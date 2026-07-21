@@ -1,0 +1,21 @@
+[submodule "vcpkg"]
+	path = vcpkg
+	url = https://github.com/microsoft/vcpkg
+[submodule "libs/Lua-cURLv3"]
+	path = libs/Lua-cURLv3
+	url = https://github.com/Lua-cURL/Lua-cURLv3.git
+[submodule "dep/imgui"]
+	path = dep/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "dep/glm"]
+	path = dep/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "libs/luautf8"]
+	path = libs/luautf8
+	url = https://github.com/starwing/luautf8.git
+[submodule "libs/luasocket"]
+	path = libs/luasocket
+	url = https://github.com/lunarmodules/luasocket.git
+[submodule "dep/compressonator"]
+	path = dep/compressonator
+	url = https://github.com/GPUOpen-Tools/compressonator

@@ -1,0 +1,14 @@
+{
+  "default-registry": {
+    "kind": "builtin",
+    "baseline": "3d72d8c930e1b6a1b2432b262c61af7d3287dcd0"
+  },
+  "registries": [
+    {
+      "kind": "filesystem",
+      "path": "vcpkg-ports",
+      "baseline": "2025-10-07",
+      "packages": ["glfw3", "gli", "luajit"]
+    }
+  ]
+}

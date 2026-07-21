@@ -1,0 +1,61 @@
+# ============================================================
+# PobTools — .gitignore
+# ============================================================
+
+# --- Build outputs -----------------------------------------
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.log
+*.tlog/
+x64/
+Debug/
+Release/
+
+# pob-zh-engine build tree (CMake) and deployment bundle
+pob-zh-engine/build/
+pob-zh-engine/dist/
+pob-zh-engine/vcpkg/
+pob-zh-engine/tests/translate_test_out.txt
+
+# Release packaging output
+dist-release/
+dist-portable/
+
+# --- Reference / external checkouts (kept local, not uploaded) ---
+PathOfBuilding-SimpleGraphic/
+atlastree-export/
+originalPOB/
+contentGGPK/
+DebugView/
+LibGGPK3-main/
+skilltree-export-3.28.0/
+/Data/
+
+# --- Translation data-generation pipeline (maintainer-only, kept local) ---
+/update-translations.bat
+/tools/
+pob-zh-engine/tools/
+/docs/ggpk-translation-pipeline.md
+
+# --- Not part of the public PobTools release (kept local only) ---
+/poeMarketTranslate/
+/NeverSinkData/
+/zh-rTW/
+/filter/
+/icon/
+/CLAUDE.md
+/.vscode/
+/docs/analysis/
+/docs/notes/
+/remove/
+
+# --- Misc --------------------------------------------------
+node_modules/
+**/__pycache__/
+graphify-out/
+image/
+Thumbs.db
+.DS_Store

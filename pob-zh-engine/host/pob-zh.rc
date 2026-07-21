@@ -1,0 +1,9 @@
+// PobTools application icon (icon/pobtools_icon_version_b).
+//
+// One resource serves every surface:
+//  - Explorer / taskbar use the exe's first RT_GROUP_ICON;
+//  - GLFW window classes (launcher / editors / atlas planner) load the icon
+//    resource named exactly "GLFW_ICON";
+//  - the PoB engine window (sys_programIcons_c in sys_video.cpp) enumerates the
+//    running exe's first icon group at runtime.
+GLFW_ICON ICON "pobtools.ico"

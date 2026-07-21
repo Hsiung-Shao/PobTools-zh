@@ -1,0 +1,432 @@
+From b72444ea45ca0fcb1a55dc3e9f9976f596cd57ed Mon Sep 17 00:00:00 2001
+From: Lars Viklund <zao@zao.se>
+Date: Mon, 8 Apr 2024 01:06:14 +0200
+Subject: [PATCH] feat: use wide CRT/API functions on Windows
+
+As functions like `fopen` and `LoadLibraryA` use the ACP on Windows and
+we would like to use UTF-8 like on other platform, transcode paths on
+demand to UTF16-LE and use MSVC CRT and W-type Windows API functions.
+---
+ src/Makefile      |   2 +-
+ src/lib_io.c      |   5 +-
+ src/lib_os.c      |  13 +++--
+ src/lib_package.c |  33 +++++++----
+ src/lj_clib.c     |   9 ++-
+ src/lj_load.c     |   3 +-
+ src/lj_utf8win.c  | 137 ++++++++++++++++++++++++++++++++++++++++++++++
+ src/lj_utf8win.h  |  28 ++++++++++
+ 8 files changed, 208 insertions(+), 22 deletions(-)
+ create mode 100644 src/lj_utf8win.c
+ create mode 100644 src/lj_utf8win.h
+
+diff --git a/src/Makefile b/src/Makefile
+index c4d0b14d..002cb149 100644
+--- a/src/Makefile
++++ b/src/Makefile
+@@ -471,7 +471,7 @@ LJCORE_O= lj_gc.o lj_err.o lj_char.o lj_bc.o lj_obj.o \
+ 	  lj_mcode.o lj_snap.o lj_record.o lj_crecord.o lj_ffrecord.o \
+ 	  lj_asm.o lj_trace.o lj_gdbjit.o \
+ 	  lj_ctype.o lj_cdata.o lj_cconv.o lj_ccall.o lj_ccallback.o \
+-	  lj_carith.o lj_clib.o lj_cparse.o \
++	  lj_carith.o lj_clib.o lj_cparse.o lj_utf8win.o \
+ 	  lj_lib.o lj_alloc.o lib_aux.o \
+ 	  $(LJLIB_O) lib_init.o
+ 
+diff --git a/src/lib_io.c b/src/lib_io.c
+index d5786e5d..31a470da 100644
+--- a/src/lib_io.c
++++ b/src/lib_io.c
+@@ -23,6 +23,7 @@
+ #include "lj_state.h"
+ #include "lj_ff.h"
+ #include "lj_lib.h"
++#include "lj_utf8win.h"
+ 
+ /* Userdata payload for I/O file. */
+ typedef struct IOFileUD {
+@@ -82,7 +83,7 @@ static IOFileUD *io_file_open(lua_State *L, const char *mode)
+ {
+   const char *fname = strdata(lj_lib_checkstr(L, 1));
+   IOFileUD *iof = io_file_new(L);
+-  iof->fp = fopen(fname, mode);
++  iof->fp = _lua_fopen(fname, mode);
+   if (iof->fp == NULL)
+     luaL_argerror(L, 1, lj_str_pushf(L, "%s: %s", fname, strerror(errno)));
+   return iof;
+@@ -413,7 +414,7 @@ LJLIB_CF(io_open)
+   GCstr *s = lj_lib_optstr(L, 2);
+   const char *mode = s ? strdata(s) : "r";
+   IOFileUD *iof = io_file_new(L);
+-  iof->fp = fopen(fname, mode);
++  iof->fp = _lua_fopen(fname, mode);
+   return iof->fp != NULL ? 1 : luaL_fileresult(L, 0, fname);
+ }
+ 
+diff --git a/src/lib_os.c b/src/lib_os.c
+index 7ad7dfaf..f8ac64a3 100644
+--- a/src/lib_os.c
++++ b/src/lib_os.c
+@@ -19,6 +19,7 @@
+ #include "lj_obj.h"
+ #include "lj_err.h"
+ #include "lj_lib.h"
++#include "lj_utf8win.h"
+ 
+ #if LJ_TARGET_POSIX
+ #include <unistd.h>
+@@ -46,7 +47,7 @@ LJLIB_CF(os_execute)
+ #endif
+ #else
+   const char *cmd = luaL_optstring(L, 1, NULL);
+-  int stat = system(cmd);
++  int stat = _lua_system(cmd);
+ #if LJ_52
+   if (cmd)
+     return luaL_execresult(L, stat);
+@@ -61,14 +62,14 @@ LJLIB_CF(os_execute)
+ LJLIB_CF(os_remove)
+ {
+   const char *filename = luaL_checkstring(L, 1);
+-  return luaL_fileresult(L, remove(filename) == 0, filename);
++  return luaL_fileresult(L, _lua_remove(filename) == 0, filename);
+ }
+ 
+ LJLIB_CF(os_rename)
+ {
+   const char *fromname = luaL_checkstring(L, 1);
+   const char *toname = luaL_checkstring(L, 2);
+-  return luaL_fileresult(L, rename(fromname, toname) == 0, fromname);
++  return luaL_fileresult(L, _lua_rename(fromname, toname) == 0, fromname);
+ }
+ 
+ LJLIB_CF(os_tmpname)
+@@ -88,7 +89,7 @@ LJLIB_CF(os_tmpname)
+     lj_err_caller(L, LJ_ERR_OSUNIQF);
+ #else
+   char buf[L_tmpnam];
+-  if (tmpnam(buf) == NULL)
++  if (_lua_tmpnam(buf) == NULL)
+     lj_err_caller(L, LJ_ERR_OSUNIQF);
+ #endif
+   lua_pushstring(L, buf);
+@@ -101,7 +102,9 @@ LJLIB_CF(os_getenv)
+ #if LJ_TARGET_CONSOLE
+   lua_pushnil(L);
+ #else
+-  lua_pushstring(L, getenv(luaL_checkstring(L, 1)));  /* if NULL push nil */
++  char const* val = _lua_getenvcopy(luaL_checkstring(L, 1));
++  lua_pushstring(L, val); /* if NULL push nil */
++  _lua_getenvfree(val);
+ #endif
+   return 1;
+ }
+diff --git a/src/lib_package.c b/src/lib_package.c
+index d2ef474f..681e7258 100644
+--- a/src/lib_package.c
++++ b/src/lib_package.c
+@@ -16,6 +16,7 @@
+ #include "lj_obj.h"
+ #include "lj_err.h"
+ #include "lj_lib.h"
++#include "lj_utf8win.h"
+ 
+ /* ------------------------------------------------------------------------ */
+ 
+@@ -80,15 +81,18 @@ BOOL WINAPI GetModuleHandleExA(DWORD, LPCSTR, HMODULE*);
+ 
+ static void setprogdir(lua_State *L)
+ {
+-  char buff[MAX_PATH + 1];
+-  char *lb;
+-  DWORD nsize = sizeof(buff);
+-  DWORD n = GetModuleFileNameA(NULL, buff, nsize);
+-  if (n == 0 || n == nsize || (lb = strrchr(buff, '\\')) == NULL) {
++  enum { N = 1<<16 };
++  wchar_t buff[N];
++  wchar_t *lb;
++  DWORD nsize = N;
++  DWORD n = GetModuleFileNameW(NULL, buff, nsize);
++  if (n == 0 || n == nsize || (lb = wcsrchr(buff, L'\\')) == NULL) {
+     luaL_error(L, "unable to get ModuleFileName");
+   } else {
+-    *lb = '\0';
+-    luaL_gsub(L, lua_tostring(L, -1), LUA_EXECDIR, buff);
++    *lb = L'\0';
++    char nbuff[N];
++    _lua_narrowtobuffer(buff, nbuff, N);
++    luaL_gsub(L, lua_tostring(L, -1), LUA_EXECDIR, nbuff);
+     lua_remove(L, -2);  /* remove original string */
+   }
+ }
+@@ -111,7 +115,9 @@ static void ll_unloadlib(void *lib)
+ 
+ static void *ll_load(lua_State *L, const char *path, int gl)
+ {
+-  HINSTANCE lib = LoadLibraryA(path);
++  wchar_t pathBuf[1<<16];
++  _lua_widentobuffer(path, pathBuf, _countof(pathBuf));
++  HINSTANCE lib = LoadLibraryW(pathBuf);
+   if (lib == NULL) pusherror(L);
+   UNUSED(gl);
+   return lib;
+@@ -267,7 +273,7 @@ static int lj_cf_package_unloadlib(lua_State *L)
+ 
+ static int readable(const char *filename)
+ {
+-  FILE *f = fopen(filename, "r");  /* try to open file */
++  FILE *f = _lua_fopen(filename, "r");  /* try to open file */
+   if (f == NULL) return 0;  /* open failed */
+   fclose(f);
+   return 1;
+@@ -535,17 +541,20 @@ static void setpath(lua_State *L, const char *fieldname, const char *envname,
+ #if LJ_TARGET_CONSOLE
+   const char *path = NULL;
+   UNUSED(envname);
++  return;
+ #else
+-  const char *path = getenv(envname);
++  char const *path = _lua_getenvcopy(envname);
+ #endif
+   if (path == NULL || noenv) {
+     lua_pushstring(L, def);
+   } else {
+-    path = luaL_gsub(L, path, LUA_PATHSEP LUA_PATHSEP,
++    char const* lpath = luaL_gsub(L, path, LUA_PATHSEP LUA_PATHSEP,
+ 			      LUA_PATHSEP AUXMARK LUA_PATHSEP);
+-    luaL_gsub(L, path, AUXMARK, def);
++
++    luaL_gsub(L, lpath, AUXMARK, def);
+     lua_remove(L, -2);
+   }
++  _lua_getenvfree(path);
+   setprogdir(L);
+   lua_setfield(L, -2, fieldname);
+ }
+diff --git a/src/lj_clib.c b/src/lj_clib.c
+index ab2db33a..d1d3c816 100644
+--- a/src/lj_clib.c
++++ b/src/lj_clib.c
+@@ -16,6 +16,7 @@
+ #include "lj_cconv.h"
+ #include "lj_cdata.h"
+ #include "lj_clib.h"
++#include "lj_utf8win.h"
+ 
+ /* -- OS-specific functions ----------------------------------------------- */
+ 
+@@ -200,7 +201,13 @@ static const char *clib_extname(lua_State *L, const char *name)
+ static void *clib_loadlib(lua_State *L, const char *name, int global)
+ {
+   DWORD oldwerr = GetLastError();
+-  void *h = (void *)LoadLibraryA(clib_extname(L, name));
++
++  enum {NameSize = 1<<16};
++  wchar_t namebuf[NameSize];
++  void *h = NULL;
++  if (_lua_widentobuffer(clib_extname(L, name), namebuf, NameSize)) {
++    h = (void *)LoadLibraryW(namebuf);
++  }
+   if (!h) clib_error(L, "cannot load module " LUA_QS ": %s", name);
+   SetLastError(oldwerr);
+   UNUSED(global);
+diff --git a/src/lj_load.c b/src/lj_load.c
+index dbd36ac7..8beeb452 100644
+--- a/src/lj_load.c
++++ b/src/lj_load.c
+@@ -22,6 +22,7 @@
+ #include "lj_lex.h"
+ #include "lj_bcdump.h"
+ #include "lj_parse.h"
++#include "lj_utf8win.h"
+ 
+ /* -- Load Lua source code and bytecode ----------------------------------- */
+ 
+@@ -88,7 +89,7 @@ LUALIB_API int luaL_loadfilex(lua_State *L, const char *filename,
+   int status;
+   const char *chunkname;
+   if (filename) {
+-    ctx.fp = fopen(filename, "rb");
++    ctx.fp = _lua_fopen(filename, "rb");
+     if (ctx.fp == NULL) {
+       lua_pushfstring(L, "cannot open %s: %s", filename, strerror(errno));
+       return LUA_ERRFILE;
+diff --git a/src/lj_utf8win.c b/src/lj_utf8win.c
+new file mode 100644
+index 00000000..96ee913a
+--- /dev/null
++++ b/src/lj_utf8win.c
+@@ -0,0 +1,137 @@
++#include "lj_utf8win.h"
++
++#ifdef _WIN32
++#include <Windows.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <wchar.h>
++
++enum { PathBufSize = 1<<16, ModeBufSize = 5 };
++
++bool _lua_narrowtobuffer(wchar_t const* srcPtr, char* dstBuf, int dstSize)
++{
++  int cchSrc = (int)wcslen(srcPtr);
++  if (!cchSrc) {
++    dstBuf[0] = '\0';
++    return true;
++  }
++  int cbDst = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, srcPtr, cchSrc, dstBuf, dstSize - 1, NULL, NULL);
++  if (!cbDst || cbDst >= dstSize) {
++    return false;
++  }
++  dstBuf[cbDst] = '\0';
++  return true;
++}
++
++bool _lua_widentobuffer(char const* srcPtr, wchar_t* dstBuf, int dstSize)
++{
++  int cbSrc = (int)strlen(srcPtr);
++  if (!cbSrc) {
++    dstBuf[0] = L'\0';
++    return true;
++  }
++  int cchDst = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, srcPtr, cbSrc, dstBuf, dstSize - 1);
++  if (!cchDst || cchDst >= dstSize ) {
++    return false;
++  }
++  dstBuf[cchDst] = L'\0';
++  return true;
++}
++
++FILE* _lua_fopen(char const* path, char const* mode)
++{
++  if (!path || !mode) {
++    return NULL;
++  }
++  wchar_t pathBuf[PathBufSize];
++  wchar_t modeBuf[ModeBufSize];
++  if (!_lua_widentobuffer(path, pathBuf, PathBufSize) ||
++      !_lua_widentobuffer(mode, modeBuf, ModeBufSize))
++  {
++    return NULL;
++  }
++  FILE* fp = _wfopen(pathBuf, modeBuf);
++  return fp;
++}
++
++char const* _lua_getenvcopy(char const* name)
++{
++  if (!name) {
++    return NULL;
++  }
++  wchar_t nameBuf[PathBufSize];
++  if (!_lua_widentobuffer(name, nameBuf, PathBufSize)) {
++    return NULL;
++  }
++  wchar_t* var = _wgetenv(nameBuf);
++  if (!var) {
++    return NULL;
++  }
++  char varBuf[PathBufSize];
++  if (!_lua_narrowtobuffer(var, varBuf, PathBufSize)) {
++    return NULL;
++  }
++  size_t cbVar = strlen(varBuf) + 1;
++  char* ret = calloc(1, cbVar);
++  memcpy(ret, varBuf, cbVar);
++  return ret;
++}
++
++void _lua_getenvfree(char const* var)
++{
++  if (var) {
++    free((char*)var);
++  }
++}
++
++int _lua_remove(char const* path)
++{
++  if (!path) {
++    return -1;
++  }
++  wchar_t pathBuf[PathBufSize];
++  if (!_lua_widentobuffer(path, pathBuf, PathBufSize)) {
++        return -1;
++  }
++  return _wremove(pathBuf);
++}
++
++int _lua_rename(char const* oldpath, char const* newpath)
++{
++  if (!oldpath || !newpath) {
++    return -1;
++  }
++  wchar_t oldBuf[PathBufSize];
++  wchar_t newBuf[PathBufSize];
++  if (!_lua_widentobuffer(oldpath, oldBuf, PathBufSize) ||
++      !_lua_widentobuffer(newpath, newBuf, PathBufSize))
++  {
++    return -1;
++  }
++  return _wrename(oldBuf, newBuf);
++}
++
++int _lua_system(char const* cmd)
++{
++  if (!cmd) {
++    return -1;
++  }
++  wchar_t cmdBuf[PathBufSize];
++  if (!_lua_widentobuffer(cmd, cmdBuf, PathBufSize)) {
++    return -1;
++  }
++  return _wsystem(cmdBuf);
++}
++
++char* _lua_tmpnam(char* s)
++{
++  wchar_t tmpBuf[L_tmpnam];
++  _wtmpnam(tmpBuf);
++
++  if (!_lua_narrowtobuffer(tmpBuf, s, L_tmpnam)) {
++    return NULL;
++  }
++  return s;
++}
++
++#endif
+diff --git a/src/lj_utf8win.h b/src/lj_utf8win.h
+new file mode 100644
+index 00000000..72e9ccae
+--- /dev/null
++++ b/src/lj_utf8win.h
+@@ -0,0 +1,28 @@
++#ifndef LJ_UTF8_WIN_H
++#define LJ_UTF8_WIN_H
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdio.h>
++
++#ifdef _WIN32
++bool _lua_narrowtobuffer(wchar_t const* srcPtr, char* dstBuf, int dstSize);
++bool _lua_widentobuffer(char const* srcPtr, wchar_t* dstBuf, int dstSize);
++FILE* _lua_fopen(char const* path, char const* mode);
++char const* _lua_getenvcopy(char const* name);
++void _lua_getenvfree(char const* name);
++int _lua_remove(char const* path);
++int _lua_rename(char const* oldpath, char const* newpath);
++int _lua_system(char const* cmd);
++char* _lua_tmpnam();
++#else
++#define _lua_fopen(path, mode) fopen(path, mode)
++#define _lua_getenvcopy(name) strdup(getenv(name))
++#define _lua_getenvfree(name) free(name)
++#define _lua_remove(path) remove(path)
++#define _lua_rename(oldpath, newpath) rename(oldpath, newpath)
++#define _lua_system(cmd) system(cmd)
++#define _lua_tmpnam(s) tmpnam(s)
++#endif
++
++#endif
+-- 
+2.42.0.windows.2
+

@@ -1,0 +1,15 @@
+{
+    "2022-08-14": {
+        "luajit": { "baseline": "2022-08-11", "port-version": 1 }
+    },
+    "2025-01-19": {
+        "glfw3": { "baseline": "3.4", "port-version": 1 },
+        "gli": { "baseline": "2021-07-06", "port-version": 3 },
+        "luajit": { "baseline": "2023-04-16", "port-version": 1 }
+    },
+    "2025-10-07": {
+        "glfw3": { "baseline": "3.4", "port-version": 1 },
+        "gli": { "baseline": "2021-07-06", "port-version": 3 },
+        "luajit": { "baseline": "2025-07-24", "port-version": 1 }
+    }
+}

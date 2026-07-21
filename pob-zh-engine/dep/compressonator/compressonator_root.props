@@ -1,0 +1,98 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!--===============================================-->
+  <!--Define Macros to be used for external files    -->
+  <!--===============================================-->
+
+  <PropertyGroup Label="UserMacros">
+    <Compressonator_RootDev>$(SolutionDir)..\..\..\</Compressonator_RootDev>
+    <Compressonator_APPSDK>$(SolutionDir)..\..\..\..\Common\Lib\AMD\APPSDK\3-0\</Compressonator_APPSDK>
+    <Compressonator_DIRECTX>$(SolutionDir)..\..\..\..\Common\lib\ext\DirectX-SDK\8.0\</Compressonator_DIRECTX>
+    <Compressonator_GLEW>$(SolutionDir)..\..\..\..\Common\Lib\Ext\glew\1.9.0\</Compressonator_GLEW>
+    <Compressonator_GLM>$(SolutionDir)..\..\..\..\Common\Lib\Ext\glm\</Compressonator_GLM>
+    <Compressonator_OPENCL>$(SolutionDir)..\..\..\..\Common\Lib\Ext\OpenCL\</Compressonator_OPENCL>
+    <Compressonator_OPENCV>$(SolutionDir)..\..\..\..\Common\Lib\Ext\OpenCV\2.49\</Compressonator_OPENCV>
+    <Compressonator_OPENEXR>$(SolutionDir)..\..\..\..\Common\Lib\Ext\OpenEXR\openexr-2.2.0\</Compressonator_OPENEXR>
+    <Compressonator_ILMBASE>$(SolutionDir)..\..\..\..\Common\Lib\Ext\OpenEXR\ilmbase-2.2.0\</Compressonator_ILMBASE>
+    <Compressonator_OPENGL>$(SolutionDir)..\..\..\..\Common\Lib\Ext\OpenGL\</Compressonator_OPENGL>
+    <Compressonator_RAPIDXML>$(SolutionDir)..\..\..\..\Common\Lib\Ext\rapidxml\</Compressonator_RAPIDXML>
+    <Compressonator_TINYXML>$(SolutionDir)..\..\..\..\Common\Lib\Ext\tinyxml\2.6.2\</Compressonator_TINYXML>
+    <Compressonator_KTX>$(SolutionDir)..\..\..\..\Common\Lib\Ext\ktx\</Compressonator_KTX>
+    <Compressonator_ZLIB>$(SolutionDir)..\..\..\..\Common\Lib\Ext\zlib\zlib-1.2.10\</Compressonator_ZLIB>
+    <Compressonator_FLTK>$(SolutionDir)..\..\..\..\Common\Lib\Ext\Fltk\1.3.4\</Compressonator_FLTK>
+    <Compressonator_AGS>$(SolutionDir)..\..\..\Libs\ags\</Compressonator_AGS>
+    <DebugSuffix Condition="'$(Configuration)'=='Debug_MD'">d</DebugSuffix>
+    <DebugSuffix Condition="'$(Configuration)'=='Release_MD'"></DebugSuffix>
+    <DebugRelease Condition="'$(Configuration)'=='Debug_MD'">debug</DebugRelease>
+    <DebugRelease Condition="'$(Configuration)'=='Release_MD'">release</DebugRelease>
+    <ShortPlatform Condition="'$(Platform)' == 'x64'"  >x64</ShortPlatform>
+    
+  </PropertyGroup>
+
+  <ItemGroup>
+    <BuildMacro Include="Compressonator_RootDev">
+        <Value>$(Compressonator_RootDev)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_BOOST">
+        <Value>$(Compressonator_BOOST)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_GLEW">
+        <Value>$(Compressonator_GLEW)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_OPENCV">
+        <Value>$(Compressonator_OPENCV)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_OPENEXR">
+        <Value>$(Compressonator_OPENEXR)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_ILMBASE">
+        <Value>$(Compressonator_ILMBASE)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_TINYXML">
+        <Value>$(Compressonator_TINYXML)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_KTX">
+       <Value>$(Compressonator_KTX)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_ZLIB">
+        <Value>$(Compressonator_ZLIB)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_APPSDK">
+        <Value>$(Compressonator_APPSDK)</Value>
+    </BuildMacro>
+    <BuildMacro Include="VULKAN_SDK">
+        <Value>$(VULKAN_SDK)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_OPENGL">
+        <Value>$(Compressonator_OPENGL)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_DIRECTX">
+      <Value>$(Compressonator_DIRECTX)</Value>
+    </BuildMacro>
+    <BuildMacro Include="QT_DIR">
+      <Value>$(QT_DIR)</Value>
+    </BuildMacro>
+    <BuildMacro Include="Compressonator_FLTK">
+        <Value>$(Compressonator_FLTK)</Value>
+    </BuildMacro>
+  </ItemGroup>
+
+  <!--=================================-->
+  <!--Define common cl and link options-->
+  <!--=================================-->
+
+  <ItemDefinitionGroup>
+
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+
+    <Link>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+
+  </ItemDefinitionGroup>
+
+</Project>

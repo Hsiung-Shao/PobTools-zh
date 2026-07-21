@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<DOCUMENT Type="Advanced Installer" CreateVersion="12.4.1" version="13.5" Modules="professional" RootPath="." Language="en" Id="{923A3584-87CA-4A31-A0BF-AF989DA207B6}">
+  <COMPONENT cid="caphyon.advinst.msicomp.ProjectOptionsComponent">
+    <ROW Name="HiddenItems" Value="AppXAppDetailsComponent;AppXCapabilitiesComponent;AppXDependenciesComponent;AppXProductDetailsComponent;AppXVisualAssetsComponent;AppXAppDeclarationsComponent;AppXUriRulesComponent"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiPropsComponent">
+    <ROW Property="AI_BITMAP_DISPLAY_MODE" Value="0"/>
+    <ROW Property="AI_CLEAN_RESOURCES_DISABLE_UPGRADE" Value="0"/>
+    <ROW Property="AI_CLEAN_RESOURCES_UNINSTALL" Value="1"/>
+    <ROW Property="AI_CLEAN_RESOURCES_USER_PROMPT_BASIC_UI" Value="0"/>
+    <ROW Property="AI_CLEAN_RESOURCES_USER_PROMPT_FULL_UI" Value="1"/>
+    <ROW Property="AI_FINDEXE_TITLE" Value="Select the installation package for [|ProductName]" ValueLocId="AI.Property.FindExeTitle"/>
+    <ROW Property="AI_PRODUCTNAME_ARP" Value="[|ProductName] [|ProductVersion]"/>
+    <ROW Property="AI_UNINSTALLER" Value="msiexec.exe"/>
+    <ROW Property="AI_UPGRADE" Value="No"/>
+    <ROW Property="ALLUSERS" Value="1" MultiBuildValue="DefaultBuild:2"/>
+    <ROW Property="ARPCOMMENTS" Value="[|ProductName] [|ProductVersion] installer" ValueLocId="*"/>
+    <ROW Property="ARPNOMODIFY" MultiBuildValue="DefaultBuild:1"/>
+    <ROW Property="ARPNOREPAIR" Value="1"/>
+    <ROW Property="ARPPRODUCTICON" Value="appicon.exe" Type="8"/>
+    <ROW Property="ARPSYSTEMCOMPONENT" Value="1"/>
+    <ROW Property="ARPURLINFOABOUT" Value="https://github.com/GPUOpen-Tools/Compressonator"/>
+    <ROW Property="AiPreferFastOem" MultiBuildValue="DefaultBuild:1"/>
+    <ROW Property="BannerBitmap" Value="banner" MultiBuildValue="DefaultBuild:AMDCompressTools.bmp" Type="1" MsiKey="BannerBitmap"/>
+    <ROW Property="DialogBitmap" Value="dialog" MultiBuildValue="DefaultBuild:AMDCompress.bmp" Type="1" MsiKey="DialogBitmap"/>
+    <ROW Property="Manufacturer" Value="GPUOpen.com"/>
+    <ROW Property="ProductCode" Value="1033:{FB88015A-B8A8-4908-8936-4D90AC16389C} " Type="16"/>
+    <ROW Property="ProductLanguage" Value="1033"/>
+    <ROW Property="ProductName" Value="CompressonatorCore"/>
+    <ROW Property="ProductVersion" Value="4.5.0" Type="32"/>
+    <ROW Property="SETUP_FILE_NAME" Value="CompressonatorCore_x64_4.1."/>
+    <ROW Property="SecureCustomProperties" Value="OLDPRODUCTS;AI_NEWERPRODUCTFOUND;AI_SETUPEXEPATH;SETUPEXEDIR"/>
+    <ROW Property="UpgradeCode" Value="{78D0379B-C01A-49C4-A8C7-A41904A35199}"/>
+    <ROW Property="WindowsType9X" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>
+    <ROW Property="WindowsType9XDisplay" MultiBuildValue="DefaultBuild:Windows 9x/ME" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT40" MultiBuildValue="DefaultBuild:Windows NT 4.0" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT40Display" MultiBuildValue="DefaultBuild:Windows NT 4.0" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT50" MultiBuildValue="DefaultBuild:Windows 2000" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT50Display" MultiBuildValue="DefaultBuild:Windows 2000" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT5X" MultiBuildValue="DefaultBuild:Windows XP/2003 RTM, Windows XP/2003 SP1, Windows XP SP2 x86" ValueLocId="-"/>
+    <ROW Property="WindowsTypeNT5XDisplay" MultiBuildValue="DefaultBuild:Windows XP/2003 RTM, Windows XP/2003 SP1, Windows XP SP2 x86" ValueLocId="-"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiDirsComponent">
+    <ROW Directory="APPDIR" Directory_Parent="TARGETDIR" DefaultDir="APPDIR:." IsPseudoRoot="1" DirectoryOptions="3"/>
+    <ROW Directory="Header_Dir" Directory_Parent="APPDIR" DefaultDir="include" DirectoryOptions="3"/>
+    <ROW Directory="Libs_Dir" Directory_Parent="APPDIR" DefaultDir="lib" DirectoryOptions="3"/>
+    <ROW Directory="License_Dir" Directory_Parent="APPDIR" DefaultDir="license" DirectoryOptions="3"/>
+    <ROW Directory="SHORTCUTDIR" Directory_Parent="TARGETDIR" DefaultDir="SHORTC~1|SHORTCUTDIR" IsPseudoRoot="1"/>
+    <ROW Directory="Samples_Dir" Directory_Parent="APPDIR" DefaultDir="examples" DirectoryOptions="3"/>
+    <ROW Directory="TARGETDIR" DefaultDir="SourceDir"/>
+    <ROW Directory="VS2015_Dir" Directory_Parent="Libs_Dir" DefaultDir="bin" DirectoryOptions="3"/>
+    <ROW Directory="core_example1_Dir" Directory_Parent="Samples_Dir" DefaultDir="CORE_E~1|core_example1" DirectoryOptions="3"/>
+    <ROW Directory="encoders_Dir" Directory_Parent="Libs_Dir" DefaultDir="encoders" DirectoryOptions="3"/>
+    <ROW Directory="x64_Dir" Directory_Parent="VS2015_Dir" DefaultDir="x64" DirectoryOptions="3"/>
+    <ROW Directory="x86_Dir" Directory_Parent="VS2015_Dir" DefaultDir="x86" DirectoryOptions="3"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiCompsComponent">
+    <ROW Component="AI_CustomARPName" ComponentId="{789B0E55-01F5-46BE-9484-AF3854411B0A}" Directory_="APPDIR" Attributes="260" KeyPath="DisplayName" Options="1"/>
+    <ROW Component="AI_DisableModify" ComponentId="{502A1A34-6C7C-4378-810F-FCFCDECFA528}" Directory_="APPDIR" Attributes="260" KeyPath="NoModify" Options="1"/>
+    <ROW Component="AI_ExePath" ComponentId="{885DA806-1F87-4E4E-80D0-FBB1617F1C94}" Directory_="APPDIR" Attributes="260" KeyPath="AI_ExePath"/>
+    <ROW Component="CMP_Core_MD_DLL.dll" ComponentId="{55C284C3-DD84-4DF9-8003-7C88AA2E1BF3}" Directory_="x86_Dir" Attributes="0" KeyPath="CMP_Core_MD_DLL.dll"/>
+    <ROW Component="CMP_Core_MD_DLL.dll_1" ComponentId="{863D6575-A42F-4038-901F-0B7C5834C642}" Directory_="x64_Dir" Attributes="256" KeyPath="CMP_Core_MD_DLL.dll_1"/>
+    <ROW Component="CMP_Core_MDd_DLL.dll" ComponentId="{C3AB56B0-ABAD-4F32-ACCC-521A051D607C}" Directory_="x86_Dir" Attributes="0" KeyPath="CMP_Core_MDd_DLL.dll"/>
+    <ROW Component="CMP_Core_MDd_DLL.dll_2" ComponentId="{07166620-A62F-4582-A323-A9C6D6A46DBA}" Directory_="x64_Dir" Attributes="256" KeyPath="CMP_Core_MDd_DLL.dll_2"/>
+    <ROW Component="CMP_Core_MT_DLL.dll" ComponentId="{E86FFF8F-C1D2-4BE1-9A67-79D7A049DE73}" Directory_="x86_Dir" Attributes="0" KeyPath="CMP_Core_MT_DLL.dll"/>
+    <ROW Component="CMP_Core_MT_DLL.dll_1" ComponentId="{8DB6BAF5-2EB9-42B2-B44E-9709687EF20D}" Directory_="x64_Dir" Attributes="256" KeyPath="CMP_Core_MT_DLL.dll_1"/>
+    <ROW Component="CMP_Core_MTd.lib" ComponentId="{AB2FB76C-CE5A-47AD-94FB-7F9344C59FBC}" Directory_="x86_Dir" Attributes="0" KeyPath="CMP_Core_MTd.lib" Type="0"/>
+    <ROW Component="CMP_Core_MTd.lib_1" ComponentId="{82B606CB-3DDC-4050-A829-A495A0E1079F}" Directory_="x64_Dir" Attributes="0" KeyPath="CMP_Core_MTd.lib_1" Type="0"/>
+    <ROW Component="CMP_Core_MTd_DLL.dll" ComponentId="{64DF9A93-0323-4B1E-BBC6-315A24DE37DF}" Directory_="x86_Dir" Attributes="0" KeyPath="CMP_Core_MTd_DLL.dll"/>
+    <ROW Component="CMP_Core_MTd_DLL.dll_1" ComponentId="{1419D007-11FE-4F73-A024-5CB501953F95}" Directory_="x64_Dir" Attributes="256" KeyPath="CMP_Core_MTd_DLL.dll_1"/>
+    <ROW Component="SHORTCUTDIR" ComponentId="{259C902A-3821-4B6D-8E4B-768991394137}" Directory_="SHORTCUTDIR" Attributes="0"/>
+    <ROW Component="bc1_cmp.h" ComponentId="{DA0796B5-12D2-4E1C-9FF2-F6D558573689}" Directory_="encoders_Dir" Attributes="0" KeyPath="bc1_cmp.h" Type="0"/>
+    <ROW Component="cmp_core.h" ComponentId="{0ABDDF9A-728A-4366-B974-C85EBA16FCCF}" Directory_="Header_Dir" Attributes="0" KeyPath="cmp_core.h" Type="0"/>
+    <ROW Component="core_example1.sln" ComponentId="{60505DB5-3F53-4C46-8850-618E15B25933}" Directory_="core_example1_Dir" Attributes="0" KeyPath="core_example1.sln" Type="0"/>
+    <ROW Component="corelicense.txt" ComponentId="{724E6D96-3FE7-4272-BF07-A7EA984C7CA1}" Directory_="License_Dir" Attributes="0" KeyPath="corelicense.txt" Type="0"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiFeatsComponent">
+    <ROW Feature="MainFeature" Title="Compressonator SDK" Description="Description" Display="7" Level="1" Directory_="APPDIR" Attributes="24" Components="AI_CustomARPName AI_DisableModify AI_ExePath CMP_Core_MD_DLL.dll CMP_Core_MD_DLL.dll_1 CMP_Core_MDd_DLL.dll CMP_Core_MDd_DLL.dll_2 CMP_Core_MT_DLL.dll CMP_Core_MT_DLL.dll_1 CMP_Core_MTd.lib CMP_Core_MTd.lib_1 CMP_Core_MTd_DLL.dll CMP_Core_MTd_DLL.dll_1 SHORTCUTDIR bc1_cmp.h cmp_core.h core_example1.sln corelicense.txt"/>
+    <ROW Feature="VisualStudioCMergeModules" Title="Visual Studio C++ Merge Modules" Description="Description" Display="0" Level="1" Directory_="APPDIR" Attributes="24" Components="AI_CustomARPName AI_DisableModify AI_ExePath"/>
+    <ATTRIBUTE name="CurrentFeature" value="MainFeature"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiFilesComponent">
+    <ROW File="CMP_Core_MD.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~7.LIB|CMP_Core_MD.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD\Win32\CMP_Core_MD.lib" SelfReg="false" NextFile="CMP_Core_MD_DLL.dll"/>
+    <ROW File="CMP_Core_MD.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~7.LIB|CMP_Core_MD.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD\x64\CMP_Core_MD.lib" SelfReg="false" NextFile="CMP_Core_MD_DLL.dll_1"/>
+    <ROW File="CMP_Core_MD_DLL.dll" Component_="CMP_Core_MD_DLL.dll" FileName="CMP_CO~4.DLL|CMP_Core_MD_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD_DLL\Win32\CMP_Core_MD_DLL.dll" SelfReg="false" NextFile="CMP_Core_MD_DLL.lib"/>
+    <ROW File="CMP_Core_MD_DLL.dll_1" Component_="CMP_Core_MD_DLL.dll_1" FileName="CMP_CO~4.DLL|CMP_Core_MD_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD_DLL\x64\CMP_Core_MD_DLL.dll" SelfReg="false" NextFile="CMP_Core_MD_DLL.lib_1"/>
+    <ROW File="CMP_Core_MD_DLL.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~8.LIB|CMP_Core_MD_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD_DLL\Win32\CMP_Core_MD_DLL.lib" SelfReg="false" NextFile="CMP_Core_MTd.lib_1"/>
+    <ROW File="CMP_Core_MD_DLL.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~8.LIB|CMP_Core_MD_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_MD_DLL\x64\CMP_Core_MD_DLL.lib" SelfReg="false" NextFile="corelicense.txt"/>
+    <ROW File="CMP_Core_MDd.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~3.LIB|CMP_Core_MDd.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD\Win32\CMP_Core_MDd.lib" SelfReg="false" NextFile="CMP_Core_MDd_DLL.dll"/>
+    <ROW File="CMP_Core_MDd.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~3.LIB|CMP_Core_MDd.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD\x64\CMP_Core_MDd.lib" SelfReg="false" NextFile="CMP_Core_MDd_DLL.dll_2"/>
+    <ROW File="CMP_Core_MDd_DLL.dll" Component_="CMP_Core_MDd_DLL.dll" FileName="CMP_CO~2.DLL|CMP_Core_MDd_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD_DLL\Win32\CMP_Core_MDd_DLL.dll" SelfReg="false" NextFile="CMP_Core_MDd_DLL.lib"/>
+    <ROW File="CMP_Core_MDd_DLL.dll_2" Component_="CMP_Core_MDd_DLL.dll_2" FileName="CMP_CO~2.DLL|CMP_Core_MDd_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD_DLL\x64\CMP_Core_MDd_DLL.dll" SelfReg="false" NextFile="CMP_Core_MDd_DLL.lib_2"/>
+    <ROW File="CMP_Core_MDd_DLL.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~4.LIB|CMP_Core_MDd_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD_DLL\Win32\CMP_Core_MDd_DLL.lib" SelfReg="false" NextFile="CMP_Core_MT.lib"/>
+    <ROW File="CMP_Core_MDd_DLL.lib_2" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~4.LIB|CMP_Core_MDd_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_MD_DLL\x64\CMP_Core_MDd_DLL.lib" SelfReg="false" NextFile="CMP_Core_MT.lib_1"/>
+    <ROW File="CMP_Core_MT.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~5.LIB|CMP_Core_MT.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release\Win32\CMP_Core_MT.lib" SelfReg="false" NextFile="CMP_Core_MT_DLL.dll"/>
+    <ROW File="CMP_Core_MT.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~5.LIB|CMP_Core_MT.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release\x64\CMP_Core_MT.lib" SelfReg="false" NextFile="CMP_Core_MT_DLL.dll_1"/>
+    <ROW File="CMP_Core_MT_DLL.dll" Component_="CMP_Core_MT_DLL.dll" FileName="CMP_CO~3.DLL|CMP_Core_MT_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_DLL\Win32\CMP_Core_MT_DLL.dll" SelfReg="false" NextFile="CMP_Core_MT_DLL.lib"/>
+    <ROW File="CMP_Core_MT_DLL.dll_1" Component_="CMP_Core_MT_DLL.dll_1" FileName="CMP_CO~3.DLL|CMP_Core_MT_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_DLL\x64\CMP_Core_MT_DLL.dll" SelfReg="false" NextFile="CMP_Core_MT_DLL.lib_1"/>
+    <ROW File="CMP_Core_MT_DLL.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~6.LIB|CMP_Core_MT_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_DLL\Win32\CMP_Core_MT_DLL.lib" SelfReg="false" NextFile="CMP_Core_MD.lib"/>
+    <ROW File="CMP_Core_MT_DLL.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~6.LIB|CMP_Core_MT_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Release_DLL\x64\CMP_Core_MT_DLL.lib" SelfReg="false" NextFile="CMP_Core_MD.lib_1"/>
+    <ROW File="CMP_Core_MTd.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~1.LIB|CMP_Core_MTd.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug\Win32\CMP_Core_MTd.lib" SelfReg="false" NextFile="CMP_Core_MTd_DLL.dll"/>
+    <ROW File="CMP_Core_MTd.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~1.LIB|CMP_Core_MTd.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug\x64\CMP_Core_MTd.lib" SelfReg="false" NextFile="CMP_Core_MTd_DLL.dll_1"/>
+    <ROW File="CMP_Core_MTd_DLL.dll" Component_="CMP_Core_MTd_DLL.dll" FileName="CMP_CO~1.DLL|CMP_Core_MTd_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_DLL\Win32\CMP_Core_MTd_DLL.dll" SelfReg="false" NextFile="CMP_Core_MTd_DLL.lib"/>
+    <ROW File="CMP_Core_MTd_DLL.dll_1" Component_="CMP_Core_MTd_DLL.dll_1" FileName="CMP_CO~1.DLL|CMP_Core_MTd_DLL.dll" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_DLL\x64\CMP_Core_MTd_DLL.dll" SelfReg="false" NextFile="CMP_Core_MTd_DLL.lib_1"/>
+    <ROW File="CMP_Core_MTd_DLL.lib" Component_="CMP_Core_MTd.lib" FileName="CMP_CO~2.LIB|CMP_Core_MTd_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_DLL\Win32\CMP_Core_MTd_DLL.lib" SelfReg="false" NextFile="CMP_Core_MDd.lib"/>
+    <ROW File="CMP_Core_MTd_DLL.lib_1" Component_="CMP_Core_MTd.lib_1" FileName="CMP_CO~2.LIB|CMP_Core_MTd_DLL.lib" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\Build\Debug_DLL\x64\CMP_Core_MTd_DLL.lib" SelfReg="false" NextFile="CMP_Core_MDd.lib_1"/>
+    <ROW File="bc1_cmp.h" Component_="bc1_cmp.h" FileName="bc1_cmp.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc1_cmp.h" SelfReg="false" NextFile="bc1_common_kernel.h"/>
+    <ROW File="bc1_common_kernel.h" Component_="bc1_cmp.h" FileName="BC1_CO~1.H|bc1_common_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc1_common_kernel.h" SelfReg="false" NextFile="bc1_encode_kernel.cpp"/>
+    <ROW File="bc1_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC1_EN~1.CPP|bc1_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc1_encode_kernel.cpp" SelfReg="false" NextFile="bc1_encode_kernel.h"/>
+    <ROW File="bc1_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC1_EN~1.H|bc1_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc1_encode_kernel.h" SelfReg="false" NextFile="bc1_encode_kernel.hlsl"/>
+    <ROW File="bc1_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC1_EN~1.HLS|bc1_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc1_encode_kernel.hlsl" SelfReg="false" NextFile="bc2_encode_kernel.cpp"/>
+    <ROW File="bc2_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC2_EN~1.CPP|bc2_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc2_encode_kernel.cpp" SelfReg="false" NextFile="bc2_encode_kernel.h"/>
+    <ROW File="bc2_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC2_EN~1.H|bc2_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc2_encode_kernel.h" SelfReg="false" NextFile="bc2_encode_kernel.hlsl"/>
+    <ROW File="bc2_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC2_EN~1.HLS|bc2_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc2_encode_kernel.hlsl" SelfReg="false" NextFile="bc3_encode_kernel.cpp"/>
+    <ROW File="bc3_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC3_EN~1.CPP|bc3_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc3_encode_kernel.cpp" SelfReg="false" NextFile="bc3_encode_kernel.h"/>
+    <ROW File="bc3_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC3_EN~1.H|bc3_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc3_encode_kernel.h" SelfReg="false" NextFile="bc3_encode_kernel.hlsl"/>
+    <ROW File="bc3_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC3_EN~1.HLS|bc3_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc3_encode_kernel.hlsl" SelfReg="false" NextFile="bc4_encode_kernel.cpp"/>
+    <ROW File="bc4_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC4_EN~1.CPP|bc4_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc4_encode_kernel.cpp" SelfReg="false" NextFile="bc4_encode_kernel.h"/>
+    <ROW File="bc4_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC4_EN~1.H|bc4_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc4_encode_kernel.h" SelfReg="false" NextFile="bc4_encode_kernel.hlsl"/>
+    <ROW File="bc4_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC4_EN~1.HLS|bc4_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc4_encode_kernel.hlsl" SelfReg="false" NextFile="bc5_encode_kernel.cpp"/>
+    <ROW File="bc5_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC5_EN~1.CPP|bc5_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc5_encode_kernel.cpp" SelfReg="false" NextFile="bc5_encode_kernel.h"/>
+    <ROW File="bc5_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC5_EN~1.H|bc5_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc5_encode_kernel.h" SelfReg="false" NextFile="bc5_encode_kernel.hlsl"/>
+    <ROW File="bc5_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC5_EN~1.HLS|bc5_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc5_encode_kernel.hlsl" SelfReg="false" NextFile="bc6_common_encoder.h"/>
+    <ROW File="bc6_common_encoder.h" Component_="bc1_cmp.h" FileName="BC6_CO~1.H|bc6_common_encoder.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc6_common_encoder.h" SelfReg="false" NextFile="bc6_encode_kernel.cpp"/>
+    <ROW File="bc6_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC6_EN~1.CPP|bc6_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc6_encode_kernel.cpp" SelfReg="false" NextFile="bc6_encode_kernel.h"/>
+    <ROW File="bc6_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC6_EN~1.H|bc6_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc6_encode_kernel.h" SelfReg="false" NextFile="bc6_encode_kernel.hlsl"/>
+    <ROW File="bc6_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC6_EN~1.HLS|bc6_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc6_encode_kernel.hlsl" SelfReg="false" NextFile="bc7_cmpmsc.h"/>
+    <ROW File="bc7_cmpmsc.h" Component_="bc1_cmp.h" FileName="BC7_CM~1.H|bc7_cmpmsc.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc7_cmpmsc.h" SelfReg="false" NextFile="bc7_common_encoder.h"/>
+    <ROW File="bc7_common_encoder.h" Component_="bc1_cmp.h" FileName="BC7_CO~1.H|bc7_common_encoder.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc7_common_encoder.h" SelfReg="false" NextFile="bc7_encode_kernel.cpp"/>
+    <ROW File="bc7_encode_kernel.cpp" Component_="bc1_cmp.h" FileName="BC7_EN~1.CPP|bc7_encode_kernel.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc7_encode_kernel.cpp" SelfReg="false" NextFile="bc7_encode_kernel.h"/>
+    <ROW File="bc7_encode_kernel.h" Component_="bc1_cmp.h" FileName="BC7_EN~1.H|bc7_encode_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc7_encode_kernel.h" SelfReg="false" NextFile="bc7_encode_kernel.hlsl"/>
+    <ROW File="bc7_encode_kernel.hlsl" Component_="bc1_cmp.h" FileName="BC7_EN~1.HLS|bc7_encode_kernel.hlsl" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bc7_encode_kernel.hlsl" SelfReg="false" NextFile="bcn_common_api.h"/>
+    <ROW File="bcn_common_api.h" Component_="bc1_cmp.h" FileName="BCN_CO~1.H|bcn_common_api.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bcn_common_api.h" SelfReg="false" NextFile="bcn_common_kernel.h"/>
+    <ROW File="bcn_common_kernel.h" Component_="bc1_cmp.h" FileName="BCN_CO~2.H|bcn_common_kernel.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\shaders\bcn_common_kernel.h" SelfReg="false" NextFile="cmp_core.h"/>
+    <ROW File="cmp_core.h" Component_="cmp_core.h" FileName="cmp_core.h" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\cmp_core\source\cmp_core.h" SelfReg="false" NextFile="core_example1.sln"/>
+    <ROW File="core_example1.sln" Component_="core_example1.sln" FileName="CORE_E~1.SLN|core_example1.sln" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\examples\core_example1\core_example1.sln" SelfReg="false" NextFile="core_example1.vcxproj"/>
+    <ROW File="core_example1.vcxproj" Component_="core_example1.sln" FileName="CORE_E~1.VCX|core_example1.vcxproj" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\examples\core_example1\core_example1.vcxproj" SelfReg="false" NextFile="core_example1.vcxproj.filters"/>
+    <ROW File="core_example1.vcxproj.filters" Component_="core_example1.sln" FileName="CORE_E~1.FIL|core_example1.vcxproj.filters" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\examples\core_example1\core_example1.vcxproj.filters" SelfReg="false" NextFile="coreexample.cpp"/>
+    <ROW File="coreexample.cpp" Component_="core_example1.sln" FileName="COREEX~1.CPP|coreexample.cpp" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\examples\core_example1\coreexample.cpp" SelfReg="false"/>
+    <ROW File="corelicense.txt" Component_="corelicense.txt" FileName="CORELI~1.TXT|corelicense.txt" Version="65535.65535.65535.65535" Attributes="0" SourcePath="..\license\corelicense.txt" SelfReg="false" NextFile="bc1_cmp.h"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.AiRemoveFileComponent">
+    <ROW RemoveFile="_" Condition="(AI_CLEAN_RESOURCES_UNINSTALL = &quot;1&quot;)" Options="0"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.BootstrOptComponent">
+    <ROW BootstrOptKey="GlobalOptions" EulaPathLocId="*" IntroTextPathLocId="*"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.BuildComponent">
+    <ROW BuildKey="DefaultBuild" BuildName="DefaultBuild" BuildOrder="1" BuildType="0" PackageFolder="AMDCompress-SetupFiles" PackageFileName="[|SETUP_FILE_NAME]" Languages="en" InstallationType="4" CabsLocation="1" PackageType="1" FilesInsideExe="true" ExeIconPath="appicon.ico" ExtractionFolder="[AppDataFolder][|Manufacturer]\[|ProductName] [|ProductVersion]\install" ExtUI="true" UseLargeSchema="true" MsiPackageType="x64" UACExecutionLevel="2"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.DictionaryComponent">
+    <ROW Path="&lt;AI_DICTS&gt;ui.ail"/>
+    <ROW Path="&lt;AI_DICTS&gt;ui_en.ail"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.DigCertStoreComponent">
+    <ROW TimeStampUrl="http://timestamp.verisign.com/scripts/timstamp.dll" SignerDescription="[|ProductName]" SignOptions="0" SignTool="0"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.FragmentComponent">
+    <ROW Fragment="CommonUI.aip" Path="&lt;AI_FRAGS&gt;CommonUI.aip"/>
+    <ROW Fragment="ConfigureDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\ConfigureDlg.aip"/>
+    <ROW Fragment="CustomizePage.aip" Path="&lt;AI_THEMES&gt;classic\fragments\CustomizePage.aip"/>
+    <ROW Fragment="FolderPage.aip" Path="&lt;AI_THEMES&gt;classic\fragments\FolderPage.aip"/>
+    <ROW Fragment="LicenseAgreementDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\LicenseAgreementDlg.aip"/>
+    <ROW Fragment="MaintenanceTypeDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\MaintenanceTypeDlg.aip"/>
+    <ROW Fragment="MaintenanceWelcomeDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\MaintenanceWelcomeDlg.aip"/>
+    <ROW Fragment="SequenceDialogs.aip" Path="&lt;AI_THEMES&gt;classic\fragments\SequenceDialogs.aip"/>
+    <ROW Fragment="Sequences.aip" Path="&lt;AI_FRAGS&gt;Sequences.aip"/>
+    <ROW Fragment="StaticUIStrings.aip" Path="&lt;AI_FRAGS&gt;StaticUIStrings.aip"/>
+    <ROW Fragment="UI.aip" Path="&lt;AI_THEMES&gt;classic\fragments\UI.aip"/>
+    <ROW Fragment="Validation.aip" Path="&lt;AI_FRAGS&gt;Validation.aip"/>
+    <ROW Fragment="VerifyRemoveDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\VerifyRemoveDlg.aip"/>
+    <ROW Fragment="VerifyRepairDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\VerifyRepairDlg.aip"/>
+    <ROW Fragment="WelcomeDlg.aip" Path="&lt;AI_THEMES&gt;classic\fragments\WelcomeDlg.aip"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiActionTextComponent">
+    <ROW Action="AI_AiRemoveFilesCommit" Description="Executing file removal operations" Template="Executing file removal: [1]" DescriptionLocId="ActionText.Description.AI_AiRemoveFilesCommit" TemplateLocId="ActionText.Template.AI_AiRemoveFilesCommit"/>
+    <ROW Action="AI_AiRemoveFilesDeferred_Permanent" Description="Preparing files for removal" Template="Preparing file: [1]" DescriptionLocId="ActionText.Description.AI_AiRemoveFilesDeferred_Permanent" TemplateLocId="ActionText.Template.AI_AiRemoveFilesDeferred_Permanent"/>
+    <ROW Action="AI_AiRemoveFilesDeferred_Undoable" Description="Preparing files for removal" Template="Preparing file: [1]" DescriptionLocId="ActionText.Description.AI_AiRemoveFilesDeferred_Undoable" TemplateLocId="ActionText.Template.AI_AiRemoveFilesDeferred_Undoable"/>
+    <ROW Action="AI_AiRemoveFilesImmediate" Description="Preparing files for removal" Template="Preparing file: [1]" DescriptionLocId="ActionText.Description.AI_AiRemoveFilesImmediate" TemplateLocId="ActionText.Template.AI_AiRemoveFilesImmediate"/>
+    <ROW Action="AI_AiRemoveFilesRollback" Description="Restoring removed files" Template="Restoring file: [1]" DescriptionLocId="ActionText.Description.AI_AiRemoveFilesRollback" TemplateLocId="ActionText.Template.AI_AiRemoveFilesRollback"/>
+    <ROW Action="AI_DeleteLzma" Description="Deleting files extracted from archive" DescriptionLocId="ActionText.Description.AI_DeleteLzma" TemplateLocId="-"/>
+    <ROW Action="AI_DeleteRLzma" Description="Deleting files extracted from archive" DescriptionLocId="ActionText.Description.AI_DeleteLzma" TemplateLocId="-"/>
+    <ROW Action="AI_ExtractFiles" Description="Extracting files from archive" DescriptionLocId="ActionText.Description.AI_ExtractLzma" TemplateLocId="-"/>
+    <ROW Action="AI_ExtractLzma" Description="Extracting files from archive" DescriptionLocId="ActionText.Description.AI_ExtractLzma" TemplateLocId="-"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiAppSearchComponent">
+    <ROW Property="AI_SETUPEXEPATH" Signature_="AI_EXE_PATH_CU" Builds="DefaultBuild"/>
+    <ROW Property="AI_SETUPEXEPATH" Signature_="AI_EXE_PATH_LM" Builds="DefaultBuild"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiBinaryComponent">
+    <ROW Name="AMDCompress.bmp" SourcePath="AMDCompress.bmp"/>
+    <ROW Name="AMDCompressTools.bmp" SourcePath="AMDCompressTools.bmp"/>
+    <ROW Name="Prereq.dll" SourcePath="&lt;AI_CUSTACTS&gt;Prereq.dll"/>
+    <ROW Name="ResourceCleaner.dll" SourcePath="&lt;AI_CUSTACTS&gt;ResourceCleaner.dll"/>
+    <ROW Name="aicustact.dll" SourcePath="&lt;AI_CUSTACTS&gt;aicustact.dll"/>
+    <ROW Name="lzmaextractor.dll" SourcePath="&lt;AI_CUSTACTS&gt;lzmaextractor.dll"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiCheckBoxComponent">
+    <ROW Property="AI_CLEAN_RESOURCES_UNINSTALL" Value="1"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiControlComponent">
+    <ROW Dialog_="LicenseAgreementDlg" Control="AgreementText" Type="ScrollableText" X="20" Y="60" Width="330" Height="120" Attributes="7" Text="CompressonatorEndUserLicenseAgreement-Win.rtf" Order="400" TextLocId="Control.Text.LicenseAgreementDlg#AgreementText_2" MsiKey="LicenseAgreementDlg#AgreementText"/>
+    <ROW Dialog_="VerifyRemoveDlg" Control="UnistallCleanupCheckBox" Type="CheckBox" X="25" Y="150" Width="320" Height="11" Attributes="3" Property="AI_CLEAN_RESOURCES_UNINSTALL" Text="Remove [ProductName] settings and temporary files." Order="1100"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiControlEventComponent">
+    <ROW Dialog_="WelcomeDlg" Control_="Next" Event="NewDialog" Argument="LicenseAgreementDlg" Condition="AI_INSTALL" Ordering="1"/>
+    <ROW Dialog_="MaintenanceWelcomeDlg" Control_="Next" Event="NewDialog" Argument="MaintenanceTypeDlg" Condition="AI_MAINT" Ordering="99"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Install" Event="EndDialog" Argument="Return" Condition="AI_MAINT" Ordering="198"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Back" Event="NewDialog" Argument="CustomizeDlg" Condition="AI_MAINT" Ordering="204"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Install" Event="EndDialog" Argument="Return" Condition="AI_INSTALL" Ordering="197"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Back" Event="NewDialog" Argument="ConfigureDlg" Condition="AI_INSTALL" Ordering="201"/>
+    <ROW Dialog_="CustomizeDlg" Control_="Next" Event="NewDialog" Argument="VerifyReadyDlg" Condition="AI_MAINT" Ordering="101"/>
+    <ROW Dialog_="CustomizeDlg" Control_="Back" Event="NewDialog" Argument="MaintenanceTypeDlg" Condition="AI_MAINT" Ordering="1"/>
+    <ROW Dialog_="MaintenanceTypeDlg" Control_="ChangeButton" Event="NewDialog" Argument="CustomizeDlg" Condition="AI_MAINT" Ordering="501"/>
+    <ROW Dialog_="MaintenanceTypeDlg" Control_="Back" Event="NewDialog" Argument="MaintenanceWelcomeDlg" Condition="AI_MAINT" Ordering="1"/>
+    <ROW Dialog_="MaintenanceTypeDlg" Control_="RemoveButton" Event="NewDialog" Argument="VerifyRemoveDlg" Condition="AI_MAINT AND InstallMode=&quot;Remove&quot;" Ordering="601"/>
+    <ROW Dialog_="VerifyRemoveDlg" Control_="Back" Event="NewDialog" Argument="MaintenanceTypeDlg" Condition="AI_MAINT AND InstallMode=&quot;Remove&quot;" Ordering="1"/>
+    <ROW Dialog_="MaintenanceTypeDlg" Control_="RepairButton" Event="NewDialog" Argument="VerifyRepairDlg" Condition="AI_MAINT AND InstallMode=&quot;Repair&quot;" Ordering="601"/>
+    <ROW Dialog_="VerifyRepairDlg" Control_="Back" Event="NewDialog" Argument="MaintenanceTypeDlg" Condition="AI_MAINT AND InstallMode=&quot;Repair&quot;" Ordering="1"/>
+    <ROW Dialog_="VerifyRepairDlg" Control_="Repair" Event="EndDialog" Argument="Return" Condition="AI_MAINT AND InstallMode=&quot;Repair&quot;" Ordering="399" Options="1"/>
+    <ROW Dialog_="VerifyRemoveDlg" Control_="Remove" Event="EndDialog" Argument="Return" Condition="AI_MAINT AND InstallMode=&quot;Remove&quot;" Ordering="299" Options="1"/>
+    <ROW Dialog_="PatchWelcomeDlg" Control_="Next" Event="NewDialog" Argument="VerifyReadyDlg" Condition="AI_PATCH" Ordering="201"/>
+    <ROW Dialog_="ResumeDlg" Control_="Install" Event="EndDialog" Argument="Return" Condition="AI_RESUME" Ordering="299"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Install" Event="EndDialog" Argument="Return" Condition="AI_PATCH" Ordering="199"/>
+    <ROW Dialog_="VerifyReadyDlg" Control_="Back" Event="NewDialog" Argument="PatchWelcomeDlg" Condition="AI_PATCH" Ordering="205"/>
+    <ROW Dialog_="LicenseAgreementDlg" Control_="Next" Event="NewDialog" Argument="ConfigureDlg" Condition="AI_INSTALL" Ordering="1"/>
+    <ROW Dialog_="LicenseAgreementDlg" Control_="Back" Event="NewDialog" Argument="WelcomeDlg" Condition="AI_INSTALL" Ordering="1"/>
+    <ROW Dialog_="ConfigureDlg" Control_="Tab" Event="SpawnDialog" Argument="CustomizePage" Condition="( AiTabPage ) AND ( 1 )" Ordering="0"/>
+    <ROW Dialog_="ConfigureDlg" Control_="Tab" Event="SpawnDialog" Argument="FolderPage" Condition="( AiTabPage ) AND ( NOT Installed )" Ordering="1"/>
+    <ROW Dialog_="ConfigureDlg" Control_="Next" Event="NewDialog" Argument="VerifyReadyDlg" Condition="AI_INSTALL" Ordering="1"/>
+    <ROW Dialog_="ConfigureDlg" Control_="Back" Event="NewDialog" Argument="LicenseAgreementDlg" Condition="AI_INSTALL" Ordering="1"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiCreateFolderComponent">
+    <ROW Directory_="SHORTCUTDIR" Component_="SHORTCUTDIR" ManualDelete="false"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiCustActComponent">
+    <ROW Action="AI_AiRemoveFilesCommit" Type="11777" Source="ResourceCleaner.dll" Target="OnAiRemoveFilesCommit" WithoutSeq="true"/>
+    <ROW Action="AI_AiRemoveFilesDeferred_Permanent" Type="11265" Source="ResourceCleaner.dll" Target="OnAiRemoveFilesPermanent" WithoutSeq="true"/>
+    <ROW Action="AI_AiRemoveFilesDeferred_Undoable" Type="11265" Source="ResourceCleaner.dll" Target="OnAiRemoveFilesUndoable" WithoutSeq="true"/>
+    <ROW Action="AI_AiRemoveFilesImmediate" Type="1" Source="ResourceCleaner.dll" Target="OnAiRemoveFilesImmediate"/>
+    <ROW Action="AI_AiRemoveFilesRollback" Type="11521" Source="ResourceCleaner.dll" Target="OnAiUndoRemoveFiles"/>
+    <ROW Action="AI_BACKUP_AI_SETUPEXEPATH" Type="51" Source="AI_SETUPEXEPATH_ORIGINAL" Target="[AI_SETUPEXEPATH]"/>
+    <ROW Action="AI_DATA_SETTER" Type="51" Source="AI_ExtractFiles" Target="[AI_SETUPEXEPATH]"/>
+    <ROW Action="AI_DeleteCadLzma" Type="51" Source="AI_DeleteLzma" Target="[AI_SETUPEXEPATH]"/>
+    <ROW Action="AI_DeleteLzma" Type="1025" Source="lzmaextractor.dll" Target="DeleteLZMAFiles"/>
+    <ROW Action="AI_DeleteRCadLzma" Type="51" Source="AI_DeleteRLzma" Target="[AI_SETUPEXEPATH]"/>
+    <ROW Action="AI_DeleteRLzma" Type="1281" Source="lzmaextractor.dll" Target="DeleteLZMAFiles"/>
+    <ROW Action="AI_DpiContentScale" Type="1" Source="aicustact.dll" Target="DpiContentScale"/>
+    <ROW Action="AI_EnableDebugLog" Type="321" Source="aicustact.dll" Target="EnableDebugLog"/>
+    <ROW Action="AI_EstimateExtractFiles" Type="1" Source="Prereq.dll" Target="EstimateExtractFiles"/>
+    <ROW Action="AI_ExtractCadLzma" Type="51" Source="AI_ExtractLzma" Target="[AI_SETUPEXEPATH]"/>
+    <ROW Action="AI_ExtractFiles" Type="1025" Source="Prereq.dll" Target="ExtractSourceFiles" AdditionalSeq="AI_DATA_SETTER"/>
+    <ROW Action="AI_ExtractLzma" Type="1025" Source="lzmaextractor.dll" Target="ExtractLZMAFiles"/>
+    <ROW Action="AI_FindExeLzma" Type="1" Source="lzmaextractor.dll" Target="FindEXE"/>
+    <ROW Action="AI_GetArpIconPath" Type="1" Source="aicustact.dll" Target="GetArpIconPath"/>
+    <ROW Action="AI_InstallModeCheck" Type="1" Source="aicustact.dll" Target="UpdateInstallMode" WithoutSeq="true"/>
+    <ROW Action="AI_PREPARE_UPGRADE" Type="65" Source="aicustact.dll" Target="PrepareUpgrade"/>
+    <ROW Action="AI_RESTORE_AI_SETUPEXEPATH" Type="51" Source="AI_SETUPEXEPATH" Target="[AI_SETUPEXEPATH_ORIGINAL]"/>
+    <ROW Action="AI_ResolveKnownFolders" Type="1" Source="aicustact.dll" Target="AI_ResolveKnownFolders"/>
+    <ROW Action="AI_SETMIXINSTLOCATION" Type="1" Source="aicustact.dll" Target="MixedAllUsersInstallLocation"/>
+    <ROW Action="AI_SHOW_LOG" Type="65" Source="aicustact.dll" Target="LaunchLogFile" WithoutSeq="true"/>
+    <ROW Action="AI_STORE_LOCATION" Type="51" Source="ARPINSTALLLOCATION" Target="[APPDIR]"/>
+    <ROW Action="SET_APPDIR" Type="307" Source="APPDIR" Target="[ProgramFilesFolder][Manufacturer]\[ProductName]" MultiBuildTarget="DefaultBuild:[WindowsVolume]Compressonator_[ProductVersion]"/>
+    <ROW Action="SET_SHORTCUTDIR" Type="307" Source="SHORTCUTDIR" Target="[ProgramMenuFolder][ProductName]" MultiBuildTarget="DefaultBuild:[ProgramMenuFolder]\Compressonator_[ProductVersion]"/>
+    <ROW Action="SET_TARGETDIR_TO_APPDIR" Type="51" Source="TARGETDIR" Target="[APPDIR]"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiEnvComponent">
+    <ROW Environment="AMDCOMPRESS_ROOT" Name="=-*COMPRESSONATOR_ROOT" Value="[APPDIR]" Component_="CMP_Core_MDd_DLL.dll_2"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiIconsComponent">
+    <ROW Name="appicon.exe" SourcePath="appicon.ico" Index="0"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiInstExSeqComponent">
+    <ROW Action="AI_STORE_LOCATION" Condition="(Not Installed) OR REINSTALL" Sequence="1501"/>
+    <ROW Action="AI_PREPARE_UPGRADE" Condition="AI_UPGRADE=&quot;No&quot; AND (Not Installed)" Sequence="1399"/>
+    <ROW Action="AI_ResolveKnownFolders" Sequence="52"/>
+    <ROW Action="AI_SETMIXINSTLOCATION" Sequence="748"/>
+    <ROW Action="AI_AiRemoveFilesRollback" Sequence="3099"/>
+    <ROW Action="AI_GetArpIconPath" Sequence="1401"/>
+    <ROW Action="AI_BACKUP_AI_SETUPEXEPATH" Sequence="99" Builds="DefaultBuild"/>
+    <ROW Action="AI_RESTORE_AI_SETUPEXEPATH" Condition="AI_SETUPEXEPATH_ORIGINAL" Sequence="101" Builds="DefaultBuild"/>
+    <ROW Action="AI_DeleteCadLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="199" Builds="DefaultBuild"/>
+    <ROW Action="AI_DeleteRCadLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="198" Builds="DefaultBuild"/>
+    <ROW Action="AI_ExtractCadLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="197" Builds="DefaultBuild"/>
+    <ROW Action="AI_FindExeLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="196" Builds="DefaultBuild"/>
+    <ROW Action="AI_ExtractLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="1549" Builds="DefaultBuild"/>
+    <ROW Action="AI_DeleteRLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="1548" Builds="DefaultBuild"/>
+    <ROW Action="AI_DeleteLzma" Condition="SETUPEXEDIR=&quot;&quot; AND Installed AND (REMOVE&lt;&gt;&quot;ALL&quot;) AND (AI_INSTALL_MODE&lt;&gt;&quot;Remove&quot;) AND (NOT PATCH)" Sequence="6599" Builds="DefaultBuild"/>
+    <ROW Action="AI_ExtractFiles" Sequence="3998" Builds="DefaultBuild"/>
+    <ROW Action="AI_DATA_SETTER" Sequence="3997"/>
+    <ROW Action="AI_EstimateExtractFiles" Sequence="3999" Builds="DefaultBuild"/>
+    <ROW Action="AI_EnableDebugLog" Sequence="51"/>
+    <ROW Action="AI_AiRemoveFilesImmediate" Sequence="3499"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiInstallUISequenceComponent">
+    <ROW Action="ExecuteAction" Sequence="1299" SeqType="0" MsiKey="ExecuteAction"/>
+    <ROW Action="AI_ResolveKnownFolders" Sequence="53"/>
+    <ROW Action="AI_DpiContentScale" Sequence="52"/>
+    <ROW Action="AI_SETMIXINSTLOCATION" Sequence="748"/>
+    <ROW Action="AI_BACKUP_AI_SETUPEXEPATH" Sequence="99"/>
+    <ROW Action="AI_RESTORE_AI_SETUPEXEPATH" Condition="AI_SETUPEXEPATH_ORIGINAL" Sequence="101"/>
+    <ROW Action="AI_EnableDebugLog" Sequence="51"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiLaunchConditionsComponent">
+    <ROW Condition="(VersionNT &lt;&gt; 400)" Description="[ProductName] cannot be installed on the following Windows versions: [WindowsTypeNT40Display]." DescriptionLocId="AI.LaunchCondition.NoNT40" IsPredefined="true" Builds="DefaultBuild"/>
+    <ROW Condition="(VersionNT &lt;&gt; 500)" Description="[ProductName] cannot be installed on [WindowsTypeNT50Display]." DescriptionLocId="AI.LaunchCondition.NoNT50" IsPredefined="true" Builds="DefaultBuild"/>
+    <ROW Condition="(VersionNT64 OR ((VersionNT &lt;&gt; 501) OR (ServicePackLevel = 3))) AND ((VersionNT &lt;&gt; 502) OR (ServicePackLevel = 2))" Description="[ProductName] cannot be installed on [WindowsTypeNT5XDisplay]." DescriptionLocId="AI.LaunchCondition.NoNT5X" IsPredefined="true" Builds="DefaultBuild"/>
+    <ROW Condition="Privileged" Description="[ProductName] requires administrative privileges to install." DescriptionLocId="AI.LaunchCondition.Privileged" IsPredefined="true" Builds="DefaultBuild"/>
+    <ROW Condition="SETUPEXEDIR OR (REMOVE=&quot;ALL&quot;)" Description="This package can only be run from a bootstrapper." DescriptionLocId="AI.LaunchCondition.RequireBootstrapper" IsPredefined="true" Builds="DefaultBuild"/>
+    <ROW Condition="VersionNT" Description="[ProductName] cannot be installed on [WindowsType9XDisplay]." DescriptionLocId="AI.LaunchCondition.No9X" IsPredefined="true" Builds="DefaultBuild"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiProgIdComponent">
+    <ROW ProgId="[|Manufacturer].[|ProductName]"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiRegLocatorComponent">
+    <ROW Signature_="AI_EXE_PATH_CU" Root="1" Key="Software\Caphyon\Advanced Installer\LZMA\[ProductCode]\[ProductVersion]" Name="AI_ExePath" Type="2"/>
+    <ROW Signature_="AI_EXE_PATH_LM" Root="2" Key="Software\Caphyon\Advanced Installer\LZMA\[ProductCode]\[ProductVersion]" Name="AI_ExePath" Type="2"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiRegsComponent">
+    <ROW Registry="AI_ExePath" Root="-1" Key="Software\Caphyon\Advanced Installer\LZMA\[ProductCode]\[ProductVersion]" Name="AI_ExePath" Value="[AI_SETUPEXEPATH]" Component_="AI_ExePath"/>
+    <ROW Registry="Comments" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="Comments" Value="[ARPCOMMENTS]" Component_="AI_CustomARPName"/>
+    <ROW Registry="Contact" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="Contact" Value="[ARPCONTACT]" Component_="AI_CustomARPName"/>
+    <ROW Registry="DisplayIcon" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="DisplayIcon" Value="[ARP_ICON_PATH]" Component_="AI_CustomARPName"/>
+    <ROW Registry="DisplayName" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="DisplayName" Value="[AI_PRODUCTNAME_ARP]" Component_="AI_CustomARPName"/>
+    <ROW Registry="DisplayVersion" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="DisplayVersion" Value="[ProductVersion]" Component_="AI_CustomARPName"/>
+    <ROW Registry="EstimatedSize" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="EstimatedSize" Value="#[AI_ARP_SIZE]" Component_="AI_CustomARPName"/>
+    <ROW Registry="HelpLink" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="HelpLink" Value="[ARPHELPLINK]" Component_="AI_CustomARPName"/>
+    <ROW Registry="HelpTelephone" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="HelpTelephone" Value="[ARPHELPTELEPHONE]" Component_="AI_CustomARPName"/>
+    <ROW Registry="InstallLocation" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="InstallLocation" Value="[APPDIR]" Component_="AI_CustomARPName"/>
+    <ROW Registry="ModifyPath" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="ModifyPath" Value="[AI_UNINSTALLER] /i [ProductCode]" Component_="AI_CustomARPName"/>
+    <ROW Registry="NoModify" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="NoModify" Value="#1" Component_="AI_DisableModify"/>
+    <ROW Registry="NoRepair" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="NoRepair" Value="#1" Component_="AI_CustomARPName"/>
+    <ROW Registry="Publisher" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="Publisher" Value="[Manufacturer]" Component_="AI_CustomARPName"/>
+    <ROW Registry="URLInfoAbout" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="URLInfoAbout" Value="[ARPURLINFOABOUT]" Component_="AI_CustomARPName"/>
+    <ROW Registry="URLUpdateInfo" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="URLUpdateInfo" Value="[ARPURLUPDATEINFO]" Component_="AI_CustomARPName"/>
+    <ROW Registry="UninstallPath" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="UninstallPath" Value="[AI_UNINSTALLER] /x [ProductCode] AI_UNINSTALLER_CTP=1" Component_="AI_CustomARPName"/>
+    <ROW Registry="UninstallString" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="UninstallString" Value="[AI_UNINSTALLER] /x [ProductCode] AI_UNINSTALLER_CTP=1" Component_="AI_CustomARPName"/>
+    <ROW Registry="VersionMajor" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="VersionMajor" Value="#3" Component_="AI_CustomARPName"/>
+    <ROW Registry="VersionMinor" Root="-1" Key="Software\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName] [ProductVersion]" Name="VersionMinor" Value="#1" Component_="AI_CustomARPName"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiRemoveFileComponent">
+    <ROW FileKey="_" Component_="CMP_Core_MDd_DLL.dll_2" DirProperty="APPDIR" InstallMode="2"/>
+    <ROW FileKey="__1" Component_="CMP_Core_MDd_DLL.dll_2" DirProperty="SHORTCUTDIR" InstallMode="1"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiShortsComponent">
+    <ROW Shortcut="APPDIR" Directory_="SHORTCUTDIR" Name="COMPRE~2|Compressonator Core SDK" Component_="CMP_Core_MDd_DLL.dll_2" Target="[APPDIR]" Hotkey="0" IconIndex="0" ShowCmd="1" WkDir="APPDIR"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiThemeComponent">
+    <ATTRIBUTE name="UsedTheme" value="classic"/>
+  </COMPONENT>
+  <COMPONENT cid="caphyon.advinst.msicomp.MsiUpgradeComponent">
+    <ROW UpgradeCode="[|UpgradeCode]" VersionMin="0.0.1" VersionMax="[|ProductVersion]" Attributes="257" ActionProperty="OLDPRODUCTS"/>
+  </COMPONENT>
+</DOCUMENT>

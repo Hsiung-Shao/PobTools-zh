@@ -1,0 +1,116 @@
+name: Build DLL
+on: 
+  push:
+  pull_request:
+  release:
+      types: [published]
+jobs:
+  build_dll:
+    strategy:
+      matrix:
+        include:
+          - platform: x64
+            os: windows-latest
+            triplet: x64-windows
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_DEFAULT_TRIPLET: ${{ matrix.triplet }}-release
+      VCPKG_TARGET_TRIPLET: ${{ matrix.triplet }}-release
+      VCPKG_INSTALLED_DIR: ${{ github.workspace }}/vcpkg_installed/
+      DEPS_DIR: ${{ github.workspace }}/vcpkg_installed/${{ matrix.triplet }}
+      INST_DIR: ${{ github.workspace }}/install-prefix
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+
+      - name: Append short commit sha to CFG_VERSION_NUM in config.h
+        shell: powershell
+        run: |
+          $file = 'config.h'
+          $short=$(git rev-parse --short HEAD)
+          (Get-Content $file -Raw) -replace '(#define\s+CFG_VERSION_NUM\s+"[^"]*)(")', "`$1-$short`$2" | Set-Content $file
+
+      - name: run-vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: "./vcpkg.json"
+          runVcpkgInstall: true
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Obtain and run CMake
+        uses: threeal/cmake-action@v1.3.0
+        with:
+          source-dir: "."
+          build-dir: "build"
+          generator: "Visual Studio 17 2022"
+          options: CMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake CMAKE_INSTALL_PREFIX="${{ env.INST_DIR }}" VCPKG_TARGET_TRIPLET="${{ env.VCPKG_TARGET_TRIPLET }}"
+
+      - name: Build DLL
+        run: "cmake --build build --config Release -t INSTALL"
+
+      - name: Show DLL resources
+        run: |
+          $dll = "install-prefix\SimpleGraphic.dll"
+          Write-Host "DLL path: $dll"
+          if (Test-Path $dll) {
+            Write-Host "VersionInfo:"; (Get-Item $dll).VersionInfo | Format-List
+          } else { Write-Host "DLL not found" }
+
+      - name: Archive DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleGraphic-${{ matrix.triplet }}.dll
+          path: "${{ env.INST_DIR }}/SimpleGraphic.dll"
+
+      - name: Archive DLL symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleGraphic-${{ matrix.triplet }}.pdb
+          path: "${{ github.workspace }}/build/Release/SimpleGraphic.pdb"
+
+      - name: Archive dependency DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleGraphic-${{ matrix.triplet }}-deps.dll
+          path: |
+            ${{ env.INST_DIR }}/*.dll
+            !${{ env.INST_DIR }}/SimpleGraphic.dll
+
+      - name: Archive dependency DLL symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimpleGraphic-${{ matrix.triplet }}-deps.pdb
+          path: |
+            ${{ env.DEPS_DIR }}/bin/*.pdb
+            ${{ github.workspace }}/build/Release/lzip.pdb
+            ${{ github.workspace }}/build/Release/lcurl.pdb
+
+      - name: Upload to release
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          cd ${{ env.INST_DIR }}
+          tar -cvf SimpleGraphicDLLs-${{ matrix.triplet }}.tar *.dll
+          gh release upload ${{ github.event.release.tag_name }} SimpleGraphicDLLs-${{ matrix.triplet }}.tar
+
+      - name: Notify PathOfBuilding repo
+        if: ${{ github.event_name == 'release' }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WIRES77_PAT }}
+          repository: ${{ github.repository_owner }}/PathOfBuilding
+          event-type: update-simple-graphic
+          client-payload: '{"tag": "${{ github.event.release.tag_name }}", "release_link": "${{ github.event.release.html_url }}"}'
+
+      - name: Notify PathOfBuilding-PoE2 repo
+        if: ${{ github.event_name == 'release' }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.WIRES77_PAT }}
+          repository: ${{ github.repository_owner }}/PathOfBuilding-PoE2
+          event-type: update-simple-graphic
+          client-payload: '{"tag": "${{ github.event.release.tag_name }}", "release_link": "${{ github.event.release.html_url }}"}'

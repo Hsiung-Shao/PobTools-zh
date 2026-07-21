@@ -1,0 +1,4 @@
+{
+  "_comment": "Descending chaos-value cut-offs. An item priced >= thresholds[k] lands in bucket k; bucket 0 = most valuable. Buckets map to a category's draggable tiers in file order (highest-value tier first).",
+  "thresholds": [100, 20, 5, 1, 0.2]
+}

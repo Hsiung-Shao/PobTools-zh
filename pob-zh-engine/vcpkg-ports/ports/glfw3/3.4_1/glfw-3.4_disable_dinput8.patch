@@ -1,0 +1,30 @@
+From a6dd071b7cd9c3f592dbf5cf1f301df529773833 Mon Sep 17 00:00:00 2001
+From: Lars Viklund <zao@zao.se>
+Date: Sat, 30 Mar 2024 21:05:35 +0100
+Subject: [PATCH] fix: disable dinput8 to fix startup delay
+
+Some HID devices block DirectInput8 device enumeration for many seconds
+which adversely affects software that uses GLFW without needing
+joysticks at all.
+
+This change skips loading of the `dinput8` library and thus disables all
+functionality that checks for its availability.
+---
+ src/win32_init.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/win32_init.c b/src/win32_init.c
+index 824e383c..a81da94e 100644
+--- a/src/win32_init.c
++++ b/src/win32_init.c
+@@ -104,7 +104,6 @@ static GLFWbool loadLibraries(void)
+     _glfw.win32.user32.GetSystemMetricsForDpi_ = (PFN_GetSystemMetricsForDpi)
+         _glfwPlatformGetModuleSymbol(_glfw.win32.user32.instance, "GetSystemMetricsForDpi");
+ 
+-    _glfw.win32.dinput8.instance = _glfwPlatformLoadModule("dinput8.dll");
+     if (_glfw.win32.dinput8.instance)
+     {
+         _glfw.win32.dinput8.Create = (PFN_DirectInput8Create)
+-- 
+2.42.0.windows.2
+

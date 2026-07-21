@@ -1,0 +1,62 @@
+From 63a98f283b12265b722b4a7e0cd87d0e527a38f9 Mon Sep 17 00:00:00 2001
+From: Lars Viklund <zao@zao.se>
+Date: Mon, 8 Apr 2024 01:03:43 +0200
+Subject: [PATCH] feat: output PDBs for the library and apply LTCG
+
+---
+ src/msvcbuild.bat | 16 ++++++++--------
+ 1 file changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/src/msvcbuild.bat b/src/msvcbuild.bat
+index 045965f8..ac85da80 100644
+--- a/src/msvcbuild.bat
++++ b/src/msvcbuild.bat
+@@ -13,9 +13,9 @@
+ 
+ @setlocal
+ @rem Add more debug flags here, e.g. DEBUGCFLAGS=/DLUA_USE_APICHECK
+-@set DEBUGCFLAGS=
+-@set LJCOMPILE=cl /nologo /c /O2 /W3 /D_CRT_SECURE_NO_DEPRECATE /D_CRT_STDIO_INLINE=__declspec(dllexport)__inline
+-@set LJLINK=link /nologo
++@set DEBUGCFLAGS=/Od
++@set LJCOMPILE=cl /nologo /c /O2 /W3 /D_CRT_SECURE_NO_DEPRECATE /D_CRT_STDIO_INLINE=__declspec(dllexport)__inline /Z7 /GL
++@set LJLINK=link /nologo /LTCG
+ @set LJMT=mt /nologo
+ @set LJLIB=lib /nologo /nodefaultlib
+ @set DASMDIR=..\dynasm
+@@ -67,14 +67,13 @@ buildvm -m folddef -o lj_folddef.h lj_opt_fold.c
+ @if "%1" neq "debug" goto :NODEBUG
+ @shift
+ @set BUILDTYPE=debug
+-@set LJCOMPILE=%LJCOMPILE% /Zi %DEBUGCFLAGS%
++@set LJCOMPILE=%LJCOMPILE% /Z7 %DEBUGCFLAGS%
+ :NODEBUG
+-@set LJLINK=%LJLINK% /%BUILDTYPE%
+ @if "%1"=="amalg" goto :AMALGDLL
+ @if "%1"=="static" goto :STATIC
+-%LJCOMPILE% /MD /DLUA_BUILD_AS_DLL lj_*.c lib_*.c
++%LJCOMPILE% /MD /DLUA_BUILD_AS_DLL lj_*.c lib_*.c /Fdlua51.pdb
+ @if errorlevel 1 goto :BAD
+-%LJLINK% /DLL /out:%LJDLLNAME% lj_*.obj lib_*.obj
++%LJLINK% /DLL /out:%LJDLLNAME% lj_*.obj lib_*.obj /DEBUG /OPT:ICF /OPT:REF
+ @if errorlevel 1 goto :BAD
+ @goto :MTDLL
+ :STATIC
+@@ -92,7 +91,7 @@ buildvm -m folddef -o lj_folddef.h lj_opt_fold.c
+ if exist %LJDLLNAME%.manifest^
+   %LJMT% -manifest %LJDLLNAME%.manifest -outputresource:%LJDLLNAME%;2
+ 
+-%LJCOMPILE% luajit.c
++%LJCOMPILE% luajit.c /Fdluajit.pdb
+ @if errorlevel 1 goto :BAD
+ %LJLINK% /out:luajit.exe luajit.obj %LJLIBNAME%
+ @if errorlevel 1 goto :BAD
+@@ -114,4 +113,5 @@ if exist luajit.exe.manifest^
+ @goto :END
+ :FAIL
+ @echo You must open a "Visual Studio Command Prompt" to run this script
++exit 1
+ :END
+-- 
+2.42.0.windows.2
+

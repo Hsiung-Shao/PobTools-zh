@@ -1,0 +1,19 @@
+{
+    "versions": [
+      {
+        "version-date": "2025-07-24",
+        "port-version": 1,
+        "path": "$/ports/luajit/2025-07-24_1"
+      },
+      {
+        "version-date": "2023-04-16",
+        "port-version": 1,
+        "path": "$/ports/luajit/2023-04-16_1"
+      },
+      {
+        "version-date": "2022-08-11",
+        "port-version": 1,
+        "path": "$/ports/luajit/2022-08-11_1"
+      }
+    ]
+}
