@@ -359,6 +359,8 @@ if (WIN32)
         host/timeless_jewel_ui.cpp
         host/passive_tree_data.cpp
         host/passive_tree_view.cpp
+        host/passive_import.cpp
+        host/passive_tree_update.cpp
         engine/common/base64.c
         host/http_client.cpp
         ${IMGUI_SOURCES}
@@ -400,6 +402,10 @@ if (WIN32)
     # (tools/gen_passive_tree.py). Sprite SHEETS are read from the user's POB
     # TreeData folder at runtime, never bundled.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/passive_tree_poe1.json" DESTINATION "Data")
+    # Bundled passive-tree sprite sheets (zoom -3, from GGG skilltree-export):
+    # lets the jewel tree view draw a league PoB hasn't shipped yet; the view
+    # still falls back to the user's PoB TreeData/<ver>/ when a sheet is absent.
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/tree/" DESTINATION "Data/tree")
     # PoE1 atlas passive tree — versioned layout: two seasons live side by side
     # under Data/atlas_versions/<tag>/ (condensed tree + EN/TC node mapping +
     # sprite sheets, each self-consistent) so the planner can diff them.

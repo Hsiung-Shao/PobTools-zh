@@ -30,15 +30,20 @@ static const float kMaxZoom = 0.7f;
 bool PassiveTreeView::LoadTextures(const std::wstring& exeDir, const PassiveTreeData& d, std::string* err)
 {
 	DestroyTextures();
-	std::wstring base = exeDir + L"PathOfBuildingCommunity\\TreeData\\" + EdWiden(d.TreeVersion()) + L"\\";
+	// Sheet sources, in order: the bundled Data\tree\ folder (shipped for leagues
+	// PoB doesn't have yet), then the user's PoB TreeData\<ver>\ (the normal
+	// source once PoB itself updates to this league).
+	std::wstring bundled = exeDir + L"Data\\tree\\";
+	std::wstring pobBase = exeDir + L"PathOfBuildingCommunity\\TreeData\\" + EdWiden(d.TreeVersion()) + L"\\";
 	tex_.assign(d.sheets.size(), 0);
 	for (size_t i = 0; i < d.sheets.size(); i++) {
 		std::wstring rel = EdWiden(d.sheets[i].file);
 		for (wchar_t& c : rel) if (c == L'/') c = L'\\';
-		std::vector<unsigned char> bytes = EdReadFile(base + rel);
+		std::vector<unsigned char> bytes = EdReadFile(bundled + rel);
+		if (bytes.empty()) bytes = EdReadFile(pobBase + rel);
 		if (bytes.empty()) {
-			if (err) *err = "找不到天賦樹圖集：TreeData/" + d.TreeVersion() + "/" + d.sheets[i].file +
-			                "（請確認 POB 已下載天賦樹資料）";
+			if (err) *err = "找不到天賦樹圖集：Data/tree/ 或 TreeData/" + d.TreeVersion() + "/" + d.sheets[i].file +
+			                "（請重新安裝 PobTools 或確認 POB 已下載天賦樹資料）";
 			return false;
 		}
 		int w = 0, h = 0;

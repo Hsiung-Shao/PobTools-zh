@@ -3,6 +3,7 @@
 #include "launcher_config.h" // ResolveConfiguredFontPath
 #include "http_client.h"
 #include "passive_tree_data.h"
+#include "passive_tree_update.h"
 #include "passive_tree_view.h"
 #include "timeless_jewel.h"
 #include "ui_theme.h"
@@ -477,6 +478,23 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	std::string ptErr;
 	bool ptDataOk = ptData.Load(exeDir, &ptErr);
 	bool ptTexOk = ptDataOk && ptView.LoadTextures(exeDir, ptData, &ptErr);
+
+	// --- background tree updater + zh coverage (toolbar status) ---
+	PassiveTreeUpdater ptUpdater;
+	ptUpdater.Init(exeDir);
+	ptUpdater.RequestCheck(false);      // throttled to once per day
+	int zhPct = -1;                     // % of stat lines with baked Chinese
+	auto computeZhPct = [&]() {
+		if (!ptDataOk) { zhPct = -1; return; }
+		int lines = 0, zh = 0;
+		for (const PtNode& n : ptData.nodes)
+			for (size_t i = 0; i < n.stats.size(); i++) {
+				lines++;
+				if (i < n.statsZh.size() && !n.statsZh[i].empty()) zh++;
+			}
+		zhPct = lines > 0 ? (int)(100.0 * zh / lines + 0.5) : -1;
+	};
+	computeZhPct();
 	int selSocket = -1;                          // node index of the socketed jewel
 	std::vector<unsigned char> ptHi;             // per-node highlight class
 	std::vector<char> ptSelected;                // per-node: user-picked focus set (1 = picked)
@@ -532,6 +550,29 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 	while (!glfwWindowShouldClose(win)) {
 		glfwPollEvents();
+
+		// updater results land on the worker thread; apply here (GL thread)
+		PassiveTreeUpdater::Status ptUst = ptUpdater.Poll();
+		if (ptUst.reloadPending) {
+			// a new league's tree + sheets landed on disk: hot reload everything
+			// that hangs off the tree (selection, highlights, search bindings)
+			ptDataOk = ptData.Load(exeDir, &ptErr);
+			ptTexOk = ptDataOk && ptView.LoadTextures(exeDir, ptData, &ptErr);
+			ptView.ResetView();
+			selSocket = -1;
+			ptSelected.clear();
+			ptHi.clear();
+			dispHi.clear();
+			ptTrans.clear();
+			statGroups.clear();
+			hiSig = -1;
+			detailSeed = -1;
+			selVersion++;
+			computeZhPct();
+			ptUpdater.AckReload();
+			ptUst = ptUpdater.Poll();
+		}
+
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
@@ -1011,6 +1052,46 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		float midW = ImGui::GetContentRegionAvail().x - rightW - ImGui::GetStyle().ItemSpacing.x;
 		if (midW < 240.0f) midW = ImGui::GetContentRegionAvail().x * 0.62f;
 		ImGui::BeginChild("##mid", ImVec2(midW, 0), false);
+
+		// tree-update status row (drawn even when the tree failed to load —
+		// updating is exactly the recovery path in that case)
+		{
+			bool busy = ptUst.phase == PassiveUpdatePhase::Downloading ||
+			            ptUst.phase == PassiveUpdatePhase::Importing ||
+			            ptUst.phase == PassiveUpdatePhase::Checking;
+			if (ptUst.phase == PassiveUpdatePhase::UpdateAvailable) {
+				ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.60f, 0.20f, 0.45f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.60f, 0.20f, 0.65f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.85f, 0.60f, 0.20f, 0.85f));
+				if (ImGui::SmallButton((u8"發現新賽季天賦樹 " + ptUst.latestVer + u8"，點擊更新").c_str()))
+					ptUpdater.StartUpdate();
+				ImGui::PopStyleColor(3);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip(u8"%s", ptUst.message.c_str());
+			} else if (busy) {
+				ImGui::TextDisabled(u8"%s", ptUst.message.c_str());
+			} else if (ptUst.phase == PassiveUpdatePhase::Error) {
+				ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f), u8"更新失敗：%s", ptUst.message.c_str());
+				ImGui::SameLine();
+				if (ImGui::SmallButton(u8"重試##ptupd")) ptUpdater.StartUpdate();
+			} else if (ptDataOk) {
+				// idle: current tree version + Chinese stat-line coverage
+				ImGui::TextDisabled(u8"樹 %s", ptData.TreeVersion().c_str());
+				if (zhPct >= 0) {
+					ImGui::SameLine();
+					if (zhPct < 90) {
+						ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.25f, 1.0f), u8"｜繁中 %d%%（字典待更新）", zhPct);
+						if (ImGui::IsItemHovered())
+							ImGui::SetTooltip(u8"新賽季詞條在翻譯字典更新前顯示英文；更新翻譯包後重新匯入即可補齊");
+					} else {
+						ImGui::TextDisabled(u8"｜繁中 %d%%", zhPct);
+					}
+				}
+				ImGui::SameLine();
+				if (ImGui::SmallButton(u8"檢查更新##ptupd")) ptUpdater.RequestCheck(true);
+			}
+		}
+
 		if (!ptTexOk) {
 			ImGui::TextWrapped(u8"天賦樹視圖無法載入：\n%s", ptErr.c_str());
 			ImGui::Spacing();
@@ -1226,6 +1307,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 	job.cancel = true;
 	if (job.th.joinable()) job.th.join();
+	ptUpdater.Shutdown();   // cancels any in-flight download, joins the worker
 	ptView.DestroyTextures();
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

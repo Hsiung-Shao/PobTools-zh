@@ -1,4 +1,5 @@
 #include "passive_tree_data.h"
+#include "timeless_jewel.h" // selftest: nodeIndex coverage vs the tree
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -207,7 +208,9 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	      (int)d.nodes.size(), (int)d.edges.size(), (int)d.sockets.size());
 
 	check(d.nodes.size() > 1500, "node count", std::to_string(d.nodes.size()));
-	check(d.sockets.size() >= 40, "socket count", std::to_string(d.sockets.size()));
+	// the PoE1 main tree carries 21 jewel sockets (cluster sockets live in proxy
+	// groups and are filtered); 20 leaves headroom for GGG adding one
+	check(d.sockets.size() >= 20, "socket count", std::to_string(d.sockets.size()));
 	check(!d.sheets.empty() && !d.TreeVersion().empty(), "sheets+version", d.TreeVersion());
 
 	// every edge endpoint valid + adjacency symmetric
@@ -246,6 +249,40 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	for (const PtNode& n : d.nodes) if (!n.nameZh.empty()) zhNames++;
 	check(zhNames > (int)d.nodes.size() * 8 / 10, "zh names >80%",
 	      std::to_string(zhNames) + "/" + std::to_string((int)d.nodes.size()));
+
+	// Traditional-Chinese stat-line coverage (baked statsZh; a new league drops
+	// this until the dictionaries catch up — the TJ toolbar surfaces the same %)
+	{
+		int lines = 0, zhLines = 0;
+		for (const PtNode& n : d.nodes)
+			for (size_t i = 0; i < n.stats.size(); i++) {
+				lines++;
+				if (i < n.statsZh.size() && !n.statsZh[i].empty()) zhLines++;
+			}
+		check(lines > 0 && zhLines * 10 >= lines * 8, "zh stat lines >80%",
+		      std::to_string(zhLines) + "/" + std::to_string(lines));
+	}
+
+	// Timeless-jewel LUT coverage: every non-socket tree node id should appear in
+	// timeless_jewels.json's nodeIndex, else jewel search silently skips it (the
+	// jewel dataset ships from PoB and can lag a new league's tree). >=90% keeps
+	// the drift visible without failing on a handful of brand-new nodes.
+	{
+		TJDataset ds;
+		std::string terr;
+		if (ds.Load(exeDir + L"Data\\timeless_jewels.json", &terr)) {
+			int total = 0, covered = 0;
+			for (const PtNode& n : d.nodes) {
+				if (n.kind == kPtSocket) continue;
+				total++;
+				if (ds.nodeIndex.count(n.id)) covered++;
+			}
+			check(total > 0 && covered * 10 >= total * 9, "timeless nodeIndex coverage >=90%",
+			      std::to_string(covered) + "/" + std::to_string(total));
+		} else {
+			ptlog(rep, "[note] timeless_jewels.json absent (%s) - coverage check skipped\n", terr.c_str());
+		}
+	}
 
 	ptlog(rep, "\n%d passed, %d failed\n", pass, fail);
 	if (rep) fclose(rep);

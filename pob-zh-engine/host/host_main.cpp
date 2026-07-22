@@ -38,6 +38,8 @@
 #include "timeless_jewel.h"
 #include "timeless_jewel_ui.h"
 #include "passive_tree_data.h"
+#include "passive_import.h"
+#include "passive_tree_update.h"
 #include "ui_theme.h"
 
 #pragma comment(lib, "shell32.lib")
@@ -265,6 +267,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless passive-tree data check (node/socket/radius counts; report file).
 	if (arg1 == L"--passive-tree-selftest") {
 		return RunPassiveTreeSelfTest(dir);
+	}
+	// Headless new-league passive-tree import: --pt-import <data.json> <ver e.g. 3_29>.
+	if (arg1 == L"--pt-import") {
+		return RunPassiveImportCli(arg2, arg3, dir);
+	}
+	// Headless passive-tree update: check PoB TreeData + GitHub tags, download, import.
+	if (arg1 == L"--pt-update") {
+		return RunPassiveTreeUpdateCli(dir);
+	}
+	// Headless zh-template scanner checks (synthetic cases; console report).
+	if (arg1 == L"--pt-import-selftest") {
+		return RunPassiveImportSelfTest(dir);
 	}
 	// Headless one-frame canvas render to pt_render.bmp (debug aid).
 	if (arg1 == L"--pt-render") { // --pt-render [zoom cx cy]
