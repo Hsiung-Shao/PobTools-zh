@@ -1,4 +1,5 @@
 #include "atlas_i18n.h"
+#include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -25,13 +26,23 @@ static bool read_file_utf8(const std::wstring& path, std::string& out)
 
 bool AtlasI18n::Load(const std::wstring& exeDir)
 {
+	return LoadVersion(exeDir, std::string()); // active season
+}
+
+bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
+{
 	nameById_.clear();
 	statByEn_.clear();
 	note_.clear();
+	repoe_.clear();
 	loaded_ = false;
 
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	std::wstring dir = idx.ResolveDataDir(exeDir, tag);
+
 	std::string content;
-	if (!read_file_utf8(exeDir + L"Data\\atlas_tree_zh.json", content)) return false;
+	if (!read_file_utf8(dir + L"atlas_tree_zh.json", content)) return false;
 
 	try {
 		ordered_json doc = ordered_json::parse(content);
@@ -60,7 +71,8 @@ bool AtlasI18n::Load(const std::wstring& exeDir)
 			}
 		}
 
-		note_ = doc.value("tag", std::string("?")) + " / repoe " + doc.value("repoe", std::string("?"));
+		repoe_ = doc.value("repoe", std::string());
+		note_ = doc.value("tag", std::string("?")) + " / repoe " + (repoe_.empty() ? "?" : repoe_);
 		loaded_ = !nameById_.empty();
 		return loaded_;
 	} catch (...) {

@@ -81,13 +81,14 @@ private:
 	std::atomic<long long> lastCheckUtc_{ 0 }; // FILETIME (100ns units)
 };
 
-// Builds Data/atlas_tree_zh.json from a GGG atlastree-export data.json (English
-// names/stats) joined with repoe-fork's Traditional-Chinese Atlas.json on the
-// node hash. Writes only after both inputs parsed and the join is sane; a zero
-// join keeps the previous mapping. Shared by the worker and the CLIs.
+// Builds atlas_tree_zh.json inside destDir (trailing backslash, e.g. a season
+// folder Data/atlas_versions/<tag>/) from a GGG atlastree-export data.json
+// (English names/stats) joined with repoe-fork's Traditional-Chinese Atlas.json
+// on the node hash. Writes only after both inputs parsed and the join is sane; a
+// zero join keeps the previous mapping. Shared by the worker and the CLIs.
 bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& tcAtlasJson,
                             const std::string& tag, const std::string& repoeVersion,
-                            const std::wstring& exeDir, std::string* err, std::string* summary);
+                            const std::wstring& destDir, std::string* err, std::string* summary);
 
 // "pob-zh.exe --atlas-update": headless check + download + import + zh mapping
 // (ignores the daily throttle). Prints the outcome; 0 on success/up-to-date.

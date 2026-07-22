@@ -261,9 +261,11 @@ bool AtlasUiState::Load(const std::wstring& exeDir)
 		ordered_json doc = ordered_json::parse(content);
 		panelW = doc.value("panelW", 0.0f);
 		if (!(panelW > 0.0f && panelW < 4096.0f)) panelW = 0.0f;
+		season = doc.value("season", std::string());
 		return true;
 	} catch (...) {
 		panelW = 0.0f;
+		season.clear();
 		return false;
 	}
 }
@@ -273,5 +275,6 @@ bool AtlasUiState::Save(const std::wstring& exeDir) const
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	ordered_json doc;
 	doc["panelW"] = panelW;
+	if (!season.empty()) doc["season"] = season;
 	return write_file_utf8(ui_state_path(exeDir), doc.dump());
 }

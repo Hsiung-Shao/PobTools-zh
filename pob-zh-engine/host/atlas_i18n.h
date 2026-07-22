@@ -8,26 +8,59 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 class AtlasI18n {
 public:
-	// Loads Data/atlas_tree_zh.json under exeDir; safe to call again to reload.
-	// Returns false (and clears the tables) when the file is missing/invalid.
+	// Loads the ACTIVE season's atlas_tree_zh.json (resolved through
+	// Data/atlas_index.json; legacy flat Data/ fallback). Safe to call again to
+	// reload. Returns false (and clears the tables) when missing/invalid.
 	bool Load(const std::wstring& exeDir);
+	// Loads a specific season (Data/atlas_versions/<tag>/atlas_tree_zh.json).
+	bool LoadVersion(const std::wstring& exeDir, const std::string& tag);
 	bool loaded() const { return loaded_; }
 
 	// id = GGG skill hash (AtlasNode.id). Falls back to en when untranslated.
 	const std::string& NodeName(int id, const std::string& en) const;
 
+	// Drop a node-name translation (used when a season rename makes the repoe
+	// snapshot's Chinese name the OLD name -> fall back to the new English name).
+	void DropName(int id) { nameById_.erase(id); }
+	// Inject a node-name translation (symmetric to AddStat; used by self-tests).
+	void AddName(int id, const std::string& zh) { nameById_[id] = zh; }
+
 	// Whole-stat-line lookup; aggregation keys stay English, display flips here.
 	const std::string& StatLine(const std::string& en) const;
 
+	// True when a direct Traditional-Chinese line exists for `en` (not a fallback).
+	bool HasStat(const std::string& en) const { return statByEn_.count(en) != 0; }
+
+	// Inject a stat-line translation (used by the cross-season TC backfill to add
+	// synthesized "old zh with new numbers" lines). Overwrites any existing entry.
+	void AddStat(const std::string& en, const std::string& zh) { statByEn_[en] = zh; }
+
 	// e.g. "3.28.0 / repoe 3.28.0.15" for the toolbar tooltip.
 	const std::string& VersionNote() const { return note_; }
+	// The repoe-fork dataset version this mapping was built from (e.g.
+	// "3.28.0.16"); callers compare it against the season tag to decide whether
+	// the translations predate the season (see PruneStaleTranslations).
+	const std::string& RepoeVersion() const { return repoe_; }
+
+	// Drop a stat-line translation (see PruneStaleTranslations in atlas_diff.h:
+	// changed lines whose zh predates the season fall back to English).
+	void DropStat(const std::string& en) { statByEn_.erase(en); }
+	// All English lines that currently have a translation (pruning iteration).
+	std::vector<std::string> TranslatedStatLines() const {
+		std::vector<std::string> v;
+		v.reserve(statByEn_.size());
+		for (const auto& kv : statByEn_) v.push_back(kv.first);
+		return v;
+	}
 
 private:
 	std::unordered_map<int, std::string> nameById_;
 	std::unordered_map<std::string, std::string> statByEn_;
 	std::string note_;
+	std::string repoe_;
 	bool loaded_ = false;
 };

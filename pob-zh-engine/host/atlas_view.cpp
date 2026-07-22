@@ -32,12 +32,15 @@ bool AtlasView::LoadTextures(const std::wstring& exeDir, const AtlasTreeData& d,
 	focusNode_ = -1;                 // node indices may change on hot-reload
 	focusAnim_ = false;
 	focusTimer_ = 0.0f;
+	// Sprite sheets live beside the tree data (versioned: Data/atlas_versions/
+	// <tag>/atlas/; legacy flat: Data/atlas/). DataDir() is the resolved folder.
+	std::wstring base = d.DataDir().empty() ? (exeDir + L"Data\\") : d.DataDir();
 	tex_.assign(d.sheets.size(), 0);
 	for (size_t i = 0; i < d.sheets.size(); i++) {
 		std::wstring rel = EdWiden(d.sheets[i].file);
 		for (wchar_t& c : rel)
 			if (c == L'/') c = L'\\';
-		std::vector<unsigned char> bytes = EdReadFile(exeDir + L"Data\\" + rel);
+		std::vector<unsigned char> bytes = EdReadFile(base + rel);
 		if (bytes.empty()) {
 			if (err) *err = "missing sprite sheet: Data/" + d.sheets[i].file;
 			return false;
@@ -225,6 +228,14 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 				dl->AddImage((ImTextureID)(intptr_t)tex_[f.sheet], a, b,
 				             ImVec2(f.uv[0], f.uv[1]), ImVec2(f.uv[2], f.uv[3]));
 			}
+		}
+
+		// version-compare overlay: a bold ring on added / modified nodes
+		if (!diffRing_.empty()) {
+			auto it = diffRing_.find(i);
+			if (it != diffRing_.end())
+				dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
+				              (std::max(n.on.w, n.on.h) * 0.5f + 16.0f) * zoom_, it->second, 0, 3.5f);
 		}
 
 		// removal preview: red ring over every node that would be lost

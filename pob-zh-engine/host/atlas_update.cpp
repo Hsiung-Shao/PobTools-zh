@@ -1,5 +1,6 @@
 #include "atlas_update.h"
 #include "atlas_import.h"
+#include "atlas_version_index.h" // versioned season layout + rolling retention
 #include "http_client.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -93,24 +94,30 @@ static std::string cdn_base_name(const std::string& url)
 	return s;
 }
 
-// Best-effort removal of the per-tag download cache (flat dir + assets subdir).
-static void remove_cache_dir(const std::wstring& dir)
+// Deletes every plain file directly under d (trailing backslash), non-recursive.
+static void clear_flat_dir(const std::wstring& d)
 {
-	auto clearFlat = [](const std::wstring& d) {
-		WIN32_FIND_DATAW fd{};
-		HANDLE h = FindFirstFileW((d + L"*").c_str(), &fd);
-		if (h == INVALID_HANDLE_VALUE) return;
-		do {
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-				DeleteFileW((d + fd.cFileName).c_str());
-		} while (FindNextFileW(h, &fd));
-		FindClose(h);
-	};
-	clearFlat(dir + L"assets\\");
-	RemoveDirectoryW((dir + L"assets").c_str());
-	clearFlat(dir);
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((d + L"*").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return;
+	do {
+		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			DeleteFileW((d + fd.cFileName).c_str());
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+}
+
+// Best-effort removal of a folder with one known subdirectory of files
+// (download cache: assets/; season folder: atlas/).
+static void remove_dir_with_sub(const std::wstring& dir, const wchar_t* sub)
+{
+	clear_flat_dir(dir + sub + L"\\");
+	RemoveDirectoryW((dir + sub).c_str());
+	clear_flat_dir(dir);
 	RemoveDirectoryW(dir.c_str());
 }
+
+static void remove_cache_dir(const std::wstring& dir) { remove_dir_with_sub(dir, L"assets"); }
 
 static long long now_filetime()
 {
@@ -232,7 +239,7 @@ static void AlignStatsZhOrder(ordered_json& n)
 
 bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& tcAtlasJson,
                             const std::string& tag, const std::string& repoeVersion,
-                            const std::wstring& exeDir, std::string* err, std::string* summary)
+                            const std::wstring& destDir, std::string* err, std::string* summary)
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
@@ -292,9 +299,9 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 		out["total"] = total;
 		out["nodes"] = std::move(outNodes);
 
-		CreateDirectoryW((exeDir + L"Data").c_str(), nullptr);
-		if (!write_file_utf8(exeDir + L"Data\\atlas_tree_zh.json", out.dump()))
-			return fail(u8"寫入 Data/atlas_tree_zh.json 失敗");
+		SHCreateDirectoryExW(nullptr, destDir.c_str(), nullptr);
+		if (!write_file_utf8(destDir + L"atlas_tree_zh.json", out.dump()))
+			return fail(u8"寫入 atlas_tree_zh.json 失敗");
 
 		int pct = (int)(100.0 * joined / total + 0.5);
 		if (summary) {
@@ -511,8 +518,13 @@ bool AtlasUpdater::refreshZhMapping(const std::string& tag, const std::string& r
 		HttpsClient repoe(kRepoeHost);
 		if (!repoe.GetString(kRepoeTcAtlasPath, tcJson, err, &stop_)) return false;
 	}
+	// write the refreshed mapping into the season's own folder (versioned
+	// layout); ResolveDataDir falls back to flat Data/ for a legacy install
+	AtlasVersionIndex idx;
+	idx.Load(exeDir_);
+	std::wstring dest = idx.ResolveDataDir(exeDir_, tag);
 	std::string summary;
-	return GenerateAtlasZhMapping(dataJson, tcJson, tag, repoeVer, exeDir_, err, &summary);
+	return GenerateAtlasZhMapping(dataJson, tcJson, tag, repoeVer, dest, err, &summary);
 }
 
 bool AtlasUpdater::doUpdate(std::string* err)
@@ -586,15 +598,17 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		st_.message = u8"下載 " + tag + u8" 圖集中… " + std::to_string(done) + "/" + std::to_string((int)assets.size());
 	}
 
-	// full validation + atomic-ish overwrite lives in the existing importer
+	// install the new season into its own folder (Data/atlas_versions/<tag>/) so
+	// the previous season survives side by side for the compare view.
+	std::wstring seasonDir = AtlasVersionIndex::VersionDir(exeDir_, tag);
 	setPhase(AtlasUpdatePhase::Importing, u8"匯入 " + tag + u8" 中…");
 	std::string sum;
-	if (!ImportAtlasTreeData(cacheDir + L"data.json", exeDir_, err, &sum)) return false;
+	if (!ImportAtlasTreeData(cacheDir + L"data.json", seasonDir, err, &sum)) return false;
 
-	// zh mapping refresh is best-effort: the old hash-keyed file keeps working
-	std::string zhNote;
+	// zh mapping into the same season folder; best-effort (English falls back)
+	std::string zhNote, repoeVer;
 	{
-		std::string repoeVer, tcJson, zhErr, zhSum;
+		std::string tcJson, zhErr, zhSum;
 		HttpsClient repoe(kRepoeHost);
 		std::string ignored;
 		if (repoe.GetString(kRepoeVersionPath, repoeVer, &ignored, &stop_)) {
@@ -602,7 +616,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 				repoeVer.pop_back();
 		}
 		if (repoe.GetString(kRepoeTcAtlasPath, tcJson, &zhErr, &stop_) &&
-			GenerateAtlasZhMapping(dataJson, tcJson, tag, repoeVer, exeDir_, &zhErr, &zhSum)) {
+			GenerateAtlasZhMapping(dataJson, tcJson, tag, repoeVer, seasonDir, &zhErr, &zhSum)) {
 			repoe_ = repoeVer;
 			zhNote = u8"；" + zhSum;
 		} else {
@@ -610,16 +624,34 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		}
 	}
 
+	// register the season, make it active, and roll back to the newest two: the
+	// third-oldest folder is deleted so the disk holds exactly two leagues.
+	int keptSeasons = 0;
+	{
+		AtlasVersionIndex idx;
+		idx.Load(exeDir_);
+		AtlasVersionEntry e;
+		e.tag = tag; e.sha = latestSha_; e.repoe = repoeVer;
+		idx.UpsertActive(e);
+		std::vector<std::string> dropped = idx.PruneToNewest(2);
+		idx.SetLastCheckUtc(now_filetime());
+		idx.Save(exeDir_);
+		keptSeasons = (int)idx.Versions().size();
+		for (const std::string& d : dropped)
+			remove_dir_with_sub(AtlasVersionIndex::VersionDir(exeDir_, d), L"atlas");
+	}
+
 	tag_ = tag;
 	sha_ = latestSha_;
 	lastCheckUtc_ = now_filetime();
-	saveVersionRecord();
-	remove_cache_dir(cacheDir); // best-effort
+	saveVersionRecord();          // legacy record: keeps the daily-throttle state
+	remove_cache_dir(cacheDir);   // best-effort
 
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.phase = AtlasUpdatePhase::Done;
-		st_.message = sum + zhNote;
+		st_.message = sum + zhNote +
+			(keptSeasons >= 2 ? u8"；已保留最近兩季，可用「版本比較」查看本次改版變更" : "");
 		st_.reloadPending = true;
 	}
 	return true;
@@ -702,8 +734,11 @@ int RunAtlasZhCli(const std::wstring& dataJsonPath, const std::wstring& tcJsonPa
 		printf("FAIL: cannot read TC Atlas.json\n");
 		return 1;
 	}
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	std::wstring dest = idx.ResolveDataDir(exeDir, idx.Active());
 	std::string err, summary;
-	if (!GenerateAtlasZhMapping(dataJson, tcJson, "local", "local", exeDir, &err, &summary)) {
+	if (!GenerateAtlasZhMapping(dataJson, tcJson, "local", "local", dest, &err, &summary)) {
 		printf("FAIL: %s\n", err.c_str());
 		return 1;
 	}

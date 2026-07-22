@@ -1,0 +1,16 @@
+{
+	"format": "pobtools-atlas-index",
+	"active": "3.29.0",
+	"compareBase": "3.28.0",
+	"versions": [
+		{
+			"tag": "3.29.0",
+			"sha": "7caabc32a9415aa6c61d2449fc6afefc1c3bb8c9",
+			"repoe": "3.28.0.16"
+		},
+		{
+			"tag": "3.28.0"
+		}
+	],
+	"lastCheckUtc": 134291787604572293
+}

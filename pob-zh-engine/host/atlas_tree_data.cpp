@@ -1,6 +1,7 @@
 #include "atlas_tree_data.h"
 #include "atlas_i18n.h"    // selftest T6: zh-mapping health check
 #include "atlas_persist.h" // multi-build schema + share codes (T7)
+#include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -67,12 +68,31 @@ static bool parse_deco(const ordered_json& j, AtlasDeco& d)
 
 bool AtlasTreeData::Load(const std::wstring& exeDir, std::string* err)
 {
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	std::wstring dir = idx.ResolveDataDir(exeDir, std::string());
+	return loadFromDir(dir, idx.Active(), err);
+}
+
+bool AtlasTreeData::LoadVersion(const std::wstring& exeDir, const std::string& tag, std::string* err)
+{
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	std::wstring dir = idx.ResolveDataDir(exeDir, tag);
+	return loadFromDir(dir, tag, err);
+}
+
+bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& tag, std::string* err)
+{
 	nodes.clear(); edges.clear(); sheets.clear(); masteries.clear(); groupBg.clear();
 	root = -1;
+	tag_ = tag;
+	dataDir_ = dataDir;
+	spriteDir_ = dataDir + L"atlas\\";
 
 	std::string content;
-	if (!read_file_utf8(exeDir + L"Data\\atlas_tree_poe1.json", content)) {
-		if (err) *err = "Data/atlas_tree_poe1.json not found or unreadable";
+	if (!read_file_utf8(dataDir + L"atlas_tree_poe1.json", content)) {
+		if (err) *err = "atlas_tree_poe1.json not found or unreadable";
 		return false;
 	}
 	try {
@@ -451,13 +471,27 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	rep.note("web: " + std::to_string(added) + " extra targets, used=" + std::to_string(d.UsedPoints()));
 
 	// Shortest-path webs are nearly tree-shaped, so close a loop on purpose:
-	// allocate one node that touches two already-allocated neighbors.
-	int ringNode = -1;
-	for (int i = 0; i < (int)d.nodes.size() && ringNode == -1; i++) {
-		if (d.nodes[i].alloc || d.nodes[i].kind == kAtlasStart) continue;
-		int allocNbs = 0;
-		for (int nb : d.nodes[i].adj) allocNbs += d.nodes[nb].alloc ? 1 : 0;
-		if (allocNbs >= 2) ringNode = i;
+	// allocate one node that touches two already-allocated neighbors. Some tree
+	// topologies (e.g. 3.29) leave the sparse every-10th web acyclic, so widen it
+	// to every notable/keystone until such a node exists — the full graph has far
+	// more edges than a spanning tree, so a loop-closing node is guaranteed.
+	auto findRing = [&]() -> int {
+		for (int i = 0; i < (int)d.nodes.size(); i++) {
+			if (d.nodes[i].alloc || d.nodes[i].kind == kAtlasStart) continue;
+			int allocNbs = 0;
+			for (int nb : d.nodes[i].adj) allocNbs += d.nodes[nb].alloc ? 1 : 0;
+			if (allocNbs >= 2) return i;
+		}
+		return -1;
+	};
+	int ringNode = findRing();
+	if (ringNode == -1) {
+		for (size_t i = 0; i < targets.size() && ringNode == -1; i++) {
+			std::vector<int> p = d.FindPathTo(targets[i]);
+			if (!p.empty()) d.Alloc(p);
+			ringNode = findRing();
+		}
+		rep.note("widened web to guarantee a loop, used=" + std::to_string(d.UsedPoints()));
 	}
 	rep.check(ringNode != -1, "found a loop-closing node");
 	if (ringNode != -1) d.Alloc({ ringNode });

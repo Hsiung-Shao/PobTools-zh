@@ -10,6 +10,7 @@
 
 #include <imgui.h>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 class AtlasI18n;
@@ -35,6 +36,11 @@ public:
 
 	// One-line status for the toolbar (hovered node name, or a rejection note).
 	const std::string& StatusLine() const { return status_; }
+
+	// Version-compare overlay: draw a colored ring on each listed node index
+	// (added = green, modified = amber). Pass an empty map to clear.
+	void SetDiffOverlay(const std::unordered_map<int, ImU32>& ringByNodeIdx) { diffRing_ = ringByNodeIdx; }
+	void ClearDiffOverlay() { diffRing_.clear(); }
 
 private:
 	ImVec2 worldToScreen(ImVec2 w) const;
@@ -65,4 +71,6 @@ private:
 	std::vector<int> hoverRemove_;   // hovering an allocated node: nodes lost
 	std::vector<char> mark_;         // node -> preview membership (fast edge tint)
 	std::string status_;
+
+	std::unordered_map<int, ImU32> diffRing_; // version-compare overlay (node idx -> ring color)
 };

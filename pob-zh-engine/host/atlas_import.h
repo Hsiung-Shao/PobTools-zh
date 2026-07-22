@@ -10,12 +10,14 @@
 #include <string>
 
 // dataJsonPath points at the export's data.json; the sprite sheets are read
-// from the sibling "assets" directory. Existing bundled data is only
-// overwritten after the conversion fully validates. On success *summary gets a
-// short UTF-8 stat line; on failure *err gets a UTF-8 reason.
-bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& exeDir,
+// from the sibling "assets" directory. The condensed tree JSON and its sprite
+// sheets are written into destDir (trailing backslash, e.g. a season folder
+// Data/atlas_versions/<tag>/); the folder + its atlas/ subdir are created as
+// needed and only overwritten after the conversion fully validates. On success
+// *summary gets a short UTF-8 stat line; on failure *err gets a UTF-8 reason.
+bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& destDir,
                          std::string* err, std::string* summary);
 
-// "pob-zh.exe --atlas-import <data.json>": headless import for automation.
-// Prints the result to an attached console and returns 0 on success.
+// "pob-zh.exe --atlas-import <data.json>": headless import into the active
+// season folder. Prints the result to an attached console; 0 on success.
 int RunAtlasImportCli(const std::wstring& dataJsonPath, const std::wstring& exeDir);

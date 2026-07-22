@@ -353,6 +353,8 @@ if (WIN32)
         host/atlas_stat_agg.cpp
         host/atlas_persist.cpp
         host/atlas_i18n.cpp
+        host/atlas_version_index.cpp
+        host/atlas_diff.cpp
         host/timeless_jewel.cpp
         host/timeless_jewel_ui.cpp
         host/passive_tree_data.cpp
@@ -398,11 +400,13 @@ if (WIN32)
     # (tools/gen_passive_tree.py). Sprite SHEETS are read from the user's POB
     # TreeData folder at runtime, never bundled.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/passive_tree_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_tree_poe1.json" DESTINATION "Data")
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas/" DESTINATION "Data/atlas")
-    # Bundled EN/TC atlas node mapping snapshot (tools/gen_atlas_zh.py; the
-    # in-app updater rewrites it from live GGG + repoe-fork data).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_tree_zh.json" DESTINATION "Data")
+    # PoE1 atlas passive tree — versioned layout: two seasons live side by side
+    # under Data/atlas_versions/<tag>/ (condensed tree + EN/TC node mapping +
+    # sprite sheets, each self-consistent) so the planner can diff them.
+    # atlas_index.json registers the installed seasons and the active/compare
+    # selection; the in-app updater installs new seasons and prunes to two.
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_versions/" DESTINATION "Data/atlas_versions")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_index.json" DESTINATION "Data")
 endif ()
 
 

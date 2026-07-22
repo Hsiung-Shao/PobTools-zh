@@ -32,6 +32,8 @@
 #include "atlas_import.h"
 #include "atlas_stat_agg.h"
 #include "atlas_update.h"
+#include "atlas_diff.h"
+#include "atlas_version_index.h"
 #include "filter_selftest.h"
 #include "timeless_jewel.h"
 #include "timeless_jewel_ui.h"
@@ -278,6 +280,21 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless stat-aggregation check (synthetic cases; console report).
 	if (arg1 == L"--atlas-agg-selftest") {
 		return RunAtlasAggSelfTest(dir);
+	}
+
+	// Headless cross-season diff logic check (synthetic old/new trees).
+	if (arg1 == L"--atlas-diff-selftest") {
+		return RunAtlasDiffSelfTest(dir);
+	}
+
+	// Headless version-registry logic check (semver / prune / rolling retention).
+	if (arg1 == L"--atlas-index-selftest") {
+		return RunAtlasVersionIndexSelfTest(dir);
+	}
+
+	// Headless cross-season diff report: --atlas-diff <oldVer> <newVer>.
+	if (arg1 == L"--atlas-diff") {
+		return RunAtlasDiffCli(arg2, arg3, dir);
 	}
 
 	// Headless filter-editor data-layer check (synthetic cases; console report).

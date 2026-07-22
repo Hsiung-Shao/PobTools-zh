@@ -2,12 +2,14 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 
 #include "atlas_planner.h"
+#include "atlas_diff.h"
 #include "atlas_i18n.h"
 #include "atlas_import.h"
 #include "atlas_persist.h"
 #include "atlas_stat_agg.h"
 #include "atlas_tree_data.h"
 #include "atlas_update.h"
+#include "atlas_version_index.h"
 #include "atlas_view.h"
 #include "editor_util.h" // EdReadFile
 #include "launcher_config.h" // ResolveConfiguredFontPath
@@ -217,35 +219,97 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	AtlasBuildFile buildFile;
 	buildFile.Load(exeDir); // legacy single-build files migrate transparently
 
-	bool ready = tree.Load(exeDir, &loadErr);
-	if (ready) {
-		tree.ApplyAllocIds(buildFile.Active().alloc); // restore the active project
-		ready = view.LoadTextures(exeDir, tree, &loadErr);
-	}
+	std::string nameBuf; // shared by the new/rename project modals
 
+	// --- persisted UI state (panel width + last viewed season) ---
+	AtlasUiState uiState;
+	uiState.Load(exeDir);
+	float panelW = -1.0f; // sentinel: initialized on the first frame (needs DisplaySize)
+
+	// --- version registry: which seasons are installed, which one is shown ---
+	AtlasVersionIndex verIndex;
+	verIndex.Load(exeDir);
+	// viewTag = the season currently on the canvas (persisted choice, else active)
+	std::string viewTag = (!uiState.season.empty() && verIndex.Has(uiState.season))
+		? uiState.season : verIndex.Active();
+
+	int startupDropped = 0;  // nodes lost because the saved build predates this season
+	bool ready = false;      // set by the initial loadSeason() below
 	std::string importMsg;   // last import result shown in the toolbar
 	bool importFailed = false;
 
+	// The newest installed season is canonical (the one the build persists for);
+	// an older-season view is a read-only preview.
+	auto onCanonicalSeason = [&]() {
+		return verIndex.Active().empty() || viewTag == verIndex.Active();
+	};
+	// Persist the build only on the canonical season, so a preview of an older
+	// season never prunes the allocation back to that season's subset.
 	auto saveActive = [&]() {
+		if (!onCanonicalSeason()) return;
 		buildFile.Active().alloc = tree.AllocIds();
 		buildFile.version = tree.Version();
 		buildFile.Save(exeDir);
 	};
 
-	std::string nameBuf; // shared by the new/rename project modals
-
-	// --- persisted UI state (draggable panel width) ---
-	AtlasUiState uiState;
-	uiState.Load(exeDir);
-	float panelW = -1.0f; // sentinel: initialized on the first frame (needs DisplaySize)
-
 	// --- zh display layer + background auto updater ---
 	AtlasI18n i18n;
-	bool zhLoaded = i18n.Load(exeDir);
-	bool showZh = zhLoaded;              // default Chinese when a mapping exists
+	bool zhLoaded = false;
+	bool showZh = false;                 // set after the first season load
 	AtlasUpdater updater;
 	updater.Init(exeDir);
 	updater.RequestCheck(false);         // throttled to once per day
+
+	// (Re)load a season's tree + zh + textures onto the canvas, re-apply the
+	// build (by GGG id), and backfill Chinese for value-only changes from the
+	// previous season (same wording, adjusted number -> reuse old zh with the new
+	// value; changed wording -> keep the new English).
+	auto loadSeason = [&](const std::string& tag) {
+		viewTag = tag;
+		startupDropped = 0;
+		ready = tree.LoadVersion(exeDir, tag, &loadErr);
+		if (ready) {
+			int mapped = tree.ApplyAllocIds(buildFile.Active().alloc);
+			if (!buildFile.version.empty() && buildFile.version != tree.Version())
+				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
+			zhLoaded = i18n.LoadVersion(exeDir, tag);
+			std::string older = verIndex.OlderThan(tag);
+			if (zhLoaded && !older.empty()) {
+				AtlasTreeData ot;
+				AtlasI18n oi;
+				std::string e;
+				if (ot.LoadVersion(exeDir, older, &e) && oi.LoadVersion(exeDir, older)) {
+					// zh built from a repoe older than the season: whatever got
+					// paired to this season's NEW/CHANGED lines is a translation
+					// of the old wording -> drop those (fall back to English) and
+					// the stale names of renamed nodes. Unchanged lines keep zh.
+					bool zhLags = !i18n.RepoeVersion().empty() &&
+					              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
+					if (zhLags) {
+						PruneStaleTranslations(i18n, tree, ot);
+						DropRenamedNames(i18n, tree, ot);
+					}
+					BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
+				}
+			}
+			ready = view.LoadTextures(exeDir, tree, &loadErr);
+		}
+	};
+
+	// initial load of the chosen season
+	loadSeason(viewTag);
+	showZh = zhLoaded;                   // default Chinese when a mapping exists
+	if (startupDropped > 0)
+		importMsg = u8"提醒：此配置存於舊版圖譜樹，" + std::to_string(startupDropped) +
+		            u8" 個已不存在的節點已自動移除";
+
+	// --- version-compare state (compareBase season -> active season) ---
+	bool compareMode = false;
+	AtlasTreeDiff diff;
+	bool diffReady = false;
+	std::string diffErr;
+	char diffSearch[256] = "";
+	std::unordered_map<int, int> activeIdxById; // GGG id -> displayed-tree node index
 
 	// --- right-hand summary panel ---
 	// Stat rows are value-aggregated (atlas_stat_agg); nodes are grouped by
@@ -292,30 +356,226 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			});
 	};
 
+	// Compute the compareBase -> active season diff (data-only; independent of the
+	// user's allocation). Maps every changed id to a canvas node index so the
+	// panel can focus it and the overlay can ring it.
+	auto rebuildDiff = [&]() {
+		diffReady = false;
+		diffErr.clear();
+		diff = AtlasTreeDiff();
+		activeIdxById.clear();
+		std::string base = verIndex.CompareBase(), targ = verIndex.Active();
+		if (base.empty() || targ.empty() || base == targ) {
+			diffErr = u8"需要兩個賽季的資料才能比較（目前只安裝了一個賽季）";
+			return;
+		}
+		AtlasTreeData bt, tt;
+		std::string e;
+		if (!bt.LoadVersion(exeDir, base, &e)) { diffErr = u8"載入 " + base + u8" 失敗：" + e; return; }
+		if (!tt.LoadVersion(exeDir, targ, &e)) { diffErr = u8"載入 " + targ + u8" 失敗：" + e; return; }
+		AtlasI18n bz, tz;
+		bool hb = bz.LoadVersion(exeDir, base), ht = tz.LoadVersion(exeDir, targ);
+		// same display rules as the canvas: when the zh snapshot predates the
+		// season, changed lines / renamed nodes fall back to English; unchanged
+		// lines keep (or backfill) their Chinese
+		if (hb && ht) {
+			bool zhLags = !tz.RepoeVersion().empty() &&
+			              AtlasVersionIndex::CompareSemver(tz.RepoeVersion(), targ) < 0;
+			if (zhLags) {
+				PruneStaleTranslations(tz, tt, bt);
+				DropRenamedNames(tz, tt, bt);
+			}
+			BackfillAtlasI18n(tz, tt, bz, bt);
+		}
+		diff = ComputeAtlasTreeDiff(bt, tt, hb ? &bz : nullptr, ht ? &tz : nullptr, base, targ);
+		for (int i = 0; i < (int)tree.nodes.size(); i++) activeIdxById[tree.nodes[i].id] = i;
+		diffReady = true;
+	};
+
+	// Ring the changed nodes on whichever season's tree is on the canvas
+	// (activeIdxById is the displayed tree): added=green, removed=red, modified=
+	// amber. added only maps on the newer tree, removed only on the older one, so
+	// each season shows the rings that make sense for it.
+	auto applyDiffOverlay = [&]() {
+		std::unordered_map<int, ImU32> rings;
+		for (const AtlasNodeDiff& n : diff.added) {
+			auto it = activeIdxById.find(n.id);
+			if (it != activeIdxById.end()) rings[it->second] = IM_COL32(90, 220, 120, 235);
+		}
+		for (const AtlasNodeDiff& n : diff.removed) {
+			auto it = activeIdxById.find(n.id);
+			if (it != activeIdxById.end()) rings[it->second] = IM_COL32(224, 80, 80, 235);
+		}
+		for (const AtlasNodeDiff& n : diff.modified) {
+			auto it = activeIdxById.find(n.id);
+			if (it != activeIdxById.end()) rings[it->second] = IM_COL32(240, 205, 90, 235);
+		}
+		view.SetDiffOverlay(rings);
+	};
+
+	// Toggle helper shared by the toolbar button and hot-reload.
+	auto refreshCompare = [&]() {
+		rebuildDiff();
+		if (diffReady) applyDiffOverlay();
+		else view.ClearDiffOverlay();
+	};
+
+	// Right-hand panel body while the version-compare view is open. Lists added /
+	// removed / value-changed nodes with per-line deltas; clicking a node that
+	// still exists in the new season focuses it on the canvas.
+	auto renderComparePanel = [&]() {
+		ImGui::TextDisabled(u8"版本比較");
+		if (fontBig) ImGui::PushFont(fontBig);
+		ImGui::TextColored(PobUi::Accent(), "%s  >>  %s", diff.oldVer.c_str(), diff.newVer.c_str());
+		if (fontBig) ImGui::PopFont();
+		if (!diffReady) {
+			ImGui::Dummy(ImVec2(0, 12.0f * scale));
+			ImGui::TextWrapped("%s", diffErr.empty() ? u8"尚未計算比較" : diffErr.c_str());
+			return;
+		}
+		ImGui::Text(u8"新增 %d    移除 %d    數值/詞條變動 %d",
+			(int)diff.added.size(), (int)diff.removed.size(), (int)diff.modified.size());
+		ImGui::Spacing();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::InputTextWithHint("##diffsearch", u8"搜尋變更節點或詞條…",
+			diffSearch, sizeof(diffSearch), ImGuiInputTextFlags_EscapeClearsAll);
+		std::string needle = ToLowerAscii(diffSearch);
+		ImGui::Spacing();
+
+		auto label = [&](const AtlasNodeDiff& n) -> const std::string& {
+			return (showZh && zhLoaded && !n.nameZh.empty()) ? n.nameZh : n.name;
+		};
+		auto lineNew = [&](const AtlasStatDelta& d) -> const std::string& {
+			return (showZh && zhLoaded && !d.zh.empty()) ? d.zh : d.en;
+		};
+		auto lineOld = [&](const AtlasStatDelta& d) -> const std::string& {
+			return (showZh && zhLoaded && !d.zhOld.empty()) ? d.zhOld : d.enOld;
+		};
+		auto match = [&](const AtlasNodeDiff& n) -> bool {
+			if (needle.empty()) return true;
+			if (ToLowerAscii(n.name).find(needle) != std::string::npos) return true;
+			if (ToLowerAscii(n.nameZh).find(needle) != std::string::npos) return true;
+			for (const AtlasStatDelta& d : n.stats)
+				if (ToLowerAscii(d.en).find(needle) != std::string::npos) return true;
+			return false;
+		};
+		auto header = [&](const char* zh, size_t count) {
+			return std::string(zh) + " (" + std::to_string(count) + ")";
+		};
+
+		ImGui::BeginChild("##diffscroll", ImVec2(0, 0), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+
+		if (!diff.added.empty() &&
+		    ImGui::CollapsingHeader(header(u8"新增節點", diff.added.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+			for (const AtlasNodeDiff& n : diff.added) {
+				if (!match(n)) continue;
+				ImGui::PushID(n.id);
+				bool clickable = activeIdxById.count(n.id) > 0;
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 0.85f, 0.55f, 1.0f));
+				if (ImGui::Selectable(("+ " + (label(n).empty() ? std::string("?") : label(n))).c_str()) && clickable)
+					view.CenterOn(tree, activeIdxById[n.id]);
+				ImGui::PopStyleColor();
+				ImGui::PopID();
+			}
+		}
+		if (!diff.removed.empty() &&
+		    ImGui::CollapsingHeader(header(u8"移除節點", diff.removed.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+			for (const AtlasNodeDiff& n : diff.removed) {
+				if (!match(n)) continue;
+				ImGui::PushID(n.id);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.45f, 0.45f, 1.0f));
+				ImGui::Selectable(("- " + (label(n).empty() ? std::string("?") : label(n))).c_str());
+				ImGui::PopStyleColor();
+				if (ImGui::IsItemHovered()) {
+					ImGui::BeginTooltip();
+					ImGui::TextDisabled(u8"此節點在新賽季已移除");
+					ImGui::PushTextWrapPos(380.0f * scale);
+					for (const std::string& s : n.statsOld) ImGui::TextUnformatted(s.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::EndTooltip();
+				}
+				ImGui::PopID();
+			}
+		}
+		if (!diff.modified.empty() &&
+		    ImGui::CollapsingHeader(header(u8"數值/詞條變動", diff.modified.size()).c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+			for (const AtlasNodeDiff& n : diff.modified) {
+				if (!match(n)) continue;
+				ImGui::PushID(n.id);
+				bool clickable = activeIdxById.count(n.id) > 0;
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.82f, 0.42f, 1.0f));
+				if (ImGui::Selectable(("~ " + (label(n).empty() ? std::string("?") : label(n))).c_str()) && clickable)
+					view.CenterOn(tree, activeIdxById[n.id]);
+				ImGui::PopStyleColor();
+				ImGui::Indent(12.0f * scale);
+				ImGui::PushTextWrapPos(0.0f);
+				if (n.nameChanged) {
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.60f, 0.66f, 0.74f, 1.0f));
+					ImGui::TextWrapped(u8"改名自：%s",
+						(showZh && zhLoaded && !n.nameOldZh.empty() ? n.nameOldZh : n.nameOld).c_str());
+					ImGui::PopStyleColor();
+				}
+				for (const AtlasStatDelta& d : n.stats) {
+					if (d.kind == AtlasStatDelta::kValueChanged) {
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.58f, 0.63f, 0.72f, 1.0f));
+						ImGui::TextWrapped("  %s", lineOld(d).c_str());
+						ImGui::PopStyleColor();
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.98f, 1.0f));
+						ImGui::TextWrapped("=> %s", lineNew(d).c_str());
+						ImGui::PopStyleColor();
+					} else if (d.kind == AtlasStatDelta::kLineAdded) {
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 0.85f, 0.55f, 1.0f));
+						ImGui::TextWrapped("+ %s", lineNew(d).c_str());
+						ImGui::PopStyleColor();
+					} else {
+						ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.45f, 0.45f, 1.0f));
+						ImGui::TextWrapped("- %s", lineNew(d).c_str());
+						ImGui::PopStyleColor();
+					}
+				}
+				ImGui::PopTextWrapPos();
+				ImGui::Unindent(12.0f * scale);
+				ImGui::Spacing();
+				ImGui::PopID();
+			}
+		}
+		ImGui::EndChild();
+	};
+
 	// hot-reload after new data landed on disk (manual import or auto update);
 	// GL work, main thread only
 	auto hotReload = [&](const std::string& okMsg) {
-		ready = tree.Load(exeDir, &loadErr);
-		if (ready) {
-			tree.ApplyAllocIds(buildFile.Active().alloc); // maps by GGG id; orphans pruned
-			saveActive();                                 // persist the pruned mapping
-			ready = view.LoadTextures(exeDir, tree, &loadErr);
-		}
-		bool zhWas = zhLoaded;        // the zh mapping may have changed too
-		zhLoaded = i18n.Load(exeDir);
+		verIndex.Load(exeDir);              // a new season may have landed
+		bool zhWas = zhLoaded;              // the zh mapping may have changed too
+		loadSeason(verIndex.Active());      // follow to the (possibly new) active season
+		if (ready) saveActive();            // lock in the id-mapping after any pruning
 		if (!zhLoaded) showZh = false;
-		else if (!zhWas) showZh = true; // translations appeared: switch on
+		else if (!zhWas) showZh = true;     // translations appeared: switch on
 		importMsg = ready ? okMsg : loadErr;
 		importFailed = !ready;
 		panelDirty = true;
+		// compute the diff so the toolbar can prompt "what changed this update"
+		diffReady = false;
+		if (ready && verIndex.Versions().size() >= 2 && !verIndex.CompareBase().empty()) {
+			rebuildDiff();
+			if (diffReady)
+				importMsg += u8"｜可比較 " + diff.oldVer + u8" -> " + diff.newVer + u8"：新增" +
+				             std::to_string(diff.added.size()) + u8" 移除" + std::to_string(diff.removed.size()) +
+				             u8" 變動" + std::to_string(diff.modified.size()) + u8"（按「版本比較」）";
+		}
+		if (compareMode) { if (diffReady) applyDiffOverlay(); else view.ClearDiffOverlay(); }
+		else view.ClearDiffOverlay();
 	};
 
 	// convert + hot-reload; keeps the old data untouched when conversion fails
 	auto importSeason = [&]() {
 		std::wstring path = OpenDataJsonDialog();
 		if (path.empty()) return;
+		// manual import replaces the active season in place (no tag is available
+		// from a local data.json); the auto updater handles versioned rolling
+		std::wstring dest = verIndex.ResolveDataDir(exeDir, verIndex.Active());
 		std::string ierr, isum;
-		if (!ImportAtlasTreeData(path, exeDir, &ierr, &isum)) {
+		if (!ImportAtlasTreeData(path, dest, &ierr, &isum)) {
 			importMsg = ierr;
 			importFailed = true;
 			return;
@@ -567,6 +827,54 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			}
 			if (zhLoaded && ImGui::IsKeyPressed(ImGuiKey_F2, false)) showZh = !showZh;
 
+			// season switcher: which league's atlas tree is drawn on the canvas
+			if (verIndex.Versions().size() >= 2 && !viewTag.empty()) {
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::TextDisabled(u8"賽季");
+				ImGui::SameLine();
+				ImGui::SetNextItemWidth(96.0f * scale);
+				if (ImGui::BeginCombo("##seasonsel", viewTag.c_str())) {
+					for (const std::string& t : verIndex.TagsNewestFirst()) {
+						bool sel = t == viewTag;
+						if (ImGui::Selectable(t.c_str(), sel) && !sel) {
+							saveActive();                 // capture edits on the outgoing canonical season
+							loadSeason(t);
+							uiState.season = t;
+							uiState.Save(exeDir);
+							panelDirty = true;
+							if (compareMode) refreshCompare(); // rebuild overlay/index for the new tree
+						}
+					}
+					ImGui::EndCombo();
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip(u8"切換畫布顯示的賽季圖譜樹（配點以節點 ID 跨季共用）");
+				if (!onCanonicalSeason()) {
+					ImGui::SameLine();
+					ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.25f, 1.0f), u8"舊賽季檢視（唯讀）");
+				}
+			}
+
+			// version-compare toggle (needs two installed seasons)
+			{
+				bool canCompare = verIndex.Versions().size() >= 2 && !verIndex.CompareBase().empty();
+				ImGui::SameLine(0, 18.0f * scale);
+				if (!canCompare) ImGui::BeginDisabled();
+				if (compareMode) PobUi::PushDangerButton();
+				if (ImGui::Button(compareMode ? u8"結束比較" : u8"版本比較")) {
+					compareMode = !compareMode;
+					if (compareMode) refreshCompare();
+					else view.ClearDiffOverlay();
+				}
+				if (compareMode) PobUi::PopButtonStyle();
+				if (!canCompare) ImGui::EndDisabled();
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip(canCompare
+						? u8"比較 %s -> %s：節點增刪與逐詞條數值變更（綠=新增, 黃=變動）"
+						: u8"需要兩個賽季的資料才能比較",
+						verIndex.CompareBase().c_str(), verIndex.Active().c_str());
+			}
+
 			// background auto-update status / prompt
 			if (ust.phase == AtlasUpdatePhase::UpdateAvailable) {
 				ImGui::SameLine(0, 24.0f * scale);
@@ -677,6 +985,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 
 			ImGui::SameLine(0, 0);
 			ImGui::BeginChild("##sidepanel", ImVec2(0, 0), true);
+
+			if (compareMode) {
+			renderComparePanel();
+			} else {
 
 			// --- points summary (pinned) ---
 			ImGui::TextDisabled(u8"已配置點數");
@@ -794,6 +1106,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				}
 			}
 			ImGui::EndChild();
+			} // end normal side panel (else branch of compareMode)
 			ImGui::EndChild();
 		}
 

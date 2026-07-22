@@ -1,9 +1,13 @@
 #include "atlas_import.h"
+#include "atlas_version_index.h" // resolve the active season folder for the CLI
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h> // SHCreateDirectoryExW (nested season folders)
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
+
+#pragma comment(lib, "shell32.lib")
 
 #include <cmath>
 #include <cstdio>
@@ -166,7 +170,7 @@ struct SheetIndex {
 
 // ---- conversion (port of gen_atlas_tree.py main()) --------------------------------
 
-bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& exeDir,
+bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& destDir,
                          std::string* err, std::string* summary)
 {
 	auto fail = [&](const std::string& m) {
@@ -425,17 +429,18 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& e
 		out["groupbg"] = std::move(outGroupBg);
 		out["bg"] = std::move(outBg);
 
-		// everything validated: copy sheets first, then overwrite the JSON
-		CreateDirectoryW((exeDir + L"Data").c_str(), nullptr);
-		CreateDirectoryW((exeDir + L"Data\\atlas").c_str(), nullptr);
+		// everything validated: copy sheets first, then overwrite the JSON.
+		// destDir may be nested (Data/atlas_versions/<tag>/) — create the whole
+		// path including the atlas/ sprite subfolder.
+		SHCreateDirectoryExW(nullptr, (destDir + L"atlas").c_str(), nullptr);
 		for (const std::string& base : sheets.baseNames) {
 			std::wstring src = sheets.srcAssets + widen(base);
-			std::wstring dst = exeDir + L"Data\\atlas\\" + widen(base);
+			std::wstring dst = destDir + L"atlas\\" + widen(base);
 			if (!CopyFileW(src.c_str(), dst.c_str(), FALSE))
 				return fail(u8"複製圖集失敗: " + base);
 		}
-		if (!write_file_utf8(exeDir + L"Data\\atlas_tree_poe1.json", out.dump()))
-			return fail(u8"寫入 Data/atlas_tree_poe1.json 失敗");
+		if (!write_file_utf8(destDir + L"atlas_tree_poe1.json", out.dump()))
+			return fail(u8"寫入 atlas_tree_poe1.json 失敗");
 
 		if (summary)
 			*summary = u8"匯入完成：" + std::to_string(out["nodes"].size()) + u8" 節點、" +
@@ -454,8 +459,12 @@ int RunAtlasImportCli(const std::wstring& dataJsonPath, const std::wstring& exeD
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
 	}
+	// import into the active season folder (falls back to the flat Data/ layout)
+	AtlasVersionIndex idx;
+	idx.Load(exeDir);
+	std::wstring dest = idx.ResolveDataDir(exeDir, idx.Active());
 	std::string err, summary;
-	bool ok = ImportAtlasTreeData(dataJsonPath, exeDir, &err, &summary);
+	bool ok = ImportAtlasTreeData(dataJsonPath, dest, &err, &summary);
 	printf("%s\n", ok ? summary.c_str() : ("FAIL: " + err).c_str());
 	return ok ? 0 : 1;
 }

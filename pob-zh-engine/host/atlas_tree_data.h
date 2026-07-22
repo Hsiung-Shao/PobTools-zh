@@ -58,9 +58,21 @@ struct AtlasDeco {
 
 class AtlasTreeData {
 public:
-	// Reads Data/atlas_tree_poe1.json under exeDir. On failure returns false
-	// and fills *err (UTF-8) when provided.
+	// Reads the ACTIVE season's atlas_tree_poe1.json (resolved through
+	// Data/atlas_index.json; falls back to the legacy flat Data/ layout). On
+	// failure returns false and fills *err (UTF-8) when provided.
 	bool Load(const std::wstring& exeDir, std::string* err);
+
+	// Reads a specific season (Data/atlas_versions/<tag>/atlas_tree_poe1.json),
+	// used by the version-compare view and the --atlas-diff CLI.
+	bool LoadVersion(const std::wstring& exeDir, const std::string& tag, std::string* err);
+
+	// Resolved data directory (trailing backslash) and sprite directory of the
+	// last successful load; the renderer reads sprite sheets from SpriteDir().
+	const std::wstring& DataDir() const { return dataDir_; }
+	const std::wstring& SpriteDir() const { return spriteDir_; }
+	// Season tag this instance was loaded for ("" for a legacy flat load).
+	const std::string& Tag() const { return tag_; }
 
 	int UsedPoints() const;                       // allocated, excluding the start node
 	int TotalPoints() const { return totalPoints_; }
@@ -104,9 +116,14 @@ public:
 private:
 	// Keeps only allocated nodes reachable from the start node.
 	void repairConnectivity();
+	// Parses atlas_tree_poe1.json out of dataDir (trailing backslash).
+	bool loadFromDir(const std::wstring& dataDir, const std::string& tag, std::string* err);
 
 	int totalPoints_ = 0;
 	std::string version_;
+	std::string tag_;
+	std::wstring dataDir_;
+	std::wstring spriteDir_;
 };
 
 // Headless logic check driven by "pob-zh.exe --atlas-selftest": loads the tree,

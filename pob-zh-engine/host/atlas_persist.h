@@ -53,6 +53,7 @@ bool AtlasParseShareCode(const std::string& code, AtlasBuildEntry* out, std::str
 // (unscaled); 0 means "use the default responsive width".
 struct AtlasUiState {
 	float panelW = 0.0f;
+	std::string season;   // last atlas season the user viewed (e.g. "3.29.0"); "" = default active
 	bool Load(const std::wstring& exeDir);
 	bool Save(const std::wstring& exeDir) const;
 };
