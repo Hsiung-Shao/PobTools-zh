@@ -89,25 +89,6 @@
 
 下載 `PobTools-Translations-<版本>.zip`,把裡面的 `Data` 資料夾覆蓋到安裝目錄。
 
-### 進階(自行從遊戲檔重抽)
-
-若你有 PoE 國際服客戶端,可雙擊根目錄 `update-translations.bat` 從本機
-`Content.ggpk` 重新抽取翻譯並補進字典(只補缺不覆寫)。詳見
-[ggpk-translation-pipeline.md](ggpk-translation-pipeline.md)。
-
----
-
-## 六、常用命令列參數
-
-```powershell
-pob-zh.exe                     # 開啟啟動器
-pob-zh.exe --atlas             # 直開圖譜配點器
-pob-zh.exe --atlas-update      # 檢查並下載圖譜新賽季資料
-pob-zh.exe --atlas-selftest    # 圖譜模組內建自測
-```
-
----
-
 ## 常見問題
 
 其他安裝與啟動相關問題(偵測不到 POB、亂碼、防毒攔截等)見

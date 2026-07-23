@@ -11,7 +11,7 @@ POB 外層注入中文翻譯與介面,**不修改你原本的 POB**。
 
 1. **Windows**(10 / 11)。
 2. **Path of Building Community**(POB 本體)—— PobTools **不包含** POB,請自行安裝:
-   - 官方下載:<https://pathofbuilding.community/>
+   - 官方下載:[https://pathofbuilding.community/](https://pathofbuilding.community/)
    - 或你電腦上已安裝好的 POB 資料夾。
 
 ---
@@ -27,10 +27,10 @@ POB 外層注入中文翻譯與介面,**不修改你原本的 POB**。
 
 在 `pob-zh.exe` **同一層**放入 POB 資料夾,名稱需正確:
 
-| 遊戲 | 資料夾名稱(放在 pob-zh.exe 旁) |
-|---|---|
+| 遊戲            | 資料夾名稱(放在 pob-zh.exe 旁)                   |
+| --------------- | ------------------------------------------------ |
 | Path of Exile 1 | `PathOfBuildingCommunity`(內含 `Launch.lua`) |
-| Path of Exile 2 | `PathOfBuildingCommunity-PoE2-Portable` |
+| Path of Exile 2 | `PathOfBuildingCommunity-PoE2-Portable`        |
 
 最終長這樣:
 
@@ -69,19 +69,15 @@ D:\PobTools\
 
 - **啟動器說「未偵測到任何 POB」**
   → 檢查 POB 資料夾名稱是否正確(見上表),且和 `pob-zh.exe` 在**同一層**。
-
 - **開啟後是亂碼 / 沒有中文字**
   → 確認 `Fonts\` 資料夾裡有字型檔(預設 `NotoSansTC-Regular.ttf`,解壓時未遺漏)。
-
 - **想換字型**
   → 啟動器底部有「字型」下拉,可即時切換 `Fonts\` 內任何 `.ttf`。
   想加自己的字型,把 `.ttf` 丟進 `Fonts\` 再重開啟動器即可(建議用 TrueType 靜態字型)。
-
 - **防毒軟體攔截**
   → 本工具會啟動 POB 並注入翻譯,可能被誤報;請自行斟酌加入信任。
-
 - **想切換介面語言**
-  → 啟動器底部有語言下拉(繁中 / 簡中 / English)。
+  → 啟動器底部有語言下拉(繁中 / English)。
 
 ---
 
