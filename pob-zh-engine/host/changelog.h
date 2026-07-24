@@ -8,6 +8,12 @@
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v0.4.1（2026-07-25）\n"
+	u8"翻譯：3.29 正式資料全量更新\n"
+	u8"　- 物品 +98、詞綴 +285、介面 +156、天賦 +65 等\n"
+	u8"　　新詞條，來源為 3.29.0.1 遊戲檔案。\n"
+	u8"　- v0.4.0 使用者由自動更新背景套用，無需操作。\n"
+	u8"\n"
 	u8"v0.4.0（2026-07-24）\n"
 	u8"改進：POB 資料夾偵測全面放寬\n"
 	u8"　- pob-zh.exe 旁任何內含 Launch.lua 的資料夾\n"
