@@ -445,11 +445,11 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		auto label = [&](const AtlasNodeDiff& n) -> const std::string& {
 			return (showZh && zhLoaded && !n.nameZh.empty()) ? n.nameZh : n.name;
 		};
-		auto lineNew = [&](const AtlasStatDelta& d) -> const std::string& {
-			return (showZh && zhLoaded && !d.zh.empty()) ? d.zh : d.en;
+		auto lineNew = [&](const AtlasStatDelta& d) -> std::string {
+			return StripStatMarkup((showZh && zhLoaded && !d.zh.empty()) ? d.zh : d.en);
 		};
-		auto lineOld = [&](const AtlasStatDelta& d) -> const std::string& {
-			return (showZh && zhLoaded && !d.zhOld.empty()) ? d.zhOld : d.enOld;
+		auto lineOld = [&](const AtlasStatDelta& d) -> std::string {
+			return StripStatMarkup((showZh && zhLoaded && !d.zhOld.empty()) ? d.zhOld : d.enOld);
 		};
 		auto match = [&](const AtlasNodeDiff& n) -> bool {
 			if (needle.empty()) return true;
@@ -490,7 +490,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 					ImGui::BeginTooltip();
 					ImGui::TextDisabled(u8"此節點在新賽季已移除");
 					ImGui::PushTextWrapPos(380.0f * scale);
-					for (const std::string& s : n.statsOld) ImGui::TextUnformatted(s.c_str());
+					for (const std::string& s : n.statsOld) ImGui::TextUnformatted(StripStatMarkup(s).c_str());
 					ImGui::PopTextWrapPos();
 					ImGui::EndTooltip();
 				}
@@ -1090,7 +1090,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 								ImGui::PushTextWrapPos(380.0f * scale);
 								for (const std::string& s : n.stats) {
 									ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.90f, 1.0f));
-									ImGui::TextUnformatted((showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
+									ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
 									ImGui::PopStyleColor();
 								}
 								ImGui::PopTextWrapPos();

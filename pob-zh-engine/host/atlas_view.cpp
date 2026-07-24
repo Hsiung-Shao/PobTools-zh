@@ -3,6 +3,7 @@
 
 #include "atlas_view.h"
 #include "atlas_i18n.h"
+#include "atlas_stat_agg.h" // StripStatMarkup for tooltip stat lines
 #include "editor_util.h"   // EdReadFile / EdWiden
 #include "image_tex.h"
 
@@ -286,7 +287,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	ImGui::PushTextWrapPos(380.0f * uiScale);
 	for (const std::string& s : n.stats) {
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.90f, 1.0f));
-		ImGui::TextUnformatted((zh ? zh->StatLine(s) : s).c_str());
+		ImGui::TextUnformatted(StripStatMarkup(zh ? zh->StatLine(s) : s).c_str());
 		ImGui::PopStyleColor();
 	}
 	ImGui::PopTextWrapPos();

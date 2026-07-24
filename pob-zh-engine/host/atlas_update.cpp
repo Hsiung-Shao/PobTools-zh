@@ -292,11 +292,85 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 		if (joined == 0)
 			return fail(u8"沒有任何節點能對上繁中資料（hash 完全不合），保留舊對照");
 
+		// Preserve season-official entries from the previous mapping ("fresh":
+		// zh patched from the season's own game files while repoe lagged). A
+		// repoe-only rebuild would otherwise wipe those lines and node names;
+		// wherever repoe now supplies its own zh, repoe wins and the marker is
+		// dropped (once repoe catches the season up, markers become inert).
+		std::set<std::string> freshOut, freshNamesOut;
+		{
+			// phase 1 (may throw): parse the previous mapping's fresh markers
+			std::map<std::string, std::string> freshZh, freshName;
+			std::string prevRaw;
+			if (read_file_utf8(destDir + L"atlas_tree_zh.json", prevRaw)) try {
+				ordered_json prev = ordered_json::parse(prevRaw);
+				std::set<std::string> freshSet, freshNameSet;
+				if (prev.contains("fresh") && prev["fresh"].is_array())
+					for (const auto& f : prev["fresh"])
+						if (f.is_string()) freshSet.insert(f.get<std::string>());
+				if (prev.contains("freshNames") && prev["freshNames"].is_array())
+					for (const auto& f : prev["freshNames"])
+						if (f.is_string()) freshNameSet.insert(f.get<std::string>());
+				if ((!freshSet.empty() || !freshNameSet.empty()) &&
+					prev.contains("nodes") && prev["nodes"].is_object()) {
+					for (const auto& [k, pv] : prev["nodes"].items()) {
+						if (freshNameSet.count(k) && pv.contains("zh") && pv["zh"].is_string())
+							freshName[k] = pv["zh"].get<std::string>();
+						if (pv.contains("statsEn") && pv.contains("statsZh") &&
+							pv["statsEn"].is_array() && pv["statsZh"].is_array() &&
+							pv["statsEn"].size() == pv["statsZh"].size())
+							for (size_t i = 0; i < pv["statsEn"].size(); i++)
+								if (pv["statsEn"][i].is_string() && pv["statsZh"][i].is_string()) {
+									std::string en = pv["statsEn"][i].get<std::string>();
+									if (freshSet.count(en))
+										freshZh[en] = pv["statsZh"][i].get<std::string>();
+								}
+					}
+				}
+			} catch (...) {
+				// unreadable previous mapping: half-parsed markers must not
+				// leak into the apply phase -> plain rebuild
+				freshZh.clear();
+				freshName.clear();
+			}
+			// phase 2 (no throw: outNodes was built above with known shapes):
+			// re-apply markers onto the rebuilt nodes
+			for (auto& [k, n] : outNodes.items()) {
+				auto fn = freshName.find(k);
+				if (fn != freshName.end() && !n.contains("zh")) {
+					n["zh"] = fn->second;
+					freshNamesOut.insert(k);
+				}
+				if (freshZh.empty() || !n.contains("statsEn") || !n["statsEn"].is_array())
+					continue;
+				const ordered_json se = n["statsEn"]; // copy: n may be re-shaped below
+				bool aligned = n.contains("statsZh") && n["statsZh"].is_array() &&
+				               n["statsZh"].size() == se.size();
+				for (size_t i = 0; i < se.size(); i++) {
+					if (!se[i].is_string()) continue;
+					std::string en = se[i].get<std::string>();
+					auto fz = freshZh.find(en);
+					if (fz == freshZh.end()) continue;
+					if (!aligned) { n["statsZh"] = se; aligned = true; }
+					std::string cur = n["statsZh"][i].is_string()
+						? n["statsZh"][i].get<std::string>() : std::string();
+					if (cur != en && cur != fz->second)
+						continue; // repoe supplied its own zh: repoe wins
+					n["statsZh"][i] = fz->second;
+					freshOut.insert(en);
+				}
+			}
+		}
+
 		ordered_json out;
 		out["tag"] = tag;
 		out["repoe"] = repoeVersion;
 		out["joined"] = joined;
 		out["total"] = total;
+		if (!freshOut.empty())
+			out["fresh"] = ordered_json(freshOut);
+		if (!freshNamesOut.empty())
+			out["freshNames"] = ordered_json(freshNamesOut);
 		out["nodes"] = std::move(outNodes);
 
 		SHCreateDirectoryExW(nullptr, destDir.c_str(), nullptr);

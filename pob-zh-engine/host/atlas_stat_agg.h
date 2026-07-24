@@ -49,6 +49,11 @@ std::string FmtStatNum(double v, bool forcePlus);
 // ASCII-only lowercase copy (bytes >= 0x80 untouched).
 std::string ToLowerAscii(const std::string& s);
 
+// GGG stat text carries internal reference markup: "[ContainsAbyss|Abysses]"
+// shows as "Abysses", "[Deep]" as "Deep". Applied to DISPLAY text only —
+// aggregation keys and i18n lookup keys keep the raw markup.
+std::string StripStatMarkup(const std::string& s);
+
 // Phase 1: classify `line` and accumulate it into `groups`; `pos` maps the
 // prefixed key ("S:"/"B:"/"M:") to the group index.
 void AccumulateStatLine(const std::string& line, std::vector<StatAggGroup>& groups,

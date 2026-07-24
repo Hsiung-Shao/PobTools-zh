@@ -33,8 +33,8 @@ PobTools 以官方客戶端資料為準,產出約 3.8 萬組英文→繁中對�
 ## 下載安裝(一般使用者)
 
 1. 到 [Releases](../../releases) 下載 **`PobTools-<版本>.zip`**,解壓到任一資料夾。
-2. 把你的 **Path of Building Community**(POB 本體,自行安裝)放到 `pob-zh.exe` 同一層,
-   資料夾命名為 `PathOfBuildingCommunity`(POE1)/ `PathOfBuildingCommunity-PoE2-Portable`(POE2)。
+2. 把你的 **Path of Building Community**(POB 本體,自行安裝)放到 `pob-zh.exe` 同一層——
+   資料夾名稱不限,內含 `Launch.lua` 即可(名稱含 `PoE2` 視為 PoE2 版)。
 3. 雙擊 **`pob-zh.exe`**,選遊戲版本後啟動,POB 即以繁體中文開啟。
 
 > PobTools **不包含** POB 本體(著作權/所有權因素),請自行從
@@ -47,6 +47,12 @@ PobTools 以官方客戶端資料為準,產出約 3.8 萬組英文→繁中對�
 新賽季或翻譯更新時,到 [Releases](../../releases) 下載
 **`PobTools-Translations-<版本>.zip`**,把裡面的 `Data` 資料夾覆蓋到安裝目錄即可,
 不必重載整包。圖譜天賦樹可在程式內用工具列按鈕線上更新。
+
+---
+
+## 社群與回饋
+
+有問題、建議或想許願新功能,歡迎加入 **[Discord 社群](https://discord.gg/6VamPQb8nC)** 討論。
 
 ---
 

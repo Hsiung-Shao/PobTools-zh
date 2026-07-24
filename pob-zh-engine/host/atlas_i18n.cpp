@@ -33,6 +33,7 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 {
 	nameById_.clear();
 	statByEn_.clear();
+	freshStats_.clear();
 	note_.clear();
 	repoe_.clear();
 	loaded_ = false;
@@ -71,6 +72,12 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 			}
 		}
 
+		// entries whose zh came from the season's own game files (ggpk patch)
+		// while repoe lagged; PruneStaleTranslations must not drop them
+		if (doc.contains("fresh") && doc["fresh"].is_array())
+			for (const auto& f : doc["fresh"])
+				if (f.is_string()) freshStats_.insert(f.get<std::string>());
+
 		repoe_ = doc.value("repoe", std::string());
 		note_ = doc.value("tag", std::string("?")) + " / repoe " + (repoe_.empty() ? "?" : repoe_);
 		loaded_ = !nameById_.empty();
@@ -78,6 +85,7 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 	} catch (...) {
 		nameById_.clear();
 		statByEn_.clear();
+		freshStats_.clear();
 		return false;
 	}
 }

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <vector>
 #include <zlib.h>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <cstdio>
@@ -1972,6 +1973,60 @@ static int l_IsSubScriptRunning(lua_State* L)
 	return 1;
 }
 
+// ---- PobTools in-memory source patches --------------------------------------
+// A few POB modules get a tiny anchored patch at load time so the translated
+// DISPLAY text can participate in searches; the files on disk stay untouched
+// (zero-pollution). Each patch names a unique anchor line; when the anchor is
+// not found exactly once (upstream rewrote the code), the module loads
+// unmodified and the feature silently degrades to English-only search.
+// Patches contain no newline, so script line numbers (tracebacks) are stable.
+struct PobToolsSourcePatch {
+	const char* fileLeaf;    // lower-case file name, e.g. "itemdbcontrol.lua"
+	const char* anchor;      // must occur exactly once in the file
+	const char* insertAfter; // inserted right after the anchor (same line)
+};
+static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
+	// Item DB search (Uniques/Bases lists): append the Traditional-Chinese
+	// display name so typing the visible translated name matches too. The
+	// '\n' separator prevents cross-boundary matches (search strings never
+	// contain a newline).
+	{ "itemdbcontrol.lua",
+	  "local searchName = item.name:lower()",
+	  " if PobToolsTranslate then local _ptzh = PobToolsTranslate(item.name) "
+	  "if _ptzh and _ptzh ~= item.name then searchName = searchName .. \"\\n\" .. _ptzh:lower() end end" },
+};
+
+// luaL_loadfile drop-in used by LoadModule/PLoadModule; same status codes.
+static int pobtools_loadfile_patched(lua_State* L, const char* path)
+{
+	std::string leaf = path;
+	size_t slash = leaf.find_last_of("/\\");
+	if (slash != std::string::npos) leaf.erase(0, slash + 1);
+	for (char& c : leaf) c = (char)tolower((unsigned char)c);
+	const PobToolsSourcePatch* patch = nullptr;
+	for (const PobToolsSourcePatch& p : kPobToolsSourcePatches)
+		if (leaf == p.fileLeaf) { patch = &p; break; }
+	if (!patch) return luaL_loadfile(L, path);
+
+	FILE* f = fopen(path, "rb"); // relative to the work dir, like luaL_loadfile
+	if (!f) return luaL_loadfile(L, path); // let lua report the error
+	std::string src;
+	char buf[65536];
+	size_t r;
+	while ((r = fread(buf, 1, sizeof(buf), f)) > 0) src.append(buf, r);
+	fclose(f);
+	if (src.compare(0, 3, "\xEF\xBB\xBF") == 0) src.erase(0, 3); // BOM: loadbuffer chokes
+
+	size_t at = src.find(patch->anchor);
+	if (at == std::string::npos || src.find(patch->anchor, at + 1) != std::string::npos)
+		return luaL_loadfile(L, path); // anchor drifted: load unpatched
+	src.insert(at + strlen(patch->anchor), patch->insertAfter);
+
+	std::string chunkName = "@";
+	chunkName += path;
+	return luaL_loadbuffer(L, src.data(), src.size(), chunkName.c_str());
+}
+
 SG_LUA_CPP_FUN_BEGIN(LoadModule)
 {
 	ui_main_c* ui = GetUIPtr(L);
@@ -1986,7 +2041,7 @@ SG_LUA_CPP_FUN_BEGIN(LoadModule)
 
 	ui->sys->SetWorkDir(ui->scriptPath);
 	auto fileStr = fileName.generic_u8string();
-	int err = luaL_loadfile(L, fileStr.c_str());
+	int err = pobtools_loadfile_patched(L, fileStr.c_str());
 	ui->sys->SetWorkDir(ui->scriptWorkDir);
 	ui->LExpect(L, err == 0, "LoadModule() error loading '%s' (%d):\n%s", fileStr.c_str(), err, lua_tostring(L, -1));
 	lua_replace(L, 1);	// Replace module name with module main chunk
@@ -2008,7 +2063,7 @@ SG_LUA_CPP_FUN_BEGIN(PLoadModule)
 	}
 
 	ui->sys->SetWorkDir(ui->scriptPath);
-	int err = luaL_loadfile(L, fileName.generic_u8string().c_str());
+	int err = pobtools_loadfile_patched(L, fileName.generic_u8string().c_str());
 	ui->sys->SetWorkDir(ui->scriptWorkDir);
 	if (err) {
 		return 1;

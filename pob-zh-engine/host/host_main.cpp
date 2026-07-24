@@ -361,9 +361,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunAtlasZhCli(arg2, arg3, dir);
 	}
 
-	// Open the atlas planner directly (shortcut-friendly).
+	// Open the atlas planner directly (shortcut-friendly; also used by the
+	// launcher to run tools as child processes so its own window stays open).
 	if (arg1 == L"--atlas") {
 		ShowAtlasPlanner(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
+		return 0;
+	}
+	if (arg1 == L"--filter-editor") {
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		ShowFilterEditor(dir, c.game, c.locale);
+		return 0;
+	}
+	if (arg1 == L"--timeless-jewel") {
+		ShowTimelessJewel(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
 		return 0;
 	}
 
@@ -442,18 +452,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				ShowEditor(dir, cfg.game, cfg.locale);
 				continue; // back to the launcher screen
 			}
-			if (res == LauncherResult::OpenFilterEditor) {
-				ShowFilterEditor(dir, cfg.game, cfg.locale);
-				continue; // back to the launcher screen
-			}
-			if (res == LauncherResult::OpenAtlasPlanner) {
-				ShowAtlasPlanner(dir, cfg.locale);
-				continue; // back to the launcher screen
-			}
-			if (res == LauncherResult::OpenTimelessJewel) {
-				ShowTimelessJewel(dir, cfg.locale);
-				continue; // back to the launcher screen
-			}
+			// filter editor / atlas planner / timeless jewel are spawned as
+			// child processes from inside the launcher loop (window stays open)
 			if (res != LauncherResult::Launch) {
 				return 0;
 			}

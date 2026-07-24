@@ -8,9 +8,8 @@ class AppUpdater;
 enum class LauncherResult {
 	Launch,            // user pressed the launch button; cfg holds the final choices
 	OpenEditor,        // user pressed the translation-editor button; cfg holds current choices
-	OpenFilterEditor,  // user pressed the loot-filter-editor button
-	OpenAtlasPlanner,  // user pressed the atlas-tree-planner button
-	OpenTimelessJewel, // user pressed the timeless-jewel calculator button
+	// (filter editor / atlas planner / timeless jewel spawn as child processes
+	// inside the launcher loop — no result values; the window stays open)
 	ApplyAppUpdate,    // updater staged a new version; caller must swap + relaunch
 	Quit,              // window closed (or UI could not be created)
 };

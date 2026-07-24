@@ -8,6 +8,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class AtlasI18n {
@@ -46,6 +47,13 @@ public:
 	// the translations predate the season (see PruneStaleTranslations).
 	const std::string& RepoeVersion() const { return repoe_; }
 
+	// True when the zh of `en` is season-official (mapping "fresh" list: lines
+	// patched from the season's own game files while repoe still lags). Such
+	// lines are exempt from PruneStaleTranslations.
+	bool IsFreshStat(const std::string& en) const { return freshStats_.count(en) != 0; }
+	// Inject a fresh marker (self-tests / symmetric to AddStat).
+	void MarkFreshStat(const std::string& en) { freshStats_.insert(en); }
+
 	// Drop a stat-line translation (see PruneStaleTranslations in atlas_diff.h:
 	// changed lines whose zh predates the season fall back to English).
 	void DropStat(const std::string& en) { statByEn_.erase(en); }
@@ -60,6 +68,7 @@ public:
 private:
 	std::unordered_map<int, std::string> nameById_;
 	std::unordered_map<std::string, std::string> statByEn_;
+	std::unordered_set<std::string> freshStats_;
 	std::string note_;
 	std::string repoe_;
 	bool loaded_ = false;

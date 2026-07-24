@@ -111,6 +111,28 @@ void AccumulateStatLine(const std::string& line, std::vector<StatAggGroup>& grou
 	}
 }
 
+std::string StripStatMarkup(const std::string& s)
+{
+	if (s.find('[') == std::string::npos) return s;
+	std::string out;
+	out.reserve(s.size());
+	size_t i = 0;
+	while (i < s.size()) {
+		if (s[i] == '[') {
+			size_t close = s.find(']', i + 1);
+			if (close != std::string::npos) {
+				size_t bar = s.find('|', i + 1);
+				size_t start = (bar != std::string::npos && bar < close) ? bar + 1 : i + 1;
+				out.append(s, start, close - start);
+				i = close + 1;
+				continue;
+			}
+		}
+		out.push_back(s[i++]);
+	}
+	return out;
+}
+
 void BuildStatAggDisplay(std::vector<StatAggGroup>& groups,
                          const std::function<std::string(const std::string&)>* zhLookup)
 {
@@ -148,6 +170,11 @@ void BuildStatAggDisplay(std::vector<StatAggGroup>& groups,
 				g.zhFallback = true;
 			}
 		}
+		// display strips the GGG reference markup ([Key|Display] -> Display);
+		// keys stay raw. Runs AFTER the numeric refill so token byte positions
+		// computed above match the strings they were found in.
+		g.dispEn = StripStatMarkup(g.dispEn);
+		g.dispZh = StripStatMarkup(g.dispZh);
 		g.searchKey = ToLowerAscii(g.key.substr(2) + "\n" + g.dispEn + "\n" + g.dispZh);
 	}
 }
@@ -186,6 +213,16 @@ int RunAtlasAggSelfTest(const std::wstring& exeDir)
 		check(g.size() == 1 && g[0].kind == StatAggGroup::kSummed &&
 		      g[0].count == 3 && g[0].dispEn == "7% increased X",
 		      "same-template sum", g.empty() ? "no groups" : g[0].dispEn);
+	}
+
+	// 1b: GGG reference markup ([Key|Display] / [Word]) strips from display
+	// text but stays raw in aggregation keys
+	{
+		auto g = agg({ "[ContainsAbyss|Abysses] spawn 2 additional [Rare] Monsters" }, nullptr);
+		check(g.size() == 1 &&
+		      g[0].dispEn == "Abysses spawn 2 additional Rare Monsters" &&
+		      g[0].key.find("[ContainsAbyss|Abysses]") != std::string::npos,
+		      "markup stripped from display, raw in key", g.empty() ? "no groups" : g[0].dispEn);
 	}
 	// 2: explicit plus sign survives
 	{

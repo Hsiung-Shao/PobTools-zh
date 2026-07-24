@@ -19,6 +19,28 @@
 #include <string>
 #include <vector>
 
+// Tools (filter editor / atlas planner / timeless jewel) run as child
+// processes of the same exe (--filter-editor / --atlas / --timeless-jewel)
+// so the launcher window stays open. The child reads pob-zh.ini for
+// game/locale — callers must SaveLauncherConfig before spawning.
+static void SpawnTool(const std::wstring& exeDir, const wchar_t* flag)
+{
+	std::wstring cmd = L"\"" + exeDir + L"pob-zh.exe\" " + flag;
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(L'\0');
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi{};
+	if (CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, 0, nullptr,
+	                   exeDir.c_str(), &si, &pi)) {
+		CloseHandle(pi.hThread);
+		CloseHandle(pi.hProcess);
+	} else {
+		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
+		            MB_ICONERROR | MB_OK);
+	}
+}
+
 // Logical (unscaled) window size; multiplied by the monitor content scale.
 static const int kWinW = 1000;
 static const int kWinH = 700;
@@ -119,7 +141,8 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		b.AddText(t->editor); b.AddText(t->filterEditor); b.AddText(t->atlasPlanner);
 		b.AddText(t->timelessJewel);
 		b.AddText(t->gamesSection); b.AddText(t->toolsSection); b.AddText(t->linksSection);
-		b.AddText(t->about); b.AddText(t->changelog); b.AddText(t->aboutBody); b.AddText(t->support); b.AddText(t->close);
+		b.AddText(t->about); b.AddText(t->changelog); b.AddText(t->aboutBody); b.AddText(t->support);
+		b.AddText(t->discord); b.AddText(t->close);
 		b.AddText(t->font);
 		b.AddText(t->updateAvailable); b.AddText(t->updateNow); b.AddText(t->updateDownloading);
 		b.AddText(t->updatePreparing); b.AddText(t->updateRestarting); b.AddText(t->updateFailed);
@@ -365,12 +388,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 	bool launch = false;
 	bool openEditor = false;
-	bool openFilterEditor = false;
-	bool openAtlasPlanner = false;
-	bool openTimelessJewel = false;
 	bool applyUpdate = false;
+	// tools spawn as child processes so this window stays open (see SpawnTool)
+	auto spawnTool = [&](const wchar_t* flag) {
+		cfg.game = poe2Sel ? L"poe2" : L"poe1";
+		cfg.locale = kLocaleIds[localeIdx];
+		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+		SpawnTool(exeDir, flag);
+	};
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
-	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !openFilterEditor && !openAtlasPlanner && !openTimelessJewel && !applyUpdate) {
+	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
 
 		// Live font switch: rebuild the glyph atlas between frames when the user
@@ -529,11 +556,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImVec2 toolSize((inner - 2.0f * gap) / 3.0f, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
 			// if (ImGui::Button(S.editor, toolSize)) openEditor = true;   // hidden for now
-			if (ImGui::Button(S.filterEditor, toolSize)) openFilterEditor = true;
+			if (ImGui::Button(S.filterEditor, toolSize)) spawnTool(L"--filter-editor");
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.atlasPlanner, toolSize)) openAtlasPlanner = true;
+			if (ImGui::Button(S.atlasPlanner, toolSize)) spawnTool(L"--atlas");
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.timelessJewel, toolSize)) openTimelessJewel = true;
+			if (ImGui::Button(S.timelessJewel, toolSize)) spawnTool(L"--timeless-jewel");
 			ImGui::PopStyleColor();
 		}
 		if (updaterBusy) ImGui::EndDisabled();
@@ -658,6 +685,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 			ImGui::Dummy(ImVec2(0, 6.0f * scale));
 			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
+			ImGui::Dummy(ImVec2(0, 4.0f * scale));
+			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
 			ImGui::Dummy(ImVec2(0, 16.0f * scale));
 			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();
@@ -743,9 +772,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	glfwTerminate();
 
 	if (openEditor) return LauncherResult::OpenEditor;
-	if (openFilterEditor) return LauncherResult::OpenFilterEditor;
-	if (openAtlasPlanner) return LauncherResult::OpenAtlasPlanner;
-	if (openTimelessJewel) return LauncherResult::OpenTimelessJewel;
 	if (applyUpdate) return LauncherResult::ApplyAppUpdate;
 	return launch ? LauncherResult::Launch : LauncherResult::Quit;
 }

@@ -2,6 +2,9 @@
 #include "atlas_tree_data.h"
 #include "atlas_i18n.h"
 #include "atlas_stat_agg.h" // FindStatNumbers: line -> template + numbers
+#include "atlas_update.h"   // GenerateAtlasZhMapping (fresh-preservation selftest)
+
+#include <json.hpp> // nlohmann::ordered_json (selftest output validation)
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX          // keep std::min/std::max usable (windows.h defines min/max macros)
@@ -21,6 +24,22 @@ static bool write_file_utf8(const std::wstring& path, const std::string& content
 	DWORD written = 0;
 	bool ok = content.empty() ||
 		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
+	CloseHandle(h);
+	return ok;
+}
+
+static bool read_file_utf8(const std::wstring& path, std::string& out)
+{
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	LARGE_INTEGER size{};
+	bool ok = false;
+	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
+		out.resize((size_t)size.QuadPart);
+		DWORD read = 0;
+		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
+		if (!ok) out.clear();
+	}
 	CloseHandle(h);
 	return ok;
 }
@@ -234,6 +253,7 @@ int PruneStaleTranslations(AtlasI18n& newI18n, const AtlasTreeData& newTree, con
 	for (const std::string& en : newI18n.TranslatedStatLines()) {
 		if (!newLines.count(en)) continue;   // not a tree line (defensive)
 		if (oldLines.count(en)) continue;    // unchanged since last season: zh is trustworthy
+		if (newI18n.IsFreshStat(en)) continue; // season-official zh (ggpk patch): keep
 		newI18n.DropStat(en);                // new/changed line with a stale zh -> English
 		dropped++;
 	}
@@ -420,6 +440,22 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		      "unchanged line keeps its Chinese (an vs 1-ge never mis-flagged)");
 	}
 
+	// --- fresh exemption: a season-new line whose zh is marked fresh (patched
+	// from the season's own game files) must survive the prune ---
+	{
+		const char* kNew = "Season-new effect reworked in 3.29";
+		AtlasTreeData oldT4, newT4;
+		oldT4.nodes.push_back(MkNode(500, kAtlasNotable, "F", { "old wording" }));
+		newT4.nodes.push_back(MkNode(500, kAtlasNotable, "F", { kNew }));
+		AtlasI18n z4;
+		z4.AddStat(kNew, u8"本季官方模板翻譯");
+		z4.MarkFreshStat(kNew);
+		int pruned = PruneStaleTranslations(z4, newT4, oldT4);
+		check(pruned == 0, "fresh-marked season-new line is NOT pruned");
+		check(z4.StatLine(kNew) == u8"本季官方模板翻譯",
+		      "fresh line keeps its season-official Chinese");
+	}
+
 	// --- renamed-node name drop (renamed -> new English name, not stale zh) ---
 	{
 		AtlasTreeData oldT2, newT2;
@@ -436,6 +472,59 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 		      "renamed node falls back to the new English name");
 		check(z.NodeName(301, "Steady Name") == u8"穩定名稱",
 		      "unchanged node keeps its Chinese name");
+	}
+
+	// --- GenerateAtlasZhMapping rebuild preservation: fresh entries/names from
+	// the previous mapping survive a repoe-only rebuild (repoe still behind the
+	// season); wherever repoe now supplies its own zh, repoe wins and the
+	// marker is dropped ---
+	{
+		using nlohmann::ordered_json;
+		std::wstring dir = exeDir + L"zhpreserve_selftest\\";
+		CreateDirectoryW(dir.c_str(), nullptr);
+		// previous mapping: node 100 fully ggpk-patched (name + stat line),
+		// node 101's line was fresh but repoe provides its own zh this time
+		const char* prev =
+			"{\"tag\":\"9.99.0\",\"repoe\":\"9.98.0.1\",\"joined\":1,\"total\":2,"
+			"\"fresh\":[\"[X|Y] gains 5\",\"other line\"],\"freshNames\":[\"100\"],"
+			"\"nodes\":{"
+			"\"100\":{\"en\":\"Node A\",\"zh\":\"節點甲\","
+			"\"statsEn\":[\"[X|Y] gains 5\"],\"statsZh\":[\"[X|Y] 獲得 5\"]},"
+			"\"101\":{\"en\":\"Node B\",\"zh\":\"節點乙\","
+			"\"statsEn\":[\"other line\"],\"statsZh\":[\"舊譯\"]}}}";
+		write_file_utf8(dir + L"atlas_tree_zh.json", prev);
+		const char* ggg =
+			"{\"nodes\":{"
+			"\"1\":{\"skill\":100,\"name\":\"Node A\",\"stats\":[\"[X|Y] gains 5\"]},"
+			"\"2\":{\"skill\":101,\"name\":\"Node B\",\"stats\":[\"other line\"]}}}";
+		const char* tc =
+			"{\"passives\":{\"101\":{\"name\":\"節點乙\","
+			"\"stat_text\":[\"其他行\"]}}}";
+		std::string zhErr;
+		bool ok = GenerateAtlasZhMapping(ggg, tc, "9.99.0", "9.98.0.2", dir, &zhErr, nullptr);
+		check(ok, "zh rebuild succeeds with a previous mapping present");
+		std::string outRaw;
+		bool valid = false, keepName = false, keepStat = false, repoeWins = false, markerSet = false;
+		if (ok && read_file_utf8(dir + L"atlas_tree_zh.json", outRaw)) try {
+			ordered_json j = ordered_json::parse(outRaw);
+			valid = true;
+			markerSet = j.contains("fresh") && j["fresh"].size() == 1 &&
+			            j["fresh"][0] == "[X|Y] gains 5" &&
+			            j.contains("freshNames") && j["freshNames"].size() == 1 &&
+			            j["freshNames"][0] == "100";
+			const auto& n100 = j["nodes"]["100"];
+			keepName = n100.value("zh", std::string()) == u8"節點甲";
+			keepStat = n100["statsZh"].size() == 1 && n100["statsZh"][0] == u8"[X|Y] 獲得 5";
+			const auto& n101 = j["nodes"]["101"];
+			repoeWins = n101["statsZh"].size() == 1 && n101["statsZh"][0] == u8"其他行";
+		} catch (...) { valid = false; }
+		check(valid, "rebuilt mapping parses");
+		check(keepName, "un-joined node keeps its fresh ggpk name");
+		check(keepStat, "un-joined node keeps its fresh ggpk stat line");
+		check(repoeWins, "repoe-provided zh wins over the stale fresh line");
+		check(markerSet, "markers keep only the still-applied entries/names");
+		DeleteFileW((dir + L"atlas_tree_zh.json").c_str());
+		RemoveDirectoryW(dir.c_str());
 	}
 
 	rep += failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
