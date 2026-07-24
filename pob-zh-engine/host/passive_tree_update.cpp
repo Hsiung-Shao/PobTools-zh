@@ -1,5 +1,6 @@
 #include "passive_tree_update.h"
 #include "passive_import.h"
+#include "launcher_config.h" // FindPoe1Dir
 #include "http_client.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -161,7 +162,9 @@ static std::string read_bundled_tree_version(const std::wstring& exeDir)
 static std::pair<int, int> newest_pob_tree_version(const std::wstring& exeDir)
 {
 	std::pair<int, int> best{ 0, 0 };
-	std::wstring pattern = exeDir + L"PathOfBuildingCommunity\\TreeData\\*";
+	std::wstring base = FindPoe1Dir(exeDir);
+	if (base.empty()) return best;
+	std::wstring pattern = base + L"TreeData\\*";
 	WIN32_FIND_DATAW fd{};
 	HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
 	if (h == INVALID_HANDLE_VALUE) return best;
@@ -378,11 +381,12 @@ bool PassiveTreeUpdater::doUpdate(std::string* err)
 		return false;
 	}
 
-	std::wstring pobDir = exeDir_ + L"PathOfBuildingCommunity\\TreeData\\" + widen(ver) + L"\\";
+	std::wstring poe1Base = FindPoe1Dir(exeDir_); // L"" when no PoB install detected
+	std::wstring pobDir = poe1Base.empty() ? L"" : poe1Base + L"TreeData\\" + widen(ver) + L"\\";
 	int done = 0;
 	for (const std::string& base : needed) {
 		if (stop_.load()) { if (err) *err = u8"已取消"; return false; }
-		if (file_exists(pobDir + widen(base))) continue; // importer copies from PoB directly
+		if (!pobDir.empty() && file_exists(pobDir + widen(base))) continue; // importer copies from PoB directly
 		std::wstring dst = cacheDir + L"assets\\" + widen(base);
 		if (!file_exists(dst)) {
 			std::vector<unsigned char> bytes;

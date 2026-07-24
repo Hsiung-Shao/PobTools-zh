@@ -4,6 +4,7 @@
 #include "passive_tree_view.h"
 #include "editor_util.h"   // EdReadFile / EdWiden
 #include "image_tex.h"
+#include "launcher_config.h" // FindPoe1Dir
 
 #include <imgui_internal.h> // ImLengthSqr
 
@@ -34,13 +35,14 @@ bool PassiveTreeView::LoadTextures(const std::wstring& exeDir, const PassiveTree
 	// PoB doesn't have yet), then the user's PoB TreeData\<ver>\ (the normal
 	// source once PoB itself updates to this league).
 	std::wstring bundled = exeDir + L"Data\\tree\\";
-	std::wstring pobBase = exeDir + L"PathOfBuildingCommunity\\TreeData\\" + EdWiden(d.TreeVersion()) + L"\\";
+	std::wstring poe1Base = FindPoe1Dir(exeDir); // L"" when no PoB install detected
+	std::wstring pobBase = poe1Base.empty() ? L"" : poe1Base + L"TreeData\\" + EdWiden(d.TreeVersion()) + L"\\";
 	tex_.assign(d.sheets.size(), 0);
 	for (size_t i = 0; i < d.sheets.size(); i++) {
 		std::wstring rel = EdWiden(d.sheets[i].file);
 		for (wchar_t& c : rel) if (c == L'/') c = L'\\';
 		std::vector<unsigned char> bytes = EdReadFile(bundled + rel);
-		if (bytes.empty()) bytes = EdReadFile(pobBase + rel);
+		if (bytes.empty() && !pobBase.empty()) bytes = EdReadFile(pobBase + rel);
 		if (bytes.empty()) {
 			if (err) *err = "找不到天賦樹圖集：Data/tree/ 或 TreeData/" + d.TreeVersion() + "/" + d.sheets[i].file +
 			                "（請重新安裝 PobTools 或確認 POB 已下載天賦樹資料）";

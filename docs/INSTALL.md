@@ -25,14 +25,16 @@ POB 外層注入中文翻譯與介面,**不修改你原本的 POB**。
 
 ### 2. 把 POB 本體放到 pob-zh.exe 旁邊
 
-在 `pob-zh.exe` **同一層**放入 POB 資料夾,名稱需正確:
+在 `pob-zh.exe` **同一層**放入 POB 資料夾。**資料夾名稱不限**——只要裡面有
+`Launch.lua` 就會被偵測到(`PathOfBuildingCommunity`、
+`PathOfBuildingCommunity-Portable` 或自己改過的名稱都可以)。
 
-| 遊戲            | 資料夾名稱(放在 pob-zh.exe 旁)                   |
-| --------------- | ------------------------------------------------ |
-| Path of Exile 1 | `PathOfBuildingCommunity`(內含 `Launch.lua`) |
-| Path of Exile 2 | `PathOfBuildingCommunity-PoE2-Portable`        |
+| 遊戲            | 判別方式                                                |
+| --------------- | ------------------------------------------------------- |
+| Path of Exile 1 | 任一內含 `Launch.lua` 的資料夾                          |
+| Path of Exile 2 | 資料夾名稱需含 `PoE2`(例:`PathOfBuildingCommunity-PoE2-Portable`) |
 
-最終長這樣:
+最終長這樣(資料夾名稱僅為範例):
 
 ```
 D:\PobTools\
@@ -44,7 +46,10 @@ D:\PobTools\
 └─ PathOfBuildingCommunity-PoE2-Portable\ ← 你的 POE2 POB(可選)
 ```
 
-> 只玩 POE1 就只放 `PathOfBuildingCommunity`;只玩 POE2 就只放另一個。
+> 只玩 POE1 就只放一個;只玩 POE2 就只放名稱含 `PoE2` 的那個。
+> 也支援把 `pob-zh.exe` 連同 `engine\`、`Data\`、`Fonts\` 直接放進 POB
+> 資料夾裡(`Launch.lua` 與 `pob-zh.exe` 同層),但建議如上圖並排放置。
+> 同時有多個符合的資料夾時,優先採用官方名稱,其餘按名稱排序取第一個。
 
 ### 3. 啟動
 

@@ -120,7 +120,8 @@ static std::wstring launch_lua_from(std::wstring p)
 	return L"";
 }
 
-// Legacy resolution for the CLI path mode: POB_PATH env, then sibling POE1 folder.
+// Legacy resolution for the CLI path mode: POB_PATH env, then the detected
+// sibling PoE1 install (any folder name with Launch.lua, or the exe dir itself).
 static std::wstring resolve_launch_lua_legacy(const std::wstring& dir)
 {
 	wchar_t env[MAX_PATH];
@@ -129,9 +130,7 @@ static std::wstring resolve_launch_lua_legacy(const std::wstring& dir)
 		std::wstring r = launch_lua_from(std::wstring(env, n));
 		if (!r.empty()) return r;
 	}
-	std::wstring sibling = dir + L"PathOfBuildingCommunity\\Launch.lua";
-	if (file_exists(sibling)) return sibling;
-	return L"";
+	return DetectInstalls(dir).poe1Lua;
 }
 
 // Set POB_GAME / POB_LOCALE for the engine, unless already set in the environment.
@@ -337,6 +336,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunFilterSelfTest(dir);
 	}
 
+	// Headless POB-install detection check (synthetic %TEMP% layouts; report file).
+	if (arg1 == L"--detect-selftest") {
+		return RunDetectInstallsSelfTest(dir);
+	}
+
 	// Headless shared-theme invariants (no GLFW window or renderer required).
 	if (arg1 == L"--ui-theme-selftest") {
 		return PobUi::RunThemeSelfTest() ? 0 : 1;
@@ -378,7 +382,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		if (launchLua.empty()) {
 			MessageBoxW(nullptr,
 				L"找不到 Path of Building 的 Launch.lua。\n\n"
-				L"請將 PathOfBuildingCommunity 資料夾放在 pob-zh.exe 旁邊,\n"
+				L"請將 POB 資料夾(內含 Launch.lua,名稱不限)放在 pob-zh.exe 旁邊,\n"
 				L"或設定環境變數 POB_PATH 指向 POB 安裝目錄。",
 				L"PobTools", MB_ICONERROR | MB_OK);
 			return 1;

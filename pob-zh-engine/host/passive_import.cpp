@@ -1,4 +1,5 @@
 #include "passive_import.h"
+#include "launcher_config.h" // FindPoe1Dir
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -658,13 +659,14 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 		std::wstring srcDir = dataJsonPath;
 		size_t slash = srcDir.find_last_of(L"\\/");
 		srcDir = (slash == std::wstring::npos) ? L"" : srcDir.substr(0, slash + 1);
-		std::wstring pobDir = exeDir + L"PathOfBuildingCommunity\\TreeData\\" + widen(ver) + L"\\";
+		std::wstring poe1Base = FindPoe1Dir(exeDir); // L"" when no PoB install detected
+		std::wstring pobDir = poe1Base.empty() ? L"" : poe1Base + L"TreeData\\" + widen(ver) + L"\\";
 		SHCreateDirectoryExW(nullptr, (exeDir + L"Data\\tree").c_str(), nullptr);
 		for (const std::string& base : sheets.baseNames) {
 			std::wstring dst = exeDir + L"Data\\tree\\" + widen(base);
-			std::wstring pobSrc = pobDir + widen(base);
+			std::wstring pobSrc = pobDir.empty() ? L"" : pobDir + widen(base);
 			std::wstring gggSrc = srcDir + L"assets\\" + widen(base);
-			const std::wstring& src = file_exists(pobSrc) ? pobSrc : gggSrc;
+			const std::wstring& src = (!pobSrc.empty() && file_exists(pobSrc)) ? pobSrc : gggSrc;
 			if (!CopyFileW(src.c_str(), dst.c_str(), FALSE))
 				return fail(u8"複製圖集失敗: " + base);
 		}

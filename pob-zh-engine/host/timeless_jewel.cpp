@@ -1,4 +1,5 @@
 #include "timeless_jewel.h"
+#include "launcher_config.h" // FindPoe1Dir
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -489,10 +490,15 @@ bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
 	std::string nameA; // ascii jewel name without spaces (e.g. "BrutalRestraint")
 	std::wstring nameW;
 	for (char c : it->second) if (c != ' ') { nameA.push_back(c); nameW.push_back((wchar_t)(unsigned char)c); }
-	std::wstring path = exeDir + L"PathOfBuildingCommunity\\Data\\TimelessJewelData\\" + nameW + L".bin";
+	std::wstring pobDir = FindPoe1Dir(exeDir);
+	if (pobDir.empty()) {
+		if (err) *err = u8"找不到 PoE1 版 POB 資料夾(需放在 pob-zh.exe 旁,名稱不限,內含 Launch.lua)";
+		return false;
+	}
+	std::wstring path = pobDir + L"Data\\TimelessJewelData\\" + nameW + L".bin";
 	if (!read_file_bytes(path, out)) {
 		if (err) *err = u8"找不到 " + nameA +
-		                u8".bin(需要旁邊有 PathOfBuildingCommunity;Glorious Vanity 首次需先讓 POB 解壓 .zip 產生 .bin)";
+		                u8".bin(需要旁邊有 PoE1 版 POB;Glorious Vanity 首次需先讓 POB 解壓 .zip 產生 .bin)";
 		return false;
 	}
 	return true;

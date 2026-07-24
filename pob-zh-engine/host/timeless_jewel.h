@@ -129,8 +129,8 @@ struct TJStatTemplate {
 // conqueror-type id prefix); 0 returns the union across all jewels.
 std::vector<TJStatTemplate> TJStatTemplates(const TJDataset& ds, int jewelType = 0);
 
-// Load the whole .bin for a jewel type from the user's PoB folder next to the
-// exe: <exeDir>PathOfBuildingCommunity\Data\TimelessJewelData\<Name>.bin.
+// Load the whole .bin for a jewel type from the detected PoE1 PoB install
+// (FindPoe1Dir): <pob dir>\Data\TimelessJewelData\<Name>.bin.
 bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
                std::string& out, std::string* err);
 

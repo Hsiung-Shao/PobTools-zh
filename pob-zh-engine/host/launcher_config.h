@@ -11,10 +11,16 @@ struct LauncherConfig {
 	std::wstring fontFile;    // CJK font filename under Fonts\ (e.g. "NotoSansTC-Regular.ttf")
 };
 
-// Detected sibling POB installs; empty string = not found.
+// Detected POB installs; empty string = not found. Detection order per slot:
+// canonical folder names first (PathOfBuildingCommunity[-Portable] / -PoE2-Portable),
+// then any first-level subfolder holding Launch.lua (name containing "poe2" =>
+// the PoE2 fork, sorted for a deterministic pick), then the exe directory itself
+// (pob-zh.exe dropped inside a POB folder), classified by its own folder name.
 struct InstallInfo {
-	std::wstring poe1Lua;     // <exe dir>\PathOfBuildingCommunity\Launch.lua
-	std::wstring poe2Lua;     // <exe dir>\PathOfBuildingCommunity-PoE2-Portable\Launch.lua
+	std::wstring poe1Dir;     // install folder, no trailing backslash
+	std::wstring poe2Dir;
+	std::wstring poe1Lua;     // <poe1Dir>\Launch.lua
+	std::wstring poe2Lua;     // <poe2Dir>\Launch.lua
 	std::string poe1Version;  // manifest.xml Version number ("2.65.0"); "" when unknown
 	std::string poe2Version;
 };
@@ -22,6 +28,14 @@ struct InstallInfo {
 LauncherConfig LoadLauncherConfig(const std::wstring& iniPath);
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg);
 InstallInfo DetectInstalls(const std::wstring& exeDir);
+
+// Detected PoE1 POB install dir with a trailing backslash; L"" when none.
+// For components that read files out of the PoE1 install (TreeData, jewels).
+std::wstring FindPoe1Dir(const std::wstring& exeDir);
+
+// Headless check of the DetectInstalls rules against synthetic folder layouts
+// under %TEMP%; report at <exeDir>PobTools\detect_selftest.txt, 0 = all pass.
+int RunDetectInstallsSelfTest(const std::wstring& exeDir);
 
 // Default bundled CJK font (open-source Noto Sans TC). FZ_ZY.ttf stays available
 // as a selectable fallback.
