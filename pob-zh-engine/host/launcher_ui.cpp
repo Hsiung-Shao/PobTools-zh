@@ -3,6 +3,7 @@
 #include "ui_theme.h"
 #include "app_version.h"
 #include "app_update.h"
+#include "changelog.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -118,13 +119,14 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		b.AddText(t->editor); b.AddText(t->filterEditor); b.AddText(t->atlasPlanner);
 		b.AddText(t->timelessJewel);
 		b.AddText(t->gamesSection); b.AddText(t->toolsSection); b.AddText(t->linksSection);
-		b.AddText(t->about); b.AddText(t->aboutBody); b.AddText(t->support); b.AddText(t->close);
+		b.AddText(t->about); b.AddText(t->changelog); b.AddText(t->aboutBody); b.AddText(t->support); b.AddText(t->close);
 		b.AddText(t->font);
 		b.AddText(t->updateAvailable); b.AddText(t->updateNow); b.AddText(t->updateDownloading);
 		b.AddText(t->updatePreparing); b.AddText(t->updateRestarting); b.AddText(t->updateFailed);
 		b.AddText(t->updateRetry); b.AddText(t->updateTransDone);
 	}
 	b.AddText(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
+	b.AddText(kChangelogText);      // version-history dialog body
 	for (const LinkEntry& l : kLinks) b.AddText(l.label);
 	b.AddText(u8"繁體中文简体한국어Korean·"); // language combo item labels + link separator
 	for (const std::string& t : extraTexts) b.AddText(t.c_str());
@@ -555,7 +557,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImVec2 lp = ImGui::GetCursorScreenPos();
 			dl->AddLine(ImVec2(lp.x, lp.y - 10.0f * scale), ImVec2(lp.x + inner, lp.y - 10.0f * scale), kGlassEdge, 1.0f);
 
-			float comboW = 180.0f * scale;
+			float comboW = 150.0f * scale;
 			ImGui::AlignTextToFramePadding();
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			ImGui::TextUnformatted(S.language);
@@ -576,13 +578,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				if (d == std::string::npos) d = s.rfind(".TTF");
 				return d != std::string::npos ? s.substr(0, d) : s;
 			};
-			ImGui::SameLine(0, 16.0f * scale);
+			ImGui::SameLine(0, 12.0f * scale);
 			ImGui::AlignTextToFramePadding();
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			ImGui::TextUnformatted(S.font);
 			ImGui::PopStyleColor();
 			ImGui::SameLine();
-			ImGui::SetNextItemWidth(190.0f * scale);
+			ImGui::SetNextItemWidth(160.0f * scale);
 			if (ImGui::BeginCombo("##font", fontStem(cfg.fontFile).c_str())) {
 				for (const std::wstring& f : fontList) {
 					if (ImGui::Selectable(fontStem(f).c_str(), f == cfg.fontFile) && f != cfg.fontFile) {
@@ -593,25 +595,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::EndCombo();
 			}
 
-			// Version tag (ASCII only, no glyph-atlas work needed).
-			ImGui::SameLine(0, 18.0f * scale);
-			ImGui::AlignTextToFramePadding();
-			ImGui::TextDisabled("v" POBTOOLS_VERSION_STRING);
-
-			// "About" opens a modal with version, attribution and a support link.
-			ImGui::SameLine(0, 18.0f * scale);
-			{
-				ImVec2 sz = ImGui::CalcTextSize(S.about);
+			// Status-bar links: the version tag and the explicit "版本資訊" text
+			// both open the scrollable version history, "About" opens the about
+			// modal.
+			auto statusLink = [&](const char* label, const char* popupId, const char* tip) {
+				ImGui::SameLine(0, 12.0f * scale);
+				ImGui::AlignTextToFramePadding();
+				ImVec2 sz = ImGui::CalcTextSize(label);
 				ImVec2 p = ImGui::GetCursorScreenPos();
 				bool hov = ImGui::IsMouseHoveringRect(p, p + sz);
 				ImGui::PushStyleColor(ImGuiCol_Text, hov ? PobUi::Accent() : PobUi::MutedText());
-				ImGui::TextUnformatted(S.about);
+				ImGui::TextUnformatted(label);
 				ImGui::PopStyleColor();
-				if (ImGui::IsItemHovered()) {
+				if (hov) {
 					ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-					if (ImGui::IsMouseClicked(0)) ImGui::OpenPopup("about_modal");
+					// OpenPopup must run before SetTooltip: the tooltip window
+					// becomes the current window scope and the popup id would
+					// otherwise be registered at the wrong level.
+					if (ImGui::IsMouseClicked(0)) ImGui::OpenPopup(popupId);
+					if (tip) ImGui::SetTooltip("%s", tip);
 				}
-			}
+			};
+			statusLink("v" POBTOOLS_VERSION_STRING, "changelog_modal", S.changelog);
+			statusLink(S.changelog, "changelog_modal", nullptr);
+			statusLink(S.about, "about_modal", nullptr);
 			ImGui::SameLine();
 			float cbW = ImGui::CalcTextSize(S.returnAfterExit).x + ImGui::GetFrameHeight() + 8.0f * scale;
 			ImGui::SetCursorPosX(W - padX - cbW);
@@ -644,7 +651,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
 				ImGui::TextUnformatted(body.c_str() + start, body.c_str() + start + len);
 				ImGui::PopTextWrapPos();
-				ImGui::Dummy(ImVec2(0, 6.0f * scale)); // leading between lines
+				ImGui::Dummy(ImVec2(0, 9.0f * scale)); // leading between lines
 				if (nl == std::string::npos) break;
 				start = nl + 1;
 			}
@@ -652,6 +659,62 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::Dummy(ImVec2(0, 6.0f * scale));
 			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
 			ImGui::Dummy(ImVec2(0, 16.0f * scale));
+			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+
+		// Version-history modal: same styling as About, but the body lives in a
+		// fixed-height scrolling child so long release notes stay browsable.
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * scale, 22.0f * scale));
+		ImGui::SetNextWindowSize(ImVec2(600.0f * scale, 480.0f * scale), ImGuiCond_Appearing);
+		bool logOpen = ImGui::BeginPopupModal("changelog_modal", nullptr, ImGuiWindowFlags_NoTitleBar);
+		ImGui::PopStyleVar();
+		if (logOpen) {
+			ImGui::PushFont(fonts.title);
+			ImGui::TextUnformatted(S.changelog);
+			ImGui::PopFont();
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted("PobTools v" POBTOOLS_VERSION_STRING);
+			ImGui::PopStyleColor();
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+
+			float footerH = ImGui::GetFrameHeightWithSpacing() + 10.0f * scale;
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * scale, 14.0f * scale));
+			ImGui::BeginChild("##changelog_scroll", ImVec2(0, -footerH), true,
+			                  ImGuiWindowFlags_AlwaysUseWindowPadding);
+			{
+				// Per-line render: release headers ("vX.Y.Z...") in accent color
+				// with a gap above, blank lines as wide separators, and a little
+				// leading everywhere so the CJK body breathes.
+				const std::string log = kChangelogText;
+				size_t start = 0;
+				bool first = true;
+				while (start <= log.size()) {
+					size_t nl = log.find('\n', start);
+					size_t len = (nl == std::string::npos ? log.size() : nl) - start;
+					std::string line = log.substr(start, len);
+					if (line.empty()) {
+						ImGui::Dummy(ImVec2(0, 10.0f * scale)); // between releases
+					} else {
+						bool isVer = line.size() > 1 && line[0] == 'v' &&
+						             line[1] >= '0' && line[1] <= '9';
+						if (isVer && !first) ImGui::Dummy(ImVec2(0, 2.0f * scale));
+						ImGui::PushTextWrapPos(0.0f); // wrap at the child's right edge
+						if (isVer) ImGui::PushStyleColor(ImGuiCol_Text, PobUi::Accent());
+						ImGui::TextUnformatted(line.c_str());
+						if (isVer) ImGui::PopStyleColor();
+						ImGui::PopTextWrapPos();
+						ImGui::Dummy(ImVec2(0, 5.0f * scale)); // line leading
+					}
+					first = false;
+					if (nl == std::string::npos) break;
+					start = nl + 1;
+				}
+			}
+			ImGui::EndChild();
+			ImGui::PopStyleVar();
+
+			ImGui::Dummy(ImVec2(0, 4.0f * scale));
 			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();
 		}

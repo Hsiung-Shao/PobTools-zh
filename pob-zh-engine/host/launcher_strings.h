@@ -25,6 +25,7 @@ struct LauncherStrings {
 	const char* toolsSection;
 	const char* linksSection;
 	const char* about;            // about dialog: button + title
+	const char* changelog;        // version-history dialog: button + title
 	const char* aboutBody;        // about dialog: description / attribution (multi-line)
 	const char* support;          // about dialog: support / buy-me-a-coffee link label
 	const char* close;            // about dialog: close button
@@ -61,6 +62,7 @@ inline constexpr LauncherStrings STR_ZHTW = {
 	u8"工具",
 	u8"外部連結",
 	u8"關於",
+	u8"版本資訊",
 	u8"PobTools — Path of Building 繁體中文化工具\n非官方粉絲工具，與 Grinding Gear Games 無關。\n程式碼採 MIT 授權，基於 Path of Building Community 與 SimpleGraphic（皆 MIT）。\n若這個工具對你有幫助，歡迎請我喝杯咖啡，這是我持續維護的動力。",
 	u8"請我喝杯咖啡",
 	u8"關閉",
@@ -97,6 +99,7 @@ inline constexpr LauncherStrings STR_EN = {
 	u8"Tools",
 	u8"Links",
 	u8"About",
+	u8"Version history",
 	u8"PobTools — Traditional Chinese localization for Path of Building.\nUnofficial fan-made tool, not affiliated with Grinding Gear Games.\nMIT-licensed, built on Path of Building Community and SimpleGraphic (both MIT).\nIf you find it useful, consider buying me a coffee — it keeps me going.",
 	u8"Buy me a coffee",
 	u8"Close",

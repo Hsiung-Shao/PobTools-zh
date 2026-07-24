@@ -4,9 +4,10 @@
  * VERSIONINFO), so this header must stay plain #define with a classic
  * include guard (rc.exe does not understand #pragma once).
  *
- * Release checklist: bump these three numbers, rebuild pob-zh, then run
- * tools/package_release.ps1 -Version <same version> (the script asserts the
- * two match). Convention consumed by the auto updater (app_update.cpp):
+ * Release checklist: bump these three numbers, add a matching entry to
+ * changelog.h, rebuild pob-zh, then run tools/package_release.ps1
+ * -Version <same version> (the script asserts the two match). Convention
+ * consumed by the auto updater (app_update.cpp):
  * patch bump = translation-data-only release (applied silently);
  * minor/major bump = app release (update prompt in the launcher).
  */
@@ -14,7 +15,7 @@
 #define POBTOOLS_APP_VERSION_H
 
 #define POBTOOLS_VER_MAJOR 0
-#define POBTOOLS_VER_MINOR 3
+#define POBTOOLS_VER_MINOR 4
 #define POBTOOLS_VER_PATCH 0
 
 #define PT_VER_STR2(x) #x
