@@ -39,7 +39,8 @@ HttpsClient::~HttpsClient()
 }
 
 bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
-                      std::string* err, const std::atomic<bool>* cancel)
+                      std::string* err, const std::atomic<bool>* cancel,
+                      const ProgressFn& onProgress)
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
@@ -63,6 +64,13 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
 		if (code == 200) {
 			ok = true;
+			unsigned long long total = 0;
+			if (onProgress) {
+				DWORD cl = 0, clLen = sizeof(cl);
+				if (WinHttpQueryHeaders(hReq, WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+					WINHTTP_HEADER_NAME_BY_INDEX, &cl, &clLen, WINHTTP_NO_HEADER_INDEX))
+					total = cl;
+			}
 			DWORD avail = 0;
 			do {
 				if (cancel && cancel->load()) { ok = false; reason = u8"已取消"; break; }
@@ -79,6 +87,7 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 					break;
 				}
 				out.resize(off + rd);
+				if (onProgress) onProgress(out.size(), total);
 			} while (avail > 0);
 			if (ok && out.empty()) { ok = false; reason = u8"回應為空"; }
 		} else {

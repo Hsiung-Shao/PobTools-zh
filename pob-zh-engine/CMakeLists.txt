@@ -361,6 +361,10 @@ if (WIN32)
         host/passive_tree_view.cpp
         host/passive_import.cpp
         host/passive_tree_update.cpp
+        host/app_update.cpp
+        host/zip_extract.cpp
+        host/hash_sha256.cpp
+        dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
         ${IMGUI_SOURCES}
@@ -374,6 +378,7 @@ if (WIN32)
         dep/imgui/backends
         dep/imgui/misc/cpp
         dep/stb
+        dep/miniz
         ${CMAKE_CURRENT_SOURCE_DIR}/deps/nlohmann
     )
     set_property(TARGET pob-zh PROPERTY

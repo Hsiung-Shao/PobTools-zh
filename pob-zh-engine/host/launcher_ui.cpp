@@ -1,6 +1,8 @@
 #include "launcher_ui.h"
 #include "launcher_strings.h"
 #include "ui_theme.h"
+#include "app_version.h"
+#include "app_update.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -118,7 +120,11 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		b.AddText(t->gamesSection); b.AddText(t->toolsSection); b.AddText(t->linksSection);
 		b.AddText(t->about); b.AddText(t->aboutBody); b.AddText(t->support); b.AddText(t->close);
 		b.AddText(t->font);
+		b.AddText(t->updateAvailable); b.AddText(t->updateNow); b.AddText(t->updateDownloading);
+		b.AddText(t->updatePreparing); b.AddText(t->updateRestarting); b.AddText(t->updateFailed);
+		b.AddText(t->updateRetry); b.AddText(t->updateTransDone);
 	}
+	b.AddText(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
 	for (const LinkEntry& l : kLinks) b.AddText(l.label);
 	b.AddText(u8"繁體中文简体한국어Korean·"); // language combo item labels + link separator
 	for (const std::string& t : extraTexts) b.AddText(t.c_str());
@@ -291,7 +297,8 @@ static bool PrimaryButton(const char* id, const char* label, bool enabled, const
 	return clicked && enabled;
 }
 
-LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, const std::wstring& exeDir)
+LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, const std::wstring& exeDir,
+                            AppUpdater* appUpd)
 {
 	if (!glfwInit()) {
 		MessageBoxW(nullptr, L"無法初始化 GLFW，啟動器介面無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
@@ -359,7 +366,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	bool openFilterEditor = false;
 	bool openAtlasPlanner = false;
 	bool openTimelessJewel = false;
-	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !openFilterEditor && !openAtlasPlanner && !openTimelessJewel) {
+	bool applyUpdate = false;
+	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
+	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !openFilterEditor && !openAtlasPlanner && !openTimelessJewel && !applyUpdate) {
 		glfwPollEvents();
 
 		// Live font switch: rebuild the glyph atlas between frames when the user
@@ -379,6 +388,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// When the font has no CJK/Hangul glyphs, fall back to English labels.
 		const LauncherStrings& S = fonts.cjkOk ? StringsFor(kLocaleIds[localeIdx], fonts.koreanOk) : STR_EN;
 		const char* localeLabels[2] = { u8"繁體中文", u8"English" };
+
+		// App-updater snapshot for this frame. While the update is in flight the
+		// launch/tool actions are disabled so the auto-relaunch cannot interrupt
+		// anything; a ready stage closes the window via ApplyAppUpdate.
+		AppUpdater::Status ust;
+		if (appUpd) {
+			ust = appUpd->Poll();
+			if (ust.phase == AppUpdatePhase::UpToDate) {
+				appUpd->AckNotice(); // silent: only problems and news are shown
+				ust = appUpd->Poll();
+			}
+			if (ust.phase == AppUpdatePhase::TransDone) {
+				if (transNoticeUntil == 0.0) transNoticeUntil = ImGui::GetTime() + 6.0;
+				if (ImGui::GetTime() >= transNoticeUntil) {
+					appUpd->AckNotice();
+					transNoticeUntil = 0.0;
+					ust = appUpd->Poll();
+				}
+			}
+			if (ust.phase == AppUpdatePhase::AppReadyToApply) applyUpdate = true;
+		}
+		bool updaterBusy = ust.phase == AppUpdatePhase::AppDownloading ||
+		                   ust.phase == AppUpdatePhase::AppStaging ||
+		                   ust.phase == AppUpdatePhase::AppReadyToApply;
 
 		ImGuiIO& io = ImGui::GetIO();
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -404,10 +437,65 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				bp + ImVec2(badge + 16.0f * scale, -2.0f * scale), kTextMain, S.title);
 			dl->AddText(fonts.small, kSmallFontSize * scale,
 				bp + ImVec2(badge + 16.0f * scale, kTitleFontSize * scale + 4.0f * scale), kTextMuted, S.subtitle);
+
+			// Updater widget, top-right of the header (kept off the busy status bar).
+			if (appUpd && ust.phase != AppUpdatePhase::Idle && ust.phase != AppUpdatePhase::Checking) {
+				ImVec2 keep = ImGui::GetCursorPos();
+				ImGui::PushFont(fonts.small);
+				auto placeRight = [&](float w, float h) {
+					ImGui::SetCursorScreenPos(bp + ImVec2(inner - w, (badge - h) * 0.5f));
+				};
+				if (ust.phase == AppUpdatePhase::AppAvailable) {
+					std::string label = std::string(S.updateAvailable) + ust.latestVer;
+					float w = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+					placeRight(w, ImGui::GetFrameHeight());
+					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.60f, 0.20f, 0.45f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.60f, 0.20f, 0.65f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.85f, 0.60f, 0.20f, 0.85f));
+					if (ImGui::Button(label.c_str())) appUpd->StartAppUpdate();
+					ImGui::PopStyleColor(3);
+					if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.updateNow);
+				} else if (ust.phase == AppUpdatePhase::AppDownloading) {
+					char prog[96];
+					if (ust.bytesTotal > 0)
+						snprintf(prog, sizeof(prog), "%s%.1f / %.1f MB", S.updateDownloading,
+						         ust.bytesDone / 1048576.0, ust.bytesTotal / 1048576.0);
+					else
+						snprintf(prog, sizeof(prog), "%s%.1f MB", S.updateDownloading,
+						         ust.bytesDone / 1048576.0);
+					float w = ImGui::CalcTextSize(prog).x;
+					placeRight(w, ImGui::GetTextLineHeight());
+					ImGui::TextDisabled("%s", prog);
+				} else if (ust.phase == AppUpdatePhase::AppStaging ||
+				           ust.phase == AppUpdatePhase::AppReadyToApply) {
+					const char* txt = ust.phase == AppUpdatePhase::AppStaging ? S.updatePreparing
+					                                                          : S.updateRestarting;
+					float w = ImGui::CalcTextSize(txt).x;
+					placeRight(w, ImGui::GetTextLineHeight());
+					ImGui::TextDisabled("%s", txt);
+				} else if (ust.phase == AppUpdatePhase::TransDone) {
+					std::string txt = std::string(S.updateTransDone) + ust.latestVer;
+					float w = ImGui::CalcTextSize(txt.c_str()).x;
+					placeRight(w, ImGui::GetTextLineHeight());
+					ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", txt.c_str());
+				} else if (ust.phase == AppUpdatePhase::Error) {
+					std::string txt = std::string(S.updateFailed) + ust.message;
+					float w = ImGui::CalcTextSize(txt.c_str()).x +
+					          ImGui::CalcTextSize(S.updateRetry).x + 24.0f * scale;
+					placeRight(w, ImGui::GetFrameHeight());
+					ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f), "%s", txt.c_str());
+					ImGui::SameLine();
+					if (ImGui::SmallButton(S.updateRetry)) appUpd->StartAppUpdate();
+				}
+				ImGui::PopFont();
+				ImGui::SetCursorPos(keep);
+			}
+
 			ImGui::Dummy(ImVec2(0, badge + 10.0f * scale));
 		}
 
 		// Games: one wide row per install, launch button inline.
+		if (updaterBusy) ImGui::BeginDisabled();
 		SectionLabel(fonts, scale, inner, S.gamesSection);
 		bool poe1Ok = !installs.poe1Lua.empty();
 		bool poe2Ok = !installs.poe2Lua.empty();
@@ -446,6 +534,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ImGui::Button(S.timelessJewel, toolSize)) openTimelessJewel = true;
 			ImGui::PopStyleColor();
 		}
+		if (updaterBusy) ImGui::EndDisabled();
 		ImGui::Dummy(ImVec2(0, 8.0f * scale));
 
 		// Link board: three stretch columns of external links.
@@ -504,6 +593,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::EndCombo();
 			}
 
+			// Version tag (ASCII only, no glyph-atlas work needed).
+			ImGui::SameLine(0, 18.0f * scale);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextDisabled("v" POBTOOLS_VERSION_STRING);
+
 			// "About" opens a modal with version, attribution and a support link.
 			ImGui::SameLine(0, 18.0f * scale);
 			{
@@ -537,7 +631,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::TextUnformatted("PobTools");
 			ImGui::PopFont();
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted("Build " __DATE__);
+			ImGui::TextUnformatted("v" POBTOOLS_VERSION_STRING "  -  Build " __DATE__);
 			ImGui::PopStyleColor();
 			ImGui::Dummy(ImVec2(0, 14.0f * scale));
 
@@ -589,5 +683,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	if (openFilterEditor) return LauncherResult::OpenFilterEditor;
 	if (openAtlasPlanner) return LauncherResult::OpenAtlasPlanner;
 	if (openTimelessJewel) return LauncherResult::OpenTimelessJewel;
+	if (applyUpdate) return LauncherResult::ApplyAppUpdate;
 	return launch ? LauncherResult::Launch : LauncherResult::Quit;
 }

@@ -40,6 +40,7 @@
 #include "passive_tree_data.h"
 #include "passive_import.h"
 #include "passive_tree_update.h"
+#include "app_update.h"
 #include "ui_theme.h"
 
 #pragma comment(lib, "shell32.lib")
@@ -256,6 +257,26 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring arg4 = (argvW && argc >= 5) ? argvW[4] : L"";
 	if (argvW) LocalFree(argvW);
 
+	// App-updater leftovers (*.old backups + download cache) are cleaned on
+	// every non-engine start; the engine child skips it to keep POB startup lean.
+	if (arg1 != L"--engine") CleanupAppUpdateLeftovers(dir);
+
+	// Headless app self-update: check releases, apply translations / stage+swap.
+	if (arg1 == L"--app-update") {
+		return RunAppUpdateCli(dir, /*checkOnly=*/false);
+	}
+	if (arg1 == L"--app-update-check") {
+		return RunAppUpdateCli(dir, /*checkOnly=*/true);
+	}
+	// One-time redirect/hash verification against the live release assets.
+	if (arg1 == L"--app-fetch-test") {
+		return RunAppFetchTest(dir);
+	}
+	// Offline updater checks (zip/zip-slip/sha256/policy/state/swap+rollback).
+	if (arg1 == L"--app-update-selftest") {
+		return RunAppUpdateSelfTest(dir);
+	}
+
 	// Headless timeless-jewel engine checks.
 	if (arg1 == L"--tj-selftest") {
 		return RunTimelessJewelSelfTest(dir);
@@ -381,6 +402,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// self-updated) bypasses the UI once and reopens the updated POB directly.
 	std::wstring ini = dir + L"pob-zh.ini";
 	std::wstring pendingLua = take_relaunch_marker(dir);
+
+	// App self-updater: daily-throttled background check; the launcher header
+	// shows the result. Destructor joins the worker on every return path.
+	AppUpdater appUpdater;
+	appUpdater.Init(dir);
+	appUpdater.RequestCheck(false);
+
 	for (;;) {
 		LauncherConfig cfg = LoadLauncherConfig(ini);
 		InstallInfo installs = DetectInstalls(dir);
@@ -391,8 +419,21 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			pendingLua.clear();
 		}
 		if (launchLua.empty()) {
-			LauncherResult res = ShowLauncher(cfg, installs, dir);
+			LauncherResult res = ShowLauncher(cfg, installs, dir, &appUpdater);
 			SaveLauncherConfig(ini, cfg); // remember choices regardless of outcome
+			if (res == LauncherResult::ApplyAppUpdate) {
+				AppUpdater::Status ust = appUpdater.Poll();
+				appUpdater.Shutdown(); // worker idle; join before touching engine\*
+				std::string aerr;
+				if (ApplyStagedAppUpdateAndRelaunch(dir, ust.stageDir, ust.latestVer,
+				                                    /*relaunch=*/true, &aerr) == 0) {
+					return 0; // the freshly spawned new exe takes over
+				}
+				MessageBoxW(nullptr, (L"更新套用失敗：\n" + from_utf8(aerr)).c_str(),
+				            L"PobTools", MB_ICONERROR | MB_OK);
+				appUpdater.Init(dir); // resume the launcher with a fresh worker
+				continue;
+			}
 			if (res == LauncherResult::OpenEditor) {
 				ShowEditor(dir, cfg.game, cfg.locale);
 				continue; // back to the launcher screen

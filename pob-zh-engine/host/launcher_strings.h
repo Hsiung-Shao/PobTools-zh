@@ -29,6 +29,14 @@ struct LauncherStrings {
 	const char* support;          // about dialog: support / buy-me-a-coffee link label
 	const char* close;            // about dialog: close button
 	const char* font;             // status bar: font picker label
+	const char* updateAvailable;  // status bar: orange button prefix ("New version v")
+	const char* updateNow;        // status bar: orange button suffix ("click to update")
+	const char* updateDownloading;// status bar: byte-progress prefix
+	const char* updatePreparing;  // status bar: extract/validate phase
+	const char* updateRestarting; // status bar: stage ready, about to relaunch
+	const char* updateFailed;     // status bar: error prefix (detail appended)
+	const char* updateRetry;      // status bar: small retry button
+	const char* updateTransDone;  // status bar: translation pack applied notice
 };
 
 inline constexpr LauncherStrings STR_ZHTW = {
@@ -57,6 +65,14 @@ inline constexpr LauncherStrings STR_ZHTW = {
 	u8"請我喝杯咖啡",
 	u8"關閉",
 	u8"字型",
+	u8"發現新版 v",
+	u8"，點擊更新",
+	u8"下載更新中 ",
+	u8"準備更新檔案…",
+	u8"更新完成，即將重新啟動…",
+	u8"更新失敗：",
+	u8"重試",
+	u8"翻譯資料已更新至 v",
 };
 
 inline constexpr LauncherStrings STR_EN = {
@@ -85,6 +101,14 @@ inline constexpr LauncherStrings STR_EN = {
 	u8"Buy me a coffee",
 	u8"Close",
 	u8"Font",
+	u8"New version v",
+	u8", click to update",
+	u8"Downloading update ",
+	u8"Preparing update files...",
+	u8"Update complete, restarting...",
+	u8"Update failed: ",
+	u8"Retry",
+	u8"Translation data updated to v",
 };
 
 // Only Traditional Chinese (zh-rTW) and English are offered. "en" (and any

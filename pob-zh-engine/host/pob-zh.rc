@@ -7,3 +7,28 @@
 //  - the PoB engine window (sys_programIcons_c in sys_video.cpp) enumerates the
 //    running exe's first icon group at runtime.
 GLFW_ICON ICON "pobtools.ico"
+
+// Version resource: numbers come from app_version.h (single source of truth
+// shared with the launcher UI and the app updater).
+#include "app_version.h"
+
+1 VERSIONINFO
+FILEVERSION POBTOOLS_VER_MAJOR, POBTOOLS_VER_MINOR, POBTOOLS_VER_PATCH, 0
+PRODUCTVERSION POBTOOLS_VER_MAJOR, POBTOOLS_VER_MINOR, POBTOOLS_VER_PATCH, 0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040404B0" // zh-TW, Unicode
+    BEGIN
+      VALUE "ProductName", "PobTools"
+      VALUE "FileDescription", "PobTools - Path of Building zh-TW launcher"
+      VALUE "FileVersion", POBTOOLS_VERSION_STRING
+      VALUE "ProductVersion", POBTOOLS_VERSION_STRING
+      VALUE "OriginalFilename", "pob-zh.exe"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x404, 1200
+  END
+END
