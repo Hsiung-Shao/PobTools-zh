@@ -209,6 +209,14 @@ static std::string digits_to_hash(const std::string &s) {
         /* Check for (X-Y) range pattern — collapse entire range to single # */
         size_t range_len = match_range(s, i);
         if (range_len > 0) {
+            if (in_number) {
+                /* Roll range attached to a value, e.g. "7(6-11)" from the
+                 * game's advanced item copy — absorb into the preceding #
+                 * so "+7(6-11) X" hashes the same as "+7 X". */
+                i += range_len - 1;
+                in_number = false;
+                continue;
+            }
             /* Absorb preceding '+' sign, same as for plain numbers */
             if (!result.empty() && result.back() == '+') {
                 result.pop_back();
@@ -255,11 +263,16 @@ static std::vector<std::string> extract_numbers(const std::string &s) {
         /* Check for (X-Y) range — extract as a single token */
         size_t range_len = match_range(s, i);
         if (range_len > 0) {
-            /* Flush any pending number */
             if (in_number) {
+                /* Roll range attached to a value, e.g. "7(6-11)" — keep the
+                 * range glued to its value as one token so fill_numbers()
+                 * reproduces the advanced-copy form POB parses natively. */
+                current += s.substr(i, range_len);
                 nums.push_back(current);
                 current.clear();
                 in_number = false;
+                i += range_len - 1;
+                continue;
             }
             /* Include preceding '+' sign */
             std::string range_text;
@@ -1410,8 +1423,34 @@ static std::string strip_suffix(const std::string &line, std::string &suffix) {
 static std::string reverse_one_line(const std::string &line) {
     if (line.empty()) return line;
 
-    /* 0. Separator lines pass through */
+    /* 0. Separator lines. The 3.29+ copy format emits variable-width dash
+     * rows (matching the section width); POB only recognises exactly
+     * "--------", so normalize any all-dash line to the canonical 8-dash. */
+    {
+        bool all_dash = line.size() >= 4;
+        for (size_t i = 0; all_dash && i < line.size(); i++) {
+            if (line[i] != '-') all_dash = false;
+        }
+        if (all_dash) return "--------";
+    }
     if (line.find("--------") != std::string::npos) return line;
+
+    /* 0b. Advanced-copy affix annotation lines, e.g.
+     *   { 前綴 "微光的"(階層：10)— 防禦,能量護盾 }
+     * The dictionary has no English affix names, so POB could never match
+     * them to its affix database — strip the line. Mods still parse in
+     * advanced-copy mode via their roll ranges, e.g. "+7(6-11)". */
+    if (line.size() >= 2 && line[0] == '{' && line.back() == '}') {
+        /* 前綴 = E5 89 8D E7 B6 B4, 後綴 = E5 BE 8C E7 B6 B4, 階層 = E9 9A 8E E5 B1 A4 */
+        static const char s_prefix_cn[] = "\xe5\x89\x8d\xe7\xb6\xb4";
+        static const char s_suffix_cn[] = "\xe5\xbe\x8c\xe7\xb6\xb4";
+        static const char s_tier_cn[]   = "\xe9\x9a\x8e\xe5\xb1\xa4";
+        if (line.find(s_prefix_cn) != std::string::npos ||
+            line.find(s_suffix_cn) != std::string::npos ||
+            line.find(s_tier_cn) != std::string::npos) {
+            return "";  /* empty = skip this line */
+        }
+    }
 
     /* 1. Try item header translation (物品種類:, 稀有度:, etc.) */
     std::string header_result;
