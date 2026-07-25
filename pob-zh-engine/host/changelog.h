@@ -8,6 +8,14 @@
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v0.7.0（2026-07-25）\n"
+	u8"修正：解壓到舊資料夾時無法啟動 POB\n"
+	u8"　- 安裝根目錄殘留的舊版 DLL 不再蓋過\n"
+	u8"　　engine 資料夾內的新版檔案。\n"
+	u8"修正：相容 POB 2.66 的 OAuth 匯入功能\n"
+	u8"　- 內建 sha2 模組備援，POB 原地升級\n"
+	u8"　　缺檔時自動補位，開啟 build 不再報錯。\n"
+	u8"\n"
 	u8"v0.6.0（2026-07-25）\n"
 	u8"修正：支援 3.29 新版物品複製格式\n"
 	u8"　- 遊戲內 Ctrl+C 的詞綴數值範圍（如 +7(6-11)）\n"

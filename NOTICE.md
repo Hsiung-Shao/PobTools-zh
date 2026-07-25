@@ -18,6 +18,7 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 | Dear ImGui(啟動器 / 編輯器 UI) | MIT | © Omar Cornut |
 | nlohmann/json 3.11.3 | MIT | © Niels Lohmann |
 | base64(`engine/common/base64.c`,來自 curl) | curl/MIT | © Daniel Stenberg 等 |
+| pure_lua_SHA(`engine/lua/sha2.lua`,POB 執行期備援模組) | MIT | © Egor Skriptunoff — https://github.com/Egor-Skriptunoff/pure_lua_SHA |
 
 > Path of Building Community 本體(`Path of Building.exe`、`Modules/`、`TreeData/` 等)
 > **不包含**在本專案的發佈包中,由使用者自行取得並置於 `pob-zh.exe` 旁。

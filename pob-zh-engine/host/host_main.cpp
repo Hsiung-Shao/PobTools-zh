@@ -161,7 +161,12 @@ static void apply_locale_env(const std::wstring& dir)
 static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua)
 {
 	std::wstring dllPath = dllDir + L"SimpleGraphic.dll";
-	HMODULE engine = LoadLibraryW(dllPath.c_str());
+	// ALTERED_SEARCH_PATH: resolve SimpleGraphic's dependencies (fmt.dll etc.)
+	// from its own directory FIRST. The default order starts with the exe dir,
+	// so a stale flat-layout DLL left in the install root (e.g. an old fmt.dll
+	// after unzipping a new release over an old install) would win and fail
+	// with "entry point not found". Field-reported on 0.5/0.6 fresh unzips.
+	HMODULE engine = LoadLibraryExW(dllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
 	if (!engine) {
 		MessageBoxW(nullptr, L"無法載入 SimpleGraphic.dll。", L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;

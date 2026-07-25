@@ -333,6 +333,15 @@ bool ui_subscript_c::Start()
 		std::string path = lua_tostring(L, -1);
 		lua_pop(L, 1);
 		path += ";" + wd + "/lua/?.lua;" + wd + "/lua/?/init.lua";
+		// Fallback runtime modules bundled next to the engine DLL (same as
+		// InitAPI): covers lua files POB's built-in updater does not ship
+		// (e.g. sha2.lua, required by PoEAPI downloads in this state).
+		{
+			std::string dllLua = EngineModuleDir().generic_string();
+			if (!dllLua.empty()) {
+				path += ";" + dllLua + "/lua/?.lua;" + dllLua + "/lua/?/init.lua";
+			}
+		}
 		lua_pushstring(L, path.c_str());
 		lua_setfield(L, -2, "path");
 

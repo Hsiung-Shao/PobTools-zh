@@ -262,6 +262,12 @@ install(TARGETS SimpleGraphic RUNTIME DESTINATION "engine")
 # POB's Lua state after OnInit. Ships in engine/ (never the POB folder).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua" DESTINATION "engine")
 
+# Fallback pure-Lua runtime modules. POB's built-in updater does not ship new
+# runtime lua files (e.g. sha2.lua, required by PoEAPI since POB 2.66), so a
+# user who updated POB in place lacks them. package.path prefers the POB
+# folder's own copy (engine/lua is appended last in ui_api.cpp InitAPI).
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/sha2.lua" DESTINATION "engine/lua")
+
 if (WIN32)
     set(DEPS_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 
