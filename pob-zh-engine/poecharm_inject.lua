@@ -113,6 +113,71 @@ PATCHES["PassiveTreeView"] = function(class)
 	end
 end
 
+-- Anoint popup (NotableDBControl): match the CJK query against the translated
+-- notable name and stat lines. Non-search eligibility (anointable recipe,
+-- PoE2 emotion checkboxes) is delegated to the original by probing it with an
+-- empty query, so upstream filter changes keep working untouched.
+PATCHES["NotableDBControl"] = function(class)
+	local orig = class.DoesNotableMatchFilters
+	if orig then
+		class.DoesNotableMatchFilters = function(self, node)
+			local search = self.controls and self.controls.search
+			local buf = search and search.buf
+			if not hasCJK(buf) then
+				return orig(self, node)
+			end
+			search.buf = ""
+			local ok, eligible = pcall(orig, self, node)
+			search.buf = buf
+			if not ok or not eligible then return false end
+			local q = buf:lower()
+			local mode = self.controls.searchMode and self.controls.searchMode.selIndex or 1
+			if (mode == 1 or mode == 2) and node.dn then
+				local dn = PobToolsTranslate(node.dn)
+				if dn and dn:lower():find(q, 1, true) then return true end
+			end
+			if (mode == 1 or mode == 3) and node.sd then
+				for _, line in ipairs(node.sd) do
+					local t = PobToolsTranslate(line)
+					if t and t:lower():find(q, 1, true) then return true end
+				end
+			end
+			return false
+		end
+	end
+end
+
+-- Dropdown typed search (SearchHost mixin; e.g. the enchant popup lists):
+-- after POB's English word matching, also accept rows whose translated label
+-- contains the CJK query. Highlight ranges are byte offsets into the English
+-- label, so translation hits clear them (row is shown, just not highlighted).
+PATCHES["SearchHost"] = function(class)
+	local orig = class.UpdateSearch
+	if orig then
+		class.UpdateSearch = function(self)
+			orig(self)
+			if not hasCJK(self.searchTerm) then return end
+			local list = self.searchListAccessor and self.searchListAccessor()
+			if not list then return end
+			local q = self.searchTerm:lower()
+			local changed = false
+			for idx, entry in ipairs(list) do
+				local info = self.searchInfos[idx]
+				if info and not info.matches then
+					local value = self.valueAccessor and self.valueAccessor(entry) or entry
+					local zh = type(value) == "string" and PobToolsTranslate(value) or nil
+					if zh and zh:lower():find(q, 1, true) then
+						info.matches = true
+						info.ranges = {}
+						changed = true
+					end
+				end
+			end
+			if changed then self:UpdateMatchCount() end
+		end
+	end
+end
+
 -- ===== apply now (loaded classes) + on future load (wrap LoadModule) =====
 -- NOTE: a class file runs `newClass(...)` FIRST and defines its methods AFTER,
 -- so methods only exist once the whole file has finished loading. POB loads
