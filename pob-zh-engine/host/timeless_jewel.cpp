@@ -1,10 +1,12 @@
 #include "timeless_jewel.h"
 #include "launcher_config.h" // FindPoe1Dir
+#include "passive_tree_data.h" // node names for the --tj-verify dump
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
 #include <json.hpp> // nlohmann::json (deps/nlohmann)
+#include <miniz.h>  // raw-zlib inflate for the shipped .zip LUTs
 
 #include <algorithm>
 #include <cctype>
@@ -40,6 +42,14 @@ static bool read_file_bytes(const std::wstring& path, std::string& out)
 	}
 	CloseHandle(h);
 	return ok;
+}
+
+// Last-write time as a comparable integer; 0 when the file does not exist.
+static uint64_t file_mtime(const std::wstring& path)
+{
+	WIN32_FILE_ATTRIBUTE_DATA fad{};
+	if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fad)) return 0;
+	return ((uint64_t)fad.ftLastWriteTime.dwHighDateTime << 32) | fad.ftLastWriteTime.dwLowDateTime;
 }
 
 // ---- dataset ------------------------------------------------------------------
@@ -83,6 +93,9 @@ bool TJDataset::Load(const std::wstring& jsonPath, std::string* err)
 		additionsOffset = doc.value("/meta/additionsOffset"_json_pointer, 96);
 		for (auto it = doc["types"].begin(); it != doc["types"].end(); ++it)
 			types[std::stoi(it.key())] = it.value().get<std::string>();
+		if (doc.contains("binNames"))
+			for (auto it = doc["binNames"].begin(); it != doc["binNames"].end(); ++it)
+				binNames[std::stoi(it.key())] = it.value().get<std::string>();
 		if (doc.contains("conqType"))
 			for (auto it = doc["conqType"].begin(); it != doc["conqType"].end(); ++it)
 				conqType[std::stoi(it.key())] = it.value().get<std::string>();
@@ -185,10 +198,17 @@ std::vector<int> TJReadLUT(const TJDataset& ds, const std::string& blob,
 		return result;
 	}
 
-	// Non-GV: only notables have LUT entries; small nodes are handled elsewhere.
-	if (index <= ds.sizeNotable) {
-		const int localId = ub(blob, (size_t)((long long)index * seedSize + seedOffset));
-		result.push_back(ds.L2G(jewelType, localId));
+	// Non-GV: only notables have LUT entries; small nodes are handled in TJApply.
+	// The table holds exactly sizeNotable rows (0 .. sizeNotable-1), so PoB's
+	// `index <= sizeNotable` reads one row past the end. Lua turns that into nil
+	// and the caller then reports "Missing LUT" and leaves the node alone, so the
+	// strict `<` here reproduces PoB's behaviour without relying on a byte that
+	// isn't there — reading it would yield 0, which L2G happily maps onto a real
+	// keystone.
+	if (index < ds.sizeNotable) {
+		const size_t off = (size_t)((long long)index * seedSize + seedOffset);
+		if (off >= blob.size()) return result; // truncated/stale LUT: no answer, not a wrong one
+		result.push_back(ds.L2G(jewelType, ub(blob, off)));
 	}
 	return result;
 }
@@ -255,27 +275,173 @@ static void push_line(TJTransform& out, const TJEntry& e, size_t i,
 	out.linesZh.push_back(zh);
 }
 
+TJPaste TJParsePaste(const TJDataset& ds, const std::string& text)
+{
+	TJPaste out;
+	size_t namePos = std::string::npos;
+	// pass 0 = English name, pass 1 = Chinese (only if English found nothing)
+	for (int pass = 0; pass < 2 && !out.jewelType; pass++) {
+		for (const auto& kv : ds.conquerors) {
+			for (int i = 0; i < (int)kv.second.size(); i++) {
+				const std::string& nm = pass == 0 ? kv.second[i].name : kv.second[i].nameZh;
+				size_t p = nm.empty() ? std::string::npos : text.find(nm);
+				if (p != std::string::npos) {
+					out.jewelType = kv.first;
+					out.conqIndex = i;
+					namePos = p;
+				}
+			}
+		}
+	}
+	// seed = largest number on the line naming the conqueror (whole text if none),
+	// which skips item level / "Limited to: 1 Historic" and similar noise
+	std::string scan = text;
+	if (namePos != std::string::npos) {
+		size_t a = text.rfind('\n', namePos);
+		a = (a == std::string::npos) ? 0 : a + 1;
+		size_t b = text.find('\n', namePos);
+		if (b == std::string::npos) b = text.size();
+		scan = text.substr(a, b - a);
+	}
+	for (size_t p = 0; p < scan.size(); p++)
+		if (isdigit((unsigned char)scan[p])) {
+			int v = atoi(scan.c_str() + p);
+			if (v > out.seed) out.seed = v;
+			while (p < scan.size() && isdigit((unsigned char)scan[p])) p++;
+		}
+	return out;
+}
+
+// Per-family item wording, transcribed from the game's own stat descriptions
+// (GGPK `local_unique_jewel_alternate_tree_*`). Note the two irregular ones:
+// the Templar line is plural and the Eternal one names the empire, not a people.
+namespace {
+struct TJFlavour {
+	const char* family;
+	const char* seedLine;   // one %d (seed) then one %s (conqueror)
+	const char* conquered;  // fills "Passives in radius are Conquered by the ..."
+};
+const TJFlavour kFlavour[] = {
+	{ "vaal",     "Bathed in the blood of %d sacrificed in the name of %s",         "Vaal" },
+	{ "karui",    "Commanded leadership over %d warriors under %s",                 "Karui" },
+	{ "maraketh", "Denoted service of %d dekhara in the akhara of %s",              "Maraketh" },
+	{ "templar",  "Carved to glorify %d new faithful converted by High Templar %s", "Templars" },
+	{ "eternal",  "Commissioned %d coins to commemorate %s",                        "Eternal Empire" },
+	{ "kalguur",  "Remembrancing %d songworthy deeds by the line of %s",            "Kalguur" },
+};
+} // namespace
+
+std::string TJItemText(const TJDataset& ds, int jewelType, int conqIndex, int seed)
+{
+	auto itType = ds.types.find(jewelType);
+	auto itFam = ds.conqType.find(jewelType);
+	auto itConq = ds.conquerors.find(jewelType);
+	if (itType == ds.types.end() || itFam == ds.conqType.end() || itConq == ds.conquerors.end())
+		return std::string();
+	if (conqIndex < 0 || conqIndex >= (int)itConq->second.size()) return std::string();
+	const TJFlavour* fl = nullptr;
+	for (const auto& f : kFlavour) if (itFam->second == f.family) { fl = &f; break; }
+	if (!fl) return std::string(); // Abyss jewels have no PoB item definition yet
+
+	char line[256];
+	snprintf(line, sizeof(line), fl->seedLine, seed, itConq->second[conqIndex].name.c_str());
+
+	// No "Item Level" or "Note" line: both exist on a real copy but neither is
+	// ours to invent, and PoB ignores them for jewels.
+	std::string out = "Item Class: Jewels\nRarity: Unique\n";
+	out += itType->second + "\nTimeless Jewel\n";
+	out += "--------\nLimited to: 1 Historic\nRadius: Large\n";
+	out += "--------\n";
+	out += line;
+	out += "\nPassives in radius are Conquered by the ";
+	out += fl->conquered;
+	out += "\nHistoric\n";
+	out += "--------\nPlace into an allocated Jewel Socket on the Passive Skill Tree."
+	       " Right click to remove from the Socket.\n";
+	return out;
+}
+
 TJTransform TJApply(const TJDataset& ds, const std::string& blob,
                     int jewelType, int seed, int nodeId, const std::string& nodeType,
                     const std::vector<std::string>& origSd,
                     const std::string& conquerorType, const std::string& conquerorId,
                     const std::string& nodeName)
 {
-	(void)origSd; (void)nodeName;
+	// origSd is not consumed here on purpose: `lines` carries only what the jewel
+	// grants, so the seed search scores jewel mods rather than the node's own.
+	// When `replaced` is false the caller must still show the node's original
+	// stats — PoB appends additions to the node instead of wiping it.
+	(void)origSd;
 	TJTransform out;
 
+	// Callers that only know the jewel (the seed search) may leave the conqueror
+	// blank; the family is a property of the jewel, so recover it from the
+	// dataset rather than silently skipping the per-family rules below.
+	std::string cq = conquerorType;
+	if (cq.empty()) {
+		auto it = ds.conqType.find(jewelType);
+		if (it != ds.conqType.end()) cq = it->second;
+	}
+
 	if (nodeType == "Keystone") {
-		std::string m = conquerorType + "_keystone_" + (conquerorId.empty() ? "1" : conquerorId);
-		for (const auto& n : ds.nodes) {
-			if (n.id == m) {
+		// Legion jewels have one keystone per conqueror (vaal_keystone_2), the
+		// Abyss ones only have a single unsuffixed keystone per jewel.
+		std::string m = cq + "_keystone_" + (conquerorId.empty() ? "1" : conquerorId);
+		const std::string plain = cq + "_keystone";
+		for (int pass = 0; pass < 2; pass++) {
+			const std::string& want = pass == 0 ? m : plain;
+			for (const auto& n : ds.nodes) {
+				if (n.id == want) {
+					out.ok = out.replaced = true;
+					out.newName = n.dn;
+					out.newNameZh = n.dnZh;
+					for (size_t i = 0; i < n.sd.size(); i++) push_line(out, n, i);
+					return out;
+				}
+			}
+		}
+		out.note = std::string("keystone not found: ") + m;
+		return out;
+	}
+
+	// Small ("Normal") passives are only seed-driven under Glorious Vanity. Every
+	// other conqueror applies one fixed rule to every small node in radius, and
+	// halves the value on the three bare attribute nodes — PassiveSpec.lua's
+	// `isValueInArray(attributes, node.dn)` branch. Tattoos are not modelled here.
+	if (nodeType == "Normal" && cq != "vaal") {
+		const bool attr = nodeName == "Strength" || nodeName == "Dexterity" ||
+		                  nodeName == "Intelligence";
+		auto lit = [&out](const char* en, const char* zh) {
+			out.ok = true;
+			out.lines.push_back(en);
+			out.linesZh.push_back(zh);
+		};
+		auto replaceWith = [&](const char* id) {
+			for (const auto& n : ds.nodes) {
+				if (n.id != id) continue;
 				out.ok = out.replaced = true;
 				out.newName = n.dn;
 				out.newNameZh = n.dnZh;
 				for (size_t i = 0; i < n.sd.size(); i++) push_line(out, n, i);
-				return out;
+				return true;
 			}
+			out.note = std::string("missing legion node: ") + id;
+			return false;
+		};
+		if (cq == "karui")
+			lit(attr ? "+2 to Strength" : "+4 to Strength", attr ? u8"+2 力量" : u8"+4 力量");
+		else if (cq == "maraketh")
+			lit(attr ? "+2 to Dexterity" : "+4 to Dexterity", attr ? u8"+2 敏捷" : u8"+4 敏捷");
+		else if (cq == "kalguur")
+			lit(attr ? "1% increased Ward" : "2% increased Ward",
+			    attr ? u8"增加 1% 保護" : u8"增加 2% 保護");
+		else if (cq == "templar") {
+			if (attr) replaceWith("templar_devotion_node");
+			else lit("+5 to Devotion", u8"+5 奉獻");
+		} else if (cq == "eternal") {
+			replaceWith("eternal_small_blank"); // smalls go blank under Elegant Hubris
 		}
-		out.note = std::string("keystone not found: ") + m;
+		// Abyss jewels: PoB has no small-node rule for them yet, so emit nothing.
 		return out;
 	}
 
@@ -287,6 +453,9 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 
 	if (jewelType == 1) {
 		const int hs = (int)lut.size();
+		// Notables roll each stat from its own slot (statMod.index); smalls take
+		// a single roll from jewelDataTbl[2] for every line.
+		const bool gvSmall = nodeType == "Normal";
 		if (hs == 2 || hs == 3) {
 			const TJEntry* n = node_at(ds, lut[0]);
 			if (!n) { out.note = "GV replace id out of range"; return out; }
@@ -298,9 +467,10 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 				double val = 0;
 				if (i < n->sortedStats.size()) {
 					auto it = n->stats.find(n->sortedStats[i]);
-					if (it != n->stats.end() && it->second.index < (int)lut.size()) {
+					const int slot = gvSmall ? 1 : (it != n->stats.end() ? it->second.index : -1);
+					if (it != n->stats.end() && slot >= 0 && slot < (int)lut.size()) {
 						sm = &it->second;
-						val = (double)lut[it->second.index];
+						val = (double)lut[slot];
 					}
 				}
 				push_line(out, *n, i, sm, val);
@@ -309,9 +479,13 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 		} else if (hs == 6 || hs == 8) {
 			int bias = 0;
 			for (int i = 0; i < hs / 2; i++) bias += (lut[i] <= 21) ? 1 : -1;
-			const TJEntry* n = (bias >= 0) ? node_at(ds, 96 + 77 - 1) : node_at(ds, 96 + 78 - 1);
-			// legionNodes[77]/[78] (Lua 1-based) -> nodes[76]/[77]; node_at expects global,
-			// so pass global = 96 + (index-1). 77 -> global 96+76.
+			// legionNodes[77]/[78] (Lua 1-based) = Might / Legacy of the Vaal.
+			// Look them up by id: their array index is stable but the additions
+			// offset in front of them is not (96 -> 337 with the Abyss jewels).
+			const char* wantId = (bias >= 0) ? "vaal_notable_random_offense"
+			                                 : "vaal_notable_random_defence";
+			const TJEntry* n = nullptr;
+			for (const auto& e : ds.nodes) if (e.id == wantId) { n = &e; break; }
 			out.ok = out.replaced = true;
 			out.newName = n ? n->dn : (bias >= 0 ? "Might of the Vaal" : "Legacy of the Vaal");
 			if (n) out.newNameZh = n->dnZh;
@@ -433,7 +607,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 	// node. Each carries its type so smalls roll additions, notables roll nodes.
 	std::vector<std::pair<int, bool>> scopeNodes; // (nodeId, notable)
 	auto consider = [&](int nodeId, int idxInBin) {
-		const bool notable = idxInBin <= ds.sizeNotable;
+		const bool notable = idxInBin < ds.sizeNotable; // rows are 0..sizeNotable-1
 		if (q.scope == 1 && !notable) return;
 		if (q.scope == 2 && notable) return;
 		scopeNodes.push_back({ nodeId, notable });
@@ -487,21 +661,62 @@ bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
 {
 	auto it = ds.types.find(jewelType);
 	if (it == ds.types.end()) { if (err) *err = u8"未知珠寶型別"; return false; }
-	std::string nameA; // ascii jewel name without spaces (e.g. "BrutalRestraint")
+	// LUT file stem: the jewel name without spaces, unless the dataset maps this
+	// type elsewhere (the Abyss LUTs are named after the Abyssal Lord).
+	auto itBin = ds.binNames.find(jewelType);
+	const std::string stem = (itBin != ds.binNames.end() && !itBin->second.empty())
+	                         ? itBin->second : it->second;
+	std::string nameA; // ascii file stem (e.g. "BrutalRestraint", "AbyssTecrod")
 	std::wstring nameW;
-	for (char c : it->second) if (c != ' ') { nameA.push_back(c); nameW.push_back((wchar_t)(unsigned char)c); }
+	for (char c : stem) if (c != ' ') { nameA.push_back(c); nameW.push_back((wchar_t)(unsigned char)c); }
 	std::wstring pobDir = FindPoe1Dir(exeDir);
 	if (pobDir.empty()) {
 		if (err) *err = u8"找不到 PoE1 版 POB 資料夾(需放在 pob-zh.exe 旁,名稱不限,內含 Launch.lua)";
 		return false;
 	}
-	std::wstring path = pobDir + L"Data\\TimelessJewelData\\" + nameW + L".bin";
-	if (!read_file_bytes(path, out)) {
-		if (err) *err = u8"找不到 " + nameA +
-		                u8".bin(需要旁邊有 PoE1 版 POB;Glorious Vanity 首次需先讓 POB 解壓 .zip 產生 .bin)";
-		return false;
+	std::wstring base = pobDir + L"Data\\TimelessJewelData\\" + nameW;
+
+	// Same freshness rule as PoB's loadJewelFile: the .bin is only a cache of the
+	// shipped .zip, so an older .bin is stale (a game patch that changes the node
+	// count shifts every row) and the .zip wins. PoB cannot produce the Abyss
+	// .bin files at all yet, so we inflate them ourselves. Despite the name the
+	// ".zip" is raw zlib, and Glorious Vanity ships split as .zip.part0..N.
+	std::vector<std::wstring> packedParts;
+	if (file_mtime(base + L".zip") != 0) {
+		packedParts.push_back(base + L".zip");
+	} else {
+		for (int i = 0; ; i++) {
+			std::wstring p = base + L".zip.part" + std::to_wstring(i);
+			if (file_mtime(p) == 0) break;
+			packedParts.push_back(std::move(p));
+		}
 	}
-	return true;
+	const uint64_t binTime = file_mtime(base + L".bin");
+	uint64_t zipTime = 0;
+	for (const auto& p : packedParts) zipTime = (std::max)(zipTime, file_mtime(p));
+
+	if (binTime && binTime >= zipTime && read_file_bytes(base + L".bin", out))
+		return true;
+	std::string packed, chunk;
+	for (const auto& p : packedParts) {
+		if (!read_file_bytes(p, chunk)) { packed.clear(); break; }
+		packed += chunk;
+	}
+	if (!packed.empty()) {
+		size_t len = 0;
+		void* p = tinfl_decompress_mem_to_heap(packed.data(), packed.size(), &len,
+		                                       TINFL_FLAG_PARSE_ZLIB_HEADER);
+		if (p) {
+			out.assign((const char*)p, len);
+			mz_free(p);
+			return true;
+		}
+	}
+	if (binTime && read_file_bytes(base + L".bin", out))
+		return true; // stale, but better than nothing if the .zip is unreadable
+	if (err) *err = u8"找不到 " + nameA +
+	                u8".bin/.zip(需要旁邊有 PoE1 版 POB,且該珠寶的查表檔存在)";
+	return false;
 }
 
 // ---- CLIs ---------------------------------------------------------------------
@@ -530,7 +745,7 @@ int RunTimelessJewelCli(const std::wstring& exeDir, int jewelType, int seed, int
 
 	std::string type = ds.types.count(jewelType) ? ds.types[jewelType] : "?";
 	auto ni = ds.nodeIndex.find(nodeId);
-	std::string nodeType = (ni != ds.nodeIndex.end() && ni->second.first <= ds.sizeNotable)
+	std::string nodeType = (ni != ds.nodeIndex.end() && ni->second.first < ds.sizeNotable)
 	                       ? "Notable" : "Normal";
 	printf("%s  seed=%d  node=%d (%s)\n", type.c_str(), seed, nodeId, nodeType.c_str());
 
@@ -565,9 +780,10 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	};
 
 	// dataset shape
-	check(ds.additions.size() == 96, "additions count", std::to_string(ds.additions.size()));
+	check(ds.additions.size() == (size_t)ds.additionsOffset, "additions count == additionsOffset",
+	      std::to_string(ds.additions.size()) + "/" + std::to_string(ds.additionsOffset));
 	check(ds.nodes.size() >= 100, "nodes count", std::to_string(ds.nodes.size()));
-	check(ds.size == 1931 && ds.sizeNotable == 452, "node index sizes",
+	check(ds.size == 1937 && ds.sizeNotable == 454, "node index sizes",
 	      std::to_string(ds.size) + "/" + std::to_string(ds.sizeNotable));
 	check(ds.additions.size() > 79 && ds.additions[79].dn == "Add Poison Damage",
 	      "addition 79 = Add Poison Damage");
@@ -623,6 +839,197 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		check(false, "load BrutalRestraint.bin", err);
 	}
 
+	// Abyss jewels (types 7-11): LUT named after the Abyssal Lord, inflated from
+	// the shipped .zip because PoB never writes a .bin for these.
+	check(ds.types.count(7) && ds.types.at(7) == "Festering Vengeance", "type 7 name",
+	      ds.types.count(7) ? ds.types.at(7) : "(missing)");
+	check(ds.binNames.count(11) && ds.binNames.at(11) == "AbyssZorath", "type 11 LUT stem",
+	      ds.binNames.count(11) ? ds.binNames.at(11) : "(missing)");
+	std::string abyss;
+	if (TJLoadBin(exeDir, ds, 7, abyss, &err)) {
+		const size_t want = (size_t)(8000 - 100 + 1) * (size_t)ds.sizeNotable;
+		check(abyss.size() == want, "AbyssTecrod LUT size",
+		      std::to_string(abyss.size()) + " want " + std::to_string(want));
+		// byte < additionsOffset -> the notable gains an addition (not a replace)
+		auto lut = TJReadLUT(ds, abyss, 7, 100, 6);
+		bool ok = lut.size() == 1 && lut[0] == 125;
+		const TJEntry* n = ok ? addition_at(ds, lut[0]) : nullptr;
+		check(ok && n && n->id == "abyss_murderous_notable_30", "Tecrod seed 100 node 6",
+		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
+		TJTransform a = TJApply(ds, abyss, 7, 100, 6, "Notable", {});
+		check(a.ok && !a.lines.empty() &&
+		      a.lines[0] == "(12-13) to 0 Added Fire Damage with Dagger Attacks",
+		      "TJApply Tecrod 100 node6 stat line (en)",
+		      a.lines.empty() ? a.note : a.lines[0]);
+		check(!a.linesZh.empty() && a.linesZh[0] == u8"匕首攻擊附加 (12-13) 至 0 火焰傷害",
+		      "TJApply Tecrod 100 node6 stat line (zh)",
+		      a.linesZh.empty() ? "(no zh)" : a.linesZh[0]);
+		// keystone lookup must fall back to the unsuffixed abyss id
+		TJTransform k = TJApply(ds, abyss, 7, 100, 6, "Keystone", {}, "abyss_murderous", "");
+		check(k.ok && k.newName == "Overwhelming Hate", "abyss keystone replace",
+		      k.ok ? k.newName + " / " + k.newNameZh : k.note);
+		check(k.newNameZh == u8"壓倒性恨意", "abyss keystone zh name", k.newNameZh);
+
+		// the affix pool must be filtered to this jewel, and a batch search over
+		// it must find the seed we decoded by hand above
+		auto tmpl = TJStatTemplates(ds, 7);
+		check(tmpl.size() > 50, "abyss stat template list", std::to_string(tmpl.size()));
+		std::string wantTmpl; // take the template as the picker would hand it over
+		for (const auto& t : tmpl)
+			if (t.en.find("Damage over Time while holding a Shield") != std::string::npos) {
+				wantTmpl = t.en;
+				break;
+			}
+		check(!wantTmpl.empty(), "abyss template lookup", wantTmpl);
+		TJSearchQuery q;
+		q.jewelType = 7;
+		q.scope = 1; // notables
+		q.wants.push_back({ wantTmpl, 0.0, 1.0 });
+		// cap above the seed count (7901) so a hit cannot be ranked out of the list
+		auto hits = TJSearch(ds, abyss, q, 9000, nullptr);
+		bool has8000 = false;
+		for (const auto& h : hits) if (h.seed == 8000) has8000 = true;
+		check(!hits.empty() && has8000, "search Tecrod finds seed 8000",
+		      std::to_string(hits.size()) + " hits");
+	} else {
+		check(false, "load AbyssTecrod LUT", err);
+	}
+	// paste parsing, against real item text (trade API explicitMods, 3.29 Allflame)
+	{
+		struct PCase { const char* txt; int type; int seed; const char* what; };
+		const PCase pcases[] = {
+			{ "Subjugating 6353 souls in the thrall of Kurgal\n"
+			  "Passives affected are Conquered by the Abyssal", 9, 6353, "paste Kurgal (en)" },
+			{ "Subjugating 6925 souls in the thrall of Ulaman\n"
+			  "Passives affected are Conquered by the Abyssal", 8, 6925, "paste Ulaman (en)" },
+			{ "Subjugating 5389 souls in the thrall of Amanamu\n"
+			  "Passives affected are Conquered by the Abyssal", 10, 5389, "paste Amanamu (en)" },
+			// Zorath words its seed line differently from the other four
+			{ "Binding 7412 souls to phylacteries to sustain Zorath\n"
+			  "Passives affected are Conquered by the Abyssal", 11, 7412, "paste Zorath (en)" },
+			// zh client text
+			{ u8"在柯戈的奴役下征服 6353 位靈魂\n範圍內的天賦被深淵族所征服",
+			  9, 6353, "paste Kurgal (zh)" },
+			{ u8"將 7412 位靈魂縛於命匣以維持澤洛斯\n範圍內的天賦被深淵族所征服",
+			  11, 7412, "paste Zorath (zh)" },
+			// full copy: item level / stack numbers must not win over the seed
+			{ "Item Class: Jewels\nRarity: Unique\nBaleful Dominion\nHypnotic Eye Jewel\n"
+			  "--------\nAbyss\nLimited to: 1 Historic\n--------\nItem Level: 86\n--------\n"
+			  "Subjugating 6353 souls in the thrall of Kurgal\n"
+			  "Passives affected are Conquered by the Abyssal\n--------\nHistoric",
+			  9, 6353, "paste full item text" },
+			// regression: a traditional legion jewel still resolves
+			{ "Commanded leadership over 12345 warriors under Kaom\n"
+			  "Passives in radius are Conquered by the Karui", 2, 12345, "paste Kaom (en)" },
+		};
+		for (const PCase& c : pcases) {
+			TJPaste p = TJParsePaste(ds, c.txt);
+			check(p.jewelType == c.type && p.seed == c.seed, c.what,
+			      "type=" + std::to_string(p.jewelType) + " seed=" + std::to_string(p.seed));
+		}
+	}
+
+	// Item text round-trips: what we hand to PoB must parse back to the same
+	// jewel and seed, and must carry the wording PoB's ModParser matches on.
+	{
+		struct IC { int type; int seed; const char* needle; };
+		const IC icases[] = {
+			{ 1, 5000,  "Bathed in the blood of 5000 sacrificed in the name of" },
+			{ 2, 12703, "Commanded leadership over 12703 warriors under Kaom" },
+			{ 3, 4000,  "Denoted service of 4000 dekhara in the akhara of" },
+			{ 4, 6000,  "Carved to glorify 6000 new faithful converted by High Templar" },
+			{ 5, 80000, "Commissioned 80000 coins to commemorate" },
+			{ 6, 4000,  "Remembrancing 4000 songworthy deeds by the line of" },
+		};
+		for (const IC& c : icases) {
+			std::string txt = TJItemText(ds, c.type, 0, c.seed);
+			const bool hasLine = txt.find(c.needle) != std::string::npos;
+			const bool hasConq = txt.find("Passives in radius are Conquered by the") != std::string::npos;
+			TJPaste back = TJParsePaste(ds, txt);
+			check(hasLine && hasConq && back.jewelType == c.type && back.seed == c.seed,
+			      "item text round-trip type " + std::to_string(c.type),
+			      "type=" + std::to_string(back.jewelType) + " seed=" + std::to_string(back.seed) +
+			      (hasLine ? "" : " [seed line wrong]") + (hasConq ? "" : " [no conquered line]"));
+		}
+		// Abyss jewels have no PoB item definition, so we must not invent one.
+		check(TJItemText(ds, 7, 0, 5000).empty(), "no item text for Abyss jewels");
+	}
+
+	// Regression: an addition must leave the node itself alone (PoB appends the
+	// stat instead of replacing the node), and index==sizeNotable is past the
+	// last LUT row — treating it as a notable used to read a phantom byte 0 and
+	// turn a small passive into a keystone.
+	std::string lp;
+	if (TJLoadBin(exeDir, ds, 2, lp, &err)) {
+		auto lut = TJReadLUT(ds, lp, 2, 12637, 21435); // Cloth and Chain
+		const TJEntry* a = lut.size() == 1 ? addition_at(ds, lut[0]) : nullptr;
+		check(lut.size() == 1 && lut[0] == 50 && a && a->id == "karui_notable_add_damage_from_crits",
+		      "LP 12637 Cloth and Chain is addition 50",
+		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (a ? a->id : "?"));
+		TJTransform t = TJApply(ds, lp, 2, 12637, 21435, "Notable", {}, "karui", "1", "Cloth and Chain");
+		check(t.ok && !t.replaced && t.lines.size() == 1 &&
+		      t.lines[0] == "You take 10% reduced Extra Damage from Critical Strikes",
+		      "LP addition keeps the node (not replaced)",
+		      std::string(t.replaced ? "replaced " : "kept ") +
+		      (t.lines.empty() ? "(no lines)" : t.lines[0]));
+		check(t.linesZh.size() == 1 && t.linesZh[0] == u8"減少 10% 承受的暴擊傷害",
+		      "LP addition zh", t.linesZh.empty() ? "(none)" : t.linesZh[0]);
+
+		// node 94 "Evasion" sits at index 454 == sizeNotable: no LUT row exists.
+		auto none = TJReadLUT(ds, lp, 2, 12637, 94);
+		check(none.empty(), "index == sizeNotable has no LUT row",
+		      none.empty() ? "" : std::to_string(none[0]));
+		TJTransform sm = TJApply(ds, lp, 2, 12637, 94, "Normal", {}, "karui", "1", "Evasion");
+		check(sm.ok && !sm.replaced && sm.lines.size() == 1 && sm.lines[0] == "+4 to Strength",
+		      "LP small node gains +4 Strength",
+		      sm.lines.empty() ? "(none)" : sm.lines[0] + (sm.replaced ? " REPLACED" : ""));
+		TJTransform at = TJApply(ds, lp, 2, 12637, 23027, "Normal", {}, "karui", "1", "Strength");
+		check(at.lines.size() == 1 && at.lines[0] == "+2 to Strength",
+		      "LP attribute node gains only +2", at.lines.empty() ? "(none)" : at.lines[0]);
+	} else {
+		check(false, "load LethalPride LUT", err);
+	}
+	// The other families' fixed small-node rules (PassiveSpec.lua "Normal" branch)
+	std::string mf;
+	if (TJLoadBin(exeDir, ds, 4, mf, &err)) {
+		TJTransform p = TJApply(ds, mf, 4, 2000, 7092, "Normal", {}, "templar", "1", "Physical and Lightning Damage");
+		check(p.lines.size() == 1 && p.lines[0] == "+5 to Devotion", "MF small node gains +5 Devotion",
+		      p.lines.empty() ? "(none)" : p.lines[0]);
+		TJTransform a = TJApply(ds, mf, 4, 2000, 23027, "Normal", {}, "templar", "1", "Strength");
+		check(a.replaced && a.newName == "Devotion", "MF attribute node becomes Devotion",
+		      a.newName.empty() ? "(none)" : a.newName);
+	} else {
+		check(false, "load MilitantFaith LUT", err);
+	}
+	std::string eh;
+	if (TJLoadBin(exeDir, ds, 5, eh, &err)) {
+		TJTransform p = TJApply(ds, eh, 5, 2000, 7092, "Normal", {}, "eternal", "1", "Physical and Lightning Damage");
+		check(p.replaced && p.lines.empty() && p.newName == "Price of Glory",
+		      "EH blanks small nodes", p.newName + (p.lines.empty() ? "" : " +lines"));
+	} else {
+		check(false, "load ElegantHubris LUT", err);
+	}
+	std::string ht;
+	if (TJLoadBin(exeDir, ds, 6, ht, &err)) {
+		TJTransform p = TJApply(ds, ht, 6, 100, 7092, "Normal", {}, "kalguur", "1", "Physical and Lightning Damage");
+		check(p.lines.size() == 1 && p.lines[0] == "2% increased Ward", "HT small node gains 2% Ward",
+		      p.lines.empty() ? "(none)" : p.lines[0]);
+	} else {
+		check(false, "load HeroicTragedy LUT", err);
+	}
+
+	std::string zorath;
+	if (TJLoadBin(exeDir, ds, 11, zorath, &err)) {
+		// type 11 is the only Abyss LUT with a non-identity localId->globalId map
+		auto lut = TJReadLUT(ds, zorath, 11, 100, 6);
+		const TJEntry* n = lut.size() == 1 ? addition_at(ds, lut[0]) : nullptr;
+		check(lut.size() == 1 && lut[0] == 314 && n && n->id == "abyss_special_notable_53",
+		      "Zorath seed 100 node 6 (L2G 52->314)",
+		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
+	} else {
+		check(false, "load AbyssZorath LUT", err);
+	}
+
 	std::string tail = failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";
 	report += tail;
 	printf("%s", tail.c_str());
@@ -635,4 +1042,70 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		CloseHandle(h);
 	}
 	return failures == 0 ? 0 : 1;
+}
+
+// Dump every transform we compute for a fixed, deterministic sample so it can be
+// diffed against an independent implementation (tools/verify_lut.py replays PoB's
+// PassiveSpec.lua straight off the shipped LUTs). Console output is unreliable
+// here (AttachConsole eats it), so everything goes to tj_verify.tsv.
+int RunTimelessJewelVerify(const std::wstring& exeDir)
+{
+	ensure_console();
+	TJDataset ds;
+	std::string err;
+	if (!load_dataset(exeDir, ds, &err)) { printf("FAIL load: %s\n", err.c_str()); return 1; }
+
+	PassiveTreeData tree;
+	std::string terr;
+	const bool haveTree = tree.Load(exeDir, &terr); // node names drive the attribute rule
+	std::map<int, const PtNode*> byId;
+	if (haveTree) for (const auto& n : tree.nodes) byId[n.id] = &n;
+
+	std::string tsv = "type\tseed\tnode\tnotable\tbytes\treplaced\tnewName\tlines\n";
+	long rows = 0;
+	for (int jt = 1; jt <= 6; jt++) {
+		std::string blob;
+		if (!TJLoadBin(exeDir, ds, jt, blob, &err)) {
+			printf("skip type %d: %s\n", jt, err.c_str());
+			continue;
+		}
+		const int lo = ds.seedMin[jt], hi = ds.seedMax[jt];
+		const int mul = (jt == 5) ? 20 : 1; // Elegant Hubris stores seed/20
+		const int picks[5] = { lo, lo + 1, (lo + hi) / 2, hi - 1, hi };
+		for (int p = 0; p < 5; p++) {
+			const int seed = picks[p] * mul;
+			for (const auto& kv : ds.nodeIndex) {
+				const int nodeId = kv.first, index = kv.second.first;
+				const bool notable = index < ds.sizeNotable;
+				if (!notable && (index % 20) != 0) continue; // sample the smalls
+				const PtNode* pn = byId.count(nodeId) ? byId[nodeId] : nullptr;
+				const char* nt = notable ? "Notable" : "Normal";
+				std::vector<int> lut = TJReadLUT(ds, blob, jt, seed, nodeId);
+				TJTransform t = TJApply(ds, blob, jt, seed, nodeId, nt, {},
+				                        ds.conqType.count(jt) ? ds.conqType[jt] : std::string(),
+				                        "", pn ? pn->name : std::string());
+				std::string bytes;
+				for (size_t i = 0; i < lut.size(); i++)
+					bytes += (i ? "," : "") + std::to_string(lut[i]);
+				std::string lines;
+				for (size_t i = 0; i < t.lines.size(); i++)
+					lines += (i ? "|" : "") + t.lines[i];
+				tsv += std::to_string(jt) + "\t" + std::to_string(seed) + "\t" +
+				       std::to_string(nodeId) + "\t" + (notable ? "1" : "0") + "\t" +
+				       bytes + "\t" + (t.replaced ? "1" : "0") + "\t" + t.newName + "\t" +
+				       lines + "\n";
+				rows++;
+			}
+		}
+		printf("type %d dumped\n", jt);
+	}
+	printf("%ld rows%s\n", rows, haveTree ? "" : " (no passive tree: attribute rule untested)");
+
+	HANDLE h = CreateFileW((exeDir + L"tj_verify.tsv").c_str(), GENERIC_WRITE, 0,
+	                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) { printf("cannot write tj_verify.tsv\n"); return 1; }
+	DWORD written = 0;
+	WriteFile(h, tsv.data(), (DWORD)tsv.size(), &written, nullptr);
+	CloseHandle(h);
+	return 0;
 }

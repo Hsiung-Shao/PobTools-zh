@@ -251,7 +251,10 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	drawDecos(d.masteries);
 
 	// --- jewel radius ring (under nodes so highlights stay readable) -------
-	if (in.selectedSocket >= 0 && in.selectedSocket < (int)d.nodes.size()) {
+	// radiusWorld <= 0 means "this jewel does not use a radius" (Abyss jewels):
+	// draw no ring rather than a wrong one.
+	if (in.radiusWorld > 0.0f &&
+	    in.selectedSocket >= 0 && in.selectedSocket < (int)d.nodes.size()) {
 		const PtNode& s = d.nodes[in.selectedSocket];
 		ImVec2 c = worldToScreen(ImVec2(s.x, s.y));
 		float rr = in.radiusWorld * zoom_;

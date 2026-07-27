@@ -92,6 +92,28 @@ std::string read_clipboard_utf8(HWND owner)
 	return out;
 }
 
+// Put UTF-8 text on the clipboard as CF_UNICODETEXT (what PoB's paste reads).
+bool write_clipboard_utf8(HWND owner, const std::string& text)
+{
+	std::wstring w = widen(text);
+	if (!OpenClipboard(owner)) return false;
+	bool ok = false;
+	if (EmptyClipboard()) {
+		HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (w.size() + 1) * sizeof(wchar_t));
+		if (h) {
+			if (void* p = GlobalLock(h)) {
+				memcpy(p, w.c_str(), (w.size() + 1) * sizeof(wchar_t));
+				GlobalUnlock(h);
+				// SetClipboardData takes ownership on success; only free on failure.
+				ok = SetClipboardData(CF_UNICODETEXT, h) != nullptr;
+			}
+			if (!ok) GlobalFree(h);
+		}
+	}
+	CloseClipboard();
+	return ok;
+}
+
 // Open the PoE official trade site pre-filled to search for a specific jewel
 // seed. The seed is encoded as the conqueror's pseudo stat filter, exactly like
 // pathofexile.com/trade does. platform: 0 pc, 1 xbox, 2 sony.
@@ -142,10 +164,12 @@ void open_trade_search_multi(const std::string& tradeStatId, const std::vector<i
 	ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
-// Background one-shot fetch of the current trade leagues (names only).
+// Background one-shot fetch of the current trade leagues. The API lists every
+// realm in one array ({"id":"Allflame","realm":"pc",...}), current league first,
+// so keep the realm alongside the id and preserve that order.
 struct LeagueFetch {
 	std::atomic<bool> running{ false }, done{ false };
-	std::vector<std::string> leagues;
+	std::vector<std::pair<std::string, std::string>> all; // (realm, id), API order
 	std::thread th;
 	~LeagueFetch() { if (th.joinable()) th.join(); }
 	void start() {
@@ -154,21 +178,42 @@ struct LeagueFetch {
 		th = std::thread([this]() {
 			HttpsClient c(L"www.pathofexile.com");
 			std::string body, err;
-			std::vector<std::string> got;
+			std::vector<std::pair<std::string, std::string>> got;
 			if (c.valid() && c.GetString(L"/api/trade/data/leagues", body, &err)) {
-				// crude JSON scan for "id":"<league>"
+				// crude JSON scan: each entry is {"id":"..","realm":"..","text":".."}
 				size_t p = 0;
 				while ((p = body.find("\"id\":\"", p)) != std::string::npos) {
 					p += 6;
 					size_t e = body.find('"', p);
 					if (e == std::string::npos) break;
-					got.push_back(body.substr(p, e - p));
+					std::string id = body.substr(p, e - p);
+					std::string realm = "pc";
+					size_t r = body.find("\"realm\":\"", e);
+					size_t nextId = body.find("\"id\":\"", e);
+					if (r != std::string::npos && (nextId == std::string::npos || r < nextId)) {
+						r += 9;
+						size_t re = body.find('"', r);
+						if (re != std::string::npos) realm = body.substr(r, re - r);
+					}
+					got.emplace_back(std::move(realm), std::move(id));
 					p = e;
 				}
 			}
-			leagues = std::move(got);
+			all = std::move(got);
 			running = false; done = true;
 		});
+	}
+	// League ids for one platform, API order (current league first), deduped.
+	std::vector<std::string> ForPlatform(int platform) const {
+		const char* want = platform == 1 ? "xbox" : platform == 2 ? "sony" : "pc";
+		std::vector<std::string> out;
+		for (const auto& kv : all) {
+			if (kv.first != want) continue;
+			bool dup = false;
+			for (const auto& s : out) if (s == kv.second) { dup = true; break; }
+			if (!dup) out.push_back(kv.second);
+		}
+		return out;
 	}
 };
 
@@ -181,10 +226,34 @@ const char* JewelZh(int t)
 	case 3: return u8"殘酷的紀律 (Brutal Restraint)";
 	case 4: return u8"激進的信仰 (Militant Faith)";
 	case 5: return u8"優雅的高傲 (Elegant Hubris)";
-	case 6: return u8"英勇的悲劇 (Heroic Tragedy)";
+	case 6: return u8"英勇悲劇 (Heroic Tragedy)";
+	// Abyss jewels (3.29): one per Abyssal Lord, all seeded 100-8000.
+	// Not offered in the calculator yet — see kMaxJewelType.
+	case 7: return u8"潰爛復仇 (Festering Vengeance)";
+	case 8: return u8"撲滅之握 (Extinguishing Grasp)";
+	case 9: return u8"邪惡統治 (Baleful Dominion)";
+	case 10: return u8"滅亡之願 (Destructive Aspiration)";
+	case 11: return u8"重奪惡意 (Reclaimed Malevolence)";
 	}
 	return "?";
 }
+
+// Highest jewel type the calculator offers. The Abyss jewels (7-11) are held
+// back until PoB can handle them: its ModParser has no Abyssal Lord in
+// `conquerorList` and there is no unique item definition, so a seed found here
+// could not be pasted into PoB or reproduced by anyone else. The dataset, the
+// LUTs and TJApply all still support them — lift this constant to re-enable.
+constexpr int kMaxJewelType = 6;
+
+// Traditional legion jewels affect a Large radius (1800 world units). The Abyss
+// ones do not: GGPK gives types 7-10 `local_unique_jewel_passive_tree_abyss_size
+// = 60` (not one of the PassiveJewelRadii values) and type 11
+// `local_unique_jewel_passive_tree_abyss_to_character_start = 1`, and the item
+// text says "Passives affected" instead of "Passives in radius". The selection
+// rule behind those is not documented anywhere yet (PoB upstream has no item
+// definition for them either), so the tree view shows no area rather than a
+// wrong one.
+bool JewelUsesRadius(int jewelType) { return jewelType >= 1 && jewelType <= 6; }
 
 const char* ConquerorType(int jewelType)
 {
@@ -195,6 +264,13 @@ const char* ConquerorType(int jewelType)
 	case 4: return "templar";
 	case 5: return "eternal";
 	case 6: return "kalguur";
+	// Abyss keystone ids are prefixed by jewel, not by conqueror
+	// (abyss_murderous_keystone); TJApply falls back to the unsuffixed form.
+	case 7: return "abyss_murderous";
+	case 8: return "abyss_searching";
+	case 9: return "abyss_hypnotic";
+	case 10: return "abyss_ghastly";
+	case 11: return "abyss_special";
 	}
 	return "";
 }
@@ -515,7 +591,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	int hlStatGroup = -1;                        // stat row -> highlight only its nodes
 
 	// --- trade export state ---
+	// League defaults to the current one as soon as the list arrives (the trade
+	// API lists it first); "Standard" only stands in while offline.
 	std::string tradeLeague = "Standard";
+	bool leagueUserSet = false;                  // user picked one -> stop auto-defaulting
 	int tradePlatform = 0;                       // 0 pc, 1 xbox, 2 sony
 	LeagueFetch leagues;
 	bool groupResults = true;                    // group seeds by # of stats matched
@@ -593,43 +672,33 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		ImGui::TextDisabled(u8"Timeless Jewel");
 		ImGui::Separator();
 
+		// fetch the trade leagues once on open so the export defaults to the
+		// current league instead of Standard (start() is a no-op once done)
+		leagues.start();
+		if (leagues.done.load() && !leagueUserSet) {
+			std::vector<std::string> lg = leagues.ForPlatform(tradePlatform);
+			if (!lg.empty() && tradeLeague != lg[0]) tradeLeague = lg[0];
+		}
+
 		// --- paste a jewel from the clipboard (auto-fills jewel/conqueror/seed) ---
 		if (ImGui::Button(u8"貼上珠寶 (從遊戲複製物品)", ImVec2(-1, 0))) {
 			std::string txt = read_clipboard_utf8(nullptr);
-			int foundJewel = 0, foundConqIdx = -1;
-			size_t namePos = std::string::npos;
-			// a conqueror name is unique across all jewels -> identifies both
-			for (auto& kv : ds->conquerors) {
-				for (int i = 0; i < (int)kv.second.size(); i++) {
-					const std::string& nm = kv.second[i].name;
-					size_t p = nm.empty() ? std::string::npos : txt.find(nm);
-					if (p != std::string::npos) { foundJewel = kv.first; foundConqIdx = i; namePos = p; }
-				}
-			}
-			// the seed is the number on the flavour line (the line naming the
-			// conqueror); fall back to the largest integer anywhere.
-			int foundSeed = -1;
-			auto lineOf = [&](size_t pos) {
-				size_t a = txt.rfind('\n', pos); a = (a == std::string::npos) ? 0 : a + 1;
-				size_t b = txt.find('\n', pos); if (b == std::string::npos) b = txt.size();
-				return txt.substr(a, b - a);
-			};
-			std::string scan = (namePos != std::string::npos) ? lineOf(namePos) : txt;
-			for (size_t p = 0; p < scan.size(); p++)
-				if (isdigit((unsigned char)scan[p])) {
-					int v = atoi(scan.c_str() + p);
-					if (v > foundSeed) foundSeed = v;
-					while (p < scan.size() && isdigit((unsigned char)scan[p])) p++;
-				}
-			if (foundJewel) {
+			TJPaste pasted = TJParsePaste(*ds, txt);
+			const int foundJewel = pasted.jewelType;
+			const int foundConqIdx = pasted.conqIndex;
+			const int foundSeed = pasted.seed;
+			const bool unsupported = foundJewel > kMaxJewelType;
+			if (foundJewel && !unsupported) {
 				jewelType = foundJewel; conquerorSel = foundConqIdx; ensureBin(jewelType);
 			}
-			if (foundSeed >= 0) {
+			if (foundSeed >= 0 && !unsupported) {
 				seedText = std::to_string(foundSeed); detailSeed = foundSeed; mode = 1;
 			}
-			status = foundJewel ? (u8"已匯入：" + std::string(JewelZh(foundJewel)) +
-			                       (foundSeed >= 0 ? u8"  種子 " + std::to_string(foundSeed) : ""))
-			                    : u8"剪貼簿中未找到珠寶資訊（請在遊戲中對珠寶 Ctrl+C）";
+			status = unsupported
+			         ? (std::string(JewelZh(foundJewel)) + u8" 尚未支援：等 Path of Building 本體加入深淵軍團珠寶後開放")
+			         : foundJewel ? (u8"已匯入：" + std::string(JewelZh(foundJewel)) +
+			                         (foundSeed >= 0 ? u8"  種子 " + std::to_string(foundSeed) : ""))
+			                      : u8"剪貼簿中未找到珠寶資訊（請在遊戲中對珠寶 Ctrl+C）";
 			hiSig = -1;
 		}
 
@@ -637,7 +706,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		ImGui::TextUnformatted(u8"珠寶");
 		ImGui::SetNextItemWidth(-1);
 		if (ImGui::BeginCombo("##jewel", JewelZh(jewelType))) {
-			for (int t = 1; t <= 6; t++)
+			for (int t = 1; t <= kMaxJewelType; t++)
 				if (ImGui::Selectable(JewelZh(t), t == jewelType)) {
 					jewelType = t;
 					conquerorSel = 0;
@@ -680,18 +749,22 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			ImGui::TextUnformatted(u8"聯盟");
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(180 * scale);
-			if (!leagues.leagues.empty()) {
+			std::vector<std::string> lgList = leagues.ForPlatform(tradePlatform);
+			if (!lgList.empty()) {
 				if (ImGui::BeginCombo("##league", tradeLeague.c_str())) {
-					for (const auto& lg : leagues.leagues)
-						if (ImGui::Selectable(lg.c_str(), lg == tradeLeague)) tradeLeague = lg;
+					for (const auto& lg : lgList)
+						if (ImGui::Selectable(lg.c_str(), lg == tradeLeague)) {
+							tradeLeague = lg;
+							leagueUserSet = true;
+						}
 					ImGui::EndCombo();
 				}
 			} else {
-				ImGui::InputText("##league", &tradeLeague);
+				if (ImGui::InputText("##league", &tradeLeague)) leagueUserSet = true;
 			}
 			ImGui::SameLine();
 			if (leagues.running.load()) ImGui::TextDisabled(u8"取得中…");
-			else if (ImGui::SmallButton(u8"取得聯盟")) leagues.start();
+			else if (ImGui::SmallButton(u8"重新取得")) { leagues.done = false; leagues.start(); }
 			ImGui::TextUnformatted(u8"平台");
 			ImGui::SameLine();
 			ImGui::RadioButton("PC", &tradePlatform, 0); ImGui::SameLine();
@@ -755,11 +828,15 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 			// --- search ---
 			bool busy = job.running.load();
-			if (selSocket < 0)
+			const bool useRadius = JewelUsesRadius(jewelType);
+			if (!useRadius)
+				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
+				                   u8"深淵珠寶的作用範圍規則未定，搜尋涵蓋全樹中型天賦");
+			else if (selSocket < 0)
 				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
 				                   u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）");
-			ImGui::BeginDisabled(busy || wants.empty() || selSocket < 0);
-			if (ImGui::Button(u8"搜尋此插槽", ImVec2(-1, 34 * scale))) {
+			ImGui::BeginDisabled(busy || wants.empty() || (useRadius && selSocket < 0));
+			if (ImGui::Button(useRadius ? u8"搜尋此插槽" : u8"搜尋（全樹）", ImVec2(-1, 34 * scale))) {
 				if (ensureBin(jewelType)) {
 					TJSearchQuery q;
 					q.jewelType = jewelType;
@@ -767,8 +844,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					q.minTotalWeight = minTotalWeight;
 					for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
 					// bind the search to the socket's in-radius nodes — the picked
-					// subset if any node is picked, otherwise all of them.
-					std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
+					// subset if any node is picked, otherwise all of them. Jewels
+					// with no radius rule leave nodeIds empty = whole tree.
+					std::vector<int> inRad;
+					if (useRadius) inRad = ptData.NodesInRadius(selSocket, 1800.0f);
 					bool anySel = false;
 					for (int idx : inRad)
 						if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
@@ -802,7 +881,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				if (groupResults) {
 					// the socket's picked in-radius nodes (or all) + wanted set
 					std::vector<int> inRad;
-					if (selSocket >= 0) {
+					if (selSocket >= 0 && JewelUsesRadius(jewelType)) {
 						std::vector<int> rad = ptData.NodesInRadius(selSocket, 1800.0f);
 						bool anySel = false;
 						for (int idx : rad)
@@ -901,6 +980,13 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 						if (ImGui::SmallButton(u8"交易"))
 							open_trade_search(tradeStatId, h.seed, tradeLeague, tradePlatform);
 						ImGui::EndDisabled();
+						ImGui::SameLine();
+						if (ImGui::SmallButton(u8"複製")) {
+							std::string t = TJItemText(*ds, jewelType, conquerorSel, h.seed);
+							status = (!t.empty() && write_clipboard_utf8(nullptr, t))
+							         ? u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)"
+							         : u8"複製失敗";
+						}
 						ImGui::PopID();
 					}
 					ImGui::EndTable();
@@ -930,6 +1016,17 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			if (ImGui::SmallButton(u8"交易搜尋"))
 				open_trade_search(tradeStatId, detailSeed, tradeLeague, tradePlatform);
 			ImGui::EndDisabled();
+			ImGui::SameLine();
+			// Hand the jewel to PoB the way PoB expects to receive items: as the
+			// game's own copy text on the clipboard.
+			if (ImGui::SmallButton(u8"複製給 POB")) {
+				std::string t = TJItemText(*ds, jewelType, conquerorSel, detailSeed);
+				status = (!t.empty() && write_clipboard_utf8(nullptr, t))
+				         ? u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)"
+				         : u8"複製失敗";
+			}
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"複製成遊戲的物品文字格式，貼進 POB「物品」分頁即可建立這顆珠寶");
 
 			// view toggle: Vilsol-style stat list vs. node-centric list
 			ImGui::RadioButton(u8"詞綴檢視", &listView, 0); ImGui::SameLine();
@@ -1098,9 +1195,15 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			ImGui::TextDisabled(u8"（計算器其餘功能仍可使用）");
 		} else {
 			// header: hint + selected socket + preview seed
-			if (selSocket < 0)
+			const bool treeRadius = JewelUsesRadius(jewelType);
+			if (!treeRadius) {
+				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
+				                   u8"深淵珠寶不使用半徑（遊戲資料為 abyss_size / to_character_start），");
+				ImGui::SameLine();
+				ImGui::TextDisabled(u8"作用範圍規則未定，暫不預覽受影響節點");
+			} else if (selSocket < 0) {
 				ImGui::TextDisabled(u8"在樹上點擊任一珠寶插槽以選擇位置");
-			else {
+			} else {
 				const PtNode& sn = ptData.nodes[selSocket];
 				ImGui::Text(u8"插槽：%s", sn.nameZh.empty() ? sn.name.c_str() : sn.nameZh.c_str());
 				ImGui::SameLine();
@@ -1111,7 +1214,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			}
 
 			// pick the socket's in-radius nodes to focus on. Empty selection = all.
-			if (selSocket >= 0) {
+			if (selSocket >= 0 && treeRadius) {
 				if (ptSelected.size() != ptData.nodes.size()) ptSelected.assign(ptData.nodes.size(), 0);
 				std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
 				auto setRange = [&](bool sel, int kindFilter) {
@@ -1141,7 +1244,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				ptTrans.clear();
 				statGroups.clear();
 				emphNode = -1; hlStatGroup = -1;
-				if (selSocket >= 0) {
+				if (selSocket >= 0 && treeRadius) {
 					std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
 					bool anySel = false;
 					for (int idx : inRad)
@@ -1220,7 +1323,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 			PassiveTreeInput tin;
 			tin.selectedSocket = selSocket;
-			tin.radiusWorld = 1800.0f;
+			tin.radiusWorld = treeRadius ? 1800.0f : 0.0f; // 0 = draw no ring
 			tin.hi = &dispHi;
 			tin.selected = ptSelected.empty() ? nullptr : &ptSelected;
 			tin.emphasize = emphNode;
@@ -1255,7 +1358,18 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					                       : (n.nameZh.empty() ? n.name : n.nameZh);
 					ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.35f, 1.0f), "%s", nm.c_str());
 					if (t.replaced) ImGui::TextDisabled(u8"（節點被替換）");
+					else ImGui::TextDisabled(u8"（保留原詞綴，珠寶額外加成）");
 					ImGui::Separator();
+					// An addition leaves the node itself intact, so its own stats
+					// still apply and must be shown above what the jewel adds.
+					if (!t.replaced) {
+						const std::vector<std::string>& base = n.statsZh.empty() ? n.stats : n.statsZh;
+						for (const std::string& s : base) {
+							ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.90f, 1.0f));
+							ImGui::TextUnformatted(s.c_str());
+							ImGui::PopStyleColor();
+						}
+					}
 					for (size_t i = 0; i < t.lines.size(); i++) {
 						const std::string& zh = (i < t.linesZh.size() && !t.linesZh[i].empty())
 						                        ? t.linesZh[i] : t.lines[i];

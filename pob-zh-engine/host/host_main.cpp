@@ -288,6 +288,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--tj") { // --tj <jewelType> <seed> <nodeId>
 		return RunTimelessJewelCli(dir, _wtoi(arg2.c_str()), _wtoi(arg3.c_str()), _wtoi(arg4.c_str()));
 	}
+	if (arg1 == L"--tj-verify") { // dump transforms to tj_verify.tsv for offline diffing
+		return RunTimelessJewelVerify(dir);
+	}
 
 	// Headless passive-tree data check (node/socket/radius counts; report file).
 	if (arg1 == L"--passive-tree-selftest") {

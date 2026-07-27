@@ -44,6 +44,8 @@ struct TJConqueror {
 struct TJDataset {
 	int additionsOffset = 96;
 	std::map<int, std::string> types;
+	std::map<int, std::string> binNames;               // jewelType -> LUT file stem when it
+	                                                   // differs from the name (Abyss jewels)
 	std::map<int, std::string> conqType;               // jewelType -> "maraketh" etc.
 	std::map<int, std::vector<TJConqueror>> conquerors; // jewelType -> conquerors
 	std::map<int, int> seedMin, seedMax;
@@ -58,13 +60,37 @@ struct TJDataset {
 	bool HasNode(int nodeId) const { return nodeIndex.count(nodeId) != 0; }
 };
 
+// What a pasted jewel (game Ctrl+C text) resolved to; jewelType 0 = not found.
+struct TJPaste {
+	int jewelType = 0;
+	int conqIndex = -1;
+	int seed = -1;
+};
+
+// Identify jewel + conqueror + seed from copied item text. The conqueror name is
+// unique across all jewels, so it pins both; the seed is the largest number on
+// the line naming the conqueror. Matches English names first, then Chinese ones
+// (zh clients copy translated text).
+TJPaste TJParsePaste(const TJDataset& ds, const std::string& text);
+
+// Render the jewel back out as the game's Ctrl+C item text, in English, so it
+// can be pasted straight into PoB (its parser matches on the English wording).
+// seed is the item seed — already x20 for Elegant Hubris, exactly as TJSearch
+// reports it. Returns "" when the type/conqueror does not resolve.
+std::string TJItemText(const TJDataset& ds, int jewelType, int conqIndex, int seed);
+
 // Result of transforming a single passive node with a socketed jewel.
+//
+// `lines` holds ONLY what the jewel grants. When `replaced` is true those lines
+// are the whole node; when it is false the jewel merely added to the node, so a
+// caller showing the node must print the node's own stats first and these after
+// — that is what PoB's NodeAdditionOrReplacementFromString does.
 struct TJTransform {
 	bool ok = false;
 	bool replaced = false;            // node became a different notable/keystone
 	std::string newName;              // replacement display name (English)
 	std::string newNameZh;            // replacement display name (Chinese; "" -> use newName)
-	std::vector<std::string> lines;   // resulting stat lines (English)
+	std::vector<std::string> lines;   // stat lines the jewel grants (English)
 	std::vector<std::string> linesZh; // parallel Chinese ("" -> fall back to English)
 	std::string note;                 // diagnostics / errors
 };
@@ -138,3 +164,4 @@ bool TJLoadBin(const std::wstring& exeDir, const TJDataset& ds, int jewelType,
 int RunTimelessJewelSelfTest(const std::wstring& exeDir);           // --tj-selftest
 int RunTimelessJewelCli(const std::wstring& exeDir, int jewelType,  // --tj <t> <seed> <node>
                         int seed, int nodeId);
+int RunTimelessJewelVerify(const std::wstring& exeDir);            // --tj-verify
