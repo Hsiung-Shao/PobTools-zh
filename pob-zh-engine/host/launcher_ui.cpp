@@ -147,6 +147,8 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		b.AddText(t->updateAvailable); b.AddText(t->updateNow); b.AddText(t->updateDownloading);
 		b.AddText(t->updatePreparing); b.AddText(t->updateRestarting); b.AddText(t->updateFailed);
 		b.AddText(t->updateRetry); b.AddText(t->updateTransDone);
+		b.AddText(t->updateCheck); b.AddText(t->updateCheckTip);
+		b.AddText(t->updateChecking); b.AddText(t->updateUpToDate);
 	}
 	b.AddText(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
 	b.AddText(kChangelogText);      // version-history dialog body
@@ -397,6 +399,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		SpawnTool(exeDir, flag);
 	};
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
+	// A check the user asked for must report back even when the answer is "no
+	// news"; the automatic startup one stays silent.
+	bool manualCheck = false;
+	double upToDateUntil = 0.0;
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
 
@@ -425,8 +431,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (appUpd) {
 			ust = appUpd->Poll();
 			if (ust.phase == AppUpdatePhase::UpToDate) {
-				appUpd->AckNotice(); // silent: only problems and news are shown
-				ust = appUpd->Poll();
+				if (!manualCheck) {
+					appUpd->AckNotice(); // silent: only problems and news are shown
+					ust = appUpd->Poll();
+				} else {
+					if (upToDateUntil == 0.0) upToDateUntil = ImGui::GetTime() + 4.0;
+					if (ImGui::GetTime() >= upToDateUntil) {
+						appUpd->AckNotice();
+						upToDateUntil = 0.0;
+						manualCheck = false;
+						ust = appUpd->Poll();
+					}
+				}
 			}
 			if (ust.phase == AppUpdatePhase::TransDone) {
 				if (transNoticeUntil == 0.0) transNoticeUntil = ImGui::GetTime() + 6.0;
@@ -468,13 +484,35 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				bp + ImVec2(badge + 16.0f * scale, kTitleFontSize * scale + 4.0f * scale), kTextMuted, S.subtitle);
 
 			// Updater widget, top-right of the header (kept off the busy status bar).
-			if (appUpd && ust.phase != AppUpdatePhase::Idle && ust.phase != AppUpdatePhase::Checking) {
+			// Idle shows the manual check button: the automatic check only fires
+			// once per launch and is throttled to once a day, so without this a
+			// user who leaves the launcher open has no way to ask again.
+			if (appUpd) {
 				ImVec2 keep = ImGui::GetCursorPos();
 				ImGui::PushFont(fonts.small);
 				auto placeRight = [&](float w, float h) {
 					ImGui::SetCursorScreenPos(bp + ImVec2(inner - w, (badge - h) * 0.5f));
 				};
-				if (ust.phase == AppUpdatePhase::AppAvailable) {
+				if (ust.phase == AppUpdatePhase::Idle) {
+					float w = ImGui::CalcTextSize(S.updateCheck).x +
+					          ImGui::GetStyle().FramePadding.x * 2.0f;
+					placeRight(w, ImGui::GetFrameHeight());
+					if (ImGui::Button(S.updateCheck)) {
+						appUpd->RequestCheck(true); // force: skip the daily throttle
+						manualCheck = true;
+						upToDateUntil = 0.0;
+					}
+					if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.updateCheckTip);
+				} else if (ust.phase == AppUpdatePhase::Checking) {
+					float w = ImGui::CalcTextSize(S.updateChecking).x;
+					placeRight(w, ImGui::GetTextLineHeight());
+					ImGui::TextDisabled("%s", S.updateChecking);
+				} else if (ust.phase == AppUpdatePhase::UpToDate) {
+					std::string txt = std::string(S.updateUpToDate) + " v" + ust.localVer;
+					float w = ImGui::CalcTextSize(txt.c_str()).x;
+					placeRight(w, ImGui::GetTextLineHeight());
+					ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", txt.c_str());
+				} else if (ust.phase == AppUpdatePhase::AppAvailable) {
 					std::string label = std::string(S.updateAvailable) + ust.latestVer;
 					float w = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
 					placeRight(w, ImGui::GetFrameHeight());

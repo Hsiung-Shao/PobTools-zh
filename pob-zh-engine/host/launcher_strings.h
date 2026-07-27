@@ -39,6 +39,10 @@ struct LauncherStrings {
 	const char* updateFailed;     // status bar: error prefix (detail appended)
 	const char* updateRetry;      // status bar: small retry button
 	const char* updateTransDone;  // status bar: translation pack applied notice
+	const char* updateCheck;      // header: manual "check for updates" button
+	const char* updateCheckTip;   // header: tooltip explaining the automatic cadence
+	const char* updateChecking;   // header: check in flight
+	const char* updateUpToDate;   // header: manual check found nothing new
 };
 
 inline constexpr LauncherStrings STR_ZHTW = {
@@ -77,6 +81,10 @@ inline constexpr LauncherStrings STR_ZHTW = {
 	u8"更新失敗：",
 	u8"重試",
 	u8"翻譯資料已更新至 v",
+	u8"檢查更新",
+	u8"自動檢查每天最多一次，且只在啟動時進行；按這裡立即強制檢查",
+	u8"檢查更新中…",
+	u8"已是最新版本",
 };
 
 inline constexpr LauncherStrings STR_EN = {
@@ -115,6 +123,10 @@ inline constexpr LauncherStrings STR_EN = {
 	u8"Update failed: ",
 	u8"Retry",
 	u8"Translation data updated to v",
+	u8"Check for updates",
+	u8"Automatic checks run at most once a day, and only at startup. Click to check right now.",
+	u8"Checking for updates...",
+	u8"Up to date",
 };
 
 // Only Traditional Chinese (zh-rTW) and English are offered. "en" (and any
