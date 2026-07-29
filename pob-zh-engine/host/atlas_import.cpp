@@ -200,7 +200,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		// atlas tree only; a character skilltree-export has classes filled in
 		if (d["constants"].contains("classes") && d["constants"]["classes"].is_array() &&
 		    !d["constants"]["classes"].empty())
-			return fail(u8"這是角色天賦樹的匯出，不是圖譜（atlas）天賦樹");
+			return fail(u8"這是角色天賦樹的匯出，不是輿圖（atlas）天賦樹");
 
 		std::vector<double> orbitRadii;
 		for (const auto& v : d["constants"]["orbitRadii"]) orbitRadii.push_back(v.get<double>());

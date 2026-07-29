@@ -272,7 +272,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 		n.kind == kAtlasWormhole ? ImVec4(0.55f, 0.80f, 0.95f, 1.0f) :
 		ImVec4(0.90f, 0.90f, 0.90f, 1.0f);
 	const std::string& dispName = zh ? zh->NodeName(n.id, n.name) : n.name;
-	ImGui::TextColored(nameCol, "%s", dispName.empty() ? (n.kind == kAtlasStart ? u8"圖譜起點" : "?") : dispName.c_str());
+	ImGui::TextColored(nameCol, "%s", dispName.empty() ? (n.kind == kAtlasStart ? u8"輿圖起點" : "?") : dispName.c_str());
 	// cost badge next to the name, poeplanner style (+N / -N nodes)
 	if (n.kind != kAtlasStart) {
 		if (n.alloc)

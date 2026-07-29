@@ -89,6 +89,93 @@ static void BadgeText(const std::string& label, ImU32 col)
 	ImGui::PopStyleColor();
 }
 
+// ---- POB colour escapes ------------------------------------------------------
+// POB marks colour inline: ^xRRGGBB for a literal colour, ^0..^9 for a palette
+// index. The dictionaries carry them verbatim (218 entries do) because the
+// engine hands the codes straight back to POB, so the editor has to show them
+// the way POB will draw them rather than as raw escape text.
+//
+// Palette and parsing rules mirror engine/common/common.cpp IsColorEscape /
+// ReadColorEscape and the colorEscape[] table — kept identical on purpose; a
+// preview that invents its own colours would be worse than none.
+static const ImVec4 kPobPalette[10] = {
+	ImVec4(0.0f, 0.0f, 0.0f, 1.0f), // ^0 black
+	ImVec4(1.0f, 0.0f, 0.0f, 1.0f), // ^1 red
+	ImVec4(0.0f, 1.0f, 0.0f, 1.0f), // ^2 green
+	ImVec4(0.0f, 0.0f, 1.0f, 1.0f), // ^3 blue
+	ImVec4(1.0f, 1.0f, 0.0f, 1.0f), // ^4 yellow
+	ImVec4(1.0f, 0.0f, 1.0f, 1.0f), // ^5 purple
+	ImVec4(0.0f, 1.0f, 1.0f, 1.0f), // ^6 aqua
+	ImVec4(1.0f, 1.0f, 1.0f, 1.0f), // ^7 white
+	ImVec4(0.7f, 0.7f, 0.7f, 1.0f), // ^8 gray
+	ImVec4(0.4f, 0.4f, 0.4f, 1.0f), // ^9 dark gray
+};
+
+static bool is_hex_digit(char c)
+{
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// Length of the escape at s[i], or 0 when there is none. 2 for ^N, 8 for ^xRRGGBB.
+static int pob_escape_len(const std::string& s, size_t i)
+{
+	if (i >= s.size() || s[i] != '^') return 0;
+	if (i + 1 >= s.size()) return 0;
+	char d = s[i + 1];
+	if (d >= '0' && d <= '9') return 2;
+	if (d == 'x' || d == 'X') {
+		if (i + 7 >= s.size()) return 0;
+		for (int c = 0; c < 6; c++)
+			if (!is_hex_digit(s[i + 2 + c])) return 0;
+		return 8;
+	}
+	return 0;
+}
+
+static bool has_pob_color(const std::string& s)
+{
+	for (size_t i = 0; i < s.size(); i++)
+		if (pob_escape_len(s, i)) return true;
+	return false;
+}
+
+// Draw `s` the way POB would: escapes consumed, following text tinted.
+// `base` is the colour to start from (the surrounding text colour).
+static void TextPobColored(const std::string& s, const ImVec4& base)
+{
+	ImVec4 cur = base;
+	std::string run;
+	bool first = true;
+	auto flush = [&]() {
+		if (run.empty()) return;
+		if (!first) ImGui::SameLine(0, 0);
+		ImGui::TextColored(cur, "%s", run.c_str());
+		first = false;
+		run.clear();
+	};
+	for (size_t i = 0; i < s.size();) {
+		int esc = pob_escape_len(s, i);
+		if (!esc) { run += s[i++]; continue; }
+		flush();
+		if (esc == 2) {
+			cur = kPobPalette[s[i + 1] - '0'];
+		} else {
+			auto hex = [&](size_t off) {
+				int v = 0;
+				for (size_t k = 0; k < 2; k++) {
+					char c = s[off + k];
+					v = v * 16 + (c <= '9' ? c - '0' : (c | 32) - 'a' + 10);
+				}
+				return v / 255.0f;
+			};
+			cur = ImVec4(hex(i + 2), hex(i + 4), hex(i + 6), 1.0f);
+		}
+		i += esc;
+	}
+	flush();
+	if (first) ImGui::TextUnformatted(""); // keep the row height when empty
+}
+
 // ---- editor ----------------------------------------------------------------
 
 void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std::wstring& locale)
@@ -111,8 +198,22 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		glfwGetMonitorContentScale(monitor, &sx, &sy);
 		scale = sx > 0.0f ? sx : 1.0f;
 	}
-	const int winW = (int)(1100 * scale);
-	const int winH = (int)(720 * scale);
+	// Roomier default: the entry list is three columns and the missing-string
+	// tab is four, so 1100x720 left both cramped. Clamped to the monitor work
+	// area (not the raw resolution) so the title bar stays reachable and the
+	// window still fits on a small laptop screen.
+	int winW = (int)(1440 * scale);
+	int winH = (int)(900 * scale);
+	if (monitor) {
+		int wx = 0, wy = 0, ww = 0, wh = 0;
+		glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
+		if (ww > 0 && wh > 0) {
+			if (winW > ww - (int)(40 * scale)) winW = ww - (int)(40 * scale);
+			if (winH > wh - (int)(60 * scale)) winH = wh - (int)(60 * scale);
+		}
+	}
+	if (winW < 900) winW = 900;
+	if (winH < 600) winH = 600;
 
 	GLFWwindow* win = glfwCreateWindow(winW, winH, "PobTools \xe2\x80\x94 \xe7\xbf\xbb\xe8\xad\xaf\xe7\xb7\xa8\xe8\xbc\xaf\xe5\x99\xa8", nullptr, nullptr);
 	if (!win) {
@@ -180,7 +281,10 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 	int fileFilter = 0;       // 0 = all, else file index + 1
 	std::vector<size_t> filtered;
 
-	bool showMiss = false;
+	// one-shot requests to bring a tab to the front (the toolbar button and
+	// the scan action both need it; ImGui clears the flag after one frame)
+	bool focusMiss = false;
+	bool focusEntries = false;
 	bool missScanned = false;
 	bool missLogFound = false;
 	bool missShowReverse = false;
@@ -278,7 +382,7 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		}
 
 		ImGui::SameLine();
-		if (ImGui::Button(u8"缺漏掃描")) { showMiss = true; runScan(); }
+		if (ImGui::Button(u8"缺漏掃描")) { focusMiss = true; runScan(); }
 		ImGui::SameLine();
 		int dirty = DirtyCount(model);
 		{
@@ -322,8 +426,18 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		}
 		ImGui::Spacing();
 
+		// --- tabs: entries / missing-string scan ------------------------------
+		// The scan used to live in its own floating window, which left it a
+		// fraction of the editor's width — too narrow for a long English
+		// string plus a file picker plus a translation box on one row. As a
+		// tab it gets the whole window.
+		if (model.localeExists && ImGui::BeginTabBar("##editortabs")) {
+
+		ImGuiTabItemFlags entriesFlags = focusEntries ? ImGuiTabItemFlags_SetSelected : 0;
+		focusEntries = false;
+		if (ImGui::BeginTabItem(u8"翻譯條目", nullptr, entriesFlags)) {
 		// --- entry table (virtualized) ---
-		if (model.localeExists) {
+		{
 			ImGuiTableFlags tflags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
 				ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable;
 			if (ImGui::BeginTable("##entries", 3, tflags, ImVec2(0, 0))) {
@@ -351,7 +465,14 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						}
 
 						ImGui::TableSetColumnIndex(1);
-						ImGui::TextUnformatted(e.key.c_str());
+						// TextPobColored emits one item per colour run, so the
+						// hover test has to cover the group, not the last run.
+						ImGui::BeginGroup();
+						if (has_pob_color(e.key))
+							TextPobColored(e.key, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						else
+							ImGui::TextUnformatted(e.key.c_str());
+						ImGui::EndGroup();
 						if (ImGui::IsItemHovered() && ImGui::GetIO().KeyShift == false) {
 							ImGui::BeginTooltip();
 							ImGui::PushTextWrapPos(500 * scale);
@@ -364,6 +485,11 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						ImGui::SetNextItemWidth(-FLT_MIN);
 						if (ImGui::InputText("##v", &e.value))
 							model.files[e.fileIdx].dirty = true;
+						// The box has to keep the raw escapes so they can be
+						// edited, so the rendered form goes underneath — this is
+						// what POB will actually draw.
+						if (has_pob_color(e.value))
+							TextPobColored(e.value, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 
 						ImGui::PopID();
 					}
@@ -371,86 +497,122 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 				ImGui::EndTable();
 			}
 		}
+		ImGui::EndTabItem();
+		}
 
-		ImGui::End();
+		// --- missing-string scan ---------------------------------------------
+		ImGuiTabItemFlags missFlags = focusMiss ? ImGuiTabItemFlags_SetSelected : 0;
+		focusMiss = false;
+		std::string missTabLabel = u8"缺漏掃描";
+		if (missScanned && !misses.empty())
+			missTabLabel += " (" + std::to_string(misses.size()) + ")";
+		if (ImGui::BeginTabItem(missTabLabel.c_str(), nullptr, missFlags)) {
+			if (ImGui::Button(u8"重新掃描")) runScan();
+			ImGui::SameLine();
+			ImGui::Checkbox(u8"顯示反查失敗 (REV)", &missShowReverse);
+			ImGui::SameLine(0, 16 * scale);
+			int removeIdx = -1;
+			bool applyAll = false;
+			if (ImGui::Button(u8"全部補上（已填寫者）")) applyAll = true;
 
-		// --- miss panel (separate window) ---
-		if (showMiss) {
-			ImGui::SetNextWindowSize(ImVec2(560 * scale, 460 * scale), ImGuiCond_FirstUseEver);
-			if (ImGui::Begin(u8"缺漏掃描", &showMiss)) {
-				if (ImGui::Button(u8"重新掃描")) runScan();
-				ImGui::SameLine();
-				ImGui::Checkbox(u8"顯示反查失敗 (REV)", &missShowReverse);
-
-				if (missScanned && !missLogFound) {
-					ImGui::TextColored(ImVec4(0.94f, 0.67f, 0.27f, 1.0f),
-						u8"找不到 translate_misses.log，請先啟動一次 POB 並操作介面。");
-				}
-
-				int shown = 0;
-				for (const MissEntry& m : misses) if (missShowReverse || !m.reverse) shown++;
-				ImGui::TextDisabled(u8"缺漏 %d 筆（共掃到 %zu）", shown, misses.size());
-				ImGui::Separator();
-
-				int removeIdx = -1;
-				bool applyAll = false;
-				if (ImGui::Button(u8"全部補上（已填寫者）")) applyAll = true;
+			if (!missScanned) {
 				ImGui::Spacing();
+				ImGui::TextDisabled(u8"按「重新掃描」讀取 translate_misses.log。");
+			} else if (!missLogFound) {
+				ImGui::TextColored(ImVec4(0.94f, 0.67f, 0.27f, 1.0f),
+					u8"找不到 translate_misses.log，請先啟動一次 POB 並操作介面。");
+			}
 
-				ImGui::BeginChild("##misslist");
+			int shown = 0;
+			for (const MissEntry& m : misses) if (missShowReverse || !m.reverse) shown++;
+			ImGui::TextDisabled(u8"缺漏 %d 筆（共掃到 %zu）", shown, misses.size());
+			ImGui::Spacing();
+
+			// A table rather than a run of SameLine widgets: the English text
+			// can be a whole sentence, and only a real column keeps the file
+			// picker and the translation box aligned when it wraps.
+			ImGuiTableFlags mflags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
+				ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable;
+			if (ImGui::BeginTable("##misses", 4, mflags, ImVec2(0, 0))) {
+				ImGui::TableSetupColumn(u8"未翻譯字串", ImGuiTableColumnFlags_WidthStretch, 0.50f);
+				ImGui::TableSetupColumn(u8"寫入檔案", ImGuiTableColumnFlags_WidthFixed, 150 * scale);
+				ImGui::TableSetupColumn(u8"翻譯", ImGuiTableColumnFlags_WidthStretch, 0.50f);
+				ImGui::TableSetupColumn("##act", ImGuiTableColumnFlags_WidthFixed, 64 * scale);
+				ImGui::TableSetupScrollFreeze(0, 1);
+				ImGui::TableHeadersRow();
+
 				for (size_t i = 0; i < misses.size(); i++) {
 					if (!missShowReverse && misses[i].reverse) continue;
+					ImGui::TableNextRow();
 					ImGui::PushID((int)i);
-					if (misses[i].reverse) BadgeText("REV", ImColor(0.85f, 0.6f, 0.3f, 1.0f));
-					ImGui::PushTextWrapPos(0.0f);
-					ImGui::TextUnformatted(misses[i].text.c_str());
-					ImGui::PopTextWrapPos();
 
-					ImGui::SetNextItemWidth(140 * scale);
+					ImGui::TableSetColumnIndex(0);
+					if (misses[i].reverse) {
+						BadgeText("REV", ImColor(0.85f, 0.6f, 0.3f, 1.0f));
+						ImGui::SameLine();
+					}
+					if (has_pob_color(misses[i].text)) {
+						TextPobColored(misses[i].text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+					} else {
+						ImGui::PushTextWrapPos(0.0f);
+						ImGui::TextUnformatted(misses[i].text.c_str());
+						ImGui::PopTextWrapPos();
+					}
+
+					ImGui::TableSetColumnIndex(1);
+					ImGui::SetNextItemWidth(-FLT_MIN);
 					{
 						int& tgt = missTarget[i];
-						std::string preview = (tgt >= 0 && tgt < (int)model.files.size()) ? model.files[tgt].name : u8"選擇檔案";
+						std::string preview = (tgt >= 0 && tgt < (int)model.files.size())
+							? model.files[tgt].name : u8"選擇檔案";
 						if (ImGui::BeginCombo("##tgt", preview.c_str())) {
 							for (size_t f = 0; f < model.files.size(); f++)
 								if (ImGui::Selectable(model.files[f].name.c_str(), tgt == (int)f)) tgt = (int)f;
 							ImGui::EndCombo();
 						}
 					}
-					ImGui::SameLine();
-					ImGui::SetNextItemWidth(220 * scale);
+
+					ImGui::TableSetColumnIndex(2);
+					ImGui::SetNextItemWidth(-FLT_MIN);
 					ImGui::InputTextWithHint("##mt", u8"輸入翻譯…", &missTrans[i]);
-					ImGui::SameLine();
+
+					ImGui::TableSetColumnIndex(3);
 					bool canAdd = missTarget[i] >= 0 && !missTrans[i].empty();
 					ImGui::BeginDisabled(!canAdd);
-					if (ImGui::Button(u8"補上")) {
+					if (ImGui::Button(u8"補上", ImVec2(-FLT_MIN, 0))) {
 						SetEntry(model, missTarget[i], misses[i].text, missTrans[i]);
 						removeIdx = (int)i;
 					}
 					ImGui::EndDisabled();
-					ImGui::Separator();
+
 					ImGui::PopID();
 				}
-				ImGui::EndChild();
-
-				if (applyAll) {
-					for (int i = (int)misses.size() - 1; i >= 0; i--) {
-						if (missTarget[i] >= 0 && !missTrans[i].empty()) {
-							SetEntry(model, missTarget[i], misses[i].text, missTrans[i]);
-							misses.erase(misses.begin() + i);
-							missTrans.erase(missTrans.begin() + i);
-							missTarget.erase(missTarget.begin() + i);
-						}
-					}
-					rebuildFilter();
-				} else if (removeIdx >= 0) {
-					misses.erase(misses.begin() + removeIdx);
-					missTrans.erase(missTrans.begin() + removeIdx);
-					missTarget.erase(missTarget.begin() + removeIdx);
-					rebuildFilter();
-				}
+				ImGui::EndTable();
 			}
-			ImGui::End();
+
+			if (applyAll) {
+				for (int i = (int)misses.size() - 1; i >= 0; i--) {
+					if (missTarget[i] >= 0 && !missTrans[i].empty()) {
+						SetEntry(model, missTarget[i], misses[i].text, missTrans[i]);
+						misses.erase(misses.begin() + i);
+						missTrans.erase(missTrans.begin() + i);
+						missTarget.erase(missTarget.begin() + i);
+					}
+				}
+				rebuildFilter();
+			} else if (removeIdx >= 0) {
+				misses.erase(misses.begin() + removeIdx);
+				missTrans.erase(missTrans.begin() + removeIdx);
+				missTarget.erase(missTarget.begin() + removeIdx);
+				rebuildFilter();
+			}
+			ImGui::EndTabItem();
 		}
+
+		ImGui::EndTabBar();
+		}
+
+		ImGui::End();
 
 		// --- unsaved-changes guard on close ---
 		if (glfwWindowShouldClose(win)) {

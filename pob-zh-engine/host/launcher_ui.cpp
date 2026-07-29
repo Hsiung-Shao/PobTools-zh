@@ -48,15 +48,17 @@ static const float kFontSize = 19.0f;
 static const float kSmallFontSize = 15.0f;
 static const float kTitleFontSize = 26.0f;
 
-// External-link board (wide layout). Placeholder set — the final list comes
-// from the user; swap the entries here, labels feed the glyph atlas
-// automatically.
+// External-link board (wide layout). Labels feed the glyph atlas automatically
+// (see the AddText loop below), so adding an entry needs no font work.
+// The Discord and sponsor links are rendered after this list from
+// LauncherStrings so they stay translated; everything here is a proper noun.
 struct LinkEntry { const char* label; const wchar_t* url; };
 static const LinkEntry kLinks[] = {
 	{ u8"PoeDB 流亡編年史",       L"https://poedb.tw" },
 	{ u8"PoE2DB",                 L"https://poe2db.tw" },
 	{ u8"官方網站",               L"https://www.pathofexile.com" },
 	{ u8"官方交易市集",           L"https://www.pathofexile.com/trade" },
+	{ u8"交易市集中文化",         L"https://github.com/Hsiung-Shao/poe-market-zh/releases/latest" },
 	{ u8"PoE Wiki",               L"https://www.poewiki.net" },
 	{ u8"巴哈姆特 PoE 板",        L"https://forum.gamer.com.tw/A.php?bsn=18966" },
 	{ u8"Reddit r/pathofexile",   L"https://www.reddit.com/r/pathofexile/" },
@@ -586,14 +588,20 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		ImGui::Dummy(ImVec2(0, 8.0f * scale));
 
-		// Tools: secondary actions. The translation editor is temporarily hidden
-		// (restore the commented button + revert toolSize to /3 to bring it back).
+		// Tools: secondary actions. Four buttons share the row, so the width
+		// divisor and the gap count must move together — three gaps between
+		// four buttons.
 		SectionLabel(fonts, scale, inner, S.toolsSection);
 		{
 			float gap = 12.0f * scale;
-			ImVec2 toolSize((inner - 2.0f * gap) / 3.0f, 46.0f * scale);
+			ImVec2 toolSize((inner - 3.0f * gap) / 4.0f, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
-			// if (ImGui::Button(S.editor, toolSize)) openEditor = true;   // hidden for now
+			// The translation editor edits dist\Data\{game}\{locale}\*.json in
+			// place — the same files the engine loads — so its changes take
+			// effect on the next POB launch (verified end to end by
+			// --editor-selftest).
+			if (ImGui::Button(S.editor, toolSize)) openEditor = true;
+			ImGui::SameLine(0, gap);
 			if (ImGui::Button(S.filterEditor, toolSize)) spawnTool(L"--filter-editor");
 			ImGui::SameLine(0, gap);
 			if (ImGui::Button(S.atlasPlanner, toolSize)) spawnTool(L"--atlas");
@@ -611,6 +619,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::TableNextColumn();
 				LinkText(l.label, l.url);
 			}
+			// Community + sponsor: moved out of the About dialog so they are
+			// reachable without opening a modal. Labels come from the string
+			// table rather than kLinks because these two are translated.
+			ImGui::TableNextColumn();
+			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
+			ImGui::TableNextColumn();
+			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
 			ImGui::EndTable();
 		}
 
@@ -721,10 +736,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				start = nl + 1;
 			}
 
-			ImGui::Dummy(ImVec2(0, 6.0f * scale));
-			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
-			ImGui::Dummy(ImVec2(0, 4.0f * scale));
-			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
+			// The Discord and sponsor links now live on the external-link board
+			// on the main screen; keeping copies here would just be two places
+			// to update when a URL changes.
 			ImGui::Dummy(ImVec2(0, 16.0f * scale));
 			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
 			ImGui::EndPopup();

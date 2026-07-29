@@ -331,6 +331,11 @@ if (WIN32)
         host/launcher_ui.cpp
         host/launcher_editor.cpp
         host/editor_data.cpp
+        host/editor_selftest.cpp
+        # the editor selftest asks the REAL loader what the engine would
+        # return; without this it could only re-implement the merge and
+        # would be testing its own copy of the rule instead of the engine
+        translate/translation_manager.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
         host/filter_selftest.cpp

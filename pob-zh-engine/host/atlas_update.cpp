@@ -501,7 +501,7 @@ void AtlasUpdater::workerLoop()
 
 bool AtlasUpdater::doCheck(std::string* err)
 {
-	setPhase(AtlasUpdatePhase::Checking, u8"檢查圖譜資料更新中…");
+	setPhase(AtlasUpdatePhase::Checking, u8"檢查輿圖資料更新中…");
 
 	// newest release tag on GitHub
 	std::string tagsBody;
@@ -552,7 +552,7 @@ bool AtlasUpdater::doCheck(std::string* err)
 
 	if (latestTag != tag_) {
 		setPhase(AtlasUpdatePhase::UpdateAvailable,
-			u8"發現新賽季圖譜資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）"));
+			u8"發現新賽季輿圖資料 " + latestTag + (tag_.empty() ? "" : u8"（目前 " + tag_ + u8"）"));
 	} else if (!repoeVer.empty() && repoeVer != repoe_) {
 		// same tree, newer translations: rebuild the zh mapping in place
 		setPhase(AtlasUpdatePhase::Checking, u8"更新繁中對照資料中…");
@@ -568,7 +568,7 @@ bool AtlasUpdater::doCheck(std::string* err)
 			setPhase(AtlasUpdatePhase::UpToDate, "");
 		}
 	} else {
-		setPhase(AtlasUpdatePhase::UpToDate, u8"圖譜資料已是最新（" + latestTag + u8"）");
+		setPhase(AtlasUpdatePhase::UpToDate, u8"輿圖資料已是最新（" + latestTag + u8"）");
 	}
 
 	lastCheckUtc_ = now_filetime();

@@ -26,6 +26,7 @@
 #include "launcher_config.h"
 #include "launcher_ui.h"
 #include "launcher_editor.h"
+#include "editor_selftest.h"
 #include "filter_editor.h"
 #include "atlas_planner.h"
 #include "atlas_tree_data.h"
@@ -374,6 +375,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--atlas") {
 		ShowAtlasPlanner(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
 		return 0;
+	}
+	if (arg1 == L"--editor-selftest") {
+		// headless: drives the editor data layer, then asks the real
+		// translation loader what the engine would return
+		return RunEditorSelftest();
 	}
 	if (arg1 == L"--filter-editor") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");

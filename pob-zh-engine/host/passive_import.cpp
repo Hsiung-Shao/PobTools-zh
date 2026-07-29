@@ -387,7 +387,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 			return fail(u8"data.json 缺少必要欄位（nodes/groups/constants/sprites）——確定是 skilltree-export 的 data.json 嗎？");
 		// a character tree has classes filled in; an atlas export does not
 		if (!d.contains("classes") || d["classes"].empty())
-			return fail(u8"這不是角色天賦樹的匯出（缺 classes；atlas 樹請用圖譜的匯入）");
+			return fail(u8"這不是角色天賦樹的匯出（缺 classes；atlas 樹請用輿圖的匯入）");
 
 		const ordered_json& nodesIn = d["nodes"];
 		const ordered_json& groups = d["groups"];

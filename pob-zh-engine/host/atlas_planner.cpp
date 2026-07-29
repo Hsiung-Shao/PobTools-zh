@@ -63,7 +63,7 @@ static std::wstring OpenDataJsonDialog()
 	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
 }
 
-static const wchar_t* kBuildJsonFilter = L"圖譜配點專案 (*.json)\0*.json\0所有檔案 (*.*)\0*.*\0\0";
+static const wchar_t* kBuildJsonFilter = L"輿圖配點專案 (*.json)\0*.json\0所有檔案 (*.*)\0*.*\0\0";
 
 // Save-file dialog for exporting one build project; buf pre-filled with the
 // project name (filesystem-hostile characters stripped).
@@ -136,7 +136,7 @@ static bool PlannerWriteFile(const std::wstring& path, const std::string& conten
 void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/)
 {
 	if (!glfwInit()) {
-		MessageBoxW(nullptr, L"無法初始化 GLFW，圖譜配點器無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
+		MessageBoxW(nullptr, L"無法初始化 GLFW，輿圖配點器無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
 		return;
 	}
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
@@ -156,10 +156,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	const int winW = (int)(1280 * scale);
 	const int winH = (int)(860 * scale);
 
-	GLFWwindow* win = glfwCreateWindow(winW, winH, u8"PobTools — 圖譜配點器", nullptr, nullptr);
+	GLFWwindow* win = glfwCreateWindow(winW, winH, u8"PobTools — 輿圖配點器", nullptr, nullptr);
 	if (!win) {
 		glfwTerminate();
-		MessageBoxW(nullptr, L"無法建立圖譜配點器視窗。", L"PobTools", MB_ICONERROR | MB_OK);
+		MessageBoxW(nullptr, L"無法建立輿圖配點器視窗。", L"PobTools", MB_ICONERROR | MB_OK);
 		return;
 	}
 	if (monitor) {
@@ -300,7 +300,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	loadSeason(viewTag);
 	showZh = zhLoaded;                   // default Chinese when a mapping exists
 	if (startupDropped > 0)
-		importMsg = u8"提醒：此配置存於舊版圖譜樹，" + std::to_string(startupDropped) +
+		importMsg = u8"提醒：此配置存於舊版輿圖樹，" + std::to_string(startupDropped) +
 		            u8" 個已不存在的節點已自動移除";
 
 	// --- version-compare state (compareBase season -> active season) ---
@@ -617,7 +617,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
 		if (!ready) {
-			ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f), u8"圖譜資料載入失敗：%s", loadErr.c_str());
+			ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f), u8"輿圖資料載入失敗：%s", loadErr.c_str());
 			ImGui::TextDisabled(u8"請確認 Data\\atlas_tree_poe1.json 與 Data\\atlas\\ 圖集存在，或直接匯入新資料。");
 			if (ImGui::Button(u8"匯入賽季資料")) importSeason();
 			// the auto updater doubles as the recovery path when no data exists
@@ -662,7 +662,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			};
 
 			ImGui::AlignTextToFramePadding();
-			ImGui::TextColored(PobUi::Accent(), u8"圖譜配置器");
+			ImGui::TextColored(PobUi::Accent(), u8"輿圖配置器");
 			ImGui::SameLine(0, 18.0f * scale);
 			ImGui::TextDisabled(u8"專案");
 			ImGui::SameLine();
@@ -848,7 +848,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 					ImGui::EndCombo();
 				}
 				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip(u8"切換畫布顯示的賽季圖譜樹（配點以節點 ID 跨季共用）");
+					ImGui::SetTooltip(u8"切換畫布顯示的賽季輿圖樹（配點以節點 ID 跨季共用）");
 				if (!onCanonicalSeason()) {
 					ImGui::SameLine();
 					ImGui::TextColored(ImVec4(0.90f, 0.65f, 0.25f, 1.0f), u8"舊賽季檢視（唯讀）");
@@ -906,7 +906,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			}
 
 			if (ImGui::BeginPopupModal(u8"匯入賽季資料確認", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-				ImGui::TextUnformatted(u8"從 GGG 官方 atlastree-export 匯入新賽季的圖譜天賦樹：");
+				ImGui::TextUnformatted(u8"從 GGG 官方 atlastree-export 匯入新賽季的輿圖天賦樹：");
 				ImGui::TextDisabled(u8"1. 到 github.com/grindinggear/atlastree-export 下載（Code → Download ZIP）並解壓縮");
 				ImGui::TextDisabled(u8"2. 選取解壓縮後資料夾內的 data.json（assets 資料夾需在旁邊）");
 				ImGui::TextDisabled(u8"匯入會覆寫目前的樹資料；已配置的節點會依 ID 對映，消失的節點自動移除。");
@@ -1023,7 +1023,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			if (!anyAlloc) {
 				ImGui::Dummy(ImVec2(0, 30.0f * scale));
 				ImGui::TextDisabled(u8"尚未配置任何節點");
-				ImGui::TextWrapped(u8"在左側圖譜上點擊節點開始規劃；滾輪縮放、拖曳平移。");
+				ImGui::TextWrapped(u8"在左側輿圖上點擊節點開始規劃；滾輪縮放、拖曳平移。");
 			} else {
 				if (ImGui::CollapsingHeader(u8"加成統計", ImGuiTreeNodeFlags_DefaultOpen)) {
 					const std::vector<int>& order = (showZh && zhLoaded) ? statOrderZh : statOrderEn;
@@ -1094,7 +1094,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 									ImGui::PopStyleColor();
 								}
 								ImGui::PopTextWrapPos();
-								ImGui::TextDisabled(u8"點擊清單以在圖譜中定位");
+								ImGui::TextDisabled(u8"點擊清單以在輿圖中定位");
 								ImGui::EndTooltip();
 								ImGui::PopStyleVar();
 							}

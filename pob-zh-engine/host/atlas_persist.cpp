@@ -197,7 +197,7 @@ bool AtlasParseExportJson(const std::string& json, AtlasBuildEntry* out, std::st
 		if (doc.value("format", std::string()) != "pobtools-atlas-build") {
 			if (doc.value("format", std::string()) == "pobtools-atlas-builds")
 				return fail(u8"這是完整存檔而不是單一專案的匯出檔");
-			return fail(u8"不是 PobTools 圖譜專案匯出檔（format 欄位不符）");
+			return fail(u8"不是 PobTools 輿圖專案匯出檔（format 欄位不符）");
 		}
 		if (!doc.contains("alloc") || !doc["alloc"].is_array())
 			return fail(u8"匯出檔缺少 alloc 陣列");
@@ -236,7 +236,7 @@ bool AtlasParseShareCode(const std::string& code, AtlasBuildEntry* out, std::str
 	for (char c : code)
 		if (c != ' ' && c != '\t' && c != '\r' && c != '\n') s.push_back(c);
 	if (s.compare(0, strlen(kShareCodePrefix), kShareCodePrefix) != 0)
-		return fail(u8"不是 PobTools 圖譜分享碼（缺少 PTAT1 前綴）");
+		return fail(u8"不是 PobTools 輿圖分享碼（缺少 PTAT1 前綴）");
 	unsigned char* dec = nullptr;
 	size_t decLen = 0;
 	if (!Base64Decode(s.c_str() + strlen(kShareCodePrefix), &dec, &decLen) || !dec)
