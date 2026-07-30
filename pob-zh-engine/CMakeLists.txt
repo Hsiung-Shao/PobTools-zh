@@ -350,6 +350,9 @@ if (WIN32)
         host/filter_data.cpp
         host/filter_i18n.cpp
         host/image_tex.cpp
+        # dropped from the build when the old filter tier-list view was retired;
+        # back in for the atlas planner's scarab icons
+        host/icon_manager.cpp
         host/item_library.cpp
         host/audio_player.cpp
         host/sound_manager.cpp
@@ -362,6 +365,7 @@ if (WIN32)
         host/atlas_import.cpp
         host/atlas_update.cpp
         host/atlas_stat_agg.cpp
+        host/atlas_scarabs.cpp
         host/atlas_persist.cpp
         host/atlas_i18n.cpp
         host/atlas_version_index.cpp
@@ -429,6 +433,12 @@ if (WIN32)
     # selection; the in-app updater installs new seasons and prunes to two.
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_versions/" DESTINATION "Data/atlas_versions")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_index.json" DESTINATION "Data")
+    # Scarab catalogue for the planner's map-device section: names + official
+    # effect text in both locales, art paths, and the placement rules
+    # (per-scarab copy limit, mutual-exclusion family). Regenerated from a local
+    # Content.ggpk by tools/ggpk_zh/gen_scarabs.py --verify; unlike the atlas
+    # tree it has no online updater, so a new league needs a fresh run.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/scarabs_poe1.json" DESTINATION "Data")
 endif ()
 
 

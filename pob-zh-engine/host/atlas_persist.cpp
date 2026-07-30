@@ -49,6 +49,23 @@ static std::vector<int> parse_alloc_array(const ordered_json& arr)
 	return out;
 }
 
+// The optional post-1.0 fields. Absent (old file) and empty (new file that does
+// not use them) are the same state on purpose.
+static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
+{
+	e.notes = obj.value("notes", std::string());
+	e.scarabs.clear();
+	if (obj.contains("scarabs") && obj["scarabs"].is_array())
+		for (const auto& s : obj["scarabs"])
+			if (s.is_string()) e.scarabs.push_back(s.get<std::string>());
+}
+
+static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
+{
+	if (!e.notes.empty()) obj["notes"] = e.notes;
+	if (!e.scarabs.empty()) obj["scarabs"] = e.scarabs;
+}
+
 // ---- AtlasBuildFile -----------------------------------------------------------
 
 std::wstring AtlasBuildFile::PathOf(const std::wstring& exeDir)
@@ -69,6 +86,7 @@ bool AtlasBuildFile::ParseDoc(const std::string& json)
 				e.name = b.value("name", std::string());
 				if (e.name.empty()) e.name = u8"預設";
 				e.alloc = parse_alloc_array(b["alloc"]);
+				parse_extras(b, e);
 				parsed.push_back(std::move(e));
 			}
 			if (parsed.empty()) return false;
@@ -83,6 +101,7 @@ bool AtlasBuildFile::ParseDoc(const std::string& json)
 			AtlasBuildEntry e;
 			e.name = u8"預設";
 			e.alloc = parse_alloc_array(doc["alloc"]);
+			parse_extras(doc, e); // harmless on a real legacy file; keeps the paths symmetric
 			builds.assign(1, std::move(e));
 			version = doc.value("version", std::string());
 			active = 0;
@@ -105,6 +124,7 @@ std::string AtlasBuildFile::SerializeDoc() const
 		ordered_json e;
 		e["name"] = b.name;
 		e["alloc"] = b.alloc;
+		write_extras(e, b);
 		arr.push_back(std::move(e));
 	}
 	doc["builds"] = std::move(arr);
@@ -183,6 +203,7 @@ std::string AtlasExportJson(const AtlasBuildEntry& b, const std::string& treeVer
 	doc["version"] = treeVersion;
 	doc["name"] = b.name;
 	doc["alloc"] = b.alloc;
+	write_extras(doc, b);
 	return doc.dump();
 }
 
@@ -204,6 +225,7 @@ bool AtlasParseExportJson(const std::string& json, AtlasBuildEntry* out, std::st
 		out->name = doc.value("name", std::string());
 		if (out->name.empty()) out->name = u8"匯入的專案";
 		out->alloc = parse_alloc_array(doc["alloc"]);
+		parse_extras(doc, *out); // the caller still runs scarabs through ScarabDb::Sanitize
 		return true;
 	} catch (const std::exception& e) {
 		if (err) *err = std::string(u8"JSON 解析失敗: ") + e.what();

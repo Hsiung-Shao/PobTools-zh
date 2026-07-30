@@ -6,12 +6,14 @@
 #include "atlas_i18n.h"
 #include "atlas_import.h"
 #include "atlas_persist.h"
+#include "atlas_scarabs.h"
 #include "atlas_stat_agg.h"
 #include "atlas_tree_data.h"
 #include "atlas_update.h"
 #include "atlas_version_index.h"
 #include "atlas_view.h"
 #include "editor_util.h" // EdReadFile
+#include "icon_manager.h" // scarab icons (poecdn + on-disk cache)
 #include "launcher_config.h" // ResolveConfiguredFontPath
 #include "ui_theme.h"
 
@@ -219,6 +221,18 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	AtlasBuildFile buildFile;
 	buildFile.Load(exeDir); // legacy single-build files migrate transparently
 
+	// Scarab catalogue + icon fetcher. Both are optional: a missing
+	// Data/scarabs_poe1.json hides the section (and makes Sanitize a no-op, so a
+	// saved scarab list survives untouched), and no network just means no icons.
+	ScarabDb scarabDb;
+	std::string scarabErr;
+	scarabDb.Load(exeDir, &scarabErr);
+	for (AtlasBuildEntry& b : buildFile.builds)
+		b.scarabs = scarabDb.Sanitize(b.scarabs, nullptr);
+
+	IconManager icons;
+	icons.Init(exeDir);
+
 	std::string nameBuf; // shared by the new/rename project modals
 
 	// --- persisted UI state (panel width + last viewed season) ---
@@ -243,12 +257,15 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	auto onCanonicalSeason = [&]() {
 		return verIndex.Active().empty() || viewTag == verIndex.Active();
 	};
-	// Persist the build only on the canonical season, so a preview of an older
-	// season never prunes the allocation back to that season's subset.
+	// Capture the allocation only on the canonical season, so a preview of an
+	// older season never prunes it back to that season's subset. The file is
+	// still written either way: notes and scarabs are season-independent, and
+	// before they existed an edit made while previewing was simply lost.
 	auto saveActive = [&]() {
-		if (!onCanonicalSeason()) return;
-		buildFile.Active().alloc = tree.AllocIds();
-		buildFile.version = tree.Version();
+		if (onCanonicalSeason()) {
+			buildFile.Active().alloc = tree.AllocIds();
+			buildFile.version = tree.Version();
+		}
 		buildFile.Save(exeDir);
 	};
 
@@ -354,6 +371,196 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			std::sort(g.begin(), g.end(), [&](const PanelNode& a, const PanelNode& b) {
 				return tree.nodes[a.idx].name < tree.nodes[b.idx].name;
 			});
+	};
+
+	// --- scarab section (map device) ---
+	// Kept beside the atlas stats but never merged into them: these are map
+	// modifiers, not passive bonuses, and their numbers do not add up with the
+	// tree's. The picker filters on en+zh and only asks for the icons of the
+	// rows actually on screen, so opening it does not queue 130 downloads.
+	char scarabSearch[256] = "";
+	auto scarabLines = [&](const ScarabDef& d) -> const std::vector<std::string>& {
+		// One list or the other, never a line from each: a Description cell can
+		// split into a different number of lines per locale.
+		return (showZh && !d.descZh.empty()) ? d.descZh : d.descEn;
+	};
+	auto scarabName = [&](const ScarabDef& d) -> const std::string& {
+		return (showZh && !d.zh.empty()) ? d.zh : d.en;
+	};
+	auto scarabRefuseText = [&](const ScarabAddResult& r) -> std::string {
+		switch (r.code) {
+		case ScarabAdd::kFull:
+			return u8"地圖裝置只能放 " + std::to_string(kMaxScarabs) + u8" 隻甲蟲";
+		case ScarabAdd::kOverLimit:
+			return u8"這隻甲蟲最多只能放 " + std::to_string(r.limit) + u8" 份";
+		case ScarabAdd::kFamilyConflict:
+			return u8"與「" + (r.conflict ? scarabName(*r.conflict) : std::string("?")) + u8"」不能同時使用";
+		default:
+			return u8"這隻甲蟲不在目前的資料中";
+		}
+	};
+
+	auto renderScarabPanel = [&]() {
+		AtlasBuildEntry& b = buildFile.Active();
+		if (!scarabDb.available()) {
+			if (ImGui::CollapsingHeader(u8"甲蟲")) {
+				ImGui::TextWrapped(u8"甲蟲資料未載入：%s", scarabErr.c_str());
+				ImGui::TextDisabled(u8"已存的甲蟲設定不會被更動。");
+			}
+			return;
+		}
+		std::string hdr = u8"甲蟲 (" + std::to_string(b.scarabs.size()) + "/" +
+		                  std::to_string(kMaxScarabs) + ")###scarabhdr";
+		if (!ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+		const float slot = 38.0f * scale;
+		int removeAt = -1;
+		for (int i = 0; i < kMaxScarabs; i++) {
+			if (i) ImGui::SameLine(0, 6.0f * scale);
+			ImGui::PushID(i);
+			if (i < (int)b.scarabs.size()) {
+				const ScarabDef* d = scarabDb.ById(b.scarabs[i]);
+				unsigned tex = 0;
+				if (d) {
+					icons.RequestPath(d->art);
+					tex = icons.TextureByPath(d->art);
+				}
+				const ImVec2 fp = ImGui::GetStyle().FramePadding;
+				bool hit = tex ? ImGui::ImageButton("##slot", (ImTextureID)(intptr_t)tex, ImVec2(slot, slot))
+				               : ImGui::Button(d ? "..." : "?", ImVec2(slot + fp.x * 2, slot + fp.y * 2));
+				if (hit) removeAt = i;
+				if (d && ImGui::IsItemHovered()) {
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f * scale, 10.0f * scale));
+					ImGui::BeginTooltip();
+					ImGui::TextColored(PobUi::Accent(), "%s", scarabName(*d).c_str());
+					ImGui::PushTextWrapPos(360.0f * scale);
+					for (const std::string& s : scarabLines(*d))
+						ImGui::TextUnformatted(StripStatMarkup(s).c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::TextDisabled(u8"點擊移除");
+					ImGui::EndTooltip();
+					ImGui::PopStyleVar();
+				}
+			} else {
+				// ImageButton adds FramePadding around the image, so a plain
+				// Button needs it too or the empty slots come out smaller.
+				const ImVec2 fp = ImGui::GetStyle().FramePadding;
+				if (ImGui::Button("+##add", ImVec2(slot + fp.x * 2, slot + fp.y * 2))) {
+					scarabSearch[0] = '\0';
+					ImGui::OpenPopup(u8"選擇甲蟲");
+				}
+				// The picker belongs to the first empty slot only; opening it from
+				// any slot would create several popups sharing one id.
+				if (ImGui::BeginPopup(u8"選擇甲蟲")) {
+					ImGui::SetNextItemWidth(320.0f * scale);
+					if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+					ImGui::InputTextWithHint("##scarabsearch", u8"搜尋名稱或效果（中英、模糊）…",
+						scarabSearch, sizeof(scarabSearch), ImGuiInputTextFlags_EscapeClearsAll);
+					ScarabQuery q = MakeScarabQuery(scarabSearch);
+
+					// Rank by match quality; an empty query scores everything 1 so
+					// the list keeps its natural family+tier order until you type.
+					std::vector<std::pair<int, const ScarabDef*>> hits;
+					for (const ScarabDef& d : scarabDb.All()) {
+						int s = ScarabMatchScore(d, q);
+						if (s > 0) hits.push_back({ s, &d });
+					}
+					if (!q.empty())
+						std::stable_sort(hits.begin(), hits.end(),
+							[](const auto& a, const auto& b) {
+								if (a.first != b.first) return a.first > b.first;
+								return a.second->zh.size() < b.second->zh.size(); // tighter name first
+							});
+					ImGui::TextDisabled(u8"%d 隻 · %s", (int)hits.size(), scarabDb.Source().c_str());
+
+					ImGui::BeginChild("##scarablist", ImVec2(420.0f * scale, 360.0f * scale));
+					std::string lastType;
+					ImGuiListClipper clip;
+					clip.Begin((int)hits.size());
+					while (clip.Step()) {
+						for (int k = clip.DisplayStart; k < clip.DisplayEnd; k++) {
+							const ScarabDef& d = *hits[k].second;
+							ScarabAddResult can = scarabDb.CanAdd(b.scarabs, d.id);
+							ImGui::PushID(k);
+							// Only rows the clipper actually emits; scrolling the
+							// whole list does end up fetching all 130, but that
+							// happens once and then lives in the disk cache.
+							icons.RequestPath(d.art);
+							unsigned tex = icons.TextureByPath(d.art);
+							float sz = ImGui::GetTextLineHeight() * 1.4f;
+							if (tex) ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(sz, sz));
+							else     ImGui::Dummy(ImVec2(sz, sz));
+							ImGui::SameLine();
+							if (!can.ok()) ImGui::BeginDisabled();
+							if (ImGui::Selectable(scarabName(d).c_str())) {
+								b.scarabs.push_back(d.id);
+								saveActive();
+								ImGui::CloseCurrentPopup();
+							}
+							if (!can.ok()) ImGui::EndDisabled();
+							if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+									ImVec2(14.0f * scale, 10.0f * scale));
+								ImGui::BeginTooltip();
+								ImGui::TextColored(PobUi::Accent(), "%s", scarabName(d).c_str());
+								ImGui::PushTextWrapPos(360.0f * scale);
+								for (const std::string& s : scarabLines(d))
+									ImGui::TextUnformatted(StripStatMarkup(s).c_str());
+								ImGui::PopTextWrapPos();
+								if (d.limit > 1)
+									ImGui::TextDisabled(u8"可放置 %d 份", d.limit);
+								if (!d.stash)
+									ImGui::TextDisabled(u8"（未出現在碎片倉庫與交易站）");
+								if (!can.ok())
+									ImGui::TextColored(PobUi::StatusColor(PobUi::StatusTone::Warning),
+										"%s", scarabRefuseText(can).c_str());
+								ImGui::EndTooltip();
+								ImGui::PopStyleVar();
+							}
+							ImGui::PopID();
+						}
+					}
+					ImGui::EndChild();
+					ImGui::EndPopup();
+				}
+				ImGui::PopID();
+				break; // only the first empty slot is interactive
+			}
+			ImGui::PopID();
+		}
+		if (removeAt >= 0) {
+			b.scarabs.erase(b.scarabs.begin() + removeAt);
+			saveActive();
+		}
+
+		ImGui::Spacing();
+		if (b.scarabs.empty()) {
+			ImGui::TextDisabled(u8"尚未放置甲蟲");
+		} else {
+			for (const std::string& id : b.scarabs) {
+				const ScarabDef* d = scarabDb.ById(id);
+				if (!d) continue;
+				ImGui::TextColored(PobUi::Accent(), "%s", scarabName(*d).c_str());
+				ImGui::Indent(10.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.98f, 1.0f));
+				for (const std::string& s : scarabLines(*d))
+					ImGui::TextWrapped("%s", StripStatMarkup(s).c_str());
+				ImGui::PopStyleColor();
+				ImGui::Unindent(10.0f * scale);
+			}
+		}
+		ImGui::Spacing();
+	};
+
+	// --- project notes ---
+	auto renderNotesPanel = [&]() {
+		if (!ImGui::CollapsingHeader(u8"備註")) return;
+		AtlasBuildEntry& b = buildFile.Active();
+		ImGui::InputTextMultiline("##notes", &b.notes,
+			ImVec2(-FLT_MIN, 90.0f * scale));
+		// Writing on every keystroke would hit the disk once per character.
+		if (ImGui::IsItemDeactivatedAfterEdit()) saveActive();
+		ImGui::Spacing();
 	};
 
 	// Compute the compareBase -> active season diff (data-only; independent of the
@@ -605,6 +812,8 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			ust = updater.Poll();
 		}
 
+		icons.Pump(); // GL thread: upload any scarab icons the worker finished
+
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
@@ -652,12 +861,23 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				saveActive();
 				int idx = buildFile.AddBuild(e.name);
 				buildFile.active = idx;
+				// Keep the raw ids so a preview season cannot prune them; the
+				// canonical season's saveActive() below replaces them with the
+				// mapped set.
+				buildFile.builds[idx].alloc = e.alloc;
+				buildFile.builds[idx].notes = e.notes;
+				std::string snote;
+				buildFile.builds[idx].scarabs = scarabDb.Sanitize(e.scarabs, &snote);
 				int kept = tree.ApplyAllocIds(e.alloc);
 				saveActive();
 				panelDirty = true;
 				int dropped = (int)e.alloc.size() - kept;
 				importMsg = u8"已匯入「" + buildFile.Active().name + u8"」：" + std::to_string(kept) + u8" 點";
 				if (dropped > 0) importMsg += u8"（丟棄 " + std::to_string(dropped) + u8" 個未知節點）";
+				if (!buildFile.builds[idx].scarabs.empty())
+					importMsg += u8"、" + std::to_string(buildFile.builds[idx].scarabs.size()) + u8" 隻甲蟲";
+				if (!buildFile.builds[idx].notes.empty()) importMsg += u8"、備註";
+				importMsg += snote; // "，忽略 N 個未知甲蟲" etc., empty when nothing was dropped
 				importFailed = false;
 			};
 
@@ -1018,6 +1238,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			// text keeps a margin from the panel edges
 			ImGui::BeginChild("##panelscroll", ImVec2(0, 0), false,
 				ImGuiWindowFlags_AlwaysUseWindowPadding);
+			// Map device + notes come first and show even with nothing allocated:
+			// both are useful before a single node is picked.
+			renderScarabPanel();
+			renderNotesPanel();
 			bool anyAlloc = false;
 			for (const auto& g : nodeGroups) anyAlloc = anyAlloc || !g.empty();
 			if (!anyAlloc) {
@@ -1126,6 +1350,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	}
 
 	updater.Shutdown();     // cancels any in-flight download, joins the worker
+	icons.Shutdown();       // joins the icon worker, deletes its textures (GL thread)
 	view.DestroyTextures(); // while the GL context is still current
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

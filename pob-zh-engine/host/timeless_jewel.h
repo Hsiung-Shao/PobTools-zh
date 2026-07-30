@@ -11,6 +11,7 @@
 
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct TJStatMod {
@@ -120,11 +121,47 @@ struct TJWantStat {
 	double weight = 1.0;    // added to a seed's score per matching node
 };
 
+// The number a rolled line contributes, for the per-stat minimum. This is a
+// magnitude WITHIN the line's own template, not a signed quantity: a leading '-'
+// survives TJNormalizeStat ("-#% to all maximum Elemental Resistances"), so the
+// sign belongs to the identity of the stat and the digits after it are what
+// actually varies. Reading it as signed would make the one reachable negative
+// keystone fail its own default minimum of 0.
+double TJStatValue(const std::string& line);
+
+// Decides whether one rolled line satisfies one of the wanted stats — template
+// equal AND value at least minValue.
+//
+// This is deliberately the ONLY implementation of that rule. The search and
+// every place the UI shows or highlights a line as a hit both go through it, so
+// what the user sees marked as matched is exactly what the ranking counted.
+// They used to be written separately and the display side ignored minValue
+// entirely, which showed under-minimum rolls as hits.
+class TJWantMatcher {
+public:
+	TJWantMatcher() = default;
+	explicit TJWantMatcher(const std::vector<TJWantStat>& wants);
+
+	// The wanted stat this line satisfies, or nullptr. The pointer belongs to
+	// the matcher and stays valid for its lifetime.
+	const TJWantStat* Match(const std::string& line) const;
+	bool empty() const { return wants_.empty(); }
+
+private:
+	std::vector<TJWantStat> wants_;              // owned copy: safe to outlive the caller's
+	std::unordered_map<std::string, int> byTmpl_; // template -> index into wants_
+};
+
 struct TJSearchQuery {
 	int jewelType = 3;
 	int scope = 1;                    // 0 = all indexed, 1 = notables only, 2 = smalls only
 	std::vector<TJWantStat> wants;
 	double minTotalWeight = 0.0;
+	// Every wanted stat must appear on the seed, not just enough of ANY of them
+	// to clear the weight. Summing weight alone lets a seed carrying one stat
+	// three times score the same as a seed carrying all three, which is not what
+	// picking several stats means. Turn off for an "any of these" search.
+	bool requireAll = true;
 	// Restrict evaluation to these node ids (a jewel socket's in-radius nodes).
 	// Empty = every indexed node in scope (global search). Node type (notable vs
 	// normal) is derived from the dataset, so smalls are rolled correctly too.

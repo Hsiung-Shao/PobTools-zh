@@ -542,8 +542,20 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	int mode = 0;                 // 0 = search by stats, 1 = enter seed
 	int scope = 1;                // 1 = notables, 0 = all
 	float minTotalWeight = 0.0f;
+	bool requireAll = true;       // picking several stats means "all of them"
 	std::string statFilter;
 	std::vector<WantRow> wants;
+	// The search criterion, rebuilt from the current rows wherever the UI needs to
+	// know "does this line count as a hit". Everything that shows or highlights a
+	// match goes through TJWantMatcher so the display can never disagree with the
+	// ranking — it used to compare templates only and ignore 最小值, so a roll the
+	// search had rejected still appeared as a hit.
+	auto makeMatcher = [&wants]() {
+		std::vector<TJWantStat> v;
+		v.reserve(wants.size());
+		for (const auto& w : wants) v.push_back({ w.en, w.minValue, w.weight });
+		return TJWantMatcher(v);
+	};
 	std::string seedText = "500";
 	std::string status;
 	int detailSeed = -1;          // a result seed to expand
@@ -821,6 +833,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 			ImGui::SetNextItemWidth(160 * scale);
 			ImGui::InputFloat(u8"最小總權重", &minTotalWeight, 0, 0, "%.1f");
+			ImGui::Checkbox(u8"必須包含全部已選詞綴", &requireAll);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"關閉後只要命中任一條就算，權重高的仍排前面。\n"
+				                  u8"開啟時，只滿足其中一條的種子不會出現。");
 			ImGui::RadioButton(u8"只中型天賦 (Notables)", &scope, 1);
 			ImGui::SameLine();
 			ImGui::RadioButton(u8"全部節點", &scope, 0);
@@ -842,6 +858,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					q.jewelType = jewelType;
 					q.scope = scope;
 					q.minTotalWeight = minTotalWeight;
+					q.requireAll = requireAll;
 					for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
 					// bind the search to the socket's in-radius nodes — the picked
 					// subset if any node is picked, otherwise all of them. Jewels
@@ -892,8 +909,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 							inRad.push_back(idx);
 						}
 					}
-					std::set<std::string> wantSet;
-					for (const auto& w : wants) wantSet.insert(w.en);
+					const TJWantMatcher matcher = makeMatcher();
 
 					// group seeds by how many nodes matched (desc), like Vilsol
 					std::map<int, std::vector<const TJSeedHit*>, std::greater<int>> groups;
@@ -925,8 +941,12 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 									break;
 								}
 								ImGui::PushID(h->seed);
+								// Coverage next to the score: with several stats picked,
+								// "weight 3" alone cannot tell "all three stats once" from
+								// "one stat three times".
 								ImGui::TextColored(ImVec4(0.98f, 0.62f, 0.30f, 1.0f),
-								                   u8"種子 %d (權重 %.0f)", h->seed, h->weight);
+								                   u8"種子 %d (權重 %.0f · 詞綴 %d/%d)",
+								                   h->seed, h->weight, h->distinctWants, (int)wants.size());
 								ImGui::SameLine();
 								if (ImGui::SmallButton(u8"查看")) detailSeed = h->seed;
 								ImGui::SameLine();
@@ -944,11 +964,16 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 									                        n.stats, ConquerorType(jewelType), conquerorId, n.name);
 									if (!t.ok) continue;
 									for (size_t i = 0; i < t.lines.size(); i++) {
-										if (!wantSet.count(TJNormalizeStat(t.lines[i]))) continue;
+										const TJWantStat* w = matcher.Match(t.lines[i]);
+										if (!w) continue; // below 最小值 counts for nothing, so it shows as nothing
 										const std::string& zh = (i < t.linesZh.size() && !t.linesZh[i].empty())
 										                        ? t.linesZh[i] : t.lines[i];
 										if (colorStats) ImGui::PushStyleColor(ImGuiCol_Text, stat_color(zh));
-										ImGui::BulletText("%s", zh.c_str());
+										// Show what this line contributed, so the seed's rank is legible.
+										if (w->weight != 1.0)
+											ImGui::BulletText(u8"%s  [權重 %.1f]", zh.c_str(), w->weight);
+										else
+											ImGui::BulletText("%s", zh.c_str());
 										if (colorStats) ImGui::PopStyleColor();
 									}
 								}
@@ -1085,12 +1110,11 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				ImGui::EndChild();
 			} else {
 				// ---- node-centric: "{node}: {affix}", click to jump on the tree ----
+				const TJWantMatcher nodeMatcher = makeMatcher();
 				auto matchesWants = [&](const TJTransform& t) {
-					if (wants.empty()) return false;
-					for (const auto& ln : t.lines) {
-						std::string k = TJNormalizeStat(ln);
-						for (const auto& w : wants) if (w.en == k) return true;
-					}
+					if (nodeMatcher.empty()) return false;
+					for (const auto& ln : t.lines)
+						if (nodeMatcher.Match(ln)) return true;
 					return false;
 				};
 				bool anySel = false;
@@ -1289,10 +1313,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 								statGroups.push_back(std::move(sg));
 							} else g = it->second;
 							(big ? statGroups[g].notables : statGroups[g].smalls).push_back(kv.first);
-							double v = 0;
-							const std::string& ln = kv.second.lines[i];
-							for (size_t p = 0; p < ln.size(); p++)
-								if (isdigit((unsigned char)ln[p])) { v = atof(ln.c_str() + p); break; }
+							// same reading of a line's value as the search's 最小值 test
+							double v = TJStatValue(kv.second.lines[i]);
 							if (v > statGroups[g].maxVal) statGroups[g].maxVal = v;
 						}
 					}
@@ -1310,11 +1332,14 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				mark(statGroups[hlStatGroup].notables);
 				mark(statGroups[hlStatGroup].smalls);
 			} else if (!wants.empty()) {
-				std::set<std::string> wset;
-				for (const auto& w : wants) wset.insert(w.en);
+				// Frame only nodes that really satisfy the query: a node whose roll
+				// sits below 最小值 contributed nothing to this seed's score, so
+				// framing it would point the eye at a node that is not why the seed
+				// ranked where it did.
+				const TJWantMatcher hiMatcher = makeMatcher();
 				for (const auto& kv : ptTrans) {
 					for (const auto& ln : kv.second.lines)
-						if (wset.count(TJNormalizeStat(ln))) {
+						if (hiMatcher.Match(ln)) {
 							dispHi[kv.first] = ptHi[kv.first] ? ptHi[kv.first] : kPtHiAffected;
 							break;
 						}

@@ -1,0 +1,2342 @@
+{
+ "format": "pobtools-scarabs",
+ "game": "poe1",
+ "source": "GGPK 3.29.0.4.2",
+ "scarabs": [
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAbyssNew1",
+   "en": "Abyss Scarab",
+   "zh": "聖甲蟲：深淵",
+   "type": "Abyss",
+   "tier": 0,
+   "family": 14,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabAbyss",
+   "descEn": [
+    "Area contains an additional [ContainsAbyss|Abyss]"
+   ],
+   "descZh": [
+    "區域內包含 1 個額外[ContainsAbyss|深淵]"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAbyssNew2",
+   "en": "Abyss Scarab of Multitudes",
+   "zh": "聖甲蟲：眾生深淵",
+   "type": "Abyss",
+   "tier": 1,
+   "family": 95,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabAbyss",
+   "descEn": [
+    "[ContainsAbyss|Abyss] Chasms in Area spawn 100% increased Monsters per fed soul"
+   ],
+   "descZh": [
+    "區域內的[ContainsAbyss|深淵]裂隙每餵養 1 個靈魂，增加 100% 生成的怪物數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAbyssNew4",
+   "en": "Abyss Scarab of Crystals",
+   "zh": "聖甲蟲：晶石深淵",
+   "type": "Abyss",
+   "tier": 2,
+   "family": 96,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabAbyss",
+   "descEn": [
+    "[ContainsAbyss|Abyss] Pits in Area that do not contain a reward instead create an [AbyssalCrystal|Abyssal Crystal]"
+   ],
+   "descZh": [
+    "區域內不含獎勵的[ContainsAbyss|深淵]坑洞會改為創造一個[AbyssalCrystal|深淵水晶]"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAbyssNew3",
+   "en": "Abyss Scarab of Descending",
+   "zh": "聖甲蟲：落降深淵",
+   "type": "Abyss",
+   "tier": 3,
+   "family": 97,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabAbyss",
+   "descEn": [
+    "Area contains an Abyssal Depths"
+   ],
+   "descZh": [
+    "區域內包含 1 個無盡深淵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAbyssNew5",
+   "en": "Abyss Scarab of the Consort",
+   "zh": "聖甲蟲：伴侶深淵",
+   "type": "Abyss",
+   "tier": 4,
+   "family": 140,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabAbyss",
+   "descEn": [
+    "An [ContainsAbyss|Abyss] Pit in Area will spawn an [AbyssalConsort|Abyssal Consort]"
+   ],
+   "descZh": [
+    "區域內 1 個[ContainsAbyss|深淵]坑洞會生成一個[AbyssalConsort|深淵伴侶]"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAnarchy1",
+   "en": "Anarchy Scarab",
+   "zh": "聖甲蟲：混亂",
+   "type": "Anarchy",
+   "tier": 0,
+   "family": 34,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabAnarchy",
+   "descEn": [
+    "Area contains 5 additional Rogue Exiles"
+   ],
+   "descZh": [
+    "區域內含 4 個額外盜賊流亡者"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAnarchy2",
+   "en": "Anarchy Scarab of Gigantification",
+   "zh": "聖甲蟲：浩瀚混亂",
+   "type": "Anarchy",
+   "tier": 1,
+   "family": 35,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabAnarchy",
+   "descEn": [
+    "Wild Rogue Exiles in Area have a 30% chance to be replaced with a Rogue Giant"
+   ],
+   "descZh": [
+    "區域內的野生盜賊流亡者有 30% 機率被盜賊巨人取代"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAnarchy3",
+   "en": "Anarchy Scarab of Partnership",
+   "zh": "聖甲蟲：結夥混亂",
+   "type": "Anarchy",
+   "tier": 2,
+   "family": 36,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabAnarchy",
+   "descEn": [
+    "Wild Rogue Exiles in Area have a 50% chance to appear in pairs"
+   ],
+   "descZh": [
+    "區域內的野生盜賊流亡者有 50% 機率成對出現"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabAnarchy4",
+   "en": "Anarchy Scarab of the Exceptional",
+   "zh": "聖甲蟲：至高混亂",
+   "type": "Anarchy",
+   "tier": 3,
+   "family": 37,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabAnarchy",
+   "descEn": [
+    "Area contains an additional Exceptional Rogue Exile"
+   ],
+   "descZh": [
+    "區域內含有一名卓越的盜賊流亡者"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeastsNew1",
+   "en": "Bestiary Scarab",
+   "zh": "聖甲蟲：獸獵",
+   "type": "Bestiary",
+   "tier": 0,
+   "family": 128,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabBeasts",
+   "descEn": [
+    "Area contains Einhar"
+   ],
+   "descZh": [
+    "區域含有埃哈"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeastsNew3",
+   "en": "Bestiary Scarab of Duplicating",
+   "zh": "聖甲蟲：增生獸獵",
+   "type": "Bestiary",
+   "tier": 1,
+   "family": 125,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabBeasts",
+   "descEn": [
+    "Create a copy of Beasts captured in Area"
+   ],
+   "descZh": [
+    "在區域內製造已捕捉巨獸的複製體"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeastsNew2",
+   "en": "Bestiary Scarab of the Herd",
+   "zh": "聖甲蟲：牧群獸獵",
+   "type": "Bestiary",
+   "tier": 2,
+   "family": 126,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabBeasts",
+   "descEn": [
+    "Area contains 5 additional Red Beasts if it contains Einhar"
+   ],
+   "descZh": [
+    "含有埃哈的區域內含5隻額外紅色野獸"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeastsNew4",
+   "en": "Bestiary Scarab of the Shadowed Crow",
+   "zh": "聖甲蟲：暗影烏鴉獸獵",
+   "type": "Bestiary",
+   "tier": 3,
+   "family": 127,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabBeasts",
+   "descEn": [
+    "Area contains The Black Mórrigan if it contains Einhar"
+   ],
+   "descZh": [
+    "含有埃哈的區域內含黑色莫里根"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBetrayal1",
+   "en": "Betrayal Scarab",
+   "zh": "聖甲蟲：反叛",
+   "type": "Betrayal",
+   "tier": 0,
+   "family": 67,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabBetrayal",
+   "descEn": [
+    "Area contains Jun"
+   ],
+   "descZh": [
+    "區域含有瓊恩"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBetrayal2",
+   "en": "Betrayal Scarab of the Allflame",
+   "zh": "聖甲蟲：不滅之火反叛",
+   "type": "Betrayal",
+   "tier": 1,
+   "family": 64,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabBetrayal",
+   "descEn": [
+    "75% Increased number of Monster Packs Substituted by Allflame Embers in Area"
+   ],
+   "descZh": [
+    "區域內由不滅之火餘燼替換的怪物增加 75% 數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBetrayal4",
+   "en": "Betrayal Scarab of Unbreaking",
+   "zh": "聖甲蟲：催堅反叛",
+   "type": "Betrayal",
+   "tier": 2,
+   "family": 65,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabBetrayal",
+   "descEn": [
+    "Interrogated Immortal Syndicate targets in Area have a 50% chance to",
+    "not lose Rank upon completing Interrogation"
+   ],
+   "descZh": [
+    "區域內被審問的永生密教成員有50%機率",
+    "在審問完畢後不降低階級"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBetrayal3",
+   "en": "Betrayal Scarab of Reinforcements",
+   "zh": "聖甲蟲：支援反叛",
+   "type": "Betrayal",
+   "tier": 3,
+   "family": 66,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabBetrayal",
+   "descEn": [
+    "Immortal Syndicate Members in Area have 50% increased chance to be accompanied by reinforcements"
+   ],
+   "descZh": [
+    "區域內的永生密教成員增加 50% 有支援的機率"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeyond1",
+   "en": "Beyond Scarab",
+   "zh": "聖甲蟲：超越",
+   "type": "Beyond",
+   "tier": 0,
+   "family": 78,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabBeyond",
+   "descEn": [
+    "Slaying enemies close together in Area can attract monsters from Beyond this realm"
+   ],
+   "descZh": [
+    "擊殺區域內的敵人將會吸引更強大的怪物登場"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeyond2",
+   "en": "Beyond Scarab of Corruption",
+   "zh": "聖甲蟲：腐化超越",
+   "type": "Beyond",
+   "tier": 1,
+   "family": 79,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabBeyond",
+   "descEn": [
+    "Items dropped by Beyond Demons in Area are Corrupted"
+   ],
+   "descZh": [
+    "區域內的超越惡魔掉落的物品為已汙染"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeyond3",
+   "en": "Beyond Scarab of Haemophilia",
+   "zh": "聖甲蟲：血病超越",
+   "type": "Beyond",
+   "tier": 2,
+   "family": 80,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabBeyond",
+   "descEn": [
+    "Beyond Portals in Area have 50% increased Merging Radius",
+    "Characters that Kill Beyond Rare Monsters in Area have a 30% chance to gain their Modifiers for 20 seconds"
+   ],
+   "descZh": [
+    "區域內，超越傳送門的融合範圍增加 50%",
+    "擊殺區域內的超越怪物時有30%機率獲得其詞綴，持續20秒"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeyond5",
+   "en": "Beyond Scarab of the Invasion",
+   "zh": "聖甲蟲：侵略超越",
+   "type": "Beyond",
+   "tier": 3,
+   "family": 81,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabBeyond",
+   "descEn": [
+    "Rare and Unique Monsters slain in Area create 8 to 12 additional Beyond Portals"
+   ],
+   "descZh": [
+    "區域內被殺的稀有和傳奇怪物額外創造 8 至 12 個超越傳送門"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBeyond4",
+   "en": "Beyond Scarab of Resurgence",
+   "zh": "聖甲蟲：復興超越",
+   "type": "Beyond",
+   "tier": 4,
+   "family": 82,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltGreaterScarabBeyond",
+   "descEn": [
+    "Beyond Bosses Spawned in Area are accompanied by Beyond Bosses of other Factions",
+    "Beyond Bosses in Area drop 20% increased Tainted Currency",
+    "Beyond Portals in Area have 30% increased chance to spawn a Unique Boss"
+   ],
+   "descZh": [
+    "區域內的超越頭目會伴隨著其他勢力的超越頭目",
+    "區域內的超越頭目增加 20% 掉落的玷汙的通貨",
+    "區域內的超越傳送門增加 30% 生成一個傳奇頭目的機率"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBlightNew1",
+   "en": "Blight Scarab",
+   "zh": "聖甲蟲：凋落",
+   "type": "Blight",
+   "tier": 0,
+   "family": 13,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabBlight",
+   "descEn": [
+    "Area contains a Blight Encounter"
+   ],
+   "descZh": [
+    "區域內包含 1 個凋落事件"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBlightNew2",
+   "en": "Blight Scarab of Bounty",
+   "zh": "聖甲蟲：珍寶凋落",
+   "type": "Blight",
+   "tier": 1,
+   "family": 92,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabBlight",
+   "descEn": [
+    "Blight Chests in Area have a 20% chance to be openable again"
+   ],
+   "descZh": [
+    "區域內的凋落保險箱有 20% 機率可以開兩次"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBlightNew3",
+   "en": "Blight Scarab of the Blightheart",
+   "zh": "聖甲蟲：枯萎之心凋落",
+   "type": "Blight",
+   "tier": 2,
+   "family": 93,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabBlight",
+   "descEn": [
+    "Blight Encounters in Area have one Blighted Chest",
+    "Blight Encounters in Area spawn additional waves of Enemies",
+    "Blighted Chests in Area grow larger and more",
+    "rewarding the more Blighted Enemies are slain"
+   ],
+   "descZh": [
+    "區域內的凋落事件會掉落一個凋落保險箱",
+    "區域內的凋落事件會生成更多波的敵人",
+    "區域內的凋落保險箱會隨著",
+    "擊殺的敵人變得更大，獎勵變得更豐富"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBlightNew4",
+   "en": "Blight Scarab of Blooming",
+   "zh": "聖甲蟲：綻放凋落",
+   "type": "Blight",
+   "tier": 3,
+   "family": 94,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabBlight",
+   "descEn": [
+    "Blight Encounters in Area have up to 3 additional Unique Bosses",
+    "Unique enemies in Blight Encounters have 100% increased life",
+    "Tier 14+ Blighted Maps found in Area drop as Blight-Ravaged Maps instead"
+   ],
+   "descZh": [
+    "區域內的凋落事件額外含有最多 3 個傳奇頭目",
+    "凋落事件中的傳奇敵人生命增加 100%",
+    "區域內找到的階級 14 以上凋落地圖掉落為凋落蔓延地圖"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBlightNew5",
+   "en": "Blight Scarab of Invigoration",
+   "zh": "聖甲蟲：振奮凋落",
+   "type": "Blight",
+   "tier": 4,
+   "family": 137,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabBlight",
+   "descEn": [
+    "Each Empowering Tower in Areas grants Blighted Monsters in",
+    "range increased Difficulty and Reward"
+   ],
+   "descZh": [
+    "區域內每個賦予塔使範圍內",
+    "凋落的怪物增加難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew1",
+   "en": "Breach Scarab of the Hive",
+   "zh": "聖甲蟲：窩巢裂痕",
+   "type": "Breach",
+   "tier": 0,
+   "family": 24,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabBreach",
+   "descEn": [
+    "Area contains a Breach Hive"
+   ],
+   "descZh": [
+    "區域內含有一座裂痕巢穴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew2",
+   "en": "Breach Scarab of the Dreamer",
+   "zh": "聖甲蟲：築夢裂痕",
+   "type": "Breach",
+   "tier": 1,
+   "family": 25,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabBreach",
+   "descEn": [
+    "Breaches in Area will always belong to Chayula"
+   ],
+   "descZh": [
+    "區域內裂痕必為夏烏拉"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew3",
+   "en": "Breach Scarab of Instability",
+   "zh": "聖甲蟲：動盪裂痕",
+   "type": "Breach",
+   "tier": 2,
+   "family": 24,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/AltLesserScarabBreach",
+   "descEn": [
+    "Area contains 2 additional Unstable Breaches"
+   ],
+   "descZh": [
+    "區域內含有2道不穩定的裂痕"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew4",
+   "en": "Breach Scarab of the Marshal",
+   "zh": "聖甲蟲：元帥裂痕",
+   "type": "Breach",
+   "tier": 3,
+   "family": 26,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltNormalScarabBreach",
+   "descEn": [
+    "Unstable Breaches in Area contain a Boss",
+    "Breach Hives in Area lead to a Hive Fortress"
+   ],
+   "descZh": [
+    "區域內的不穩定裂痕含有一名頭目",
+    "區域內的裂痕巢穴會通往巢裔要塞"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew5",
+   "en": "Breach Scarab of the Incensed Swarm",
+   "zh": "聖甲蟲：怒潮裂痕",
+   "type": "Breach",
+   "tier": 4,
+   "family": 28,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabBreach",
+   "descEn": [
+    "Ailith's skills in Area instead enrage the Hive, increasing the Difficulty",
+    "and Reward of subsequent waves"
+   ],
+   "descZh": [
+    "區域內艾里絲的技能會改為激怒巢裔，增加",
+    "後續波次的難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabBreachNew6",
+   "en": "Breach Scarab of Resonant Cascade",
+   "zh": "聖甲蟲：共鳴浪湧裂痕",
+   "type": "Breach",
+   "tier": 5,
+   "family": 138,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabBreach",
+   "descEn": [
+    "Unstable Breaches in Areas are 10% faster for each Unstable Breach already opened",
+    "Monsters from Unstable Breaches in Areas have increased Difficulty and Reward for",
+    "each Unstable Breach already opened"
+   ],
+   "descZh": [
+    "每個已開啟的不穩定裂痕會使區域內不穩定裂痕開啟和關閉速度增加 10%",
+    "每個已開啟的不穩定裂痕",
+    "使區域內不穩定裂痕的怪物增加難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDelirium1",
+   "en": "Delirium Scarab",
+   "zh": "聖甲蟲：譫妄",
+   "type": "Delirium",
+   "tier": 0,
+   "family": 87,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabDelirium",
+   "descEn": [
+    "Area contains a Mirror of Delirium"
+   ],
+   "descZh": [
+    "此區域含有 1 個譫妄之鏡"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDelirium2",
+   "en": "Delirium Scarab of Mania",
+   "zh": "聖甲蟲：狂熱譫妄",
+   "type": "Delirium",
+   "tier": 1,
+   "family": 88,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabDelirium",
+   "descEn": [
+    "Delirium Reward Meters fill 100% faster in Area",
+    "Delirium in Area increases 50% faster with distance from the mirror"
+   ],
+   "descZh": [
+    "區域內譫妄異域的獎勵量表填滿加快 100%",
+    "區域內的鏡子遠方的譫妄強化比平常快 50%"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDelirium3",
+   "en": "Delirium Scarab of Paranoia",
+   "zh": "聖甲蟲：偏執譫妄",
+   "type": "Delirium",
+   "tier": 2,
+   "family": 89,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabDelirium",
+   "descEn": [
+    "Delirium Encounters in Area generate 2 additional Reward types"
+   ],
+   "descZh": [
+    "區域內譫妄異域的事件額外生成 2 個獎勵類型"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDelirium4",
+   "en": "Delirium Scarab of Neuroses",
+   "zh": "聖甲蟲：神經譫妄",
+   "type": "Delirium",
+   "tier": 3,
+   "family": 90,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltGreaterScarabDelirium",
+   "descEn": [
+    "Delirium Encounters in Area contain all Unique Delirium Bosses",
+    "Delirium Reward Types in Area gain +1 to count on defeating a Unique Delirium Boss",
+    "Can only be used with Tier 11+ Maps"
+   ],
+   "descZh": [
+    "區域內譫妄異域的事件含有所有傳奇譫妄頭目",
+    "區域內的所有譫妄獎勵記數會在擊殺傳奇譫妄頭目時+1",
+    "限用於階級 11 以上的地圖"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDelirium5",
+   "en": "Delirium Scarab of Delusions",
+   "zh": "聖甲蟲：幻覺譫妄",
+   "type": "Delirium",
+   "tier": 4,
+   "family": 91,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabDelirium",
+   "descEn": [
+    "Maps found in Area have layers of Delirium"
+   ],
+   "descZh": [
+    "區域內發現的地圖含有多層譫妄異域"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSulphiteNew1",
+   "en": "Sulphite Scarab",
+   "zh": "聖甲蟲：硫酸",
+   "type": "Delve",
+   "tier": 0,
+   "family": 124,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabSulphite",
+   "descEn": [
+    "Area contains Niko"
+   ],
+   "descZh": [
+    "區域內含尼科",
+    "地圖擁有者獲得 150% 更多硫酸"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSulphiteNew2",
+   "en": "Sulphite Scarab of Greed",
+   "zh": "聖甲蟲：貪婪硫酸",
+   "type": "Delve",
+   "tier": 1,
+   "family": 122,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabSulphite",
+   "descEn": [
+    "Map owner gains 150% more Sulphite"
+   ],
+   "descZh": [
+    "地圖擁有者增加 150% 獲得硫酸量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSulphiteNew3",
+   "en": "Sulphite Scarab of Fumes",
+   "zh": "聖甲蟲：煙毒硫酸",
+   "type": "Delve",
+   "tier": 2,
+   "family": 123,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabSulphite",
+   "descEn": [
+    "Sulphite found in Map Area releases Enraging Fumes",
+    "Monsters affected by Enraging Fumes have 50% increased Item Quantity",
+    "Sulphite in your maps is guarded by Monsters from the Azurite Mine"
+   ],
+   "descZh": [
+    "地圖區域內掉落的硫酸釋放激怒雲霧",
+    "感染激怒雲霧影響的怪物增加 50% 物品數量",
+    "你的地圖中的硫酸由來自碧藍礦坑的怪物守衛著"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew1",
+   "en": "Divination Scarab of The Cloister",
+   "zh": "聖甲蟲：迴廊命運",
+   "type": "DivinationCards",
+   "tier": 0,
+   "family": 72,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabDivination",
+   "descEn": [
+    "Area contains 8 to 12 additional packs of Doedre's Devoted",
+    "Doedre's Devoted have 1% additional chance to drop a Stacked Deck"
+   ],
+   "descZh": [
+    "區域內含有額外 8 至 12 群德瑞的信徒",
+    "德瑞的信徒有額外 1% 的機率會掉落豐裕牌組"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew3",
+   "en": "Divination Scarab of Pilfering",
+   "zh": "聖甲蟲：盜竊命運",
+   "type": "DivinationCards",
+   "tier": 1,
+   "family": 73,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabDivination",
+   "descEn": [
+    "Divination Cards which drop in Area are stolen by a Final Map Boss",
+    "That Final Map Boss becomes more Difficult and deals",
+    "increased Damage the more Divination Cards they have stolen",
+    "That Final Map Boss duplicates all stolen Divination Cards when defeated"
+   ],
+   "descZh": [
+    "最終地圖頭目會偷走區域內掉落的命運卡",
+    "該名最終地圖頭目會根據偷取的命運卡數量",
+    "變得更難對付並造成更多傷害",
+    "擊敗該名最終地圖頭目時，被偷取的命運卡會以 2 倍的數量掉落"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew2",
+   "en": "Divination Scarab of Plenty",
+   "zh": "聖甲蟲：富饒命運",
+   "type": "DivinationCards",
+   "tier": 2,
+   "family": 74,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabDivination",
+   "descEn": [
+    "Area contains 6 to 10 additional Packs of Divination Touched Magic Monsters that",
+    "have 1000% increased chance to drop Divination Cards"
+   ],
+   "descZh": [
+    "區域含有額外 6 至 10 個命運之觸魔法怪物群，",
+    "其增加 1000% 掉落命運卡的機率"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDomination2",
+   "en": "Domination Scarab of Apparitions",
+   "zh": "聖甲蟲：映像支配",
+   "type": "Domination",
+   "tier": 0,
+   "family": 47,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabDomination",
+   "descEn": [
+    "Area contains 2 additional Apparition Shrines"
+   ],
+   "descZh": [
+    "區域內含有 2 個額外映像神殿"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDomination3",
+   "en": "Domination Scarab of Evolution",
+   "zh": "聖甲蟲：進化支配",
+   "type": "Domination",
+   "tier": 1,
+   "family": 48,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabDomination",
+   "descEn": [
+    "Area contains an additional Evolving Shrine"
+   ],
+   "descZh": [
+    "區域內含有一個額外的進化神殿"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDomination1",
+   "en": "Domination Scarab",
+   "zh": "聖甲蟲：支配",
+   "type": "Domination",
+   "tier": 2,
+   "family": 49,
+   "limit": 4,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabDomination",
+   "descEn": [
+    "Area contains 3 additional Shrines"
+   ],
+   "descZh": [
+    "區域內含有 3 個額外神殿"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabDomination4",
+   "en": "Domination Scarab of Terrors",
+   "zh": "聖甲蟲：惡懼支配",
+   "type": "Domination",
+   "tier": 3,
+   "family": 50,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabDomination",
+   "descEn": [
+    "Shrines in Area are guarded by an Atlas Boss",
+    "Modifiers to the Final Map Boss also apply to these Atlas Bosses"
+   ],
+   "descZh": [
+    "區域內的神殿由一個額外地圖頭目看守",
+    "最終地圖頭目的詞綴也會套用到這些守衛身上"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabEssence1",
+   "en": "Essence Scarab",
+   "zh": "聖甲蟲：精髓",
+   "type": "Essence",
+   "tier": 0,
+   "family": 43,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabEssence",
+   "descEn": [
+    "Area contains 3 additional Imprisoned Monsters"
+   ],
+   "descZh": [
+    "區域內包含 3 個被禁錮的怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabEssence2",
+   "en": "Essence Scarab of Ascent",
+   "zh": "聖甲蟲：上升精髓",
+   "type": "Essence",
+   "tier": 1,
+   "family": 44,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabEssence",
+   "descEn": [
+    "Essences found in Area are a tier higher"
+   ],
+   "descZh": [
+    "區域掉落的精髓高一階"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabEssence4",
+   "en": "Essence Scarab of Calcification",
+   "zh": "聖甲蟲：鈣化精髓",
+   "type": "Essence",
+   "tier": 2,
+   "family": 45,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabEssence",
+   "descEn": [
+    "Rare monsters that are natural inhabitants of the Area are imprisoned by Essences"
+   ],
+   "descZh": [
+    "受困於精髓的原生稀有怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabEssence3",
+   "en": "Essence Scarab of Stability",
+   "zh": "聖甲蟲：穩定精髓",
+   "type": "Essence",
+   "tier": 3,
+   "family": 46,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabEssence",
+   "descEn": [
+    "Corrupting an Essence in Area can only result in",
+    "upgrading or transforming Essences"
+   ],
+   "descZh": [
+    "在區域內汙染精隨只會使其",
+    "升級或轉化成其他精髓"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabEssence5",
+   "en": "Essence Scarab of Adaptation",
+   "zh": "聖甲蟲：適性精髓",
+   "type": "Essence",
+   "tier": 4,
+   "family": 139,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabEssence",
+   "descEn": [
+    "Imprisoned Monsters released in Areas grant a random Essence Modifier to another Imprisoned Monster in the Area",
+    "Imprisoned Monsters in Areas have increased Difficulty and Reward for",
+    "each Essence Modifier"
+   ],
+   "descZh": [
+    "區域內被禁錮的怪物脫困後使另一個被禁錮的怪物獲得一個隨機精髓詞綴",
+    "每個精髓詞綴",
+    "使被禁錮的怪物增加難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabExpedition1",
+   "en": "Expedition Scarab",
+   "zh": "聖甲蟲：探險",
+   "type": "Expedition",
+   "tier": 0,
+   "family": 10,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabExpedition",
+   "descEn": [
+    "Area contains an Expedition Encounter"
+   ],
+   "descZh": [
+    "區域內包含 1 個額外探險事件"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabExpedition2",
+   "en": "Expedition Scarab of Runefinding",
+   "zh": "聖甲蟲：尋符探險",
+   "type": "Expedition",
+   "tier": 1,
+   "family": 105,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabExpedition",
+   "descEn": [
+    "Expedition Encounters in Area have 100% increased",
+    "number of Runic Monster Markers"
+   ],
+   "descZh": [
+    "區域內的探險事件增加 100%",
+    "魔符怪物標記的數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabExpedition3",
+   "en": "Expedition Scarab of Verisium Powder",
+   "zh": "聖甲蟲：維里西姆粉末探險",
+   "type": "Expedition",
+   "tier": 2,
+   "family": 106,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabExpedition",
+   "descEn": [
+    "Expedition Encounters in Area have 50% increased number of Explosives",
+    "80% increased Explosive Radius"
+   ],
+   "descZh": [
+    "區域內探險事件的炸藥增加 50% 數量",
+    "增加 80% 爆炸範圍"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabExpedition5",
+   "en": "Expedition Scarab of Archaeology",
+   "zh": "聖甲蟲：考古探險",
+   "type": "Expedition",
+   "tier": 3,
+   "family": 107,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabExpedition",
+   "descEn": [
+    "Remnants in Expedition Encounters in Area have 2 additional Suffixes and Prefixes"
+   ],
+   "descZh": [
+    "區域內的探險事件的遺跡內含 2 個額外後綴與前綴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabExpedition4",
+   "en": "Expedition Scarab of Infusion",
+   "zh": "聖甲蟲：注能探險",
+   "type": "Expedition",
+   "tier": 4,
+   "family": 108,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltGreaterScarabExpedition",
+   "descEn": [
+    "Logbooks found in Area always have 4 Implicits",
+    "Expedition Monsters gain increased Difficulty and Reward for each Remnant detonated"
+   ],
+   "descZh": [
+    "區域內找到的探險日誌總是擁有4條固定詞綴",
+    "探險的怪物根據引爆的遺物數量增加難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarbingerNew1",
+   "en": "Harbinger Scarab",
+   "zh": "聖甲蟲：神諭",
+   "type": "Harbinger",
+   "tier": 0,
+   "family": 68,
+   "limit": 4,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabHarbingers",
+   "descEn": [
+    "Area contains 3 additional Harbingers"
+   ],
+   "descZh": [
+    "區域內含 3 個額外神諭"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarbingerNew2",
+   "en": "Harbinger Scarab of Obelisks",
+   "zh": "聖甲蟲：石碑神諭",
+   "type": "Harbinger",
+   "tier": 1,
+   "family": 69,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabHarbingers",
+   "descEn": [
+    "Harbingers in Area spawn Empowered Obelisks",
+    "Empowered Obelisks drop Currency Shards when defeated"
+   ],
+   "descZh": [
+    "區域內的神諭會生成強化石碑",
+    "擊敗強化石碑後會掉落通貨碎片"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarbingerNew4",
+   "en": "Harbinger Scarab of Warhoards",
+   "zh": "聖甲蟲：戰儲神諭",
+   "type": "Harbinger",
+   "tier": 2,
+   "family": 70,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabHarbingers",
+   "descEn": [
+    "Currency shards dropped by Harbingers in Area are duplicated"
+   ],
+   "descZh": [
+    "區域內的神諭降臨掉落的通貨碎片被複製"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarbingerNew3",
+   "en": "Harbinger Scarab of Regency",
+   "zh": "聖甲蟲：攝政神諭",
+   "type": "Harbinger",
+   "tier": 3,
+   "family": 71,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabHarbingers",
+   "descEn": [
+    "Harbingers in Area have a 50% chance to be replaced by a powerful Harbinger Boss"
+   ],
+   "descZh": [
+    "區域的神諭降臨有 50% 機率取代為一個強大的神諭降臨頭目"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarvest1",
+   "en": "Harvest Scarab",
+   "zh": "聖甲蟲：豐收",
+   "type": "Harvest",
+   "tier": 0,
+   "family": 55,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabHarvest",
+   "descEn": [
+    "Area contains the Sacred Grove"
+   ],
+   "descZh": [
+    "區域含有聖殿密園"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarvest3",
+   "en": "Harvest Scarab of Cornucopia",
+   "zh": "聖甲蟲：富饒豐收",
+   "type": "Harvest",
+   "tier": 1,
+   "family": 56,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabHarvest",
+   "descEn": [
+    "If Area contains the Sacred Grove, it will contain up to 1 additional Tier 4 seed of each type, if possible"
+   ],
+   "descZh": [
+    "區域內的聖殿密園只要情況允許便保證含有階級 4 種子，每種類最多 1 個"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabHarvest2",
+   "en": "Harvest Scarab of Doubling",
+   "zh": "聖甲蟲：倍增豐收",
+   "type": "Harvest",
+   "tier": 2,
+   "family": 57,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabHarvest",
+   "descEn": [
+    "Lifeforce dropped by Harvest Monsters in Area is duplicated",
+    "Harvest Monsters in Area have 100% more Life"
+   ],
+   "descZh": [
+    "區域內的豐收怪物掉落的生靈之力被複製",
+    "區域內的豐收怪物增加 100% 生命"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabIncursion1",
+   "en": "Incursion Scarab",
+   "zh": "聖甲蟲：穿越",
+   "type": "Incursion",
+   "tier": 0,
+   "family": 62,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabIncursion",
+   "descEn": [
+    "Area contains Alva"
+   ],
+   "descZh": [
+    "區域含有艾瓦"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabIncursion2",
+   "en": "Incursion Scarab of Invasion",
+   "zh": "聖甲蟲：侵略穿越",
+   "type": "Incursion",
+   "tier": 1,
+   "family": 59,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabIncursion",
+   "descEn": [
+    "Area contains 12 to 16 additional packs of Incursion Monsters"
+   ],
+   "descZh": [
+    "區域含有額外 12 至 16 群穿越怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabIncursion3",
+   "en": "Incursion Scarab of Champions",
+   "zh": "聖甲蟲：鬥士穿越",
+   "type": "Incursion",
+   "tier": 2,
+   "family": 61,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabIncursion",
+   "descEn": [
+    "Incursions in Area have a 35% chance for all Monsters to be at least Magic",
+    "Incursions in Area have 15% increased Pack Size"
+   ],
+   "descZh": [
+    "區域內的穿越有35%的機率使所有怪物至少為魔法",
+    "區域內的穿越增加15%怪物群大小"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabIncursion4",
+   "en": "Incursion Scarab of Timelines",
+   "zh": "聖甲蟲：時間線穿越",
+   "type": "Incursion",
+   "tier": 3,
+   "family": 60,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabIncursion",
+   "descEn": [
+    "Final Architect slain in Area will drop an Itemised Temple",
+    " Itemised Temples dropped in Area are generated based on current Temple layout, but with randomised room tiers"
+   ],
+   "descZh": [
+    "區域內被殺的最終建師掉落一個道具神殿",
+    "區域內道具神廟的生成取決於現有神廟的格局，其中的房間階級為隨機"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabInfluenceNew1",
+   "en": "Influencing Scarab of the Shaper",
+   "zh": "聖甲蟲：塑界感染",
+   "type": "Influence",
+   "tier": 0,
+   "family": 20,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabShaper",
+   "descEn": [
+    "Adds Shaper Influence outcome to Area"
+   ],
+   "descZh": [
+    "附加塑界者勢力至區域"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabInfluenceNew2",
+   "en": "Influencing Scarab of the Elder",
+   "zh": "聖甲蟲：尊師感染",
+   "type": "Influence",
+   "tier": 1,
+   "family": 21,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabElder",
+   "descEn": [
+    "Adds Elder Influence outcome to Area"
+   ],
+   "descZh": [
+    "附加異界尊師勢力至區域"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabInfluenceNew4",
+   "en": "Influencing Scarab of Interference",
+   "zh": "聖甲蟲：干預感染",
+   "type": "Influence",
+   "tier": 2,
+   "family": 22,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabShaper",
+   "descEn": [
+    "A Map Boss is accompanied by a random Shaper Guardian, Elder Guardian, Conqueror or Synthesis Boss",
+    "Can only be used with Tier 14+ Maps"
+   ],
+   "descZh": [
+    "地圖頭目會伴隨著一名隨機的塑者守護者、尊師守護者、征服者、或追憶頭目",
+    "僅可於階級 14 以上的地圖使用"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabInfluenceNew3",
+   "en": "Influencing Scarab of Hordes",
+   "zh": "聖甲蟲：群集感染",
+   "type": "Influence",
+   "tier": 3,
+   "family": 23,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabElder",
+   "descEn": [
+    "Influenced Monster Packs in Area have 40% increased Pack Size"
+   ],
+   "descZh": [
+    "區域內的勢力怪物增加 40% 怪物群大小"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabLegionNew1",
+   "en": "Legion Scarab",
+   "zh": "聖甲蟲：戰亂",
+   "type": "Legion",
+   "tier": 0,
+   "family": 98,
+   "limit": 5,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabLegion",
+   "descEn": [
+    "Area contains an additional Legion Encounter"
+   ],
+   "descZh": [
+    "區域內包含 1 個額外戰亂事件"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabLegionNew2",
+   "en": "Legion Scarab of Officers",
+   "zh": "聖甲蟲：幹部戰亂",
+   "type": "Legion",
+   "tier": 1,
+   "family": 99,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabLegion",
+   "descEn": [
+    "Legion Factions in Area have 5 additional Sergeants"
+   ],
+   "descZh": [
+    "區域內的軍團派別內含 5 個額外中士"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabLegionNew3",
+   "en": "Legion Scarab of Treasures",
+   "zh": "聖甲蟲：寶藏戰亂",
+   "type": "Legion",
+   "tier": 2,
+   "family": 100,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/AltNormalScarabLegion",
+   "descEn": [
+    "Legion Chests in Area have a 20% chance to spread their Rewards",
+    " to Legion Monsters they release from stasis when they are broken out",
+    "Legion Monsters that have gained Rewards have increased Difficulty"
+   ],
+   "descZh": [
+    "區域內的軍團寶箱在從凝滯狀態被釋放時",
+    "有20%機率會擴散其獎勵至周遭的軍團怪物上",
+    "以此方式獲得獎勵的軍團怪物會增加難度"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabLegionNew4",
+   "en": "Legion Scarab of The Sekhema",
+   "zh": "聖甲蟲：絲克瑪戰亂",
+   "type": "Legion",
+   "tier": 3,
+   "family": 101,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabLegion",
+   "descEn": [
+    "Legion Encounters in Area always contain the Maraketh Faction"
+   ],
+   "descZh": [
+    "區域內的軍團事件必含馬拉克斯派別"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabLegionNew5",
+   "en": "Legion Scarab of Eternal Conflict",
+   "zh": "聖甲蟲：永恆鬥爭戰亂",
+   "type": "Legion",
+   "tier": 4,
+   "family": 102,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabLegion",
+   "descEn": [
+    "Legion Monsters in Area can be broken out of Stasis multiple times",
+    "Legion Monsters in Area gain increased Difficulty and Reward for each time they are broken out"
+   ],
+   "descZh": [
+    "區域內軍團怪物可以多次脫離靜止狀態",
+    "區域內軍團怪物每次脫離都會增加難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMapsNew1",
+   "en": "Cartography Scarab of Escalation",
+   "zh": "聖甲蟲：惡化製圖",
+   "type": "Maps",
+   "tier": 0,
+   "family": 29,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabMaps",
+   "descEn": [
+    "10% increased Maps found in Area for each Map Modifier affecting Area"
+   ],
+   "descZh": [
+    "每個地圖詞綴影響區域增加 10% 區域內掉落地圖"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMapsNew2",
+   "en": "Cartography Scarab of Risk",
+   "zh": "聖甲蟲：風險製圖",
+   "type": "Maps",
+   "tier": 1,
+   "family": 30,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabMaps",
+   "descEn": [
+    "Area has 2 additional random Modifiers"
+   ],
+   "descZh": [
+    "區域含有 2 個額外的隨機詞綴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMapsNew5",
+   "en": "Cartography Scarab of the Multitude",
+   "zh": "聖甲蟲：增生製圖",
+   "type": "Maps",
+   "tier": 2,
+   "family": 31,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/AltNormalScarabMaps",
+   "descEn": [
+    "Area contains 8 to 12 additional packs of",
+    "Difficult and Rewarding Monsters which drop 300% increased Maps"
+   ],
+   "descZh": [
+    "區域內含有額外 8 至 12 群",
+    "困難和會賦予獎勵的怪物群，它們會掉落額外 300% 的地圖"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMapsNew4",
+   "en": "Cartography Scarab of Corruption",
+   "zh": "聖甲蟲：腐化製圖",
+   "type": "Maps",
+   "tier": 3,
+   "family": 32,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabMaps",
+   "descEn": [
+    "Non-Unique Maps found in Area are Corrupted with 8 Modifiers"
+   ],
+   "descZh": [
+    "區域內掉落的非傳奇地圖為已汙染且有 8 條詞綴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMapsNew3",
+   "en": "Cartography Scarab of Singularity",
+   "zh": "聖甲蟲：極寶製圖",
+   "type": "Maps",
+   "tier": 4,
+   "family": 33,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltNormalScarabMaps",
+   "descEn": [
+    "A Unique Map will drop from the Final Map Boss"
+   ],
+   "descZh": [
+    "地圖最終頭目會掉落傳奇地圖"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMercenaries1",
+   "en": "Trarthan Scarab",
+   "zh": "特拉特斯聖甲蟲",
+   "type": "Mercenaries",
+   "tier": 0,
+   "family": 145,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabMercenaries",
+   "descEn": [
+    "Area is inhabited by a Mercenary"
+   ],
+   "descZh": [
+    "區域內含有一名傭兵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMercenaries2",
+   "en": "Trarthan Scarab of Infamy",
+   "zh": "聖甲蟲：萬惡傭兵",
+   "type": "Mercenaries",
+   "tier": 1,
+   "family": 146,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabMercenaries",
+   "descEn": [
+    "Mercenaries found in Area are Infamous",
+    "Mercenaries found in Area are accompanied by two Wild Mercenaries"
+   ],
+   "descZh": [
+    "區域內找到的傭兵為萬惡傭兵",
+    "區域內找到的傭兵會伴隨著兩名野生傭兵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMercenaries3",
+   "en": "Trarthan Scarab of Renown",
+   "zh": "聖甲蟲：聲名傭兵",
+   "type": "Mercenaries",
+   "tier": 2,
+   "family": 147,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabMercenaries",
+   "descEn": [
+    "All Equipment Items on Mercenaries found in Area are Unique"
+   ],
+   "descZh": [
+    "區域內找到的傭兵所裝備的所有物品皆為傳奇"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMercenaries4",
+   "en": "Trarthan Scarab of Surprising Alliances",
+   "zh": "聖甲蟲：意外盟友傭兵",
+   "type": "Mercenaries",
+   "tier": 3,
+   "family": 148,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabMercenaries",
+   "descEn": [
+    "Wild Rogue Exiles in Area have 50% chance to be accompanied by a Wild Mercenary",
+    "Wild Mercenaries have increased Difficulty for each Wild Mercenary in Area"
+   ],
+   "descZh": [
+    "區域內的盜賊流亡者有 50% 機率伴隨著一名野生傭兵",
+    "野生傭兵會根據區域內的每一名野生傭兵增加難度"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc1",
+   "en": "Scarab of Monstrous Lineage",
+   "zh": "聖甲蟲：畸形血脈",
+   "type": "Misc",
+   "tier": 0,
+   "family": 109,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabMisc",
+   "descEn": [
+    "40% increased Magic Pack Size"
+   ],
+   "descZh": [
+    "增加 40% 魔法怪物群大小"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc2",
+   "en": "Scarab of Adversaries",
+   "zh": "聖甲蟲：敵手",
+   "type": "Misc",
+   "tier": 1,
+   "family": 110,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/AltLesserScarabMisc",
+   "descEn": [
+    "Area contains 4 additional Packs with Mirrored Rare Monsters"
+   ],
+   "descZh": [
+    "區域含有額外 4 群反射的稀有怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc3",
+   "en": "Scarab of Divinity",
+   "zh": "聖甲蟲：神聖",
+   "type": "Misc",
+   "tier": 2,
+   "family": 114,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabMisc",
+   "descEn": [
+    "Up to 3 additional Rare Monsters in Area will be Pantheon-Touched",
+    "Apparitions spawned by Pantheon-Touched Monsters deal 100% increased damage"
+   ],
+   "descZh": [
+    "區域內最多會有 3 個額外帶有眾神之觸的稀有怪物",
+    "帶有眾神之觸的怪物所召喚的映像增加 100% 造成的傷害"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc4",
+   "en": "Scarab of Hunted Traitors",
+   "zh": "聖甲蟲：通緝叛徒",
+   "type": "Misc",
+   "tier": 3,
+   "family": 112,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabMisc",
+   "descEn": [
+    "Area contains Hunted Traitors"
+   ],
+   "descZh": [
+    "區域含有多個受通緝的背叛者"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc5",
+   "en": "Scarab of Stability",
+   "zh": "聖甲蟲：穩定",
+   "type": "Misc",
+   "tier": 4,
+   "family": 113,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabMisc",
+   "descEn": [
+    "Portals to Area have a 50% chance to not be consumed on use"
+   ],
+   "descZh": [
+    "使用時有 50% 機率不消耗通往區域的傳送門"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc6",
+   "en": "Scarab of the Commander",
+   "zh": "聖甲蟲：指揮官",
+   "type": "Misc",
+   "tier": 5,
+   "family": 130,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabMisc1",
+   "descEn": [
+    "Grants an additional Kirac Mission on Map Completion"
+   ],
+   "descZh": [
+    "完成地圖時獲得 1 個額外基拉克任務"
+   ],
+   "stash": false
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc7",
+   "en": "Scarab of Evolution",
+   "zh": "聖甲蟲：進化",
+   "type": "Misc",
+   "tier": 6,
+   "family": 131,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabMisc2",
+   "descEn": [
+    "10 Monster Packs in Area are upgraded to Magic"
+   ],
+   "descZh": [
+    "區域內 10 個怪物群升級為魔法怪物"
+   ],
+   "stash": false
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc8",
+   "en": "Scarab of Wisps",
+   "zh": "聖甲蟲：妖精",
+   "type": "Misc",
+   "tier": 7,
+   "family": 132,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabMisc1",
+   "descEn": [
+    "Monsters in Area have a chance to be Empowered by 2000 Wildwood Wisps"
+   ],
+   "descZh": [
+    "怪物有機率受到 2000 個荒林妖精強化"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc9",
+   "en": "Scarab of the Sinistral",
+   "zh": "聖甲蟲：左旋",
+   "type": "Misc",
+   "tier": 8,
+   "family": 133,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabMisc2",
+   "descEn": [
+    "100% increased effect of Area Prefix Modifiers",
+    "Area Suffix Modifiers have no effect"
+   ],
+   "descZh": [
+    "增加100%區域的前綴效果",
+    "區域的後綴沒有效果"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc10",
+   "en": "Scarab of the Dextral",
+   "zh": "聖甲蟲：右旋",
+   "type": "Misc",
+   "tier": 9,
+   "family": 134,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltGreaterScarabMisc",
+   "descEn": [
+    "100% increased effect of Area Suffix Modifiers",
+    "Area Prefix Modifiers have no effect"
+   ],
+   "descZh": [
+    "增加100%區域的後綴效果",
+    "區域的前綴沒有效果"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabMisc11",
+   "en": "Scarab of Radiant Storms",
+   "zh": "聖甲蟲：光輝風暴",
+   "type": "Misc",
+   "tier": 10,
+   "family": 135,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabMisc2",
+   "descEn": [
+    "Area contains a Resplendent Tempest"
+   ],
+   "descZh": [
+    "區域含有燦爛風暴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabRitual1",
+   "en": "Ritual Scarab of Selectiveness",
+   "zh": "聖甲蟲：揀選祭祀",
+   "type": "Ritual",
+   "tier": 0,
+   "family": 51,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabRitual",
+   "descEn": [
+    "Rerolling Favours at Ritual Altars in Area has no cost the first 2 times",
+    "Ritual Altars in Area allow rerolling Favours 2 additional times"
+   ],
+   "descZh": [
+    "在區域內的祭祀神壇重骰恩賜之物時，前 2 次免費",
+    "區域內祭祀神壇允許額外重骰恩賜之物2次"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabRitual2",
+   "en": "Ritual Scarab of Wisps",
+   "zh": "聖甲蟲：妖精祭祀",
+   "type": "Ritual",
+   "tier": 1,
+   "family": 52,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabRitual",
+   "descEn": [
+    "Ritual Altars in Area spawn a Wildwood Wisp",
+    "Wildwood Wisps grant 100% increased Tribute Gained to nearby Players"
+   ],
+   "descZh": [
+    "區域內的祭祀神壇會生成一個荒林妖精",
+    "荒林妖精會使附近的玩家增加 100% 獲得的貢禮"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabRitual3",
+   "en": "Ritual Scarab of Abundance",
+   "zh": "聖甲蟲：繁榮祭祀",
+   "type": "Ritual",
+   "tier": 2,
+   "family": 53,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabRitual",
+   "descEn": [
+    "Rituals in Area offer 100% increased Favours"
+   ],
+   "descZh": [
+    "區域內的祭祀增加 100% 恩惠"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabRitual4",
+   "en": "Ritual Scarab of Corpses",
+   "zh": "聖甲蟲：荒屍祭祀",
+   "type": "Ritual",
+   "tier": 3,
+   "family": 54,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabRitual",
+   "descEn": [
+    "Rituals in Area contain an additional Rare Itemised Corpse Monster"
+   ],
+   "descZh": [
+    "區域內的祭祀包含額外一隻屍體可物品化的稀有怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSettlers1",
+   "en": "Kalguuran Scarab",
+   "zh": "聖甲蟲：卡爾葛",
+   "type": "Settlers",
+   "tier": 0,
+   "family": 141,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabSettlers",
+   "descEn": [
+    "Area contains 2 additional Ore Deposits"
+   ],
+   "descZh": [
+    "區域含有 1 個額外礦床"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSettlers2",
+   "en": "Kalguuran Scarab of Guarded Riches",
+   "zh": "聖甲蟲：守衛財寶卡爾葛",
+   "type": "Settlers",
+   "tier": 1,
+   "family": 142,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabSettlers",
+   "descEn": [
+    "Monsters guarding Ore Deposits in Area are at least Magic"
+   ],
+   "descZh": [
+    "區域內守衛礦床的怪物至少為魔法"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSettlers3",
+   "en": "Kalguuran Scarab of Refinement",
+   "zh": "聖甲蟲：精化卡爾葛",
+   "type": "Settlers",
+   "tier": 2,
+   "family": 143,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabSettlers",
+   "descEn": [
+    "Ore Deposits in Area grant Smelted Bars instead of Marking Ore"
+   ],
+   "descZh": [
+    "區域內礦床賦予冶鍊金屬條而非印記礦石"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabSettlers4",
+   "en": "Kalguuran Scarab of Enriching",
+   "zh": "聖甲蟲：富裕卡爾葛",
+   "type": "Settlers",
+   "tier": 3,
+   "family": 144,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabSettlers",
+   "descEn": [
+    "Monsters guarding Ore Deposits have increased Difficulty and",
+    "Reward and Ore Deposits contain 15% increased Ore",
+    "for each Ore Deposit completed in Area "
+   ],
+   "descZh": [
+    "增加看守礦床的怪物的難度和獎勵",
+    "每完成區域內的一座其他礦床",
+    "即增加15%礦床的難度和獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabStrongboxNew1",
+   "en": "Ambush Scarab",
+   "zh": "聖甲蟲：伏擊",
+   "type": "Strongbox",
+   "tier": 0,
+   "family": 38,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabStrongboxes",
+   "descEn": [
+    "Area contains 4 additional Strongboxes"
+   ],
+   "descZh": [
+    "區域含有額外 3 個保險箱"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabStrongboxNew2",
+   "en": "Ambush Scarab of Hidden Compartments",
+   "zh": "聖甲蟲：暗室伏擊",
+   "type": "Strongbox",
+   "tier": 1,
+   "family": 39,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabStrongboxes",
+   "descEn": [
+    "15% Chance for Strongboxes in Area to be openable again"
+   ],
+   "descZh": [
+    "區域內的保險箱有 15% 機率可以開兩次"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabStrongboxNew3",
+   "en": "Ambush Scarab of Potency",
+   "zh": "聖甲蟲：爆發伏擊",
+   "type": "Strongbox",
+   "tier": 2,
+   "family": 40,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabStrongboxes",
+   "descEn": [
+    "75% Increased effect of Explicit Modifiers on Strongboxes in Area"
+   ],
+   "descZh": [
+    "區域內的保險箱增加 75% 固定詞綴效果"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabStrongboxNew4",
+   "en": "Ambush Scarab of Containment",
+   "zh": "聖甲蟲：遏制伏擊",
+   "type": "Strongbox",
+   "tier": 3,
+   "family": 41,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabStrongboxes",
+   "descEn": [
+    "Area contains many additional Strongboxes",
+    "Area's inhabitants are lying in ambush"
+   ],
+   "descZh": [
+    "區域含有多個額外保險箱",
+    "區域的敵人處於伏擊狀態"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabStrongboxNew5",
+   "en": "Ambush Scarab of Discernment",
+   "zh": "聖甲蟲：洞察伏擊",
+   "type": "Strongbox",
+   "tier": 4,
+   "family": 42,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabStrongboxes",
+   "descEn": [
+    "Strongboxes in Area are more likely to be rarer varieties"
+   ],
+   "descZh": [
+    "區域內的保險箱有更高機率含有更稀有品種"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabTormentNew1",
+   "en": "Torment Scarab",
+   "zh": "聖甲蟲：苦痛",
+   "type": "Torment",
+   "tier": 0,
+   "family": 75,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabTorment",
+   "descEn": [
+    "Area is haunted by 4 additional Tormented Spirits",
+    "Tormented Spirits in Area have a 10% chance to",
+    "be set free when Possessed Monsters are slain",
+    " and dig up a Possessed Monster"
+   ],
+   "descZh": [
+    "區域被 4 個額外罪魂糾纏",
+    "區域內的罪魂在被附身的怪物",
+    "被擊殺時有10%機率",
+    "會被釋放並掘出一隻被附身的怪物"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabTormentNew2",
+   "en": "Torment Scarab of Peculiarity",
+   "zh": "聖甲蟲：特異苦痛",
+   "type": "Torment",
+   "tier": 1,
+   "family": 76,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabTorment",
+   "descEn": [
+    "Tormented Spirits in Area are replaced with unusual variants"
+   ],
+   "descZh": [
+    "區域內的罪魂取代成異常型態"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabTormentNew3",
+   "en": "Torment Scarab of Release",
+   "zh": "聖甲蟲：釋放苦痛",
+   "type": "Torment",
+   "tier": 2,
+   "family": 77,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabTorment",
+   "descEn": [
+    "Tormented Spirits in Area have a 25% chance to",
+    "be set free when Possessed Monsters are slain"
+   ],
+   "descZh": [
+    "區域內的罪魂有 25% 機率",
+    "被罪魂附身的怪物死亡後被釋放了"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabTormentNew4",
+   "en": "Torment Scarab of Possession",
+   "zh": "聖甲蟲：附身苦痛",
+   "type": "Torment",
+   "tier": 3,
+   "family": 129,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabTorment",
+   "descEn": [
+    "Rare Monsters in Area have a quarter chance to be Possessed by up to 3 Tormented Spirits"
+   ],
+   "descZh": [
+    "稀有怪物有四分之一機率被最多 3 個罪魂附身"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber1",
+   "en": "Horned Scarab of Bloodlines",
+   "zh": "聖甲蟲：血統犄角",
+   "type": "Uber",
+   "tier": 0,
+   "family": 115,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab1",
+   "descEn": [
+    "Area has 150% increased Magic Monsters",
+    "Magic Monsters in area have an additional Modifier"
+   ],
+   "descZh": [
+    "區域內的魔法怪物增加 150%",
+    "區域內的魔法怪物有1條額外詞綴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber2",
+   "en": "Horned Scarab of Nemeses",
+   "zh": "聖甲蟲：復仇犄角",
+   "type": "Uber",
+   "tier": 1,
+   "family": 116,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab2",
+   "descEn": [
+    "Rare Monsters in Area have 2 additional Modifiers"
+   ],
+   "descZh": [
+    "區域內的稀有怪物含有 2 個額外詞綴"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber3",
+   "en": "Horned Scarab of Preservation",
+   "zh": "聖甲蟲：庇護犄角",
+   "type": "Uber",
+   "tier": 2,
+   "family": 117,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab3",
+   "descEn": [
+    "Other Scarabs are not consumed on use"
+   ],
+   "descZh": [
+    "使用時不消耗其他的聖甲蟲"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber4",
+   "en": "Horned Scarab of Awakening",
+   "zh": "聖甲蟲：覺醒犄角",
+   "type": "Uber",
+   "tier": 3,
+   "family": 118,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab4",
+   "descEn": [
+    "Tier 16+ Areas contain the Bosses from a random Maven Invitation"
+   ],
+   "descZh": [
+    "階級16以上的競技場中會包含來自隨機釋界之邀的頭目"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber5",
+   "en": "Horned Scarab of Tradition",
+   "zh": "聖甲蟲：傳統犄角",
+   "type": "Uber",
+   "tier": 4,
+   "family": 119,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab5",
+   "descEn": [
+    "All Rare and Unique Monsters in Area have dropped items",
+    "transformed by a Reward Modifier"
+   ],
+   "descZh": [
+    "區域內所有稀有和傳奇怪物掉落的物品都會",
+    "被獎勵詞綴轉化"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber6",
+   "en": "Horned Scarab of Glittering",
+   "zh": "聖甲蟲：閃亮犄角",
+   "type": "Uber",
+   "tier": 5,
+   "family": 120,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab6",
+   "descEn": [
+    "Players in Area gain increased Item Rarity for each Monster",
+    "slain, up to 400%, decaying over time"
+   ],
+   "descZh": [
+    "區域內的玩家每殺死一個怪物，物品稀有度便會增加",
+    "，最多增加 400%，並隨時間遞減"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUber7",
+   "en": "Horned Scarab of Pandemonium",
+   "zh": "聖甲蟲：萬劫犄角",
+   "type": "Uber",
+   "tier": 6,
+   "family": 121,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/SuperScarab7",
+   "descEn": [
+    "Monster packs in Area have a 15% chance to be replaced by a random Atlas Boss",
+    "Modifiers to the Final Map Boss also apply to these Atlas Bosses"
+   ],
+   "descZh": [
+    "區域內的怪物群有 15% 機率取代為隨機輿圖頭目",
+    "適用於最終地圖頭目的詞綴也會套用在這些輿圖頭目身上"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUltimatum1",
+   "en": "Ultimatum Scarab",
+   "zh": "聖甲蟲：通牒",
+   "type": "Ultimatum",
+   "tier": 0,
+   "family": 12,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabUltimatum",
+   "descEn": [
+    "Area contains an Ultimatum Encounter"
+   ],
+   "descZh": [
+    "區域內包含 1 個通諜事件"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUltimatum2",
+   "en": "Ultimatum Scarab of Bribing",
+   "zh": "聖甲蟲：賄賂通牒",
+   "type": "Ultimatum",
+   "tier": 1,
+   "family": 83,
+   "limit": 2,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabUltimatum",
+   "descEn": [
+    "Ultimatum Monsters grant 150% increased Experience",
+    "Ultimatum Encounters grant rewards as though you completed 2 additional Rounds"
+   ],
+   "descZh": [
+    "通牒怪物增加 150% 經驗",
+    "通牒事件給予的獎勵，有如你完成額外 2 回合"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUltimatum3",
+   "en": "Ultimatum Scarab of Dueling",
+   "zh": "聖甲蟲：決鬥通牒",
+   "type": "Ultimatum",
+   "tier": 2,
+   "family": 84,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabUltimatum",
+   "descEn": [
+    "Ultimatum Encounters in Area will always lead to a Unique Boss if possible"
+   ],
+   "descZh": [
+    "區域內的通牒事件只要情況允許便保證觸發傳奇頭目"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUltimatum4",
+   "en": "Ultimatum Scarab of Catalysing",
+   "zh": "聖甲蟲：催化通牒",
+   "type": "Ultimatum",
+   "tier": 3,
+   "family": 85,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabUltimatum",
+   "descEn": [
+    "Ultimatum Encounters in Area will only offer Catalysts",
+    "as Rewards to the Map Owner"
+   ],
+   "descZh": [
+    "區域內的最後通牒事件僅會向地圖",
+    "擁有者提供催化劑作為獎勵"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUltimatum5",
+   "en": "Ultimatum Scarab of Inscription",
+   "zh": "聖甲蟲：銘文通牒",
+   "type": "Ultimatum",
+   "tier": 4,
+   "family": 86,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/AltTier4ScarabUltimatum",
+   "descEn": [
+    "Ultimatum Encounter rewards in Area offering Catalysts",
+    "will offer Inscribed Ultimatums to the Map Owner instead"
+   ],
+   "descZh": [
+    "區域內的最後通牒事件獎勵將從催化劑改為",
+    "給予地圖主辦人最後通牒雕刻"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUniquesNew1",
+   "en": "Titanic Scarab",
+   "zh": "聖甲蟲：泰坦",
+   "type": "Uniques",
+   "tier": 0,
+   "family": 3,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/LesserScarabUnique",
+   "descEn": [
+    "Unique Monsters have 1% increased Toughness, Damage, Rarity and Quantity of items dropped per 1% increased Pack Size of Area"
+   ],
+   "descZh": [
+    "區域內的怪物群大小每增加 1%，傳奇怪物的堅韌、傷害、物品稀有度和數量皆增加 1%"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUniquesNew2",
+   "en": "Titanic Scarab of Treasures",
+   "zh": "聖甲蟲：珍寶泰坦",
+   "type": "Uniques",
+   "tier": 1,
+   "family": 103,
+   "limit": 3,
+   "art": "Art/2DItems/Currency/Scarabs/NormalScarabUnique",
+   "descEn": [
+    "Unique Monsters in Area have an additional Reward",
+    "Unique Monsters in Area have 30% increased Toughness"
+   ],
+   "descZh": [
+    "區域內的傳奇怪物擁有額外獎勵",
+    "增加 30% 區域內傳奇怪物的堅韌"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/Scarabs/ScarabUniquesNew3",
+   "en": "Titanic Scarab of Legend",
+   "zh": "聖甲蟲：傳說泰坦",
+   "type": "Uniques",
+   "tier": 2,
+   "family": 104,
+   "limit": 1,
+   "art": "Art/2DItems/Currency/Scarabs/GreaterScarabUnique",
+   "descEn": [
+    "Unique Monsters in Area have 4 additional Monster Modifiers"
+   ],
+   "descZh": [
+    "區域內的傳奇怪物含有 4 個額外怪物詞綴"
+   ],
+   "stash": true
+  }
+ ]
+}

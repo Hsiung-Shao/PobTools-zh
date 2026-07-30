@@ -547,11 +547,26 @@ std::string TJNormalizeStat(const std::string& s)
 	return out;
 }
 
-static double first_num(const std::string& s)
+double TJStatValue(const std::string& s)
 {
 	for (size_t i = 0; i < s.size(); i++)
 		if (isdigit((unsigned char)s[i])) return strtod(s.c_str() + i, nullptr);
 	return 0.0;
+}
+
+TJWantMatcher::TJWantMatcher(const std::vector<TJWantStat>& wants) : wants_(wants)
+{
+	// Built after the copy so the indices refer to wants_, not the caller's
+	// vector — the matcher has to survive a temporary being passed in.
+	for (int i = 0; i < (int)wants_.size(); i++) byTmpl_.emplace(wants_[i].tmpl, i);
+}
+
+const TJWantStat* TJWantMatcher::Match(const std::string& line) const
+{
+	auto it = byTmpl_.find(TJNormalizeStat(line));
+	if (it == byTmpl_.end()) return nullptr;
+	const TJWantStat& w = wants_[it->second];
+	return TJStatValue(line) >= w.minValue ? &w : nullptr;
 }
 
 std::vector<TJStatTemplate> TJStatTemplates(const TJDataset& ds, int jewelType)
@@ -600,8 +615,7 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 	if (itMin == ds.seedMin.end() || itMax == ds.seedMax.end() || q.wants.empty())
 		return hits;
 
-	std::unordered_map<std::string, const TJWantStat*> want;
-	for (const auto& w : q.wants) want[w.tmpl] = &w;
+	const TJWantMatcher matcher(q.wants);
 
 	// candidate nodes: the socket's in-radius set if given, else every indexed
 	// node. Each carries its type so smalls roll additions, notables roll nodes.
@@ -636,20 +650,27 @@ std::vector<TJSeedHit> TJSearch(const TJDataset& ds, const std::string& blob,
 			                        nd.second ? "Notable" : "Normal", {});
 			if (!t.ok) continue;
 			for (const auto& line : t.lines) {
-				auto it = want.find(TJNormalizeStat(line));
-				if (it != want.end() && first_num(line) >= it->second->minValue) {
-					total += it->second->weight;
+				if (const TJWantStat* w = matcher.Match(line)) {
+					total += w->weight;
 					matches++;
-					distinct.insert(it->second);
+					distinct.insert(w);
 				}
 			}
 		}
-		if (matches > 0 && total >= q.minTotalWeight)
+		const bool covered = !q.requireAll || distinct.size() == q.wants.size();
+		if (matches > 0 && covered && total >= q.minTotalWeight)
 			hits.push_back({ seed, total, matches, (int)distinct.size() });
 	}
 
-	std::sort(hits.begin(), hits.end(),
-	          [](const TJSeedHit& a, const TJSeedHit& b) { return a.weight > b.weight; });
+	// Weight decides the ranking; the rest are tie-breaks so the same query always
+	// produces the same order (std::sort is not stable, and equal-weight seeds are
+	// common once weights are whole numbers).
+	std::sort(hits.begin(), hits.end(), [](const TJSeedHit& a, const TJSeedHit& b) {
+		if (a.weight != b.weight) return a.weight > b.weight;
+		if (a.distinctWants != b.distinctWants) return a.distinctWants > b.distinctWants;
+		if (a.matches != b.matches) return a.matches > b.matches;
+		return a.seed < b.seed;
+	});
 	if (topN > 0 && (int)hits.size() > topN) hits.resize(topN);
 	return hits;
 }
@@ -835,6 +856,201 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		for (const auto& h : hits) if (h.seed == 500) has500 = true;
 		check(!hits.empty() && has500, "search BR poison finds seed 500",
 		      std::to_string(hits.size()) + " hits in " + std::to_string(dt) + " ms");
+
+		// --- the minimum and the weight have to actually do something ---------
+		// A minimum above every roll of that stat must empty the result set; if
+		// it does not, the "minimum" is decorative and the ranking is noise.
+		{
+			// Uncapped baseline: `hits` above was truncated to topN, so comparing
+			// set sizes against it would measure the cap, not the filter.
+			auto all = TJSearch(ds, blob, q, 0, nullptr);
+			check(!all.empty(), "baseline search returns seeds", std::to_string(all.size()));
+
+			TJSearchQuery qm = q;
+			qm.wants[0].minValue = 1000.0;
+			check(TJSearch(ds, blob, qm, 0, nullptr).empty(),
+			      "an unreachable 最小值 rejects every seed");
+
+			// The poison template always grants 20, so any threshold either keeps
+			// every seed or none and "the set shrank" would be vacuously true.
+			// A minimum only discriminates on a template several nodes grant at
+			// DIFFERENT amounts (Brutal Restraint's "+# to Dexterity" comes as 2,
+			// 4 and 20) — find one of those and cut between the extremes.
+			std::map<std::string, std::set<double>> byTmpl;
+			for (const auto& e : ds.additions) {
+				if (e.id.rfind("maraketh", 0) != 0) continue;
+				for (const auto& line : e.sd) byTmpl[TJNormalizeStat(line)].insert(TJStatValue(line));
+			}
+			std::string splitTmpl;
+			double slo = 0, shi = 0;
+			for (const auto& kv : byTmpl)
+				if (kv.second.size() > 1) {
+					splitTmpl = kv.first;
+					slo = *kv.second.begin();
+					shi = *kv.second.rbegin();
+					break;
+				}
+			if (splitTmpl.empty()) {
+				check(false, "found a Brutal Restraint stat granted at several amounts");
+			} else {
+				TJSearchQuery qr;
+				qr.jewelType = 3;
+				// All nodes, not just notables: the small amounts of a shared
+				// template come from SMALL nodes (+2/+4 Dexterity), so a
+				// notables-only scan sees only the +20 and the minimum would have
+				// nothing to cut.
+				qr.scope = 0;
+				qr.wants.push_back({ splitTmpl, 0.0, 1.0 });
+				auto loose = TJSearch(ds, blob, qr, 0, nullptr);
+				qr.wants[0].minValue = (slo + shi) / 2.0;
+				auto tight = TJSearch(ds, blob, qr, 0, nullptr);
+				// Over the whole tree nearly every seed keeps SOME matching node,
+				// so the minimum is not really a seed filter — what it changes is
+				// how many nodes each seed matches, and therefore its score and
+				// its rank. That is the quantity worth asserting on.
+				std::map<int, int> before;
+				for (const auto& h : loose) before[h.seed] = h.matches;
+				long long lost = 0;
+				bool neverGrew = true;
+				for (const auto& h : tight) {
+					auto it = before.find(h.seed);
+					if (it == before.end()) continue;
+					neverGrew = neverGrew && h.matches <= it->second;
+					lost += it->second - h.matches;
+				}
+				check(!loose.empty() && !tight.empty() && neverGrew && lost > 0,
+				      "最小值 drops the under-minimum nodes from each seed's score",
+				      splitTmpl + " [" + std::to_string((int)slo) + ".." + std::to_string((int)shi) +
+				      "] " + std::to_string(lost) + " node hits removed across " +
+				      std::to_string(tight.size()) + " seeds");
+			}
+
+			// Weight scales the score, so the ranking must be reproducible and
+			// proportional rather than incidental.
+			TJSearchQuery qw = q;
+			qw.wants[0].weight = 2.5;
+			auto weighted = TJSearch(ds, blob, qw, 2000, nullptr);
+			bool scaled = weighted.size() == hits.size();
+			for (size_t i = 0; scaled && i < weighted.size(); i++)
+				scaled = weighted[i].seed == hits[i].seed &&
+				         std::abs(weighted[i].weight - hits[i].weight * 2.5) < 1e-9;
+			check(scaled, "weight scales the score and keeps the order");
+
+			// minTotalWeight is a floor on the score. Take the threshold from the
+			// population itself (just above the median) so the check proves it
+			// splits the set instead of accepting a value that happens to keep
+			// everything.
+			TJSearchQuery qt = q;
+			qt.minTotalWeight = all[all.size() / 2].weight + 0.5;
+			auto floored = TJSearch(ds, blob, qt, 0, nullptr);
+			bool allAbove = true;
+			for (const auto& h : floored) allAbove = allAbove && h.weight >= qt.minTotalWeight;
+			check(allAbove && !floored.empty() && floored.size() < all.size(),
+			      "最小總權重 splits the population by score",
+			      std::to_string(floored.size()) + " of " + std::to_string(all.size()) +
+			      " above " + std::to_string(qt.minTotalWeight));
+
+			// --- picking two stats has to mean BOTH -------------------------
+			// The reported symptom: with two stats picked, a seed carrying the
+			// first one three times scored the same as a seed carrying both, and
+			// was listed as an equal hit.
+			{
+				TJSearchQuery q2;
+				q2.jewelType = 3;
+				q2.scope = 1;
+				q2.wants.push_back({ "#% increased Damage with Poison", 0.0, 1.0 });
+				q2.wants.push_back({ "Poisons you inflict deal Damage #% faster", 0.0, 1.0 });
+
+				q2.requireAll = false;
+				auto any = TJSearch(ds, blob, q2, 0, nullptr);
+				q2.requireAll = true;
+				auto both = TJSearch(ds, blob, q2, 0, nullptr);
+
+				bool anyHadPartial = false;
+				for (const auto& h : any) if (h.distinctWants < 2) { anyHadPartial = true; break; }
+				bool allCovered = !both.empty();
+				for (const auto& h : both) allCovered = allCovered && h.distinctWants == 2;
+
+				check(anyHadPartial, "without the flag, partial seeds do get through",
+				      std::to_string(any.size()) + " seeds");
+				check(allCovered && both.size() < any.size(),
+				      "必須包含全部已選詞綴 drops the partial ones",
+				      std::to_string(both.size()) + " of " + std::to_string(any.size()));
+
+				// The case the user actually hits: a jewel socket sees ~20 notables,
+				// not 452, so partial coverage is the norm rather than a rounding
+				// error. Restricting the node set is what makes the difference
+				// visible, so assert it there too.
+				std::vector<int> few;
+				for (const auto& kv : ds.nodeIndex) {
+					if (kv.second.first >= ds.sizeNotable) continue;
+					few.push_back(kv.first);
+					if (few.size() >= 20) break;
+				}
+				q2.nodeIds = few;
+				q2.requireAll = false;
+				auto anyFew = TJSearch(ds, blob, q2, 0, nullptr);
+				q2.requireAll = true;
+				auto bothFew = TJSearch(ds, blob, q2, 0, nullptr);
+				bool coveredFew = !bothFew.empty();
+				for (const auto& h : bothFew) coveredFew = coveredFew && h.distinctWants == 2;
+				check(coveredFew && bothFew.size() * 2 < anyFew.size(),
+				      "on a socket-sized node set the flag removes most partial seeds",
+				      std::to_string(bothFew.size()) + " of " + std::to_string(anyFew.size()) +
+				      " over " + std::to_string(few.size()) + " notables");
+			}
+
+			// Ranking must be a total order: equal weights are common, and an
+			// unstable sort would shuffle them between runs.
+			auto again = TJSearch(ds, blob, q, 2000, nullptr);
+			bool same = again.size() == hits.size();
+			for (size_t i = 0; same && i < again.size(); i++) same = again[i].seed == hits[i].seed;
+			check(same, "the same query ranks identically every run");
+			bool ordered = true;
+			for (size_t i = 1; i < hits.size(); i++) ordered = ordered && hits[i - 1].weight >= hits[i].weight;
+			check(ordered, "results are ordered by weight");
+		}
+
+		// --- display and search must agree on what counts as a hit -----------
+		// The UI used to compare templates only, so a roll under 最小值 was still
+		// drawn as a match. Both sides now go through TJWantMatcher; this checks
+		// the matcher enforces exactly what the search counted.
+		{
+			std::vector<TJWantStat> w{ { "#% increased Damage with Poison", 25.0, 1.0 } };
+			TJWantMatcher m(w);
+			check(m.Match("30% increased Damage with Poison") != nullptr,
+			      "matcher accepts a roll at or above 最小值");
+			check(m.Match("20% increased Damage with Poison") == nullptr,
+			      "matcher rejects a roll below 最小值");
+			check(m.Match("30% increased Damage with Bleeding") == nullptr,
+			      "matcher rejects a different stat");
+			check(TJWantMatcher().Match("anything") == nullptr, "empty matcher matches nothing");
+			check(TJStatValue("Adds 5 to 12 Fire Damage") == 5.0, "value reads the first number");
+			check(TJStatValue("Enemies have -2% to all Resistances") == 2.0,
+			      "value is the magnitude within its template (the sign lives in the template)");
+
+			// Cross-check the matcher against the search on real seeds: re-count by
+			// hand and demand the same number the ranking used. Sampled (each seed
+			// is a full 452-node sweep) and asserted non-empty, because a loop that
+			// never runs would "pass" while testing nothing.
+			TJSearchQuery qc = q;
+			qc.wants[0].minValue = 10.0;   // low enough to leave seeds to check
+			auto sample = TJSearch(ds, blob, qc, 5, nullptr);
+			TJWantMatcher mc(qc.wants);
+			bool consistent = !sample.empty();
+			for (const auto& h : sample) {
+				int counted = 0;
+				for (const auto& kv : ds.nodeIndex) {
+					if (kv.second.first >= ds.sizeNotable) continue;
+					TJTransform t2 = TJApply(ds, blob, qc.jewelType, h.seed, kv.first, "Notable", {});
+					if (!t2.ok) continue;
+					for (const auto& ln : t2.lines) if (mc.Match(ln)) counted++;
+				}
+				if (counted != h.matches) { consistent = false; break; }
+			}
+			check(consistent, "matcher and search count the same hits",
+			      std::to_string(sample.size()) + " seeds re-counted");
+		}
 	} else {
 		check(false, "load BrutalRestraint.bin", err);
 	}

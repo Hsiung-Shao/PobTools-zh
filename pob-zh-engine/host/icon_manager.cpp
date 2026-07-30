@@ -7,6 +7,7 @@
 #include <shlobj.h>
 
 #include <json.hpp> // nlohmann::ordered_json
+#include <cctype>
 #include <vector>
 
 #pragma comment(lib, "winhttp.lib")
@@ -107,8 +108,9 @@ void IconManager::Init(const std::wstring& exeDir)
 					if (v.is_string()) paths_.emplace(k, v.get<std::string>());
 		} catch (...) {}
 	}
-	if (paths_.empty()) return; // no index -> icons disabled (graceful)
-
+	// The worker starts even without the index: callers that already know an art
+	// path (atlas planner scarabs) do not need one, and an idle worker parked on
+	// its condition variable costs nothing.
 	cacheDir_ = exeDir + L"PobTools\\cache\\icons\\";
 	SHCreateDirectoryExW(nullptr, cacheDir_.c_str(), nullptr); // best-effort
 
@@ -128,23 +130,49 @@ void IconManager::Shutdown()
 		for (Done& d : doneQ_) FreeDecoded(d.rgba);
 		doneQ_.clear();
 	}
-	for (auto& [name, t] : tex_) DeleteTexture(t);
+	for (auto& [art, t] : tex_) DeleteTexture(t);
 	tex_.clear();
+	requested_.clear();
+}
+
+// Data sources disagree about the extension: icon_paths.json stores bare paths,
+// ItemVisualIdentity.DDSFile keeps ".dds". Normalize so both reach the same
+// cache entry and the same texture.
+static std::string strip_dds(const std::string& p)
+{
+	if (p.size() > 4) {
+		std::string tail = p.substr(p.size() - 4);
+		for (char& c : tail) c = (char)tolower((unsigned char)c);
+		if (tail == ".dds") return p.substr(0, p.size() - 4);
+	}
+	return p;
+}
+
+void IconManager::RequestPath(const std::string& artPath)
+{
+	if (artPath.empty()) return;
+	std::string art = strip_dds(artPath);
+	if (!requested_.insert(art).second) return; // already queued or done
+	{ std::lock_guard<std::mutex> lk(reqMx_); reqQ_.push_back(art); }
+	reqCv_.notify_one();
+}
+
+unsigned IconManager::TextureByPath(const std::string& artPath)
+{
+	auto it = tex_.find(strip_dds(artPath));
+	return it != tex_.end() ? it->second : 0;
 }
 
 void IconManager::Request(const std::string& name)
 {
-	if (name.empty() || requested_.count(name)) return;
-	if (paths_.find(name) == paths_.end()) { requested_.insert(name); return; } // no icon for this name
-	requested_.insert(name);
-	{ std::lock_guard<std::mutex> lk(reqMx_); reqQ_.push_back(name); }
-	reqCv_.notify_one();
+	auto it = paths_.find(name);
+	if (it != paths_.end()) RequestPath(it->second);
 }
 
 unsigned IconManager::Texture(const std::string& name)
 {
-	auto it = tex_.find(name);
-	return it != tex_.end() ? it->second : 0;
+	auto it = paths_.find(name);
+	return it == paths_.end() ? 0 : TextureByPath(it->second);
 }
 
 void IconManager::Pump()
@@ -160,7 +188,7 @@ void IconManager::Pump()
 		}
 		unsigned t = CreateTextureRGBA(d.rgba, d.w, d.h);
 		FreeDecoded(d.rgba);
-		tex_[d.name] = t; // even 0 (failed) is recorded so we don't retry
+		tex_[d.art] = t; // even 0 (failed) is recorded so we don't retry
 	}
 }
 
@@ -172,18 +200,14 @@ void IconManager::workerLoop()
 		INTERNET_DEFAULT_HTTPS_PORT, 0) : nullptr;
 
 	for (;;) {
-		std::string name;
+		std::string artPath;
 		{
 			std::unique_lock<std::mutex> lk(reqMx_);
 			reqCv_.wait(lk, [&] { return stop_.load() || !reqQ_.empty(); });
 			if (stop_.load()) break;
-			name = reqQ_.front();
+			artPath = reqQ_.front();
 			reqQ_.pop_front();
 		}
-
-		auto it = paths_.find(name);
-		if (it == paths_.end()) continue;
-		const std::string& artPath = it->second;
 
 		std::wstring cacheFile = cacheDir_ + sanitize(artPath) + L".png";
 		std::vector<unsigned char> bytes;
@@ -199,7 +223,7 @@ void IconManager::workerLoop()
 		if (!rgba) continue;
 		{
 			std::lock_guard<std::mutex> lk(doneMx_);
-			doneQ_.push_back(Done{ name, w, h, rgba });
+			doneQ_.push_back(Done{ artPath, w, h, rgba });
 		}
 	}
 

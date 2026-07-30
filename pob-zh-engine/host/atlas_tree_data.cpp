@@ -1,6 +1,7 @@
 #include "atlas_tree_data.h"
 #include "atlas_i18n.h"    // selftest T6: zh-mapping health check
 #include "atlas_persist.h" // multi-build schema + share codes (T7)
+#include "atlas_scarabs.h" // selftest T8: placement rules + notes/scarabs persistence
 #include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
@@ -602,6 +603,10 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			rep.note("zh mapping absent or empty - skipped (English-only display)");
 		}
 	}
+
+	// T8: scarab catalogue, placement rules and the notes/scarabs persistence
+	// (including the backward-compatibility guarantees) — see atlas_scarabs.cpp.
+	rep.failures += RunScarabSelfTest(exeDir, rep.text);
 
 	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";
 	printf("%s", rep.text.c_str());
