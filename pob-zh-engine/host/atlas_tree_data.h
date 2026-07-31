@@ -107,6 +107,9 @@ public:
 	std::vector<AtlasSheet> sheets;
 	AtlasFrame frames[5];                         // indexed by kind
 	std::vector<AtlasDeco> masteries;
+	// Optional atlastree-export-derived mastery groups, aligned with masteries.
+	// Empty means mastery icon group-clicking is disabled for this data file.
+	std::vector<std::vector<int>> masteryNodeGroups;
 	std::vector<AtlasDeco> groupBg;
 	AtlasSpriteRef bg;                            // full-tree background art
 	bool hasBg = false;

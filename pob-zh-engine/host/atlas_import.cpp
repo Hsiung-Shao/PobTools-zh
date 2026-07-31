@@ -226,6 +226,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		};
 
 		std::set<std::string> masteryIds;
+		std::map<std::string, std::set<int>> masteryGroupIdsByName;
 		std::map<std::string, int> id2idx;
 		ordered_json outNodes = ordered_json::array();
 		ordered_json outMast = ordered_json::array();
@@ -250,6 +251,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 
 			if (v.value("isMastery", false)) {
 				masteryIds.insert(key);
+				masteryGroupIdsByName[v.value("name", std::string())].insert(grpId);
 				ordered_json spr = sheets.uv("mastery", v.value("icon", std::string()));
 				if (spr.is_null())
 					return fail(sheets.err.empty() ? u8"mastery 圖示缺失: " + key : sheets.err);
@@ -377,6 +379,46 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 			outFrames[std::to_string(fr.kind)] = std::move(f);
 		}
 
+		ordered_json outMasteryGroups = ordered_json::array();
+		{
+			const std::set<std::string> notableException = {
+				"3315", "1444", "44954", "49699", "23485"
+			};
+			for (const auto& m : outMast) {
+				std::set<int> picked;
+				std::string masteryName = m.value("n", std::string());
+				auto mit = masteryGroupIdsByName.find(masteryName);
+				if (mit != masteryGroupIdsByName.end()) {
+					for (int grpId : mit->second) {
+						std::string gid = std::to_string(grpId);
+						if (!groups.contains(gid) || !groups[gid].contains("nodes") || !groups[gid]["nodes"].is_array())
+							continue;
+						std::vector<std::string> groupNodeIds;
+						for (const auto& v : groups[gid]["nodes"])
+							groupNodeIds.push_back(v.is_string() ? v.get<std::string>() : std::to_string(v.get<int>()));
+
+						auto hasId = [&](const char* id) {
+							return std::find(groupNodeIds.begin(), groupNodeIds.end(), std::string(id)) != groupNodeIds.end();
+						};
+						if (hasId("65499")) { groupNodeIds.push_back("54499"); groupNodeIds.push_back("55003"); }
+						if (hasId("19599")) { groupNodeIds.push_back("9338"); groupNodeIds.push_back("50203"); groupNodeIds.push_back("5515"); }
+						if (hasId("37316")) { groupNodeIds.push_back("9409"); groupNodeIds.push_back("45606"); }
+
+						for (const std::string& nodeId : groupNodeIds) {
+							if (!nodesIn.contains(nodeId)) continue;
+							const ordered_json& src = nodesIn[nodeId];
+							if (!src.value("isNotable", false) && !notableException.count(nodeId)) continue;
+							auto it = id2idx.find(nodeId);
+							if (it != id2idx.end()) picked.insert(it->second);
+						}
+					}
+				}
+				ordered_json arr = ordered_json::array();
+				for (int idx : picked) arr.push_back(idx);
+				outMasteryGroups.push_back(std::move(arr));
+			}
+		}
+
 		// group backgrounds
 		ordered_json outGroupBg = ordered_json::array();
 		for (const auto& [gid, gv] : groups.items()) {
@@ -426,6 +468,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		out["edges"] = std::move(outEdges);
 		out["frames"] = std::move(outFrames);
 		out["masteries"] = std::move(outMast);
+		out["masteryGroups"] = std::move(outMasteryGroups);
 		out["groupbg"] = std::move(outGroupBg);
 		out["bg"] = std::move(outBg);
 

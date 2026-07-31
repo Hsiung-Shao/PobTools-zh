@@ -210,6 +210,7 @@ if (WIN32)
     target_compile_options(SimpleGraphic
         PRIVATE
         "/EHa"
+        "/utf-8"
     )
     target_compile_definitions(SimpleGraphic
         PRIVATE

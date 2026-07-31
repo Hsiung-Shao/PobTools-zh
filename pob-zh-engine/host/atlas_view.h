@@ -15,6 +15,16 @@
 
 class AtlasI18n;
 
+// Optional planner overlay used only by PobTools' atlas planner. Normal atlas
+// allocation passes nullptr, preserving the original click-to-allocate behavior.
+struct AtlasPlanOptions {
+	bool enabled = false;
+	bool paused = false;
+	std::vector<char>* pref = nullptr; // 0 neutral, 1 desired, 2 undesired
+	std::vector<char>* groupPref = nullptr; // aligned with AtlasTreeData::masteries
+	bool prefChanged = false;
+};
+
 class AtlasView {
 public:
 	// Uploads every sheet in d.sheets from exeDir/Data/. GL-thread only, call
@@ -27,7 +37,7 @@ public:
 	// Fills the remaining content region with the tree canvas and handles all
 	// interaction. Returns true when the allocation changed this frame.
 	// zh (optional) switches tooltip names/stats to Traditional Chinese.
-	bool Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh = nullptr);
+	bool Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh = nullptr, AtlasPlanOptions* plan = nullptr);
 
 	// Glides the camera to node idx (raising zoom to a readable level when far
 	// out) and starts a short fading highlight ring. User pan/zoom cancels the
@@ -48,8 +58,10 @@ private:
 	void updateHover(AtlasTreeData& d, ImVec2 mouseWorld);
 	void drawDecos(const AtlasTreeData& d, ImDrawList* dl, const std::vector<AtlasDeco>& decos);
 	void drawEdges(const AtlasTreeData& d, ImDrawList* dl);
-	void drawNodes(const AtlasTreeData& d, ImDrawList* dl);
+	void drawNodes(const AtlasTreeData& d, ImDrawList* dl, const AtlasPlanOptions* plan);
 	void drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI18n* zh);
+	int hitMastery(const AtlasTreeData& d, ImVec2 mouseWorld) const;
+	const std::vector<int>& masteryGroupNodes(const AtlasTreeData& d, int masteryIdx) const;
 
 	std::vector<unsigned> tex_;      // aligned with d.sheets
 	ImVec2 vpPos_{ 0, 0 }, vpSize_{ 0, 0 };
@@ -65,6 +77,7 @@ private:
 	float focusTimer_ = 0.0f;        // seconds left on the highlight ring
 
 	int hover_ = -1;
+	int hoverMastery_ = -1;
 	bool allocDirty_ = true;         // recompute hover previews after changes
 	int previewFor_ = -1;
 	std::vector<int> hoverPath_;     // hovering an unallocated node: nodes to add

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 // ---- palette ----------------------------------------------------------------
 
@@ -20,6 +21,8 @@ static const ImU32 kColEdgeOn = IM_COL32(116, 202, 244, 240);   // allocated: li
 static const ImU32 kColEdgePath = IM_COL32(120, 200, 150, 220); // preview: green
 static const ImU32 kColEdgeLose = IM_COL32(224, 80, 80, 220);   // removal: red
 static const ImU32 kColHoverRing = IM_COL32(255, 255, 255, 90);
+static const ImU32 kColDesiredRing = IM_COL32(74, 222, 128, 245);
+static const ImU32 kColUndesiredRing = IM_COL32(248, 113, 113, 245);
 
 // side-panel click-to-focus
 static const float kFocusDuration = 1.6f;  // highlight ring fade time (seconds)
@@ -197,7 +200,7 @@ void AtlasView::drawEdges(const AtlasTreeData& d, ImDrawList* dl)
 	}
 }
 
-void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
+void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl, const AtlasPlanOptions* plan)
 {
 	ImVec2 wmin = screenToWorld(vpPos_);
 	ImVec2 wmax = screenToWorld(vpPos_ + vpSize_);
@@ -244,6 +247,21 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              (std::max(n.on.w, n.on.h) * 0.5f + 12.0f) * zoom_, kColEdgeLose, 0, 2.5f);
 
+		if (plan && plan->enabled && plan->pref && i < (int)plan->pref->size()) {
+			char p = (*plan->pref)[i];
+			if (p == 1 || p == 2) {
+				float r = (std::max(n.on.w, n.on.h) * 0.5f + (p == 1 ? 22.0f : 28.0f)) * zoom_;
+				dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)), r,
+				              p == 1 ? kColDesiredRing : kColUndesiredRing, 0, p == 1 ? 3.0f : 3.5f);
+				if (p == 2) {
+					ImVec2 c = worldToScreen(ImVec2(n.x, n.y));
+					float x = r * 0.62f;
+					dl->AddLine(ImVec2(c.x - x, c.y - x), ImVec2(c.x + x, c.y + x), kColUndesiredRing, 2.5f);
+					dl->AddLine(ImVec2(c.x - x, c.y + x), ImVec2(c.x + x, c.y - x), kColUndesiredRing, 2.5f);
+				}
+			}
+		}
+
 		if (i == hover_)
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              (std::max(n.on.w, n.on.h) * 0.5f + 18.0f) * zoom_, kColHoverRing, 0, 2.0f);
@@ -256,6 +274,30 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 			              IM_COL32(255, 220, 120, (int)(255 * a)), 0, 3.0f);
 		}
 	}
+}
+
+int AtlasView::hitMastery(const AtlasTreeData& d, ImVec2 mouseWorld) const
+{
+	int found = -1;
+	float bestSq = 0.0f;
+	for (int i = 0; i < (int)d.masteries.size(); i++) {
+		const AtlasDeco& m = d.masteries[i];
+		float r = std::max(m.spr.w, m.spr.h) * 0.5f;
+		float dx = m.x - mouseWorld.x, dy = m.y - mouseWorld.y;
+		float dsq = dx * dx + dy * dy;
+		if (dsq <= r * r && (found == -1 || dsq < bestSq)) {
+			found = i;
+			bestSq = dsq;
+		}
+	}
+	return found;
+}
+
+const std::vector<int>& AtlasView::masteryGroupNodes(const AtlasTreeData& d, int masteryIdx) const
+{
+	static const std::vector<int> empty;
+	if (masteryIdx < 0 || masteryIdx >= (int)d.masteryNodeGroups.size()) return empty;
+	return d.masteryNodeGroups[masteryIdx];
 }
 
 void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
@@ -325,7 +367,7 @@ void AtlasView::CenterOn(const AtlasTreeData& d, int nodeIdx)
 
 // ---- main entry -------------------------------------------------------------------
 
-bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
+bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, AtlasPlanOptions* plan)
 {
 	ImGuiIO& io = ImGui::GetIO();
 	bool changed = false;
@@ -394,13 +436,65 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
 
 	if (hovered)
 		updateHover(d, screenToWorld(io.MousePos));
-	else
+	else {
 		hover_ = -1;
+		hoverMastery_ = -1;
+	}
+	if (hovered && plan && plan->enabled)
+		hoverMastery_ = hitMastery(d, screenToWorld(io.MousePos));
+	else
+		hoverMastery_ = -1;
+	if (hoverMastery_ != -1 && masteryGroupNodes(d, hoverMastery_).empty())
+		hoverMastery_ = -1;
+	if (hoverMastery_ != -1)
+		ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 
-	// click-to-allocate / deallocate (release with negligible total movement)
-	if (ImGui::IsItemDeactivated() &&
-	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
-	    hover_ != -1) {
+	// click-to-allocate / deallocate, or planning-mode desire toggles
+	if (plan && plan->enabled && plan->pref) {
+		if ((int)plan->pref->size() != (int)d.nodes.size())
+			plan->pref->assign(d.nodes.size(), 0);
+
+		if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+		    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale &&
+		    hover_ != -1 && hover_ < (int)plan->pref->size() && (*plan->pref)[hover_] != 0) {
+			(*plan->pref)[hover_] = 0;
+			status_ = u8"已清除標記";
+			plan->prefChanged = true;
+			changed = true;
+		} else if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+		           ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
+		           (hover_ != -1 || hoverMastery_ != -1)) {
+			if ((int)plan->pref->size() != (int)d.nodes.size())
+				plan->pref->assign(d.nodes.size(), 0);
+			int mi = hoverMastery_;
+			if (mi != -1) {
+				const std::vector<int>& group = masteryGroupNodes(d, mi);
+				char groupState = 0;
+				if (plan->groupPref) {
+					if ((int)plan->groupPref->size() != (int)d.masteries.size())
+						plan->groupPref->assign(d.masteries.size(), 0);
+					groupState = (*plan->groupPref)[mi];
+				}
+				groupState = (groupState == 0) ? 1 : (groupState == 1) ? 2 : 0;
+				if (plan->groupPref)
+					(*plan->groupPref)[mi] = groupState;
+				for (int idx : group)
+					if (idx >= 0 && idx < (int)plan->pref->size() && d.nodes[idx].kind != kAtlasStart)
+						(*plan->pref)[idx] = groupState;
+				status_ = d.masteries[mi].name + u8" 群組標記 " + std::to_string((int)group.size()) + u8" 點";
+				plan->prefChanged = true;
+				changed = true;
+			} else if (hover_ != -1 && d.nodes[hover_].kind != kAtlasStart) {
+				char& p = (*plan->pref)[hover_];
+				p = (p == 0) ? 1 : (p == 1) ? 2 : 0;
+				status_ = p == 1 ? u8"已標記為想要" : p == 2 ? u8"已標記為不要" : u8"已清除標記";
+				plan->prefChanged = true;
+				changed = true;
+			}
+		}
+	} else if (ImGui::IsItemDeactivated() &&
+	           ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
+	           hover_ != -1) {
 		const AtlasNode& n = d.nodes[hover_];
 		if (n.kind == kAtlasStart) {
 			// inert
@@ -439,7 +533,12 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
 	drawDecos(d, dl, d.groupBg);
 	drawEdges(d, dl);
 	drawDecos(d, dl, d.masteries);
-	drawNodes(d, dl);
+	if (hoverMastery_ != -1 && hoverMastery_ < (int)d.masteries.size()) {
+		const AtlasDeco& m = d.masteries[hoverMastery_];
+		float r = (std::max(m.spr.w, m.spr.h) * 0.5f + 18.0f) * zoom_;
+		dl->AddCircle(worldToScreen(ImVec2(m.x, m.y)), r, IM_COL32(255, 255, 255, 150), 0, 3.0f);
+	}
+	drawNodes(d, dl, plan);
 
 	// allocated-count chip pinned to the canvas corner (poeplanner style)
 	{

@@ -85,7 +85,7 @@ bool AtlasTreeData::LoadVersion(const std::wstring& exeDir, const std::string& t
 
 bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& tag, std::string* err)
 {
-	nodes.clear(); edges.clear(); sheets.clear(); masteries.clear(); groupBg.clear();
+	nodes.clear(); edges.clear(); sheets.clear(); masteries.clear(); masteryNodeGroups.clear(); groupBg.clear();
 	root = -1;
 	tag_ = tag;
 	dataDir_ = dataDir;
@@ -159,6 +159,21 @@ bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& 
 				AtlasDeco d;
 				if (parse_deco(jm, d)) masteries.push_back(std::move(d));
 			}
+		if (doc.contains("masteryGroups") && doc["masteryGroups"].is_array()) {
+			masteryNodeGroups.assign(masteries.size(), {});
+			int lim = (std::min)((int)masteries.size(), (int)doc["masteryGroups"].size());
+			bool any = false;
+			for (int i = 0; i < lim; i++) {
+				if (!doc["masteryGroups"][i].is_array()) continue;
+				for (const auto& idx : doc["masteryGroups"][i]) {
+					int n = idx.get<int>();
+					if (n >= 0 && n < (int)nodes.size() && nodes[n].kind != kAtlasStart)
+						masteryNodeGroups[i].push_back(n);
+				}
+				if (!masteryNodeGroups[i].empty()) any = true;
+			}
+			if (!any) masteryNodeGroups.clear();
+		}
 		if (doc.contains("groupbg"))
 			for (const auto& jg : doc["groupbg"]) {
 				AtlasDeco d;

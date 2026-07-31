@@ -32,8 +32,11 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
+#include <deque>
 #include <functional>
 #include <numeric>
+#include <queue>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -251,6 +254,12 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	bool ready = false;      // set by the initial loadSeason() below
 	std::string importMsg;   // last import result shown in the toolbar
 	bool importFailed = false;
+	bool planningMode = false;
+	bool planningPaused = false;
+	bool planningDirty = false;
+	std::vector<char> planningPref; // 0 neutral, 1 desired, 2 undesired
+	std::vector<char> planningGroupPref; // aligned with tree.masteries
+	std::string planningMsg;
 
 	// The newest installed season is canonical (the one the build persists for);
 	// an older-season view is a read-only preview.
@@ -310,6 +319,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				}
 			}
 			ready = view.LoadTextures(exeDir, tree, &loadErr);
+			planningPref.assign(tree.nodes.size(), 0);
+			planningGroupPref.assign(tree.masteries.size(), 0);
+			planningDirty = false;
+			planningMsg.clear();
 		}
 	};
 
@@ -371,6 +384,261 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			std::sort(g.begin(), g.end(), [&](const PanelNode& a, const PanelNode& b) {
 				return tree.nodes[a.idx].name < tree.nodes[b.idx].name;
 			});
+	};
+
+	auto rebuildPlanningAllocation = [&]() -> bool {
+		if (!planningMode || planningPaused || !ready) return false;
+		if ((int)planningPref.size() != (int)tree.nodes.size())
+			planningPref.assign(tree.nodes.size(), 0);
+
+		std::vector<char> desired(tree.nodes.size(), 0), blocked(tree.nodes.size(), 0);
+		int desiredCount = 0, blockedCount = 0;
+		for (int i = 0; i < (int)tree.nodes.size(); i++) {
+			if (tree.nodes[i].kind == kAtlasStart) continue;
+			if (planningPref[i] == 2) { blocked[i] = 1; blockedCount++; }
+			else if (planningPref[i] == 1) { desired[i] = 1; desiredCount++; }
+		}
+
+		std::vector<char> before(tree.nodes.size(), 0);
+		for (int i = 0; i < (int)tree.nodes.size(); i++) before[i] = tree.nodes[i].alloc ? 1 : 0;
+		tree.Reset();
+
+		auto containsAscii = [](const std::string& text, const char* needle) {
+			std::string hay = ToLowerAscii(text);
+			std::string nd = ToLowerAscii(needle);
+			return hay.find(nd) != std::string::npos;
+		};
+		auto hasStat = [&](const AtlasNode& n, const char* needle) {
+			for (const std::string& stat : n.stats)
+				if (containsAscii(stat, needle)) return true;
+			return false;
+		};
+		auto isTravelNode = [&](const AtlasNode& n) {
+			return hasStat(n, "chance for map drops to be duplicated") ||
+			       hasStat(n, "increased quantity of items found in your maps") ||
+			       hasStat(n, "increased scarabs found in your maps") ||
+			       hasStat(n, "increased effect of modifiers on your maps") ||
+			       hasStat(n, "additional connected map");
+		};
+		auto nodeWeight = [&](int idx) {
+			if (idx < 0 || idx >= (int)tree.nodes.size()) return 1.0;
+			const AtlasNode& n = tree.nodes[idx];
+			double w = 1.0;
+			if (n.kind == kAtlasNotable || n.kind == kAtlasKeystone) w = 0.5;
+			if (isTravelNode(n)) w -= 0.01;
+			else if (n.kind == kAtlasNormal) {
+				for (int nb : n.adj) {
+					if (nb >= 0 && nb < (int)tree.nodes.size() && isTravelNode(tree.nodes[nb])) {
+						w -= 0.01;
+						break;
+					}
+				}
+			}
+			if (n.kind == kAtlasWormhole) w = (std::max)(w, 1.5);
+			return (std::max)(0.05, w);
+		};
+
+		struct PlanPath {
+			std::vector<int> nodes; // origin first, target last
+			int originGroup = -1;
+			int targetGroup = -1;
+			double cost = 0.0;
+			double overlap = 0.0;
+		};
+		auto mergeGroups = [](std::vector<std::vector<int>>& groups, int a, int b, const std::vector<int>& path) {
+			if (a < 0 || b < 0 || a >= (int)groups.size() || b >= (int)groups.size() || a == b) return;
+			std::vector<char> seen;
+			int maxIdx = 0;
+			for (const auto& g : groups)
+				for (int n : g) maxIdx = (std::max)(maxIdx, n);
+			for (int n : path) maxIdx = (std::max)(maxIdx, n);
+			seen.assign(maxIdx + 1, 0);
+			std::vector<int> merged;
+			auto add = [&](int n) {
+				if (n < 0) return;
+				if (n >= (int)seen.size()) seen.resize(n + 1, 0);
+				if (!seen[n]) { seen[n] = 1; merged.push_back(n); }
+			};
+			for (int n : groups[a]) add(n);
+			for (int n : groups[b]) add(n);
+			for (int n : path) add(n);
+			if (a < b) {
+				groups.erase(groups.begin() + b);
+				groups.erase(groups.begin() + a);
+			} else {
+				groups.erase(groups.begin() + a);
+				groups.erase(groups.begin() + b);
+			}
+			groups.push_back(std::move(merged));
+		};
+
+		std::vector<std::vector<int>> planGroups;
+		auto mergeAdjacentGroups = [&]() {
+			bool merged = true;
+			while (merged) {
+				merged = false;
+				std::vector<int> member(tree.nodes.size(), -1);
+				for (int gi = 0; gi < (int)planGroups.size(); gi++)
+					for (int n : planGroups[gi])
+						if (n >= 0 && n < (int)member.size()) member[n] = gi;
+				for (int i = 0; i < (int)tree.nodes.size() && !merged; i++) {
+					int gi = member[i];
+					if (gi == -1) continue;
+					for (int nb : tree.nodes[i].adj) {
+						int gj = (nb >= 0 && nb < (int)member.size()) ? member[nb] : -1;
+						if (gj != -1 && gj != gi) {
+							mergeGroups(planGroups, gi, gj, {});
+							merged = true;
+							break;
+						}
+					}
+				}
+			}
+		};
+
+		if (tree.root >= 0) planGroups.push_back({ tree.root });
+		for (int i = 0; i < (int)tree.nodes.size(); i++) {
+			if (!desired[i] || blocked[i]) continue;
+			tree.nodes[i].alloc = true;
+			planGroups.push_back({ i });
+		}
+		mergeAdjacentGroups();
+
+		auto shortestPathsFromGroup = [&](const std::vector<int>& group, const std::vector<int>& member) {
+			const double kInf = 1e30;
+			std::vector<double> dist(tree.nodes.size(), kInf);
+			std::vector<int> prev(tree.nodes.size(), -1);
+			struct QItem { double dist; int idx; };
+			struct Greater { bool operator()(const QItem& a, const QItem& b) const { return a.dist > b.dist; } };
+			std::priority_queue<QItem, std::vector<QItem>, Greater> pq;
+			for (int n : group) {
+				if (n < 0 || n >= (int)tree.nodes.size() || blocked[n]) continue;
+				dist[n] = 0.0;
+				pq.push({ 0.0, n });
+			}
+
+			std::vector<PlanPath> found;
+			double best = kInf;
+			while (!pq.empty()) {
+				QItem item = pq.top();
+				pq.pop();
+				if (item.dist != dist[item.idx]) continue;
+				if (item.dist > best * 2.0 + 0.001) break;
+				int itemGroup = member[item.idx];
+				if (itemGroup != -1 && itemGroup != member[group[0]]) {
+					std::vector<int> path;
+					for (int at = item.idx; at != -1; at = prev[at]) path.push_back(at);
+					std::reverse(path.begin(), path.end());
+					found.push_back({ path, member[group[0]], itemGroup, item.dist, 0.0 });
+					best = (std::min)(best, item.dist);
+					continue;
+				}
+				for (int nb : tree.nodes[item.idx].adj) {
+					if (nb < 0 || nb >= (int)tree.nodes.size() || blocked[nb]) continue;
+					if (tree.nodes[nb].kind == kAtlasStart && nb != tree.root) continue;
+					double nd = item.dist + ((tree.nodes[nb].alloc || member[nb] == member[group[0]]) ? 0.0 : nodeWeight(nb));
+					if (nd + 0.000001 < dist[nb]) {
+						dist[nb] = nd;
+						prev[nb] = item.idx;
+						pq.push({ nd, nb });
+					}
+				}
+			}
+			return found;
+		};
+
+		int guard = 0;
+		while (planGroups.size() > 1 && ++guard <= 500) {
+			std::vector<int> member(tree.nodes.size(), -1);
+			for (int gi = 0; gi < (int)planGroups.size(); gi++)
+				for (int n : planGroups[gi])
+					if (n >= 0 && n < (int)member.size()) member[n] = gi;
+
+			std::vector<PlanPath> paths;
+			for (const auto& group : planGroups) {
+				std::vector<PlanPath> found = shortestPathsFromGroup(group, member);
+				paths.insert(paths.end(), found.begin(), found.end());
+			}
+			if (paths.empty()) break;
+
+			std::vector<int> occurrences(tree.nodes.size(), 0);
+			for (const PlanPath& p : paths)
+				for (int i = 1; i + 1 < (int)p.nodes.size(); i++)
+					if (p.nodes[i] >= 0 && p.nodes[i] < (int)occurrences.size()) occurrences[p.nodes[i]]++;
+			for (PlanPath& p : paths) {
+				double sum = 0.0;
+				int count = 0;
+				for (int i = 1; i + 1 < (int)p.nodes.size(); i++) {
+					sum += occurrences[p.nodes[i]];
+					count++;
+				}
+				p.overlap = count ? (sum / count) : 0.0;
+			}
+			std::sort(paths.begin(), paths.end(), [](const PlanPath& a, const PlanPath& b) {
+				if (std::fabs(a.cost - b.cost) > 0.000001) return a.cost < b.cost;
+				if (std::fabs(a.overlap - b.overlap) > 0.000001) return a.overlap > b.overlap;
+				return a.nodes.size() < b.nodes.size();
+			});
+
+			const PlanPath& best = paths.front();
+			for (int n : best.nodes)
+				if (n >= 0 && n < (int)tree.nodes.size() && tree.nodes[n].kind != kAtlasStart)
+					tree.nodes[n].alloc = true;
+			mergeGroups(planGroups, best.originGroup, best.targetGroup, best.nodes);
+		}
+
+		if (tree.root >= 0) {
+			std::vector<int> desiredNodes;
+			for (int i = 0; i < (int)desired.size(); i++)
+				if (desired[i] && tree.nodes[i].alloc) desiredNodes.push_back(i);
+
+			std::vector<int> candidates;
+			for (int i = 0; i < (int)tree.nodes.size(); i++)
+				if (tree.nodes[i].alloc && tree.nodes[i].kind != kAtlasStart && !desired[i])
+					candidates.push_back(i);
+			for (int removeIdx : candidates) {
+				if (!tree.nodes[removeIdx].alloc) continue;
+				tree.nodes[removeIdx].alloc = false;
+				std::vector<char> reach(tree.nodes.size(), 0);
+				std::deque<int> q;
+				reach[tree.root] = 1;
+				q.push_back(tree.root);
+				while (!q.empty()) {
+					int cur = q.front();
+					q.pop_front();
+					for (int nb : tree.nodes[cur].adj) {
+						if (nb < 0 || nb >= (int)tree.nodes.size() || reach[nb] || !tree.nodes[nb].alloc) continue;
+						reach[nb] = 1;
+						q.push_back(nb);
+					}
+				}
+				bool ok = true;
+				for (int dIdx : desiredNodes) {
+					if (!reach[dIdx]) {
+						ok = false;
+						break;
+					}
+				}
+				if (!ok) tree.nodes[removeIdx].alloc = true;
+			}
+		}
+
+		int reached = 0;
+		for (int i = 0; i < (int)desired.size(); i++)
+			if (desired[i] && tree.nodes[i].alloc) reached++;
+
+		bool changed = false;
+		for (int i = 0; i < (int)tree.nodes.size(); i++) {
+			if ((tree.nodes[i].alloc ? 1 : 0) != before[i]) {
+				changed = true;
+				break;
+			}
+		}
+		planningMsg = std::string(u8"規劃：") + std::to_string(reached) + "/" + std::to_string(desiredCount) +
+		              u8" 個想要節點，排除 " + std::to_string(blockedCount) + u8" 個不要節點";
+		if (desiredCount > reached)
+			planningMsg += u8"（有節點無法避開不要點連到）";
+		return changed;
 	};
 
 	// --- scarab section (map device) ---
@@ -854,6 +1122,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				saveActive();            // capture the outgoing project first
 				buildFile.active = i;
 				tree.ApplyAllocIds(buildFile.Active().alloc);
+				planningPref.assign(tree.nodes.size(), 0);
+				planningGroupPref.assign(tree.masteries.size(), 0);
+				planningDirty = false;
+				planningMsg.clear();
 				saveActive();            // persist active index + pruned mapping
 				panelDirty = true;
 			};
@@ -869,6 +1141,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				std::string snote;
 				buildFile.builds[idx].scarabs = scarabDb.Sanitize(e.scarabs, &snote);
 				int kept = tree.ApplyAllocIds(e.alloc);
+				planningPref.assign(tree.nodes.size(), 0);
+				planningGroupPref.assign(tree.masteries.size(), 0);
+				planningDirty = false;
+				planningMsg.clear();
 				saveActive();
 				panelDirty = true;
 				int dropped = (int)e.alloc.size() - kept;
@@ -924,6 +1200,24 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			if (ImGui::Button(u8"匯出")) ImGui::OpenPopup("##exportmenu");
 			ImGui::SameLine();
 			if (ImGui::Button(u8"匯入")) ImGui::OpenPopup("##importmenu");
+			ImGui::SameLine();
+			bool planningButtonWasActive = planningMode;
+			if (planningButtonWasActive) PobUi::PushDangerButton();
+			if (ImGui::Button(planningMode ? u8"結束規劃" : u8"規劃模式")) {
+				planningMode = !planningMode;
+				planningPaused = false;
+				planningPref.assign(tree.nodes.size(), 0);
+				planningGroupPref.assign(tree.masteries.size(), 0);
+				planningDirty = false;
+				planningMsg = planningMode
+					? std::string(u8"規劃模式：左鍵想要/不要/清除，右鍵清除；點群組圖示可批量標記")
+					: std::string();
+				if (!planningMode) {
+					tree.ApplyAllocIds(buildFile.Active().alloc);
+					panelDirty = true;
+				}
+			}
+			if (planningButtonWasActive) PobUi::PopButtonStyle();
 
 			if (ImGui::BeginPopupModal(u8"新增專案", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
 				ImGui::TextUnformatted(u8"專案名稱：");
@@ -1037,7 +1331,6 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			if (updaterBusy) ImGui::BeginDisabled(); // both paths overwrite the same tree json
 			if (ImGui::Button(u8"匯入賽季資料")) ImGui::OpenPopup(u8"匯入賽季資料確認");
 			if (updaterBusy) ImGui::EndDisabled();
-
 			// zh/en display toggle (only when a mapping is available); F2 mirrors it
 			if (zhLoaded) {
 				ImGui::SameLine();
@@ -1080,19 +1373,35 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				bool canCompare = verIndex.Versions().size() >= 2 && !verIndex.CompareBase().empty();
 				ImGui::SameLine(0, 18.0f * scale);
 				if (!canCompare) ImGui::BeginDisabled();
-				if (compareMode) PobUi::PushDangerButton();
+				bool compareButtonWasActive = compareMode;
+				if (compareButtonWasActive) PobUi::PushDangerButton();
 				if (ImGui::Button(compareMode ? u8"結束比較" : u8"版本比較")) {
 					compareMode = !compareMode;
 					if (compareMode) refreshCompare();
 					else view.ClearDiffOverlay();
 				}
-				if (compareMode) PobUi::PopButtonStyle();
+				if (compareButtonWasActive) PobUi::PopButtonStyle();
 				if (!canCompare) ImGui::EndDisabled();
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip(canCompare
 						? u8"比較 %s -> %s：節點增刪與逐詞條數值變更（綠=新增, 黃=變動）"
 						: u8"需要兩個賽季的資料才能比較",
 						verIndex.CompareBase().c_str(), verIndex.Active().c_str());
+			}
+			if (planningMode) {
+				ImGui::SameLine(0, 18.0f * scale);
+				if (ImGui::Button(planningPaused ? u8"恢復計算" : u8"暫停計算")) {
+					planningPaused = !planningPaused;
+					if (!planningPaused) planningDirty = true;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button(u8"重新計算")) planningDirty = true;
+				ImGui::SameLine();
+				if (ImGui::Button(u8"清除規劃")) {
+					planningPref.assign(tree.nodes.size(), 0);
+					planningGroupPref.assign(tree.masteries.size(), 0);
+					planningDirty = true;
+				}
 			}
 
 			// background auto-update status / prompt
@@ -1120,6 +1429,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				ImGui::SameLine(0, 18.0f * scale);
 				ImGui::TextColored(PobUi::StatusColor(importFailed ? PobUi::StatusTone::Error : PobUi::StatusTone::Success),
 					"%s", importMsg.c_str());
+			} else if (planningMode && !planningMsg.empty()) {
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::TextColored(planningPaused ? PobUi::StatusColor(PobUi::StatusTone::Warning) : PobUi::Accent(),
+					"%s%s", planningPaused ? u8"[暫停] " : "", planningMsg.c_str());
 			} else if (!view.StatusLine().empty()) {
 				ImGui::SameLine(0, 18.0f * scale);
 				ImGui::TextDisabled("%s", view.StatusLine().c_str());
@@ -1155,6 +1468,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				ImGui::Spacing();
 				if (ImGui::Button(u8"清除全部")) {
 					tree.Reset();
+					planningPref.assign(tree.nodes.size(), 0);
+					planningGroupPref.assign(tree.masteries.size(), 0);
+					planningDirty = false;
+					planningMsg.clear();
 					saveActive();
 					panelDirty = true;
 					ImGui::CloseCurrentPopup();
@@ -1176,7 +1493,17 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			const float splitW = 8.0f * scale;
 			ImGui::BeginChild("##treewrap", ImVec2(-(panelW + splitW), 0), false,
 				ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-			bool changed = view.Draw(tree, scale, showZh && zhLoaded ? &i18n : nullptr); // auto-saves below; the file is tiny
+			AtlasPlanOptions planOpts;
+			planOpts.enabled = planningMode;
+			planOpts.paused = planningPaused;
+			planOpts.pref = &planningPref;
+			planOpts.groupPref = &planningGroupPref;
+			bool changed = view.Draw(tree, scale, showZh && zhLoaded ? &i18n : nullptr,
+			                         planningMode ? &planOpts : nullptr); // auto-saves below; the file is tiny
+			if (planOpts.prefChanged) {
+				planningDirty = true;
+				changed = false;
+			}
 			ImGui::EndChild();
 
 			ImGui::SameLine(0, 0);
@@ -1193,6 +1520,14 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			if (ImGui::IsItemDeactivated()) { // write once on release, not per drag frame
 				uiState.panelW = panelW / scale;
 				uiState.Save(exeDir);
+			}
+			if (planningDirty && !planningPaused) {
+				bool planChanged = rebuildPlanningAllocation();
+				planningDirty = false;
+				if (planChanged) {
+					saveActive();
+					panelDirty = true;
+				}
 			}
 			if (changed) {
 				saveActive();
