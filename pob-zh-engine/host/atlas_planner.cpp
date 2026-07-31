@@ -8,6 +8,7 @@
 #include "atlas_optimize.h"
 #include "atlas_astrolabes.h"
 #include "atlas_maps.h"
+#include "atlas_mechanics.h"
 #include "atlas_persist.h"
 #include "atlas_scarabs.h"
 #include "atlas_stat_agg.h"
@@ -261,6 +262,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	// --- version registry: which seasons are installed, which one is shown ---
 	AtlasVersionIndex verIndex;
 	verIndex.Load(exeDir);
+	// Load() repairs the index against the season folders actually on disk (the
+	// packaged atlas_index.json overwrites the user's on every app update). Write
+	// the repair back once so it sticks.
+	if (verIndex.NeedsSave()) verIndex.Save(exeDir);
 	// viewTag = the season currently on the canvas (persisted choice, else active)
 	std::string viewTag = (!uiState.season.empty() && verIndex.Has(uiState.season))
 		? uiState.season : verIndex.Active();
@@ -293,9 +298,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		buildFile.Save(exeDir);
 	};
 
-	// Single-level undo. The minimum-point solver may re-route wiring on any
-	// click, which is the one thing a user cannot predict, so there has to be a
-	// way back. Snapshots are taken before a change lands, not after.
+	// Single-level undo. Plain clicking never moves anything the user placed, but
+	// planning mode and the compress button both re-route wiring, which is the
+	// one thing a user cannot predict, so there has to be a way back. Snapshots
+	// are taken before a change lands, not after.
 	struct AtlasUndo {
 		bool valid = false;
 		std::vector<int> alloc, targets, blocked;
@@ -336,35 +342,107 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		saveActive();
 	};
 
-	// A project saved before targets existed has an allocation but no record of
-	// which nodes were deliberate. Guessing and silently re-solving would move
-	// someone's finished tree under them, so the guess is only ever offered.
-	bool migrateChecked = false;
-	bool migrateOffer = false;
-	int migrateFrom = 0, migrateTo = 0;
-	std::vector<int> migrateTargets, migrateNodes;
-	auto checkMigration = [&]() {
-		migrateChecked = true;
-		migrateOffer = false;
-		if (!ready || !onCanonicalSeason()) return;
-		const AtlasBuildEntry& b = buildFile.Active();
-		if (!b.targets.empty() || b.alloc.empty()) return;      // not a legacy build
-
-		migrateTargets = AtlasInferTargets(tree);
-		AtlasPlan p = AtlasPlanMinimal(tree, migrateTargets, tree.BlockedIdx(), tree.AllocIdx());
-		migrateFrom = tree.UsedPoints();
-		migrateTo = p.points;
-		migrateNodes = p.nodes;
-		if (migrateTo < migrateFrom) {
-			migrateOffer = true;
-			return;
+	// On-demand minimum-point compression.
+	//
+	// This used to run inside every click: the allocation was re-derived from the
+	// target set each time, which is minimal but re-routes paths the user already
+	// walked -- clicking a second node visibly scrambles the first one's route,
+	// and it compounds. Clicking is now plain shortest-path (atlas_view.cpp), and
+	// minimality is a button you press when you want it.
+	//
+	// What gets pinned is deliberately conservative: the user's own picks UNION
+	// every notable / keystone / leaf (AtlasInferTargets). So compression can
+	// only ever delete redundant wiring -- it can never cost you a big node or an
+	// endpoint, which is the failure a one-way "make it smaller" button must not
+	// have. Undo covers it either way.
+	int compressFrom = 0, compressTo = 0;
+	auto compressTargets = [&]() {
+		std::vector<int> t = tree.TargetIdx();
+		for (int i : AtlasInferTargets(tree))
+			if (std::find(t.begin(), t.end(), i) == t.end()) t.push_back(i);
+		return t;
+	};
+	// Solved only when the button is actually pressed -- a Steiner solve is far
+	// too heavy to run once per frame just to grey out a button, and "press it
+	// and be told it is already minimal" is a perfectly good answer.
+	auto applyCompress = [&](std::string& msg) {
+		std::vector<int> targets = compressTargets();
+		AtlasPlan p = AtlasPlanMinimal(tree, targets, tree.BlockedIdx(), tree.AllocIdx());
+		if (!p.ok()) {
+			msg = u8"有節點被「不要」的標記擋住，連不上，無法壓縮";
+			return false;
 		}
-		// Nothing to gain: adopt the inferred targets quietly. The allocation
-		// cannot move (the solver keeps an equal-cost tree it was handed), so
-		// this is invisible apart from the file gaining a targets key.
+		if (p.points >= tree.UsedPoints()) {
+			msg = u8"已經是最少點的接法了（" + std::to_string(tree.UsedPoints()) + u8" 點）";
+			return false;
+		}
+		snapshot(undo);
+		compressFrom = tree.UsedPoints();
+		compressTo = p.points;
+		tree.SetAllocSet(p.nodes);
 		for (AtlasNode& nd : tree.nodes) nd.target = false;
-		for (int t : migrateTargets) tree.nodes[t].target = true;
+		for (int t : targets)
+			if (t >= 0 && t < (int)tree.nodes.size()) tree.nodes[t].target = true;
 		saveActive();
+		msg = u8"已壓縮：" + std::to_string(compressFrom) + u8" → " + std::to_string(compressTo) +
+		      u8" 點（Ctrl+Z 可復原）";
+		if (!p.exact) msg += u8"（近似解）";
+		return true;
+	};
+
+	// --- league-mechanic overlay ---------------------------------------------
+	// "Where else is 裂痕?" -- clicking a cluster's mastery icon, or a row in the
+	// side panel, rings every node of that mechanic across the whole atlas. The
+	// per-season map is written next to the tree by the importer/updater; when a
+	// season predates the feature the db borrows the newest one it can find and
+	// says so. Purely a view: it never touches the allocation.
+	AtlasMechanicDb mechDb;
+	std::string mechSel;                                   // selected mechanic id ("" = none)
+	std::vector<std::pair<std::string, std::vector<int>>> mechNodeIdx;   // id -> node indices
+	std::vector<std::pair<std::string, std::vector<int>>> mechMastIdx;   // id -> mastery indices
+	auto mechFind = [](const std::vector<std::pair<std::string, std::vector<int>>>& v,
+	                   const std::string& id) -> const std::vector<int>* {
+		for (const auto& kv : v)
+			if (kv.first == id) return &kv.second;
+		return nullptr;
+	};
+	auto applyMechHighlight = [&]() {
+		const std::vector<int>* n = mechSel.empty() ? nullptr : mechFind(mechNodeIdx, mechSel);
+		const std::vector<int>* m = mechSel.empty() ? nullptr : mechFind(mechMastIdx, mechSel);
+		if (!n && !m) { view.ClearMechanicHighlight(); return; }
+		view.SetMechanicHighlight(n ? *n : std::vector<int>(), m ? *m : std::vector<int>());
+	};
+	// Resolve the season's mechanic map onto THIS tree's node indices. Ids that
+	// the season does not have simply do not resolve; nothing is invented.
+	auto reloadMechanics = [&]() {
+		mechNodeIdx.clear();
+		mechMastIdx.clear();
+		mechDb.Load(exeDir, viewTag);
+		std::unordered_map<int, int> idxById;
+		for (int i = 0; i < (int)tree.nodes.size(); i++) idxById[tree.nodes[i].id] = i;
+		for (const AtlasMechanicDb::Entry& e : mechDb.Entries()) {
+			std::vector<int> idx;
+			for (int id : e.nodeIds) {
+				auto it = idxById.find(id);
+				if (it != idxById.end()) idx.push_back(it->second);
+			}
+			if (!idx.empty()) mechNodeIdx.emplace_back(e.def->id, std::move(idx));
+		}
+		// Mastery icons carry the English mechanic name, which is the catalogue's
+		// join key -- the same key the generator used, so this cannot drift.
+		std::vector<std::string> labels(tree.masteries.size());
+		for (int i = 0; i < (int)tree.masteries.size(); i++) {
+			const AtlasMechanicDef* d = AtlasMechanicByEn(tree.masteries[i].name);
+			if (!d) continue;
+			labels[i] = d->zh;
+			bool found = false;
+			for (auto& kv : mechMastIdx)
+				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
+			if (!found) mechMastIdx.emplace_back(d->id, std::vector<int>{ i });
+		}
+		view.SetMasteryLabels(std::move(labels));
+		if (!mechSel.empty() && !mechFind(mechNodeIdx, mechSel)) mechSel.clear();
+		applyMechHighlight();
 	};
 
 	// --- zh display layer + background auto updater ---
@@ -410,6 +488,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				}
 			}
 			ready = view.LoadTextures(exeDir, tree, &loadErr);
+			reloadMechanics();
 		}
 	};
 
@@ -1009,6 +1088,58 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		ImGui::Spacing();
 	};
 
+	// League mechanics: the same highlight the mastery icons drive, reachable as
+	// a list so you do not have to find a cluster first. Not part of the build --
+	// nothing here is saved, it is a way of reading the map.
+	auto renderMechanicPanel = [&]() {
+		if (!ImGui::CollapsingHeader(u8"機制")) return;
+		if (mechNodeIdx.empty()) {
+			ImGui::TextWrapped(u8"這個賽季還沒有機制分類資料。重新下載或匯入賽季資料後就會產生。");
+			ImGui::Spacing();
+			return;
+		}
+		if (!mechDb.BorrowedFrom().empty())
+			ImGui::TextDisabled(u8"（分類沿用 %s，本賽季新增的節點可能未歸類）",
+				mechDb.BorrowedFrom().c_str());
+		ImGui::TextDisabled(u8"點一列標出全輿圖同機制的位置；再點一次取消");
+		for (const auto& kv : mechNodeIdx) {
+			const AtlasMechanicDef* d = AtlasMechanicById(kv.first);
+			if (!d) continue;
+			const std::vector<int>* mm = mechFind(mechMastIdx, kv.first);
+			std::string label = (showZh && zhLoaded ? d->zh : d->en) +
+			                    "###mech_" + d->id;   // stable id, label may flip language
+			ImGui::PushStyleColor(ImGuiCol_Text, kv.first == mechSel
+				? ImVec4(1.0f, 0.89f, 0.43f, 1.0f) : ImVec4(0.86f, 0.88f, 0.92f, 1.0f));
+			bool hit = ImGui::Selectable(label.c_str(), kv.first == mechSel);
+			ImGui::PopStyleColor();
+			ImGui::SameLine();
+			ImGui::TextDisabled("%d", (int)kv.second.size());
+			if (hit) {
+				mechSel = (kv.first == mechSel) ? std::string() : kv.first;
+				applyMechHighlight();
+				// Jump to the first cluster so a mechanic off-screen is not just
+				// "nothing happened".
+				if (!mechSel.empty() && mm && !mm->empty()) {
+					int mi = (*mm)[0];
+					// masteries are decorations, not nodes; centre on the nearest
+					// node of the mechanic instead so CenterOn has something real
+					int best = -1;
+					float bestSq = 0.0f;
+					for (int ni : kv.second) {
+						float dx = tree.nodes[ni].x - tree.masteries[mi].x;
+						float dy = tree.nodes[ni].y - tree.masteries[mi].y;
+						float sq = dx * dx + dy * dy;
+						if (best < 0 || sq < bestSq) { best = ni; bestSq = sq; }
+					}
+					if (best >= 0) view.CenterOn(tree, best);
+				}
+			}
+		}
+		if (mechDb.Unassigned() > 0)
+			ImGui::TextDisabled(u8"另有 %d 個節點不屬於任何機制叢集", mechDb.Unassigned());
+		ImGui::Spacing();
+	};
+
 	// Compute the compareBase -> active season diff (data-only; independent of the
 	// user's allocation). Maps every changed id to a canvas node index so the
 	// panel can focus it and the overlay can ring it.
@@ -1343,7 +1474,6 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				tree.ApplyAllocIds(buildFile.Active().alloc);
 				tree.ApplyTargetIds(buildFile.Active().targets);
 				tree.ApplyBlockedIds(buildFile.Active().blocked);
-				migrateChecked = false;  // the incoming project may still be legacy
 				undo.valid = false;      // undo does not cross projects
 				saveActive();            // persist active index + pruned mapping
 				panelDirty = true;
@@ -1371,7 +1501,6 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				int kept = tree.ApplyAllocIds(e.alloc);
 				tree.ApplyTargetIds(e.targets);
 				tree.ApplyBlockedIds(e.blocked);
-				migrateChecked = false;  // an import from before targets is legacy too
 				undo.valid = false;
 				saveActive();
 				panelDirty = true;
@@ -1470,7 +1599,6 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 						tree.ApplyAllocIds(buildFile.Active().alloc);
 						tree.ApplyTargetIds(buildFile.Active().targets);
 						tree.ApplyBlockedIds(buildFile.Active().blocked);
-						migrateChecked = false;
 						undo.valid = false;
 						saveActive();
 						panelDirty = true;
@@ -1542,6 +1670,26 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			ImGui::TextColored(cnt, "%d / %d", used, total);
 			ImGui::SameLine(0, 24.0f * scale);
 			if (ImGui::Button(u8"重置")) ImGui::OpenPopup(u8"重置配點");
+			ImGui::SameLine();
+			// Minimum-point compression on demand. Clicking never re-routes any
+			// more (see atlas_view.cpp), so this is the only thing that moves
+			// wiring, and only when asked.
+			{
+				const bool canCompress = ready && !planningMode && !compareMode &&
+				                         onCanonicalSeason() && tree.UsedPoints() > 0;
+				if (!canCompress) ImGui::BeginDisabled();
+				if (ImGui::Button(u8"壓縮到最少點")) {
+					std::string msg;
+					importFailed = !applyCompress(msg);
+					importMsg = msg;
+					panelDirty = true;
+				}
+				if (!canCompress) ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip(u8"用最少的天賦點重新接一次目前的節點。\n"
+					                  u8"大點、鑰石與端點都會保留，只有中間繞路的小點會改道；\n"
+					                  u8"平常點節點不會自動重算，按了才會動，Ctrl+Z 可復原。");
+			}
 			ImGui::SameLine();
 			bool updaterBusy = ust.phase == AtlasUpdatePhase::Downloading ||
 			                   ust.phase == AtlasUpdatePhase::Importing;
@@ -1661,7 +1809,21 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			}
 
 			ImGui::Spacing();
-			ImGui::TextDisabled(u8"滾輪縮放  ·  拖曳平移  ·  左鍵配點或移除");
+			ImGui::TextDisabled(u8"滾輪縮放  ·  拖曳平移  ·  左鍵配點或移除"
+			                    u8"  ·  點叢集中央的機制圖示可標出同機制的所有位置");
+			// Which mechanic is lit up right now, and how to turn it off. Without
+			// this the rings look like part of the tree.
+			if (!mechSel.empty()) {
+				const AtlasMechanicDef* d = AtlasMechanicById(mechSel);
+				const std::vector<int>* nn = mechFind(mechNodeIdx, mechSel);
+				const std::vector<int>* mm = mechFind(mechMastIdx, mechSel);
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::TextColored(ImVec4(1.0f, 0.89f, 0.43f, 1.0f), u8"機制：%s（%d 節點 · %d 叢集）",
+					d ? (showZh && zhLoaded ? d->zh.c_str() : d->en.c_str()) : mechSel.c_str(),
+					nn ? (int)nn->size() : 0, mm ? (int)mm->size() : 0);
+				ImGui::SameLine();
+				if (ImGui::SmallButton(u8"清除##mech")) { mechSel.clear(); applyMechHighlight(); }
+			}
 			if (!importMsg.empty()) {
 				ImGui::SameLine(0, 18.0f * scale);
 				ImGui::TextColored(PobUi::StatusColor(importFailed ? PobUi::StatusTone::Error : PobUi::StatusTone::Success),
@@ -1732,10 +1894,8 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 
 			ImGui::Separator();
 
-			if (!migrateChecked) checkMigration();
-
-			// Ctrl+Z: the solver may re-route wiring on any click, so there is
-			// always exactly one step back available.
+			// Ctrl+Z: planning mode and the compress button both move wiring the
+			// user did not place, so there is always exactly one step back.
 			if (undo.valid && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
 				tree.ApplyAllocIds(undo.alloc);
 				tree.ApplyTargetIds(undo.targets);
@@ -1775,6 +1935,23 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				uiState.panelW = panelW / scale;
 				uiState.Save(exeDir);
 			}
+			// Clicking a mastery icon toggles its mechanic. The view consumed the
+			// click, so this can never also allocate.
+			if (view.ClickedMastery() >= 0) {
+				int mi = view.ClickedMastery();
+				std::string hit;
+				for (const auto& kv : mechMastIdx)
+					if (std::find(kv.second.begin(), kv.second.end(), mi) != kv.second.end()) {
+						hit = kv.first;
+						break;
+					}
+				mechSel = (hit.empty() || hit == mechSel) ? std::string() : hit;
+				applyMechHighlight();
+			}
+			if (!mechSel.empty() && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+				mechSel.clear();
+				applyMechHighlight();
+			}
 			if (changed) {
 				saveActive();
 				panelDirty = true;
@@ -1806,12 +1983,13 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				int nTargets = (int)tree.TargetIdx().size();
 				int wiring = used - nTargets;
 				if (wiring < 0) wiring = 0;   // (windows.h's max macro is in scope here)
-				ImGui::TextDisabled(u8"目標 %d 個 · 連接用 %d 點", nTargets, wiring);
+				ImGui::TextDisabled(u8"自己點的 %d 個 · 連接用 %d 點", nTargets, wiring);
 				if (nTargets > AtlasOptExactCap()) {
 					ImGui::SameLine(0, 8.0f * scale);
 					ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f), u8"近似解");
 					if (ImGui::IsItemHovered())
-						ImGui::SetTooltip(u8"目標超過 %d 個時改用近似演算法，可能比真正的最少點多幾點。",
+						ImGui::SetTooltip(u8"超過 %d 個時，「壓縮到最少點」與規劃模式改用近似演算法，\n"
+							u8"可能比真正的最少點多幾點。平常點節點不受影響。",
 							AtlasOptExactCap());
 				}
 				if (undo.valid) {
@@ -1821,36 +1999,6 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			}
 			ImGui::Spacing();
 
-			// One-time offer for a project saved before targets existed. Never
-			// applied on its own -- the user's finished tree is not ours to move.
-			if (migrateOffer) {
-				ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.14f, 0.07f, 1.0f));
-				ImGui::BeginChild("##migrate", ImVec2(0, 92.0f * scale), true);
-				ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.45f, 1.0f), u8"可以壓縮到更少點");
-				ImGui::TextWrapped(u8"這個專案是舊版存的，目前 %d 點，改用最少點的接法只要 %d 點。"
-				                   u8"大點與端點都會保留，只有中間連接用的小點會改道。",
-				                   migrateFrom, migrateTo);
-				if (ImGui::Button(u8"套用")) {
-					snapshot(undo);
-					tree.SetAllocSet(migrateNodes);
-					for (AtlasNode& nd : tree.nodes) nd.target = false;
-					for (int t : migrateTargets) tree.nodes[t].target = true;
-					saveActive();
-					panelDirty = true;
-					migrateOffer = false;
-				}
-				ImGui::SameLine();
-				if (ImGui::Button(u8"保持現狀")) {
-					// Pin everything that is allocated: nothing can move later.
-					for (AtlasNode& nd : tree.nodes)
-						nd.target = nd.alloc && nd.kind != kAtlasStart;
-					saveActive();
-					migrateOffer = false;
-				}
-				ImGui::EndChild();
-				ImGui::PopStyleColor();
-				ImGui::Spacing();
-			}
 
 			// --- search (pinned; filters stats AND the node list, en + zh) ---
 			ImGui::SetNextItemWidth(-FLT_MIN);
@@ -1874,6 +2022,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			renderMapPanel();
 			renderScarabPanel();
 			renderNotesPanel();
+			renderMechanicPanel();
 			bool anyAlloc = false;
 			for (const auto& g : nodeGroups) anyAlloc = anyAlloc || !g.empty();
 			if (!anyAlloc) {

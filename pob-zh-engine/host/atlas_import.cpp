@@ -1,4 +1,5 @@
 #include "atlas_import.h"
+#include "atlas_mechanics.h"     // league-mechanic map written alongside the tree
 #include "atlas_version_index.h" // resolve the active season folder for the CLI
 
 #define WIN32_LEAN_AND_MEAN
@@ -442,11 +443,36 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		if (!write_file_utf8(destDir + L"atlas_tree_poe1.json", out.dump()))
 			return fail(u8"寫入 atlas_tree_poe1.json 失敗");
 
+		// League-mechanic map for the same season, from the same document. This
+		// lives here rather than in a maintainer script precisely so a new season
+		// installed in-app gets it automatically -- the scarab and astrolabe
+		// catalogues need a manual re-run every league and that is a standing
+		// trap. Best-effort: the tree is already written and perfectly usable
+		// without it, so a failure is reported in the summary, never fatal.
+		std::string mechNote;
+		{
+			// destDir is Data/atlas_versions/<tag>/; the folder name IS the tag.
+			std::wstring dd = destDir;
+			while (!dd.empty() && (dd.back() == L'\\' || dd.back() == L'/')) dd.pop_back();
+			size_t slash = dd.find_last_of(L"\\/");
+			std::wstring leaf = slash == std::wstring::npos ? dd : dd.substr(slash + 1);
+			std::string tag(leaf.begin(), leaf.end());
+
+			AtlasMechanicMap m;
+			std::string mErr;
+			if (AtlasBuildMechanicMap(content, tag, &m, &mErr) &&
+			    AtlasWriteMechanicMap(m, destDir, &mErr)) {
+				mechNote = u8"、" + std::to_string((int)m.groups.size()) + u8" 個機制分類";
+			} else {
+				mechNote = u8"（機制分類未產生：" + mErr + u8"）";
+			}
+		}
+
 		if (summary)
 			*summary = u8"匯入完成：" + std::to_string(out["nodes"].size()) + u8" 節點、" +
 			           std::to_string(out["edges"].size()) + u8" 連線、" +
 			           std::to_string(totalPoints) + u8" 點上限、" +
-			           std::to_string(sheets.baseNames.size()) + u8" 張圖集";
+			           std::to_string(sheets.baseNames.size()) + u8" 張圖集" + mechNote;
 		return true;
 	} catch (const std::exception& e) {
 		return fail(std::string(u8"匯入過程發生例外: ") + e.what());

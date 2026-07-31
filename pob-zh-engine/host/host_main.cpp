@@ -35,6 +35,7 @@
 #include "atlas_optimize.h"
 #include "atlas_update.h"
 #include "atlas_diff.h"
+#include "atlas_mechanics.h"
 #include "atlas_version_index.h"
 #include "filter_selftest.h"
 #include "timeless_jewel.h"
@@ -349,6 +350,35 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless cross-season diff report: --atlas-diff <oldVer> <newVer>.
 	if (arg1 == L"--atlas-diff") {
 		return RunAtlasDiffCli(arg2, arg3, dir);
+	}
+
+	// Maintainer tool: build a season's mechanic map from an atlastree-export
+	// data.json. Same classifier the in-app updater runs, so the files shipped
+	// in host/data/atlas_versions/ cannot drift from an in-app update's output.
+	//   --atlas-mechanics-build <data.json> <tag> [destDir]
+	if (arg1 == L"--atlas-mechanics-build") {
+		std::string tag(arg3.begin(), arg3.end());
+		return RunAtlasMechanicBuild(arg2, tag, arg4);
+	}
+
+	// Headless mechanic-catalogue check (compiled table + installed season files).
+	if (arg1 == L"--atlas-mechanics-selftest") {
+		std::string rep;
+		int fails = RunAtlasMechanicSelfTest(dir, rep);
+		rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";
+		if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+			FILE* f = nullptr;
+			freopen_s(&f, "CONOUT$", "w", stdout);
+		}
+		printf("%s", rep.c_str());
+		HANDLE h = CreateFileW((dir + L"atlas_mechanics_selftest.txt").c_str(), GENERIC_WRITE, 0,
+		                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h != INVALID_HANDLE_VALUE) {
+			DWORD w = 0;
+			WriteFile(h, rep.data(), (DWORD)rep.size(), &w, nullptr);
+			CloseHandle(h);
+		}
+		return fails == 0 ? 0 : 1;
 	}
 
 	// Headless filter-editor data-layer check (synthetic cases; console report).

@@ -12,6 +12,7 @@
 #include <imgui.h>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class AtlasI18n;
@@ -51,6 +52,22 @@ public:
 	void SetDiffOverlay(const std::unordered_map<int, ImU32>& ringByNodeIdx) { diffRing_ = ringByNodeIdx; }
 	void ClearDiffOverlay() { diffRing_.clear(); }
 
+	// Mechanic overlay: a search-style ring on every node of one league
+	// mechanic plus the mastery icons that mark its clusters, so "where else is
+	// this mechanic" is one click. Purely visual; never touches allocation.
+	void SetMechanicHighlight(const std::vector<int>& nodeIdx, const std::vector<int>& masteryIdx);
+	void ClearMechanicHighlight() { mechNodes_.clear(); mechMasteries_.clear(); }
+	bool HasMechanicHighlight() const { return !mechNodes_.empty() || !mechMasteries_.empty(); }
+
+	// Index into AtlasTreeData::masteries clicked this frame (-1 = none). A
+	// mastery click is consumed by the view, so it can never also allocate.
+	int ClickedMastery() const { return clickedMastery_; }
+
+	// Display name per mastery index for the hover tooltip (Chinese when the
+	// mechanic catalogue is present). Anything shorter than d.masteries, or an
+	// empty entry, falls back to AtlasDeco::name.
+	void SetMasteryLabels(std::vector<std::string> labels) { masteryLabel_ = std::move(labels); }
+
 private:
 	ImVec2 worldToScreen(ImVec2 w) const;
 	ImVec2 screenToWorld(ImVec2 s) const;
@@ -78,6 +95,10 @@ private:
 	bool allocDirty_ = true;         // recompute hover previews after changes
 	int previewFor_ = -1;
 	float dwell_ = 0.0f;             // seconds the cursor has rested on hover_
+	// Mirrors Draw's `planning` argument so the hover/preview helpers can branch
+	// without threading it through. The two modes have genuinely different click
+	// models: planning re-derives the whole tree, normal never moves a node.
+	bool planning_ = false;
 
 	// Preview of what clicking hover_ would do. A click applies exactly this
 	// cached plan rather than re-solving, so the number in the tooltip and the
@@ -102,4 +123,10 @@ private:
 	float rejectFlash_ = 0.0f;       // seconds left on the "not enough points" banner
 
 	std::unordered_map<int, ImU32> diffRing_; // version-compare overlay (node idx -> ring color)
+
+	// mechanic overlay + mastery-icon hit testing
+	std::unordered_set<int> mechNodes_, mechMasteries_;
+	std::vector<std::string> masteryLabel_;
+	int hoverMastery_ = -1;          // mastery under the cursor (-1 none)
+	int clickedMastery_ = -1;        // reset at the top of every Draw
 };

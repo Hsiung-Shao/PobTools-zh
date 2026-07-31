@@ -4,6 +4,7 @@
 #include "atlas_scarabs.h" // selftest T8: placement rules + notes/scarabs persistence
 #include "atlas_astrolabes.h" // selftest T9: quadrant rule + astrolabe persistence
 #include "atlas_maps.h"    // selftest T10: main-map catalogue
+#include "atlas_optimize.h" // selftest T11: contrast against the minimum-point model
 #include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
@@ -786,6 +787,107 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		}
 	} else {
 		rep.note("no existing project file on disk - byte-identity check skipped");
+	}
+
+	// T11: the click model itself — allocating towards a new node must never move
+	// a node that is already allocated.
+	//
+	// This is the defect 0.12.0 shipped: clicks re-derived the whole tree from the
+	// target set, so the route to the first node visibly re-arranged itself when
+	// the second was picked, and it compounded from there. The property below is
+	// what "點一下就接最短路徑、不動已配好的點" means, stated so it cannot regress
+	// quietly again. Minimality is now only reachable through the toolbar button.
+	{
+		d.Reset();
+		std::vector<int> picks;
+		for (int i = 0; i < (int)d.nodes.size(); i++)
+			if (d.nodes[i].kind == kAtlasNotable) picks.push_back(i);
+		std::sort(picks.begin(), picks.end(),
+		          [&](int a, int b) { return d.nodes[a].id < d.nodes[b].id; });
+		int steps = 0, moved = 0, badLen = 0, unpinned = 0;
+		std::set<int> prev;
+		std::vector<int> distNow = relax_dist(d);
+		for (size_t i = 0; i < picks.size() && steps < 12; i += 7) {
+			int t = picks[i];
+			if (d.nodes[t].alloc) continue;
+			std::vector<int> p = d.FindPathTo(t);
+			if (p.empty()) continue;
+			// the path only ever consists of currently-unallocated nodes
+			for (int v : p) if (d.nodes[v].alloc) badLen++;
+			d.Alloc(p);
+			d.nodes[t].target = true;
+			std::set<int> now;
+			for (const AtlasNode& n : d.nodes)
+				if (n.alloc && n.kind != kAtlasStart) now.insert(n.id);
+			for (int id : prev) if (!now.count(id)) moved++;   // <- the regression
+			prev = now;
+			steps++;
+		}
+		rep.check(steps >= 5, "click-model check ran enough steps",
+		          std::to_string(steps) + " clicks");
+		rep.check(moved == 0, "allocating towards a new node never drops an allocated one",
+		          std::to_string(moved) + " lost");
+		// "never drops one" is only a meaningful claim if the rejected model
+		// actually did. Replay the same clicks through the minimum-point solver
+		// and count what it would have moved -- a note, not a check, because it
+		// describes the OLD behaviour and must never be able to fail the build.
+		{
+			AtlasTreeData m;
+			std::string e3;
+			int solverDrops = 0, solverSteps = 0;
+			if (m.Load(exeDir, &e3)) {
+				std::set<int> mprev;
+				std::vector<int> mtargets;
+				for (size_t i = 0; i < picks.size() && solverSteps < steps; i += 7) {
+					int t = picks[i];
+					if (t < 0 || t >= (int)m.nodes.size()) continue;
+					mtargets.push_back(t);
+					AtlasPlan p = AtlasPlanMinimal(m, mtargets, {}, m.AllocIdx());
+					m.SetAllocSet(p.nodes);
+					std::set<int> mnow;
+					for (const AtlasNode& n : m.nodes)
+						if (n.alloc && n.kind != kAtlasStart) mnow.insert(n.id);
+					for (int id : mprev) if (!mnow.count(id)) solverDrops++;
+					mprev = mnow;
+					solverSteps++;
+				}
+			}
+			rep.note("same clicks under the 0.12.0 minimum-point model would have moved " +
+			         std::to_string(solverDrops) + " already-allocated node(s)");
+		}
+		rep.check(badLen == 0, "each new path is entirely unallocated nodes");
+		// The first click's route must still be a genuine shortest path from the
+		// start; "never moves" would be trivially satisfied by never optimising.
+		int firstNotable = -1;
+		for (int i : picks) { firstNotable = i; break; }
+		if (firstNotable >= 0 && distNow[firstNotable] < (1 << 29)) {
+			AtlasTreeData fresh;
+			std::string e2;
+			if (fresh.Load(exeDir, &e2)) {
+				std::vector<int> p = fresh.FindPathTo(firstNotable);
+				rep.check((int)p.size() == distNow[firstNotable],
+				          "a first click still takes the shortest route",
+				          "bfs=" + std::to_string(p.size()) +
+				          " relax=" + std::to_string(distNow[firstNotable]));
+			}
+		}
+		// Removal still takes the orphans with it, and targets must not survive on
+		// nodes that are gone (they feed the compress button).
+		if (!prev.empty()) {
+			int victim = -1;
+			for (int i = 0; i < (int)d.nodes.size(); i++)
+				if (d.nodes[i].alloc && d.nodes[i].target) { victim = i; break; }
+			if (victim >= 0) {
+				std::vector<int> rs = d.FindRemoveSet(victim);
+				for (int v : rs) d.nodes[v].target = false;
+				d.Remove(rs);
+				for (const AtlasNode& n : d.nodes)
+					if (!n.alloc && n.target) unpinned++;
+				rep.check(unpinned == 0, "removed nodes do not stay pinned as targets");
+				rep.check(!d.nodes[victim].alloc, "the removed node is actually gone");
+			}
+		}
+		d.Reset();
 	}
 
 	// T8: scarab catalogue, placement rules and the notes/scarabs persistence

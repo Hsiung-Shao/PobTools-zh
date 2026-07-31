@@ -43,6 +43,11 @@ public:
 	bool Has(const std::string& tag) const;
 	const AtlasVersionEntry* Find(const std::string& tag) const;
 
+	// True when Load() had to repair the index against what is on disk (see
+	// adoptFromDisk). Callers write it back once so the repair sticks instead of
+	// being re-derived on every launch.
+	bool NeedsSave() const { return dirty_; }
+
 	// Tags sorted newest-first by semver.
 	std::vector<std::string> TagsNewestFirst() const;
 
@@ -92,6 +97,7 @@ private:
 	std::string active_, compareBase_;
 	std::vector<AtlasVersionEntry> versions_;
 	long long lastCheckUtc_ = 0;
+	mutable bool dirty_ = false;   // Load() repaired something; Save() clears it
 };
 
 // "pob-zh.exe --atlas-index-selftest": headless check of semver ordering,

@@ -150,6 +150,7 @@ void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
 	HANDLE h = FindFirstFileW(glob.c_str(), &fd);
 	if (h == INVALID_HANDLE_VALUE) return;
 	bool added = false;
+	std::string newest;   // newest COMPLETE season folder adopted in this pass
 	do {
 		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
 		std::wstring name = fd.cFileName;
@@ -162,23 +163,33 @@ void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
 			tag.push_back((char)c);
 		}
 		if (!ascii || Has(tag)) continue;
-		// Only adopt a folder that actually holds a tree, so a leftover empty
-		// directory does not register as a selectable season.
-		if (!file_exists(VersionDir(exeDir, tag) + L"atlas_tree_poe1.json")) continue;
+		// Only adopt a folder that carries a COMPLETE season. A tree file alone
+		// is not enough: an interrupted download can leave one behind without
+		// its sprites or its Chinese mapping, and promoting that to active below
+		// would break the planner outright.
+		std::wstring vd = VersionDir(exeDir, tag);
+		if (!file_exists(vd + L"atlas_tree_poe1.json")) continue;
+		if (!file_exists(vd + L"atlas_tree_zh.json")) continue;
+		if (!dir_exists(vd + L"atlas")) continue;
 		AtlasVersionEntry e;
 		e.tag = tag;
 		versions_.push_back(e);
 		added = true;
+		if (newest.empty() || CompareSemver(tag, newest) > 0) newest = tag;
 	} while (FindNextFileW(h, &fd));
 	FindClose(h);
 	if (!added) return;
-	// Adopting must not move the user off the season they were viewing; it only
-	// makes the extra ones selectable. Active is only filled in when unset.
-	if (active_.empty()) {
-		std::vector<std::string> tags = TagsNewestFirst();
-		if (!tags.empty()) active_ = tags.front();
-	}
+	// The newest complete season ON DISK is canonical, even when the index file
+	// disagrees. It regularly does: Data/atlas_index.json ships with the app, so
+	// every install and every app update writes the packaged copy back over it
+	// and orphans a season the user downloaded in-app afterwards. Leaving
+	// `active` alone made that season permanently "舊賽季檢視（唯讀）" -- visible,
+	// selectable, and silently refusing to save. Which season the user is
+	// LOOKING at is a separate, persisted choice (uiState.season), so promoting
+	// active here does not move them.
+	if (active_.empty() || CompareSemver(newest, active_) > 0) active_ = newest;
 	refreshCompareBase();
+	dirty_ = true;
 }
 
 void AtlasVersionIndex::UpsertActive(const AtlasVersionEntry& e)
@@ -255,7 +266,7 @@ std::vector<std::string> AtlasVersionIndex::PruneSeasons(size_t keepSeasons)
 
 void AtlasVersionIndex::Load(const std::wstring& exeDir)
 {
-	active_.clear(); compareBase_.clear(); versions_.clear(); lastCheckUtc_ = 0;
+	active_.clear(); compareBase_.clear(); versions_.clear(); lastCheckUtc_ = 0; dirty_ = false;
 
 	std::string content;
 	if (read_file_utf8(IndexPath(exeDir), content)) {
@@ -326,7 +337,9 @@ bool AtlasVersionIndex::Save(const std::wstring& exeDir) const
 
 	// ensure Data/ exists (it always should, but be safe for headless tooling)
 	CreateDirectoryW((exeDir + L"Data").c_str(), nullptr);
-	return write_file_utf8(IndexPath(exeDir), doc.dump(1, '\t'));
+	bool ok = write_file_utf8(IndexPath(exeDir), doc.dump(1, '\t'));
+	if (ok) dirty_ = false;
+	return ok;
 }
 
 // ---- headless self-test (--atlas-index-selftest) ----------------------------
@@ -502,9 +515,86 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 			check(missing.empty(), "every season folder on disk is registered in the index");
 			if (!missing.empty()) rep += "      missing: " + missing + "\n";
 			check(!live.Active().empty(), "a live index resolves an active season");
-			// Adoption must not hijack which season the user was looking at.
 			check(live.Has(live.Active()), "the active season is one of the registered ones");
+			// The newest COMPLETE season on disk is canonical. Anything else and
+			// the planner marks it "舊賽季檢視（唯讀）" and silently refuses to
+			// save into it -- which is what a downloaded 3.29.1 did while the
+			// packaged atlas_index.json still said 3.29.0.
+			std::string newestComplete;
+			for (const std::string& t : onDisk) {
+				std::wstring vd = AtlasVersionIndex::VersionDir(exeDir, t);
+				if (!file_exists(vd + L"atlas_tree_zh.json") || !dir_exists(vd + L"atlas")) continue;
+				if (newestComplete.empty() ||
+				    AtlasVersionIndex::CompareSemver(t, newestComplete) > 0) newestComplete = t;
+			}
+			if (!newestComplete.empty()) {
+				check(live.Active() == newestComplete,
+				      "active = the newest complete season on disk");
+				if (live.Active() != newestComplete)
+					rep += "      active=" + live.Active() + " newest on disk=" + newestComplete + "\n";
+			}
 		}
+	}
+
+	// --- adoption against a synthetic install tree ----------------------------
+	// The real-install block above can only observe whatever this machine
+	// happens to have. This one builds the exact situation the bug came from
+	// (index names an older season, a newer complete one sits on disk) plus the
+	// case that must NOT be adopted (a half-finished download), in a throwaway
+	// directory so nothing real is touched.
+	{
+		wchar_t tmp[MAX_PATH]{};
+		GetTempPathW(MAX_PATH, tmp);
+		std::wstring root = std::wstring(tmp) + L"pobtools_idx_selftest\\";
+		auto rmrf = [](const std::wstring& dir, auto&& self) -> void {
+			WIN32_FIND_DATAW f{};
+			HANDLE hh = FindFirstFileW((dir + L"*").c_str(), &f);
+			if (hh != INVALID_HANDLE_VALUE) {
+				do {
+					std::wstring n = f.cFileName;
+					if (n == L"." || n == L"..") continue;
+					if (f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) self(dir + n + L"\\", self);
+					else DeleteFileW((dir + n).c_str());
+				} while (FindNextFileW(hh, &f));
+				FindClose(hh);
+			}
+			RemoveDirectoryW(dir.c_str());
+		};
+		rmrf(root, rmrf);
+		auto season = [&](const wchar_t* tag, bool complete) {
+			std::wstring d = root + L"Data\\atlas_versions\\" + tag + L"\\";
+			CreateDirectoryW(d.c_str(), nullptr);
+			write_file_utf8(d + L"atlas_tree_poe1.json", "{}");
+			if (complete) {
+				write_file_utf8(d + L"atlas_tree_zh.json", "{}");
+				CreateDirectoryW((d + L"atlas").c_str(), nullptr);
+			}
+		};
+		CreateDirectoryW(root.c_str(), nullptr);
+		CreateDirectoryW((root + L"Data").c_str(), nullptr);
+		CreateDirectoryW((root + L"Data\\atlas_versions").c_str(), nullptr);
+		season(L"3.28.0", true);
+		season(L"3.29.0", true);
+		season(L"3.29.1", true);    // downloaded in-app, never made it into the index
+		season(L"3.30.0", false);   // interrupted download: tree only, no zh, no sprites
+		write_file_utf8(root + L"Data\\atlas_index.json",
+			"{\"format\":\"pobtools-atlas-index\",\"active\":\"3.29.0\",\"compareBase\":\"3.28.0\","
+			"\"versions\":[{\"tag\":\"3.29.0\"},{\"tag\":\"3.28.0\"}],\"lastCheckUtc\":0}");
+
+		AtlasVersionIndex s;
+		s.Load(root);
+		check(s.Has("3.29.1"), "a season folder missing from the index is adopted");
+		check(s.Active() == "3.29.1", "adoption promotes active to the newer complete season");
+		check(!s.Has("3.30.0"), "an incomplete season folder is NOT adopted");
+		check(s.CompareBase() == "3.29.0", "compare base follows the promoted active");
+		check(s.NeedsSave(), "a repaired index reports that it needs writing back");
+		// Writing it back must make the repair stick with nothing left to do.
+		check(s.Save(root) && !s.NeedsSave(), "saving clears the needs-write flag");
+		AtlasVersionIndex again;
+		again.Load(root);
+		check(again.Active() == "3.29.1" && !again.NeedsSave(),
+		      "reloading the saved index needs no further repair");
+		rmrf(root, rmrf);
 	}
 
 	rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";

@@ -368,6 +368,10 @@ if (WIN32)
         host/atlas_scarabs.cpp
         host/atlas_astrolabes.cpp
         host/atlas_maps.cpp
+        # league-mechanic grouping behind "show me every 裂痕 cluster"; the map
+        # itself is generated per season by the updater/importer, not shipped as
+        # a hand-maintained data file
+        host/atlas_mechanics.cpp
         # shared by the scarab / astrolabe / map pickers
         host/fuzzy_match.cpp
         host/atlas_optimize.cpp
