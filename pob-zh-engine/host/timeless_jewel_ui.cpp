@@ -8,6 +8,8 @@
 #include "timeless_jewel.h"
 #include "ui_theme.h"
 
+#include <json.hpp> // nlohmann::json (deps/nlohmann) — TjUiState
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
@@ -114,37 +116,40 @@ bool write_clipboard_utf8(HWND owner, const std::string& text)
 	return ok;
 }
 
-// Open the PoE official trade site pre-filled to search for a specific jewel
-// seed. The seed is encoded as the conqueror's pseudo stat filter, exactly like
-// pathofexile.com/trade does. platform: 0 pc, 1 xbox, 2 sony.
-void open_trade_search(const std::string& tradeStatId, int seed,
-                       const std::string& league, int platform)
+} // namespace
+
+// ---- trade realms -----------------------------------------------------------
+
+// Verified against both /api/trade/data/stats: every conqueror the calculator
+// can offer (jewel types 1-6, 23 conquerors) exists on both regions with the
+// same id. --tj-realm-check re-proves this on demand.
+const TradeRealm kTradeRealms[] = {
+	// NOTE: the .tw site answers on the bare host; www.pathofexile.tw 301s to it,
+	// so use the canonical one and save a redirect.
+	{ u8"國際服", "www.pathofexile.com", L"www.pathofexile.com", true },
+	{ u8"台服",   "pathofexile.tw",      L"pathofexile.tw",      false },
+};
+const int kTradeRealmCount = (int)(sizeof(kTradeRealms) / sizeof(kTradeRealms[0]));
+
+// Query JSON for one seed. status "securable" == the trade site's "Instant
+// Buyout" mode (per awakened-poe-trade: merchantOnly -> 'securable'). No
+// trade_filters block: leaving sale_type unset keeps the "Sale Type" row at
+// "Any". (An explicit sale_type — especially a JSON null — got ?q= rejected.)
+std::string TradeQueryJson(const std::string& tradeStatId, int seed)
 {
-	if (tradeStatId.empty() || league.empty()) return;
-	// status "securable" == the trade site's "Instant Buyout" mode (per
-	// awakened-poe-trade: merchantOnly -> 'securable'). No trade_filters block:
-	// leaving sale_type unset keeps the "Sale Type" row at "Any". (An explicit
-	// sale_type — especially a JSON null — got the ?q= state rejected.)
 	char q[640];
 	snprintf(q, sizeof(q),
 		"{\"query\":{\"status\":{\"option\":\"securable\"},\"stats\":[{\"type\":\"and\",\"filters\":"
 		"[{\"id\":\"%s\",\"value\":{\"min\":%d,\"max\":%d}}]}]"
 		"},\"sort\":{\"price\":\"asc\"}}",
 		tradeStatId.c_str(), seed, seed);
-	const char* realm = platform == 1 ? "xbox/" : platform == 2 ? "sony/" : "";
-	std::string url = "https://www.pathofexile.com/trade/search/" + std::string(realm) +
-	                  url_encode(league) + "?q=" + url_encode(q);
-	ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+	return q;
 }
 
-// Open a trade search that matches ANY of several seeds at once (PoE "count"
-// stat group with one filter per seed, count >= 1). Used to bundle a whole
-// match-group into a single query. Caps at kMaxTradeSeeds filters per URL.
-void open_trade_search_multi(const std::string& tradeStatId, const std::vector<int>& seeds,
-                             const std::string& league, int platform)
+// Query JSON matching ANY of several seeds (PoE "count" stat group, one filter
+// per seed, count >= 1) so a whole match-group fits in one search.
+std::string TradeQueryJsonMulti(const std::string& tradeStatId, const std::vector<int>& seeds)
 {
-	if (tradeStatId.empty() || league.empty() || seeds.empty()) return;
-	const size_t kMaxTradeSeeds = 40;
 	std::string filters;
 	size_t n = 0;
 	for (int s : seeds) {
@@ -155,13 +160,89 @@ void open_trade_search_multi(const std::string& tradeStatId, const std::vector<i
 		filters += f;
 		n++;
 	}
-	std::string q = "{\"query\":{\"status\":{\"option\":\"securable\"},\"stats\":[{\"type\":\"count\","
-	                "\"value\":{\"min\":1},\"filters\":[" + filters + "]}]"
-	                "},\"sort\":{\"price\":\"asc\"}}";
-	const char* realm = platform == 1 ? "xbox/" : platform == 2 ? "sony/" : "";
-	std::string url = "https://www.pathofexile.com/trade/search/" + std::string(realm) +
-	                  url_encode(league) + "?q=" + url_encode(q);
+	return "{\"query\":{\"status\":{\"option\":\"securable\"},\"stats\":[{\"type\":\"count\","
+	       "\"value\":{\"min\":1},\"filters\":[" + filters + "]}]"
+	       "},\"sort\":{\"price\":\"asc\"}}";
+}
+
+// Pure URL assembly, kept separate from ShellExecute so --tj-selftest can
+// assert on it. Returns "" when there is nothing sensible to open.
+// platform: 0 pc, 1 xbox, 2 sony — ignored by realms without consoles.
+std::string TradeSearchUrl(int realmIdx, const std::string& league, int platform,
+                           const std::string& queryJson)
+{
+	if (league.empty() || queryJson.empty()) return std::string();
+	if (realmIdx < 0 || realmIdx >= kTradeRealmCount) realmIdx = 0;
+	const TradeRealm& r = kTradeRealms[realmIdx];
+	const char* console = "";
+	if (r.consoles) console = platform == 1 ? "xbox/" : platform == 2 ? "sony/" : "";
+	// url_encode is byte-wise, so a Chinese league name comes out as the same
+	// percent-escapes the trade site itself uses (亡焰咒海 -> %E4%BA%A1...).
+	return "https://" + std::string(r.host) + "/trade/search/" + console +
+	       url_encode(league) + "?q=" + url_encode(queryJson);
+}
+
+// ---- TjUiState --------------------------------------------------------------
+
+static std::wstring tj_ui_path(const std::wstring& exeDir)
+{
+	return exeDir + L"PobTools\\tj_ui.json";
+}
+
+bool TjUiState::Load(const std::wstring& exeDir)
+{
+	std::vector<unsigned char> raw = read_file(tj_ui_path(exeDir));
+	if (raw.empty()) return false;
+	try {
+		nlohmann::json doc = nlohmann::json::parse(std::string(raw.begin(), raw.end()));
+		realm = doc.value("realm", 0);
+		platform = doc.value("platform", 0);
+		league = doc.value("league", std::string());
+		return true;
+	} catch (...) {
+		realm = 0; platform = 0; league.clear();
+		return false;
+	}
+}
+
+bool TjUiState::Save(const std::wstring& exeDir) const
+{
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	nlohmann::json doc;
+	doc["realm"] = realm;
+	doc["platform"] = platform;
+	if (!league.empty()) doc["league"] = league;
+	std::string out = doc.dump();
+	HANDLE f = CreateFileW(tj_ui_path(exeDir).c_str(), GENERIC_WRITE, 0, nullptr,
+	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (f == INVALID_HANDLE_VALUE) return false;
+	DWORD wrote = 0;
+	bool ok = WriteFile(f, out.data(), (DWORD)out.size(), &wrote, nullptr) && wrote == out.size();
+	CloseHandle(f);
+	return ok;
+}
+
+namespace {
+
+void open_url(const std::string& url)
+{
+	if (url.empty()) return;
 	ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+// Open the trade site pre-filled to search for a specific jewel seed.
+void open_trade_search(const std::string& tradeStatId, int seed,
+                       const std::string& league, int platform, int realmIdx)
+{
+	if (tradeStatId.empty()) return;
+	open_url(TradeSearchUrl(realmIdx, league, platform, TradeQueryJson(tradeStatId, seed)));
+}
+
+void open_trade_search_multi(const std::string& tradeStatId, const std::vector<int>& seeds,
+                             const std::string& league, int platform, int realmIdx)
+{
+	if (tradeStatId.empty() || seeds.empty()) return;
+	open_url(TradeSearchUrl(realmIdx, league, platform, TradeQueryJsonMulti(tradeStatId, seeds)));
 }
 
 // Background one-shot fetch of the current trade leagues. The API lists every
@@ -171,12 +252,24 @@ struct LeagueFetch {
 	std::atomic<bool> running{ false }, done{ false };
 	std::vector<std::pair<std::string, std::string>> all; // (realm, id), API order
 	std::thread th;
+	const wchar_t* host = kTradeRealms[0].hostW;
 	~LeagueFetch() { if (th.joinable()) th.join(); }
+	// Switching region throws the list away and refetches from the new host.
+	// Joining first keeps `all` from being written by the outgoing thread.
+	void SetHost(const wchar_t* h) {
+		if (h == host) return;
+		if (th.joinable()) th.join();
+		host = h;
+		all.clear();
+		done = false;
+		running = false;
+	}
 	void start() {
 		if (running.load() || done.load()) return;
 		running = true;
+		if (th.joinable()) th.join();
 		th = std::thread([this]() {
-			HttpsClient c(L"www.pathofexile.com");
+			HttpsClient c(host);
 			std::string body, err;
 			std::vector<std::pair<std::string, std::string>> got;
 			if (c.valid() && c.GetString(L"/api/trade/data/leagues", body, &err)) {
@@ -559,6 +652,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	std::string seedText = "500";
 	std::string status;
 	int detailSeed = -1;          // a result seed to expand
+	// Set once the user opens any trade search. The calculator's numbers come from
+	// our own transform of the game data; PoB is the independent second opinion,
+	// so nudge people to cross-check there before they spend currency.
+	bool tradeHintShown = false;
 
 	// --- passive tree view (right pane) ---
 	PassiveTreeData ptData;
@@ -608,7 +705,21 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	std::string tradeLeague = "Standard";
 	bool leagueUserSet = false;                  // user picked one -> stop auto-defaulting
 	int tradePlatform = 0;                       // 0 pc, 1 xbox, 2 sony
+	int tradeRealm = 0;                          // index into kTradeRealms
 	LeagueFetch leagues;
+	TjUiState tjUi;                              // remembers region/league/platform
+	if (tjUi.Load(exeDir)) {
+		tradeRealm = std::clamp(tjUi.realm, 0, kTradeRealmCount - 1);
+		tradePlatform = kTradeRealms[tradeRealm].consoles ? std::clamp(tjUi.platform, 0, 2) : 0;
+		if (!tjUi.league.empty()) { tradeLeague = tjUi.league; leagueUserSet = true; }
+	}
+	leagues.SetHost(kTradeRealms[tradeRealm].hostW);
+	auto saveTjUi = [&]() {
+		tjUi.realm = tradeRealm;
+		tjUi.platform = tradePlatform;
+		tjUi.league = tradeLeague;
+		tjUi.Save(exeDir);
+	};
 	bool groupResults = true;                    // group seeds by # of stats matched
 	bool searchInputsOpen = true;                // collapse the stat picker after a search
 
@@ -689,7 +800,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		leagues.start();
 		if (leagues.done.load() && !leagueUserSet) {
 			std::vector<std::string> lg = leagues.ForPlatform(tradePlatform);
-			if (!lg.empty() && tradeLeague != lg[0]) tradeLeague = lg[0];
+			if (!lg.empty() && tradeLeague != lg[0]) { tradeLeague = lg[0]; saveTjUi(); }
 		}
 
 		// --- paste a jewel from the clipboard (auto-fills jewel/conqueror/seed) ---
@@ -756,8 +867,22 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		std::string conquerorId = conqN ? (*conqs)[conquerorSel].id : std::string("1");
 		std::string tradeStatId = conqN ? (*conqs)[conquerorSel].trade : std::string();
 
-		// --- trade export settings (league + platform) ---
+		// --- trade export settings (region + league + platform) ---
 		if (ImGui::CollapsingHeader(u8"交易站匯出設定")) {
+			ImGui::TextUnformatted(u8"區域");
+			ImGui::SameLine();
+			for (int r = 0; r < kTradeRealmCount; r++) {
+				if (r) ImGui::SameLine();
+				if (ImGui::RadioButton(kTradeRealms[r].label, tradeRealm == r) && tradeRealm != r) {
+					tradeRealm = r;
+					// League names are region-specific, so the current pick and the
+					// cached list are both meaningless now: refetch and re-default.
+					if (!kTradeRealms[r].consoles) tradePlatform = 0;
+					leagues.SetHost(kTradeRealms[r].hostW);
+					leagueUserSet = false;
+					saveTjUi();
+				}
+			}
 			ImGui::TextUnformatted(u8"聯盟");
 			ImGui::SameLine();
 			ImGui::SetNextItemWidth(180 * scale);
@@ -768,20 +893,30 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 						if (ImGui::Selectable(lg.c_str(), lg == tradeLeague)) {
 							tradeLeague = lg;
 							leagueUserSet = true;
+							saveTjUi();
 						}
 					ImGui::EndCombo();
 				}
 			} else {
 				if (ImGui::InputText("##league", &tradeLeague)) leagueUserSet = true;
+				if (ImGui::IsItemDeactivatedAfterEdit()) saveTjUi();
 			}
 			ImGui::SameLine();
 			if (leagues.running.load()) ImGui::TextDisabled(u8"取得中…");
 			else if (ImGui::SmallButton(u8"重新取得")) { leagues.done = false; leagues.start(); }
-			ImGui::TextUnformatted(u8"平台");
-			ImGui::SameLine();
-			ImGui::RadioButton("PC", &tradePlatform, 0); ImGui::SameLine();
-			ImGui::RadioButton("Xbox", &tradePlatform, 1); ImGui::SameLine();
-			ImGui::RadioButton("PS", &tradePlatform, 2);
+			// Consoles are an international-realm concept; the .tw site has none.
+			if (kTradeRealms[tradeRealm].consoles) {
+				ImGui::TextUnformatted(u8"平台");
+				ImGui::SameLine();
+				int before = tradePlatform;
+				ImGui::RadioButton("PC", &tradePlatform, 0); ImGui::SameLine();
+				ImGui::RadioButton("Xbox", &tradePlatform, 1); ImGui::SameLine();
+				ImGui::RadioButton("PS", &tradePlatform, 2);
+				// Only remember the choice. Deliberately NOT clearing leagueUserSet:
+				// switching platform never re-defaulted the league before, and this
+				// change is not the place to alter that.
+				if (tradePlatform != before) saveTjUi();
+			}
 		}
 
 		ImGui::Separator();
@@ -895,6 +1030,25 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				ImGui::Checkbox(u8"依命中節點數分組（可整組一鍵交易）", &groupResults);
 				bool tradeOff = tradeStatId.empty() || tradeLeague.empty();
 
+				// Cross-check reminder. Only shown after the user actually opened a
+				// trade search, so it does not add noise to the normal search flow.
+				// No arrow glyphs here: the CJK font atlas does not carry them and
+				// they render as tofu (see error_imgui_font_atlas_missing_glyphs).
+				if (tradeHintShown) {
+					ImGui::Separator();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.98f, 0.78f, 0.35f, 1.0f));
+					ImGui::TextUnformatted(u8"提醒：買之前先用 Path of Building 對一次答案");
+					ImGui::PopStyleColor();
+					ImGui::TextWrapped(u8"%s",
+					    u8"1. 在交易站找到那顆珠寶，Ctrl+C 複製，貼進 POB 的物品欄。\n"
+					    u8"2. 也可以把交易站上「已鑲好這顆珠寶的整件裝備」複製進 POB。\n"
+					    u8"3. 對照 POB 算出來的天賦加成，確認與本工具列出的詞綴一致。");
+					ImGui::TextDisabled(u8"%s",
+					    u8"本工具的轉換演算法以 POB 為規格、數值以遊戲檔為真值，"
+					    u8"兩邊理應相同。若對不上請回報，那代表其中一邊有問題。");
+					ImGui::Separator();
+				}
+
 				if (groupResults) {
 					// the socket's picked in-radius nodes (or all) + wanted set
 					std::vector<int> inRad;
@@ -928,7 +1082,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 							if (ImGui::SmallButton(u8"交易查詢整組")) {
 								std::vector<int> seeds;
 								for (auto* h : kv.second) seeds.push_back(h->seed);
-								open_trade_search_multi(tradeStatId, seeds, tradeLeague, tradePlatform);
+								open_trade_search_multi(tradeStatId, seeds, tradeLeague, tradePlatform, tradeRealm);
+								tradeHintShown = true;
 							}
 							ImGui::EndDisabled();
 							if (kv.second.size() > 40) { ImGui::SameLine(); ImGui::TextDisabled(u8"(交易取前 40)"); }
@@ -951,8 +1106,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 								if (ImGui::SmallButton(u8"查看")) detailSeed = h->seed;
 								ImGui::SameLine();
 								ImGui::BeginDisabled(tradeOff);
-								if (ImGui::SmallButton(u8"交易"))
-									open_trade_search(tradeStatId, h->seed, tradeLeague, tradePlatform);
+								if (ImGui::SmallButton(u8"交易")) {
+									open_trade_search(tradeStatId, h->seed, tradeLeague, tradePlatform, tradeRealm);
+									tradeHintShown = true;
+								}
 								ImGui::EndDisabled();
 								// this seed's matched affixes only (no node name), on the
 								// picked nodes — keeps the list compact per the request
@@ -1002,8 +1159,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 						if (ImGui::SmallButton(u8"查看")) detailSeed = h.seed;
 						ImGui::TableNextColumn();
 						ImGui::BeginDisabled(tradeOff);
-						if (ImGui::SmallButton(u8"交易"))
-							open_trade_search(tradeStatId, h.seed, tradeLeague, tradePlatform);
+						if (ImGui::SmallButton(u8"交易")) {
+							open_trade_search(tradeStatId, h.seed, tradeLeague, tradePlatform, tradeRealm);
+							tradeHintShown = true;
+						}
 						ImGui::EndDisabled();
 						ImGui::SameLine();
 						if (ImGui::SmallButton(u8"複製")) {
@@ -1038,8 +1197,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			ImGui::Text(u8"種子 %d 範圍內的變更", detailSeed);
 			ImGui::SameLine();
 			ImGui::BeginDisabled(tradeStatId.empty() || tradeLeague.empty());
-			if (ImGui::SmallButton(u8"交易搜尋"))
-				open_trade_search(tradeStatId, detailSeed, tradeLeague, tradePlatform);
+			if (ImGui::SmallButton(u8"交易搜尋")) {
+				open_trade_search(tradeStatId, detailSeed, tradeLeague, tradePlatform, tradeRealm);
+				tradeHintShown = true;
+			}
 			ImGui::EndDisabled();
 			ImGui::SameLine();
 			// Hand the jewel to PoB the way PoB expects to receive items: as the
@@ -1453,4 +1614,85 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	ImGui::DestroyContext();
 	glfwDestroyWindow(win);
 	glfwTerminate();
+}
+
+// ---- cross-region stat id check (--tj-realm-check) --------------------------
+
+// Every conqueror the calculator can OFFER must exist on every region, or its
+// trade button would produce a search the site cannot run. This is how the one
+// real gap was found: Zorath (jewel type 11) is absent from the .tw site — it
+// is harmless today only because kMaxJewelType hides types 7-11. Raise that
+// constant and this check starts failing, which is exactly the point.
+int RunTradeRealmCheck(const std::wstring& exeDir)
+{
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		FILE* f = nullptr;
+		freopen_s(&f, "CONOUT$", "w", stdout);
+	}
+	std::string report;
+	int failures = 0;
+	auto line = [&](const std::string& s) { report += s + "\n"; printf("%s\n", s.c_str()); };
+
+	TJDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir + L"Data\\timeless_jewels.json", &err)) {
+		line("FAIL  load timeless_jewels.json: " + err);
+		return 1;
+	}
+
+	for (int r = 0; r < kTradeRealmCount; r++) {
+		const TradeRealm& realm = kTradeRealms[r];
+		HttpsClient c(realm.hostW);
+		std::string body, herr;
+		if (!c.valid() || !c.GetString(L"/api/trade/data/stats", body, &herr)) {
+			line(std::string("FAIL  ") + realm.label + " (" + realm.host +
+			     ") /api/trade/data/stats: " + herr);
+			failures++;
+			continue;
+		}
+		// Crude scan: every "id":"..." in the document. Good enough for a
+		// membership test and avoids parsing a 2 MB document.
+		std::set<std::string> ids;
+		for (size_t p = body.find("\"id\":\""); p != std::string::npos; p = body.find("\"id\":\"", p + 1)) {
+			size_t s = p + 6, e = body.find('"', s);
+			if (e == std::string::npos) break;
+			ids.insert(body.substr(s, e - s));
+		}
+
+		int checked = 0, missing = 0, hiddenMissing = 0;
+		std::string missingList, hiddenList;
+		for (const auto& kv : ds.conquerors) {
+			const bool selectable = kv.first <= kMaxJewelType;
+			for (const TJConqueror& q : kv.second) {
+				if (q.trade.empty()) continue;
+				const bool present = ids.count(q.trade) != 0;
+				if (selectable) {
+					checked++;
+					if (!present) { missing++; missingList += " " + q.name; }
+				} else if (!present) {
+					hiddenMissing++;
+					hiddenList += " " + q.name + "(type " + std::to_string(kv.first) + ")";
+				}
+			}
+		}
+		char buf[512];
+		snprintf(buf, sizeof(buf), "%s  %s (%s): %d stat ids, %d selectable conquerors, %d missing",
+		         missing == 0 ? "PASS" : "FAIL", realm.label, realm.host,
+		         (int)ids.size(), checked, missing);
+		line(buf);
+		if (missing) { line("      missing:" + missingList); failures++; }
+		if (hiddenMissing)
+			line("      note: absent but currently hidden by kMaxJewelType=" +
+			     std::to_string(kMaxJewelType) + ":" + hiddenList);
+	}
+
+	line(failures == 0 ? "\nALL PASS" : "\nFAILURES: " + std::to_string(failures));
+	HANDLE h = CreateFileW((exeDir + L"tj_realm_check.txt").c_str(), GENERIC_WRITE, 0,
+	                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h != INVALID_HANDLE_VALUE) {
+		DWORD wrote = 0;
+		WriteFile(h, report.data(), (DWORD)report.size(), &wrote, nullptr);
+		CloseHandle(h);
+	}
+	return failures == 0 ? 0 : 1;
 }

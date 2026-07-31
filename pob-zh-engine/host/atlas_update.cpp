@@ -698,8 +698,10 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		}
 	}
 
-	// register the season, make it active, and roll back to the newest two: the
-	// third-oldest folder is deleted so the disk holds exactly two leagues.
+	// Register the season, make it active, and roll back to the newest two
+	// LEAGUES: every revision of the current league stays (3.29.0 alongside
+	// 3.29.1), the previous league keeps only its final revision, anything older
+	// has its folder deleted.
 	int keptSeasons = 0;
 	{
 		AtlasVersionIndex idx;
@@ -707,7 +709,7 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		AtlasVersionEntry e;
 		e.tag = tag; e.sha = latestSha_; e.repoe = repoeVer;
 		idx.UpsertActive(e);
-		std::vector<std::string> dropped = idx.PruneToNewest(2);
+		std::vector<std::string> dropped = idx.PruneSeasons(2);
 		idx.SetLastCheckUtc(now_filetime());
 		idx.Save(exeDir_);
 		keptSeasons = (int)idx.Versions().size();

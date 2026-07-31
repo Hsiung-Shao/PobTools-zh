@@ -5,6 +5,8 @@
 // Pure data + rule logic, no ImGui / GL — same split as atlas_stat_agg.
 #pragma once
 
+#include "fuzzy_match.h"
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -41,27 +43,14 @@ struct ScarabDef {
 	std::string descKeyEn, descKeyZh;      // effect lines, markup stripped
 };
 
-// A query parsed once per frame rather than once per row.
-struct ScarabQuery {
-	std::string lower;               // as typed, ASCII-lowercased
-	std::string compact;             // spaces and punctuation removed
-	std::vector<std::string> tokens; // whitespace-split
-	bool empty() const { return lower.empty(); }
-};
+// The picker's query type and parser are the shared ones (fuzzy_match.h); the
+// aliases keep the scarab-flavoured names the planner already calls.
+using ScarabQuery = FuzzyQuery;
+inline ScarabQuery MakeScarabQuery(const std::string& raw) { return MakeFuzzyQuery(raw); }
 
-ScarabQuery MakeScarabQuery(const std::string& raw);
-
-// How well `d` matches `q`: 0 = no match, higher = better. Plain substring is
-// too strict for these names — Chinese puts the family word last
-// (「聖甲蟲：窩巢裂痕」) while English puts it first ("Breach Scarab of the
-// Hive"), so someone who knows one order cannot find the other, and the
-// fullwidth colon defeats a query typed without it. Tiers, best first:
-//
-//   name exact / prefix / substring        100 / 90 / 80
-//   name substring ignoring punctuation    70
-//   every whitespace token present in name 60
-//   name characters in order (fzf-like)    40
-//   effect text substring / tokens         30 / 20
+// How well `d` matches `q`: 0 = no match, higher = better. Name tiers come from
+// FuzzyNameScore (100 exact … 40 subsequence) and effect text from
+// FuzzyTextScore (30 / 20), so a name hit always outranks an effect hit.
 //
 // An empty query matches everything with score 1, which keeps the catalogue in
 // its natural family+tier order until the user actually types.

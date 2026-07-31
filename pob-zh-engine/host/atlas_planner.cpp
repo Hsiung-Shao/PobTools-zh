@@ -5,6 +5,9 @@
 #include "atlas_diff.h"
 #include "atlas_i18n.h"
 #include "atlas_import.h"
+#include "atlas_optimize.h"
+#include "atlas_astrolabes.h"
+#include "atlas_maps.h"
 #include "atlas_persist.h"
 #include "atlas_scarabs.h"
 #include "atlas_stat_agg.h"
@@ -65,7 +68,7 @@ static std::wstring OpenDataJsonDialog()
 	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
 }
 
-static const wchar_t* kBuildJsonFilter = L"輿圖配點專案 (*.json)\0*.json\0所有檔案 (*.*)\0*.*\0\0";
+static const wchar_t* kBuildJsonFilter = L"輿圖策略專案 (*.json)\0*.json\0所有檔案 (*.*)\0*.*\0\0";
 
 // Save-file dialog for exporting one build project; buf pre-filled with the
 // project name (filesystem-hostile characters stripped).
@@ -138,7 +141,7 @@ static bool PlannerWriteFile(const std::wstring& path, const std::string& conten
 void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/)
 {
 	if (!glfwInit()) {
-		MessageBoxW(nullptr, L"無法初始化 GLFW，輿圖配點器無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
+		MessageBoxW(nullptr, L"無法初始化 GLFW，輿圖策略無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
 		return;
 	}
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
@@ -158,10 +161,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	const int winW = (int)(1280 * scale);
 	const int winH = (int)(860 * scale);
 
-	GLFWwindow* win = glfwCreateWindow(winW, winH, u8"PobTools — 輿圖配點器", nullptr, nullptr);
+	GLFWwindow* win = glfwCreateWindow(winW, winH, u8"PobTools — 輿圖策略", nullptr, nullptr);
 	if (!win) {
 		glfwTerminate();
-		MessageBoxW(nullptr, L"無法建立輿圖配點器視窗。", L"PobTools", MB_ICONERROR | MB_OK);
+		MessageBoxW(nullptr, L"無法建立輿圖策略視窗。", L"PobTools", MB_ICONERROR | MB_OK);
 		return;
 	}
 	if (monitor) {
@@ -227,8 +230,23 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	ScarabDb scarabDb;
 	std::string scarabErr;
 	scarabDb.Load(exeDir, &scarabErr);
-	for (AtlasBuildEntry& b : buildFile.builds)
+
+	// Astrolabes (3.29 Shaped Regions, one per atlas quadrant) and the map
+	// catalogue behind the project's main-map pick. Optional on exactly the same
+	// terms as the scarabs: absent data hides the section and turns Sanitize
+	// into a no-op rather than erasing what the user saved.
+	AstrolabeDb astroDb;
+	std::string astroErr;
+	astroDb.Load(exeDir, &astroErr);
+	AtlasMapDb mapDb;
+	std::string mapErr;
+	mapDb.Load(exeDir, &mapErr);
+
+	for (AtlasBuildEntry& b : buildFile.builds) {
 		b.scarabs = scarabDb.Sanitize(b.scarabs, nullptr);
+		b.astrolabes = astroDb.Sanitize(b.astrolabes, nullptr);
+		b.mapId = mapDb.SanitizeOne(b.mapId);
+	}
 
 	IconManager icons;
 	icons.Init(exeDir);
@@ -261,12 +279,92 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	// older season never prunes it back to that season's subset. The file is
 	// still written either way: notes and scarabs are season-independent, and
 	// before they existed an edit made while previewing was simply lost.
+	// Set while the sandbox planning mode is open. saveActive() checks it, so
+	// there is exactly ONE place that can write during planning: nowhere.
+	bool planningMode = false;
 	auto saveActive = [&]() {
+		if (planningMode) return;   // sandbox: never touch the file
 		if (onCanonicalSeason()) {
 			buildFile.Active().alloc = tree.AllocIds();
+			buildFile.Active().targets = tree.TargetIds();
+			buildFile.Active().blocked = tree.BlockedIds();
 			buildFile.version = tree.Version();
 		}
 		buildFile.Save(exeDir);
+	};
+
+	// Single-level undo. The minimum-point solver may re-route wiring on any
+	// click, which is the one thing a user cannot predict, so there has to be a
+	// way back. Snapshots are taken before a change lands, not after.
+	struct AtlasUndo {
+		bool valid = false;
+		std::vector<int> alloc, targets, blocked;
+	};
+	AtlasUndo undo, frameStart;
+	auto snapshot = [&](AtlasUndo& u) {
+		u.valid = true;
+		u.alloc = tree.AllocIds();
+		u.targets = tree.TargetIds();
+		u.blocked = tree.BlockedIds();
+	};
+
+	// --- sandbox planning mode ---
+	// Entering starts from a blank slate so several core nodes can be marked
+	// quickly; leaving asks whether to keep the result. NOTHING is written to
+	// the build file while planning, so abandoning a session is guaranteed to
+	// leave the project byte-identical -- that is the whole point of the mode.
+	bool planningAskExit = false;      // the save/discard prompt is up
+	AtlasUndo planSnapshot;            // state captured on entry
+	auto enterPlanning = [&]() {
+		snapshot(planSnapshot);
+		tree.Reset();                  // clears alloc, targets and blocked
+		planningMode = true;
+		planningAskExit = false;
+	};
+	auto restorePlanning = [&]() {
+		tree.ApplyAllocIds(planSnapshot.alloc);
+		tree.ApplyTargetIds(planSnapshot.targets);
+		tree.ApplyBlockedIds(planSnapshot.blocked);
+		planningMode = false;
+		planningAskExit = false;
+		undo.valid = false;            // undo does not straddle the sandbox
+	};
+	auto keepPlanning = [&]() {
+		planningMode = false;
+		planningAskExit = false;
+		undo = planSnapshot;           // one step back = "before I started planning"
+		saveActive();
+	};
+
+	// A project saved before targets existed has an allocation but no record of
+	// which nodes were deliberate. Guessing and silently re-solving would move
+	// someone's finished tree under them, so the guess is only ever offered.
+	bool migrateChecked = false;
+	bool migrateOffer = false;
+	int migrateFrom = 0, migrateTo = 0;
+	std::vector<int> migrateTargets, migrateNodes;
+	auto checkMigration = [&]() {
+		migrateChecked = true;
+		migrateOffer = false;
+		if (!ready || !onCanonicalSeason()) return;
+		const AtlasBuildEntry& b = buildFile.Active();
+		if (!b.targets.empty() || b.alloc.empty()) return;      // not a legacy build
+
+		migrateTargets = AtlasInferTargets(tree);
+		AtlasPlan p = AtlasPlanMinimal(tree, migrateTargets, tree.BlockedIdx(), tree.AllocIdx());
+		migrateFrom = tree.UsedPoints();
+		migrateTo = p.points;
+		migrateNodes = p.nodes;
+		if (migrateTo < migrateFrom) {
+			migrateOffer = true;
+			return;
+		}
+		// Nothing to gain: adopt the inferred targets quietly. The allocation
+		// cannot move (the solver keeps an equal-cost tree it was handed), so
+		// this is invisible apart from the file gaining a targets key.
+		for (AtlasNode& nd : tree.nodes) nd.target = false;
+		for (int t : migrateTargets) tree.nodes[t].target = true;
+		saveActive();
 	};
 
 	// --- zh display layer + background auto updater ---
@@ -287,6 +385,8 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		ready = tree.LoadVersion(exeDir, tag, &loadErr);
 		if (ready) {
 			int mapped = tree.ApplyAllocIds(buildFile.Active().alloc);
+			tree.ApplyTargetIds(buildFile.Active().targets);   // must follow ApplyAllocIds
+			tree.ApplyBlockedIds(buildFile.Active().blocked);
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
 			zhLoaded = i18n.LoadVersion(exeDir, tag);
@@ -320,12 +420,18 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		importMsg = u8"提醒：此配置存於舊版輿圖樹，" + std::to_string(startupDropped) +
 		            u8" 個已不存在的節點已自動移除";
 
-	// --- version-compare state (compareBase season -> active season) ---
+	// --- version-compare state ---
+	// The pair being compared is USER-CHOSEN, not fixed to compareBase -> active:
+	// with every revision of the current league retained (3.29.0 alongside
+	// 3.29.1), "what did GGG change mid-league?" is a question about two
+	// revisions of the same league, which a fixed previous-league base could
+	// never answer. Defaults to compareBase -> active.
 	bool compareMode = false;
 	AtlasTreeDiff diff;
 	bool diffReady = false;
 	std::string diffErr;
 	char diffSearch[256] = "";
+	std::string cmpBase, cmpTarg;               // chosen seasons; empty = use the defaults
 	std::unordered_map<int, int> activeIdxById; // GGG id -> displayed-tree node index
 
 	// --- right-hand summary panel ---
@@ -371,6 +477,346 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			std::sort(g.begin(), g.end(), [&](const PanelNode& a, const PanelNode& b) {
 				return tree.nodes[a.idx].name < tree.nodes[b.idx].name;
 			});
+	};
+
+	// --- astrolabe section (one Shaped Region per atlas quadrant) ---
+	// Above the scarabs on purpose: an astrolabe covers a whole quadrant, a
+	// scarab covers the one map you are about to open.
+	char astroSearch[256] = "";
+	auto astroLines = [&](const AstrolabeDef& d) -> const std::vector<std::string>& {
+		// One list or the other, never a line from each.
+		return (showZh && !d.descZh.empty()) ? d.descZh : d.descEn;
+	};
+	auto astroName = [&](const AstrolabeDef& d) -> const std::string& {
+		return (showZh && !d.zh.empty()) ? d.zh : d.en;
+	};
+	// The compass label is OURS. AtlasRegions ships an Id and no name column, so
+	// the only official Traditional Chinese string for a quadrant is its Memory
+	// Vault's area name — shown in parentheses so the invented part and the
+	// official part stay visibly separate. (Compare the scarab families, where
+	// no Chinese name was invented at all; the difference is that a quadrant has
+	// to be addressable here, so it needs some label.)
+	auto quadrantLabel = [&](const AtlasQuadrant& q) {
+		std::string compass = q.id;
+		if (showZh) {
+			if (q.id == "NorthWest") compass = u8"西北";
+			else if (q.id == "NorthEast") compass = u8"東北";
+			else if (q.id == "SouthEast") compass = u8"東南";
+			else if (q.id == "SouthWest") compass = u8"西南";
+		}
+		const std::string& vault = (showZh && !q.vaultZh.empty()) ? q.vaultZh : q.vaultEn;
+		return vault.empty() ? compass : compass + u8"（" + vault + u8"）";
+	};
+
+	auto renderAstrolabePanel = [&]() {
+		AtlasBuildEntry& b = buildFile.Active();
+		if (!astroDb.available()) {
+			if (ImGui::CollapsingHeader(u8"星盤")) {
+				ImGui::TextWrapped(u8"星盤資料未載入：%s", astroErr.c_str());
+				ImGui::TextDisabled(u8"已存的星盤設定不會被更動。");
+			}
+			return;
+		}
+		std::string hdr = u8"星盤 (" + std::to_string(b.astrolabes.size()) + "/" +
+		                  std::to_string(astroDb.Regions().size()) + ")###astrohdr";
+		if (!ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+		ImGui::TextDisabled(u8"每個半區同時只能有一片幻塑界域");
+		const float slot = 38.0f * scale;
+		int regionIdx = 0;
+		for (const AtlasQuadrant& q : astroDb.Regions()) {
+			ImGui::PushID(regionIdx++);
+			// Which astrolabe (if any) sits on this quadrant.
+			const AstrolabePlacement* placed = nullptr;
+			for (const AstrolabePlacement& p : b.astrolabes)
+				if (p.region == q.id) { placed = &p; break; }
+			const AstrolabeDef* def = placed ? astroDb.ById(placed->id) : nullptr;
+
+			const ImVec2 fp = ImGui::GetStyle().FramePadding;
+			bool clicked = false;
+			if (def) {
+				icons.RequestPath(def->art);
+				unsigned tex = icons.TextureByPath(def->art);
+				clicked = tex
+					? ImGui::ImageButton("##slot", (ImTextureID)(intptr_t)tex, ImVec2(slot, slot))
+					: ImGui::Button("...", ImVec2(slot + fp.x * 2, slot + fp.y * 2));
+			} else {
+				clicked = ImGui::Button("+##add", ImVec2(slot + fp.x * 2, slot + fp.y * 2));
+			}
+			if (clicked) {
+				if (def) {
+					// Clicking a filled slot clears that quadrant.
+					for (size_t i = 0; i < b.astrolabes.size(); i++)
+						if (b.astrolabes[i].region == q.id) { b.astrolabes.erase(b.astrolabes.begin() + i); break; }
+					saveActive();
+				} else {
+					astroSearch[0] = '\0';
+					ImGui::OpenPopup(u8"選擇星盤");
+				}
+			}
+			if (def && ImGui::IsItemHovered()) {
+				ImGui::SetTooltip(u8"點擊移除");
+			}
+
+			// One picker per quadrant; the PushID above keeps their ids apart.
+			if (ImGui::BeginPopup(u8"選擇星盤")) {
+				ImGui::TextDisabled("%s", quadrantLabel(q).c_str());
+				ImGui::SetNextItemWidth(320.0f * scale);
+				if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+				ImGui::InputTextWithHint("##astrosearch", u8"搜尋名稱或效果（中英、模糊）…",
+					astroSearch, sizeof(astroSearch), ImGuiInputTextFlags_EscapeClearsAll);
+				FuzzyQuery q2 = MakeFuzzyQuery(astroSearch);
+
+				std::vector<std::pair<int, const AstrolabeDef*>> hits;
+				for (const AstrolabeDef& d : astroDb.All()) {
+					int s = astroDb.MatchScore(d, q2);
+					if (s > 0) hits.push_back({ s, &d });
+				}
+				if (!q2.empty())
+					std::stable_sort(hits.begin(), hits.end(),
+						[](const auto& x, const auto& y) {
+							if (x.first != y.first) return x.first > y.first;
+							return x.second->zh.size() < y.second->zh.size();
+						});
+				ImGui::TextDisabled(u8"%d 種 · %s", (int)hits.size(), astroDb.Source().c_str());
+
+				ImGui::BeginChild("##astrolist", ImVec2(420.0f * scale, 300.0f * scale));
+				for (size_t k = 0; k < hits.size(); k++) {
+					const AstrolabeDef& d = *hits[k].second;
+					ImGui::PushID((int)k);
+					icons.RequestPath(d.art);
+					unsigned tex = icons.TextureByPath(d.art);
+					float sz = ImGui::GetTextLineHeight() * 1.4f;
+					if (tex) ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(sz, sz));
+					else     ImGui::Dummy(ImVec2(sz, sz));
+					ImGui::SameLine();
+					if (ImGui::Selectable(astroName(d).c_str())) {
+						// The slot was empty, so CanPlace can only refuse on data
+						// the catalogue does not know; check anyway rather than
+						// trusting the UI state.
+						if (astroDb.CanPlace(b.astrolabes, q.id, d.id).ok()) {
+							b.astrolabes.push_back({ q.id, d.id });
+							saveActive();
+						}
+						ImGui::CloseCurrentPopup();
+					}
+					if (ImGui::IsItemHovered()) {
+						ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+							ImVec2(14.0f * scale, 10.0f * scale));
+						ImGui::BeginTooltip();
+						ImGui::TextColored(PobUi::Accent(), "%s", astroName(d).c_str());
+						ImGui::PushTextWrapPos(360.0f * scale);
+						for (const std::string& s : astroLines(d))
+							ImGui::TextUnformatted(StripStatMarkup(s).c_str());
+						ImGui::PopTextWrapPos();
+						if (!d.enabled)
+							ImGui::TextDisabled(u8"（本賽季尚未啟用，交易站也沒有）");
+						ImGui::EndTooltip();
+						ImGui::PopStyleVar();
+					}
+					ImGui::PopID();
+				}
+				ImGui::EndChild();
+				ImGui::EndPopup();
+			}
+
+			ImGui::SameLine();
+			ImGui::BeginGroup();
+			ImGui::TextDisabled("%s", quadrantLabel(q).c_str());
+			if (def) {
+				ImGui::TextColored(PobUi::Accent(), "%s", astroName(*def).c_str());
+			} else if (placed) {
+				// Sanitize should have removed this; say so instead of drawing a blank.
+				ImGui::TextDisabled(u8"未知星盤");
+			} else {
+				ImGui::TextDisabled(u8"未配置");
+			}
+			ImGui::EndGroup();
+
+			if (def) {
+				ImGui::Indent(10.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.98f, 1.0f));
+				for (const std::string& s : astroLines(*def))
+					ImGui::TextWrapped("%s", StripStatMarkup(s).c_str());
+				ImGui::PopStyleColor();
+				if (!def->enabled)
+					ImGui::TextDisabled(u8"（本賽季尚未啟用）");
+				ImGui::Unindent(10.0f * scale);
+			}
+			ImGui::PopID();
+		}
+		ImGui::Spacing();
+	};
+
+	// --- main map section (one per project) ---
+	char mapSearch[256] = "";
+	// The two dropdowns are INDEPENDENT, and deliberately not modelled on the
+	// game's own data: once a quadrant's Voidstone is socketed, every map in that
+	// quadrant becomes T16, so a map's shipped tier says nothing about the tier
+	// it will actually be run at. Filtering the name list by it would hide maps
+	// the user can legitimately pick. So the tier dropdown records the PLAN and
+	// the name dropdown always offers every map.
+	const int kMapTierUnique = 99;
+	auto mapPrimaryName = [&](const AtlasMapDef& d) -> const std::string& {
+		// The atlas shows the AREA name, so that is what the planner leads with.
+		return showZh ? d.zhArea : d.enArea;
+	};
+	auto mapSecondName = [&](const AtlasMapDef& d) -> const std::string& {
+		return showZh ? d.zhItem : d.enItem;
+	};
+	auto mapRegionLabel = [&](const std::string& regionId) {
+		const AtlasQuadrant* q = astroDb.RegionById(regionId);
+		return q ? quadrantLabel(*q) : regionId;
+	};
+	// A map's own tier, shown only as a hint in the tooltip — never as the label,
+	// so it cannot be mistaken for the tier the project plans to run.
+	auto mapOwnTierLabel = [&](const AtlasMapDef& d) {
+		if (d.kind == AtlasMapDef::kUnique) return std::string(showZh ? u8"傳奇" : "unique");
+		return d.tier > 0 ? "T" + std::to_string(d.tier) : std::string("-");
+	};
+	auto mapTierLabel = [&](int t) {
+		if (t == 0) return std::string(showZh ? u8"未指定" : "unset");
+		if (t == kMapTierUnique) return std::string(showZh ? u8"傳奇圖" : "unique");
+		return "T" + std::to_string(t);
+	};
+	// Endgame is almost entirely run at the top tier, so an unset project shows
+	// that as its starting point. Only a deliberate pick is written to the file:
+	// this is display-only until the user touches something.
+	auto plannedTier = [&]() {
+		int t = buildFile.Active().mapTier;
+		if (t > 0) return t;
+		return mapDb.TiersPresent().empty() ? 0 : mapDb.TiersPresent().back();
+	};
+
+	auto renderMapPanel = [&]() {
+		AtlasBuildEntry& b = buildFile.Active();
+		if (!mapDb.available()) {
+			if (ImGui::CollapsingHeader(u8"主力地圖")) {
+				ImGui::TextWrapped(u8"地圖資料未載入：%s", mapErr.c_str());
+				ImGui::TextDisabled(u8"已存的地圖設定不會被更動。");
+			}
+			return;
+		}
+		if (!ImGui::CollapsingHeader(u8"主力地圖", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+		const AtlasMapDef* cur = b.mapId.empty() ? nullptr : mapDb.ById(b.mapId);
+		if (cur) {
+			const float sz = 28.0f * scale;
+			icons.RequestPath(cur->art);
+			unsigned tex = icons.TextureByPath(cur->art);
+			if (tex) {
+				ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(sz, sz));
+				ImGui::SameLine();
+			}
+			ImGui::BeginGroup();
+			// The PLANNED tier leads, then the name — two separate facts, and the
+			// eye should not have to split a sentence to read them.
+			ImGui::TextColored(ImVec4(0.55f, 0.80f, 0.95f, 1.0f), "%s", mapTierLabel(plannedTier()).c_str());
+			ImGui::SameLine(0, 8.0f * scale);
+			ImGui::TextColored(PobUi::Accent(), "%s", mapPrimaryName(*cur).c_str());
+			std::string sub;
+			const std::string& item = mapSecondName(*cur);
+			if (!item.empty() && item != mapPrimaryName(*cur)) sub = item + u8" · ";
+			sub += mapRegionLabel(cur->region);
+			ImGui::TextDisabled("%s", sub.c_str());
+			ImGui::EndGroup();
+		} else {
+			ImGui::TextDisabled(u8"尚未選擇");
+		}
+
+		// --- two INDEPENDENT dropdowns: the tier to run at, and which map ---
+		ImGui::TextDisabled(u8"階級");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(110.0f * scale);
+		if (ImGui::BeginCombo("##maptier", mapTierLabel(plannedTier()).c_str())) {
+			// Only tiers this season actually ships get an entry (AtlasMapDb
+			// derives the list from the data, so a season with a different tier
+			// range needs no code change).
+			for (int t : mapDb.TiersPresent())
+				if (ImGui::Selectable(mapTierLabel(t).c_str(), plannedTier() == t)) {
+					b.mapTier = t;
+					saveActive();
+				}
+			if (ImGui::Selectable(mapTierLabel(kMapTierUnique).c_str(),
+			                      plannedTier() == kMapTierUnique)) {
+				b.mapTier = kMapTierUnique;
+				saveActive();
+			}
+			ImGui::EndCombo();
+		}
+
+		ImGui::SameLine();
+		ImGui::TextDisabled(u8"地圖");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		const char* namePreview = cur ? mapPrimaryName(*cur).c_str() : u8"選擇地圖…";
+		if (ImGui::BeginCombo("##mapname", namePreview)) {
+			// EVERY map, always. The tier dropdown does not filter this list:
+			// a Voidstone lifts a whole quadrant to T16, so a map's shipped tier
+			// is no reason to hide it from a T16 plan.
+			ImGui::SetNextItemWidth(-FLT_MIN);
+			if (ImGui::IsWindowAppearing()) {
+				mapSearch[0] = '\0';
+				ImGui::SetKeyboardFocusHere();
+			}
+			ImGui::InputTextWithHint("##mapsearch", u8"搜尋地圖名稱…",
+				mapSearch, sizeof(mapSearch), ImGuiInputTextFlags_EscapeClearsAll);
+			FuzzyQuery q = MakeFuzzyQuery(mapSearch);
+
+			std::vector<std::pair<int, const AtlasMapDef*>> hits;
+			for (const AtlasMapDef& d : mapDb.All()) {
+				int s = mapDb.MatchScore(d, q);
+				if (s > 0) hits.push_back({ s, &d });
+			}
+			// With no query the natural order is by quadrant then tier, which is
+			// how someone reads the atlas; a query ranks by match quality.
+			if (q.empty())
+				std::stable_sort(hits.begin(), hits.end(), [](const auto& x, const auto& y) {
+					if (x.second->region != y.second->region) return x.second->region < y.second->region;
+					if (x.second->tier != y.second->tier) return x.second->tier < y.second->tier;
+					return x.second->enArea < y.second->enArea;
+				});
+			else
+				std::stable_sort(hits.begin(), hits.end(), [](const auto& x, const auto& y) {
+					if (x.first != y.first) return x.first > y.first;
+					return x.second->enArea.size() < y.second->enArea.size();
+				});
+
+			ImGui::TextDisabled(u8"%d 張", (int)hits.size());
+			ImGui::BeginChild("##maplist", ImVec2(340.0f * scale, 320.0f * scale));
+			ImGuiListClipper clip;
+			clip.Begin((int)hits.size());
+			while (clip.Step()) {
+				for (int k = clip.DisplayStart; k < clip.DisplayEnd; k++) {
+					const AtlasMapDef& d = *hits[k].second;
+					ImGui::PushID(k);
+					// The name alone. The map's own tier goes in the tooltip, not
+					// the label — showing it beside a planned tier of T16 would
+					// read as a contradiction rather than as extra information.
+					if (ImGui::Selectable(mapPrimaryName(d).c_str(), d.id == b.mapId)) {
+						b.mapId = d.id;
+						saveActive();
+						ImGui::CloseCurrentPopup();
+					}
+					if (ImGui::IsItemHovered()) {
+						std::string tip = mapRegionLabel(d.region) +
+							u8" · 原始階級 " + mapOwnTierLabel(d);
+						const std::string& item = mapSecondName(d);
+						if (!item.empty() && item != mapPrimaryName(d)) tip = item + u8" · " + tip;
+						ImGui::SetTooltip("%s", tip.c_str());
+					}
+					ImGui::PopID();
+				}
+			}
+			ImGui::EndChild();
+			ImGui::EndCombo();
+		}
+
+		if (cur && ImGui::Button(u8"清除")) {
+			b.mapId.clear();
+			saveActive();
+		}
+		ImGui::Spacing();
 	};
 
 	// --- scarab section (map device) ---
@@ -571,9 +1017,17 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 		diffErr.clear();
 		diff = AtlasTreeDiff();
 		activeIdxById.clear();
-		std::string base = verIndex.CompareBase(), targ = verIndex.Active();
-		if (base.empty() || targ.empty() || base == targ) {
-			diffErr = u8"需要兩個賽季的資料才能比較（目前只安裝了一個賽季）";
+		// Fall back to the registry's defaults until the user picks a pair, and
+		// re-validate every time: an update or a prune can retire a chosen tag.
+		if (cmpBase.empty() || !verIndex.Has(cmpBase)) cmpBase = verIndex.CompareBase();
+		if (cmpTarg.empty() || !verIndex.Has(cmpTarg)) cmpTarg = verIndex.Active();
+		std::string base = cmpBase, targ = cmpTarg;
+		if (base.empty() || targ.empty()) {
+			diffErr = u8"需要兩個版本的資料才能比較（目前只安裝了一個版本）";
+			return;
+		}
+		if (base == targ) {
+			diffErr = u8"請選擇兩個不同的版本";
 			return;
 		}
 		AtlasTreeData bt, tt;
@@ -632,6 +1086,39 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	// still exists in the new season focuses it on the canvas.
 	auto renderComparePanel = [&]() {
 		ImGui::TextDisabled(u8"版本比較");
+
+		// --- pick the two versions ---
+		// Every installed tag is offered on both sides, so this covers both
+		// "3.28 -> 3.29" (what the new league changed) and "3.29.0 -> 3.29.1"
+		// (what GGG adjusted mid-league).
+		std::vector<std::string> tags = verIndex.TagsNewestFirst();
+		auto versionCombo = [&](const char* id, const char* caption, std::string& slot) {
+			ImGui::TextDisabled("%s", caption);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(110.0f * scale);
+			bool changed = false;
+			if (ImGui::BeginCombo(id, slot.c_str())) {
+				for (const std::string& t : tags)
+					if (ImGui::Selectable(t.c_str(), t == slot) && t != slot) {
+						slot = t;
+						changed = true;
+					}
+				ImGui::EndCombo();
+			}
+			return changed;
+		};
+		bool pairChanged = versionCombo("##cmpbase", u8"舊", cmpBase);
+		ImGui::SameLine();
+		ImGui::TextDisabled(">>");
+		ImGui::SameLine();
+		pairChanged |= versionCombo("##cmptarg", u8"新", cmpTarg);
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"對調")) {
+			std::swap(cmpBase, cmpTarg);
+			pairChanged = true;
+		}
+		if (pairChanged) refreshCompare();
+
 		if (fontBig) ImGui::PushFont(fontBig);
 		ImGui::TextColored(PobUi::Accent(), "%s  >>  %s", diff.oldVer.c_str(), diff.newVer.c_str());
 		if (fontBig) ImGui::PopFont();
@@ -854,6 +1341,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				saveActive();            // capture the outgoing project first
 				buildFile.active = i;
 				tree.ApplyAllocIds(buildFile.Active().alloc);
+				tree.ApplyTargetIds(buildFile.Active().targets);
+				tree.ApplyBlockedIds(buildFile.Active().blocked);
+				migrateChecked = false;  // the incoming project may still be legacy
+				undo.valid = false;      // undo does not cross projects
 				saveActive();            // persist active index + pruned mapping
 				panelDirty = true;
 			};
@@ -866,14 +1357,30 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				// mapped set.
 				buildFile.builds[idx].alloc = e.alloc;
 				buildFile.builds[idx].notes = e.notes;
-				std::string snote;
+				buildFile.builds[idx].targets = e.targets;
+				buildFile.builds[idx].blocked = e.blocked;
+				// Each Sanitize clears the note it is handed, so they get their own
+				// and are concatenated afterwards.
+				std::string snote, anote;
 				buildFile.builds[idx].scarabs = scarabDb.Sanitize(e.scarabs, &snote);
+				buildFile.builds[idx].astrolabes = astroDb.Sanitize(e.astrolabes, &anote);
+				snote += anote;
+				buildFile.builds[idx].mapId = mapDb.SanitizeOne(e.mapId);
+				if (!e.mapId.empty() && buildFile.builds[idx].mapId.empty())
+					snote += u8"，忽略 1 張未知地圖";
 				int kept = tree.ApplyAllocIds(e.alloc);
+				tree.ApplyTargetIds(e.targets);
+				tree.ApplyBlockedIds(e.blocked);
+				migrateChecked = false;  // an import from before targets is legacy too
+				undo.valid = false;
 				saveActive();
 				panelDirty = true;
 				int dropped = (int)e.alloc.size() - kept;
 				importMsg = u8"已匯入「" + buildFile.Active().name + u8"」：" + std::to_string(kept) + u8" 點";
 				if (dropped > 0) importMsg += u8"（丟棄 " + std::to_string(dropped) + u8" 個未知節點）";
+				if (!buildFile.builds[idx].astrolabes.empty())
+					importMsg += u8"、" + std::to_string(buildFile.builds[idx].astrolabes.size()) + u8" 片幻塑界域";
+				if (!buildFile.builds[idx].mapId.empty()) importMsg += u8"、主力地圖";
 				if (!buildFile.builds[idx].scarabs.empty())
 					importMsg += u8"、" + std::to_string(buildFile.builds[idx].scarabs.size()) + u8" 隻甲蟲";
 				if (!buildFile.builds[idx].notes.empty()) importMsg += u8"、備註";
@@ -882,7 +1389,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			};
 
 			ImGui::AlignTextToFramePadding();
-			ImGui::TextColored(PobUi::Accent(), u8"輿圖配置器");
+			ImGui::TextColored(PobUi::Accent(), u8"輿圖策略");
 			ImGui::SameLine(0, 18.0f * scale);
 			ImGui::TextDisabled(u8"專案");
 			ImGui::SameLine();
@@ -961,6 +1468,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				if (ImGui::Button(u8"刪除")) {
 					if (buildFile.RemoveBuild(buildFile.active)) {
 						tree.ApplyAllocIds(buildFile.Active().alloc);
+						tree.ApplyTargetIds(buildFile.Active().targets);
+						tree.ApplyBlockedIds(buildFile.Active().blocked);
+						migrateChecked = false;
+						undo.valid = false;
 						saveActive();
 						panelDirty = true;
 					}
@@ -1075,24 +1586,59 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				}
 			}
 
+			// sandbox planning toggle (not available while comparing seasons:
+			// that view is a read-only preview of a different tree)
+			{
+				ImGui::SameLine(0, 18.0f * scale);
+				if (compareMode) ImGui::BeginDisabled();
+				// Latch the flag BEFORE the button: the click handler flips the
+				// very flag the Push/Pop is keyed on (enterPlanning sets
+				// planningMode), so testing it again afterwards pops a style that
+				// was never pushed on one edge, and leaks a pushed style on the
+				// other — which then tints every later button on the toolbar.
+				const bool wasPlanning = planningMode;
+				if (wasPlanning) PobUi::PushDangerButton();
+				if (ImGui::Button(wasPlanning ? u8"結束規劃" : u8"規劃模式")) {
+					if (planningMode) planningAskExit = true;   // ask before deciding
+					else { enterPlanning(); panelDirty = true; }
+				}
+				if (wasPlanning) PobUi::PopButtonStyle();
+				if (compareMode) ImGui::EndDisabled();
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip(planningMode
+						? u8"結束並選擇是否保留這次規劃"
+						: u8"沙盒：從空白開始快速標記想要／不要的節點，"
+						  u8"期間不會寫入存檔，結束時再決定要不要保留");
+			}
+
 			// version-compare toggle (needs two installed seasons)
 			{
-				bool canCompare = verIndex.Versions().size() >= 2 && !verIndex.CompareBase().empty();
+				bool canCompare = verIndex.Versions().size() >= 2 && !verIndex.CompareBase().empty() &&
+				                  !planningMode;
 				ImGui::SameLine(0, 18.0f * scale);
 				if (!canCompare) ImGui::BeginDisabled();
-				if (compareMode) PobUi::PushDangerButton();
-				if (ImGui::Button(compareMode ? u8"結束比較" : u8"版本比較")) {
+				// Same latching rule as the planning button above — this one is
+				// what actually leaked: leaving compare mode pushed the danger
+				// style and never popped it, so every button drawn afterwards
+				// stayed red until the window was reopened.
+				const bool wasCompare = compareMode;
+				if (wasCompare) PobUi::PushDangerButton();
+				if (ImGui::Button(wasCompare ? u8"結束比較" : u8"版本比較")) {
 					compareMode = !compareMode;
 					if (compareMode) refreshCompare();
 					else view.ClearDiffOverlay();
 				}
-				if (compareMode) PobUi::PopButtonStyle();
+				if (wasCompare) PobUi::PopButtonStyle();
 				if (!canCompare) ImGui::EndDisabled();
 				if (ImGui::IsItemHovered())
 					ImGui::SetTooltip(canCompare
-						? u8"比較 %s -> %s：節點增刪與逐詞條數值變更（綠=新增, 黃=變動）"
-						: u8"需要兩個賽季的資料才能比較",
-						verIndex.CompareBase().c_str(), verIndex.Active().c_str());
+						? u8"比較任兩個已安裝版本（可選）：節點增刪與逐詞條數值變更"
+						  u8"（綠=新增, 紅=移除, 黃=變動）\n"
+						  u8"當季各小版本都會保留，所以也能比 %s 這種賽季中的官方調整\n"
+						  u8"目前已安裝 %d 個版本"
+						: u8"需要兩個版本的資料才能比較",
+						(verIndex.Versions().size() >= 2 ? u8"3.29.0 -> 3.29.1" : ""),
+						(int)verIndex.Versions().size());
 			}
 
 			// background auto-update status / prompt
@@ -1150,6 +1696,26 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 					"[!] CJK font atlas not loaded (Fonts\\FZ_ZY.ttf).");
 			}
 
+			// Leaving the sandbox: the ONLY place a planning session can reach
+			// the build file. Both outcomes are explicit -- there is no default
+			// action on a stray click, and no path that writes without asking.
+			if (planningAskExit) { ImGui::OpenPopup(u8"結束規劃"); planningAskExit = false; }
+			if (ImGui::BeginPopupModal(u8"結束規劃", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+				int want = (int)tree.TargetIdx().size();
+				int avoid = (int)tree.BlockedIdx().size();
+				ImGui::TextUnformatted(u8"要保留這次規劃嗎？");
+				ImGui::Spacing();
+				ImGui::Text(u8"目前 %d 點 · 想要 %d 個 · 排除 %d 個", tree.UsedPoints(), want, avoid);
+				ImGui::TextDisabled(u8"保留會覆蓋這個專案原本的 %d 點配置。", (int)planSnapshot.alloc.size());
+				ImGui::Spacing();
+				if (ImGui::Button(u8"保留並儲存")) { keepPlanning(); panelDirty = true; ImGui::CloseCurrentPopup(); }
+				ImGui::SameLine();
+				if (ImGui::Button(u8"捨棄")) { restorePlanning(); panelDirty = true; ImGui::CloseCurrentPopup(); }
+				ImGui::SameLine();
+				if (ImGui::Button(u8"繼續規劃")) ImGui::CloseCurrentPopup();
+				ImGui::EndPopup();
+			}
+
 			if (ImGui::BeginPopupModal(u8"重置配點", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
 				ImGui::TextUnformatted(u8"確定要清除所有已配置的節點嗎？");
 				ImGui::Spacing();
@@ -1166,6 +1732,19 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 
 			ImGui::Separator();
 
+			if (!migrateChecked) checkMigration();
+
+			// Ctrl+Z: the solver may re-route wiring on any click, so there is
+			// always exactly one step back available.
+			if (undo.valid && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+				tree.ApplyAllocIds(undo.alloc);
+				tree.ApplyTargetIds(undo.targets);
+				tree.ApplyBlockedIds(undo.blocked);
+				undo.valid = false;
+				saveActive();
+				panelDirty = true;
+			}
+
 			// --- canvas + splitter + right summary panel ---
 			// default: 35% of the window; the splitter drag below overrides it
 			// and the chosen width persists in PobTools/atlas_ui.json
@@ -1176,7 +1755,9 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			const float splitW = 8.0f * scale;
 			ImGui::BeginChild("##treewrap", ImVec2(-(panelW + splitW), 0), false,
 				ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-			bool changed = view.Draw(tree, scale, showZh && zhLoaded ? &i18n : nullptr); // auto-saves below; the file is tiny
+			snapshot(frameStart);   // the pre-click state, in case Draw changes it
+			bool changed = view.Draw(tree, scale, showZh && zhLoaded ? &i18n : nullptr, planningMode); // auto-saves below; the file is tiny
+			if (changed) undo = frameStart;
 			ImGui::EndChild();
 
 			ImGui::SameLine(0, 0);
@@ -1221,7 +1802,55 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			ImGui::ProgressBar(total > 0 ? (float)used / (float)total : 0.0f,
 				ImVec2(-FLT_MIN, 8.0f * scale), "");
 			ImGui::PopStyleColor();
+			{
+				int nTargets = (int)tree.TargetIdx().size();
+				int wiring = used - nTargets;
+				if (wiring < 0) wiring = 0;   // (windows.h's max macro is in scope here)
+				ImGui::TextDisabled(u8"目標 %d 個 · 連接用 %d 點", nTargets, wiring);
+				if (nTargets > AtlasOptExactCap()) {
+					ImGui::SameLine(0, 8.0f * scale);
+					ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f), u8"近似解");
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip(u8"目標超過 %d 個時改用近似演算法，可能比真正的最少點多幾點。",
+							AtlasOptExactCap());
+				}
+				if (undo.valid) {
+					ImGui::SameLine(0, 10.0f * scale);
+					ImGui::TextDisabled(u8"Ctrl+Z 復原");
+				}
+			}
 			ImGui::Spacing();
+
+			// One-time offer for a project saved before targets existed. Never
+			// applied on its own -- the user's finished tree is not ours to move.
+			if (migrateOffer) {
+				ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.16f, 0.14f, 0.07f, 1.0f));
+				ImGui::BeginChild("##migrate", ImVec2(0, 92.0f * scale), true);
+				ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.45f, 1.0f), u8"可以壓縮到更少點");
+				ImGui::TextWrapped(u8"這個專案是舊版存的，目前 %d 點，改用最少點的接法只要 %d 點。"
+				                   u8"大點與端點都會保留，只有中間連接用的小點會改道。",
+				                   migrateFrom, migrateTo);
+				if (ImGui::Button(u8"套用")) {
+					snapshot(undo);
+					tree.SetAllocSet(migrateNodes);
+					for (AtlasNode& nd : tree.nodes) nd.target = false;
+					for (int t : migrateTargets) tree.nodes[t].target = true;
+					saveActive();
+					panelDirty = true;
+					migrateOffer = false;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button(u8"保持現狀")) {
+					// Pin everything that is allocated: nothing can move later.
+					for (AtlasNode& nd : tree.nodes)
+						nd.target = nd.alloc && nd.kind != kAtlasStart;
+					saveActive();
+					migrateOffer = false;
+				}
+				ImGui::EndChild();
+				ImGui::PopStyleColor();
+				ImGui::Spacing();
+			}
 
 			// --- search (pinned; filters stats AND the node list, en + zh) ---
 			ImGui::SetNextItemWidth(-FLT_MIN);
@@ -1238,8 +1867,11 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			// text keeps a margin from the panel edges
 			ImGui::BeginChild("##panelscroll", ImVec2(0, 0), false,
 				ImGuiWindowFlags_AlwaysUseWindowPadding);
-			// Map device + notes come first and show even with nothing allocated:
-			// both are useful before a single node is picked.
+			// Quadrants, then the map, then the device that map goes into, then
+			// notes. All show even with nothing allocated: they are useful
+			// before a single node is picked.
+			renderAstrolabePanel();
+			renderMapPanel();
 			renderScarabPanel();
 			renderNotesPanel();
 			bool anyAlloc = false;
@@ -1336,7 +1968,12 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 
 		ImGui::End();
 
-		if (glfwWindowShouldClose(win)) running = false;
+		if (glfwWindowShouldClose(win)) {
+			// Closing the window mid-plan must not silently drop the work, and
+			// must not silently keep it either -- ask, same as the button does.
+			if (planningMode) { planningAskExit = true; glfwSetWindowShouldClose(win, 0); }
+			else running = false;
+		}
 
 		ImGui::PopFont();
 		ImGui::Render();

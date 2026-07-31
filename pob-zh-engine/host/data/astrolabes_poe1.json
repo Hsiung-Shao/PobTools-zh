@@ -1,0 +1,183 @@
+{
+ "format": "pobtools-astrolabes",
+ "game": "poe1",
+ "source": "GGPK 3.29.0.4.2",
+ "regions": [
+  {
+   "id": "NorthWest",
+   "vaultEn": "Machinist's Vault",
+   "vaultZh": "機械師的寶庫"
+  },
+  {
+   "id": "NorthEast",
+   "vaultEn": "Zealot's Vault",
+   "vaultZh": "狂熱者的寶庫"
+  },
+  {
+   "id": "SouthEast",
+   "vaultEn": "Arkhon's Vault",
+   "vaultZh": "執政官的寶庫"
+  },
+  {
+   "id": "SouthWest",
+   "vaultEn": "Scholar's Vault",
+   "vaultZh": "學者的寶庫"
+  }
+ ],
+ "astrolabes": [
+  {
+   "id": "Metadata/Items/Currency/AstrolabeGeneric",
+   "en": "Templar Astrolabe",
+   "zh": "聖堂星盤",
+   "mechanic": "Generic",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionGeneric",
+   "descEn": [
+    "Adds a Shaped Region to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeHarvest",
+   "en": "Fruiting Astrolabe",
+   "zh": "碩果星盤",
+   "mechanic": "Harvest",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionHarvest",
+   "descEn": [
+    "Adds a Shaped Region containing the Sacred Grove to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有聖殿密園的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeAbyss",
+   "en": "Lightless Astrolabe",
+   "zh": "無光星盤",
+   "mechanic": "Abyss",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionAbyss",
+   "descEn": [
+    "Adds a Shaped Region containing [ContainsAbyss|Abysses] to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有[ContainsAbyss|深淵]的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeBreach",
+   "en": "Grasping Astrolabe",
+   "zh": "執掌星盤",
+   "mechanic": "Breach",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionBreach",
+   "descEn": [
+    "Adds a Shaped Region containing Breaches to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有裂痕的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeRitual",
+   "en": "Nameless Astrolabe",
+   "zh": "無名星盤",
+   "mechanic": "Ritual",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionRitual",
+   "descEn": [
+    "Adds a Shaped Region containing Ritual Altars to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有祭祀祭壇的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeBlight",
+   "en": "Fungal Astrolabe",
+   "zh": "菌群星盤",
+   "mechanic": "Blight",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionBlight",
+   "descEn": [
+    "Adds a Shaped Region containing Blight encounters to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有凋落遭遇的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeUltimatum",
+   "en": "Chaotic Astrolabe",
+   "zh": "混沌星盤",
+   "mechanic": "Ultimatum",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionUltimatum",
+   "descEn": [
+    "Adds a Shaped Region containing Ultimatum encounters to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有通牒遭遇的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeDelirium",
+   "en": "Deceptive Astrolabe",
+   "zh": "幻象星盤",
+   "mechanic": "Delirium",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionDelirium",
+   "descEn": [
+    "Adds a Shaped Region containing Mirrors of Delirium to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有譫妄之鏡的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeLegion",
+   "en": "Timeless Astrolabe",
+   "zh": "永恆星盤",
+   "mechanic": "Legion",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionLegion",
+   "descEn": [
+    "Adds a Shaped Region containing Legion encounters to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有軍團遭遇的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeExpedition",
+   "en": "Runic Astrolabe",
+   "zh": "符文星盤",
+   "mechanic": "Expedition",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionExpedition",
+   "descEn": [
+    "Adds a Shaped Region containing Expedition encounters to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有探險遭遇的幻塑界域"
+   ],
+   "enabled": true
+  },
+  {
+   "id": "Metadata/Items/Currency/AstrolabeSettlers",
+   "en": "Prospecting Astrolabe",
+   "zh": "勘探星盤",
+   "mechanic": "Settlers",
+   "art": "Art/2DItems/Currency/Atlas/AtlasMissionSettlers",
+   "descEn": [
+    "Adds a Shaped Region containing Ore Deposits to a quadrant of the Atlas"
+   ],
+   "descZh": [
+    "為輿圖的一個半區新增含有礦床的幻塑界域"
+   ],
+   "enabled": false
+  }
+ ]
+}

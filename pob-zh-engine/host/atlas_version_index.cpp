@@ -125,10 +125,60 @@ std::string AtlasVersionIndex::OlderThan(const std::string& tag) const
 
 void AtlasVersionIndex::refreshCompareBase()
 {
-	std::vector<std::string> tags = TagsNewestFirst();
-	compareBase_.clear();
-	for (const std::string& t : tags)
-		if (t != active_) { compareBase_ = t; break; } // newest that is not the active one
+	// Prefer the newest version OLDER than the active one, so the default diff
+	// reads old -> new. Only when the active season is the oldest installed does
+	// this fall back to "newest that is not active" (which then reads new -> old,
+	// but at least offers something). This mattered once the registry started
+	// holding several revisions of one league: with 3.29.0 active and 3.29.1 also
+	// installed, "newest non-active" alone would have pointed the base at a
+	// version NEWER than the target.
+	compareBase_ = OlderThan(active_);
+	if (!compareBase_.empty()) return;
+	for (const std::string& t : TagsNewestFirst())
+		if (t != active_) { compareBase_ = t; break; }
+}
+
+void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
+{
+	// The index is a cache of what is on disk, not the other way round. A season
+	// folder that carries real data but never made it into atlas_index.json (an
+	// update interrupted midway, a hand-copied folder, an index restored from an
+	// older backup) is otherwise invisible to the planner forever — which is
+	// exactly how a downloaded 3.29.1 ended up unusable while sitting on disk.
+	std::wstring glob = exeDir + L"Data\\atlas_versions\\*";
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW(glob.c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return;
+	bool added = false;
+	do {
+		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+		std::wstring name = fd.cFileName;
+		if (name == L"." || name == L"..") continue;
+		// Tags are ASCII semver; anything else is not ours to adopt.
+		std::string tag;
+		bool ascii = !name.empty();
+		for (wchar_t c : name) {
+			if (c < 32 || c > 126) { ascii = false; break; }
+			tag.push_back((char)c);
+		}
+		if (!ascii || Has(tag)) continue;
+		// Only adopt a folder that actually holds a tree, so a leftover empty
+		// directory does not register as a selectable season.
+		if (!file_exists(VersionDir(exeDir, tag) + L"atlas_tree_poe1.json")) continue;
+		AtlasVersionEntry e;
+		e.tag = tag;
+		versions_.push_back(e);
+		added = true;
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+	if (!added) return;
+	// Adopting must not move the user off the season they were viewing; it only
+	// makes the extra ones selectable. Active is only filled in when unset.
+	if (active_.empty()) {
+		std::vector<std::string> tags = TagsNewestFirst();
+		if (!tags.empty()) active_ = tags.front();
+	}
+	refreshCompareBase();
 }
 
 void AtlasVersionIndex::UpsertActive(const AtlasVersionEntry& e)
@@ -148,16 +198,50 @@ void AtlasVersionIndex::SetActive(const std::string& tag)
 	refreshCompareBase();
 }
 
-std::vector<std::string> AtlasVersionIndex::PruneToNewest(size_t keep)
+std::string AtlasVersionIndex::SeasonOf(const std::string& tag)
+{
+	// "3.29.1" -> "3.29". A league is major.minor; the patch is an in-league
+	// revision. A tag with fewer than two dots is its own season.
+	size_t first = tag.find('.');
+	if (first == std::string::npos) return tag;
+	size_t second = tag.find('.', first + 1);
+	return second == std::string::npos ? tag : tag.substr(0, second);
+}
+
+std::vector<std::string> AtlasVersionIndex::PruneSeasons(size_t keepSeasons)
 {
 	std::vector<std::string> order = TagsNewestFirst();
+
+	// Seasons in newest-first order, de-duplicated.
+	std::vector<std::string> seasons;
+	for (const std::string& t : order) {
+		std::string s = SeasonOf(t);
+		if (std::find(seasons.begin(), seasons.end(), s) == seasons.end())
+			seasons.push_back(s);
+	}
+
 	std::vector<std::string> dropped;
-	if (order.size() <= keep) return dropped;
-	for (size_t i = keep; i < order.size(); i++) {
-		if (order[i] == active_) continue; // never drop the active season
-		dropped.push_back(order[i]);
+	for (const std::string& t : order) {
+		size_t si = (size_t)(std::find(seasons.begin(), seasons.end(), SeasonOf(t)) - seasons.begin());
+		bool keep;
+		if (si >= keepSeasons) {
+			keep = false;              // season older than the retention window
+		} else if (si == 0) {
+			keep = true;               // current league: every in-league revision
+		} else {
+			// An older league keeps only its final revision. `order` is
+			// newest-first, so this tag is the final one iff no tag of the same
+			// season came before it.
+			keep = true;
+			for (const std::string& o : order) {
+				if (o == t) break;
+				if (SeasonOf(o) == SeasonOf(t)) { keep = false; break; }
+			}
+		}
+		if (!keep && t != active_) dropped.push_back(t); // never drop the active season
 	}
 	if (dropped.empty()) return dropped;
+
 	std::vector<AtlasVersionEntry> kept;
 	for (const auto& e : versions_)
 		if (std::find(dropped.begin(), dropped.end(), e.tag) == dropped.end())
@@ -193,6 +277,7 @@ void AtlasVersionIndex::Load(const std::wstring& exeDir)
 				active_ = nf.empty() ? std::string() : nf.front();
 			}
 			compareBase_ = doc.value("compareBase", std::string());
+			adoptFromDisk(exeDir); // season folders the index never heard about
 			if (compareBase_.empty() || !Has(compareBase_) || compareBase_ == active_)
 				refreshCompareBase();
 			return;
@@ -216,6 +301,7 @@ void AtlasVersionIndex::Load(const std::wstring& exeDir)
 		} catch (...) {
 		}
 	}
+	adoptFromDisk(exeDir); // also covers "index missing entirely, folders present"
 	// No file at all: stay empty; ResolveDataDir falls back to the flat layout.
 }
 
@@ -283,8 +369,8 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 	check(nf.size() == 3 && nf[0] == "3.29.0" && nf[1] == "3.28.0" && nf[2] == "3.27.0",
 	      "TagsNewestFirst = 3.29, 3.28, 3.27");
 
-	// rolling prune keeps the newest two, drops the third, never the active one
-	std::vector<std::string> dropped = idx.PruneToNewest(2);
+	// rolling prune keeps the newest two leagues, drops the third, never the active one
+	std::vector<std::string> dropped = idx.PruneSeasons(2);
 	check(dropped.size() == 1 && dropped[0] == "3.27.0", "prune drops exactly 3.27.0");
 	check(idx.Versions().size() == 2 && idx.Has("3.29.0") && idx.Has("3.28.0") && !idx.Has("3.27.0"),
 	      "after prune: only 3.29.0 + 3.28.0 remain");
@@ -297,8 +383,82 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 	check(idx.Find("3.28.0") && idx.Find("3.28.0")->sha == "newsha", "re-upsert updates fields");
 
 	// prune is a no-op when already at/under the keep count
-	std::vector<std::string> none = idx.PruneToNewest(2);
+	std::vector<std::string> none = idx.PruneSeasons(2);
 	check(none.empty() && idx.Versions().size() == 2, "prune no-op at keep count");
+
+	// --- retention is per LEAGUE, not per tag ---------------------------------
+	check(AtlasVersionIndex::SeasonOf("3.29.1") == "3.29" &&
+	      AtlasVersionIndex::SeasonOf("3.29") == "3.29" &&
+	      AtlasVersionIndex::SeasonOf("3.29.0.4.2") == "3.29" &&
+	      AtlasVersionIndex::SeasonOf("weird") == "weird",
+	      "SeasonOf strips the patch component");
+	{
+		// The shape the user actually has: several revisions of the current
+		// league, several of the previous one, and an older league.
+		AtlasVersionIndex s;
+		s.UpsertActive({ "3.27.0", "", "" });
+		s.UpsertActive({ "3.28.0", "", "" });
+		s.UpsertActive({ "3.28.1", "", "" });
+		s.UpsertActive({ "3.28.2", "", "" });
+		s.UpsertActive({ "3.29.0", "", "" });
+		s.UpsertActive({ "3.29.1", "", "" });
+		check(s.Versions().size() == 6, "six tags before the per-league prune");
+
+		std::vector<std::string> gone = s.PruneSeasons(2);
+		// current league keeps BOTH revisions; 3.28 keeps only its last; 3.27 goes
+		check(s.Has("3.29.0") && s.Has("3.29.1"),
+		      "current league keeps every revision (3.29.0 AND 3.29.1)");
+		check(s.Has("3.28.2") && !s.Has("3.28.1") && !s.Has("3.28.0"),
+		      "previous league keeps only its final revision (3.28.2)");
+		check(!s.Has("3.27.0"), "leagues outside the window are dropped");
+		check(s.Versions().size() == 3, "three tags survive");
+		check(gone.size() == 3, "three tags reported as dropped for folder deletion");
+		// With 3.29.1 active, the newest version older than it is its own
+		// sibling 3.29.0 — so the default diff is the mid-league one. That is
+		// the useful default now that in-league revisions are retained, and it
+		// is asserted so it stays a decision rather than an accident.
+		check(s.Active() == "3.29.1" && s.CompareBase() == "3.29.0",
+		      "compare base is the newest OLDER version, i.e. the sibling revision");
+	}
+	{
+		// The moment a NEW league lands: the outgoing league collapses to its
+		// final revision and the one before it goes entirely.
+		AtlasVersionIndex s;
+		s.UpsertActive({ "3.28.2", "", "" });
+		s.UpsertActive({ "3.29.0", "", "" });
+		s.UpsertActive({ "3.29.1", "", "" });
+		s.UpsertActive({ "3.30.0", "", "" }); // new league arrives and becomes active
+		std::vector<std::string> gone = s.PruneSeasons(2);
+		check(s.Has("3.30.0"), "new league retained");
+		check(s.Has("3.29.1") && !s.Has("3.29.0"),
+		      "outgoing league collapses to its final revision (3.29.1 kept, 3.29.0 dropped)");
+		check(!s.Has("3.28.2"), "the league before that is dropped entirely");
+		check(s.Versions().size() == 2 && gone.size() == 2, "exactly two tags survive the rollover");
+		check(s.CompareBase() == "3.29.1", "compare base is the previous league's final revision");
+	}
+	{
+		// Compare base must be OLDER than active, not merely "not active" —
+		// otherwise a mid-league revision installed alongside the active one
+		// points the default diff backwards.
+		AtlasVersionIndex s;
+		s.UpsertActive({ "3.28.0", "", "" });
+		s.UpsertActive({ "3.29.0", "", "" });
+		s.UpsertActive({ "3.29.1", "", "" });
+		s.SetActive("3.29.0"); // user is viewing the earlier revision
+		check(s.CompareBase() == "3.28.0",
+		      "base is the newest version OLDER than active, not the newer sibling");
+	}
+	{
+		// The active season is never dropped, even when its league is outside the
+		// window (a user previewing an old league must not lose it underfoot).
+		AtlasVersionIndex s;
+		s.UpsertActive({ "3.29.0", "", "" });
+		s.UpsertActive({ "3.28.0", "", "" });
+		s.UpsertActive({ "3.27.0", "", "" });
+		s.SetActive("3.27.0");
+		std::vector<std::string> gone = s.PruneSeasons(2);
+		check(gone.empty() && s.Has("3.27.0"), "the active season survives an out-of-window prune");
+	}
 
 	// OlderThan: the newest installed season strictly older than a given tag
 	// (backs the compare base + the cross-season TC backfill source selection)
@@ -310,6 +470,41 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		check(oi.OlderThan("3.29.0") == "3.28.0", "OlderThan(3.29.0) = 3.28.0");
 		check(oi.OlderThan("3.28.0") == "3.27.0", "OlderThan(3.28.0) = 3.27.0");
 		check(oi.OlderThan("3.27.0").empty(), "OlderThan(oldest) = empty");
+	}
+
+	// --- against the REAL install: every season folder holding a tree must be
+	// reachable through the index. The in-memory cases above cannot catch an
+	// index file that simply never listed a folder sitting on disk, which is the
+	// state a downloaded 3.29.1 was found in.
+	{
+		std::wstring root = exeDir + L"Data\\atlas_versions\\";
+		std::vector<std::string> onDisk;
+		WIN32_FIND_DATAW fd{};
+		HANDLE h = FindFirstFileW((root + L"*").c_str(), &fd);
+		if (h != INVALID_HANDLE_VALUE) {
+			do {
+				if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+				std::wstring n = fd.cFileName;
+				if (n == L"." || n == L"..") continue;
+				std::string tag(n.begin(), n.end());
+				if (file_exists(root + n + L"\\atlas_tree_poe1.json")) onDisk.push_back(tag);
+			} while (FindNextFileW(h, &fd));
+			FindClose(h);
+		}
+		if (onDisk.empty()) {
+			rep += "      no installed season folders here - on-disk adoption check skipped\n";
+		} else {
+			AtlasVersionIndex live;
+			live.Load(exeDir);
+			std::string missing;
+			for (const std::string& t : onDisk)
+				if (!live.Has(t)) missing += (missing.empty() ? "" : ",") + t;
+			check(missing.empty(), "every season folder on disk is registered in the index");
+			if (!missing.empty()) rep += "      missing: " + missing + "\n";
+			check(!live.Active().empty(), "a live index resolves an active season");
+			// Adoption must not hijack which season the user was looking at.
+			check(live.Has(live.Active()), "the active season is one of the registered ones");
+		}
 	}
 
 	rep += fails == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(fails) + "\n";

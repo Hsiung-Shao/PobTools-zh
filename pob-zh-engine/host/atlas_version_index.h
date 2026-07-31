@@ -3,8 +3,10 @@
 // Replaces the old single-slot Data/atlas_version.json with a rolling registry
 // of the atlas passive-tree seasons installed on disk, so two leagues can live
 // side by side (Data/atlas_versions/<tag>/) and be diffed. The auto updater
-// installs new seasons here and prunes to the newest two; the planner resolves
-// which season to load through this index.
+// installs new seasons here and prunes to the newest two LEAGUES — keeping every
+// revision of the current one (3.29.0 and 3.29.1 both stay) but only the final
+// revision of the previous one; the planner resolves which season to load
+// through this index.
 //
 // Backward compatible: a legacy flat install (Data/atlas_tree_poe1.json +
 // Data/atlas_version.json, no atlas_versions/ dir) keeps working — the resolver
@@ -54,9 +56,17 @@ public:
 	// Set active explicitly (must already exist); refreshes compareBase.
 	void SetActive(const std::string& tag);
 
-	// Keep only the `keep` newest seasons; returns the dropped tags so the caller
+	// Retention is per LEAGUE, not per tag. A league is major.minor; the patch is
+	// an in-league revision (3.29.0, 3.29.1, ...).
+	//   * the current league keeps EVERY revision it has
+	//   * each older league within the window keeps only its FINAL revision
+	//   * leagues outside the window go entirely
+	// The active season is never dropped. Returns the dropped tags so the caller
 	// can delete their directories.
-	std::vector<std::string> PruneToNewest(size_t keep);
+	std::vector<std::string> PruneSeasons(size_t keepSeasons);
+
+	// "3.29.1" -> "3.29"; a tag with fewer than two dots is its own season.
+	static std::string SeasonOf(const std::string& tag);
 
 	// Data/atlas_versions/<tag>/ (trailing backslash), regardless of existence.
 	static std::wstring VersionDir(const std::wstring& exeDir, const std::string& tag);
@@ -73,6 +83,11 @@ public:
 
 private:
 	void refreshCompareBase();
+	// Register season folders on disk that the index file does not list. The
+	// index is a cache of the filesystem, not the authority: an interrupted
+	// update or a restored older index would otherwise leave real data
+	// permanently invisible. Never changes `active`.
+	void adoptFromDisk(const std::wstring& exeDir);
 
 	std::string active_, compareBase_;
 	std::vector<AtlasVersionEntry> versions_;

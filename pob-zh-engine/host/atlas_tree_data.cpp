@@ -2,6 +2,8 @@
 #include "atlas_i18n.h"    // selftest T6: zh-mapping health check
 #include "atlas_persist.h" // multi-build schema + share codes (T7)
 #include "atlas_scarabs.h" // selftest T8: placement rules + notes/scarabs persistence
+#include "atlas_astrolabes.h" // selftest T9: quadrant rule + astrolabe persistence
+#include "atlas_maps.h"    // selftest T10: main-map catalogue
 #include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
@@ -257,7 +259,7 @@ void AtlasTreeData::Remove(const std::vector<int>& removeSet)
 
 void AtlasTreeData::Reset()
 {
-	for (AtlasNode& n : nodes) n.alloc = (n.kind == kAtlasStart);
+	for (AtlasNode& n : nodes) { n.alloc = (n.kind == kAtlasStart); n.target = false; n.blocked = false; }
 	if (root >= 0) nodes[root].alloc = true;
 }
 
@@ -313,6 +315,94 @@ std::vector<int> AtlasTreeData::AllocIds() const
 	return out;
 }
 
+int AtlasTreeData::ApplyTargetIds(const std::vector<int>& ids)
+{
+	std::vector<std::pair<int, int>> id2idx;
+	id2idx.reserve(nodes.size());
+	for (int i = 0; i < (int)nodes.size(); i++) id2idx.push_back({ nodes[i].id, i });
+	std::sort(id2idx.begin(), id2idx.end());
+
+	for (AtlasNode& n : nodes) n.target = false;
+	int mapped = 0;
+	for (int id : ids) {
+		auto it = std::lower_bound(id2idx.begin(), id2idx.end(), std::make_pair(id, 0));
+		if (it != id2idx.end() && it->first == id && nodes[it->second].kind != kAtlasStart) {
+			nodes[it->second].target = true;
+			mapped++;
+		}
+	}
+	return mapped;
+}
+
+std::vector<int> AtlasTreeData::TargetIds() const
+{
+	std::vector<int> out;
+	for (const AtlasNode& n : nodes)
+		if (n.target && n.kind != kAtlasStart) out.push_back(n.id);
+	return out;
+}
+
+std::vector<int> AtlasTreeData::TargetIdx() const
+{
+	std::vector<int> out;
+	for (int i = 0; i < (int)nodes.size(); i++)
+		if (nodes[i].target && nodes[i].kind != kAtlasStart) out.push_back(i);
+	return out;
+}
+
+int AtlasTreeData::ApplyBlockedIds(const std::vector<int>& ids)
+{
+	std::vector<std::pair<int, int>> id2idx;
+	id2idx.reserve(nodes.size());
+	for (int i = 0; i < (int)nodes.size(); i++) id2idx.push_back({ nodes[i].id, i });
+	std::sort(id2idx.begin(), id2idx.end());
+
+	for (AtlasNode& n : nodes) n.blocked = false;
+	int mapped = 0;
+	for (int id : ids) {
+		auto it = std::lower_bound(id2idx.begin(), id2idx.end(), std::make_pair(id, 0));
+		// The start node is never blockable: walling it off would make every
+		// target unreachable and there is nothing useful that could mean.
+		if (it != id2idx.end() && it->first == id && nodes[it->second].kind != kAtlasStart) {
+			nodes[it->second].blocked = true;
+			mapped++;
+		}
+	}
+	return mapped;
+}
+
+std::vector<int> AtlasTreeData::BlockedIds() const
+{
+	std::vector<int> out;
+	for (const AtlasNode& n : nodes)
+		if (n.blocked && n.kind != kAtlasStart) out.push_back(n.id);
+	return out;
+}
+
+std::vector<int> AtlasTreeData::BlockedIdx() const
+{
+	std::vector<int> out;
+	for (int i = 0; i < (int)nodes.size(); i++)
+		if (nodes[i].blocked && nodes[i].kind != kAtlasStart) out.push_back(i);
+	return out;
+}
+
+std::vector<int> AtlasTreeData::AllocIdx() const
+{
+	std::vector<int> out;
+	for (int i = 0; i < (int)nodes.size(); i++)
+		if (nodes[i].alloc) out.push_back(i);
+	return out;
+}
+
+void AtlasTreeData::SetAllocSet(const std::vector<int>& idx)
+{
+	for (AtlasNode& n : nodes) n.alloc = (n.kind == kAtlasStart);
+	if (root >= 0) nodes[root].alloc = true;
+	for (int i : idx)
+		if (i >= 0 && i < (int)nodes.size()) nodes[i].alloc = true;
+}
+
 bool AtlasTreeData::SaveBuild(const std::wstring& exeDir) const
 {
 	// read-modify-write: only the active project changes, siblings stay intact
@@ -320,6 +410,8 @@ bool AtlasTreeData::SaveBuild(const std::wstring& exeDir) const
 	f.Load(exeDir); // missing/invalid file falls back to one empty project
 	f.version = version_;
 	f.Active().alloc = AllocIds();
+	f.Active().targets = TargetIds();
+	f.Active().blocked = BlockedIds();
 	return f.Save(exeDir);
 }
 
@@ -327,7 +419,9 @@ bool AtlasTreeData::LoadBuild(const std::wstring& exeDir)
 {
 	AtlasBuildFile f;
 	if (!f.Load(exeDir)) return false;
-	ApplyAllocIds(f.Active().alloc);
+	ApplyAllocIds(f.Active().alloc);     // clears targets, so it goes first
+	ApplyTargetIds(f.Active().targets);
+	ApplyBlockedIds(f.Active().blocked);
 	return true;
 }
 
@@ -558,6 +652,34 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	rep.check(beforeIds == afterIds, "round-trip preserves allocation",
 	          std::to_string(beforeIds.size()) + " nodes");
 
+	// T5b: the same for targets. They ride along on the very same file, and a
+	// target that failed to survive would silently un-pin a node the user chose.
+	{
+		std::vector<int> someIdx;
+		for (int i = 0; i < (int)d.nodes.size() && someIdx.size() < 4; i++)
+			if (d.nodes[i].alloc && d.nodes[i].kind != kAtlasStart) someIdx.push_back(i);
+		std::vector<int> wantIds;
+		for (int i : someIdx) { d.nodes[i].target = true; wantIds.push_back(d.nodes[i].id); }
+		std::sort(wantIds.begin(), wantIds.end());
+		rep.check(d.SaveBuild(exeDir), "save build with targets");
+		d.Reset();
+		rep.check(d.TargetIdx().empty(), "reset clears targets too");
+		rep.check(d.LoadBuild(exeDir), "load build with targets");
+		std::vector<int> gotIds = d.TargetIds();
+		std::sort(gotIds.begin(), gotIds.end());
+		rep.check(gotIds == wantIds, "round-trip preserves targets",
+		          std::to_string(gotIds.size()) + " of " + std::to_string(wantIds.size()));
+		// ApplyAllocIds resets targets, so the load order in LoadBuild matters;
+		// this pins that contract down.
+		d.ApplyAllocIds(d.AllocIds());
+		rep.check(d.TargetIdx().empty(), "ApplyAllocIds clears targets (load order contract)");
+		d.ApplyTargetIds(wantIds);
+		rep.check((int)d.TargetIdx().size() == (int)wantIds.size(), "ApplyTargetIds restores them");
+		int unknown = d.ApplyTargetIds({ -12345 });
+		rep.check(unknown == 0 && d.TargetIdx().empty(), "unknown target ids are dropped");
+		d.ApplyTargetIds(wantIds);
+	}
+
 	// T7: multi-build persistence — legacy migration + share-code round-trip.
 	{
 		AtlasBuildFile f;
@@ -604,9 +726,76 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		}
 	}
 
+	// T7b: the REAL project file on this machine, not a synthetic one. Parsing it
+	// and writing it straight back out must reproduce it byte for byte —
+	// otherwise merely opening the planner would rewrite an existing user's
+	// projects. Synthetic round-trips cannot prove this: they only ever exercise
+	// documents this build itself produced. Uses the copy BuildGuard took before
+	// any test wrote to that path, so the later Save/Load tests cannot taint it.
+	if (hadBuild && !savedBuild.empty()) {
+		AtlasBuildFile probe;
+		if (probe.ParseDoc(savedBuild)) {
+			std::string again = probe.SerializeDoc();
+			rep.check(again == savedBuild,
+			          "the existing project file on disk survives parse->serialize unchanged",
+			          again == savedBuild ? std::string()
+			                              : "was " + std::to_string(savedBuild.size()) +
+			                                " bytes, now " + std::to_string(again.size()));
+			if (again != savedBuild) {
+				rep.note("before: " + savedBuild.substr(0, 300));
+				rep.note("after : " + again.substr(0, 300));
+			}
+			// T7c: and the question that actually matters to someone with work
+			// already saved — does USING the new fields destroy any of it?
+			// Adds an astrolabe, a main map and a planned tier to every project
+			// in the real file, then reads it back and compares each pre-existing
+			// field. Purely in memory; the file on disk is never written.
+			AtlasBuildFile mutated;
+			mutated.ParseDoc(savedBuild);
+			for (AtlasBuildEntry& b : mutated.builds) {
+				b.astrolabes.push_back({ "NorthWest", "Metadata/Items/Currency/AstrolabeBreach" });
+				b.mapId = "MapWorldsShrine";
+				b.mapTier = 16;
+			}
+			AtlasBuildFile back;
+			bool ok = back.ParseDoc(mutated.SerializeDoc()) &&
+			          back.builds.size() == probe.builds.size() &&
+			          back.version == probe.version && back.active == probe.active;
+			std::string lost;
+			for (size_t i = 0; ok && i < probe.builds.size(); i++) {
+				const AtlasBuildEntry& a = probe.builds[i];
+				const AtlasBuildEntry& c = back.builds[i];
+				if (a.name != c.name)         lost += " name";
+				if (a.alloc != c.alloc)       lost += " alloc";
+				if (a.targets != c.targets)   lost += " targets";
+				if (a.blocked != c.blocked)   lost += " blocked";
+				if (a.notes != c.notes)       lost += " notes";
+				if (a.scarabs != c.scarabs)   lost += " scarabs";
+			}
+			size_t nodes = 0, tgts = 0;
+			for (const AtlasBuildEntry& b : probe.builds) { nodes += b.alloc.size(); tgts += b.targets.size(); }
+			rep.check(ok && lost.empty(),
+			          "adding astrolabes/map/tier to the real project keeps every existing field",
+			          ok ? (lost.empty()
+			                    ? std::to_string(probe.builds.size()) + " project(s), " +
+			                          std::to_string(nodes) + " nodes, " + std::to_string(tgts) + " targets intact"
+			                    : "lost:" + lost)
+			             : "document did not survive the round trip");
+		} else {
+			rep.note("existing project file did not parse - skipped the byte-identity check");
+		}
+	} else {
+		rep.note("no existing project file on disk - byte-identity check skipped");
+	}
+
 	// T8: scarab catalogue, placement rules and the notes/scarabs persistence
 	// (including the backward-compatibility guarantees) — see atlas_scarabs.cpp.
 	rep.failures += RunScarabSelfTest(exeDir, rep.text);
+
+	// T9/T10: the 3.29 astrolabe quadrant rule and the main-map catalogue, each
+	// with the same backward-compatibility guarantees the scarabs established.
+	rep.failures += RunAstrolabeSelfTest(exeDir, rep.text);
+	rep.failures += RunAtlasMapSelfTest(exeDir, rep.text);
 
 	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";
 	printf("%s", rep.text.c_str());

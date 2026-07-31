@@ -9,7 +9,6 @@
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
 #include <algorithm>
-#include <cstring> // strlen
 
 using nlohmann::ordered_json;
 
@@ -41,115 +40,23 @@ static std::vector<std::string> parse_lines(const ordered_json& arr)
 }
 
 // ---- fuzzy matching ----------------------------------------------------------
-
-// Punctuation that shows up in these names and would otherwise make a query
-// typed without it fail. Listed as UTF-8 literals because they are multi-byte;
-// a byte-wise filter would corrupt the surrounding CJK.
-static const char* kDropTokens[] = {
-	u8"：", u8"，", u8"。", u8"、", u8"（", u8"）", u8"「", u8"」", u8"·", u8"…",
-	":", ",", ".", "'", "\"", "(", ")", "[", "]", "-", "/",
-};
-
-// Lowercase, then strip whitespace and the punctuation above.
-static std::string compact_key(const std::string& s)
-{
-	std::string out;
-	out.reserve(s.size());
-	size_t i = 0;
-	while (i < s.size()) {
-		bool dropped = false;
-		for (const char* tok : kDropTokens) {
-			size_t n = strlen(tok);
-			if (s.compare(i, n, tok) == 0) { i += n; dropped = true; break; }
-		}
-		if (dropped) continue;
-		unsigned char c = (unsigned char)s[i];
-		if (c == ' ' || c == '\t' || c == '\n' || c == '\r') { i++; continue; }
-		out.push_back(s[i++]);
-	}
-	return out;
-}
-
-// Byte length of the UTF-8 code point starting at s[i].
-static size_t utf8_len(const std::string& s, size_t i)
-{
-	unsigned char c = (unsigned char)s[i];
-	size_t n = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : (c >> 3) == 0x1E ? 4 : 1;
-	return (i + n <= s.size()) ? n : 1;
-}
-
-// Do `needle`'s characters appear in `hay` in order (not necessarily adjacent)?
-// Steps whole code points, never bytes: matching half of a CJK character
-// against half of another would invent hits that make no sense to a reader.
-static bool subsequence(const std::string& hay, const std::string& needle)
-{
-	size_t pos = 0;
-	for (size_t i = 0; i < needle.size();) {
-		size_t n = utf8_len(needle, i);
-		size_t at = hay.find(needle.substr(i, n), pos);
-		if (at == std::string::npos) return false;
-		pos = at + n;
-		i += n;
-	}
-	return true;
-}
-
-static bool all_tokens_in(const std::string& hay, const std::vector<std::string>& tokens)
-{
-	for (const std::string& t : tokens)
-		if (hay.find(t) == std::string::npos) return false;
-	return true;
-}
-
-ScarabQuery MakeScarabQuery(const std::string& raw)
-{
-	ScarabQuery q;
-	q.lower = ToLowerAscii(raw);
-	// trim so a trailing space does not turn into an empty token
-	size_t b = q.lower.find_first_not_of(" \t\r\n");
-	size_t e = q.lower.find_last_not_of(" \t\r\n");
-	q.lower = (b == std::string::npos) ? std::string() : q.lower.substr(b, e - b + 1);
-	q.compact = compact_key(q.lower);
-	for (size_t i = 0; i <= q.lower.size();) {
-		size_t sp = q.lower.find_first_of(" \t", i);
-		std::string tok = q.lower.substr(i, sp == std::string::npos ? std::string::npos : sp - i);
-		if (!tok.empty()) q.tokens.push_back(tok);
-		if (sp == std::string::npos) break;
-		i = sp + 1;
-	}
-	return q;
-}
-
-// Best tier for one name field.
-static int name_score(const std::string& key, const std::string& compact, const ScarabQuery& q)
-{
-	if (key.empty()) return 0;
-	if (key == q.lower) return 100;
-	if (key.compare(0, q.lower.size(), q.lower) == 0) return 90;
-	size_t at = key.find(q.lower);
-	if (at != std::string::npos)
-		return 80 - (int)(at < 9 ? at : 9);   // earlier hits read as more relevant
-	if (!q.compact.empty() && compact.find(q.compact) != std::string::npos) return 70;
-	if (q.tokens.size() > 1 && all_tokens_in(key, q.tokens)) return 60;
-	if (!q.compact.empty() && subsequence(compact, q.compact)) return 40;
-	return 0;
-}
+// The tiers themselves live in fuzzy_match.cpp; the astrolabe and map pickers
+// need the same behaviour and a second copy would drift.
 
 int ScarabMatchScore(const ScarabDef& d, const ScarabQuery& q)
 {
 	if (q.empty()) return 1; // everything matches; caller keeps the natural order
 
-	int best = name_score(d.keyZh, d.keyZhCompact, q);
-	int en = name_score(d.keyEn, d.keyEnCompact, q);
+	int best = FuzzyNameScore(d.keyZh, d.keyZhCompact, q);
+	int en = FuzzyNameScore(d.keyEn, d.keyEnCompact, q);
 	if (en > best) best = en;
 	if (best) return best;
 
 	// Nothing in the names: fall back to the effect text, always ranked below
 	// any name hit so "what is this scarab called" beats "what does it do".
 	for (const std::string* k : { &d.descKeyZh, &d.descKeyEn }) {
-		if (k->empty()) continue;
-		if (k->find(q.lower) != std::string::npos) return 30;
-		if (q.tokens.size() > 1 && all_tokens_in(*k, q.tokens)) return 20;
+		int s = FuzzyTextScore(*k, q);
+		if (s) return s;
 	}
 	return 0;
 }
@@ -196,8 +103,8 @@ bool ScarabDb::Load(const std::wstring& exeDir, std::string* err)
 			if (d.descZh.empty()) d.descZh = d.descEn; // untranslated: show English
 			d.keyEn = ToLowerAscii(d.en);
 			d.keyZh = ToLowerAscii(d.zh);
-			d.keyEnCompact = compact_key(d.keyEn);
-			d.keyZhCompact = compact_key(d.keyZh);
+			d.keyEnCompact = FuzzyCompactKey(d.keyEn);
+			d.keyZhCompact = FuzzyCompactKey(d.keyZh);
 			// Effects are searched as rendered, so a query matches what the user
 			// can actually see (GGG markup like [ContainsAbyss|深淵] is stripped).
 			for (const std::string& s : d.descEn) d.descKeyEn += StripStatMarkup(s) + "\n";
@@ -314,28 +221,35 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		AtlasBuildFile f;
 		bool mig = f.ParseDoc(u8"{\"version\":\"x\",\"alloc\":[1,2,3]}");
 		rep.check(mig && f.builds.size() == 1 && f.builds[0].notes.empty() &&
-		          f.builds[0].scarabs.empty(),
-		          "legacy file loads with empty notes/scarabs");
+		          f.builds[0].scarabs.empty() && f.builds[0].targets.empty() &&
+		          f.builds[0].blocked.empty(),
+		          "legacy file loads with empty notes/scarabs/targets/blocked");
 
-		// T-byte-compat: a build that uses neither feature must serialize
+		// T-byte-compat: a build that uses none of the features must serialize
 		// exactly as it did before the fields existed, so untouched user files
 		// stay identical.
 		std::string doc = f.SerializeDoc();
 		rep.check(doc.find("notes") == std::string::npos &&
-		          doc.find("scarabs") == std::string::npos,
-		          "unused notes/scarabs are omitted from the document", doc);
+		          doc.find("scarabs") == std::string::npos &&
+		          doc.find("targets") == std::string::npos &&
+		          doc.find("blocked") == std::string::npos,
+		          "unused notes/scarabs/targets/blocked are omitted from the document", doc);
 
 		// T-roundtrip: full state survives save -> load.
 		AtlasBuildFile g;
 		g.ParseDoc(u8"{\"builds\":[{\"name\":\"a\",\"alloc\":[7]}]}");
 		g.builds[0].notes = u8"第一行\n第二行";
 		g.builds[0].scarabs = { "s1", "s2", "s3", "s4", "s5" };
+		g.builds[0].targets = { 7, 4242 };
+		g.builds[0].blocked = { 99 };
 		AtlasBuildFile h;
 		bool rt = h.ParseDoc(g.SerializeDoc());
 		rep.check(rt && h.builds.size() == 1 &&
 		          h.builds[0].notes == g.builds[0].notes &&
-		          h.builds[0].scarabs == g.builds[0].scarabs,
-		          "notes + 5 scarabs round-trip through the build file");
+		          h.builds[0].scarabs == g.builds[0].scarabs &&
+		          h.builds[0].targets == g.builds[0].targets &&
+		          h.builds[0].blocked == g.builds[0].blocked,
+		          "notes + 5 scarabs + targets + blocked round-trip through the build file");
 
 		// T-forward: a document written by a NEWER build (unknown keys) must
 		// still load — this is the mirror of "old exe reads new file".
@@ -354,28 +268,34 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		src.alloc = { 11, 22 };
 		src.notes = u8"備註內容";
 		src.scarabs = { "a", "b" };
+		src.targets = { 22 };
+		src.blocked = { 33 };
 		AtlasBuildEntry back;
 		std::string perr;
 		std::string code = AtlasBuildShareCode(src, "test");
 		rep.check(code.compare(0, 6, "PTAT1|") == 0 &&
 		          AtlasParseShareCode(code, &back, &perr) &&
 		          back.notes == src.notes && back.scarabs == src.scarabs &&
+		          back.targets == src.targets && back.blocked == src.blocked &&
 		          back.alloc == src.alloc,
-		          "share code carries notes + scarabs", perr);
+		          "share code carries notes + scarabs + targets + blocked", perr);
 
 		AtlasBuildEntry old;
 		rep.check(AtlasParseExportJson(
 		              u8"{\"format\":\"pobtools-atlas-build\",\"version\":\"v\","
 		              u8"\"name\":\"old\",\"alloc\":[5,6]}", &old, &perr) &&
-		          old.alloc == std::vector<int>({ 5, 6 }) && old.notes.empty() && old.scarabs.empty(),
+		          old.alloc == std::vector<int>({ 5, 6 }) && old.notes.empty() &&
+		          old.scarabs.empty() && old.targets.empty() && old.blocked.empty(),
 		          "pre-scarab export file still imports", perr);
 
 		AtlasBuildEntry noneUsed;
 		noneUsed.name = "n";
 		noneUsed.alloc = { 1 };
 		std::string ex = AtlasExportJson(noneUsed, "v");
-		rep.check(ex.find("notes") == std::string::npos && ex.find("scarabs") == std::string::npos,
-		          "export omits unused notes/scarabs too", ex);
+		rep.check(ex.find("notes") == std::string::npos && ex.find("scarabs") == std::string::npos &&
+		          ex.find("targets") == std::string::npos &&
+		          ex.find("blocked") == std::string::npos,
+		          "export omits unused notes/scarabs/targets/blocked too", ex);
 
 		// T-disk: the production Save/Load pair, not just the string codec —
 		// this is the path the planner actually uses, and the one the GUI test
@@ -389,6 +309,8 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		w.builds[0].notes = u8"專案一備註\n含換行";
 		w.builds[0].scarabs = { "sA", "sB" };
 		w.builds[1].scarabs = { "sC" };
+		w.builds[0].targets = { 2 };
+		w.builds[0].blocked = { 3 };
 		bool wrote = w.Save(exeDir);
 		AtlasBuildFile r;
 		bool readBack = r.Load(exeDir);
@@ -396,8 +318,11 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          r.builds[0].notes == w.builds[0].notes &&
 		          r.builds[0].scarabs == w.builds[0].scarabs &&
 		          r.builds[1].scarabs == w.builds[1].scarabs &&
+		          r.builds[0].targets == w.builds[0].targets &&
+		          r.builds[0].blocked == w.builds[0].blocked &&
+		          r.builds[1].targets.empty() &&
 		          r.builds[1].notes.empty(),
-		          "Save/Load on disk preserves per-project notes + scarabs");
+		          "Save/Load on disk preserves per-project notes + scarabs + targets + blocked");
 	}
 
 	// --- rules: need the catalogue.

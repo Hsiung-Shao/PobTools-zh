@@ -7,6 +7,7 @@
 #pragma once
 
 #include "atlas_tree_data.h"
+#include "atlas_optimize.h"
 
 #include <imgui.h>
 #include <string>
@@ -27,7 +28,12 @@ public:
 	// Fills the remaining content region with the tree canvas and handles all
 	// interaction. Returns true when the allocation changed this frame.
 	// zh (optional) switches tooltip names/stats to Traditional Chinese.
-	bool Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh = nullptr);
+	//
+	// planning = the sandbox planning mode: left click cycles a node through
+	// want -> avoid -> clear (so several core nodes can be marked quickly) and
+	// the allocation is re-derived after every mark. The caller is responsible
+	// for the sandbox itself — this class never touches the build file.
+	bool Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh = nullptr, bool planning = false);
 
 	// Glides the camera to node idx (raising zoom to a readable level when far
 	// out) and starts a short fading highlight ring. User pan/zoom cancels the
@@ -36,6 +42,9 @@ public:
 
 	// One-line status for the toolbar (hovered node name, or a rejection note).
 	const std::string& StatusLine() const { return status_; }
+	// True while a refused click is still worth shouting about: the toolbar
+	// line alone reads as "nothing happened", which is what users reported.
+	bool RejectActive() const { return rejectFlash_ > 0.0f; }
 
 	// Version-compare overlay: draw a colored ring on each listed node index
 	// (added = green, modified = amber). Pass an empty map to clear.
@@ -45,7 +54,8 @@ public:
 private:
 	ImVec2 worldToScreen(ImVec2 w) const;
 	ImVec2 screenToWorld(ImVec2 s) const;
-	void updateHover(AtlasTreeData& d, ImVec2 mouseWorld);
+	void updateHover(AtlasTreeData& d, ImVec2 mouseWorld, float dt);
+	void solvePreview(AtlasTreeData& d);
 	void drawDecos(const AtlasTreeData& d, ImDrawList* dl, const std::vector<AtlasDeco>& decos);
 	void drawEdges(const AtlasTreeData& d, ImDrawList* dl);
 	void drawNodes(const AtlasTreeData& d, ImDrawList* dl);
@@ -67,10 +77,29 @@ private:
 	int hover_ = -1;
 	bool allocDirty_ = true;         // recompute hover previews after changes
 	int previewFor_ = -1;
-	std::vector<int> hoverPath_;     // hovering an unallocated node: nodes to add
-	std::vector<int> hoverRemove_;   // hovering an allocated node: nodes lost
+	float dwell_ = 0.0f;             // seconds the cursor has rested on hover_
+
+	// Preview of what clicking hover_ would do. A click applies exactly this
+	// cached plan rather than re-solving, so the number in the tooltip and the
+	// allocation the user gets can never disagree.
+	bool planReady_ = false;
+	std::vector<int> planTargets_;   // target set the plan was solved for
+	std::vector<int> planNodes_;     // resulting allocation (node indices)
+	std::vector<int> hoverAdd_;      // nodes the click would allocate
+	std::vector<int> hoverDrop_;     // nodes the click would give up (re-routing!)
+	int planPoints_ = 0;
+	bool planExact_ = true;
+	// Clicking would change neither the targets nor the allocation. A minimal
+	// plan cannot produce this -- prune_redundant guarantees every non-target
+	// node is a cut vertex (asserted by --atlas-opt-selftest) -- so this is a
+	// guard for allocations that are not minimal (hand-edited file, a build
+	// migrated with "keep as is"). Saying so beats a click that appears to do
+	// nothing, and beats writing the file for it.
+	bool planNoop_ = false;
+
 	std::vector<char> mark_;         // node -> preview membership (fast edge tint)
 	std::string status_;
+	float rejectFlash_ = 0.0f;       // seconds left on the "not enough points" banner
 
 	std::unordered_map<int, ImU32> diffRing_; // version-compare overlay (node idx -> ring color)
 };

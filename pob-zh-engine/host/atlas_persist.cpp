@@ -58,12 +58,51 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	if (obj.contains("scarabs") && obj["scarabs"].is_array())
 		for (const auto& s : obj["scarabs"])
 			if (s.is_string()) e.scarabs.push_back(s.get<std::string>());
+	e.targets.clear();
+	if (obj.contains("targets") && obj["targets"].is_array())
+		e.targets = parse_alloc_array(obj["targets"]);
+	e.blocked.clear();
+	if (obj.contains("blocked") && obj["blocked"].is_array())
+		e.blocked = parse_alloc_array(obj["blocked"]);
+	// Astrolabes are an object keyed by quadrant. ordered_json preserves the
+	// insertion order, so a round trip keeps the quadrants as they were written;
+	// nothing downstream depends on that order, only on one entry per key.
+	// The caller still runs the result through AstrolabeDb::Sanitize.
+	e.astrolabes.clear();
+	if (obj.contains("astrolabes") && obj["astrolabes"].is_object())
+		for (auto it = obj["astrolabes"].begin(); it != obj["astrolabes"].end(); ++it)
+			if (it.value().is_string() && !it.key().empty())
+				e.astrolabes.push_back({ it.key(), it.value().get<std::string>() });
+	// Checked rather than obj.value("map", ...): value() THROWS when the key
+	// exists with the wrong type, and the throw unwinds all the way out of
+	// ParseDoc — one hand-edited `"map": 5` would drop every project in the
+	// file, not just that field. (The older `notes` line has the same shape and
+	// the same exposure; left alone here to keep this change to its own scope.)
+	e.mapId.clear();
+	if (obj.contains("map") && obj["map"].is_string())
+		e.mapId = obj["map"].get<std::string>();
+	e.mapTier = 0;
+	if (obj.contains("mapTier") && obj["mapTier"].is_number_integer())
+		e.mapTier = obj["mapTier"].get<int>();
 }
 
 static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 {
 	if (!e.notes.empty()) obj["notes"] = e.notes;
 	if (!e.scarabs.empty()) obj["scarabs"] = e.scarabs;
+	if (!e.targets.empty()) obj["targets"] = e.targets;
+	if (!e.blocked.empty()) obj["blocked"] = e.blocked;
+	if (!e.astrolabes.empty()) {
+		ordered_json a = ordered_json::object();
+		// First write wins, mirroring "one Shaped Region per quadrant"; a list
+		// that slipped past Sanitize cannot produce a duplicate key here.
+		for (const AstrolabePlacement& p : e.astrolabes)
+			if (!p.region.empty() && !p.id.empty() && !a.contains(p.region))
+				a[p.region] = p.id;
+		if (!a.empty()) obj["astrolabes"] = std::move(a);
+	}
+	if (!e.mapId.empty()) obj["map"] = e.mapId;
+	if (e.mapTier > 0) obj["mapTier"] = e.mapTier;
 }
 
 // ---- AtlasBuildFile -----------------------------------------------------------

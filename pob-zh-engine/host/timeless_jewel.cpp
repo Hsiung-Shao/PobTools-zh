@@ -5,6 +5,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include "timeless_jewel_ui.h" // trade URL assembly (selftest)
+
 #include <json.hpp> // nlohmann::json (deps/nlohmann)
 #include <miniz.h>  // raw-zlib inflate for the shipped .zip LUTs
 
@@ -1244,6 +1246,109 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
 	} else {
 		check(false, "load AbyssZorath LUT", err);
+	}
+
+	// --- trade search URL assembly -------------------------------------------
+	// The query JSON is language-independent, so the ONLY thing that changes
+	// between regions is the host + league. Golden strings here because the
+	// international URL must not move a byte when a region is added.
+	{
+		const std::string kQ =
+			"%7B%22query%22%3A%7B%22status%22%3A%7B%22option%22%3A%22securable%22%7D%2C%22stats%22"
+			"%3A%5B%7B%22type%22%3A%22and%22%2C%22filters%22%3A%5B%7B%22id%22%3A%22explicit.pseudo"
+			"_timeless_jewel_kaom%22%2C%22value%22%3A%7B%22min%22%3A1234%2C%22max%22%3A1234%7D%7D"
+			"%5D%7D%5D%7D%2C%22sort%22%3A%7B%22price%22%3A%22asc%22%7D%7D";
+		std::string q1 = TradeQueryJson("explicit.pseudo_timeless_jewel_kaom", 1234);
+
+		check(TradeSearchUrl(0, "Standard", 0, q1) ==
+		      "https://www.pathofexile.com/trade/search/Standard?q=" + kQ,
+		      "international PC url is byte-identical to before");
+		check(TradeSearchUrl(0, "Standard", 1, q1) ==
+		      "https://www.pathofexile.com/trade/search/xbox/Standard?q=" + kQ,
+		      "international xbox url keeps its realm segment");
+		check(TradeSearchUrl(0, "Standard", 2, q1).find("/search/sony/") != std::string::npos,
+		      "international sony url keeps its realm segment");
+
+		// Taiwan: canonical host (www.pathofexile.tw 301-redirects), CJK league
+		// percent-encoded per byte, and never a console segment.
+		std::string tw = TradeSearchUrl(1, u8"亡焰咒海", 0, q1);
+		check(tw == "https://pathofexile.tw/trade/search/"
+		            "%E4%BA%A1%E7%84%B0%E5%92%92%E6%B5%B7?q=" + kQ,
+		      "taiwan url: canonical host + encoded CJK league", tw.substr(0, 60));
+		check(TradeSearchUrl(1, u8"亡焰咒海", 1, q1) == tw &&
+		      TradeSearchUrl(1, u8"亡焰咒海", 2, q1) == tw,
+		      "taiwan ignores the console platform entirely");
+		check(TradeSearchUrl(1, "Standard", 0, q1).find("www.pathofexile.tw") == std::string::npos,
+		      "taiwan never uses the redirecting www host");
+
+		// guards
+		check(TradeSearchUrl(0, "", 0, q1).empty(), "empty league yields no url");
+		check(TradeSearchUrl(0, "Standard", 0, "").empty(), "empty query yields no url");
+		check(TradeSearchUrl(99, "Standard", 0, q1) == TradeSearchUrl(0, "Standard", 0, q1),
+		      "out-of-range region falls back to international");
+
+		// multi-seed: one filter per seed, capped, count>=1
+		std::vector<int> many;
+		for (int i = 0; i < (int)kMaxTradeSeeds + 15; i++) many.push_back(1000 + i);
+		std::string qm = TradeQueryJsonMulti("explicit.pseudo_timeless_jewel_kaom", many);
+		size_t nFilters = 0;
+		for (size_t p = qm.find("\"id\""); p != std::string::npos; p = qm.find("\"id\"", p + 1)) nFilters++;
+		check(nFilters == kMaxTradeSeeds, "multi-seed query caps the filter count",
+		      std::to_string(nFilters) + "/" + std::to_string(kMaxTradeSeeds));
+		check(qm.find("\"type\":\"count\"") != std::string::npos &&
+		      qm.find("\"value\":{\"min\":1}") != std::string::npos,
+		      "multi-seed query is a count>=1 group");
+		check(TradeQueryJsonMulti("x", {}).find("\"filters\":[]") != std::string::npos,
+		      "no seeds yields an empty filter list, not garbage");
+
+		// Remembered region/league/platform. Round-tripped through the real file
+		// because that is what breaks (encoding, missing dir); the user's own
+		// state is saved and put back afterwards.
+		{
+			std::wstring path = exeDir + L"PobTools\\tj_ui.json";
+			TjUiState saved;
+			bool had = saved.Load(exeDir);
+
+			TjUiState w;
+			w.realm = 1;
+			w.platform = 2;
+			w.league = u8"亡焰咒海";   // CJK must survive the round trip
+			bool wrote = w.Save(exeDir);
+			TjUiState rd;
+			bool read = rd.Load(exeDir);
+			check(wrote && read && rd.realm == 1 && rd.platform == 2 && rd.league == w.league,
+			      "trade ui state round-trips (incl. CJK league)",
+			      read ? rd.league : std::string("<load failed>"));
+
+			// A corrupt file must not wedge the window at a bogus region.
+			HANDLE bad = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+			                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (bad != INVALID_HANDLE_VALUE) {
+				const char junk[] = "{not json";
+				DWORD n = 0;
+				WriteFile(bad, junk, (DWORD)strlen(junk), &n, nullptr);
+				CloseHandle(bad);
+			}
+			TjUiState broken;
+			bool loadedBad = broken.Load(exeDir);
+			check(!loadedBad && broken.realm == 0 && broken.platform == 0 && broken.league.empty(),
+			      "corrupt trade ui state falls back to defaults");
+
+			if (had) saved.Save(exeDir);
+			else DeleteFileW(path.c_str());
+		}
+
+		// every region must be usable: label/host present, exactly one w/ consoles
+		int consoleRealms = 0, bad = 0;
+		for (int r = 0; r < kTradeRealmCount; r++) {
+			if (kTradeRealms[r].consoles) consoleRealms++;
+			if (!kTradeRealms[r].label || !kTradeRealms[r].host || !kTradeRealms[r].hostW) bad++;
+			if (TradeSearchUrl(r, "L", 0, q1).find(kTradeRealms[r].host) == std::string::npos) bad++;
+		}
+		check(bad == 0 && kTradeRealmCount >= 2 && consoleRealms == 1,
+		      "region table is well formed",
+		      std::to_string(kTradeRealmCount) + " regions, " +
+		      std::to_string(consoleRealms) + " with consoles");
 	}
 
 	std::string tail = failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(failures) + "\n";

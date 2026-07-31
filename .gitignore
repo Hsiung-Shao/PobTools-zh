@@ -42,6 +42,10 @@ pob-zh-engine/tools/
 
 # --- Not part of the public PobTools release (kept local only) ---
 /poeMarketTranslate/
+# poe-price-check 是獨立產品且有自己的 git repo 與 MIT 授權(大量移植
+# Awakened PoE Trade),不隨 PobTools 一起發布。
+/poe-price-check/
+/poe-price-check-spec.md
 /NeverSinkData/
 /zh-rTW/
 /filter/

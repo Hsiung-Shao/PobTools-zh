@@ -32,6 +32,7 @@
 #include "atlas_tree_data.h"
 #include "atlas_import.h"
 #include "atlas_stat_agg.h"
+#include "atlas_optimize.h"
 #include "atlas_update.h"
 #include "atlas_diff.h"
 #include "atlas_version_index.h"
@@ -283,6 +284,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 
 	// Headless timeless-jewel engine checks.
+	// Online: every offerable conqueror's trade stat id must exist on every region.
+	if (arg1 == L"--tj-realm-check") {
+		return RunTradeRealmCheck(dir);
+	}
+
 	if (arg1 == L"--tj-selftest") {
 		return RunTimelessJewelSelfTest(dir);
 	}
@@ -323,6 +329,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless stat-aggregation check (synthetic cases; console report).
 	if (arg1 == L"--atlas-agg-selftest") {
 		return RunAtlasAggSelfTest(dir);
+	}
+
+	// Headless minimum-point solver check (brute-force comparison + timings).
+	if (arg1 == L"--atlas-opt-selftest") {
+		return RunAtlasOptSelfTest(dir);
 	}
 
 	// Headless cross-season diff logic check (synthetic old/new trees).

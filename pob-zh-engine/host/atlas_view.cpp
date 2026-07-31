@@ -20,6 +20,17 @@ static const ImU32 kColEdgeOn = IM_COL32(116, 202, 244, 240);   // allocated: li
 static const ImU32 kColEdgePath = IM_COL32(120, 200, 150, 220); // preview: green
 static const ImU32 kColEdgeLose = IM_COL32(224, 80, 80, 220);   // removal: red
 static const ImU32 kColHoverRing = IM_COL32(255, 255, 255, 90);
+static const ImU32 kColTargetRing = IM_COL32(255, 205, 110, 150); // deliberately picked
+static const ImU32 kColAvoidRing = IM_COL32(248, 113, 113, 245);  // ruled out by the user
+
+// How long the cursor must rest on a node before its minimum-point plan is
+// solved. Without this, sweeping the tree would run one solve per node passed.
+static const float kSolveDelay = 0.12f;
+// Target rings turn into visual noise on a zoomed-out map, so they only appear
+// once nodes are big enough to read.
+static const float kTargetRingMinZoom = 0.10f;
+
+static const float kRejectFlash = 2.5f;    // "not enough points" banner lifetime
 
 // side-panel click-to-focus
 static const float kFocusDuration = 1.6f;  // highlight ring fade time (seconds)
@@ -85,7 +96,36 @@ ImVec2 AtlasView::screenToWorld(ImVec2 s) const
 
 // ---- hover / preview ------------------------------------------------------------
 
-void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld)
+void AtlasView::solvePreview(AtlasTreeData& d)
+{
+	planReady_ = false;
+	planTargets_.clear();
+	planNodes_.clear();
+	hoverAdd_.clear();
+	hoverDrop_.clear();
+	planPoints_ = 0;
+	planExact_ = true;
+	mark_.assign(d.nodes.size(), 0);
+	if (hover_ < 0 || d.nodes[hover_].kind == kAtlasStart) return;
+
+	planTargets_ = AtlasTargetsAfterClick(d, hover_);
+	AtlasPlan plan = AtlasPlanMinimal(d, planTargets_, d.BlockedIdx(), d.AllocIdx());
+	planNodes_ = plan.nodes;
+	planPoints_ = plan.points;
+	planExact_ = plan.exact;
+
+	std::vector<char> next(d.nodes.size(), 0);
+	for (int v : planNodes_) next[v] = 1;
+	for (int i = 0; i < (int)d.nodes.size(); i++) {
+		if (d.nodes[i].kind == kAtlasStart) continue;
+		if (next[i] && !d.nodes[i].alloc) { hoverAdd_.push_back(i); mark_[i] = 1; }
+		else if (!next[i] && d.nodes[i].alloc) { hoverDrop_.push_back(i); mark_[i] = 2; }
+	}
+	planNoop_ = hoverAdd_.empty() && hoverDrop_.empty() && planTargets_ == d.TargetIdx();
+	planReady_ = true;
+}
+
+void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld, float dt)
 {
 	int found = -1;
 	float bestSq = 0.0f;
@@ -105,22 +145,23 @@ void AtlasView::updateHover(AtlasTreeData& d, ImVec2 mouseWorld)
 			bestSq = dsq;
 		}
 	}
-	hover_ = found;
-
-	if (hover_ != previewFor_ || allocDirty_) {
-		previewFor_ = hover_;
-		allocDirty_ = false;
-		hoverPath_.clear();
-		hoverRemove_.clear();
+	if (found != hover_ || allocDirty_) {
+		hover_ = found;
+		previewFor_ = -1;
+		planReady_ = false;
+		dwell_ = 0.0f;
 		mark_.assign(d.nodes.size(), 0);
-		if (hover_ != -1) {
-			if (d.nodes[hover_].alloc) {
-				hoverRemove_ = d.FindRemoveSet(hover_);
-				for (int i : hoverRemove_) mark_[i] = 2;
-			} else {
-				hoverPath_ = d.FindPathTo(hover_);
-				for (int i : hoverPath_) mark_[i] = 1;
-			}
+		allocDirty_ = false;
+	}
+
+	// A full minimum-point solve is far heavier than the old BFS, so it waits
+	// for the cursor to settle. Sweeping across the tree must not solve once
+	// per node passed over.
+	if (hover_ != -1 && hover_ != previewFor_) {
+		dwell_ += dt;
+		if (dwell_ >= kSolveDelay) {
+			previewFor_ = hover_;
+			solvePreview(d);
 		}
 	}
 }
@@ -239,6 +280,24 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 				              (std::max(n.on.w, n.on.h) * 0.5f + 16.0f) * zoom_, it->second, 0, 3.5f);
 		}
 
+		// deliberately picked nodes, so wiring that re-routes is distinguishable
+		// from what the user actually asked for
+		if (n.target && zoom_ >= kTargetRingMinZoom)
+			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
+			              (std::max(n.on.w, n.on.h) * 0.5f + 8.0f) * zoom_, kColTargetRing, 0, 2.0f);
+
+		// ruled out: ring plus a cross, because a ring alone reads as "selected"
+		// and this is the opposite. Drawn at every zoom -- an avoided node the
+		// user cannot see is exactly the one they would wonder about.
+		if (n.blocked) {
+			ImVec2 c = worldToScreen(ImVec2(n.x, n.y));
+			float r = (std::max(n.on.w, n.on.h) * 0.5f + 10.0f) * zoom_;
+			dl->AddCircle(c, r, kColAvoidRing, 0, 2.5f);
+			float x = r * 0.62f;
+			dl->AddLine(ImVec2(c.x - x, c.y - x), ImVec2(c.x + x, c.y + x), kColAvoidRing, 2.5f);
+			dl->AddLine(ImVec2(c.x - x, c.y + x), ImVec2(c.x + x, c.y - x), kColAvoidRing, 2.5f);
+		}
+
 		// removal preview: red ring over every node that would be lost
 		if (i < (int)mark_.size() && mark_[i] == 2)
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
@@ -274,12 +333,20 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	const std::string& dispName = zh ? zh->NodeName(n.id, n.name) : n.name;
 	ImGui::TextColored(nameCol, "%s", dispName.empty() ? (n.kind == kAtlasStart ? u8"輿圖起點" : "?") : dispName.c_str());
 	// cost badge next to the name, poeplanner style (+N / -N nodes)
-	if (n.kind != kAtlasStart) {
-		if (n.alloc)
-			// ASCII '-'（U+2212 − 不在 FZ_ZY 字形內,會畫成 '?'）
-			{ ImGui::SameLine(0, 14.0f * uiScale); ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f), u8"-%d 點", (int)hoverRemove_.size()); }
-		else if (!hoverPath_.empty())
-			{ ImGui::SameLine(0, 14.0f * uiScale); ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), u8"+%d 點", (int)hoverPath_.size()); }
+	// ASCII '-'（U+2212 − 不在 FZ_ZY 字形內,會畫成 '?'）
+	if (n.kind != kAtlasStart && planReady_) {
+		int net = planPoints_ - d.UsedPoints();
+		ImGui::SameLine(0, 14.0f * uiScale);
+		if (net > 0)
+			ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), u8"+%d 點", net);
+		else if (net < 0)
+			ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f), u8"-%d 點", -net);
+		else
+			ImGui::TextDisabled(u8"±0 點");
+	}
+	if (n.target) {
+		ImGui::SameLine(0, 10.0f * uiScale);
+		ImGui::TextColored(ImVec4(1.0f, 0.80f, 0.43f, 1.0f), u8"[目標]");
 	}
 
 	// 明確 wrap 寬度:TextWrapped 會跟著「目前視窗寬」換行,而 auto-resize
@@ -295,17 +362,29 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	ImGui::Separator();
 	if (n.kind == kAtlasStart) {
 		ImGui::TextDisabled(u8"起點節點");
+	} else if (!planReady_) {
+		ImGui::TextDisabled(u8"計算最少點路徑…");
+	} else if (planNodes_.empty()) {
+		ImGui::TextDisabled(u8"無法連接到起點");
+	} else if (planNoop_) {
+		ImGui::TextDisabled(u8"連接用節點，沒有目標依賴它（點擊無效）");
+	} else if (planPoints_ > d.TotalPoints()) {
+		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		                   u8"要 %d 點，超過上限 %d 點", planPoints_, d.TotalPoints());
+	} else if (n.alloc && n.target) {
+		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		                   u8"點擊取消這個目標（剩 %d 點）", planPoints_);
 	} else if (n.alloc) {
-		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f), u8"點擊移除 %d 點", (int)hoverRemove_.size());
-	} else if (hoverPath_.empty()) {
-		ImGui::TextDisabled(u8"無法連接到已配置的節點");
+		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		                   u8"連接用節點，點擊會放棄它後面的目標（剩 %d 點）", planPoints_);
 	} else {
-		int remain = d.TotalPoints() - d.UsedPoints();
-		if ((int)hoverPath_.size() > remain)
-			ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
-			                   u8"需要 %d 點（剩餘 %d 點，不足）", (int)hoverPath_.size(), remain);
-		else
-			ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), u8"點擊配置 %d 點", (int)hoverPath_.size());
+		ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f),
+		                   u8"點擊設為目標，共 %d 點", planPoints_);
+		if (!hoverDrop_.empty())
+			ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f),
+			                   u8"其中 %d 個連接用節點會改道", (int)hoverDrop_.size());
+		if (!planExact_)
+			ImGui::TextDisabled(u8"目標超過 %d 個，這是近似解", AtlasOptExactCap());
 	}
 	ImGui::EndTooltip();
 	ImGui::PopStyleVar();
@@ -325,7 +404,7 @@ void AtlasView::CenterOn(const AtlasTreeData& d, int nodeIdx)
 
 // ---- main entry -------------------------------------------------------------------
 
-bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
+bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool planning)
 {
 	ImGuiIO& io = ImGui::GetIO();
 	bool changed = false;
@@ -393,38 +472,89 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
 	if (focusTimer_ > 0.0f) focusTimer_ -= io.DeltaTime;
 
 	if (hovered)
-		updateHover(d, screenToWorld(io.MousePos));
+		updateHover(d, screenToWorld(io.MousePos), io.DeltaTime);
 	else
 		hover_ = -1;
 
-	// click-to-allocate / deallocate (release with negligible total movement)
+	// Planning mode: mark first, solve after. Left click cycles the node through
+	// want -> avoid -> clear so a handful of core nodes can be marked quickly;
+	// right click clears in one step. Nothing here writes to disk -- the caller
+	// keeps the sandbox and decides at the end whether to keep the result.
+	if (planning) {
+		bool markChanged = false;
+		const bool shortLeft = ImGui::IsItemDeactivated() &&
+			ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale;
+		const bool shortRight = hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+			ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale;
+		if (hover_ != -1 && d.nodes[hover_].kind != kAtlasStart) {
+			AtlasNode& n = d.nodes[hover_];
+			if (shortRight && (n.target || n.blocked)) {
+				n.target = n.blocked = false;
+				status_ = u8"已清除標記";
+				markChanged = true;
+			} else if (shortLeft) {
+				if (!n.target && !n.blocked)      { n.target = true;  status_ = u8"標記為想要"; }
+				else if (n.target)                { n.target = false; n.blocked = true; status_ = u8"標記為不要"; }
+				else                              { n.blocked = false; status_ = u8"已清除標記"; }
+				markChanged = true;
+			}
+		}
+		if (markChanged) {
+			AtlasPlan p = AtlasPlanMinimal(d, d.TargetIdx(), d.BlockedIdx(), d.AllocIdx());
+			d.SetAllocSet(p.nodes);
+			planExact_ = p.exact;
+			// A want that the avoids have walled off is reported, never left
+			// allocated-but-disconnected (the defect this model exists to avoid).
+			if (!p.ok()) {
+				status_ += u8" · " + std::to_string(p.unreachable.size()) + u8" 個想要的點被不要的點擋住，連不上";
+				rejectFlash_ = kRejectFlash;
+			} else {
+				status_ += u8" · 共 " + std::to_string(d.UsedPoints()) + u8" 點";
+				if (!p.exact) status_ += u8"（近似解）";
+			}
+			changed = true;
+			allocDirty_ = true;
+			planReady_ = false;
+		}
+	} else
+	// click = edit the target set (release with negligible total movement)
 	if (ImGui::IsItemDeactivated() &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
-	    hover_ != -1) {
-		const AtlasNode& n = d.nodes[hover_];
-		if (n.kind == kAtlasStart) {
-			// inert
-		} else if (n.alloc) {
-			std::vector<int> rs = d.FindRemoveSet(hover_);
-			d.Remove(rs);
-			status_ = u8"已移除 " + std::to_string((int)rs.size()) + u8" 點";
-			changed = true;
-		} else if (!hoverPath_.empty()) {
-			int remain = d.TotalPoints() - d.UsedPoints();
-			if ((int)hoverPath_.size() <= remain) {
-				d.Alloc(hoverPath_);
-				status_ = u8"已配置 " + std::to_string((int)hoverPath_.size()) + u8" 點";
-				changed = true;
+	    hover_ != -1 && d.nodes[hover_].kind != kAtlasStart) {
+		// A click before the hover settled has no cached plan yet; solve now
+		// rather than ignoring the click.
+		if (!planReady_) { previewFor_ = hover_; solvePreview(d); }
+		if (planReady_ && planNoop_) {
+			status_ = u8"這個連接用節點沒有目標依賴它，移除不了";
+			rejectFlash_ = kRejectFlash;
+		} else if (planReady_) {
+			if (planPoints_ > d.TotalPoints()) {
+				status_ = u8"點數不足：這樣要 " + std::to_string(planPoints_) +
+				          u8" 點，上限 " + std::to_string(d.TotalPoints()) + u8" 點";
+				rejectFlash_ = kRejectFlash;
 			} else {
-				status_ = u8"點數不足：需要 " + std::to_string((int)hoverPath_.size()) +
-				          u8" 點，剩餘 " + std::to_string(remain) + u8" 點";
+				int add = (int)hoverAdd_.size(), drop = (int)hoverDrop_.size();
+				d.SetAllocSet(planNodes_);
+				for (AtlasNode& nd : d.nodes) nd.target = false;
+				for (int t : planTargets_)
+					if (t >= 0 && t < (int)d.nodes.size()) d.nodes[t].target = true;
+				// Re-routing is the one thing a user would not expect, so it is
+				// always named rather than folded into a single net number.
+				status_ = u8"配置 +" + std::to_string(add) + u8" 點";
+				if (drop > 0) status_ += u8" · 改道 -" + std::to_string(drop) + u8" 點";
+				status_ += u8" · 共 " + std::to_string(d.UsedPoints()) + u8" 點";
+				if (!planExact_) status_ += u8"（近似解）";
+				changed = true;
 			}
 		}
 		if (changed) {
 			allocDirty_ = true;
-			updateHover(d, screenToWorld(io.MousePos)); // refresh preview immediately
+			updateHover(d, screenToWorld(io.MousePos), 0.0f);
+			previewFor_ = hover_;                 // refresh the preview immediately
+			solvePreview(d);
 		}
 	}
+	if (rejectFlash_ > 0.0f) rejectFlash_ -= io.DeltaTime;
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(vpPos_, vpPos_ + vpSize_, true);
@@ -450,6 +580,19 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh)
 		ImVec2 p0 = vpPos_ + ImVec2(12.0f * uiScale, 12.0f * uiScale);
 		dl->AddRectFilled(p0, p0 + ts + pad + pad, IM_COL32(16, 18, 24, 215), 6.0f * uiScale);
 		dl->AddText(p0 + pad, IM_COL32(240, 244, 250, 255), buf);
+	}
+
+	// Refused click: a single line in the toolbar reads as "nothing happened",
+	// so say it on the canvas, where the user is actually looking.
+	if (rejectFlash_ > 0.0f && !status_.empty()) {
+		float fade = std::min(1.0f, rejectFlash_ / 0.6f);
+		ImVec2 ts = ImGui::CalcTextSize(status_.c_str());
+		ImVec2 pad(14.0f * uiScale, 9.0f * uiScale);
+		ImVec2 box = ts + pad + pad;
+		ImVec2 p0(vpPos_.x + (vpSize_.x - box.x) * 0.5f, vpPos_.y + 26.0f * uiScale);
+		dl->AddRectFilled(p0, p0 + box, IM_COL32(60, 18, 22, (int)(235 * fade)), 6.0f * uiScale);
+		dl->AddRect(p0, p0 + box, IM_COL32(224, 80, 80, (int)(230 * fade)), 6.0f * uiScale, 0, 2.0f);
+		dl->AddText(p0 + pad, IM_COL32(255, 200, 200, (int)(255 * fade)), status_.c_str());
 	}
 	dl->PopClipRect();
 

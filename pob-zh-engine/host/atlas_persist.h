@@ -9,15 +9,43 @@
 #include <string>
 #include <vector>
 
-// `notes` and `scarabs` were added after the format shipped. Both are written
-// ONLY when non-empty, so a build that uses neither serializes byte-identically
-// to what earlier versions produced, and an older PobTools reading a newer file
-// just ignores the extra keys. Keep that property when adding further fields.
+// One astrolabe placed on one atlas quadrant. Lives here rather than in
+// atlas_astrolabes.h because it is a shape the SAVE FILE has: putting it the
+// other way round would make the persistence header depend on the catalogue
+// header while the catalogue's self-test depends on this one.
+struct AstrolabePlacement {
+	std::string region; // AtlasRegions id: "NorthWest" / "NorthEast" / "SouthEast" / "SouthWest"
+	std::string id;     // "Metadata/Items/Currency/Astrolabe..."
+};
+
+// `notes`, `scarabs`, `targets`, `astrolabes` and `mapId` were all added after
+// the format shipped. All are written ONLY when non-empty, so a build that uses
+// none of them serializes byte-identically to what earlier versions produced,
+// and an older PobTools reading a newer file just ignores the extra keys. Keep
+// that property when adding further fields.
 struct AtlasBuildEntry {
 	std::string name;                  // UTF-8 display name
 	std::vector<int> alloc;            // GGG skill ids, start node excluded
 	std::string notes;                 // free-form project note (may contain newlines)
 	std::vector<std::string> scarabs;  // scarab Metadata ids, in placement order (max 5)
+	// At most one per quadrant (the game refuses a second Shaped Region on a
+	// quadrant); serialized as an OBJECT keyed by quadrant so the document stays
+	// sparse and independent of quadrant ordering.
+	std::vector<AstrolabePlacement> astrolabes;
+	std::string mapId;                 // the project's main map (WorldAreas.Id), "" = none
+	// The tier the project intends to RUN that map at, which is not the map's
+	// own tier: once a quadrant's Voidstone is socketed every map in it becomes
+	// T16. So this is the user's plan, stored independently of mapId, and the
+	// map picker is never filtered by it. 0 = unset, 99 = unique maps.
+	int mapTier = 0;
+	// Nodes the user picked deliberately, as GGG skill ids. Everything else in
+	// `alloc` is wiring the solver chose and may re-route freely (see
+	// atlas_optimize.h). Empty alongside a non-empty `alloc` means "saved
+	// before targets existed" and triggers the one-time migration prompt.
+	std::vector<int> targets;
+	// Nodes the user ruled out; the solver routes around them. Kept so a
+	// planning session can be resumed instead of re-marked from scratch.
+	std::vector<int> blocked;
 };
 
 struct AtlasBuildFile {

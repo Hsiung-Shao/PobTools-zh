@@ -366,6 +366,11 @@ if (WIN32)
         host/atlas_update.cpp
         host/atlas_stat_agg.cpp
         host/atlas_scarabs.cpp
+        host/atlas_astrolabes.cpp
+        host/atlas_maps.cpp
+        # shared by the scarab / astrolabe / map pickers
+        host/fuzzy_match.cpp
+        host/atlas_optimize.cpp
         host/atlas_persist.cpp
         host/atlas_i18n.cpp
         host/atlas_version_index.cpp
@@ -439,6 +444,13 @@ if (WIN32)
     # Content.ggpk by tools/ggpk_zh/gen_scarabs.py --verify; unlike the atlas
     # tree it has no online updater, so a new league needs a fresh run.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/scarabs_poe1.json" DESTINATION "Data")
+    # Astrolabe catalogue (3.29 Shaped Regions) and the atlas map list behind the
+    # planner's quadrant slots and main-map pick. Regenerated from a local
+    # Content.ggpk by tools/ggpk_zh/gen_astrolabes.py --verify and
+    # gen_atlas_maps.py --verify. Like the scarabs these have NO online updater,
+    # so a new league needs a fresh run of both.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
 endif ()
 
 

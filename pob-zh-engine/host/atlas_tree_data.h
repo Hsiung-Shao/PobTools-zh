@@ -33,6 +33,15 @@ struct AtlasNode {
 	AtlasSpriteRef on, off;           // allocated / unallocated icon
 	std::vector<int> adj;             // neighbor node indices
 	bool alloc = false;
+	// Picked deliberately by the user, as opposed to wiring the minimum-point
+	// solver added on the way. Targets are pinned: re-solving may re-route
+	// anything else, but never drops one. See atlas_optimize.h.
+	bool target = false;
+	// Ruled out by the user: the solver never routes through it. Excluding a
+	// node just takes the induced subgraph, so the result stays exactly as
+	// optimal -- but it CAN wall a target off, which is reported rather than
+	// silently leaving that target allocated-but-disconnected.
+	bool blocked = false;
 };
 
 struct AtlasEdge {
@@ -88,12 +97,26 @@ public:
 
 	void Alloc(const std::vector<int>& path);
 	void Remove(const std::vector<int>& removeSet);
-	void Reset();                                 // back to start-only
+	void Reset();                                 // back to start-only, targets cleared
 
 	// Reset + mark by GGG skill id + repair connectivity. Unknown ids are
 	// silently dropped; returns how many ids actually mapped to nodes.
+	// Clears targets, so ApplyTargetIds must follow it, not precede it.
 	int ApplyAllocIds(const std::vector<int>& ids);
 	std::vector<int> AllocIds() const;            // allocated ids, start excluded
+
+	// Deliberately picked nodes (see AtlasNode::target). Unknown ids are
+	// dropped the same way; returns how many mapped.
+	int ApplyTargetIds(const std::vector<int>& ids);
+	std::vector<int> TargetIds() const;           // target ids, start excluded
+	std::vector<int> TargetIdx() const;           // the same as node indices
+
+	// Ruled-out nodes (see AtlasNode::blocked), same id/index conventions.
+	int ApplyBlockedIds(const std::vector<int>& ids);
+	std::vector<int> BlockedIds() const;
+	std::vector<int> BlockedIdx() const;
+	std::vector<int> AllocIdx() const;            // allocated node indices, start INCLUDED
+	void SetAllocSet(const std::vector<int>& idx); // replace the allocation wholesale
 	const std::string& Version() const { return version_; }
 
 	// Build persistence under exeDir\PobTools\atlas_build_poe1.json (multi-build
