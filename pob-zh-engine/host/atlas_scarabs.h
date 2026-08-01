@@ -11,10 +11,11 @@
 #include <unordered_map>
 #include <vector>
 
-// A map device takes five scarabs. Each individual scarab additionally caps how
-// many copies of itself may go in (ScarabDef::limit, 1..5), and scarabs sharing
-// a `family` are mutually exclusive. All three rules come from the game's own
-// data (MapFragmentMods), not from lore or guesswork.
+// A map device takes five items (scarabs and, since the slots were renamed
+// 地圖格, the Vaal map fragments). Each entry additionally caps how many copies
+// of itself may go in (ScarabDef::limit, 1..5), and entries sharing a
+// non-negative `family` are mutually exclusive. All three rules come from the
+// game's own data (MapFragmentMods), not from lore or guesswork.
 static const int kMaxScarabs = 5;
 
 struct ScarabDef {
@@ -22,9 +23,14 @@ struct ScarabDef {
 	std::string en, zh;    // official names, both locales
 	std::string type;      // ScarabTypes id; English in every locale, so never shown alone
 	std::string art;       // "Art/2DItems/..." without the extension
+	std::string kind;      // "scarab" (default) | "fragment" — display grouping only
 	int tier = 0;
-	int family = 0;        // mutual-exclusion group
-	int limit = 1;         // max copies of THIS scarab in one map device
+	// Mutual-exclusion group. NEGATIVE = in no group: the Vaal fragments share
+	// family 149 in the raw table with 50 other rows, yet four Sacrifice pieces
+	// are exactly what you socket together, so the generator emits -1 for them
+	// instead of the rule layer special-casing one magic number.
+	int family = 0;
+	int limit = 1;         // max copies of THIS entry in one map device
 	bool stash = true;     // false = absent from the fragment stash AND both trade realms
 
 	// Two INDEPENDENT lists: one Description cell holds embedded newlines and

@@ -23,6 +23,19 @@ void translation_reload(void);
 ** Returned pointer is valid until translation_shutdown(). */
 const char* translation_lookup(const char *english);
 
+/* Select the dictionary file consulted BEFORE the merged map, naming the POB
+** data file the string being drawn came from (currently only "gems"). Pass
+** nullptr or "" to clear. Returns the previous selection (nullptr if none) so
+** callers can restore it; an unknown name clears instead of failing.
+**
+** Why: the merged map is last-wins, so a bare word like "Volatility" resolves
+** to whichever file defined it last (passives.json) even when POB is drawing a
+** gem name from Gems.lua. Marking the source lets both contexts be right. */
+const char* translation_set_source(const char *name);
+
+/* Currently selected source dictionary, or nullptr. */
+const char* translation_get_source(void);
+
 /* Get current locale string (e.g. "zh-rTW") */
 const char* translation_get_locale(void);
 

@@ -270,6 +270,56 @@ int RunEditorSelftest()
 		check(metaKept, "T13 non-entries fields survived the round trip");
 	}
 
+	// --- source dictionaries (issue #3) ------------------------------------
+	// POB stores support gems under their SHORT name, so "Volatility" is both a
+	// gem (易變輔助) and a passive node (易爆). passives.json loads later and wins
+	// the merge, which is right for the tree and wrong for the skill tab. The
+	// engine resolves it by letting POB name the data file a string came from.
+	{
+		translation_reload();
+		auto say = [](const char* key) {
+			const char* r = translation_lookup(key);
+			return r ? std::string(r) : std::string();
+		};
+		const std::string bareVolatility = say("Volatility");
+		const std::string bareList = say("Volatility, Point Blank");
+
+		check(bareVolatility == u8"易爆",
+		      "T14 unmarked lookup is unchanged (passive wording still wins)");
+
+		const char* prev = translation_set_source("gems");
+		check(prev == nullptr, "T15 setting a source returns the previous one (none)");
+		check(say("Volatility") == u8"易變輔助",
+		      "T16 **gem source returns the gem name (issue #3)**");
+		// A comma list recurses through the whole pipeline and caches its result;
+		// that result must not escape into the shared cache.
+		const std::string sourcedList = say("Volatility, Point Blank");
+		check(sourcedList == u8"易變輔助, 零點射擊輔助",
+		      "T17 每段都走來源字典");
+
+		translation_set_source(nullptr);
+		check(say("Volatility") == bareVolatility,
+		      "T18 clearing the source restores the previous answer");
+		check(say("Volatility, Point Blank") == bareList,
+		      "T19 **the source result never leaks into the shared cache**");
+
+		// An unknown name must degrade to "no source", not to a crash or a stale
+		// selection: an older data pack may simply not have the file.
+		translation_set_source("no-such-source");
+		check(translation_get_source() == nullptr,
+		      "T20 unknown source name degrades to none");
+		check(say("Volatility") == bareVolatility, "T21 ...and lookups are unaffected");
+
+		// Nesting: the returned name is what restores the outer scope.
+		translation_set_source("gems");
+		const char* inner = translation_set_source("gems");
+		check(inner && std::string(inner) == "gems",
+		      "T22 nested set returns the outer source for restoring");
+		translation_set_source(inner);
+		check(say("Volatility") == u8"易變輔助", "T23 outer source still in effect");
+		translation_set_source(nullptr);
+	}
+
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);
 	if (g_fail == 0) {
 		printf("結論：透過編輯器的修正確實會生效；但同一個英文鍵存在多個檔案時，\n"

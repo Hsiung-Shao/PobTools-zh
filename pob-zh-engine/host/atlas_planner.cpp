@@ -904,6 +904,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	// tree's. The picker filters on en+zh and only asks for the icons of the
 	// rows actually on screen, so opening it does not queue 130 downloads.
 	char scarabSearch[256] = "";
+	bool openScarabPicker = false;   // set inside the panel, acted on outside it
 	auto scarabLines = [&](const ScarabDef& d) -> const std::vector<std::string>& {
 		// One list or the other, never a line from each: a Description cell can
 		// split into a different number of lines per locale.
@@ -915,26 +916,26 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 	auto scarabRefuseText = [&](const ScarabAddResult& r) -> std::string {
 		switch (r.code) {
 		case ScarabAdd::kFull:
-			return u8"地圖裝置只能放 " + std::to_string(kMaxScarabs) + u8" 隻甲蟲";
+			return u8"地圖裝置只有 " + std::to_string(kMaxScarabs) + u8" 個地圖格";
 		case ScarabAdd::kOverLimit:
-			return u8"這隻甲蟲最多只能放 " + std::to_string(r.limit) + u8" 份";
+			return u8"這個項目最多只能放 " + std::to_string(r.limit) + u8" 份";
 		case ScarabAdd::kFamilyConflict:
 			return u8"與「" + (r.conflict ? scarabName(*r.conflict) : std::string("?")) + u8"」不能同時使用";
 		default:
-			return u8"這隻甲蟲不在目前的資料中";
+			return u8"這個項目不在目前的資料中";
 		}
 	};
 
 	auto renderScarabPanel = [&]() {
 		AtlasBuildEntry& b = buildFile.Active();
 		if (!scarabDb.available()) {
-			if (ImGui::CollapsingHeader(u8"甲蟲")) {
-				ImGui::TextWrapped(u8"甲蟲資料未載入：%s", scarabErr.c_str());
-				ImGui::TextDisabled(u8"已存的甲蟲設定不會被更動。");
+			if (ImGui::CollapsingHeader(u8"地圖格")) {
+				ImGui::TextWrapped(u8"地圖格資料未載入：%s", scarabErr.c_str());
+				ImGui::TextDisabled(u8"已存的地圖格設定不會被更動。");
 			}
 			return;
 		}
-		std::string hdr = u8"甲蟲 (" + std::to_string(b.scarabs.size()) + "/" +
+		std::string hdr = u8"地圖格 (" + std::to_string(b.scarabs.size()) + "/" +
 		                  std::to_string(kMaxScarabs) + ")###scarabhdr";
 		if (!ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) return;
 
@@ -972,11 +973,55 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 				const ImVec2 fp = ImGui::GetStyle().FramePadding;
 				if (ImGui::Button("+##add", ImVec2(slot + fp.x * 2, slot + fp.y * 2))) {
 					scarabSearch[0] = '\0';
-					ImGui::OpenPopup(u8"選擇甲蟲");
+					// Raised here, submitted outside the panel — see renderScarabPicker.
+					openScarabPicker = true;
 				}
-				// The picker belongs to the first empty slot only; opening it from
-				// any slot would create several popups sharing one id.
-				if (ImGui::BeginPopup(u8"選擇甲蟲")) {
+				ImGui::PopID();
+				break; // only the first empty slot is interactive
+			}
+			ImGui::PopID();
+		}
+		if (removeAt >= 0) {
+			b.scarabs.erase(b.scarabs.begin() + removeAt);
+			saveActive();
+		}
+
+		ImGui::Spacing();
+		if (b.scarabs.empty()) {
+			ImGui::TextDisabled(u8"尚未放置任何項目");
+		} else {
+			for (const std::string& id : b.scarabs) {
+				const ScarabDef* d = scarabDb.ById(id);
+				if (!d) continue;
+				ImGui::TextColored(PobUi::Accent(), "%s", scarabName(*d).c_str());
+				ImGui::Indent(10.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.98f, 1.0f));
+				for (const std::string& s : scarabLines(*d))
+					ImGui::TextWrapped("%s", StripStatMarkup(s).c_str());
+				ImGui::PopStyleColor();
+				ImGui::Unindent(10.0f * scale);
+			}
+		}
+		ImGui::Spacing();
+	};
+
+	// Submitted OUTSIDE the scrolling panel, on purpose.
+	//
+	// A popup opened from inside a child window is clipped to that child. This
+	// picker is ~460px wide and the + button sits near the panel's right edge,
+	// so ImGui's auto-placement flips it leftwards onto the atlas canvas —
+	// outside the panel's clip rect. The popup then renders nothing at all while
+	// still swallowing every mouse click, so the first press on + silently opens
+	// an invisible window and from then on the whole UI looks dead. Submitting it
+	// in the main window means it is never clipped.
+	auto renderScarabPicker = [&]() {
+		if (!scarabDb.available()) return;
+		AtlasBuildEntry& b = buildFile.Active();
+		if (openScarabPicker) {
+			ImGui::OpenPopup(u8"選擇地圖格項目");
+			openScarabPicker = false;
+		}
+		if (ImGui::BeginPopup(u8"選擇地圖格項目")) {
 					ImGui::SetNextItemWidth(320.0f * scale);
 					if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
 					ImGui::InputTextWithHint("##scarabsearch", u8"搜尋名稱或效果（中英、模糊）…",
@@ -1046,35 +1091,8 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 						}
 					}
 					ImGui::EndChild();
-					ImGui::EndPopup();
-				}
-				ImGui::PopID();
-				break; // only the first empty slot is interactive
-			}
-			ImGui::PopID();
+			ImGui::EndPopup();
 		}
-		if (removeAt >= 0) {
-			b.scarabs.erase(b.scarabs.begin() + removeAt);
-			saveActive();
-		}
-
-		ImGui::Spacing();
-		if (b.scarabs.empty()) {
-			ImGui::TextDisabled(u8"尚未放置甲蟲");
-		} else {
-			for (const std::string& id : b.scarabs) {
-				const ScarabDef* d = scarabDb.ById(id);
-				if (!d) continue;
-				ImGui::TextColored(PobUi::Accent(), "%s", scarabName(*d).c_str());
-				ImGui::Indent(10.0f * scale);
-				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.72f, 0.80f, 0.98f, 1.0f));
-				for (const std::string& s : scarabLines(*d))
-					ImGui::TextWrapped("%s", StripStatMarkup(s).c_str());
-				ImGui::PopStyleColor();
-				ImGui::Unindent(10.0f * scale);
-			}
-		}
-		ImGui::Spacing();
 	};
 
 	// --- project notes ---
@@ -1511,7 +1529,7 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 					importMsg += u8"、" + std::to_string(buildFile.builds[idx].astrolabes.size()) + u8" 片幻塑界域";
 				if (!buildFile.builds[idx].mapId.empty()) importMsg += u8"、主力地圖";
 				if (!buildFile.builds[idx].scarabs.empty())
-					importMsg += u8"、" + std::to_string(buildFile.builds[idx].scarabs.size()) + u8" 隻甲蟲";
+					importMsg += u8"、" + std::to_string(buildFile.builds[idx].scarabs.size()) + u8" 個地圖格項目";
 				if (!buildFile.builds[idx].notes.empty()) importMsg += u8"、備註";
 				importMsg += snote; // "，忽略 N 個未知甲蟲" etc., empty when nothing was dropped
 				importFailed = false;
@@ -2018,11 +2036,21 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			// Quadrants, then the map, then the device that map goes into, then
 			// notes. All show even with nothing allocated: they are useful
 			// before a single node is picked.
-			renderAstrolabePanel();
-			renderMapPanel();
-			renderScarabPanel();
-			renderNotesPanel();
-			renderMechanicPanel();
+			// Each panel gets its own id namespace. Without this the astrolabe
+			// quadrants and the map slots collide: both loop with PushID(index)
+			// starting at 0 and both label their widgets "+##add" / "##slot", so
+			// in this single child window they hash to the SAME ImGuiID. ImGui
+			// requires ids to be unique per window; when they are not, the first
+			// widget submitted keeps the interaction and the later one goes dead
+			// — which is exactly why the map slots' + did nothing while the
+			// astrolabe section was expanded, and started working once it was
+			// collapsed (its buttons stop being submitted).
+			ImGui::PushID("astrolabes"); renderAstrolabePanel(); ImGui::PopID();
+			ImGui::PushID("mainmap");    renderMapPanel();       ImGui::PopID();
+			ImGui::PushID("mapslots");   renderScarabPanel();    ImGui::PopID();
+			ImGui::PushID("notes");      renderNotesPanel();     ImGui::PopID();
+			ImGui::PushID("mechanics");  renderMechanicPanel();  ImGui::PopID();
+			// (the map-slot picker is submitted after EndChild, below)
 			bool anyAlloc = false;
 			for (const auto& g : nodeGroups) anyAlloc = anyAlloc || !g.empty();
 			if (!anyAlloc) {
@@ -2114,6 +2142,10 @@ void ShowAtlasPlanner(const std::wstring& exeDir, const std::wstring& /*locale*/
 			} // end normal side panel (else branch of compareMode)
 			ImGui::EndChild();
 		}
+
+		// Outside every child: a popup submitted inside one gets clipped to it,
+		// and this one is wide enough to be flipped clean out of the panel.
+		renderScarabPicker();
 
 		ImGui::End();
 

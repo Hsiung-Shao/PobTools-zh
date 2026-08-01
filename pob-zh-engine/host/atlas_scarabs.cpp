@@ -96,6 +96,7 @@ bool ScarabDb::Load(const std::wstring& exeDir, std::string* err)
 			d.art = s.value("art", std::string());
 			d.tier = s.value("tier", 0);
 			d.family = s.value("family", 0);
+			d.kind = s.value("kind", std::string("scarab"));
 			d.limit = std::clamp(s.value("limit", 1), 1, kMaxScarabs);
 			d.stash = s.value("stash", true);
 			if (s.contains("descEn")) d.descEn = parse_lines(s["descEn"]);
@@ -119,7 +120,7 @@ bool ScarabDb::Load(const std::wstring& exeDir, std::string* err)
 		return false;
 	}
 	if (defs_.empty()) {
-		if (err) *err = u8"scarabs_poe1.json 沒有任何甲蟲";
+		if (err) *err = u8"scarabs_poe1.json 沒有任何項目";
 		return false;
 	}
 	for (int i = 0; i < (int)defs_.size(); i++) byId_.emplace(defs_[i].id, i);
@@ -145,7 +146,10 @@ ScarabAddResult ScarabDb::CanAdd(const std::vector<std::string>& cur, const std:
 		// A different scarab of the same family blocks the whole family; report
 		// the one already placed so the message can name it.
 		const ScarabDef* other = ById(have);
-		if (other && other->family == def->family) {
+		// A NEGATIVE family means "belongs to no exclusion group". The Vaal
+		// fragments all share family 149 in the raw data, but four Sacrifice
+		// pieces are meant to go in together, so the generator emits -1.
+		if (other && def->family >= 0 && other->family == def->family) {
 			r.code = ScarabAdd::kFamilyConflict;
 			r.conflict = other;
 			return r;
@@ -179,10 +183,10 @@ std::vector<std::string> ScarabDb::Sanitize(const std::vector<std::string>& ids,
 		}
 	}
 	if (note) {
-		if (unknown) *note += u8"，忽略 " + std::to_string(unknown) + u8" 個未知甲蟲";
-		if (illegal) *note += u8"，忽略 " + std::to_string(illegal) + u8" 個違反放置規則的甲蟲";
-		if (over)    *note += u8"，超過 " + std::to_string(kMaxScarabs) + u8" 格的 " +
-		                      std::to_string(over) + u8" 個甲蟲已捨棄";
+		if (unknown) *note += u8"，忽略 " + std::to_string(unknown) + u8" 個未知項目";
+		if (illegal) *note += u8"，忽略 " + std::to_string(illegal) + u8" 個違反放置規則的項目";
+		if (over)    *note += u8"，超過 " + std::to_string(kMaxScarabs) + u8" 個地圖格的 " +
+		                      std::to_string(over) + u8" 個項目已捨棄";
 	}
 	return out;
 }
@@ -338,9 +342,15 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		return rep.failures;
 	}
 
-	rep.note("catalogue: " + std::to_string(db.All().size()) + " scarabs, source " + db.Source());
-	rep.check(db.All().size() == 130, "catalogue holds 130 scarabs",
-	          std::to_string(db.All().size()));
+	// Counted per kind: one combined total would let a lost scarab hide behind a
+	// gained fragment.
+	size_t nScarab = 0, nFragment = 0;
+	for (const ScarabDef& d : db.All()) (d.kind == "fragment" ? nFragment : nScarab)++;
+	rep.note("catalogue: " + std::to_string(nScarab) + " scarabs + " +
+	         std::to_string(nFragment) + " fragments, source " + db.Source());
+	rep.check(nScarab == 130, "catalogue holds 130 scarabs", std::to_string(nScarab));
+	rep.check(nFragment == 8, "catalogue holds 8 Vaal map fragments",
+	          std::to_string(nFragment));
 
 	// Find live fixtures instead of hard-coding ids, so the test keeps working
 	// after a season update changes the catalogue.
@@ -354,8 +364,9 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 	}
 	for (const ScarabDef& a : db.All()) {
 		if (famA) break;
+		if (a.family < 0) continue;   // fragments share -1 and are NOT exclusive
 		for (const ScarabDef& b : db.All())
-			if (&a != &b && a.family == b.family) { famA = &a; famB = &b; break; }
+			if (&a != &b && b.family >= 0 && a.family == b.family) { famA = &a; famB = &b; break; }
 	}
 	rep.check(lim1 && limN, "found limit=1 and limit>1 fixtures");
 	rep.check(famA && famB, "found a mutually exclusive pair",
@@ -383,6 +394,52 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		ScarabAddResult r = db.CanAdd(cur, famB->id);
 		rep.check(r.code == ScarabAdd::kFamilyConflict && r.conflict == famA,
 		          "same-family scarab refused and names the blocker");
+	}
+	{
+		// Map fragments: the four Sacrifice pieces are what opens a Vaal side
+		// area, so they MUST all fit together. In the raw table they share
+		// family 149 with 50 other rows, which under the exclusion rule would
+		// refuse the second one -- that is why the generator emits -1.
+		std::vector<const ScarabDef*> sac;
+		for (const ScarabDef& d : db.All())
+			if (d.kind == "fragment" && d.id.find("CurrencyVaalFragment1_") != std::string::npos)
+				sac.push_back(&d);
+		rep.check(sac.size() == 4, "four Sacrifice fragments present",
+		          std::to_string(sac.size()));
+		if (sac.size() == 4) {
+			std::vector<std::string> cur;
+			bool allOk = true;
+			for (const ScarabDef* d : sac) {
+				allOk = allOk && db.CanAdd(cur, d->id).ok();
+				cur.push_back(d->id);
+			}
+			rep.check(allOk && cur.size() == 4,
+			          "all four Sacrifice fragments fit together (family -1)");
+			rep.check(db.Sanitize(cur, nullptr).size() == 4,
+			          "Sanitize keeps the whole Sacrifice set");
+			// A second copy of one is still refused: limit still applies.
+			rep.check(db.CanAdd(cur, sac[0]->id).code == ScarabAdd::kOverLimit,
+			          "a duplicate fragment is still refused by limit");
+		}
+
+		// The picker is driven by ScarabMatchScore, so searching the way a user
+		// would has to surface them. Checked here rather than by clicking: this
+		// is the same function the popup filters with.
+		auto found = [&](const char* q) {
+			ScarabQuery sq = MakeScarabQuery(q);
+			int n = 0;
+			for (const ScarabDef& d : db.All())
+				if (d.kind == "fragment" && ScarabMatchScore(d, sq) > 0) n++;
+			return n;
+		};
+		rep.check(found(u8"奉獻") == 4, "搜尋「奉獻」找到 4 個獻祭碎片",
+		          std::to_string(found(u8"奉獻")));
+		rep.check(found(u8"凡人") == 4, "搜尋「凡人」找到 4 個凡人碎片",
+		          std::to_string(found(u8"凡人")));
+		rep.check(found("Sacrifice") == 4, "英文查詢同樣找得到",
+		          std::to_string(found("Sacrifice")));
+		rep.check(found(u8"黎明的奉獻") == 1, "全名查詢只命中一件",
+		          std::to_string(found(u8"黎明的奉獻")));
 	}
 	{
 		// Five distinct families fill the device; a sixth is refused.

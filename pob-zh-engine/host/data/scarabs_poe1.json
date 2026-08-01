@@ -2337,6 +2337,166 @@
     "區域內的傳奇怪物含有 4 個額外怪物詞綴"
    ],
    "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_2",
+   "en": "Sacrifice at Dawn",
+   "zh": "黎明的奉獻",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/Vaal02",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "5% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_3",
+   "en": "Sacrifice at Noon",
+   "zh": "正午的奉獻",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/Vaal03",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "5% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_4",
+   "en": "Sacrifice at Dusk",
+   "zh": "黃昏的奉獻",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/Vaal04",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "5% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_1",
+   "en": "Sacrifice at Midnight",
+   "zh": "午夜的奉獻",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/Vaal01",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "5% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_4",
+   "en": "Mortal Grief",
+   "zh": "凡人的哀傷",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/UberVaal04",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "10% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_1",
+   "en": "Mortal Rage",
+   "zh": "凡人的憤怒",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/UberVaal01",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "10% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_2",
+   "en": "Mortal Hope",
+   "zh": "凡人的希望",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/UberVaal02",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "10% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
+  },
+  {
+   "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_3",
+   "en": "Mortal Ignorance",
+   "zh": "凡人的無知",
+   "kind": "fragment",
+   "type": "VaalFragment",
+   "tier": 0,
+   "family": -1,
+   "limit": 1,
+   "art": "Art/2DItems/Maps/UberVaal03",
+   "descEn": [
+    "Area contains a Vaal Side Area",
+    "10% increased Quantity of Items found in Area"
+   ],
+   "descZh": [
+    "區域內包含瓦爾區域",
+    "增加5%區域內找到的物品數量"
+   ],
+   "stash": true
   }
  ]
 }

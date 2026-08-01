@@ -2396,6 +2396,18 @@ static int l_PobToolsSetTranslate(lua_State* L)
 	return 1;
 }
 
+// PobToolsSetSource(name) -> previous name (or nil). Names the POB data file
+// the strings about to be drawn came from, so that file's dictionary wins over
+// the merged map. Pass nil to clear. Wrap it around a control's Draw and
+// restore the returned value afterwards; anything left unmarked is unaffected.
+static int l_PobToolsSetSource(lua_State* L)
+{
+	const char* name = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
+	const char* prev = translation_set_source(name);
+	if (prev) lua_pushstring(L, prev); else lua_pushnil(L);
+	return 1;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -2609,6 +2621,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsTranslate);
 	ADDFUNC(PobToolsReverse);
 	ADDFUNC(PobToolsSetTranslate);
+	ADDFUNC(PobToolsSetSource);
 	ADDFUNCALIAS(PoeCharmTranslate, PobToolsTranslate);
 	ADDFUNCALIAS(PoeCharmReverse, PobToolsReverse);
 	ADDFUNCALIAS(PoeCharmSetTranslate, PobToolsSetTranslate);

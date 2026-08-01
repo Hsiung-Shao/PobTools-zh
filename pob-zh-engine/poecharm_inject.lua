@@ -28,11 +28,55 @@ local function hasCJK(s)
 	return s ~= nil and s:find("[\128-\255]") ~= nil
 end
 
+-- ===== source marking =====
+-- The dictionary is one flat merged map, so a bare word resolves to whichever
+-- file defined it LAST. POB stores support gems under their short name
+-- ("Volatility", not "Volatility Support") and passives.json redefines that
+-- same key as the passive node, so the skill tab drew 易爆 instead of 易變輔助
+-- (issue #3). Telling the engine which POB data file the strings came from lets
+-- gems.json win there while the passive tree keeps its own wording.
+--
+-- pcall is not optional: an error escaping the wrapped Draw would leave every
+-- later lookup stuck in gem context for the rest of the session.
+-- (Lua 5.1: no table.pack, so return values are forwarded positionally. Draw
+-- methods return nothing today; three slots is slack, not a known requirement.)
+local function withSource(name, fn, self, ...)
+	if type(PobToolsSetSource) ~= "function" then return fn(self, ...) end
+	local prev = PobToolsSetSource(name)
+	local ok, a, b, c = pcall(fn, self, ...)
+	PobToolsSetSource(prev)
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+local function wrapDrawWithSource(class, name)
+	local orig = class.Draw
+	if not orig then return false end
+	class.Draw = function(self, ...)
+		return withSource(name, orig, self, ...)
+	end
+	return true
+end
+
 -- ===== per-class patchers =====
 local PATCHES = {}
 
+-- Socket group list: its row labels are built from grantedEffect.name, i.e.
+-- straight out of Gems.lua as well.
+PATCHES["SkillListControl"] = function(class)
+	if not wrapDrawWithSource(class, "gems") then
+		error("SkillListControl has no Draw to wrap")
+	end
+end
+
 -- Skill gem dropdown: allow CJK input + match gems by their translated name.
 PATCHES["GemSelectControl"] = function(class)
+	-- (0) every string this control draws is a gem name: the edit box shows the
+	--     gem's nameSpec and the dropdown rows show gemData.name, both read from
+	--     Gems.lua. Mark the source so gems.json wins over the merged map.
+	if not wrapDrawWithSource(class, "gems") then
+		error("GemSelectControl has no Draw to wrap")
+	end
 	-- (a) input: the gem box hardcodes an ASCII-only filter ("^ %a':-"), which
 	--     strips CJK on insert. Widen it after construction (main.unicode is on
 	--     because the engine set _G.utf8).

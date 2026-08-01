@@ -42,6 +42,43 @@ static std::unordered_map<std::string, std::string> s_lookup_cache;     /* forwa
 static std::string s_locale;
 static bool s_initialized = false;
 static bool s_translation_enabled = true;
+
+/* ========== Source dictionaries ==========
+**
+** The lookup map is flat and merged in meta.json load order, so the LAST file
+** to define a key wins everywhere. That breaks whenever the same bare English
+** word means different things depending on where POB read it: POB stores
+** support gems under their short name ("Volatility", not "Volatility Support"),
+** and passives.json — loaded later — redefines that key as the passive node of
+** the same name, so the skill tab showed 易爆 instead of 易變輔助 (issue #3).
+** 65 keys collide this way in poe1.
+**
+** Load order cannot fix it: whichever file wins, the other context is wrong.
+** So POB tells us WHERE it read the string from (PobToolsSetSource, wrapped
+** around the controls that draw gem names) and that file's own dictionary is
+** consulted first. Nothing is marked by default, so unmarked call sites — the
+** passive tree included — behave exactly as before.
+*/
+struct SourceDict {
+    const char *name;   /* what Lua passes to PobToolsSetSource */
+    const char *file;   /* the dictionary file backing it */
+};
+static const SourceDict kSourceDicts[] = {
+    { "gems", "gems.json" },
+};
+
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
+static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
+static std::string s_active_source_name;
+
+/* Results computed while a source is active may embed a source-specific
+** translation (the pattern / comma-list / suffix paths all recurse), so they
+** must never land in the shared cache — a later unmarked lookup of the same
+** string would get the gem-context answer. Each source therefore caches into
+** its own map. Entries are created once at load time, and unordered_map keeps
+** references to existing elements valid, so these pointers stay good. */
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_source_cache;
+static std::unordered_map<std::string, std::string> *s_lookup_cache_active = &s_lookup_cache;
 /* ========== Dynamic structures for externalized data ========== */
 
 struct HeaderMapping_Dyn {
@@ -482,7 +519,8 @@ static std::string determine_locale() {
 
 /* ========== JSON Loading Functions ========== */
 
-static int load_json_translations(const std::string &filepath, bool is_base_items) {
+static int load_json_translations(const std::string &filepath, bool is_base_items,
+                                  std::unordered_map<std::string, std::string> *sink = nullptr) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
 
@@ -551,6 +589,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         std::string clean_value = strip_brackets(full_value);
 
         s_translations[full_key] = full_value;
+        if (sink) (*sink)[full_key] = full_value;
         s_reverse[full_value] = full_key;
         if (clean_value != full_value) {
             s_reverse[clean_value] = clean_key;
@@ -810,7 +849,17 @@ static bool try_load_json(const std::string &base_dir) {
     int fileCount = 0;
     for (auto &filename : load_order) {
         std::string filepath = json_dir + filename;
-        int count = load_json_translations(filepath, false);
+        /* Files backing a source dictionary get a second copy of their own
+         * entries, untouched by whatever later files redefine. */
+        std::unordered_map<std::string, std::string> *sink = nullptr;
+        for (const SourceDict &sd : kSourceDicts) {
+            if (filename == sd.file) {
+                sink = &s_sources[sd.name];
+                s_source_cache[sd.name];   /* create now: never rehash later */
+                break;
+            }
+        }
+        int count = load_json_translations(filepath, false, sink);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -939,6 +988,13 @@ void translation_shutdown(void) {
     s_forward_pattern.clear();
     s_term_glossary.clear();
     s_lookup_cache.clear();
+    /* Drop the source dictionaries too, and point the active handles back at
+     * the defaults — a reload must not leave them dangling into freed maps. */
+    s_active_source = nullptr;
+    s_active_source_name.clear();
+    s_lookup_cache_active = &s_lookup_cache;
+    s_sources.clear();
+    s_source_cache.clear();
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -1062,6 +1118,16 @@ const char* translation_lookup(const char *english) {
         }
     }
 
+    /* 0. Source dictionary: POB told us which of its own data files this
+     *    string came from, so that file's entries win over the merged map.
+     *    A miss here just falls through to the normal path. */
+    if (s_active_source) {
+        auto sit = s_active_source->find(english);
+        if (sit != s_active_source->end()) {
+            return sit->second.c_str();
+        }
+    }
+
     /* 1. Exact match (fast path, no cache needed — already O(1)) */
     auto it = s_translations.find(english);
     if (it != s_translations.end()) {
@@ -1070,8 +1136,8 @@ const char* translation_lookup(const char *english) {
 
     /* 2. Check lookup cache (avoids repeated pattern/glossary scans) */
     {
-        auto cit = s_lookup_cache.find(english);
-        if (cit != s_lookup_cache.end()) {
+        auto cit = s_lookup_cache_active->find(english);
+        if (cit != s_lookup_cache_active->end()) {
             return cit->second.empty() ? nullptr : cit->second.c_str();
         }
     }
@@ -1094,7 +1160,7 @@ const char* translation_lookup(const char *english) {
                 OutputDebugStringA(msg);
                 s_hit_count++;
             }
-            auto [iter, _] = s_lookup_cache.emplace(input, std::move(result));
+            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
             return iter->second.c_str();
         } else {
             /* Diagnostic: log pattern misses (first 50 only) */
@@ -1119,7 +1185,7 @@ const char* translation_lookup(const char *english) {
         if (stripped != input && !stripped.empty()) {
             if (const char *r = translation_lookup(stripped.c_str())) {
                 std::string copy(r); /* copy before emplace can rehash the cache */
-                auto [iter, _] = s_lookup_cache.emplace(input, std::move(copy));
+                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(copy));
                 return iter->second.c_str();
             }
             /* clean text also missed: fall through with the original input */
@@ -1147,7 +1213,7 @@ const char* translation_lookup(const char *english) {
                     combined += " (";
                     combined += suffix_zh ? suffix_zh : suffix.c_str();
                     combined += ")";
-                    auto [iter, _] = s_lookup_cache.emplace(input, std::move(combined));
+                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
                     return iter->second.c_str();
                 }
             }
@@ -1179,7 +1245,7 @@ const char* translation_lookup(const char *english) {
             joined += r; /* safe: r points into caches, appended before next lookup */
         }
         if (all_ok) {
-            auto [iter, _] = s_lookup_cache.emplace(input, std::move(joined));
+            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
             return iter->second.c_str();
         }
     }
@@ -1286,7 +1352,7 @@ const char* translation_lookup(const char *english) {
                     cur = s.pos + s.len;
                 }
                 result.append(input, cur, std::string::npos);
-                auto [iter, _] = s_lookup_cache.emplace(input, std::move(result));
+                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
                 return iter->second.c_str();
             }
         }
@@ -1296,8 +1362,44 @@ const char* translation_lookup(const char *english) {
     if (forward_miss_worth_logging(input)) {
         log_translation_miss("MISS", input);
     }
-    s_lookup_cache.emplace(input, std::string());
+    s_lookup_cache_active->emplace(input, std::string());
     return nullptr;
+}
+
+/* Select the source dictionary consulted before the merged map, or pass null /
+** "" to go back to the plain merged lookup. Returns the PREVIOUS selection so
+** the caller can restore it, which is what makes nesting safe.
+**
+** An unknown name deliberately behaves as "no source" rather than failing:
+** a dictionary file may be missing from an older data pack, and the app must
+** still render — just without the disambiguation. */
+const char* translation_set_source(const char *name) {
+    static std::string prev_holder;
+    /* Copy the argument BEFORE touching prev_holder. Restoring a nested scope
+    ** means passing back the pointer this function returned last time, which
+    ** aliases prev_holder — assigning to it first would rewrite the argument
+    ** out from under us. */
+    const std::string want = (name && *name) ? std::string(name) : std::string();
+    prev_holder = s_active_source_name;
+
+    s_active_source = nullptr;
+    s_active_source_name.clear();
+    s_lookup_cache_active = &s_lookup_cache;
+
+    if (!want.empty()) {
+        auto it = s_sources.find(want);
+        if (it != s_sources.end()) {
+            s_active_source = &it->second;
+            s_active_source_name = want;
+            auto cit = s_source_cache.find(s_active_source_name);
+            if (cit != s_source_cache.end()) s_lookup_cache_active = &cit->second;
+        }
+    }
+    return prev_holder.empty() ? nullptr : prev_holder.c_str();
+}
+
+const char* translation_get_source(void) {
+    return s_active_source_name.empty() ? nullptr : s_active_source_name.c_str();
 }
 
 const char* translation_get_locale(void) {
@@ -1969,6 +2071,7 @@ void translation_free(char *str) {
 void translation_set_enabled(bool enabled) {
     s_translation_enabled = enabled;
     s_lookup_cache.clear();
+    for (auto &kv : s_source_cache) kv.second.clear();
     OutputDebugStringA(enabled
         ? "[pob-proxy] Translation ON (F2)\n"
         : "[pob-proxy] Translation OFF (F2)\n");
