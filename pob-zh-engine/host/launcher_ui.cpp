@@ -64,7 +64,44 @@ static const LinkEntry kLinks[] = {
 	{ u8"Reddit r/pathofexile",   L"https://www.reddit.com/r/pathofexile/" },
 	{ u8"poe.ninja",              L"https://poe.ninja" },
 	{ u8"FilterBlade",            L"https://www.filterblade.xyz" },
+	{ u8"拆粉查詢",               L"https://poe-disenchant-tool.vercel.app/allflame" },
 };
+
+// The language-picker labels name scripts a Traditional Chinese font is not
+// expected to carry (한국어, 简). The atlas asks for them anyway — if the user
+// supplies a font that has them, they draw — but they are not a coverage
+// requirement, and LoadFonts already probes koreanOk/cjkOk to drive the UI.
+static const char* const kOptionalScriptTexts[] = {
+	u8"简体", u8"한국어",
+};
+
+// Every piece of text the launcher can put on screen, in one place so the font
+// atlas and the coverage selftest cannot disagree about what has to be drawable.
+static void CollectLauncherTexts(std::vector<const char*>& out)
+{
+	for (const LauncherStrings* t : { &STR_ZHTW, &STR_EN }) {
+		const char* const fields[] = {
+			t->title, t->subtitle, t->language, t->gameVersion,
+			t->poe1, t->poe2, t->detected, t->missing,
+			t->notFoundPoe1, t->notFoundPoe2, t->noneFound,
+			t->returnAfterExit, t->launch,
+			t->editor, t->filterEditor, t->atlasPlanner, t->timelessJewel,
+			t->gamesSection, t->toolsSection, t->linksSection,
+			t->about, t->changelog, t->aboutBody, t->support,
+			t->discord, t->close, t->font,
+			t->updateAvailable, t->updateNow, t->updateDownloading,
+			t->updatePreparing, t->updateRestarting, t->updateFailed,
+			t->updateRetry, t->updateTransDone,
+			t->updateCheck, t->updateCheckTip,
+			t->updateChecking, t->updateUpToDate,
+		};
+		for (const char* f : fields) if (f) out.push_back(f);
+	}
+	out.push_back(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
+	out.push_back(kChangelogText);      // version-history dialog body
+	for (const LinkEntry& l : kLinks) out.push_back(l.label);
+	out.push_back(u8"繁體中文Korean·"); // language combo labels + link separator
+}
 
 // Launcher-specific draw-list colours; shared widgets use ui_theme.cpp.
 static const ImU32 kAccent     = IM_COL32(99, 102, 241, 255);   // #6366f1
@@ -135,27 +172,12 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 	ranges.clear();
 	ImFontGlyphRangesBuilder b;
 	b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-	for (const LauncherStrings* t : { &STR_ZHTW, &STR_EN }) {
-		b.AddText(t->title); b.AddText(t->subtitle); b.AddText(t->language); b.AddText(t->gameVersion);
-		b.AddText(t->poe1); b.AddText(t->poe2); b.AddText(t->detected); b.AddText(t->missing);
-		b.AddText(t->notFoundPoe1); b.AddText(t->notFoundPoe2); b.AddText(t->noneFound);
-		b.AddText(t->returnAfterExit); b.AddText(t->launch);
-		b.AddText(t->editor); b.AddText(t->filterEditor); b.AddText(t->atlasPlanner);
-		b.AddText(t->timelessJewel);
-		b.AddText(t->gamesSection); b.AddText(t->toolsSection); b.AddText(t->linksSection);
-		b.AddText(t->about); b.AddText(t->changelog); b.AddText(t->aboutBody); b.AddText(t->support);
-		b.AddText(t->discord); b.AddText(t->close);
-		b.AddText(t->font);
-		b.AddText(t->updateAvailable); b.AddText(t->updateNow); b.AddText(t->updateDownloading);
-		b.AddText(t->updatePreparing); b.AddText(t->updateRestarting); b.AddText(t->updateFailed);
-		b.AddText(t->updateRetry); b.AddText(t->updateTransDone);
-		b.AddText(t->updateCheck); b.AddText(t->updateCheckTip);
-		b.AddText(t->updateChecking); b.AddText(t->updateUpToDate);
+	{
+		std::vector<const char*> texts;
+		CollectLauncherTexts(texts);
+		for (const char* t : texts) b.AddText(t);
+		for (const char* t : kOptionalScriptTexts) b.AddText(t);
 	}
-	b.AddText(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
-	b.AddText(kChangelogText);      // version-history dialog body
-	for (const LinkEntry& l : kLinks) b.AddText(l.label);
-	b.AddText(u8"繁體中文简体한국어Korean·"); // language combo item labels + link separator
 	for (const std::string& t : extraTexts) b.AddText(t.c_str());
 	b.BuildRanges(&ranges);
 
@@ -826,4 +848,127 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	if (openEditor) return LauncherResult::OpenEditor;
 	if (applyUpdate) return LauncherResult::ApplyAppUpdate;
 	return launch ? LauncherResult::Launch : LauncherResult::Quit;
+}
+
+// ---------------------------------------------------------------- font coverage
+//
+// ImGui draws a '?' for any codepoint the loaded font has no glyph for, with no
+// warning anywhere. That is how the version-history bullet shipped unreadable:
+// "・" (U+30FB) exists in the default Noto Sans TC but NOT in FZ_ZY.ttf, so the
+// defect was invisible to anyone who had not switched fonts.
+//
+// The check builds each shipped font headlessly (ImGui needs a context, not a
+// window or a GL device) and asks FindGlyphNoFallback for every codepoint the
+// launcher can draw. Adding a link label or a changelog line is now covered
+// automatically, because both come from CollectLauncherTexts.
+int RunFontCoverageSelftest(const std::wstring& exeDir)
+{
+	std::vector<const char*> texts;
+	CollectLauncherTexts(texts);
+
+	// unique codepoints, in first-seen order so the report reads like the source
+	std::vector<unsigned> want;
+	{
+		std::vector<bool> seen(0x110000, false);
+		for (const char* t : texts) {
+			for (const unsigned char* p = (const unsigned char*)t; p && *p; ) {
+				unsigned cp = 0;
+				int n = 1;
+				if (*p < 0x80)             { cp = *p; }
+				else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1Fu; n = 2; }
+				else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0Fu; n = 3; }
+				else if ((*p & 0xF8) == 0xF0) { cp = *p & 0x07u; n = 4; }
+				else { p++; continue; }              // stray continuation byte
+				for (int i = 1; i < n; i++) {
+					if ((p[i] & 0xC0) != 0x80) { n = i; cp = 0; break; }
+					cp = (cp << 6) | (p[i] & 0x3Fu);
+				}
+				p += n;
+				if (cp < 0x20 || cp >= 0x110000) continue;  // control chars are not drawn
+				if (!seen[cp]) { seen[cp] = true; want.push_back(cp); }
+			}
+		}
+	}
+
+	std::vector<std::wstring> fonts = ListAvailableFonts(exeDir);
+	if (fonts.empty()) {
+		printf("font coverage: no fonts under Fonts\ -- nothing to check\n");
+		return 1;
+	}
+	printf("font coverage: %d distinct characters across %d font(s)\n",
+	       (int)want.size(), (int)fonts.size());
+
+	int bad = 0;
+	for (const std::wstring& f : fonts) {
+		const std::wstring path = ResolveFontPath(exeDir, f);
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.Fonts->Clear();
+
+		static ImVector<ImWchar> ranges;
+		ranges.clear();
+		ImFontGlyphRangesBuilder b;
+		b.AddRanges(io.Fonts->GetGlyphRangesDefault());
+		for (const char* t : texts) b.AddText(t);
+		for (const char* t : kOptionalScriptTexts) b.AddText(t);
+		b.BuildRanges(&ranges);
+
+		// read_file, not AddFontFromFileTTF: that one fopen()s a narrow path and
+		// the exe may sit in a non-ASCII directory (same reason LoadFonts does it).
+		std::vector<unsigned char> ttf = read_file(path);
+		ImFont* font = nullptr;
+		if (!ttf.empty()) {
+			ImFontConfig cfg;
+			cfg.FontDataOwnedByAtlas = false;
+			font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), 18.0f, &cfg, ranges.Data);
+			if (font) io.Fonts->Build();
+		}
+
+		const std::string name = to_utf8(f);
+		if (!font) {
+			printf("  [FAIL] %s: could not be loaded\n", name.c_str());
+			bad++;
+			ImGui::DestroyContext();
+			continue;
+		}
+		std::vector<unsigned> missing;
+		for (unsigned cp : want) {
+			if (cp > 0xFFFF) continue;  // ImWchar is 16-bit in this build
+			if (!font->FindGlyphNoFallback((ImWchar)cp)) missing.push_back(cp);
+		}
+		// Reported, never failed: a TC font is not expected to carry these.
+		{
+			std::string absent;
+			for (const char* t : kOptionalScriptTexts) {
+				for (const unsigned char* p = (const unsigned char*)t; *p; p += (*p < 0x80 ? 1 : (*p & 0xE0) == 0xC0 ? 2 : (*p & 0xF0) == 0xE0 ? 3 : 4)) {
+					unsigned cp = 0;
+					if (*p < 0x80) cp = *p;
+					else if ((*p & 0xE0) == 0xC0) cp = ((*p & 0x1Fu) << 6) | (p[1] & 0x3Fu);
+					else if ((*p & 0xF0) == 0xE0) cp = ((*p & 0x0Fu) << 12) | ((p[1] & 0x3Fu) << 6) | (p[2] & 0x3Fu);
+					else continue;
+					if (cp <= 0xFFFF && !font->FindGlyphNoFallback((ImWchar)cp)) {
+						wchar_t w[2] = { (wchar_t)cp, 0 };
+						absent += to_utf8(w);
+					}
+				}
+			}
+			if (!absent.empty())
+				printf("  [note] %s: no glyph for the optional script label(s) '%s'\n",
+				       name.c_str(), absent.c_str());
+		}
+		if (missing.empty()) {
+			printf("  [PASS] %s: draws all %d\n", name.c_str(), (int)want.size());
+		} else {
+			printf("  [FAIL] %s: %d character(s) would render as '?'\n",
+			       name.c_str(), (int)missing.size());
+			for (unsigned cp : missing) {
+				wchar_t w[2] = { (wchar_t)cp, 0 };
+				printf("           U+%04X  '%s'\n", cp, to_utf8(w).c_str());
+			}
+			bad++;
+		}
+		ImGui::DestroyContext();
+	}
+	printf("\n%s\n", bad == 0 ? "ALL PASS" : "FAILED");
+	return bad == 0 ? 0 : 1;
 }

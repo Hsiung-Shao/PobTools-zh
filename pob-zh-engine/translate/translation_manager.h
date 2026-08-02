@@ -36,6 +36,37 @@ const char* translation_set_source(const char *name);
 /* Currently selected source dictionary, or nullptr. */
 const char* translation_get_source(void);
 
+/* ===== Reverse-translation trace =====
+**
+** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
+** flat dictionary merged from 8 files, and from the outside you cannot see
+** which rule fired or which file's copy of a key won. Every claim about paste
+** coverage then has to be inferred from black-box round trips, which is how
+** three separate coverage figures came out wrong in one session.
+**
+** Between begin() and end(), each reverse-translated line appends one TSV row:
+**   line <TAB> rule <TAB> key <TAB> file <TAB> nums <TAB> in <TAB> out
+** `rule` names the branch that produced the result ("pattern", "status",
+** "annotation", "miss", ...); `file` is the dictionary the winning entry came
+** from. Tracing is off by default and costs nothing when off. */
+void        translation_trace_begin(void);
+const char* translation_trace_get(void);
+void        translation_trace_end(void);
+
+/* Render GGG's "[Key|Display]" / "[Key]" markup the way the game does before it
+** draws a string. Exposed so a diagnostic can build a probe that looks like real
+** game text using the ENGINE's own rendering — re-implementing it alongside is
+** how an instrument ends up measuring itself instead of the engine. Returns a
+** pointer to static storage, valid until the next call. */
+const char* translation_strip_ggg_markup(const char *s);
+
+/* Debug: the section grammar's verdict, one "<kind>\t<line>" row per input line
+** (kinds: sep/header/property/enchant/mods/status/flavour/desc/-). Exposed so
+** the selftest can assert what the grammar decided instead of only what came out
+** the far end -- a wrong label that happens to produce the right English is a
+** bug waiting for the next item shape. Buffer is valid until the next call. */
+const char* translation_classify_dump(const char *text);
+
 /* Get current locale string (e.g. "zh-rTW") */
 const char* translation_get_locale(void);
 

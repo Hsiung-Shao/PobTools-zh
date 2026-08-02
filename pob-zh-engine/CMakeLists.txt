@@ -332,6 +332,8 @@ if (WIN32)
         host/launcher_editor.cpp
         host/editor_data.cpp
         host/editor_selftest.cpp
+        host/paste_selftest.cpp
+        host/paste_trace.cpp
         # the editor selftest asks the REAL loader what the engine would
         # return; without this it could only re-implement the merge and
         # would be testing its own copy of the rule instead of the engine

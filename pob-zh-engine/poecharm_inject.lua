@@ -222,6 +222,58 @@ PATCHES["SearchHost"] = function(class)
 	end
 end
 
+-- Tooltips: translate a line BEFORE POB wraps it.
+--
+-- TooltipClass:AddLine splits on "\n" and immediately calls main:WrapString,
+-- storing each wrapped fragment as its own line (Tooltip.lua:95-107); Draw then
+-- issues one DrawString per fragment (Tooltip.lua:597). The engine's DrawString
+-- hook therefore only ever sees POST-WRAP pieces, and a piece like
+-- "...have a 25% chance to Explode, dealing a tenth of their maximum" is in no
+-- dictionary -- so EVERY tooltip line long enough to wrap stayed English, no
+-- matter how complete the dictionary was. Translating here fixes the whole
+-- class of them, and the wrap then happens at Chinese widths, which is also the
+-- correct place to measure.
+--
+-- PobToolsTranslateDisplay, not PobToolsTranslate: POB colours text with inline
+-- "^x7070FF" escapes, and the bare lookup strips them to match and hands back
+-- uncoloured text -- which silently repainted every translated tooltip line in
+-- the default colour. The Display variant is the exact function DrawString uses.
+--
+-- Double translation is not a concern: the fragments DrawString later sees are
+-- Chinese, and Chinese matches no English key.
+PATCHES["Tooltip"] = function(class)
+	local orig = class.AddLine
+	if not orig then error("Tooltip has no AddLine to wrap") end
+	if type(PobToolsTranslateDisplay) ~= "function" then
+		error("PobToolsTranslateDisplay unavailable (engine too old)")
+	end
+	class.AddLine = function(self, size, text, ...)
+		-- Tooltip.lua:96 starts a new BLOCK when a line begins with "Equipping"
+		-- or "Removing", so translating those would silently change the
+		-- tooltip's block structure. Left alone on purpose.
+		local structural = type(text) == "string" and
+			(text:find("Equipping", 1, true) or text:find("Removing", 1, true))
+		if type(text) == "string" and text ~= "" and not structural and not hasCJK(text) then
+			-- whole blob first: GGG ships some stat lines WITH their own "\n"
+			-- and the dictionary stores those joined, so the multi-line form is
+			-- a real key. Falling back per line covers everything else.
+			local whole = PobToolsTranslateDisplay(text)
+			if whole then
+				text = whole
+			elseif text:find("\n", 1, true) then
+				local parts, changed = {}, false
+				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+					local zh = line ~= "" and PobToolsTranslateDisplay(line) or nil
+					if zh then changed = true end
+					t_insert(parts, zh or line)
+				end
+				if changed then text = table.concat(parts, "\n") end
+			end
+		end
+		return orig(self, size, text, ...)
+	end
+end
+
 -- ===== apply now (loaded classes) + on future load (wrap LoadModule) =====
 -- NOTE: a class file runs `newClass(...)` FIRST and defines its methods AFTER,
 -- so methods only exist once the whole file has finished loading. POB loads

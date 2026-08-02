@@ -27,6 +27,8 @@
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
+#include "paste_selftest.h"
+#include "paste_trace.h"
 #include "filter_editor.h"
 #include "atlas_planner.h"
 #include "atlas_tree_data.h"
@@ -395,6 +397,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--ui-theme-selftest") {
 		return PobUi::RunThemeSelfTest() ? 0 : 1;
 	}
+	if (arg1 == L"--font-coverage-selftest") {
+		// headless: every shipped font must be able to draw every character the
+		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
+		return RunFontCoverageSelftest(dir);
+	}
 
 	// Headless new-season atlas data import: --atlas-import <path to data.json>.
 	if (arg1 == L"--atlas-import") {
@@ -421,6 +428,26 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// headless: drives the editor data layer, then asks the real
 		// translation loader what the engine would return
 		return RunEditorSelftest();
+	}
+	if (arg1 == L"--paste-trace") {
+		// headless: one item, one row per line -- which rule fired, which
+		// dictionary file's copy of the key won
+		return RunPasteTrace(arg2, arg3.empty() ? (dir + L"paste_trace.tsv") : arg3);
+	}
+	if (arg1 == L"--paste-census") {
+		// headless: the same trace over every dictionary entry's Chinese.
+		// arg3 picks the section context: plain (default) / mods / property
+		std::string shell = "plain";
+		if (!arg3.empty()) {
+			shell.assign(arg3.begin(), arg3.end());  // ASCII keywords only
+		}
+		return RunPasteCensus(arg2.empty() ? (dir + L"paste_census.tsv") : arg2, shell);
+	}
+	if (arg1 == L"--paste-selftest") {
+		// headless: replays real 3.29 Chinese items through the paste path.
+		// POB turns any surviving non-ASCII byte into '?', so the check is that
+		// nothing survives.
+		return RunPasteSelftest();
 	}
 	if (arg1 == L"--filter-editor") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");

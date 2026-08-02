@@ -1653,8 +1653,37 @@ static int l_Paste(lua_State* L)
 	}
 
 	if (got_clipboard && !utf8_text.empty()) {
+		// Set POB_PASTE_TRACE=1 to record what POB actually received. Everything
+		// about this path used to be reconstructed from simulations run outside
+		// the engine, which is how several confident-but-wrong diagnoses got
+		// made; with this on, a user pastes once and the real answer is on disk.
+		char tracebuf[8];
+		const bool trace = translation_win_env("POB_PASTE_TRACE", tracebuf, sizeof(tracebuf)) != nullptr;
+		if (trace) translation_trace_begin();
+
 		// Reverse-translate Chinese -> English so POB can parse pasted items.
 		char* reversed = translation_reverse_text(utf8_text.c_str());
+
+		if (trace) {
+			char dir[MAX_PATH];
+			GetModuleFileNameA(nullptr, dir, MAX_PATH);
+			std::string path(dir);
+			size_t slash = path.find_last_of("\\/");
+			path = (slash == std::string::npos ? std::string() : path.substr(0, slash + 1))
+			     + "paste_trace_runtime.tsv";
+			// Append, never truncate: the file is read after the fact, and a
+			// second paste used to silently erase the one being investigated.
+			const bool fresh = GetFileAttributesA(path.c_str()) == INVALID_FILE_ATTRIBUTES;
+			if (FILE* f = fopen(path.c_str(), "ab")) {
+				if (fresh) fputs("\xEF\xBB\xBFrule\tkind\tkey\tfile\tin\tout\n", f);
+				fputs("=== paste ===\t\t\t\t\n", f);
+				const char* rows = translation_trace_get();
+				fwrite(rows, 1, strlen(rows), f);
+				fclose(f);
+			}
+			translation_trace_end();
+		}
+
 		if (reversed) {
 			lua_pushstring(L, reversed);
 			translation_free(reversed);
@@ -2375,6 +2404,25 @@ static int l_PobToolsTranslate(lua_State* L)
 	return 1;
 }
 
+// PobToolsTranslateDisplay(text) -> translated text, or nil when nothing matched.
+//
+// The same function DrawString uses, exposed because Tooltip:AddLine has to
+// translate BEFORE POB wraps a line (Tooltip.lua:95-107) -- after the wrap the
+// pieces match nothing. It exists instead of letting the Lua patch call
+// PobToolsTranslate because that one is a bare dictionary lookup: POB colours
+// text with inline "^x7070FF" escapes, the lookup strips them to match, and the
+// bare result would drop the line's colour. tr_display puts the leading escape
+// back. Two implementations of that rule would drift; there is one.
+static int l_PobToolsTranslateDisplay(lua_State* L)
+{
+	const char* text = lua_tostring(L, 1);
+	if (!text) { lua_pushnil(L); return 1; }
+	std::string out = tr_display(text);
+	if (out.empty() || out == text) { lua_pushnil(L); return 1; }
+	lua_pushlstring(L, out.data(), out.size());
+	return 1;
+}
+
 // PobToolsReverse(chinese) -> english, or nil. Lua-callable single-term reverse lookup.
 static int l_PobToolsReverse(lua_State* L)
 {
@@ -2619,6 +2667,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	// PobTools: Lua-callable translation helpers. The legacy PoeCharm* global
 	// names are kept as aliases so existing injected Lua keeps working.
 	ADDFUNC(PobToolsTranslate);
+	ADDFUNC(PobToolsTranslateDisplay);
 	ADDFUNC(PobToolsReverse);
 	ADDFUNC(PobToolsSetTranslate);
 	ADDFUNC(PobToolsSetSource);
