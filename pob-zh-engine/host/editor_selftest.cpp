@@ -118,13 +118,14 @@ std::string engine_says(const char* key)
 
 } // namespace
 
-int RunEditorSelftest()
+// T1-T13 for one game. Everything here writes to the REAL dictionaries next to
+// the exe (edit -> verify through the engine -> restore), which is why it stayed
+// hardcoded to poe1: running it against poe2 rewrites poe2's files too. Safe now
+// that SaveFile preserves each file's original line ending.
+static int run_for_game(const std::wstring& dir, const char* game)
 {
-	g_pass = g_fail = 0;
-	const std::wstring dir = exe_dir();
-	printf("editor selftest — data dir next to: %s\n", narrow(dir).c_str());
-
-	EditorModel model = LoadModel(dir, "poe1", "zh-rTW");
+	printf("\n=== %s ===\n", game);
+	EditorModel model = LoadModel(dir, game, "zh-rTW");
 	if (!model.localeExists || model.files.empty()) {
 		printf("  [FAIL]  locale dir not found or no dictionary files\n");
 		return 2;
@@ -138,7 +139,8 @@ int RunEditorSelftest()
 	// passthrough mode -- every lookup then returns nothing and every
 	// comparison below "passes" for the wrong reason. Set them the same way
 	// the launcher does, and prove the loader actually read the files.
-	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+	SetEnvironmentVariableW(L"POB_GAME",
+	                        std::wstring(game, game + strlen(game)).c_str()); // ASCII ids
 	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
 	translation_reload();
 	printf("  engine: locale=%s entries=%d\n",
@@ -205,7 +207,7 @@ int RunEditorSelftest()
 		      "T7 **edit through the editor reaches the engine**");
 
 		// restore and prove the restore worked
-		EditorModel reload = LoadModel(dir, "poe1", "zh-rTW");
+		EditorModel reload = LoadModel(dir, game, "zh-rTW");
 		int ridx = FindFileIdx(reload, model.files[(size_t)fidx].name);
 		SetEntry(reload, ridx, key, before);
 		SaveAll(reload, &err);
@@ -220,7 +222,7 @@ int RunEditorSelftest()
 		printf("  shadowed key %s: in %s (loses) and %s (wins)\n",
 		       key.c_str(), loserFile.c_str(), winnerFile.c_str());
 
-		EditorModel m2 = LoadModel(dir, "poe1", "zh-rTW");
+		EditorModel m2 = LoadModel(dir, game, "zh-rTW");
 		const std::string winnerValue = engine_says(key.c_str());
 		std::string err;
 
@@ -242,7 +244,7 @@ int RunEditorSelftest()
 		      "T9 editing the LOSING copy changes nothing (the shadowing trap)");
 
 		// now edit the winning copy
-		EditorModel m3 = LoadModel(dir, "poe1", "zh-rTW");
+		EditorModel m3 = LoadModel(dir, game, "zh-rTW");
 		int wi = FindFileIdx(m3, winnerFile);
 		SetEntry(m3, wi, key, sentinel + winnerValue);
 		SaveAll(m3, &err);
@@ -250,7 +252,7 @@ int RunEditorSelftest()
 		      "T10 editing the WINNING copy does take effect");
 
 		// restore both
-		EditorModel m4 = LoadModel(dir, "poe1", "zh-rTW");
+		EditorModel m4 = LoadModel(dir, game, "zh-rTW");
 		SetEntry(m4, FindFileIdx(m4, loserFile), key, loserBefore);
 		SetEntry(m4, FindFileIdx(m4, winnerFile), key, winnerValue);
 		SaveAll(m4, &err);
@@ -259,7 +261,7 @@ int RunEditorSelftest()
 
 	// --- round-trip fidelity ----------------------------------------------
 	{
-		EditorModel m = LoadModel(dir, "poe1", "zh-rTW");
+		EditorModel m = LoadModel(dir, game, "zh-rTW");
 		bool keysKept = true, metaKept = true;
 		for (const EditorFile& f : m.files) {
 			if (!f.doc.contains("entries")) { keysKept = false; break; }
@@ -269,6 +271,162 @@ int RunEditorSelftest()
 		check(keysKept, "T12 every file still has its entries object");
 		check(metaKept, "T13 non-entries fields survived the round trip");
 	}
+
+	// --- load order, exposed on the model ----------------------------------
+	// The editor now reads meta.json's load_order itself so its file pickers can
+	// say which copy of a key the engine will actually use. T24-T26 check that
+	// shortcut against the full merge replay, and against the engine.
+	{
+		check(!model.loadOrder.empty(), "T24 model exposes meta.json load_order");
+
+		std::vector<int> byOrder = FileIdxInLoadOrder(model);
+		bool sameSize = byOrder.size() == model.files.size();
+		bool ascending = true;
+		int prev = -1;
+		for (int fi : byOrder) {
+			const int o = model.files[(size_t)fi].order;
+			if (o < 0) continue;              // unlisted files sort last
+			if (o <= prev) ascending = false;
+			prev = o;
+		}
+		check(sameSize && ascending, "T25 FileIdxInLoadOrder covers every file, in order");
+
+		std::map<std::string, int> occ;
+		for (const EditorEntry& e : model.entries) occ[e.key]++;
+		std::map<std::string, std::string> w = merge_winner(model, load_order(model));
+		int checked = 0, wrong = 0;
+		std::string firstWrong;
+		for (const auto& kv : occ) {
+			if (kv.second < 2) continue;      // only keys that actually collide
+			auto it = w.find(kv.first);
+			if (it == w.end()) continue;
+			const int fi = WinnerFileIdx(model, kv.first);
+			if (fi < 0 || model.files[(size_t)fi].name != it->second) {
+				if (wrong == 0) firstWrong = kv.first;
+				wrong++;
+			}
+			checked++;
+		}
+		if (wrong) printf("     first mismatch: %s\n", firstWrong.c_str());
+		printf("     cross-checked %d shadowed keys\n", checked);
+		check(checked > 100 && wrong == 0,
+		      "T26 WinnerFileIdx agrees with a full merge replay on every shadowed key");
+	}
+
+	// --- line endings survive a save ---------------------------------------
+	// Two poe1 dictionaries were silently converted CRLF->LF by an earlier
+	// version of SaveFile. Copies, so the real files are never at risk.
+	{
+		bool anyCrlf = false, anyChecked = false, allKept = true;
+		for (const EditorFile& f : model.files) {
+			if (!f.crlf) continue;
+			anyCrlf = true;
+			const std::wstring tmp = f.path + L".lftest";
+			if (!CopyFileW(f.path.c_str(), tmp.c_str(), FALSE)) continue;
+			EditorFile probe;
+			probe.name = f.name;
+			probe.path = tmp;
+			probe.doc = f.doc;
+			probe.crlf = f.crlf;
+			std::string err;
+			if (SaveFile(probe, &err)) {
+				std::string before, after;
+				// count CRs before/after through the same reader the model uses
+				HANDLE h = CreateFileW(tmp.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+				                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (h != INVALID_HANDLE_VALUE) {
+					char buf[8192];
+					DWORD got = 0;
+					size_t cr = 0, lf = 0;
+					while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got)
+						for (DWORD i = 0; i < got; i++) {
+							if (buf[i] == '\r') cr++;
+							if (buf[i] == '\n') lf++;
+						}
+					CloseHandle(h);
+					if (cr == 0 || cr != lf) allKept = false;
+					anyChecked = true;
+				}
+			}
+			DeleteFileW(tmp.c_str());
+			DeleteFileW((tmp + L".bak").c_str());
+			break; // one representative file is enough
+		}
+		check(anyCrlf && anyChecked && allKept,
+		      "T27 SaveFile keeps a CRLF file CRLF");
+	}
+
+	// --- adding a brand-new key reaches the engine -------------------------
+	// The add-entry row is the only way to translate a string the engine has
+	// never logged as missing. SetEntry has no delete path, so the file is
+	// restored from a byte snapshot rather than by editing it back.
+	{
+		const std::string newKey = "__pobtools_editor_selftest_key__";
+		const std::string newVal = u8"自我測試新增";
+		const int target = FindFileIdx(model, "ui.json");
+		check(target >= 0, "T28a ui.json present as an add target");
+		if (target >= 0) {
+			const std::wstring path = model.files[(size_t)target].path;
+			const std::wstring snap = path + L".snap";
+			CopyFileW(path.c_str(), snap.c_str(), FALSE);
+
+			EditorModel m = LoadModel(dir, game, "zh-rTW");
+			const int ti = FindFileIdx(m, "ui.json");
+			SetEntry(m, ti, newKey, newVal);
+			std::string err;
+			SaveAll(m, &err);
+			check(engine_says(newKey.c_str()) == newVal,
+			      "T28 a key added through the editor reaches the engine");
+
+			MoveFileExW(snap.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+			DeleteFileW((path + L".bak").c_str());
+			check(engine_says(newKey.c_str()).empty(), "T29 restore removed the test key");
+		}
+	}
+
+	// --- locale enumeration -------------------------------------------------
+	{
+		std::vector<std::string> l1 = ListLocales(dir, "poe1");
+		std::vector<std::string> l2 = ListLocales(dir, "poe2");
+		bool has1 = std::find(l1.begin(), l1.end(), std::string("zh-rTW")) != l1.end();
+		bool has2 = std::find(l2.begin(), l2.end(), std::string("zh-rTW")) != l2.end();
+		std::vector<std::string> lx = ListLocales(dir, "poe9");
+		check(has1 && has2, "T30 ListLocales finds zh-rTW for both games");
+		check(!lx.empty(), "T31 ListLocales falls back instead of returning nothing");
+	}
+
+	// SaveFile backs a file up before overwriting it, so a run that edits and
+	// restores four files leaves four .bak copies behind. Every value is already
+	// restored and verified above, so the backups are litter -- and litter in the
+	// shipping Data\ directory is exactly the kind of thing nobody notices.
+	for (const EditorFile& f : model.files)
+		DeleteFileW((f.path + L".bak").c_str());
+
+	return 0;
+}
+
+int RunEditorSelftest(const std::string& games)
+{
+	g_pass = g_fail = 0;
+	const std::wstring dir = exe_dir();
+	printf("editor selftest - data dir next to: %s\n", narrow(dir).c_str());
+	printf("  NOTE: this edits the dictionaries next to the exe (edit -> verify -> restore)\n");
+
+	const bool doPoe1 = (games != "poe2");
+	const bool doPoe2 = (games != "poe1");
+	if (doPoe1 && run_for_game(dir, "poe1") == 2) return 2;
+	if (doPoe2 && run_for_game(dir, "poe2") == 2) return 2;
+
+	// Everything below is poe1-only: it asserts the Volatility gem/passive
+	// collision, and poe2's dictionary has no such data. Printed, not skipped
+	// silently, so "did not run" stays visible.
+	printf("\n=== source dictionaries (poe1 only) ===\n");
+	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
+	translation_reload();
+	EditorModel model = LoadModel(dir, "poe1", "zh-rTW");
+	std::vector<std::string> order = load_order(model);
+	(void)order;
 
 	// --- source dictionaries (issue #3) ------------------------------------
 	// POB stores support gems under their SHORT name, so "Volatility" is both a

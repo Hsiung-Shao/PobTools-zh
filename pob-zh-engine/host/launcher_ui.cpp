@@ -4,6 +4,7 @@
 #include "app_version.h"
 #include "app_update.h"
 #include "changelog.h"
+#include "pob_launch.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -94,13 +95,116 @@ static void CollectLauncherTexts(std::vector<const char*>& out)
 			t->updateRetry, t->updateTransDone,
 			t->updateCheck, t->updateCheckTip,
 			t->updateChecking, t->updateUpToDate,
+			t->tabHome, t->tabSettings, t->sectionInterface, t->sectionLaunch,
+			t->exitModeClose, t->exitModeKeepOpen, t->startupTabLabel,
+			t->pobRunning, t->pobSameGameWarn, t->updateBlockedTip,
 		};
+		// A string that never reaches the glyph atlas is drawn as '?' with no
+		// warning anywhere -- that is how the version-history bullet shipped
+		// unreadable on one of the two fonts. Forgetting to list a new field is
+		// now a build error rather than something a screenshot reveals.
+		static_assert(sizeof(fields) / sizeof(fields[0]) == kLauncherStringsFields,
+		              "add the new LauncherStrings field to this list too");
 		for (const char* f : fields) if (f) out.push_back(f);
 	}
 	out.push_back(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
 	out.push_back(kChangelogText);      // version-history dialog body
 	for (const LinkEntry& l : kLinks) out.push_back(l.label);
 	out.push_back(u8"繁體中文Korean·"); // language combo labels + link separator
+}
+
+// Release history body.
+//
+// changelog.h is hard-wrapped at ~26 CJK characters per line, because it used to
+// be drawn in a 600px modal. In a full-width tab those breaks are simply wrong:
+// the text stays in a narrow column with the rest of the window empty. So the
+// baked-in line breaks are UNDONE here and ImGui re-wraps at the real width.
+//
+// Structure, per the format contract with changelog.h:
+//   "v" + digit           release header (accent colour, gap above)
+//   ""                    blank line between releases
+//   U+3000 + "·" or "- "   bullet (both spellings exist across the history)
+//   U+3000, anything else  continuation of the previous line -- folded back in
+//                          (one U+3000 after a heading, two after a bullet)
+//   anything else         section heading (修正 / 新增 / 調整)
+//
+// Historical entries are never edited (a standing project rule), so undoing the
+// wrap at render time is the only way to fix them.
+static void DrawChangelogBody(float scale)
+{
+	static const char kIdeoSpace[] = "\xe3\x80\x80";   // U+3000
+	static const char kMidDot[]    = "\xc2\xb7";       // U+00B7
+	auto startsWith = [](const std::string& s, const char* p) {
+		return s.compare(0, strlen(p), p) == 0;
+	};
+	auto isBullet = [&](const std::string& s) {
+		return startsWith(s, (std::string(kIdeoSpace) + kMidDot).c_str()) ||
+		       startsWith(s, (std::string(kIdeoSpace) + "- ").c_str());
+	};
+
+	// 1. fold continuations back into the line they belong to. Bullets are
+	//    continued with two U+3000, headings with one, so the rule is "indented
+	//    and not the start of a bullet".
+	std::vector<std::string> lines;
+	{
+		const std::string log = kChangelogText;
+		size_t start = 0;
+		while (start <= log.size()) {
+			size_t nl = log.find('\n', start);
+			size_t len = (nl == std::string::npos ? log.size() : nl) - start;
+			std::string line = log.substr(start, len);
+			if (!lines.empty() && startsWith(line, kIdeoSpace) && !isBullet(line)) {
+				std::string tail = line;
+				while (startsWith(tail, kIdeoSpace)) tail.erase(0, strlen(kIdeoSpace));
+				std::string& prev = lines.back();
+				// The wrap points are all mid-CJK, where no separator belongs.
+				// Guard the one case that would lose a space anyway.
+				if (!prev.empty() && !tail.empty() &&
+				    (unsigned char)prev.back() < 0x80 && isalnum((unsigned char)prev.back()) &&
+				    (unsigned char)tail[0] < 0x80 && isalnum((unsigned char)tail[0]))
+					prev += ' ';
+				prev += tail;
+			} else {
+				lines.push_back(line);
+			}
+			if (nl == std::string::npos) break;
+			start = nl + 1;
+		}
+	}
+
+	// 2. draw
+	const float indent = 16.0f * scale;
+	bool first = true;
+	for (const std::string& line : lines) {
+		if (line.empty()) {
+			ImGui::Dummy(ImVec2(0, 10.0f * scale)); // between releases
+			first = false;
+			continue;
+		}
+		const bool isVer = line.size() > 1 && line[0] == 'v' &&
+		                   line[1] >= '0' && line[1] <= '9';
+		if (isVer && !first) ImGui::Dummy(ImVec2(0, 6.0f * scale));
+
+		std::string text = line;
+		bool bullet = false;
+		if (startsWith(text, kIdeoSpace)) {
+			text.erase(0, strlen(kIdeoSpace));
+			if (startsWith(text, kMidDot)) { text.erase(0, strlen(kMidDot)); bullet = true; }
+			else if (startsWith(text, "- ")) { text.erase(0, 2); bullet = true; }
+		}
+		if (bullet) {
+			text = std::string(kMidDot) + " " + text;
+			ImGui::Indent(indent);
+		}
+		ImGui::PushTextWrapPos(0.0f); // wrap at the container's right edge
+		if (isVer) ImGui::PushStyleColor(ImGuiCol_Text, PobUi::Accent());
+		ImGui::TextUnformatted(text.c_str());
+		if (isVer) ImGui::PopStyleColor();
+		ImGui::PopTextWrapPos();
+		if (bullet) ImGui::Unindent(indent);
+		ImGui::Dummy(ImVec2(0, 4.0f * scale)); // line leading
+		first = false;
+	}
 }
 
 // Launcher-specific draw-list colours; shared widgets use ui_theme.cpp.
@@ -236,6 +340,33 @@ static void SectionLabel(const LauncherFonts& fonts, float scale, float innerW, 
 		ImVec2(mn.x + innerW, y), kGlassEdge, 1.0f);
 	ImGui::PopFont();
 	ImGui::Dummy(ImVec2(0, 2.0f * scale));
+}
+
+// About body: product line, build date, attribution. Per-line leading because
+// the default line height packs CJK too tightly.
+static void DrawAboutBody(const LauncherStrings& S, const LauncherFonts& fonts,
+                          float scale, float wrap)
+{
+	ImGui::PushFont(fonts.title);
+	ImGui::TextUnformatted("PobTools");
+	ImGui::PopFont();
+	ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+	ImGui::TextUnformatted("v" POBTOOLS_VERSION_STRING "  -  Build " __DATE__);
+	ImGui::PopStyleColor();
+	ImGui::Dummy(ImVec2(0, 10.0f * scale));
+
+	std::string body = S.aboutBody;
+	size_t start = 0;
+	while (start <= body.size()) {
+		size_t nl = body.find('\n', start);
+		size_t len = (nl == std::string::npos ? body.size() : nl) - start;
+		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
+		ImGui::TextUnformatted(body.c_str() + start, body.c_str() + start + len);
+		ImGui::PopTextWrapPos();
+		ImGui::Dummy(ImVec2(0, 9.0f * scale)); // leading between lines
+		if (nl == std::string::npos) break;
+		start = nl + 1;
+	}
 }
 
 // Wide game row: icon badge + game name + POB version + detect status on a
@@ -422,11 +553,25 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
 		SpawnTool(exeDir, flag);
 	};
+	// KeepOpen mode: start POB the same way the tools are started (detached, the
+	// window stays up) instead of returning Launch. ShowLauncher tears down GLFW
+	// and ImGui before it returns, so "return a result" could never keep the
+	// window alive, let alone allow a second POB while the first is running.
+	auto launchPob = [&](bool poe2) {
+		cfg.game = poe2 ? L"poe2" : L"poe1";
+		cfg.locale = kLocaleIds[localeIdx];
+		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);   // the child's safety net
+		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile); // inherited
+		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
+		if (!lua.empty()) PobLaunch::SpawnPobDetached(lua, cfg.game);
+	};
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
 	// A check the user asked for must report back even when the answer is "no
 	// news"; the automatic startup one stays silent.
 	bool manualCheck = false;
 	double upToDateUntil = 0.0;
+	bool wasPobBusy = false;       // edge-detect "the last POB just closed"
+	bool applyStartupTab = true;   // honour cfg.startupTab on the first frame only
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
 
@@ -447,6 +592,21 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// When the font has no CJK/Hangul glyphs, fall back to English labels.
 		const LauncherStrings& S = fonts.cjkOk ? StringsFor(kLocaleIds[localeIdx], fonts.koreanOk) : STR_EN;
 		const char* localeLabels[2] = { u8"繁體中文", u8"English" };
+
+		// POB instances this launcher started (KeepOpen mode). Counted every
+		// frame because that call is also where finished processes are reaped.
+		const int pobCount = PobLaunch::PobRunningCount();
+		const bool pobBusy = PobLaunch::AnyPobRunning(exeDir);
+		if (appUpd) {
+			// Applying an update renames engine\* out of the way while POB has
+			// those DLLs open, and the same check silently overwrites Data\*.json
+			// with a fresh translation pack. Both have to stop, so the gate goes
+			// on the worker, not just on the button.
+			appUpd->SetHold(pobBusy);
+			// Last POB closed: pick the check back up instead of waiting a day.
+			if (wasPobBusy && !pobBusy) appUpd->RequestCheck(false);
+		}
+		wasPobBusy = pobBusy;
 
 		// App-updater snapshot for this frame. While the update is in flight the
 		// launch/tool actions are disabled so the auto-relaunch cannot interrupt
@@ -521,12 +681,17 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					float w = ImGui::CalcTextSize(S.updateCheck).x +
 					          ImGui::GetStyle().FramePadding.x * 2.0f;
 					placeRight(w, ImGui::GetFrameHeight());
+					// Disabled while POB holds engine\*. The tooltip says why and
+					// what to do -- a greyed-out button on its own is a dead end.
+					ImGui::BeginDisabled(pobBusy);
 					if (ImGui::Button(S.updateCheck)) {
 						appUpd->RequestCheck(true); // force: skip the daily throttle
 						manualCheck = true;
 						upToDateUntil = 0.0;
 					}
-					if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.updateCheckTip);
+					ImGui::EndDisabled();
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+						ImGui::SetTooltip("%s", pobBusy ? S.updateBlockedTip : S.updateCheckTip);
 				} else if (ust.phase == AppUpdatePhase::Checking) {
 					float w = ImGui::CalcTextSize(S.updateChecking).x;
 					placeRight(w, ImGui::GetTextLineHeight());
@@ -543,9 +708,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.60f, 0.20f, 0.45f));
 					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.60f, 0.20f, 0.65f));
 					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.85f, 0.60f, 0.20f, 0.85f));
+					ImGui::BeginDisabled(pobBusy);
 					if (ImGui::Button(label.c_str())) appUpd->StartAppUpdate();
+					ImGui::EndDisabled();
 					ImGui::PopStyleColor(3);
-					if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.updateNow);
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+						ImGui::SetTooltip("%s", pobBusy ? S.updateBlockedTip : S.updateNow);
 				} else if (ust.phase == AppUpdatePhase::AppDownloading) {
 					char prog[96];
 					if (ust.bytesTotal > 0)
@@ -585,21 +753,51 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::Dummy(ImVec2(0, badge + 10.0f * scale));
 		}
 
+		// --- tabs -------------------------------------------------------------
+		// The version history used to be a 600px modal; as a tab it gets the whole
+		// window. Settings collects the controls that used to crowd the status bar.
+		const bool tabsOk = ImGui::BeginTabBar("##maintabs");
+		ImGuiTabItemFlags homeFlags = 0, verFlags = 0;
+		if (applyStartupTab) {
+			(cfg.startupTab == StartupTab::Versions ? verFlags : homeFlags) =
+				ImGuiTabItemFlags_SetSelected;
+			applyStartupTab = false;
+		}
+		if (tabsOk && ImGui::BeginTabItem(S.tabHome, nullptr, homeFlags)) {
+		ImGui::BeginChild("##homebody", ImVec2(0, 0), false);
+
 		// Games: one wide row per install, launch button inline.
 		if (updaterBusy) ImGui::BeginDisabled();
 		SectionLabel(fonts, scale, inner, S.gamesSection);
 		bool poe1Ok = !installs.poe1Lua.empty();
 		bool poe2Ok = !installs.poe2Lua.empty();
+		// KeepOpen starts POB detached and leaves this window up; the other two
+		// modes take the original path (set `launch`, ShowLauncher returns).
+		const bool keepOpen = (cfg.exitMode == LaunchExitMode::KeepOpen);
 		if (GameRow("##launch1", S.poe1, installs.poe1Version, poe1Ok ? S.detected : S.missing,
 				poe1Ok, fonts, scale, inner, poe1Ok ? poe1Dir.c_str() : S.notFoundPoe1, S.launch)) {
 			poe2Sel = false;
-			launch = true;
+			if (keepOpen) launchPob(false); else launch = true;
 		}
 		ImGui::Dummy(ImVec2(0, 2.0f * scale));
 		if (GameRow("##launch2", S.poe2, installs.poe2Version, poe2Ok ? S.detected : S.missing,
 				poe2Ok, fonts, scale, inner, poe2Ok ? poe2Dir.c_str() : S.notFoundPoe2, S.launch)) {
 			poe2Sel = true;
-			launch = true;
+			if (keepOpen) launchPob(true); else launch = true;
+		}
+		if (pobCount > 0) {
+			ImGui::PushFont(fonts.small);
+			ImGui::TextDisabled("%s%d", S.pobRunning, pobCount);
+			// Two windows on ONE install share POB's Settings.xml and build files,
+			// so the last one closed overwrites the other. Not ours to fix, but
+			// the user should not have to discover it by losing work.
+			if (PobLaunch::PobRunningCountFor(L"poe1") > 1 ||
+			    PobLaunch::PobRunningCountFor(L"poe2") > 1) {
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.62f, 0.25f, 1.0f));
+				ImGui::TextWrapped("%s", S.pobSameGameWarn);
+				ImGui::PopStyleColor();
+			}
+			ImGui::PopFont();
 		}
 		if (!poe1Ok && !poe2Ok) {
 			ImGui::PushFont(fonts.small);
@@ -651,21 +849,32 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::EndTable();
 		}
 
-		// Bottom status bar: hairline, language combo left, return-checkbox right.
-		{
-			float rowH = ImGui::GetFrameHeight();
-			float yBar = io.DisplaySize.y - rowH - ImGui::GetStyle().WindowPadding.y;
-			if (yBar > ImGui::GetCursorPosY()) ImGui::SetCursorPosY(yBar);
-			ImVec2 lp = ImGui::GetCursorScreenPos();
-			dl->AddLine(ImVec2(lp.x, lp.y - 10.0f * scale), ImVec2(lp.x + inner, lp.y - 10.0f * scale), kGlassEdge, 1.0f);
+		ImGui::EndChild();
+		ImGui::EndTabItem();
+		} // home tab
 
-			float comboW = 150.0f * scale;
+		// --- version history --------------------------------------------------
+		if (tabsOk && ImGui::BeginTabItem(S.changelog, nullptr, verFlags)) {
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * scale, 14.0f * scale));
+			ImGui::BeginChild("##changelog_scroll", ImVec2(0, 0), true,
+			                  ImGuiWindowFlags_AlwaysUseWindowPadding);
+			DrawChangelogBody(scale);
+			ImGui::EndChild();
+			ImGui::PopStyleVar();
+			ImGui::EndTabItem();
+		}
+
+		// --- settings ---------------------------------------------------------
+		if (tabsOk && ImGui::BeginTabItem(S.tabSettings)) {
+			ImGui::BeginChild("##settingsbody", ImVec2(0, 0), false);
+
+			SectionLabel(fonts, scale, inner, S.sectionInterface);
 			ImGui::AlignTextToFramePadding();
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			ImGui::TextUnformatted(S.language);
 			ImGui::PopStyleColor();
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(comboW);
+			ImGui::SameLine(160.0f * scale);
+			ImGui::SetNextItemWidth(220.0f * scale);
 			if (ImGui::BeginCombo("##locale", localeLabels[localeIdx])) {
 				for (int i = 0; i < 2; i++) {
 					if (ImGui::Selectable(localeLabels[i], localeIdx == i)) localeIdx = i;
@@ -674,19 +883,20 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 
 			// Font picker: lists Fonts\*.ttf; switching rebuilds the atlas live.
+			// The rebuild happens at the top of the loop, before NewFrame, so it
+			// does not care which tab the combo is drawn on.
 			auto fontStem = [](const std::wstring& f) {
 				std::string s = to_utf8(f);
 				size_t d = s.rfind(".ttf");
 				if (d == std::string::npos) d = s.rfind(".TTF");
 				return d != std::string::npos ? s.substr(0, d) : s;
 			};
-			ImGui::SameLine(0, 12.0f * scale);
 			ImGui::AlignTextToFramePadding();
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 			ImGui::TextUnformatted(S.font);
 			ImGui::PopStyleColor();
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(160.0f * scale);
+			ImGui::SameLine(160.0f * scale);
+			ImGui::SetNextItemWidth(220.0f * scale);
 			if (ImGui::BeginCombo("##font", fontStem(cfg.fontFile).c_str())) {
 				for (const std::wstring& f : fontList) {
 					if (ImGui::Selectable(fontStem(f).c_str(), f == cfg.fontFile) && f != cfg.fontFile) {
@@ -697,130 +907,44 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::EndCombo();
 			}
 
-			// Status-bar links: the version tag and the explicit "版本資訊" text
-			// both open the scrollable version history, "About" opens the about
-			// modal.
-			auto statusLink = [&](const char* label, const char* popupId, const char* tip) {
-				ImGui::SameLine(0, 12.0f * scale);
-				ImGui::AlignTextToFramePadding();
-				ImVec2 sz = ImGui::CalcTextSize(label);
-				ImVec2 p = ImGui::GetCursorScreenPos();
-				bool hov = ImGui::IsMouseHoveringRect(p, p + sz);
-				ImGui::PushStyleColor(ImGuiCol_Text, hov ? PobUi::Accent() : PobUi::MutedText());
-				ImGui::TextUnformatted(label);
-				ImGui::PopStyleColor();
-				if (hov) {
-					ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-					// OpenPopup must run before SetTooltip: the tooltip window
-					// becomes the current window scope and the popup id would
-					// otherwise be registered at the wrong level.
-					if (ImGui::IsMouseClicked(0)) ImGui::OpenPopup(popupId);
-					if (tip) ImGui::SetTooltip("%s", tip);
-				}
-			};
-			statusLink("v" POBTOOLS_VERSION_STRING, "changelog_modal", S.changelog);
-			statusLink(S.changelog, "changelog_modal", nullptr);
-			statusLink(S.about, "about_modal", nullptr);
-			ImGui::SameLine();
-			float cbW = ImGui::CalcTextSize(S.returnAfterExit).x + ImGui::GetFrameHeight() + 8.0f * scale;
-			ImGui::SetCursorPosX(W - padX - cbW);
-			ImGui::Checkbox(S.returnAfterExit, &cfg.returnToLauncher);
-		}
-
-		// About modal: product line, build date, attribution, support link.
-		// Roomy window padding + per-line leading so the CJK body doesn't look
-		// cramped (the default line height packs the lines too tightly).
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * scale, 22.0f * scale));
-		ImGui::SetNextWindowSize(ImVec2(510.0f * scale, 0), ImGuiCond_Appearing);
-		bool aboutOpen = ImGui::BeginPopupModal("about_modal", nullptr,
-		                                        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar);
-		ImGui::PopStyleVar();
-		if (aboutOpen) {
-			ImGui::PushFont(fonts.title);
-			ImGui::TextUnformatted("PobTools");
-			ImGui::PopFont();
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted("v" POBTOOLS_VERSION_STRING "  -  Build " __DATE__);
-			ImGui::PopStyleColor();
-			ImGui::Dummy(ImVec2(0, 14.0f * scale));
-
-			const float wrap = 458.0f * scale;
-			std::string body = S.aboutBody;
-			size_t start = 0;
-			while (start <= body.size()) {
-				size_t nl = body.find('\n', start);
-				size_t len = (nl == std::string::npos ? body.size() : nl) - start;
-				ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
-				ImGui::TextUnformatted(body.c_str() + start, body.c_str() + start + len);
-				ImGui::PopTextWrapPos();
-				ImGui::Dummy(ImVec2(0, 9.0f * scale)); // leading between lines
-				if (nl == std::string::npos) break;
-				start = nl + 1;
-			}
-
-			// The Discord and sponsor links now live on the external-link board
-			// on the main screen; keeping copies here would just be two places
-			// to update when a URL changes.
-			ImGui::Dummy(ImVec2(0, 16.0f * scale));
-			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
-		}
-
-		// Version-history modal: same styling as About, but the body lives in a
-		// fixed-height scrolling child so long release notes stay browsable.
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * scale, 22.0f * scale));
-		ImGui::SetNextWindowSize(ImVec2(600.0f * scale, 480.0f * scale), ImGuiCond_Appearing);
-		bool logOpen = ImGui::BeginPopupModal("changelog_modal", nullptr, ImGuiWindowFlags_NoTitleBar);
-		ImGui::PopStyleVar();
-		if (logOpen) {
-			ImGui::PushFont(fonts.title);
-			ImGui::TextUnformatted(S.changelog);
-			ImGui::PopFont();
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted("PobTools v" POBTOOLS_VERSION_STRING);
-			ImGui::PopStyleColor();
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
-
-			float footerH = ImGui::GetFrameHeightWithSpacing() + 10.0f * scale;
-			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * scale, 14.0f * scale));
-			ImGui::BeginChild("##changelog_scroll", ImVec2(0, -footerH), true,
-			                  ImGuiWindowFlags_AlwaysUseWindowPadding);
+			SectionLabel(fonts, scale, inner, S.sectionLaunch);
+			// One radio group, not two checkboxes: "return afterwards" and "stay
+			// open" cannot both be true, and a pair of checkboxes invites exactly
+			// that state. See LaunchExitMode.
 			{
-				// Per-line render: release headers ("vX.Y.Z...") in accent color
-				// with a gap above, blank lines as wide separators, and a little
-				// leading everywhere so the CJK body breathes.
-				const std::string log = kChangelogText;
-				size_t start = 0;
-				bool first = true;
-				while (start <= log.size()) {
-					size_t nl = log.find('\n', start);
-					size_t len = (nl == std::string::npos ? log.size() : nl) - start;
-					std::string line = log.substr(start, len);
-					if (line.empty()) {
-						ImGui::Dummy(ImVec2(0, 10.0f * scale)); // between releases
-					} else {
-						bool isVer = line.size() > 1 && line[0] == 'v' &&
-						             line[1] >= '0' && line[1] <= '9';
-						if (isVer && !first) ImGui::Dummy(ImVec2(0, 2.0f * scale));
-						ImGui::PushTextWrapPos(0.0f); // wrap at the child's right edge
-						if (isVer) ImGui::PushStyleColor(ImGuiCol_Text, PobUi::Accent());
-						ImGui::TextUnformatted(line.c_str());
-						if (isVer) ImGui::PopStyleColor();
-						ImGui::PopTextWrapPos();
-						ImGui::Dummy(ImVec2(0, 5.0f * scale)); // line leading
-					}
-					first = false;
-					if (nl == std::string::npos) break;
-					start = nl + 1;
-				}
+				int em = (int)cfg.exitMode;
+				ImGui::RadioButton(S.exitModeClose, &em, (int)LaunchExitMode::CloseLauncher);
+				ImGui::RadioButton(S.returnAfterExit, &em, (int)LaunchExitMode::ReturnAfterExit);
+				ImGui::RadioButton(S.exitModeKeepOpen, &em, (int)LaunchExitMode::KeepOpen);
+				cfg.exitMode = (LaunchExitMode)em;
 			}
-			ImGui::EndChild();
-			ImGui::PopStyleVar();
 
-			ImGui::Dummy(ImVec2(0, 4.0f * scale));
-			if (ImGui::Button(S.close, ImVec2(120.0f * scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			ImGui::AlignTextToFramePadding();
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			ImGui::TextUnformatted(S.startupTabLabel);
+			ImGui::PopStyleColor();
+			{
+				int st = (int)cfg.startupTab;
+				ImGui::SameLine(160.0f * scale);
+				ImGui::RadioButton(S.tabHome, &st, (int)StartupTab::Home);
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::RadioButton(S.changelog, &st, (int)StartupTab::Versions);
+				cfg.startupTab = (StartupTab)st;
+			}
+
+			// About is two short paragraphs, so a tab of its own would be mostly
+			// empty. It lives at the bottom of settings instead.
+			ImGui::Dummy(ImVec2(0, 16.0f * scale));
+			SectionLabel(fonts, scale, inner, S.about);
+			DrawAboutBody(S, fonts, scale, inner - 40.0f * scale);
+
+			ImGui::EndChild();
+			ImGui::EndTabItem();
 		}
+
+		if (tabsOk) ImGui::EndTabBar();
 
 		ImGui::End();
 		ImGui::PopFont();

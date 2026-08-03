@@ -64,7 +64,20 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		c.locale = buf;
 	}
 
-	c.returnToLauncher = read_ini_int(iniPath, L"ReturnToLauncher", 0) != 0;
+	// ExitMode replaced the ReturnToLauncher boolean. Absent key = an ini written
+	// by an older build, so migrate from it; anything out of range (hand-edited,
+	// or written by a future version) falls back to the historical behaviour
+	// rather than to an undefined value.
+	{
+		int em = read_ini_int(iniPath, L"ExitMode", INT_MIN);
+		if (em == INT_MIN)
+			em = read_ini_int(iniPath, L"ReturnToLauncher", 0) != 0 ? 1 : 0;
+		if (em < 0 || em > 2) em = 0;
+		c.exitMode = (LaunchExitMode)em;
+
+		const int st = read_ini_int(iniPath, L"StartupTab", 0);
+		c.startupTab = (st == 1) ? StartupTab::Versions : StartupTab::Home;
+	}
 
 	wchar_t fbuf[128];
 	read_ini_str(iniPath, L"Font", kDefaultFontFile, fbuf, 128);
@@ -80,7 +93,14 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 {
 	WritePrivateProfileStringW(kSection, L"Game", cfg.game.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Locale", cfg.locale.c_str(), iniPath.c_str());
-	WritePrivateProfileStringW(kSection, L"ReturnToLauncher", cfg.returnToLauncher ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ExitMode",
+		std::to_wstring((int)cfg.exitMode).c_str(), iniPath.c_str());
+	// Mirrored for older builds: someone who downgrades keeps their "return to
+	// launcher" choice instead of silently losing it.
+	WritePrivateProfileStringW(kSection, L"ReturnToLauncher",
+		cfg.exitMode == LaunchExitMode::ReturnAfterExit ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"StartupTab",
+		std::to_wstring((int)cfg.startupTab).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 }
 
@@ -370,5 +390,93 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		CloseHandle(h);
 	}
 	st_rmtree(root);
+	return failures ? 2 : 0;
+}
+
+// ---- launcher config selftest ----------------------------------------------
+//
+// Everything worth testing about the exit-mode setting is in LoadLauncherConfig,
+// which is a pure function of an ini file — so it can be exercised head-first
+// with synthetic files and no window. That is a large part of why exit mode is
+// an enum: two booleans would need tests for an illegal both-set state that the
+// enum simply cannot represent.
+int RunLauncherConfigSelfTest(const std::wstring& exeDir)
+{
+	wchar_t tmp[MAX_PATH];
+	DWORD n = GetTempPathW(MAX_PATH, tmp);
+	if (n == 0 || n >= MAX_PATH) return 1;
+	const std::wstring ini = std::wstring(tmp) + L"pobtools_cfg_st.ini";
+
+	std::string report;
+	int failures = 0;
+	auto check = [&](const char* name, bool ok, const std::string& detail = "") {
+		report += std::string(ok ? "PASS " : "FAIL ") + name +
+		          (detail.empty() ? "" : "  (" + detail + ")") + "\n";
+		if (!ok) failures++;
+	};
+	// The env vars would override Game/Locale and make these cases lie.
+	SetEnvironmentVariableW(L"POB_GAME", nullptr);
+	SetEnvironmentVariableW(L"POB_LOCALE", nullptr);
+
+	auto write = [&](const wchar_t* section, std::initializer_list<std::pair<const wchar_t*, const wchar_t*>> kv) {
+		DeleteFileW(ini.c_str());
+		for (const auto& p : kv)
+			WritePrivateProfileStringW(section, p.first, p.second, ini.c_str());
+	};
+	auto mode = [&]() { return (int)LoadLauncherConfig(ini).exitMode; };
+	auto tab  = [&]() { return (int)LoadLauncherConfig(ini).startupTab; };
+
+	write(L"PobTools", { { L"ReturnToLauncher", L"1" } });
+	check("T1 old ReturnToLauncher=1 migrates to ReturnAfterExit", mode() == 1, std::to_string(mode()));
+
+	write(L"PobTools", { { L"ReturnToLauncher", L"0" } });
+	check("T2 old ReturnToLauncher=0 migrates to CloseLauncher", mode() == 0, std::to_string(mode()));
+
+	write(L"PobTools", { { L"ExitMode", L"2" }, { L"ReturnToLauncher", L"1" } });
+	check("T3 ExitMode wins over the legacy key", mode() == 2, std::to_string(mode()));
+
+	write(L"PobTools", { { L"ExitMode", L"7" } });
+	check("T4 out-of-range ExitMode clamps to CloseLauncher", mode() == 0, std::to_string(mode()));
+
+	write(L"PobTools", { { L"ExitMode", L"abc" } });
+	check("T5 non-numeric ExitMode clamps to CloseLauncher", mode() == 0, std::to_string(mode()));
+
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T6 no exit-mode keys at all defaults to CloseLauncher", mode() == 0, std::to_string(mode()));
+
+	write(L"PoeCharm", { { L"ReturnToLauncher", L"1" } });
+	check("T7 legacy [PoeCharm] section still migrates", mode() == 1, std::to_string(mode()));
+
+	write(L"PobTools", { { L"StartupTab", L"1" } });
+	check("T8 StartupTab=1 selects the version tab", tab() == 1, std::to_string(tab()));
+	write(L"PobTools", { { L"StartupTab", L"5" } });
+	check("T9 out-of-range StartupTab clamps to Home", tab() == 0, std::to_string(tab()));
+
+	// round trip, including the mirrored legacy key
+	for (int m = 0; m <= 2; m++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.exitMode = (LaunchExitMode)m;
+		c.startupTab = (m == 1) ? StartupTab::Versions : StartupTab::Home;
+		c.fontFile = kDefaultFontFile;
+		SaveLauncherConfig(ini, c);
+		LauncherConfig back = LoadLauncherConfig(ini);
+		const int legacy = GetPrivateProfileIntW(kSection, L"ReturnToLauncher", -1, ini.c_str());
+		check(("T10 round trip exit mode " + std::to_string(m)).c_str(),
+		      (int)back.exitMode == m && (int)back.startupTab == (int)c.startupTab &&
+		      legacy == (m == 1 ? 1 : 0),
+		      "legacy=" + std::to_string(legacy));
+	}
+
+	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	HANDLE h = CreateFileW((exeDir + L"PobTools\\launcher_config_selftest.txt").c_str(),
+	                       GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h != INVALID_HANDLE_VALUE) {
+		DWORD w = 0;
+		WriteFile(h, report.data(), (DWORD)report.size(), &w, nullptr);
+		CloseHandle(h);
+	}
+	DeleteFileW(ini.c_str());
 	return failures ? 2 : 0;
 }

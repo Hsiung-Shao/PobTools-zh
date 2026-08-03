@@ -98,6 +98,27 @@ static std::wstring locale_dir(const std::wstring& exeDir, const std::string& ga
 	return exeDir + L"Data\\" + widen(game) + L"\\" + widen(locale) + L"\\";
 }
 
+// meta.json's load_order. It is deliberately NOT part of the model's file list
+// (it has no "entries" object), but the engine merges dictionaries in this order
+// and the last file to define a key wins, so the editor has to read it anyway.
+static std::vector<std::string> read_load_order(const std::wstring& dataDir)
+{
+	std::vector<std::string> order;
+	std::string content;
+	if (!read_file_utf8(dataDir + L"meta.json", content)) return order;
+	try {
+		ordered_json meta = ordered_json::parse(content);
+		if (meta.contains("load_order") && meta["load_order"].is_array()) {
+			for (const auto& v : meta["load_order"])
+				if (v.is_string()) order.push_back(v.get<std::string>());
+		}
+	} catch (...) {
+		// A broken meta.json leaves order empty: every file gets rank -1 and the
+		// UI says "not in load_order" rather than inventing an order.
+	}
+	return order;
+}
+
 EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const std::string& locale)
 {
 	EditorModel model;
@@ -138,6 +159,12 @@ EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const
 		EditorFile ef;
 		ef.name = narrow(wname);
 		ef.path = model.dataDir + wname;
+		// Decided by the FIRST line break, not by "contains a CRLF anywhere": a
+		// mostly-LF file with one stray CRLF must not be rewritten as all-CRLF.
+		{
+			size_t nl = content.find('\n');
+			ef.crlf = (nl != std::string::npos && nl > 0 && content[nl - 1] == '\r');
+		}
 		ef.doc = std::move(doc);
 		model.files.push_back(std::move(ef));
 		int fileIdx = (int)model.files.size() - 1;
@@ -161,7 +188,77 @@ EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const
 			model.entries.push_back(std::move(e));
 		}
 	}
+
+	model.loadOrder = read_load_order(model.dataDir);
+	for (EditorFile& f : model.files) {
+		f.order = -1;
+		for (size_t i = 0; i < model.loadOrder.size(); i++)
+			if (model.loadOrder[i] == f.name) { f.order = (int)i; break; }
+	}
 	return model;
+}
+
+std::vector<std::string> ListLocales(const std::wstring& exeDir, const std::string& game)
+{
+	std::vector<std::string> out;
+	const std::wstring gameDir = exeDir + L"Data\\" + widen(game) + L"\\";
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((gameDir + L"*").c_str(), &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+			std::wstring n = fd.cFileName;
+			if (n == L"." || n == L"..") continue;
+			out.push_back(narrow(n));
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+	std::sort(out.begin(), out.end());
+	if (out.empty()) out.push_back("zh-rTW"); // never hand back an empty combo
+	return out;
+}
+
+std::vector<int> FileIdxInLoadOrder(const EditorModel& model)
+{
+	std::vector<int> idx;
+	idx.reserve(model.files.size());
+	for (size_t i = 0; i < model.files.size(); i++) idx.push_back((int)i);
+	std::stable_sort(idx.begin(), idx.end(), [&](int a, int b) {
+		const int oa = model.files[a].order, ob = model.files[b].order;
+		if (oa == ob) return false;
+		if (oa < 0) return false;   // unlisted files sort last
+		if (ob < 0) return true;
+		return oa < ob;
+	});
+	return idx;
+}
+
+std::vector<int> FilesContaining(const EditorModel& model, const std::string& key)
+{
+	std::vector<int> hits;
+	for (const EditorEntry& e : model.entries) {
+		if (e.key != key) continue;
+		bool seen = false;
+		for (int h : hits) if (h == e.fileIdx) { seen = true; break; }
+		if (!seen) hits.push_back(e.fileIdx);
+	}
+	std::sort(hits.begin(), hits.end(), [&](int a, int b) {
+		return model.files[a].order < model.files[b].order;
+	});
+	return hits;
+}
+
+int WinnerFileIdx(const EditorModel& model, const std::string& key)
+{
+	int best = -1, bestOrder = -2;
+	for (int f : FilesContaining(model, key)) {
+		// An unlisted file (-1) is never loaded, so it can only win when it is
+		// the only holder -- and even then the engine would not see it. Rank it
+		// below every listed file but above "nothing found".
+		const int o = model.files[f].order;
+		if (o > bestOrder) { bestOrder = o; best = f; }
+	}
+	return best;
 }
 
 int FindFileIdx(const EditorModel& model, const std::string& name)
@@ -207,6 +304,24 @@ bool SaveFile(EditorFile& file, std::string* err)
 		return false;
 	}
 	out.push_back('\n'); // trailing newline, matches typical JSON files
+
+	// Restore the file's original line ending. dump() only emits '\n', so saving
+	// once used to rewrite a CRLF file end to end as LF.
+	//
+	// Expanding every '\n' is safe: nlohmann escapes control characters inside
+	// string VALUES even with ensure_ascii=false (a newline in a translation is
+	// written as the two characters '\' 'n'), so every raw '\n' in the output is
+	// structural, and there are no raw '\r' to double up.
+	if (file.crlf) {
+		std::string crlf;
+		crlf.reserve(out.size() + out.size() / 8);
+		for (char c : out) {
+			if (c == '\n') crlf.push_back('\r');
+			crlf.push_back(c);
+		}
+		out.swap(crlf);
+	}
+
 	if (!write_file_atomic(file.path, out)) {
 		if (err) *err = file.name + ": write failed";
 		return false;

@@ -43,7 +43,25 @@ struct LauncherStrings {
 	const char* updateCheckTip;   // header: tooltip explaining the automatic cadence
 	const char* updateChecking;   // header: check in flight
 	const char* updateUpToDate;   // header: manual check found nothing new
+	// --- appended for the tabbed layout. New fields go at the END: both tables
+	// are positional aggregate initialisers, so inserting in the middle shifts
+	// every later string silently.
+	const char* tabHome;          // tab: the launch / tools / links page
+	const char* tabSettings;      // tab: settings
+	const char* sectionInterface; // settings group: language + font
+	const char* sectionLaunch;    // settings group: what happens when POB starts
+	const char* exitModeClose;    // radio: launcher closes with POB
+	const char* exitModeKeepOpen; // radio: launcher stays up, POB can be re-launched
+	const char* startupTabLabel;  // settings: which tab to open on
+	const char* pobRunning;       // home: "POB running: N"
+	const char* pobSameGameWarn;  // home: two instances share one install's saves
+	const char* updateBlockedTip; // header: why the update button is disabled
 };
+
+// Field count, used by launcher_ui.cpp to prove every string is fed to the glyph
+// atlas. ImGui draws a missing glyph as '?' with no warning of any kind, so a
+// string that never reaches the atlas is only discovered from a screenshot.
+inline constexpr size_t kLauncherStringsFields = sizeof(LauncherStrings) / sizeof(const char*);
 
 inline constexpr LauncherStrings STR_ZHTW = {
 	u8"Path of Building 啟動器",
@@ -85,6 +103,16 @@ inline constexpr LauncherStrings STR_ZHTW = {
 	u8"自動檢查每天最多一次，且只在啟動時進行；按這裡立即強制檢查",
 	u8"檢查更新中…",
 	u8"已是最新版本",
+	u8"主畫面",
+	u8"設定",
+	u8"介面",
+	u8"啟動 POB 後",
+	u8"關閉啟動器",
+	u8"保持啟動器開啟（可再開一個 POB）",
+	u8"啟動時顯示",
+	u8"POB 執行中：",
+	u8"同一個 POB 開了多個視窗；它們共用設定與流派檔，最後關閉的那個會蓋掉其他的",
+	u8"POB 執行中無法更新：更新會替換 engine 資料夾裡的檔案，請先關閉所有 POB 視窗",
 };
 
 inline constexpr LauncherStrings STR_EN = {
@@ -127,6 +155,16 @@ inline constexpr LauncherStrings STR_EN = {
 	u8"Automatic checks run at most once a day, and only at startup. Click to check right now.",
 	u8"Checking for updates...",
 	u8"Up to date",
+	u8"Home",
+	u8"Settings",
+	u8"Interface",
+	u8"After launching POB",
+	u8"Close the launcher",
+	u8"Keep the launcher open (POB can be launched again)",
+	u8"Tab shown at startup",
+	u8"POB running: ",
+	u8"Several windows of the same POB are open; they share its settings and build files, and the last one closed overwrites the others",
+	u8"Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.",
 };
 
 // Only Traditional Chinese (zh-rTW) and English are offered. "en" (and any

@@ -4,11 +4,27 @@
 #include <string>
 #include <vector>
 
+// What the launcher does once POB starts. One enum rather than two booleans:
+// "return afterwards" and "stay open" are mutually exclusive, and two bools have
+// an illegal both-set state that a hand-edited ini can produce and that every
+// read/toggle/write site would have to defend against separately. Clamped once
+// in LoadLauncherConfig, and the UI falls out as a single radio group.
+enum class LaunchExitMode {
+	CloseLauncher   = 0,  // launcher exits with POB (the historical default)
+	ReturnAfterExit = 1,  // launcher reappears when POB closes
+	KeepOpen        = 2,  // launcher stays up; POB can be started more than once
+};
+
+// Which tab the launcher opens on. Settings is deliberately not offered: landing
+// on a settings page is never what someone wants on startup.
+enum class StartupTab { Home = 0, Versions = 1 };
+
 struct LauncherConfig {
-	std::wstring game;        // "poe1" | "poe2"
-	std::wstring locale;      // "zh-rTW" | "en"
-	bool returnToLauncher;    // show the launcher again after POB exits
-	std::wstring fontFile;    // CJK font filename under Fonts\ (e.g. "NotoSansTC-Regular.ttf")
+	std::wstring   game     = L"poe1";      // "poe1" | "poe2"
+	std::wstring   locale   = L"zh-rTW";    // "zh-rTW" | "en"
+	LaunchExitMode exitMode = LaunchExitMode::CloseLauncher;
+	StartupTab     startupTab = StartupTab::Home;
+	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 };
 
 // Detected POB installs; empty string = not found. Detection order per slot:
@@ -36,6 +52,11 @@ std::wstring FindPoe1Dir(const std::wstring& exeDir);
 // Headless check of the DetectInstalls rules against synthetic folder layouts
 // under %TEMP%; report at <exeDir>PobTools\detect_selftest.txt, 0 = all pass.
 int RunDetectInstallsSelfTest(const std::wstring& exeDir);
+
+// Headless check of the ini parsing rules -- migration from the old
+// ReturnToLauncher boolean, clamping of out-of-range values, and round-tripping.
+// Same report convention as above; 0 = all pass.
+int RunLauncherConfigSelfTest(const std::wstring& exeDir);
 
 // Default bundled CJK font (open-source Noto Sans TC). FZ_ZY.ttf stays available
 // as a selectable fallback.

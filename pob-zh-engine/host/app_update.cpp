@@ -435,6 +435,11 @@ bool AppUpdater::downloadAsset(const std::string& url, const std::string& sha256
 
 bool AppUpdater::doCheck(std::string* err)
 {
+	// A POB is running: it holds engine\*.dll open, and this function goes on to
+	// overwrite Data\*.json with a fresh translation pack. Return without
+	// recording the check time, so the next tick after the hold lifts retries.
+	if (hold_.load()) return true;
+
 	setPhase(AppUpdatePhase::Checking, u8"檢查更新中…");
 
 	std::string body;

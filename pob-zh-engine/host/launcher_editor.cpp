@@ -176,6 +176,44 @@ static void TextPobColored(const std::string& s, const ImVec4& base)
 	if (first) ImGui::TextUnformatted(""); // keep the row height when empty
 }
 
+// Target-file picker, ordered the way the ENGINE loads the files rather than
+// alphabetically. Which file you write to decides whether the edit does anything
+// at all: the dictionary is one flat map merged in meta.json's load_order and the
+// last file to define a key wins. poe1 and poe2 order the same files differently,
+// so the name alone tells the user nothing.
+static void TargetFileCombo(const EditorModel& model, const char* id, int& target, float scale)
+{
+	const std::vector<int> order = FileIdxInLoadOrder(model);
+	auto label = [&](int fi) {
+		const EditorFile& f = model.files[fi];
+		if (f.order < 0) return f.name + u8"（未列入 load_order，引擎不會載入）";
+		return std::to_string(f.order + 1) + ". " + f.name;
+	};
+	// highest-ranked listed file = the one that wins every collision
+	int lastListed = -1;
+	for (int fi : order) if (model.files[fi].order >= 0) lastListed = fi;
+
+	ImGui::SetNextItemWidth(230 * scale);
+	const std::string preview = (target >= 0 && target < (int)model.files.size())
+		? label(target) : std::string(u8"（選擇檔案）");
+	if (!ImGui::BeginCombo(id, preview.c_str())) return;
+	bool separated = false;
+	for (int fi : order) {
+		const bool unlisted = model.files[fi].order < 0;
+		if (unlisted && !separated) { ImGui::Separator(); separated = true; }
+		// An unlisted file is never merged, so writing there is guaranteed to do
+		// nothing -- the least detectable failure of all. Do not offer it.
+		ImGui::BeginDisabled(unlisted);
+		if (ImGui::Selectable(label(fi).c_str(), fi == target)) target = fi;
+		ImGui::EndDisabled();
+		if (fi == lastListed) {
+			ImGui::SameLine();
+			ImGui::TextDisabled(u8"← 最後載入，會蓋過前面");
+		}
+	}
+	ImGui::EndCombo();
+}
+
 // ---- editor ----------------------------------------------------------------
 
 void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std::wstring& locale)
@@ -269,12 +307,28 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 
 	// --- state ---
 	static const char* kGames[2] = { "poe1", "poe2" };
-	static const char* kLocales[1] = { "zh-rTW" };
 	int gi = (game == L"poe2") ? 1 : 0;
-	int li = 0;  // only zh-rTW is offered
-	(void)locale;
 
-	EditorModel model = LoadModel(exeDir, kGames[gi], kLocales[li]);
+	// Locales come from disk, not a hardcoded list: the caller's choice used to
+	// be discarded outright, so opening the editor from an "en" launcher silently
+	// edited the Chinese dictionary.
+	std::vector<std::string> locales = ListLocales(exeDir, kGames[gi]);
+	std::string status;
+	int li = 0;
+	{
+		const std::string want = narrow(locale);
+		auto it = std::find(locales.begin(), locales.end(), want);
+		if (it != locales.end()) {
+			li = (int)(it - locales.begin());
+		} else {
+			auto zh = std::find(locales.begin(), locales.end(), std::string("zh-rTW"));
+			li = (zh != locales.end()) ? (int)(zh - locales.begin()) : 0;
+			if (!want.empty())
+				status = u8"此語系（" + want + u8"）沒有翻譯資料，已改開 " + locales[li];
+		}
+	}
+
+	EditorModel model = LoadModel(exeDir, kGames[gi], locales[li]);
 
 	std::string search;       // raw search text
 	std::string searchLower;  // cached lowercase
@@ -292,7 +346,20 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 	std::vector<std::string> missTrans;
 	std::vector<int> missTarget;
 
-	std::string status;
+	// "Add entry" row (above the table, not inside it: the table is virtualised
+	// with ImGuiListClipper over 110k rows and its indices are used directly).
+	std::string newKey, newVal;
+	int newTarget = -1;
+	std::vector<int> newKeyOwners;      // files already defining newKey, in load order
+	std::string newKeyOwnersFor;        // the key newKeyOwners was computed for
+	bool focusNewKey = false;
+
+	// An action waiting for the unsaved-changes prompt. All four entry points
+	// (game combo, locale combo, reload button, window close) need the same
+	// guard, so they set a pending action instead of each opening their own.
+	enum class Pending { None, SwitchGame, SwitchLocale, Reload, Close };
+	Pending pending = Pending::None;
+	int pendingGi = gi, pendingLi = li;
 
 	auto rebuildFilter = [&]() {
 		filtered.clear();
@@ -307,13 +374,24 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		}
 	};
 
+	// Unconditional reload. Callers are responsible for the dirty check — this
+	// stays the raw operation so the guard has exactly one implementation.
 	auto reload = [&]() {
-		model = LoadModel(exeDir, kGames[gi], kLocales[li]);
+		locales = ListLocales(exeDir, kGames[gi]);
+		if (li >= (int)locales.size()) li = 0;
+		model = LoadModel(exeDir, kGames[gi], locales[li]);
 		fileFilter = 0;
 		rebuildFilter();
 		missScanned = false;
 		misses.clear(); missTrans.clear(); missTarget.clear();
+		newKeyOwners.clear(); newKeyOwnersFor.clear(); newTarget = -1;
 		status.clear();
+	};
+
+	auto applyPending = [&]() {
+		if (pending == Pending::SwitchGame)        gi = pendingGi;
+		else if (pending == Pending::SwitchLocale) li = pendingLi;
+		reload();
 	};
 
 	auto runScan = [&]() {
@@ -345,11 +423,33 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextColored(PobUi::Accent(), u8"翻譯資料庫");
 		ImGui::SameLine(0, 18 * scale);
+		// Both combos roll their own selection BACK when there are unsaved edits
+		// and hand the choice to the prompt instead. ImGui::Combo writes the new
+		// index immediately, so without the rollback the box would show a game
+		// that is not loaded while the prompt is up.
 		ImGui::SetNextItemWidth(90 * scale);
-		if (ImGui::Combo("##game", &gi, kGames, 2)) reload();
+		{
+			int prev = gi;
+			if (ImGui::Combo("##game", &gi, kGames, 2)) {
+				if (DirtyCount(model) > 0) { pendingGi = gi; gi = prev; pending = Pending::SwitchGame; }
+				else reload();
+			}
+		}
 		ImGui::SameLine();
 		ImGui::SetNextItemWidth(110 * scale);
-		if (ImGui::Combo("##locale", &li, kLocales, 1)) reload();
+		{
+			int prev = li;
+			if (ImGui::BeginCombo("##locale", locales[li].c_str())) {
+				for (size_t i = 0; i < locales.size(); i++) {
+					if (ImGui::Selectable(locales[i].c_str(), (int)i == li)) li = (int)i;
+				}
+				ImGui::EndCombo();
+			}
+			if (li != prev) {
+				if (DirtyCount(model) > 0) { pendingLi = li; li = prev; pending = Pending::SwitchLocale; }
+				else reload();
+			}
+		}
 
 		ImGui::SameLine(0, 18 * scale);
 		ImGui::TextDisabled(u8"資料範圍");
@@ -399,7 +499,10 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 			ImGui::EndDisabled();
 		}
 		ImGui::SameLine();
-		if (ImGui::Button(u8"重新載入")) reload();
+		if (ImGui::Button(u8"重新載入")) {
+			if (DirtyCount(model) > 0) pending = Pending::Reload;
+			else reload();
+		}
 
 		// --- status strip ---
 		ImGui::Spacing();
@@ -436,6 +539,97 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		ImGuiTabItemFlags entriesFlags = focusEntries ? ImGuiTabItemFlags_SetSelected : 0;
 		focusEntries = false;
 		if (ImGui::BeginTabItem(u8"翻譯條目", nullptr, entriesFlags)) {
+
+		// --- add a new entry --------------------------------------------------
+		// Above the table on purpose: the table is an ImGuiListClipper over 110k
+		// rows whose indices address `filtered` directly, and the warning below
+		// needs a second line that would not fit in a cell anyway.
+		//
+		// Until now a key could only be added if the ENGINE had already logged it
+		// as missing, so anything that never rendered was unreachable.
+		{
+			if (newTarget < 0 || newTarget >= (int)model.files.size()) {
+				int def = FindFileIdx(model, "ui.json");
+				newTarget = (def >= 0) ? def : (model.files.empty() ? -1 : 0);
+			}
+			if (newKeyOwnersFor != newKey) {   // cache: a linear scan of 110k rows
+				newKeyOwners = FilesContaining(model, newKey);
+				newKeyOwnersFor = newKey;
+			}
+			const int winner = newKeyOwners.empty() ? -1 : newKeyOwners.back();
+			const bool inTarget = std::find(newKeyOwners.begin(), newKeyOwners.end(),
+			                                newTarget) != newKeyOwners.end();
+
+			ImGui::TextDisabled(u8"新增");
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(280 * scale);
+			if (focusNewKey) { ImGui::SetKeyboardFocusHere(); focusNewKey = false; }
+			ImGui::InputTextWithHint("##newkey", u8"Key（英文，需與 POB 完全相同）", &newKey);
+			ImGui::SameLine();
+			ImGui::TextDisabled(u8"寫入");
+			ImGui::SameLine();
+			TargetFileCombo(model, "##newtarget", newTarget, scale);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 90 * scale);
+			const bool entered = ImGui::InputTextWithHint("##newval", u8"翻譯", &newVal,
+			                                              ImGuiInputTextFlags_EnterReturnsTrue);
+			ImGui::SameLine();
+			const bool canAdd = !newKey.empty() && !newVal.empty() && newTarget >= 0;
+			ImGui::BeginDisabled(!canAdd);
+			PobUi::PushPrimaryButton();
+			const bool pressed = ImGui::Button(inTarget ? u8"覆蓋" : u8"新增", ImVec2(80 * scale, 0));
+			PobUi::PopButtonStyle();
+			ImGui::EndDisabled();
+
+			if (canAdd && (pressed || entered)) {
+				SetEntry(model, newTarget, newKey, newVal);
+				status = std::string(inTarget ? u8"已覆蓋 " : u8"已新增 ") +
+				         model.files[newTarget].name + u8"：" + newKey;
+				search = newKey;                       // make the new row visible
+				searchLower = to_lower_ascii(search);
+				rebuildFilter();
+				newKey.clear(); newVal.clear();
+				newKeyOwners.clear(); newKeyOwnersFor.clear();
+				focusNewKey = true;                    // ready for the next one
+			}
+
+			// Which copy the engine will actually use. Editing a shadowed copy
+			// changes nothing, and nothing in the UI used to say so.
+			if (newKey.empty()) {
+				ImGui::TextDisabled(u8" ");
+			} else if (newKeyOwners.empty()) {
+				ImGui::TextDisabled(u8"新條目");
+			} else if (inTarget) {
+				std::string old;
+				for (const EditorEntry& e : model.entries)
+					if (e.fileIdx == newTarget && e.key == newKey) { old = e.value; break; }
+				ImGui::TextColored(PobUi::StatusColor(PobUi::StatusTone::Warning),
+					u8"%s 已有這個 key，將覆蓋現有翻譯：%s",
+					model.files[newTarget].name.c_str(), old.c_str());
+			} else {
+				std::string others;
+				for (int f : newKeyOwners) {
+					if (!others.empty()) others += u8"、";
+					others += model.files[f].name;
+				}
+				const bool targetWins = (newTarget >= 0 && winner >= 0 &&
+				                         model.files[newTarget].order > model.files[winner].order);
+				if (targetWins) {
+					ImGui::TextDisabled(u8"此 key 也在 %s；引擎會採用你選的 %s",
+						others.c_str(), model.files[newTarget].name.c_str());
+				} else {
+					ImGui::TextColored(PobUi::StatusColor(PobUi::StatusTone::Warning),
+						u8"寫進 %s 不會生效，引擎會用 %s 的版本",
+						model.files[newTarget].name.c_str(), model.files[winner].name.c_str());
+					ImGui::SameLine();
+					if (ImGui::SmallButton((std::string(u8"改寫入 ") +
+					                        model.files[winner].name).c_str()))
+						newTarget = winner;
+				}
+			}
+		}
+		ImGui::Spacing();
+
 		// --- entry table (virtualized) ---
 		{
 			ImGuiTableFlags tflags = ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg |
@@ -560,17 +754,9 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 					}
 
 					ImGui::TableSetColumnIndex(1);
-					ImGui::SetNextItemWidth(-FLT_MIN);
-					{
-						int& tgt = missTarget[i];
-						std::string preview = (tgt >= 0 && tgt < (int)model.files.size())
-							? model.files[tgt].name : u8"選擇檔案";
-						if (ImGui::BeginCombo("##tgt", preview.c_str())) {
-							for (size_t f = 0; f < model.files.size(); f++)
-								if (ImGui::Selectable(model.files[f].name.c_str(), tgt == (int)f)) tgt = (int)f;
-							ImGui::EndCombo();
-						}
-					}
+					// Same picker as the add row: alphabetical order told the
+					// user nothing about which copy the engine would read.
+					TargetFileCombo(model, "##tgt", missTarget[i], scale);
 
 					ImGui::TableSetColumnIndex(2);
 					ImGui::SetNextItemWidth(-FLT_MIN);
@@ -614,28 +800,67 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 
 		ImGui::End();
 
-		// --- unsaved-changes guard on close ---
+		// --- unsaved-changes guard -------------------------------------------
+		// Opened here, after End(), so the popup sits at the root ID level; the
+		// combos above only set `pending`. Switching game used to discard unsaved
+		// edits without a word.
 		if (glfwWindowShouldClose(win)) {
 			if (DirtyCount(model) > 0) {
 				glfwSetWindowShouldClose(win, GLFW_FALSE);
-				ImGui::OpenPopup(u8"未儲存變更");
+				pending = Pending::Close;
 			} else {
 				running = false;
 			}
 		}
+		if (pending != Pending::None && !ImGui::IsPopupOpen(u8"未儲存變更"))
+			ImGui::OpenPopup(u8"未儲存變更");
+
 		if (ImGui::BeginPopupModal(u8"未儲存變更", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			ImGui::TextUnformatted(u8"有尚未儲存的翻譯變更。");
+			ImGui::Text(u8"有 %d 個檔案尚未儲存。", DirtyCount(model));
+			// Name the action: by the time the prompt appears the user may not
+			// remember which button they pressed.
+			switch (pending) {
+				case Pending::SwitchGame:
+					ImGui::TextUnformatted((std::string(u8"即將切換到 ") + kGames[pendingGi] +
+					                        u8"，未儲存的修改會遺失。").c_str());
+					break;
+				case Pending::SwitchLocale:
+					ImGui::TextUnformatted((std::string(u8"即將切換到 ") + locales[pendingLi] +
+					                        u8"，未儲存的修改會遺失。").c_str());
+					break;
+				case Pending::Reload:
+					ImGui::TextUnformatted(u8"即將重新載入，未儲存的修改會遺失。");
+					break;
+				default:
+					ImGui::TextUnformatted(u8"即將關閉編輯器。");
+					break;
+			}
 			ImGui::Spacing();
-			if (ImGui::Button(u8"儲存並關閉")) {
+
+			const bool closing = (pending == Pending::Close);
+			PobUi::PushPrimaryButton();
+			if (ImGui::Button(closing ? u8"儲存並關閉" : u8"儲存後繼續")) {
 				std::string err;
 				SaveAll(model, &err);
+				if (closing) running = false; else applyPending();
+				pending = Pending::None;
 				ImGui::CloseCurrentPopup();
-				running = false;
 			}
+			PobUi::PopButtonStyle();
 			ImGui::SameLine();
-			if (ImGui::Button(u8"直接關閉")) { ImGui::CloseCurrentPopup(); running = false; }
+			// The only button here that throws work away.
+			PobUi::PushDangerButton();
+			if (ImGui::Button(closing ? u8"直接關閉" : u8"捨棄並繼續")) {
+				if (closing) running = false; else applyPending();
+				pending = Pending::None;
+				ImGui::CloseCurrentPopup();
+			}
+			PobUi::PopButtonStyle();
 			ImGui::SameLine();
-			if (ImGui::Button(u8"取消")) ImGui::CloseCurrentPopup();
+			if (ImGui::Button(u8"取消")) {
+				pending = Pending::None;   // combos already rolled themselves back
+				ImGui::CloseCurrentPopup();
+			}
 			ImGui::EndPopup();
 		}
 

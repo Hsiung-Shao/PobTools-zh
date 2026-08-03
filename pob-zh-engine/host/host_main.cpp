@@ -29,6 +29,7 @@
 #include "editor_selftest.h"
 #include "paste_selftest.h"
 #include "paste_trace.h"
+#include "pob_launch.h"
 #include "filter_editor.h"
 #include "atlas_planner.h"
 #include "atlas_tree_data.h"
@@ -159,6 +160,11 @@ static void apply_locale_env(const std::wstring& dir)
 
 	ensure(L"POB_GAME", L"Game", L"poe1");
 	ensure(L"POB_LOCALE", L"Locale", L"zh-rTW");
+	// The font was never covered here, so POB started from the legacy CLI path
+	// (or, now, detached from the launcher) got no font setting at all. `ensure`
+	// is a no-op when the variable was inherited, so this cannot override the
+	// launcher's choice.
+	ensure(L"POB_ZH_FONTFILE", L"Font", kDefaultFontFile);
 }
 
 // Load SimpleGraphic.dll (from the engine DLL directory) and run POB.
@@ -215,29 +221,9 @@ static std::wstring take_relaunch_marker(const std::wstring& dir)
 	return from_utf8(std::string(buf, read));
 }
 
-// Spawn ourselves with --engine and wait for POB to exit.
-// POB_GAME / POB_LOCALE / POB_ZH_FONTDIR are inherited through the environment.
-static DWORD spawn_engine_and_wait(const std::wstring& launchLua)
-{
-	std::wstring exe = exe_path();
-	std::wstring cmd = L"\"" + exe + L"\" --engine \"" + launchLua + L"\"";
-	std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
-	cmdBuf.push_back(L'\0');
-
-	STARTUPINFOW si{};
-	si.cb = sizeof(si);
-	PROCESS_INFORMATION pi{};
-	if (!CreateProcessW(exe.c_str(), cmdBuf.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-		MessageBoxW(nullptr, L"無法啟動 POB 子程序。", L"PobTools", MB_ICONERROR | MB_OK);
-		return (DWORD)-1;
-	}
-	CloseHandle(pi.hThread);
-	WaitForSingleObject(pi.hProcess, INFINITE);
-	DWORD code = 0;
-	GetExitCodeProcess(pi.hProcess, &code);
-	CloseHandle(pi.hProcess);
-	return code;
-}
+// Spawning POB now lives in pob_launch.cpp: the launcher can also start it
+// detached (KeepOpen mode), and both paths must hand the engine the same
+// environment.
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 {
@@ -397,6 +383,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--ui-theme-selftest") {
 		return PobUi::RunThemeSelfTest() ? 0 : 1;
 	}
+	if (arg1 == L"--pob-launch-selftest") {
+		// headless: instance tracking/reaping and the "a POB is running" marker,
+		// exercised with fake waitable handles instead of a real POB
+		return PobLaunch::RunPobLaunchSelfTest(dir);
+	}
+	if (arg1 == L"--launcher-config-selftest") {
+		// headless: ini parsing, legacy migration and clamping — no window needed
+		return RunLauncherConfigSelfTest(dir);
+	}
 	if (arg1 == L"--font-coverage-selftest") {
 		// headless: every shipped font must be able to draw every character the
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
@@ -427,7 +422,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--editor-selftest") {
 		// headless: drives the editor data layer, then asks the real
 		// translation loader what the engine would return
-		return RunEditorSelftest();
+		// arg2 selects the game ("poe1" / "poe2"); empty runs both.
+		std::string games = "both";
+		if (!arg2.empty()) games.assign(arg2.begin(), arg2.end()); // ASCII keywords
+		return RunEditorSelftest(games);
 	}
 	if (arg1 == L"--paste-trace") {
 		// headless: one item, one row per line -- which rule fired, which
@@ -463,6 +461,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--engine") {
 		std::wstring launchLua = launch_lua_from(arg2);
 		if (launchLua.empty()) return 1;
+		// Publish "a POB is running against this install" for as long as this
+		// process lives, so a launcher (possibly a different one) knows not to
+		// swap engine\*.dll out from under it.
+		PobLaunch::HoldEngineRunningMarker(dir);
 		apply_locale_env(dir); // no-op when inherited; safety net for manual use
 		return run_engine(engineDir, launchLua);
 	}
@@ -545,17 +547,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			if (launchLua.empty()) continue; // UI should have prevented this; just re-show
 		}
 
-		set_env_both(L"POB_GAME", cfg.game.c_str());
-		set_env_both(L"POB_LOCALE", cfg.locale.c_str());
-		set_env_both(L"POB_ZH_FONTFILE", cfg.fontFile.c_str()); // r_font.cpp reads this
-
-		spawn_engine_and_wait(launchLua);
+		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile);
+		PobLaunch::SpawnPobAndWait(launchLua);
 
 		// POB self-updated: its updater is about to start a fresh pob-zh.exe
 		// (which will consume the marker), so this instance bows out instead
 		// of racing it with a launcher window.
 		if (GetFileAttributesW(relaunch_marker_path(dir).c_str()) != INVALID_FILE_ATTRIBUTES) return 0;
 
-		if (!cfg.returnToLauncher) return 0;
+		// KeepOpen never reaches here: in that mode the launcher spawns POB
+		// itself and its window never closes, so ShowLauncher only returns Quit.
+		if (cfg.exitMode != LaunchExitMode::ReturnAfterExit) return 0;
 	}
 }

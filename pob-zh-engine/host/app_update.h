@@ -64,6 +64,14 @@ public:
 	Status Poll();     // main thread, each frame: snapshot
 	void AckNotice();  // main thread: dismiss TransDone/UpToDate/Error back to Idle
 
+	// Main thread. Suspends all update work while a POB is running: applying an
+	// app update renames pob-zh.exe and engine\* out of the way, and the same
+	// check also downloads translation packs straight over Data\*.json. Disabling
+	// the button is not enough — the worker does the translation update on its
+	// own schedule, with nobody pressing anything.
+	void SetHold(bool on) { hold_.store(on); }
+	bool IsHeld() const { return hold_.load(); }
+
 private:
 	friend int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly);
 	friend int RunAppFetchTest(const std::wstring& exeDir);
@@ -90,6 +98,7 @@ private:
 	std::wstring exeDir_;
 	std::thread worker_;
 	std::atomic<bool> stop_{ false };
+	std::atomic<bool> hold_{ false };  // see SetHold
 
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;
