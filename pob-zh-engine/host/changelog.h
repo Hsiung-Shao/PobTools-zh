@@ -1,13 +1,48 @@
-// Release history shown in the launcher's version-info dialog (scrollable).
-// UPDATE THIS together with app_version.h on every release; newest entry on
-// top. Formatting contract with launcher_ui.cpp: a line starting with 'v'+digit
-// is a release header (accent color, extra gap above), a blank line separates
-// releases, keep body lines short (~26 CJK chars) so they rarely wrap. The
-// whole string is AddText'ed into the launcher glyph atlas, so any Chinese
+// Release history shown in the launcher's version-history tab (scrollable).
+// UPDATE THIS together with app_version.h on every release; newest entry on top.
+//
+// Formatting contract with launcher_ui.cpp (DrawChangelogBody):
+//   "v" + digit           release header (accent colour, gap above)
+//   ""                    blank line between releases
+//   U+3000 + U+00B7       bullet
+//   U+3000, anything else continuation -- folded back into the previous line
+//
+// WRITE ONE BULLET PER LINE. The tab is full width and the renderer wraps at the
+// real width; the hard wrapping in the older entries below dates from a 600px
+// modal and is undone at render time. Those entries stay as they are.
+//
+// Use U+00B7 for the bullet, never U+30FB: the shipped FZ_ZY.ttf has no glyph
+// for U+30FB and ImGui silently draws '?'. --font-coverage-selftest catches it.
+//
+// The whole string is AddText'ed into the launcher glyph atlas, so any Chinese
 // used here renders without extra font work.
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v0.15.0（2026-08-03）\n"
+	u8"修正\n"
+	u8"　·貼上物品時星團珠寶的大天賦全部消失：珠寶會被重建成另一顆，骰到的大天賦一個都不留。\n"
+	u8"　·POB 裡較長的詞綴顯示英文：一行只要長到需要換行就翻不出來，與字典有沒有那一條無關。\n"
+	u8"　·血肉融合這類負值詞綴完全沒有翻譯。\n"
+	u8"　·傳奇珠寶「穢生 赤影夢魘」第一條詞綴顯示成問號。\n"
+	u8"　·工藝介面的詞綴列顯示英文，同一條詞綴在物品說明裡卻是中文。\n"
+	u8"　·版本紀錄的條列符號顯示成問號，且文字擠在窄窄一欄。\n"
+	u8"　·翻譯編輯器切換遊戲時，未儲存的修改會直接消失，也不會提醒。\n"
+	u8"　·翻譯編輯器存檔會改掉檔案的換行格式。\n"
+	u8"新增\n"
+	u8"　·啟動器改成分頁：主畫面、版本資訊、設定。版本資訊拿到整個視窗的寬度。\n"
+	u8"　·設定可選啟動 POB 後要關閉啟動器、回到啟動器，或保持開啟。（保持開啟時可以再開一個 POB）\n"
+	u8"　　※ 有 POB 在執行時無法更新，更新會替換 engine 資料夾裡的檔案。\n"
+	u8"　·設定可選啟動時要顯示主畫面還是版本資訊。\n"
+	u8"　·翻譯編輯器可以手動新增詞條，不必等它先出現在缺漏掃描裡。\n"
+	u8"　·翻譯編輯器會提醒「寫進這個檔不會生效」，並可一鍵改寫到真正生效的那個檔。\n"
+	u8"　·翻譯編輯器切換遊戲或語系前，會先問要不要儲存。\n"
+	u8"　·外部連結新增「拆粉查詢」。\n"
+	u8"調整\n"
+	u8"　·介面語言、字型、「POB 關閉後回到啟動器」移到設定分頁。\n"
+	u8"　·「版本資訊」與「關於」不再是彈出視窗。\n"
+	u8"　·翻譯編輯器更名為「翻譯編輯器(Beta)」。\n"
+	u8"\n"
 	u8"v0.14.0（2026-08-01）\n"
 	u8"修正\n"
 	u8"　·技能欄的輔助寶石顯示成天賦的名\n"
