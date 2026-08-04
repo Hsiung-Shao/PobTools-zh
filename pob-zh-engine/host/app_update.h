@@ -32,6 +32,9 @@ enum class AppUpdatePhase {
 	UpToDate,        // check finished: this build is current
 	TransUpdating,   // translation pack: download + verify + apply (automatic)
 	TransDone,       // translation pack applied; informational notice
+	TransAvailable,  // new translation data exists but automatic updates are off
+	                 // -- reporting "up to date" here would be a lie, and the user
+	                 // needs somewhere to apply it from
 	AppAvailable,    // newer app release; waiting for the user to click update
 	AppDownloading,  // fetching the full app zip
 	AppStaging,      // extract + validate into the staging dir
@@ -51,6 +54,20 @@ public:
 
 	// Main thread. Valid in AppAvailable/Error: downloads + stages the app zip.
 	void StartAppUpdate();
+
+	// Main thread. Whether an update may replace the translation dictionaries.
+	// Off is for someone editing translations themselves: the dictionaries are
+	// replaced wholesale, so an automatic patch-level update silently discards
+	// every edit made through the translation editor. Gating the BUTTON is not
+	// enough -- the worker applies translation packs on its own schedule with
+	// nobody pressing anything, so the gate has to be here.
+	void SetTranslationUpdates(bool on) { transUpdates_.store(on); }
+	bool TranslationUpdatesEnabled() const { return transUpdates_.load(); }
+
+	// Main thread. Valid in TransAvailable: apply the pending translation pack
+	// once, regardless of the setting above. Turning the setting off must not mean
+	// "you can never have new translations again".
+	void StartTranslationUpdate();
 
 	struct Status {
 		AppUpdatePhase phase = AppUpdatePhase::Idle;
@@ -77,7 +94,7 @@ private:
 	friend int RunAppFetchTest(const std::wstring& exeDir);
 	friend int RunAppUpdateSelfTest(const std::wstring& exeDir);
 
-	enum class Cmd { Check, UpdateApp };
+	enum class Cmd { Check, UpdateApp, UpdateTranslations };
 	struct RemoteRelease {
 		std::string ver;                   // "0.2.0" (tag without the leading v)
 		std::string appUrl, appSha;        // browser_download_url + sha256 hex (may be empty)
@@ -98,7 +115,8 @@ private:
 	std::wstring exeDir_;
 	std::thread worker_;
 	std::atomic<bool> stop_{ false };
-	std::atomic<bool> hold_{ false };  // see SetHold
+	std::atomic<bool> hold_{ false };           // see SetHold
+	std::atomic<bool> transUpdates_{ true };    // see SetTranslationUpdates
 
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;
@@ -121,13 +139,28 @@ AppUpdateDecision ClassifyAppUpdate(std::tuple<int, int, int> remote,
                                     std::tuple<int, int, int> localApp,
                                     std::tuple<int, int, int> localTrans);
 
+// Is `rel` -- a path relative to the install root, backslash separated -- part of
+// the translation data? The line is the one packaging already draws: exactly the
+// contents of the PobTools-Translations zip. Using the existing split rather than
+// inventing a second one keeps "翻譯資料" meaning one thing to the user.
+//
+// Written as a positive test used to EXCLUDE, so that if a future release adds a
+// data file and forgets to list it here, that file keeps being updated (today's
+// behaviour) rather than silently going stale.
+bool IsTranslationDataRel(const std::wstring& rel);
+
 // Main thread, launcher window already closed. Swaps the staged install into
 // exeDir (content files two-pass .new/rename; exe + engine DLLs backed up to
 // *.old first, rolled back on any failure) and optionally spawns the new exe.
 // Returns 0 on success; fills *errOut otherwise. tag is recorded in
 // update_state.json (informational).
+//
+// includeTranslations=false leaves every IsTranslationDataRel file alone, so an
+// app update can be taken without losing edited dictionaries. The exe and
+// engine\* are swapped either way -- only the dictionaries are held back.
 int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstring& stageDir,
-                                    const std::string& tag, bool relaunch, std::string* errOut);
+                                    const std::string& tag, bool relaunch, std::string* errOut,
+                                    bool includeTranslations = true);
 
 // Every-start best-effort cleanup: deletes *.old leftovers and the download
 // cache from a previous swap. Safe to call unconditionally.

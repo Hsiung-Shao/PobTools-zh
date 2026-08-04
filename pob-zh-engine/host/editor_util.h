@@ -26,5 +26,14 @@ std::string EdToLowerAscii(const std::string& s);
 // save=true -> Save As. initialDir may be empty.
 std::wstring EdFilterDialog(const std::wstring& initialDir, bool save);
 
+// Win32 folder picker ("" if cancelled). One implementation shared by the sound
+// library and the translation-data path setting; the caller supplies the title.
+std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir = std::wstring());
+
+// Win32 open dialog scoped to font files ("" if cancelled). Lists .otf too even
+// though the launcher cannot load it: rejecting by extension would be guessing,
+// and the caller decides by actually trying to load the file.
+std::wstring EdOpenFontDialog();
+
 // One-line summary of a block's conditions (for rule lists / status / search).
 std::string BlockSummary(const FilterFile& f, const FilterBlock& b);

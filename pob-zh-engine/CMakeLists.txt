@@ -327,6 +327,7 @@ if (WIN32)
         host/pob-zh.rc
         host/host_main.cpp
         host/launcher_config.cpp
+        host/launcher_strings_io.cpp
         host/ui_theme.cpp
         host/launcher_ui.cpp
         host/launcher_editor.cpp

@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "editor_data.h"
+#include "launcher_config.h"   // ResolveDataDir
 #include "../translate/translation_manager.h"
 
 namespace {
@@ -118,14 +119,18 @@ std::string engine_says(const char* key)
 
 } // namespace
 
-// T1-T13 for one game. Everything here writes to the REAL dictionaries next to
-// the exe (edit -> verify through the engine -> restore), which is why it stayed
-// hardcoded to poe1: running it against poe2 rewrites poe2's files too. Safe now
-// that SaveFile preserves each file's original line ending.
-static int run_for_game(const std::wstring& dir, const char* game)
+// T1-T13 for one game. Everything here writes to the REAL dictionaries (edit ->
+// verify through the engine -> restore), which is why it stayed hardcoded to poe1:
+// running it against poe2 rewrites poe2's files too. Safe now that SaveFile
+// preserves each file's original line ending.
+//
+// `slotRoot` is ALWAYS the built-in <exeDir>Data\<game>\, never a configured
+// external folder -- see RunEditorSelftest. A self test that followed the user's
+// setting would edit and re-save a translator's working copy.
+static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot, const char* game)
 {
 	printf("\n=== %s ===\n", game);
-	EditorModel model = LoadModel(dir, game, "zh-rTW");
+	EditorModel model = LoadModel(slotRoot, "zh-rTW");
 	if (!model.localeExists || model.files.empty()) {
 		printf("  [FAIL]  locale dir not found or no dictionary files\n");
 		return 2;
@@ -207,7 +212,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 		      "T7 **edit through the editor reaches the engine**");
 
 		// restore and prove the restore worked
-		EditorModel reload = LoadModel(dir, game, "zh-rTW");
+		EditorModel reload = LoadModel(slotRoot, "zh-rTW");
 		int ridx = FindFileIdx(reload, model.files[(size_t)fidx].name);
 		SetEntry(reload, ridx, key, before);
 		SaveAll(reload, &err);
@@ -222,7 +227,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 		printf("  shadowed key %s: in %s (loses) and %s (wins)\n",
 		       key.c_str(), loserFile.c_str(), winnerFile.c_str());
 
-		EditorModel m2 = LoadModel(dir, game, "zh-rTW");
+		EditorModel m2 = LoadModel(slotRoot, "zh-rTW");
 		const std::string winnerValue = engine_says(key.c_str());
 		std::string err;
 
@@ -244,7 +249,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 		      "T9 editing the LOSING copy changes nothing (the shadowing trap)");
 
 		// now edit the winning copy
-		EditorModel m3 = LoadModel(dir, game, "zh-rTW");
+		EditorModel m3 = LoadModel(slotRoot, "zh-rTW");
 		int wi = FindFileIdx(m3, winnerFile);
 		SetEntry(m3, wi, key, sentinel + winnerValue);
 		SaveAll(m3, &err);
@@ -252,7 +257,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 		      "T10 editing the WINNING copy does take effect");
 
 		// restore both
-		EditorModel m4 = LoadModel(dir, game, "zh-rTW");
+		EditorModel m4 = LoadModel(slotRoot, "zh-rTW");
 		SetEntry(m4, FindFileIdx(m4, loserFile), key, loserBefore);
 		SetEntry(m4, FindFileIdx(m4, winnerFile), key, winnerValue);
 		SaveAll(m4, &err);
@@ -261,7 +266,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 
 	// --- round-trip fidelity ----------------------------------------------
 	{
-		EditorModel m = LoadModel(dir, game, "zh-rTW");
+		EditorModel m = LoadModel(slotRoot, "zh-rTW");
 		bool keysKept = true, metaKept = true;
 		for (const EditorFile& f : m.files) {
 			if (!f.doc.contains("entries")) { keysKept = false; break; }
@@ -370,7 +375,7 @@ static int run_for_game(const std::wstring& dir, const char* game)
 			const std::wstring snap = path + L".snap";
 			CopyFileW(path.c_str(), snap.c_str(), FALSE);
 
-			EditorModel m = LoadModel(dir, game, "zh-rTW");
+			EditorModel m = LoadModel(slotRoot, "zh-rTW");
 			const int ti = FindFileIdx(m, "ui.json");
 			SetEntry(m, ti, newKey, newVal);
 			std::string err;
@@ -386,13 +391,77 @@ static int run_for_game(const std::wstring& dir, const char* game)
 
 	// --- locale enumeration -------------------------------------------------
 	{
-		std::vector<std::string> l1 = ListLocales(dir, "poe1");
-		std::vector<std::string> l2 = ListLocales(dir, "poe2");
+		std::vector<std::string> l1 = ListLocales(BuiltinDictDir(exeDir, DictSlot::Poe1));
+		std::vector<std::string> l2 = ListLocales(BuiltinDictDir(exeDir, DictSlot::Poe2));
 		bool has1 = std::find(l1.begin(), l1.end(), std::string("zh-rTW")) != l1.end();
 		bool has2 = std::find(l2.begin(), l2.end(), std::string("zh-rTW")) != l2.end();
-		std::vector<std::string> lx = ListLocales(dir, "poe9");
+		std::vector<std::string> lx = ListLocales(exeDir + L"Data\\poe9\\");
 		check(has1 && has2, "T30 ListLocales finds zh-rTW for both games");
 		check(!lx.empty(), "T31 ListLocales falls back instead of returning nothing");
+
+		// The launcher's own labels are a dictionary of the same shape, so the
+		// editor reaches them with no special-case code -- that is the entire
+		// reason they were put under Data\launcher\<locale>\ rather than in a
+		// settings file of their own.
+		const std::wstring launcherRoot = BuiltinDictDir(exeDir, DictSlot::Launcher);
+		std::vector<std::string> ll = ListLocales(launcherRoot);
+		EditorModel lm = LoadModel(launcherRoot, "zh-rTW");
+		check(std::find(ll.begin(), ll.end(), std::string("zh-rTW")) != ll.end(),
+		      "T32 ListLocales sees the launcher-strings dictionary");
+		check(lm.localeExists && lm.files.size() == 1 && lm.entries.size() >= 40 &&
+		          lm.loadOrder.size() == 1 && lm.loadOrder[0] == "launcher.json",
+		      "T33 the launcher dictionary loads like any other");
+
+		// T33c -- a language nobody hardcoded. Dropping a folder in is the whole
+		// point, so it is exercised end to end (list it, load it, remove it)
+		// rather than asserted about zh-rTW, which proves nothing about "automatic".
+		{
+			const std::wstring probeRoot = BuiltinDictDir(exeDir, DictSlot::Poe1);
+			const std::wstring probe = probeRoot + L"xx-TEST\\";
+			CreateDirectoryW(probe.c_str(), nullptr);
+			auto put = [](const std::wstring& p, const std::string& body) {
+				HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+				                       FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (h == INVALID_HANDLE_VALUE) return;
+				DWORD w = 0;
+				WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr);
+				CloseHandle(h);
+			};
+			put(probe + L"meta.json",
+			    "{\"display_name\":\"Probe\",\"load_order\":[\"probe.json\"]}");
+			put(probe + L"probe.json", "{\"entries\":{\"Chaos Orb\":\"PROBE\"}}");
+
+			std::vector<std::string> ls = ListLocales(probeRoot);
+			EditorModel pm = LoadModel(probeRoot, "xx-TEST");
+			const bool listed = std::find(ls.begin(), ls.end(), std::string("xx-TEST")) != ls.end();
+			check(listed && pm.localeExists && pm.entries.size() == 1 &&
+			          pm.loadOrder.size() == 1 && pm.loadOrder[0] == "probe.json",
+			      "T33c a newly dropped-in language folder is listed and loads");
+
+			DeleteFileW((probe + L"probe.json").c_str());
+			DeleteFileW((probe + L"meta.json").c_str());
+			RemoveDirectoryW(probe.c_str());
+			// Litter in the shipping Data\ directory is exactly what nobody notices.
+			check(GetFileAttributesW(probe.c_str()) == INVALID_FILE_ATTRIBUTES,
+			      "T33d the probe language folder was removed again");
+		}
+
+		// T33b -- which rows get the expanded editor. The About paragraph is the
+		// case that prompted it (four lines crammed into a one-line box), and a
+		// short label is the case that must NOT get a button cluttering it.
+		{
+			EditorEntry multi; multi.value = "one\ntwo";
+			EditorEntry longv; longv.value = std::string(80, 'x');
+			EditorEntry longk; longk.key = std::string(80, 'x'); longk.value = "short";
+			// not `small`: windows.h (rpcndr.h) has `#define small char`
+			EditorEntry brief; brief.key = "Close"; brief.value = u8"關閉";
+			int multiline = 0;
+			for (const EditorEntry& e : lm.entries)
+				if (e.value.find('\n') != std::string::npos) multiline++;
+			check(NeedsExpandedEditor(multi) && NeedsExpandedEditor(longv) &&
+			          NeedsExpandedEditor(longk) && !NeedsExpandedEditor(brief) && multiline >= 1,
+			      "T33b long / multi-line entries get the expanded editor, short ones do not");
+		}
 	}
 
 	// SaveFile backs a file up before overwriting it, so a run that edits and
@@ -409,13 +478,26 @@ int RunEditorSelftest(const std::string& games)
 {
 	g_pass = g_fail = 0;
 	const std::wstring dir = exe_dir();
-	printf("editor selftest - data dir next to: %s\n", narrow(dir).c_str());
+
+	// PINNED to the shipped dictionaries by passing an empty configured path.
+	// This test edits real files and restores them; if it followed the user's
+	// DataDir setting it would be rewriting a translator's working copy, and a
+	// mistake there has no backup (dist\Data is not under version control).
+	const std::wstring poe1Root = ResolveDictDir(dir, DictSlot::Poe1, L"").root;
+	const std::wstring poe2Root = ResolveDictDir(dir, DictSlot::Poe2, L"").root;
+	printf("editor selftest - dictionary folders: %s | %s\n",
+	       narrow(poe1Root).c_str(), narrow(poe2Root).c_str());
 	printf("  NOTE: this edits the dictionaries next to the exe (edit -> verify -> restore)\n");
+	// Prove the pinning rather than trusting the comment: even with an external
+	// folder configured, the ones used here must still be the built-in ones.
+	check(poe1Root == BuiltinDictDir(dir, DictSlot::Poe1) &&
+	          poe2Root == BuiltinDictDir(dir, DictSlot::Poe2),
+	      "T34 selftest is pinned to the built-in dictionaries");
 
 	const bool doPoe1 = (games != "poe2");
 	const bool doPoe2 = (games != "poe1");
-	if (doPoe1 && run_for_game(dir, "poe1") == 2) return 2;
-	if (doPoe2 && run_for_game(dir, "poe2") == 2) return 2;
+	if (doPoe1 && run_for_game(dir, poe1Root, "poe1") == 2) return 2;
+	if (doPoe2 && run_for_game(dir, poe2Root, "poe2") == 2) return 2;
 
 	// Everything below is poe1-only: it asserts the Volatility gem/passive
 	// collision, and poe2's dictionary has no such data. Printed, not skipped
@@ -424,7 +506,7 @@ int RunEditorSelftest(const std::string& games)
 	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
 	translation_reload();
-	EditorModel model = LoadModel(dir, "poe1", "zh-rTW");
+	EditorModel model = LoadModel(poe1Root, "zh-rTW");
 	std::vector<std::string> order = load_order(model);
 	(void)order;
 
@@ -476,6 +558,65 @@ int RunEditorSelftest(const std::string& games)
 		translation_set_source(inner);
 		check(say("Volatility") == u8"易變輔助", "T23 outer source still in effect");
 		translation_set_source(nullptr);
+	}
+
+	// --- external dictionary root (POB_ZH_DATADIR) --------------------------
+	//
+	// Asks the REAL loader, not a re-implementation: build a throwaway dictionary
+	// somewhere else, point the variable at it, and see whether a key that exists
+	// ONLY there comes back. A key that exists only in the built-in dictionaries
+	// must then be gone -- that is what separates "read the external root" from
+	// "merged something extra on top", which would look identical otherwise.
+	printf("\n=== external dictionary root ===\n");
+	{
+		wchar_t tmp[MAX_PATH];
+		GetTempPathW(MAX_PATH, tmp);
+		// The variable points at the folder holding the <locale> sub-folders --
+		// i.e. a copy of Data\poe1, not of Data.
+		const std::wstring extRoot = std::wstring(tmp) + L"pobtools_ext_dict\\";
+		const std::wstring leaf = extRoot + L"zh-rTW\\";
+		CreateDirectoryW(extRoot.c_str(), nullptr);
+		CreateDirectoryW(leaf.c_str(), nullptr);
+
+		auto put = [](const std::wstring& p, const std::string& body) {
+			HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+			                       FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return;
+			DWORD w = 0;
+			WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr);
+			CloseHandle(h);
+		};
+		const char* kOnlyExternal = "PobToolsExternalRootProbe";
+		put(leaf + L"meta.json", "{\"load_order\":[\"probe.json\"]}");
+		put(leaf + L"probe.json",
+		    std::string("{\"entries\":{\"") + kOnlyExternal + "\":\"\xe5\xa4\x96\xe9\x83\xa8\"}}");
+
+		// A key that only the shipped dictionaries have, to prove the switch.
+		const char* kOnlyBuiltin = "Chaos Orb";
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", extRoot.c_str());
+		translation_reload();
+		const char* extHit = translation_lookup(kOnlyExternal);
+		const char* builtinGone = translation_lookup(kOnlyBuiltin);
+		check(extHit != nullptr, "T35 the engine reads the dictionaries at POB_ZH_DATADIR");
+		check(builtinGone == nullptr, "T36 ...instead of the built-in ones, not on top of them");
+
+		// Pointing it at a folder with no dictionary for this game must fall back
+		// rather than leave POB with nothing translated at all.
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", (extRoot + L"nowhere").c_str());
+		translation_reload();
+		check(translation_lookup(kOnlyBuiltin) != nullptr,
+		      "T37 an unusable POB_ZH_DATADIR falls back to the built-in dictionaries");
+
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr);
+		translation_reload();
+		check(translation_lookup(kOnlyExternal) == nullptr &&
+		          translation_lookup(kOnlyBuiltin) != nullptr,
+		      "T38 clearing the variable returns to the built-in dictionaries");
+
+		DeleteFileW((leaf + L"probe.json").c_str());
+		DeleteFileW((leaf + L"meta.json").c_str());
+		RemoveDirectoryW(leaf.c_str());
+		RemoveDirectoryW(extRoot.c_str());
 	}
 
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);

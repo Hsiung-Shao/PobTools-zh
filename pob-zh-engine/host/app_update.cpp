@@ -1,6 +1,7 @@
 #include "app_update.h"
 #include "app_version.h"
 #include "http_client.h"
+#include "launcher_config.h" // LoadLauncherConfig (the CLI honours the same opt-out)
 #include "zip_extract.h"
 #include "hash_sha256.h"
 
@@ -12,6 +13,8 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <cwctype>
+#include <string>
 #include <vector>
 
 #include <miniz.h> // self test builds in-memory archives
@@ -248,6 +251,48 @@ static bool apply_content_two_pass(const std::wstring& exeDir, const std::wstrin
 	return true;
 }
 
+// ---- translation-data classification ---------------------------------------
+
+// Mirrors package_release.ps1's $dataGlobs -- the contents of the Translations
+// zip. Two definitions in two languages is a drift risk, so the direction was
+// chosen to make drift harmless: this is a positive test used to EXCLUDE, so a
+// data file added to packaging but not listed here keeps being updated (exactly
+// what happens today) instead of silently going stale on someone's install.
+bool IsTranslationDataRel(const std::wstring& rel)
+{
+	std::wstring p = rel;
+	for (wchar_t& c : p) {
+		if (c == L'/') c = L'\\';
+		else c = (wchar_t)towlower(c);
+	}
+	if (p.compare(0, 5, L"data\\") != 0) return false;
+	const std::wstring tail = p.substr(5);
+
+	auto ends_with = [](const std::wstring& s, const wchar_t* suffix) {
+		const size_t n = wcslen(suffix);
+		return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+	};
+	// Data\<game>\<locale>\*.json -- the POB dictionaries and the launcher's own
+	// labels, which live under Data\launcher\<locale>\ for exactly this reason.
+	for (const wchar_t* game : { L"poe1\\", L"poe2\\", L"launcher\\" }) {
+		const size_t n = wcslen(game);
+		if (tail.compare(0, n, game) != 0) continue;
+		const std::wstring rest = tail.substr(n);
+		// one more directory level, then a .json file: <locale>\<name>.json
+		const size_t slash = rest.find(L'\\');
+		if (slash == std::wstring::npos) return false;
+		const std::wstring leaf = rest.substr(slash + 1);
+		return !leaf.empty() && leaf.find(L'\\') == std::wstring::npos && ends_with(leaf, L".json");
+	}
+	// Data\atlas_versions\<tag>\atlas_tree_zh.json only -- the other files in that
+	// folder are atlas structure, not translations, and ship with the app.
+	if (tail.compare(0, 15, L"atlas_versions\\") == 0)
+		return ends_with(tail, L"\\atlas_tree_zh.json");
+
+	return tail == L"filter_items_zh.json" || tail == L"item_meta.json" ||
+	       tail == L"item_classes_zh.json";
+}
+
 // ---- policy -----------------------------------------------------------------
 
 AppUpdateDecision ClassifyAppUpdate(std::tuple<int, int, int> remote,
@@ -349,6 +394,16 @@ void AppUpdater::StartAppUpdate()
 	cmdCv_.notify_one();
 }
 
+void AppUpdater::StartTranslationUpdate()
+{
+	if (!worker_.joinable()) return;
+	{
+		std::lock_guard<std::mutex> lk(cmdMx_);
+		cmdQ_.push_back(Cmd::UpdateTranslations);
+	}
+	cmdCv_.notify_one();
+}
+
 AppUpdater::Status AppUpdater::Poll()
 {
 	std::lock_guard<std::mutex> lk(stMx_);
@@ -390,6 +445,17 @@ void AppUpdater::workerLoop()
 				// because lastCheckUtc is only persisted on success
 				log_line(exeDir_, "check failed: " + err);
 				setPhase(AppUpdatePhase::Idle, "");
+			}
+		} else if (cmd == Cmd::UpdateTranslations) {
+			// The one-off apply behind the TransAvailable notice. Deliberately not
+			// gated on transUpdates_: the user pressed this.
+			if (hold_.load()) {
+				setPhase(AppUpdatePhase::Error, u8"POB 執行中，請先關閉所有 POB 視窗");
+			} else if (!latest_.hasTrans) {
+				setPhase(AppUpdatePhase::Error, u8"找不到對應的翻譯資料");
+			} else if (!doUpdateTranslations(&err)) {
+				log_line(exeDir_, "manual translation update failed: " + err);
+				setPhase(AppUpdatePhase::Error, err);
 			}
 		} else {
 			if (!doUpdateApp(&err)) {
@@ -493,6 +559,16 @@ bool AppUpdater::doCheck(std::string* err)
 	}
 
 	AppUpdateDecision d = ClassifyAppUpdate(remoteV, localApp, localTrans);
+	if (d.applyTransNow && rel.hasTrans && !transUpdates_.load()) {
+		// Opted out. Saying "up to date" here would be false, and leaving no way to
+		// take the pack would mean toggling the setting back and forth -- so name
+		// the version and let the UI offer a one-off apply.
+		setPhase(AppUpdatePhase::TransAvailable,
+		         u8"有新的翻譯資料 v" + rel.ver + u8"（目前設定為不自動更新）");
+		lastCheckUtc_ = now_filetime();
+		saveState();
+		return true;
+	}
 	if (d.applyTransNow && rel.hasTrans) {
 		std::string terr;
 		if (!doUpdateTranslations(&terr)) {
@@ -635,7 +711,8 @@ void CleanupAppUpdateLeftovers(const std::wstring& exeDir)
 }
 
 int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstring& stageDir,
-                                    const std::string& tag, bool relaunch, std::string* errOut)
+                                    const std::string& tag, bool relaunch, std::string* errOut,
+                                    bool includeTranslations)
 {
 	auto fail = [&](const std::string& m) {
 		log_line(exeDir, "apply failed: " + m);
@@ -670,10 +747,18 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 		std::vector<std::wstring> rels;
 		list_files_rec(stage, L"", &rels);
 		std::vector<std::wstring> content, boot;
+		int skippedTrans = 0;
 		for (const std::wstring& rel : rels) {
-			if (rel == L"pob-zh.exe" || rel.compare(0, 7, L"engine\\") == 0) boot.push_back(rel);
-			else content.push_back(rel);
+			if (rel == L"pob-zh.exe" || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
+			// The app zip always carries Data\ (a fresh install needs it); holding
+			// the dictionaries back happens HERE, at apply time, so someone editing
+			// translations can still take the program update.
+			if (!includeTranslations && IsTranslationDataRel(rel)) { skippedTrans++; continue; }
+			content.push_back(rel);
 		}
+		if (skippedTrans)
+			log_line(exeDir, "translation updates off: kept " + std::to_string(skippedTrans) +
+			                 " existing dictionary file(s)");
 
 		delete_old_backups(exeDir, 1);
 
@@ -735,7 +820,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 				try { v = ordered_json::parse(content2); } catch (...) { v = ordered_json(); }
 			}
 			v["appliedApp"] = tag;
-			v["appliedTranslations"] = tag; // the full zip carries Data\ too
+			// Only claim the dictionaries moved if they actually did. Recording it
+			// unconditionally would make the next check think the translation data
+			// is current and never offer the pack again.
+			if (includeTranslations) v["appliedTranslations"] = tag; // the full zip carries Data\ too
 			CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 			write_file_atomic(exeDir + L"PobTools\\update_state.json", v.dump(2));
 		}
@@ -780,6 +868,10 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	AppUpdater u;
 	u.exeDir_ = exeDir;
 	u.loadState();
+	// The CLI has to honour the same opt-out as the UI, or "update from a script"
+	// becomes the one path that still overwrites edited dictionaries.
+	const bool wantTrans = LoadLauncherConfig(exeDir + L"pob-zh.ini").updateTranslations;
+	u.SetTranslationUpdates(wantTrans);
 	{
 		std::lock_guard<std::mutex> lk(u.stMx_);
 		u.st_.localVer = POBTOOLS_VERSION_STRING;
@@ -803,7 +895,8 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	}
 	st = u.Poll();
 	std::string aerr;
-	if (ApplyStagedAppUpdateAndRelaunch(exeDir, st.stageDir, st.latestVer, false, &aerr) != 0) {
+	if (ApplyStagedAppUpdateAndRelaunch(exeDir, st.stageDir, st.latestVer, false, &aerr,
+	                                    wantTrans) != 0) {
 		printf("FAIL: %s\n", aerr.c_str());
 		return 1;
 	}
@@ -1026,6 +1119,91 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		     readPrefix(inst + L"engine\\glfw3.dll") == "OLD" &&
 		     readPrefix(inst + L"engine\\libGLESv2.dll") == "OLD";
 		check(ok, "T7 mid-swap failure rolls boot files back");
+	}
+
+	// T8: what counts as translation data. The near-misses matter more than the
+	// hits -- classifying one file too many means an update silently stops
+	// delivering it.
+	{
+		struct Case { const wchar_t* rel; bool want; };
+		const Case cases[] = {
+			// the dictionaries, including the launcher's own labels
+			{ L"Data\\poe1\\zh-rTW\\ui.json",                  true  },
+			{ L"Data\\poe2\\zh-rTW\\meta.json",                true  },
+			{ L"Data\\launcher\\zh-rTW\\launcher.json",        true  },
+			{ L"data\\POE1\\zh-rTW\\Stats.JSON",               true  }, // case-insensitive
+			{ L"Data/poe1/zh-rTW/items.json",                  true  }, // forward slashes
+			{ L"Data\\atlas_versions\\3.29\\atlas_tree_zh.json", true },
+			{ L"Data\\filter_items_zh.json",                   true  },
+			{ L"Data\\item_meta.json",                         true  },
+			{ L"Data\\item_classes_zh.json",                   true  },
+			// near misses that must keep updating
+			{ L"Data\\poe1x\\zh-rTW\\ui.json",                 false }, // prefix trap
+			{ L"Data\\poe1\\zh-rTW\\notes.txt",                false }, // not a dictionary
+			{ L"Data\\poe1\\ui.json",                          false }, // missing locale level
+			{ L"Data\\poe1\\zh-rTW\\sub\\ui.json",             false }, // one level too deep
+			{ L"Data\\atlas_versions\\3.29\\atlas_tree_poe1.json", false }, // structure, not text
+			{ L"Data\\atlas_index.json",                       false },
+			{ L"Fonts\\NotoSansTC-Regular.ttf",                false },
+			{ L"pob-zh.exe",                                   false },
+			{ L"engine\\SimpleGraphic.dll",                    false },
+			{ L"Datafile.json",                                false }, // "Data" without a separator
+		};
+		bool ok = true;
+		std::string bad;
+		for (const Case& c : cases) {
+			if (IsTranslationDataRel(c.rel) == c.want) continue;
+			ok = false;
+			bad += " " + narrow(c.rel);
+		}
+		check(ok, ("T8 IsTranslationDataRel classifies the pack contents" +
+		           (ok ? std::string() : (" -- wrong:" + bad))).c_str());
+	}
+
+	// T9: with translation updates off, an app update still swaps the exe and
+	// engine but leaves the dictionaries exactly as they were. This is the whole
+	// point of the split, so it is asserted on real files, not on a flag.
+	{
+		std::wstring inst = root + L"\\t9\\inst\\";
+		std::wstring stage = root + L"\\t9\\stage\\";
+		bool ok = setupInstall(inst, stage);
+		// dict.json sits directly under Data\ and is NOT translation data; add one
+		// that is, plus a non-dictionary Data file that must still be updated.
+		ok = ok && writeSmall(inst + L"Data\\poe1\\zh-rTW\\ui.json", "OLD");
+		ok = ok && writeSmall(stage + L"Data\\poe1\\zh-rTW\\ui.json", "NEW");
+		ok = ok && writeSmall(inst + L"Data\\atlas_index.json", "OLD");
+		ok = ok && writeSmall(stage + L"Data\\atlas_index.json", "NEW");
+		std::string aerr;
+		ok = ok && ApplyStagedAppUpdateAndRelaunch(inst, stage, "9.9.9", false, &aerr,
+		                                           /*includeTranslations=*/false) == 0;
+		ok = ok && readPrefix(inst + L"pob-zh.exe") == "NEW" &&
+		     readPrefix(inst + L"engine\\SimpleGraphic.dll") == "NEW" &&
+		     readPrefix(inst + L"Data\\atlas_index.json") == "NEW" &&
+		     readPrefix(inst + L"Data\\poe1\\zh-rTW\\ui.json") == "OLD";
+		// ...and it must not claim the dictionaries are current, or the pack would
+		// never be offered again.
+		std::string stateRaw;
+		ok = ok && read_file_utf8(inst + L"PobTools\\update_state.json", stateRaw) &&
+		     stateRaw.find("appliedTranslations") == std::string::npos;
+		check(ok, "T9 app update with translations off keeps the dictionaries");
+	}
+
+	// T10: the same run with the setting ON must replace them -- otherwise T9
+	// would pass even if the dictionaries were never updatable at all.
+	{
+		std::wstring inst = root + L"\\t10\\inst\\";
+		std::wstring stage = root + L"\\t10\\stage\\";
+		bool ok = setupInstall(inst, stage);
+		ok = ok && writeSmall(inst + L"Data\\poe1\\zh-rTW\\ui.json", "OLD");
+		ok = ok && writeSmall(stage + L"Data\\poe1\\zh-rTW\\ui.json", "NEW");
+		std::string aerr;
+		ok = ok && ApplyStagedAppUpdateAndRelaunch(inst, stage, "9.9.9", false, &aerr,
+		                                           /*includeTranslations=*/true) == 0;
+		ok = ok && readPrefix(inst + L"Data\\poe1\\zh-rTW\\ui.json") == "NEW";
+		std::string stateRaw;
+		ok = ok && read_file_utf8(inst + L"PobTools\\update_state.json", stateRaw) &&
+		     stateRaw.find("appliedTranslations") != std::string::npos;
+		check(ok, "T10 app update with translations on replaces the dictionaries");
 	}
 
 	remove_dir_rec(root);

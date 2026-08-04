@@ -71,11 +71,15 @@ bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi)
 } // namespace
 
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
-                  const std::wstring& fontFile)
+                  const std::wstring& fontFile, const std::wstring& dataDir)
 {
 	set_env_both(L"POB_GAME", game.c_str());
 	set_env_both(L"POB_LOCALE", locale.c_str());
 	set_env_both(L"POB_ZH_FONTFILE", fontFile.c_str()); // r_font.cpp reads this
+	// Always written, empty included: this process is long-lived in KeepOpen mode,
+	// so clearing the setting has to actually clear the variable rather than leave
+	// the previous launch's value behind for the next POB to inherit.
+	set_env_both(L"POB_ZH_DATADIR", dataDir.c_str());
 }
 
 unsigned long SpawnPobAndWait(const std::wstring& launchLua)

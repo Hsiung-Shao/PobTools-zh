@@ -306,13 +306,29 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 	ImGui_ImplOpenGL3_Init("#version 100");
 
 	// --- state ---
-	static const char* kGames[2] = { "poe1", "poe2" };
-	int gi = (game == L"poe2") ? 1 : 0;
+	// "launcher" is the launcher's own labels. It is listed here rather than
+	// special-cased anywhere because Data\launcher\<locale>\ has the same shape as
+	// Data\poe1\<locale>\ — meta.json with a load_order plus dictionary files.
+	static const char* kGames[kDictSlotCount] = { "poe1", "poe2", "launcher" };
+	int gi = 0;
+	for (int i = 0; i < kDictSlotCount; i++)
+		if (game == DictSlotFolder((DictSlot)i)) { gi = i; break; }
+
+	// The dictionaries the ENGINE will read, per slot. Editing the built-in copy
+	// while POB reads an external one is the one failure this whole feature has to
+	// avoid, so the editor resolves the same settings the launcher does. Resolved
+	// once for all three: switching the combo must not re-read the ini and pick up
+	// a half-finished edit made in another window.
+	const LauncherConfig editCfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+	DictDirInfo slotDir[kDictSlotCount];
+	for (int i = 0; i < kDictSlotCount; i++)
+		slotDir[i] = ResolveDictDir(exeDir, (DictSlot)i, editCfg.dataDir[i]);
+	auto slotRoot = [&]() { return slotDir[gi].root; };
 
 	// Locales come from disk, not a hardcoded list: the caller's choice used to
 	// be discarded outright, so opening the editor from an "en" launcher silently
 	// edited the Chinese dictionary.
-	std::vector<std::string> locales = ListLocales(exeDir, kGames[gi]);
+	std::vector<std::string> locales = ListLocales(slotRoot());
 	std::string status;
 	int li = 0;
 	{
@@ -328,7 +344,12 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		}
 	}
 
-	EditorModel model = LoadModel(exeDir, kGames[gi], locales[li]);
+	EditorModel model = LoadModel(slotRoot(), locales[li]);
+	auto noteExternal = [&]() {
+		if (slotDir[gi].status == DataDirStatus::External)
+			status = u8"編輯的是外部翻譯資料夾：" + narrow(slotRoot());
+	};
+	if (status.empty()) noteExternal();
 
 	std::string search;       // raw search text
 	std::string searchLower;  // cached lowercase
@@ -354,6 +375,13 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 	std::string newKeyOwnersFor;        // the key newKeyOwners was computed for
 	bool focusNewKey = false;
 
+	// Expanded editor for a long / multi-line value. The table is virtualised with
+	// ImGuiListClipper, which requires uniform row heights, so a multi-line box
+	// cannot go in the cell -- it opens as a modal instead. -1 = closed.
+	int bigIdx = -1;
+	std::string bigText;
+	bool openBig = false;
+
 	// An action waiting for the unsaved-changes prompt. All four entry points
 	// (game combo, locale combo, reload button, window close) need the same
 	// guard, so they set a pending action instead of each opening their own.
@@ -377,15 +405,16 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 	// Unconditional reload. Callers are responsible for the dirty check — this
 	// stays the raw operation so the guard has exactly one implementation.
 	auto reload = [&]() {
-		locales = ListLocales(exeDir, kGames[gi]);
+		locales = ListLocales(slotRoot());
 		if (li >= (int)locales.size()) li = 0;
-		model = LoadModel(exeDir, kGames[gi], locales[li]);
+		model = LoadModel(slotRoot(), locales[li]);
 		fileFilter = 0;
 		rebuildFilter();
 		missScanned = false;
 		misses.clear(); missTrans.clear(); missTarget.clear();
 		newKeyOwners.clear(); newKeyOwnersFor.clear(); newTarget = -1;
 		status.clear();
+		noteExternal(); // each slot has its own folder: say which one this is
 	};
 
 	auto applyPending = [&]() {
@@ -427,10 +456,10 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		// and hand the choice to the prompt instead. ImGui::Combo writes the new
 		// index immediately, so without the rollback the box would show a game
 		// that is not loaded while the prompt is up.
-		ImGui::SetNextItemWidth(90 * scale);
+		ImGui::SetNextItemWidth(110 * scale);
 		{
 			int prev = gi;
-			if (ImGui::Combo("##game", &gi, kGames, 2)) {
+			if (ImGui::Combo("##game", &gi, kGames, kDictSlotCount)) {
 				if (DirtyCount(model) > 0) { pendingGi = gi; gi = prev; pending = Pending::SwitchGame; }
 				else reload();
 			}
@@ -676,9 +705,26 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						}
 
 						ImGui::TableSetColumnIndex(2);
-						ImGui::SetNextItemWidth(-FLT_MIN);
+						// Long or multi-line values (the About paragraph is four
+						// lines) get an expand button; the rule lives in
+						// editor_data so it can be asserted headlessly.
+						const bool big = NeedsExpandedEditor(e);
+						ImGui::SetNextItemWidth(big ? -(28.0f * scale) : -FLT_MIN);
 						if (ImGui::InputText("##v", &e.value))
 							model.files[e.fileIdx].dirty = true;
+						if (big) {
+							ImGui::SameLine(0, 4 * scale);
+							// Plain ASCII: this window builds its own glyph atlas
+							// from the dictionary text, and a decorative arrow is
+							// exactly the kind of character that renders as '?'.
+							if (ImGui::SmallButton("...")) {
+								bigIdx = (int)ei;
+								bigText = e.value;
+								openBig = true;
+							}
+							if (ImGui::IsItemHovered())
+								ImGui::SetTooltip(u8"展開編輯（內容較長或有換行）");
+						}
 						// The box has to keep the raw escapes so they can be
 						// edited, so the rendered form goes underneath — this is
 						// what POB will actually draw.
@@ -799,6 +845,49 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		}
 
 		ImGui::End();
+
+		// --- expanded value editor -------------------------------------------
+		// Opened here, at the root ID level, for the same reason as the guard
+		// below: OpenPopup inside the table's ID scope would never match this
+		// BeginPopupModal. The row only records which entry to edit.
+		if (openBig) { ImGui::OpenPopup(u8"編輯內容"); openBig = false; }
+		if (ImGui::BeginPopupModal(u8"編輯內容", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			if (bigIdx >= 0 && bigIdx < (int)model.entries.size()) {
+				EditorEntry& e = model.entries[bigIdx];
+				ImGui::PushTextWrapPos(760 * scale);
+				ImGui::TextDisabled(u8"Key（英文）");
+				ImGui::TextUnformatted(e.key.c_str());
+				ImGui::PopTextWrapPos();
+				ImGui::Spacing();
+				ImGui::TextDisabled(u8"翻譯（可多行；Enter 換行）");
+				ImGui::InputTextMultiline("##bigval", &bigText,
+				                          ImVec2(780 * scale, 240 * scale));
+				if (has_pob_color(bigText)) {
+					ImGui::TextDisabled(u8"顯示效果：");
+					TextPobColored(bigText, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+				}
+				ImGui::Spacing();
+				PobUi::PushPrimaryButton();
+				if (ImGui::Button(u8"套用", ImVec2(110 * scale, 0))) {
+					if (bigText != e.value) {
+						e.value = bigText;
+						model.files[e.fileIdx].dirty = true;
+					}
+					bigIdx = -1;
+					ImGui::CloseCurrentPopup();
+				}
+				PobUi::PopButtonStyle();
+				ImGui::SameLine();
+				if (ImGui::Button(u8"取消", ImVec2(110 * scale, 0))) {
+					bigIdx = -1;
+					ImGui::CloseCurrentPopup();
+				}
+			} else {
+				// The filter or a reload moved the ground under the popup.
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 
 		// --- unsaved-changes guard -------------------------------------------
 		// Opened here, after End(), so the popup sits at the root ID level; the

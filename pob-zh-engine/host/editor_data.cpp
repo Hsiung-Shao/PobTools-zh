@@ -93,9 +93,14 @@ static std::string strip_color_codes(const std::string& s)
 
 // ---- model loading ---------------------------------------------------------
 
-static std::wstring locale_dir(const std::wstring& exeDir, const std::string& game, const std::string& locale)
+// slotRoot is the folder holding the <locale> sub-folders, WITH its trailing
+// backslash -- <exeDir>Data\poe1\ for the built-in PoE1 dictionaries, or a
+// translator's external copy of them. It is deliberately NOT the exe directory
+// and NOT a Data root: the editor has to write to whatever the engine reads, or
+// "I changed it and nothing happened" is the result.
+static std::wstring locale_dir(const std::wstring& slotRoot, const std::string& locale)
 {
-	return exeDir + L"Data\\" + widen(game) + L"\\" + widen(locale) + L"\\";
+	return slotRoot + widen(locale) + L"\\";
 }
 
 // meta.json's load_order. It is deliberately NOT part of the model's file list
@@ -119,10 +124,10 @@ static std::vector<std::string> read_load_order(const std::wstring& dataDir)
 	return order;
 }
 
-EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const std::string& locale)
+EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 {
 	EditorModel model;
-	model.dataDir = locale_dir(exeDir, game, locale);
+	model.dataDir = locale_dir(slotRoot, locale);
 	if (!dir_exists(model.dataDir)) {
 		model.localeExists = false;
 		return model;
@@ -198,12 +203,20 @@ EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const
 	return model;
 }
 
-std::vector<std::string> ListLocales(const std::wstring& exeDir, const std::string& game)
+bool NeedsExpandedEditor(const EditorEntry& e)
+{
+	// A newline can never be seen at all in a one-line box; the length threshold is
+	// where the text starts scrolling out of a normal-width cell.
+	const size_t kLongEnough = 60;
+	return e.value.find('\n') != std::string::npos || e.key.find('\n') != std::string::npos ||
+	       e.value.size() > kLongEnough || e.key.size() > kLongEnough;
+}
+
+std::vector<std::string> ListLocales(const std::wstring& slotRoot)
 {
 	std::vector<std::string> out;
-	const std::wstring gameDir = exeDir + L"Data\\" + widen(game) + L"\\";
 	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((gameDir + L"*").c_str(), &fd);
+	HANDLE h = FindFirstFileW((slotRoot + L"*").c_str(), &fd);
 	if (h != INVALID_HANDLE_VALUE) {
 		do {
 			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;

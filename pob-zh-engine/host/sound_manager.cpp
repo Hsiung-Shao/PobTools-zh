@@ -1,5 +1,6 @@
 #include "sound_manager.h"
 #include "audio_player.h"
+#include "editor_util.h"   // EdBrowseForFolder
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -57,16 +58,8 @@ void SetSoundFolder(const std::wstring& folder)
 
 std::wstring BrowseSoundFolder()
 {
-	BROWSEINFOW bi{};
-	bi.lpszTitle = L"選擇音效資料夾";
-	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-	LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-	if (!pidl) return std::wstring();
-	wchar_t path[MAX_PATH] = L"";
-	std::wstring r;
-	if (SHGetPathFromIDListW(pidl, path)) r = path;
-	CoTaskMemFree(pidl);
-	return r;
+	// Shared implementation (editor_util); only the title differs.
+	return EdBrowseForFolder(L"選擇音效資料夾", GetSoundFolder());
 }
 
 static void EnumFiles(const std::wstring& folder, std::vector<std::wstring>& out)

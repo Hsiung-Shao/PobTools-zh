@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "launcher_config.h"
+#include "launcher_strings_io.h"
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
@@ -165,6 +166,22 @@ static void apply_locale_env(const std::wstring& dir)
 	// is a no-op when the variable was inherited, so this cannot override the
 	// launcher's choice.
 	ensure(L"POB_ZH_FONTFILE", L"Font", kDefaultFontFile);
+
+	// The external dictionary folder deliberately does NOT go through `ensure`:
+	//  - it is a path, and that helper's fixed 128-wchar buffer truncates silently
+	//    (GetPrivateProfileStringW cannot report truncation, so the symptom would
+	//    be "my folder is ignored" for long paths only);
+	//  - the codepage-proof hex spelling and the folder validation both already
+	//    live in launcher_config, and a second copy of either would drift.
+	// Only a usable folder is passed on, so this path behaves like the launcher's.
+	if (GetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr, 0) == 0) {
+		wchar_t g[64] = L"poe1";
+		GetEnvironmentVariableW(L"POB_GAME", g, 64); // set by `ensure` just above
+		const DictSlot slot = (wcscmp(g, L"poe2") == 0) ? DictSlot::Poe2 : DictSlot::Poe1;
+		DictDirInfo dd = ResolveDictDir(dir, slot, LoadLauncherConfig(ini).dataDir[(int)slot]);
+		set_env_both(L"POB_ZH_DATADIR",
+		             dd.status == DataDirStatus::External ? dd.root.c_str() : L"");
+	}
 }
 
 // Load SimpleGraphic.dll (from the engine DLL directory) and run POB.
@@ -397,6 +414,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
 		return RunFontCoverageSelftest(dir);
 	}
+	if (arg1 == L"--launcher-strings-selftest") {
+		// headless: the JSON overlay for the launcher's own labels — key uniqueness,
+		// fallback to the compiled table, and the pointer lifetime it depends on
+		return RunLauncherStringsSelfTest(dir);
+	}
+	if (arg1 == L"--launcher-strings-export") {
+		// maintainer: regenerate Data\launcher\zh-rTW\ from the compiled tables so
+		// the shipped translation file cannot drift away from the binary
+		return RunLauncherStringsExport(dir);
+	}
 
 	// Headless new-season atlas data import: --atlas-import <path to data.json>.
 	if (arg1 == L"--atlas-import") {
@@ -417,6 +444,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// launcher to run tools as child processes so its own window stays open).
 	if (arg1 == L"--atlas") {
 		ShowAtlasPlanner(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
+		return 0;
+	}
+	// Open the translation editor directly (shortcut-friendly). The launcher still
+	// opens it IN-PROCESS -- that is what lets its own labels reload on the way
+	// back -- so this is an extra entry point, not a replacement.
+	// Optional arg2 picks the dictionary set ("poe1" / "poe2" / "launcher");
+	// without it the editor opens on whatever the launcher last used.
+	if (arg1 == L"--translation-editor") {
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		ShowEditor(dir, arg2.empty() ? c.game : arg2, c.locale);
 		return 0;
 	}
 	if (arg1 == L"--editor-selftest") {
@@ -505,6 +542,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// shows the result. Destructor joins the worker on every return path.
 	AppUpdater appUpdater;
 	appUpdater.Init(dir);
+	// Before the first check: the worker downloads and applies translation packs
+	// on its own schedule, so the opt-out has to be in place before it runs, not
+	// merely reflected in the UI afterwards.
+	appUpdater.SetTranslationUpdates(LoadLauncherConfig(ini).updateTranslations);
 	appUpdater.RequestCheck(false);
 
 	for (;;) {
@@ -524,7 +565,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				appUpdater.Shutdown(); // worker idle; join before touching engine\*
 				std::string aerr;
 				if (ApplyStagedAppUpdateAndRelaunch(dir, ust.stageDir, ust.latestVer,
-				                                    /*relaunch=*/true, &aerr) == 0) {
+				                                    /*relaunch=*/true, &aerr,
+				                                    cfg.updateTranslations) == 0) {
 					return 0; // the freshly spawned new exe takes over
 				}
 				MessageBoxW(nullptr, (L"更新套用失敗：\n" + from_utf8(aerr)).c_str(),
@@ -547,7 +589,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			if (launchLua.empty()) continue; // UI should have prevented this; just re-show
 		}
 
-		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile);
+		{
+			// Only a folder that actually holds dictionaries is handed over; a
+			// broken setting must leave POB on the built-in ones rather than with
+			// no translations at all.
+			const DictSlot slot = (cfg.game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
+			DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
+			PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
+			                        dd.status == DataDirStatus::External ? dd.root : L"");
+		}
 		PobLaunch::SpawnPobAndWait(launchLua);
 
 		// POB self-updated: its updater is about to start a fresh pob-zh.exe

@@ -1091,17 +1091,56 @@ static bool try_load_json(const std::string &base_dir) {
     std::string json_dir;
     std::string meta_path;
     bool found = false;
-    const char *candidates[] = {
-        "Data\\",                /* current layout: Data/{game}/{locale}/ */
-        "Data\\Translate\\",     /* legacy layout */
-        "..\\Data\\Translate\\", /* legacy pobcharm4-ui layout */
-    };
-    for (const char *prefix : candidates) {
-        json_dir = base_dir + prefix + game + "\\" + effective_locale + "\\";
+
+    /* POB_ZH_DATADIR: the dictionary folder for THIS game, kept outside the
+     * install so a translator can edit a working copy and see it rendered by the
+     * real POB -- and so updates, which only ever write to the install directory,
+     * cannot overwrite it.
+     *
+     * It points at the folder that directly contains the <locale> sub-folders
+     * (exactly what you get by copying Data\poe1 somewhere), NOT at a Data root:
+     * the launcher already knows which game it is starting, so it picks the right
+     * folder and this code never has to know about games at all.
+     *
+     * The launcher validates the folder and only sets the variable when it is
+     * usable; the fallback below is for a hand-set variable pointing somewhere
+     * wrong, where shipping no translations would be far worse than ignoring it.
+     *
+     * Note the whole dictionary path is ANSI (GetEnvironmentVariableA here,
+     * std::ifstream below), exactly as it already is for the install directory,
+     * so the folder has to be spellable in the system codepage. */
+    char dirbuf[1024];
+    const char *data_env = win_env("POB_ZH_DATADIR", dirbuf, sizeof(dirbuf));
+    if (data_env && *data_env) {
+        std::string root = data_env;
+        if (root.back() != '\\' && root.back() != '/') root += '\\';
+        json_dir = root + effective_locale + "\\";
         meta_path = json_dir + "meta.json";
-        if (GetFileAttributesA(meta_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
-            found = true;
-            break;
+        found = GetFileAttributesA(meta_path.c_str()) != INVALID_FILE_ATTRIBUTES;
+        if (!found) {
+            /* Leave a trace: falling back silently is how "my external folder is
+             * being ignored" becomes unexplainable. */
+            char why[1400];
+            snprintf(why, sizeof(why),
+                     "[pob-proxy] POB_ZH_DATADIR has no %s dictionary (%s); using built-in\n",
+                     effective_locale.c_str(), meta_path.c_str());
+            OutputDebugStringA(why);
+        }
+    }
+
+    if (!found) {
+        const char *candidates[] = {
+            "Data\\",                /* current layout: Data/{game}/{locale}/ */
+            "Data\\Translate\\",     /* legacy layout */
+            "..\\Data\\Translate\\", /* legacy pobcharm4-ui layout */
+        };
+        for (const char *prefix : candidates) {
+            json_dir = base_dir + prefix + game + "\\" + effective_locale + "\\";
+            meta_path = json_dir + "meta.json";
+            if (GetFileAttributesA(meta_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                found = true;
+                break;
+            }
         }
     }
 

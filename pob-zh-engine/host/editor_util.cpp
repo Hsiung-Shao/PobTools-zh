@@ -3,8 +3,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>     // GetOpenFileNameW / GetSaveFileNameW
+#include <shlobj.h>      // SHBrowseForFolderW
 
 #pragma comment(lib, "comdlg32.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
 
 std::string EdNarrow(const std::wstring& w)
 {
@@ -78,6 +81,46 @@ std::wstring EdFilterDialog(const std::wstring& initialDir, bool save)
 	ofn.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
 	BOOL ok = save ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
 	return ok ? std::wstring(buf) : std::wstring();
+}
+
+std::wstring EdOpenFontDialog()
+{
+	wchar_t buf[MAX_PATH] = L"";
+	OPENFILENAMEW ofn{};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.hwndOwner = GetActiveWindow();
+	ofn.lpstrFilter = L"字型檔 (*.ttf;*.ttc;*.otf)\0*.ttf;*.ttc;*.otf\0所有檔案 (*.*)\0*.*\0\0";
+	ofn.lpstrFile = buf;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.lpstrInitialDir = L"C:\\Windows\\Fonts"; // where people's fonts already are
+	ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
+}
+
+std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir)
+{
+	BROWSEINFOW bi{};
+	bi.hwndOwner = GetActiveWindow();
+	bi.lpszTitle = title;
+	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+	// BFFM_INITIALIZED fires once when the dialog opens; it is the only place the
+	// starting folder can be set, since BROWSEINFO has no field for it.
+	std::wstring start = initialDir;
+	if (!start.empty()) {
+		bi.lParam = (LPARAM)start.c_str();
+		bi.lpfn = [](HWND hwnd, UINT msg, LPARAM, LPARAM data) -> int {
+			if (msg == BFFM_INITIALIZED && data)
+				SendMessageW(hwnd, BFFM_SETSELECTIONW, TRUE, data);
+			return 0;
+		};
+	}
+	LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+	if (!pidl) return std::wstring();
+	wchar_t path[MAX_PATH] = L"";
+	std::wstring r;
+	if (SHGetPathFromIDListW(pidl, path)) r = path;
+	CoTaskMemFree(pidl);
+	return r;
 }
 
 std::string BlockSummary(const FilterFile& f, const FilterBlock& b)

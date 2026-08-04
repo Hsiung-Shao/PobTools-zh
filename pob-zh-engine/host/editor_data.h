@@ -54,16 +54,31 @@ struct MissEntry {
 	bool reverse = false;    // true: REV| line (Chinese→English reverse failure)
 };
 
-// Load all dictionary files for a game/locale. localeExists is false (and the
-// model otherwise empty) when the directory does not exist.
-EditorModel LoadModel(const std::wstring& exeDir, const std::string& game, const std::string& locale);
+// Load all dictionary files for one locale of one dictionary set.
+//
+// `slotRoot` is the folder that directly CONTAINS the <locale> sub-folders, with
+// a trailing backslash: <exeDir>Data\poe1\ for the shipped PoE1 dictionaries, or
+// whatever external folder the user configured for that slot (ResolveDictDir in
+// launcher_config.h). It is NOT the exe directory and NOT a Data root -- the
+// editor must write to the same folder the engine reads, otherwise an edit
+// appears to do nothing. localeExists is false (model otherwise empty) when the
+// directory is absent.
+EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale);
 
 // Find a file index by name (e.g. "ui.json"); -1 if absent.
 int FindFileIdx(const EditorModel& model, const std::string& name);
 
-// Locale sub-directories present under Data\{game}\. Falls back to {"zh-rTW"}
-// when the game directory is missing, so callers always have something to show.
-std::vector<std::string> ListLocales(const std::wstring& exeDir, const std::string& game);
+// Is this entry too long, or too multi-line, to edit in a single-line table cell?
+// The entries table is virtualised with ImGuiListClipper, which requires uniform
+// row heights -- so a taller box cannot live in the cell and these rows get an
+// expand button plus a modal editor instead. Here rather than in the UI so the
+// rule is a thing that can be asserted, not something only a screenshot shows.
+bool NeedsExpandedEditor(const EditorEntry& e);
+
+// Locale sub-directories present under `slotRoot` (same convention as LoadModel).
+// Falls back to {"zh-rTW"} when the directory is missing, so callers always have
+// something to show.
+std::vector<std::string> ListLocales(const std::wstring& slotRoot);
 
 // File indices sorted by engine load order (earliest first); files absent from
 // load_order come last. Use this for any "which file should I write to" UI —

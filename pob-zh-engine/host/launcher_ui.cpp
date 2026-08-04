@@ -1,5 +1,7 @@
 #include "launcher_ui.h"
+#include "editor_util.h"        // EdBrowseForFolder (one folder picker for the app)
 #include "launcher_strings.h"
+#include "launcher_strings_io.h"
 #include "ui_theme.h"
 #include "app_version.h"
 #include "app_update.h"
@@ -16,6 +18,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <misc/cpp/imgui_stdlib.h> // InputText over std::string (the data-folder field)
 
 #include <string>
 #include <vector>
@@ -78,35 +81,25 @@ static const char* const kOptionalScriptTexts[] = {
 
 // Every piece of text the launcher can put on screen, in one place so the font
 // atlas and the coverage selftest cannot disagree about what has to be drawable.
-static void CollectLauncherTexts(std::vector<const char*>& out)
+// `overlays` are the JSON-translated string sets actually in use (one per
+// locale). They must be listed too: a translator can type a character the chosen
+// font has no glyph for, and the atlas is built once for both locales because the
+// language combo switches without rebuilding it.
+static void CollectLauncherTexts(std::vector<const char*>& out,
+                                 const std::vector<const LauncherStrings*>& overlays = {})
 {
-	for (const LauncherStrings* t : { &STR_ZHTW, &STR_EN }) {
-		const char* const fields[] = {
-			t->title, t->subtitle, t->language, t->gameVersion,
-			t->poe1, t->poe2, t->detected, t->missing,
-			t->notFoundPoe1, t->notFoundPoe2, t->noneFound,
-			t->returnAfterExit, t->launch,
-			t->editor, t->filterEditor, t->atlasPlanner, t->timelessJewel,
-			t->gamesSection, t->toolsSection, t->linksSection,
-			t->about, t->changelog, t->aboutBody, t->support,
-			t->discord, t->close, t->font,
-			t->updateAvailable, t->updateNow, t->updateDownloading,
-			t->updatePreparing, t->updateRestarting, t->updateFailed,
-			t->updateRetry, t->updateTransDone,
-			t->updateCheck, t->updateCheckTip,
-			t->updateChecking, t->updateUpToDate,
-			t->tabHome, t->tabSettings, t->sectionInterface, t->sectionLaunch,
-			t->exitModeClose, t->exitModeKeepOpen, t->startupTabLabel,
-			t->pobRunning, t->pobSameGameWarn, t->updateBlockedTip,
-		};
-		// A string that never reaches the glyph atlas is drawn as '?' with no
-		// warning anywhere -- that is how the version-history bullet shipped
-		// unreadable on one of the two fonts. Forgetting to list a new field is
-		// now a build error rather than something a screenshot reveals.
-		static_assert(sizeof(fields) / sizeof(fields[0]) == kLauncherStringsFields,
-		              "add the new LauncherStrings field to this list too");
-		for (const char* f : fields) if (f) out.push_back(f);
-	}
+	// A string that never reaches the glyph atlas is drawn as '?' with no warning
+	// anywhere -- that is how the version-history bullet shipped unreadable on one
+	// of the two fonts. There used to be a hand-copied roster of fields here that
+	// a new string had to be added to; walking the member-pointer table means the
+	// roster cannot be out of date at all.
+	for (const LauncherStrings* t : { &STR_ZHTW, &STR_EN })
+		for (auto m : kLauncherStringMembers)
+			if (t->*m) out.push_back(t->*m);
+	for (const LauncherStrings* t : overlays)
+		if (t)
+			for (auto m : kLauncherStringMembers)
+				if (t->*m) out.push_back(t->*m);
 	out.push_back(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
 	out.push_back(kChangelogText);      // version-history dialog body
 	for (const LinkEntry& l : kLinks) out.push_back(l.label);
@@ -246,6 +239,41 @@ static std::string to_utf8(const std::wstring& w)
 	return s;
 }
 
+// UTF-8 -> codepoints. One decoder shared by the live coverage probe and the
+// headless coverage selftest: two copies would eventually disagree about some
+// edge case and the check would stop meaning what the probe means.
+template <class F>
+static void ForEachCodepoint(const char* text, F&& fn)
+{
+	for (const unsigned char* p = (const unsigned char*)text; p && *p; ) {
+		unsigned cp = 0;
+		int n = 1;
+		if (*p < 0x80)                { cp = *p; }
+		else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1Fu; n = 2; }
+		else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0Fu; n = 3; }
+		else if ((*p & 0xF8) == 0xF0) { cp = *p & 0x07u; n = 4; }
+		else { p++; continue; }                      // stray continuation byte
+		for (int i = 1; i < n; i++) {
+			if ((p[i] & 0xC0) != 0x80) { n = i; cp = 0; break; }
+			cp = (cp << 6) | (p[i] & 0x3Fu);
+		}
+		p += n;
+		if (cp < 0x20 || cp >= 0x110000) continue;   // control chars are not drawn
+		fn(cp);
+	}
+}
+
+// ImGui hands back UTF-8; Win32 paths are UTF-16. The data-folder field is the
+// one place the user types a path directly.
+static std::wstring from_utf8(const std::string& s)
+{
+	if (s.empty()) return std::wstring();
+	int needed = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
+	std::wstring w((size_t)needed, L'\0');
+	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], needed);
+	return w;
+}
+
 // Build one atlas covering every string in all language tables (plus any
 // runtime texts such as detected install paths), so switching the UI
 // language never requires a rebuild.
@@ -258,7 +286,8 @@ struct LauncherFonts {
 };
 
 static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigned char>& ttfKeepAlive,
-                               const std::vector<std::string>& extraTexts, float scale)
+                               const std::vector<std::string>& extraTexts, float scale,
+                               const std::vector<const LauncherStrings*>& overlays = {})
 {
 	LauncherFonts out;
 	ImGuiIO& io = ImGui::GetIO();
@@ -278,7 +307,7 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 	b.AddRanges(io.Fonts->GetGlyphRangesDefault());
 	{
 		std::vector<const char*> texts;
-		CollectLauncherTexts(texts);
+		CollectLauncherTexts(texts, overlays);
 		for (const char* t : texts) b.AddText(t);
 		for (const char* t : kOptionalScriptTexts) b.AddText(t);
 	}
@@ -303,6 +332,68 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		io.Fonts->Build();
 	}
 	return out;
+}
+
+// Can the LAUNCHER load this font file?
+//
+// Decided from the file's own bytes, never its extension: a .ttf can hold CFF
+// outlines and a .otf can hold glyf ones, so the extension is not the format. The
+// launcher draws with stb_truetype (bundled inside ImGui), which handles glyf
+// outlines only -- 'OTTO' (CFF/PostScript) and WOFF are out. The ENGINE renders
+// with FreeType and accepts more, so this is a launcher-side limit rather than a
+// property of the file, and the message has to say so.
+//
+// Not done by building a throwaway atlas: ImGui's AddFontFromMemoryTTF only
+// IM_ASSERTs on a bad font, and IM_ASSERT is plain assert() here, compiled out in
+// Release -- it would read past the buffer instead of reporting anything.
+enum class FontKind { TrueType, CffOutlines, NotAFont };
+static FontKind ClassifyFontFile(const std::vector<unsigned char>& d)
+{
+	if (d.size() < 4) return FontKind::NotAFont;
+	const unsigned tag = ((unsigned)d[0] << 24) | ((unsigned)d[1] << 16) |
+	                     ((unsigned)d[2] << 8) | (unsigned)d[3];
+	switch (tag) {
+		case 0x00010000u:  // TrueType outlines
+		case 0x74727565u:  // 'true'  (Apple TrueType)
+		case 0x74746366u:  // 'ttcf'  (collection; stb reads font 0)
+			return FontKind::TrueType;
+		case 0x4F54544Fu:  // 'OTTO'  (CFF outlines)
+			return FontKind::CffOutlines;
+		default:
+			return FontKind::NotAFont;   // includes 'wOFF' / 'wOF2'
+	}
+}
+
+// Can the freshly built atlas actually draw each language's labels? ImGui
+// substitutes '?' for a missing glyph and says nothing, so once the labels became
+// translatable this had to be asked rather than assumed -- someone installing a
+// Latin-only font and picking Chinese would otherwise just get a broken screen.
+// missing[i] collects up to a few of the characters that failed, for the message.
+static std::vector<bool> ProbeLocaleCoverage(const LauncherFonts& fonts,
+                                             const std::vector<LauncherStringStore>& stores,
+                                             std::vector<std::string>* missing)
+{
+	std::vector<bool> ok(stores.size(), true);
+	if (missing) missing->assign(stores.size(), std::string());
+	if (!fonts.body) return ok;
+	for (size_t i = 0; i < stores.size(); i++) {
+		int shown = 0;
+		for (auto m : kLauncherStringMembers) {
+			const char* s = stores[i].s.*m;
+			if (!s) continue;
+			ForEachCodepoint(s, [&](unsigned cp) {
+				if (cp >= 0x110000) return;
+				if (fonts.body->FindGlyphNoFallback((ImWchar)cp)) return;
+				ok[i] = false;
+				if (missing && shown < 6) {
+					wchar_t w[2] = { (wchar_t)cp, 0 };
+					(*missing)[i] += to_utf8(w);
+					shown++;
+				}
+			});
+		}
+	}
+	return ok;
 }
 
 static void TextCenteredAt(ImDrawList* dl, ImFont* font, float fontSize, ImVec2 center, ImU32 col, const char* text)
@@ -527,10 +618,44 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// Detected install folders (shown in card tooltips) need their glyphs in the atlas.
 	std::string poe1Dir = installs.poe1Lua.empty() ? "" : to_utf8(installs.poe1Lua.substr(0, installs.poe1Lua.find_last_of(L'\\')));
 	std::string poe2Dir = installs.poe2Lua.empty() ? "" : to_utf8(installs.poe2Lua.substr(0, installs.poe2Lua.find_last_of(L'\\')));
+	// Where each dictionary set lives: the install, or a translator's working copy
+	// somewhere else. Independent per slot -- someone translating only PoE1 should
+	// not be dragged into keeping an external PoE2 copy in step.
+	DictDirInfo dictDir[kDictSlotCount];
+	auto resolveDict = [&](int i) { dictDir[i] = ResolveDictDir(exeDir, (DictSlot)i, cfg.dataDir[i]); };
+	for (int i = 0; i < kDictSlotCount; i++) resolveDict(i);
+
+	// Languages come from the folders on disk, so adding Data\poe1\ja-JP\ is all
+	// it takes to offer Japanese. "en" is always first and needs no folder.
+	std::vector<LocaleInfo> locales = ListInstalledLocales(exeDir, cfg);
+
+	// Launcher labels come from the compiled tables with
+	// <launcher slot>\<locale>\launcher.json layered on top. EVERY language is
+	// loaded up front because the language picker switches without rebuilding the
+	// glyph atlas -- so the atlas must already contain whatever every translator
+	// typed. Loaded BEFORE LoadFonts for exactly that reason, which also means a
+	// changed data path only reaches these labels on the next launcher start.
+	const std::wstring launcherRoot = dictDir[(int)DictSlot::Launcher].root;
+	std::vector<LauncherStringStore> strStore;
+	strStore.reserve(locales.size()); // LauncherStringStore is move-only (see its header)
+	for (const LocaleInfo& l : locales)
+		strStore.emplace_back(LoadLauncherStrings(launcherRoot, from_utf8(l.id)));
+	// EVERY language, not just the selected one: the atlas is rebuilt only when the
+	// font changes, so switching language must not need glyphs that were never
+	// added. A missing one is drawn as '?' with no warning of any kind.
+	std::vector<const LauncherStrings*> strOverlays;
+	strOverlays.reserve(strStore.size());
+	for (const LauncherStringStore& st : strStore) strOverlays.push_back(&st.s);
+
 	std::vector<unsigned char> ttfData;
-	LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData, { poe1Dir, poe2Dir }, scale);
+	LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData,
+	                                { poe1Dir, poe2Dir }, scale, strOverlays);
 	std::vector<std::wstring> fontList = ListAvailableFonts(exeDir);
 	bool fontChanged = false;
+	// Recomputed with the atlas, never independently: the answer is a property of
+	// the atlas that was just built, not of the font file.
+	std::vector<std::string> localeMissing;
+	std::vector<bool> localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
 	ImGui_ImplOpenGL3_Init("#version 100");
@@ -540,16 +665,26 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	if (poe2Sel && installs.poe2Lua.empty() && !installs.poe1Lua.empty()) poe2Sel = false;
 	if (!poe2Sel && installs.poe1Lua.empty() && !installs.poe2Lua.empty()) poe2Sel = true;
 
-	int localeIdx = (cfg.locale == L"en") ? 1 : 0;
-	static const wchar_t* kLocaleIds[2] = { L"zh-rTW", L"en" };
+	// Falls back to zh-rTW, then en, when the configured language's folder is gone.
+	int localeIdx = PickLocaleIndex(locales, cfg.locale);
 
 	bool launch = false;
 	bool openEditor = false;
 	bool applyUpdate = false;
+
+	// Game and language live in widget state (poe2Sel / localeIdx), not in cfg, so
+	// cfg is stale until this runs. Every path that writes the ini must call it
+	// first -- the "Save settings" button used to write the OLD language back,
+	// which is exactly the kind of thing that makes a save button untrustworthy.
+	auto syncCfgFromUi = [&]() {
+		cfg.game = poe2Sel ? L"poe2" : L"poe1";
+		if (localeIdx >= 0 && localeIdx < (int)locales.size())
+			cfg.locale = from_utf8(locales[localeIdx].id);
+	};
+
 	// tools spawn as child processes so this window stays open (see SpawnTool)
 	auto spawnTool = [&](const wchar_t* flag) {
-		cfg.game = poe2Sel ? L"poe2" : L"poe1";
-		cfg.locale = kLocaleIds[localeIdx];
+		syncCfgFromUi();
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
 		SpawnTool(exeDir, flag);
 	};
@@ -558,13 +693,47 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// and ImGui before it returns, so "return a result" could never keep the
 	// window alive, let alone allow a second POB while the first is running.
 	auto launchPob = [&](bool poe2) {
-		cfg.game = poe2 ? L"poe2" : L"poe1";
-		cfg.locale = kLocaleIds[localeIdx];
+		syncCfgFromUi();
+		cfg.game = poe2 ? L"poe2" : L"poe1"; // the row that was clicked, not the selection
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);   // the child's safety net
-		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile); // inherited
+		// Only a validated external folder is passed on (see the settings page),
+		// and only the one for the game being started; a broken path leaves POB on
+		// the built-in dictionaries.
+		const int slot = poe2 ? (int)DictSlot::Poe2 : (int)DictSlot::Poe1;
+		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
+		                        dictDir[slot].status == DataDirStatus::External
+		                            ? dictDir[slot].root : std::wstring());
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (!lua.empty()) PobLaunch::SpawnPobDetached(lua, cfg.game);
 	};
+	// "Copy the built-in data to..." state. The confirm popup has to be opened
+	// from outside the tab's draw scope (ImGui's ID stack), so the button records
+	// an intent and the work happens after the window ends.
+	std::wstring copyDest;
+	std::string copyMsg;
+	int copySlot = 0;
+	bool askOverwrite = false;
+	bool doCopy = false;
+	// Text being typed in each path box. Kept apart from cfg so a half-typed path
+	// is not treated as the setting, and mirrored back from cfg whenever the box
+	// is not focused (so Clear / Browse / the suggestion button show up there).
+	std::string dirEdit[kDictSlotCount];
+	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = to_utf8(cfg.dataDir[i]);
+	std::string fontMsg;       // result of the last "install a font" attempt
+	double savedUntil = 0.0;   // "saved" confirmation deadline
+
+	// EVERY settings change writes the ini immediately. Half-immediate is worse
+	// than either extreme: some fields used to persist on change and the rest only
+	// when the window closed, so whether a change survived depended on which
+	// widget it was -- and nothing on screen said which. The "Save settings"
+	// button now only exists to say "yes, it is written", not to be the one way
+	// changes take effect.
+	auto saveNow = [&]() {
+		syncCfgFromUi(); // language / game are widget state until now
+		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+		savedUntil = ImGui::GetTime() + 3.0;
+	};
+
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
 	// A check the user asked for must report back even when the answer is "no
 	// news"; the automatic startup one stays silent.
@@ -581,7 +750,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			fontChanged = false;
 			ImGui_ImplOpenGL3_DestroyFontsTexture();
 			ImGui::GetIO().Fonts->Clear();
-			fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData, { poe1Dir, poe2Dir }, scale);
+			fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData,
+			                  { poe1Dir, poe2Dir }, scale, strOverlays);
+			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
 		}
 
@@ -589,9 +760,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		// When the font has no CJK/Hangul glyphs, fall back to English labels.
-		const LauncherStrings& S = fonts.cjkOk ? StringsFor(kLocaleIds[localeIdx], fonts.koreanOk) : STR_EN;
-		const char* localeLabels[2] = { u8"繁體中文", u8"English" };
+		// When the chosen font cannot draw the chosen language, fall back to the
+		// English labels (index 0) rather than a screen full of '?'.
+		const bool langDrawable = localeDrawable.empty() ||
+		                          (localeIdx >= 0 && localeIdx < (int)localeDrawable.size() &&
+		                           localeDrawable[localeIdx]);
+		const LauncherStrings& S = langDrawable ? strStore[localeIdx].s : strStore[0].s;
 
 		// POB instances this launcher started (KeepOpen mode). Counted every
 		// frame because that call is also where finished processes are reaped.
@@ -737,6 +911,22 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					float w = ImGui::CalcTextSize(txt.c_str()).x;
 					placeRight(w, ImGui::GetTextLineHeight());
 					ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", txt.c_str());
+				} else if (ust.phase == AppUpdatePhase::TransAvailable) {
+					// Opted out of automatic translation updates. Say what is
+					// waiting and offer to take it once -- otherwise the only way
+					// to get it is to toggle the setting off and on again.
+					std::string txt = ust.message;
+					float w = ImGui::CalcTextSize(txt.c_str()).x +
+					          ImGui::CalcTextSize(S.transApplyNow).x + 28.0f * scale;
+					placeRight(w, ImGui::GetFrameHeight());
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextColored(ImVec4(0.95f, 0.66f, 0.25f, 1.0f), "%s", txt.c_str());
+					ImGui::SameLine();
+					ImGui::BeginDisabled(pobBusy);
+					if (ImGui::SmallButton(S.transApplyNow)) appUpd->StartTranslationUpdate();
+					ImGui::EndDisabled();
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && pobBusy)
+						ImGui::SetTooltip("%s", S.updateBlockedTip);
 				} else if (ust.phase == AppUpdatePhase::Error) {
 					std::string txt = std::string(S.updateFailed) + ust.message;
 					float w = ImGui::CalcTextSize(txt.c_str()).x +
@@ -765,6 +955,33 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		if (tabsOk && ImGui::BeginTabItem(S.tabHome, nullptr, homeFlags)) {
 		ImGui::BeginChild("##homebody", ImVec2(0, 0), false);
+
+		// Reading dictionaries from somewhere else changes what POB shows, and a
+		// wrong translation looks exactly like broken data -- so it is stated on
+		// the main screen rather than only in settings, where it is easy to forget
+		// having switched it on. One line per redirected slot: which one matters.
+		{
+			bool anyExternal = false;
+			for (int i = 0; i < kDictSlotCount; i++) {
+				if (dictDir[i].status != DataDirStatus::External) continue;
+				anyExternal = true;
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.66f, 0.25f, 1.0f));
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("%s（%s）", S.homeExternalData, to_utf8(DictSlotFolder((DictSlot)i)).c_str());
+				ImGui::PopStyleColor();
+				ImGui::SameLine(0, 6.0f * scale);
+				ImGui::TextDisabled("%s", to_utf8(dictDir[i].root).c_str());
+				ImGui::SameLine(0, 10.0f * scale);
+				ImGui::PushID(i);
+				if (ImGui::SmallButton(S.useBuiltin)) {
+					cfg.dataDir[i].clear();
+					resolveDict(i);
+					saveNow();
+				}
+				ImGui::PopID();
+			}
+			if (anyExternal) ImGui::Dummy(ImVec2(0, 4.0f * scale));
+		}
 
 		// Games: one wide row per install, launch button inline.
 		if (updaterBusy) ImGui::BeginDisabled();
@@ -875,9 +1092,32 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::PopStyleColor();
 			ImGui::SameLine(160.0f * scale);
 			ImGui::SetNextItemWidth(220.0f * scale);
-			if (ImGui::BeginCombo("##locale", localeLabels[localeIdx])) {
-				for (int i = 0; i < 2; i++) {
-					if (ImGui::Selectable(localeLabels[i], localeIdx == i)) localeIdx = i;
+			// Label: the display name, plus which dictionary sets actually have
+			// this language. A language present only for PoE1 is still offered
+			// (see ListInstalledLocales) and the other game then shows the
+			// original text -- saying so here is cheaper than explaining it later.
+			auto localeLabel = [&](const LocaleInfo& l) {
+				std::string s = l.displayName;
+				if (l.id == "en") return s;
+				const bool p1 = l.slot[(int)DictSlot::Poe1], p2 = l.slot[(int)DictSlot::Poe2];
+				if (p1 && !p2) s += u8"（僅 PoE1）";
+				else if (!p1 && p2) s += u8"（僅 PoE2）";
+				return s;
+			};
+			if (localeIdx >= 0 && localeIdx < (int)locales.size() &&
+			    ImGui::BeginCombo("##locale", localeLabel(locales[localeIdx]).c_str())) {
+				for (int i = 0; i < (int)locales.size(); i++) {
+					const bool drawable = i >= (int)localeDrawable.size() || localeDrawable[i];
+					if (!drawable) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.66f, 0.25f, 1.0f));
+					if (ImGui::Selectable(localeLabel(locales[i]).c_str(), localeIdx == i) &&
+					    localeIdx != i) {
+						localeIdx = i;
+						saveNow();
+					}
+					if (!drawable) {
+						ImGui::PopStyleColor();
+						if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.fontMissingGlyphs);
+					}
 				}
 				ImGui::EndCombo();
 			}
@@ -902,9 +1142,217 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					if (ImGui::Selectable(fontStem(f).c_str(), f == cfg.fontFile) && f != cfg.fontFile) {
 						cfg.fontFile = f;
 						fontChanged = true;
+						saveNow();
 					}
 				}
 				ImGui::EndCombo();
+			}
+			ImGui::SameLine(0, 6.0f * scale);
+			if (ImGui::Button(S.installFont)) {
+				const std::wstring src = EdOpenFontDialog();
+				fontMsg.clear();
+				if (!src.empty()) {
+					const std::wstring name = src.substr(src.find_last_of(L'\\') + 1);
+					const std::wstring dst = exeDir + L"Fonts\\" + name;
+					switch (ClassifyFontFile(read_file(src))) {
+						case FontKind::CffOutlines: fontMsg = S.fontCff; break;
+						case FontKind::NotAFont:    fontMsg = S.fontNotAFont; break;
+						case FontKind::TrueType:
+							// Never overwrite: the target may be one of the shipped
+							// fonts, and "install" should not be able to replace them.
+							if (GetFileAttributesW(dst.c_str()) != INVALID_FILE_ATTRIBUTES) {
+								fontMsg = S.fontAlreadyThere;
+								cfg.fontFile = name;
+								fontChanged = true;
+								saveNow();
+							} else if (CopyFileW(src.c_str(), dst.c_str(), TRUE)) {
+								fontMsg = std::string(S.fontInstalled) + to_utf8(name);
+								fontList = ListAvailableFonts(exeDir);
+								cfg.fontFile = name;
+								fontChanged = true;
+								saveNow();
+							} else {
+								fontMsg = S.fontCopyFailed;
+							}
+							break;
+					}
+				}
+			}
+			if (!fontMsg.empty()) {
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextDisabled("%s", fontMsg.c_str());
+				ImGui::PopTextWrapPos();
+			}
+			// Whether the CURRENT font can draw the CURRENT language. Says
+			// "launcher labels" rather than "everything": POB draws through
+			// FreeType over a much larger character set, so this is an indicator,
+			// not a guarantee.
+			if (localeIdx >= 0 && localeIdx < (int)localeDrawable.size() && !localeDrawable[localeIdx]) {
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextColored(ImVec4(0.95f, 0.66f, 0.25f, 1.0f), "%s%s",
+				                   S.fontMissingHere,
+				                   localeIdx < (int)localeMissing.size() ? localeMissing[localeIdx].c_str() : "");
+				ImGui::PopTextWrapPos();
+			}
+
+			// --- translation data -------------------------------------------
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionTransData);
+			{
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.transDataHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
+
+				const ImVec4 warn(0.95f, 0.66f, 0.25f, 1.0f);
+				const char* slotLabel[kDictSlotCount] = { S.poe1, S.poe2, S.slotLauncher };
+
+				for (int i = 0; i < kDictSlotCount; i++) {
+					ImGui::PushID(i);
+					const std::wstring builtin = BuiltinDictDir(exeDir, (DictSlot)i);
+
+					// Re-resolve only when the path actually changes: ResolveDictDir
+					// walks the folder tree, not something to do every frame.
+					auto applyPath = [&](const std::wstring& p) {
+						cfg.dataDir[i] = p;
+						resolveDict(i);
+						saveNow();
+						copyMsg.clear();
+					};
+
+					ImGui::AlignTextToFramePadding();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+					ImGui::TextUnformatted(slotLabel[i]);
+					ImGui::PopStyleColor();
+					ImGui::SameLine(160.0f * scale);
+
+					// Width from what is actually left on the line, not from `inner`:
+					// this child has a scrollbar, so a computed width overshoots and
+					// pushes the last button off the edge.
+					const float btnW = 84.0f * scale, gapBtn = 6.0f * scale;
+					ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - btnW * 3.0f -
+					                        gapBtn * 3.0f - 8.0f * scale);
+					// The hint says what empty MEANS, not what the built-in path is:
+					// a full absolute path as placeholder text reads as a value
+					// that is already set, and it is repeated on the status line
+					// below anyway.
+					if (ImGui::InputTextWithHint("##datadir", S.dataDirEmptyHint, &dirEdit[i],
+					                             ImGuiInputTextFlags_EnterReturnsTrue))
+						applyPath(from_utf8(dirEdit[i]));
+					// Enter is not the only way people finish typing: clicking away
+					// used to discard the whole path silently.
+					if (ImGui::IsItemDeactivatedAfterEdit()) applyPath(from_utf8(dirEdit[i]));
+					if (!ImGui::IsItemActive()) dirEdit[i] = to_utf8(cfg.dataDir[i]);
+
+					ImGui::SameLine(0, gapBtn);
+					if (ImGui::Button(S.browse, ImVec2(btnW, 0))) {
+						std::wstring picked = EdBrowseForFolder(
+							L"選擇翻譯資料夾", cfg.dataDir[i].empty() ? builtin : cfg.dataDir[i]);
+						if (!picked.empty()) applyPath(picked);
+					}
+					ImGui::SameLine(0, gapBtn);
+					if (ImGui::Button(S.copyBuiltin, ImVec2(btnW, 0))) {
+						copyDest = EdBrowseForFolder(L"複製內建翻譯資料到…",
+						                             cfg.dataDir[i].empty() ? builtin : cfg.dataDir[i]);
+						copyMsg.clear();
+						copySlot = i;
+						if (!copyDest.empty()) {
+							if (DictionariesPresentAt(copyDest)) askOverwrite = true;
+							else doCopy = true;
+						}
+					}
+					ImGui::SameLine(0, gapBtn);
+					if (ImGui::Button(S.clearPath, ImVec2(btnW, 0))) applyPath(std::wstring());
+
+					// Status. Every failure mode says what is wrong AND what to do:
+					// "no dictionaries here" on its own leaves the folder level to
+					// be guessed, and it can be wrong in either direction.
+					ImGui::PushTextWrapPos(inner - 40.0f * scale);
+					const DictDirInfo& dd = dictDir[i];
+					switch (dd.status) {
+						case DataDirStatus::Builtin: {
+							// Relative to the app folder. The absolute form is the
+							// machine this happens to be installed on, which is not
+							// what the reader is asking about -- they want to know
+							// WHICH folder inside the program is being used. The
+							// full path is one hover away for when it is.
+							const std::string rel = std::string("Data\\") +
+							                        to_utf8(DictSlotFolder((DictSlot)i)) + "\\";
+							ImGui::TextDisabled("%s%s", S.dataDirBuiltin, rel.c_str());
+							if (ImGui::IsItemHovered())
+								ImGui::SetTooltip("%s", to_utf8(builtin).c_str());
+							break;
+						}
+						case DataDirStatus::External: {
+							// Path and contents on separate lines: run together they
+							// wrap mid-path and neither is readable.
+							ImGui::TextColored(warn, "%s%s", S.dataDirExternal, to_utf8(dd.root).c_str());
+							std::string found;
+							for (const auto& f : dd.found) {
+								if (!found.empty()) found += "   ";
+								found += f.first + " (" + std::to_string(f.second) + ")";
+							}
+							ImGui::TextDisabled("%s", found.c_str());
+							if (i == (int)DictSlot::Launcher)
+								ImGui::TextDisabled("%s", S.dataDirRestart);
+							break;
+						}
+						case DataDirStatus::Missing:
+							ImGui::TextColored(warn, "%s", S.dataDirMissing);
+							break;
+						case DataDirStatus::WrongShape:
+						case DataDirStatus::TooShallow:
+							ImGui::TextColored(warn, "%s", dd.status == DataDirStatus::WrongShape
+							                                   ? S.dataDirWrongShape : S.dataDirTooShallow);
+							if (!dd.suggestion.empty()) {
+								ImGui::TextDisabled("%s", to_utf8(dd.suggestion).c_str());
+								ImGui::SameLine(0, 8.0f * scale);
+								if (ImGui::SmallButton(S.useSuggestion)) applyPath(dd.suggestion);
+							}
+							break;
+						case DataDirStatus::NoDictionaries:
+							ImGui::TextColored(warn, "%s", S.dataDirNoDict);
+							break;
+					}
+					if (dd.insideInstall && dd.status != DataDirStatus::Builtin)
+						ImGui::TextColored(warn, "%s", S.dataDirInside);
+					if (!dd.staleLoadOrder.empty()) {
+						std::string line = S.dataDirStale;
+						for (const std::string& s : dd.staleLoadOrder) line += " " + s;
+						ImGui::TextColored(warn, "%s", line.c_str());
+					}
+					ImGui::PopTextWrapPos();
+					ImGui::Dummy(ImVec2(0, 4.0f * scale));
+					ImGui::PopID();
+				}
+
+				if (!copyMsg.empty()) {
+					ImGui::PushTextWrapPos(inner - 40.0f * scale);
+					ImGui::TextDisabled("%s", copyMsg.c_str());
+					ImGui::PopTextWrapPos();
+				}
+
+				// The update gate. Default on: most people want new-league
+				// translations; only someone editing them wants to opt out.
+				ImGui::Dummy(ImVec2(0, 6.0f * scale));
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.transUpdateLabel);
+				ImGui::PopStyleColor();
+				{
+					int tu = cfg.updateTranslations ? 0 : 1;
+					ImGui::RadioButton(S.transUpdateOn, &tu, 0);
+					ImGui::RadioButton(S.transUpdateOff, &tu, 1);
+					const bool want = (tu == 0);
+					if (want != cfg.updateTranslations) {
+						cfg.updateTranslations = want;
+						saveNow();
+						// The worker applies packs on its own schedule, so the
+						// setting has to reach it immediately, not at next start.
+						if (appUpd) appUpd->SetTranslationUpdates(want);
+					}
+				}
 			}
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
@@ -917,7 +1365,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::RadioButton(S.exitModeClose, &em, (int)LaunchExitMode::CloseLauncher);
 				ImGui::RadioButton(S.returnAfterExit, &em, (int)LaunchExitMode::ReturnAfterExit);
 				ImGui::RadioButton(S.exitModeKeepOpen, &em, (int)LaunchExitMode::KeepOpen);
-				cfg.exitMode = (LaunchExitMode)em;
+				if (em != (int)cfg.exitMode) {
+					cfg.exitMode = (LaunchExitMode)em;
+					saveNow();
+				}
 			}
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
@@ -931,15 +1382,38 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::RadioButton(S.tabHome, &st, (int)StartupTab::Home);
 				ImGui::SameLine(0, 18.0f * scale);
 				ImGui::RadioButton(S.changelog, &st, (int)StartupTab::Versions);
-				cfg.startupTab = (StartupTab)st;
+				if (st != (int)cfg.startupTab) {
+					cfg.startupTab = (StartupTab)st;
+					saveNow();
+				}
 			}
 
-			// About is two short paragraphs, so a tab of its own would be mostly
-			// empty. It lives at the bottom of settings instead.
+			// Saving, at the very bottom and outside every group: it writes the
+			// WHOLE file, and sitting inside the translation-data block made it
+			// look like it only saved those three paths.
 			ImGui::Dummy(ImVec2(0, 16.0f * scale));
-			SectionLabel(fonts, scale, inner, S.about);
-			DrawAboutBody(S, fonts, scale, inner - 40.0f * scale);
+			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			if (ImGui::Button(S.saveSettings, ImVec2(140.0f * scale, 0))) saveNow();
+			if (ImGui::GetTime() < savedUntil) {
+				ImGui::SameLine(0, 8.0f * scale);
+				ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", S.settingsSaved);
+			}
+			ImGui::PushTextWrapPos(inner - 40.0f * scale);
+			ImGui::TextDisabled("%s", S.saveSettingsHint);
+			ImGui::PopTextWrapPos();
 
+			ImGui::EndChild();
+			ImGui::EndTabItem();
+		}
+
+		// --- about ------------------------------------------------------------
+		if (tabsOk && ImGui::BeginTabItem(S.about)) {
+			ImGui::BeginChild("##aboutbody", ImVec2(0, 0), false);
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			DrawAboutBody(S, fonts, scale, inner - 40.0f * scale);
+			ImGui::Dummy(ImVec2(0, 12.0f * scale));
+			ImGui::TextDisabled("PobTools v" POBTOOLS_VERSION_STRING "  ·  " __DATE__);
 			ImGui::EndChild();
 			ImGui::EndTabItem();
 		}
@@ -947,6 +1421,50 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (tabsOk) ImGui::EndTabBar();
 
 		ImGui::End();
+
+		// Overwrite confirmation for the copy button. Opened at this level (outside
+		// the tab's child window) so the popup's ID stack does not depend on which
+		// tab happens to be drawn.
+		if (askOverwrite) { ImGui::OpenPopup("##copyconfirm"); askOverwrite = false; }
+		if (ImGui::BeginPopupModal("##copyconfirm", nullptr,
+		                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+			ImGui::PushTextWrapPos(420.0f * scale);
+			ImGui::TextUnformatted(S.copyOverwrite);
+			ImGui::TextDisabled("%s", to_utf8(copyDest).c_str());
+			ImGui::PopTextWrapPos();
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			// The only button here that destroys someone's work.
+			PobUi::PushDangerButton();
+			if (ImGui::Button(S.overwriteConfirm, ImVec2(110.0f * scale, 0))) {
+				doCopy = true;
+				ImGui::CloseCurrentPopup();
+			}
+			PobUi::PopButtonStyle();
+			ImGui::SameLine();
+			if (ImGui::Button(S.cancel, ImVec2(110.0f * scale, 0))) {
+				copyDest.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		if (doCopy) {
+			doCopy = false;
+			std::string cerr;
+			int n = CopyBuiltinDictionary(exeDir, (DictSlot)copySlot, copyDest, &cerr);
+			if (n < 0) {
+				copyMsg = cerr;
+			} else {
+				copyMsg = std::string(S.copyDone) + std::to_string(n) + S.copyDoneSuffix;
+				// Point at what was just created: copying and then having to browse
+				// to the same folder by hand would be a pointless second step.
+				cfg.dataDir[copySlot] = copyDest;
+				resolveDict(copySlot);
+				SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+				savedUntil = ImGui::GetTime() + 3.0;
+			}
+			copyDest.clear();
+		}
+
 		ImGui::PopFont();
 		ImGui::Render();
 
@@ -959,8 +1477,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		glfwSwapBuffers(win);
 	}
 
-	cfg.game = poe2Sel ? L"poe2" : L"poe1";
-	cfg.locale = kLocaleIds[localeIdx];
+	syncCfgFromUi(); // host_main saves cfg after this returns
 
 	// Full teardown so the next round (return-to-launcher) re-inits cleanly.
 	ImGui_ImplOpenGL3_Shutdown();
@@ -987,30 +1504,100 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 // automatically, because both come from CollectLauncherTexts.
 int RunFontCoverageSelftest(const std::wstring& exeDir)
 {
+	// EVERY installed language's launcher.json, not just the shipped one: once the
+	// labels became translatable, a translator can type a character the shipped
+	// font has no glyph for, and adding a language folder must not quietly escape
+	// this check. The list comes from disk for exactly that reason.
+	LauncherConfig cfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+	const std::wstring launcherRoot = ResolveDictDir(exeDir, DictSlot::Launcher,
+	                                                 cfg.dataDir[(int)DictSlot::Launcher]).root;
+	std::vector<LocaleInfo> locales = ListInstalledLocales(exeDir, cfg);
+	std::vector<LauncherStringStore> strStore;
+	strStore.reserve(locales.size()); // move-only; see LauncherStringStore
+	for (const LocaleInfo& l : locales) {
+		std::wstring wid(l.id.begin(), l.id.end()); // ids are ASCII folder names
+		strStore.emplace_back(LoadLauncherStrings(launcherRoot, wid));
+	}
+	std::vector<const LauncherStrings*> overlays;
+	overlays.reserve(strStore.size());
+	for (const LauncherStringStore& st : strStore) overlays.push_back(&st.s);
+
 	std::vector<const char*> texts;
-	CollectLauncherTexts(texts);
+	CollectLauncherTexts(texts, overlays);
 
 	// unique codepoints, in first-seen order so the report reads like the source
 	std::vector<unsigned> want;
 	{
 		std::vector<bool> seen(0x110000, false);
-		for (const char* t : texts) {
-			for (const unsigned char* p = (const unsigned char*)t; p && *p; ) {
-				unsigned cp = 0;
-				int n = 1;
-				if (*p < 0x80)             { cp = *p; }
-				else if ((*p & 0xE0) == 0xC0) { cp = *p & 0x1Fu; n = 2; }
-				else if ((*p & 0xF0) == 0xE0) { cp = *p & 0x0Fu; n = 3; }
-				else if ((*p & 0xF8) == 0xF0) { cp = *p & 0x07u; n = 4; }
-				else { p++; continue; }              // stray continuation byte
-				for (int i = 1; i < n; i++) {
-					if ((p[i] & 0xC0) != 0x80) { n = i; cp = 0; break; }
-					cp = (cp << 6) | (p[i] & 0x3Fu);
-				}
-				p += n;
-				if (cp < 0x20 || cp >= 0x110000) continue;  // control chars are not drawn
+		for (const char* t : texts)
+			ForEachCodepoint(t, [&](unsigned cp) {
 				if (!seen[cp]) { seen[cp] = true; want.push_back(cp); }
+			});
+	}
+	printf("font coverage: %d language(s) installed:", (int)locales.size());
+	for (const LocaleInfo& l : locales) printf(" %s", l.id.c_str());
+	printf("\n");
+
+	// Does a language dropped in as a folder actually reach the atlas?
+	//
+	// Asserting "every installed language's characters are in `want`" would be
+	// true by construction and prove nothing: the only language shipped today is
+	// zh-rTW, whose launcher.json is byte-identical to the compiled table, so its
+	// overlay contributes no character the compiled strings did not already have.
+	// A throwaway language carrying a character NOTHING else uses is the only way
+	// this check can fail when the wiring breaks.
+	{
+		const wchar_t* kProbeId = L"xx-TEST";
+		const unsigned kProbeCp = 0x03A9;         // GREEK CAPITAL LETTER OMEGA
+		const char* kProbeUtf8 = "\xce\xa9";      // in no compiled string
+		const std::wstring dir = launcherRoot + kProbeId + L"\\";
+		CreateDirectoryW(launcherRoot.c_str(), nullptr);
+		CreateDirectoryW(dir.c_str(), nullptr);
+		std::string body = std::string("{\"entries\":{\"") + STR_EN.tabHome + "\":\"" +
+		                   kProbeUtf8 + "\"}}";
+		HANDLE h = CreateFileW((dir + L"launcher.json").c_str(), GENERIC_WRITE, 0, nullptr,
+		                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		bool wrote = false;
+		if (h != INVALID_HANDLE_VALUE) {
+			DWORD w = 0;
+			wrote = WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr) != 0;
+			CloseHandle(h);
+		}
+		CreateDirectoryW(dir.c_str(), nullptr);
+		{
+			HANDLE m = CreateFileW((dir + L"meta.json").c_str(), GENERIC_WRITE, 0, nullptr,
+			                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (m != INVALID_HANDLE_VALUE) {
+				const char* meta = "{\"display_name\":\"Probe\",\"load_order\":[\"launcher.json\"]}";
+				DWORD w = 0;
+				WriteFile(m, meta, (DWORD)strlen(meta), &w, nullptr);
+				CloseHandle(m);
 			}
+		}
+
+		LauncherStringStore probe = LoadLauncherStrings(launcherRoot, kProbeId);
+		std::vector<const char*> t2;
+		std::vector<const LauncherStrings*> ov2 = overlays;
+		ov2.push_back(&probe.s);
+		CollectLauncherTexts(t2, ov2);
+		bool reached = false;
+		for (const char* t : t2)
+			ForEachCodepoint(t, [&](unsigned cp) { if (cp == kProbeCp) reached = true; });
+
+		DeleteFileW((dir + L"launcher.json").c_str());
+		DeleteFileW((dir + L"meta.json").c_str());
+		RemoveDirectoryW(dir.c_str());
+
+		printf("  [%s]  a dropped-in language's characters reach the glyph atlas\n",
+		       (wrote && probe.overridden == 1 && reached) ? "PASS" : "FAIL");
+		if (!(wrote && probe.overridden == 1 && reached)) {
+			printf("         (wrote=%d overridden=%d reached=%d)\n",
+			       (int)wrote, probe.overridden, (int)reached);
+			return 1;
+		}
+		if (GetFileAttributesW(dir.c_str()) != INVALID_FILE_ATTRIBUTES) {
+			printf("  [FAIL]  probe language folder was left behind: %s\n", to_utf8(dir).c_str());
+			return 1;
 		}
 	}
 

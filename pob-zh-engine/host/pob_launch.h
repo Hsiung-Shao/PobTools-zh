@@ -14,10 +14,11 @@
 
 namespace PobLaunch {
 
-// POB_GAME / POB_LOCALE / POB_ZH_FONTFILE, set in both the Win32 and CRT
-// environments so a child process inherits them.
+// POB_GAME / POB_LOCALE / POB_ZH_FONTFILE / POB_ZH_DATADIR, set in both the
+// Win32 and CRT environments so a child process inherits them. Pass dataDir empty
+// for the built-in dictionaries -- the engine treats empty as "not set".
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
-                  const std::wstring& fontFile);
+                  const std::wstring& fontFile, const std::wstring& dataDir);
 
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
 // failure to spawn.
