@@ -1778,7 +1778,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 
 	std::vector<std::wstring> fonts = ListAvailableFonts(exeDir);
 	if (fonts.empty()) {
-		printf("font coverage: no fonts under Fonts\ -- nothing to check\n");
+		printf("font coverage: no fonts under Fonts\\ -- nothing to check\n");
 		return 1;
 	}
 	printf("font coverage: %d distinct characters across %d font(s)\n",
