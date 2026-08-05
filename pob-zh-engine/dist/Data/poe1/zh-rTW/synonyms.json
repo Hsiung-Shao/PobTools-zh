@@ -1,0 +1,151 @@
+{
+  "replacements": [
+    {
+      "from": "與",
+      "to": "和",
+      "comment": "both mean 'and'"
+    },
+    {
+      "from": "提高",
+      "to": "增加",
+      "comment": "both mean 'increased'"
+    },
+    {
+      "from": "降低",
+      "to": "減少",
+      "comment": "both mean 'reduced'"
+    },
+    {
+      "from": "腐化",
+      "to": "汙染",
+      "comment": "old vs new for 'corrupted'"
+    },
+    {
+      "from": "污",
+      "to": "汙",
+      "comment": "character variant for 'pollute/corrupt'"
+    },
+    {
+      "from": "精華",
+      "to": "精髓",
+      "comment": "both mean 'Essence'"
+    },
+    {
+      "from": "精隨",
+      "to": "精髓",
+      "comment": "typo variant of 'Essence'"
+    },
+    {
+      "from": "擊敗敵人",
+      "to": "擊殺",
+      "comment": "both mean 'on Kill'"
+    },
+    {
+      "from": "無法",
+      "to": "不能",
+      "comment": "both mean 'cannot'"
+    },
+    {
+      "from": "其它",
+      "to": "其他",
+      "comment": "both mean 'other'"
+    },
+    {
+      "from": "護甲值",
+      "to": "護甲",
+      "comment": "remove 值 after armour"
+    },
+    {
+      "from": "閃避值",
+      "to": "閃避",
+      "comment": "remove 值 after evasion"
+    },
+    {
+      "from": "召喚生物",
+      "to": "召喚物",
+      "comment": "both mean 'minion'"
+    },
+    {
+      "from": "週圍",
+      "to": "周圍",
+      "comment": "character variant for 'surrounding'"
+    },
+    {
+      "from": "公尺",
+      "to": "米",
+      "comment": "meter unit variant"
+    },
+    {
+      "from": "縮短",
+      "to": "減少",
+      "comment": "both mean 'reduced' in duration context"
+    },
+    {
+      "from": "全球",
+      "to": "全域",
+      "comment": "both mean 'Global'"
+    },
+    {
+      "from": "受到",
+      "to": "承受",
+      "comment": "both mean 'take/receive' in damage context"
+    },
+    {
+      "from": "得到",
+      "to": "獲得",
+      "comment": "both mean 'gain/obtain'"
+    },
+    {
+      "from": "怪物",
+      "to": "敵人",
+      "comment": "both mean 'enemy'"
+    },
+    {
+      "from": "持續時間",
+      "to": "時間",
+      "comment": "game often omits 持續"
+    },
+    {
+      "from": "近期內",
+      "to": "近期",
+      "comment": "remove redundant 內"
+    }
+  ],
+  "removals": [
+    "獲得",
+    "附加",
+    "效果",
+    "狀態",
+    "的",
+    "有",
+    "你",
+    "若",
+    "則"
+  ],
+  "protected_compounds": [
+    {
+      "compound": "異常狀態",
+      "component": "狀態"
+    }
+  ],
+  "strip_punctuation": [
+    "，",
+    "、",
+    "【",
+    "】"
+  ],
+  "strip_space_around": [
+    "%",
+    "#"
+  ],
+  "strip_measure_words": [
+    {
+      "pattern": "# 點",
+      "replacement": "# "
+    },
+    {
+      "pattern": "#點",
+      "replacement": "#"
+    }
+  ]
+}

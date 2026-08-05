@@ -16,9 +16,44 @@ Release/
 
 # pob-zh-engine build tree (CMake) and deployment bundle
 pob-zh-engine/build/
-pob-zh-engine/dist/
 pob-zh-engine/vcpkg/
 pob-zh-engine/tests/translate_test_out.txt
+
+# dist/ is the deployment bundle — a build output, so it stays ignored, with one
+# exception: the translation dictionaries. Those ship in the public release zip
+# already, and keeping them here is what lets an outside translator fork the
+# repo, edit a dictionary and open a PR.
+#
+# ⚠ This MUST be written as `dist/*` plus per-level re-includes, never as
+# `dist/` plus `!dist/Data/...`. Git does not descend into a directory that is
+# excluded as a whole, so a `!` line underneath one would match nothing and the
+# dictionaries would stay invisible — silently, with no error to explain it.
+#
+# Each re-included directory needs its parent re-included first, hence the
+# Data/ line before the Data/* line.
+pob-zh-engine/dist/*
+!pob-zh-engine/dist/Data/
+pob-zh-engine/dist/Data/*
+!pob-zh-engine/dist/Data/poe1/
+!pob-zh-engine/dist/Data/poe2/
+!pob-zh-engine/dist/Data/launcher/
+!pob-zh-engine/dist/Data/filter_items_zh.json
+!pob-zh-engine/dist/Data/item_meta.json
+!pob-zh-engine/dist/Data/item_classes_zh.json
+
+# The set above mirrors $dataGlobs in tools/package_release.ps1 and
+# IsTranslationDataRel() in host/app_update.cpp — the same "what counts as
+# translation data" boundary, now expressed a third time. Keep them in step.
+# One deliberate difference: atlas_versions/*/atlas_tree_zh.json is in the
+# packaged set but NOT here. Atlas data is fetched and rebuilt by the in-app
+# updater and filtered by the prune/fresh machinery, so a hand-edited copy in
+# the repo would be overwritten or stripped at load time rather than take
+# effect. Translating the atlas is not a PR-shaped job.
+
+# Editor backups, wherever they land. The translation editor writes a .bak
+# beside every dictionary it saves, and those sit inside the re-included
+# directories above — this line is what keeps them out.
+*.bak
 
 # Release packaging output
 dist-release/

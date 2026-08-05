@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "locale": "zh-rTW",
+  "display_name": "繁體中文",
+  "source": "launcher",
+  "load_order": [
+    "launcher.json"
+  ]
+}
