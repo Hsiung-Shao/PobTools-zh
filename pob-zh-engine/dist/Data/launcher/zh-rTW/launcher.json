@@ -88,6 +88,11 @@
     "That is not a usable font file": "這不是可以用的字型檔",
     "Could not copy the font": "複製字型失敗",
     "The current font cannot draw this language": "目前的字型畫不出這個語言的文字",
-    "The current font is missing: ": "目前的字型畫不出這些字："
+    "The current font is missing: ": "目前的字型畫不出這些字：",
+    "Windows": "視窗方式",
+    "Separate desktop windows": "各自獨立的視窗",
+    "As tabs inside this launcher": "在啟動器裡開成分頁",
+    "In tabbed mode POB and the tools sit inside this window. POB itself runs normally and nothing is written to its folder.": "分頁模式下，POB 與工具會嵌在這個視窗裡；POB 本身照常執行，資料夾不會被動到。",
+    "Restart the launcher for this to take effect": "改完要重開啟動器才會生效"
   }
 }
