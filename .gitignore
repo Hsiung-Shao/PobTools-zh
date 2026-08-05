@@ -81,6 +81,9 @@ pob-zh-engine/tools/
 # Awakened PoE Trade),不隨 PobTools 一起發布。
 /poe-price-check/
 /poe-price-check-spec.md
+# 譯文勘誤協作平台的開發規格。內含 Cloudflare 架構、D1 schema、授權模型與
+# 防濫用設計 —— 公開等於把防線畫給要繞過它的人看。規格本身也還沒定案。
+/poe-translation-hub-spec.md
 /NeverSinkData/
 /zh-rTW/
 /filter/
