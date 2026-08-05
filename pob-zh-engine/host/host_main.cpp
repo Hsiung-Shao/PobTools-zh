@@ -31,6 +31,8 @@
 #include "paste_selftest.h"
 #include "paste_trace.h"
 #include "pob_launch.h"
+#include "window_manager.h"
+#include "window_dock.h"
 #include "filter_editor.h"
 #include "atlas_planner.h"
 #include "atlas_tree_data.h"
@@ -404,6 +406,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// headless: instance tracking/reaping and the "a POB is running" marker,
 		// exercised with fake waitable handles instead of a real POB
 		return PobLaunch::RunPobLaunchSelfTest(dir);
+	}
+	if (arg1 == L"--dock-spike") {
+		// Feasibility run for docking POB against a container WITHOUT SetParent.
+		// Interactive by nature; writes PobTools\dock_trace.txt and dock_stage.txt.
+		// --dock-spike [nospawn|verbose]
+		return WindowDock::RunDockSpike(dir, arg2 != L"nospawn", arg2 == L"verbose");
+	}
+	if (arg1 == L"--window-layout-selftest") {
+		// headless: the arithmetic behind the window list's tile/cascade buttons.
+		// Includes the case that matters most -- a 1920-wide screen cannot tile two
+		// POB windows, because POB refuses to go below 1080px.
+		return WindowMgr::RunWindowLayoutSelfTest(dir);
 	}
 	if (arg1 == L"--launcher-config-selftest") {
 		// headless: ini parsing, legacy migration and clamping — no window needed

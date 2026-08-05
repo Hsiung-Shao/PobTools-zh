@@ -196,6 +196,11 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 
 		const int st = read_ini_int(iniPath, L"StartupTab", 0);
 		c.startupTab = (st == 1) ? StartupTab::Versions : StartupTab::Home;
+
+		// Anything that is not exactly 1 means Separate, so a hand-edited or
+		// future value can never leave someone stuck in the new path.
+		c.windowMode = (read_ini_int(iniPath, L"WindowMode", 0) == 1)
+		             ? WindowMode::Tabbed : WindowMode::Separate;
 	}
 
 	wchar_t fbuf[128];
@@ -236,6 +241,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		cfg.exitMode == LaunchExitMode::ReturnAfterExit ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"StartupTab",
 		std::to_wstring((int)cfg.startupTab).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"WindowMode",
+		std::to_wstring((int)cfg.windowMode).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 
 	for (int i = 0; i < kDictSlotCount; i++) {
@@ -904,18 +911,30 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	write(L"PobTools", { { L"StartupTab", L"5" } });
 	check("T9 out-of-range StartupTab clamps to Home", tab() == 0, std::to_string(tab()));
 
+	// Window mode. The default matters more than the parsing here: the tabbed
+	// path is new, so an ini that says nothing must land on the old behaviour.
+	auto wm = [&]() { return (int)LoadLauncherConfig(ini).windowMode; };
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T8b no WindowMode key defaults to Separate", wm() == 0, std::to_string(wm()));
+	write(L"PobTools", { { L"WindowMode", L"1" } });
+	check("T8c WindowMode=1 selects Tabbed", wm() == 1, std::to_string(wm()));
+	write(L"PobTools", { { L"WindowMode", L"7" } });
+	check("T8d an unknown WindowMode falls back to Separate", wm() == 0, std::to_string(wm()));
+
 	// round trip, including the mirrored legacy key
 	for (int m = 0; m <= 2; m++) {
 		DeleteFileW(ini.c_str());
 		LauncherConfig c;
 		c.exitMode = (LaunchExitMode)m;
 		c.startupTab = (m == 1) ? StartupTab::Versions : StartupTab::Home;
+		c.windowMode = (m == 2) ? WindowMode::Tabbed : WindowMode::Separate;
 		c.fontFile = kDefaultFontFile;
 		SaveLauncherConfig(ini, c);
 		LauncherConfig back = LoadLauncherConfig(ini);
 		const int legacy = GetPrivateProfileIntW(kSection, L"ReturnToLauncher", -1, ini.c_str());
 		check(("T10 round trip exit mode " + std::to_string(m)).c_str(),
 		      (int)back.exitMode == m && (int)back.startupTab == (int)c.startupTab &&
+		      (int)back.windowMode == (int)c.windowMode &&
 		      legacy == (m == 1 ? 1 : 0),
 		      "legacy=" + std::to_string(legacy));
 	}

@@ -7,6 +7,7 @@
 #include "app_update.h"
 #include "changelog.h"
 #include "pob_launch.h"
+#include "window_dock.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -14,6 +15,8 @@
 
 #include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>   // glfwGetWin32Window, for the docking container
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -23,27 +26,18 @@
 #include <string>
 #include <vector>
 
-// Tools (filter editor / atlas planner / timeless jewel) run as child
-// processes of the same exe (--filter-editor / --atlas / --timeless-jewel)
-// so the launcher window stays open. The child reads pob-zh.ini for
-// game/locale — callers must SaveLauncherConfig before spawning.
-static void SpawnTool(const std::wstring& exeDir, const wchar_t* flag)
-{
-	std::wstring cmd = L"\"" + exeDir + L"pob-zh.exe\" " + flag;
-	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
-	buf.push_back(L'\0');
-	STARTUPINFOW si{};
-	si.cb = sizeof(si);
-	PROCESS_INFORMATION pi{};
-	if (CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, 0, nullptr,
-	                   exeDir.c_str(), &si, &pi)) {
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
-	} else {
-		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
-		            MB_ICONERROR | MB_OK);
-	}
-}
+// Tools (filter editor / atlas planner / timeless jewel) run as child processes
+// of the same exe so the launcher window stays open; spawning lives in
+// PobLaunch::SpawnToolDetached, which also REMEMBERS the process. The launcher
+// used to close the handle immediately and therefore had no way to know that a
+// tool window was open — which the window-docking work needs.
+
+// Reachable from GLFW's window callbacks, which are plain function pointers.
+// One launcher window per process, so a file-scope pointer is enough.
+//
+// Deliberately NOT glfwSetWindowUserPointer: the ImGui GLFW backend claims that
+// pointer for its own data.
+static WindowDock::Dock* g_launcherDock = nullptr;
 
 // Logical (unscaled) window size; multiplied by the monitor content scale.
 static const int kWinW = 1000;
@@ -610,6 +604,34 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	glfwSwapInterval(1);
 	glfwShowWindow(win);
 
+	// Tabbed window mode: this window becomes the container POB and the tools are
+	// docked into. Everything about it is gated on the setting, so Separate mode
+	// runs exactly the code it ran before.
+	const bool tabbed = (cfg.windowMode == WindowMode::Tabbed);
+	WindowDock::Dock dock;
+	if (tabbed) {
+		// Resizable, because a fixed-size launcher makes a poor window to run POB
+		// in. Separate mode keeps the fixed size it has always had.
+		glfwSetWindowAttrib(win, GLFW_RESIZABLE, GLFW_TRUE);
+		glfwSetWindowSize(win, (int)(1500 * scale), (int)(950 * scale));
+		dock.Init(glfwGetWin32Window(win), exeDir + L"PobTools\\dock_log.txt");
+		g_launcherDock = &dock;
+		// Dragging a window puts Windows into a modal message loop during which
+		// glfwPollEvents never returns, so without these the docked window is
+		// left behind for the whole drag.
+		glfwSetWindowPosCallback(win, [](GLFWwindow*, int, int) {
+			if (g_launcherDock) g_launcherDock->OnHostMoved();
+		});
+		glfwSetWindowSizeCallback(win, [](GLFWwindow*, int, int) {
+			if (g_launcherDock) g_launcherDock->OnHostMoved();
+		});
+		// Activating the container is what buries the docked window, and that is
+		// exactly what finishing a drag does.
+		glfwSetWindowFocusCallback(win, [](GLFWwindow*, int focused) {
+			if (focused && g_launcherDock) g_launcherDock->OnHostFocused();
+		});
+	}
+
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGui::GetIO().IniFilename = nullptr; // never touch the engine's imgui.ini
@@ -682,11 +704,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			cfg.locale = from_utf8(locales[localeIdx].id);
 	};
 
-	// tools spawn as child processes so this window stays open (see SpawnTool)
-	auto spawnTool = [&](const wchar_t* flag) {
+	// tools spawn as child processes so this window stays open; the kind is what
+	// lets them be told apart later without parsing window titles
+	auto spawnTool = [&](const wchar_t* flag, PobLaunch::InstanceKind kind, const char* label) {
 		syncCfgFromUi();
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
-		SpawnTool(exeDir, flag);
+		unsigned long pid = 0;
+		if (!PobLaunch::SpawnToolDetached(exeDir, flag, kind, &pid)) return;
+		// In tabbed mode the tool becomes a tab here rather than a window of its
+		// own; in separate mode nothing else happens, exactly as before.
+		if (tabbed) dock.Track(pid, from_utf8(label));
 	};
 	// KeepOpen mode: start POB the same way the tools are started (detached, the
 	// window stays up) instead of returning Launch. ShowLauncher tears down GLFW
@@ -704,7 +731,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                        dictDir[slot].status == DataDirStatus::External
 		                            ? dictDir[slot].root : std::wstring());
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
-		if (!lua.empty()) PobLaunch::SpawnPobDetached(lua, cfg.game);
+		if (lua.empty()) return;
+		unsigned long pid = 0;
+		if (!PobLaunch::SpawnPobDetached(lua, cfg.game, &pid)) return;
+		// Tabbed mode docks it into this window; separate mode leaves it as its
+		// own desktop window, which is what it has always done.
+		if (tabbed) dock.Track(pid, poe2 ? L"PoE2" : L"PoE1");
 	};
 	// "Copy the built-in data to..." state. The confirm popup has to be opened
 	// from outside the tab's draw scope (ImGui's ID stack), so the button records
@@ -721,6 +753,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = to_utf8(cfg.dataDir[i]);
 	std::string fontMsg;       // result of the last "install a font" attempt
 	double savedUntil = 0.0;   // "saved" confirmation deadline
+	// "restart to apply" notice for the window-mode switch; a deadline rather than
+	// a bool so it outlives the frame the click happened in.
+	double windowModeChangedUntil = 0.0;
 
 	// EVERY settings change writes the ini immediately. Half-immediate is worse
 	// than either extreme: some fields used to persist on change and the rest only
@@ -741,8 +776,47 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	double upToDateUntil = 0.0;
 	bool wasPobBusy = false;       // edge-detect "the last POB just closed"
 	bool applyStartupTab = true;   // honour cfg.startupTab on the first frame only
+	bool closingTabs = false;      // tabbed mode: shutting down, closing tabs in turn
+	unsigned long closingPid = 0;  // the tab already asked to close, so it is asked once
+	double closeAskedAt = 0.0;     // when, so a cancelled save prompt can be detected
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
+
+		// Closing this window in tabbed mode means closing every tab first, and
+		// each one may put up "save your build?" -- answering cancel has to keep
+		// both the tab and this window alive, so the close is held rather than
+		// obeyed until they are actually gone.
+		// Closing the launcher closes its tabs. The close request is a one-shot
+		// signal, so it only starts the process -- the work is driven by
+		// `closingTabs` from then on. Reading the flag instead of the signal
+		// matters: clearing it below meant the condition was false on the very
+		// next frame, so only the first tab was ever asked to close.
+		if (tabbed && glfwWindowShouldClose(win) && !dock.Empty()) {
+			closingTabs = true;
+			glfwSetWindowShouldClose(win, GLFW_FALSE);
+		}
+		if (tabbed && closingTabs) {
+			if (dock.Empty()) {
+				glfwSetWindowShouldClose(win, GLFW_TRUE);
+			} else {
+				// ONE at a time, last first, asking again only once the previous one
+				// has actually gone. Asking all at once made them close in a visible
+				// flurry, and any tab prompting "save your build?" did so hidden
+				// behind whichever tab was showing.
+				const unsigned long back = dock.Tabs().back().pid;
+				if (back != closingPid) {
+					closingPid = back;
+					closeAskedAt = ImGui::GetTime();
+					dock.RequestClose(dock.Tabs().size() - 1);
+				} else if (ImGui::GetTime() - closeAskedAt > 8.0) {
+					// Still there long after being asked: the user answered "cancel"
+					// to its save prompt. That is a decision to keep working, so the
+					// shutdown is abandoned rather than nagging them tab by tab.
+					closingTabs = false;
+					closingPid = 0;
+				}
+			}
+		}
 
 		// Live font switch: rebuild the glyph atlas between frames when the user
 		// picks a different font in the status-bar combo.
@@ -946,14 +1020,27 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// --- tabs -------------------------------------------------------------
 		// The version history used to be a 600px modal; as a tab it gets the whole
 		// window. Settings collects the controls that used to crowd the status bar.
-		const bool tabsOk = ImGui::BeginTabBar("##maintabs");
+		// Reorderable so window tabs can be dragged into whatever order suits the
+		// user. The four built-in tabs are pinned with ImGuiTabItemFlags_Leading
+		// below, which keeps them in front and out of the reordering entirely.
+		const bool tabsOk = ImGui::BeginTabBar("##maintabs",
+			tabbed ? ImGuiTabBarFlags_Reorderable : 0);
+		// Pinned only in tabbed mode: with no window tabs there is nothing to
+		// reorder, and Leading would change the existing look for no reason.
+		const ImGuiTabItemFlags kPinned = tabbed ? ImGuiTabItemFlags_Leading : 0;
+		// Everything below this line belongs to the docked window when a window
+		// tab is selected. Taken right after BeginTabBar, which is where the cursor
+		// sits once the strip itself has been laid out.
+		const int stripH = (int)ImGui::GetCursorPosY();
+		int activeDockTab = -1;   // -1 = a normal tab is showing, no window on top
+		int closeDockTab = -1;
 		ImGuiTabItemFlags homeFlags = 0, verFlags = 0;
 		if (applyStartupTab) {
 			(cfg.startupTab == StartupTab::Versions ? verFlags : homeFlags) =
 				ImGuiTabItemFlags_SetSelected;
 			applyStartupTab = false;
 		}
-		if (tabsOk && ImGui::BeginTabItem(S.tabHome, nullptr, homeFlags)) {
+		if (tabsOk && ImGui::BeginTabItem(S.tabHome, nullptr, homeFlags | kPinned)) {
 		ImGui::BeginChild("##homebody", ImVec2(0, 0), false);
 
 		// Reading dictionaries from somewhere else changes what POB shows, and a
@@ -990,7 +1077,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		bool poe2Ok = !installs.poe2Lua.empty();
 		// KeepOpen starts POB detached and leaves this window up; the other two
 		// modes take the original path (set `launch`, ShowLauncher returns).
-		const bool keepOpen = (cfg.exitMode == LaunchExitMode::KeepOpen);
+		//
+		// Tabbed mode always takes the detached path, whatever exitMode says: this
+		// window IS the one POB lives in, so closing it on launch would take POB
+		// with it.
+		const bool keepOpen = tabbed || (cfg.exitMode == LaunchExitMode::KeepOpen);
 		if (GameRow("##launch1", S.poe1, installs.poe1Version, poe1Ok ? S.detected : S.missing,
 				poe1Ok, fonts, scale, inner, poe1Ok ? poe1Dir.c_str() : S.notFoundPoe1, S.launch)) {
 			poe2Sel = false;
@@ -1037,13 +1128,27 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// place — the same files the engine loads — so its changes take
 			// effect on the next POB launch (verified end to end by
 			// --editor-selftest).
-			if (ImGui::Button(S.editor, toolSize)) openEditor = true;
+			// Separate mode opens it IN-PROCESS (openEditor makes ShowLauncher
+			// return) -- that is what lets the launcher's own labels reload on the
+			// way back. Tabbed mode cannot do that: returning would tear down the
+			// window every docked POB is living in. So it goes through the same
+			// child-process entry point the other tools use and becomes a tab.
+			if (ImGui::Button(S.editor, toolSize)) {
+				if (tabbed)
+					spawnTool(L"--translation-editor",
+					          PobLaunch::InstanceKind::TranslationEditor, S.editor);
+				else
+					openEditor = true;
+			}
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.filterEditor, toolSize)) spawnTool(L"--filter-editor");
+			if (ImGui::Button(S.filterEditor, toolSize))
+				spawnTool(L"--filter-editor", PobLaunch::InstanceKind::FilterEditor, S.filterEditor);
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.atlasPlanner, toolSize)) spawnTool(L"--atlas");
+			if (ImGui::Button(S.atlasPlanner, toolSize))
+				spawnTool(L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner);
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.timelessJewel, toolSize)) spawnTool(L"--timeless-jewel");
+			if (ImGui::Button(S.timelessJewel, toolSize))
+				spawnTool(L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel);
 			ImGui::PopStyleColor();
 		}
 		if (updaterBusy) ImGui::EndDisabled();
@@ -1071,7 +1176,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		} // home tab
 
 		// --- version history --------------------------------------------------
-		if (tabsOk && ImGui::BeginTabItem(S.changelog, nullptr, verFlags)) {
+		if (tabsOk && ImGui::BeginTabItem(S.changelog, nullptr, verFlags | kPinned)) {
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * scale, 14.0f * scale));
 			ImGui::BeginChild("##changelog_scroll", ImVec2(0, 0), true,
 			                  ImGuiWindowFlags_AlwaysUseWindowPadding);
@@ -1082,7 +1187,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 
 		// --- settings ---------------------------------------------------------
-		if (tabsOk && ImGui::BeginTabItem(S.tabSettings)) {
+		if (tabsOk && ImGui::BeginTabItem(S.tabSettings, nullptr, kPinned)) {
 			ImGui::BeginChild("##settingsbody", ImVec2(0, 0), false);
 
 			SectionLabel(fonts, scale, inner, S.sectionInterface);
@@ -1356,10 +1461,40 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionWindow);
+			{
+				int wm = (int)cfg.windowMode;
+				ImGui::RadioButton(S.winModeSeparate, &wm, (int)WindowMode::Separate);
+				ImGui::RadioButton(S.winModeTabbed, &wm, (int)WindowMode::Tabbed);
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextWrapped("%s", S.winModeHint);
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				if (wm != (int)cfg.windowMode) {
+					cfg.windowMode = (WindowMode)wm;
+					saveNow();
+					// The mode is decided once, when this window is created (it
+					// changes whether the window is resizable and whether the docking
+					// callbacks exist), so it cannot take effect mid-session.
+					windowModeChangedUntil = ImGui::GetTime() + 8.0;
+				}
+				if (windowModeChangedUntil > ImGui::GetTime()) {
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.62f, 0.25f, 1.0f));
+					ImGui::TextWrapped("%s", S.winModeRestart);
+					ImGui::PopStyleColor();
+				}
+			}
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
 			SectionLabel(fonts, scale, inner, S.sectionLaunch);
 			// One radio group, not two checkboxes: "return afterwards" and "stay
 			// open" cannot both be true, and a pair of checkboxes invites exactly
 			// that state. See LaunchExitMode.
+			//
+			// Ignored entirely in tabbed mode -- this window IS where POB lives --
+			// so it is disabled there rather than left looking effective.
+			if (tabbed) ImGui::BeginDisabled();
 			{
 				int em = (int)cfg.exitMode;
 				ImGui::RadioButton(S.exitModeClose, &em, (int)LaunchExitMode::CloseLauncher);
@@ -1370,6 +1505,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					saveNow();
 				}
 			}
+			if (tabbed) ImGui::EndDisabled();
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
 			ImGui::AlignTextToFramePadding();
@@ -1408,7 +1544,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 
 		// --- about ------------------------------------------------------------
-		if (tabsOk && ImGui::BeginTabItem(S.about)) {
+		if (tabsOk && ImGui::BeginTabItem(S.about, nullptr, kPinned)) {
 			ImGui::BeginChild("##aboutbody", ImVec2(0, 0), false);
 			ImGui::Dummy(ImVec2(0, 6.0f * scale));
 			DrawAboutBody(S, fonts, scale, inner - 40.0f * scale);
@@ -1418,9 +1554,41 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::EndTabItem();
 		}
 
+		// --- docked windows ---------------------------------------------------
+		// One tab per POB / tool window, after the fixed ones. Their bodies are
+		// deliberately empty: the real window is a separate top-level window sitting
+		// exactly over this area, so anything drawn here would be invisible anyway.
+		if (tabbed && tabsOk) {
+			const std::vector<WindowDock::Tab>& dtabs = dock.Tabs();
+			for (size_t i = 0; i < dtabs.size(); i++) {
+				// The label alone is not unique -- two PoE1 tabs are ordinary --
+				// so the id comes from the index after "##".
+				std::string label = to_utf8(dtabs[i].label) + "##dock" + std::to_string(i);
+				bool open = true;
+				if (ImGui::BeginTabItem(label.c_str(), &open)) {
+					activeDockTab = (int)i;
+					ImGui::EndTabItem();
+				}
+				// The tab's own close button: asks the window to close (POB gets to
+				// prompt about unsaved work) rather than killing it.
+				if (!open) closeDockTab = (int)i;
+			}
+		}
+
 		if (tabsOk) ImGui::EndTabBar();
 
 		ImGui::End();
+
+		// Docked windows: reap, adopt, position, z-order. After ImGui::End so the
+		// strip height measured above is the one actually laid out this frame.
+		if (tabbed) {
+			if (closeDockTab >= 0) dock.RequestClose((size_t)closeDockTab);
+			// While shutting down, show whichever tab is being closed, so a "save
+			// your build?" prompt is on screen rather than behind another tab.
+			const int shown = (closingTabs && !dock.Empty())
+			                ? (int)dock.Tabs().size() - 1 : activeDockTab;
+			dock.Update(stripH, shown);
+		}
 
 		// Overwrite confirmation for the copy button. Opened at this level (outside
 		// the tab's child window) so the popup's ID stack does not depend on which
@@ -1478,6 +1646,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	}
 
 	syncCfgFromUi(); // host_main saves cfg after this returns
+
+	// Hand every docked window its frame back before this window goes away, or
+	// they would be left frameless and unmovable on the desktop.
+	if (tabbed) {
+		dock.RestoreAll();
+		g_launcherDock = nullptr; // the callbacks are about to be destroyed with the window
+	}
 
 	// Full teardown so the next round (return-to-launcher) re-inits cleanly.
 	ImGui_ImplOpenGL3_Shutdown();

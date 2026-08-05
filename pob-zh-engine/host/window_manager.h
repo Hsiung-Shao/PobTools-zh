@@ -1,0 +1,43 @@
+// Geometry and window plumbing for docking POB against a container window.
+//
+// Two halves on purpose: the geometry is pure arithmetic with no Win32 in it, so
+// --window-layout-selftest can check it headlessly; the Win32 half is a thin
+// wrapper that does what the geometry decided.
+#pragma once
+
+#include <string>
+
+namespace WindowMgr {
+
+// Rectangle in screen coordinates. Separate from RECT so the geometry half stays
+// free of windows.h (and of the far/near/min/max macro minefield with it).
+struct WinRect {
+	int x = 0, y = 0, w = 0, h = 0;
+
+	bool operator==(const WinRect& o) const {
+		return x == o.x && y == o.y && w == o.w && h == o.h;
+	}
+};
+
+// Where a docked window belongs: the container's client area minus the tab strip
+// along its top. `originX/originY` is the screen position of the container's
+// client (0,0) -- docked windows stay top-level, so they are positioned in screen
+// coordinates, not in the container's client space.
+//
+// Never returns a negative height: a container dragged shorter than its own tab
+// strip would otherwise produce an inverted rectangle, and SetWindowPos does
+// something arbitrary with those.
+WinRect ComputeDockRect(int originX, int originY, int clientW, int clientH, int stripH);
+
+// ---- Win32 half --------------------------------------------------------------
+
+// Ask a window to close, exactly as clicking its X does: POB gets to run its
+// "save your build?" prompt. Never TerminateProcess -- that throws away work.
+bool RequestClose(void* hwnd);
+
+std::wstring WindowTitle(void* hwnd);
+
+// Headless checks for the geometry half; report at <exeDir>PobTools\, 0 = pass.
+int RunWindowLayoutSelfTest(const std::wstring& exeDir);
+
+} // namespace WindowMgr

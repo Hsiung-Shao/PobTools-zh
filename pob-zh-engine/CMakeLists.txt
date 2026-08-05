@@ -336,6 +336,8 @@ if (WIN32)
         host/paste_selftest.cpp
         host/paste_trace.cpp
         host/pob_launch.cpp
+        host/window_manager.cpp
+        host/window_dock.cpp
         # the editor selftest asks the REAL loader what the engine would
         # return; without this it could only re-implement the merge and
         # would be testing its own copy of the rule instead of the engine

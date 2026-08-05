@@ -143,7 +143,14 @@
 	X(fontCopyFailed,    u8"複製字型失敗",                 u8"Could not copy the font")               \
 	X(fontMissingGlyphs, u8"目前的字型畫不出這個語言的文字",                                          \
 	                     u8"The current font cannot draw this language")                              \
-	X(fontMissingHere,   u8"目前的字型畫不出這些字：",     u8"The current font is missing: ")
+	X(fontMissingHere,   u8"目前的字型畫不出這些字：",     u8"The current font is missing: ")          \
+	/* window mode (v0.17.0) */                                                                      \
+	X(sectionWindow,     u8"視窗方式",                     u8"Windows")                               \
+	X(winModeSeparate,   u8"各自獨立的視窗",               u8"Separate desktop windows")              \
+	X(winModeTabbed,     u8"在啟動器裡開成分頁",           u8"As tabs inside this launcher")          \
+	X(winModeHint,       u8"分頁模式下，POB 與工具會嵌在這個視窗裡；POB 本身照常執行，資料夾不會被動到。", \
+	                     u8"In tabbed mode POB and the tools sit inside this window. POB itself runs normally and nothing is written to its folder.") \
+	X(winModeRestart,    u8"改完要重開啟動器才會生效",     u8"Restart the launcher for this to take effect")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

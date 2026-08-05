@@ -19,6 +19,15 @@ enum class LaunchExitMode {
 // on a settings page is never what someone wants on startup.
 enum class StartupTab { Home = 0, Versions = 1 };
 
+// Whether POB opens as its own desktop window or as a tab inside the launcher.
+//
+// Tabbed keeps POB's window top-level and merely strips its frame and glues it
+// to the launcher's client area -- POB itself runs completely normally and
+// nothing is written to its folder. Separate is the historical behaviour and the
+// default; the tabbed path is new and its every failure mode is a Win32 one, so
+// it has to be chosen deliberately.
+enum class WindowMode { Separate = 0, Tabbed = 1 };
+
 // The three independently redirectable dictionary sets. Separate rather than one
 // shared root: someone translating only PoE1 should not be dragged into keeping an
 // external PoE2 copy in step, and the launcher's own labels are not a game at all.
@@ -33,6 +42,10 @@ struct LauncherConfig {
 	std::wstring   locale   = L"zh-rTW";    // "zh-rTW" | "en"
 	LaunchExitMode exitMode = LaunchExitMode::CloseLauncher;
 	StartupTab     startupTab = StartupTab::Home;
+	// Separate by default. In Tabbed mode exitMode is ignored: the launcher IS
+	// the window POB lives in, so "close the launcher when POB starts" has no
+	// meaning.
+	WindowMode     windowMode = WindowMode::Separate;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
 	// Empty = built-in. Each one points at the folder that directly CONTAINS the

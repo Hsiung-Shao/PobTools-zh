@@ -3,6 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -14,8 +15,67 @@ namespace {
 struct Instance {
 	HANDLE handle;
 	std::wstring game;
+	InstanceKind kind = InstanceKind::Pob;
+	DWORD pid = 0;
+	HWND hwnd = nullptr; // resolved on demand; see resolve_main_window
 };
 std::vector<Instance> g_instances;
+
+// Drop every finished child. Split out of PobRunningCount because three callers
+// now need "make the table current" without wanting POB's count.
+void reap()
+{
+	for (size_t i = 0; i < g_instances.size();) {
+		if (WaitForSingleObject(g_instances[i].handle, 0) == WAIT_OBJECT_0) {
+			CloseHandle(g_instances[i].handle);
+			g_instances.erase(g_instances.begin() + (ptrdiff_t)i);
+		} else {
+			i++;
+		}
+	}
+}
+
+struct FindWindowCtx {
+	DWORD pid;
+	HWND  best;      // a GLFW window: what we actually want
+	HWND  fallback;  // any visible unowned top-level window of that process
+};
+
+// The main window of a child process, or null while it has none yet.
+//
+// GLFW creates the window HIDDEN and shows it later (sys_video.cpp passes
+// GLFW_VISIBLE=FALSE so the user never sees an unpositioned stock window), so
+// "not found" is the normal answer for the first moments of a child's life and
+// must not be cached as "this one has no window".
+//
+// Matching on the GLFW class name rather than "first visible window of the pid"
+// is what keeps the engine's own console window (sys_console.cpp registers its
+// own class) from being picked up when the user has it open.
+BOOL CALLBACK find_window_cb(HWND hwnd, LPARAM param)
+{
+	auto* ctx = (FindWindowCtx*)param;
+	DWORD pid = 0;
+	GetWindowThreadProcessId(hwnd, &pid);
+	if (pid != ctx->pid) return TRUE;
+	if (!IsWindowVisible(hwnd)) return TRUE;
+	if (GetWindow(hwnd, GW_OWNER) != nullptr) return TRUE;
+
+	wchar_t cls[64] = {};
+	GetClassNameW(hwnd, cls, 64);
+	if (wcsncmp(cls, L"GLFW", 4) == 0) {
+		ctx->best = hwnd;
+		return FALSE; // found it, stop enumerating
+	}
+	if (!ctx->fallback) ctx->fallback = hwnd;
+	return TRUE;
+}
+
+HWND resolve_main_window(DWORD pid)
+{
+	FindWindowCtx ctx{ pid, nullptr, nullptr };
+	EnumWindows(find_window_cb, (LPARAM)&ctx);
+	return ctx.best ? ctx.best : ctx.fallback;
+}
 
 std::wstring exe_path()
 {
@@ -94,38 +154,77 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua)
 	return code;
 }
 
-bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game)
+bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
+                      unsigned long* outPid)
 {
 	PROCESS_INFORMATION pi{};
 	if (!spawn(launchLua, pi)) return false;
 	CloseHandle(pi.hThread);
-	g_instances.push_back({ pi.hProcess, game }); // handle closed when it is reaped
+	// handle closed when it is reaped
+	g_instances.push_back({ pi.hProcess, game, InstanceKind::Pob, pi.dwProcessId, nullptr });
+	if (outPid) *outPid = pi.dwProcessId;
+	return true;
+}
+
+bool SpawnToolDetached(const std::wstring& exeDir, const wchar_t* flag, InstanceKind kind,
+                       unsigned long* outPid)
+{
+	std::wstring cmd = L"\"" + exeDir + L"pob-zh.exe\" " + flag;
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(L'\0');
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi{};
+	if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, 0, nullptr,
+	                    exeDir.c_str(), &si, &pi)) {
+		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
+		            MB_ICONERROR | MB_OK);
+		return false;
+	}
+	CloseHandle(pi.hThread);
+	g_instances.push_back({ pi.hProcess, std::wstring(), kind, pi.dwProcessId, nullptr });
+	if (outPid) *outPid = pi.dwProcessId;
 	return true;
 }
 
 int PobRunningCount()
 {
-	for (size_t i = 0; i < g_instances.size();) {
-		if (WaitForSingleObject(g_instances[i].handle, 0) == WAIT_OBJECT_0) {
-			CloseHandle(g_instances[i].handle);
-			g_instances.erase(g_instances.begin() + (ptrdiff_t)i);
-		} else {
-			i++;
-		}
-	}
-	return (int)g_instances.size();
+	reap();
+	int n = 0;
+	for (const Instance& in : g_instances) if (in.kind == InstanceKind::Pob) n++;
+	return n;
 }
 
 int PobRunningCountFor(const std::wstring& game)
 {
-	PobRunningCount(); // reap first, so the answer is current
+	reap(); // so the answer is current
 	int n = 0;
-	for (const Instance& in : g_instances) if (in.game == game) n++;
+	for (const Instance& in : g_instances)
+		if (in.kind == InstanceKind::Pob && in.game == game) n++;
 	return n;
+}
+
+std::vector<InstanceInfo> RunningInstances()
+{
+	reap();
+	std::vector<InstanceInfo> out;
+	out.reserve(g_instances.size());
+	for (Instance& in : g_instances) {
+		// Re-resolve while unknown: the window appears some time after the process
+		// does. Once found it is cached, but a stale handle is worse than none, so
+		// verify it still exists before handing it out.
+		if (in.hwnd && !IsWindow(in.hwnd)) in.hwnd = nullptr;
+		if (!in.hwnd && in.pid) in.hwnd = resolve_main_window(in.pid);
+		out.push_back({ in.pid, in.kind, in.game, (void*)in.hwnd });
+	}
+	return out;
 }
 
 bool AnyPobRunning(const std::wstring& exeDir)
 {
+	// PobRunningCount counts only InstanceKind::Pob, which is exactly right here:
+	// an update swaps engine\*.dll, and only POB has those loaded. A tool window
+	// being open must not block updates.
 	if (PobRunningCount() > 0) return true;
 	// A second launcher instance sees none of our handles. KeepOpen mode makes
 	// "launcher already open, user double-clicks the exe again" likely, and that
@@ -146,7 +245,14 @@ void HoldEngineRunningMarker(const std::wstring& exeDir)
 
 void TrackHandleForTest(void* handle, const std::wstring& game)
 {
-	g_instances.push_back({ (HANDLE)handle, game });
+	// pid 0 on purpose: RunningInstances then skips window resolution, so the
+	// headless test never enumerates the real desktop.
+	g_instances.push_back({ (HANDLE)handle, game, InstanceKind::Pob, 0, nullptr });
+}
+
+void TrackToolHandleForTest(void* handle, InstanceKind kind)
+{
+	g_instances.push_back({ (HANDLE)handle, std::wstring(), kind, 0, nullptr });
 }
 
 int RunPobLaunchSelfTest(const std::wstring& exeDir)
@@ -191,6 +297,41 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 	      AnyPobRunning(exeDir));
 	CloseHandle(m2);
 	check("P9 false once the last holder is gone", !AnyPobRunning(exeDir));
+
+	// Tools share the table with POB but must never be mistaken for it. The one
+	// that matters is P12: a tool window open while an update wants to swap
+	// engine\*.dll is fine, because no tool has those DLLs loaded. Getting this
+	// wrong would silently stop updating for anyone who leaves the atlas planner
+	// open -- with no error to show for it.
+	HANDLE t1 = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	HANDLE t2 = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	TrackToolHandleForTest(t1, InstanceKind::AtlasPlanner);
+	TrackToolHandleForTest(t2, InstanceKind::FilterEditor);
+	check("P10 tools do not count as POB", PobRunningCount() == 0,
+	      std::to_string(PobRunningCount()));
+	{
+		std::vector<InstanceInfo> all = RunningInstances();
+		int atlas = 0, filter = 0;
+		for (const InstanceInfo& i : all) {
+			if (i.kind == InstanceKind::AtlasPlanner) atlas++;
+			if (i.kind == InstanceKind::FilterEditor) filter++;
+		}
+		check("P11 both tools are listed with their kind",
+		      all.size() == 2 && atlas == 1 && filter == 1,
+		      "listed " + std::to_string(all.size()));
+	}
+	check("P12 a tool alone does not block updates", !AnyPobRunning(exeDir));
+
+	HANDLE t3 = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	TrackHandleForTest(t3, L"poe1");
+	check("P13 POB alongside tools is still counted", PobRunningCount() == 1 &&
+	      RunningInstances().size() == 3, std::to_string(PobRunningCount()));
+
+	SetEvent(t1);
+	SetEvent(t2);
+	SetEvent(t3);
+	check("P14 mixed table reaps clean", RunningInstances().empty() &&
+	      PobRunningCount() == 0);
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
