@@ -2444,6 +2444,17 @@ static int l_PobToolsSetTranslate(lua_State* L)
 	return 1;
 }
 
+// PobToolsGetTranslate() -> true while display translation is on (F2 toggles it).
+//
+// Read-only on purpose. PobToolsSetTranslate returns the previous state too, but
+// it also drops the lookup caches, so using it to *read* the flag would clear
+// them on every call -- and the tooltip patch asks once per tooltip per frame.
+static int l_PobToolsGetTranslate(lua_State* L)
+{
+	lua_pushboolean(L, translation_is_enabled() ? 1 : 0);
+	return 1;
+}
+
 // PobToolsSetSource(name) -> previous name (or nil). Names the POB data file
 // the strings about to be drawn came from, so that file's dictionary wins over
 // the merged map. Pass nil to clear. Wrap it around a control's Draw and
@@ -2670,6 +2681,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsTranslateDisplay);
 	ADDFUNC(PobToolsReverse);
 	ADDFUNC(PobToolsSetTranslate);
+	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNCALIAS(PoeCharmTranslate, PobToolsTranslate);
 	ADDFUNCALIAS(PoeCharmReverse, PobToolsReverse);

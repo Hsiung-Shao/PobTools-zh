@@ -272,6 +272,46 @@ PATCHES["Tooltip"] = function(class)
 		end
 		return orig(self, size, text, ...)
 	end
+
+	-- F2 has to reach tooltips that are ALREADY on screen.
+	--
+	-- The lines above are translated when the tooltip is BUILT, and POB rebuilds
+	-- a tooltip only when CheckForUpdate sees one of the caller's values change
+	-- (Tooltip.lua:67). The item slots pass (item, devModeAlt, outputRevision,
+	-- SHIFT) -- F2 changes none of them, so the tooltip under the cursor kept the
+	-- language it was built in and only turned English once you hovered something
+	-- else. Before the AddLine hook existed, translation happened per-frame inside
+	-- DrawString, which is why F2 used to look instant.
+	--
+	-- POB has the same problem with its own main.notSupportedModTooltips switch
+	-- and fixes it inside CheckForUpdate (Tooltip.lua:80); this is that fix for
+	-- our switch, kept in the same place and the same shape. The state is stored
+	-- in updateParams so that Clear(true) wipes it along with everything else --
+	-- an emptied tooltip must rebuild anyway.
+	local origCheck = class.CheckForUpdate
+	if origCheck and type(PobToolsGetTranslate) == "function" then
+		class.CheckForUpdate = function(self, ...)
+			-- Always call through first: CheckForUpdate is what RECORDS the
+			-- params, so short-circuiting it would make the next real change
+			-- go unnoticed. It also creates updateParams.
+			local doUpdate = origCheck(self, ...)
+			local cur = PobToolsGetTranslate()
+			local params = self.updateParams
+			if params and params.pobToolsTranslate ~= cur then
+				params.pobToolsTranslate = cur
+				if not doUpdate then
+					self:Clear()   -- keeps updateParams, exactly like line 82
+					return true
+				end
+			end
+			return doUpdate
+		end
+	else
+		-- Not fatal: the tooltips still translate, F2 just will not refresh one
+		-- that is already open. Worth a line in the log rather than killing the
+		-- whole patch over it.
+		log("Tooltip: CheckForUpdate/PobToolsGetTranslate missing, F2 will not refresh open tooltips")
+	end
 end
 
 -- ===== apply now (loaded classes) + on future load (wrap LoadModule) =====
