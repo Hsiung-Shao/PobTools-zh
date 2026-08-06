@@ -751,6 +751,14 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						ImGui::PopID();
 					}
 				}
+				// One empty row of slack after the last entry. Added outside the
+				// clipper on purpose: it is not an item, it just lengthens the
+				// table's content so the final row can be scrolled clear of the
+				// bottom edge instead of sitting flush against it, which reads as
+				// "there is more below" even when there is not.
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				ImGui::Dummy(ImVec2(0, ImGui::GetFrameHeight()));
 				ImGui::EndTable();
 			}
 		}
