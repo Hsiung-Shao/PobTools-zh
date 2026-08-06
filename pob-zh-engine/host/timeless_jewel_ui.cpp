@@ -331,12 +331,18 @@ const char* JewelZh(int t)
 	return "?";
 }
 
-// Highest jewel type the calculator offers. The Abyss jewels (7-11) are held
-// back until PoB can handle them: its ModParser has no Abyssal Lord in
-// `conquerorList` and there is no unique item definition, so a seed found here
-// could not be pasted into PoB or reproduced by anyone else. The dataset, the
-// LUTs and TJApply all still support them — lift this constant to re-enable.
-constexpr int kMaxJewelType = 6;
+// kMaxJewelType now lives in timeless_jewel_ui.h so --tj-selftest can assert
+// against it. The Abyss jewels (7-11) are held back for two reasons now:
+//
+//  * PoB's ModParser has no Abyssal Lord in `conquerorList` and there is no
+//    unique item definition, so a seed found here could not be pasted into PoB
+//    or reproduced by anyone else.
+//  * PoB 2.67 rewrapped the Abyss lookup tables in a container format ("ABYS"
+//    per socket, "ABYN" per node plus an "ASCS" section). TJReadLUT still reads
+//    a flat notable*seed byte table from offset 0, so against those files it
+//    returns bytes taken from the header and the offset tables — plausible
+//    looking and wrong. Reading the container is the work that has to happen
+//    before this constant can be raised.
 
 // Traditional legion jewels affect a Large radius (1800 world units). The Abyss
 // ones do not: GGPK gives types 7-10 `local_unique_jewel_passive_tree_abyss_size

@@ -1065,6 +1065,28 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	      ds.binNames.count(11) ? ds.binNames.at(11) : "(missing)");
 	std::string abyss;
 	if (TJLoadBin(exeDir, ds, 7, abyss, &err)) {
+	// PoB 2.67 wrapped the Abyss tables in a container: 4-byte magic, format
+	// version, jewel type, then seed min/max/increment and a table of block
+	// offsets ("ABYS" keys blocks by socket, "ABYN" by node and adds an "ASCS"
+	// ascendancy section). See PoB's Modules/DataAbyssJewelLookUpTableHelper.lua.
+	//
+	// Detected by its magic, not by size: a size check only says "not what I
+	// expected", while the magic says what it actually is. Everything below
+	// reads a flat notable*seed table from offset 0, so against a container it
+	// returns bytes lifted out of the header and the offset tables -- answers
+	// that look like real stat ids and are wrong. Re-pinning them to whatever
+	// comes out now would be recording the wrong answer as the expected one.
+	//
+	// So when the container is present the decode checks do not run, and what
+	// is asserted instead is the property that keeps those wrong answers away
+	// from anyone: types 7-11 are not offered. That fails the moment someone
+	// raises kMaxJewelType without teaching TJReadLUT the container.
+	const std::string magic = abyss.substr(0, (std::min)((size_t)4, abyss.size()));
+	if (magic == "ABYS" || magic == "ABYN") {
+		check(kMaxJewelType == 6,
+		      "abyss LUT is PoB's new container format, so types 7-11 stay hidden",
+		      magic + " container -- teach TJReadLUT this layout before raising kMaxJewelType");
+	} else {
 		const size_t want = (size_t)(8000 - 100 + 1) * (size_t)ds.sizeNotable;
 		check(abyss.size() == want, "AbyssTecrod LUT size",
 		      std::to_string(abyss.size()) + " want " + std::to_string(want));
@@ -1109,6 +1131,7 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		for (const auto& h : hits) if (h.seed == 8000) has8000 = true;
 		check(!hits.empty() && has8000, "search Tecrod finds seed 8000",
 		      std::to_string(hits.size()) + " hits");
+	}
 	} else {
 		check(false, "load AbyssTecrod LUT", err);
 	}
@@ -1238,12 +1261,25 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 
 	std::string zorath;
 	if (TJLoadBin(exeDir, ds, 11, zorath, &err)) {
-		// type 11 is the only Abyss LUT with a non-identity localId->globalId map
-		auto lut = TJReadLUT(ds, zorath, 11, 100, 6);
-		const TJEntry* n = lut.size() == 1 ? addition_at(ds, lut[0]) : nullptr;
-		check(lut.size() == 1 && lut[0] == 314 && n && n->id == "abyss_special_notable_53",
-		      "Zorath seed 100 node 6 (L2G 52->314)",
-		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
+		// Zorath ships as "ABYN": one block per passive node plus an "ASCS"
+		// section, and which nodes it even has an answer for depends on the
+		// allocated path from the socket to the class start -- there is no
+		// seed*index address to compute. Same reasoning as the ABYS block above:
+		// with a container present the decode check is not re-pinned, the
+		// hidden-ness of the type is what gets asserted.
+		const std::string zmagic = zorath.substr(0, (std::min)((size_t)4, zorath.size()));
+		if (zmagic == "ABYS" || zmagic == "ABYN") {
+			check(kMaxJewelType == 6,
+			      "Zorath LUT is PoB's new container format, so type 11 stays hidden",
+			      zmagic + " container -- needs the allocated path, which PobTools does not track");
+		} else {
+			// type 11 is the only Abyss LUT with a non-identity localId->globalId map
+			auto lut = TJReadLUT(ds, zorath, 11, 100, 6);
+			const TJEntry* n = lut.size() == 1 ? addition_at(ds, lut[0]) : nullptr;
+			check(lut.size() == 1 && lut[0] == 314 && n && n->id == "abyss_special_notable_53",
+			      "Zorath seed 100 node 6 (L2G 52->314)",
+			      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
+		}
 	} else {
 		check(false, "load AbyssZorath LUT", err);
 	}
