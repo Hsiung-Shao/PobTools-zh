@@ -75,6 +75,18 @@ int FindFileIdx(const EditorModel& model, const std::string& name);
 // rule is a thing that can be asserted, not something only a screenshot shows.
 bool NeedsExpandedEditor(const EditorEntry& e);
 
+// One-line form of a string for a table cell. ImGuiListClipper sizes the whole
+// scroll range from one row's height, so ANY taller row makes the range too
+// short and the last entries unreachable -- a 25-line key in ui.json is what
+// made the list stop scrolling with rows still below.
+//
+// A line break comes back as the two characters \n, which is not a marker
+// invented here: 1,198 keys in the poe1 dictionary already spell a line break
+// exactly that way (stats.json stores backslash + n where ui.json stores a real
+// 0x0A). This makes the two spellings look alike instead of showing one of them
+// as a hole in the layout. The untouched text stays one hover away.
+std::string OneLineForCell(const std::string& s);
+
 // Locale sub-directories present under `slotRoot` (same convention as LoadModel).
 // Falls back to {"zh-rTW"} when the directory is missing, so callers always have
 // something to show.

@@ -688,13 +688,17 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						}
 
 						ImGui::TableSetColumnIndex(1);
+						// One line, always: a key with real line breaks would draw
+						// as many lines and the clipper's uniform-height assumption
+						// (see below) would put the tail of the list out of reach.
+						const std::string keyCell = OneLineForCell(e.key);
 						// TextPobColored emits one item per colour run, so the
 						// hover test has to cover the group, not the last run.
 						ImGui::BeginGroup();
-						if (has_pob_color(e.key))
-							TextPobColored(e.key, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+						if (has_pob_color(keyCell))
+							TextPobColored(keyCell, ImGui::GetStyleColorVec4(ImGuiCol_Text));
 						else
-							ImGui::TextUnformatted(e.key.c_str());
+							ImGui::TextUnformatted(keyCell.c_str());
 						ImGui::EndGroup();
 						if (ImGui::IsItemHovered() && ImGui::GetIO().KeyShift == false) {
 							ImGui::BeginTooltip();
@@ -712,6 +716,9 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 						ImGui::SetNextItemWidth(big ? -(28.0f * scale) : -FLT_MIN);
 						if (ImGui::InputText("##v", &e.value))
 							model.files[e.fileIdx].dirty = true;
+						// Taken here, while "the last item" is still the box: the
+						// expand button below would otherwise be what gets asked.
+						const bool boxHovered = ImGui::IsItemHovered() && !ImGui::IsItemActive();
 						if (big) {
 							ImGui::SameLine(0, 4 * scale);
 							// Plain ASCII: this window builds its own glyph atlas
@@ -726,10 +733,20 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 								ImGui::SetTooltip(u8"展開編輯（內容較長或有換行）");
 						}
 						// The box has to keep the raw escapes so they can be
-						// edited, so the rendered form goes underneath — this is
-						// what POB will actually draw.
-						if (has_pob_color(e.value))
-							TextPobColored(e.value, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+						// edited, so the rendered form is shown separately — this
+						// is what POB will actually draw.
+						//
+						// In a tooltip, not on a second line under the box: an
+						// extra line makes this row taller than the rest, and the
+						// clipper below sizes the whole scroll range from ONE
+						// row's height. 218 coloured values in the poe1 dictionary
+						// were each shortening that range by a line.
+						if (boxHovered && has_pob_color(e.value)) {
+							ImGui::BeginTooltip();
+							ImGui::TextDisabled(u8"顯示效果：");
+							TextPobColored(e.value, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+							ImGui::EndTooltip();
+						}
 
 						ImGui::PopID();
 					}

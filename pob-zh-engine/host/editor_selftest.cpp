@@ -464,6 +464,38 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		}
 	}
 
+	// T33c -- every table cell is exactly one line.
+	//
+	// The entries table is an ImGuiListClipper over 110k rows and the clipper
+	// sizes the whole scroll range from ONE row's height, so a single taller row
+	// shortens the range and the rows past it cannot be reached. That is not
+	// hypothetical: ui.json has a key 25 lines long, and one 3-line key inside a
+	// 106-row filter was enough to strand the last entries off the bottom.
+	{
+		check(OneLineForCell("a\nb") == "a\\nb" &&
+		          OneLineForCell("a\r\nb") == "a\\nb" &&
+		          OneLineForCell("plain") == "plain",
+		      "T33c1 a line break becomes the two characters \\n, CRLF included");
+
+		int folded = 0;
+		std::string worst;
+		for (const EditorEntry& e : model.entries) {
+			const std::string k = OneLineForCell(e.key);
+			const std::string v = OneLineForCell(e.value);
+			if (e.key.find('\n') != std::string::npos) folded++;
+			if (k.find_first_of("\r\n") != std::string::npos ||
+			    v.find_first_of("\r\n") != std::string::npos) {
+				if (worst.empty()) worst = e.key.substr(0, 40);
+			}
+		}
+		// `folded > 0` is the part that keeps this honest: without it the sweep
+		// would pass just as happily on a dictionary that has no multi-line key
+		// at all, and prove nothing about the case it exists for.
+		const std::string msg = "T33c2 no dictionary entry can draw a multi-line cell (" +
+		                        std::to_string(folded) + " folded)";
+		check(worst.empty() && folded > 0, msg.c_str());
+	}
+
 	// SaveFile backs a file up before overwriting it, so a run that edits and
 	// restores four files leaves four .bak copies behind. Every value is already
 	// restored and verified above, so the backups are litter -- and litter in the

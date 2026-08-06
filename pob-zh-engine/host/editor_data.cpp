@@ -212,6 +212,19 @@ bool NeedsExpandedEditor(const EditorEntry& e)
 	       e.value.size() > kLongEnough || e.key.size() > kLongEnough;
 }
 
+std::string OneLineForCell(const std::string& s)
+{
+	if (s.find('\n') == std::string::npos && s.find('\r') == std::string::npos) return s;
+	std::string out;
+	out.reserve(s.size() + 8);
+	for (size_t i = 0; i < s.size(); i++) {
+		if (s[i] == '\r') continue;          // CRLF collapses to one marker
+		if (s[i] == '\n') { out += "\\n"; continue; }
+		out += s[i];
+	}
+	return out;
+}
+
 std::vector<std::string> ListLocales(const std::wstring& slotRoot)
 {
 	std::vector<std::string> out;
