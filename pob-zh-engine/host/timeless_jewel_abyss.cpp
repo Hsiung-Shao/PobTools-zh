@@ -382,14 +382,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 	return hits;
 }
 
-// ---- selftest -----------------------------------------------------------------
-//
-// The pinned values below were read off PoB 2.67.1's shipped containers and
-// cross-checked against Parazeya/abyss-jewels' independent walk (4494 of 4494
-// (socket, seed) node sets identical; the same comparison with the seed shifted
-// by one matched 0 of 4494, so it can tell seeds apart). If the game's passive
-// tree changes these move, and the failure text says so — a stale pin should
-// read as "the data moved", not as "the reader broke".
+// ---- headless entry points ----------------------------------------------------
 
 static void abyss_console()
 {
@@ -399,6 +392,109 @@ static void abyss_console()
 		freopen_s(&f, "CONOUT$", "w", stderr);
 	}
 }
+
+// Write a UTF-8 report next to the exe. This is a WIN32 GUI binary: it has no
+// stdout of its own, and the console it attaches to belongs to whoever launched
+// it, so piped output is lost. Every headless check here goes to a file for
+// that reason.
+static void abyss_write_report(const std::wstring& exeDir, const wchar_t* name,
+                               const std::string& body)
+{
+	HANDLE h = CreateFileW((exeDir + name).c_str(), GENERIC_WRITE, 0,
+	                       nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return;
+	DWORD written = 0;
+	WriteFile(h, body.data(), (DWORD)body.size(), &written, nullptr);
+	CloseHandle(h);
+}
+
+// "--abyss <jewelType> <socketId> <seed>": report what one jewel does in one
+// socket, to abyss_cli.txt. This runs the same composition the detail panel
+// does -- read the record, map each conquered id onto the tree, render its
+// lines -- so what lands in the file is what the window shows.
+int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int seed)
+{
+	abyss_console();
+	std::string out;
+	auto emit = [&](const std::string& line) {
+		out += line + "\n";
+		printf("%s\n", line.c_str());
+	};
+	auto finish = [&](int code) {
+		abyss_write_report(exeDir, L"abyss_cli.txt", out);
+		return code;
+	};
+
+	TJDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir + L"Data\\timeless_jewels.json", &err)) {
+		emit("load dataset: " + err);
+		return finish(1);
+	}
+	if (!TJAbyssUsable(jewelType)) {
+		emit("jewel type " + std::to_string(jewelType) + " is not one this reads (7-10)");
+		return finish(1);
+	}
+	PassiveTreeData tree;
+	std::string terr;
+	const bool haveTree = tree.Load(exeDir, &terr);
+	if (!haveTree) emit("(no passive tree: " + terr + " -- ids only)");
+
+	std::string blob;
+	if (!TJLoadBin(exeDir, ds, jewelType, blob, &err)) { emit(err); return finish(1); }
+	TJAbyssLUT lut;
+	if (!TJAbyssParse(blob, jewelType, lut, &err)) { emit(err); return finish(1); }
+
+	if (socketId == 0) {
+		std::string s = "sockets:";
+		for (size_t i = 0; i < lut.socketIds.size(); i++)
+			s += " " + std::to_string(lut.socketIds[i]);
+		emit(s);
+		emit("seeds " + std::to_string(lut.seedMin) + ".." + std::to_string(lut.seedMax) +
+		     " step " + std::to_string(lut.seedInc));
+		return finish(0);
+	}
+
+	std::map<int, TJAbyssMod> got;
+	if (!TJAbyssReadSocket(ds, blob, lut, socketId, seed, got)) {
+		emit("no record for socket " + std::to_string(socketId) +
+		     " seed " + std::to_string(seed));
+		return finish(1);
+	}
+	emit((ds.types.count(jewelType) ? ds.types.at(jewelType) : "?") +
+	     "  socket " + std::to_string(socketId) + "  seed " + std::to_string(seed) +
+	     "  -> " + std::to_string(got.size()) + " conquered passives");
+	for (std::map<int, TJAbyssMod>::const_iterator it = got.begin(); it != got.end(); ++it) {
+		std::string name = std::to_string(it->first);
+		if (haveTree) {
+			const int idx = tree.IndexOfId(it->first);
+			if (idx >= 0) {
+				const PtNode& n = tree.nodes[(size_t)idx];
+				name = (n.nameZh.empty() ? n.name : n.nameZh) + " (" + std::to_string(n.id) + ")";
+			}
+		}
+		TJTransform t = TJAbyssApply(ds, it->second);
+		std::string line = "  " + name + (t.replaced ? "  => " : "  += ");
+		if (t.replaced) line += (t.newNameZh.empty() ? t.newName : t.newNameZh) + "  ";
+		for (size_t i = 0; i < t.lines.size(); i++) {
+			const std::string& s = (i < t.linesZh.size() && !t.linesZh[i].empty())
+			                       ? t.linesZh[i] : t.lines[i];
+			line += (i ? " / " : "") + s;
+		}
+		if (!t.note.empty()) line += "   [" + t.note + "]";
+		emit(line);
+	}
+	return finish(0);
+}
+
+// ---- selftest -----------------------------------------------------------------
+//
+// The pinned values below were read off PoB 2.67.1's shipped containers and
+// cross-checked against Parazeya/abyss-jewels' independent walk (4494 of 4494
+// (socket, seed) node sets identical; the same comparison with the seed shifted
+// by one matched 0 of 4494, so it can tell seeds apart). If the game's passive
+// tree changes these move, and the failure text says so — a stale pin should
+// read as "the data moved", not as "the reader broke".
 
 static std::string join_lines(const std::vector<std::string>& v)
 {
@@ -598,8 +694,16 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				q.jewelType = 7;
 				q.scope = 0;
 				q.wants.push_back({ want, 0.0, 1.0 });
+				// Timed, because a search is a full sweep of 7901 seeds and the UI
+				// runs it on a worker while the window keeps drawing: if this
+				// ever creeps into tens of seconds that is a product problem, not
+				// a detail. Reported, not asserted — machines differ.
+				const DWORD t0 = GetTickCount();
 				std::vector<TJSeedHit> hits = TJAbyssSearch(ds, blob, lut, q, 2491, 20, &nodeKind, nullptr);
-				check(!hits.empty(), "a reachable stat finds seeds", std::to_string(hits.size()));
+				const DWORD dt = GetTickCount() - t0;
+				check(!hits.empty(), "a reachable stat finds seeds",
+				      std::to_string(hits.size()) + " hits, full 7901-seed sweep in " +
+				      std::to_string(dt) + " ms");
 
 				bool ordered = true;
 				for (size_t i = 1; i < hits.size(); i++)

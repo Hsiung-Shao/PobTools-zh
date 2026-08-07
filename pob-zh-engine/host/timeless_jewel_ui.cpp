@@ -6,6 +6,7 @@
 #include "passive_tree_update.h"
 #include "passive_tree_view.h"
 #include "timeless_jewel.h"
+#include "timeless_jewel_abyss.h"
 #include "ui_theme.h"
 
 #include <json.hpp> // nlohmann::json (deps/nlohmann) — TjUiState
@@ -321,7 +322,6 @@ const char* JewelZh(int t)
 	case 5: return u8"優雅的高傲 (Elegant Hubris)";
 	case 6: return u8"英勇悲劇 (Heroic Tragedy)";
 	// Abyss jewels (3.29): one per Abyssal Lord, all seeded 100-8000.
-	// Not offered in the calculator yet — see kMaxJewelType.
 	case 7: return u8"潰爛復仇 (Festering Vengeance)";
 	case 8: return u8"撲滅之握 (Extinguishing Grasp)";
 	case 9: return u8"邪惡統治 (Baleful Dominion)";
@@ -331,27 +331,18 @@ const char* JewelZh(int t)
 	return "?";
 }
 
-// kMaxJewelType now lives in timeless_jewel_ui.h so --tj-selftest can assert
-// against it. The Abyss jewels (7-11) are held back for two reasons now:
-//
-//  * PoB's ModParser has no Abyssal Lord in `conquerorList` and there is no
-//    unique item definition, so a seed found here could not be pasted into PoB
-//    or reproduced by anyone else.
-//  * PoB 2.67 rewrapped the Abyss lookup tables in a container format ("ABYS"
-//    per socket, "ABYN" per node plus an "ASCS" section). TJReadLUT still reads
-//    a flat notable*seed byte table from offset 0, so against those files it
-//    returns bytes taken from the header and the offset tables — plausible
-//    looking and wrong. Reading the container is the work that has to happen
-//    before this constant can be raised.
+// kMaxJewelType lives in timeless_jewel_ui.h so both selftests can assert
+// against it. Both of the reasons the Abyss jewels used to be held back are
+// gone: PoB 2.67 carries the Abyssal Lords in ModParser's conquerorList and a
+// unique definition for each jewel, and timeless_jewel_abyss.cpp now reads the
+// ABYS/ABYN containers. Only Zorath stays hidden, for a reason that is about
+// PobTools and not about PoB — see the header.
 
-// Traditional legion jewels affect a Large radius (1800 world units). The Abyss
-// ones do not: GGPK gives types 7-10 `local_unique_jewel_passive_tree_abyss_size
-// = 60` (not one of the PassiveJewelRadii values) and type 11
-// `local_unique_jewel_passive_tree_abyss_to_character_start = 1`, and the item
-// text says "Passives affected" instead of "Passives in radius". The selection
-// rule behind those is not documented anywhere yet (PoB upstream has no item
-// definition for them either), so the tree view shows no area rather than a
-// wrong one.
+// Legion jewels affect a Large radius (1800 world units). The Abyss ones have no
+// radius at all: their file names the conquered passives directly, and the item
+// text says "Passives affected" rather than "Passives in radius". So for 7-10
+// the socket is not a way of choosing a radius — it IS the lookup key, and
+// nothing can be searched without one.
 bool JewelUsesRadius(int jewelType) { return jewelType >= 1 && jewelType <= 6; }
 
 const char* ConquerorType(int jewelType)
@@ -421,12 +412,39 @@ struct SearchJob {
 
 	~SearchJob() { cancel = true; if (th.joinable()) th.join(); }
 
-	void start(const TJDataset* ds, const std::string* blob, TJSearchQuery q) {
+	// The LUT is taken as a shared_ptr, not a raw pointer, so that switching
+	// jewel mid-search cannot pull the buffer out from under the worker: the
+	// loader hands the UI a NEW buffer and this thread keeps the old one alive
+	// until it finishes.
+	void start(const TJDataset* ds, std::shared_ptr<const std::string> blob, TJSearchQuery q) {
 		if (th.joinable()) { cancel = true; th.join(); }
 		cancel = false; done = false; running = true;
 		results.clear();
 		th = std::thread([this, ds, blob, q]() {
 			auto r = TJSearch(*ds, *blob, q, 500, &cancel);
+			results = std::move(r);
+			running = false; done = true;
+		});
+	}
+
+	// Abyss jewels search one socket's block rather than a set of nodes, so they
+	// need the parsed container and the socket id instead of q.nodeIds.
+	//
+	// `lut` and `nodeKind` are taken BY VALUE. TJAbyssReadSocket fills a per-seed
+	// offset cache inside the LUT as it walks, and the detail panel reads the
+	// same socket on the UI thread every frame — sharing one index would be two
+	// threads writing one std::map. Copying costs the block table (21 entries)
+	// plus whatever offsets are already cached; the expensive part, the walk that
+	// built the block table, is not repeated.
+	void startAbyss(const TJDataset* ds, std::shared_ptr<const std::string> blob,
+	                TJAbyssLUT lut, TJSearchQuery q, int socketId,
+	                std::map<int, int> nodeKind) {
+		if (th.joinable()) { cancel = true; th.join(); }
+		cancel = false; done = false; running = true;
+		results.clear();
+		th = std::thread([this, ds, blob, lut = std::move(lut), q, socketId,
+		                  nodeKind = std::move(nodeKind)]() mutable {
+			auto r = TJAbyssSearch(*ds, *blob, lut, q, socketId, 500, &nodeKind, &cancel);
 			results = std::move(r);
 			running = false; done = true;
 		});
@@ -737,16 +755,43 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 	int templatesFor = jewelType;
 	auto blob = std::make_shared<std::string>();
 	std::string binErr;
-	bool binOk = TJLoadBin(exeDir, *ds, jewelType, *blob, &binErr);
-	int loadedBinType = jewelType;
+	// Abyss containers carry their own block index, built by walking the whole
+	// file once. It lives beside the blob and is rebuilt whenever the blob is.
+	auto abyssLut = std::make_shared<TJAbyssLUT>();
+	int loadedBinType = 0;
 
 	SearchJob job;
 
+	// Node kinds decide what "只看大天賦" means for an Abyss search. Keystones are
+	// absent from the Legion node index, so without this map every conquered
+	// keystone would be filed as a small passive and quietly filtered out.
+	std::map<int, int> ptKind;
+	auto rebuildKinds = [&]() {
+		ptKind.clear();
+		for (const PtNode& n : ptData.nodes) ptKind[n.id] = n.kind;
+	};
+	rebuildKinds();
+
+	auto loadBinFor = [&](int type) {
+		// Fresh buffers rather than clearing in place: a search may still be
+		// reading the old ones, and it holds its own reference to them.
+		blob = std::make_shared<std::string>();
+		abyssLut = std::make_shared<TJAbyssLUT>();
+		bool ok = TJLoadBin(exeDir, *ds, type, *blob, &binErr);
+		if (ok && TJIsAbyss(type) && !TJAbyssParse(*blob, type, *abyssLut, &binErr)) {
+			// A container we cannot index is a failed load, not a usable one:
+			// reading from a half-built index returns confident nonsense.
+			blob = std::make_shared<std::string>();
+			ok = false;
+		}
+		loadedBinType = type;
+		return ok;
+	};
+	bool binOk = loadBinFor(jewelType);
+
 	auto ensureBin = [&](int type) {
 		if (binOk && loadedBinType == type) return true;
-		blob->clear();
-		binOk = TJLoadBin(exeDir, *ds, type, *blob, &binErr);
-		loadedBinType = type;
+		binOk = loadBinFor(type);
 		return binOk;
 	};
 
@@ -766,6 +811,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			// that hangs off the tree (selection, highlights, search bindings)
 			ptDataOk = ptData.Load(exeDir, &ptErr);
 			ptTexOk = ptDataOk && ptView.LoadTextures(exeDir, ptData, &ptErr);
+			rebuildKinds(); // node kinds drive the Abyss scope filter
 			ptView.ResetView();
 			selSocket = -1;
 			ptSelected.clear();
@@ -824,7 +870,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				seedText = std::to_string(foundSeed); detailSeed = foundSeed; mode = 1;
 			}
 			status = unsupported
-			         ? (std::string(JewelZh(foundJewel)) + u8" 尚未支援：等 Path of Building 本體加入深淵軍團珠寶後開放")
+			         ? (std::string(JewelZh(foundJewel)) +
+			            u8" 尚未支援：它的效果取決於角色從插槽到起點的已配點路徑，本工具沒有角色資料")
 			         : foundJewel ? (u8"已匯入：" + std::string(JewelZh(foundJewel)) +
 			                         (foundSeed >= 0 ? u8"  種子 " + std::to_string(foundSeed) : ""))
 			                      : u8"剪貼簿中未找到珠寶資訊（請在遊戲中對珠寶 Ctrl+C）";
@@ -978,7 +1025,11 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip(u8"關閉後只要命中任一條就算，權重高的仍排前面。\n"
 				                  u8"開啟時，只滿足其中一條的種子不會出現。");
-			ImGui::RadioButton(u8"只中型天賦 (Notables)", &scope, 1);
+			// Abyss jewels conquer keystones too, and TJAbyssInScope counts them
+			// as "big" — the label has to say so or the filter looks like it is
+			// dropping results.
+			ImGui::RadioButton(TJIsAbyss(jewelType) ? u8"只大型天賦與鑰石"
+			                                        : u8"只中型天賦 (Notables)", &scope, 1);
 			ImGui::SameLine();
 			ImGui::RadioButton(u8"全部節點", &scope, 0);
 			} // searchInputsOpen
@@ -986,14 +1037,17 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			// --- search ---
 			bool busy = job.running.load();
 			const bool useRadius = JewelUsesRadius(jewelType);
-			if (!useRadius)
+			const bool isAbyss = TJIsAbyss(jewelType);
+			// Both kinds of jewel need a socket, for opposite reasons: a Legion
+			// one to know which radius to walk, an Abyss one because the socket
+			// IS the key its file is indexed by.
+			if (selSocket < 0)
 				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
-				                   u8"深淵珠寶的作用範圍規則未定，搜尋涵蓋全樹中型天賦");
-			else if (selSocket < 0)
-				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
-				                   u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）");
-			ImGui::BeginDisabled(busy || wants.empty() || (useRadius && selSocket < 0));
-			if (ImGui::Button(useRadius ? u8"搜尋此插槽" : u8"搜尋（全樹）", ImVec2(-1, 34 * scale))) {
+				                   isAbyss
+				                   ? u8"請先在中間樹上點擊珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
+				                   : u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）");
+			ImGui::BeginDisabled(busy || wants.empty() || selSocket < 0);
+			if (ImGui::Button(u8"搜尋此插槽", ImVec2(-1, 34 * scale))) {
 				if (ensureBin(jewelType)) {
 					TJSearchQuery q;
 					q.jewelType = jewelType;
@@ -1001,23 +1055,28 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					q.minTotalWeight = minTotalWeight;
 					q.requireAll = requireAll;
 					for (auto& w : wants) q.wants.push_back({ w.en, w.minValue, w.weight });
-					// bind the search to the socket's in-radius nodes — the picked
-					// subset if any node is picked, otherwise all of them. Jewels
-					// with no radius rule leave nodeIds empty = whole tree.
-					std::vector<int> inRad;
-					if (useRadius) inRad = ptData.NodesInRadius(selSocket, 1800.0f);
-					bool anySel = false;
-					for (int idx : inRad)
-						if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
-					for (int idx : inRad) {
-						if (ptData.nodes[idx].kind == kPtSocket) continue;
-						if (anySel && !(idx < (int)ptSelected.size() && ptSelected[idx])) continue;
-						q.nodeIds.push_back(ptData.nodes[idx].id);
-					}
 					detailSeed = -1;
 					status = u8"搜尋中…";
 					searchInputsOpen = false; // collapse inputs, show results
-					job.start(ds.get(), blob.get(), q);
+					if (isAbyss) {
+						// No node list: the container names the conquered passives
+						// itself, so there is nothing for the caller to pre-select.
+						job.startAbyss(ds.get(), blob, *abyssLut, q,
+						               ptData.nodes[selSocket].id, ptKind);
+					} else {
+						// bind the search to the socket's in-radius nodes — the
+						// picked subset if any node is picked, otherwise all.
+						std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
+						bool anySel = false;
+						for (int idx : inRad)
+							if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
+						for (int idx : inRad) {
+							if (ptData.nodes[idx].kind == kPtSocket) continue;
+							if (anySel && !(idx < (int)ptSelected.size() && ptSelected[idx])) continue;
+							q.nodeIds.push_back(ptData.nodes[idx].id);
+						}
+						job.start(ds.get(), blob, q);
+					}
 				} else {
 					status = binErr;
 				}
@@ -1435,27 +1494,57 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				ptTrans.clear();
 				statGroups.clear();
 				emphNode = -1; hlStatGroup = -1;
-				if (selSocket >= 0 && treeRadius) {
-					std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
+				const bool abyssDetail = TJIsAbyss(jewelType);
+				if (selSocket >= 0 && (treeRadius || abyssDetail)) {
+					const bool haveBin = detailSeed >= 0 && ensureBin(jewelType);
+
+					// Where the two engines part company. A Legion jewel is given
+					// a socket and works out which passives are in reach; an Abyss
+					// one is TOLD which passives it took, and they are scattered
+					// across the tree rather than sitting inside a circle. So one
+					// side computes its candidates and the other reads them.
+					std::vector<int> cand;
+					std::map<int, TJAbyssMod> abyssMods; // node index -> modification
+					if (abyssDetail) {
+						std::map<int, TJAbyssMod> byId;
+						if (haveBin && TJAbyssReadSocket(*ds, *blob, *abyssLut,
+						                                 ptData.nodes[selSocket].id,
+						                                 detailSeed, byId)) {
+							for (const auto& kv : byId) {
+								const int idx = ptData.IndexOfId(kv.first);
+								if (idx < 0) continue; // conquered node absent from our tree copy
+								cand.push_back(idx);
+								abyssMods[idx] = kv.second;
+							}
+						}
+					} else {
+						cand = ptData.NodesInRadius(selSocket, 1800.0f);
+					}
+
 					bool anySel = false;
-					for (int idx : inRad)
+					for (int idx : cand)
 						if (idx < (int)ptSelected.size() && ptSelected[idx]) { anySel = true; break; }
 					auto included = [&](int idx) {
 						return !anySel || (idx < (int)ptSelected.size() && ptSelected[idx]);
 					};
-					bool haveBin = detailSeed >= 0 && ensureBin(jewelType);
-					// transforms for ALL in-radius nodes (tooltips + tree highlight)
-					for (int idx : inRad) {
+					for (int idx : cand) {
 						const PtNode& n = ptData.nodes[idx];
 						if (detailSeed < 0 || !haveBin) {
 							ptHi[idx] = kPtHiAffected; // radius-only preview (no seed yet)
 							continue;
 						}
-						const char* nt = n.kind == kPtKeystone ? "Keystone"
-						               : n.kind == kPtNotable ? "Notable" : "Normal";
-						TJTransform t = TJApply(*ds, *blob, jewelType, detailSeed, n.id, nt,
-						                        n.stats, ConquerorType(jewelType), conquerorId,
-						                        n.name);
+						TJTransform t;
+						if (abyssDetail) {
+							auto m = abyssMods.find(idx);
+							if (m == abyssMods.end()) continue;
+							t = TJAbyssApply(*ds, m->second);
+						} else {
+							const char* nt = n.kind == kPtKeystone ? "Keystone"
+							               : n.kind == kPtNotable ? "Notable" : "Normal";
+							t = TJApply(*ds, *blob, jewelType, detailSeed, n.id, nt,
+							            n.stats, ConquerorType(jewelType), conquerorId,
+							            n.name);
+						}
 						if (t.ok && (!t.lines.empty() || t.replaced)) {
 							ptHi[idx] = t.replaced ? kPtHiReplaced : kPtHiAffected;
 							ptTrans[idx] = std::move(t);

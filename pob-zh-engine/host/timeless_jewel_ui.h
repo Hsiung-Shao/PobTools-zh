@@ -8,12 +8,14 @@
 // Blocking window; fully creates and tears down its own GLFW/ImGui/GL context.
 void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale);
 
-// Highest jewel type the calculator offers. The Abyss jewels (7-11) are held
-// back; see the long note at its old home in timeless_jewel_ui.cpp. Shared
-// because --tj-selftest asserts against it: PoB 2.67 wrapped the Abyss lookup
-// tables in a container format this code cannot read, so "those types are not
-// offered" is the property that keeps the wrong answers away from anyone.
-constexpr int kMaxJewelType = 6;
+// Highest jewel type the calculator offers.
+//
+// 7-10 (Tecrod / Ulaman / Kurgal / Amanamu) read PoB's ABYS container and are
+// offered. 11 (Zorath) is not: its ABYN layout is keyed on the character's
+// allocated path from the socket to their class start, and PobTools has no
+// character. Shared because both selftests assert against it — "type 11 is not
+// offered" is what keeps a guessed answer away from anyone.
+constexpr int kMaxJewelType = 10;
 
 // ---- trade site regions -----------------------------------------------------
 //

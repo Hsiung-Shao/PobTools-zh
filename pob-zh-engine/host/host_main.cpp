@@ -312,6 +312,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--abyss-selftest") {
 		return RunAbyssSelfTest(dir);
 	}
+	if (arg1 == L"--abyss") { // --abyss <jewelType> <socketId> <seed>  (socket 0 = list)
+		return RunAbyssCli(dir, _wtoi(arg2.c_str()), _wtoi(arg3.c_str()), _wtoi(arg4.c_str()));
+	}
 
 	// Headless passive-tree data check (node/socket/radius counts; report file).
 	if (arg1 == L"--passive-tree-selftest") {

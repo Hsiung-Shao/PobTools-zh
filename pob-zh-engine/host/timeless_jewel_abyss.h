@@ -113,3 +113,6 @@ std::vector<TJStatTemplate> TJAbyssStatTemplates(const TJDataset& ds, int jewelT
 
 // --abyss-selftest
 int RunAbyssSelfTest(const std::wstring& exeDir);
+
+// --abyss <jewelType> <socketId> <seed>; socketId 0 lists the sockets instead.
+int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int seed);

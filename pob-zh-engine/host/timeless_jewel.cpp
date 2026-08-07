@@ -1,4 +1,5 @@
 #include "timeless_jewel.h"
+#include "timeless_jewel_abyss.h" // engine boundary assertions in the selftest
 #include "launcher_config.h" // FindPoe1Dir
 #include "passive_tree_data.h" // node names for the --tj-verify dump
 
@@ -362,6 +363,30 @@ const TJFlavour kFlavour[] = {
 	{ "eternal",  "Commissioned %d coins to commemorate %s",                        "Eternal Empire" },
 	{ "kalguur",  "Remembrancing %d songworthy deeds by the line of %s",            "Kalguur" },
 };
+
+// The Abyss jewels are shaped differently: an Eye Jewel base rather than
+// "Timeless Jewel", no radius line, and "Passives affected" instead of
+// "Passives in radius". Transcribed from PoB's own
+// TimelessJewelListControl.lua, which is the text PoB feeds to its own parser —
+// so anything accepted there is accepted here.
+struct TJAbyssItem {
+	int jewelType;
+	const char* name;     // unique name
+	const char* base;     // base item type
+	const char* seedLine; // one %d (seed)
+};
+const TJAbyssItem kAbyssItems[] = {
+	{ 7,  "Festering Vengeance",    "Murderous Eye Jewel",
+	      "Subjugating %d souls in the thrall of Tecrod" },
+	{ 8,  "Extinguishing Grasp",    "Searching Eye Jewel",
+	      "Subjugating %d souls in the thrall of Ulaman" },
+	{ 9,  "Baleful Dominion",       "Hypnotic Eye Jewel",
+	      "Subjugating %d souls in the thrall of Kurgal" },
+	{ 10, "Destructive Aspiration", "Ghastly Eye Jewel",
+	      "Subjugating %d souls in the thrall of Amanamu" },
+	{ 11, "Reclaimed Malevolence",  "Assembled Eye Jewel",
+	      "Binding %d souls to phylacteries to sustain Zorath" },
+};
 } // namespace
 
 std::string TJItemText(const TJDataset& ds, int jewelType, int conqIndex, int seed)
@@ -372,9 +397,25 @@ std::string TJItemText(const TJDataset& ds, int jewelType, int conqIndex, int se
 	if (itType == ds.types.end() || itFam == ds.conqType.end() || itConq == ds.conquerors.end())
 		return std::string();
 	if (conqIndex < 0 || conqIndex >= (int)itConq->second.size()) return std::string();
+
+	for (const auto& a : kAbyssItems) {
+		if (a.jewelType != jewelType) continue;
+		char seedLine[160];
+		snprintf(seedLine, sizeof(seedLine), a.seedLine, seed);
+		std::string out = "Item Class: Jewels\nRarity: Unique\n";
+		out += std::string(a.name) + "\n" + a.base + "\n";
+		out += "--------\nLimited to: 1 Historic\n";
+		out += "--------\n";
+		out += seedLine;
+		out += "\nPassives affected are Conquered by the Abyssal\nHistoric\n";
+		out += "--------\nPlace into an allocated Jewel Socket on the Passive Skill Tree."
+		       " Right click to remove from the Socket.\n";
+		return out;
+	}
+
 	const TJFlavour* fl = nullptr;
 	for (const auto& f : kFlavour) if (itFam->second == f.family) { fl = &f; break; }
-	if (!fl) return std::string(); // Abyss jewels have no PoB item definition yet
+	if (!fl) return std::string();
 
 	char line[256];
 	snprintf(line, sizeof(line), fl->seedLine, seed, itConq->second[conqIndex].name.c_str());
@@ -1171,67 +1212,34 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	// ascendancy section). See PoB's Modules/DataAbyssJewelLookUpTableHelper.lua.
 	//
 	// Detected by its magic, not by size: a size check only says "not what I
-	// expected", while the magic says what it actually is. Everything below
-	// reads a flat notable*seed table from offset 0, so against a container it
+	// expected", while the magic says what it actually is. TJReadLUT reads a
+	// flat notable*seed table from offset 0, so pointing it at a container
 	// returns bytes lifted out of the header and the offset tables -- answers
-	// that look like real stat ids and are wrong. Re-pinning them to whatever
-	// comes out now would be recording the wrong answer as the expected one.
+	// that look like real stat ids and are wrong.
 	//
-	// So when the container is present the decode checks do not run, and what
-	// is asserted instead is the property that keeps those wrong answers away
-	// from anyone: types 7-11 are not offered. That fails the moment someone
-	// raises kMaxJewelType without teaching TJReadLUT the container.
+	// Reading these files is timeless_jewel_abyss.cpp's job and
+	// --abyss-selftest's to check. What belongs here is the boundary between
+	// the two engines, so that nothing quietly sends an Abyss file through the
+	// Legion reader again.
 	const std::string magic = abyss.substr(0, (std::min)((size_t)4, abyss.size()));
-	if (magic == "ABYS" || magic == "ABYN") {
-		check(kMaxJewelType == 6,
-		      "abyss LUT is PoB's new container format, so types 7-11 stay hidden",
-		      magic + " container -- teach TJReadLUT this layout before raising kMaxJewelType");
-	} else {
-		const size_t want = (size_t)(8000 - 100 + 1) * (size_t)ds.sizeNotable;
-		check(abyss.size() == want, "AbyssTecrod LUT size",
-		      std::to_string(abyss.size()) + " want " + std::to_string(want));
-		// byte < additionsOffset -> the notable gains an addition (not a replace)
-		auto lut = TJReadLUT(ds, abyss, 7, 100, 6);
-		bool ok = lut.size() == 1 && lut[0] == 125;
-		const TJEntry* n = ok ? addition_at(ds, lut[0]) : nullptr;
-		check(ok && n && n->id == "abyss_murderous_notable_30", "Tecrod seed 100 node 6",
-		      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
-		TJTransform a = TJApply(ds, abyss, 7, 100, 6, "Notable", {});
-		check(a.ok && !a.lines.empty() &&
-		      a.lines[0] == "(12-13) to 0 Added Fire Damage with Dagger Attacks",
-		      "TJApply Tecrod 100 node6 stat line (en)",
-		      a.lines.empty() ? a.note : a.lines[0]);
-		check(!a.linesZh.empty() && a.linesZh[0] == u8"匕首攻擊附加 (12-13) 至 0 火焰傷害",
-		      "TJApply Tecrod 100 node6 stat line (zh)",
-		      a.linesZh.empty() ? "(no zh)" : a.linesZh[0]);
-		// keystone lookup must fall back to the unsuffixed abyss id
-		TJTransform k = TJApply(ds, abyss, 7, 100, 6, "Keystone", {}, "abyss_murderous", "");
-		check(k.ok && k.newName == "Overwhelming Hate", "abyss keystone replace",
-		      k.ok ? k.newName + " / " + k.newNameZh : k.note);
-		check(k.newNameZh == u8"壓倒性恨意", "abyss keystone zh name", k.newNameZh);
+	check(magic == "ABYS", "Tecrod ships as an ABYS container", magic);
+	check(TJIsAbyss(7) && TJIsAbyss(11) && !TJIsAbyss(6),
+	      "the Abyss engine claims exactly types 7-11");
+	check(kMaxJewelType == 10,
+	      "the calculator offers 7-10 and still withholds Zorath (11)",
+	      "kMaxJewelType = " + std::to_string(kMaxJewelType));
+	check(TJAbyssUsable(10) && !TJAbyssUsable(11),
+	      "Zorath is refused by the engine too, not only hidden by the UI");
 
-		// the affix pool must be filtered to this jewel, and a batch search over
-		// it must find the seed we decoded by hand above
-		auto tmpl = TJStatTemplates(ds, 7);
-		check(tmpl.size() > 50, "abyss stat template list", std::to_string(tmpl.size()));
-		std::string wantTmpl; // take the template as the picker would hand it over
-		for (const auto& t : tmpl)
-			if (t.en.find("Damage over Time while holding a Shield") != std::string::npos) {
-				wantTmpl = t.en;
-				break;
-			}
-		check(!wantTmpl.empty(), "abyss template lookup", wantTmpl);
-		TJSearchQuery q;
-		q.jewelType = 7;
-		q.scope = 1; // notables
-		q.wants.push_back({ wantTmpl, 0.0, 1.0 });
-		// cap above the seed count (7901) so a hit cannot be ranked out of the list
-		auto hits = TJSearch(ds, abyss, q, 9000, nullptr);
-		bool has8000 = false;
-		for (const auto& h : hits) if (h.seed == 8000) has8000 = true;
-		check(!hits.empty() && has8000, "search Tecrod finds seed 8000",
-		      std::to_string(hits.size()) + " hits");
-	}
+	// These do not touch the blob: TJApply's keystone branch answers from the
+	// dataset and returns before any lookup, and the template list never reads
+	// a LUT at all. So they still say something true about the Abyss data.
+	TJTransform k = TJApply(ds, abyss, 7, 100, 6, "Keystone", {}, "abyss_murderous", "");
+	check(k.ok && k.newName == "Overwhelming Hate", "abyss keystone replace",
+	      k.ok ? k.newName + " / " + k.newNameZh : k.note);
+	check(k.newNameZh == u8"壓倒性恨意", "abyss keystone zh name", k.newNameZh);
+	auto tmpl = TJStatTemplates(ds, 7);
+	check(tmpl.size() > 50, "abyss stat template list", std::to_string(tmpl.size()));
 	} else {
 		check(false, "load AbyssTecrod LUT", err);
 	}
@@ -1292,8 +1300,32 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			      "type=" + std::to_string(back.jewelType) + " seed=" + std::to_string(back.seed) +
 			      (hasLine ? "" : " [seed line wrong]") + (hasConq ? "" : " [no conquered line]"));
 		}
-		// Abyss jewels have no PoB item definition, so we must not invent one.
-		check(TJItemText(ds, 7, 0, 5000).empty(), "no item text for Abyss jewels");
+		// Abyss jewels word their item text differently: an Eye Jewel base rather
+		// than "Timeless Jewel", no radius line, and "Passives affected" instead
+		// of "Passives in radius". Transcribed from PoB's own
+		// TimelessJewelListControl.lua, so a round-trip through our own parser is
+		// the weaker half of the claim -- the wording is the part that must be
+		// PoB's, which is why the base line is asserted literally.
+		{
+			struct AC { int type; const char* base; const char* needle; };
+			const AC acases[] = {
+				{ 7,  "Murderous Eye Jewel", "Subjugating 5000 souls in the thrall of Tecrod" },
+				{ 9,  "Hypnotic Eye Jewel",  "Subjugating 5000 souls in the thrall of Kurgal" },
+				{ 11, "Assembled Eye Jewel",
+				      "Binding 5000 souls to phylacteries to sustain Zorath" },
+			};
+			for (const AC& c : acases) {
+				const std::string txt = TJItemText(ds, c.type, 0, 5000);
+				TJPaste back = TJParsePaste(ds, txt);
+				check(txt.find(c.needle) != std::string::npos &&
+				      txt.find(c.base) != std::string::npos &&
+				      txt.find("Passives affected are Conquered by the Abyssal") != std::string::npos &&
+				      txt.find("Radius:") == std::string::npos &&
+				      back.jewelType == c.type && back.seed == 5000,
+				      "abyss item text round-trip type " + std::to_string(c.type),
+				      "type=" + std::to_string(back.jewelType) + " seed=" + std::to_string(back.seed));
+			}
+		}
 	}
 
 	// Regression: an addition must leave the node itself alone (PoB appends the
@@ -1362,24 +1394,17 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	std::string zorath;
 	if (TJLoadBin(exeDir, ds, 11, zorath, &err)) {
 		// Zorath ships as "ABYN": one block per passive node plus an "ASCS"
-		// section, and which nodes it even has an answer for depends on the
-		// allocated path from the socket to the class start -- there is no
-		// seed*index address to compute. Same reasoning as the ABYS block above:
-		// with a container present the decode check is not re-pinned, the
-		// hidden-ness of the type is what gets asserted.
+		// section, and which nodes it has an answer for depends on the allocated
+		// path from the socket to the class start. PobTools has no character, so
+		// this one stays out of the calculator even though its container parses
+		// -- and staying out is the property worth pinning, because the day
+		// someone raises kMaxJewelType to 11 the UI would start showing answers
+		// derived from a path nobody supplied.
 		const std::string zmagic = zorath.substr(0, (std::min)((size_t)4, zorath.size()));
-		if (zmagic == "ABYS" || zmagic == "ABYN") {
-			check(kMaxJewelType == 6,
-			      "Zorath LUT is PoB's new container format, so type 11 stays hidden",
-			      zmagic + " container -- needs the allocated path, which PobTools does not track");
-		} else {
-			// type 11 is the only Abyss LUT with a non-identity localId->globalId map
-			auto lut = TJReadLUT(ds, zorath, 11, 100, 6);
-			const TJEntry* n = lut.size() == 1 ? addition_at(ds, lut[0]) : nullptr;
-			check(lut.size() == 1 && lut[0] == 314 && n && n->id == "abyss_special_notable_53",
-			      "Zorath seed 100 node 6 (L2G 52->314)",
-			      lut.empty() ? "(none)" : std::to_string(lut[0]) + " " + (n ? n->id : "?"));
-		}
+		check(zmagic == "ABYN", "Zorath ships as an ABYN container", zmagic);
+		check(kMaxJewelType < 11 && !TJAbyssUsable(11),
+		      "Zorath is withheld by both the UI and the engine",
+		      "kMaxJewelType = " + std::to_string(kMaxJewelType));
 	} else {
 		check(false, "load AbyssZorath LUT", err);
 	}
