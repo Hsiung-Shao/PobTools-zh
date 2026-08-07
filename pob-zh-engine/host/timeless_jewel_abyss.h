@@ -57,9 +57,13 @@ struct TJAbyssLUT {
 	std::map<int, std::vector<size_t> > seedOffsets;
 };
 
-// Types this file handles. 7-10 are usable; 11 parses but has no caller.
+// Types this file handles.
 bool TJIsAbyss(int jewelType);
-bool TJAbyssUsable(int jewelType); // 7-10 only
+bool TJAbyssUsable(int jewelType);
+
+// Zorath (11) is the one keyed by passive node rather than by socket. Callers
+// have to treat it differently, so ask rather than comparing to 11 everywhere.
+bool TJIsZorath(int jewelType);
 
 // Parse the container header and index its blocks. Fails loudly rather than
 // half-working: a header that does not match `jewelType` is a mismatched or
@@ -75,6 +79,33 @@ int TJAbyssSeedIndex(const TJAbyssLUT& lut, int seed);
 bool TJAbyssReadSocket(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
                        int socketId, int seed, std::map<int, TJAbyssMod>& out);
 
+// ---- Zorath (ABYN) ------------------------------------------------------------
+//
+// This file answers a different question. Measured on the real container: for
+// EVERY seed, EVERY one of its 2143 passive blocks holds a non-empty
+// modification. So the seed decides what each passive would become, and the
+// character's allocated path from the socket to their class start decides which
+// of those actually apply. PobTools has no character, so it cannot name that
+// path — but "what would this passive become" is exact for any passive asked.
+//
+// That is why the socket is only a starting point to look around from here,
+// where for types 7-10 it is the lookup key.
+
+// What one passive becomes under this seed. Exact.
+bool TJAbyssReadNode(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                     int nodeId, int seed, TJAbyssMod& out);
+
+// The same for a set of passives, skipping any the file has no block for.
+bool TJAbyssReadNodes(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                      const std::vector<int>& nodeIds, int seed,
+                      std::map<int, TJAbyssMod>& out);
+
+// The passives each Ascendancy gets under this seed. This part needs no path,
+// so unlike everything else about Zorath it is exact and complete. Keyed by the
+// Ascendancy's English name as the file stores it.
+bool TJAbyssReadAscendancies(const std::string& blob, TJAbyssLUT& lut, int seed,
+                             std::map<std::string, std::vector<int> >& out);
+
 // The value to show for one stat of a component. A stored negative is shown
 // positive when the stat's own range is non-negative, because those templates
 // already carry the direction in the word "reduced" -- printing "-16% reduced"
@@ -87,6 +118,13 @@ TJTransform TJAbyssApply(const TJDataset& ds, const TJAbyssMod& mod);
 
 // Rank seeds for one socket, using the same wanted-stat rules as TJSearch so a
 // hit means the same thing in both engines.
+//
+// ABYS (7-10): the socket's own block is read and `q.nodeIds` is ignored — the
+// file names the conquered passives, so there is nothing for a caller to
+// choose. ABYN (11): `q.nodeIds` IS the candidate set, because which passives
+// count depends on a path PobTools cannot know; the caller decides what to
+// judge the seed on, and an empty list therefore returns nothing rather than
+// silently scoring the whole tree.
 //
 // `nodeKind` maps a passive id to passive_tree_data.h's kPt* value and decides
 // what q.scope means. It is not optional in practice: the Abyss walk conquers

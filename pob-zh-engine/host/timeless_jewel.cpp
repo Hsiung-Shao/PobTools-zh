@@ -1225,11 +1225,8 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	check(magic == "ABYS", "Tecrod ships as an ABYS container", magic);
 	check(TJIsAbyss(7) && TJIsAbyss(11) && !TJIsAbyss(6),
 	      "the Abyss engine claims exactly types 7-11");
-	check(kMaxJewelType == 10,
-	      "the calculator offers 7-10 and still withholds Zorath (11)",
+	check(kMaxJewelType == 11, "the calculator offers all five Abyss jewels",
 	      "kMaxJewelType = " + std::to_string(kMaxJewelType));
-	check(TJAbyssUsable(10) && !TJAbyssUsable(11),
-	      "Zorath is refused by the engine too, not only hidden by the UI");
 
 	// These do not touch the blob: TJApply's keystone branch answers from the
 	// dataset and returns before any lookup, and the template list never reads
@@ -1394,17 +1391,16 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	std::string zorath;
 	if (TJLoadBin(exeDir, ds, 11, zorath, &err)) {
 		// Zorath ships as "ABYN": one block per passive node plus an "ASCS"
-		// section, and which nodes it has an answer for depends on the allocated
-		// path from the socket to the class start. PobTools has no character, so
-		// this one stays out of the calculator even though its container parses
-		// -- and staying out is the property worth pinning, because the day
-		// someone raises kMaxJewelType to 11 the UI would start showing answers
-		// derived from a path nobody supplied.
+		// section. Every passive has an answer for every seed; which of them
+		// apply follows the allocated path from the socket to the class start,
+		// which PobTools cannot know. Offered anyway on the user's call, with the
+		// estimate labelled where it is shown. The reader's own checks live in
+		// --abyss-selftest; what is pinned here is only the boundary.
 		const std::string zmagic = zorath.substr(0, (std::min)((size_t)4, zorath.size()));
 		check(zmagic == "ABYN", "Zorath ships as an ABYN container", zmagic);
-		check(kMaxJewelType < 11 && !TJAbyssUsable(11),
-		      "Zorath is withheld by both the UI and the engine",
-		      "kMaxJewelType = " + std::to_string(kMaxJewelType));
+		check(TJIsZorath(11) && TJAbyssUsable(11),
+		      "Zorath is offered, and what it cannot know is labelled in the window"
+		      " rather than hidden behind a constant");
 	} else {
 		check(false, "load AbyssZorath LUT", err);
 	}

@@ -98,7 +98,8 @@ bool read_modification(const TJDataset& ds, const std::string& b, size_t& o,
 } // namespace
 
 bool TJIsAbyss(int jewelType) { return jewelType >= 7 && jewelType <= 11; }
-bool TJAbyssUsable(int jewelType) { return jewelType >= 7 && jewelType <= 10; }
+bool TJAbyssUsable(int jewelType) { return jewelType >= 7 && jewelType <= 11; }
+bool TJIsZorath(int jewelType) { return jewelType == 11; }
 
 // ---- container parse ----------------------------------------------------------
 
@@ -250,6 +251,65 @@ bool TJAbyssReadSocket(const TJDataset& ds, const std::string& blob, TJAbyssLUT&
 	return true;
 }
 
+bool TJAbyssReadNode(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                     int nodeId, int seed, TJAbyssMod& out)
+{
+	out.clear();
+	if (!lut.ok || lut.fmt != "ABYN") return false;
+	const int si = TJAbyssSeedIndex(lut, seed);
+	if (si < 0) return false;
+	const std::vector<size_t>* offs = block_seed_offsets(blob, lut, nodeId, skip_modification);
+	if (!offs || si >= (int)offs->size()) return false;
+	size_t o = (*offs)[(size_t)si];
+	return read_modification(ds, blob, o, lut.jewelType, out);
+}
+
+bool TJAbyssReadNodes(const TJDataset& ds, const std::string& blob, TJAbyssLUT& lut,
+                      const std::vector<int>& nodeIds, int seed,
+                      std::map<int, TJAbyssMod>& out)
+{
+	out.clear();
+	if (!lut.ok || lut.fmt != "ABYN") return false;
+	if (TJAbyssSeedIndex(lut, seed) < 0) return false;
+	for (size_t i = 0; i < nodeIds.size(); i++) {
+		// A passive the file has no block for is not an error: the tree carries
+		// sockets and class starts this jewel never touches.
+		if (lut.blockOffsets.find(nodeIds[i]) == lut.blockOffsets.end()) continue;
+		TJAbyssMod mod;
+		if (TJAbyssReadNode(ds, blob, lut, nodeIds[i], seed, mod) && !mod.empty())
+			out[nodeIds[i]] = mod;
+	}
+	return true;
+}
+
+bool TJAbyssReadAscendancies(const std::string& blob, TJAbyssLUT& lut, int seed,
+                             std::map<std::string, std::vector<int> >& out)
+{
+	out.clear();
+	if (!lut.ok || lut.fmt != "ABYN") return false;
+	const int si = TJAbyssSeedIndex(lut, seed);
+	if (si < 0) return false;
+	for (std::map<std::string, size_t>::const_iterator it = lut.ascOffsets.begin();
+	     it != lut.ascOffsets.end(); ++it) {
+		// Ascendancy blocks are keyed by name, not by an int, so they cannot use
+		// the same offset cache as the node blocks. They are 21 short records
+		// each, so walking them is cheap enough not to need one.
+		size_t o = it->second;
+		for (int s = 0; s < si; s++)
+			if (!skip_ascendancy_record(blob, o)) return false;
+		int selected = 0;
+		if (!rd_u8(blob, o, selected)) return false;
+		std::vector<int> ids;
+		for (int k = 0; k < selected; k++) {
+			int nid = 0;
+			if (!rd_u16(blob, o, nid)) return false;
+			ids.push_back(nid);
+		}
+		out[it->first] = ids;
+	}
+	return true;
+}
+
 double TJAbyssRollFor(const TJAbyssComponent& c, const TJStatMod& m)
 {
 	const int i = m.index - 1;
@@ -342,14 +402,26 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
                                      const volatile bool* cancel)
 {
 	std::vector<TJSeedHit> hits;
-	if (!lut.ok || lut.fmt != "ABYS" || q.wants.empty()) return hits;
-	if (lut.blockOffsets.find(socketId) == lut.blockOffsets.end()) return hits;
+	if (!lut.ok || q.wants.empty()) return hits;
+	const bool byNode = (lut.fmt == "ABYN");
+	if (byNode) {
+		// Zorath scores whatever the caller nominated. Refusing an empty list is
+		// the point: "no candidates" means the caller has not said what the seed
+		// should be judged on, and scoring every passive in the tree instead
+		// would answer a question nobody asked.
+		if (q.nodeIds.empty()) return hits;
+	} else if (lut.fmt != "ABYS" || lut.blockOffsets.find(socketId) == lut.blockOffsets.end()) {
+		return hits;
+	}
 
 	const TJWantMatcher matcher(q.wants);
 	std::map<int, TJAbyssMod> affected;
 	for (int seed = lut.seedMin; seed <= lut.seedMax; seed += lut.seedInc) {
 		if (cancel && *cancel) break;
-		if (!TJAbyssReadSocket(ds, blob, lut, socketId, seed, affected)) continue;
+		const bool read = byNode
+			? TJAbyssReadNodes(ds, blob, lut, q.nodeIds, seed, affected)
+			: TJAbyssReadSocket(ds, blob, lut, socketId, seed, affected);
+		if (!read) continue;
 
 		double total = 0;
 		int matches = 0;
@@ -456,14 +528,75 @@ int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int see
 	}
 
 	std::map<int, TJAbyssMod> got;
-	if (!TJAbyssReadSocket(ds, blob, lut, socketId, seed, got)) {
+	if (TJIsZorath(jewelType)) {
+		// Zorath is keyed by passive, not by socket, so "what does this socket
+		// take" has no answer. Report what the seed does to the passives around
+		// the socket instead — and say that is what it is.
+		if (!haveTree) {
+			emit("Zorath needs the passive tree to pick the passives around a socket");
+			return finish(1);
+		}
+		const int sIdx = tree.IndexOfId(socketId);
+		if (sIdx < 0) {
+			emit("socket " + std::to_string(socketId) + " is not in the tree");
+			return finish(1);
+		}
+		std::vector<int> ids;
+		// not `near`: windows.h still defines that as a macro
+		std::vector<int> around = tree.NodesInRadius(sIdx, 1800.0f);
+		for (size_t i = 0; i < around.size(); i++)
+			ids.push_back(tree.nodes[(size_t)around[i]].id);
+		if (!TJAbyssReadNodes(ds, blob, lut, ids, seed, got)) {
+			emit("no record for seed " + std::to_string(seed));
+			return finish(1);
+		}
+		emit((ds.types.count(jewelType) ? ds.types.at(jewelType) : "?") +
+		     "  seed " + std::to_string(seed) + "  -> " + std::to_string(got.size()) +
+		     " passives near socket " + std::to_string(socketId) +
+		     " (ESTIMATE: which ones apply follows the character's allocated path)");
+
+		std::map<std::string, std::vector<int> > asc;
+		if (TJAbyssReadAscendancies(blob, lut, seed, asc)) {
+			emit("  -- Ascendancy picks for this seed (exact; no path involved) --");
+			for (std::map<std::string, std::vector<int> >::const_iterator a = asc.begin();
+			     a != asc.end(); ++a) {
+				std::string line = "  " + a->first + ": ";
+				if (a->second.empty()) {
+					line += "(none)";
+				} else {
+					for (size_t i = 0; i < a->second.size(); i++) {
+						// The Ascendancy notable's own name is not available:
+						// PobTools' tree deliberately leaves Ascendancy nodes out.
+						// What it BECOMES is, and that is the part being chosen.
+						if (i) line += " ; ";
+						line += "#" + std::to_string(a->second[i]) + " -> ";
+						TJAbyssMod m;
+						if (!TJAbyssReadNode(ds, blob, lut, a->second[i], seed, m)) {
+							line += "(no block)";
+							continue;
+						}
+						TJTransform t = TJAbyssApply(ds, m);
+						if (t.replaced) line += (t.newNameZh.empty() ? t.newName : t.newNameZh) + " ";
+						for (size_t k = 0; k < t.lines.size(); k++) {
+							const std::string& z = (k < t.linesZh.size() && !t.linesZh[k].empty())
+							                       ? t.linesZh[k] : t.lines[k];
+							line += (k ? " / " : "") + z;
+						}
+					}
+				}
+				emit(line);
+			}
+			emit("  -- passives near the socket --");
+		}
+	} else if (!TJAbyssReadSocket(ds, blob, lut, socketId, seed, got)) {
 		emit("no record for socket " + std::to_string(socketId) +
 		     " seed " + std::to_string(seed));
 		return finish(1);
+	} else {
+		emit((ds.types.count(jewelType) ? ds.types.at(jewelType) : "?") +
+		     "  socket " + std::to_string(socketId) + "  seed " + std::to_string(seed) +
+		     "  -> " + std::to_string(got.size()) + " conquered passives");
 	}
-	emit((ds.types.count(jewelType) ? ds.types.at(jewelType) : "?") +
-	     "  socket " + std::to_string(socketId) + "  seed " + std::to_string(seed) +
-	     "  -> " + std::to_string(got.size()) + " conquered passives");
 	for (std::map<int, TJAbyssMod>::const_iterator it = got.begin(); it != got.end(); ++it) {
 		std::string name = std::to_string(it->first);
 		if (haveTree) {
@@ -529,8 +662,10 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 
 	// A1 the type gate: 7-10 usable, 11 parsed but not offered.
 	check(TJIsAbyss(7) && TJIsAbyss(11) && !TJIsAbyss(6), "types 7-11 are the Abyss ones");
-	check(TJAbyssUsable(10) && !TJAbyssUsable(11) && !TJAbyssUsable(6),
-	      "only 7-10 are usable; Zorath needs an allocated path PobTools does not track");
+	check(TJAbyssUsable(10) && TJAbyssUsable(11) && !TJAbyssUsable(6),
+	      "all five Abyss jewels are readable");
+	check(TJIsZorath(11) && !TJIsZorath(10),
+	      "only Zorath is keyed by passive node rather than by socket");
 
 	// A2 the "g"-format regression that the Abyss rolls exposed. Life regen is
 	// stored per minute; without the scaling this prints 60 instead of 1.
@@ -811,8 +946,9 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// A11 Zorath is a different container and is parsed, but stays unusable
-	// until PobTools can supply the allocated path its layout is keyed on.
+	// A11 Zorath. Its container answers a different question, so it gets a
+	// different set of checks: what one passive becomes is exact, which passives
+	// apply is not knowable here, and the Ascendancy pick needs no path at all.
 	{
 		std::string zorath;
 		TJAbyssLUT lz;
@@ -828,9 +964,100 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      lz.ascOffsets.count("Deadeye"),
 			      "Zorath carries a per-Ascendancy section",
 			      std::to_string(lz.ascOffsets.size()) + " ascendancies");
+
 			std::map<int, TJAbyssMod> none;
 			check(!TJAbyssReadSocket(ds, zorath, lz, 2491, 100, none) && none.empty(),
 			      "the socket reader refuses an ABYN container rather than misreading it");
+
+			// A11a one passive, exactly. Same value the pre-container selftest
+			// pinned for (seed 100, node 6) — the container reorganised the file
+			// without changing the answer.
+			TJAbyssMod mod;
+			if (!TJAbyssReadNode(ds, zorath, lz, 6, 100, mod) || mod.size() != 1) {
+				check(false, "read Zorath node 6 seed 100");
+			} else {
+				const TJEntry* e = TJAdditionAt(ds, mod[0].globalId);
+				check(mod[0].type == 2 && mod[0].globalId == 314 && e &&
+				      e->id == "abyss_special_notable_53",
+				      "Zorath node 6 seed 100 maps localId 52 -> global 314",
+				      e ? e->id : "unresolved");
+				TJTransform t = TJAbyssApply(ds, mod);
+				check(t.ok && !t.replaced && t.lines.size() == 1 &&
+				      t.lines[0] == "25% increased Evasion Rating while moving",
+				      "and rolls 25 into its own range", join_lines(t.lines));
+			}
+
+			// A11b every passive has an answer for every seed. This is what makes
+			// the socket a place to look rather than a lookup key, so it is worth
+			// asserting rather than remembering.
+			{
+				int have = 0;
+				const int probe[] = { 6, 94, 127, 223, 224, 238 };
+				for (size_t i = 0; i < sizeof(probe) / sizeof(probe[0]); i++) {
+					TJAbyssMod m;
+					if (TJAbyssReadNode(ds, zorath, lz, probe[i], 4096, m) && !m.empty()) have++;
+				}
+				check(have == 6, "every sampled passive has a modification under one seed",
+				      std::to_string(have) + "/6");
+			}
+
+			// A11c a passive the file has no block for is skipped, not invented.
+			{
+				std::vector<int> ids;
+				ids.push_back(6);
+				ids.push_back(999999);
+				std::map<int, TJAbyssMod> got;
+				check(TJAbyssReadNodes(ds, zorath, lz, ids, 100, got) && got.size() == 1 &&
+				      got.count(6) == 1,
+				      "an unknown passive id is skipped rather than read from elsewhere",
+				      std::to_string(got.size()) + " of 2 returned");
+			}
+
+			// A11d the Ascendancy pick. No path is involved, so this half is
+			// exact. Ascendant getting nothing is the discriminating case: all of
+			// its notables cost five points and the jewel cannot rewrite one
+			// costing four or more, which is also what Parazeya's in-game
+			// observations show.
+			std::map<std::string, std::vector<int> > a100, a368;
+			if (!TJAbyssReadAscendancies(zorath, lz, 100, a100) ||
+			    !TJAbyssReadAscendancies(zorath, lz, 368, a368)) {
+				check(false, "read the Ascendancy section");
+			} else {
+				check(a100.size() == 21, "every Ascendancy has an entry",
+				      std::to_string(a100.size()));
+				check(a100.count("Ascendant") && a100["Ascendant"].empty() &&
+				      a368["Ascendant"].empty(),
+				      "Ascendant is picked for nothing — its notables all cost 5 points");
+				check(a100.count("Deadeye") && a100["Deadeye"].size() == 1 &&
+				      a100["Deadeye"][0] == 2872,
+				      "Deadeye seed 100 picks node 2872",
+				      a100["Deadeye"].empty() ? "(none)" : std::to_string(a100["Deadeye"][0]));
+				// Anti-vacuity: if the picks never moved with the seed, the reader
+				// could be returning the same record every time and still "pass".
+				check(a100["Berserker"] != a368["Berserker"],
+				      "a different seed picks a different Ascendancy notable");
+			}
+
+			// A11e the search must refuse to guess. With no candidate passives it
+			// has not been told what to judge, and scoring the whole tree instead
+			// would answer a question nobody asked.
+			{
+				TJSearchQuery qz;
+				qz.jewelType = 11;
+				qz.scope = 0;
+				qz.wants.push_back({ "#% increased Attack Speed", 0.0, 1.0 });
+				check(TJAbyssSearch(ds, zorath, lz, qz, 2491, 10, &nodeKind, nullptr).empty(),
+				      "a Zorath search with no candidate passives returns nothing");
+
+				qz.nodeIds.push_back(6);
+				qz.nodeIds.push_back(94);
+				qz.nodeIds.push_back(127);
+				qz.nodeIds.push_back(223);
+				std::vector<TJSeedHit> zh =
+					TJAbyssSearch(ds, zorath, lz, qz, 2491, 10, &nodeKind, nullptr);
+				check(!zh.empty(), "given passives to judge, it finds seeds",
+				      std::to_string(zh.size()) + " hits");
+			}
 		}
 	}
 

@@ -10,12 +10,14 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale);
 
 // Highest jewel type the calculator offers.
 //
-// 7-10 (Tecrod / Ulaman / Kurgal / Amanamu) read PoB's ABYS container and are
-// offered. 11 (Zorath) is not: its ABYN layout is keyed on the character's
-// allocated path from the socket to their class start, and PobTools has no
-// character. Shared because both selftests assert against it — "type 11 is not
-// offered" is what keeps a guessed answer away from anyone.
-constexpr int kMaxJewelType = 10;
+// 7-10 (Tecrod / Ulaman / Kurgal / Amanamu) read PoB's ABYS container, keyed by
+// jewel socket, and are exact. 11 (Zorath) reads ABYN, which answers "what does
+// THIS passive become" for every passive; which of those apply depends on the
+// character's allocated path from the socket to their class start, and PobTools
+// has no character. It is offered anyway, on the user's call (2026-08-07), with
+// the estimate labelled in the window — the seed's effect on any single passive
+// is exact, and its Ascendancy pick is exact and path-independent.
+constexpr int kMaxJewelType = 11;
 
 // ---- trade site regions -----------------------------------------------------
 //

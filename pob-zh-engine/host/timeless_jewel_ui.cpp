@@ -891,6 +891,23 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			ImGui::EndCombo();
 		}
 
+		// Standing caveat for the Abyss jewels. They are new in 3.29 and there is
+		// far less community data behind them than behind the Legion ones: the
+		// reader was checked against PoB's own container and an independent
+		// implementation of the game's algorithm, but only 42 in-game recordings
+		// exist to check either of those against. Say so where the choice is
+		// made, not buried in a tooltip.
+		if (TJIsAbyss(jewelType)) {
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.70f, 0.40f, 1.0f));
+			ImGui::TextWrapped(u8"※ 深淵珠寶是 3.29 新增，目前可對照的實測樣本仍少，"
+			                   u8"結果無法像軍團珠寶那樣完整驗證，請以遊戲內實際結果為準。");
+			if (TJIsZorath(jewelType))
+				ImGui::TextWrapped(u8"※ 重奪惡意另外還取決於你從插槽走到職業起點的「已配點路徑」，"
+				                   u8"本工具沒有角色資料 —— 請隨意點一個插槽，用它周邊的天賦來判斷這顆種子。"
+				                   u8"單一天賦會變成什麼、以及昇華天賦的選擇，這兩項是準確的。");
+			ImGui::PopStyleColor();
+		}
+
 		// jewel changed (combo or paste): the affix pool is jewel-specific
 		if (jewelType != templatesFor) {
 			templates = TJStatTemplates(*ds, jewelType);
@@ -1036,19 +1053,22 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 			// --- search ---
 			bool busy = job.running.load();
-			const bool useRadius = JewelUsesRadius(jewelType);
 			const bool isAbyss = TJIsAbyss(jewelType);
-			// Both kinds of jewel need a socket, for opposite reasons: a Legion
-			// one to know which radius to walk, an Abyss one because the socket
-			// IS the key its file is indexed by.
+			const bool isZorath = TJIsZorath(jewelType);
+			// Every jewel needs a socket, for three different reasons: a Legion
+			// one to know which radius to walk, types 7-10 because the socket IS
+			// the key their file is indexed by, and Zorath because it is the
+			// place the user is asking us to look around.
 			if (selSocket < 0) {
 				// Wrapped, not TextColored: the left column is 430px and this
-				// sentence does not fit on one line in either wording — the
-				// Legion one was already running off the edge.
+				// sentence does not fit on one line in any wording — the Legion
+				// one was already running off the edge.
+				const char* hint =
+					isZorath ? u8"請先在中間樹上點擊珠寶插槽（隨意一個即可，用來決定要看哪一帶的天賦）"
+					: isAbyss ? u8"請先在中間樹上點擊珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
+					          : u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）";
 				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.70f, 0.40f, 1.0f));
-				ImGui::TextWrapped("%s", isAbyss
-				                   ? u8"請先在中間樹上點擊珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
-				                   : u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）");
+				ImGui::TextWrapped("%s", hint);
 				ImGui::PopStyleColor();
 			}
 			ImGui::BeginDisabled(busy || wants.empty() || selSocket < 0);
@@ -1063,14 +1083,13 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					detailSeed = -1;
 					status = u8"搜尋中…";
 					searchInputsOpen = false; // collapse inputs, show results
-					if (isAbyss) {
-						// No node list: the container names the conquered passives
-						// itself, so there is nothing for the caller to pre-select.
-						job.startAbyss(ds.get(), blob, *abyssLut, q,
-						               ptData.nodes[selSocket].id, ptKind);
-					} else {
-						// bind the search to the socket's in-radius nodes — the
-						// picked subset if any node is picked, otherwise all.
+					// Types 7-10 need no node list: their file names the conquered
+					// passives. Everything else is judged on the socket's
+					// neighbourhood, narrowed to the user's picks when there are
+					// any — for Zorath that neighbourhood stands in for a path we
+					// cannot know, so letting the user pick the nodes IS the way
+					// to aim it at their own build.
+					if (!isAbyss || isZorath) {
 						std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
 						bool anySel = false;
 						for (int idx : inRad)
@@ -1080,8 +1099,12 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 							if (anySel && !(idx < (int)ptSelected.size() && ptSelected[idx])) continue;
 							q.nodeIds.push_back(ptData.nodes[idx].id);
 						}
-						job.start(ds.get(), blob, q);
 					}
+					if (isAbyss)
+						job.startAbyss(ds.get(), blob, *abyssLut, q,
+						               ptData.nodes[selSocket].id, ptKind);
+					else
+						job.start(ds.get(), blob, q);
 				} else {
 					status = binErr;
 				}
@@ -1122,7 +1145,9 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				if (groupResults) {
 					// the socket's picked in-radius nodes (or all) + wanted set
 					std::vector<int> inRad;
-					if (selSocket >= 0 && JewelUsesRadius(jewelType)) {
+					// Zorath is judged on the same neighbourhood the search used;
+					// only 7-10 get their node list from the file instead.
+					if (selSocket >= 0 && (!TJIsAbyss(jewelType) || TJIsZorath(jewelType))) {
 						std::vector<int> rad = ptData.NodesInRadius(selSocket, 1800.0f);
 						bool anySel = false;
 						for (int idx : rad)
@@ -1199,13 +1224,27 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 									}
 								};
 								if (TJIsAbyss(jewelType)) {
-									// inRad is empty for these and always will be — the
+									// For 7-10 inRad is empty and always will be — the
 									// conquered passives come from the file, so without
 									// this branch every seed here would list nothing.
+									// Zorath is the other way round: the file has an
+									// answer for every passive, so the neighbourhood is
+									// what decides which answers are worth showing.
 									std::map<int, TJAbyssMod> rec;
-									if (selSocket >= 0 &&
-									    TJAbyssReadSocket(*ds, *blob, *abyssLut,
-									                      ptData.nodes[selSocket].id, h->seed, rec)) {
+									bool got = false;
+									if (selSocket >= 0) {
+										if (TJIsZorath(jewelType)) {
+											std::vector<int> ids;
+											ids.reserve(inRad.size());
+											for (int idx : inRad) ids.push_back(ptData.nodes[idx].id);
+											got = TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, h->seed, rec);
+										} else {
+											got = TJAbyssReadSocket(*ds, *blob, *abyssLut,
+											                        ptData.nodes[selSocket].id,
+											                        h->seed, rec);
+										}
+									}
+									if (got) {
 										for (const auto& kv : rec) {
 											if (!TJAbyssInScope(scope, kv.first, *ds, &ptKind)) continue;
 											TJTransform t = TJAbyssApply(*ds, kv.second);
@@ -1285,7 +1324,9 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			// "in radius" is only true for the Legion jewels. The Abyss ones
 			// name their conquered passives in the file and scatter them over
 			// the whole tree, so the same wording would describe the wrong rule.
-			ImGui::Text(TJIsAbyss(jewelType) ? u8"種子 %d 征服的天賦" : u8"種子 %d 範圍內的變更",
+			ImGui::Text(TJIsZorath(jewelType) ? u8"種子 %d 對這一帶天賦的效果"
+			            : TJIsAbyss(jewelType) ? u8"種子 %d 征服的天賦"
+			                                   : u8"種子 %d 範圍內的變更",
 			            detailSeed);
 			ImGui::SameLine();
 			ImGui::BeginDisabled(tradeStatId.empty() || tradeLeague.empty());
@@ -1305,6 +1346,52 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			}
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip(u8"複製成遊戲的物品文字格式，貼進 POB「物品」分頁即可建立這顆珠寶");
+
+			// Zorath's Ascendancy pick needs no path, so unlike everything else
+			// about this jewel it is exact. That makes it the most trustworthy
+			// thing on screen and worth its own section.
+			if (TJIsZorath(jewelType) && detailSeed >= 0 && binOk) {
+				if (ImGui::CollapsingHeader(u8"昇華天賦選擇（準確）")) {
+					std::map<std::string, std::vector<int>> asc;
+					if (!TJAbyssReadAscendancies(*blob, *abyssLut, detailSeed, asc)) {
+						ImGui::TextDisabled(u8"讀取失敗");
+					} else {
+						ImGui::BeginChild("##asc", ImVec2(0, 170 * scale), true);
+						for (const auto& kv : asc) {
+							ImGui::TextColored(ImVec4(0.98f, 0.62f, 0.30f, 1.0f), "%s", kv.first.c_str());
+							if (kv.second.empty()) {
+								// Ascendant is the standing case: all of its notables cost
+								// five points and the jewel cannot rewrite one costing four
+								// or more.
+								ImGui::SameLine();
+								ImGui::TextDisabled(u8"（不受影響）");
+								continue;
+							}
+							for (int nid : kv.second) {
+								TJAbyssMod m;
+								if (!TJAbyssReadNode(*ds, *blob, *abyssLut, nid, detailSeed, m)) continue;
+								TJTransform t = TJAbyssApply(*ds, m);
+								if (t.replaced) {
+									const std::string& nm = t.newNameZh.empty() ? t.newName : t.newNameZh;
+									ImGui::BulletText(u8"變為「%s」", nm.c_str());
+								}
+								for (size_t i = 0; i < t.lines.size(); i++) {
+									const std::string& z = (i < t.linesZh.size() && !t.linesZh[i].empty())
+									                       ? t.linesZh[i] : t.lines[i];
+									if (colorStats) ImGui::PushStyleColor(ImGuiCol_Text, stat_color(z));
+									ImGui::BulletText("%s", z.c_str());
+									if (colorStats) ImGui::PopStyleColor();
+								}
+							}
+						}
+						ImGui::EndChild();
+						// The Ascendancy notable's own name is not available: PobTools'
+						// tree leaves Ascendancy nodes out. What it becomes is the part
+						// being chosen, so that is what is shown.
+						ImGui::TextDisabled(u8"（本工具的樹資料不含昇華節點，只顯示它會變成什麼）");
+					}
+				}
+			}
 
 			// view toggle: Vilsol-style stat list vs. node-centric list
 			ImGui::RadioButton(u8"詞綴檢視", &listView, 0); ImGui::SameLine();
@@ -1484,6 +1571,11 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 				ImGui::SameLine();
 				if (detailSeed < 0)
 					ImGui::TextDisabled(u8"｜選一個種子（搜尋結果按「查看」或輸入種子）即可預覽轉換");
+				else if (TJIsZorath(jewelType))
+					// The circle is where we are looking, not what the jewel hits.
+					// Say that outright: the same ring means an area of effect for
+					// every other jewel in this window.
+					ImGui::TextDisabled(u8"｜預覽種子 %d｜圈內為判斷用，實際生效看你的配點", detailSeed);
 				else if (treeAbyss)
 					// Not "in radius": these are the passives the jewel's own file
 					// names, and they are spread over the tree rather than sitting
@@ -1495,7 +1587,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			}
 
 			// pick the socket's in-radius nodes to focus on. Empty selection = all.
-			if (selSocket >= 0 && treeRadius) {
+			if (selSocket >= 0 && (treeRadius || TJIsZorath(jewelType))) {
 				if (ptSelected.size() != ptData.nodes.size()) ptSelected.assign(ptData.nodes.size(), 0);
 				std::vector<int> inRad = ptData.NodesInRadius(selSocket, 1800.0f);
 				auto setRange = [&](bool sel, int kindFilter) {
@@ -1536,7 +1628,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 					// side computes its candidates and the other reads them.
 					std::vector<int> cand;
 					std::map<int, TJAbyssMod> abyssMods; // node index -> modification
-					if (abyssDetail) {
+					const bool zorathDetail = TJIsZorath(jewelType);
+					if (abyssDetail && !zorathDetail) {
 						std::map<int, TJAbyssMod> byId;
 						if (haveBin && TJAbyssReadSocket(*ds, *blob, *abyssLut,
 						                                 ptData.nodes[selSocket].id,
@@ -1549,7 +1642,27 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 							}
 						}
 					} else {
+						// Zorath and the Legion jewels both start from the socket's
+						// neighbourhood — but they mean different things by it. For
+						// a Legion jewel that IS the affected set; for Zorath it is
+						// where we are looking, because the real set follows a path
+						// through the character's own allocation.
 						cand = ptData.NodesInRadius(selSocket, 1800.0f);
+						if (zorathDetail && haveBin) {
+							std::vector<int> ids;
+							ids.reserve(cand.size());
+							for (int idx : cand) ids.push_back(ptData.nodes[idx].id);
+							std::map<int, TJAbyssMod> byId;
+							TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, detailSeed, byId);
+							std::vector<int> kept;
+							for (int idx : cand) {
+								auto it = byId.find(ptData.nodes[idx].id);
+								if (it == byId.end()) continue; // no block for this passive
+								kept.push_back(idx);
+								abyssMods[idx] = it->second;
+							}
+							cand.swap(kept);
+						}
 					}
 
 					bool anySel = false;
@@ -1635,7 +1748,10 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 			PassiveTreeInput tin;
 			tin.selectedSocket = selSocket;
-			tin.radiusWorld = treeRadius ? 1800.0f : 0.0f; // 0 = draw no ring
+			// Zorath has no radius either, but this ring marks the area being
+			// judged, not an area of effect — the header says which. Leaving it
+			// invisible would hide what the numbers were computed from.
+			tin.radiusWorld = (treeRadius || TJIsZorath(jewelType)) ? 1800.0f : 0.0f;
 			tin.hi = &dispHi;
 			tin.selected = ptSelected.empty() ? nullptr : &ptSelected;
 			tin.emphasize = emphNode;
