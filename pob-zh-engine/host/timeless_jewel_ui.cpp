@@ -1041,11 +1041,16 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 			// Both kinds of jewel need a socket, for opposite reasons: a Legion
 			// one to know which radius to walk, an Abyss one because the socket
 			// IS the key its file is indexed by.
-			if (selSocket < 0)
-				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
-				                   isAbyss
+			if (selSocket < 0) {
+				// Wrapped, not TextColored: the left column is 430px and this
+				// sentence does not fit on one line in either wording — the
+				// Legion one was already running off the edge.
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.70f, 0.40f, 1.0f));
+				ImGui::TextWrapped("%s", isAbyss
 				                   ? u8"請先在中間樹上點擊珠寶插槽（深淵珠寶的結果由插槽決定，沒有半徑）"
 				                   : u8"請先在中間樹上點擊珠寶插槽（搜尋只計算該插槽半徑內的節點）");
+				ImGui::PopStyleColor();
+			}
 			ImGui::BeginDisabled(busy || wants.empty() || selSocket < 0);
 			if (ImGui::Button(u8"搜尋此插槽", ImVec2(-1, 34 * scale))) {
 				if (ensureBin(jewelType)) {
@@ -1178,13 +1183,7 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 								ImGui::EndDisabled();
 								// this seed's matched affixes only (no node name), on the
 								// picked nodes — keeps the list compact per the request
-								for (int idx : inRad) {
-									const PtNode& n = ptData.nodes[idx];
-									const char* nt = n.kind == kPtKeystone ? "Keystone"
-									               : n.kind == kPtNotable ? "Notable" : "Normal";
-									TJTransform t = TJApply(*ds, *blob, jewelType, h->seed, n.id, nt,
-									                        n.stats, ConquerorType(jewelType), conquerorId, n.name);
-									if (!t.ok) continue;
+								auto drawMatched = [&](const TJTransform& t) {
 									for (size_t i = 0; i < t.lines.size(); i++) {
 										const TJWantStat* w = matcher.Match(t.lines[i]);
 										if (!w) continue; // below 最小值 counts for nothing, so it shows as nothing
@@ -1197,6 +1196,30 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 										else
 											ImGui::BulletText("%s", zh.c_str());
 										if (colorStats) ImGui::PopStyleColor();
+									}
+								};
+								if (TJIsAbyss(jewelType)) {
+									// inRad is empty for these and always will be — the
+									// conquered passives come from the file, so without
+									// this branch every seed here would list nothing.
+									std::map<int, TJAbyssMod> rec;
+									if (selSocket >= 0 &&
+									    TJAbyssReadSocket(*ds, *blob, *abyssLut,
+									                      ptData.nodes[selSocket].id, h->seed, rec)) {
+										for (const auto& kv : rec) {
+											if (!TJAbyssInScope(scope, kv.first, *ds, &ptKind)) continue;
+											TJTransform t = TJAbyssApply(*ds, kv.second);
+											if (t.ok) drawMatched(t);
+										}
+									}
+								} else {
+									for (int idx : inRad) {
+										const PtNode& n = ptData.nodes[idx];
+										const char* nt = n.kind == kPtKeystone ? "Keystone"
+										               : n.kind == kPtNotable ? "Notable" : "Normal";
+										TJTransform t = TJApply(*ds, *blob, jewelType, h->seed, n.id, nt,
+										                        n.stats, ConquerorType(jewelType), conquerorId, n.name);
+										if (t.ok) drawMatched(t);
 									}
 								}
 								ImGui::Separator();
@@ -1259,7 +1282,11 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		} else if (detailSeed < 0) {
 			ImGui::TextDisabled(u8"選一個種子（搜尋結果按「查看」或於「輸入種子」查詢）");
 		} else {
-			ImGui::Text(u8"種子 %d 範圍內的變更", detailSeed);
+			// "in radius" is only true for the Legion jewels. The Abyss ones
+			// name their conquered passives in the file and scatter them over
+			// the whole tree, so the same wording would describe the wrong rule.
+			ImGui::Text(TJIsAbyss(jewelType) ? u8"種子 %d 征服的天賦" : u8"種子 %d 範圍內的變更",
+			            detailSeed);
 			ImGui::SameLine();
 			ImGui::BeginDisabled(tradeStatId.empty() || tradeLeague.empty());
 			if (ImGui::SmallButton(u8"交易搜尋")) {
@@ -1310,7 +1337,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 				ImGui::BeginChild("##statlist2", ImVec2(0, 0), true);
 				if (statGroups.empty())
-					ImGui::TextDisabled(u8"此範圍內沒有受影響的詞綴（或資料仍在計算）。");
+					ImGui::TextDisabled("%s", TJIsAbyss(jewelType) ? u8"這個插槽在此種子下沒有可顯示的詞綴（或資料仍在計算）。"
+					                     : u8"此範圍內沒有受影響的詞綴（或資料仍在計算）。");
 				auto drawGroup = [&](int g, int section) { // section: -1 all, 0 notables, 1 smalls
 					int c = section == 0 ? (int)statGroups[g].notables.size()
 					      : section == 1 ? (int)statGroups[g].smalls.size() : cnt(g);
@@ -1361,7 +1389,8 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 
 				ImGui::BeginChild("##nodelist", ImVec2(0, 0), true);
 				if (rows.empty())
-					ImGui::TextDisabled(u8"此範圍內沒有受影響的節點（或資料仍在計算）。");
+					ImGui::TextDisabled("%s", TJIsAbyss(jewelType) ? u8"這個插槽在此種子下沒有被征服的天賦（或資料仍在計算）。"
+					                     : u8"此範圍內沒有受影響的節點（或資料仍在計算）。");
 				for (const Row& r : rows) {
 					const PtNode& n = ptData.nodes[r.idx];
 					const TJTransform& t = ptTrans.at(r.idx);
@@ -1446,21 +1475,23 @@ void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale)
 		} else {
 			// header: hint + selected socket + preview seed
 			const bool treeRadius = JewelUsesRadius(jewelType);
-			if (!treeRadius) {
-				ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.40f, 1.0f),
-				                   u8"深淵珠寶不使用半徑（遊戲資料為 abyss_size / to_character_start），");
-				ImGui::SameLine();
-				ImGui::TextDisabled(u8"作用範圍規則未定，暫不預覽受影響節點");
-			} else if (selSocket < 0) {
+			const bool treeAbyss = TJIsAbyss(jewelType);
+			if (selSocket < 0) {
 				ImGui::TextDisabled(u8"在樹上點擊任一珠寶插槽以選擇位置");
 			} else {
 				const PtNode& sn = ptData.nodes[selSocket];
 				ImGui::Text(u8"插槽：%s", sn.nameZh.empty() ? sn.name.c_str() : sn.nameZh.c_str());
 				ImGui::SameLine();
-				if (detailSeed >= 0)
-					ImGui::TextDisabled(u8"｜預覽種子 %d｜半徑內受影響節點以金框標示", detailSeed);
-				else
+				if (detailSeed < 0)
 					ImGui::TextDisabled(u8"｜選一個種子（搜尋結果按「查看」或輸入種子）即可預覽轉換");
+				else if (treeAbyss)
+					// Not "in radius": these are the passives the jewel's own file
+					// names, and they are spread over the tree rather than sitting
+					// inside a circle. Saying "radius" here would describe the
+					// wrong mechanic.
+					ImGui::TextDisabled(u8"｜預覽種子 %d｜此插槽被征服的天賦以金框標示", detailSeed);
+				else
+					ImGui::TextDisabled(u8"｜預覽種子 %d｜半徑內受影響節點以金框標示", detailSeed);
 			}
 
 			// pick the socket's in-radius nodes to focus on. Empty selection = all.
