@@ -45,6 +45,7 @@
 #include "atlas_version_index.h"
 #include "filter_selftest.h"
 #include "timeless_jewel.h"
+#include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
 #include "passive_tree_data.h"
 #include "passive_import.h"
@@ -305,6 +306,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--tj-verify") { // dump transforms to tj_verify.tsv for offline diffing
 		return RunTimelessJewelVerify(dir);
+	}
+	// Abyss jewels read a different container and are checked separately; the
+	// files are ~70 MB inflated each, so this is not folded into --tj-selftest.
+	if (arg1 == L"--abyss-selftest") {
+		return RunAbyssSelfTest(dir);
 	}
 
 	// Headless passive-tree data check (node/socket/radius counts; report file).

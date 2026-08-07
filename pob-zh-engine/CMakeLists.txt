@@ -386,6 +386,8 @@ if (WIN32)
         host/atlas_version_index.cpp
         host/atlas_diff.cpp
         host/timeless_jewel.cpp
+        # Abyss jewels are keyed by socket, not by radius; separate engine
+        host/timeless_jewel_abyss.cpp
         host/timeless_jewel_ui.cpp
         host/passive_tree_data.cpp
         host/passive_tree_view.cpp

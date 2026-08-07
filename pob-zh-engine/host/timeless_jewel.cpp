@@ -240,8 +240,26 @@ static void replace_all_str(std::string& s, const std::string& from, const std::
 }
 
 // Substitute a roll value into a stat template, mirroring PoB's replaceHelperFunc.
-static std::string roll_stat(std::string sd, const TJStatMod& m, double value)
+//
+// The "g"-format branch is not cosmetic. Those stats are stored in game units
+// and written in display units: life regeneration is stored per minute and
+// printed per second, leech is stored in permyriad and printed as a percent.
+// Skipping it turns "Regenerate (0.7-1.2)% of Life per second" into
+// "Regenerate 60% of Life per second". 31 entries in the dataset carry such a
+// stat, and 11 of them belong to Legion jewels — this was wrong there too, not
+// only for the Abyss ones that made it visible.
+std::string TJRollStat(const std::string& sdIn, const std::string& statKey,
+                       const TJStatMod& m, double value)
 {
+	std::string sd = sdIn;
+	if (m.fmt == "g") {
+		if (statKey.find("per_minute") != std::string::npos)
+			value = std::floor(value / 60.0 * 10.0 + 0.5) / 10.0; // PoB rounds to 1 dp
+		else if (statKey.find("permyriad") != std::string::npos)
+			value = value / 100.0;
+		else if (statKey.find("_ms") != std::string::npos)
+			value = value / 1000.0;
+	}
 	if (m.min != m.max) {
 		replace_all_str(sd, "(" + fmt_num(m.min) + "-" + fmt_num(m.max) + ")", fmt_num(value));
 	} else if (m.min != value) {
@@ -250,28 +268,41 @@ static std::string roll_stat(std::string sd, const TJStatMod& m, double value)
 	return sd;
 }
 
-static const TJEntry* node_at(const TJDataset& ds, int global)
+// Older internal callers pass the stat key alongside; keep the short form for
+// the places that already looked the mod up by index.
+static std::string roll_stat(const std::string& sd, const std::string& statKey,
+                             const TJStatMod& m, double value)
 {
-	const int i = global - ds.additionsOffset; // Lua nodes[global+1-96] -> [global-96]
+	return TJRollStat(sd, statKey, m, value);
+}
+
+const TJEntry* TJNodeAt(const TJDataset& ds, int global)
+{
+	const int i = global - ds.additionsOffset; // Lua nodes[global+1-additions] -> [global-additions]
 	if (i >= 0 && i < (int)ds.nodes.size()) return &ds.nodes[i];
 	return nullptr;
 }
-static const TJEntry* addition_at(const TJDataset& ds, int global)
+const TJEntry* TJAdditionAt(const TJDataset& ds, int global)
 {
 	if (global >= 0 && global < (int)ds.additions.size()) return &ds.additions[global];
 	return nullptr;
 }
+static const TJEntry* node_at(const TJDataset& ds, int global) { return TJNodeAt(ds, global); }
+static const TJEntry* addition_at(const TJDataset& ds, int global) { return TJAdditionAt(ds, global); }
 
 // Emit one stat line (English + baked Chinese) from an entry, optionally rolling
 // a range/value into both.
+// statKey is needed alongside the mod: the unit scaling for "g"-format stats is
+// selected by the key's name, not by anything inside TJStatMod.
 static void push_line(TJTransform& out, const TJEntry& e, size_t i,
-                      const TJStatMod* sm = nullptr, double value = 0.0)
+                      const TJStatMod* sm = nullptr, double value = 0.0,
+                      const std::string& statKey = std::string())
 {
 	std::string en = (i < e.sd.size()) ? e.sd[i] : std::string();
 	std::string zh = (i < e.sdZh.size()) ? e.sdZh[i] : std::string();
 	if (sm) {
-		en = roll_stat(en, *sm, value);
-		if (!zh.empty()) zh = roll_stat(zh, *sm, value);
+		en = roll_stat(en, statKey, *sm, value);
+		if (!zh.empty()) zh = roll_stat(zh, statKey, *sm, value);
 	}
 	out.lines.push_back(en);
 	out.linesZh.push_back(zh);
@@ -467,15 +498,17 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 			for (size_t i = 0; i < n->sd.size(); i++) {
 				const TJStatMod* sm = nullptr;
 				double val = 0;
+				std::string key;
 				if (i < n->sortedStats.size()) {
 					auto it = n->stats.find(n->sortedStats[i]);
 					const int slot = gvSmall ? 1 : (it != n->stats.end() ? it->second.index : -1);
 					if (it != n->stats.end() && slot >= 0 && slot < (int)lut.size()) {
 						sm = &it->second;
 						val = (double)lut[slot];
+						key = it->first;
 					}
 				}
-				push_line(out, *n, i, sm, val);
+				push_line(out, *n, i, sm, val, key);
 			}
 			return out;
 		} else if (hs == 6 || hs == 8) {
@@ -501,7 +534,9 @@ TJTransform TJApply(const TJDataset& ds, const std::string& blob,
 				const TJEntry* a = addition_at(ds, kv.first);
 				if (!a) continue;
 				const TJStatMod* sm = a->stats.empty() ? nullptr : &a->stats.begin()->second;
-				for (size_t i = 0; i < a->sd.size(); i++) push_line(out, *a, i, sm, (double)kv.second);
+				const std::string key = a->stats.empty() ? std::string() : a->stats.begin()->first;
+				for (size_t i = 0; i < a->sd.size(); i++)
+					push_line(out, *a, i, sm, (double)kv.second, key);
 			}
 			return out;
 		}
@@ -546,6 +581,13 @@ std::string TJNormalizeStat(const std::string& s)
 			i++;
 		}
 	}
+	// An unrolled range and a rolled value name the same stat: "(7-12)% increased
+	// Fire Damage" and "9% increased Fire Damage" must land on one key, or a
+	// stat picked from the list (built from unrolled templates) would never match
+	// a line the Abyss engine produces (which always carries its actual roll).
+	// "(#-#)" is the only parenthesised shape in the dataset — 1170 of them, and
+	// nothing else — so a plain substitution is enough.
+	replace_all_str(out, "(#-#)", "#");
 	return out;
 }
 
@@ -843,6 +885,15 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		// normalization + stat-template list
 		check(TJNormalizeStat("20% increased Damage with Poison") == "#% increased Damage with Poison",
 		      "normalize turns numbers into #");
+		// A picked stat has to match a line that carries an actual roll. The
+		// Legion engine leaves ranges unrolled and the Abyss one always rolls, so
+		// the two forms must reduce to one key or the Abyss search finds nothing.
+		check(TJNormalizeStat("(7-12)% increased Fire Damage") ==
+		      TJNormalizeStat("9% increased Fire Damage"),
+		      "an unrolled range and a rolled value share one key",
+		      TJNormalizeStat("(7-12)% increased Fire Damage"));
+		check(TJNormalizeStat("Adds (5-7) to (11-13) Fire Damage") == "Adds # to # Fire Damage",
+		      "a line with two ranges collapses both");
 		check(TJStatTemplates(ds).size() > 50, "stat template list built",
 		      std::to_string(TJStatTemplates(ds).size()));
 
@@ -1055,6 +1106,55 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		}
 	} else {
 		check(false, "load BrutalRestraint.bin", err);
+	}
+
+	// --- Glorious Vanity is the only Legion jewel that rolls a value into a
+	// notable, so it is the only one where the "g"-format unit scaling can show.
+	// Nothing used to exercise this path end to end: --tj-verify compares LUT
+	// bytes, not rendered lines, so "Regenerate 60% of Life per second" would
+	// have passed every check we had. Assert the printed number lands inside the
+	// range its own template declares.
+	{
+		std::string gv;
+		std::string gerr;
+		if (!TJLoadBin(exeDir, ds, 1, gv, &gerr)) {
+			check(false, "load GloriousVanity LUT", gerr);
+		} else {
+			const TJEntry* ritual = nullptr;
+			for (const auto& e : ds.nodes) if (e.id == "vaal_notable_life_1") { ritual = &e; break; }
+			if (!ritual) {
+				check(false, "dataset carries vaal_notable_life_1 (Ritual of Flesh)");
+			} else {
+				auto sm = ritual->stats.find("life_regeneration_rate_per_minute_%");
+				std::string found;
+				int scanned = 0;
+				for (int seed = 100; seed < 200 && found.empty(); seed++) {
+					for (const auto& kv : ds.nodeIndex) {
+						if (kv.second.first >= ds.sizeNotable) continue;
+						scanned++;
+						TJTransform t = TJApply(ds, gv, 1, seed, kv.first, "Notable", {});
+						if (!t.ok || !t.replaced || t.newName != ritual->dn) continue;
+						for (const auto& ln : t.lines)
+							if (ln.find("per second") != std::string::npos) { found = ln; break; }
+						if (!found.empty()) break;
+					}
+				}
+				if (found.empty()) {
+					// Say so rather than passing: a scan that found no case has
+					// tested nothing, and silence here is what let the bug live.
+					check(false, "found a Ritual of Flesh roll to check",
+					      std::to_string(scanned) + " transforms scanned, none matched");
+				} else {
+					const double v = TJStatValue(found);
+					check(sm != ritual->stats.end() && v >= sm->second.min && v <= sm->second.max,
+					      "a rolled per-second regen prints inside its own declared range",
+					      found + " (range " + fmt_num(sm->second.min) + "-" +
+					      fmt_num(sm->second.max) + ")");
+					check(found.find("(0.7-1.2)") == std::string::npos,
+					      "the range placeholder was actually substituted", found);
+				}
+			}
+		}
 	}
 
 	// Abyss jewels (types 7-11): LUT named after the Abyssal Lord, inflated from

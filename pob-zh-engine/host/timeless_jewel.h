@@ -100,6 +100,21 @@ struct TJTransform {
 std::vector<int> TJReadLUT(const TJDataset& ds, const std::string& binBlob,
                            int jewelType, int seed, int nodeId);
 
+// ---- shared with the Abyss engine (timeless_jewel_abyss.cpp) ------------------
+
+// Substitute a rolled value into one stat template, mirroring PoB's
+// replaceHelperFunc — including the unit scaling it applies to "g"-format
+// stats, whose rolls are stored in game units (per minute, permyriad, ms) and
+// printed in display units.
+std::string TJRollStat(const std::string& sd, const std::string& statKey,
+                       const TJStatMod& m, double value);
+
+// Entry lookup by global id. Replacements index `nodes` (offset by the addition
+// count, as PoB's `legion.nodes[id + 1 - timelessJewelAdditions]` does);
+// additions index `additions` directly. Both return nullptr when out of range.
+const TJEntry* TJNodeAt(const TJDataset& ds, int globalId);
+const TJEntry* TJAdditionAt(const TJDataset& ds, int globalId);
+
 // Transform one node. nodeType is "Notable" / "Keystone" / "Normal".
 // origSd is the node's original stat lines (used by Normal/GV rolls).
 TJTransform TJApply(const TJDataset& ds, const std::string& binBlob,
