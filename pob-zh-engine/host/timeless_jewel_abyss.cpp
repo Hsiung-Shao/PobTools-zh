@@ -315,10 +315,21 @@ double TJAbyssRollFor(const TJAbyssComponent& c, const TJStatMod& m)
 	const int i = m.index - 1;
 	if (i < 0 || i >= (int)c.rolls.size()) return 0.0;
 	double v = (double)c.rolls[i];
-	// "(15-20)% reduced Critical Strike Chance" stores its roll as -16: the
+	// "(15-20)% reduced Critical Strike Chance" stores its roll as -16. The
 	// direction is already in the word "reduced", so printing the sign as well
-	// would state the opposite. Only flip when the stat's own range is
-	// non-negative — a genuinely negative range keeps its sign.
+	// would state the opposite of what the game shows.
+	//
+	// This is a DELIBERATE divergence from PoB's PassiveSpec.lua, which feeds
+	// component.rolls[statMod.index] through unchanged and would render
+	// "-16% reduced". PoB's own TreeTab does flip it, via
+	// getAbyssJewelComponentRoll, so PoB disagrees with itself; the game settles
+	// it. Every stat that can receive a negative roll here -- there are three,
+	// all worded "reduced" -- carries a `negate` handler on its negative branch
+	// in GGPK's stat descriptions, so the game displays the magnitude.
+	//
+	// Only flip when the stat's own range is non-negative: one Abyss entry
+	// (abyss_hypnotic_notable_18, enemies_you_wither_have_all_resistances_%)
+	// declares a negative range and must keep its sign.
 	if (v < 0 && m.min >= 0) v = -v;
 	return v;
 }
@@ -942,6 +953,32 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				      joined.find("-16") == std::string::npos,
 				      "a negative roll on a non-negative range prints as a positive "
 				      "(the word 'reduced' already carries the direction)", joined);
+			}
+
+			// A10b the other half of that rule, and the reason it is a rule
+			// rather than "always flip". One Abyss entry declares a negative
+			// range; flipping it would state the opposite. Pure-function checks,
+			// because a fixture for the negative-range entry would pin a seed
+			// that game data can move.
+			{
+				TJAbyssComponent c;
+				c.type = 2;
+				c.rolls.push_back(-16);
+				TJStatMod pos;   // "(15-20)% reduced ..." -- magnitude is shown
+				pos.index = 1; pos.min = 15; pos.max = 20;
+				TJStatMod neg;   // a genuinely negative range -- sign is kept
+				neg.index = 1; neg.min = -20; neg.max = -10;
+				check(TJAbyssRollFor(c, pos) == 16.0 && TJAbyssRollFor(c, neg) == -16.0,
+				      "the flip is conditioned on the stat's own range, not on the sign alone");
+
+				// And the negative-range case must actually exist in the data,
+				// or that branch is guarding against nothing.
+				bool haveNegRange = false;
+				for (const auto& e : ds.additions)
+					for (const auto& kv : e.stats)
+						if (e.id.rfind("abyss", 0) == 0 && kv.second.min < 0) haveNegRange = true;
+				check(haveNegRange,
+				      "an Abyss entry really does declare a negative range");
 			}
 		}
 	}
