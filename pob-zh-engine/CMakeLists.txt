@@ -335,6 +335,8 @@ if (WIN32)
         host/editor_selftest.cpp
         host/paste_selftest.cpp
         host/paste_trace.cpp
+        # 多佔位符詞條的填位回歸 + 全量 A/B 快照工具
+        host/placeholder_selftest.cpp
         host/pob_launch.cpp
         host/window_manager.cpp
         host/window_dock.cpp

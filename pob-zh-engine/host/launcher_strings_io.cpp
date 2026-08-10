@@ -116,14 +116,54 @@ int RunLauncherStringsExport(const std::wstring& exeDir)
 	CreateDirectoryW((exeDir + L"Data\\launcher").c_str(), nullptr);
 	CreateDirectoryW(dir.c_str(), nullptr);
 
+	// ⚠ MERGE, never overwrite. package_release.ps1 runs this on EVERY package,
+	// and launcher.json is now a file an outside translator owns and edits — a
+	// straight regeneration would mean "releasing the program silently reverts
+	// the translator's work", once per release, with no diff to notice it by.
+	// So: existing values win, the compiled zh-rTW string is only used to fill in
+	// a key the file does not have yet.
+	ordered_json existing = ordered_json::object();
+	{
+		std::string content;
+		if (read_file_utf8(dir + L"launcher.json", content)) {
+			try {
+				ordered_json doc = ordered_json::parse(content);
+				if (doc.contains("entries") && doc["entries"].is_object()) existing = doc["entries"];
+			} catch (...) {
+				// A corrupt file is not a reason to refuse to package; it just
+				// means there is nothing to preserve. Said out loud below.
+				printf("launcher.json is not valid JSON; exporting a fresh one\n");
+			}
+		}
+	}
+
 	ordered_json entries = ordered_json::object();
+	int kept = 0, added = 0;
 	for (size_t i = 0; i < kLauncherStringsFields; i++) {
 		auto mem = kLauncherStringMembers[i];
 		const char* key = STR_EN.*mem;
 		const char* val = STR_ZHTW.*mem;
 		if (!key || !val) continue;
-		entries[key] = val;
+		auto it = existing.find(key);
+		if (it != existing.end() && it->is_string() && !it->get<std::string>().empty()) {
+			entries[key] = *it;
+			kept++;
+		} else {
+			entries[key] = val;
+			added++;
+		}
 	}
+	// Keys the binary no longer knows: an English string was edited, so this
+	// entry is now an orphan. Carried over rather than dropped — the translation
+	// in it is somebody's work, and deleting it is not this script's call. They
+	// go last so the live entries stay in table order.
+	int orphans = 0;
+	for (auto it = existing.begin(); it != existing.end(); ++it) {
+		if (entries.contains(it.key())) continue;
+		entries[it.key()] = it.value();
+		orphans++;
+	}
+
 	ordered_json dict = ordered_json::object();
 	dict["entries"] = entries;
 
@@ -142,9 +182,11 @@ int RunLauncherStringsExport(const std::wstring& exeDir)
 	// Deliberately NO MessageBox on failure: the selftest calls this function, and
 	// a modal dialog turns a headless check into a hang with no output. Exit code
 	// and stdout only.
-	printf(ok ? "launcher strings exported to Data\\launcher\\zh-rTW\\ (%d entries)\n"
-	          : "launcher strings export FAILED (%d entries prepared)\n",
-	       (int)entries.size());
+	printf(ok ? "launcher strings exported to Data\\launcher\\zh-rTW\\ (%d entries: %d kept, "
+	            "%d filled in, %d orphaned)\n"
+	          : "launcher strings export FAILED (%d entries prepared: %d kept, %d filled in, "
+	            "%d orphaned)\n",
+	       (int)entries.size(), kept, added, orphans);
 	return ok ? 0 : 1;
 }
 
@@ -320,6 +362,54 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		              meta.find("launcher.json") != std::string::npos &&
 		              meta.find("\r\n") != std::string::npos;
 		check("L9 exported meta.json carries load_order and is CRLF like the others", metaOk);
+	}
+
+	// L10 -- re-exporting must NOT revert a translator's edits. The packaging
+	// script runs the export on every release, so an overwriting export would
+	// quietly undo外部翻譯者的修改 once per version, and the only evidence would
+	// be a JSON diff nobody reads. Also asserts the two things that make merging
+	// safe to run blind: a key the file lacks is still filled in, and an orphaned
+	// key (English string edited since) is carried over rather than deleted.
+	{
+		std::wstring exportRoot = sandbox + L"\\export2\\";
+		CreateDirectoryW((sandbox + L"\\export2").c_str(), nullptr);
+		bool ok = RunLauncherStringsExport(exportRoot) == 0;
+
+		// Stand in for the translator: edit one value, delete another entry
+		// entirely, and add a key from an older build.
+		const std::wstring file = exportRoot + L"Data\\launcher\\zh-rTW\\launcher.json";
+		std::string content;
+		ok = ok && read_file_utf8(file, content);
+		ordered_json doc;
+		if (ok) {
+			try { doc = ordered_json::parse(content); } catch (...) { ok = false; }
+		}
+		if (ok) {
+			doc["entries"][STR_EN.tabHome] = "譯者改過的主畫面";
+			doc["entries"].erase(STR_EN.font);
+			doc["entries"]["A string only an older build had"] = "孤兒";
+			ok = write_file_bytes(file, doc.dump(2));
+		}
+
+		ok = ok && RunLauncherStringsExport(exportRoot) == 0;
+		std::string after;
+		ordered_json doc2;
+		ok = ok && read_file_utf8(file, after);
+		if (ok) {
+			try { doc2 = ordered_json::parse(after); } catch (...) { ok = false; }
+		}
+		std::string why;
+		if (ok) {
+			const ordered_json& e = doc2["entries"];
+			if (e.value(STR_EN.tabHome, std::string()) != "譯者改過的主畫面")
+				why = "edited value was reverted";
+			else if (e.value(STR_EN.font, std::string()) != STR_ZHTW.font)
+				why = "missing key was not filled in";
+			else if (e.value("A string only an older build had", std::string()) != "孤兒")
+				why = "orphaned key was dropped";
+		}
+		check("L10 re-export keeps the translator's values, fills gaps, keeps orphans",
+		      ok && why.empty(), why);
 	}
 
 	rm_tree(sandbox);

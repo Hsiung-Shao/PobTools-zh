@@ -10,6 +10,7 @@
 #include <shlobj.h>
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
@@ -26,18 +27,139 @@ using nlohmann::ordered_json;
 // ---- release source -------------------------------------------------------
 
 static const wchar_t* kApiHost = L"api.github.com";
+// App 線。releases/latest 只回最新的 non-prerelease、non-draft release,而
+// data-<n> 一律標 prerelease —— 所以這個端點的語意天生就是「最新程式版」,
+// 契約與 v0.18.0 以前的客戶端完全一致。
 static const wchar_t* kLatestPath = L"/repos/Hsiung-Shao/PobTools-zh/releases/latest";
+// Data 線。⚠ 這份清單依 created_at(tag 指向的 commit 時間)排序,不是依 tag,
+// 從舊 commit 打的 data tag 會排到後面 —— 所以一律解出序號自己比大小,
+// 絕不取第一個命中的。
+static const wchar_t* kReleasesPath = L"/repos/Hsiung-Shao/PobTools-zh/releases?per_page=100";
+// 資產名的前綴。改成前綴比對(而非 "PobTools-" + tag + ".zip" 字串拼接)是拆
+// 兩線的前提:資料包的檔名裡根本沒有程式版號,拼不出來。
+static const char* kAppAssetPrefix = "PobTools-update-";   // 主檔包(不含字典)
+static const char* kDataAssetPrefix = "PobTools-Data-";    // 翻譯資料包
+// 安裝目錄裡的翻譯資料版本戳記。內容 {"dataVersion":"data-3"}。
+static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 
-// Every CJK literal the updater can surface in Status.message (including the
-// ones bubbled up from HttpsClient / ExtractZipToDir), concatenated so the
-// launcher can seed its glyph atlas. Keep in sync when adding messages.
-const char* kAppUpdateGlyphSeed =
-	u8"檢查更新中…已是最新版發現新翻譯資料已更新至（引擎下次啟動生效）目前版本下載主體更新中"
-	u8"解壓與驗證更新檔就緒，即將重新啟動雜湊值不符（下載損毀？）磁碟空間不足（需 300MB）"
-	u8"找不到對應的發佈資產暫存檔驗證失敗（可能被防毒隔離）另一個實例正在套用內容檔複製替換失敗"
-	u8"備份放置回滾已還原舊版無法建立解壓目錄格式無效條目資訊讀取路徑非法檔案寫入"
-	u8"已取消回應為空連線失敗（網路無法使用？）建立 HTTP 請求 HTTPS 初始化版本記錄解析"
-	u8"發佈資產網址無效發佈版號無法解析翻譯資料包內容驗證失敗無法建立更新鎖";
+// ---- Status.message vocabulary --------------------------------------------
+//
+// 為什麼是一份 X-macro 而不是一段手抄的字串:
+//
+// 啟動器的字型圖集是**一次性**建好的,而 Status.message 是執行期才組出來的,所以
+// 訊息用到的字必須事先餵給圖集。以前這裡是一段人工維護的「把所有訊息串起來」的
+// 常數,而 ImGui 對沒有 glyph 的字直接畫 '?',不 assert 不 log —— 於是
+// 「訊息裡有、種子裡沒有」這個狀態完全是靜默的。
+//
+// ⚠ 它真的發生過:「（目前設定為不自動更新）」的 設/自/動 與「請先關閉所有 POB
+// 視窗」的 請/先/關/閉/所/視/窗 在 v0.18.0 就已經在送出,卻從來不在種子裡。
+// --font-coverage-selftest **當時就已經在吃這個種子了**,而且是綠的 —— 因為它問的
+// 是「種子裡的字畫不畫得出來」,不是「訊息用到的字在不在種子裡」。守門守的是錯的
+// 那一半,所以漏了一整版都沒人知道。
+//
+// 現在:訊息片語列在下面這份清單裡,種子由清單**生成**(不可能不同步),而
+// --app-update-selftest 的 T13 反過來檢查「每一則實際組出來的訊息,每個字都在種子
+// 裡」,並用一個故意沒列進來的探針字證明這道檢查真的會失敗。
+//
+// 加新訊息的規矩:片語加進這份清單、用生成的常數,不要在 setPhase 現場打字面值。
+#define PT_UPD_MSGS(X)                                                          \
+	/* 檢查與結果 */                                                            \
+	X(kMsgChecking,        u8"檢查更新中…")                                     \
+	X(kMsgUpToDate,        u8"已是最新版 v")                                     \
+	X(kMsgAppFound,        u8"發現新版 v")                                       \
+	X(kMsgAppCurrent,      u8"（目前 v")                                         \
+	X(kMsgCloseParen,      u8"）")                                               \
+	/* 翻譯資料線 */                                                            \
+	X(kMsgDataFound,       u8"有新的翻譯資料 ")                                  \
+	X(kMsgDataOptedOut,    u8"（目前設定為不自動更新）")                         \
+	X(kMsgDataDownloading, u8"下載新翻譯資料 ")                                  \
+	X(kMsgDataDone,        u8"翻譯資料已更新至 ")                                \
+	X(kMsgDataEffective,   u8"（引擎下次啟動生效）")                             \
+	X(kMsgNoDataAsset,     u8"找不到對應的翻譯資料")                             \
+	X(kMsgNoDataRelease,   u8"尚無翻譯資料發佈")                                 \
+	X(kMsgDataPackBad,     u8"翻譯資料包內容驗證失敗")                           \
+	/* 程式主體線 */                                                            \
+	X(kMsgAppDownloading,  u8"下載主體更新 v")                                   \
+	X(kMsgEllipsis,        u8"…")                                               \
+	X(kMsgStaging,         u8"解壓與驗證更新檔…")                                \
+	X(kMsgReadyRestart,    u8"更新檔就緒，即將重新啟動…")                        \
+	X(kMsgNoAppAsset,      u8"找不到對應的發佈資產")                             \
+	X(kMsgNoDiskSpace,     u8"磁碟空間不足（需 300MB）")                         \
+	/* 失敗與阻擋 */                                                            \
+	X(kMsgPobRunning,      u8"POB 執行中，請先關閉所有 POB 視窗")                \
+	X(kMsgHashMismatch,    u8"下載檔案雜湊值不符（下載損毀？）")                 \
+	X(kMsgBadAssetUrl,     u8"發佈資產網址無效: ")                               \
+	X(kMsgBadVersion,      u8"發佈版號無法解析: ")                               \
+	X(kMsgAssetNotUnique,  u8"發佈資產名稱不唯一: ")                             \
+	X(kMsgBadReleaseInfo,  u8"版本資訊解析失敗")                                 \
+	X(kMsgBadReleaseList,  u8"發佈清單解析失敗")                                 \
+	X(kMsgStageBad,        u8"更新暫存檔驗證失敗（可能被防毒隔離）")             \
+	X(kMsgLockFailed,      u8"無法建立更新鎖")                                   \
+	X(kMsgOtherInstance,   u8"另一個 PobTools 實例正在套用更新")                 \
+	X(kMsgApplyFailed,     u8"更新套用失敗")                                     \
+	X(kMsgRolledBack,      u8"（已還原舊版）")                                   \
+	X(kMsgCopyFailed,      u8"內容檔複製失敗: ")                                 \
+	X(kMsgReplaceFailed,   u8"內容檔替換失敗: ")                                 \
+	X(kMsgBackupFailed,    u8"備份失敗: ")                                       \
+	X(kMsgPlaceFailed,     u8"放置失敗: ")
+
+#define PT_UPD_DEFINE(name, lit) static const char* const name = lit;
+PT_UPD_MSGS(PT_UPD_DEFINE)
+#undef PT_UPD_DEFINE
+
+// Index-aligned with nothing -- just an enumerable copy, so T13 can walk every
+// phrase instead of trusting that someone remembered to seed it.
+static const char* const kUpdMsgFragments[] = {
+#define PT_UPD_LIST(name, lit) lit,
+	PT_UPD_MSGS(PT_UPD_LIST)
+#undef PT_UPD_LIST
+};
+
+// ⚠ 這一段是**別的 TU** 丟進 Status.message 的訊息(http_client.cpp、
+// zip_extract.cpp)。它們不在上面那份清單裡,所以這裡仍然是手抄的 —— 改那兩個檔
+// 的訊息時要回來補。單獨標出來,是為了讓「還沒被結構性保護的部分」有明確邊界,
+// 而不是混在一起假裝全部都安全。
+#define PT_UPD_EXTERNAL_SEED                                                   \
+	u8"已取消回應為空連線失敗（網路無法使用？）建立 HTTP 請求 HTTPS 初始化"     \
+	u8"無法建立解壓目錄格式無效條目資訊讀取路徑非法檔案寫入失敗回滾備份"
+static const char* const kExternalMsgSeed = PT_UPD_EXTERNAL_SEED;
+
+// Generated: the concatenation of every phrase above. Cannot drift from the
+// list, because it IS the list.
+#define PT_UPD_SEED(name, lit) lit
+const char* kAppUpdateGlyphSeed = PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED;
+#undef PT_UPD_SEED
+
+// 組合型訊息全部集中在這裡,而不是在 setPhase 現場拼字串。兩個好處:
+//   1. T13 有東西可以驅動 —— 它能真的產生一則完整訊息再逐字檢查,而不是只檢查
+//      片語(片語由定義就在種子裡,那種檢查是恆真的);
+//   2. 版號/標籤這些插進去的東西是 ASCII,所以「訊息用到的字」嚴格等於「片語用
+//      到的字」,這條等式是 T13 能成立的前提。
+static std::string MsgUpToDate()
+{
+	return std::string(kMsgUpToDate) + POBTOOLS_VERSION_STRING;
+}
+static std::string MsgAppAvailable(const std::string& ver)
+{
+	return std::string(kMsgAppFound) + ver + kMsgAppCurrent + POBTOOLS_VERSION_STRING +
+	       kMsgCloseParen;
+}
+static std::string MsgAppDownloading(const std::string& ver)
+{
+	return std::string(kMsgAppDownloading) + ver + kMsgEllipsis;
+}
+static std::string MsgDataAvailable(const std::string& tag)
+{
+	return std::string(kMsgDataFound) + tag + kMsgDataOptedOut;
+}
+static std::string MsgDataDownloading(const std::string& tag)
+{
+	return std::string(kMsgDataDownloading) + tag + kMsgEllipsis;
+}
+static std::string MsgDataApplied(const std::string& tag)
+{
+	return std::string(kMsgDataDone) + tag + kMsgDataEffective;
+}
 
 // ---- small helpers (same conventions as atlas_update.cpp) ------------------
 
@@ -233,7 +355,7 @@ static bool apply_content_two_pass(const std::wstring& exeDir, const std::wstrin
 		std::wstring dst = exeDir + rel + L".new";
 		ensure_parent_dir(dst);
 		if (!CopyFileW((stage + rel).c_str(), dst.c_str(), FALSE)) {
-			if (err) *err = u8"內容檔複製失敗: " + narrow(rel);
+			if (err) *err = kMsgCopyFailed + narrow(rel);
 			for (const std::wstring& s : staged) DeleteFileW((exeDir + s + L".new").c_str());
 			return false;
 		}
@@ -242,7 +364,7 @@ static bool apply_content_two_pass(const std::wstring& exeDir, const std::wstrin
 	for (size_t i = 0; i < rels.size(); i++) {
 		if (!MoveFileExW((exeDir + rels[i] + L".new").c_str(), (exeDir + rels[i]).c_str(),
 		                 MOVEFILE_REPLACE_EXISTING)) {
-			if (err) *err = u8"內容檔替換失敗: " + narrow(rels[i]);
+			if (err) *err = kMsgReplaceFailed + narrow(rels[i]);
 			for (size_t j = i; j < rels.size(); j++)
 				DeleteFileW((exeDir + rels[j] + L".new").c_str());
 			return false;
@@ -253,11 +375,10 @@ static bool apply_content_two_pass(const std::wstring& exeDir, const std::wstrin
 
 // ---- translation-data classification ---------------------------------------
 
-// Mirrors package_release.ps1's $dataGlobs -- the contents of the Translations
-// zip. Two definitions in two languages is a drift risk, so the direction was
-// chosen to make drift harmless: this is a positive test used to EXCLUDE, so a
-// data file added to packaging but not listed here keeps being updated (exactly
-// what happens today) instead of silently going stale on someone's install.
+// THE boundary between the two release lines (see the header for why the safety
+// direction flipped in v0.19.0). package_release.ps1 no longer keeps its own
+// copy of this rule -- it calls --translation-data-list, which walks the staged
+// tree through this exact function -- so there is one definition again.
 bool IsTranslationDataRel(const std::wstring& rel)
 {
 	std::wstring p = rel;
@@ -284,30 +405,74 @@ bool IsTranslationDataRel(const std::wstring& rel)
 		const std::wstring leaf = rest.substr(slash + 1);
 		return !leaf.empty() && leaf.find(L'\\') == std::wstring::npos && ends_with(leaf, L".json");
 	}
-	// Data\atlas_versions\<tag>\atlas_tree_zh.json only -- the other files in that
-	// folder are atlas structure, not translations, and ship with the app.
-	if (tail.compare(0, 15, L"atlas_versions\\") == 0)
-		return ends_with(tail, L"\\atlas_tree_zh.json");
+	// ⚠ Data\atlas_versions\<tag>\atlas_tree_zh.json used to be here and is
+	// deliberately NOT any more. A season folder is only adopted when
+	// atlas_tree_poe1.json + atlas_tree_zh.json + atlas\ are ALL present
+	// (atlas_version_index.cpp, adoptFromDisk); putting one of the three in the
+	// other zip splits the season in half, and anyone who has the app pack but
+	// not yet the matching data pack loses the whole new league -- on the day the
+	// league starts, which is exactly when it hurts most. The atlas text is
+	// machine-fetched and rebuilt by the in-app updater anyway; translating it is
+	// not a PR-shaped job (the same argument .gitignore already makes).
+	if (tail.compare(0, 15, L"atlas_versions\\") == 0) return false;
 
-	return tail == L"filter_items_zh.json" || tail == L"item_meta.json" ||
-	       tail == L"item_classes_zh.json";
+	// The stamp itself is translation data: it must be swapped by the same
+	// two-pass apply as the dictionaries it describes, or "content moved, version
+	// did not" becomes reachable.
+	return tail == L"translations_version.json" || tail == L"filter_items_zh.json" ||
+	       tail == L"item_meta.json" || tail == L"item_classes_zh.json";
+}
+
+std::string ReadLocalDataVersion(const std::wstring& exeDir)
+{
+	std::string content;
+	if (!read_file_utf8(exeDir + kDataStampRel, content)) return std::string();
+	try {
+		ordered_json v = ordered_json::parse(content);
+		return v.value("dataVersion", std::string());
+	} catch (...) {
+		// A corrupt stamp reads as "unstamped", which costs one redundant
+		// download and then repairs itself -- the alternative (treating it as
+		// current) would strand the install on stale dictionaries forever.
+		return std::string();
+	}
 }
 
 // ---- policy -----------------------------------------------------------------
 
-AppUpdateDecision ClassifyAppUpdate(std::tuple<int, int, int> remote,
-                                    std::tuple<int, int, int> localApp,
-                                    std::tuple<int, int, int> localTrans)
+bool ParseDataTagSeq(const std::string& tag, long long* seq)
 {
-	AppUpdateDecision d;
-	if (!(remote > localApp)) return d; // equal or older: never downgrade
-	if (std::get<0>(remote) == std::get<0>(localApp) &&
-	    std::get<1>(remote) == std::get<1>(localApp)) {
-		d.applyTransNow = remote > localTrans; // patch bump: data-only release
-	} else {
-		d.promptApp = true;                    // minor/major bump: app release
+	if (tag.compare(0, 5, "data-") != 0 || tag.size() <= 5) return false;
+	long long n = 0;
+	for (size_t i = 5; i < tag.size(); i++) {
+		if (tag[i] < '0' || tag[i] > '9') return false;
+		n = n * 10 + (tag[i] - '0');
+		if (n > 1'000'000'000ll) return false; // absurd: treat as malformed
 	}
-	return d;
+	if (seq) *seq = n;
+	return true;
+}
+
+UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
+                       std::tuple<int, int, int> localApp,
+                       bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
+                       bool autoData)
+{
+	UpdatePlan p;
+	// EVERY app bump prompts now, patch included. The old rule ("patch = data
+	// only, apply it silently") rested on patch releases touching nothing but
+	// Data\; with the dictionaries on their own line that premise is gone, and
+	// applying an app pack always means renaming pob-zh.exe + engine\* and
+	// restarting the process. Doing that without a click would close the program
+	// in front of the user.
+	p.promptApp = hasAppAsset && remoteApp > localApp;
+
+	// -1 (unstamped install) is smaller than every real sequence, so a v0.18.0
+	// install picks up the newest pack exactly once and is stamped from then on.
+	const bool dataNewer = hasDataAsset && remoteDataSeq > localDataSeq;
+	p.applyDataNow = dataNewer && autoData;
+	p.offerData = dataNewer && !autoData;
+	return p;
 }
 
 // ---- AppUpdater --------------------------------------------------------------
@@ -355,6 +520,7 @@ void AppUpdater::Init(const std::wstring& exeDir)
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.localVer = POBTOOLS_VERSION_STRING;
+		st_.localDataVer = ReadLocalDataVersion(exeDir_);
 	}
 	worker_ = std::thread(&AppUpdater::workerLoop, this);
 }
@@ -447,15 +613,26 @@ void AppUpdater::workerLoop()
 				setPhase(AppUpdatePhase::Idle, "");
 			}
 		} else if (cmd == Cmd::UpdateTranslations) {
-			// The one-off apply behind the TransAvailable notice. Deliberately not
-			// gated on transUpdates_: the user pressed this.
+			// The one-off apply behind the TransAvailable notice and behind the
+			// "no dictionaries at all" banner. Deliberately not gated on
+			// transUpdates_: the user pressed this.
 			if (hold_.load()) {
-				setPhase(AppUpdatePhase::Error, u8"POB 執行中，請先關閉所有 POB 視窗");
-			} else if (!latest_.hasTrans) {
-				setPhase(AppUpdatePhase::Error, u8"找不到對應的翻譯資料");
-			} else if (!doUpdateTranslations(&err)) {
-				log_line(exeDir_, "manual translation update failed: " + err);
-				setPhase(AppUpdatePhase::Error, err);
+				setPhase(AppUpdatePhase::Error, kMsgPobRunning);
+			} else {
+				// 按鈕可能在任何檢查跑完之前就被按下(全新安裝的橫幅、或這一輪
+				// 檢查因為 POB 開著被跳過)。少了這一步,按鈕會回「找不到對應的
+				// 翻譯資料」—— 而事實只是還沒去問過,使用者無從分辨。
+				if (!latest_.hasData) {
+					std::string derr;
+					if (!fetchDataRelease(&latest_, &derr))
+						log_line(exeDir_, "manual translation update: data line failed: " + derr);
+				}
+				if (!latest_.hasData) {
+					setPhase(AppUpdatePhase::Error, kMsgNoDataAsset);
+				} else if (!doUpdateTranslations(&err)) {
+					log_line(exeDir_, "manual translation update failed: " + err);
+					setPhase(AppUpdatePhase::Error, err);
+				}
 			}
 		} else {
 			if (!doUpdateApp(&err)) {
@@ -471,7 +648,7 @@ bool AppUpdater::downloadAsset(const std::string& url, const std::string& sha256
 {
 	std::wstring host, path;
 	if (!split_https_url(url, &host, &path)) {
-		if (err) *err = u8"發佈資產網址無效: " + url;
+		if (err) *err = kMsgBadAssetUrl + url;
 		return false;
 	}
 	HttpsClient c(host);
@@ -490,11 +667,114 @@ bool AppUpdater::downloadAsset(const std::string& url, const std::string& sha256
 		std::string got;
 		if (!Sha256Hex(out->data(), out->size(), &got) ||
 		    got != to_lower_ascii(sha256hex)) {
-			if (err) *err = u8"下載檔案雜湊值不符（下載損毀？）";
+			if (err) *err = kMsgHashMismatch;
 			return false;
 		}
 	} else {
 		log_line(exeDir_, "asset without digest, hash check skipped: " + url);
+	}
+	return true;
+}
+
+// One release's asset list -> the single entry whose name starts with `prefix`
+// and ends in ".zip". "Exactly one" is asserted rather than "the first one": two
+// matches means the release carries an asset nobody planned for, and picking one
+// at random would install it.
+static bool pick_asset(const ordered_json& release, const char* prefix,
+                       std::string* url, std::string* sha, std::string* why)
+{
+	int hits = 0;
+	if (release.contains("assets")) {
+		for (const auto& a : release["assets"]) {
+			std::string name = a.value("name", std::string());
+			if (name.compare(0, strlen(prefix), prefix) != 0) continue;
+			if (name.size() < 4 || name.compare(name.size() - 4, 4, ".zip") != 0) continue;
+			hits++;
+			*url = a.value("browser_download_url", std::string());
+			std::string digest = a.value("digest", std::string());
+			if (digest.compare(0, 7, "sha256:") == 0) digest.erase(0, 7);
+			else digest.clear(); // unknown scheme: skip hash check
+			*sha = digest;
+		}
+	}
+	if (hits == 1) return true;
+	if (hits > 1 && why) *why = kMsgAssetNotUnique + std::string(prefix);
+	url->clear();
+	sha->clear();
+	return false;
+}
+
+bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
+{
+	std::string body;
+	{
+		HttpsClient api(kApiHost);
+		if (!api.GetString(kLatestPath, body, err, &stop_)) return false;
+	}
+	try {
+		ordered_json j = ordered_json::parse(body);
+		std::string tag = j.value("tag_name", std::string());
+		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
+		rel->appVer = tag;
+		std::string why;
+		rel->hasApp = pick_asset(j, kAppAssetPrefix, &rel->appUrl, &rel->appSha, &why);
+		if (!why.empty()) log_line(exeDir_, "app asset rejected: " + why);
+	} catch (...) {
+		if (err) *err = kMsgBadReleaseInfo;
+		return false;
+	}
+	// ⚠ 這裡解析失敗就整個檢查失敗,是刻意的:releases/latest 回了一個不是
+	// semver 的 tag,代表有人把 data-<n> 發成了正式 release,那正是本次改版
+	// 最高風險的那一格 —— 沉默地繼續會讓使用者以為自己是最新版。
+	std::tuple<int, int, int> v;
+	if (!parse_semver(rel->appVer, &v)) {
+		if (err) *err = kMsgBadVersion + rel->appVer;
+		return false;
+	}
+	return true;
+}
+
+bool AppUpdater::fetchDataRelease(RemoteRelease* rel, std::string* err)
+{
+	std::string body;
+	{
+		HttpsClient api(kApiHost);
+		if (!api.GetString(kReleasesPath, body, err, &stop_)) return false;
+	}
+	try {
+		ordered_json j = ordered_json::parse(body);
+		if (!j.is_array()) {
+			if (err) *err = kMsgBadReleaseList;
+			return false;
+		}
+		for (const auto& r : j) {
+			if (r.value("draft", false)) continue;
+			long long seq = 0;
+			const std::string tag = r.value("tag_name", std::string());
+			if (!ParseDataTagSeq(tag, &seq)) continue;
+			if (seq <= rel->dataSeq) continue; // 自己比大小,不信清單順序
+			std::string url, sha, why;
+			if (!pick_asset(r, kDataAssetPrefix, &url, &sha, &why)) {
+				// 一個沒有資產的 data release 不該讓比它舊的那一個也失效
+				if (!why.empty()) log_line(exeDir_, "data asset rejected: " + why);
+				continue;
+			}
+			rel->dataSeq = seq;
+			rel->dataTag = tag;
+			rel->dataUrl = url;
+			rel->dataSha = sha;
+			rel->hasData = true;
+		}
+	} catch (...) {
+		if (err) *err = kMsgBadReleaseList;
+		return false;
+	}
+	// 「一個 data release 都還沒發」在過渡期是正常狀態,不是壞掉 —— 但它與
+	// 「清單抓不到」在畫面上長得一模一樣(兩者都是什麼都沒有),所以回 false
+	// 讓 doCheck 把原因寫進 log。呼叫端本來就把這條線當非致命處理。
+	if (!rel->hasData) {
+		if (err) *err = kMsgNoDataRelease;
+		return false;
 	}
 	return true;
 }
@@ -506,98 +786,91 @@ bool AppUpdater::doCheck(std::string* err)
 	// recording the check time, so the next tick after the hold lifts retries.
 	if (hold_.load()) return true;
 
-	setPhase(AppUpdatePhase::Checking, u8"檢查更新中…");
+	setPhase(AppUpdatePhase::Checking, kMsgChecking);
 
-	std::string body;
-	{
-		HttpsClient api(kApiHost);
-		if (!api.GetString(kLatestPath, body, err, &stop_)) return false;
-	}
-
+	// --- App 線(致命):失敗就整個檢查失敗,沿用舊行為 ---------------------
 	RemoteRelease rel;
-	try {
-		ordered_json j = ordered_json::parse(body);
-		std::string tag = j.value("tag_name", std::string());
-		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
-		rel.ver = tag;
-		std::string appName = "PobTools-" + tag + ".zip";
-		std::string transName = "PobTools-Translations-" + tag + ".zip";
-		if (j.contains("assets")) {
-			for (const auto& a : j["assets"]) {
-				std::string name = a.value("name", std::string());
-				std::string url = a.value("browser_download_url", std::string());
-				std::string digest = a.value("digest", std::string());
-				if (digest.compare(0, 7, "sha256:") == 0) digest.erase(0, 7);
-				else digest.clear(); // unknown scheme: skip hash check
-				if (name == appName) { rel.hasApp = true; rel.appUrl = url; rel.appSha = digest; }
-				else if (name == transName) { rel.hasTrans = true; rel.transUrl = url; rel.transSha = digest; }
-			}
-		}
-	} catch (...) {
-		if (err) *err = u8"版本資訊解析失敗";
-		return false;
+	if (!fetchAppRelease(&rel, err)) return false;
+
+	// --- Data 線(非致命):翻譯拉不到,程式更新照常 -----------------------
+	// 兩條線分開請求就是為了這一格。共用一次請求的話,翻譯線的任何毛病
+	//(還沒發過 data release、清單暫時打不開)都會連坐擋掉程式更新。
+	{
+		std::string derr;
+		if (!fetchDataRelease(&rel, &derr))
+			log_line(exeDir_, "data line unavailable (non-fatal): " + derr);
 	}
 
-	std::tuple<int, int, int> remoteV;
-	if (!parse_semver(rel.ver, &remoteV)) {
-		if (err) *err = u8"發佈版號無法解析: " + rel.ver;
-		return false;
-	}
-	std::tuple<int, int, int> localApp;
+	std::tuple<int, int, int> remoteApp, localApp;
+	parse_semver(rel.appVer, &remoteApp); // fetchAppRelease 已驗過
 	parse_semver(POBTOOLS_VERSION_STRING, &localApp);
-	std::tuple<int, int, int> localTrans = localApp;
-	{
-		std::tuple<int, int, int> t;
-		if (parse_semver(appliedTrans_, &t) && t > localTrans) localTrans = t;
-	}
+
+	const std::string localData = ReadLocalDataVersion(exeDir_);
+	long long localDataSeq = -1;
+	ParseDataTagSeq(localData, &localDataSeq); // 解不出來就維持 -1
 
 	latest_ = rel;
-	latestSeen_ = rel.ver;
+	latestSeen_ = rel.appVer;
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
-		st_.latestVer = rel.ver;
+		st_.latestAppVer = rel.appVer;
+		st_.latestDataVer = rel.dataTag;
+		st_.localDataVer = localData;
 	}
 
-	AppUpdateDecision d = ClassifyAppUpdate(remoteV, localApp, localTrans);
-	if (d.applyTransNow && rel.hasTrans && !transUpdates_.load()) {
-		// Opted out. Saying "up to date" here would be false, and leaving no way to
-		// take the pack would mean toggling the setting back and forth -- so name
-		// the version and let the UI offer a one-off apply.
-		setPhase(AppUpdatePhase::TransAvailable,
-		         u8"有新的翻譯資料 v" + rel.ver + u8"（目前設定為不自動更新）");
-		lastCheckUtc_ = now_filetime();
-		saveState();
-		return true;
-	}
-	if (d.applyTransNow && rel.hasTrans) {
+	const UpdatePlan plan = PlanUpdates(rel.hasApp, remoteApp, localApp,
+	                                    rel.hasData, rel.dataSeq, localDataSeq,
+	                                    transUpdates_.load());
+
+	// 翻譯線先跑(它會自己套用完),程式線接著**無條件**判斷。
+	// ⚠ 這兩段以前是 if / else-if。當時 patch 與 minor 互斥所以安全,拆線後
+	// 兩者可以同時成立(v0.19.0 與 data-N 同日發),而 else-if 會讓翻譯套用完
+	// 之後**吞掉程式更新提示**,同時 lastCheckUtc 已落盤 → 沉默 24 小時。
+	bool dataOk = true;
+	if (plan.applyDataNow) {
 		std::string terr;
 		if (!doUpdateTranslations(&terr)) {
 			// silent: old dictionaries stay intact, retried next launch
 			// (lastCheckUtc is not persisted on this path)
 			log_line(exeDir_, "translation update failed: " + terr);
 			setPhase(AppUpdatePhase::Idle, "");
-			return true;
+			dataOk = false;
 		}
-	} else if (d.promptApp && rel.hasApp) {
-		setPhase(AppUpdatePhase::AppAvailable,
-		         u8"發現新版 v" + rel.ver + u8"（目前 v" POBTOOLS_VERSION_STRING u8"）");
-	} else {
-		setPhase(AppUpdatePhase::UpToDate, u8"已是最新版 v" POBTOOLS_VERSION_STRING);
+	} else if (plan.offerData) {
+		// Opted out. Saying "up to date" here would be false, and leaving no way to
+		// take the pack would mean toggling the setting back and forth -- so name
+		// the version and let the UI offer a one-off apply.
+		setPhase(AppUpdatePhase::TransAvailable,
+		         MsgDataAvailable(rel.dataTag));
 	}
 
-	lastCheckUtc_ = now_filetime();
+	if (plan.promptApp) {
+		setPhase(AppUpdatePhase::AppAvailable,
+		         MsgAppAvailable(rel.appVer));
+	} else {
+		// 沒有程式更新時,不要把翻譯線剛設好的通知蓋掉;兩線都沒事才報最新版。
+		std::lock_guard<std::mutex> lk(stMx_);
+		if (st_.phase == AppUpdatePhase::Checking) {
+			st_.phase = AppUpdatePhase::UpToDate;
+			st_.message = MsgUpToDate();
+		}
+	}
+
+	if (dataOk) lastCheckUtc_ = now_filetime();
 	saveState();
 	return true;
 }
 
 bool AppUpdater::doUpdateTranslations(std::string* err)
 {
-	setPhase(AppUpdatePhase::TransUpdating, u8"下載新翻譯資料 v" + latest_.ver + u8"…");
+	setPhase(AppUpdatePhase::TransUpdating, MsgDataDownloading(latest_.dataTag));
 
 	std::vector<unsigned char> buf;
-	if (!downloadAsset(latest_.transUrl, latest_.transSha, &buf, err, false)) return false;
+	if (!downloadAsset(latest_.dataUrl, latest_.dataSha, &buf, err, false)) return false;
 
-	std::wstring cacheDir = exeDir_ + L"PobTools\\cache\\app_update\\" + widen(latest_.ver);
+	// ⚠ 快取目錄名用各自的版號。兩線共用一個 "<ver>" 目錄時,一線的
+	// remove_dir_rec 會把另一線正在用的 stage 一起刪掉。
+	std::wstring cacheDir = exeDir_ + L"PobTools\\cache\\app_update\\" + widen(latest_.dataTag);
 	std::wstring stage = cacheDir + L"\\trans_stage\\";
 	remove_dir_rec(cacheDir);
 	if (!ExtractZipToDir(buf.data(), buf.size(), stage, err)) return false;
@@ -605,23 +878,41 @@ bool AppUpdater::doUpdateTranslations(std::string* err)
 	// pack sanity: dictionaries only — a mispackaged asset must not slip through
 	if (!dir_exists(stage + L"Data") || file_exists(stage + L"pob-zh.exe") ||
 	    dir_exists(stage + L"engine")) {
-		if (err) *err = u8"翻譯資料包內容驗證失敗";
+		if (err) *err = kMsgDataPackBad;
 		remove_dir_rec(cacheDir);
 		return false;
 	}
 
 	std::vector<std::wstring> rels;
 	list_files_rec(stage, L"", &rels);
+	const bool packHasStamp = file_exists(stage + kDataStampRel);
 	if (!apply_content_two_pass(exeDir_, stage, rels, err)) {
 		remove_dir_rec(cacheDir);
 		return false;
 	}
+	// The stamp normally rides inside the pack and lands atomically with the
+	// content it describes. A pack without one (hand-built by a translator) would
+	// otherwise leave the install unstamped and redownload the same 4.4MB every
+	// single day, so write it here as a fallback -- late, but bounded.
+	if (!packHasStamp) {
+		ordered_json v;
+		v["dataVersion"] = latest_.dataTag;
+		write_file_atomic(exeDir_ + kDataStampRel, v.dump(2));
+		log_line(exeDir_, "pack carried no translations_version.json; stamped locally");
+	}
 
-	appliedTrans_ = latest_.ver;
+	appliedTrans_ = latest_.dataTag; // informational only; the stamp is the truth
 	remove_dir_rec(cacheDir);
-	setPhase(AppUpdatePhase::TransDone,
-	         u8"翻譯資料已更新至 v" + latest_.ver + u8"（引擎下次啟動生效）");
-	log_line(exeDir_, "translations updated to v" + latest_.ver + " (" +
+	{
+		std::lock_guard<std::mutex> lk(stMx_);
+		st_.localDataVer = ReadLocalDataVersion(exeDir_);
+		// 手動路徑可能沒經過 doCheck,latestDataVer 還是空的 —— UI 的
+		// 「翻譯資料已更新至 」後面就會什麼都沒有。
+		st_.latestDataVer = latest_.dataTag;
+		st_.phase = AppUpdatePhase::TransDone;
+		st_.message = MsgDataApplied(latest_.dataTag);
+	}
+	log_line(exeDir_, "translations updated to " + latest_.dataTag + " (" +
 	                  std::to_string(rels.size()) + " files)");
 	return true;
 }
@@ -634,7 +925,7 @@ static bool validate_app_stage(const std::wstring& stage, std::string* err)
 	    !file_exists(stage + L"engine\\glfw3.dll") ||
 	    !file_exists(stage + L"engine\\libGLESv2.dll") ||
 	    !dir_exists(stage + L"Data")) {
-		if (err) *err = u8"更新暫存檔驗證失敗（可能被防毒隔離）";
+		if (err) *err = kMsgStageBad;
 		return false;
 	}
 	return true;
@@ -643,28 +934,28 @@ static bool validate_app_stage(const std::wstring& stage, std::string* err)
 bool AppUpdater::doUpdateApp(std::string* err)
 {
 	if (!latest_.hasApp) {
-		if (err) *err = u8"找不到對應的發佈資產";
+		if (err) *err = kMsgNoAppAsset;
 		return false;
 	}
 
 	ULARGE_INTEGER freeBytes{};
 	if (GetDiskFreeSpaceExW(exeDir_.c_str(), &freeBytes, nullptr, nullptr) &&
 	    freeBytes.QuadPart < 300ull * 1024 * 1024) {
-		if (err) *err = u8"磁碟空間不足（需 300MB）";
+		if (err) *err = kMsgNoDiskSpace;
 		return false;
 	}
 
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.phase = AppUpdatePhase::AppDownloading;
-		st_.message = u8"下載主體更新 v" + latest_.ver + u8"…";
+		st_.message = MsgAppDownloading(latest_.appVer);
 		st_.bytesDone = st_.bytesTotal = 0;
 	}
 	std::vector<unsigned char> buf;
 	if (!downloadAsset(latest_.appUrl, latest_.appSha, &buf, err, true)) return false;
 
-	setPhase(AppUpdatePhase::AppStaging, u8"解壓與驗證更新檔…");
-	std::wstring cacheDir = exeDir_ + L"PobTools\\cache\\app_update\\" + widen(latest_.ver);
+	setPhase(AppUpdatePhase::AppStaging, kMsgStaging);
+	std::wstring cacheDir = exeDir_ + L"PobTools\\cache\\app_update\\v" + widen(latest_.appVer);
 	std::wstring stage = cacheDir + L"\\app_stage\\";
 	remove_dir_rec(cacheDir);
 	if (!ExtractZipToDir(buf.data(), buf.size(), stage, err)) return false;
@@ -673,7 +964,7 @@ bool AppUpdater::doUpdateApp(std::string* err)
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.phase = AppUpdatePhase::AppReadyToApply;
-		st_.message = u8"更新檔就緒，即將重新啟動…";
+		st_.message = kMsgReadyRestart;
 		st_.applyPending = true;
 		st_.stageDir = stage;
 	}
@@ -732,10 +1023,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 	wchar_t mname[64];
 	swprintf_s(mname, L"Local\\PobTools-appswap-%016llx", hash);
 	HANDLE mtx = CreateMutexW(nullptr, TRUE, mname);
-	if (!mtx) return fail(u8"無法建立更新鎖");
+	if (!mtx) return fail(kMsgLockFailed);
 	if (GetLastError() == ERROR_ALREADY_EXISTS) {
 		CloseHandle(mtx);
-		return fail(u8"另一個 PobTools 實例正在套用更新");
+		return fail(kMsgOtherInstance);
 	}
 
 	int rc = 1;
@@ -750,9 +1041,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 		int skippedTrans = 0;
 		for (const std::wstring& rel : rels) {
 			if (rel == L"pob-zh.exe" || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
-			// The app zip always carries Data\ (a fresh install needs it); holding
-			// the dictionaries back happens HERE, at apply time, so someone editing
-			// translations can still take the program update.
+			// Normally a no-op since v0.19.0: PobTools-update-<ver>.zip carries no
+			// dictionaries at all. Kept as the last line of defence for the two
+			// cases where the stage DOES hold them -- someone pointed at the full
+			// zip, or packaging leaked a dictionary into the app pack.
 			if (!includeTranslations && IsTranslationDataRel(rel)) { skippedTrans++; continue; }
 			content.push_back(rel);
 		}
@@ -777,7 +1069,7 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 			r.dst = exeDir + rel;
 			if (file_exists(r.dst)) {
 				if (!MoveFileExW(r.dst.c_str(), (r.dst + L".old").c_str(), MOVEFILE_REPLACE_EXISTING)) {
-					msg = u8"備份失敗: " + narrow(rel);
+					msg = kMsgBackupFailed + narrow(rel);
 					ok = false;
 					break;
 				}
@@ -795,7 +1087,7 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 					if (!placed) Sleep(300);
 				}
 				if (!placed) {
-					msg = u8"放置失敗: " + narrow(boot[i]);
+					msg = kMsgPlaceFailed + narrow(boot[i]);
 					ok = false;
 					break;
 				}
@@ -808,7 +1100,7 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 				if (it->backedUp)
 					MoveFileExW((it->dst + L".old").c_str(), it->dst.c_str(), MOVEFILE_REPLACE_EXISTING);
 			}
-			msg += u8"（已還原舊版）";
+			msg += kMsgRolledBack;
 			break;
 		}
 
@@ -820,10 +1112,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 				try { v = ordered_json::parse(content2); } catch (...) { v = ordered_json(); }
 			}
 			v["appliedApp"] = tag;
-			// Only claim the dictionaries moved if they actually did. Recording it
-			// unconditionally would make the next check think the translation data
-			// is current and never offer the pack again.
-			if (includeTranslations) v["appliedTranslations"] = tag; // the full zip carries Data\ too
+			// ⚠ 這裡以前會在 includeTranslations 時寫 appliedTranslations = <程式版號>。
+			// 拆兩線之後那是錯的:程式版號與 data-<n> 不同號,寫進去只會污染一個
+			// 現在純資訊性的欄位。翻譯資料的真值是 Data\translations_version.json,
+			// 它跟著內容一起被搬,不需要也不該由這裡代寫。
 			CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 			write_file_atomic(exeDir + L"PobTools\\update_state.json", v.dump(2));
 		}
@@ -847,7 +1139,7 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 
 	ReleaseMutex(mtx);
 	CloseHandle(mtx);
-	if (rc != 0) return fail(msg.empty() ? u8"更新套用失敗" : msg);
+	if (rc != 0) return fail(msg.empty() ? kMsgApplyFailed : msg);
 	return 0;
 }
 
@@ -884,9 +1176,16 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 		return 1;
 	}
 	AppUpdater::Status st = u.Poll();
-	printf("local v%s, remote v%s\n%s\n", POBTOOLS_VERSION_STRING, st.latestVer.c_str(),
-	       st.message.c_str());
-	log_line(exeDir, "cli check: local v" POBTOOLS_VERSION_STRING ", remote v" + st.latestVer);
+	// 兩個版號都印。這是舊客戶端相容性驗證(拿 v0.18.0 的 exe 跑 --app-update-check)
+	// 唯一的肉眼證據來源,所以程式版與資料版必須分行看得見。
+	printf("app:  local v%s, remote v%s\n", POBTOOLS_VERSION_STRING, st.latestAppVer.c_str());
+	printf("data: local %s, remote %s\n",
+	       st.localDataVer.empty() ? "(unstamped)" : st.localDataVer.c_str(),
+	       st.latestDataVer.empty() ? "(none)" : st.latestDataVer.c_str());
+	printf("%s\n", st.message.c_str());
+	log_line(exeDir, "cli check: app local v" POBTOOLS_VERSION_STRING ", remote v" +
+	                 st.latestAppVer + "; data local " + st.localDataVer + ", remote " +
+	                 st.latestDataVer);
 	if (checkOnly || st.phase != AppUpdatePhase::AppAvailable) return 0;
 
 	if (!u.doUpdateApp(&err)) {
@@ -895,18 +1194,56 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	}
 	st = u.Poll();
 	std::string aerr;
-	if (ApplyStagedAppUpdateAndRelaunch(exeDir, st.stageDir, st.latestVer, false, &aerr,
+	if (ApplyStagedAppUpdateAndRelaunch(exeDir, st.stageDir, st.latestAppVer, false, &aerr,
 	                                    wantTrans) != 0) {
 		printf("FAIL: %s\n", aerr.c_str());
 		return 1;
 	}
-	printf("updated to v%s - restart PobTools to finish\n", st.latestVer.c_str());
+	printf("updated to v%s - restart PobTools to finish\n", st.latestAppVer.c_str());
 	return 0;
 }
 
-// Hidden helper for the one-time redirect verification: downloads the latest
-// Translations asset (github.com -> objects.githubusercontent.com 302) and
-// reports whether the sha256 digest matched. Applies nothing.
+int RunTranslationDataList(const std::wstring& dir, const std::wstring& outFile)
+{
+	attach_parent_console();
+
+	std::wstring root = dir;
+	if (!root.empty() && root.back() != L'\\') root += L'\\';
+	if (!dir_exists(root)) {
+		printf("FAIL: not a directory: %s\n", narrow(root).c_str());
+		return 1;
+	}
+
+	std::vector<std::wstring> all;
+	list_files_rec(root, L"", &all);
+
+	std::vector<std::wstring> hits;
+	for (const std::wstring& rel : all)
+		if (IsTranslationDataRel(rel)) hits.push_back(rel);
+	// Deterministic order: packaging diffs this output against the zip entries,
+	// and FindFirstFileW's order is not something to build an assertion on.
+	std::sort(hits.begin(), hits.end());
+
+	std::string text;
+	for (const std::wstring& rel : hits) text += narrow(rel) + "\n";
+
+	fwrite(text.data(), 1, text.size(), stdout);
+	if (!outFile.empty() && !write_file_bytes(outFile, text.data(), text.size())) {
+		printf("FAIL: cannot write %s\n", narrow(outFile).c_str());
+		return 1;
+	}
+	// 一個檔都沒有 = 規則沒接上或指錯目錄。舊打包腳本的 glob 打錯字會靜默產出
+	// 空 zip 並一路成功,那個洞在這裡就堵掉。
+	if (hits.empty()) {
+		printf("FAIL: no translation data under %s\n", narrow(root).c_str());
+		return 1;
+	}
+	return 0;
+}
+
+// Hidden helper for the one-time redirect verification: downloads the newest
+// data pack (github.com -> objects.githubusercontent.com 302) and reports
+// whether the sha256 digest matched. Applies nothing.
 int RunAppFetchTest(const std::wstring& exeDir)
 {
 	attach_parent_console();
@@ -918,12 +1255,12 @@ int RunAppFetchTest(const std::wstring& exeDir)
 		printf("FAIL check: %s\n", err.c_str());
 		return 1;
 	}
-	if (!u.latest_.hasTrans) {
-		printf("FAIL: latest release has no translations asset\n");
+	if (!u.latest_.hasData) {
+		printf("FAIL: no data-<n> release with a %s* asset\n", kDataAssetPrefix);
 		return 1;
 	}
 	std::vector<unsigned char> buf;
-	if (!u.downloadAsset(u.latest_.transUrl, u.latest_.transSha, &buf, &err, false)) {
+	if (!u.downloadAsset(u.latest_.dataUrl, u.latest_.dataSha, &buf, &err, false)) {
 		printf("FAIL fetch: %s\n", err.c_str());
 		return 1;
 	}
@@ -1013,24 +1350,65 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		check(ok, "T3 sha256 test vector");
 	}
 
-	// T4: update policy matrix (patch = data-only, minor/major = app, never downgrade)
+	// T4: the two-line update plan.
+	//
+	// ⚠ This test used to assert the OPPOSITE rule -- "patch bump = silent
+	// data-only release". That rule died with the split (a patch bump now means a
+	// program pack that renames pob-zh.exe and restarts the process), and a test
+	// left asserting it would have gone on giving a green light to the wrong
+	// behaviour. The cases that matter most are the last two: both lines updating
+	// at once, which the old if/else-if silently collapsed into one.
 	{
 		auto v = [](int a, int b, int c) { return std::tuple<int, int, int>{a, b, c}; };
-		AppUpdateDecision d;
+		const auto v0190 = v(0, 19, 0);
+		UpdatePlan p;
 		bool ok = true;
-		d = ClassifyAppUpdate(v(0, 1, 1), v(0, 1, 0), v(0, 1, 0));
-		ok = ok && d.applyTransNow && !d.promptApp;              // patch bump
-		d = ClassifyAppUpdate(v(0, 2, 0), v(0, 1, 5), v(0, 1, 5));
-		ok = ok && !d.applyTransNow && d.promptApp;              // minor bump
-		d = ClassifyAppUpdate(v(1, 0, 0), v(0, 9, 9), v(0, 9, 9));
-		ok = ok && !d.applyTransNow && d.promptApp;              // major bump
-		d = ClassifyAppUpdate(v(0, 1, 0), v(0, 1, 0), v(0, 1, 0));
-		ok = ok && !d.applyTransNow && !d.promptApp;             // equal
-		d = ClassifyAppUpdate(v(0, 0, 9), v(0, 1, 0), v(0, 1, 0));
-		ok = ok && !d.applyTransNow && !d.promptApp;             // never downgrade
-		d = ClassifyAppUpdate(v(0, 1, 2), v(0, 1, 0), v(0, 1, 2));
-		ok = ok && !d.applyTransNow && !d.promptApp;             // patch already applied
-		check(ok, "T4 update policy matrix");
+		std::string bad;
+		auto want = [&](const char* what, const UpdatePlan& got, bool app, bool applyD, bool offerD) {
+			if (got.promptApp == app && got.applyDataNow == applyD && got.offerData == offerD) return;
+			ok = false;
+			bad += std::string(" ") + what;
+		};
+
+		// --- App 線 -------------------------------------------------------
+		// every bump prompts now, patch included
+		want("patch-prompts", PlanUpdates(true, v(0, 19, 1), v0190, false, -1, -1, true),
+		     true, false, false);
+		want("minor-prompts", PlanUpdates(true, v(0, 20, 0), v0190, false, -1, -1, true),
+		     true, false, false);
+		want("major-prompts", PlanUpdates(true, v(1, 0, 0), v0190, false, -1, -1, true),
+		     true, false, false);
+		want("equal-quiet", PlanUpdates(true, v0190, v0190, false, -1, -1, true),
+		     false, false, false);
+		want("never-downgrade", PlanUpdates(true, v(0, 18, 0), v0190, false, -1, -1, true),
+		     false, false, false);
+		// a release without the update asset must not offer an update it cannot do
+		want("no-asset-no-prompt", PlanUpdates(false, v(0, 20, 0), v0190, false, -1, -1, true),
+		     false, false, false);
+
+		// --- Data 線 ------------------------------------------------------
+		want("data-newer-auto", PlanUpdates(true, v0190, v0190, true, 3, 2, true),
+		     false, true, false);
+		want("data-newer-manual", PlanUpdates(true, v0190, v0190, true, 3, 2, false),
+		     false, false, true);
+		want("data-same", PlanUpdates(true, v0190, v0190, true, 3, 3, true),
+		     false, false, false);
+		// 遠端比本機舊(有人把 data-2 重發成 latest)絕不倒退
+		want("data-older", PlanUpdates(true, v0190, v0190, true, 2, 3, true),
+		     false, false, false);
+		// 全新安裝/v0.18.0 升上來:沒有戳記 = -1,拿一次就好
+		want("data-unstamped", PlanUpdates(true, v0190, v0190, true, 1, -1, true),
+		     false, true, false);
+		want("data-no-asset", PlanUpdates(true, v0190, v0190, false, -1, -1, true),
+		     false, false, false);
+
+		// --- 兩線同時 ------------------------------------------------------
+		// 這才是 doCheck 的 if/else-if 會吃掉東西的那一格
+		want("both-auto", PlanUpdates(true, v(0, 20, 0), v0190, true, 4, 3, true),
+		     true, true, false);
+		want("both-manual", PlanUpdates(true, v(0, 20, 0), v0190, true, 4, 3, false),
+		     true, false, true);
+		check(ok, ("T4 two-line update plan" + (ok ? std::string() : (" -- wrong:" + bad))).c_str());
 	}
 
 	// T5: state record round-trip + corrupt file reads as defaults
@@ -1121,9 +1499,11 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		check(ok, "T7 mid-swap failure rolls boot files back");
 	}
 
-	// T8: what counts as translation data. The near-misses matter more than the
-	// hits -- classifying one file too many means an update silently stops
-	// delivering it.
+	// T8: what counts as translation data -- now the line between the two release
+	// zips, so BOTH directions are damaging. A file wrongly called translation
+	// data disappears from the app pack (nobody who only takes program updates
+	// ever gets it again); a file wrongly called app data is packed into the app
+	// zip and every program update overwrites the translator's copy.
 	{
 		struct Case { const wchar_t* rel; bool want; };
 		const Case cases[] = {
@@ -1133,16 +1513,27 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 			{ L"Data\\launcher\\zh-rTW\\launcher.json",        true  },
 			{ L"data\\POE1\\zh-rTW\\Stats.JSON",               true  }, // case-insensitive
 			{ L"Data/poe1/zh-rTW/items.json",                  true  }, // forward slashes
-			{ L"Data\\atlas_versions\\3.29\\atlas_tree_zh.json", true },
+			// a locale nobody has shipped yet: the rule is "one more directory
+			// level", never a list of known locales, so ko is covered for free.
+			// Hardcoding zh-rTW anywhere is how a new language silently fails to
+			// be packaged at all.
+			{ L"Data\\poe1\\ko\\ui.json",                      true  },
+			{ L"Data\\launcher\\ko\\launcher.json",            true  },
 			{ L"Data\\filter_items_zh.json",                   true  },
 			{ L"Data\\item_meta.json",                         true  },
 			{ L"Data\\item_classes_zh.json",                   true  },
-			// near misses that must keep updating
+			{ L"Data\\translations_version.json",              true  }, // the stamp rides with them
+			// near misses that must stay in the app pack
 			{ L"Data\\poe1x\\zh-rTW\\ui.json",                 false }, // prefix trap
 			{ L"Data\\poe1\\zh-rTW\\notes.txt",                false }, // not a dictionary
 			{ L"Data\\poe1\\ui.json",                          false }, // missing locale level
 			{ L"Data\\poe1\\zh-rTW\\sub\\ui.json",             false }, // one level too deep
-			{ L"Data\\atlas_versions\\3.29\\atlas_tree_poe1.json", false }, // structure, not text
+			// ⚠ atlas_tree_zh.json moved OUT of the translation set in v0.19.0: a
+			// season folder needs all three of its files at once, so splitting it
+			// across the two zips makes a new league invisible to anyone who only
+			// took the app pack. This case is the one guarding that decision.
+			{ L"Data\\atlas_versions\\3.29\\atlas_tree_zh.json",   false },
+			{ L"Data\\atlas_versions\\3.29\\atlas_tree_poe1.json", false },
 			{ L"Data\\atlas_index.json",                       false },
 			{ L"Fonts\\NotoSansTC-Regular.ttf",                false },
 			{ L"pob-zh.exe",                                   false },
@@ -1180,8 +1571,9 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		     readPrefix(inst + L"engine\\SimpleGraphic.dll") == "NEW" &&
 		     readPrefix(inst + L"Data\\atlas_index.json") == "NEW" &&
 		     readPrefix(inst + L"Data\\poe1\\zh-rTW\\ui.json") == "OLD";
-		// ...and it must not claim the dictionaries are current, or the pack would
-		// never be offered again.
+		// The app swap must not touch the data version at all -- in either
+		// direction. It used to write appliedTranslations = <app tag>, which after
+		// the split is a value from the wrong numbering scheme entirely.
 		std::string stateRaw;
 		ok = ok && read_file_utf8(inst + L"PobTools\\update_state.json", stateRaw) &&
 		     stateRaw.find("appliedTranslations") == std::string::npos;
@@ -1200,10 +1592,170 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		ok = ok && ApplyStagedAppUpdateAndRelaunch(inst, stage, "9.9.9", false, &aerr,
 		                                           /*includeTranslations=*/true) == 0;
 		ok = ok && readPrefix(inst + L"Data\\poe1\\zh-rTW\\ui.json") == "NEW";
+		// Even here -- dictionaries genuinely replaced -- the app tag must not be
+		// recorded as a data version. The stamp file is the only truth.
 		std::string stateRaw;
 		ok = ok && read_file_utf8(inst + L"PobTools\\update_state.json", stateRaw) &&
-		     stateRaw.find("appliedTranslations") != std::string::npos;
+		     stateRaw.find("appliedTranslations") == std::string::npos;
 		check(ok, "T10 app update with translations on replaces the dictionaries");
+	}
+
+	// T11: the data version stamp. The whole Data 線 rests on this one number, and
+	// every way of failing to read it has to land on "unstamped" (-1) rather than
+	// on "current" -- guessing current strands an install on stale dictionaries
+	// with nothing to show for it.
+	{
+		std::wstring inst = root + L"\\t11\\inst\\";
+		SHCreateDirectoryExW(nullptr, (inst + L"Data").c_str(), nullptr);
+		bool ok = true;
+		std::string bad;
+		auto seqOf = [](const char* tag) {
+			long long n = -1;
+			return ParseDataTagSeq(tag, &n) ? n : -1;
+		};
+		// tag parsing: an app tag must never be mistaken for a data tag
+		if (seqOf("data-3") != 3) { ok = false; bad += " data-3"; }
+		if (seqOf("data-0") != 0) { ok = false; bad += " data-0"; }
+		if (seqOf("data-12") != 12) { ok = false; bad += " data-12"; }
+		if (seqOf("v0.19.0") != -1) { ok = false; bad += " v0.19.0"; }
+		if (seqOf("data-") != -1) { ok = false; bad += " data-"; }
+		if (seqOf("data-1a") != -1) { ok = false; bad += " data-1a"; }
+		if (seqOf("Data-1") != -1) { ok = false; bad += " Data-1"; }
+		// missing file
+		if (!ReadLocalDataVersion(inst).empty()) { ok = false; bad += " missing"; }
+		// present
+		writeSmall(inst + kDataStampRel, "{\"dataVersion\":\"data-7\"}");
+		if (ReadLocalDataVersion(inst) != "data-7") { ok = false; bad += " present"; }
+		// corrupt reads as unstamped, not as current
+		writeSmall(inst + kDataStampRel, "{not json");
+		if (!ReadLocalDataVersion(inst).empty()) { ok = false; bad += " corrupt"; }
+		check(ok, ("T11 data version stamp round-trip" +
+		           (ok ? std::string() : (" -- wrong:" + bad))).c_str());
+	}
+
+	// T12: --translation-data-list is the contract packaging splits the zips on,
+	// so it is exercised against a tree rather than trusted. Asserting the exact
+	// text (not just a count) is deliberate: packaging compares this output to the
+	// zip entry names, so separator and ordering are part of the contract.
+	{
+		std::wstring src = root + L"\\t12\\dist\\";
+		bool ok = writeSmall(src + L"Data\\poe1\\zh-rTW\\ui.json", "x");
+		ok = ok && writeSmall(src + L"Data\\poe1\\ko\\ui.json", "x");
+		ok = ok && writeSmall(src + L"Data\\launcher\\zh-rTW\\launcher.json", "x");
+		ok = ok && writeSmall(src + L"Data\\translations_version.json", "x");
+		ok = ok && writeSmall(src + L"Data\\item_meta.json", "x");
+		// must NOT be listed
+		ok = ok && writeSmall(src + L"Data\\atlas_versions\\3.29.0\\atlas_tree_zh.json", "x");
+		ok = ok && writeSmall(src + L"Data\\atlas_index.json", "x");
+		ok = ok && writeSmall(src + L"Data\\poe1\\zh-rTW\\glossary.md", "x");
+		ok = ok && writeBig(src + L"pob-zh.exe", "x");
+
+		std::wstring outFile = root + L"\\t12\\list.txt";
+		ok = ok && RunTranslationDataList(src, outFile) == 0;
+		std::string got;
+		ok = ok && read_file_utf8(outFile, got);
+		const std::string wantText =
+			"Data\\item_meta.json\n"
+			"Data\\launcher\\zh-rTW\\launcher.json\n"
+			"Data\\poe1\\ko\\ui.json\n"
+			"Data\\poe1\\zh-rTW\\ui.json\n"
+			"Data\\translations_version.json\n";
+		ok = ok && got == wantText;
+		// an empty result is a packaging bug, not a valid answer
+		std::wstring empty = root + L"\\t12\\empty\\";
+		SHCreateDirectoryExW(nullptr, empty.c_str(), nullptr);
+		ok = ok && RunTranslationDataList(empty, L"") != 0;
+		ok = ok && RunTranslationDataList(root + L"\\t12\\nope\\", L"") != 0;
+		check(ok, ("T12 --translation-data-list walks the tree through the same rule" +
+		           (ok ? std::string() : (" -- got:\n" + got))).c_str());
+	}
+
+	// T13: every character the updater can put on screen must be in the glyph
+	// seed. This is the half that was missing for a whole release.
+	//
+	// --font-coverage-selftest已經在吃 kAppUpdateGlyphSeed,而且一直是綠的 -- but it
+	// asks "can the fonts draw what is IN the seed", never "is what the updater
+	// SAYS in the seed". So a phrase that was never seeded (「請先關閉所有 POB
+	// 視窗」 shipped that way in v0.18.0) is invisible to it by construction: the
+	// characters it would have complained about were never handed to it.
+	//
+	// This test closes the loop from the other end -- it drives the real message
+	// formatters with fake data and checks the produced text, so the failure it
+	// catches is "someone wrote a message with a character nobody seeded".
+	{
+		// UTF-8 -> codepoints. Not a validating decoder: this only has to answer
+		// "which characters appear", and the input is our own literals.
+		auto codepoints = [](const std::string& s, std::vector<unsigned>* out) {
+			for (size_t i = 0; i < s.size();) {
+				const unsigned char c = (unsigned char)s[i];
+				unsigned cp = c;
+				int extra = 0;
+				if (c >= 0xF0) { cp = c & 0x07u; extra = 3; }
+				else if (c >= 0xE0) { cp = c & 0x0Fu; extra = 2; }
+				else if (c >= 0xC0) { cp = c & 0x1Fu; extra = 1; }
+				i++;
+				for (int k = 0; k < extra && i < s.size(); k++, i++)
+					cp = (cp << 6) | ((unsigned char)s[i] & 0x3Fu);
+				out->push_back(cp);
+			}
+		};
+		std::vector<unsigned> seedCps;
+		codepoints(kAppUpdateGlyphSeed, &seedCps);
+		std::sort(seedCps.begin(), seedCps.end());
+
+		auto firstMissing = [&](const std::string& msg, unsigned* missing) {
+			std::vector<unsigned> cps;
+			codepoints(msg, &cps);
+			for (unsigned cp : cps) {
+				if (cp < 0x80) continue; // ASCII: every font has it
+				if (!std::binary_search(seedCps.begin(), seedCps.end(), cp)) {
+					if (missing) *missing = cp;
+					return true;
+				}
+			}
+			return false;
+		};
+		auto hex = [](unsigned cp) {
+			char buf[16];
+			sprintf_s(buf, "U+%04X", cp);
+			return std::string(buf);
+		};
+
+		int checked = 0;
+		bool ok = true;
+		std::string bad;
+		auto expectCovered = [&](const std::string& msg) {
+			checked++;
+			unsigned miss = 0;
+			if (firstMissing(msg, &miss)) {
+				ok = false;
+				bad += " " + hex(miss) + "(" + msg + ")";
+			}
+		};
+
+		for (const char* frag : kUpdMsgFragments) expectCovered(frag);
+		expectCovered(kExternalMsgSeed);
+		// The composed messages, driven with stand-in版號/標籤 -- these are what a
+		// user actually sees, and the only place a stray literal could hide.
+		expectCovered(MsgUpToDate());
+		expectCovered(MsgAppAvailable("9.9.9"));
+		expectCovered(MsgAppDownloading("9.9.9"));
+		expectCovered(MsgDataAvailable("data-42"));
+		expectCovered(MsgDataDownloading("data-42"));
+		expectCovered(MsgDataApplied("data-42"));
+
+		// ⚠ Does this check have teeth? Everything above is seeded by
+		// construction (the seed is generated from the same list), so all of it
+		// would also pass if firstMissing() were broken and always returned false.
+		// A character deliberately left out of the list must be detected.
+		unsigned probeMiss = 0;
+		const bool probeCaught = firstMissing(u8"Ω", &probeMiss) && probeMiss == 0x03A9;
+		if (!probeCaught) { ok = false; bad += " probe-not-detected"; }
+		if (checked == 0) { ok = false; bad += " nothing-checked"; }
+
+		check(ok, ("T13 every updater message character is in the glyph seed (" +
+		           std::to_string(checked) + " messages)" +
+		           (ok ? std::string() : (" -- missing:" + bad))).c_str());
 	}
 
 	remove_dir_rec(root);

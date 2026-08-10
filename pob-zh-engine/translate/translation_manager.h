@@ -67,6 +67,28 @@ const char* translation_strip_ggg_markup(const char *s);
 ** bug waiting for the next item shape. Buffer is valid until the next call. */
 const char* translation_classify_dump(const char *text);
 
+/* ===== 填值機制的測試掛勾(--placeholder-selftest 專用) =====
+**
+** 多佔位符的詞條靠 {N} 的編號對位,不靠出現順序:中文常把 {1} 講在 {0} 前面。
+** 編號在雜湊成 '#' 的那一刻就消失了,所以對照表是載入時算好的,執行時只照表填。
+**
+** translation_debug_fill: 用 source 樣板解讀 input 的數值,填進 target 樣板。
+** 走的是載入期/執行期共用的同一份計畫產生器,所以測試裡的邊角案例驗到的就是引擎
+** 真正在跑的那一份。input 必須雜湊成與 source 相同的字串(執行期命中的條件),
+** 否則回 nullptr —— 打錯的測試案例應該炸掉而不是安靜通過。
+** 回傳靜態緩衝區,下次呼叫即失效。 */
+const char* translation_debug_fill(const char *source_tmpl, const char *target_tmpl, const char *input);
+
+/* 同一行文字,填值用的數值格與 extract_numbers 必須逐一相符(兩者是同一套掃描規則
+** 的兩個出口)。回傳不一致的欄位數,0 = 相符。 */
+int translation_debug_slot_mismatch(const char *text);
+
+/* 突變開關:退回舊行為 —— 依 '#' 出現順序填,而且輸入只抽數字(原文自帶的 '#' 不
+** 算一格)。兩半都要退,否則基準線比真正的舊引擎好,A/B 量到的差異會偏少。
+** 必須在 translation_init() 之前設定才會影響字典裡的對照表(計畫是載入時算的);
+** translation_debug_fill 則是每次呼叫都看現值。回傳先前的設定。 */
+int translation_debug_set_legacy_fill(int on);
+
 /* Get current locale string (e.g. "zh-rTW") */
 const char* translation_get_locale(void);
 

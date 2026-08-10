@@ -34,7 +34,7 @@
     "Update complete, restarting...": "更新完成，即將重新啟動…",
     "Update failed: ": "更新失敗：",
     "Retry": "重試",
-    "Translation data updated to v": "翻譯資料已更新至 v",
+    "Translation data updated to ": "翻譯資料已更新至 ",
     "Check for updates": "檢查更新",
     "Automatic checks run at most once a day, and only at startup. Click to check right now.": "自動檢查每天最多一次，且只在啟動時進行；按這裡立即強制檢查",
     "Checking for updates...": "檢查更新中…",
@@ -75,10 +75,12 @@
     "That folder already holds dictionaries. Continuing overwrites the edits in them.": "這個資料夾裡已經有翻譯字典了。繼續會覆蓋掉裡面的修改。",
     "Overwrite": "覆蓋",
     "Cancel": "取消",
-    "Update translation data too": "更新時一併更新翻譯資料",
+    "Automatically update translation data": "自動更新翻譯資料",
     "Yes: new-league affix and item translations arrive automatically": "是：新賽季的詞綴與物品翻譯自動跟上",
     "No: I edit the translations myself, do not overwrite my files": "否：我自己在改翻譯，不要覆蓋我的檔案",
     "Apply once now": "立即套用一次",
+    "Translation data version: ": "目前翻譯資料版本：",
+    "not stamped (installed before v0.19.0)": "未標示（v0.18.0 以前的安裝）",
     "Translation data: external folder": "翻譯資料：外部資料夾",
     "Use built-in": "切回內建",
     "Install a font...": "安裝字型…",
@@ -93,6 +95,10 @@
     "Separate desktop windows": "各自獨立的視窗",
     "As tabs inside this launcher": "在啟動器裡開成分頁",
     "In tabbed mode POB and the tools sit inside this window. POB itself runs normally and nothing is written to its folder.": "分頁模式下，POB 與工具會嵌在這個視窗裡；POB 本身照常執行，資料夾不會被動到。",
-    "Restart the launcher for this to take effect": "改完要重開啟動器才會生效"
+    "Restart the launcher for this to take effect": "改完要重開啟動器才會生效",
+    "This install has no translation data, so POB shows the original English. The program update pack does not carry the dictionaries; they are downloaded separately.": "這份安裝沒有翻譯資料，POB 會顯示英文原文。主程式更新包不含字典，需要另外下載一次。",
+    "Download translation data now": "立即下載翻譯資料",
+    "Translation data updated to v": "翻譯資料已更新至 v",
+    "Update translation data too": "更新時一併更新翻譯資料"
   }
 }

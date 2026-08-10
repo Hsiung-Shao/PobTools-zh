@@ -67,7 +67,8 @@
 	X(updateRestarting,  u8"更新完成，即將重新啟動…",      u8"Update complete, restarting...")        \
 	X(updateFailed,      u8"更新失敗：",                   u8"Update failed: ")                       \
 	X(updateRetry,       u8"重試",                         u8"Retry")                                 \
-	X(updateTransDone,   u8"翻譯資料已更新至 v",           u8"Translation data updated to v")         \
+	/* 版號後面沒有 v:翻譯資料走的是 data-<n>,不是 semver */                                        \
+	X(updateTransDone,   u8"翻譯資料已更新至 ",            u8"Translation data updated to ")          \
 	X(updateCheck,       u8"檢查更新",                     u8"Check for updates")                     \
 	X(updateCheckTip,    u8"自動檢查每天最多一次，且只在啟動時進行；按這裡立即強制檢查",              \
 	                     u8"Automatic checks run at most once a day, and only at startup. Click to check right now.") \
@@ -124,12 +125,17 @@
 	                     u8"That folder already holds dictionaries. Continuing overwrites the edits in them.") \
 	X(overwriteConfirm,  u8"覆蓋",                         u8"Overwrite")                            \
 	X(cancel,            u8"取消",                         u8"Cancel")                               \
-	X(transUpdateLabel,  u8"更新時一併更新翻譯資料",       u8"Update translation data too")           \
+	/* v0.19.0:翻譯資料自成一條發佈線,不再跟著程式更新走,「一併」已不成立 */                        \
+	X(transUpdateLabel,  u8"自動更新翻譯資料",             u8"Automatically update translation data") \
 	X(transUpdateOn,     u8"是：新賽季的詞綴與物品翻譯自動跟上",                                      \
 	                     u8"Yes: new-league affix and item translations arrive automatically")        \
 	X(transUpdateOff,    u8"否：我自己在改翻譯，不要覆蓋我的檔案",                                    \
 	                     u8"No: I edit the translations myself, do not overwrite my files")           \
 	X(transApplyNow,     u8"立即套用一次",                 u8"Apply once now")                       \
+	/* 兩個版號了:程式一個、翻譯資料一個,設定頁要說得出目前是哪一份 */                              \
+	X(transDataVersion,  u8"目前翻譯資料版本：",           u8"Translation data version: ")            \
+	X(transDataUnstamped, u8"未標示（v0.18.0 以前的安裝）",                                           \
+	                     u8"not stamped (installed before v0.19.0)")                                  \
 	X(homeExternalData,  u8"翻譯資料：外部資料夾",         u8"Translation data: external folder")     \
 	X(useBuiltin,        u8"切回內建",                     u8"Use built-in")                          \
 	/* font installation + coverage (v0.16.0) */                                                     \
@@ -150,7 +156,13 @@
 	X(winModeTabbed,     u8"在啟動器裡開成分頁",           u8"As tabs inside this launcher")          \
 	X(winModeHint,       u8"分頁模式下，POB 與工具會嵌在這個視窗裡；POB 本身照常執行，資料夾不會被動到。", \
 	                     u8"In tabbed mode POB and the tools sit inside this window. POB itself runs normally and nothing is written to its folder.") \
-	X(winModeRestart,    u8"改完要重開啟動器才會生效",     u8"Restart the launcher for this to take effect")
+	X(winModeRestart,    u8"改完要重開啟動器才會生效",     u8"Restart the launcher for this to take effect") \
+	/* 只解壓了主檔包的防呆 (v0.19.0)。這個情境沒有任何錯誤訊息:程式正常啟動、                       \
+	   啟動器介面照樣是中文(編譯進 exe 的字串表兜底),只有 POB 全英文 —— 所以                       \
+	   偵測不到字典時要主動說出來,不能等使用者自己想通 */                                            \
+	X(noDictBanner,      u8"這份安裝沒有翻譯資料，POB 會顯示英文原文。主程式更新包不含字典，需要另外下載一次。", \
+	                     u8"This install has no translation data, so POB shows the original English. The program update pack does not carry the dictionaries; they are downloaded separately.") \
+	X(noDictDownload,    u8"立即下載翻譯資料",             u8"Download translation data now")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

@@ -647,6 +647,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	auto resolveDict = [&](int i) { dictDir[i] = ResolveDictDir(exeDir, (DictSlot)i, cfg.dataDir[i]); };
 	for (int i = 0; i < kDictSlotCount; i++) resolveDict(i);
 
+	// Someone who unzipped PobTools-update-<ver>.zip on its own gets a program
+	// that starts normally, shows a Chinese launcher (the compiled string table
+	// covers that) and an entirely English POB, with no error anywhere. Nothing
+	// else catches it: validate_app_stage passes on that pack by design, and it
+	// only runs on an update stage, never at startup. So the launcher looks for
+	// itself. Throttled rather than computed once, because the banner has to
+	// disappear on its own after the download button has done its job.
+	bool builtinDictsPresent = true;
+	double dictProbeAt = -1.0;
+
 	// Languages come from the folders on disk, so adding Data\poe1\ja-JP\ is all
 	// it takes to offer Japanese. "en" is always first and needs no folder.
 	std::vector<LocaleInfo> locales = ListInstalledLocales(exeDir, cfg);
@@ -950,7 +960,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					placeRight(w, ImGui::GetTextLineHeight());
 					ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", txt.c_str());
 				} else if (ust.phase == AppUpdatePhase::AppAvailable) {
-					std::string label = std::string(S.updateAvailable) + ust.latestVer;
+					std::string label = std::string(S.updateAvailable) + ust.latestAppVer;
 					float w = ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f;
 					placeRight(w, ImGui::GetFrameHeight());
 					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.60f, 0.20f, 0.45f));
@@ -981,7 +991,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					placeRight(w, ImGui::GetTextLineHeight());
 					ImGui::TextDisabled("%s", txt);
 				} else if (ust.phase == AppUpdatePhase::TransDone) {
-					std::string txt = std::string(S.updateTransDone) + ust.latestVer;
+					std::string txt = std::string(S.updateTransDone) + ust.latestDataVer;
 					float w = ImGui::CalcTextSize(txt.c_str()).x;
 					placeRight(w, ImGui::GetTextLineHeight());
 					ImGui::TextColored(ImVec4(0.35f, 0.80f, 0.45f, 1.0f), "%s", txt.c_str());
@@ -1068,6 +1078,40 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PopID();
 			}
 			if (anyExternal) ImGui::Dummy(ImVec2(0, 4.0f * scale));
+		}
+
+		// No dictionaries anywhere: see the declaration of builtinDictsPresent.
+		// Only when all three slots are on the built-in path -- an external folder
+		// that happens to be empty already has its own, more specific warning in
+		// settings, and two warnings about the same thing help nobody.
+		{
+			const double nowT = ImGui::GetTime();
+			if (dictProbeAt < 0.0 || nowT - dictProbeAt > 1.0) {
+				dictProbeAt = nowT;
+				builtinDictsPresent = false;
+				for (int i = 0; i < kDictSlotCount; i++)
+					if (DictionariesPresentAt(BuiltinDictDir(exeDir, (DictSlot)i)))
+						builtinDictsPresent = true;
+			}
+			bool allBuiltin = true;
+			for (int i = 0; i < kDictSlotCount; i++)
+				if (dictDir[i].status != DataDirStatus::Builtin) allBuiltin = false;
+			if (allBuiltin && !builtinDictsPresent) {
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.66f, 0.25f, 1.0f));
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.noDictBanner);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				if (appUpd) {
+					ImGui::BeginDisabled(pobBusy || updaterBusy ||
+					                     ust.phase == AppUpdatePhase::TransUpdating);
+					if (ImGui::Button(S.noDictDownload)) appUpd->StartTranslationUpdate();
+					ImGui::EndDisabled();
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && pobBusy)
+						ImGui::SetTooltip("%s", S.updateBlockedTip);
+				}
+				ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			}
 		}
 
 		// Games: one wide row per install, launch button inline.
@@ -1458,6 +1502,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						if (appUpd) appUpd->SetTranslationUpdates(want);
 					}
 				}
+
+				// There are two version numbers now. The one in the header is the
+				// program's; without this line the translation data has no visible
+				// version at all, and "is my dictionary current?" becomes
+				// unanswerable — which is the first question an external
+				// translator's users will ask.
+				ImGui::Dummy(ImVec2(0, 4.0f * scale));
+				ImGui::PushFont(fonts.small);
+				ImGui::TextDisabled("%s%s", S.transDataVersion,
+				                    ust.localDataVer.empty() ? S.transDataUnstamped
+				                                             : ust.localDataVer.c_str());
+				ImGui::PopFont();
 			}
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));

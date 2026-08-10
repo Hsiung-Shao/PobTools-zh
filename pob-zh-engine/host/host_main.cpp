@@ -30,6 +30,7 @@
 #include "editor_selftest.h"
 #include "paste_selftest.h"
 #include "paste_trace.h"
+#include "placeholder_selftest.h"
 #include "pob_launch.h"
 #include "window_manager.h"
 #include "window_dock.h"
@@ -291,6 +292,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--app-update-selftest") {
 		return RunAppUpdateSelfTest(dir);
 	}
+	// Packaging: which files belong in the translation data pack. Takes a
+	// directory (the staged tree, not necessarily this install) plus an optional
+	// output file, because PowerShell 5.1 reads a native program's stdout through
+	// the console code page.
+	if (arg1 == L"--translation-data-list") {
+		return RunTranslationDataList(arg2.empty() ? dir : arg2, arg3);
+	}
 
 	// Headless timeless-jewel engine checks.
 	// Online: every offerable conqueror's trade stat id must exist on every region.
@@ -501,6 +509,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		}
 		return RunPasteCensus(arg2.empty() ? (dir + L"paste_census.tsv") : arg2, shell);
 	}
+	if (arg1 == L"--placeholder-selftest") {
+		// headless: 多佔位符詞條的數值填位。中文常把 {1} 排到 {0} 前面,
+		// 值必須照編號落位而不是照 '#' 的出現順序。
+		return RunPlaceholderSelftest();
+	}
+	if (arg1 == L"--placeholder-dump") {
+		// headless: 每一條含數值格的詞條各跑一次正向與反向,輸出可逐行比對的
+		// 快照。改動前後各跑一次就是全量 A/B 回歸。
+		std::string game = "poe1";
+		if (!arg3.empty()) game.assign(arg3.begin(), arg3.end());  // ASCII keywords only
+		return RunPlaceholderDump(arg2.empty() ? (dir + L"placeholder_dump.tsv") : arg2,
+		                          game, arg4 == L"legacy");
+	}
+	if (arg1 == L"--placeholder-probe") {
+		return RunPlaceholderProbe(arg2);
+	}
 	if (arg1 == L"--paste-selftest") {
 		// headless: replays real 3.29 Chinese items through the paste path.
 		// POB turns any surviving non-ASCII byte into '?', so the check is that
@@ -587,7 +611,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				AppUpdater::Status ust = appUpdater.Poll();
 				appUpdater.Shutdown(); // worker idle; join before touching engine\*
 				std::string aerr;
-				if (ApplyStagedAppUpdateAndRelaunch(dir, ust.stageDir, ust.latestVer,
+				if (ApplyStagedAppUpdateAndRelaunch(dir, ust.stageDir, ust.latestAppVer,
 				                                    /*relaunch=*/true, &aerr,
 				                                    cfg.updateTranslations) == 0) {
 					return 0; // the freshly spawned new exe takes over

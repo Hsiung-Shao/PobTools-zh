@@ -37,18 +37,25 @@ pob-zh-engine/dist/Data/*
 !pob-zh-engine/dist/Data/poe1/
 !pob-zh-engine/dist/Data/poe2/
 !pob-zh-engine/dist/Data/launcher/
-!pob-zh-engine/dist/Data/filter_items_zh.json
-!pob-zh-engine/dist/Data/item_meta.json
-!pob-zh-engine/dist/Data/item_classes_zh.json
 
-# The set above mirrors $dataGlobs in tools/package_release.ps1 and
-# IsTranslationDataRel() in host/app_update.cpp — the same "what counts as
-# translation data" boundary, now expressed a third time. Keep them in step.
-# One deliberate difference: atlas_versions/*/atlas_tree_zh.json is in the
-# packaged set but NOT here. Atlas data is fetched and rebuilt by the in-app
-# updater and filtered by the prune/fresh machinery, so a hand-edited copy in
-# the repo would be overwritten or stripped at load time rather than take
-# effect. Translating the atlas is not a PR-shaped job.
+# 這裡只再收錄「dist 是唯一寫入者」的那幾組字典。三個曾經也列在這裡的檔
+# (filter_items_zh.json / item_meta.json / item_classes_zh.json)已經拿掉了:
+# 它們由 CMakeLists.txt 的 install(FILES host/data/...) 產生,dist 那份是複本。
+# 兩邊都追蹤 = 兩個主人 —— 翻譯者對 dist 那份送 PR,下一次 cmake --install 會
+# 靜默把它蓋回 host/data 的內容,而且不會有任何錯誤訊息。**host/data/ 是唯一
+# 來源**,要改就改那裡;package_release.ps1 有一道 sha256 斷言比對兩份,不同就
+# 中止打包(代表忘了重跑 cmake --install)。
+#
+# 剩下的這組與 IsTranslationDataRel()(host/app_update.cpp)畫的是同一條「什麼算
+# 翻譯資料」的線,只是換一種語言表達。以前這條線有三份實作(還有打包腳本自己的
+# glob 清單);打包腳本那份在 v0.19.0 刪掉了,改成呼叫 `--translation-data-list`
+# 走訪 staging、用 IsTranslationDataRel() 本人判定。這裡是唯一剩下的第二份,
+# 改一處要同步另一處。
+# 一個刻意的差異:atlas_versions/*/atlas_tree_zh.json 不在這裡。輿圖資料是程式
+# 抓取重建、再經 prune/fresh 過濾的,手改一份放進 repo 只會在載入時被覆蓋或剝
+# 掉,翻譯輿圖不是 PR 形狀的工作。**它同樣不在翻譯資料包裡**(見 app_update.cpp
+# 的註解):一個賽季資料夾要三個檔同時存在才會被採納,拆包會讓只裝主檔的人在新
+# 賽季開賽當天整季隱形。
 
 # Editor backups, wherever they land. The translation editor writes a .bak
 # beside every dictionary it saves, and those sit inside the re-included

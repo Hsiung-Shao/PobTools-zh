@@ -32,9 +32,18 @@ using njson = nlohmann::json;
 
 /* ========== Internal State ========== */
 
+/* 樣板配對的產物不是「另一個雜湊字串」而是一份填值計畫:只有 '#' 的字串留不住
+** {N} 的編號,而編號正是中英語序不同時唯一的對位依據。細節見 build_fill_plan。
+**   text  目標樣板(待填處仍是 '#',填不出來的字面數字已直接寫回去)
+**   src   text 裡第 i 個 '#' 要取來源的第 src[i] 格;-1 = 沒有來源,留 '#' */
+struct FillPlan {
+    std::string      text;
+    std::vector<int> src;
+};
+
 static std::unordered_map<std::string, std::string> s_translations;      /* English → Chinese */
 static std::unordered_map<std::string, std::string> s_reverse;           /* Chinese → English (exact) */
-static std::unordered_map<std::string, std::string> s_reverse_pattern;   /* Chinese pattern → English pattern (hashed) */
+static std::unordered_map<std::string, FillPlan>    s_reverse_pattern;   /* Chinese pattern → English fill plan */
 /* Which file supplied the entry that currently OWNS each reverse key. Both maps
 ** are last-wins across the eight dictionaries, so this is the only way to say
 ** which file shadowed which — see the trace notes below. Populated always (a few
@@ -42,7 +51,7 @@ static std::unordered_map<std::string, std::string> s_reverse_pattern;   /* Chin
 ** flag would mean the diagnostic is missing exactly when it is wanted. */
 static std::unordered_map<std::string, std::string> s_reverse_origin;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_origin;
-static std::unordered_map<std::string, std::string> s_forward_pattern;   /* English pattern → Chinese pattern (hashed) */
+static std::unordered_map<std::string, FillPlan>    s_forward_pattern;   /* English pattern → Chinese fill plan */
 static std::unordered_map<std::string, std::string> s_reverse_bases;    /* Chinese base type → English (from items.json base entries) */
 static std::vector<std::pair<std::string, std::string>> s_term_glossary; /* sorted longest-first for substring replacement */
 static std::unordered_map<std::string, std::string> s_lookup_cache;     /* forward lookup cache (input → result, empty = no match) */
@@ -374,10 +383,29 @@ static bool sign_before(const std::string &s, size_t i) {
     return true;
 }
 
-static std::string digits_to_hash(const std::string &s) {
+/* 除了雜湊字串,還可以回報「每一個 '#' 是哪來的」。
+**
+** 為什麼要塞在同一支函式裡:填值需要知道輸入的第 i 個 '#' 對應哪一段原文,而那
+** 個對應關係完全由這裡的掃描規則決定(正負號吸收、(X-Y) 範圍、7(6-11) 進階複製
+** 形式、千分位)。另外寫一支「抽值器」等於把同一套規則寫兩份,兩份一旦漂開,錯位
+** 會安靜地發生在使用者畫面上而不是任何斷言裡 —— 這個專案已經吃過一次「驗證器與
+** 被驗證的程式共享同一個盲點」的虧。
+**
+** slots 若不為 null,長度等於輸出裡 '#' 的個數,依序:
+**   非空 = 這個 '#' 是由數字(含吸收掉的正負號、範圍)摺疊來的,內容就是原文;
+**   空字串 = 輸入本來就寫著 '#'(POB 工藝介面的詞綴列就長這樣),沒有數值可填。 */
+static std::string digits_to_hash(const std::string &s, std::vector<std::string> *slots = nullptr) {
     std::string result;
     result.reserve(s.size());
     bool in_number = false;
+    /* 把 result 尾端被 absorb_sign 吃掉的正負號還給正在收集的那一格 */
+    auto begin_slot = [&](bool absorbed, char sign) {
+        if (!slots) return;
+        slots->push_back(absorbed ? std::string(1, sign) : std::string());
+    };
+    auto append_slot = [&](const std::string &t) {
+        if (slots && !slots->empty()) slots->back() += t;
+    };
     for (size_t i = 0; i < s.size(); i++) {
         /* Check for (X-Y) range pattern — collapse entire range to single # */
         size_t range_len = match_range(s, i);
@@ -386,13 +414,17 @@ static std::string digits_to_hash(const std::string &s) {
                 /* Roll range attached to a value, e.g. "7(6-11)" from the
                  * game's advanced item copy — absorb into the preceding #
                  * so "+7(6-11) X" hashes the same as "+7 X". */
+                append_slot(s.substr(i, range_len));
                 i += range_len - 1;
                 in_number = false;
                 continue;
             }
             /* Absorb preceding sign, same as for plain numbers */
-            absorb_sign(result);
+            char sign = result.empty() ? '\0' : result.back();
+            bool absorbed = absorb_sign(result);
             result += '#';
+            begin_slot(absorbed, sign);
+            append_slot(s.substr(i, range_len));
             i += range_len - 1; /* -1 because loop increments */
             in_number = false;
             continue;
@@ -406,17 +438,24 @@ static std::string digits_to_hash(const std::string &s) {
                  * By consuming the sign, "+20 to Intelligence" → "# to Intelligence"
                  * matches pattern "# to Intelligence"; likewise "-2" so that
                  * "此物品插槽中輔助寶石等級 -2" matches the same key "+2" does. */
-                absorb_sign(result);
+                char sign = result.empty() ? '\0' : result.back();
+                bool absorbed = absorb_sign(result);
                 result += '#';
+                begin_slot(absorbed, sign);
                 in_number = true;
             }
+            append_slot(std::string(1, c));
             /* skip digit */
         } else if (c == '.' && in_number && i + 1 < s.size() && s[i+1] >= '0' && s[i+1] <= '9') {
             /* decimal point inside number, skip */
+            append_slot(".");
         } else if (c == ',' && in_number && i + 1 < s.size() && s[i+1] >= '0' && s[i+1] <= '9') {
             /* thousands separator inside number (e.g., "7,881"), skip */
+            append_slot(",");
         } else {
             in_number = false;
+            /* 原文自己就寫著 '#':它也會成為一個待填格,但沒有對應的數值 */
+            if (c == '#' && slots) slots->push_back(std::string());
             result += c;
         }
     }
@@ -479,24 +518,14 @@ static std::vector<std::string> extract_numbers(const std::string &s) {
     return nums;
 }
 
-/* ========== Helper: replace # placeholders with numbers ========== */
+/* ========== Helper: normalize {0},{1},... placeholders to # ==========
+**
+** ph_index 若不為 null,長度等於輸出裡 '#' 的個數,依序記下那一格的來歷:
+**   >= 0 是 {N} 的 N;-1 是原文本來就寫著的 '#'。
+** 編號只有在這裡看得見 —— 一旦全部變成 '#' 就永久消失了,而中文常常把 {1} 排到
+** {0} 前面,少了編號就只能照出現順序填,於是語序相反的詞條數值必定填反。 */
 
-static std::string fill_numbers(const std::string &pattern, const std::vector<std::string> &nums) {
-    std::string result;
-    size_t ni = 0;
-    for (char c : pattern) {
-        if (c == '#' && ni < nums.size()) {
-            result += nums[ni++];
-        } else {
-            result += c;
-        }
-    }
-    return result;
-}
-
-/* ========== Helper: normalize {0},{1},... placeholders to # ========== */
-
-static std::string normalize_placeholders(const std::string &s) {
+static std::string normalize_placeholders(const std::string &s, std::vector<int> *ph_index = nullptr) {
     std::string result;
     result.reserve(s.size());
     for (size_t i = 0; i < s.size(); i++) {
@@ -507,6 +536,7 @@ static std::string normalize_placeholders(const std::string &s) {
             if (j > i + 1 && j < s.size()) {
                 if (s[j] == '}') {
                     result += '#';
+                    if (ph_index) ph_index->push_back(atoi(s.c_str() + i + 1));
                     i = j; /* skip past } */
                     continue;
                 }
@@ -519,15 +549,185 @@ static std::string normalize_placeholders(const std::string &s) {
                     size_t k = s.find('}', j);
                     if (k != std::string::npos && k - j <= 8) {
                         result += '#';
+                        if (ph_index) ph_index->push_back(atoi(s.c_str() + i + 1));
                         i = k; /* skip past } */
                         continue;
                     }
                 }
             }
         }
+        /* 不是佔位符的 '{' 照抄(GGG 的 "<grey>{(...)}" 之類),但原文自帶的 '#'
+        ** 仍是一格,否則後面的編號會整排錯開。 */
+        if (s[i] == '#' && ph_index) ph_index->push_back(-1);
         result += s[i];
     }
     return result;
+}
+
+/* ========== 數值填回:依編號,不依出現順序 ==========
+**
+** 一個樣板槽位的來歷。ph >= 0 表示它是 {N};否則 lit 是樣板裡寫死的數字文字
+** (空字串代表樣板裡本來就是 '#',沒有值可對)。 */
+struct TmplSlot {
+    int         ph;
+    std::string lit;
+};
+
+static std::vector<TmplSlot> template_slots(const std::string &tmpl) {
+    std::vector<int> ph_index;
+    std::string p = normalize_placeholders(tmpl, &ph_index);
+    std::vector<std::string> hs;
+    digits_to_hash(p, &hs);
+
+    std::vector<TmplSlot> out;
+    out.reserve(hs.size());
+    size_t mi = 0;
+    for (const std::string &t : hs) {
+        if (!t.empty()) {                 /* 寫死在樣板裡的數字 */
+            out.push_back({ -1, t });
+            continue;
+        }
+        /* digits_to_hash 原樣抄過去的 '#',依序就是 normalize_placeholders 產生的
+        ** 那幾格 —— 兩支掃描器都不會重排,所以按順序取即可對上。 */
+        int n = (mi < ph_index.size()) ? ph_index[mi] : -1;
+        mi++;
+        out.push_back({ n, std::string() });
+    }
+    return out;
+}
+
+/* 兩個字面數字是不是同一個值。忽略正負號,因為 digits_to_hash 會把緊貼數字的
+** 正負號吸進 '#',英文寫 "+1" 而中文寫 "1" 的條目非常多(光 poe1 就上千條),
+** 拿字串硬比會讓它們全部配不上而退回舊行為。 */
+static bool same_literal_value(const std::string &a, const std::string &b) {
+    size_t ai = (!a.empty() && (a[0] == '+' || a[0] == '-')) ? 1 : 0;
+    size_t bi = (!b.empty() && (b[0] == '+' || b[0] == '-')) ? 1 : 0;
+    return a.compare(ai, std::string::npos, b, bi, std::string::npos) == 0;
+}
+
+/* 測試用的突變開關:打開就退回「照 '#' 出現順序填」的舊行為。留成開關而不是叫人
+** 手動改一次程式碼,是為了讓「把修好的地方弄回去,測試就該紅」這件事可以隨時重跑
+** —— 一次性的手改驗證,下一個人是驗不到的。只有 --placeholder-selftest 會碰它。 */
+static bool s_legacy_fill = false;
+
+int translation_debug_set_legacy_fill(int on) {
+    bool prev = s_legacy_fill;
+    s_legacy_fill = (on != 0);
+    return prev ? 1 : 0;
+}
+
+/* dst_text 是已經雜湊+正規化好的目標樣板(也就是舊版直接拿去依序填的那個字串)。
+** 對照關係一律用語言無關的鍵決定,配不上才退回位置:
+**   1. {N} 對 {N} —— 這是唯一能表達「中文把 {1} 講在前面」的資訊
+**   2. 字面數字對同值的字面數字 —— 「per 200 命中值」那種寫死的變體
+**   3. 剩下的照剩下的順序配 —— 兩邊都沒有可對的鍵時,維持舊行為不亂改
+**   4. 還是配不到的字面數字就照抄樣板;配不到的 {N} 留 '#'(寧可空著,也不要
+**      安靜地填一個錯的數字進去) */
+static FillPlan build_fill_plan(const std::string &src_tmpl, const std::string &dst_tmpl,
+                                const std::string &dst_text) {
+    FillPlan plan;
+    size_t nhash = 0;
+    for (char c : dst_text) if (c == '#') nhash++;
+
+    std::vector<TmplSlot> src = template_slots(src_tmpl);
+    std::vector<TmplSlot> dst = template_slots(dst_tmpl);
+
+    /* 正規化後的 '#' 數與樣板槽位數對不上,代表我們對這一條的理解有洞。這時整份
+    ** 對照表都不可信,退回舊的依序填 —— 錯也錯得和以前一樣,不會多生一種錯。 */
+    if (s_legacy_fill || dst.size() != nhash) {
+        plan.text = dst_text;
+        plan.src.reserve(nhash);
+        for (size_t i = 0; i < nhash; i++) plan.src.push_back((int)i);
+        return plan;
+    }
+
+    std::vector<int>  from(dst.size(), -1);
+    std::vector<char> taken(src.size(), 0);
+
+    for (size_t d = 0; d < dst.size(); d++) {
+        if (dst[d].ph < 0) continue;
+        for (size_t s = 0; s < src.size(); s++) {
+            /* 同一個 {0} 在目標出現兩次是合法的,所以這裡不看 taken:兩格都該取
+            ** 同一個來源值。taken 只是給第 3 步用的「還沒被認領」標記。
+            **
+            ** 已知代價:英文寫 {0}/{1} 而中文兩格都寫成 {0} 的條目(全量 A/B 掃出
+            ** poe1 35 條、poe2 26 條,全在 stats.json),舊做法依序填會碰巧把 {1} 的
+            ** 值放進第二格,新做法照樣板要求填兩次同一個值。那是譯文本身的缺陷,
+            ** 修法在資料不在這裡 —— 引擎按樣板說的做,錯就錯得看得見。 */
+            if (src[s].ph == dst[d].ph) { from[d] = (int)s; taken[s] = 1; break; }
+        }
+    }
+    for (size_t d = 0; d < dst.size(); d++) {
+        if (from[d] >= 0 || dst[d].ph >= 0 || dst[d].lit.empty()) continue;
+        for (size_t s = 0; s < src.size(); s++) {
+            if (taken[s] || src[s].ph >= 0 || src[s].lit.empty()) continue;
+            if (same_literal_value(src[s].lit, dst[d].lit)) { from[d] = (int)s; taken[s] = 1; break; }
+        }
+    }
+    {
+        size_t s = 0;
+        for (size_t d = 0; d < dst.size(); d++) {
+            if (from[d] >= 0) continue;
+            while (s < src.size() && taken[s]) s++;
+            if (s >= src.size()) break;
+            from[d] = (int)s;
+            taken[s] = 1;
+        }
+    }
+
+    plan.text.reserve(dst_text.size());
+    plan.src.reserve(nhash);
+    size_t k = 0;
+    for (char c : dst_text) {
+        if (c != '#') { plan.text += c; continue; }
+        if (from[k] < 0 && dst[k].ph < 0 && !dst[k].lit.empty()) {
+            /* 樣板自己寫死的數字,來源沒有對應的一格:照抄回去。舊版把它當成待填格
+            ** 吃掉一個數值,於是後面每一格都往前挪一位。 */
+            plan.text += dst[k].lit;
+        } else {
+            plan.text += '#';
+            plan.src.push_back(from[k]);
+        }
+        k++;
+    }
+    return plan;
+}
+
+/* values 依序是輸入每一個 '#' 的原文(空字串 = 那一格輸入本來就寫著 '#',
+** 沒有數值)。取不到值就留 '#',與舊版「數值用完了就不填」一致。 */
+static std::string fill_plan(const FillPlan &plan, const std::vector<std::string> &values) {
+    std::string result;
+    result.reserve(plan.text.size());
+    size_t k = 0;
+    for (char c : plan.text) {
+        if (c != '#') { result += c; continue; }
+        int si = (k < plan.src.size()) ? plan.src[k] : -1;
+        k++;
+        if (si >= 0 && (size_t)si < values.size() && !values[si].empty()) result += values[si];
+        else result += '#';
+    }
+    return result;
+}
+
+/* 輸入端的對照組:把一行實際文字拆成「每個 '#' 對應的原文」。
+**
+** 與舊的 extract_numbers 差在「原文自己寫著 '#' 的那一格」也會算一格(值是空的)。
+** POB 工藝介面的詞綴列就是這種形狀,舊做法只數數字,於是 "#% increased Armour per
+** 10 Strength" 的 10 會被塞進第一格 —— 那一格根本不是它的。
+**
+** normalize_ph 必須跟該路徑「算查表鍵時有沒有做 normalize_placeholders」一致:計畫
+** 是按鍵裡 '#' 的順序寫的,抽值的切法只要與鍵不同步,整排就錯位。正向的 pattern 有
+** 做(translation_lookup 步驟 3),反向的沒有(reverse_one_line_impl 步驟 5)。
+** 這個不對稱害過一次:GGG 的 "<colour:...>{{{0}}}" 在反向多切了一刀,9001 被當成
+** 佔位符吃掉,整格變成空的 —— A/B 掃出 23 列才抓到。
+**
+** 突變開關也要管到這裡:舊行為是 fill_numbers(樣板, extract_numbers(輸入)),兩半
+** 都得退回去,否則 A/B 的基準線其實比真正的舊引擎好一點,量出來的差異會偏少。 */
+static std::vector<std::string> hash_slot_values(const std::string &s, bool normalize_ph) {
+    if (s_legacy_fill) return extract_numbers(s);
+    std::vector<std::string> vals;
+    digits_to_hash(normalize_ph ? normalize_placeholders(s) : s, &vals);
+    return vals;
 }
 
 /* ========== Helper: replace all occurrences of a substring ========== */
@@ -630,6 +830,56 @@ static std::string strip_brackets(const std::string &s) {
         result += s[i];
     }
     return result;
+}
+
+/* ========== 測試掛勾:直接驅動填值機制 ==========
+**
+** 自檢要涵蓋的邊角(編號不從 0 開始、目標用了來源沒有的編號、同一個 {0} 用兩次、
+** 樣板裡寫死數字)在出貨字典裡不見得樣樣都有,而為了測試往字典塞假資料等於改變
+** 被測對象。這支掛勾讓測試自己給兩個樣板加一行輸入,走的仍是載入期與執行期共用的
+** build_fill_plan / fill_plan —— 測到的就是引擎真正在跑的那一份。
+**
+** 輸入必須雜湊成與 source 樣板相同的字串(那正是它在執行期會命中的條件);對不起來
+** 就回 nullptr,免得一個打錯的測試案例安靜地「通過」。 */
+const char* translation_debug_fill(const char *source_tmpl, const char *target_tmpl, const char *input) {
+    static std::string out;
+    out.clear();
+    if (!source_tmpl || !target_tmpl || !input) return nullptr;
+
+    std::string src = strip_brackets(source_tmpl);
+    std::string dst = strip_brackets(target_tmpl);
+    std::string src_hash = normalize_whitespace(digits_to_hash(normalize_placeholders(src)));
+    std::string dst_hash = normalize_whitespace(digits_to_hash(normalize_placeholders(dst)));
+
+    std::string in_plain = strip_brackets(input);
+    std::string in_hash = normalize_whitespace(digits_to_hash(normalize_placeholders(in_plain)));
+    if (to_ascii_lower(in_hash) != to_ascii_lower(src_hash)) return nullptr;
+
+    /* 抽值走執行期同一支,突變開關才管得到這一半(舊行為只抽數字,不把原文自帶的
+    ** '#' 算一格)。自己在這裡再抽一次,等於讓測試繞過一半的被測程式碼。 */
+    std::vector<std::string> vals = hash_slot_values(in_plain, /*normalize_ph=*/true);
+
+    out = fill_plan(build_fill_plan(src, dst, dst_hash), vals);
+    return out.c_str();
+}
+
+/* 同一行文字,兩支掃描器的答案必須一致:digits_to_hash 回報的數字格,去掉「原文本來
+** 就寫著 '#'」的空格之後,應該逐一等於 extract_numbers。兩者是同一套規則的兩個出口
+** (一個給填值、一個給 composite 的數值存活檢查),漂開了不會有人發現。
+** 回傳不一致的欄位數,0 代表相符。 */
+int translation_debug_slot_mismatch(const char *text) {
+    if (!text) return 0;
+    std::vector<std::string> vals;
+    digits_to_hash(normalize_placeholders(text), &vals);
+    std::vector<std::string> nums = extract_numbers(normalize_placeholders(text));
+    size_t j = 0, bad = 0;
+    for (const std::string &v : vals) {
+        if (v.empty()) continue;
+        if (j >= nums.size() || nums[j] != v) bad++;
+        j++;
+    }
+    if (j != nums.size()) bad += (nums.size() - j);
+    return (int)bad;
 }
 
 /* ========== Helper: determine locale ========== */
@@ -821,13 +1071,15 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         std::string norm_value = normalize_whitespace(digits_to_hash(normalize_placeholders(clean_value)));
         std::string norm_key = normalize_whitespace(digits_to_hash(normalize_placeholders(clean_key)));
         if (norm_value != clean_value || norm_key != clean_key) {
-            s_reverse_pattern[norm_value] = norm_key;
+            s_reverse_pattern[norm_value] = build_fill_plan(clean_value, clean_key, norm_key);
             s_reverse_pattern_origin[norm_value] = origin;
-            s_forward_pattern[to_ascii_lower(norm_key)] = norm_value;
+            s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan(clean_key, clean_value, norm_value);
         }
         std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
         if (fuzzy_value != norm_value) {
-            s_reverse_pattern[fuzzy_value] = norm_key;
+            /* 同一份計畫:模糊化只改查表用的鍵,不動槽位順序(synonyms.json 的規則
+            ** 都不會刪掉 '#',所以模糊鍵命中時輸入的格數仍與樣板一致)。 */
+            s_reverse_pattern[fuzzy_value] = build_fill_plan(clean_value, clean_key, norm_key);
             s_reverse_pattern_origin[fuzzy_value] = origin;
         }
 
@@ -855,11 +1107,11 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     std::string nk = normalize_whitespace(digits_to_hash(normalize_placeholders(k)));
                     if (nv != v || nk != k) {
                         if (!s_reverse_pattern.count(nv)) {
-                            s_reverse_pattern[nv] = nk;
+                            s_reverse_pattern[nv] = build_fill_plan(v, k, nk);
                             s_reverse_pattern_origin[nv] = origin;
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = nv;
+                        if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
                     }
                 }
             }
@@ -1278,8 +1530,8 @@ void translation_init(void) {
             auto it = s_reverse_pattern.find(test_patterns[i]);
             if (it != s_reverse_pattern.end()) {
                 snprintf(msg, sizeof(msg), "[pob-proxy] DIAG: pattern '%s' FOUND -> '%.*s'\n",
-                         test_names[i], (int)(it->second.size() > 80 ? 80 : it->second.size()),
-                         it->second.c_str());
+                         test_names[i], (int)(it->second.text.size() > 80 ? 80 : it->second.text.size()),
+                         it->second.text.c_str());
             } else {
                 snprintf(msg, sizeof(msg), "[pob-proxy] DIAG: pattern '%s' NOT FOUND\n", test_names[i]);
             }
@@ -1480,8 +1732,9 @@ const char* translation_lookup(const char *english) {
         && !s_forward_pattern.empty()) {
         auto pit = s_forward_pattern.find(pattern);
         if (pit != s_forward_pattern.end()) {
-            auto nums = extract_numbers(input);
-            std::string result = fill_numbers(pit->second, nums);
+            /* 輸入的第 i 個 '#' 一定對得上樣板的第 i 個 '#' —— 兩者雜湊後是同一
+            ** 個字串,這正是它命中的原因。計畫就是照這個索引寫的。 */
+            std::string result = fill_plan(pit->second, hash_slot_values(input, /*normalize_ph=*/true));
             /* Diagnostic: log pattern hits (first 20 only) */
             static int s_hit_count = 0;
             if (s_hit_count < 20) {
@@ -2359,13 +2612,15 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
                         std::string full_pattern = prefix_cn + pz + " #";
                         auto fpit = s_reverse_pattern.find(full_pattern);
                         if (fpit != s_reverse_pattern.end()) {
-                            result = fill_numbers(fpit->second, {eng_name});
+                            /* 這裡填的是天賦名不是數字,但位置的問法完全相同:
+                            ** 構造出來的中文樣式只有一格,英文那邊的計畫就指向它。 */
+                            result = fill_plan(fpit->second, {eng_name});
                         } else {
                             /* Fuzzy try */
                             std::string fuzzy_fp = normalize_chinese_synonyms(full_pattern);
                             fpit = s_reverse_pattern.find(fuzzy_fp);
                             if (fpit != s_reverse_pattern.end()) {
-                                result = fill_numbers(fpit->second, {eng_name});
+                                result = fill_plan(fpit->second, {eng_name});
                             } else {
                                 /* Fallback: just "Allocates <name>" */
                                 result = "Allocates " + eng_name;
@@ -2452,8 +2707,7 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
     auto pit = s_reverse_pattern.find(pattern);
     if (pit != s_reverse_pattern.end()) {
         /* Found English pattern, fill in numbers from original line */
-        std::vector<std::string> nums = extract_numbers(core);
-        std::string result = fill_numbers(pit->second, nums) + suffix;
+        std::string result = fill_plan(pit->second, hash_slot_values(core, /*normalize_ph=*/false)) + suffix;
         char msg[512];
         snprintf(msg, sizeof(msg), "[pob-proxy] Reverse pattern match: '%.*s' -> '%.*s'\n",
                  (int)(core.size() > 80 ? 80 : core.size()), core.c_str(),
@@ -2493,8 +2747,7 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
         if (fuzzy != pattern) {
             pit = s_reverse_pattern.find(fuzzy);
             if (pit != s_reverse_pattern.end()) {
-                std::vector<std::string> nums = extract_numbers(core);
-                std::string result = fill_numbers(pit->second, nums) + suffix;
+                std::string result = fill_plan(pit->second, hash_slot_values(core, /*normalize_ph=*/false)) + suffix;
                 char msg[512];
                 snprintf(msg, sizeof(msg), "[pob-proxy] Reverse fuzzy match: '%.*s' -> '%.*s'\n",
                          (int)(core.size() > 80 ? 80 : core.size()), core.c_str(),
@@ -2519,8 +2772,7 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
             /* Try direct pattern lookup without sign */
             pit = s_reverse_pattern.find(no_sign);
             if (pit != s_reverse_pattern.end()) {
-                std::vector<std::string> nums = extract_numbers(core);
-                std::string result = sign_prefix + fill_numbers(pit->second, nums) + suffix;
+                std::string result = sign_prefix + fill_plan(pit->second, hash_slot_values(core, /*normalize_ph=*/false)) + suffix;
                 char msg[512];
                 snprintf(msg, sizeof(msg), "[pob-proxy] Reverse sign-prefix match: '%.*s' -> '%.*s'\n",
                          (int)(core.size() > 80 ? 80 : core.size()), core.c_str(),
@@ -2534,8 +2786,7 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
             if (fuzzy_no_sign != no_sign) {
                 pit = s_reverse_pattern.find(fuzzy_no_sign);
                 if (pit != s_reverse_pattern.end()) {
-                    std::vector<std::string> nums = extract_numbers(core);
-                    std::string result = sign_prefix + fill_numbers(pit->second, nums) + suffix;
+                    std::string result = sign_prefix + fill_plan(pit->second, hash_slot_values(core, /*normalize_ph=*/false)) + suffix;
                     char msg[512];
                     snprintf(msg, sizeof(msg), "[pob-proxy] Reverse sign-prefix fuzzy: '%.*s' -> '%.*s'\n",
                              (int)(core.size() > 80 ? 80 : core.size()), core.c_str(),
