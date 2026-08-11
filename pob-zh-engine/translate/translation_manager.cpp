@@ -53,8 +53,16 @@ static std::unordered_map<std::string, std::string> s_reverse_origin;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_origin;
 static std::unordered_map<std::string, FillPlan>    s_forward_pattern;   /* English pattern → Chinese fill plan */
 static std::unordered_map<std::string, std::string> s_reverse_bases;    /* Chinese base type → English (from items.json base entries) */
+/* Forward twin of s_reverse_bases: the English base type names. Only used to
+** recognise POB's generated "<title>, <base type>" item names — see the
+** comma-list path in translation_lookup. */
+static std::unordered_set<std::string> s_base_items_en;
 static std::vector<std::pair<std::string, std::string>> s_term_glossary; /* sorted longest-first for substring replacement */
 static std::unordered_map<std::string, std::string> s_lookup_cache;     /* forward lookup cache (input → result, empty = no match) */
+/* Item-title results are cached apart from s_lookup_cache on purpose — see
+** translation_lookup_item_title. Mixing them would leak the relaxed answer into
+** the general path, which is exactly what the separate entry point prevents. */
+static std::unordered_map<std::string, std::string> s_item_title_cache;
 static std::string s_locale;
 static bool s_initialized = false;
 static bool s_translation_enabled = true;
@@ -1057,6 +1065,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
         if (is_base_items) {
             s_reverse_bases[clean_value] = clean_key;
+            /* Item.lua strips any " (...)" from the base name before appending it
+            ** to the title, so the form that reaches us is always the clean one;
+            ** the full key is recorded too because it costs nothing and a future
+            ** dictionary may carry markup we have not seen. */
+            s_base_items_en.insert(clean_key);
+            s_base_items_en.insert(full_key);
             if (clean_value != full_value) {
                 s_reverse_bases[full_value] = full_key;
             }
@@ -1556,9 +1570,11 @@ void translation_shutdown(void) {
     s_reverse.clear();
     s_reverse_pattern.clear();
     s_reverse_bases.clear();
+    s_base_items_en.clear();
     s_forward_pattern.clear();
     s_term_glossary.clear();
     s_lookup_cache.clear();
+    s_item_title_cache.clear();
     /* Drop the source dictionaries too, and point the active handles back at
      * the defaults — a reload must not leave them dangling into freed maps. */
     s_active_source = nullptr;
@@ -1677,6 +1693,56 @@ static bool forward_miss_worth_logging(const std::string &input) {
         else run = 0;
     }
     return word;
+}
+
+/* Translate a generated item title word by word.
+**
+** GGG assembles rare and cluster-jewel titles from a word pool ("Loath" + "Joy"),
+** and POB concatenates the result with the base type (Item.lua:1572), so the
+** finished name is never a dictionary key even though every word in it is. The
+** term glossary is what normally rescues these, but it refuses keys shorter than
+** four characters (is_glossary_candidate) — a floor that exists to keep short
+** function words like "and"/"for" out of ordinary prose, where a spurious hit
+** would let a whole English sentence reach full coverage and be translated word
+** salad. "Loath Joy" lost to that floor because "Joy" is three letters, while
+** "Soul Star" and "Rift Suit" cleared it at exactly four.
+**
+** Relaxing the floor globally is not the fix; relaxing it HERE is, because the
+** only caller first proves the string ends in a real base type. Prose does not
+** end in a base type, so nothing outside item names can reach this path.
+**
+** All-or-nothing on purpose: a half-translated name is worse than an English one.
+*/
+static bool translate_title_words(const std::string &title, std::string &out) {
+    if (title.empty() || title.find(' ') == std::string::npos) return false;
+    std::string result;
+    size_t start = 0;
+    for (;;) {
+        size_t sp = title.find(' ', start);
+        std::string word = title.substr(start, sp == std::string::npos ? std::string::npos : sp - start);
+        if (word.empty()) return false;
+        /* Same two exact layers translation_lookup consults first, in the same
+        ** order — a source dictionary must still win for a word it disambiguates.
+        ** Deliberately NOT a recursive translation_lookup: the pattern and
+        ** glossary paths below it exist for sentences, and letting them fire on a
+        ** single bare word is how a title would silently become something else. */
+        const std::string *zh = nullptr;
+        if (s_active_source) {
+            auto sit = s_active_source->find(word);
+            if (sit != s_active_source->end()) zh = &sit->second;
+        }
+        if (!zh) {
+            auto it = s_translations.find(word);
+            if (it == s_translations.end()) return false;
+            zh = &it->second;
+        }
+        if (!result.empty()) result += ' ';
+        result += *zh;
+        if (sp == std::string::npos) break;
+        start = sp + 1;
+    }
+    out = std::move(result);
+    return true;
 }
 
 const char* translation_lookup(const char *english) {
@@ -1820,14 +1886,25 @@ const char* translation_lookup(const char *english) {
             parts.push_back(input.substr(start, sep - start));
             start = sep + 2;
         }
+        /* "<title>, <base type>" is how POB names every rare and every cluster
+        ** jewel (Item.lua:1572). Confirming the LAST segment is a real base type
+        ** is what licenses the relaxed per-word fallback for the segments before
+        ** it: that check is the boundary keeping the relaxation out of prose. */
+        const bool item_name = parts.size() >= 2 && s_base_items_en.count(parts.back()) > 0;
         bool all_ok = parts.size() >= 2;
         std::string joined;
-        for (auto &p : parts) {
+        for (size_t i = 0; i < parts.size(); i++) {
+            const std::string &p = parts[i];
             if (p.empty()) { all_ok = false; break; }
-            const char *r = translation_lookup(p.c_str());
-            if (!r) { all_ok = false; break; }
+            std::string seg;
+            if (const char *r = translation_lookup(p.c_str())) {
+                seg = r; /* copied now: the next lookup may rehash the caches */
+            } else if (!(item_name && i + 1 < parts.size() && translate_title_words(p, seg))) {
+                all_ok = false;
+                break;
+            }
             if (!joined.empty()) joined += ", ";
-            joined += r; /* safe: r points into caches, appended before next lookup */
+            joined += seg;
         }
         if (all_ok) {
             auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
@@ -1949,6 +2026,31 @@ const char* translation_lookup(const char *english) {
     }
     s_lookup_cache_active->emplace(input, std::string());
     return nullptr;
+}
+
+const char* translation_lookup_item_title(const char *english) {
+    if (!english || !*english || s_translations.empty() || !s_translation_enabled) return nullptr;
+
+    /* Deliberately NOT s_lookup_cache: a relaxed result must never become
+    ** visible to the general path. Caching "Loath Joy" -> "惡行 歡愉" in the
+    ** shared cache would hand that answer to every later caller, including prose,
+    ** which is the very leak the separate entry point exists to prevent. */
+    std::string input(english);
+    auto cit = s_item_title_cache.find(input);
+    if (cit != s_item_title_cache.end()) {
+        return cit->second.empty() ? nullptr : cit->second.c_str();
+    }
+
+    std::string result;
+    /* Uniques and any title the dictionary knows whole go through the normal
+    ** pipeline first, so this changes nothing for them. */
+    if (const char *r = translation_lookup(english)) {
+        result = r;
+    } else if (!translate_title_words(input, result)) {
+        result.clear();
+    }
+    auto [iter, _] = s_item_title_cache.emplace(std::move(input), std::move(result));
+    return iter->second.empty() ? nullptr : iter->second.c_str();
 }
 
 /* Select the source dictionary consulted before the merged map, or pass null /

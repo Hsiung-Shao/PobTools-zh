@@ -2005,14 +2005,22 @@ static int l_IsSubScriptRunning(lua_State* L)
 // ---- PobTools in-memory source patches --------------------------------------
 // A few POB modules get a tiny anchored patch at load time so the translated
 // DISPLAY text can participate in searches; the files on disk stay untouched
-// (zero-pollution). Each patch names a unique anchor line; when the anchor is
-// not found exactly once (upstream rewrote the code), the module loads
-// unmodified and the feature silently degrades to English-only search.
+// (zero-pollution). When a patch's anchor does not match as expected (upstream
+// rewrote the code), THAT patch is skipped and the feature degrades to English
+// rather than the module failing to load. A file may carry several patches.
 // Patches contain no newline, so script line numbers (tracebacks) are stable.
 struct PobToolsSourcePatch {
 	const char* fileLeaf;    // lower-case file name, e.g. "itemdbcontrol.lua"
-	const char* anchor;      // must occur exactly once in the file
+	const char* anchor;      // what to look for
 	const char* insertAfter; // inserted right after the anchor (same line)
+	// When set, insertAfter is ignored and EVERY occurrence of the anchor is
+	// replaced by this. Two reasons this mode exists: an insert can only extend
+	// an expression from the right, and some call sites need the LEFT operand
+	// wrapped as well; and the same composition bug can sit at several call
+	// sites with nothing in the text to tell them apart, where demanding a
+	// unique anchor would mean either leaving them broken or inventing a
+	// whitespace-sensitive anchor that upstream reindentation would break.
+	const char* replaceWith;
 };
 static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// Item DB search (Uniques/Bases lists): append the Traditional-Chinese
@@ -2023,6 +2031,69 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	  "local searchName = item.name:lower()",
 	  " if PobToolsTranslate then local _ptzh = PobToolsTranslate(item.name) "
 	  "if _ptzh and _ptzh ~= item.name then searchName = searchName .. \"\\n\" .. _ptzh:lower() end end" },
+
+	// Same feature, PoE2's rewrite of the same control: it matches item.name
+	// inline instead of building a searchName, so the PoE1 anchor finds nothing
+	// there and Chinese item-DB search had never worked in PoE2 at all. Each
+	// anchor matches in exactly one of the two folders and is skipped in the
+	// other, so both can sit here under the same file name.
+	{ "itemdbcontrol.lua",
+	  "string.matchOrPattern, item.name:lower()",
+	  " .. \"\\n\" .. (((PobToolsTranslate and PobToolsTranslate(item.name)) or \"\"):lower())" },
+
+	// Item tooltip title. The item LISTS draw "<title>, <base type>", and the
+	// base type is what proves the string is an item name -- see the comma path
+	// in translation_lookup. The tooltip instead draws the title on a line of
+	// its own (ItemsTab.lua:4388), so that proof is gone and "Loath Joy" stayed
+	// English there even after the lists were fixed. This call site is the proof.
+	//
+	// A trailing :gsub() is how an expression gets wrapped when the patch
+	// mechanism can only INSERT after an anchor: the handler receives the whole
+	// title and returns the translation, and returning nil is what leaves the
+	// English alone (gsub keeps a match whose handler returns nil/false), which
+	// is also the fallback when the global is missing on an older engine.
+	{ "itemstab.lua",
+	  "rarityCode..item.title",
+	  ":gsub(\"^.+$\", PobToolsItemTitle or \"%0\")" },
+
+	// Dropdown labels that POB builds as "<node name><padding><stat text>"
+	// (TreeTab.lua:871 for tattoos, :1358 for timeless-jewel mods). The finished
+	// label is not a dictionary key, so the flat lookup can only succeed when BOTH
+	// halves happen to be literal glossary terms -- which is why 26 of the 60
+	// tattoos rendered in Chinese and 34 stayed English, with no pattern a user
+	// could make sense of. Every piece translates on its own; only the join does
+	// not. So translate the pieces and let POB do the joining.
+	//
+	// PobToolsTranslateDisplay, NOT PobToolsItemTitle: these names include passive
+	// notables, and the item-title path would fall back to word-by-word and could
+	// turn an unknown notable into word salad. A plain lookup returns nil instead,
+	// and nil is what keeps the English.
+	{ "treetab.lua",
+	  "label = node.dn .. \"",
+	  nullptr,
+	  "label = ((PobToolsTranslateDisplay and PobToolsTranslateDisplay(node.dn)) or node.dn) .. \"" },
+	// The stats half of the tattoo label. Each comma-free run is translated on its
+	// own, which is right here because they are separate modifiers rather than one
+	// sentence. A stat containing its own comma splits into runs that match
+	// nothing, so it is simply left in English -- never mangled.
+	{ "treetab.lua",
+	  "table.concat(node.sd, \",\")",
+	  ":gsub(\"[^,]+\", PobToolsTranslateDisplay)" },
+
+	// Translate BEFORE POB wraps. main:WrapString splits a line into
+	// width-limited fragments and each fragment is drawn separately, so by the
+	// time DrawString sees them there is nothing left that matches a dictionary
+	// key -- the tattoo popup showed a translated name above two English halves
+	// of one sentence for exactly this reason. Tooltip:AddLine already solves
+	// this for tooltips by translating first (poecharm_inject.lua); the other
+	// seven call sites had no such protection. Patching the wrapper itself
+	// covers all of them at once.
+	//
+	// Re-translating text a caller already translated is harmless: the lookup
+	// misses on Chinese and returns nil, and `or str` keeps what was passed in.
+	{ "main.lua",
+	  "function main:WrapString(str, height, width)",
+	  " if PobToolsTranslateDisplay then str = PobToolsTranslateDisplay(str) or str end" },
 };
 
 // luaL_loadfile drop-in used by LoadModule/PLoadModule; same status codes.
@@ -2032,10 +2103,10 @@ static int pobtools_loadfile_patched(lua_State* L, const char* path)
 	size_t slash = leaf.find_last_of("/\\");
 	if (slash != std::string::npos) leaf.erase(0, slash + 1);
 	for (char& c : leaf) c = (char)tolower((unsigned char)c);
-	const PobToolsSourcePatch* patch = nullptr;
+	bool anyForFile = false;
 	for (const PobToolsSourcePatch& p : kPobToolsSourcePatches)
-		if (leaf == p.fileLeaf) { patch = &p; break; }
-	if (!patch) return luaL_loadfile(L, path);
+		if (leaf == p.fileLeaf) { anyForFile = true; break; }
+	if (!anyForFile) return luaL_loadfile(L, path);
 
 	FILE* f = fopen(path, "rb"); // relative to the work dir, like luaL_loadfile
 	if (!f) return luaL_loadfile(L, path); // let lua report the error
@@ -2046,10 +2117,33 @@ static int pobtools_loadfile_patched(lua_State* L, const char* path)
 	fclose(f);
 	if (src.compare(0, 3, "\xEF\xBB\xBF") == 0) src.erase(0, 3); // BOM: loadbuffer chokes
 
-	size_t at = src.find(patch->anchor);
-	if (at == std::string::npos || src.find(patch->anchor, at + 1) != std::string::npos)
-		return luaL_loadfile(L, path); // anchor drifted: load unpatched
-	src.insert(at + strlen(patch->anchor), patch->insertAfter);
+	// Each patch is judged on its own: one whose anchor drifted is skipped while
+	// the rest still apply. Failing the whole file would mean an unrelated
+	// upstream edit silently switching several features back to English at once.
+	int applied = 0;
+	for (const PobToolsSourcePatch& p : kPobToolsSourcePatches) {
+		if (leaf != p.fileLeaf) continue;
+		size_t at = src.find(p.anchor);
+		if (at == std::string::npos) continue; // anchor drifted: skip this patch
+		const size_t alen = strlen(p.anchor);
+		if (p.replaceWith) {
+			// Replace every occurrence. Resume past the replacement so a
+			// replacement that contains the anchor cannot loop forever.
+			const size_t rlen = strlen(p.replaceWith);
+			for (size_t pos = at; pos != std::string::npos; pos = src.find(p.anchor, pos)) {
+				src.replace(pos, alen, p.replaceWith);
+				pos += rlen;
+				applied++;
+			}
+		} else {
+			// Insert mode stays strict: these patches target one exact call site,
+			// and a second match would mean the anchor no longer identifies it.
+			if (src.find(p.anchor, at + 1) != std::string::npos) continue;
+			src.insert(at + alen, p.insertAfter);
+			applied++;
+		}
+	}
+	if (applied == 0) return luaL_loadfile(L, path); // nothing matched: load as-is
 
 	std::string chunkName = "@";
 	chunkName += path;
@@ -2404,6 +2498,23 @@ static int l_PobToolsTranslate(lua_State* L)
 	return 1;
 }
 
+// PobToolsItemTitle(title) -> chinese, or nil. Used as a gsub replacement
+// function, so returning nil is what keeps the English (gsub leaves a match
+// alone when the handler returns nil or false) -- that is the degradation path.
+//
+// Only the item tooltip calls this, via the source patch below. The title is
+// drawn on a line of its own there (ItemsTab.lua:4388), so unlike the item
+// lists, the string carries no evidence that it is an item name; the call site
+// is the only thing that knows. See translation_lookup_item_title.
+static int l_PobToolsItemTitle(lua_State* L)
+{
+	const char* text = lua_tostring(L, 1);
+	if (!text) { lua_pushnil(L); return 1; }
+	const char* zh = translation_lookup_item_title(text);
+	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
+	return 1;
+}
+
 // PobToolsTranslateDisplay(text) -> translated text, or nil when nothing matched.
 //
 // The same function DrawString uses, exposed because Tooltip:AddLine has to
@@ -2678,6 +2789,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	// PobTools: Lua-callable translation helpers. The legacy PoeCharm* global
 	// names are kept as aliases so existing injected Lua keeps working.
 	ADDFUNC(PobToolsTranslate);
+	ADDFUNC(PobToolsItemTitle);
 	ADDFUNC(PobToolsTranslateDisplay);
 	ADDFUNC(PobToolsReverse);
 	ADDFUNC(PobToolsSetTranslate);

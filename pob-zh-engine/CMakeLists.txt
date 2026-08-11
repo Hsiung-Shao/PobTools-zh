@@ -334,6 +334,8 @@ if (WIN32)
         host/editor_data.cpp
         host/editor_selftest.cpp
         host/paste_selftest.cpp
+        # POB 執行時拼出來的物品名(「<標題>, <基底>」)的正向翻譯回歸
+        host/item_name_selftest.cpp
         host/paste_trace.cpp
         # 多佔位符詞條的填位回歸 + 全量 A/B 快照工具
         host/placeholder_selftest.cpp

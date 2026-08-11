@@ -23,6 +23,21 @@ void translation_reload(void);
 ** Returned pointer is valid until translation_shutdown(). */
 const char* translation_lookup(const char *english);
 
+/* Look up a string the caller has already established is a generated ITEM TITLE
+** (GGG's "<prefix> <suffix>" word pair, or a unique's name). Tries the normal
+** pipeline first, then falls back to translating word by word.
+**
+** Why a separate entry point: the per-word fallback ignores the glossary's
+** four-character floor, which exists to keep short function words out of prose.
+** translation_lookup() can only relax it when the string carries its own proof
+** of being an item name -- the "<title>, <base type>" form the item lists use.
+** The tooltip draws the title on a line of its own (ItemsTab.lua:4388), so that
+** proof is gone and only the CALL SITE knows. This function is that knowledge.
+**
+** Returns nullptr when the title does not fully translate; callers must then
+** render the English, never a half-translated mix. */
+const char* translation_lookup_item_title(const char *english);
+
 /* Select the dictionary file consulted BEFORE the merged map, naming the POB
 ** data file the string being drawn came from (currently only "gems"). Pass
 ** nullptr or "" to clear. Returns the previous selection (nullptr if none) so

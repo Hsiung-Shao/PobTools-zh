@@ -16,11 +16,13 @@
 // jewel, Foulborn unique jewel, helmet with an implicit annotation and a
 // negative value, and a cluster jewel with enchant lines.
 //
-// Two lines are asserted to STILL be Chinese. They are genuine dictionary gaps,
-// and the point of asserting them exactly is that they must stay visible: a
-// missing mod that silently disappears is worse than one POB flags. If either
-// ever gets translated this test fails, which is the correct prompt to update
-// it.
+// kKnownGaps is the list of lines allowed to stay Chinese -- genuine dictionary
+// gaps, named exactly so they stay visible, since a missing mod that silently
+// disappears is worse than one POB flags. It is currently EMPTY: every item
+// fixture must come out fully ASCII. Filling a gap therefore fails this test,
+// which is the correct prompt to update it. That is not hypothetical -- adding
+// "Intangibility: {0}%" to ui.json is what rewrote the property assertions
+// below.
 
 #include "paste_selftest.h"
 
@@ -437,18 +439,31 @@ int RunPasteSelftest()
 	// these four assertions have to hold together: the known case still drops,
 	// a key nobody has ever seen drops too, a key POB does consume survives, and
 	// the same text outside the property block is left alone.
-	check(!prop_survives("無形性: 15%"),
-	      "Intangibility dropped (would push Item.lua into EXPLICIT early)");
 	check(!prop_survives("虛構屬性: 42%"),
-	      "an unknown property key drops as well -- the rule is not a list");
+	      "an unknown property key drops -- the rule is not a list");
 	check(prop_survives("品質: +20% (augmented)", "Quality: +20%"),
 	      "a property POB does consume is NOT dropped");
-	// Outside the property block the same line must fall through untouched:
+	// 無形性 was the one hardcoded drop, and then the worked example of the rule
+	// that replaced it, purely because the dictionary had no entry for POB's own
+	// wording ("Intangibility: {0}%", now in ui.json -- GGPK only ever writes the
+	// term inside its "[Key|Display]" markup, which POB does not emit). With a
+	// translation available the line no longer reaches the drop rule, and that is
+	// the better outcome: POB writes this property itself (Item.lua:1753) and
+	// parses it back (Item.lua:825), so a pasted item now KEEPS its Intangibility
+	// instead of losing it.
+	//
+	// Asserted by its English form. "The Chinese vanished" would pass either way
+	// -- dropped or translated -- so it would have hidden this change entirely.
+	check(prop_survives("無形性: 15%", "Intangibility: 15%"),
+	      "Intangibility translates, so it survives as a real property");
+	// Outside the property block the same shape must fall through untouched:
 	// dropping it there would delete a modifier that merely contains a colon.
+	// Sampled with a key that cannot translate, so a future dictionary addition
+	// cannot quietly turn this into a vacuous pass the way 無形性 just did.
 	{
-		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n無形性: 15%\n");
-		check(s.find("無形性: 15%") != std::string::npos,
-		      "the same line outside the property block is left alone");
+		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n虛構屬性: 42%\n");
+		check(s.find("虛構屬性: 42%") != std::string::npos,
+		      "the same shape outside the property block is left alone");
 	}
 
 	printf("\n-- GGG's own multi-line entries, registered per line --\n");

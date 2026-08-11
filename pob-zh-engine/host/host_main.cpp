@@ -29,6 +29,7 @@
 #include "launcher_editor.h"
 #include "editor_selftest.h"
 #include "paste_selftest.h"
+#include "item_name_selftest.h"
 #include "paste_trace.h"
 #include "placeholder_selftest.h"
 #include "pob_launch.h"
@@ -530,6 +531,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// POB turns any surviving non-ASCII byte into '?', so the check is that
 		// nothing survives.
 		return RunPasteSelftest();
+	}
+	if (arg1 == L"--item-name-selftest") {
+		// headless: POB builds "<title>, <base type>" at runtime, so the finished
+		// name is never a dictionary key. Replays one real build's equipment and
+		// jewel sockets through the forward path.
+		return RunItemNameSelftest();
+	}
+	if (arg1 == L"--tr") {
+		// One-off: what does the engine actually return for this string?
+		return RunTranslateProbe(arg2);
 	}
 	if (arg1 == L"--filter-editor") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
