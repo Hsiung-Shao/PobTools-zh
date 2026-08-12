@@ -6,6 +6,11 @@
 #include <vector>
 
 // Blocking window; fully creates and tears down its own GLFW/ImGui/GL context.
+class IToolPanel;
+
+// As a tab. Caller owns the panel and must Init() it before drawing.
+IToolPanel* CreateTimelessJewelPanel();
+
 void ShowTimelessJewel(const std::wstring& exeDir, const std::wstring& locale);
 
 // Highest jewel type the calculator offers.

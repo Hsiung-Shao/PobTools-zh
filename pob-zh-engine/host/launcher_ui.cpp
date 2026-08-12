@@ -11,6 +11,7 @@
 // Tools that draw inside this window rather than in one of their own.
 #include "filter_editor.h"
 #include "launcher_editor.h"
+#include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -1383,8 +1384,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ImGui::Button(S.atlasPlanner, toolSize))
 				spawnTool(L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner);
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.timelessJewel, toolSize))
-				spawnTool(L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel);
+			if (ImGui::Button(S.timelessJewel, toolSize)) {
+				if (tabbed) openPanel(&CreateTimelessJewelPanel, S.timelessJewel);
+				else spawnTool(L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel);
+			}
 			ImGui::PopStyleColor();
 		}
 		if (updaterBusy) ImGui::EndDisabled();
