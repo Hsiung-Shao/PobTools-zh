@@ -23,6 +23,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <share.h>   // _SH_DENYWR, so the log can be read while it is being written
 #include <string>
 
 namespace WindowDock {
@@ -63,6 +64,21 @@ void vlog(const char* fmt, ...)
 	va_end(ap);
 	fputc('\n', g_log);
 	fflush(g_log);
+}
+
+// fprintf's %S goes through the C locale, which in the default "C" locale cannot
+// convert anything outside ASCII -- so every Chinese tab label logged as an empty
+// string, and the log said nothing about the very tabs it was meant to describe.
+// UTF-8 is what the rest of this codebase writes, so the log writes it too.
+std::string to_utf8_log(const std::wstring& w)
+{
+	if (w.empty()) return std::string();
+	const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(),
+	                                  nullptr, 0, nullptr, nullptr);
+	if (n <= 0) return std::string();
+	std::string out((size_t)n, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &out[0], n, nullptr, nullptr);
+	return out;
 }
 
 struct FindCtx { DWORD pid; HWND found; };
@@ -125,7 +141,13 @@ void Dock::Init(void* host, const std::wstring& logPath)
 	host_ = host;
 	if (!g_log && !logPath.empty()) {
 		DeleteFileW(logPath.c_str());
-		_wfopen_s(&g_log, logPath.c_str(), L"w");
+		// _wfsopen with _SH_DENYWR, NOT _wfopen_s: the secure variant opens
+		// EXCLUSIVELY, so nothing -- not even a plain type of the file -- could read
+		// this log while the program was running. For a log whose entire purpose is
+		// to survive a freeze, being readable only after the process exits defeats
+		// the point: a hang is exactly when it cannot be read and exactly when it is
+		// needed. Measured: every FileShare combination failed against the old handle.
+		g_log = _wfsopen(logPath.c_str(), L"w", _SH_DENYWR);
 	}
 	// Needed by ITaskbarList. S_FALSE (already initialised) is fine.
 	CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -134,10 +156,12 @@ void Dock::Init(void* host, const std::wstring& logPath)
 
 void Dock::Track(unsigned long pid, const std::wstring& label)
 {
-	dlog("dock: tracking pid=%lu label='%S'", pid, label.c_str());
+	dlog("dock: tracking pid=%lu label='%s'", pid, to_utf8_log(label).c_str());
 	Tab t;
 	t.pid = pid;
 	t.label = label;
+	// Kept so a window whose caption cannot be read still has something to show.
+	t.baseLabel = label;
 	tabs_.push_back(t);
 	orig_.push_back(Original{});
 }
@@ -147,22 +171,42 @@ void Dock::Adopt(Tab& t)
 	HWND w = (HWND)t.hwnd;
 	const size_t i = (size_t)(&t - tabs_.data());
 	Original& o = orig_[i];
-	o.style = GetWindowLongPtrW(w, GWL_STYLE);
-	o.exStyle = GetWindowLongPtrW(w, GWL_EXSTYLE);
-	RECT r{};
-	GetWindowRect(w, &r);
-	o.x = r.left; o.y = r.top; o.w = r.right - r.left; o.h = r.bottom - r.top;
-	dlog("dock: adopting hwnd=%p style=0x%08X rect=%d,%d %dx%d",
-	     (void*)w, (unsigned)o.style, o.x, o.y, o.w, o.h);
-
-	// POB starts maximized, and a maximized window ignores SetWindowPos's size,
-	// so the dock would silently do nothing.
-	if (IsZoomed(w) || IsIconic(w)) {
-		dlog("dock: restoring maximized/minimized window first");
-		ShowWindowAsync(w, SW_RESTORE);
+	// Captured ONCE, on the first attempt. Adoption can return early to wait for an
+	// un-maximise, and re-reading here on the retry would record the restored state
+	// as "the original" -- RestoreAll would then hand the user a merely large window
+	// where they had a maximized one, and o.style would have lost WS_MAXIMIZE, which
+	// is the only record that it was maximized at all.
+	if (!o.captured) {
+		o.style = GetWindowLongPtrW(w, GWL_STYLE);
+		o.exStyle = GetWindowLongPtrW(w, GWL_EXSTYLE);
+		RECT r{};
+		GetWindowRect(w, &r);
+		o.x = r.left; o.y = r.top; o.w = r.right - r.left; o.h = r.bottom - r.top;
+		o.captured = true;
+		dlog("dock: adopting hwnd=%p style=0x%08X rect=%d,%d %dx%d maximized=%d",
+		     (void*)w, (unsigned)o.style, o.x, o.y, o.w, o.h, IsZoomed(w) ? 1 : 0);
 	}
-	LONG_PTR style = o.style;
-	style &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+
+	// POB starts maximized, and a maximized window ignores SetWindowPos's size, so
+	// the dock would silently do nothing.
+	//
+	// ShowWindowAsync POSTS -- it has not happened when this returns. Stripping the
+	// frame in the same breath wrote `o.style` (WS_MAXIMIZE and all) back over the
+	// restore that was still in flight, so the window stayed maximized as far as
+	// Windows was concerned. Measured: both lines landed in the same millisecond.
+	// So adoption waits instead, and the caller retries on a later frame.
+	if (IsZoomed(w) || IsIconic(w)) {
+		if (!t.awaitingRestore) {
+			dlog("dock: window is maximized/minimized -- restoring before adopting");
+			ShowWindowAsync(w, SW_RESTORE);
+			t.awaitingRestore = true;
+		}
+		return;
+	}
+	t.awaitingRestore = false;
+	// WS_MAXIMIZE is in this mask and used to be missing; it is not WS_MAXIMIZEBOX.
+	// See WindowMgr::DockedStyleMask.
+	LONG_PTR style = o.style & ~(LONG_PTR)WindowMgr::DockedStyleMask();
 	SetWindowLongPtrW(w, GWL_STYLE, style);
 	// A style change does not repaint the non-client area by itself: without
 	// SWP_FRAMECHANGED the caption stays on screen even though the style says it
@@ -262,7 +306,11 @@ void Dock::Update(int stripH, int activeIndex)
 	if (GetTickCount64() - lastFind_ >= 60) {
 		lastFind_ = GetTickCount64();
 		for (Tab& t : tabs_) {
-			if (t.hwnd || !t.pid) continue;
+			if (!t.pid) continue;
+			// Retry adoption for a window that is still waiting to come out of
+			// maximized: Adopt returns early in that case and has to be called again.
+			if (t.awaitingRestore && t.hwnd) { Adopt(t); continue; }
+			if (t.hwnd) continue;
 			HWND found = find_window_of(t.pid);
 			if (found) {
 				t.hwnd = found;
@@ -271,45 +319,79 @@ void Dock::Update(int stripH, int activeIndex)
 		}
 	}
 
+	// Tab titles follow the window. POB puts the build name in its caption
+	// (`<build> (<class>) - Path of Building`), so this is what makes a tab say
+	// which build it is holding. Twice a second, not per frame.
+	if (GetTickCount64() - lastTitle_ >= 500) {
+		lastTitle_ = GetTickCount64();
+		for (Tab& t : tabs_) {
+			if (!t.hwnd || !t.docked || !IsWindow((HWND)t.hwnd)) continue;
+			const std::wstring title = WindowMgr::WindowTitle(t.hwnd);
+			// An unreadable title keeps whatever the tab already said. A tab that
+			// went blank would be worse than one that is merely out of date.
+			const std::wstring shown = WindowMgr::ShortenWindowTitle(title, t.baseLabel);
+			if (!shown.empty() && shown != t.label) {
+				dlog("dock: tab title '%s' -> '%s'",
+				     to_utf8_log(t.label).c_str(), to_utf8_log(shown).c_str());
+				t.label = shown;
+			}
+		}
+	}
+
 	// The container is the single source of truth for "is this app on screen".
 	// Docked windows follow it; they never drive it while it is minimised.
 	const bool hostMin = !!IsIconic((HWND)host_);
+	// Logged on the EDGE. A minimise is the one moment this log has to describe,
+	// and a per-frame line at vsync would bury it under thousands of others.
+	if (loggedHostMin_ != (int)hostMin) {
+		loggedHostMin_ = (int)hostMin;
+		dlog("dock: container %s (active=%d of %zu)",
+		     hostMin ? "MINIMISED" : "restored", active_, tabs_.size());
+	}
 	// Show the active one, hide the rest -- and hide everything when the
 	// container is minimised, since a docked window is not a child and would
 	// otherwise stay floating on the desktop on its own.
 	for (size_t i = 0; i < tabs_.size(); i++) {
 		Tab& t = tabs_[i];
 		if (!t.hwnd || !IsWindow((HWND)t.hwnd)) continue;
-		if (!hostMin && (int)i == active_) {
-			const bool hidden = !IsWindowVisible((HWND)t.hwnd) || IsIconic((HWND)t.hwnd);
-			if (hidden) {
-				// SW_SHOWNOACTIVATE, not SW_SHOWNA: SW_SHOWNA means "display it in
-				// its CURRENT state", so a window that was minimised stays minimised
-				// -- and the check further down then reads that as an intentional
-				// minimise and pulls the whole container down with it.
+		WindowMgr::TabState ts;
+		ts.isActive = ((int)i == active_);
+		ts.hidden = !IsWindowVisible((HWND)t.hwnd) || !!IsIconic((HWND)t.hwnd);
+		switch (WindowMgr::DecideTab(hostMin, ts)) {
+			case WindowMgr::TabAction::Show:
+				// SW_SHOWNOACTIVATE, not SW_SHOWNA: SW_SHOWNA means "display it in its
+				// CURRENT state", so a window that was minimised stays minimised -- and
+				// DecideHost then reads that as an intentional minimise and pulls the
+				// whole container down with it.
 				//
 				// But SW_SHOWNOACTIVATE restores it to its own most recent size and
-				// position, which undoes the docking geometry. So this frame only
-				// shows it; positioning happens on a later frame, once the
-				// asynchronous show has actually landed. Doing both here raced, and
-				// the window ended up back at its pre-dock size.
+				// position, which undoes the docking geometry. So this frame only shows
+				// it; positioning happens on a later frame, once the asynchronous show
+				// has actually landed. Doing both here raced, and the window ended up
+				// back at its pre-dock size.
+				dlog("dock: tab %zu -> show", i);
 				ShowWindowAsync((HWND)t.hwnd, SW_SHOWNOACTIVATE);
-			} else {
+				break;
+			case WindowMgr::TabAction::Position:
 				Position(t, false);
-			}
-		} else {
-			ShowWindowAsync((HWND)t.hwnd, SW_HIDE);
+				break;
+			case WindowMgr::TabAction::Hide:
+				// Only when there is something to hide. This used to fire unconditionally
+				// every frame, which at vsync is 60 cross-process calls a second per
+				// inactive tab, all of them no-ops.
+				if (!ts.hidden || IsWindowVisible((HWND)t.hwnd)) {
+					dlog("dock: tab %zu -> hide (%s)", i,
+					     hostMin ? "container minimised" : "not the active tab");
+					ShowWindowAsync((HWND)t.hwnd, SW_HIDE);
+				}
+				break;
 		}
 	}
 
 	// Exactly one taskbar button between the container and the docked windows,
 	// and it has to follow whichever one is on screen.
-	//
-	// Hiding a docked window also removes ITS taskbar button. Dropping ours once
-	// and for all therefore left the taskbar completely empty whenever a normal
-	// tab was selected -- and, worse, whenever the container was minimised, which
-	// made the whole app unreachable. Ours comes back in both of those cases.
-	const bool showOwnButton = hostMin || active_ < 0 || active_ >= (int)tabs_.size();
+	const bool haveActive = active_ >= 0 && active_ < (int)tabs_.size();
+	const bool showOwnButton = WindowMgr::ShouldShowOwnTaskbarButton(hostMin, haveActive);
 	if (showOwnButton == droppedOwnButton_) {
 		taskbar_button((HWND)host_, showOwnButton);
 		droppedOwnButton_ = !showOwnButton;
@@ -318,28 +400,21 @@ void Dock::Update(int stripH, int activeIndex)
 	// Z-order and minimise state, a few times a second. Backstop for the focus
 	// callback: clicking the container's own strip while it is already focused
 	// raises it WITHOUT firing a focus change.
-	if (GetTickCount64() - lastKeep_ >= 200 && !hostMin) {
+	if (GetTickCount64() - lastKeep_ >= 200) {
 		lastKeep_ = GetTickCount64();
-		if (active_ >= 0 && active_ < (int)tabs_.size()) {
-			Tab& t = tabs_[(size_t)active_];
-			if (t.hwnd && IsWindow((HWND)t.hwnd) && t.docked) {
-				// A docked window minimised on its own (its taskbar button was
-				// clicked) takes the container with it, so the group behaves as one
-				// window.
-				//
-				// There is deliberately no "docked window is up but the container is
-				// minimised -> restore the container" rule. That is indistinguishable
-				// from the user having just minimised the container themselves, and
-				// it made the window spring straight back every time they tried.
-				// Restoring is Windows' job, via the taskbar button that
-				// showOwnButton puts back while minimised.
-				if (IsIconic((HWND)t.hwnd) && GetTickCount64() - lastSwitch_ >= 600) {
-					dlog("dock: active tab minimised -> minimising container");
-					ShowWindowAsync((HWND)host_, SW_MINIMIZE);
-				} else if (!IsIconic((HWND)t.hwnd)) {
-					FixZOrder(t);
-				}
-			}
+		Tab* act = haveActive ? &tabs_[(size_t)active_] : nullptr;
+		const bool actOk = act && act->hwnd && IsWindow((HWND)act->hwnd) && act->docked;
+		WindowMgr::HostDecisionIn in;
+		in.hostMinimised = hostMin;
+		in.haveActiveTab = actOk;
+		in.activeTabMinimised = actOk && !!IsIconic((HWND)act->hwnd);
+		in.msSinceTabSwitch = GetTickCount64() - lastSwitch_;
+		const WindowMgr::HostDecision d = WindowMgr::DecideHost(in);
+		if (d.minimiseContainer) {
+			dlog("dock: active tab minimised -> minimising container");
+			ShowWindowAsync((HWND)host_, SW_MINIMIZE);
+		} else if (d.sinkContainer) {
+			FixZOrder(*act);
 		}
 	}
 }
@@ -391,12 +466,27 @@ void Dock::RestoreAll()
 		Tab& t = tabs_[i];
 		if (!t.docked || !t.hwnd || !IsWindow((HWND)t.hwnd)) continue;
 		const Original& o = orig_[i];
-		dlog("dock: restoring tab %zu", i);
-		SetWindowLongPtrW((HWND)t.hwnd, GWL_STYLE, (LONG_PTR)o.style);
+		// WS_MAXIMIZE is a STATE, not a look. Writing the bit back produced a window
+		// that told Windows it was maximized while sitting at the rectangle it had
+		// when maximized -- overhanging the screen by the border width, and with a
+		// restore button that did nothing sensible. So the bit is withheld here and
+		// the state is asked for properly below.
+		const bool wasMaximized = (o.style & (LONG_PTR)WS_MAXIMIZE) != 0;
+		dlog("dock: restoring tab %zu (maximized=%d)", i, wasMaximized ? 1 : 0);
+		SetWindowLongPtrW((HWND)t.hwnd, GWL_STYLE, (LONG_PTR)(o.style & ~(LONG_PTR)WS_MAXIMIZE));
 		SetWindowLongPtrW((HWND)t.hwnd, GWL_EXSTYLE, (LONG_PTR)o.exStyle);
-		SetWindowPos((HWND)t.hwnd, HWND_TOP, o.x, o.y, o.w, o.h,
-		             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS);
-		ShowWindowAsync((HWND)t.hwnd, SW_SHOW);
+		if (wasMaximized) {
+			// The remembered rect is the maximized one, so it is not what a restored
+			// window should get; Windows works the geometry out itself from the monitor.
+			SetWindowPos((HWND)t.hwnd, HWND_TOP, 0, 0, 0, 0,
+			             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED |
+			             SWP_ASYNCWINDOWPOS);
+			ShowWindowAsync((HWND)t.hwnd, SW_MAXIMIZE);
+		} else {
+			SetWindowPos((HWND)t.hwnd, HWND_TOP, o.x, o.y, o.w, o.h,
+			             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS);
+			ShowWindowAsync((HWND)t.hwnd, SW_SHOW);
+		}
 		t.docked = false;
 	}
 	if (droppedOwnButton_ && host_) {
@@ -405,6 +495,110 @@ void Dock::RestoreAll()
 		taskbar_button((HWND)host_, true);
 		droppedOwnButton_ = false;
 	}
+}
+
+// ---- adoption / restoration against a real window ----------------------------
+
+int RunDockStyleSelfTest(const std::wstring& exeDir)
+{
+	std::string report;
+	int failures = 0, checks = 0;
+	auto check = [&](const char* name, bool ok, const std::string& detail = "") {
+		checks++;
+		report += std::string(ok ? "PASS " : "FAIL ") + name +
+		          (detail.empty() ? "" : "  (" + detail + ")") + "\n";
+		if (!ok) failures++;
+	};
+	auto hexs = [](long long v) {
+		char b[32]; snprintf(b, sizeof(b), "0x%08llX", (unsigned long long)v); return std::string(b);
+	};
+
+	if (!glfwInit()) {
+		report += "FAIL could not init GLFW\nRESULT FAIL\n";
+		failures++;
+	} else {
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+		// The container is created HIDDEN on purpose: Dock finds windows to adopt by
+		// walking this process's VISIBLE GLFW windows, so a hidden one cannot be
+		// mistaken for the target. Without that the dock would happily adopt itself.
+		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+		GLFWwindow* host = glfwCreateWindow(400, 300, "dock-selftest-host", nullptr, nullptr);
+		glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+		GLFWwindow* target = glfwCreateWindow(800, 600, "dock-selftest-target", nullptr, nullptr);
+		if (!host || !target) {
+			report += "FAIL could not create the two windows\n";
+			failures++;
+		} else {
+			HWND th = glfwGetWin32Window(target);
+			// The state that matters. POB starts like this; whether it still is by the
+			// time a human runs a check is not something to leave to chance.
+			ShowWindow(th, SW_MAXIMIZE);
+			for (int i = 0; i < 40 && !IsZoomed(th); i++) { glfwPollEvents(); Sleep(25); }
+			const LONG_PTR before = GetWindowLongPtrW(th, GWL_STYLE);
+			check("S1 the target really is maximized before adoption",
+			      IsZoomed(th) && (before & WS_MAXIMIZE) != 0, hexs(before));
+
+			{
+				Dock dock;
+				dock.Init(glfwGetWin32Window(host), std::wstring());
+				dock.Track(GetCurrentProcessId(), L"target");
+				// Adoption is throttled to 60ms and deliberately spans frames: it asks
+				// for the un-maximise, then strips the frame only once that has landed.
+				for (int i = 0; i < 120; i++) {
+					glfwPollEvents();
+					dock.Update(0, 0);
+					if (!dock.Tabs().empty() && dock.Tabs()[0].docked) break;
+					Sleep(25);
+				}
+				const bool adopted = !dock.Tabs().empty() && dock.Tabs()[0].docked;
+				check("S2 the window was adopted", adopted);
+
+				const LONG_PTR after = GetWindowLongPtrW(th, GWL_STYLE);
+				// THE regression this suite exists for. WS_MAXIMIZE (0x01000000) was
+				// missing from the strip list -- only WS_MAXIMIZEBOX (0x00010000) was
+				// there -- so the docked window went on telling Windows it was maximized
+				// while the dock sized it by hand.
+				check("S3 adoption clears WS_MAXIMIZE", (after & WS_MAXIMIZE) == 0, hexs(after));
+				check("S4 ... and the window is genuinely no longer zoomed", !IsZoomed(th));
+				check("S5 adoption clears the caption", (after & WS_CAPTION) == 0, hexs(after));
+				check("S6 adoption clears the sizing frame", (after & WS_THICKFRAME) == 0);
+
+				dock.RestoreAll();
+				for (int i = 0; i < 40 && !IsZoomed(th); i++) { glfwPollEvents(); Sleep(25); }
+				const LONG_PTR back = GetWindowLongPtrW(th, GWL_STYLE);
+				// Putting the STYLE BIT back is not the same as being maximized: that
+				// produced a window overhanging the screen by the border width whose
+				// restore button did nothing sensible. The state has to be asked for.
+				check("S7 restoring gives back a genuinely maximized window", !!IsZoomed(th),
+				      hexs(back));
+				check("S8 ... with its caption", (back & WS_CAPTION) != 0, hexs(back));
+			}
+		}
+		if (target) glfwDestroyWindow(target);
+		if (host) glfwDestroyWindow(host);
+		glfwTerminate();
+	}
+
+	const int ran = checks;
+	check("S9 the suite actually ran", ran >= 8, std::to_string(ran) + " checks");
+
+	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	HANDLE h = CreateFileW((exeDir + L"PobTools\\dock_style_selftest.txt").c_str(),
+	                       GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+	                       FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h != INVALID_HANDLE_VALUE) {
+		DWORD w = 0;
+		WriteFile(h, report.data(), (DWORD)report.size(), &w, nullptr);
+		CloseHandle(h);
+	}
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		FILE* f = nullptr;
+		freopen_s(&f, "CONOUT$", "w", stdout);
+	}
+	printf("%s", report.c_str());
+	return failures ? 2 : 0;
 }
 
 // ---- spike -------------------------------------------------------------------

@@ -26,6 +26,16 @@ struct Tab {
 	void*         hwnd = nullptr;     // HWND, null until the window shows up
 	std::wstring  label;              // what the tab strip shows
 	bool          docked = false;     // frame stripped and being positioned
+
+	// POB starts maximized, and a maximized window ignores SetWindowPos's size.
+	// Un-maximising it is asynchronous, so adoption waits a frame or two for that
+	// to land before stripping the frame -- doing both at once wrote the old style
+	// (WS_MAXIMIZE included) straight back over the restore.
+	bool          awaitingRestore = false;
+
+	// The label the tab was created with, kept so a window whose title cannot be
+	// read falls back to something rather than to an empty tab.
+	std::wstring  baseLabel;
 };
 
 // Manages every docked window for one container.
@@ -76,7 +86,14 @@ private:
 	void Position(Tab& t, bool force, bool sync = false);
 	void FixZOrder(Tab& t);
 
-	struct Original { long long style = 0, exStyle = 0; int x = 0, y = 0, w = 0, h = 0; };
+	// What the window looked like before the dock touched it. `captured` exists
+	// because adoption may run more than once (it waits for an un-maximise), and
+	// only the FIRST pass sees the untouched window.
+	struct Original {
+		long long style = 0, exStyle = 0;
+		int x = 0, y = 0, w = 0, h = 0;
+		bool captured = false;
+	};
 
 	void*             host_ = nullptr;
 	std::vector<Tab>  tabs_;
@@ -84,11 +101,24 @@ private:
 	int               stripH_ = 0;
 	int               active_ = -1;
 	bool              droppedOwnButton_ = false;
-	unsigned long long lastFind_ = 0, lastKeep_ = 0, lastSwitch_ = 0;
+	unsigned long long lastFind_ = 0, lastKeep_ = 0, lastSwitch_ = 0, lastTitle_ = 0;
+	// Last logged container minimise state. The log is the only record of what
+	// happened during a minimise, and it has to be written on the EDGE -- a
+	// per-frame line at vsync would bury the one transition that matters.
+	int               loggedHostMin_ = -1;
 };
 
 // Feasibility run, opened with --dock-spike. Kept because it is the smallest
 // thing that exercises the whole path end to end.
 int RunDockSpike(const std::wstring& exeDir, bool spawnPob = true, bool verbose = false);
+
+// Adoption and restoration against a real window this process owns, opened with
+// --dock-style-selftest. Report at <exeDir>PobTools\, 0 = pass.
+//
+// It builds its own MAXIMIZED window rather than driving POB, because whether POB
+// starts maximized depends on what the user last did -- so a check that waits for
+// POB to be maximized passes vacuously most of the time, which is precisely how
+// the missing WS_MAXIMIZE survived. Here the interesting state is guaranteed.
+int RunDockStyleSelfTest(const std::wstring& exeDir);
 
 } // namespace WindowDock

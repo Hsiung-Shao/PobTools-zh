@@ -431,6 +431,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// --dock-spike [nospawn|verbose]
 		return WindowDock::RunDockSpike(dir, arg2 != L"nospawn", arg2 == L"verbose");
 	}
+	if (arg1 == L"--dock-style-selftest") {
+		// Adoption against a real MAXIMIZED window this process owns. Needs a desktop
+		// (it creates windows) but no interaction: the container is hidden and the
+		// target is driven entirely through Win32.
+		return WindowDock::RunDockStyleSelfTest(dir);
+	}
 	if (arg1 == L"--window-layout-selftest") {
 		// headless: the arithmetic behind the window list's tile/cascade buttons.
 		// Includes the case that matters most -- a 1920-wide screen cannot tile two
