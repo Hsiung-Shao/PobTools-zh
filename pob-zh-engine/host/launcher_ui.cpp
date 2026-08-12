@@ -1855,7 +1855,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				// so the id comes from the index after "##".
 				std::string label = to_utf8(dtabs[i].label) + "##dock" + std::to_string(i);
 				bool open = true;
-				if (ImGui::BeginTabItem(label.c_str(), &open)) {
+				// Newly started windows bring themselves to the front, the same as an
+				// embedded panel does. Without it the tool appeared, was hidden again
+				// because the user was still on another tab, and left only a tab behind.
+				const ImGuiTabItemFlags focus =
+					dock.TakeFocusRequest(i) ? ImGuiTabItemFlags_SetSelected : 0;
+				if (ImGui::BeginTabItem(label.c_str(), &open, focus)) {
 					activeDockTab = (int)i;
 					ImGui::EndTabItem();
 				}

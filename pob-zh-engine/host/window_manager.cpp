@@ -94,10 +94,20 @@ std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring&
 	// "Path of Building" does not get its own name eaten out of the middle.
 	static const wchar_t* kSuffix = L" - Path of Building";
 	const size_t suffixLen = wcslen(kSuffix);
-	if (s.size() > suffixLen && s.compare(s.size() - suffixLen, suffixLen, kSuffix) == 0)
+	if (s.size() > suffixLen && s.compare(s.size() - suffixLen, suffixLen, kSuffix) == 0) {
 		s.erase(s.size() - suffixLen);
-	else if (s == L"Path of Building")
+	} else if (s == L"Path of Building") {
 		s.clear();   // no build loaded yet
+	} else {
+		// Not POB, so the caption carries nothing the tab does not already say.
+		//
+		// Only POB has a caption worth following: it puts the build name in it and
+		// changes it as the user works. A tool's caption is fixed ("PobTools —
+		// 輿圖策略"), so adopting it merely replaced a clean tab label with the same
+		// words plus a redundant prefix. Taking the caption "as-is" whenever it did
+		// not look like POB was the wrong rule, and this is the case it got wrong.
+		return std::wstring();
+	}
 
 	// Trim: a caption is user data and can arrive with anything around it.
 	const size_t b = s.find_first_not_of(L" \t");
@@ -252,8 +262,14 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		check("T4 a build called 'Path of Building' survives",
 		      ShortenWindowTitle(L"Path of Building - Path of Building", fb) ==
 		          L"Path of Building");
-		check("T5 a caption with no app suffix is used as-is",
-		      ShortenWindowTitle(L"PoE2 build", fb) == L"PoE2 build");
+		// This asserted the opposite until a tool tab showed up labelled
+		// "PobTools — 輿圖策略" instead of "輿圖策略": a caption that is not POB's
+		// says nothing the tab does not already say, and taking it "as-is" only
+		// added a redundant prefix. The test was pinning the wrong behaviour.
+		check("T5 a caption that is not POB's leaves the tab alone",
+		      ShortenWindowTitle(L"PobTools — 輿圖策略", fb).empty());
+		check("T5b ... including anything else that is not POB",
+		      ShortenWindowTitle(L"Some Other Window", fb).empty());
 		{
 			const std::wstring longName(80, L'x');
 			const std::wstring got = ShortenWindowTitle(longName + L" - Path of Building", fb);
@@ -264,8 +280,16 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      ShortenWindowTitle(L"   Spark Inquis   - Path of Building", fb) ==
 		          L"Spark Inquis",
 		      "a caption is user data");
-		check("T8 a caption of only spaces falls back rather than blanking the tab",
-		      ShortenWindowTitle(L"    ", fb) == fb);
+		// Whitespace is not POB's caption either, so it takes the same route as any
+		// other foreign one: no opinion, and the tab keeps whatever it says. The
+		// visible result is the same as falling back -- the label was already the
+		// fallback -- but it also means a caption that momentarily reads blank does
+		// not wipe out a build name that was there a second ago.
+		check("T8 a caption of only spaces leaves the tab alone",
+		      ShortenWindowTitle(L"    ", fb).empty());
+		check("T8b the fallback is still used when POB has no build open",
+		      ShortenWindowTitle(L"Path of Building", fb) == fb,
+		      "the one case where the caption really does mean 'nothing loaded'");
 	}
 
 	// Snapshot first: `checks` is incremented by the call below, so reading it

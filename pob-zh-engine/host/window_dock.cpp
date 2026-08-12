@@ -166,6 +166,13 @@ void Dock::Track(unsigned long pid, const std::wstring& label)
 	orig_.push_back(Original{});
 }
 
+bool Dock::TakeFocusRequest(size_t index)
+{
+	if (index >= tabs_.size() || !tabs_[index].wantFocus) return false;
+	tabs_[index].wantFocus = false;
+	return true;
+}
+
 void Dock::Adopt(Tab& t)
 {
 	HWND w = (HWND)t.hwnd;
@@ -543,6 +550,15 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 				Dock dock;
 				dock.Init(glfwGetWin32Window(host), std::wstring());
 				dock.Track(GetCurrentProcessId(), L"target");
+
+				// A newly tracked window must ask to be brought to the front, ONCE.
+				// Without the request the dock hides it for not being the active tab
+				// and the user sees the window flash up and vanish; without the
+				// one-shot it would steal focus back on every frame and the user could
+				// never switch away from it.
+				check("S0 a new tab asks for focus", dock.TakeFocusRequest(0));
+				check("S0b ... and only once", !dock.TakeFocusRequest(0));
+				check("S0c an out-of-range tab asks for nothing", !dock.TakeFocusRequest(99));
 				// Adoption is throttled to 60ms and deliberately spans frames: it asks
 				// for the un-maximise, then strips the frame only once that has landed.
 				for (int i = 0; i < 120; i++) {
@@ -581,7 +597,7 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 	}
 
 	const int ran = checks;
-	check("S9 the suite actually ran", ran >= 8, std::to_string(ran) + " checks");
+	check("S9 the suite actually ran", ran >= 11, std::to_string(ran) + " checks");
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

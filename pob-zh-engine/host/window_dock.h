@@ -36,6 +36,15 @@ struct Tab {
 	// The label the tab was created with, kept so a window whose title cannot be
 	// read falls back to something rather than to an empty tab.
 	std::wstring  baseLabel;
+
+	// Bring this tab to the front once, then clear.
+	//
+	// A newly started tool used to appear as a tab the user was not on, and the
+	// dock -- correctly -- hides any tab that is not the active one. So the window
+	// flashed up, vanished, and left a tab to be found. Embedded panels focus
+	// themselves on open; a docked one has to as well, or the two behave
+	// differently for no reason the user can see.
+	bool          wantFocus = true;
 };
 
 // Manages every docked window for one container.
@@ -79,6 +88,9 @@ public:
 	void RestoreAll();
 
 	const std::vector<Tab>& Tabs() const { return tabs_; }
+
+	// Consume the one-shot focus request for a tab (see Tab::wantFocus).
+	bool TakeFocusRequest(size_t index);
 	bool Empty() const { return tabs_.empty(); }
 
 private:
