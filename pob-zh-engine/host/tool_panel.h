@@ -91,6 +91,15 @@ public:
 	virtual ToolCloseState RequestClose() = 0;
 	virtual ToolCloseState CloseState() const = 0;
 
+	// Take the request back, returning the panel to Open.
+	//
+	// Needed because closing the launcher asks EVERY panel at once: a clean one
+	// answers Closed immediately, and if another then answers Cancelled the whole
+	// shutdown is abandoned -- at which point the ones that already agreed must not
+	// quietly disappear. Without this, cancelling a save prompt would take the
+	// user's other tabs with it.
+	virtual void AbortClose() = 0;
+
 	// Release threads and GL textures. Must run while the GL context is still
 	// current, so the host does this before tearing anything down.
 	virtual void Shutdown() {}

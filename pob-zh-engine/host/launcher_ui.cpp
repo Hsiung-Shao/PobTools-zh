@@ -964,6 +964,28 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// `closingTabs` from then on. Reading the flag instead of the signal
 		// matters: clearing it below meant the condition was false on the very
 		// next frame, so only the first tab was ever asked to close.
+		// Embedded panels get asked before the window is allowed to go. Without this
+		// a tab with unsaved work would simply be shut down in the teardown below and
+		// the work lost without a word -- the docked tabs have had this since they
+		// existed, and a panel is no different to the person using it.
+		//
+		// Cancelled by any one of them abandons the whole close, which matches how
+		// the docked sequence treats "the user said no".
+		if (glfwWindowShouldClose(win) && !panels.empty()) {
+			bool waiting = false, cancelled = false;
+			for (EmbeddedPanel& ep : panels) {
+				const ToolCloseState cs = ep.panel->RequestClose();
+				if (cs == ToolCloseState::Asking) waiting = true;
+				else if (cs == ToolCloseState::Cancelled) cancelled = true;
+			}
+			if (waiting || cancelled) glfwSetWindowShouldClose(win, GLFW_FALSE);
+			// Somebody said no, so nothing closes -- including the panels that had
+			// already agreed. Without taking their agreement back, the reap below
+			// would find them Closed and remove them, and cancelling one save prompt
+			// would silently take the user's other tabs with it.
+			if (cancelled)
+				for (EmbeddedPanel& ep : panels) ep.panel->AbortClose();
+		}
 		if (tabbed && glfwWindowShouldClose(win) && !dock.Empty()) {
 			closingTabs = true;
 			glfwSetWindowShouldClose(win, GLFW_FALSE);
@@ -1960,6 +1982,17 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		dock.RestoreAll();
 		g_launcherDock = nullptr; // the callbacks are about to be destroyed with the window
 	}
+
+	// Embedded panels, while the GL context is STILL CURRENT: they hold textures
+	// and worker threads, and deleting a texture after the context is gone is at
+	// best ignored and at worst a crash. Deliberately before the teardown below and
+	// not in a destructor, where the ordering would depend on declaration order.
+	//
+	// Not asked whether they want to close: by this point the launcher is going
+	// regardless, and any panel with unsaved work has already had its say through
+	// the close sequence.
+	for (EmbeddedPanel& ep : panels) ep.panel->Shutdown();
+	panels.clear();
 
 	// Full teardown so the next round (return-to-launcher) re-inits cleanly.
 	ImGui_ImplOpenGL3_Shutdown();

@@ -110,6 +110,13 @@ public:
 	}
 	ToolCloseState CloseState() const override { return close_; }
 
+	void AbortClose() override
+	{
+		// Only an agreement not yet acted on is taken back. A panel mid-prompt keeps
+		// its prompt: the user is looking at it and answering it decides the outcome.
+		if (close_ == ToolCloseState::Closed) close_ = ToolCloseState::Open;
+	}
+
 	PobUi::Density Density() const override { return PobUi::Density::Compact; }
 	const char* PanelId() const override { return "filter"; }
 
