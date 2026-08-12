@@ -28,3 +28,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 // while looking fine on the default Noto Sans TC. Returns 0 when every font
 // covers every character. Lives here because the text sources are all in scope.
 int RunFontCoverageSelftest(const std::wstring& exeDir);
+
+// Does the atlas the launcher really builds fit on the GPU, and does it carry the
+// characters an arbitrary build name needs? Drives LoadFonts across
+// {font} x {DPI scale} x {GL_MAX_TEXTURE_SIZE}; headless, report + exit code.
+int RunFontAtlasSelftest(const std::wstring& exeDir);

@@ -277,11 +277,49 @@ struct LauncherFonts {
 	ImFont* title = nullptr;
 	bool koreanOk = false;
 	bool cjkOk = false;
+
+	// What the atlas actually came out as, and what the GPU will accept. Recorded
+	// rather than assumed: ImGui reports an oversized atlas only through IM_ASSERT,
+	// which is plain assert() here and compiled out in Release -- it would upload a
+	// texture the driver rejects and draw nothing but blank quads, with no error.
+	int texW = 0, texH = 0, maxTex = 0;
+	// Empty when everything asked for fitted. Otherwise says what had to be given
+	// up, so the launcher can show it instead of silently drawing '?' forever.
+	std::string dropped;
 };
 
+// The body face carries the WHOLE CJK block, not just the characters the string
+// tables happen to contain.
+//
+// Tab labels now show POB's build name, which is arbitrary user text -- and a
+// glyph that is not in the atlas is drawn as '?' with no warning anywhere. The
+// same face is what the embedded tools will draw with, and they have always
+// needed the full range for item and node names.
+//
+// Only the body face. At 19px the full block is about 8.5M px^2, which fits
+// 4096 wide; doing the same to `small` (15px) and `title` (26px) as well would be
+// roughly 29M px^2 -- over 7000 rows -- and blow past every common
+// GL_MAX_TEXTURE_SIZE. Those two keep the precise set, which is all they draw.
+static void BuildPreciseRanges(ImFontGlyphRangesBuilder& b,
+                               const std::vector<std::string>& extraTexts,
+                               const std::vector<const LauncherStrings*>& overlays)
+{
+	ImGuiIO& io = ImGui::GetIO();
+	b.AddRanges(io.Fonts->GetGlyphRangesDefault());
+	std::vector<const char*> texts;
+	CollectLauncherTexts(texts, overlays);
+	for (const char* t : texts) b.AddText(t);
+	for (const char* t : kOptionalScriptTexts) b.AddText(t);
+	for (const std::string& t : extraTexts) b.AddText(t.c_str());
+}
+
+// `maxTexOverride` is for the headless check: with no GL context there is nothing
+// to ask, so a selftest that let this query would only ever measure the smallest
+// fallback and never the case that actually ships. Zero means "ask the driver".
 static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigned char>& ttfKeepAlive,
                                const std::vector<std::string>& extraTexts, float scale,
-                               const std::vector<const LauncherStrings*>& overlays = {})
+                               const std::vector<const LauncherStrings*>& overlays = {},
+                               int maxTexOverride = 0)
 {
 	LauncherFonts out;
 	ImGuiIO& io = ImGui::GetIO();
@@ -295,25 +333,83 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		return out;
 	}
 
-	static ImVector<ImWchar> ranges; // must outlive the atlas build
-	ranges.clear();
-	ImFontGlyphRangesBuilder b;
-	b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-	{
-		std::vector<const char*> texts;
-		CollectLauncherTexts(texts, overlays);
-		for (const char* t : texts) b.AddText(t);
-		for (const char* t : kOptionalScriptTexts) b.AddText(t);
+	// Both must outlive the atlas: ImGui stores only the POINTER to a glyph range,
+	// and re-reads it on every Build(). Two separate buffers because the body face
+	// and the other two no longer share a range.
+	static ImVector<ImWchar> rangesPrecise, rangesFull;
+
+	// Whatever the driver will take. Queried, not assumed -- ANGLE reports 16384 on
+	// the D3D11 backend and as little as 2048 on D3D9, and the difference decides
+	// whether the full CJK block is possible at all on this machine.
+	GLint maxTex = (GLint)maxTexOverride;
+	if (maxTex <= 0) {
+		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
+		if (maxTex <= 0) maxTex = 2048;  // no context / broken query: assume the worst
 	}
-	for (const std::string& t : extraTexts) b.AddText(t.c_str());
-	b.BuildRanges(&ranges);
+	out.maxTex = (int)maxTex;
 
 	ImFontConfig cfg;
 	cfg.FontDataOwnedByAtlas = false; // shared buffer for all sizes; we keep it alive
-	out.body = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(), kFontSize * scale, &cfg, ranges.Data);
-	out.small = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(), kSmallFontSize * scale, &cfg, ranges.Data);
-	out.title = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(), kTitleFontSize * scale, &cfg, ranges.Data);
-	io.Fonts->Build();
+	cfg.OversampleH = 1;              // 3x the area otherwise, for no gain at these sizes
+	cfg.OversampleV = 1;
+	cfg.PixelSnapH = true;
+
+	// Height is not rounded up to a power of two: at 19px that is the difference
+	// between ~3200 rows and 4096, i.e. about 15MB of texture for nothing. NPOT with
+	// CLAMP_TO_EDGE and no mipmaps is valid in GLES2, which is exactly how the ImGui
+	// backend sets the atlas up.
+	io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
+	// As wide as the GPU allows, up to 8192. Width and height trade off directly in
+	// the packer, and height is the dimension that overflows: at 150% DPI the full
+	// CJK block needs ~4600 rows at 4096 wide, which does not fit a 4096 limit -- but
+	// at 8192 wide it needs ~2300 and fits easily. Capped at 8192 because past that
+	// the atlas is one long strip and nothing is gained.
+	io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : (maxTex >= 4096 ? 4096 : 2048);
+
+	// Tries one combination and reports whether the result fits the GPU. Everything
+	// is rebuilt from scratch each time -- Clear() drops the fonts as well as the
+	// pixels, so the ImFont pointers from a rejected attempt are already dead.
+	auto attempt = [&](bool fullCjk, bool korean) -> bool {
+		io.Fonts->Clear();
+		rangesPrecise.clear();
+		rangesFull.clear();
+		{
+			ImFontGlyphRangesBuilder b;
+			BuildPreciseRanges(b, extraTexts, overlays);
+			b.BuildRanges(&rangesPrecise);
+		}
+		{
+			ImFontGlyphRangesBuilder b;
+			BuildPreciseRanges(b, extraTexts, overlays);
+			if (fullCjk) b.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
+			if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
+			b.BuildRanges(&rangesFull);
+		}
+		out.body = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
+		                                          kFontSize * scale, &cfg, rangesFull.Data);
+		out.small = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
+		                                           kSmallFontSize * scale, &cfg, rangesPrecise.Data);
+		out.title = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
+		                                           kTitleFontSize * scale, &cfg, rangesPrecise.Data);
+		if (!io.Fonts->Build()) return false;
+		out.texW = io.Fonts->TexWidth;
+		out.texH = io.Fonts->TexHeight;
+		return out.texW <= (int)maxTex && out.texH <= (int)maxTex;
+	};
+
+	// Widest first, then give up the least useful part. Korean goes before Chinese
+	// because only two languages ship today and neither is Korean, while Chinese is
+	// what every build name and item name is written in.
+	if (!attempt(true, true)) {
+		out.dropped = "korean";
+		if (!attempt(true, false)) {
+			out.dropped = "cjk";
+			// Last resort: the precise set for everything, i.e. the behaviour before
+			// tab titles needed arbitrary text. Tab labels will show '?' for anything
+			// outside the string tables, which is why `dropped` is surfaced in the UI.
+			attempt(false, false);
+		}
+	}
 
 	if (out.body) {
 		out.cjkOk = out.body->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
@@ -1343,6 +1439,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				                   localeIdx < (int)localeMissing.size() ? localeMissing[localeIdx].c_str() : "");
 				ImGui::PopTextWrapPos();
 			}
+			// The glyph atlas had to be cut down to fit this GPU, which means tab
+			// titles and item names will show '?' for anything outside the launcher's
+			// own strings. Said out loud rather than left as a mystery: it depends on
+			// the driver's texture limit and the display scaling, so the user has no
+			// way to guess why some characters are missing and others are not.
+			if (!fonts.dropped.empty()) {
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextColored(ImVec4(0.95f, 0.66f, 0.25f, 1.0f), "%s", S.fontAtlasTrimmed);
+				ImGui::PopTextWrapPos();
+			}
 
 			// --- translation data -------------------------------------------
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
@@ -1733,6 +1839,190 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 // window or a GL device) and asks FindGlyphNoFallback for every codepoint the
 // launcher can draw. Adding a link label or a changelog line is now covered
 // automatically, because both come from CollectLauncherTexts.
+// Does the atlas the launcher actually builds fit on the GPU, and does it carry
+// the characters tab titles need?
+//
+// Separate from --font-coverage-selftest, which asks a different question ("can
+// this font file draw the strings we ship") and never calls LoadFonts. This one
+// drives the real function across the {font} x {DPI scale} x {GL_MAX_TEXTURE_SIZE}
+// grid, because the failure it is looking for depends on all three and appears on
+// none of them alone.
+int RunFontAtlasSelftest(const std::wstring& exeDir)
+{
+	std::string report;
+	int failures = 0, checks = 0;
+	auto check = [&](const std::string& name, bool ok, const std::string& detail = "") {
+		checks++;
+		report += std::string(ok ? "PASS " : "FAIL ") + name +
+		          (detail.empty() ? "" : "  (" + detail + ")") + "\n";
+		if (!ok) failures++;
+	};
+
+	LauncherConfig cfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+	const std::wstring launcherRoot = ResolveDictDir(exeDir, DictSlot::Launcher,
+	                                                 cfg.dataDir[(int)DictSlot::Launcher]).root;
+	std::vector<LocaleInfo> locales = ListInstalledLocales(exeDir, cfg);
+	std::vector<LauncherStringStore> strStore;
+	strStore.reserve(locales.size());
+	for (const LocaleInfo& l : locales)
+		strStore.emplace_back(LoadLauncherStrings(launcherRoot, std::wstring(l.id.begin(), l.id.end())));
+	std::vector<const LauncherStrings*> overlays;
+	overlays.reserve(strStore.size());
+	for (const LauncherStringStore& st : strStore) overlays.push_back(&st.s);
+
+	std::vector<std::wstring> fontList = ListAvailableFonts(exeDir);
+	if (fontList.empty()) {
+		report += "FAIL no fonts under Fonts\\\nRESULT FAIL\n";
+		failures++;
+		fontList.clear();
+	}
+
+	// Characters a build name can contain that appear in NO launcher string. Without
+	// these the check is vacuous: every character of the precise set is present by
+	// construction, so a body face that lost the full CJK block would still pass.
+	//
+	// Written as UTF-8 and decoded, never as hand-typed codepoints: the first version
+	// of this list had 贖 as 0x8CFF (it is 0x8D16), and the check went green or red
+	// depending on whether a font happened to have a glyph at the wrong address.
+	const char* kProbeText = u8"贖燃點罪鮫龜";
+	std::vector<unsigned> probeCps;
+	ForEachCodepoint(kProbeText, [&](unsigned cp) { probeCps.push_back(cp); });
+
+	const float kScales[] = { 1.0f, 1.25f, 1.5f, 2.0f };
+	const int   kLimits[] = { 2048, 4096, 8192, 16384 };
+
+	for (const std::wstring& f : fontList) {
+		const std::string fname = to_utf8(f);
+		for (float sc : kScales) {
+			for (int lim : kLimits) {
+				ImGui::CreateContext();
+				std::vector<unsigned char> ttf;
+				LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, f), ttf, {}, sc, overlays, lim);
+
+				char head[192];
+				snprintf(head, sizeof(head), "%s @%.2fx max=%d", fname.c_str(), sc, lim);
+				char detail[192];
+				snprintf(detail, sizeof(detail), "%dx%d%s%s", fonts.texW, fonts.texH,
+				         fonts.dropped.empty() ? "" : " dropped=", fonts.dropped.c_str());
+
+				// The whole point of the guard: whatever it decides to build, the result
+				// must be uploadable. An atlas over the limit is not a crash, it is a
+				// window that draws nothing and says nothing.
+				check(std::string(head) + " -- atlas fits the GPU limit",
+				      fonts.texW > 0 && fonts.texW <= lim && fonts.texH <= lim, detail);
+
+				// And it must never give up more than it had to.
+				if (fonts.dropped.empty()) {
+					int missing = 0;
+					for (unsigned cp : probeCps)
+						if (cp <= 0xFFFF &&
+						    (!fonts.body || !fonts.body->FindGlyphNoFallback((ImWchar)cp)))
+							missing++;
+					check(std::string(head) + " -- build-name characters are in the atlas",
+					      missing == 0,
+					      std::to_string((int)probeCps.size() - missing) + "/" +
+					          std::to_string((int)probeCps.size()) + " present");
+				} else {
+					report += "note " + std::string(head) + " -- degraded, dropped=" +
+					          fonts.dropped + " (" + detail + ")\n";
+				}
+				ImGui::DestroyContext();
+			}
+		}
+	}
+
+	// What THIS machine will actually do. The grid above is hypothetical; a real
+	// context is the only way to learn the driver's limit, and the limit is what
+	// decides whether the shipping configuration degrades in front of the user.
+	//
+	// A hidden window, and the GL context torn down again straight away -- same
+	// pattern as RunPassiveTreeRender. Never activated: taking focus in a headless
+	// check is how phantom clicks happen.
+	{
+		int realMax = 0;
+		float realScale = 1.0f;
+		if (glfwInit()) {
+			glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+			glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+			glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+			glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+			if (GLFWwindow* w = glfwCreateWindow(64, 64, "font-atlas-probe", nullptr, nullptr)) {
+				glfwMakeContextCurrent(w);
+				GLint m = 0;
+				glGetIntegerv(GL_MAX_TEXTURE_SIZE, &m);
+				realMax = (int)m;
+				if (GLFWmonitor* mon = glfwGetPrimaryMonitor()) {
+					float sx = 1.0f, sy = 1.0f;
+					glfwGetMonitorContentScale(mon, &sx, &sy);
+					if (sx > 0.0f) realScale = sx;
+				}
+				glfwDestroyWindow(w);
+			}
+			glfwTerminate();
+		}
+		char d[128];
+		snprintf(d, sizeof(d), "GL_MAX_TEXTURE_SIZE=%d, monitor scale=%.2fx", realMax, realScale);
+		check("this machine reports a usable texture limit", realMax >= 2048, d);
+
+		if (realMax >= 2048) {
+			ImGui::CreateContext();
+			std::vector<unsigned char> ttf;
+			LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttf, {},
+			                                realScale, overlays, realMax);
+			int miss = 0;
+			for (unsigned cp : probeCps)
+				if (cp <= 0xFFFF && (!fonts.body || !fonts.body->FindGlyphNoFallback((ImWchar)cp)))
+					miss++;
+			char d2[192];
+			snprintf(d2, sizeof(d2), "%dx%d on a %d limit at %.2fx%s%s", fonts.texW, fonts.texH,
+			         realMax, realScale, fonts.dropped.empty() ? "" : ", dropped=",
+			         fonts.dropped.c_str());
+			check("the shipping configuration on THIS machine keeps the full CJK block",
+			      fonts.dropped != "cjk" && miss == 0, d2);
+			ImGui::DestroyContext();
+		}
+	}
+
+	// The configuration that actually ships has to be the undegraded one somewhere,
+	// or the guard is just quietly disabling the feature on every machine.
+	{
+		ImGui::CreateContext();
+		std::vector<unsigned char> ttf;
+		LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttf, {}, 1.0f,
+		                                overlays, 4096);
+		int missing = 0;
+		for (unsigned cp : probeCps)
+			if (cp <= 0xFFFF && (!fonts.body || !fonts.body->FindGlyphNoFallback((ImWchar)cp)))
+				missing++;
+		check("the shipped font at 100% on a 4096 GPU keeps the full CJK block",
+		      fonts.dropped != "cjk" && missing == 0,
+		      (fonts.dropped.empty() ? "nothing dropped" : ("dropped=" + fonts.dropped)) +
+		          ", " + std::to_string(missing) + " probe glyph(s) missing");
+		ImGui::DestroyContext();
+	}
+
+	const int ran = checks;
+	check("the suite actually ran", ran >= 10, std::to_string(ran) + " checks");
+
+	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	HANDLE h = CreateFileW((exeDir + L"PobTools\\font_atlas_selftest.txt").c_str(),
+	                       GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+	                       FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h != INVALID_HANDLE_VALUE) {
+		DWORD w = 0;
+		WriteFile(h, report.data(), (DWORD)report.size(), &w, nullptr);
+		CloseHandle(h);
+	}
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		FILE* fp = nullptr;
+		freopen_s(&fp, "CONOUT$", "w", stdout);
+	}
+	printf("%s", report.c_str());
+	return failures ? 2 : 0;
+}
+
 int RunFontCoverageSelftest(const std::wstring& exeDir)
 {
 	// EVERY installed language's launcher.json, not just the shipped one: once the

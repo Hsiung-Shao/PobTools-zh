@@ -452,6 +452,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
 		return RunFontCoverageSelftest(dir);
 	}
+	if (arg1 == L"--font-atlas-selftest") {
+		// Headless: does the atlas LoadFonts really builds fit the GPU, and does it
+		// carry the characters an arbitrary POB build name is written in.
+		return RunFontAtlasSelftest(dir);
+	}
 	if (arg1 == L"--launcher-strings-selftest") {
 		// headless: the JSON overlay for the launcher's own labels — key uniqueness,
 		// fallback to the compiled table, and the pointer lifetime it depends on

@@ -150,6 +150,11 @@
 	X(fontMissingGlyphs, u8"目前的字型畫不出這個語言的文字",                                          \
 	                     u8"The current font cannot draw this language")                              \
 	X(fontMissingHere,   u8"目前的字型畫不出這些字：",     u8"The current font is missing: ")          \
+	/* 圖集裝不下完整中文字集 (v0.21.0)。分頁標題會顯示 POB 的專案名稱,那是任意文字,           \
+	   所以整個中文字集都要進圖集;但圖集大小受顯示卡材質上限與顯示縮放兩者夾擊,               \
+	   放不下時只能砍掉再說 —— 而 ImGui 對缺字是靜默畫問號,不講就沒人知道為什麼 */            \
+	X(fontAtlasTrimmed,  u8"顯示卡的材質上限放不下完整中文字集，部分罕用字（例如專案名稱裡的字）會顯示為問號。降低顯示縮放比例可以避免。", \
+	                     u8"The full Chinese character set does not fit this GPU's texture limit, so rare characters (in build names, for example) show as '?'. A lower display scaling avoids it.") \
 	/* window mode (v0.17.0) */                                                                      \
 	X(sectionWindow,     u8"視窗方式",                     u8"Windows")                               \
 	X(winModeSeparate,   u8"各自獨立的視窗",               u8"Separate desktop windows")              \
