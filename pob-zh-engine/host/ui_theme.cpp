@@ -3,6 +3,7 @@
 #include <imgui.h>
 
 #include <cmath>
+#include <cstring>   // memcmp, for the style round-trip check
 
 namespace {
 
@@ -22,8 +23,23 @@ namespace PobUi {
 
 void ApplyTheme(float scale, Density density)
 {
-	ImGui::StyleColorsDark();
-	ImGuiStyle& s = ImGui::GetStyle();
+	BuildStyle(ImGui::GetStyle(), scale, density);
+}
+
+void BuildStyle(::ImGuiStyle& s, float scale, Density density)
+{
+	// Into `s`, not the active style: this has to be usable on a style the caller
+	// keeps on the side.
+	//
+	// The default-constructed assignment is what makes the result independent of
+	// what `s` held before, and StyleColorsDark alone is NOT enough for that -- it
+	// writes Colors and nothing else. The fields this function never mentions
+	// (WindowMinSize, ColumnsMinSpacing, TouchExtraPadding, ...) are still scaled by
+	// ScaleAllSizes below, so without a real reset they would grow by `scale` on
+	// every call. Harmless when the theme was applied once at start-up; not harmless
+	// now that a style is rebuilt per tab.
+	s = ImGuiStyle();
+	ImGui::StyleColorsDark(&s);
 	ImVec4* c = s.Colors;
 
 	// Graphite surfaces keep the editors quiet; the original PobTools indigo is
@@ -165,6 +181,67 @@ bool RunThemeSelfTest()
 	// ImGui floors scaled dimensions to whole pixels.
 	ok = ok && Near(second.FrameRounding, 7.0f) && Near(second.WindowPadding.x, 24.0f) &&
 		Near(second.FramePadding.y, 7.0f) && Near(second.ScrollbarSize, 18.0f);
+
+	// Field by field, NOT memcmp: ImGuiStyle has padding bytes between its bools and
+	// the floats after them, and those are never initialised -- a memcmp compares
+	// them too and fails for reasons that have nothing to do with the style.
+	auto sameStyle = [](const ImGuiStyle& a, const ImGuiStyle& b) {
+		if (!Near(a.WindowPadding.x, b.WindowPadding.x) ||
+		    !Near(a.WindowPadding.y, b.WindowPadding.y) ||
+		    !Near(a.FramePadding.x, b.FramePadding.x) ||
+		    !Near(a.FramePadding.y, b.FramePadding.y) ||
+		    !Near(a.ItemSpacing.x, b.ItemSpacing.x) ||
+		    !Near(a.ItemSpacing.y, b.ItemSpacing.y) ||
+		    !Near(a.CellPadding.x, b.CellPadding.x) ||
+		    !Near(a.CellPadding.y, b.CellPadding.y) ||
+		    !Near(a.FrameRounding, b.FrameRounding) ||
+		    !Near(a.ChildRounding, b.ChildRounding) ||
+		    !Near(a.ScrollbarSize, b.ScrollbarSize) ||
+		    !Near(a.IndentSpacing, b.IndentSpacing) ||
+		    !Near(a.FrameBorderSize, b.FrameBorderSize) ||
+		    // The fields BuildStyle never assigns but ScaleAllSizes still scales.
+		    // These are the ONLY ones that can reveal a missing reset -- everything
+		    // above is overwritten on each call and looks identical either way. An
+		    // earlier version of this check omitted them and passed happily against a
+		    // BuildStyle that did not reset at all.
+		    !Near(a.WindowMinSize.x, b.WindowMinSize.x) ||
+		    !Near(a.ColumnsMinSpacing, b.ColumnsMinSpacing) ||
+		    !Near(a.TouchExtraPadding.x, b.TouchExtraPadding.x))
+			return false;
+		for (int i = 0; i < ImGuiCol_COUNT; i++) {
+			if (!Near(a.Colors[i].x, b.Colors[i].x) || !Near(a.Colors[i].y, b.Colors[i].y) ||
+			    !Near(a.Colors[i].z, b.Colors[i].z) || !Near(a.Colors[i].w, b.Colors[i].w))
+				return false;
+		}
+		return true;
+	};
+
+	// Swapping a whole style out and back must be lossless, because that is how an
+	// embedded tool draws at its own density inside the launcher.
+	{
+		ApplyTheme(1.0f, Density::Comfortable);
+		const ImGuiStyle keep = ImGui::GetStyle();
+		ImGuiStyle canvas;
+		BuildStyle(canvas, 1.0f, Density::Canvas);
+		ImGui::GetStyle() = canvas;
+		// Canvas really is a different density, or the swap would be untestable.
+		const bool swapped = Near(ImGui::GetStyle().WindowPadding.x, 12.0f) &&
+		                     !Near(keep.WindowPadding.x, 12.0f);
+		ImGui::GetStyle() = keep;
+		ok = ok && swapped && sameStyle(ImGui::GetStyle(), keep);
+	}
+
+	// BuildStyle must not read what is already there. ApplyTheme ends in
+	// ScaleAllSizes, which COMPOUNDS -- so a version that scaled in place would give
+	// a different answer the second time, and a per-frame swap would inflate every
+	// padding without bound.
+	{
+		ImGuiStyle a, b;
+		BuildStyle(a, 1.25f, Density::Canvas);
+		BuildStyle(b, 1.25f, Density::Canvas);   // same inputs, already-filled target
+		BuildStyle(b, 1.25f, Density::Canvas);
+		ok = ok && sameStyle(a, b);
+	}
 	ImGui::DestroyContext();
 	return ok;
 }
