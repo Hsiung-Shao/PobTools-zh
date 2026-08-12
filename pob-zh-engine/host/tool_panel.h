@@ -48,6 +48,11 @@ struct ToolPanelHost {
 	bool embedded = false;
 
 	ImFont* body = nullptr;   // CJK-capable; what panels draw with
+	// Digits and '/' only, at roughly 1.6x body. For the one thing a panel wants
+	// big enough to read across the room -- the atlas planner's points counter.
+	// Deliberately not a full face: twelve glyphs cost nothing, a second CJK face
+	// costs more atlas than the whole rest of the launcher.
+	ImFont* big = nullptr;
 	bool cjkOk = false;       // false = the font could not supply Chinese glyphs
 };
 

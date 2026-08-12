@@ -23,6 +23,7 @@
 namespace {
 
 const float kFontSize = 18.0f;
+const float kBigFontSize = 30.0f;   // ToolPanelHost::big
 
 } // namespace
 
@@ -83,6 +84,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	// only in that the launcher also folds in its own UI strings.
 	std::vector<unsigned char> ttf = EdReadFile(ResolveConfiguredFontPath(exeDir));
 	ImFont* font = nullptr;
+	ImFont* fontBig = nullptr;
 	bool cjkOk = false;
 	if (!ttf.empty()) {
 		ImGuiIO& io = ImGui::GetIO();
@@ -107,6 +109,15 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : 4096;
 		font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale,
 		                                      &cfg, ranges.Data);
+		// ToolPanelHost::big -- twelve glyphs, so it costs nothing and both hosts can
+		// offer it unconditionally rather than the panel having two layouts.
+		static ImVector<ImWchar> bigRanges;
+		bigRanges.clear();
+		ImFontGlyphRangesBuilder bb;
+		bb.AddText("0123456789 /");
+		bb.BuildRanges(&bigRanges);
+		fontBig = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kBigFontSize * scale,
+		                                         &cfg, bigRanges.Data);
 		if (io.Fonts->Build() && font)
 			cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
 	}
@@ -123,6 +134,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	host.hostHwnd = glfwGetWin32Window(win);
 	host.embedded = false;
 	host.body = font;
+	host.big = fontBig;   // null when the font file could not be read; panels guard
 	host.cjkOk = cjkOk;
 
 	int rc = 0;

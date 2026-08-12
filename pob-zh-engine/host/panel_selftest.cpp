@@ -11,6 +11,7 @@
 // panel that quietly assumed it owned the screen passes when drawn alone.
 #include "panel_selftest.h"
 
+#include "atlas_planner.h"
 #include "filter_editor.h"
 #include "launcher_editor.h"
 #include "timeless_jewel_ui.h"
@@ -30,6 +31,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -117,6 +119,9 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			host.hostHwnd = glfwGetWin32Window(win);
 			host.embedded = true;
 			host.body = ImGui::GetIO().Fonts->Fonts[0];
+			// Both real hosts always supply one, so that is the configuration worth
+			// exercising here.
+			host.big = ImGui::GetIO().Fonts->Fonts[0];
 			host.cjkOk = false;   // the default font has no CJK; the panel must cope
 
 			// Every panel, not just one: the contract is the same for all of them and
@@ -126,6 +131,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				{ "filter", &CreateFilterEditorPanel },
 				{ "trans",  &CreateTranslationEditorPanel },
 				{ "tj",     &CreateTimelessJewelPanel },
+				{ "atlas",  &CreateAtlasPlannerPanel },
 			};
 			for (const Entry& ent : kPanels) {
 			std::unique_ptr<IToolPanel> panel(ent.make());
@@ -138,6 +144,14 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 
 			Stacks before, after;
 			bool balanced = true, everDrew = false;
+			// How much the panel actually put on screen, at its busiest frame.
+			//
+			// "The tab body ran" is a much weaker statement than it looks: three of
+			// these tools draw a short apology instead of themselves when their data
+			// files are missing, and that path leaves every check below green while
+			// exercising almost none of the panel. A real body is thousands of
+			// vertices; an apology is a few dozen.
+			int peakVtx = 0;
 			for (int frame = 0; frame < 8; frame++) {
 				ImGui_ImplOpenGL3_NewFrame();
 				ImGui_ImplGlfw_NewFrame();
@@ -177,6 +191,12 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				ImGui::End();
 
 				ImGui::Render();
+				// Whole-frame, because a panel's children each own a draw list and the
+				// container's own list would miss everything inside them. The neighbour
+				// tab and the bar itself are the only other contributors, and they are
+				// worth well under a hundred vertices.
+				if (ImGui::GetDrawData())
+					peakVtx = (std::max)(peakVtx, ImGui::GetDrawData()->TotalVtxCount);
 				int fw = 0, fh = 0;
 				glfwGetFramebufferSize(win, &fw, &fh);
 				glViewport(0, 0, fw, fh);
@@ -190,6 +210,13 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			// bar does not draw an unselected tab's body) and everything below would
 			// be comparing two default-constructed snapshots.
 			rep.check(std::string("P2 the panel's body was actually drawn") + tag, everDrew);
+			// Measured, not guessed: forcing the atlas planner down its missing-data
+			// branch draws 444 vertices, while its real body draws 40,218. The other
+			// three measure 1,694 / 3,512 / 99,508. 1000 is the line between "drew
+			// almost nothing" and "drew a panel", and any panel that later crosses it
+			// is worth a look whatever the reason.
+			rep.check(std::string("P2b ...and it was the real body, not a missing-data notice") + tag,
+			          peakVtx >= 1000, std::to_string(peakVtx) + " vertices");
 			rep.check(std::string("P3 Frame() leaves every ImGui stack as it found it") + tag, balanced,
 			          balanced ? before.str() : (before.str() + " -> " + after.str()));
 
@@ -221,7 +248,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 	}
 
 	const int ran = rep.checks;
-	rep.check("P7 the suite actually ran", ran >= 18, std::to_string(ran) + " checks");
+	rep.check("P7 the suite actually ran", ran >= 28, std::to_string(ran) + " checks");
 
 	rep.text += rep.failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

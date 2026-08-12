@@ -9,6 +9,7 @@
 #include "pob_launch.h"
 #include "window_dock.h"
 // Tools that draw inside this window rather than in one of their own.
+#include "atlas_planner.h"
 #include "filter_editor.h"
 #include "launcher_editor.h"
 #include "timeless_jewel_ui.h"
@@ -51,6 +52,7 @@ static const int kWinH = 700;
 static const float kFontSize = 19.0f;
 static const float kSmallFontSize = 15.0f;
 static const float kTitleFontSize = 26.0f;
+static const float kBigFontSize = 30.0f;   // ToolPanelHost::big, digits only
 
 // External-link board (wide layout). Labels feed the glyph atlas automatically
 // (see the AddText loop below), so adding an entry needs no font work.
@@ -281,6 +283,10 @@ struct LauncherFonts {
 	ImFont* body = nullptr;
 	ImFont* small = nullptr;
 	ImFont* title = nullptr;
+	// ToolPanelHost::big -- digits and '/' only, for the atlas planner's points
+	// counter. Twelve glyphs, so it is built unconditionally rather than making the
+	// panel lay itself out two different ways.
+	ImFont* big = nullptr;
 	bool koreanOk = false;
 	bool cjkOk = false;
 
@@ -335,14 +341,15 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		out.body = io.Fonts->AddFontDefault();
 		out.small = out.body;
 		out.title = out.body;
+		out.big = out.body;
 		io.Fonts->Build();
 		return out;
 	}
 
-	// Both must outlive the atlas: ImGui stores only the POINTER to a glyph range,
-	// and re-reads it on every Build(). Two separate buffers because the body face
-	// and the other two no longer share a range.
-	static ImVector<ImWchar> rangesPrecise, rangesFull;
+	// All three must outlive the atlas: ImGui stores only the POINTER to a glyph
+	// range, and re-reads it on every Build(). Separate buffers because the body
+	// face, the other two, and the digits-only face no longer share a range.
+	static ImVector<ImWchar> rangesPrecise, rangesFull, rangesDigits;
 
 	// Whatever the driver will take. Queried, not assumed -- ANGLE reports 16384 on
 	// the D3D11 backend and as little as 2048 on D3D9, and the difference decides
@@ -379,6 +386,7 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		io.Fonts->Clear();
 		rangesPrecise.clear();
 		rangesFull.clear();
+		rangesDigits.clear();
 		{
 			ImFontGlyphRangesBuilder b;
 			BuildPreciseRanges(b, extraTexts, overlays);
@@ -397,6 +405,13 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		                                           kSmallFontSize * scale, &cfg, rangesPrecise.Data);
 		out.title = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
 		                                           kTitleFontSize * scale, &cfg, rangesPrecise.Data);
+		{
+			ImFontGlyphRangesBuilder b;
+			b.AddText("0123456789 /");
+			b.BuildRanges(&rangesDigits);
+		}
+		out.big = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
+		                                         kBigFontSize * scale, &cfg, rangesDigits.Data);
 		if (!io.Fonts->Build()) return false;
 		out.texW = io.Fonts->TexWidth;
 		out.texH = io.Fonts->TexHeight;
@@ -425,6 +440,7 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		out.body = io.Fonts->AddFontDefault();
 		out.small = out.body;
 		out.title = out.body;
+		out.big = out.body;
 		io.Fonts->Build();
 	}
 	return out;
@@ -1029,6 +1045,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// Re-published every frame, never cached by a panel: `fontChanged` above
 		// rebuilds the atlas and invalidates every ImFont* handed out before it.
 		panelHost.body = fonts.body;
+		panelHost.big = fonts.big;
 		panelHost.cjkOk = fonts.cjkOk;
 
 		ImGui_ImplOpenGL3_NewFrame();
@@ -1381,8 +1398,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				else spawnTool(L"--filter-editor", PobLaunch::InstanceKind::FilterEditor, S.filterEditor);
 			}
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.atlasPlanner, toolSize))
-				spawnTool(L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner);
+			if (ImGui::Button(S.atlasPlanner, toolSize)) {
+				if (tabbed) openPanel(&CreateAtlasPlannerPanel, S.atlasPlanner);
+				else spawnTool(L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner);
+			}
 			ImGui::SameLine(0, gap);
 			if (ImGui::Button(S.timelessJewel, toolSize)) {
 				if (tabbed) openPanel(&CreateTimelessJewelPanel, S.timelessJewel);
