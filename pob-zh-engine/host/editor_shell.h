@@ -35,13 +35,38 @@ struct BlockListRow {
 	bool dirty = false;
 };
 
-// Cross-section editor state, owned by ShowFilterEditor for the window's lifetime.
+// A Win32 dialog the UI asked for but which has NOT been opened yet.
+//
+// Common dialogs run their own modal message loop, so opening one from inside a
+// frame stops that frame half-drawn -- and when this editor is a launcher tab, it
+// stops the whole launcher, including the code that keeps docked POB windows
+// hidden. Recording the intent and opening the dialog after the frame has been
+// presented (EdRunDeferredDialogs, called from the panel's RunDeferred) keeps the
+// dialog out of the middle of a frame.
+enum class EdDialog {
+	None,
+	OpenFilter,       // 開啟檔案… / 開啟 .filter 檔…
+	SaveFilterAs,     // 另存為…
+	ExportCustom,     // 保存自定義  (uses pendingExportSel)
+	ImportCustom,     // 導入自定義
+	SoundFolder,      // 音效資料夾 → 瀏覽…
+};
+
+// Cross-section editor state, owned by the panel for its lifetime.
 struct EditorShell {
 	// host-provided context
 	std::wstring exeDir;
 	std::wstring locale;
 	float scale = 1.0f;
 	bool cjkOk = false;
+	// The container window, so a dialog is owned by it. Never GetActiveWindow():
+	// that returns whatever is active on this thread at the moment of the call,
+	// which is right today only by coincidence.
+	void* hostHwnd = nullptr;
+
+	// Set by a widget, acted on after the frame. See EdDialog.
+	EdDialog pendingDialog = EdDialog::None;
+	std::vector<int> pendingExportSel;
 
 	// discovered .filter files + their scan dir (for the open dialog)
 	std::vector<FilterListEntry> fileList;
@@ -100,6 +125,10 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 過濾編輯 section.
 void EdRebuildRows(EditorShell& s);
+
+// Open whatever dialog the last frame asked for, and apply the result. Called
+// once per frame AFTER the frame has been presented -- never from inside one.
+void EdRunDeferredDialogs(EditorShell& s);
 
 // --- settings persistence (pob-zh.ini [PobTools]) ---
 void LoadEditorSettings(EditorShell& s);

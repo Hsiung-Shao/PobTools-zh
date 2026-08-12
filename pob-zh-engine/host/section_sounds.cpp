@@ -318,10 +318,7 @@ void DrawSoundsSection(EditorShell& s)
 	if (ImGui::InputText(u8"音效資料夾", &folderU, ImGuiInputTextFlags_EnterReturnsTrue))
 		s.sounds.SetFolder(EdWiden(folderU));
 	ImGui::SameLine();
-	if (ImGui::Button(u8"瀏覽…")) {
-		std::wstring f = BrowseSoundFolder();
-		if (!f.empty()) s.sounds.SetFolder(f);
-	}
+	if (ImGui::Button(u8"瀏覽…")) s.pendingDialog = EdDialog::SoundFolder;
 	ImGui::SameLine();
 	if (ImGui::Button(u8"重新整理")) { s.sounds.Rescan(); RefCounts(s, true); }
 	ImGui::SameLine();

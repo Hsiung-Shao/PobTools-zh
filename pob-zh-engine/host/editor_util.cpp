@@ -67,12 +67,15 @@ std::string EdToLowerAscii(const std::string& s)
 	return r;
 }
 
-std::wstring EdFilterDialog(const std::wstring& initialDir, bool save)
+std::wstring EdFilterDialog(const std::wstring& initialDir, bool save, void* owner)
 {
 	wchar_t buf[MAX_PATH] = L"";
 	OPENFILENAMEW ofn{};
 	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = GetActiveWindow(); // the GLFW window on this thread
+	// The container window when the caller knows it. GetActiveWindow is only a
+	// fallback: it returns whatever is active on this thread at this instant, which
+	// is the right window today purely because nothing else on the thread has one.
+	ofn.hwndOwner = owner ? (HWND)owner : GetActiveWindow();
 	ofn.lpstrFilter = L"過濾器 (*.filter)\0*.filter\0所有檔案 (*.*)\0*.*\0\0";
 	ofn.lpstrFile = buf;
 	ofn.nMaxFile = MAX_PATH;
@@ -97,10 +100,10 @@ std::wstring EdOpenFontDialog()
 	return GetOpenFileNameW(&ofn) ? std::wstring(buf) : std::wstring();
 }
 
-std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir)
+std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir, void* owner)
 {
 	BROWSEINFOW bi{};
-	bi.hwndOwner = GetActiveWindow();
+	bi.hwndOwner = owner ? (HWND)owner : GetActiveWindow();
 	bi.lpszTitle = title;
 	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
 	// BFFM_INITIALIZED fires once when the dialog opens; it is the only place the

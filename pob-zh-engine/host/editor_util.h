@@ -24,11 +24,15 @@ std::string EdToLowerAscii(const std::string& s);
 
 // Win32 open/save dialog scoped to *.filter. Returns "" if cancelled.
 // save=true -> Save As. initialDir may be empty.
-std::wstring EdFilterDialog(const std::wstring& initialDir, bool save);
+// `owner` is the container window the dialog belongs to. Passing it explicitly
+// matters once these run inside the launcher: GetActiveWindow only happens to be
+// right while the tool owns the only window on the thread.
+std::wstring EdFilterDialog(const std::wstring& initialDir, bool save, void* owner = nullptr);
 
 // Win32 folder picker ("" if cancelled). One implementation shared by the sound
 // library and the translation-data path setting; the caller supplies the title.
-std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir = std::wstring());
+std::wstring EdBrowseForFolder(const wchar_t* title, const std::wstring& initialDir = std::wstring(),
+                               void* owner = nullptr);
 
 // Win32 open dialog scoped to font files ("" if cancelled). Lists .otf too even
 // though the launcher cannot load it: rejecting by extension would be guessing,

@@ -2,6 +2,7 @@
 #include "editor_util.h"
 #include "filter_parser.h"
 #include "custom_rules_io.h"
+#include "sound_manager.h"   // BrowseSoundFolder
 #include "ui_theme.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +13,76 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <string>
+
+// ---- deferred dialogs --------------------------------------------------------
+//
+// Every Win32 common dialog this editor opens goes through here, and here is only
+// ever reached after a frame has been presented. See EdDialog in the header for
+// why: a common dialog runs its own modal message loop, so opening one from inside
+// a frame leaves that frame half-drawn -- and as a launcher tab it stops the
+// launcher's loop, which is what keeps docked POB windows hidden and positioned.
+
+void EdRunDeferredDialogs(EditorShell& s)
+{
+	const EdDialog want = s.pendingDialog;
+	if (want == EdDialog::None) return;
+	// Cleared FIRST. If the dialog itself somehow left the intent set, the next
+	// frame would reopen it, and the user could not get out of it.
+	s.pendingDialog = EdDialog::None;
+
+	switch (want) {
+		case EdDialog::OpenFilter: {
+			std::wstring p = EdFilterDialog(s.initialDir, false, s.hostHwnd);
+			if (!p.empty()) s.OpenByPath(p, false);
+			break;
+		}
+		case EdDialog::SaveFilterAs: {
+			std::wstring p = EdFilterDialog(s.initialDir, true, s.hostHwnd);
+			if (!p.empty()) {
+				s.model.path = p;
+				size_t slash = p.find_last_of(L"\\/");
+				s.model.name = EdNarrow(slash == std::wstring::npos ? p : p.substr(slash + 1));
+				std::string err;
+				s.status = SaveFilter(s.model, &err)
+					? (u8"已儲存：" + s.model.name + u8"　※ 遊戲內要到 選項→遊戲→UI 重新選擇過濾器才會生效")
+					: (u8"儲存失敗：" + err);
+			}
+			break;
+		}
+		case EdDialog::ExportCustom: {
+			std::vector<int> sel;
+			sel.swap(s.pendingExportSel);   // consumed, whatever the user answers
+			if (sel.empty()) break;
+			std::wstring p = EdFilterDialog(s.initialDir, true, s.hostHwnd);
+			if (!p.empty()) {
+				std::string frag = ExportCustomRules(s.model, sel, u8"自訂規則");
+				std::string err;
+				s.status = SaveCustomRulesFile(p, frag, &err)
+					? (u8"已保存 " + std::to_string((int)sel.size()) + u8" 條自訂規則")
+					: (u8"保存失敗：" + err);
+			}
+			break;
+		}
+		case EdDialog::ImportCustom: {
+			std::wstring p = EdFilterDialog(s.initialDir, false, s.hostHwnd);
+			if (!p.empty()) {
+				std::vector<unsigned char> data = EdReadFile(p);
+				std::string frag(data.begin(), data.end());
+				std::string err;
+				int n = ImportCustomRules(s.doc, frag, &err);
+				s.status = (n < 0) ? (u8"導入失敗：" + err)
+				         : (u8"已導入 " + std::to_string(n) + u8" 條規則到自訂區（未儲存）");
+			}
+			break;
+		}
+		case EdDialog::SoundFolder: {
+			std::wstring f = BrowseSoundFolder(s.hostHwnd);
+			if (!f.empty()) s.sounds.SetFolder(f);
+			break;
+		}
+		case EdDialog::None: break;
+	}
+}
 
 // ---- EditorShell methods -----------------------------------------------------
 
@@ -77,10 +148,7 @@ void DrawTopToolbar(EditorShell& s)
 		}
 	}
 	ImGui::SameLine();
-	if (ImGui::Button(u8"開啟檔案…")) {
-		std::wstring p = EdFilterDialog(s.initialDir, false);
-		if (!p.empty()) s.OpenByPath(p, false);
-	}
+	if (ImGui::Button(u8"開啟檔案…")) s.pendingDialog = EdDialog::OpenFilter;
 	ImGui::SameLine();
 	if (ImGui::Button(u8"重新整理列表")) { s.fileList = ListFilters(); }
 
@@ -97,18 +165,7 @@ void DrawTopToolbar(EditorShell& s)
 	ImGui::EndDisabled();
 	ImGui::SameLine();
 	ImGui::BeginDisabled(!s.loaded);
-	if (ImGui::Button(u8"另存為…")) {
-		std::wstring p = EdFilterDialog(s.initialDir, true);
-		if (!p.empty()) {
-			s.model.path = p;
-			size_t slash = p.find_last_of(L"\\/");
-			s.model.name = EdNarrow(slash == std::wstring::npos ? p : p.substr(slash + 1));
-			std::string err;
-			s.status = SaveFilter(s.model, &err)
-				? (u8"已儲存：" + s.model.name + u8"　※ 遊戲內要到 選項→遊戲→UI 重新選擇過濾器才會生效")
-				: (u8"儲存失敗：" + err);
-		}
-	}
+	if (ImGui::Button(u8"另存為…")) s.pendingDialog = EdDialog::SaveFilterAs;
 	ImGui::SameLine();
 	if (ImGui::Button(u8"重新載入")) { if (!s.model.path.empty()) s.OpenByPath(s.model.path, true); }
 
@@ -131,30 +188,17 @@ void DrawTopToolbar(EditorShell& s)
 		if (sel.empty()) {
 			s.status = u8"請先選取（或批量勾選）要保存的規則。";
 		} else {
-			std::wstring p = EdFilterDialog(s.initialDir, true);
-			if (!p.empty()) {
-				std::string frag = ExportCustomRules(s.model, sel, u8"自訂規則");
-				std::string err;
-				s.status = SaveCustomRulesFile(p, frag, &err)
-					? (u8"已保存 " + std::to_string((int)sel.size()) + u8" 條自訂規則")
-					: (u8"保存失敗：" + err);
-			}
+			// Carried to the deferred step: the selection can change between the
+			// click and the dialog closing, and what was exported has to be what was
+			// selected when the button was pressed.
+			s.pendingExportSel = sel;
+			s.pendingDialog = EdDialog::ExportCustom;
 		}
 	}
 	if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"把選取的規則匯出成獨立檔，可在其他過濾器導入");
 
 	ImGui::SameLine();
-	if (ImGui::Button(u8"導入自定義")) {
-		std::wstring p = EdFilterDialog(s.initialDir, false);
-		if (!p.empty()) {
-			std::vector<unsigned char> data = EdReadFile(p);
-			std::string frag(data.begin(), data.end());
-			std::string err;
-			int n = ImportCustomRules(s.doc, frag, &err);
-			s.status = (n < 0) ? (u8"導入失敗：" + err)
-			         : (u8"已導入 " + std::to_string(n) + u8" 條規則到自訂區（未儲存）");
-		}
-	}
+	if (ImGui::Button(u8"導入自定義")) s.pendingDialog = EdDialog::ImportCustom;
 	if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"把匯出的自訂規則檔加入此過濾器最上方的自訂區");
 	ImGui::EndDisabled();
 }

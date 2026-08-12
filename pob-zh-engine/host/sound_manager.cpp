@@ -56,10 +56,10 @@ void SetSoundFolder(const std::wstring& folder)
 	WritePrivateProfileStringW(L"PobTools", L"SoundFolder", folder.c_str(), IniPath().c_str());
 }
 
-std::wstring BrowseSoundFolder()
+std::wstring BrowseSoundFolder(void* owner)
 {
 	// Shared implementation (editor_util); only the title differs.
-	return EdBrowseForFolder(L"選擇音效資料夾", GetSoundFolder());
+	return EdBrowseForFolder(L"選擇音效資料夾", GetSoundFolder(), owner);
 }
 
 static void EnumFiles(const std::wstring& folder, std::vector<std::wstring>& out)

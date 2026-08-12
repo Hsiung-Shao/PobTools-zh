@@ -28,6 +28,7 @@
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
+#include "panel_selftest.h"
 #include "paste_selftest.h"
 #include "item_name_selftest.h"
 #include "paste_trace.h"
@@ -430,6 +431,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// Interactive by nature; writes PobTools\dock_trace.txt and dock_stage.txt.
 		// --dock-spike [nospawn|verbose]
 		return WindowDock::RunDockSpike(dir, arg2 != L"nospawn", arg2 == L"verbose");
+	}
+	if (arg1 == L"--panel-selftest") {
+		// Headless: an embedded tool panel, drawn inside a tab bar in a container
+		// that is smaller than the screen -- the case that exposes a panel which
+		// assumed it owned the viewport.
+		return RunPanelSelfTest(dir);
 	}
 	if (arg1 == L"--dock-style-selftest") {
 		// Adoption against a real MAXIMIZED window this process owns. Needs a desktop

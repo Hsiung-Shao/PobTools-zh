@@ -369,6 +369,12 @@ if (WIN32)
         host/editor_util.cpp
         host/editor_shell.cpp
         host/filter_editor.cpp
+        # one panel's content, drawn either into its own window (tool_window) or
+        # into a launcher tab -- the per-frame code exists once for both
+        host/tool_window.cpp
+        # drives a panel exactly as a launcher tab does; no other selftest ever
+        # creates an ImGui frame, so nothing else can see that path
+        host/panel_selftest.cpp
         host/atlas_tree_data.cpp
         host/atlas_view.cpp
         host/atlas_planner.cpp

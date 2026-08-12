@@ -8,6 +8,9 @@
 #include "changelog.h"
 #include "pob_launch.h"
 #include "window_dock.h"
+// Tools that draw inside this window rather than in one of their own.
+#include "filter_editor.h"
+#include "tool_panel.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -23,6 +26,7 @@
 #include <imgui_impl_opengl3.h>
 #include <misc/cpp/imgui_stdlib.h> // InputText over std::string (the data-folder field)
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -882,6 +886,68 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	double upToDateUntil = 0.0;
 	bool wasPobBusy = false;       // edge-detect "the last POB just closed"
 	bool applyStartupTab = true;   // honour cfg.startupTab on the first frame only
+
+	// Tools drawn inside this window rather than started as their own process.
+	// Tabbed mode only -- separate mode still spawns them, exactly as before, so
+	// that path is untouched by any of this.
+	struct EmbeddedPanel {
+		std::unique_ptr<IToolPanel> panel;
+		std::string label;
+		// ImGuiTabItemFlags_SetSelected for one frame. Needed when a panel is asked
+		// to close and answers by putting up a prompt: the prompt has to be on the
+		// tab the user is looking at, not behind whichever tab happens to be active.
+		ImGuiTabItemFlags forceSelect = 0;
+	};
+	std::vector<EmbeddedPanel> panels;
+
+	// One prebuilt style per density, so a tab swap is an assignment rather than a
+	// rebuild. ApplyTheme cannot be called per frame: it ends in ScaleAllSizes,
+	// which compounds.
+	ImGuiStyle styleComfortable, styleCompact, styleCanvas;
+	PobUi::BuildStyle(styleComfortable, scale, PobUi::Density::Comfortable);
+	PobUi::BuildStyle(styleCompact, scale, PobUi::Density::Compact);
+	PobUi::BuildStyle(styleCanvas, scale, PobUi::Density::Canvas);
+	auto styleFor = [&](PobUi::Density d) -> const ImGuiStyle& {
+		switch (d) {
+			case PobUi::Density::Canvas: return styleCanvas;
+			case PobUi::Density::Compact: return styleCompact;
+			default: return styleComfortable;
+		}
+	};
+
+	// Lent to every panel and OUTLIVES them all, because they keep a pointer into
+	// it. `body` is refreshed each frame rather than copied once: the atlas is
+	// rebuilt when the user changes font, and every ImFont* from before that is
+	// dangling afterwards.
+	ToolPanelHost panelHost;
+	panelHost.exeDir = exeDir;
+	panelHost.locale = cfg.locale;
+	panelHost.scale = scale;
+	panelHost.hostHwnd = glfwGetWin32Window(win);
+	panelHost.embedded = true;
+
+	// Open a tool as a tab, or bring the one already open to the front. One
+	// instance each -- two translation editors would be writing the same files, and
+	// the tools keep enough state (a whole passive tree, the scarab icon cache) that
+	// a second copy is not free either.
+	auto openPanel = [&](IToolPanel* (*make)(), const char* label) {
+		std::unique_ptr<IToolPanel> fresh(make());
+		for (EmbeddedPanel& ep : panels) {
+			if (std::string(ep.panel->PanelId()) == fresh->PanelId()) {
+				ep.forceSelect = ImGuiTabItemFlags_SetSelected;
+				return;
+			}
+		}
+		panelHost.game = cfg.game;
+		panelHost.locale = cfg.locale;
+		if (!fresh->Init(panelHost)) return;
+		EmbeddedPanel ep;
+		ep.panel = std::move(fresh);
+		ep.label = label;
+		ep.forceSelect = ImGuiTabItemFlags_SetSelected;
+		panels.push_back(std::move(ep));
+	};
+
 	bool closingTabs = false;      // tabbed mode: shutting down, closing tabs in turn
 	unsigned long closingPid = 0;  // the tab already asked to close, so it is asked once
 	double closeAskedAt = 0.0;     // when, so a cancelled save prompt can be detected
@@ -935,6 +1001,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
 		}
+
+		// Re-published every frame, never cached by a panel: `fontChanged` above
+		// rebuilds the atlas and invalidates every ImFont* handed out before it.
+		panelHost.body = fonts.body;
+		panelHost.cjkOk = fonts.cjkOk;
 
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
@@ -1281,8 +1352,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					openEditor = true;
 			}
 			ImGui::SameLine(0, gap);
-			if (ImGui::Button(S.filterEditor, toolSize))
-				spawnTool(L"--filter-editor", PobLaunch::InstanceKind::FilterEditor, S.filterEditor);
+			// Tabbed mode draws it in this window; separate mode starts it as its own
+			// process, exactly as before. Both run the same per-frame code -- see
+			// tool_panel.h.
+			if (ImGui::Button(S.filterEditor, toolSize)) {
+				if (tabbed) openPanel(&CreateFilterEditorPanel, S.filterEditor);
+				else spawnTool(L"--filter-editor", PobLaunch::InstanceKind::FilterEditor, S.filterEditor);
+			}
 			ImGui::SameLine(0, gap);
 			if (ImGui::Button(S.atlasPlanner, toolSize))
 				spawnTool(L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner);
@@ -1716,6 +1792,35 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::EndTabItem();
 		}
 
+		// --- embedded tools ---------------------------------------------------
+		// Drawn straight into this frame, unlike the docked tabs below: these are
+		// our own ImGui code, so there is no second window and nothing to keep glued
+		// to anything. Switching to one is instant and it cannot be left behind.
+		//
+		// The style is swapped for the panel's own density and put back afterwards.
+		// Safe here because the style-var stack is empty at this point -- see
+		// PobUi::BuildStyle.
+		for (size_t i = 0; tabbed && tabsOk && i < panels.size(); i++) {
+			EmbeddedPanel& ep = panels[i];
+			std::string label = ep.label + "##panel" + ep.panel->PanelId();
+			bool open = true;
+			if (ImGui::BeginTabItem(label.c_str(), &open, ep.forceSelect)) {
+				ep.forceSelect = 0;
+				// A panel drawn here means no docked window is on top of the client
+				// area, so activeDockTab stays -1 and Dock::Update hides them all.
+				ImGui::PushID(ep.panel->PanelId());
+				const ImGuiStyle keep = ImGui::GetStyle();
+				ImGui::GetStyle() = styleFor(ep.panel->Density());
+				ImGui::PushFont(fonts.body);
+				ep.panel->Frame();
+				ImGui::PopFont();
+				ImGui::GetStyle() = keep;
+				ImGui::PopID();
+				ImGui::EndTabItem();
+			}
+			if (!open) ep.panel->RequestClose();
+		}
+
 		// --- docked windows ---------------------------------------------------
 		// One tab per POB / tool window, after the fixed ones. Their bodies are
 		// deliberately empty: the real window is a separate top-level window sitting
@@ -1750,6 +1855,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			const int shown = (closingTabs && !dock.Empty())
 			                ? (int)dock.Tabs().size() - 1 : activeDockTab;
 			dock.Update(stripH, shown);
+		}
+
+		// Embedded panels: deferred work, then reap the ones that are done.
+		//
+		// AFTER dock.Update on purpose. A panel's deferred work is where its Win32
+		// dialogs open, and Dock::Update is what hides the docked POB windows when a
+		// panel tab is selected -- doing it the other way round could put a modal
+		// dialog underneath a window that had not been hidden yet, where the user
+		// cannot see it while the program appears to have stopped responding.
+		for (size_t i = 0; i < panels.size();) {
+			EmbeddedPanel& ep = panels[i];
+			ep.panel->RunDeferred();
+			const ToolCloseState cs = ep.panel->CloseState();
+			if (cs == ToolCloseState::Asking) {
+				// Its prompt has to be visible to be answerable.
+				ep.forceSelect = ImGuiTabItemFlags_SetSelected;
+				i++;
+			} else if (cs == ToolCloseState::Closed) {
+				// While the GL context is still current: panels may hold textures.
+				ep.panel->Shutdown();
+				panels.erase(panels.begin() + (ptrdiff_t)i);
+			} else {
+				i++;
+			}
 		}
 
 		// Overwrite confirmation for the copy button. Opened at this level (outside

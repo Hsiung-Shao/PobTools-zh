@@ -201,10 +201,7 @@ void DrawFilterEditSection(EditorShell& s)
 		PobUi::PushPrimaryButton();
 		bool open = ImGui::Button(u8"開啟 .filter 檔…", ImVec2(buttonW, 0));
 		PobUi::PopButtonStyle();
-		if (open) {
-			std::wstring p = EdFilterDialog(s.initialDir, false);
-			if (!p.empty()) s.OpenByPath(p, false);
-		}
+		if (open) s.pendingDialog = EdDialog::OpenFilter;
 		return;
 	}
 	if (s.doc.file() != &s.model) s.doc.Attach(&s.model);
