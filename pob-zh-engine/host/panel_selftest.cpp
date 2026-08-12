@@ -12,6 +12,7 @@
 #include "panel_selftest.h"
 
 #include "filter_editor.h"
+#include "launcher_editor.h"
 #include "tool_panel.h"
 #include "ui_theme.h"
 
@@ -117,8 +118,17 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			host.body = ImGui::GetIO().Fonts->Fonts[0];
 			host.cjkOk = false;   // the default font has no CJK; the panel must cope
 
-			std::unique_ptr<IToolPanel> panel(CreateFilterEditorPanel());
-			rep.check("P1 the panel initialises", panel->Init(host));
+			// Every panel, not just one: the contract is the same for all of them and
+			// a check that only ever exercises the easiest tool proves the least.
+			struct Entry { const char* what; IToolPanel* (*make)(); };
+			const Entry kPanels[] = {
+				{ "filter", &CreateFilterEditorPanel },
+				{ "trans",  &CreateTranslationEditorPanel },
+			};
+			for (const Entry& ent : kPanels) {
+			std::unique_ptr<IToolPanel> panel(ent.make());
+			const std::string tag = std::string(" [") + ent.what + "]";
+			rep.check(std::string("P1 the panel initialises") + tag, panel->Init(host));
 
 			// The style the launcher would swap in for this panel.
 			ImGuiStyle panelStyle;
@@ -177,13 +187,13 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			// Without this the loop above could have skipped the tab entirely (a tab
 			// bar does not draw an unselected tab's body) and everything below would
 			// be comparing two default-constructed snapshots.
-			rep.check("P2 the panel's body was actually drawn", everDrew);
-			rep.check("P3 Frame() leaves every ImGui stack as it found it", balanced,
+			rep.check(std::string("P2 the panel's body was actually drawn") + tag, everDrew);
+			rep.check(std::string("P3 Frame() leaves every ImGui stack as it found it") + tag, balanced,
 			          balanced ? before.str() : (before.str() + " -> " + after.str()));
 
 			{
 				const GLenum err = glGetError();
-				rep.check("P4 no GL error was raised while drawing", err == GL_NO_ERROR,
+				rep.check(std::string("P4 no GL error was raised while drawing") + tag, err == GL_NO_ERROR,
 				          "glGetError=" + std::to_string((unsigned)err));
 			}
 
@@ -191,13 +201,14 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			// save, and a tab that argues about closing when nothing changed is worse
 			// than one that just goes.
 			const ToolCloseState cs = panel->RequestClose();
-			rep.check("P5 a clean panel closes without asking",
+			rep.check(std::string("P5 a clean panel closes without asking") + tag,
 			          cs == ToolCloseState::Closed, "state=" + std::to_string((int)cs));
-			rep.check("P6 and reports the same state when asked again",
+			rep.check(std::string("P6 and reports the same state when asked again") + tag,
 			          panel->CloseState() == ToolCloseState::Closed);
 
 			panel->Shutdown();
 			panel.reset();
+			} // for each panel
 
 			ImGui_ImplOpenGL3_Shutdown();
 			ImGui_ImplGlfw_Shutdown();
@@ -208,7 +219,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 	}
 
 	const int ran = rep.checks;
-	rep.check("P7 the suite actually ran", ran >= 6, std::to_string(ran) + " checks");
+	rep.check("P7 the suite actually ran", ran >= 12, std::to_string(ran) + " checks");
 
 	rep.text += rep.failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

@@ -1,4 +1,6 @@
 #include "launcher_editor.h"
+#include "tool_panel.h"
+#include "tool_window.h"
 #include "editor_data.h"
 #include "launcher_config.h" // ResolveConfiguredFontPath
 #include "ui_theme.h"
@@ -216,239 +218,82 @@ static void TargetFileCombo(const EditorModel& model, const char* id, int& targe
 
 // ---- editor ----------------------------------------------------------------
 
-void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std::wstring& locale)
-{
-	if (!glfwInit()) {
-		MessageBoxW(nullptr, L"無法初始化 GLFW，翻譯編輯器無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
-		return;
-	}
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-	glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+// ---- translation editor, as a panel -----------------------------------------
+//
+// The window / GL context / font atlas / main loop belong to whichever host is
+// drawing this: RunToolWindow for a window of its own, the launcher's tab body
+// when embedded. See tool_panel.h.
+//
+// Everything that was a local of ShowEditor is a member here, and the closures it
+// captured by reference are member functions. That is what let the UI body below
+// move across UNCHANGED -- every name in it still resolves, so this is a
+// structural change rather than a rewrite of working UI code.
 
-	float scale = 1.0f;
-	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-	if (monitor) {
-		float sx = 1.0f, sy = 1.0f;
-		glfwGetMonitorContentScale(monitor, &sx, &sy);
-		scale = sx > 0.0f ? sx : 1.0f;
-	}
-	// Roomier default: the entry list is three columns and the missing-string
-	// tab is four, so 1100x720 left both cramped. Clamped to the monitor work
-	// area (not the raw resolution) so the title bar stays reachable and the
-	// window still fits on a small laptop screen.
-	int winW = (int)(1440 * scale);
-	int winH = (int)(900 * scale);
-	if (monitor) {
-		int wx = 0, wy = 0, ww = 0, wh = 0;
-		glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
-		if (ww > 0 && wh > 0) {
-			if (winW > ww - (int)(40 * scale)) winW = ww - (int)(40 * scale);
-			if (winH > wh - (int)(60 * scale)) winH = wh - (int)(60 * scale);
-		}
-	}
-	if (winW < 900) winW = 900;
-	if (winH < 600) winH = 600;
+namespace {
 
-	GLFWwindow* win = glfwCreateWindow(winW, winH, "PobTools \xe2\x80\x94 \xe7\xbf\xbb\xe8\xad\xaf\xe7\xb7\xa8\xe8\xbc\xaf\xe5\x99\xa8", nullptr, nullptr);
-	if (!win) {
-		glfwTerminate();
-		MessageBoxW(nullptr, L"無法建立翻譯編輯器視窗。", L"PobTools", MB_ICONERROR | MB_OK);
-		return;
-	}
-	if (monitor) {
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		if (mode) glfwSetWindowPos(win, (mode->width - winW) / 2, (mode->height - winH) / 2);
-	}
-	glfwMakeContextCurrent(win);
-	glfwSwapInterval(1);
-	glfwShowWindow(win);
+// Was declared inside ShowEditor. A member function cannot name a type local to
+// another function, so it moves out here with its meaning intact.
+//
+// An action waiting for the unsaved-changes prompt. Every entry point (game combo,
+// locale combo, reload button, closing the tab or the window) needs the same
+// guard, so they set a pending action instead of each opening their own.
+enum class Pending { None, SwitchGame, SwitchLocale, Reload, Close };
 
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGui::GetIO().IniFilename = nullptr;
-	PobUi::ApplyTheme(scale, PobUi::Density::Compact);
+// "launcher" is the launcher's own labels. Listed here rather than special-cased
+// anywhere because the launcher dictionary folder has the same shape as a game
+// one -- meta.json with a load_order, plus dictionary files.
+const char* kGames[kDictSlotCount] = { "poe1", "poe2", "launcher" };
 
-	// Full CJK + Korean atlas so any dictionary text renders and any character
-	// can be typed via IME (the launcher only builds glyphs for its own labels).
-	std::vector<unsigned char> ttf = read_file(ResolveConfiguredFontPath(exeDir));
-	ImFont* font = nullptr;
-	bool cjkOk = false;
-	if (!ttf.empty()) {
-		ImGuiIO& io = ImGui::GetIO();
-		static ImVector<ImWchar> ranges;
-		ranges.clear();
-		ImFontGlyphRangesBuilder b;
-		b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-		b.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
-		b.AddRanges(io.Fonts->GetGlyphRangesKorean());
-		b.BuildRanges(&ranges);
-		ImFontConfig cfg;
-		cfg.FontDataOwnedByAtlas = false;
-		// CJK atlas is dense (~21k glyphs). Disable oversampling so the texture
-		// stays well under the GLES2/ANGLE max-texture-size limit (oversampling
-		// would ~4x the area and can silently drop glyphs on some GPUs).
-		cfg.OversampleH = 1;
-		cfg.OversampleV = 1;
-		cfg.PixelSnapH = true;
-		// Cap atlas width so it grows in height rather than exceeding GL limits.
-		io.Fonts->TexDesiredWidth = 4096;
-		font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale, &cfg, ranges.Data);
-		if (io.Fonts->Build() && font)
-			cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
-	}
-	if (!font) font = ImGui::GetIO().Fonts->AddFontDefault();
+} // namespace
 
-	ImGui_ImplGlfw_InitForOpenGL(win, true);
-	ImGui_ImplOpenGL3_Init("#version 100");
-
-	// --- state ---
-	// "launcher" is the launcher's own labels. It is listed here rather than
-	// special-cased anywhere because Data\launcher\<locale>\ has the same shape as
-	// Data\poe1\<locale>\ — meta.json with a load_order plus dictionary files.
-	static const char* kGames[kDictSlotCount] = { "poe1", "poe2", "launcher" };
-	int gi = 0;
-	for (int i = 0; i < kDictSlotCount; i++)
-		if (game == DictSlotFolder((DictSlot)i)) { gi = i; break; }
-
-	// The dictionaries the ENGINE will read, per slot. Editing the built-in copy
-	// while POB reads an external one is the one failure this whole feature has to
-	// avoid, so the editor resolves the same settings the launcher does. Resolved
-	// once for all three: switching the combo must not re-read the ini and pick up
-	// a half-finished edit made in another window.
-	const LauncherConfig editCfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-	DictDirInfo slotDir[kDictSlotCount];
-	for (int i = 0; i < kDictSlotCount; i++)
-		slotDir[i] = ResolveDictDir(exeDir, (DictSlot)i, editCfg.dataDir[i]);
-	auto slotRoot = [&]() { return slotDir[gi].root; };
-
-	// Locales come from disk, not a hardcoded list: the caller's choice used to
-	// be discarded outright, so opening the editor from an "en" launcher silently
-	// edited the Chinese dictionary.
-	std::vector<std::string> locales = ListLocales(slotRoot());
-	std::string status;
-	int li = 0;
+class TranslationEditorPanel : public IToolPanel {
+public:
+	bool Init(const ToolPanelHost& h) override
 	{
-		const std::string want = narrow(locale);
-		auto it = std::find(locales.begin(), locales.end(), want);
-		if (it != locales.end()) {
-			li = (int)(it - locales.begin());
-		} else {
-			auto zh = std::find(locales.begin(), locales.end(), std::string("zh-rTW"));
-			li = (zh != locales.end()) ? (int)(zh - locales.begin()) : 0;
-			if (!want.empty())
-				status = u8"此語系（" + want + u8"）沒有翻譯資料，已改開 " + locales[li];
+		host_ = &h;
+		exeDir = h.exeDir;
+		scale = h.scale;
+
+		for (int i = 0; i < kDictSlotCount; i++)
+			if (h.game == DictSlotFolder((DictSlot)i)) { gi = i; break; }
+
+		// The dictionaries the ENGINE will read, per slot. Editing the built-in copy
+		// while POB reads an external one is the one failure this whole feature has to
+		// avoid, so the editor resolves the same settings the launcher does. Resolved
+		// once for all three: switching the combo must not re-read the ini and pick up
+		// a half-finished edit made elsewhere.
+		editCfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+		for (int i = 0; i < kDictSlotCount; i++)
+			slotDir[i] = ResolveDictDir(exeDir, (DictSlot)i, editCfg.dataDir[i]);
+
+		// Locales come from disk, not a hardcoded list: the caller's choice used to be
+		// discarded outright, so opening the editor from an "en" launcher silently
+		// edited the Chinese dictionary.
+		locales = ListLocales(slotRoot());
+		if (locales.empty()) return false;
+		{
+			const std::string want = narrow(h.locale);
+			auto it = std::find(locales.begin(), locales.end(), want);
+			if (it != locales.end()) {
+				li = (int)(it - locales.begin());
+			} else {
+				auto zh = std::find(locales.begin(), locales.end(), std::string("zh-rTW"));
+				li = (zh != locales.end()) ? (int)(zh - locales.begin()) : 0;
+				if (!want.empty())
+					status = u8"此語系（" + want + u8"）沒有翻譯資料，已改開 " + locales[li];
+			}
 		}
+		pendingGi = gi;
+		pendingLi = li;
+
+		model = LoadModel(slotRoot(), locales[li]);
+		if (status.empty()) noteExternal();
+		rebuildFilter();
+		return true;
 	}
 
-	EditorModel model = LoadModel(slotRoot(), locales[li]);
-	auto noteExternal = [&]() {
-		if (slotDir[gi].status == DataDirStatus::External)
-			status = u8"編輯的是外部翻譯資料夾：" + narrow(slotRoot());
-	};
-	if (status.empty()) noteExternal();
-
-	std::string search;       // raw search text
-	std::string searchLower;  // cached lowercase
-	int fileFilter = 0;       // 0 = all, else file index + 1
-	std::vector<size_t> filtered;
-
-	// one-shot requests to bring a tab to the front (the toolbar button and
-	// the scan action both need it; ImGui clears the flag after one frame)
-	bool focusMiss = false;
-	bool focusEntries = false;
-	bool missScanned = false;
-	bool missLogFound = false;
-	bool missShowReverse = false;
-	std::vector<MissEntry> misses;
-	std::vector<std::string> missTrans;
-	std::vector<int> missTarget;
-
-	// "Add entry" row (above the table, not inside it: the table is virtualised
-	// with ImGuiListClipper over 110k rows and its indices are used directly).
-	std::string newKey, newVal;
-	int newTarget = -1;
-	std::vector<int> newKeyOwners;      // files already defining newKey, in load order
-	std::string newKeyOwnersFor;        // the key newKeyOwners was computed for
-	bool focusNewKey = false;
-
-	// Expanded editor for a long / multi-line value. The table is virtualised with
-	// ImGuiListClipper, which requires uniform row heights, so a multi-line box
-	// cannot go in the cell -- it opens as a modal instead. -1 = closed.
-	int bigIdx = -1;
-	std::string bigText;
-	bool openBig = false;
-
-	// An action waiting for the unsaved-changes prompt. All four entry points
-	// (game combo, locale combo, reload button, window close) need the same
-	// guard, so they set a pending action instead of each opening their own.
-	enum class Pending { None, SwitchGame, SwitchLocale, Reload, Close };
-	Pending pending = Pending::None;
-	int pendingGi = gi, pendingLi = li;
-
-	auto rebuildFilter = [&]() {
-		filtered.clear();
-		filtered.reserve(model.entries.size());
-		for (size_t i = 0; i < model.entries.size(); i++) {
-			const EditorEntry& e = model.entries[i];
-			if (fileFilter != 0 && e.fileIdx != fileFilter - 1) continue;
-			if (!searchLower.empty() &&
-				!contains_ci(e.key, searchLower) && !contains_ci(e.value, searchLower))
-				continue;
-			filtered.push_back(i);
-		}
-	};
-
-	// Unconditional reload. Callers are responsible for the dirty check — this
-	// stays the raw operation so the guard has exactly one implementation.
-	auto reload = [&]() {
-		locales = ListLocales(slotRoot());
-		if (li >= (int)locales.size()) li = 0;
-		model = LoadModel(slotRoot(), locales[li]);
-		fileFilter = 0;
-		rebuildFilter();
-		missScanned = false;
-		misses.clear(); missTrans.clear(); missTarget.clear();
-		newKeyOwners.clear(); newKeyOwnersFor.clear(); newTarget = -1;
-		status.clear();
-		noteExternal(); // each slot has its own folder: say which one this is
-	};
-
-	auto applyPending = [&]() {
-		if (pending == Pending::SwitchGame)        gi = pendingGi;
-		else if (pending == Pending::SwitchLocale) li = pendingLi;
-		reload();
-	};
-
-	auto runScan = [&]() {
-		misses = ScanMisses(exeDir, model, &missLogFound);
-		missScanned = true;
-		int uiIdx = FindFileIdx(model, "ui.json");
-		if (uiIdx < 0) uiIdx = model.files.empty() ? -1 : 0;
-		missTrans.assign(misses.size(), std::string());
-		missTarget.assign(misses.size(), uiIdx);
-	};
-
-	rebuildFilter();
-
-	bool running = true;
-	while (running) {
-		glfwPollEvents();
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-		ImGui::PushFont(font);
-
-		ImGuiIO& io = ImGui::GetIO();
-		ImGui::SetNextWindowPos(ImVec2(0, 0));
-		ImGui::SetNextWindowSize(io.DisplaySize);
-		ImGui::Begin("##editor", nullptr,
-			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-		// --- data scope ---
+	void Frame() override
+	{
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextColored(PobUi::Accent(), u8"翻譯資料庫");
 		ImGui::SameLine(0, 18 * scale);
@@ -535,7 +380,9 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 
 		// --- status strip ---
 		ImGui::Spacing();
-		if (!cjkOk) {
+		// Read through the host every frame rather than cached at Init: the launcher
+		// rebuilds its atlas when the font changes, and this answer changes with it.
+		if (!host_->cjkOk) {
 			// Kept ASCII: when the CJK atlas failed, Chinese glyphs cannot render.
 			ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f),
 				"[!] CJK font atlas not loaded (Fonts\\FZ_ZY.ttf missing or texture too large). Chinese cannot display/input.");
@@ -869,7 +716,6 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 		ImGui::EndTabBar();
 		}
 
-		ImGui::End();
 
 		// --- expanded value editor -------------------------------------------
 		// Opened here, at the root ID level, for the same reason as the guard
@@ -913,19 +759,6 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 			}
 			ImGui::EndPopup();
 		}
-
-		// --- unsaved-changes guard -------------------------------------------
-		// Opened here, after End(), so the popup sits at the root ID level; the
-		// combos above only set `pending`. Switching game used to discard unsaved
-		// edits without a word.
-		if (glfwWindowShouldClose(win)) {
-			if (DirtyCount(model) > 0) {
-				glfwSetWindowShouldClose(win, GLFW_FALSE);
-				pending = Pending::Close;
-			} else {
-				running = false;
-			}
-		}
 		if (pending != Pending::None && !ImGui::IsPopupOpen(u8"未儲存變更"))
 			ImGui::OpenPopup(u8"未儲存變更");
 
@@ -955,8 +788,8 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 			PobUi::PushPrimaryButton();
 			if (ImGui::Button(closing ? u8"儲存並關閉" : u8"儲存後繼續")) {
 				std::string err;
-				SaveAll(model, &err);
-				if (closing) running = false; else applyPending();
+				if (SaveAll(model, &err)) saved_ = true;
+				if (closing) close_ = ToolCloseState::Closed; else applyPending();
 				pending = Pending::None;
 				ImGui::CloseCurrentPopup();
 			}
@@ -965,33 +798,175 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 			// The only button here that throws work away.
 			PobUi::PushDangerButton();
 			if (ImGui::Button(closing ? u8"直接關閉" : u8"捨棄並繼續")) {
-				if (closing) running = false; else applyPending();
+				if (closing) close_ = ToolCloseState::Closed; else applyPending();
 				pending = Pending::None;
 				ImGui::CloseCurrentPopup();
 			}
 			PobUi::PopButtonStyle();
 			ImGui::SameLine();
 			if (ImGui::Button(u8"取消")) {
-				pending = Pending::None;   // combos already rolled themselves back
+				pending = Pending::None;
+				// The host asked; the user said no. Cancelled rather than Open, so
+				// whoever started the close abandons it instead of asking again.
+				if (close_ == ToolCloseState::Asking) close_ = ToolCloseState::Cancelled;   // combos already rolled themselves back
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
 		}
-
-		ImGui::PopFont();
-		ImGui::Render();
-		int fbW = 0, fbH = 0;
-		glfwGetFramebufferSize(win, &fbW, &fbH);
-		glViewport(0, 0, fbW, fbH);
-		glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(win);
 	}
 
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
-	glfwDestroyWindow(win);
-	glfwTerminate();
+	ToolCloseState RequestClose() override
+	{
+		if (close_ == ToolCloseState::Open || close_ == ToolCloseState::Cancelled) {
+			if (DirtyCount(model) > 0) {
+				pending = Pending::Close;
+				close_ = ToolCloseState::Asking;
+			} else {
+				close_ = ToolCloseState::Closed;
+			}
+		}
+		return close_;
+	}
+	ToolCloseState CloseState() const override { return close_; }
+
+	PobUi::Density Density() const override { return PobUi::Density::Compact; }
+	const char* PanelId() const override { return "trans"; }
+
+	// True once a save has happened, so the launcher can reload its own labels: this
+	// editor can be editing the launcher's dictionary, i.e. the very strings the
+	// launcher is drawing with. Reading it clears it.
+	bool TakeSavedFlag() { const bool f = saved_; saved_ = false; return f; }
+
+private:
+	std::wstring slotRoot() const { return slotDir[gi].root; }
+
+	void noteExternal()
+	{
+		if (slotDir[gi].status == DataDirStatus::External)
+			status = u8"編輯的是外部翻譯資料夾：" + narrow(slotRoot());
+	}
+
+	void rebuildFilter()
+	{
+		filtered.clear();
+		filtered.reserve(model.entries.size());
+		for (size_t i = 0; i < model.entries.size(); i++) {
+			const EditorEntry& e = model.entries[i];
+			if (fileFilter != 0 && e.fileIdx != fileFilter - 1) continue;
+			if (!searchLower.empty() &&
+				!contains_ci(e.key, searchLower) && !contains_ci(e.value, searchLower))
+				continue;
+			filtered.push_back(i);
+		}
+	}
+
+	// Unconditional reload. Callers are responsible for the dirty check -- this stays
+	// the raw operation so the guard has exactly one implementation.
+	void reload()
+	{
+		locales = ListLocales(slotRoot());
+		if (locales.empty()) return;
+		if (li >= (int)locales.size()) li = 0;
+		model = LoadModel(slotRoot(), locales[li]);
+		fileFilter = 0;
+		rebuildFilter();
+		missScanned = false;
+		misses.clear(); missTrans.clear(); missTarget.clear();
+		newKeyOwners.clear(); newKeyOwnersFor.clear(); newTarget = -1;
+		status.clear();
+		noteExternal(); // each slot has its own folder: say which one this is
+	}
+
+	void applyPending()
+	{
+		if (pending == Pending::SwitchGame)        gi = pendingGi;
+		else if (pending == Pending::SwitchLocale) li = pendingLi;
+		reload();
+	}
+
+	void runScan()
+	{
+		misses = ScanMisses(exeDir, model, &missLogFound);
+		missScanned = true;
+		int uiIdx = FindFileIdx(model, "ui.json");
+		if (uiIdx < 0) uiIdx = model.files.empty() ? -1 : 0;
+		missTrans.assign(misses.size(), std::string());
+		missTarget.assign(misses.size(), uiIdx);
+	}
+
+	const ToolPanelHost* host_ = nullptr;
+	ToolCloseState close_ = ToolCloseState::Open;
+	bool saved_ = false;
+
+	std::wstring exeDir;
+	float scale = 1.0f;
+
+	int gi = 0;
+	LauncherConfig editCfg;
+	DictDirInfo slotDir[kDictSlotCount];
+	std::vector<std::string> locales;
+	std::string status;
+	int li = 0;
+	EditorModel model;
+
+	std::string search;       // raw search text
+	std::string searchLower;  // cached lowercase
+	int fileFilter = 0;       // 0 = all, else file index + 1
+	std::vector<size_t> filtered;
+
+	// one-shot requests to bring a tab to the front (the toolbar button and the scan
+	// action both need it; ImGui clears the flag after one frame)
+	bool focusMiss = false;
+	bool focusEntries = false;
+	bool missScanned = false;
+	bool missLogFound = false;
+	bool missShowReverse = false;
+	std::vector<MissEntry> misses;
+	std::vector<std::string> missTrans;
+	std::vector<int> missTarget;
+
+	// "Add entry" row (above the table, not inside it: the table is virtualised with
+	// ImGuiListClipper over 110k rows and its indices are used directly).
+	std::string newKey, newVal;
+	int newTarget = -1;
+	std::vector<int> newKeyOwners;   // files already defining newKey, in load order
+	std::string newKeyOwnersFor;     // the key newKeyOwners was computed for
+	bool focusNewKey = false;
+
+	// Expanded editor for a long / multi-line value. The table is virtualised with
+	// ImGuiListClipper, which requires uniform row heights, so a multi-line box
+	// cannot go in the cell -- it opens as a modal instead. -1 = closed.
+	int bigIdx = -1;
+	std::string bigText;
+	bool openBig = false;
+
+	Pending pending = Pending::None;
+	int pendingGi = 0, pendingLi = 0;
+};
+
+IToolPanel* CreateTranslationEditorPanel()
+{
+	return new TranslationEditorPanel();
+}
+
+// dynamic_cast rather than a virtual on IToolPanel: "did you save?" is peculiar
+// to this one tool, and putting it in the interface would invite every other
+// panel to grow a meaningless implementation of it.
+bool TranslationEditorPanelSaved(IToolPanel* panel)
+{
+	auto* te = dynamic_cast<TranslationEditorPanel*>(panel);
+	return te && te->TakeSavedFlag();
+}
+
+void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std::wstring& locale)
+{
+	TranslationEditorPanel panel;
+	ToolWindowDesc desc;
+	// "PobTools — 翻譯編輯器"
+	desc.titleUtf8 = "PobTools \xe2\x80\x94 \xe7\xbf\xbb\xe8\xad\xaf\xe7\xb7\xa8\xe8\xbc\xaf\xe5\x99\xa8";
+	desc.defW = 1420;
+	desc.defH = 900;
+	// Big enough that the taskbar matters.
+	desc.clampToWorkArea = true;
+	RunToolWindow(panel, desc, exeDir, game, locale);
 }

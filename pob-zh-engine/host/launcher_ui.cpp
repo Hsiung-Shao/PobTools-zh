@@ -10,6 +10,7 @@
 #include "window_dock.h"
 // Tools that draw inside this window rather than in one of their own.
 #include "filter_editor.h"
+#include "launcher_editor.h"
 #include "tool_panel.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -1345,11 +1346,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// window every docked POB is living in. So it goes through the same
 			// child-process entry point the other tools use and becomes a tab.
 			if (ImGui::Button(S.editor, toolSize)) {
-				if (tabbed)
-					spawnTool(L"--translation-editor",
-					          PobLaunch::InstanceKind::TranslationEditor, S.editor);
-				else
-					openEditor = true;
+				if (tabbed) openPanel(&CreateTranslationEditorPanel, S.editor);
+				else openEditor = true;
 			}
 			ImGui::SameLine(0, gap);
 			// Tabbed mode draws it in this window; separate mode starts it as its own
@@ -1867,6 +1865,24 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		for (size_t i = 0; i < panels.size();) {
 			EmbeddedPanel& ep = panels[i];
 			ep.panel->RunDeferred();
+
+			// The translation editor can be editing Data\launcher\<locale>\ -- the
+			// very strings this window is drawing with. In separate mode that was
+			// handled by the launcher being torn down and rebuilt around it; as a tab
+			// there is no such moment, so a save has to be noticed here.
+			//
+			// Reloading the tables is not enough on its own: a translator can type a
+			// character that was not in the atlas, and a glyph that is not there is
+			// drawn as '?' with no warning. So the atlas is rebuilt too.
+			if (TranslationEditorPanelSaved(ep.panel.get())) {
+				strStore.clear();
+				for (const LocaleInfo& l : locales)
+					strStore.emplace_back(LoadLauncherStrings(launcherRoot, from_utf8(l.id)));
+				strOverlays.clear();
+				for (const LauncherStringStore& st : strStore) strOverlays.push_back(&st.s);
+				fontChanged = true;
+			}
+
 			const ToolCloseState cs = ep.panel->CloseState();
 			if (cs == ToolCloseState::Asking) {
 				// Its prompt has to be visible to be answerable.
