@@ -121,6 +121,18 @@ std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring&
 		return std::wstring();
 	}
 
+	// POB appends the class in parentheses -- "name (Elementalist)" from
+	// PassiveSpec.lua:2307, "name (Elementalist + X)" with a secondary
+	// ascendancy, or "name (char, class, league)" from ImportTab.lua:1249 --
+	// always as the caption's FINAL group. The tab exists to tell builds apart
+	// and the build's own name does that; the class annotation is what pushed
+	// real names past the 28-char clip. Only the last group goes, so a build
+	// name that itself contains parentheses keeps them.
+	if (!s.empty() && s.back() == L')') {
+		const size_t open = s.rfind(L" (");
+		if (open != std::wstring::npos && open > 0) s.erase(open);
+	}
+
 	// Trim: a caption is user data and can arrive with anything around it.
 	const size_t b = s.find_first_not_of(L" \t");
 	if (b == std::wstring::npos) s.clear();
@@ -261,9 +273,22 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 	// ---- tab titles ----------------------------------------------------------
 	{
 		const std::wstring fb = L"PoE1";
-		check("T1 the build name is what the tab shows",
+		// The class annotation POB appends is dropped (user ruling 2026-08-14):
+		// the tab is for telling builds apart, and at tab width the annotation
+		// only ate the name -- "3.29點燃贖罪 (Elementalist + Ab…" showed no less
+		// class and no more name than "3.29點燃贖罪" does.
+		check("T1 the build name ALONE is what the tab shows",
 		      ShortenWindowTitle(L"Frostblades Raider (Ranger) - Path of Building", fb) ==
-		          L"Frostblades Raider (Ranger)");
+		          L"Frostblades Raider");
+		check("T1b a secondary ascendancy is part of the same group",
+		      ShortenWindowTitle(L"3.29點燃贖罪 (Elementalist + Abberath) - Path of Building", fb) ==
+		          L"3.29點燃贖罪");
+		check("T1c only the LAST group goes: a name's own parens survive",
+		      ShortenWindowTitle(L"Spark (v2) (Inquisitor) - Path of Building", fb) ==
+		          L"Spark (v2)");
+		check("T1d the import-tab caption drops its whole annotation too",
+		      ShortenWindowTitle(L"MyBuild (Char, Ranger, Keepers) - Path of Building", fb) ==
+		          L"MyBuild");
 		check("T2 no build loaded falls back to the tab's own name",
 		      ShortenWindowTitle(L"Path of Building", fb) == fb);
 		check("T3 an unreadable caption says nothing, so the tab keeps its label",
