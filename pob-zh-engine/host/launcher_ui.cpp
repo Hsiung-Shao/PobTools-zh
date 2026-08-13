@@ -8,6 +8,7 @@
 #include "changelog.h"
 #include "pob_launch.h"
 #include "window_dock.h"
+#include "window_manager.h"   // DockTabLabel
 // Tools that draw inside this window rather than in one of their own.
 #include "atlas_planner.h"
 #include "filter_editor.h"
@@ -944,6 +945,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	panelHost.hostHwnd = glfwGetWin32Window(win);
 	panelHost.embedded = true;
 
+	// A panel that could not load its data, waiting for a safe moment to say so.
+	std::string panelInitError;
+
 	// Open a tool as a tab, or bring the one already open to the front. One
 	// instance each -- two translation editors would be writing the same files, and
 	// the tools keep enough state (a whole passive tree, the scarab icon cache) that
@@ -958,7 +962,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		panelHost.game = cfg.game;
 		panelHost.locale = cfg.locale;
-		if (!fresh->Init(panelHost)) return;
+		if (!fresh->Init(panelHost)) {
+			// Held for the deferred section rather than shown here: this runs in the
+			// middle of a frame. See IToolPanel::InitError.
+			panelInitError = fresh->InitError();
+			return;
+		}
 		EmbeddedPanel ep;
 		ep.panel = std::move(fresh);
 		ep.label = label;
@@ -967,6 +976,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	};
 
 	bool closingTabs = false;      // tabbed mode: shutting down, closing tabs in turn
+	bool closingPanels = false;    // ... and the embedded ones, which answer over frames
 	unsigned long closingPid = 0;  // the tab already asked to close, so it is asked once
 	double closeAskedAt = 0.0;     // when, so a cancelled save prompt can be detected
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
@@ -988,20 +998,34 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		//
 		// Cancelled by any one of them abandons the whole close, which matches how
 		// the docked sequence treats "the user said no".
+		//
+		// Held in a flag for the same reason `closingTabs` is: the close request is
+		// a ONE-SHOT signal, and clearing it below makes the condition false on the
+		// very next frame. Asking straight off the signal meant a panel that put up
+		// a prompt got its answer, closed its own tab -- and the window it was asked
+		// on behalf of stayed open, because by then nothing remembered why.
 		if (glfwWindowShouldClose(win) && !panels.empty()) {
+			closingPanels = true;
+			glfwSetWindowShouldClose(win, GLFW_FALSE);
+		}
+		if (closingPanels) {
 			bool waiting = false, cancelled = false;
 			for (EmbeddedPanel& ep : panels) {
 				const ToolCloseState cs = ep.panel->RequestClose();
 				if (cs == ToolCloseState::Asking) waiting = true;
 				else if (cs == ToolCloseState::Cancelled) cancelled = true;
 			}
-			if (waiting || cancelled) glfwSetWindowShouldClose(win, GLFW_FALSE);
-			// Somebody said no, so nothing closes -- including the panels that had
-			// already agreed. Without taking their agreement back, the reap below
-			// would find them Closed and remove them, and cancelling one save prompt
-			// would silently take the user's other tabs with it.
-			if (cancelled)
+			if (cancelled) {
+				// Somebody said no, so nothing closes -- including the panels that
+				// had already agreed. Without taking their agreement back, the reap
+				// below would find them Closed and remove them, and cancelling one
+				// save prompt would silently take the user's other tabs with it.
 				for (EmbeddedPanel& ep : panels) ep.panel->AbortClose();
+				closingPanels = false;
+			} else if (!waiting) {
+				closingPanels = false;
+				glfwSetWindowShouldClose(win, GLFW_TRUE);
+			}
 		}
 		if (tabbed && glfwWindowShouldClose(win) && !dock.Empty()) {
 			closingTabs = true;
@@ -1562,7 +1586,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// own strings. Said out loud rather than left as a mystery: it depends on
 			// the driver's texture limit and the display scaling, so the user has no
 			// way to guess why some characters are missing and others are not.
-			if (!fonts.dropped.empty()) {
+			// Only when CHINESE was the thing that had to go. Korean is dropped
+			// first and no shipped language needs it, so warning about it told the
+			// user their Chinese was broken when it was complete.
+			if (fonts.dropped == "cjk") {
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
 				ImGui::TextColored(ImVec4(0.95f, 0.66f, 0.25f, 1.0f), "%s", S.fontAtlasTrimmed);
 				ImGui::PopTextWrapPos();
@@ -1870,9 +1897,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (tabbed && tabsOk) {
 			const std::vector<WindowDock::Tab>& dtabs = dock.Tabs();
 			for (size_t i = 0; i < dtabs.size(); i++) {
-				// The label alone is not unique -- two PoE1 tabs are ordinary --
-				// so the id comes from the index after "##".
-				std::string label = to_utf8(dtabs[i].label) + "##dock" + std::to_string(i);
+				// The label alone is not unique -- two PoE1 tabs are ordinary -- and
+				// it now follows POB's caption, so it must not be part of the id at
+				// all. See WindowMgr::DockTabLabel.
+				std::string label = WindowMgr::DockTabLabel(to_utf8(dtabs[i].label), dtabs[i].pid);
 				bool open = true;
 				// Newly started windows bring themselves to the front, the same as an
 				// embedded panel does. Without it the tool appeared, was hidden again
@@ -1902,6 +1930,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			const int shown = (closingTabs && !dock.Empty())
 			                ? (int)dock.Tabs().size() - 1 : activeDockTab;
 			dock.Update(stripH, shown);
+		}
+
+		// A tool that refused to open. Here for the same reason a panel's dialogs
+		// are: the frame is over and the docked windows have been dealt with.
+		if (!panelInitError.empty()) {
+			const std::wstring why = from_utf8(panelInitError);
+			panelInitError.clear();
+			MessageBoxW(glfwGetWin32Window(win), why.c_str(), L"PobTools", MB_ICONERROR | MB_OK);
 		}
 
 		// Embedded panels: deferred work, then reap the ones that are done.
@@ -1938,6 +1974,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ep.forceSelect = ImGuiTabItemFlags_SetSelected;
 				i++;
 			} else if (cs == ToolCloseState::Closed) {
+				// Not while the others are still being asked. A panel that has agreed
+				// must stay reversible until every panel has answered, or cancelling
+				// one prompt takes the tabs that already said yes down with it --
+				// which is precisely what AbortClose exists to prevent, and reaping
+				// here would defeat it.
+				if (closingPanels) { i++; continue; }
 				// While the GL context is still current: panels may hold textures.
 				ep.panel->Shutdown();
 				panels.erase(panels.begin() + (ptrdiff_t)i);

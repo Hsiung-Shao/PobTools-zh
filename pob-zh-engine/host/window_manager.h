@@ -110,6 +110,20 @@ std::wstring WindowTitle(void* hwnd);
 // half second for a window it cannot read.
 std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring& fallback);
 
+// The tab strip's label for a docked window: what it says, plus what ImGui is to
+// identify it BY.
+//
+// The separator has to be "###", not "##". Both hide what follows, but only
+// "###" resets the hash -- with "##" the visible text is still part of the id
+// (dep/imgui/imgui.cpp, ImHashStr). Since the label now follows POB's caption,
+// "##" meant the tab's identity changed the moment the user renamed a build or
+// opened another one: ImGui saw the old tab vanish and a different one appear,
+// nothing was selected, and Dock::Update hid the very window they were using.
+//
+// The pid rather than the tab index, so closing an earlier tab does not hand its
+// widget state to whichever tab shuffles into its place.
+std::string DockTabLabel(const std::string& utf8Label, unsigned long pid);
+
 // Headless checks for the geometry half; report at <exeDir>PobTools\, 0 = pass.
 int RunWindowLayoutSelfTest(const std::wstring& exeDir);
 

@@ -72,6 +72,14 @@ public:
 	// the host shows a message instead of the panel rather than an empty tab.
 	virtual bool Init(const ToolPanelHost& host) = 0;
 
+	// Why Init() said no, in the user's language; empty for "no comment".
+	//
+	// Reported rather than shown, because Init runs INSIDE a frame in the
+	// launcher, and a modal message box there stops the loop that keeps the
+	// docked POB windows glued to the client area -- the same reason panels defer
+	// their file dialogs. The host puts it up at a moment when that is safe.
+	virtual const char* InitError() const { return ""; }
+
 	// Exactly one frame of content, inside the window the host has already begun.
 	//
 	// The contract, all of which the launcher's tab body satisfies naturally:

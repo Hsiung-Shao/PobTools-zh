@@ -650,7 +650,14 @@ public:
 			if (panelW < 0.0f)
 				panelW = uiState.panelW > 0.0f ? uiState.panelW * scale
 				                               : std::clamp(dispW * 0.35f, 380.0f * scale, 700.0f * scale);
-			panelW = std::clamp(panelW, 320.0f * scale, dispW * 0.6f);
+			// The upper bound can fall BELOW the lower one in a narrow window, and
+			// std::clamp with lo > hi is undefined -- not merely odd. Reachable since
+			// dispW became this panel's width rather than the whole screen's: neither
+			// the launcher nor the standalone window has a minimum size, so anything
+			// under about 533px of content gets there.
+			const float panelMin = 320.0f * scale;
+			const float panelMax = (std::max)(panelMin, dispW * 0.6f);
+			panelW = std::clamp(panelW, panelMin, panelMax);
 			const float splitW = 8.0f * scale;
 			ImGui::BeginChild("##treewrap", ImVec2(-(panelW + splitW), 0), false,
 				ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -669,7 +676,7 @@ public:
 					IM_COL32(99, 102, 241, ImGui::IsItemActive() ? 220 : 120), 2.0f);
 			}
 			if (ImGui::IsItemActive())
-				panelW = std::clamp(panelW - io.MouseDelta.x, 320.0f * scale, dispW * 0.6f);
+				panelW = std::clamp(panelW - io.MouseDelta.x, panelMin, panelMax);
 			if (ImGui::IsItemDeactivated()) { // write once on release, not per drag frame
 				uiState.panelW = panelW / scale;
 				uiState.Save(exeDir);

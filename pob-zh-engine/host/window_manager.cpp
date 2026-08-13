@@ -4,6 +4,13 @@
 #define NOMINMAX // windows.h defines min/max as macros and eats std::max at the call site
 #include <windows.h>
 
+// For ImHashStr only: the tab-id check below has to hash the way ImGui does
+// rather than by looking at the string, or it would be testing my reading of
+// ImGui instead of ImGui. No context is created and nothing is drawn.
+#define IMGUI_DEFINE_MATH_OPERATORS
+#include <imgui.h>
+#include <imgui_internal.h>
+
 #include <cstdio>
 #include <cwchar>
 #include <string>
@@ -83,6 +90,11 @@ std::wstring WindowTitle(void* hwnd)
 	int got = GetWindowTextW(h, &out[0], len + 1);
 	out.resize((size_t)(got > 0 ? got : 0));
 	return out;
+}
+
+std::string DockTabLabel(const std::string& utf8Label, unsigned long pid)
+{
+	return utf8Label + "###dock" + std::to_string(pid);
 }
 
 std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring& fallback)
@@ -291,11 +303,25 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      ShortenWindowTitle(L"Path of Building", fb) == fb,
 		      "the one case where the caption really does mean 'nothing loaded'");
 	}
+	{
+		// Now that the label follows POB's caption, the tab's ID must not. Hashed
+		// with ImGui's own function, because the whole trap is that "##" looks like
+		// it hides the label from the id and does not -- only "###" does.
+		const ImGuiID a = ImHashStr(DockTabLabel("Frostblades Raider (Ranger)", 4242).c_str());
+		const ImGuiID b = ImHashStr(DockTabLabel("Boneshatter Jugg (Marauder)", 4242).c_str());
+		check("T9 renaming the build does not give the tab a new identity", a == b,
+		      "or ImGui destroys the tab, selects nothing, and the dock hides the window");
+		const ImGuiID c = ImHashStr(DockTabLabel("Frostblades Raider (Ranger)", 4243).c_str());
+		check("T10 ... while two windows are still two tabs", a != c);
+		check("T11 the visible half is still the label",
+		      DockTabLabel("PoE1", 7).rfind("PoE1###", 0) == 0,
+		      DockTabLabel("PoE1", 7));
+	}
 
 	// Snapshot first: `checks` is incremented by the call below, so reading it
 	// inside the condition would count a check that has not happened yet.
 	const int ran = checks;
-	check("D7 the suite actually ran", ran >= 29, std::to_string(ran) + " checks");
+	check("D7 the suite actually ran", ran >= 32, std::to_string(ran) + " checks");
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

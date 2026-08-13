@@ -617,8 +617,9 @@ public:
 		// Data first: a clear message beats an empty window.
 		ds = std::make_shared<TJDataset>();
 		if (!ds->Load(exeDir + L"Data\\timeless_jewels.json", &derr)) {
-			MessageBoxW(nullptr, L"無法載入 timeless_jewels.json（資料檔遺失）。", L"PobTools",
-			            MB_ICONERROR | MB_OK);
+			// Reported, not shown: this runs inside the launcher's frame. See
+			// IToolPanel::InitError.
+			initErr_ = u8"無法載入 timeless_jewels.json（資料檔遺失）。";
 			return false;
 		}
 
@@ -1692,6 +1693,7 @@ public:
 
 	PobUi::Density Density() const override { return PobUi::Density::Compact; }
 	const char* PanelId() const override { return "tj"; }
+	const char* InitError() const override { return initErr_.c_str(); }
 
 private:
 	// The search criterion, rebuilt from the current rows wherever the UI needs to
@@ -1768,6 +1770,7 @@ private:
 	}
 
 	const ToolPanelHost* host_ = nullptr;
+	std::string initErr_;
 	ToolCloseState close_ = ToolCloseState::Open;
 	bool shutdown_ = false;
 

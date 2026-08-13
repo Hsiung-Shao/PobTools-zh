@@ -140,6 +140,14 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	int rc = 0;
 	if (!panel.Init(host)) {
 		rc = 1;
+		// Safe here -- there is no frame in flight yet. The launcher cannot do this
+		// at the same point; see IToolPanel::InitError.
+		if (const char* why = panel.InitError(); why && *why) {
+			const int n = MultiByteToWideChar(CP_UTF8, 0, why, -1, nullptr, 0);
+			std::wstring w((size_t)(n > 0 ? n - 1 : 0), L'\0');
+			if (n > 0) MultiByteToWideChar(CP_UTF8, 0, why, -1, &w[0], n);
+			MessageBoxW(nullptr, w.c_str(), L"PobTools", MB_ICONERROR | MB_OK);
+		}
 	} else {
 		bool running = true;
 		while (running) {
