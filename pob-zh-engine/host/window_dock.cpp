@@ -21,8 +21,10 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <atomic>
 #include <cstdarg>
 #include <cstdio>
+#include <thread>
 #include <share.h>   // _SH_DENYWR, so the log can be read while it is being written
 #include <string>
 
@@ -225,7 +227,7 @@ void Dock::Adopt(Tab& t)
 	t.docked = true;
 }
 
-void Dock::Position(Tab& t, bool force, bool sync)
+void Dock::Position(Tab& t, bool force)
 {
 	HWND w = (HWND)t.hwnd;
 	if (!w || !IsWindow(w)) return;
@@ -259,14 +261,12 @@ void Dock::Position(Tab& t, bool force, bool sync)
 	// relationship: the input queues stay separate, which is the documented
 	// precondition for this flag to post instead of send.
 	//
-	// While the user is dragging, though, "posted" means the docked window
-	// visibly lags behind and only catches up when the drag stops. Dragging is
-	// the one moment the user is watching the two windows move together, so that
-	// path asks for it synchronously -- safe here for the same reason the flag
-	// works at all (no attached input queues), and a window being dragged is not
-	// a window that is busy recalculating.
+	// ALWAYS, with no synchronous variant on offer. There was one, for the drag
+	// path, and it is what let a busy POB freeze the container mid-drag. S18/S19
+	// measure the difference: 516ms versus 0ms against a window that is not
+	// pumping. Nothing this loop does is worth waiting on another process for.
 	SetWindowPos(w, HWND_TOP, want.x, want.y, want.w, want.h,
-	             SWP_NOACTIVATE | (sync ? 0u : (UINT)SWP_ASYNCWINDOWPOS));
+	             SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 	vlog("dock: positioned %p to %d,%d %dx%d", (void*)w, want.x, want.y, want.w, want.h);
 }
 
@@ -444,9 +444,31 @@ void Dock::OnHostMoved()
 	if (active_ < 0 || active_ >= (int)tabs_.size()) return;
 	Tab& t = tabs_[(size_t)active_];
 	if (!t.hwnd || !t.docked) return;
-	// Synchronous: this fires from inside Windows' modal drag loop, and a posted
-	// move visibly trails the container until the drag ends.
-	Position(t, false, /*sync=*/true);
+	// Asynchronous, and throttled. Windows runs a modal loop for the whole of a
+	// drag, so glfwPollEvents never returns and this callback is the only thing
+	// keeping the docked window with the container.
+	//
+	// It used to ask synchronously, to stop the docked window trailing. That
+	// bought smoothness with the wrong currency: a cross-queue SetWindowPos
+	// without SWP_ASYNCWINDOWPOS SENDS, and a window whose owner is not pumping
+	// cannot answer. Measured by S18/S19: 516ms against a 500ms stall, versus 0ms
+	// posted. POB recalculating a build is exactly that window, so the wait landed
+	// on the container -- on the thing under the user's mouse. A follower that
+	// lags is a far smaller problem than a drag that judders.
+	//
+	// The throttle is what makes the posted version behave. A drag produces many
+	// more moves than any window can repaint, and posting every one of them leaves
+	// the other process a backlog of stale positions to grind through after the
+	// drag has already finished. Whatever gets dropped is corrected by the first
+	// Update after the modal loop ends, which is the same code that puts the
+	// window back after a minimise.
+	const unsigned long long now = GetTickCount64();
+	if (now - lastDragPos_ >= 16) {
+		lastDragPos_ = now;
+		Position(t, false);
+	}
+	// Not throttled: it re-orders OUR window, so it costs nothing and never waits
+	// on anybody.
 	FixZOrder(t);
 }
 
@@ -685,6 +707,28 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 					          std::to_string(want.y) + " " + std::to_string(want.w) + "x" +
 					          std::to_string(want.h));
 				}
+				// Moving the container still drags the docked window along. The
+				// move callback is throttled now, so a single move can be dropped
+				// -- Update is what has to make that invisible, and this is the
+				// check that says it does.
+				{
+					RECT hr{};
+					GetWindowRect(hh, &hr);
+					SetWindowPos(hh, nullptr, hr.left + 40, hr.top + 30, 0, 0,
+					             SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+					pump(30);
+					RECT hc{};
+					GetClientRect(hh, &hc);
+					POINT o{ 0, 0 };
+					ClientToScreen(hh, &o);
+					const WindowMgr::WinRect want = WindowMgr::ComputeDockRect(
+						o.x, o.y, hc.right - hc.left, hc.bottom - hc.top, 0);
+					const RECT got = rectOf(th);
+					check("S20 moving the container brings the docked window with it",
+					      got.left == want.x && got.top == want.y,
+					      rectStr(got) + " want " + std::to_string(want.x) + "," +
+					          std::to_string(want.y));
+				}
 				g_selfTestDock = nullptr;
 
 				dock.RestoreAll();
@@ -697,6 +741,72 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 				      hexs(back));
 				check("S8 ... with its caption", (back & WS_CAPTION) != 0, hexs(back));
 			}
+
+			// ---- what a synchronous cross-queue move actually costs ----------
+			//
+			// The drag path used to ask for the docked window's move
+			// SYNCHRONOUSLY, on the grounds that a posted move visibly trails the
+			// container. What that traded away was never measured: a window whose
+			// owner is not pumping cannot answer, and the caller waits. POB
+			// recalculating a build is exactly such a window, and the wait lands
+			// on the container -- the one thing the user is physically dragging.
+			//
+			// The target lives on its own thread so the two have separate message
+			// queues. That is the same condition that holds across processes, and
+			// the documented precondition for SWP_ASYNCWINDOWPOS to post rather
+			// than send.
+			{
+				const DWORD kStallMs = 500;
+				std::atomic<bool> ready{ false }, stall{ false }, done{ false };
+				HWND sw = nullptr;
+				std::thread worker([&] {
+					WNDCLASSW wc{};
+					wc.lpfnWndProc = DefWindowProcW;
+					wc.hInstance = GetModuleHandleW(nullptr);
+					wc.lpszClassName = L"PobToolsStallTarget";
+					RegisterClassW(&wc);
+					sw = CreateWindowExW(0, L"PobToolsStallTarget", L"stall",
+					                     WS_OVERLAPPEDWINDOW, 0, 0, 200, 150,
+					                     nullptr, nullptr, wc.hInstance, nullptr);
+					ready = true;   // publishes sw to the waiting thread
+					while (!done) {
+						if (stall) { Sleep(kStallMs); stall = false; continue; }
+						MSG m;
+						while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
+							TranslateMessage(&m);
+							DispatchMessageW(&m);
+						}
+						Sleep(1);
+					}
+					if (sw) DestroyWindow(sw);   // must be the owning thread
+				});
+				for (int i = 0; i < 400 && !ready; i++) Sleep(5);
+
+				if (!sw) {
+					check("S18 the stall target was created", false, "CreateWindowExW failed");
+				} else {
+					auto timeMove = [&](UINT extra, int xy) {
+						stall = true;
+						Sleep(30);   // let the worker actually enter its stall
+						const ULONGLONG t0 = GetTickCount64();
+						SetWindowPos(sw, nullptr, xy, xy, 0, 0,
+						             SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | extra);
+						const long long ms = (long long)(GetTickCount64() - t0);
+						while (stall) Sleep(5);
+						return ms;
+					};
+					const long long syncMs = timeMove(0, 10);
+					const long long asyncMs = timeMove(SWP_ASYNCWINDOWPOS, 20);
+					check("S18 a synchronous move waits on a window that is not pumping",
+					      syncMs >= (long long)kStallMs / 2,
+					      std::to_string(syncMs) + " ms of a " + std::to_string(kStallMs) +
+					          " ms stall");
+					check("S19 ... and an asynchronous one does not",
+					      asyncMs < 60, std::to_string(asyncMs) + " ms");
+				}
+				done = true;
+				worker.join();
+			}
 		}
 		if (target) glfwDestroyWindow(target);
 		if (host) glfwDestroyWindow(host);
@@ -704,7 +814,7 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 	}
 
 	const int ran = checks;
-	check("S9 the suite actually ran", ran >= 19, std::to_string(ran) + " checks");
+	check("S9 the suite actually ran", ran >= 22, std::to_string(ran) + " checks");
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

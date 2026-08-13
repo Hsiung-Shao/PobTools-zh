@@ -95,7 +95,9 @@ public:
 
 private:
 	void Adopt(Tab& t);
-	void Position(Tab& t, bool force, bool sync = false);
+	// Always asynchronous. There is deliberately no synchronous option: see
+	// OnHostMoved, and S18/S19 in the style selftest.
+	void Position(Tab& t, bool force);
 	void FixZOrder(Tab& t);
 
 	// What the window looked like before the dock touched it. `captured` exists
@@ -114,6 +116,9 @@ private:
 	int               active_ = -1;
 	bool              droppedOwnButton_ = false;
 	unsigned long long lastFind_ = 0, lastKeep_ = 0, lastSwitch_ = 0, lastTitle_ = 0;
+	// Rate limit for the move callback. A drag fires it far more often than any
+	// window can repaint, and every one of those is a cross-process request.
+	unsigned long long lastDragPos_ = 0;
 	// Last logged container minimise state. The log is the only record of what
 	// happened during a minimise, and it has to be written on the EDGE -- a
 	// per-frame line at vsync would bury the one transition that matters.
