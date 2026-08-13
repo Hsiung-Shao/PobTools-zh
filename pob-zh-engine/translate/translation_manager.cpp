@@ -2224,6 +2224,35 @@ static std::string strip_suffix(const std::string &line, std::string &suffix) {
             return line.substr(0, line.size() - padded.size());
         }
     }
+
+    /* "… — 無法使用的值" — advanced copy's marker for a roll that cannot scale
+     * (a Vestigial implicit's fixed value). Unlike the (implicit)-style suffixes
+     * above, this one is TRANSLATED on re-attachment, because POB parses the
+     * English marker itself: Item.lua:1059 strips " - Unscalable Value" and sets
+     * modLine.unscalable. ASCII hyphen on purpose — sanitiseText folds every
+     * dash variant to '-' before that match runs, so the em-dash form would work
+     * too, but only by accident of that folding. The em-dash is required on the
+     * Chinese side: it is what marks the words as GGG's marker rather than prose
+     * that merely ends with the same characters. */
+    {
+        static const char kUnscalableZh[] =
+            "\xe7\x84\xa1\xe6\xb3\x95\xe4\xbd\xbf\xe7\x94\xa8\xe7\x9a\x84\xe5\x80\xbc"; /* 無法使用的值 */
+        static const char kEmDash[] = "\xe2\x80\x94";                                   /* — U+2014 */
+        const size_t ulen = sizeof(kUnscalableZh) - 1;
+        if (line.size() > ulen &&
+            line.compare(line.size() - ulen, ulen, kUnscalableZh) == 0) {
+            size_t p = line.size() - ulen;
+            while (p > 0 && line[p - 1] == ' ') p--;
+            if (p >= 3 && line.compare(p - 3, 3, kEmDash) == 0) {
+                p -= 3;
+                while (p > 0 && line[p - 1] == ' ') p--;
+                if (p > 0) {
+                    suffix = " - Unscalable Value";
+                    return line.substr(0, p);
+                }
+            }
+        }
+    }
     return line;
 }
 
@@ -2787,6 +2816,26 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
 
                 const std::string &en = is_enchant ? p.english_enchant : p.english;
                 return REV("composite", en + inner_en + suffix);
+            }
+        }
+    }
+
+    /* 3d. "殘存 <基底名>" — a Vestigial item's base-type line. GGG composes it
+     * from the "Vestigial {0}" clientstring, so the composed form exists in no
+     * dictionary and the exact lookup below can never see it. Translate the
+     * base name and put the English prefix back; POB strips "^Vestigial "
+     * itself when resolving the base (Item.lua:973). Guarded by "the remainder
+     * is a whole dictionary key", so a modifier that merely starts with 殘存
+     * cannot be rewritten. */
+    {
+        static const char kVestigialZh[] = "\xe6\xae\x98\xe5\xad\x98 "; /* 殘存 + space */
+        const size_t vlen = sizeof(kVestigialZh) - 1;
+        if (core.size() > vlen && core.compare(0, vlen, kVestigialZh) == 0) {
+            const std::string rest = core.substr(vlen);
+            auto vit = s_reverse.find(rest);
+            if (vit != s_reverse.end()) {
+                rev_note(rest, s_reverse_origin.count(rest) ? s_reverse_origin[rest] : "?");
+                return REV("vestigial-base", "Vestigial " + vit->second + suffix);
             }
         }
     }

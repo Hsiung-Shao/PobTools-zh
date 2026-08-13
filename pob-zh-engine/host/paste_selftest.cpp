@@ -153,7 +153,7 @@ void check_kinds(const char* name, const char* zh, const char* spec)
 	bool ok = got == expect;
 	(ok ? g_pass : g_fail)++;
 	printf("  %s  %s: section labels\n", ok ? "[PASS]" : "[FAIL]", name);
-	if (!ok) printf("           got:    %s\n           expect: %s\n", got.c_str(), expect);
+	if (!ok) printf("           got:    %s\n           expect: %s\n", got.c_str(), expect.c_str());
 }
 
 void check_eq(const char* zh, const char* expect, const char* what)
@@ -274,6 +274,28 @@ const char* kMelding =
 "然後升到了生命的天空。 我的家人仍然在我身邊尖叫。\"\n--------\n"
 "放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。\n";
 
+// Vestigial Sin Trek, 3.29: the base-type line carries the "殘存 " (Vestigial)
+// prefix GGG composes from the "Vestigial {0}" template, and two modifiers
+// carry the " — 無法使用的值" (Unscalable Value) marker. All three lines used
+// to come out of the paste as '?' runs -- the two rules they pin down did not
+// exist. The reminder line after the vestigial implicit and the flavour line
+// were already handled; they are here so the whole reported item stays green.
+const char* kVestigialBoots =
+"物品種類: 鞋子\n稀有度: 傳奇\n敏銳思維\n殘存 匿蹤短靴\n--------\n"
+"閃避值: 441 (augmented)\n能量護盾: 108 (augmented)\n--------\n"
+"需求:\n等級: 62\n敏捷: 117\n--------\n插槽: W-W-W \n--------\n"
+"物品等級: 85\n--------\n"
+"{ 殘存固定詞綴— 元素,火焰,冰冷,閃電,異常狀態 }\n"
+"被榮耀瘋癲影響時，免疫元素異常狀態 — 無法使用的值\n"
+"（元素異常狀態包含點燃、焦灼、冰緩、冰凍、易碎、感電和殘喘）\n--------\n"
+"{ 傳奇詞綴— 防禦,閃避 }\n增加 95(80-100)% 閃避值\n"
+"{ 傳奇詞綴— 防禦,能量護盾 }\n+108(100-150) 最大能量護盾\n"
+"{ 傳奇詞綴— 能力 }\n+26(20-30) 敏捷\n"
+"{ 傳奇詞綴— 能力 }\n+23(20-30) 智慧\n"
+"{ 傳奇詞綴 }\n敵人不能偷取你的生命 — 無法使用的值\n"
+"{ 傳奇詞綴— 速度 }\n增加 30% 移動速度\n--------\n"
+"保持距離，以策安全。\n";
+
 // Lines that legitimately have no translation yet, keyed by the fixture they
 // belong to. Asserted exactly so a gap can neither appear nor vanish unnoticed.
 //
@@ -325,6 +347,7 @@ int RunPasteSelftest()
 	check_item("cluster jewel", kCluster, 0);
 	check_item("large cluster jewel", kLargeCluster, 0);
 	check_item("Melding of the Flesh", kMelding, 0);
+	check_item("vestigial boots", kVestigialBoots, 0);
 
 	printf("\n-- section grammar: every line's label, on every fixture --\n");
 	// Section COUNT and ORDER differ across these eight (6 to 8 sections; sockets,
@@ -352,6 +375,9 @@ int RunPasteSelftest()
 	            "sep mods*8 sep desc");
 	check_kinds("Melding of the Flesh", kMelding,
 	            "header*4 sep property sep property sep mods*7 sep flavour*3 sep desc");
+	check_kinds("vestigial boots", kVestigialBoots,
+	            "header*4 sep property*2 sep property*3 sep property sep property "
+	            "sep mods*3 sep mods*12 sep flavour");
 
 	printf("\n-- advanced-copy annotations rebuilt into POB's flag form --\n");
 	check_eq("{ 固定詞綴 }", "{ Implicit Modifier }", "implicit");
@@ -528,6 +554,38 @@ int RunPasteSelftest()
 	// The positive form must keep working: the range still has to be one token.
 	check_eq("+71(70-84) 最大生命", "+71(70-84) to maximum Life",
 	         "positive roll range unaffected");
+
+	printf("\n-- Vestigial items: composed base line, Unscalable marker --\n");
+	// The base line is composed from GGG's "Vestigial {0}" template, so the
+	// composed form is in no dictionary; the rule translates the base and puts
+	// the English prefix back. POB strips "^Vestigial " itself (Item.lua:973).
+	check_eq("殘存 匿蹤短靴", "Vestigial Stealth Boots",
+	         "Vestigial base-type line composed from its base name");
+	// POB parses the ASCII marker itself and sets modLine.unscalable
+	// (Item.lua:1059), so the marker is translated, never dropped.
+	check_eq("敵人不能偷取你的生命 — 無法使用的值",
+	         "Enemies Cannot Leech Life From you - Unscalable Value",
+	         "Unscalable marker re-attached through the exact rule");
+	check_eq("被榮耀瘋癲影響時，免疫元素異常狀態 — 無法使用的值",
+	         "Immune to Elemental Ailments while affected by Glorious Madness - Unscalable Value",
+	         "the vestigial implicit itself");
+	check_eq("增加 30% 移動速度 — 無法使用的值",
+	         "30% increased Movement Speed - Unscalable Value",
+	         "Unscalable marker re-attached through the pattern rule");
+	// Probed inside a rare item: on a unique the flavour fallback would drop an
+	// untouched line and hide what these two guards exist to see.
+	{
+		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n"
+		                    "敵人不能偷取你的生命 無法使用的值\n");
+		check(s.find("\xe6\x95\xb5\xe4\xba\xba") != std::string::npos /* 敵人 */,
+		      "the marker words without the em-dash are prose, not stripped");
+	}
+	{
+		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n"
+		                    "殘存 這不是任何基底\n");
+		check(s.find("\xe6\xae\x98\xe5\xad\x98") != std::string::npos /* 殘存 */,
+		      "殘存 before a non-name is not rewritten");
+	}
 
 	printf("\n-- flavour text: dropped only when its whole section is untranslated --\n");
 	{
