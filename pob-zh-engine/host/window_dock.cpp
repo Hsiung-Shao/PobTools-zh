@@ -229,6 +229,19 @@ void Dock::Position(Tab& t, bool force, bool sync)
 {
 	HWND w = (HWND)t.hwnd;
 	if (!w || !IsWindow(w)) return;
+	// A minimised container has no client area: Windows reports it as 0x0 at
+	// (-32000,-32000), and positioning against that throws the docked window into
+	// the corner at 2x2. The move and size callbacks reach here during the
+	// minimise itself -- WM_MOVE and WM_SIZE are how a minimise is delivered --
+	// which is BEFORE Update gets to hide anything, so the window is still on
+	// screen when it happens.
+	//
+	// Worse than the flicker: the drag path asks for it synchronously, and a
+	// synchronous SetWindowPos across processes blocks until the other side pumps
+	// its queue. POB mid-recalculation is exactly when it will not, so minimising
+	// could stall this loop for as long as POB took -- which from the outside is a
+	// window that will not go down. Measured by S13.
+	if (IsIconic((HWND)host_)) return;
 	RECT rc{};
 	GetClientRect((HWND)host_, &rc);
 	POINT origin{ 0, 0 };
@@ -506,6 +519,12 @@ void Dock::RestoreAll()
 
 // ---- adoption / restoration against a real window ----------------------------
 
+namespace {
+// The suite installs the launcher's own move / size / focus callbacks, and GLFW
+// callbacks are plain function pointers with nowhere to put a capture.
+Dock* g_selfTestDock = nullptr;
+}
+
 int RunDockStyleSelfTest(const std::wstring& exeDir)
 {
 	std::string report;
@@ -580,6 +599,94 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 				check("S5 adoption clears the caption", (after & WS_CAPTION) == 0, hexs(after));
 				check("S6 adoption clears the sizing frame", (after & WS_THICKFRAME) == 0);
 
+				// ---- the minimise cycle ------------------------------------
+				//
+				// Nothing else reaches this. The pure rules (M1-M12) say what
+				// SHOULD happen when the container goes down; only running it
+				// says whether the window actually goes with it -- and a docked
+				// window left behind on the desktop is precisely what "the app
+				// will not minimise" looks like from the outside.
+				//
+				// The container's move / size / focus callbacks are wired up the
+				// way the launcher wires them, because minimising a window
+				// generates WM_MOVE and WM_SIZE, and what the dock does with
+				// those is part of what is under test.
+				g_selfTestDock = &dock;
+				glfwSetWindowPosCallback(host, [](GLFWwindow*, int, int) {
+					if (g_selfTestDock) g_selfTestDock->OnHostMoved();
+				});
+				glfwSetWindowSizeCallback(host, [](GLFWwindow*, int, int) {
+					if (g_selfTestDock) g_selfTestDock->OnHostMoved();
+				});
+				glfwSetWindowFocusCallback(host, [](GLFWwindow*, int focused) {
+					if (focused && g_selfTestDock) g_selfTestDock->OnHostFocused();
+				});
+
+				HWND hh = glfwGetWin32Window(host);
+				auto pump = [&](int frames) {
+					for (int i = 0; i < frames; i++) {
+						glfwPollEvents();
+						dock.Update(0, 0);
+						Sleep(16);
+					}
+				};
+				auto rectOf = [](HWND w) { RECT r{}; GetWindowRect(w, &r); return r; };
+				auto rectStr = [](const RECT& r) {
+					char b[64];
+					snprintf(b, sizeof(b), "%ld,%ld %ldx%ld", r.left, r.top,
+					         r.right - r.left, r.bottom - r.top);
+					return std::string(b);
+				};
+
+				// SW_SHOWNA: on screen without taking focus, so running the suite
+				// cannot land a phantom click in whatever the user is doing.
+				ShowWindow(hh, SW_SHOWNA);
+				pump(30);
+				check("S10 the docked window is on screen while the container is",
+				      !!IsWindowVisible(th));
+				const RECT beforeMin = rectOf(th);
+
+				ShowWindow(hh, SW_MINIMIZE);
+				pump(45);
+				check("S11 the container minimises", !!IsIconic(hh));
+				check("S12 ... and takes the docked window off screen with it",
+				      !IsWindowVisible(th),
+				      "left behind, this is what 'it will not minimise' looks like");
+				const RECT duringMin = rectOf(th);
+				// Minimising fires WM_MOVE (to -32000,-32000) and WM_SIZE (0x0), and
+				// the dock's move handler runs before Update gets to hide anything.
+				// A container with no client area has no meaningful place to put a
+				// window, so nothing may be positioned against it.
+				check("S13 ... without dragging it to the minimised container's rect",
+				      duringMin.left == beforeMin.left && duringMin.top == beforeMin.top &&
+				      duringMin.right == beforeMin.right && duringMin.bottom == beforeMin.bottom,
+				      rectStr(beforeMin) + " -> " + rectStr(duringMin));
+
+				pump(45);
+				check("S14 the container stays down (nothing springs it back)",
+				      !!IsIconic(hh));
+
+				ShowWindow(hh, SW_RESTORE);
+				pump(60);
+				check("S15 the container comes back", !IsIconic(hh));
+				check("S16 ... and so does the docked window", !!IsWindowVisible(th));
+				{
+					RECT hc{};
+					GetClientRect(hh, &hc);
+					POINT o{ 0, 0 };
+					ClientToScreen(hh, &o);
+					const WindowMgr::WinRect want = WindowMgr::ComputeDockRect(
+						o.x, o.y, hc.right - hc.left, hc.bottom - hc.top, 0);
+					const RECT got = rectOf(th);
+					check("S17 ... back over the container, not wherever it was left",
+					      got.left == want.x && got.top == want.y &&
+					      got.right - got.left == want.w && got.bottom - got.top == want.h,
+					      rectStr(got) + " want " + std::to_string(want.x) + "," +
+					          std::to_string(want.y) + " " + std::to_string(want.w) + "x" +
+					          std::to_string(want.h));
+				}
+				g_selfTestDock = nullptr;
+
 				dock.RestoreAll();
 				for (int i = 0; i < 40 && !IsZoomed(th); i++) { glfwPollEvents(); Sleep(25); }
 				const LONG_PTR back = GetWindowLongPtrW(th, GWL_STYLE);
@@ -597,7 +704,7 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 	}
 
 	const int ran = checks;
-	check("S9 the suite actually ran", ran >= 11, std::to_string(ran) + " checks");
+	check("S9 the suite actually ran", ran >= 19, std::to_string(ran) + " checks");
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
