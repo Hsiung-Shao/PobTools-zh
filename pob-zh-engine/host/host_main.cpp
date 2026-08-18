@@ -172,6 +172,10 @@ static void apply_locale_env(const std::wstring& dir)
 	// is a no-op when the variable was inherited, so this cannot override the
 	// launcher's choice.
 	ensure(L"POB_ZH_FONTFILE", L"Font", kDefaultFontFile);
+	// Same gap as the font file: the launcher passes this via SetEngineEnv, but
+	// the legacy CLI path never did, so a user who turned the switch OFF in the
+	// ini would still get letters/digits in the custom font ("absent" means on).
+	ensure(L"POB_ZH_FONT_ALL", L"FontApplyAll", L"1");
 
 	// The external dictionary folder deliberately does NOT go through `ensure`:
 	//  - it is a path, and that helper's fixed 128-wchar buffer truncates silently
