@@ -14,12 +14,15 @@
 #include <string>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <algorithm>
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_SYNTHESIS_H
 
 // =======
 // Classes
@@ -82,6 +85,12 @@ struct r_font_c::FtCache {
 	std::vector<FtAtlas> atlases;
 	// Key: (pixelSize << 21) | codepoint (supports up to 2M codepoints and heights up to 2048)
 	std::unordered_map<uint64_t, FtCachedGlyph> cache;
+	// Synthetic bold: the host ships ONE face per family, so the "Liberation
+	// Sans Bold" slot has to embolden that face or bold headers flatten out.
+	bool embolden = false;
+	// Codepoints this face has no glyph for (requireGlyph misses), so each one
+	// is asked of FreeType once, not every frame.
+	std::unordered_set<char32_t> missing;
 
 	bool Init(r_renderer_c* rend, const std::string& ttfPath) {
 		renderer = rend;
@@ -139,18 +148,40 @@ struct r_font_c::FtCache {
 		return atlases.back();
 	}
 
-	FtCachedGlyph* GetGlyph(char32_t cp, int pixelSize) {
+	// requireGlyph: return null when the face has NO glyph for cp instead of
+	// rendering .notdef. Only the ASCII-override path passes true — for it a
+	// miss falls back to the bitmap font, so a CJK-only TTF still shows Latin.
+	// The CJK path keeps the historical .notdef behaviour untouched.
+	FtCachedGlyph* GetGlyph(char32_t cp, int pixelSize, bool requireGlyph = false) {
 		if (!face) return nullptr;
+
+		if (requireGlyph && missing.count(cp)) return nullptr;
 
 		uint64_t key = ((uint64_t)pixelSize << 21) | (uint32_t)cp;
 		auto it = cache.find(key);
 		if (it != cache.end()) return &it->second;
 
+		if (requireGlyph && FT_Get_Char_Index(face, (FT_ULong)cp) == 0) {
+			missing.insert(cp);
+			return nullptr;
+		}
+
 		// Set pixel size
 		FT_Set_Pixel_Sizes(face, 0, pixelSize);
 
-		// Load and render glyph
-		if (FT_Load_Char(face, (FT_ULong)cp, FT_LOAD_RENDER)) {
+		// Load and render glyph. The embolden pass needs the outline, so it
+		// loads unrendered, thickens, then renders; the plain path stays on
+		// FT_LOAD_RENDER exactly as before.
+		if (embolden) {
+			if (FT_Load_Char(face, (FT_ULong)cp, FT_LOAD_DEFAULT)) {
+				return nullptr;
+			}
+			FT_GlyphSlot_Embolden(face->glyph);
+			if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP &&
+			    FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL)) {
+				return nullptr;
+			}
+		} else if (FT_Load_Char(face, (FT_ULong)cp, FT_LOAD_RENDER)) {
 			return nullptr;
 		}
 
@@ -336,6 +367,21 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 			ftCache.reset();
 		}
 	}
+
+	// POB_ZH_FONT_ALL: also draw ASCII from the selected TTF so Latin/digits
+	// and CJK share one typeface. "0" disables; absent/other enables (the host
+	// always writes it explicitly, absent only means a bare-engine run). The
+	// monospaced face is exempt — POB uses it exactly where fixed columns
+	// matter (console, protected edits, the raw-item editor). The Bold face
+	// gets synthetic emboldening, gated on the same switch so the default-off
+	// path renders byte-identically to before.
+	if (ftCache) {
+		char allBuf[8];
+		const char* all = translation_win_env("POB_ZH_FONT_ALL", allBuf, sizeof(allBuf));
+		const bool allEnabled = !(all && all[0] == '0' && all[1] == '\0');
+		ftForAll = allEnabled && strcmp(fontName, "Bitstream Vera Sans Mono") != 0;
+		ftCache->embolden = allEnabled && strstr(fontName, "Bold") != nullptr;
+	}
 }
 
 r_font_c::~r_font_c()
@@ -364,6 +410,17 @@ std::u32string BuildTofuString(char32_t cp) {
 }
 
 int const tofuSizeReduction = 3;
+
+float r_font_c::TabWidth(f_fontHeight_s* fh, float scale)
+{
+	if (ftForAll && ftCache) {
+		if (auto* sp = ftCache->GetGlyph(U' ', fh->height, /*requireGlyph=*/true)) {
+			return sp->advance * 4.0f * scale;
+		}
+	}
+	auto& glyph = fh->Glyph(' ');
+	return (glyph.width + glyph.spLeft + glyph.spRight) * 4.0f * scale;
+}
 
 int r_font_c::StringWidthInternal(f_fontHeight_s* fh, std::u32string_view str, int height, float scale)
 {
@@ -402,14 +459,21 @@ int r_font_c::StringWidthInternal(f_fontHeight_s* fh, std::u32string_view str, i
 			++idx;
 		}
 		else if (ch == U'\t') {
-			auto& glyph = fh->Glyph(' ');
-			int spWidth = glyph.width + glyph.spLeft + glyph.spRight;
-			width += spWidth * 4 * scale;
+			width += TabWidth(fh, scale);
 			width = std::ceil(width);
 			++idx;
 		}
 		else {
-			width += measureCodepoint(fh, ch) * scale;
+			// ASCII: same TTF as the CJK path when the override is on, so a
+			// mixed line measures with one set of metrics. A face without the
+			// glyph falls back to the bitmap font.
+			FtCachedGlyph* ftGlyph = (ftForAll && ftCache)
+			    ? ftCache->GetGlyph(ch, fh->height, /*requireGlyph=*/true) : nullptr;
+			if (ftGlyph) {
+				width += ftGlyph->advance * scale;
+			} else {
+				width += measureCodepoint(fh, ch) * scale;
+			}
 			width = std::ceil(width);
 			++idx;
 		}
@@ -483,8 +547,7 @@ size_t r_font_c::StringCursorInternal(f_fontHeight_s* fh, std::u32string_view st
 			++I;
 		}
 		else if (*I == U'\t') {
-			auto& glyph = fh->Glyph(' ');
-			float fullWidth = (glyph.width + glyph.spLeft + glyph.spRight) * 4.0f * scale;
+			float fullWidth = TabWidth(fh, scale);
 			float halfWidth = std::ceil(fullWidth / 2.0f);
 			x += halfWidth;
 			x = std::ceil(x);
@@ -499,7 +562,16 @@ size_t r_font_c::StringCursorInternal(f_fontHeight_s* fh, std::u32string_view st
 			++I;
 		}
 		else {
-			x += measureCodepoint(fh, *I) * scale;
+			// ASCII via the TTF when the override is on — the cursor must walk
+			// the same advances DrawTextLine paints with, or clicks land on the
+			// wrong character.
+			FtCachedGlyph* ftGlyph = (ftForAll && ftCache)
+			    ? ftCache->GetGlyph(*I, fh->height, /*requireGlyph=*/true) : nullptr;
+			if (ftGlyph) {
+				x += ftGlyph->advance * scale;
+			} else {
+				x += measureCodepoint(fh, *I) * scale;
+			}
 			x = std::ceil(x);
 			if (curX <= x) {
 				break;
@@ -698,9 +770,7 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 
 		// Handle tabs
 		if (ch == U'\t') {
-			auto& glyph = fh->Glyph(' ');
-			int spWidth = glyph.width + glyph.spLeft + glyph.spRight;
-			x+= (spWidth << 2) * scale;
+			x += TabWidth(fh, scale);
 			tail = tail.substr(1);
 			continue;
 		}
@@ -723,6 +793,18 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 			}
 			tail = tail.substr(1);
 			continue;
+		}
+
+		// ASCII through the TTF when the override is on — the same face the
+		// CJK path draws with, so a mixed line is one typeface. A face
+		// without the glyph falls back to the bitmap font below.
+		if (ftForAll && ftCache) {
+			auto* ftGlyph = ftCache->GetGlyph(ch, fh->height, /*requireGlyph=*/true);
+			if (ftGlyph) {
+				drawFtGlyph(ftGlyph, height, scale);
+				tail = tail.substr(1);
+				continue;
+			}
 		}
 
 		// Draw normal ASCII glyph

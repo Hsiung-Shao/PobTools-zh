@@ -47,6 +47,9 @@ struct LauncherConfig {
 	// meaning.
 	WindowMode     windowMode = WindowMode::Separate;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
+	// Also draw ASCII in the POB window from the selected font (engine env
+	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.
+	bool           fontApplyAll = true;
 	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
 	// Empty = built-in. Each one points at the folder that directly CONTAINS the
 	// <locale> sub-folders, i.e. exactly what you get by copying Data\poe1

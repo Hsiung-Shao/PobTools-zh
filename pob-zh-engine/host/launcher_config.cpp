@@ -207,6 +207,7 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	read_ini_str(iniPath, L"Font", kDefaultFontFile, fbuf, 128);
 	c.fontFile = fbuf;
 	if (c.fontFile.empty()) c.fontFile = kDefaultFontFile;
+	c.fontApplyAll = read_ini_int(iniPath, L"FontApplyAll", 1) != 0;
 
 	// Hex copy first (see hex_of_utf8): it is the codepage-proof spelling. A
 	// malformed one decodes to empty and we fall through to the raw key rather
@@ -244,6 +245,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 	WritePrivateProfileStringW(kSection, L"WindowMode",
 		std::to_wstring((int)cfg.windowMode).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"FontApplyAll",
+		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
 
 	for (int i = 0; i < kDictSlotCount; i++) {
 		const std::wstring key = kDataDirKeys[i];

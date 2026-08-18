@@ -888,7 +888,8 @@ int RunDockSpike(const std::wstring& exeDir, bool spawnPob, bool verbose)
 		const std::wstring l = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (l.empty()) return;
 		const std::wstring game = poe2 ? L"poe2" : L"poe1";
-		PobLaunch::SetEngineEnv(game, cfg.locale, cfg.fontFile, std::wstring());
+		PobLaunch::SetEngineEnv(game, cfg.locale, cfg.fontFile, std::wstring(),
+		                        cfg.fontApplyAll);
 		unsigned long pid = 0;
 		if (PobLaunch::SpawnPobDetached(l, game, &pid))
 			dock.Track(pid, poe2 ? L"PoE2" : L"PoE1");

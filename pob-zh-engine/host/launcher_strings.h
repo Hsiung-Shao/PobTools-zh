@@ -167,7 +167,12 @@
 	   偵測不到字典時要主動說出來,不能等使用者自己想通 */                                            \
 	X(noDictBanner,      u8"這份安裝沒有翻譯資料，POB 會顯示英文原文。主程式更新包不含字典，需要另外下載一次。", \
 	                     u8"This install has no translation data, so POB shows the original English. The program update pack does not carry the dictionaries; they are downloaded separately.") \
-	X(noDictDownload,    u8"立即下載翻譯資料",             u8"Download translation data now")
+	X(noDictDownload,    u8"立即下載翻譯資料",             u8"Download translation data now")           \
+	/* font: apply the selected TTF to ASCII in the POB window too (v0.22.0) */                      \
+	X(fontApplyAllChk,   u8"POB 視窗的英文與數字也用此字型",                                          \
+	                     u8"Use this font for letters & digits in POB too")                          \
+	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。", \
+	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

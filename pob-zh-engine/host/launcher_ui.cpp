@@ -858,7 +858,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		const int slot = poe2 ? (int)DictSlot::Poe2 : (int)DictSlot::Poe1;
 		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
 		                        dictDir[slot].status == DataDirStatus::External
-		                            ? dictDir[slot].root : std::wstring());
+		                            ? dictDir[slot].root : std::wstring(),
+		                        cfg.fontApplyAll);
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (lua.empty()) return;
 		unsigned long pid = 0;
@@ -1569,6 +1570,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
 				ImGui::TextDisabled("%s", fontMsg.c_str());
 				ImGui::PopTextWrapPos();
+			}
+			// Engine-side ASCII override (POB_ZH_FONT_ALL). Takes effect on the
+			// next POB launch — the engine reads the env when it spawns.
+			{
+				bool applyAll = cfg.fontApplyAll;
+				if (ImGui::Checkbox(S.fontApplyAllChk, &applyAll)) {
+					cfg.fontApplyAll = applyAll;
+					saveNow();
+				}
+				if (ImGui::IsItemHovered()) {
+					ImGui::SetTooltip("%s", S.fontApplyAllTip);
+				}
 			}
 			// Whether the CURRENT font can draw the CURRENT language. Says
 			// "launcher labels" rather than "everything": POB draws through

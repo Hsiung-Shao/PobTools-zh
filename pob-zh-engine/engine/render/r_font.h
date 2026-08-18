@@ -40,6 +40,11 @@ private:
 	};
 	FontHeightEntry FindFontHeight(int height);
 
+	// Tab = 4 spaces of the ACTIVE face: the TTF's space when ftForAll is on,
+	// the bitmap font's otherwise — tab stops must move with the same font the
+	// surrounding glyphs are drawn from or tabbed columns drift.
+	float TabWidth(f_fontHeight_s* fh, float scale);
+
 	class r_renderer_c* renderer = nullptr;
 	int		numFontHeight = 0;
 	struct f_fontHeight_s *fontHeights[32] = {};
@@ -49,4 +54,8 @@ private:
 	// FreeType CJK fallback
 	struct FtCache;
 	std::unique_ptr<FtCache> ftCache;
+	// POB_ZH_FONT_ALL: route ASCII (cp < numGlyph) through the selected TTF as
+	// well, so Latin/digits and CJK share one typeface. Never set for the
+	// monospaced face — console and raw-item editing need fixed columns.
+	bool ftForAll = false;
 };

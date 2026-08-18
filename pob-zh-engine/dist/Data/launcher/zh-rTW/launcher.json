@@ -91,6 +91,7 @@
     "Could not copy the font": "複製字型失敗",
     "The current font cannot draw this language": "目前的字型畫不出這個語言的文字",
     "The current font is missing: ": "目前的字型畫不出這些字：",
+    "The full Chinese character set does not fit this GPU's texture limit, so rare characters (in build names, for example) show as '?'. A lower display scaling avoids it.": "顯示卡的材質上限放不下完整中文字集，部分罕用字（例如專案名稱裡的字）會顯示為問號。降低顯示縮放比例可以避免。",
     "Windows": "視窗方式",
     "Separate desktop windows": "各自獨立的視窗",
     "As tabs inside this launcher": "在啟動器裡開成分頁",
@@ -98,6 +99,8 @@
     "Restart the launcher for this to take effect": "改完要重開啟動器才會生效",
     "This install has no translation data, so POB shows the original English. The program update pack does not carry the dictionaries; they are downloaded separately.": "這份安裝沒有翻譯資料，POB 會顯示英文原文。主程式更新包不含字典，需要另外下載一次。",
     "Download translation data now": "立即下載翻譯資料",
+    "Use this font for letters & digits in POB too": "POB 視窗的英文與數字也用此字型",
+    "When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.": "開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。",
     "Translation data updated to v": "翻譯資料已更新至 v",
     "Update translation data too": "更新時一併更新翻譯資料"
   }

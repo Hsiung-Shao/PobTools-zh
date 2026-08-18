@@ -672,7 +672,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			const DictSlot slot = (cfg.game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
 			DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
 			PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
-			                        dd.status == DataDirStatus::External ? dd.root : L"");
+			                        dd.status == DataDirStatus::External ? dd.root : L"",
+			                        cfg.fontApplyAll);
 		}
 		PobLaunch::SpawnPobAndWait(launchLua);
 

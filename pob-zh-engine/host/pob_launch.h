@@ -42,7 +42,8 @@ struct InstanceInfo {
 // Win32 and CRT environments so a child process inherits them. Pass dataDir empty
 // for the built-in dictionaries -- the engine treats empty as "not set".
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
-                  const std::wstring& fontFile, const std::wstring& dataDir);
+                  const std::wstring& fontFile, const std::wstring& dataDir,
+                  bool fontApplyAll = true);
 
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
 // failure to spawn.
