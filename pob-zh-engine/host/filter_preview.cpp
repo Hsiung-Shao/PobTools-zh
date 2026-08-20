@@ -2,6 +2,8 @@
 #include "editor_shell.h"
 #include "editor_util.h"
 #include "filter_parser.h"
+#include "filter_item_import.h"
+#include "clipboard_util.h"
 #include "audio_player.h"
 #include "sound_manager.h"   // GetSoundFolder
 #include "ui_theme.h"
@@ -140,7 +142,8 @@ bool evalCond(const FilterLine& ln, const PreviewItem& it, const std::string& cl
 		{ "SynthesisedItem", it.synthesised }, { "AnyEnchantment", it.enchanted },
 		{ "Replica", it.replica }, { "BlightedMap", it.blightedMap },
 		{ "UberBlightedMap", false }, { "ElderMap", false }, { "ShapedMap", false },
-		{ "ElderItem", false }, { "ShaperItem", false }, { "Scourged", false },
+		{ "ElderItem", (it.influence & kInfElder) != 0 },
+		{ "ShaperItem", (it.influence & kInfShaper) != 0 }, { "Scourged", false },
 		{ "TransfiguredGem", false }, { "AlternateQuality", false },
 		{ "HasImplicitMod", false }, { "HasCruciblePassiveTree", false },
 	};
@@ -148,13 +151,72 @@ bool evalCond(const FilterLine& ln, const PreviewItem& it, const std::string& cl
 		if (kw == m.kw) return valueBool(ln) == m.val;
 
 	if (kw == "HasInfluence") {
-		// the preview item never has influence: only "None" matches
-		for (const FilterToken& t : ln.values)
-			if (t.text == "None") return ln.op != "!" && ln.op != "!=";
-		return ln.op == "!" || ln.op == "!=";
+		// Game semantics: any listed influence present matches; "None" matches
+		// an uninfluenced item; `!`/`!=` negates. With influence == 0 this is
+		// exactly the old "only None matches" behaviour.
+		bool neg = (ln.op == "!" || ln.op == "!=");
+		bool any = false;
+		for (const FilterToken& t : ln.values) {
+			if (t.text == "None") { if (it.influence == 0) any = true; continue; }
+			unsigned bit = 0;
+			if (t.text == "Shaper") bit = kInfShaper;
+			else if (t.text == "Elder") bit = kInfElder;
+			else if (t.text == "Crusader") bit = kInfCrusader;
+			else if (t.text == "Redeemer") bit = kInfRedeemer;
+			else if (t.text == "Hunter") bit = kInfHunter;
+			else if (t.text == "Warlord") bit = kInfWarlord;
+			if (bit && (it.influence & bit)) any = true;
+		}
+		return neg ? !any : any;
 	}
 
-	// HasExplicitMod / SocketGroup / HasEnchantment / ArchnemesisMod /
+	if (kw == "SocketGroup") {
+		// Token = optional leading count + colour letters (RGBWAD), e.g. "RGB",
+		// "5GGG". Default op: some linked group holds >= count sockets and
+		// contains the colours as a multiset. `==`: a group is exactly the
+		// multiset. `!`/`!=` negates. Unknown groups (synthetic items) never
+		// match — the state a plain drop is in.
+		bool neg = (ln.op == "!" || ln.op == "!=");
+		bool exact = (ln.op == "==" || ln.op == "=");
+		// >=/> keep containment semantics (count applies to the group size);
+		// </<= are degenerate in the wild — leave them unmodelled.
+		if (!neg && !exact && !ln.op.empty() && ln.op != ">=" && ln.op != ">") {
+			*unknown = true;
+			return false;
+		}
+		auto countOf = [](const std::string& g, char c) {
+			int n = 0;
+			for (char x : g) if (x == c) n++;
+			return n;
+		};
+		bool any = false;
+		for (const FilterToken& t : ln.values) {
+			size_t i = 0;
+			int minCount = 0;
+			while (i < t.text.size() && t.text[i] >= '0' && t.text[i] <= '9')
+				minCount = minCount * 10 + (t.text[i++] - '0');
+			std::string colours = t.text.substr(i);
+			bool valid = !t.text.empty();
+			for (char c : colours)
+				if (!strchr("RGBWAD", c)) valid = false;
+			if (!valid) { *unknown = true; return false; }
+			for (const std::string& g : it.socketGroups) {
+				if (minCount && (int)g.size() < minCount) continue;
+				bool fit = true;
+				for (char c : "RGBWAD") {
+					if (!c) break;
+					int need = countOf(colours, c);
+					int got = countOf(g, c);
+					if (exact ? (got != need) : (got < need)) { fit = false; break; }
+				}
+				if (exact && (int)g.size() != (int)colours.size()) fit = false;
+				if (fit) { any = true; break; }
+			}
+		}
+		return neg ? !any : any;
+	}
+
+	// HasExplicitMod / HasEnchantment / ArchnemesisMod /
 	// BaseDefencePercentile / GemQualityType / ... — not modelled.
 	*unknown = true;
 	return false;
@@ -366,6 +428,9 @@ struct DropEntry {
 	PreviewItem item;
 	PreviewResult res;
 	float jitter = 0;
+	bool imported = false;              // parsed from a real Ctrl+C item text
+	std::string labelOverride;          // canvas label ("" = DisplayName(base))
+	std::vector<ImportIssue> importWarnings;
 };
 
 // section-local state (single editor window)
@@ -376,6 +441,8 @@ std::string g_search;
 int g_masterVol = 80;               // preview master volume %
 bool g_autoPlay = true;
 std::string g_soundNote;            // what the last evaluation would play
+ImportedItem g_import;              // last "paste from game" parse result
+bool g_importTried = false;         // a paste happened (show summary/warnings)
 
 ImU32 col32(const unsigned char c[4]) { return IM_COL32(c[0], c[1], c[2], c[3]); }
 
@@ -448,6 +515,23 @@ void showSingle(EditorShell& s)
 	d.res = EvaluatePreview(s.model, d.item, s.i18n);
 	g_drops.push_back(std::move(d));
 	if (g_autoPlay) playResultSound(s, g_drops[0].res);
+}
+
+// Put the last successfully pasted game item on the canvas. The label mirrors
+// the game: name line for rare/unique, pasted base line otherwise.
+void importShow(EditorShell& s, bool append)
+{
+	if (!g_import.ok) return;
+	if (!append) g_drops.clear();
+	DropEntry d;
+	d.item = g_import.item;
+	d.item.areaLevel = g_item.areaLevel;   // FilterBlade-style: UI supplies it
+	d.imported = true;
+	d.labelOverride = !g_import.name.empty() ? g_import.name : g_import.baseRaw;
+	d.importWarnings = g_import.warnings;
+	d.res = EvaluatePreview(s.model, d.item, s.i18n);
+	g_drops.push_back(std::move(d));
+	if (g_autoPlay) playResultSound(s, g_drops.back().res);
 }
 
 // NeverSink 標記解析:區塊 header 的 $type-> 第一節段(分類鍵)與 $tier-> 全路徑。
@@ -553,6 +637,73 @@ void DrawDropPreviewSection(EditorShell& s)
 	// ---- left: item picker + properties + sound ----
 	ImGui::BeginChild("##pvctrl", ImVec2(ctrlW, 0), true);
 
+	// ---- import a real item copied from the game (FilterBlade-style) ----
+	if (ImGui::CollapsingHeader(u8"從遊戲匯入物品", ImGuiTreeNodeFlags_DefaultOpen)) {
+		auto pasteImport = [&s](bool append) {
+			std::string txt = ReadClipboardUtf8(s.hostHwnd);
+			g_import = ParseGameItemText(txt, s.i18n, s.library.items());
+			g_importTried = true;
+			if (g_import.ok) importShow(s, append);
+			// on failure the previous canvas is kept; warnings explain below
+		};
+		PobUi::PushPrimaryButton();
+		if (ImGui::Button(u8"貼上並顯示", ImVec2((ctrlW - 30 * s.scale) * 0.5f, 0)))
+			pasteImport(false);
+		ImGui::SameLine();
+		if (ImGui::Button(u8"貼上並加入畫布", ImVec2(-1, 0)))
+			pasteImport(true);
+		PobUi::PopButtonStyle();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(u8"遊戲內對物品按 Ctrl+C，回來按這裡。\n"
+			                  u8"「加入畫布」不清空現有樣本，方便多件比較。");
+
+		if (g_importTried) {
+			ImGui::PushTextWrapPos(ctrlW - 16 * s.scale);
+			if (g_import.ok) {
+				if (!g_import.name.empty())
+					ImGui::Text(u8"名稱：%s", g_import.name.c_str());
+				std::string zhBase = s.i18n.DisplayName(g_import.baseEn);
+				ImGui::Text(u8"基底：%s%s%s", zhBase.c_str(),
+					zhBase == g_import.baseEn ? "" : "  ",
+					zhBase == g_import.baseEn ? "" : ("(" + g_import.baseEn + ")").c_str());
+				static const char* kRarZh[] = { u8"普通", u8"魔法", u8"稀有", u8"傳奇" };
+				std::string info = kRarZh[std::clamp(g_import.item.rarity, 0, 3)];
+				info += u8" · 物等 " + std::to_string(g_import.item.itemLevel);
+				if (g_import.item.quality) info += u8" · 品質 " + std::to_string(g_import.item.quality);
+				if (!g_import.socketsRaw.empty()) info += u8" · 插槽 " + g_import.socketsRaw;
+				if (g_import.item.stackSize > 1) info += u8" · ×" + std::to_string(g_import.item.stackSize);
+				ImGui::TextDisabled("%s", info.c_str());
+				std::string flags;
+				auto addFlag = [&flags](bool on, const char* zh) {
+					if (on) { if (!flags.empty()) flags += u8"、"; flags += zh; }
+				};
+				addFlag(g_import.item.corrupted, u8"已汙染");
+				addFlag(g_import.item.mirrored, u8"已鏡像");
+				addFlag(g_import.item.fractured, u8"破裂");
+				addFlag(g_import.item.synthesised, u8"追憶");
+				addFlag(!g_import.item.identified && g_import.item.rarity >= 1, u8"未鑑定");
+				addFlag(g_import.item.enchanted, u8"附魔");
+				addFlag(g_import.item.replica, u8"贗品");
+				addFlag(g_import.item.blightedMap, u8"凋落");
+				addFlag((g_import.item.influence & kInfShaper) != 0, u8"塑者");
+				addFlag((g_import.item.influence & kInfElder) != 0, u8"尊師");
+				addFlag((g_import.item.influence & kInfCrusader) != 0, u8"聖戰士");
+				addFlag((g_import.item.influence & kInfRedeemer) != 0, u8"救贖者");
+				addFlag((g_import.item.influence & kInfHunter) != 0, u8"狩獵者");
+				addFlag((g_import.item.influence & kInfWarlord) != 0, u8"總督軍");
+				addFlag(g_import.exarch, u8"灼烙");
+				addFlag(g_import.eater, u8"吞噬");
+				if (!flags.empty()) ImGui::TextDisabled(u8"狀態：%s", flags.c_str());
+				ImGui::TextDisabled(u8"區域等級沿用下方「物品屬性」的設定");
+			}
+			for (const ImportIssue& w : g_import.warnings)
+				ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.30f, 1.0f), u8"※ %s", w.msg.c_str());
+			ImGui::PopTextWrapPos();
+		}
+		ImGui::Spacing();
+	}
+
+	ImGui::Separator();
 	ImGui::TextUnformatted(u8"物品");
 	ImGui::SetNextItemWidth(-1);
 	ImGui::InputTextWithHint("##pvsearch", u8"搜尋物品（中/英文）…", &g_search);
@@ -608,6 +759,9 @@ void DrawDropPreviewSection(EditorShell& s)
 	}
 	if (ImGui::Button(u8"套用屬性重新判定", ImVec2(-1, 0))) {
 		for (DropEntry& d : g_drops) {
+			// Imported items carry their REAL parsed fields — only the area
+			// level (which the text never has) follows the panel.
+			if (d.imported) { d.item.areaLevel = g_item.areaLevel; continue; }
 			// carry the tweaks onto every generated drop of the same base kind
 			PreviewItem& pi = d.item;
 			pi.rarity = (pi.rarity == 3) ? 3 : g_item.rarity;
@@ -672,7 +826,7 @@ void DrawDropPreviewSection(EditorShell& s)
 			DropEntry& d = g_drops[i];
 			const PreviewResult& r = d.res;
 			std::string zh = s.i18n.DisplayName(d.item.baseType);
-			std::string label = zh;
+			std::string label = d.labelOverride.empty() ? zh : d.labelOverride;
 			if (d.item.stackSize > 1) label += u8" ×" + std::to_string(d.item.stackSize);
 
 			ImGui::PushID(i);
@@ -725,6 +879,7 @@ void DrawDropPreviewSection(EditorShell& s)
 
 			if (hov) {
 				std::string tip = d.item.baseType;
+				if (d.imported) tip += u8"（匯入物品）";
 				if (r.matched && r.blockIdx >= 0 && r.blockIdx < (int)s.rows.size())
 					tip += u8"\n命中規則：" + s.rows[r.blockIdx].label + u8"\n字體 " + std::to_string(r.fontSize);
 				else
@@ -736,6 +891,8 @@ void DrawDropPreviewSection(EditorShell& s)
 					for (size_t k = 0; k < r.unknownConds.size() && k < 6; k++)
 						tip += (k ? ", " : "") + r.unknownConds[k];
 				}
+				for (size_t k = 0; k < d.importWarnings.size() && k < 4; k++)
+					tip += u8"\n※ " + d.importWarnings[k].msg;
 				if (r.matched) tip += u8"\n（點擊跳至該規則編輯）";
 				ImGui::SetTooltip("%s", tip.c_str());
 			}

@@ -25,6 +25,7 @@
 // below.
 
 #include "paste_selftest.h"
+#include "paste_fixtures.h"
 
 #include <windows.h>
 
@@ -165,136 +166,7 @@ void check_eq(const char* zh, const char* expect, const char* what)
 	if (!ok) printf("           got:    '%s'\n           expect: '%s'\n", got.c_str(), expect);
 }
 
-// ---------------------------------------------------------------- fixtures
-
-const char* kFlask =
-"物品種類: 功能藥劑\n稀有度: 傳奇\n噬燼甕\n真銀藥劑\n--------\n"
-"品質: +20% (augmented)\n持續 7.20 (augmented) 秒\n"
-"每次使用會從 77 (augmented) 充能次數中消耗 40 次\n目前有 77 充能次數\n猛攻\n"
-"（ 猛攻增加你 20% 攻擊速度、施放速度，和移動速度 ）\n--------\n需求:\n等級: 48\n--------\n"
-"物品等級: 85\n--------\n當充能滿時使用 (enchant)\n--------\n"
-"{ 前綴 \"卡塔莉娜的\" }\n效果期間由你造成的點燃會擴散到 1.5 公尺內的其他敵人身上\n"
-"{ 傳奇詞綴 }\n+17(10-20) 最大充能\n"
-"{ 傳奇詞綴 }\n當你消耗 1 個被點燃的屍體時補充 5 充能\n"
-"{ 傳奇詞綴— 傷害 }\n在你效果持續時間被點燃的敵人，增加承受 7(7-10)% 傷害\n"
-"{ 傳奇詞綴— 防禦,能量護盾 }\n效果持續時間內，當你擊殺 1 個敵人時恢復 2(1-3)% 能量護盾\n"
-"--------\n新生命有時需要適當的燃燒。\n--------\n"
-"點擊右鍵以喝下藥劑。只有裝備於腰帶上時才會充能。殺死怪物時會回復充能次數。\n";
-
-const char* kBoots =
-"物品種類: 鞋子\n稀有度: 稀有\n巨龍 涼靴\n聖騎士長靴\n--------\n"
-"品質: +29% (augmented)\n護甲: 369 (augmented)\n能量護盾: 74 (augmented)\n無形性: 8%\n--------\n"
-"需求:\n等級: 84\n力量: 98\n敏捷: 98\n智慧: 155\n--------\n插槽: R G-W R\n--------\n"
-"物品等級: 84\n--------\n"
-"{ 灼烙總督固定詞綴 (宏偉)— 元素,閃電,異常狀態 }\n41(39-41)% 機率避免被感電\n"
-"{ 吞噬天地固定詞綴 (宏偉)— 傷害,元素,火焰,異常狀態 }\n你造成的點燃傷害加速 7%\n"
-"（在一小段時間後，他們會造成相同總傷害）\n--------\n"
-"{ 前綴 \"獵豹的\"(階層：2)— 速度 }\n增加 30% 移動速度\n"
-"{ 前綴 \"巨靈的\"(階層：2)— 防禦,護甲,能量護盾 }\n增加 33(33-38)% 護甲與能量護盾\n"
-"增加 15(14-15)% 暈眩恢復和格擋恢復\n"
-"{ 前綴 \"健壯的\"(階層：4)— 生命 }\n+71(70-84) 最大生命\n"
-"{ 後綴 \"艾菲吉之\"(階層：1)— 元素,閃電,抗性 }\n+46(46-48)% 閃電抗性\n"
-"{ 後綴 \"海象之\"(階層：4)— 元素,冰冷,抗性 }\n+31(30-35)% 冰冷抗性\n"
-"{ 已大師工藝 後綴 \"工藝之\"— 元素,閃電,混沌,抗性 }\n+15(13-15)% 閃電和混沌抗性\n"
-"卓烙總督物品\n吞噬天地物品\n";
-
-const char* kJewel =
-"物品種類: 珠寶\n稀有度: 稀有\n末日 電球\n赤紅珠寶\n--------\n無形性: 16%\n--------\n"
-"物品等級: 69\n--------\n"
-"{ 已破裂 前綴 \"衰老的\"(階層：1)— 異常狀態 }\n傷害型異常狀態造成傷害加速 5(4-6)%\n"
-"（造成傷害的異常狀態包含流血、點燃和中毒）\n（在一小段時間後，他們會造成相同總傷害）\n"
-"{ 前綴 \"防護的\"(階層：1) }\n持盾時 +2(2-3)% 攻擊傷害格擋率\n"
-"{ 後綴 \"焚燒之\"(階層：1)— 傷害,元素,火焰,異常狀態 }\n增加 19(16-20)% 燃燒傷害\n"
-"{ 後綴 \"真誠之\"(階層：1)— 元素,火焰,冰冷,抗性 }\n+11(10-12)% 火焰與冰冷抗性\n--------\n"
-"放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。\n--------\n破裂之物\n";
-
-const char* kFoulborn =
-"物品種類: 珠寶\n稀有度: 傳奇\n穢生 赤影夢魘\n赤紅珠寶\n--------\n僅限: 1\n範圍: 大\n--------\n"
-"物品等級: 83\n--------\n"
-"{ 傳奇詞綴 }\n範圍內天賦獲得火焰抗性或全部元素抗性\n同時提供等同其數值 50% 的攻擊傷害格擋率\n"
-"{ Foulborn Unique Modifier— 元素,火焰 }\n若你近期內曾格擋攻擊，擊中造成的火焰傷害視為幸運\n"
-"（ 近期內意指 4 秒內 ）\n--------\n我們凝固；腥紅外殼使不配者窒息。\n--------\n"
-"放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。\n";
-
-const char* kHelm =
-"物品種類: 頭部\n稀有度: 稀有\n奇術 真實之衛\n罪魔邪冠\n--------\n"
-"品質: +20% (augmented)\n護甲: 326 (augmented)\n能量護盾: 78 (augmented)\n無形性: 15%\n--------\n"
-"需求:\n等級: 75\n力量: 79\n敏捷: 111\n智慧: 100\n--------\n插槽: W-R-B-B\n--------\n"
-"物品等級: 82\n--------\n"
-"{ 固定詞綴 }\n此物品插槽中輔助寶石等級 -2\n此物品插槽中技能寶石等級 +2\n--------\n"
-"{ 前綴 \"被選召的\"(階層：1)— 寶石 }\n插槽中範圍效果寶石等級 +2\n增加 10(8-10)% 範圍效果\n"
-"{ 前綴 \"鈷藍的\"(階層：11)— 魔力 }\n+23(20-24) 最大魔力\n"
-"{ 前綴 \"聖潔的\"(階層：2)— 防禦,護甲,能量護盾 }\n+84(49-85) 點護甲\n+27(23-28) 最大能量護盾\n"
-"{ 後綴 \"精髓之\"— 傷害,元素,寶石 }\n插槽中的寶石造成 30% 更多元素傷害\n"
-"{ 後綴 \"尊師之\"(階層：2)— 傷害,元素,火焰,寶石 }\n插槽中寶石被等級 18 的燃燒傷害輔助\n"
-"增加 30(26-30)% 燃燒傷害\n"
-"{ 後綴 \"眾神之\"(階層：1)— 能力 }\n+54(51-55) 力量\n--------\n尊師之物\n";
-
-const char* kCluster =
-"物品種類: 珠寶\n稀有度: 稀有\n精魂 破碎之地\n中型星團珠寶\n--------\n無形性: 11%\n--------\n"
-"需求:\n等級: 54\n--------\n物品等級: 83\n--------\n"
-"附加 5 個天賦 (enchant)\n（ 附加的天賦點不會被其它珠寶視為範圍內 ） (enchant)\n"
-"（ 所有附加的天賦點都為小型，除非有特條件 ） (enchant)\n1 個附加的天賦為珠寶插槽 (enchant)\n"
-"附加的小型天賦給予：被捷光環影響時，增加 10% 傷害 (enchant)\n"
-"（天賦點不是指核心、專精、關鍵天賦或珠寶插槽，而是小的天賦點） (enchant)\n--------\n"
-"{ 前綴 \"顯著的\"(階層：1)— 傷害 }\n1 個附加的天賦為授權使徒\n"
-"{ 前綴 \"顯著的\"(階層：1)— 傷害 }\n1 個附加的天賦為終焉使者\n"
-"{ 後綴 \"貓鼬之\"(階層：3)— 能力 }\n附加的小天賦給予：+2(2-3) 敏捷\n"
-"{ 後綴 \"放逐之\"(階層：2)— 混沌,抗性 }\n附加的小天賦給予：+4% 混沌抗性\n--------\n"
-"放置於天賦樹已配置的中型或巨型珠寶插槽中。附加的天賦點不與珠寶範圍互動。點擊右鍵從插槽中移除。\n";
-
-// A second cluster jewel, kept because its enchant carries a DIFFERENT inner
-// stat: one missing enchant made POB rebuild the whole jewel around the wrong
-// skill and discard all three notables it had actually rolled, so the failure is
-// worth pinning on more than one wording.
-const char* kLargeCluster =
-"物品種類: 珠寶\n稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n無形性: 33%\n--------\n"
-"需求:\n等級: 54\n--------\n物品等級: 72\n--------\n"
-"附加 8 個天賦 (enchant)\n（ 附加的天賦點不會被其它珠寶視為範圍內 ） (enchant)\n"
-"（ 所有附加的天賦點都為小型，除非有特條件 ） (enchant)\n2 個附加的天賦為珠寶插槽 (enchant)\n"
-"附加的小型天賦給予：增加 10% 元素傷害 (enchant)\n"
-"（天賦點不是指核心、專精、關鍵天賦或珠寶插槽，而是小的天賦點） (enchant)\n--------\n"
-"{ 前綴 \"顯著的\"(階層：1)— 傷害,元素,抗性 }\n1 個附加的天賦為多稜之心\n"
-"{ 前綴 \"顯著的\"(階層：1)— 傷害,元素 }\n1 個附加的天賦為施虐者\n"
-"{ 後綴 \"顯著之\"(階層：1)— 傷害,元素 }\n1 個附加的天賦為迷茫之列\n"
-"{ 後綴 \"放逐之\"(階層：2)— 混沌,抗性 }\n附加的小天賦給予：+4% 混沌抗性\n--------\n"
-"放置於天賦樹已配置的巨型珠寶插槽中。附加的天賦點不與珠寶範圍互動。點擊右鍵從插槽中移除。\n";
-
-// Melding of the Flesh: its rolls are NEGATIVE, so the advanced-copy range comes
-// out as "-72(-80--70)%" with four minus signs in a row. Kept as a fixture
-// because that shape broke every roll on the item and nothing else here has it.
-const char* kMelding =
-"物品種類: 珠寶\n稀有度: 傳奇\n血肉融合\n鈷藍珠寶\n--------\n僅限: 1\n--------\n"
-"物品等級: 85\n--------\n"
-"{ 傳奇詞綴— 元素,抗性 }\n-72(-80--70)% 全部元素抗性\n"
-"{ 傳奇詞綴— 元素,抗性 }\n-4(-6--4)% 全部最大元素抗性\n（最大抗性無法提升超過 90%）\n"
-"{ 傳奇詞綴— 元素,抗性 }\n元素抗性上限改為你最高的元素抗性\n--------\n"
-"\"我們醒來時突然發現一片叢林沖破了我們家的山谷。\n"
-"抓緊的四肢盤繞在我們周圍，進入我們。我們彼此沉淪，\n"
-"然後升到了生命的天空。 我的家人仍然在我身邊尖叫。\"\n--------\n"
-"放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。\n";
-
-// Vestigial Sin Trek, 3.29: the base-type line carries the "殘存 " (Vestigial)
-// prefix GGG composes from the "Vestigial {0}" template, and two modifiers
-// carry the " — 無法使用的值" (Unscalable Value) marker. All three lines used
-// to come out of the paste as '?' runs -- the two rules they pin down did not
-// exist. The reminder line after the vestigial implicit and the flavour line
-// were already handled; they are here so the whole reported item stays green.
-const char* kVestigialBoots =
-"物品種類: 鞋子\n稀有度: 傳奇\n敏銳思維\n殘存 匿蹤短靴\n--------\n"
-"閃避值: 441 (augmented)\n能量護盾: 108 (augmented)\n--------\n"
-"需求:\n等級: 62\n敏捷: 117\n--------\n插槽: W-W-W \n--------\n"
-"物品等級: 85\n--------\n"
-"{ 殘存固定詞綴— 元素,火焰,冰冷,閃電,異常狀態 }\n"
-"被榮耀瘋癲影響時，免疫元素異常狀態 — 無法使用的值\n"
-"（元素異常狀態包含點燃、焦灼、冰緩、冰凍、易碎、感電和殘喘）\n--------\n"
-"{ 傳奇詞綴— 防禦,閃避 }\n增加 95(80-100)% 閃避值\n"
-"{ 傳奇詞綴— 防禦,能量護盾 }\n+108(100-150) 最大能量護盾\n"
-"{ 傳奇詞綴— 能力 }\n+26(20-30) 敏捷\n"
-"{ 傳奇詞綴— 能力 }\n+23(20-30) 智慧\n"
-"{ 傳奇詞綴 }\n敵人不能偷取你的生命 — 無法使用的值\n"
-"{ 傳奇詞綴— 速度 }\n增加 30% 移動速度\n--------\n"
-"保持距離，以策安全。\n";
+// fixtures live in paste_fixtures.h (shared with --filter-selftest)
 
 // Lines that legitimately have no translation yet, keyed by the fixture they
 // belong to. Asserted exactly so a gap can neither appear nor vanish unnoticed.
@@ -339,43 +211,43 @@ int RunPasteSelftest()
 	       translation_get_count());
 
 	printf("\n-- whole items: nothing may survive as non-ASCII --\n");
-	check_item("unique flask", kFlask, 0);
-	check_item("rare boots", kBoots, 0);
-	check_item("fractured jewel", kJewel, 0);
-	check_item("helmet", kHelm, 0);
-	check_item("Foulborn jewel", kFoulborn, 0);
-	check_item("cluster jewel", kCluster, 0);
-	check_item("large cluster jewel", kLargeCluster, 0);
-	check_item("Melding of the Flesh", kMelding, 0);
-	check_item("vestigial boots", kVestigialBoots, 0);
+	check_item("unique flask", kFxFlask, 0);
+	check_item("rare boots", kFxBoots, 0);
+	check_item("fractured jewel", kFxJewel, 0);
+	check_item("helmet", kFxHelm, 0);
+	check_item("Foulborn jewel", kFxFoulborn, 0);
+	check_item("cluster jewel", kFxCluster, 0);
+	check_item("large cluster jewel", kFxLargeCluster, 0);
+	check_item("Melding of the Flesh", kFxMelding, 0);
+	check_item("vestigial boots", kFxVestigialBoots, 0);
 
 	printf("\n-- section grammar: every line's label, on every fixture --\n");
 	// Section COUNT and ORDER differ across these eight (6 to 8 sections; sockets,
 	// requirements and influence come and go), which is exactly why the grammar
 	// keys on the Item Level line and on what a section contains, never on "the
 	// third section". These sequences are the proof that it holds up.
-	check_kinds("unique flask", kFlask,
+	check_kinds("unique flask", kFxFlask,
 	            "header*4 sep property*6 sep property*2 sep property sep enchant "
 	            "sep mods*10 sep flavour sep desc");
-	check_kinds("rare boots", kBoots,
+	check_kinds("rare boots", kFxBoots,
 	            "header*4 sep property*4 sep property*5 sep property sep property "
 	            "sep mods*5 sep mods*15");
-	check_kinds("fractured jewel", kJewel,
+	check_kinds("fractured jewel", kFxJewel,
 	            "header*4 sep property sep property sep mods*10 sep desc sep status");
-	check_kinds("Foulborn jewel", kFoulborn,
+	check_kinds("Foulborn jewel", kFxFoulborn,
 	            "header*4 sep property*2 sep property sep mods*6 sep flavour sep desc");
-	check_kinds("helmet", kHelm,
+	check_kinds("helmet", kFxHelm,
 	            "header*4 sep property*4 sep property*5 sep property sep property "
 	            "sep mods*3 sep mods*15 sep status");
-	check_kinds("cluster jewel", kCluster,
+	check_kinds("cluster jewel", kFxCluster,
 	            "header*4 sep property sep property*2 sep property sep enchant*6 "
 	            "sep mods*8 sep desc");
-	check_kinds("large cluster jewel", kLargeCluster,
+	check_kinds("large cluster jewel", kFxLargeCluster,
 	            "header*4 sep property sep property*2 sep property sep enchant*6 "
 	            "sep mods*8 sep desc");
-	check_kinds("Melding of the Flesh", kMelding,
+	check_kinds("Melding of the Flesh", kFxMelding,
 	            "header*4 sep property sep property sep mods*7 sep flavour*3 sep desc");
-	check_kinds("vestigial boots", kVestigialBoots,
+	check_kinds("vestigial boots", kFxVestigialBoots,
 	            "header*4 sep property*2 sep property*3 sep property sep property "
 	            "sep mods*3 sep mods*12 sep flavour");
 

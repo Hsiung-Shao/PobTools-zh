@@ -10,6 +10,7 @@
 #include "timeless_jewel.h"
 #include "timeless_jewel_abyss.h"
 #include "ui_theme.h"
+#include "clipboard_util.h"
 
 #include <json.hpp> // nlohmann::json (deps/nlohmann) — TjUiState
 
@@ -74,49 +75,6 @@ std::wstring widen(const std::string& s)
 	std::wstring w(n, L'\0');
 	MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n);
 	return w;
-}
-
-// Read the clipboard as UTF-8 text (empty on failure).
-std::string read_clipboard_utf8(HWND owner)
-{
-	std::string out;
-	if (!OpenClipboard(owner)) return out;
-	HANDLE h = GetClipboardData(CF_UNICODETEXT);
-	if (h) {
-		const wchar_t* w = (const wchar_t*)GlobalLock(h);
-		if (w) {
-			int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
-			if (n > 1) {
-				out.resize(n - 1);
-				WideCharToMultiByte(CP_UTF8, 0, w, -1, &out[0], n, nullptr, nullptr);
-			}
-			GlobalUnlock(h);
-		}
-	}
-	CloseClipboard();
-	return out;
-}
-
-// Put UTF-8 text on the clipboard as CF_UNICODETEXT (what PoB's paste reads).
-bool write_clipboard_utf8(HWND owner, const std::string& text)
-{
-	std::wstring w = widen(text);
-	if (!OpenClipboard(owner)) return false;
-	bool ok = false;
-	if (EmptyClipboard()) {
-		HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (w.size() + 1) * sizeof(wchar_t));
-		if (h) {
-			if (void* p = GlobalLock(h)) {
-				memcpy(p, w.c_str(), (w.size() + 1) * sizeof(wchar_t));
-				GlobalUnlock(h);
-				// SetClipboardData takes ownership on success; only free on failure.
-				ok = SetClipboardData(CF_UNICODETEXT, h) != nullptr;
-			}
-			if (!ok) GlobalFree(h);
-		}
-	}
-	CloseClipboard();
-	return ok;
 }
 
 } // namespace
@@ -687,7 +645,7 @@ public:
 
 		// --- paste a jewel from the clipboard (auto-fills jewel/conqueror/seed) ---
 		if (ImGui::Button(u8"貼上珠寶 (從遊戲複製物品)", ImVec2(-1, 0))) {
-			std::string txt = read_clipboard_utf8(nullptr);
+			std::string txt = ReadClipboardUtf8(nullptr);
 			TJPaste pasted = TJParsePaste(*ds, txt);
 			const int foundJewel = pasted.jewelType;
 			const int foundConqIdx = pasted.conqIndex;
@@ -1124,7 +1082,7 @@ public:
 						ImGui::SameLine();
 						if (ImGui::SmallButton(u8"複製")) {
 							std::string t = TJItemText(*ds, jewelType, conquerorSel, h.seed);
-							status = (!t.empty() && write_clipboard_utf8(nullptr, t))
+							status = (!t.empty() && WriteClipboardUtf8(nullptr, t))
 							         ? u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)"
 							         : u8"複製失敗";
 						}
@@ -1170,7 +1128,7 @@ public:
 			// game's own copy text on the clipboard.
 			if (ImGui::SmallButton(u8"複製給 POB")) {
 				std::string t = TJItemText(*ds, jewelType, conquerorSel, detailSeed);
-				status = (!t.empty() && write_clipboard_utf8(nullptr, t))
+				status = (!t.empty() && WriteClipboardUtf8(nullptr, t))
 				         ? u8"已複製物品文字，可在 POB 的物品欄貼上 (Ctrl+V)"
 				         : u8"複製失敗";
 			}

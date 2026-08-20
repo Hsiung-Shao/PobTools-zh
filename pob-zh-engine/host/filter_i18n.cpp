@@ -87,6 +87,11 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 						if (v.contains("class") && v["class"].is_string()) m.cls = v["class"].get<std::string>();
 						if (v.contains("tags") && v["tags"].is_array())
 							for (auto& t : v["tags"]) if (t.is_string()) m.tags.push_back(t.get<std::string>());
+						// Filter-relevant base metadata (absent for uniques and
+						// GGPK-patched entries — the defaults mean "unknown").
+						if (v.contains("drop") && v["drop"].is_number_integer()) m.drop = v["drop"].get<int>();
+						if (v.contains("w") && v["w"].is_number_integer()) m.w = v["w"].get<int>();
+						if (v.contains("h") && v["h"].is_number_integer()) m.h = v["h"].get<int>();
 						meta_.emplace(name, std::move(m));
 					}
 			} catch (...) {}
@@ -120,8 +125,29 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 					for (auto& e : doc["item_classes"])
 						if (e.contains("en") && e.contains("zh") && e["en"].is_string() && e["zh"].is_string())
 							classZh_.emplace(e["en"].get<std::string>(), e["zh"].get<std::string>());
+
+				// zh -> en parse tables for pasted game item text. Same file the
+				// paste path's classify_lines uses; read-only here.
+				auto zhToEn = [&doc](const char* section,
+				                     std::unordered_map<std::string, std::string>& dst) {
+					if (!doc.contains(section) || !doc[section].is_array()) return;
+					for (auto& e : doc[section])
+						if (e.contains("en") && e.contains("zh") && e["en"].is_string() && e["zh"].is_string())
+							dst.emplace(e["zh"].get<std::string>(), e["en"].get<std::string>());
+				};
+				zhToEn("headers", zh_.header);
+				zhToEn("rarity_values", zh_.rarity);
+				zhToEn("status_lines", zh_.status);
+				zhToEn("influence_tags", zh_.influence);
+				zhToEn("item_classes", zh_.itemClass);
 			} catch (...) {}
 		}
+		// Supplements for known gaps in item_metadata.json, verified against the
+		// GGPK snapshot (tools/ggpk_zh/db, version 1). emplace: the file wins.
+		zh_.header.emplace(u8"地圖階級", "Map Tier");          // clientstrings ItemDisplayMapTier
+		zh_.header.emplace(u8"堆疊數量", "Stack Size");        // clientstrings ItemDisplayStackSize
+		                                                       // (the file's 堆疊大小 is a stale alias)
+		zh_.itemClass.emplace(u8"深淵珠寶", "Abyss Jewels");   // itemclasses AbyssJewel .Name
 	}
 
 	loaded_ = !names_.empty() || !baseClass_.empty();
@@ -150,6 +176,21 @@ const std::vector<std::string>& FilterI18n::Tags(const std::string& en) const
 	static const std::vector<std::string> kEmpty;
 	auto it = meta_.find(en);
 	return it != meta_.end() ? it->second.tags : kEmpty;
+}
+
+int FilterI18n::DropLevelOf(const std::string& en) const
+{
+	auto it = meta_.find(en);
+	return it != meta_.end() ? it->second.drop : -1;
+}
+
+bool FilterI18n::SizeOf(const std::string& en, int* w, int* h) const
+{
+	auto it = meta_.find(en);
+	if (it == meta_.end() || it->second.w <= 0 || it->second.h <= 0) return false;
+	if (w) *w = it->second.w;
+	if (h) *h = it->second.h;
+	return true;
 }
 
 std::string FilterI18n::ClassNameZh(const std::string& enClass) const

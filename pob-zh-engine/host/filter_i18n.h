@@ -34,6 +34,28 @@ public:
 	// "unique"); empty if unknown. Used for sub-categorisation and item detail.
 	const std::vector<std::string>& Tags(const std::string& en) const;
 
+	// Base drop level from item_meta.json ("drop", repoe base_items); -1 when
+	// unknown (uniques, GGPK-patched entries) — callers keep their defaults.
+	int DropLevelOf(const std::string& en) const;
+
+	// Inventory size in grid cells ("w"/"h" from item_meta.json); false when
+	// unknown — callers keep their defaults.
+	bool SizeOf(const std::string& en, int* w, int* h) const;
+
+	// zh -> en lookup tables for parsing pasted game item text. Built from the
+	// same item_metadata.json the paste path uses, plus code-side supplements
+	// verified against GGPK (the file itself feeds classify_lines and is not
+	// touched). Keys are the exact zh strings the TW client prints; values are
+	// the exact en client strings. Empty maps when the locale has no file.
+	struct ZhTables {
+		std::unordered_map<std::string, std::string> header;     // "物品種類" -> "Item Class"
+		std::unordered_map<std::string, std::string> rarity;     // "稀有"     -> "Rare"
+		std::unordered_map<std::string, std::string> status;     // "已汙染"   -> "Corrupted"
+		std::unordered_map<std::string, std::string> influence;  // "塑者之物" -> "Shaper Item"
+		std::unordered_map<std::string, std::string> itemClass;  // "胸甲"     -> "Body Armours"
+	};
+	const ZhTables& Zh() const { return zh_; }
+
 	// English item class -> Chinese label (falls back to the input).
 	std::string ClassNameZh(const std::string& enClass) const;
 
@@ -44,13 +66,19 @@ public:
 	std::string ClassNameEn(const std::string& classId) const;
 
 private:
-	struct Meta { std::string cls; std::vector<std::string> tags; };
+	struct Meta {
+		std::string cls;
+		std::vector<std::string> tags;
+		int drop = -1;      // base drop level; -1 = unknown
+		int w = 0, h = 0;   // inventory size; 0 = unknown
+	};
 
 	std::unordered_map<std::string, std::string> names_;      // en name  -> zh name
 	std::unordered_map<std::string, std::string> baseClass_;  // en base  -> en class (legacy)
 	std::unordered_map<std::string, std::string> classZh_;    // en class -> zh class
 	std::unordered_map<std::string, std::string> classEn_;    // class id -> game class name
-	std::unordered_map<std::string, Meta>        meta_;       // en name  -> {class, tags}
+	std::unordered_map<std::string, Meta>        meta_;       // en name  -> {class, tags, drop, w, h}
+	ZhTables zh_;                                             // pasted-item parse tables
 	bool loaded_ = false;
 };
 

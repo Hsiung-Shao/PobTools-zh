@@ -9,7 +9,10 @@
 #include "filter_data.h"
 #include "filter_i18n.h"
 #include "filter_preview.h"
+#include "filter_item_import.h"
 #include "item_library.h"
+#include "paste_fixtures.h"
+#include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -613,6 +616,305 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T13 synthesize refuses unmodelled block");
 	}
 
+	// ---- T14: item-import data layer (base metadata + zh parse tables) ----
+	// Needs Data\ next to the exe (run from dist\, like the atlas selftest).
+	{
+		FilterI18n i18n;
+		i18n.Load(exeDir, "zh-rTW");
+		rep.check(i18n.loaded(), "T14 i18n loaded (run from dist\\ so Data\\ exists)");
+
+		rep.check(i18n.DropLevelOf("Thicket Bow") == 56, "T14 Thicket Bow drop level 56",
+		          std::to_string(i18n.DropLevelOf("Thicket Bow")));
+		int w = 0, h = 0;
+		rep.check(i18n.SizeOf("Thicket Bow", &w, &h) && w == 2 && h == 3,
+		          "T14 Thicket Bow inventory 2x3");
+		rep.check(i18n.DropLevelOf("Headhunter") == -1,
+		          "T14 unique without drop data -> -1 (caller keeps default)");
+		rep.check(!i18n.SizeOf("Abyss Scarab of Crystals", &w, &h),
+		          "T14 GGPK-patched entry without size -> false (caller keeps default)");
+		rep.check(i18n.DropLevelOf("No Such Item") == -1 && !i18n.SizeOf("No Such Item", &w, &h),
+		          "T14 unknown item -> unknown metadata");
+
+		const FilterI18n::ZhTables& z = i18n.Zh();
+		rep.check(!z.header.empty() && !z.rarity.empty() && !z.status.empty() &&
+		          !z.influence.empty() && !z.itemClass.empty(),
+		          "T14 all five zh tables non-empty");
+		auto eq = [](const std::unordered_map<std::string, std::string>& m,
+		             const char* k, const char* v) {
+			auto it = m.find(k);
+			return it != m.end() && it->second == v;
+		};
+		rep.check(eq(z.header, u8"物品種類", "Item Class"), "T14 header table zh->en");
+		rep.check(eq(z.rarity, u8"稀有", "Rare"), "T14 rarity table zh->en");
+		rep.check(eq(z.status, u8"已汙染", "Corrupted"), "T14 status table zh->en");
+		rep.check(eq(z.influence, u8"塑者之物", "Shaper Item"), "T14 influence table zh->en");
+		rep.check(eq(z.header, u8"地圖階級", "Map Tier"), "T14 Map Tier supplement");
+		rep.check(eq(z.header, u8"堆疊數量", "Stack Size"), "T14 Stack Size supplement");
+		rep.check(eq(z.itemClass, u8"深淵珠寶", "Abyss Jewels"), "T14 Abyss Jewels supplement");
+	}
+
+	// ---- T15: pasted-item parser — real zh fixtures -----------------------
+	{
+		FilterI18n i18n;
+		i18n.Load(exeDir, "zh-rTW");
+		ItemLibrary libLoader;
+		libLoader.Load(exeDir, i18n);
+		const std::vector<LibItem>& lib = libLoader.items();
+		rep.check(!lib.empty(), "T15 item library loaded");
+
+		ImportedItem b = ParseGameItemText(kFxBoots, i18n, lib);
+		rep.check(b.ok, "T15 boots parsed");
+		rep.check(b.item.rarity == 2 && b.item.itemLevel == 84 && b.item.quality == 29,
+		          "T15 boots rarity/ilvl/quality");
+		rep.check(b.baseEn == "Paladin Boots" && b.item.classId == "Boots",
+		          "T15 boots base + class", b.baseEn + "/" + b.item.classId);
+		rep.check(b.item.sockets == 4 && b.item.linkedSockets == 2 &&
+		          b.item.socketGroups.size() == 3 && b.item.socketGroups[1] == "GW",
+		          "T15 boots sockets R G-W R -> {R,GW,R}");
+		rep.check(b.item.influence == 0 && b.exarch && b.eater,
+		          "T15 boots exarch/eater flagged, no HasInfluence bits");
+		rep.check(b.item.dropLevel == 84 && b.item.width == 2 && b.item.height == 2,
+		          "T15 boots drop level + size from item_meta");
+		rep.check(b.item.identified && !b.item.corrupted, "T15 boots identified, not corrupted");
+		bool warnedExarch = false;
+		for (const ImportIssue& w : b.warnings)
+			if (w.msg.find("HasSearingExarchImplicit") != std::string::npos) warnedExarch = true;
+		rep.check(warnedExarch, "T15 exarch mark surfaced as warning");
+
+		ImportedItem fl = ParseGameItemText(kFxFlask, i18n, lib);
+		rep.check(fl.ok && fl.item.rarity == 3 && fl.baseEn == "Silver Flask" &&
+		          fl.item.enchanted && fl.item.quality == 20 && fl.item.itemLevel == 85,
+		          "T15 unique flask + enchant line", fl.baseEn);
+
+		ImportedItem jw = ParseGameItemText(kFxJewel, i18n, lib);
+		rep.check(jw.ok && jw.item.fractured && jw.baseEn == "Crimson Jewel" &&
+		          jw.item.itemLevel == 69 && jw.item.sockets == 0,
+		          "T15 fractured jewel marker in its own section", jw.baseEn);
+
+		ImportedItem vb = ParseGameItemText(kFxVestigialBoots, i18n, lib);
+		rep.check(vb.ok && vb.baseEn == "Stealth Boots" && vb.item.rarity == 3,
+		          "T15 vestigial prefix stripped to real base", vb.baseEn);
+		rep.check(vb.item.sockets == 3 && vb.item.linkedSockets == 3 &&
+		          vb.item.socketGroups.size() == 1 && vb.item.socketGroups[0] == "WWW",
+		          "T15 sockets W-W-W with trailing space tolerated");
+	}
+
+	// ---- T16: pasted-item parser — en client text -------------------------
+	{
+		FilterI18n i18n;
+		i18n.Load(exeDir, "zh-rTW");
+		ItemLibrary libLoader;
+		libLoader.Load(exeDir, i18n);
+		const std::vector<LibItem>& lib = libLoader.items();
+
+		const char* enRare =
+			"Item Class: Body Armours\n"
+			"Rarity: Rare\n"
+			"Corpse Shell\n"
+			"Vaal Regalia\n"
+			"--------\n"
+			"Quality: +28% (augmented)\n"
+			"Energy Shield: 505 (augmented)\n"
+			"--------\n"
+			"Requirements:\n"
+			"Level: 68\n"
+			"Int: 194\n"
+			"--------\n"
+			"Sockets: R-G-B W-W G\n"
+			"--------\n"
+			"Item Level: 86\n"
+			"--------\n"
+			"+1 to Level of Socketed Gems\n"
+			"--------\n"
+			"Corrupted\n";
+		ImportedItem e = ParseGameItemText(enRare, i18n, lib);
+		rep.check(e.ok && e.baseEn == "Vaal Regalia" && e.item.rarity == 2 &&
+		          e.item.itemLevel == 86 && e.item.quality == 28 && e.item.corrupted,
+		          "T16 en rare parsed", e.baseEn);
+		rep.check(e.item.sockets == 6 && e.item.linkedSockets == 3 &&
+		          e.item.socketGroups.size() == 3 && e.item.socketGroups[0] == "RGB",
+		          "T16 en sockets R-G-B W-W G");
+		rep.check(e.item.gemLevel == 1, "T16 requirements Level is NOT the gem level");
+
+		const char* enGem =
+			"Item Class: Skill Gems\n"
+			"Rarity: Gem\n"
+			"Superior Spectral Shield Throw\n"
+			"--------\n"
+			"Attack, Projectile, Physical\n"
+			"Level: 20 (Max)\n"
+			"Quality: +20% (augmented)\n"
+			"--------\n"
+			"Requirements:\n"
+			"Level: 70\n"
+			"Dex: 155\n"
+			"--------\n"
+			"Deals weapon damage as projectiles\n";
+		ImportedItem g = ParseGameItemText(enGem, i18n, lib);
+		rep.check(g.ok && g.baseEn == "Spectral Shield Throw" && g.item.gemLevel == 20 &&
+		          g.item.quality == 20 && g.item.rarity == 0,
+		          "T16 superior gem: level from its own section", g.baseEn);
+		bool noIlvl = false;
+		for (const ImportIssue& w : g.warnings)
+			if (w.msg.find(u8"物品等級") != std::string::npos) noIlvl = true;
+		rep.check(noIlvl, "T16 missing Item Level warned (gems have none)");
+
+		const char* enCurrency =
+			"Item Class: Stackable Currency\n"
+			"Rarity: Currency\n"
+			"Chaos Orb\n"
+			"--------\n"
+			"Stack Size: 5/20\n"
+			"--------\n"
+			"Reforges a rare item with new random modifiers\n";
+		ImportedItem c = ParseGameItemText(enCurrency, i18n, lib);
+		rep.check(c.ok && c.baseEn == "Chaos Orb" && c.item.stackSize == 5 &&
+		          c.item.rarity == 0, "T16 currency Stack Size 5/20 -> 5", c.baseEn);
+
+		const char* enMap =
+			"Item Class: Maps\n"
+			"Rarity: Normal\n"
+			"Blighted Cage Map\n"
+			"--------\n"
+			"Map Tier: 14 (augmented)\n"
+			"--------\n"
+			"Item Level: 79\n";
+		ImportedItem m = ParseGameItemText(enMap, i18n, lib);
+		rep.check(m.ok && m.baseEn == "Cage Map" && m.item.blightedMap &&
+		          m.item.mapTier == 14, "T16 Blighted prefix + Map Tier", m.baseEn);
+
+		const char* enReplica =
+			"Item Class: Belts\n"
+			"Rarity: Unique\n"
+			"Replica Headhunter\n"
+			"Leather Belt\n"
+			"--------\n"
+			"Requirements:\n"
+			"Level: 40\n"
+			"--------\n"
+			"Item Level: 83\n";
+		ImportedItem rp = ParseGameItemText(enReplica, i18n, lib);
+		rep.check(rp.ok && rp.baseEn == "Leather Belt" && rp.item.replica &&
+		          rp.item.rarity == 3, "T16 Replica flag from the name line", rp.baseEn);
+
+		const char* enMagic =
+			"Item Class: Belts\n"
+			"Rarity: Magic\n"
+			"Sharpened Rustic Sash of the Whelpling\n"
+			"--------\n"
+			"Item Level: 12\n";
+		ImportedItem mg = ParseGameItemText(enMagic, i18n, lib);
+		rep.check(mg.ok && mg.baseEn == "Rustic Sash" && mg.item.rarity == 1,
+		          "T16 magic composed name -> longest base substring", mg.baseEn);
+	}
+
+	// ---- T17: evaluator extensions (SocketGroup + influence bitmask) ------
+	{
+		FilterI18n emptyI18n;
+		auto evalOne = [&emptyI18n](const std::string& cond, const PreviewItem& it) {
+			FilterFile f = ParseFilter("Show\n\t" + cond + "\n\tSetFontSize 45\n");
+			return EvaluatePreview(f, it, emptyI18n);
+		};
+
+		PreviewItem it;
+		it.baseType = "Cobalt Jewel";
+		it.classId = "Jewel";
+		it.socketGroups = { "R", "GW", "R" };
+
+		PreviewItem rgb = it;
+		rgb.socketGroups = { "BGR", "W" };          // one linked group holding R+G+B
+
+		rep.check(evalOne("SocketGroup \"RGB\"", rgb).matched,
+		          "T17 SocketGroup RGB matches linked R+G+B in any order");
+		rep.check(!evalOne("SocketGroup \"RGB\"", it).matched,
+		          "T17 SocketGroup RGB needs the colours in ONE linked group");
+		rep.check(evalOne("SocketGroup ! \"RGB\"", it).matched,
+		          "T17 SocketGroup negation");
+		PreviewItem five = it;
+		five.socketGroups = { "GGGGR" };
+		rep.check(evalOne("SocketGroup \"5GGG\"", five).matched,
+		          "T17 SocketGroup 5GGG: 5-linked with 3 greens matches");
+		rep.check(!evalOne("SocketGroup \"5GGG\"", rgb).matched,
+		          "T17 SocketGroup 5GGG: 3-link does not match");
+		rep.check(evalOne("SocketGroup == \"RGB\"", rgb).matched &&
+		          !evalOne("SocketGroup == \"RG\"", rgb).matched,
+		          "T17 SocketGroup == exact multiset");
+		PreviewItem bare = it;
+		bare.socketGroups.clear();
+		rep.check(!evalOne("SocketGroup \"RGB\"", bare).matched,
+		          "T17 unknown socket groups never match (plain-drop semantics)");
+		rep.check(evalOne("SocketGroup \"RGB\"", bare).unknownConds.empty(),
+		          "T17 empty socket groups are modelled, not 'unknown'");
+
+		PreviewItem shaped = it;
+		shaped.influence = kInfShaper;
+		rep.check(evalOne("HasInfluence Shaper", shaped).matched,
+		          "T17 HasInfluence bit match");
+		rep.check(!evalOne("HasInfluence Elder", shaped).matched,
+		          "T17 HasInfluence wrong bit no match");
+		rep.check(evalOne("HasInfluence Elder Shaper", shaped).matched,
+		          "T17 HasInfluence any-of");
+		rep.check(evalOne("HasInfluence ! Shaper", it).matched &&
+		          !evalOne("HasInfluence ! Shaper", shaped).matched,
+		          "T17 HasInfluence negation");
+		rep.check(evalOne("HasInfluence None", it).matched &&
+		          !evalOne("HasInfluence None", shaped).matched,
+		          "T17 HasInfluence None == uninfluenced (old behaviour kept)");
+		rep.check(evalOne("ShaperItem True", shaped).matched &&
+		          !evalOne("ElderItem True", shaped).matched &&
+		          evalOne("ElderItem False", shaped).matched,
+		          "T17 Shaper/ElderItem read the bitmask");
+
+		PreviewResult ru = evalOne("Sockets >= \"AAAA\"", five);
+		bool sawSockets = false;
+		for (const std::string& k : ru.unknownConds) if (k == "Sockets") sawSockets = true;
+		rep.check(!ru.matched && sawSockets,
+		          "T17 Sockets colour syntax stays unmodelled + reported");
+	}
+
+	// ---- T18: end-to-end — pasted zh boots through a mini filter ----------
+	{
+		FilterI18n i18n;
+		i18n.Load(exeDir, "zh-rTW");
+		ItemLibrary libLoader;
+		libLoader.Load(exeDir, i18n);
+		ImportedItem b = ParseGameItemText(kFxBoots, i18n, libLoader.items());
+		rep.check(b.ok, "T18 boots parsed");
+
+		const char* src =
+			"Show\n"
+			"\tHasExplicitMod \"Veiled\"\n"
+			"\tSetFontSize 40\n"
+			"\n"
+			"Show\n"
+			"\tSocketGroup \"RGB\"\n"
+			"\tSetFontSize 41\n"
+			"\n"
+			"Show\n"
+			"\tHasInfluence Shaper Elder\n"
+			"\tSetFontSize 42\n"
+			"\n"
+			"Show\n"
+			"\tContinue\n"
+			"\tDropLevel >= 65\n"
+			"\tPlayEffect Purple\n"
+			"\n"
+			"Show\n"
+			"\tRarity Rare\n"
+			"\tItemLevel >= 80\n"
+			"\tSetTextColor 1 2 3\n";
+		FilterFile f = ParseFilter(src);
+		PreviewResult res = EvaluatePreview(f, b.item, i18n);
+		rep.check(res.matched && res.blockIdx == 4 && res.text[0] == 1 && res.text[1] == 2,
+		          "T18 lands on Rare+ilvl block, skips unmodelled/unmatched ones",
+		          std::to_string(res.blockIdx));
+		rep.check(res.playEffect == "Purple",
+		          "T18 DropLevel 84 passes the Continue block, beam applied");
+		bool sawHem = false;
+		for (const std::string& k : res.unknownConds) if (k == "HasExplicitMod") sawHem = true;
+		rep.check(sawHem, "T18 HasExplicitMod reported as not simulated");
+	}
+
 	rep.note("failures=" + std::to_string(rep.failures));
 	printf("%s", rep.text.c_str());
 
@@ -620,4 +922,90 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 	if (out) out.write(rep.text.data(), (std::streamsize)rep.text.size());
 
 	return rep.failures ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// --filter-import-probe: the paste button's exact path, headless.
+
+int RunFilterImportProbe(const std::wstring& exeDir, const std::wstring& itemFile,
+                         const std::wstring& filterFile)
+{
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		FILE* f = nullptr;
+		freopen_s(&f, "CONOUT$", "w", stdout);
+	}
+	std::string repText;
+	auto line = [&repText](const std::string& s) { repText += s + "\n"; };
+
+	std::string text;
+	if (!itemFile.empty()) {
+		std::ifstream in(itemFile, std::ios::binary);
+		text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+	} else {
+		text = ReadClipboardUtf8(nullptr);   // the same call the paste button makes
+	}
+	line("input: " + std::to_string(text.size()) + " bytes (" +
+	     (itemFile.empty() ? "clipboard" : "file") + ")");
+
+	FilterI18n i18n;
+	i18n.Load(exeDir, "zh-rTW");
+	ItemLibrary lib;
+	lib.Load(exeDir, i18n);
+
+	ImportedItem r = ParseGameItemText(text, i18n, lib.items());
+	line("ok=" + std::to_string(r.ok ? 1 : 0));
+	line("name='" + r.name + "'  base='" + r.baseRaw + "' -> '" + r.baseEn +
+	     "'  classId='" + r.item.classId + "'");
+	line("rarity=" + std::to_string(r.item.rarity) +
+	     " ilvl=" + std::to_string(r.item.itemLevel) +
+	     " drop=" + std::to_string(r.item.dropLevel) +
+	     " q=" + std::to_string(r.item.quality) +
+	     " size=" + std::to_string(r.item.width) + "x" + std::to_string(r.item.height) +
+	     " sockets=" + std::to_string(r.item.sockets) +
+	     "/" + std::to_string(r.item.linkedSockets));
+	{
+		std::string g = "groups=";
+		for (const std::string& s : r.item.socketGroups) g += "[" + s + "]";
+		g += "  influence=" + std::to_string(r.item.influence);
+		g += std::string("  corrupted=") + (r.item.corrupted ? "1" : "0");
+		g += std::string(" identified=") + (r.item.identified ? "1" : "0");
+		g += std::string(" fractured=") + (r.item.fractured ? "1" : "0");
+		g += std::string(" enchanted=") + (r.item.enchanted ? "1" : "0");
+		line(g);
+	}
+	for (const ImportIssue& w : r.warnings) line(u8"warn: " + w.msg);
+
+	int rc = r.ok ? 0 : 1;
+	if (r.ok) {
+		std::wstring fpath = filterFile.empty() ? exeDir + L"Filters\\default.filter"
+		                                        : filterFile;
+		bool okF = false;
+		FilterFile f = LoadFilter(fpath, &okF);
+		if (!okF) {
+			line("filter: could not load (pass a .filter path as the 2nd argument)");
+			rc = 2;
+		} else {
+			PreviewResult res = EvaluatePreview(f, r.item, i18n);
+			line("filter blocks=" + std::to_string(f.blocks.size()));
+			line(std::string("matched=") + (res.matched ? "1" : "0") +
+			     " hidden=" + (res.hidden ? "1" : "0") +
+			     " blockIdx=" + std::to_string(res.blockIdx) +
+			     " fontSize=" + std::to_string(res.fontSize));
+			if (res.blockIdx >= 0 && res.blockIdx < (int)f.blocks.size()) {
+				line("rule: " + f.blocks[res.blockIdx].headerComment);
+				line("rule zh: " + NeverSinkHeaderZh(f.blocks[res.blockIdx].headerComment));
+			}
+			if (!res.customSound.empty()) line("sound: " + res.customSound);
+			if (!res.playEffect.empty()) line("beam: " + res.playEffect);
+			if (!res.minimapIcon.empty()) line("icon: " + res.minimapIcon);
+			std::string u = "unknownConds:";
+			for (const std::string& k : res.unknownConds) u += " " + k;
+			line(u);
+		}
+	}
+
+	printf("%s", repText.c_str());
+	std::ofstream out(exeDir + L"filter_import_probe.txt", std::ios::binary);
+	if (out) out.write(repText.data(), (std::streamsize)repText.size());
+	return rc;
 }

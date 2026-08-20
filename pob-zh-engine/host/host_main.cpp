@@ -415,6 +415,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--filter-selftest") {
 		return RunFilterSelfTest(dir);
 	}
+	if (arg1 == L"--filter-import-probe") {
+		// Headless run of the drop-preview paste button's exact path:
+		// arg2 = item text file (default: clipboard), arg3 = .filter
+		// (default: Filters\default.filter). Report: filter_import_probe.txt.
+		return RunFilterImportProbe(dir, arg2, arg3);
+	}
 
 	// Headless POB-install detection check (synthetic %TEMP% layouts; report file).
 	if (arg1 == L"--detect-selftest") {

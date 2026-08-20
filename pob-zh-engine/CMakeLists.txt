@@ -357,6 +357,7 @@ if (WIN32)
         host/section_filteredit.cpp
         host/section_sounds.cpp
         host/filter_preview.cpp
+        host/filter_item_import.cpp
         host/filter_data.cpp
         host/filter_i18n.cpp
         host/image_tex.cpp
@@ -366,6 +367,7 @@ if (WIN32)
         host/item_library.cpp
         host/audio_player.cpp
         host/sound_manager.cpp
+        host/clipboard_util.cpp
         host/editor_util.cpp
         host/editor_shell.cpp
         host/filter_editor.cpp

@@ -18,6 +18,18 @@
 
 struct EditorShell;
 
+// Influence bits for PreviewItem::influence. The six HasInfluence tokens; the
+// Searing Exarch / Eater of Worlds marks are implicit-based (HasSearingExarch-
+// Implicit / HasEaterOfWorldsImplicit) and stay unmodelled.
+enum : unsigned {
+	kInfShaper   = 1u << 0,
+	kInfElder    = 1u << 1,
+	kInfCrusader = 1u << 2,
+	kInfRedeemer = 1u << 3,
+	kInfHunter   = 1u << 4,
+	kInfWarlord  = 1u << 5,
+};
+
 // The synthetic item the evaluator sees. Defaults describe a plain fresh drop.
 struct PreviewItem {
 	std::string baseType;      // English base name ("Divine Orb")
@@ -35,6 +47,11 @@ struct PreviewItem {
 	bool identified = false, corrupted = false, mirrored = false;
 	bool fractured = false, synthesised = false, enchanted = false;
 	bool replica = false, blightedMap = false;
+	unsigned influence = 0;                  // kInf* bits; 0 = no influence
+	// Linked socket groups as colour strings, e.g. "R G-W R" -> {"R","GW","R"}.
+	// Empty = unknown (synthetic items): SocketGroup then never matches, the
+	// state a plain unsocketed drop is in.
+	std::vector<std::string> socketGroups;
 };
 
 // The resolved display decision (game defaults pre-filled, actions override).
