@@ -12,8 +12,24 @@
 --
 -- Requires the engine-exported global `PobToolsTranslate(english) -> chinese`.
 
+-- POB_ZH_INJECT_TRACE=1 also appends every log line to poecharm_inject_trace.txt
+-- next to this file. The engine console that ConPrintf feeds is hidden in a
+-- normal run, so without this a field report has nothing to quote.
+local traceFile
+do
+	local v = os and os.getenv and os.getenv("POB_ZH_INJECT_TRACE")
+	if v and v ~= "" and v ~= "0" then
+		local src = debug and debug.getinfo and debug.getinfo(1, "S").source or ""
+		local dir = src:match("^@(.*[/\\])") or ""
+		traceFile = io.open(dir .. "poecharm_inject_trace.txt", "ab")
+	end
+end
 local function log(msg)
 	if ConPrintf then ConPrintf("[PobTools] %s", msg) end
+	if traceFile then
+		traceFile:write(msg, "\n")
+		traceFile:flush()
+	end
 end
 
 if type(PobToolsTranslate) ~= "function" or type(common) ~= "table" or type(common.classes) ~= "table" then
@@ -222,6 +238,71 @@ PATCHES["SearchHost"] = function(class)
 	end
 end
 
+-- Edit boxes: keep CJK when PASTING.
+-- EditControl:OnKeyDown handles Ctrl+V / right-click by reading Paste() and
+-- then running text:gsub("[\128-\255]", "?") -- every non-ASCII byte becomes
+-- '?', so "我愛POE" pasted into the Notes tab came out as "??????POE" while
+-- TYPING the same text works (OnChar never passes that line). The replacement
+-- exists because stock POB cannot draw those bytes; this engine can, and the
+-- same box already accepts them when typed.
+--
+-- The paste branch is re-done here minus that one line. Everything else -- the
+-- pasteFilter hook (ItemsTab installs sanitiseText there, so item text still
+-- gets POB's own cleanup), selection replacement, the per-box filter inside
+-- Insert/ReplaceSel, the length limit -- is still POB's own code, and every
+-- other key goes straight to the original.
+PATCHES["EditControl"] = function(class)
+	local orig = class.OnKeyDown
+	if not orig then error("EditControl has no OnKeyDown to wrap") end
+	class.OnKeyDown = function(self, key, doubleClick)
+		-- same condition as upstream; disableRightClickPaste exists in PoE2 only
+		-- (nil in PoE1, so the extra test is harmless there)
+		local paste = (key == "v" and IsKeyDown("CTRL"))
+			or (key == "RIGHTBUTTON" and self.Object:IsMouseOver() and not self.disableRightClickPaste)
+		if not paste then
+			return orig(self, key, doubleClick)
+		end
+		-- same guards as the original, in the same order
+		if not self:IsShown() or not self:IsEnabled() then
+			return
+		end
+		local mOverControl = self:GetMouseOverControl()
+		if mOverControl and mOverControl.OnKeyDown then
+			self.selControl = mOverControl
+			return mOverControl:OnKeyDown(key) and self
+		else
+			self.selControl = nil
+		end
+		local text = Paste()
+		if traceFile then
+			log(string.format("EditControl paste key=%s filter=%s pasteFilter=%s bytes=%s", tostring(key),
+				tostring(self.filter), tostring(self.pasteFilter ~= nil),
+				text and (text:gsub(".", function(c) return string.format("%02X ", c:byte()) end)) or "nil"))
+		end
+		if text then
+			if self.pasteFilter then
+				text = self.pasteFilter(text)
+			end
+			-- upstream: text = text:gsub("[\128-\255]", "?")  -- deliberately dropped
+			if self.sel and self.sel ~= self.caret then
+				self:ReplaceSel(text)
+			else
+				self:Insert(text)
+			end
+		end
+		return self
+	end
+	-- Subclasses (ResizableEditControl, GemSelectControl) inherit through a
+	-- CACHING __index (Common.lua newClass): the first lookup copies the parent
+	-- method into the subclass table, so a subclass that already resolved
+	-- OnKeyDown would keep the old one. Swap those copies too.
+	for _, other in pairs(common.classes) do
+		if other ~= class and rawget(other, "OnKeyDown") == orig then
+			other.OnKeyDown = class.OnKeyDown
+		end
+	end
+end
+
 -- Tooltips: translate a line BEFORE POB wraps it.
 --
 -- TooltipClass:AddLine splits on "\n" and immediately calls main:WrapString,
@@ -319,6 +400,15 @@ end
 -- so methods only exist once the whole file has finished loading. POB loads
 -- class files lazily through the global LoadModule (getClass -> LoadModule).
 -- We therefore patch right AFTER each LoadModule returns, not at newClass time.
+--
+-- ...and only after the OUTERMOST one. newClass("EditControl", ..., "UndoHandler")
+-- calls getClass on each parent, and a parent that is not loaded yet goes
+-- through LoadModule *from inside EditControl.lua, before any of its methods
+-- exist*. Patching when that inner call returned found common.classes.EditControl
+-- registered but empty, failed with "has no OnKeyDown to wrap", and the failure
+-- was final because the name was already marked applied. A depth counter makes
+-- the patch wait until the whole nest has finished loading. (Found at runtime
+-- with POB_ZH_INJECT_TRACE; the offline harness had pre-loaded every parent.)
 local applied = {}
 local function applyPatch(name, class)
 	if applied[name] or not class then return end
@@ -339,10 +429,16 @@ tryApplyAll() -- classes already loaded at injection time
 
 if type(LoadModule) == "function" then
 	local origLoadModule = LoadModule
+	local depth = 0
 	LoadModule = function(...)
-		-- class files return at most a couple of values; preserve them
-		local a, b, c, d = origLoadModule(...)
-		tryApplyAll()
+		depth = depth + 1
+		-- class files return at most a couple of values; preserve them.
+		-- pcall so an error inside a module cannot leave depth stuck above zero
+		-- (which would silence every later patch); the error is rethrown as-is.
+		local ok, a, b, c, d = pcall(origLoadModule, ...)
+		depth = depth - 1
+		if not ok then error(a, 0) end
+		if depth == 0 then tryApplyAll() end
 		return a, b, c, d
 	end
 end
