@@ -398,10 +398,17 @@ static std::shared_ptr<const FontBuildInput> PrepareFontInput(
 }
 
 // Builds the fonts into `atlas`. Safe on a worker thread as long as `atlas` is
-// not the one the UI is drawing with: ImFontAtlas::Build touches nothing global
-// (stb_truetype, static range tables, the atlas itself). The RGBA conversion is
-// done here too, so the main thread's CreateFontsTexture finds it ready and only
-// pays for the upload.
+// not the one the UI is drawing with: ImFontAtlas::Build reads only the atlas,
+// stb_truetype and static range tables. The one global it does touch is ImGui's
+// allocation counter (MemAlloc bumps GImGui->IO.MetricsActiveAllocations without
+// atomics) -- a benign race that only skews the Metrics window, but it does mean
+// the context must outlive the worker, and that this claim is worth re-checking
+// on an ImGui upgrade. The RGBA conversion is done here too, so the main
+// thread's CreateFontsTexture finds it ready and only pays for the upload.
+//
+// NOT safe with an empty TTF: AddFontDefault decompresses the built-in font
+// through stb_decompress's file-scope globals, so two threads doing it at once
+// corrupt each other. FontAtlasWorker::Start refuses that case.
 static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBuildInput> in,
                                FontScope scope)
 {
@@ -525,6 +532,10 @@ struct FontAtlasWorker {
 	void Start(std::shared_ptr<const FontBuildInput> in)
 	{
 		Discard();
+		// No TTF: the Full build would be the same default font the main thread is
+		// building right now, and building it on two threads at once corrupts
+		// both (see LoadFonts). Nothing to swap in, so there is nothing to start.
+		if (!in->ttf || in->ttf->empty()) return;
 		done.store(false, std::memory_order_release);
 		atlas = IM_NEW(ImFontAtlas)();
 		ImFontAtlas* a = atlas;
@@ -1197,6 +1208,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Full);
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
+			ImGui::GetIO().Fonts->ClearTexData(); // same as the swap path below
 		}
 		// The full atlas from the startup worker is ready: swap it in between
 		// frames. Order matters -- DestroyFontsTexture clears the TexID of whatever
@@ -1205,7 +1217,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// io.Fonts is at DestroyContext, so the old atlas is ours to free here.
 		// Nothing between this and NewFrame may measure text: ImGui's current
 		// font still points into the old atlas until NewFrame resets it.
-		if (fontWorker.Done()) {
+		// Only once the window is up, i.e. after the first frame: the backend
+		// creates its device objects (font texture included) lazily in the first
+		// NewFrame, and a swap before that would have CreateFontsTexture run twice
+		// -- the second time re-rasterising the whole block on this thread because
+		// ClearTexData had already dropped the pixels.
+		if (fontWorker.Done() && glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
 			LauncherFonts full;
 			ImFontAtlas* fullAtlas = fontWorker.Take(&full);
 			ImGuiIO& io = ImGui::GetIO();
@@ -2473,14 +2490,40 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		          (full.dropped.empty() ? "" : " dropped=" + full.dropped));
 		if (fullAtlas) IM_DELETE(fullAtlas);
 
-		// The user picks another font while the worker is still rasterising: the
-		// launcher discards the build mid-flight (join + free) and rebuilds. Must
-		// neither crash nor leave the worker holding the atlas.
+		// Both builds must share one keep-alive: the atlas only stores pointers
+		// into it, and a copy would move the buffers.
+		check("precise and full builds share the same input buffers",
+		      precise.input == full.input && precise.input == in);
+
+		// The user picks another font while the worker is still rasterising. This
+		// replays ShowLauncher's fontChanged sequence exactly: discard the
+		// in-flight build, clear the live atlas, rebuild Full from a NEW input,
+		// then drop the last reference to the old input -- the worker must be
+		// gone by then or it would be reading freed TTF bytes.
 		FontAtlasWorker abandoned;
 		abandoned.Start(in);
 		abandoned.Discard();
-		check("a font atlas build discarded mid-flight leaves nothing behind",
-		      !abandoned.Running() && !abandoned.Done());
+		ImGui::GetIO().Fonts->Clear();
+		std::shared_ptr<const FontBuildInput> in2 =
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		LauncherFonts rebuilt = LoadFonts(ImGui::GetIO().Fonts, in2, FontScope::Full);
+		precise = LauncherFonts();
+		full = LauncherFonts();
+		in.reset();
+		check("a font change during the background build rebuilds cleanly",
+		      !abandoned.Running() && !abandoned.Done() && rebuilt.input == in2 &&
+		          rebuilt.body && rebuilt.body->FindGlyphNoFallback((ImWchar)0x555F) != nullptr,
+		      std::to_string(rebuilt.texW) + "x" + std::to_string(rebuilt.texH));
+
+		// No TTF at all (Fonts\ folder missing): the worker must refuse to start,
+		// because two threads decompressing ImGui's built-in font race on its
+		// static state.
+		auto noTtf = std::make_shared<FontBuildInput>();
+		noTtf->ttf = std::make_shared<const std::vector<unsigned char>>();
+		noTtf->maxTex = 4096;
+		FontAtlasWorker refused;
+		refused.Start(noTtf);
+		check("the background build is not started without a TTF", !refused.Running());
 		ImGui::DestroyContext();
 	}
 

@@ -20,8 +20,9 @@
 #define POB_ZH_STARTUP_TRACE_H
 
 /* First call picks the file: role = "launcher" / "engine" (ASCII). Later calls
-** ignore the role. Safe to call from any thread; lines from different threads
-** are whole lines but may interleave in order. */
+** ignore the role. Must run before any thread that will mark (both callers do it
+** at process entry); after that marking is safe from any thread -- lines from
+** different threads are whole lines but may interleave in order. */
 void startup_trace_begin(const char* role);
 
 /* Append one stage line. No-op until startup_trace_begin has run. printf-style

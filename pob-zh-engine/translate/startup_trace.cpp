@@ -55,6 +55,14 @@ void startup_trace_begin(const char* role)
 
 	s_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
 	                     FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (s_file == INVALID_HANDLE_VALUE && GetLastError() == ERROR_SHARING_VIOLATION) {
+		/* Another instance of the same role is alive and holds the plain name
+		** (two POBs open at once). Its timeline stays intact; this one gets a
+		** per-process file instead of vanishing. */
+		swprintf_s(path, L"%sPobTools\\startup_%s_%lu.txt", exe, wrole, (unsigned long)GetCurrentProcessId());
+		s_file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS,
+		                     FILE_ATTRIBUTE_NORMAL, nullptr);
+	}
 	if (s_file == INVALID_HANDLE_VALUE) return;
 	char head[160];
 	int len = snprintf(head, sizeof(head), "# pob-zh startup timeline (%s); ms since process creation\r\n", role ? role : "?");

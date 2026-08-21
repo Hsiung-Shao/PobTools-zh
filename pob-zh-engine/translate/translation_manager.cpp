@@ -1548,6 +1548,13 @@ void translation_wait_ready(void) {
     ** 藏在 POB 自己的載入後面)。static bool 在快路徑上只多一個分支。 */
     static bool s_first_use_traced = false;
     if (s_ready.load(std::memory_order_acquire)) {
+        /* worker 已經結束但還沒被收:join 只等它最後那行 trace,微秒級。沒收的話每次
+        ** Restart 都會漏一個 thread 物件與 OS handle,因為 init_async 會直接覆寫指標。 */
+        if (s_init_thread) {
+            if (s_init_thread->joinable()) s_init_thread->join();
+            delete s_init_thread;
+            s_init_thread = nullptr;
+        }
         if (!s_first_use_traced && s_initialized) {
             s_first_use_traced = true;
             startup_trace_mark("first dictionary use: %s", translation_get_init_stats());
@@ -1572,6 +1579,7 @@ void translation_init(void) {
     translation_wait_ready();
     if (s_initialized) return;
     s_initialized = true;
+    s_init_stats.async = false; /* F3 reload 走這裡,統計行不能再說 in background */
     do_init();
 }
 
@@ -1584,10 +1592,14 @@ void translation_init_async(void) {
     s_init_stats.async = true;
     try {
         s_init_thread = new std::thread([]() {
+            /* 只接 C++ 例外。引擎是 /EHa,catch (...) 會連 access violation 一起吞掉,
+            ** 把半建的 map 交給主執行緒 —— 那種錯誤寧可讓它誠實地崩在這裡。 */
             try {
                 do_init();
-            } catch (...) {
-                OutputDebugStringA("[pob-proxy] translation_init threw; dictionaries left as loaded so far\n");
+            } catch (const std::exception &e) {
+                char why[300];
+                snprintf(why, sizeof(why), "[pob-proxy] translation_init threw (%s); dictionaries left as loaded so far\n", e.what());
+                OutputDebugStringA(why);
             }
             s_ready.store(true, std::memory_order_release);
             /* 不經 translation_get_init_stats():它的 static 緩衝是主執行緒的 */

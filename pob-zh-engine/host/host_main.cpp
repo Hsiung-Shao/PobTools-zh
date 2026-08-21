@@ -288,10 +288,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		startup_trace_mark("wWinMain entered");
 	}
 
-	// App-updater leftovers (*.old backups + download cache) are cleaned on
-	// every non-engine start; the engine child skips it to keep POB startup lean.
-	if (arg1 != L"--engine") CleanupAppUpdateLeftovers(dir);
-	if (arg1.empty()) startup_trace_mark("update leftovers cleaned");
+	// App-updater leftovers (*.old backups + download cache) are cleaned by the
+	// launcher only. The engine child skips it to keep POB startup lean, and the
+	// tool children (--filter-editor etc.) are started BY a running launcher --
+	// one whose updater may be staging a pack in that very cache right now.
+	if (arg1.empty()) {
+		CleanupAppUpdateLeftovers(dir);
+		startup_trace_mark("update leftovers cleaned");
+	}
 
 	// Headless app self-update: check releases, apply translations / stage+swap.
 	if (arg1 == L"--app-update") {
@@ -673,7 +677,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				continue;
 			}
 			if (res == LauncherResult::OpenEditor) {
+				// The editor reads and writes Data\*.json in this process; a
+				// translation pack landing meanwhile would leave one file old and
+				// the rest new. Held, not shut down: the worker stays for the
+				// launcher screen this returns to.
+				appUpdater.SetHold(true);
 				ShowEditor(dir, cfg.game, cfg.locale);
+				appUpdater.SetHold(false);
 				continue; // back to the launcher screen
 			}
 			// filter editor / atlas planner / timeless jewel are spawned as
@@ -697,7 +707,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			                        dd.status == DataDirStatus::External ? dd.root : L"",
 			                        cfg.fontApplyAll);
 		}
+		// Held for the whole run: the engine reads Data\*.json on a background
+		// thread right after start, and the updater's check (started above, still
+		// on the network) would otherwise write a new pack straight over them.
+		appUpdater.SetHold(true);
 		PobLaunch::SpawnPobAndWait(launchLua);
+		appUpdater.SetHold(false);
 
 		// POB self-updated: its updater is about to start a fresh pob-zh.exe
 		// (which will consume the marker), so this instance bows out instead
