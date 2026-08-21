@@ -107,7 +107,7 @@ certutil -hashfile PobTools-<版本>.zip SHA256
 
 此程式已在 GitHub 上開源,歡迎分享給親朋好友使用,也歡迎贊助一杯咖啡 ☕
 
-- **[Buy me a coffee](https://buymeacoffee.com/hsiung)**
+- **[贊助支持頁面](https://hsiung-shao.github.io/support/)**
 
 ---
 

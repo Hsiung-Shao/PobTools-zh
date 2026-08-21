@@ -12,6 +12,15 @@
 /* Initialize translation system: load JSON files based on config */
 void translation_init(void);
 
+/* 背景載入:在 InitAPI 啟一條執行緒建字典,POB 的 Lua 不必等它。任何會讀字典的
+** 公開 API 開頭都會 translation_wait_ready(),所以從呼叫端看語意與同步版相同,
+** 只是第一次呼叫可能阻塞到載入完成。host 的自檢仍用同步的 translation_init()。
+** 不 wait 的:is_enabled / win_env / trace_* / free / strip_ggg_markup / debug_*
+**(它們不讀字典;win_env 在 RenderInit 期被 r_font 呼叫,加了就把載入串回
+** 關鍵路徑)。 */
+void translation_init_async(void);
+void translation_wait_ready(void);
+
 /* Shutdown: free all translation data */
 void translation_shutdown(void);
 
@@ -109,6 +118,9 @@ const char* translation_get_locale(void);
 
 /* Get number of loaded translation entries */
 int translation_get_count(void);
+
+/* 載入耗時摘要(一行文字,給探針與 console 用)。 */
+const char* translation_get_init_stats(void);
 
 /* Toggle translation on/off at runtime (F2 hotkey) */
 void translation_set_enabled(bool enabled);

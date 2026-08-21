@@ -76,6 +76,8 @@ set(SIMPLEGRAPHIC_SOURCES
     "ui_subscript.h"
     "translate/translation_manager.cpp"
     "translate/translation_manager.h"
+    "translate/startup_trace.cpp"
+    "translate/startup_trace.h"
 )
 
 set (SIMPLEGRAPHIC_PLATFORM_SOURCES)
@@ -346,6 +348,7 @@ if (WIN32)
         # return; without this it could only re-implement the merge and
         # would be testing its own copy of the rule instead of the engine
         translate/translation_manager.cpp
+        translate/startup_trace.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
         host/filter_selftest.cpp

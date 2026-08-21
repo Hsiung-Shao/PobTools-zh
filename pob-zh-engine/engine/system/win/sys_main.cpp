@@ -9,6 +9,7 @@
 #include <re2/re2.h>
 
 #include "sys_local.h"
+#include "translation_manager.h"
 
 #include "core.h"
 
@@ -526,6 +527,11 @@ void sys_main_c::Error(const char *fmt, ...)
 	_memTrak_suppressReport = true;
 #endif
 #ifdef _WIN32
+	// ExitProcess kills every other thread first and only then runs the DLL's
+	// static destructors. If the dictionary worker were still mid-rehash, those
+	// destructors would walk a half-built map (or deadlock on a heap lock it
+	// died holding). It finishes in about a second, so wait for it.
+	translation_wait_ready();
 	ExitProcess(0);
 #else
 	std::exit(0);

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cwchar>
 #include <string>
 #include <vector>
 
@@ -169,6 +170,32 @@ bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
 	return true;
 }
 
+// The launcher's own environment minus the variables SetEngineEnv writes. Tools
+// read pob-zh.ini, but LoadLauncherConfig lets POB_GAME / POB_LOCALE override the
+// ini -- so a tool started after a POB had run would inherit THAT launch's game
+// and language instead of what the user has selected since. The engine child is
+// not affected: it is started right after SetEngineEnv, on purpose.
+static std::vector<wchar_t> tool_environment_block()
+{
+	static const wchar_t* const kStrip[] = {
+		L"POB_GAME=", L"POB_LOCALE=", L"POB_ZH_FONTFILE=", L"POB_ZH_DATADIR=", L"POB_ZH_FONT_ALL=",
+	};
+	std::vector<wchar_t> block;
+	wchar_t* env = GetEnvironmentStringsW();
+	if (!env) return block;
+	for (const wchar_t* p = env; *p; p += wcslen(p) + 1) {
+		bool drop = false;
+		for (const wchar_t* k : kStrip) {
+			if (_wcsnicmp(p, k, wcslen(k)) == 0) { drop = true; break; }
+		}
+		if (drop) continue;
+		block.insert(block.end(), p, p + wcslen(p) + 1);
+	}
+	block.push_back(L'\0');
+	FreeEnvironmentStringsW(env);
+	return block;
+}
+
 bool SpawnToolDetached(const std::wstring& exeDir, const wchar_t* flag, InstanceKind kind,
                        unsigned long* outPid)
 {
@@ -178,7 +205,9 @@ bool SpawnToolDetached(const std::wstring& exeDir, const wchar_t* flag, Instance
 	STARTUPINFOW si{};
 	si.cb = sizeof(si);
 	PROCESS_INFORMATION pi{};
-	if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE, 0, nullptr,
+	std::vector<wchar_t> env = tool_environment_block();
+	if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
+	                    env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT, env.empty() ? nullptr : env.data(),
 	                    exeDir.c_str(), &si, &pi)) {
 		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
 		            MB_ICONERROR | MB_OK);
@@ -300,6 +329,27 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 	      AnyPobRunning(exeDir));
 	CloseHandle(m2);
 	check("P9 false once the last holder is gone", !AnyPobRunning(exeDir));
+
+	// A tool child must read pob-zh.ini, so the launch variables the previous
+	// POB start wrote into THIS process must not reach it -- but everything else
+	// (PATH, TEMP, the font dir) must.
+	{
+		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
+		SetEnvironmentVariableW(L"POB_ZH_FONTDIR", exeDir.c_str());
+		std::vector<wchar_t> blk = tool_environment_block();
+		bool hasGame = false, hasLocale = false, hasFontDir = false, hasPath = false;
+		for (const wchar_t* p = blk.data(); p && *p; p += wcslen(p) + 1) {
+			if (_wcsnicmp(p, L"POB_GAME=", 9) == 0) hasGame = true;
+			if (_wcsnicmp(p, L"POB_LOCALE=", 11) == 0) hasLocale = true;
+			if (_wcsnicmp(p, L"POB_ZH_FONTDIR=", 15) == 0) hasFontDir = true;
+			if (_wcsnicmp(p, L"PATH=", 5) == 0) hasPath = true;
+		}
+		check("E1 tool environment drops the POB launch variables", !hasGame && !hasLocale);
+		check("E2 tool environment keeps everything else", hasFontDir && hasPath);
+		SetEnvironmentVariableW(L"POB_GAME", nullptr);
+		SetEnvironmentVariableW(L"POB_LOCALE", nullptr);
+	}
 
 	// Tools share the table with POB but must never be mistaken for it. The one
 	// that matters is P12: a tool window open while an update wants to swap

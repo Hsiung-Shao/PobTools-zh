@@ -23,8 +23,13 @@
 #include <unordered_set>
 #include <vector>
 #include <fstream>
+#include <iterator>
 #include <sstream>
+#include <chrono>
+#include <atomic>
+#include <thread>
 #include "translation_manager.h"
+#include "startup_trace.h"
 
 /* nlohmann/json for structured JSON translation loading */
 #include <json.hpp>
@@ -66,6 +71,35 @@ static std::unordered_map<std::string, std::string> s_item_title_cache;
 static std::string s_locale;
 static bool s_initialized = false;
 static bool s_translation_enabled = true;
+
+/* 載入耗時統計(毫秒)。字典在背景執行緒建(見 translation_init_async),所以真正
+** 落在 POB 啟動關鍵路徑上的只有 wait_ms:主執行緒第一次要用字典時實際等了多久。
+** total/parse/build 是 worker 自己的工時;--tr 探針與引擎 console 都印。 */
+static struct {
+    double parse_ms = 0;   /* nlohmann::json::parse 累計 */
+    double build_ms = 0;   /* 逐筆建表(正向/反向/樣板)累計 */
+    double total_ms = 0;   /* translation_init 全程 */
+    double wait_ms  = 0;   /* 主執行緒第一次 wait_ready 實際阻塞的時間 */
+    int    files    = 0;
+    bool   async    = false;
+} s_init_stats;
+using tr_clock = std::chrono::steady_clock;
+static double tr_ms_since(tr_clock::time_point t0) {
+    return std::chrono::duration<double, std::milli>(tr_clock::now() - t0).count();
+}
+
+/* ========== 背景載入 ==========
+**
+** 三態:s_initialized = 已經開始(同步或非同步),s_ready = 已經完成。
+** 執行緒物件放在堆上而不是 static std::thread:引擎的 sys_main_c::Error() 走
+** ExitProcess 不經 shutdown,一個還 joinable 的 static thread 在 DLL 靜態解構時會
+** std::terminate,POB 崩潰時會再多彈一個「pob-zh.exe 已停止運作」。
+** worker 裡只能用絕對路徑(本檔本來就全是 get_exe_directory() 前綴):主執行緒在
+** Lua 載入期會反覆 SetWorkDir 改 CWD。 */
+static std::atomic<bool> s_ready{true};   /* 沒有 async 在跑時恆為 true */
+static std::thread *s_init_thread = nullptr;
+
+static void do_init(void);
 
 /* ========== Source dictionaries ==========
 **
@@ -631,14 +665,21 @@ int translation_debug_set_legacy_fill(int on) {
 **   3. 剩下的照剩下的順序配 —— 兩邊都沒有可對的鍵時,維持舊行為不亂改
 **   4. 還是配不到的字面數字就照抄樣板;配不到的 {N} 留 '#'(寧可空著,也不要
 **      安靜地填一個錯的數字進去) */
+static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
+                                      const std::string &dst_text);
+
 static FillPlan build_fill_plan(const std::string &src_tmpl, const std::string &dst_tmpl,
                                 const std::string &dst_text) {
+    return build_fill_plan_slots(template_slots(src_tmpl), template_slots(dst_tmpl), dst_text);
+}
+
+/* 載入時每筆詞條要建三份計畫,而 template_slots 是其中最貴的一步(兩次正規化掃描);
+** 把它抽出來讓呼叫端對同一個樣板只算一次。 */
+static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
+                                      const std::string &dst_text) {
     FillPlan plan;
     size_t nhash = 0;
     for (char c : dst_text) if (c == '#') nhash++;
-
-    std::vector<TmplSlot> src = template_slots(src_tmpl);
-    std::vector<TmplSlot> dst = template_slots(dst_tmpl);
 
     /* 正規化後的 '#' 數與樣板槽位數對不上,代表我們對這一條的理解有洞。這時整份
     ** 對照表都不可信,退回舊的依序填 —— 錯也錯得和以前一樣,不會多生一種錯。 */
@@ -929,6 +970,10 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                                   std::unordered_map<std::string, std::string> *sink = nullptr) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
+    /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
+    ** 差了一倍。內容完全相同(binary 開檔,BOM 由 lexer 自己跳)。 */
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
 
     /* bare file name, e.g. "stats.json" — recorded as the origin of every key
     ** this call wins, so the trace can name who shadowed whom */
@@ -939,8 +984,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     }
 
     njson doc;
+    const tr_clock::time_point t_parse = tr_clock::now();
     try {
-        doc = njson::parse(file);
+        doc = njson::parse(raw);
     } catch (const njson::parse_error &e) {
         char msg[512];
         snprintf(msg, sizeof(msg), "[pob-proxy] JSON parse error in %s: %s\n",
@@ -948,6 +994,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         OutputDebugStringA(msg);
         return 0;
     }
+
+    s_init_stats.parse_ms += tr_ms_since(t_parse);
+    const tr_clock::time_point t_build = tr_clock::now();
 
     if (!doc.contains("entries") || !doc["entries"].is_object()) return 0;
 
@@ -1042,19 +1091,23 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         std::string full_key = color_prefix.empty() ? key : (color_prefix + key);
         std::string full_value = color_prefix.empty() ? value : (color_prefix + value);
 
-        /* Duplicate key detection */
-        auto existing = s_translations.find(full_key);
-        if (existing != s_translations.end() && existing->second != full_value) {
-            char msg[512];
-            snprintf(msg, sizeof(msg), "[pob-proxy] JSON duplicate key: \"%.80s\" old=\"%.60s\" new=\"%.60s\" in %s\n",
-                     full_key.c_str(), existing->second.c_str(), full_value.c_str(), filepath.c_str());
-            OutputDebugStringA(msg);
-        }
-
         std::string clean_key = strip_brackets(full_key);
         std::string clean_value = strip_brackets(full_value);
 
-        s_translations[full_key] = full_value;
+        /* Insert-or-overwrite (last wins, as always) in ONE hash lookup; the
+        ** duplicate diagnostic reads the old value before it is replaced. */
+        {
+            auto [it, inserted] = s_translations.try_emplace(full_key, full_value);
+            if (!inserted) {
+                if (it->second != full_value) {
+                    char msg[512];
+                    snprintf(msg, sizeof(msg), "[pob-proxy] JSON duplicate key: \"%.80s\" old=\"%.60s\" new=\"%.60s\" in %s\n",
+                             full_key.c_str(), it->second.c_str(), full_value.c_str(), filepath.c_str());
+                    OutputDebugStringA(msg);
+                }
+                it->second = full_value;
+            }
+        }
         if (sink) (*sink)[full_key] = full_value;
         s_reverse[full_value] = full_key;
         s_reverse_origin[full_value] = origin;
@@ -1084,16 +1137,36 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         /* Build pattern maps (use clean keys without color prefix for pattern matching) */
         std::string norm_value = normalize_whitespace(digits_to_hash(normalize_placeholders(clean_value)));
         std::string norm_key = normalize_whitespace(digits_to_hash(normalize_placeholders(clean_key)));
+        /* 兩個樣板的槽位各算一次,給下面最多三份計畫共用(template_slots 是純函式,
+        ** 結果與每次重算逐位元相同)。 */
+        std::vector<TmplSlot> slots_key, slots_value;
+        bool slots_done = false;
+        auto ensure_slots = [&]() {
+            if (slots_done) return;
+            slots_done = true;
+            slots_key = template_slots(clean_key);
+            slots_value = template_slots(clean_value);
+        };
+        FillPlan reverse_plan;   /* value → key,norm_value 與 fuzzy_value 共用 */
+        bool reverse_plan_done = false;
+        auto ensure_reverse_plan = [&]() {
+            if (reverse_plan_done) return;
+            reverse_plan_done = true;
+            ensure_slots();
+            reverse_plan = build_fill_plan_slots(slots_value, slots_key, norm_key);
+        };
         if (norm_value != clean_value || norm_key != clean_key) {
-            s_reverse_pattern[norm_value] = build_fill_plan(clean_value, clean_key, norm_key);
+            ensure_reverse_plan();
+            s_reverse_pattern[norm_value] = reverse_plan;
             s_reverse_pattern_origin[norm_value] = origin;
-            s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan(clean_key, clean_value, norm_value);
+            s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan_slots(slots_key, slots_value, norm_value);
         }
         std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
         if (fuzzy_value != norm_value) {
             /* 同一份計畫:模糊化只改查表用的鍵,不動槽位順序(synonyms.json 的規則
             ** 都不會刪掉 '#',所以模糊鍵命中時輸入的格數仍與樣板一致)。 */
-            s_reverse_pattern[fuzzy_value] = build_fill_plan(clean_value, clean_key, norm_key);
+            ensure_reverse_plan();
+            s_reverse_pattern[fuzzy_value] = reverse_plan;
             s_reverse_pattern_origin[fuzzy_value] = origin;
         }
 
@@ -1133,6 +1206,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         count++;
     }
 
+    s_init_stats.build_ms += tr_ms_since(t_build);
+    s_init_stats.files++;
     return count;
 }
 
@@ -1468,9 +1543,82 @@ static bool try_load_json(const std::string &base_dir) {
 
 /* ========== Public API ========== */
 
+void translation_wait_ready(void) {
+    /* 第一次真的要用字典時留一筆:等了多久就是載入落在關鍵路徑上的量(0 = 完全
+    ** 藏在 POB 自己的載入後面)。static bool 在快路徑上只多一個分支。 */
+    static bool s_first_use_traced = false;
+    if (s_ready.load(std::memory_order_acquire)) {
+        /* worker 已經結束但還沒被收:join 只等它最後那行 trace,微秒級。沒收的話每次
+        ** Restart 都會漏一個 thread 物件與 OS handle,因為 init_async 會直接覆寫指標。 */
+        if (s_init_thread) {
+            if (s_init_thread->joinable()) s_init_thread->join();
+            delete s_init_thread;
+            s_init_thread = nullptr;
+        }
+        if (!s_first_use_traced && s_initialized) {
+            s_first_use_traced = true;
+            startup_trace_mark("first dictionary use: %s", translation_get_init_stats());
+        }
+        return;
+    }
+    s_first_use_traced = true;
+    const tr_clock::time_point t0 = tr_clock::now();
+    if (s_init_thread) {
+        if (s_init_thread->joinable()) s_init_thread->join();
+        delete s_init_thread;
+        s_init_thread = nullptr;
+    }
+    /* join 之後一定 ready(worker 每個出口都設);若沒有 thread 卻不 ready,只可能
+    ** 是 thread 建立失敗,那時 init_async 已經同步補跑過了。 */
+    s_ready.store(true, std::memory_order_release);
+    s_init_stats.wait_ms = tr_ms_since(t0);
+    startup_trace_mark("translation dictionaries ready: %s", translation_get_init_stats());
+}
+
 void translation_init(void) {
+    translation_wait_ready();
     if (s_initialized) return;
     s_initialized = true;
+    s_init_stats.async = false; /* F3 reload 走這裡,統計行不能再說 in background */
+    do_init();
+}
+
+void translation_init_async(void) {
+    translation_wait_ready();
+    if (s_initialized) return;
+    s_initialized = true;
+    s_ready.store(false, std::memory_order_release);
+    s_init_stats = {};
+    s_init_stats.async = true;
+    try {
+        s_init_thread = new std::thread([]() {
+            /* 只接 C++ 例外。引擎是 /EHa,catch (...) 會連 access violation 一起吞掉,
+            ** 把半建的 map 交給主執行緒 —— 那種錯誤寧可讓它誠實地崩在這裡。 */
+            try {
+                do_init();
+            } catch (const std::exception &e) {
+                char why[300];
+                snprintf(why, sizeof(why), "[pob-proxy] translation_init threw (%s); dictionaries left as loaded so far\n", e.what());
+                OutputDebugStringA(why);
+            }
+            s_ready.store(true, std::memory_order_release);
+            /* 不經 translation_get_init_stats():它的 static 緩衝是主執行緒的 */
+            startup_trace_mark("translation worker finished: %.0f ms (json parse %.0f, table build %.0f)",
+                               s_init_stats.total_ms, s_init_stats.parse_ms, s_init_stats.build_ms);
+        });
+    } catch (...) {
+        /* 開不了執行緒(資源耗盡):退回同步,行為與以前完全相同 */
+        s_init_thread = nullptr;
+        do_init();
+        s_ready.store(true, std::memory_order_release);
+    }
+}
+
+static void do_init(void) {
+    const bool async = s_init_stats.async;
+    s_init_stats = {};
+    s_init_stats.async = async;
+    const tr_clock::time_point t_init = tr_clock::now();
 
     s_locale = determine_locale();
     if (s_locale.empty()) {
@@ -1521,9 +1669,11 @@ void translation_init(void) {
     std::sort(s_term_glossary.begin(), s_term_glossary.end(),
         [](const auto &a, const auto &b) { return a.first.size() > b.first.size(); });
 
-    snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d translations (JSON mode, %d pattern, %d glossary, %d base types)\n",
+    s_init_stats.total_ms = tr_ms_since(t_init);
+    snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d translations (JSON mode, %d pattern, %d glossary, %d base types) in %.0f ms (parse %.0f, build %.0f, %d files)\n",
              (int)s_translations.size(),
-             (int)s_reverse_pattern.size(), (int)s_term_glossary.size(), (int)s_reverse_bases.size());
+             (int)s_reverse_pattern.size(), (int)s_term_glossary.size(), (int)s_reverse_bases.size(),
+             s_init_stats.total_ms, s_init_stats.parse_ms, s_init_stats.build_ms, s_init_stats.files);
     OutputDebugStringA(msg);
 
     /* Diagnostic: verify key patterns exist in map */
@@ -1566,6 +1716,7 @@ void translation_init(void) {
 }
 
 void translation_shutdown(void) {
+    translation_wait_ready();
     s_translations.clear();
     s_reverse.clear();
     s_reverse_pattern.clear();
@@ -1746,7 +1897,9 @@ static bool translate_title_words(const std::string &title, std::string &out) {
 }
 
 const char* translation_lookup(const char *english) {
-    if (!english || s_translations.empty() || !s_translation_enabled) return nullptr;
+    if (!english || !s_translation_enabled) return nullptr;
+    translation_wait_ready();
+    if (s_translations.empty()) return nullptr;
 
     /* One-time deferred diagnostic: check lua-utf8.dll load status.
      * This runs on the first lookup (by which time Lua is fully initialized). */
@@ -2029,7 +2182,9 @@ const char* translation_lookup(const char *english) {
 }
 
 const char* translation_lookup_item_title(const char *english) {
-    if (!english || !*english || s_translations.empty() || !s_translation_enabled) return nullptr;
+    if (!english || !*english || !s_translation_enabled) return nullptr;
+    translation_wait_ready();
+    if (s_translations.empty()) return nullptr;
 
     /* Deliberately NOT s_lookup_cache: a relaxed result must never become
     ** visible to the general path. Caching "Loath Joy" -> "惡行 歡愉" in the
@@ -2061,6 +2216,7 @@ const char* translation_lookup_item_title(const char *english) {
 ** a dictionary file may be missing from an older data pack, and the app must
 ** still render — just without the disambiguation. */
 const char* translation_set_source(const char *name) {
+    translation_wait_ready();
     static std::string prev_holder;
     /* Copy the argument BEFORE touching prev_holder. Restoring a nested scope
     ** means passing back the pointer this function returned last time, which
@@ -2086,14 +2242,26 @@ const char* translation_set_source(const char *name) {
 }
 
 const char* translation_get_source(void) {
+    translation_wait_ready();
     return s_active_source_name.empty() ? nullptr : s_active_source_name.c_str();
 }
 
 const char* translation_get_locale(void) {
+    translation_wait_ready();
     return s_locale.c_str();
 }
 
+const char* translation_get_init_stats(void) {
+    /* 不 wait:wait_ready 自己會在 trace 行裡呼叫這個 */
+    static char buf[200];
+    snprintf(buf, sizeof(buf), "init %.0f ms%s (json parse %.0f, table build %.0f, %d files), main thread waited %.0f ms",
+             s_init_stats.total_ms, s_init_stats.async ? " in background" : "",
+             s_init_stats.parse_ms, s_init_stats.build_ms, s_init_stats.files, s_init_stats.wait_ms);
+    return buf;
+}
+
 int translation_get_count(void) {
+    translation_wait_ready();
     return (int)s_translations.size();
 }
 
@@ -3036,6 +3204,7 @@ const char* translation_strip_ggg_markup(const char *s) {
 }
 
 const char* translation_classify_dump(const char *text) {
+    translation_wait_ready();
     static std::string holder;
     holder.clear();
     if (!text) return holder.c_str();
@@ -3053,7 +3222,9 @@ const char* translation_classify_dump(const char *text) {
 /* ========== Public: reverse-translate multi-line text ========== */
 
 char* translation_reverse_text(const char *chinese_text) {
-    if (!chinese_text || s_reverse.empty()) return nullptr;
+    if (!chinese_text) return nullptr;
+    translation_wait_ready();
+    if (s_reverse.empty()) return nullptr;
 
     /* Check if text contains any non-ASCII (potential CJK) */
     bool has_nonascii = false;
@@ -3300,6 +3471,7 @@ void translation_free(char *str) {
 }
 
 void translation_set_enabled(bool enabled) {
+    translation_wait_ready(); /* clears caches the worker may still be filling */
     s_translation_enabled = enabled;
     s_lookup_cache.clear();
     for (auto &kv : s_source_cache) kv.second.clear();
@@ -3313,7 +3485,9 @@ bool translation_is_enabled(void) {
 }
 
 const char* translation_reverse_lookup(const char *chinese) {
-    if (!chinese || s_reverse.empty()) return nullptr;
+    if (!chinese) return nullptr;
+    translation_wait_ready();
+    if (s_reverse.empty()) return nullptr;
     auto it = s_reverse.find(chinese);
     if (it != s_reverse.end()) {
         return it->second.c_str();

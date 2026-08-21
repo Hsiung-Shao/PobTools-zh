@@ -270,14 +270,29 @@ int RunTranslateProbe(const std::wstring& text)
 {
 	SetConsoleOutputCP(CP_UTF8);
 	SetEnvironmentVariableA("POB_LOCALE", "zh-rTW");
+	// Wall time since the process was created, so the probe also shows what the
+	// exe costs BEFORE the dictionaries are touched (loader, CRT, startup cleanup).
+	auto sinceStart = []() -> double {
+		FILETIME c, e, k, u;
+		GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u);
+		FILETIME now;
+		GetSystemTimeAsFileTime(&now);
+		ULARGE_INTEGER a, b;
+		a.LowPart = c.dwLowDateTime; a.HighPart = c.dwHighDateTime;
+		b.LowPart = now.dwLowDateTime; b.HighPart = now.dwHighDateTime;
+		return (double)(b.QuadPart - a.QuadPart) / 10000.0;
+	};
+	const double tBefore = sinceStart();
 	translation_init();
+	const double tAfter = sinceStart();
+	printf("process->init %.0f ms, init->done %.0f ms\n", tBefore, tAfter - tBefore);
 
 	int n = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0, nullptr, nullptr);
 	std::string en(n, '\0');
 	if (n > 0) WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), &en[0], n, nullptr, nullptr);
 
-	printf("locale=%s entries=%d\n", translation_get_locale() ? translation_get_locale() : "(null)",
-	       translation_get_count());
+	printf("locale=%s entries=%d %s\n", translation_get_locale() ? translation_get_locale() : "(null)",
+	       translation_get_count(), translation_get_init_stats());
 	if (en.empty()) { printf("usage: --tr \"<english>\"\n"); return 2; }
 
 	const char* zh = translation_lookup(en.c_str());

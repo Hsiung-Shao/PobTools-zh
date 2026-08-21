@@ -7,6 +7,7 @@
 #include "r_local.h"
 
 #include "translation_manager.h"
+#include "startup_trace.h"
 
 #include <fmt/format.h>
 #include <iostream>
@@ -267,6 +268,7 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 {
 	numFontHeight = 0;
 	fontHeightMap = NULL;
+	const double ctorStart = startup_trace_now_ms();
 
 	std::string fileNameBase = fmt::format(CFG_DATAPATH "Fonts/{}", fontName);
 
@@ -356,6 +358,7 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/FZ_ZY.ttf");
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/CJKFallback.ttf");
 
+	const double ftStart = startup_trace_now_ms();
 	for (size_t i = 0; i < ttfCandidates.size(); i++) {
 		std::ifstream test(ttfCandidates[i]);
 		if (test.good()) {
@@ -367,6 +370,8 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 			ftCache.reset();
 		}
 	}
+	startup_trace_mark("font '%s': bitmap %.1f ms, freetype %.1f ms", fontName,
+	                   ftStart - ctorStart, startup_trace_now_ms() - ftStart);
 
 	// POB_ZH_FONT_ALL: also draw ASCII from the selected TTF so Latin/digits
 	// and CJK share one typeface. "0" disables; absent/other enables (the host

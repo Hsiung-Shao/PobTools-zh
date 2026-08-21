@@ -15,6 +15,7 @@
 #include "launcher_editor.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
+#include "../translate/startup_trace.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -30,8 +31,10 @@
 #include <imgui_impl_opengl3.h>
 #include <misc/cpp/imgui_stdlib.h> // InputText over std::string (the data-folder field)
 
+#include <atomic>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 // Tools (filter editor / atlas planner / timeless jewel) run as child processes
@@ -280,6 +283,35 @@ static std::wstring from_utf8(const std::string& s)
 // Build one atlas covering every string in all language tables (plus any
 // runtime texts such as detected install paths), so switching the UI
 // language never requires a rebuild.
+//
+// Everything an atlas build reads that is NOT the atlas itself. ImGui stores only
+// POINTERS to the TTF bytes and to the glyph-range arrays, so they must live at
+// least as long as the atlas -- and the atlas may be built on a worker thread
+// while the main thread rebuilds another one (the user picked a new font), so
+// "static buffers reused by every build" is exactly the kind of sharing that
+// turns into a use-after-free. Each build gets its own copy, kept alive by the
+// LauncherFonts it produced.
+struct FontBuildInput {
+	std::shared_ptr<const std::vector<unsigned char>> ttf; // empty -> ImGui default font
+	// The precise set: every string the launcher can draw, in every installed
+	// language, plus `extraTexts`. Computed on the main thread (it reads the
+	// string tables, which the translation editor may reload), so a worker never
+	// has to look at them.
+	ImVector<ImWchar> rangesPrecise;
+	ImVector<ImWchar> rangesDigits; // "0123456789 /" for ToolPanelHost::big
+	float scale = 1.0f;
+	// Whatever the driver will take. Queried on the main thread (it needs the GL
+	// context), never assumed: ANGLE reports 16384 on the D3D11 backend and as
+	// little as 2048 on D3D9, and the difference decides whether the full CJK
+	// block is possible at all on this machine. 0 = unknown, assume the worst.
+	int maxTex = 0;
+};
+
+// Which glyphs a build covers. The launcher starts with Precise so its first
+// frame is on screen in well under 100 ms, and swaps in a Full atlas built on a
+// worker thread a few hundred milliseconds later. Only the body face differs.
+enum class FontScope { Precise, Full };
+
 struct LauncherFonts {
 	ImFont* body = nullptr;
 	ImFont* small = nullptr;
@@ -290,6 +322,7 @@ struct LauncherFonts {
 	ImFont* big = nullptr;
 	bool koreanOk = false;
 	bool cjkOk = false;
+	FontScope scope = FontScope::Precise;
 
 	// What the atlas actually came out as, and what the GPU will accept. Recorded
 	// rather than assumed: ImGui reports an oversized atlas only through IM_ASSERT,
@@ -298,7 +331,15 @@ struct LauncherFonts {
 	int texW = 0, texH = 0, maxTex = 0;
 	// Empty when everything asked for fitted. Otherwise says what had to be given
 	// up, so the launcher can show it instead of silently drawing '?' forever.
+	// A Precise build never sets it: it did not try for the full block, so it has
+	// not "dropped" anything, and the UI warning keys off "cjk" being here.
 	std::string dropped;
+
+	// Keep-alive for the pointers the atlas holds (see FontBuildInput). Shared,
+	// so copying a LauncherFonts never moves the buffers the atlas points into.
+	std::shared_ptr<const FontBuildInput> input;
+	struct Ranges { ImVector<ImWchar> full; };
+	std::shared_ptr<Ranges> ranges;
 };
 
 // The body face carries the WHOLE CJK block, not just the characters the string
@@ -326,44 +367,70 @@ static void BuildPreciseRanges(ImFontGlyphRangesBuilder& b,
 	for (const std::string& t : extraTexts) b.AddText(t.c_str());
 }
 
-// `maxTexOverride` is for the headless check: with no GL context there is nothing
-// to ask, so a selftest that let this query would only ever measure the smallest
-// fallback and never the case that actually ships. Zero means "ask the driver".
-static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigned char>& ttfKeepAlive,
-                               const std::vector<std::string>& extraTexts, float scale,
-                               const std::vector<const LauncherStrings*>& overlays = {},
-                               int maxTexOverride = 0)
+// Main thread only (reads the string tables and, when `maxTexOverride` is 0, the
+// GL context). `maxTexOverride` is for the headless check: with no GL context
+// there is nothing to ask, so a selftest that let this query would only ever
+// measure the smallest fallback and never the case that actually ships.
+static std::shared_ptr<const FontBuildInput> PrepareFontInput(
+    const std::wstring& fontPath, const std::vector<std::string>& extraTexts,
+    const std::vector<const LauncherStrings*>& overlays, float scale, int maxTexOverride)
 {
-	LauncherFonts out;
-	ImGuiIO& io = ImGui::GetIO();
-
-	ttfKeepAlive = read_file(fontPath);
-	if (ttfKeepAlive.empty()) {
-		out.body = io.Fonts->AddFontDefault();
-		out.small = out.body;
-		out.title = out.body;
-		out.big = out.body;
-		io.Fonts->Build();
-		return out;
+	auto in = std::make_shared<FontBuildInput>();
+	in->ttf = std::make_shared<const std::vector<unsigned char>>(read_file(fontPath));
+	in->scale = scale;
+	{
+		ImFontGlyphRangesBuilder b;
+		BuildPreciseRanges(b, extraTexts, overlays);
+		b.BuildRanges(&in->rangesPrecise);
 	}
-
-	// All three must outlive the atlas: ImGui stores only the POINTER to a glyph
-	// range, and re-reads it on every Build(). Separate buffers because the body
-	// face, the other two, and the digits-only face no longer share a range.
-	static ImVector<ImWchar> rangesPrecise, rangesFull, rangesDigits;
-
-	// Whatever the driver will take. Queried, not assumed -- ANGLE reports 16384 on
-	// the D3D11 backend and as little as 2048 on D3D9, and the difference decides
-	// whether the full CJK block is possible at all on this machine.
+	{
+		ImFontGlyphRangesBuilder b;
+		b.AddText("0123456789 /");
+		b.BuildRanges(&in->rangesDigits);
+	}
 	GLint maxTex = (GLint)maxTexOverride;
 	if (maxTex <= 0) {
 		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
 		if (maxTex <= 0) maxTex = 2048;  // no context / broken query: assume the worst
 	}
-	out.maxTex = (int)maxTex;
+	in->maxTex = (int)maxTex;
+	return in;
+}
+
+// Builds the fonts into `atlas`. Safe on a worker thread as long as `atlas` is
+// not the one the UI is drawing with: ImFontAtlas::Build reads only the atlas,
+// stb_truetype and static range tables. The one global it does touch is ImGui's
+// allocation counter (MemAlloc bumps GImGui->IO.MetricsActiveAllocations without
+// atomics) -- a benign race that only skews the Metrics window, but it does mean
+// the context must outlive the worker, and that this claim is worth re-checking
+// on an ImGui upgrade. The RGBA conversion is done here too, so the main
+// thread's CreateFontsTexture finds it ready and only pays for the upload.
+//
+// NOT safe with an empty TTF: AddFontDefault decompresses the built-in font
+// through stb_decompress's file-scope globals, so two threads doing it at once
+// corrupt each other. FontAtlasWorker::Start refuses that case.
+static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBuildInput> in,
+                               FontScope scope)
+{
+	LauncherFonts out;
+	out.input = in;
+	out.ranges = std::make_shared<LauncherFonts::Ranges>();
+	out.scope = scope;
+	out.maxTex = in->maxTex;
+
+	if (!in->ttf || in->ttf->empty()) {
+		out.body = atlas->AddFontDefault();
+		out.small = out.body;
+		out.title = out.body;
+		out.big = out.body;
+		atlas->Build();
+		return out;
+	}
+	const std::vector<unsigned char>& ttf = *in->ttf;
+	const int maxTex = in->maxTex;
 
 	ImFontConfig cfg;
-	cfg.FontDataOwnedByAtlas = false; // shared buffer for all sizes; we keep it alive
+	cfg.FontDataOwnedByAtlas = false; // shared buffer for all sizes; `in` keeps it alive
 	cfg.OversampleH = 1;              // 3x the area otherwise, for no gain at these sizes
 	cfg.OversampleV = 1;
 	cfg.PixelSnapH = true;
@@ -372,64 +439,60 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 	// between ~3200 rows and 4096, i.e. about 15MB of texture for nothing. NPOT with
 	// CLAMP_TO_EDGE and no mipmaps is valid in GLES2, which is exactly how the ImGui
 	// backend sets the atlas up.
-	io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
+	atlas->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
 	// As wide as the GPU allows, up to 8192. Width and height trade off directly in
 	// the packer, and height is the dimension that overflows: at 150% DPI the full
 	// CJK block needs ~4600 rows at 4096 wide, which does not fit a 4096 limit -- but
 	// at 8192 wide it needs ~2300 and fits easily. Capped at 8192 because past that
 	// the atlas is one long strip and nothing is gained.
-	io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : (maxTex >= 4096 ? 4096 : 2048);
+	atlas->TexDesiredWidth = maxTex >= 8192 ? 8192 : (maxTex >= 4096 ? 4096 : 2048);
 
 	// Tries one combination and reports whether the result fits the GPU. Everything
 	// is rebuilt from scratch each time -- Clear() drops the fonts as well as the
 	// pixels, so the ImFont pointers from a rejected attempt are already dead.
 	auto attempt = [&](bool fullCjk, bool korean) -> bool {
-		io.Fonts->Clear();
-		rangesPrecise.clear();
-		rangesFull.clear();
-		rangesDigits.clear();
+		atlas->Clear();
+		out.ranges->full.clear();
 		{
 			ImFontGlyphRangesBuilder b;
-			BuildPreciseRanges(b, extraTexts, overlays);
-			b.BuildRanges(&rangesPrecise);
+			b.AddRanges(in->rangesPrecise.Data);
+			if (fullCjk) b.AddRanges(atlas->GetGlyphRangesChineseFull());
+			if (korean) b.AddRanges(atlas->GetGlyphRangesKorean());
+			b.BuildRanges(&out.ranges->full);
 		}
-		{
-			ImFontGlyphRangesBuilder b;
-			BuildPreciseRanges(b, extraTexts, overlays);
-			if (fullCjk) b.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
-			if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
-			b.BuildRanges(&rangesFull);
-		}
-		out.body = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
-		                                          kFontSize * scale, &cfg, rangesFull.Data);
-		out.small = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
-		                                           kSmallFontSize * scale, &cfg, rangesPrecise.Data);
-		out.title = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
-		                                           kTitleFontSize * scale, &cfg, rangesPrecise.Data);
-		{
-			ImFontGlyphRangesBuilder b;
-			b.AddText("0123456789 /");
-			b.BuildRanges(&rangesDigits);
-		}
-		out.big = io.Fonts->AddFontFromMemoryTTF(ttfKeepAlive.data(), (int)ttfKeepAlive.size(),
-		                                         kBigFontSize * scale, &cfg, rangesDigits.Data);
-		if (!io.Fonts->Build()) return false;
-		out.texW = io.Fonts->TexWidth;
-		out.texH = io.Fonts->TexHeight;
-		return out.texW <= (int)maxTex && out.texH <= (int)maxTex;
+		const float scale = in->scale;
+		out.body = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
+		                                       kFontSize * scale, &cfg, out.ranges->full.Data);
+		out.small = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
+		                                        kSmallFontSize * scale, &cfg, in->rangesPrecise.Data);
+		out.title = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
+		                                        kTitleFontSize * scale, &cfg, in->rangesPrecise.Data);
+		out.big = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
+		                                      kBigFontSize * scale, &cfg, in->rangesDigits.Data);
+		if (!atlas->Build()) return false;
+		out.texW = atlas->TexWidth;
+		out.texH = atlas->TexHeight;
+		return out.texW <= maxTex && out.texH <= maxTex;
 	};
 
-	// Widest first, then give up the least useful part. Korean goes before Chinese
-	// because only two languages ship today and neither is Korean, while Chinese is
-	// what every build name and item name is written in.
-	if (!attempt(true, true)) {
-		out.dropped = "korean";
-		if (!attempt(true, false)) {
-			out.dropped = "cjk";
-			// Last resort: the precise set for everything, i.e. the behaviour before
-			// tab titles needed arbitrary text. Tab labels will show '?' for anything
-			// outside the string tables, which is why `dropped` is surfaced in the UI.
-			attempt(false, false);
+	if (scope == FontScope::Precise) {
+		// The set the string tables need and nothing more: a few thousand glyphs,
+		// built in tens of milliseconds, so the window can show its first frame
+		// while the worker is still rasterising the full block.
+		attempt(false, false);
+	} else {
+		// Widest first, then give up the least useful part. Korean goes before Chinese
+		// because only two languages ship today and neither is Korean, while Chinese is
+		// what every build name and item name is written in.
+		if (!attempt(true, true)) {
+			out.dropped = "korean";
+			if (!attempt(true, false)) {
+				out.dropped = "cjk";
+				// Last resort: the precise set for everything, i.e. the behaviour before
+				// tab titles needed arbitrary text. Tab labels will show '?' for anything
+				// outside the string tables, which is why `dropped` is surfaced in the UI.
+				attempt(false, false);
+			}
 		}
 	}
 
@@ -438,14 +501,69 @@ static LauncherFonts LoadFonts(const std::wstring& fontPath, std::vector<unsigne
 		out.koreanOk = out.body->FindGlyphNoFallback((ImWchar)0xD55C /* 한 */) != nullptr;
 	}
 	if (!out.body) {
-		out.body = io.Fonts->AddFontDefault();
+		out.body = atlas->AddFontDefault();
 		out.small = out.body;
 		out.title = out.body;
 		out.big = out.body;
-		io.Fonts->Build();
+		atlas->Build();
+	}
+	// 18.8M pixels for the full block at 8192 wide: done here, off the main thread
+	// when this is the worker, rather than inside the backend's CreateFontsTexture.
+	{
+		unsigned char* px = nullptr;
+		int w = 0, h = 0;
+		atlas->GetTexDataAsRGBA32(&px, &w, &h);
 	}
 	return out;
 }
+
+// The Full build on a worker thread. Owns the atlas until the main thread takes
+// it (Take) or throws it away (Discard); both join first. Never outlives the ImGui
+// context: ImGui::MemAlloc keeps a counter on the current context, so the worker
+// must be gone before DestroyContext.
+struct FontAtlasWorker {
+	std::thread thread;
+	std::atomic<bool> done{false};
+	ImFontAtlas* atlas = nullptr;
+	LauncherFonts fonts;
+
+	bool Running() const { return atlas != nullptr; }
+
+	void Start(std::shared_ptr<const FontBuildInput> in)
+	{
+		Discard();
+		// No TTF: the Full build would be the same default font the main thread is
+		// building right now, and building it on two threads at once corrupts
+		// both (see LoadFonts). Nothing to swap in, so there is nothing to start.
+		if (!in->ttf || in->ttf->empty()) return;
+		done.store(false, std::memory_order_release);
+		atlas = IM_NEW(ImFontAtlas)();
+		ImFontAtlas* a = atlas;
+		thread = std::thread([this, a, in]() {
+			fonts = LoadFonts(a, in, FontScope::Full);
+			done.store(true, std::memory_order_release);
+		});
+	}
+	bool Done() const { return atlas && done.load(std::memory_order_acquire); }
+	// The finished atlas; the caller now owns it.
+	ImFontAtlas* Take(LauncherFonts* out)
+	{
+		if (thread.joinable()) thread.join();
+		ImFontAtlas* a = atlas;
+		atlas = nullptr;
+		*out = fonts;
+		fonts = LauncherFonts();
+		return a;
+	}
+	void Discard()
+	{
+		if (thread.joinable()) thread.join();
+		if (atlas) IM_DELETE(atlas);
+		atlas = nullptr;
+		fonts = LauncherFonts();
+	}
+	~FontAtlasWorker() { Discard(); }
+};
 
 // Can the LAUNCHER load this font file?
 //
@@ -690,6 +808,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		MessageBoxW(nullptr, L"無法初始化 GLFW，啟動器介面無法顯示。", L"PobTools", MB_ICONERROR | MB_OK);
 		return LauncherResult::Quit;
 	}
+	startup_trace_mark("glfwInit done");
 
 	// Same context setup as the engine (sys_video.cpp): GLES 3.0 via ANGLE/EGL.
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
@@ -721,7 +840,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	}
 	glfwMakeContextCurrent(win);
 	glfwSwapInterval(1);
-	glfwShowWindow(win);
+	// NOT shown yet: the window goes on screen right after its first frame has been
+	// presented (see the main loop), so there is never a black window waiting for
+	// the atlas. Until v0.24 it was shown here and stayed blank for ~300 ms.
+	startup_trace_mark("window created + GL context current");
+	// The texture limit is the one thing the font worker needs from GL, and GL is
+	// main-thread only, so it is read once here and handed over.
+	GLint glMaxTex = 0;
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glMaxTex);
+	if (glMaxTex <= 0) glMaxTex = 2048;
 
 	// Tabbed window mode: this window becomes the container POB and the tools are
 	// docked into. Everything about it is gated on the setting, so Separate mode
@@ -798,9 +925,19 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	strOverlays.reserve(strStore.size());
 	for (const LauncherStringStore& st : strStore) strOverlays.push_back(&st.s);
 
-	std::vector<unsigned char> ttfData;
-	LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData,
-	                                { poe1Dir, poe2Dir }, scale, strOverlays);
+	startup_trace_mark("locales + launcher strings loaded");
+	// Two atlases from one input: the precise set right now, on this thread, so
+	// the first frame is a few tens of milliseconds away; the full CJK block on a
+	// worker, swapped in by the main loop when it is done (typically ~300 ms
+	// later). Until then a character outside the string tables -- a build name in
+	// a tab title, say -- draws as '?', and corrects itself on the swap.
+	std::shared_ptr<const FontBuildInput> fontInput = PrepareFontInput(
+	    ResolveFontPath(exeDir, cfg.fontFile), { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex);
+	FontAtlasWorker fontWorker;
+	fontWorker.Start(fontInput);
+	LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Precise);
+	startup_trace_mark("precise font atlas built (%dx%d); full atlas building in the background",
+	                   fonts.texW, fonts.texH);
 	std::vector<std::wstring> fontList = ListAvailableFonts(exeDir);
 	bool fontChanged = false;
 	// Recomputed with the atlas, never independently: the answer is a property of
@@ -810,6 +947,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
 	ImGui_ImplOpenGL3_Init("#version 100");
+	startup_trace_mark("ImGui backends initialised");
 
 	// Pre-select an available game if the remembered one is missing.
 	bool poe2Sel = (cfg.game == L"poe2");
@@ -1056,15 +1194,49 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 
 		// Live font switch: rebuild the glyph atlas between frames when the user
-		// picks a different font in the status-bar combo.
+		// picks a different font in the status-bar combo. Synchronous and Full: the
+		// user asked for it and ~400 ms is fine. A background build still in flight
+		// is for the OLD font, so it is thrown away first -- and it must be joined
+		// before the TTF buffer it reads can go out of scope.
 		if (fontChanged) {
 			fontChanged = false;
+			fontWorker.Discard();
 			ImGui_ImplOpenGL3_DestroyFontsTexture();
 			ImGui::GetIO().Fonts->Clear();
-			fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttfData,
-			                  { poe1Dir, poe2Dir }, scale, strOverlays);
+			fontInput = PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile),
+			                             { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex);
+			fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Full);
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
+			ImGui::GetIO().Fonts->ClearTexData(); // same as the swap path below
+		}
+		// The full atlas from the startup worker is ready: swap it in between
+		// frames. Order matters -- DestroyFontsTexture clears the TexID of whatever
+		// io.Fonts points at, so it runs against the OLD atlas, and
+		// CreateFontsTexture against the NEW one. The context deletes whatever
+		// io.Fonts is at DestroyContext, so the old atlas is ours to free here.
+		// Nothing between this and NewFrame may measure text: ImGui's current
+		// font still points into the old atlas until NewFrame resets it.
+		// Only once the window is up, i.e. after the first frame: the backend
+		// creates its device objects (font texture included) lazily in the first
+		// NewFrame, and a swap before that would have CreateFontsTexture run twice
+		// -- the second time re-rasterising the whole block on this thread because
+		// ClearTexData had already dropped the pixels.
+		if (fontWorker.Done() && glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
+			LauncherFonts full;
+			ImFontAtlas* fullAtlas = fontWorker.Take(&full);
+			ImGuiIO& io = ImGui::GetIO();
+			ImGui_ImplOpenGL3_DestroyFontsTexture();
+			ImFontAtlas* old = io.Fonts;
+			io.Fonts = fullAtlas;
+			fonts = full;
+			ImGui_ImplOpenGL3_CreateFontsTexture();
+			IM_DELETE(old);
+			// ~94 MB of CPU-side pixels (Alpha8 + RGBA32) the GPU now has its own copy of.
+			io.Fonts->ClearTexData();
+			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
+			startup_trace_mark("full font atlas swapped in (%dx%d%s%s)", fonts.texW, fonts.texH,
+			                   fonts.dropped.empty() ? "" : " dropped=", fonts.dropped.c_str());
 		}
 
 		// Re-published every frame, never cached by a panel: `fontChanged` above
@@ -1450,7 +1622,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::TableNextColumn();
 			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
 			ImGui::TableNextColumn();
-			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
+			// One sponsor page of our own, so the payment provider can change
+			// without shipping a new build.
+			LinkText(S.support, L"https://hsiung-shao.github.io/support/");
 			ImGui::EndTable();
 		}
 
@@ -2054,6 +2228,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		glClear(GL_COLOR_BUFFER_BIT);
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 		glfwSwapBuffers(win);
+		if (!glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
+			// First frame is in the swap chain: now the window can appear with
+			// content already on it.
+			glfwShowWindow(win);
+			startup_trace_mark("first frame presented, window shown");
+		}
 	}
 
 	syncCfgFromUi(); // host_main saves cfg after this returns
@@ -2075,6 +2255,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// the close sequence.
 	for (EmbeddedPanel& ep : panels) ep.panel->Shutdown();
 	panels.clear();
+
+	// The font worker allocates through ImGui, which counts on the current
+	// context: it has to be gone before the context is.
+	fontWorker.Discard();
 
 	// Full teardown so the next round (return-to-launcher) re-inits cleanly.
 	ImGui_ImplOpenGL3_Shutdown();
@@ -2156,8 +2340,9 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		for (float sc : kScales) {
 			for (int lim : kLimits) {
 				ImGui::CreateContext();
-				std::vector<unsigned char> ttf;
-				LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, f), ttf, {}, sc, overlays, lim);
+				std::shared_ptr<const FontBuildInput> in =
+				    PrepareFontInput(ResolveFontPath(exeDir, f), {}, overlays, sc, lim);
+				LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 
 				char head[192];
 				snprintf(head, sizeof(head), "%s @%.2fx max=%d", fname.c_str(), sc, lim);
@@ -2227,9 +2412,9 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 
 		if (realMax >= 2048) {
 			ImGui::CreateContext();
-			std::vector<unsigned char> ttf;
-			LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttf, {},
-			                                realScale, overlays, realMax);
+			std::shared_ptr<const FontBuildInput> in =
+			    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, realScale, realMax);
+			LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 			int miss = 0;
 			for (unsigned cp : probeCps)
 				if (cp <= 0xFFFF && (!fonts.body || !fonts.body->FindGlyphNoFallback((ImWchar)cp)))
@@ -2248,9 +2433,9 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 	// or the guard is just quietly disabling the feature on every machine.
 	{
 		ImGui::CreateContext();
-		std::vector<unsigned char> ttf;
-		LauncherFonts fonts = LoadFonts(ResolveFontPath(exeDir, cfg.fontFile), ttf, {}, 1.0f,
-		                                overlays, 4096);
+		std::shared_ptr<const FontBuildInput> in =
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 		int missing = 0;
 		for (unsigned cp : probeCps)
 			if (cp <= 0xFFFF && (!fonts.body || !fonts.body->FindGlyphNoFallback((ImWchar)cp)))
@@ -2259,6 +2444,88 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		      fonts.dropped != "cjk" && missing == 0,
 		      (fonts.dropped.empty() ? "nothing dropped" : ("dropped=" + fonts.dropped)) +
 		          ", " + std::to_string(missing) + " probe glyph(s) missing");
+		ImGui::DestroyContext();
+	}
+
+	// The startup path: a Precise atlas on the main thread plus a Full one from the
+	// worker, the way ShowLauncher does it. The precise one must already draw every
+	// launcher string (the first frame is drawn with it) and must not claim to have
+	// degraded; the worker's must be the same atlas ShowLauncher got before, or the
+	// swap would silently change what the window shows.
+	{
+		ImGui::CreateContext();
+		std::shared_ptr<const FontBuildInput> in =
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		FontAtlasWorker worker;
+		worker.Start(in);
+		LauncherFonts precise = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Precise);
+		int preciseMissing = 0;
+		for (const LauncherStrings* s : overlays) {
+			for (auto m : kLauncherStringMembers) {
+				const char* t = s->*m;
+				if (!t) continue;
+				ForEachCodepoint(t, [&](unsigned cp) {
+					if (cp <= 0xFFFF && cp >= 0x20 && !precise.body->FindGlyphNoFallback((ImWchar)cp))
+						preciseMissing++;
+				});
+			}
+		}
+		check("the precise (first-frame) atlas draws every launcher string",
+		      preciseMissing == 0 && precise.cjkOk,
+		      std::to_string(preciseMissing) + " string-table glyph(s) missing, " +
+		          std::to_string(precise.texW) + "x" + std::to_string(precise.texH));
+		check("the precise atlas does not report a degraded build", precise.dropped.empty(),
+		      precise.dropped.empty() ? "dropped is empty" : "dropped=" + precise.dropped);
+		check("the precise atlas is a small fraction of the full one",
+		      precise.texW * precise.texH < 4096 * 1200,
+		      std::to_string(precise.texW) + "x" + std::to_string(precise.texH));
+		LauncherFonts full;
+		ImFontAtlas* fullAtlas = worker.Take(&full);
+		int fullMissing = 0;
+		for (unsigned cp : probeCps)
+			if (cp <= 0xFFFF && (!full.body || !full.body->FindGlyphNoFallback((ImWchar)cp)))
+				fullMissing++;
+		check("the worker-built full atlas keeps the full CJK block",
+		      fullAtlas != nullptr && full.dropped != "cjk" && fullMissing == 0 &&
+		          full.texW > 0 && full.texW <= 4096 && full.texH <= 4096,
+		      std::to_string(full.texW) + "x" + std::to_string(full.texH) +
+		          (full.dropped.empty() ? "" : " dropped=" + full.dropped));
+		if (fullAtlas) IM_DELETE(fullAtlas);
+
+		// Both builds must share one keep-alive: the atlas only stores pointers
+		// into it, and a copy would move the buffers.
+		check("precise and full builds share the same input buffers",
+		      precise.input == full.input && precise.input == in);
+
+		// The user picks another font while the worker is still rasterising. This
+		// replays ShowLauncher's fontChanged sequence exactly: discard the
+		// in-flight build, clear the live atlas, rebuild Full from a NEW input,
+		// then drop the last reference to the old input -- the worker must be
+		// gone by then or it would be reading freed TTF bytes.
+		FontAtlasWorker abandoned;
+		abandoned.Start(in);
+		abandoned.Discard();
+		ImGui::GetIO().Fonts->Clear();
+		std::shared_ptr<const FontBuildInput> in2 =
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		LauncherFonts rebuilt = LoadFonts(ImGui::GetIO().Fonts, in2, FontScope::Full);
+		precise = LauncherFonts();
+		full = LauncherFonts();
+		in.reset();
+		check("a font change during the background build rebuilds cleanly",
+		      !abandoned.Running() && !abandoned.Done() && rebuilt.input == in2 &&
+		          rebuilt.body && rebuilt.body->FindGlyphNoFallback((ImWchar)0x555F) != nullptr,
+		      std::to_string(rebuilt.texW) + "x" + std::to_string(rebuilt.texH));
+
+		// No TTF at all (Fonts\ folder missing): the worker must refuse to start,
+		// because two threads decompressing ImGui's built-in font race on its
+		// static state.
+		auto noTtf = std::make_shared<FontBuildInput>();
+		noTtf->ttf = std::make_shared<const std::vector<unsigned char>>();
+		noTtf->maxTex = 4096;
+		FontAtlasWorker refused;
+		refused.Start(noTtf);
+		check("the background build is not started without a TTF", !refused.Running());
 		ImGui::DestroyContext();
 	}
 

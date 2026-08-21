@@ -519,6 +519,11 @@ void AppUpdater::Init(const std::wstring& exeDir)
 	loadState();
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
+		// A fresh status, not just fresh version fields: after a FAILED apply the
+		// old one still said AppReadyToApply with the same stageDir, and the
+		// launcher's very first Poll would have asked to apply it again -- a
+		// MessageBox / launcher-frame loop with no way out but Task Manager.
+		st_ = Status{};
 		st_.localVer = POBTOOLS_VERSION_STRING;
 		st_.localDataVer = ReadLocalDataVersion(exeDir_);
 	}
@@ -827,7 +832,15 @@ bool AppUpdater::doCheck(std::string* err)
 	// 兩者可以同時成立(v0.19.0 與 data-N 同日發),而 else-if 會讓翻譯套用完
 	// 之後**吞掉程式更新提示**,同時 lastCheckUtc 已落盤 → 沉默 24 小時。
 	bool dataOk = true;
-	if (plan.applyDataNow) {
+	if (plan.applyDataNow && hold_.load()) {
+		// The check began with no POB running, but the network round trips took
+		// long enough for one to start (or for the engine to begin reading
+		// Data\*.json). Writing the pack now would swap dictionaries under it.
+		// Same outcome as a failed apply: nothing recorded, retried next time.
+		log_line(exeDir_, "translation update deferred: a POB started during the check");
+		setPhase(AppUpdatePhase::Idle, "");
+		dataOk = false;
+	} else if (plan.applyDataNow) {
 		std::string terr;
 		if (!doUpdateTranslations(&terr)) {
 			// silent: old dictionaries stay intact, retried next launch
@@ -996,7 +1009,11 @@ static void delete_old_backups(const std::wstring& exeDir, int retries)
 
 void CleanupAppUpdateLeftovers(const std::wstring& exeDir)
 {
-	delete_old_backups(exeDir, 5);
+	// One attempt, no retry sleeps: this runs before the launcher window exists,
+	// and right after an update the .old files are still held by the exiting
+	// previous exe -- five 200 ms retries used to put up to a second in front of
+	// the first frame. A backup that survives is deleted on the next start.
+	delete_old_backups(exeDir, 1);
 	if (dir_exists(exeDir + L"PobTools\\cache\\app_update"))
 		remove_dir_rec(exeDir + L"PobTools\\cache\\app_update");
 }

@@ -7,6 +7,7 @@
 #define GLAD_GLES2_IMPLEMENTATION
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "r_local.h"
+#include "startup_trace.h"
 
 #include "common/base64.h"
 
@@ -1098,6 +1099,7 @@ void r_renderer_c::Init(r_featureFlag_e features)
 	ImGui_ImplGlfw_InitForOpenGL((GLFWwindow*)sys->video->GetWindowHandle(), true);
 	ImGui_ImplOpenGL3_Init("#version 100");
 
+	startup_trace_mark("renderer: window + GL ready, loading fonts");
 	fonts[F_FIXED] = new r_font_c(this, "Bitstream Vera Sans Mono");
 	fonts[F_VAR] = new r_font_c(this, "Liberation Sans");
 	fonts[F_VAR_BOLD] = new r_font_c(this, "Liberation Sans Bold");
@@ -1105,6 +1107,7 @@ void r_renderer_c::Init(r_featureFlag_e features)
 	fonts[F_FONTIN_SC_ITALIC] = new r_font_c(this, "Fontin SmallCaps Italic");
 	fonts[F_FONTIN] = new r_font_c(this, "Fontin");
 	fonts[F_FONTIN_ITALIC] = new r_font_c(this, "Fontin Italic");
+	startup_trace_mark("renderer: 7 fonts loaded (FreeType x7)");
 
 	sys->con->Printf("Renderer initialised in %d msec.\n", timer.Get());
 }
