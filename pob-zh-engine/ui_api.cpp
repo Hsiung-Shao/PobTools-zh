@@ -2800,8 +2800,11 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNCALIAS(PoeCharmSetTranslate, PobToolsSetTranslate);
 
 	// PobTools: load translation dictionaries (POB_LOCALE / POB_GAME env-driven).
-	// No-op passthrough when no locale is configured.
-	translation_init();
+	// No-op passthrough when no locale is configured. Built on a background
+	// thread: building the tables takes ~1 s for PoE1 and nothing here needs
+	// them until the first DrawString / paste, which waits for it (see
+	// translation_wait_ready). POB's own Lua loading runs meanwhile.
+	translation_init_async();
 
 	// PoeCharm: expose lua-utf8 as the global `utf8` BEFORE POB runs, so POB's
 	// main:DetectUnicodeSupport() (checks type(_G.utf8)=="table") turns on

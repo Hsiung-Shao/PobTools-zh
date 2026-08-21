@@ -55,6 +55,7 @@
 #include "passive_tree_update.h"
 #include "app_update.h"
 #include "ui_theme.h"
+#include "../translate/startup_trace.h"
 
 #pragma comment(lib, "shell32.lib")
 
@@ -279,9 +280,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring arg4 = (argvW && argc >= 5) ? argvW[4] : L"";
 	if (argvW) LocalFree(argvW);
 
+	// Startup timeline (PobTools\startup_launcher.txt) for the launcher only: the
+	// engine child writes its own from inside SimpleGraphic.dll, and the CLI
+	// probes are not startups anyone waits on.
+	if (arg1.empty()) {
+		startup_trace_begin("launcher");
+		startup_trace_mark("wWinMain entered");
+	}
+
 	// App-updater leftovers (*.old backups + download cache) are cleaned on
 	// every non-engine start; the engine child skips it to keep POB startup lean.
 	if (arg1 != L"--engine") CleanupAppUpdateLeftovers(dir);
+	if (arg1.empty()) startup_trace_mark("update leftovers cleaned");
 
 	// Headless app self-update: check releases, apply translations / stage+swap.
 	if (arg1 == L"--app-update") {
@@ -633,10 +643,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// merely reflected in the UI afterwards.
 	appUpdater.SetTranslationUpdates(LoadLauncherConfig(ini).updateTranslations);
 	appUpdater.RequestCheck(false);
+	startup_trace_mark("app updater started");
 
 	for (;;) {
 		LauncherConfig cfg = LoadLauncherConfig(ini);
 		InstallInfo installs = DetectInstalls(dir);
+		startup_trace_mark("config + installs detected");
 
 		std::wstring launchLua;
 		if (!pendingLua.empty()) {

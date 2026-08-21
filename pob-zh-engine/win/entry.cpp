@@ -6,6 +6,7 @@
 //
 
 #include "system/win/sys_local.h"
+#include "startup_trace.h"
 #if 0
 #pragma comment(lib, "winmm")
 #pragma comment(lib, "opengl32")
@@ -84,6 +85,10 @@ extern "C" SIMPLEGRAPHIC_DLL_PUBLIC int RunLuaFileAsWin(int argc, char** argv)
 #ifdef _WIN32
 	timeBeginPeriod(1);
 #endif
+
+	// Startup timeline for the engine child (PobTools\startup_engine.txt).
+	startup_trace_begin("engine");
+	startup_trace_mark("RunLuaFileAsWin entered");
 
 	sys_main_c* sys = new sys_main_c;
 

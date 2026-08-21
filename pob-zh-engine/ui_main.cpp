@@ -7,6 +7,7 @@
 #include "ui_local.h"
 
 #include "translation_manager.h"
+#include "startup_trace.h"
 
 // ======
 // Locals
@@ -317,11 +318,13 @@ void ui_main_c::ScriptInit()
 #endif
 
 	// Add libraries and APIs
+	startup_trace_mark("Lua state created");
 	lua_gc(L, LUA_GCSTOP, 0);
 	lua_pushcfunction(L, InitAPI);
 	int err = lua_pcall(L, 0, 0, 0);
 	if (err) sys->Error("Error initialising Lua environment: \n%s\n", lua_tostring(L, -1));
 	lua_gc(L, LUA_GCRESTART, -1);
+	startup_trace_mark("InitAPI done (dictionary load started in the background)");
 
 	// Setup debug system
 	debug = ui_IDebug::GetHandle(this);
@@ -354,6 +357,7 @@ void ui_main_c::ScriptInit()
 	}
 	lua_setglobal(L, "arg");
 	PCall(scriptArgc, 0);
+	startup_trace_mark("Launch.lua returned");
 
 	if ( !didExit && !restartFlag ) {
 		// Run initialisation callback
@@ -361,6 +365,7 @@ void ui_main_c::ScriptInit()
 		if (extraArgs >= 0) {
 			PCall(extraArgs, 0);
 		}
+		startup_trace_mark("OnInit returned");
 	}
 	if ( !didExit && !restartFlag ) {
 		// PoeCharm: run the engine-owned CJK injection script in POB's Lua state.
@@ -377,6 +382,7 @@ void ui_main_c::ScriptInit()
 			PCall(0, 0);
 		}
 		sys->SetWorkDir();
+		startup_trace_mark("poecharm_inject.lua done");
 	}
 	if ( !didExit && !restartFlag ) {
 		// Check for frame callback
@@ -451,6 +457,11 @@ void ui_main_c::Frame()
 		// Finish up
 		//sys->con->Printf("EndFrame...\n");
 		renderer->EndFrame();
+		static bool firstFrameTraced = false;
+		if (!firstFrameTraced) {
+			firstFrameTraced = true;
+			startup_trace_mark("first frame rendered");
+		}
 	}
 
 	//sys->con->Printf("Finishing up...\n");
