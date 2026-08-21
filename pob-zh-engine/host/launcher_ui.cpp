@@ -1622,7 +1622,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::TableNextColumn();
 			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
 			ImGui::TableNextColumn();
-			LinkText(S.support, L"https://buymeacoffee.com/hsiung");
+			// One sponsor page of our own, so the payment provider can change
+			// without shipping a new build.
+			LinkText(S.support, L"https://hsiung-shao.github.io/support/");
 			ImGui::EndTable();
 		}
 
