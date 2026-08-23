@@ -13,6 +13,7 @@
 #include "atlas_planner.h"
 #include "filter_editor.h"
 #include "launcher_editor.h"
+#include "regex_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "../translate/startup_trace.h"
@@ -1565,13 +1566,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		ImGui::Dummy(ImVec2(0, 8.0f * scale));
 
-		// Tools: secondary actions. Four buttons share the row, so the width
-		// divisor and the gap count must move together — three gaps between
-		// four buttons.
+		// Tools: secondary actions. Five buttons share the row, so the width
+		// divisor and the gap count must move together — four gaps between
+		// five buttons.
 		SectionLabel(fonts, scale, inner, S.toolsSection);
 		{
 			float gap = 12.0f * scale;
-			ImVec2 toolSize((inner - 3.0f * gap) / 4.0f, 46.0f * scale);
+			ImVec2 toolSize((inner - 4.0f * gap) / 5.0f, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
 			// The translation editor edits dist\Data\{game}\{locale}\*.json in
 			// place — the same files the engine loads — so its changes take
@@ -1603,6 +1604,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ImGui::Button(S.timelessJewel, toolSize)) {
 				if (tabbed) openPanel(&CreateTimelessJewelPanel, S.timelessJewel);
 				else spawnTool(L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel);
+			}
+			ImGui::SameLine(0, gap);
+			// Builds a string for the GAME's search box, not for POB -- so it is
+			// useful with no POB installed and reads nothing out of one.
+			if (ImGui::Button(S.regexTool, toolSize)) {
+				if (tabbed) openPanel(&CreateRegexToolPanel, S.regexTool);
+				else spawnTool(L"--regex", PobLaunch::InstanceKind::RegexTool, S.regexTool);
 			}
 			ImGui::PopStyleColor();
 		}

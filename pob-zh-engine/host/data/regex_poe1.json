@@ -1,0 +1,2137 @@
+{
+ "schema": 1,
+ "game": "poe1",
+ "source": "GGPK Mods/Stats/Tags + tools/ggpk_zh/out/poe1/stats.json",
+ "pages": [
+  {
+   "id": "map_mods",
+   "title": "地圖詞綴",
+   "titleEn": "Map modifiers",
+   "note": "勾選要找的詞綴，把產生的字串貼進倉庫搜尋列。不會誤中的保證只涵蓋這份清單裡的其他詞綴。",
+   "limit": 250,
+   "groups": [
+    "前綴",
+    "後綴",
+    "前後綴皆有"
+   ],
+   "groupsEn": [
+    "Prefix",
+    "Suffix",
+    "Both"
+   ],
+   "entries": [
+    {
+     "id": "MapMonsterCannotBeStunned2MapWorlds",
+     "zh": [
+      "#% 更多怪物生命"
+     ],
+     "en": [
+      "#% more Monster Life"
+     ],
+     "g": 0,
+     "affixZh": "堅定不移的、豐饒的、堅定的"
+    },
+    {
+     "id": "MapUberModLessFlaskEffect",
+     "zh": [
+      "#%更少施加於玩家的藥劑效果"
+     ],
+     "en": [
+      "Players have #% less effect of Flasks applied to them"
+     ],
+     "g": 0,
+     "affixZh": "稀釋的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterPhysicalResistance2MapWorlds",
+     "zh": [
+      "+#% 怪物物理傷害減免"
+     ],
+     "en": [
+      "+#% Monster Physical Damage Reduction"
+     ],
+     "g": 0,
+     "affixZh": "裝甲的、受保護的"
+    },
+    {
+     "id": "MapMonstersAllResistances2MapWorlds",
+     "zh": [
+      "+#% 怪物的元素抗性"
+     ],
+     "en": [
+      "+#% Monster Elemental Resistances"
+     ],
+     "g": 0,
+     "affixZh": "抵抗的、受保護的、抗性的"
+    },
+    {
+     "id": "MapMonstersAllResistances2MapWorlds",
+     "zh": [
+      "+#% 怪物的混沌抗性"
+     ],
+     "en": [
+      "+#% Monster Chaos Resistance"
+     ],
+     "g": 0,
+     "affixZh": "抵抗的、受保護的、抗性的"
+    },
+    {
+     "id": "MapDangerousBoss1MapWorlds",
+     "zh": [
+      "傳奇頭目增加 #% 傷害"
+     ],
+     "en": [
+      "Unique Boss deals #% increased Damage"
+     ],
+     "g": 0,
+     "affixZh": "霸主的"
+    },
+    {
+     "id": "MapDangerousBoss1MapWorlds",
+     "zh": [
+      "傳奇頭目增加 #% 攻擊速度及施放速度"
+     ],
+     "en": [
+      "Unique Boss has #% increased Attack and Cast Speed"
+     ],
+     "g": 0,
+     "affixZh": "霸主的"
+    },
+    {
+     "id": "MapMassiveBoss1MapWorlds",
+     "zh": [
+      "傳奇頭目增加 #% 生命"
+     ],
+     "en": [
+      "Unique Boss has #% increased Life"
+     ],
+     "g": 0,
+     "affixZh": "泰坦的"
+    },
+    {
+     "id": "MapMassiveBoss1MapWorlds",
+     "zh": [
+      "傳奇頭目增加 #% 範圍技能"
+     ],
+     "en": [
+      "Unique Boss has #% increased Area of Effect"
+     ],
+     "g": 0,
+     "affixZh": "泰坦的"
+    },
+    {
+     "id": "MapBossPossessedMapWorlds",
+     "zh": [
+      "傳奇頭目被附身"
+     ],
+     "en": [
+      "Unique Bosses are Possessed"
+     ],
+     "g": 0,
+     "affixZh": "著迷的"
+    },
+    {
+     "id": "MapUberModMonsterAilments",
+     "zh": [
+      "全部怪物傷害可以點燃、冰凍和感電"
+     ],
+     "en": [
+      "All Monster Damage can Ignite, Freeze and Shock"
+     ],
+     "g": 0,
+     "affixZh": "折磨的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModLabyrinthHazards",
+     "zh": [
+      "區域內含有昇華迷宮陷阱"
+     ],
+     "en": [
+      "Area contains Labyrinth Hazards"
+     ],
+     "g": 0,
+     "affixZh": "迷宮的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModDrowningOrbs",
+     "zh": [
+      "區域內含有溺亡之球"
+     ],
+     "en": [
+      "Area contains Drowning Orbs"
+     ],
+     "g": 0,
+     "affixZh": "飢餓的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModExarch",
+     "zh": [
+      "區域內含有灼烙總督符文"
+     ],
+     "en": [
+      "Area contains Runes of the Searing Exarch"
+     ],
+     "g": 0,
+     "affixZh": "灼烙的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterPacksKitavaMapWorlds_",
+     "zh": [
+      "區域內有許多奇塔弗的信徒"
+     ],
+     "en": [
+      "Area is inhabited by Cultists of Kitava"
+     ],
+     "g": 0,
+     "affixZh": "盛宴的"
+    },
+    {
+     "id": "MapMonsterPacksSolarisMapWorlds_",
+     "zh": [
+      "區域內有許多日耀神信徒"
+     ],
+     "en": [
+      "Area is inhabited by Solaris fanatics"
+     ],
+     "g": 0,
+     "affixZh": "日耀的"
+    },
+    {
+     "id": "MapMonsterPacksLunarisMapWorlds_",
+     "zh": [
+      "區域內有許多月影神信徒"
+     ],
+     "en": [
+      "Area is inhabited by Lunaris fanatics"
+     ],
+     "g": 0,
+     "affixZh": "月影的"
+    },
+    {
+     "id": "MapMonsterPacksGhostsMapWorlds",
+     "zh": [
+      "區域內有許多鬼魂"
+     ],
+     "en": [
+      "Area is inhabited by Ghosts"
+     ],
+     "g": 0,
+     "affixZh": "作祟的"
+    },
+    {
+     "id": "MapUberModShaperTouched",
+     "zh": [
+      "區域內的稀有怪物為塑界者之觸"
+     ],
+     "en": [
+      "Rare monsters in area are Shaper-Touched"
+     ],
+     "g": 0,
+     "affixZh": "瓦爾多的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterPacksAbominationMapWorlds",
+     "zh": [
+      "區域含有大量被創造生物"
+     ],
+     "en": [
+      "Area is inhabited by Abominations"
+     ],
+     "g": 0,
+     "affixZh": "憎惡的"
+    },
+    {
+     "id": "MapMonsterPacksUndeadMapWorlds_",
+     "zh": [
+      "區域含有許多不死生物"
+     ],
+     "en": [
+      "Area is inhabited by Undead"
+     ],
+     "g": 0,
+     "affixZh": "亡靈的"
+    },
+    {
+     "id": "MapMonsterPacksHumanoidsMapWorlds",
+     "zh": [
+      "區域含有許多人型生物"
+     ],
+     "en": [
+      "Area is inhabited by Humanoids"
+     ],
+     "g": 0,
+     "affixZh": "雙足的"
+    },
+    {
+     "id": "MapMonsterPacksAnimalsMapWorlds",
+     "zh": [
+      "區域含有許多動物"
+     ],
+     "en": [
+      "Area is inhabited by Animals"
+     ],
+     "g": 0,
+     "affixZh": "野性的"
+    },
+    {
+     "id": "MapTotemsMapWorlds",
+     "zh": [
+      "區域含有許多圖騰"
+     ],
+     "en": [
+      "Area contains many Totems"
+     ],
+     "g": 0,
+     "affixZh": "儀式的"
+    },
+    {
+     "id": "MapMonsterPacksDemonsMapWorlds",
+     "zh": [
+      "區域含有許多惡魔"
+     ],
+     "en": [
+      "Area is inhabited by Demons"
+     ],
+     "g": 0,
+     "affixZh": "惡魔的"
+    },
+    {
+     "id": "MapMonsterPacksSpawnsSeaWitchesMapWorlds",
+     "zh": [
+      "區域含有許多海巫和它的召喚物"
+     ],
+     "en": [
+      "Area is inhabited by Sea Witches and their Spawn"
+     ],
+     "g": 0,
+     "affixZh": "濕滑的"
+    },
+    {
+     "id": "MapMonsterPacksGoatmenMapWorlds",
+     "zh": [
+      "區域含有許多羊男"
+     ],
+     "en": [
+      "Area is inhabited by Goatmen"
+     ],
+     "g": 0,
+     "affixZh": "羊男的"
+    },
+    {
+     "id": "MapMonsterPacksRangedMapWorlds",
+     "zh": [
+      "區域含有許多遠程怪物"
+     ],
+     "en": [
+      "Area is inhabited by ranged monsters"
+     ],
+     "g": 0,
+     "affixZh": "發散的"
+    },
+    {
+     "id": "MapMonsterPacksSkeletonsMapWorlds_",
+     "zh": [
+      "區域含有許多骷髏"
+     ],
+     "en": [
+      "Area is inhabited by Skeletons"
+     ],
+     "g": 0,
+     "affixZh": "骷髏的"
+    },
+    {
+     "id": "MapTwoBossesMapWorlds",
+     "zh": [
+      "地圖含有兩個傳奇頭目"
+     ],
+     "en": [
+      "Area contains two Unique Bosses"
+     ],
+     "g": 0,
+     "affixZh": "孿生的"
+    },
+    {
+     "id": "MapMoreMonsterPackVarietyMapWorlds_",
+     "zh": [
+      "地圖裡的怪物種類被增加了"
+     ],
+     "en": [
+      "Area has increased monster variety"
+     ],
+     "g": 0,
+     "affixZh": "五花八門的"
+    },
+    {
+     "id": "MapUberModSynthMiniboss",
+     "zh": [
+      "地圖頭目伴隨著 1 個追憶頭目"
+     ],
+     "en": [
+      "Map Boss is accompanied by a Synthesis Boss"
+     ],
+     "g": 0,
+     "affixZh": "合成的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterDamage2MapWorlds",
+     "zh": [
+      "增加 #% 怪物傷害"
+     ],
+     "en": [
+      "#% increased Monster Damage"
+     ],
+     "g": 0,
+     "affixZh": "殘暴的、野蠻人的"
+    },
+    {
+     "id": "MapMonsterFast2MapWorlds",
+     "zh": [
+      "增加 #% 怪物攻擊速度"
+     ],
+     "en": [
+      "#% increased Monster Attack Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的、艦隊的"
+    },
+    {
+     "id": "MapMonsterFast2MapWorlds",
+     "zh": [
+      "增加 #% 怪物施放速度"
+     ],
+     "en": [
+      "#% increased Monster Cast Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的、艦隊的"
+    },
+    {
+     "id": "MapMonsterFast2MapWorlds",
+     "zh": [
+      "增加 #% 怪物移動速度"
+     ],
+     "en": [
+      "#% increased Monster Movement Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的、艦隊的"
+    },
+    {
+     "id": "MapNemesisModOnRaresMapWorlds",
+     "zh": [
+      "增加 #% 稀有怪物的數量"
+     ],
+     "en": [
+      "#% increased number of Rare Monsters"
+     ],
+     "g": 0,
+     "affixZh": "反抗者的"
+    },
+    {
+     "id": "MapMonstersCurseEffectOnSelfFinal2MapWorlds",
+     "zh": [
+      "對怪物的詛咒有 #% 更少效果"
+     ],
+     "en": [
+      "#% less effect of Curses on Monsters"
+     ],
+     "g": 0,
+     "affixZh": "魔抗的"
+    },
+    {
+     "id": "MapMonstersChanceToSuppressSpells2MapWorlds",
+     "zh": [
+      "怪物 #% 壓抑法術傷害率"
+     ],
+     "en": [
+      "Monsters have #% chance to Suppress Spell Damage"
+     ],
+     "g": 0,
+     "affixZh": "壓迫性的、壓抑的"
+    },
+    {
+     "id": "MapUberModMonsterAttackBlock",
+     "zh": [
+      "怪物 #% 攻擊傷害格擋率"
+     ],
+     "en": [
+      "Monsters have #% Chance to Block Attack Damage"
+     ],
+     "g": 0,
+     "affixZh": "堅定的",
+     "t17": true
+    },
+    {
+     "id": "MapHexproofMapWorlds",
+     "zh": [
+      "怪物不能受到詛咒"
+     ],
+     "en": [
+      "Monsters are Hexproof"
+     ],
+     "g": 0,
+     "affixZh": "無咒的"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
+     "zh": [
+      "怪物不能被嘲諷"
+     ],
+     "en": [
+      "Monsters cannot be Taunted"
+     ],
+     "g": 0,
+     "affixZh": "無阻的"
+    },
+    {
+     "id": "MapMonstersAllDamageAlwaysIgnitesMapWorldsMaven",
+     "zh": [
+      "怪物傷害必定造成點燃"
+     ],
+     "en": [
+      "All Monster Damage from Hits always Ignites"
+     ],
+     "g": 0,
+     "affixZh": "燃燒的、爆燃"
+    },
+    {
+     "id": "MapUberModVines",
+     "zh": [
+      "怪物擊中時造成 # 層緩速藤蔓"
+     ],
+     "en": [
+      "Monsters inflict # Grasping Vines on Hit"
+     ],
+     "g": 0,
+     "affixZh": "抓緊的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterChaosDamage2MapWorlds",
+     "zh": [
+      "怪物擊中時造成凋零 2 秒"
+     ],
+     "en": [
+      "Monsters Inflict Withered for 2 seconds on Hit"
+     ],
+     "g": 0,
+     "affixZh": "褻瀆的、粗陋的"
+    },
+    {
+     "id": "MapMonstersAvoidPoisonBleedBlind2MapWorlds",
+     "zh": [
+      "怪物有 #% 機率避免中毒、穿刺和流血"
+     ],
+     "en": [
+      "Monsters have a #% chance to avoid Poison, Impale, and Bleeding"
+     ],
+     "g": 0,
+     "affixZh": "抗滲的"
+    },
+    {
+     "id": "MapMonstersMaximumLifeAddedEnergyShield2MapWorlds_____",
+     "zh": [
+      "怪物獲得 #% 最大生命的額外最大能量護盾"
+     ],
+     "en": [
+      "Monsters gain #% of Maximum Life as Extra Maximum Energy Shield"
+     ],
+     "g": 0,
+     "affixZh": "緩衝的"
+    },
+    {
+     "id": "MapUberModDamageAsElemental",
+     "zh": [
+      "怪物獲得 #% 物理傷害的額外 1 個隨機元素傷害"
+     ],
+     "en": [
+      "Monsters gain #% of their Physical Damage as Extra Damage of a random Element"
+     ],
+     "g": 0,
+     "affixZh": "三相的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterChaosDamage2MapWorlds",
+     "zh": [
+      "怪物獲得等同它們 #% 物理傷害的額外混沌傷害"
+     ],
+     "en": [
+      "Monsters gain #% of their Physical Damage as Extra Chaos Damage"
+     ],
+     "g": 0,
+     "affixZh": "褻瀆的、粗陋的"
+    },
+    {
+     "id": "MapMonsterMultipleProjectilesWorlds",
+     "zh": [
+      "怪物發射 # 額外投射物"
+     ],
+     "en": [
+      "Monsters fire # additional Projectiles"
+     ],
+     "g": 0,
+     "affixZh": "裂化的、放大的"
+    },
+    {
+     "id": "MapMonsterChainMapWorlds",
+     "zh": [
+      "怪物的技能附加 # 次連鎖"
+     ],
+     "en": [
+      "Monsters' skills Chain # additional times"
+     ],
+     "g": 0,
+     "affixZh": "連鎖的"
+    },
+    {
+     "id": "MapMonstersImpaleOnHit2MapWorlds",
+     "zh": [
+      "怪物的攻擊擊中時有 #% 機率造成穿刺"
+     ],
+     "en": [
+      "Monsters' Attacks have #% chance to Impale on Hit"
+     ],
+     "g": 0,
+     "affixZh": "穿刺的"
+    },
+    {
+     "id": "MapMonsterColdDamage2MapWorlds",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為冰冷"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Cold"
+     ],
+     "g": 0,
+     "affixZh": "冷凍的、冰凍"
+    },
+    {
+     "id": "MapMonsterFireDamage2MapWorlds",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為火焰"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Fire"
+     ],
+     "g": 0,
+     "affixZh": "燃燒的、燃燒"
+    },
+    {
+     "id": "MapMonsterLightningDamage2MapWorlds__",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為閃電"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Lightning"
+     ],
+     "g": 0,
+     "affixZh": "導電的、感電"
+    },
+    {
+     "id": "MapMonstersChanceToInflictStatusAilments2MapWorlds",
+     "zh": [
+      "擊中時，怪物有 #% 機率點燃、冰凍和感電"
+     ],
+     "en": [
+      "Monsters have a #% chance to Ignite, Freeze and Shock on Hit"
+     ],
+     "g": 0,
+     "affixZh": "重權的"
+    },
+    {
+     "id": "MapUberModMonsterAilments",
+     "zh": [
+      "擊中時，怪物點燃、冰凍和感電"
+     ],
+     "en": [
+      "Monsters Ignite, Freeze and Shock on Hit"
+     ],
+     "g": 0,
+     "affixZh": "折磨的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModRareMonsters",
+     "zh": [
+      "每個稀有怪物有 # 個額外詞綴"
+     ],
+     "en": [
+      "Rare Monsters each have # additional Modifier"
+     ],
+     "g": 0,
+     "affixZh": "反抗者的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModSawblades",
+     "zh": [
+      "玩家受到血漬鋸刃攻擊"
+     ],
+     "en": [
+      "Players are assaulted by Bloodstained Sawblades"
+     ],
+     "g": 0,
+     "affixZh": "終極的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModChain",
+     "zh": [
+      "當怪物的投射物撞擊地面時連鎖"
+     ],
+     "en": [
+      "Monsters' Projectiles can Chain when colliding with Terrain"
+     ],
+     "g": 0,
+     "affixZh": "連鎖的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterElementalReflection2MapWorlds",
+     "zh": [
+      "稀有怪物擁有會反射 # 元素傷害的元素荊棘"
+     ],
+     "en": [
+      "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
+     ],
+     "g": 0,
+     "affixZh": "反射的、懲戒的、已複製"
+    },
+    {
+     "id": "MapMonsterPhysicalReflection2MapWorlds",
+     "zh": [
+      "稀有怪物擁有會反射 # 物理傷害的物理荊棘"
+     ],
+     "en": [
+      "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
+     ],
+     "g": 0,
+     "affixZh": "懲罰的、懲戒的"
+    },
+    {
+     "id": "MapUberModVolatiles",
+     "zh": [
+      "稀有怪物擁有核息"
+     ],
+     "en": [
+      "Rare Monsters have Volatile Cores"
+     ],
+     "g": 0,
+     "affixZh": "易爆之",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterCriticalStrikesAndDamage2MapWorlds",
+     "zh": [
+      "#% 怪物暴擊加成"
+     ],
+     "en": [
+      "#% to Monster Critical Strike Multiplier"
+     ],
+     "g": 1,
+     "affixZh": "死亡之"
+    },
+    {
+     "id": "MapUberModPoison",
+     "zh": [
+      "來自怪物擊中的所有傷害都可造成中毒"
+     ],
+     "en": [
+      "All Damage from Monsters' Hits can Poison"
+     ],
+     "g": 1,
+     "affixZh": "猛毒之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModAurasAffectMonsters",
+     "zh": [
+      "來自玩家技能、且可以影響友方的光環會同時影響敵人"
+     ],
+     "en": [
+      "Auras from Player Skills which affect Allies also affect Enemies"
+     ],
+     "g": 1,
+     "affixZh": "寶藏之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModShrineBuff",
+     "zh": [
+      "傳奇怪物有 1 個隨機神殿效果"
+     ],
+     "en": [
+      "Unique Monsters have a random Shrine Buff"
+     ],
+     "g": 1,
+     "affixZh": "支配之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModElderNovas",
+     "zh": [
+      "區域內含有不穩定的惡魔觸手"
+     ],
+     "en": [
+      "Area contains Unstable Tentacle Fiends"
+     ],
+     "g": 1,
+     "affixZh": "腐朽之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModPlayerMarked",
+     "zh": [
+      "區域內含有數片會施加隨機印記的移動印記地面"
+     ],
+     "en": [
+      "Area contains patches of moving Marked Ground, inflicting random Marks"
+     ],
+     "g": 1,
+     "affixZh": "印記之",
+     "t17": true
+    },
+    {
+     "id": "MapShockedGround1MapWorlds",
+     "zh": [
+      "區域內有數道增加 #% 承受傷害的感電地面"
+     ],
+     "en": [
+      "Area has patches of Shocked Ground which increase Damage taken by #%"
+     ],
+     "g": 1,
+     "affixZh": "雷之"
+    },
+    {
+     "id": "MapUberModRaresLastGasp",
+     "zh": [
+      "區域內的稀有怪物會暫時的從死亡中復甦"
+     ],
+     "en": [
+      "Rare monsters in area Temporarily Revive on death"
+     ],
+     "g": 1,
+     "affixZh": "堅持之",
+     "t17": true
+    },
+    {
+     "id": "MapConsecratedGround2MapWorlds",
+     "zh": [
+      "區域有數道奉獻地面"
+     ],
+     "en": [
+      "Area has patches of Consecrated Ground"
+     ],
+     "g": 1,
+     "affixZh": "奉獻之"
+    },
+    {
+     "id": "MapChilledGroundSuffix1MapWorlds",
+     "zh": [
+      "地圖含有冰緩地面"
+     ],
+     "en": [
+      "Area has patches of Chilled Ground"
+     ],
+     "g": 1,
+     "affixZh": "冰之"
+    },
+    {
+     "id": "MapBurningGround1MapWorlds_",
+     "zh": [
+      "地圖含有燃燒地面"
+     ],
+     "en": [
+      "Area has patches of Burning Ground"
+     ],
+     "g": 1,
+     "affixZh": "烈焰之、烈火之"
+    },
+    {
+     "id": "MapDesecratedGround1MapWorlds",
+     "zh": [
+      "地圖含有腐化地面"
+     ],
+     "en": [
+      "Area has patches of desecrated ground"
+     ],
+     "g": 1,
+     "affixZh": "褻瀆之"
+    },
+    {
+     "id": "MapUberModEleDamagePenetration",
+     "zh": [
+      "怪物傷害穿透 #% 元素抗性"
+     ],
+     "en": [
+      "Monster Damage Penetrates #% Elemental Resistances"
+     ],
+     "g": 1,
+     "affixZh": "穿透之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModPoison",
+     "zh": [
+      "怪物增加 #% 中毒持續時間"
+     ],
+     "en": [
+      "Monsters have #% increased Poison Duration"
+     ],
+     "g": 1,
+     "affixZh": "猛毒之",
+     "t17": true
+    },
+    {
+     "id": "MapPlayersEvasionAndUnluckyDodge1MapWorlds",
+     "zh": [
+      "怪物增加 #% 命中值"
+     ],
+     "en": [
+      "Monsters have #% increased Accuracy Rating"
+     ],
+     "g": 1,
+     "affixZh": "傾斜之"
+    },
+    {
+     "id": "MapMonsterCriticalStrikesAndDamage2MapWorlds",
+     "zh": [
+      "怪物增加 #% 暴擊率"
+     ],
+     "en": [
+      "Monsters have #% increased Critical Strike Chance"
+     ],
+     "g": 1,
+     "affixZh": "死亡之"
+    },
+    {
+     "id": "MapMonstersStealChargesOnHitMapWorlds",
+     "zh": [
+      "怪物擊中時偷取暴擊、狂怒和耐力球"
+     ],
+     "en": [
+      "Monsters steal Power, Frenzy and Endurance charges on Hit"
+     ],
+     "g": 1,
+     "affixZh": "精神之、削弱之"
+    },
+    {
+     "id": "MapMonstersPowerChargeOnHitMapWorlds",
+     "zh": [
+      "怪物擊中時獲得 1 顆暴擊球"
+     ],
+     "en": [
+      "Monsters gain a Power Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "暴擊之、權利之"
+    },
+    {
+     "id": "MapMonstersFrenzyChargeOnHitMapWorlds",
+     "zh": [
+      "怪物擊中時獲得 1 顆狂怒球"
+     ],
+     "en": [
+      "Monsters gain a Frenzy Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "狂怒之"
+    },
+    {
+     "id": "MapMonstersEnduranceChargeOnHitMapWorlds",
+     "zh": [
+      "怪物擊中時獲得 1 顆耐力球"
+     ],
+     "en": [
+      "Monsters gain an Endurance Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "耐久之"
+    },
+    {
+     "id": "MapMonstersBlindOnHitMapWorlds",
+     "zh": [
+      "怪物擊中時致盲"
+     ],
+     "en": [
+      "Monsters Blind on Hit"
+     ],
+     "g": 1,
+     "affixZh": "盲目之"
+    },
+    {
+     "id": "MapMonstersMaimOnHitMapWorlds",
+     "zh": [
+      "怪物攻擊擊中時造成癱瘓"
+     ],
+     "en": [
+      "Monsters Maim on Hit with Attacks"
+     ],
+     "g": 1,
+     "affixZh": "大屠殺之、屠戮之"
+    },
+    {
+     "id": "MapUberModPowerCharges",
+     "zh": [
+      "怪物暴擊球上限 #"
+     ],
+     "en": [
+      "Monsters have # to Maximum Power Charges"
+     ],
+     "g": 1,
+     "affixZh": "權利之",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterStatusAilmentAvoidance2MapWorlds",
+     "zh": [
+      "怪物有 #% 機率避免元素異常狀態"
+     ],
+     "en": [
+      "Monsters have #% chance to Avoid Elemental Ailments"
+     ],
+     "g": 1,
+     "affixZh": "隔絕之、絕緣之"
+    },
+    {
+     "id": "MapMonstersHinderOnHitMapWorlds",
+     "zh": [
+      "怪物法術擊中時造成阻礙"
+     ],
+     "en": [
+      "Monsters Hinder on Hit with Spells"
+     ],
+     "g": 1,
+     "affixZh": "阻抗之"
+    },
+    {
+     "id": "MapMonsterLifeLeechImmunityMapWorlds",
+     "zh": [
+      "怪物無法被偷取"
+     ],
+     "en": [
+      "Monsters cannot be Leeched from"
+     ],
+     "g": 1,
+     "affixZh": "凝血之"
+    },
+    {
+     "id": "MapUberModFrenzyCharges",
+     "zh": [
+      "怪物狂怒球上限 #"
+     ],
+     "en": [
+      "Monsters have # to Maximum Frenzy Charges"
+     ],
+     "g": 1,
+     "affixZh": "狂怒之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModEnduranceCharges",
+     "zh": [
+      "怪物耐力球上限 #"
+     ],
+     "en": [
+      "Monsters have # to Maximum Endurance Charges"
+     ],
+     "g": 1,
+     "affixZh": "耐久之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModMonsterDebuffSpeed",
+     "zh": [
+      "怪物身上的減益效果消逝加速 #%"
+     ],
+     "en": [
+      "Debuffs on Monsters expire #% faster"
+     ],
+     "g": 1,
+     "affixZh": "反抗之",
+     "t17": true
+    },
+    {
+     "id": "MapMonstersBaseSelfCriticalMultiplier2MapWorlds",
+     "zh": [
+      "減少 #% 怪物承受的暴擊傷害"
+     ],
+     "en": [
+      "Monsters take #% reduced Extra Damage from Critical Strikes"
+     ],
+     "g": 1,
+     "affixZh": "堅韌之"
+    },
+    {
+     "id": "MapPlayerMaxResists1MapWorlds",
+     "zh": [
+      "玩家 #% 全部最大抗性"
+     ],
+     "en": [
+      "Players have #% to all maximum Resistances"
+     ],
+     "g": 1,
+     "affixZh": "曝露之"
+    },
+    {
+     "id": "MapPlayersEvasionAndUnluckyDodge1MapWorlds",
+     "zh": [
+      "玩家 #% 防止壓抑法術傷害的總量"
+     ],
+     "en": [
+      "Players have #% to amount of Suppressed Spell Damage Prevented"
+     ],
+     "g": 1,
+     "affixZh": "傾斜之"
+    },
+    {
+     "id": "MapPlayerNoLifeESRegenMapWorlds",
+     "zh": [
+      "玩家不能回復生命、魔力和能量護盾"
+     ],
+     "en": [
+      "Players cannot Regenerate Life, Mana or Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "瘀血之"
+    },
+    {
+     "id": "MapPlayerElementalEquilibriumMapWorlds",
+     "zh": [
+      "玩家不能造成曝曬"
+     ],
+     "en": [
+      "Players cannot inflict Exposure"
+     ],
+     "g": 1,
+     "affixZh": "平衡之"
+    },
+    {
+     "id": "MapUberModFlaskMeteor",
+     "zh": [
+      "玩家使用藥劑時被隕石瞄準"
+     ],
+     "en": [
+      "Players are targeted by a Meteor when they use a Flask"
+     ],
+     "g": 1,
+     "affixZh": "飲用之",
+     "t17": true
+    },
+    {
+     "id": "MapPlayersLessCooldownRecovery2MapWorlds",
+     "zh": [
+      "玩家有 #% 更少冷卻時間恢復率"
+     ],
+     "en": [
+      "Players have #% less Cooldown Recovery Rate"
+     ],
+     "g": 1,
+     "affixZh": "疲勞之"
+    },
+    {
+     "id": "MapPlayersAccuracyRating2MapWorlds",
+     "zh": [
+      "玩家有 #% 更少命中值"
+     ],
+     "en": [
+      "Players have #% less Accuracy Rating"
+     ],
+     "g": 1,
+     "affixZh": "不精確之"
+    },
+    {
+     "id": "MapPlayerReducedRegen1MapWorlds",
+     "zh": [
+      "玩家有 #% 更少生命和能量護盾恢復率"
+     ],
+     "en": [
+      "Players have #% less Recovery Rate of Life and Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "窒息之"
+    },
+    {
+     "id": "MapPlayersLessAoERadius2MapWorlds",
+     "zh": [
+      "玩家有 #% 更少的範圍效果"
+     ],
+     "en": [
+      "Players have #% less Area of Effect"
+     ],
+     "g": 1,
+     "affixZh": "無能之"
+    },
+    {
+     "id": "MapPlayersBlockAndArmour2MapWorlds",
+     "zh": [
+      "玩家有 #% 更少護甲"
+     ],
+     "en": [
+      "Players have #% less Armour"
+     ],
+     "g": 1,
+     "affixZh": "腐鏽之、銹之"
+    },
+    {
+     "id": "MapPlayersReducedAuraEffect2MapWorlds",
+     "zh": [
+      "玩家減少 #% 來自技能的非詛咒光環效果"
+     ],
+     "en": [
+      "Players have #% reduced effect of Non-Curse Auras from Skills"
+     ],
+     "g": 1,
+     "affixZh": "懷疑之"
+    },
+    {
+     "id": "MapUberModLessPlayerLeech",
+     "zh": [
+      "玩家減少 #% 最大總生命、魔力和偷取每秒能量護盾恢復"
+     ],
+     "en": [
+      "Players have #% reduced Maximum total Life, Mana and Energy Shield Recovery per second from Leech"
+     ],
+     "g": 1,
+     "affixZh": "凝血之",
+     "t17": true
+    },
+    {
+     "id": "MapPlayersBlockAndArmour2MapWorlds",
+     "zh": [
+      "玩家減少 #% 格擋率"
+     ],
+     "en": [
+      "Players have #% reduced Chance to Block"
+     ],
+     "g": 1,
+     "affixZh": "腐鏽之、銹之"
+    },
+    {
+     "id": "MapPlayersGainReducedFlaskCharges2MapWorlds_",
+     "zh": [
+      "玩家獲得的藥劑充能減少 #%"
+     ],
+     "en": [
+      "Players gain #% reduced Flask Charges"
+     ],
+     "g": 1,
+     "affixZh": "乾旱之"
+    },
+    {
+     "id": "MapUberModGlobalDefences",
+     "zh": [
+      "玩家的防禦減少 #%"
+     ],
+     "en": [
+      "Players have #% less Defences"
+     ],
+     "g": 1,
+     "affixZh": "傾斜之",
+     "t17": true
+    },
+    {
+     "id": "MapPlayerCurseElementalWeakness1MapWorlds",
+     "zh": [
+      "玩家被元素要害詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Elemental Weakness"
+     ],
+     "g": 1,
+     "affixZh": "元素要害之、詛咒之"
+    },
+    {
+     "id": "MapPlayerCurseTemporalChains1MapWorlds",
+     "zh": [
+      "玩家被時空鎖鏈詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Temporal Chains"
+     ],
+     "g": 1,
+     "affixZh": "時空鎖鏈之、詛咒之"
+    },
+    {
+     "id": "MapPlayerCurseVulnerability1MapWorlds",
+     "zh": [
+      "玩家被脆弱詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Vulnerability"
+     ],
+     "g": 1,
+     "affixZh": "脆弱之、詛咒之"
+    },
+    {
+     "id": "MapPlayerCurseEnfeeblement1MapWorlds",
+     "zh": [
+      "玩家被衰弱詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Enfeeble"
+     ],
+     "g": 1,
+     "affixZh": "衰弱之"
+    },
+    {
+     "id": "MapPlayersBuffsExpireFaster2MapWorlds___",
+     "zh": [
+      "玩家身上的增益效果加速 #% 失效"
+     ],
+     "en": [
+      "Buffs on Players expire #% faster"
+     ],
+     "g": 1,
+     "affixZh": "轉瞬之"
+    },
+    {
+     "id": "MapUberModRareFracture",
+     "zh": [
+      "稀有怪物死亡時有 #% 機率破裂"
+     ],
+     "en": [
+      "#% chance for Rare Monsters to Fracture on death"
+     ],
+     "g": 1,
+     "affixZh": "裂片之",
+     "t17": true
+    },
+    {
+     "id": "MapPoisoningMapWorlds",
+     "zh": [
+      "被怪物擊中時中毒"
+     ],
+     "en": [
+      "Monsters Poison on Hit"
+     ],
+     "g": 1,
+     "affixZh": "猛毒之"
+    },
+    {
+     "id": "MapMonsterAllBossesAtOnceMaven",
+     "zh": [
+      "釋界一次釋放全部頭目"
+     ],
+     "en": [
+      "Maven releases all Bosses at once"
+     ],
+     "g": 1,
+     "affixZh": "挑戰之"
+    },
+    {
+     "id": "MapUberModMavenFollower",
+     "zh": [
+      "釋界干擾玩家"
+     ],
+     "en": [
+      "The Maven interferes with Players"
+     ],
+     "g": 1,
+     "affixZh": "珍藏之",
+     "t17": true
+    },
+    {
+     "id": "MapBloodlinesModOnMagicsMapWorlds",
+     "zh": [
+      "魔法怪物增加 #%"
+     ],
+     "en": [
+      "#% increased Magic Monsters"
+     ],
+     "g": 1,
+     "affixZh": "血統之"
+    },
+    {
+     "id": "MapUberModEnduranceCharges",
+     "zh": [
+      "區域內掉落的地圖增加 #%"
+     ],
+     "en": [
+      "#% more Maps found in Area"
+     ],
+     "g": 2,
+     "affixZh": "權利之、狂怒之、耐久之、緩衝的",
+     "t17": true
+    },
+    {
+     "id": "MapUberModBuffExpiry",
+     "zh": [
+      "區域內掉落的聖甲蟲增加 #%"
+     ],
+     "en": [
+      "#% more Scarabs found in Area"
+     ],
+     "g": 2,
+     "affixZh": "易爆之、傾斜之、折磨的、轉瞬之",
+     "t17": true
+    },
+    {
+     "id": "MapUberModFlaskMeteor",
+     "zh": [
+      "區域內掉落的通貨增加 #%"
+     ],
+     "en": [
+      "#% more Currency found in Area"
+     ],
+     "g": 2,
+     "affixZh": "堅定的、懲戒的、豐饒的、終極的",
+     "t17": true
+    },
+    {
+     "id": "MapMonsterAreaOfEffect2MapWorlds",
+     "zh": [
+      "增加怪物 #% 範圍效果"
+     ],
+     "en": [
+      "Monsters have #% increased Area of Effect"
+     ],
+     "g": 2,
+     "affixZh": "巨人之、放大的"
+    },
+    {
+     "id": "MapMonsterCannotBeStunned2MapWorlds",
+     "zh": [
+      "怪物不會被暈眩"
+     ],
+     "en": [
+      "Monsters cannot be Stunned"
+     ],
+     "g": 2,
+     "affixZh": "堅定不移的、勇士之、堅定的"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
+     "zh": [
+      "怪物的移動速度不能被調整至低於基礎值"
+     ],
+     "en": [
+      "Monsters' Movement Speed cannot be modified to below Base Value"
+     ],
+     "g": 2,
+     "affixZh": "無阻的、勇士之"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
+     "zh": [
+      "怪物的行動速度不能被調整至低於基礎值"
+     ],
+     "en": [
+      "Monsters' Action Speed cannot be modified to below Base Value"
+     ],
+     "g": 2,
+     "affixZh": "無阻的、勇士之"
+    }
+   ]
+  },
+  {
+   "id": "logbook_mods",
+   "title": "探險日誌詞綴",
+   "titleEn": "Expedition logbook modifiers",
+   "note": "勾選要找的日誌詞綴。不會誤中的保證只涵蓋這份清單。",
+   "limit": 250,
+   "groups": [
+    "前綴",
+    "後綴",
+    "前後綴皆有"
+   ],
+   "groupsEn": [
+    "Prefix",
+    "Suffix",
+    "Both"
+   ],
+   "entries": [
+    {
+     "id": "MapMonsterCannotBeStunned1MapWorldsExpedition_",
+     "zh": [
+      "#% 更多怪物生命"
+     ],
+     "en": [
+      "#% more Monster Life"
+     ],
+     "g": 0,
+     "affixZh": "堅定不移的、豐饒的"
+    },
+    {
+     "id": "MapMonsterPhysicalResistance1MapWorldsExpedition",
+     "zh": [
+      "+#% 怪物物理傷害減免"
+     ],
+     "en": [
+      "+#% Monster Physical Damage Reduction"
+     ],
+     "g": 0,
+     "affixZh": "裝甲的"
+    },
+    {
+     "id": "MapMonstersAllResistances1MapWorldsExpedition",
+     "zh": [
+      "+#% 怪物的元素抗性"
+     ],
+     "en": [
+      "+#% Monster Elemental Resistances"
+     ],
+     "g": 0,
+     "affixZh": "抵抗的"
+    },
+    {
+     "id": "MapMonstersAllResistances1MapWorldsExpedition",
+     "zh": [
+      "+#% 怪物的混沌抗性"
+     ],
+     "en": [
+      "+#% Monster Chaos Resistance"
+     ],
+     "g": 0,
+     "affixZh": "抵抗的"
+    },
+    {
+     "id": "MapMonsterDamage1MapWorldsExpedition",
+     "zh": [
+      "增加 #% 怪物傷害"
+     ],
+     "en": [
+      "#% increased Monster Damage"
+     ],
+     "g": 0,
+     "affixZh": "殘暴的"
+    },
+    {
+     "id": "MapMonsterFast1MapWorldsExpedition",
+     "zh": [
+      "增加 #% 怪物攻擊速度"
+     ],
+     "en": [
+      "#% increased Monster Attack Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的"
+    },
+    {
+     "id": "MapMonsterFast1MapWorldsExpedition",
+     "zh": [
+      "增加 #% 怪物施放速度"
+     ],
+     "en": [
+      "#% increased Monster Cast Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的"
+    },
+    {
+     "id": "MapMonsterFast1MapWorldsExpedition",
+     "zh": [
+      "增加 #% 怪物移動速度"
+     ],
+     "en": [
+      "#% increased Monster Movement Speed"
+     ],
+     "g": 0,
+     "affixZh": "飄忽的"
+    },
+    {
+     "id": "MapMonstersCurseEffectOnSelfFinal1MapWorldsExpedition",
+     "zh": [
+      "對怪物的詛咒有 #% 更少效果"
+     ],
+     "en": [
+      "#% less effect of Curses on Monsters"
+     ],
+     "g": 0,
+     "affixZh": "魔抗的"
+    },
+    {
+     "id": "MapMonstersChanceToSuppressSpells1MapWorldsExpedition__",
+     "zh": [
+      "怪物 #% 壓抑法術傷害率"
+     ],
+     "en": [
+      "Monsters have #% chance to Suppress Spell Damage"
+     ],
+     "g": 0,
+     "affixZh": "壓迫性的"
+    },
+    {
+     "id": "MapMonsterCannotBeStunned1MapWorldsExpedition_",
+     "zh": [
+      "怪物不會被暈眩"
+     ],
+     "en": [
+      "Monsters cannot be Stunned"
+     ],
+     "g": 0,
+     "affixZh": "堅定不移的"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
+     "zh": [
+      "怪物不能被嘲諷"
+     ],
+     "en": [
+      "Monsters cannot be Taunted"
+     ],
+     "g": 0,
+     "affixZh": "無阻的"
+    },
+    {
+     "id": "MapMonsterChaosDamage2MapWorldsExpedition",
+     "zh": [
+      "怪物擊中時造成凋零 2 秒"
+     ],
+     "en": [
+      "Monsters Inflict Withered for 2 seconds on Hit"
+     ],
+     "g": 0,
+     "affixZh": "褻瀆的"
+    },
+    {
+     "id": "MapMonstersAvoidPoisonBleedBlind1MapWorldsExpedition",
+     "zh": [
+      "怪物有 #% 機率避免中毒、穿刺和流血"
+     ],
+     "en": [
+      "Monsters have a #% chance to avoid Poison, Impale, and Bleeding"
+     ],
+     "g": 0,
+     "affixZh": "抗滲的"
+    },
+    {
+     "id": "MapMonstersMaximumLifeAddedEnergyShield1MapWorldsExpedition_",
+     "zh": [
+      "怪物獲得 #% 最大生命的額外最大能量護盾"
+     ],
+     "en": [
+      "Monsters gain #% of Maximum Life as Extra Maximum Energy Shield"
+     ],
+     "g": 0,
+     "affixZh": "緩衝的"
+    },
+    {
+     "id": "MapMonsterChaosDamage2MapWorldsExpedition",
+     "zh": [
+      "怪物獲得等同它們 #% 物理傷害的額外混沌傷害"
+     ],
+     "en": [
+      "Monsters gain #% of their Physical Damage as Extra Chaos Damage"
+     ],
+     "g": 0,
+     "affixZh": "褻瀆的"
+    },
+    {
+     "id": "MapMonsterMultipleProjectilesWorldsExpedition_",
+     "zh": [
+      "怪物發射 # 額外投射物"
+     ],
+     "en": [
+      "Monsters fire # additional Projectiles"
+     ],
+     "g": 0,
+     "affixZh": "裂化的"
+    },
+    {
+     "id": "MapMonsterChainMapWorldsExpedition",
+     "zh": [
+      "怪物的技能附加 # 次連鎖"
+     ],
+     "en": [
+      "Monsters' skills Chain # additional times"
+     ],
+     "g": 0,
+     "affixZh": "連鎖的"
+    },
+    {
+     "id": "MapMonstersImpaleOnHit1MapWorldsExpedition__",
+     "zh": [
+      "怪物的攻擊擊中時有 #% 機率造成穿刺"
+     ],
+     "en": [
+      "Monsters' Attacks have #% chance to Impale on Hit"
+     ],
+     "g": 0,
+     "affixZh": "穿刺的"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
+     "zh": [
+      "怪物的移動速度不能被調整至低於基礎值"
+     ],
+     "en": [
+      "Monsters' Movement Speed cannot be modified to below Base Value"
+     ],
+     "g": 0,
+     "affixZh": "無阻的"
+    },
+    {
+     "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
+     "zh": [
+      "怪物的行動速度不能被調整至低於基礎值"
+     ],
+     "en": [
+      "Monsters' Action Speed cannot be modified to below Base Value"
+     ],
+     "g": 0,
+     "affixZh": "無阻的"
+    },
+    {
+     "id": "MapMonsterColdDamage1MapWorldsExpedition",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為冰冷"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Cold"
+     ],
+     "g": 0,
+     "affixZh": "冷凍的"
+    },
+    {
+     "id": "MapMonsterFireDamage1MapWorldsExpedition",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為火焰"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Fire"
+     ],
+     "g": 0,
+     "affixZh": "燃燒的"
+    },
+    {
+     "id": "MapMonsterLightningDamage1MapWorldsExpedition",
+     "zh": [
+      "怪物造成 #% 額外物理傷害視為閃電"
+     ],
+     "en": [
+      "Monsters deal #% extra Physical Damage as Lightning"
+     ],
+     "g": 0,
+     "affixZh": "導電的"
+    },
+    {
+     "id": "MapMonstersChanceToInflictStatusAilments1MapWorldsExpedition__",
+     "zh": [
+      "擊中時，怪物有 #% 機率點燃、冰凍和感電"
+     ],
+     "en": [
+      "Monsters have a #% chance to Ignite, Freeze and Shock on Hit"
+     ],
+     "g": 0,
+     "affixZh": "重權的"
+    },
+    {
+     "id": "MapMonsterElementalReflection1MapWorldsExpedition",
+     "zh": [
+      "稀有怪物擁有會反射 # 元素傷害的元素荊棘"
+     ],
+     "en": [
+      "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
+     ],
+     "g": 0,
+     "affixZh": "反射的"
+    },
+    {
+     "id": "MapMonsterPhysicalReflection1MapWorldsExpedition",
+     "zh": [
+      "稀有怪物擁有會反射 # 物理傷害的物理荊棘"
+     ],
+     "en": [
+      "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
+     ],
+     "g": 0,
+     "affixZh": "懲罰的"
+    },
+    {
+     "id": "MapMonsterCriticalStrikesAndDamage1MapWorldsExpedition_",
+     "zh": [
+      "#% 怪物暴擊加成"
+     ],
+     "en": [
+      "#% to Monster Critical Strike Multiplier"
+     ],
+     "g": 1,
+     "affixZh": "死亡之"
+    },
+    {
+     "id": "MapShockedGround1MapWorldsExpedition_",
+     "zh": [
+      "區域內有數道增加 #% 承受傷害的感電地面"
+     ],
+     "en": [
+      "Area has patches of Shocked Ground which increase Damage taken by #%"
+     ],
+     "g": 1,
+     "affixZh": "雷之"
+    },
+    {
+     "id": "MapConsecratedGround1MapWorldsExpedition_",
+     "zh": [
+      "區域有數道奉獻地面"
+     ],
+     "en": [
+      "Area has patches of Consecrated Ground"
+     ],
+     "g": 1,
+     "affixZh": "奉獻之"
+    },
+    {
+     "id": "MapChilledGroundSuffix1MapWorldsExpedition",
+     "zh": [
+      "地圖含有冰緩地面"
+     ],
+     "en": [
+      "Area has patches of Chilled Ground"
+     ],
+     "g": 1,
+     "affixZh": "冰之"
+    },
+    {
+     "id": "MapBurningGround1MapWorldsExpedition_",
+     "zh": [
+      "地圖含有燃燒地面"
+     ],
+     "en": [
+      "Area has patches of Burning Ground"
+     ],
+     "g": 1,
+     "affixZh": "烈焰之"
+    },
+    {
+     "id": "MapDesecratedGround1MapWorldsExpedition",
+     "zh": [
+      "地圖含有腐化地面"
+     ],
+     "en": [
+      "Area has patches of desecrated ground"
+     ],
+     "g": 1,
+     "affixZh": "褻瀆之"
+    },
+    {
+     "id": "MapMonsterAreaOfEffect1MapWorldsExpedition_",
+     "zh": [
+      "增加怪物 #% 範圍效果"
+     ],
+     "en": [
+      "Monsters have #% increased Area of Effect"
+     ],
+     "g": 1,
+     "affixZh": "巨人之"
+    },
+    {
+     "id": "MapPlayersEvasionAndUnluckyDodge1MapWorldsExpedition",
+     "zh": [
+      "怪物增加 #% 命中值"
+     ],
+     "en": [
+      "Monsters have #% increased Accuracy Rating"
+     ],
+     "g": 1,
+     "affixZh": "傾斜之"
+    },
+    {
+     "id": "MapMonsterCriticalStrikesAndDamage1MapWorldsExpedition_",
+     "zh": [
+      "怪物增加 #% 暴擊率"
+     ],
+     "en": [
+      "Monsters have #% increased Critical Strike Chance"
+     ],
+     "g": 1,
+     "affixZh": "死亡之"
+    },
+    {
+     "id": "MapMonstersStealChargesOnHitMapWorldsExpedition",
+     "zh": [
+      "怪物擊中時偷取暴擊、狂怒和耐力球"
+     ],
+     "en": [
+      "Monsters steal Power, Frenzy and Endurance charges on Hit"
+     ],
+     "g": 1,
+     "affixZh": "精神之"
+    },
+    {
+     "id": "MapMonstersPowerChargeOnHitMapWorldsExpedition",
+     "zh": [
+      "怪物擊中時獲得 1 顆暴擊球"
+     ],
+     "en": [
+      "Monsters gain a Power Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "暴擊之"
+    },
+    {
+     "id": "MapMonstersFrenzyChargeOnHitMapWorldsExpedition_",
+     "zh": [
+      "怪物擊中時獲得 1 顆狂怒球"
+     ],
+     "en": [
+      "Monsters gain a Frenzy Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "狂怒之"
+    },
+    {
+     "id": "MapMonstersEnduranceChargeOnHitMapWorldsExpedition",
+     "zh": [
+      "怪物擊中時獲得 1 顆耐力球"
+     ],
+     "en": [
+      "Monsters gain an Endurance Charge on Hit"
+     ],
+     "g": 1,
+     "affixZh": "耐久之"
+    },
+    {
+     "id": "MapMonstersBlindOnHitMapWorldsExpedition__",
+     "zh": [
+      "怪物擊中時致盲"
+     ],
+     "en": [
+      "Monsters Blind on Hit"
+     ],
+     "g": 1,
+     "affixZh": "盲目之"
+    },
+    {
+     "id": "MapMonstersMaimOnHitMapWorldsExpedition_",
+     "zh": [
+      "怪物攻擊擊中時造成癱瘓"
+     ],
+     "en": [
+      "Monsters Maim on Hit with Attacks"
+     ],
+     "g": 1,
+     "affixZh": "大屠殺之"
+    },
+    {
+     "id": "MapMonstersHinderOnHitMapWorldsExpedition",
+     "zh": [
+      "怪物法術擊中時造成阻礙"
+     ],
+     "en": [
+      "Monsters Hinder on Hit with Spells"
+     ],
+     "g": 1,
+     "affixZh": "阻抗之"
+    },
+    {
+     "id": "MapMonstersBaseSelfCriticalMultiplier1MapWorldsExpedition",
+     "zh": [
+      "減少 #% 怪物承受的暴擊傷害"
+     ],
+     "en": [
+      "Monsters take #% reduced Extra Damage from Critical Strikes"
+     ],
+     "g": 1,
+     "affixZh": "堅韌之"
+    },
+    {
+     "id": "MapPlayerMaxResists1MapWorldsExpedition",
+     "zh": [
+      "玩家 #% 全部最大抗性"
+     ],
+     "en": [
+      "Players have #% to all maximum Resistances"
+     ],
+     "g": 1,
+     "affixZh": "曝露之"
+    },
+    {
+     "id": "MapPlayersEvasionAndUnluckyDodge1MapWorldsExpedition",
+     "zh": [
+      "玩家 #% 防止壓抑法術傷害的總量"
+     ],
+     "en": [
+      "Players have #% to amount of Suppressed Spell Damage Prevented"
+     ],
+     "g": 1,
+     "affixZh": "傾斜之"
+    },
+    {
+     "id": "MapPlayerNoLifeESRegenMapWorldsExpedition",
+     "zh": [
+      "玩家不能回復生命、魔力和能量護盾"
+     ],
+     "en": [
+      "Players cannot Regenerate Life, Mana or Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "瘀血之"
+    },
+    {
+     "id": "MapPlayerElementalEquilibriumMapWorldsExpedition__",
+     "zh": [
+      "玩家不能造成曝曬"
+     ],
+     "en": [
+      "Players cannot inflict Exposure"
+     ],
+     "g": 1,
+     "affixZh": "平衡之"
+    },
+    {
+     "id": "MapPlayersLessCooldownRecovery1MapWorldsExpedition_",
+     "zh": [
+      "玩家有 #% 更少冷卻時間恢復率"
+     ],
+     "en": [
+      "Players have #% less Cooldown Recovery Rate"
+     ],
+     "g": 1,
+     "affixZh": "疲勞之"
+    },
+    {
+     "id": "MapPlayersAccuracyRating1MapWorldsExpedition_",
+     "zh": [
+      "玩家有 #% 更少命中值"
+     ],
+     "en": [
+      "Players have #% less Accuracy Rating"
+     ],
+     "g": 1,
+     "affixZh": "不精確之"
+    },
+    {
+     "id": "MapPlayerReducedRegen1MapWorldsExpedition_",
+     "zh": [
+      "玩家有 #% 更少生命和能量護盾恢復率"
+     ],
+     "en": [
+      "Players have #% less Recovery Rate of Life and Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "窒息之"
+    },
+    {
+     "id": "MapPlayersLessAoERadius1MapWorldsExpedition",
+     "zh": [
+      "玩家有 #% 更少的範圍效果"
+     ],
+     "en": [
+      "Players have #% less Area of Effect"
+     ],
+     "g": 1,
+     "affixZh": "無能之"
+    },
+    {
+     "id": "MapPlayersBlockAndArmour1MapWorldsExpedition",
+     "zh": [
+      "玩家有 #% 更少護甲"
+     ],
+     "en": [
+      "Players have #% less Armour"
+     ],
+     "g": 1,
+     "affixZh": "腐鏽之"
+    },
+    {
+     "id": "MapPlayersReducedAuraEffect1MapWorldsExpedition",
+     "zh": [
+      "玩家減少 #% 來自技能的非詛咒光環效果"
+     ],
+     "en": [
+      "Players have #% reduced effect of Non-Curse Auras from Skills"
+     ],
+     "g": 1,
+     "affixZh": "懷疑之"
+    },
+    {
+     "id": "MapPlayersBlockAndArmour1MapWorldsExpedition",
+     "zh": [
+      "玩家減少 #% 格擋率"
+     ],
+     "en": [
+      "Players have #% reduced Chance to Block"
+     ],
+     "g": 1,
+     "affixZh": "腐鏽之"
+    },
+    {
+     "id": "MapPlayersGainReducedFlaskCharges1MapWorldsExpedition",
+     "zh": [
+      "玩家獲得的藥劑充能減少 #%"
+     ],
+     "en": [
+      "Players gain #% reduced Flask Charges"
+     ],
+     "g": 1,
+     "affixZh": "乾旱之"
+    },
+    {
+     "id": "MapPlayerCurseElementalWeakness1MapWorldsExpedition_",
+     "zh": [
+      "玩家被元素要害詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Elemental Weakness"
+     ],
+     "g": 1,
+     "affixZh": "元素要害之"
+    },
+    {
+     "id": "MapPlayerCurseTemporalChains1MapWorldsExpedition_",
+     "zh": [
+      "玩家被時空鎖鏈詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Temporal Chains"
+     ],
+     "g": 1,
+     "affixZh": "時空鎖鏈之"
+    },
+    {
+     "id": "MapPlayerCurseVulnerability1MapWorldsExpedition_",
+     "zh": [
+      "玩家被脆弱詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Vulnerability"
+     ],
+     "g": 1,
+     "affixZh": "脆弱之"
+    },
+    {
+     "id": "MapPlayerCurseEnfeeblement1MapWorldsExpedition_",
+     "zh": [
+      "玩家被衰弱詛咒"
+     ],
+     "en": [
+      "Players are Cursed with Enfeeble"
+     ],
+     "g": 1,
+     "affixZh": "衰弱之"
+    },
+    {
+     "id": "MapPlayersBuffsExpireFaster1MapWorldsExpedition___",
+     "zh": [
+      "玩家身上的增益效果加速 #% 失效"
+     ],
+     "en": [
+      "Buffs on Players expire #% faster"
+     ],
+     "g": 1,
+     "affixZh": "轉瞬之"
+    },
+    {
+     "id": "MapPoisoningMapWorldsExpedition",
+     "zh": [
+      "被怪物擊中時中毒"
+     ],
+     "en": [
+      "Monsters Poison on Hit"
+     ],
+     "g": 1,
+     "affixZh": "猛毒之"
+    }
+   ]
+  }
+ ]
+}

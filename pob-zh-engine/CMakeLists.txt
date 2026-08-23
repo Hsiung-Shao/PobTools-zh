@@ -411,6 +411,12 @@ if (WIN32)
         host/app_update.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
+        # 搜尋字串產生器：核心 + 資料 + UI + 自檢
+        host/regex_gen.cpp
+        host/regex_data.cpp
+        host/regex_state.cpp
+        host/regex_tool_ui.cpp
+        host/regex_selftest.cpp
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
@@ -478,6 +484,12 @@ if (WIN32)
     # so a new league needs a fresh run of both.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
+    # Search-string generator catalogue: every list the tool can build a query
+    # over (map modifiers, logbook modifiers, item bases), each entry carrying the
+    # line the game prints with '#' where a roll goes. Regenerated from a local
+    # Content.ggpk by tools/gen_regex_data.py; like the scarabs it has no online
+    # updater, so a new league needs a fresh run.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
 endif ()
 
 

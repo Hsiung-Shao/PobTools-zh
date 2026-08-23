@@ -14,6 +14,7 @@
 #include "atlas_planner.h"
 #include "filter_editor.h"
 #include "launcher_editor.h"
+#include "regex_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "ui_theme.h"
@@ -132,6 +133,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				{ "trans",  &CreateTranslationEditorPanel },
 				{ "tj",     &CreateTimelessJewelPanel },
 				{ "atlas",  &CreateAtlasPlannerPanel },
+				{ "regex",  &CreateRegexToolPanel },
 			};
 			for (const Entry& ent : kPanels) {
 			std::unique_ptr<IToolPanel> panel(ent.make());

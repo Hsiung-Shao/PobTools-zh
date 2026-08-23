@@ -47,6 +47,8 @@
 #include "atlas_mechanics.h"
 #include "atlas_version_index.h"
 #include "filter_selftest.h"
+#include "regex_selftest.h"
+#include "regex_tool.h"
 #include "timeless_jewel.h"
 #include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
@@ -425,6 +427,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return fails == 0 ? 0 : 1;
 	}
 
+	// Headless search-string generator check (synthetic rules + the shipped
+	// catalogue through hundreds of random picks).
+	if (arg1 == L"--regex-selftest") {
+		return RunRegexSelfTest(dir);
+	}
+
 	// Headless filter-editor data-layer check (synthetic cases; console report).
 	if (arg1 == L"--filter-selftest") {
 		return RunFilterSelfTest(dir);
@@ -591,6 +599,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--timeless-jewel") {
 		ShowTimelessJewel(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
+		return 0;
+	}
+	if (arg1 == L"--regex") {
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		ShowRegexTool(dir, c.game, c.locale);
 		return 0;
 	}
 
