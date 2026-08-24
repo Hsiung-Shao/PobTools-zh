@@ -56,6 +56,7 @@
 #include "passive_import.h"
 #include "passive_tree_update.h"
 #include "app_update.h"
+#include "sig_verify.h"
 #include "ui_theme.h"
 #include "../translate/startup_trace.h"
 
@@ -306,6 +307,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--app-update-check") {
 		return RunAppUpdateCli(dir, /*checkOnly=*/true);
 	}
+	// Which repo does this binary take updates from? Packaging asserts it, so a
+	// test build (built with -DPOBTOOLS_UPDATE_REPO=...) can never be shipped.
+	if (arg1 == L"--update-source") { // --update-source [outFile]
+		return RunUpdateSourceCli(arg2);
+	}
 	// One-time redirect/hash verification against the live release assets.
 	if (arg1 == L"--app-fetch-test") {
 		return RunAppFetchTest(dir);
@@ -320,6 +326,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// the console code page.
 	if (arg1 == L"--translation-data-list") {
 		return RunTranslationDataList(arg2.empty() ? dir : arg2, arg3);
+	}
+	// Packaging: verify a freshly signed release manifest against the public keys
+	// compiled into THIS exe. The packaging script has its own copy of the key,
+	// but a verifier that shares the signer's blind spot is no verifier -- this is
+	// the same code path the user's client will run.
+	if (arg1 == L"--verify-manifest") { // --verify-manifest <manifest.json> <manifest.json.sig>
+		return RunVerifyManifestCli(arg2, arg3);
 	}
 
 	// Headless timeless-jewel engine checks.

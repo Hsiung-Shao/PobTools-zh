@@ -4,6 +4,8 @@
 #include "launcher_config.h" // LoadLauncherConfig (the CLI honours the same opt-out)
 #include "zip_extract.h"
 #include "hash_sha256.h"
+#include "sig_verify.h"
+#include "update_pubkeys.h" // 內嵌公鑰清單;自檢會把它換成臨時金鑰來驅動分支
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -30,15 +32,42 @@ static const wchar_t* kApiHost = L"api.github.com";
 // App 線。releases/latest 只回最新的 non-prerelease、non-draft release,而
 // data-<n> 一律標 prerelease —— 所以這個端點的語意天生就是「最新程式版」,
 // 契約與 v0.18.0 以前的客戶端完全一致。
-static const wchar_t* kLatestPath = L"/repos/Hsiung-Shao/PobTools-zh/releases/latest";
+// 更新來源的 repo。⚠ **編譯期**定義,不是環境變數也不是設定檔:
+//
+// 它要能被換掉,是因為「簽章會放行正確的更新」這件事只能對著一個真的 release
+// 證明,而拿正式 repo 做那個實驗會讓全體使用者的客戶端看到測試用的 release ——
+// 尤其 Data 線掃的是 `/releases` 全清單,**prerelease 不會被跳過**,一個測試用的
+// data-<n> 會被每一台機器抓走。
+//
+// 但它**不能**是執行期可改的:更新來源是安全邊界的一部分,能在使用者機器上改
+// 它的人就能把更新指到自己的地方(雖然簽章仍擋得住安裝,但那是第二道防線,
+// 不該讓第一道白白消失)。用 CMake 的 `-D` 傳,正式建置根本不存在這條路。
+//
+//   cmake -B build-test -DPOBTOOLS_UPDATE_REPO=你的帳號/測試repo
+#ifndef POBTOOLS_UPDATE_REPO
+#define POBTOOLS_UPDATE_REPO "Hsiung-Shao/PobTools-zh"
+#endif
+#define PT_UPD_L2(x) L##x
+#define PT_UPD_L(x) PT_UPD_L2(x)
+
+static const wchar_t* kLatestPath =
+	L"/repos/" PT_UPD_L(POBTOOLS_UPDATE_REPO) L"/releases/latest";
 // Data 線。⚠ 這份清單依 created_at(tag 指向的 commit 時間)排序,不是依 tag,
 // 從舊 commit 打的 data tag 會排到後面 —— 所以一律解出序號自己比大小,
 // 絕不取第一個命中的。
-static const wchar_t* kReleasesPath = L"/repos/Hsiung-Shao/PobTools-zh/releases?per_page=100";
+static const wchar_t* kReleasesPath =
+	L"/repos/" PT_UPD_L(POBTOOLS_UPDATE_REPO) L"/releases?per_page=100";
 // 資產名的前綴。改成前綴比對(而非 "PobTools-" + tag + ".zip" 字串拼接)是拆
 // 兩線的前提:資料包的檔名裡根本沒有程式版號,拼不出來。
 static const char* kAppAssetPrefix = "PobTools-update-";   // 主檔包(不含字典)
 static const char* kDataAssetPrefix = "PobTools-Data-";    // 翻譯資料包
+// 經過簽章的資產清單。兩條線共用同一組命名,因為它們是兩個不同的 release,
+// 各自帶各自的 manifest。⚠ 這兩個後綴的關係是「一個是另一個加 .sig」,而
+// `.json.sig` 也符合 `.json` 前綴的檔名比對 —— 挑選器一律用完整後綴比對,
+// 不用 contains,否則兩個資產會互相認成對方。
+static const char* kManifestPrefix = "PobTools-manifest-";
+static const char* kManifestSuffix = ".json";
+static const char* kManifestSigSuffix = ".json.sig";
 // 安裝目錄裡的翻譯資料版本戳記。內容 {"dataVersion":"data-3"}。
 static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 
@@ -85,6 +114,11 @@ static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 	X(kMsgReadyRestart,    u8"更新檔就緒，即將重新啟動…")                        \
 	X(kMsgNoAppAsset,      u8"找不到對應的發佈資產")                             \
 	X(kMsgNoDiskSpace,     u8"磁碟空間不足（需 300MB）")                         \
+	/* 發佈簽章(信任根是編進 exe 的公鑰,不是 GitHub 上的任何資料) */          \
+	X(kMsgNoSignature,     u8"發佈缺少簽章，已拒絕安裝")                        \
+	X(kMsgSigBad,          u8"發佈簽章驗證失敗，已拒絕安裝")                    \
+	X(kMsgManifestBad,     u8"發佈清單無效或與版本不符")                        \
+	X(kMsgSizeMismatch,    u8"下載檔案大小不符")                                \
 	/* 失敗與阻擋 */                                                            \
 	X(kMsgPobRunning,      u8"POB 執行中，請先關閉所有 POB 視窗")                \
 	X(kMsgHashMismatch,    u8"下載檔案雜湊值不符（下載損毀？）")                 \
@@ -648,7 +682,43 @@ void AppUpdater::workerLoop()
 	}
 }
 
+// 拿簽過章的清單所宣告的大小與雜湊,去擋收到的位元組。抽出來是為了讓自檢能
+// **不碰網路**地驗這道閘門 —— 在此之前,「manifest 算出正確的數字」有 T19 在測,
+// 「那些數字真的被拿去擋東西」卻一條測試都沒有。兩件事分開才叫測過。
+static bool VerifyPayload(const std::vector<unsigned char>& bytes, const std::string& sha256hex,
+                          unsigned long long expectedSize, std::string* err, std::string* detail)
+{
+	if (detail) detail->clear();
+
+	// 大小先驗:比雜湊便宜,而且「大小對了雜湊不對」與「大小就不對」是兩種
+	// 完全不同的故事,分開報才查得下去。
+	if (expectedSize != 0 && bytes.size() != expectedSize) {
+		if (detail) *detail = "size mismatch: got " + std::to_string(bytes.size()) +
+		                      ", manifest says " + std::to_string(expectedSize);
+		if (err) *err = kMsgSizeMismatch;
+		return false;
+	}
+
+	// ⚠ 空的 sha256 以前代表「GitHub 沒給 digest,跳過檢查」。那條路已經移除:
+	// 現在雜湊一律來自簽過章的 manifest,所以空值只可能是呼叫端寫錯,而
+	// 「驗不了就照裝」正是這整次改動要消滅的行為。
+	if (sha256hex.empty()) {
+		if (detail) *detail = "internal: no expected sha256 supplied";
+		if (err) *err = kMsgHashMismatch;
+		return false;
+	}
+	std::string got;
+	if (!Sha256Hex(bytes.data(), bytes.size(), &got) || got != to_lower_ascii(sha256hex)) {
+		if (detail) *detail = "sha256 mismatch: got " + got + ", manifest says " +
+		                      to_lower_ascii(sha256hex);
+		if (err) *err = kMsgHashMismatch;
+		return false;
+	}
+	return true;
+}
+
 bool AppUpdater::downloadAsset(const std::string& url, const std::string& sha256hex,
+                               unsigned long long expectedSize,
                                std::vector<unsigned char>* out, std::string* err, bool reportBytes)
 {
 	std::wstring host, path;
@@ -668,44 +738,243 @@ bool AppUpdater::downloadAsset(const std::string& url, const std::string& sha256
 	// browser_download_url 302s to objects.githubusercontent.com; WinHTTP's
 	// default redirect policy follows HTTPS->HTTPS across hosts.
 	if (!c.Get(path, *out, err, &stop_, progress)) return false;
-	if (!sha256hex.empty()) {
-		std::string got;
-		if (!Sha256Hex(out->data(), out->size(), &got) ||
-		    got != to_lower_ascii(sha256hex)) {
-			if (err) *err = kMsgHashMismatch;
+
+	std::string detail;
+	const bool ok = VerifyPayload(*out, sha256hex, expectedSize, err, &detail);
+	if (!detail.empty()) log_line(exeDir_, detail + " -- " + url);
+	return ok;
+}
+
+// 驗簽 + 判斷 manifest 說的是不是這一版、有沒有這個資產。**不碰網路**,所以自檢
+// 可以用現場產生的臨時金鑰把每一條拒絕路徑都走一次 —— 那些分支若只存在於一個
+// 會發 HTTP 請求的函式裡,就等於永遠沒被測過,而它們正是「該拒的沒拒」與
+// 「不該拒的拒了」兩種災難的所在。
+//
+// *detail 收一句要寫進更新記錄的英文說明(可能為空);*err 收要顯示給使用者的
+// 中文訊息。兩者刻意分開:記錄要能查,畫面要能讀。
+static bool VerifySignedManifest(const std::vector<unsigned char>& body,
+                                 const std::string& sigHex,
+                                 const std::string& expectTag,
+                                 const std::string& assetName,
+                                 const std::string& apiDigest,
+                                 const char* const* keysHex, int keyCount,
+                                 std::string* shaOut, unsigned long long* sizeOut,
+                                 std::string* err, std::string* detail)
+{
+	shaOut->clear();
+	*sizeOut = 0;
+	if (detail) detail->clear();
+
+	// --- 驗簽。這是整條鏈唯一不依賴 GitHub 的一步。--------------------------
+	int keyIndex = -1;
+	std::string sigErr;
+	if (!VerifyReleaseSignatureWithKeys(body.data(), body.size(), sigHex, keysHex, keyCount,
+	                                    &keyIndex, &sigErr)) {
+		if (detail) *detail = "SIGNATURE REJECTED for " + expectTag + ": " + sigErr;
+		if (err) *err = kMsgSigBad;
+		return false;
+	}
+
+	// --- 驗過之後才解析內容 ------------------------------------------------
+	try {
+		ordered_json m = ordered_json::parse(body.begin(), body.end());
+		if (m.value("schema", 0) != 1) {
+			if (detail) *detail = "manifest schema is not 1 for " + expectTag;
+			if (err) *err = kMsgManifestBad;
 			return false;
 		}
-	} else {
-		log_line(exeDir_, "asset without digest, hash check skipped: " + url);
+		// ⚠ 這一行擋的是「拿一份**有效簽章**的舊 manifest 掛到新 release 上」。
+		// 少了它,簽章只證明「這份清單曾經是真的」,證明不了「它說的是這一版」。
+		if (m.value("tag", std::string()) != expectTag) {
+			if (detail) *detail = "manifest tag mismatch: says '" +
+			                      m.value("tag", std::string()) + "', release is '" + expectTag + "'";
+			if (err) *err = kMsgManifestBad;
+			return false;
+		}
+		if (!m.contains("assets") || !m["assets"].is_array()) {
+			if (detail) *detail = "manifest has no assets array for " + expectTag;
+			if (err) *err = kMsgManifestBad;
+			return false;
+		}
+		int hits = 0;
+		for (const auto& a : m["assets"]) {
+			if (!a.is_object()) continue;
+			if (a.value("name", std::string()) != assetName) continue;
+			hits++;
+			*shaOut = to_lower_ascii(a.value("sha256", std::string()));
+			// value<T> 在型別不符時會 throw(而不是回預設值)。整份 manifest
+			// 是我們自己產的,但「自己產的」不是輸入驗證 —— 外面那層 catch
+			// 會把它變成一句拒絕,不會讓例外炸穿呼叫端。
+			*sizeOut = a.value("size", 0ull);
+		}
+		// 同名兩筆 = 這份 manifest 本身有問題,挑一筆就是猜。
+		// sha 長度與 size 非零一起檢查:一個只有 name 的空殼條目不能算數。
+		if (hits != 1 || shaOut->size() != 64 || *sizeOut == 0) {
+			if (detail) *detail = "manifest has " + std::to_string(hits) + " usable entr(y/ies) for '" +
+			                      assetName + "' in " + expectTag + " -- refusing";
+			shaOut->clear();
+			*sizeOut = 0;
+			if (err) *err = kMsgManifestBad;
+			return false;
+		}
+	} catch (...) {
+		if (detail) *detail = "manifest parse failed for " + expectTag;
+		if (err) *err = kMsgManifestBad;
+		return false;
 	}
+
+	// --- 第二個證人 --------------------------------------------------------
+	// GitHub 自己算出來的 digest 若與簽過章的清單不一致,代表儲存在 GitHub 上的
+	// 那份位元組已經不是被簽的那一份。此時**不要**默默相信 manifest 然後去下載
+	// 一個必然會雜湊不符的檔 —— 直接停,並且把兩個值都寫進記錄。
+	if (!apiDigest.empty() && to_lower_ascii(apiDigest) != *shaOut) {
+		if (detail) *detail = "DIGEST CONFLICT for '" + assetName + "': signed manifest says " +
+		                      *shaOut + ", GitHub reports " + to_lower_ascii(apiDigest);
+		shaOut->clear();
+		*sizeOut = 0;
+		if (err) *err = kMsgManifestBad;
+		return false;
+	}
+	if (detail) *detail = "manifest ok for " + expectTag + " (key #" + std::to_string(keyIndex) +
+	                      ", asset '" + assetName + "')";
 	return true;
 }
 
+bool AppUpdater::resolveSignedAsset(const SignedManifestRef& ref, const std::string& assetName,
+                                    const std::string& apiDigest, std::string* shaOut,
+                                    unsigned long long* sizeOut, std::string* err)
+{
+	shaOut->clear();
+	*sizeOut = 0;
+
+	if (!ref.has() || assetName.empty()) {
+		log_line(exeDir_, "release carries no signed manifest -- refusing to install");
+		if (err) *err = kMsgNoSignature;
+		return false;
+	}
+
+	// manifest 與簽章本身不能用雜湊驗(那個雜湊要從哪來?),它們的完整性完全
+	// 來自簽章。所以這兩個下載刻意繞過 downloadAsset 的必填雜湊。
+	auto fetchSmall = [&](const std::string& url, std::vector<unsigned char>* buf) {
+		std::wstring host, path;
+		if (!split_https_url(url, &host, &path)) return false;
+		HttpsClient c(host);
+		std::string e;
+		if (!c.Get(path, *buf, &e, &stop_)) {
+			log_line(exeDir_, "manifest fetch failed: " + e + " — " + url);
+			return false;
+		}
+		// 4 MB 是一個「不可能是 manifest」的界線。沒有它,一個被換成 2GB 的
+		// 資產會在驗簽之前就先把記憶體吃光。
+		if (buf->empty() || buf->size() > 4ull * 1024 * 1024) {
+			log_line(exeDir_, "manifest size implausible (" + std::to_string(buf->size()) +
+			                  " bytes) — " + url);
+			return false;
+		}
+		return true;
+	};
+
+	std::vector<unsigned char> body, sigRaw;
+	if (!fetchSmall(ref.url, &body) || !fetchSmall(ref.sigUrl, &sigRaw)) {
+		if (err) *err = kMsgNoSignature;
+		return false;
+	}
+
+	const std::string sigHex(reinterpret_cast<const char*>(sigRaw.data()), sigRaw.size());
+	std::string detail;
+	const bool ok = VerifySignedManifest(body, sigHex, ref.tag, assetName, apiDigest,
+	                                     kUpdatePublicKeysHex, kUpdatePublicKeyCount,
+	                                     shaOut, sizeOut, err, &detail);
+	if (!detail.empty()) log_line(exeDir_, detail);
+	return ok;
+}
+
+// 這則錯誤是「重試也不會好」的那一類嗎?三則信任訊息都是永久狀態:release 上
+// 沒有簽章、簽章驗不過、清單與這一版對不上 —— 全部要人去修 release,不是等網路。
+//
+// ⚠ 用訊息常數比對而不是另立錯誤碼,是為了跟這個檔既有的錯誤傳遞方式一致
+//(整支更新器都用 kMsg* 當錯誤值)。代價是加新的信任訊息時要回來補這裡,
+// 所以自檢 T20 反過來驗:每一則信任訊息都必須被這個判斷認出來。
+static bool IsTrustFailure(const std::string& msg)
+{
+	return msg == kMsgNoSignature || msg == kMsgSigBad || msg == kMsgManifestBad;
+}
+
+static bool ends_with(const std::string& s, const char* suffix)
+{
+	const size_t n = strlen(suffix);
+	return s.size() >= n && s.compare(s.size() - n, n, suffix) == 0;
+}
+
+static bool starts_with(const std::string& s, const char* prefix)
+{
+	const size_t n = strlen(prefix);
+	return s.size() >= n && s.compare(0, n, prefix) == 0;
+}
+
 // One release's asset list -> the single entry whose name starts with `prefix`
-// and ends in ".zip". "Exactly one" is asserted rather than "the first one": two
-// matches means the release carries an asset nobody planned for, and picking one
-// at random would install it.
-static bool pick_asset(const ordered_json& release, const char* prefix,
-                       std::string* url, std::string* sha, std::string* why)
+// and ends in `suffix`. "Exactly one" is asserted rather than "the first one":
+// two matches means the release carries an asset nobody planned for, and picking
+// one at random would install it.
+static bool pick_asset_ex(const ordered_json& release, const char* prefix, const char* suffix,
+                          std::string* url, std::string* sha, std::string* nameOut,
+                          std::string* why)
 {
 	int hits = 0;
 	if (release.contains("assets")) {
 		for (const auto& a : release["assets"]) {
 			std::string name = a.value("name", std::string());
-			if (name.compare(0, strlen(prefix), prefix) != 0) continue;
-			if (name.size() < 4 || name.compare(name.size() - 4, 4, ".zip") != 0) continue;
+			if (!starts_with(name, prefix)) continue;
+			if (!ends_with(name, suffix)) continue;
 			hits++;
-			*url = a.value("browser_download_url", std::string());
-			std::string digest = a.value("digest", std::string());
-			if (digest.compare(0, 7, "sha256:") == 0) digest.erase(0, 7);
-			else digest.clear(); // unknown scheme: skip hash check
-			*sha = digest;
+			if (url) *url = a.value("browser_download_url", std::string());
+			if (nameOut) *nameOut = name;
+			if (sha) {
+				std::string digest = a.value("digest", std::string());
+				// GitHub 只承諾 "sha256:<hex>";別的方案就是我們不認得的東西,
+				// 當作沒有。⚠ 這裡「沒有 digest」不再等於「不驗」——真正的
+				// 判準是 manifest,digest 只是拿來交叉比對的第二個證人。
+				if (starts_with(digest, "sha256:")) digest.erase(0, 7);
+				else digest.clear();
+				*sha = digest;
+			}
 		}
 	}
 	if (hits == 1) return true;
 	if (hits > 1 && why) *why = kMsgAssetNotUnique + std::string(prefix);
+	if (url) url->clear();
+	if (sha) sha->clear();
+	if (nameOut) nameOut->clear();
+	return false;
+}
+
+static bool pick_asset(const ordered_json& release, const char* prefix,
+                       std::string* url, std::string* sha, std::string* nameOut,
+                       std::string* why)
+{
+	return pick_asset_ex(release, prefix, ".zip", url, sha, nameOut, why);
+}
+
+// 該 release 上的簽章資產對。⚠ 缺其中一個就當作整組不存在:一個沒有簽章的
+// manifest 是完全沒有價值的東西,把它當成「有 manifest」只會讓後面的程式碼
+// 多一條可以走錯的路。
+// 回 true 時 *url / *sigUrl 都已填好。⚠ 缺其中一個就當作整組不存在:一個沒有
+// 簽章的 manifest 是完全沒有價值的東西,把它當成「有 manifest」只會讓後面的
+// 程式碼多一條可以走錯的路。
+static bool pick_manifest_pair(const ordered_json& release,
+                               std::string* url, std::string* sigUrl)
+{
+	std::string why;
+	const bool hasJson = pick_asset_ex(release, kManifestPrefix, kManifestSuffix,
+	                                   url, nullptr, nullptr, &why);
+	const bool hasSig = pick_asset_ex(release, kManifestPrefix, kManifestSigSuffix,
+	                                  sigUrl, nullptr, nullptr, &why);
+	// ⚠ `.json` 後綴會不會同時吃到 `.json.sig`?不會 —— ends_with(".json") 對
+	// "x.json.sig" 是 false。但這件事是這段程式碼正確性的支點,所以自檢有一條
+	// 專門釘它(T18),不靠讀者自己相信。
+	if (hasJson && hasSig) return true;
 	url->clear();
-	sha->clear();
+	sigUrl->clear();
 	return false;
 }
 
@@ -718,12 +987,25 @@ bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
 	}
 	try {
 		ordered_json j = ordered_json::parse(body);
-		std::string tag = j.value("tag_name", std::string());
+		const std::string rawTag = j.value("tag_name", std::string());
+		std::string tag = rawTag;
 		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
 		rel->appVer = tag;
 		std::string why;
-		rel->hasApp = pick_asset(j, kAppAssetPrefix, &rel->appUrl, &rel->appSha, &why);
+		rel->hasApp = pick_asset(j, kAppAssetPrefix, &rel->appUrl, &rel->appSha,
+		                         &rel->appName, &why);
 		if (!why.empty()) log_line(exeDir_, "app asset rejected: " + why);
+		// ⚠ manifest 綁的是 release 的**原始** tag("v0.26.0"),不是去掉 v 之後
+		// 的版號字串。兩者混用會讓 tag 比對永遠不符,而那個失敗長得像「簽章
+		// 壞了」—— 是最難查的那種。
+		std::string mUrl, mSig;
+		if (pick_manifest_pair(j, &mUrl, &mSig)) {
+			rel->appManifest.url = mUrl;
+			rel->appManifest.sigUrl = mSig;
+			rel->appManifest.tag = rawTag;
+		} else if (rel->hasApp) {
+			log_line(exeDir_, "app release " + rawTag + " has no signed manifest");
+		}
 	} catch (...) {
 		if (err) *err = kMsgBadReleaseInfo;
 		return false;
@@ -758,8 +1040,8 @@ bool AppUpdater::fetchDataRelease(RemoteRelease* rel, std::string* err)
 			const std::string tag = r.value("tag_name", std::string());
 			if (!ParseDataTagSeq(tag, &seq)) continue;
 			if (seq <= rel->dataSeq) continue; // 自己比大小,不信清單順序
-			std::string url, sha, why;
-			if (!pick_asset(r, kDataAssetPrefix, &url, &sha, &why)) {
+			std::string url, sha, name, why;
+			if (!pick_asset(r, kDataAssetPrefix, &url, &sha, &name, &why)) {
 				// 一個沒有資產的 data release 不該讓比它舊的那一個也失效
 				if (!why.empty()) log_line(exeDir_, "data asset rejected: " + why);
 				continue;
@@ -768,6 +1050,17 @@ bool AppUpdater::fetchDataRelease(RemoteRelease* rel, std::string* err)
 			rel->dataTag = tag;
 			rel->dataUrl = url;
 			rel->dataSha = sha;
+			rel->dataName = name;
+			// data 線的 tag 本身就沒有 v 前綴("data-5"),直接用。
+			rel->dataManifest = SignedManifestRef{};
+			std::string mUrl, mSig;
+			if (pick_manifest_pair(r, &mUrl, &mSig)) {
+				rel->dataManifest.url = mUrl;
+				rel->dataManifest.sigUrl = mSig;
+				rel->dataManifest.tag = tag;
+			} else {
+				log_line(exeDir_, "data release " + tag + " has no signed manifest");
+			}
 			rel->hasData = true;
 		}
 	} catch (...) {
@@ -843,10 +1136,16 @@ bool AppUpdater::doCheck(std::string* err)
 	} else if (plan.applyDataNow) {
 		std::string terr;
 		if (!doUpdateTranslations(&terr)) {
-			// silent: old dictionaries stay intact, retried next launch
-			// (lastCheckUtc is not persisted on this path)
 			log_line(exeDir_, "translation update failed: " + terr);
-			setPhase(AppUpdatePhase::Idle, "");
+			// 網路壞掉會自己好,所以照舊靜默重試(舊字典完好,lastCheckUtc 沒落盤)。
+			// 但**信任失敗不會自己好** —— 沒簽章、簽章不符、清單對不上,重試一萬次
+			// 都是同一個結果。那種情況靜默的後果是使用者永遠停在舊字典,而且畫面上
+			// 沒有任何線索可以讓他知道、更沒有線索可以回報給我們。說出來。
+			if (IsTrustFailure(terr)) {
+				setPhase(AppUpdatePhase::Error, terr);
+			} else {
+				setPhase(AppUpdatePhase::Idle, "");
+			}
 			dataOk = false;
 		}
 	} else if (plan.offerData) {
@@ -878,8 +1177,16 @@ bool AppUpdater::doUpdateTranslations(std::string* err)
 {
 	setPhase(AppUpdatePhase::TransUpdating, MsgDataDownloading(latest_.dataTag));
 
+	// 先把「這個檔應該長什麼樣」從簽過章的清單裡取出來,再下載。順序不能反 ——
+	// 反過來就變成「先把來路不明的位元組收下,再回頭找理由相信它」。
+	std::string wantSha;
+	unsigned long long wantSize = 0;
+	if (!resolveSignedAsset(latest_.dataManifest, latest_.dataName, latest_.dataSha,
+	                        &wantSha, &wantSize, err))
+		return false;
+
 	std::vector<unsigned char> buf;
-	if (!downloadAsset(latest_.dataUrl, latest_.dataSha, &buf, err, false)) return false;
+	if (!downloadAsset(latest_.dataUrl, wantSha, wantSize, &buf, err, false)) return false;
 
 	// ⚠ 快取目錄名用各自的版號。兩線共用一個 "<ver>" 目錄時,一線的
 	// remove_dir_rec 會把另一線正在用的 stage 一起刪掉。
@@ -958,6 +1265,14 @@ bool AppUpdater::doUpdateApp(std::string* err)
 		return false;
 	}
 
+	// 驗簽在下載 34MB 之前。除了「不先收下來路不明的東西」之外還有一個好處:
+	// 一個沒簽章的 release 會在按下按鈕後一秒內就失敗,而不是下載完才說不要。
+	std::string wantSha;
+	unsigned long long wantSize = 0;
+	if (!resolveSignedAsset(latest_.appManifest, latest_.appName, latest_.appSha,
+	                        &wantSha, &wantSize, err))
+		return false;
+
 	{
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.phase = AppUpdatePhase::AppDownloading;
@@ -965,7 +1280,7 @@ bool AppUpdater::doUpdateApp(std::string* err)
 		st_.bytesDone = st_.bytesTotal = 0;
 	}
 	std::vector<unsigned char> buf;
-	if (!downloadAsset(latest_.appUrl, latest_.appSha, &buf, err, true)) return false;
+	if (!downloadAsset(latest_.appUrl, wantSha, wantSize, &buf, err, true)) return false;
 
 	setPhase(AppUpdatePhase::AppStaging, kMsgStaging);
 	std::wstring cacheDir = exeDir_ + L"PobTools\\cache\\app_update\\v" + widen(latest_.appVer);
@@ -1258,6 +1573,22 @@ int RunTranslationDataList(const std::wstring& dir, const std::wstring& outFile)
 	return 0;
 }
 
+int RunUpdateSourceCli(const std::wstring& outFile)
+{
+	attach_parent_console();
+	// 只輸出 repo,不輸出別的 —— 打包腳本要拿它做逐字比對,多一個字都是負擔。
+	const std::string text = POBTOOLS_UPDATE_REPO;
+	printf("%s\n", text.c_str());
+	// ⚠ pob-zh.exe 是 GUI 子系統。AttachConsole 之後 printf 是寫到**父行程的
+	// 主控台**,不是寫到呼叫端重導的管線 —— PowerShell 收得到空字串然後很有信心
+	// 地比對成功/失敗。所以判準走檔案,與 --translation-data-list 同一個理由。
+	if (!outFile.empty() && !write_file_bytes(outFile, text.data(), text.size())) {
+		printf("FAIL: cannot write %s\n", narrow(outFile).c_str());
+		return 1;
+	}
+	return 0;
+}
+
 // Hidden helper for the one-time redirect verification: downloads the newest
 // data pack (github.com -> objects.githubusercontent.com 302) and reports
 // whether the sha256 digest matched. Applies nothing.
@@ -1276,12 +1607,19 @@ int RunAppFetchTest(const std::wstring& exeDir)
 		printf("FAIL: no data-<n> release with a %s* asset\n", kDataAssetPrefix);
 		return 1;
 	}
+	std::string wantSha;
+	unsigned long long wantSize = 0;
+	if (!u.resolveSignedAsset(u.latest_.dataManifest, u.latest_.dataName, u.latest_.dataSha,
+	                          &wantSha, &wantSize, &err)) {
+		printf("FAIL manifest: %s\n", err.c_str());
+		return 1;
+	}
 	std::vector<unsigned char> buf;
-	if (!u.downloadAsset(u.latest_.dataUrl, u.latest_.dataSha, &buf, &err, false)) {
+	if (!u.downloadAsset(u.latest_.dataUrl, wantSha, wantSize, &buf, &err, false)) {
 		printf("FAIL fetch: %s\n", err.c_str());
 		return 1;
 	}
-	printf("OK: fetched %zu bytes, sha256 verified (redirect followed)\n", buf.size());
+	printf("OK: fetched %zu bytes, signature + sha256 verified (redirect followed)\n", buf.size());
 	return 0;
 }
 
@@ -1773,6 +2111,408 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		check(ok, ("T13 every updater message character is in the glyph seed (" +
 		           std::to_string(checked) + " messages)" +
 		           (ok ? std::string() : (" -- missing:" + bad))).c_str());
+	}
+
+	// ---- 發佈簽章 ---------------------------------------------------------
+	//
+	// 這一組分成兩半,兩半都必要:
+	//   T14   驗證邏輯本身對不對 —— 用行程內現場產生的金鑰,不依賴任何 fixture。
+	//   T15-17 PowerShell 簽的東西這支 exe 驗不驗得過 —— 用真金鑰簽出來的定值。
+	// 只做前者,發版當天才會發現 .NET 與 BCrypt 對簽章格式的理解不同;只做後者,
+	// 換金鑰就得重做 fixture,而且測不到「錯誤輸入被拒絕」的那些路徑。
+
+	// T14: 現場產生金鑰 -> 簽 -> 驗。含三種必須被拒絕的突變。
+	{
+		const std::string payload = "the quick brown fox";
+		std::string pub, sig;
+		bool ok = SignWithEphemeralKeyForTest(payload.data(), payload.size(), &pub, &sig);
+		std::string bad;
+		if (!ok) bad += " generate-failed";
+		if (ok && (pub.size() != 128 || sig.size() != 128)) {
+			ok = false;
+			bad += " wrong-hex-length";
+		}
+		if (ok && !VerifyDetachedSignature(payload.data(), payload.size(), sig, pub, nullptr)) {
+			ok = false;
+			bad += " good-signature-rejected";
+		}
+		// 突變 1:訊息改一個 byte
+		if (ok) {
+			std::string tampered = payload;
+			tampered[0] = 'T';
+			if (VerifyDetachedSignature(tampered.data(), tampered.size(), sig, pub, nullptr)) {
+				ok = false;
+				bad += " tampered-message-accepted";
+			}
+		}
+		// 突變 2:簽章改一個十六進位字元
+		if (ok) {
+			std::string s2 = sig;
+			s2[10] = (s2[10] == 'a') ? 'b' : 'a';
+			if (VerifyDetachedSignature(payload.data(), payload.size(), s2, pub, nullptr)) {
+				ok = false;
+				bad += " tampered-signature-accepted";
+			}
+		}
+		// 突變 3:換一把金鑰
+		if (ok) {
+			std::string pub2, sig2;
+			if (!SignWithEphemeralKeyForTest(payload.data(), payload.size(), &pub2, &sig2)) {
+				ok = false;
+				bad += " second-key-failed";
+			} else if (pub2 == pub) {
+				ok = false;
+				bad += " two-keys-identical";
+			} else if (VerifyDetachedSignature(payload.data(), payload.size(), sig, pub2, nullptr)) {
+				ok = false;
+				bad += " wrong-key-accepted";
+			}
+		}
+		// 形狀不對的輸入一律拒絕(截斷的簽章不得被當成比較短的合法簽章)
+		if (ok) {
+			const char* malformed[] = { "", "zz", "00", "xyz" };
+			for (const char* m : malformed) {
+				if (VerifyDetachedSignature(payload.data(), payload.size(), m, pub, nullptr)) {
+					ok = false;
+					bad += " malformed-accepted";
+				}
+			}
+			if (VerifyDetachedSignature(payload.data(), payload.size(),
+			                            sig.substr(0, 126), pub, nullptr)) {
+				ok = false;
+				bad += " truncated-accepted";
+			}
+		}
+		check(ok, ("T14 ECDSA P-256 verify accepts good and rejects tampered" +
+		           (ok ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T15-T17: 跨工具介面。下面這些簽章是 tools/signing_lib.ps1 用**真正的發佈
+	// 私鑰**簽出來的定值,驗證用的是 update_pubkeys.h 裡編進這支 exe 的公鑰。
+	//
+	// ⚠ 這一組會在換發佈金鑰時失敗,那是刻意的:換了金鑰就必須重新產生
+	// fixture(tools 底下有腳本),而失敗會逼人去做,不會安靜地放過。
+	{
+		// tools/signing_lib.ps1 對這串 ASCII 位元組簽章(不含結尾換行)
+		static const char kFixturePayload[] = "PobTools update signature selftest fixture v1";
+		const size_t kFixtureLen = sizeof(kFixturePayload) - 1;
+		// primary(update_pubkeys.h 的 #0)
+		static const char kSigPrimary[] =
+			"d70ab09fc53d58cc6649db2083ab5cd7f9ef6b5bdda4399c3ebeceb68816686c"
+			"6ccf8194923536acb519577ffa12fffaaff2fab53a63a56afa4e5238f5355b6a";
+		// backup(#1)。⚠ 沒有這一條,備援金鑰是一段從未執行過的程式碼,
+		// 而它唯一會被用到的時機正是「主金鑰已經出事」的那一天。
+		static const char kSigBackup[] =
+			"b72fead2c19f0661d050bec91923ae04298cf82c3fe4db616fca96bd5dff4f23"
+			"75086a539139e2ddf9d744f6d4f4da6c1275e48c3c31bba2dff406ee86e2a0e6";
+		// 一把不在 exe 裡的金鑰所簽的合法簽章
+		static const char kSigStranger[] =
+			"7628c845ef5301089ccc5739c11a4d84e4db5cc19ce6c27b3fa45dff3604838f"
+			"98b56be633b92557cee55d278f94f1938125b9fd5d765367ea76e90f440118f5";
+
+		int idx = -1;
+		std::string e;
+		bool okP = VerifyReleaseSignature(kFixturePayload, kFixtureLen, kSigPrimary, &idx, &e);
+		check(okP && idx == 0,
+		      ("T15 PowerShell-signed fixture verifies with compiled-in primary key" +
+		       (okP ? (idx == 0 ? std::string() : " -- wrong key index " + std::to_string(idx))
+		            : (" -- " + e))).c_str());
+
+		int idxB = -1;
+		std::string eB;
+		bool okB = VerifyReleaseSignature(kFixturePayload, kFixtureLen, kSigBackup, &idxB, &eB);
+		check(okB && idxB == 1,
+		      ("T16 backup key in update_pubkeys.h actually works" +
+		       (okB ? (idxB == 1 ? std::string() : " -- wrong key index " + std::to_string(idxB))
+		            : (" -- " + eB))).c_str());
+
+		// 兩種必須被拒絕的:陌生金鑰簽的、以及被改過的訊息。
+		bool rejStranger = !VerifyReleaseSignature(kFixturePayload, kFixtureLen,
+		                                           kSigStranger, nullptr, nullptr);
+		std::string mutated(kFixturePayload, kFixtureLen);
+		mutated[kFixtureLen - 1] = '2'; // "...fixture v1" -> "...fixture v2"
+		bool rejMutated = !VerifyReleaseSignature(mutated.data(), mutated.size(),
+		                                          kSigPrimary, nullptr, nullptr);
+		// 帶結尾換行的簽章文字必須照樣通過(.sig 資產就是這個樣子)
+		bool okTrailingNl = VerifyReleaseSignature(kFixturePayload, kFixtureLen,
+		                                           std::string(kSigPrimary) + "\n",
+		                                           nullptr, nullptr);
+		std::string bad;
+		if (!rejStranger) bad += " stranger-key-accepted";
+		if (!rejMutated) bad += " mutated-payload-accepted";
+		if (!okTrailingNl) bad += " trailing-newline-rejected";
+		check(bad.empty(),
+		      ("T17 unknown-key and mutated-payload signatures rejected; .sig trailing newline ok" +
+		       (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T18: 資產挑選。整個 manifest 機制建立在「`.json` 的比對不會吃到 `.json.sig`」
+	// 這個假設上。它成立,但它成立這件事是靠讀者自己看出來的 —— 靠不住,釘住它。
+	{
+		auto asset = [](const char* name) {
+			ordered_json a;
+			a["name"] = name;
+			a["browser_download_url"] = std::string("https://x/") + name;
+			a["digest"] = "sha256:" + std::string(64, 'a');
+			return a;
+		};
+		ordered_json rel;
+		rel["assets"] = ordered_json::array({
+			asset("PobTools-update-0.26.0.zip"),
+			asset("PobTools-0.26.0.zip"),
+			asset("SHA256SUMS-0.26.0.txt"),
+			asset("PobTools-manifest-v0.26.0.json"),
+			asset("PobTools-manifest-v0.26.0.json.sig"),
+		});
+
+		std::string mUrl, mSig;
+		bool ok = pick_manifest_pair(rel, &mUrl, &mSig);
+		std::string bad;
+		if (!ok) bad += " pair-not-found";
+		if (ok && mUrl != "https://x/PobTools-manifest-v0.26.0.json") bad += " json-picked-wrong";
+		if (ok && mSig != "https://x/PobTools-manifest-v0.26.0.json.sig") bad += " sig-picked-wrong";
+
+		// 主檔包的挑選不得被完整包(PobTools-0.26.0.zip)干擾,反之亦然。
+		std::string url, sha, name, why;
+		if (!pick_asset(rel, kAppAssetPrefix, &url, &sha, &name, &why) ||
+		    name != "PobTools-update-0.26.0.zip")
+			bad += " app-asset-picked-wrong";
+
+		// 只有 .json 沒有 .sig 時必須整組視為不存在。
+		ordered_json half;
+		half["assets"] = ordered_json::array({ asset("PobTools-manifest-v0.26.0.json") });
+		std::string u2, s2;
+		if (pick_manifest_pair(half, &u2, &s2)) bad += " unsigned-manifest-accepted";
+		if (!u2.empty() || !s2.empty()) bad += " outputs-not-cleared";
+
+		check(bad.empty(), ("T18 manifest/asset selection distinguishes .json from .json.sig" +
+		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T19: manifest 的接受/拒絕判斷,每一條分支都走一次。
+	//
+	// 這一條測的是「不該拒的有沒有被拒」——  T15-T17 只證明了簽章驗得動,證明不了
+	// 一份**正確**的 manifest 會被接受。少了它,一個把 tag 比對寫反的 bug 會在
+	// 所有離線測試全綠的情況下,讓每一位使用者的更新都失敗。
+	//
+	// 用臨時金鑰而不是真發佈金鑰:C++ 這端拿不到私鑰,而這些分支全都在驗簽**之後**,
+	// 所以用哪一把金鑰不影響它們的正確性。
+	{
+		auto makeManifest = [](const char* tag, const char* assetName,
+		                       const char* sha, unsigned long long size,
+		                       int schema, bool duplicate) {
+			ordered_json a;
+			a["name"] = assetName;
+			a["size"] = size;
+			a["sha256"] = sha;
+			ordered_json m;
+			m["schema"] = schema;
+			m["tag"] = tag;
+			m["assets"] = ordered_json::array({ a });
+			if (duplicate) m["assets"].push_back(a);
+			const std::string s = m.dump();
+			return std::vector<unsigned char>(s.begin(), s.end());
+		};
+
+		const std::string kSha(64, 'c');
+		const char* kAsset = "PobTools-Data-9.zip";
+		const unsigned long long kSize = 12345;
+
+		std::string bad;
+		int checked = 0;
+		// 每個案例:自己簽自己的 body,所以除了「簽章壞掉」那一格之外,
+		// 走到的一定是驗簽之後的判斷。
+		auto run = [&](const char* what, const std::vector<unsigned char>& body,
+		               const char* expectTag, const char* assetName, const char* apiDigest,
+		               bool wantAccept, bool corruptSig) {
+			checked++;
+			std::string pub, sig;
+			if (!SignWithEphemeralKeyForTest(body.data(), body.size(), &pub, &sig)) {
+				bad += std::string(" ") + what + "(sign-failed)";
+				return;
+			}
+			if (corruptSig) sig[0] = (sig[0] == 'a') ? 'b' : 'a';
+			const char* keys[1] = { pub.c_str() };
+			std::string sha, e, detail;
+			unsigned long long size = 0;
+			const bool got = VerifySignedManifest(body, sig, expectTag, assetName, apiDigest,
+			                                      keys, 1, &sha, &size, &e, &detail);
+			if (got != wantAccept) {
+				bad += std::string(" ") + what + (got ? "(accepted)" : "(rejected)");
+				return;
+			}
+			if (wantAccept && (sha != kSha || size != kSize)) {
+				bad += std::string(" ") + what + "(wrong-values)";
+			}
+			// 被拒絕時輸出必須清乾淨 —— 呼叫端只看回傳值,但留著半個 sha
+			// 就是下一個「用了不該用的值」的種子。
+			if (!wantAccept && (!sha.empty() || size != 0)) {
+				bad += std::string(" ") + what + "(outputs-not-cleared)";
+			}
+		};
+
+		const auto good = makeManifest("data-9", kAsset, kSha.c_str(), kSize, 1, false);
+
+		// 必須接受
+		run("accept-plain", good, "data-9", kAsset, "", true, false);
+		run("accept-matching-digest", good, "data-9", kAsset, kSha.c_str(), true, false);
+		// GitHub 的 digest 大小寫不同不算衝突
+		run("accept-uppercase-digest", good, "data-9", kAsset,
+		    std::string(64, 'C').c_str(), true, false);
+
+		// 必須拒絕
+		run("reject-bad-signature", good, "data-9", kAsset, "", false, true);
+		run("reject-tag-mismatch", good, "data-10", kAsset, "", false, false);
+		run("reject-unknown-asset", good, "data-9", "PobTools-Data-8.zip", "", false, false);
+		run("reject-digest-conflict", good, "data-9", kAsset, std::string(64, 'd').c_str(),
+		    false, false);
+		run("reject-schema-2", makeManifest("data-9", kAsset, kSha.c_str(), kSize, 2, false),
+		    "data-9", kAsset, "", false, false);
+		run("reject-duplicate-entry", makeManifest("data-9", kAsset, kSha.c_str(), kSize, 1, true),
+		    "data-9", kAsset, "", false, false);
+		run("reject-short-sha", makeManifest("data-9", kAsset, "abc", kSize, 1, false),
+		    "data-9", kAsset, "", false, false);
+		run("reject-zero-size", makeManifest("data-9", kAsset, kSha.c_str(), 0, 1, false),
+		    "data-9", kAsset, "", false, false);
+		{
+			const char* junk = "this is not json";
+			std::vector<unsigned char> body(junk, junk + strlen(junk));
+			run("reject-not-json", body, "data-9", kAsset, "", false, false);
+		}
+
+		if (checked == 0) bad += " nothing-checked";
+		check(bad.empty(), ("T19 signed-manifest decisions: " + std::to_string(checked) +
+		                    " cases" + (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T20: 「這個失敗值不值得打擾使用者」的分類。
+	//
+	// 翻譯線的失敗預設是靜默的(網路壞掉會自己好,吵他沒意義),但信任失敗不會
+	// 自己好 —— 靜默的結果是使用者永遠停在舊字典而且完全不知道。IsTrustFailure
+	// 就是這條界線,而它是手寫的清單,所以這裡反過來驗:每一則信任訊息都要被認出來,
+	// 每一則非信任訊息都不能被誤認。
+	{
+		const char* trust[] = { kMsgNoSignature, kMsgSigBad, kMsgManifestBad };
+		const char* transient[] = { kMsgHashMismatch, kMsgSizeMismatch, kMsgNoDataAsset,
+		                            kMsgNoDataRelease, kMsgDataPackBad, kMsgBadReleaseList,
+		                            kMsgPobRunning, kMsgNoDiskSpace, "" };
+		std::string bad;
+		for (const char* m : trust)
+			if (!IsTrustFailure(m)) bad += std::string(" missed:") + m;
+		for (const char* m : transient)
+			if (IsTrustFailure(m)) bad += std::string(" false-positive:") + m;
+		check(bad.empty(), ("T20 trust failures are surfaced, transient ones stay quiet" +
+		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T21: 一整條鏈,用真的 zip 位元組跑完。
+	//
+	// T19 證明 manifest 會吐出正確的 sha/size,但沒有證明**那些數字真的被拿去擋
+	// 東西**。這兩件事之間曾經什麼測試都沒有 —— 一個把 VerifyPayload 寫成永遠
+	// 回 true 的 bug,在 T14-T20 全綠的情況下會讓整套簽章變成純裝飾。
+	//
+	// 這裡走的順序與 doUpdateApp / doUpdateTranslations 完全相同:
+	//   簽 manifest → 驗簽 → 取出該資產的 sha/size → 拿它驗位元組 → 解壓。
+	// 唯一沒有涵蓋的是中間那個 HTTPS GET(它需要一個真的 release)。
+	{
+		const std::string assetName = "PobTools-Data-9.zip";
+		std::vector<unsigned char> zipGood = make_zip_single("Data\\poe1\\zh-rTW\\ui.json", "{}");
+		std::vector<unsigned char> zipOther = make_zip_single("Data\\poe1\\zh-rTW\\ui.json", "{ }");
+
+		std::string shaGood;
+		bool ok = !zipGood.empty() && !zipOther.empty() &&
+		          Sha256Hex(zipGood.data(), zipGood.size(), &shaGood);
+		std::string bad;
+		if (!ok) bad += " fixture-build-failed";
+
+		// 一份宣告 zipGood 的 manifest,用臨時金鑰簽。
+		std::vector<unsigned char> body;
+		std::string pub, sig;
+		if (ok) {
+			ordered_json a;
+			a["name"] = assetName;
+			a["size"] = (unsigned long long)zipGood.size();
+			a["sha256"] = shaGood;
+			ordered_json m;
+			m["schema"] = 1;
+			m["tag"] = "data-9";
+			m["assets"] = ordered_json::array({ a });
+			const std::string s = m.dump();
+			body.assign(s.begin(), s.end());
+			if (!SignWithEphemeralKeyForTest(body.data(), body.size(), &pub, &sig)) {
+				ok = false;
+				bad += " sign-failed";
+			}
+		}
+
+		// 驗簽 + 取值,和產品路徑同一個函式。
+		std::string wantSha;
+		unsigned long long wantSize = 0;
+		if (ok) {
+			const char* keys[1] = { pub.c_str() };
+			std::string e, detail;
+			if (!VerifySignedManifest(body, sig, "data-9", assetName, "", keys, 1,
+			                          &wantSha, &wantSize, &e, &detail)) {
+				ok = false;
+				bad += " manifest-rejected";
+			} else if (wantSha != shaGood || wantSize != zipGood.size()) {
+				ok = false;
+				bad += " manifest-wrong-values";
+			}
+		}
+
+		if (ok) {
+			std::string e;
+			// 正確的位元組必須通過
+			if (!VerifyPayload(zipGood, wantSha, wantSize, &e, nullptr))
+				bad += " good-payload-rejected";
+			// 同樣大小、內容不同的 zip 必須被雜湊擋下(這一格才是真正在防掉包:
+			// 攻擊者能讓大小一樣,但讓 sha256 一樣才是難的那件事)
+			if (zipOther.size() == zipGood.size()) {
+				std::string e2;
+				if (VerifyPayload(zipOther, wantSha, wantSize, &e2, nullptr))
+					bad += " swapped-payload-accepted";
+				else if (e2 != kMsgHashMismatch)
+					bad += " swapped-payload-wrong-error";
+			} else {
+				// 大小不同也要測到,只是走的是另一條(大小)分支
+				std::string e2;
+				if (VerifyPayload(zipOther, wantSha, wantSize, &e2, nullptr))
+					bad += " different-size-payload-accepted";
+			}
+			// 截斷的必須被大小擋下,而且錯誤要是「大小」不是「雜湊」——
+			// 兩種故事分開報,查起來才有方向
+			std::vector<unsigned char> truncated(zipGood.begin(), zipGood.end() - 1);
+			std::string e3;
+			if (VerifyPayload(truncated, wantSha, wantSize, &e3, nullptr))
+				bad += " truncated-accepted";
+			else if (e3 != kMsgSizeMismatch)
+				bad += " truncated-wrong-error";
+			// 改一個 byte(大小相同)必須被雜湊擋下
+			std::vector<unsigned char> flipped = zipGood;
+			flipped[flipped.size() / 2] ^= 0xFF;
+			std::string e4;
+			if (VerifyPayload(flipped, wantSha, wantSize, &e4, nullptr))
+				bad += " flipped-byte-accepted";
+			else if (e4 != kMsgHashMismatch)
+				bad += " flipped-byte-wrong-error";
+			// 呼叫端漏傳雜湊必須是拒絕,不是放行
+			std::string e5;
+			if (VerifyPayload(zipGood, "", wantSize, &e5, nullptr))
+				bad += " empty-sha-accepted";
+
+			// 通過驗證的那一份,真的解得開而且內容正確 —— 鏈的最後一節
+			std::wstring dest = root + L"\\t21\\";
+			std::string xe, got;
+			int files = 0;
+			if (!ExtractZipToDir(zipGood.data(), zipGood.size(), dest, &xe, &files) ||
+			    files != 1 || !read_file_utf8(dest + L"Data\\poe1\\zh-rTW\\ui.json", got) ||
+			    got != "{}")
+				bad += " verified-zip-did-not-extract";
+		}
+
+		check(bad.empty(), ("T21 signed manifest -> payload gate -> extract, end to end" +
+		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
 	}
 
 	remove_dir_rec(root);
