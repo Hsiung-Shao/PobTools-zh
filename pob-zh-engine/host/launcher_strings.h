@@ -47,6 +47,7 @@
 	X(filterEditor,      u8"過濾器編輯器",                 u8"Filter editor")                         \
 	X(atlasPlanner,      u8"輿圖策略",                     u8"Atlas strategy")                        \
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
+	X(regexTool,         u8"Poe Regex",                    u8"Poe Regex")                              \
 	/* wide-layout section labels */                                                                 \
 	X(gamesSection,      u8"遊戲",                         u8"Games")                                 \
 	X(toolsSection,      u8"工具",                         u8"Tools")                                 \

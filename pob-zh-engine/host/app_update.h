@@ -116,6 +116,18 @@ private:
 	friend int RunAppUpdateSelfTest(const std::wstring& exeDir);
 
 	enum class Cmd { Check, UpdateApp, UpdateTranslations };
+
+	// 一個 release 上那份「經過簽章的資產清單」。manifest 本身是普通的 JSON,
+	// 信任來自旁邊那個分離式簽章 —— 而簽章是用**編進 exe 的公鑰**驗的,不是用
+	// GitHub 上的任何東西。這就是整個機制的重點:信任根在使用者的磁碟上,不在
+	// 那個可能被入侵的帳號上。
+	struct SignedManifestRef {
+		std::string url;    // PobTools-manifest-<tag>.json
+		std::string sigUrl; // PobTools-manifest-<tag>.json.sig
+		std::string tag;    // 這份 manifest 必須自稱屬於哪個 tag(擋移花接木)
+		bool has() const { return !url.empty() && !sigUrl.empty() && !tag.empty(); }
+	};
+
 	// The two lines never share a field. They used to (a single `ver`), and that
 	// single field fed the UI label, the apply tag written to update_state.json
 	// and the download cache directory at once — so a data tag arriving second
@@ -124,11 +136,15 @@ private:
 		// App 線 (releases/latest)
 		std::string appVer;                // "0.19.0" (tag without the leading v)
 		std::string appUrl, appSha;        // browser_download_url + sha256 hex (may be empty)
+		std::string appName;               // 資產檔名 — manifest 是按檔名對接的
+		SignedManifestRef appManifest;
 		bool hasApp = false;
 		// Data 線 (highest data-<n> among /releases)
 		std::string dataTag;               // "data-3" verbatim — NOT a semver
 		long long   dataSeq = -1;          // 3; -1 = none found
 		std::string dataUrl, dataSha;
+		std::string dataName;
+		SignedManifestRef dataManifest;
 		bool hasData = false;
 	};
 
@@ -138,7 +154,23 @@ private:
 	bool fetchDataRelease(RemoteRelease* rel, std::string* err); // worker: /releases scan
 	bool doUpdateTranslations(std::string* err); // worker (invoked from doCheck)
 	bool doUpdateApp(std::string* err);        // worker
+
+	// worker。下載 manifest + 簽章、用內嵌公鑰驗簽、確認 manifest 自稱的 tag 就是
+	// 這個 release,然後回傳 assetName 那一項的預期 sha256 與大小。
+	//
+	// 為什麼在「要下載了」才做,而不是在 doCheck 就做:一次什麼都沒發現的例行
+	// 檢查不該多兩個請求。代價是缺簽章的 release 仍會提示更新、按下去才失敗 ——
+	// 這是刻意的,因為反過來(靜默不提示)會讓使用者以為自己已是最新版。
+	bool resolveSignedAsset(const SignedManifestRef& ref, const std::string& assetName,
+	                        const std::string& apiDigest, std::string* shaOut,
+	                        unsigned long long* sizeOut, std::string* err);
+
+	// sha256hex 為必填。以前它可以是空字串(代表 GitHub 沒給 digest 就不驗),
+	// 那條路已經移除 —— 「驗不了就照裝」不是降級,是把防護整個關掉。
+	// expectedSize 為 0 時不檢查大小(只有 manifest 本身這種還沒有已知大小的
+	// 小檔會走到)。
 	bool downloadAsset(const std::string& url, const std::string& sha256hex,
+	                   unsigned long long expectedSize,
 	                   std::vector<unsigned char>* out, std::string* err, bool reportBytes);
 	void loadState();
 	void saveState();
@@ -237,6 +269,19 @@ void CleanupAppUpdateLeftovers(const std::wstring& exeDir);
 // headless check (+ translation catch-up + app stage/swap, without relaunch).
 // Ignores the daily throttle. Prints and logs to PobTools\app_update_log.txt.
 int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly);
+
+// "pob-zh.exe --update-source [outFile]": reports the GitHub repo this binary
+// checks for updates, and nothing else. Exists so packaging can ASSERT it -- the
+// repo is a compile-time define (POBTOOLS_UPDATE_REPO) precisely so a test build
+// can point somewhere harmless, and the failure mode of that convenience is
+// shipping the test build to everyone. A binary cannot be asked what it was
+// compiled with in any other way, and "I'm sure I rebuilt it" is not an assertion.
+//
+// ⚠ With outFile the answer also lands in a file, and THAT is the channel to
+// judge on: pob-zh.exe is a GUI-subsystem program, so the AttachConsole'd printf
+// reaches the parent console rather than a caller's redirected pipe -- a script
+// reading stdout gets an empty string and compares it with great confidence.
+int RunUpdateSourceCli(const std::wstring& outFile);
 
 // "pob-zh.exe --app-fetch-test": one-time redirect verification — downloads
 // the latest data pack (github.com 302s to objects.githubusercontent.com) and

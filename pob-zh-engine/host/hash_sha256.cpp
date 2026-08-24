@@ -8,10 +8,10 @@
 
 #pragma comment(lib, "bcrypt.lib")
 
-bool Sha256Hex(const void* data, size_t size, std::string* hexLower)
+bool Sha256Raw(const void* data, size_t size, unsigned char out[32])
 {
-	if (!hexLower) return false;
-	hexLower->clear();
+	if (!out) return false;
+	memset(out, 0, 32);
 
 	BCRYPT_ALG_HANDLE hAlg = nullptr;
 	if (BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_SHA256_ALGORITHM, nullptr, 0) != 0)
@@ -19,7 +19,6 @@ bool Sha256Hex(const void* data, size_t size, std::string* hexLower)
 
 	bool ok = false;
 	DWORD objLen = 0, cb = 0;
-	UCHAR digest[32] = {};
 	std::vector<UCHAR> obj;
 	BCRYPT_HASH_HANDLE hHash = nullptr;
 	if (BCryptGetProperty(hAlg, BCRYPT_OBJECT_LENGTH, (PUCHAR)&objLen, sizeof(objLen), &cb, 0) == 0) {
@@ -27,13 +26,23 @@ bool Sha256Hex(const void* data, size_t size, std::string* hexLower)
 		if (BCryptCreateHash(hAlg, &hHash, obj.data(), objLen, nullptr, 0, 0) == 0) {
 			// 25MB assets hash in one call; sizes here never approach ULONG range.
 			if (BCryptHashData(hHash, (PUCHAR)data, (ULONG)size, 0) == 0 &&
-			    BCryptFinishHash(hHash, digest, sizeof(digest), 0) == 0)
+			    BCryptFinishHash(hHash, out, 32, 0) == 0)
 				ok = true;
 			BCryptDestroyHash(hHash);
 		}
 	}
 	BCryptCloseAlgorithmProvider(hAlg, 0);
-	if (!ok) return false;
+	if (!ok) memset(out, 0, 32); // never hand back a half-written digest
+	return ok;
+}
+
+bool Sha256Hex(const void* data, size_t size, std::string* hexLower)
+{
+	if (!hexLower) return false;
+	hexLower->clear();
+
+	unsigned char digest[32] = {};
+	if (!Sha256Raw(data, size, digest)) return false;
 
 	static const char* hex = "0123456789abcdef";
 	hexLower->resize(64);

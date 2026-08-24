@@ -411,12 +411,35 @@ if (WIN32)
         host/app_update.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
+        host/sig_verify.cpp
+        # 搜尋字串產生器：核心 + 資料 + UI + 自檢
+        host/regex_gen.cpp
+        host/regex_data.cpp
+        host/regex_state.cpp
+        host/regex_tool_ui.cpp
+        host/regex_selftest.cpp
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
         ${IMGUI_SOURCES}
     )
     target_compile_definitions(pob-zh PRIVATE "UNICODE" "_UNICODE" "IMGUI_IMPL_OPENGL_ES2")
+    # 更新來源的 repo。不設就是 app_update.cpp 裡的正式值。
+    #
+    # 存在的理由:「簽章會放行正確的更新」只能對著一個真的 release 證明,而拿正式
+    # repo 做那個實驗會讓全體使用者的客戶端看到測試用的 release —— 尤其 Data 線掃
+    # /releases 全清單、prerelease 不會被跳過。
+    #
+    #   cmake -B build -DPOBTOOLS_UPDATE_REPO=你的帳號/測試repo
+    #   cmake -B build -UPOBTOOLS_UPDATE_REPO      # 改回正式值
+    #
+    # ⚠ 這是編譯期的,執行期改不了 —— 更新來源是安全邊界的一部分。
+    # ⚠ 打包腳本 Assert-Step 16 會問 exe 自己(--update-source)並斷言是正式 repo,
+    #    所以測試建置不可能被打包發出去。
+    if(POBTOOLS_UPDATE_REPO)
+        message(STATUS "pob-zh: 更新來源改為 ${POBTOOLS_UPDATE_REPO}(測試建置,不可發布)")
+        target_compile_definitions(pob-zh PRIVATE "POBTOOLS_UPDATE_REPO=\"${POBTOOLS_UPDATE_REPO}\"")
+    endif()
     # host sources contain UTF-8 CJK string literals; force UTF-8 source parsing
     # so MSVC does not misread them under the system (Big5) code page.
     target_compile_options(pob-zh PRIVATE "/utf-8")
@@ -478,6 +501,12 @@ if (WIN32)
     # so a new league needs a fresh run of both.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
+    # Search-string generator catalogue: every list the tool can build a query
+    # over (map modifiers, logbook modifiers, item bases), each entry carrying the
+    # line the game prints with '#' where a roll goes. Regenerated from a local
+    # Content.ggpk by tools/gen_regex_data.py; like the scarabs it has no online
+    # updater, so a new league needs a fresh run.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
 endif ()
 
 
