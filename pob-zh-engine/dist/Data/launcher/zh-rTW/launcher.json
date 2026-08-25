@@ -59,6 +59,8 @@
     "Save settings": "儲存設定",
     "Saved": "已儲存",
     "Everything on this page is written to pob-zh.ini as you change it; this button just writes again and confirms.": "這一頁的設定改動都會立即寫入 pob-zh.ini，這個按鈕只是再存一次並確認。",
+    "Open the problem log folder": "開啟問題紀錄資料夾",
+    "Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.": "程式遇到問題時會把原因寫進這裡（每天一個檔）。回報問題時附上當天那一個檔最有幫助；一切正常時它會是空的。",
     "Use this": "改用這個",
     "Leave empty to use the built-in data": "留空 = 使用內建資料",
     "Using the built-in data: ": "使用內建資料：",
@@ -102,7 +104,6 @@
     "Download translation data now": "立即下載翻譯資料",
     "Use this font for letters & digits in POB too": "POB 視窗的英文與數字也用此字型",
     "When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.": "開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。",
-    "Translation data updated to v": "翻譯資料已更新至 v",
-    "Update translation data too": "更新時一併更新翻譯資料"
+    "Translation data updated to v": "翻譯資料已更新至 v"
   }
 }

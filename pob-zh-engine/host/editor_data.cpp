@@ -1,4 +1,5 @@
 #include "editor_data.h"
+#include "error_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -373,17 +374,27 @@ static void sync_entries_into_doc(EditorModel& model, int fileIdx)
 
 int SaveAll(EditorModel& model, std::string* err)
 {
-	int saved = 0;
+	int saved = 0, failed = 0;
 	for (size_t i = 0; i < model.files.size(); i++) {
 		if (!model.files[i].dirty) continue;
 		sync_entries_into_doc(model, (int)i);
 		std::string fileErr;
 		if (SaveFile(model.files[i], &fileErr)) {
 			saved++;
-		} else if (err && err->empty()) {
-			*err = fileErr;
+		} else {
+			failed++;
+			// Per file, not just the first one: the caller only surfaces the
+			// first error, and "3 of 8 files did not save" is a different story
+			// from "one did". What is at stake is somebody's hand-written
+			// translation, which exists nowhere else.
+			PobLog::Error("save", "dictionary file did not save: " +
+			                          narrow(model.files[i].path) + ": " + fileErr);
+			if (err && err->empty()) *err = fileErr;
 		}
 	}
+	if (failed)
+		PobLog::Error("save", u8"翻譯字典存檔失敗：" + std::to_string(failed) +
+		                          u8" 個檔沒有寫入（成功 " + std::to_string(saved) + u8" 個）");
 	return saved;
 }
 

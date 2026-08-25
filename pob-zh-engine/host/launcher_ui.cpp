@@ -6,6 +6,7 @@
 #include "app_version.h"
 #include "app_update.h"
 #include "changelog.h"
+#include "error_log.h"
 #include "pob_launch.h"
 #include "window_dock.h"
 #include "window_manager.h"   // DockTabLabel
@@ -451,7 +452,12 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 	// Tries one combination and reports whether the result fits the GPU. Everything
 	// is rebuilt from scratch each time -- Clear() drops the fonts as well as the
 	// pixels, so the ImFont pointers from a rejected attempt are already dead.
-	auto attempt = [&](bool fullCjk, bool korean) -> bool {
+	// `sizeMul` shrinks every face by the same factor. It is the last lever left
+	// once there is nothing else to drop: the glyph SET is already minimal at that
+	// point, so the only way to make the atlas smaller is to make the glyphs
+	// smaller. Slightly small text is a cosmetic loss; an atlas over the GPU limit
+	// is a window that draws nothing at all and says nothing about why.
+	auto attempt = [&](bool fullCjk, bool korean, float sizeMul = 1.0f) -> bool {
 		atlas->Clear();
 		out.ranges->full.clear();
 		{
@@ -461,7 +467,7 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 			if (korean) b.AddRanges(atlas->GetGlyphRangesKorean());
 			b.BuildRanges(&out.ranges->full);
 		}
-		const float scale = in->scale;
+		const float scale = in->scale * sizeMul;
 		out.body = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
 		                                       kFontSize * scale, &cfg, out.ranges->full.Data);
 		out.small = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
@@ -489,10 +495,53 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 			out.dropped = "korean";
 			if (!attempt(true, false)) {
 				out.dropped = "cjk";
-				// Last resort: the precise set for everything, i.e. the behaviour before
-				// tab titles needed arbitrary text. Tab labels will show '?' for anything
-				// outside the string tables, which is why `dropped` is surfaced in the UI.
-				attempt(false, false);
+				// The precise set for everything, i.e. the behaviour before tab titles
+				// needed arbitrary text. Tab labels will show '?' for anything outside
+				// the string tables, which is why `dropped` is surfaced in the UI.
+				if (!attempt(false, false)) {
+					// Still over the limit with the smallest set there is. Reachable
+					// with a large CJK face at 200% on a 2048-limited GPU -- FZ_ZY did
+					// exactly this (2048x2094, 46 rows over) and the old code simply
+					// returned that atlas, which cannot be uploaded.
+					//
+					// Shrink until it fits. Every step is a real loss, so each one is
+					// recorded rather than absorbed silently.
+					bool fits = false;
+					float mul = 1.0f;
+					for (int step = 0; step < 6 && !fits; step++) {
+						mul -= 0.1f;
+						if (mul < 0.45f) break;
+						fits = attempt(false, false, mul);
+					}
+					if (fits) {
+						out.dropped = "cjk+shrunk";
+						char why[192];
+						snprintf(why, sizeof(why),
+						         "font atlas would not fit the %d px GPU limit at %.2fx; "
+						         "shrank the interface font to %.0f%% so it could be uploaded",
+						         maxTex, in->scale, mul * 100.0f);
+						PobLog::Error("i18n", why);
+					} else {
+						// Nothing this face can do. The built-in bitmap font is ASCII
+						// only and always fits: an English interface beats a blank one.
+						out.dropped = "font";
+						char why[192];
+						snprintf(why, sizeof(why),
+						         "font atlas does not fit the %d px GPU limit at %.2fx even "
+						         "shrunk; fell back to the built-in ASCII font",
+						         maxTex, in->scale);
+						PobLog::Error("i18n", why);
+						atlas->Clear();
+						out.ranges->full.clear();
+						out.body = atlas->AddFontDefault();
+						out.small = out.body;
+						out.title = out.body;
+						out.big = out.body;
+						atlas->Build();
+						out.texW = atlas->TexWidth;
+						out.texH = atlas->TexHeight;
+					}
+				}
 			}
 		}
 	}
@@ -1000,7 +1049,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                            ? dictDir[slot].root : std::wstring(),
 		                        cfg.fontApplyAll);
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
-		if (lua.empty()) return;
+		if (lua.empty()) {
+			// Nothing to launch and, until v0.28.0, nothing said about it: the
+			// button just did not respond. Say which game and where we looked.
+			PobLog::Error("pob", std::string("no POB install detected for ") +
+			                         (poe2 ? "poe2" : "poe1") +
+			                         "; nothing to launch (looked next to pob-zh.exe and in the "
+			                         "configured POB folder)");
+			return;
+		}
 		unsigned long pid = 0;
 		if (!PobLaunch::SpawnPobDetached(lua, cfg.game, &pid)) return;
 		// Tabbed mode docks it into this window; separate mode leaves it as its
@@ -1106,6 +1163,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// Held for the deferred section rather than shown here: this runs in the
 			// middle of a frame. See IToolPanel::InitError.
 			panelInitError = fresh->InitError();
+			if (!panelInitError.empty())
+				PobLog::Error("panel", std::string(fresh->PanelId() ? fresh->PanelId() : "?") +
+				                           u8" 面板初始化失敗：" + panelInitError);
 			return;
 		}
 		EmbeddedPanel ep;
@@ -1268,7 +1328,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// on the worker, not just on the button.
 			appUpd->SetHold(pobBusy);
 			// Last POB closed: pick the check back up instead of waiting a day.
-			if (wasPobBusy && !pobBusy) appUpd->RequestCheck(false);
+			if (wasPobBusy && !pobBusy) appUpd->RequestCheck(AppUpdater::CheckReason::Background);
 		}
 		wasPobBusy = pobBusy;
 
@@ -1349,7 +1409,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					// what to do -- a greyed-out button on its own is a dead end.
 					ImGui::BeginDisabled(pobBusy);
 					if (ImGui::Button(S.updateCheck)) {
-						appUpd->RequestCheck(true); // force: skip the daily throttle
+						// UserAsked, not just "force": it also decides that a failure has to be
+						// visible rather than putting the button back unchanged.
+						appUpd->RequestCheck(AppUpdater::CheckReason::UserAsked);
 						manualCheck = true;
 						upToDateUntil = 0.0;
 					}
@@ -2039,6 +2101,25 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 			ImGui::PushTextWrapPos(inner - 40.0f * scale);
 			ImGui::TextDisabled("%s", S.saveSettingsHint);
+			ImGui::PopTextWrapPos();
+
+			// The failure log. It is written by every part of the program, so it
+			// belongs to none of the blocks above -- and it is the one thing on
+			// this page a user only ever needs when they are already stuck, which
+			// is why it says what to do with it rather than just naming a folder.
+			ImGui::Dummy(ImVec2(0, 16.0f * scale));
+			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			if (ImGui::Button(S.openLogFolder, ImVec2(200.0f * scale, 0))) {
+				// LogDir() creates the folder, so this never opens nothing --
+				// a button that appears to do nothing is the exact failure this
+				// whole release is about.
+				const std::wstring lg = PobLog::LogDir();
+				if (!lg.empty())
+					ShellExecuteW(nullptr, L"open", lg.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			}
+			ImGui::PushTextWrapPos(inner - 40.0f * scale);
+			ImGui::TextDisabled("%s", S.openLogFolderHint);
 			ImGui::PopTextWrapPos();
 
 			ImGui::EndChild();

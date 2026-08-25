@@ -29,6 +29,7 @@
 #include <atomic>
 #include <thread>
 #include "translation_manager.h"
+#include "../host/error_log.h"
 #include "startup_trace.h"
 
 /* nlohmann/json for structured JSON translation loading */
@@ -992,6 +993,14 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         snprintf(msg, sizeof(msg), "[pob-proxy] JSON parse error in %s: %s\n",
                  filepath.c_str(), e.what());
         OutputDebugStringA(msg);
+        /* THIS is what a broken dictionary actually looks like -- not an
+        ** exception out of translation_init, but ONE FILE quietly contributing
+        ** zero entries. The user sees a whole category revert to English and
+        ** nothing else in the program mentions it. The outer catch only fires
+        ** for failures that escape every per-file handler, i.e. almost never;
+        ** hooking the log there alone left the common case uncovered. */
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
         return 0;
     }
 
@@ -1220,6 +1229,13 @@ static bool load_json_meta(const std::string &filepath,
     try {
         doc = njson::parse(file);
     } catch (...) {
+        /* meta.json decides the merge order. Losing it does not empty the
+        ** dictionaries -- it silently changes which file wins a shadowed key,
+        ** which shows up as a handful of WRONG translations rather than missing
+        ** ones. That is much harder to recognise, so say it out loud. */
+        PobLog::Error("i18n", "meta.json did not parse; dictionary load order falls "
+                              "back to the default and shadowed keys may resolve to "
+                              "a different file");
         return false;
     }
 
@@ -1600,6 +1616,12 @@ void translation_init_async(void) {
                 char why[300];
                 snprintf(why, sizeof(why), "[pob-proxy] translation_init threw (%s); dictionaries left as loaded so far\n", e.what());
                 OutputDebugStringA(why);
+                /* OutputDebugString reaches a debugger and nobody else. The
+                ** user-visible symptom is "half the interface is in English",
+                ** which looks like a translation gap rather than a crash, so
+                ** without this line there is nothing to tell the two apart. */
+                PobLog::Error("i18n", std::string("dictionary load threw: ") + e.what() +
+                                          "; only the entries loaded so far are active");
             }
             s_ready.store(true, std::memory_order_release);
             /* 不經 translation_get_init_stats():它的 static 緩衝是主執行緒的 */

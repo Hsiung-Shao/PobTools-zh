@@ -1,4 +1,5 @@
 #include "passive_tree_update.h"
+#include "error_log.h"
 #include "passive_import.h"
 #include "launcher_config.h" // FindPoe1Dir
 #include "http_client.h"
@@ -268,12 +269,17 @@ void PassiveTreeUpdater::workerLoop()
 		std::string err;
 		if (cmd == Cmd::Check) {
 			if (!doCheck(&err)) {
-				// a failed background check stays quiet; retried next launch
+				// Quiet on screen (nobody asked, and the network comes back on its
+				// own) but never quiet in the log -- this is the same shape that
+				// made "check for updates does nothing" unreportable in v0.27.0.
+				PobLog::Error("tree", "check failed: " + err);
 				setPhase(PassiveUpdatePhase::Idle, "");
 			}
 		} else {
-			if (!doUpdate(&err))
+			if (!doUpdate(&err)) {
+				PobLog::Error("tree", "update failed: " + err);
 				setPhase(PassiveUpdatePhase::Error, err);
+			}
 		}
 	}
 }

@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "error_log.h"
 #include "launcher_config.h"
 #include "launcher_strings_io.h"
 #include "launcher_ui.h"
@@ -210,12 +211,21 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua)
 	// with "entry point not found". Field-reported on 0.5/0.6 fresh unzips.
 	HMODULE engine = LoadLibraryExW(dllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
 	if (!engine) {
+		// The child dies here and the user sees a box with no detail. 126 is
+		// "a dependency is missing", 193 is "wrong architecture", 5 is denied --
+		// three completely different stories behind one message.
+		PobLog::Error("pob", "SimpleGraphic.dll failed to load, GetLastError=" +
+		                         std::to_string((unsigned long)GetLastError()));
 		MessageBoxW(nullptr, L"無法載入 SimpleGraphic.dll。", L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;
 	}
 
 	RunLuaFileAsWin_t RunLuaFileAsWin = (RunLuaFileAsWin_t)GetProcAddress(engine, "RunLuaFileAsWin");
 	if (!RunLuaFileAsWin) {
+		// A DLL from a different build than the exe. Worth naming, because the
+		// message on screen reads like corruption when it is really a mismatch.
+		PobLog::Error("pob", "SimpleGraphic.dll loaded but has no RunLuaFileAsWin export "
+		                     "(engine and launcher are from different builds)");
 		MessageBoxW(nullptr, L"SimpleGraphic.dll 缺少 RunLuaFileAsWin 匯出。", L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;
 	}
@@ -267,7 +277,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// POB folder's own bundled DLLs out of the search path.
 	std::wstring engineDir = dir + L"engine\\";
 	if (!file_exists(engineDir + L"SimpleGraphic.dll")) {
+		// Legacy flat layout: the engine used to sit beside the exe. Falling back
+		// is right for those installs -- but when the DLL is simply GONE this
+		// silently re-points every later check at the wrong folder, and the user
+		// ends up being told that glfw3.dll is missing. That message sends them
+		// looking for the wrong file, so record what actually happened.
 		engineDir = dir;
+		if (!file_exists(engineDir + L"SimpleGraphic.dll")) {
+			PobLog::Error("pob", "engine\\SimpleGraphic.dll is missing and there is no "
+			                     "flat-layout copy beside the exe either; every engine path "
+			                     "below now points at the install root");
+		}
 	}
 	SetDllDirectoryW(engineDir.c_str());
 
@@ -499,6 +519,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// headless: ini parsing, legacy migration and clamping — no window needed
 		return RunLauncherConfigSelfTest(dir);
 	}
+	// The failure log's own contract: line shape, flattening, concurrent writers,
+	// and a retention sweep that must never touch anything it did not write.
+	if (arg1 == L"--error-log-selftest") {
+		return RunErrorLogSelfTest(dir);
+	}
 	if (arg1 == L"--font-coverage-selftest") {
 		// headless: every shipped font must be able to draw every character the
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
@@ -623,7 +648,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Internal engine child: env already inherited from the launcher parent.
 	if (arg1 == L"--engine") {
 		std::wstring launchLua = launch_lua_from(arg2);
-		if (launchLua.empty()) return 1;
+		if (launchLua.empty()) {
+			// The child exits with no window and no message at all: from the
+			// launcher it looks as if POB opened and vanished.
+			PobLog::Error("pob", "--engine was given a path with no Launch.lua: " +
+			                         to_utf8(arg2));
+			return 1;
+		}
 		// Publish "a POB is running against this install" for as long as this
 		// process lives, so a launcher (possibly a different one) knows not to
 		// swap engine\*.dll out from under it.
@@ -637,6 +668,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		std::wstring launchLua = launch_lua_from(arg1);
 		if (launchLua.empty()) launchLua = resolve_launch_lua_legacy(dir);
 		if (launchLua.empty()) {
+			PobLog::Error("pob", "no Launch.lua found beside the exe or via POB_PATH "
+			                     "(direct-launch path)");
 			MessageBoxW(nullptr,
 				L"找不到 Path of Building 的 Launch.lua。\n\n"
 				L"請將 POB 資料夾(內含 Launch.lua,名稱不限)放在 pob-zh.exe 旁邊,\n"
@@ -652,6 +685,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// missing, the first glfw call dies with an unhelpful SEH exception
 	// (0xC06D007E) instead of a loader error, so check up front.
 	if (!file_exists(engineDir + L"glfw3.dll") || !file_exists(engineDir + L"libGLESv2.dll")) {
+		// The earliest failure there is: the launcher exits before its window
+		// exists, so nothing in the UI can ever report it. Name the files that
+		// are actually absent -- "engine 資料夾不完整" is true but untraceable,
+		// and this is reached both when the folder really is incomplete and when
+		// the fallback above quietly moved the goalposts to the install root.
+		std::string miss;
+		if (!file_exists(engineDir + L"glfw3.dll")) miss += "glfw3.dll ";
+		if (!file_exists(engineDir + L"libGLESv2.dll")) miss += "libGLESv2.dll ";
+		PobLog::Error("pob", "launcher cannot start: missing " + miss + "under " +
+		                         to_utf8(engineDir));
 		MessageBoxW(nullptr,
 			L"engine 資料夾不完整（缺少 glfw3.dll 或 libGLESv2.dll）。\n"
 			L"請重新解壓縮完整的 pob-zh 套件。",
@@ -672,8 +715,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// on its own schedule, so the opt-out has to be in place before it runs, not
 	// merely reflected in the UI afterwards.
 	appUpdater.SetTranslationUpdates(LoadLauncherConfig(ini).updateTranslations);
-	appUpdater.RequestCheck(false);
+	appUpdater.RequestCheck(AppUpdater::CheckReason::Background);
 	startup_trace_mark("app updater started");
+
+	// Retention, once per launch. 30 days is long enough that a user who reports
+	// a problem a fortnight late still has the evidence, and short enough that an
+	// install nobody looks after never accumulates anything worth noticing.
+	PobLog::PruneOlderThan(30);
 
 	for (;;) {
 		LauncherConfig cfg = LoadLauncherConfig(ini);

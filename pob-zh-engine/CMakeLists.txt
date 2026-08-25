@@ -65,6 +65,10 @@ set(SIMPLEGRAPHIC_SOURCES
     "win/entry.cpp"
     "ui.h"
     "ui_api.cpp"
+    # Shared failure log. Compiled into BOTH targets on purpose: the engine
+    # cannot call into the host, and the POB patch failures worth recording
+    # happen in ui_api.cpp. Appends are atomic, so two copies is not a race.
+    "host/error_log.cpp"
     "ui_console.cpp"
     "ui_console.h"
     "ui_debug.cpp"
@@ -212,6 +216,14 @@ if (WIN32)
     target_compile_options(SimpleGraphic
         PRIVATE
         "/EHa"
+        # Same reason as the pob-zh target below: ui_api.cpp now carries UTF-8
+        # CJK literals (what each POB patch is FOR, so the failure log can say it
+        # in the user's words). Without this MSVC reads the file as Big5, where a
+        # trailing 0x5C escapes the closing quote -- the error it produces is
+        # "newline in constant", which points nowhere near the real problem.
+        # Verified safe: before this change the engine had ZERO non-ASCII string
+        # literals; every other non-ASCII byte in these sources is in a comment.
+        "/utf-8"
     )
     target_compile_definitions(SimpleGraphic
         PRIVATE
@@ -328,6 +340,8 @@ if (WIN32)
     add_executable(pob-zh WIN32
         host/pob-zh.rc
         host/host_main.cpp
+        host/error_log.cpp
+        host/error_log_selftest.cpp
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp

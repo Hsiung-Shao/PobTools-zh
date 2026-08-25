@@ -8,6 +8,7 @@
 #include "passive_tree_update.h"
 #include "passive_tree_view.h"
 #include "timeless_jewel.h"
+#include "error_log.h"
 #include "timeless_jewel_abyss.h"
 #include "ui_theme.h"
 #include "clipboard_util.h"
@@ -577,6 +578,9 @@ public:
 		if (!ds->Load(exeDir + L"Data\\timeless_jewels.json", &derr)) {
 			// Reported, not shown: this runs inside the launcher's frame. See
 			// IToolPanel::InitError.
+			// The panel message is deliberately short; `derr` says which file and
+			// what was wrong with it, and it exists nowhere else after this line.
+			PobLog::Error("data", "timeless_jewels.json: " + derr);
 			initErr_ = u8"無法載入 timeless_jewels.json（資料檔遺失）。";
 			return false;
 		}

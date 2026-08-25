@@ -101,6 +101,12 @@
 	X(settingsSaved,     u8"已儲存",                       u8"Saved")                                \
 	X(saveSettingsHint,  u8"這一頁的設定改動都會立即寫入 pob-zh.ini，這個按鈕只是再存一次並確認。", \
 	                     u8"Everything on this page is written to pob-zh.ini as you change it; this button just writes again and confirms.") \
+	/* v0.28.0: the failure log. Named "問題紀錄" rather than "log" because the
+	   only time anyone goes looking is when something is wrong, and that is what
+	   we need them to send us. */                                                                \
+	X(openLogFolder,     u8"開啟問題紀錄資料夾",           u8"Open the problem log folder")          \
+	X(openLogFolderHint, u8"程式遇到問題時會把原因寫進這裡（每天一個檔）。回報問題時附上當天那一個檔最有幫助；一切正常時它會是空的。", \
+	                     u8"Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.") \
 	X(useSuggestion,     u8"改用這個",                     u8"Use this")                             \
 	X(dataDirEmptyHint,  u8"留空 = 使用內建資料",          u8"Leave empty to use the built-in data")  \
 	X(dataDirBuiltin,    u8"使用內建資料：",               u8"Using the built-in data: ")             \

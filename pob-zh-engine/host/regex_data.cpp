@@ -1,4 +1,5 @@
 #include "regex_data.h"
+#include "error_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -70,6 +71,7 @@ bool RegexDataset::Load(const std::wstring& exeDir, const std::wstring& preferre
 		any |= LoadOne(exeDir, g, err);
 	if (!any) {
 		if (err) *err = u8"安裝目錄的 Data 底下沒有任何 regex_*.json 清單檔";
+		PobLog::Error("data", "no regex_*.json found under Data\\ (Poe Regex has nothing to show)");
 		return false;
 	}
 	if (err) err->clear();
@@ -126,6 +128,7 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 		// One bad file must not take the other game's catalogue down with it, so
 		// only this file's pages are rolled back.
 		if (err) *err = u8"regex_" + gameId + u8".json 解析失敗：" + ex.what();
+		PobLog::Error("data", "regex_" + gameId + ".json parse failed: " + ex.what());
 		while (pages_.size() > before) pages_.pop_back();
 		return false;
 	}

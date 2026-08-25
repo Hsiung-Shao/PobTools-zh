@@ -1,4 +1,6 @@
 #include "app_update.h"
+
+#include "error_log.h"
 #include "app_version.h"
 #include "http_client.h"
 #include "launcher_config.h" // LoadLauncherConfig (the CLI honours the same opt-out)
@@ -472,6 +474,26 @@ std::string ReadLocalDataVersion(const std::wstring& exeDir)
 	}
 }
 
+// The message the button turns into when a check the user asked for fails.
+//
+// Only the failures whose cause is legible get rewritten; everything else is
+// passed through verbatim. A guessed translation of an unfamiliar error is worse
+// than the English, because it sends whoever reads the report to the wrong place
+// and there is no way back to what the machine actually said.
+//
+// 403/429 from the API host is the one worth naming: unauthenticated GitHub
+// allows 60 requests an hour per IP and one check spends two of them, so a user
+// who keeps pressing the button after a silent failure burns through the budget
+// and then every later check fails for a reason that has nothing to do with them.
+static std::string FriendlyCheckError(const std::string& err)
+{
+	const bool rateLimited = err.find("HTTP 403") != std::string::npos ||
+	                         err.find("HTTP 429") != std::string::npos;
+	if (rateLimited)
+		return u8"GitHub 暫時限制查詢次數，請過幾分鐘再試";
+	return err;
+}
+
 // ---- policy -----------------------------------------------------------------
 
 bool ParseDataTagSeq(const std::string& tag, long long* seq)
@@ -576,15 +598,16 @@ void AppUpdater::Shutdown()
 	}
 }
 
-void AppUpdater::RequestCheck(bool force)
+void AppUpdater::RequestCheck(CheckReason reason)
 {
 	if (!worker_.joinable()) return;
+	const bool userAsked = (reason == CheckReason::UserAsked);
 	static const long long kDay = 24ll * 3600 * 10'000'000; // FILETIME is 100ns units
-	if (!force && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
+	if (!userAsked && lastCheckUtc_ > 0 && now_filetime() - lastCheckUtc_ < kDay)
 		return; // throttled: checked within the last day
 	{
 		std::lock_guard<std::mutex> lk(cmdMx_);
-		cmdQ_.push_back(Cmd::Check);
+		cmdQ_.push_back(userAsked ? Cmd::CheckLoud : Cmd::Check);
 	}
 	cmdCv_.notify_one();
 }
@@ -644,12 +667,19 @@ void AppUpdater::workerLoop()
 			cmdQ_.pop_front();
 		}
 		std::string err;
-		if (cmd == Cmd::Check) {
+		if (cmd == Cmd::Check || cmd == Cmd::CheckLoud) {
 			if (!doCheck(&err)) {
-				// a failed background check stays quiet; retried next launch
-				// because lastCheckUtc is only persisted on success
+				// A background check stays quiet and is retried next launch
+				// (lastCheckUtc is only persisted on success). A check the user
+				// pressed a button for does NOT: putting the button back exactly
+				// as it was is indistinguishable from "nothing to update", which
+				// is the report this release exists to answer.
 				log_line(exeDir_, "check failed: " + err);
-				setPhase(AppUpdatePhase::Idle, "");
+				PobLog::Error("app-update", "check failed: " + err);
+				if (cmd == Cmd::CheckLoud)
+					setPhase(AppUpdatePhase::Error, FriendlyCheckError(err));
+				else
+					setPhase(AppUpdatePhase::Idle, "");
 			}
 		} else if (cmd == Cmd::UpdateTranslations) {
 			// The one-off apply behind the TransAvailable notice and behind the
@@ -663,19 +693,24 @@ void AppUpdater::workerLoop()
 				// 翻譯資料」—— 而事實只是還沒去問過,使用者無從分辨。
 				if (!latest_.hasData) {
 					std::string derr;
-					if (!fetchDataRelease(&latest_, &derr))
+					if (!fetchDataRelease(&latest_, &derr)) {
 						log_line(exeDir_, "manual translation update: data line failed: " + derr);
+						PobLog::Error("data-update", "release lookup failed: " + derr);
+					}
 				}
 				if (!latest_.hasData) {
 					setPhase(AppUpdatePhase::Error, kMsgNoDataAsset);
+					PobLog::Error("data-update", "no translation asset on the newest data release");
 				} else if (!doUpdateTranslations(&err)) {
 					log_line(exeDir_, "manual translation update failed: " + err);
+					PobLog::Error("data-update", "apply failed: " + err);
 					setPhase(AppUpdatePhase::Error, err);
 				}
 			}
 		} else {
 			if (!doUpdateApp(&err)) {
 				log_line(exeDir_, "app update failed: " + err);
+				PobLog::Error("app-update", "apply failed: " + err);
 				setPhase(AppUpdatePhase::Error, err);
 			}
 		}
@@ -1141,6 +1176,11 @@ bool AppUpdater::doCheck(std::string* err)
 			// 但**信任失敗不會自己好** —— 沒簽章、簽章不符、清單對不上,重試一萬次
 			// 都是同一個結果。那種情況靜默的後果是使用者永遠停在舊字典,而且畫面上
 			// 沒有任何線索可以讓他知道、更沒有線索可以回報給我們。說出來。
+			// Both are logged. A trust failure never fixes itself and is the most
+			// important line this file can carry; a transport failure is quiet on
+			// screen by design, which is exactly why it needs the written record.
+			PobLog::Error(IsTrustFailure(terr) ? "sig" : "data-update",
+			              "translation line: " + terr);
 			if (IsTrustFailure(terr)) {
 				setPhase(AppUpdatePhase::Error, terr);
 			} else {
@@ -1505,6 +1545,12 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	if (!u.doCheck(&err)) {
 		printf("FAIL: %s\n", err.c_str());
 		log_line(exeDir, std::string("cli check failed: ") + err);
+		// The CLI calls doCheck DIRECTLY instead of queueing a command, so it never
+		// passes the worker's logging branch. Found by actually running
+		// --app-update-check against a build pointed at a nonexistent repo: the
+		// check failed, exit code 1, and the failure log stayed empty. Reading the
+		// code would not have shown this -- the two paths look interchangeable.
+		PobLog::Error("app-update", "check failed (CLI): " + err);
 		return 1;
 	}
 	AppUpdater::Status st = u.Poll();

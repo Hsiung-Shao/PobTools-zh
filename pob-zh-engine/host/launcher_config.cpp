@@ -1,4 +1,5 @@
 #include "launcher_config.h"
+#include "error_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -232,7 +233,15 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 {
-	WritePrivateProfileStringW(kSection, L"Game", cfg.game.c_str(), iniPath.c_str());
+	// Only the first write is checked. Every line below goes to the same file
+	// through the same API, so they fail together (read-only install, folder gone,
+	// a security product holding the handle) -- checking one is enough to notice,
+	// and checking all twenty would bury the signal in repetition.
+	if (!WritePrivateProfileStringW(kSection, L"Game", cfg.game.c_str(), iniPath.c_str())) {
+		PobLog::Error("config", "pob-zh.ini could not be written, GetLastError=" +
+		                            std::to_string((unsigned long)GetLastError()) +
+		                            " (settings will not survive a restart)");
+	}
 	WritePrivateProfileStringW(kSection, L"Locale", cfg.locale.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"ExitMode",
 		std::to_wstring((int)cfg.exitMode).c_str(), iniPath.c_str());

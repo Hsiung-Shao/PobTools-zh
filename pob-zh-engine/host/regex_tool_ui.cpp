@@ -4,6 +4,7 @@
 #include "regex_data.h"
 #include "regex_gen.h"
 #include "regex_state.h"
+#include "error_log.h"
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "ui_theme.h"
@@ -285,8 +286,22 @@ private:
 
 	void flushState()
 	{
-		if (!stateDirty_) return;
-		state_.Save(exeDir_);
+		if (!stateDirty_ || saveFailed_) return;
+		// The return value used to be dropped. Bookmarks are the only thing this
+		// tool holds that the player cannot rebuild from anywhere else, so a save
+		// that quietly did nothing would surface days later as "my bookmarks are
+		// gone" with nothing to point at.
+		if (!state_.Save(exeDir_)) {
+			PobLog::Error("save", u8"regex_ui.json 存檔失敗（書籤與勾選沒有保存）");
+			// RunDeferred runs EVERY FRAME. Retrying here without a brake meant
+			// sixty failed opens a second -- and, before the log learned to
+			// collapse repeats, sixty identical lines a second with it.
+			// The moment worth retrying is the next time the user changes
+			// something, not the next frame; `stateDirty_` stays set so that
+			// retry still writes everything.
+			saveFailed_ = true;
+			return;
+		}
 		stateDirty_ = false;
 	}
 
@@ -385,6 +400,7 @@ private:
 		state_.page = pageId();
 		state_.mode = modeId();
 		stateDirty_ = true;
+		saveFailed_ = false;   // a fresh change deserves a fresh attempt
 	}
 
 	// ---- header --------------------------------------------------------------
@@ -1065,6 +1081,9 @@ private:
 
 	RegexUiState state_;
 	bool stateDirty_ = false;
+	// Set when a save failed; cleared by the next real change. Without it the
+	// deferred pass retries a doomed write on every single frame.
+	bool saveFailed_ = false;
 
 	std::vector<PageState> pages_;
 	int page_ = 0;

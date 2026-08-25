@@ -1,4 +1,5 @@
 #include "atlas_import.h"
+#include "error_log.h"
 #include "atlas_mechanics.h"     // league-mechanic map written alongside the tree
 #include "atlas_version_index.h" // resolve the active season folder for the CLI
 
@@ -176,6 +177,9 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
+		// Every refusal in this function funnels through here, which is why the
+		// log hook is here and not at twenty return sites.
+		PobLog::Error("atlas", "atlas tree import failed: " + m);
 		return false;
 	};
 

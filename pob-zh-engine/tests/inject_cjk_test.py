@@ -194,6 +194,12 @@ class Harness(object):
         g["__py_translate_display"] = translate_display
         g["__py_set_source"] = set_source
         g["__py_item_title"] = translate
+        # Every failure the inject reports, in order. This is the engine-side
+        # failure log seen from Lua; the test below is the only thing that proves
+        # a broken patch actually reaches it.
+        self.logged_errors = []
+        g["__py_log_error"] = lambda feature, msg: self.logged_errors.append(
+            (feature, msg))
         # Wrapped in real Lua functions on purpose: a Python callable handed
         # straight to Lua is userdata, and the inject's first line is a
         # type(PobToolsTranslate) ~= "function" bail-out. A harness that trips
@@ -204,6 +210,7 @@ function PobToolsTranslateDisplay(s) return __py_translate_display(s) end
 function PobToolsSetSource(n) return __py_set_source(n) end
 function PobToolsGetTranslate() return true end
 function PobToolsItemTitle(s) return __py_item_title(s) end
+function PobToolsLogError(f, m) return __py_log_error(f, m) end
 """)
 
     def apply_inject(self):
@@ -523,6 +530,41 @@ def test_calcs(fork):
           not probe(False, "生命池", "Effective Hit Pool"))
 
 
+def test_patch_failure_is_logged(fork):
+    """A patch that cannot apply has to end up in the failure log.
+
+    This is the whole reason the log exists. When POB changes upstream, the
+    symptom a user sees is "Chinese input stopped working" -- there is no crash,
+    no message, and the feature simply goes quiet. Before this, the only record
+    was a trace file that exists solely when POB_ZH_INJECT_TRACE is set, i.e.
+    never on a user's machine.
+
+    The failure is manufactured the way upstream would cause it: the class is
+    present but the method the patch wraps is gone.
+    """
+    h = Harness(fork, with_inject=False)
+    # CalcsTab without SearchMatch -- exactly what an upstream rename looks like
+    # from in here.
+    # A bare table, not newClass(): the two forks disagree about that signature,
+    # and what matters here is only that the class EXISTS while the method the
+    # patch wraps does not -- which is exactly what an upstream rename leaves
+    # behind.
+    h.run(b'common.classes.CalcsTab = {}')
+    h.apply_inject()
+
+    hits = [(f, m) for (f, m) in h.logged_errors if f == "inject"]
+    check("%s inject: a failed patch is written to the failure log" % fork,
+          len(hits) >= 1, repr(h.logged_errors))
+    if hits:
+        msg = hits[0][1]
+        # The name alone ("patch FAILED CalcsTab") is not actionable by whoever
+        # reads the report, so the symptom has to travel with it.
+        check("%s inject: the log line names the symptom, not just the class" % fork,
+              "計算頁" in msg, msg)
+        check("%s inject: the log line names the class too" % fork,
+              "CalcsTab" in msg, msg)
+
+
 def test_no_patch_failed(fork):
     """Every PATCHES entry that had a class present must have applied cleanly."""
     h = Harness(fork, with_inject=False)
@@ -617,15 +659,22 @@ def test_upstream_shape(fork):
 # ---- C++ source-patch anchors ---------------------------------------------
 
 def parse_source_patches(cpp):
-    """Pull (file, anchor, insert_after, replace_with) out of kPobToolsSourcePatches[].
+    """Pull (what, file, anchor, insert_after, replace_with, one_fork_only) out of
+    kPobToolsSourcePatches[].
 
     replace_with is None for insert-mode patches. Adjacent C string literals are
     concatenated by the compiler, so the payload is whatever literals follow the
-    first two; `nullptr` in the entry is what marks replace mode.
+    first three.
+
+    Replace mode is decided by WHERE nullptr sits, not by whether the entry
+    contains the word: since one-fork-only entries end in `nullptr, true`, a
+    substring test would call every one of them a replace patch and then compare
+    the wrong field against the shipped POB source.
     """
     body = cpp.split("kPobToolsSourcePatches[] = {", 1)[1]
     body = body.split("\n};", 1)[0]
     body = re.sub(r"//[^\n]*", "", body)               # comments hold example code
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)  # /*oneForkOnly=*/ markers
     entries = []
     depth = 0
     cur = ""
@@ -644,23 +693,28 @@ def parse_source_patches(cpp):
             cur += ch
     out = []
     for e in entries:
-        lits = re.findall(r'"((?:[^"\\]|\\.)*)"', e)
-        if len(lits) < 2:
+        lits = list(re.finditer(r'"((?:[^"\\]|\\.)*)"', e))
+        if len(lits) < 3:
             continue
-        fields = [unescape_c(x) for x in lits]
-        leaf, anchor = fields[0], fields[1]
-        payload = "".join(fields[2:])
-        if "nullptr" in e:
-            out.append((leaf, anchor, None, payload))
+        fields = [unescape_c(m.group(1)) for m in lits]
+        what, leaf, anchor = fields[0], fields[1], fields[2]
+        payload = "".join(fields[3:])
+        # Everything between the anchor literal and the next one. `nullptr` there
+        # means the insertAfter slot was skipped, i.e. this is a replace patch.
+        gap = e[lits[2].end():lits[3].start()] if len(lits) > 3 else e[lits[2].end():]
+        is_replace = "nullptr" in gap
+        one_fork = re.search(r"\btrue\b", e[lits[-1].end():]) is not None
+        if is_replace:
+            out.append((what, leaf, anchor, None, payload, one_fork))
         else:
-            out.append((leaf, anchor, payload, None))
+            out.append((what, leaf, anchor, payload, None, one_fork))
     return out
 
 
 def apply_source_patches(src, leaf, patches):
     """Mirror of pobtools_loadfile_patched() in ui_api.cpp."""
     applied = 0
-    for p_leaf, anchor, insert_after, replace_with in patches:
+    for _what, p_leaf, anchor, insert_after, replace_with, _one_fork in patches:
         if p_leaf != leaf:
             continue
         at = src.find(anchor)
@@ -686,7 +740,7 @@ def unescape_c(s):
 def test_source_patch_anchors():
     patches = parse_source_patches(read_text(UI_API))
     check("source patches: table parsed", len(patches) >= 3, "n=%d" % len(patches))
-    for leaf, anchor, insert_after, replace_with in patches:
+    for what, leaf, anchor, insert_after, replace_with, one_fork in patches:
         is_replace = replace_with is not None
         total = 0
         for fork, base in FORKS.items():
@@ -708,6 +762,25 @@ def test_source_patch_anchors():
                       "found %d" % n)
         check("anchor matches somewhere: %s %r" % (leaf, anchor[:48]), total >= 1,
               "found 0 in both forks")
+        # oneForkOnly decides whether a miss is reported to the user at runtime
+        # (ui_api.cpp logs "[inject] <what> ... anchor drifted"). Flag it wrongly
+        # and the log either cries wolf on every launch of one fork, or stays
+        # silent about the exact regression it exists to catch -- so the flag is
+        # checked against the shipped sources rather than trusted.
+        forks_hit = 0
+        for fork, base in FORKS.items():
+            for root, _dirs, files in os.walk(base):
+                if any(f.lower() == leaf for f in files):
+                    fp = os.path.join(root, next(f for f in files if f.lower() == leaf))
+                    if anchor in read_text(fp):
+                        forks_hit += 1
+                    break
+        if one_fork:
+            check("oneForkOnly is true because it really is one fork: %s" % what,
+                  forks_hit == 1, "matched in %d fork(s)" % forks_hit)
+        else:
+            check("a patch not marked oneForkOnly matches both forks: %s" % what,
+                  forks_hit == len(FORKS), "matched in %d of %d" % (forks_hit, len(FORKS)))
 
 
 def test_source_patch_compiles():
@@ -719,7 +792,7 @@ def test_source_patch_compiles():
     to find that here instead.
     """
     patches = parse_source_patches(read_text(UI_API))
-    leaves = sorted(set(p[0] for p in patches))
+    leaves = sorted(set(p[1] for p in patches))   # p[1] is the file leaf
     for fork, base in FORKS.items():
         rt = lua51.LuaRuntime(unpack_returned_tuples=True)
         # always two values: one return value would not arrive as a tuple
@@ -771,6 +844,7 @@ def main():
         test_calcs(fork)
         test_paste_regression(fork)
         test_no_patch_failed(fork)
+        test_patch_failure_is_logged(fork)
         test_upstream_shape(fork)
     print("== C++ source patches ==")
     test_source_patch_anchors()

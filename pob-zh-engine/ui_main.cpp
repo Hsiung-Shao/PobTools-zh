@@ -4,6 +4,7 @@
 // Module: UI Main
 //
 
+#include "host/error_log.h"
 #include "ui_local.h"
 
 #include "translation_manager.h"
@@ -375,8 +376,22 @@ void ui_main_c::ScriptInit()
 		std::filesystem::path injectPath = EngineModuleDir() / "poecharm_inject.lua";
 		std::string injectStr = injectPath.generic_u8string();
 		sys->SetWorkDir(scriptWorkDir);
-		if (luaL_loadfile(L, injectStr.c_str())) {
-			sys->con->Printf("PoeCharm inject load error: %s\n", lua_tostring(L, -1));
+		// The file missing is a different story from the file being broken, and
+		// both end with "no Chinese anywhere in POB" -- which reads as a
+		// translation problem rather than a script that never ran.
+		if (!std::filesystem::exists(injectPath)) {
+			PobLog::Error("inject", "poecharm_inject.lua is not in the engine folder; "
+			                        "none of the Chinese input/search patches will run: " +
+			                            injectStr);
+		} else if (luaL_loadfile(L, injectStr.c_str())) {
+			// Until v0.28.0 this went to POB's console and nowhere else. Nobody
+			// opens that console, so the whole injection could stop happening and
+			// the only symptom was "POB is in English again".
+			const char* why = lua_tostring(L, -1);
+			sys->con->Printf("PoeCharm inject load error: %s\n", why);
+			PobLog::Error("inject", std::string("poecharm_inject.lua did not load, so no "
+			                                    "Chinese patch was applied at all: ") +
+			                            (why ? why : "(no detail)"));
 			lua_pop(L, 1);
 		} else {
 			PCall(0, 0);

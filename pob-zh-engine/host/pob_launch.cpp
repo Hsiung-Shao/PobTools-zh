@@ -1,4 +1,5 @@
 #include "pob_launch.h"
+#include "error_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -125,6 +126,12 @@ bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi)
 	if (CreateProcessW(exe.c_str(), cmdBuf.data(), nullptr, nullptr, FALSE, 0,
 	                   nullptr, nullptr, &si, &pi))
 		return true;
+	// POB is started as `pob-zh.exe --engine <Launch.lua>`, NOT by running POB's
+	// own exe -- so the thing that fails here is spawning ourselves again, and the
+	// usual cause (anti-virus holding the exe, the install moved) is only in
+	// GetLastError, which is gone by the time anyone asks.
+	PobLog::Error("pob", "CreateProcess for the POB child failed, GetLastError=" +
+	                         std::to_string((unsigned long)GetLastError()));
 	MessageBoxW(nullptr, L"無法啟動 POB 子程序。", L"PobTools", MB_ICONERROR | MB_OK);
 	return false;
 }
@@ -209,6 +216,11 @@ bool SpawnToolDetached(const std::wstring& exeDir, const wchar_t* flag, Instance
 	if (!CreateProcessW(nullptr, buf.data(), nullptr, nullptr, FALSE,
 	                    env.empty() ? 0 : CREATE_UNICODE_ENVIRONMENT, env.empty() ? nullptr : env.data(),
 	                    exeDir.c_str(), &si, &pi)) {
+		// A message box tells the user; the log is what tells us WHY. GetLastError
+		// is the whole answer here (5 = denied by AV/permissions, 2 = the exe moved)
+		// and it is gone by the time anyone asks.
+		PobLog::Error("pob", "CreateProcess for the tool window failed, GetLastError=" +
+		                         std::to_string((unsigned long)GetLastError()));
 		MessageBoxW(nullptr, L"無法啟動工具視窗（子程序建立失敗）。", L"PobTools",
 		            MB_ICONERROR | MB_OK);
 		return false;

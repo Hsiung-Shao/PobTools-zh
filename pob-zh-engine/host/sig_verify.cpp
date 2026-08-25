@@ -199,6 +199,15 @@ bool VerifyReleaseSignatureWithKeys(const void* data, size_t size, const std::st
 bool VerifyReleaseSignature(const void* data, size_t size, const std::string& sigHex,
                             int* keyIndex, std::string* err)
 {
+	// NOT logged here, deliberately. This is a primitive: --app-update-selftest
+	// calls it with deliberately bad signatures to prove the rejection works, and
+	// logging at this level put two "release signature rejected" lines into the
+	// failure log on every clean test run. A log that reports healthy behaviour as
+	// a problem stops being read.
+	//
+	// The real refusals are logged one level up, where a failure means an update
+	// was actually turned away: app_update.cpp routes trust failures through
+	// PobLog::Error("sig", ...) with the context of which line and which release.
 	return VerifyReleaseSignatureWithKeys(data, size, sigHex, kUpdatePublicKeysHex,
 	                                      kUpdatePublicKeyCount, keyIndex, err);
 }

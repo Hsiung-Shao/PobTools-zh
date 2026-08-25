@@ -1,4 +1,5 @@
 #include "atlas_update.h"
+#include "error_log.h"
 #include "atlas_import.h"
 #include "atlas_version_index.h" // versioned season layout + rolling retention
 #include "http_client.h"
@@ -711,7 +712,12 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		idx.UpsertActive(e);
 		std::vector<std::string> dropped = idx.PruneSeasons(2);
 		idx.SetLastCheckUtc(now_filetime());
-		idx.Save(exeDir_);
+		if (!idx.Save(exeDir_)) {
+			// The files landed but the index did not: next launch the new season
+			// is on disk and invisible. Worth saying out loud -- it looks exactly
+			// like "the update did nothing".
+			PobLog::Error("atlas", u8"新賽季資料已下載，但 atlas_index.json 存檔失敗");
+		}
 		keptSeasons = (int)idx.Versions().size();
 		for (const std::string& d : dropped)
 			remove_dir_with_sub(AtlasVersionIndex::VersionDir(exeDir_, d), L"atlas");

@@ -16,6 +16,7 @@
 #include "atlas_stat_agg.h"
 #include "atlas_tree_data.h"
 #include "atlas_update.h"
+#include "error_log.h"
 #include "atlas_version_index.h"
 #include "atlas_view.h"
 #include "editor_util.h" // EdReadFile
@@ -176,9 +177,12 @@ public:
 		exeDir = h.exeDir;
 		scale = h.scale;
 		buildFile.Load(exeDir); // legacy single-build files migrate transparently
-		scarabDb.Load(exeDir, &scarabErr);
-		astroDb.Load(exeDir, &astroErr);
-		mapDb.Load(exeDir, &mapErr);
+		if (!scarabDb.Load(exeDir, &scarabErr))
+			PobLog::Error("data", "scarabs_poe1.json: " + scarabErr);
+		if (!astroDb.Load(exeDir, &astroErr))
+			PobLog::Error("data", "astrolabes_poe1.json: " + astroErr);
+		if (!mapDb.Load(exeDir, &mapErr))
+			PobLog::Error("data", "atlas_maps_poe1.json: " + mapErr);
 		for (AtlasBuildEntry& b : buildFile.builds) {
 			b.scarabs = scarabDb.Sanitize(b.scarabs, nullptr);
 			b.astrolabes = astroDb.Sanitize(b.astrolabes, nullptr);
@@ -187,7 +191,8 @@ public:
 		icons.Init(exeDir);
 		uiState.Load(exeDir);
 		verIndex.Load(exeDir);
-		if (verIndex.NeedsSave()) verIndex.Save(exeDir);
+		if (verIndex.NeedsSave() && !verIndex.Save(exeDir))
+			PobLog::Error("save", "atlas_index.json 存檔失敗（賽季清單沒有更新）");
 		viewTag = (!uiState.season.empty() && verIndex.Has(uiState.season))
 			? uiState.season : verIndex.Active();
 		updater.Init(exeDir);
@@ -1194,6 +1199,11 @@ private:
 		viewTag = tag;
 		startupDropped = 0;
 		ready = tree.LoadVersion(exeDir, tag, &loadErr);
+		if (!ready) {
+			// The season's tree is the planner: without it the whole tab is a
+			// message. Nothing else records which season failed or why.
+			PobLog::Error("data", "atlas season " + tag + " failed to load: " + loadErr);
+		}
 		if (ready) {
 			int mapped = tree.ApplyAllocIds(buildFile.Active().alloc);
 			tree.ApplyTargetIds(buildFile.Active().targets);   // must follow ApplyAllocIds

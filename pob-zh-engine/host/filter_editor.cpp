@@ -3,6 +3,7 @@
 #include "editor_util.h"
 #include "filter_data.h"     // ListFilters / Poe1FilterDirs
 #include "filter_parser.h"   // SaveFilter (close guard)
+#include "error_log.h"
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "ui_theme.h"
@@ -79,7 +80,12 @@ public:
 			ImGui::Spacing();
 			if (ImGui::Button(u8"儲存並關閉")) {
 				std::string err;
-				SaveFilter(shell_.model, &err);
+				// The return value used to be dropped, and the window closed
+				// regardless: a failed save here looks exactly like a successful
+				// one, and the edits are gone with it.
+				if (!SaveFilter(shell_.model, &err))
+					PobLog::Error("save", u8"過濾器「儲存並關閉」失敗：" +
+					                          (err.empty() ? std::string(u8"原因不明") : err));
 				ImGui::CloseCurrentPopup();
 				close_ = ToolCloseState::Closed;
 			}

@@ -142,3 +142,9 @@ graphify-out/
 image/
 Thumbs.db
 .DS_Store
+
+# 故障注入用的測試建置與測試安裝(tools/fault_inject.ps1 的 update-repo-gone)。
+# ⚠ 那顆 exe 的更新來源被改成一個不存在的 repo,絕對不能進 dist 或出貨包 ——
+# package_release.ps1 的 Assert-Step 16 會擋,但擋在那裡等於整個發版流程白做一次。
+pob-zh-engine/build-faulttest/
+dist-faulttest/

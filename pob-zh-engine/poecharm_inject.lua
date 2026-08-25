@@ -34,6 +34,9 @@ end
 
 if type(PobToolsTranslate) ~= "function" or type(common) ~= "table" or type(common.classes) ~= "table" then
 	log("inject skipped (PobToolsTranslate / common.classes unavailable)")
+	if type(PobToolsLogError) == "function" then
+		PobToolsLogError("inject", "翻譯注入整個沒有啟動（引擎函式或 common.classes 不存在）")
+	end
 	return
 end
 
@@ -592,11 +595,40 @@ end
 -- the patch wait until the whole nest has finished loading. (Found at runtime
 -- with POB_ZH_INJECT_TRACE; the offline harness had pre-loaded every parent.)
 local applied = {}
+
+-- What the user loses when a patch does not apply. The patch name alone ends up
+-- in a bug report as "patch FAILED ItemDBControl", which says nothing about what
+-- they would actually notice; this table is what turns the log line into a
+-- symptom somebody can confirm.
+local PATCH_SYMPTOM = {
+	SkillListControl        = "技能列表的中文顯示",
+	GemSelectControl        = "技能寶石搜尋框打不進中文",
+	PassiveTreeView         = "天賦樹節點的中文顯示",
+	NotableDBControl        = "塗油／大天賦搜尋框打不進中文",
+	ItemDBControl           = "物品資料庫的名稱與詞綴搜尋打不進中文",
+	MinionSearchListControl = "召喚物搜尋框打不進中文",
+	CalcsTab                = "計算頁搜尋框打不進中文",
+	SearchHost              = "天賦樹搜尋框打不進中文",
+	EditControl             = "輸入框貼上中文會變成問號",
+	Tooltip                 = "提示視窗的中文顯示",
+}
+
 local function applyPatch(name, class)
 	if applied[name] or not class then return end
 	applied[name] = true
 	local ok, err = pcall(PATCHES[name], class)
-	if ok then log("patched " .. name) else log("patch FAILED " .. name .. ": " .. tostring(err)) end
+	if ok then
+		log("patched " .. name)
+	else
+		log("patch FAILED " .. name .. ": " .. tostring(err))
+		-- The trace above only exists when POB_ZH_INJECT_TRACE is set, i.e. never
+		-- on a user's machine. This is the copy that survives to be reported.
+		if type(PobToolsLogError) == "function" then
+			PobToolsLogError("inject",
+				(PATCH_SYMPTOM[name] or name) .. "：" .. name ..
+				" patch 套用失敗（POB 可能更新過）— " .. tostring(err))
+		end
+	end
 end
 
 local function tryApplyAll()

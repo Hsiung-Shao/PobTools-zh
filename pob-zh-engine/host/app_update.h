@@ -64,7 +64,16 @@ public:
 
 	// Main thread. Queues a version check; without force it is throttled to
 	// once per day (persisted in update_state.json).
-	void RequestCheck(bool force);
+	// Why the check is happening, which decides two things at once: whether the
+	// daily throttle applies, and whether a FAILURE is allowed to be silent.
+	//
+	// Silence is right for Background -- the network comes back on its own and
+	// nobody asked. It is wrong for UserAsked: v0.27.0 shipped with both cases
+	// going through the same quiet path, so pressing "check for updates" with a
+	// rate-limited GitHub put the button back exactly as it was and the user had
+	// no way to tell a failure from "already up to date".
+	enum class CheckReason { Background, UserAsked };
+	void RequestCheck(CheckReason reason);
 
 	// Main thread. Valid in AppAvailable/Error: downloads + stages the app zip.
 	void StartAppUpdate();
@@ -115,7 +124,7 @@ private:
 	friend int RunAppFetchTest(const std::wstring& exeDir);
 	friend int RunAppUpdateSelfTest(const std::wstring& exeDir);
 
-	enum class Cmd { Check, UpdateApp, UpdateTranslations };
+	enum class Cmd { Check, CheckLoud, UpdateApp, UpdateTranslations };
 
 	// 一個 release 上那份「經過簽章的資產清單」。manifest 本身是普通的 JSON,
 	// 信任來自旁邊那個分離式簽章 —— 而簽章是用**編進 exe 的公鑰**驗的,不是用

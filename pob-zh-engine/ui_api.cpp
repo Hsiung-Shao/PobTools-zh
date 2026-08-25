@@ -4,6 +4,7 @@
 // Module: UI API
 //
 
+#include "host/error_log.h"
 #include "ui_local.h"
 
 #include <filesystem>
@@ -2010,6 +2011,10 @@ static int l_IsSubScriptRunning(lua_State* L)
 // rather than the module failing to load. A file may carry several patches.
 // Patches contain no newline, so script line numbers (tracebacks) are stable.
 struct PobToolsSourcePatch {
+	// What breaks for the user when this one does not apply. It is the only part
+	// of this table that means anything in a bug report, so it is written in the
+	// words the user would use rather than the name of the call site.
+	const char* what;
 	const char* fileLeaf;    // lower-case file name, e.g. "itemdbcontrol.lua"
 	const char* anchor;      // what to look for
 	const char* insertAfter; // inserted right after the anchor (same line)
@@ -2021,6 +2026,13 @@ struct PobToolsSourcePatch {
 	// unique anchor would mean either leaving them broken or inventing a
 	// whitespace-sensitive anchor that upstream reindentation would break.
 	const char* replaceWith;
+	// True when the call site legitimately exists in only one of the two POB
+	// forks. A missing anchor is normally worth recording -- that is how "Chinese
+	// stopped working after POB updated" becomes findable -- but these two would
+	// report a failure on every single launch of the fork that never had them,
+	// and a log that cries wolf is worse than no log. Set from measurement, not
+	// from reading: grep both shipped forks for the anchor before flipping it.
+	bool oneForkOnly;
 };
 static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// (Item DB search used to have two patches here, one per fork, that widened
@@ -2040,7 +2052,8 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// StripEscapes on the RESULT, not just the input: several of these values
 	// come back coloured ("Is the enemy Shocked?" is three coloured runs), and a
 	// query typed off the screen would otherwise straddle an escape and miss.
-	{ "configtab.lua",
+	{ u8"設定頁的選項搜尋打不進中文",
+	  "configtab.lua",
 	  "local label = StripEscapes(varData.label or \"\"):lower()",
 	  " if PobToolsTranslateDisplay and searchStr:find(\"[\\128-\\255]\") then "
 	  "local _ptzh = PobToolsTranslateDisplay(StripEscapes(varData.label or \"\")) "
@@ -2052,11 +2065,13 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// which never matches a CJK byte. That is enough: rank 1 is the exact
 	// "type what you see" case. PoE2 has no such popup, so the anchor simply
 	// finds nothing there.
-	{ "configtab.lua",
+	{ u8"自訂修飾符的「新增修飾符」搜尋打不進中文",
+	  "configtab.lua",
 	  "local modLower = modText:lower()",
 	  " if PobToolsTranslateDisplay and searchStr:find(\"[\\128-\\255]\") then "
 	  "local _ptzh = PobToolsTranslateDisplay(modText) "
-	  "if _ptzh then modLower = modLower .. \"\\n\" .. StripEscapes(_ptzh):lower() end end" },
+	  "if _ptzh then modLower = modLower .. \"\\n\" .. StripEscapes(_ptzh):lower() end end",
+	  nullptr, /*oneForkOnly=*/true },
 
 	// Item tooltip title. The item LISTS draw "<title>, <base type>", and the
 	// base type is what proves the string is an item name -- see the comma path
@@ -2069,7 +2084,8 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// title and returns the translation, and returning nil is what leaves the
 	// English alone (gsub keeps a match whose handler returns nil/false), which
 	// is also the fallback when the global is missing on an older engine.
-	{ "itemstab.lua",
+	{ u8"物品提示的標題維持英文",
+	  "itemstab.lua",
 	  "rarityCode..item.title",
 	  ":gsub(\"^.+$\", PobToolsItemTitle or \"%0\")" },
 
@@ -2085,7 +2101,8 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// notables, and the item-title path would fall back to word-by-word and could
 	// turn an unknown notable into word salad. A plain lookup returns nil instead,
 	// and nil is what keeps the English.
-	{ "treetab.lua",
+	{ u8"刺青與軍團珠寶下拉的名稱維持英文",
+	  "treetab.lua",
 	  "label = node.dn .. \"",
 	  nullptr,
 	  "label = ((PobToolsTranslateDisplay and PobToolsTranslateDisplay(node.dn)) or node.dn) .. \"" },
@@ -2093,9 +2110,11 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// own, which is right here because they are separate modifiers rather than one
 	// sentence. A stat containing its own comma splits into runs that match
 	// nothing, so it is simply left in English -- never mangled.
-	{ "treetab.lua",
+	{ u8"刺青下拉的詞綴文字維持英文",
+	  "treetab.lua",
 	  "table.concat(node.sd, \",\")",
-	  ":gsub(\"[^,]+\", PobToolsTranslateDisplay)" },
+	  ":gsub(\"[^,]+\", PobToolsTranslateDisplay)",
+	  nullptr, /*oneForkOnly=*/true },
 
 	// Translate BEFORE POB wraps. main:WrapString splits a line into
 	// width-limited fragments and each fragment is drawn separately, so by the
@@ -2108,7 +2127,8 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	//
 	// Re-translating text a caller already translated is harmless: the lookup
 	// misses on Chinese and returns nil, and `or str` keeps what was passed in.
-	{ "main.lua",
+	{ u8"換行過的長句維持英文",
+	  "main.lua",
 	  "function main:WrapString(str, height, width)",
 	  " if PobToolsTranslateDisplay then str = PobToolsTranslateDisplay(str) or str end" },
 };
@@ -2141,7 +2161,16 @@ static int pobtools_loadfile_patched(lua_State* L, const char* path)
 	for (const PobToolsSourcePatch& p : kPobToolsSourcePatches) {
 		if (leaf != p.fileLeaf) continue;
 		size_t at = src.find(p.anchor);
-		if (at == std::string::npos) continue; // anchor drifted: skip this patch
+		if (at == std::string::npos) {
+			// The anchor drifted: this feature just switched itself back to
+			// English and nothing else in the program will ever mention it. This
+			// is the single most valuable line in the whole failure log -- "POB
+			// updated and Chinese input stopped working" has no other symptom.
+			if (!p.oneForkOnly)
+				PobLog::Error("inject", std::string(p.what) + " — " + p.fileLeaf +
+				                            u8" 的錨點對不上（POB 可能更新過）");
+			continue;
+		}
 		const size_t alen = strlen(p.anchor);
 		if (p.replaceWith) {
 			// Replace every occurrence. Resume past the replacement so a
@@ -2155,7 +2184,12 @@ static int pobtools_loadfile_patched(lua_State* L, const char* path)
 		} else {
 			// Insert mode stays strict: these patches target one exact call site,
 			// and a second match would mean the anchor no longer identifies it.
-			if (src.find(p.anchor, at + 1) != std::string::npos) continue;
+			// Skipping is the safe answer, but it is still a feature going dark.
+			if (src.find(p.anchor, at + 1) != std::string::npos) {
+				PobLog::Error("inject", std::string(p.what) + " — " + p.fileLeaf +
+				                            u8" 的錨點不再唯一，已跳過以免改錯地方");
+				continue;
+			}
 			src.insert(at + alen, p.insertAfter);
 			applied++;
 		}
@@ -2504,6 +2538,26 @@ static int l_SetForeground(lua_State* L)
 	return 0;
 }
 
+// PobToolsLogError(feature, message) -> nothing. The Lua side's way into the
+// failure log.
+//
+// poecharm_inject.lua raises error() when a patch cannot find the slot it needs,
+// which is the right thing to do for a maintainer running with a debugger --
+// but for a user it disappears into POB's own error handling and never reaches
+// anyone who could act on it. The whole point of this build's log is that a
+// report of "Chinese stopped working" arrives with the reason attached.
+//
+// Deliberately total: bad arguments are logged as-is rather than raising, since
+// this is what the error path calls and it must not add a second failure on top
+// of the first one.
+static int l_PobToolsLogError(lua_State* L)
+{
+	const char* feature = lua_tostring(L, 1);
+	const char* msg = lua_tostring(L, 2);
+	PobLog::Error(feature && *feature ? feature : "inject", msg ? msg : "(no message)");
+	return 0;
+}
+
 // PobToolsTranslate(english) -> chinese, or nil. Lua-callable forward lookup.
 // (Legacy global name PoeCharmTranslate is kept as an alias in InitAPI.)
 static int l_PobToolsTranslate(lua_State* L)
@@ -2812,6 +2866,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsSetTranslate);
 	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);
+	ADDFUNC(PobToolsLogError);
 	ADDFUNCALIAS(PoeCharmTranslate, PobToolsTranslate);
 	ADDFUNCALIAS(PoeCharmReverse, PobToolsReverse);
 	ADDFUNCALIAS(PoeCharmSetTranslate, PobToolsSetTranslate);

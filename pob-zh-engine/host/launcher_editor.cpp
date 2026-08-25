@@ -1,4 +1,5 @@
 #include "launcher_editor.h"
+#include "error_log.h"
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "editor_data.h"
@@ -270,7 +271,13 @@ public:
 		// discarded outright, so opening the editor from an "en" launcher silently
 		// edited the Chinese dictionary.
 		locales = ListLocales(slotRoot());
-		if (locales.empty()) return false;
+		if (locales.empty()) {
+			// Init returns false and the tab shows nothing. Without this the user
+			// sees an editor that will not open and there is no record of the
+			// dictionary folder being empty or unreadable.
+			PobLog::Error("panel", u8"翻譯編輯器找不到任何語系資料夾：" + narrow(slotRoot()));
+			return false;
+		}
 		{
 			const std::string want = narrow(h.locale);
 			auto it = std::find(locales.begin(), locales.end(), want);

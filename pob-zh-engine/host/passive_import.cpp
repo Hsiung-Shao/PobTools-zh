@@ -1,4 +1,5 @@
 #include "passive_import.h"
+#include "error_log.h"
 #include "launcher_config.h" // FindPoe1Dir
 
 #define WIN32_LEAN_AND_MEAN
@@ -368,6 +369,7 @@ bool ImportPassiveTreeData(const std::wstring& dataJsonPath, const std::string& 
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
+		PobLog::Error("tree", "passive tree import failed: " + m);
 		return false;
 	};
 	if (ver.empty()) return fail(u8"缺少樹版本（例如 3_29）");
