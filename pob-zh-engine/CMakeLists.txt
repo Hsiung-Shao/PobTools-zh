@@ -502,11 +502,23 @@ if (WIN32)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
     # Search-string generator catalogue: every list the tool can build a query
-    # over (map modifiers, logbook modifiers, item bases), each entry carrying the
-    # line the game prints with '#' where a roll goes. Regenerated from a local
-    # Content.ggpk by tools/gen_regex_data.py; like the scarabs it has no online
-    # updater, so a new league needs a fresh run.
+    # over (map and logbook modifiers for PoE1; waystone, tablet, relic and
+    # remnant modifiers for PoE2), each entry carrying the line the game prints
+    # with '#' where a roll goes. Regenerated from a local Content.ggpk by
+    # tools/gen_regex_data.py and gen_regex_data2.py; like the scarabs neither has
+    # an online updater, so a new league needs a fresh run.
+    # BOTH files ship: the panel loads every catalogue it finds and labels each
+    # page with its game, so a PoE1 player can still read the PoE2 list.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe2.json" DESTINATION "Data")
+    # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
+    # which is gitignored and has no install rule -- so a `cmake --install` into a
+    # fresh prefix, or any cleanup of dist\, silently lost it. Nothing reported the
+    # loss either: the launcher falls through ResolveFontPath to the next candidate
+    # and the engine to its CJK fallback, so the first symptom is missing glyphs on
+    # someone else's machine. host/data/fonts/ is now the single source, mirrored by
+    # the sha256 assertion in tools/package_release.ps1.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/NotoSansTC-Regular.ttf" DESTINATION "Fonts")
 endif ()
 
 

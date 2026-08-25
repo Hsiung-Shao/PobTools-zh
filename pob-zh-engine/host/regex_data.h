@@ -26,9 +26,9 @@ struct RegexPageDef {
 	std::string id;
 	std::string title;
 	// "poe1" / "poe2". A page belongs to the game whose file it came from, and
-	// the launcher's current game only decides the ORDER: a PoE1 map-modifier
-	// list is still the right answer for someone who happens to have PoE2
-	// selected, as long as the label says which game it is.
+	// the launcher's current game only decides the ORDER: both catalogues stay
+	// visible, because someone with PoE2 selected may still want to look up a
+	// PoE1 map modifier, as long as the label says which game it is.
 	std::string game;
 	std::string note;
 	int limit = 250;                 // the client's search field, in characters

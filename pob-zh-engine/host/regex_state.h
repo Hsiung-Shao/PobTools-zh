@@ -27,6 +27,11 @@
 struct RegexBookmark {
 	std::string name;
 	std::string page;                  // page id, e.g. "map_mods"
+	// "poe1" / "poe2". Derivable from the page id today, and stored anyway: the
+	// bookmark list is filtered by game, and a bookmark whose page has since
+	// been retired would otherwise have nowhere to be shown -- which is how
+	// user data disappears without anyone deciding to delete it.
+	std::string game;
 	std::string mode = "any";          // any | all | none
 	// Which language the query was built from when this was saved. Stored so
 	// loading a bookmark gives back the string the player actually copied: the
@@ -44,6 +49,7 @@ struct RegexPagePicks {
 };
 
 struct RegexUiState {
+	std::string game;                  // "poe1" / "poe2"; empty = use the launcher's
 	std::string page;                  // the list that was showing
 	std::string mode = "any";
 	std::string lang = "zh";           // which language the query is built from

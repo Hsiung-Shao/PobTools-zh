@@ -14,6 +14,7 @@ PobTools/
 |-- pob-zh-engine/                 PobTools desktop app and translation engine
 |   |-- host/                      Launcher, editors, atlas planner, shared UI theme
 |   |   `-- data/                  Prebuilt runtime data (translated dictionaries, trees)
+|   |       `-- fonts/             Shipped CJK font (installed to Fonts/ beside the exe)
 |   |-- engine/                    SimpleGraphic-derived Lua host
 |   |-- translate/                 Runtime translation lookup and hooks
 |   |-- dep/                       Vendored build dependencies (glm, compressonator, ...)
@@ -30,6 +31,7 @@ PobTools/
 - `pob-zh-engine/host/filter_editor.cpp` and `editor_shell.cpp` own the filter editor application shell.
 - `pob-zh-engine/host/atlas_planner.cpp` owns the atlas planner window and its canvas/panel layout.
 - `pob-zh-engine/host/data/*.json` holds prebuilt runtime data (translated dictionaries, atlas/passive trees) the app loads at runtime.
+- `pob-zh-engine/host/data/fonts/` holds the shipped CJK font. `host/data/` is the single source for everything CMake installs beside the exe — editing the copy under the deployment directory is silently reverted by the next `cmake --install`.
 - `pob-zh-engine/translate/` owns runtime translation data loading and lookup.
 
 ## Documentation

@@ -20,3 +20,10 @@
 # ⚠ 這一行必須在字典第一次 commit 之前就位。先 commit 再補,CRLF 已經被正規化
 # 成 LF 存進歷史,補上之後會再產生一次整檔變動。
 pob-zh-engine/dist/Data/**/*.json -text
+
+# 字型是二進位。這台機器的 core.autocrlf=true 會把 .ttf 裡碰巧等於 0x0D 0x0A
+# 的位元組當成行尾來轉換,檔案在 checkout 之後就壞了 —— 而且壞得很安靜:
+# stb_truetype 解析失敗只會讓那個字型被跳過,fallback 鏈接手,沒有錯誤訊息。
+# dep/imgui/.gitattributes 已經替它自己的 ttf 標了 binary,根目錄這份補上
+# host/data/fonts/ 這條線。
+*.ttf binary

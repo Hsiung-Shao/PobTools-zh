@@ -44,6 +44,32 @@ local function hasCJK(s)
 	return s ~= nil and s:find("[\128-\255]") ~= nil
 end
 
+-- What a search has to match is what the user SEES, and POB's inline "^7" /
+-- "^xRRGGBB" runs are colour commands, not glyphs. Dictionary values carry them
+-- too -- "Is the enemy Shocked?" comes back as
+-- "^xFFFFFF敵人是否被^xADAA47【感電】^7?" -- so a query typed straight off the
+-- screen ("敵人是否被感電") would fall in the gap between two coloured runs and
+-- find nothing. StripEscapes is POB's own function for this; it is absent only
+-- if POB moved it, and then the raw value is still better than no value.
+local function visible(text)
+	if text == nil then return nil end
+	if type(StripEscapes) == "function" then return StripEscapes(text) end
+	return text
+end
+
+-- The two lookups, normalised to visible text. `zhDisplay` is the one that
+-- reproduces what DrawString drew; `zhRaw` is the bare dictionary hit, used
+-- where the source has been marked (gems) or where the caller wants a name
+-- rather than a rendered line.
+local function zhDisplay(text)
+	if type(PobToolsTranslateDisplay) ~= "function" then return nil end
+	return visible(PobToolsTranslateDisplay(text))
+end
+
+local function zhRaw(text)
+	return visible(PobToolsTranslate(text))
+end
+
 -- ===== source marking =====
 -- The dictionary is one flat merged map, so a bare word resolves to whichever
 -- file defined it LAST. POB stores support gems under their short name
@@ -74,6 +100,39 @@ local function wrapDrawWithSource(class, name)
 	return true
 end
 
+-- ===== constructor wrapping =====
+-- The two POB forks store a class's constructor in DIFFERENT places, and there
+-- is nothing at the call site to tell them apart:
+--
+--   PoE2 fork      newClass(name, parents..., ctorFunc)  -> class._constructor
+--                  and new() calls class._constructor(object, ...)
+--   PoE1 community newClass(name, parents...)            -> the ctor is a plain
+--                  method NAMED AFTER THE CLASS (class[className], Common.lua:185),
+--                  and _constructor does not exist anywhere in that fork.
+--
+-- The gem box widened its input filter through `class._constructor` alone, so on
+-- PoE1 that branch was simply nil and skipped in silence -- Chinese stayed
+-- unenterable while the trace still printed "patched GemSelectControl". Hence
+-- `after` runs through this helper, which reports whether it found a slot at
+-- all so a caller can fail loudly instead.
+--
+-- Patch time is right after the class file finished loading, i.e. before the
+-- first new(), so the PoE1 wrapper installed by new() (Common.lua:186) wraps
+-- OURS and its "constructor did not return a value" check still sees the
+-- original's return value, which is why `ret` is forwarded untouched.
+local function wrapConstructor(class, className, after)
+	local key = rawget(class, "_constructor") and "_constructor"
+		or (rawget(class, className) and className)
+	if not key then return false end
+	local orig = class[key]
+	class[key] = function(self, ...)
+		local ret = orig(self, ...)
+		after(self)
+		return ret
+	end
+	return true
+end
+
 -- ===== per-class patchers =====
 local PATCHES = {}
 
@@ -93,26 +152,35 @@ PATCHES["GemSelectControl"] = function(class)
 	if not wrapDrawWithSource(class, "gems") then
 		error("GemSelectControl has no Draw to wrap")
 	end
-	-- (a) input: the gem box hardcodes an ASCII-only filter ("^ %a':-"), which
-	--     strips CJK on insert. Widen it after construction (main.unicode is on
-	--     because the engine set _G.utf8).
-	local origCtor = class._constructor
-	if origCtor then
-		class._constructor = function(self, ...)
-			origCtor(self, ...)
-			if main and main.unicode then
-				self.filter = "%c"
-				self.filterPattern = "[" .. self.filter .. "]"
-			end
+	-- (a) input: the gem box hardcodes an ASCII-only filter ("^ %a':-") and
+	--     EditControl:Insert runs text:gsub(filterPattern,"") on every typed
+	--     character, so each CJK byte was deleted on the way in -- the box could
+	--     never hold a Chinese query and (b) below never had anything to match.
+	--     Widen it after construction (main.unicode is on because the engine set
+	--     _G.utf8). Fatal when no constructor slot is found: silence here is
+	--     exactly how this went unnoticed on PoE1.
+	if not wrapConstructor(class, "GemSelectControl", function(self)
+		if main and main.unicode then
+			self.filter = "%c"
+			self.filterPattern = "[" .. self.filter .. "]"
 		end
+		if traceFile then
+			log("GemSelectControl filter=" .. tostring(self.filter))
+		end
+	end) then
+		error("GemSelectControl has no constructor to wrap")
 	end
 	-- (b) search: after POB's normal (English) build, append gems whose
 	--     translated name contains the CJK query.
+	--
+	--     Under source "gems" for the same reason the Draw wrap above is: the
+	--     merged map answers "Volatility" with 易爆 (the passive), while the row
+	--     the user is looking at says 易變輔助 out of gems.json. Matching the
+	--     unmarked lookup meant typing exactly what the dropdown showed found
+	--     nothing.
 	local origBuild = class.BuildList
 	if origBuild then
-		class.BuildList = function(self, buf)
-			origBuild(self, buf)
-			if not hasCJK(buf) then return end
+		local function appendCJKMatches(self, buf)
 			local q = buf:lower()
 			-- POB leaves a single "" placeholder when the English search found nothing
 			if self.noMatches or (self.list[1] == "" and #self.list == 1) then
@@ -123,7 +191,7 @@ PATCHES["GemSelectControl"] = function(class)
 			local matchList = {}
 			for gemId, gemData in pairs(self.gems) do
 				if not seen[gemId] and gemData.name and self:FilterSupport(gemId, gemData) then
-					local ch = PobToolsTranslate(gemData.name)
+					local ch = zhRaw(gemData.name)
 					if ch and ch:lower():find(q, 1, true) then
 						t_insert(matchList, gemId)
 						seen[gemId] = true
@@ -141,6 +209,11 @@ PATCHES["GemSelectControl"] = function(class)
 				self.noMatches = true
 			end
 		end
+		class.BuildList = function(self, buf)
+			origBuild(self, buf)
+			if not hasCJK(buf) then return end
+			withSource("gems", appendCJKMatches, self, buf)
+		end
 	end
 end
 
@@ -157,12 +230,12 @@ PATCHES["PassiveTreeView"] = function(class)
 			if node and hasCJK(s) then
 				local q = s:lower()
 				if node.dn then
-					local dn = PobToolsTranslate(node.dn)
+					local dn = zhRaw(node.dn)
 					if dn and dn:lower():find(q, 1, true) then return true end
 				end
 				if node.sd then
 					for _, line in ipairs(node.sd) do
-						local t = PobToolsTranslate(line)
+						local t = zhRaw(line)
 						if t and t:lower():find(q, 1, true) then return true end
 					end
 				end
@@ -193,17 +266,126 @@ PATCHES["NotableDBControl"] = function(class)
 			local q = buf:lower()
 			local mode = self.controls.searchMode and self.controls.searchMode.selIndex or 1
 			if (mode == 1 or mode == 2) and node.dn then
-				local dn = PobToolsTranslate(node.dn)
+				local dn = zhRaw(node.dn)
 				if dn and dn:lower():find(q, 1, true) then return true end
 			end
 			if (mode == 1 or mode == 3) and node.sd then
 				for _, line in ipairs(node.sd) do
-					local t = PobToolsTranslate(line)
+					local t = zhRaw(line)
 					if t and t:lower():find(q, 1, true) then return true end
 				end
 			end
 			return false
 		end
+	end
+end
+
+-- Item database (Uniques / Rare templates): match the CJK query against the
+-- translated item name AND the translated modifier lines. Same probe-the-
+-- original-with-an-empty-query shape as the notable popup above, because
+-- DoesItemMatchFilters mixes eligibility (slot, type, league, obtainable,
+-- requirements) with the text search in one boolean.
+--
+-- The name half used to live in a C++ source patch on itemdbcontrol.lua; it is
+-- here now so one function owns the whole rule. The mod-line half never existed,
+-- which is why searching a Chinese affix returned nothing while searching a
+-- Chinese item name worked.
+PATCHES["ItemDBControl"] = function(class)
+	if type(PobToolsTranslateDisplay) ~= "function" then
+		error("PobToolsTranslateDisplay unavailable (engine too old)")
+	end
+	local orig = class.DoesItemMatchFilters
+	if not orig then error("ItemDBControl has no DoesItemMatchFilters to wrap") end
+	-- Every mod-line table the two forks keep. PoE2 added runeModLines and PoE1
+	-- has no such field, so a name that is absent is skipped rather than assumed.
+	local MOD_LINE_FIELDS = { "enchantModLines", "runeModLines", "implicitModLines", "explicitModLines" }
+	class.DoesItemMatchFilters = function(self, item)
+		local search = self.controls and self.controls.search
+		local buf = search and search.buf
+		if not hasCJK(buf) then
+			return orig(self, item)
+		end
+		search.buf = ""
+		local ok, eligible = pcall(orig, self, item)
+		search.buf = buf
+		if not ok or not eligible then return false end
+		local q = buf:lower()
+		local mode = self.controls.searchMode and self.controls.searchMode.selIndex or 1
+		if (mode == 1 or mode == 2) and item.name then
+			-- Display first: the list row is drawn as colorCode .. item.name and
+			-- goes through the same tr_display, so this is literally the text on
+			-- screen. The bare lookup is the fallback for names the display path
+			-- returns unchanged.
+			local zh = zhDisplay(item.name) or zhRaw(item.name)
+			if zh and zh:lower():find(q, 1, true) then return true end
+		end
+		if mode == 1 or mode == 3 then
+			for _, field in ipairs(MOD_LINE_FIELDS) do
+				local lines = item[field]
+				if lines then
+					for _, line in pairs(lines) do
+						local t = line.line and zhDisplay(line.line)
+						if t and t:lower():find(q, 1, true) then return true end
+					end
+				end
+			end
+		end
+		return false
+	end
+end
+
+-- Minion list search (spectres, and the minion pickers): match the CJK query
+-- against the translated minion name and its skill names.
+--
+-- The searchStr the caller passes has already been pattern-escaped, so the raw
+-- box is read instead -- a plain find on what the user actually typed.
+PATCHES["MinionSearchListControl"] = function(class)
+	if type(PobToolsTranslateDisplay) ~= "function" then
+		error("PobToolsTranslateDisplay unavailable (engine too old)")
+	end
+	local orig = class.DoesEntryMatchFilters
+	if not orig then error("MinionSearchListControl has no DoesEntryMatchFilters to wrap") end
+	class.DoesEntryMatchFilters = function(self, searchStr, minionId, filterMode)
+		if orig(self, searchStr, minionId, filterMode) then return true end
+		local search = self.controls and self.controls.searchText
+		local buf = search and search.buf
+		if not hasCJK(buf) then return false end
+		local minion = self.data and self.data.minions and self.data.minions[minionId]
+		if not minion then return false end
+		local q = buf:lower()
+		-- dropdown is { "Names", "Skills", "Both" }
+		if (filterMode == 1 or filterMode == 3) and minion.name then
+			local zh = zhDisplay(minion.name)
+			if zh and zh:lower():find(q, 1, true) then return true end
+		end
+		if (filterMode == 2 or filterMode == 3) and minion.skillList then
+			for _, skillId in ipairs(minion.skillList) do
+				local skill = self.data.skills and self.data.skills[skillId]
+				local zh = skill and skill.name and zhDisplay(skill.name)
+				if zh and zh:lower():find(q, 1, true) then return true end
+			end
+		end
+		return false
+	end
+end
+
+-- Calcs tab search box: it highlights sections and rows whose label matches, so
+-- the whole feature is one predicate over a label. Additive -- an English match
+-- is still an English match, the translated text is just also considered.
+PATCHES["CalcsTab"] = function(class)
+	if type(PobToolsTranslateDisplay) ~= "function" then
+		error("PobToolsTranslateDisplay unavailable (engine too old)")
+	end
+	local orig = class.SearchMatch
+	if not orig then error("CalcsTab has no SearchMatch to wrap") end
+	class.SearchMatch = function(self, txt)
+		local search = self.controls and self.controls.search
+		local buf = search and search.buf
+		if type(txt) == "string" and hasCJK(buf) then
+			local zh = zhDisplay(txt)
+			if zh and zh:lower():find(buf:lower(), 1, true) then return true end
+		end
+		return orig(self, txt)
 	end
 end
 
@@ -225,7 +407,7 @@ PATCHES["SearchHost"] = function(class)
 				local info = self.searchInfos[idx]
 				if info and not info.matches then
 					local value = self.valueAccessor and self.valueAccessor(entry) or entry
-					local zh = type(value) == "string" and PobToolsTranslate(value) or nil
+					local zh = type(value) == "string" and zhRaw(value) or nil
 					if zh and zh:lower():find(q, 1, true) then
 						info.matches = true
 						info.ranges = {}

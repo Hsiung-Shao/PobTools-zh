@@ -2023,23 +2023,40 @@ struct PobToolsSourcePatch {
 	const char* replaceWith;
 };
 static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
-	// Item DB search (Uniques/Bases lists): append the Traditional-Chinese
-	// display name so typing the visible translated name matches too. The
-	// '\n' separator prevents cross-boundary matches (search strings never
-	// contain a newline).
-	{ "itemdbcontrol.lua",
-	  "local searchName = item.name:lower()",
-	  " if PobToolsTranslate then local _ptzh = PobToolsTranslate(item.name) "
-	  "if _ptzh and _ptzh ~= item.name then searchName = searchName .. \"\\n\" .. _ptzh:lower() end end" },
+	// (Item DB search used to have two patches here, one per fork, that widened
+	// the item NAME only. The whole rule -- name AND modifier lines, both forks --
+	// now lives in one place, the ItemDBControl patch in poecharm_inject.lua:
+	// DoesItemMatchFilters is a plain method, so it needs no source surgery, and
+	// splitting one predicate across two mechanisms is how the modifier half
+	// went missing for as long as it did.)
 
-	// Same feature, PoE2's rewrite of the same control: it matches item.name
-	// inline instead of building a searchName, so the PoE1 anchor finds nothing
-	// there and Chinese item-DB search had never worked in PoE2 at all. Each
-	// anchor matches in exactly one of the two folders and is skipped in the
-	// other, so both can sit here under the same file name.
-	{ "itemdbcontrol.lua",
-	  "string.matchOrPattern, item.name:lower()",
-	  " .. \"\\n\" .. (((PobToolsTranslate and PobToolsTranslate(item.name)) or \"\"):lower())" },
+	// Config tab option search: the predicate is a local closure, not a method,
+	// so it cannot be reached from poecharm_inject.lua. It matches the option's
+	// English label while the screen shows the translated one, so a Chinese query
+	// hid every option. Append the translation as a second line of the haystack.
+	//
+	// Guarded on the query actually containing a non-ASCII byte: this runs once
+	// per config option per rebuild, and an English search should not pay for it.
+	// StripEscapes on the RESULT, not just the input: several of these values
+	// come back coloured ("Is the enemy Shocked?" is three coloured runs), and a
+	// query typed off the screen would otherwise straddle an escape and miss.
+	{ "configtab.lua",
+	  "local label = StripEscapes(varData.label or \"\"):lower()",
+	  " if PobToolsTranslateDisplay and searchStr:find(\"[\\128-\\255]\") then "
+	  "local _ptzh = PobToolsTranslateDisplay(StripEscapes(varData.label or \"\")) "
+	  "if _ptzh then label = label .. \"\\n\" .. StripEscapes(_ptzh):lower() end end" },
+
+	// "Add modifier" popup on the custom-modifier block: same problem, same
+	// shape, different closure (fuzzyScore). Only its rank-1 branch -- a plain
+	// substring find -- can match Chinese; the other two branches split on %w+,
+	// which never matches a CJK byte. That is enough: rank 1 is the exact
+	// "type what you see" case. PoE2 has no such popup, so the anchor simply
+	// finds nothing there.
+	{ "configtab.lua",
+	  "local modLower = modText:lower()",
+	  " if PobToolsTranslateDisplay and searchStr:find(\"[\\128-\\255]\") then "
+	  "local _ptzh = PobToolsTranslateDisplay(modText) "
+	  "if _ptzh then modLower = modLower .. \"\\n\" .. StripEscapes(_ptzh):lower() end end" },
 
 	// Item tooltip title. The item LISTS draw "<title>, <base type>", and the
 	// base type is what proves the string is an item name -- see the comma path

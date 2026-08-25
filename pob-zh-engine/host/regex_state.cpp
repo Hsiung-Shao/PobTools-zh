@@ -68,6 +68,11 @@ bool RegexUiState::Load(const std::wstring& exeDir)
 	if (!ReadAll(StatePath(exeDir), body)) return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);
+		// Empty is a real value here: it means "no choice recorded yet", and the
+		// panel answers it with the launcher's game. OneOf() would turn that into
+		// a wrong answer that looks like a decision.
+		game = doc.value("game", std::string());
+		if (game != "poe1" && game != "poe2") game.clear();
 		page = doc.value("page", std::string());
 		mode = OneOf(doc.value("mode", std::string("any")), "any", "all", "none");
 		lang = OneOf(doc.value("lang", std::string("zh")), "zh", "en", nullptr);
@@ -95,6 +100,11 @@ bool RegexUiState::Load(const std::wstring& exeDir)
 				RegexBookmark rec;
 				rec.name = b.value("name", std::string());
 				rec.page = b.value("page", std::string());
+				// Absent in files written before the list was split by game. Left
+				// empty for the panel to fill in from the page id, which is the only
+				// place that knows which catalogue a page came from.
+				rec.game = b.value("game", std::string());
+				if (rec.game != "poe1" && rec.game != "poe2") rec.game.clear();
 				rec.mode = OneOf(b.value("mode", std::string("any")), "any", "all", "none");
 				rec.lang = OneOf(b.value("lang", std::string("zh")), "zh", "en", nullptr);
 				rec.keys = StringArray(b, "keys");
@@ -121,6 +131,7 @@ bool RegexUiState::Save(const std::wstring& exeDir) const
 
 	ordered_json doc;
 	doc["schema"] = 1;
+	doc["game"] = game;
 	doc["page"] = page;
 	doc["mode"] = mode;
 	doc["lang"] = lang;
@@ -140,6 +151,7 @@ bool RegexUiState::Save(const std::wstring& exeDir) const
 		ordered_json o;
 		o["name"] = b.name;
 		o["page"] = b.page;
+		o["game"] = b.game;
 		o["mode"] = b.mode;
 		o["lang"] = b.lang;
 		o["keys"] = b.keys;

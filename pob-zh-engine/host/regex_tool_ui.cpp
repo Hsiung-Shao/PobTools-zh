@@ -20,10 +20,14 @@
 // those and nothing else, paste it into the game's search box.
 //
 // The panel owns no knowledge of what a map modifier is. It shows the pages the
-// data file happens to contain, and everything about picking tokens lives in
-// regex_gen. The one thing it does add is the last page, 自訂清單, where the
-// corpus is whatever the player pasted -- the same machinery pointed at a list
-// the tool has never seen.
+// data files happen to contain, and everything about picking tokens lives in
+// regex_gen.
+//
+// Choosing is two-level: the game first, then that game's list. PoE1 and PoE2
+// have nothing to say to each other -- a waystone modifier is not a candidate
+// for a map search and vice versa -- so a flat list of every page with the game
+// spelled out in each label was one reading step where there should be none. The
+// bookmark list follows the same selector for the same reason.
 //
 // A row shows the line in the language the query is being built from, and -- when
 // the bilingual switch is on -- the other language underneath it. Which language
@@ -116,14 +120,15 @@ struct PageState {
 	bool filterDirty = true;
 };
 
-// The synthetic last page. Its corpus is the text the player pasted, one entry
-// per line, so the tool works on lists nobody has extracted yet -- divination
-// cards, a guild's buy list, whatever is in front of them.
-constexpr const char* kCustomPageTitle = u8"自訂清單";
-constexpr const char* kCustomPageNote =
-	u8"一行一個候選字串。勾選要找的那幾行，產生的字串保證只中勾選的行、不中其他行。"
-	u8"數字請寫成 #，代表遊戲會填入一個數值。";
-constexpr const char* kCustomPageId = "__custom";
+// The panel is two-level: pick the game, then the list. Both games' catalogues
+// are loaded, and every page belongs to exactly one of them, so this is the only
+// vocabulary the selector needs.
+constexpr const char* kGames[2] = {"poe1", "poe2"};
+
+const char* GameLabel(const std::string& g)
+{
+	return g == "poe2" ? "PoE2" : "PoE1";
+}
 
 // Which modal wants to open. Raised by a button deep inside a child window and
 // acted on at the top level, because OpenPopup and BeginPopupModal have to be
@@ -138,10 +143,18 @@ public:
 		exeDir_ = h.exeDir;
 		game_ = h.game.empty() ? std::wstring(L"poe1") : h.game;
 		dataOk_ = data_.Load(exeDir_, game_, &dataErr_);
-		ownGame_ = data_.HasGame(NarrowAscii(game_));
-		pages_.resize(data_.Pages().size() + 1);   // + the custom page
+		pages_.resize(data_.Pages().size());
 		for (size_t i = 0; i < data_.Pages().size(); i++)
 			pages_[i].picked.assign(data_.Pages()[i].entries.size(), 0);
+		// The launcher's game is the opening answer, but only if it has a
+		// catalogue: offering an empty PoE2 tab to someone whose Data folder
+		// predates it would be a dead end, not information.
+		selGame_ = NarrowAscii(game_);
+		if (!data_.HasGame(selGame_)) {
+			selGame_.clear();
+			for (const char* g : kGames)
+				if (selGame_.empty() && data_.HasGame(g)) selGame_ = g;
+		}
 
 		state_.Load(exeDir_);   // a fresh install has no file; the defaults are fine
 		restoreState();
@@ -156,21 +169,22 @@ public:
 	{
 		if (!dataOk_) {
 			ImGui::TextColored(kBad, u8"搜尋字串資料載入失敗：%s", dataErr_.c_str());
-			ImGui::TextDisabled(u8"「自訂清單」不需要資料檔，仍可使用。");
-			ImGui::Dummy(ImVec2(0, 8));
+			ImGui::TextDisabled(u8"請確認安裝目錄的 Data 底下有 regex_poe1.json / regex_poe2.json。");
+			return;
 		}
-		// No banner when the launcher's game has no list of its own. The page
-		// labels still carry "（PoE1）" in that case, which is the part that
-		// actually prevents a PoE2 player from mistaking the list for theirs.
-
 		drawHeader();
 		ImGui::Separator();
+		// Guarded because every panel below reaches for the current page. Load()
+		// having succeeded does not promise a page survived the entry filter.
+		if (!hasPage()) {
+			ImGui::TextColored(kWarn, u8"這個版本沒有任何可用的清單。");
+			return;
+		}
 
 		const float avail = ImGui::GetContentRegionAvail().x;
 		const float leftW = std::max(340.0f, avail * 0.54f);
 		ImGui::BeginChild("##rx_left", ImVec2(leftW, 0), false);
-		if (onCustom()) drawCustomSource();
-		else drawList();
+		drawList();
 		ImGui::EndChild();
 		ImGui::SameLine();
 		ImGui::BeginChild("##rx_right", ImVec2(0, 0), false);
@@ -211,23 +225,39 @@ public:
 	const char* PanelId() const override { return "regex"; }
 
 private:
-	int customIdx() const { return (int)data_.Pages().size(); }
-	bool onCustom() const { return page_ == customIdx(); }
+	bool hasPage() const { return page_ >= 0 && page_ < (int)data_.Pages().size(); }
 	PageState& st() { return pages_[page_]; }
 	const PageState& st() const { return pages_[page_]; }
 
-	// The entries of whatever page is showing. The custom page has no data-file
-	// entries, so it keeps its own vector built from the pasted text.
 	const std::vector<RegexEntryDef>& entries() const
 	{
-		return onCustom() ? customEntries_ : data_.Pages()[page_].entries;
+		return data_.Pages()[page_].entries;
 	}
 	const std::vector<std::string>& groups() const
 	{
-		static const std::vector<std::string> none;
-		return onCustom() ? none : data_.Pages()[page_].groups;
+		return data_.Pages()[page_].groups;
 	}
-	int limit() const { return onCustom() ? 250 : data_.Pages()[page_].limit; }
+	int limit() const { return data_.Pages()[page_].limit; }
+
+	// ---- games ---------------------------------------------------------------
+
+	// The first page of a game, or -1. Also the answer to "does this game have a
+	// catalogue at all", which is why the caller never asks that separately.
+	int firstPageOf(const std::string& g) const
+	{
+		for (size_t i = 0; i < data_.Pages().size(); i++)
+			if (data_.Pages()[i].game == g) return (int)i;
+		return -1;
+	}
+	// Which game a page id belongs to; empty when no loaded catalogue has it.
+	// That case is a bookmark saved against a list this build no longer ships,
+	// and it is reported rather than quietly filed under one of the games.
+	std::string gameOfPage(const std::string& id) const
+	{
+		for (const RegexPageDef& p : data_.Pages())
+			if (p.id == id) return p.game;
+		return std::string();
+	}
 
 	// Every page's corpus is language-specific, so switching language throws them
 	// all away rather than only the one on screen: coming back to a page whose
@@ -242,20 +272,10 @@ private:
 	}
 	std::string pageId() const
 	{
-		return onCustom() ? std::string(kCustomPageId) : data_.Pages()[page_].id;
-	}
-
-	// The game tag is appended only when it is NOT the launcher's game: on a
-	// matching install every page would carry the same suffix, which is noise.
-	std::string pageLabel(int i) const
-	{
-		const RegexPageDef& p = data_.Pages()[i];
-		if (ownGame_ || p.game.empty()) return p.title;
-		return p.title + (p.game == "poe2" ? u8"（PoE2）" : u8"（PoE1）");
+		return hasPage() ? data_.Pages()[page_].id : std::string();
 	}
 	std::string pageTitleById(const std::string& id) const
 	{
-		if (id == kCustomPageId) return kCustomPageTitle;
 		for (const RegexPageDef& p : data_.Pages())
 			if (p.id == id) return p.title;
 		return id;
@@ -272,10 +292,27 @@ private:
 
 	void restoreState()
 	{
+		// The remembered game wins over the launcher's, but only if it still has
+		// a catalogue; otherwise Init's answer stands.
+		if (!state_.game.empty() && data_.HasGame(state_.game)) selGame_ = state_.game;
+		page_ = firstPageOf(selGame_);
 		for (size_t i = 0; i < data_.Pages().size(); i++)
-			if (data_.Pages()[i].id == state_.page) page_ = (int)i;
-		if (state_.page == kCustomPageId) page_ = customIdx();
+			if (data_.Pages()[i].id == state_.page && data_.Pages()[i].game == selGame_)
+				page_ = (int)i;
 		mode_ = ModeFromId(state_.mode);
+
+		// Bookmarks written before the split carry no game. Filling it in from
+		// the page id -- and writing it back -- is what keeps them visible: the
+		// list is filtered by game, and an unfilled one would have no column to
+		// appear in. One that names a page this build no longer ships stays
+		// empty on purpose and is counted in the panel instead of vanishing.
+		for (RegexBookmark& b : state_.bookmarks) {
+			if (!b.game.empty()) continue;
+			const std::string g = gameOfPage(b.page);
+			if (g.empty()) continue;
+			b.game = g;
+			stateDirty_ = true;
+		}
 
 		int missedTotal = 0;
 		std::string firstPage;
@@ -342,9 +379,9 @@ private:
 		st().dirty = true;
 		st().filterDirty = true;   // ticked rows move to the top; see refreshFilter
 		copied_ = false;
-		if (onCustom()) return;   // a pasted list is not worth carrying to next run
 		RegexPagePicks& p = state_.PicksFor(pageId());
 		collectKeys(p.keys, p.alt);
+		state_.game = selGame_;
 		state_.page = pageId();
 		state_.mode = modeId();
 		stateDirty_ = true;
@@ -354,14 +391,26 @@ private:
 
 	void drawHeader()
 	{
-		ImGui::SetNextItemWidth(240 * host_->scale);
-		const std::string cur = onCustom() ? kCustomPageTitle : pageLabel(page_);
-		if (ImGui::BeginCombo(u8"清單", cur.c_str())) {
+		// Game first, then that game's list. A game with no catalogue is not
+		// offered at all: a selectable option that leads to an empty panel is
+		// worse than not seeing it, and --regex-selftest fails when either file
+		// is missing from the install, so this cannot hide a packaging mistake.
+		ImGui::SetNextItemWidth(88 * host_->scale);
+		if (ImGui::BeginCombo(u8"遊戲", GameLabel(selGame_))) {
+			for (const char* g : kGames) {
+				if (firstPageOf(g) < 0) continue;
+				if (ImGui::Selectable(GameLabel(g), selGame_ == g)) switchGame(g);
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine(0, 16 * host_->scale);
+		ImGui::SetNextItemWidth(170 * host_->scale);
+		if (ImGui::BeginCombo(u8"清單", data_.Pages()[page_].title.c_str())) {
 			for (size_t i = 0; i < data_.Pages().size(); i++) {
-				if (ImGui::Selectable(pageLabel((int)i).c_str(), page_ == (int)i))
+				if (data_.Pages()[i].game != selGame_) continue;
+				if (ImGui::Selectable(data_.Pages()[i].title.c_str(), page_ == (int)i))
 					switchPage((int)i);
 			}
-			if (ImGui::Selectable(kCustomPageTitle, onCustom())) switchPage(customIdx());
 			ImGui::EndCombo();
 		}
 		ImGui::SameLine(0, 24 * host_->scale);
@@ -394,7 +443,12 @@ private:
 			const float w = ImGui::GetFrameHeight() +
 			                ImGui::GetStyle().ItemInnerSpacing.x +
 			                ImGui::CalcTextSize(label).x;
-			ImGui::SameLine(ImGui::GetContentRegionMax().x - w);
+			// Right-aligned, but never to the left of where the row already is:
+			// a narrow window would otherwise draw this on top of the mode radios
+			// instead of wrapping, and an overlap reads as a rendering bug.
+			ImGui::SameLine();
+			const float after = ImGui::GetCursorPosX();
+			ImGui::SameLine(std::max(after, ImGui::GetContentRegionMax().x - w));
 			if (ImGui::Checkbox(label, &bilingual_)) {
 				state_.bilingual = bilingual_;
 				stateDirty_ = true;
@@ -403,7 +457,7 @@ private:
 				ImGui::SetTooltip(u8"在每一列下面加上另一種語言的原文");
 		}
 
-		const std::string& note = onCustom() ? customNote_ : data_.Pages()[page_].note;
+		const std::string& note = data_.Pages()[page_].note;
 		if (!note.empty()) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 			ImGui::TextWrapped("%s", note.c_str());
@@ -416,17 +470,6 @@ private:
 		int n = 0;
 		for (char c : st().picked) n += c ? 1 : 0;
 		return n;
-	}
-
-	void drawCustomSource()
-	{
-		ImGui::TextDisabled(u8"候選清單（一行一個）");
-		const ImVec2 boxSize(-1, ImGui::GetContentRegionAvail().y * 0.38f);
-		if (ImGui::InputTextMultiline("##rx_custom", &customText_, boxSize))
-			customTextDirty_ = true;
-		if (customTextDirty_) rebuildCustom();
-		ImGui::Separator();
-		drawList();
 	}
 
 	// ---- the list ------------------------------------------------------------
@@ -661,8 +704,15 @@ private:
 
 	void drawBookmarks()
 	{
+		int mine = 0, elsewhere = 0, orphans = 0;
+		for (const RegexBookmark& b : state_.bookmarks) {
+			if (b.game.empty()) orphans++;
+			else if (b.game == selGame_) mine++;
+			else elsewhere++;
+		}
+
 		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled(u8"書籤");
+		ImGui::TextDisabled(u8"書籤（%s）", GameLabel(selGame_));
 		ImGui::SameLine();
 		const int picks = pickCount();
 		ImGui::BeginDisabled(picks == 0);
@@ -675,17 +725,34 @@ private:
 		if (picks == 0 && ImGui::IsItemHovered())
 			ImGui::SetTooltip(u8"先勾選幾項才有東西可以存");
 
-		if (state_.bookmarks.empty()) {
+		// The other game's bookmarks are hidden, not gone. Saying how many there
+		// are is the difference between a filter and a bookmark that looks lost.
+		if (elsewhere > 0) {
+			const std::string other = (selGame_ == "poe2") ? "poe1" : "poe2";
+			const std::string msg = std::string(GameLabel(other)) + u8" 還有 " +
+			                        std::to_string(elsewhere) + u8" 筆";
+			const float w = ImGui::CalcTextSize(msg.c_str()).x;
+			ImGui::SameLine(ImGui::GetContentRegionMax().x - w);
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped(u8"還沒有書籤。勾好一組常用的詞綴後按「存成書籤」，"
-			                   u8"下次可以直接叫回來。");
+			ImGui::TextUnformatted(msg.c_str());
 			ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"切換上方的遊戲就看得到");
+		}
+
+		if (mine == 0) {
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextWrapped(u8"%s 還沒有書籤。勾好一組常用的詞綴後按「存成書籤」，"
+			                   u8"下次可以直接叫回來。", GameLabel(selGame_));
+			ImGui::PopStyleColor();
+			drawOrphanNote(orphans);
 			return;
 		}
 
 		ImGui::BeginChild("##rx_bm", ImVec2(0, 0), true);
 		for (int i = 0; i < (int)state_.bookmarks.size(); i++) {
 			const RegexBookmark& b = state_.bookmarks[i];
+			if (b.game != selGame_) continue;
 			ImGui::PushID(i);
 			ImGui::TextUnformatted(b.name.c_str());
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
@@ -715,7 +782,22 @@ private:
 			ImGui::Separator();
 			ImGui::PopID();
 		}
+		drawOrphanNote(orphans);
 		ImGui::EndChild();
+	}
+
+	// A bookmark whose page id belongs to no loaded catalogue -- saved against a
+	// list this build dropped, or against a Data file that is not installed. It
+	// is still in regex_ui.json and still written back on every save; what it has
+	// lost is a game to be filed under, so it is counted here rather than shown
+	// as a row that no button could act on.
+	void drawOrphanNote(int orphans)
+	{
+		if (orphans <= 0) return;
+		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+		ImGui::TextWrapped(u8"另有 %d 筆書籤存在這個版本沒有的清單上，沒有顯示"
+		                   u8"（資料仍保留在 PobTools\regex_ui.json）。", orphans);
+		ImGui::PopStyleColor();
 	}
 
 	void loadBookmark(int i)
@@ -728,12 +810,16 @@ private:
 		int target = -1;
 		for (size_t p = 0; p < data_.Pages().size(); p++)
 			if (data_.Pages()[p].id == b.page) target = (int)p;
-		if (target < 0 && b.page == kCustomPageId) target = customIdx();
 		if (target < 0) {
 			notice_ = u8"書籤「" + b.name + u8"」的清單「" + pageTitleById(b.page) +
 			          u8"」在這個版本不存在，沒有載入。";
 			return;
 		}
+		// The list is filtered by game, so this normally already matches; it is
+		// spelled out anyway because a bookmark carries its own game and loading
+		// one must never leave the selector pointing somewhere else.
+		selGame_ = data_.Pages()[target].game;
+		state_.game = selGame_;
 		switchPage(target);
 		mode_ = ModeFromId(b.mode);
 		state_.mode = modeId();
@@ -758,6 +844,7 @@ private:
 		}
 		RegexBookmark& b = state_.bookmarks[i];
 		b.page = pageId();
+		b.game = selGame_;
 		b.mode = modeId();
 		b.lang = (lang_ == Lang::En) ? "en" : "zh";
 		b.keys = std::move(keys);
@@ -834,6 +921,7 @@ private:
 			RegexBookmark b;
 			b.name = nameBuf_;
 			b.page = pageId();
+			b.game = selGame_;
 			b.mode = modeId();
 			b.lang = (lang_ == Lang::En) ? "en" : "zh";
 			collectKeys(b.keys, b.alt);
@@ -850,7 +938,6 @@ private:
 
 	bool pageHasT17()
 	{
-		if (onCustom()) return false;
 		if (t17Cache_ != page_) {
 			t17Cache_ = page_;
 			t17Present_ = false;
@@ -877,7 +964,21 @@ private:
 		copied_ = false;
 		st().filterDirty = true;
 		st().dirty = true;
+		state_.game = selGame_;
 		state_.page = pageId();
+		stateDirty_ = true;
+	}
+
+	// Moving to a game moves to its first list. Nothing is thrown away: every
+	// page keeps its own ticks, so coming back finds the work where it was left.
+	void switchGame(const std::string& g)
+	{
+		if (g == selGame_) return;
+		const int first = firstPageOf(g);
+		if (first < 0) return;
+		selGame_ = g;
+		switchPage(first);
+		state_.game = selGame_;
 		stateDirty_ = true;
 	}
 
@@ -955,39 +1056,12 @@ private:
 		s.dirty = false;
 	}
 
-	void rebuildCustom()
-	{
-		customTextDirty_ = false;
-		customEntries_.clear();
-		size_t start = 0;
-		for (size_t i = 0; i <= customText_.size(); i++) {
-			if (i != customText_.size() && customText_[i] != '\n') continue;
-			std::string line = customText_.substr(start, i - start);
-			start = i + 1;
-			while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-			size_t b = line.find_first_not_of(' ');
-			if (b == std::string::npos) continue;
-			line = line.substr(b);
-			RegexEntryDef d;
-			d.id = line;
-			d.zh.push_back(line);
-			customEntries_.push_back(std::move(d));
-		}
-		PageState& s = pages_[customIdx()];
-		// Ticks are keyed by position here, so a changed list has to drop them
-		// rather than silently move them onto different lines.
-		s.picked.assign(customEntries_.size(), 0);
-		s.corpusReady = false;
-		s.filterDirty = true;
-		s.dirty = true;
-	}
-
 	const ToolPanelHost* host_ = nullptr;
 	std::wstring exeDir_, game_;
 	RegexDataset data_;
 	bool dataOk_ = false;
-	bool ownGame_ = false;      // a catalogue exists for the launcher's game
 	std::string dataErr_;
+	std::string selGame_ = "poe1";   // which game's lists are showing
 
 	RegexUiState state_;
 	bool stateDirty_ = false;
@@ -997,11 +1071,6 @@ private:
 	RegexGen::Mode mode_ = RegexGen::Mode::Any;
 	Lang lang_ = Lang::Zh;
 	bool bilingual_ = true;
-
-	std::vector<RegexEntryDef> customEntries_;
-	std::string customText_;
-	std::string customNote_ = kCustomPageNote;
-	bool customTextDirty_ = false;
 
 	Modal modal_ = Modal::None;
 	bool renameMode_ = false;

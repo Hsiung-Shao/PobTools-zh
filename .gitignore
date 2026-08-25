@@ -105,10 +105,35 @@ pob-zh-engine/tools/
 /filter/
 /icon/
 /CLAUDE.md
+# 發版 SOP skill。與 CLAUDE.md 同性質:維護者流程(發布內部細節、簽章私鑰放在哪、
+# -Force 的使用時機),只留本地,不進公開 repo。
+/.claude/skills/
 /.vscode/
 /docs/analysis/
 /docs/notes/
 /remove/
+
+# --- Secrets(防呆:repo 裡永遠不該出現這些)-----------------
+# 發佈簽章的私鑰放在 %USERPROFILE%\.pobtools\ —— 結構上就不在 repo 裡,`git add -A`
+# 帶不走。這一段是第二道防線:哪天有人為了「方便」把 .key 複製進工作目錄、或某個
+# 腳本把它寫到 repo 底下,git 也不會收。⚠ 兩把私鑰都遺失 = 所有已安裝客戶端永久
+# 失去自動更新,但**外流**比遺失更糟 —— 拿到私鑰的人可以簽出一份會被全體客戶端
+# 信任的假更新。
+#
+# 公鑰是另一回事:host/update_pubkeys.h 本來就編進出貨的 exe,公開是它的用途。
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+.pobtools/
+# 常見的憑證/環境變數外洩形狀
+.env
+.env.*
+!.env.example
+secrets.json
+*_secret*
+*.credentials
 
 # --- Misc --------------------------------------------------
 node_modules/

@@ -1,0 +1,2264 @@
+{
+ "schema": 1,
+ "game": "poe2",
+ "source": "PoE2 GGPK Mods/Stats/Tags + tools/ggpk2_zh/out/poe2/stats.json",
+ "pages": [
+  {
+   "id": "waystone_mods",
+   "title": "換界石詞綴",
+   "titleEn": "Waystone modifiers",
+   "note": "勾選要找的詞綴，把產生的字串貼進倉庫搜尋列。不會誤中的保證只涵蓋這份清單裡的其他詞綴。",
+   "limit": 250,
+   "groups": [
+    "前綴",
+    "後綴",
+    "前後綴皆有"
+   ],
+   "groupsEn": [
+    "Prefix",
+    "Suffix",
+    "Both"
+   ],
+   "entries": [
+    {
+     "id": "MapMonsterCritIncrease1",
+     "zh": [
+      "#%怪物暴擊傷害加成"
+     ],
+     "en": [
+      "Monsters have #% Critical Damage Bonus"
+     ],
+     "g": 0,
+     "affixZh": "毀滅的"
+    },
+    {
+     "id": "MapMonsterLifeIncrease1",
+     "zh": [
+      "#%更多怪物生命"
+     ],
+     "en": [
+      "#% more Monster Life"
+     ],
+     "g": 0,
+     "affixZh": "強韌的"
+    },
+    {
+     "id": "MapMonsterDamageIncrease1",
+     "zh": [
+      "增加#%怪物傷害"
+     ],
+     "en": [
+      "#% increased Monster Damage"
+     ],
+     "g": 0,
+     "affixZh": "痛苦的"
+    },
+    {
+     "id": "MapMonsterStunBuildup1",
+     "zh": [
+      "增加#%怪物的暈眩累積"
+     ],
+     "en": [
+      "Monsters have #% increased Stun Buildup"
+     ],
+     "g": 0,
+     "affixZh": "衝擊的"
+    },
+    {
+     "id": "MapMonsterCritIncrease1",
+     "zh": [
+      "增加#%怪物的暴擊率"
+     ],
+     "en": [
+      "Monsters have #% increased Critical Hit Chance"
+     ],
+     "g": 0,
+     "affixZh": "毀滅的"
+    },
+    {
+     "id": "MapMonstersElementalPenetration1",
+     "zh": [
+      "怪物傷害穿透#%元素抗性"
+     ],
+     "en": [
+      "Monster Damage Penetrates #% Elemental Resistances"
+     ],
+     "g": 0,
+     "affixZh": "穿透的"
+    },
+    {
+     "id": "MapMonsterAccuracy1",
+     "zh": [
+      "怪物增加#%命中值"
+     ],
+     "en": [
+      "Monsters have #% increased Accuracy Rating"
+     ],
+     "g": 0,
+     "affixZh": "精確的"
+    },
+    {
+     "id": "MapMonsterSpeedIncrease3",
+     "zh": [
+      "怪物增加#%攻擊、施放、移動速度"
+     ],
+     "en": [
+      "Monsters have #% increased Attack, Cast and Movement Speed"
+     ],
+     "g": 0,
+     "affixZh": "短暫的"
+    },
+    {
+     "id": "MapMonsterBleeding1",
+     "zh": [
+      "怪物有#%機率在擊中時引起流血"
+     ],
+     "en": [
+      "Monsters have #% chance to inflict Bleeding on Hit"
+     ],
+     "g": 0,
+     "affixZh": "穿孔的"
+    },
+    {
+     "id": "MapMonsterPoisoning1",
+     "zh": [
+      "怪物有#%機率在擊中時造成中毒"
+     ],
+     "en": [
+      "Monsters have #% chance to Poison on Hit"
+     ],
+     "g": 0,
+     "affixZh": "猛毒的"
+    },
+    {
+     "id": "MapMonsterArmourBreak1",
+     "zh": [
+      "怪物破壞的護甲值等同於造成的#%物理傷害"
+     ],
+     "en": [
+      "Monsters Break Armour equal to #% of Physical Damage dealt"
+     ],
+     "g": 0,
+     "affixZh": "粉碎的"
+    },
+    {
+     "id": "MapMonsterDamageAsCold1",
+     "zh": [
+      "怪物造成等同於傷害#%的額外冰冷傷害"
+     ],
+     "en": [
+      "Monsters deal #% of Damage as Extra Cold"
+     ],
+     "g": 0,
+     "affixZh": "凍傷的"
+    },
+    {
+     "id": "MapMonsterDamageAsChaos1",
+     "zh": [
+      "怪物造成等同於傷害#%的額外混沌傷害"
+     ],
+     "en": [
+      "Monsters deal #% of Damage as Extra Chaos"
+     ],
+     "g": 0,
+     "affixZh": "粗陋的"
+    },
+    {
+     "id": "MapMonsterDamageAsFire1",
+     "zh": [
+      "怪物造成等同於傷害#%的額外火焰傷害"
+     ],
+     "en": [
+      "Monsters deal #% of Damage as Extra Fire"
+     ],
+     "g": 0,
+     "affixZh": "煉獄的"
+    },
+    {
+     "id": "MapMonsterDamageAsLightning1",
+     "zh": [
+      "怪物造成等同於傷害#%的額外閃電傷害"
+     ],
+     "en": [
+      "Monsters deal #% of Damage as Extra Lightning"
+     ],
+     "g": 0,
+     "affixZh": "雷霆的"
+    },
+    {
+     "id": "MapMonsterElementalResistances1",
+     "zh": [
+      "+#%怪物元素抗性"
+     ],
+     "en": [
+      "+#% Monster Elemental Resistances"
+     ],
+     "g": 1,
+     "affixZh": "稜鏡之"
+    },
+    {
+     "id": "MapSpreadBurningGround1",
+     "zh": [
+      "區域中有多個點燃地面"
+     ],
+     "en": [
+      "Area has patches of Ignited Ground"
+     ],
+     "g": 1,
+     "affixZh": "烈火之、烈火的"
+    },
+    {
+     "id": "MapSpreadChilledGround1",
+     "zh": [
+      "區域會有多塊冰緩地面"
+     ],
+     "en": [
+      "Area has patches of Chilled Ground"
+     ],
+     "g": 1,
+     "affixZh": "雨雪之、雨雪的"
+    },
+    {
+     "id": "MapSpreadShockedGround1",
+     "zh": [
+      "區域會有多塊感電地面"
+     ],
+     "en": [
+      "Area has patches of Shocked Ground"
+     ],
+     "g": 1,
+     "affixZh": "支電震、電震的"
+    },
+    {
+     "id": "MapMonsterStunAilmentThreshold1",
+     "zh": [
+      "增加#%怪物異常狀態門檻"
+     ],
+     "en": [
+      "Monsters have #% increased Ailment Threshold"
+     ],
+     "g": 1,
+     "affixZh": "堅定不移之"
+    },
+    {
+     "id": "MapMonsterStunAilmentThreshold1",
+     "zh": [
+      "增加#%怪物的暈眩門檻"
+     ],
+     "en": [
+      "Monsters have #% increased Stun Threshold"
+     ],
+     "g": 1,
+     "affixZh": "堅定不移之"
+    },
+    {
+     "id": "MapMonsterElementAilmentChance1",
+     "zh": [
+      "怪物增加#%元素異常狀態施加"
+     ],
+     "en": [
+      "Monster have #% increased Elemental Ailment Application"
+     ],
+     "g": 1,
+     "affixZh": "強盛之"
+    },
+    {
+     "id": "MapMonsterArmoured1",
+     "zh": [
+      "怪物為裝甲的"
+     ],
+     "en": [
+      "Monsters are Armoured"
+     ],
+     "g": 1,
+     "affixZh": "耐久之"
+    },
+    {
+     "id": "MapMonsterEvasive1",
+     "zh": [
+      "怪物為閃避的"
+     ],
+     "en": [
+      "Monsters are Evasive"
+     ],
+     "g": 1,
+     "affixZh": "閃避之"
+    },
+    {
+     "id": "MapMonsterEnergyShield1",
+     "zh": [
+      "怪物獲得等同於最大生命#%的額外最大能量護盾"
+     ],
+     "en": [
+      "Monsters gain #% of maximum Life as Extra maximum Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "緩衝之"
+    },
+    {
+     "id": "MapMonstersCurseEffectOnSelf1",
+     "zh": [
+      "怪物身上的詛咒具有#%更少效果"
+     ],
+     "en": [
+      "#% less effect of Curses on Monsters"
+     ],
+     "g": 1,
+     "affixZh": "魔抗之、禦魔之"
+    },
+    {
+     "id": "MapMonstersBaseSelfCriticalMultiplier1",
+     "zh": [
+      "怪物遭暴擊時，減少#%承受的額外傷害"
+     ],
+     "en": [
+      "Monsters take #% reduced Extra Damage from Critical Hits"
+     ],
+     "g": 1,
+     "affixZh": "障礙物之"
+    },
+    {
+     "id": "MapPlayerFlaskChargeGain1",
+     "zh": [
+      "減少#%玩家獲得的藥劑充能"
+     ],
+     "en": [
+      "Players gain #% reduced Flask Charges"
+     ],
+     "g": 1,
+     "affixZh": "乾旱之"
+    },
+    {
+     "id": "MapPlayerMaximumResists1",
+     "zh": [
+      "玩家#%最大抗性"
+     ],
+     "en": [
+      "#% maximum Player Resistances"
+     ],
+     "g": 1,
+     "affixZh": "曝曬之"
+    },
+    {
+     "id": "MapPlayerRecoveryRate1",
+     "zh": [
+      "玩家擁有#%更少生命和能量護盾恢復率"
+     ],
+     "en": [
+      "Players have #% less Recovery Rate of Life and Energy Shield"
+     ],
+     "g": 1,
+     "affixZh": "窒息之"
+    },
+    {
+     "id": "MapPlayerCooldownRecovery1",
+     "zh": [
+      "玩家有#%更少冷卻時間恢復率"
+     ],
+     "en": [
+      "Players have #% less Cooldown Recovery Rate"
+     ],
+     "g": 1,
+     "affixZh": "疲勞之"
+    },
+    {
+     "id": "MapPlayerElementalWeakness1",
+     "zh": [
+      "玩家正在持續被元素要害詛咒"
+     ],
+     "en": [
+      "Players are periodically Cursed with Elemental Weakness"
+     ],
+     "g": 1,
+     "affixZh": "侵蝕之"
+    },
+    {
+     "id": "MapPlayerTemporalChains1",
+     "zh": [
+      "玩家正在持續被時空鎖鏈詛咒"
+     ],
+     "en": [
+      "Players are periodically Cursed with Temporal Chains"
+     ],
+     "g": 1,
+     "affixZh": "減慢之"
+    },
+    {
+     "id": "MapPlayerEnfeeble1",
+     "zh": [
+      "玩家正在持續被衰弱詛咒"
+     ],
+     "en": [
+      "Players are periodically Cursed with Enfeeble"
+     ],
+     "g": 1,
+     "affixZh": "衰弱之"
+    }
+   ]
+  },
+  {
+   "id": "tablet_mods",
+   "title": "碑牌詞綴",
+   "titleEn": "Precursor tablet modifiers",
+   "note": "八種碑牌共用一份清單，左欄依碑牌分組。「通用」那組每種碑牌都會出，輻照碑牌只會出那一組。不會誤中的保證只涵蓋這份清單裡的其他詞綴。",
+   "limit": 250,
+   "groups": [
+    "通用（輻照）",
+    "裂痕",
+    "探險",
+    "譫妄",
+    "祭祀",
+    "深淵",
+    "總督",
+    "神廟"
+   ],
+   "groupsEn": [
+    "Any (Irradiated)",
+    "Breach",
+    "Expedition",
+    "Delirium",
+    "Ritual",
+    "Abyss",
+    "Overseer",
+    "Temple"
+   ],
+   "entries": [
+    {
+     "id": "TowerMapAdditionalUniqueMonsterModifier",
+     "zh": [
+      "傳奇怪物會擁有#個額外的詞綴"
+     ],
+     "en": [
+      "Unique Monsters have # additional Rare Modifier"
+     ],
+     "g": 0,
+     "affixZh": "挑戰之"
+    },
+    {
+     "id": "TowerAdditionalAzmeriWisp1",
+     "zh": [
+      "地圖內含有#個額外阿茲莫里魂靈"
+     ],
+     "en": [
+      "Map contains # additional Azmeri Spirit"
+     ],
+     "g": 0,
+     "affixZh": "阿茲莫里的"
+    },
+    {
+     "id": "TowerAdditionalExile1",
+     "zh": [
+      "地圖內含有#名額外盜賊流亡者"
+     ],
+     "en": [
+      "Map is inhabited by # additional Rogue Exile"
+     ],
+     "g": 0,
+     "affixZh": "流亡的"
+    },
+    {
+     "id": "TowerRareChestCount1",
+     "zh": [
+      "地圖內含有額外的#個稀有箱子"
+     ],
+     "en": [
+      "Map contains # additional Rare Chests"
+     ],
+     "g": 0,
+     "affixZh": "司庫的"
+    },
+    {
+     "id": "TowerAdditionalStoneCircle",
+     "zh": [
+      "地圖內含有額外的一個召喚法陣"
+     ],
+     "en": [
+      "Map contains an additional Summoning Circle"
+     ],
+     "g": 0,
+     "affixZh": "召喚師的"
+    },
+    {
+     "id": "TowerMonsterRarityIncrease1",
+     "zh": [
+      "地圖增加#%怪物稀有度"
+     ],
+     "en": [
+      "Map has #% increased Monster Rarity"
+     ],
+     "g": 0,
+     "affixZh": "充盈的"
+    },
+    {
+     "id": "TowerMapAdditionalModifier",
+     "zh": [
+      "地圖有#個額外隨機詞綴"
+     ],
+     "en": [
+      "Map has # additional random Modifier"
+     ],
+     "g": 0,
+     "affixZh": "承諾之"
+    },
+    {
+     "id": "TowerAdditionalExileChance",
+     "zh": [
+      "增加#%地圖內含有盜賊流亡者的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain Rogue Exiles"
+     ],
+     "g": 0,
+     "affixZh": "流亡者之"
+    },
+    {
+     "id": "TowerAdditionalShrineChance",
+     "zh": [
+      "增加#%地圖內含有神殿的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain Shrines"
+     ],
+     "g": 0,
+     "affixZh": "神殿之"
+    },
+    {
+     "id": "TowerAdditionalEssenceChance",
+     "zh": [
+      "增加#%地圖內含有精髓的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain Essences"
+     ],
+     "g": 0,
+     "affixZh": "精髓之"
+    },
+    {
+     "id": "TowerExperienceGainIncrease1",
+     "zh": [
+      "增加#%地圖內所獲取的經驗量"
+     ],
+     "en": [
+      "#% increased Experience gain in Map"
+     ],
+     "g": 0,
+     "affixZh": "昇華的"
+    },
+    {
+     "id": "TowerDroppedGoldIncrease1",
+     "zh": [
+      "增加#%地圖內所獲取的金幣數量"
+     ],
+     "en": [
+      "#% increased Gold found in Map"
+     ],
+     "g": 0,
+     "affixZh": "慷慨的"
+    },
+    {
+     "id": "TowerMapDroppedMapsIncrease",
+     "zh": [
+      "增加#%地圖內找到的換界石數量"
+     ],
+     "en": [
+      "#% increased Quantity of Waystones found in Map"
+     ],
+     "g": 0,
+     "affixZh": "製圖師之"
+    },
+    {
+     "id": "TowerDroppedItemRarityIncrease1",
+     "zh": [
+      "增加#%地圖內找到的物品稀有度"
+     ],
+     "en": [
+      "#% increased Rarity of Items found in Map"
+     ],
+     "g": 0,
+     "affixZh": "蒐集者的"
+    },
+    {
+     "id": "TowerAdditionalStrongboxChance",
+     "zh": [
+      "增加#%地圖內有含有保險箱的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain Strongboxes"
+     ],
+     "g": 0,
+     "affixZh": "保險箱之"
+    },
+    {
+     "id": "TowerStoneCircleChance",
+     "zh": [
+      "增加#%地圖內有含有召喚法陣的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain a Summoning Circle"
+     ],
+     "g": 0,
+     "affixZh": "召喚之"
+    },
+    {
+     "id": "TowerAdditionalSpiritChance",
+     "zh": [
+      "增加#%地圖內有含有阿茲莫里魂靈的機率"
+     ],
+     "en": [
+      "Map has #% increased chance to contain Azmeri Spirits"
+     ],
+     "g": 0,
+     "affixZh": "魂靈之"
+    },
+    {
+     "id": "TowerPackSizeIncrease1",
+     "zh": [
+      "增加#%地圖內的怪物群大小"
+     ],
+     "en": [
+      "#% increased Pack Size in Map"
+     ],
+     "g": 0,
+     "affixZh": "多產的"
+    },
+    {
+     "id": "TowerRarePackIncrease1",
+     "zh": [
+      "增加#%地圖含有的稀有怪物數量"
+     ],
+     "en": [
+      "Map has #% increased number of Rare Monsters"
+     ],
+     "g": 0,
+     "affixZh": "充滿的"
+    },
+    {
+     "id": "TowerMagicPackIncrease1",
+     "zh": [
+      "增加#%地圖含有的魔法怪物"
+     ],
+     "en": [
+      "Map has #% increased Magic Monsters"
+     ],
+     "g": 0,
+     "affixZh": "擁擠的"
+    },
+    {
+     "id": "TowerMonsterEffectiveness1",
+     "zh": [
+      "增加#%怪物的效用"
+     ],
+     "en": [
+      "Monsters have #% increased Effectiveness"
+     ],
+     "g": 0,
+     "affixZh": "挑戰者的"
+    },
+    {
+     "id": "TowerBreachWombgiftLevelChance",
+     "zh": [
+      "地圖內有#%機率掉落高一等級的胎贈"
+     ],
+     "en": [
+      "Wombgifts have #% chance to drop one Level higher in Map"
+     ],
+     "g": 1,
+     "affixZh": "血肉之"
+    },
+    {
+     "id": "TowerBreachAdditionalRares",
+     "zh": [
+      "地圖內的不穩定裂痕會在穩定後生成一名額外稀有怪物]"
+     ],
+     "en": [
+      "Unstable Breaches in Map spawn an additional Rare Monster when Stabilised"
+     ],
+     "g": 1,
+     "affixZh": "入侵之"
+    },
+    {
+     "id": "TowerBreachHivebloodQuantity",
+     "zh": [
+      "增加#%地圖內找到的巢裔之血數量"
+     ],
+     "en": [
+      "#% increased Quantity of Hiveblood found in Map"
+     ],
+     "g": 1,
+     "affixZh": "流動之"
+    },
+    {
+     "id": "TowerBreachWombgiftQuantity",
+     "zh": [
+      "增加#%地圖內找到的胎贈數量"
+     ],
+     "en": [
+      "#% increased Quantity of Wombgifts found in Map"
+     ],
+     "g": 1,
+     "affixZh": "形體之"
+    },
+    {
+     "id": "TowerBreachBossChance",
+     "zh": [
+      "增加#%地圖內的不穩定裂痕含有烈許的統領．弗倫的機率"
+     ],
+     "en": [
+      "Unstable Breaches in Map have #% increased chance to contain Vruun, Marshal of Xesht"
+     ],
+     "g": 1,
+     "affixZh": "指揮官之"
+    },
+    {
+     "id": "TowerBreachRareMonsterPotency",
+     "zh": [
+      "增加#%地圖內稀有裂痕怪物的效用"
+     ],
+     "en": [
+      "#% increased Effectiveness of Rare Breach Monsters in Map"
+     ],
+     "g": 1,
+     "affixZh": "手之"
+    },
+    {
+     "id": "TowerBreachMonsterQuantity",
+     "zh": [
+      "增加#%地圖內裂痕的怪物群大小"
+     ],
+     "en": [
+      "Breaches in Map have #% increased Pack Size"
+     ],
+     "g": 1,
+     "affixZh": "部落之"
+    },
+    {
+     "id": "TowerExpeditionRelicIncrease",
+     "zh": [
+      "地圖內的探險事件含有#魔符"
+     ],
+     "en": [
+      "Expeditions in Map have # Remnant"
+     ],
+     "g": 2,
+     "affixZh": "創作之"
+    },
+    {
+     "id": "TowerExpeditionRunicMonsters",
+     "zh": [
+      "增加#%地圖內含有的符文怪物印記的數量"
+     ],
+     "en": [
+      "Map contains #% increased number of Runic Monster Markers"
+     ],
+     "g": 2,
+     "affixZh": "符文之"
+    },
+    {
+     "id": "TowerExpeditionRareMonsters",
+     "zh": [
+      "增加#%地圖內的探險事件含有稀有怪物的數量"
+     ],
+     "en": [
+      "#% increased number of Rare Expedition Monsters in Map"
+     ],
+     "g": 2,
+     "affixZh": "遠古惡魔之"
+    },
+    {
+     "id": "TowerExpeditionArtifactIncrease",
+     "zh": [
+      "增加#%地圖內的探險事件怪物所掉落的文物數量"
+     ],
+     "en": [
+      "#% increased quantity of Expedition Artifacts dropped by Monsters in Map"
+     ],
+     "g": 2,
+     "affixZh": "維里西姆之"
+    },
+    {
+     "id": "TowerExpeditionLogbookIncrease",
+     "zh": [
+      "增加#%地圖內的探險事件所生成的符文怪物掉落的探險日誌數量"
+     ],
+     "en": [
+      "#% increased Quantity of Expedition Logbooks dropped by Runic Monsters in Map"
+     ],
+     "g": 2,
+     "affixZh": "知識之"
+    },
+    {
+     "id": "TowerExpeditionExplosionPlacement",
+     "zh": [
+      "增加#%地圖內的探險事件放置炸藥的距離"
+     ],
+     "en": [
+      "#% increased Expedition Explosive Placement Range in Map"
+     ],
+     "g": 2,
+     "affixZh": "爆破之"
+    },
+    {
+     "id": "TowerExpeditionExplosionRadius",
+     "zh": [
+      "增加#%地圖內的探險事件爆炸的範圍"
+     ],
+     "en": [
+      "#% increased Expedition Explosive Radius in Map"
+     ],
+     "g": 2,
+     "affixZh": "拆除之"
+    },
+    {
+     "id": "TowerExpeditionRelicModEffect",
+     "zh": [
+      "增加#%地圖內的探險事件魔符的效果"
+     ],
+     "en": [
+      "#% increased Effect of Expedition Remnants in Map"
+     ],
+     "g": 2,
+     "affixZh": "聖物之"
+    },
+    {
+     "id": "TowerDeliriumDifficultyIncrease",
+     "zh": [
+      "地圖中的譫妄會增加#%玩家的譫妄程度"
+     ],
+     "en": [
+      "Delirium Fog in Map applies #% increased Deliriousness to Players"
+     ],
+     "g": 3,
+     "affixZh": "瘋狂之"
+    },
+    {
+     "id": "TowerDeliriumAdditionalShardsChance",
+     "zh": [
+      "地圖中的譫妄迷霧增加#%裂鏡碎片的生成量"
+     ],
+     "en": [
+      "Delirium Fog in Map spawns #% increased MirrorShards"
+     ],
+     "g": 3,
+     "affixZh": "碎裂之"
+    },
+    {
+     "id": "TowerDeliriumFogDissipationDelayNew",
+     "zh": [
+      "地圖內含有的譫妄迷霧會在消散前額外持續#秒"
+     ],
+     "en": [
+      "Delirium Fog in Map lasts # additional seconds before dissipating"
+     ],
+     "g": 3,
+     "affixZh": "永恆之"
+    },
+    {
+     "id": "TowerDeliriumBossChance",
+     "zh": [
+      "地圖內的譫妄有#%更多機率生成傳奇頭目"
+     ],
+     "en": [
+      "Delirium Encounters in Map are #% more likely to spawn Unique Bosses"
+     ],
+     "g": 3,
+     "affixZh": "恐懼症之"
+    },
+    {
+     "id": "TowerDeliriumRareMonsterPause",
+     "zh": [
+      "地圖內的譫妄迷霧在擊殺稀有怪物時會暫停#秒"
+     ],
+     "en": [
+      "Slaying Rare Monsters in Map pauses the Delirium Mirror Timer for # seconds"
+     ],
+     "g": 3,
+     "affixZh": "冰凍時間之"
+    },
+    {
+     "id": "TowerDeliriumMonsterSplinterIncrease",
+     "zh": [
+      "增加#%地圖內掉落的幻像斷片數量"
+     ],
+     "en": [
+      "#% increased Stack size of Simulacrum Splinters found in Map"
+     ],
+     "g": 3,
+     "affixZh": "幻像異界之"
+    },
+    {
+     "id": "TowerDeliriumPackSizeIncrease",
+     "zh": [
+      "增加#%地圖內的譫妄怪物怪物群大小"
+     ],
+     "en": [
+      "Delirium Monsters in Map have #% increased Pack Size"
+     ],
+     "g": 3,
+     "affixZh": "迫害之"
+    },
+    {
+     "id": "TowerDeliriumDoodadsIncrease",
+     "zh": [
+      "增加#%地圖內的譫妄生成破碎之鏡"
+     ],
+     "en": [
+      "Delirium Fog in Map spawns #% increased Fracturing Mirrors"
+     ],
+     "g": 3,
+     "affixZh": "鏡子之"
+    },
+    {
+     "id": "TowerDeliriumFogPersistence",
+     "zh": [
+      "減少#%地圖內的譫妄迷霧消散速度"
+     ],
+     "en": [
+      "Delirium Fog in Map dissipates #% slower"
+     ],
+     "g": 3,
+     "affixZh": "無休止之"
+    },
+    {
+     "id": "TowerRitualAdditionalReroll",
+     "zh": [
+      "地圖內的祭祀神壇可以額外重骰一次"
+     ],
+     "en": [
+      "Ritual Altars in Map allow rerolling Favours an additional time"
+     ],
+     "g": 4,
+     "affixZh": "祈禱之"
+    },
+    {
+     "id": "TowerRitualDeferSpeed",
+     "zh": [
+      "地圖內的祭祀神壇所延遲的恩惠之物出現速度加快#%"
+     ],
+     "en": [
+      "Favours Deferred at Ritual Altars in Map reappear #% sooner"
+     ],
+     "g": 4,
+     "affixZh": "吸引之"
+    },
+    {
+     "id": "TowerRitualMagicMonsters",
+     "zh": [
+      "地圖內的祭祀神壇所復活的怪物增加#%為稀有怪物的機率"
+     ],
+     "en": [
+      "Revived Monsters from Ritual Altars in Map have #% increased chance to be Rare"
+     ],
+     "g": 4,
+     "affixZh": "邪教之"
+    },
+    {
+     "id": "TowerRitualRareMonsters",
+     "zh": [
+      "地圖內的祭祀神壇所復活的怪物增加#%為魔法怪物的機率"
+     ],
+     "en": [
+      "Revived Monsters from Ritual Altars in Map have #% increased chance to be Magic"
+     ],
+     "g": 4,
+     "affixZh": "棄兒之"
+    },
+    {
+     "id": "TowerRitualChanceForNoCost",
+     "zh": [
+      "地圖內的祭祀神壇有#%機率不消耗貢禮"
+     ],
+     "en": [
+      "Favours Rerolled at Ritual Altars in Map have #% chance to cost no Tribute"
+     ],
+     "g": 4,
+     "affixZh": "玄秘之"
+    },
+    {
+     "id": "TowerRitualTributeIncrease",
+     "zh": [
+      "增加#%在地圖內的祭祀神壇所獻祭的怪物提供的貢禮數量"
+     ],
+     "en": [
+      "Monsters Sacrificed at Ritual Altars in Map grant #% increased Tribute"
+     ],
+     "g": 4,
+     "affixZh": "犧牲之"
+    },
+    {
+     "id": "TowerRitualOmenChance",
+     "zh": [
+      "增加#%地圖內的祭祀神壇獎勵為預兆的機率"
+     ],
+     "en": [
+      "Ritual Favours in Map have #% increased chance to be Omens"
+     ],
+     "g": 4,
+     "affixZh": "徵兆之"
+    },
+    {
+     "id": "TowerRitualDeferCostIncrease",
+     "zh": [
+      "減少#%地圖內的祭祀神壇所需的貢禮數量"
+     ],
+     "en": [
+      "Deferring Favours at Ritual Altars in Map costs #% reduced Tribute"
+     ],
+     "g": 4,
+     "affixZh": "奉獻之"
+    },
+    {
+     "id": "TowerRitualRerollCostIncrease",
+     "zh": [
+      "減少#%地圖內的祭祀神壇重骰所需的貢禮數量"
+     ],
+     "en": [
+      "Rerolling Favours at Ritual Altars in Map costs #% reduced Tribute"
+     ],
+     "g": 4,
+     "affixZh": "教條之"
+    },
+    {
+     "id": "TowerAbyssAdditionalChance",
+     "zh": [
+      "地圖內含有額外一道深淵"
+     ],
+     "en": [
+      "Map contains an additional Abyss"
+     ],
+     "g": 5,
+     "affixZh": "空殼之"
+    },
+    {
+     "id": "TowerAbyssIncreasedRewards",
+     "zh": [
+      "地圖內的深淵坑洞有兩倍機率含有獎勵"
+     ],
+     "en": [
+      "Abyss Pits in Map are twice as likely to have Rewards"
+     ],
+     "g": 5,
+     "affixZh": "寶藏之"
+    },
+    {
+     "id": "TowerAbyssDepthsChance",
+     "zh": [
+      "地圖內的深淵增加有#%機率前往無盡深淵"
+     ],
+     "en": [
+      "Abysses in Map have #% increased chance to lead to an Abyssal Depths"
+     ],
+     "g": 5,
+     "affixZh": "深淵之"
+    },
+    {
+     "id": "TowerAbyssExtraModifiers",
+     "zh": [
+      "地圖內的深淵怪物增加#%擁有深淵詞綴的機率"
+     ],
+     "en": [
+      "#% increased chance for Abyssal monsters in Map to have Abyssal Modifiers"
+     ],
+     "g": 5,
+     "affixZh": "幽暗之力之"
+    },
+    {
+     "id": "TowerAbyssRareMonsterIncrease",
+     "zh": [
+      "地圖內的深淵生成#隻額外稀有怪物"
+     ],
+     "en": [
+      "# additional Rare Monsters are spawned from Abysses in Map"
+     ],
+     "g": 5,
+     "affixZh": "勇士之"
+    },
+    {
+     "id": "TowerAbyss4AdditionalChance",
+     "zh": [
+      "地圖有#%機率包含4道額外深淵"
+     ],
+     "en": [
+      "Map has #% chance to contain four additional Abysses"
+     ],
+     "g": 5,
+     "affixZh": "裂變之"
+    },
+    {
+     "id": "TowerAbyssExtraTickets",
+     "zh": [
+      "增加#%來自地圖內深淵的褻瀆通貨掉落機率"
+     ],
+     "en": [
+      "#% increased chance for Desecrated Currency from Abysses in Map"
+     ],
+     "g": 5,
+     "affixZh": "骨化之"
+    },
+    {
+     "id": "TowerAbyssMonsterIncrease",
+     "zh": [
+      "增加#%地圖內的深淵生成的怪物數量"
+     ],
+     "en": [
+      "Abysses in Map spawn #% increased Monsters"
+     ],
+     "g": 5,
+     "affixZh": "群突之"
+    },
+    {
+     "id": "TowerAbyssEffectivenessPerChasm",
+     "zh": [
+      "每有一個已關閉的坑洞，增加#%深淵怪物效用，最多100%"
+     ],
+     "en": [
+      "Abyssal Monsters have #% increased Effectiveness for each closed Pit, up to 100%"
+     ],
+     "g": 5,
+     "affixZh": "升勢之"
+    },
+    {
+     "id": "TowerAdditionalStrongbox1",
+     "zh": [
+      "地圖內含有額外的一個保險箱"
+     ],
+     "en": [
+      "Map contains an additional Strongbox"
+     ],
+     "g": 6,
+     "affixZh": "收藏家之、隔間之"
+    },
+    {
+     "id": "TowerAdditionalShrine1",
+     "zh": [
+      "地圖內含有額外的一個神殿"
+     ],
+     "en": [
+      "Map contains an additional Shrine"
+     ],
+     "g": 6,
+     "affixZh": "奉獻之、崇拜之"
+    },
+    {
+     "id": "TowerAdditionalEssence1",
+     "zh": [
+      "地圖內含有額外的一個精髓"
+     ],
+     "en": [
+      "Map contains an additional Essence"
+     ],
+     "g": 6,
+     "affixZh": "晶化的、晶石之"
+    },
+    {
+     "id": "TowerMapBossAdditionalSpirit",
+     "zh": [
+      "地圖內含有額外的一個阿茲莫里魂靈"
+     ],
+     "en": [
+      "Map contains an additional Azmeri Spirit"
+     ],
+     "g": 6,
+     "affixZh": "妖精之"
+    },
+    {
+     "id": "TowerMapBossRarity",
+     "zh": [
+      "增加#%地圖頭目掉落物品的稀有度"
+     ],
+     "en": [
+      "#% increased Rarity of Items dropped by Map Bosses"
+     ],
+     "g": 6,
+     "affixZh": "寶藏之"
+    },
+    {
+     "id": "TowerMapBossWaystoneChance",
+     "zh": [
+      "增加#%地圖頭目掉落的換界石數量"
+     ],
+     "en": [
+      "#% increased Quantity of Waystones dropped by Map Bosses"
+     ],
+     "g": 6,
+     "affixZh": "路途之"
+    },
+    {
+     "id": "TowerMapBossQuantity",
+     "zh": [
+      "增加#%地圖頭目的掉落物品數量"
+     ],
+     "en": [
+      "#% increased Quantity of Items dropped by Map Bosses"
+     ],
+     "g": 6,
+     "affixZh": "囤物之"
+    },
+    {
+     "id": "TowerMapBossExperience",
+     "zh": [
+      "增加#%地圖頭目賦予的經驗"
+     ],
+     "en": [
+      "Map Bosses grant #% increased Experience"
+     ],
+     "g": 6,
+     "affixZh": "克服之"
+    },
+    {
+     "id": "TowerIncursionExtraPacks",
+     "zh": [
+      "地圖內的瓦爾烽塔周遭擁有額外#群怪物"
+     ],
+     "en": [
+      "# extra pack of Monsters around Vaal Beacons in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionPackSize",
+     "zh": [
+      "增加#%地圖內瓦爾烽塔周遭的怪物群大小"
+     ],
+     "en": [
+      "#% increased Pack Size for Monsters around Vaal Beacons in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionRareChestChance",
+     "zh": [
+      "增加#%地圖內瓦爾烽塔的寶箱為稀有的機率"
+     ],
+     "en": [
+      "#% increased chance Vaal Beacon Chests are Rare in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionSecondaryEncounters",
+     "zh": [
+      "增加#%地圖內的瓦爾烽塔召喚額外怪物的機率"
+     ],
+     "en": [
+      "#% increased chance Vaal Beacons summon additional Monsters in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionTokenChance",
+     "zh": [
+      "有#%機率從地圖內的瓦爾烽塔獲得額外一個額外水晶"
+     ],
+     "en": [
+      "#% chance to gain an additional Crystal from Vaal Beacons in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionExtraPacksChance",
+     "zh": [
+      "有#%機率擁有一群額外怪物在地圖內的瓦爾烽塔周遭"
+     ],
+     "en": [
+      "#% chance for an extra packs of Monsters around Vaal Beacons in Map"
+     ],
+     "g": 7
+    },
+    {
+     "id": "TowerIncursionBossChance",
+     "zh": [
+      "有#%機率為地圖新增一名瓦爾烽塔傳奇怪物"
+     ],
+     "en": [
+      "#% chance to add a Vaal Beacon Unique Monster to the Map"
+     ],
+     "g": 7
+    }
+   ]
+  },
+  {
+   "id": "relic_mods",
+   "title": "聖物詞綴",
+   "titleEn": "Relic modifiers",
+   "note": "聖域試煉的聖物詞綴。不會誤中的保證只涵蓋這份清單。",
+   "limit": 250,
+   "groups": [
+    "前綴",
+    "後綴",
+    "前後綴皆有"
+   ],
+   "groupsEn": [
+    "Prefix",
+    "Suffix",
+    "Both"
+   ],
+   "entries": [
+    {
+     "id": "SanctumMerchantExtraOptions1",
+     "zh": [
+      "商人有1個額外選擇"
+     ],
+     "en": [
+      "The Merchant has an additional Choice"
+     ],
+     "g": 0,
+     "affixZh": "豐產的"
+    },
+    {
+     "id": "SanctumStartingGold1",
+     "zh": [
+      "在試煉開始時獲得#個聖水"
+     ],
+     "en": [
+      "Gain # Sacred Water at the start of the Trial"
+     ],
+     "g": 0,
+     "affixZh": "布衣的、部下的、巨靈的、絲克瑪的"
+    },
+    {
+     "id": "SanctumResolveRecovery1",
+     "zh": [
+      "增加#%恢復的榮譽"
+     ],
+     "en": [
+      "#% increased Honour restored"
+     ],
+     "g": 0,
+     "affixZh": "復甦的、刺激的、活躍的、有勇氣的"
+    },
+    {
+     "id": "SanctumMaximumHonour1",
+     "zh": [
+      "增加#%最大榮譽"
+     ],
+     "en": [
+      "#% increased maximum Honour"
+     ],
+     "g": 0,
+     "affixZh": "光榮的、道德的、原則的、尊敬的"
+    },
+    {
+     "id": "SanctumMaximumLife1",
+     "zh": [
+      "增加#%最大生命"
+     ],
+     "en": [
+      "#% increased maximum Life"
+     ],
+     "g": 0,
+     "affixZh": "堅韌的、耐久的、堅定不移、熱烈的"
+    },
+    {
+     "id": "SanctumMovementSpeed1",
+     "zh": [
+      "增加#%移動速度"
+     ],
+     "en": [
+      "#% increased Movement Speed"
+     ],
+     "g": 0,
+     "affixZh": "靈活的、迅速的、急速"
+    },
+    {
+     "id": "SanctumGuardsIncreasedDamageTaken1",
+     "zh": [
+      "增加#%稀有怪物承受傷害"
+     ],
+     "en": [
+      "Rare Monsters take #% increased Damage"
+     ],
+     "g": 0,
+     "affixZh": "違者的、違規者的、恥辱的"
+    },
+    {
+     "id": "SanctumDefences1",
+     "zh": [
+      "增加#%護甲、閃避、和能量護盾"
+     ],
+     "en": [
+      "#% increased Armour, Evasion and Energy Shield"
+     ],
+     "g": 0,
+     "affixZh": "加強的、分層的、加厚的、束帶的"
+    },
+    {
+     "id": "SanctumKeyUpgradeChance1",
+     "zh": [
+      "完成一個樓層時，有#%機率使你的每一把鑰匙升級"
+     ],
+     "en": [
+      "#% chance for each of your Keys to upgrade on completing a Floor"
+     ],
+     "g": 0,
+     "affixZh": "增進的、重鑄的、升級的"
+    },
+    {
+     "id": "SanctumMonstersIncreasedDamageTaken1",
+     "zh": [
+      "怪物增加#%傷害"
+     ],
+     "en": [
+      "Monsters take #% increased Damage"
+     ],
+     "g": 0,
+     "affixZh": "粉碎之、懲戒的、殲滅的"
+    },
+    {
+     "id": "SanctumMonsterSpeed1",
+     "zh": [
+      "怪物減少#%攻擊、施放、移動速度"
+     ],
+     "en": [
+      "Monsters have #% reduced Attack, Cast and Movement Speed"
+     ],
+     "g": 0,
+     "affixZh": "時間扭曲的、時占的、短暫的"
+    },
+    {
+     "id": "SanctumChanceToPreventHonourDeath1",
+     "zh": [
+      "有#%機率讓你在失去所有榮譽時，改為保有1榮譽"
+     ],
+     "en": [
+      "#% chance if you were to lose all your Honour to have 1 Honour instead"
+     ],
+     "g": 0,
+     "affixZh": "作弊的、詐欺的"
+    },
+    {
+     "id": "SanctumMonstersReducedDamage1",
+     "zh": [
+      "減少#%怪物造成的傷害"
+     ],
+     "en": [
+      "Monsters deal #% reduced Damage"
+     ],
+     "g": 0,
+     "affixZh": "彈力的、強化的、費解的"
+    },
+    {
+     "id": "SanctumReducedTrapDamage2",
+     "zh": [
+      "減少#%陷阱造成的傷害"
+     ],
+     "en": [
+      "Traps deal #% reduced Damage"
+     ],
+     "g": 0,
+     "affixZh": "雜技的、富有彈性的"
+    },
+    {
+     "id": "SanctumBossReducedDamage1",
+     "zh": [
+      "減少#%頭目傷害"
+     ],
+     "en": [
+      "Bosses deal #% reduced Damage"
+     ],
+     "g": 0,
+     "affixZh": "神盾、無懼先鋒、盾影"
+    },
+    {
+     "id": "SanctumAdditionalKeyChance1",
+     "zh": [
+      "當你獲得一把鑰匙時，有#%機率獲得另一把"
+     ],
+     "en": [
+      "When you gain a Key #% chance to gain another"
+     ],
+     "g": 0,
+     "affixZh": "小偷的、扒竊的、盜賊的"
+    },
+    {
+     "id": "SanctumGuardsReducedDamage1",
+     "zh": [
+      "稀有怪物減少#%傷害"
+     ],
+     "en": [
+      "Rare Monsters deal #% reduced Damage"
+     ],
+     "g": 0,
+     "affixZh": "守護、堅堡、城塞"
+    },
+    {
+     "id": "SanctumBossIncreasedDamageTaken1",
+     "zh": [
+      "頭目增加承受#%傷害"
+     ],
+     "en": [
+      "Bosses take #% increased Damage"
+     ],
+     "g": 0,
+     "affixZh": "挑戰者的、篡奪者的、弒君者的"
+    },
+    {
+     "id": "SanctumMaximumHonourResistance1",
+     "zh": [
+      "#%至最大榮譽抗性"
+     ],
+     "en": [
+      "#% to Maximum Honour Resistance"
+     ],
+     "g": 1,
+     "affixZh": "卓越之、輝煌之"
+    },
+    {
+     "id": "SanctumHonourResistance1",
+     "zh": [
+      "#%至榮譽抗性"
+     ],
+     "en": [
+      "#% to Honour Resistance"
+     ],
+     "g": 1,
+     "affixZh": "價值之、應得之、正當之、資格之"
+    },
+    {
+     "id": "SanctumFountainDoubleGoldChance1",
+     "zh": [
+      "噴泉有#%機率賦予兩倍聖水"
+     ],
+     "en": [
+      "Fountains have #% chance to grant double Sacred Water"
+     ],
+     "g": 1,
+     "affixZh": "流淌之、充滿之、溢出之、豐收之"
+    },
+    {
+     "id": "SanctumKeyDropChance1",
+     "zh": [
+      "增加#%怪物掉落的鑰匙數量"
+     ],
+     "en": [
+      "#% increased quantity of Keys dropped by Monsters"
+     ],
+     "g": 1,
+     "affixZh": "存取之、承認之、進入之、入手之"
+    },
+    {
+     "id": "SanctumRelicQuantity1",
+     "zh": [
+      "增加#%怪物掉落聖物的數量"
+     ],
+     "en": [
+      "#% increased quantity of Relics dropped by Monsters"
+     ],
+     "g": 1,
+     "affixZh": "發現之、學習之、調查之"
+    },
+    {
+     "id": "SanctumGoldOnRoomCompletion1",
+     "zh": [
+      "完成一個房間時，獲得#個聖水"
+     ],
+     "en": [
+      "Gain # Sacred Water when you complete a Room"
+     ],
+     "g": 1,
+     "affixZh": "水井之、噴泉之、綠洲之"
+    },
+    {
+     "id": "SanctumResolveOnRoomComplete1",
+     "zh": [
+      "完成房間時，恢復#榮譽"
+     ],
+     "en": [
+      "Restore # Honour on room completion"
+     ],
+     "g": 1,
+     "affixZh": "過程之、先進之、前進之、改進"
+    },
+    {
+     "id": "SanctumReducedCritDamage1",
+     "zh": [
+      "對你的擊中減少#%暴擊傷害加成"
+     ],
+     "en": [
+      "Hits against you have #% reduced Critical Damage Bonus"
+     ],
+     "g": 1,
+     "affixZh": "結實之、韌性之、堅定之"
+    },
+    {
+     "id": "SanctumMonstersDoubleGoldChance1",
+     "zh": [
+      "怪物有#%機率掉落兩倍聖水"
+     ],
+     "en": [
+      "Monsters have #% chance to drop double Sacred Water"
+     ],
+     "g": 1,
+     "affixZh": "浸濕之、浸泡之、滂沱之、滲透之"
+    },
+    {
+     "id": "SanctumHonourOnGainKey1",
+     "zh": [
+      "拾起一把鑰匙時，恢復#榮譽"
+     ],
+     "en": [
+      "Restore # Honour on picking up a Key"
+     ],
+     "g": 1,
+     "affixZh": "捐獻之、奉獻之、託付之、賜予之"
+    },
+    {
+     "id": "SanctumRestoreHonourOnBossKill1",
+     "zh": [
+      "擊殺頭目時，恢復#榮譽"
+     ],
+     "en": [
+      "Restore # Honour on killing a Boss"
+     ],
+     "g": 1,
+     "affixZh": "賦予之、冠軍之、勝利之、征服之"
+    },
+    {
+     "id": "SanctumAvoidAfflictionChance1",
+     "zh": [
+      "有#%機率避免獲得苦痛"
+     ],
+     "en": [
+      "#% chance to Avoid gaining an Affliction"
+     ],
+     "g": 1,
+     "affixZh": "尊嚴之、威望之、榮耀之、榮譽之"
+    },
+    {
+     "id": "SanctumSlowResistance1",
+     "zh": [
+      "減少#%你身上的減益效果緩速程度"
+     ],
+     "en": [
+      "#% reduced Slowing Potency of Debuffs on You"
+     ],
+     "g": 1,
+     "affixZh": "屹立之、不屈之、追獵者之"
+    },
+    {
+     "id": "SanctumMerchantReducedCosts1",
+     "zh": [
+      "減少#%販售價格"
+     ],
+     "en": [
+      "#% reduced Merchant Prices"
+     ],
+     "g": 1,
+     "affixZh": "慈善之、外交之"
+    },
+    {
+     "id": "SanctumRestoreHonourOnFountainUse1",
+     "zh": [
+      "膜拜一座馬拉克斯神殿時，恢復#榮譽"
+     ],
+     "en": [
+      "Restore # Honour on venerating a Maraketh Shrine"
+     ],
+     "g": 1,
+     "affixZh": "刷新之、康復之、青年之、新穎之"
+    },
+    {
+     "id": "SanctumRevealExtraRoomEachFloor2",
+     "zh": [
+      "試煉地圖額外揭露#個房間"
+     ],
+     "en": [
+      "# additional Rooms are revealed on the Trial Map"
+     ],
+     "g": 1,
+     "affixZh": "千里眼之、照明之"
+    },
+    {
+     "id": "SanctumRevealExtraRoomEachFloor1",
+     "zh": [
+      "試煉地圖額外揭露1個房間"
+     ],
+     "en": [
+      "An additional Room is revealed on the Trial Map"
+     ],
+     "g": 1,
+     "affixZh": "照明之"
+    },
+    {
+     "id": "SanctumDodgeRollDistance1",
+     "zh": [
+      "閃避翻滾距離#公尺"
+     ],
+     "en": [
+      "# metres to Dodge Roll distance"
+     ],
+     "g": 1,
+     "affixZh": "衝撞之、逃避之"
+    }
+   ]
+  },
+  {
+   "id": "expedition_relic_mods",
+   "title": "探險遺物詞綴",
+   "titleEn": "Expedition remnant modifiers",
+   "note": "探險遺物的增益與減益。不會誤中的保證只涵蓋這份清單。",
+   "limit": 250,
+   "groups": [
+    "增益",
+    "減益",
+    "其他"
+   ],
+   "groupsEn": [
+    "Upside",
+    "Downside",
+    "Other"
+   ],
+   "entries": [
+    {
+     "id": "ExpeditionRelicUpsideSpecialKaruiTotem",
+     "zh": [
+      "受到岡姆祝福"
+     ],
+     "en": [
+      "Blessed by Kaom"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideSpecialAzmeriWisp",
+     "zh": [
+      "含有一個阿茲莫里魂靈"
+     ],
+     "en": [
+      "Contains an Azmeri Spirit"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideItemQuantityMonster",
+     "zh": [
+      "增加#%怪物掉落物品的數量"
+     ],
+     "en": [
+      "#% increased Quantity of Items Dropped by Monsters"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideItemRarityMonster",
+     "zh": [
+      "增加#%怪物掉落物品的稀有度"
+     ],
+     "en": [
+      "#% increased Rarity of Items Dropped by Monsters"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideSpecialDevourerTail",
+     "zh": [
+      "增加#%怪物的效用"
+     ],
+     "en": [
+      "Monsters have #% increased Effectiveness"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsidePackSize",
+     "zh": [
+      "增加#%怪物群大小"
+     ],
+     "en": [
+      "#% increased Pack size"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideItemRarityChest",
+     "zh": [
+      "增加#%發掘保險箱的物品品質"
+     ],
+     "en": [
+      "#% increased Rarity of Items Found in Excavated Chests"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideItemQuantityChest",
+     "zh": [
+      "增加#%發掘保險箱的物品數量"
+     ],
+     "en": [
+      "#% increased Quantity of Items Found in Excavated Chests"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideRareMonsterChance",
+     "zh": [
+      "增加#%稀有怪物的數量"
+     ],
+     "en": [
+      "#% increased number of Rare Monsters"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideMagicMonsterChance",
+     "zh": [
+      "增加#%魔法怪物的數量"
+     ],
+     "en": [
+      "#% increased number of Magic Monsters"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideExperience",
+     "zh": [
+      "怪物增加#%經驗值"
+     ],
+     "en": [
+      "Monsters grant #% increased Experience"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideSpecialRunicHenge",
+     "zh": [
+      "為所有怪物添加一個隨機符形"
+     ],
+     "en": [
+      "Adds a random runeshape to all monsters"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideMissingLife",
+     "zh": [
+      "生成的怪物損失額外#%生命"
+     ],
+     "en": [
+      "Monsters spawn with an additional #% of Life missing"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicUpsideElitesDuplicated",
+     "zh": [
+      "符文怪物被複製"
+     ],
+     "en": [
+      "Runic Monsters are Duplicated"
+     ],
+     "g": 0
+    },
+    {
+     "id": "ExpeditionRelicDownsideElementalAilmentChance",
+     "zh": [
+      "增加#%怪物擁有的易燃幅度"
+     ],
+     "en": [
+      "Monsters have #% increased Flammability Magnitude"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideElementalAilmentChance",
+     "zh": [
+      "增加#%怪物的冰凍累積"
+     ],
+     "en": [
+      "Monsters have #% increased Freeze Buildup"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideElementalAilmentChance",
+     "zh": [
+      "增加#%怪物造成感電的機率"
+     ],
+     "en": [
+      "Monsters have #% increased chance to Shock"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideIncreasedDamage",
+     "zh": [
+      "增加#%怪物造成的傷害"
+     ],
+     "en": [
+      "Monsters deal #% increased Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideCannotBeCrit",
+     "zh": [
+      "對怪物的擊中不能暴擊"
+     ],
+     "en": [
+      "Hits against Monsters cannot be Critical Hits"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideResistancesAndMaxResistances",
+     "zh": [
+      "怪物#%全部抗性"
+     ],
+     "en": [
+      "Monsters have #% to all Resistances"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideResistancesAndMaxResistances",
+     "zh": [
+      "怪物#%全部最大抗性"
+     ],
+     "en": [
+      "Monsters have #% to all maximum Resistances"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmuneColdDamage",
+     "zh": [
+      "怪物免疫冰冷傷害"
+     ],
+     "en": [
+      "Monsters are Immune to Cold Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmuneChaosDamage",
+     "zh": [
+      "怪物免疫混沌傷害"
+     ],
+     "en": [
+      "Monsters are Immune to Chaos Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmuneFireDamage",
+     "zh": [
+      "怪物免疫火焰傷害"
+     ],
+     "en": [
+      "Monsters are Immune to Fire Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmunePhysicalDamage",
+     "zh": [
+      "怪物免疫物理傷害"
+     ],
+     "en": [
+      "Monsters are Immune to Physical Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmuneLightningDamage",
+     "zh": [
+      "怪物免疫閃電傷害"
+     ],
+     "en": [
+      "Monsters are Immune to Lightning Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideIncreasedSpeed",
+     "zh": [
+      "怪物增加#%攻擊速度"
+     ],
+     "en": [
+      "Monsters have #% increased Attack Speed"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideIncreasedSpeed",
+     "zh": [
+      "怪物增加#%施放速度"
+     ],
+     "en": [
+      "Monsters have #% increased Cast Speed"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideIncreasedLife",
+     "zh": [
+      "怪物增加#%最大生命"
+     ],
+     "en": [
+      "Monsters have #% increased Maximum Life"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideIncreasedSpeed",
+     "zh": [
+      "怪物增加#%移動速度"
+     ],
+     "en": [
+      "Monsters have #% increased Movement Speed"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideAllDamagePoisonsPoisonDuration",
+     "zh": [
+      "怪物擊中時造成中毒"
+     ],
+     "en": [
+      "Monsters Poison on Hit"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideAllDamagePoisonsPoisonDuration",
+     "zh": [
+      "怪物擊中的所有傷害貢獻至中毒幅度"
+     ],
+     "en": [
+      "All Damage from Monsters' Hits Contributes to Poison Magnitude"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideImmuneToCurses",
+     "zh": [
+      "怪物為無咒"
+     ],
+     "en": [
+      "Monsters are Hexproof"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAsCold",
+     "zh": [
+      "怪物獲得等同於傷害#%的額外冰冷傷害"
+     ],
+     "en": [
+      "Monsters Gain #% of Damage as Extra Cold Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAsChaos",
+     "zh": [
+      "怪物獲得等同於傷害#%的額外混沌傷害"
+     ],
+     "en": [
+      "Monsters Gain #% of Damage as Extra Chaos Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAsFire",
+     "zh": [
+      "怪物獲得等同於傷害#%的額外火焰傷害"
+     ],
+     "en": [
+      "Monsters Gain #% of Damage as Extra Fire Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAsLightning",
+     "zh": [
+      "怪物獲得等同於傷害#%的額外閃電傷害"
+     ],
+     "en": [
+      "Monsters Gain #% of Damage as Extra Lightning Damage"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideHitsCannotBeEvaded",
+     "zh": [
+      "怪物的擊中不能被閃避"
+     ],
+     "en": [
+      "Monsters' Hits can't be Evaded"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideAlwaysCrit",
+     "zh": [
+      "怪物的擊中必定暴擊"
+     ],
+     "en": [
+      "Monsters' Hits are always Critical Hits"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideBleedOnHitBleedDuration",
+     "zh": [
+      "怪物的攻擊擊中造成流血"
+     ],
+     "en": [
+      "Monsters' Attack Hits inflict Bleeding"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideColdPenetration",
+     "zh": [
+      "怪物穿透#%冰冷抗性"
+     ],
+     "en": [
+      "Monsters Penetrate #% Cold Resistance"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideChaosPenetration",
+     "zh": [
+      "怪物穿透#%混沌抗性"
+     ],
+     "en": [
+      "Monsters Penetrate #% Chaos Resistance"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideFirePenetration",
+     "zh": [
+      "怪物穿透#%火焰抗性"
+     ],
+     "en": [
+      "Monsters Penetrate #% Fire Resistance"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideLightningPenetration",
+     "zh": [
+      "怪物穿透#%閃電抗性"
+     ],
+     "en": [
+      "Monsters Penetrate #% Lightning Resistance"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideGrantNoFlaskCharges",
+     "zh": [
+      "怪物被擊殺時不會給予藥劑充能"
+     ],
+     "en": [
+      "Monsters do not grant Flask Charges when Slain"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAttackCastMovementSpeedLowLife",
+     "zh": [
+      "怪物貧血時增加#%攻擊速度"
+     ],
+     "en": [
+      "Monsters have #% increased Attack Speed while on Low Life"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAttackCastMovementSpeedLowLife",
+     "zh": [
+      "怪物貧血時增加#%施放速度"
+     ],
+     "en": [
+      "Monsters have #% increased Cast Speed while on Low Life"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideDamageAttackCastMovementSpeedLowLife",
+     "zh": [
+      "怪物貧血時增加#%移動速度"
+     ],
+     "en": [
+      "Monsters have #% increased Movement Speed while on Low Life"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideArmourBreak",
+     "zh": [
+      "擊中破壞的護甲值等同於造成的#%物理傷害"
+     ],
+     "en": [
+      "Monsters' Hits Break Armour equal to #% of Physical Damage dealt"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideRegenerateLifeEveryFourSeconds",
+     "zh": [
+      "每4秒，符文怪物在1秒內回復#%生命"
+     ],
+     "en": [
+      "Every 4 seconds, Runic Monsters Regenerate #% of maximum Life over one second"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideCannotBeLeechedFrom",
+     "zh": [
+      "無法從怪物身上偷取生命"
+     ],
+     "en": [
+      "Life cannot be Leeched from Monsters"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideCannotBeLeechedFrom",
+     "zh": [
+      "無法從怪物身上偷取魔力"
+     ],
+     "en": [
+      "Mana cannot be Leeched from Monsters"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicDownsideElitesRandomCurseOnHit",
+     "zh": [
+      "符文怪物擊中時套用1個隨機詛咒"
+     ],
+     "en": [
+      "Runic Monsters apply a random Curse on Hit"
+     ],
+     "g": 1
+    },
+    {
+     "id": "ExpeditionRelicModifierStatusAilmentThreshold",
+     "zh": [
+      "增加#%怪物的元素異常狀態門檻"
+     ],
+     "en": [
+      "Monsters have #% increased Elemental Ailment Threshold"
+     ],
+     "g": 2
+    },
+    {
+     "id": "ExpeditionRelicModifierBeastSkin",
+     "zh": [
+      "怪物有+#%的機率腐化結合"
+     ],
+     "en": [
+      "Monsters have +#% chance to Coalesce Corruption"
+     ],
+     "g": 2
+    }
+   ]
+  }
+ ]
+}
