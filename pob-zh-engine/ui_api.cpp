@@ -1157,11 +1157,18 @@ static std::string tr_display(const char* text)
 		return std::string(raw && raw != text ? raw : text);
 	}
 	const char* sres = translation_lookup(stripped);
-	if (sres) {
+	// A hit that hands back the bare text unchanged is not a translation: the
+	// lookup's comma-list path does exactly that for "0, 0, 0" (each "0" is
+	// its own trivial hit), and re-attaching only the LEADING colour would
+	// repaint the calcs-page charge counts in one colour. Keep the original,
+	// every colour code included. Same rule for the raw retry below, which
+	// may have arrived here through the lookup's own colour-stripping step.
+	if (sres && strcmp(sres, stripped) != 0) {
 		if (leading[0] != '\0') return std::string(leading) + sres;
 		return std::string(sres);
 	}
-	return std::string(raw && raw != text ? raw : text);
+	if (raw && raw != text && strcmp(raw, stripped) != 0) return std::string(raw);
+	return std::string(text);
 }
 
 static int l_DrawString(lua_State* L)
@@ -2131,6 +2138,22 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	  "main.lua",
 	  "function main:WrapString(str, height, width)",
 	  " if PobToolsTranslateDisplay then str = PobToolsTranslateDisplay(str) or str end" },
+
+	// Calcs page section header. POB DRAWS the header as `label..":"` but
+	// places the value after it by measuring `label` alone. In English those
+	// differ by one colon; through the dictionary they are two different keys
+	// that can come back as two different strings -- "Recoup and Hit Taken
+	// Over Time" is 9 characters and "...Time:" is 14 -- so the value was drawn
+	// underneath the bold header and vanished ("Charges: 0, 0" lost a value,
+	// "Rage: 0 (0)" crowded the colon). Measure what is actually drawn, minus
+	// the colon, so the English layout stays pixel-identical (per-glyph widths
+	// are additive). Replace mode: PoE1 (`local ex = lx + ...`) and PoE2
+	// (`local x = x + 3 + ...`) share the call but not the line around it.
+	{ u8"計算頁區段標題後面的數值被中文標題蓋住",
+	  "calcsectioncontrol.lua",
+	  "DrawStringWidth(16, \"VAR BOLD\", subSec.label)",
+	  nullptr,
+	  "(DrawStringWidth(16, \"VAR BOLD\", (subSec.label or \"\") .. \":\") - DrawStringWidth(16, \"VAR BOLD\", \":\"))" },
 };
 
 // luaL_loadfile drop-in used by LoadModule/PLoadModule; same status codes.

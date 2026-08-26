@@ -8,6 +8,7 @@
 
 #include "translation_manager.h"
 #include "startup_trace.h"
+#include "r_font_fallback.h"
 
 #include <fmt/format.h>
 #include <iostream>
@@ -92,6 +93,12 @@ struct r_font_c::FtCache {
 	// Codepoints this face has no glyph for (requireGlyph misses), so each one
 	// is asked of FreeType once, not every frame.
 	std::unordered_set<char32_t> missing;
+	// The other shipped faces, tried in order for a codepoint the primary face
+	// has no glyph for (r_font_fallback.h; tests/font_fallback_selftest.cpp
+	// runs it against the shipped TTFs). requireGlyph (the ASCII override path)
+	// deliberately does NOT consult these: Latin from a second face is worse
+	// than the bitmap font it already falls back to.
+	FtFallbackChain fallback;
 
 	bool Init(r_renderer_c* rend, const std::string& ttfPath) {
 		renderer = rend;
@@ -113,8 +120,22 @@ struct r_font_c::FtCache {
 		for (auto& atlas : atlases) {
 			delete atlas.tex;
 		}
+		fallback.Close();
 		if (face) FT_Done_Face(face);
 		if (library) FT_Done_FreeType(library);
+	}
+
+	// The face to render `cp` from (see FtFallbackChain::FaceFor). The log
+	// fires once per fallback file, the first time the primary misses.
+	FT_Face FaceFor(char32_t cp) {
+		return fallback.FaceFor(library, face, cp, [this, cp](const std::string& path, bool ok) {
+			if (ok) {
+				renderer->sys->con->Printf("FreeType: opened fallback font '%s' (U+%04X missing from the primary face)",
+					path.c_str(), (unsigned)cp);
+			} else {
+				renderer->sys->con->Warning("FreeType: failed to open fallback font '%s'", path.c_str());
+			}
+		});
 	}
 
 	FtAtlas& EnsureAtlas(int glyphW, int glyphH) {
@@ -167,26 +188,30 @@ struct r_font_c::FtCache {
 			return nullptr;
 		}
 
+		// The CJK path (requireGlyph == false) may draw from a fallback face.
+		// The ASCII override path has just proven the primary has the glyph.
+		FT_Face useFace = requireGlyph ? face : FaceFor(cp);
+
 		// Set pixel size
-		FT_Set_Pixel_Sizes(face, 0, pixelSize);
+		FT_Set_Pixel_Sizes(useFace, 0, pixelSize);
 
 		// Load and render glyph. The embolden pass needs the outline, so it
 		// loads unrendered, thickens, then renders; the plain path stays on
 		// FT_LOAD_RENDER exactly as before.
 		if (embolden) {
-			if (FT_Load_Char(face, (FT_ULong)cp, FT_LOAD_DEFAULT)) {
+			if (FT_Load_Char(useFace, (FT_ULong)cp, FT_LOAD_DEFAULT)) {
 				return nullptr;
 			}
-			FT_GlyphSlot_Embolden(face->glyph);
-			if (face->glyph->format != FT_GLYPH_FORMAT_BITMAP &&
-			    FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL)) {
+			FT_GlyphSlot_Embolden(useFace->glyph);
+			if (useFace->glyph->format != FT_GLYPH_FORMAT_BITMAP &&
+			    FT_Render_Glyph(useFace->glyph, FT_RENDER_MODE_NORMAL)) {
 				return nullptr;
 			}
-		} else if (FT_Load_Char(face, (FT_ULong)cp, FT_LOAD_RENDER)) {
+		} else if (FT_Load_Char(useFace, (FT_ULong)cp, FT_LOAD_RENDER)) {
 			return nullptr;
 		}
 
-		FT_GlyphSlot slot = face->glyph;
+		FT_GlyphSlot slot = useFace->glyph;
 		FT_Bitmap& bmp = slot->bitmap;
 
 		int glyphW = (int)bmp.width;
@@ -365,6 +390,12 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 			test.close();
 			ftCache = std::make_unique<FtCache>();
 			if (ftCache->Init(renderer, ttfCandidates[i].c_str())) {
+				// Every OTHER candidate that exists becomes a fallback, in the
+				// same priority order.
+				ftCache->fallback.CollectFallbacks(ttfCandidates, i, [](const std::string& path) {
+					std::ifstream probe(path);
+					return probe.good();
+				});
 				break;
 			}
 			ftCache.reset();

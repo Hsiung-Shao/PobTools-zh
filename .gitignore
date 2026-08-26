@@ -18,6 +18,7 @@ Release/
 pob-zh-engine/build/
 pob-zh-engine/vcpkg/
 pob-zh-engine/tests/translate_test_out.txt
+pob-zh-engine/tests/display_colour_test_out.txt
 
 # dist/ is the deployment bundle — a build output, so it stays ignored, with one
 # exception: the translation dictionaries. Those ship in the public release zip
@@ -140,6 +141,7 @@ node_modules/
 **/__pycache__/
 graphify-out/
 image/
+images/
 Thumbs.db
 .DS_Store
 

@@ -627,3 +627,13 @@ target_link_libraries(lzip
 
 install(TARGETS lzip RUNTIME DESTINATION "engine")
 install(FILES $<TARGET_RUNTIME_DLLS:lzip> DESTINATION "engine")
+
+# Headless check of the engine's fallback font chain against the shipped TTFs
+# (engine/render/r_font_fallback.h). Not installed, not built by default:
+#   cmake --build build --config Release --target font_fallback_selftest
+#   $env:PATH = "dist\engine;$env:PATH"; build\Release\font_fallback_selftest.exe dist\Fonts
+add_executable(font_fallback_selftest EXCLUDE_FROM_ALL tests/font_fallback_selftest.cpp)
+target_link_libraries(font_fallback_selftest PRIVATE Freetype::Freetype)
+if (MSVC)
+    target_compile_options(font_fallback_selftest PRIVATE "/utf-8")
+endif ()
