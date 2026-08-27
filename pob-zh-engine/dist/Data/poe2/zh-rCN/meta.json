@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "locale": "zh-rCN",
+  "display_name": "简体中文",
+  "source": "poe2",
+  "load_order": [
+    "tags.json",
+    "ui.json",
+    "stats.json",
+    "items.json",
+    "gems.json",
+    "passives.json",
+    "uniques.json",
+    "monsters.json"
+  ],
+  "incomplete_translation_whitelist": [
+    "DPS",
+    "PoB",
+    "DoT",
+    "AoE",
+    "URL",
+    "DPI",
+    "POB",
+    "B",
+    "G",
+    "R",
+    "W",
+    "A"
+  ]
+}

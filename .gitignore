@@ -150,3 +150,7 @@ Thumbs.db
 # package_release.ps1 的 Assert-Step 16 會擋,但擋在那裡等於整個發版流程白做一次。
 pob-zh-engine/build-faulttest/
 dist-faulttest/
+
+# 維護者翻譯來源資料,只留本地
+/CnTranslationData/
+/Poe2MarketZh Data/
