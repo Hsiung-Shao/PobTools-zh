@@ -644,9 +644,17 @@ static std::string read_pob_version(const std::wstring& installDir)
 	size_t close = xml.find('"', attr);
 	if (close == std::string::npos || close > end) return std::string();
 	std::string v = xml.substr(attr, close - attr);
-	if (v.empty() || v.size() >= 16) return std::string();
-	for (char c : v)
-		if (!(c >= '0' && c <= '9') && c != '.') return std::string();
+	// Release builds are "2.57.1"; the beta branch stamps "2.67.2-ed354c2f8"
+	// (16 chars, dash, hex letters). The old digits-and-dots-under-16 guard
+	// rejected exactly that and the launcher row showed no version at all for
+	// a beta install. Cap 25 (user-set): longer than any real stamp, short
+	// enough that markup or a corrupt attribute still reads as garbage.
+	if (v.empty() || v.size() > 25) return std::string();
+	for (char c : v) {
+		const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') ||
+		                (c >= 'A' && c <= 'Z') || c == '.' || c == '-';
+		if (!ok) return std::string();
+	}
 	return v;
 }
 
