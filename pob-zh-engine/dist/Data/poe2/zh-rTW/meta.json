@@ -21,10 +21,14 @@
     "URL",
     "DPI",
     "POB",
+    "FullDPS",
     "B",
     "G",
     "R",
     "W",
     "A"
+  ],
+  "glossary_blacklist": [
+    "UNUSED"
   ]
 }

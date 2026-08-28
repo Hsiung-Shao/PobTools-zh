@@ -56474,6 +56474,8 @@
     "{0}% more Melee Damage while Burning": "燃燒時有 {0}% 更多近戰傷害",
     "{0}% less Melee Damage while Burning": "燃燒時有 {0}% 更少近戰傷害",
     "Prevent {0:+d}% of Reflected Damage during Effect": "效果持續時間內，避免 {0:+d}% 反射的傷害",
+    "Prevent {0:+d}% of Reflected Physical Damage you would take while affected by Determination": "被堅定影響時，避免 {0:+d}% 你承受的反射物理傷害",
+    "Prevent {0:+d}% of Reflected Elemental Damage you would take while\naffected by Purity of Elements": "被元素淨化影響時，避免 {0:+d}% 你承受的反射元素傷害",
     "Minions have {0:+d}% to Damage over Time Multiplier": "召喚物擁有 {0:+d}% 持續傷害加成",
     "40% increased Critical Strike Chance if you've Summoned a Totem Recently": "如果你近期召喚了一根圖騰，增加40%暴擊率",
     "40% increased Critical Strike Chance if you've Summoned a Totem in the past {0} seconds": "如果你在過去{0}秒內召喚了一根圖騰，增加40%暴擊率",

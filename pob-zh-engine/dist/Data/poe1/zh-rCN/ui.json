@@ -2434,6 +2434,7 @@
     "Unused Items": "未使用物品",
     "Delete Unused": "删除未使用物品",
     "(Unused)": "^9(未使用)",
+    "(Guard)": "(护卫)",
     "(Used in 'Default')": "^9在“默认”中使用",
     "Delete Item": "删除物品",
     "Are you sure you want to delete it?": "你确定你要删除它?",
