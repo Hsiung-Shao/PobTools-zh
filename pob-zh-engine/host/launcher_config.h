@@ -181,6 +181,13 @@ std::vector<std::wstring> ListAvailableFonts(const std::wstring& exeDir);
 // falls back to the Noto default, then FZ_ZY, then any Fonts\*.ttf.
 std::wstring ResolveFontPath(const std::wstring& exeDir, const std::wstring& fontFile);
 
+// Full paths of every other shipped font, i.e. every Fonts\*.ttf except the one
+// `fontFile` resolves to. These are merged into the ImGui atlas as glyph
+// fallbacks: Noto Sans TC carries no simplified-only characters, so a zh-rCN
+// launcher on the default font drew 73 of its glyphs as '?' until FZ_ZY (which
+// has them all, and ships since v0.28.0) filled the gaps.
+std::vector<std::wstring> FallbackFontPaths(const std::wstring& exeDir, const std::wstring& fontFile);
+
 // Convenience for the editor/atlas entry points: read the configured font from
 // <exeDir>\pob-zh.ini and resolve it to a full path (with the same fallbacks).
 std::wstring ResolveConfiguredFontPath(const std::wstring& exeDir);

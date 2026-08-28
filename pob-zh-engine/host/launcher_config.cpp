@@ -607,6 +607,17 @@ std::wstring ResolveFontPath(const std::wstring& exeDir, const std::wstring& fon
 	return p;
 }
 
+std::vector<std::wstring> FallbackFontPaths(const std::wstring& exeDir, const std::wstring& fontFile)
+{
+	const std::wstring primary = ResolveFontPath(exeDir, fontFile);
+	std::vector<std::wstring> out;
+	for (const std::wstring& f : ListAvailableFonts(exeDir)) {
+		const std::wstring p = exeDir + L"Fonts\\" + f;
+		if (_wcsicmp(p.c_str(), primary.c_str()) != 0) out.push_back(p);
+	}
+	return out;
+}
+
 std::wstring ResolveConfiguredFontPath(const std::wstring& exeDir)
 {
 	wchar_t fbuf[128];

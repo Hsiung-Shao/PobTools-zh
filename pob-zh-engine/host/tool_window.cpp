@@ -83,7 +83,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	// Full CJK + Korean, so item names, node names and IME input all render. The
 	// launcher builds an equivalent face for the embedded case; the ranges differ
 	// only in that the launcher also folds in its own UI strings.
-	std::vector<unsigned char> ttf = EdReadFile(ResolveConfiguredFontPath(exeDir));
+	const std::wstring primaryFontPath = ResolveConfiguredFontPath(exeDir);
+	std::vector<unsigned char> ttf = EdReadFile(primaryFontPath);
 	ImFont* font = nullptr;
 	ImFont* fontBig = nullptr;
 	bool cjkOk = false;
@@ -110,6 +111,22 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : 4096;
 		font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale,
 		                                      &cfg, ranges.Data);
+		// Every other shipped font, merged as glyph fallbacks (present glyphs are
+		// skipped): the tools draw zh-rCN dictionary text, and Noto Sans TC has
+		// no simplified-only glyphs. Static: the atlas keeps the pointers.
+		static std::vector<std::vector<unsigned char>> fallbackTtfs;
+		fallbackTtfs.clear();
+		for (const std::wstring& f : ListAvailableFonts(exeDir)) {
+			const std::wstring p = exeDir + L"Fonts\\" + f;
+			if (_wcsicmp(p.c_str(), primaryFontPath.c_str()) == 0) continue;
+			std::vector<unsigned char> fb = EdReadFile(p);
+			if (!fb.empty()) fallbackTtfs.push_back(std::move(fb));
+		}
+		ImFontConfig cfgMerge = cfg;
+		cfgMerge.MergeMode = true;
+		for (std::vector<unsigned char>& fb : fallbackTtfs)
+			io.Fonts->AddFontFromMemoryTTF(fb.data(), (int)fb.size(), kFontSize * scale,
+			                               &cfgMerge, ranges.Data);
 		// ToolPanelHost::big -- twelve glyphs, so it costs nothing and both hosts can
 		// offer it unconditionally rather than the panel having two layouts.
 		static ImVector<ImWchar> bigRanges;

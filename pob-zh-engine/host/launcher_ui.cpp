@@ -1,4 +1,5 @@
 #include "launcher_ui.h"
+#include <map>                  // RunFontCoverageSelftest's union bookkeeping
 #include "editor_util.h"        // EdBrowseForFolder (one folder picker for the app)
 #include "launcher_strings.h"
 #include "launcher_strings_io.h"
@@ -295,6 +296,11 @@ static std::wstring from_utf8(const std::string& s)
 // LauncherFonts it produced.
 struct FontBuildInput {
 	std::shared_ptr<const std::vector<unsigned char>> ttf; // empty -> ImGui default font
+	// The OTHER shipped fonts, merged into every face as glyph fallbacks (a
+	// glyph the primary already has is skipped by ImGui's merge mode, so the
+	// atlas only grows by the gaps). Noto Sans TC has no simplified-only
+	// characters; FZ_ZY fills them.
+	std::vector<std::shared_ptr<const std::vector<unsigned char>>> fallbacks;
 	// The precise set: every string the launcher can draw, in every installed
 	// language, plus `extraTexts`. Computed on the main thread (it reads the
 	// string tables, which the translation editor may reload), so a worker never
@@ -375,11 +381,16 @@ static void BuildPreciseRanges(ImFontGlyphRangesBuilder& b,
 // measure the smallest fallback and never the case that actually ships.
 static std::shared_ptr<const FontBuildInput> PrepareFontInput(
     const std::wstring& fontPath, const std::vector<std::string>& extraTexts,
-    const std::vector<const LauncherStrings*>& overlays, float scale, int maxTexOverride)
+    const std::vector<const LauncherStrings*>& overlays, float scale, int maxTexOverride,
+    const std::vector<std::wstring>& fallbackPaths = {})
 {
 	auto in = std::make_shared<FontBuildInput>();
 	in->ttf = std::make_shared<const std::vector<unsigned char>>(read_file(fontPath));
 	in->scale = scale;
+	for (const std::wstring& p : fallbackPaths) {
+		auto buf = std::make_shared<const std::vector<unsigned char>>(read_file(p));
+		if (!buf->empty()) in->fallbacks.push_back(std::move(buf));
+	}
 	{
 		ImFontGlyphRangesBuilder b;
 		BuildPreciseRanges(b, extraTexts, overlays);
@@ -468,14 +479,21 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 			b.BuildRanges(&out.ranges->full);
 		}
 		const float scale = in->scale * sizeMul;
-		out.body = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
-		                                       kFontSize * scale, &cfg, out.ranges->full.Data);
-		out.small = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
-		                                        kSmallFontSize * scale, &cfg, in->rangesPrecise.Data);
-		out.title = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
-		                                        kTitleFontSize * scale, &cfg, in->rangesPrecise.Data);
-		out.big = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(),
-		                                      kBigFontSize * scale, &cfg, in->rangesDigits.Data);
+		// Merged fallbacks: a glyph the primary face already has is skipped, so
+		// the atlas grows only by the gaps (the simplified-only characters, for
+		// the shipped pair). `in` keeps the buffers alive, same as the primary.
+		ImFontConfig cfgMerge = cfg;
+		cfgMerge.MergeMode = true;
+		auto addFace = [&](float px, const ImWchar* ranges) -> ImFont* {
+			ImFont* f = atlas->AddFontFromMemoryTTF((void*)ttf.data(), (int)ttf.size(), px, &cfg, ranges);
+			for (const auto& fb : in->fallbacks)
+				atlas->AddFontFromMemoryTTF((void*)fb->data(), (int)fb->size(), px, &cfgMerge, ranges);
+			return f;
+		};
+		out.body = addFace(kFontSize * scale, out.ranges->full.Data);
+		out.small = addFace(kSmallFontSize * scale, in->rangesPrecise.Data);
+		out.title = addFace(kTitleFontSize * scale, in->rangesPrecise.Data);
+		out.big = addFace(kBigFontSize * scale, in->rangesDigits.Data);
 		if (!atlas->Build()) return false;
 		out.texW = atlas->TexWidth;
 		out.texH = atlas->TexHeight;
@@ -982,7 +1000,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// later). Until then a character outside the string tables -- a build name in
 	// a tab title, say -- draws as '?', and corrects itself on the swap.
 	std::shared_ptr<const FontBuildInput> fontInput = PrepareFontInput(
-	    ResolveFontPath(exeDir, cfg.fontFile), { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex);
+	    ResolveFontPath(exeDir, cfg.fontFile), { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex,
+	    FallbackFontPaths(exeDir, cfg.fontFile));
 	FontAtlasWorker fontWorker;
 	fontWorker.Start(fontInput);
 	LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Precise);
@@ -1265,7 +1284,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui_ImplOpenGL3_DestroyFontsTexture();
 			ImGui::GetIO().Fonts->Clear();
 			fontInput = PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile),
-			                             { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex);
+			                             { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex,
+			                             FallbackFontPaths(exeDir, cfg.fontFile));
 			fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Full);
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
@@ -2430,7 +2450,8 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 			for (int lim : kLimits) {
 				ImGui::CreateContext();
 				std::shared_ptr<const FontBuildInput> in =
-				    PrepareFontInput(ResolveFontPath(exeDir, f), {}, overlays, sc, lim);
+				    PrepareFontInput(ResolveFontPath(exeDir, f), {}, overlays, sc, lim,
+				                     FallbackFontPaths(exeDir, f));
 				LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 
 				char head[192];
@@ -2502,7 +2523,8 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		if (realMax >= 2048) {
 			ImGui::CreateContext();
 			std::shared_ptr<const FontBuildInput> in =
-			    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, realScale, realMax);
+			    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, realScale, realMax,
+			                 FallbackFontPaths(exeDir, cfg.fontFile));
 			LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 			int miss = 0;
 			for (unsigned cp : probeCps)
@@ -2523,7 +2545,8 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 	{
 		ImGui::CreateContext();
 		std::shared_ptr<const FontBuildInput> in =
-		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096,
+		                 FallbackFontPaths(exeDir, cfg.fontFile));
 		LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
 		int missing = 0;
 		for (unsigned cp : probeCps)
@@ -2544,7 +2567,8 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 	{
 		ImGui::CreateContext();
 		std::shared_ptr<const FontBuildInput> in =
-		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096,
+		                 FallbackFontPaths(exeDir, cfg.fontFile));
 		FontAtlasWorker worker;
 		worker.Start(in);
 		LauncherFonts precise = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Precise);
@@ -2596,7 +2620,8 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		abandoned.Discard();
 		ImGui::GetIO().Fonts->Clear();
 		std::shared_ptr<const FontBuildInput> in2 =
-		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096);
+		    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, 1.0f, 4096,
+		                 FallbackFontPaths(exeDir, cfg.fontFile));
 		LauncherFonts rebuilt = LoadFonts(ImGui::GetIO().Fonts, in2, FontScope::Full);
 		precise = LauncherFonts();
 		full = LauncherFonts();
@@ -2746,6 +2771,14 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 	printf("font coverage: %d distinct characters across %d font(s)\n",
 	       (int)want.size(), (int)fonts.size());
 
+	// UNION semantics: the launcher merges every shipped font into its atlas as
+	// glyph fallbacks, so a character is drawable when ANY font carries it.
+	// Judging each font alone made zh-rCN un-shippable -- Noto Sans TC has no
+	// simplified-only glyphs and never will; FZ_ZY fills them. A per-font gap
+	// is still reported (it shows which font is doing the covering), but only a
+	// character missing from EVERY font fails the run.
+	std::map<unsigned, int> uncovered; // cp -> fonts still missing it
+	for (unsigned cp : want) if (cp <= 0xFFFF) uncovered[cp] = 0;
 	int bad = 0;
 	for (const std::wstring& f : fonts) {
 		const std::wstring path = ResolveFontPath(exeDir, f);
@@ -2782,7 +2815,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 		std::vector<unsigned> missing;
 		for (unsigned cp : want) {
 			if (cp > 0xFFFF) continue;  // ImWchar is 16-bit in this build
-			if (!font->FindGlyphNoFallback((ImWchar)cp)) missing.push_back(cp);
+			if (!font->FindGlyphNoFallback((ImWchar)cp)) { missing.push_back(cp); uncovered[cp]++; }
 		}
 		// Reported, never failed: a TC font is not expected to carry these.
 		{
@@ -2807,15 +2840,28 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 		if (missing.empty()) {
 			printf("  [PASS] %s: draws all %d\n", name.c_str(), (int)want.size());
 		} else {
-			printf("  [FAIL] %s: %d character(s) would render as '?'\n",
+			// A gap in ONE font is fine as long as another shipped font covers
+			// it -- the launcher's merged fallback will use that one.
+			printf("  [gap]  %s: %d character(s) covered by another shipped font\n",
 			       name.c_str(), (int)missing.size());
-			for (unsigned cp : missing) {
+		}
+		ImGui::DestroyContext();
+	}
+	// The real gate: a character NO shipped font can draw.
+	{
+		std::vector<unsigned> nowhere;
+		for (const auto& [cp, misses] : uncovered)
+			if (misses == (int)fonts.size()) nowhere.push_back(cp);
+		if (!nowhere.empty()) {
+			printf("  [FAIL] %d character(s) missing from EVERY shipped font\n", (int)nowhere.size());
+			for (unsigned cp : nowhere) {
 				wchar_t w[2] = { (wchar_t)cp, 0 };
 				printf("           U+%04X  '%s'\n", cp, to_utf8(w).c_str());
 			}
 			bad++;
+		} else {
+			printf("  [PASS] every launcher character is drawable by at least one shipped font\n");
 		}
-		ImGui::DestroyContext();
 	}
 	printf("\n%s\n", bad == 0 ? "ALL PASS" : "FAILED");
 	return bad == 0 ? 0 : 1;
