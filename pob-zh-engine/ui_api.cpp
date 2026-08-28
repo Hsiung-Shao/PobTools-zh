@@ -1136,39 +1136,34 @@ static std::string tr_display(const char* text)
 	size_t len = strlen(text);
 	if (len == 0) return std::string();
 
-	// 1. Direct lookup on the raw text (handles exact matches incl. color codes)
+	// One lookup does it all: translation_lookup's colour-segment step (3.4)
+	// translates each coloured run in place, so a hit already carries the
+	// escapes in their original positions. This used to strip the codes here
+	// and re-attach only the LEADING one, which is why every mid-string colour
+	// was lost. Copy immediately -- the pointer is into a cache that a later
+	// lookup may rehash.
 	const char* raw = translation_lookup(text);
-	bool has_colors = false;
-	for (size_t i = 0; i + 1 < len; i++) {
-		if (text[i] == '^' && (text[i + 1] == 'x' || (text[i + 1] >= '0' && text[i + 1] <= '9'))) {
-			has_colors = true;
-			break;
-		}
-	}
-	if (raw && raw != text && !has_colors) {
-		return std::string(raw);
-	}
+	if (!raw || strcmp(raw, text) == 0) return std::string(text);
+	std::string result(raw);
 
-	// 2. Strip color codes and retry (cleaner pattern match on the bare text)
 	char stripped[4096];
 	char leading[16];
-	int slen = tr_strip_color_codes(text, (int)len, stripped, sizeof(stripped), leading, sizeof(leading));
-	if (slen == (int)len) {
-		return std::string(raw && raw != text ? raw : text);
-	}
-	const char* sres = translation_lookup(stripped);
+	const int slen = tr_strip_color_codes(text, (int)len, stripped, sizeof(stripped), leading, sizeof(leading));
+	const bool had_colors = (slen != (int)len);
+
 	// A hit that hands back the bare text unchanged is not a translation: the
 	// lookup's comma-list path does exactly that for "0, 0, 0" (each "0" is
-	// its own trivial hit), and re-attaching only the LEADING colour would
-	// repaint the calcs-page charge counts in one colour. Keep the original,
-	// every colour code included. Same rule for the raw retry below, which
-	// may have arrived here through the lookup's own colour-stripping step.
-	if (sres && strcmp(sres, stripped) != 0) {
-		if (leading[0] != '\0') return std::string(leading) + sres;
-		return std::string(sres);
+	// its own trivial hit), and taking it would strip the calcs-page charge
+	// counts of their colours. Keep the original, every colour code included.
+	if (had_colors && result == stripped) return std::string(text);
+
+	// The lookup fell back to whole-line translation (no segment covered the
+	// line), so the result carries no escapes at all. Re-attaching the leading
+	// one is all that can be recovered -- better than a line with no colour.
+	if (had_colors && leading[0] != '\0' && result.find('^') == std::string::npos) {
+		return std::string(leading) + result;
 	}
-	if (raw && raw != text && strcmp(raw, stripped) != 0) return std::string(raw);
-	return std::string(text);
+	return result;
 }
 
 static int l_DrawString(lua_State* L)

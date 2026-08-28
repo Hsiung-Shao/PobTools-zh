@@ -262,6 +262,12 @@ static std::vector<std::pair<std::string,std::string>> s_strip_measure_words;
 /* Incomplete-translation whitelist (from meta.json) */
 static std::vector<std::string>   s_whitelist_terms;
 
+/* Keys that must never become glossary terms (from meta.json). The dictionary
+** inherits GGG's internal placeholder affixes ("[UNUSED]" -> "反鍊金的"), and
+** a placeholder in the substring glossary silently rewrites unrelated UI text:
+** "Unused Items" came out as "反鍊金的 物品". */
+static std::vector<std::string>   s_glossary_blacklist;
+
 /* ========== Helper: read env via Win32 (NOT getenv) ==========
 **
 ** The host exe uses a static CRT and passes POB_* variables with
@@ -323,7 +329,11 @@ static bool is_glossary_candidate(const std::string &key) {
     }
     /* Must not start with ^ (color code) */
     if (!key.empty() && key[0] == '^') return false;
-    return has_letter;
+    if (!has_letter) return false;
+    for (const std::string &bad : s_glossary_blacklist) {
+        if (key == bad) return false;
+    }
+    return true;
 }
 
 /* ========== Helper: Get exe directory ========== */
@@ -1254,6 +1264,13 @@ static bool load_json_meta(const std::string &filepath,
         }
     }
 
+    if (doc.contains("glossary_blacklist") && doc["glossary_blacklist"].is_array()) {
+        for (auto &item : doc["glossary_blacklist"]) {
+            if (item.is_string())
+                s_glossary_blacklist.push_back(item.get<std::string>());
+        }
+    }
+
     return true;
 }
 
@@ -1775,6 +1792,7 @@ void translation_shutdown(void) {
     s_strip_space_around.clear();
     s_strip_measure_words.clear();
     s_whitelist_terms.clear();
+    s_glossary_blacklist.clear();
     s_initialized = false;
     OutputDebugStringA("[pob-proxy] Translation manager shutdown\n");
 }
@@ -1836,6 +1854,76 @@ static std::string strip_color_codes(const std::string &s) {
         plain += s[i];
     }
     return plain;
+}
+
+/* Length of the SimpleGraphic colour escape starting at `i`, or 0 if there is
+** none. Deliberately as permissive about "^x" as strip_color_codes above (no
+** hex validation): if the two disagreed about what counts as an escape, the
+** segment path and the strip path would cut the same string differently. */
+static int colour_escape_len(const std::string &s, size_t i) {
+    if (i >= s.size() || s[i] != '^' || i + 1 >= s.size()) return 0;
+    const char n = s[i + 1];
+    if ((n == 'x' || n == 'X') && i + 7 < s.size()) return 8;
+    if (n >= '0' && n <= '9') return 2;
+    return 0;
+}
+
+/* One run of text plus the colour escape(s) that immediately precede it. */
+struct ColourSegment {
+    std::string colour; /* escapes, verbatim; empty for a run that starts the string */
+    std::string text;   /* everything up to the next escape */
+};
+
+/* Split "A^x808080 (B)" into {"", "A"}, {"^x808080", " (B)"}. Consecutive
+** escapes stay glued to the run they introduce, so re-joining colour+text in
+** order reproduces the input byte for byte. */
+static std::vector<ColourSegment> split_colour_segments(const std::string &s) {
+    std::vector<ColourSegment> out;
+    ColourSegment cur;
+    size_t i = 0;
+    while (i < s.size()) {
+        const int esc = colour_escape_len(s, i);
+        if (esc > 0) {
+            /* An escape closes the current run -- unless no text has been
+            ** collected yet, in which case the leading escapes all belong to
+            ** the run that is about to start. */
+            if (!cur.text.empty()) { out.push_back(cur); cur = ColourSegment(); }
+            cur.colour.append(s, i, esc);
+            i += esc;
+            continue;
+        }
+        cur.text += s[i++];
+    }
+    if (!cur.colour.empty() || !cur.text.empty()) out.push_back(cur);
+    return out;
+}
+
+/* True when every ASCII letter in `s` belongs to a meta.json whitelist term
+** ("DPS", "PoB", ...), i.e. the run is meant to stay in English rather than
+** being an untranslated gap. Same intent as the glossary's coverage rule. */
+static bool covered_by_whitelist(const std::string &s) {
+    if (s.empty()) return false;
+    std::vector<bool> covered(s.size(), false);
+    for (const std::string &wl : s_whitelist_terms) {
+        if (wl.empty()) continue;
+        size_t from = 0;
+        while (true) {
+            const size_t p = s.find(wl, from);
+            if (p == std::string::npos) break;
+            from = p + 1;
+            /* Whole-word only, same rule the glossary uses. The list holds the
+            ** single-letter gem codes ("B", "R", "G", "W"), so without this a
+            ** "Bag" would count as fully whitelisted and never be translated. */
+            const size_t end = p + wl.size();
+            if (p > 0 && is_ascii_alpha(s[p - 1])) continue;
+            if (end < s.size() && is_ascii_alpha(s[end])) continue;
+            for (size_t i = p; i < end; i++) covered[i] = true;
+        }
+    }
+    for (size_t i = 0; i < s.size(); i++) {
+        if (is_ascii_alpha(s[i]) && !covered[i]) return false;
+    }
+    return true;
 }
 
 /* A forward miss is only dictionary-actionable when it actually carries an
@@ -2002,13 +2090,158 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.4 Colour-code retry: POB glues colour escapes straight onto words
-     *     ("^x7070FFKinetic Blast ^720/20", "Full ^xE05030Life?"), which
-     *     defeats every matcher above and breaks glossary word boundaries.
-     *     Strip the codes and run the whole pipeline on the clean text. */
-    if (input.find('^') != std::string::npos) {
+    /* 3.35 Multi-line blocks: POB's LabelControls are whole [[...]] literals
+     *     (the skills tab's "Usage Tips:" block) and EditControl's unfocused
+     *     view is every line glued into one string (colour..line.."\n",
+     *     ConfigTab.lua:85) -- ONE DrawString call, while the dictionary keys
+     *     are per line.
+     *
+     *     Each line is translated INDEPENDENTLY through the full pipeline: a
+     *     line that translates is replaced, a line that does not is kept
+     *     verbatim. The all-or-nothing iron rule holds WITHIN a line, not
+     *     across lines -- the custom-mods box mixes recognised mods with the
+     *     player's own notes ("grafts--"), and demanding the whole block made
+     *     one untranslatable note drag every recognised mod back to English
+     *     while the focused view (drawn per line) showed them in Chinese.
+     *
+     *     Runs BEFORE the colour-segment step so 3.4 only ever sees single
+     *     lines. A line holds no '\n', so the recursion cannot come back here.
+     *     A line that misses but starts with the "- " bullet is retried
+     *     without it -- zh-rCN keys carry no bullet. */
+    if (input.find('\n') != std::string::npos) {
+        std::vector<std::string> lines;
+        size_t start = 0;
+        while (true) {
+            size_t sep = input.find('\n', start);
+            if (sep == std::string::npos) { lines.push_back(input.substr(start)); break; }
+            lines.push_back(input.substr(start, sep - start));
+            start = sep + 1;
+        }
+        bool translated_any = false;
+        std::string joined;
+        joined.reserve(input.size() + 64);
+        for (size_t li = 0; li < lines.size(); li++) {
+            const std::string &line = lines[li];
+            std::string body = line;
+            if (!body.empty() && body.back() == '\r') body.pop_back();
+            bool has_alpha = false;
+            for (char c : body) if (is_ascii_alpha(c)) { has_alpha = true; break; }
+            std::string out_line = line;
+            if (has_alpha && !covered_by_whitelist(body)) {
+                const char *zh = translation_lookup(body.c_str());
+                std::string zh_copy;
+                if (zh && body != zh) {
+                    zh_copy = zh;
+                } else if (!zh && body.compare(0, 2, "- ") == 0) {
+                    if (const char *bz = translation_lookup(body.c_str() + 2)) {
+                        if (body.compare(2, std::string::npos, bz) != 0) {
+                            zh_copy = "- ";
+                            zh_copy += bz;
+                        }
+                    }
+                }
+                if (!zh_copy.empty()) {
+                    translated_any = true;
+                    out_line = std::move(zh_copy);
+                    if (!line.empty() && line.back() == '\r') out_line += '\r';
+                }
+            }
+            if (li) joined += '\n';
+            joined += out_line;
+        }
+        /* No line translated: fall through untouched, so the whole-block
+        ** behaviour for colour/glossary inputs is exactly what it was. */
+        if (translated_any) {
+            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
+            return iter->second.c_str();
+        }
+    }
+
+    /* 3.4 Colour segments: POB glues colour escapes straight onto words
+     *     ("^x7070FFKinetic Blast ^720/20", "111,337^x808080 (Guard)",
+     *     "<name>^xE0B0FF (Active) ^7^x8888FFB^7-^x8888FFB"), which defeats
+     *     every matcher above and breaks glossary word boundaries.
+     *
+     *     Translate each coloured run on its own and put the runs back where
+     *     they were. Stripping the codes and translating the whole line -- what
+     *     this step used to do -- can only ever return a colourless string,
+     *     which is why every mid-string colour was lost: the caller could
+     *     re-attach the LEADING escape and nothing else. Field-reported as
+     *     "the translation takes the colour of whatever came before it".
+     *
+     *     A segment carries no colour ESCAPE, so the recursive lookup cannot
+     *     come back here; there is no unbounded recursion. The entry check
+     *     must be for a real escape, not the '^' character: the Notes tab's
+     *     own description contains a literal "(^)", and a bare-caret string
+     *     re-entering here is a single segment identical to its input --
+     *     lookup(core) == lookup(input), which recursed until the stack was
+     *     gone (0xC00000FD the moment the Notes tab rendered). */
+    bool input_has_escape = false;
+    for (size_t i = 0; i + 1 < input.size(); i++) {
+        if (colour_escape_len(input, i) > 0) { input_has_escape = true; break; }
+    }
+    if (input_has_escape) {
+        std::vector<ColourSegment> segs = split_colour_segments(input);
+        std::string rebuilt;
+        rebuilt.reserve(input.size() + 32);
+        bool translated_any = false;
+        bool all_covered = true;
+        for (const ColourSegment &seg : segs) {
+            /* Split the run into <leading space><core><trailing space>: POB
+            ** puts the escape before the space (" (Guard)"), and the space is
+            ** not part of any dictionary key. Newlines count as space here:
+            ** EditControl's unfocused view is built as colour..line.."\n" per
+            ** line (ConfigTab.lua:85), so every line arrives as its own
+            ** segment with a trailing "\n" that no dictionary key carries --
+            ** the custom-mods box translated only while focused without this. */
+            const size_t b = seg.text.find_first_not_of(" \t\r\n");
+            const size_t e = seg.text.find_last_not_of(" \t\r\n");
+            const std::string core = (b == std::string::npos)
+                                         ? std::string()
+                                         : seg.text.substr(b, e - b + 1);
+            bool has_alpha = false;
+            for (char c : core) if (is_ascii_alpha(c)) { has_alpha = true; break; }
+
+            /* Nothing to translate (digits, punctuation, the "-" between gem
+            ** letters, text already in Chinese), or a run the whitelist says
+            ** stays in English ("B", "DPS", "FullDPS"). Either way it is
+            ** covered, and it is emitted exactly as it arrived. */
+            if (!has_alpha || covered_by_whitelist(core)) {
+                rebuilt += seg.colour;
+                rebuilt += seg.text;
+                continue;
+            }
+            const char *zh = translation_lookup(core.c_str());
+            if (!zh || core == zh) { all_covered = false; break; }
+            std::string zh_copy(zh); /* the next lookup may rehash the cache */
+            translated_any = true;
+            /* A translation that starts with its own escape is choosing the
+            ** colour; emitting the segment's escape first would be dead bytes
+            ** at best and would fight the dictionary at worst. */
+            if (colour_escape_len(zh_copy, 0) == 0) rebuilt += seg.colour;
+            rebuilt.append(seg.text, 0, (b == std::string::npos) ? seg.text.size() : b);
+            rebuilt += zh_copy;
+            if (b != std::string::npos) rebuilt.append(seg.text, e + 1, std::string::npos);
+        }
+        if (translated_any && all_covered) {
+            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(rebuilt));
+            return iter->second.c_str();
+        }
+
+        /* Segment translation did not cover the line. Fall back to the old
+        ** whole-line behaviour so the translation rate never regresses -- that
+        ** path still loses the colours, but a coloured English line is worse
+        ** than a colourless Chinese one.
+        **
+        ** Only for a line that actually carries an English word, though. With
+        ** no letters there is nothing to translate, and the fallback returns
+        ** only what punctuation normalisation did to the text -- the rage value
+        ** "^7^xFF99220 ^7(0)" came back as "^70（0）": half-width brackets
+        ** widened, one colour code left of the two. */
         std::string stripped = strip_color_codes(input);
-        if (stripped != input && !stripped.empty()) {
+        bool stripped_has_alpha = false;
+        for (char c : stripped) if (is_ascii_alpha(c)) { stripped_has_alpha = true; break; }
+        if (stripped_has_alpha && stripped != input && !stripped.empty()) {
             if (const char *r = translation_lookup(stripped.c_str())) {
                 std::string copy(r); /* copy before emplace can rehash the cache */
                 auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(copy));
@@ -2035,6 +2268,20 @@ const char* translation_lookup(const char *english) {
                 std::string body = input.substr(0, open);
                 if (const char *body_zh = translation_lookup(body.c_str())) {
                     std::string combined(body_zh); /* copy before the next lookup can rehash the cache */
+                    /* Ask for the bracketed form FIRST. "(Unused)" is a real
+                    ** dictionary key; the bare "Unused" is not, and stripping
+                    ** the brackets hands it to the glossary, which carries
+                    ** GGG's placeholder affix "[UNUSED]" -- that is how
+                    ** "<item>  ^9(Unused)" came out as "<item>  (反鍊金的)". */
+                    const std::string bracketed = "(" + suffix + ")";
+                    if (const char *whole_zh = translation_lookup(bracketed.c_str())) {
+                        if (bracketed != whole_zh) {
+                            combined += " ";
+                            combined += whole_zh;
+                            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
+                            return iter->second.c_str();
+                        }
+                    }
                     const char *suffix_zh = translation_lookup(suffix.c_str());
                     combined += " (";
                     combined += suffix_zh ? suffix_zh : suffix.c_str();
