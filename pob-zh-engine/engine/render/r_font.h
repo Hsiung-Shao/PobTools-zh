@@ -43,7 +43,7 @@ private:
 	// Tab = 4 spaces of the ACTIVE face: the TTF's space when ftForAll is on,
 	// the bitmap font's otherwise — tab stops must move with the same font the
 	// surrounding glyphs are drawn from or tabbed columns drift.
-	float TabWidth(f_fontHeight_s* fh, float scale);
+	float TabWidth(f_fontHeight_s* fh, int height, float scale);
 
 	class r_renderer_c* renderer = nullptr;
 	int		numFontHeight = 0;

@@ -25,6 +25,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_SYNTHESIS_H
+#include FT_TRUETYPE_TABLES_H
 
 // =======
 // Classes
@@ -63,6 +64,14 @@ struct f_fontHeight_s {
 
 static const int FT_ATLAS_SIZE = 2048;
 
+// FreeType glyphs are rasterized at the FINAL drawn pixel height, not at the
+// bitmap-font bucket height rescaled at draw time — rescaling a grayscale
+// bitmap under GL_LINEAR is what smeared CJK text. Draw and measure must both
+// map a text height through this same helper or advances drift apart.
+static inline int FtPixelSize(int height) {
+	return height > 0 ? height : 1;
+}
+
 struct FtCachedGlyph {
 	int atlasIndex;
 	float tcLeft, tcRight, tcTop, tcBottom;
@@ -99,6 +108,11 @@ struct r_font_c::FtCache {
 	// deliberately does NOT consult these: Latin from a second face is worse
 	// than the bitmap font it already falls back to.
 	FtFallbackChain fallback;
+	// Baseline position as a fraction of the line cell, from the PRIMARY face's
+	// own metrics (fallback-face glyphs align to it too, or mixed-face lines
+	// wobble). 0.82f is the historical approximation, kept for faces whose
+	// metrics tables are degenerate.
+	float baselineRatio = 0.82f;
 
 	bool Init(r_renderer_c* rend, const std::string& ttfPath) {
 		renderer = rend;
@@ -113,6 +127,28 @@ struct r_font_c::FtCache {
 			return false;
 		}
 		rend->sys->con->Printf("FreeType: loaded CJK fallback font '%s'", ttfPath.c_str());
+
+		// Baseline from the face's real metrics instead of the 0.82 guess.
+		// Prefer OS/2 typo ascender/descender — for CJK faces that puts the
+		// ideographic em box flush with the line cell — falling back to hhea.
+		// Both are font units, so no pixel size needs to be set yet.
+		long asc = 0, desc = 0;
+		if (auto* os2 = (TT_OS2*)FT_Get_Sfnt_Table(face, FT_SFNT_OS2)) {
+			if (os2->sTypoAscender > 0 && os2->sTypoAscender > os2->sTypoDescender) {
+				asc = os2->sTypoAscender;
+				desc = os2->sTypoDescender;
+			}
+		}
+		if (!asc && face->ascender > 0 && face->ascender > face->descender) {
+			asc = face->ascender;
+			desc = face->descender;
+		}
+		if (asc) {
+			float ratio = (float)asc / (float)(asc - desc);
+			if (ratio >= 0.5f && ratio <= 1.0f) {
+				baselineRatio = ratio;
+			}
+		}
 		return true;
 	}
 
@@ -447,11 +483,11 @@ std::u32string BuildTofuString(char32_t cp) {
 
 int const tofuSizeReduction = 3;
 
-float r_font_c::TabWidth(f_fontHeight_s* fh, float scale)
+float r_font_c::TabWidth(f_fontHeight_s* fh, int height, float scale)
 {
 	if (ftForAll && ftCache) {
-		if (auto* sp = ftCache->GetGlyph(U' ', fh->height, /*requireGlyph=*/true)) {
-			return sp->advance * 4.0f * scale;
+		if (auto* sp = ftCache->GetGlyph(U' ', FtPixelSize(height), /*requireGlyph=*/true)) {
+			return sp->advance * 4.0f;
 		}
 	}
 	auto& glyph = fh->Glyph(' ');
@@ -478,9 +514,9 @@ int r_font_c::StringWidthInternal(f_fontHeight_s* fh, std::u32string_view str, i
 		else if (ch >= (unsigned)fh->numGlyph) {
 			// Try FreeType fallback for CJK characters
 			if (ftCache) {
-				auto* ftGlyph = ftCache->GetGlyph(ch, fh->height);
+				auto* ftGlyph = ftCache->GetGlyph(ch, FtPixelSize(height));
 				if (ftGlyph) {
-					width += ftGlyph->advance * scale;
+					width += ftGlyph->advance;
 					width = std::ceil(width);
 					++idx;
 					continue;
@@ -495,7 +531,7 @@ int r_font_c::StringWidthInternal(f_fontHeight_s* fh, std::u32string_view str, i
 			++idx;
 		}
 		else if (ch == U'\t') {
-			width += TabWidth(fh, scale);
+			width += TabWidth(fh, height, scale);
 			width = std::ceil(width);
 			++idx;
 		}
@@ -504,9 +540,9 @@ int r_font_c::StringWidthInternal(f_fontHeight_s* fh, std::u32string_view str, i
 			// mixed line measures with one set of metrics. A face without the
 			// glyph falls back to the bitmap font.
 			FtCachedGlyph* ftGlyph = (ftForAll && ftCache)
-			    ? ftCache->GetGlyph(ch, fh->height, /*requireGlyph=*/true) : nullptr;
+			    ? ftCache->GetGlyph(ch, FtPixelSize(height), /*requireGlyph=*/true) : nullptr;
 			if (ftGlyph) {
-				width += ftGlyph->advance * scale;
+				width += ftGlyph->advance;
 			} else {
 				width += measureCodepoint(fh, ch) * scale;
 			}
@@ -560,9 +596,9 @@ size_t r_font_c::StringCursorInternal(f_fontHeight_s* fh, std::u32string_view st
 		else if (*I >= (unsigned)fh->numGlyph) {
 			// Try FreeType fallback
 			if (ftCache) {
-				auto* ftGlyph = ftCache->GetGlyph(*I, fh->height);
+				auto* ftGlyph = ftCache->GetGlyph(*I, FtPixelSize(height));
 				if (ftGlyph) {
-					x += ftGlyph->advance * scale;
+					x += ftGlyph->advance;
 					x = std::ceil(x);
 					if (curX <= x) {
 						return std::distance(str.begin(), I);
@@ -583,7 +619,7 @@ size_t r_font_c::StringCursorInternal(f_fontHeight_s* fh, std::u32string_view st
 			++I;
 		}
 		else if (*I == U'\t') {
-			float fullWidth = TabWidth(fh, scale);
+			float fullWidth = TabWidth(fh, height, scale);
 			float halfWidth = std::ceil(fullWidth / 2.0f);
 			x += halfWidth;
 			x = std::ceil(x);
@@ -602,9 +638,9 @@ size_t r_font_c::StringCursorInternal(f_fontHeight_s* fh, std::u32string_view st
 			// the same advances DrawTextLine paints with, or clicks land on the
 			// wrong character.
 			FtCachedGlyph* ftGlyph = (ftForAll && ftCache)
-			    ? ftCache->GetGlyph(*I, fh->height, /*requireGlyph=*/true) : nullptr;
+			    ? ftCache->GetGlyph(*I, FtPixelSize(height), /*requireGlyph=*/true) : nullptr;
 			if (ftGlyph) {
-				x += ftGlyph->advance * scale;
+				x += ftGlyph->advance;
 			} else {
 				x += measureCodepoint(fh, *I) * scale;
 			}
@@ -752,11 +788,20 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 		x = std::ceil(x);
 	};
 
-	// Lambda to draw a FreeType glyph
-	auto drawFtGlyph = [this, &curTex, &x, y](FtCachedGlyph* ftg, int height, float scale) {
+	// Baseline offset inside the line cell, from the face's real metrics
+	// (FtCache::baselineRatio). Rounded to whole pixels once per line so every
+	// glyph quad below stays on the pixel grid.
+	const int ftPx = FtPixelSize(height);
+	const int ftBaselinePx = ftCache ? (int)std::lround(height * ftCache->baselineRatio) : 0;
+
+	// Lambda to draw a FreeType glyph. The glyph was rasterized at the final
+	// pixel height (no draw-time rescale), and x, bearings and bitmap sizes are
+	// all integers here, so the quad samples the atlas texel-exact under
+	// GL_LINEAR — this is what keeps CJK text sharp.
+	auto drawFtGlyph = [this, &curTex, &x, y, ftBaselinePx](FtCachedGlyph* ftg) {
 		if (ftg->atlasIndex < 0 || ftg->bitmapWidth == 0) {
 			// Zero-width glyph (space-like)
-			x += ftg->advance * scale;
+			x += ftg->advance;
 			x = std::ceil(x);
 			return;
 		}
@@ -767,16 +812,13 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 			renderer->curLayer->Bind(atlasTex);
 		}
 
-		// Calculate position with proper baseline alignment
-		// bearingY is distance from baseline to glyph top (positive = above baseline)
-		// For TGA fonts, the glyph fills the full height with no bearing concept.
-		// We need to align the FreeType glyph so its baseline matches the TGA font baseline.
-		// Approximate: baseline is at about 80% of the font height from top.
-		float baselineY = y + height * 0.82f;
-		float glyphX = x + ftg->bearingX * scale;
-		float glyphY = baselineY - ftg->bearingY * scale;
-		float glyphW = ftg->bitmapWidth * scale;
-		float glyphH = ftg->bitmapRows * scale;
+		// bearingY is distance from baseline to glyph top (positive = above
+		// baseline). x is already integral (rounded start + per-glyph ceil);
+		// the round is insurance against a fractional pen position sneaking in.
+		float glyphX = std::round(x) + ftg->bearingX;
+		float glyphY = y + ftBaselinePx - ftg->bearingY;
+		float glyphW = (float)ftg->bitmapWidth;
+		float glyphH = (float)ftg->bitmapRows;
 
 		if (glyphX + glyphW >= 0 && glyphX < renderer->VirtualScreenWidth()) {
 			renderer->curLayer->Quad(
@@ -787,7 +829,7 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 			);
 		}
 
-		x += ftg->advance * scale;
+		x += ftg->advance;
 		x = std::ceil(x);
 	};
 
@@ -806,7 +848,7 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 
 		// Handle tabs
 		if (ch == U'\t') {
-			x += TabWidth(fh, scale);
+			x += TabWidth(fh, height, scale);
 			tail = tail.substr(1);
 			continue;
 		}
@@ -815,9 +857,9 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 		if (ch >= (unsigned)fh->numGlyph) {
 			// Try FreeType fallback
 			if (ftCache) {
-				auto* ftGlyph = ftCache->GetGlyph(ch, fh->height);
+				auto* ftGlyph = ftCache->GetGlyph(ch, ftPx);
 				if (ftGlyph) {
-					drawFtGlyph(ftGlyph, height, scale);
+					drawFtGlyph(ftGlyph);
 					tail = tail.substr(1);
 					continue;
 				}
@@ -835,9 +877,9 @@ void r_font_c::DrawTextLine(scp_t pos, int align, int height, col4_t col, std::u
 		// CJK path draws with, so a mixed line is one typeface. A face
 		// without the glyph falls back to the bitmap font below.
 		if (ftForAll && ftCache) {
-			auto* ftGlyph = ftCache->GetGlyph(ch, fh->height, /*requireGlyph=*/true);
+			auto* ftGlyph = ftCache->GetGlyph(ch, ftPx, /*requireGlyph=*/true);
 			if (ftGlyph) {
-				drawFtGlyph(ftGlyph, height, scale);
+				drawFtGlyph(ftGlyph);
 				tail = tail.substr(1);
 				continue;
 			}
