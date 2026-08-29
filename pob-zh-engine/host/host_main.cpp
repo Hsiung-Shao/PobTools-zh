@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "error_log.h"
+#include "http_client.h"
 #include "launcher_config.h"
 #include "launcher_strings_io.h"
 #include "launcher_ui.h"
@@ -302,6 +303,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring arg3 = (argvW && argc >= 4) ? argvW[3] : L"";
 	std::wstring arg4 = (argvW && argc >= 5) ? argvW[4] : L"";
 	if (argvW) LocalFree(argvW);
+
+	// Proxy for every WinHTTP session, before any dispatch: the launcher's
+	// updater, the CLI update/atlas probes and the tool children (their own
+	// processes re-enter here) must all see it, or GitHub stays unreachable for
+	// people who need a proxy. Empty follows the system proxy.
+	HttpSetManualProxy(LoadLauncherConfig(dir + L"pob-zh.ini").proxy);
 
 	// Startup timeline (PobTools\startup_launcher.txt) for the launcher only: the
 	// engine child writes its own from inside SimpleGraphic.dll, and the CLI

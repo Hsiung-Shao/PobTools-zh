@@ -8,6 +8,7 @@
 #include "app_update.h"
 #include "changelog.h"
 #include "error_log.h"
+#include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
 #include "window_dock.h"
 #include "window_manager.h"   // DockTabLabel
@@ -1096,6 +1097,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// is not focused (so Clear / Browse / the suggestion button show up there).
 	std::string dirEdit[kDictSlotCount];
 	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = to_utf8(cfg.dataDir[i]);
+	std::string proxyEdit = to_utf8(cfg.proxy);
 	std::string fontMsg;       // result of the last "install a font" attempt
 	double savedUntil = 0.0;   // "saved" confirmation deadline
 	// "restart to apply" notice for the window-mode switch; a deadline rather than
@@ -2041,6 +2043,40 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::TextDisabled("%s%s", S.transDataVersion,
 				                    ust.localDataVer.empty() ? S.transDataUnstamped
 				                                             : ust.localDataVer.c_str());
+				ImGui::PopFont();
+			}
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionNetwork);
+			{
+				// Reaches the HTTP layer immediately: the update worker opens a
+				// new session per operation, so the next check already uses it.
+				auto applyProxy = [&](const std::string& v) {
+					std::wstring w = from_utf8(v);
+					if (w == cfg.proxy) return;
+					cfg.proxy = w;
+					saveNow();
+					HttpSetManualProxy(cfg.proxy);
+				};
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.proxyLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 8.0f * scale);
+				if (ImGui::InputTextWithHint("##proxy", S.proxyEmptyHint, &proxyEdit,
+				                             ImGuiInputTextFlags_EnterReturnsTrue))
+					applyProxy(proxyEdit);
+				// Clicking away must not discard what was typed (same rule as the
+				// data-folder fields above).
+				if (ImGui::IsItemDeactivatedAfterEdit()) applyProxy(proxyEdit);
+				if (!ImGui::IsItemActive()) proxyEdit = to_utf8(cfg.proxy);
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.proxyNote);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
 				ImGui::PopFont();
 			}
 

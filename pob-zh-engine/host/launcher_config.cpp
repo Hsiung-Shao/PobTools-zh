@@ -221,6 +221,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 
 	c.updateTranslations = read_ini_int(iniPath, L"UpdateTranslations", 1) != 0;
 
+	c.proxy = read_ini_path(iniPath, L"Proxy");
+
 	if (c.game != L"poe1" && c.game != L"poe2") c.game = L"poe1";
 	// Deliberately NOT clamped to a list of known language codes. This function
 	// only sees an ini path, so it cannot know which language folders exist; the
@@ -274,6 +276,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 
 	WritePrivateProfileStringW(kSection, L"UpdateTranslations",
 		cfg.updateTranslations ? L"1" : L"0", iniPath.c_str());
+
+	WritePrivateProfileStringW(kSection, L"Proxy", cfg.proxy.c_str(), iniPath.c_str());
 }
 
 // ---- external translation-data root ----------------------------------------
@@ -1050,6 +1054,20 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		SaveLauncherConfig(ini, c);
 		check(on ? "T17b UpdateTranslations round-trips on" : "T17c UpdateTranslations round-trips off",
 		      LoadLauncherConfig(ini).updateTranslations == (on != 0));
+	}
+
+	// T17d/e -- the proxy field. Default must be empty (= follow the system
+	// proxy); a set value round-trips verbatim, normalization is the HTTP
+	// layer's job, not the ini's.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T17d Proxy defaults to empty", LoadLauncherConfig(ini).proxy.empty());
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.proxy = L"127.0.0.1:7890";
+		SaveLauncherConfig(ini, c);
+		check("T17e Proxy round-trips", LoadLauncherConfig(ini).proxy == L"127.0.0.1:7890");
 	}
 
 	// T18..T25 -- ResolveDictDir against synthetic folders. Every failure mode has

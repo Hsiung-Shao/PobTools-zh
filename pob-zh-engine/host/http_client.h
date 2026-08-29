@@ -10,6 +10,20 @@
 #include <string>
 #include <vector>
 
+// ---- proxy -------------------------------------------------------------------
+// Manual proxy for every host-side WinHTTP session ("host:port"; a pasted
+// http:// prefix is tolerated). Empty = follow the system proxy automatically
+// (the Clash / V2Ray "system proxy" toggle included), which is also the
+// fallback when the manual value cannot be applied. Set at startup from
+// pob-zh.ini and again when the setting changes; sessions created afterwards
+// pick it up.
+void HttpSetManualProxy(const std::wstring& proxy);
+
+// WinHttpOpen honouring the proxy policy above (returns an HINTERNET as void*,
+// null on failure). Every host-side WinHTTP session must come from here, or it
+// silently bypasses the proxy setting.
+void* HttpOpenSession(const wchar_t* userAgent);
+
 class HttpsClient {
 public:
 	explicit HttpsClient(const std::wstring& host);

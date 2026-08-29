@@ -60,6 +60,11 @@ struct LauncherConfig {
 	// Whether an update may replace the translation dictionaries. Off is for
 	// people editing translations themselves; see IsTranslationDataRel.
 	bool           updateTranslations = true;
+	// HTTP proxy for the launcher's own downloads (update checks, translation
+	// data, atlas data, filter icons), as "host:port". Empty = follow the system
+	// proxy automatically — GitHub is unreachable without one for many
+	// mainland-China users. Applied via HttpSetManualProxy (http_client.h).
+	std::wstring   proxy;
 };
 
 // ---- external dictionary folders -------------------------------------------

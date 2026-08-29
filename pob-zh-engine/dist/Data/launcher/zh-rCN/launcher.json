@@ -104,6 +104,10 @@
     "Download translation data now": "立即下载翻译数据",
     "Use this font for letters & digits in POB too": "POB 窗口的英文与数字也用此字体",
     "When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.": "开启后 POB 窗口内中英数共用同一个字体。等宽栏位（控制台、物品原文编辑）一律保持原生等宽字体。切换后需重新启动 POB 窗口才会生效。",
-    "Translation data updated to v": "翻译数据已更新至 v"
+    "Translation data updated to v": "翻译数据已更新至 v",
+    "Network": "网络",
+    "HTTP proxy": "HTTP 代理",
+    "empty = follow the system proxy": "留空＝自动跟随系统代理",
+    "Update checks, translation data and icon downloads go through this proxy (e.g. 127.0.0.1:7890). When empty the system proxy is followed automatically.": "更新检查、翻译数据与图标下载都会经过这个代理（例：127.0.0.1:7890）。留空时自动跟随系统代理，开着 Clash / V2Ray 类工具即可直接使用。"
   }
 }

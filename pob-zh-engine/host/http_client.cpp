@@ -1,10 +1,18 @@
 #include "http_client.h"
+#include "error_log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
 
+#include <mutex>
+
 #pragma comment(lib, "winhttp.lib")
+
+// Absent from older SDK headers; the value is stable (Win 8.1+ feature).
+#ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+#define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY 4
+#endif
 
 static std::string narrow(const std::wstring& w)
 {
@@ -15,11 +23,57 @@ static std::string narrow(const std::wstring& w)
 	return s;
 }
 
+// Manual proxy shared by every session this process opens. Guarded because the
+// settings page writes it on the UI thread while workers open sessions.
+static std::mutex g_proxyMx;
+static std::wstring g_manualProxy; // normalized "host:port"; empty = automatic
+
+void HttpSetManualProxy(const std::wstring& proxy)
+{
+	std::wstring p = proxy;
+	while (!p.empty() && iswspace(p.front())) p.erase(p.begin());
+	while (!p.empty() && iswspace(p.back())) p.pop_back();
+	// People paste what their proxy tool shows, which is a URL.
+	auto stripPrefix = [&p](const wchar_t* pre) {
+		size_t n = wcslen(pre);
+		if (p.size() >= n && _wcsnicmp(p.c_str(), pre, n) == 0) p.erase(0, n);
+	};
+	stripPrefix(L"http://");
+	stripPrefix(L"https://");
+	while (!p.empty() && p.back() == L'/') p.pop_back();
+	std::lock_guard<std::mutex> lk(g_proxyMx);
+	g_manualProxy = p;
+}
+
+void* HttpOpenSession(const wchar_t* userAgent)
+{
+	std::wstring proxy;
+	{
+		std::lock_guard<std::mutex> lk(g_proxyMx);
+		proxy = g_manualProxy;
+	}
+	if (!proxy.empty()) {
+		HINTERNET s = WinHttpOpen(userAgent, WINHTTP_ACCESS_TYPE_NAMED_PROXY,
+			proxy.c_str(), WINHTTP_NO_PROXY_BYPASS, 0);
+		if (s) return s;
+		PobLog::Error("net", "manual proxy '" + narrow(proxy) +
+		                         "' rejected by WinHttpOpen, falling back to the system proxy");
+	}
+	// Follow the system proxy (IE/WinINET settings + WPAD): this is what makes
+	// a Clash/V2Ray "system proxy" work without any setting. Win 8.1+; older
+	// Windows rejects the flag and drops to the historical direct behaviour.
+	HINTERNET s = WinHttpOpen(userAgent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	if (!s)
+		s = WinHttpOpen(userAgent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+			WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	return s;
+}
+
 HttpsClient::HttpsClient(const std::wstring& host)
 {
 	// GitHub's API rejects requests without a User-Agent; keep the product UA.
-	HINTERNET s = WinHttpOpen(L"PobTools/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-		WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	HINTERNET s = (HINTERNET)HttpOpenSession(L"PobTools/1.0");
 	if (!s) return;
 	// resolve / connect / send / receive timeouts: keep Shutdown-time joins short
 	WinHttpSetTimeouts(s, 10000, 10000, 15000, 30000);

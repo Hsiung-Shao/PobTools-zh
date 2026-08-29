@@ -1,5 +1,6 @@
 #include "icon_manager.h"
 #include "image_tex.h"
+#include "http_client.h" // HttpOpenSession: the shared proxy-aware session
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -194,8 +195,7 @@ void IconManager::Pump()
 
 void IconManager::workerLoop()
 {
-	HINTERNET hSession = WinHttpOpen(L"PobTools/1.0 (POE filter editor)",
-		WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+	HINTERNET hSession = (HINTERNET)HttpOpenSession(L"PobTools/1.0 (POE filter editor)");
 	HINTERNET hConnect = hSession ? WinHttpConnect(hSession, L"web.poecdn.com",
 		INTERNET_DEFAULT_HTTPS_PORT, 0) : nullptr;
 

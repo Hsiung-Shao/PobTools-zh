@@ -143,6 +143,15 @@
 	X(transDataVersion,  u8"目前翻譯資料版本：",           u8"Translation data version: ")            \
 	X(transDataUnstamped, u8"未標示（v0.18.0 以前的安裝）",                                           \
 	                     u8"not stamped (installed before v0.19.0)")                                  \
+	/* v1.1.0:大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
+	X(sectionNetwork,    u8"網路",                         u8"Network")                               \
+	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
+	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
+	X(proxyNote,         u8"更新檢查、翻譯資料與圖示下載都會經過這個代理（例：127.0.0.1:7890）。"     \
+	                     u8"留空時自動跟隨系統代理，開著 Clash / V2Ray 類工具即可直接使用。",         \
+	                     u8"Update checks, translation data and icon downloads go through this "      \
+	                     u8"proxy (e.g. 127.0.0.1:7890). When empty the system proxy is followed "    \
+	                     u8"automatically.")                                                          \
 	X(homeExternalData,  u8"翻譯資料：外部資料夾",         u8"Translation data: external folder")     \
 	X(useBuiltin,        u8"切回內建",                     u8"Use built-in")                          \
 	/* font installation + coverage (v0.16.0) */                                                     \
