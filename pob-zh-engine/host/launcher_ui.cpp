@@ -18,6 +18,7 @@
 #include "filter_editor.h"
 #include "launcher_editor.h"
 #include "regex_tool.h"
+#include "warehouse_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "../translate/startup_trace.h"
@@ -1889,13 +1890,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		ImGui::Dummy(ImVec2(0, 8.0f * scale));
 
-		// Tools: secondary actions. Five buttons share the row, so the width
-		// divisor and the gap count must move together — four gaps between
-		// five buttons.
+		// Tools: secondary actions. Six buttons share the row, so the width
+		// divisor and the gap count must move together — five gaps between
+		// six buttons.
 		SectionLabel(fonts, scale, inner, S.toolsSection);
 		{
 			float gap = 12.0f * scale;
-			ImVec2 toolSize((inner - 4.0f * gap) / 5.0f, 46.0f * scale);
+			ImVec2 toolSize((inner - 5.0f * gap) / 6.0f, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
 			// The translation editor edits dist\Data\{game}\{locale}\*.json in
 			// place — the same files the engine loads — so its changes take
@@ -1934,6 +1935,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ImGui::Button(S.regexTool, toolSize)) {
 				if (tabbed) openPanel(&CreateRegexToolPanel, S.regexTool);
 				else spawnTool(L"--regex", PobLaunch::InstanceKind::RegexTool, S.regexTool);
+			}
+			ImGui::SameLine(0, gap);
+			// TEST-channel stash revenue tracker (POESESSID; see warehouse_tool.h).
+			if (ImGui::Button(S.warehouseTool, toolSize)) {
+				if (tabbed) openPanel(&CreateWarehousePanel, S.warehouseTool);
+				else spawnTool(L"--warehouse", PobLaunch::InstanceKind::Warehouse, S.warehouseTool);
 			}
 			ImGui::PopStyleColor();
 		}
