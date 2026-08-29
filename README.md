@@ -5,12 +5,14 @@
 
 > 非官方粉絲工具,與 Grinding Gear Games 無關。程式碼採 MIT 授權。
 
+💬 有問題、建議或想許願新功能,歡迎加入 **[Discord 社群](https://discord.gg/6VamPQb8nC)** 討論。
+
 ---
 
 ## 這是什麼
 
 Path of Exile 台服用語的翻譯資料一直缺乏穩定來源(社群資料落後版本、官方 API 會斷線)。
-PobTools 以官方客戶端資料為準,產出約 3.8 萬組英文→繁中對照,內建進一個
+PobTools 以官方客戶端資料為準,產出約 10 萬組英文→中文對照,內建進一個
 **engine-in-exe** 的啟動器裡。
 
 因為翻譯內建在引擎、POB 本體保持完全純淨,**POB 怎麼更新都照跑**——這正是本專案要解決的
@@ -20,37 +22,24 @@ PobTools 以官方客戶端資料為準,產出約 3.8 萬組英文→繁中對�
 
 | 功能              | 說明                                                             |
 | ----------------- | ---------------------------------------------------------------- |
-| 繁中化 POB 啟動器 | POE1 / POE2 皆支援;介面語言可切繁中  / English                  |
+| 中文化 POB 啟動器 | POE1 / POE2 皆支援;介面語言可切繁中 / 简中 / English            |
 | 翻譯編輯器        | 內建字典編輯器,可即時修改、補充翻譯                              |
 | 過濾器編輯器      | NeverSink tier-list 式物品過濾器編輯,含中文顯示與圖示            |
-| 輿圖策略        | 地圖天賦樹規劃,支援多方案、匯出/分享碼、**新賽季自動更新** |
+| 輿圖策略          | 地圖天賦樹規劃,支援多方案、匯出/分享碼、**新賽季自動更新**      |
+| 軍團珠寶計算器    | 永恆軍團珠寶種子計算,支援中文搜尋與交易連結                      |
+| 搜尋字串產生器    | 勾選詞綴產生遊戲內搜尋用的正規表示式,POE1 / POE2 清單皆支援      |
 | 可切換字型        | 預設 Noto Sans TC(OFL),可即時換任何`.ttf`                      |
 
 功能操作細節見 **[docs/USAGE.md](docs/USAGE.md)**。
 
 ---
 
-## 下載安裝(一般使用者)
+## 下載安裝
 
-1. 到 [Releases](../../releases) 下載 **`PobTools-<版本>.zip`**,解壓到任一資料夾。
-2. 把你的 **Path of Building Community**(POB 本體,自行安裝)放到 `pob-zh.exe` 同一層——
-   資料夾名稱不限,內含 `Launch.lua` 即可(名稱含 `PoE2` 視為 PoE2 版)。
-3. 雙擊 **`pob-zh.exe`**,選遊戲版本後啟動,POB 即以繁體中文開啟。
-
-> PobTools **不包含** POB 本體(著作權/所有權因素),請自行從
-> [https://pathofbuilding.community/](https://pathofbuilding.community/) 取得。
-
-完整圖解步驟與常見問題見 **[docs/INSTALL.md](docs/INSTALL.md)**。
-
-### 更新翻譯
-
-翻譯資料是獨立的一條發佈線(`data-1`、`data-2`…),程式平常會自己更新,不必手動處理。
-要手動換的話,到 [Releases](../../releases) 找標著 `data-<編號>` 的那一則,下載
-**`PobTools-Data-<編號>.zip`**,把裡面的 `Data` 資料夾覆蓋到安裝目錄即可。
-圖譜天賦樹可在程式內用工具列按鈕線上更新。
-
-> 同一頁還有一個 `PobTools-update-<版本>.zip`,那是**程式自動更新用**的、不含翻譯資料 ——
-> 手動下載它會得到一個沒有中文的 POB。第一次安裝請下載 `PobTools-<版本>.zip`。
+1. 到 [Releases](../../releases) 下載 **`PobTools-<版本>.zip`** 解壓。
+2. 另外準備 **Path of Building Community** 本體(PobTools 不包含 POB):
+   [原版 POB 最新版下載](https://github.com/PathOfBuildingCommunity/PathOfBuilding/releases/latest)。
+3. 完整步驟、資料夾擺放方式、翻譯資料更新與常見問題,見 **[docs/INSTALL.md](docs/INSTALL.md)**。
 
 ---
 
@@ -77,57 +66,19 @@ This product isn't affiliated with or endorsed by Grinding Gear Games or Garena 
 本程式為**非官方粉絲工具**,與 Grinding Gear Games、Garena 無任何隸屬關係,亦未經其背書。
 Path of Exile 及其所有遊戲內容之著作權屬 Grinding Gear Games。
 
-### 防毒軟體誤判
+### 防毒軟體誤判與更新驗證
 
-本程式**未購買程式碼簽章憑證**,加上具備「自動更新(下載並替換自身)」「動態載入模組」
-「修改 POB 腳本以進行中文化」等行為特徵,可能被 Windows Defender 等防毒軟體以機器學習
-啟發式規則誤判(例如 `Trojan:Win32/Bearfoos.B!ml`,`!ml` 後綴即代表 AI 推測而非特徵碼比對)。
-
-**v0.9.0 起**的 Release 附有 **`SHA256SUMS-<版本>.txt`**,可確認你下載到的檔案與發佈版位元組完全相同:
-
-```powershell
-# PowerShell
-Get-FileHash .\PobTools-<版本>.zip -Algorithm SHA256
-# cmd
-certutil -hashfile PobTools-<版本>.zip SHA256
-```
-
-> 相同的 hash 代表檔案**未被第三方竄改**,不代表通過任何安全性檢驗。
-> 本專案原始碼公開於 GitHub,歡迎自行檢視與編譯。
-
-### 自動更新的簽章驗證(v0.26.0 起)
-
-上面那段 hash 是給**手動下載**的人核對用的。**自動更新不需要你做任何事** ——
-從 v0.26.0 開始,程式主體更新與翻譯資料更新在安裝前都會自己驗證數位簽章:
-
-1. 每個 Release 附一份 `PobTools-manifest-<tag>.json`(列出每個檔案的大小與 SHA-256)
-   與它的分離式簽章 `.json.sig`;
-2. 更新器用**編譯進 PobTools 執行檔裡的公鑰**驗證那份簽章,再比對下載回來的位元組;
-3. 簽章缺少、驗不過、或清單與這個版本對不上,**一律拒絕安裝**並顯示原因,
-   絕不會「驗不了就照裝」。
-
-這比單純比對雜湊多擋一種情況:雜湊如果是從發佈平台的 API 讀來的,能竄改那份回應
-的人可以連雜湊一起換掉;簽章則需要維護者的私鑰才簽得出來,而私鑰不在 GitHub 上。
-
-演算法是 ECDSA P-256 / SHA-256,由 Windows 內建的 CNG 驗證,不引入任何第三方
-函式庫。公鑰是公開的,就在 [`pob-zh-engine/host/update_pubkeys.h`](pob-zh-engine/host/update_pubkeys.h)。
-
-> ⚠ 這**不是** Windows 的程式碼簽章憑證,所以不會減少上面說的防毒誤判。
-> 它保護的是「更新下載到的東西是不是我發的」,與防毒對執行檔的啟發式判斷無關。
-
----
-
-## 社群與回饋
-
-有問題、建議或想許願新功能,歡迎加入 **[Discord 社群](https://discord.gg/6VamPQb8nC)** 討論。
-
----
-
-## 贊助
-
-此程式已在 GitHub 上開源,歡迎分享給親朋好友使用,也歡迎贊助一杯咖啡 ☕
-
-- **[贊助支持頁面](https://hsiung-shao.github.io/support/)**
+- 本程式**未購買 Windows 程式碼簽章憑證**,加上「自動更新、動態載入模組、記憶體修補
+  POB 腳本」等行為特徵,可能被防毒軟體以啟發式規則誤判(`!ml` 後綴即 AI 推測型偵測)。
+  原始碼公開於 GitHub,歡迎自行檢視與編譯。
+- **手動下載**的人可用 Release 附的 `SHA256SUMS-<版本>.txt` 核對雜湊
+  (`certutil -hashfile <檔名> SHA256`),確認檔案與發佈版位元組相同。
+- **自動更新不需要你做任何事**:v0.26.0 起,程式主體與翻譯資料在安裝前都會以
+  **編譯進執行檔的公鑰**驗證發佈清單的 ECDSA P-256 簽章
+  (公鑰:[`pob-zh-engine/host/update_pubkeys.h`](pob-zh-engine/host/update_pubkeys.h)),
+  簽章缺少或驗不過**一律拒絕安裝**,絕不會「驗不了就照裝」。
+- 注意:這是「更新內容是不是維護者發的」的來源驗證,**不是** Windows 程式碼簽章,
+  無法消除上述防毒誤判。
 
 ---
 

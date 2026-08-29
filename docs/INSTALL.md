@@ -10,8 +10,9 @@ POB 外層注入中文翻譯與介面,**不修改你原本的 POB**。
 ## 一、你需要準備
 
 1. **Windows**(10 / 11)。
-2. **Path of Building Community**(POB 本體)—— PobTools **不包含** POB,請自行安裝:
-   - 官方下載:[https://pathofbuilding.community/](https://pathofbuilding.community/)
+2. **Path of Building Community**(POB 本體)—— PobTools **不包含** POB(著作權/所有權因素),請自行安裝:
+   - POE1:[原版 POB 最新版](https://github.com/PathOfBuildingCommunity/PathOfBuilding/releases/latest)
+   - POE2:[原版 POB PoE2 最新版](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2/releases/latest)
    - 或你電腦上已安裝好的 POB 資料夾。
 
 ---
