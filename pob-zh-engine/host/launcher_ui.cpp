@@ -1874,6 +1874,104 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PopTextWrapPos();
 			}
 
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionLaunch);
+			// One radio group, not two checkboxes: "return afterwards" and "stay
+			// open" cannot both be true, and a pair of checkboxes invites exactly
+			// that state. See LaunchExitMode.
+			//
+			// Ignored entirely in tabbed mode -- this window IS where POB lives --
+			// so it is disabled there rather than left looking effective.
+			if (tabbed) ImGui::BeginDisabled();
+			{
+				int em = (int)cfg.exitMode;
+				ImGui::RadioButton(S.exitModeClose, &em, (int)LaunchExitMode::CloseLauncher);
+				ImGui::RadioButton(S.returnAfterExit, &em, (int)LaunchExitMode::ReturnAfterExit);
+				ImGui::RadioButton(S.exitModeKeepOpen, &em, (int)LaunchExitMode::KeepOpen);
+				if (em != (int)cfg.exitMode) {
+					cfg.exitMode = (LaunchExitMode)em;
+					saveNow();
+				}
+			}
+			if (tabbed) ImGui::EndDisabled();
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			ImGui::AlignTextToFramePadding();
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			ImGui::TextUnformatted(S.startupTabLabel);
+			ImGui::PopStyleColor();
+			{
+				int st = (int)cfg.startupTab;
+				ImGui::SameLine(160.0f * scale);
+				ImGui::RadioButton(S.tabHome, &st, (int)StartupTab::Home);
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::RadioButton(S.changelog, &st, (int)StartupTab::Versions);
+				if (st != (int)cfg.startupTab) {
+					cfg.startupTab = (StartupTab)st;
+					saveNow();
+				}
+			}
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionWindow);
+			{
+				int wm = (int)cfg.windowMode;
+				ImGui::RadioButton(S.winModeSeparate, &wm, (int)WindowMode::Separate);
+				ImGui::RadioButton(S.winModeTabbed, &wm, (int)WindowMode::Tabbed);
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextWrapped("%s", S.winModeHint);
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				if (wm != (int)cfg.windowMode) {
+					cfg.windowMode = (WindowMode)wm;
+					saveNow();
+					// The mode is decided once, when this window is created (it
+					// changes whether the window is resizable and whether the docking
+					// callbacks exist), so it cannot take effect mid-session.
+					windowModeChangedUntil = ImGui::GetTime() + 8.0;
+				}
+				if (windowModeChangedUntil > ImGui::GetTime()) {
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.62f, 0.25f, 1.0f));
+					ImGui::TextWrapped("%s", S.winModeRestart);
+					ImGui::PopStyleColor();
+				}
+			}
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionNetwork);
+			{
+				// Reaches the HTTP layer immediately: the update worker opens a
+				// new session per operation, so the next check already uses it.
+				auto applyProxy = [&](const std::string& v) {
+					std::wstring w = from_utf8(v);
+					if (w == cfg.proxy) return;
+					cfg.proxy = w;
+					saveNow();
+					HttpSetManualProxy(cfg.proxy);
+				};
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.proxyLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 8.0f * scale);
+				if (ImGui::InputTextWithHint("##proxy", S.proxyEmptyHint, &proxyEdit,
+				                             ImGuiInputTextFlags_EnterReturnsTrue))
+					applyProxy(proxyEdit);
+				// Clicking away must not discard what was typed (same rule as the
+				// data-folder fields below).
+				if (ImGui::IsItemDeactivatedAfterEdit()) applyProxy(proxyEdit);
+				if (!ImGui::IsItemActive()) proxyEdit = to_utf8(cfg.proxy);
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.proxyNote);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+			}
+
 			// --- translation data -------------------------------------------
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
 			SectionLabel(fonts, scale, inner, S.sectionTransData);
@@ -2044,104 +2142,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				                    ust.localDataVer.empty() ? S.transDataUnstamped
 				                                             : ust.localDataVer.c_str());
 				ImGui::PopFont();
-			}
-
-			ImGui::Dummy(ImVec2(0, 10.0f * scale));
-			SectionLabel(fonts, scale, inner, S.sectionNetwork);
-			{
-				// Reaches the HTTP layer immediately: the update worker opens a
-				// new session per operation, so the next check already uses it.
-				auto applyProxy = [&](const std::string& v) {
-					std::wstring w = from_utf8(v);
-					if (w == cfg.proxy) return;
-					cfg.proxy = w;
-					saveNow();
-					HttpSetManualProxy(cfg.proxy);
-				};
-				ImGui::AlignTextToFramePadding();
-				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-				ImGui::TextUnformatted(S.proxyLabel);
-				ImGui::PopStyleColor();
-				ImGui::SameLine(160.0f * scale);
-				ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 8.0f * scale);
-				if (ImGui::InputTextWithHint("##proxy", S.proxyEmptyHint, &proxyEdit,
-				                             ImGuiInputTextFlags_EnterReturnsTrue))
-					applyProxy(proxyEdit);
-				// Clicking away must not discard what was typed (same rule as the
-				// data-folder fields above).
-				if (ImGui::IsItemDeactivatedAfterEdit()) applyProxy(proxyEdit);
-				if (!ImGui::IsItemActive()) proxyEdit = to_utf8(cfg.proxy);
-				ImGui::PushFont(fonts.small);
-				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-				ImGui::PushTextWrapPos(inner - 40.0f * scale);
-				ImGui::TextWrapped("%s", S.proxyNote);
-				ImGui::PopTextWrapPos();
-				ImGui::PopStyleColor();
-				ImGui::PopFont();
-			}
-
-			ImGui::Dummy(ImVec2(0, 10.0f * scale));
-			SectionLabel(fonts, scale, inner, S.sectionWindow);
-			{
-				int wm = (int)cfg.windowMode;
-				ImGui::RadioButton(S.winModeSeparate, &wm, (int)WindowMode::Separate);
-				ImGui::RadioButton(S.winModeTabbed, &wm, (int)WindowMode::Tabbed);
-				ImGui::PushFont(fonts.small);
-				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-				ImGui::TextWrapped("%s", S.winModeHint);
-				ImGui::PopStyleColor();
-				ImGui::PopFont();
-				if (wm != (int)cfg.windowMode) {
-					cfg.windowMode = (WindowMode)wm;
-					saveNow();
-					// The mode is decided once, when this window is created (it
-					// changes whether the window is resizable and whether the docking
-					// callbacks exist), so it cannot take effect mid-session.
-					windowModeChangedUntil = ImGui::GetTime() + 8.0;
-				}
-				if (windowModeChangedUntil > ImGui::GetTime()) {
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.90f, 0.62f, 0.25f, 1.0f));
-					ImGui::TextWrapped("%s", S.winModeRestart);
-					ImGui::PopStyleColor();
-				}
-			}
-
-			ImGui::Dummy(ImVec2(0, 10.0f * scale));
-			SectionLabel(fonts, scale, inner, S.sectionLaunch);
-			// One radio group, not two checkboxes: "return afterwards" and "stay
-			// open" cannot both be true, and a pair of checkboxes invites exactly
-			// that state. See LaunchExitMode.
-			//
-			// Ignored entirely in tabbed mode -- this window IS where POB lives --
-			// so it is disabled there rather than left looking effective.
-			if (tabbed) ImGui::BeginDisabled();
-			{
-				int em = (int)cfg.exitMode;
-				ImGui::RadioButton(S.exitModeClose, &em, (int)LaunchExitMode::CloseLauncher);
-				ImGui::RadioButton(S.returnAfterExit, &em, (int)LaunchExitMode::ReturnAfterExit);
-				ImGui::RadioButton(S.exitModeKeepOpen, &em, (int)LaunchExitMode::KeepOpen);
-				if (em != (int)cfg.exitMode) {
-					cfg.exitMode = (LaunchExitMode)em;
-					saveNow();
-				}
-			}
-			if (tabbed) ImGui::EndDisabled();
-
-			ImGui::Dummy(ImVec2(0, 10.0f * scale));
-			ImGui::AlignTextToFramePadding();
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-			ImGui::TextUnformatted(S.startupTabLabel);
-			ImGui::PopStyleColor();
-			{
-				int st = (int)cfg.startupTab;
-				ImGui::SameLine(160.0f * scale);
-				ImGui::RadioButton(S.tabHome, &st, (int)StartupTab::Home);
-				ImGui::SameLine(0, 18.0f * scale);
-				ImGui::RadioButton(S.changelog, &st, (int)StartupTab::Versions);
-				if (st != (int)cfg.startupTab) {
-					cfg.startupTab = (StartupTab)st;
-					saveNow();
-				}
 			}
 
 			// Saving, at the very bottom and outside every group: it writes the
