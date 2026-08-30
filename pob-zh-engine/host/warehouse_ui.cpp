@@ -941,9 +941,21 @@ private:
 				ImGui::EndPopup();
 			}
 			// The change rides on the same row, right-aligned over the selectable.
+			// Uniformly in divine (user request): raw chaos numbers at this width
+			// were unreadable (+214262). Falls back to chaos when no rate is known.
 			ImGui::SameLine(ImGui::GetContentRegionMax().x - 62.0f * host_->scale);
 			if (prev) {
-				const std::string txt = (delta >= 0 ? "+" : "") + FormatChaos(delta);
+				std::string txt;
+				if (s.divineRate > 0) {
+					const double dv = delta / s.divineRate;
+					const double mag = dv < 0 ? -dv : dv;
+					char buf[32];
+					snprintf(buf, sizeof(buf),
+					         mag >= 100 ? "%+.0f d" : mag >= 1 ? "%+.1f d" : "%+.2f d", dv);
+					txt = buf;
+				} else {
+					txt = (delta >= 0 ? "+" : "") + FormatChaos(delta) + " c";
+				}
 				ImGui::TextColored(delta >= 0 ? kGood : kBad, "%s", txt.c_str());
 			} else {
 				ImGui::TextColored(kDim, "--");
