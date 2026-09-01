@@ -27,3 +27,7 @@ pob-zh-engine/dist/Data/**/*.json -text
 # dep/imgui/.gitattributes 已經替它自己的 ttf 標了 binary,根目錄這份補上
 # host/data/fonts/ 這條線。
 *.ttf binary
+
+# host/data/redist/d3dcompiler_47.dll 同理:二進位,別讓 autocrlf 碰它。git 對
+# 含 NUL 的檔通常會自己判成 binary,但字型那次的教訓是「通常」不夠,明講。
+*.dll binary

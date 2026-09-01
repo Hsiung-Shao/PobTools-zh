@@ -282,6 +282,25 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua" DESTINATION "eng
 # folder's own copy (engine/lua is appended last in ui_api.cpp InitAPI).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/runtime_lua/sha2.lua" DESTINATION "engine/lua")
 
+# Microsoft's redistributable HLSL compiler, vendored in host/data/redist/.
+# ANGLE loads d3dcompiler_47.dll by name to compile the HLSL it generates. POB
+# ships its own copy next to its exe, and the exe directory is first in the DLL
+# search order -- which is why the stock POB works under Wine. Our engine lives
+# in engine\ with SetDllDirectoryW pointing there; without a copy here the load
+# falls through to the system one. On Windows that is Microsoft's too and
+# nothing is amiss, but Wine's is a reimplementation that rejects ANGLE's output
+# (E5022: resource index "must be determinable at compile time"), so POB will
+# not start at all on macOS/CrossOver.
+#
+# The vendored file is POB's own copy (FileVersion 10.0.10150.0, the one
+# field-tested under CrossOver 26.3 on 2026-09-01), so packaging never depends
+# on a POB or Windows SDK install being present on the build machine. Like
+# host/data/fonts/, the copy in dist\engine\ is mirrored by a sha256 assertion
+# in tools/package_release.ps1.
+if (WIN32)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/redist/d3dcompiler_47.dll" DESTINATION "engine")
+endif ()
+
 if (WIN32)
     set(DEPS_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
 
