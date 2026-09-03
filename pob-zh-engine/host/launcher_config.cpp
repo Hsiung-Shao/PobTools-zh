@@ -202,6 +202,17 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		// future value can never leave someone stuck in the new path.
 		c.windowMode = (read_ini_int(iniPath, L"WindowMode", 0) == 1)
 		             ? WindowMode::Tabbed : WindowMode::Separate;
+
+		// Remembered window sizes. A pair is only meaningful whole: a width with
+		// no usable height (one key hand-deleted, one value garbage) is "default",
+		// not "default height with a remembered width".
+		auto readPair = [&](const wchar_t* wKey, const wchar_t* hKey, int& w, int& h) {
+			w = ClampWindowDim(read_ini_int(iniPath, wKey, 0));
+			h = ClampWindowDim(read_ini_int(iniPath, hKey, 0));
+			if (w == 0 || h == 0) w = h = 0;
+		};
+		readPair(L"WindowW", L"WindowH", c.winW, c.winH);
+		readPair(L"TabbedWindowW", L"TabbedWindowH", c.tabWinW, c.tabWinH);
 	}
 
 	wchar_t fbuf[128];
@@ -209,6 +220,7 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.fontFile = fbuf;
 	if (c.fontFile.empty()) c.fontFile = kDefaultFontFile;
 	c.fontApplyAll = read_ini_int(iniPath, L"FontApplyAll", 1) != 0;
+	c.fontSize = ClampLauncherFontSize(read_ini_int(iniPath, L"FontSize", kLauncherFontSizeDefault));
 
 	// Hex copy first (see hex_of_utf8): it is the codepage-proof spelling. A
 	// malformed one decodes to empty and we fall through to the raw key rather
@@ -255,9 +267,19 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		std::to_wstring((int)cfg.startupTab).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"WindowMode",
 		std::to_wstring((int)cfg.windowMode).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"WindowW",
+		std::to_wstring(cfg.winW).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"WindowH",
+		std::to_wstring(cfg.winH).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"TabbedWindowW",
+		std::to_wstring(cfg.tabWinW).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"TabbedWindowH",
+		std::to_wstring(cfg.tabWinH).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontApplyAll",
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"FontSize",
+		std::to_wstring(cfg.fontSize).c_str(), iniPath.c_str());
 
 	for (int i = 0; i < kDictSlotCount; i++) {
 		const std::wstring key = kDataDirKeys[i];
@@ -1068,6 +1090,78 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		c.proxy = L"127.0.0.1:7890";
 		SaveLauncherConfig(ini, c);
 		check("T17e Proxy round-trips", LoadLauncherConfig(ini).proxy == L"127.0.0.1:7890");
+	}
+
+	// T17f..T17j -- launcher font size (whole-UI zoom) and the remembered window
+	// sizes. The clamps are the whole point: a hand-edited or non-numeric value
+	// must land on the default, never on 0 px text or a 0x0 window.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	{
+		const LauncherConfig c = LoadLauncherConfig(ini);
+		check("T17f FontSize defaults to 19", c.fontSize == kLauncherFontSizeDefault,
+		      std::to_string(c.fontSize));
+		check("T17f window sizes default to 0 (= mode default)",
+		      c.winW == 0 && c.winH == 0 && c.tabWinW == 0 && c.tabWinH == 0);
+	}
+	{
+		// Out of range / garbage -> default; in range -> kept verbatim.
+		const struct { const wchar_t* raw; const char* label; int want; } cases[] = {
+			{ L"5", "5", 19 }, { L"99", "99", 19 }, { L"abc", "abc", 19 }, { L"-3", "-3", 19 },
+			{ L"0", "0", 19 }, { L"14", "14", 14 }, { L"22", "22", 22 }, { L"26", "26", 26 },
+		};
+		for (const auto& tc : cases) {
+			write(L"PobTools", { { L"Game", L"poe1" }, { L"FontSize", tc.raw } });
+			const int got = LoadLauncherConfig(ini).fontSize;
+			const std::string name = std::string("T17g FontSize \"") + tc.label + "\" -> " +
+			                         std::to_string(tc.want);
+			check(name.c_str(), got == tc.want, "got " + std::to_string(got));
+		}
+	}
+	{
+		const struct { const wchar_t* w; const wchar_t* h; const char* label; int wantW; int wantH; } cases[] = {
+			{ L"300",   L"800",  "300x800 (below min)",   0, 0 },
+			{ L"20000", L"800",  "20000x800 (above max)", 0, 0 },
+			{ L"abc",   L"800",  "abcx800 (text)",        0, 0 },
+			{ L"-1",    L"800",  "-1x800",                0, 0 },
+			{ L"1280",  nullptr, "1280 with no height",   0, 0 },   // half a pair is no pair
+			{ L"1280",  L"800",  "1280x800",              1280, 800 },
+		};
+		for (const auto& tc : cases) {
+			if (tc.h) write(L"PobTools", { { L"Game", L"poe1" }, { L"WindowW", tc.w }, { L"WindowH", tc.h } });
+			else      write(L"PobTools", { { L"Game", L"poe1" }, { L"WindowW", tc.w } });
+			const LauncherConfig c = LoadLauncherConfig(ini);
+			const std::string name = std::string("T17h Window ") + tc.label + " -> " +
+			                         std::to_string(tc.wantW) + "x" + std::to_string(tc.wantH);
+			check(name.c_str(), c.winW == tc.wantW && c.winH == tc.wantH,
+			      "got " + std::to_string(c.winW) + "x" + std::to_string(c.winH));
+		}
+	}
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.fontSize = 22;
+		c.winW = 1280;    c.winH = 800;
+		c.tabWinW = 1600; c.tabWinH = 1000;
+		SaveLauncherConfig(ini, c);
+		const LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17i FontSize and both window pairs round-trip",
+		      r.fontSize == 22 && r.winW == 1280 && r.winH == 800 &&
+		          r.tabWinW == 1600 && r.tabWinH == 1000);
+	}
+	{
+		// The two modes remember independently: setting one pair leaves the other
+		// at its default in both directions.
+		DeleteFileW(ini.c_str());
+		write(L"PobTools", { { L"Game", L"poe1" }, { L"TabbedWindowW", L"1600" }, { L"TabbedWindowH", L"1000" } });
+		LauncherConfig c = LoadLauncherConfig(ini);
+		check("T17j tabbed size alone leaves the separate size at default",
+		      c.winW == 0 && c.winH == 0 && c.tabWinW == 1600 && c.tabWinH == 1000);
+		DeleteFileW(ini.c_str());
+		write(L"PobTools", { { L"Game", L"poe1" }, { L"WindowW", L"1280" }, { L"WindowH", L"800" } });
+		c = LoadLauncherConfig(ini);
+		check("T17j separate size alone leaves the tabbed size at default",
+		      c.winW == 1280 && c.winH == 800 && c.tabWinW == 0 && c.tabWinH == 0);
 	}
 
 	// T18..T25 -- ResolveDictDir against synthetic folders. Every failure mode has

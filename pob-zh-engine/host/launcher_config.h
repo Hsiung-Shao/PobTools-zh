@@ -37,6 +37,42 @@ inline constexpr int kDictSlotCount = 3;
 // Folder name under Data\ ("poe1" / "poe2" / "launcher").
 const wchar_t* DictSlotFolder(DictSlot slot);
 
+// ---- launcher-only zoom and window size ------------------------------------
+//
+// "Font size" is the ONE user-facing knob for the launcher's own scale. Every
+// launcher dimension is already written as <logical> * scale, so the body font
+// size is turned into a zoom factor and folded into that scale: text, paddings,
+// card heights and button heights grow together and the layout never has to be
+// taught about it. Applies to the launcher and the standalone tool windows only,
+// never to POB (the engine gets its font through env variables, not this).
+inline constexpr int kLauncherFontSizeDefault = 19;   // launcher_ui.cpp kFontSize
+inline constexpr int kLauncherFontSizeMin     = 14;
+inline constexpr int kLauncherFontSizeMax     = 26;
+
+// Out of range (hand-edited, non-numeric -> 0, a future build's value) means the
+// default, never "as small as it goes": 0 is what GetPrivateProfileIntW returns
+// for text, and 0 px would be a launcher with no readable text at all.
+inline int ClampLauncherFontSize(int v)
+{
+	return (v < kLauncherFontSizeMin || v > kLauncherFontSizeMax) ? kLauncherFontSizeDefault : v;
+}
+inline float LauncherZoom(int fontSize)
+{
+	return (float)ClampLauncherFontSize(fontSize) / (float)kLauncherFontSizeDefault;
+}
+
+// Window dimensions are stored in PHYSICAL pixels, exactly as GLFW reports them,
+// because that is what the size fields on the settings page show and what a drag
+// produced. 0 = "use the mode's default"; anything implausible is treated as 0
+// rather than clamped to the nearest edge, so a broken value cannot pin the
+// window to 400x400 or to a 16384-wide strip.
+inline constexpr int kWindowDimMin = 400;
+inline constexpr int kWindowDimMax = 16384;
+inline int ClampWindowDim(int v)
+{
+	return (v < kWindowDimMin || v > kWindowDimMax) ? 0 : v;
+}
+
 struct LauncherConfig {
 	std::wstring   game     = L"poe1";      // "poe1" | "poe2"
 	std::wstring   locale   = L"zh-rTW";    // "zh-rTW" | "en"
@@ -46,10 +82,19 @@ struct LauncherConfig {
 	// the window POB lives in, so "close the launcher when POB starts" has no
 	// meaning.
 	WindowMode     windowMode = WindowMode::Separate;
+	// Remembered launcher window size, physical pixels, 0 = the mode's default
+	// (1000x700 / 1500x950 at the current scale). One pair per window mode: the
+	// tabbed container holds POB and wants to be big, the separate launcher does
+	// not, and switching modes should not drag the other mode's size along.
+	int            winW = 0, winH = 0;          // WindowMode::Separate
+	int            tabWinW = 0, tabWinH = 0;    // WindowMode::Tabbed
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Also draw ASCII in the POB window from the selected font (engine env
 	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.
 	bool           fontApplyAll = true;
+	// Launcher body font size in px at 100% DPI; drives the whole-UI zoom (see
+	// LauncherZoom above). POB is unaffected.
+	int            fontSize = kLauncherFontSizeDefault;
 	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
 	// Empty = built-in. Each one points at the folder that directly CONTAINS the
 	// <locale> sub-folders, i.e. exactly what you get by copying Data\poe1

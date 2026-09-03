@@ -54,10 +54,22 @@
 // pointer for its own data.
 static WindowDock::Dock* g_launcherDock = nullptr;
 
-// Logical (unscaled) window size; multiplied by the monitor content scale.
+// Logical (unscaled) window sizes; multiplied by `scale` (monitor content scale
+// times the user's font-size zoom, see LauncherZoom). The tabbed container holds
+// POB, so its default is the size POB itself opens at. kMinWin* is the smallest
+// the layout stays usable at: below ~900 the five-button tool row starts
+// clipping its longest label, and both tab bodies scroll, so nothing breaks.
 static const int kWinW = 1000;
 static const int kWinH = 700;
-static const float kFontSize = 19.0f;
+static const int kTabbedWinW = 1500;
+static const int kTabbedWinH = 950;
+static const int kMinWinW = 900;
+static const int kMinWinH = 560;
+// Body face at 100% zoom. MUST equal kLauncherFontSizeDefault: the settings page
+// shows the body size in px and the zoom is derived from that ratio.
+static constexpr float kFontSize = 19.0f;
+static_assert((int)kFontSize == kLauncherFontSizeDefault,
+              "font-size setting is expressed as the body px; keep the two in step");
 static const float kSmallFontSize = 15.0f;
 static const float kTitleFontSize = 26.0f;
 static const float kBigFontSize = 30.0f;   // ToolPanelHost::big, digits only
@@ -498,7 +510,12 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 		if (!atlas->Build()) return false;
 		out.texW = atlas->TexWidth;
 		out.texH = atlas->TexHeight;
-		return out.texW <= maxTex && out.texH <= maxTex;
+		// Height is judged against 8192 even on a 16384 GPU. Past that the atlas
+		// is a ~450 MB texture (reachable only at the largest font-size setting on
+		// a 200% monitor), and a launcher should not cost that much VRAM just to
+		// keep Korean; the ladder below gives that up first.
+		const int maxTexH = maxTex < 8192 ? maxTex : 8192;
+		return out.texW <= maxTex && out.texH <= maxTexH;
 	};
 
 	if (scope == FontScope::Precise) {
@@ -884,18 +901,70 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+	// Resizable in both modes since v1.3.0; the size is remembered per mode (see
+	// the poll in the main loop) and can also be typed on the settings page.
+	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // position first, then show
 
-	float scale = 1.0f;
+	// `dpiScale` is the monitor's; `scale` is what everything below multiplies
+	// by, and folds in the font-size setting. Reassigned when that setting
+	// changes (see the zoom-apply block in the main loop), so it is not const.
+	float dpiScale = 1.0f;
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 	if (monitor) {
 		float sx = 1.0f, sy = 1.0f;
 		glfwGetMonitorContentScale(monitor, &sx, &sy);
-		scale = sx > 0.0f ? sx : 1.0f;
+		dpiScale = sx > 0.0f ? sx : 1.0f;
 	}
-	const int winW = (int)(kWinW * scale);
-	const int winH = (int)(kWinH * scale);
+	float scale = dpiScale * LauncherZoom(cfg.fontSize);
+
+	// Tabbed window mode: this window becomes the container POB and the tools are
+	// docked into. Decided here because the two modes have different default and
+	// remembered sizes; everything else about it is gated further down, so
+	// Separate mode runs exactly the code it ran before.
+	const bool tabbed = (cfg.windowMode == WindowMode::Tabbed);
+	int& storedW = tabbed ? cfg.tabWinW : cfg.winW;
+	int& storedH = tabbed ? cfg.tabWinH : cfg.winH;
+
+	// Monitor work area (screen minus taskbar), falling back to the video mode.
+	// Physical pixels, like everything GLFW reports on Windows.
+	auto workArea = [&](int* wx, int* wy, int* ww, int* wh) {
+		*wx = *wy = *ww = *wh = 0;
+		if (!monitor) return;
+		glfwGetMonitorWorkarea(monitor, wx, wy, ww, wh);
+		if (*ww > 0 && *wh > 0) return;
+		if (const GLFWvidmode* mode = glfwGetVideoMode(monitor)) {
+			*wx = *wy = 0;
+			*ww = mode->width;
+			*wh = mode->height;
+		}
+	};
+	// The mode's default size at the CURRENT scale (reads `scale` by reference,
+	// so it follows a zoom change).
+	auto defaultWinSize = [&](int* w, int* h) {
+		*w = (int)((tabbed ? kTabbedWinW : kWinW) * scale);
+		*h = (int)((tabbed ? kTabbedWinH : kWinH) * scale);
+	};
+	// Never smaller than the layout can take, never larger than the screen: a
+	// size remembered on a bigger monitor must still come up fully visible.
+	auto clampWinSize = [&](int* w, int* h) {
+		const int minW = (int)(kMinWinW * scale), minH = (int)(kMinWinH * scale);
+		if (*w < minW) *w = minW;
+		if (*h < minH) *h = minH;
+		int wx, wy, ww, wh;
+		workArea(&wx, &wy, &ww, &wh);
+		if (ww > 0 && *w > ww) *w = ww;
+		if (wh > 0 && *h > wh) *h = wh;
+	};
+
+	int winW = 0, winH = 0;
+	if (storedW > 0 && storedH > 0) {
+		winW = storedW;
+		winH = storedH;
+	} else {
+		defaultWinSize(&winW, &winH);
+	}
+	clampWinSize(&winW, &winH);
 
 	GLFWwindow* win = glfwCreateWindow(winW, winH, "PobTools", nullptr, nullptr);
 	if (!win) {
@@ -903,10 +972,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		MessageBoxW(nullptr, L"無法建立啟動器視窗。", L"PobTools", MB_ICONERROR | MB_OK);
 		return LauncherResult::Quit;
 	}
-	if (monitor) {
-		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-		if (mode) glfwSetWindowPos(win, (mode->width - winW) / 2, (mode->height - winH) / 2);
+	{
+		// Centred on the work area, not the video mode: a window as tall as the
+		// screen would otherwise sit half under the taskbar.
+		int wx, wy, ww, wh;
+		workArea(&wx, &wy, &ww, &wh);
+		if (ww > 0 && wh > 0) glfwSetWindowPos(win, wx + (ww - winW) / 2, wy + (wh - winH) / 2);
 	}
+	glfwSetWindowSizeLimits(win, (int)(kMinWinW * scale), (int)(kMinWinH * scale),
+	                        GLFW_DONT_CARE, GLFW_DONT_CARE);
 	glfwMakeContextCurrent(win);
 	glfwSwapInterval(1);
 	// NOT shown yet: the window goes on screen right after its first frame has been
@@ -919,16 +993,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &glMaxTex);
 	if (glMaxTex <= 0) glMaxTex = 2048;
 
-	// Tabbed window mode: this window becomes the container POB and the tools are
-	// docked into. Everything about it is gated on the setting, so Separate mode
-	// runs exactly the code it ran before.
-	const bool tabbed = (cfg.windowMode == WindowMode::Tabbed);
+	// Tabbed window mode: the docking half. The window itself was already sized
+	// for the mode above.
 	WindowDock::Dock dock;
 	if (tabbed) {
-		// Resizable, because a fixed-size launcher makes a poor window to run POB
-		// in. Separate mode keeps the fixed size it has always had.
-		glfwSetWindowAttrib(win, GLFW_RESIZABLE, GLFW_TRUE);
-		glfwSetWindowSize(win, (int)(1500 * scale), (int)(950 * scale));
 		dock.Init(glfwGetWin32Window(win), exeDir + L"PobTools\\dock_log.txt");
 		g_launcherDock = &dock;
 		// Dragging a window puts Windows into a modal message loop during which
@@ -1103,6 +1171,19 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// "restart to apply" notice for the window-mode switch; a deadline rather than
 	// a bool so it outlives the frame the click happened in.
 	double windowModeChangedUntil = 0.0;
+	// Font-size slider: edited copy while dragging, and the scale the main loop
+	// should switch to once the drag ends (0 = nothing pending). The switch is
+	// done between frames, never from inside the widget: it rebuilds styles and
+	// the atlas, and both must happen with an empty ImGui stack.
+	int   fontSizeEdit = cfg.fontSize;
+	float pendingScale = 0.0f;
+	// Window size: the two fields on the settings page, the last size the poll
+	// saw, and the debounce for remembering a drag. `lastW == 0` means the poll
+	// has not seeded yet -- the startup size is never written back as a change.
+	int    winEdit[2] = { 0, 0 };
+	int    lastW = 0, lastH = 0;
+	double sizeStableAt = 0.0;
+	bool   sizeDirty = false;
 
 	// EVERY settings change writes the ini immediately. Half-immediate is worse
 	// than either extreme: some fields used to persist on change and the rest only
@@ -1114,6 +1195,20 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		syncCfgFromUi(); // language / game are widget state until now
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
 		savedUntil = ImGui::GetTime() + 3.0;
+	};
+	// Resize the window from the settings page. `remember` decides what the ini
+	// gets: the typed size, or 0 ("mode default") for the reset button -- the
+	// window is resized either way. Updates the poll's last-seen size so the
+	// change is not re-detected as a drag.
+	auto applyWindowSize = [&](int w, int h, bool remember) {
+		clampWinSize(&w, &h);
+		glfwSetWindowSize(win, w, h);
+		lastW = w;
+		lastH = h;
+		sizeDirty = false;
+		storedW = remember ? w : 0;
+		storedH = remember ? h : 0;
+		saveNow();
 	};
 
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
@@ -1203,6 +1298,42 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
 
+		// Remember a drag-resize once it has settled for half a second. Polled
+		// rather than hooked: the size callback is the dock's in tabbed mode, and
+		// a callback fires for every pixel of a drag anyway.
+		//
+		// Minimising is delivered as a 0x0 WM_SIZE (and a WM_MOVE to -32000), so
+		// the iconified state and non-positive sizes are skipped outright -- this
+		// exact path once parked the docked POB window off-screen. A maximised
+		// size is skipped too: restoring it later would give a windowed launcher
+		// the size of the whole screen.
+		{
+			int w = 0, h = 0;
+			glfwGetWindowSize(win, &w, &h);
+			if (w > 0 && h > 0 && !glfwGetWindowAttrib(win, GLFW_ICONIFIED) &&
+			    !glfwGetWindowAttrib(win, GLFW_MAXIMIZED)) {
+				if (lastW == 0) {
+					lastW = w; // seed only; the startup size is not a change
+					lastH = h;
+				} else if (w != lastW || h != lastH) {
+					lastW = w;
+					lastH = h;
+					sizeStableAt = glfwGetTime(); // ImGui::GetTime is not valid before NewFrame
+					sizeDirty = true;
+				} else if (sizeDirty && glfwGetTime() - sizeStableAt > 0.5) {
+					sizeDirty = false;
+					if (w != storedW || h != storedH) {
+						storedW = w;
+						storedH = h;
+						// Straight to the ini: saveNow() would flash "saved" on
+						// every drag, which is noise for something this passive.
+						syncCfgFromUi();
+						SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+					}
+				}
+			}
+		}
+
 		// Closing this window in tabbed mode means closing every tab first, and
 		// each one may put up "save your build?" -- answering cancel has to keep
 		// both the tab and this window alive, so the close is held rather than
@@ -1280,6 +1411,29 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// user asked for it and ~400 ms is fine. A background build still in flight
 		// is for the OLD font, so it is thrown away first -- and it must be joined
 		// before the TTF buffer it reads can go out of scope.
+		// Font-size change: switch `scale`, rebuild the prebuilt styles (ApplyTheme
+		// ends in ScaleAllSizes, which compounds, so it runs on a fresh style and
+		// only here, between frames), and let the atlas path below rebuild the
+		// faces at the new size. A window still at its mode default is resized to
+		// the new default with it; a remembered size is the user's and stays.
+		if (pendingScale > 0.0f) {
+			const bool atDefault = (storedW == 0 || storedH == 0);
+			scale = pendingScale;
+			pendingScale = 0.0f;
+			PobUi::ApplyTheme(scale, PobUi::Density::Comfortable);
+			PobUi::BuildStyle(styleComfortable, scale, PobUi::Density::Comfortable);
+			PobUi::BuildStyle(styleCompact, scale, PobUi::Density::Compact);
+			PobUi::BuildStyle(styleCanvas, scale, PobUi::Density::Canvas);
+			panelHost.scale = scale;
+			glfwSetWindowSizeLimits(win, (int)(kMinWinW * scale), (int)(kMinWinH * scale),
+			                        GLFW_DONT_CARE, GLFW_DONT_CARE);
+			if (atDefault) {
+				int w, h;
+				defaultWinSize(&w, &h);
+				applyWindowSize(w, h, false);
+			}
+			fontChanged = true;
+		}
 		if (fontChanged) {
 			fontChanged = false;
 			fontWorker.Discard();
@@ -1776,6 +1930,82 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::EndCombo();
 			}
 
+			// Launcher font size = whole-UI zoom (see LauncherZoom). Applied when
+			// the slider is RELEASED, not per tick: each apply rebuilds the atlas.
+			{
+				ImGui::PushID("fontsize");
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.fontSizeLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				ImGui::SliderInt("##fontsize", &fontSizeEdit, kLauncherFontSizeMin, kLauncherFontSizeMax,
+				                 "%d px", ImGuiSliderFlags_AlwaysClamp);
+				if (ImGui::IsItemDeactivatedAfterEdit() && fontSizeEdit != cfg.fontSize) {
+					cfg.fontSize = ClampLauncherFontSize(fontSizeEdit);
+					saveNow();
+					pendingScale = dpiScale * LauncherZoom(cfg.fontSize);
+				}
+				if (!ImGui::IsItemActive()) fontSizeEdit = cfg.fontSize;
+				ImGui::SameLine(0, 6.0f * scale);
+				if (ImGui::SmallButton(S.resetDefault) && cfg.fontSize != kLauncherFontSizeDefault) {
+					cfg.fontSize = kLauncherFontSizeDefault;
+					saveNow();
+					pendingScale = dpiScale;
+				}
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.fontSizeHint);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				ImGui::PopID();
+			}
+			// Window size for the CURRENT mode, physical pixels. The fields mirror the
+			// live window whenever they are not being edited, so "default" reads as
+			// the real numbers rather than as 0. Commit on Enter or on leaving the
+			// field, same as the proxy box.
+			{
+				ImGui::PushID("winsize");
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.winSizeLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				bool commit = false, active[2] = { false, false };
+				ImGui::SetNextItemWidth(90.0f * scale);
+				commit |= ImGui::InputInt("##w", &winEdit[0], 0, 0, ImGuiInputTextFlags_EnterReturnsTrue);
+				commit |= ImGui::IsItemDeactivatedAfterEdit();
+				active[0] = ImGui::IsItemActive();
+				ImGui::SameLine(0, 6.0f * scale);
+				ImGui::TextUnformatted("x"); // ASCII on purpose: U+00D7 is not in every shipped font
+				ImGui::SameLine(0, 6.0f * scale);
+				ImGui::SetNextItemWidth(90.0f * scale);
+				commit |= ImGui::InputInt("##h", &winEdit[1], 0, 0, ImGuiInputTextFlags_EnterReturnsTrue);
+				commit |= ImGui::IsItemDeactivatedAfterEdit();
+				active[1] = ImGui::IsItemActive();
+				if (commit && winEdit[0] > 0 && winEdit[1] > 0 &&
+				    (winEdit[0] != lastW || winEdit[1] != lastH))
+					applyWindowSize(winEdit[0], winEdit[1], true);
+				if (!active[0]) winEdit[0] = lastW;
+				if (!active[1]) winEdit[1] = lastH;
+				ImGui::SameLine(0, 6.0f * scale);
+				if (ImGui::SmallButton(S.resetDefault)) {
+					int w, h;
+					defaultWinSize(&w, &h);
+					applyWindowSize(w, h, false);
+				}
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.winSizeHint);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				ImGui::PopID();
+			}
 			// Font picker: lists Fonts\*.ttf; switching rebuilds the atlas live.
 			// The rebuild happens at the top of the loop, before NewFrame, so it
 			// does not care which tab the combo is drawn on.
@@ -2477,7 +2707,11 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 	std::vector<unsigned> probeCps;
 	ForEachCodepoint(kProbeText, [&](unsigned cp) { probeCps.push_back(cp); });
 
-	const float kScales[] = { 1.0f, 1.25f, 1.5f, 2.0f };
+	// The last scale is the largest font-size setting on a 200% monitor
+	// (26/19 zoom): the ladder has to end in an uploadable atlas there too, even
+	// if what it uploads is degraded.
+	const float kScales[] = { 1.0f, 1.25f, 1.5f, 2.0f,
+	                          2.0f * (float)kLauncherFontSizeMax / (float)kLauncherFontSizeDefault };
 	const int   kLimits[] = { 2048, 4096, 8192, 16384 };
 
 	for (const std::wstring& f : fontList) {
@@ -2573,6 +2807,24 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 			check("the shipping configuration on THIS machine keeps the full CJK block",
 			      fonts.dropped != "cjk" && miss == 0, d2);
 			ImGui::DestroyContext();
+
+			// Informational only: what the largest font-size setting would do here.
+			// Not a check, because a developer who runs at 26 px must not turn the
+			// release gate red on a GPU where the shipping default is fine.
+			{
+				ImGui::CreateContext();
+				const float zoomed = realScale * LauncherZoom(kLauncherFontSizeMax);
+				std::shared_ptr<const FontBuildInput> inZ =
+				    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, zoomed, realMax,
+				                     FallbackFontPaths(exeDir, cfg.fontFile));
+				LauncherFonts fz = LoadFonts(ImGui::GetIO().Fonts, inZ, FontScope::Full);
+				char d3[192];
+				snprintf(d3, sizeof(d3), "note at the max font size (%d px, %.2fx): %dx%d%s%s\n",
+				         kLauncherFontSizeMax, zoomed, fz.texW, fz.texH,
+				         fz.dropped.empty() ? "" : ", dropped=", fz.dropped.c_str());
+				report += d3;
+				ImGui::DestroyContext();
+			}
 		}
 	}
 

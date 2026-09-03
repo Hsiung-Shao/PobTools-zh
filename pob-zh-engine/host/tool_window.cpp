@@ -43,6 +43,10 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 
+	// Same scale rule as the launcher: monitor content scale times the user's
+	// font-size zoom from pob-zh.ini, so a tool opened as its own window is the
+	// same size on screen as the same tool opened as a launcher tab.
+	const float zoom = LauncherZoom(LoadLauncherConfig(exeDir + L"pob-zh.ini").fontSize);
 	float scale = 1.0f;
 	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
 	if (monitor) {
@@ -50,15 +54,17 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		glfwGetMonitorContentScale(monitor, &sx, &sy);
 		scale = sx > 0.0f ? sx : 1.0f;
 	}
+	scale *= zoom;
 	int winW = (int)(desc.defW * scale);
 	int winH = (int)(desc.defH * scale);
-	if (desc.clampToWorkArea && monitor) {
-		int wx = 0, wy = 0, ww = 0, wh = 0;
-		glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
-		if (ww > 0 && wh > 0) {
-			if (winW > ww) winW = ww;
-			if (winH > wh) winH = wh;
-		}
+	// Work area, physical pixels; (0,0)-sized when unknown.
+	int wx = 0, wy = 0, ww = 0, wh = 0;
+	if (monitor) glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
+	// Windows that asked to be clamped always are; every window is once zoom
+	// has pushed it past the screen (1500 * 1.37 on a 1920-wide monitor).
+	if ((desc.clampToWorkArea || zoom > 1.0f) && ww > 0 && wh > 0) {
+		if (winW > ww) winW = ww;
+		if (winH > wh) winH = wh;
 	}
 
 	GLFWwindow* win = glfwCreateWindow(winW, winH, desc.titleUtf8, nullptr, nullptr);
@@ -67,7 +73,11 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		MessageBoxW(nullptr, L"無法建立視窗。", L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;
 	}
-	if (monitor) {
+	if (ww > 0 && wh > 0) {
+		// Centred on the work area so a screen-tall window is not half under the
+		// taskbar.
+		glfwSetWindowPos(win, wx + (ww - winW) / 2, wy + (wh - winH) / 2);
+	} else if (monitor) {
 		const GLFWvidmode* mode = glfwGetVideoMode(monitor);
 		if (mode) glfwSetWindowPos(win, (mode->width - winW) / 2, (mode->height - winH) / 2);
 	}
@@ -94,12 +104,6 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		// Build(). Static because this function can only ever run one panel at a time
 		// in this process.
 		static ImVector<ImWchar> ranges;
-		ranges.clear();
-		ImFontGlyphRangesBuilder b;
-		b.AddRanges(io.Fonts->GetGlyphRangesDefault());
-		b.AddRanges(io.Fonts->GetGlyphRangesChineseFull());
-		b.AddRanges(io.Fonts->GetGlyphRangesKorean());
-		b.BuildRanges(&ranges);
 		ImFontConfig cfg;
 		cfg.FontDataOwnedByAtlas = false;
 		cfg.OversampleH = 1;
@@ -108,9 +112,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		io.Fonts->Flags |= ImFontAtlasFlags_NoPowerOfTwoHeight;
 		GLint maxTex = 0;
 		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTex);
-		io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : 4096;
-		font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale,
-		                                      &cfg, ranges.Data);
+		if (maxTex <= 0) maxTex = 2048;
+		io.Fonts->TexDesiredWidth = maxTex >= 8192 ? 8192 : (maxTex >= 4096 ? 4096 : 2048);
 		// Every other shipped font, merged as glyph fallbacks (present glyphs are
 		// skipped): the tools draw zh-rCN dictionary text, and Noto Sans TC has
 		// no simplified-only glyphs. Static: the atlas keeps the pointers.
@@ -124,9 +127,6 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		}
 		ImFontConfig cfgMerge = cfg;
 		cfgMerge.MergeMode = true;
-		for (std::vector<unsigned char>& fb : fallbackTtfs)
-			io.Fonts->AddFontFromMemoryTTF(fb.data(), (int)fb.size(), kFontSize * scale,
-			                               &cfgMerge, ranges.Data);
 		// ToolPanelHost::big -- twelve glyphs, so it costs nothing and both hosts can
 		// offer it unconditionally rather than the panel having two layouts.
 		static ImVector<ImWchar> bigRanges;
@@ -134,9 +134,50 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		ImFontGlyphRangesBuilder bb;
 		bb.AddText("0123456789 /");
 		bb.BuildRanges(&bigRanges);
-		fontBig = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kBigFontSize * scale,
-		                                         &cfg, bigRanges.Data);
-		if (io.Fonts->Build() && font)
+
+		// One attempt at a glyph set; true when the built atlas is uploadable.
+		// The launcher has the same ladder (LoadFonts in launcher_ui.cpp) for the
+		// same reason: an atlas over GL_MAX_TEXTURE_SIZE is not an error anywhere,
+		// it is a window that draws nothing. Reachable here at the largest
+		// font-size setting on a high-DPI monitor, so it has to be guarded.
+		auto attempt = [&](bool fullCjk, bool korean) -> bool {
+			io.Fonts->Clear();
+			ranges.clear();
+			ImFontGlyphRangesBuilder b;
+			b.AddRanges(io.Fonts->GetGlyphRangesDefault());
+			b.AddRanges(fullCjk ? io.Fonts->GetGlyphRangesChineseFull()
+			                    : io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+			if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
+			b.BuildRanges(&ranges);
+			font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale,
+			                                      &cfg, ranges.Data);
+			for (std::vector<unsigned char>& fb : fallbackTtfs)
+				io.Fonts->AddFontFromMemoryTTF(fb.data(), (int)fb.size(), kFontSize * scale,
+				                               &cfgMerge, ranges.Data);
+			fontBig = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kBigFontSize * scale,
+			                                         &cfg, bigRanges.Data);
+			if (!io.Fonts->Build()) return false;
+			return io.Fonts->TexWidth <= maxTex && io.Fonts->TexHeight <= maxTex;
+		};
+		bool built = attempt(true, true);
+		if (!built) {
+			PobLog::Error("i18n", "tool window font atlas over the GPU limit with Korean at " +
+			                          std::to_string((int)(kFontSize * scale)) + " px; retrying without");
+			built = attempt(true, false);
+		}
+		if (!built) {
+			PobLog::Error("i18n", "tool window font atlas over the GPU limit with the full CJK block; "
+			                      "falling back to the common set (rare characters will show as ?)");
+			built = attempt(false, false);
+		}
+		if (!built) {
+			PobLog::Error("i18n", "tool window font atlas does not fit the GPU even at the common set; "
+			                      "using ImGui's built-in ASCII font");
+			io.Fonts->Clear();
+			font = nullptr;
+			fontBig = nullptr;
+		}
+		if (font)
 			cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
 	}
 	if (!font) font = ImGui::GetIO().Fonts->AddFontDefault();

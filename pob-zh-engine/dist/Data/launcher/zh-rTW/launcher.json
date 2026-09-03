@@ -108,6 +108,11 @@
     "Download translation data now": "立即下載翻譯資料",
     "Use this font for letters & digits in POB too": "POB 視窗的英文與數字也用此字型",
     "When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.": "開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。",
+    "Font size": "字體大小",
+    "Affects only the launcher and its tool windows; POB itself is unchanged": "只影響啟動器與工具視窗，POB 本身不受影響",
+    "Reset to default": "恢復預設",
+    "Window size": "視窗大小",
+    "You can also drag the window edge; the size is remembered": "也可以直接拖曳視窗邊緣調整，大小會記住",
     "Translation data updated to v": "翻譯資料已更新至 v"
   }
 }

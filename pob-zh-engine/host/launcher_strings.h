@@ -188,7 +188,16 @@
 	X(fontApplyAllChk,   u8"POB 視窗的英文與數字也用此字型",                                          \
 	                     u8"Use this font for letters & digits in POB too")                          \
 	X(fontApplyAllTip,   u8"開啟後 POB 視窗內中英數共用同一個字型。等寬欄位（主控台、物品原文編輯）一律維持原生等寬字型。切換後需重新啟動 POB 視窗才會生效。", \
-	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.")
+	                     u8"When on, Chinese, letters and digits in the POB window share the selected font. Monospaced fields (console, raw item editing) keep the native fixed-width font. Takes effect the next time the POB window starts.") \
+	/* launcher-only zoom + remembered window size (v1.3.0). ASCII 'x' between the  \
+	   width and height fields on purpose: U+00D7 is not in every shipped font. */    \
+	X(fontSizeLabel,     u8"字體大小",                       u8"Font size")                              \
+	X(fontSizeHint,      u8"只影響啟動器與工具視窗，POB 本身不受影響",                                    \
+	                     u8"Affects only the launcher and its tool windows; POB itself is unchanged")   \
+	X(resetDefault,      u8"恢復預設",                       u8"Reset to default")                       \
+	X(winSizeLabel,      u8"視窗大小",                       u8"Window size")                            \
+	X(winSizeHint,       u8"也可以直接拖曳視窗邊緣調整，大小會記住",                                      \
+	                     u8"You can also drag the window edge; the size is remembered")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;
