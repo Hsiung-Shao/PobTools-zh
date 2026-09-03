@@ -20,6 +20,12 @@ struct RegexEntryDef {
 	std::string affixZh;             // the affix names that print this line
 	std::vector<std::string> zh;     // printed lines, '#' where a number goes
 	std::vector<std::string> en;
+	// Text the game's search also reads for this entry without printing it as
+	// a line: the advanced description (affix name, tier, tags), the reminder
+	// text, the name pieces. Only ever used to veto a token -- see regex_gen.h.
+	// Optional in the file; an older catalogue simply has none.
+	std::vector<std::string> hiddenZh;
+	std::vector<std::string> hiddenEn;
 };
 
 struct RegexPageDef {
@@ -34,6 +40,16 @@ struct RegexPageDef {
 	int limit = 250;                 // the client's search field, in characters
 	std::vector<std::string> groups;
 	std::vector<RegexEntryDef> entries;
+	// Text every item of this page carries (property labels, the base name, the
+	// flavour paragraph, the random words rare names are made of). A token that
+	// hits it hits everything, so the generator must never emit one. Optional
+	// in the file, like the entry fields above.
+	std::vector<std::string> ambientZh;
+	std::vector<std::string> ambientEn;
+	std::vector<std::string> namePrefixZh;   // rare-name words, left half
+	std::vector<std::string> nameSuffixZh;   // right half, leading space kept
+	std::vector<std::string> namePrefixEn;
+	std::vector<std::string> nameSuffixEn;
 };
 
 class RegexDataset {

@@ -1,13 +1,13 @@
 {
  "schema": 1,
  "game": "poe1",
- "source": "GGPK Mods/Stats/Tags + tools/ggpk_zh/out/poe1/stats.json",
+ "source": "GGPK Mods/Stats/Tags/Words + tools/ggpk_zh/out/poe1/{stats,tables}",
  "pages": [
   {
    "id": "map_mods",
    "title": "地圖詞綴",
    "titleEn": "Map modifiers",
-   "note": "勾選要找的詞綴，把產生的字串貼進倉庫搜尋列。不會誤中的保證只涵蓋這份清單裡的其他詞綴。",
+   "note": "勾選要找的詞綴，把產生的字串貼進倉庫搜尋列。產生的片段會避開這份清單裡的其他詞綴，也避開遊戲同樣會比對的詞綴名稱、階層、標籤、提示說明與地圖名。",
    "limit": 250,
    "groups": [
     "前綴",
@@ -29,7 +29,23 @@
       "#% more Monster Life"
      ],
      "g": 0,
-     "affixZh": "堅定不移的、豐饒的、堅定的"
+     "affixZh": "堅定不移的、豐饒的、堅定的",
+     "hiddenZh": [
+      "前綴 \"堅定不移的\"(階層：#)",
+      "生命",
+      "堅定不移的地圖（階級#）",
+      "前綴 \"豐饒的\"(階層：#)",
+      "豐饒的地圖（階級#）",
+      "前綴 \"堅定的\"(階層：#)",
+      "堅定的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unwavering\" (Tier: #)",
+      "Life",
+      "Unwavering Map (Tier #)",
+      "Prefix Modifier \"Fecund\" (Tier: #)",
+      "Fecund Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModLessFlaskEffect",
@@ -41,7 +57,15 @@
      ],
      "g": 0,
      "affixZh": "稀釋的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"稀釋的\"(階層：#)",
+      "稀釋的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Diluted\" (Tier: #)",
+      "Diluted Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPhysicalResistance2MapWorlds",
@@ -52,7 +76,21 @@
       "+#% Monster Physical Damage Reduction"
      ],
      "g": 0,
-     "affixZh": "裝甲的、受保護的"
+     "affixZh": "裝甲的、受保護的",
+     "hiddenZh": [
+      "前綴 \"裝甲的\"(階層：#)",
+      "物理",
+      "裝甲的地圖（階級#）",
+      "前綴 \"受保護的\"(階層：#)",
+      "受保護的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Armoured\" (Tier: #)",
+      "Physical",
+      "Armoured Map (Tier #)",
+      "Prefix Modifier \"Protected\" (Tier: #)",
+      "Protected Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersAllResistances2MapWorlds",
@@ -63,7 +101,31 @@
       "+#% Monster Elemental Resistances"
      ],
      "g": 0,
-     "affixZh": "抵抗的、受保護的、抗性的"
+     "affixZh": "抵抗的、受保護的、抗性的",
+     "hiddenZh": [
+      "前綴 \"抵抗的\"(階層：#)",
+      "元素",
+      "混沌",
+      "抗性",
+      "元素,混沌,抗性",
+      "元素, 混沌, 抗性",
+      "抵抗的地圖（階級#）",
+      "前綴 \"受保護的\"(階層：#)",
+      "受保護的地圖（階級#）",
+      "前綴 \"抗性的\"(階層：#)",
+      "抗性的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Resistant\" (Tier: #)",
+      "Elemental",
+      "Chaos",
+      "Resistance",
+      "Elemental,Chaos,Resistance",
+      "Elemental, Chaos, Resistance",
+      "Resistant Map (Tier #)",
+      "Prefix Modifier \"Protected\" (Tier: #)",
+      "Protected Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersAllResistances2MapWorlds",
@@ -74,7 +136,31 @@
       "+#% Monster Chaos Resistance"
      ],
      "g": 0,
-     "affixZh": "抵抗的、受保護的、抗性的"
+     "affixZh": "抵抗的、受保護的、抗性的",
+     "hiddenZh": [
+      "前綴 \"抵抗的\"(階層：#)",
+      "元素",
+      "混沌",
+      "抗性",
+      "元素,混沌,抗性",
+      "元素, 混沌, 抗性",
+      "抵抗的地圖（階級#）",
+      "前綴 \"受保護的\"(階層：#)",
+      "受保護的地圖（階級#）",
+      "前綴 \"抗性的\"(階層：#)",
+      "抗性的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Resistant\" (Tier: #)",
+      "Elemental",
+      "Chaos",
+      "Resistance",
+      "Elemental,Chaos,Resistance",
+      "Elemental, Chaos, Resistance",
+      "Resistant Map (Tier #)",
+      "Prefix Modifier \"Protected\" (Tier: #)",
+      "Protected Map (Tier #)"
+     ]
     },
     {
      "id": "MapDangerousBoss1MapWorlds",
@@ -85,7 +171,25 @@
       "Unique Boss deals #% increased Damage"
      ],
      "g": 0,
-     "affixZh": "霸主的"
+     "affixZh": "霸主的",
+     "hiddenZh": [
+      "前綴 \"霸主的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "霸主的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Overlord's\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Overlord's Map (Tier #)"
+     ]
     },
     {
      "id": "MapDangerousBoss1MapWorlds",
@@ -96,7 +200,25 @@
       "Unique Boss has #% increased Attack and Cast Speed"
      ],
      "g": 0,
-     "affixZh": "霸主的"
+     "affixZh": "霸主的",
+     "hiddenZh": [
+      "前綴 \"霸主的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "霸主的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Overlord's\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Overlord's Map (Tier #)"
+     ]
     },
     {
      "id": "MapMassiveBoss1MapWorlds",
@@ -107,7 +229,17 @@
       "Unique Boss has #% increased Life"
      ],
      "g": 0,
-     "affixZh": "泰坦的"
+     "affixZh": "泰坦的",
+     "hiddenZh": [
+      "前綴 \"泰坦的\"(階層：#)",
+      "生命",
+      "泰坦的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Titan's\" (Tier: #)",
+      "Life",
+      "Titan's Map (Tier #)"
+     ]
     },
     {
      "id": "MapMassiveBoss1MapWorlds",
@@ -118,7 +250,17 @@
       "Unique Boss has #% increased Area of Effect"
      ],
      "g": 0,
-     "affixZh": "泰坦的"
+     "affixZh": "泰坦的",
+     "hiddenZh": [
+      "前綴 \"泰坦的\"(階層：#)",
+      "生命",
+      "泰坦的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Titan's\" (Tier: #)",
+      "Life",
+      "Titan's Map (Tier #)"
+     ]
     },
     {
      "id": "MapBossPossessedMapWorlds",
@@ -129,7 +271,15 @@
       "Unique Bosses are Possessed"
      ],
      "g": 0,
-     "affixZh": "著迷的"
+     "affixZh": "著迷的",
+     "hiddenZh": [
+      "前綴 \"著迷的\"(階層：#)",
+      "著迷的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Enthralled\" (Tier: #)",
+      "Enthralled Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModMonsterAilments",
@@ -141,7 +291,21 @@
      ],
      "g": 0,
      "affixZh": "折磨的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"折磨的\"(階層：#)",
+      "（點燃根據技能的基礎火焰傷害，造成持續火焰傷害，持續4秒）",
+      "（冰凍使敵人行動速度降至 0，使他們無法行動。根據擊中的冰冷傷害決定持續時間）",
+      "（感電根據擊中的閃電傷害總量，增加至多50%承受傷害，持續2秒）",
+      "折磨的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Afflicting\" (Tier: #)",
+      "(Ignite deals Fire Damage over time, based on the base Fire Damage of the Skill, for 4 seconds)",
+      "(Freeze lowers Enemy Action Speed to zero, preventing them from acting. Duration is based on the Cold Damage of the Hit)",
+      "(Shock increases Damage taken by up to 50%, depending on the amount of Lightning Damage in the hit, for 2 seconds)",
+      "Afflicting Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModLabyrinthHazards",
@@ -153,7 +317,15 @@
      ],
      "g": 0,
      "affixZh": "迷宮的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"迷宮的\"(階層：#)",
+      "迷宮的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Labyrinth's\" (Tier: #)",
+      "Labyrinth's Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModDrowningOrbs",
@@ -165,7 +337,15 @@
      ],
      "g": 0,
      "affixZh": "飢餓的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"飢餓的\"(階層：#)",
+      "飢餓的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Hungering\" (Tier: #)",
+      "Hungering Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModExarch",
@@ -177,7 +357,15 @@
      ],
      "g": 0,
      "affixZh": "灼烙的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"灼烙的\"(階層：#)",
+      "灼烙的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Searing\" (Tier: #)",
+      "Searing Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksKitavaMapWorlds_",
@@ -188,7 +376,15 @@
       "Area is inhabited by Cultists of Kitava"
      ],
      "g": 0,
-     "affixZh": "盛宴的"
+     "affixZh": "盛宴的",
+     "hiddenZh": [
+      "前綴 \"盛宴的\"(階層：#)",
+      "盛宴的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Feasting\" (Tier: #)",
+      "Feasting Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksSolarisMapWorlds_",
@@ -199,7 +395,15 @@
       "Area is inhabited by Solaris fanatics"
      ],
      "g": 0,
-     "affixZh": "日耀的"
+     "affixZh": "日耀的",
+     "hiddenZh": [
+      "前綴 \"日耀的\"(階層：#)",
+      "日耀的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Solar\" (Tier: #)",
+      "Solar Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksLunarisMapWorlds_",
@@ -210,7 +414,15 @@
       "Area is inhabited by Lunaris fanatics"
      ],
      "g": 0,
-     "affixZh": "月影的"
+     "affixZh": "月影的",
+     "hiddenZh": [
+      "前綴 \"月影的\"(階層：#)",
+      "月影的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Lunar\" (Tier: #)",
+      "Lunar Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksGhostsMapWorlds",
@@ -221,7 +433,15 @@
       "Area is inhabited by Ghosts"
      ],
      "g": 0,
-     "affixZh": "作祟的"
+     "affixZh": "作祟的",
+     "hiddenZh": [
+      "前綴 \"作祟的\"(階層：#)",
+      "作祟的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Haunting\" (Tier: #)",
+      "Haunting Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModShaperTouched",
@@ -233,7 +453,15 @@
      ],
      "g": 0,
      "affixZh": "瓦爾多的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"瓦爾多的\"(階層：#)",
+      "瓦爾多的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Valdo's\" (Tier: #)",
+      "Valdo's Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksAbominationMapWorlds",
@@ -244,7 +472,15 @@
       "Area is inhabited by Abominations"
      ],
      "g": 0,
-     "affixZh": "憎惡的"
+     "affixZh": "憎惡的",
+     "hiddenZh": [
+      "前綴 \"憎惡的\"(階層：#)",
+      "憎惡的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Abhorrent\" (Tier: #)",
+      "Abhorrent Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksUndeadMapWorlds_",
@@ -255,7 +491,15 @@
       "Area is inhabited by Undead"
      ],
      "g": 0,
-     "affixZh": "亡靈的"
+     "affixZh": "亡靈的",
+     "hiddenZh": [
+      "前綴 \"亡靈的\"(階層：#)",
+      "亡靈的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Undead\" (Tier: #)",
+      "Undead Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksHumanoidsMapWorlds",
@@ -266,7 +510,15 @@
       "Area is inhabited by Humanoids"
      ],
      "g": 0,
-     "affixZh": "雙足的"
+     "affixZh": "雙足的",
+     "hiddenZh": [
+      "前綴 \"雙足的\"(階層：#)",
+      "雙足的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Bipedal\" (Tier: #)",
+      "Bipedal Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksAnimalsMapWorlds",
@@ -277,7 +529,15 @@
       "Area is inhabited by Animals"
      ],
      "g": 0,
-     "affixZh": "野性的"
+     "affixZh": "野性的",
+     "hiddenZh": [
+      "前綴 \"野性的\"(階層：#)",
+      "野性的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Feral\" (Tier: #)",
+      "Feral Map (Tier #)"
+     ]
     },
     {
      "id": "MapTotemsMapWorlds",
@@ -288,7 +548,15 @@
       "Area contains many Totems"
      ],
      "g": 0,
-     "affixZh": "儀式的"
+     "affixZh": "儀式的",
+     "hiddenZh": [
+      "前綴 \"儀式的\"(階層：#)",
+      "儀式的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Ceremonial\" (Tier: #)",
+      "Ceremonial Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksDemonsMapWorlds",
@@ -299,7 +567,15 @@
       "Area is inhabited by Demons"
      ],
      "g": 0,
-     "affixZh": "惡魔的"
+     "affixZh": "惡魔的",
+     "hiddenZh": [
+      "前綴 \"惡魔的\"(階層：#)",
+      "惡魔的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Demonic\" (Tier: #)",
+      "Demonic Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksSpawnsSeaWitchesMapWorlds",
@@ -310,7 +586,15 @@
       "Area is inhabited by Sea Witches and their Spawn"
      ],
      "g": 0,
-     "affixZh": "濕滑的"
+     "affixZh": "濕滑的",
+     "hiddenZh": [
+      "前綴 \"濕滑的\"(階層：#)",
+      "濕滑的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Slithering\" (Tier: #)",
+      "Slithering Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksGoatmenMapWorlds",
@@ -321,7 +605,15 @@
       "Area is inhabited by Goatmen"
      ],
      "g": 0,
-     "affixZh": "羊男的"
+     "affixZh": "羊男的",
+     "hiddenZh": [
+      "前綴 \"羊男的\"(階層：#)",
+      "羊男的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Capricious\" (Tier: #)",
+      "Capricious Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksRangedMapWorlds",
@@ -332,7 +624,15 @@
       "Area is inhabited by ranged monsters"
      ],
      "g": 0,
-     "affixZh": "發散的"
+     "affixZh": "發散的",
+     "hiddenZh": [
+      "前綴 \"發散的\"(階層：#)",
+      "發散的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Emanant\" (Tier: #)",
+      "Emanant Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPacksSkeletonsMapWorlds_",
@@ -343,7 +643,15 @@
       "Area is inhabited by Skeletons"
      ],
      "g": 0,
-     "affixZh": "骷髏的"
+     "affixZh": "骷髏的",
+     "hiddenZh": [
+      "前綴 \"骷髏的\"(階層：#)",
+      "骷髏的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Skeletal\" (Tier: #)",
+      "Skeletal Map (Tier #)"
+     ]
     },
     {
      "id": "MapTwoBossesMapWorlds",
@@ -354,7 +662,15 @@
       "Area contains two Unique Bosses"
      ],
      "g": 0,
-     "affixZh": "孿生的"
+     "affixZh": "孿生的",
+     "hiddenZh": [
+      "前綴 \"孿生的\"(階層：#)",
+      "孿生的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Twinned\" (Tier: #)",
+      "Twinned Map (Tier #)"
+     ]
     },
     {
      "id": "MapMoreMonsterPackVarietyMapWorlds_",
@@ -365,7 +681,15 @@
       "Area has increased monster variety"
      ],
      "g": 0,
-     "affixZh": "五花八門的"
+     "affixZh": "五花八門的",
+     "hiddenZh": [
+      "前綴 \"五花八門的\"(階層：#)",
+      "五花八門的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Multifarious\" (Tier: #)",
+      "Multifarious Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModSynthMiniboss",
@@ -377,7 +701,15 @@
      ],
      "g": 0,
      "affixZh": "合成的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"合成的\"(階層：#)",
+      "合成的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Synthetic\" (Tier: #)",
+      "Synthetic Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamage2MapWorlds",
@@ -388,7 +720,19 @@
       "#% increased Monster Damage"
      ],
      "g": 0,
-     "affixZh": "殘暴的、野蠻人的"
+     "affixZh": "殘暴的、野蠻人的",
+     "hiddenZh": [
+      "前綴 \"殘暴的\"(階層：#)",
+      "傷害",
+      "殘暴的地圖（階級#）",
+      "前綴 \"野蠻人的\"(階層：#)",
+      "野蠻人的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Savage\" (Tier: #)",
+      "Damage",
+      "Savage Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterFast2MapWorlds",
@@ -399,7 +743,27 @@
       "#% increased Monster Attack Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的、艦隊的"
+     "affixZh": "飄忽的、艦隊的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的地圖（階級#）",
+      "前綴 \"艦隊的\"(階層：#)",
+      "艦隊的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterFast2MapWorlds",
@@ -410,7 +774,27 @@
       "#% increased Monster Cast Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的、艦隊的"
+     "affixZh": "飄忽的、艦隊的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的地圖（階級#）",
+      "前綴 \"艦隊的\"(階層：#)",
+      "艦隊的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterFast2MapWorlds",
@@ -421,7 +805,27 @@
       "#% increased Monster Movement Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的、艦隊的"
+     "affixZh": "飄忽的、艦隊的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的地圖（階級#）",
+      "前綴 \"艦隊的\"(階層：#)",
+      "艦隊的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Map (Tier #)"
+     ]
     },
     {
      "id": "MapNemesisModOnRaresMapWorlds",
@@ -432,7 +836,15 @@
       "#% increased number of Rare Monsters"
      ],
      "g": 0,
-     "affixZh": "反抗者的"
+     "affixZh": "反抗者的",
+     "hiddenZh": [
+      "前綴 \"反抗者的\"(階層：#)",
+      "反抗者的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Antagonist's\" (Tier: #)",
+      "Antagonist's Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersCurseEffectOnSelfFinal2MapWorlds",
@@ -443,7 +855,23 @@
       "#% less effect of Curses on Monsters"
      ],
      "g": 0,
-     "affixZh": "魔抗的"
+     "affixZh": "魔抗的",
+     "hiddenZh": [
+      "前綴 \"魔抗的\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "魔抗的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Hexwarded\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "Hexwarded Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersChanceToSuppressSpells2MapWorlds",
@@ -454,7 +882,19 @@
       "Monsters have #% chance to Suppress Spell Damage"
      ],
      "g": 0,
-     "affixZh": "壓迫性的、壓抑的"
+     "affixZh": "壓迫性的、壓抑的",
+     "hiddenZh": [
+      "前綴 \"壓迫性的\"(階層：#)",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "壓迫性的地圖（階級#）",
+      "前綴 \"壓抑的\"(階層：#)",
+      "壓抑的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Oppressive\" (Tier: #)",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Oppressive Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModMonsterAttackBlock",
@@ -466,7 +906,15 @@
      ],
      "g": 0,
      "affixZh": "堅定的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"堅定的\"(階層：#)",
+      "堅定的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Stalwart\" (Tier: #)",
+      "Stalwart Map (Tier #)"
+     ]
     },
     {
      "id": "MapHexproofMapWorlds",
@@ -477,7 +925,23 @@
       "Monsters are Hexproof"
      ],
      "g": 0,
-     "affixZh": "無咒的"
+     "affixZh": "無咒的",
+     "hiddenZh": [
+      "前綴 \"無咒的\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "無咒的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Hexproof\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "Hexproof Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
@@ -488,7 +952,17 @@
       "Monsters cannot be Taunted"
      ],
      "g": 0,
-     "affixZh": "無阻的"
+     "affixZh": "無阻的",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersAllDamageAlwaysIgnitesMapWorldsMaven",
@@ -499,7 +973,29 @@
       "All Monster Damage from Hits always Ignites"
      ],
      "g": 0,
-     "affixZh": "燃燒的、爆燃"
+     "affixZh": "燃燒的、爆燃",
+     "hiddenZh": [
+      "前綴 \"燃燒的\"(階層：#)",
+      "元素",
+      "火焰",
+      "異常狀態",
+      "元素,火焰,異常狀態",
+      "元素, 火焰, 異常狀態",
+      "（點燃根據技能的基礎火焰傷害，造成持續火焰傷害，持續4秒）",
+      "燃燒的地圖（階級#）",
+      "前綴 \"爆燃\"(階層：#)",
+      "爆燃地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Conflagrating\" (Tier: #)",
+      "Elemental",
+      "Fire",
+      "Ailment",
+      "Elemental,Fire,Ailment",
+      "Elemental, Fire, Ailment",
+      "(Ignite deals Fire Damage over time, based on the base Fire Damage of the Skill, for 4 seconds)",
+      "Conflagrating Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModVines",
@@ -511,7 +1007,17 @@
      ],
      "g": 0,
      "affixZh": "抓緊的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"抓緊的\"(階層：#)",
+      "（ 至多 10 條藤蔓可以抓住你，每個藤蔓造成 8% 更少移動速度。移動時掙脫 ）",
+      "抓緊的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Grasping\" (Tier: #)",
+      "(Up to 10 Vines can grasp you, inflicting 8% less Movement Speed per Vine. Broken by moving)",
+      "Grasping Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterChaosDamage2MapWorlds",
@@ -522,7 +1028,29 @@
       "Monsters Inflict Withered for 2 seconds on Hit"
      ],
      "g": 0,
-     "affixZh": "褻瀆的、粗陋的"
+     "affixZh": "褻瀆的、粗陋的",
+     "hiddenZh": [
+      "前綴 \"褻瀆的\"(階層：#)",
+      "傷害",
+      "物理",
+      "混沌",
+      "傷害,物理,混沌",
+      "傷害, 物理, 混沌",
+      "（凋零增加 6% 承受混沌傷害，至多可以堆疊 15 次）",
+      "褻瀆的地圖（階級#）",
+      "前綴 \"粗陋的\"(階層：#)",
+      "粗陋的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Profane\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Chaos",
+      "Damage,Physical,Chaos",
+      "Damage, Physical, Chaos",
+      "(Withered applies 6% increased Chaos Damage Taken, and can be inflicted up to 15 times)",
+      "Profane Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersAvoidPoisonBleedBlind2MapWorlds",
@@ -533,7 +1061,27 @@
       "Monsters have a #% chance to avoid Poison, Impale, and Bleeding"
      ],
      "g": 0,
-     "affixZh": "抗滲的"
+     "affixZh": "抗滲的",
+     "hiddenZh": [
+      "前綴 \"抗滲的\"(階層：#)",
+      "物理",
+      "混沌",
+      "攻擊",
+      "異常狀態",
+      "物理,混沌,攻擊,異常狀態",
+      "物理, 混沌, 攻擊, 異常狀態",
+      "抗滲的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Impervious\" (Tier: #)",
+      "Physical",
+      "Chaos",
+      "Attack",
+      "Ailment",
+      "Physical,Chaos,Attack,Ailment",
+      "Physical, Chaos, Attack, Ailment",
+      "Impervious Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersMaximumLifeAddedEnergyShield2MapWorlds_____",
@@ -544,7 +1092,15 @@
       "Monsters gain #% of Maximum Life as Extra Maximum Energy Shield"
      ],
      "g": 0,
-     "affixZh": "緩衝的"
+     "affixZh": "緩衝的",
+     "hiddenZh": [
+      "前綴 \"緩衝的\"(階層：#)",
+      "緩衝的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Buffered\" (Tier: #)",
+      "Buffered Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModDamageAsElemental",
@@ -556,7 +1112,15 @@
      ],
      "g": 0,
      "affixZh": "三相的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"三相的\"(階層：#)",
+      "三相的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Prismatic\" (Tier: #)",
+      "Prismatic Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterChaosDamage2MapWorlds",
@@ -567,7 +1131,29 @@
       "Monsters gain #% of their Physical Damage as Extra Chaos Damage"
      ],
      "g": 0,
-     "affixZh": "褻瀆的、粗陋的"
+     "affixZh": "褻瀆的、粗陋的",
+     "hiddenZh": [
+      "前綴 \"褻瀆的\"(階層：#)",
+      "傷害",
+      "物理",
+      "混沌",
+      "傷害,物理,混沌",
+      "傷害, 物理, 混沌",
+      "（凋零增加 6% 承受混沌傷害，至多可以堆疊 15 次）",
+      "褻瀆的地圖（階級#）",
+      "前綴 \"粗陋的\"(階層：#)",
+      "粗陋的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Profane\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Chaos",
+      "Damage,Physical,Chaos",
+      "Damage, Physical, Chaos",
+      "(Withered applies 6% increased Chaos Damage Taken, and can be inflicted up to 15 times)",
+      "Profane Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterMultipleProjectilesWorlds",
@@ -578,7 +1164,19 @@
       "Monsters fire # additional Projectiles"
      ],
      "g": 0,
-     "affixZh": "裂化的、放大的"
+     "affixZh": "裂化的、放大的",
+     "hiddenZh": [
+      "前綴 \"裂化的\"(階層：#)",
+      "裂化的地圖（階級#）",
+      "前綴 \"放大的\"(階層：#)",
+      "放大的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Splitting\" (Tier: #)",
+      "Splitting Map (Tier #)",
+      "Prefix Modifier \"Magnifying\" (Tier: #)",
+      "Magnifying Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterChainMapWorlds",
@@ -589,7 +1187,15 @@
       "Monsters' skills Chain # additional times"
      ],
      "g": 0,
-     "affixZh": "連鎖的"
+     "affixZh": "連鎖的",
+     "hiddenZh": [
+      "前綴 \"連鎖的\"(階層：#)",
+      "連鎖的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Chaining\" (Tier: #)",
+      "Chaining Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersImpaleOnHit2MapWorlds",
@@ -600,7 +1206,17 @@
       "Monsters' Attacks have #% chance to Impale on Hit"
      ],
      "g": 0,
-     "affixZh": "穿刺的"
+     "affixZh": "穿刺的",
+     "hiddenZh": [
+      "前綴 \"穿刺的\"(階層：#)",
+      "（ 當被穿刺的敵人被擊中，穿刺會反射 10% 穿刺之擊所造成的物理傷害至敵人。穿刺持續 5 次擊中 ）",
+      "穿刺的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Impaling\" (Tier: #)",
+      "(When an Impaled enemy is hit, the Impale reflects 10% of the physical damage of the Impaling hit to that enemy. Impale lasts for 5 hits or 8 seconds)",
+      "Impaling Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterColdDamage2MapWorlds",
@@ -611,7 +1227,29 @@
       "Monsters deal #% extra Physical Damage as Cold"
      ],
      "g": 0,
-     "affixZh": "冷凍的、冰凍"
+     "affixZh": "冷凍的、冰凍",
+     "hiddenZh": [
+      "前綴 \"冷凍的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "冰冷",
+      "傷害,物理,元素,冰冷",
+      "傷害, 物理, 元素, 冰冷",
+      "冷凍的地圖（階級#）",
+      "前綴 \"冰凍\"(階層：#)",
+      "冰凍地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Freezing\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Cold",
+      "Damage,Physical,Elemental,Cold",
+      "Damage, Physical, Elemental, Cold",
+      "Freezing Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterFireDamage2MapWorlds",
@@ -622,7 +1260,29 @@
       "Monsters deal #% extra Physical Damage as Fire"
      ],
      "g": 0,
-     "affixZh": "燃燒的、燃燒"
+     "affixZh": "燃燒的、燃燒",
+     "hiddenZh": [
+      "前綴 \"燃燒的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "火焰",
+      "傷害,物理,元素,火焰",
+      "傷害, 物理, 元素, 火焰",
+      "燃燒的地圖（階級#）",
+      "前綴 \"燃燒\"(階層：#)",
+      "燃燒地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Burning\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Fire",
+      "Damage,Physical,Elemental,Fire",
+      "Damage, Physical, Elemental, Fire",
+      "Burning Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterLightningDamage2MapWorlds__",
@@ -633,7 +1293,29 @@
       "Monsters deal #% extra Physical Damage as Lightning"
      ],
      "g": 0,
-     "affixZh": "導電的、感電"
+     "affixZh": "導電的、感電",
+     "hiddenZh": [
+      "前綴 \"導電的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "閃電",
+      "傷害,物理,元素,閃電",
+      "傷害, 物理, 元素, 閃電",
+      "導電的地圖（階級#）",
+      "前綴 \"感電\"(階層：#)",
+      "感電地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Shocking\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Lightning",
+      "Damage,Physical,Elemental,Lightning",
+      "Damage, Physical, Elemental, Lightning",
+      "Shocking Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersChanceToInflictStatusAilments2MapWorlds",
@@ -644,7 +1326,29 @@
       "Monsters have a #% chance to Ignite, Freeze and Shock on Hit"
      ],
      "g": 0,
-     "affixZh": "重權的"
+     "affixZh": "重權的",
+     "hiddenZh": [
+      "前綴 \"重權的\"(階層：#)",
+      "元素",
+      "火焰",
+      "冰冷",
+      "閃電",
+      "異常狀態",
+      "元素,火焰,冰冷,閃電,異常狀態",
+      "元素, 火焰, 冰冷, 閃電, 異常狀態",
+      "重權的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Empowered\" (Tier: #)",
+      "Elemental",
+      "Fire",
+      "Cold",
+      "Lightning",
+      "Ailment",
+      "Elemental,Fire,Cold,Lightning,Ailment",
+      "Elemental, Fire, Cold, Lightning, Ailment",
+      "Empowered Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModMonsterAilments",
@@ -656,7 +1360,21 @@
      ],
      "g": 0,
      "affixZh": "折磨的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"折磨的\"(階層：#)",
+      "（點燃根據技能的基礎火焰傷害，造成持續火焰傷害，持續4秒）",
+      "（冰凍使敵人行動速度降至 0，使他們無法行動。根據擊中的冰冷傷害決定持續時間）",
+      "（感電根據擊中的閃電傷害總量，增加至多50%承受傷害，持續2秒）",
+      "折磨的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Afflicting\" (Tier: #)",
+      "(Ignite deals Fire Damage over time, based on the base Fire Damage of the Skill, for 4 seconds)",
+      "(Freeze lowers Enemy Action Speed to zero, preventing them from acting. Duration is based on the Cold Damage of the Hit)",
+      "(Shock increases Damage taken by up to 50%, depending on the amount of Lightning Damage in the hit, for 2 seconds)",
+      "Afflicting Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModRareMonsters",
@@ -668,7 +1386,15 @@
      ],
      "g": 0,
      "affixZh": "反抗者的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"反抗者的\"(階層：#)",
+      "反抗者的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Antagonist's\" (Tier: #)",
+      "Antagonist's Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModSawblades",
@@ -680,7 +1406,15 @@
      ],
      "g": 0,
      "affixZh": "終極的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"終極的\"(階層：#)",
+      "終極的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Ultimate\" (Tier: #)",
+      "Ultimate Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModChain",
@@ -692,7 +1426,15 @@
      ],
      "g": 0,
      "affixZh": "連鎖的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"連鎖的\"(階層：#)",
+      "連鎖的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Chaining\" (Tier: #)",
+      "Chaining Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterElementalReflection2MapWorlds",
@@ -703,7 +1445,29 @@
       "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
      ],
      "g": 0,
-     "affixZh": "反射的、懲戒的、已複製"
+     "affixZh": "反射的、懲戒的、已複製",
+     "hiddenZh": [
+      "前綴 \"反射的\"(階層：#)",
+      "傷害",
+      "元素",
+      "傷害,元素",
+      "傷害, 元素",
+      "反射的地圖（階級#）",
+      "前綴 \"懲戒的\"(階層：#)",
+      "懲戒的地圖（階級#）",
+      "前綴 \"已複製\"(階層：#)",
+      "已複製地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Mirrored\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Damage,Elemental",
+      "Damage, Elemental",
+      "Mirrored Map (Tier #)",
+      "Prefix Modifier \"Punishing\" (Tier: #)",
+      "Punishing Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPhysicalReflection2MapWorlds",
@@ -714,7 +1478,25 @@
       "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
      ],
      "g": 0,
-     "affixZh": "懲罰的、懲戒的"
+     "affixZh": "懲罰的、懲戒的",
+     "hiddenZh": [
+      "前綴 \"懲罰的\"(階層：#)",
+      "傷害",
+      "物理",
+      "傷害,物理",
+      "傷害, 物理",
+      "懲罰的地圖（階級#）",
+      "前綴 \"懲戒的\"(階層：#)",
+      "懲戒的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Punishing\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Damage,Physical",
+      "Damage, Physical",
+      "Punishing Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModVolatiles",
@@ -726,7 +1508,15 @@
      ],
      "g": 0,
      "affixZh": "易爆之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"易爆之\"(階層：#)",
+      "易爆之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Volatile\" (Tier: #)",
+      "Volatile Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterCriticalStrikesAndDamage2MapWorlds",
@@ -737,7 +1527,23 @@
       "#% to Monster Critical Strike Multiplier"
      ],
      "g": 1,
-     "affixZh": "死亡之"
+     "affixZh": "死亡之",
+     "hiddenZh": [
+      "後綴 \"死亡之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "死亡之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Deadliness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Map (Tier #) of Deadliness"
+     ]
     },
     {
      "id": "MapUberModPoison",
@@ -749,7 +1555,17 @@
      ],
      "g": 1,
      "affixZh": "猛毒之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"猛毒之\"(階層：#)",
+      "（ 中毒造成持續性混沌傷害，傷害取決於初始的物理和混沌傷害總和。中毒效果可以疊加 ）",
+      "猛毒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Venom\" (Tier: #)",
+      "(Poison deals Chaos Damage over time, based on the base Physical and Chaos Damage of the Skill. Multiple instances of Poison stack)",
+      "Map (Tier #) of Venom"
+     ]
     },
     {
      "id": "MapUberModAurasAffectMonsters",
@@ -761,7 +1577,15 @@
      ],
      "g": 1,
      "affixZh": "寶藏之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"寶藏之\"(階層：#)",
+      "寶藏之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Treachery\" (Tier: #)",
+      "Map (Tier #) of Treachery"
+     ]
     },
     {
      "id": "MapUberModShrineBuff",
@@ -773,7 +1597,15 @@
      ],
      "g": 1,
      "affixZh": "支配之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"支配之\"(階層：#)",
+      "支配之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Domination\" (Tier: #)",
+      "Map (Tier #) of Domination"
+     ]
     },
     {
      "id": "MapUberModElderNovas",
@@ -785,7 +1617,15 @@
      ],
      "g": 1,
      "affixZh": "腐朽之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"腐朽之\"(階層：#)",
+      "腐朽之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Decaying\" (Tier: #)",
+      "Map (Tier #) of Decaying"
+     ]
     },
     {
      "id": "MapUberModPlayerMarked",
@@ -797,7 +1637,15 @@
      ],
      "g": 1,
      "affixZh": "印記之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"印記之\"(階層：#)",
+      "印記之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Marking\" (Tier: #)",
+      "Map (Tier #) of Marking"
+     ]
     },
     {
      "id": "MapShockedGround1MapWorlds",
@@ -808,7 +1656,15 @@
       "Area has patches of Shocked Ground which increase Damage taken by #%"
      ],
      "g": 1,
-     "affixZh": "雷之"
+     "affixZh": "雷之",
+     "hiddenZh": [
+      "後綴 \"雷之\"(階層：#)",
+      "雷之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Lightning\" (Tier: #)",
+      "Map (Tier #) of Lightning"
+     ]
     },
     {
      "id": "MapUberModRaresLastGasp",
@@ -820,7 +1676,15 @@
      ],
      "g": 1,
      "affixZh": "堅持之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"堅持之\"(階層：#)",
+      "堅持之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Persistence\" (Tier: #)",
+      "Map (Tier #) of Persistence"
+     ]
     },
     {
      "id": "MapConsecratedGround2MapWorlds",
@@ -831,7 +1695,15 @@
       "Area has patches of Consecrated Ground"
      ],
      "g": 1,
-     "affixZh": "奉獻之"
+     "affixZh": "奉獻之",
+     "hiddenZh": [
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Consecration\" (Tier: #)",
+      "Map (Tier #) of Consecration"
+     ]
     },
     {
      "id": "MapChilledGroundSuffix1MapWorlds",
@@ -842,7 +1714,17 @@
       "Area has patches of Chilled Ground"
      ],
      "g": 1,
-     "affixZh": "冰之"
+     "affixZh": "冰之",
+     "hiddenZh": [
+      "後綴 \"冰之\"(階層：#)",
+      "（站立於冰冷地面將使你受到冰緩）",
+      "冰之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Ice\" (Tier: #)",
+      "(You are Chilled while standing in Chilled Ground)",
+      "Map (Tier #) of Ice"
+     ]
     },
     {
      "id": "MapBurningGround1MapWorlds_",
@@ -853,7 +1735,27 @@
       "Area has patches of Burning Ground"
      ],
      "g": 1,
-     "affixZh": "烈焰之、烈火之"
+     "affixZh": "烈焰之、烈火之",
+     "hiddenZh": [
+      "後綴 \"烈焰之\"(階層：#)",
+      "傷害",
+      "元素",
+      "火焰",
+      "傷害,元素,火焰",
+      "傷害, 元素, 火焰",
+      "烈焰之地圖（階級#）",
+      "後綴 \"烈火之\"(階層：#)",
+      "烈火之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Flames\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Fire",
+      "Damage,Elemental,Fire",
+      "Damage, Elemental, Fire",
+      "Map (Tier #) of Flames"
+     ]
     },
     {
      "id": "MapDesecratedGround1MapWorlds",
@@ -864,7 +1766,23 @@
       "Area has patches of desecrated ground"
      ],
      "g": 1,
-     "affixZh": "褻瀆之"
+     "affixZh": "褻瀆之",
+     "hiddenZh": [
+      "後綴 \"褻瀆之\"(階層：#)",
+      "傷害",
+      "混沌",
+      "傷害,混沌",
+      "傷害, 混沌",
+      "褻瀆之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Desecration\" (Tier: #)",
+      "Damage",
+      "Chaos",
+      "Damage,Chaos",
+      "Damage, Chaos",
+      "Map (Tier #) of Desecration"
+     ]
     },
     {
      "id": "MapUberModEleDamagePenetration",
@@ -876,7 +1794,15 @@
      ],
      "g": 1,
      "affixZh": "穿透之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"穿透之\"(階層：#)",
+      "穿透之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Penetration\" (Tier: #)",
+      "Map (Tier #) of Penetration"
+     ]
     },
     {
      "id": "MapUberModPoison",
@@ -888,7 +1814,17 @@
      ],
      "g": 1,
      "affixZh": "猛毒之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"猛毒之\"(階層：#)",
+      "（ 中毒造成持續性混沌傷害，傷害取決於初始的物理和混沌傷害總和。中毒效果可以疊加 ）",
+      "猛毒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Venom\" (Tier: #)",
+      "(Poison deals Chaos Damage over time, based on the base Physical and Chaos Damage of the Skill. Multiple instances of Poison stack)",
+      "Map (Tier #) of Venom"
+     ]
     },
     {
      "id": "MapPlayersEvasionAndUnluckyDodge1MapWorlds",
@@ -899,7 +1835,19 @@
       "Monsters have #% increased Accuracy Rating"
      ],
      "g": 1,
-     "affixZh": "傾斜之"
+     "affixZh": "傾斜之",
+     "hiddenZh": [
+      "後綴 \"傾斜之\"(階層：#)",
+      "攻擊",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "傾斜之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "Attack",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Map (Tier #) of Miring"
+     ]
     },
     {
      "id": "MapMonsterCriticalStrikesAndDamage2MapWorlds",
@@ -910,7 +1858,23 @@
       "Monsters have #% increased Critical Strike Chance"
      ],
      "g": 1,
-     "affixZh": "死亡之"
+     "affixZh": "死亡之",
+     "hiddenZh": [
+      "後綴 \"死亡之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "死亡之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Deadliness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Map (Tier #) of Deadliness"
+     ]
     },
     {
      "id": "MapMonstersStealChargesOnHitMapWorlds",
@@ -921,7 +1885,17 @@
       "Monsters steal Power, Frenzy and Endurance charges on Hit"
      ],
      "g": 1,
-     "affixZh": "精神之、削弱之"
+     "affixZh": "精神之、削弱之",
+     "hiddenZh": [
+      "後綴 \"精神之\"(階層：#)",
+      "精神之地圖（階級#）",
+      "後綴 \"削弱之\"(階層：#)",
+      "削弱之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enervation\" (Tier: #)",
+      "Map (Tier #) of Enervation"
+     ]
     },
     {
      "id": "MapMonstersPowerChargeOnHitMapWorlds",
@@ -932,7 +1906,17 @@
       "Monsters gain a Power Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "暴擊之、權利之"
+     "affixZh": "暴擊之、權利之",
+     "hiddenZh": [
+      "後綴 \"暴擊之\"(階層：#)",
+      "暴擊之地圖（階級#）",
+      "後綴 \"權利之\"(階層：#)",
+      "權利之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Power\" (Tier: #)",
+      "Map (Tier #) of Power"
+     ]
     },
     {
      "id": "MapMonstersFrenzyChargeOnHitMapWorlds",
@@ -943,7 +1927,15 @@
       "Monsters gain a Frenzy Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "狂怒之"
+     "affixZh": "狂怒之",
+     "hiddenZh": [
+      "後綴 \"狂怒之\"(階層：#)",
+      "狂怒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Frenzy\" (Tier: #)",
+      "Map (Tier #) of Frenzy"
+     ]
     },
     {
      "id": "MapMonstersEnduranceChargeOnHitMapWorlds",
@@ -954,7 +1946,15 @@
       "Monsters gain an Endurance Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "耐久之"
+     "affixZh": "耐久之",
+     "hiddenZh": [
+      "後綴 \"耐久之\"(階層：#)",
+      "耐久之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Endurance\" (Tier: #)",
+      "Map (Tier #) of Endurance"
+     ]
     },
     {
      "id": "MapMonstersBlindOnHitMapWorlds",
@@ -965,7 +1965,17 @@
       "Monsters Blind on Hit"
      ],
      "g": 1,
-     "affixZh": "盲目之"
+     "affixZh": "盲目之",
+     "hiddenZh": [
+      "後綴 \"盲目之\"(階層：#)",
+      "（ 被致盲有20%更少命中率和閃避值，持續4秒 ）",
+      "盲目之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Blinding\" (Tier: #)",
+      "(Being Blinded causes 20% less Accuracy Rating and Evasion Rating, for 4 seconds)",
+      "Map (Tier #) of Blinding"
+     ]
     },
     {
      "id": "MapMonstersMaimOnHitMapWorlds",
@@ -976,7 +1986,19 @@
       "Monsters Maim on Hit with Attacks"
      ],
      "g": 1,
-     "affixZh": "大屠殺之、屠戮之"
+     "affixZh": "大屠殺之、屠戮之",
+     "hiddenZh": [
+      "後綴 \"大屠殺之\"(階層：#)",
+      "（ 被癱瘓的敵人減少 30% 移動速度 ）",
+      "大屠殺之地圖（階級#）",
+      "後綴 \"屠戮之\"(階層：#)",
+      "屠戮之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Carnage\" (Tier: #)",
+      "(Maimed enemies have 30% reduced Movement Speed)",
+      "Map (Tier #) of Carnage"
+     ]
     },
     {
      "id": "MapUberModPowerCharges",
@@ -988,7 +2010,15 @@
      ],
      "g": 1,
      "affixZh": "權利之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"權利之\"(階層：#)",
+      "權利之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Power\" (Tier: #)",
+      "Map (Tier #) of Power"
+     ]
     },
     {
      "id": "MapMonsterStatusAilmentAvoidance2MapWorlds",
@@ -999,7 +2029,33 @@
       "Monsters have #% chance to Avoid Elemental Ailments"
      ],
      "g": 1,
-     "affixZh": "隔絕之、絕緣之"
+     "affixZh": "隔絕之、絕緣之",
+     "hiddenZh": [
+      "後綴 \"隔絕之\"(階層：#)",
+      "元素",
+      "火焰",
+      "冰冷",
+      "閃電",
+      "異常狀態",
+      "元素,火焰,冰冷,閃電,異常狀態",
+      "元素, 火焰, 冰冷, 閃電, 異常狀態",
+      "（元素異常狀態包含點燃、焦灼、冰緩、冰凍、易碎、感電和殘喘）",
+      "隔絕之地圖（階級#）",
+      "後綴 \"絕緣之\"(階層：#)",
+      "絕緣之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Insulation\" (Tier: #)",
+      "Elemental",
+      "Fire",
+      "Cold",
+      "Lightning",
+      "Ailment",
+      "Elemental,Fire,Cold,Lightning,Ailment",
+      "Elemental, Fire, Cold, Lightning, Ailment",
+      "(Elemental Ailments are Ignited, Scorched, Chilled, Frozen, Brittle, Shocked, and Sapped)",
+      "Map (Tier #) of Insulation"
+     ]
     },
     {
      "id": "MapMonstersHinderOnHitMapWorlds",
@@ -1010,7 +2066,17 @@
       "Monsters Hinder on Hit with Spells"
      ],
      "g": 1,
-     "affixZh": "阻抗之"
+     "affixZh": "阻抗之",
+     "hiddenZh": [
+      "後綴 \"阻抗之\"(階層：#)",
+      "（受阻礙的敵人減少 30% 移動速度 4 秒）",
+      "阻抗之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Impedance\" (Tier: #)",
+      "(Hinder reduces movement speed by 30% for 4 seconds)",
+      "Map (Tier #) of Impedance"
+     ]
     },
     {
      "id": "MapMonsterLifeLeechImmunityMapWorlds",
@@ -1021,7 +2087,15 @@
       "Monsters cannot be Leeched from"
      ],
      "g": 1,
-     "affixZh": "凝血之"
+     "affixZh": "凝血之",
+     "hiddenZh": [
+      "後綴 \"凝血之\"(階層：#)",
+      "凝血之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Congealment\" (Tier: #)",
+      "Map (Tier #) of Congealment"
+     ]
     },
     {
      "id": "MapUberModFrenzyCharges",
@@ -1033,7 +2107,15 @@
      ],
      "g": 1,
      "affixZh": "狂怒之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"狂怒之\"(階層：#)",
+      "狂怒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Frenzy\" (Tier: #)",
+      "Map (Tier #) of Frenzy"
+     ]
     },
     {
      "id": "MapUberModEnduranceCharges",
@@ -1045,7 +2127,15 @@
      ],
      "g": 1,
      "affixZh": "耐久之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"耐久之\"(階層：#)",
+      "耐久之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Endurance\" (Tier: #)",
+      "Map (Tier #) of Endurance"
+     ]
     },
     {
      "id": "MapUberModMonsterDebuffSpeed",
@@ -1057,7 +2147,15 @@
      ],
      "g": 1,
      "affixZh": "反抗之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"反抗之\"(階層：#)",
+      "反抗之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Defiance\" (Tier: #)",
+      "Map (Tier #) of Defiance"
+     ]
     },
     {
      "id": "MapMonstersBaseSelfCriticalMultiplier2MapWorlds",
@@ -1068,7 +2166,23 @@
       "Monsters take #% reduced Extra Damage from Critical Strikes"
      ],
      "g": 1,
-     "affixZh": "堅韌之"
+     "affixZh": "堅韌之",
+     "hiddenZh": [
+      "後綴 \"堅韌之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "堅韌之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Toughness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Map (Tier #) of Toughness"
+     ]
     },
     {
      "id": "MapPlayerMaxResists1MapWorlds",
@@ -1079,7 +2193,23 @@
       "Players have #% to all maximum Resistances"
      ],
      "g": 1,
-     "affixZh": "曝露之"
+     "affixZh": "曝露之",
+     "hiddenZh": [
+      "後綴 \"曝露之\"(階層：#)",
+      "元素",
+      "抗性",
+      "元素,抗性",
+      "元素, 抗性",
+      "曝露之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Exposure\" (Tier: #)",
+      "Elemental",
+      "Resistance",
+      "Elemental,Resistance",
+      "Elemental, Resistance",
+      "Map (Tier #) of Exposure"
+     ]
     },
     {
      "id": "MapPlayersEvasionAndUnluckyDodge1MapWorlds",
@@ -1090,7 +2220,19 @@
       "Players have #% to amount of Suppressed Spell Damage Prevented"
      ],
      "g": 1,
-     "affixZh": "傾斜之"
+     "affixZh": "傾斜之",
+     "hiddenZh": [
+      "後綴 \"傾斜之\"(階層：#)",
+      "攻擊",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "傾斜之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "Attack",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Map (Tier #) of Miring"
+     ]
     },
     {
      "id": "MapPlayerNoLifeESRegenMapWorlds",
@@ -1101,7 +2243,27 @@
       "Players cannot Regenerate Life, Mana or Energy Shield"
      ],
      "g": 1,
-     "affixZh": "瘀血之"
+     "affixZh": "瘀血之",
+     "hiddenZh": [
+      "後綴 \"瘀血之\"(階層：#)",
+      "生命",
+      "魔力",
+      "防禦",
+      "能量護盾",
+      "生命,魔力,防禦,能量護盾",
+      "生命, 魔力, 防禦, 能量護盾",
+      "瘀血之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Stasis\" (Tier: #)",
+      "Life",
+      "Mana",
+      "Defences",
+      "Energy Shield",
+      "Life,Mana,Defences,Energy Shield",
+      "Life, Mana, Defences, Energy Shield",
+      "Map (Tier #) of Stasis"
+     ]
     },
     {
      "id": "MapPlayerElementalEquilibriumMapWorlds",
@@ -1112,7 +2274,23 @@
       "Players cannot inflict Exposure"
      ],
      "g": 1,
-     "affixZh": "平衡之"
+     "affixZh": "平衡之",
+     "hiddenZh": [
+      "後綴 \"平衡之\"(階層：#)",
+      "傷害",
+      "元素",
+      "傷害,元素",
+      "傷害, 元素",
+      "平衡之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Balance\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Damage,Elemental",
+      "Damage, Elemental",
+      "Map (Tier #) of Balance"
+     ]
     },
     {
      "id": "MapUberModFlaskMeteor",
@@ -1124,7 +2302,15 @@
      ],
      "g": 1,
      "affixZh": "飲用之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"飲用之\"(階層：#)",
+      "飲用之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Imbibing\" (Tier: #)",
+      "Map (Tier #) of Imbibing"
+     ]
     },
     {
      "id": "MapPlayersLessCooldownRecovery2MapWorlds",
@@ -1135,7 +2321,15 @@
       "Players have #% less Cooldown Recovery Rate"
      ],
      "g": 1,
-     "affixZh": "疲勞之"
+     "affixZh": "疲勞之",
+     "hiddenZh": [
+      "後綴 \"疲勞之\"(階層：#)",
+      "疲勞之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Fatigue\" (Tier: #)",
+      "Map (Tier #) of Fatigue"
+     ]
     },
     {
      "id": "MapPlayersAccuracyRating2MapWorlds",
@@ -1146,7 +2340,15 @@
       "Players have #% less Accuracy Rating"
      ],
      "g": 1,
-     "affixZh": "不精確之"
+     "affixZh": "不精確之",
+     "hiddenZh": [
+      "後綴 \"不精確之\"(階層：#)",
+      "不精確之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Imprecision\" (Tier: #)",
+      "Map (Tier #) of Imprecision"
+     ]
     },
     {
      "id": "MapPlayerReducedRegen1MapWorlds",
@@ -1157,7 +2359,25 @@
       "Players have #% less Recovery Rate of Life and Energy Shield"
      ],
      "g": 1,
-     "affixZh": "窒息之"
+     "affixZh": "窒息之",
+     "hiddenZh": [
+      "後綴 \"窒息之\"(階層：#)",
+      "生命",
+      "防禦",
+      "能量護盾",
+      "生命,防禦,能量護盾",
+      "生命, 防禦, 能量護盾",
+      "窒息之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Smothering\" (Tier: #)",
+      "Life",
+      "Defences",
+      "Energy Shield",
+      "Life,Defences,Energy Shield",
+      "Life, Defences, Energy Shield",
+      "Map (Tier #) of Smothering"
+     ]
     },
     {
      "id": "MapPlayersLessAoERadius2MapWorlds",
@@ -1168,7 +2388,15 @@
       "Players have #% less Area of Effect"
      ],
      "g": 1,
-     "affixZh": "無能之"
+     "affixZh": "無能之",
+     "hiddenZh": [
+      "後綴 \"無能之\"(階層：#)",
+      "無能之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Impotence\" (Tier: #)",
+      "Map (Tier #) of Impotence"
+     ]
     },
     {
      "id": "MapPlayersBlockAndArmour2MapWorlds",
@@ -1179,7 +2407,25 @@
       "Players have #% less Armour"
      ],
      "g": 1,
-     "affixZh": "腐鏽之、銹之"
+     "affixZh": "腐鏽之、銹之",
+     "hiddenZh": [
+      "後綴 \"腐鏽之\"(階層：#)",
+      "防禦",
+      "護甲",
+      "防禦,護甲",
+      "防禦, 護甲",
+      "腐鏽之地圖（階級#）",
+      "後綴 \"銹之\"(階層：#)",
+      "銹之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Rust\" (Tier: #)",
+      "Defences",
+      "Armour",
+      "Defences,Armour",
+      "Defences, Armour",
+      "Map (Tier #) of Rust"
+     ]
     },
     {
      "id": "MapPlayersReducedAuraEffect2MapWorlds",
@@ -1190,7 +2436,15 @@
       "Players have #% reduced effect of Non-Curse Auras from Skills"
      ],
      "g": 1,
-     "affixZh": "懷疑之"
+     "affixZh": "懷疑之",
+     "hiddenZh": [
+      "後綴 \"懷疑之\"(階層：#)",
+      "懷疑之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Doubt\" (Tier: #)",
+      "Map (Tier #) of Doubt"
+     ]
     },
     {
      "id": "MapUberModLessPlayerLeech",
@@ -1202,7 +2456,15 @@
      ],
      "g": 1,
      "affixZh": "凝血之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"凝血之\"(階層：#)",
+      "凝血之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Congealment\" (Tier: #)",
+      "Map (Tier #) of Congealment"
+     ]
     },
     {
      "id": "MapPlayersBlockAndArmour2MapWorlds",
@@ -1213,7 +2475,25 @@
       "Players have #% reduced Chance to Block"
      ],
      "g": 1,
-     "affixZh": "腐鏽之、銹之"
+     "affixZh": "腐鏽之、銹之",
+     "hiddenZh": [
+      "後綴 \"腐鏽之\"(階層：#)",
+      "防禦",
+      "護甲",
+      "防禦,護甲",
+      "防禦, 護甲",
+      "腐鏽之地圖（階級#）",
+      "後綴 \"銹之\"(階層：#)",
+      "銹之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Rust\" (Tier: #)",
+      "Defences",
+      "Armour",
+      "Defences,Armour",
+      "Defences, Armour",
+      "Map (Tier #) of Rust"
+     ]
     },
     {
      "id": "MapPlayersGainReducedFlaskCharges2MapWorlds_",
@@ -1224,7 +2504,15 @@
       "Players gain #% reduced Flask Charges"
      ],
      "g": 1,
-     "affixZh": "乾旱之"
+     "affixZh": "乾旱之",
+     "hiddenZh": [
+      "後綴 \"乾旱之\"(階層：#)",
+      "乾旱之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Drought\" (Tier: #)",
+      "Map (Tier #) of Drought"
+     ]
     },
     {
      "id": "MapUberModGlobalDefences",
@@ -1236,7 +2524,17 @@
      ],
      "g": 1,
      "affixZh": "傾斜之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"傾斜之\"(階層：#)",
+      "（護甲、閃避和能量護盾是標準防禦）",
+      "傾斜之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "(Armour, Evasion Rating and Energy Shield are the standard Defences)",
+      "Map (Tier #) of Miring"
+     ]
     },
     {
      "id": "MapPlayerCurseElementalWeakness1MapWorlds",
@@ -1247,7 +2545,33 @@
       "Players are Cursed with Elemental Weakness"
      ],
      "g": 1,
-     "affixZh": "元素要害之、詛咒之"
+     "affixZh": "元素要害之、詛咒之",
+     "hiddenZh": [
+      "後綴 \"元素要害之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（元素要害為咒術，減少 15% 全部元素抗性。持續 8 秒）",
+      "元素要害之地圖（階級#）",
+      "後綴 \"詛咒之\"(階層：#)",
+      "（脆弱為咒術，增加 15% 承受物理傷害，使擊中對目標 +25% 流血機率。脆弱持續 8 秒）",
+      "（時空鎖鏈為咒術，減少 15% 行動速度或 9% 對稀有或傳奇目標，並且使目標上的效果比平常慢 40% 失效。對玩家有 50% 更少效果並持續 5 秒）",
+      "詛咒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Elemental Weakness\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Elemental Weakness is a Hex which inficts -15% to all Elemental Resistances. It lasts 8 seconds)",
+      "Map (Tier #) of Elemental Weakness",
+      "Suffix Modifier \"of Curses\" (Tier: #)",
+      "(Vulnerability is a Hex which increases Physical Damage taken by 15% and causes Hits to have +25% chance to inflict Bleeding on the target. It lasts 8 seconds)",
+      "(Temporal Chains is a Hex which reduces Action Speed by 15%, or 9% on Rare or Unique targets, and makes other effects on the target expire 40% slower. It has 50% less effect on Players and lasts 5 seconds)",
+      "Map (Tier #) of Curses"
+     ]
     },
     {
      "id": "MapPlayerCurseTemporalChains1MapWorlds",
@@ -1258,7 +2582,33 @@
       "Players are Cursed with Temporal Chains"
      ],
      "g": 1,
-     "affixZh": "時空鎖鏈之、詛咒之"
+     "affixZh": "時空鎖鏈之、詛咒之",
+     "hiddenZh": [
+      "後綴 \"時空鎖鏈之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（時空鎖鏈為咒術，減少 15% 行動速度或 9% 對稀有或傳奇目標，並且使目標上的效果比平常慢 40% 失效。對玩家有 50% 更少效果並持續 5 秒）",
+      "時空鎖鏈之地圖（階級#）",
+      "後綴 \"詛咒之\"(階層：#)",
+      "（脆弱為咒術，增加 15% 承受物理傷害，使擊中對目標 +25% 流血機率。脆弱持續 8 秒）",
+      "（元素要害為咒術，減少 15% 全部元素抗性。持續 8 秒）",
+      "詛咒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Temporal Chains\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Temporal Chains is a Hex which reduces Action Speed by 15%, or 9% on Rare or Unique targets, and makes other effects on the target expire 40% slower. It has 50% less effect on Players and lasts 5 seconds)",
+      "Map (Tier #) of Temporal Chains",
+      "Suffix Modifier \"of Curses\" (Tier: #)",
+      "(Vulnerability is a Hex which increases Physical Damage taken by 15% and causes Hits to have +25% chance to inflict Bleeding on the target. It lasts 8 seconds)",
+      "(Elemental Weakness is a Hex which inficts -15% to all Elemental Resistances. It lasts 8 seconds)",
+      "Map (Tier #) of Curses"
+     ]
     },
     {
      "id": "MapPlayerCurseVulnerability1MapWorlds",
@@ -1269,7 +2619,33 @@
       "Players are Cursed with Vulnerability"
      ],
      "g": 1,
-     "affixZh": "脆弱之、詛咒之"
+     "affixZh": "脆弱之、詛咒之",
+     "hiddenZh": [
+      "後綴 \"脆弱之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（脆弱為咒術，增加 15% 承受物理傷害，使擊中對目標 +25% 流血機率。脆弱持續 8 秒）",
+      "脆弱之地圖（階級#）",
+      "後綴 \"詛咒之\"(階層：#)",
+      "（時空鎖鏈為咒術，減少 15% 行動速度或 9% 對稀有或傳奇目標，並且使目標上的效果比平常慢 40% 失效。對玩家有 50% 更少效果並持續 5 秒）",
+      "（元素要害為咒術，減少 15% 全部元素抗性。持續 8 秒）",
+      "詛咒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Vulnerability\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Vulnerability is a Hex which increases Physical Damage taken by 15% and causes Hits to have +25% chance to inflict Bleeding on the target. It lasts 8 seconds)",
+      "Map (Tier #) of Vulnerability",
+      "Suffix Modifier \"of Curses\" (Tier: #)",
+      "(Temporal Chains is a Hex which reduces Action Speed by 15%, or 9% on Rare or Unique targets, and makes other effects on the target expire 40% slower. It has 50% less effect on Players and lasts 5 seconds)",
+      "(Elemental Weakness is a Hex which inficts -15% to all Elemental Resistances. It lasts 8 seconds)",
+      "Map (Tier #) of Curses"
+     ]
     },
     {
      "id": "MapPlayerCurseEnfeeblement1MapWorlds",
@@ -1280,7 +2656,25 @@
       "Players are Cursed with Enfeeble"
      ],
      "g": 1,
-     "affixZh": "衰弱之"
+     "affixZh": "衰弱之",
+     "hiddenZh": [
+      "後綴 \"衰弱之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（衰弱為咒術，減少 10% 目標命中率和 15% 傷害，或 9% 對稀有或傳奇目標。衰弱持續 8 秒）",
+      "衰弱之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enfeeblement\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Enfeeble is a Hex which reduces the targets' Accuracy Rating by 10% and Damage by 15%, or 9% on Rare or Unique targets. It lasts 8 seconds)",
+      "Map (Tier #) of Enfeeblement"
+     ]
     },
     {
      "id": "MapPlayersBuffsExpireFaster2MapWorlds___",
@@ -1291,7 +2685,15 @@
       "Buffs on Players expire #% faster"
      ],
      "g": 1,
-     "affixZh": "轉瞬之"
+     "affixZh": "轉瞬之",
+     "hiddenZh": [
+      "後綴 \"轉瞬之\"(階層：#)",
+      "轉瞬之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Transience\" (Tier: #)",
+      "Map (Tier #) of Transience"
+     ]
     },
     {
      "id": "MapUberModRareFracture",
@@ -1303,7 +2705,15 @@
      ],
      "g": 1,
      "affixZh": "裂片之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"裂片之\"(階層：#)",
+      "裂片之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Splinters\" (Tier: #)",
+      "Map (Tier #) of Splinters"
+     ]
     },
     {
      "id": "MapPoisoningMapWorlds",
@@ -1314,7 +2724,25 @@
       "Monsters Poison on Hit"
      ],
      "g": 1,
-     "affixZh": "猛毒之"
+     "affixZh": "猛毒之",
+     "hiddenZh": [
+      "後綴 \"猛毒之\"(階層：#)",
+      "混沌",
+      "異常狀態",
+      "混沌,異常狀態",
+      "混沌, 異常狀態",
+      "（ 中毒造成持續性混沌傷害，傷害取決於初始的物理和混沌傷害總和。中毒效果可以疊加 ）",
+      "猛毒之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Venom\" (Tier: #)",
+      "Chaos",
+      "Ailment",
+      "Chaos,Ailment",
+      "Chaos, Ailment",
+      "(Poison deals Chaos Damage over time, based on the base Physical and Chaos Damage of the Skill. Multiple instances of Poison stack)",
+      "Map (Tier #) of Venom"
+     ]
     },
     {
      "id": "MapMonsterAllBossesAtOnceMaven",
@@ -1325,7 +2753,15 @@
       "Maven releases all Bosses at once"
      ],
      "g": 1,
-     "affixZh": "挑戰之"
+     "affixZh": "挑戰之",
+     "hiddenZh": [
+      "後綴 \"挑戰之\"(階層：#)",
+      "挑戰之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Challenge\" (Tier: #)",
+      "Map (Tier #) of Challenge"
+     ]
     },
     {
      "id": "MapUberModMavenFollower",
@@ -1337,7 +2773,15 @@
      ],
      "g": 1,
      "affixZh": "珍藏之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"珍藏之\"(階層：#)",
+      "珍藏之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Collection\" (Tier: #)",
+      "Map (Tier #) of Collection"
+     ]
     },
     {
      "id": "MapBloodlinesModOnMagicsMapWorlds",
@@ -1348,7 +2792,15 @@
       "#% increased Magic Monsters"
      ],
      "g": 1,
-     "affixZh": "血統之"
+     "affixZh": "血統之",
+     "hiddenZh": [
+      "後綴 \"血統之\"(階層：#)",
+      "血統之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Bloodlines\" (Tier: #)",
+      "Map (Tier #) of Bloodlines"
+     ]
     },
     {
      "id": "MapUberModEnduranceCharges",
@@ -1360,7 +2812,43 @@
      ],
      "g": 2,
      "affixZh": "權利之、狂怒之、耐久之、緩衝的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "後綴 \"權利之\"(階層：#)",
+      "權利之地圖（階級#）",
+      "後綴 \"狂怒之\"(階層：#)",
+      "狂怒之地圖（階級#）",
+      "後綴 \"耐久之\"(階層：#)",
+      "耐久之地圖（階級#）",
+      "前綴 \"緩衝的\"(階層：#)",
+      "緩衝的地圖（階級#）",
+      "前綴 \"壓抑的\"(階層：#)",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "壓抑的地圖（階級#）",
+      "後綴 \"支配之\"(階層：#)",
+      "支配之地圖（階級#）",
+      "前綴 \"抓緊的\"(階層：#)",
+      "（ 至多 10 條藤蔓可以抓住你，每個藤蔓造成 8% 更少移動速度。移動時掙脫 ）",
+      "抓緊的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Power\" (Tier: #)",
+      "Map (Tier #) of Power",
+      "Suffix Modifier \"of Frenzy\" (Tier: #)",
+      "Map (Tier #) of Frenzy",
+      "Suffix Modifier \"of Endurance\" (Tier: #)",
+      "Map (Tier #) of Endurance",
+      "Prefix Modifier \"Buffered\" (Tier: #)",
+      "Buffered Map (Tier #)",
+      "Prefix Modifier \"Oppressive\" (Tier: #)",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Oppressive Map (Tier #)",
+      "Suffix Modifier \"of Domination\" (Tier: #)",
+      "Map (Tier #) of Domination",
+      "Prefix Modifier \"Grasping\" (Tier: #)",
+      "(Up to 10 Vines can grasp you, inflicting 8% less Movement Speed per Vine. Broken by moving)",
+      "Grasping Map (Tier #)"
+     ]
     },
     {
      "id": "MapUberModBuffExpiry",
@@ -1372,7 +2860,39 @@
      ],
      "g": 2,
      "affixZh": "易爆之、傾斜之、折磨的、轉瞬之",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"易爆之\"(階層：#)",
+      "易爆之地圖（階級#）",
+      "後綴 \"傾斜之\"(階層：#)",
+      "（護甲、閃避和能量護盾是標準防禦）",
+      "傾斜之地圖（階級#）",
+      "前綴 \"折磨的\"(階層：#)",
+      "（點燃根據技能的基礎火焰傷害，造成持續火焰傷害，持續4秒）",
+      "（冰凍使敵人行動速度降至 0，使他們無法行動。根據擊中的冰冷傷害決定持續時間）",
+      "（感電根據擊中的閃電傷害總量，增加至多50%承受傷害，持續2秒）",
+      "折磨的地圖（階級#）",
+      "後綴 \"轉瞬之\"(階層：#)",
+      "轉瞬之地圖（階級#）",
+      "後綴 \"印記之\"(階層：#)",
+      "印記之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Volatile\" (Tier: #)",
+      "Volatile Map (Tier #)",
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "(Armour, Evasion Rating and Energy Shield are the standard Defences)",
+      "Map (Tier #) of Miring",
+      "Prefix Modifier \"Afflicting\" (Tier: #)",
+      "(Ignite deals Fire Damage over time, based on the base Fire Damage of the Skill, for 4 seconds)",
+      "(Freeze lowers Enemy Action Speed to zero, preventing them from acting. Duration is based on the Cold Damage of the Hit)",
+      "(Shock increases Damage taken by up to 50%, depending on the amount of Lightning Damage in the hit, for 2 seconds)",
+      "Afflicting Map (Tier #)",
+      "Suffix Modifier \"of Transience\" (Tier: #)",
+      "Map (Tier #) of Transience",
+      "Suffix Modifier \"of Marking\" (Tier: #)",
+      "Map (Tier #) of Marking"
+     ]
     },
     {
      "id": "MapUberModFlaskMeteor",
@@ -1384,7 +2904,39 @@
      ],
      "g": 2,
      "affixZh": "堅定的、懲戒的、豐饒的、終極的",
-     "t17": true
+     "t17": true,
+     "hiddenZh": [
+      "前綴 \"堅定的\"(階層：#)",
+      "堅定的地圖（階級#）",
+      "前綴 \"懲戒的\"(階層：#)",
+      "懲戒的地圖（階級#）",
+      "前綴 \"豐饒的\"(階層：#)",
+      "豐饒的地圖（階級#）",
+      "前綴 \"終極的\"(階層：#)",
+      "終極的地圖（階級#）",
+      "後綴 \"飲用之\"(階層：#)",
+      "飲用之地圖（階級#）",
+      "後綴 \"反抗之\"(階層：#)",
+      "反抗之地圖（階級#）",
+      "前綴 \"稀釋的\"(階層：#)",
+      "稀釋的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Stalwart\" (Tier: #)",
+      "Stalwart Map (Tier #)",
+      "Prefix Modifier \"Punishing\" (Tier: #)",
+      "Punishing Map (Tier #)",
+      "Prefix Modifier \"Fecund\" (Tier: #)",
+      "Fecund Map (Tier #)",
+      "Prefix Modifier \"Ultimate\" (Tier: #)",
+      "Ultimate Map (Tier #)",
+      "Suffix Modifier \"of Imbibing\" (Tier: #)",
+      "Map (Tier #) of Imbibing",
+      "Suffix Modifier \"of Defiance\" (Tier: #)",
+      "Map (Tier #) of Defiance",
+      "Prefix Modifier \"Diluted\" (Tier: #)",
+      "Diluted Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterAreaOfEffect2MapWorlds",
@@ -1395,7 +2947,19 @@
       "Monsters have #% increased Area of Effect"
      ],
      "g": 2,
-     "affixZh": "巨人之、放大的"
+     "affixZh": "巨人之、放大的",
+     "hiddenZh": [
+      "後綴 \"巨人之\"(階層：#)",
+      "巨人之地圖（階級#）",
+      "前綴 \"放大的\"(階層：#)",
+      "放大的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Giants\" (Tier: #)",
+      "Map (Tier #) of Giants",
+      "Prefix Modifier \"Magnifying\" (Tier: #)",
+      "Magnifying Map (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterCannotBeStunned2MapWorlds",
@@ -1406,7 +2970,23 @@
       "Monsters cannot be Stunned"
      ],
      "g": 2,
-     "affixZh": "堅定不移的、勇士之、堅定的"
+     "affixZh": "堅定不移的、勇士之、堅定的",
+     "hiddenZh": [
+      "前綴 \"堅定不移的\"(階層：#)",
+      "生命",
+      "堅定不移的地圖（階級#）",
+      "後綴 \"勇士之\"(階層：#)",
+      "勇士之地圖（階級#）",
+      "前綴 \"堅定的\"(階層：#)",
+      "堅定的地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unwavering\" (Tier: #)",
+      "Life",
+      "Unwavering Map (Tier #)",
+      "Suffix Modifier \"of the Juggernaut\" (Tier: #)",
+      "Map (Tier #) of the Juggernaut"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
@@ -1417,7 +2997,21 @@
       "Monsters' Movement Speed cannot be modified to below Base Value"
      ],
      "g": 2,
-     "affixZh": "無阻的、勇士之"
+     "affixZh": "無阻的、勇士之",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的地圖（階級#）",
+      "後綴 \"勇士之\"(階層：#)",
+      "勇士之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Map (Tier #)",
+      "Suffix Modifier \"of the Juggernaut\" (Tier: #)",
+      "Map (Tier #) of the Juggernaut"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsMaven",
@@ -1428,15 +3022,998 @@
       "Monsters' Action Speed cannot be modified to below Base Value"
      ],
      "g": 2,
-     "affixZh": "無阻的、勇士之"
+     "affixZh": "無阻的、勇士之",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的地圖（階級#）",
+      "後綴 \"勇士之\"(階層：#)",
+      "勇士之地圖（階級#）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Map (Tier #)",
+      "Suffix Modifier \"of the Juggernaut\" (Tier: #)",
+      "Map (Tier #) of the Juggernaut"
+     ]
     }
-   ]
+   ],
+   "ambientZh": [
+    "地圖階級",
+    "物品數量",
+    "物品稀有度",
+    "怪物群大小",
+    "地圖掉落機率",
+    "已找到金幣",
+    "更多聖甲蟲",
+    "更多通貨",
+    "更多命運卡",
+    "更多地圖",
+    "已汙染物品機率",
+    "怪物等級：#",
+    "物品等級：#",
+    "透過個人的地圖裝置來使用這張地圖以前往這個階級或更低的該地圖。每張地圖只能被使用一次。",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "分化",
+    "破裂之物",
+    "追憶之物",
+    "塑者之物",
+    "尊師之物",
+    "聖戰軍王物品",
+    "救贖者物品",
+    "狩獵者物品",
+    "總督軍物品",
+    "卓烙總督物品",
+    "吞噬天地物品",
+    "災魘",
+    "(階層：#)",
+    "固定詞綴",
+    "傳奇詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "品質",
+    "地圖（階級#）",
+    "不淨密室地圖",
+    "不潔教堂",
+    "九頭蛇冰窟",
+    "乾枯湖岸",
+    "乾海",
+    "乾潮林地",
+    "亞特蘭提斯",
+    "儲物倉",
+    "冥神之域",
+    "冰川山丘",
+    "凍原小屋",
+    "刻劃最後通牒",
+    "劇毒林谷",
+    "危城巷弄",
+    "危城廣場",
+    "危機水道",
+    "危機海礁",
+    "古兵工廠",
+    "古典密室",
+    "古博物館",
+    "古堡",
+    "古競速場",
+    "園林苑",
+    "地底之河",
+    "堡壘地圖",
+    "塑者之界",
+    "墓地谷",
+    "墓影書坊",
+    "墮影墓場",
+    "壁壘地圖",
+    "夜語幽林",
+    "大決鬥場",
+    "失序教院",
+    "失落城塢",
+    "奇美拉魔坑",
+    "奇術之庭",
+    "奇術秘殿",
+    "奪魂之殿",
+    "如履危牆",
+    "嬋娟神殿",
+    "密林果園",
+    "密草神殿",
+    "寒河",
+    "寒頂之巔",
+    "實驗居所",
+    "寧逸溫房",
+    "尋夢追憶",
+    "岔河",
+    "岩漿熔湖",
+    "崩壞長廊",
+    "巨坑",
+    "巨蛛之林",
+    "巨蛛巢穴",
+    "平頂荒漠",
+    "幽暗地穴",
+    "幽魂宅邸",
+    "幽魂監牢",
+    "廣場",
+    "怒浪之港",
+    "惡咒陵墓",
+    "惡臭屍域",
+    "惡臭沼地",
+    "惡靈學院",
+    "憎惡地圖",
+    "挖掘場",
+    "旱地墓室",
+    "旱木林地",
+    "晨曦墓地",
+    "晴空幽島",
+    "暮光海灘",
+    "暮色沙丘",
+    "月色迴廊",
+    "核心",
+    "極原冰帽",
+    "死寂泥溝",
+    "殘破殞坑",
+    "毒牙海港",
+    "毒菌魔域",
+    "洪災礦坑",
+    "海風高原",
+    "淤塞水道",
+    "激戰柱廊",
+    "濕地礦山",
+    "濱海堡壘",
+    "濱海山丘",
+    "濱海幽穴",
+    "火山炎口",
+    "火山炎域",
+    "火鳳凰熔核",
+    "炙陽峽谷",
+    "無疆田野",
+    "熔岩之室",
+    "熔火岩灘",
+    "熱林塚墓",
+    "熾炎船塢",
+    "牛頭人謎域",
+    "瓦爾密殿",
+    "瓦爾金字塔",
+    "異蛛墓塚",
+    "異蛛巢穴",
+    "畸形亡域",
+    "疾風峽灣",
+    "病疫林谷",
+    "瘴氣泥沼",
+    "白沙灘頭",
+    "破碎堡礁",
+    "硫磺荒漠",
+    "硫磺蝕岸",
+    "神主居所",
+    "神域之殿",
+    "神諭之殿．歸徒",
+    "神諭之殿．煉獄",
+    "神諭之殿．神臨",
+    "神諭之殿．降師",
+    "禁忌之森",
+    "禁斷圍城",
+    "禁魂炎獄",
+    "秘密通道",
+    "穢陰獄牢",
+    "競技場",
+    "糜爛之庭地圖",
+    "紫晶礦山",
+    "絕望燈塔",
+    "緋紅之鎮",
+    "緋紅神殿",
+    "羈破牢籠",
+    "聖所地圖",
+    "聖殿",
+    "腐敗下水道",
+    "致命岩灘",
+    "苦行之域",
+    "荊棘谷",
+    "荒地",
+    "荒涼牧野",
+    "血腥沼澤",
+    "血腥陣地",
+    "詭譎晶洞",
+    "謊言劇院地圖",
+    "象牙神殿",
+    "貧瘠之地",
+    "赤貧居所",
+    "軍械庫",
+    "迷宮花園",
+    "違禁掘坑",
+    "遠古危城",
+    "遠古市集",
+    "遺跡廢墟",
+    "酸岩酸嶼",
+    "鍊金房",
+    "鐵鏽工廠",
+    "長草遺跡",
+    "闇獄尖塔",
+    "陰晦泥灘",
+    "陰暗墓塚",
+    "雲頂鐘樓",
+    "露台花園",
+    "靜縊陵墓",
+    "餓獸巢穴",
+    "驚懼樹叢",
+    "骨跡陵墓",
+    "高地神塔地圖",
+    "魅影別墅",
+    "魔影墓場",
+    "魔金寶庫",
+    "魔靈幻獄",
+    "不祥",
+    "燃盡",
+    "鍛鐵",
+    "堅鋼",
+    "苦痛",
+    "幽暗",
+    "殘忍",
+    "死寂",
+    "混沌",
+    "鮮血",
+    "恐懼",
+    "劇痛",
+    "暴行",
+    "冷酷",
+    "低語",
+    "汙濁",
+    "著迷",
+    "空洞",
+    "虛空",
+    "虛空之觸",
+    "跨維度",
+    "星際",
+    "宇宙",
+    "平面",
+    "超凡",
+    "卓越",
+    "神話",
+    "惡意",
+    "邪惡",
+    "隱祕",
+    "朦朧",
+    "怪異",
+    "遺棄",
+    "遠古",
+    "悲痛",
+    "秘術",
+    "刺骨",
+    "巫咒",
+    "瀆靈",
+    "蒼涼",
+    "命運",
+    "恐慌",
+    "夢境",
+    "惡靈",
+    "腥臭",
+    "禁禮",
+    "忘卻",
+    "神逐",
+    "靈象",
+    "仇恨",
+    "淡隱",
+    "幽懼",
+    "狂語",
+    "迷失",
+    "災病",
+    "秘言",
+    "夢魘",
+    "粗陋",
+    "遙望",
+    "靜嵐",
+    "暴虐",
+    "漩渦",
+    "曲空",
+    "咒縛",
+    "毀滅",
+    "暮色",
+    "蒼空",
+    "亂世",
+    "宿敵",
+    "昏暗",
+    "符紋",
+    "禍害",
+    "迷途",
+    "惡行",
+    "魔暴",
+    "心靈",
+    "奇蹟",
+    "遺忘",
+    "魔域",
+    "術痕",
+    "奇術",
+    "憂傷",
+    "靈魂",
+    "責難",
+    "復仇",
+    "勝利",
+    "災禍",
+    "災難",
+    "悶痛",
+    "深淵",
+    "壁壘",
+    "聖域",
+    "遺地",
+    "密境",
+    "孤獨之境",
+    "詭計",
+    "撫慰",
+    "渴望",
+    "預兆",
+    "旅行",
+    "航程",
+    "跋涉",
+    "領土",
+    "土地",
+    "挑戰",
+    "挑釁",
+    "唆使",
+    "煽動",
+    "祈願",
+    "禮拜",
+    "銘文",
+    "草皮",
+    "痕跡",
+    "航向",
+    "路徑",
+    "羅盤",
+    "橫切",
+    "方向",
+    "導航",
+    "路線",
+    "軌跡",
+    "方位角",
+    "意圖",
+    "向量",
+    "控制",
+    "進展",
+    "選擇",
+    "決心",
+    "決意",
+    "策略",
+    "石頭",
+    "雕刻",
+    "研磨",
+    "奔波",
+    "辛勞"
+   ],
+   "ambientEn": [
+    "Map Tier",
+    "Item Quantity",
+    "Item Rarity",
+    "Monster Pack Size",
+    "Map Drop Chance",
+    "Gold Found",
+    "More Scarabs",
+    "More Currency",
+    "More Divination Cards",
+    "More Maps",
+    "Corrupted Item Chance",
+    "Monster Level: #",
+    "Item Level: #",
+    "Travel to a Map of this tier or lower by using this in a personal Map Device. Maps can only be used once.",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "Split",
+    "Fractured Item",
+    "Synthesised Item",
+    "Shaper Item",
+    "Elder Item",
+    "Crusader Item",
+    "Redeemer Item",
+    "Hunter Item",
+    "Warlord Item",
+    "Searing Exarch Item",
+    "Eater of Worlds Item",
+    "Scourged",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Unique Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Quality",
+    "Map (Tier #)",
+    "Chambers of Impurity Map",
+    "Defiled Cathedral Map",
+    "Lair of the Hydra Map",
+    "Arid Lake Map",
+    "Dry Sea Map",
+    "Peninsula Map",
+    "Sunken City Map",
+    "Silo Map",
+    "Maze Map",
+    "Glacier Map",
+    "Frozen Cabins Map",
+    "Engraved Ultimatum",
+    "Jungle Valley Map",
+    "Alleyways Map",
+    "City Square Map",
+    "Waterways Map",
+    "Reef Map",
+    "Arsenal Map",
+    "Relic Chambers Map",
+    "Museum Map",
+    "Chateau Map",
+    "Racecourse Map",
+    "Park Map",
+    "Underground River Map",
+    "Fortress Map",
+    "The Shaper's Realm",
+    "Grave Trough Map",
+    "Scriptorium Map",
+    "Graveyard Map",
+    "Citadel Map",
+    "Dark Forest Map",
+    "Colosseum Map",
+    "Courthouse Map",
+    "Port Map",
+    "Pit of the Chimera Map",
+    "Courtyard Map",
+    "Shrine Map",
+    "Temple Map",
+    "Lookout Map",
+    "Moon Temple Map",
+    "Orchard Map",
+    "Overgrown Shrine Map",
+    "Cold River Map",
+    "Summit Map",
+    "Laboratory Map",
+    "Conservatory Map",
+    "Synthesised Map",
+    "Forking River Map",
+    "Lava Lake Map",
+    "Arcade Map",
+    "Pit Map",
+    "Spider Forest Map",
+    "Spider Lair Map",
+    "Mesa Map",
+    "Grotto Map",
+    "Haunted Mansion Map",
+    "Cells Map",
+    "Plaza Map",
+    "Pier Map",
+    "Cursed Crypt Map",
+    "Carcass Map",
+    "Marshes Map",
+    "Academy Map",
+    "Abomination Map",
+    "Excavation Map",
+    "Burial Chambers Map",
+    "Ashen Wood Map",
+    "Cemetery Map",
+    "Tropical Island Map",
+    "Shore Map",
+    "Dunes Map",
+    "Promenade Map",
+    "Core Map",
+    "Iceberg Map",
+    "Waste Pool Map",
+    "Crater Map",
+    "Wharf Map",
+    "Fungal Hollow Map",
+    "Flooded Mine Map",
+    "Plateau Map",
+    "Stagnation Map",
+    "Colonnade Map",
+    "Mineral Pools Map",
+    "Ramparts Map",
+    "Atoll Map",
+    "Underground Sea Map",
+    "Caldera Map",
+    "Volcano Map",
+    "Forge of the Phoenix Map",
+    "Canyon Map",
+    "Fields Map",
+    "Lava Chamber Map",
+    "Estuary Map",
+    "Barrows Map",
+    "Shipyard Map",
+    "Maze of the Minotaur Map",
+    "Vaal Temple Map",
+    "Vaal Pyramid Map",
+    "Arachnid Tomb Map",
+    "Arachnid Nest Map",
+    "Malformation Map",
+    "Coves Map",
+    "Infested Valley Map",
+    "Bog Map",
+    "Beach Map",
+    "Coral Ruins Map",
+    "Desert Spring Map",
+    "Sulphur Vents Map",
+    "Residence Map",
+    "Palace Map",
+    "Harbinger Map",
+    "Forbidden Woods Map",
+    "Siege Map",
+    "Dungeon Map",
+    "Channel Map",
+    "Pen Map",
+    "Arena Map",
+    "Courtyard of Wasting Map",
+    "Crystal Ore Map",
+    "Lighthouse Map",
+    "Crimson Township Map",
+    "Crimson Temple Map",
+    "Cage Map",
+    "Sanctuary Map",
+    "Basilica Map",
+    "Toxic Sewer Map",
+    "Strand Map",
+    "Precinct Map",
+    "Bramble Valley Map",
+    "Wasteland Map",
+    "Leyline Map",
+    "Primordial Pool Map",
+    "Primordial Blocks Map",
+    "Geode Map",
+    "Theatre of Lies Map",
+    "Ivory Temple Map",
+    "Desert Map",
+    "Ghetto Map",
+    "Armoury Map",
+    "Gardens Map",
+    "Dig Map",
+    "Ancient City Map",
+    "Bazaar Map",
+    "Castle Ruins Map",
+    "Acid Caverns Map",
+    "Foundry Map",
+    "Factory Map",
+    "Overgrown Ruin Map",
+    "Tower Map",
+    "Mud Geyser Map",
+    "Sepulchre Map",
+    "Belfry Map",
+    "Terrace Map",
+    "Mausoleum Map",
+    "Lair Map",
+    "Thicket Map",
+    "Bone Crypt Map",
+    "Ziggurat Map",
+    "Villa Map",
+    "Necropolis Map",
+    "Vault Map",
+    "Phantasmagoria Map",
+    "Dire",
+    "Cinder",
+    "Iron",
+    "Steel",
+    "Agony",
+    "Dark",
+    "Cruel",
+    "Death",
+    "Chaos",
+    "Blood",
+    "Terror",
+    "Pain",
+    "Savage",
+    "Grim",
+    "Whispering",
+    "Foul",
+    "Enthralling",
+    "Hollow",
+    "Void",
+    "Voidtouched",
+    "Interdimensional",
+    "Celestial",
+    "Cosmic",
+    "Planar",
+    "Otherworldly",
+    "Transcendental",
+    "Mythic",
+    "Malevolent",
+    "Pernicious",
+    "Ominous",
+    "Cryptic",
+    "Nebulous",
+    "Eerie",
+    "Abandoned",
+    "Ancient",
+    "Anguish",
+    "Arcane",
+    "Bleak",
+    "Damned",
+    "Desecrated",
+    "Desolate",
+    "Destiny",
+    "Dread",
+    "Dream",
+    "Evil",
+    "Fetid",
+    "Forbidden",
+    "Forgotten",
+    "Ghastly",
+    "Godless",
+    "Graven",
+    "Hate",
+    "Hidden",
+    "Horror",
+    "Insane",
+    "Lost",
+    "Morbid",
+    "Mystic",
+    "Nightmare",
+    "Profane",
+    "Remote",
+    "Secluded",
+    "Stained",
+    "Torture",
+    "Vortex",
+    "Warped",
+    "Damnation",
+    "Doom",
+    "Dusk",
+    "Empyrean",
+    "Entropy",
+    "Fate",
+    "Foe",
+    "Gloom",
+    "Glyph",
+    "Havoc",
+    "Hypnotic",
+    "Loath",
+    "Maelstrom",
+    "Mind",
+    "Miracle",
+    "Oblivion",
+    "Pandemonium",
+    "Rift",
+    "Rune",
+    "Sorrow",
+    "Soul",
+    "Torment",
+    "Vengeance",
+    "Victory",
+    "Woe",
+    "Doomed",
+    "Timeworn",
+    "Abyss",
+    "Frontier",
+    "Nexus",
+    "Remnant",
+    "Secrets",
+    "Solitude",
+    "Artifice",
+    "Solace",
+    "Desire",
+    "Portent",
+    "Journey",
+    "Voyage",
+    "Trek",
+    "Territory",
+    "Lands",
+    "Challenge",
+    "Provocation",
+    "Instigation",
+    "Incitement",
+    "Invocation",
+    "Liturgy",
+    "Inscription",
+    "Realm",
+    "Trail",
+    "Course",
+    "Path",
+    "Compass",
+    "Crosscut",
+    "Direction",
+    "Navigation",
+    "Route",
+    "Trajectory",
+    "Bearings",
+    "Intent",
+    "Vector",
+    "Control",
+    "Progression",
+    "Choice",
+    "Resolve",
+    "Determination",
+    "Gambit",
+    "Stone",
+    "Carving",
+    "Grind",
+    "Hustle",
+    "Toil"
+   ],
+   "nameWordsZh": {
+    "prefix": [
+     "不祥",
+     "燃盡",
+     "鍛鐵",
+     "堅鋼",
+     "苦痛",
+     "幽暗",
+     "殘忍",
+     "死寂",
+     "混沌",
+     "鮮血",
+     "恐懼",
+     "劇痛",
+     "暴行",
+     "冷酷",
+     "低語",
+     "汙濁",
+     "著迷",
+     "空洞",
+     "虛空",
+     "虛空之觸",
+     "跨維度",
+     "星際",
+     "宇宙",
+     "平面",
+     "超凡",
+     "卓越",
+     "神話",
+     "惡意",
+     "邪惡",
+     "不祥",
+     "隱祕",
+     "朦朧",
+     "怪異",
+     "遺棄",
+     "遠古",
+     "悲痛",
+     "秘術",
+     "刺骨",
+     "巫咒",
+     "瀆靈",
+     "蒼涼",
+     "命運",
+     "恐慌",
+     "夢境",
+     "惡靈",
+     "腥臭",
+     "禁禮",
+     "忘卻",
+     "幽暗",
+     "神逐",
+     "靈象",
+     "仇恨",
+     "淡隱",
+     "幽懼",
+     "狂語",
+     "迷失",
+     "災病",
+     "秘言",
+     "夢魘",
+     "粗陋",
+     "遙望",
+     "靜嵐",
+     "汙濁",
+     "暴虐",
+     "漩渦",
+     "曲空",
+     "咒縛",
+     "毀滅",
+     "暮色",
+     "蒼空",
+     "亂世",
+     "命運",
+     "宿敵",
+     "昏暗",
+     "符紋",
+     "禍害",
+     "迷途",
+     "惡行",
+     "魔暴",
+     "心靈",
+     "奇蹟",
+     "遺忘",
+     "魔域",
+     "術痕",
+     "奇術",
+     "憂傷",
+     "靈魂",
+     "責難",
+     "復仇",
+     "勝利",
+     "災禍",
+     "災難",
+     "悶痛"
+    ],
+    "suffix": [
+     " 深淵",
+     " 壁壘",
+     " 聖域",
+     " 遺地",
+     " 密境",
+     " 孤獨之境",
+     "  詭計",
+     "撫慰",
+     "渴望",
+     "預兆",
+     "  旅行",
+     "  航程",
+     "  跋涉",
+     "  領土",
+     "  土地",
+     "挑戰",
+     "挑釁",
+     "唆使",
+     "煽動",
+     "祈願",
+     "禮拜",
+     "銘文",
+     "草皮",
+     "痕跡",
+     "航向",
+     "路徑",
+     "羅盤",
+     "橫切",
+     "方向",
+     "導航",
+     "路線",
+     "軌跡",
+     "方位角",
+     "意圖",
+     "向量",
+     "控制",
+     "進展",
+     "選擇",
+     "決心",
+     "決意",
+     "策略",
+     "石頭",
+     "雕刻",
+     "研磨",
+     "奔波",
+     "辛勞"
+    ]
+   },
+   "nameWordsEn": {
+    "prefix": [
+     "Dire",
+     "Cinder",
+     "Iron",
+     "Steel",
+     "Agony",
+     "Dark",
+     "Cruel",
+     "Death",
+     "Chaos",
+     "Blood",
+     "Terror",
+     "Pain",
+     "Savage",
+     "Grim",
+     "Whispering",
+     "Foul",
+     "Enthralling",
+     "Hollow",
+     "Void",
+     "Voidtouched",
+     "Interdimensional",
+     "Celestial",
+     "Cosmic",
+     "Planar",
+     "Otherworldly",
+     "Transcendental",
+     "Mythic",
+     "Malevolent",
+     "Pernicious",
+     "Ominous",
+     "Cryptic",
+     "Nebulous",
+     "Eerie",
+     "Abandoned",
+     "Ancient",
+     "Anguish",
+     "Arcane",
+     "Bleak",
+     "Damned",
+     "Desecrated",
+     "Desolate",
+     "Destiny",
+     "Dread",
+     "Dream",
+     "Evil",
+     "Fetid",
+     "Forbidden",
+     "Forgotten",
+     "Ghastly",
+     "Godless",
+     "Graven",
+     "Hate",
+     "Hidden",
+     "Horror",
+     "Insane",
+     "Lost",
+     "Morbid",
+     "Mystic",
+     "Nightmare",
+     "Profane",
+     "Remote",
+     "Secluded",
+     "Stained",
+     "Torture",
+     "Vortex",
+     "Warped",
+     "Damnation",
+     "Doom",
+     "Dusk",
+     "Empyrean",
+     "Entropy",
+     "Fate",
+     "Foe",
+     "Gloom",
+     "Glyph",
+     "Havoc",
+     "Hypnotic",
+     "Loath",
+     "Maelstrom",
+     "Mind",
+     "Miracle",
+     "Oblivion",
+     "Pandemonium",
+     "Rift",
+     "Rune",
+     "Sorrow",
+     "Soul",
+     "Torment",
+     "Vengeance",
+     "Victory",
+     "Woe",
+     "Doomed",
+     "Timeworn"
+    ],
+    "suffix": [
+     " Abyss",
+     " Frontier",
+     " Nexus",
+     " Remnant",
+     " Secrets",
+     " Solitude",
+     " Artifice",
+     " Solace",
+     " Desire",
+     " Portent",
+     "Journey",
+     "Voyage",
+     "Trek",
+     "Territory",
+     "Lands",
+     " Challenge",
+     " Provocation",
+     " Instigation",
+     " Incitement",
+     " Invocation",
+     " Liturgy",
+     " Inscription",
+     " Realm",
+     "Trail",
+     " Course",
+     " Path",
+     " Compass",
+     " Crosscut",
+     " Direction",
+     " Navigation",
+     " Route",
+     " Trajectory",
+     " Bearings",
+     " Intent",
+     " Vector",
+     " Control",
+     " Progression",
+     " Choice",
+     " Resolve",
+     " Determination",
+     " Gambit",
+     " Stone",
+     " Carving",
+     " Grind",
+     " Hustle",
+     " Toil"
+    ]
+   }
   },
   {
    "id": "logbook_mods",
    "title": "探險日誌詞綴",
    "titleEn": "Expedition logbook modifiers",
-   "note": "勾選要找的日誌詞綴。不會誤中的保證只涵蓋這份清單。",
+   "note": "勾選要找的日誌詞綴。產生的片段會避開這份清單裡的其他詞綴，也避開遊戲同樣會比對的詞綴名稱、階層、提示說明與日誌名。",
    "limit": 250,
    "groups": [
     "前綴",
@@ -1458,7 +4035,21 @@
       "#% more Monster Life"
      ],
      "g": 0,
-     "affixZh": "堅定不移的、豐饒的"
+     "affixZh": "堅定不移的、豐饒的",
+     "hiddenZh": [
+      "前綴 \"堅定不移的\"(階層：#)",
+      "生命",
+      "堅定不移的探險日誌",
+      "前綴 \"豐饒的\"(階層：#)",
+      "豐饒的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unwavering\" (Tier: #)",
+      "Life",
+      "Unwavering Expedition Logbook",
+      "Prefix Modifier \"Fecund\" (Tier: #)",
+      "Fecund Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterPhysicalResistance1MapWorldsExpedition",
@@ -1469,7 +4060,17 @@
       "+#% Monster Physical Damage Reduction"
      ],
      "g": 0,
-     "affixZh": "裝甲的"
+     "affixZh": "裝甲的",
+     "hiddenZh": [
+      "前綴 \"裝甲的\"(階層：#)",
+      "物理",
+      "裝甲的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Armoured\" (Tier: #)",
+      "Physical",
+      "Armoured Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersAllResistances1MapWorldsExpedition",
@@ -1480,7 +4081,25 @@
       "+#% Monster Elemental Resistances"
      ],
      "g": 0,
-     "affixZh": "抵抗的"
+     "affixZh": "抵抗的",
+     "hiddenZh": [
+      "前綴 \"抵抗的\"(階層：#)",
+      "元素",
+      "混沌",
+      "抗性",
+      "元素,混沌,抗性",
+      "元素, 混沌, 抗性",
+      "抵抗的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Resistant\" (Tier: #)",
+      "Elemental",
+      "Chaos",
+      "Resistance",
+      "Elemental,Chaos,Resistance",
+      "Elemental, Chaos, Resistance",
+      "Resistant Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersAllResistances1MapWorldsExpedition",
@@ -1491,7 +4110,25 @@
       "+#% Monster Chaos Resistance"
      ],
      "g": 0,
-     "affixZh": "抵抗的"
+     "affixZh": "抵抗的",
+     "hiddenZh": [
+      "前綴 \"抵抗的\"(階層：#)",
+      "元素",
+      "混沌",
+      "抗性",
+      "元素,混沌,抗性",
+      "元素, 混沌, 抗性",
+      "抵抗的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Resistant\" (Tier: #)",
+      "Elemental",
+      "Chaos",
+      "Resistance",
+      "Elemental,Chaos,Resistance",
+      "Elemental, Chaos, Resistance",
+      "Resistant Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterDamage1MapWorldsExpedition",
@@ -1502,7 +4139,17 @@
       "#% increased Monster Damage"
      ],
      "g": 0,
-     "affixZh": "殘暴的"
+     "affixZh": "殘暴的",
+     "hiddenZh": [
+      "前綴 \"殘暴的\"(階層：#)",
+      "傷害",
+      "殘暴的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Savage\" (Tier: #)",
+      "Damage",
+      "Savage Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterFast1MapWorldsExpedition",
@@ -1513,7 +4160,25 @@
       "#% increased Monster Attack Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的"
+     "affixZh": "飄忽的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterFast1MapWorldsExpedition",
@@ -1524,7 +4189,25 @@
       "#% increased Monster Cast Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的"
+     "affixZh": "飄忽的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterFast1MapWorldsExpedition",
@@ -1535,7 +4218,25 @@
       "#% increased Monster Movement Speed"
      ],
      "g": 0,
-     "affixZh": "飄忽的"
+     "affixZh": "飄忽的",
+     "hiddenZh": [
+      "前綴 \"飄忽的\"(階層：#)",
+      "攻擊",
+      "法術",
+      "速度",
+      "攻擊,法術,速度",
+      "攻擊, 法術, 速度",
+      "飄忽的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleet\" (Tier: #)",
+      "Attack",
+      "Caster",
+      "Speed",
+      "Attack,Caster,Speed",
+      "Attack, Caster, Speed",
+      "Fleet Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersCurseEffectOnSelfFinal1MapWorldsExpedition",
@@ -1546,7 +4247,23 @@
       "#% less effect of Curses on Monsters"
      ],
      "g": 0,
-     "affixZh": "魔抗的"
+     "affixZh": "魔抗的",
+     "hiddenZh": [
+      "前綴 \"魔抗的\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "魔抗的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Hexwarded\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "Hexwarded Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersChanceToSuppressSpells1MapWorldsExpedition__",
@@ -1557,7 +4274,17 @@
       "Monsters have #% chance to Suppress Spell Damage"
      ],
      "g": 0,
-     "affixZh": "壓迫性的"
+     "affixZh": "壓迫性的",
+     "hiddenZh": [
+      "前綴 \"壓迫性的\"(階層：#)",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "壓迫性的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Oppressive\" (Tier: #)",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Oppressive Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterCannotBeStunned1MapWorldsExpedition_",
@@ -1568,7 +4295,17 @@
       "Monsters cannot be Stunned"
      ],
      "g": 0,
-     "affixZh": "堅定不移的"
+     "affixZh": "堅定不移的",
+     "hiddenZh": [
+      "前綴 \"堅定不移的\"(階層：#)",
+      "生命",
+      "堅定不移的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unwavering\" (Tier: #)",
+      "Life",
+      "Unwavering Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
@@ -1579,7 +4316,17 @@
       "Monsters cannot be Taunted"
      ],
      "g": 0,
-     "affixZh": "無阻的"
+     "affixZh": "無阻的",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterChaosDamage2MapWorldsExpedition",
@@ -1590,7 +4337,27 @@
       "Monsters Inflict Withered for 2 seconds on Hit"
      ],
      "g": 0,
-     "affixZh": "褻瀆的"
+     "affixZh": "褻瀆的",
+     "hiddenZh": [
+      "前綴 \"褻瀆的\"(階層：#)",
+      "傷害",
+      "物理",
+      "混沌",
+      "傷害,物理,混沌",
+      "傷害, 物理, 混沌",
+      "（凋零增加 6% 承受混沌傷害，至多可以堆疊 15 次）",
+      "褻瀆的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Profane\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Chaos",
+      "Damage,Physical,Chaos",
+      "Damage, Physical, Chaos",
+      "(Withered applies 6% increased Chaos Damage Taken, and can be inflicted up to 15 times)",
+      "Profane Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersAvoidPoisonBleedBlind1MapWorldsExpedition",
@@ -1601,7 +4368,27 @@
       "Monsters have a #% chance to avoid Poison, Impale, and Bleeding"
      ],
      "g": 0,
-     "affixZh": "抗滲的"
+     "affixZh": "抗滲的",
+     "hiddenZh": [
+      "前綴 \"抗滲的\"(階層：#)",
+      "物理",
+      "混沌",
+      "攻擊",
+      "異常狀態",
+      "物理,混沌,攻擊,異常狀態",
+      "物理, 混沌, 攻擊, 異常狀態",
+      "抗滲的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Impervious\" (Tier: #)",
+      "Physical",
+      "Chaos",
+      "Attack",
+      "Ailment",
+      "Physical,Chaos,Attack,Ailment",
+      "Physical, Chaos, Attack, Ailment",
+      "Impervious Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersMaximumLifeAddedEnergyShield1MapWorldsExpedition_",
@@ -1612,7 +4399,15 @@
       "Monsters gain #% of Maximum Life as Extra Maximum Energy Shield"
      ],
      "g": 0,
-     "affixZh": "緩衝的"
+     "affixZh": "緩衝的",
+     "hiddenZh": [
+      "前綴 \"緩衝的\"(階層：#)",
+      "緩衝的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Buffered\" (Tier: #)",
+      "Buffered Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterChaosDamage2MapWorldsExpedition",
@@ -1623,7 +4418,27 @@
       "Monsters gain #% of their Physical Damage as Extra Chaos Damage"
      ],
      "g": 0,
-     "affixZh": "褻瀆的"
+     "affixZh": "褻瀆的",
+     "hiddenZh": [
+      "前綴 \"褻瀆的\"(階層：#)",
+      "傷害",
+      "物理",
+      "混沌",
+      "傷害,物理,混沌",
+      "傷害, 物理, 混沌",
+      "（凋零增加 6% 承受混沌傷害，至多可以堆疊 15 次）",
+      "褻瀆的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Profane\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Chaos",
+      "Damage,Physical,Chaos",
+      "Damage, Physical, Chaos",
+      "(Withered applies 6% increased Chaos Damage Taken, and can be inflicted up to 15 times)",
+      "Profane Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterMultipleProjectilesWorldsExpedition_",
@@ -1634,7 +4449,15 @@
       "Monsters fire # additional Projectiles"
      ],
      "g": 0,
-     "affixZh": "裂化的"
+     "affixZh": "裂化的",
+     "hiddenZh": [
+      "前綴 \"裂化的\"(階層：#)",
+      "裂化的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Splitting\" (Tier: #)",
+      "Splitting Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterChainMapWorldsExpedition",
@@ -1645,7 +4468,15 @@
       "Monsters' skills Chain # additional times"
      ],
      "g": 0,
-     "affixZh": "連鎖的"
+     "affixZh": "連鎖的",
+     "hiddenZh": [
+      "前綴 \"連鎖的\"(階層：#)",
+      "連鎖的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Chaining\" (Tier: #)",
+      "Chaining Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersImpaleOnHit1MapWorldsExpedition__",
@@ -1656,7 +4487,17 @@
       "Monsters' Attacks have #% chance to Impale on Hit"
      ],
      "g": 0,
-     "affixZh": "穿刺的"
+     "affixZh": "穿刺的",
+     "hiddenZh": [
+      "前綴 \"穿刺的\"(階層：#)",
+      "（ 當被穿刺的敵人被擊中，穿刺會反射 10% 穿刺之擊所造成的物理傷害至敵人。穿刺持續 5 次擊中 ）",
+      "穿刺的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Impaling\" (Tier: #)",
+      "(When an Impaled enemy is hit, the Impale reflects 10% of the physical damage of the Impaling hit to that enemy. Impale lasts for 5 hits or 8 seconds)",
+      "Impaling Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
@@ -1667,7 +4508,17 @@
       "Monsters' Movement Speed cannot be modified to below Base Value"
      ],
      "g": 0,
-     "affixZh": "無阻的"
+     "affixZh": "無阻的",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersCantBeSlowedOrTauntedMapWorldsExpedition_",
@@ -1678,7 +4529,17 @@
       "Monsters' Action Speed cannot be modified to below Base Value"
      ],
      "g": 0,
-     "affixZh": "無阻的"
+     "affixZh": "無阻的",
+     "hiddenZh": [
+      "前綴 \"無阻的\"(階層：#)",
+      "速度",
+      "無阻的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Unstoppable\" (Tier: #)",
+      "Speed",
+      "Unstoppable Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterColdDamage1MapWorldsExpedition",
@@ -1689,7 +4550,27 @@
       "Monsters deal #% extra Physical Damage as Cold"
      ],
      "g": 0,
-     "affixZh": "冷凍的"
+     "affixZh": "冷凍的",
+     "hiddenZh": [
+      "前綴 \"冷凍的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "冰冷",
+      "傷害,物理,元素,冰冷",
+      "傷害, 物理, 元素, 冰冷",
+      "冷凍的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Freezing\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Cold",
+      "Damage,Physical,Elemental,Cold",
+      "Damage, Physical, Elemental, Cold",
+      "Freezing Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterFireDamage1MapWorldsExpedition",
@@ -1700,7 +4581,27 @@
       "Monsters deal #% extra Physical Damage as Fire"
      ],
      "g": 0,
-     "affixZh": "燃燒的"
+     "affixZh": "燃燒的",
+     "hiddenZh": [
+      "前綴 \"燃燒的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "火焰",
+      "傷害,物理,元素,火焰",
+      "傷害, 物理, 元素, 火焰",
+      "燃燒的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Burning\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Fire",
+      "Damage,Physical,Elemental,Fire",
+      "Damage, Physical, Elemental, Fire",
+      "Burning Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterLightningDamage1MapWorldsExpedition",
@@ -1711,7 +4612,27 @@
       "Monsters deal #% extra Physical Damage as Lightning"
      ],
      "g": 0,
-     "affixZh": "導電的"
+     "affixZh": "導電的",
+     "hiddenZh": [
+      "前綴 \"導電的\"(階層：#)",
+      "傷害",
+      "物理",
+      "元素",
+      "閃電",
+      "傷害,物理,元素,閃電",
+      "傷害, 物理, 元素, 閃電",
+      "導電的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Shocking\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Elemental",
+      "Lightning",
+      "Damage,Physical,Elemental,Lightning",
+      "Damage, Physical, Elemental, Lightning",
+      "Shocking Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonstersChanceToInflictStatusAilments1MapWorldsExpedition__",
@@ -1722,7 +4643,29 @@
       "Monsters have a #% chance to Ignite, Freeze and Shock on Hit"
      ],
      "g": 0,
-     "affixZh": "重權的"
+     "affixZh": "重權的",
+     "hiddenZh": [
+      "前綴 \"重權的\"(階層：#)",
+      "元素",
+      "火焰",
+      "冰冷",
+      "閃電",
+      "異常狀態",
+      "元素,火焰,冰冷,閃電,異常狀態",
+      "元素, 火焰, 冰冷, 閃電, 異常狀態",
+      "重權的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Empowered\" (Tier: #)",
+      "Elemental",
+      "Fire",
+      "Cold",
+      "Lightning",
+      "Ailment",
+      "Elemental,Fire,Cold,Lightning,Ailment",
+      "Elemental, Fire, Cold, Lightning, Ailment",
+      "Empowered Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterElementalReflection1MapWorldsExpedition",
@@ -1733,7 +4676,23 @@
       "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
      ],
      "g": 0,
-     "affixZh": "反射的"
+     "affixZh": "反射的",
+     "hiddenZh": [
+      "前綴 \"反射的\"(階層：#)",
+      "傷害",
+      "元素",
+      "傷害,元素",
+      "傷害, 元素",
+      "反射的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Mirrored\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Damage,Elemental",
+      "Damage, Elemental",
+      "Mirrored Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterPhysicalReflection1MapWorldsExpedition",
@@ -1744,7 +4703,23 @@
       "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
      ],
      "g": 0,
-     "affixZh": "懲罰的"
+     "affixZh": "懲罰的",
+     "hiddenZh": [
+      "前綴 \"懲罰的\"(階層：#)",
+      "傷害",
+      "物理",
+      "傷害,物理",
+      "傷害, 物理",
+      "懲罰的探險日誌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Punishing\" (Tier: #)",
+      "Damage",
+      "Physical",
+      "Damage,Physical",
+      "Damage, Physical",
+      "Punishing Expedition Logbook"
+     ]
     },
     {
      "id": "MapMonsterCriticalStrikesAndDamage1MapWorldsExpedition_",
@@ -1755,7 +4730,23 @@
       "#% to Monster Critical Strike Multiplier"
      ],
      "g": 1,
-     "affixZh": "死亡之"
+     "affixZh": "死亡之",
+     "hiddenZh": [
+      "後綴 \"死亡之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "死亡之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Deadliness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Expedition Logbook of Deadliness"
+     ]
     },
     {
      "id": "MapShockedGround1MapWorldsExpedition_",
@@ -1766,7 +4757,15 @@
       "Area has patches of Shocked Ground which increase Damage taken by #%"
      ],
      "g": 1,
-     "affixZh": "雷之"
+     "affixZh": "雷之",
+     "hiddenZh": [
+      "後綴 \"雷之\"(階層：#)",
+      "雷之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Lightning\" (Tier: #)",
+      "Expedition Logbook of Lightning"
+     ]
     },
     {
      "id": "MapConsecratedGround1MapWorldsExpedition_",
@@ -1777,7 +4776,15 @@
       "Area has patches of Consecrated Ground"
      ],
      "g": 1,
-     "affixZh": "奉獻之"
+     "affixZh": "奉獻之",
+     "hiddenZh": [
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Consecration\" (Tier: #)",
+      "Expedition Logbook of Consecration"
+     ]
     },
     {
      "id": "MapChilledGroundSuffix1MapWorldsExpedition",
@@ -1788,7 +4795,17 @@
       "Area has patches of Chilled Ground"
      ],
      "g": 1,
-     "affixZh": "冰之"
+     "affixZh": "冰之",
+     "hiddenZh": [
+      "後綴 \"冰之\"(階層：#)",
+      "（站立於冰冷地面將使你受到冰緩）",
+      "冰之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Ice\" (Tier: #)",
+      "(You are Chilled while standing in Chilled Ground)",
+      "Expedition Logbook of Ice"
+     ]
     },
     {
      "id": "MapBurningGround1MapWorldsExpedition_",
@@ -1799,7 +4816,25 @@
       "Area has patches of Burning Ground"
      ],
      "g": 1,
-     "affixZh": "烈焰之"
+     "affixZh": "烈焰之",
+     "hiddenZh": [
+      "後綴 \"烈焰之\"(階層：#)",
+      "傷害",
+      "元素",
+      "火焰",
+      "傷害,元素,火焰",
+      "傷害, 元素, 火焰",
+      "烈焰之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Flames\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Fire",
+      "Damage,Elemental,Fire",
+      "Damage, Elemental, Fire",
+      "Expedition Logbook of Flames"
+     ]
     },
     {
      "id": "MapDesecratedGround1MapWorldsExpedition",
@@ -1810,7 +4845,23 @@
       "Area has patches of desecrated ground"
      ],
      "g": 1,
-     "affixZh": "褻瀆之"
+     "affixZh": "褻瀆之",
+     "hiddenZh": [
+      "後綴 \"褻瀆之\"(階層：#)",
+      "傷害",
+      "混沌",
+      "傷害,混沌",
+      "傷害, 混沌",
+      "褻瀆之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Desecration\" (Tier: #)",
+      "Damage",
+      "Chaos",
+      "Damage,Chaos",
+      "Damage, Chaos",
+      "Expedition Logbook of Desecration"
+     ]
     },
     {
      "id": "MapMonsterAreaOfEffect1MapWorldsExpedition_",
@@ -1821,7 +4872,15 @@
       "Monsters have #% increased Area of Effect"
      ],
      "g": 1,
-     "affixZh": "巨人之"
+     "affixZh": "巨人之",
+     "hiddenZh": [
+      "後綴 \"巨人之\"(階層：#)",
+      "巨人之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Giants\" (Tier: #)",
+      "Expedition Logbook of Giants"
+     ]
     },
     {
      "id": "MapPlayersEvasionAndUnluckyDodge1MapWorldsExpedition",
@@ -1832,7 +4891,19 @@
       "Monsters have #% increased Accuracy Rating"
      ],
      "g": 1,
-     "affixZh": "傾斜之"
+     "affixZh": "傾斜之",
+     "hiddenZh": [
+      "後綴 \"傾斜之\"(階層：#)",
+      "攻擊",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "傾斜之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "Attack",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Expedition Logbook of Miring"
+     ]
     },
     {
      "id": "MapMonsterCriticalStrikesAndDamage1MapWorldsExpedition_",
@@ -1843,7 +4914,23 @@
       "Monsters have #% increased Critical Strike Chance"
      ],
      "g": 1,
-     "affixZh": "死亡之"
+     "affixZh": "死亡之",
+     "hiddenZh": [
+      "後綴 \"死亡之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "死亡之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Deadliness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Expedition Logbook of Deadliness"
+     ]
     },
     {
      "id": "MapMonstersStealChargesOnHitMapWorldsExpedition",
@@ -1854,7 +4941,15 @@
       "Monsters steal Power, Frenzy and Endurance charges on Hit"
      ],
      "g": 1,
-     "affixZh": "精神之"
+     "affixZh": "精神之",
+     "hiddenZh": [
+      "後綴 \"精神之\"(階層：#)",
+      "精神之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enervation\" (Tier: #)",
+      "Expedition Logbook of Enervation"
+     ]
     },
     {
      "id": "MapMonstersPowerChargeOnHitMapWorldsExpedition",
@@ -1865,7 +4960,15 @@
       "Monsters gain a Power Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "暴擊之"
+     "affixZh": "暴擊之",
+     "hiddenZh": [
+      "後綴 \"暴擊之\"(階層：#)",
+      "暴擊之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Power\" (Tier: #)",
+      "Expedition Logbook of Power"
+     ]
     },
     {
      "id": "MapMonstersFrenzyChargeOnHitMapWorldsExpedition_",
@@ -1876,7 +4979,15 @@
       "Monsters gain a Frenzy Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "狂怒之"
+     "affixZh": "狂怒之",
+     "hiddenZh": [
+      "後綴 \"狂怒之\"(階層：#)",
+      "狂怒之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Frenzy\" (Tier: #)",
+      "Expedition Logbook of Frenzy"
+     ]
     },
     {
      "id": "MapMonstersEnduranceChargeOnHitMapWorldsExpedition",
@@ -1887,7 +4998,15 @@
       "Monsters gain an Endurance Charge on Hit"
      ],
      "g": 1,
-     "affixZh": "耐久之"
+     "affixZh": "耐久之",
+     "hiddenZh": [
+      "後綴 \"耐久之\"(階層：#)",
+      "耐久之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Endurance\" (Tier: #)",
+      "Expedition Logbook of Endurance"
+     ]
     },
     {
      "id": "MapMonstersBlindOnHitMapWorldsExpedition__",
@@ -1898,7 +5017,17 @@
       "Monsters Blind on Hit"
      ],
      "g": 1,
-     "affixZh": "盲目之"
+     "affixZh": "盲目之",
+     "hiddenZh": [
+      "後綴 \"盲目之\"(階層：#)",
+      "（ 被致盲有20%更少命中率和閃避值，持續4秒 ）",
+      "盲目之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Blinding\" (Tier: #)",
+      "(Being Blinded causes 20% less Accuracy Rating and Evasion Rating, for 4 seconds)",
+      "Expedition Logbook of Blinding"
+     ]
     },
     {
      "id": "MapMonstersMaimOnHitMapWorldsExpedition_",
@@ -1909,7 +5038,17 @@
       "Monsters Maim on Hit with Attacks"
      ],
      "g": 1,
-     "affixZh": "大屠殺之"
+     "affixZh": "大屠殺之",
+     "hiddenZh": [
+      "後綴 \"大屠殺之\"(階層：#)",
+      "（ 被癱瘓的敵人減少 30% 移動速度 ）",
+      "大屠殺之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Carnage\" (Tier: #)",
+      "(Maimed enemies have 30% reduced Movement Speed)",
+      "Expedition Logbook of Carnage"
+     ]
     },
     {
      "id": "MapMonstersHinderOnHitMapWorldsExpedition",
@@ -1920,7 +5059,17 @@
       "Monsters Hinder on Hit with Spells"
      ],
      "g": 1,
-     "affixZh": "阻抗之"
+     "affixZh": "阻抗之",
+     "hiddenZh": [
+      "後綴 \"阻抗之\"(階層：#)",
+      "（受阻礙的敵人減少 30% 移動速度 4 秒）",
+      "阻抗之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Impedance\" (Tier: #)",
+      "(Hinder reduces movement speed by 30% for 4 seconds)",
+      "Expedition Logbook of Impedance"
+     ]
     },
     {
      "id": "MapMonstersBaseSelfCriticalMultiplier1MapWorldsExpedition",
@@ -1931,7 +5080,23 @@
       "Monsters take #% reduced Extra Damage from Critical Strikes"
      ],
      "g": 1,
-     "affixZh": "堅韌之"
+     "affixZh": "堅韌之",
+     "hiddenZh": [
+      "後綴 \"堅韌之\"(階層：#)",
+      "傷害",
+      "暴擊",
+      "傷害,暴擊",
+      "傷害, 暴擊",
+      "堅韌之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Toughness\" (Tier: #)",
+      "Damage",
+      "Critical",
+      "Damage,Critical",
+      "Damage, Critical",
+      "Expedition Logbook of Toughness"
+     ]
     },
     {
      "id": "MapPlayerMaxResists1MapWorldsExpedition",
@@ -1942,7 +5107,23 @@
       "Players have #% to all maximum Resistances"
      ],
      "g": 1,
-     "affixZh": "曝露之"
+     "affixZh": "曝露之",
+     "hiddenZh": [
+      "後綴 \"曝露之\"(階層：#)",
+      "元素",
+      "抗性",
+      "元素,抗性",
+      "元素, 抗性",
+      "曝露之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Exposure\" (Tier: #)",
+      "Elemental",
+      "Resistance",
+      "Elemental,Resistance",
+      "Elemental, Resistance",
+      "Expedition Logbook of Exposure"
+     ]
     },
     {
      "id": "MapPlayersEvasionAndUnluckyDodge1MapWorldsExpedition",
@@ -1953,7 +5134,19 @@
       "Players have #% to amount of Suppressed Spell Damage Prevented"
      ],
      "g": 1,
-     "affixZh": "傾斜之"
+     "affixZh": "傾斜之",
+     "hiddenZh": [
+      "後綴 \"傾斜之\"(階層：#)",
+      "攻擊",
+      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
+      "傾斜之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Miring\" (Tier: #)",
+      "Attack",
+      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
+      "Expedition Logbook of Miring"
+     ]
     },
     {
      "id": "MapPlayerNoLifeESRegenMapWorldsExpedition",
@@ -1964,7 +5157,27 @@
       "Players cannot Regenerate Life, Mana or Energy Shield"
      ],
      "g": 1,
-     "affixZh": "瘀血之"
+     "affixZh": "瘀血之",
+     "hiddenZh": [
+      "後綴 \"瘀血之\"(階層：#)",
+      "生命",
+      "魔力",
+      "防禦",
+      "能量護盾",
+      "生命,魔力,防禦,能量護盾",
+      "生命, 魔力, 防禦, 能量護盾",
+      "瘀血之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Stasis\" (Tier: #)",
+      "Life",
+      "Mana",
+      "Defences",
+      "Energy Shield",
+      "Life,Mana,Defences,Energy Shield",
+      "Life, Mana, Defences, Energy Shield",
+      "Expedition Logbook of Stasis"
+     ]
     },
     {
      "id": "MapPlayerElementalEquilibriumMapWorldsExpedition__",
@@ -1975,7 +5188,23 @@
       "Players cannot inflict Exposure"
      ],
      "g": 1,
-     "affixZh": "平衡之"
+     "affixZh": "平衡之",
+     "hiddenZh": [
+      "後綴 \"平衡之\"(階層：#)",
+      "傷害",
+      "元素",
+      "傷害,元素",
+      "傷害, 元素",
+      "平衡之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Balance\" (Tier: #)",
+      "Damage",
+      "Elemental",
+      "Damage,Elemental",
+      "Damage, Elemental",
+      "Expedition Logbook of Balance"
+     ]
     },
     {
      "id": "MapPlayersLessCooldownRecovery1MapWorldsExpedition_",
@@ -1986,7 +5215,15 @@
       "Players have #% less Cooldown Recovery Rate"
      ],
      "g": 1,
-     "affixZh": "疲勞之"
+     "affixZh": "疲勞之",
+     "hiddenZh": [
+      "後綴 \"疲勞之\"(階層：#)",
+      "疲勞之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Fatigue\" (Tier: #)",
+      "Expedition Logbook of Fatigue"
+     ]
     },
     {
      "id": "MapPlayersAccuracyRating1MapWorldsExpedition_",
@@ -1997,7 +5234,15 @@
       "Players have #% less Accuracy Rating"
      ],
      "g": 1,
-     "affixZh": "不精確之"
+     "affixZh": "不精確之",
+     "hiddenZh": [
+      "後綴 \"不精確之\"(階層：#)",
+      "不精確之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Imprecision\" (Tier: #)",
+      "Expedition Logbook of Imprecision"
+     ]
     },
     {
      "id": "MapPlayerReducedRegen1MapWorldsExpedition_",
@@ -2008,7 +5253,25 @@
       "Players have #% less Recovery Rate of Life and Energy Shield"
      ],
      "g": 1,
-     "affixZh": "窒息之"
+     "affixZh": "窒息之",
+     "hiddenZh": [
+      "後綴 \"窒息之\"(階層：#)",
+      "生命",
+      "防禦",
+      "能量護盾",
+      "生命,防禦,能量護盾",
+      "生命, 防禦, 能量護盾",
+      "窒息之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Smothering\" (Tier: #)",
+      "Life",
+      "Defences",
+      "Energy Shield",
+      "Life,Defences,Energy Shield",
+      "Life, Defences, Energy Shield",
+      "Expedition Logbook of Smothering"
+     ]
     },
     {
      "id": "MapPlayersLessAoERadius1MapWorldsExpedition",
@@ -2019,7 +5282,15 @@
       "Players have #% less Area of Effect"
      ],
      "g": 1,
-     "affixZh": "無能之"
+     "affixZh": "無能之",
+     "hiddenZh": [
+      "後綴 \"無能之\"(階層：#)",
+      "無能之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Impotence\" (Tier: #)",
+      "Expedition Logbook of Impotence"
+     ]
     },
     {
      "id": "MapPlayersBlockAndArmour1MapWorldsExpedition",
@@ -2030,7 +5301,23 @@
       "Players have #% less Armour"
      ],
      "g": 1,
-     "affixZh": "腐鏽之"
+     "affixZh": "腐鏽之",
+     "hiddenZh": [
+      "後綴 \"腐鏽之\"(階層：#)",
+      "防禦",
+      "護甲",
+      "防禦,護甲",
+      "防禦, 護甲",
+      "腐鏽之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Rust\" (Tier: #)",
+      "Defences",
+      "Armour",
+      "Defences,Armour",
+      "Defences, Armour",
+      "Expedition Logbook of Rust"
+     ]
     },
     {
      "id": "MapPlayersReducedAuraEffect1MapWorldsExpedition",
@@ -2041,7 +5328,15 @@
       "Players have #% reduced effect of Non-Curse Auras from Skills"
      ],
      "g": 1,
-     "affixZh": "懷疑之"
+     "affixZh": "懷疑之",
+     "hiddenZh": [
+      "後綴 \"懷疑之\"(階層：#)",
+      "懷疑之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Doubt\" (Tier: #)",
+      "Expedition Logbook of Doubt"
+     ]
     },
     {
      "id": "MapPlayersBlockAndArmour1MapWorldsExpedition",
@@ -2052,7 +5347,23 @@
       "Players have #% reduced Chance to Block"
      ],
      "g": 1,
-     "affixZh": "腐鏽之"
+     "affixZh": "腐鏽之",
+     "hiddenZh": [
+      "後綴 \"腐鏽之\"(階層：#)",
+      "防禦",
+      "護甲",
+      "防禦,護甲",
+      "防禦, 護甲",
+      "腐鏽之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Rust\" (Tier: #)",
+      "Defences",
+      "Armour",
+      "Defences,Armour",
+      "Defences, Armour",
+      "Expedition Logbook of Rust"
+     ]
     },
     {
      "id": "MapPlayersGainReducedFlaskCharges1MapWorldsExpedition",
@@ -2063,7 +5374,15 @@
       "Players gain #% reduced Flask Charges"
      ],
      "g": 1,
-     "affixZh": "乾旱之"
+     "affixZh": "乾旱之",
+     "hiddenZh": [
+      "後綴 \"乾旱之\"(階層：#)",
+      "乾旱之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Drought\" (Tier: #)",
+      "Expedition Logbook of Drought"
+     ]
     },
     {
      "id": "MapPlayerCurseElementalWeakness1MapWorldsExpedition_",
@@ -2074,7 +5393,25 @@
       "Players are Cursed with Elemental Weakness"
      ],
      "g": 1,
-     "affixZh": "元素要害之"
+     "affixZh": "元素要害之",
+     "hiddenZh": [
+      "後綴 \"元素要害之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（元素要害為咒術，減少 15% 全部元素抗性。持續 8 秒）",
+      "元素要害之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Elemental Weakness\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Elemental Weakness is a Hex which inficts -15% to all Elemental Resistances. It lasts 8 seconds)",
+      "Expedition Logbook of Elemental Weakness"
+     ]
     },
     {
      "id": "MapPlayerCurseTemporalChains1MapWorldsExpedition_",
@@ -2085,7 +5422,25 @@
       "Players are Cursed with Temporal Chains"
      ],
      "g": 1,
-     "affixZh": "時空鎖鏈之"
+     "affixZh": "時空鎖鏈之",
+     "hiddenZh": [
+      "後綴 \"時空鎖鏈之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（時空鎖鏈為咒術，減少 15% 行動速度或 9% 對稀有或傳奇目標，並且使目標上的效果比平常慢 40% 失效。對玩家有 50% 更少效果並持續 5 秒）",
+      "時空鎖鏈之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Temporal Chains\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Temporal Chains is a Hex which reduces Action Speed by 15%, or 9% on Rare or Unique targets, and makes other effects on the target expire 40% slower. It has 50% less effect on Players and lasts 5 seconds)",
+      "Expedition Logbook of Temporal Chains"
+     ]
     },
     {
      "id": "MapPlayerCurseVulnerability1MapWorldsExpedition_",
@@ -2096,7 +5451,25 @@
       "Players are Cursed with Vulnerability"
      ],
      "g": 1,
-     "affixZh": "脆弱之"
+     "affixZh": "脆弱之",
+     "hiddenZh": [
+      "後綴 \"脆弱之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（脆弱為咒術，增加 15% 承受物理傷害，使擊中對目標 +25% 流血機率。脆弱持續 8 秒）",
+      "脆弱之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Vulnerability\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Vulnerability is a Hex which increases Physical Damage taken by 15% and causes Hits to have +25% chance to inflict Bleeding on the target. It lasts 8 seconds)",
+      "Expedition Logbook of Vulnerability"
+     ]
     },
     {
      "id": "MapPlayerCurseEnfeeblement1MapWorldsExpedition_",
@@ -2107,7 +5480,25 @@
       "Players are Cursed with Enfeeble"
      ],
      "g": 1,
-     "affixZh": "衰弱之"
+     "affixZh": "衰弱之",
+     "hiddenZh": [
+      "後綴 \"衰弱之\"(階層：#)",
+      "法術",
+      "詛咒",
+      "法術,詛咒",
+      "法術, 詛咒",
+      "（衰弱為咒術，減少 10% 目標命中率和 15% 傷害，或 9% 對稀有或傳奇目標。衰弱持續 8 秒）",
+      "衰弱之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enfeeblement\" (Tier: #)",
+      "Caster",
+      "Curse",
+      "Caster,Curse",
+      "Caster, Curse",
+      "(Enfeeble is a Hex which reduces the targets' Accuracy Rating by 10% and Damage by 15%, or 9% on Rare or Unique targets. It lasts 8 seconds)",
+      "Expedition Logbook of Enfeeblement"
+     ]
     },
     {
      "id": "MapPlayersBuffsExpireFaster1MapWorldsExpedition___",
@@ -2118,7 +5509,15 @@
       "Buffs on Players expire #% faster"
      ],
      "g": 1,
-     "affixZh": "轉瞬之"
+     "affixZh": "轉瞬之",
+     "hiddenZh": [
+      "後綴 \"轉瞬之\"(階層：#)",
+      "轉瞬之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Transience\" (Tier: #)",
+      "Expedition Logbook of Transience"
+     ]
     },
     {
      "id": "MapPoisoningMapWorldsExpedition",
@@ -2129,9 +5528,381 @@
       "Monsters Poison on Hit"
      ],
      "g": 1,
-     "affixZh": "猛毒之"
+     "affixZh": "猛毒之",
+     "hiddenZh": [
+      "後綴 \"猛毒之\"(階層：#)",
+      "混沌",
+      "異常狀態",
+      "混沌,異常狀態",
+      "混沌, 異常狀態",
+      "（ 中毒造成持續性混沌傷害，傷害取決於初始的物理和混沌傷害總和。中毒效果可以疊加 ）",
+      "猛毒之探險日誌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Venom\" (Tier: #)",
+      "Chaos",
+      "Ailment",
+      "Chaos,Ailment",
+      "Chaos, Ailment",
+      "(Poison deals Chaos Damage over time, based on the base Physical and Chaos Damage of the Skill. Multiple instances of Poison stack)",
+      "Expedition Logbook of Venom"
+     ]
     }
-   ]
+   ],
+   "ambientZh": [
+    "死境探險",
+    "地區",
+    "區域等級",
+    "物品等級：#",
+    "把此道具帶回你的藏身處給丹尼格，來開啟前往探險的傳送門。",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "分化",
+    "(階層：#)",
+    "固定詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "探險日誌",
+    "破碎環之德魯伊",
+    "黑鐮傭兵",
+    "聖杯之序",
+    "豔陽騎士",
+    "符文要塞",
+    "先行者神殿",
+    "誘惑深淖",
+    "烽火墳墓",
+    "陡岸峭壁",
+    "公墓",
+    "堅固堡壘",
+    "英雄塚",
+    "沙漠廢墟",
+    "乾枯河床",
+    "森林遺跡",
+    "遺忘石窟",
+    "卡魯戰爭墓地",
+    "迷黯山腰",
+    "幽魂洞穴",
+    "腐朽神殿",
+    "薩恩貧民窟",
+    "灌木叢",
+    "失落聖殿",
+    "沉船岩礁",
+    "毒菇地牢",
+    "毒化下水道",
+    "破碎密殿",
+    "沙瀑遺跡",
+    "奧札爾郊野",
+    "瓦爾神殿",
+    "火山島",
+    "不祥",
+    "鍛鐵",
+    "堅鋼",
+    "幽暗",
+    "殘忍",
+    "死寂",
+    "暴行",
+    "冷酷",
+    "遺棄",
+    "先祖",
+    "遠古",
+    "荒蕪",
+    "刺骨",
+    "葬禮",
+    "詛咒",
+    "蒼涼",
+    "忘卻",
+    "神逐",
+    "淡隱",
+    "迷失",
+    "遙望",
+    "靜嵐",
+    "災難",
+    "不幸",
+    "艱鉅",
+    "傳奇",
+    "神話",
+    "孤獨",
+    "搖籃",
+    "刀鋒",
+    "壁壘",
+    "望景",
+    "驛站",
+    "庇護所",
+    "殘跡",
+    "遺地",
+    "密境",
+    "影域",
+    "孤獨之境",
+    "荒原",
+    "旅程",
+    "承諾",
+    "企業",
+    "勘探",
+    "旅行",
+    "遠征",
+    "航程",
+    "跋涉",
+    "活動",
+    "尋求",
+    "使命",
+    "殖民",
+    "前哨",
+    "授權",
+    "領土",
+    "土地",
+    "挖掘",
+    "故事",
+    "佐賀",
+    "民謠",
+    "民間故事"
+   ],
+   "ambientEn": [
+    "Expedition",
+    "Area",
+    "Area Level",
+    "Item Level: #",
+    "Take this item to Dannig in your Hideout to open portals to an expedition.",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "Split",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Expedition Logbook",
+    "Druids of the Broken Circle",
+    "Black Scythe Mercenaries",
+    "Order of the Chalice",
+    "Knights of the Sun",
+    "Runic Stronghold",
+    "Precursor Shrine",
+    "Alluring Pool",
+    "Battleground Graves",
+    "Bluffs",
+    "Cemetery",
+    "Fortified Redoubt",
+    "Heroic Tomb",
+    "Desert Ruins",
+    "Dried Riverbed",
+    "Forest Ruins",
+    "Forgotten Grotto",
+    "Karui Wargraves",
+    "Mountainside",
+    "Spectral Hollow",
+    "Rotting Temple",
+    "Sarn Slums",
+    "Scrublands",
+    "Lost Sanctum",
+    "Shipwreck Reef",
+    "Mushroom Thicket",
+    "Noxious Gutter",
+    "Chittering Chamber",
+    "Sandy Vestige",
+    "Utzaal Outskirts",
+    "Vaal Temple",
+    "Volcanic Island",
+    "Dire",
+    "Iron",
+    "Steel",
+    "Dark",
+    "Cruel",
+    "Death",
+    "Savage",
+    "Grim",
+    "Abandoned",
+    "Ancestral",
+    "Ancient",
+    "Barren",
+    "Bleak",
+    "Buried",
+    "Cursed",
+    "Desolate",
+    "Forgotten",
+    "Godless",
+    "Hidden",
+    "Lost",
+    "Remote",
+    "Secluded",
+    "Doomed",
+    "Ill-fated",
+    "Arduous",
+    "Legendary",
+    "Mythical",
+    "Lonely",
+    "Cradle",
+    "Edge",
+    "Frontier",
+    "Panorama",
+    "Reaches",
+    "Refuge",
+    "Remains",
+    "Remnant",
+    "Secrets",
+    "Shadows",
+    "Solitude",
+    "Waste",
+    "Excursion",
+    "Undertaking",
+    "Enterprise",
+    "Exploration",
+    "Journey",
+    "Voyage",
+    "Trek",
+    "Campaign",
+    "Quest",
+    "Mission",
+    "Colony",
+    "Outpost",
+    "Mandate",
+    "Territory",
+    "Lands",
+    "Excavation",
+    "Tale",
+    "Saga",
+    "Myth",
+    "Ballad",
+    "Folktale"
+   ],
+   "nameWordsZh": {
+    "prefix": [
+     "不祥",
+     "鍛鐵",
+     "堅鋼",
+     "幽暗",
+     "殘忍",
+     "死寂",
+     "暴行",
+     "冷酷",
+     "遺棄",
+     "先祖",
+     "遠古",
+     "荒蕪",
+     "刺骨",
+     "葬禮",
+     "詛咒",
+     "蒼涼",
+     "忘卻",
+     "神逐",
+     "淡隱",
+     "迷失",
+     "遙望",
+     "靜嵐",
+     "災難",
+     "不幸",
+     "艱鉅",
+     "傳奇",
+     "神話",
+     "孤獨"
+    ],
+    "suffix": [
+     " 搖籃",
+     " 刀鋒",
+     " 壁壘",
+     " 望景",
+     " 驛站",
+     " 庇護所",
+     " 殘跡",
+     " 遺地",
+     " 密境",
+     " 影域",
+     " 孤獨之境",
+     " 荒原",
+     " 旅程",
+     "  承諾",
+     "  企業",
+     "  勘探",
+     "  旅行",
+     "  遠征",
+     "  航程",
+     "  跋涉",
+     "  活動",
+     "  尋求",
+     "  使命",
+     "  殖民",
+     "  前哨",
+     "  授權",
+     "  領土",
+     "  土地",
+     "  挖掘",
+     "  故事",
+     "  佐賀",
+     "  神話",
+     "  民謠",
+     "  民間故事"
+    ]
+   },
+   "nameWordsEn": {
+    "prefix": [
+     "Dire",
+     "Iron",
+     "Steel",
+     "Dark",
+     "Cruel",
+     "Death",
+     "Savage",
+     "Grim",
+     "Abandoned",
+     "Ancestral",
+     "Ancient",
+     "Barren",
+     "Bleak",
+     "Buried",
+     "Cursed",
+     "Desolate",
+     "Forgotten",
+     "Godless",
+     "Hidden",
+     "Lost",
+     "Remote",
+     "Secluded",
+     "Doomed",
+     "Ill-fated",
+     "Arduous",
+     "Legendary",
+     "Mythical",
+     "Lonely"
+    ],
+    "suffix": [
+     " Cradle",
+     " Edge",
+     " Frontier",
+     " Panorama",
+     " Reaches",
+     " Refuge",
+     " Remains",
+     " Remnant",
+     " Secrets",
+     " Shadows",
+     " Solitude",
+     " Waste",
+     "Excursion",
+     "Undertaking",
+     "Enterprise",
+     "Exploration",
+     "Journey",
+     "Expedition",
+     "Voyage",
+     "Trek",
+     "Campaign",
+     "Quest",
+     "Mission",
+     "Colony",
+     "Outpost",
+     "Mandate",
+     "Territory",
+     "Lands",
+     "Excavation",
+     "Tale",
+     "Saga",
+     "Myth",
+     "Ballad",
+     "Folktale"
+    ]
+   }
   }
  ]
 }

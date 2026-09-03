@@ -49,6 +49,16 @@ std::vector<std::string> StringArray(const ordered_json& j, const char* key)
 	return out;
 }
 
+// j[key][sub] as a string array; missing at either level reads as empty, the
+// same way StringArray treats a missing key.
+std::vector<std::string> NestedStringArray(const ordered_json& j, const char* key,
+                                           const char* sub)
+{
+	auto it = j.find(key);
+	if (it == j.end() || !it->is_object()) return {};
+	return StringArray(*it, sub);
+}
+
 } // namespace
 
 bool RegexDataset::Load(const std::wstring& exeDir, const std::wstring& preferred,
@@ -103,6 +113,12 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 			page.note = p.value("note", std::string());
 			page.limit = p.value("limit", 250);
 			page.groups = StringArray(p, "groups");
+			page.ambientZh = StringArray(p, "ambientZh");
+			page.ambientEn = StringArray(p, "ambientEn");
+			page.namePrefixZh = NestedStringArray(p, "nameWordsZh", "prefix");
+			page.nameSuffixZh = NestedStringArray(p, "nameWordsZh", "suffix");
+			page.namePrefixEn = NestedStringArray(p, "nameWordsEn", "prefix");
+			page.nameSuffixEn = NestedStringArray(p, "nameWordsEn", "suffix");
 			const auto entries = p.find("entries");
 			if (entries == p.end() || !entries->is_array()) continue;
 			page.entries.reserve(entries->size());
@@ -115,6 +131,8 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 				d.affixZh = e.value("affixZh", std::string());
 				d.zh = StringArray(e, "zh");
 				d.en = StringArray(e, "en");
+				d.hiddenZh = StringArray(e, "hiddenZh");
+				d.hiddenEn = StringArray(e, "hiddenEn");
 				// An entry with no printed text has nothing to search for, and
 				// keeping it would put a row in the list that can never be
 				// resolved into a token.

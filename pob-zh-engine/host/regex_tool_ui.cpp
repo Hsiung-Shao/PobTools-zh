@@ -629,6 +629,20 @@ private:
 			ImGui::Separator();
 			ImGui::TextDisabled(u8"來源詞綴：%s", e.affixZh.c_str());
 		}
+		// What the search reads besides the line. Shown because it explains
+		// why a token is longer than the line alone would need -- and cut to a
+		// few rows, since a reminder text can run to a paragraph.
+		const std::vector<std::string>& hidden = (lang_ == Lang::Zh) ? e.hiddenZh : e.hiddenEn;
+		if (!hidden.empty()) {
+			ImGui::Separator();
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(u8"遊戲搜尋也會比對：");
+			const size_t shown = hidden.size() < 4 ? hidden.size() : 4;
+			for (size_t i = 0; i < shown; i++) ImGui::BulletText("%s", hidden[i].c_str());
+			if (hidden.size() > shown)
+				ImGui::Text(u8"（另有 %d 行）", (int)(hidden.size() - shown));
+			ImGui::PopStyleColor();
+		}
 		ImGui::EndTooltip();
 	}
 
@@ -697,7 +711,9 @@ private:
 			for (int i : s.result.unresolved)
 				ImGui::BulletText("%s", LineIn(entries()[i], lang_).c_str());
 			ImGui::TextWrapped(u8"清單裡有其他項目印出一模一樣的文字，"
-			                   u8"遊戲的搜尋沒有辦法只中其中一個。");
+			                   u8"或這一行能用的每一段字也出現在每張物品都有的文字裡"
+			                   u8"（詞綴名稱、階層、提示說明、已汙染這類標籤），"
+			                   u8"遊戲的搜尋沒有辦法只中它。");
 			ImGui::PopStyleColor();
 		}
 
@@ -1052,12 +1068,24 @@ private:
 			// a claim about ONE language's list: two entries the Chinese cannot
 			// tell apart may be trivially separable in English, and the other way
 			// round, so the corpus has to be the one the player will paste into.
-			const std::vector<std::string>& want = (lang_ == Lang::Zh) ? d.zh : d.en;
-			const std::vector<std::string>& fallback = (lang_ == Lang::Zh) ? d.en : d.zh;
-			e.texts = want.empty() ? fallback : want;
+			const bool zh = (lang_ == Lang::Zh);
+			const std::vector<std::string>& want = zh ? d.zh : d.en;
+			const std::vector<std::string>& fallback = zh ? d.en : d.zh;
+			const bool useWant = !want.empty();
+			e.texts = useWant ? want : fallback;
+			// The hidden text follows the language the entry actually ended up
+			// in, not the panel's setting: an entry that fell back to English
+			// lines must not carry Chinese tags.
+			e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
 			es.push_back(std::move(e));
 		}
-		s.corpus.Reset(std::move(es));
+		const RegexPageDef& page = data_.Pages()[page_];
+		const bool zh = (lang_ == Lang::Zh);
+		RegexGen::Ambient amb;
+		amb.lines = zh ? page.ambientZh : page.ambientEn;
+		amb.nameLeft = zh ? page.namePrefixZh : page.namePrefixEn;
+		amb.nameRight = zh ? page.nameSuffixZh : page.nameSuffixEn;
+		s.corpus.Reset(std::move(es), std::move(amb));
 		s.corpusReady = true;
 		s.dirty = true;
 	}

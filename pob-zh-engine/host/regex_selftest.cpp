@@ -42,6 +42,14 @@ Corpus Make(const std::vector<std::string>& texts)
 	return c;
 }
 
+// Entries built by hand (hidden text and all), plus the page's ambient text.
+Corpus MakeEx(std::vector<Entry> es, RegexGen::Ambient amb = RegexGen::Ambient{})
+{
+	Corpus c;
+	c.Reset(std::move(es), std::move(amb));
+	return c;
+}
+
 // Deterministic, and deliberately not std::mt19937: the point is that a failure
 // is reproducible from the seed printed in the report, on any toolchain.
 struct Rng {
@@ -182,6 +190,137 @@ void SyntheticTests()
 		check(RegexGen::CharCount(u8"怪物") == 2, "two Chinese characters cost two");
 		check(RegexGen::CharCount("ab") == 2, "two ASCII characters cost two");
 		check(RegexGen::CharCount(u8"a怪") == 2, "and a mixture adds up");
+	}
+
+	// ---- hidden and ambient text: the search reads more than the line ----------
+
+	line("[T13] hidden text is never cut into tokens and never counts as finding an entry");
+	{
+		Entry a;
+		a.id = "a";
+		a.texts = {u8"甲乙"};
+		a.hidden = {u8"丙丁"};
+		Entry b;
+		b.id = "b";
+		b.texts = {u8"戊己"};
+		Corpus c = MakeEx({a, b});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.exact && r.query.find(u8"丙") == std::string::npos &&
+		      r.query.find(u8"丁") == std::string::npos,
+		      "the query is cut from the printed line only: " + r.query);
+		RegexGen::Check v = c.Verify({0}, u8"\"丙\"");
+		check(!v.ok && v.missing.size() == 1 && v.missing[0] == 0,
+		      "a term that only hits hidden text does not find the entry");
+		check(v.extra.empty(), "and nobody else is reported for it either");
+	}
+
+	line("[T14] a token that also hits another entry's hidden text is rejected");
+	{
+		// The user's report: 燃燒的地圖 prints one line, but its advanced
+		// description carries the tag 異常狀態, so a bare 常 finds it.
+		Entry a;
+		a.id = "avoid-ailments";
+		a.texts = {u8"元素異常狀態"};
+		Entry b;
+		b.id = "ignite";
+		b.texts = {u8"玩家有更少護甲"};
+		b.hidden = {u8"元素,火焰,異常狀態"};
+		Corpus c = MakeEx({a, b});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.exact, "still resolvable with a longer piece: " + r.query);
+		check(c.Verify({0}, r.query).ok, "and Verify agrees the hidden text is not touched");
+		RegexGen::Check v = c.Verify({0}, u8"\"常\"");
+		check(!v.ok && v.extra.size() == 1 && v.extra[0] == 1,
+		      "a term that reaches the other entry's hidden text is an over-match");
+		RegexGen::Result both = c.Build({0, 1}, Mode::Any);
+		check(both.exact && c.Verify({0, 1}, both.query).ok,
+		      "with both picked the shared text is fair game again: " + both.query);
+		RegexGen::Result all = c.Build({0, 1}, Mode::All);
+		check(all.exact, "All resolves both: " + all.query);
+		bool clean = true;
+		for (const std::string& t : all.tokens) {
+			const std::string q = "\"" + t + "\"";
+			if (!(c.Verify({0}, q).ok || c.Verify({1}, q).ok)) clean = false;
+		}
+		check(clean, "each All term names one pick without reaching the other's hidden text");
+
+		// Numbers in hidden text are wildcards, exactly as in printed text.
+		Entry p;
+		p.id = "literal";
+		p.texts = {u8"持續 5 秒"};
+		Entry q;
+		q.id = "other";
+		q.texts = {u8"其他"};
+		q.hidden = {u8"持續 # 秒"};
+		Corpus d = MakeEx({p, q});
+		RegexGen::Result r2 = d.Build({0}, Mode::Any);
+		check(!r2.exact, "a literal number a hidden wildcard could print cannot be singled out");
+	}
+
+	line("[T15] text on every item vetoes a token, and Verify names the term");
+	{
+		Entry a;
+		a.id = "level";
+		a.texts = {u8"怪物等級增加"};
+		Entry b;
+		b.id = "life";
+		b.texts = {u8"玩家生命"};
+		Entry c3;
+		c3.id = "corrupted";
+		c3.texts = {u8"已汙染"};
+		RegexGen::Ambient amb;
+		amb.lines = {u8"怪物等級：#", u8"已汙染"};
+		Corpus c = MakeEx({a, b, c3}, amb);
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.exact, "resolvable past the ambient text: " + r.query);
+		check(c.Verify({0}, r.query).ok, "and the query does not touch it");
+		RegexGen::Check v = c.Verify({0}, u8"\"怪物\"");
+		check(!v.ok && v.ambient.size() == 1, "a term found on every item is named as such");
+		RegexGen::Result r3 = c.Build({2}, Mode::Any);
+		check(!r3.exact, "an entry whose whole line is on every item cannot be singled out");
+
+		// The seam of a rare name: "Agony Desire" is on some item even though
+		// neither word is a line of its own.
+		Entry e;
+		e.id = "dues";
+		e.texts = {"pay dues"};
+		Entry f;
+		f.id = "other";
+		f.texts = {"other"};
+		RegexGen::Ambient names;
+		names.nameLeft = {"Agony"};
+		names.nameRight = {" Desire"};
+		Corpus d = MakeEx({e, f}, names);
+		RegexGen::Result r4 = d.Build({0}, Mode::Any);
+		check(r4.exact && d.Verify({0}, r4.query).ok,
+		      "a token never straddles the seam of a rare name: " + r4.query);
+		RegexGen::Check v2 = d.Verify({0}, "\"y d\"");
+		check(!v2.ok && v2.ambient.size() == 1, "and a term that does is named");
+	}
+
+	line("[T16] anchors are honoured against hidden lines too");
+	{
+		Entry a;
+		a.id = "abc";
+		a.texts = {"abc"};
+		Entry b;
+		b.id = "xabc";
+		b.texts = {"xabc"};
+		b.hidden = {"zabcz"};
+		Corpus c = MakeEx({a, b});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.exact && r.query.find('^') != std::string::npos && c.Verify({0}, r.query).ok,
+		      "a '^' token clears a hidden line that has the text mid-way: " + r.query);
+		// With the hidden line STARTING with the text, '^abc' is no longer
+		// enough; only the form anchored at both ends is left.
+		b.hidden = {"abcz"};
+		Corpus d = MakeEx({a, b});
+		RegexGen::Result r2 = d.Build({0}, Mode::Any);
+		check(r2.exact && r2.query.find("^abc$") != std::string::npos &&
+		      d.Verify({0}, r2.query).ok,
+		      "a hidden line starting with it forces the fully anchored form: " + r2.query);
+		RegexGen::Check v = d.Verify({0}, "\"^abc\"");
+		check(!v.ok && v.extra.size() == 1, "and Verify sees the anchored hidden hit");
 	}
 }
 
@@ -381,6 +520,11 @@ bool RoundTrip(const Corpus& c, const std::vector<int>& sel, Mode mode,
 {
 	RegexGen::Result r = c.Build(sel, mode);
 	RegexGen::Check v = c.Verify(sel, r.query);
+	if (!v.ambient.empty()) {
+		why = "term \"" + v.ambient[0] + "\" matches text printed on every item of the page "
+		      "(query \"" + r.query + "\")";
+		return false;
+	}
 	if (!v.extra.empty()) {
 		why = "false positive: " + std::to_string(v.extra.size()) +
 		      " unpicked entries also match \"" + r.query + "\"";
@@ -433,18 +577,94 @@ void DataTests(const std::wstring& exeDir)
 	for (const RegexPageDef& p : ds.Pages()) {
 		line(std::string("[data] ") + (useZh ? u8"繁中 " : "English ") + p.title +
 		     " -- " + std::to_string(p.entries.size()) + " entries");
-		std::vector<Entry> es;
-		es.reserve(p.entries.size());
-		for (const RegexEntryDef& d : p.entries) {
-			Entry e;
-			e.id = d.id;
-			const std::vector<std::string>& want = useZh ? d.zh : d.en;
-			const std::vector<std::string>& other = useZh ? d.en : d.zh;
-			e.texts = want.empty() ? other : want;
-			es.push_back(std::move(e));
+		// Built exactly the way the panel builds it (regex_tool_ui.cpp
+		// buildCorpus): lines in the chosen language, whole-entry fallback to
+		// the other, hidden text following whichever the entry ended up in.
+		// `full` = false leaves the hidden and ambient text out, which is only
+		// used to report how much of the page they cost.
+		auto build = [&](bool full) {
+			std::vector<Entry> es;
+			es.reserve(p.entries.size());
+			for (const RegexEntryDef& d : p.entries) {
+				Entry e;
+				e.id = d.id;
+				const std::vector<std::string>& want = useZh ? d.zh : d.en;
+				const std::vector<std::string>& other = useZh ? d.en : d.zh;
+				const bool useWant = !want.empty();
+				e.texts = useWant ? want : other;
+				if (full)
+					e.hidden = useWant ? (useZh ? d.hiddenZh : d.hiddenEn)
+					                   : (useZh ? d.hiddenEn : d.hiddenZh);
+				es.push_back(std::move(e));
+			}
+			RegexGen::Ambient amb;
+			if (full) {
+				amb.lines = useZh ? p.ambientZh : p.ambientEn;
+				amb.nameLeft = useZh ? p.namePrefixZh : p.namePrefixEn;
+				amb.nameRight = useZh ? p.nameSuffixZh : p.nameSuffixEn;
+			}
+			Corpus c;
+			c.Reset(std::move(es), std::move(amb));
+			return c;
+		};
+		Corpus c = build(true);
+		Corpus bare = build(false);
+
+		// Shape of the new fields. Every page carries the lines its items all
+		// print, in both languages -- except one whose items have no affix names
+		// and no random names to speak of, and says so here rather than in a
+		// silent zero.
+		{
+			const bool mayBeBare = (p.id == "expedition_relic_mods");
+			const std::vector<std::string>& amb = useZh ? p.ambientZh : p.ambientEn;
+			check(!amb.empty() || mayBeBare, "the page carries ambient text (" +
+			      std::to_string(amb.size()) + " lines)");
+
+			// A hidden line equal to a printed one would let the generator
+			// think the text is hidden when the item shows it.
+			int same = 0;
+			std::string firstSame;
+			for (const RegexEntryDef& d : p.entries) {
+				const std::vector<std::string>& hid = useZh ? d.hiddenZh : d.hiddenEn;
+				for (const std::string& h : hid) {
+					bool hit = false;
+					for (const RegexEntryDef& o : p.entries) {
+						const std::vector<std::string>& vis = useZh ? o.zh : o.en;
+						for (const std::string& v : vis) if (v == h) { hit = true; break; }
+						if (hit) break;
+					}
+					if (hit) { if (!same) firstSame = h; same++; }
+				}
+			}
+			check(same == 0, "no hidden line repeats a printed line" +
+			      (same ? " -- " + firstSame : std::string()));
+
+			// The tier is a roll: written as '#', never as the digit the
+			// generator happened to see.
+			int digitTier = 0;
+			std::string firstTier;
+			auto tierOk = [&](std::string s) {
+				for (char& ch : s) if (ch >= 'A' && ch <= 'Z') ch = char(ch - 'A' + 'a');
+				const char* keys[2] = {u8"階層：", "tier: "};
+				for (const char* k : keys) {
+					size_t at = 0;
+					while ((at = s.find(k, at)) != std::string::npos) {
+						at += std::string(k).size();
+						if (at >= s.size() || s[at] != '#') {
+							if (!digitTier) firstTier = s;
+							digitTier++;
+						}
+					}
+				}
+			};
+			for (const std::string& s : amb) tierOk(s);
+			for (const RegexEntryDef& d : p.entries) {
+				const std::vector<std::string>& hid = useZh ? d.hiddenZh : d.hiddenEn;
+				for (const std::string& h : hid) tierOk(h);
+			}
+			check(digitTier == 0, "every tier line rolls ('#'), none carries a digit" +
+			      (digitTier ? " -- " + firstTier : std::string()));
 		}
-		Corpus c;
-		c.Reset(std::move(es));
 
 		// Duplicate text inside one page is a data bug, not a generator one: two
 		// rows the player can tick separately but the game prints identically.
@@ -524,22 +744,47 @@ void DataTests(const std::wstring& exeDir)
 		{
 			const int step = (int)p.entries.size() > 400
 				? (int)p.entries.size() / 400 : 1;
-			int tried = 0, stuck = 0;
-			std::string examples;
+			int tried = 0, stuck = 0, stuckBare = 0, badVerify = 0;
+			std::string examples, byHidden, firstBad;
 			for (int i = 0; i < (int)p.entries.size(); i += step) {
 				tried++;
+				const std::vector<std::string>& want = useZh ? p.entries[i].zh
+				                                            : p.entries[i].en;
+				const std::string name = want.empty() ? p.entries[i].id : want[0];
 				RegexGen::Result r = c.Build({i}, Mode::Any);
-				if (r.exact) continue;
+				if (r.exact) {
+					// The whole point of the hidden and ambient text: a single
+					// pick's string must not reach any other entry's hidden
+					// text or anything every item prints.
+					RegexGen::Check v = c.Verify({i}, r.query);
+					if (!v.ok) {
+						if (!badVerify) firstBad = name + " -> " + r.query;
+						badVerify++;
+					}
+					continue;
+				}
 				stuck++;
 				if (stuck <= 5) {
 					examples += (examples.empty() ? "" : " / ");
-					const std::vector<std::string>& want = useZh ? p.entries[i].zh
-					                                            : p.entries[i].en;
-					examples += want.empty() ? p.entries[i].id : want[0];
+					examples += name;
+				}
+				// Stuck only once the hidden and ambient text are in play: the
+				// cost of the fix, printed so a league that rewrites a reminder
+				// text is noticed here rather than in a bug report.
+				if (bare.Build({i}, Mode::Any).exact) {
+					stuckBare++;
+					if (stuckBare <= 5) {
+						byHidden += (byHidden.empty() ? "" : " / ");
+						byHidden += name;
+					}
 				}
 			}
 			line("        singly findable: " + std::to_string(tried - stuck) + " / " +
 			     std::to_string(tried) + (stuck ? "   stuck: " + examples : ""));
+			line("        stuck by hidden/ambient text: " + std::to_string(stuckBare) +
+			     (stuckBare ? " (" + byHidden + ")" : ""));
+			check(badVerify == 0, "every single-pick string stays clear of hidden and "
+			      "ambient text" + (badVerify ? " -- " + firstBad : std::string()));
 			// A line whose every usable fragment also occurs in a more specific
 			// line can never be singled out by any string -- "怪物增加#%攻擊速度"
 			// sits entirely inside "怪物貧血時增加#%攻擊速度". That is GGG's
@@ -555,6 +800,30 @@ void DataTests(const std::wstring& exeDir)
 			// fires there is reporting page size, not data quality.
 			check(stuck * 4 <= tried,
 			      "at most a quarter of entries cannot be singled out");
+		}
+
+		// The report that started this: on the Chinese map page a bare 常 found
+		// 燃燒的地圖 through its tag 異常狀態 and 反抗者的時空鎖鏈之地圖 through
+		// the reminder text 比平常慢. Whatever else the data does, that term
+		// must now be seen to reach past its own entry.
+		if (useZh && p.id == "map_mods") {
+			int idx = -1;
+			for (int i = 0; i < (int)p.entries.size(); i++)
+				if (!p.entries[i].zh.empty() &&
+				    p.entries[i].zh[0] == u8"怪物有 #% 機率避免元素異常狀態") idx = i;
+			if (idx < 0) {
+				check(false, u8"the entry 怪物有 #% 機率避免元素異常狀態 is on the map page");
+			} else {
+				RegexGen::Check v = c.Verify({idx}, u8"\"常\"");
+				check(!v.extra.empty() || !v.ambient.empty(),
+				      u8"a bare 常 is known to reach other maps (" +
+				      std::to_string(v.extra.size()) + " entries, " +
+				      std::to_string(v.ambient.size()) + " ambient)");
+				RegexGen::Result r = c.Build({idx}, Mode::Any);
+				bool bare1 = false;
+				for (const std::string& t : r.tokens) if (t == u8"常") bare1 = true;
+				check(r.exact && !bare1, u8"and the entry is built without it: " + r.query);
+			}
 		}
 	}
 	}

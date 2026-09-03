@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "game": "poe2",
- "source": "PoE2 GGPK Mods/Stats/Tags + tools/ggpk2_zh/out/poe2/stats.json",
+ "source": "PoE2 GGPK Mods/Stats/Tags/Words + tools/ggpk2_zh/out/poe2/{stats,tables}",
  "pages": [
   {
    "id": "waystone_mods",
@@ -29,7 +29,15 @@
       "Monsters have #% Critical Damage Bonus"
      ],
      "g": 0,
-     "affixZh": "毀滅的"
+     "affixZh": "毀滅的",
+     "hiddenZh": [
+      "前綴 \"毀滅的\"(階層：#)",
+      "毀滅的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Destructive\" (Tier: #)",
+      "Destructive Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterLifeIncrease1",
@@ -40,7 +48,15 @@
       "#% more Monster Life"
      ],
      "g": 0,
-     "affixZh": "強韌的"
+     "affixZh": "強韌的",
+     "hiddenZh": [
+      "前綴 \"強韌的\"(階層：#)",
+      "強韌的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Tough\" (Tier: #)",
+      "Tough Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamageIncrease1",
@@ -51,7 +67,15 @@
       "#% increased Monster Damage"
      ],
      "g": 0,
-     "affixZh": "痛苦的"
+     "affixZh": "痛苦的",
+     "hiddenZh": [
+      "前綴 \"痛苦的\"(階層：#)",
+      "痛苦的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Painful\" (Tier: #)",
+      "Painful Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterStunBuildup1",
@@ -62,7 +86,15 @@
       "Monsters have #% increased Stun Buildup"
      ],
      "g": 0,
-     "affixZh": "衝擊的"
+     "affixZh": "衝擊的",
+     "hiddenZh": [
+      "前綴 \"衝擊的\"(階層：#)",
+      "衝擊的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Impacting\" (Tier: #)",
+      "Impacting Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterCritIncrease1",
@@ -73,7 +105,15 @@
       "Monsters have #% increased Critical Hit Chance"
      ],
      "g": 0,
-     "affixZh": "毀滅的"
+     "affixZh": "毀滅的",
+     "hiddenZh": [
+      "前綴 \"毀滅的\"(階層：#)",
+      "毀滅的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Destructive\" (Tier: #)",
+      "Destructive Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonstersElementalPenetration1",
@@ -84,7 +124,15 @@
       "Monster Damage Penetrates #% Elemental Resistances"
      ],
      "g": 0,
-     "affixZh": "穿透的"
+     "affixZh": "穿透的",
+     "hiddenZh": [
+      "前綴 \"穿透的\"(階層：#)",
+      "穿透的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Penetrating\" (Tier: #)",
+      "Penetrating Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterAccuracy1",
@@ -95,7 +143,15 @@
       "Monsters have #% increased Accuracy Rating"
      ],
      "g": 0,
-     "affixZh": "精確的"
+     "affixZh": "精確的",
+     "hiddenZh": [
+      "前綴 \"精確的\"(階層：#)",
+      "精確的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Precise\" (Tier: #)",
+      "Precise Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterSpeedIncrease3",
@@ -106,7 +162,15 @@
       "Monsters have #% increased Attack, Cast and Movement Speed"
      ],
      "g": 0,
-     "affixZh": "短暫的"
+     "affixZh": "短暫的",
+     "hiddenZh": [
+      "前綴 \"短暫的\"(階層：#)",
+      "短暫的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Fleeting\" (Tier: #)",
+      "Fleeting Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterBleeding1",
@@ -117,7 +181,15 @@
       "Monsters have #% chance to inflict Bleeding on Hit"
      ],
      "g": 0,
-     "affixZh": "穿孔的"
+     "affixZh": "穿孔的",
+     "hiddenZh": [
+      "前綴 \"穿孔的\"(階層：#)",
+      "穿孔的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Puncturing\" (Tier: #)",
+      "Puncturing Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterPoisoning1",
@@ -128,7 +200,15 @@
       "Monsters have #% chance to Poison on Hit"
      ],
      "g": 0,
-     "affixZh": "猛毒的"
+     "affixZh": "猛毒的",
+     "hiddenZh": [
+      "前綴 \"猛毒的\"(階層：#)",
+      "猛毒的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Venomous\" (Tier: #)",
+      "Venomous Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterArmourBreak1",
@@ -139,7 +219,15 @@
       "Monsters Break Armour equal to #% of Physical Damage dealt"
      ],
      "g": 0,
-     "affixZh": "粉碎的"
+     "affixZh": "粉碎的",
+     "hiddenZh": [
+      "前綴 \"粉碎的\"(階層：#)",
+      "粉碎的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Shattering\" (Tier: #)",
+      "Shattering Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamageAsCold1",
@@ -150,7 +238,15 @@
       "Monsters deal #% of Damage as Extra Cold"
      ],
      "g": 0,
-     "affixZh": "凍傷的"
+     "affixZh": "凍傷的",
+     "hiddenZh": [
+      "前綴 \"凍傷的\"(階層：#)",
+      "凍傷的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Frostbitten\" (Tier: #)",
+      "Frostbitten Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamageAsChaos1",
@@ -161,7 +257,15 @@
       "Monsters deal #% of Damage as Extra Chaos"
      ],
      "g": 0,
-     "affixZh": "粗陋的"
+     "affixZh": "粗陋的",
+     "hiddenZh": [
+      "前綴 \"粗陋的\"(階層：#)",
+      "粗陋的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Profane\" (Tier: #)",
+      "Profane Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamageAsFire1",
@@ -172,7 +276,15 @@
       "Monsters deal #% of Damage as Extra Fire"
      ],
      "g": 0,
-     "affixZh": "煉獄的"
+     "affixZh": "煉獄的",
+     "hiddenZh": [
+      "前綴 \"煉獄的\"(階層：#)",
+      "煉獄的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Infernal\" (Tier: #)",
+      "Infernal Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterDamageAsLightning1",
@@ -183,7 +295,15 @@
       "Monsters deal #% of Damage as Extra Lightning"
      ],
      "g": 0,
-     "affixZh": "雷霆的"
+     "affixZh": "雷霆的",
+     "hiddenZh": [
+      "前綴 \"雷霆的\"(階層：#)",
+      "雷霆的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Thunderous\" (Tier: #)",
+      "Thunderous Waystone (Tier #)"
+     ]
     },
     {
      "id": "MapMonsterElementalResistances1",
@@ -194,7 +314,15 @@
       "+#% Monster Elemental Resistances"
      ],
      "g": 1,
-     "affixZh": "稜鏡之"
+     "affixZh": "稜鏡之",
+     "hiddenZh": [
+      "後綴 \"稜鏡之\"(階層：#)",
+      "稜鏡之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Prism\" (Tier: #)",
+      "Waystone (Tier #) of the Prism"
+     ]
     },
     {
      "id": "MapSpreadBurningGround1",
@@ -205,7 +333,19 @@
       "Area has patches of Ignited Ground"
      ],
      "g": 1,
-     "affixZh": "烈火之、烈火的"
+     "affixZh": "烈火之、烈火的",
+     "hiddenZh": [
+      "後綴 \"烈火之\"(階層：#)",
+      "烈火之換界石（階級 #）",
+      "後綴 \"烈火的\"(階層：#)",
+      "烈火的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Flames\" (Tier: #)",
+      "Waystone (Tier #) of Flames",
+      "Suffix Modifier \"Flaming\" (Tier: #)",
+      "Waystone (Tier #) Flaming"
+     ]
     },
     {
      "id": "MapSpreadChilledGround1",
@@ -216,7 +356,19 @@
       "Area has patches of Chilled Ground"
      ],
      "g": 1,
-     "affixZh": "雨雪之、雨雪的"
+     "affixZh": "雨雪之、雨雪的",
+     "hiddenZh": [
+      "後綴 \"雨雪之\"(階層：#)",
+      "雨雪之換界石（階級 #）",
+      "後綴 \"雨雪的\"(階層：#)",
+      "雨雪的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Sleet\" (Tier: #)",
+      "Waystone (Tier #) of Sleet",
+      "Suffix Modifier \"Sleet\" (Tier: #)",
+      "Waystone (Tier #) Sleet"
+     ]
     },
     {
      "id": "MapSpreadShockedGround1",
@@ -227,7 +379,19 @@
       "Area has patches of Shocked Ground"
      ],
      "g": 1,
-     "affixZh": "支電震、電震的"
+     "affixZh": "支電震、電震的",
+     "hiddenZh": [
+      "後綴 \"支電震\"(階層：#)",
+      "支電震換界石（階級 #）",
+      "後綴 \"電震的\"(階層：#)",
+      "電震的換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Shocking\" (Tier: #)",
+      "Waystone (Tier #) of Shocking",
+      "Suffix Modifier \"Shocking\" (Tier: #)",
+      "Waystone (Tier #) Shocking"
+     ]
     },
     {
      "id": "MapMonsterStunAilmentThreshold1",
@@ -238,7 +402,15 @@
       "Monsters have #% increased Ailment Threshold"
      ],
      "g": 1,
-     "affixZh": "堅定不移之"
+     "affixZh": "堅定不移之",
+     "hiddenZh": [
+      "後綴 \"堅定不移之\"(階層：#)",
+      "堅定不移之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Unwavering\" (Tier: #)",
+      "Waystone (Tier #) of the Unwavering"
+     ]
     },
     {
      "id": "MapMonsterStunAilmentThreshold1",
@@ -249,7 +421,15 @@
       "Monsters have #% increased Stun Threshold"
      ],
      "g": 1,
-     "affixZh": "堅定不移之"
+     "affixZh": "堅定不移之",
+     "hiddenZh": [
+      "後綴 \"堅定不移之\"(階層：#)",
+      "堅定不移之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Unwavering\" (Tier: #)",
+      "Waystone (Tier #) of the Unwavering"
+     ]
     },
     {
      "id": "MapMonsterElementAilmentChance1",
@@ -260,7 +440,15 @@
       "Monster have #% increased Elemental Ailment Application"
      ],
      "g": 1,
-     "affixZh": "強盛之"
+     "affixZh": "強盛之",
+     "hiddenZh": [
+      "後綴 \"強盛之\"(階層：#)",
+      "強盛之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Overpowering\" (Tier: #)",
+      "Waystone (Tier #) of Overpowering"
+     ]
     },
     {
      "id": "MapMonsterArmoured1",
@@ -271,7 +459,15 @@
       "Monsters are Armoured"
      ],
      "g": 1,
-     "affixZh": "耐久之"
+     "affixZh": "耐久之",
+     "hiddenZh": [
+      "後綴 \"耐久之\"(階層：#)",
+      "耐久之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enduring\" (Tier: #)",
+      "Waystone (Tier #) of Enduring"
+     ]
     },
     {
      "id": "MapMonsterEvasive1",
@@ -282,7 +478,15 @@
       "Monsters are Evasive"
      ],
      "g": 1,
-     "affixZh": "閃避之"
+     "affixZh": "閃避之",
+     "hiddenZh": [
+      "後綴 \"閃避之\"(階層：#)",
+      "閃避之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Evasion\" (Tier: #)",
+      "Waystone (Tier #) of Evasion"
+     ]
     },
     {
      "id": "MapMonsterEnergyShield1",
@@ -293,7 +497,15 @@
       "Monsters gain #% of maximum Life as Extra maximum Energy Shield"
      ],
      "g": 1,
-     "affixZh": "緩衝之"
+     "affixZh": "緩衝之",
+     "hiddenZh": [
+      "後綴 \"緩衝之\"(階層：#)",
+      "緩衝之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Buffering\" (Tier: #)",
+      "Waystone (Tier #) of Buffering"
+     ]
     },
     {
      "id": "MapMonstersCurseEffectOnSelf1",
@@ -304,7 +516,17 @@
       "#% less effect of Curses on Monsters"
      ],
      "g": 1,
-     "affixZh": "魔抗之、禦魔之"
+     "affixZh": "魔抗之、禦魔之",
+     "hiddenZh": [
+      "後綴 \"魔抗之\"(階層：#)",
+      "魔抗之換界石（階級 #）",
+      "後綴 \"禦魔之\"(階層：#)",
+      "禦魔之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Hexwarding\" (Tier: #)",
+      "Waystone (Tier #) of Hexwarding"
+     ]
     },
     {
      "id": "MapMonstersBaseSelfCriticalMultiplier1",
@@ -315,7 +537,15 @@
       "Monsters take #% reduced Extra Damage from Critical Hits"
      ],
      "g": 1,
-     "affixZh": "障礙物之"
+     "affixZh": "障礙物之",
+     "hiddenZh": [
+      "後綴 \"障礙物之\"(階層：#)",
+      "障礙物之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Obstruction\" (Tier: #)",
+      "Waystone (Tier #) of Obstruction"
+     ]
     },
     {
      "id": "MapPlayerFlaskChargeGain1",
@@ -326,7 +556,15 @@
       "Players gain #% reduced Flask Charges"
      ],
      "g": 1,
-     "affixZh": "乾旱之"
+     "affixZh": "乾旱之",
+     "hiddenZh": [
+      "後綴 \"乾旱之\"(階層：#)",
+      "乾旱之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Drought\" (Tier: #)",
+      "Waystone (Tier #) of Drought"
+     ]
     },
     {
      "id": "MapPlayerMaximumResists1",
@@ -337,7 +575,15 @@
       "#% maximum Player Resistances"
      ],
      "g": 1,
-     "affixZh": "曝曬之"
+     "affixZh": "曝曬之",
+     "hiddenZh": [
+      "後綴 \"曝曬之\"(階層：#)",
+      "曝曬之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Exposure\" (Tier: #)",
+      "Waystone (Tier #) of Exposure"
+     ]
     },
     {
      "id": "MapPlayerRecoveryRate1",
@@ -348,7 +594,15 @@
       "Players have #% less Recovery Rate of Life and Energy Shield"
      ],
      "g": 1,
-     "affixZh": "窒息之"
+     "affixZh": "窒息之",
+     "hiddenZh": [
+      "後綴 \"窒息之\"(階層：#)",
+      "窒息之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Smothering\" (Tier: #)",
+      "Waystone (Tier #) of Smothering"
+     ]
     },
     {
      "id": "MapPlayerCooldownRecovery1",
@@ -359,7 +613,15 @@
       "Players have #% less Cooldown Recovery Rate"
      ],
      "g": 1,
-     "affixZh": "疲勞之"
+     "affixZh": "疲勞之",
+     "hiddenZh": [
+      "後綴 \"疲勞之\"(階層：#)",
+      "疲勞之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Fatigue\" (Tier: #)",
+      "Waystone (Tier #) of Fatigue"
+     ]
     },
     {
      "id": "MapPlayerElementalWeakness1",
@@ -370,7 +632,15 @@
       "Players are periodically Cursed with Elemental Weakness"
      ],
      "g": 1,
-     "affixZh": "侵蝕之"
+     "affixZh": "侵蝕之",
+     "hiddenZh": [
+      "後綴 \"侵蝕之\"(階層：#)",
+      "侵蝕之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Erosion\" (Tier: #)",
+      "Waystone (Tier #) of Erosion"
+     ]
     },
     {
      "id": "MapPlayerTemporalChains1",
@@ -381,7 +651,15 @@
       "Players are periodically Cursed with Temporal Chains"
      ],
      "g": 1,
-     "affixZh": "減慢之"
+     "affixZh": "減慢之",
+     "hiddenZh": [
+      "後綴 \"減慢之\"(階層：#)",
+      "減慢之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Slowing\" (Tier: #)",
+      "Waystone (Tier #) of Slowing"
+     ]
     },
     {
      "id": "MapPlayerEnfeeble1",
@@ -392,9 +670,461 @@
       "Players are periodically Cursed with Enfeeble"
      ],
      "g": 1,
-     "affixZh": "衰弱之"
+     "affixZh": "衰弱之",
+     "hiddenZh": [
+      "後綴 \"衰弱之\"(階層：#)",
+      "衰弱之換界石（階級 #）"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Enfeebling\" (Tier: #)",
+      "Waystone (Tier #) of Enfeebling"
+     ]
     }
-   ]
+   ],
+   "ambientZh": [
+    "物品等級 #",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "(階層：#)",
+    "固定詞綴",
+    "傳奇詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "需求",
+    "換界石階級",
+    "物品稀有度",
+    "怪群大小",
+    "怪物稀有度",
+    "換界石掉落機率",
+    "獲得經驗值",
+    "魔法怪物",
+    "稀有怪物",
+    "怪物效能",
+    "可用於地圖裝置以進入地圖。每個換界石只能被使用一次。",
+    "品質",
+    "換界石（階級 #）",
+    "不祥",
+    "燃盡",
+    "鍛鐵",
+    "堅鋼",
+    "苦痛",
+    "幽暗",
+    "殘忍",
+    "死寂",
+    "混沌",
+    "鮮血",
+    "恐懼",
+    "劇痛",
+    "殘暴的",
+    "冷酷",
+    "遺棄",
+    "先祖的",
+    "遠古",
+    "悲痛",
+    "秘術",
+    "旱地",
+    "荒蕪",
+    "烈火",
+    "刺骨",
+    "多產的",
+    "葬禮",
+    "謀害",
+    "詛咒的",
+    "巨岩",
+    "巫咒",
+    "瀆靈",
+    "蒼涼",
+    "命運",
+    "恐慌",
+    "夢境",
+    "惡靈",
+    "腥臭",
+    "禁禮",
+    "忘卻",
+    "遺落",
+    "霉氣",
+    "鬼魂",
+    "神逐",
+    "靈象",
+    "仇恨",
+    "鬧鬼的",
+    "隱藏",
+    "幽懼",
+    "狂語",
+    "迷失",
+    "災病",
+    "神秘的",
+    "夢魘",
+    "褻瀆的",
+    "敗壞",
+    "遙望",
+    "腐朽",
+    "峭寒",
+    "靜嵐",
+    "幽魂",
+    "汙濁",
+    "暴虐",
+    "寧靜",
+    "扭曲的",
+    "邪靈",
+    "漩渦",
+    "曲空",
+    "羈絆",
+    "刀鋒",
+    "壁壘",
+    "望景",
+    "遺地",
+    "孤獨之境",
+    "航向",
+    "路徑",
+    "羅盤",
+    "橫穿",
+    "方向",
+    "導航",
+    "路線",
+    "彈道",
+    "方位",
+    "探險",
+    "意圖",
+    "向量",
+    "控制",
+    "能量球",
+    "進度",
+    "秩序",
+    "選擇",
+    "決心",
+    "堅定",
+    "策略",
+    "石肌",
+    "雕刻的"
+   ],
+   "ambientEn": [
+    "Item Level #",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Unique Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Requirements",
+    "Waystone Tier",
+    "Item Rarity",
+    "Pack Size",
+    "Monster Rarity",
+    "Waystone Drop Chance",
+    "Experience Gained",
+    "Magic Monsters",
+    "Rare Monsters",
+    "Monster Effectiveness",
+    "Can be used in a Map Device, allowing you to enter a Map. Waystones can only be used once.",
+    "Quality",
+    "Waystone (Tier #)",
+    "Dire",
+    "Cinder",
+    "Iron",
+    "Steel",
+    "Agony",
+    "Dark",
+    "Cruel",
+    "Death",
+    "Chaos",
+    "Blood",
+    "Terror",
+    "Pain",
+    "Savage",
+    "Grim",
+    "Abandoned",
+    "Ancestral",
+    "Ancient",
+    "Anguish",
+    "Arcane",
+    "Arid",
+    "Barren",
+    "Blasted",
+    "Bleak",
+    "Breeding",
+    "Buried",
+    "Cabal",
+    "Cursed",
+    "Cyclopean",
+    "Damned",
+    "Desecrated",
+    "Desolate",
+    "Destiny",
+    "Dread",
+    "Dream",
+    "Evil",
+    "Fetid",
+    "Forbidden",
+    "Forgotten",
+    "Forsaken",
+    "Fungus",
+    "Ghastly",
+    "Ghost",
+    "Godless",
+    "Graven",
+    "Hate",
+    "Haunted",
+    "Hidden",
+    "Horror",
+    "Insane",
+    "Lost",
+    "Morbid",
+    "Mystic",
+    "Nightmare",
+    "Profane",
+    "Putrid",
+    "Remote",
+    "Rotting",
+    "Rugged",
+    "Secluded",
+    "Spectre",
+    "Stained",
+    "Torture",
+    "Tranquil",
+    "Twisted",
+    "Unholy",
+    "Vortex",
+    "Warped",
+    "Wraith",
+    "Bind",
+    "Edge",
+    "Frontier",
+    "Panorama",
+    "Remnant",
+    "Solitude",
+    "Course",
+    "Path",
+    "Compass",
+    "Crosscut",
+    "Direction",
+    "Navigation",
+    "Route",
+    "Trajectory",
+    "Bearings",
+    "Expedition",
+    "Intent",
+    "Vector",
+    "Control",
+    "Charge",
+    "Progression",
+    "Order",
+    "Choice",
+    "Resolve",
+    "Determination",
+    "Gambit",
+    "Stone",
+    "Carving"
+   ],
+   "nameWordsZh": {
+    "prefix": [
+     "不祥",
+     "燃盡",
+     "鍛鐵",
+     "堅鋼",
+     "苦痛",
+     "幽暗",
+     "殘忍",
+     "死寂",
+     "混沌",
+     "鮮血",
+     "恐懼",
+     "劇痛",
+     "殘暴的",
+     "冷酷",
+     "遺棄",
+     "先祖的",
+     "遠古",
+     "悲痛",
+     "秘術",
+     "旱地",
+     "荒蕪",
+     "烈火",
+     "刺骨",
+     "多產的",
+     "葬禮",
+     "謀害",
+     "詛咒的",
+     "巨岩",
+     "巫咒",
+     "瀆靈",
+     "蒼涼",
+     "命運",
+     "恐慌",
+     "夢境",
+     "惡靈",
+     "腥臭",
+     "禁禮",
+     "忘卻",
+     "遺落",
+     "霉氣",
+     "幽暗",
+     "鬼魂",
+     "神逐",
+     "靈象",
+     "仇恨",
+     "鬧鬼的",
+     "隱藏",
+     "幽懼",
+     "狂語",
+     "迷失",
+     "災病",
+     "神秘的",
+     "夢魘",
+     "褻瀆的",
+     "敗壞",
+     "遙望",
+     "腐朽",
+     "峭寒",
+     "靜嵐",
+     "幽魂",
+     "汙濁",
+     "暴虐",
+     "寧靜",
+     "扭曲的",
+     "邪靈",
+     "漩渦",
+     "曲空",
+     "惡靈"
+    ],
+    "suffix": [
+     " 羈絆",
+     " 刀鋒",
+     " 壁壘",
+     " 望景",
+     " 遺地",
+     " 孤獨之境",
+     "航向",
+     "路徑",
+     "羅盤",
+     "橫穿",
+     "方向",
+     "導航",
+     "路線",
+     "彈道",
+     "方位",
+     "探險",
+     "意圖",
+     "向量",
+     "控制",
+     "能量球",
+     "進度",
+     "秩序",
+     "選擇",
+     "決心",
+     "堅定",
+     "策略",
+     "石肌",
+     "雕刻的"
+    ]
+   },
+   "nameWordsEn": {
+    "prefix": [
+     "Dire",
+     "Cinder",
+     "Iron",
+     "Steel",
+     "Agony",
+     "Dark",
+     "Cruel",
+     "Death",
+     "Chaos",
+     "Blood",
+     "Terror",
+     "Pain",
+     "Savage",
+     "Grim",
+     "Abandoned",
+     "Ancestral",
+     "Ancient",
+     "Anguish",
+     "Arcane",
+     "Arid",
+     "Barren",
+     "Blasted",
+     "Bleak",
+     "Breeding",
+     "Buried",
+     "Cabal",
+     "Cursed",
+     "Cyclopean",
+     "Damned",
+     "Desecrated",
+     "Desolate",
+     "Destiny",
+     "Dread",
+     "Dream",
+     "Evil",
+     "Fetid",
+     "Forbidden",
+     "Forgotten",
+     "Forsaken",
+     "Fungus",
+     "Ghastly",
+     "Ghost",
+     "Godless",
+     "Graven",
+     "Hate",
+     "Haunted",
+     "Hidden",
+     "Horror",
+     "Insane",
+     "Lost",
+     "Morbid",
+     "Mystic",
+     "Nightmare",
+     "Profane",
+     "Putrid",
+     "Remote",
+     "Rotting",
+     "Rugged",
+     "Secluded",
+     "Spectre",
+     "Stained",
+     "Torture",
+     "Tranquil",
+     "Twisted",
+     "Unholy",
+     "Vortex",
+     "Warped",
+     "Wraith"
+    ],
+    "suffix": [
+     " Bind",
+     " Edge",
+     " Frontier",
+     " Panorama",
+     " Remnant",
+     " Solitude",
+     " Course",
+     " Path",
+     " Compass",
+     " Crosscut",
+     " Direction",
+     " Navigation",
+     " Route",
+     " Trajectory",
+     " Bearings",
+     " Expedition",
+     " Intent",
+     " Vector",
+     " Control",
+     " Charge",
+     " Progression",
+     " Order",
+     " Choice",
+     " Resolve",
+     " Determination",
+     " Gambit",
+     " Stone",
+     " Carving"
+    ]
+   }
   },
   {
    "id": "tablet_mods",
@@ -432,7 +1162,29 @@
       "Unique Monsters have # additional Rare Modifier"
      ],
      "g": 0,
-     "affixZh": "挑戰之"
+     "affixZh": "挑戰之",
+     "hiddenZh": [
+      "後綴 \"挑戰之\"(階層：#)",
+      "挑戰之探險碑牌",
+      "挑戰之深淵碑牌",
+      "挑戰之神廟碑牌",
+      "挑戰之祭祀碑牌",
+      "挑戰之總督碑牌",
+      "挑戰之裂痕碑牌",
+      "挑戰之譫妄碑牌",
+      "挑戰之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Contest\" (Tier: #)",
+      "Expedition Tablet of Contest",
+      "Abyss Tablet of Contest",
+      "Temple Tablet of Contest",
+      "Ritual Tablet of Contest",
+      "Overseer Tablet of Contest",
+      "Breach Tablet of Contest",
+      "Delirium Tablet of Contest",
+      "Irradiated Tablet of Contest"
+     ]
     },
     {
      "id": "TowerAdditionalAzmeriWisp1",
@@ -443,7 +1195,29 @@
       "Map contains # additional Azmeri Spirit"
      ],
      "g": 0,
-     "affixZh": "阿茲莫里的"
+     "affixZh": "阿茲莫里的",
+     "hiddenZh": [
+      "前綴 \"阿茲莫里的\"(階層：#)",
+      "阿茲莫里的探險碑牌",
+      "阿茲莫里的深淵碑牌",
+      "阿茲莫里的神廟碑牌",
+      "阿茲莫里的祭祀碑牌",
+      "阿茲莫里的總督碑牌",
+      "阿茲莫里的裂痕碑牌",
+      "阿茲莫里的譫妄碑牌",
+      "阿茲莫里的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Azmeri's\" (Tier: #)",
+      "Azmeri's Expedition Tablet",
+      "Azmeri's Abyss Tablet",
+      "Azmeri's Temple Tablet",
+      "Azmeri's Ritual Tablet",
+      "Azmeri's Overseer Tablet",
+      "Azmeri's Breach Tablet",
+      "Azmeri's Delirium Tablet",
+      "Azmeri's Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerAdditionalExile1",
@@ -454,7 +1228,29 @@
       "Map is inhabited by # additional Rogue Exile"
      ],
      "g": 0,
-     "affixZh": "流亡的"
+     "affixZh": "流亡的",
+     "hiddenZh": [
+      "前綴 \"流亡的\"(階層：#)",
+      "流亡的探險碑牌",
+      "流亡的深淵碑牌",
+      "流亡的神廟碑牌",
+      "流亡的祭祀碑牌",
+      "流亡的總督碑牌",
+      "流亡的裂痕碑牌",
+      "流亡的譫妄碑牌",
+      "流亡的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Exiled\" (Tier: #)",
+      "Exiled Expedition Tablet",
+      "Exiled Abyss Tablet",
+      "Exiled Temple Tablet",
+      "Exiled Ritual Tablet",
+      "Exiled Overseer Tablet",
+      "Exiled Breach Tablet",
+      "Exiled Delirium Tablet",
+      "Exiled Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerRareChestCount1",
@@ -465,7 +1261,29 @@
       "Map contains # additional Rare Chests"
      ],
      "g": 0,
-     "affixZh": "司庫的"
+     "affixZh": "司庫的",
+     "hiddenZh": [
+      "前綴 \"司庫的\"(階層：#)",
+      "司庫的探險碑牌",
+      "司庫的深淵碑牌",
+      "司庫的神廟碑牌",
+      "司庫的祭祀碑牌",
+      "司庫的總督碑牌",
+      "司庫的裂痕碑牌",
+      "司庫的譫妄碑牌",
+      "司庫的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Treasurer's\" (Tier: #)",
+      "Treasurer's Expedition Tablet",
+      "Treasurer's Abyss Tablet",
+      "Treasurer's Temple Tablet",
+      "Treasurer's Ritual Tablet",
+      "Treasurer's Overseer Tablet",
+      "Treasurer's Breach Tablet",
+      "Treasurer's Delirium Tablet",
+      "Treasurer's Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerAdditionalStoneCircle",
@@ -476,7 +1294,29 @@
       "Map contains an additional Summoning Circle"
      ],
      "g": 0,
-     "affixZh": "召喚師的"
+     "affixZh": "召喚師的",
+     "hiddenZh": [
+      "前綴 \"召喚師的\"(階層：#)",
+      "召喚師的探險碑牌",
+      "召喚師的深淵碑牌",
+      "召喚師的神廟碑牌",
+      "召喚師的祭祀碑牌",
+      "召喚師的總督碑牌",
+      "召喚師的裂痕碑牌",
+      "召喚師的譫妄碑牌",
+      "召喚師的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Summoner's\" (Tier: #)",
+      "Summoner's Expedition Tablet",
+      "Summoner's Abyss Tablet",
+      "Summoner's Temple Tablet",
+      "Summoner's Ritual Tablet",
+      "Summoner's Overseer Tablet",
+      "Summoner's Breach Tablet",
+      "Summoner's Delirium Tablet",
+      "Summoner's Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerMonsterRarityIncrease1",
@@ -487,7 +1327,29 @@
       "Map has #% increased Monster Rarity"
      ],
      "g": 0,
-     "affixZh": "充盈的"
+     "affixZh": "充盈的",
+     "hiddenZh": [
+      "前綴 \"充盈的\"(階層：#)",
+      "充盈的探險碑牌",
+      "充盈的深淵碑牌",
+      "充盈的神廟碑牌",
+      "充盈的祭祀碑牌",
+      "充盈的總督碑牌",
+      "充盈的裂痕碑牌",
+      "充盈的譫妄碑牌",
+      "充盈的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Abounding\" (Tier: #)",
+      "Abounding Expedition Tablet",
+      "Abounding Abyss Tablet",
+      "Abounding Temple Tablet",
+      "Abounding Ritual Tablet",
+      "Abounding Overseer Tablet",
+      "Abounding Breach Tablet",
+      "Abounding Delirium Tablet",
+      "Abounding Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerMapAdditionalModifier",
@@ -498,7 +1360,29 @@
       "Map has # additional random Modifier"
      ],
      "g": 0,
-     "affixZh": "承諾之"
+     "affixZh": "承諾之",
+     "hiddenZh": [
+      "後綴 \"承諾之\"(階層：#)",
+      "承諾之探險碑牌",
+      "承諾之深淵碑牌",
+      "承諾之神廟碑牌",
+      "承諾之祭祀碑牌",
+      "承諾之總督碑牌",
+      "承諾之裂痕碑牌",
+      "承諾之譫妄碑牌",
+      "承諾之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Undertaking\" (Tier: #)",
+      "Expedition Tablet of Undertaking",
+      "Abyss Tablet of Undertaking",
+      "Temple Tablet of Undertaking",
+      "Ritual Tablet of Undertaking",
+      "Overseer Tablet of Undertaking",
+      "Breach Tablet of Undertaking",
+      "Delirium Tablet of Undertaking",
+      "Irradiated Tablet of Undertaking"
+     ]
     },
     {
      "id": "TowerAdditionalExileChance",
@@ -509,7 +1393,29 @@
       "Map has #% increased chance to contain Rogue Exiles"
      ],
      "g": 0,
-     "affixZh": "流亡者之"
+     "affixZh": "流亡者之",
+     "hiddenZh": [
+      "後綴 \"流亡者之\"(階層：#)",
+      "流亡者之探險碑牌",
+      "流亡者之深淵碑牌",
+      "流亡者之神廟碑牌",
+      "流亡者之祭祀碑牌",
+      "流亡者之總督碑牌",
+      "流亡者之裂痕碑牌",
+      "流亡者之譫妄碑牌",
+      "流亡者之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Exile\" (Tier: #)",
+      "Expedition Tablet of the Exile",
+      "Abyss Tablet of the Exile",
+      "Temple Tablet of the Exile",
+      "Ritual Tablet of the Exile",
+      "Overseer Tablet of the Exile",
+      "Breach Tablet of the Exile",
+      "Delirium Tablet of the Exile",
+      "Irradiated Tablet of the Exile"
+     ]
     },
     {
      "id": "TowerAdditionalShrineChance",
@@ -520,7 +1426,29 @@
       "Map has #% increased chance to contain Shrines"
      ],
      "g": 0,
-     "affixZh": "神殿之"
+     "affixZh": "神殿之",
+     "hiddenZh": [
+      "後綴 \"神殿之\"(階層：#)",
+      "神殿之探險碑牌",
+      "神殿之深淵碑牌",
+      "神殿之神廟碑牌",
+      "神殿之祭祀碑牌",
+      "神殿之總督碑牌",
+      "神殿之裂痕碑牌",
+      "神殿之譫妄碑牌",
+      "神殿之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Shrines\" (Tier: #)",
+      "Expedition Tablet of Shrines",
+      "Abyss Tablet of Shrines",
+      "Temple Tablet of Shrines",
+      "Ritual Tablet of Shrines",
+      "Overseer Tablet of Shrines",
+      "Breach Tablet of Shrines",
+      "Delirium Tablet of Shrines",
+      "Irradiated Tablet of Shrines"
+     ]
     },
     {
      "id": "TowerAdditionalEssenceChance",
@@ -531,7 +1459,29 @@
       "Map has #% increased chance to contain Essences"
      ],
      "g": 0,
-     "affixZh": "精髓之"
+     "affixZh": "精髓之",
+     "hiddenZh": [
+      "後綴 \"精髓之\"(階層：#)",
+      "精髓之探險碑牌",
+      "精髓之深淵碑牌",
+      "精髓之神廟碑牌",
+      "精髓之祭祀碑牌",
+      "精髓之總督碑牌",
+      "精髓之裂痕碑牌",
+      "精髓之譫妄碑牌",
+      "精髓之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Essence\" (Tier: #)",
+      "Expedition Tablet of the Essence",
+      "Abyss Tablet of the Essence",
+      "Temple Tablet of the Essence",
+      "Ritual Tablet of the Essence",
+      "Overseer Tablet of the Essence",
+      "Breach Tablet of the Essence",
+      "Delirium Tablet of the Essence",
+      "Irradiated Tablet of the Essence"
+     ]
     },
     {
      "id": "TowerExperienceGainIncrease1",
@@ -542,7 +1492,29 @@
       "#% increased Experience gain in Map"
      ],
      "g": 0,
-     "affixZh": "昇華的"
+     "affixZh": "昇華的",
+     "hiddenZh": [
+      "前綴 \"昇華的\"(階層：#)",
+      "昇華的探險碑牌",
+      "昇華的深淵碑牌",
+      "昇華的神廟碑牌",
+      "昇華的祭祀碑牌",
+      "昇華的總督碑牌",
+      "昇華的裂痕碑牌",
+      "昇華的譫妄碑牌",
+      "昇華的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Elevated\" (Tier: #)",
+      "Elevated Expedition Tablet",
+      "Elevated Abyss Tablet",
+      "Elevated Temple Tablet",
+      "Elevated Ritual Tablet",
+      "Elevated Overseer Tablet",
+      "Elevated Breach Tablet",
+      "Elevated Delirium Tablet",
+      "Elevated Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerDroppedGoldIncrease1",
@@ -553,7 +1525,29 @@
       "#% increased Gold found in Map"
      ],
      "g": 0,
-     "affixZh": "慷慨的"
+     "affixZh": "慷慨的",
+     "hiddenZh": [
+      "前綴 \"慷慨的\"(階層：#)",
+      "慷慨的探險碑牌",
+      "慷慨的深淵碑牌",
+      "慷慨的神廟碑牌",
+      "慷慨的祭祀碑牌",
+      "慷慨的總督碑牌",
+      "慷慨的裂痕碑牌",
+      "慷慨的譫妄碑牌",
+      "慷慨的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Bountiful\" (Tier: #)",
+      "Bountiful Expedition Tablet",
+      "Bountiful Abyss Tablet",
+      "Bountiful Temple Tablet",
+      "Bountiful Ritual Tablet",
+      "Bountiful Overseer Tablet",
+      "Bountiful Breach Tablet",
+      "Bountiful Delirium Tablet",
+      "Bountiful Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerMapDroppedMapsIncrease",
@@ -564,7 +1558,29 @@
       "#% increased Quantity of Waystones found in Map"
      ],
      "g": 0,
-     "affixZh": "製圖師之"
+     "affixZh": "製圖師之",
+     "hiddenZh": [
+      "後綴 \"製圖師之\"(階層：#)",
+      "製圖師之探險碑牌",
+      "製圖師之深淵碑牌",
+      "製圖師之神廟碑牌",
+      "製圖師之祭祀碑牌",
+      "製圖師之總督碑牌",
+      "製圖師之裂痕碑牌",
+      "製圖師之譫妄碑牌",
+      "製圖師之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Cartographer\" (Tier: #)",
+      "Expedition Tablet of the Cartographer",
+      "Abyss Tablet of the Cartographer",
+      "Temple Tablet of the Cartographer",
+      "Ritual Tablet of the Cartographer",
+      "Overseer Tablet of the Cartographer",
+      "Breach Tablet of the Cartographer",
+      "Delirium Tablet of the Cartographer",
+      "Irradiated Tablet of the Cartographer"
+     ]
     },
     {
      "id": "TowerDroppedItemRarityIncrease1",
@@ -575,7 +1591,29 @@
       "#% increased Rarity of Items found in Map"
      ],
      "g": 0,
-     "affixZh": "蒐集者的"
+     "affixZh": "蒐集者的",
+     "hiddenZh": [
+      "前綴 \"蒐集者的\"(階層：#)",
+      "蒐集者的探險碑牌",
+      "蒐集者的深淵碑牌",
+      "蒐集者的神廟碑牌",
+      "蒐集者的祭祀碑牌",
+      "蒐集者的總督碑牌",
+      "蒐集者的裂痕碑牌",
+      "蒐集者的譫妄碑牌",
+      "蒐集者的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Collector's\" (Tier: #)",
+      "Collector's Expedition Tablet",
+      "Collector's Abyss Tablet",
+      "Collector's Temple Tablet",
+      "Collector's Ritual Tablet",
+      "Collector's Overseer Tablet",
+      "Collector's Breach Tablet",
+      "Collector's Delirium Tablet",
+      "Collector's Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerAdditionalStrongboxChance",
@@ -586,7 +1624,29 @@
       "Map has #% increased chance to contain Strongboxes"
      ],
      "g": 0,
-     "affixZh": "保險箱之"
+     "affixZh": "保險箱之",
+     "hiddenZh": [
+      "後綴 \"保險箱之\"(階層：#)",
+      "保險箱之探險碑牌",
+      "保險箱之深淵碑牌",
+      "保險箱之神廟碑牌",
+      "保險箱之祭祀碑牌",
+      "保險箱之總督碑牌",
+      "保險箱之裂痕碑牌",
+      "保險箱之譫妄碑牌",
+      "保險箱之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Strongboxes\" (Tier: #)",
+      "Expedition Tablet of Strongboxes",
+      "Abyss Tablet of Strongboxes",
+      "Temple Tablet of Strongboxes",
+      "Ritual Tablet of Strongboxes",
+      "Overseer Tablet of Strongboxes",
+      "Breach Tablet of Strongboxes",
+      "Delirium Tablet of Strongboxes",
+      "Irradiated Tablet of Strongboxes"
+     ]
     },
     {
      "id": "TowerStoneCircleChance",
@@ -597,7 +1657,29 @@
       "Map has #% increased chance to contain a Summoning Circle"
      ],
      "g": 0,
-     "affixZh": "召喚之"
+     "affixZh": "召喚之",
+     "hiddenZh": [
+      "後綴 \"召喚之\"(階層：#)",
+      "召喚之探險碑牌",
+      "召喚之深淵碑牌",
+      "召喚之神廟碑牌",
+      "召喚之祭祀碑牌",
+      "召喚之總督碑牌",
+      "召喚之裂痕碑牌",
+      "召喚之譫妄碑牌",
+      "召喚之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Summoning\" (Tier: #)",
+      "Expedition Tablet of the Summoning",
+      "Abyss Tablet of the Summoning",
+      "Temple Tablet of the Summoning",
+      "Ritual Tablet of the Summoning",
+      "Overseer Tablet of the Summoning",
+      "Breach Tablet of the Summoning",
+      "Delirium Tablet of the Summoning",
+      "Irradiated Tablet of the Summoning"
+     ]
     },
     {
      "id": "TowerAdditionalSpiritChance",
@@ -608,7 +1690,29 @@
       "Map has #% increased chance to contain Azmeri Spirits"
      ],
      "g": 0,
-     "affixZh": "魂靈之"
+     "affixZh": "魂靈之",
+     "hiddenZh": [
+      "後綴 \"魂靈之\"(階層：#)",
+      "魂靈之探險碑牌",
+      "魂靈之深淵碑牌",
+      "魂靈之神廟碑牌",
+      "魂靈之祭祀碑牌",
+      "魂靈之總督碑牌",
+      "魂靈之裂痕碑牌",
+      "魂靈之譫妄碑牌",
+      "魂靈之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Spirits\" (Tier: #)",
+      "Expedition Tablet of Spirits",
+      "Abyss Tablet of Spirits",
+      "Temple Tablet of Spirits",
+      "Ritual Tablet of Spirits",
+      "Overseer Tablet of Spirits",
+      "Breach Tablet of Spirits",
+      "Delirium Tablet of Spirits",
+      "Irradiated Tablet of Spirits"
+     ]
     },
     {
      "id": "TowerPackSizeIncrease1",
@@ -619,7 +1723,29 @@
       "#% increased Pack Size in Map"
      ],
      "g": 0,
-     "affixZh": "多產的"
+     "affixZh": "多產的",
+     "hiddenZh": [
+      "前綴 \"多產的\"(階層：#)",
+      "多產的探險碑牌",
+      "多產的深淵碑牌",
+      "多產的神廟碑牌",
+      "多產的祭祀碑牌",
+      "多產的總督碑牌",
+      "多產的裂痕碑牌",
+      "多產的譫妄碑牌",
+      "多產的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Breeding\" (Tier: #)",
+      "Breeding Expedition Tablet",
+      "Breeding Abyss Tablet",
+      "Breeding Temple Tablet",
+      "Breeding Ritual Tablet",
+      "Breeding Overseer Tablet",
+      "Breeding Breach Tablet",
+      "Breeding Delirium Tablet",
+      "Breeding Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerRarePackIncrease1",
@@ -630,7 +1756,29 @@
       "Map has #% increased number of Rare Monsters"
      ],
      "g": 0,
-     "affixZh": "充滿的"
+     "affixZh": "充滿的",
+     "hiddenZh": [
+      "前綴 \"充滿的\"(階層：#)",
+      "充滿的探險碑牌",
+      "充滿的深淵碑牌",
+      "充滿的神廟碑牌",
+      "充滿的祭祀碑牌",
+      "充滿的總督碑牌",
+      "充滿的裂痕碑牌",
+      "充滿的譫妄碑牌",
+      "充滿的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Brimming\" (Tier: #)",
+      "Brimming Expedition Tablet",
+      "Brimming Abyss Tablet",
+      "Brimming Temple Tablet",
+      "Brimming Ritual Tablet",
+      "Brimming Overseer Tablet",
+      "Brimming Breach Tablet",
+      "Brimming Delirium Tablet",
+      "Brimming Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerMagicPackIncrease1",
@@ -641,7 +1789,29 @@
       "Map has #% increased Magic Monsters"
      ],
      "g": 0,
-     "affixZh": "擁擠的"
+     "affixZh": "擁擠的",
+     "hiddenZh": [
+      "前綴 \"擁擠的\"(階層：#)",
+      "擁擠的探險碑牌",
+      "擁擠的深淵碑牌",
+      "擁擠的神廟碑牌",
+      "擁擠的祭祀碑牌",
+      "擁擠的總督碑牌",
+      "擁擠的裂痕碑牌",
+      "擁擠的譫妄碑牌",
+      "擁擠的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Teeming\" (Tier: #)",
+      "Teeming Expedition Tablet",
+      "Teeming Abyss Tablet",
+      "Teeming Temple Tablet",
+      "Teeming Ritual Tablet",
+      "Teeming Overseer Tablet",
+      "Teeming Breach Tablet",
+      "Teeming Delirium Tablet",
+      "Teeming Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerMonsterEffectiveness1",
@@ -652,7 +1822,29 @@
       "Monsters have #% increased Effectiveness"
      ],
      "g": 0,
-     "affixZh": "挑戰者的"
+     "affixZh": "挑戰者的",
+     "hiddenZh": [
+      "前綴 \"挑戰者的\"(階層：#)",
+      "挑戰者的探險碑牌",
+      "挑戰者的深淵碑牌",
+      "挑戰者的神廟碑牌",
+      "挑戰者的祭祀碑牌",
+      "挑戰者的總督碑牌",
+      "挑戰者的裂痕碑牌",
+      "挑戰者的譫妄碑牌",
+      "挑戰者的輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Challenger's\" (Tier: #)",
+      "Challenger's Expedition Tablet",
+      "Challenger's Abyss Tablet",
+      "Challenger's Temple Tablet",
+      "Challenger's Ritual Tablet",
+      "Challenger's Overseer Tablet",
+      "Challenger's Breach Tablet",
+      "Challenger's Delirium Tablet",
+      "Challenger's Irradiated Tablet"
+     ]
     },
     {
      "id": "TowerBreachWombgiftLevelChance",
@@ -663,7 +1855,29 @@
       "Wombgifts have #% chance to drop one Level higher in Map"
      ],
      "g": 1,
-     "affixZh": "血肉之"
+     "affixZh": "血肉之",
+     "hiddenZh": [
+      "後綴 \"血肉之\"(階層：#)",
+      "血肉之探險碑牌",
+      "血肉之深淵碑牌",
+      "血肉之神廟碑牌",
+      "血肉之祭祀碑牌",
+      "血肉之總督碑牌",
+      "血肉之裂痕碑牌",
+      "血肉之譫妄碑牌",
+      "血肉之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Flesh\" (Tier: #)",
+      "Expedition Tablet of the Flesh",
+      "Abyss Tablet of the Flesh",
+      "Temple Tablet of the Flesh",
+      "Ritual Tablet of the Flesh",
+      "Overseer Tablet of the Flesh",
+      "Breach Tablet of the Flesh",
+      "Delirium Tablet of the Flesh",
+      "Irradiated Tablet of the Flesh"
+     ]
     },
     {
      "id": "TowerBreachAdditionalRares",
@@ -674,7 +1888,29 @@
       "Unstable Breaches in Map spawn an additional Rare Monster when Stabilised"
      ],
      "g": 1,
-     "affixZh": "入侵之"
+     "affixZh": "入侵之",
+     "hiddenZh": [
+      "後綴 \"入侵之\"(階層：#)",
+      "入侵之探險碑牌",
+      "入侵之深淵碑牌",
+      "入侵之神廟碑牌",
+      "入侵之祭祀碑牌",
+      "入侵之總督碑牌",
+      "入侵之裂痕碑牌",
+      "入侵之譫妄碑牌",
+      "入侵之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Invasion\" (Tier: #)",
+      "Expedition Tablet of the Invasion",
+      "Abyss Tablet of the Invasion",
+      "Temple Tablet of the Invasion",
+      "Ritual Tablet of the Invasion",
+      "Overseer Tablet of the Invasion",
+      "Breach Tablet of the Invasion",
+      "Delirium Tablet of the Invasion",
+      "Irradiated Tablet of the Invasion"
+     ]
     },
     {
      "id": "TowerBreachHivebloodQuantity",
@@ -685,7 +1921,29 @@
       "#% increased Quantity of Hiveblood found in Map"
      ],
      "g": 1,
-     "affixZh": "流動之"
+     "affixZh": "流動之",
+     "hiddenZh": [
+      "後綴 \"流動之\"(階層：#)",
+      "流動之探險碑牌",
+      "流動之深淵碑牌",
+      "流動之神廟碑牌",
+      "流動之祭祀碑牌",
+      "流動之總督碑牌",
+      "流動之裂痕碑牌",
+      "流動之譫妄碑牌",
+      "流動之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Flow\" (Tier: #)",
+      "Expedition Tablet of the Flow",
+      "Abyss Tablet of the Flow",
+      "Temple Tablet of the Flow",
+      "Ritual Tablet of the Flow",
+      "Overseer Tablet of the Flow",
+      "Breach Tablet of the Flow",
+      "Delirium Tablet of the Flow",
+      "Irradiated Tablet of the Flow"
+     ]
     },
     {
      "id": "TowerBreachWombgiftQuantity",
@@ -696,7 +1954,29 @@
       "#% increased Quantity of Wombgifts found in Map"
      ],
      "g": 1,
-     "affixZh": "形體之"
+     "affixZh": "形體之",
+     "hiddenZh": [
+      "後綴 \"形體之\"(階層：#)",
+      "形體之探險碑牌",
+      "形體之深淵碑牌",
+      "形體之神廟碑牌",
+      "形體之祭祀碑牌",
+      "形體之總督碑牌",
+      "形體之裂痕碑牌",
+      "形體之譫妄碑牌",
+      "形體之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Form\" (Tier: #)",
+      "Expedition Tablet of the Form",
+      "Abyss Tablet of the Form",
+      "Temple Tablet of the Form",
+      "Ritual Tablet of the Form",
+      "Overseer Tablet of the Form",
+      "Breach Tablet of the Form",
+      "Delirium Tablet of the Form",
+      "Irradiated Tablet of the Form"
+     ]
     },
     {
      "id": "TowerBreachBossChance",
@@ -707,7 +1987,29 @@
       "Unstable Breaches in Map have #% increased chance to contain Vruun, Marshal of Xesht"
      ],
      "g": 1,
-     "affixZh": "指揮官之"
+     "affixZh": "指揮官之",
+     "hiddenZh": [
+      "後綴 \"指揮官之\"(階層：#)",
+      "指揮官之探險碑牌",
+      "指揮官之深淵碑牌",
+      "指揮官之神廟碑牌",
+      "指揮官之祭祀碑牌",
+      "指揮官之總督碑牌",
+      "指揮官之裂痕碑牌",
+      "指揮官之譫妄碑牌",
+      "指揮官之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Commander\" (Tier: #)",
+      "Expedition Tablet of the Commander",
+      "Abyss Tablet of the Commander",
+      "Temple Tablet of the Commander",
+      "Ritual Tablet of the Commander",
+      "Overseer Tablet of the Commander",
+      "Breach Tablet of the Commander",
+      "Delirium Tablet of the Commander",
+      "Irradiated Tablet of the Commander"
+     ]
     },
     {
      "id": "TowerBreachRareMonsterPotency",
@@ -718,7 +2020,29 @@
       "#% increased Effectiveness of Rare Breach Monsters in Map"
      ],
      "g": 1,
-     "affixZh": "手之"
+     "affixZh": "手之",
+     "hiddenZh": [
+      "後綴 \"手之\"(階層：#)",
+      "手之探險碑牌",
+      "手之深淵碑牌",
+      "手之神廟碑牌",
+      "手之祭祀碑牌",
+      "手之總督碑牌",
+      "手之裂痕碑牌",
+      "手之譫妄碑牌",
+      "手之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Hand\" (Tier: #)",
+      "Expedition Tablet of the Hand",
+      "Abyss Tablet of the Hand",
+      "Temple Tablet of the Hand",
+      "Ritual Tablet of the Hand",
+      "Overseer Tablet of the Hand",
+      "Breach Tablet of the Hand",
+      "Delirium Tablet of the Hand",
+      "Irradiated Tablet of the Hand"
+     ]
     },
     {
      "id": "TowerBreachMonsterQuantity",
@@ -729,7 +2053,29 @@
       "Breaches in Map have #% increased Pack Size"
      ],
      "g": 1,
-     "affixZh": "部落之"
+     "affixZh": "部落之",
+     "hiddenZh": [
+      "後綴 \"部落之\"(階層：#)",
+      "部落之探險碑牌",
+      "部落之深淵碑牌",
+      "部落之神廟碑牌",
+      "部落之祭祀碑牌",
+      "部落之總督碑牌",
+      "部落之裂痕碑牌",
+      "部落之譫妄碑牌",
+      "部落之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Horde\" (Tier: #)",
+      "Expedition Tablet of the Horde",
+      "Abyss Tablet of the Horde",
+      "Temple Tablet of the Horde",
+      "Ritual Tablet of the Horde",
+      "Overseer Tablet of the Horde",
+      "Breach Tablet of the Horde",
+      "Delirium Tablet of the Horde",
+      "Irradiated Tablet of the Horde"
+     ]
     },
     {
      "id": "TowerExpeditionRelicIncrease",
@@ -740,7 +2086,29 @@
       "Expeditions in Map have # Remnant"
      ],
      "g": 2,
-     "affixZh": "創作之"
+     "affixZh": "創作之",
+     "hiddenZh": [
+      "後綴 \"創作之\"(階層：#)",
+      "創作之探險碑牌",
+      "創作之深淵碑牌",
+      "創作之神廟碑牌",
+      "創作之祭祀碑牌",
+      "創作之總督碑牌",
+      "創作之裂痕碑牌",
+      "創作之譫妄碑牌",
+      "創作之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Writings\" (Tier: #)",
+      "Expedition Tablet of the Writings",
+      "Abyss Tablet of the Writings",
+      "Temple Tablet of the Writings",
+      "Ritual Tablet of the Writings",
+      "Overseer Tablet of the Writings",
+      "Breach Tablet of the Writings",
+      "Delirium Tablet of the Writings",
+      "Irradiated Tablet of the Writings"
+     ]
     },
     {
      "id": "TowerExpeditionRunicMonsters",
@@ -751,7 +2119,29 @@
       "Map contains #% increased number of Runic Monster Markers"
      ],
      "g": 2,
-     "affixZh": "符文之"
+     "affixZh": "符文之",
+     "hiddenZh": [
+      "後綴 \"符文之\"(階層：#)",
+      "符文之探險碑牌",
+      "符文之深淵碑牌",
+      "符文之神廟碑牌",
+      "符文之祭祀碑牌",
+      "符文之總督碑牌",
+      "符文之裂痕碑牌",
+      "符文之譫妄碑牌",
+      "符文之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Runes\" (Tier: #)",
+      "Expedition Tablet of Runes",
+      "Abyss Tablet of Runes",
+      "Temple Tablet of Runes",
+      "Ritual Tablet of Runes",
+      "Overseer Tablet of Runes",
+      "Breach Tablet of Runes",
+      "Delirium Tablet of Runes",
+      "Irradiated Tablet of Runes"
+     ]
     },
     {
      "id": "TowerExpeditionRareMonsters",
@@ -762,7 +2152,29 @@
       "#% increased number of Rare Expedition Monsters in Map"
      ],
      "g": 2,
-     "affixZh": "遠古惡魔之"
+     "affixZh": "遠古惡魔之",
+     "hiddenZh": [
+      "後綴 \"遠古惡魔之\"(階層：#)",
+      "遠古惡魔之探險碑牌",
+      "遠古惡魔之深淵碑牌",
+      "遠古惡魔之神廟碑牌",
+      "遠古惡魔之祭祀碑牌",
+      "遠古惡魔之總督碑牌",
+      "遠古惡魔之裂痕碑牌",
+      "遠古惡魔之譫妄碑牌",
+      "遠古惡魔之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Ancient Fiends\" (Tier: #)",
+      "Expedition Tablet of Ancient Fiends",
+      "Abyss Tablet of Ancient Fiends",
+      "Temple Tablet of Ancient Fiends",
+      "Ritual Tablet of Ancient Fiends",
+      "Overseer Tablet of Ancient Fiends",
+      "Breach Tablet of Ancient Fiends",
+      "Delirium Tablet of Ancient Fiends",
+      "Irradiated Tablet of Ancient Fiends"
+     ]
     },
     {
      "id": "TowerExpeditionArtifactIncrease",
@@ -773,7 +2185,29 @@
       "#% increased quantity of Expedition Artifacts dropped by Monsters in Map"
      ],
      "g": 2,
-     "affixZh": "維里西姆之"
+     "affixZh": "維里西姆之",
+     "hiddenZh": [
+      "後綴 \"維里西姆之\"(階層：#)",
+      "維里西姆之探險碑牌",
+      "維里西姆之深淵碑牌",
+      "維里西姆之神廟碑牌",
+      "維里西姆之祭祀碑牌",
+      "維里西姆之總督碑牌",
+      "維里西姆之裂痕碑牌",
+      "維里西姆之譫妄碑牌",
+      "維里西姆之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Verisium\" (Tier: #)",
+      "Expedition Tablet of Verisium",
+      "Abyss Tablet of Verisium",
+      "Temple Tablet of Verisium",
+      "Ritual Tablet of Verisium",
+      "Overseer Tablet of Verisium",
+      "Breach Tablet of Verisium",
+      "Delirium Tablet of Verisium",
+      "Irradiated Tablet of Verisium"
+     ]
     },
     {
      "id": "TowerExpeditionLogbookIncrease",
@@ -784,7 +2218,29 @@
       "#% increased Quantity of Expedition Logbooks dropped by Runic Monsters in Map"
      ],
      "g": 2,
-     "affixZh": "知識之"
+     "affixZh": "知識之",
+     "hiddenZh": [
+      "後綴 \"知識之\"(階層：#)",
+      "知識之探險碑牌",
+      "知識之深淵碑牌",
+      "知識之神廟碑牌",
+      "知識之祭祀碑牌",
+      "知識之總督碑牌",
+      "知識之裂痕碑牌",
+      "知識之譫妄碑牌",
+      "知識之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Knowledge\" (Tier: #)",
+      "Expedition Tablet of Knowledge",
+      "Abyss Tablet of Knowledge",
+      "Temple Tablet of Knowledge",
+      "Ritual Tablet of Knowledge",
+      "Overseer Tablet of Knowledge",
+      "Breach Tablet of Knowledge",
+      "Delirium Tablet of Knowledge",
+      "Irradiated Tablet of Knowledge"
+     ]
     },
     {
      "id": "TowerExpeditionExplosionPlacement",
@@ -795,7 +2251,29 @@
       "#% increased Expedition Explosive Placement Range in Map"
      ],
      "g": 2,
-     "affixZh": "爆破之"
+     "affixZh": "爆破之",
+     "hiddenZh": [
+      "後綴 \"爆破之\"(階層：#)",
+      "爆破之探險碑牌",
+      "爆破之深淵碑牌",
+      "爆破之神廟碑牌",
+      "爆破之祭祀碑牌",
+      "爆破之總督碑牌",
+      "爆破之裂痕碑牌",
+      "爆破之譫妄碑牌",
+      "爆破之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Detonator\" (Tier: #)",
+      "Expedition Tablet of the Detonator",
+      "Abyss Tablet of the Detonator",
+      "Temple Tablet of the Detonator",
+      "Ritual Tablet of the Detonator",
+      "Overseer Tablet of the Detonator",
+      "Breach Tablet of the Detonator",
+      "Delirium Tablet of the Detonator",
+      "Irradiated Tablet of the Detonator"
+     ]
     },
     {
      "id": "TowerExpeditionExplosionRadius",
@@ -806,7 +2284,29 @@
       "#% increased Expedition Explosive Radius in Map"
      ],
      "g": 2,
-     "affixZh": "拆除之"
+     "affixZh": "拆除之",
+     "hiddenZh": [
+      "後綴 \"拆除之\"(階層：#)",
+      "拆除之探險碑牌",
+      "拆除之深淵碑牌",
+      "拆除之神廟碑牌",
+      "拆除之祭祀碑牌",
+      "拆除之總督碑牌",
+      "拆除之裂痕碑牌",
+      "拆除之譫妄碑牌",
+      "拆除之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Demolition\" (Tier: #)",
+      "Expedition Tablet of the Demolition",
+      "Abyss Tablet of the Demolition",
+      "Temple Tablet of the Demolition",
+      "Ritual Tablet of the Demolition",
+      "Overseer Tablet of the Demolition",
+      "Breach Tablet of the Demolition",
+      "Delirium Tablet of the Demolition",
+      "Irradiated Tablet of the Demolition"
+     ]
     },
     {
      "id": "TowerExpeditionRelicModEffect",
@@ -817,7 +2317,29 @@
       "#% increased Effect of Expedition Remnants in Map"
      ],
      "g": 2,
-     "affixZh": "聖物之"
+     "affixZh": "聖物之",
+     "hiddenZh": [
+      "後綴 \"聖物之\"(階層：#)",
+      "聖物之探險碑牌",
+      "聖物之深淵碑牌",
+      "聖物之神廟碑牌",
+      "聖物之祭祀碑牌",
+      "聖物之總督碑牌",
+      "聖物之裂痕碑牌",
+      "聖物之譫妄碑牌",
+      "聖物之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Relics\" (Tier: #)",
+      "Expedition Tablet of Relics",
+      "Abyss Tablet of Relics",
+      "Temple Tablet of Relics",
+      "Ritual Tablet of Relics",
+      "Overseer Tablet of Relics",
+      "Breach Tablet of Relics",
+      "Delirium Tablet of Relics",
+      "Irradiated Tablet of Relics"
+     ]
     },
     {
      "id": "TowerDeliriumDifficultyIncrease",
@@ -828,7 +2350,29 @@
       "Delirium Fog in Map applies #% increased Deliriousness to Players"
      ],
      "g": 3,
-     "affixZh": "瘋狂之"
+     "affixZh": "瘋狂之",
+     "hiddenZh": [
+      "後綴 \"瘋狂之\"(階層：#)",
+      "瘋狂之探險碑牌",
+      "瘋狂之深淵碑牌",
+      "瘋狂之神廟碑牌",
+      "瘋狂之祭祀碑牌",
+      "瘋狂之總督碑牌",
+      "瘋狂之裂痕碑牌",
+      "瘋狂之譫妄碑牌",
+      "瘋狂之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Madness\" (Tier: #)",
+      "Expedition Tablet of Madness",
+      "Abyss Tablet of Madness",
+      "Temple Tablet of Madness",
+      "Ritual Tablet of Madness",
+      "Overseer Tablet of Madness",
+      "Breach Tablet of Madness",
+      "Delirium Tablet of Madness",
+      "Irradiated Tablet of Madness"
+     ]
     },
     {
      "id": "TowerDeliriumAdditionalShardsChance",
@@ -839,7 +2383,29 @@
       "Delirium Fog in Map spawns #% increased MirrorShards"
      ],
      "g": 3,
-     "affixZh": "碎裂之"
+     "affixZh": "碎裂之",
+     "hiddenZh": [
+      "後綴 \"碎裂之\"(階層：#)",
+      "碎裂之探險碑牌",
+      "碎裂之深淵碑牌",
+      "碎裂之神廟碑牌",
+      "碎裂之祭祀碑牌",
+      "碎裂之總督碑牌",
+      "碎裂之裂痕碑牌",
+      "碎裂之譫妄碑牌",
+      "碎裂之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Shattering\" (Tier: #)",
+      "Expedition Tablet of Shattering",
+      "Abyss Tablet of Shattering",
+      "Temple Tablet of Shattering",
+      "Ritual Tablet of Shattering",
+      "Overseer Tablet of Shattering",
+      "Breach Tablet of Shattering",
+      "Delirium Tablet of Shattering",
+      "Irradiated Tablet of Shattering"
+     ]
     },
     {
      "id": "TowerDeliriumFogDissipationDelayNew",
@@ -850,7 +2416,29 @@
       "Delirium Fog in Map lasts # additional seconds before dissipating"
      ],
      "g": 3,
-     "affixZh": "永恆之"
+     "affixZh": "永恆之",
+     "hiddenZh": [
+      "後綴 \"永恆之\"(階層：#)",
+      "永恆之探險碑牌",
+      "永恆之深淵碑牌",
+      "永恆之神廟碑牌",
+      "永恆之祭祀碑牌",
+      "永恆之總督碑牌",
+      "永恆之裂痕碑牌",
+      "永恆之譫妄碑牌",
+      "永恆之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Eternity\" (Tier: #)",
+      "Expedition Tablet of Eternity",
+      "Abyss Tablet of Eternity",
+      "Temple Tablet of Eternity",
+      "Ritual Tablet of Eternity",
+      "Overseer Tablet of Eternity",
+      "Breach Tablet of Eternity",
+      "Delirium Tablet of Eternity",
+      "Irradiated Tablet of Eternity"
+     ]
     },
     {
      "id": "TowerDeliriumBossChance",
@@ -861,7 +2449,29 @@
       "Delirium Encounters in Map are #% more likely to spawn Unique Bosses"
      ],
      "g": 3,
-     "affixZh": "恐懼症之"
+     "affixZh": "恐懼症之",
+     "hiddenZh": [
+      "後綴 \"恐懼症之\"(階層：#)",
+      "恐懼症之探險碑牌",
+      "恐懼症之深淵碑牌",
+      "恐懼症之神廟碑牌",
+      "恐懼症之祭祀碑牌",
+      "恐懼症之總督碑牌",
+      "恐懼症之裂痕碑牌",
+      "恐懼症之譫妄碑牌",
+      "恐懼症之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Phobia\" (Tier: #)",
+      "Expedition Tablet of Phobia",
+      "Abyss Tablet of Phobia",
+      "Temple Tablet of Phobia",
+      "Ritual Tablet of Phobia",
+      "Overseer Tablet of Phobia",
+      "Breach Tablet of Phobia",
+      "Delirium Tablet of Phobia",
+      "Irradiated Tablet of Phobia"
+     ]
     },
     {
      "id": "TowerDeliriumRareMonsterPause",
@@ -872,7 +2482,29 @@
       "Slaying Rare Monsters in Map pauses the Delirium Mirror Timer for # seconds"
      ],
      "g": 3,
-     "affixZh": "冰凍時間之"
+     "affixZh": "冰凍時間之",
+     "hiddenZh": [
+      "後綴 \"冰凍時間之\"(階層：#)",
+      "冰凍時間之探險碑牌",
+      "冰凍時間之深淵碑牌",
+      "冰凍時間之神廟碑牌",
+      "冰凍時間之祭祀碑牌",
+      "冰凍時間之總督碑牌",
+      "冰凍時間之裂痕碑牌",
+      "冰凍時間之譫妄碑牌",
+      "冰凍時間之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Freeze Time\" (Tier: #)",
+      "Expedition Tablet of Freeze Time",
+      "Abyss Tablet of Freeze Time",
+      "Temple Tablet of Freeze Time",
+      "Ritual Tablet of Freeze Time",
+      "Overseer Tablet of Freeze Time",
+      "Breach Tablet of Freeze Time",
+      "Delirium Tablet of Freeze Time",
+      "Irradiated Tablet of Freeze Time"
+     ]
     },
     {
      "id": "TowerDeliriumMonsterSplinterIncrease",
@@ -883,7 +2515,29 @@
       "#% increased Stack size of Simulacrum Splinters found in Map"
      ],
      "g": 3,
-     "affixZh": "幻像異界之"
+     "affixZh": "幻像異界之",
+     "hiddenZh": [
+      "後綴 \"幻像異界之\"(階層：#)",
+      "幻像異界之探險碑牌",
+      "幻像異界之深淵碑牌",
+      "幻像異界之神廟碑牌",
+      "幻像異界之祭祀碑牌",
+      "幻像異界之總督碑牌",
+      "幻像異界之裂痕碑牌",
+      "幻像異界之譫妄碑牌",
+      "幻像異界之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Simulacrum\" (Tier: #)",
+      "Expedition Tablet of the Simulacrum",
+      "Abyss Tablet of the Simulacrum",
+      "Temple Tablet of the Simulacrum",
+      "Ritual Tablet of the Simulacrum",
+      "Overseer Tablet of the Simulacrum",
+      "Breach Tablet of the Simulacrum",
+      "Delirium Tablet of the Simulacrum",
+      "Irradiated Tablet of the Simulacrum"
+     ]
     },
     {
      "id": "TowerDeliriumPackSizeIncrease",
@@ -894,7 +2548,29 @@
       "Delirium Monsters in Map have #% increased Pack Size"
      ],
      "g": 3,
-     "affixZh": "迫害之"
+     "affixZh": "迫害之",
+     "hiddenZh": [
+      "後綴 \"迫害之\"(階層：#)",
+      "迫害之探險碑牌",
+      "迫害之深淵碑牌",
+      "迫害之神廟碑牌",
+      "迫害之祭祀碑牌",
+      "迫害之總督碑牌",
+      "迫害之裂痕碑牌",
+      "迫害之譫妄碑牌",
+      "迫害之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Persecution\" (Tier: #)",
+      "Expedition Tablet of Persecution",
+      "Abyss Tablet of Persecution",
+      "Temple Tablet of Persecution",
+      "Ritual Tablet of Persecution",
+      "Overseer Tablet of Persecution",
+      "Breach Tablet of Persecution",
+      "Delirium Tablet of Persecution",
+      "Irradiated Tablet of Persecution"
+     ]
     },
     {
      "id": "TowerDeliriumDoodadsIncrease",
@@ -905,7 +2581,29 @@
       "Delirium Fog in Map spawns #% increased Fracturing Mirrors"
      ],
      "g": 3,
-     "affixZh": "鏡子之"
+     "affixZh": "鏡子之",
+     "hiddenZh": [
+      "後綴 \"鏡子之\"(階層：#)",
+      "鏡子之探險碑牌",
+      "鏡子之深淵碑牌",
+      "鏡子之神廟碑牌",
+      "鏡子之祭祀碑牌",
+      "鏡子之總督碑牌",
+      "鏡子之裂痕碑牌",
+      "鏡子之譫妄碑牌",
+      "鏡子之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Mirrors\" (Tier: #)",
+      "Expedition Tablet of Mirrors",
+      "Abyss Tablet of Mirrors",
+      "Temple Tablet of Mirrors",
+      "Ritual Tablet of Mirrors",
+      "Overseer Tablet of Mirrors",
+      "Breach Tablet of Mirrors",
+      "Delirium Tablet of Mirrors",
+      "Irradiated Tablet of Mirrors"
+     ]
     },
     {
      "id": "TowerDeliriumFogPersistence",
@@ -916,7 +2614,29 @@
       "Delirium Fog in Map dissipates #% slower"
      ],
      "g": 3,
-     "affixZh": "無休止之"
+     "affixZh": "無休止之",
+     "hiddenZh": [
+      "後綴 \"無休止之\"(階層：#)",
+      "無休止之探險碑牌",
+      "無休止之深淵碑牌",
+      "無休止之神廟碑牌",
+      "無休止之祭祀碑牌",
+      "無休止之總督碑牌",
+      "無休止之裂痕碑牌",
+      "無休止之譫妄碑牌",
+      "無休止之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Unending\" (Tier: #)",
+      "Expedition Tablet of the Unending",
+      "Abyss Tablet of the Unending",
+      "Temple Tablet of the Unending",
+      "Ritual Tablet of the Unending",
+      "Overseer Tablet of the Unending",
+      "Breach Tablet of the Unending",
+      "Delirium Tablet of the Unending",
+      "Irradiated Tablet of the Unending"
+     ]
     },
     {
      "id": "TowerRitualAdditionalReroll",
@@ -927,7 +2647,29 @@
       "Ritual Altars in Map allow rerolling Favours an additional time"
      ],
      "g": 4,
-     "affixZh": "祈禱之"
+     "affixZh": "祈禱之",
+     "hiddenZh": [
+      "後綴 \"祈禱之\"(階層：#)",
+      "祈禱之探險碑牌",
+      "祈禱之深淵碑牌",
+      "祈禱之神廟碑牌",
+      "祈禱之祭祀碑牌",
+      "祈禱之總督碑牌",
+      "祈禱之裂痕碑牌",
+      "祈禱之譫妄碑牌",
+      "祈禱之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Prayers\" (Tier: #)",
+      "Expedition Tablet of Prayers",
+      "Abyss Tablet of Prayers",
+      "Temple Tablet of Prayers",
+      "Ritual Tablet of Prayers",
+      "Overseer Tablet of Prayers",
+      "Breach Tablet of Prayers",
+      "Delirium Tablet of Prayers",
+      "Irradiated Tablet of Prayers"
+     ]
     },
     {
      "id": "TowerRitualDeferSpeed",
@@ -938,7 +2680,29 @@
       "Favours Deferred at Ritual Altars in Map reappear #% sooner"
      ],
      "g": 4,
-     "affixZh": "吸引之"
+     "affixZh": "吸引之",
+     "hiddenZh": [
+      "後綴 \"吸引之\"(階層：#)",
+      "吸引之探險碑牌",
+      "吸引之深淵碑牌",
+      "吸引之神廟碑牌",
+      "吸引之祭祀碑牌",
+      "吸引之總督碑牌",
+      "吸引之裂痕碑牌",
+      "吸引之譫妄碑牌",
+      "吸引之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Appeal\" (Tier: #)",
+      "Expedition Tablet of the Appeal",
+      "Abyss Tablet of the Appeal",
+      "Temple Tablet of the Appeal",
+      "Ritual Tablet of the Appeal",
+      "Overseer Tablet of the Appeal",
+      "Breach Tablet of the Appeal",
+      "Delirium Tablet of the Appeal",
+      "Irradiated Tablet of the Appeal"
+     ]
     },
     {
      "id": "TowerRitualMagicMonsters",
@@ -949,7 +2713,29 @@
       "Revived Monsters from Ritual Altars in Map have #% increased chance to be Rare"
      ],
      "g": 4,
-     "affixZh": "邪教之"
+     "affixZh": "邪教之",
+     "hiddenZh": [
+      "後綴 \"邪教之\"(階層：#)",
+      "邪教之探險碑牌",
+      "邪教之深淵碑牌",
+      "邪教之神廟碑牌",
+      "邪教之祭祀碑牌",
+      "邪教之總督碑牌",
+      "邪教之裂痕碑牌",
+      "邪教之譫妄碑牌",
+      "邪教之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Cult\" (Tier: #)",
+      "Expedition Tablet of the Cult",
+      "Abyss Tablet of the Cult",
+      "Temple Tablet of the Cult",
+      "Ritual Tablet of the Cult",
+      "Overseer Tablet of the Cult",
+      "Breach Tablet of the Cult",
+      "Delirium Tablet of the Cult",
+      "Irradiated Tablet of the Cult"
+     ]
     },
     {
      "id": "TowerRitualRareMonsters",
@@ -960,7 +2746,29 @@
       "Revived Monsters from Ritual Altars in Map have #% increased chance to be Magic"
      ],
      "g": 4,
-     "affixZh": "棄兒之"
+     "affixZh": "棄兒之",
+     "hiddenZh": [
+      "後綴 \"棄兒之\"(階層：#)",
+      "棄兒之探險碑牌",
+      "棄兒之深淵碑牌",
+      "棄兒之神廟碑牌",
+      "棄兒之祭祀碑牌",
+      "棄兒之總督碑牌",
+      "棄兒之裂痕碑牌",
+      "棄兒之譫妄碑牌",
+      "棄兒之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Foundling\" (Tier: #)",
+      "Expedition Tablet of the Foundling",
+      "Abyss Tablet of the Foundling",
+      "Temple Tablet of the Foundling",
+      "Ritual Tablet of the Foundling",
+      "Overseer Tablet of the Foundling",
+      "Breach Tablet of the Foundling",
+      "Delirium Tablet of the Foundling",
+      "Irradiated Tablet of the Foundling"
+     ]
     },
     {
      "id": "TowerRitualChanceForNoCost",
@@ -971,7 +2779,29 @@
       "Favours Rerolled at Ritual Altars in Map have #% chance to cost no Tribute"
      ],
      "g": 4,
-     "affixZh": "玄秘之"
+     "affixZh": "玄秘之",
+     "hiddenZh": [
+      "後綴 \"玄秘之\"(階層：#)",
+      "玄秘之探險碑牌",
+      "玄秘之深淵碑牌",
+      "玄秘之神廟碑牌",
+      "玄秘之祭祀碑牌",
+      "玄秘之總督碑牌",
+      "玄秘之裂痕碑牌",
+      "玄秘之譫妄碑牌",
+      "玄秘之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Occult\" (Tier: #)",
+      "Expedition Tablet of the Occult",
+      "Abyss Tablet of the Occult",
+      "Temple Tablet of the Occult",
+      "Ritual Tablet of the Occult",
+      "Overseer Tablet of the Occult",
+      "Breach Tablet of the Occult",
+      "Delirium Tablet of the Occult",
+      "Irradiated Tablet of the Occult"
+     ]
     },
     {
      "id": "TowerRitualTributeIncrease",
@@ -982,7 +2812,29 @@
       "Monsters Sacrificed at Ritual Altars in Map grant #% increased Tribute"
      ],
      "g": 4,
-     "affixZh": "犧牲之"
+     "affixZh": "犧牲之",
+     "hiddenZh": [
+      "後綴 \"犧牲之\"(階層：#)",
+      "犧牲之探險碑牌",
+      "犧牲之深淵碑牌",
+      "犧牲之神廟碑牌",
+      "犧牲之祭祀碑牌",
+      "犧牲之總督碑牌",
+      "犧牲之裂痕碑牌",
+      "犧牲之譫妄碑牌",
+      "犧牲之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Sacrifice\" (Tier: #)",
+      "Expedition Tablet of Sacrifice",
+      "Abyss Tablet of Sacrifice",
+      "Temple Tablet of Sacrifice",
+      "Ritual Tablet of Sacrifice",
+      "Overseer Tablet of Sacrifice",
+      "Breach Tablet of Sacrifice",
+      "Delirium Tablet of Sacrifice",
+      "Irradiated Tablet of Sacrifice"
+     ]
     },
     {
      "id": "TowerRitualOmenChance",
@@ -993,7 +2845,29 @@
       "Ritual Favours in Map have #% increased chance to be Omens"
      ],
      "g": 4,
-     "affixZh": "徵兆之"
+     "affixZh": "徵兆之",
+     "hiddenZh": [
+      "後綴 \"徵兆之\"(階層：#)",
+      "徵兆之探險碑牌",
+      "徵兆之深淵碑牌",
+      "徵兆之神廟碑牌",
+      "徵兆之祭祀碑牌",
+      "徵兆之總督碑牌",
+      "徵兆之裂痕碑牌",
+      "徵兆之譫妄碑牌",
+      "徵兆之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Omens\" (Tier: #)",
+      "Expedition Tablet of Omens",
+      "Abyss Tablet of Omens",
+      "Temple Tablet of Omens",
+      "Ritual Tablet of Omens",
+      "Overseer Tablet of Omens",
+      "Breach Tablet of Omens",
+      "Delirium Tablet of Omens",
+      "Irradiated Tablet of Omens"
+     ]
     },
     {
      "id": "TowerRitualDeferCostIncrease",
@@ -1004,7 +2878,29 @@
       "Deferring Favours at Ritual Altars in Map costs #% reduced Tribute"
      ],
      "g": 4,
-     "affixZh": "奉獻之"
+     "affixZh": "奉獻之",
+     "hiddenZh": [
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之探險碑牌",
+      "奉獻之深淵碑牌",
+      "奉獻之神廟碑牌",
+      "奉獻之祭祀碑牌",
+      "奉獻之總督碑牌",
+      "奉獻之裂痕碑牌",
+      "奉獻之譫妄碑牌",
+      "奉獻之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Devotion\" (Tier: #)",
+      "Expedition Tablet of Devotion",
+      "Abyss Tablet of Devotion",
+      "Temple Tablet of Devotion",
+      "Ritual Tablet of Devotion",
+      "Overseer Tablet of Devotion",
+      "Breach Tablet of Devotion",
+      "Delirium Tablet of Devotion",
+      "Irradiated Tablet of Devotion"
+     ]
     },
     {
      "id": "TowerRitualRerollCostIncrease",
@@ -1015,7 +2911,29 @@
       "Rerolling Favours at Ritual Altars in Map costs #% reduced Tribute"
      ],
      "g": 4,
-     "affixZh": "教條之"
+     "affixZh": "教條之",
+     "hiddenZh": [
+      "後綴 \"教條之\"(階層：#)",
+      "教條之探險碑牌",
+      "教條之深淵碑牌",
+      "教條之神廟碑牌",
+      "教條之祭祀碑牌",
+      "教條之總督碑牌",
+      "教條之裂痕碑牌",
+      "教條之譫妄碑牌",
+      "教條之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Dogma\" (Tier: #)",
+      "Expedition Tablet of the Dogma",
+      "Abyss Tablet of the Dogma",
+      "Temple Tablet of the Dogma",
+      "Ritual Tablet of the Dogma",
+      "Overseer Tablet of the Dogma",
+      "Breach Tablet of the Dogma",
+      "Delirium Tablet of the Dogma",
+      "Irradiated Tablet of the Dogma"
+     ]
     },
     {
      "id": "TowerAbyssAdditionalChance",
@@ -1026,7 +2944,29 @@
       "Map contains an additional Abyss"
      ],
      "g": 5,
-     "affixZh": "空殼之"
+     "affixZh": "空殼之",
+     "hiddenZh": [
+      "後綴 \"空殼之\"(階層：#)",
+      "空殼之探險碑牌",
+      "空殼之深淵碑牌",
+      "空殼之神廟碑牌",
+      "空殼之祭祀碑牌",
+      "空殼之總督碑牌",
+      "空殼之裂痕碑牌",
+      "空殼之譫妄碑牌",
+      "空殼之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Hollows\" (Tier: #)",
+      "Expedition Tablet of Hollows",
+      "Abyss Tablet of Hollows",
+      "Temple Tablet of Hollows",
+      "Ritual Tablet of Hollows",
+      "Overseer Tablet of Hollows",
+      "Breach Tablet of Hollows",
+      "Delirium Tablet of Hollows",
+      "Irradiated Tablet of Hollows"
+     ]
     },
     {
      "id": "TowerAbyssIncreasedRewards",
@@ -1037,7 +2977,29 @@
       "Abyss Pits in Map are twice as likely to have Rewards"
      ],
      "g": 5,
-     "affixZh": "寶藏之"
+     "affixZh": "寶藏之",
+     "hiddenZh": [
+      "後綴 \"寶藏之\"(階層：#)",
+      "寶藏之探險碑牌",
+      "寶藏之深淵碑牌",
+      "寶藏之神廟碑牌",
+      "寶藏之祭祀碑牌",
+      "寶藏之總督碑牌",
+      "寶藏之裂痕碑牌",
+      "寶藏之譫妄碑牌",
+      "寶藏之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Treasures\" (Tier: #)",
+      "Expedition Tablet of Treasures",
+      "Abyss Tablet of Treasures",
+      "Temple Tablet of Treasures",
+      "Ritual Tablet of Treasures",
+      "Overseer Tablet of Treasures",
+      "Breach Tablet of Treasures",
+      "Delirium Tablet of Treasures",
+      "Irradiated Tablet of Treasures"
+     ]
     },
     {
      "id": "TowerAbyssDepthsChance",
@@ -1048,7 +3010,29 @@
       "Abysses in Map have #% increased chance to lead to an Abyssal Depths"
      ],
      "g": 5,
-     "affixZh": "深淵之"
+     "affixZh": "深淵之",
+     "hiddenZh": [
+      "後綴 \"深淵之\"(階層：#)",
+      "深淵之探險碑牌",
+      "深淵之深淵碑牌",
+      "深淵之神廟碑牌",
+      "深淵之祭祀碑牌",
+      "深淵之總督碑牌",
+      "深淵之裂痕碑牌",
+      "深淵之譫妄碑牌",
+      "深淵之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Depths\" (Tier: #)",
+      "Expedition Tablet of the Depths",
+      "Abyss Tablet of the Depths",
+      "Temple Tablet of the Depths",
+      "Ritual Tablet of the Depths",
+      "Overseer Tablet of the Depths",
+      "Breach Tablet of the Depths",
+      "Delirium Tablet of the Depths",
+      "Irradiated Tablet of the Depths"
+     ]
     },
     {
      "id": "TowerAbyssExtraModifiers",
@@ -1059,7 +3043,29 @@
       "#% increased chance for Abyssal monsters in Map to have Abyssal Modifiers"
      ],
      "g": 5,
-     "affixZh": "幽暗之力之"
+     "affixZh": "幽暗之力之",
+     "hiddenZh": [
+      "後綴 \"幽暗之力之\"(階層：#)",
+      "幽暗之力之探險碑牌",
+      "幽暗之力之深淵碑牌",
+      "幽暗之力之神廟碑牌",
+      "幽暗之力之祭祀碑牌",
+      "幽暗之力之總督碑牌",
+      "幽暗之力之裂痕碑牌",
+      "幽暗之力之譫妄碑牌",
+      "幽暗之力之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Dark Power\" (Tier: #)",
+      "Expedition Tablet of Dark Power",
+      "Abyss Tablet of Dark Power",
+      "Temple Tablet of Dark Power",
+      "Ritual Tablet of Dark Power",
+      "Overseer Tablet of Dark Power",
+      "Breach Tablet of Dark Power",
+      "Delirium Tablet of Dark Power",
+      "Irradiated Tablet of Dark Power"
+     ]
     },
     {
      "id": "TowerAbyssRareMonsterIncrease",
@@ -1070,7 +3076,29 @@
       "# additional Rare Monsters are spawned from Abysses in Map"
      ],
      "g": 5,
-     "affixZh": "勇士之"
+     "affixZh": "勇士之",
+     "hiddenZh": [
+      "後綴 \"勇士之\"(階層：#)",
+      "勇士之探險碑牌",
+      "勇士之深淵碑牌",
+      "勇士之神廟碑牌",
+      "勇士之祭祀碑牌",
+      "勇士之總督碑牌",
+      "勇士之裂痕碑牌",
+      "勇士之譫妄碑牌",
+      "勇士之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Champions\" (Tier: #)",
+      "Expedition Tablet of Champions",
+      "Abyss Tablet of Champions",
+      "Temple Tablet of Champions",
+      "Ritual Tablet of Champions",
+      "Overseer Tablet of Champions",
+      "Breach Tablet of Champions",
+      "Delirium Tablet of Champions",
+      "Irradiated Tablet of Champions"
+     ]
     },
     {
      "id": "TowerAbyss4AdditionalChance",
@@ -1081,7 +3109,29 @@
       "Map has #% chance to contain four additional Abysses"
      ],
      "g": 5,
-     "affixZh": "裂變之"
+     "affixZh": "裂變之",
+     "hiddenZh": [
+      "後綴 \"裂變之\"(階層：#)",
+      "裂變之探險碑牌",
+      "裂變之深淵碑牌",
+      "裂變之神廟碑牌",
+      "裂變之祭祀碑牌",
+      "裂變之總督碑牌",
+      "裂變之裂痕碑牌",
+      "裂變之譫妄碑牌",
+      "裂變之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Schisms\" (Tier: #)",
+      "Expedition Tablet of Schisms",
+      "Abyss Tablet of Schisms",
+      "Temple Tablet of Schisms",
+      "Ritual Tablet of Schisms",
+      "Overseer Tablet of Schisms",
+      "Breach Tablet of Schisms",
+      "Delirium Tablet of Schisms",
+      "Irradiated Tablet of Schisms"
+     ]
     },
     {
      "id": "TowerAbyssExtraTickets",
@@ -1092,7 +3142,29 @@
       "#% increased chance for Desecrated Currency from Abysses in Map"
      ],
      "g": 5,
-     "affixZh": "骨化之"
+     "affixZh": "骨化之",
+     "hiddenZh": [
+      "後綴 \"骨化之\"(階層：#)",
+      "骨化之探險碑牌",
+      "骨化之深淵碑牌",
+      "骨化之神廟碑牌",
+      "骨化之祭祀碑牌",
+      "骨化之總督碑牌",
+      "骨化之裂痕碑牌",
+      "骨化之譫妄碑牌",
+      "骨化之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Ossification\" (Tier: #)",
+      "Expedition Tablet of Ossification",
+      "Abyss Tablet of Ossification",
+      "Temple Tablet of Ossification",
+      "Ritual Tablet of Ossification",
+      "Overseer Tablet of Ossification",
+      "Breach Tablet of Ossification",
+      "Delirium Tablet of Ossification",
+      "Irradiated Tablet of Ossification"
+     ]
     },
     {
      "id": "TowerAbyssMonsterIncrease",
@@ -1103,7 +3175,29 @@
       "Abysses in Map spawn #% increased Monsters"
      ],
      "g": 5,
-     "affixZh": "群突之"
+     "affixZh": "群突之",
+     "hiddenZh": [
+      "後綴 \"群突之\"(階層：#)",
+      "群突之探險碑牌",
+      "群突之深淵碑牌",
+      "群突之神廟碑牌",
+      "群突之祭祀碑牌",
+      "群突之總督碑牌",
+      "群突之裂痕碑牌",
+      "群突之譫妄碑牌",
+      "群突之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Horde\" (Tier: #)",
+      "Expedition Tablet of the Horde",
+      "Abyss Tablet of the Horde",
+      "Temple Tablet of the Horde",
+      "Ritual Tablet of the Horde",
+      "Overseer Tablet of the Horde",
+      "Breach Tablet of the Horde",
+      "Delirium Tablet of the Horde",
+      "Irradiated Tablet of the Horde"
+     ]
     },
     {
      "id": "TowerAbyssEffectivenessPerChasm",
@@ -1114,7 +3208,29 @@
       "Abyssal Monsters have #% increased Effectiveness for each closed Pit, up to 100%"
      ],
      "g": 5,
-     "affixZh": "升勢之"
+     "affixZh": "升勢之",
+     "hiddenZh": [
+      "後綴 \"升勢之\"(階層：#)",
+      "升勢之探險碑牌",
+      "升勢之深淵碑牌",
+      "升勢之神廟碑牌",
+      "升勢之祭祀碑牌",
+      "升勢之總督碑牌",
+      "升勢之裂痕碑牌",
+      "升勢之譫妄碑牌",
+      "升勢之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Escalation\" (Tier: #)",
+      "Expedition Tablet of Escalation",
+      "Abyss Tablet of Escalation",
+      "Temple Tablet of Escalation",
+      "Ritual Tablet of Escalation",
+      "Overseer Tablet of Escalation",
+      "Breach Tablet of Escalation",
+      "Delirium Tablet of Escalation",
+      "Irradiated Tablet of Escalation"
+     ]
     },
     {
      "id": "TowerAdditionalStrongbox1",
@@ -1125,7 +3241,47 @@
       "Map contains an additional Strongbox"
      ],
      "g": 6,
-     "affixZh": "收藏家之、隔間之"
+     "affixZh": "收藏家之、隔間之",
+     "hiddenZh": [
+      "後綴 \"收藏家之\"(階層：#)",
+      "收藏家之探險碑牌",
+      "收藏家之深淵碑牌",
+      "收藏家之神廟碑牌",
+      "收藏家之祭祀碑牌",
+      "收藏家之總督碑牌",
+      "收藏家之裂痕碑牌",
+      "收藏家之譫妄碑牌",
+      "收藏家之輻照碑牌",
+      "後綴 \"隔間之\"(階層：#)",
+      "隔間之探險碑牌",
+      "隔間之深淵碑牌",
+      "隔間之神廟碑牌",
+      "隔間之祭祀碑牌",
+      "隔間之總督碑牌",
+      "隔間之裂痕碑牌",
+      "隔間之譫妄碑牌",
+      "隔間之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Antiquarian\" (Tier: #)",
+      "Expedition Tablet of the Antiquarian",
+      "Abyss Tablet of the Antiquarian",
+      "Temple Tablet of the Antiquarian",
+      "Ritual Tablet of the Antiquarian",
+      "Overseer Tablet of the Antiquarian",
+      "Breach Tablet of the Antiquarian",
+      "Delirium Tablet of the Antiquarian",
+      "Irradiated Tablet of the Antiquarian",
+      "Suffix Modifier \"of Compartments\" (Tier: #)",
+      "Expedition Tablet of Compartments",
+      "Abyss Tablet of Compartments",
+      "Temple Tablet of Compartments",
+      "Ritual Tablet of Compartments",
+      "Overseer Tablet of Compartments",
+      "Breach Tablet of Compartments",
+      "Delirium Tablet of Compartments",
+      "Irradiated Tablet of Compartments"
+     ]
     },
     {
      "id": "TowerAdditionalShrine1",
@@ -1136,7 +3292,47 @@
       "Map contains an additional Shrine"
      ],
      "g": 6,
-     "affixZh": "奉獻之、崇拜之"
+     "affixZh": "奉獻之、崇拜之",
+     "hiddenZh": [
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之探險碑牌",
+      "奉獻之深淵碑牌",
+      "奉獻之神廟碑牌",
+      "奉獻之祭祀碑牌",
+      "奉獻之總督碑牌",
+      "奉獻之裂痕碑牌",
+      "奉獻之譫妄碑牌",
+      "奉獻之輻照碑牌",
+      "後綴 \"崇拜之\"(階層：#)",
+      "崇拜之探險碑牌",
+      "崇拜之深淵碑牌",
+      "崇拜之神廟碑牌",
+      "崇拜之祭祀碑牌",
+      "崇拜之總督碑牌",
+      "崇拜之裂痕碑牌",
+      "崇拜之譫妄碑牌",
+      "崇拜之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Devoted\" (Tier: #)",
+      "Expedition Tablet of the Devoted",
+      "Abyss Tablet of the Devoted",
+      "Temple Tablet of the Devoted",
+      "Ritual Tablet of the Devoted",
+      "Overseer Tablet of the Devoted",
+      "Breach Tablet of the Devoted",
+      "Delirium Tablet of the Devoted",
+      "Irradiated Tablet of the Devoted",
+      "Suffix Modifier \"of Worship\" (Tier: #)",
+      "Expedition Tablet of Worship",
+      "Abyss Tablet of Worship",
+      "Temple Tablet of Worship",
+      "Ritual Tablet of Worship",
+      "Overseer Tablet of Worship",
+      "Breach Tablet of Worship",
+      "Delirium Tablet of Worship",
+      "Irradiated Tablet of Worship"
+     ]
     },
     {
      "id": "TowerAdditionalEssence1",
@@ -1147,7 +3343,47 @@
       "Map contains an additional Essence"
      ],
      "g": 6,
-     "affixZh": "晶化的、晶石之"
+     "affixZh": "晶化的、晶石之",
+     "hiddenZh": [
+      "前綴 \"晶化的\"(階層：#)",
+      "晶化的探險碑牌",
+      "晶化的深淵碑牌",
+      "晶化的神廟碑牌",
+      "晶化的祭祀碑牌",
+      "晶化的總督碑牌",
+      "晶化的裂痕碑牌",
+      "晶化的譫妄碑牌",
+      "晶化的輻照碑牌",
+      "後綴 \"晶石之\"(階層：#)",
+      "晶石之探險碑牌",
+      "晶石之深淵碑牌",
+      "晶石之神廟碑牌",
+      "晶石之祭祀碑牌",
+      "晶石之總督碑牌",
+      "晶石之裂痕碑牌",
+      "晶石之譫妄碑牌",
+      "晶石之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Crystallised\" (Tier: #)",
+      "Crystallised Expedition Tablet",
+      "Crystallised Abyss Tablet",
+      "Crystallised Temple Tablet",
+      "Crystallised Ritual Tablet",
+      "Crystallised Overseer Tablet",
+      "Crystallised Breach Tablet",
+      "Crystallised Delirium Tablet",
+      "Crystallised Irradiated Tablet",
+      "Suffix Modifier \"of Crystals\" (Tier: #)",
+      "Expedition Tablet of Crystals",
+      "Abyss Tablet of Crystals",
+      "Temple Tablet of Crystals",
+      "Ritual Tablet of Crystals",
+      "Overseer Tablet of Crystals",
+      "Breach Tablet of Crystals",
+      "Delirium Tablet of Crystals",
+      "Irradiated Tablet of Crystals"
+     ]
     },
     {
      "id": "TowerMapBossAdditionalSpirit",
@@ -1158,7 +3394,29 @@
       "Map contains an additional Azmeri Spirit"
      ],
      "g": 6,
-     "affixZh": "妖精之"
+     "affixZh": "妖精之",
+     "hiddenZh": [
+      "後綴 \"妖精之\"(階層：#)",
+      "妖精之探險碑牌",
+      "妖精之深淵碑牌",
+      "妖精之神廟碑牌",
+      "妖精之祭祀碑牌",
+      "妖精之總督碑牌",
+      "妖精之裂痕碑牌",
+      "妖精之譫妄碑牌",
+      "妖精之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Wisps\" (Tier: #)",
+      "Expedition Tablet of Wisps",
+      "Abyss Tablet of Wisps",
+      "Temple Tablet of Wisps",
+      "Ritual Tablet of Wisps",
+      "Overseer Tablet of Wisps",
+      "Breach Tablet of Wisps",
+      "Delirium Tablet of Wisps",
+      "Irradiated Tablet of Wisps"
+     ]
     },
     {
      "id": "TowerMapBossRarity",
@@ -1169,7 +3427,29 @@
       "#% increased Rarity of Items dropped by Map Bosses"
      ],
      "g": 6,
-     "affixZh": "寶藏之"
+     "affixZh": "寶藏之",
+     "hiddenZh": [
+      "後綴 \"寶藏之\"(階層：#)",
+      "寶藏之探險碑牌",
+      "寶藏之深淵碑牌",
+      "寶藏之神廟碑牌",
+      "寶藏之祭祀碑牌",
+      "寶藏之總督碑牌",
+      "寶藏之裂痕碑牌",
+      "寶藏之譫妄碑牌",
+      "寶藏之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Treasure\" (Tier: #)",
+      "Expedition Tablet of Treasure",
+      "Abyss Tablet of Treasure",
+      "Temple Tablet of Treasure",
+      "Ritual Tablet of Treasure",
+      "Overseer Tablet of Treasure",
+      "Breach Tablet of Treasure",
+      "Delirium Tablet of Treasure",
+      "Irradiated Tablet of Treasure"
+     ]
     },
     {
      "id": "TowerMapBossWaystoneChance",
@@ -1180,7 +3460,29 @@
       "#% increased Quantity of Waystones dropped by Map Bosses"
      ],
      "g": 6,
-     "affixZh": "路途之"
+     "affixZh": "路途之",
+     "hiddenZh": [
+      "後綴 \"路途之\"(階層：#)",
+      "路途之探險碑牌",
+      "路途之深淵碑牌",
+      "路途之神廟碑牌",
+      "路途之祭祀碑牌",
+      "路途之總督碑牌",
+      "路途之裂痕碑牌",
+      "路途之譫妄碑牌",
+      "路途之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Pathways\" (Tier: #)",
+      "Expedition Tablet of Pathways",
+      "Abyss Tablet of Pathways",
+      "Temple Tablet of Pathways",
+      "Ritual Tablet of Pathways",
+      "Overseer Tablet of Pathways",
+      "Breach Tablet of Pathways",
+      "Delirium Tablet of Pathways",
+      "Irradiated Tablet of Pathways"
+     ]
     },
     {
      "id": "TowerMapBossQuantity",
@@ -1191,7 +3493,29 @@
       "#% increased Quantity of Items dropped by Map Bosses"
      ],
      "g": 6,
-     "affixZh": "囤物之"
+     "affixZh": "囤物之",
+     "hiddenZh": [
+      "後綴 \"囤物之\"(階層：#)",
+      "囤物之探險碑牌",
+      "囤物之深淵碑牌",
+      "囤物之神廟碑牌",
+      "囤物之祭祀碑牌",
+      "囤物之總督碑牌",
+      "囤物之裂痕碑牌",
+      "囤物之譫妄碑牌",
+      "囤物之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Hoards\" (Tier: #)",
+      "Expedition Tablet of Hoards",
+      "Abyss Tablet of Hoards",
+      "Temple Tablet of Hoards",
+      "Ritual Tablet of Hoards",
+      "Overseer Tablet of Hoards",
+      "Breach Tablet of Hoards",
+      "Delirium Tablet of Hoards",
+      "Irradiated Tablet of Hoards"
+     ]
     },
     {
      "id": "TowerMapBossExperience",
@@ -1202,7 +3526,29 @@
       "Map Bosses grant #% increased Experience"
      ],
      "g": 6,
-     "affixZh": "克服之"
+     "affixZh": "克服之",
+     "hiddenZh": [
+      "後綴 \"克服之\"(階層：#)",
+      "克服之探險碑牌",
+      "克服之深淵碑牌",
+      "克服之神廟碑牌",
+      "克服之祭祀碑牌",
+      "克服之總督碑牌",
+      "克服之裂痕碑牌",
+      "克服之譫妄碑牌",
+      "克服之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Conquering\" (Tier: #)",
+      "Expedition Tablet of Conquering",
+      "Abyss Tablet of Conquering",
+      "Temple Tablet of Conquering",
+      "Ritual Tablet of Conquering",
+      "Overseer Tablet of Conquering",
+      "Breach Tablet of Conquering",
+      "Delirium Tablet of Conquering",
+      "Irradiated Tablet of Conquering"
+     ]
     },
     {
      "id": "TowerIncursionExtraPacks",
@@ -1274,7 +3620,257 @@
      ],
      "g": 7
     }
-   ]
+   ],
+   "ambientZh": [
+    "物品等級 #",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "(階層：#)",
+    "固定詞綴",
+    "傳奇詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "需求",
+    "可以使用於個人的地圖裝置來增加地圖的詞綴。",
+    "探險碑牌",
+    "深淵碑牌",
+    "神廟碑牌",
+    "祭祀碑牌",
+    "總督碑牌",
+    "裂痕碑牌",
+    "譫妄碑牌",
+    "輻照碑牌",
+    "虛空",
+    "虛空之觸",
+    "跨維度",
+    "星際",
+    "宇宙",
+    "平面",
+    "異界的",
+    "卓越",
+    "神話",
+    "怪異",
+    "遠古",
+    "巨岩",
+    "神逐",
+    "蒼空",
+    "鳳鳴",
+    "傳奇",
+    "深淵",
+    "絕境",
+    "密境",
+    "聖曲",
+    "榮耀之紋",
+    "盟誓",
+    "救贖者",
+    "令狀",
+    "召喚",
+    "授權",
+    "儀式",
+    "挑戰",
+    "挑釁",
+    "唆使",
+    "煽動",
+    "祈願",
+    "禮拜",
+    "銘文",
+    "號令的",
+    "戒律的",
+    "發號施令的",
+    "旨意的",
+    "標地的",
+    "禁令的",
+    "訓誡的",
+    "主宰的",
+    "律法的",
+    "審判的",
+    "計畫的",
+    "設計的",
+    "改造的"
+   ],
+   "ambientEn": [
+    "Item Level #",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Unique Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Requirements",
+    "Can be used in a personal Map Device to add modifiers to a Map.",
+    "Expedition Tablet",
+    "Abyss Tablet",
+    "Temple Tablet",
+    "Ritual Tablet",
+    "Overseer Tablet",
+    "Breach Tablet",
+    "Delirium Tablet",
+    "Irradiated Tablet",
+    "Void",
+    "Voidtouched",
+    "Interdimensional",
+    "Celestial",
+    "Cosmic",
+    "Planar",
+    "Otherworldly",
+    "Transcendental",
+    "Mythic",
+    "Eerie",
+    "Ancient",
+    "Cyclopean",
+    "Godless",
+    "Empyrean",
+    "Phoenix",
+    "Legendary",
+    "Mythical",
+    "Abyss",
+    "Apex",
+    "Secrets",
+    "Anthem",
+    "Emblem",
+    "League",
+    "Salvation",
+    "Writ",
+    "Summons",
+    "Mandate",
+    "Myth",
+    "Rite",
+    "Challenge",
+    "Provocation",
+    "Instigation",
+    "Incitement",
+    "Invocation",
+    "Liturgy",
+    "Inscription",
+    "Command",
+    "Edict",
+    "Commandment",
+    "Decree",
+    "Directive",
+    "Injunction",
+    "Precept",
+    "Dictate",
+    "Law",
+    "Judgment",
+    "Project",
+    "Design",
+    "Terraform"
+   ],
+   "nameWordsZh": {
+    "prefix": [
+     "虛空",
+     "虛空之觸",
+     "跨維度",
+     "星際",
+     "宇宙",
+     "平面",
+     "異界的",
+     "卓越",
+     "神話",
+     "怪異",
+     "遠古",
+     "巨岩",
+     "神逐",
+     "蒼空",
+     "鳳鳴",
+     "傳奇",
+     "神話"
+    ],
+    "suffix": [
+     " 深淵",
+     " 絕境",
+     " 密境",
+     " 聖曲",
+     " 榮耀之紋",
+     " 盟誓",
+     " 救贖者",
+     "  令狀",
+     "召喚",
+     "  授權",
+     "  神話",
+     "儀式",
+     "挑戰",
+     "挑釁",
+     "唆使",
+     "煽動",
+     "祈願",
+     "禮拜",
+     "銘文",
+     "號令的",
+     "戒律的",
+     "發號施令的",
+     "旨意的",
+     "標地的",
+     "禁令的",
+     "訓誡的",
+     "主宰的",
+     "律法的",
+     "審判的",
+     "計畫的",
+     "設計的",
+     "改造的"
+    ]
+   },
+   "nameWordsEn": {
+    "prefix": [
+     "Void",
+     "Voidtouched",
+     "Interdimensional",
+     "Celestial",
+     "Cosmic",
+     "Planar",
+     "Otherworldly",
+     "Transcendental",
+     "Mythic",
+     "Eerie",
+     "Ancient",
+     "Cyclopean",
+     "Godless",
+     "Empyrean",
+     "Phoenix",
+     "Legendary",
+     "Mythical"
+    ],
+    "suffix": [
+     " Abyss",
+     " Apex",
+     " Secrets",
+     " Anthem",
+     " Emblem",
+     " League",
+     " Salvation",
+     " Writ",
+     " Summons",
+     "Mandate",
+     "Myth",
+     " Rite",
+     " Challenge",
+     " Provocation",
+     " Instigation",
+     " Incitement",
+     " Invocation",
+     " Liturgy",
+     " Inscription",
+     "Command",
+     "Edict",
+     "Commandment",
+     "Decree",
+     "Directive",
+     "Injunction",
+     "Precept",
+     "Dictate",
+     "Law",
+     "Judgment",
+     "Project",
+     "Design",
+     "Terraform"
+    ]
+   }
   },
   {
    "id": "relic_mods",
@@ -1302,7 +3898,27 @@
       "The Merchant has an additional Choice"
      ],
      "g": 0,
-     "affixZh": "豐產的"
+     "affixZh": "豐產的",
+     "hiddenZh": [
+      "前綴 \"豐產的\"(階層：#)",
+      "豐產的古甕聖物",
+      "豐產的器皿聖物",
+      "豐產的寶箱聖物",
+      "豐產的聖經聖物",
+      "豐產的草紙聖物",
+      "豐產的陶罐聖物",
+      "豐產的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Plentiful\" (Tier: #)",
+      "Plentiful Urn Relic",
+      "Plentiful Vase Relic",
+      "Plentiful Coffer Relic",
+      "Plentiful Tapestry Relic",
+      "Plentiful Seal Relic",
+      "Plentiful Amphora Relic",
+      "Plentiful Incense Relic"
+     ]
     },
     {
      "id": "SanctumStartingGold1",
@@ -1313,7 +3929,91 @@
       "Gain # Sacred Water at the start of the Trial"
      ],
      "g": 0,
-     "affixZh": "布衣的、部下的、巨靈的、絲克瑪的"
+     "affixZh": "布衣的、部下的、巨靈的、絲克瑪的",
+     "hiddenZh": [
+      "前綴 \"布衣的\"(階層：#)",
+      "布衣的古甕聖物",
+      "布衣的器皿聖物",
+      "布衣的寶箱聖物",
+      "布衣的聖經聖物",
+      "布衣的草紙聖物",
+      "布衣的陶罐聖物",
+      "布衣的香爐聖物",
+      "前綴 \"部下的\"(階層：#)",
+      "部下的古甕聖物",
+      "部下的器皿聖物",
+      "部下的寶箱聖物",
+      "部下的聖經聖物",
+      "部下的草紙聖物",
+      "部下的陶罐聖物",
+      "部下的香爐聖物",
+      "前綴 \"巨靈的\"(階層：#)",
+      "巨靈的古甕聖物",
+      "巨靈的器皿聖物",
+      "巨靈的寶箱聖物",
+      "巨靈的聖經聖物",
+      "巨靈的草紙聖物",
+      "巨靈的陶罐聖物",
+      "巨靈的香爐聖物",
+      "前綴 \"絲克瑪的\"(階層：#)",
+      "絲克瑪的古甕聖物",
+      "絲克瑪的器皿聖物",
+      "絲克瑪的寶箱聖物",
+      "絲克瑪的聖經聖物",
+      "絲克瑪的草紙聖物",
+      "絲克瑪的陶罐聖物",
+      "絲克瑪的香爐聖物",
+      "前綴 \"神聖的\"(階層：#)",
+      "神聖的古甕聖物",
+      "神聖的器皿聖物",
+      "神聖的寶箱聖物",
+      "神聖的聖經聖物",
+      "神聖的草紙聖物",
+      "神聖的陶罐聖物",
+      "神聖的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Commoner's\" (Tier: #)",
+      "Commoner's Urn Relic",
+      "Commoner's Vase Relic",
+      "Commoner's Coffer Relic",
+      "Commoner's Tapestry Relic",
+      "Commoner's Seal Relic",
+      "Commoner's Amphora Relic",
+      "Commoner's Incense Relic",
+      "Prefix Modifier \"Dekhara's\" (Tier: #)",
+      "Dekhara's Urn Relic",
+      "Dekhara's Vase Relic",
+      "Dekhara's Coffer Relic",
+      "Dekhara's Tapestry Relic",
+      "Dekhara's Seal Relic",
+      "Dekhara's Amphora Relic",
+      "Dekhara's Incense Relic",
+      "Prefix Modifier \"Djinn's\" (Tier: #)",
+      "Djinn's Urn Relic",
+      "Djinn's Vase Relic",
+      "Djinn's Coffer Relic",
+      "Djinn's Tapestry Relic",
+      "Djinn's Seal Relic",
+      "Djinn's Amphora Relic",
+      "Djinn's Incense Relic",
+      "Prefix Modifier \"Sekhema's\" (Tier: #)",
+      "Sekhema's Urn Relic",
+      "Sekhema's Vase Relic",
+      "Sekhema's Coffer Relic",
+      "Sekhema's Tapestry Relic",
+      "Sekhema's Seal Relic",
+      "Sekhema's Amphora Relic",
+      "Sekhema's Incense Relic",
+      "Prefix Modifier \"Divinity's\" (Tier: #)",
+      "Divinity's Urn Relic",
+      "Divinity's Vase Relic",
+      "Divinity's Coffer Relic",
+      "Divinity's Tapestry Relic",
+      "Divinity's Seal Relic",
+      "Divinity's Amphora Relic",
+      "Divinity's Incense Relic"
+     ]
     },
     {
      "id": "SanctumResolveRecovery1",
@@ -1324,7 +4024,99 @@
       "#% increased Honour restored"
      ],
      "g": 0,
-     "affixZh": "復甦的、刺激的、活躍的、有勇氣的"
+     "affixZh": "復甦的、刺激的、活躍的、有勇氣的",
+     "hiddenZh": [
+      "前綴 \"復甦的\"(階層：#)",
+      "復甦的古甕聖物",
+      "復甦的器皿聖物",
+      "復甦的寶箱聖物",
+      "復甦的聖經聖物",
+      "復甦的草紙聖物",
+      "復甦的陶罐聖物",
+      "復甦的香爐聖物",
+      "前綴 \"刺激的\"(階層：#)",
+      "刺激的古甕聖物",
+      "刺激的器皿聖物",
+      "刺激的寶箱聖物",
+      "刺激的聖經聖物",
+      "刺激的草紙聖物",
+      "刺激的陶罐聖物",
+      "刺激的香爐聖物",
+      "前綴 \"活躍的\"(階層：#)",
+      "活躍的古甕聖物",
+      "活躍的器皿聖物",
+      "活躍的寶箱聖物",
+      "活躍的聖經聖物",
+      "活躍的草紙聖物",
+      "活躍的陶罐聖物",
+      "活躍的香爐聖物",
+      "前綴 \"有勇氣的\"(階層：#)",
+      "有勇氣的古甕聖物",
+      "有勇氣的器皿聖物",
+      "有勇氣的寶箱聖物",
+      "有勇氣的聖經聖物",
+      "有勇氣的草紙聖物",
+      "有勇氣的陶罐聖物",
+      "有勇氣的香爐聖物",
+      "前綴 \"光亮的\"(階層：#)",
+      "光亮的古甕聖物",
+      "光亮的器皿聖物",
+      "光亮的寶箱聖物",
+      "光亮的聖經聖物",
+      "光亮的草紙聖物",
+      "光亮的陶罐聖物",
+      "光亮的香爐聖物",
+      "前綴 \"壯膽的\"(階層：#)",
+      "壯膽的古甕聖物",
+      "壯膽的器皿聖物",
+      "壯膽的寶箱聖物",
+      "壯膽的聖經聖物",
+      "壯膽的草紙聖物",
+      "壯膽的陶罐聖物",
+      "壯膽的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Revitalising\" (Tier: #)",
+      "Revitalising Urn Relic",
+      "Revitalising Vase Relic",
+      "Revitalising Coffer Relic",
+      "Revitalising Tapestry Relic",
+      "Revitalising Seal Relic",
+      "Revitalising Amphora Relic",
+      "Revitalising Incense Relic",
+      "Prefix Modifier \"Galvanising\" (Tier: #)",
+      "Galvanising Urn Relic",
+      "Galvanising Vase Relic",
+      "Galvanising Coffer Relic",
+      "Galvanising Tapestry Relic",
+      "Galvanising Seal Relic",
+      "Galvanising Amphora Relic",
+      "Galvanising Incense Relic",
+      "Prefix Modifier \"Enlivening\" (Tier: #)",
+      "Enlivening Urn Relic",
+      "Enlivening Vase Relic",
+      "Enlivening Coffer Relic",
+      "Enlivening Tapestry Relic",
+      "Enlivening Seal Relic",
+      "Enlivening Amphora Relic",
+      "Enlivening Incense Relic",
+      "Prefix Modifier \"Emboldening\" (Tier: #)",
+      "Emboldening Urn Relic",
+      "Emboldening Vase Relic",
+      "Emboldening Coffer Relic",
+      "Emboldening Tapestry Relic",
+      "Emboldening Seal Relic",
+      "Emboldening Amphora Relic",
+      "Emboldening Incense Relic",
+      "Prefix Modifier \"Brightening\" (Tier: #)",
+      "Brightening Urn Relic",
+      "Brightening Vase Relic",
+      "Brightening Coffer Relic",
+      "Brightening Tapestry Relic",
+      "Brightening Seal Relic",
+      "Brightening Amphora Relic",
+      "Brightening Incense Relic"
+     ]
     },
     {
      "id": "SanctumMaximumHonour1",
@@ -1335,7 +4127,91 @@
       "#% increased maximum Honour"
      ],
      "g": 0,
-     "affixZh": "光榮的、道德的、原則的、尊敬的"
+     "affixZh": "光榮的、道德的、原則的、尊敬的",
+     "hiddenZh": [
+      "前綴 \"光榮的\"(階層：#)",
+      "光榮的古甕聖物",
+      "光榮的器皿聖物",
+      "光榮的寶箱聖物",
+      "光榮的聖經聖物",
+      "光榮的草紙聖物",
+      "光榮的陶罐聖物",
+      "光榮的香爐聖物",
+      "前綴 \"道德的\"(階層：#)",
+      "道德的古甕聖物",
+      "道德的器皿聖物",
+      "道德的寶箱聖物",
+      "道德的聖經聖物",
+      "道德的草紙聖物",
+      "道德的陶罐聖物",
+      "道德的香爐聖物",
+      "前綴 \"原則的\"(階層：#)",
+      "原則的古甕聖物",
+      "原則的器皿聖物",
+      "原則的寶箱聖物",
+      "原則的聖經聖物",
+      "原則的草紙聖物",
+      "原則的陶罐聖物",
+      "原則的香爐聖物",
+      "前綴 \"尊敬的\"(階層：#)",
+      "尊敬的古甕聖物",
+      "尊敬的器皿聖物",
+      "尊敬的寶箱聖物",
+      "尊敬的聖經聖物",
+      "尊敬的草紙聖物",
+      "尊敬的陶罐聖物",
+      "尊敬的香爐聖物",
+      "前綴 \"德高望重的\"(階層：#)",
+      "德高望重的古甕聖物",
+      "德高望重的器皿聖物",
+      "德高望重的寶箱聖物",
+      "德高望重的聖經聖物",
+      "德高望重的草紙聖物",
+      "德高望重的陶罐聖物",
+      "德高望重的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Honourable\" (Tier: #)",
+      "Honourable Urn Relic",
+      "Honourable Vase Relic",
+      "Honourable Coffer Relic",
+      "Honourable Tapestry Relic",
+      "Honourable Seal Relic",
+      "Honourable Amphora Relic",
+      "Honourable Incense Relic",
+      "Prefix Modifier \"Moral\" (Tier: #)",
+      "Moral Urn Relic",
+      "Moral Vase Relic",
+      "Moral Coffer Relic",
+      "Moral Tapestry Relic",
+      "Moral Seal Relic",
+      "Moral Amphora Relic",
+      "Moral Incense Relic",
+      "Prefix Modifier \"Principled\" (Tier: #)",
+      "Principled Urn Relic",
+      "Principled Vase Relic",
+      "Principled Coffer Relic",
+      "Principled Tapestry Relic",
+      "Principled Seal Relic",
+      "Principled Amphora Relic",
+      "Principled Incense Relic",
+      "Prefix Modifier \"Respected\" (Tier: #)",
+      "Respected Urn Relic",
+      "Respected Vase Relic",
+      "Respected Coffer Relic",
+      "Respected Tapestry Relic",
+      "Respected Seal Relic",
+      "Respected Amphora Relic",
+      "Respected Incense Relic",
+      "Prefix Modifier \"Venerable\" (Tier: #)",
+      "Venerable Urn Relic",
+      "Venerable Vase Relic",
+      "Venerable Coffer Relic",
+      "Venerable Tapestry Relic",
+      "Venerable Seal Relic",
+      "Venerable Amphora Relic",
+      "Venerable Incense Relic"
+     ]
     },
     {
      "id": "SanctumMaximumLife1",
@@ -1346,7 +4222,91 @@
       "#% increased maximum Life"
      ],
      "g": 0,
-     "affixZh": "堅韌的、耐久的、堅定不移、熱烈的"
+     "affixZh": "堅韌的、耐久的、堅定不移、熱烈的",
+     "hiddenZh": [
+      "前綴 \"堅韌的\"(階層：#)",
+      "堅韌的古甕聖物",
+      "堅韌的器皿聖物",
+      "堅韌的寶箱聖物",
+      "堅韌的聖經聖物",
+      "堅韌的草紙聖物",
+      "堅韌的陶罐聖物",
+      "堅韌的香爐聖物",
+      "前綴 \"耐久的\"(階層：#)",
+      "耐久的古甕聖物",
+      "耐久的器皿聖物",
+      "耐久的寶箱聖物",
+      "耐久的聖經聖物",
+      "耐久的草紙聖物",
+      "耐久的陶罐聖物",
+      "耐久的香爐聖物",
+      "前綴 \"堅定不移\"(階層：#)",
+      "堅定不移古甕聖物",
+      "堅定不移器皿聖物",
+      "堅定不移寶箱聖物",
+      "堅定不移聖經聖物",
+      "堅定不移草紙聖物",
+      "堅定不移陶罐聖物",
+      "堅定不移香爐聖物",
+      "前綴 \"熱烈的\"(階層：#)",
+      "熱烈的古甕聖物",
+      "熱烈的器皿聖物",
+      "熱烈的寶箱聖物",
+      "熱烈的聖經聖物",
+      "熱烈的草紙聖物",
+      "熱烈的陶罐聖物",
+      "熱烈的香爐聖物",
+      "前綴 \"堅決的\"(階層：#)",
+      "堅決的古甕聖物",
+      "堅決的器皿聖物",
+      "堅決的寶箱聖物",
+      "堅決的聖經聖物",
+      "堅決的草紙聖物",
+      "堅決的陶罐聖物",
+      "堅決的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Steadfast\" (Tier: #)",
+      "Steadfast Urn Relic",
+      "Steadfast Vase Relic",
+      "Steadfast Coffer Relic",
+      "Steadfast Tapestry Relic",
+      "Steadfast Seal Relic",
+      "Steadfast Amphora Relic",
+      "Steadfast Incense Relic",
+      "Prefix Modifier \"Enduring\" (Tier: #)",
+      "Enduring Urn Relic",
+      "Enduring Vase Relic",
+      "Enduring Coffer Relic",
+      "Enduring Tapestry Relic",
+      "Enduring Seal Relic",
+      "Enduring Amphora Relic",
+      "Enduring Incense Relic",
+      "Prefix Modifier \"Adamant\" (Tier: #)",
+      "Adamant Urn Relic",
+      "Adamant Vase Relic",
+      "Adamant Coffer Relic",
+      "Adamant Tapestry Relic",
+      "Adamant Seal Relic",
+      "Adamant Amphora Relic",
+      "Adamant Incense Relic",
+      "Prefix Modifier \"Ardent\" (Tier: #)",
+      "Ardent Urn Relic",
+      "Ardent Vase Relic",
+      "Ardent Coffer Relic",
+      "Ardent Tapestry Relic",
+      "Ardent Seal Relic",
+      "Ardent Amphora Relic",
+      "Ardent Incense Relic",
+      "Prefix Modifier \"Resolute\" (Tier: #)",
+      "Resolute Urn Relic",
+      "Resolute Vase Relic",
+      "Resolute Coffer Relic",
+      "Resolute Tapestry Relic",
+      "Resolute Seal Relic",
+      "Resolute Amphora Relic",
+      "Resolute Incense Relic"
+     ]
     },
     {
      "id": "SanctumMovementSpeed1",
@@ -1357,7 +4317,59 @@
       "#% increased Movement Speed"
      ],
      "g": 0,
-     "affixZh": "靈活的、迅速的、急速"
+     "affixZh": "靈活的、迅速的、急速",
+     "hiddenZh": [
+      "前綴 \"靈活的\"(階層：#)",
+      "靈活的古甕聖物",
+      "靈活的器皿聖物",
+      "靈活的寶箱聖物",
+      "靈活的聖經聖物",
+      "靈活的草紙聖物",
+      "靈活的陶罐聖物",
+      "靈活的香爐聖物",
+      "前綴 \"迅速的\"(階層：#)",
+      "迅速的古甕聖物",
+      "迅速的器皿聖物",
+      "迅速的寶箱聖物",
+      "迅速的聖經聖物",
+      "迅速的草紙聖物",
+      "迅速的陶罐聖物",
+      "迅速的香爐聖物",
+      "前綴 \"急速\"(階層：#)",
+      "急速古甕聖物",
+      "急速器皿聖物",
+      "急速寶箱聖物",
+      "急速聖經聖物",
+      "急速草紙聖物",
+      "急速陶罐聖物",
+      "急速香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Nimble\" (Tier: #)",
+      "Nimble Urn Relic",
+      "Nimble Vase Relic",
+      "Nimble Coffer Relic",
+      "Nimble Tapestry Relic",
+      "Nimble Seal Relic",
+      "Nimble Amphora Relic",
+      "Nimble Incense Relic",
+      "Prefix Modifier \"Swift\" (Tier: #)",
+      "Swift Urn Relic",
+      "Swift Vase Relic",
+      "Swift Coffer Relic",
+      "Swift Tapestry Relic",
+      "Swift Seal Relic",
+      "Swift Amphora Relic",
+      "Swift Incense Relic",
+      "Prefix Modifier \"Hasted\" (Tier: #)",
+      "Hasted Urn Relic",
+      "Hasted Vase Relic",
+      "Hasted Coffer Relic",
+      "Hasted Tapestry Relic",
+      "Hasted Seal Relic",
+      "Hasted Amphora Relic",
+      "Hasted Incense Relic"
+     ]
     },
     {
      "id": "SanctumGuardsIncreasedDamageTaken1",
@@ -1368,7 +4380,59 @@
       "Rare Monsters take #% increased Damage"
      ],
      "g": 0,
-     "affixZh": "違者的、違規者的、恥辱的"
+     "affixZh": "違者的、違規者的、恥辱的",
+     "hiddenZh": [
+      "前綴 \"違者的\"(階層：#)",
+      "違者的古甕聖物",
+      "違者的器皿聖物",
+      "違者的寶箱聖物",
+      "違者的聖經聖物",
+      "違者的草紙聖物",
+      "違者的陶罐聖物",
+      "違者的香爐聖物",
+      "前綴 \"違規者的\"(階層：#)",
+      "違規者的古甕聖物",
+      "違規者的器皿聖物",
+      "違規者的寶箱聖物",
+      "違規者的聖經聖物",
+      "違規者的草紙聖物",
+      "違規者的陶罐聖物",
+      "違規者的香爐聖物",
+      "前綴 \"恥辱的\"(階層：#)",
+      "恥辱的古甕聖物",
+      "恥辱的器皿聖物",
+      "恥辱的寶箱聖物",
+      "恥辱的聖經聖物",
+      "恥辱的草紙聖物",
+      "恥辱的陶罐聖物",
+      "恥辱的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Transgressor's\" (Tier: #)",
+      "Transgressor's Urn Relic",
+      "Transgressor's Vase Relic",
+      "Transgressor's Coffer Relic",
+      "Transgressor's Tapestry Relic",
+      "Transgressor's Seal Relic",
+      "Transgressor's Amphora Relic",
+      "Transgressor's Incense Relic",
+      "Prefix Modifier \"Violator's\" (Tier: #)",
+      "Violator's Urn Relic",
+      "Violator's Vase Relic",
+      "Violator's Coffer Relic",
+      "Violator's Tapestry Relic",
+      "Violator's Seal Relic",
+      "Violator's Amphora Relic",
+      "Violator's Incense Relic",
+      "Prefix Modifier \"Disgrace's\" (Tier: #)",
+      "Disgrace's Urn Relic",
+      "Disgrace's Vase Relic",
+      "Disgrace's Coffer Relic",
+      "Disgrace's Tapestry Relic",
+      "Disgrace's Seal Relic",
+      "Disgrace's Amphora Relic",
+      "Disgrace's Incense Relic"
+     ]
     },
     {
      "id": "SanctumDefences1",
@@ -1379,7 +4443,75 @@
       "#% increased Armour, Evasion and Energy Shield"
      ],
      "g": 0,
-     "affixZh": "加強的、分層的、加厚的、束帶的"
+     "affixZh": "加強的、分層的、加厚的、束帶的",
+     "hiddenZh": [
+      "前綴 \"加強的\"(階層：#)",
+      "加強的古甕聖物",
+      "加強的器皿聖物",
+      "加強的寶箱聖物",
+      "加強的聖經聖物",
+      "加強的草紙聖物",
+      "加強的陶罐聖物",
+      "加強的香爐聖物",
+      "前綴 \"分層的\"(階層：#)",
+      "分層的古甕聖物",
+      "分層的器皿聖物",
+      "分層的寶箱聖物",
+      "分層的聖經聖物",
+      "分層的草紙聖物",
+      "分層的陶罐聖物",
+      "分層的香爐聖物",
+      "前綴 \"加厚的\"(階層：#)",
+      "加厚的古甕聖物",
+      "加厚的器皿聖物",
+      "加厚的寶箱聖物",
+      "加厚的聖經聖物",
+      "加厚的草紙聖物",
+      "加厚的陶罐聖物",
+      "加厚的香爐聖物",
+      "前綴 \"束帶的\"(階層：#)",
+      "束帶的古甕聖物",
+      "束帶的器皿聖物",
+      "束帶的寶箱聖物",
+      "束帶的聖經聖物",
+      "束帶的草紙聖物",
+      "束帶的陶罐聖物",
+      "束帶的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Reinforced\" (Tier: #)",
+      "Reinforced Urn Relic",
+      "Reinforced Vase Relic",
+      "Reinforced Coffer Relic",
+      "Reinforced Tapestry Relic",
+      "Reinforced Seal Relic",
+      "Reinforced Amphora Relic",
+      "Reinforced Incense Relic",
+      "Prefix Modifier \"Layered\" (Tier: #)",
+      "Layered Urn Relic",
+      "Layered Vase Relic",
+      "Layered Coffer Relic",
+      "Layered Tapestry Relic",
+      "Layered Seal Relic",
+      "Layered Amphora Relic",
+      "Layered Incense Relic",
+      "Prefix Modifier \"Thickened\" (Tier: #)",
+      "Thickened Urn Relic",
+      "Thickened Vase Relic",
+      "Thickened Coffer Relic",
+      "Thickened Tapestry Relic",
+      "Thickened Seal Relic",
+      "Thickened Amphora Relic",
+      "Thickened Incense Relic",
+      "Prefix Modifier \"Girded\" (Tier: #)",
+      "Girded Urn Relic",
+      "Girded Vase Relic",
+      "Girded Coffer Relic",
+      "Girded Tapestry Relic",
+      "Girded Seal Relic",
+      "Girded Amphora Relic",
+      "Girded Incense Relic"
+     ]
     },
     {
      "id": "SanctumKeyUpgradeChance1",
@@ -1390,7 +4522,59 @@
       "#% chance for each of your Keys to upgrade on completing a Floor"
      ],
      "g": 0,
-     "affixZh": "增進的、重鑄的、升級的"
+     "affixZh": "增進的、重鑄的、升級的",
+     "hiddenZh": [
+      "前綴 \"增進的\"(階層：#)",
+      "增進的古甕聖物",
+      "增進的器皿聖物",
+      "增進的寶箱聖物",
+      "增進的聖經聖物",
+      "增進的草紙聖物",
+      "增進的陶罐聖物",
+      "增進的香爐聖物",
+      "前綴 \"重鑄的\"(階層：#)",
+      "重鑄的古甕聖物",
+      "重鑄的器皿聖物",
+      "重鑄的寶箱聖物",
+      "重鑄的聖經聖物",
+      "重鑄的草紙聖物",
+      "重鑄的陶罐聖物",
+      "重鑄的香爐聖物",
+      "前綴 \"升級的\"(階層：#)",
+      "升級的古甕聖物",
+      "升級的器皿聖物",
+      "升級的寶箱聖物",
+      "升級的聖經聖物",
+      "升級的草紙聖物",
+      "升級的陶罐聖物",
+      "升級的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Enhancing\" (Tier: #)",
+      "Enhancing Urn Relic",
+      "Enhancing Vase Relic",
+      "Enhancing Coffer Relic",
+      "Enhancing Tapestry Relic",
+      "Enhancing Seal Relic",
+      "Enhancing Amphora Relic",
+      "Enhancing Incense Relic",
+      "Prefix Modifier \"Reforging\" (Tier: #)",
+      "Reforging Urn Relic",
+      "Reforging Vase Relic",
+      "Reforging Coffer Relic",
+      "Reforging Tapestry Relic",
+      "Reforging Seal Relic",
+      "Reforging Amphora Relic",
+      "Reforging Incense Relic",
+      "Prefix Modifier \"Upgrading\" (Tier: #)",
+      "Upgrading Urn Relic",
+      "Upgrading Vase Relic",
+      "Upgrading Coffer Relic",
+      "Upgrading Tapestry Relic",
+      "Upgrading Seal Relic",
+      "Upgrading Amphora Relic",
+      "Upgrading Incense Relic"
+     ]
     },
     {
      "id": "SanctumMonstersIncreasedDamageTaken1",
@@ -1401,7 +4585,59 @@
       "Monsters take #% increased Damage"
      ],
      "g": 0,
-     "affixZh": "粉碎之、懲戒的、殲滅的"
+     "affixZh": "粉碎之、懲戒的、殲滅的",
+     "hiddenZh": [
+      "前綴 \"粉碎之\"(階層：#)",
+      "粉碎之古甕聖物",
+      "粉碎之器皿聖物",
+      "粉碎之寶箱聖物",
+      "粉碎之聖經聖物",
+      "粉碎之草紙聖物",
+      "粉碎之陶罐聖物",
+      "粉碎之香爐聖物",
+      "前綴 \"懲戒的\"(階層：#)",
+      "懲戒的古甕聖物",
+      "懲戒的器皿聖物",
+      "懲戒的寶箱聖物",
+      "懲戒的聖經聖物",
+      "懲戒的草紙聖物",
+      "懲戒的陶罐聖物",
+      "懲戒的香爐聖物",
+      "前綴 \"殲滅的\"(階層：#)",
+      "殲滅的古甕聖物",
+      "殲滅的器皿聖物",
+      "殲滅的寶箱聖物",
+      "殲滅的聖經聖物",
+      "殲滅的草紙聖物",
+      "殲滅的陶罐聖物",
+      "殲滅的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Crushing\" (Tier: #)",
+      "Crushing Urn Relic",
+      "Crushing Vase Relic",
+      "Crushing Coffer Relic",
+      "Crushing Tapestry Relic",
+      "Crushing Seal Relic",
+      "Crushing Amphora Relic",
+      "Crushing Incense Relic",
+      "Prefix Modifier \"Punishing\" (Tier: #)",
+      "Punishing Urn Relic",
+      "Punishing Vase Relic",
+      "Punishing Coffer Relic",
+      "Punishing Tapestry Relic",
+      "Punishing Seal Relic",
+      "Punishing Amphora Relic",
+      "Punishing Incense Relic",
+      "Prefix Modifier \"Annihilating\" (Tier: #)",
+      "Annihilating Urn Relic",
+      "Annihilating Vase Relic",
+      "Annihilating Coffer Relic",
+      "Annihilating Tapestry Relic",
+      "Annihilating Seal Relic",
+      "Annihilating Amphora Relic",
+      "Annihilating Incense Relic"
+     ]
     },
     {
      "id": "SanctumMonsterSpeed1",
@@ -1412,7 +4648,59 @@
       "Monsters have #% reduced Attack, Cast and Movement Speed"
      ],
      "g": 0,
-     "affixZh": "時間扭曲的、時占的、短暫的"
+     "affixZh": "時間扭曲的、時占的、短暫的",
+     "hiddenZh": [
+      "前綴 \"時間扭曲的\"(階層：#)",
+      "時間扭曲的古甕聖物",
+      "時間扭曲的器皿聖物",
+      "時間扭曲的寶箱聖物",
+      "時間扭曲的聖經聖物",
+      "時間扭曲的草紙聖物",
+      "時間扭曲的陶罐聖物",
+      "時間扭曲的香爐聖物",
+      "前綴 \"時占的\"(階層：#)",
+      "時占的古甕聖物",
+      "時占的器皿聖物",
+      "時占的寶箱聖物",
+      "時占的聖經聖物",
+      "時占的草紙聖物",
+      "時占的陶罐聖物",
+      "時占的香爐聖物",
+      "前綴 \"短暫的\"(階層：#)",
+      "短暫的古甕聖物",
+      "短暫的器皿聖物",
+      "短暫的寶箱聖物",
+      "短暫的聖經聖物",
+      "短暫的草紙聖物",
+      "短暫的陶罐聖物",
+      "短暫的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Time-warping\" (Tier: #)",
+      "Time-warping Urn Relic",
+      "Time-warping Vase Relic",
+      "Time-warping Coffer Relic",
+      "Time-warping Tapestry Relic",
+      "Time-warping Seal Relic",
+      "Time-warping Amphora Relic",
+      "Time-warping Incense Relic",
+      "Prefix Modifier \"Chronomancy\" (Tier: #)",
+      "Chronomancy Urn Relic",
+      "Chronomancy Vase Relic",
+      "Chronomancy Coffer Relic",
+      "Chronomancy Tapestry Relic",
+      "Chronomancy Seal Relic",
+      "Chronomancy Amphora Relic",
+      "Chronomancy Incense Relic",
+      "Prefix Modifier \"Temporal\" (Tier: #)",
+      "Temporal Urn Relic",
+      "Temporal Vase Relic",
+      "Temporal Coffer Relic",
+      "Temporal Tapestry Relic",
+      "Temporal Seal Relic",
+      "Temporal Amphora Relic",
+      "Temporal Incense Relic"
+     ]
     },
     {
      "id": "SanctumChanceToPreventHonourDeath1",
@@ -1423,7 +4711,43 @@
       "#% chance if you were to lose all your Honour to have 1 Honour instead"
      ],
      "g": 0,
-     "affixZh": "作弊的、詐欺的"
+     "affixZh": "作弊的、詐欺的",
+     "hiddenZh": [
+      "前綴 \"作弊的\"(階層：#)",
+      "作弊的古甕聖物",
+      "作弊的器皿聖物",
+      "作弊的寶箱聖物",
+      "作弊的聖經聖物",
+      "作弊的草紙聖物",
+      "作弊的陶罐聖物",
+      "作弊的香爐聖物",
+      "前綴 \"詐欺的\"(階層：#)",
+      "詐欺的古甕聖物",
+      "詐欺的器皿聖物",
+      "詐欺的寶箱聖物",
+      "詐欺的聖經聖物",
+      "詐欺的草紙聖物",
+      "詐欺的陶罐聖物",
+      "詐欺的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Cheater's\" (Tier: #)",
+      "Cheater's Urn Relic",
+      "Cheater's Vase Relic",
+      "Cheater's Coffer Relic",
+      "Cheater's Tapestry Relic",
+      "Cheater's Seal Relic",
+      "Cheater's Amphora Relic",
+      "Cheater's Incense Relic",
+      "Prefix Modifier \"Deceiver's\" (Tier: #)",
+      "Deceiver's Urn Relic",
+      "Deceiver's Vase Relic",
+      "Deceiver's Coffer Relic",
+      "Deceiver's Tapestry Relic",
+      "Deceiver's Seal Relic",
+      "Deceiver's Amphora Relic",
+      "Deceiver's Incense Relic"
+     ]
     },
     {
      "id": "SanctumMonstersReducedDamage1",
@@ -1434,7 +4758,59 @@
       "Monsters deal #% reduced Damage"
      ],
      "g": 0,
-     "affixZh": "彈力的、強化的、費解的"
+     "affixZh": "彈力的、強化的、費解的",
+     "hiddenZh": [
+      "前綴 \"彈力的\"(階層：#)",
+      "彈力的古甕聖物",
+      "彈力的器皿聖物",
+      "彈力的寶箱聖物",
+      "彈力的聖經聖物",
+      "彈力的草紙聖物",
+      "彈力的陶罐聖物",
+      "彈力的香爐聖物",
+      "前綴 \"強化的\"(階層：#)",
+      "強化的古甕聖物",
+      "強化的器皿聖物",
+      "強化的寶箱聖物",
+      "強化的聖經聖物",
+      "強化的草紙聖物",
+      "強化的陶罐聖物",
+      "強化的香爐聖物",
+      "前綴 \"費解的\"(階層：#)",
+      "費解的古甕聖物",
+      "費解的器皿聖物",
+      "費解的寶箱聖物",
+      "費解的聖經聖物",
+      "費解的草紙聖物",
+      "費解的陶罐聖物",
+      "費解的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Resilient\" (Tier: #)",
+      "Resilient Urn Relic",
+      "Resilient Vase Relic",
+      "Resilient Coffer Relic",
+      "Resilient Tapestry Relic",
+      "Resilient Seal Relic",
+      "Resilient Amphora Relic",
+      "Resilient Incense Relic",
+      "Prefix Modifier \"Fortified\" (Tier: #)",
+      "Fortified Urn Relic",
+      "Fortified Vase Relic",
+      "Fortified Coffer Relic",
+      "Fortified Tapestry Relic",
+      "Fortified Seal Relic",
+      "Fortified Amphora Relic",
+      "Fortified Incense Relic",
+      "Prefix Modifier \"Impenetrable\" (Tier: #)",
+      "Impenetrable Urn Relic",
+      "Impenetrable Vase Relic",
+      "Impenetrable Coffer Relic",
+      "Impenetrable Tapestry Relic",
+      "Impenetrable Seal Relic",
+      "Impenetrable Amphora Relic",
+      "Impenetrable Incense Relic"
+     ]
     },
     {
      "id": "SanctumReducedTrapDamage2",
@@ -1445,7 +4821,43 @@
       "Traps deal #% reduced Damage"
      ],
      "g": 0,
-     "affixZh": "雜技的、富有彈性的"
+     "affixZh": "雜技的、富有彈性的",
+     "hiddenZh": [
+      "前綴 \"雜技的\"(階層：#)",
+      "雜技的古甕聖物",
+      "雜技的器皿聖物",
+      "雜技的寶箱聖物",
+      "雜技的聖經聖物",
+      "雜技的草紙聖物",
+      "雜技的陶罐聖物",
+      "雜技的香爐聖物",
+      "前綴 \"富有彈性的\"(階層：#)",
+      "富有彈性的古甕聖物",
+      "富有彈性的器皿聖物",
+      "富有彈性的寶箱聖物",
+      "富有彈性的聖經聖物",
+      "富有彈性的草紙聖物",
+      "富有彈性的陶罐聖物",
+      "富有彈性的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Acrobatic\" (Tier: #)",
+      "Acrobatic Urn Relic",
+      "Acrobatic Vase Relic",
+      "Acrobatic Coffer Relic",
+      "Acrobatic Tapestry Relic",
+      "Acrobatic Seal Relic",
+      "Acrobatic Amphora Relic",
+      "Acrobatic Incense Relic",
+      "Prefix Modifier \"Limber\" (Tier: #)",
+      "Limber Urn Relic",
+      "Limber Vase Relic",
+      "Limber Coffer Relic",
+      "Limber Tapestry Relic",
+      "Limber Seal Relic",
+      "Limber Amphora Relic",
+      "Limber Incense Relic"
+     ]
     },
     {
      "id": "SanctumBossReducedDamage1",
@@ -1456,7 +4868,59 @@
       "Bosses deal #% reduced Damage"
      ],
      "g": 0,
-     "affixZh": "神盾、無懼先鋒、盾影"
+     "affixZh": "神盾、無懼先鋒、盾影",
+     "hiddenZh": [
+      "前綴 \"神盾\"(階層：#)",
+      "神盾古甕聖物",
+      "神盾器皿聖物",
+      "神盾寶箱聖物",
+      "神盾聖經聖物",
+      "神盾草紙聖物",
+      "神盾陶罐聖物",
+      "神盾香爐聖物",
+      "前綴 \"無懼先鋒\"(階層：#)",
+      "無懼先鋒古甕聖物",
+      "無懼先鋒器皿聖物",
+      "無懼先鋒寶箱聖物",
+      "無懼先鋒聖經聖物",
+      "無懼先鋒草紙聖物",
+      "無懼先鋒陶罐聖物",
+      "無懼先鋒香爐聖物",
+      "前綴 \"盾影\"(階層：#)",
+      "盾影古甕聖物",
+      "盾影器皿聖物",
+      "盾影寶箱聖物",
+      "盾影聖經聖物",
+      "盾影草紙聖物",
+      "盾影陶罐聖物",
+      "盾影香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Aegis\" (Tier: #)",
+      "Aegis Urn Relic",
+      "Aegis Vase Relic",
+      "Aegis Coffer Relic",
+      "Aegis Tapestry Relic",
+      "Aegis Seal Relic",
+      "Aegis Amphora Relic",
+      "Aegis Incense Relic",
+      "Prefix Modifier \"Vanguard\" (Tier: #)",
+      "Vanguard Urn Relic",
+      "Vanguard Vase Relic",
+      "Vanguard Coffer Relic",
+      "Vanguard Tapestry Relic",
+      "Vanguard Seal Relic",
+      "Vanguard Amphora Relic",
+      "Vanguard Incense Relic",
+      "Prefix Modifier \"Phalanx\" (Tier: #)",
+      "Phalanx Urn Relic",
+      "Phalanx Vase Relic",
+      "Phalanx Coffer Relic",
+      "Phalanx Tapestry Relic",
+      "Phalanx Seal Relic",
+      "Phalanx Amphora Relic",
+      "Phalanx Incense Relic"
+     ]
     },
     {
      "id": "SanctumAdditionalKeyChance1",
@@ -1467,7 +4931,59 @@
       "When you gain a Key #% chance to gain another"
      ],
      "g": 0,
-     "affixZh": "小偷的、扒竊的、盜賊的"
+     "affixZh": "小偷的、扒竊的、盜賊的",
+     "hiddenZh": [
+      "前綴 \"小偷的\"(階層：#)",
+      "小偷的古甕聖物",
+      "小偷的器皿聖物",
+      "小偷的寶箱聖物",
+      "小偷的聖經聖物",
+      "小偷的草紙聖物",
+      "小偷的陶罐聖物",
+      "小偷的香爐聖物",
+      "前綴 \"扒竊的\"(階層：#)",
+      "扒竊的古甕聖物",
+      "扒竊的器皿聖物",
+      "扒竊的寶箱聖物",
+      "扒竊的聖經聖物",
+      "扒竊的草紙聖物",
+      "扒竊的陶罐聖物",
+      "扒竊的香爐聖物",
+      "前綴 \"盜賊的\"(階層：#)",
+      "盜賊的古甕聖物",
+      "盜賊的器皿聖物",
+      "盜賊的寶箱聖物",
+      "盜賊的聖經聖物",
+      "盜賊的草紙聖物",
+      "盜賊的陶罐聖物",
+      "盜賊的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Pilferer's\" (Tier: #)",
+      "Pilferer's Urn Relic",
+      "Pilferer's Vase Relic",
+      "Pilferer's Coffer Relic",
+      "Pilferer's Tapestry Relic",
+      "Pilferer's Seal Relic",
+      "Pilferer's Amphora Relic",
+      "Pilferer's Incense Relic",
+      "Prefix Modifier \"Picklock's\" (Tier: #)",
+      "Picklock's Urn Relic",
+      "Picklock's Vase Relic",
+      "Picklock's Coffer Relic",
+      "Picklock's Tapestry Relic",
+      "Picklock's Seal Relic",
+      "Picklock's Amphora Relic",
+      "Picklock's Incense Relic",
+      "Prefix Modifier \"Thief's\" (Tier: #)",
+      "Thief's Urn Relic",
+      "Thief's Vase Relic",
+      "Thief's Coffer Relic",
+      "Thief's Tapestry Relic",
+      "Thief's Seal Relic",
+      "Thief's Amphora Relic",
+      "Thief's Incense Relic"
+     ]
     },
     {
      "id": "SanctumGuardsReducedDamage1",
@@ -1478,7 +4994,59 @@
       "Rare Monsters deal #% reduced Damage"
      ],
      "g": 0,
-     "affixZh": "守護、堅堡、城塞"
+     "affixZh": "守護、堅堡、城塞",
+     "hiddenZh": [
+      "前綴 \"守護\"(階層：#)",
+      "守護古甕聖物",
+      "守護器皿聖物",
+      "守護寶箱聖物",
+      "守護聖經聖物",
+      "守護草紙聖物",
+      "守護陶罐聖物",
+      "守護香爐聖物",
+      "前綴 \"堅堡\"(階層：#)",
+      "堅堡古甕聖物",
+      "堅堡器皿聖物",
+      "堅堡寶箱聖物",
+      "堅堡聖經聖物",
+      "堅堡草紙聖物",
+      "堅堡陶罐聖物",
+      "堅堡香爐聖物",
+      "前綴 \"城塞\"(階層：#)",
+      "城塞古甕聖物",
+      "城塞器皿聖物",
+      "城塞寶箱聖物",
+      "城塞聖經聖物",
+      "城塞草紙聖物",
+      "城塞陶罐聖物",
+      "城塞香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Bulwark\" (Tier: #)",
+      "Bulwark Urn Relic",
+      "Bulwark Vase Relic",
+      "Bulwark Coffer Relic",
+      "Bulwark Tapestry Relic",
+      "Bulwark Seal Relic",
+      "Bulwark Amphora Relic",
+      "Bulwark Incense Relic",
+      "Prefix Modifier \"Bastion\" (Tier: #)",
+      "Bastion Urn Relic",
+      "Bastion Vase Relic",
+      "Bastion Coffer Relic",
+      "Bastion Tapestry Relic",
+      "Bastion Seal Relic",
+      "Bastion Amphora Relic",
+      "Bastion Incense Relic",
+      "Prefix Modifier \"Citadel\" (Tier: #)",
+      "Citadel Urn Relic",
+      "Citadel Vase Relic",
+      "Citadel Coffer Relic",
+      "Citadel Tapestry Relic",
+      "Citadel Seal Relic",
+      "Citadel Amphora Relic",
+      "Citadel Incense Relic"
+     ]
     },
     {
      "id": "SanctumBossIncreasedDamageTaken1",
@@ -1489,7 +5057,59 @@
       "Bosses take #% increased Damage"
      ],
      "g": 0,
-     "affixZh": "挑戰者的、篡奪者的、弒君者的"
+     "affixZh": "挑戰者的、篡奪者的、弒君者的",
+     "hiddenZh": [
+      "前綴 \"挑戰者的\"(階層：#)",
+      "挑戰者的古甕聖物",
+      "挑戰者的器皿聖物",
+      "挑戰者的寶箱聖物",
+      "挑戰者的聖經聖物",
+      "挑戰者的草紙聖物",
+      "挑戰者的陶罐聖物",
+      "挑戰者的香爐聖物",
+      "前綴 \"篡奪者的\"(階層：#)",
+      "篡奪者的古甕聖物",
+      "篡奪者的器皿聖物",
+      "篡奪者的寶箱聖物",
+      "篡奪者的聖經聖物",
+      "篡奪者的草紙聖物",
+      "篡奪者的陶罐聖物",
+      "篡奪者的香爐聖物",
+      "前綴 \"弒君者的\"(階層：#)",
+      "弒君者的古甕聖物",
+      "弒君者的器皿聖物",
+      "弒君者的寶箱聖物",
+      "弒君者的聖經聖物",
+      "弒君者的草紙聖物",
+      "弒君者的陶罐聖物",
+      "弒君者的香爐聖物"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Challenger's\" (Tier: #)",
+      "Challenger's Urn Relic",
+      "Challenger's Vase Relic",
+      "Challenger's Coffer Relic",
+      "Challenger's Tapestry Relic",
+      "Challenger's Seal Relic",
+      "Challenger's Amphora Relic",
+      "Challenger's Incense Relic",
+      "Prefix Modifier \"Usurper's\" (Tier: #)",
+      "Usurper's Urn Relic",
+      "Usurper's Vase Relic",
+      "Usurper's Coffer Relic",
+      "Usurper's Tapestry Relic",
+      "Usurper's Seal Relic",
+      "Usurper's Amphora Relic",
+      "Usurper's Incense Relic",
+      "Prefix Modifier \"Regicidal\" (Tier: #)",
+      "Regicidal Urn Relic",
+      "Regicidal Vase Relic",
+      "Regicidal Coffer Relic",
+      "Regicidal Tapestry Relic",
+      "Regicidal Seal Relic",
+      "Regicidal Amphora Relic",
+      "Regicidal Incense Relic"
+     ]
     },
     {
      "id": "SanctumMaximumHonourResistance1",
@@ -1500,7 +5120,43 @@
       "#% to Maximum Honour Resistance"
      ],
      "g": 1,
-     "affixZh": "卓越之、輝煌之"
+     "affixZh": "卓越之、輝煌之",
+     "hiddenZh": [
+      "後綴 \"卓越之\"(階層：#)",
+      "卓越之古甕聖物",
+      "卓越之器皿聖物",
+      "卓越之寶箱聖物",
+      "卓越之聖經聖物",
+      "卓越之草紙聖物",
+      "卓越之陶罐聖物",
+      "卓越之香爐聖物",
+      "後綴 \"輝煌之\"(階層：#)",
+      "輝煌之古甕聖物",
+      "輝煌之器皿聖物",
+      "輝煌之寶箱聖物",
+      "輝煌之聖經聖物",
+      "輝煌之草紙聖物",
+      "輝煌之陶罐聖物",
+      "輝煌之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Excellence\" (Tier: #)",
+      "Urn Relic of Excellence",
+      "Vase Relic of Excellence",
+      "Coffer Relic of Excellence",
+      "Tapestry Relic of Excellence",
+      "Seal Relic of Excellence",
+      "Amphora Relic of Excellence",
+      "Incense Relic of Excellence",
+      "Suffix Modifier \"of Brilliance\" (Tier: #)",
+      "Urn Relic of Brilliance",
+      "Vase Relic of Brilliance",
+      "Coffer Relic of Brilliance",
+      "Tapestry Relic of Brilliance",
+      "Seal Relic of Brilliance",
+      "Amphora Relic of Brilliance",
+      "Incense Relic of Brilliance"
+     ]
     },
     {
      "id": "SanctumHonourResistance1",
@@ -1511,7 +5167,91 @@
       "#% to Honour Resistance"
      ],
      "g": 1,
-     "affixZh": "價值之、應得之、正當之、資格之"
+     "affixZh": "價值之、應得之、正當之、資格之",
+     "hiddenZh": [
+      "後綴 \"價值之\"(階層：#)",
+      "價值之古甕聖物",
+      "價值之器皿聖物",
+      "價值之寶箱聖物",
+      "價值之聖經聖物",
+      "價值之草紙聖物",
+      "價值之陶罐聖物",
+      "價值之香爐聖物",
+      "後綴 \"應得之\"(階層：#)",
+      "應得之古甕聖物",
+      "應得之器皿聖物",
+      "應得之寶箱聖物",
+      "應得之聖經聖物",
+      "應得之草紙聖物",
+      "應得之陶罐聖物",
+      "應得之香爐聖物",
+      "後綴 \"正當之\"(階層：#)",
+      "正當之古甕聖物",
+      "正當之器皿聖物",
+      "正當之寶箱聖物",
+      "正當之聖經聖物",
+      "正當之草紙聖物",
+      "正當之陶罐聖物",
+      "正當之香爐聖物",
+      "後綴 \"資格之\"(階層：#)",
+      "資格之古甕聖物",
+      "資格之器皿聖物",
+      "資格之寶箱聖物",
+      "資格之聖經聖物",
+      "資格之草紙聖物",
+      "資格之陶罐聖物",
+      "資格之香爐聖物",
+      "後綴 \"長處之\"(階層：#)",
+      "長處之古甕聖物",
+      "長處之器皿聖物",
+      "長處之寶箱聖物",
+      "長處之聖經聖物",
+      "長處之草紙聖物",
+      "長處之陶罐聖物",
+      "長處之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Worth\" (Tier: #)",
+      "Urn Relic of Worth",
+      "Vase Relic of Worth",
+      "Coffer Relic of Worth",
+      "Tapestry Relic of Worth",
+      "Seal Relic of Worth",
+      "Amphora Relic of Worth",
+      "Incense Relic of Worth",
+      "Suffix Modifier \"of Deserving\" (Tier: #)",
+      "Urn Relic of Deserving",
+      "Vase Relic of Deserving",
+      "Coffer Relic of Deserving",
+      "Tapestry Relic of Deserving",
+      "Seal Relic of Deserving",
+      "Amphora Relic of Deserving",
+      "Incense Relic of Deserving",
+      "Suffix Modifier \"of Justification\" (Tier: #)",
+      "Urn Relic of Justification",
+      "Vase Relic of Justification",
+      "Coffer Relic of Justification",
+      "Tapestry Relic of Justification",
+      "Seal Relic of Justification",
+      "Amphora Relic of Justification",
+      "Incense Relic of Justification",
+      "Suffix Modifier \"of Entitlement\" (Tier: #)",
+      "Urn Relic of Entitlement",
+      "Vase Relic of Entitlement",
+      "Coffer Relic of Entitlement",
+      "Tapestry Relic of Entitlement",
+      "Seal Relic of Entitlement",
+      "Amphora Relic of Entitlement",
+      "Incense Relic of Entitlement",
+      "Suffix Modifier \"of Merit\" (Tier: #)",
+      "Urn Relic of Merit",
+      "Vase Relic of Merit",
+      "Coffer Relic of Merit",
+      "Tapestry Relic of Merit",
+      "Seal Relic of Merit",
+      "Amphora Relic of Merit",
+      "Incense Relic of Merit"
+     ]
     },
     {
      "id": "SanctumFountainDoubleGoldChance1",
@@ -1522,7 +5262,75 @@
       "Fountains have #% chance to grant double Sacred Water"
      ],
      "g": 1,
-     "affixZh": "流淌之、充滿之、溢出之、豐收之"
+     "affixZh": "流淌之、充滿之、溢出之、豐收之",
+     "hiddenZh": [
+      "後綴 \"流淌之\"(階層：#)",
+      "流淌之古甕聖物",
+      "流淌之器皿聖物",
+      "流淌之寶箱聖物",
+      "流淌之聖經聖物",
+      "流淌之草紙聖物",
+      "流淌之陶罐聖物",
+      "流淌之香爐聖物",
+      "後綴 \"充滿之\"(階層：#)",
+      "充滿之古甕聖物",
+      "充滿之器皿聖物",
+      "充滿之寶箱聖物",
+      "充滿之聖經聖物",
+      "充滿之草紙聖物",
+      "充滿之陶罐聖物",
+      "充滿之香爐聖物",
+      "後綴 \"溢出之\"(階層：#)",
+      "溢出之古甕聖物",
+      "溢出之器皿聖物",
+      "溢出之寶箱聖物",
+      "溢出之聖經聖物",
+      "溢出之草紙聖物",
+      "溢出之陶罐聖物",
+      "溢出之香爐聖物",
+      "後綴 \"豐收之\"(階層：#)",
+      "豐收之古甕聖物",
+      "豐收之器皿聖物",
+      "豐收之寶箱聖物",
+      "豐收之聖經聖物",
+      "豐收之草紙聖物",
+      "豐收之陶罐聖物",
+      "豐收之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Flowing\" (Tier: #)",
+      "Urn Relic of Flowing",
+      "Vase Relic of Flowing",
+      "Coffer Relic of Flowing",
+      "Tapestry Relic of Flowing",
+      "Seal Relic of Flowing",
+      "Amphora Relic of Flowing",
+      "Incense Relic of Flowing",
+      "Suffix Modifier \"of Brimming\" (Tier: #)",
+      "Urn Relic of Brimming",
+      "Vase Relic of Brimming",
+      "Coffer Relic of Brimming",
+      "Tapestry Relic of Brimming",
+      "Seal Relic of Brimming",
+      "Amphora Relic of Brimming",
+      "Incense Relic of Brimming",
+      "Suffix Modifier \"of Overflowing\" (Tier: #)",
+      "Urn Relic of Overflowing",
+      "Vase Relic of Overflowing",
+      "Coffer Relic of Overflowing",
+      "Tapestry Relic of Overflowing",
+      "Seal Relic of Overflowing",
+      "Amphora Relic of Overflowing",
+      "Incense Relic of Overflowing",
+      "Suffix Modifier \"of Abundance\" (Tier: #)",
+      "Urn Relic of Abundance",
+      "Vase Relic of Abundance",
+      "Coffer Relic of Abundance",
+      "Tapestry Relic of Abundance",
+      "Seal Relic of Abundance",
+      "Amphora Relic of Abundance",
+      "Incense Relic of Abundance"
+     ]
     },
     {
      "id": "SanctumKeyDropChance1",
@@ -1533,7 +5341,75 @@
       "#% increased quantity of Keys dropped by Monsters"
      ],
      "g": 1,
-     "affixZh": "存取之、承認之、進入之、入手之"
+     "affixZh": "存取之、承認之、進入之、入手之",
+     "hiddenZh": [
+      "後綴 \"存取之\"(階層：#)",
+      "存取之古甕聖物",
+      "存取之器皿聖物",
+      "存取之寶箱聖物",
+      "存取之聖經聖物",
+      "存取之草紙聖物",
+      "存取之陶罐聖物",
+      "存取之香爐聖物",
+      "後綴 \"承認之\"(階層：#)",
+      "承認之古甕聖物",
+      "承認之器皿聖物",
+      "承認之寶箱聖物",
+      "承認之聖經聖物",
+      "承認之草紙聖物",
+      "承認之陶罐聖物",
+      "承認之香爐聖物",
+      "後綴 \"進入之\"(階層：#)",
+      "進入之古甕聖物",
+      "進入之器皿聖物",
+      "進入之寶箱聖物",
+      "進入之聖經聖物",
+      "進入之草紙聖物",
+      "進入之陶罐聖物",
+      "進入之香爐聖物",
+      "後綴 \"入手之\"(階層：#)",
+      "入手之古甕聖物",
+      "入手之器皿聖物",
+      "入手之寶箱聖物",
+      "入手之聖經聖物",
+      "入手之草紙聖物",
+      "入手之陶罐聖物",
+      "入手之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Access\" (Tier: #)",
+      "Urn Relic of Access",
+      "Vase Relic of Access",
+      "Coffer Relic of Access",
+      "Tapestry Relic of Access",
+      "Seal Relic of Access",
+      "Amphora Relic of Access",
+      "Incense Relic of Access",
+      "Suffix Modifier \"of Admission\" (Tier: #)",
+      "Urn Relic of Admission",
+      "Vase Relic of Admission",
+      "Coffer Relic of Admission",
+      "Tapestry Relic of Admission",
+      "Seal Relic of Admission",
+      "Amphora Relic of Admission",
+      "Incense Relic of Admission",
+      "Suffix Modifier \"of Entry\" (Tier: #)",
+      "Urn Relic of Entry",
+      "Vase Relic of Entry",
+      "Coffer Relic of Entry",
+      "Tapestry Relic of Entry",
+      "Seal Relic of Entry",
+      "Amphora Relic of Entry",
+      "Incense Relic of Entry",
+      "Suffix Modifier \"of Entrance\" (Tier: #)",
+      "Urn Relic of Entrance",
+      "Vase Relic of Entrance",
+      "Coffer Relic of Entrance",
+      "Tapestry Relic of Entrance",
+      "Seal Relic of Entrance",
+      "Amphora Relic of Entrance",
+      "Incense Relic of Entrance"
+     ]
     },
     {
      "id": "SanctumRelicQuantity1",
@@ -1544,7 +5420,59 @@
       "#% increased quantity of Relics dropped by Monsters"
      ],
      "g": 1,
-     "affixZh": "發現之、學習之、調查之"
+     "affixZh": "發現之、學習之、調查之",
+     "hiddenZh": [
+      "後綴 \"發現之\"(階層：#)",
+      "發現之古甕聖物",
+      "發現之器皿聖物",
+      "發現之寶箱聖物",
+      "發現之聖經聖物",
+      "發現之草紙聖物",
+      "發現之陶罐聖物",
+      "發現之香爐聖物",
+      "後綴 \"學習之\"(階層：#)",
+      "學習之古甕聖物",
+      "學習之器皿聖物",
+      "學習之寶箱聖物",
+      "學習之聖經聖物",
+      "學習之草紙聖物",
+      "學習之陶罐聖物",
+      "學習之香爐聖物",
+      "後綴 \"調查之\"(階層：#)",
+      "調查之古甕聖物",
+      "調查之器皿聖物",
+      "調查之寶箱聖物",
+      "調查之聖經聖物",
+      "調查之草紙聖物",
+      "調查之陶罐聖物",
+      "調查之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Discovery\" (Tier: #)",
+      "Urn Relic of Discovery",
+      "Vase Relic of Discovery",
+      "Coffer Relic of Discovery",
+      "Tapestry Relic of Discovery",
+      "Seal Relic of Discovery",
+      "Amphora Relic of Discovery",
+      "Incense Relic of Discovery",
+      "Suffix Modifier \"of Learning\" (Tier: #)",
+      "Urn Relic of Learning",
+      "Vase Relic of Learning",
+      "Coffer Relic of Learning",
+      "Tapestry Relic of Learning",
+      "Seal Relic of Learning",
+      "Amphora Relic of Learning",
+      "Incense Relic of Learning",
+      "Suffix Modifier \"of Investigation\" (Tier: #)",
+      "Urn Relic of Investigation",
+      "Vase Relic of Investigation",
+      "Coffer Relic of Investigation",
+      "Tapestry Relic of Investigation",
+      "Seal Relic of Investigation",
+      "Amphora Relic of Investigation",
+      "Incense Relic of Investigation"
+     ]
     },
     {
      "id": "SanctumGoldOnRoomCompletion1",
@@ -1555,7 +5483,59 @@
       "Gain # Sacred Water when you complete a Room"
      ],
      "g": 1,
-     "affixZh": "水井之、噴泉之、綠洲之"
+     "affixZh": "水井之、噴泉之、綠洲之",
+     "hiddenZh": [
+      "後綴 \"水井之\"(階層：#)",
+      "水井之古甕聖物",
+      "水井之器皿聖物",
+      "水井之寶箱聖物",
+      "水井之聖經聖物",
+      "水井之草紙聖物",
+      "水井之陶罐聖物",
+      "水井之香爐聖物",
+      "後綴 \"噴泉之\"(階層：#)",
+      "噴泉之古甕聖物",
+      "噴泉之器皿聖物",
+      "噴泉之寶箱聖物",
+      "噴泉之聖經聖物",
+      "噴泉之草紙聖物",
+      "噴泉之陶罐聖物",
+      "噴泉之香爐聖物",
+      "後綴 \"綠洲之\"(階層：#)",
+      "綠洲之古甕聖物",
+      "綠洲之器皿聖物",
+      "綠洲之寶箱聖物",
+      "綠洲之聖經聖物",
+      "綠洲之草紙聖物",
+      "綠洲之陶罐聖物",
+      "綠洲之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Well\" (Tier: #)",
+      "Urn Relic of the Well",
+      "Vase Relic of the Well",
+      "Coffer Relic of the Well",
+      "Tapestry Relic of the Well",
+      "Seal Relic of the Well",
+      "Amphora Relic of the Well",
+      "Incense Relic of the Well",
+      "Suffix Modifier \"of the Fountain\" (Tier: #)",
+      "Urn Relic of the Fountain",
+      "Vase Relic of the Fountain",
+      "Coffer Relic of the Fountain",
+      "Tapestry Relic of the Fountain",
+      "Seal Relic of the Fountain",
+      "Amphora Relic of the Fountain",
+      "Incense Relic of the Fountain",
+      "Suffix Modifier \"of the Oasis\" (Tier: #)",
+      "Urn Relic of the Oasis",
+      "Vase Relic of the Oasis",
+      "Coffer Relic of the Oasis",
+      "Tapestry Relic of the Oasis",
+      "Seal Relic of the Oasis",
+      "Amphora Relic of the Oasis",
+      "Incense Relic of the Oasis"
+     ]
     },
     {
      "id": "SanctumResolveOnRoomComplete1",
@@ -1566,7 +5546,75 @@
       "Restore # Honour on room completion"
      ],
      "g": 1,
-     "affixZh": "過程之、先進之、前進之、改進"
+     "affixZh": "過程之、先進之、前進之、改進",
+     "hiddenZh": [
+      "後綴 \"過程之\"(階層：#)",
+      "過程之古甕聖物",
+      "過程之器皿聖物",
+      "過程之寶箱聖物",
+      "過程之聖經聖物",
+      "過程之草紙聖物",
+      "過程之陶罐聖物",
+      "過程之香爐聖物",
+      "後綴 \"先進之\"(階層：#)",
+      "先進之古甕聖物",
+      "先進之器皿聖物",
+      "先進之寶箱聖物",
+      "先進之聖經聖物",
+      "先進之草紙聖物",
+      "先進之陶罐聖物",
+      "先進之香爐聖物",
+      "後綴 \"前進之\"(階層：#)",
+      "前進之古甕聖物",
+      "前進之器皿聖物",
+      "前進之寶箱聖物",
+      "前進之聖經聖物",
+      "前進之草紙聖物",
+      "前進之陶罐聖物",
+      "前進之香爐聖物",
+      "後綴 \"改進\"(階層：#)",
+      "改進古甕聖物",
+      "改進器皿聖物",
+      "改進寶箱聖物",
+      "改進聖經聖物",
+      "改進草紙聖物",
+      "改進陶罐聖物",
+      "改進香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Progress\" (Tier: #)",
+      "Urn Relic of Progress",
+      "Vase Relic of Progress",
+      "Coffer Relic of Progress",
+      "Tapestry Relic of Progress",
+      "Seal Relic of Progress",
+      "Amphora Relic of Progress",
+      "Incense Relic of Progress",
+      "Suffix Modifier \"of Advancement\" (Tier: #)",
+      "Urn Relic of Advancement",
+      "Vase Relic of Advancement",
+      "Coffer Relic of Advancement",
+      "Tapestry Relic of Advancement",
+      "Seal Relic of Advancement",
+      "Amphora Relic of Advancement",
+      "Incense Relic of Advancement",
+      "Suffix Modifier \"of Headway\" (Tier: #)",
+      "Urn Relic of Headway",
+      "Vase Relic of Headway",
+      "Coffer Relic of Headway",
+      "Tapestry Relic of Headway",
+      "Seal Relic of Headway",
+      "Amphora Relic of Headway",
+      "Incense Relic of Headway",
+      "Suffix Modifier \"of Betterment\" (Tier: #)",
+      "Urn Relic of Betterment",
+      "Vase Relic of Betterment",
+      "Coffer Relic of Betterment",
+      "Tapestry Relic of Betterment",
+      "Seal Relic of Betterment",
+      "Amphora Relic of Betterment",
+      "Incense Relic of Betterment"
+     ]
     },
     {
      "id": "SanctumReducedCritDamage1",
@@ -1577,7 +5625,59 @@
       "Hits against you have #% reduced Critical Damage Bonus"
      ],
      "g": 1,
-     "affixZh": "結實之、韌性之、堅定之"
+     "affixZh": "結實之、韌性之、堅定之",
+     "hiddenZh": [
+      "後綴 \"結實之\"(階層：#)",
+      "結實之古甕聖物",
+      "結實之器皿聖物",
+      "結實之寶箱聖物",
+      "結實之聖經聖物",
+      "結實之草紙聖物",
+      "結實之陶罐聖物",
+      "結實之香爐聖物",
+      "後綴 \"韌性之\"(階層：#)",
+      "韌性之古甕聖物",
+      "韌性之器皿聖物",
+      "韌性之寶箱聖物",
+      "韌性之聖經聖物",
+      "韌性之草紙聖物",
+      "韌性之陶罐聖物",
+      "韌性之香爐聖物",
+      "後綴 \"堅定之\"(階層：#)",
+      "堅定之古甕聖物",
+      "堅定之器皿聖物",
+      "堅定之寶箱聖物",
+      "堅定之聖經聖物",
+      "堅定之草紙聖物",
+      "堅定之陶罐聖物",
+      "堅定之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Stoutness\" (Tier: #)",
+      "Urn Relic of Stoutness",
+      "Vase Relic of Stoutness",
+      "Coffer Relic of Stoutness",
+      "Tapestry Relic of Stoutness",
+      "Seal Relic of Stoutness",
+      "Amphora Relic of Stoutness",
+      "Incense Relic of Stoutness",
+      "Suffix Modifier \"of Tenacity\" (Tier: #)",
+      "Urn Relic of Tenacity",
+      "Vase Relic of Tenacity",
+      "Coffer Relic of Tenacity",
+      "Tapestry Relic of Tenacity",
+      "Seal Relic of Tenacity",
+      "Amphora Relic of Tenacity",
+      "Incense Relic of Tenacity",
+      "Suffix Modifier \"of Unwavering\" (Tier: #)",
+      "Urn Relic of Unwavering",
+      "Vase Relic of Unwavering",
+      "Coffer Relic of Unwavering",
+      "Tapestry Relic of Unwavering",
+      "Seal Relic of Unwavering",
+      "Amphora Relic of Unwavering",
+      "Incense Relic of Unwavering"
+     ]
     },
     {
      "id": "SanctumMonstersDoubleGoldChance1",
@@ -1588,7 +5688,75 @@
       "Monsters have #% chance to drop double Sacred Water"
      ],
      "g": 1,
-     "affixZh": "浸濕之、浸泡之、滂沱之、滲透之"
+     "affixZh": "浸濕之、浸泡之、滂沱之、滲透之",
+     "hiddenZh": [
+      "後綴 \"浸濕之\"(階層：#)",
+      "浸濕之古甕聖物",
+      "浸濕之器皿聖物",
+      "浸濕之寶箱聖物",
+      "浸濕之聖經聖物",
+      "浸濕之草紙聖物",
+      "浸濕之陶罐聖物",
+      "浸濕之香爐聖物",
+      "後綴 \"浸泡之\"(階層：#)",
+      "浸泡之古甕聖物",
+      "浸泡之器皿聖物",
+      "浸泡之寶箱聖物",
+      "浸泡之聖經聖物",
+      "浸泡之草紙聖物",
+      "浸泡之陶罐聖物",
+      "浸泡之香爐聖物",
+      "後綴 \"滂沱之\"(階層：#)",
+      "滂沱之古甕聖物",
+      "滂沱之器皿聖物",
+      "滂沱之寶箱聖物",
+      "滂沱之聖經聖物",
+      "滂沱之草紙聖物",
+      "滂沱之陶罐聖物",
+      "滂沱之香爐聖物",
+      "後綴 \"滲透之\"(階層：#)",
+      "滲透之古甕聖物",
+      "滲透之器皿聖物",
+      "滲透之寶箱聖物",
+      "滲透之聖經聖物",
+      "滲透之草紙聖物",
+      "滲透之陶罐聖物",
+      "滲透之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Dampening\" (Tier: #)",
+      "Urn Relic of Dampening",
+      "Vase Relic of Dampening",
+      "Coffer Relic of Dampening",
+      "Tapestry Relic of Dampening",
+      "Seal Relic of Dampening",
+      "Amphora Relic of Dampening",
+      "Incense Relic of Dampening",
+      "Suffix Modifier \"of Soaking\" (Tier: #)",
+      "Urn Relic of Soaking",
+      "Vase Relic of Soaking",
+      "Coffer Relic of Soaking",
+      "Tapestry Relic of Soaking",
+      "Seal Relic of Soaking",
+      "Amphora Relic of Soaking",
+      "Incense Relic of Soaking",
+      "Suffix Modifier \"of Drenching\" (Tier: #)",
+      "Urn Relic of Drenching",
+      "Vase Relic of Drenching",
+      "Coffer Relic of Drenching",
+      "Tapestry Relic of Drenching",
+      "Seal Relic of Drenching",
+      "Amphora Relic of Drenching",
+      "Incense Relic of Drenching",
+      "Suffix Modifier \"of Saturating\" (Tier: #)",
+      "Urn Relic of Saturating",
+      "Vase Relic of Saturating",
+      "Coffer Relic of Saturating",
+      "Tapestry Relic of Saturating",
+      "Seal Relic of Saturating",
+      "Amphora Relic of Saturating",
+      "Incense Relic of Saturating"
+     ]
     },
     {
      "id": "SanctumHonourOnGainKey1",
@@ -1599,7 +5767,91 @@
       "Restore # Honour on picking up a Key"
      ],
      "g": 1,
-     "affixZh": "捐獻之、奉獻之、託付之、賜予之"
+     "affixZh": "捐獻之、奉獻之、託付之、賜予之",
+     "hiddenZh": [
+      "後綴 \"捐獻之\"(階層：#)",
+      "捐獻之古甕聖物",
+      "捐獻之器皿聖物",
+      "捐獻之寶箱聖物",
+      "捐獻之聖經聖物",
+      "捐獻之草紙聖物",
+      "捐獻之陶罐聖物",
+      "捐獻之香爐聖物",
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之古甕聖物",
+      "奉獻之器皿聖物",
+      "奉獻之寶箱聖物",
+      "奉獻之聖經聖物",
+      "奉獻之草紙聖物",
+      "奉獻之陶罐聖物",
+      "奉獻之香爐聖物",
+      "後綴 \"託付之\"(階層：#)",
+      "託付之古甕聖物",
+      "託付之器皿聖物",
+      "託付之寶箱聖物",
+      "託付之聖經聖物",
+      "託付之草紙聖物",
+      "託付之陶罐聖物",
+      "託付之香爐聖物",
+      "後綴 \"賜予之\"(階層：#)",
+      "賜予之古甕聖物",
+      "賜予之器皿聖物",
+      "賜予之寶箱聖物",
+      "賜予之聖經聖物",
+      "賜予之草紙聖物",
+      "賜予之陶罐聖物",
+      "賜予之香爐聖物",
+      "後綴 \"贈遺之\"(階層：#)",
+      "贈遺之古甕聖物",
+      "贈遺之器皿聖物",
+      "贈遺之寶箱聖物",
+      "贈遺之聖經聖物",
+      "贈遺之草紙聖物",
+      "贈遺之陶罐聖物",
+      "贈遺之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Donation\" (Tier: #)",
+      "Urn Relic of Donation",
+      "Vase Relic of Donation",
+      "Coffer Relic of Donation",
+      "Tapestry Relic of Donation",
+      "Seal Relic of Donation",
+      "Amphora Relic of Donation",
+      "Incense Relic of Donation",
+      "Suffix Modifier \"of Offering\" (Tier: #)",
+      "Urn Relic of Offering",
+      "Vase Relic of Offering",
+      "Coffer Relic of Offering",
+      "Tapestry Relic of Offering",
+      "Seal Relic of Offering",
+      "Amphora Relic of Offering",
+      "Incense Relic of Offering",
+      "Suffix Modifier \"of Entrusting\" (Tier: #)",
+      "Urn Relic of Entrusting",
+      "Vase Relic of Entrusting",
+      "Coffer Relic of Entrusting",
+      "Tapestry Relic of Entrusting",
+      "Seal Relic of Entrusting",
+      "Amphora Relic of Entrusting",
+      "Incense Relic of Entrusting",
+      "Suffix Modifier \"of Bestowing\" (Tier: #)",
+      "Urn Relic of Bestowing",
+      "Vase Relic of Bestowing",
+      "Coffer Relic of Bestowing",
+      "Tapestry Relic of Bestowing",
+      "Seal Relic of Bestowing",
+      "Amphora Relic of Bestowing",
+      "Incense Relic of Bestowing",
+      "Suffix Modifier \"of Bequeathing\" (Tier: #)",
+      "Urn Relic of Bequeathing",
+      "Vase Relic of Bequeathing",
+      "Coffer Relic of Bequeathing",
+      "Tapestry Relic of Bequeathing",
+      "Seal Relic of Bequeathing",
+      "Amphora Relic of Bequeathing",
+      "Incense Relic of Bequeathing"
+     ]
     },
     {
      "id": "SanctumRestoreHonourOnBossKill1",
@@ -1610,7 +5862,91 @@
       "Restore # Honour on killing a Boss"
      ],
      "g": 1,
-     "affixZh": "賦予之、冠軍之、勝利之、征服之"
+     "affixZh": "賦予之、冠軍之、勝利之、征服之",
+     "hiddenZh": [
+      "後綴 \"賦予之\"(階層：#)",
+      "賦予之古甕聖物",
+      "賦予之器皿聖物",
+      "賦予之寶箱聖物",
+      "賦予之聖經聖物",
+      "賦予之草紙聖物",
+      "賦予之陶罐聖物",
+      "賦予之香爐聖物",
+      "後綴 \"冠軍之\"(階層：#)",
+      "冠軍之古甕聖物",
+      "冠軍之器皿聖物",
+      "冠軍之寶箱聖物",
+      "冠軍之聖經聖物",
+      "冠軍之草紙聖物",
+      "冠軍之陶罐聖物",
+      "冠軍之香爐聖物",
+      "後綴 \"勝利之\"(階層：#)",
+      "勝利之古甕聖物",
+      "勝利之器皿聖物",
+      "勝利之寶箱聖物",
+      "勝利之聖經聖物",
+      "勝利之草紙聖物",
+      "勝利之陶罐聖物",
+      "勝利之香爐聖物",
+      "後綴 \"征服之\"(階層：#)",
+      "征服之古甕聖物",
+      "征服之器皿聖物",
+      "征服之寶箱聖物",
+      "征服之聖經聖物",
+      "征服之草紙聖物",
+      "征服之陶罐聖物",
+      "征服之香爐聖物",
+      "後綴 \"凱旋之\"(階層：#)",
+      "凱旋之古甕聖物",
+      "凱旋之器皿聖物",
+      "凱旋之寶箱聖物",
+      "凱旋之聖經聖物",
+      "凱旋之草紙聖物",
+      "凱旋之陶罐聖物",
+      "凱旋之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Empowerment\" (Tier: #)",
+      "Urn Relic of Empowerment",
+      "Vase Relic of Empowerment",
+      "Coffer Relic of Empowerment",
+      "Tapestry Relic of Empowerment",
+      "Seal Relic of Empowerment",
+      "Amphora Relic of Empowerment",
+      "Incense Relic of Empowerment",
+      "Suffix Modifier \"of Championship\" (Tier: #)",
+      "Urn Relic of Championship",
+      "Vase Relic of Championship",
+      "Coffer Relic of Championship",
+      "Tapestry Relic of Championship",
+      "Seal Relic of Championship",
+      "Amphora Relic of Championship",
+      "Incense Relic of Championship",
+      "Suffix Modifier \"of Victory\" (Tier: #)",
+      "Urn Relic of Victory",
+      "Vase Relic of Victory",
+      "Coffer Relic of Victory",
+      "Tapestry Relic of Victory",
+      "Seal Relic of Victory",
+      "Amphora Relic of Victory",
+      "Incense Relic of Victory",
+      "Suffix Modifier \"of Conquest\" (Tier: #)",
+      "Urn Relic of Conquest",
+      "Vase Relic of Conquest",
+      "Coffer Relic of Conquest",
+      "Tapestry Relic of Conquest",
+      "Seal Relic of Conquest",
+      "Amphora Relic of Conquest",
+      "Incense Relic of Conquest",
+      "Suffix Modifier \"of Triumph\" (Tier: #)",
+      "Urn Relic of Triumph",
+      "Vase Relic of Triumph",
+      "Coffer Relic of Triumph",
+      "Tapestry Relic of Triumph",
+      "Seal Relic of Triumph",
+      "Amphora Relic of Triumph",
+      "Incense Relic of Triumph"
+     ]
     },
     {
      "id": "SanctumAvoidAfflictionChance1",
@@ -1621,7 +5957,75 @@
       "#% chance to Avoid gaining an Affliction"
      ],
      "g": 1,
-     "affixZh": "尊嚴之、威望之、榮耀之、榮譽之"
+     "affixZh": "尊嚴之、威望之、榮耀之、榮譽之",
+     "hiddenZh": [
+      "後綴 \"尊嚴之\"(階層：#)",
+      "尊嚴之古甕聖物",
+      "尊嚴之器皿聖物",
+      "尊嚴之寶箱聖物",
+      "尊嚴之聖經聖物",
+      "尊嚴之草紙聖物",
+      "尊嚴之陶罐聖物",
+      "尊嚴之香爐聖物",
+      "後綴 \"威望之\"(階層：#)",
+      "威望之古甕聖物",
+      "威望之器皿聖物",
+      "威望之寶箱聖物",
+      "威望之聖經聖物",
+      "威望之草紙聖物",
+      "威望之陶罐聖物",
+      "威望之香爐聖物",
+      "後綴 \"榮耀之\"(階層：#)",
+      "榮耀之古甕聖物",
+      "榮耀之器皿聖物",
+      "榮耀之寶箱聖物",
+      "榮耀之聖經聖物",
+      "榮耀之草紙聖物",
+      "榮耀之陶罐聖物",
+      "榮耀之香爐聖物",
+      "後綴 \"榮譽之\"(階層：#)",
+      "榮譽之古甕聖物",
+      "榮譽之器皿聖物",
+      "榮譽之寶箱聖物",
+      "榮譽之聖經聖物",
+      "榮譽之草紙聖物",
+      "榮譽之陶罐聖物",
+      "榮譽之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Dignity\" (Tier: #)",
+      "Urn Relic of Dignity",
+      "Vase Relic of Dignity",
+      "Coffer Relic of Dignity",
+      "Tapestry Relic of Dignity",
+      "Seal Relic of Dignity",
+      "Amphora Relic of Dignity",
+      "Incense Relic of Dignity",
+      "Suffix Modifier \"of Prestige\" (Tier: #)",
+      "Urn Relic of Prestige",
+      "Vase Relic of Prestige",
+      "Coffer Relic of Prestige",
+      "Tapestry Relic of Prestige",
+      "Seal Relic of Prestige",
+      "Amphora Relic of Prestige",
+      "Incense Relic of Prestige",
+      "Suffix Modifier \"of Glory\" (Tier: #)",
+      "Urn Relic of Glory",
+      "Vase Relic of Glory",
+      "Coffer Relic of Glory",
+      "Tapestry Relic of Glory",
+      "Seal Relic of Glory",
+      "Amphora Relic of Glory",
+      "Incense Relic of Glory",
+      "Suffix Modifier \"of Honour\" (Tier: #)",
+      "Urn Relic of Honour",
+      "Vase Relic of Honour",
+      "Coffer Relic of Honour",
+      "Tapestry Relic of Honour",
+      "Seal Relic of Honour",
+      "Amphora Relic of Honour",
+      "Incense Relic of Honour"
+     ]
     },
     {
      "id": "SanctumSlowResistance1",
@@ -1632,7 +6036,59 @@
       "#% reduced Slowing Potency of Debuffs on You"
      ],
      "g": 1,
-     "affixZh": "屹立之、不屈之、追獵者之"
+     "affixZh": "屹立之、不屈之、追獵者之",
+     "hiddenZh": [
+      "後綴 \"屹立之\"(階層：#)",
+      "屹立之古甕聖物",
+      "屹立之器皿聖物",
+      "屹立之寶箱聖物",
+      "屹立之聖經聖物",
+      "屹立之草紙聖物",
+      "屹立之陶罐聖物",
+      "屹立之香爐聖物",
+      "後綴 \"不屈之\"(階層：#)",
+      "不屈之古甕聖物",
+      "不屈之器皿聖物",
+      "不屈之寶箱聖物",
+      "不屈之聖經聖物",
+      "不屈之草紙聖物",
+      "不屈之陶罐聖物",
+      "不屈之香爐聖物",
+      "後綴 \"追獵者之\"(階層：#)",
+      "追獵者之古甕聖物",
+      "追獵者之器皿聖物",
+      "追獵者之寶箱聖物",
+      "追獵者之聖經聖物",
+      "追獵者之草紙聖物",
+      "追獵者之陶罐聖物",
+      "追獵者之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Unyielding\" (Tier: #)",
+      "Urn Relic of Unyielding",
+      "Vase Relic of Unyielding",
+      "Coffer Relic of Unyielding",
+      "Tapestry Relic of Unyielding",
+      "Seal Relic of Unyielding",
+      "Amphora Relic of Unyielding",
+      "Incense Relic of Unyielding",
+      "Suffix Modifier \"of Unrelenting\" (Tier: #)",
+      "Urn Relic of Unrelenting",
+      "Vase Relic of Unrelenting",
+      "Coffer Relic of Unrelenting",
+      "Tapestry Relic of Unrelenting",
+      "Seal Relic of Unrelenting",
+      "Amphora Relic of Unrelenting",
+      "Incense Relic of Unrelenting",
+      "Suffix Modifier \"of the Pathfinder\" (Tier: #)",
+      "Urn Relic of the Pathfinder",
+      "Vase Relic of the Pathfinder",
+      "Coffer Relic of the Pathfinder",
+      "Tapestry Relic of the Pathfinder",
+      "Seal Relic of the Pathfinder",
+      "Amphora Relic of the Pathfinder",
+      "Incense Relic of the Pathfinder"
+     ]
     },
     {
      "id": "SanctumMerchantReducedCosts1",
@@ -1643,7 +6099,43 @@
       "#% reduced Merchant Prices"
      ],
      "g": 1,
-     "affixZh": "慈善之、外交之"
+     "affixZh": "慈善之、外交之",
+     "hiddenZh": [
+      "後綴 \"慈善之\"(階層：#)",
+      "慈善之古甕聖物",
+      "慈善之器皿聖物",
+      "慈善之寶箱聖物",
+      "慈善之聖經聖物",
+      "慈善之草紙聖物",
+      "慈善之陶罐聖物",
+      "慈善之香爐聖物",
+      "後綴 \"外交之\"(階層：#)",
+      "外交之古甕聖物",
+      "外交之器皿聖物",
+      "外交之寶箱聖物",
+      "外交之聖經聖物",
+      "外交之草紙聖物",
+      "外交之陶罐聖物",
+      "外交之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Charity\" (Tier: #)",
+      "Urn Relic of Charity",
+      "Vase Relic of Charity",
+      "Coffer Relic of Charity",
+      "Tapestry Relic of Charity",
+      "Seal Relic of Charity",
+      "Amphora Relic of Charity",
+      "Incense Relic of Charity",
+      "Suffix Modifier \"of Diplomacy\" (Tier: #)",
+      "Urn Relic of Diplomacy",
+      "Vase Relic of Diplomacy",
+      "Coffer Relic of Diplomacy",
+      "Tapestry Relic of Diplomacy",
+      "Seal Relic of Diplomacy",
+      "Amphora Relic of Diplomacy",
+      "Incense Relic of Diplomacy"
+     ]
     },
     {
      "id": "SanctumRestoreHonourOnFountainUse1",
@@ -1654,7 +6146,91 @@
       "Restore # Honour on venerating a Maraketh Shrine"
      ],
      "g": 1,
-     "affixZh": "刷新之、康復之、青年之、新穎之"
+     "affixZh": "刷新之、康復之、青年之、新穎之",
+     "hiddenZh": [
+      "後綴 \"刷新之\"(階層：#)",
+      "刷新之古甕聖物",
+      "刷新之器皿聖物",
+      "刷新之寶箱聖物",
+      "刷新之聖經聖物",
+      "刷新之草紙聖物",
+      "刷新之陶罐聖物",
+      "刷新之香爐聖物",
+      "後綴 \"康復之\"(階層：#)",
+      "康復之古甕聖物",
+      "康復之器皿聖物",
+      "康復之寶箱聖物",
+      "康復之聖經聖物",
+      "康復之草紙聖物",
+      "康復之陶罐聖物",
+      "康復之香爐聖物",
+      "後綴 \"青年之\"(階層：#)",
+      "青年之古甕聖物",
+      "青年之器皿聖物",
+      "青年之寶箱聖物",
+      "青年之聖經聖物",
+      "青年之草紙聖物",
+      "青年之陶罐聖物",
+      "青年之香爐聖物",
+      "後綴 \"新穎之\"(階層：#)",
+      "新穎之古甕聖物",
+      "新穎之器皿聖物",
+      "新穎之寶箱聖物",
+      "新穎之聖經聖物",
+      "新穎之草紙聖物",
+      "新穎之陶罐聖物",
+      "新穎之香爐聖物",
+      "後綴 \"綻放之\"(階層：#)",
+      "綻放之古甕聖物",
+      "綻放之器皿聖物",
+      "綻放之寶箱聖物",
+      "綻放之聖經聖物",
+      "綻放之草紙聖物",
+      "綻放之陶罐聖物",
+      "綻放之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Refreshment\" (Tier: #)",
+      "Urn Relic of Refreshment",
+      "Vase Relic of Refreshment",
+      "Coffer Relic of Refreshment",
+      "Tapestry Relic of Refreshment",
+      "Seal Relic of Refreshment",
+      "Amphora Relic of Refreshment",
+      "Incense Relic of Refreshment",
+      "Suffix Modifier \"of Convalescence\" (Tier: #)",
+      "Urn Relic of Convalescence",
+      "Vase Relic of Convalescence",
+      "Coffer Relic of Convalescence",
+      "Tapestry Relic of Convalescence",
+      "Seal Relic of Convalescence",
+      "Amphora Relic of Convalescence",
+      "Incense Relic of Convalescence",
+      "Suffix Modifier \"of Youth\" (Tier: #)",
+      "Urn Relic of Youth",
+      "Vase Relic of Youth",
+      "Coffer Relic of Youth",
+      "Tapestry Relic of Youth",
+      "Seal Relic of Youth",
+      "Amphora Relic of Youth",
+      "Incense Relic of Youth",
+      "Suffix Modifier \"of Freshness\" (Tier: #)",
+      "Urn Relic of Freshness",
+      "Vase Relic of Freshness",
+      "Coffer Relic of Freshness",
+      "Tapestry Relic of Freshness",
+      "Seal Relic of Freshness",
+      "Amphora Relic of Freshness",
+      "Incense Relic of Freshness",
+      "Suffix Modifier \"of Bloom\" (Tier: #)",
+      "Urn Relic of Bloom",
+      "Vase Relic of Bloom",
+      "Coffer Relic of Bloom",
+      "Tapestry Relic of Bloom",
+      "Seal Relic of Bloom",
+      "Amphora Relic of Bloom",
+      "Incense Relic of Bloom"
+     ]
     },
     {
      "id": "SanctumRevealExtraRoomEachFloor2",
@@ -1665,7 +6241,43 @@
       "# additional Rooms are revealed on the Trial Map"
      ],
      "g": 1,
-     "affixZh": "千里眼之、照明之"
+     "affixZh": "千里眼之、照明之",
+     "hiddenZh": [
+      "後綴 \"千里眼之\"(階層：#)",
+      "千里眼之古甕聖物",
+      "千里眼之器皿聖物",
+      "千里眼之寶箱聖物",
+      "千里眼之聖經聖物",
+      "千里眼之草紙聖物",
+      "千里眼之陶罐聖物",
+      "千里眼之香爐聖物",
+      "後綴 \"照明之\"(階層：#)",
+      "照明之古甕聖物",
+      "照明之器皿聖物",
+      "照明之寶箱聖物",
+      "照明之聖經聖物",
+      "照明之草紙聖物",
+      "照明之陶罐聖物",
+      "照明之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Clairvoyance\" (Tier: #)",
+      "Urn Relic of Clairvoyance",
+      "Vase Relic of Clairvoyance",
+      "Coffer Relic of Clairvoyance",
+      "Tapestry Relic of Clairvoyance",
+      "Seal Relic of Clairvoyance",
+      "Amphora Relic of Clairvoyance",
+      "Incense Relic of Clairvoyance",
+      "Suffix Modifier \"of Illumination\" (Tier: #)",
+      "Urn Relic of Illumination",
+      "Vase Relic of Illumination",
+      "Coffer Relic of Illumination",
+      "Tapestry Relic of Illumination",
+      "Seal Relic of Illumination",
+      "Amphora Relic of Illumination",
+      "Incense Relic of Illumination"
+     ]
     },
     {
      "id": "SanctumRevealExtraRoomEachFloor1",
@@ -1676,7 +6288,27 @@
       "An additional Room is revealed on the Trial Map"
      ],
      "g": 1,
-     "affixZh": "照明之"
+     "affixZh": "照明之",
+     "hiddenZh": [
+      "後綴 \"照明之\"(階層：#)",
+      "照明之古甕聖物",
+      "照明之器皿聖物",
+      "照明之寶箱聖物",
+      "照明之聖經聖物",
+      "照明之草紙聖物",
+      "照明之陶罐聖物",
+      "照明之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Illumination\" (Tier: #)",
+      "Urn Relic of Illumination",
+      "Vase Relic of Illumination",
+      "Coffer Relic of Illumination",
+      "Tapestry Relic of Illumination",
+      "Seal Relic of Illumination",
+      "Amphora Relic of Illumination",
+      "Incense Relic of Illumination"
+     ]
     },
     {
      "id": "SanctumDodgeRollDistance1",
@@ -1687,9 +6319,97 @@
       "# metres to Dodge Roll distance"
      ],
      "g": 1,
-     "affixZh": "衝撞之、逃避之"
+     "affixZh": "衝撞之、逃避之",
+     "hiddenZh": [
+      "後綴 \"衝撞之\"(階層：#)",
+      "衝撞之古甕聖物",
+      "衝撞之器皿聖物",
+      "衝撞之寶箱聖物",
+      "衝撞之聖經聖物",
+      "衝撞之草紙聖物",
+      "衝撞之陶罐聖物",
+      "衝撞之香爐聖物",
+      "後綴 \"逃避之\"(階層：#)",
+      "逃避之古甕聖物",
+      "逃避之器皿聖物",
+      "逃避之寶箱聖物",
+      "逃避之聖經聖物",
+      "逃避之草紙聖物",
+      "逃避之陶罐聖物",
+      "逃避之香爐聖物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of Lunging\" (Tier: #)",
+      "Urn Relic of Lunging",
+      "Vase Relic of Lunging",
+      "Coffer Relic of Lunging",
+      "Tapestry Relic of Lunging",
+      "Seal Relic of Lunging",
+      "Amphora Relic of Lunging",
+      "Incense Relic of Lunging",
+      "Suffix Modifier \"of Eluding\" (Tier: #)",
+      "Urn Relic of Eluding",
+      "Vase Relic of Eluding",
+      "Coffer Relic of Eluding",
+      "Tapestry Relic of Eluding",
+      "Seal Relic of Eluding",
+      "Amphora Relic of Eluding",
+      "Incense Relic of Eluding"
+     ]
     }
-   ]
+   ],
+   "ambientZh": [
+    "物品等級 #",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "(階層：#)",
+    "固定詞綴",
+    "傳奇詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "需求",
+    "將此物品放置到絲克瑪試煉開頭的聖物祭壇。",
+    "將此物品放於聖物祭壇，來影響你的角色",
+    "古甕聖物",
+    "器皿聖物",
+    "寶箱聖物",
+    "聖經聖物",
+    "草紙聖物",
+    "陶罐聖物",
+    "香爐聖物"
+   ],
+   "ambientEn": [
+    "Item Level #",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Unique Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Requirements",
+    "Place this item on the Relic Altar at the start of the Trial of the Sekhemas",
+    "Place this item on the Relic Altar to affect your character",
+    "Urn Relic",
+    "Vase Relic",
+    "Coffer Relic",
+    "Tapestry Relic",
+    "Seal Relic",
+    "Amphora Relic",
+    "Incense Relic"
+   ],
+   "nameWordsZh": {
+    "prefix": [],
+    "suffix": []
+   },
+   "nameWordsEn": {
+    "prefix": [],
+    "suffix": []
+   }
   },
   {
    "id": "expedition_relic_mods",
@@ -1886,7 +6606,13 @@
      "en": [
       "Monsters deal #% increased Damage"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "傷害"
+     ],
+     "hiddenEn": [
+      "Damage"
+     ]
     },
     {
      "id": "ExpeditionRelicDownsideCannotBeCrit",
@@ -1976,7 +6702,13 @@
      "en": [
       "Monsters have #% increased Attack Speed"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "速度"
+     ],
+     "hiddenEn": [
+      "Speed"
+     ]
     },
     {
      "id": "ExpeditionRelicDownsideIncreasedSpeed",
@@ -1986,7 +6718,13 @@
      "en": [
       "Monsters have #% increased Cast Speed"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "速度"
+     ],
+     "hiddenEn": [
+      "Speed"
+     ]
     },
     {
      "id": "ExpeditionRelicDownsideIncreasedLife",
@@ -1996,7 +6734,13 @@
      "en": [
       "Monsters have #% increased Maximum Life"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "生命"
+     ],
+     "hiddenEn": [
+      "Life"
+     ]
     },
     {
      "id": "ExpeditionRelicDownsideIncreasedSpeed",
@@ -2006,7 +6750,13 @@
      "en": [
       "Monsters have #% increased Movement Speed"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "速度"
+     ],
+     "hiddenEn": [
+      "Speed"
+     ]
     },
     {
      "id": "ExpeditionRelicDownsideAllDamagePoisonsPoisonDuration",
@@ -2258,7 +7008,43 @@
      ],
      "g": 2
     }
-   ]
+   ],
+   "ambientZh": [
+    "物品等級 #",
+    "已汙染",
+    "未鑑定",
+    "已複製",
+    "(階層：#)",
+    "固定詞綴",
+    "傳奇詞綴",
+    "前綴",
+    "後綴",
+    "稀有度",
+    "需求",
+    "詞綴"
+   ],
+   "ambientEn": [
+    "Item Level #",
+    "Corrupted",
+    "Unidentified",
+    "Mirrored",
+    "(Tier: #)",
+    "Implicit Modifier",
+    "Unique Modifier",
+    "Prefix",
+    "Suffix",
+    "Rarity",
+    "Requirements",
+    "Modifiers"
+   ],
+   "nameWordsZh": {
+    "prefix": [],
+    "suffix": []
+   },
+   "nameWordsEn": {
+    "prefix": [],
+    "suffix": []
+   }
   }
  ]
 }

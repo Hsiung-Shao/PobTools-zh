@@ -60,10 +60,10 @@ struct Prepped {
 	bool hasNumber = false;   // any line with a '#'; scopes the permissive test
 };
 
-Prepped Prep(const Entry& e)
+Prepped Prep(const std::vector<std::string>& texts)
 {
 	Prepped p;
-	for (const std::string& raw : e.texts) {
+	for (const std::string& raw : texts) {
 		std::string t = Fold(raw);
 		if (t.empty()) continue;
 		Line ln;
@@ -280,8 +280,10 @@ std::vector<std::string> SplitTerms(const std::string& q)
 
 struct Candidate {
 	Token tok;
-	const std::vector<int>* hits = nullptr;   // entry indices, ascending
-	int cost = 0;                             // characters, plus the joiner
+	const std::vector<int>* hits = nullptr;       // entry indices, ascending
+	const std::vector<int>* hiddenHits = nullptr; // entries whose HIDDEN text
+	                                              // contains it; null = none
+	int cost = 0;                                 // characters, plus the joiner
 };
 
 } // namespace
@@ -299,26 +301,71 @@ int CharCount(const std::string& utf8)
 
 struct Corpus::Impl {
 	std::vector<Entry> entries;
-	std::vector<Prepped> prepped;
+	std::vector<Prepped> prepped;   // printed text: proposes tokens, means "found"
+	std::vector<Prepped> hidden;    // per entry, veto only
+	Prepped ambient;                // the page's every-item text, veto only
 	Options opt;
 	// token -> every entry whose printed text literally contains it
 	std::unordered_map<Token, std::vector<int>, TokenHash> index;
-	std::vector<int> numbered;   // entries with a '#'; scope of the permissive test
+	// The same for hidden text. Kept apart from `index` on purpose: a hit here
+	// must never be credited as covering a pick, because the item may not print
+	// that text at all.
+	std::unordered_map<Token, std::vector<int>, TokenHash> hiddenIndex;
+	std::unordered_set<Token, TokenHash> ambientIndex;
+	std::vector<int> numbered;        // entries whose printed text has a '#'
+	std::vector<int> numberedHidden;  // entries whose hidden text has a '#'
+	// Rare-name seams: every tail of a left word and every head of a right word
+	// (folded, up to maxTokenChars characters), plus the whole words for the
+	// anchored cases. A token that splits into (tail, head) sits across the
+	// space between two random words of some item's name.
+	std::unordered_set<std::string> leftTails, rightHeads, leftFull, rightFull;
 
-	// Everything the token hits that the player did not pick. The index answers
-	// the literal case; the permissive case is only asked of entries that print
-	// a number, and only when the token could reach across one.
+	// Does the token straddle the seam of a rare name? '^' demands the whole
+	// left word (the name starts the line); '$' the whole right word.
+	bool JoinsName(const Token& tok) const
+	{
+		if (leftTails.empty() || rightHeads.empty()) return false;
+		const std::vector<size_t> off = CharOffsets(tok.body);
+		const size_t nc = off.size() - 1;
+		for (size_t k = 1; k < nc; k++) {
+			const std::string a = tok.body.substr(0, off[k]);
+			const std::string b = tok.body.substr(off[k]);
+			if (!(tok.head ? leftFull.count(a) : leftTails.count(a))) continue;
+			if (tok.tail ? rightFull.count(b) : rightHeads.count(b)) return true;
+		}
+		return false;
+	}
+
+	// Everything the token hits that the player did not pick. The indexes
+	// answer the literal case; the permissive case is only asked of text that
+	// prints a number, and only when the token could reach across one.
+	//
+	// Order matters only for cost: the cheap lookups go first, and a token is
+	// rejected by the first thing it hits. Ambient and hidden text are checked
+	// before the "cannot cross a number" shortcut so that shortcut stays what
+	// it claims to be -- complete knowledge in the literal indexes.
 	bool Safe(const Token& tok, const std::vector<int>& hits,
 	          const std::vector<bool>& isSelected) const
 	{
 		for (int h : hits)
 			if (!isSelected[h]) return false;
+		if (ambientIndex.count(tok)) return false;
+		auto hi = hiddenIndex.find(tok);
+		if (hi != hiddenIndex.end())
+			for (int h : hi->second)
+				if (!isSelected[h]) return false;
+		if (JoinsName(tok)) return false;
 		if (tok.body.find_first_of(kNumChars) == std::string::npos)
-			return true;   // cannot cross a number, so the index already knows
+			return true;   // cannot cross a number, so the indexes already know
 		for (int i : numbered) {
 			if (isSelected[i]) continue;
 			if (std::binary_search(hits.begin(), hits.end(), i)) continue;
 			if (MayMatch(prepped[i], tok)) return false;
+		}
+		if (ambient.hasNumber && MayMatch(ambient, tok)) return false;
+		for (int i : numberedHidden) {
+			if (isSelected[i]) continue;
+			if (MayMatch(hidden[i], tok)) return false;
 		}
 		return true;
 	}
@@ -333,17 +380,29 @@ bool Corpus::Empty() const { return impl_->entries.empty(); }
 size_t Corpus::Size() const { return impl_->entries.size(); }
 const Entry& Corpus::At(size_t i) const { return impl_->entries[i]; }
 
-void Corpus::Reset(std::vector<Entry> entries, const Options& opt)
+void Corpus::Reset(std::vector<Entry> entries, Ambient ambient, const Options& opt)
 {
 	Impl& m = *impl_;
 	m.entries = std::move(entries);
 	m.opt = opt;
 	m.opt.maxTokenChars = std::max(1, m.opt.maxTokenChars);
 	m.prepped.clear();
+	m.hidden.clear();
 	m.index.clear();
+	m.hiddenIndex.clear();
+	m.ambientIndex.clear();
 	m.numbered.clear();
+	m.numberedHidden.clear();
+	m.leftTails.clear();
+	m.rightHeads.clear();
+	m.leftFull.clear();
+	m.rightFull.clear();
 	m.prepped.reserve(m.entries.size());
-	for (const Entry& e : m.entries) m.prepped.push_back(Prep(e));
+	m.hidden.reserve(m.entries.size());
+	for (const Entry& e : m.entries) {
+		m.prepped.push_back(Prep(e.texts));
+		m.hidden.push_back(Prep(e.hidden));
+	}
 	for (int i = 0; i < (int)m.prepped.size(); i++) {
 		if (m.prepped[i].hasNumber) m.numbered.push_back(i);
 		std::unordered_set<Token, TokenHash> seen;
@@ -351,7 +410,36 @@ void Corpus::Reset(std::vector<Entry> entries, const Options& opt)
 		             [&](const Token& t) {
 			if (seen.insert(t).second) m.index[t].push_back(i);
 		});
+		// Same enumeration over the hidden lines, so a literal lookup is as
+		// complete for them as it is for the printed ones -- but into a map of
+		// its own (see Impl).
+		if (m.hidden[i].hasNumber) m.numberedHidden.push_back(i);
+		std::unordered_set<Token, TokenHash> seenHidden;
+		ForEachToken(m.hidden[i], m.opt.maxTokenChars, m.opt.anchors,
+		             [&](const Token& t) {
+			if (seenHidden.insert(t).second) m.hiddenIndex[t].push_back(i);
+		});
 	}
+	m.ambient = Prep(ambient.lines);
+	ForEachToken(m.ambient, m.opt.maxTokenChars, m.opt.anchors,
+	             [&](const Token& t) { m.ambientIndex.insert(t); });
+	// Name seams. Every piece that could be one side of a straddling token: up
+	// to maxTokenChars characters, the whole word included.
+	auto sides = [&](const std::vector<std::string>& words, bool left) {
+		for (const std::string& raw : words) {
+			const std::string s = Fold(raw);
+			if (s.empty()) continue;
+			(left ? m.leftFull : m.rightFull).insert(s);
+			const std::vector<size_t> off = CharOffsets(s);
+			const size_t nc = off.size() - 1;
+			for (size_t k = 1; k <= nc && (int)k <= m.opt.maxTokenChars; k++) {
+				if (left) m.leftTails.insert(s.substr(off[nc - k]));
+				else      m.rightHeads.insert(s.substr(0, off[k]));
+			}
+		}
+	};
+	sides(ambient.nameLeft, true);
+	sides(ambient.nameRight, false);
 }
 
 Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
@@ -381,18 +469,28 @@ Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
 			auto it = m.index.find(t);
 			if (it == m.index.end()) return;   // cannot happen; cheap to survive
 			if (!m.Safe(t, it->second, isSelected)) return;
-			cands.push_back(Candidate{t, &it->second, TokenChars(t) + 1});
+			auto hh = m.hiddenIndex.find(t);
+			cands.push_back(Candidate{t, &it->second,
+			                          hh == m.hiddenIndex.end() ? nullptr : &hh->second,
+			                          TokenChars(t) + 1});
 		});
 	}
 
 	if (mode == Mode::All) {
 		// AND means every pick needs a term of its own, and that term must not be
 		// satisfiable by any OTHER entry -- a token shared by two picks would let
-		// either one alone satisfy the pair.
+		// either one alone satisfy the pair. Hidden text counts here too: Safe
+		// only ruled out UNPICKED entries, and an item carrying pick B alone
+		// would satisfy A's term through B's reminder text.
 		for (int s : picks) {
 			const Candidate* best = nullptr;
 			for (const Candidate& c : cands) {
 				if (c.hits->size() != 1 || (*c.hits)[0] != s) continue;
+				bool ownHiddenOnly = true;
+				if (c.hiddenHits)
+					for (int h : *c.hiddenHits)
+						if (h != s) { ownHiddenOnly = false; break; }
+				if (!ownHiddenOnly) continue;
 				if (!best || c.cost < best->cost ||
 				    (c.cost == best->cost && Render(c.tok) < Render(best->tok)))
 					best = &c;
@@ -477,17 +575,22 @@ Check Corpus::Verify(const std::vector<int>& selected, const std::string& query)
 		const std::vector<Token> alts = ParseAlternation(term);
 		for (int e = 0; e < (int)m.entries.size(); e++) {
 			for (const Token& t : alts) {
+				// "Certainly finds" reads printed text only; "might hit" reads
+				// the hidden text as well. The asymmetry is the same one as
+				// around numbers, and for the same reason.
 				if (AlwaysMatches(m.prepped[e], t)) definite[e] = true;
-				if (MayMatch(m.prepped[e], t)) possible[e] = true;
+				if (MayMatch(m.prepped[e], t) || MayMatch(m.hidden[e], t)) possible[e] = true;
 			}
 		}
+		for (const Token& t : alts)
+			if (MayMatch(m.ambient, t) || m.JoinsName(t)) chk.ambient.push_back(Render(t));
 	}
 
 	for (int e = 0; e < (int)m.entries.size(); e++) {
 		if (want[e] && !definite[e]) chk.missing.push_back(e);
 		if (!want[e] && possible[e]) chk.extra.push_back(e);
 	}
-	chk.ok = chk.missing.empty() && chk.extra.empty();
+	chk.ok = chk.missing.empty() && chk.extra.empty() && chk.ambient.empty();
 	return chk;
 }
 

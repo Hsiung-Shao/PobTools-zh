@@ -40,6 +40,26 @@
 // Rejecting on the permissive test and accepting on the strict one is the safe
 // direction: the generator can only ever refuse a token it could have used, and
 // never emit one that quietly over-matches.
+//
+// ---- what the search really reads --------------------------------------------
+//
+// The client matches more than the modifier lines, and it does so whether or
+// not that text is on screen (verified in-game, 2026-09: a map whose only line
+// is 怪物傷害必定造成點燃 is found by "常" through its tag 異常狀態):
+//
+//   * the advanced description of each modifier -- 前綴 "燃燒的"(階層：1) and
+//     the tag names after it (元素,火焰,異常狀態);
+//   * the reminder text attached to the line (時空鎖鏈's explanation contains
+//     平常 and 失效);
+//   * the item's name: affix name + base for a magic item, two random words
+//     for a rare one;
+//   * the lines every item of the kind carries: 怪物等級, 物品數量, 已汙染, the
+//     base name, the flavour paragraph.
+//
+// So an entry carries `hidden` text next to its printed `texts`, and a corpus
+// carries the page's `Ambient` text. The rule that keeps the two tests honest:
+// printed text PROPOSES tokens and is what "found it" means; hidden and ambient
+// text can only VETO a token, never source one and never count as a hit.
 #pragma once
 
 #include <memory>
@@ -55,6 +75,24 @@ namespace RegexGen {
 struct Entry {
 	std::string id;
 	std::vector<std::string> texts;
+	// Text the search also reads for this entry but the item does not print as
+	// a modifier line: the advanced description, its tags, the reminder text,
+	// the name pieces. Never cut into tokens and never "finds" the entry; only
+	// consulted for "would this token also hit something else". '#' works here
+	// exactly as it does in `texts`.
+	std::vector<std::string> hidden;
+};
+
+// Text present on EVERY item of the page, so any token that hits it hits
+// everything. `lines` are matched like hidden lines. `nameLeft` / `nameRight`
+// are the random words a rare item's name is assembled from (the right half
+// keeps its leading space): the join of any left word and any right word is
+// also on the item, and a token can straddle that seam, so the seam is checked
+// as well as the words themselves.
+struct Ambient {
+	std::vector<std::string> lines;
+	std::vector<std::string> nameLeft;
+	std::vector<std::string> nameRight;
 };
 
 enum class Mode {
@@ -77,9 +115,11 @@ struct Result {
 	std::string query;                  // paste this into the game
 	int         length = 0;             // characters, counted as the client does
 	std::vector<std::string> tokens;    // the pieces, for showing the work
-	// Picks that no token can single out, by index into the corpus. Always
-	// because another entry prints the same line: nothing can tell them apart,
-	// and saying so is better than shipping a query that quietly over-matches.
+	// Picks that no token can single out, by index into the corpus. Either
+	// another entry prints the same line, or every usable fragment of this one
+	// also occurs in text the page's items all carry (or in another entry's
+	// hidden text): nothing can tell them apart, and saying so is better than
+	// shipping a query that quietly over-matches.
 	std::vector<int> unresolved;
 	bool exact = true;                  // false <=> unresolved is non-empty
 };
@@ -90,7 +130,12 @@ struct Result {
 struct Check {
 	bool ok = false;
 	std::vector<int> missing;   // picked, but the query does not find it
-	std::vector<int> extra;     // not picked, but the query finds it
+	std::vector<int> extra;     // not picked, but the query finds it (printed
+	                            // or hidden text)
+	// Alternatives that hit the page's ambient text, i.e. every item. Named
+	// separately because the honest `extra` for such a term is "the whole
+	// list", which tells the reader nothing about which term did it.
+	std::vector<std::string> ambient;
 };
 
 // A prepared corpus. Preparing costs a pass over every entry and builds the
@@ -105,7 +150,8 @@ public:
 	Corpus(Corpus&&) noexcept;
 	Corpus& operator=(Corpus&&) noexcept;
 
-	void Reset(std::vector<Entry> entries, const Options& opt = Options{});
+	void Reset(std::vector<Entry> entries, Ambient ambient = Ambient{},
+	           const Options& opt = Options{});
 	bool Empty() const;
 	size_t Size() const;
 	const Entry& At(size_t i) const;
