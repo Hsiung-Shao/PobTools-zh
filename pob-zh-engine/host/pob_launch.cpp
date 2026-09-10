@@ -209,8 +209,13 @@ void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath)
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
                   bool fontApplyAll, int windowOpacity,
-                  const std::wstring& bgPath, int bgBright, int glassBlur, int treeBg)
+                  const std::wstring& bgPath, int bgBright, int glassBlur, int treeBg,
+                  bool hangWatch)
 {
+	// "0" only when the user opted out in the ini; the engine's watchdog reads it
+	// before it starts its thread. Always written for the same long-lived-process
+	// reason as the variables below.
+	set_env_both(L"POB_ZH_HANGWATCH", hangWatch ? L"1" : L"0");
 	set_env_both(L"POB_ZH_BG", bgPath.c_str());
 	set_env_both(L"POB_ZH_BG_BRIGHT", std::to_wstring(bgBright).c_str());
 	set_env_both(L"POB_ZH_GLASS_BLUR", std::to_wstring(glassBlur).c_str());

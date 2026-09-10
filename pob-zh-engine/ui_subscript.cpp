@@ -5,6 +5,7 @@
 //
 
 #include "ui_local.h"
+#include "host/hang_watch.h"
 
 // =======
 // Classes
@@ -385,6 +386,10 @@ bool ui_subscript_c::Start()
 
 void ui_subscript_c::Stop()
 {
+	// Both waits below are untimed spins on the main thread: a background script
+	// that never reaches another Lua line (a stuck download, say) stops POB dead
+	// right here, and this is what says so.
+	HangWatch::Scope watch("subscript-stop");
 	if (running) {
 		// Set hook to stop script on the next line
 		lua_sethook(L, l_hookStop, LUA_MASKLINE, 0);

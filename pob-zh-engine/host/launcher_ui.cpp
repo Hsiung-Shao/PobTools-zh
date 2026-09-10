@@ -8,6 +8,7 @@
 #include "app_update.h"
 #include "changelog.h"
 #include "error_log.h"
+#include "hang_watch.h"       // heartbeat, and the POB windows the watchdog asks after
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
 #include "window_dock.h"
@@ -1138,7 +1139,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                            ? dictDir[slot].root : std::wstring(),
 		                        cfg.fontApplyAll, look.windowOpacity,
 		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
-		                        look.treeBg);
+		                        look.treeBg, cfg.hangWatch);
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (lua.empty()) {
 			// Nothing to launch and, until v0.28.0, nothing said about it: the
@@ -1224,6 +1225,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	};
 
 	double transNoticeUntil = 0.0; // TransDone banner auto-dismiss deadline
+	double lastPeerSync = 0.0;     // when the watchdog last got the POB window list
 	// A check the user asked for must report back even when the answer is "no
 	// news"; the automatic startup one stays silent.
 	bool manualCheck = false;
@@ -1309,6 +1311,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	double closeAskedAt = 0.0;     // when, so a cancelled save prompt can be detected
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
 		glfwPollEvents();
+
+		// The heartbeat the watchdog thread is watching. One store per frame; if
+		// it stops for good, that thread is what writes down where we stopped.
+		HangWatch::Beat();
 
 		// Remember a drag-resize once it has settled for half a second. Polled
 		// rather than hooked: the size callback is the dock's in tabbed mode, and
@@ -1509,6 +1515,27 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// frame because that call is also where finished processes are reaped.
 		const int pobCount = PobLaunch::PobRunningCount();
 		const bool pobBusy = PobLaunch::AnyPobRunning(exeDir);
+
+		// Hand the watchdog thread a snapshot of the POB windows to ask after.
+		// It cannot call RunningInstances itself (not thread-safe), and this
+		// thread must not do the asking: a SendMessageTimeout against a wedged
+		// window is exactly the wait that would freeze the launcher too. Twice a
+		// second is plenty -- the threshold it feeds is twenty.
+		if (ImGui::GetTime() - lastPeerSync > 0.5) {
+			lastPeerSync = ImGui::GetTime();
+			std::vector<HangWatch::Peer> peers;
+			for (const PobLaunch::InstanceInfo& in : PobLaunch::RunningInstances()) {
+				if (in.kind != PobLaunch::InstanceKind::Pob || !in.hwnd) continue;
+				HangWatch::Peer p;
+				p.pid = in.pid;
+				p.hwnd = in.hwnd;
+				// Not localised: this label goes into the log, where it has to
+				// mean the same thing to whoever reads the report.
+				p.label = std::string("POB (") + (in.game == L"poe2" ? "poe2" : "poe1") + ")";
+				peers.push_back(p);
+			}
+			HangWatch::SetPeers(peers);
+		}
 		if (appUpd) {
 			// Applying an update renames engine\* out of the way while POB has
 			// those DLLs open, and the same check silently overwrites Data\*.json
@@ -1681,6 +1708,20 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 
 			ImGui::Dummy(ImVec2(0, badge + 10.0f * scale));
+
+			// A POB that has stopped answering for twenty seconds. There is
+			// nothing the launcher can usefully do about it -- killing it would
+			// throw away an unsaved build over what might be a slow import -- so
+			// this says only what happened and that the reason was written down.
+			// It clears itself the moment that window answers again.
+			const HangWatch::PeerStatus stuck = HangWatch::GetPeerStatus();
+			if (stuck.hung) {
+				ImGui::PushFont(fonts.small);
+				ImGui::TextColored(ImVec4(0.94f, 0.72f, 0.27f, 1.0f), "%s", S.hangNotice);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.hangNoticeTip);
+				ImGui::PopFont();
+				ImGui::Dummy(ImVec2(0, 4.0f * scale));
+			}
 		}
 
 		// --- tabs -------------------------------------------------------------

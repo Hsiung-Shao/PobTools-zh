@@ -213,7 +213,13 @@
 	X(glassBlurLabel,    u8"霧面強度",                       u8"Frost strength")                         \
 	X(treeBgLabel,       u8"天賦樹底圖",                     u8"Tree backdrop")                          \
 	X(bgHint,            u8"把 PNG／JPG／WebP 放進 PobTools\\Backgrounds 資料夾就能選。圖片鋪滿整個 POB 視窗當最底層，天賦樹與各分頁畫在它上面；亮度是圖片壓暗的程度。霧面強度把側欄、工具列變成毛玻璃：面板底下的畫面先模糊再蓋上面板的淡色（面板不透明度）；0% 為不模糊。天賦樹底圖是節點底下那層深色底紋的不透明度，調低就能在天賦頁也看到背景圖片。全部即時生效", \
-	                     u8"Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live")
+	                     u8"Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live") \
+	/* v1.4.0: shown when a POB window has stopped answering. Deliberately says
+	   nothing about what to do -- the launcher offers no way to end POB, because
+	   a wrong guess would throw away an unsaved build. */                                          \
+	X(hangNotice,        u8"POB 沒有回應，原因已寫進問題紀錄", u8"POB is not responding; the reason has been written to the problem log") \
+	X(hangNoticeTip,     u8"POB 已經超過 20 秒沒有反應。當時它在做什麼已經記進「設定」分頁的問題紀錄資料夾，回報時附上今天那幾個檔就好。POB 恢復或關閉後這行會自己消失。", \
+	                     u8"POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

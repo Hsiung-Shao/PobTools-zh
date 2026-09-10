@@ -5,6 +5,7 @@
 //
 
 #include "host/error_log.h"
+#include "host/hang_watch.h"
 #include "ui_local.h"
 
 #include "translation_manager.h"
@@ -357,13 +358,17 @@ void ui_main_c::ScriptInit()
 		lua_rawseti(L, -2, i);
 	}
 	lua_setglobal(L, "arg");
-	PCall(scriptArgc, 0);
+	{
+		HangWatch::Scope watch("lua:Launch.lua");
+		PCall(scriptArgc, 0);
+	}
 	startup_trace_mark("Launch.lua returned");
 
 	if ( !didExit && !restartFlag ) {
 		// Run initialisation callback
 		int extraArgs = PushCallback("OnInit");
 		if (extraArgs >= 0) {
+			HangWatch::Scope watch("lua:OnInit");
 			PCall(extraArgs, 0);
 		}
 		startup_trace_mark("OnInit returned");
@@ -394,6 +399,7 @@ void ui_main_c::ScriptInit()
 			                            (why ? why : "(no detail)"));
 			lua_pop(L, 1);
 		} else {
+			HangWatch::Scope watch("lua:inject");
 			PCall(0, 0);
 		}
 		sys->SetWorkDir();
@@ -413,6 +419,22 @@ void ui_main_c::ScriptInit()
 
 void ui_main_c::Frame()
 {
+	HangWatch::Stage("frame");
+	// POB_ZH_HANG_TEST=<seconds>: stall the frame loop on purpose, once, so the
+	// watchdog can be verified end to end on a real POB rather than only in the
+	// self-test's synthetic process. Unset for everybody who did not ask for it.
+	{
+		static bool hangTestDone = false;
+		if (!hangTestDone) {
+			hangTestDone = true;
+			const char* secs = getenv("POB_ZH_HANG_TEST");
+			const int hangSecs = secs ? atoi(secs) : 0;
+			if (hangSecs > 0) {
+				HangWatch::Stage("hang-test");
+				sys->Sleep(hangSecs * 1000);
+			}
+		}
+	}
 	// Check for any subscripts we need to run
 	bool hasSubscript = false;
 	for (dword i = 0; i < subScriptSize; i++) {
@@ -458,6 +480,9 @@ void ui_main_c::Frame()
 	//sys->con->Printf("OnFrame...\n");
 	int extraArgs = PushCallback("OnFrame");
 	if (extraArgs >= 0) {
+		// Where POB spends nearly all of its time, and where nearly every freeze
+		// worth reporting will be found sitting.
+		HangWatch::Scope watch("lua:OnFrame");
 		PCall(extraArgs, 0);
 	}
 

@@ -5,6 +5,7 @@
 //
 
 #include "host/error_log.h"
+#include "host/hang_watch.h"
 #include "ui_local.h"
 
 #include <filesystem>
@@ -2237,7 +2238,13 @@ SG_LUA_CPP_FUN_BEGIN(LoadModule)
 	ui->sys->SetWorkDir(ui->scriptWorkDir);
 	ui->LExpect(L, err == 0, "LoadModule() error loading '%s' (%d):\n%s", fileStr.c_str(), err, lua_tostring(L, -1));
 	lua_replace(L, 1);	// Replace module name with module main chunk
-	lua_call(L, n - 1, LUA_MULTRET);
+	// Startup spends most of its time in here, and a module that never returns
+	// is a freeze with no window up yet -- the case where the breadcrumb is the
+	// only evidence there is.
+	{
+		HangWatch::Scope watch(("load-module:" + std::string(modName)).c_str());
+		lua_call(L, n - 1, LUA_MULTRET);
+	}
 	return lua_gettop(L);
 }
 SG_LUA_CPP_FUN_END()
@@ -2263,7 +2270,10 @@ SG_LUA_CPP_FUN_BEGIN(PLoadModule)
 	lua_replace(L, 1);	// Replace module name with module main chunk
 	lua_getfield(L, LUA_REGISTRYINDEX, "traceback");
 	lua_insert(L, 1); // Insert traceback function at start of stack
-	err = lua_pcall(L, n - 1, LUA_MULTRET, 1);
+	{
+		HangWatch::Scope watch(("load-module:" + std::string(modName)).c_str());
+		err = lua_pcall(L, n - 1, LUA_MULTRET, 1);
+	}
 	if (err) {
 		return 1;
 	}

@@ -10,6 +10,7 @@
 
 #include "sys_local.h"
 #include "translation_manager.h"
+#include "../../../host/hang_watch.h"
 
 #include "core.h"
 
@@ -672,11 +673,27 @@ bool sys_main_c::Run(int argc, char** argv)
 		}
 #endif
 
+		// Watch this frame loop. POB runs in its own process, so nothing outside
+		// it can tell "wedged" from "busy"; the watchdog thread started here is
+		// the only thing that will still be able to say what we were doing.
+		{
+			HangWatch::Options watch;
+			watch.role = "engine";
+			char game[16] = {};
+			GetEnvironmentVariableA("POB_GAME", game, sizeof(game));
+			watch.game = game[0] ? game : nullptr;
+			HangWatch::Start(watch);
+		}
+		HangWatch::Stage("engine-init");
+
 		// Initialise engine
 		core->Init(argc, argv);
 
 		// Run frame loop
 		while (exitFlag == false) {
+			// One store per iteration, before any of the work: whatever stops
+			// below, the heartbeat stops with it.
+			HangWatch::Beat();
 			if (minimized) {
 				glfwWaitEventsTimeout(0.1);
 			}
@@ -699,7 +716,12 @@ bool sys_main_c::Run(int argc, char** argv)
 		core->Shutdown();
 	}
 #ifdef _WIN32
-	catch (EXCEPTION_POINTERS* exPtr) { 
+	catch (EXCEPTION_POINTERS* exPtr) {
+		// Before the message below, which lives and dies with the console window:
+		// the same crash, written down with a stack and the breadcrumb, in the
+		// folder the settings page's button opens. Until v1.4.0 a crash left the
+		// user with one bare address they had to copy by hand.
+		HangWatch::ReportCrash(exPtr);
 		// C exception
 		PEXCEPTION_RECORD exRec = exPtr->ExceptionRecord;
 		DWORD code =  exRec->ExceptionCode;

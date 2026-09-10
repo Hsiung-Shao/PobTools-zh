@@ -69,6 +69,9 @@ set(SIMPLEGRAPHIC_SOURCES
     # cannot call into the host, and the POB patch failures worth recording
     # happen in ui_api.cpp. Appends are atomic, so two copies is not a race.
     "host/error_log.cpp"
+    # Same reasoning for the hang/crash watchdog: POB runs in its own process,
+    # so the engine has to watch its own frame loop.
+    "host/hang_watch.cpp"
     "ui_console.cpp"
     "ui_console.h"
     "ui_debug.cpp"
@@ -361,6 +364,8 @@ if (WIN32)
         host/host_main.cpp
         host/error_log.cpp
         host/error_log_selftest.cpp
+        host/hang_watch.cpp
+        host/hang_watch_selftest.cpp
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp

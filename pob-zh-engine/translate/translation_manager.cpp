@@ -30,6 +30,7 @@
 #include <thread>
 #include "translation_manager.h"
 #include "../host/error_log.h"
+#include "../host/hang_watch.h"
 #include "startup_trace.h"
 
 /* nlohmann/json for structured JSON translation loading */
@@ -1596,6 +1597,9 @@ void translation_wait_ready(void) {
     }
     s_first_use_traced = true;
     const tr_clock::time_point t0 = tr_clock::now();
+    /* 這是主執行緒唯一會為字典停下來的地方(等背景 worker 讀完 Data\*.json)。
+    ** 卡在這裡的話畫面上什麼都還沒有,麵包屑是唯一看得出來的線索。 */
+    HangWatch::Scope hw_wait("dict-wait");
     if (s_init_thread) {
         if (s_init_thread->joinable()) s_init_thread->join();
         delete s_init_thread;

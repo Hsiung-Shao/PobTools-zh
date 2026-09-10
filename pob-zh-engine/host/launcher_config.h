@@ -154,6 +154,13 @@ struct LauncherConfig {
 	// proxy automatically — GitHub is unreachable without one for many
 	// mainland-China users. Applied via HttpSetManualProxy (http_client.h).
 	std::wstring   proxy;
+	// The hang/crash watchdog (hang_watch.h), passed down to POB as
+	// POB_ZH_HANGWATCH. On by default and deliberately not in the UI: it costs
+	// one thread and one atomic store per frame, and a switch invites people to
+	// turn off the thing that would have explained their freeze. The ini key is
+	// here so a machine where suspending threads is a problem can still opt out
+	// without a new build.
+	bool           hangWatch = true;
 };
 
 // ---- external dictionary folders -------------------------------------------

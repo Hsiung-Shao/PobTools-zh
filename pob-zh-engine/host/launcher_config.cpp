@@ -257,6 +257,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	}
 
 	c.updateTranslations = read_ini_int(iniPath, L"UpdateTranslations", 1) != 0;
+	// Undocumented on purpose: the escape hatch for a machine the watchdog
+	// misbehaves on, not a setting to browse. Anything but 0 means on.
+	c.hangWatch = read_ini_int(iniPath, L"HangWatch", 1) != 0;
 
 	c.proxy = read_ini_path(iniPath, L"Proxy");
 
@@ -303,6 +306,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontApplyAll",
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"HangWatch",
+		cfg.hangWatch ? L"1" : L"0", iniPath.c_str());
 	for (int g = 0; g < 2; g++) {
 		const AppearanceConfig& a = cfg.look[g];
 		const std::wstring sfx = GameKeySuffix(g);
@@ -1158,6 +1163,21 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		SaveLauncherConfig(ini, c);
 		check(on ? "T17b UpdateTranslations round-trips on" : "T17c UpdateTranslations round-trips off",
 		      LoadLauncherConfig(ini).updateTranslations == (on != 0));
+	}
+
+	// T17f -- the watchdog escape hatch. Default must be ON: an install that
+	// silently stopped explaining its own freezes would look exactly like one
+	// that never froze.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T17f HangWatch defaults to on", LoadLauncherConfig(ini).hangWatch);
+	for (int on = 0; on <= 1; on++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.hangWatch = (on != 0);
+		SaveLauncherConfig(ini, c);
+		check(on ? "T17g HangWatch round-trips on" : "T17h HangWatch round-trips off",
+		      LoadLauncherConfig(ini).hangWatch == (on != 0));
 	}
 
 	// T17d/e -- the proxy field. Default must be empty (= follow the system

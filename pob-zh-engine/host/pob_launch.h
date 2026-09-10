@@ -40,14 +40,14 @@ struct InstanceInfo {
 };
 
 // POB_GAME / POB_LOCALE / POB_ZH_FONTFILE / POB_ZH_DATADIR / POB_ZH_FONT_ALL /
-// POB_ZH_WINDOW_OPACITY, set in both the Win32 and CRT environments so a child
+// POB_ZH_WINDOW_OPACITY / POB_ZH_HANGWATCH, set in both the Win32 and CRT environments so a child
 // process inherits them. Pass dataDir empty for the built-in dictionaries -- the
 // engine treats empty as "not set". windowOpacity is a percent; 100 = opaque.
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
                   bool fontApplyAll = true, int windowOpacity = 100,
                   const std::wstring& bgPath = std::wstring(), int bgBright = 50,
-                  int glassBlur = 0, int treeBg = 100);
+                  int glassBlur = 0, int treeBg = 100, bool hangWatch = true);
 
 // Live counterparts for the background image (absolute path, "" = none), its
 // brightness and the liquid-glass blur; same delivery as ApplyPobWindowOpacity

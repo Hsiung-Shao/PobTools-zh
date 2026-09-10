@@ -207,33 +207,61 @@ int PobLog::PruneOlderThan(int keepDays)
 	wchar_t cutName[32];
 	swprintf_s(cutName, L"%04d-%02d-%02d", cut.wYear, cut.wMonth, cut.wDay);
 
-	// Only names of exactly the shape this module writes. Never a wildcard sweep:
-	// this directory is inside the user's install, and a delete loop that trusted
-	// "*.log" would one day meet a file somebody else put there.
-	auto isOurName = [](const std::wstring& fn, std::wstring* date) {
-		if (fn.size() != 20) return false;                       // error-YYYY-MM-DD.log
-		if (fn.compare(0, 6, L"error-") != 0) return false;
-		if (fn.compare(16, 4, L".log") != 0) return false;
-		for (int i = 6; i < 16; i++) {
-			const wchar_t c = fn[i];
-			const bool wantDash = (i == 10 || i == 13);
+	// Only names of exactly the shape this module writes: the daily failure log,
+	// and the hang/crash reports the watchdog drops beside it. Never a wildcard
+	// sweep -- this directory is inside the user's install, and a delete loop
+	// that trusted "*.txt" would one day meet a file somebody else put there.
+	//
+	//   error-YYYY-MM-DD.log
+	//   hang-YYYY-MM-DD-HHMMSS-<role>.txt
+	//   crash-YYYY-MM-DD-HHMMSS-<role>.txt
+	auto dateAt = [](const std::wstring& fn, size_t at, std::wstring* date) {
+		if (fn.size() < at + 10) return false;
+		for (int i = 0; i < 10; i++) {
+			const wchar_t c = fn[at + i];
+			const bool wantDash = (i == 4 || i == 7);
 			if (wantDash ? (c != L'-') : (c < L'0' || c > L'9')) return false;
 		}
-		if (date) *date = fn.substr(6, 10);
+		if (date) *date = fn.substr(at, 10);
 		return true;
+	};
+	auto endsWith = [](const std::wstring& fn, const wchar_t* suffix) {
+		const size_t n = wcslen(suffix);
+		return fn.size() >= n && fn.compare(fn.size() - n, n, suffix) == 0;
+	};
+
+	// `fixedWidth` names carry nothing after the date; the reports carry a time,
+	// so what follows their date must be the separator and never part of a
+	// longer word (hang-notes.txt is somebody's file, not ours).
+	struct Shape { const wchar_t* pattern; const wchar_t* prefix; const wchar_t* suffix; bool fixedWidth; };
+	const Shape shapes[] = {
+		{ L"error-*.log", L"error-", L".log", true  },
+		{ L"hang-*.txt",  L"hang-",  L".txt", false },
+		{ L"crash-*.txt", L"crash-", L".txt", false },
 	};
 
 	int removed = 0;
-	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((dir + L"error-*.log").c_str(), &fd);
-	if (h == INVALID_HANDLE_VALUE) return 0;
-	do {
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
-		std::wstring date;
-		if (!isOurName(fd.cFileName, &date)) continue;
-		if (date >= cutName) continue;           // today's file is never older
-		if (DeleteFileW((dir + fd.cFileName).c_str())) removed++;
-	} while (FindNextFileW(h, &fd));
-	FindClose(h);
+	for (const Shape& sh : shapes) {
+		const size_t plen = wcslen(sh.prefix);
+		WIN32_FIND_DATAW fd{};
+		HANDLE h = FindFirstFileW((dir + sh.pattern).c_str(), &fd);
+		if (h == INVALID_HANDLE_VALUE) continue;
+		do {
+			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+			const std::wstring fn = fd.cFileName;
+			if (fn.size() < plen || fn.compare(0, plen, sh.prefix) != 0) continue;
+			if (!endsWith(fn, sh.suffix)) continue;
+			if (sh.fixedWidth) {
+				if (fn.size() != plen + 10 + wcslen(sh.suffix)) continue;
+			} else {
+				if (fn.size() <= plen + 10 || fn[plen + 10] != L'-') continue;
+			}
+			std::wstring date;
+			if (!dateAt(fn, plen, &date)) continue;
+			if (date >= cutName) continue;           // today's file is never older
+			if (DeleteFileW((dir + fn).c_str())) removed++;
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
 	return removed;
 }

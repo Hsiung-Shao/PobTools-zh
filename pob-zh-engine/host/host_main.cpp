@@ -25,6 +25,7 @@
 
 #include "error_log.h"
 #include "http_client.h"
+#include "hang_watch.h"
 #include "launcher_config.h"
 #include "launcher_strings_io.h"
 #include "launcher_ui.h"
@@ -182,6 +183,9 @@ static void apply_locale_env(const std::wstring& dir)
 	// the legacy CLI path never did, so a user who turned the switch OFF in the
 	// ini would still get letters/digits in the custom font ("absent" means on).
 	ensure(L"POB_ZH_FONT_ALL", L"FontApplyAll", L"1");
+	// Same gap again: a POB started from the legacy CLI path would otherwise
+	// ignore an ini that turned the watchdog off ("absent" means on).
+	ensure(L"POB_ZH_HANGWATCH", L"HangWatch", L"1");
 	// Appearance (per game, see AppearanceConfig): all of it goes through the
 	// config loader -- the per-game keys have a fallback chain (`ensure` has
 	// none) and the background is a path that may be non-ASCII.
@@ -547,6 +551,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--error-log-selftest") {
 		return RunErrorLogSelfTest(dir);
 	}
+	// The watchdog that explains a freeze. Its second gate -- a window that still
+	// answers -- is what keeps a dragged window from being reported as a hang, so
+	// that gate gets a case of its own here.
+	if (arg1 == L"--hang-selftest") {
+		return RunHangWatchSelfTest(dir);
+	}
+	// Deliberately stalls this process so a real report lands in the real log
+	// folder: the only way to confirm on a live machine that the frames in it
+	// resolve against the build that produced the release.
+	if (arg1 == L"--hang-probe") {
+		return RunHangProbe(dir, arg2.empty() ? 25 : _wtoi(arg2.c_str()));
+	}
 	if (arg1 == L"--font-coverage-selftest") {
 		// headless: every shipped font must be able to draw every character the
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
@@ -746,6 +762,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// install nobody looks after never accumulates anything worth noticing.
 	PobLog::PruneOlderThan(30);
 
+	// From here on the launcher window is the only thing between the user and a
+	// freeze, so start watching our own frame loop -- and, through SetPeers in
+	// the launcher UI, the POB processes we start. While POB runs in the mode
+	// that closes the launcher, this process sits in a blocking wait with no
+	// window of its own: no window means the second gate can never be satisfied,
+	// which is exactly the "not a hang" answer that case needs.
+	{
+		HangWatch::Options watch;
+		watch.role = "launcher";
+		HangWatch::Start(watch);
+	}
+
 	for (;;) {
 		LauncherConfig cfg = LoadLauncherConfig(ini);
 		InstallInfo installs = DetectInstalls(dir);
@@ -805,7 +833,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			                        dd.status == DataDirStatus::External ? dd.root : L"",
 			                        cfg.fontApplyAll, look.windowOpacity,
 			                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
-			                        look.treeBg);
+			                        look.treeBg, cfg.hangWatch);
 		}
 		// Held for the whole run: the engine reads Data\*.json on a background
 		// thread right after start, and the updater's check (started above, still

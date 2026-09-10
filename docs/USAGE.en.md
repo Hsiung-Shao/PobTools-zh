@@ -236,6 +236,32 @@ on the Settings page and updates will not overwrite your dictionaries (the progr
 still updates). You are still notified when new data is available and can take it once with
 "Apply once now".
 
+## 8. When POB or PobTools freezes
+
+"Open the problem log folder" at the bottom of the Settings page opens
+`PobTools\logs\`. Whenever something fails, the reason is written there; when
+nothing is wrong the folder stays empty.
+
+Since v1.4.0, **freezes and crashes leave a reason behind too**:
+
+- **Not responding**: when POB's or the launcher's window has been frozen for
+  more than 20 seconds, a `hang-<date>-<time>-<role>.txt` is written. It says
+  what was being done at the time (loading the translation dictionaries, running
+  one of POB's modules, …) and where each thread stopped, and
+  `error-<date>.log` gets a one-line summary.
+- **Crashes**: an unexpected exit leaves a `crash-<date>-<time>-<role>.txt` the
+  same way.
+- While POB is not responding, a line at the top of the launcher says the reason
+  has been written down. It clears itself once POB responds again or is closed.
+  **The launcher will not end POB for you** — sometimes it is only busy with a
+  slow calculation, and killing it would throw away an unsaved build.
+- Pauses caused by dragging the window, opening a menu or a file dialog do not
+  count as "not responding" and produce nothing.
+- Attaching that day's files to a bug report is the most useful thing you can do.
+  They contain only the program's own code positions and its module list, never
+  your build data.
+- Like the logs, these files are kept for 30 days and then removed automatically.
+
 ## FAQ
 
 Other installation and startup questions (POB not detected, garbled text, antivirus, …)

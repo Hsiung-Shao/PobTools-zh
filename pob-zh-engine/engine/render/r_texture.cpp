@@ -8,6 +8,7 @@
 #include <vector>
 #include <atomic>
 #include "r_local.h"
+#include "../../host/hang_watch.h"
 
 #include "cmp_core.h"
 #include "stb_image_resize.h"
@@ -115,6 +116,10 @@ t_manager_c::t_manager_c(r_renderer_c* renderer)
 
 t_manager_c::~t_manager_c()
 {
+	// Shutdown blocks here until every loader thread notices doRun; one that is
+	// stuck mid-download makes closing POB look like a hang, which is exactly the
+	// report we would otherwise have no explanation for.
+	HangWatch::Scope watch("tex-shutdown");
 	doRun = false;
 	for (auto& worker : workers)
 		worker.join();
