@@ -149,6 +149,12 @@ struct LauncherConfig {
 	// Whether an update may replace the translation dictionaries. Off is for
 	// people editing translations themselves; see IsTranslationDataRel.
 	bool           updateTranslations = true;
+	// Install a new PobTools release by itself at startup, instead of waiting for
+	// the orange button. OFF by default and it has to stay that way: applying an
+	// app update closes the program and reopens it, and a program that does that
+	// uninvited is a program the user cannot predict. See ShouldAutoApplyApp for
+	// the (deliberately narrow) moment it is allowed to act.
+	bool           autoApplyAppUpdate = false;
 	// HTTP proxy for the launcher's own downloads (update checks, translation
 	// data, atlas data, filter icons), as "host:port". Empty = follow the system
 	// proxy automatically — GitHub is unreachable without one for many

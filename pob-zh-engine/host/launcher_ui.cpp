@@ -1100,6 +1100,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	bool openEditor = false;
 	bool applyUpdate = false;
 
+	// Has the user started anything in this launcher session? It gates the
+	// automatic update: closing and reopening the launcher is free while nothing
+	// is open, and an interruption the moment anything is. Set by every path that
+	// starts POB, a tool window or an embedded panel.
+	bool anythingLaunched = false;
+	// One shot for the whole process. A failed apply comes back here with the
+	// updater re-Init'ed, and without this the launcher would download, fail and
+	// download again forever; the orange button still works after a failure.
+	static bool autoApplyTried = false;
+
 	// Game and language live in widget state (poe2Sel / localeIdx), not in cfg, so
 	// cfg is stale until this runs. Every path that writes the ini must call it
 	// first -- the "Save settings" button used to write the OLD language back,
@@ -1117,6 +1127,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
 		unsigned long pid = 0;
 		if (!PobLaunch::SpawnToolDetached(exeDir, flag, kind, &pid)) return;
+		anythingLaunched = true;
 		// In tabbed mode the tool becomes a tab here rather than a window of its
 		// own; in separate mode nothing else happens, exactly as before.
 		if (tabbed) dock.Track(pid, from_utf8(label));
@@ -1152,6 +1163,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		unsigned long pid = 0;
 		if (!PobLaunch::SpawnPobDetached(lua, cfg.game, &pid)) return;
+		anythingLaunched = true;
 		// Tabbed mode docks it into this window; separate mode leaves it as its
 		// own desktop window, which is what it has always done.
 		if (tabbed) dock.Track(pid, poe2 ? L"PoE2" : L"PoE1");
@@ -1280,6 +1292,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// the tools keep enough state (a whole passive tree, the scarab icon cache) that
 	// a second copy is not free either.
 	auto openPanel = [&](IToolPanel* (*make)(), const char* label) {
+		anythingLaunched = true;   // tabbed mode's tools count as "in use" too
 		std::unique_ptr<IToolPanel> fresh(make());
 		for (EmbeddedPanel& ep : panels) {
 			if (std::string(ep.panel->PanelId()) == fresh->PanelId()) {
@@ -1575,6 +1588,25 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					ust = appUpd->Poll();
 				}
 			}
+			// "Install a new version at startup by itself": press our own button,
+			// but only in the moment where nothing is lost by it (see
+			// ShouldAutoApplyApp). Everything after this -- the download progress,
+			// AppReadyToApply, the swap and the relaunch -- is the same path the
+			// orange button takes, so the user still watches it happen on screen
+			// instead of the window vanishing without explanation.
+			{
+				AutoApplyInputs ai;
+				ai.settingOn = cfg.autoApplyAppUpdate;
+				ai.phase = ust.phase;
+				ai.pobBusy = pobBusy;
+				ai.anythingLaunched = anythingLaunched;
+				ai.alreadyTried = autoApplyTried;
+				if (ShouldAutoApplyApp(ai)) {
+					autoApplyTried = true;
+					appUpd->StartAppUpdate();
+					ust = appUpd->Poll();
+				}
+			}
 			if (ust.phase == AppUpdatePhase::AppReadyToApply) applyUpdate = true;
 		}
 		bool updaterBusy = ust.phase == AppUpdatePhase::AppDownloading ||
@@ -1826,13 +1858,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (GameRow("##launch1", S.poe1, installs.poe1Version, poe1Ok ? S.detected : S.missing,
 				poe1Ok, fonts, scale, inner, poe1Ok ? poe1Dir.c_str() : S.notFoundPoe1, S.launch)) {
 			poe2Sel = false;
-			if (keepOpen) launchPob(false); else launch = true;
+			if (keepOpen) launchPob(false); else { launch = true; anythingLaunched = true; }
 		}
 		ImGui::Dummy(ImVec2(0, 2.0f * scale));
 		if (GameRow("##launch2", S.poe2, installs.poe2Version, poe2Ok ? S.detected : S.missing,
 				poe2Ok, fonts, scale, inner, poe2Ok ? poe2Dir.c_str() : S.notFoundPoe2, S.launch)) {
 			poe2Sel = true;
-			if (keepOpen) launchPob(true); else launch = true;
+			if (keepOpen) launchPob(true); else { launch = true; anythingLaunched = true; }
 		}
 		if (pobCount > 0) {
 			ImGui::PushFont(fonts.small);
@@ -1876,7 +1908,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// child-process entry point the other tools use and becomes a tab.
 			if (ImGui::Button(S.editor, toolSize)) {
 				if (tabbed) openPanel(&CreateTranslationEditorPanel, S.editor);
-				else openEditor = true;
+				else { openEditor = true; anythingLaunched = true; }
 			}
 			ImGui::SameLine(0, gap);
 			// Tabbed mode draws it in this window; separate mode starts it as its own
@@ -2253,6 +2285,25 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PopTextWrapPos();
 				ImGui::PopStyleColor();
 				ImGui::PopFont();
+			}
+
+			// --- program updates ---------------------------------------------
+			// Its own section rather than a line in "translation data": the two
+			// lines update independently, and the one that closes and reopens the
+			// program should not be found by accident.
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionAppUpdate);
+			{
+				bool autoApp = cfg.autoApplyAppUpdate;
+				if (ImGui::Checkbox(S.autoAppUpdate, &autoApp)) {
+					cfg.autoApplyAppUpdate = autoApp;
+					saveNow();
+				}
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.autoAppUpdateHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
 			}
 
 			// --- translation data -------------------------------------------

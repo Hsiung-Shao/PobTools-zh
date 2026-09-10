@@ -11,6 +11,11 @@
 //       prompts — the old "patch bump = silent data-only release" rule is gone,
 //       because applying anything now means renaming pob-zh.exe and engine\*
 //       and restarting the process, which must never happen unasked.
+//       Since v1.4.0 there is exactly one exception, and it is opt-in: with
+//       「啟動後自動安裝新版本」 turned on the launcher presses that button for
+//       the user, but only in the moment where a restart costs nothing — see
+//       ShouldAutoApplyApp below for the gate. Every other path still waits for
+//       a click.
 //
 //   Data 線  — GET /releases?per_page=100 and pick the highest "data-<n>"
 //       sequence. Those releases are ALWAYS marked prerelease, so they can
@@ -218,6 +223,30 @@ UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
                        std::tuple<int, int, int> localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
                        bool autoData);
+
+// Should the launcher press its own update button?
+//
+// PlanUpdates deliberately never applies an app release without a click, because
+// doing so closes the program in front of the user. This function is the one
+// place that exception is allowed, and it is narrow on purpose: the setting is
+// off by default, and even when it is on the only moment we take is the one
+// where nothing can be lost -- the launcher has just started, the user has not
+// pressed launch or opened a tool yet, and no POB is holding engine\*.dll.
+//
+// It is a pure function so the self test can drive every combination. The same
+// logic living inside the frame loop would have no test able to reach it, which
+// is the lesson the PlanUpdates matrix (T4) was written for.
+struct AutoApplyInputs {
+	bool settingOn = false;        // 啟動後自動安裝新版本
+	AppUpdatePhase phase = AppUpdatePhase::Idle;
+	bool pobBusy = false;          // a POB is running: engine\* cannot be swapped
+	bool anythingLaunched = false; // this launcher session has started POB or a tool
+	bool alreadyTried = false;     // one shot per process; see below
+};
+// alreadyTried exists because a failed apply returns to the launcher with the
+// updater re-Init'ed. Without the latch that would download, fail, and download
+// again forever -- the same loop Init's Status reset is there to prevent.
+bool ShouldAutoApplyApp(const AutoApplyInputs& in);
 
 // "data-3" -> 3. False for anything else, including "v0.19.0" and "data-" — the
 // Data 線 must never mistake an app tag for a data tag.

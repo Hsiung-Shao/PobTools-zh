@@ -219,7 +219,14 @@
 	   a wrong guess would throw away an unsaved build. */                                          \
 	X(hangNotice,        u8"POB 沒有回應，原因已寫進問題紀錄", u8"POB is not responding; the reason has been written to the problem log") \
 	X(hangNoticeTip,     u8"POB 已經超過 20 秒沒有反應。當時它在做什麼已經記進「設定」分頁的問題紀錄資料夾，回報時附上今天那幾個檔就好。POB 恢復或關閉後這行會自己消失。", \
-	                     u8"POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.")
+	                     u8"POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.") \
+	/* v1.4.0: the program-update line gets its own section. Off by default --
+	   installing a new version closes the launcher and reopens it, and that is
+	   not something to do to somebody who did not ask for it. */                                   \
+	X(sectionAppUpdate,  u8"程式更新",                     u8"Program updates")                      \
+	X(autoAppUpdate,     u8"啟動後自動安裝新版本",         u8"Install new versions at startup")       \
+	X(autoAppUpdateHint, u8"PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。", \
+	                     u8"PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

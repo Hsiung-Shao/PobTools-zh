@@ -128,6 +128,9 @@
     "Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live": "把 PNG／JPG／WebP 放進 PobTools\\Backgrounds 資料夾就能選。圖片鋪滿整個 POB 視窗當最底層，天賦樹與各分頁畫在它上面；亮度是圖片壓暗的程度。霧面強度把側欄、工具列變成毛玻璃：面板底下的畫面先模糊再蓋上面板的淡色（面板不透明度）；0% 為不模糊。天賦樹底圖是節點底下那層深色底紋的不透明度，調低就能在天賦頁也看到背景圖片。全部即時生效",
     "POB is not responding; the reason has been written to the problem log": "POB 沒有回應，原因已寫進問題紀錄",
     "POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.": "POB 已經超過 20 秒沒有反應。當時它在做什麼已經記進「設定」分頁的問題紀錄資料夾，回報時附上今天那幾個檔就好。POB 恢復或關閉後這行會自己消失。",
+    "Program updates": "程式更新",
+    "Install new versions at startup": "啟動後自動安裝新版本",
+    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。",
     "Translation data updated to v": "翻譯資料已更新至 v"
   }
 }

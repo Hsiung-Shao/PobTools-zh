@@ -257,6 +257,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	}
 
 	c.updateTranslations = read_ini_int(iniPath, L"UpdateTranslations", 1) != 0;
+	// Default 0: never install a new version, close and reopen the program on a
+	// user who did not ask for that.
+	c.autoApplyAppUpdate = read_ini_int(iniPath, L"AutoApplyAppUpdate", 0) != 0;
 	// Undocumented on purpose: the escape hatch for a machine the watchdog
 	// misbehaves on, not a setting to browse. Anything but 0 means on.
 	c.hangWatch = read_ini_int(iniPath, L"HangWatch", 1) != 0;
@@ -347,6 +350,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 
 	WritePrivateProfileStringW(kSection, L"UpdateTranslations",
 		cfg.updateTranslations ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"AutoApplyAppUpdate",
+		cfg.autoApplyAppUpdate ? L"1" : L"0", iniPath.c_str());
 
 	WritePrivateProfileStringW(kSection, L"Proxy", cfg.proxy.c_str(), iniPath.c_str());
 }
@@ -1163,6 +1168,21 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		SaveLauncherConfig(ini, c);
 		check(on ? "T17b UpdateTranslations round-trips on" : "T17c UpdateTranslations round-trips off",
 		      LoadLauncherConfig(ini).updateTranslations == (on != 0));
+	}
+
+	// T17i -- installing a new version by itself. The default is the whole point
+	// of the case: ON by default would mean an install that closes and reopens
+	// itself on a user who never asked for that.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T17i AutoApplyAppUpdate defaults to OFF", !LoadLauncherConfig(ini).autoApplyAppUpdate);
+	for (int on = 0; on <= 1; on++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.autoApplyAppUpdate = (on != 0);
+		SaveLauncherConfig(ini, c);
+		check(on ? "T17j AutoApplyAppUpdate round-trips on" : "T17k AutoApplyAppUpdate round-trips off",
+		      LoadLauncherConfig(ini).autoApplyAppUpdate == (on != 0));
 	}
 
 	// T17f -- the watchdog escape hatch. Default must be ON: an install that

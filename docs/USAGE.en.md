@@ -108,6 +108,13 @@ The launcher checks GitHub for new versions once a day in the background (since 
 - Your personal settings (`pob-zh.ini`, the `PobTools\` folder) and the POB folder itself
   are never touched by an update.
 
+**If you would rather not press that button**: tick "Install new versions at startup" in
+the "Program updates" section of the Settings page (since v1.4.0, off by default).
+PobTools then checks as it opens and, when a new version exists, installs it and reopens
+itself. It only acts right after startup, **before you have opened POB or any tool**, and
+never while a POB is running (that would touch files POB has open). A new version found
+while you are already working still waits for the button in the top right.
+
 Advanced: you can also run `pob-zh.exe --app-update-check` (check only) or
 `pob-zh.exe --app-update` (check and update, no automatic restart) from the command line.
 

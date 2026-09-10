@@ -531,6 +531,24 @@ UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
 	return p;
 }
 
+bool ShouldAutoApplyApp(const AutoApplyInputs& in)
+{
+	if (!in.settingOn) return false;
+	if (in.alreadyTried) return false;
+	// Only from the state that means "waiting for a click". Every later phase
+	// (downloading, staging, ready) is already this same update in flight, and
+	// starting it again would queue a second download of the same zip.
+	if (in.phase != AppUpdatePhase::AppAvailable) return false;
+	// Swapping engine\*.dll under a running POB is what SetHold protects against;
+	// the click path is disabled for the same reason.
+	if (in.pobBusy) return false;
+	// The window where restarting costs nothing. Once the user has pressed launch
+	// or opened a tool, the launcher closing itself is an interruption -- the
+	// orange button is still right there for them.
+	if (in.anythingLaunched) return false;
+	return true;
+}
+
 // ---- AppUpdater --------------------------------------------------------------
 
 void AppUpdater::loadState()
@@ -1810,6 +1828,50 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		want("both-manual", PlanUpdates(true, v(0, 20, 0), v0190, true, 4, 3, false),
 		     true, false, true);
 		check(ok, ("T4 two-line update plan" + (ok ? std::string() : (" -- wrong:" + bad))).c_str());
+	}
+
+	// T4b: pressing our own update button. This is the ONE place an app release
+	// is applied without a click, so the interesting half of the table is every
+	// way it must refuse: a POB holding engine\*.dll, a session where the user is
+	// already doing something, a phase where the same download is already in
+	// flight, and the second attempt after a failed apply.
+	{
+		bool ok = true;
+		std::string bad;
+		auto base = [] {
+			AutoApplyInputs in;
+			in.settingOn = true;
+			in.phase = AppUpdatePhase::AppAvailable;
+			return in;
+		};
+		auto want = [&](const char* what, const AutoApplyInputs& in, bool expect) {
+			if (ShouldAutoApplyApp(in) == expect) return;
+			ok = false;
+			bad += std::string(" ") + what;
+		};
+
+		want("the one moment it fires", base(), true);
+
+		{ AutoApplyInputs in = base(); in.settingOn = false;        want("setting-off", in, false); }
+		{ AutoApplyInputs in = base(); in.pobBusy = true;           want("pob-running", in, false); }
+		{ AutoApplyInputs in = base(); in.anythingLaunched = true;  want("already-working", in, false); }
+		{ AutoApplyInputs in = base(); in.alreadyTried = true;      want("one-shot-latch", in, false); }
+
+		// Every phase that is not "waiting for a click". Firing in any of these
+		// would start a second download of the update already being fetched.
+		const AppUpdatePhase others[] = {
+			AppUpdatePhase::Idle,          AppUpdatePhase::Checking,
+			AppUpdatePhase::UpToDate,      AppUpdatePhase::TransUpdating,
+			AppUpdatePhase::TransDone,     AppUpdatePhase::TransAvailable,
+			AppUpdatePhase::AppDownloading, AppUpdatePhase::AppStaging,
+			AppUpdatePhase::AppReadyToApply, AppUpdatePhase::Error,
+		};
+		for (AppUpdatePhase ph : others) {
+			AutoApplyInputs in = base();
+			in.phase = ph;
+			want("non-available-phase", in, false);
+		}
+		check(ok, ("T4b auto-apply gate" + (ok ? std::string() : (" -- wrong:" + bad))).c_str());
 	}
 
 	// T5: state record round-trip + corrupt file reads as defaults
