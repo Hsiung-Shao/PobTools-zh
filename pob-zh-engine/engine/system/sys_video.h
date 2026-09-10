@@ -4,6 +4,8 @@
 // System Video Header
 //
 
+#include <string>
+
 // =======
 // Classes
 // =======
@@ -33,6 +35,12 @@ struct sys_vidSet_s {
 	sys_vidSave_s save; // Saved state
 };
 
+// Diagnostic trace for the window opacity feature. No-op unless the environment
+// variable POB_ZH_OPACITY_TRACE names a file; then each call appends one line.
+// Windows only (defined in win/sys_video.cpp).
+void sys_opacity_trace(const char* fmt, ...);
+bool sys_opacity_trace_enabled();
+
 // ==========
 // Interfaces
 // ==========
@@ -44,6 +52,27 @@ public:
 	static void FreeHandle(sys_IVideo* hnd);
 
 	sys_vidSave_s vid;	// Current state
+
+	// Window opacity in percent, 100 = opaque (feature off). Windows only: set
+	// from POB_ZH_WINDOW_OPACITY at window creation and live by the pob-zh
+	// launcher (a WM_APP message, see sys_video.cpp). The renderer draws POB's
+	// chrome fills (side bar, top bar, tree bottom toolbar) with this alpha so
+	// the layer below them shows through; the window itself stays opaque.
+	// Exposed to Lua as PobToolsWindowOpacity() so the injected script can
+	// extend the passive tree under the chrome while it is active.
+	int windowOpacityPct = 100;
+	// Background image for the whole POB window (absolute path, UTF-8; empty =
+	// POB's own striped background) and its brightness in percent, plus the
+	// liquid-glass blur strength for the chrome panels (0 = plain fill). Same
+	// plumbing as windowOpacityPct: environment at startup, window messages
+	// live (sys_video.cpp); read from Lua via PobToolsBackground().
+	std::string bgPath;
+	int bgBrightPct = 50;
+	int glassBlurPct = 0;
+	// Opacity of the passive tree's own tiled backdrop (the layer under the
+	// nodes), percent; 100 = upstream behaviour, lower lets the background
+	// image show through it, 0 = hidden.
+	int treeBgPct = 100;
 
 	virtual	int		Apply(sys_vidSet_s* set) = 0;	// Apply settings
 

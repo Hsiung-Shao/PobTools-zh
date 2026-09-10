@@ -455,6 +455,10 @@ struct AdjacentMergeStrategy : RenderStrategy {
 
 	struct BatchKey {
 		int blendMode = -1;
+		// True while the bound texture is the white image, i.e. the quads are
+		// DrawImage(nil, ...) fills. Not part of the ordering: it only feeds the
+		// per-vertex alpha scaling of POB's chrome (window opacity, see QUAD).
+		bool untextured = false;
 
 		bool operator < (BatchKey const& rhs) const {
 			return blendMode < rhs.blendMode;
@@ -488,6 +492,7 @@ struct AdjacentMergeStrategy : RenderStrategy {
 		case r_layerCmd_s::BIND: {
 			auto* c = (r_layerCmdBind_s*)cmd;
 			nextTex_ = c->tex;
+			latchKey_.untextured = renderer_->whiteTex && c->tex == renderer_->whiteTex;
 			if (showStats_) {
 				// ImGui::Text("TEX: %s", c->tex->fileName.c_str());
 			}
@@ -547,6 +552,57 @@ struct AdjacentMergeStrategy : RenderStrategy {
 				q.g = tint_[1];
 				q.b = tint_[2];
 				q.a = tint_[3];
+				// Window opacity: POB's chrome fills -- untextured quads on
+				// layer 5 sub 0 (top bar, side bar, its stat box, Build.lua:1329)
+				// and layer 1 sub 0 (tree/compare tab bottom toolbar,
+				// TreeTab.lua:474) -- are drawn translucent so whatever sits
+				// below them shows through: the passive tree (extended to the
+				// whole window by poecharm_inject.lua while this is active) or
+				// the striped app background on the other tabs. The window
+				// itself stays opaque to the desktop by the user's decision.
+				//
+				// Only PANEL-sized fills and the panel separator lines, not the
+				// controls sitting on them: a button or drop-down is a light
+				// border quad with a black inner quad on top, and making the
+				// inner one translucent lets the border bleed through and the
+				// whole control goes pale grey. Panels are the side bar (312 x H),
+				// its stat list box, the bottom-left box (312 x 58) -- wide AND
+				// tall -- or the full-width bars (top bar W x 28, tree toolbar
+				// W x 30); the separators are the 4 px lines spanning the window.
+				// At 0 % all of that vanishes and only the information (text,
+				// icons, controls) is left on top of the tree.
+				if (latchKey_.untextured) {
+					const int L = layer_->layer, S = layer_->subLayer;
+					if (S == 0 && (L == 5 || L == 1)) {
+						const int pct = renderer_->sys->video->windowOpacityPct;
+						if (pct >= 0 && pct < 100) {
+							const auto& qd = c->quad;
+							const float w = (std::max)({ qd.x[0], qd.x[1], qd.x[2], qd.x[3] }) - (std::min)({ qd.x[0], qd.x[1], qd.x[2], qd.x[3] });
+							const float h = (std::max)({ qd.y[0], qd.y[1], qd.y[2], qd.y[3] }) - (std::min)({ qd.y[0], qd.y[1], qd.y[2], qd.y[3] });
+							const float screenW = (float)renderer_->VirtualScreenWidth();
+							const float screenH = (float)renderer_->VirtualScreenHeight();
+							const bool panel = (w >= 200.0f && h >= 40.0f) || (w >= 0.6f * screenW && h >= 20.0f);
+							const bool separator = (w >= 0.6f * screenW && h <= 8.0f) || (h >= 0.5f * screenH && w <= 8.0f);
+							if (panel || separator) q.a *= (float)pct / 100.0f;
+							// Liquid glass: blur what is already under this panel
+							// before its tint goes on. Only on the first vertex, and
+							// only after flushing the quads queued on this layer so
+							// the backdrop is complete.
+							if (panel && v == 0 && renderer_->sys->video->glassBlurPct > 0) {
+								if (!batch_.batch.vertices.empty()) Dispatch();
+								const float qx = (std::min)({ qd.x[0], qd.x[1], qd.x[2], qd.x[3] });
+								const float qy = (std::min)({ qd.y[0], qd.y[1], qd.y[2], qd.y[3] });
+								renderer_->DrawGlassPanel(qx, qy, w, h);
+								lastDispatchKey_.reset(); // blend/viewport must be re-applied
+								// Dispatch emptied the texture set; this quad's slot was
+								// computed against the old one.
+								batch_.textures.clear();
+								batch_.textures.push_back(nextTex_);
+								texSlot = 0;
+							}
+						}
+					}
+				}
 				q.viewX = (float)vp.x;
 				q.viewY = (float)vp.y;
 				q.viewW = (float)vp.width;
@@ -603,19 +659,24 @@ private:
 			Mat4 mvpMatrix = OrthoMatrix(0, virtualW, virtualH, 0, -9999, 9999);
 			glUniformMatrix4fv(mvpMatrixLoc_, 1, GL_FALSE, mvpMatrix.data());
 		}
-		if (!lastKey || lastKey->blendMode != key.blendMode) {
+		if (!lastKey || *lastKey != key) {
 			if (showStats_) {
 				ImGui::Text("New blend mode %s", s_blendModeString.at((r_blendMode_e)key.blendMode));
 			}
+			// RGB blends exactly as before. Alpha is handled separately so the
+			// framebuffer alpha can only move towards 1: the plain
+			// GL_SRC_ALPHA/GL_ONE_MINUS_SRC_ALPHA pair applied to alpha erodes it
+			// with every translucent draw, and on platforms that composite the
+			// window with its alpha (macOS) that shows as see-through patches.
 			switch (key.blendMode) {
 			case RB_ALPHA:
-				glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+				glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 				break;
 			case RB_PRE_ALPHA:
-				glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+				glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 				break;
 			case RB_ADDITIVE:
-				glBlendFunc(GL_ONE, GL_ONE);
+				glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 				break;
 			}
 		}
@@ -873,6 +934,38 @@ void main(void) {
 }
 )";
 
+// Separable 9-tap gaussian for the liquid-glass panels. u_dir is the sample
+// step in texture units (already multiplied by the strength), u_uvMax the
+// used corner of the quarter-size target so taps never read stale texels
+// outside the rectangle being blurred.
+std::string const s_glassBlurFsSource = R"(#version 300 es
+precision mediump float;
+
+uniform highp sampler2D s_tex;
+uniform vec2 u_dir;
+uniform vec2 u_uvMax;
+
+in vec2 v_texcoord;
+
+out vec4 f_fragColor;
+
+void main(void) {
+	float w0 = 0.227027, w1 = 0.1945946, w2 = 0.1216216, w3 = 0.054054, w4 = 0.016216;
+	vec2 lo = vec2(0.0);
+	vec2 hi = u_uvMax;
+	vec3 c = texture(s_tex, clamp(v_texcoord, lo, hi)).rgb * w0;
+	c += texture(s_tex, clamp(v_texcoord + u_dir * 1.0, lo, hi)).rgb * w1;
+	c += texture(s_tex, clamp(v_texcoord - u_dir * 1.0, lo, hi)).rgb * w1;
+	c += texture(s_tex, clamp(v_texcoord + u_dir * 2.0, lo, hi)).rgb * w2;
+	c += texture(s_tex, clamp(v_texcoord - u_dir * 2.0, lo, hi)).rgb * w2;
+	c += texture(s_tex, clamp(v_texcoord + u_dir * 3.0, lo, hi)).rgb * w3;
+	c += texture(s_tex, clamp(v_texcoord - u_dir * 3.0, lo, hi)).rgb * w3;
+	c += texture(s_tex, clamp(v_texcoord + u_dir * 4.0, lo, hi)).rgb * w4;
+	c += texture(s_tex, clamp(v_texcoord - u_dir * 4.0, lo, hi)).rgb * w4;
+	f_fragColor = vec4(c, 1.0);
+}
+)";
+
 // =============
 // Init/Shutdown
 // =============
@@ -1082,6 +1175,7 @@ void r_renderer_c::Init(r_featureFlag_e features)
 	sys->con->Printf("Loading resources...\n");
 
 	whiteImage = RegisterShader("@white", 0);
+	whiteTex = whiteImage ? whiteImage->sh->tex : nullptr;
 	blackImage = RegisterShader("@black", 0);
 
 	imguiCtx = ImGui::CreateContext();
@@ -1429,6 +1523,20 @@ void r_renderer_c::EndFrame()
 	bool elideDraw = false;
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, GetDrawRenderTarget().framebuffer);
+		{
+			// The window opacity (chrome fill alpha, see AdjacentMergeStrategy) is
+			// not part of the command stream, so an unchanged UI would otherwise
+			// be elided and keep presenting the old look after a slider change.
+			const int pct = sys->video->windowOpacityPct;
+			const int glass = sys->video->glassBlurPct;
+			if (pct != lastOpacityPct_ || glass != lastGlassBlurPct_) {
+				// (0 is a valid value: panels fully gone.)
+				lastOpacityPct_ = pct;
+				lastGlassBlurPct_ = glass;
+				lastFrameHash.clear();
+			}
+			glass_.rectsThisFrame = 0;
+		}
 		glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 		int l{};
 		for (l = 0; l < numLayer; l++) {
@@ -1682,8 +1790,184 @@ int r_renderer_c::GetTexAsyncCount()
 // 2D Drawing
 // ==========
 
+// ---- liquid glass ----------------------------------------------------------
+
+void r_renderer_c::EnsureGlassResources(int w4, int h4)
+{
+	auto& g = glass_;
+	if (g.broken) return;
+	if (!g.blurProg) {
+		auto compileShader = [](std::string_view src, GLenum type) -> GLuint {
+			GLuint id = glCreateShader(type);
+			auto sourcePtr = src.data();
+			glShaderSource(id, 1, &sourcePtr, nullptr);
+			glCompileShader(id);
+			return id;
+		};
+		GLuint vs = compileShader(s_scaleVsSource, GL_VERTEX_SHADER);
+		GLuint fs = compileShader(s_glassBlurFsSource, GL_FRAGMENT_SHADER);
+		if (!GetShaderCompileSuccess(vs) || !GetShaderCompileSuccess(fs)) {
+			sys->con->Printf("Glass blur shader compile failure: %s / %s\n",
+			                 GetShaderInfoLog(vs).c_str(), GetShaderInfoLog(fs).c_str());
+			g.broken = true;
+			return;
+		}
+		GLuint prog = glCreateProgram();
+		glAttachShader(prog, vs);
+		glAttachShader(prog, fs);
+		glLinkProgram(prog);
+		glDeleteShader(vs);
+		glDeleteShader(fs);
+		if (!GetProgramLinkSuccess(prog)) {
+			sys->con->Printf("Glass blur program link failure: %s\n", GetProgramInfoLog(prog).c_str());
+			glDeleteProgram(prog);
+			g.broken = true;
+			return;
+		}
+		g.blurProg = prog;
+		g.blurAttribPos = glGetAttribLocation(prog, "a_position");
+		g.blurAttribTC = glGetAttribLocation(prog, "a_texcoord");
+		g.blurLocTex = glGetUniformLocation(prog, "s_tex");
+		g.blurLocDir = glGetUniformLocation(prog, "u_dir");
+		g.blurLocUvMax = glGetUniformLocation(prog, "u_uvMax");
+		glGenFramebuffers(2, g.fbo);
+		glGenTextures(2, g.tex);
+	}
+	if (g.w != w4 || g.h != h4) {
+		GLint prevTex2D, prevFB;
+		glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex2D);
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+		for (int i = 0; i < 2; ++i) {
+			glBindTexture(GL_TEXTURE_2D, g.tex[i]);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w4, h4, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glBindFramebuffer(GL_FRAMEBUFFER, g.fbo[i]);
+			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g.tex[i], 0);
+			if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+				sys->con->Printf("Glass FBO %d incomplete\n", i);
+				g.broken = true;
+			}
+		}
+		glBindFramebuffer(GL_FRAMEBUFFER, prevFB);
+		glBindTexture(GL_TEXTURE_2D, prevTex2D);
+		g.w = w4;
+		g.h = h4;
+	}
+}
+
+// Replace the contents of the screen rectangle (virtual pixels, y down) with
+// a blurred copy of itself. Called from the batch strategy between two
+// dispatches, so every GL state it touches is put back: framebuffer,
+// viewport, program, blend, array buffer, unit-0 2D texture, attrib arrays.
+void r_renderer_c::DrawGlassPanel(float x, float y, float w, float h)
+{
+	const int pct = sys->video->glassBlurPct;
+	if (pct <= 0) return;
+	const int W = VirtualScreenWidth(), H = VirtualScreenHeight();
+	if (W <= 0 || H <= 0) return;
+	const float x0 = (std::max)(0.0f, x), y0 = (std::max)(0.0f, y);
+	const float x1 = (std::min)((float)W, x + w), y1 = (std::min)((float)H, y + h);
+	if (x1 - x0 < 4.0f || y1 - y0 < 4.0f) return;
+	const int W4 = (std::max)(1, W / 4), H4 = (std::max)(1, H / 4);
+	EnsureGlassResources(W4, H4);
+	auto& g = glass_;
+	if (g.broken) return;
+	const int rw = (std::min)(W4, (std::max)(1, (int)((x1 - x0) / 4.0f)));
+	const int rh = (std::min)(H4, (std::max)(1, (int)((y1 - y0) / 4.0f)));
+	auto& draw = GetDrawRenderTarget();
+
+	GLint prevFB;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glDisable(GL_BLEND);
+	glActiveTexture(GL_TEXTURE0);
+
+	// Rectangle in the draw target's texture space (GL: v up).
+	const float u0 = x0 / W, u1 = x1 / W;
+	const float vb = 1.0f - y1 / H, vt = 1.0f - y0 / H;
+	const float uvMax[2] = { rw / (float)W4, rh / (float)H4 };
+
+	// Pass 1: downsample the rectangle into ping (region [0,rw]x[0,rh]).
+	{
+		const float tri[] = { -1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 3.0f };
+		const float tc[] = { u0, vb, u0 + 2.0f * (u1 - u0), vb, u0, vb + 2.0f * (vt - vb) };
+		glBindFramebuffer(GL_FRAMEBUFFER, g.fbo[0]);
+		glViewport(0, 0, rw, rh);
+		glUseProgram(draw.blitProg);
+		glVertexAttribPointer(draw.blitAttribLocPos, 2, GL_FLOAT, GL_FALSE, 0, tri);
+		glVertexAttribPointer(draw.blitAttribLocTC, 2, GL_FLOAT, GL_FALSE, 0, tc);
+		glEnableVertexAttribArray(draw.blitAttribLocPos);
+		glEnableVertexAttribArray(draw.blitAttribLocTC);
+		glBindTexture(GL_TEXTURE_2D, draw.colorTexture);
+		glUniform1i(draw.blitSampleLocColour, 0);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glDisableVertexAttribArray(draw.blitAttribLocPos);
+		glDisableVertexAttribArray(draw.blitAttribLocTC);
+	}
+
+	// Passes 2..: separable blur, ping -> pong -> ping, once or more.
+	{
+		const float step = 1.0f + 2.0f * pct / 100.0f;          // texels at quarter res
+		const int iters = 1 + (pct >= 50 ? 1 : 0) + (pct >= 85 ? 1 : 0);
+		const float tri[] = { -1.0f, -1.0f, 3.0f, -1.0f, -1.0f, 3.0f };
+		const float tc[] = { 0.0f, 0.0f, 2.0f * uvMax[0], 0.0f, 0.0f, 2.0f * uvMax[1] };
+		glUseProgram(g.blurProg);
+		glVertexAttribPointer(g.blurAttribPos, 2, GL_FLOAT, GL_FALSE, 0, tri);
+		glVertexAttribPointer(g.blurAttribTC, 2, GL_FLOAT, GL_FALSE, 0, tc);
+		glEnableVertexAttribArray(g.blurAttribPos);
+		glEnableVertexAttribArray(g.blurAttribTC);
+		glUniform1i(g.blurLocTex, 0);
+		glUniform2f(g.blurLocUvMax, uvMax[0], uvMax[1]);
+		for (int i = 0; i < iters; ++i) {
+			glBindFramebuffer(GL_FRAMEBUFFER, g.fbo[1]);
+			glViewport(0, 0, rw, rh);
+			glBindTexture(GL_TEXTURE_2D, g.tex[0]);
+			glUniform2f(g.blurLocDir, step / W4, 0.0f);
+			glDrawArrays(GL_TRIANGLES, 0, 3);
+			glBindFramebuffer(GL_FRAMEBUFFER, g.fbo[0]);
+			glBindTexture(GL_TEXTURE_2D, g.tex[1]);
+			glUniform2f(g.blurLocDir, 0.0f, step / H4);
+			glDrawArrays(GL_TRIANGLES, 0, 3);
+		}
+		glDisableVertexAttribArray(g.blurAttribPos);
+		glDisableVertexAttribArray(g.blurAttribTC);
+	}
+
+	// Pass 4: paste the blurred region back over the rectangle.
+	{
+		const float xc0 = u0 * 2.0f - 1.0f, xc1 = u1 * 2.0f - 1.0f;
+		const float yc0 = vb * 2.0f - 1.0f, yc1 = vt * 2.0f - 1.0f;
+		const float quad[] = { xc0, yc0, xc1, yc0, xc0, yc1, xc1, yc0, xc1, yc1, xc0, yc1 };
+		const float qtc[] = { 0.0f, 0.0f, uvMax[0], 0.0f, 0.0f, uvMax[1],
+		                      uvMax[0], 0.0f, uvMax[0], uvMax[1], 0.0f, uvMax[1] };
+		glBindFramebuffer(GL_FRAMEBUFFER, draw.framebuffer);
+		glViewport(0, 0, W, H);
+		glUseProgram(draw.blitProg);
+		glVertexAttribPointer(draw.blitAttribLocPos, 2, GL_FLOAT, GL_FALSE, 0, quad);
+		glVertexAttribPointer(draw.blitAttribLocTC, 2, GL_FLOAT, GL_FALSE, 0, qtc);
+		glEnableVertexAttribArray(draw.blitAttribLocPos);
+		glEnableVertexAttribArray(draw.blitAttribLocTC);
+		glBindTexture(GL_TEXTURE_2D, g.tex[0]);
+		glUniform1i(draw.blitSampleLocColour, 0);
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+		glDisableVertexAttribArray(draw.blitAttribLocPos);
+		glDisableVertexAttribArray(draw.blitAttribLocTC);
+	}
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+	glEnable(GL_BLEND);
+	glBindFramebuffer(GL_FRAMEBUFFER, prevFB);
+	glViewport(0, 0, W, H);
+	g.rectsThisFrame++;
+}
+
 void r_renderer_c::SetClearColor(const col4_t col)
 {
+	std::copy_n(col, 4, clearCol_);
 	glClearColor(col[0], col[1], col[2], col[3]);
 }
 

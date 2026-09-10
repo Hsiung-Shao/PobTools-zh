@@ -247,6 +247,148 @@ PATCHES["PassiveTreeView"] = function(class)
 			return orig(self, ...)
 		end
 	end
+
+	-- Window opacity (PobTools launcher slider, Windows): below 100% the engine
+	-- draws POB's chrome (side bar, top bar, the tree tab's bottom toolbar)
+	-- translucent. The user wants the passive tree to be the fixed layer under
+	-- that chrome, so on the tree tab the tree is drawn over the WHOLE window
+	-- instead of the tab viewport: same on-screen centre, same scale, only the
+	-- canvas grows. Input stays confined to the original viewport -- a hover or
+	-- click over the side bar must still belong to the side bar -- except while
+	-- a drag that started inside is in progress. The compare tab draws viewers
+	-- in its own panes and is left alone (build.viewMode ~= "TREE").
+	local origDraw = class.Draw
+	local origZoom = class.Zoom
+	if origDraw and origZoom then
+		-- The tree's own tiled backdrop (the layer under the nodes), drawn by us
+		-- with an alpha so a custom background image can show through it.
+		-- Upstream's copy is suppressed by setting the asset's width to -1
+		-- ("loaded, do not draw" for its `== 0` measure / `> 0` draw checks),
+		-- and put back to 0 when neither an image nor a reduced opacity is in
+		-- play. Same formula as PassiveTreeView.lua:547-555, using the
+		-- viewport and zoom the original will see.
+		-- The two forks keep the backdrop differently: PoE1 in tree.assets and
+		-- pans it with the tree (PassiveTreeView.lua:547-555); PoE2 through
+		-- tree:GetAssetByName("Background2") as a static tile (same file, ~576).
+		-- Both use the `width == 0` measure / `width > 0` draw checks.
+		local isPoe2Fork = type(class.DrawQuadAndRotate) == "function"
+		local zoomLevelMax = isPoe2Fork and 20 or 12 -- upstream Zoom() clamp per fork
+		local function treeBackdropAssets(tree)
+			if not tree then return {} end
+			if type(tree.GetAssetByName) == "function" then
+				local ok, a = pcall(tree.GetAssetByName, tree, "Background2")
+				return (ok and a) and { a } or {}
+			end
+			if not tree.assets then return {} end
+			local out = {}
+			if tree.assets.Background2 then out[#out + 1] = tree.assets.Background2 end
+			if tree.assets.Background1 then out[#out + 1] = tree.assets.Background1 end
+			return out
+		end
+		local bgMeasured = setmetatable({}, { __mode = "k" })
+		local function drawTreeBackdrop(self, build, vp, alpha)
+			local tree = build and build.spec and build.spec.tree
+			local bg = treeBackdropAssets(tree)[1]
+			if not bg or not bg.handle or alpha <= 0 then return end
+			local m = bgMeasured[bg]
+			if not m then
+				local w, h = bg.handle:ImageSize()
+				m = { w = w or 0, h = h or 0 }
+				bgMeasured[bg] = m
+			end
+			if m.w <= 0 then return end
+			if not m.logged then
+				m.logged = true
+				log(string.format("tree backdrop: own draw, image %dx%d alpha=%.2f poe2=%s", m.w, m.h, alpha, tostring(isPoe2Fork)))
+			end
+			SetDrawColor(1, 1, 1, alpha)
+			if isPoe2Fork then
+				DrawImage(bg.handle, vp.x, vp.y, vp.width, vp.height, 0, 0, vp.width / 100, vp.height / 100)
+			else
+				local scale = math.min(vp.width, vp.height) / tree.size * self.zoom
+				local bgSize = m.w * scale * 1.33 * 2.5
+				DrawImage(bg.handle, vp.x, vp.y, vp.width, vp.height,
+					(self.zoomX + vp.width / 2) / -bgSize, (self.zoomY + vp.height / 2) / -bgSize,
+					(vp.width / 2 - self.zoomX) / bgSize, (vp.height / 2 - self.zoomY) / bgSize)
+			end
+			SetDrawColor(1, 1, 1)
+		end
+		class.Draw = function(self, build, viewPort, inputEvents)
+			local bgPath, _, _, treeBg = "", 50, 0, 100
+			if type(PobToolsBackground) == "function" then bgPath, _, _, treeBg = PobToolsBackground() end
+			bgPath = bgPath or ""
+			treeBg = tonumber(treeBg) or 100
+			local ownBackdrop = (bgPath ~= "") or (treeBg < 100)
+			local tree = build and build.spec and build.spec.tree
+			for _, a in ipairs(treeBackdropAssets(tree)) do
+				if ownBackdrop then a.width = -1
+				elseif a.width == -1 then a.width = 0 end
+			end
+			local pct = type(PobToolsWindowOpacity) == "function" and PobToolsWindowOpacity() or 100
+			if not pct or pct >= 100 or not viewPort or not build or build.viewMode ~= "TREE" then
+				if ownBackdrop and viewPort then
+					self.zoomX = self.zoomX or 0
+					self.zoomY = self.zoomY or 0
+					local okB, errB = pcall(drawTreeBackdrop, self, build, viewPort, treeBg / 100)
+					if not okB and not self._ptBackdropErr then
+						self._ptBackdropErr = true
+						log("tree backdrop draw failed: " .. tostring(errB))
+						if type(PobToolsLogError) == "function" then PobToolsLogError("background", "天賦樹底圖繪製失敗：" .. tostring(errB)) end
+					end
+				end
+				return origDraw(self, build, viewPort, inputEvents)
+			end
+			local screenW, screenH = GetScreenSize()
+			local full = { x = 0, y = 0, width = screenW, height = screenH }
+			local dx = (viewPort.x + viewPort.width / 2) - screenW / 2
+			local dy = (viewPort.y + viewPort.height / 2) - screenH / 2
+			local k = math.min(viewPort.width, viewPort.height) / math.min(screenW, screenH)
+			self.zoomX = (self.zoomX or 0) + dx
+			self.zoomY = (self.zoomY or 0) + dy
+			self.zoom = 1.2 ^ self.zoomLevel * k
+			self._ptExpandK = k
+			local realGetCursorPos = GetCursorPos
+			GetCursorPos = function()
+				local x, y = realGetCursorPos()
+				if self.dragX then return x, y end
+				if x >= viewPort.x and x < viewPort.x + viewPort.width
+				   and y >= viewPort.y and y < viewPort.y + viewPort.height then
+					return x, y
+				end
+				return -1, -1
+			end
+			if ownBackdrop then
+				local okB, errB = pcall(drawTreeBackdrop, self, build, full, treeBg / 100)
+				if not okB and not self._ptBackdropErr then
+					self._ptBackdropErr = true
+					log("tree backdrop draw failed: " .. tostring(errB))
+					if type(PobToolsLogError) == "function" then PobToolsLogError("background", "天賦樹底圖繪製失敗：" .. tostring(errB)) end
+				end
+			end
+			local ok, err = pcall(origDraw, self, build, full, inputEvents)
+			GetCursorPos = realGetCursorPos
+			self._ptExpandK = nil
+			self.zoomX = self.zoomX - dx
+			self.zoomY = self.zoomY - dy
+			self.zoom = 1.2 ^ self.zoomLevel
+			if not ok then error(err, 0) end
+		end
+		class.Zoom = function(self, level, viewPort)
+			local k = self._ptExpandK
+			if not k then return origZoom(self, level, viewPort) end
+			-- upstream Zoom() (PassiveTreeView.lua:1307) with the scale factor
+			-- kept; the original would drop it and the tree would jump for a frame.
+			self.zoomLevel = math.max(0, math.min(zoomLevelMax, self.zoomLevel + level))
+			local oldZoom = self.zoom
+			self.zoom = 1.2 ^ self.zoomLevel * k
+			local factor = self.zoom / oldZoom
+			local cursorX, cursorY = GetCursorPos()
+			local relX = cursorX - viewPort.x - viewPort.width / 2
+			local relY = cursorY - viewPort.y - viewPort.height / 2
+			self.zoomX = relX + (self.zoomX - relX) * factor
+			self.zoomY = relY + (self.zoomY - relY) * factor
+		end
+	end
 end
 
 -- Anoint popup (NotableDBControl): match the CJK query against the translated
@@ -631,12 +773,102 @@ local function applyPatch(name, class)
 	end
 end
 
+-- Custom background image (PobTools launcher: 背景圖片 / 背景亮度). `main` is a
+-- plain global table, not a class, so it is patched here rather than through
+-- PATCHES. POB draws its striped backdrop from main:DrawBackground(viewPort),
+-- sub-layer -100, once over the whole window (Build.lua) and once per tab
+-- viewport; both calls are replaced by the same image, mapped to the WHOLE
+-- window and cropped to the viewport given, so the two paint seamlessly.
+local bgState = { path = nil, handle = nil, w = 0, h = 0, failed = nil }
+-- Draws the configured image over `viewPort` (window coordinates), mapped to
+-- the whole window (cover crop). Returns false when there is no usable image.
+local function drawBackgroundImage(viewPort)
+	local path, bright = PobToolsBackground()
+	if not path or path == "" or not viewPort then
+		bgState.path, bgState.handle = nil, nil
+		return false
+	end
+	if bgState.path ~= path then
+			bgState.path, bgState.handle, bgState.w, bgState.h = path, nil, 0, 0
+			local h = NewImageHandle()
+			h:Load(path, "CLAMP")
+			if h:IsValid() then
+				local w, hh = h:ImageSize()
+				if w and hh and w > 0 and hh > 0 then
+					bgState.handle, bgState.w, bgState.h = h, w, hh
+				end
+			end
+			log(string.format("background image %s: valid=%s size=%sx%s", tostring(path),
+				tostring(h:IsValid()), tostring(bgState.w), tostring(bgState.h)))
+			if not bgState.handle and bgState.failed ~= path then
+				bgState.failed = path
+				if type(PobToolsLogError) == "function" then
+					PobToolsLogError("background", "背景圖片載入失敗，改用內建底圖：" .. tostring(path))
+				end
+			end
+		end
+	if not bgState.handle then return false end
+	local screenW, screenH = GetScreenSize()
+	if not screenW or screenW <= 0 or screenH <= 0 then return false end
+	-- cover: scale the image so it fills the window, crop the overflow
+	local scale = math.max(screenW / bgState.w, screenH / bgState.h)
+	local drawW, drawH = bgState.w * scale, bgState.h * scale
+	local offX, offY = (screenW - drawW) / 2, (screenH - drawH) / 2
+	local u0 = (viewPort.x - offX) / drawW
+	local v0 = (viewPort.y - offY) / drawH
+	local u1 = (viewPort.x + viewPort.width - offX) / drawW
+	local v1 = (viewPort.y + viewPort.height - offY) / drawH
+	local b = math.max(0, math.min(100, tonumber(bright) or 50)) / 100
+	SetDrawLayer(nil, -100)
+	SetDrawColor(b, b, b)
+	DrawImage(bgState.handle, viewPort.x, viewPort.y, viewPort.width, viewPort.height, u0, v0, u1, v1)
+	SetDrawColor(1, 1, 1)
+	SetDrawLayer(nil, 0)
+	return true
+end
+
+local function patchMainBackground()
+	if applied.__mainBackground or type(main) ~= "table" or type(main.DrawBackground) ~= "function" then return end
+	if type(PobToolsBackground) ~= "function" then return end
+	applied.__mainBackground = true
+	-- 1. The per-tab / conversion-screen call: with an image configured the
+	--    whole-window pass below already covers the viewport, so this becomes
+	--    a no-op; without one it is upstream's striped backdrop as before.
+	local orig = main.DrawBackground
+	main.DrawBackground = function(self, viewPort)
+		local path = PobToolsBackground()
+		if path and path ~= "" and bgState.handle and bgState.path == path then return end
+		if path and path ~= "" and drawBackgroundImage(viewPort) then return end
+		return orig(self, viewPort)
+	end
+	-- 2. The whole-window pass. Upstream only paints its backdrop per tab
+	--    viewport (and never on the tree tab, which has its own), so nothing
+	--    would show under the side bar / top bar / tree otherwise: paint the
+	--    image over the full window at the start of every BUILD frame.
+	local bm = main.modes and main.modes.BUILD
+	if bm and type(bm.OnFrame) == "function" then
+		local origOnFrame = bm.OnFrame
+		bm.OnFrame = function(self, ...)
+			local screenW, screenH = GetScreenSize()
+			if screenW and screenW > 0 then
+				pcall(drawBackgroundImage, { x = 0, y = 0, width = screenW, height = screenH })
+			end
+			return origOnFrame(self, ...)
+		end
+		log("patched main.DrawBackground + BUILD.OnFrame (custom background image)")
+	else
+		log("patched main.DrawBackground (custom background image; BUILD mode not found, no whole-window pass)")
+	end
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
 			applyPatch(name, common.classes[name])
 		end
 	end
+	local ok, err = pcall(patchMainBackground)
+	if not ok then log("patch FAILED main.DrawBackground: " .. tostring(err)) end
 end
 
 tryApplyAll() -- classes already loaded at injection time

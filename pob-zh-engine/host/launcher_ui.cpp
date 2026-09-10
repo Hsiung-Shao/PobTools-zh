@@ -1132,10 +1132,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// and only the one for the game being started; a broken path leaves POB on
 		// the built-in dictionaries.
 		const int slot = poe2 ? (int)DictSlot::Poe2 : (int)DictSlot::Poe1;
+		const AppearanceConfig& look = cfg.look[GameIndex(cfg.game)];
 		PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
 		                        dictDir[slot].status == DataDirStatus::External
 		                            ? dictDir[slot].root : std::wstring(),
-		                        cfg.fontApplyAll);
+		                        cfg.fontApplyAll, look.windowOpacity,
+		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
+		                        look.treeBg);
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (lua.empty()) {
 			// Nothing to launch and, until v0.28.0, nothing said about it: the
@@ -1181,6 +1184,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// saw, and the debounce for remembering a drag. `lastW == 0` means the poll
 	// has not seeded yet -- the startup size is never written back as a change.
 	int    winEdit[2] = { 0, 0 };
+	// Appearance tab: which game's set is being edited, and slider scratch
+	// values (they mirror cfg.look[lookGame] whenever idle, so switching the
+	// game re-syncs them on the next frame).
+	int    lookGame = GameIndex(cfg.game);
+	int    opacityEdit = cfg.look[lookGame].windowOpacity;
+	int    bgBrightEdit = cfg.look[lookGame].bgBright;
+	int    glassEdit = cfg.look[lookGame].glassBlur;
+	int    treeBgEdit = cfg.look[lookGame].treeBg;
+	std::vector<std::wstring> bgList = ListAvailableBackgrounds(exeDir);
 	int    lastW = 0, lastH = 0;
 	double sizeStableAt = 0.0;
 	bool   sizeDirty = false;
@@ -2411,6 +2423,157 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::EndChild();
 			ImGui::EndTabItem();
 		}
+
+		// --- appearance ------------------------------------------------------
+		// POB window look, one set per game; everything here is Windows-only.
+		if (tabsOk && ImGui::BeginTabItem(S.tabAppearance, nullptr, kPinned)) {
+			ImGui::BeginChild("##lookbody", ImVec2(0, 0), false);
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			ImGui::PushFont(fonts.small);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			ImGui::PushTextWrapPos(inner - 40.0f * scale);
+			ImGui::TextWrapped("%s", S.lookIntro);
+			ImGui::PopTextWrapPos();
+			ImGui::PopStyleColor();
+			ImGui::PopFont();
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			{
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.lookGameLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				ImGui::RadioButton(S.poe1, &lookGame, 0);
+				ImGui::SameLine(0, 16.0f * scale);
+				ImGui::RadioButton(S.poe2, &lookGame, 1);
+			}
+			ImGui::Dummy(ImVec2(0, 6.0f * scale));
+			AppearanceConfig& look = cfg.look[lookGame];
+			const std::wstring lookGameKey = lookGame == 1 ? L"poe2" : L"poe1";
+			// POB window opacity (Windows only, so not drawn under Wine/CrossOver).
+			// Dragging previews on every POB window already open -- cheap, it is a
+			// single Win32 attribute per window -- and the ini is written once, on
+			// release. New POB windows read the value from the environment.
+			if (!PobLaunch::RunningUnderWine()) {
+				ImGui::PushID("winopacity");
+				ImGui::AlignTextToFramePadding();
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.winOpacityLabel);
+				ImGui::PopStyleColor();
+				ImGui::SameLine(160.0f * scale);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				if (ImGui::SliderInt("##winopacity", &opacityEdit, kWindowOpacityMin, 100, "%d%%",
+				                     ImGuiSliderFlags_AlwaysClamp)) {
+					PobLaunch::ApplyPobWindowOpacity(lookGameKey, opacityEdit);
+				}
+				if (ImGui::IsItemDeactivatedAfterEdit() && opacityEdit != look.windowOpacity) {
+					look.windowOpacity = ClampWindowOpacity(opacityEdit);
+					PobLaunch::ApplyPobWindowOpacity(lookGameKey, look.windowOpacity);
+					saveNow();
+				}
+				if (!ImGui::IsItemActive()) opacityEdit = look.windowOpacity;
+				ImGui::SameLine(0, 6.0f * scale);
+				if (ImGui::SmallButton(S.resetDefault) && look.windowOpacity != kWindowOpacityDefault) {
+					look.windowOpacity = kWindowOpacityDefault;
+					opacityEdit = look.windowOpacity;
+					PobLaunch::ApplyPobWindowOpacity(lookGameKey, look.windowOpacity);
+					saveNow();
+				}
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.winOpacityHint);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				ImGui::PopID();
+			}
+			// Background image + liquid glass (Windows only, like the opacity).
+			// The image and both percents reach open POB windows live; the ini
+			// is written on selection / slider release.
+			if (!PobLaunch::RunningUnderWine()) {
+				ImGui::PushID("background");
+				auto labelLeft = [&](const char* text) {
+					ImGui::AlignTextToFramePadding();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+					ImGui::TextUnformatted(text);
+					ImGui::PopStyleColor();
+					ImGui::SameLine(160.0f * scale);
+				};
+				labelLeft(S.bgLabel);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				const std::string current = look.background.empty() ? std::string(S.bgDefault) : to_utf8(look.background);
+				if (ImGui::BeginCombo("##bgfile", current.c_str())) {
+					if (ImGui::Selectable(S.bgDefault, look.background.empty()) && !look.background.empty()) {
+						look.background.clear();
+						PobLaunch::ApplyPobBackground(lookGameKey, std::wstring());
+						saveNow();
+					}
+					for (const std::wstring& f : bgList) {
+						if (ImGui::Selectable(to_utf8(f).c_str(), f == look.background) && f != look.background) {
+							look.background = f;
+							PobLaunch::ApplyPobBackground(lookGameKey, ResolveBackgroundPath(exeDir, f));
+							saveNow();
+						}
+					}
+					ImGui::EndCombo();
+				}
+				ImGui::SameLine(0, 6.0f * scale);
+				if (ImGui::SmallButton(S.bgOpenFolder)) {
+					ShellExecuteW(nullptr, L"open", BackgroundsDir(exeDir).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+				}
+				ImGui::SameLine(0, 6.0f * scale);
+				if (ImGui::SmallButton(S.bgRefresh)) bgList = ListAvailableBackgrounds(exeDir);
+
+				labelLeft(S.bgBrightLabel);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				if (ImGui::SliderInt("##bgbright", &bgBrightEdit, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+					PobLaunch::ApplyPobBackgroundBright(lookGameKey, bgBrightEdit);
+				}
+				if (ImGui::IsItemDeactivatedAfterEdit() && bgBrightEdit != look.bgBright) {
+					look.bgBright = ClampPercent(bgBrightEdit, kBgBrightDefault);
+					PobLaunch::ApplyPobBackgroundBright(lookGameKey, look.bgBright);
+					saveNow();
+				}
+				if (!ImGui::IsItemActive()) bgBrightEdit = look.bgBright;
+
+				labelLeft(S.glassBlurLabel);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				if (ImGui::SliderInt("##glassblur", &glassEdit, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+					PobLaunch::ApplyPobGlassBlur(lookGameKey, glassEdit);
+				}
+				if (ImGui::IsItemDeactivatedAfterEdit() && glassEdit != look.glassBlur) {
+					look.glassBlur = ClampPercent(glassEdit, 0);
+					PobLaunch::ApplyPobGlassBlur(lookGameKey, look.glassBlur);
+					saveNow();
+				}
+				if (!ImGui::IsItemActive()) glassEdit = look.glassBlur;
+
+				labelLeft(S.treeBgLabel);
+				ImGui::SetNextItemWidth(220.0f * scale);
+				if (ImGui::SliderInt("##treebg", &treeBgEdit, 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+					PobLaunch::ApplyPobTreeBackdrop(lookGameKey, treeBgEdit);
+				}
+				if (ImGui::IsItemDeactivatedAfterEdit() && treeBgEdit != look.treeBg) {
+					look.treeBg = ClampPercent(treeBgEdit, 100);
+					PobLaunch::ApplyPobTreeBackdrop(lookGameKey, look.treeBg);
+					saveNow();
+				}
+				if (!ImGui::IsItemActive()) treeBgEdit = look.treeBg;
+
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", S.bgHint);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
+				ImGui::PopID();
+			}
+			ImGui::EndChild();
+			ImGui::EndTabItem();
+		}
+
 
 		// --- about ------------------------------------------------------------
 		if (tabsOk && ImGui::BeginTabItem(S.about, nullptr, kPinned)) {

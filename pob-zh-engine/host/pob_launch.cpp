@@ -138,10 +138,83 @@ bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi)
 
 } // namespace
 
+bool RunningUnderWine()
+{
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	return ntdll && GetProcAddress(ntdll, "wine_get_version") != nullptr;
+}
+
+// Mirrored in engine/system/win/sys_video.cpp (kMsgSetWindowOpacity): the engine
+// subclasses its GLFW window and applies the percent itself -- the opacity is
+// per-pixel (background only), so it is the renderer's job, not a window style.
+static const UINT kMsgSetWindowOpacity = WM_APP + 0x50;
+
+void ApplyPobWindowOpacity(const std::wstring& game, int percent)
+{
+	if (RunningUnderWine()) return;
+	if (percent < 0) percent = 0;
+	if (percent > 100) percent = 100;
+	for (const InstanceInfo& in : RunningInstances()) {
+		if (in.kind != InstanceKind::Pob || !in.hwnd || in.game != game) continue;
+		PostMessageW((HWND)in.hwnd, kMsgSetWindowOpacity, (WPARAM)percent, 0);
+	}
+}
+
+static std::string to_utf8(const std::wstring& w)
+{
+	if (w.empty()) return std::string();
+	int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+	std::string s(needed, '\0');
+	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], needed, nullptr, nullptr);
+	return s;
+}
+
+static const UINT      kMsgSetGlassBlur   = WM_APP + 0x51; // mirrored in engine sys_video.cpp
+static const UINT      kMsgSetBgBright    = WM_APP + 0x52;
+static const UINT      kMsgSetTreeBg      = WM_APP + 0x53;
+static const ULONG_PTR kCopyDataBgPath    = 0x50;
+
+static void post_pct(const std::wstring& game, UINT msg, int percent)
+{
+	if (RunningUnderWine()) return;
+	if (percent < 0) percent = 0;
+	if (percent > 100) percent = 100;
+	for (const InstanceInfo& in : RunningInstances()) {
+		if (in.kind != InstanceKind::Pob || !in.hwnd || in.game != game) continue;
+		PostMessageW((HWND)in.hwnd, msg, (WPARAM)percent, 0);
+	}
+}
+
+void ApplyPobBackgroundBright(const std::wstring& game, int percent) { post_pct(game, kMsgSetBgBright, percent); }
+void ApplyPobGlassBlur(const std::wstring& game, int percent)        { post_pct(game, kMsgSetGlassBlur, percent); }
+void ApplyPobTreeBackdrop(const std::wstring& game, int percent)     { post_pct(game, kMsgSetTreeBg, percent); }
+
+void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath)
+{
+	if (RunningUnderWine()) return;
+	std::string utf8 = to_utf8(bgPath);
+	COPYDATASTRUCT cds{};
+	cds.dwData = kCopyDataBgPath;
+	cds.cbData = (DWORD)utf8.size();
+	cds.lpData = utf8.empty() ? (void*)"" : (void*)utf8.data();
+	for (const InstanceInfo& in : RunningInstances()) {
+		if (in.kind != InstanceKind::Pob || !in.hwnd || in.game != game) continue;
+		// SendMessageTimeout: WM_COPYDATA must be sent, not posted; never hang on
+		// a POB that is busy.
+		DWORD_PTR res = 0;
+		SendMessageTimeoutW((HWND)in.hwnd, WM_COPYDATA, 0, (LPARAM)&cds, SMTO_ABORTIFHUNG, 500, &res);
+	}
+}
+
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
-                  bool fontApplyAll)
+                  bool fontApplyAll, int windowOpacity,
+                  const std::wstring& bgPath, int bgBright, int glassBlur, int treeBg)
 {
+	set_env_both(L"POB_ZH_BG", bgPath.c_str());
+	set_env_both(L"POB_ZH_BG_BRIGHT", std::to_wstring(bgBright).c_str());
+	set_env_both(L"POB_ZH_GLASS_BLUR", std::to_wstring(glassBlur).c_str());
+	set_env_both(L"POB_ZH_TREE_BG", std::to_wstring(treeBg).c_str());
 	set_env_both(L"POB_GAME", game.c_str());
 	set_env_both(L"POB_LOCALE", locale.c_str());
 	set_env_both(L"POB_ZH_FONTFILE", fontFile.c_str()); // r_font.cpp reads this
@@ -151,6 +224,8 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
 	set_env_both(L"POB_ZH_DATADIR", dataDir.c_str());
 	// "0"/"1", always written for the same long-lived-process reason as above.
 	set_env_both(L"POB_ZH_FONT_ALL", fontApplyAll ? L"1" : L"0");
+	// Percent, always written; sys_video.cpp reads it right after glfwCreateWindow.
+	set_env_both(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(windowOpacity).c_str());
 }
 
 unsigned long SpawnPobAndWait(const std::wstring& launchLua)
@@ -186,6 +261,8 @@ static std::vector<wchar_t> tool_environment_block()
 {
 	static const wchar_t* const kStrip[] = {
 		L"POB_GAME=", L"POB_LOCALE=", L"POB_ZH_FONTFILE=", L"POB_ZH_DATADIR=", L"POB_ZH_FONT_ALL=",
+		L"POB_ZH_WINDOW_OPACITY=", L"POB_ZH_BG=", L"POB_ZH_BG_BRIGHT=", L"POB_ZH_GLASS_BLUR=",
+		L"POB_ZH_TREE_BG=",
 	};
 	std::vector<wchar_t> block;
 	wchar_t* env = GetEnvironmentStringsW();

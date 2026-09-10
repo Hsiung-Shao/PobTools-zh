@@ -5,6 +5,8 @@
 // Platform: Windows
 //
 
+#include <glad/gles2.h>
+
 #include "sys_local.h"
 
 #include <GLFW/glfw3.h>
@@ -62,6 +64,29 @@ bool sys_openGL_c::Shutdown()
 
 void sys_openGL_c::Swap()
 {
+	// Opacity diagnostics: what alpha actually sits in the default framebuffer
+	// right before it is presented (see sys_opacity_trace). Once a second, and
+	// only with POB_ZH_OPACITY_TRACE set: glReadPixels stalls the pipeline.
+	static unsigned frame = 0;
+	if (sys_opacity_trace_enabled() && (frame++ % 60) == 0) {
+		static bool reported = false;
+		if (!reported) {
+			reported = true;
+			GLint a = -1;
+			glGetIntegerv(GL_ALPHA_BITS, &a);
+			sys_opacity_trace("default framebuffer GL_ALPHA_BITS=%d", (int)a);
+		}
+		const int w = sys->video->vid.fbSize[0], h = sys->video->vid.fbSize[1];
+		if (w > 64 && h > 64) {
+			unsigned char side[4] = {}, centre[4] = {};
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+			glReadPixels(30, h / 6, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, side);          // sidebar, lower-left
+			glReadPixels(w / 2, h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, centre);     // tree canvas
+			sys_opacity_trace("pct=%d fb=%dx%d sidebar rgba=%d,%d,%d,%d centre rgba=%d,%d,%d,%d",
+			                  sys->video->windowOpacityPct, w, h,
+			                  side[0], side[1], side[2], side[3], centre[0], centre[1], centre[2], centre[3]);
+		}
+	}
 	glfwSwapBuffers((GLFWwindow*)sys->video->GetWindowHandle());
 }
 

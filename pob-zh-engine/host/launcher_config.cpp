@@ -220,6 +220,31 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.fontFile = fbuf;
 	if (c.fontFile.empty()) c.fontFile = kDefaultFontFile;
 	c.fontApplyAll = read_ini_int(iniPath, L"FontApplyAll", 1) != 0;
+	// Appearance, per game. The suffix-less keys are what the first test builds
+	// wrote (one shared set); they seed BOTH games when a per-game key is absent
+	// and are deleted on the next save.
+	for (int g = 0; g < 2; g++) {
+		AppearanceConfig& a = c.look[g];
+		const std::wstring sfx = GameKeySuffix(g);
+		auto intKey = [&](const wchar_t* base, int def, int fb) {
+			const std::wstring k = base + sfx;
+			// -1 sentinel: "absent" must be told apart from a legitimate 0.
+			int v = read_ini_int(iniPath, k.c_str(), -1);
+			if (v < 0) v = read_ini_int(iniPath, base, def);
+			return ClampPercent(v, fb);
+		};
+		a.windowOpacity = ClampWindowOpacity(intKey(L"WindowOpacity", kWindowOpacityDefault, kWindowOpacityDefault));
+		a.bgBright = intKey(L"BackgroundBright", kBgBrightDefault, kBgBrightDefault);
+		a.glassBlur = intKey(L"GlassBlur", 0, 0);
+		a.treeBg = intKey(L"TreeBackdrop", 100, 100);
+		// Hex copy first, same reason as the dictionary folders below.
+		std::wstring decoded = utf8_of_hex(read_ini_path(iniPath, (L"BackgroundHex" + sfx).c_str()));
+		a.background = decoded.empty() ? read_ini_path(iniPath, (L"Background" + sfx).c_str()) : decoded;
+		if (a.background.empty()) {
+			decoded = utf8_of_hex(read_ini_path(iniPath, L"BackgroundHex"));
+			a.background = decoded.empty() ? read_ini_path(iniPath, L"Background") : decoded;
+		}
+	}
 	c.fontSize = ClampLauncherFontSize(read_ini_int(iniPath, L"FontSize", kLauncherFontSizeDefault));
 
 	// Hex copy first (see hex_of_utf8): it is the codepage-proof spelling. A
@@ -278,6 +303,25 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontApplyAll",
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
+	for (int g = 0; g < 2; g++) {
+		const AppearanceConfig& a = cfg.look[g];
+		const std::wstring sfx = GameKeySuffix(g);
+		auto writeInt = [&](const wchar_t* base, int v) {
+			WritePrivateProfileStringW(kSection, (base + sfx).c_str(), std::to_wstring(v).c_str(), iniPath.c_str());
+		};
+		writeInt(L"WindowOpacity", ClampWindowOpacity(a.windowOpacity));
+		writeInt(L"BackgroundBright", ClampPercent(a.bgBright, kBgBrightDefault));
+		writeInt(L"GlassBlur", ClampPercent(a.glassBlur, 0));
+		writeInt(L"TreeBackdrop", ClampPercent(a.treeBg, 100));
+		WritePrivateProfileStringW(kSection, (L"Background" + sfx).c_str(), a.background.c_str(), iniPath.c_str());
+		if (a.background.empty() || is_ascii(a.background))
+			WritePrivateProfileStringW(kSection, (L"BackgroundHex" + sfx).c_str(), nullptr, iniPath.c_str());
+		else
+			WritePrivateProfileStringW(kSection, (L"BackgroundHex" + sfx).c_str(), hex_of_utf8(a.background).c_str(), iniPath.c_str());
+	}
+	// The shared set from the first test builds: migrated above, gone from here on.
+	for (const wchar_t* k : { L"WindowOpacity", L"Background", L"BackgroundHex", L"BackgroundBright", L"GlassBlur", L"TreeBackdrop" })
+		WritePrivateProfileStringW(kSection, k, nullptr, iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontSize",
 		std::to_wstring(cfg.fontSize).c_str(), iniPath.c_str());
 
@@ -614,6 +658,44 @@ std::vector<std::wstring> ListAvailableFonts(const std::wstring& exeDir)
 		FindClose(h);
 	}
 	return out;
+}
+
+std::wstring BackgroundsDir(const std::wstring& exeDir)
+{
+	const std::wstring dir = exeDir + L"PobTools\\Backgrounds\\";
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	CreateDirectoryW(dir.c_str(), nullptr);
+	return dir;
+}
+
+std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir)
+{
+	std::vector<std::wstring> out;
+	const std::wstring dir = BackgroundsDir(exeDir);
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((dir + L"*").c_str(), &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+			std::wstring name = fd.cFileName;
+			size_t dot = name.rfind(L'.');
+			if (dot == std::wstring::npos) continue;
+			std::wstring ext = name.substr(dot + 1);
+			for (auto& ch : ext) ch = (wchar_t)towlower(ch);
+			if (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"webp")
+				out.push_back(name);
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+	std::sort(out.begin(), out.end());
+	return out;
+}
+
+std::wstring ResolveBackgroundPath(const std::wstring& exeDir, const std::wstring& file)
+{
+	if (file.empty()) return std::wstring();
+	const std::wstring p = BackgroundsDir(exeDir) + file;
+	return file_exists(p) ? p : std::wstring();
 }
 
 std::wstring ResolveFontPath(const std::wstring& exeDir, const std::wstring& fontFile)

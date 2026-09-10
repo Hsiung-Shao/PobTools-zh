@@ -61,6 +61,45 @@ inline float LauncherZoom(int fontSize)
 	return (float)ClampLauncherFontSize(fontSize) / (float)kLauncherFontSizeDefault;
 }
 
+// POB panel opacity in percent (Windows only; see PobLaunch::SetEngineEnv and
+// ApplyPobWindowOpacity). 100 = opaque = feature off, which is also what a
+// garbage ini value means; 0 = the side bar / tool bar panels vanish entirely
+// and only text and controls remain over the passive tree. Safe all the way
+// down: the window itself never becomes see-through.
+inline constexpr int kWindowOpacityMin     = 0;
+inline constexpr int kWindowOpacityDefault = 100;
+inline int ClampWindowOpacity(int v)
+{
+	if (v < 0 || v > 100) return kWindowOpacityDefault;
+	return v;
+}
+// Background image brightness (percent) and liquid-glass blur (percent).
+inline constexpr int kBgBrightDefault = 50;
+inline int ClampPercent(int v, int fallback)
+{
+	return (v < 0 || v > 100) ? fallback : v;
+}
+
+// Everything the "Appearance" tab controls, kept per game.
+struct AppearanceConfig {
+	// Opacity of the chrome panels (side bar, top bar, tree toolbar) in
+	// percent; 100 = plain (feature off), 0 = only text and controls remain.
+	int            windowOpacity = kWindowOpacityDefault;
+	// Background image: file name under PobTools\Backgrounds\ (empty = POB's
+	// own striped backdrop) and its brightness in percent.
+	std::wstring   background;
+	int            bgBright = kBgBrightDefault;
+	// Liquid-glass blur strength of the chrome panels (0 = plain fill).
+	int            glassBlur = 0;
+	// Opacity of the passive tree's own tiled backdrop (the layer under the
+	// nodes), percent. 100 = as upstream; lower lets the background image show
+	// through the tree area too.
+	int            treeBg = 100;
+};
+// "poe1" -> 0, "poe2" -> 1 (anything else counts as PoE1).
+inline int GameIndex(const std::wstring& game) { return game == L"poe2" ? 1 : 0; }
+inline const wchar_t* GameKeySuffix(int idx) { return idx == 1 ? L"Poe2" : L"Poe1"; }
+
 // Window dimensions are stored in PHYSICAL pixels, exactly as GLFW reports them,
 // because that is what the size fields on the settings page show and what a drag
 // produced. 0 = "use the mode's default"; anything implausible is treated as 0
@@ -95,6 +134,11 @@ struct LauncherConfig {
 	// Launcher body font size in px at 100% DPI; drives the whole-UI zoom (see
 	// LauncherZoom above). POB is unaffected.
 	int            fontSize = kLauncherFontSizeDefault;
+	// POB window appearance, one set per game (PoE1 / PoE2 have different
+	// trees and different tastes); index with GameIndex(). Windows only; the
+	// launcher's "Appearance" tab edits them and pushes changes live to the POB
+	// windows of that game; SetEngineEnv passes the starting game's set.
+	AppearanceConfig look[2];
 	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
 	// Empty = built-in. Each one points at the folder that directly CONTAINS the
 	// <locale> sub-folders, i.e. exactly what you get by copying Data\poe1
@@ -226,6 +270,14 @@ extern const wchar_t* const kDefaultFontFile;
 
 // Filenames of every *.ttf under <exe dir>\Fonts (for the font picker).
 std::vector<std::wstring> ListAvailableFonts(const std::wstring& exeDir);
+
+// Background images the user dropped into PobTools\Backgrounds\ (png/jpg/jpeg/
+// webp), file names only; the folder is created on first use so "open folder"
+// always has somewhere to go. Update packages never touch PobTools\.
+std::wstring BackgroundsDir(const std::wstring& exeDir);
+std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir);
+// Absolute path for a configured background, empty when unset or missing.
+std::wstring ResolveBackgroundPath(const std::wstring& exeDir, const std::wstring& file);
 
 // Full path to the font to load: the requested fontFile if present, otherwise
 // falls back to the Noto default, then FZ_ZY, then any Fonts\*.ttf.

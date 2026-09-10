@@ -182,6 +182,22 @@ static void apply_locale_env(const std::wstring& dir)
 	// the legacy CLI path never did, so a user who turned the switch OFF in the
 	// ini would still get letters/digits in the custom font ("absent" means on).
 	ensure(L"POB_ZH_FONT_ALL", L"FontApplyAll", L"1");
+	// Appearance (per game, see AppearanceConfig): all of it goes through the
+	// config loader -- the per-game keys have a fallback chain (`ensure` has
+	// none) and the background is a path that may be non-ASCII.
+	{
+		wchar_t g[64] = L"poe1";
+		GetEnvironmentVariableW(L"POB_GAME", g, 64); // set by `ensure` above
+		const AppearanceConfig& look = LoadLauncherConfig(ini).look[GameIndex(g)];
+		auto ensureVal = [&](const wchar_t* var, const std::wstring& val) {
+			if (GetEnvironmentVariableW(var, nullptr, 0) == 0) set_env_both(var, val.c_str());
+		};
+		ensureVal(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(look.windowOpacity));
+		ensureVal(L"POB_ZH_BG_BRIGHT", std::to_wstring(look.bgBright));
+		ensureVal(L"POB_ZH_GLASS_BLUR", std::to_wstring(look.glassBlur));
+		ensureVal(L"POB_ZH_TREE_BG", std::to_wstring(look.treeBg));
+		ensureVal(L"POB_ZH_BG", ResolveBackgroundPath(dir, look.background));
+	}
 
 	// The external dictionary folder deliberately does NOT go through `ensure`:
 	//  - it is a path, and that helper's fixed 128-wchar buffer truncates silently
@@ -784,9 +800,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			// no translations at all.
 			const DictSlot slot = (cfg.game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
 			DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
+			const AppearanceConfig& look = cfg.look[GameIndex(cfg.game)];
 			PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
 			                        dd.status == DataDirStatus::External ? dd.root : L"",
-			                        cfg.fontApplyAll);
+			                        cfg.fontApplyAll, look.windowOpacity,
+			                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
+			                        look.treeBg);
 		}
 		// Held for the whole run: the engine reads Data\*.json on a background
 		// thread right after start, and the updater's check (started above, still

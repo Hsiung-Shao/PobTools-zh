@@ -113,6 +113,19 @@
     "Affects only the launcher and its tool windows; POB itself is unchanged": "只影响启动器与工具窗口，POB 本身不受影响",
     "Reset to default": "恢复默认",
     "Window size": "窗口大小",
-    "You can also drag the window edge; the size is remembered": "也可以直接拖拽窗口边缘调整，大小会记住"
+    "You can also drag the window edge; the size is remembered": "也可以直接拖拽窗口边缘调整，大小会记住",
+    "POB panel opacity": "POB 面板不透明度",
+    "Appearance": "外观",
+    "Applies to": "应用到",
+    "Look of the POB window, one set per game; changes apply live to that game's open POB windows. Windows only.": "POB 窗口的外观，两个游戏各自一组设置；改动会实时应用到该游戏已打开的 POB 窗口。仅 Windows 支持。",
+    "Background image": "背景图片",
+    "Default (POB's own backdrop)": "默认（POB 内置底图）",
+    "Open folder": "打开文件夹",
+    "Refresh": "刷新",
+    "Background brightness": "背景亮度",
+    "Frost strength": "雾面强度",
+    "Tree backdrop": "天赋树底图",
+    "Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live": "把 PNG／JPG／WebP 放进 PobTools\\Backgrounds 文件夹就能选。图片铺满整个 POB 窗口当最底层，天赋树与各页画在它上面；亮度是图片压暗的程度。雾面强度把侧栏、工具栏变成毛玻璃：面板底下的画面先模糊再盖上面板的淡色（面板不透明度）；0% 为不模糊。天赋树底图是节点底下那层深色底纹的不透明度，调低就能在天赋页也看到背景图片。全部实时生效",
+    "The side bar, top bar and tree-tab toolbar backgrounds and separators fade out; at 0% they are gone and only text and controls remain over the passive tree, which then spans the whole window (striped background on other tabs). The desktop never shows through. 100% = off, open POB windows follow the slider live. Windows only": "侧栏、上方工具栏与天赋页底部工具栏的底色与分隔线会淡出，0% 时完全消失，只剩文字与控件叠在延伸到整个窗口的天赋树上（其他页为斜纹底）；不会透出桌面。100% 为关闭，拖动时已打开的 POB 窗口实时生效；仅 Windows 支持"
   }
 }

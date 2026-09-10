@@ -11,6 +11,8 @@
 #include "core.h"
 
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h> // glfwGetWin32Window, for the opacity subclass
 
 #include <deque>
 #include <map>
@@ -289,6 +291,153 @@ public:
 	std::deque<std::vector<uint8_t>> imageDatas;
 };
 
+// Wine (CrossOver on macOS) exports wine_get_version from ntdll; real Windows
+// never does. The opacity feature below is Windows-only by decision: Wine's
+// window alpha behaves differently (the framebuffer alpha already leaks through
+// on macOS), so layering on top of that would compound two effects.
+static bool RunningUnderWine()
+{
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	return ntdll && GetProcAddress(ntdll, "wine_get_version") != nullptr;
+}
+
+// ---- window opacity (Windows only) -----------------------------------------
+//
+// "Opacity" here is neither whole-window LWA_ALPHA nor see-through to the
+// desktop: the user wants POB's chrome (side bar, top bar, the tree tab's
+// bottom toolbar) drawn translucent over a fixed bottom layer -- the passive
+// tree, extended to the whole window by poecharm_inject.lua, or the striped
+// app background on the other tabs. The window stays opaque. The renderer
+// does all of it (r_main.cpp, QUAD: the chrome fills' vertex alpha is scaled
+// by sys_IVideo::windowOpacityPct); this file only owns the value:
+// POB_ZH_WINDOW_OPACITY at startup (set by the pob-zh launcher from
+// pob-zh.ini, read via the Win32 API because the host is a static-CRT exe
+// whose _putenv the DLL CRT cannot see) and afterwards the launcher's live
+// slider as a WM_APP message, caught by subclassing the GLFW window procedure.
+// GLFW keeps its own state in GWLP_USERDATA, untouched.
+
+static const UINT kMsgSetWindowOpacity = WM_APP + 0x50; // mirrored in host/pob_launch.cpp
+static WNDPROC     g_opacityPrevWndProc = nullptr;
+static sys_IVideo* g_opacityVideo = nullptr;
+
+static char g_opacityTracePath[MAX_PATH];
+static int  g_opacityTraceState = 0; // 0 unknown, 1 on, -1 off
+
+bool sys_opacity_trace_enabled()
+{
+	if (g_opacityTraceState == 0) {
+		DWORD n = GetEnvironmentVariableA("POB_ZH_OPACITY_TRACE", g_opacityTracePath, sizeof(g_opacityTracePath));
+		g_opacityTraceState = (n > 0 && n < sizeof(g_opacityTracePath)) ? 1 : -1;
+	}
+	return g_opacityTraceState > 0;
+}
+
+void sys_opacity_trace(const char* fmt, ...)
+{
+	if (!sys_opacity_trace_enabled()) return;
+	const char* path = g_opacityTracePath;
+	FILE* f = nullptr;
+	if (fopen_s(&f, path, "a") != 0 || !f) return;
+	fprintf(f, "[%lu] ", GetTickCount());
+	va_list ap;
+	va_start(ap, fmt);
+	vfprintf(f, fmt, ap);
+	va_end(ap);
+	fputc('\n', f);
+	fclose(f);
+}
+
+static void SetWindowOpacityPct(HWND hwnd, int pct)
+{
+	(void)hwnd;
+	// 0..100; 0 = the panels are gone entirely (only text/controls remain),
+	// 100 = feature off. Out of range (garbage env) = off.
+	if (pct < 0 || pct > 100) pct = 100;
+	if (g_opacityVideo) g_opacityVideo->windowOpacityPct = pct;
+	sys_opacity_trace("SetWindowOpacityPct -> %d", pct);
+}
+
+// Background image + liquid glass, same channel (mirrored in host/pob_launch.cpp).
+static const UINT  kMsgSetGlassBlur   = WM_APP + 0x51; // wParam = percent
+static const UINT  kMsgSetBgBright    = WM_APP + 0x52; // wParam = percent
+static const UINT  kMsgSetTreeBg      = WM_APP + 0x53; // wParam = percent
+static const ULONG_PTR kCopyDataBgPath = 0x50;          // WM_COPYDATA: UTF-8 path, "" = none
+
+static int ClampPct(int v, int fallback)
+{
+	return (v < 0 || v > 100) ? fallback : v;
+}
+
+static LRESULT CALLBACK OpacityWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+	if (msg == kMsgSetWindowOpacity) {
+		sys_opacity_trace("WM_APP opacity message received: %d", (int)wParam);
+		SetWindowOpacityPct(hwnd, (int)wParam);
+		return 0;
+	}
+	if (msg == kMsgSetGlassBlur) {
+		if (g_opacityVideo) g_opacityVideo->glassBlurPct = ClampPct((int)wParam, 0);
+		sys_opacity_trace("glass blur -> %d", (int)wParam);
+		return 0;
+	}
+	if (msg == kMsgSetBgBright) {
+		if (g_opacityVideo) g_opacityVideo->bgBrightPct = ClampPct((int)wParam, 50);
+		sys_opacity_trace("bg bright -> %d", (int)wParam);
+		return 0;
+	}
+	if (msg == kMsgSetTreeBg) {
+		if (g_opacityVideo) g_opacityVideo->treeBgPct = ClampPct((int)wParam, 100);
+		sys_opacity_trace("tree backdrop -> %d", (int)wParam);
+		return 0;
+	}
+	if (msg == WM_COPYDATA) {
+		const COPYDATASTRUCT* cds = (const COPYDATASTRUCT*)lParam;
+		if (cds && cds->dwData == kCopyDataBgPath && g_opacityVideo) {
+			const char* p = (const char*)cds->lpData;
+			size_t n = cds->cbData;
+			while (n > 0 && p[n - 1] == '\0') --n; // tolerate a trailing NUL
+			g_opacityVideo->bgPath.assign(p ? p : "", p ? n : 0);
+			sys_opacity_trace("bg path -> '%s'", g_opacityVideo->bgPath.c_str());
+			return TRUE;
+		}
+	}
+	return CallWindowProcW(g_opacityPrevWndProc, hwnd, msg, wParam, lParam);
+}
+
+static void ReadBackgroundEnv(sys_IVideo* video)
+{
+	char buf[2048];
+	DWORD n = GetEnvironmentVariableA("POB_ZH_BG", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->bgPath.assign(buf, n);
+	n = GetEnvironmentVariableA("POB_ZH_BG_BRIGHT", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->bgBrightPct = ClampPct(atoi(buf), 50);
+	n = GetEnvironmentVariableA("POB_ZH_GLASS_BLUR", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->glassBlurPct = ClampPct(atoi(buf), 0);
+	n = GetEnvironmentVariableA("POB_ZH_TREE_BG", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->treeBgPct = ClampPct(atoi(buf), 100);
+	sys_opacity_trace("background env: path='%s' bright=%d glass=%d", video->bgPath.c_str(),
+	                  video->bgBrightPct, video->glassBlurPct);
+}
+
+static void InstallWindowOpacity(GLFWwindow* wnd, sys_IVideo* video)
+{
+	if (!wnd || RunningUnderWine()) return;
+	HWND hwnd = glfwGetWin32Window(wnd);
+	if (!hwnd) return;
+	g_opacityVideo = video;
+	g_opacityPrevWndProc = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)OpacityWndProc);
+	ReadBackgroundEnv(video);
+	char buf[32];
+	DWORD n = GetEnvironmentVariableA("POB_ZH_WINDOW_OPACITY", buf, sizeof(buf));
+	sys_opacity_trace("InstallWindowOpacity hwnd=%p subclassed=%d env='%s'", (void*)hwnd,
+	                  g_opacityPrevWndProc != nullptr, (n > 0 && n < sizeof(buf)) ? buf : "(unset)");
+	if (n == 0 || n >= sizeof(buf)) return;
+	char* end = nullptr;
+	long pct = strtol(buf, &end, 10);
+	if (end == buf) return;
+	SetWindowOpacityPct(hwnd, (int)pct);
+}
+
 bool ShouldIgnoreDpiScale() {
 #ifdef _WIN32
 	std::wstring const appChoice = L"HIGHDPIAWARE", sysChoice = L"DPIUNAWARE", enhanceFlag = L"GDIDPISCALING";
@@ -468,6 +617,7 @@ int sys_video_c::Apply(sys_vidSet_s* set)
 			glfwGetError(&errDesc);
 			sys->con->Printf("Could not create window, %s\n", errDesc);
 		}
+		InstallWindowOpacity(wnd, this);
 
 		glfwMakeContextCurrent(wnd);
 		gladLoadGLES2(glfwGetProcAddress);

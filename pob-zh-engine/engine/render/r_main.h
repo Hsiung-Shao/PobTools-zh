@@ -139,6 +139,7 @@ public:
 	conVar_c*	r_drawCull = nullptr;
 
 	r_shaderHnd_c* whiteImage = nullptr;	// White image
+	r_tex_c* whiteTex = nullptr;	// whiteImage's texture; what DrawImage(nil) binds (see BatchKey::keepAlpha)
 	r_shaderHnd_c* blackImage = nullptr;	// Black image
 
 	ImGuiContext* imguiCtx = nullptr;
@@ -179,6 +180,28 @@ public:
 	int dpiScaleOverridePercent = 0;
 	RenderTarget rttMain[2];
 	int	presentRtt = 0;
+	// Last SetClearColor (kept for the opacity feature's history; the clear
+	// itself is still applied where it was set).
+	float clearCol_[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+	int lastOpacityPct_ = 100; // window opacity: forces a redraw (no frame elision) when it changes
+	int lastGlassBlurPct_ = 0; // same for the liquid-glass blur strength
+
+	// Liquid-glass panels (window opacity feature): what is already drawn
+	// under a chrome panel is downsampled to 1/4, blurred, and pasted back
+	// before the panel's own tint goes on top. Two quarter-size ping/pong
+	// targets are kept for the whole session; see DrawGlassPanel.
+	struct GlassRes {
+		GLuint fbo[2] = { 0, 0 };
+		GLuint tex[2] = { 0, 0 };
+		int    w = -1, h = -1;      // quarter-screen size the targets are allocated at
+		GLuint blurProg = 0;
+		GLint  blurAttribPos = -1, blurAttribTC = -1;
+		GLint  blurLocTex = -1, blurLocDir = -1, blurLocUvMax = -1;
+		bool   broken = false;      // shader/FBO failed once: stay a plain fill
+		int    rectsThisFrame = 0;
+	} glass_;
+	void EnsureGlassResources(int w4, int h4);
+	void DrawGlassPanel(float x, float y, float w, float h);
 
 	std::vector<uint8_t> lastFrameHash{};
 

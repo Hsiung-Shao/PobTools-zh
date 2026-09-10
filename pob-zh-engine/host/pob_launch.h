@@ -39,12 +39,37 @@ struct InstanceInfo {
 	void*         hwnd = nullptr;  // HWND, or null while the window does not exist yet
 };
 
-// POB_GAME / POB_LOCALE / POB_ZH_FONTFILE / POB_ZH_DATADIR, set in both the
-// Win32 and CRT environments so a child process inherits them. Pass dataDir empty
-// for the built-in dictionaries -- the engine treats empty as "not set".
+// POB_GAME / POB_LOCALE / POB_ZH_FONTFILE / POB_ZH_DATADIR / POB_ZH_FONT_ALL /
+// POB_ZH_WINDOW_OPACITY, set in both the Win32 and CRT environments so a child
+// process inherits them. Pass dataDir empty for the built-in dictionaries -- the
+// engine treats empty as "not set". windowOpacity is a percent; 100 = opaque.
 void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
-                  bool fontApplyAll = true);
+                  bool fontApplyAll = true, int windowOpacity = 100,
+                  const std::wstring& bgPath = std::wstring(), int bgBright = 50,
+                  int glassBlur = 0, int treeBg = 100);
+
+// Live counterparts for the background image (absolute path, "" = none), its
+// brightness and the liquid-glass blur; same delivery as ApplyPobWindowOpacity
+// (WM_COPYDATA for the path, WM_APP messages for the percents). No-op under Wine.
+// `game` ("poe1"/"poe2") selects which POB windows receive it: the appearance
+// settings are kept per game.
+void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath);
+void ApplyPobBackgroundBright(const std::wstring& game, int percent);
+void ApplyPobGlassBlur(const std::wstring& game, int percent);
+void ApplyPobTreeBackdrop(const std::wstring& game, int percent);
+
+// True under Wine / CrossOver (ntdll exports wine_get_version). The window
+// opacity feature is Windows-only: on macOS the framebuffer alpha already leaks
+// through the window, and layering LWA_ALPHA on top would compound two effects.
+bool RunningUnderWine();
+
+// Tell every POB window this launcher started (and that exists already) to use
+// this opacity (percent, 100 = opaque). Only the app background becomes
+// see-through; text, controls and the passive tree stay solid -- the engine does
+// it in the framebuffer alpha and asks DWM to composite with it. Sent as a
+// window message, so it takes effect live. No-op under Wine.
+void ApplyPobWindowOpacity(const std::wstring& game, int percent);
 
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
 // failure to spawn.

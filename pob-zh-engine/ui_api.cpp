@@ -2624,6 +2624,31 @@ static int l_PobToolsTranslateDisplay(lua_State* L)
 }
 
 // PobToolsReverse(chinese) -> english, or nil. Lua-callable single-term reverse lookup.
+// pct = PobToolsWindowOpacity()
+// Current POB window opacity in percent (100 = off). The injected Lua uses it
+// to decide whether to extend the passive tree under the translucent chrome.
+static int l_PobToolsWindowOpacity(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	lua_pushinteger(L, ui->sys->video->windowOpacityPct);
+	return 1;
+}
+
+// path, brightPct, glassBlurPct = PobToolsBackground()
+// The launcher-chosen background image (absolute UTF-8 path, "" = none) and
+// its brightness; the injected Lua draws it in main:DrawBackground. glassBlur
+// is returned for completeness (the engine applies it itself).
+static int l_PobToolsBackground(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	const auto* v = ui->sys->video;
+	lua_pushlstring(L, v->bgPath.data(), v->bgPath.size());
+	lua_pushinteger(L, v->bgBrightPct);
+	lua_pushinteger(L, v->glassBlurPct);
+	lua_pushinteger(L, v->treeBgPct);
+	return 4;
+}
+
 static int l_PobToolsReverse(lua_State* L)
 {
 	const char* text = lua_tostring(L, 1);
@@ -2881,6 +2906,8 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsItemTitle);
 	ADDFUNC(PobToolsTranslateDisplay);
 	ADDFUNC(PobToolsReverse);
+	ADDFUNC(PobToolsWindowOpacity);
+	ADDFUNC(PobToolsBackground);
 	ADDFUNC(PobToolsSetTranslate);
 	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);

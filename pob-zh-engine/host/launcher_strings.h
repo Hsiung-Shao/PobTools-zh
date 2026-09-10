@@ -197,7 +197,23 @@
 	X(resetDefault,      u8"恢復預設",                       u8"Reset to default")                       \
 	X(winSizeLabel,      u8"視窗大小",                       u8"Window size")                            \
 	X(winSizeHint,       u8"也可以直接拖曳視窗邊緣調整，大小會記住",                                      \
-	                     u8"You can also drag the window edge; the size is remembered")
+	                     u8"You can also drag the window edge; the size is remembered")                \
+	X(winOpacityLabel,   u8"POB 面板不透明度",               u8"POB panel opacity")                      \
+	X(winOpacityHint,    u8"側欄、上方工具列與天賦頁底部工具列的底色與分隔線會淡出，0% 時完全消失，只剩文字與控制項疊在延伸到整個視窗的天賦樹上（其他分頁為斜紋底）；不會透出桌面。100% 為關閉，拖動時已開啟的 POB 視窗即時生效；僅 Windows 支援", \
+	                     u8"The side bar, top bar and tree-tab toolbar backgrounds and separators fade out; at 0% they are gone and only text and controls remain over the passive tree, which then spans the whole window (striped background on other tabs). The desktop never shows through. 100% = off, open POB windows follow the slider live. Windows only") \
+	X(tabAppearance,     u8"外觀",                           u8"Appearance")                             \
+	X(lookGameLabel,     u8"套用到",                         u8"Applies to")                             \
+	X(lookIntro,         u8"POB 視窗的外觀，兩個遊戲各自一組設定；改動會即時套用到該遊戲已開啟的 POB 視窗。僅 Windows 支援。", \
+	                     u8"Look of the POB window, one set per game; changes apply live to that game's open POB windows. Windows only.") \
+	X(bgLabel,           u8"背景圖片",                       u8"Background image")                       \
+	X(bgDefault,         u8"預設（POB 內建底圖）",           u8"Default (POB's own backdrop)")           \
+	X(bgOpenFolder,      u8"開啟資料夾",                     u8"Open folder")                            \
+	X(bgRefresh,         u8"重新整理",                       u8"Refresh")                                \
+	X(bgBrightLabel,     u8"背景亮度",                       u8"Background brightness")                  \
+	X(glassBlurLabel,    u8"霧面強度",                       u8"Frost strength")                         \
+	X(treeBgLabel,       u8"天賦樹底圖",                     u8"Tree backdrop")                          \
+	X(bgHint,            u8"把 PNG／JPG／WebP 放進 PobTools\\Backgrounds 資料夾就能選。圖片鋪滿整個 POB 視窗當最底層，天賦樹與各分頁畫在它上面；亮度是圖片壓暗的程度。霧面強度把側欄、工具列變成毛玻璃：面板底下的畫面先模糊再蓋上面板的淡色（面板不透明度）；0% 為不模糊。天賦樹底圖是節點底下那層深色底紋的不透明度，調低就能在天賦頁也看到背景圖片。全部即時生效", \
+	                     u8"Drop PNG/JPG/WebP files into the PobTools\\Backgrounds folder to pick them here. The image fills the whole POB window as the bottom layer, with the tree and the tabs drawn over it; brightness dims the image. Frost strength turns the side bar and tool bars into frosted glass: what is under a panel is blurred, then the panel's tint (panel opacity) goes on top; 0% = no blur. Tree backdrop is the opacity of the dark tiled layer under the nodes; lower it to see the background image on the tree tab too. Everything applies live")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;
