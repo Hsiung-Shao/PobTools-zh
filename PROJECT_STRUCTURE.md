@@ -36,7 +36,7 @@ PobTools/
 
 ## Documentation
 
-- [README.md](README.md) — overview, download/install for users, build from source.
-- [docs/INSTALL.md](docs/INSTALL.md) — end-user install guide.
-- [docs/USAGE.md](docs/USAGE.md) — feature-by-feature usage guide.
+- [README.md](README.md) — overview, download/install for users, build from source. English: [README.en.md](README.en.md).
+- [docs/INSTALL.md](docs/INSTALL.md) — end-user install guide. English: [docs/INSTALL.en.md](docs/INSTALL.en.md).
+- [docs/USAGE.md](docs/USAGE.md) — feature-by-feature usage guide. English: [docs/USAGE.en.md](docs/USAGE.en.md).
 - [pob-zh-engine/README_PobTools.md](pob-zh-engine/README_PobTools.md) — engine-in-exe architecture.

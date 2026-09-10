@@ -1,5 +1,7 @@
 # PobTools 安裝教學
 
+**繁體中文** | [English](INSTALL.en.md)
+
 PobTools 是 **Path of Building（POB）繁體中文化工具**。它用「零污染」方式在
 POB 外層注入中文翻譯與介面,**不修改你原本的 POB**。
 

@@ -1,5 +1,7 @@
 # PobTools — Path of Building 繁體中文化啟動器
 
+**繁體中文** | [English](README.en.md)
+
 以本機遊戲檔為翻譯來源的 **Path of Building(POB)繁體中文化工具**。用「零污染」方式
 在 POB 外層注入繁中翻譯與介面,**不修改你原本的 POB**,POB 自我更新也不會壞掉。
 

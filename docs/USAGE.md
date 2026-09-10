@@ -1,5 +1,7 @@
 # PobTools 功能使用說明
 
+**繁體中文** | [English](USAGE.en.md)
+
 本文說明 PobTools 各功能的操作方式。第一次安裝請先看
 [安裝教學 INSTALL.md](INSTALL.md)。
 
