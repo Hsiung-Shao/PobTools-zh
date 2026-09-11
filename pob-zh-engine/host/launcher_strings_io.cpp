@@ -428,6 +428,94 @@ int RunLauncherStringsSelfTest(const std::wstring& exeDir)
 		      ok && why.empty(), why);
 	}
 
+	// L11 -- exporting a language the binary does not compile in (ko-KR here)
+	// writes a template: every key present, every value the English key itself,
+	// and a meta.json whose display_name is the folder name (a translator fills
+	// both in). Nothing zh-rTW-specific may leak into it.
+	{
+		std::wstring exportRoot = sandbox + L"\\export3\\";
+		CreateDirectoryW((sandbox + L"\\export3").c_str(), nullptr);
+		int rc = RunLauncherStringsExport(exportRoot, L"ko-KR");
+		const std::wstring file = exportRoot + L"Data\\launcher\\ko-KR\\launcher.json";
+		std::string content, meta, why;
+		ordered_json doc;
+		bool ok = rc == 0 && read_file_utf8(file, content) &&
+		          read_file_utf8(exportRoot + L"Data\\launcher\\ko-KR\\meta.json", meta);
+		if (ok) {
+			try { doc = ordered_json::parse(content); } catch (...) { ok = false; why = "not JSON"; }
+		}
+		if (ok) {
+			const ordered_json& e = doc["entries"];
+			size_t n = 0;
+			for (size_t i = 0; i < kLauncherStringsFields && why.empty(); i++) {
+				const char* key = STR_EN.*kLauncherStringMembers[i];
+				if (!key) continue;
+				n++;
+				auto it = e.find(key);
+				if (it == e.end()) why = std::string("missing key: ") + kLauncherStringNames[i];
+				else if (!it->is_string() || it->get<std::string>() != key)
+					why = std::string("value is not the English key: ") + kLauncherStringNames[i];
+			}
+			if (why.empty() && e.size() != n) why = "entry count " + std::to_string(e.size()) + " != " + std::to_string(n);
+			if (why.empty() && meta.find("\"locale\": \"ko-KR\"") == std::string::npos) why = "meta locale is not ko-KR";
+			if (why.empty() && meta.find("\"display_name\": \"ko-KR\"") == std::string::npos) why = "meta display_name is not the folder name";
+			if (why.empty() && meta.find(u8"繁體中文") != std::string::npos) why = "zh-rTW display name leaked into ko-KR meta";
+		}
+		check("L11 exporting an uncompiled locale writes an English template + folder-named meta",
+		      ok && why.empty(), why.empty() ? ("rc=" + std::to_string(rc)) : why);
+
+		// L12 -- a translator's meta.json (display_name 한국어) and values survive
+		// a re-export; only missing keys are filled in. Same contract as L10, for
+		// the locale the packaging script never touches.
+		bool ok2 = ok;
+		if (ok2) {
+			doc["entries"][STR_EN.tabHome] = u8"홈";
+			doc["entries"].erase(STR_EN.font);
+			ok2 = write_file_bytes(file, doc.dump(2)) &&
+			      write_file_bytes(exportRoot + L"Data\\launcher\\ko-KR\\meta.json",
+			                       u8"{\"locale\":\"ko-KR\",\"display_name\":\"한국어\",\"load_order\":[\"launcher.json\"]}");
+		}
+		ok2 = ok2 && RunLauncherStringsExport(exportRoot, L"ko-KR") == 0;
+		std::string after, meta2, why2;
+		ordered_json doc2;
+		ok2 = ok2 && read_file_utf8(file, after) &&
+		      read_file_utf8(exportRoot + L"Data\\launcher\\ko-KR\\meta.json", meta2);
+		if (ok2) {
+			try { doc2 = ordered_json::parse(after); } catch (...) { ok2 = false; why2 = "not JSON"; }
+		}
+		if (ok2) {
+			const ordered_json& e = doc2["entries"];
+			if (e.value(STR_EN.tabHome, std::string()) != u8"홈") why2 = "translated value was reverted";
+			else if (e.value(STR_EN.font, std::string()) != STR_EN.font) why2 = "missing key was not filled with English";
+			else if (meta2.find(u8"한국어") == std::string::npos) why2 = "translator's meta.json was overwritten";
+		}
+		check("L12 re-exporting ko-KR keeps values and the translator's meta.json", ok2 && why2.empty(), why2);
+
+		// L13 -- "en" needs no file (keys are the English strings), and a locale
+		// carrying a path separator would write outside Data\launcher\. Both are
+		// refused with a non-zero exit and nothing on disk.
+		{
+			std::wstring exportRoot4 = sandbox + L"\\export4\\";
+			CreateDirectoryW((sandbox + L"\\export4").c_str(), nullptr);
+			int rcEn = RunLauncherStringsExport(exportRoot4, L"en");
+			int rcEmpty = RunLauncherStringsExport(exportRoot4, L"");
+			int rcPath = RunLauncherStringsExport(exportRoot4, L"..\\evil");
+			WIN32_FIND_DATAW fd{};
+			HANDLE h = FindFirstFileW((exportRoot4 + L"Data\\launcher\\*").c_str(), &fd);
+			bool wrote = false;
+			if (h != INVALID_HANDLE_VALUE) {
+				do {
+					if (wcscmp(fd.cFileName, L".") && wcscmp(fd.cFileName, L"..")) wrote = true;
+				} while (FindNextFileW(h, &fd));
+				FindClose(h);
+			}
+			check("L13 en / empty / path-like locales are refused and write nothing",
+			      rcEn != 0 && rcEmpty != 0 && rcPath != 0 && !wrote,
+			      "rc en=" + std::to_string(rcEn) + " empty=" + std::to_string(rcEmpty) +
+			          " path=" + std::to_string(rcPath) + (wrote ? " (something was written)" : ""));
+		}
+	}
+
 	rm_tree(sandbox);
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";

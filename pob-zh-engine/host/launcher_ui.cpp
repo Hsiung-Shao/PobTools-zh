@@ -3209,6 +3209,59 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 		ImGui::DestroyContext();
 	}
 
+	// The ladder's first sacrifice depends on the interface language (ko-KR keeps
+	// Hangul longest, everyone else keeps the CJK block longest). Drive LoadFonts
+	// with the scale rising until the Korean-preferring build has to drop the CJK
+	// block while still holding Hangul -- the exact case the preference exists for
+	// -- and check the other preference makes the opposite choice on the same input.
+	{
+		// `koreanOk` probes 한, which the ko-KR launcher strings put into the PRECISE
+		// set, so it stays true even after the Hangul BLOCK is dropped. The block
+		// itself is probed with 힣 (U+D7A3): in GetGlyphRangesKorean, in Noto Sans
+		// KR, and in no launcher string. The CJK block is probed with kProbeText,
+		// same as the checks above.
+		struct LadderResult { std::string dropped; bool hangulBlock, cjkBlock; int w, h; };
+		auto buildWith = [&](bool preferKorean, float scale) -> LadderResult {
+			ImGui::CreateContext();
+			std::shared_ptr<const FontBuildInput> in =
+			    PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile), {}, overlays, scale, 4096,
+			                     FallbackFontPaths(exeDir, cfg.fontFile), preferKorean);
+			LauncherFonts f = LoadFonts(ImGui::GetIO().Fonts, in, FontScope::Full);
+			LadderResult r{ f.dropped, false, true, f.texW, f.texH };
+			r.hangulBlock = f.body && f.body->FindGlyphNoFallback((ImWchar)0xD7A3) != nullptr;
+			for (unsigned cp : probeCps)
+				if (cp <= 0xFFFF && (!f.body || !f.body->FindGlyphNoFallback((ImWchar)cp)))
+					r.cjkBlock = false;
+			ImGui::DestroyContext();
+			return r;
+		};
+		const float kLadderScales[] = { 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f };
+		bool exercised = false;
+		std::string trail;
+		for (float s : kLadderScales) {
+			LadderResult ko = buildWith(true, s);
+			char t[96];
+			snprintf(t, sizeof(t), " %.2fx:%s%s%s", s, ko.dropped.empty() ? "fits" : ko.dropped.c_str(),
+			         ko.hangulBlock ? "+hangul" : "", ko.cjkBlock ? "+cjk" : "");
+			trail += t;
+			if (ko.dropped.empty()) continue; // everything fit: nothing was sacrificed
+			check("a Korean interface never gives the Hangul block up first",
+			      ko.dropped != "korean" && (ko.hangulBlock || !ko.cjkBlock),
+			      "scale " + std::to_string(s) + " dropped=" + ko.dropped);
+			if (ko.dropped == "cjk" && ko.hangulBlock && !ko.cjkBlock) {
+				LadderResult other = buildWith(false, s);
+				check("a non-Korean interface on the same input drops the Hangul block, not the CJK block",
+				      other.dropped == "korean" && !other.hangulBlock && other.cjkBlock,
+				      "scale " + std::to_string(s) + " dropped=" + other.dropped +
+				          (other.hangulBlock ? " hangul-block kept" : "") + (other.cjkBlock ? " cjk kept" : " cjk lost"));
+				exercised = true;
+				break;
+			}
+		}
+		check("the language-aware ladder was exercised (Korean kept, CJK dropped, on a 4096 limit)",
+		      exercised, "trail:" + trail);
+	}
+
 	const int ran = checks;
 	check("the suite actually ran", ran >= 10, std::to_string(ran) + " checks");
 
