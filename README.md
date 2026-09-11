@@ -24,7 +24,7 @@ PobTools 以官方客戶端資料為準,產出約 10 萬組英文→中文對照
 
 | 功能              | 說明                                                             |
 | ----------------- | ---------------------------------------------------------------- |
-| 中文化 POB 啟動器 | POE1 / POE2 皆支援;介面語言可切繁中 / 简中 / English            |
+| 中文化 POB 啟動器 | POE1 / POE2 皆支援;介面語言可切繁中 / 简中 / 한국어 / English      |
 | 翻譯編輯器        | 內建字典編輯器,可即時修改、補充翻譯                              |
 | 過濾器編輯器      | NeverSink tier-list 式物品過濾器編輯,含中文顯示與圖示            |
 | 輿圖策略          | 地圖天賦樹規劃,支援多方案、匯出/分享碼、**新賽季自動更新**      |
@@ -42,6 +42,7 @@ PobTools 以官方客戶端資料為準,產出約 10 萬組英文→中文對照
 2. 另外準備 **Path of Building Community** 本體(PobTools 不包含 POB):
    [原版 POB 最新版下載](https://github.com/PathOfBuildingCommunity/PathOfBuilding/releases/latest)。
 3. 完整步驟、資料夾擺放方式、翻譯資料更新與常見問題,見 **[docs/INSTALL.md](docs/INSTALL.md)**。
+4. 想把 PobTools 翻成另一種語言、或校對現有翻譯,見 **[docs/TRANSLATING.md](docs/TRANSLATING.md)**。
 
 ---
 

@@ -266,10 +266,19 @@ int RunItemNameSelftest()
 	return g_fail == 0 ? 0 : 1;
 }
 
-int RunTranslateProbe(const std::wstring& text)
+int RunTranslateProbe(const std::wstring& text, const std::wstring& locale)
 {
 	SetConsoleOutputCP(CP_UTF8);
-	SetEnvironmentVariableA("POB_LOCALE", "zh-rTW");
+	// Default zh-rTW, as before; `--tr "<english>" ko-KR` probes another installed
+	// language without renaming folders (the old workaround, see
+	// error_tr_probe_hardcoded_locale).
+	std::string loc = "zh-rTW";
+	if (!locale.empty()) {
+		int ln = WideCharToMultiByte(CP_UTF8, 0, locale.c_str(), (int)locale.size(), nullptr, 0, nullptr, nullptr);
+		loc.assign(ln > 0 ? ln : 0, '\0');
+		if (ln > 0) WideCharToMultiByte(CP_UTF8, 0, locale.c_str(), (int)locale.size(), &loc[0], ln, nullptr, nullptr);
+	}
+	SetEnvironmentVariableA("POB_LOCALE", loc.c_str());
 	// Wall time since the process was created, so the probe also shows what the
 	// exe costs BEFORE the dictionaries are touched (loader, CRT, startup cleanup).
 	auto sinceStart = []() -> double {

@@ -327,6 +327,11 @@ struct FontBuildInput {
 	// little as 2048 on D3D9, and the difference decides whether the full CJK
 	// block is possible at all on this machine. 0 = unknown, assume the worst.
 	int maxTex = 0;
+	// The interface language is Korean: when the full atlas does not fit, the
+	// Hangul block is the LAST thing to give up, not the first (see the ladder
+	// in LoadFonts). False for every other language, which keeps the pre-ko-KR
+	// order byte for byte.
+	bool preferKorean = false;
 };
 
 // Which glyphs a build covers. The launcher starts with Precise so its first
@@ -396,11 +401,12 @@ static void BuildPreciseRanges(ImFontGlyphRangesBuilder& b,
 static std::shared_ptr<const FontBuildInput> PrepareFontInput(
     const std::wstring& fontPath, const std::vector<std::string>& extraTexts,
     const std::vector<const LauncherStrings*>& overlays, float scale, int maxTexOverride,
-    const std::vector<std::wstring>& fallbackPaths = {})
+    const std::vector<std::wstring>& fallbackPaths = {}, bool preferKorean = false)
 {
 	auto in = std::make_shared<FontBuildInput>();
 	in->ttf = std::make_shared<const std::vector<unsigned char>>(read_file(fontPath));
 	in->scale = scale;
+	in->preferKorean = preferKorean;
 	for (const std::wstring& p : fallbackPaths) {
 		auto buf = std::make_shared<const std::vector<unsigned char>>(read_file(p));
 		if (!buf->empty()) in->fallbacks.push_back(std::move(buf));
@@ -525,12 +531,16 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 		// while the worker is still rasterising the full block.
 		attempt(false, false);
 	} else {
-		// Widest first, then give up the least useful part. Korean goes before Chinese
-		// because only two languages ship today and neither is Korean, while Chinese is
-		// what every build name and item name is written in.
+		// Widest first, then give up the least useful part FOR THE ACTIVE LANGUAGE.
+		// Chinese is what every build name and item name is written in, so Korean
+		// goes first -- except when the interface language is Korean: then the
+		// Hangul block is what the user reads and the full CJK block goes first
+		// (the precise set still carries every launcher string, so the UI itself
+		// stays readable either way).
+		const bool ko = in->preferKorean;
 		if (!attempt(true, true)) {
-			out.dropped = "korean";
-			if (!attempt(true, false)) {
+			out.dropped = ko ? "cjk" : "korean";
+			if (!(ko ? attempt(false, true) : attempt(true, false))) {
 				out.dropped = "cjk";
 				// The precise set for everything, i.e. the behaviour before tab titles
 				// needed arbitrary text. Tab labels will show '?' for anything outside
@@ -1044,6 +1054,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// Languages come from the folders on disk, so adding Data\poe1\ja-JP\ is all
 	// it takes to offer Japanese. "en" is always first and needs no folder.
 	std::vector<LocaleInfo> locales = ListInstalledLocales(exeDir, cfg);
+	// Everything the language picker prints must be in the precise atlas too. A
+	// display name is arbitrary translator text from meta.json ("한국어"), not a
+	// string-table entry, so it is listed explicitly -- kOptionalScriptTexts only
+	// happens to cover the two scripts known today.
+	std::vector<std::string> atlasTexts = { poe1Dir, poe2Dir };
+	for (const LocaleInfo& l : locales) atlasTexts.push_back(l.displayName);
 
 	// Launcher labels come from the compiled tables with
 	// <launcher slot>\<locale>\launcher.json layered on top. EVERY language is
@@ -1070,8 +1086,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// later). Until then a character outside the string tables -- a build name in
 	// a tab title, say -- draws as '?', and corrects itself on the swap.
 	std::shared_ptr<const FontBuildInput> fontInput = PrepareFontInput(
-	    ResolveFontPath(exeDir, cfg.fontFile), { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex,
-	    FallbackFontPaths(exeDir, cfg.fontFile));
+	    ResolveFontPath(exeDir, cfg.fontFile), atlasTexts, strOverlays, scale, glMaxTex,
+	    FallbackFontPaths(exeDir, cfg.fontFile), cfg.locale == L"ko-KR");
 	FontAtlasWorker fontWorker;
 	fontWorker.Start(fontInput);
 	LauncherFonts fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Precise);
@@ -1471,8 +1487,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui_ImplOpenGL3_DestroyFontsTexture();
 			ImGui::GetIO().Fonts->Clear();
 			fontInput = PrepareFontInput(ResolveFontPath(exeDir, cfg.fontFile),
-			                             { poe1Dir, poe2Dir }, strOverlays, scale, glMaxTex,
-			                             FallbackFontPaths(exeDir, cfg.fontFile));
+			                             atlasTexts, strOverlays, scale, glMaxTex,
+			                             FallbackFontPaths(exeDir, cfg.fontFile), cfg.locale == L"ko-KR");
 			fonts = LoadFonts(ImGui::GetIO().Fonts, fontInput, FontScope::Full);
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
@@ -2004,8 +2020,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					if (!drawable) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.66f, 0.25f, 1.0f));
 					if (ImGui::Selectable(localeLabel(locales[i]).c_str(), localeIdx == i) &&
 					    localeIdx != i) {
+						const bool wasKo = locales[localeIdx].id == "ko-KR";
+						const bool isKo = locales[i].id == "ko-KR";
 						localeIdx = i;
 						saveNow();
+						// The full-atlas ladder keeps the ACTIVE language's script
+						// longest (LoadFonts). An atlas that had to drop a block was
+						// built for the other preference, so rebuild it; a complete
+						// atlas already has both blocks and is left alone.
+						if (wasKo != isKo && !fonts.dropped.empty()) fontChanged = true;
 					}
 					if (!drawable) {
 						ImGui::PopStyleColor();

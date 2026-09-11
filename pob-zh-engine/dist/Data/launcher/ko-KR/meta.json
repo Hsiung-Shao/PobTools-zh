@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "locale": "ko-KR",
+  "display_name": "한국어",
+  "source": "launcher",
+  "load_order": [
+    "launcher.json"
+  ]
+}

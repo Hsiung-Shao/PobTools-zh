@@ -131,6 +131,38 @@ int main(int argc, char** argv) {
 		chain.Close();
 	}
 	{
+		// Korean: no Han-only shipped font has a single Hangul syllable; the
+		// ko-KR dictionaries reach the screen only through Noto Sans KR in the
+		// chain. Asserted against the real file so a future font swap that drops
+		// Hangul fails here and not on a Korean user's screen.
+		const std::string kr = fontDir + "NotoSansKR-Regular.ttf";
+		const char32_t hangul = 0xD55C; // 한
+		check("precondition: Noto Sans KR ships next to the other fonts", fileExists(kr), kr);
+		FT_Face krFace = nullptr;
+		if (fileExists(kr) && !FT_New_Face(lib, kr.c_str(), 0, &krFace)) {
+			check("precondition: Noto TC and FZ_ZY lack U+D55C, Noto KR has it",
+			      FT_Get_Char_Index(notoFace, hangul) == 0 && FT_Get_Char_Index(fzFace, hangul) == 0
+			      && FT_Get_Char_Index(krFace, hangul) != 0);
+			// Shipped order: TC primary, then KR, then FZ_ZY. The chain opens every
+			// fallback on the first miss (by design), but the face SERVING the
+			// Hangul must be KR -- FZ_ZY has no Hangul, so a wrong pick would be a
+			// .notdef box on a Korean user's screen.
+			FtFallbackChain chain;
+			chain.paths = { kr, fz };
+			int opens = 0;
+			FT_Face f = chain.FaceFor(lib, notoFace, hangul, [&](const std::string&, bool ok) { if (ok) opens++; });
+			const std::string fam = (f && f->family_name) ? f->family_name : "";
+			check("U+D55C (Hangul) -> served by the Noto Sans KR face",
+			      f != notoFace && f != nullptr && FT_Get_Char_Index(f, hangul) != 0
+			      && fam.find("KR") != std::string::npos && opens == (int)chain.paths.size(),
+			      "family=" + fam + " opens=" + std::to_string(opens));
+			chain.Close();
+			FT_Done_Face(krFace);
+		} else {
+			check("Noto Sans KR opens with FreeType", false, kr);
+		}
+	}
+	{
 		// A path that cannot be opened is skipped, not fatal, and reported.
 		FtFallbackChain chain;
 		chain.paths = { fontDir + "does-not-exist.ttf", fz };

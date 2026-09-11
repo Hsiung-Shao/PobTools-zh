@@ -159,11 +159,16 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			if (!io.Fonts->Build()) return false;
 			return io.Fonts->TexWidth <= maxTex && io.Fonts->TexHeight <= maxTex;
 		};
+		// Same ladder as the launcher's LoadFonts: the block the active language
+		// does not read is the first to go. With a Korean interface that is the
+		// full CJK block; for everyone else it is Hangul.
+		const bool preferKorean = LoadLauncherConfig(exeDir + L"pob-zh.ini").locale == L"ko-KR";
 		bool built = attempt(true, true);
 		if (!built) {
-			PobLog::Error("i18n", "tool window font atlas over the GPU limit with Korean at " +
-			                          std::to_string((int)(kFontSize * scale)) + " px; retrying without");
-			built = attempt(true, false);
+			PobLog::Error("i18n", std::string("tool window font atlas over the GPU limit at ") +
+			                          std::to_string((int)(kFontSize * scale)) + " px; retrying without " +
+			                          (preferKorean ? "the full CJK block" : "Korean"));
+			built = preferKorean ? attempt(false, true) : attempt(true, false);
 		}
 		if (!built) {
 			PobLog::Error("i18n", "tool window font atlas over the GPU limit with the full CJK block; "

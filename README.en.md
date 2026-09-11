@@ -28,7 +28,7 @@ the "localization breaks every time POB updates" problem this project set out to
 
 | Feature                   | Description                                                                                   |
 | ------------------------- | --------------------------------------------------------------------------------------------- |
-| Localized POB launcher    | Supports POE1 and POE2; UI language switchable between Traditional Chinese / Simplified Chinese / English |
+| Localized POB launcher    | Supports POE1 and POE2; UI language switchable between Traditional Chinese / Simplified Chinese / Korean / English |
 | Translation editor        | Built-in dictionary editor; edit or add translations on the spot                              |
 | Filter editor             | NeverSink tier-list style item filter editor, with Chinese display and icons                  |
 | Atlas strategy            | Atlas passive tree planner: multiple builds, export / share codes, **auto-update for new leagues** |
@@ -47,6 +47,8 @@ Usage details are in **[docs/USAGE.en.md](docs/USAGE.en.md)**.
    [latest official POB release](https://github.com/PathOfBuildingCommunity/PathOfBuilding/releases/latest).
 3. Full steps, folder layout, translation data updates and FAQ:
    **[docs/INSTALL.en.md](docs/INSTALL.en.md)**.
+4. To translate PobTools into another language, or to review an existing translation, see
+   **[docs/TRANSLATING.en.md](docs/TRANSLATING.en.md)**.
 
 ---
 

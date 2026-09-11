@@ -11,4 +11,4 @@ int RunItemNameSelftest();
 // "check" a dictionary change reproduces whatever the script author misread --
 // a Python model of this pipeline once omitted the glossary layer and
 // attributed a dozen working names to the wrong path. Ask the engine instead.
-int RunTranslateProbe(const std::wstring& text);
+int RunTranslateProbe(const std::wstring& text, const std::wstring& locale = std::wstring());

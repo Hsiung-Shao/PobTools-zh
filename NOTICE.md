@@ -35,6 +35,7 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 | 檔案 | 授權 | 說明 |
 |---|---|---|
 | `Fonts/NotoSansTC-Regular.ttf`(**預設** CJK 顯示字型) | **SIL OFL 1.1** | 由 Google/Adobe 思源黑體衍生的 Noto Sans TC,自官方變數字型固定成 Regular(wght 400)靜態 TTF。可自由隨附散布。 |
+| `Fonts/NotoSansKR-Regular.ttf`(韓文 ko-KR 顯示用後援字型) | **SIL OFL 1.1** | Google Noto Sans KR,自官方變數字型 `NotoSansKR[wght].ttf`(google/fonts 儲存庫 `ofl/notosanskr/`,Version 2.004)以 fontTools instancer 固定成 Regular(wght 400)靜態 TTF。預設字型 Noto Sans TC 沒有任何韓文字形,引擎與啟動器在主字型缺字時改用這一顆。可自由隨附散布,授權全文見該儲存庫的 `OFL.txt`。 |
 | `Fonts/FZ_ZY.ttf`(可選的替代 CJK 字型) | **商業字型,授權未取得** | 方正系列字型,著作權屬方正集團。本專案**沒有**取得散布授權,隨附純屬歷史沿革(v0.1.0 起就在包裡);程式碼的 MIT 授權**不涵蓋這個檔案**。若權利人要求,將自出貨包移除。使用者可自行刪除 `Fonts\FZ_ZY.ttf`,不影響其他功能(預設字型是上面那一顆)。 |
 
 > 使用者可在啟動器底部的「字型」下拉切換任一放在 `Fonts\` 的 `.ttf`。
@@ -46,6 +47,6 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 - **程式碼**:MIT(本專案原創)+ MIT(SimpleGraphic / ImGui / json / curl base64)。
 - **POB 本體**:MIT,但**不隨附**,使用者自備。
 - **翻譯 / 遊戲資料**:取材自 GGG 版權內容,以粉絲工具用途提供,非以 MIT 授權釋出。
-- **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布)。
+- **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布);韓文後援 Noto Sans KR(同為 SIL OFL 1.1)。
   ⚠ 另隨附一顆 `Fonts/FZ_ZY.ttf`(方正系列),**授權未取得**、不在 MIT 涵蓋範圍內,
   詳見上表;它只是可選的替代字型,刪掉不影響任何功能。

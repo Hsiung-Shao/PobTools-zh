@@ -412,10 +412,16 @@ r_font_c::r_font_c(r_renderer_c* renderer, const char* fontName)
 			if (ff[0]) ttfCandidates.push_back(base + "Fonts/" + ff);
 		}
 		ttfCandidates.push_back(base + "Fonts/NotoSansTC-Regular.ttf");
+		// Hangul lives only here: neither Noto Sans TC nor FZ_ZY has a single
+		// Korean syllable, so the ko-KR dictionaries draw through the fallback
+		// chain from this face. Listed before FZ_ZY so a Han character missing
+		// from Noto TC still prefers the (licensed) Noto family over FZ_ZY.
+		ttfCandidates.push_back(base + "Fonts/NotoSansKR-Regular.ttf");
 		ttfCandidates.push_back(base + "Fonts/FZ_ZY.ttf");
 		ttfCandidates.push_back(base + "Fonts/CJKFallback.ttf");
 	}
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/NotoSansTC-Regular.ttf");
+	ttfCandidates.push_back(CFG_DATAPATH "Fonts/NotoSansKR-Regular.ttf");
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/FZ_ZY.ttf");
 	ttfCandidates.push_back(CFG_DATAPATH "Fonts/CJKFallback.ttf");
 

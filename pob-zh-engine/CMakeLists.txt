@@ -557,6 +557,12 @@ if (WIN32)
     # someone else's machine. host/data/fonts/ is now the single source, mirrored by
     # the sha256 assertion in tools/package_release.ps1.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/NotoSansTC-Regular.ttf" DESTINATION "Fonts")
+    # Korean (ko-KR): Noto Sans TC carries no Hangul at all (0 of 11,172
+    # syllables), so the Korean dictionaries need their own face. Static Regular
+    # instance of Google's NotoSansKR[wght].ttf (SIL OFL 1.1, see NOTICE.md); the
+    # engine and the launcher both pick it up as a glyph fallback, the default
+    # face stays Noto Sans TC.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/fonts/NotoSansKR-Regular.ttf" DESTINATION "Fonts")
 endif ()
 
 

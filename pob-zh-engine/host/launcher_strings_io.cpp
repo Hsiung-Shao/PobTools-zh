@@ -103,12 +103,24 @@ LauncherStringStore LoadLauncherStrings(const std::wstring& slotRoot, const std:
 	return st;
 }
 
-int RunLauncherStringsExport(const std::wstring& exeDir)
+int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& locale)
 {
-	// Only zh-rTW has anything to translate: the keys ARE the English strings, so
-	// an "en" file would map every entry to itself.
-	const std::wstring locale = L"zh-rTW";
+	// zh-RTW is the only language compiled in; for any other folder the fill-in
+	// value is the English key itself, so the file comes out as a template every
+	// key present, untranslated ones visibly equal to their key. The keys ARE the
+	// English strings, so an "en" folder is never written.
+	const bool compiled = (locale == L"zh-rTW");
 	const std::wstring dir = exeDir + L"Data\\launcher\\" + locale + L"\\";
+	std::string localeUtf8;
+	{
+		int n = WideCharToMultiByte(CP_UTF8, 0, locale.c_str(), (int)locale.size(), nullptr, 0, nullptr, nullptr);
+		localeUtf8.assign(n > 0 ? n : 0, '\0');
+		if (n > 0) WideCharToMultiByte(CP_UTF8, 0, locale.c_str(), (int)locale.size(), &localeUtf8[0], n, nullptr, nullptr);
+	}
+	if (locale.empty() || locale == L"en" || locale.find_first_of(L"\\/") != std::wstring::npos) {
+		printf("launcher strings export: refusing locale '%s'\n", localeUtf8.c_str());
+		return 1;
+	}
 
 	// Every level: CreateDirectoryW does not create parents, and the selftest
 	// exports into a fresh sandbox where none of them exist yet.
@@ -142,7 +154,7 @@ int RunLauncherStringsExport(const std::wstring& exeDir)
 	for (size_t i = 0; i < kLauncherStringsFields; i++) {
 		auto mem = kLauncherStringMembers[i];
 		const char* key = STR_EN.*mem;
-		const char* val = STR_ZHTW.*mem;
+		const char* val = compiled ? STR_ZHTW.*mem : STR_EN.*mem;
 		if (!key || !val) continue;
 		auto it = existing.find(key);
 		if (it != existing.end() && it->is_string() && !it->get<std::string>().empty()) {
@@ -169,24 +181,28 @@ int RunLauncherStringsExport(const std::wstring& exeDir)
 
 	ordered_json meta = ordered_json::object();
 	meta["version"] = "1.0.0";
-	meta["locale"] = "zh-rTW";
+	meta["locale"] = localeUtf8;
 	// What the launcher's language picker shows. Optional: a folder without it
 	// falls back to its own name, which is how a translator can add a language
-	// with nothing but a folder and a load_order.
-	meta["display_name"] = u8"繁體中文";
+	// with nothing but a folder and a load_order. Only zh-rTW's is known here;
+	// another language's meta.json is left alone if it already exists (the
+	// translator wrote its display_name), and gets the folder name otherwise.
+	meta["display_name"] = compiled ? std::string(u8"繁體中文") : localeUtf8;
 	meta["source"] = "launcher";
 	meta["load_order"] = ordered_json::array({ "launcher.json" });
 
-	bool ok = write_file_bytes(dir + L"launcher.json", to_crlf(dict.dump(2) + "\n")) &&
-	          write_file_bytes(dir + L"meta.json", to_crlf(meta.dump(2) + "\n"));
+	bool ok = write_file_bytes(dir + L"launcher.json", to_crlf(dict.dump(2) + "\n"));
+	std::string metaExisting;
+	if (ok && (compiled || !read_file_utf8(dir + L"meta.json", metaExisting)))
+		ok = write_file_bytes(dir + L"meta.json", to_crlf(meta.dump(2) + "\n"));
 	// Deliberately NO MessageBox on failure: the selftest calls this function, and
 	// a modal dialog turns a headless check into a hang with no output. Exit code
 	// and stdout only.
-	printf(ok ? "launcher strings exported to Data\\launcher\\zh-rTW\\ (%d entries: %d kept, "
+	printf(ok ? "launcher strings exported to Data\\launcher\\%s\\ (%d entries: %d kept, "
 	            "%d filled in, %d orphaned)\n"
-	          : "launcher strings export FAILED (%d entries prepared: %d kept, %d filled in, "
+	          : "launcher strings export FAILED for Data\\launcher\\%s\\ (%d entries prepared: %d kept, %d filled in, "
 	            "%d orphaned)\n",
-	       (int)entries.size(), kept, added, orphans);
+	       localeUtf8.c_str(), (int)entries.size(), kept, added, orphans);
 	return ok ? 0 : 1;
 }
 

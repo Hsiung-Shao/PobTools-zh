@@ -48,7 +48,7 @@ LauncherStringStore LoadLauncherStrings(const std::wstring& slotRoot, const std:
 // <exeDir>Data\launcher\<locale>\{meta.json,launcher.json} from the compiled
 // tables. Run before packaging so the shipped JSON cannot drift from the binary.
 // Returns 0 on success.
-int RunLauncherStringsExport(const std::wstring& exeDir);
+int RunLauncherStringsExport(const std::wstring& exeDir, const std::wstring& locale = L"zh-rTW");
 
 // Headless checks (--launcher-strings-selftest): English keys pairwise unique,
 // overlay/fallback semantics, pointer lifetime across many overrides, export

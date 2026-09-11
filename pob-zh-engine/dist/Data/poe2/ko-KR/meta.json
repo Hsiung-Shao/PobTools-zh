@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "locale": "ko-KR",
+  "display_name": "한국어",
+  "source": "poe2",
+  "load_order": [
+    "tags.json",
+    "ui.json",
+    "stats.json",
+    "items.json",
+    "gems.json",
+    "passives.json",
+    "uniques.json",
+    "monsters.json"
+  ],
+  "incomplete_translation_whitelist": [
+    "DPS",
+    "PoB",
+    "DoT",
+    "AoE",
+    "URL",
+    "DPI",
+    "POB",
+    "FullDPS",
+    "B",
+    "G",
+    "R",
+    "W",
+    "A"
+  ],
+  "glossary_blacklist": [
+    "UNUSED"
+  ]
+}

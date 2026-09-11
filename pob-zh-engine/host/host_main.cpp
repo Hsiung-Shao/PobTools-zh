@@ -580,8 +580,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--launcher-strings-export") {
 		// maintainer: regenerate Data\launcher\zh-rTW\ from the compiled tables so
-		// the shipped translation file cannot drift away from the binary
-		return RunLauncherStringsExport(dir);
+		// the shipped translation file cannot drift away from the binary. With a
+		// second argument (e.g. ko-KR) it writes that folder instead, filling any
+		// key the file lacks with the English string -- a translator's template.
+		return RunLauncherStringsExport(dir, arg2.empty() ? L"zh-rTW" : arg2);
 	}
 
 	// Headless new-season atlas data import: --atlas-import <path to data.json>.
@@ -667,7 +669,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--tr") {
 		// One-off: what does the engine actually return for this string?
-		return RunTranslateProbe(arg2);
+		// Optional third argument picks the language folder (default zh-rTW).
+		return RunTranslateProbe(arg2, arg3);
 	}
 	if (arg1 == L"--filter-editor") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");

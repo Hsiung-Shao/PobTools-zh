@@ -19,13 +19,15 @@ placed at the same level:
 - Tools open as separate windows (since v0.5.0); the launcher stays open, so several tools
   can be used at once.
 - The status bar at the bottom switches the **UI language** (Traditional Chinese /
-  Simplified Chinese / English) and the **font**.
+  Simplified Chinese / Korean / English) and the **font**.
 
 ### Switching the language
 
 The language dropdown at the bottom switches the launcher and the POB UI language on the
-spot. The matching translation data must exist (`zh-rTW` Traditional Chinese and `zh-rCN`
-Simplified Chinese are shipped by default).
+spot. The matching translation data must exist (`zh-rTW` Traditional Chinese, `zh-rCN`
+Simplified Chinese and `ko-KR` Korean are shipped by default; Korean is built from the
+official game files, with about four fifths of POB's own interface translated and the rest
+shown in English). To add or review a language, see [TRANSLATING.en.md](TRANSLATING.en.md).
 
 ### Switching the font
 
@@ -242,6 +244,11 @@ If you edit the translations yourself: set "Automatically update translation dat
 on the Settings page and updates will not overwrite your dictionaries (the program itself
 still updates). You are still notified when new data is available and can take it once with
 "Apply once now".
+
+### Translators
+
+Dictionary format, placeholder rules, local testing and how to submit a pull request are all
+in **[TRANSLATING.en.md](TRANSLATING.en.md)**.
 
 ## 8. When POB or PobTools freezes
 
