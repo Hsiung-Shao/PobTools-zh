@@ -525,6 +525,7 @@ void ui_main_c::ScriptShutdown()
 	if (extraArgs >= 0) {
 		PCall(extraArgs, 0);
 	}
+	startup_trace_mark("shutdown: OnExit returned");
 
 	// Shutdown subscript and debug systems
 	for (dword i = 0; i < subScriptSize; i++) {
@@ -534,13 +535,16 @@ void ui_main_c::ScriptShutdown()
 	}
 	delete subScriptList;
 	ui_IDebug::FreeHandle(debug);
+	startup_trace_mark("shutdown: subscripts freed");
 
 	// PoeCharm: free translation dictionaries (paired with translation_init in InitAPI)
 	translation_shutdown();
+	startup_trace_mark("shutdown: translation tables freed");
 
 	// Shutdown Lua
 	L = NULL;
 	solState.reset();
+	startup_trace_mark("shutdown: Lua state closed");
 }
 
 void ui_main_c::Shutdown()
@@ -553,7 +557,8 @@ void ui_main_c::Shutdown()
 
 		// Shutdown renderer
 		renderer->Shutdown();
-		r_IRenderer::FreeHandle(renderer);	
+		r_IRenderer::FreeHandle(renderer);
+		startup_trace_mark("shutdown: renderer freed");
 
 		// Shutdown window
 		sys->video->SetVisible(false);

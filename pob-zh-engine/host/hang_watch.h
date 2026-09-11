@@ -108,6 +108,8 @@ PeerStatus GetPeerStatus();
 // product calls these: the cap is per run on purpose.
 void ResetForTest();
 std::string CurrentStageForTest();
+// True between Start() and Stop(): the watchdog thread object exists.
+bool RunningForTest();
 
 // Writes crash-<date>-<time>-<role>.txt and one line to the error log, and
 // nothing else. The engine's existing SEH catch (sys_main.cpp) calls this: it
@@ -130,3 +132,10 @@ int RunHangWatchSelfTest(const std::wstring& exeDir);
 // in the real log directory. For verifying on a live machine that the frames
 // resolve against the build's PDB.
 int RunHangProbe(const std::wstring& exeDir, int seconds);
+
+// --hang-exit-probe: starts the watchdog and returns WITHOUT stopping it, the
+// way a caller that forgot Stop() would. The self-test spawns this and asserts
+// the process still exits 0 and promptly -- the v1.4.0 regression was a
+// std::terminate at exit (0xC0000409) plus the Windows Error Reporting delay
+// that came with it.
+int RunHangExitProbe();

@@ -413,6 +413,61 @@ int RunHangWatchSelfTest(const std::wstring& exeDir)
 		check("T9b and really reports empty", Find(box, L"hang-*.txt").empty());
 	}
 
+	// T10 -- Stop() is safe in every state. Nothing running: a no-op. Running:
+	// the thread is joined and gone. Twice: still fine. The launcher calls it
+	// from a scope guard on every way out, so "harmless when redundant" matters.
+	{
+		HangWatch::ResetForTest();
+		HangWatch::Stop();
+		check("T10 Stop without Start is a no-op", !HangWatch::RunningForTest());
+		HangWatch::Options o;
+		o.role = "selftest";
+		o.stallMs = 600;
+		o.requireWindow = false;
+		HangWatch::Start(o);
+		check("T10b Start leaves the watchdog running", HangWatch::RunningForTest());
+		HangWatch::Stop();
+		check("T10c Stop joins and forgets the thread", !HangWatch::RunningForTest());
+		HangWatch::Stop();
+		check("T10d a second Stop is harmless", !HangWatch::RunningForTest());
+	}
+
+	// T11 -- a process that started the watchdog and never stopped it still
+	// exits 0, and promptly. This is the v1.4.0 regression: a static std::thread
+	// left joinable at exit is std::terminate, the exit code becomes 0xC0000409,
+	// and Windows Error Reporting holds the dying process for seconds -- which is
+	// what kept the launcher from coming back after POB closed. The probe is a
+	// separate process because the failure only happens at process exit.
+	// (Verified to go red: with a joinable static std::thread planted in the
+	// probe, T11b reports exit code 0xC0000409 after ~2.4 s.)
+	{
+		wchar_t exe[MAX_PATH] = {};
+		GetModuleFileNameW(nullptr, exe, MAX_PATH);
+		std::wstring cmd = L"\"" + std::wstring(exe) + L"\" --hang-exit-probe";
+		std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+		buf.push_back(L'\0');
+		STARTUPINFOW si{};
+		si.cb = sizeof(si);
+		PROCESS_INFORMATION pi{};
+		const ULONGLONG t0 = GetTickCount64();
+		const bool spawned = CreateProcessW(exe, buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+		                                    nullptr, nullptr, &si, &pi) != 0;
+		check("T11 the exit probe process starts", spawned);
+		if (spawned) {
+			CloseHandle(pi.hThread);
+			const DWORD waited = WaitForSingleObject(pi.hProcess, 15000);
+			const ULONGLONG ms = GetTickCount64() - t0;
+			DWORD code = 0xFFFFFFFF;
+			if (waited == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
+			else TerminateProcess(pi.hProcess, 9);
+			CloseHandle(pi.hProcess);
+			check("T11b it exits 0 with the watchdog left running", waited == WAIT_OBJECT_0 && code == 0,
+			      "exit code 0x" + [&] { char b[16]; sprintf_s(b, "%08lX", (unsigned long)code); return std::string(b); }());
+			check("T11c and within three seconds (no error-reporting stall)", ms < 3000,
+			      std::to_string(ms) + " ms");
+		}
+	}
+
 	HangWatch::ResetForTest();
 	PobLog::SetDirForTest(L"");
 	Rmtree(box);
@@ -456,4 +511,17 @@ int RunHangProbe(const std::wstring& exeDir, int seconds)
 		CloseHandle(h);
 	}
 	return dir.empty() ? 2 : 0;
+}
+
+int RunHangExitProbe()
+{
+	HangWatch::Options o;
+	o.role = "probe";
+	o.stallMs = 5000;
+	o.requireWindow = false;
+	HangWatch::Start(o);
+	HangWatch::Beat();
+	// Deliberately no Stop(): the point is what happens to a process that exits
+	// with the watchdog thread still alive. See RunHangWatchSelfTest T11.
+	return 0;
 }

@@ -4,6 +4,7 @@
 #include "editor_util.h"       // EdReadFile
 #include "launcher_config.h"   // ResolveConfiguredFontPath
 #include "tool_panel.h"
+#include "frame_pacing.h"      // idle wait, minimised = no present, unchanged frame = no present
 #include "ui_theme.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -20,6 +21,10 @@
 
 #include <string>
 #include <vector>
+
+// See the refresh callback in RunToolWindow: the next frame is presented even
+// if its draw data matches the last one.
+static bool g_toolRedraw = true;
 
 namespace {
 
@@ -84,6 +89,12 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	glfwMakeContextCurrent(win);
 	glfwSwapInterval(1);
 	glfwShowWindow(win);
+	// Unchanged frames are not presented (frame_pacing.h); a refresh or a resize
+	// invalidates the picture without changing the draw data, so both force one.
+	// One tool window per process, hence the file-level flag.
+	glfwSetWindowRefreshCallback(win, [](GLFWwindow*) { g_toolRedraw = true; });
+	glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int, int) { g_toolRedraw = true; });
+	g_toolRedraw = true;
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -216,8 +227,14 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		}
 	} else {
 		bool running = true;
+		// Pacing (frame_pacing.h): wait for events instead of spinning, present
+		// only changed frames. `nextWait` is decided at the bottom of each pass.
+		FramePacing::Pacer pacer;
+		double nextWait = 0.0;
 		while (running) {
-			glfwPollEvents();
+			if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
+			else glfwPollEvents();
+			pacer.BeginFrame(glfwGetTime());
 			ImGui_ImplOpenGL3_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
 			ImGui::NewFrame();
@@ -247,13 +264,23 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 
 			ImGui::PopFont();
 			ImGui::Render();
-			int fbW = 0, fbH = 0;
-			glfwGetFramebufferSize(win, &fbW, &fbH);
-			glViewport(0, 0, fbW, fbH);
-			glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
-			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-			glfwSwapBuffers(win);
+			FramePacing::Inputs pace;
+			pace.now = glfwGetTime();
+			pace.iconified = glfwGetWindowAttrib(win, GLFW_ICONIFIED) != 0;
+			pace.activity = FramePacing::ImGuiActivity();
+			pace.busy = panel.CloseState() == ToolCloseState::Asking; // a prompt answered over frames
+			pace.forceRender = g_toolRedraw;
+			g_toolRedraw = false;
+			if (pacer.ShouldRender(pace, ImGui::GetDrawData())) {
+				int fbW = 0, fbH = 0;
+				glfwGetFramebufferSize(win, &fbW, &fbH);
+				glViewport(0, 0, fbW, fbH);
+				glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
+				glClear(GL_COLOR_BUFFER_BIT);
+				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+				glfwSwapBuffers(win);
+			}
+			nextWait = pacer.WaitSeconds(glfwGetTime());
 
 			// After the frame is on screen, so a modal dialog does not appear over a
 			// half-drawn window and a long pause does not eat a frame the user is

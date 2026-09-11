@@ -10,6 +10,7 @@
 
 #include "sys_local.h"
 #include "translation_manager.h"
+#include "startup_trace.h"
 #include "../../../host/hang_watch.h"
 
 #include "core.h"
@@ -533,6 +534,7 @@ void sys_main_c::Error(const char *fmt, ...)
 	// destructors would walk a half-built map (or deadlock on a heap lock it
 	// died holding). It finishes in about a second, so wait for it.
 	translation_wait_ready();
+	HangWatch::Stop(); // joined here rather than killed mid-report by ExitProcess
 	ExitProcess(0);
 #else
 	std::exit(0);
@@ -713,7 +715,9 @@ bool sys_main_c::Run(int argc, char** argv)
 		}
 
 		// Shutdown engine
+		startup_trace_mark("shutdown: frame loop left, core shutting down");
 		core->Shutdown();
+		startup_trace_mark("shutdown: core shutdown complete");
 	}
 #ifdef _WIN32
 	catch (EXCEPTION_POINTERS* exPtr) {
@@ -763,6 +767,12 @@ bool sys_main_c::Run(int argc, char** argv)
 	sys_IVideo::FreeHandle(video);
 	sys_IConsole::FreeHandle(conWin);
 	IConsole::FreeHandle(con);
+	// Paired with the Start() above. Left running, the watchdog thread would be
+	// found joinable by the DLL's static destructors and the process would die
+	// by std::terminate (0xC0000409) after a Windows Error Reporting cycle --
+	// the seconds the launcher used to wait for after POB was closed.
+	HangWatch::Stop();
+	startup_trace_mark("shutdown: system handles freed, Run returning");
 
 	return restartFlag;
 }

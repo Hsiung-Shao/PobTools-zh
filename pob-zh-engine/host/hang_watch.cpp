@@ -41,7 +41,13 @@ char                            g_stage[kStageMax] = {};
 std::atomic<unsigned long long> g_stageSince{0};
 
 DWORD           g_mainTid = 0;
-std::thread     g_watch;
+// On the heap, never a namespace-scope std::thread: this file is linked into
+// both the exe and SimpleGraphic.dll, and a static std::thread that is still
+// joinable when static destructors run is std::terminate -- abort, 0xC0000409,
+// and a Windows Error Reporting cycle that held the exiting POB process (and
+// the launcher waiting on it) for seconds in v1.4.0. Stop() joins and deletes
+// it on the orderly paths; on ExitProcess paths the thread is simply killed.
+std::thread*    g_watch = nullptr;
 HANDLE          g_stopEvt = nullptr;
 std::string     g_role    = "app";
 std::string     g_game;
@@ -583,15 +589,24 @@ void HangWatch::Start(const Options& opt)
 	if (!g_prevFilter) g_prevFilter = SetUnhandledExceptionFilter(&HangWatch::CrashFilter);
 	g_stopEvt = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 	g_running.store(true);
-	g_watch = std::thread(WatchLoop);
+	g_watch = new std::thread(WatchLoop);
 }
 
 void HangWatch::Stop()
 {
 	if (!g_running.exchange(false)) return;
 	if (g_stopEvt) SetEvent(g_stopEvt);
-	if (g_watch.joinable()) g_watch.join();
+	if (g_watch) {
+		if (g_watch->joinable()) g_watch->join();
+		delete g_watch;
+		g_watch = nullptr;
+	}
 	if (g_stopEvt) { CloseHandle(g_stopEvt); g_stopEvt = nullptr; }
+}
+
+bool HangWatch::RunningForTest()
+{
+	return g_running.load() && g_watch != nullptr;
 }
 
 void HangWatch::Beat()

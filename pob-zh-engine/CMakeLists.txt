@@ -366,6 +366,9 @@ if (WIN32)
         host/error_log_selftest.cpp
         host/hang_watch.cpp
         host/hang_watch_selftest.cpp
+        # idle / minimised / unchanged-frame pacing of the ImGui loops
+        host/frame_pacing.cpp
+        host/frame_pacing_selftest.cpp
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp

@@ -9,6 +9,7 @@
 #include "changelog.h"
 #include "error_log.h"
 #include "hang_watch.h"       // heartbeat, and the POB windows the watchdog asks after
+#include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
 #include "window_dock.h"
@@ -54,6 +55,10 @@
 // Deliberately NOT glfwSetWindowUserPointer: the ImGui GLFW backend claims that
 // pointer for its own data.
 static WindowDock::Dock* g_launcherDock = nullptr;
+// Set by the refresh / framebuffer-size callbacks and by the atlas swaps: the
+// next frame is presented even if its draw data matches the last one. See
+// frame_pacing.h for why frames are otherwise skipped.
+static bool g_launcherRedraw = true;
 
 // Logical (unscaled) window sizes; multiplied by `scale` (monitor content scale
 // times the user's font-size zoom, see LauncherZoom). The tabbed container holds
@@ -1026,6 +1031,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		});
 	}
 
+	// Frames whose draw data did not change are not presented (frame_pacing.h),
+	// so anything that invalidates what is on screen without changing the draw
+	// data has to say so: a WM_PAINT-style refresh (uncovered, restored) and a
+	// resize (the framebuffer behind the old picture is gone). Installed before
+	// the ImGui backend, which chains the callbacks it needs and leaves these.
+	glfwSetWindowRefreshCallback(win, [](GLFWwindow*) { g_launcherRedraw = true; });
+	glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int, int) { g_launcherRedraw = true; });
+	g_launcherRedraw = true;
+
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGui::GetIO().IniFilename = nullptr; // never touch the engine's imgui.ini
@@ -1338,8 +1352,16 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	bool closingPanels = false;    // ... and the embedded ones, which answer over frames
 	unsigned long closingPid = 0;  // the tab already asked to close, so it is asked once
 	double closeAskedAt = 0.0;     // when, so a cancelled save prompt can be detected
+	// Pacing (frame_pacing.h): the loop waits for events instead of spinning,
+	// and only presents frames whose draw data changed. `nextWait` is decided at
+	// the bottom of each iteration; zero on the first so the window comes up at
+	// once.
+	FramePacing::Pacer pacer;
+	double nextWait = 0.0;
 	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
-		glfwPollEvents();
+		if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
+		else glfwPollEvents();
+		pacer.BeginFrame(glfwGetTime());
 
 		// The heartbeat the watchdog thread is watching. One store per frame; if
 		// it stops for good, that thread is what writes down where we stopped.
@@ -1493,6 +1515,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			ImGui_ImplOpenGL3_CreateFontsTexture();
 			ImGui::GetIO().Fonts->ClearTexData(); // same as the swap path below
+			g_launcherRedraw = true; // new glyphs behind the same vertices
 		}
 		// The full atlas from the startup worker is ready: swap it in between
 		// frames. Order matters -- DestroyFontsTexture clears the TexID of whatever
@@ -1521,6 +1544,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			localeDrawable = ProbeLocaleCoverage(fonts, strStore, &localeMissing);
 			startup_trace_mark("full font atlas swapped in (%dx%d%s%s)", fonts.texW, fonts.texH,
 			                   fonts.dropped.empty() ? "" : " dropped=", fonts.dropped.c_str());
+			g_launcherRedraw = true; // the '?' placeholders on screen are now real glyphs
 		}
 
 		// Re-published every frame, never cached by a panel: `fontChanged` above
@@ -2874,19 +2898,39 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		ImGui::PopFont();
 		ImGui::Render();
 
-		int fbW = 0, fbH = 0;
-		glfwGetFramebufferSize(win, &fbW, &fbH);
-		glViewport(0, 0, fbW, fbH);
-		glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(win);
-		if (!glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
-			// First frame is in the swap chain: now the window can appear with
-			// content already on it.
-			glfwShowWindow(win);
-			startup_trace_mark("first frame presented, window shown");
+		// Present only when something changed (frame_pacing.h). `busy` lists
+		// every reason this loop has for wanting the fast cadence without any
+		// input: a worker or a timer that will change the picture on its own,
+		// a closing sequence that answers over frames, and the docked POB
+		// windows in tabbed mode, which are positioned from this loop.
+		FramePacing::Inputs pace;
+		pace.now = glfwGetTime();
+		pace.iconified = glfwGetWindowAttrib(win, GLFW_ICONIFIED) != 0;
+		pace.activity = FramePacing::ImGuiActivity();
+		pace.busy = fontWorker.Running() || pendingScale > 0.0f || fontChanged ||
+		            closingTabs || closingPanels || sizeDirty || updaterBusy ||
+		            ust.phase == AppUpdatePhase::Checking ||
+		            upToDateUntil > 0.0 || transNoticeUntil > 0.0 ||
+		            savedUntil > pace.now || windowModeChangedUntil > pace.now ||
+		            (tabbed && !dock.Empty());
+		pace.forceRender = g_launcherRedraw;
+		g_launcherRedraw = false;
+		if (pacer.ShouldRender(pace, ImGui::GetDrawData())) {
+			int fbW = 0, fbH = 0;
+			glfwGetFramebufferSize(win, &fbW, &fbH);
+			glViewport(0, 0, fbW, fbH);
+			glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT);
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			glfwSwapBuffers(win);
+			if (!glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
+				// First frame is in the swap chain: now the window can appear with
+				// content already on it.
+				glfwShowWindow(win);
+				startup_trace_mark("first frame presented, window shown");
+			}
 		}
+		nextWait = pacer.WaitSeconds(glfwGetTime());
 	}
 
 	syncCfgFromUi(); // host_main saves cfg after this returns

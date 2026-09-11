@@ -26,6 +26,7 @@
 #include "error_log.h"
 #include "http_client.h"
 #include "hang_watch.h"
+#include "frame_pacing.h"   // --frame-pacing-selftest
 #include "launcher_config.h"
 #include "launcher_strings_io.h"
 #include "launcher_ui.h"
@@ -257,7 +258,11 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua)
 	arg0.push_back('\0');
 	char* argv[1] = { arg0.data() };
 
-	return RunLuaFileAsWin(1, argv);
+	const int rc = RunLuaFileAsWin(1, argv);
+	// The gap between this and the launcher's "POB child exited" mark is the
+	// process teardown (DLL unloads, static destructors) nothing else can time.
+	startup_trace_mark("engine returned (code %d); process teardown follows", rc);
+	return rc;
 }
 
 // Relaunch marker, written by the engine right before it spawns POB's
@@ -563,6 +568,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--hang-probe") {
 		return RunHangProbe(dir, arg2.empty() ? 25 : _wtoi(arg2.c_str()));
 	}
+	// Spawned by --hang-selftest T11: exits with the watchdog still running and
+	// must still come back 0, promptly.
+	if (arg1 == L"--hang-exit-probe") {
+		return RunHangExitProbe();
+	}
+	// Headless: the launcher's frame pacing (idle wait, minimised = no render,
+	// unchanged draw data = no present) as a pure decision table.
+	if (arg1 == L"--frame-pacing-selftest") {
+		return RunFramePacingSelfTest(dir);
+	}
 	if (arg1 == L"--font-coverage-selftest") {
 		// headless: every shipped font must be able to draw every character the
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
@@ -776,9 +791,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		watch.role = "launcher";
 		HangWatch::Start(watch);
 	}
+	// Joined on every way out of the loop below (there are several returns). A
+	// watchdog thread still alive at exit was a std::terminate in v1.4.0:
+	// exit code 0xC0000409 and a Windows Error Reporting cycle every time the
+	// launcher closed. --hang-selftest T11 guards the same thing for the engine.
+	struct StopWatchAtExit { ~StopWatchAtExit() { HangWatch::Stop(); } } stopWatchAtExit;
 
 	for (;;) {
 		LauncherConfig cfg = LoadLauncherConfig(ini);
+		startup_trace_mark("config loaded");
 		InstallInfo installs = DetectInstalls(dir);
 		startup_trace_mark("config + installs detected");
 

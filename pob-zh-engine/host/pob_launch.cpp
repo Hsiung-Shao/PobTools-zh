@@ -1,5 +1,6 @@
 #include "pob_launch.h"
 #include "error_log.h"
+#include "../translate/startup_trace.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -238,10 +239,15 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua)
 	PROCESS_INFORMATION pi{};
 	if (!spawn(launchLua, pi)) return (unsigned long)-1;
 	CloseHandle(pi.hThread);
+	// Both ends of the wait go into the startup timeline: "closed POB, launcher
+	// came back seconds later" is only diagnosable when the child's exit and the
+	// launcher's return are on the same clock.
+	startup_trace_mark("POB child spawned (pid %lu); waiting for it to exit", (unsigned long)pi.dwProcessId);
 	WaitForSingleObject(pi.hProcess, INFINITE);
 	DWORD code = 0;
 	GetExitCodeProcess(pi.hProcess, &code);
 	CloseHandle(pi.hProcess);
+	startup_trace_mark("POB child exited (code %lu)", (unsigned long)code);
 	return code;
 }
 
