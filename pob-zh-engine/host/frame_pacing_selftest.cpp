@@ -175,6 +175,76 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		check("P4h minimised overrides busy for the wait", Near(p.WaitSeconds(20.1), kIdleWait));
 	}
 
+	// P5 -- ImGuiActivity() reads the real io, so it is checked against a real
+	// context, headless: no window, no renderer, input injected through the
+	// same event queue the GLFW backend feeds. Every branch of the OR gets a
+	// frame that trips it and a frame that does not.
+	{
+		ImGuiContext* ctx = ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.IniFilename = nullptr;
+		io.DisplaySize = ImVec2(800, 600);
+		io.DeltaTime = 1.0f / 60.0f;
+		io.Fonts->Build(); // NewFrame insists on a built atlas; nothing is ever uploaded
+		auto frame = [](void (*body)()) {
+			ImGui::NewFrame();
+			if (body) body();
+			ImGui::Render();
+		};
+		io.AddMousePosEvent(100, 100);
+		frame(nullptr); // the first position is a teleport, not a move
+		frame(nullptr);
+		check("P5 a quiet frame is not activity", !ImGuiActivity());
+		io.AddMousePosEvent(120, 100);
+		frame(nullptr);
+		check("P5b mouse movement is", ImGuiActivity());
+		frame(nullptr);
+		check("P5c and the frame after it is quiet again", !ImGuiActivity());
+		io.AddMouseButtonEvent(0, true);
+		frame(nullptr);
+		check("P5d a held mouse button is", ImGuiActivity());
+		io.AddMouseButtonEvent(0, false);
+		frame(nullptr);
+		frame(nullptr);
+		check("P5e released, quiet", !ImGuiActivity());
+		io.AddMouseWheelEvent(0.0f, 1.0f);
+		frame(nullptr);
+		check("P5f the wheel is", ImGuiActivity());
+		frame(nullptr);
+		check("P5g wheel gone, quiet", !ImGuiActivity());
+		io.AddKeyEvent(ImGuiKey_A, true);
+		frame(nullptr);
+		check("P5h a held key is", ImGuiActivity());
+		io.AddKeyEvent(ImGuiKey_A, false);
+		frame(nullptr);
+		frame(nullptr);
+		check("P5i key released, quiet", !ImGuiActivity());
+		frame([] {
+			ImGui::Begin("w");
+			ImGui::OpenPopup("p");
+			if (ImGui::BeginPopup("p")) { ImGui::TextUnformatted("x"); ImGui::EndPopup(); }
+			ImGui::End();
+		});
+		check("P5j an open popup is", ImGuiActivity());
+		frame([] {
+			ImGui::Begin("w");
+			if (ImGui::BeginPopup("p")) { ImGui::CloseCurrentPopup(); ImGui::EndPopup(); }
+			ImGui::End();
+		});
+		frame([] { ImGui::Begin("w"); ImGui::End(); });
+		check("P5k popup closed, quiet", !ImGuiActivity());
+		static char text[16] = {};
+		frame([] {
+			ImGui::Begin("w");
+			ImGui::SetKeyboardFocusHere();
+			ImGui::InputText("##t", text, sizeof(text));
+			ImGui::End();
+		});
+		frame([] { ImGui::Begin("w"); ImGui::InputText("##t", text, sizeof(text)); ImGui::End(); });
+		check("P5l a focused text field is (caret must blink)", ImGuiActivity());
+		ImGui::DestroyContext(ctx);
+	}
+
 	line("");
 	line(g_fail ? "RESULT FAIL" : "RESULT PASS");
 
