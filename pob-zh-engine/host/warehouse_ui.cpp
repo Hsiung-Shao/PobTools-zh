@@ -97,10 +97,16 @@ public:
 		host_ = &host;
 		exeDir_ = host.exeDir;
 		state_.Load(exeDir_);
-		history_.Load(exeDir_);
+		// PoE1 only for now: no channel can read a PoE2 stash (the legacy
+		// endpoints silently ignore realm=poe2 and answer for PoE1; the OAuth
+		// stash API is PoE1-only -- verified 2026-09-11). The per-game plumbing
+		// and the PoE2 price tables stay, ready for a PoE2 stash API.
+		state_.game = "poe1";
+		history_.Load(exeDir_, state_.game);
 		i18n_.Load(exeDir_, NarrowUtf8(host.locale));
 		icons_.Init(exeDir_);
 		svc_.Init(exeDir_);
+		svc_.SetGame(state_.game);
 		// No network here: the launcher Inits every panel it opens (and the panel
 		// selftest Inits all of them); requests wait for a click.
 		return true;
@@ -119,7 +125,7 @@ public:
 				if (history_.sessionStartUtc == 0) history_.sessionStartUtc = snap.utc;
 				history_.snaps.push_back(std::move(snap));
 				history_.Prune(NowUtc());
-				if (!history_.Save(exeDir_))
+				if (!history_.Save(exeDir_, state_.game))
 					PobLog::Error("warehouse", u8"快照歷史存檔失敗");
 				svc_.AckDone();
 				st_ = svc_.Poll();
@@ -144,7 +150,7 @@ public:
 	ToolCloseState RequestClose() override
 	{
 		saveState();
-		if (!history_.snaps.empty()) history_.Save(exeDir_);
+		if (!history_.snaps.empty()) history_.Save(exeDir_, state_.game);
 		close_ = ToolCloseState::Closed;
 		return close_;
 	}
@@ -176,7 +182,7 @@ private:
 	void maybeAutoSnapshot()
 	{
 		if (state_.autoMinutes <= 0 || busy() || !st_.authOk) return;
-		if (state_.sessid.empty() || state_.league.empty() || state_.selectedTabIds.empty())
+		if (state_.sessid.empty() || state_.sel().league.empty() || state_.sel().tabIds.empty())
 			return;
 		const long long last = history_.snaps.empty() ? 0 : history_.snaps.back().utc;
 		if (last == 0) return; // the first snapshot is always a deliberate click
@@ -192,7 +198,7 @@ private:
 		a.accountName = state_.accountName;
 		a.secret = state_.sessid;
 		svc_.SetAuth(a);
-		svc_.RequestSnapshot(state_.league, state_.selectedTabIds, true);
+		svc_.RequestSnapshot(state_.sel().league, state_.sel().tabIds, true);
 	}
 
 	// ---- left column ------------------------------------------------------
@@ -200,7 +206,7 @@ private:
 	void drawSettings()
 	{
 		ImGui::TextColored(kWarn, u8"測試性質功能");
-		ImGui::TextWrapped(u8"以 POESESSID 讀取國際服 (PoE1) 倉庫。session id 等同帳號"
+		ImGui::TextWrapped(u8"以 POESESSID 讀取國際服 PoE1 倉庫。session id 等同帳號"
 		                   u8"登入權杖，僅以 Windows 使用者加密（DPAPI）存於本機，"
 		                   u8"請勿分享給任何人。日後將改接官方授權通道。");
 		ImGui::Separator();
@@ -238,14 +244,14 @@ private:
 		ImGui::Text(u8"聯盟");
 		ImGui::SetNextItemWidth(-40.0f * host_->scale);
 		if (leagues_.empty()) {
-			if (ImGui::InputText("##wh_league", &state_.league)) stateDirty_ = true;
+			if (ImGui::InputText("##wh_league", &state_.sel().league)) stateDirty_ = true;
 		} else {
-			if (ImGui::BeginCombo("##wh_league_c", state_.league.c_str())) {
+			if (ImGui::BeginCombo("##wh_league_c", state_.sel().league.c_str())) {
 				for (const std::string& l : leagues_) {
-					if (ImGui::Selectable(l.c_str(), l == state_.league)) {
-						if (state_.league != l) {
-							state_.league = l;
-							state_.selectedTabIds.clear();
+					if (ImGui::Selectable(l.c_str(), l == state_.sel().league)) {
+						if (state_.sel().league != l) {
+							state_.sel().league = l;
+							state_.sel().tabIds.clear();
 							tabs_.clear();
 							stateDirty_ = true;
 						}
@@ -263,34 +269,34 @@ private:
 		ImGui::EndDisabled();
 
 		ImGui::Separator();
-		ImGui::BeginDisabled(busy() || !st_.authOk || state_.league.empty());
+		ImGui::BeginDisabled(busy() || !st_.authOk || state_.sel().league.empty());
 		if (ImGui::Button(u8"取得倉庫分頁清單")) {
 			StashAuth a;
 			a.accountName = state_.accountName;
 			a.secret = state_.sessid;
 			svc_.SetAuth(a);
 			svc_.AckDone();
-			svc_.RequestTabList(state_.league);
+			svc_.RequestTabList(state_.sel().league);
 		}
 		ImGui::EndDisabled();
 
 		if (!tabs_.empty()) {
 			ImGui::TextColored(kDim, u8"勾選要統計的分頁（%d 個已選）",
-			                   (int)state_.selectedTabIds.size());
+			                   (int)state_.sel().tabIds.size());
 			ImGui::BeginChild("##wh_tabs", ImVec2(0, 220.0f * host_->scale), true);
 			for (const StashTabInfo& t : tabs_) {
-				bool sel = std::find(state_.selectedTabIds.begin(),
-				                     state_.selectedTabIds.end(),
-				                     t.id) != state_.selectedTabIds.end();
+				bool sel = std::find(state_.sel().tabIds.begin(),
+				                     state_.sel().tabIds.end(),
+				                     t.id) != state_.sel().tabIds.end();
 				std::string label = t.name + "##" + t.id;
 				if (ImGui::Checkbox(label.c_str(), &sel)) {
 					if (sel) {
-						state_.selectedTabIds.push_back(t.id);
+						state_.sel().tabIds.push_back(t.id);
 					} else {
-						state_.selectedTabIds.erase(
-						    std::remove(state_.selectedTabIds.begin(),
-						                state_.selectedTabIds.end(), t.id),
-						    state_.selectedTabIds.end());
+						state_.sel().tabIds.erase(
+						    std::remove(state_.sel().tabIds.begin(),
+						                state_.sel().tabIds.end(), t.id),
+						    state_.sel().tabIds.end());
 					}
 					stateDirty_ = true;
 				}
@@ -355,8 +361,8 @@ private:
 
 	void drawMain()
 	{
-		const bool canSnap = !busy() && st_.authOk && !state_.league.empty() &&
-		                     !state_.selectedTabIds.empty() && !state_.sessid.empty();
+		const bool canSnap = !busy() && st_.authOk && !state_.sel().league.empty() &&
+		                     !state_.sel().tabIds.empty() && !state_.sessid.empty();
 		ImGui::BeginDisabled(!canSnap);
 		if (ImGui::Button(u8"立即快照", ImVec2(120.0f * host_->scale, 0))) {
 			svc_.AckDone();
@@ -936,7 +942,7 @@ private:
 			if (ImGui::BeginPopupContextItem("##snap_ctx")) {
 				if (s.utc != history_.sessionStartUtc && ImGui::MenuItem(u8"設為起點")) {
 					history_.sessionStartUtc = s.utc;
-					history_.Save(exeDir_);
+					history_.Save(exeDir_, state_.game);
 				}
 				ImGui::EndPopup();
 			}

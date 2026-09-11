@@ -39,6 +39,12 @@ std::string IconArtPath(const std::string& url)
 	return p;
 }
 
+// The legacy endpoints' realm parameter for a game id.
+std::string RealmOf(const std::string& game)
+{
+	return game == "poe2" ? "poe2" : "pc";
+}
+
 } // namespace
 
 void WarehouseAggregateItems(const std::vector<StashItemRaw>& items, Snapshot& snap)
@@ -82,7 +88,12 @@ void WarehousePriceSnapshot(Snapshot& snap,
 	const bool haveMarket = lookup != nullptr;
 	for (SnapshotLine& line : snap.lines) {
 		NinjaPrice p;
-		if (lookup && lookup(line.key, &p) && !p.lowConfidence && p.chaos > 0) {
+		bool found = lookup && lookup(line.key, &p);
+		// PoE2 support gems trade on the Currency Exchange, so their price sits
+		// under the exchange namespace by plain name, not under a bracket key.
+		if (!found && lookup && line.key.rfind("gem|", 0) == 0)
+			found = lookup(NinjaExchangeKey(line.dispEn), &p);
+		if (found && !p.lowConfidence && p.chaos > 0) {
 			line.chaosEach = p.chaos;
 			line.chaosTotal = p.chaos * (double)line.count;
 			line.priced = true;
@@ -134,17 +145,41 @@ StashAuth WarehouseService::authCopy()
 	return auth_;
 }
 
+void WarehouseService::SetGame(const std::string& game)
+{
+	{
+		std::lock_guard<std::mutex> lk(cmdMx_);
+		game_ = game == "poe2" ? "poe2" : "poe1";
+	}
+	// Everything the status holds is per realm: a PoE1 tab list, league list or
+	// session check says nothing about PoE2.
+	std::lock_guard<std::mutex> lk(stMx_);
+	st_.tabs.clear();
+	st_.tabsReady = false;
+	st_.leagues.clear();
+	st_.leaguesReady = false;
+	st_.authOk = false;
+	st_.authFailed = false;
+	st_.blocked = false;
+}
+
 void WarehouseService::RequestVerify()
 {
 	std::lock_guard<std::mutex> lk(cmdMx_);
-	cmdQ_.push_back(Cmd{ Cmd::Kind::Verify });
+	Cmd c;
+	c.kind = Cmd::Kind::Verify;
+	c.game = game_;
+	cmdQ_.push_back(std::move(c));
 	cmdCv_.notify_all();
 }
 
 void WarehouseService::RequestLeagues()
 {
 	std::lock_guard<std::mutex> lk(cmdMx_);
-	cmdQ_.push_back(Cmd{ Cmd::Kind::Leagues });
+	Cmd c;
+	c.kind = Cmd::Kind::Leagues;
+	c.game = game_;
+	cmdQ_.push_back(std::move(c));
 	cmdCv_.notify_all();
 }
 
@@ -154,6 +189,7 @@ void WarehouseService::RequestTabList(const std::string& league)
 	c.kind = Cmd::Kind::ListTabs;
 	c.league = league;
 	std::lock_guard<std::mutex> lk(cmdMx_);
+	c.game = game_;
 	cmdQ_.push_back(std::move(c));
 	cmdCv_.notify_all();
 }
@@ -168,6 +204,7 @@ void WarehouseService::RequestSnapshot(const std::string& league,
 	c.tabIds = tabIds;
 	c.withPricing = withPricing;
 	std::lock_guard<std::mutex> lk(cmdMx_);
+	c.game = game_;
 	cmdQ_.push_back(std::move(c));
 	cmdCv_.notify_all();
 }
@@ -236,9 +273,9 @@ void WarehouseService::workerLoop()
 		// becomes an Error phase the UI can show, not a crash.
 		try {
 			switch (cmd.kind) {
-			case Cmd::Kind::Verify: doVerify(auth); break;
-			case Cmd::Kind::Leagues: doLeagues(); break;
-			case Cmd::Kind::ListTabs: doListTabs(auth, cmd.league); break;
+			case Cmd::Kind::Verify: doVerify(auth, cmd); break;
+			case Cmd::Kind::Leagues: doLeagues(cmd); break;
+			case Cmd::Kind::ListTabs: doListTabs(auth, cmd); break;
 			case Cmd::Kind::Snapshot: doSnapshot(auth, cmd); break;
 			}
 		} catch (const std::exception& e) {
@@ -249,10 +286,10 @@ void WarehouseService::workerLoop()
 	}
 }
 
-void WarehouseService::doVerify(const StashAuth& auth)
+void WarehouseService::doVerify(const StashAuth& auth, const Cmd& cmd)
 {
 	setPhase(WarehousePhase::Verifying, u8"驗證 session 中…");
-	auto provider = CreateSessidStashProvider(auth);
+	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
 	std::string err;
 	StashError kind = StashError::None;
 	if (!provider->Verify(&err, &kind, &stop_)) {
@@ -269,12 +306,12 @@ void WarehouseService::doVerify(const StashAuth& auth)
 	}
 }
 
-void WarehouseService::doLeagues()
+void WarehouseService::doLeagues(const Cmd& cmd)
 {
 	setPhase(WarehousePhase::ListingTabs, u8"取得聯盟清單中…");
 	std::vector<std::string> leagues;
 	std::string err;
-	if (!FetchNinjaLeagues(leagues, &err, &stop_)) {
+	if (!FetchNinjaLeagues(cmd.game, leagues, &err, &stop_)) {
 		noteError(StashError::Network, err);
 		return;
 	}
@@ -285,14 +322,14 @@ void WarehouseService::doLeagues()
 	st_.message = u8"聯盟清單已更新";
 }
 
-void WarehouseService::doListTabs(const StashAuth& auth, const std::string& league)
+void WarehouseService::doListTabs(const StashAuth& auth, const Cmd& cmd)
 {
 	setPhase(WarehousePhase::ListingTabs, u8"取得倉庫分頁清單中…");
-	auto provider = CreateSessidStashProvider(auth);
+	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
 	std::vector<StashTabInfo> tabs;
 	std::string err;
 	StashError kind = StashError::None;
-	if (!provider->ListTabs(league, tabs, &err, &kind, &stop_)) {
+	if (!provider->ListTabs(cmd.league, tabs, &err, &kind, &stop_)) {
 		noteError(kind, err);
 		return;
 	}
@@ -309,7 +346,7 @@ void WarehouseService::doListTabs(const StashAuth& auth, const std::string& leag
 void WarehouseService::doSnapshot(const StashAuth& auth, const Cmd& cmd)
 {
 	setPhase(WarehousePhase::ListingTabs, u8"取得倉庫分頁清單中…");
-	auto provider = CreateSessidStashProvider(auth);
+	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
 	std::vector<StashTabInfo> tabs;
 	std::string err;
 	StashError kind = StashError::None;
@@ -367,7 +404,7 @@ void WarehouseService::doSnapshot(const StashAuth& auth, const Cmd& cmd)
 		std::string nerr;
 		// A pricing failure downgrades the snapshot to counts-only; it is still a
 		// snapshot, and the totals stay honestly at zero.
-		if (!ninja_.Refresh(cmd.league, false, &nerr, &stop_))
+		if (!ninja_.Refresh(cmd.game, cmd.league, false, &nerr, &stop_))
 			PobLog::Error("warehouse", u8"估價來源失敗（快照退化為僅數量）: " + nerr);
 		divineRate = ninja_.DivineRate();
 	}

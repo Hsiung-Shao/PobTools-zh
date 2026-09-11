@@ -56,13 +56,16 @@ struct SnapshotDiff {
 
 SnapshotDiff DiffSnapshots(const Snapshot& from, const Snapshot& to);
 
-// The whole history: PobTools\warehouse_poe1.json.
+// The whole history of one game: PobTools\warehouse_<poe1|poe2>.json. One file
+// per game -- a PoE2 snapshot diffed against a PoE1 one would be nonsense.
 struct WarehouseHistory {
 	std::vector<Snapshot> snaps;     // utc ascending
 	long long sessionStartUtc = 0;   // utc of the snapshot marked "session start"; 0 = none
 
-	bool Load(const std::wstring& exeDir);        // absent/corrupt -> empty, not an error
-	bool Save(const std::wstring& exeDir) const;  // atomic (.tmp -> MoveFileExW)
+	// absent/corrupt -> empty, not an error
+	bool Load(const std::wstring& exeDir, const std::string& game = "poe1");
+	// atomic (.tmp -> MoveFileExW)
+	bool Save(const std::wstring& exeDir, const std::string& game = "poe1") const;
 
 	// Keeps the file bounded: beyond 48h old, one snapshot per hour (the last of
 	// each hour); at most 200 total (oldest dropped first). The session-start

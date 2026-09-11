@@ -37,6 +37,11 @@ public:
 	// a mid-job change applies from the next command on.
 	void SetAuth(const StashAuth& a);
 
+	// Main thread. "poe1" / "poe2": which realm and which price table later
+	// requests use (captured into each command when it is queued). Clears the
+	// per-realm status (tab/league lists, session verdict).
+	void SetGame(const std::string& game);
+
 	void RequestVerify();
 	void RequestLeagues();                        // poe.ninja league list
 	void RequestTabList(const std::string& league);
@@ -64,15 +69,16 @@ public:
 private:
 	struct Cmd {
 		enum class Kind { Verify, Leagues, ListTabs, Snapshot } kind = Kind::Verify;
+		std::string game = "poe1"; // captured when queued
 		std::string league;
 		std::vector<std::string> tabIds;
 		bool withPricing = true;
 	};
 
 	void workerLoop();
-	void doVerify(const StashAuth& auth);
-	void doLeagues();
-	void doListTabs(const StashAuth& auth, const std::string& league);
+	void doVerify(const StashAuth& auth, const Cmd& cmd);
+	void doLeagues(const Cmd& cmd);
+	void doListTabs(const StashAuth& auth, const Cmd& cmd);
 	void doSnapshot(const StashAuth& auth, const Cmd& cmd);
 	void setPhase(WarehousePhase p, const std::string& msg);
 	StashAuth authCopy();
@@ -85,6 +91,7 @@ private:
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;
 	std::deque<Cmd> cmdQ_;
+	std::string game_ = "poe1"; // guarded by cmdMx_
 
 	std::mutex authMx_;
 	StashAuth auth_;

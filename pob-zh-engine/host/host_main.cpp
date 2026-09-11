@@ -500,8 +500,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunWarehouseSelfTest(dir);
 	}
 	// ONLINE probe of the sessid stash channel (deliberately not a selftest).
+	//   --warehouse-probe [pc|poe2] [league]
 	if (arg1 == L"--warehouse-probe") {
-		return RunWarehouseProbe(dir);
+		return RunWarehouseProbe(dir, arg2, arg3);
 	}
 
 	// Headless filter-editor data-layer check (synthetic cases; console report).

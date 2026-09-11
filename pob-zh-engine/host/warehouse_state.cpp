@@ -145,12 +145,22 @@ bool WarehouseUiState::Load(const std::wstring& exeDir)
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		accountName = doc.value("accountName", std::string());
-		league = doc.value("league", std::string());
-		selectedTabIds.clear();
-		auto jt = doc.find("selectedTabIds");
-		if (jt != doc.end() && jt->is_array())
-			for (const auto& t : *jt)
-				if (t.is_string()) selectedTabIds.push_back(t.get<std::string>());
+		game = doc.value("game", std::string());
+		if (game != "poe1" && game != "poe2") game.clear();
+		auto readSel = [](const ordered_json& o, WarehouseGameSel& s) {
+			s.league = o.value("league", std::string());
+			s.tabIds.clear();
+			auto jt = o.find("selectedTabIds");
+			if (jt != o.end() && jt->is_array())
+				for (const auto& t : *jt)
+					if (t.is_string()) s.tabIds.push_back(t.get<std::string>());
+		};
+		// Files written before PoE2 support kept PoE1's picks at the top level.
+		auto j1 = doc.find("poe1");
+		readSel(j1 != doc.end() && j1->is_object() ? *j1 : doc, poe1);
+		auto j2 = doc.find("poe2");
+		if (j2 != doc.end() && j2->is_object()) readSel(*j2, poe2);
+		else poe2 = WarehouseGameSel{};
 		autoMinutes = doc.value("autoMinutes", 0);
 		if (autoMinutes != 0 && autoMinutes < 5) autoMinutes = 5;
 		// The toggle is gone from the UI: values auto-convert (>= 1 divine shows
@@ -171,8 +181,15 @@ bool WarehouseUiState::Save(const std::wstring& exeDir) const
 	ordered_json doc;
 	doc["schema"] = 1;
 	doc["accountName"] = accountName;
-	doc["league"] = league;
-	doc["selectedTabIds"] = selectedTabIds;
+	doc["game"] = game;
+	auto writeSel = [](const WarehouseGameSel& s) {
+		ordered_json o;
+		o["league"] = s.league;
+		o["selectedTabIds"] = s.tabIds;
+		return o;
+	};
+	doc["poe1"] = writeSel(poe1);
+	doc["poe2"] = writeSel(poe2);
 	doc["autoMinutes"] = autoMinutes;
 	doc["showDivine"] = showDivine;
 	// The plain session id is deliberately not representable in this file.

@@ -17,6 +17,7 @@
 
 #include <json.hpp>
 
+#include <algorithm>
 #include <climits>
 
 using nlohmann::ordered_json;
@@ -101,7 +102,8 @@ bool ParseStashTabJson(const std::string& body, int tabIndex,
 	if (!doc.is_object()) return fail(u8"回應不是 JSON 物件");
 	// GGG's own refusals come back as 200 with {"error":{...}} -- surface the
 	// shape without copying the message (it is not ours and not localised).
-	if (doc.find("error") != doc.end()) return fail(u8"API 回應帶有錯誤");
+	if (doc.find("error") != doc.end())
+		return fail(u8"API 回應帶有錯誤: " + StashApiErrorText(body));
 
 	if (tabs) {
 		tabs->clear();
@@ -264,23 +266,41 @@ namespace {
 
 class SessidStashProvider : public IStashProvider {
 public:
-	explicit SessidStashProvider(const StashAuth& auth)
-	    : auth_(auth), http_(kHost)
+	SessidStashProvider(const StashAuth& auth, const std::string& realm)
+	    : auth_(auth), realm_(realm.empty() ? std::string("pc") : realm), http_(kHost)
 	{
 		throttle_.SetMinIntervalMs(1000);
 	}
 
-	bool Verify(std::string* err, StashError* kind,
-	            const std::atomic<bool>* cancel) override
+	bool Verify(std::string* err, StashError* kind, const std::atomic<bool>* cancel,
+	            std::vector<std::string>* charLeagues = nullptr) override
 	{
 		HttpResult res;
-		if (!request(L"/character-window/get-characters", res, err, kind, cancel))
-			return false;
+		// PoE1 keeps the historical parameterless call (known-good); any other
+		// realm must be named or the server answers for PoE1.
+		std::wstring path = L"/character-window/get-characters";
+		if (realm_ != "pc") path += L"?realm=" + UrlEncode(realm_);
+		if (!request(path, res, err, kind, cancel)) return false;
 		// A dead session is a redirect to the login page: WinHTTP follows it and
 		// hands back 200 with HTML, so "is it a JSON array" IS the check.
 		try {
 			ordered_json doc = ordered_json::parse(res.body);
-			if (doc.is_array()) return true;
+			if (doc.is_array()) {
+				if (charLeagues) {
+					charLeagues->clear();
+					for (const auto& c : doc) {
+						if (!c.is_object()) continue;
+						auto jl = c.find("league");
+						if (jl == c.end() || !jl->is_string()) continue;
+						std::string l = jl->get<std::string>();
+						if (!l.empty() &&
+						    std::find(charLeagues->begin(), charLeagues->end(), l) ==
+						        charLeagues->end())
+							charLeagues->push_back(std::move(l));
+					}
+				}
+				return true;
+			}
 		} catch (const std::exception&) {
 		}
 		if (kind) *kind = StashError::Auth;
@@ -321,11 +341,45 @@ public:
 		return true;
 	}
 
+	// Four different 403s, told apart by the body:
+	//   JSON                  -> GGG refusing this session (Auth)
+	//   Cloudflare challenge  -> edge protection (Blocked); re-entering the
+	//                            session id would not help
+	//   "Permission Denied"   -> GGG's own page for an unauthenticated request:
+	//                            byte-identical with the stored cookie and with
+	//                            no cookie at all (2026-09-11), i.e. the session
+	//                            expired -- or the account name does not match it
+	//   any other HTML page   -> the site refusing this REQUEST (Forbidden)
+	// Lumping the HTML ones together once reported an expired session as
+	// "blocked by Cloudflare".
+	static StashError classify403(const std::string& body, std::string* err)
+	{
+		if (!looksLikeLoginPage(body)) {
+			if (err) *err = u8"session 無效或已過期 (HTTP 403)";
+			return StashError::Auth;
+		}
+		if (looksLikeCloudflare(body)) {
+			if (err) *err = u8"請求被網站防護 (Cloudflare) 阻擋 (HTTP 403)，稍後再試";
+			return StashError::Blocked;
+		}
+		if (lowerHead(body, body.size()).find("permission denied") != std::string::npos) {
+			if (err)
+				*err = u8"權限被拒 (HTTP 403)：POESESSID 已過期，或帳號名稱與此 session 不符";
+			return StashError::Auth;
+		}
+		const std::string title = htmlTitle(body);
+		if (err)
+			*err = u8"網站拒絕此請求 (HTTP 403" +
+			       (title.empty() ? std::string() : ": " + title) + ")";
+		return StashError::Forbidden;
+	}
+
 private:
 	std::wstring stashPath(const std::string& league, int tabIndex, bool wantTabs) const
 	{
 		std::wstring p = L"/character-window/get-stash-items?accountName=" +
-		                 UrlEncode(auth_.accountName) + L"&realm=pc&league=" +
+		                 UrlEncode(auth_.accountName) + L"&realm=" + UrlEncode(realm_) +
+		                 L"&league=" +
 		                 UrlEncode(league) + L"&tabs=" + (wantTabs ? L"1" : L"0") +
 		                 L"&tabIndex=" + std::to_wstring(tabIndex);
 		return p;
@@ -338,6 +392,51 @@ private:
 			return c == '<';
 		}
 		return false;
+	}
+
+	static std::string lowerHead(const std::string& body, size_t n)
+	{
+		std::string s = body.substr(0, n);
+		for (char& c : s)
+			if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+		return s;
+	}
+
+	// Cloudflare's challenge / block pages, by their own fixed markers. Two
+	// markers that look right and are NOT: the word "cloudflare" (ordinary pages
+	// carry /cdn-cgi/ links) and "challenge-platform" -- Cloudflare's JS
+	// detection script (/cdn-cgi/challenge-platform/scripts/jsd/main.js) is
+	// injected into EVERY page, including GGG's own "Permission Denied" page,
+	// which it would then misreport as a Cloudflare block.
+	static bool looksLikeCloudflare(const std::string& body)
+	{
+		const std::string s = lowerHead(body, body.size());
+		return s.find("just a moment") != std::string::npos ||
+		       s.find("cf-chl") != std::string::npos ||
+		       s.find("attention required") != std::string::npos;
+	}
+
+	// The page's <title>, trimmed and capped: short, never secret, and exactly
+	// what tells two HTML refusals apart in a report.
+	static std::string htmlTitle(const std::string& body)
+	{
+		const std::string s = lowerHead(body, 16384);
+		size_t a = s.find("<title");
+		if (a == std::string::npos) return std::string();
+		a = s.find('>', a);
+		if (a == std::string::npos) return std::string();
+		size_t b = s.find("</title>", ++a);
+		if (b == std::string::npos) return std::string();
+		std::string t = body.substr(a, b - a);
+		std::string out;
+		for (char c : t) {
+			if (c == '\r' || c == '\n' || c == '\t') c = ' ';
+			if (c == ' ' && (out.empty() || out.back() == ' ')) continue;
+			out += c;
+		}
+		while (!out.empty() && out.back() == ' ') out.pop_back();
+		if (out.size() > 80) out.resize(80);
+		return out;
 	}
 
 	// Shared request path: throttle, send with the cookie, classify the status.
@@ -385,36 +484,67 @@ private:
 			if (kind) *kind = StashError::Auth;
 			if (err) *err = u8"session 無效或已過期 (HTTP 401)";
 			return false;
-		case 403:
-			// GGG's own 403 is JSON; an HTML body is the edge protection speaking,
-			// and telling the user to re-enter their session id would be wrong.
-			if (looksLikeLoginPage(res.body)) {
-				if (kind) *kind = StashError::Blocked;
-				if (err) *err = u8"請求被網站防護阻擋 (HTTP 403)，稍後再試";
-			} else {
-				if (kind) *kind = StashError::Auth;
-				if (err) *err = u8"session 無效或已過期 (HTTP 403)";
-			}
+		case 403: {
+			const StashError k = classify403(res.body, err);
+			if (kind) *kind = k;
 			return false;
+		}
 		case 429:
 			if (kind) *kind = StashError::RateLimited;
 			if (err) *err = u8"請求過於頻繁 (HTTP 429)，已自動退避";
 			return false;
-		default:
-			if (kind) *kind = StashError::Network;
-			if (err) *err = "HTTP " + std::to_string(res.status);
+		default: {
+			// GGG answers malformed or unsupported requests with 400/404 and a
+			// JSON {"error":{...}} whose message is the only thing that says WHY
+			// (a bare "HTTP 400" once left a realm question unanswerable).
+			const std::string why = StashApiErrorText(res.body);
+			const bool refused = res.status == 400 || res.status == 404;
+			if (kind) *kind = refused ? StashError::Forbidden : StashError::Network;
+			if (err)
+				*err = "HTTP " + std::to_string(res.status) +
+				       (why.empty() ? std::string() : ": " + why);
 			return false;
+		}
 		}
 	}
 
 	StashAuth auth_;
+	std::string realm_; // "pc" or "poe2"
 	HttpsClient http_;
 	SimpleThrottle throttle_;
 };
 
 } // namespace
 
-std::unique_ptr<IStashProvider> CreateSessidStashProvider(const StashAuth& auth)
+std::unique_ptr<IStashProvider> CreateSessidStashProvider(const StashAuth& auth,
+                                                          const std::string& realm)
 {
-	return std::make_unique<SessidStashProvider>(auth);
+	return std::make_unique<SessidStashProvider>(auth, realm);
+}
+
+StashError ClassifyStash403(const std::string& body, std::string* err)
+{
+	return SessidStashProvider::classify403(body, err);
+}
+
+std::string StashApiErrorText(const std::string& body)
+{
+	try {
+		ordered_json doc = ordered_json::parse(body);
+		if (!doc.is_object()) return std::string();
+		auto je = doc.find("error");
+		if (je == doc.end() || !je->is_object()) return std::string();
+		std::string msg;
+		auto jm = je->find("message");
+		if (jm != je->end() && jm->is_string()) msg = jm->get<std::string>();
+		auto jc = je->find("code");
+		if (jc != je->end() && jc->is_number_integer()) {
+			const std::string code = std::to_string(jc->get<long long>());
+			msg = msg.empty() ? "code " + code : msg + " (code " + code + ")";
+		}
+		if (msg.size() > 120) msg.resize(120);
+		return msg;
+	} catch (const std::exception&) {
+		return std::string();
+	}
 }

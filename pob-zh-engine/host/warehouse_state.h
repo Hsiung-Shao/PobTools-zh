@@ -10,10 +10,20 @@
 #include <string>
 #include <vector>
 
+// What the player picked for one game. Kept per game: a PoE1 league name or tab
+// id means nothing on the PoE2 realm, and switching must not lose either side.
+struct WarehouseGameSel {
+	std::string league;
+	std::vector<std::string> tabIds;
+};
+
 struct WarehouseUiState {
 	std::string accountName;
-	std::string league;
-	std::vector<std::string> selectedTabIds;
+	std::string game;        // "poe1" / "poe2"; empty until chosen (the panel then
+	                         // follows the launcher's game)
+	WarehouseGameSel poe1, poe2;
+	WarehouseGameSel& sel() { return game == "poe2" ? poe2 : poe1; }
+	const WarehouseGameSel& sel() const { return game == "poe2" ? poe2 : poe1; }
 	int autoMinutes = 0;     // auto-snapshot interval; 0 = off, else clamped >= 5
 	bool showDivine = true; // totals shown in divine by default (user request)
 

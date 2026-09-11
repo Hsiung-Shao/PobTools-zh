@@ -11,9 +11,11 @@ using nlohmann::ordered_json;
 
 namespace {
 
-std::wstring HistoryPath(const std::wstring& exeDir)
+std::wstring HistoryPath(const std::wstring& exeDir, const std::string& game)
 {
-	return exeDir + L"PobTools\\warehouse_poe1.json";
+	// Only the two known ids ever reach a file name.
+	return exeDir + (game == "poe2" ? L"PobTools\\warehouse_poe2.json"
+	                                : L"PobTools\\warehouse_poe1.json");
 }
 
 bool ReadAll(const std::wstring& path, std::string& out)
@@ -123,12 +125,12 @@ SnapshotDiff DiffSnapshots(const Snapshot& from, const Snapshot& to)
 	return d;
 }
 
-bool WarehouseHistory::Load(const std::wstring& exeDir)
+bool WarehouseHistory::Load(const std::wstring& exeDir, const std::string& game)
 {
 	snaps.clear();
 	sessionStartUtc = 0;
 	std::string body;
-	if (!ReadAll(HistoryPath(exeDir), body)) return false;
+	if (!ReadAll(HistoryPath(exeDir, game), body)) return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		// A newer schema is a file we cannot promise to preserve on the next
@@ -182,7 +184,7 @@ bool WarehouseHistory::Load(const std::wstring& exeDir)
 	return true;
 }
 
-bool WarehouseHistory::Save(const std::wstring& exeDir) const
+bool WarehouseHistory::Save(const std::wstring& exeDir, const std::string& game) const
 {
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 
@@ -215,7 +217,7 @@ bool WarehouseHistory::Save(const std::wstring& exeDir) const
 		arr.push_back(std::move(o));
 	}
 	doc["snaps"] = std::move(arr);
-	return WriteAtomic(HistoryPath(exeDir), doc.dump(1, '\t'));
+	return WriteAtomic(HistoryPath(exeDir, game), doc.dump(1, '\t'));
 }
 
 void WarehouseHistory::Prune(long long nowUtc)

@@ -61,6 +61,8 @@ enum class StashError {
 	RateLimited, // 429: the throttle will hold the next call back
 	Network,     // transport failure
 	Parse,       // 200 but the body did not look like stash JSON
+	Forbidden,   // 403 HTML that is neither Cloudflare nor a session answer: the
+	             // site refusing this REQUEST (e.g. a realm the endpoint lacks)
 };
 
 class IStashProvider {
@@ -70,8 +72,12 @@ public:
 	// All synchronous, worker-thread only. Each call throttles itself (minimum
 	// spacing + whatever the server's rate-limit headers demanded); the caller
 	// just calls in sequence.
+	// charLeagues (optional): the distinct leagues this account has characters
+	// in on the provider's realm -- a free by-product of the session check that
+	// tells a caller which league a stash can exist in.
 	virtual bool Verify(std::string* err, StashError* kind,
-	                    const std::atomic<bool>* cancel) = 0;
+	                    const std::atomic<bool>* cancel,
+	                    std::vector<std::string>* charLeagues = nullptr) = 0;
 	virtual bool ListTabs(const std::string& league, std::vector<StashTabInfo>& out,
 	                      std::string* err, StashError* kind,
 	                      const std::atomic<bool>* cancel) = 0;
@@ -80,7 +86,22 @@ public:
 	                      StashError* kind, const std::atomic<bool>* cancel) = 0;
 };
 
-std::unique_ptr<IStashProvider> CreateSessidStashProvider(const StashAuth& auth);
+// `realm` is the legacy endpoints' realm parameter: "pc" (PoE1, default) or
+// "poe2". The official OAuth stash API is documented PoE1-only, so whether the
+// legacy path serves PoE2 stashes is an empirical question -- --warehouse-probe
+// poe2 answers it.
+std::unique_ptr<IStashProvider> CreateSessidStashProvider(const StashAuth& auth,
+                                                          const std::string& realm = "pc");
+
+// The sessid channel's reading of an HTTP 403 body, split out so the self-test
+// can pin it with real-shaped pages. *err gets a fixed message plus at most the
+// page <title> -- never other body text.
+StashError ClassifyStash403(const std::string& body, std::string* err);
+
+// GGG's JSON error body ({"error":{"code":N,"message":"..."}}) as one short
+// line, "message (code N)"; empty when the body is not that shape. Fixed
+// server text -- safe to show and to log.
+std::string StashApiErrorText(const std::string& body);
 
 // The parse half of FetchTab/ListTabs, split out so the self-test can feed it
 // fixtures without a socket. Either output may be null when the caller only

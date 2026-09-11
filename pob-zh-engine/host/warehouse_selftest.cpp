@@ -20,6 +20,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -258,6 +260,40 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          ok && out.size() == 1 && out[0].first == "card|Abandoned Wealth" &&
 		              out[0].second.chaos == 0.22, err);
 
+		// PoE2 quotes in DIVINE (core.primary); converted to chaos at parse time
+		// via core.rates, or every PoE2 price would be off by ~11x.
+		const char kPoe2Exch[] = R"json({"core":{"primary":"divine","secondary":"chaos",
+		  "rates":{"exalted":256.8,"chaos":11.31}},
+		  "items":[{"id":"exalted","name":"Exalted Orb"}],
+		  "lines":[{"id":"exalted","primaryValue":0.1}]})json";
+		out.clear();
+		double cpd = 0.0;
+		ok = NinjaPriceSource::ParseExchangeOverview(kPoe2Exch, &out, &err, "currency|", &cpd);
+		rep.check("T3p PoE2 divine quote converted to chaos, rate from core",
+		          ok && out.size() == 1 && std::fabs(out[0].second.chaos - 1.131) < 1e-9 &&
+		              cpd == 11.31,
+		          err);
+		const char kPoe1Core[] = R"json({"core":{"primary":"chaos","secondary":"divine",
+		  "rates":{"divine":0.0025}},"items":[{"id":1,"name":"Divine Orb"}],
+		  "lines":[{"id":1,"primaryValue":400}]})json";
+		out.clear();
+		cpd = 0.0;
+		ok = NinjaPriceSource::ParseExchangeOverview(kPoe1Core, &out, &err, "currency|", &cpd);
+		rep.check("T3q PoE1 chaos quote untouched, divine rate from core",
+		          ok && out.size() == 1 && out[0].second.chaos == 400.0 &&
+		              std::fabs(cpd - 400.0) < 1e-6,
+		          err);
+		const char kPoe2Item[] = R"json({"core":{"primary":"divine","rates":{"chaos":10}},
+		  "lines":[{"name":"Redbeak","baseType":"Shortsword","primaryValue":0.5,"listingCount":40},
+		           {"name":"Troll","baseType":"Shortsword","primaryValue":2171,"listingCount":2}]})json";
+		out.clear();
+		ok = NinjaPriceSource::ParseItemOverview(kPoe2Item, "UniqueWeapons", &out, &err);
+		rep.check("T3r PoE2 unique: primaryValue->chaos, listingCount confidence",
+		          ok && out.size() == 2 && out[0].first == "unique|Redbeak|Shortsword" &&
+		              out[0].second.chaos == 5.0 && !out[0].second.lowConfidence &&
+		              out[1].second.lowConfidence,
+		          err);
+
 		const char kCurrencyOverview[] = R"json({"lines":[
 		  {"currencyTypeName":"Orb of Dominance","chaosEquivalent":804.0,
 		   "receive":{"count":11,"listing_count":25}},
@@ -334,6 +370,25 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T4e2 non-card unpriced stays unpriced",
 		          snap.unpricedKinds == (int)snap.lines.size() - 2);
 		rep.check("T4f divine rate stored", snap.divineRate == 210.0);
+
+		// PoE2 support gems: no bracket price, but an exchange price under the
+		// gem's plain name.
+		Snapshot g2;
+		SnapshotLine gl;
+		gl.key = "gem|Lineage Support|20|0";
+		gl.dispEn = "Lineage Support";
+		gl.count = 2;
+		g2.lines = { gl };
+		WarehousePriceSnapshot(
+		    g2,
+		    [](const std::string& key, NinjaPrice* o) {
+			    if (key != "currency|Lineage Support") return false;
+			    o->chaos = 30.0;
+			    return true;
+		    },
+		    0.0);
+		rep.check("T4g gem falls back to its exchange price",
+		          g2.lines[0].priced && g2.totalChaos == 60.0);
 	}
 
 	// ---- diff -------------------------------------------------------------
@@ -405,8 +460,11 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 
 		WarehouseUiState s;
 		s.accountName = "Tester#1234";
-		s.league = "Mercenaries";
-		s.selectedTabIds = { "abc123", "def456" };
+		s.game = "poe2";
+		s.poe1.league = "Mercenaries";
+		s.poe1.tabIds = { "abc123", "def456" };
+		s.poe2.league = "Forbidden Rites";
+		s.poe2.tabIds = { "p2tab" };
 		s.autoMinutes = 10;
 		s.showDivine = true;
 		s.sessid = fakeToken;
@@ -428,11 +486,30 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 
 		WarehouseUiState in;
 		rep.check("T7e state loads", in.Load(scratch));
-		rep.check("T7f fields round-trip", in.accountName == s.accountName &&
-		                                       in.league == s.league &&
-		                                       in.selectedTabIds == s.selectedTabIds &&
-		                                       in.autoMinutes == 10 && in.showDivine);
+		rep.check("T7f fields round-trip (both games' picks kept apart)",
+		          in.accountName == s.accountName && in.game == "poe2" &&
+		              in.poe1.league == s.poe1.league && in.poe1.tabIds == s.poe1.tabIds &&
+		              in.poe2.league == s.poe2.league && in.poe2.tabIds == s.poe2.tabIds &&
+		              in.autoMinutes == 10 && in.showDivine);
 		rep.check("T7g token round-trips through DPAPI", in.sessid == fakeToken);
+
+		// A settings file from before PoE2 support: its top-level picks are
+		// PoE1's, and nothing may leak into the PoE2 side.
+		const char kLegacy[] = R"({"schema":1,"accountName":"Old#1","league":"Allflame",)"
+		                       R"("selectedTabIds":["t1"],"autoMinutes":0})";
+		HANDLE lf = CreateFileW((scratch + L"PobTools\\warehouse_ui.json").c_str(),
+		                        GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+		                        FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (lf != INVALID_HANDLE_VALUE) {
+			DWORD w = 0;
+			WriteFile(lf, kLegacy, (DWORD)(sizeof(kLegacy) - 1), &w, nullptr);
+			CloseHandle(lf);
+		}
+		WarehouseUiState old;
+		rep.check("T7h pre-PoE2 file: top-level picks become PoE1's",
+		          old.Load(scratch) && old.poe1.league == "Allflame" &&
+		              old.poe1.tabIds.size() == 1 && old.poe2.league.empty() &&
+		              old.poe2.tabIds.empty() && old.game.empty());
 	}
 
 	// ---- history round-trip + prune --------------------------------------
@@ -460,6 +537,20 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              in.snaps[0].lines[0].chaosTotal == 1050.0 &&
 		              in.snaps[1].totalChaos == 1300.0);
 
+		// One file per game: a PoE2 save must leave PoE1's history alone.
+		WarehouseHistory p2;
+		Snapshot ps;
+		ps.utc = 1700009999;
+		ps.league = "Forbidden Rites";
+		ps.totalChaos = 5.0;
+		p2.snaps = { ps };
+		rep.check("T8f PoE2 history saves", p2.Save(scratch, "poe2"));
+		WarehouseHistory back1, back2;
+		rep.check("T8g PoE1 history untouched by a PoE2 save",
+		          back1.Load(scratch, "poe1") && back1.snaps.size() == 2 &&
+		              back2.Load(scratch, "poe2") && back2.snaps.size() == 1 &&
+		              back2.snaps[0].league == "Forbidden Rites");
+
 		// Prune: 6 days of 10-minute snapshots -> hourly beyond 48h, capped at 200,
 		// session start immortal.
 		WarehouseHistory big;
@@ -485,6 +576,40 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T8e still utc-ascending", ascending);
 	}
 
+	// ---- 403 classification ----------------------------------------------
+	{
+		// GGG's real "Permission Denied" page carries Cloudflare's JS-detection
+		// script (challenge-platform/scripts/jsd) like every page on the site.
+		// It once read as "blocked by Cloudflare" while the session had simply
+		// expired (2026-09-11).
+		const char kGggDenied[] =
+		    "<!DOCTYPE html><html lang=\"en\"><head><title>Path of Exile</title></head>"
+		    "<body><h2>Permission Denied</h2><p>You don't have permission to access this "
+		    "area.</p><script>var a=document.createElement('script');"
+		    "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';</script></body></html>";
+		const char kCfChallenge[] =
+		    "<!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title></head>"
+		    "<body><div id=\"cf-chl-widget\"></div></body></html>";
+		const char kOtherHtml[] =
+		    "<html><head><title>Maintenance</title></head><body>Down</body></html>";
+		std::string e;
+		rep.check("T9 GGG Permission Denied page -> Auth (not Cloudflare)",
+		          ClassifyStash403(kGggDenied, &e) == StashError::Auth, e);
+		rep.check("T9a real Cloudflare challenge -> Blocked",
+		          ClassifyStash403(kCfChallenge, &e) == StashError::Blocked, e);
+		rep.check("T9b JSON 403 -> Auth",
+		          ClassifyStash403(R"({"error":{"code":6,"message":"Forbidden"}})", &e) ==
+		              StashError::Auth,
+		          e);
+		const bool other = ClassifyStash403(kOtherHtml, &e) == StashError::Forbidden;
+		rep.check("T9c other HTML -> Forbidden, title in message",
+		          other && e.find("Maintenance") != std::string::npos, e);
+		const std::string why =
+		    StashApiErrorText(R"({"error":{"code":2,"message":"Invalid query"}})");
+		rep.check("T9d GGG JSON error surfaced as text", why == "Invalid query (code 2)", why);
+		rep.check("T9e non-JSON body yields no text", StashApiErrorText("<html></html>").empty());
+	}
+
 	PobLog::SetDirForTest(L"");
 	rep.text += rep.failures == 0
 	                ? "\nALL PASS (" + std::to_string(rep.checks) + " checks)\n"
@@ -494,13 +619,24 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 	return rep.failures == 0 ? 0 : 1;
 }
 
-int RunWarehouseProbe(const std::wstring& exeDir)
+int RunWarehouseProbe(const std::wstring& exeDir, const std::wstring& realmArg,
+                      const std::wstring& leagueArg)
 {
-	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-		FILE* f = nullptr;
-		freopen_s(&f, "CONOUT$", "w", stdout);
-	}
+	auto utf8 = [](const std::wstring& w) {
+		if (w.empty()) return std::string();
+		int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0,
+		                            nullptr, nullptr);
+		std::string s(n, '\0');
+		WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr,
+		                    nullptr);
+		return s;
+	};
+	const std::string realm = realmArg.empty() ? std::string("pc") : utf8(realmArg);
 	std::string out;
+	auto finish = [&](int code) {
+		PrintAndSave(exeDir, out, L"warehouse_probe.txt");
+		return code;
+	};
 
 	WarehouseUiState st;
 	st.Load(exeDir);
@@ -508,41 +644,124 @@ int RunWarehouseProbe(const std::wstring& exeDir)
 		out += u8"倉庫收益線上探針：尚未設定。\n"
 		       u8"先開啟工具（--warehouse）輸入帳號名與 POESESSID 並按「驗證 session」，"
 		       u8"或至少讓設定檔存在後再跑。\n";
-		printf("%s", out.c_str());
-		return 2;
+		return finish(2);
 	}
-	const std::string league = st.league.empty() ? "Standard" : st.league;
-	out += u8"帳號: " + st.accountName + u8"  聯盟: " + league + "\n";
+	out += u8"帳號: " + st.accountName + u8"  realm: " + realm + "\n";
 
 	StashAuth auth;
 	auth.accountName = st.accountName;
 	auth.secret = st.sessid;
-	auto provider = CreateSessidStashProvider(auth);
+	auto provider = CreateSessidStashProvider(auth, realm);
 
 	std::string err;
 	StashError kind = StashError::None;
+	std::vector<std::string> charLeagues;
 	DWORD t0 = GetTickCount();
-	if (!provider->Verify(&err, &kind, nullptr)) {
+	if (!provider->Verify(&err, &kind, nullptr, &charLeagues)) {
 		out += u8"Verify: 失敗 [" + std::to_string((int)kind) + "] " + err + "\n";
-		printf("%s", out.c_str());
-		return 1;
+		return finish(1);
 	}
-	out += u8"Verify: OK（" + std::to_string(GetTickCount() - t0) + " ms）\n";
+	std::string joined;
+	for (const std::string& l : charLeagues) joined += (joined.empty() ? "" : ", ") + l;
+	out += u8"Verify: OK（" + std::to_string(GetTickCount() - t0) + u8" ms），角色所在聯盟: " +
+	       (joined.empty() ? std::string(u8"（無角色）") : joined) + "\n";
+
+	// League candidates: explicit arg > the leagues this realm has characters in
+	// > the saved league (PoE1 only -- a PoE1 league means nothing on poe2) >
+	// Standard.
+	std::vector<std::string> candidates;
+	auto add = [&](const std::string& l) {
+		if (!l.empty() && std::find(candidates.begin(), candidates.end(), l) == candidates.end())
+			candidates.push_back(l);
+	};
+	if (!leagueArg.empty()) {
+		add(utf8(leagueArg));
+	} else {
+		for (const std::string& l : charLeagues) add(l);
+		add(realm == "pc" ? st.poe1.league : st.poe2.league);
+		add("Standard");
+	}
 
 	std::vector<StashTabInfo> tabs;
-	t0 = GetTickCount();
-	if (!provider->ListTabs(league, tabs, &err, &kind, nullptr)) {
-		out += u8"ListTabs: 失敗 [" + std::to_string((int)kind) + "] " + err + "\n";
-		printf("%s", out.c_str());
-		return 1;
+	std::string league;
+	for (const std::string& cand : candidates) {
+		std::vector<StashTabInfo> t;
+		t0 = GetTickCount();
+		if (provider->ListTabs(cand, t, &err, &kind, nullptr)) {
+			out += u8"ListTabs [" + cand + u8"]: OK，" + std::to_string(t.size()) +
+			       u8" 個分頁（" + std::to_string(GetTickCount() - t0) + " ms）\n";
+			tabs = std::move(t);
+			league = cand;
+			break;
+		}
+		out += u8"ListTabs [" + cand + u8"]: 失敗 [" + std::to_string((int)kind) + "] " + err +
+		       "\n";
+		// Not "wrong league" answers: more candidates would only burn rate limit.
+		if (kind == StashError::Auth || kind == StashError::Blocked ||
+		    kind == StashError::RateLimited)
+			break;
 	}
-	out += u8"ListTabs: OK，" + std::to_string(tabs.size()) + u8" 個分頁（" +
-	       std::to_string(GetTickCount() - t0) + " ms）\n";
-	for (size_t i = 0; i < tabs.size() && i < 5; i++)
+	if (tabs.empty()) {
+		out += u8"結論: realm=" + realm + u8" 取不到任何倉庫分頁。\n";
+		return finish(1);
+	}
+	for (size_t i = 0; i < tabs.size() && i < 8; i++)
 		out += "  #" + std::to_string(tabs[i].index) + " " + tabs[i].name + " [" +
 		       tabs[i].type + "]\n";
-	if (tabs.size() > 5) out += "  ...\n";
-	out += u8"探針結束：sessid 通道可用。\n";
-	printf("%s", out.c_str());
-	return 0;
+	if (tabs.size() > 8) out += "  ...\n";
+
+	// One real tab fetch: proves items come back and shows their JSON shape.
+	// A currency tab is the most informative (stackables, the pricing core).
+	const StashTabInfo* pick = &tabs[0];
+	for (const StashTabInfo& t : tabs)
+		if (t.type == "CurrencyStash") { pick = &t; break; }
+	std::vector<StashItemRaw> items;
+	t0 = GetTickCount();
+	if (!provider->FetchTab(league, pick->index, items, &err, &kind, nullptr)) {
+		out += u8"FetchTab #" + std::to_string(pick->index) + u8": 失敗 [" +
+		       std::to_string((int)kind) + "] " + err + "\n";
+		return finish(1);
+	}
+	int keyed = 0;
+	for (const StashItemRaw& it : items) {
+		std::string k, d;
+		if (BuildPriceKey(it, &k, &d)) keyed++;
+	}
+	out += u8"FetchTab #" + std::to_string(pick->index) + " " + pick->name + " [" + pick->type +
+	       u8"]: " + std::to_string(items.size()) + u8" 件物品，" + std::to_string(keyed) +
+	       u8" 件可建 price-key（" + std::to_string(GetTickCount() - t0) + " ms）\n";
+	for (size_t i = 0; i < items.size() && i < 12; i++) {
+		const StashItemRaw& it = items[i];
+		std::string k, d;
+		const bool ok = BuildPriceKey(it, &k, &d);
+		out += "  [frame " + std::to_string(it.frameType) + "] " +
+		       (it.name.empty() ? std::string() : it.name + " / ") + it.typeLine + " x" +
+		       std::to_string(it.stackSize) + "  -> " + (ok ? k : std::string(u8"(不可估)")) +
+		       "\n";
+	}
+	// A realm the server does not know is silently IGNORED -- it answers for
+	// PoE1. Getting tabs back therefore proves nothing by itself: compare with
+	// the same league on pc; identical tab ids mean the realm was dropped.
+	// (2026-09-11: realm=poe2 returned the PoE1 stash verbatim, and the first
+	// version of this probe reported "PoE2 stash available".)
+	if (realm != "pc") {
+		Sleep(1000); // a second provider has a fresh throttle; stay polite
+		auto pcProvider = CreateSessidStashProvider(auth, "pc");
+		std::vector<StashTabInfo> pcTabs;
+		if (pcProvider->ListTabs(league, pcTabs, &err, &kind, nullptr)) {
+			bool same = pcTabs.size() == tabs.size();
+			for (size_t i = 0; same && i < tabs.size(); i++) same = pcTabs[i].id == tabs[i].id;
+			if (same) {
+				out += u8"結論: realm=" + realm + u8" 被伺服器忽略——回傳的 " +
+				       std::to_string(tabs.size()) + u8" 個分頁 id 與 PoE1 完全相同，這不是 " +
+				       realm + u8" 的倉庫。\n";
+				return finish(3);
+			}
+			out += u8"對照: PoE1 同聯盟的分頁與此不同，realm 參數有作用。\n";
+		} else {
+			out += u8"對照: PoE1 沒有「" + league + u8"」的倉庫（" + err + u8"），無法比對。\n";
+		}
+	}
+	out += u8"結論: realm=" + realm + u8" 倉庫可取得。\n";
+	return finish(0);
 }

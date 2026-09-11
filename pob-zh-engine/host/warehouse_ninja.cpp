@@ -14,15 +14,40 @@ namespace {
 
 constexpr wchar_t kNinjaHost[] = L"poe.ninja";
 
-// type=All is empty on the exchange endpoint; these are fetched one by one.
-const char* kExchangeTypes[] = { "Currency", "Fragment", "Scarab", "Oil",
-	                             "Essence", "Fossil", "Resonator", "DeliriumOrb",
-	                             "Tattoo", "Omen", "Runegraft" };
+// One exchange type to fetch, and the price-key namespace its lines file under.
+struct TypePlan {
+	const char* type;
+	const char* prefix;
+};
 
-// Categories the stash-item endpoint prices that stacks in a stash are made of.
-const char* kItemTypes[] = { "SkillGem", "DivinationCard", "Map", "UniqueMap",
-	                         "UniqueWeapon", "UniqueArmour", "UniqueAccessory",
-	                         "UniqueJewel", "UniqueFlask" };
+// PoE1 exchange: stackables, plus divination cards (their item overview 404s).
+const TypePlan kPoe1Exchange[] = {
+	{ "Currency", "currency|" },  { "Fragment", "currency|" },    { "Scarab", "currency|" },
+	{ "Oil", "currency|" },       { "Essence", "currency|" },     { "Fossil", "currency|" },
+	{ "Resonator", "currency|" }, { "DeliriumOrb", "currency|" }, { "Tattoo", "currency|" },
+	{ "Omen", "currency|" },      { "Runegraft", "currency|" },   { "DivinationCard", "card|" },
+};
+
+// PoE2: the economy IS the in-game Currency Exchange. Names are the site's own
+// request parameters, not its URL slugs (read off its requests, 2026-09-11).
+const TypePlan kPoe2Exchange[] = {
+	{ "Currency", "currency|" },   { "Fragments", "currency|" },
+	{ "Abyss", "currency|" },      { "UncutGems", "currency|" },
+	{ "LineageSupportGems", "currency|" },
+	{ "Essences", "currency|" },   { "SoulCores", "currency|" },
+	{ "Idols", "currency|" },      { "Runes", "currency|" },
+	{ "Ritual", "currency|" },     { "Expedition", "currency|" },
+	{ "Delirium", "currency|" },   { "Breach", "currency|" },
+	{ "Verisium", "currency|" },
+};
+
+const char* const kPoe1ItemTypes[] = { "SkillGem", "Map", "UniqueMap", "UniqueWeapon",
+	                                   "UniqueArmour", "UniqueAccessory", "UniqueJewel",
+	                                   "UniqueFlask" };
+// PoE2 spells these in the plural (and UniqueRelics 404s).
+const char* const kPoe2ItemTypes[] = { "UniqueWeapons", "UniqueArmours", "UniqueAccessories",
+	                                   "UniqueFlasks",  "UniqueCharms",  "UniqueJewels",
+	                                   "UniqueTablets" };
 
 constexpr int kLowConfidenceMinCount = 5;
 
@@ -64,6 +89,13 @@ std::wstring SanitizeForFile(const std::string& s)
 		out += keep ? (wchar_t)c : L'_';
 	}
 	return out.empty() ? L"league" : out;
+}
+
+std::wstring CachePath(const std::wstring& exeDir, const std::string& game,
+                       const std::string& league)
+{
+	return exeDir + L"PobTools\\cache\\ninja\\" + Widen(game) + L"_" +
+	       SanitizeForFile(league) + L".json";
 }
 
 bool ReadAll(const std::wstring& path, std::string& out)
@@ -115,11 +147,50 @@ long long NowUtc()
 	return (long long)((t - 116444736000000000ull) / 10000000ull);
 }
 
+double RateOf(const ordered_json& rates, const char* unit)
+{
+	auto it = rates.find(unit);
+	return it != rates.end() && it->is_number() ? it->get<double>() : 0.0;
+}
+
+// How many chaos one unit of this response's quotes is worth. poe.ninja quotes
+// in core.primary (chaos on PoE1, divine on PoE2); core.rates says how many of
+// each other unit one primary buys. No core at all is the PoE1 shape from
+// before core existed: chaos. Returns 0 when the quote cannot be converted.
+// chaosPerDivine (optional) receives the rate the core states, if any.
+double ChaosFactor(const ordered_json& doc, double* chaosPerDivine)
+{
+	auto jc = doc.find("core");
+	if (jc == doc.end() || !jc->is_object()) return 1.0;
+	std::string primary;
+	auto jp = jc->find("primary");
+	if (jp != jc->end() && jp->is_string()) primary = jp->get<std::string>();
+	double rChaos = 0.0, rDivine = 0.0;
+	auto jr = jc->find("rates");
+	if (jr != jc->end() && jr->is_object()) {
+		rChaos = RateOf(*jr, "chaos");
+		rDivine = RateOf(*jr, "divine");
+	}
+	if (primary.empty() || primary == "chaos") {
+		if (chaosPerDivine && rDivine > 0) *chaosPerDivine = 1.0 / rDivine;
+		return 1.0;
+	}
+	if (primary == "divine") {
+		if (rChaos <= 0) return 0.0;
+		if (chaosPerDivine) *chaosPerDivine = rChaos;
+		return rChaos;
+	}
+	// Some other primary: convertible only through its chaos rate.
+	if (rChaos <= 0) return 0.0;
+	if (chaosPerDivine && rDivine > 0) *chaosPerDivine = rChaos / rDivine;
+	return rChaos;
+}
+
 } // namespace
 
 bool NinjaPriceSource::ParseExchangeOverview(
     const std::string& body, std::vector<std::pair<std::string, NinjaPrice>>* out,
-    std::string* err, const char* keyPrefix)
+    std::string* err, const char* keyPrefix, double* chaosPerDivine)
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
@@ -142,6 +213,8 @@ bool NinjaPriceSource::ParseExchangeOverview(
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		if (!doc.is_object()) return fail(u8"exchange 回應不是物件");
+		const double factor = ChaosFactor(doc, chaosPerDivine);
+		if (factor <= 0) return fail(u8"exchange 回應的計價單位無法換算成混沌石");
 
 		// items[] names the goods, lines[] prices them; joined on id.
 		std::unordered_map<std::string, std::string> nameById;
@@ -167,7 +240,7 @@ bool NinjaPriceSource::ParseExchangeOverview(
 			auto nameIt = nameById.find(id);
 			if (nameIt == nameById.end() || v <= 0) continue;
 			NinjaPrice p;
-			p.chaos = v;
+			p.chaos = v * factor;
 			out->emplace_back(keyPrefix + nameIt->second, p);
 		}
 		return true;
@@ -178,7 +251,8 @@ bool NinjaPriceSource::ParseExchangeOverview(
 
 bool NinjaPriceSource::ParseItemOverview(
     const std::string& body, const std::string& type,
-    std::vector<std::pair<std::string, NinjaPrice>>* out, std::string* err)
+    std::vector<std::pair<std::string, NinjaPrice>>* out, std::string* err,
+    double* chaosPerDivine)
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
@@ -204,13 +278,17 @@ bool NinjaPriceSource::ParseItemOverview(
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		if (!doc.is_object()) return fail(u8"item overview 回應不是物件");
+		const double factor = ChaosFactor(doc, chaosPerDivine);
 		auto jl = doc.find("lines");
 		if (jl == doc.end() || !jl->is_array()) return fail(u8"item overview 回應缺 lines");
 
 		for (const auto& l : *jl) {
 			if (!l.is_object()) continue;
 			std::string name = jstr(l, "name");
+			// PoE1 lines carry chaosValue; PoE2 lines only primaryValue, in the
+			// core's primary currency (divine).
 			double chaos = jnum(l, "chaosValue", 0.0);
+			if (chaos <= 0 && factor > 0) chaos = jnum(l, "primaryValue", 0.0) * factor;
 			if (name.empty() || chaos <= 0) continue;
 			int count = (int)jnum(l, "count", jnum(l, "listingCount", 0.0));
 
@@ -227,7 +305,7 @@ bool NinjaPriceSource::ParseItemOverview(
 			} else if (type == "UniqueMap") {
 				key = NinjaUniqueKey(name, jstr(l, "baseType"), 0);
 			} else {
-				// UniqueWeapon / UniqueArmour / UniqueAccessory / UniqueJewel / UniqueFlask
+				// PoE1 UniqueWeapon/... and PoE2 UniqueWeapons/...
 				key = NinjaUniqueKey(name, jstr(l, "baseType"), (int)jnum(l, "links", 0));
 			}
 
@@ -287,18 +365,17 @@ void NinjaPriceSource::Init(const std::wstring& exeDir)
 	exeDir_ = exeDir;
 }
 
-bool NinjaPriceSource::loadCache(const std::string& league)
+bool NinjaPriceSource::loadCache(const std::string& game, const std::string& league)
 {
 	std::string body;
-	if (!ReadAll(exeDir_ + L"PobTools\\cache\\ninja\\" + SanitizeForFile(league) + L".json",
-	             body))
-		return false;
+	if (!ReadAll(CachePath(exeDir_, game, league), body)) return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);
-		// Exact schema match: bumping the number is how a coverage fix (new
-		// sources, new key families) invalidates every stale cache at once --
-		// otherwise the 15-minute TTL keeps serving the pre-fix price table.
-		if (doc.value("schema", 1) != 2) return false;
+		// Exact schema match: bumping the number is how a coverage or unit fix
+		// invalidates every stale cache at once -- otherwise the 15-minute TTL
+		// keeps serving the pre-fix price table.
+		if (doc.value("schema", 1) != 3) return false;
+		if (doc.value("game", std::string()) != game) return false;
 		if (doc.value("league", std::string()) != league) return false;
 		fetchedUtc_ = doc.value("fetchedUtc", (long long)0);
 		divineRate_ = doc.value("divineRate", 0.0);
@@ -314,21 +391,21 @@ bool NinjaPriceSource::loadCache(const std::string& league)
 				prices_[it.key()] = p;
 			}
 		}
-		league_ = league;
 		return !prices_.empty();
 	} catch (const std::exception&) {
 		return false;
 	}
 }
 
-void NinjaPriceSource::saveCache(const std::string& league) const
+void NinjaPriceSource::saveCache() const
 {
 	CreateDirectoryW((exeDir_ + L"PobTools").c_str(), nullptr);
 	CreateDirectoryW((exeDir_ + L"PobTools\\cache").c_str(), nullptr);
 	CreateDirectoryW((exeDir_ + L"PobTools\\cache\\ninja").c_str(), nullptr);
 	ordered_json doc;
-	doc["schema"] = 2;
-	doc["league"] = league;
+	doc["schema"] = 3;
+	doc["game"] = game_;
+	doc["league"] = league_;
 	doc["fetchedUtc"] = fetchedUtc_;
 	doc["divineRate"] = divineRate_;
 	ordered_json jp = ordered_json::object();
@@ -340,84 +417,97 @@ void NinjaPriceSource::saveCache(const std::string& league) const
 		jp[kv.first] = std::move(p);
 	}
 	doc["prices"] = std::move(jp);
-	WriteAtomic(exeDir_ + L"PobTools\\cache\\ninja\\" + SanitizeForFile(league) + L".json",
-	            doc.dump());
+	WriteAtomic(CachePath(exeDir_, game_, league_), doc.dump());
 }
 
-bool NinjaPriceSource::Refresh(const std::string& league, bool force, std::string* err,
+bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& league,
+                               bool force, std::string* err,
                                const std::atomic<bool>* cancel)
 {
-	if (league_ != league || prices_.empty()) {
+	const std::string game = gameIn == "poe2" ? "poe2" : "poe1";
+	if (game_ != game || league_ != league || prices_.empty()) {
 		fetchedUtc_ = 0;
 		divineRate_ = 0.0;
 		prices_.clear();
-		loadCache(league);
+		game_ = game;
+		league_ = league;
+		loadCache(game, league);
 	}
 	if (!force && CacheFresh(fetchedUtc_, NowUtc())) return true;
 
 	HttpsClient http(kNinjaHost);
 	std::unordered_map<std::string, NinjaPrice> fresh;
+	double coreDivine = 0.0;
 	int fetchedTypes = 0;
 	auto polite = [&]() { Sleep(300); }; // it is a community resource
 
+	const std::wstring base = L"/" + Widen(game) + L"/api/economy/";
 	const std::wstring leagueQ = UrlEncodeQuery(league);
-	// (type, key namespace): divination cards trade on the exchange too, under
-	// their own price-key family -- the item overview 404s for them.
-	struct ExchangeFetch { const char* type; const char* prefix; };
-	std::vector<ExchangeFetch> exchangeFetches;
-	for (const char* type : kExchangeTypes) exchangeFetches.push_back({ type, "currency|" });
-	exchangeFetches.push_back({ "DivinationCard", "card|" });
-	for (const ExchangeFetch& ef : exchangeFetches) {
-		if (cancel && cancel->load()) break;
-		std::string body;
-		std::string terr;
-		std::wstring path = L"/poe1/api/economy/exchange/current/overview?league=" +
-		                    leagueQ + L"&type=" + Widen(ef.type);
-		if (http.GetString(path, body, &terr, cancel)) {
-			std::vector<std::pair<std::string, NinjaPrice>> lines;
-			if (ParseExchangeOverview(body, &lines, nullptr, ef.prefix)) {
-				for (auto& kv : lines) fresh[kv.first] = kv.second;
-				fetchedTypes++;
-			}
-		}
-		polite();
-	}
-	// Gap-filler AFTER the exchange pass: stash-listed prices for whatever the
-	// bulk market does not trade. Exchange keys win -- they are live trades.
-	for (const char* type : { "Currency", "Fragment" }) {
-		if (cancel && cancel->load()) break;
-		std::string body;
-		std::string terr;
-		std::wstring path = L"/poe1/api/economy/stash/current/currency/overview?league=" +
-		                    leagueQ + L"&type=" + Widen(type);
-		if (http.GetString(path, body, &terr, cancel)) {
-			std::vector<std::pair<std::string, NinjaPrice>> lines;
-			if (ParseCurrencyOverview(body, &lines, nullptr)) {
-				for (auto& kv : lines)
-					if (fresh.find(kv.first) == fresh.end()) fresh[kv.first] = kv.second;
-				fetchedTypes++;
-			}
-		}
-		polite();
-	}
-	for (const char* type : kItemTypes) {
-		if (cancel && cancel->load()) break;
-		std::string body;
-		std::string terr;
-		std::wstring path = L"/poe1/api/economy/stash/current/item/overview?league=" +
-		                    leagueQ + L"&type=" + Widen(type);
-		if (http.GetString(path, body, &terr, cancel)) {
-			std::vector<std::pair<std::string, NinjaPrice>> lines;
-			if (ParseItemOverview(body, type, &lines, nullptr)) {
-				for (auto& kv : lines) {
-					auto it = fresh.find(kv.first);
-					if (it == fresh.end() || kv.second.listingCount > it->second.listingCount)
-						fresh[kv.first] = kv.second;
+
+	auto runExchange = [&](const TypePlan* plans, size_t n) {
+		for (size_t i = 0; i < n; i++) {
+			if (cancel && cancel->load()) return;
+			std::string body, terr;
+			if (http.GetString(base + L"exchange/current/overview?league=" + leagueQ +
+			                       L"&type=" + Widen(plans[i].type),
+			                   body, &terr, cancel)) {
+				std::vector<std::pair<std::string, NinjaPrice>> lines;
+				double cpd = 0.0;
+				if (ParseExchangeOverview(body, &lines, nullptr, plans[i].prefix, &cpd)) {
+					for (auto& kv : lines) fresh[kv.first] = kv.second;
+					if (coreDivine <= 0 && cpd > 0) coreDivine = cpd;
+					fetchedTypes++;
 				}
-				fetchedTypes++;
 			}
+			polite();
 		}
-		polite();
+	};
+	auto runItems = [&](const char* const* types, size_t n) {
+		for (size_t i = 0; i < n; i++) {
+			if (cancel && cancel->load()) return;
+			std::string body, terr;
+			if (http.GetString(base + L"stash/current/item/overview?league=" + leagueQ +
+			                       L"&type=" + Widen(types[i]),
+			                   body, &terr, cancel)) {
+				std::vector<std::pair<std::string, NinjaPrice>> lines;
+				if (ParseItemOverview(body, types[i], &lines, nullptr)) {
+					// Keys can repeat (gem variants collapse into one bucket); the
+					// best-evidenced price wins. Exchange prices are never displaced.
+					for (auto& kv : lines) {
+						auto it = fresh.find(kv.first);
+						if (it == fresh.end() || kv.second.listingCount > it->second.listingCount)
+							fresh[kv.first] = kv.second;
+					}
+					fetchedTypes++;
+				}
+			}
+			polite();
+		}
+	};
+
+	if (game == "poe2") {
+		runExchange(kPoe2Exchange, sizeof(kPoe2Exchange) / sizeof(kPoe2Exchange[0]));
+		runItems(kPoe2ItemTypes, sizeof(kPoe2ItemTypes) / sizeof(kPoe2ItemTypes[0]));
+	} else {
+		runExchange(kPoe1Exchange, sizeof(kPoe1Exchange) / sizeof(kPoe1Exchange[0]));
+		// Gap-filler AFTER the exchange pass: stash-listed prices for whatever
+		// the bulk market does not trade. Exchange keys win -- they are live trades.
+		for (const char* type : { "Currency", "Fragment" }) {
+			if (cancel && cancel->load()) break;
+			std::string body, terr;
+			if (http.GetString(base + L"stash/current/currency/overview?league=" + leagueQ +
+			                       L"&type=" + Widen(type),
+			                   body, &terr, cancel)) {
+				std::vector<std::pair<std::string, NinjaPrice>> lines;
+				if (ParseCurrencyOverview(body, &lines, nullptr)) {
+					for (auto& kv : lines)
+						if (fresh.find(kv.first) == fresh.end()) fresh[kv.first] = kv.second;
+					fetchedTypes++;
+				}
+			}
+			polite();
+		}
+		runItems(kPoe1ItemTypes, sizeof(kPoe1ItemTypes) / sizeof(kPoe1ItemTypes[0]));
 	}
 
 	if (fetchedTypes == 0) {
@@ -427,22 +517,26 @@ bool NinjaPriceSource::Refresh(const std::string& league, bool force, std::strin
 	}
 
 	prices_ = std::move(fresh);
-	league_ = league;
 	fetchedUtc_ = NowUtc();
 
-	// Chaos Orb IS the unit every price is quoted in, so no source ever lists
-	// it -- without this line a stack of chaos counts as 未估價.
+	// Chaos Orb IS the unit every price was converted into: 1 by definition,
+	// and no PoE1 source ever lists it.
 	NinjaPrice chaosOrb;
 	chaosOrb.chaos = 1.0;
 	chaosOrb.listingCount = 999;
 	prices_[NinjaExchangeKey("Chaos Orb")] = chaosOrb;
 
-	NinjaPrice divine;
-	divineRate_ = 0.0;
-	if (PriceOf(NinjaExchangeKey("Divine Orb"), &divine) && divine.chaos >= 30.0)
-		divineRate_ = divine.chaos;
+	// Chaos per divine: the rate the responses' core states is authoritative.
+	// Fallback for a PoE1 response without core: the Divine Orb line, believed
+	// only above 30c (a PoE2 divine is ~11 chaos, so that floor is PoE1-only).
+	divineRate_ = coreDivine;
+	if (divineRate_ <= 0 && game == "poe1") {
+		NinjaPrice divine;
+		if (PriceOf(NinjaExchangeKey("Divine Orb"), &divine) && divine.chaos >= 30.0)
+			divineRate_ = divine.chaos;
+	}
 
-	saveCache(league);
+	saveCache();
 	return true;
 }
 
@@ -454,12 +548,14 @@ bool NinjaPriceSource::PriceOf(const std::string& key, NinjaPrice* out) const
 	return true;
 }
 
-bool FetchNinjaLeagues(std::vector<std::string>& out, std::string* err,
-                       const std::atomic<bool>* cancel)
+bool FetchNinjaLeagues(const std::string& gameIn, std::vector<std::string>& out,
+                       std::string* err, const std::atomic<bool>* cancel)
 {
+	const std::string game = gameIn == "poe2" ? "poe2" : "poe1";
 	HttpsClient http(kNinjaHost);
 	std::string body;
-	if (!http.GetString(L"/poe1/api/economy/leagues", body, err, cancel)) return false;
+	if (!http.GetString(L"/" + Widen(game) + L"/api/economy/leagues", body, err, cancel))
+		return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		if (!doc.is_array()) {
@@ -469,8 +565,10 @@ bool FetchNinjaLeagues(std::vector<std::string>& out, std::string* err,
 		out.clear();
 		for (const auto& l : doc) {
 			if (l.is_object()) {
-				std::string id = l.value("id", l.value("name", std::string()));
-				if (!id.empty()) out.push_back(std::move(id));
+				auto jid = l.find("id");
+				auto jn = l.find("name");
+				if (jid != l.end() && jid->is_string()) out.push_back(jid->get<std::string>());
+				else if (jn != l.end() && jn->is_string()) out.push_back(jn->get<std::string>());
 			} else if (l.is_string()) {
 				out.push_back(l.get<std::string>());
 			}
