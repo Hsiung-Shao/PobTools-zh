@@ -37,6 +37,11 @@ public:
 	// a mid-job change applies from the next command on.
 	void SetAuth(const StashAuth& a);
 
+	// Main thread. Drops the held credential (overwriting its bytes) and the
+	// session verdict with it -- the 清除 button. A job already running keeps the
+	// copy it took; the next one has nothing to send.
+	void ForgetAuth();
+
 	// Main thread. "poe1" / "poe2": which realm and which price table later
 	// requests use (captured into each command when it is queued). Clears the
 	// per-realm status (tab/league lists, session verdict).
@@ -83,6 +88,17 @@ private:
 	void setPhase(WarehousePhase p, const std::string& msg);
 	StashAuth authCopy();
 	void noteError(StashError kind, const std::string& err);
+
+	// The shared request guard (warehouse_state.h). guardRefuses: a pause the
+	// server asked for has not passed -> Error, and nothing is sent. noteBackoff:
+	// carries the provider's pending pause into the guard when a job ends.
+	bool guardRefuses();
+	void noteBackoff(const IStashProvider& p);
+	struct BackoffCarry { // noteBackoff at scope exit, whichever way a job ends
+		WarehouseService* svc;
+		const IStashProvider* provider;
+		~BackoffCarry() { svc->noteBackoff(*provider); }
+	};
 
 	std::wstring exeDir_;
 	std::thread worker_;

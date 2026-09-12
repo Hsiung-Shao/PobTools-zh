@@ -5,6 +5,7 @@
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
+#include <algorithm> // std::min
 #include <cstdlib> // free
 #include <cstring> // strlen
 
@@ -84,6 +85,53 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	e.mapTier = 0;
 	if (obj.contains("mapTier") && obj["mapTier"].is_number_integer())
 		e.mapTier = obj["mapTier"].get<int>();
+
+	// The bound revenue record. Every field type-checked for the reason given
+	// above: a malformed record costs the record, never the project.
+	e.profit = AtlasProfitRecord{};
+	auto jp = obj.find("profit");
+	if (jp != obj.end() && jp->is_object()) {
+		const ordered_json& p = *jp;
+		auto num = [&p](const char* k) {
+			auto it = p.find(k);
+			return it != p.end() && it->is_number() ? it->get<double>() : 0.0;
+		};
+		auto whole = [&p](const char* k) {
+			auto it = p.find(k);
+			return it != p.end() && it->is_number_integer() ? it->get<long long>() : 0ll;
+		};
+		AtlasProfitRecord r;
+		r.fromUtc = whole("from");
+		r.toUtc = whole("to");
+		auto jl = p.find("league");
+		if (jl != p.end() && jl->is_string()) r.league = jl->get<std::string>();
+		r.hours = num("hours");
+		r.qtyGain = num("qtyGain");
+		r.qtyLoss = num("qtyLoss");
+		r.priceMove = num("priceMove");
+		r.net = num("net");
+		r.divineRate = num("divineRate");
+		r.costPerMap = num("costPerMap");
+		auto jt = p.find("top");
+		if (jt != p.end() && jt->is_array()) {
+			for (const auto& t : *jt) {
+				if (r.top.size() >= 10) break;
+				if (!t.is_object()) continue;
+				auto je = t.find("en");
+				if (je == t.end() || !je->is_string() || je->get<std::string>().empty()) continue;
+				AtlasProfitItem it;
+				it.en = je->get<std::string>();
+				auto jz = t.find("zh");
+				if (jz != t.end() && jz->is_string()) it.zh = jz->get<std::string>();
+				auto jn = t.find("n");
+				if (jn != t.end() && jn->is_number_integer()) it.dCount = jn->get<long long>();
+				auto jc = t.find("c");
+				if (jc != t.end() && jc->is_number()) it.chaos = jc->get<double>();
+				r.top.push_back(std::move(it));
+			}
+		}
+		if (!r.empty()) e.profit = std::move(r);
+	}
 }
 
 static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
@@ -103,6 +151,35 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 	}
 	if (!e.mapId.empty()) obj["map"] = e.mapId;
 	if (e.mapTier > 0) obj["mapTier"] = e.mapTier;
+	// Unlike mapPrice / cost, the revenue record IS shared: binding one to a
+	// project is how its measured earnings travel with the share code.
+	if (!e.profit.empty()) {
+		const AtlasProfitRecord& r = e.profit;
+		ordered_json p;
+		p["from"] = r.fromUtc;
+		p["to"] = r.toUtc;
+		if (!r.league.empty()) p["league"] = r.league;
+		p["hours"] = r.hours;
+		p["qtyGain"] = r.qtyGain;
+		p["qtyLoss"] = r.qtyLoss;
+		p["priceMove"] = r.priceMove;
+		p["net"] = r.net;
+		if (r.divineRate > 0.0) p["divineRate"] = r.divineRate;
+		if (r.costPerMap > 0.0) p["costPerMap"] = r.costPerMap;
+		if (!r.top.empty()) {
+			ordered_json top = ordered_json::array();
+			for (const AtlasProfitItem& t : r.top) {
+				ordered_json j;
+				j["en"] = t.en;
+				if (!t.zh.empty() && t.zh != t.en) j["zh"] = t.zh;
+				j["n"] = t.dCount;
+				j["c"] = t.chaos;
+				top.push_back(std::move(j));
+			}
+			p["top"] = std::move(top);
+		}
+		obj["profit"] = std::move(p);
+	}
 }
 
 // ---- AtlasBuildFile -----------------------------------------------------------
@@ -126,6 +203,27 @@ bool AtlasBuildFile::ParseDoc(const std::string& json)
 				if (e.name.empty()) e.name = u8"預設";
 				e.alloc = parse_alloc_array(b["alloc"]);
 				parse_extras(b, e);
+				// Read here and not in parse_extras: the export/share-code path
+				// shares that helper, and a market price is not part of a build.
+				auto jp = b.find("mapPrice");
+				if (jp != b.end() && jp->is_number()) {
+					const double v = jp->get<double>();
+					e.mapPrice = v > 0.0 ? v : 0.0;
+				}
+				auto jc = b.find("cost");
+				if (jc != b.end() && jc->is_object()) {
+					auto ju = jc->find("utc");
+					if (ju != jc->end() && ju->is_number_integer())
+						e.costRecordedUtc = ju->get<long long>();
+					auto jpr = jc->find("prices");
+					if (jpr != jc->end() && jpr->is_object())
+						for (auto it = jpr->begin(); it != jpr->end(); ++it)
+							if (it.value().is_number() && it.value().get<double>() > 0.0)
+								e.costPrices[it.key()] = it.value().get<double>();
+				}
+				auto jm = b.find("plannedMaps");
+				if (jm != b.end() && jm->is_number_integer() && jm->get<long long>() > 0)
+					e.plannedMaps = (int)(std::min)(jm->get<long long>(), 1000000ll);
 				parsed.push_back(std::move(e));
 			}
 			if (parsed.empty()) return false;
@@ -164,6 +262,18 @@ std::string AtlasBuildFile::SerializeDoc() const
 		e["name"] = b.name;
 		e["alloc"] = b.alloc;
 		write_extras(e, b);
+		// Build file only (see ParseDoc), and only when set: an unset price keeps
+		// the document byte-identical to what earlier versions wrote.
+		if (b.mapPrice > 0.0) e["mapPrice"] = b.mapPrice;
+		if (!b.costPrices.empty() || b.costRecordedUtc > 0) {
+			ordered_json c;
+			if (b.costRecordedUtc > 0) c["utc"] = b.costRecordedUtc;
+			ordered_json p = ordered_json::object();
+			for (const auto& kv : b.costPrices) p[kv.first] = kv.second;
+			c["prices"] = std::move(p);
+			e["cost"] = std::move(c);
+		}
+		if (b.plannedMaps > 0) e["plannedMaps"] = b.plannedMaps;
 		arr.push_back(std::move(e));
 	}
 	doc["builds"] = std::move(arr);

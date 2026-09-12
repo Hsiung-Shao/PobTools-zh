@@ -84,6 +84,12 @@ public:
 	virtual bool FetchTab(const std::string& league, int tabIndex,
 	                      std::vector<StashItemRaw>& out, std::string* err,
 	                      StashError* kind, const std::atomic<bool>* cancel) = 0;
+
+	// How long the server still wants this account left alone -- a 429's
+	// Retry-After, an exhausted bucket's penalty -- in ms from now; 0 = none.
+	// A provider lives for one job, so the caller carries this past it
+	// (warehouse_state's request guard), or the next job would start blind.
+	virtual int RemainingBackoffMs() const { return 0; }
 };
 
 // `realm` is the legacy endpoints' realm parameter: "pc" (PoE1, default) or
@@ -110,6 +116,12 @@ bool ParseStashTabJson(const std::string& body, int tabIndex,
                        std::vector<StashItemRaw>* items,
                        std::vector<StashTabInfo>* tabs, std::string* err);
 
+// The sessid channel's floor between two requests. GGG's account bucket is one
+// pool for everything on the account -- the site, trade tools, this -- and is
+// reported near 45 per 60 s (30 at times). At 2 s a full-stash snapshot (1 + N
+// tab requests) is spread over ~2N seconds instead of landing as one burst.
+constexpr int kStashMinSpacingMs = 2000;
+
 // Conservative client-side pacing: a fixed minimum spacing between requests,
 // pushed further back by what the server's rate-limit headers report and by any
 // 429's Retry-After. Pure arithmetic over fed-in state -- the self-test drives
@@ -130,8 +142,11 @@ public:
 	// How long the next request must still wait from `nowMs`. 0 = go now.
 	int NextDelayMs(long long nowMs) const;
 
+	// Until when the server asked to be left alone (monotonic ms; 0 = never).
+	long long BlockedUntilMs() const { return blockedUntilMs_; }
+
 private:
 	long long lastReqMs_ = 0;
 	long long blockedUntilMs_ = 0;
-	int minMs_ = 1000;
+	int minMs_ = kStashMinSpacingMs;
 };

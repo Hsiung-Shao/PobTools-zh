@@ -269,7 +269,13 @@ public:
 	SessidStashProvider(const StashAuth& auth, const std::string& realm)
 	    : auth_(auth), realm_(realm.empty() ? std::string("pc") : realm), http_(kHost)
 	{
-		throttle_.SetMinIntervalMs(1000);
+		throttle_.SetMinIntervalMs(kStashMinSpacingMs);
+	}
+
+	int RemainingBackoffMs() const override
+	{
+		const long long left = throttle_.BlockedUntilMs() - (long long)GetTickCount64();
+		return left <= 0 ? 0 : left > INT_MAX ? INT_MAX : (int)left;
 	}
 
 	bool Verify(std::string* err, StashError* kind, const std::atomic<bool>* cancel,

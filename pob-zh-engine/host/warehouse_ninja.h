@@ -53,6 +53,8 @@ public:
 	// Chaos per divine; 0 = unknown.
 	double DivineRate() const { return divineRate_; }
 	long long FetchedUtc() const { return fetchedUtc_; }
+	// The whole table (price-key -> chaos), for NinjaPriceFeed to hand out a copy.
+	const std::unordered_map<std::string, NinjaPrice>& Prices() const { return prices_; }
 
 	// Pure parsers, exposed for the self-test. Output pairs are (price-key,
 	// price in chaos). chaosPerDivine (optional) receives the rate the
@@ -99,3 +101,9 @@ private:
 // first. Worker thread.
 bool FetchNinjaLeagues(const std::string& game, std::vector<std::string>& out,
                        std::string* err, const std::atomic<bool>* cancel);
+
+// Deletes this cache's own files (PobTools\cache\ninja\<poe1|poe2>_<league>.json,
+// and the .tmp leftovers of a crashed writer) not written for maxAgeDays. A
+// league in use is rewritten every 15 minutes, so only finished leagues age out
+// -- ~0.5 MB each, kept forever otherwise. Returns how many were removed.
+int PruneNinjaCache(const std::wstring& exeDir, long long nowUtc, int maxAgeDays = 30);

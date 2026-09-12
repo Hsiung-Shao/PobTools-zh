@@ -465,6 +465,9 @@ if (WIN32)
         host/warehouse_service.cpp
         host/warehouse_ui.cpp
         host/warehouse_selftest.cpp
+        # 輿圖策略 × 倉庫收益：每張圖成本（純資料）+ 共用 poe.ninja 價格來源
+        host/atlas_cost.cpp
+        host/warehouse_price_feed.cpp
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp

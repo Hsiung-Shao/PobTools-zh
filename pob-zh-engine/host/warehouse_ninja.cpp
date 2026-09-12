@@ -118,7 +118,11 @@ bool ReadAll(const std::wstring& path, std::string& out)
 
 bool WriteAtomic(const std::wstring& dst, const std::string& body)
 {
-	const std::wstring tmp = dst + L".tmp";
+	// Unique per writer: two price sources (the snapshot worker and the atlas
+	// cost card's feed, possibly in two processes) can save the same cache file
+	// at once, and a shared ".tmp" would let one truncate the other's half-write.
+	const std::wstring tmp = dst + L".tmp" + std::to_wstring(GetCurrentProcessId()) + L"_" +
+	                         std::to_wstring(GetCurrentThreadId());
 	HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr,
 	                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (f == INVALID_HANDLE_VALUE) return false;
@@ -360,9 +364,47 @@ bool NinjaPriceSource::ParseCurrencyOverview(
 	}
 }
 
+static long long UnixOf(const FILETIME& ft)
+{
+	ULARGE_INTEGER t;
+	t.LowPart = ft.dwLowDateTime;
+	t.HighPart = ft.dwHighDateTime;
+	const unsigned long long kEpoch = 116444736000000000ull; // 1601 -> 1970, in 100ns
+	return t.QuadPart > kEpoch ? (long long)((t.QuadPart - kEpoch) / 10000000ull) : 0;
+}
+
+int PruneNinjaCache(const std::wstring& exeDir, long long nowUtc, int maxAgeDays)
+{
+	const std::wstring dir = exeDir + L"PobTools\\cache\\ninja\\";
+	WIN32_FIND_DATAW fd{};
+	HANDLE f = FindFirstFileW((dir + L"poe?_*").c_str(), &fd);
+	if (f == INVALID_HANDLE_VALUE) return 0;
+	std::vector<std::wstring> victims;
+	do {
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+		// Only names this cache writes (the wildcard also matches 8.3 aliases).
+		const std::wstring name = fd.cFileName;
+		if (name.compare(0, 5, L"poe1_") != 0 && name.compare(0, 5, L"poe2_") != 0) continue;
+		const bool isJson = name.size() > 5 && name.compare(name.size() - 5, 5, L".json") == 0;
+		const bool isTmp = name.find(L".json.tmp") != std::wstring::npos;
+		if (!isJson && !isTmp) continue;
+		if (nowUtc - UnixOf(fd.ftLastWriteTime) > (long long)maxAgeDays * 86400)
+			victims.push_back(dir + name);
+	} while (FindNextFileW(f, &fd));
+	FindClose(f);
+	int removed = 0;
+	for (const std::wstring& p : victims)
+		if (DeleteFileW(p.c_str())) removed++;
+	return removed;
+}
+
 void NinjaPriceSource::Init(const std::wstring& exeDir)
 {
 	exeDir_ = exeDir;
+	// A directory listing, no network: allowed in a panel's Init.
+	FILETIME now{};
+	GetSystemTimeAsFileTime(&now);
+	PruneNinjaCache(exeDir, UnixOf(now));
 }
 
 bool NinjaPriceSource::loadCache(const std::string& game, const std::string& league)

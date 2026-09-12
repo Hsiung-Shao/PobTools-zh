@@ -6,11 +6,32 @@
 // official OAuth application is approved (see warehouse_provider.h).
 #pragma once
 
+#include <functional>
 #include <string>
 
 class IToolPanel;
 
 IToolPanel* CreateWarehousePanel();
+
+// What a host embedding the revenue panel adds -- the atlas planner's 收益 and
+// 設定 tabs. Every member is optional.
+struct WarehouseEmbed {
+	// Both drawn inside the panel's frame and ID scope. topCard is a first card
+	// in the revenue page's top row (the project's per-map cost), bordered and
+	// sized like the other two; topCardHeight says how tall its content wants
+	// to be, and the row takes the tallest. settingsBottom closes the settings
+	// page's left column (the revenue-record buttons).
+	std::function<void()> topCard, settingsBottom;
+	std::function<float()> topCardHeight;
+	// Set: the host's own tab bar picks the page (0 = 收益, 1 = 說明, 2 = 設定;
+	// anything else reads as 收益) and the panel draws no tab bar of its own.
+	// Null: the panel offers 「收益 / 說明 / 設定」 itself.
+	const int* page = nullptr;
+};
+
+// CreateWarehousePanel() keeps its plain signature: the launcher and the panel
+// selftest take its address.
+IToolPanel* CreateWarehousePanelEmbedded(const WarehouseEmbed& embed);
 
 void ShowWarehouseTool(const std::wstring& exeDir, const std::wstring& game,
                        const std::wstring& locale);

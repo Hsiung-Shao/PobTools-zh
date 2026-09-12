@@ -138,6 +138,17 @@ std::string WarehouseUnprotectSecret(const std::string& blobB64)
 	return plain;
 }
 
+void WarehouseWipe(std::string& s)
+{
+	if (!s.empty()) {
+		// volatile so the writes survive an optimiser that sees a dead store into
+		// a buffer about to be freed.
+		volatile char* p = &s[0];
+		for (size_t i = 0; i < s.size(); i++) p[i] = 0;
+	}
+	s.clear();
+}
+
 bool WarehouseUiState::Load(const std::wstring& exeDir)
 {
 	std::string body;
@@ -161,12 +172,18 @@ bool WarehouseUiState::Load(const std::wstring& exeDir)
 		auto j2 = doc.find("poe2");
 		if (j2 != doc.end() && j2->is_object()) readSel(*j2, poe2);
 		else poe2 = WarehouseGameSel{};
-		autoMinutes = doc.value("autoMinutes", 0);
-		if (autoMinutes != 0 && autoMinutes < 5) autoMinutes = 5;
+		autoMinutes = WarehouseNormalizeAutoMinutes(doc.value("autoMinutes", 0));
 		// The toggle is gone from the UI: values auto-convert (>= 1 divine shows
 		// in d, the rest in c), so this stays permanently on.
 		showDivine = true;
-		sessid = WarehouseUnprotectSecret(doc.value("sessidDpapi", std::string()));
+		const std::string blob = doc.value("sessidDpapi", std::string());
+		// No flag + a blob = written before the setting existed: the player did
+		// save one, so keep honouring that. No flag and no blob = off.
+		auto jr = doc.find("rememberSessid");
+		rememberSessid = jr != doc.end() && jr->is_boolean() ? jr->get<bool>() : !blob.empty();
+		// A blob this user cannot decrypt (another machine, another account) loads
+		// as "nothing saved" while the flag stays on: the next paste is kept.
+		sessid = WarehouseUnprotectSecret(blob);
 	} catch (const std::exception&) {
 		*this = WarehouseUiState{};
 		return false;
@@ -174,9 +191,32 @@ bool WarehouseUiState::Load(const std::wstring& exeDir)
 	return true;
 }
 
-bool WarehouseUiState::Save(const std::wstring& exeDir) const
+bool WarehouseUiState::Save(const std::wstring& exeDir, bool writeSecret) const
 {
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+
+	// What the credential fields will say. Ours only when this save is about
+	// them; otherwise whatever the file already holds, so another panel's clear
+	// survives our write (see the header).
+	bool remember = rememberSessid;
+	std::string blob =
+	    (!rememberSessid || sessid.empty()) ? std::string() : WarehouseProtectSecret(sessid);
+	if (!writeSecret) {
+		std::string prevBody;
+		if (ReadAll(StatePath(exeDir), prevBody)) {
+			try {
+				ordered_json prev = ordered_json::parse(prevBody);
+				auto jb = prev.find("sessidDpapi");
+				blob = jb != prev.end() && jb->is_string() ? jb->get<std::string>()
+				                                          : std::string();
+				auto jr = prev.find("rememberSessid");
+				remember = jr != prev.end() && jr->is_boolean() ? jr->get<bool>()
+				                                                : !blob.empty();
+			} catch (const std::exception&) {
+				// Unreadable file: this save is what rebuilds it, ours stands.
+			}
+		}
+	}
 
 	ordered_json doc;
 	doc["schema"] = 1;
@@ -192,7 +232,145 @@ bool WarehouseUiState::Save(const std::wstring& exeDir) const
 	doc["poe2"] = writeSel(poe2);
 	doc["autoMinutes"] = autoMinutes;
 	doc["showDivine"] = showDivine;
-	// The plain session id is deliberately not representable in this file.
-	doc["sessidDpapi"] = sessid.empty() ? std::string() : WarehouseProtectSecret(sessid);
+	doc["rememberSessid"] = remember;
+	// The plain session id is deliberately not representable in this file. An
+	// empty field is also how "forget it" is carried out: a credential save with
+	// the box unticked (or after the 清除 button) overwrites a blob written
+	// earlier.
+	doc["sessidDpapi"] = blob;
 	return WriteAtomic(StatePath(exeDir), doc.dump(1, '\t'));
+}
+
+int WarehouseNormalizeAutoMinutes(int minutes)
+{
+	if (minutes < 60) return 0;
+	if (minutes >= 360) return 360;
+	return (minutes + 30) / 60 * 60;
+}
+
+namespace {
+
+std::wstring GuardPath(const std::wstring& exeDir)
+{
+	return exeDir + L"PobTools\\warehouse_guard.json";
+}
+
+bool SaveGuard(const std::wstring& exeDir, const WarehouseGuard& g)
+{
+	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+	ordered_json doc;
+	doc["schema"] = 1;
+	doc["lastSnapshotStartUtc"] = g.lastSnapshotStartUtc;
+	doc["blockedUntilUtc"] = g.blockedUntilUtc;
+	return WriteAtomic(GuardPath(exeDir), doc.dump());
+}
+
+// Serializes read-check-write across every PobTools process of this logon
+// session. An abandoned mutex (its holder crashed) counts as acquired: the file
+// is rewritten whole, so there is no half-state to protect. A timeout proceeds
+// unlocked -- the guard is courtesy towards the server, not a correctness lock.
+class GuardLock {
+public:
+	GuardLock()
+	{
+		h_ = CreateMutexW(nullptr, FALSE, L"Local\\PobTools.warehouse.guard");
+		if (h_) {
+			const DWORD w = WaitForSingleObject(h_, 2000);
+			held_ = w == WAIT_OBJECT_0 || w == WAIT_ABANDONED;
+		}
+	}
+	~GuardLock()
+	{
+		if (held_) ReleaseMutex(h_);
+		if (h_) CloseHandle(h_);
+	}
+	GuardLock(const GuardLock&) = delete;
+	GuardLock& operator=(const GuardLock&) = delete;
+
+private:
+	HANDLE h_ = nullptr;
+	bool held_ = false;
+};
+
+} // namespace
+
+long long WarehouseNextSnapshotUtc(const WarehouseGuard& g)
+{
+	const long long cool =
+	    g.lastSnapshotStartUtc > 0 ? g.lastSnapshotStartUtc + kWarehouseSnapshotCooldownS : 0;
+	return cool > g.blockedUntilUtc ? cool : g.blockedUntilUtc;
+}
+
+WarehouseGuard WarehouseGuardLoad(const std::wstring& exeDir)
+{
+	WarehouseGuard g;
+	std::string body;
+	if (!ReadAll(GuardPath(exeDir), body)) return g;
+	try {
+		ordered_json doc = ordered_json::parse(body);
+		if (!doc.is_object()) return g;
+		auto whole = [&doc](const char* k) {
+			auto it = doc.find(k);
+			return it != doc.end() && it->is_number_integer() ? it->get<long long>() : 0ll;
+		};
+		g.lastSnapshotStartUtc = whole("lastSnapshotStartUtc");
+		g.blockedUntilUtc = whole("blockedUntilUtc");
+	} catch (const std::exception&) {
+		g = WarehouseGuard{};
+	}
+	return g;
+}
+
+bool WarehouseClaimSnapshot(const std::wstring& exeDir, long long nowUtc, long long* nextUtc)
+{
+	GuardLock lock;
+	WarehouseGuard g = WarehouseGuardLoad(exeDir);
+	// A start stamped in the future is a clock that was set back: measure the
+	// cooldown from now, not from a moment that has not happened yet.
+	if (g.lastSnapshotStartUtc > nowUtc) g.lastSnapshotStartUtc = nowUtc;
+	const long long next = WarehouseNextSnapshotUtc(g);
+	if (nowUtc < next) {
+		if (nextUtc) *nextUtc = next;
+		return false;
+	}
+	g.lastSnapshotStartUtc = nowUtc;
+	SaveGuard(exeDir, g); // best effort: a failed write must not cost the snapshot
+	if (nextUtc) *nextUtc = nowUtc + kWarehouseSnapshotCooldownS;
+	return true;
+}
+
+void WarehouseNoteBlocked(const std::wstring& exeDir, long long untilUtc)
+{
+	GuardLock lock;
+	WarehouseGuard g = WarehouseGuardLoad(exeDir);
+	if (untilUtc <= g.blockedUntilUtc) return;
+	g.blockedUntilUtc = untilUtc;
+	SaveGuard(exeDir, g);
+}
+
+long long WarehouseAutoDueUtc(long long latestSnapUtc, long long armedUtc, int minutes,
+                              const WarehouseGuard& g)
+{
+	if (minutes <= 0) return 0;
+	const long long base = latestSnapUtc > armedUtc ? latestSnapUtc : armedUtc;
+	const long long due = base + (long long)minutes * 60;
+	const long long allowed = WarehouseNextSnapshotUtc(g);
+	return due > allowed ? due : allowed;
+}
+
+std::string WarehouseSavedLeague(const std::wstring& exeDir)
+{
+	std::string body;
+	if (!ReadAll(StatePath(exeDir), body)) return std::string();
+	try {
+		ordered_json doc = ordered_json::parse(body);
+		if (!doc.is_object()) return std::string();
+		// Files written before PoE2 support kept PoE1's picks at the top level.
+		auto j1 = doc.find("poe1");
+		const ordered_json& o = (j1 != doc.end() && j1->is_object()) ? *j1 : doc;
+		auto jl = o.find("league");
+		return jl != o.end() && jl->is_string() ? jl->get<std::string>() : std::string();
+	} catch (const std::exception&) {
+		return std::string();
+	}
 }

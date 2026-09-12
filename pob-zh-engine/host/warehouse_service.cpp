@@ -1,5 +1,7 @@
 #include "warehouse_service.h"
 
+#include "warehouse_state.h" // the shared request guard
+
 #include "error_log.h"
 #include "warehouse_pricing.h"
 
@@ -137,6 +139,20 @@ void WarehouseService::SetAuth(const StashAuth& a)
 {
 	std::lock_guard<std::mutex> lk(authMx_);
 	auth_ = a;
+}
+
+void WarehouseService::ForgetAuth()
+{
+	{
+		std::lock_guard<std::mutex> lk(authMx_);
+		// Overwrite before releasing: "cleared" should not leave the bytes
+		// readable in whatever memory the string had.
+		WarehouseWipe(auth_.secret);
+		auth_ = StashAuth{};
+	}
+	std::lock_guard<std::mutex> lk(stMx_);
+	st_.authOk = false;
+	st_.authFailed = false;
 }
 
 StashAuth WarehouseService::authCopy()
@@ -286,10 +302,37 @@ void WarehouseService::workerLoop()
 	}
 }
 
+bool WarehouseService::guardRefuses()
+{
+	const long long until = WarehouseGuardLoad(exeDir_).blockedUntilUtc;
+	const long long now = NowUtc();
+	if (now >= until) return false;
+	// Not logged: this is the guard working, and a retry-happy click would
+	// otherwise fill the error log.
+	std::lock_guard<std::mutex> lk(stMx_);
+	st_.phase = WarehousePhase::Error;
+	st_.message = u8"帳號請求額度冷卻中，約 " + std::to_string(until - now) + u8" 秒後再試";
+	return true;
+}
+
+void WarehouseService::noteBackoff(const IStashProvider& p)
+{
+	// Runs from a destructor: nothing may escape.
+	try {
+		const int ms = p.RemainingBackoffMs();
+		// The 2 s spacing is our own pacing, not the server's; only a real pause
+		// (429, exhausted bucket) is worth carrying to the next job.
+		if (ms > kStashMinSpacingMs) WarehouseNoteBlocked(exeDir_, NowUtc() + (ms + 999) / 1000);
+	} catch (...) {
+	}
+}
+
 void WarehouseService::doVerify(const StashAuth& auth, const Cmd& cmd)
 {
+	if (guardRefuses()) return;
 	setPhase(WarehousePhase::Verifying, u8"驗證 session 中…");
 	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
+	BackoffCarry carry{ this, provider.get() };
 	std::string err;
 	StashError kind = StashError::None;
 	if (!provider->Verify(&err, &kind, &stop_)) {
@@ -324,8 +367,10 @@ void WarehouseService::doLeagues(const Cmd& cmd)
 
 void WarehouseService::doListTabs(const StashAuth& auth, const Cmd& cmd)
 {
+	if (guardRefuses()) return;
 	setPhase(WarehousePhase::ListingTabs, u8"取得倉庫分頁清單中…");
 	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
+	BackoffCarry carry{ this, provider.get() };
 	std::vector<StashTabInfo> tabs;
 	std::string err;
 	StashError kind = StashError::None;
@@ -345,8 +390,10 @@ void WarehouseService::doListTabs(const StashAuth& auth, const Cmd& cmd)
 
 void WarehouseService::doSnapshot(const StashAuth& auth, const Cmd& cmd)
 {
+	if (guardRefuses()) return;
 	setPhase(WarehousePhase::ListingTabs, u8"取得倉庫分頁清單中…");
 	auto provider = CreateSessidStashProvider(auth, RealmOf(cmd.game));
+	BackoffCarry carry{ this, provider.get() };
 	std::vector<StashTabInfo> tabs;
 	std::string err;
 	StashError kind = StashError::None;
