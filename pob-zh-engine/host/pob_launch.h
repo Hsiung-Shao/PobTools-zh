@@ -29,6 +29,7 @@ enum class InstanceKind {
 	TimelessJewel,
 	TranslationEditor,
 	RegexTool,
+	Warehouse,
 };
 
 // A child process this launcher started and that is still alive.
@@ -85,8 +86,8 @@ bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
                       unsigned long* outPid = nullptr);
 
 // Start one of the tool windows (--atlas / --filter-editor / --timeless-jewel /
-// --regex / --translation-editor) and track it the same way. The child reads pob-zh.ini for
-// game/locale, so callers must SaveLauncherConfig before spawning.
+// --regex / --warehouse / --translation-editor) and track it the same way. The child
+// reads pob-zh.ini for game/locale, so callers must SaveLauncherConfig before spawning.
 //
 // `outPid` receives the new process id, for callers that need to find its window
 // (the tabbed window mode docks tools too).

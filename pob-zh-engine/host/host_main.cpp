@@ -53,6 +53,7 @@
 #include "filter_selftest.h"
 #include "regex_selftest.h"
 #include "regex_tool.h"
+#include "warehouse_tool.h"
 #include "timeless_jewel.h"
 #include "timeless_jewel_abyss.h"
 #include "timeless_jewel_ui.h"
@@ -498,6 +499,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunRegexSelfTest(dir);
 	}
 
+	// Headless warehouse (stash revenue) data-layer check: fixtures only, no
+	// network, never the real PobTools\ directory.
+	if (arg1 == L"--warehouse-selftest") {
+		return RunWarehouseSelfTest(dir);
+	}
+	// ONLINE probe of the sessid stash channel (deliberately not a selftest).
+	//   --warehouse-probe [pc|poe2] [league]
+	if (arg1 == L"--warehouse-probe") {
+		return RunWarehouseProbe(dir, arg2, arg3);
+	}
+
 	// Headless filter-editor data-layer check (synthetic cases; console report).
 	if (arg1 == L"--filter-selftest") {
 		return RunFilterSelfTest(dir);
@@ -699,6 +711,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--regex") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
 		ShowRegexTool(dir, c.game, c.locale);
+		return 0;
+	}
+	// 倉庫收益統計（測試性質：POESESSID 通道，見 warehouse_provider.h）
+	if (arg1 == L"--warehouse") {
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		ShowWarehouseTool(dir, c.game, c.locale);
 		return 0;
 	}
 

@@ -18,6 +18,7 @@
     "Atlas strategy": "輿圖策略",
     "Timeless jewel": "軍團珠寶",
     "Poe Regex": "Poe Regex",
+    "Stash tracker": "倉庫收益",
     "Games": "遊戲",
     "Tools": "工具",
     "Links": "外部連結",
@@ -131,6 +132,11 @@
     "Program updates": "程式更新",
     "Install new versions at startup": "啟動後自動安裝新版本",
     "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。",
+    "Official site": "官方網站",
+    "Official trade (PoE1)": "官方交易市集（PoE1）",
+    "Official trade (PoE2)": "官方交易市集（PoE2）",
+    "Disenchant lookup": "拆粉查詢",
+    "Chinese localisation": "中文化工具",
     "Translation data updated to v": "翻譯資料已更新至 v"
   }
 }

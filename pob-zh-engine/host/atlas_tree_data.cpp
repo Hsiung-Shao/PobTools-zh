@@ -899,6 +899,100 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	rep.failures += RunAstrolabeSelfTest(exeDir, rep.text);
 	rep.failures += RunAtlasMapSelfTest(exeDir, rep.text);
 
+	// T11: the manual map price behind the 收益 tab's cost card. It round-trips
+	// through the build file, an unset price serializes byte-identically to
+	// before the field existed, and it never leaks into the export json (it is
+	// a market price, not part of the build).
+	{
+		AtlasBuildFile f;
+		f.version = "3.29.0";
+		f.builds.resize(1);
+		f.builds[0].name = "t11";
+		const std::string before = f.SerializeDoc();
+		f.builds[0].mapPrice = 12.5;
+		const std::string with = f.SerializeDoc();
+		AtlasBuildFile g;
+		const bool parsed = g.ParseDoc(with);
+		rep.check(parsed && g.builds.size() == 1 && g.builds[0].mapPrice == 12.5,
+		          "mapPrice round-trips through the build file");
+		f.builds[0].mapPrice = 0.0;
+		rep.check(f.SerializeDoc() == before && before.find("mapPrice") == std::string::npos,
+		          "unset mapPrice serializes byte-identically to before");
+		f.builds[0].mapPrice = 12.5;
+		rep.check(AtlasExportJson(f.builds[0], "3.29.0").find("mapPrice") == std::string::npos,
+		          "mapPrice stays out of the export json / share code");
+
+		// The recorded cost (bulk buy: one market snapshot; batch buys: typed).
+		f.builds[0].costPrices["Metadata/Items/Scarabs/T11"] = 7.5;
+		f.builds[0].costRecordedUtc = 1800000000;
+		AtlasBuildFile h;
+		const bool parsed2 = h.ParseDoc(f.SerializeDoc());
+		rep.check(parsed2 && h.builds.size() == 1 && h.builds[0].costPrices.size() == 1 &&
+		              h.builds[0].costPrices.begin()->second == 7.5 &&
+		              h.builds[0].costRecordedUtc == 1800000000,
+		          "recorded cost prices round-trip through the build file");
+		rep.check(AtlasExportJson(f.builds[0], "3.29.0").find("\"cost\"") == std::string::npos,
+		          "recorded cost prices stay out of the export json / share code");
+		f.builds[0].costPrices.clear();
+		f.builds[0].costRecordedUtc = 0;
+		f.builds[0].mapPrice = 0.0;
+		rep.check(f.SerializeDoc() == before, "unset cost record serializes byte-identically");
+
+		// Planned map count: the cost card's plan total. Build file only.
+		f.builds[0].plannedMaps = 40;
+		AtlasBuildFile pm;
+		rep.check(pm.ParseDoc(f.SerializeDoc()) && pm.builds.size() == 1 &&
+		              pm.builds[0].plannedMaps == 40,
+		          "plannedMaps round-trips through the build file");
+		rep.check(AtlasExportJson(f.builds[0], "3.29.0").find("plannedMaps") == std::string::npos,
+		          "plannedMaps stays out of the export json / share code");
+		f.builds[0].plannedMaps = 0;
+
+		// The bound revenue record is shared ON PURPOSE: build file, export json
+		// and share code all carry it.
+		AtlasProfitRecord pr;
+		pr.fromUtc = 1800000000;
+		pr.toUtc = 1800007200;
+		pr.league = "Mercenaries";
+		pr.hours = 2.0;
+		pr.qtyGain = 900.0;
+		pr.qtyLoss = -100.0;
+		pr.priceMove = -15.5;
+		pr.net = 784.5;
+		pr.divineRate = 200.0;
+		pr.costPerMap = 36.46;
+		pr.top = { { "The Doctor", u8"博士", 1, 500.0 }, { "Divine Orb", "", 2, 400.0 } };
+		f.builds[0].profit = pr;
+		auto same = [&pr](const AtlasProfitRecord& q) {
+			return q.fromUtc == pr.fromUtc && q.toUtc == pr.toUtc && q.league == pr.league &&
+			       q.hours == pr.hours && q.qtyGain == pr.qtyGain && q.qtyLoss == pr.qtyLoss &&
+			       q.priceMove == pr.priceMove && q.net == pr.net && q.divineRate == pr.divineRate &&
+			       q.costPerMap == pr.costPerMap && q.top.size() == 2 && q.top[0].en == "The Doctor" &&
+			       q.top[0].zh == u8"博士" && q.top[0].dCount == 1 && q.top[0].chaos == 500.0 &&
+			       q.top[1].zh.empty() && q.top[1].dCount == 2 && q.top[1].chaos == 400.0;
+		};
+		AtlasBuildFile pf;
+		rep.check(pf.ParseDoc(f.SerializeDoc()) && pf.builds.size() == 1 && same(pf.builds[0].profit),
+		          "profit record round-trips through the build file");
+		AtlasBuildEntry viaJson, viaCode;
+		std::string perr;
+		rep.check(AtlasParseExportJson(AtlasExportJson(f.builds[0], "3.29.0"), &viaJson, &perr) &&
+		              same(viaJson.profit),
+		          "profit record travels in the export json");
+		rep.check(AtlasParseShareCode(AtlasBuildShareCode(f.builds[0], "3.29.0"), &viaCode, &perr) &&
+		              same(viaCode.profit),
+		          "profit record travels in the share code");
+		AtlasBuildEntry badRec;
+		const char kBadProfit[] =
+		    R"({"format":"pobtools-atlas-build","version":"3.29.0","name":"x","alloc":[1,2],)"
+		    R"("profit":{"from":"x","to":5,"top":[{"en":3}]}})";
+		rep.check(AtlasParseExportJson(kBadProfit, &badRec, &perr) && badRec.alloc.size() == 2 &&
+		              badRec.profit.empty(),
+		          "a malformed profit record is dropped, the project kept");
+		f.builds[0].profit = AtlasProfitRecord{};
+		rep.check(f.SerializeDoc() == before, "unset plannedMaps / profit serialize byte-identically");
+	}
+
 	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";
 	printf("%s", rep.text.c_str());
 	write_file_utf8(exeDir + L"atlas_selftest.txt", rep.text);

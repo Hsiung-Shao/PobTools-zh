@@ -166,3 +166,86 @@ bool HttpsClient::GetString(const std::wstring& path, std::string& out, std::str
 	out.assign((const char*)bytes.data(), bytes.size());
 	return true;
 }
+
+bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
+                        std::string* err, const std::atomic<bool>* cancel)
+{
+	auto fail = [&](const std::string& m) {
+		if (err) *err = m;
+		return false;
+	};
+	out = HttpResult{};
+	if (!hConnect_) return fail(u8"HTTPS 連線初始化失敗");
+
+	HINTERNET hReq = WinHttpOpenRequest((HINTERNET)hConnect_, L"GET", path.c_str(), nullptr,
+		WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
+	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
+
+	// The only cookies on the wire are the ones extra.headers spells out. Without
+	// this, WinHTTP keeps a per-session jar: a Set-Cookie from one response would
+	// ride along on every later request through this client.
+	DWORD disable = WINHTTP_DISABLE_COOKIES;
+	WinHttpSetOption(hReq, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
+
+	std::wstring joined;
+	for (const std::wstring& h : extra.headers) {
+		joined += h;
+		joined += L"\r\n";
+	}
+
+	bool ok = false;
+	std::string reason;
+	if (WinHttpSendRequest(hReq,
+			joined.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : joined.c_str(),
+			joined.empty() ? 0 : (DWORD)joined.size(),
+			WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+		WinHttpReceiveResponse(hReq, nullptr)) {
+		DWORD code = 0, len = sizeof(code);
+		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
+		out.status = (int)code;
+
+		for (const std::wstring& name : extra.wantHeaders) {
+			wchar_t buf[1024];
+			DWORD blen = sizeof(buf);
+			// WinHttpQueryHeaders wants a mutable name buffer for CUSTOM queries.
+			std::wstring nameCopy = name;
+			if (WinHttpQueryHeaders(hReq, WINHTTP_QUERY_CUSTOM, nameCopy.c_str(),
+					buf, &blen, WINHTTP_NO_HEADER_INDEX)) {
+				std::string key = narrow(name);
+				for (char& c : key) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+				out.headers[key] = narrow(std::wstring(buf, blen / sizeof(wchar_t)));
+			}
+		}
+
+		// The body is read for every status: 429's Retry-After story and 403's
+		// Cloudflare page are exactly the bodies a caller needs to see.
+		ok = true;
+		DWORD avail = 0;
+		do {
+			if (cancel && cancel->load()) { ok = false; reason = u8"已取消"; break; }
+			avail = 0;
+			if (!WinHttpQueryDataAvailable(hReq, &avail)) { ok = false; reason = u8"讀取回應失敗"; break; }
+			if (avail == 0) break;
+			size_t off = out.body.size();
+			out.body.resize(off + avail);
+			DWORD rd = 0;
+			if (!WinHttpReadData(hReq, &out.body[off], avail, &rd)) {
+				out.body.resize(off);
+				ok = false;
+				reason = u8"讀取回應失敗";
+				break;
+			}
+			out.body.resize(off + rd);
+		} while (avail > 0);
+	} else {
+		reason = u8"連線失敗（網路無法使用？）: " + narrow(path);
+	}
+	WinHttpCloseHandle(hReq);
+	if (!ok) {
+		out = HttpResult{};
+		return fail(reason);
+	}
+	return true;
+}

@@ -209,10 +209,31 @@ void IconManager::workerLoop()
 			reqQ_.pop_front();
 		}
 
-		std::wstring cacheFile = cacheDir_ + sanitize(artPath) + L".png";
+		// Two key shapes share this queue. Classic art paths
+		// ("Art/2DItems/X") fetch /image/<path>.png and cache under the
+		// sanitized path, exactly as before. Modern stash-API icons are
+		// pre-signed generator URLs ("gen/image/<b64>/<sig>/<Name>") -- the
+		// b64 token is a few hundred characters, so the cache name is a hash
+		// plus the readable tail instead of the sanitized whole.
+		std::wstring cacheName;
+		std::wstring urlPath;
+		if (artPath.rfind("gen/", 0) == 0) {
+			unsigned hash = 2166136261u; // FNV-1a: stable across runs
+			for (unsigned char c : artPath) { hash ^= c; hash *= 16777619u; }
+			wchar_t hex[16];
+			swprintf_s(hex, L"gen_%08x_", hash);
+			size_t tail = artPath.find_last_of('/');
+			cacheName = hex + sanitize(tail == std::string::npos
+			                               ? artPath
+			                               : artPath.substr(tail + 1));
+			urlPath = L"/" + widen(artPath) + L".png";
+		} else {
+			cacheName = sanitize(artPath);
+			urlPath = L"/image/" + widen(artPath) + L".png";
+		}
+		std::wstring cacheFile = cacheDir_ + cacheName + L".png";
 		std::vector<unsigned char> bytes;
 		if (!read_file_bytes(cacheFile, bytes)) {
-			std::wstring urlPath = L"/image/" + widen(artPath) + L".png";
 			if (HttpGet(hConnect, urlPath, bytes))
 				write_file_bytes(cacheFile, bytes);
 		}

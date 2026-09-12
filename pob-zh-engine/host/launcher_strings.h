@@ -48,6 +48,7 @@
 	X(atlasPlanner,      u8"輿圖策略",                     u8"Atlas strategy")                        \
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
 	X(regexTool,         u8"Poe Regex",                    u8"Poe Regex")                              \
+	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	/* wide-layout section labels */                                                                 \
 	X(gamesSection,      u8"遊戲",                         u8"Games")                                 \
 	X(toolsSection,      u8"工具",                         u8"Tools")                                 \
@@ -226,7 +227,18 @@
 	X(sectionAppUpdate,  u8"程式更新",                     u8"Program updates")                      \
 	X(autoAppUpdate,     u8"啟動後自動安裝新版本",         u8"Install new versions at startup")       \
 	X(autoAppUpdateHint, u8"PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。", \
-	                     u8"PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.")
+	                     u8"PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.") \
+	/* Link-board labels that are NOT proper nouns. The rest of kLinks stays
+	   hard-coded: site names (PoeDB, poe.ninja, FilterBlade...) read the same in
+	   every language, and the Chinese-community links keep their Chinese labels
+	   in every locale on purpose -- that IS what they are (user ruling). */      \
+	X(linkOfficialSite,  u8"官方網站",                     u8"Official site")                         \
+	X(linkTradePoe1,     u8"官方交易市集（PoE1）",         u8"Official trade (PoE1)")                 \
+	X(linkTradePoe2,     u8"官方交易市集（PoE2）",         u8"Official trade (PoE2)")                 \
+	X(linkDisenchant,    u8"拆粉查詢",                     u8"Disenchant lookup")                     \
+	/* Column head over our own tools; the other two columns are headed PoE1 and
+	   PoE2, which need no translation. */                                       \
+	X(linkGroupTools,    u8"中文化工具",                   u8"Chinese localisation")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

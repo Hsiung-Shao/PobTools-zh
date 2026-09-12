@@ -18,6 +18,7 @@
     "Atlas strategy": "异界策略",
     "Timeless jewel": "永恒珠宝",
     "Poe Regex": "Poe Regex",
+    "Stash tracker": "仓库收益",
     "Games": "游戏",
     "Tools": "工具",
     "Links": "外部链接",
@@ -131,6 +132,11 @@
     "POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.": "POB 已经超过 20 秒没有反应。当时它在做什么已经记进「设置」页的问题记录文件夹，回报时附上今天那几个文件就好。POB 恢复或关闭后这行会自己消失。",
     "Program updates": "程序更新",
     "Install new versions at startup": "启动后自动安装新版本",
-    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools 一打开就检查，有新版本就直接装好并重新打开，不必按右上角那个按钮。只在刚启动、还没开过 POB 或任何工具时才会动手；有 POB 在跑时一律不动。翻译数据的自动更新是下面那个独立的设置。"
+    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools 一打开就检查，有新版本就直接装好并重新打开，不必按右上角那个按钮。只在刚启动、还没开过 POB 或任何工具时才会动手；有 POB 在跑时一律不动。翻译数据的自动更新是下面那个独立的设置。",
+    "Official site": "官方网站",
+    "Official trade (PoE1)": "官方交易行（PoE1）",
+    "Official trade (PoE2)": "官方交易行（PoE2）",
+    "Disenchant lookup": "拆粉查询",
+    "Chinese localisation": "中文化工具"
   }
 }

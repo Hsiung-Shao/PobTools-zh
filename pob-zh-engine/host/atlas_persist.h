@@ -6,6 +6,7 @@
 // (PobTools/atlas_build_poe1.json) and is upgraded in place on first save.
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,33 @@
 struct AstrolabePlacement {
 	std::string region; // AtlasRegions id: "NorthWest" / "NorthEast" / "SouthEast" / "SouthWest"
 	std::string id;     // "Metadata/Items/Currency/Astrolabe..."
+};
+
+// One line of a bound revenue record: an item the stretch produced, valued by
+// its count change (the market moving stock already held is not production).
+struct AtlasProfitItem {
+	std::string en;
+	std::string zh;        // stored when bound: the share code's recipient needs no dictionary
+	long long dCount = 0;
+	double chaos = 0.0;
+};
+
+// A stretch of the stash revenue history (倉庫收益) bound to a project, so the
+// build carries what running it actually earned. Unlike mapPrice / cost this IS
+// part of the build: it goes through the export json and the share code --
+// sharing it is the point. All money in chaos; divineRate (at toUtc) converts.
+struct AtlasProfitRecord {
+	long long fromUtc = 0, toUtc = 0;
+	std::string league;
+	double hours = 0.0;
+	double qtyGain = 0.0;    // value of items gained (>= 0)
+	double qtyLoss = 0.0;    // value of items spent (<= 0)
+	double priceMove = 0.0;  // the market re-pricing stock held throughout
+	double net = 0.0;        // total stash value change = the three above
+	double divineRate = 0.0; // 0 = unknown
+	double costPerMap = 0.0; // the project's cost card total when bound; 0 = unknown
+	std::vector<AtlasProfitItem> top; // the biggest gains, at most 10
+	bool empty() const { return fromUtc <= 0 || toUtc <= fromUtc; }
 };
 
 // `notes`, `scarabs`, `targets`, `astrolabes` and `mapId` were all added after
@@ -46,6 +74,22 @@ struct AtlasBuildEntry {
 	// Nodes the user ruled out; the solver routes around them. Kept so a
 	// planning session can be resumed instead of re-marked from scratch.
 	std::vector<int> blocked;
+	// What the player pays for one map of this project, in chaos (the 收益
+	// tab's cost card; poe.ninja no longer prices regular maps). 0 = unset.
+	// A market price, not part of the build: written to the build file only,
+	// never into the export json or the share code.
+	double mapPrice = 0.0;
+	// What the player PAID for this project's map-device items, item id ->
+	// chaos per unit. A bulk buyer presses 「記錄目前市價」 once; a batch buyer
+	// types each price. Same rules as mapPrice: build file only, written only
+	// when set. costRecordedUtc = when the market was last recorded (0 = never).
+	std::map<std::string, double> costPrices;
+	long long costRecordedUtc = 0;
+	// How many maps the player plans to run: the cost card shows the whole
+	// plan's cost. Same rules as mapPrice (build file only, written when > 0).
+	int plannedMaps = 0;
+	// Shared with the build (write_extras): see AtlasProfitRecord.
+	AtlasProfitRecord profit;
 };
 
 struct AtlasBuildFile {

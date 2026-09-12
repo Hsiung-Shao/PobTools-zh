@@ -459,6 +459,18 @@ if (WIN32)
         host/regex_state.cpp
         host/regex_tool_ui.cpp
         host/regex_selftest.cpp
+        # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
+        host/warehouse_provider_sessid.cpp
+        host/warehouse_snapshot.cpp
+        host/warehouse_state.cpp
+        host/warehouse_pricing.cpp
+        host/warehouse_ninja.cpp
+        host/warehouse_service.cpp
+        host/warehouse_ui.cpp
+        host/warehouse_selftest.cpp
+        # 輿圖策略 × 倉庫收益：每張圖成本（純資料）+ 共用 poe.ninja 價格來源
+        host/atlas_cost.cpp
+        host/warehouse_price_feed.cpp
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
