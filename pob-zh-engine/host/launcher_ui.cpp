@@ -7,6 +7,7 @@
 #include "app_version.h"
 #include "app_update.h"
 #include "changelog.h"
+#include "changelog_en.h"
 #include "error_log.h"
 #include "hang_watch.h"       // heartbeat, and the POB windows the watchdog asks after
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
@@ -79,21 +80,73 @@ static const float kBigFontSize = 30.0f;   // ToolPanelHost::big, digits only
 // External-link board (wide layout). Labels feed the glyph atlas automatically
 // (see the AddText loop below), so adding an entry needs no font work.
 // The Discord and sponsor links are rendered after this list from
-// LauncherStrings so they stay translated; everything here is a proper noun.
-struct LinkEntry { const char* label; const wchar_t* url; };
-static const LinkEntry kLinks[] = {
+// LauncherStrings so they stay translated.
+//
+// `tr` decides which label a locale sees. Set: the string table's, so an
+// English or Korean user reads "Official trade (PoE1)". Null: `label`, in every
+// locale -- either because the label is a proper noun that does not translate
+// (PoeDB, poe.ninja, FilterBlade) or because the thing behind the link IS
+// Chinese (the Bahamut board, the two Chinese-localisation tools). Those stay
+// listed and stay Chinese for everyone: hiding them would only make a reader
+// think the localisation does not exist (user ruling, 2026-09-12).
+struct LinkEntry {
+	const char* label;
+	const wchar_t* url;
+	const char* LauncherStrings::*tr = nullptr;
+};
+
+// One array per column. The board grew to 18 entries once PoE2 and our own
+// localisation tools were added, and a single row-major list read as a jumble:
+// the PoE1 wiki and a Chrome Web Store page landed side by side for no reason.
+// Reading DOWN a column is how a link board is scanned, so each game -- and our
+// own tools -- gets a column of its own, headed and in a fixed order.
+static const LinkEntry kLinksPoe1[] = {
+	{ u8"官方網站",               L"https://www.pathofexile.com",       &LauncherStrings::linkOfficialSite },
+	{ u8"官方交易市集（PoE1）",   L"https://www.pathofexile.com/trade", &LauncherStrings::linkTradePoe1 },
 	{ u8"PoeDB 流亡編年史",       L"https://poedb.tw" },
-	{ u8"PoE2DB",                 L"https://poe2db.tw" },
-	{ u8"官方網站",               L"https://www.pathofexile.com" },
-	{ u8"官方交易市集",           L"https://www.pathofexile.com/trade" },
-	{ u8"交易市集中文化",         L"https://github.com/Hsiung-Shao/poe-market-zh/releases/latest" },
 	{ u8"PoE Wiki",               L"https://www.poewiki.net" },
-	{ u8"巴哈姆特 PoE 板",        L"https://forum.gamer.com.tw/A.php?bsn=18966" },
-	{ u8"Reddit r/pathofexile",   L"https://www.reddit.com/r/pathofexile/" },
 	{ u8"poe.ninja",              L"https://poe.ninja" },
 	{ u8"FilterBlade",            L"https://www.filterblade.xyz" },
-	{ u8"拆粉查詢",               L"https://poe-disenchant-tool.vercel.app/allflame" },
+	{ u8"拆粉查詢",               L"https://poe-disenchant-tool.vercel.app/allflame", &LauncherStrings::linkDisenchant },
+	{ u8"Reddit r/pathofexile",   L"https://www.reddit.com/r/pathofexile/" },
+	{ u8"巴哈姆特 PoE 板",        L"https://forum.gamer.com.tw/A.php?bsn=18966" },
 };
+static const LinkEntry kLinksPoe2[] = {
+	{ u8"官方交易市集（PoE2）",   L"https://www.pathofexile.com/trade2", &LauncherStrings::linkTradePoe2 },
+	{ u8"PoE2DB",                 L"https://poe2db.tw" },
+	{ u8"PoE2 Wiki",              L"https://www.poe2wiki.net" },
+	{ u8"poe.ninja（PoE2）",      L"https://poe.ninja/poe2" },
+	{ u8"Reddit r/PathOfExile2",  L"https://www.reddit.com/r/PathOfExile2/" },
+};
+// Ours. Three install routes for the trade-site extension (the stores are what
+// most people want; the GitHub release is for manual installs), then the
+// price-check fork -- PoE1 only for now, because the PoE2 price checker
+// (Exiled Exchange 2) already ships Traditional Chinese of its own. The label
+// says (PoE1) so that gap is visible instead of looking like it covers both.
+static const LinkEntry kLinksTools[] = {
+	{ u8"交易市集中文化（Chrome）",
+	  L"https://chromewebstore.google.com/detail/poe-market-zh/ipnmbepaghlkapopikbpcchblhfkieed" },
+	{ u8"交易市集中文化（Firefox）",
+	  L"https://addons.mozilla.org/zh-TW/firefox/addon/poe-market-zh/" },
+	{ u8"交易市集中文化（GitHub）",
+	  L"https://github.com/Hsiung-Shao/poe-market-zh/releases/latest" },
+	{ u8"查價器中文化（PoE1）",
+	  L"https://github.com/Hsiung-Shao/awakened-poe-trade-zh-TW/releases/latest" },
+};
+
+struct LinkColumn {
+	const char* head;                        // null -> use headTr
+	const char* LauncherStrings::*headTr;
+	const LinkEntry* items;
+	int count;
+};
+static const LinkColumn kLinkColumns[] = {
+	{ "PoE1", nullptr, kLinksPoe1, (int)(sizeof(kLinksPoe1) / sizeof(kLinksPoe1[0])) },
+	{ "PoE2", nullptr, kLinksPoe2, (int)(sizeof(kLinksPoe2) / sizeof(kLinksPoe2[0])) },
+	{ nullptr, &LauncherStrings::linkGroupTools, kLinksTools,
+	  (int)(sizeof(kLinksTools) / sizeof(kLinksTools[0])) },
+};
+static const int kLinkColumnCount = (int)(sizeof(kLinkColumns) / sizeof(kLinkColumns[0]));
 
 // The language-picker labels name scripts a Traditional Chinese font is not
 // expected to carry (한국어, 简). The atlas asks for them anyway — if the user
@@ -125,8 +178,12 @@ static void CollectLauncherTexts(std::vector<const char*>& out,
 			for (auto m : kLauncherStringMembers)
 				if (t->*m) out.push_back(t->*m);
 	out.push_back(kAppUpdateGlyphSeed); // dynamic updater Status.message vocabulary
-	out.push_back(kChangelogText);      // version-history dialog body
-	for (const LinkEntry& l : kLinks) out.push_back(l.label);
+	out.push_back(kChangelogText);      // version-history dialog body (zh)
+	out.push_back(kChangelogTextEn);    // ...and the one every other locale reads
+	for (const LinkColumn& c : kLinkColumns) {
+		if (c.head) out.push_back(c.head);
+		for (int i = 0; i < c.count; i++) out.push_back(c.items[i].label);
+	}
 	out.push_back(u8"繁體中文Korean·"); // language combo labels + link separator
 }
 
@@ -147,7 +204,7 @@ static void CollectLauncherTexts(std::vector<const char*>& out,
 //
 // Historical entries are never edited (a standing project rule), so undoing the
 // wrap at render time is the only way to fix them.
-static void DrawChangelogBody(float scale)
+static void DrawChangelogBody(float scale, bool zh)
 {
 	static const char kIdeoSpace[] = "\xe3\x80\x80";   // U+3000
 	static const char kMidDot[]    = "\xc2\xb7";       // U+00B7
@@ -164,7 +221,7 @@ static void DrawChangelogBody(float scale)
 	//    and not the start of a bullet".
 	std::vector<std::string> lines;
 	{
-		const std::string log = kChangelogText;
+		const std::string log = zh ? kChangelogText : kChangelogTextEn;
 		size_t start = 0;
 		while (start <= log.size()) {
 			size_t nl = log.find('\n', start);
@@ -1524,6 +1581,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                          (localeIdx >= 0 && localeIdx < (int)localeDrawable.size() &&
 		                           localeDrawable[localeIdx]);
 		const LauncherStrings& S = langDrawable ? strStore[localeIdx].s : strStore[0].s;
+		// Which release history to show. The prose lives in the source, not in a
+		// translated string table, so it follows the same fallback S does: a font
+		// that cannot draw the chosen language would make the Chinese one
+		// unreadable too. zh-rTW, zh-rCN, and any zh-* dropped in later.
+		const bool zhUi = langDrawable && localeIdx >= 0 && localeIdx < (int)locales.size() &&
+		                  locales[localeIdx].id.rfind("zh", 0) == 0;
 
 		// POB instances this launcher started (KeepOpen mode). Counted every
 		// frame because that call is also where finished processes are reaped.
@@ -1949,22 +2012,43 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 		// Link board: three stretch columns of external links.
 		SectionLabel(fonts, scale, inner, S.linksSection);
-		if (ImGui::BeginTable("##links", 3, ImGuiTableFlags_SizingStretchSame)) {
-			for (const LinkEntry& l : kLinks) {
-				ImGui::TableNextColumn();
-				LinkText(l.label, l.url);
+		// Column per group, filled DOWN rather than across: TableNextColumn would
+		// wrap row-major and scatter each group over every column.
+		if (ImGui::BeginTable("##links", kLinkColumnCount, ImGuiTableFlags_SizingStretchSame)) {
+			int rows = 0;
+			for (const LinkColumn& c : kLinkColumns)
+				if (c.count > rows) rows = c.count;
+
+			ImGui::TableNextRow();
+			for (int c = 0; c < kLinkColumnCount; c++) {
+				ImGui::TableSetColumnIndex(c);
+				const LinkColumn& col = kLinkColumns[c];
+				ImGui::PushFont(fonts.small);
+				ImGui::TextDisabled("%s", col.head ? col.head : S.*col.headTr);
+				ImGui::PopFont();
 			}
-			// Community + sponsor: moved out of the About dialog so they are
-			// reachable without opening a modal. Labels come from the string
-			// table rather than kLinks because these two are translated.
-			ImGui::TableNextColumn();
-			LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
-			ImGui::TableNextColumn();
-			// One sponsor page of our own, so the payment provider can change
-			// without shipping a new build.
-			LinkText(S.support, L"https://hsiung-shao.github.io/support/");
+			for (int r = 0; r < rows; r++) {
+				ImGui::TableNextRow();
+				for (int c = 0; c < kLinkColumnCount; c++) {
+					const LinkColumn& col = kLinkColumns[c];
+					if (r >= col.count) continue; // shorter column: leave the cell empty
+					ImGui::TableSetColumnIndex(c);
+					const LinkEntry& l = col.items[r];
+					LinkText(l.tr ? S.*l.tr : l.label, l.url);
+				}
+			}
 			ImGui::EndTable();
 		}
+
+		// Ours, not the game's: kept out of the table so they do not read as a
+		// fourth category of game resources. Moved out of the About dialog long
+		// ago so they are reachable without opening a modal.
+		ImGui::Dummy(ImVec2(0, 6.0f * scale));
+		LinkText(S.discord, L"https://discord.gg/6VamPQb8nC");
+		ImGui::SameLine(0, 18.0f * scale);
+		// One sponsor page of our own, so the payment provider can change
+		// without shipping a new build.
+		LinkText(S.support, L"https://hsiung-shao.github.io/support/");
 
 		ImGui::EndChild();
 		ImGui::EndTabItem();
@@ -1975,7 +2059,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * scale, 14.0f * scale));
 			ImGui::BeginChild("##changelog_scroll", ImVec2(0, 0), true,
 			                  ImGuiWindowFlags_AlwaysUseWindowPadding);
-			DrawChangelogBody(scale);
+			DrawChangelogBody(scale, zhUi);
 			ImGui::EndChild();
 			ImGui::PopStyleVar();
 			ImGui::EndTabItem();
