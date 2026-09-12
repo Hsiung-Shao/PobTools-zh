@@ -324,6 +324,10 @@ void WarehouseService::noteBackoff(const IStashProvider& p)
 		// (429, exhausted bucket) is worth carrying to the next job.
 		if (ms > kStashMinSpacingMs) WarehouseNoteBlocked(exeDir_, NowUtc() + (ms + 999) / 1000);
 	} catch (...) {
+		// Swallowed on purpose. This runs from ~BackoffCarry, i.e. during
+		// stack unwinding, where an escaping exception calls std::terminate:
+		// losing one backoff note costs the next job a wait it did not need,
+		// while letting it out costs the whole process.
 	}
 }
 
