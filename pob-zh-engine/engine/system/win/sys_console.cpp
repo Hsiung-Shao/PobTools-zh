@@ -117,9 +117,17 @@ void sys_console_c::ThreadProc()
 	conClass.hIcon				= sys->icon;
 	if (RegisterClass(&conClass) == 0) exit(0);
 
-	// Create the system console window
+	// Create the system console window. Headless (POB_ZH_HEADLESS=1) starts it
+	// hidden: it is the first window this process would otherwise show, for a
+	// third of a second, and a headless child has no business showing any.
+	DWORD style = SCON_STYLE;
+	{
+		char v[8] = {};
+		GetEnvironmentVariableA("POB_ZH_HEADLESS", v, sizeof(v));
+		if (v[0] == '1') style &= ~WS_VISIBLE;
+	}
 	hwMain = CreateWindowExW(
-		0, CFG_SCON_TITLE " Class", CFG_SCON_TITLE, SCON_STYLE, 
+		0, CFG_SCON_TITLE " Class", CFG_SCON_TITLE, style,
 		wrec.left, wrec.top, wrec.right - wrec.left, wrec.bottom - wrec.top,
 		NULL, NULL, sys->hinst, NULL
 	);

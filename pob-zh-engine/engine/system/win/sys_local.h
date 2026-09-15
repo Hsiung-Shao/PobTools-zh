@@ -59,6 +59,11 @@ public:
 
 	bool	initialised = false;
 	bool	minimized = false;
+	// POB_ZH_HEADLESS=1: no GLFW window, frame loop paced by stdin requests,
+	// errors go to the failure log and a non-zero exit code instead of a
+	// console window that waits for someone to close it.
+	bool	headless = false;
+	int		exitCode = 0;
 	volatile bool	exitFlag = false;
 	volatile bool	restartFlag = false;
 	char*	exitMsg = nullptr;

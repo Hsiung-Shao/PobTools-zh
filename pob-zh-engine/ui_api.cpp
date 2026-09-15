@@ -19,6 +19,8 @@
 
 #include "core/core_tex_manipulation.h"
 #include "translation_manager.h"
+#include "engine/headless_bridge.h"
+#include "stb_image.h" // header only; the implementation lives in core_image.cpp
 
 /* OnFrame()
 ** OnChar("<char>")
@@ -368,15 +370,95 @@ static int l_artHandleSize(lua_State* L)
 
 struct imgHandle_s {
 	r_shaderHnd_c* hnd;
+	// Headless: no renderer, no texture -- but POB still asks ImageSize() for
+	// sprite-sheet UVs, so Load() records the file's dimensions here instead.
+	int headlessW;
+	int headlessH;
+	bool headlessLoaded;
 };
 
 static int l_NewImageHandle(lua_State* L)
 {
 	imgHandle_s* imgHandle = (imgHandle_s*)lua_newuserdata(L, sizeof(imgHandle_s));
 	imgHandle->hnd = NULL;
+	imgHandle->headlessW = 0;
+	imgHandle->headlessH = 0;
+	imgHandle->headlessLoaded = false;
 	lua_pushvalue(L, lua_upvalueindex(1));
 	lua_setmetatable(L, -2);
 	return 1;
+}
+
+static imgHandle_s* GetImgHandle(lua_State* L, ui_main_c* ui, const char* method, bool loaded);
+
+// Headless image handles: no texture is ever created. Load() records the
+// dimensions (stb can read a PNG/JPEG header without decoding it) because
+// PassiveTree divides sprite coordinates by ImageSize(); anything stb cannot
+// read (a .dds) reports 1x1, the same as an image still loading.
+static int l_imgHandleLoadHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	imgHandle_s* imgHandle = GetImgHandle(L, ui, "Load", false);
+	ui->LExpect(L, lua_gettop(L) >= 1 && lua_isstring(L, 1), "Usage: imgHandle:Load(fileName[, flags...])");
+	auto fileName = std::filesystem::u8path(lua_tostring(L, 1));
+	if (!fileName.is_absolute() && !ui->scriptWorkDir.empty()) {
+		fileName = ui->scriptWorkDir / fileName;
+	}
+	imgHandle->headlessW = 1;
+	imgHandle->headlessH = 1;
+	imgHandle->headlessLoaded = true;
+	std::ifstream in(fileName, std::ios::binary);
+	if (in) {
+		// Headers sit in the first few KB; stb only needs the header for _info.
+		std::vector<unsigned char> head(65536);
+		in.read((char*)head.data(), (std::streamsize)head.size());
+		int x = 0, y = 0, comp = 0;
+		if (stbi_info_from_memory(head.data(), (int)in.gcount(), &x, &y, &comp) && x > 0 && y > 0) {
+			imgHandle->headlessW = x;
+			imgHandle->headlessH = y;
+		}
+	}
+	return 0;
+}
+
+static int l_imgHandleIsValidHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	imgHandle_s* imgHandle = GetImgHandle(L, ui, "IsValid", false);
+	lua_pushboolean(L, imgHandle->headlessLoaded);
+	return 1;
+}
+
+static int l_imgHandleUnloadHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	imgHandle_s* imgHandle = GetImgHandle(L, ui, "Unload", false);
+	imgHandle->headlessLoaded = false;
+	return 0;
+}
+
+static int l_imgHandleIsLoadingHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	GetImgHandle(L, ui, "IsLoading", false);
+	lua_pushboolean(L, 0);
+	return 1;
+}
+
+static int l_imgHandleSetLoadingPriorityHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	GetImgHandle(L, ui, "SetLoadingPriority", false);
+	return 0;
+}
+
+static int l_imgHandleImageSizeHeadless(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	imgHandle_s* imgHandle = GetImgHandle(L, ui, "ImageSize", false);
+	lua_pushinteger(L, imgHandle->headlessLoaded ? imgHandle->headlessW : 0);
+	lua_pushinteger(L, imgHandle->headlessLoaded ? imgHandle->headlessH : 0);
+	return 2;
 }
 
 static imgHandle_s* GetImgHandle(lua_State* L, ui_main_c* ui, const char* method, bool loaded)
@@ -2487,8 +2569,12 @@ static void pobcharm_redirect_update_restart(ui_main_c* ui)
 	out.close();
 
 	// Marker tells the host which Launch.lua to reopen, bypassing the launcher UI.
+	// Second line (headless only) says the new UI was driving this POB, so the
+	// host reopens that rather than the classic window. A host that predates
+	// the line reads only the first one.
 	std::ofstream marker(hostExe.parent_path() / "pob-zh.relaunch", std::ios::trunc);
 	marker << ui->scriptName.generic_u8string();
+	if (ui->headless) marker << "\nui=modern";
 #endif
 }
 
@@ -2940,6 +3026,30 @@ int ui_main_c::InitAPI(lua_State* L)
 	// above so require() finds lua-utf8.dll; pcall guards a missing module.
 	if (luaL_dostring(L, "local ok, m = pcall(require, 'lua-utf8'); if ok then _G.utf8 = m end")) {
 		lua_pop(L, 1); // ignore (should not happen: inner pcall handles failure)
+	}
+
+	// Headless (POB_ZH_HEADLESS=1): re-point the renderer-dependent globals
+	// and the image-handle methods at versions that need no window. Done last
+	// so it overrides exactly what was registered above and nothing else.
+	{
+		ui_main_c* ui = GetUIPtr(L);
+		if (ui && ui->headless) {
+			lua_getfield(L, LUA_REGISTRYINDEX, "uiimghandlemeta");
+			lua_pushcfunction(L, l_imgHandleLoadHeadless);
+			lua_setfield(L, -2, "Load");
+			lua_pushcfunction(L, l_imgHandleUnloadHeadless);
+			lua_setfield(L, -2, "Unload");
+			lua_pushcfunction(L, l_imgHandleIsValidHeadless);
+			lua_setfield(L, -2, "IsValid");
+			lua_pushcfunction(L, l_imgHandleIsLoadingHeadless);
+			lua_setfield(L, -2, "IsLoading");
+			lua_pushcfunction(L, l_imgHandleSetLoadingPriorityHeadless);
+			lua_setfield(L, -2, "SetLoadingPriority");
+			lua_pushcfunction(L, l_imgHandleImageSizeHeadless);
+			lua_setfield(L, -2, "ImageSize");
+			lua_pop(L, 1);
+			HeadlessBridge::InstallStubs(L, ui);
+		}
 	}
 
 	return 0;

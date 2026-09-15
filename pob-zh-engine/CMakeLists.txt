@@ -63,6 +63,12 @@ set(SIMPLEGRAPHIC_SOURCES
     "engine/system/sys_opengl.h"
     "engine/system/sys_video.h"
     "win/entry.cpp"
+    # Headless mode: stdio JSON transport + the Draw* stubs and bridge dispatch
+    # that let POB's Lua run with no window for the new UI (host --modern-ui).
+    "engine/headless_ipc.cpp"
+    "engine/headless_ipc.h"
+    "engine/headless_bridge.cpp"
+    "engine/headless_bridge.h"
     "ui.h"
     "ui_api.cpp"
     # Shared failure log. Compiled into BOTH targets on purpose: the engine
@@ -279,6 +285,11 @@ install(TARGETS SimpleGraphic RUNTIME DESTINATION "engine")
 # POB's Lua state after OnInit. Ships in engine/ (never the POB folder).
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua" DESTINATION "engine")
 
+# Headless bridge: the Lua side of the new UI, loaded after the inject script
+# when POB_ZH_HEADLESS=1. Under Data\ (not engine\) so the signed translation-
+# data line can hotfix it between app releases.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua" DESTINATION "Data/bridge")
+
 # Fallback pure-Lua runtime modules. POB's built-in updater does not ship new
 # runtime lua files (e.g. sha2.lua, required by PoEAPI since POB 2.66), so a
 # user who updated POB in place lacks them. package.path prefers the POB
@@ -450,6 +461,9 @@ if (WIN32)
         host/passive_import.cpp
         host/passive_tree_update.cpp
         host/app_update.cpp
+        # headless POB child (stdio JSON) + its self-test against a sandbox install
+        host/headless_proc.cpp
+        host/headless_selftest.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp

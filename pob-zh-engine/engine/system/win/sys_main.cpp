@@ -12,6 +12,8 @@
 #include "translation_manager.h"
 #include "startup_trace.h"
 #include "../../../host/hang_watch.h"
+#include "../../../host/error_log.h"
+#include "../../headless_ipc.h"
 
 #include "core.h"
 
@@ -499,8 +501,8 @@ void sys_main_c::Error(const char *fmt, ...)
 {
 	if (errorRaised) return;
 	errorRaised = true;
-	
-	if (initialised) {
+
+	if (initialised && !headless) {
 		video->SetVisible(false);
 		conWin->SetVisible(true);
 	}
@@ -519,6 +521,16 @@ void sys_main_c::Error(const char *fmt, ...)
 #ifndef _WIN32
 	free(msg);
 #endif
+
+	if (headless) {
+		// Nobody is looking at a console window; the host is watching our exit
+		// code and the failure log. Waiting here would hang the host forever.
+		PobLog::Error("headless", std::string("engine error: ") + msg);
+		HeadlessIpc::SendEvent("error", "{\"message\":" + HeadlessIpc::Quote(msg) + "}");
+		translation_wait_ready();
+		HangWatch::Stop();
+		ExitProcess(3);
+	}
 
 	exitFlag = false;
 	while (exitFlag == false) {
@@ -548,7 +560,7 @@ void sys_main_c::Exit(const char* msg)
 	}
 	FreeString(exitMsg);
 	exitMsg = msg? AllocString(msg) : NULL;
-	if (exitMsg) {
+	if (exitMsg && !headless) {
 		conWin->SetVisible(true);
 	}
 	exitFlag = true;
@@ -557,7 +569,7 @@ void sys_main_c::Exit(const char* msg)
 void sys_main_c::Restart()
 {
 	video->SetVisible(false);
-	conWin->SetVisible(true);
+	if (!headless) conWin->SetVisible(true);
 	restartFlag = true;
 	FreeString(exitMsg);
 	exitMsg = NULL;
@@ -652,6 +664,21 @@ bool sys_main_c::Run(int argc, char** argv)
 
 	SetWorkDir();
 
+	// Same variable ui_main.cpp reads; decided here too because the frame loop
+	// below is the thing that must not touch GLFW when there is no window.
+	{
+		char v[8] = {};
+		GetEnvironmentVariableA("POB_ZH_HEADLESS", v, sizeof(v));
+		headless = (v[0] == '1');
+	}
+	if (headless && !HeadlessIpc::Start()) {
+		// Headless with nobody on the other end of stdin is a launch mistake
+		// (run from a shell without redirection), not something to run through.
+		PobLog::Error("headless", "POB_ZH_HEADLESS=1 but stdin/stdout are not pipes; nothing to talk to");
+		exitCode = 4;
+		return false;
+	}
+
 	// Get system interfaces
 	con = IConsole::GetHandle();
 	conWin = sys_IConsole::GetHandle(this);
@@ -696,6 +723,23 @@ bool sys_main_c::Run(int argc, char** argv)
 			// One store per iteration, before any of the work: whatever stops
 			// below, the heartbeat stops with it.
 			HangWatch::Beat();
+			if (headless) {
+				// No window: nothing to poll, nothing that can ask to close. The
+				// host closing our stdin is the close request. Pace at 50 ms --
+				// enough to pump POB's update-check subscript and answer requests
+				// promptly, cheap enough to idle for hours (the 12-hour re-check
+				// in Launch.lua only needs OnFrame to run at all).
+				if (HeadlessIpc::HostGone()) {
+					Exit();
+					break;
+				}
+				core->Frame();
+				if (threadError) {
+					Error(threadError);
+				}
+				Sleep(50);
+				continue;
+			}
 			if (minimized) {
 				glfwWaitEventsTimeout(0.1);
 			}
@@ -746,7 +790,17 @@ bool sys_main_c::Run(int argc, char** argv)
 	}
 #endif
 
-	if (exitMsg) {
+	if (exitMsg && headless) {
+		// A script error (ui_main DoError -> Exit(msg)). Same rule as Error():
+		// log it, tell the host, leave a non-zero exit code, never wait.
+		con->Printf("\n%s", exitMsg);
+		PobLog::Error("headless", std::string("script error: ") + exitMsg);
+		HeadlessIpc::SendEvent("error", "{\"message\":" + HeadlessIpc::Quote(exitMsg) + "}");
+		FreeString(exitMsg);
+		exitMsg = NULL;
+		exitCode = 2;
+	}
+	else if (exitMsg) {
 		exitFlag = false;
 		video->SetVisible(false);
 		conWin->SetVisible(true);
@@ -758,9 +812,12 @@ bool sys_main_c::Run(int argc, char** argv)
 		while (exitFlag == false) {
 			Sleep(50);
 		}
-	}	
+	}
 
 	initialised = false;
+	if (headless) {
+		HeadlessIpc::Stop();
+	}
 
 	// Release system interfaces
 	core_IMain::FreeHandle(core);

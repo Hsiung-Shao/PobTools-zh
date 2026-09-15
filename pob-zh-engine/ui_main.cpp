@@ -10,6 +10,13 @@
 
 #include "translation_manager.h"
 #include "startup_trace.h"
+#include "engine/headless_bridge.h"
+#include "engine/headless_ipc.h"
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 // ======
 // Locals
@@ -244,6 +251,18 @@ void ui_main_c::Init(int argc, char** argv)
 		scriptArgv[a] = AllocString(argv[a]);
 	}
 
+	// Headless mode is an environment variable, not an argv flag: POB's Main.lua
+	// treats arg[1] as a build import link, so anything extra on the command
+	// line would be read as one. Win32 API on purpose -- the host exe is /MT and
+	// its CRT environment is not the one this /MD DLL's getenv() sees.
+#ifdef _WIN32
+	{
+		char v[8] = {};
+		GetEnvironmentVariableA("POB_ZH_HEADLESS", v, sizeof(v));
+		headless = (v[0] == '1');
+	}
+#endif
+
 	// Load config files (engine-owned: resolved next to the DLL when not
 	// present at the CWD-relative legacy location)
 	core->config->LoadConfig(ResolveEngineCfg("SimpleGraphic.cfg"));
@@ -405,6 +424,12 @@ void ui_main_c::ScriptInit()
 		sys->SetWorkDir();
 		startup_trace_mark("poecharm_inject.lua done");
 	}
+	if ( !didExit && !restartFlag && headless ) {
+		// After inject, so the bridge sees the same patched classes the classic
+		// UI does; on a Restart() this runs again with the new Lua state, which
+		// is exactly what a POB self-update needs.
+		HeadlessLoadBridge();
+	}
 	if ( !didExit && !restartFlag ) {
 		// Check for frame callback
 		int extraArgs = PushCallback("OnFrame");
@@ -444,7 +469,11 @@ void ui_main_c::Frame()
 		}
 	}
 	// Always runs 10 frames after finishing the boot process
-	if (!sys->video->IsVisible() || sys->conWin->IsVisible() || restartFlag || didExit) {
+	if (headless) {
+		// Pacing belongs to the host's request stream (sys_main.cpp's headless
+		// loop); the idle gate below would only ever see "no window, no mouse".
+	}
+	else if (!sys->video->IsVisible() || sys->conWin->IsVisible() || restartFlag || didExit) {
 		framesSinceWindowHidden = 0;
 	}
 	else if (framesSinceWindowHidden <= 10) {
@@ -454,8 +483,8 @@ void ui_main_c::Frame()
 	else if (!sys->video->IsActive() && !sys->video->IsCursorOverWindow() && !hasActiveCoroutine && !hasSubscript) {
 		sys->Sleep(100);
 		return;
-	}	
-	
+	}
+
 	if (renderer) {
 		// Prepare for rendering
 		renderer->BeginFrame();
@@ -474,6 +503,14 @@ void ui_main_c::Frame()
 				subScriptList[i] = NULL;
 			}
 		}
+	}
+
+	// Headless: hand the host's queued requests to the bridge. Before OnFrame so
+	// a request that changes the build is followed by POB's own recalculation
+	// in the same iteration; the bridge pumps launch:OnFrame() itself when it
+	// needs the result inside one request.
+	if (headless) {
+		HeadlessDispatch();
 	}
 
 	// Run script
@@ -505,7 +542,7 @@ void ui_main_c::Frame()
 	}
 
 	//sys->con->Printf("Finishing up...\n");
-	if ( !sys->video->IsActive() && !hasActiveCoroutine && !hasSubscript ) {
+	if ( !headless && !sys->video->IsActive() && !hasActiveCoroutine && !hasSubscript ) {
 		sys->Sleep(100);
 	}
 
@@ -515,7 +552,55 @@ void ui_main_c::Frame()
 			renderer->PurgeShaders();
 		}
 		ScriptInit();
+		if (headless && !didExit && !restartFlag) {
+			// The Lua state (and with it POB's freshly updated code) was rebuilt;
+			// the host's view of the build is stale and must be reloaded.
+			HeadlessIpc::SendEvent("restarted", "{}");
+		}
 	}
+}
+
+void ui_main_c::HeadlessLoadBridge()
+{
+	bridgeDispatchRef = LUA_NOREF;
+	char buf[2048] = {};
+#ifdef _WIN32
+	GetEnvironmentVariableA("POB_ZH_BRIDGE", buf, sizeof(buf));
+#endif
+	std::filesystem::path bridgePath;
+	if (buf[0]) {
+		bridgePath = std::filesystem::u8path(buf);
+	} else {
+		// Default: Data\bridge\bridge.lua beside the host exe (one level above
+		// engine\). Under Data\ so the signed translation-data line can hotfix it.
+		bridgePath = EngineModuleDir().parent_path() / "Data" / "bridge" / "bridge.lua";
+	}
+	std::string bridgeStr = bridgePath.generic_u8string();
+	sys->SetWorkDir(scriptWorkDir);
+	if (!std::filesystem::exists(bridgePath)) {
+		PobLog::Error("bridge", "bridge.lua not found, the new UI has nothing to talk to: " + bridgeStr);
+		HeadlessIpc::SendEvent("gate_result", "{\"ok\":false,\"failed\":[\"bridge.lua missing: " +
+		                                          bridgeStr + "\"]}");
+	} else if (luaL_loadfile(L, bridgeStr.c_str())) {
+		const char* why = lua_tostring(L, -1);
+		std::string msg = std::string("bridge.lua did not load: ") + (why ? why : "(no detail)");
+		PobLog::Error("bridge", msg);
+		HeadlessIpc::SendEvent("gate_result", "{\"ok\":false,\"failed\":[" + HeadlessIpc::Quote(msg) + "]}");
+		lua_pop(L, 1);
+	} else {
+		HangWatch::Scope watch("lua:bridge");
+		// PCall reports a runtime error through DoError -> Exit(msg), which the
+		// headless sys loop turns into a logged non-zero exit; the host sees the
+		// process end rather than a bridge that silently never answers.
+		PCall(0, 0);
+	}
+	sys->SetWorkDir();
+	startup_trace_mark("bridge.lua done");
+}
+
+void ui_main_c::HeadlessDispatch()
+{
+	HeadlessBridge::DispatchPending(this);
 }
 
 void ui_main_c::ScriptShutdown()

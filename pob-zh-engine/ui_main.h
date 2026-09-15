@@ -45,6 +45,12 @@ public:
 	bool	restartFlag = false;
 	bool	didExit = false;
 	bool	renderEnable = false;
+	// POB_ZH_HEADLESS=1: run POB's Lua with no window, no GL, Draw* as no-ops,
+	// and talk to the host over stdio (engine/headless_ipc.h). Read once in Init.
+	bool	headless = false;
+	// Registry ref of the Lua dispatcher the bridge registered with
+	// PobToolsBridgeSetDispatcher(fn); LUA_NOREF until the bridge loaded.
+	int		bridgeDispatchRef = -2 /* LUA_NOREF */;
 	int		cursorX = 0;
 	int		cursorY = 0;
 	int		framesSinceWindowHidden = 0;
@@ -59,6 +65,10 @@ public:
 	void	RenderInit(r_featureFlag_e features);
 	void	ScriptInit();
 	void	ScriptShutdown();
+	// Headless only: load Data\bridge\bridge.lua (path from POB_ZH_BRIDGE) after
+	// the inject script, and hand queued host requests to its dispatcher.
+	void	HeadlessLoadBridge();
+	void	HeadlessDispatch();
 
 	void	LAssert(lua_State* L, int cond, const char* fmt, ...); // Non-local return to Lua code on failure
 	void	LExpect(lua_State* L, int cond, const char* fmt, ...); // Throws ui_expectationFailed_s on failure, message on Lua stack

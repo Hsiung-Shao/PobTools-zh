@@ -94,10 +94,13 @@ extern "C" SIMPLEGRAPHIC_DLL_PUBLIC int RunLuaFileAsWin(int argc, char** argv)
 
 	while (sys->Run(argc, argv));
 
+	// Non-zero only in headless mode (sys_main.cpp): the classic window reports
+	// its errors on screen and the host never looked at this value.
+	const int rc = sys->exitCode;
 	delete sys;
 
 #ifdef _WIN32
 	timeEndPeriod(1);
 #endif
-	return 0;
+	return rc;
 }

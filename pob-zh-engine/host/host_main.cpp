@@ -38,6 +38,7 @@
 #include "paste_trace.h"
 #include "placeholder_selftest.h"
 #include "pob_launch.h"
+#include "headless_proc.h" // --engine-headless / --headless-selftest
 #include "window_manager.h"
 #include "window_dock.h"
 #include "filter_editor.h"
@@ -718,6 +719,29 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
 		ShowWarehouseTool(dir, c.game, c.locale);
 		return 0;
+	}
+
+	// Headless engine end-to-end check against a sandbox copy of the PoE1 install.
+	if (arg1 == L"--headless-selftest") { // --headless-selftest [pobDir]
+		return RunHeadlessSelfTest(dir, arg2);
+	}
+
+	// Internal headless engine child (new UI / self-test): same as --engine but
+	// with POB_ZH_HEADLESS=1 in the environment, so the engine creates no window
+	// and talks JSON over the stdio pipes the parent handed it. The variable is
+	// set here as well as by the parent: a headless child must never come up as
+	// a classic window because someone launched it by hand.
+	if (arg1 == L"--engine-headless") {
+		std::wstring launchLua = launch_lua_from(arg2);
+		if (launchLua.empty()) {
+			PobLog::Error("headless", "--engine-headless was given a path with no Launch.lua: " +
+			                              to_utf8(arg2));
+			return 1;
+		}
+		SetEnvironmentVariableW(L"POB_ZH_HEADLESS", L"1");
+		PobLaunch::HoldEngineRunningMarker(dir);
+		apply_locale_env(dir);
+		return run_engine(engineDir, launchLua);
 	}
 
 	// Internal engine child: env already inherited from the launcher parent.

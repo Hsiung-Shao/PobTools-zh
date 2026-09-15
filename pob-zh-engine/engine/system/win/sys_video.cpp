@@ -816,6 +816,7 @@ void sys_video_c::SetForeground()
 
 bool sys_video_c::IsActive()
 {
+	if (!initialised || !wnd) return false; // headless: no window was ever created
 	return glfwGetWindowAttrib(wnd, GLFW_FOCUSED);
 }
 
