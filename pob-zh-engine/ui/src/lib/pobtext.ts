@@ -12,16 +12,16 @@ export interface TextRun {
 }
 
 const SLOT: readonly string[] = [
-  "var(--fg-4)", // ^0 black-ish
+  "var(--ink-4)", // ^0 black-ish
   "var(--bad)", // ^1 red
   "var(--ok)", // ^2 green
   "var(--c-mana)", // ^3 blue
   "var(--c-rare)", // ^4 yellow
   "var(--c-chaos)", // ^5 purple
   "var(--c-es)", // ^6 cyan
-  "var(--fg-0)", // ^7 white
-  "var(--fg-2)", // ^8 grey
-  "var(--fg-3)", // ^9 dark grey
+  "var(--ink-0)", // ^7 white
+  "var(--ink-2)", // ^8 grey
+  "var(--ink-3)", // ^9 dark grey
 ];
 
 const KNOWN: Record<string, string> = {
@@ -33,11 +33,11 @@ const KNOWN: Record<string, string> = {
   ffff77: "var(--c-rare)",
   "8888ff": "var(--c-magic)",
   c8c8c8: "var(--c-normal)",
-  ffffff: "var(--fg-0)",
+  ffffff: "var(--ink-0)",
   "1aa29b": "var(--c-gem)",
   "74cabf": "var(--c-gem)",
   aa9e82: "var(--c-currency)",
-  "808080": "var(--fg-2)",
+  "808080": "var(--ink-2)",
   e05030: "var(--bad)",
   ff9922: "var(--warn)",
   "33ff77": "var(--ok)",

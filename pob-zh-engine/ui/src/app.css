@@ -1,8 +1,8 @@
-/* Design tokens and base controls.
-   Adapted from pob-redux (https://github.com/juddisjudd/pob-redux), MIT
-   License, (c) 2026 Judd. See NOTICE.md. Changes: the UI font is the shipped
-   Noto Sans TC/KR served by the host (fonts.pobtools) so Chinese and Korean
-   render; the Geist/Fontin font files are not bundled. */
+/* PobTools 新介面 —— 設計 token 與基底樣式。
+   底色是帶一點藍的深石板,不是純黑;前景是偏暖的米白,呼應 PoE 的羊皮紙;
+   唯一的強調色是金(和天賦樹已配路徑同一種),互動用冷藍。
+   字型只用出貨的 Noto Sans TC/KR(host 以 fonts.pobtools 供應),
+   數字一律等寬 tabular。 */
 
 @font-face {
   font-family: "Noto Sans TC";
@@ -15,35 +15,41 @@
   font-display: swap;
 }
 
-/* Monochrome, hairline. Accents are semantic only. Dark is the base; the
-   tree canvas draws PoB's dark art so it stays dark in any theme. */
-:root,
-.scope-dark {
+:root {
   color-scheme: dark;
 
-  --bg-0: #0b0b0c;
-  --bg-1: #101012;
-  --bg-2: #151518;
-  --bg-3: #1b1b1f;
-  --bg-hover: #202025;
-  --bg-active: #26262c;
+  /* 面 */
+  --surface-0: #0e1116;
+  --surface-1: #131820;
+  --surface-2: #192029;
+  --surface-3: #202834;
+  --surface-hover: #242d3a;
+  --surface-active: #2a3442;
 
-  --line-0: #1c1c21;
-  --line-1: #27272d;
-  --line-2: #35353d;
+  /* 邊 */
+  --edge-0: #1d2430;
+  --edge-1: #29323f;
+  --edge-2: #3a4554;
 
-  --fg-0: #f2f2f4;
-  --fg-1: #b9b9c1;
-  --fg-2: #8a8a94;
-  --fg-3: #76767f;
-  --fg-4: #484850;
+  /* 墨 */
+  --ink-0: #ece6d8;
+  --ink-1: #c3bfb4;
+  --ink-2: #8f8d86;
+  --ink-3: #6d6c66;
+  --ink-4: #45464a;
 
-  --focus: #7f9dff;
-  --ok: #67d38a;
-  --warn: #e7b04e;
-  --bad: #f06a6a;
+  /* 強調 */
+  --gold: #d8aa4b;
+  --gold-soft: rgba(216, 170, 75, 0.16);
+  --gold-dim: #7c6230;
+  --accent: #5b9dff;
+  --accent-soft: rgba(91, 157, 255, 0.18);
+  --focus: var(--accent);
+  --ok: #6fcf97;
+  --warn: #e3b04b;
+  --bad: #ef6b6b;
 
-  /* Path of Exile semantics, tuned for a dark neutral ground */
+  /* PoB 色碼 ^x 對應(依深底微調亮度) */
   --c-life: #f25c5c;
   --c-mana: #6f9cff;
   --c-es: #5fd0e4;
@@ -60,17 +66,17 @@
   --c-spirit: #f0cf74;
   --c-currency: #cba64c;
 
-  --primary-hover: #ffffff;
-  --fade-off: 0.45;
-  --pob-mix: 100%;
-  --backdrop: rgb(0 0 0 / 0.55);
-  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.55);
-  --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.5);
-}
+  --dim-opacity: 0.45;
+  --backdrop: rgba(6, 8, 12, 0.6);
+  --shadow-float: 0 10px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
 
-:root {
-  --font-ui: "Segoe UI", "Noto Sans TC", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans TC", monospace;
+  /* 天賦樹畫布 */
+  --tree-bg: #0b0e13;
+  --tree-line: #262e3a;
+  --tree-line-lit: #4a5566;
+
+  --font-ui: "Noto Sans TC", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
 
   --fs-2xs: 10px;
   --fs-xs: 11px;
@@ -79,12 +85,12 @@
   --fs-lg: 15px;
   --fs-xl: 20px;
 
-  --r-1: 3px;
-  --r-2: 5px;
+  --radius-s: 3px;
+  --radius-m: 6px;
 
-  --titlebar-h: 38px;
+  --titlebar-h: 40px;
   --statusbar-h: 24px;
-  --sidebar-w: 300px;
+  --sidebar-w: 304px;
 }
 
 *,
@@ -97,13 +103,12 @@ html,
 body {
   margin: 0;
   height: 100%;
-  background: var(--bg-0);
-  color: var(--fg-0);
+  background: var(--surface-0);
+  color: var(--ink-0);
   font-family: var(--font-ui);
   font-size: var(--fs-md);
-  line-height: 1.4;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   overflow: hidden;
   user-select: none;
 }
@@ -113,21 +118,25 @@ body {
 }
 
 ::selection {
-  background: rgba(127, 157, 255, 0.28);
+  background: var(--accent-soft);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--line-2) transparent;
+  scrollbar-color: var(--edge-2) transparent;
 }
 *::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--line-2);
-  border-radius: 4px;
+  background: var(--edge-2);
+  border-radius: 5px;
   border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
   background-clip: content-box;
 }
 *::-webkit-scrollbar-track {
@@ -143,64 +152,66 @@ textarea {
 }
 button,
 select,
-summary,
 [role="button"],
-[role="tab"],
-input[type="checkbox"],
-input[type="radio"] {
+[role="tab"] {
   cursor: pointer;
 }
 button:disabled,
 select:disabled,
-input:disabled,
-[aria-disabled="true"] {
+input:disabled {
   cursor: default;
 }
+:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: 1px;
+}
 
+/* 按鈕:平面、細邊,主按鈕用金 */
 .btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-1);
-  background: var(--bg-2);
-  color: var(--fg-1);
+  padding: 0 11px;
+  border: 1px solid var(--edge-1);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--ink-1);
   font-size: var(--fs-sm);
-  letter-spacing: 0.01em;
-  cursor: pointer;
   white-space: nowrap;
-  transition: background 80ms linear, border-color 80ms linear, color 80ms linear;
+  cursor: pointer;
+  transition: background 90ms, border-color 90ms, color 90ms;
 }
-.btn:hover {
-  background: var(--bg-hover);
-  border-color: var(--line-2);
-  color: var(--fg-0);
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--edge-2);
+  color: var(--ink-0);
 }
-.btn:active {
-  background: var(--bg-active);
+.btn:active:not(:disabled) {
+  background: var(--surface-active);
 }
 .btn:disabled {
-  opacity: var(--fade-off);
-  cursor: default;
+  opacity: var(--dim-opacity);
 }
 .btn.primary {
-  background: var(--fg-0);
-  color: var(--bg-0);
-  border-color: var(--fg-0);
-  font-weight: 500;
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #17120a;
+  font-weight: 600;
 }
-.btn.primary:hover {
-  background: var(--primary-hover);
+.btn.primary:hover:not(:disabled) {
+  background: #e6bb5f;
+  border-color: #e6bb5f;
+  color: #17120a;
 }
 .btn.ghost {
   background: transparent;
   border-color: transparent;
 }
-.btn.ghost:hover {
-  border-color: var(--line-1);
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: transparent;
 }
 .btn.sm {
   height: 22px;
@@ -208,64 +219,46 @@ input:disabled,
   font-size: var(--fs-xs);
 }
 
+/* 輸入框 */
 .input,
-.select,
-.textarea {
+.select {
   appearance: none;
   height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--line-1);
-  border-radius: var(--r-1);
-  background: var(--bg-1);
-  color: var(--fg-0);
+  padding: 0 9px;
+  border: 1px solid var(--edge-1);
+  border-radius: var(--radius-s);
+  background: var(--surface-0);
+  color: var(--ink-0);
   font-size: var(--fs-sm);
   outline: none;
   min-width: 0;
 }
 .input:focus,
-.select:focus,
-.textarea:focus {
-  border-color: var(--focus);
-  box-shadow: 0 0 0 1px rgba(127, 157, 255, 0.25);
+.select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
-.input::placeholder,
-.textarea::placeholder {
-  color: var(--fg-3);
+.input::placeholder {
+  color: var(--ink-3);
 }
-option,
-optgroup {
-  background-color: var(--bg-2);
-  color: var(--fg-0);
-}
-.select {
-  padding-right: 22px;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%2380808a' stroke-width='1.2'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  cursor: pointer;
+option {
+  background-color: var(--surface-2);
+  color: var(--ink-0);
 }
 
-.mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
+/* 文字工具類 */
 .num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 .label {
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg-2);
-}
-.muted {
-  color: var(--fg-2);
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
 }
 .dim {
-  color: var(--fg-3);
+  color: var(--ink-3);
 }
 .selectable {
   user-select: text;
@@ -274,31 +267,11 @@ optgroup {
 kbd {
   font-family: var(--font-mono);
   font-size: var(--fs-2xs);
-  padding: 1px 4px;
-  border: 1px solid var(--line-2);
-  border-bottom-width: 2px;
+  padding: 1px 5px;
+  border: 1px solid var(--edge-2);
   border-radius: 3px;
-  color: var(--fg-2);
-  background: var(--bg-2);
-}
-
-.hr {
-  height: 1px;
-  background: var(--line-0);
-}
-
-.panel {
-  background: var(--bg-1);
-  border: 1px solid var(--line-0);
-  border-radius: var(--r-2);
-}
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 30px;
-  padding: 0 10px;
-  border-bottom: 1px solid var(--line-0);
+  color: var(--ink-2);
+  background: var(--surface-2);
 }
 
 @keyframes pulse {
@@ -309,14 +282,4 @@ kbd {
   50% {
     opacity: 1;
   }
-}
-
-/* Tree canvas and accent tokens (ours). */
-:root {
-  --accent: #5b9dff;
-  --gold: #e0b35a;
-  --gold-dim: #7a5e2a;
-  --tree-bg: #0d1014;
-  --tree-line: #2a3038;
-  --tree-line-lit: #4c5563;
 }

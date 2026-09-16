@@ -95,7 +95,7 @@
     align-items: center;
     gap: 10px;
     padding: 8px 14px;
-    border-bottom: 1px solid var(--line-0);
+    border-bottom: 1px solid var(--edge-0);
   }
   .path {
     font-size: var(--fs-xs);
@@ -120,18 +120,18 @@
     gap: 12px;
     align-items: center;
     padding: 5px 8px;
-    border-radius: var(--r-1);
+    border-radius: var(--radius-s);
     font-size: var(--fs-sm);
     cursor: default;
   }
   .row:hover {
-    background: var(--bg-hover);
+    background: var(--surface-hover);
   }
   .row.sel {
-    background: var(--bg-active);
+    background: var(--surface-active);
   }
   .row.folder .name {
-    color: var(--fg-1);
+    color: var(--ink-1);
   }
   .name {
     white-space: nowrap;

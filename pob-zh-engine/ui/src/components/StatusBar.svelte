@@ -1,12 +1,12 @@
-<!-- Structure after pob-redux's StatusBar (MIT, (c) 2026 Judd); content is ours. -->
+<!-- 底部狀態列:引擎狀態、POB 版本、相容閘門、POB 自己的更新、錯誤/提示、rev。 -->
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type UpdateStatus } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
 
-  // POB's own update check runs in the engine (a subscript thread, every 12 h
-  // and at boot); we only ask what it found.
+  // POB's own update check runs inside the engine (its subscript thread, at
+  // boot and every 12 h); we only ask what it found.
   let upd = $state<UpdateStatus | null>(null);
   let applying = $state(false);
   onMount(() => {
@@ -31,84 +31,114 @@
     applying = false;
   }
 
-  const stateColor = $derived(app.engine === "ready" ? "var(--ok)" : app.engine === "gone" ? "var(--bad)" : "var(--warn)");
+  const tone = $derived(app.engine === "ready" ? "ok" : app.engine === "gone" ? "bad" : "warn");
 </script>
 
-<footer class="statusbar">
-  <div class="seg">
-    <span class="dot" style:background={stateColor} class:pulse={app.engine === "booting" || app.busy > 0}></span>
-    <span>{t("status.engine")} {app.engine}</span>
-  </div>
+<footer class="bar">
+  <span class="item">
+    <i class="lamp {tone}" class:pulse={app.engine === "booting" || app.busy > 0}></i>
+    {t("status.engine")} {app.engine}
+  </span>
   {#if app.version}
-    <div class="seg">
+    <span class="item">
       <span class="dim">{t("status.pob")}</span>
       <span class="num">{app.version.pobVersion}</span>
       <span class="dim">{app.version.pobBranch}</span>
-    </div>
+    </span>
   {/if}
   {#if app.gate}
-    <div class="seg" class:bad={!app.gate.ok} title={app.gate.failed.join("; ")}>
-      <span>{app.gate.ok ? t("app.gateOk") : t("app.gateFailed", { failed: app.gate.failed.join("; ") })}</span>
-    </div>
+    <span class="item" class:bad={!app.gate.ok} title={app.gate.failed.join("; ")}>
+      {app.gate.ok ? t("app.gateOk") : t("app.gateFailed", { failed: app.gate.failed.join("; ") })}
+    </span>
   {/if}
   {#if upd?.available === "normal" || upd?.available === "basic"}
-    <button class="seg warn" onclick={apply} disabled={applying}>
-      <span>{t("status.updateAvailable")}</span>
-      <span class="btn sm">{t("status.updateApply")}</span>
+    <button class="item act" onclick={apply} disabled={applying}>
+      <span class="warn">{t("status.updateAvailable")}</span>
+      <span class="chip">{t("status.updateApply")}</span>
     </button>
   {:else if upd?.checking}
-    <div class="seg dim"><span>{t("status.updateChecking")}</span></div>
+    <span class="item dim">{t("status.updateChecking")}</span>
   {:else if upd?.error}
-    <div class="seg bad" title={upd.error}><span>{upd.error}</span></div>
+    <span class="item bad" title={upd.error}>{upd.error}</span>
   {/if}
-  <div class="grow"></div>
+
+  <span class="grow"></span>
+
   {#if app.error}
-    <button class="seg bad" onclick={() => (app.error = null)}><span>{app.error}</span></button>
+    <button class="item act bad" onclick={() => (app.error = null)}>{app.error}</button>
   {:else if app.notice}
-    <button class="seg ok" onclick={() => (app.notice = null)}><span>{app.notice}</span></button>
+    <button class="item act ok" onclick={() => (app.notice = null)}>{app.notice}</button>
   {/if}
-  <div class="seg dim" title={t("status.updateBlocked")}><span>{t("status.rev")}</span><span class="num">{app.rev}</span></div>
+  <span class="item dim" title={t("status.updateBlocked")}>{t("status.rev")} <span class="num">{app.rev}</span></span>
 </footer>
 
 <style>
-  .statusbar {
+  .bar {
     height: var(--statusbar-h);
     display: flex;
-    align-items: stretch;
-    background: var(--bg-1);
-    border-top: 1px solid var(--line-0);
-    font-size: var(--fs-xs);
-    color: var(--fg-2);
-    letter-spacing: 0.02em;
-  }
-  .seg {
-    display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 10px;
-    border-right: 1px solid var(--line-0);
+    gap: 2px;
+    padding: 0 8px;
+    background: var(--surface-0);
+    border-top: 1px solid var(--edge-0);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+  }
+  .item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
+    height: 100%;
     white-space: nowrap;
-    appearance: none;
-    background: none;
-    border-top: 0;
-    border-bottom: 0;
-    border-left: 0;
-    color: inherit;
-    font: inherit;
-    max-width: 50vw;
+    max-width: 48vw;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .item + .item::before {
+    content: "·";
+    color: var(--ink-4);
+    margin-right: 6px;
+  }
+  .act {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .act:hover {
+    background: var(--surface-hover);
   }
   .grow {
     flex: 1;
   }
-  .dot {
-    width: 6px;
-    height: 6px;
+  .lamp {
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
+    display: inline-block;
+  }
+  .lamp.ok {
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+  }
+  .lamp.warn {
+    background: var(--warn);
+  }
+  .lamp.bad {
+    background: var(--bad);
   }
   .pulse {
     animation: pulse 1.2s ease-in-out infinite;
+  }
+  .chip {
+    padding: 1px 7px;
+    border-radius: 9px;
+    background: var(--gold);
+    color: #17120a;
+    font-weight: 600;
   }
   .bad {
     color: var(--bad);
@@ -118,6 +148,5 @@
   }
   .warn {
     color: var(--warn);
-    cursor: pointer;
   }
 </style>

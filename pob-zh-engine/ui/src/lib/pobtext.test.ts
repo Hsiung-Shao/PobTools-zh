@@ -4,7 +4,7 @@ import { pobPlain, pobRuns } from "./pobtext";
 describe("pobRuns", () => {
   it("splits palette and literal colour codes into runs", () => {
     expect(pobRuns("^7生命: ^xFF7070123")).toEqual([
-      { text: "生命: ", color: "var(--fg-0)" },
+      { text: "生命: ", color: "var(--ink-0)" },
       { text: "123", color: "var(--c-life)" },
     ]);
   });

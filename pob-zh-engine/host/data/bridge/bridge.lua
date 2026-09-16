@@ -149,8 +149,7 @@ end
 -- one stat entry at a time and tags every row that appended with the entry's
 -- stat key and the actor, so the UI can group by key and never has to read
 -- "^7Minion:" (rule 5). POB's own spacer logic only looks at the previous row,
--- so splitting the list changes nothing it produces. (Technique from
--- pob-redux's bridge, MIT.)
+-- so splitting the list changes nothing it produces.
 local wrapped = false
 local function wrap_add_display_stat_list()
 	local B = build()

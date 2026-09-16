@@ -1,75 +1,52 @@
-// PoB's sidebar regrouped under headings, keyed by PoB's own stat names.
-// Adapted from pob-redux (https://github.com/juddisjudd/pob-redux), MIT
-// License, (c) 2026 Judd. Changes: group labels come from i18n, and the
-// player/minion split relies only on `row.actor` (our bridge tags every row
-// through its AddDisplayStatList wrapper) -- no English label matching.
+// POB's sidebar is one long list; we fold it into sections by the stat key
+// the bridge tags each row with. Keys are classified by what they are named
+// (POB's stat names are regular: *Cost, *Resist, *MaximumHitTaken, ...), with
+// a short table for the few that read differently from what they mean.
+// Rows POB adds without a key (skill info, spacers) stay with the section
+// they arrived in; minion rows form one section of their own.
 import type { SidebarRow } from "./bridge";
 import { t } from "./i18n";
 
 export type StatGroup = "offence" | "skill" | "attributes" | "resources" | "mitigation" | "resistances" | "misc" | "fulldps";
 
-const ORDER: StatGroup[] = ["offence", "skill", "attributes", "resources", "mitigation", "resistances", "misc", "fulldps"];
+/** Section order on screen. */
+export const GROUP_ORDER: StatGroup[] = ["offence", "skill", "attributes", "resources", "mitigation", "resistances", "misc", "fulldps"];
 
-const KEYS: Record<StatGroup, string[]> = {
-  offence: [
-    "AverageHit", "PvpAverageHit", "AverageDamage", "AverageBurstDamage", "PvpAverageDamage",
-    "Speed", "WarcryCastTime", "ChannelTime", "HitSpeed", "ChannelTimeToTrigger",
-    "TrapThrowingTime", "TrapCooldown", "MineLayingTime", "TrapThrowCount", "MineThrowCount",
-    "TotemPlacementTime", "FiringRate", "ReloadTime",
-    "PreEffectiveCritChance", "CritChance", "CritBifurcates", "CritMultiplier",
-    "HitChance", "AccuracyHitChanceUncapped", "MainHand", "OffHand",
-    "TotalDPS", "PvpTotalDPS", "TotalDot", "WithDotDPS",
-    "BleedDPS", "CorruptingBloodDPS", "BleedDamage", "WithBleedDPS",
-    "IgniteDPS", "IgniteDamage", "BurningGroundDPS", "MirageBurningGroundDPS", "WithIgniteDPS",
-    "PoisonDPS", "CausticGroundDPS", "MirageCausticGroundDPS", "PoisonDamage", "WithPoisonDPS",
-    "DecayDPS", "TotalDotDPS", "ImpaleDPS", "WithImpaleDPS", "MirageDPS", "CullingDPS",
-    "ReservationDPS", "CombinedDPS", "CombinedAvg", "ExplodeChance", "CombinedAvgToMonsterLife",
-  ],
-  skill: [
-    "ActiveMinionLimit", "Cooldown", "SealCooldown", "SealMax", "TimeMaxSeals",
-    "AreaOfEffectRadiusMetres", "BrandAttachmentRangeMetre", "BrandTicks",
-    "ManaCost", "ManaPercentCost", "ManaPerSecondCost", "ManaPercentPerSecondCost",
-    "LifeCost", "LifePercentCost", "LifePerSecondCost", "LifePercentPerSecondCost",
-    "ESCost", "ESPerSecondCost", "ESPercentPerSecondCost",
-    "WardCost", "WardPercentCost", "WardPerSecondCost",
-    "RageCost", "RagePerSecondCost", "SoulCost",
-  ],
-  attributes: ["Str", "ReqStr", "Dex", "ReqDex", "Int", "ReqInt", "Devotion", "Tribute"],
-  resources: [
-    "Darkness", "ReservedDarkness",
-    "Spirit", "SpiritUnreserved", "SpiritUnreservedPercent",
-    "Life", "Spec:LifeInc", "LifeUnreserved", "LifeRecoverable", "LifeUnreservedPercent",
-    "LifeRegenRecovery", "LifeLeechGainRate", "LifeLeechGainPerHit",
-    "Mana", "Spec:ManaInc", "ManaUnreserved", "ManaUnreservedPercent",
-    "ManaRegenRecovery", "ManaLeechGainRate", "ManaLeechGainPerHit",
-    "EnergyShield", "EnergyShieldRecoveryCap", "Spec:EnergyShieldInc",
-    "EnergyShieldRegenRecovery", "EnergyShieldLeechGainRate", "EnergyShieldLeechGainPerHit",
-    "Ward", "WardRegenRecovery", "Rage", "RageRegenRecovery",
-    "TotalBuildDegen", "TotalNetRegen", "NetLifeRegen", "NetManaRegen", "NetWardRegen", "NetEnergyShieldRegen",
-  ],
-  mitigation: [
-    "TotalEHP", "PvPTotalTakenHit", "PhysicalMaximumHitTaken", "LightningMaximumHitTaken",
-    "FireMaximumHitTaken", "ColdMaximumHitTaken", "ChaosMaximumHitTaken",
-    "Evasion", "Spec:EvasionInc", "EvadeChance", "MeleeEvadeChance", "ProjectileEvadeChance",
-    "SpellEvadeChance", "SpellProjectileEvadeChance", "DeflectionRating", "DeflectChance",
-    "Armour", "Spec:ArmourInc", "PhysicalDamageReduction",
-    "EffectiveBlockChance", "EffectiveSpellBlockChance", "AttackDodgeChance", "SpellDodgeChance",
-    "EffectiveSpellSuppressionChance",
-  ],
-  resistances: [
-    "FireResist", "FireResistOverCap", "ColdResist", "ColdResistOverCap",
-    "LightningResist", "LightningResistOverCap", "ChaosResist", "ChaosResistOverCap",
-  ],
-  misc: ["EffectiveMovementSpeedMod", "MovementSpeedWhileUsingSkill", "PresenceRadiusMetres"],
-  fulldps: ["FullDPS", "FullDotDPS", "SkillDPS"],
+/** Keys whose name would land them in the wrong family. */
+const EXPLICIT: Record<string, StatGroup> = {
+  ReservationDPS: "offence",
+  ActiveMinionLimit: "skill",
+  BrandTicks: "skill",
+  TimeMaxSeals: "skill",
+  Devotion: "attributes",
+  Tribute: "attributes",
+  TotalBuildDegen: "resources",
+  TotalNetRegen: "resources",
+  PresenceRadiusMetres: "misc",
+  EffectiveMovementSpeedMod: "misc",
+  MovementSpeedWhileUsingSkill: "misc",
 };
 
-const GROUP_OF = new Map<string, StatGroup>();
-for (const g of ORDER) for (const k of KEYS[g]) GROUP_OF.set(k, g);
+/** Name families, first match wins. */
+const FAMILIES: [RegExp, StatGroup][] = [
+  [/^(FullDPS|FullDotDPS|SkillDPS)$/, "fulldps"],
+  [/Resist/, "resistances"],
+  [/^(Req)?(Str|Dex|Int)$/, "attributes"],
+  [/Cost$|Cooldown|Seal|Radius|Metre|Brand/, "skill"],
+  [/EHP|TakenHit|HitTaken|Evasion|Evade|Deflect|Armour|DamageReduction|Block|Dodge|Suppression/, "mitigation"],
+  [/^(Life|Mana|EnergyShield|Ward|Rage|Spirit|Darkness|ReservedDarkness)|Regen|Leech|Degen|^Spec:(Life|Mana|EnergyShield)Inc$/, "resources"],
+];
+
+export function groupOf(stat: string): StatGroup {
+  const e = EXPLICIT[stat];
+  if (e) return e;
+  for (const [re, g] of FAMILIES) if (re.test(stat)) return g;
+  return "offence";
+}
 
 export interface SidebarItem {
   row: SidebarRow;
-  /** 1-based position in PoB's own list, which sidebar_breakdown addresses. */
+  /** 1-based position in POB's list; sidebar_breakdown addresses rows by it. */
   index: number;
 }
 
@@ -80,8 +57,10 @@ export interface SidebarSection {
 }
 
 const isSpacer = (r: SidebarRow) => !r.lhs && !r.rhs;
+const isHeadingOnly = (r: SidebarRow) => !!r.lhs && !r.rhs && !r.align;
 
-function trimmed(items: SidebarItem[]): SidebarItem[] {
+/** Drops leading/trailing spacers and collapses runs of them. */
+function tidy(items: SidebarItem[]): SidebarItem[] {
   const out: SidebarItem[] = [];
   for (const it of items) {
     if (isSpacer(it.row) && (out.length === 0 || isSpacer(out[out.length - 1].row))) continue;
@@ -91,17 +70,16 @@ function trimmed(items: SidebarItem[]): SidebarItem[] {
   return out;
 }
 
-/**
- * Rows keep PoB's relative order inside a group; a key PoB adds that is not
- * listed here stays with the group of the row before it, since PoB's list is
- * already ordered by topic. Rows PoB inserts itself (skill info, "Skill
- * disabled") lead, unlabelled; minion rows form one group.
- */
 export function groupSidebar(rows: SidebarRow[]): SidebarSection[] {
-  const info: SidebarItem[] = [];
+  const lead: SidebarItem[] = [];
   const minion: SidebarItem[] = [];
-  const buckets = new Map<StatGroup, SidebarItem[]>();
-  let cur: StatGroup | null = null;
+  const bySection = new Map<StatGroup, SidebarItem[]>();
+  let current: StatGroup | null = null;
+  const push = (g: StatGroup, it: SidebarItem) => {
+    let b = bySection.get(g);
+    if (!b) bySection.set(g, (b = []));
+    b.push(it);
+  };
 
   rows.forEach((row, i) => {
     const it = { row, index: i + 1 };
@@ -110,31 +88,23 @@ export function groupSidebar(rows: SidebarRow[]): SidebarSection[] {
       return;
     }
     if (row.stat) {
-      const g = GROUP_OF.get(row.stat) ?? cur ?? "offence";
-      cur = g;
-      let b = buckets.get(g);
-      if (!b) buckets.set(g, (b = []));
-      b.push(it);
+      current = groupOf(row.stat);
+      push(current, it);
       return;
     }
-    if (row.actor === "player") {
-      if (cur) buckets.get(cur)!.push(it);
-      return;
-    }
-    // Untagged rows are POB's own inserts: the skill info message, "Minion:" /
-    // "Player:" headings (dropped: the group heading says it), spacers.
-    if (row.lhs && !row.rhs && !row.align) return;
-    if (cur === null) info.push(it);
-    else buckets.get(cur)!.push(it);
+    // "Minion:" / "Player:" headings POB inserts: the section label says it.
+    if (!row.actor && isHeadingOnly(row)) return;
+    if (current) push(current, it);
+    else lead.push(it);
   });
 
   const out: SidebarSection[] = [];
-  const infoRows = trimmed(info);
-  if (infoRows.length) out.push({ key: "info", label: null, items: infoRows });
-  const minionRows = trimmed(minion);
+  const leadRows = tidy(lead);
+  if (leadRows.length) out.push({ key: "lead", label: null, items: leadRows });
+  const minionRows = tidy(minion);
   if (minionRows.length) out.push({ key: "minion", label: t("group.minion"), items: minionRows });
-  for (const g of ORDER) {
-    const items = trimmed(buckets.get(g) ?? []);
+  for (const g of GROUP_ORDER) {
+    const items = tidy(bySection.get(g) ?? []);
     if (items.length) out.push({ key: g, label: t(`group.${g}`), items });
   }
   return out;

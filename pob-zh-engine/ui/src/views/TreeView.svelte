@@ -675,8 +675,8 @@
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
-    border-bottom: 1px solid var(--line-0);
-    background: var(--bg-1);
+    border-bottom: 1px solid var(--edge-0);
+    background: var(--surface-1);
   }
   .search {
     width: 240px;
@@ -710,9 +710,9 @@
     padding: 6px 10px;
     font-size: var(--fs-xs);
     color: var(--warn);
-    background: var(--bg-1);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-1);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s);
   }
   .veil {
     position: absolute;
@@ -730,7 +730,7 @@
   .vsep {
     width: 1px;
     height: 16px;
-    background: var(--line-1);
+    background: var(--edge-1);
     margin: 0 4px;
   }
   .menu {
@@ -738,10 +738,10 @@
     min-width: 260px;
     max-width: 380px;
     padding: 6px;
-    background: var(--bg-1);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-2);
-    box-shadow: var(--shadow-pop);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-float);
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -750,7 +750,7 @@
     padding: 4px 8px 8px;
     font-size: var(--fs-xs);
     letter-spacing: 0.06em;
-    color: var(--fg-2);
+    color: var(--ink-2);
   }
   .choice {
     appearance: none;
@@ -760,26 +760,26 @@
     gap: 1px;
     padding: 6px 8px;
     border: 0;
-    border-radius: var(--r-1);
+    border-radius: var(--radius-s);
     background: transparent;
-    color: var(--fg-0);
+    color: var(--ink-0);
     font-size: var(--fs-xs);
     text-align: left;
     white-space: normal;
     cursor: pointer;
   }
   .choice:hover:not(:disabled) {
-    background: var(--bg-hover);
+    background: var(--surface-hover);
   }
   .choice.on {
     box-shadow: inset 2px 0 0 var(--ok);
   }
   .choice:disabled {
-    color: var(--fg-4);
+    color: var(--ink-4);
     cursor: default;
   }
   .choice.cancel {
-    color: var(--fg-3);
+    color: var(--ink-3);
     margin-top: 4px;
   }
   .modal {
@@ -792,9 +792,9 @@
   .dialog {
     width: 440px;
     padding: 16px 18px;
-    background: var(--bg-1);
-    border: 1px solid var(--line-1);
-    border-radius: var(--r-2);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-m);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -802,7 +802,7 @@
   .dialog p {
     margin: 0;
     font-size: var(--fs-sm);
-    color: var(--fg-1);
+    color: var(--ink-1);
     line-height: 1.5;
   }
   .actions {
@@ -815,11 +815,11 @@
     position: absolute;
     width: 320px;
     pointer-events: none;
-    background: var(--bg-1);
-    border: 1px solid var(--line-1);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
     border-top: 2px solid var(--gold);
-    border-radius: var(--r-2);
-    box-shadow: var(--shadow-pop);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-float);
     font-size: var(--fs-sm);
   }
   .tip-title {
@@ -828,11 +828,11 @@
     align-items: baseline;
     gap: 8px;
     padding: 8px 12px 6px;
-    border-bottom: 1px solid var(--line-0);
+    border-bottom: 1px solid var(--edge-0);
   }
   .tip-title .name {
     font-weight: 600;
-    color: var(--fg-0);
+    color: var(--ink-0);
   }
   .tip-title .name.keystone {
     color: var(--c-rare);
@@ -844,7 +844,7 @@
     font-size: var(--fs-2xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--fg-3);
+    color: var(--ink-3);
     white-space: nowrap;
   }
   .tip-body {
@@ -859,7 +859,7 @@
   }
   .tip-body hr {
     border: 0;
-    border-top: 1px solid var(--line-0);
+    border-top: 1px solid var(--edge-0);
     margin: 5px 0;
   }
   .tip-foot {
@@ -867,7 +867,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 6px 12px 8px;
-    border-top: 1px solid var(--line-0);
+    border-top: 1px solid var(--edge-0);
     font-size: var(--fs-xs);
   }
 </style>

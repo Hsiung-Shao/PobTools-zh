@@ -1,6 +1,5 @@
 <script lang="ts">
-  // Shell after pob-redux's App (MIT, (c) 2026 Judd): title bar, sidebar +
-  // main view, status bar. Phase 1 views: the build list and the tree.
+  // 版面殼:頂列 / 側欄 + 主視圖 / 狀態列。Phase 1 的主視圖:建置清單與天賦樹。
   import { onMount } from "svelte";
   import { bridge } from "$lib/bridge";
   import { loadLocale, t } from "$lib/i18n";

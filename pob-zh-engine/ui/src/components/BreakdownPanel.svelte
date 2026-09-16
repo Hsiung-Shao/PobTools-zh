@@ -1,4 +1,4 @@
-<!-- Adapted from pob-redux (MIT, (c) 2026 Judd): strings through i18n. See NOTICE.md. -->
+<!-- POB 的計算細項:純文字段、表格段、半徑段,原樣呈現,只換字型與顏色。 -->
 <script lang="ts">
   import type { BreakdownSection } from "$lib/bridge";
   import { t } from "$lib/i18n";
@@ -7,89 +7,84 @@
   let { sections }: { sections: BreakdownSection[] } = $props();
 </script>
 
-<div class="bd">
+<div class="panel">
   {#each sections as s}
     {#if s.type === "text"}
-      <div class="txt" class:big={s.size >= 16}>
+      <div class="text" class:big={s.size >= 16}>
         {#each s.lines as line}
-          <div class="tl"><PobText text={line} /></div>
+          <div class="line"><PobText text={line} muted="var(--ink-1)" /></div>
         {/each}
       </div>
     {:else if s.type === "table"}
-      <div class="tbl">
-        {#if s.label}<div class="tlabel"><PobText text={s.label} /></div>{/if}
+      <div class="table">
+        {#if s.label}<div class="caption"><PobText text={s.label} /></div>{/if}
         <div class="grid" style:grid-template-columns={`repeat(${s.cols.length}, auto)`}>
           {#each s.cols as c}
-            <div class="th" class:r={c.right}>{c.label}</div>
+            <div class="th" class:right={c.right}>{c.label}</div>
           {/each}
           {#each s.rows as row}
             {#each s.cols as c}
-              <div class="td" class:r={c.right}><PobText text={row[c.key] ?? ""} /></div>
+              <div class="td num" class:right={c.right}><PobText text={row[c.key] ?? ""} muted="var(--ink-1)" /></div>
             {/each}
           {/each}
         </div>
-        {#if s.footer}<div class="tfoot"><PobText text={s.footer} /></div>{/if}
+        {#if s.footer}<div class="footer"><PobText text={s.footer} muted="var(--ink-2)" /></div>{/if}
       </div>
     {:else if s.type === "radius"}
-      <div class="dim small">{t("breakdown.radius", { radius: s.radius })}</div>
+      <div class="radius">{t("breakdown.radius", { radius: s.radius })}</div>
     {/if}
   {/each}
   {#if sections.length === 0}
-    <div class="dim small">{t("breakdown.none")}</div>
+    <div class="radius">{t("breakdown.none")}</div>
   {/if}
 </div>
 
 <style>
-  .bd {
+  .panel {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
     font-size: var(--fs-xs);
-    line-height: 1.45;
+    line-height: 1.5;
   }
-  .txt .tl {
-    color: var(--fg-1);
+  .line {
     white-space: pre-wrap;
   }
-  .txt.big .tl {
+  .big .line {
     font-size: var(--fs-sm);
   }
-  .tlabel {
-    font-weight: 600;
-    color: var(--fg-0);
+  .caption {
     margin-bottom: 4px;
+    font-weight: 600;
   }
   .grid {
     display: grid;
-    gap: 1px 14px;
-    overflow-x: auto;
+    gap: 0 16px;
     align-items: baseline;
+    overflow-x: auto;
   }
   .th {
+    padding: 0 0 3px;
     font-size: var(--fs-2xs);
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--fg-2);
-    padding-bottom: 3px;
-    border-bottom: 1px solid var(--line-1);
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    border-bottom: 1px solid var(--edge-1);
     white-space: nowrap;
   }
   .td {
-    color: var(--fg-1);
-    white-space: nowrap;
-    font-family: var(--font-mono);
+    padding: 2px 0;
     font-size: var(--fs-2xs);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--edge-0);
   }
-  .r {
+  .right {
     text-align: right;
   }
-  .tfoot {
-    margin-top: 4px;
-    color: var(--fg-2);
+  .footer {
+    margin-top: 5px;
     white-space: pre-wrap;
   }
-  .small {
-    font-size: var(--fs-xs);
+  .radius {
+    color: var(--ink-3);
   }
 </style>
