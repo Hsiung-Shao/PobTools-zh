@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "1420", "--strictPort"],
+      "port": 1420,
+      "cwd": "pob-zh-engine/ui"
+    }
+  ]
+}

@@ -1403,6 +1403,377 @@ end)
 probe("main.buildPath + MakeDir", function() return type(launch.main.buildPath) == "string" and type(MakeDir) == "function" end)
 
 -- ---------------------------------------------------------------------------
+-- Items
+-- ---------------------------------------------------------------------------
+
+-- A Tooltip's lines, the shape node_info hands out.
+local function tooltip_lines(tt)
+	local lines = {}
+	for i, l in ipairs(tt.lines or {}) do
+		if l.text ~= nil then
+			lines[i] = { size = l.size, text = tr(l.text), raw = l.text, center = l.center and true or false, font = l.font }
+		else
+			lines[i] = { sep = l.size or 0 }
+		end
+	end
+	return lines
+end
+
+-- Runs fn with POB's line wrapping disabled (the page wraps itself).
+local function without_wrap(fn)
+	local m = main()
+	local savedWrap = m.WrapString
+	m.WrapString = function(_, s) return { s } end
+	local ok, err = pcall(fn)
+	m.WrapString = savedWrap
+	if not ok then error(err, 0) end
+end
+
+local influence_keys = { "shaper", "elder", "adjudicator", "basilisk", "crusader", "eyrie", "cleansing", "tangle" }
+
+local function item_summary(it)
+	local inf = {}
+	for _, k in ipairs(influence_keys) do
+		if it[k] then inf[#inf + 1] = k end
+	end
+	local sockets = {}
+	for i, s in ipairs(it.sockets or {}) do sockets[i] = { color = s.color, group = s.group } end
+	-- POB's display name is "Title, Base" for uniques; the dictionaries know
+	-- the two halves, not the join.
+	local nameZh
+	if it.title and it.baseName then
+		nameZh = tr(it.title) .. ", " .. tr(it.baseName)
+	else
+		nameZh = tr(it.name)
+	end
+	return {
+		id = it.id,
+		name = it.name,
+		nameZh = nameZh,
+		title = it.title,
+		titleZh = it.title and tr(it.title) or nil,
+		baseName = it.baseName,
+		baseNameZh = it.baseName and tr(it.baseName) or nil,
+		rarity = it.rarity,
+		type = it.type,
+		typeZh = it.type and tr(it.type) or nil,
+		primarySlot = it.base and it:GetPrimarySlot() or nil,
+		unsupported = (not it.base) and true or false,
+		corrupted = it.corrupted and true or false,
+		quality = it.quality,
+		itemLevel = it.itemLevel,
+		sockets = sockets,
+		influences = inf,
+		clusterJewel = it.clusterJewel and true or false,
+		league = it.league,
+		source = it.source,
+	}
+end
+
+-- list_items: every item POB holds, the slot grid, item sets.
+function M.list_items()
+	local b = ensure_build()
+	local tab = b.itemsTab
+	-- Classic POB refreshes socket labels/activity from its Draw; do it here.
+	if tab.UpdateSockets then tab:UpdateSockets() end
+	local items = {}
+	for i, id in ipairs(tab.itemOrderList) do
+		local it = tab.items[id]
+		if it then items[#items + 1] = item_summary(it) end
+	end
+	local slots = {}
+	for i, slot in ipairs(tab.orderedSlots) do
+		-- Which of the build's items POB would let into this slot (its own rule).
+		local valid = {}
+		for _, id in ipairs(tab.itemOrderList) do
+			local it = tab.items[id]
+			if it and it.base and tab:IsItemValidForSlot(it, slot.slotName) then valid[#valid + 1] = id end
+		end
+		slots[i] = as_object({
+			valid = valid,
+			name = slot.slotName,
+			label = slot.label,
+			labelZh = tr(slot.label),
+			selItemId = slot.selItemId or 0,
+			weaponSet = slot.weaponSet,
+			nodeId = slot.nodeId,
+			socketIndex = slot.nodeId and tonumber(tostring(slot.label):match("#(%d+)")) or nil,
+			shown = slot:IsShown() and true or false,
+			inactive = slot.inactive and true or false,
+			parent = slot.parentSlot and slot.parentSlot.slotName or nil,
+			isFlask = slot.slotName:match("Flask") and true or false,
+			active = slot.active and true or false,
+		})
+	end
+	local sets = {}
+	for i, id in ipairs(tab.itemSetOrderList) do
+		local set = tab.itemSets[id]
+		sets[i] = { id = id, title = set and set.title or nil }
+	end
+	return {
+		items = items,
+		slots = slots,
+		itemSets = sets,
+		activeItemSetId = tab.activeItemSetId,
+		useSecondWeaponSet = tab.activeItemSet and tab.activeItemSet.useSecondWeaponSet and true or false,
+		rev = b.outputRevision,
+	}
+end
+
+-- item_tooltip{id | raw, slotName?, dbMode?}: POB's own item tooltip. With a
+-- slot the stat-difference block ("equipping this changes DPS by...") is
+-- included, exactly as hovering the item over that slot in the classic UI.
+function M.item_tooltip(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local it, dbMode
+	if p and p.raw then
+		it = new("Item"):Item(p.raw, p.rarity, true)
+		if it.base then it:BuildModList() end
+		dbMode = true
+	else
+		it = tab.items[tonumber(p and p.id or 0)]
+		if not it then error("no item " .. tostring(p and p.id), 0) end
+		dbMode = p.dbMode and true or false
+	end
+	local slot = p and p.slotName and tab.slots[p.slotName] or nil
+	local tt = new("Tooltip"):Tooltip()
+	local savedDiff = tab.showStatDifferences
+	tab.showStatDifferences = slot ~= nil
+	without_wrap(function() tab:AddItemTooltip(tt, it, slot, dbMode) end)
+	tab.showStatDifferences = savedDiff
+	return {
+		id = it.id,
+		header = tt.tooltipHeader,
+		color = tt.color,
+		lines = tooltip_lines(tt),
+		summary = item_summary(it),
+	}
+end
+
+-- item_raw{id}: the item as text (what copying it in POB gives).
+function M.item_raw(p)
+	local b = ensure_build()
+	local it = b.itemsTab.items[tonumber(p and p.id or 0)]
+	if not it then error("no item " .. tostring(p and p.id), 0) end
+	return { raw = it:BuildRaw() }
+end
+
+local function items_committed(b)
+	b.itemsTab:PopulateSlots()
+	b.itemsTab:AddUndoState()
+	return commit(b)
+end
+
+-- add_item{raw, equip=true|false, slotName?}: new("Item") from pasted text,
+-- then ItemsTab:AddItem (auto-equips into the first free valid slot unless
+-- equip=false); slotName forces that slot.
+function M.add_item(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local raw = p and p.raw
+	if type(raw) ~= "string" or #raw == 0 then error("params.raw required", 0) end
+	if #raw > 64 * 1024 then error("item text too large", 0) end
+	local it = new("Item"):Item(raw)
+	if not it.base then error("item base not recognised: " .. tostring(it.baseName or it.name), 0) end
+	local wantSlot = p.slotName and tab.slots[p.slotName] or nil
+	tab:AddItem(it, p.equip == false or wantSlot ~= nil)
+	if wantSlot then
+		if not tab:IsItemValidForSlot(it, wantSlot.slotName) then
+			tab:DeleteItem(it)
+			error("item does not fit slot " .. wantSlot.slotName, 0)
+		end
+		wantSlot:SetSelItemId(it.id)
+	end
+	local r = items_committed(b)
+	r.item = item_summary(it)
+	return r
+end
+
+function M.delete_item(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local it = tab.items[tonumber(p and p.id or 0)]
+	if not it then error("no item " .. tostring(p and p.id), 0) end
+	tab:DeleteItem(it)
+	return items_committed(b)
+end
+
+function M.equip_item(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local it = tab.items[tonumber(p and p.id or 0)]
+	local slot = p and p.slotName and tab.slots[p.slotName]
+	if not it then error("no item " .. tostring(p and p.id), 0) end
+	if not slot then error("no slot " .. tostring(p and p.slotName), 0) end
+	if not tab:IsItemValidForSlot(it, slot.slotName) then error("item does not fit slot " .. slot.slotName, 0) end
+	slot:SetSelItemId(it.id)
+	return items_committed(b)
+end
+
+function M.unequip_slot(p)
+	local b = ensure_build()
+	local slot = p and p.slotName and b.itemsTab.slots[p.slotName]
+	if not slot then error("no slot " .. tostring(p and p.slotName), 0) end
+	slot:SetSelItemId(0)
+	return items_committed(b)
+end
+
+-- Flask slots have an "active" tick.
+function M.set_slot_active(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local slot = p and p.slotName and tab.slots[p.slotName]
+	if not slot or not slot.controls.activate then error("no flask slot " .. tostring(p and p.slotName), 0) end
+	slot.active = p.active and true or false
+	tab.activeItemSet[slot.slotName].active = slot.active
+	slot.controls.activate.state = slot.active
+	return items_committed(b)
+end
+
+function M.set_item_set(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.itemSets[id] then error("no item set " .. tostring(p and p.id), 0) end
+	tab:SetActiveItemSet(id)
+	tab:AddUndoState()
+	return commit(b)
+end
+
+-- new_item_set{title, copyCurrent?}: the manage popup's "New" (+ "Copy").
+function M.new_item_set(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local set = tab:NewItemSet()
+	set.title = p and p.title or nil
+	if p and p.copyCurrent and tab.activeItemSet then
+		for slotName, slot in pairs(tab.slots) do
+			if not slot.nodeId and tab.activeItemSet[slotName] then
+				set[slotName].selItemId = tab.activeItemSet[slotName].selItemId
+				set[slotName].active = tab.activeItemSet[slotName].active
+			end
+		end
+		set.useSecondWeaponSet = tab.activeItemSet.useSecondWeaponSet
+	end
+	table.insert(tab.itemSetOrderList, set.id)
+	tab:SetActiveItemSet(set.id)
+	tab:AddUndoState()
+	local r = commit(b)
+	r.id = set.id
+	return r
+end
+
+function M.rename_item_set(p)
+	local b = ensure_build()
+	local set = b.itemsTab.itemSets[tonumber(p and p.id or 0)]
+	if not set then error("no item set " .. tostring(p and p.id), 0) end
+	set.title = p.title
+	return commit(b)
+end
+
+function M.delete_item_set(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.itemSets[id] then error("no item set " .. tostring(p and p.id), 0) end
+	if #tab.itemSetOrderList <= 1 then error("cannot delete the last item set", 0) end
+	for i, v in ipairs(tab.itemSetOrderList) do
+		if v == id then table.remove(tab.itemSetOrderList, i) break end
+	end
+	if tab.activeItemSetId == id then tab:SetActiveItemSet(tab.itemSetOrderList[1]) end
+	tab.itemSets[id] = nil
+	tab:AddUndoState()
+	return commit(b)
+end
+
+function M.set_weapon_swap(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	if not tab.activeItemSet then error("no item set", 0) end
+	tab.activeItemSet.useSecondWeaponSet = p and p.on and true or false
+	tab:AddUndoState()
+	return commit(b)
+end
+
+-- item_db{kind="unique"|"rare", query?, type?, page?, size?}: POB's unique
+-- and rare databases (main.uniqueDB / rareDB), matched on English and
+-- translated names, paged.
+local db_cache = {}
+local function db_sorted(kind)
+	local m = main()
+	local db = kind == "rare" and m.rareDB or m.uniqueDB
+	if not db then error("item database missing", 0) end
+	-- POB parses the databases in a coroutine it resumes once per frame (Main.lua
+	-- onFrameFuncs.LoadItems, ~20 ms of work each); pump frames until it is done.
+	local pumps = 0
+	while db.loading and pumps < 2000 do
+		frame()
+		pumps = pumps + 1
+	end
+	if db.loading then error("item database still loading", 0) end
+	if db_cache[kind] and db_cache[kind].db == db then return db_cache[kind].list, db_cache[kind].types end
+	local list, typeSet = {}, {}
+	for name, it in pairs(db.list) do
+		local nameZh = (it.title and it.baseName) and (tr(it.title) .. ", " .. tr(it.baseName)) or tr(it.name)
+		list[#list + 1] = { it = it, key = (it.name or ""):lower(), keyZh = (nameZh or ""):lower(), nameZh = nameZh }
+		if it.type then typeSet[it.type] = true end
+	end
+	table.sort(list, function(a, b) return a.key < b.key end)
+	local types = {}
+	for t in pairs(typeSet) do types[#types + 1] = t end
+	table.sort(types)
+	db_cache[kind] = { db = db, list = list, types = types }
+	return list, types
+end
+
+function M.item_db(p)
+	ensure_build()
+	local kind = p and p.kind == "rare" and "rare" or "unique"
+	local list, types = db_sorted(kind)
+	local q = p and type(p.query) == "string" and p.query:lower() or ""
+	local wantType = p and p.type or nil
+	local page = math.max(1, tonumber(p and p.page) or 1)
+	local size = math.min(200, math.max(1, tonumber(p and p.size) or 50))
+	local hits = {}
+	for _, e in ipairs(list) do
+		local it = e.it
+		if (wantType == nil or wantType == "" or it.type == wantType)
+			and (q == "" or e.key:find(q, 1, true) or e.keyZh:find(q, 1, true)) then
+			hits[#hits + 1] = e
+		end
+	end
+	local out = {}
+	local first = (page - 1) * size
+	for i = first + 1, math.min(#hits, first + size) do
+		local e = hits[i]
+		local s = item_summary(e.it)
+		s.raw = e.it.raw
+		s.id = nil
+		out[#out + 1] = s
+	end
+	local typeList = {}
+	for i, t in ipairs(types) do typeList[i] = { type = t, typeZh = tr(t) } end
+	return { kind = kind, total = #hits, page = page, size = size, items = out, types = typeList }
+end
+
+probe("classes.ItemsTab.AddItem/DeleteItem/AddItemTooltip/IsItemValidForSlot/PopulateSlots", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.AddItem) == "function" and type(c.DeleteItem) == "function" and type(c.AddItemTooltip) == "function"
+		and type(c.IsItemValidForSlot) == "function" and type(c.PopulateSlots) == "function"
+end)
+probe("classes.ItemsTab item sets (NewItemSet/SetActiveItemSet)", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.NewItemSet) == "function" and type(c.SetActiveItemSet) == "function"
+end)
+probe("classes.ItemSlotControl.SetSelItemId", function() local c = class_of("ItemSlotControl"); return type(c) == "table" and type(c.SetSelItemId) == "function" end)
+probe("classes.Item(raw)/BuildRaw/GetPrimarySlot", function()
+	local c = class_of("Item")
+	return type(c) == "table" and type(c.BuildRaw) == "function" and type(c.GetPrimarySlot) == "function" and type(c.BuildModList) == "function"
+end)
+probe("main.uniqueDB/rareDB", function() return type(launch.main.uniqueDB) == "table" and type(launch.main.rareDB) == "table" end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 

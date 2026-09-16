@@ -5,9 +5,12 @@ import { fileURLToPath, URL } from "node:url";
 import { defineConfig } from "vitest/config"; // vite's defineConfig plus the `test` block
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [svelte()],
   base: "./",
+  // public/fixtures/ holds recorded bridge answers for the mock transport
+  // (dev only, generated from a real build); nothing in public/ ships.
+  publicDir: mode === "development" ? "public" : false,
   resolve: {
     alias: { $lib: fileURLToPath(new URL("./src/lib", import.meta.url)) },
   },
@@ -24,4 +27,4 @@ export default defineConfig({
     environment: "node",
     include: ["src/**/*.test.ts"],
   },
-});
+}));

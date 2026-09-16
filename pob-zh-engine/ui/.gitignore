@@ -1,3 +1,5 @@
 node_modules/
 .svelte-kit/
 *.local
+# recorded bridge answers for `vite dev` (from a real build; regenerate, do not commit)
+public/fixtures/

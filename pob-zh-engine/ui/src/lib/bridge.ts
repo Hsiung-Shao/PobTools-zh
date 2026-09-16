@@ -363,6 +363,73 @@ export interface CharImportParams {
   ignoreWeaponSwap?: boolean;
 }
 
+// --- items -------------------------------------------------------------------
+
+export interface ItemSummary {
+  id?: number;
+  name: string;
+  nameZh: string;
+  title?: string;
+  titleZh?: string;
+  baseName?: string;
+  baseNameZh?: string;
+  rarity: "NORMAL" | "MAGIC" | "RARE" | "UNIQUE" | "RELIC" | string;
+  type?: string;
+  typeZh?: string;
+  primarySlot?: string;
+  unsupported: boolean;
+  corrupted: boolean;
+  quality?: number;
+  itemLevel?: number;
+  sockets: { color: string; group: number }[];
+  influences: string[];
+  clusterJewel: boolean;
+  league?: string;
+  source?: string;
+  /** item_db only: the text to add_item with. */
+  raw?: string;
+}
+export interface ItemSlot {
+  name: string;
+  label: string;
+  labelZh: string;
+  selItemId: number;
+  weaponSet?: number;
+  nodeId?: number;
+  /** tree jewel sockets: POB's running number ("Socket #n") */
+  socketIndex?: number;
+  shown: boolean;
+  inactive: boolean;
+  parent?: string;
+  isFlask: boolean;
+  active: boolean;
+  /** ids of the build's items POB accepts in this slot */
+  valid: number[];
+}
+export interface ItemsList {
+  items: ItemSummary[];
+  slots: ItemSlot[];
+  itemSets: { id: number; title?: string }[];
+  activeItemSetId: number;
+  useSecondWeaponSet: boolean;
+  rev: number;
+}
+export interface ItemTooltip {
+  id?: number;
+  header?: string;
+  color?: string;
+  lines: TooltipLine[];
+  summary: ItemSummary;
+}
+export interface ItemDbPage {
+  kind: "unique" | "rare";
+  total: number;
+  page: number;
+  size: number;
+  items: ItemSummary[];
+  types: { type: string; typeZh: string }[];
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
   treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
@@ -393,6 +460,20 @@ export const api = {
   decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
   importCode: (code: string, mode: "replace" | "new") => bridge.call<LoadedBuild>("import_code", { code, mode }, 180000),
   importCharacter: (p: CharImportParams) => bridge.call<Committed & { imported: string[] }>("import_character", p, 180000),
+  listItems: () => bridge.call<ItemsList>("list_items", {}, 60000),
+  itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
+  itemRaw: (id: number) => bridge.call<{ raw: string }>("item_raw", { id }),
+  addItem: (raw: string, opts: { equip?: boolean; slotName?: string } = {}) => bridge.call<Committed & { item: ItemSummary }>("add_item", { raw, ...opts }, 60000),
+  deleteItem: (id: number) => bridge.call<Committed>("delete_item", { id }, 60000),
+  equipItem: (id: number, slotName: string) => bridge.call<Committed>("equip_item", { id, slotName }, 60000),
+  unequipSlot: (slotName: string) => bridge.call<Committed>("unequip_slot", { slotName }, 60000),
+  setSlotActive: (slotName: string, active: boolean) => bridge.call<Committed>("set_slot_active", { slotName, active }, 60000),
+  setItemSet: (id: number) => bridge.call<Committed>("set_item_set", { id }, 60000),
+  newItemSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_item_set", { title, copyCurrent }, 60000),
+  renameItemSet: (id: number, title: string) => bridge.call<Committed>("rename_item_set", { id, title }, 60000),
+  deleteItemSet: (id: number) => bridge.call<Committed>("delete_item_set", { id }, 60000),
+  setWeaponSwap: (on: boolean) => bridge.call<Committed>("set_weapon_swap", { on }, 60000),
+  itemDb: (p: { kind: "unique" | "rare"; query?: string; type?: string; page?: number; size?: number }) => bridge.call<ItemDbPage>("item_db", p, 120000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
 };

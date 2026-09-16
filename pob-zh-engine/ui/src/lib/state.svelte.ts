@@ -113,7 +113,9 @@ export const app = new AppState();
 
 // Engine events. `hello` arrives once per Lua state: at boot and again after a
 // POB self-update restarted it, when every cached build fact is stale.
-bridge.on("gate_result", (d) => (app.gate = d as GateResult));
+bridge.on("gate_result", (d) => {
+  app.gate = d as GateResult;
+});
 let openedOnce = false;
 bridge.on("hello", async () => {
   app.engine = "ready";
@@ -143,4 +145,6 @@ bridge.on("host.child_exited", (d: any) => {
   app.engine = "gone";
   app.childExit = typeof d?.exitCode === "number" ? d.exitCode : -1;
 });
-bridge.on("error", (d: any) => (app.error = String(d?.message ?? d)));
+bridge.on("error", (d: any) => {
+  app.error = String(d?.message ?? d);
+});

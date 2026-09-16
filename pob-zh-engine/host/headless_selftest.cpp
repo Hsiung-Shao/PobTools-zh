@@ -823,6 +823,91 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("save_build (in place) succeeds on a build that has a file", okSv2 && !sv2.value("unsaved", true));
 		}
 
+		// --- 2b: items -----------------------------------------------------------
+		{
+			json li;
+			bool okLi = okLoad && child.Call("list_items", json::object(), li, 60000);
+			int shownSlots = 0, withValid = 0;
+			if (okLi) for (auto& sl : li["slots"]) { if (sl.value("shown", false)) shownSlots++; if (sl.contains("valid")) withValid++; }
+			check("list_items: the build's items, POB's slot grid (with validity) and item sets",
+			      okLi && li["items"].size() > 5 && shownSlots >= 15 && withValid == (int)li["slots"].size() && li["itemSets"].size() >= 1 &&
+			          li["items"][0].contains("nameZh"),
+			      okLi ? "items=" + std::to_string(li["items"].size()) + " slots=" + std::to_string(li["slots"].size()) + " shown=" + std::to_string(shownSlots)
+			           : li.dump().substr(0, 300));
+			// The first few items: every tooltip has lines and a header, and at
+			// least one line somewhere came back translated (a jewel's text may
+			// have no dictionary entry, so no single item is required to).
+			int ttOk = 0, ttTried = 0, zhLines = 0;
+			for (size_t i = 0; okLi && i < li["items"].size() && i < 5; i++) {
+				json tt;
+				ttTried++;
+				if (!child.Call("item_tooltip", json{{"id", li["items"][i].value("id", 0LL)}}, tt, 60000)) continue;
+				int textLines = 0;
+				// The injector already renames items in POB's own tables, so "raw"
+				// can be Chinese too; count lines that carry any non-ASCII text.
+				for (auto& l : tt["lines"]) if (l.contains("text")) {
+					textLines++;
+					const std::string tx = l.value("text", "");
+					for (unsigned char c : tx) if (c >= 0x80) { zhLines++; break; }
+				}
+				if (textLines >= 3 && !tt.value("header", "").empty()) ttOk++;
+			}
+			check("item_tooltip: POB's own item tooltip for each item, with translated text",
+			      ttTried > 0 && ttOk == ttTried && zhLines >= 1, "items=" + std::to_string(ttTried) + " ok=" + std::to_string(ttOk) + " translatedLines=" + std::to_string(zhLines));
+
+			// add a unique ring (equip=false), swap it into Ring 1, put the old one back, delete it
+			json st0;
+			child.Call("get_stats", json::object(), st0, 30000);
+			const std::string ringRaw =
+			    "Rarity: UNIQUE\nShavronne's Revelation\nMoonstone Ring\nItem Level: 80\nImplicits: 1\n+60 to Intelligence\n"
+			    "Right ring slot: You cannot Regenerate Mana\nRight ring slot: Regenerate 6% of Energy Shield per second\n"
+			    "Right ring slot: +265 to maximum Mana\nLeft ring slot: You cannot Recharge or Regenerate Energy Shield\n"
+			    "Left ring slot: Regenerate 42.4 Mana per Second\nLeft ring slot: +250 to maximum Energy Shield\n";
+			json added;
+			bool okAdd = okLi && child.Call("add_item", json{{"raw", ringRaw}, {"equip", false}}, added, 60000);
+			long long newId = okAdd ? added["item"].value("id", 0LL) : 0;
+			json li2;
+			bool okLi2 = okAdd && child.Call("list_items", json::object(), li2, 60000);
+			check("add_item parses pasted text through new(\"Item\") and AddItem (count +1, not equipped)",
+			      okAdd && newId > 0 && added["item"].value("rarity", "") == "UNIQUE" && added["item"].value("primarySlot", "") == "Ring 1" &&
+			          okLi2 && li2["items"].size() == li["items"].size() + 1,
+			      okAdd ? added.dump().substr(0, 200) : added.dump().substr(0, 300));
+			long long prevRing = 0;
+			if (okLi2) for (auto& sl : li2["slots"]) if (sl.value("name", "") == "Ring 1") prevRing = sl.value("selItemId", 0LL);
+			json eq, st1;
+			bool okEq = okLi2 && child.Call("equip_item", json{{"id", newId}, {"slotName", "Ring 1"}}, eq, 60000) &&
+			            child.Call("get_stats", json::object(), st1, 30000);
+			check("equip_item into Ring 1 changes the calculation",
+			      okEq && st0.contains("stats") && st1.contains("stats") &&
+			          (st0["stats"].value("Mana", 0.0) != st1["stats"].value("Mana", 0.0) || st0["stats"].value("TotalDPS", 0.0) != st1["stats"].value("TotalDPS", 0.0)),
+			      okEq ? "mana " + st0["stats"].value("Mana", json()).dump() + " -> " + st1["stats"].value("Mana", json()).dump() : eq.dump().substr(0, 300));
+			json back, st2;
+			bool okBack = okEq && (prevRing > 0 ? child.Call("equip_item", json{{"id", prevRing}, {"slotName", "Ring 1"}}, back, 60000)
+			                                    : child.Call("unequip_slot", json{{"slotName", "Ring 1"}}, back, 60000)) &&
+			              child.Call("delete_item", json{{"id", newId}}, back, 60000) && child.Call("get_stats", json::object(), st2, 30000);
+			json li3;
+			bool okLi3 = okBack && child.Call("list_items", json::object(), li3, 60000);
+			check("putting the old ring back and deleting the new one restores count, Mana and TotalDPS",
+			      okLi3 && li3["items"].size() == li["items"].size() && st0["stats"].value("Mana", 0.0) == st2["stats"].value("Mana", 1.0) &&
+			          st0["stats"].value("TotalDPS", 0.0) == st2["stats"].value("TotalDPS", 1.0),
+			      okLi3 ? "count=" + std::to_string(li3["items"].size()) + " mana " + st2["stats"].value("Mana", json()).dump() : back.dump().substr(0, 300));
+			json badAdd;
+			bool okBadAdd = child.Call("add_item", json{{"raw", "Rarity: RARE\nNonsense\nNot A Base At All\n"}}, badAdd, 60000);
+			check("add_item refuses text with no known base (error, engine stays up)", !okBadAdd && child.Alive(), badAdd.dump().substr(0, 200));
+
+			json dbU, dbZh, dbR;
+			bool okDbU = okLoad && child.Call("item_db", json{{"kind", "unique"}, {"query", "shavronne"}, {"page", 1}, {"size", 10}}, dbU, 180000);
+			bool okDbZh = okDbU && child.Call("item_db", json{{"kind", "unique"}, {"query", u8"\u859b\u6717"}, {"page", 1}, {"size", 10}}, dbZh, 60000);
+			bool okDbR = okDbU && child.Call("item_db", json{{"kind", "rare"}, {"page", 1}, {"size", 5}}, dbR, 60000);
+			check("item_db: uniques searchable in English and in the translated name, rares listed, entries carry raw text",
+			      okDbU && dbU.value("total", 0) >= 3 && dbU["items"][0].contains("raw") && okDbZh && dbZh.value("total", 0) >= 1 &&
+			          okDbR && dbR.value("total", 0) > 50 && dbR["types"].size() > 3,
+			      "en=" + std::to_string(dbU.value("total", 0)) + " zh=" + std::to_string(dbZh.value("total", 0)) + " rares=" + std::to_string(dbR.value("total", 0)));
+			json dbTt;
+			bool okDbTt = okDbU && dbU["items"].size() && child.Call("item_tooltip", json{{"raw", dbU["items"][0].value("raw", "")}, {"rarity", "UNIQUE"}, {"dbMode", true}}, dbTt, 60000);
+			check("item_tooltip{raw} previews a database entry without adding it", okDbTt && dbTt["lines"].size() >= 3);
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);
