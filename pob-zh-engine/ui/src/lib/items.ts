@@ -67,3 +67,8 @@ export function slotsFor(slots: ItemSlot[], itemId: number): ItemSlot[] {
 export function itemById(items: ItemSummary[], id: number): ItemSummary | undefined {
   return items.find((i) => i.id === id);
 }
+
+/** Pasted text that starts like an item (the rarity or item-class line), in either client language. */
+export function looksLikeItem(s: string): boolean {
+  return /^(Rarity|Item Class|稀有度|物品種類|物品类别)\s*[:：]/m.test(s);
+}

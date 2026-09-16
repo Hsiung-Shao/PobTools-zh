@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
   import { api, type ItemDbPage, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { equippedIn, groupSlots, itemById, rarityColor, slotsFor } from "$lib/items";
+  import { equippedIn, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor } from "$lib/items";
   import { app } from "$lib/state.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
 
@@ -167,8 +167,6 @@
       pasteErr = String(err?.message ?? err);
     }
   }
-  // Item text starts with the rarity or item-class line, in either client language.
-  const looksLikeItem = (s: string) => /^(Rarity|Item Class|稀有度|物品種類|物品类别|稀有度)\s*[:：]/m.test(s);
   function onPasteBox(e: ClipboardEvent) {
     // Ctrl+V into an empty box adds straight away (what the classic UI does).
     if (pasteText.trim()) return;

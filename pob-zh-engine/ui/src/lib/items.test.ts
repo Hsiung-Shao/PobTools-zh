@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equippedIn, groupSlots, rarityColor, slotsFor } from "./items";
+import { equippedIn, groupSlots, looksLikeItem, rarityColor, slotsFor } from "./items";
 import type { ItemSlot } from "./bridge";
 
 const slot = (p: Partial<ItemSlot> & { name: string }): ItemSlot => ({
@@ -46,5 +46,18 @@ describe("item <-> slot lookups", () => {
   it("rarityColor falls back to the base ink", () => {
     expect(rarityColor("UNIQUE")).toContain("--c-unique");
     expect(rarityColor(undefined)).toBe("var(--ink-0)");
+  });
+});
+
+describe("looksLikeItem", () => {
+  it("accepts game item text in English and in the Chinese client", () => {
+    expect(looksLikeItem("Rarity: RARE\nDoom Veil\nCobalt Jewel")).toBe(true);
+    expect(looksLikeItem("Item Class: Jewels\nRarity: MAGIC\n")).toBe(true);
+    expect(looksLikeItem("稀有度: 魔法\n習武的 鈷藍珠寶")).toBe(true);
+    expect(looksLikeItem("物品種類: 珠寶\n稀有度: 稀有")).toBe(true);
+  });
+  it("rejects share codes and prose", () => {
+    expect(looksLikeItem("eNrtvQd…")).toBe(false);
+    expect(looksLikeItem("the rarity is high")).toBe(false);
   });
 });
