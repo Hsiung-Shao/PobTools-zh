@@ -961,6 +961,71 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okDg ? "groups=" + std::to_string(sk3["groups"].size()) + " dps " + st3["stats"].value("TotalDPS", json()).dump() : dg.dump().substr(0, 200));
 		}
 
+		// --- 2d: config + calcs ---------------------------------------------------
+		{
+			json cf;
+			bool okCf = okLoad && child.Call("list_config", json::object(), cf, 60000);
+			int items = 0, visible = 0, lists = 0, zhLabels = 0;
+			if (okCf) for (auto& sec : cf["sections"]) for (auto& it : sec["items"]) {
+				items++;
+				if (it.value("visible", false)) visible++;
+				if (it.contains("list")) lists++;
+				if (it.value("labelZh", "") != it.value("label", "")) zhLabels++;
+			}
+			check("list_config: POB's option list in sections, with POB's own visibility and translated labels",
+			      okCf && cf["sections"].size() >= 5 && items > 200 && visible > 20 && visible < items && lists > 5 && zhLabels > 50 &&
+			          cf["configSets"].size() >= 1 && cf["customMods"].size() >= 1,
+			      okCf ? "sections=" + std::to_string(cf["sections"].size()) + " items=" + std::to_string(items) + " visible=" + std::to_string(visible) +
+			                 " zh=" + std::to_string(zhLabels)
+			           : cf.dump().substr(0, 300));
+			json st0, sc, st1, rc, st2;
+			child.Call("get_stats", json::object(), st0, 30000);
+			bool okSc = okCf && child.Call("set_config", json{{"var", "enemyIsBoss"}, {"value", "Uber"}}, sc, 60000) && child.Call("get_stats", json::object(), st1, 30000);
+			check("set_config{enemyIsBoss=Uber} changes the calculation (BuildModList + recalculation)",
+			      okSc && (st0["stats"].value("TotalDPS", 0.0) != st1["stats"].value("TotalDPS", 0.0) || st0["stats"].value("TotalEHP", 0.0) != st1["stats"].value("TotalEHP", 0.0)),
+			      okSc ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st1["stats"].value("TotalDPS", json()).dump() : sc.dump().substr(0, 200));
+			bool okRc = okSc && child.Call("reset_config", json{{"var", "enemyIsBoss"}}, rc, 60000) && child.Call("get_stats", json::object(), st2, 30000);
+			check("reset_config restores the default and the numbers", okRc && st0["stats"].value("TotalDPS", 0.0) == st2["stats"].value("TotalDPS", 1.0) &&
+			                                                              st0["stats"].value("TotalEHP", 0.0) == st2["stats"].value("TotalEHP", 1.0));
+			json cm, st3, cm2, st4;
+			bool okCm = okCf && child.Call("set_custom_mods", json{{"list", json::array({json{{"title", "t"}, {"text", "100% increased Damage"}, {"enabled", true}}})}}, cm, 60000) &&
+			            child.Call("get_stats", json::object(), st3, 30000) &&
+			            child.Call("set_custom_mods", json{{"list", json::array()}}, cm2, 60000) && child.Call("get_stats", json::object(), st4, 30000);
+			check("set_custom_mods parses a modifier line through POB and clearing it restores TotalDPS",
+			      okCm && st3["stats"].value("TotalDPS", 0.0) > st0["stats"].value("TotalDPS", 0.0) && st0["stats"].value("TotalDPS", 0.0) == st4["stats"].value("TotalDPS", 1.0),
+			      okCm ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump() : cm.dump().substr(0, 200));
+
+			json cal;
+			bool okCal = okLoad && child.Call("get_calcs", json::object(), cal, 60000);
+			int rows = 0, cells = 0, withBd = 0, enabledSecs = 0;
+			int bdSi = 0, bdUi = 0, bdRi = 0, bdCi = 0;
+			if (okCal) for (auto& sec : cal["sections"]) {
+				if (sec.value("enabled", false)) enabledSecs++;
+				for (auto& sub : sec["subsections"]) for (auto& row : sub["rows"]) {
+					rows++;
+					for (auto& c : row["cells"]) {
+						cells++;
+						if (c.value("hasBreakdown", false)) {
+							withBd++;
+							if (!bdSi && c.contains("text") && !c.value("text", "").empty()) { bdSi = sec.value("si", 0); bdUi = sub.value("ui", 0); bdRi = row.value("ri", 0); bdCi = c.value("ci", 0); }
+						}
+					}
+				}
+			}
+			check("get_calcs: POB's calc sections formatted by formatCalcStr, rows filtered by CheckFlag",
+			      okCal && cal["sections"].size() > 20 && enabledSecs > 10 && rows > 100 && cells > 150 && withBd > 100 && cal["selectors"].contains("mainSocketGroup"),
+			      okCal ? "sections=" + std::to_string(cal["sections"].size()) + " rows=" + std::to_string(rows) + " cells=" + std::to_string(cells) + " bd=" + std::to_string(withBd)
+			            : cal.dump().substr(0, 300));
+			json bd;
+			bool okBd = bdSi > 0 && child.Call("calcs_breakdown", json{{"si", bdSi}, {"ui", bdUi}, {"ri", bdRi}, {"ci", bdCi}}, bd, 60000);
+			check("calcs_breakdown: a cell's breakdown sections through CalcBreakdownControl", okBd && bd["sections"].size() >= 1,
+			      okBd ? "sections=" + std::to_string(bd["sections"].size()) : bd.dump().substr(0, 200));
+			json ci, cal2;
+			bool okCi = okCal && child.Call("set_calcs_input", json{{"var", "misc_buffMode"}, {"value", "UNBUFFED"}}, ci, 60000) &&
+			            child.Call("get_calcs", json::object(), cal2, 60000) && child.Call("set_calcs_input", json{{"var", "misc_buffMode"}, {"value", "EFFECTIVE"}}, ci, 60000);
+			check("set_calcs_input{misc_buffMode} round-trips", okCi && cal2["input"].value("misc_buffMode", "") == "UNBUFFED");
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);

@@ -502,6 +502,79 @@ export interface GemPatch {
   count?: number;
 }
 
+// --- config / calcs ------------------------------------------------------------
+
+export type ConfigValue = boolean | number | string | null | undefined;
+export interface ConfigItem {
+  var: string;
+  type: "check" | "count" | "countAllowZero" | "integer" | "float" | "list" | "text" | string;
+  label?: string;
+  labelZh?: string;
+  value?: ConfigValue;
+  placeholder?: number | string;
+  visible: boolean;
+  tooltip?: string;
+  tooltipZh?: string;
+  list?: { val: ConfigValue; label: string; labelZh: string }[];
+}
+export interface ConfigSection {
+  name: string;
+  nameZh: string;
+  col: number;
+  items: ConfigItem[];
+}
+export interface CustomModBlock {
+  title?: string;
+  text: string;
+  enabled: boolean;
+}
+export interface ConfigList {
+  sections: ConfigSection[];
+  customMods: CustomModBlock[];
+  configSets: { id: number; title?: string }[];
+  activeConfigSetId: number;
+  rev: number;
+}
+export interface CalcCell {
+  ci: number;
+  text?: string;
+  raw?: string;
+  hasBreakdown?: boolean;
+  control?: string;
+}
+export interface CalcRow {
+  ri: number;
+  label?: string;
+  labelZh?: string;
+  color?: string;
+  textSize?: number;
+  cells: CalcCell[];
+}
+export interface CalcSubsection {
+  ui: number;
+  label?: string;
+  labelZh?: string;
+  collapsed: boolean;
+  extra?: string;
+  rows: CalcRow[];
+}
+export interface CalcSection {
+  si: number;
+  id: string;
+  group: number;
+  colour?: string;
+  widthCols: number;
+  enabled: boolean;
+  subsections: CalcSubsection[];
+}
+export interface CalcsData {
+  sections: CalcSection[];
+  input: { skill_number: number; misc_buffMode: string; showMinion: boolean };
+  selectors: { mainSocketGroup?: DdField; mainSkill?: DdField; mainSkillPart?: DdField };
+  hasMinion: boolean;
+  rev: number;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
   treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
@@ -562,6 +635,18 @@ export const api = {
   newSkillSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_skill_set", { title, copyCurrent }, 60000),
   renameSkillSet: (id: number, title: string) => bridge.call<Committed>("rename_skill_set", { id, title }, 60000),
   deleteSkillSet: (id: number) => bridge.call<Committed>("delete_skill_set", { id }, 60000),
+  listConfig: () => bridge.call<ConfigList>("list_config", {}, 60000),
+  setConfig: (v: string, value: ConfigValue) => bridge.call<Committed>("set_config", { var: v, value }, 60000),
+  setConfigPlaceholder: (v: string, value: number | string | null) => bridge.call<Committed>("set_config_placeholder", { var: v, value }, 60000),
+  resetConfig: (v: string) => bridge.call<Committed>("reset_config", { var: v }, 60000),
+  setCustomMods: (list: CustomModBlock[]) => bridge.call<Committed>("set_custom_mods", { list }, 60000),
+  setConfigSet: (id: number) => bridge.call<Committed>("set_config_set", { id }, 60000),
+  newConfigSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_config_set", { title, copyCurrent }, 60000),
+  renameConfigSet: (id: number, title: string) => bridge.call<Committed>("rename_config_set", { id, title }, 60000),
+  deleteConfigSet: (id: number) => bridge.call<Committed>("delete_config_set", { id }, 60000),
+  getCalcs: () => bridge.call<CalcsData>("get_calcs", {}, 60000),
+  setCalcsInput: (v: string, value: unknown) => bridge.call<Committed>("set_calcs_input", { var: v, value }, 60000),
+  calcsBreakdown: (si: number, ui: number, ri: number, ci: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("calcs_breakdown", { si, ui, ri, ci }, 60000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
 };

@@ -2145,6 +2145,373 @@ probe("data.gems / gemForSkill", function()
 end)
 
 -- ---------------------------------------------------------------------------
+-- Configuration
+-- ---------------------------------------------------------------------------
+
+local function config_var_list()
+	local ok, list = pcall(require, "Modules.ConfigOptions")
+	if not ok or type(list) ~= "table" then error("Modules/ConfigOptions not available", 0) end
+	return list
+end
+
+local function config_set(tab)
+	local set = tab.configSets and tab.configSets[tab.activeConfigSetId]
+	if not set then error("no active config set", 0) end
+	return set
+end
+
+local function control_prop(ctl, key)
+	if not ctl then return nil end
+	local v = ctl[key]
+	if type(v) == "function" then
+		local ok, r = pcall(v, ctl)
+		return ok and r or nil
+	end
+	return v
+end
+
+-- list_config: POB's option list (Modules/ConfigOptions) in its sections,
+-- each option's current value/placeholder, and whether POB would show it
+-- right now (the control's own `shown` closure: ifCond / ifOption / ...).
+function M.list_config()
+	local b = ensure_build()
+	local tab = b.configTab
+	local set = config_set(tab)
+	local sections, cur = {}, nil
+	for _, vd in ipairs(config_var_list()) do
+		if vd.section then
+			cur = { name = vd.section, nameZh = tr(vd.section), col = vd.col or 1, items = {} }
+			sections[#sections + 1] = cur
+		elseif vd.var and cur then
+			local ctl = tab.varControls and tab.varControls[vd.var]
+			local visible = true
+			if ctl and ctl.IsShown then
+				local ok, shown = pcall(ctl.IsShown, ctl)
+				visible = ok and shown and true or false
+			end
+			local item = {
+				var = vd.var, type = vd.type,
+				label = vd.label, labelZh = tr(vd.label),
+				value = set.input[vd.var], placeholder = set.placeholder[vd.var],
+				visible = visible,
+				tooltip = control_prop(ctl, "tooltipText"),
+			}
+			if item.tooltip then item.tooltipZh = tr(item.tooltip) end
+			if vd.type == "list" and vd.list then
+				local opts = {}
+				for i, o in ipairs(vd.list) do
+					opts[i] = { val = o.val, label = o.label, labelZh = tr(o.label) }
+				end
+				item.list = opts
+			end
+			cur.items[#cur.items + 1] = as_object(item)
+		end
+	end
+	local custom = {}
+	for i, blk in ipairs(set.customModsList or {}) do
+		custom[i] = { title = blk.title, text = blk.text or "", enabled = blk.enabled ~= false }
+	end
+	local sets = {}
+	for i, id in ipairs(tab.configSetOrderList or {}) do
+		local s = tab.configSets[id]
+		sets[i] = { id = id, title = s and s.title or nil }
+	end
+	return { sections = sections, customMods = custom, configSets = sets, activeConfigSetId = tab.activeConfigSetId, rev = b.outputRevision }
+end
+
+local function config_committed(b)
+	local tab = b.configTab
+	tab:AddUndoState()
+	tab:BuildModList()
+	pcall(tab.UpdateControls, tab)
+	return commit(b)
+end
+
+local function find_var(var)
+	for _, vd in ipairs(config_var_list()) do
+		if vd.var == var then return vd end
+	end
+	error("unknown config var " .. tostring(var), 0)
+end
+
+-- set_config{var, value}: the control callback for that option's type.
+function M.set_config(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local set = config_set(tab)
+	local vd = find_var(p and p.var)
+	local v = p.value
+	if vd.type == "check" then
+		v = v and true or false
+	elseif vd.type == "count" or vd.type == "integer" or vd.type == "countAllowZero" or vd.type == "float" then
+		v = (v ~= nil and v ~= "") and tonumber(v) or nil
+	elseif vd.type == "list" then
+		local okv = false
+		for _, o in ipairs(vd.list or {}) do
+			if o.val == v or tostring(o.val) == tostring(v) then v = o.val; okv = true; break end
+		end
+		if not okv then error("value not in list for " .. vd.var, 0) end
+	elseif vd.type == "text" then
+		v = v ~= nil and tostring(v) or nil
+	end
+	set.input[vd.var] = v
+	return config_committed(b)
+end
+
+-- set_config_placeholder{var, value}: the grey "what the build implies" number.
+function M.set_config_placeholder(p)
+	local b = ensure_build()
+	local set = config_set(b.configTab)
+	local vd = find_var(p and p.var)
+	set.placeholder[vd.var] = (p.value ~= nil and p.value ~= "") and tonumber(p.value) or nil
+	return config_committed(b)
+end
+
+-- reset_config{var}: back to what NewConfigSet would have put there.
+function M.reset_config(p)
+	local b = ensure_build()
+	local set = config_set(b.configTab)
+	local vd = find_var(p and p.var)
+	local v = vd.defaultState
+	if vd.defaultIndex and vd.list then v = vd.list[vd.defaultIndex].val end
+	set.input[vd.var] = v
+	return config_committed(b)
+end
+
+-- set_custom_mods{list=[{title,text,enabled}]}: the whole custom-modifier
+-- block list at once (BuildModList parses it, the same as the classic editor).
+function M.set_custom_mods(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local set = config_set(tab)
+	local list = {}
+	for i, blk in ipairs(p and p.list or {}) do
+		list[i] = { title = blk.title or ("Group " .. i), text = blk.text or "", enabled = blk.enabled ~= false }
+	end
+	if #list == 0 then list[1] = { title = "Default", enabled = true, text = "" } end
+	set.customModsList = list
+	pcall(tab.UpdateCustomModsControls, tab)
+	return config_committed(b)
+end
+
+function M.set_config_set(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.configSets[id] then error("no config set " .. tostring(p and p.id), 0) end
+	tab:SetActiveConfigSet(id)
+	tab:AddUndoState()
+	return commit(b)
+end
+
+function M.new_config_set(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local set = tab:NewConfigSet(nil, p and p.title or nil)
+	if p and p.copyCurrent then
+		local cur = config_set(tab)
+		set.input = copyTable(cur.input)
+		set.placeholder = copyTable(cur.placeholder)
+		set.customModsList = copyTable(cur.customModsList or {})
+	end
+	table.insert(tab.configSetOrderList, set.id)
+	tab:SetActiveConfigSet(set.id)
+	tab:AddUndoState()
+	local r = commit(b)
+	r.id = set.id
+	return r
+end
+
+function M.rename_config_set(p)
+	local b = ensure_build()
+	local set = b.configTab.configSets[tonumber(p and p.id or 0)]
+	if not set then error("no config set " .. tostring(p and p.id), 0) end
+	set.title = p.title
+	return commit(b)
+end
+
+function M.delete_config_set(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.configSets[id] then error("no config set " .. tostring(p and p.id), 0) end
+	if #tab.configSetOrderList <= 1 then error("cannot delete the last config set", 0) end
+	for i, v in ipairs(tab.configSetOrderList) do
+		if v == id then table.remove(tab.configSetOrderList, i) break end
+	end
+	if tab.activeConfigSetId == id then tab:SetActiveConfigSet(tab.configSetOrderList[1]) end
+	tab.configSets[id] = nil
+	tab:AddUndoState()
+	return commit(b)
+end
+
+-- ---------------------------------------------------------------------------
+-- Calcs
+-- ---------------------------------------------------------------------------
+
+-- The breakdown control's sections as data (shared by the sidebar and the
+-- calcs page): SetBreakdownData fills ctl.sectionList, we read it, then clear.
+local function breakdown_sections(ctl, fill)
+	local sections = {}
+	local ok, err = pcall(function()
+		fill()
+		for _, s in ipairs(ctl.sectionList or {}) do
+			if s.type == "TEXT" then
+				local lines = {}
+				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
+				sections[#sections + 1] = { type = "text", size = s.textSize or 16, lines = lines }
+			elseif s.type == "TABLE" then
+				local cols, rows = {}, {}
+				for i, c in ipairs(s.colList or {}) do
+					cols[i] = { label = tr(c.label or ""), key = tostring(c.key), right = c.right and true or false }
+				end
+				for i, r in ipairs(s.rowList or {}) do
+					local row = {}
+					for _, c in ipairs(s.colList or {}) do
+						row[tostring(c.key)] = tr(cell_text(r[c.key]))
+					end
+					rows[i] = setmetatable(row, { __object = true })
+				end
+				sections[#sections + 1] = { type = "table", label = s.label and tr(s.label) or nil, footer = s.footer and tr(s.footer) or nil, cols = cols, rows = rows }
+			elseif s.type == "RADIUS" then
+				sections[#sections + 1] = { type = "radius", radius = s.radius }
+			end
+		end
+	end)
+	ctl:SetBreakdownData()
+	if not ok then error(err, 0) end
+	return sections
+end
+
+local function calcs_actor(tab)
+	if not tab.calcsEnv then error("calcs output not built yet", 0) end
+	return tab.input.showMinion and tab.calcsEnv.minion or tab.calcsEnv.player
+end
+
+-- get_calcs: every section/subsection/row/cell of POB's Calcs tab, formatted
+-- by POB's own formatCalcStr against the CALCS environment, with the flags
+-- POB uses to hide rows (CheckFlag). Cells are addressable for breakdowns.
+function M.get_calcs()
+	local b = ensure_build()
+	local tab = b.calcsTab
+	local actor = calcs_actor(tab)
+	local out = {}
+	for si, sec in ipairs(tab.sectionList) do
+		local enabled = tab:CheckFlag(sec) and true or false
+		local subs = {}
+		for ui, sub in ipairs(sec.subSection or {}) do
+			local rows = {}
+			for ri, row in ipairs(sub.data or {}) do
+				if enabled and tab:CheckFlag(row) then
+					local cells = {}
+					for ci, col in ipairs(row) do
+						if col.format and tab:CheckFlag(col) then
+							local ok, text = pcall(formatCalcStr, col.format, actor, col)
+							text = ok and tostring(text) or "?"
+							cells[#cells + 1] = as_object({
+								ci = ci, text = tr(text), raw = text,
+								hasBreakdown = #col > 0,
+								control = col.controlName,
+							})
+						elseif col.controlName then
+							cells[#cells + 1] = as_object({ ci = ci, control = col.controlName })
+						end
+					end
+					rows[#rows + 1] = as_object({ ri = ri, label = row.label, labelZh = row.label and tr(row.label) or nil, color = row.color, textSize = row.textSize, cells = cells })
+				end
+			end
+			local extra
+			if sub.data and sub.data.extra then
+				local ok, t = pcall(formatCalcStr, sub.data.extra, actor)
+				extra = ok and tr(tostring(t)) or nil
+			end
+			subs[ui] = as_object({ ui = ui, label = sub.label, labelZh = tr(sub.label), collapsed = sub.collapsed and true or false, extra = extra, rows = rows })
+		end
+		out[si] = as_object({ si = si, id = sec.id, group = sec.group, colour = sec.colour, widthCols = sec.widthCols, enabled = enabled, subsections = subs })
+	end
+	-- the skill/mode selectors POB draws in its first section
+	local sel = tab.sectionList[1]
+	local selectors = {}
+	if sel and sel.controls and sel.controls.mainSocketGroup then
+		b:RefreshSkillSelectControls(sel.controls, tab.input.skill_number, "Calcs")
+		selectors.mainSocketGroup = { index = sel.controls.mainSocketGroup.selIndex or 1, list = dd_entries(sel.controls.mainSocketGroup) }
+		if dd_shown(sel.controls.mainSkill) then selectors.mainSkill = { index = sel.controls.mainSkill.selIndex or 1, list = dd_entries(sel.controls.mainSkill) } end
+		if dd_shown(sel.controls.mainSkillPart) then selectors.mainSkillPart = { index = sel.controls.mainSkillPart.selIndex or 1, list = dd_entries(sel.controls.mainSkillPart) } end
+	end
+	return {
+		sections = out,
+		input = { skill_number = tab.input.skill_number, misc_buffMode = tab.input.misc_buffMode, showMinion = tab.input.showMinion and true or false },
+		selectors = selectors,
+		hasMinion = tab.calcsEnv and tab.calcsEnv.minion ~= nil,
+		rev = b.outputRevision,
+	}
+end
+
+-- set_calcs_input{var, value}: skill_number / misc_buffMode / showMinion,
+-- plus the "Calcs" twins of the main-skill selectors.
+function M.set_calcs_input(p)
+	local b = ensure_build()
+	local tab = b.calcsTab
+	local var, v = p and p.var, p and p.value
+	if var == "skill_number" then
+		tab.input.skill_number = tonumber(v) or 1
+	elseif var == "misc_buffMode" then
+		if v ~= "EFFECTIVE" and v ~= "COMBAT" and v ~= "BUFFED" and v ~= "UNBUFFED" then error("bad buff mode", 0) end
+		tab.input.misc_buffMode = v
+	elseif var == "showMinion" then
+		tab.input.showMinion = v and true or false
+	elseif var == "mainActiveSkill" then
+		local g = b.skillsTab.socketGroupList[tab.input.skill_number]
+		if not g then error("no socket group", 0) end
+		g.mainActiveSkillCalcs = tonumber(v) or 1
+	elseif var == "skillPart" then
+		local g = b.skillsTab.socketGroupList[tab.input.skill_number]
+		local as = g and g.displaySkillListCalcs and g.displaySkillListCalcs[g.mainActiveSkillCalcs or 1]
+		local src = as and as.activeEffect and as.activeEffect.srcInstance
+		if not src then error("no active skill", 0) end
+		src.skillPartCalcs = tonumber(v) or 1
+	else
+		error("unknown calcs input " .. tostring(var), 0)
+	end
+	tab:AddUndoState()
+	return commit(b)
+end
+
+-- calcs_breakdown{si, ui, ri, ci}: the breakdown POB shows when that cell is
+-- hovered (CalcBreakdownControl:SetBreakdownData(colData)).
+function M.calcs_breakdown(p)
+	local b = ensure_build()
+	local tab = b.calcsTab
+	local sec = tab.sectionList[tonumber(p and p.si or 0)]
+	local sub = sec and sec.subSection[tonumber(p.ui or 0)]
+	local row = sub and sub.data[tonumber(p.ri or 0)]
+	local col = row and row[tonumber(p.ci or 0)]
+	if not col then error("no such cell", 0) end
+	local ctl = tab.controls.breakdown
+	local sections = breakdown_sections(ctl, function() ctl:SetBreakdownData(col, false) end)
+	return { sections = sections, rev = b.outputRevision }
+end
+
+probe("classes.ConfigTab.BuildModList/UpdateLevel/SetActiveConfigSet/NewConfigSet", function()
+	local c = class_of("ConfigTab")
+	return type(c) == "table" and type(c.BuildModList) == "function" and type(c.UpdateLevel) == "function"
+		and type(c.SetActiveConfigSet) == "function" and type(c.NewConfigSet) == "function"
+end)
+probe("Modules.ConfigOptions is a list with sections and vars", function()
+	local ok, list = pcall(require, "Modules.ConfigOptions")
+	if not ok or type(list) ~= "table" then return false end
+	local sections, vars = 0, 0
+	for _, vd in ipairs(list) do
+		if vd.section then sections = sections + 1 elseif vd.var then vars = vars + 1 end
+	end
+	return sections >= 3 and vars >= 20
+end)
+probe("classes.CalcsTab.CheckFlag + sectionList + formatCalcStr", function()
+	local c = class_of("CalcsTab")
+	return type(c) == "table" and type(c.CheckFlag) == "function" and type(formatCalcStr) == "function"
+end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 
