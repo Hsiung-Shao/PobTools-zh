@@ -300,6 +300,69 @@ export interface NodeInfo {
   pathDist?: number;
 }
 
+export interface DdEntry {
+  val?: number;
+  label: string;
+  labelZh?: string;
+  minionId?: string;
+  itemSetId?: number;
+}
+export interface DdField {
+  index: number;
+  list: DdEntry[];
+  enabled?: boolean;
+}
+/** The top bar as POB fills it (Build.lua's level + main-skill controls). */
+export interface BuildHeader {
+  buildName: string;
+  dbFileName?: string;
+  unsaved: boolean;
+  level: number;
+  levelAuto: boolean;
+  mainSocketGroup: DdField;
+  mainSkill?: DdField;
+  mainSkillPart?: DdField;
+  mainSkillStageCount?: number;
+  mainSkillMineCount?: number;
+  mainSkillMinion?: DdField;
+  mainSkillMinionSkill?: DdField;
+  rev: number;
+}
+export interface Committed {
+  rev: number;
+  unsaved: boolean;
+}
+export interface SaveResult {
+  dbFileName: string;
+  buildName: string;
+  subPath?: string;
+  unsaved: boolean;
+  rev: number;
+}
+export interface CodeInfo {
+  sections: string[];
+  className?: string;
+  classNameZh?: string;
+  ascendClassName?: string;
+  ascendClassNameZh?: string;
+  level?: number;
+  targetVersion?: string;
+  itemCount?: number;
+  skillCount?: number;
+  hasTree?: boolean;
+  xmlBytes: number;
+}
+export interface CharImportParams {
+  items?: string;
+  passives?: string;
+  importTree?: boolean;
+  importItems?: boolean;
+  deleteJewels?: boolean;
+  clearItems?: boolean;
+  clearSkills?: boolean;
+  ignoreWeaponSwap?: boolean;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
   treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
@@ -321,6 +384,15 @@ export const api = {
   getUpdateStatus: () => bridge.call<UpdateStatus>("get_update_status"),
   checkUpdateAsync: () => bridge.call<{ started: boolean }>("check_update_async"),
   applyUpdate: () => bridge.call<{ applied: string }>("apply_update", {}, 120000),
+  getBuildHeader: () => bridge.call<BuildHeader>("get_build_header"),
+  setBuildField: (field: string, value: unknown) => bridge.call<Committed>("set_build_field", { field, value }, 60000),
+  saveBuild: () => bridge.call<SaveResult>("save_build", {}, 60000),
+  saveBuildAs: (path: string) => bridge.call<SaveResult>("save_build_as", { path }, 60000),
+  revertBuild: () => bridge.call<LoadedBuild>("revert_build", {}, 120000),
+  exportCode: () => bridge.call<{ code: string; bytes: number }>("export_code", {}, 60000),
+  decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
+  importCode: (code: string, mode: "replace" | "new") => bridge.call<LoadedBuild>("import_code", { code, mode }, 180000),
+  importCharacter: (p: CharImportParams) => bridge.call<Committed & { imported: string[] }>("import_character", p, 180000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
 };

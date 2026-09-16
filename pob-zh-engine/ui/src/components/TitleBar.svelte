@@ -7,6 +7,13 @@
   const tabs: { id: ViewId; key: string }[] = [
     { id: "builds", key: "title.builds" },
     { id: "tree", key: "title.tree" },
+    { id: "items", key: "title.items" },
+    { id: "skills", key: "title.skills" },
+    { id: "config", key: "title.config" },
+    { id: "calcs", key: "title.calcs" },
+    { id: "notes", key: "title.notes" },
+    { id: "party", key: "title.party" },
+    { id: "import", key: "title.import" },
   ];
 
   // The OS window title carries the build name for the taskbar.

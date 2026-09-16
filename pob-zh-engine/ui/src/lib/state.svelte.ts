@@ -1,8 +1,8 @@
 // App-wide state: engine status, the loaded build, sidebar, view.
 // Svelte 5 runes in a module so every component reads the same object.
-import { api, bridge, hostInfo, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
+import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
 
-export type ViewId = "builds" | "tree";
+export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import";
 
 class AppState {
   engine = $state<"booting" | "ready" | "gone">("booting");
@@ -16,6 +16,9 @@ class AppState {
   view = $state<ViewId>("builds");
   info = $state<BuildInfo | null>(null);
   sidebar = $state<Sidebar | null>(null);
+  header = $state<BuildHeader | null>(null);
+  /** "HH:MM" of the last successful save in this session. */
+  savedAt = $state<string | null>(null);
   /** POB's outputRevision after the last refresh; everything cached is keyed on it. */
   rev = $state(0);
   loaded = $derived(this.info !== null);
@@ -37,12 +40,48 @@ class AppState {
 
   /** Re-reads what depends on the build's calculation state. Returns true. */
   async refresh(): Promise<boolean> {
-    const [info, side] = await Promise.all([api.getBuildInfo(), api.getSidebar()]);
+    const [info, side, header] = await Promise.all([api.getBuildInfo(), api.getSidebar(), api.getBuildHeader()]);
     this.info = info;
     this.sidebar = side;
+    this.header = header;
     this.rev = side.rev;
     return true;
   }
+
+  /** Build:Init ran again (import): every cached view is stale, like a fresh load. */
+  async afterReinit() {
+    this.rev = 0;
+    await this.run(() => this.refresh());
+  }
+
+  private stamp() {
+    const d = new Date();
+    this.savedAt = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  async save() {
+    const r = await this.run(() => api.saveBuild());
+    if (r) {
+      this.stamp();
+      await this.refresh();
+    }
+  }
+
+  /** Saves under POB's build folder: `name` may carry a sub-folder ("dir/name"). */
+  async saveAs(name: string) {
+    const buildPath = this.buildPath;
+    if (!buildPath) return;
+    const rel = name.replace(/\\/g, "/").replace(/^\/+/, "");
+    const path = `${buildPath}${rel}${rel.toLowerCase().endsWith(".xml") ? "" : ".xml"}`;
+    const r = await this.run(() => api.saveBuildAs(path));
+    if (r) {
+      this.stamp();
+      await this.refresh();
+    }
+  }
+
+  /** POB's build folder with a trailing separator (from version / list_builds). */
+  buildPath = $state<string>("");
 
   /**
    * The tree changed in the engine (a click, an undo): POB recalculated in
@@ -64,6 +103,7 @@ class AppState {
   reset() {
     this.info = null;
     this.sidebar = null;
+    this.header = null;
     this.rev = 0;
     this.view = "builds";
   }
@@ -81,6 +121,7 @@ bridge.on("hello", async () => {
   app.reset();
   try {
     app.version = await api.version();
+    if (app.version?.buildPath) app.buildPath = app.version.buildPath;
   } catch (e: any) {
     app.error = String(e?.message ?? e);
   }

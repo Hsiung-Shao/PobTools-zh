@@ -731,6 +731,98 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("tree_undo removes the mastery again", okMu && mu["allocatedNodes"].size() == (size_t)allocCount);
 		}
 
+		// --- 2a: build header, level, share code, save-as, import ---------------
+		{
+			json hdr;
+			bool okH = okLoad && child.Call("get_build_header", json::object(), hdr, 30000);
+			check("get_build_header: level and POB's own main-skill selectors",
+			      okH && hdr.value("level", 0) > 0 && hdr.contains("mainSocketGroup") && hdr["mainSocketGroup"]["list"].size() > 0 &&
+			          hdr["mainSocketGroup"]["list"][0].contains("labelZh"),
+			      okH ? "level=" + std::to_string(hdr.value("level", 0)) + " groups=" + std::to_string(hdr["mainSocketGroup"]["list"].size()) +
+			                (hdr.contains("mainSkill") ? " skills=" + std::to_string(hdr["mainSkill"]["list"].size()) : "")
+			          : hdr.dump().substr(0, 300));
+			const int lv0 = hdr.value("level", 0);
+			json st0;
+			child.Call("get_stats", json::object(), st0, 30000);
+			const int lv1 = lv0 > 50 ? lv0 - 40 : lv0 + 40;
+			json r1, st1;
+			bool ok1 = okH && child.Call("set_build_field", json{{"field", "level"}, {"value", lv1}}, r1, 60000) &&
+			           child.Call("get_stats", json::object(), st1, 30000);
+			// Life alone is not enough of a witness (a CI build sits at 1 whatever
+			// the level); any of the three moving proves the recalculation ran.
+			auto moved = [&](const char* k) {
+				return st0.contains("stats") && st1.contains("stats") && st0["stats"].value(k, 0.0) != st1["stats"].value(k, 0.0);
+			};
+			check("set_build_field{level} recalculates (Life/ES/TotalDPS change) and marks the build unsaved",
+			      ok1 && r1.value("unsaved", false) && (moved("Life") || moved("EnergyShield") || moved("TotalDPS")),
+			      ok1 ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st1["stats"].value("TotalDPS", json()).dump() : r1.dump().substr(0, 200));
+			json r2, st2;
+			bool ok2 = ok1 && child.Call("set_build_field", json{{"field", "level"}, {"value", lv0}}, r2, 60000) &&
+			           child.Call("get_stats", json::object(), st2, 30000);
+			check("restoring the level restores Life and TotalDPS exactly",
+			      ok2 && st0["stats"].value("Life", 0.0) == st2["stats"].value("Life", 1.0) &&
+			          st0["stats"].value("TotalDPS", 0.0) == st2["stats"].value("TotalDPS", 1.0));
+
+			// share code: export -> decode preview -> import back into this build
+			json ex, dec;
+			bool okEx = okLoad && child.Call("export_code", json::object(), ex, 60000);
+			bool okDec = okEx && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
+			auto hasSection = [&](const char* n) {
+				if (!okDec || !dec.contains("sections")) return false;
+				for (auto& x : dec["sections"]) if (x.get<std::string>() == n) return true;
+				return false;
+			};
+			check("export_code -> decode_code: a code that decodes to a build with tree, items and skills",
+			      okEx && ex.value("bytes", 0) > 1000 && okDec && hasSection("Build") && hasSection("Tree") && hasSection("Items") &&
+			          hasSection("Skills") && dec.value("level", 0) == lv0 && !dec.value("className", "").empty(),
+			      okDec ? "bytes=" + std::to_string(ex.value("bytes", 0)) + " items=" + std::to_string(dec.value("itemCount", 0)) +
+			                  " skills=" + std::to_string(dec.value("skillCount", 0)) + " class=" + dec.value("className", "")
+			            : (okEx ? dec.dump().substr(0, 300) : ex.dump().substr(0, 300)));
+			json badDec;
+			bool okBadDec = child.Call("decode_code", json{{"code", "this is not a code"}}, badDec, 60000);
+			check("decode_code rejects garbage with an error instead of a crash", !okBadDec && child.Alive(), badDec.dump().substr(0, 200));
+			json imp, st3;
+			bool okImp = okEx && child.Call("import_code", json{{"code", ex.value("code", "")}, {"mode", "replace"}}, imp, 180000) &&
+			             child.Call("get_stats", json::object(), st3, 30000);
+			check("import_code{replace} of the build's own code gives the same Life and TotalDPS",
+			      okImp && st0["stats"].value("Life", 0.0) == st3["stats"].value("Life", 1.0) &&
+			          st0["stats"].value("TotalDPS", 0.0) == st3["stats"].value("TotalDPS", 1.0),
+			      okImp ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump()
+			            : imp.dump().substr(0, 300));
+
+			// save as: under the sandbox's build folder, then reload it and run the oracle again
+			const std::wstring savePath = sandbox + L"\\Builds\\bridge_saveas.xml";
+			DeleteFileW(savePath.c_str());
+			json sv;
+			bool okSv = okLoad && child.Call("save_build_as", json{{"path", narrow(savePath)}}, sv, 60000);
+			check("save_build_as writes the file under the build folder and clears unsaved",
+			      okSv && GetFileAttributesW(savePath.c_str()) != INVALID_FILE_ATTRIBUTES && !sv.value("unsaved", true) &&
+			          sv.value("buildName", "") == "bridge_saveas",
+			      okSv ? sv.dump().substr(0, 200) : sv.dump().substr(0, 300));
+			json ld, st4;
+			bool okLd = okSv && child.Call("load_build_file", json{{"path", narrow(savePath)}}, ld, 120000) &&
+			            child.Call("get_stats", json::object(), st4, 30000);
+			if (okLd) {
+				auto oracle = ParsePlayerStats(ReadFileA(savePath));
+				int missing = 0;
+				std::vector<std::string> ex2;
+				int bad = CompareStats(oracle, st4["stats"], 1e-9, missing, ex2);
+				std::string detail = "checked=" + std::to_string(oracle.size()) + " bad=" + std::to_string(bad) + " missing=" + std::to_string(missing);
+				for (auto& e : ex2) detail += "; " + e;
+				check("the file save_build_as wrote reloads and its <PlayerStat> equal get_stats (rel 1e-9)",
+				      oracle.size() > 20 && bad == 0 && missing == 0, detail);
+			} else {
+				check("the file save_build_as wrote reloads and its <PlayerStat> equal get_stats (rel 1e-9)", false, ld.dump().substr(0, 300));
+			}
+			json outside;
+			bool okOut = child.Call("save_build_as", json{{"path", narrow(exeDir + L"PobTools\\outside.xml")}}, outside, 30000);
+			check("save_build_as refuses a path outside POB's build folder", !okOut && GetFileAttributesW((exeDir + L"PobTools\\outside.xml").c_str()) == INVALID_FILE_ATTRIBUTES,
+			      outside.dump().substr(0, 200));
+			json sv2;
+			bool okSv2 = okLd && child.Call("save_build", json::object(), sv2, 60000);
+			check("save_build (in place) succeeds on a build that has a file", okSv2 && !sv2.value("unsaved", true));
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);

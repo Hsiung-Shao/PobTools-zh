@@ -8,7 +8,30 @@
   import StatusBar from "./components/StatusBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import BuildList from "./components/BuildList.svelte";
+  import BuildBar from "./components/BuildBar.svelte";
   import TreeView from "./views/TreeView.svelte";
+  import ImportView from "./views/ImportView.svelte";
+  import type { ViewId } from "$lib/state.svelte";
+
+  // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
+  const tabOrder: ViewId[] = ["builds", "tree", "items", "skills", "config", "calcs", "notes", "party", "import"];
+  function onKey(e: KeyboardEvent) {
+    if (!e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "s" && !e.shiftKey && app.loaded) {
+      e.preventDefault();
+      void app.save();
+      return;
+    }
+    const n = Number(e.key);
+    if (n >= 1 && n <= tabOrder.length) {
+      const id = tabOrder[n - 1];
+      if (id === "builds" || app.loaded) {
+        e.preventDefault();
+        app.view = id;
+      }
+    }
+  }
 
   let i18nReady = $state(false);
   onMount(() => {
@@ -16,9 +39,12 @@
   });
 </script>
 
+<svelte:window onkeydown={onKey} />
+
 {#if i18nReady}
   <div class="app">
     <TitleBar />
+    {#if app.loaded && app.view !== "builds"}<BuildBar />{/if}
     <div class="body">
       <Sidebar />
       <main class="view">
@@ -33,6 +59,10 @@
           <div class="center"><p class="bad">{t("app.gateFailed", { failed: app.gate.failed.join("; ") })}</p></div>
         {:else if app.view === "tree" && app.loaded}
           <TreeView />
+        {:else if app.view === "import" && app.loaded}
+          <ImportView />
+        {:else if app.view !== "builds" && app.loaded}
+          <div class="center"><p class="dim">{t("app.viewSoon")}</p></div>
         {:else}
           <BuildList />
         {/if}

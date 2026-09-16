@@ -1060,6 +1060,349 @@ probe("classes.Tooltip.AddLine", function() local c = class_of("Tooltip"); retur
 probe("latestTreeVersion", function() return type(latestTreeVersion) == "string" end)
 
 -- ---------------------------------------------------------------------------
+-- Build header (top bar), save, import / export
+-- ---------------------------------------------------------------------------
+
+-- Every mutation on the build ends the way POB's own control callbacks do:
+-- modFlag + buildFlag, then one frame so mainOutput and the sidebar catch up.
+local function commit(b)
+	b.modFlag = true
+	b.buildFlag = true
+	frame()
+	return { rev = b.outputRevision, unsaved = b.unsaved and true or false }
+end
+
+-- A DropDownControl's list as {val,label,labelZh}; entries may be plain
+-- strings (mainSkillMinionSkill) or tables with val/label/minionId/itemSetId.
+local function dd_entries(ctl)
+	local out = {}
+	for i, e in ipairs(ctl.list or {}) do
+		if type(e) == "table" then
+			out[i] = { val = e.val, label = e.label, labelZh = tr(e.label), minionId = e.minionId, itemSetId = e.itemSetId }
+		else
+			out[i] = { val = i, label = e, labelZh = tr(e) }
+		end
+	end
+	return out
+end
+
+local function dd_shown(ctl)
+	if not ctl then return false end
+	local s = ctl.shown
+	if type(s) == "function" then return s(ctl) and true or false end
+	return s ~= false
+end
+
+-- The top bar as POB lays it out: level (+ auto), the main-skill selectors
+-- POB itself fills through RefreshSkillSelectControls, and the save state.
+function M.get_build_header()
+	local b = ensure_build()
+	local c = b.controls
+	b:RefreshSkillSelectControls(c, b.mainSocketGroup, "")
+	local h = {
+		buildName = b.buildName,
+		dbFileName = b.dbFileName or nil,
+		unsaved = b.unsaved and true or false,
+		level = b.characterLevel,
+		levelAuto = b.characterLevelAutoMode and true or false,
+		mainSocketGroup = { index = c.mainSocketGroup.selIndex or 1, list = dd_entries(c.mainSocketGroup) },
+		rev = b.outputRevision,
+	}
+	if dd_shown(c.mainSkill) then
+		h.mainSkill = { index = c.mainSkill.selIndex or 1, list = dd_entries(c.mainSkill), enabled = c.mainSkill.enabled ~= false }
+	end
+	if dd_shown(c.mainSkillPart) then
+		h.mainSkillPart = { index = c.mainSkillPart.selIndex or 1, list = dd_entries(c.mainSkillPart) }
+	end
+	if dd_shown(c.mainSkillStageCount) then h.mainSkillStageCount = tonumber(c.mainSkillStageCount.buf) end
+	if dd_shown(c.mainSkillMineCount) then h.mainSkillMineCount = tonumber(c.mainSkillMineCount.buf) or 0 end
+	if dd_shown(c.mainSkillMinion) then
+		h.mainSkillMinion = { index = c.mainSkillMinion.selIndex or 1, list = dd_entries(c.mainSkillMinion), enabled = c.mainSkillMinion.enabled ~= false }
+	end
+	if dd_shown(c.mainSkillMinionSkill) then
+		h.mainSkillMinionSkill = { index = c.mainSkillMinionSkill.selIndex or 1, list = dd_entries(c.mainSkillMinionSkill) }
+	end
+	return h
+end
+
+-- The active skill instance the main-skill selectors edit (Build.lua's
+-- callbacks all start from these three lines).
+local function main_src_instance(b)
+	local g = b.skillsTab.socketGroupList[b.mainSocketGroup]
+	local as = g and g.displaySkillList and g.displaySkillList[g.mainActiveSkill or 1]
+	return as and as.activeEffect and as.activeEffect.srcInstance, g
+end
+
+-- set_build_field{field, value}: one top-bar control's callback, verbatim.
+function M.set_build_field(p)
+	local b = ensure_build()
+	local c = b.controls
+	local field = p and p.field
+	local v = p and p.value
+	if field == "level" then
+		local lv = math.min(math.max(tonumber(v) or 1, 1), 100)
+		b.characterLevel = lv
+		b.configTab:BuildModList()
+		b.characterLevelAutoMode = false
+		c.levelScalingButton.label = "Manual"
+		c.characterLevel:SetText(tostring(lv))
+	elseif field == "levelAuto" then
+		b.characterLevelAutoMode = v and true or false
+		c.levelScalingButton.label = b.characterLevelAutoMode and "Auto" or "Manual"
+		b.configTab:BuildModList()
+	elseif field == "mainSocketGroup" then
+		local idx = tonumber(v)
+		if not idx or not b.skillsTab.socketGroupList[idx] then error("no socket group " .. tostring(v), 0) end
+		b.mainSocketGroup = idx
+	elseif field == "mainSkill" then
+		local g = b.skillsTab.socketGroupList[b.mainSocketGroup]
+		if not g then error("no main socket group", 0) end
+		g.mainActiveSkill = tonumber(v) or 1
+	elseif field == "mainSkillPart" then
+		local src = main_src_instance(b)
+		if not src then error("no active skill", 0) end
+		src.skillPart = tonumber(v) or 1
+	elseif field == "mainSkillStageCount" then
+		local src = main_src_instance(b)
+		if not src then error("no active skill", 0) end
+		src.skillStageCount = tonumber(v)
+	elseif field == "mainSkillMineCount" then
+		local src = main_src_instance(b)
+		if not src then error("no active skill", 0) end
+		src.skillMineCount = tonumber(v)
+	elseif field == "mainSkillMinion" then
+		local src = main_src_instance(b)
+		if not src then error("no active skill", 0) end
+		b:RefreshSkillSelectControls(c, b.mainSocketGroup, "")
+		local e = c.mainSkillMinion.list[tonumber(v) or 0]
+		if type(e) ~= "table" then error("no minion entry " .. tostring(v), 0) end
+		if e.itemSetId then src.skillMinionItemSet = e.itemSetId else src.skillMinion = e.minionId end
+	elseif field == "mainSkillMinionSkill" then
+		local src = main_src_instance(b)
+		if not src then error("no active skill", 0) end
+		src.skillMinionSkill = tonumber(v) or 1
+	else
+		error("unknown field " .. tostring(field), 0)
+	end
+	return commit(b)
+end
+
+-- --- save -------------------------------------------------------------------
+
+local function norm_path(s)
+	return (tostring(s or ""):gsub("\\", "/"):lower())
+end
+
+local function under_build_path(path)
+	local root = norm_path(main().buildPath)
+	if root == "" then return false end
+	if root:sub(-1) ~= "/" then root = root .. "/" end
+	return norm_path(path):sub(1, #root) == root
+end
+
+-- Writes the build where it came from. SaveDBFile answers true on failure
+-- (it opens a popup nobody sees here), nil on success.
+function M.save_build()
+	local b = ensure_build()
+	if not b.dbFileName then error("build has no file yet; use save_build_as", 0) end
+	local failed = b:SaveDBFile()
+	if failed then error("save failed: " .. tostring(b.dbFileName), 0) end
+	frame()
+	return { dbFileName = b.dbFileName, buildName = b.buildName, unsaved = b.unsaved and true or false, rev = b.outputRevision }
+end
+
+-- save_build_as{path}: the same bookkeeping OpenSaveAsPopup does before it
+-- calls SaveDBFile (name, sub-folder), restricted to POB's build folder.
+function M.save_build_as(p)
+	local b = ensure_build()
+	local path = p and p.path
+	if type(path) ~= "string" or path == "" then error("params.path required", 0) end
+	path = path:gsub("/", "\\")
+	if path:sub(-4):lower() ~= ".xml" then path = path .. ".xml" end
+	if not under_build_path(path) then
+		error("path must be under the build folder: " .. tostring(main().buildPath), 0)
+	end
+	local name = path:match("([^\\]+)%.xml$")
+	if not name or name:find("[\\/:%*%?\"<>|%c]") then error("bad build name", 0) end
+	local m = main()
+	local dir = path:match("^(.*)\\[^\\]+$")
+	if dir then MakeDir(dir) end
+	b.dbFileName = path
+	b.buildName = name
+	b.dbFileSubPath = path:sub(#m.buildPath + 1, -#name - 5)
+	local failed = b:SaveDBFile()
+	if failed then error("save failed: " .. path, 0) end
+	if b.spec and b.spec.SetWindowTitleWithBuildClass then b.spec:SetWindowTitleWithBuildClass() end
+	frame()
+	return { dbFileName = b.dbFileName, buildName = b.buildName, subPath = b.dbFileSubPath, unsaved = b.unsaved and true or false, rev = b.outputRevision }
+end
+
+-- Reloads the file on disk, throwing away unsaved changes.
+function M.revert_build()
+	local b = ensure_build()
+	if not b.dbFileName then error("build has no file to revert to", 0) end
+	return M.load_build_file({ path = b.dbFileName })
+end
+
+-- --- share codes ------------------------------------------------------------
+
+-- ImportTab's "Generate" button, one line.
+function M.export_code()
+	local b = ensure_build()
+	local xml = b:SaveDB("code")
+	if not xml then error("SaveDB failed", 0) end
+	local code = common.base64.encode(Deflate(xml)):gsub("+", "-"):gsub("/", "_")
+	return { code = code, bytes = #code }
+end
+
+local MAX_CODE = 4 * 1024 * 1024
+
+local function decode_share_code(code)
+	if type(code) ~= "string" then error("params.code required", 0) end
+	code = code:gsub("^[%s?]+", ""):gsub("[%s?]+$", "")
+	if #code == 0 then error("empty code", 0) end
+	if #code > MAX_CODE then error("code too large", 0) end
+	local ok, xml = pcall(function()
+		return Inflate(common.base64.decode(code:gsub("-", "+"):gsub("_", "/")))
+	end)
+	if not ok or type(xml) ~= "string" or #xml == 0 then error("not a Path of Building code", 0) end
+	local doc, err = common.xml.ParseXML(xml)
+	if not doc then error("code did not decode to a build: " .. tostring(err), 0) end
+	local root = doc[1]
+	if type(root) ~= "table" or root.elem ~= "PathOfBuilding" then error("code is not a build file", 0) end
+	return xml, root
+end
+
+-- decode_code{code}: what the page shows before the user commits to importing.
+function M.decode_code(p)
+	local xml, root = decode_share_code(p and p.code)
+	local info = { sections = {} }
+	for _, node in ipairs(root) do
+		if type(node) == "table" and node.elem then
+			info.sections[#info.sections + 1] = node.elem
+			if node.elem == "Build" then
+				local a = node.attrib or {}
+				info.className = a.className
+				info.classNameZh = tr(a.className)
+				info.ascendClassName = a.ascendClassName
+				info.ascendClassNameZh = tr(a.ascendClassName)
+				info.level = tonumber(a.level)
+				info.targetVersion = a.targetVersion
+			elseif node.elem == "Items" then
+				local n = 0
+				for _, c in ipairs(node) do if type(c) == "table" and c.elem == "Item" then n = n + 1 end end
+				info.itemCount = n
+			elseif node.elem == "Skills" then
+				local n = 0
+				for _, c in ipairs(node) do
+					if type(c) == "table" and (c.elem == "Skill" or c.elem == "SkillSet") then n = n + 1 end
+				end
+				info.skillCount = n
+			elseif node.elem == "Tree" then
+				info.hasTree = true
+			end
+		end
+	end
+	info.xmlBytes = #xml
+	return info
+end
+
+-- After Build:Init rebuilt everything, bring the page's world back like a
+-- fresh load: the sidebar wrapper, two frames, the same shape load_build_file
+-- returns.
+local function after_reinit()
+	wrap_add_display_stat_list()
+	frame()
+	frame()
+	local b = ensure_build()
+	return {
+		buildName = b.buildName,
+		dbFileName = b.dbFileName or nil,
+		outputRevision = b.outputRevision,
+		className = b.spec and b.spec.curClassName,
+		ascendClassName = b.spec and b.spec.curAscendClassName,
+		level = b.characterLevel,
+	}
+end
+
+-- import_code{code, mode="replace"|"new"}: ImportTab's importSelectedBuild
+-- without its confirm popup (the page asks). "replace" keeps this build's
+-- file and name; "new" is an unsaved "Imported build".
+function M.import_code(p)
+	local b = ensure_build()
+	local xml = decode_share_code(p and p.code)
+	local mode = p and p.mode or "new"
+	b:Shutdown()
+	if mode == "replace" then
+		b:Init(b.dbFileName, b.buildName, xml, false)
+	else
+		b:Init(false, "Imported build", xml, false)
+	end
+	b.viewMode = "TREE"
+	return after_reinit()
+end
+
+-- import_character{items=<get-items JSON text>, passives=<get-passive-skills
+-- JSON text>, importTree, importItems, deleteJewels, clearItems, clearSkills,
+-- ignoreWeaponSwap}: the two site-import buttons, fed pasted responses
+-- instead of a download. charData is assembled the way ImportTab's callbacks
+-- assemble it (character block + passives + jewels / equipment + guardian).
+function M.import_character(p)
+	local b = ensure_build()
+	local dkjson = require("dkjson")
+	local itemsJson, passivesJson
+	if p.items and p.items ~= "" then
+		local v, _, err = dkjson.decode(p.items)
+		if not v then error("items JSON: " .. tostring(err), 0) end
+		itemsJson = v
+	end
+	if p.passives and p.passives ~= "" then
+		local v, _, err = dkjson.decode(p.passives)
+		if not v then error("passives JSON: " .. tostring(err), 0) end
+		passivesJson = v
+	end
+	local charData = copyTable((itemsJson and itemsJson.character) or (passivesJson and passivesJson.character) or {})
+	charData.class = charData.class or (b.spec and b.spec.curClassName)
+	charData.level = charData.level or b.characterLevel
+	charData.name = charData.name or b.buildName
+	charData.league = charData.league or ""
+	local did = {}
+	if p.importTree ~= false and passivesJson then
+		if not passivesJson.hashes then error("passives JSON has no hashes", 0) end
+		charData.passives = passivesJson
+		charData.jewels = passivesJson.items
+		b.importTab:ImportPassiveTreeAndJewels(charData, p.deleteJewels and true or false)
+		did[#did + 1] = "tree"
+	end
+	if p.importItems ~= false and itemsJson then
+		if not itemsJson.items then error("items JSON has no items", 0) end
+		charData.equipment = itemsJson.items
+		charData.guardian = itemsJson.guardian
+		b.importTab:ImportItemsAndSkills(charData, p.clearItems and true or false, p.clearSkills and true or false, p.ignoreWeaponSwap and true or false)
+		did[#did + 1] = "items"
+	end
+	if #did == 0 then error("nothing to import: give items and/or passives JSON", 0) end
+	local r = commit(b)
+	r.imported = did
+	return r
+end
+
+probe("classes.Build main-skill selectors", function()
+	local b = build()
+	return type(b) == "table" and type(b.RefreshSkillSelectControls) == "function" and type(b.SaveDB) == "function"
+		and type(b.SaveDBFile) == "function" and type(b.ResetModFlags) == "function" and type(b.Init) == "function" and type(b.Shutdown) == "function"
+end)
+probe("share code codec (Deflate/Inflate/base64/xml)", function()
+	return type(Deflate) == "function" and type(Inflate) == "function" and type(common) == "table" and type(common.base64) == "table"
+		and type(common.base64.encode) == "function" and type(common.xml) == "table" and type(common.xml.ParseXML) == "function"
+end)
+probe("classes.ImportTab.ImportPassiveTreeAndJewels/ImportItemsAndSkills", function()
+	local c = class_of("ImportTab")
+	return type(c) == "table" and type(c.ImportPassiveTreeAndJewels) == "function" and type(c.ImportItemsAndSkills) == "function"
+end)
+probe("main.buildPath + MakeDir", function() return type(launch.main.buildPath) == "string" and type(MakeDir) == "function" end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 
