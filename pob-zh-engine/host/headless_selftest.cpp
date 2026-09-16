@@ -878,6 +878,39 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okImp ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump()
 			            : imp.dump().substr(0, 300));
 
+			// Account import: ImportTab's OAuth / account-name state as the page
+			// polls it. Offline checks first, then one real round trip against
+			// pathofexile.com with an account that cannot exist (the same network
+			// POB's own update check already used).
+			{
+				json is;
+				bool okIs = child.Call("import_status", json::object(), is, 30000);
+				check("import_status: not authorized, three realms, account-name flow idle, nothing imported",
+				      okIs && !is.value("authorized", true) && is["realms"].size() == 3 && is["site"].value("mode", "") == "GETACCOUNTNAME" &&
+				          is.value("imported", -1) == 0 && is["oauth"].contains("now"),
+				      okIs ? is.dump().substr(0, 300) : is.dump().substr(0, 300));
+				json bad;
+				bool okBad = child.Call("fetch_characters", json{{"source", "site"}, {"realm", "PC"}, {"accountName", "nodiscriminator"}}, bad, 30000);
+				check("fetch_characters{site} without the #1234 discriminator is refused (POB's Start-button rule)", !okBad && child.Alive(), bad.dump().substr(0, 200));
+				json early;
+				bool okEarly = child.Call("import_account_character", json{{"source", "site"}, {"realm", "PC"}, {"name", "x"}, {"what", "tree"}}, early, 30000);
+				check("import_account_character{site} before a character list is refused", !okEarly && child.Alive(), early.dump().substr(0, 200));
+				json fc;
+				bool okFc = child.Call("fetch_characters", json{{"source", "site"}, {"realm", "PC"}, {"accountName", "pobtools-no-such-account-zz#0000"}}, fc, 30000);
+				std::string mode = "";
+				json last;
+				for (int i = 0; okFc && i < 60; i++) {
+					Sleep(500);
+					if (!child.Call("import_status", json::object(), last, 30000)) break;
+					mode = last["site"].value("mode", "");
+					if (mode != "DOWNLOADCHARLIST") break;
+				}
+				std::string status = last.is_object() ? last["site"].value("status", "") : "";
+				check("fetch_characters{site}: POB's own download ran in the subscript and its error text came back (mode returns to GETACCOUNTNAME)",
+				      okFc && fc.value("started", false) && mode == "GETACCOUNTNAME" && status.find("^") == 0 && status != "Idle",
+				      "mode=" + mode + " status=" + status.substr(0, 120));
+			}
+
 			// save as: under the sandbox's build folder, then reload it and run the oracle again
 			const std::wstring savePath = sandbox + L"\\Builds\\bridge_saveas.xml";
 			DeleteFileW(savePath.c_str());

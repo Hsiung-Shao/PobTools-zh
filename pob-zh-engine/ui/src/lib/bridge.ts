@@ -425,6 +425,45 @@ export interface CharImportParams {
   ignoreWeaponSwap?: boolean;
 }
 
+// --- account import (ImportTab's OAuth and account-name flows) --------------
+
+export interface AccountChar {
+  name: string;
+  league?: string;
+  class?: string;
+  classZh?: string;
+  level?: number;
+  realm?: string;
+}
+export interface ImportStatus {
+  authorized: boolean;
+  oauth: { loading: boolean; errCode?: string; timer?: number; rateLimitEnd?: number; now: number; url?: string };
+  site: { mode: string; status?: string; statusZh?: string; accountName?: string; characters: AccountChar[] };
+  realms: { id: string; label: string; realmCode: string }[];
+  lastRealm?: string;
+  lastLeague?: string;
+  characters: Record<string, AccountChar[]>;
+  lastAccountName?: string;
+  accountHistory: string[];
+  hasPoints: boolean;
+  /** Count of POB import calls that ran (tree or items); moves when a download finished. */
+  imported: number;
+  lastImport?: "tree" | "items";
+  recalculated: boolean;
+  rev: number;
+}
+export interface AccountImportParams {
+  source: "oauth" | "site";
+  realm: string;
+  name: string;
+  league?: string;
+  what: "tree" | "items";
+  deleteJewels?: boolean;
+  clearItems?: boolean;
+  clearSkills?: boolean;
+  ignoreWeaponSwap?: boolean;
+}
+
 // --- items -------------------------------------------------------------------
 
 export interface ItemSummary {
@@ -681,6 +720,12 @@ export const api = {
   decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
   importCode: (code: string, mode: "replace" | "new") => bridge.call<LoadedBuild>("import_code", { code, mode }, 180000),
   importCharacter: (p: CharImportParams) => bridge.call<Committed & { imported: string[] }>("import_character", p, 180000),
+  importStatus: () => bridge.call<ImportStatus>("import_status", {}, 60000),
+  oauthStart: () => bridge.call<{ started?: boolean; authorized?: boolean; url?: string }>("oauth_start", {}, 30000),
+  oauthLogout: () => bridge.call<{ authorized: boolean }>("oauth_logout"),
+  fetchCharacters: (p: { source: "oauth" | "site"; realm: string; accountName?: string }) => bridge.call<{ started: boolean }>("fetch_characters", p, 30000),
+  importAccountCharacter: (p: AccountImportParams) => bridge.call<{ started: boolean; what: string }>("import_account_character", p, 30000),
+  importSiteReset: () => bridge.call<{ mode: string }>("import_site_reset"),
   listItems: () => bridge.call<ItemsList>("list_items", {}, 60000),
   itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
   itemRaw: (id: number) => bridge.call<{ raw: string }>("item_raw", { id }),

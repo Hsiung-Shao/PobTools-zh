@@ -1619,6 +1619,290 @@ function M.import_character(p)
 	return r
 end
 
+-- ---------------------------------------------------------------------------
+-- Account import (ImportTab.lua:24-471): the OAuth flow (PoEAPI + the
+-- LaunchServer.lua loopback subscript) and the account-name flow
+-- (character-window/get-*). Both download through POB's subscripts, whose
+-- callbacks land on later engine frames, so every starter returns at once
+-- and the page polls import_status for the outcome.
+-- ---------------------------------------------------------------------------
+
+-- Headless there is no window to bring forward, and the URL the OAuth
+-- subscript opens is worth showing on the page (OnSubCall resolves these
+-- globals by name at call time, so wrapping them here is enough).
+if PobToolsHeadless and PobToolsHeadless() then
+	SetForeground = function() end
+	local origOpenURL = OpenURL
+	OpenURL = function(url)
+		M._lastOpenedUrl = url
+		if type(origOpenURL) == "function" then return origOpenURL(url) end
+	end
+end
+
+local function import_tab(b)
+	local tab = b.importTab
+	if not tab or not tab.controls then error("import tab not available", 0) end
+	return tab
+end
+
+-- Every ImportPassiveTreeAndJewels / ImportItemsAndSkills that POB's own
+-- download callbacks run is counted on the instance; import_status reports
+-- the count and recalculates once it has moved.
+local function hook_import_counters(tab)
+	if tab._pobtoolsHooked then return end
+	tab._pobtoolsHooked = true
+	tab._pobtoolsImported = 0
+	tab._pobtoolsLastImport = nil
+	local origTree, origItems = tab.ImportPassiveTreeAndJewels, tab.ImportItemsAndSkills
+	tab.ImportPassiveTreeAndJewels = function(self, ...)
+		local r = origTree(self, ...)
+		self._pobtoolsImported = self._pobtoolsImported + 1
+		self._pobtoolsLastImport = "tree"
+		return r
+	end
+	tab.ImportItemsAndSkills = function(self, ...)
+		local r = origItems(self, ...)
+		self._pobtoolsImported = self._pobtoolsImported + 1
+		self._pobtoolsLastImport = "items"
+		return r
+	end
+end
+
+-- realmList is file-local in ImportTab.lua; the realm dropdown holds it.
+local function realm_entries(tab)
+	local dd = tab.controls.accountRealm or tab.controls.siteAccountRealm
+	return (dd and dd.list) or {}
+end
+local function realm_by_id(tab, id)
+	for _, r in ipairs(realm_entries(tab)) do
+		if r.id == id or r.realmCode == id then return r end
+	end
+	error("unknown realm " .. tostring(id), 0)
+end
+
+-- The character list entries as the page shows them (BuildCharacterList's fields).
+local function char_summaries(list, realmCode)
+	local out = {}
+	for _, c in ipairs(list or {}) do
+		if type(c) == "table" and (not realmCode or c.realm == nil or c.realm == realmCode) then
+			out[#out + 1] = {
+				name = c.name, league = c.league, class = c.class, classZh = c.class and tr(c.class) or nil,
+				level = c.level, realm = c.realm,
+			}
+		end
+	end
+	return out
+end
+
+function M.import_status()
+	local b = ensure_build()
+	local tab = import_tab(b)
+	hook_import_counters(tab)
+	local m = main()
+	local api = m.api
+	local realms = {}
+	for _, r in ipairs(realm_entries(tab)) do
+		realms[#realms + 1] = { id = r.id, label = r.label, realmCode = r.realmCode }
+	end
+	local characters = {}
+	for code, list in pairs(tab.characterList or {}) do characters[code] = char_summaries(list, code) end
+	local history = {}
+	for name in pairs(m.gameAccounts or {}) do history[#history + 1] = name end
+	table.sort(history, function(x, y) return x:lower() < y:lower() end)
+	local site = tab.controls.siteAccountName
+	local imported = tab._pobtoolsImported or 0
+	local recalculated = false
+	if imported ~= (tab._pobtoolsReported or 0) then
+		tab._pobtoolsReported = imported
+		commit(b)
+		recalculated = true
+	end
+	return {
+		authorized = (api and api.authToken ~= nil) and true or false,
+		oauth = {
+			loading = tab.oauthLoading and true or false,
+			errCode = tab.oauthErrCode,
+			timer = tab.oauthTimer,
+			rateLimitEnd = tab.rateLimitEndTime,
+			now = os.time(),
+			url = M._lastOpenedUrl,
+		},
+		site = {
+			mode = tab.charImportMode,
+			status = tab.charImportStatus,
+			statusZh = tab.charImportStatus and tr(tab.charImportStatus) or nil,
+			accountName = site and site.buf or nil,
+			characters = char_summaries(tab.lastCharList, nil),
+		},
+		realms = realms,
+		lastRealm = m.lastRealm,
+		lastLeague = m.lastLeague,
+		characters = as_object(characters),
+		lastAccountName = m.lastAccountName,
+		accountHistory = history,
+		hasPoints = b.spec and b.spec:CountAllocNodes() > 0 or false,
+		imported = imported,
+		lastImport = tab._pobtoolsLastImport,
+		recalculated = recalculated,
+		rev = b.outputRevision,
+	}
+end
+
+-- The "Authorize with Path of Exile" button (:164-183): PoEAPI:FetchAuthToken
+-- starts the loopback server subscript, which opens the browser and copies
+-- the URL. The 60 s timer field is what the status label counts down.
+function M.oauth_start()
+	local b = ensure_build()
+	local tab = import_tab(b)
+	local api = main().api
+	if not api then error("PoE API not available", 0) end
+	if api.authToken then return { authorized = true } end
+	M._lastOpenedUrl = nil
+	tab.oauthErrCode = nil
+	api:FetchAuthToken(function(errCode)
+		if errCode then
+			tab.oauthErrCode = errCode
+		else
+			tab.oauthErrCode = nil
+		end
+		tab.oauthTimer = nil
+	end)
+	tab.oauthTimer = os.time()
+	return { started = true, url = M._lastOpenedUrl }
+end
+
+-- "Logout from Path of Exile API" (:84-89).
+function M.oauth_logout()
+	local b = ensure_build()
+	import_tab(b)
+	local api = main().api
+	if api then api:ResetDetails() end
+	main():SaveSettings()
+	return { authorized = false }
+end
+
+-- fetch_characters{source="oauth"|"site", realm="PC"|"XBOX"|"SONY", accountName?}:
+-- the "Fetch Characters" button (:138-161) or the account-name "Start"
+-- button (:363-366, DownloadSiteCharacterList).
+function M.fetch_characters(p)
+	local b = ensure_build()
+	local tab = import_tab(b)
+	hook_import_counters(tab)
+	local realm = realm_by_id(tab, (p and p.realm) or main().lastRealm or "PC")
+	if p and p.source == "site" then
+		local name = p.accountName
+		if type(name) ~= "string" or not name:match("%S[#%-]%d%d%d%d$") then
+			error("account name needs its discriminator, e.g. Name#1234", 0)
+		end
+		local ctl = tab.controls.siteAccountName
+		if ctl.pasteFilter then name = ctl.pasteFilter(name) end
+		ctl:SetText(name)
+		tab.controls.siteAccountRealm:SelByValue(realm.id, "id")
+		tab:DownloadSiteCharacterList(realm)
+		return { started = true, mode = tab.charImportMode }
+	end
+	local api = main().api
+	if not api or not api.authToken then error("not authorized", 0) end
+	tab.controls.accountRealm:SelByValue(realm.id, "id")
+	tab.oauthLoading = true
+	api:DownloadCharacterList(realm.realmCode, function(body, err, timeNext)
+		if not err then
+			tab.characterList[realm.realmCode] = body and body.characters or {}
+			tab.oauthErrCode = nil
+		elseif err == "Response code: 429" then
+			tab.rateLimitEndTime = timeNext
+		elseif err:match("401") then
+			tab.oauthErrCode = "Auth token is invalid. Please login again."
+			api:ResetDetails()
+		else
+			tab.oauthErrCode = err
+		end
+		tab.oauthLoading = false
+	end)
+	return { started = true }
+end
+
+-- import_account_character{source, realm, name, league?, what="tree"|"items",
+-- deleteJewels, clearItems, clearSkills, ignoreWeaponSwap}: the "Passive
+-- Tree and Jewels" / "Items and Skills" buttons (:249-321 OAuth, :429-467
+-- site). One download per call; the page runs tree then items.
+function M.import_account_character(p)
+	local b = ensure_build()
+	local tab = import_tab(b)
+	hook_import_counters(tab)
+	if type(p) ~= "table" or type(p.name) ~= "string" or p.name == "" then error("params.name required", 0) end
+	local what = p.what == "items" and "items" or "tree"
+	local realm = realm_by_id(tab, p.realm or main().lastRealm or "PC")
+	local c = tab.controls
+	if p.source == "site" then
+		if tab.charImportMode ~= "SELECTCHAR" then error("fetch the character list first (mode " .. tostring(tab.charImportMode) .. ")", 0) end
+		tab:BuildCharacterList(realm.realmCode, nil, tab.lastCharList, c.siteCharSelect)
+		local sel
+		for i, e in ipairs(c.siteCharSelect.list) do
+			if e.char and e.char.name == p.name then sel = i break end
+		end
+		if not sel then error("character not in the fetched list: " .. p.name, 0) end
+		c.siteCharSelect.selIndex = sel
+		c.siteCharImportTreeClearJewels.state = p.deleteJewels and true or false
+		c.siteCharImportItemsClearItems.state = p.clearItems and true or false
+		c.siteCharImportItemsClearSkills.state = p.clearSkills and true or false
+		c.siteCharImportItemsIgnoreWeaponSwap.state = p.ignoreWeaponSwap and true or false
+		if what == "tree" then tab:DownloadPassiveTree(realm) else tab:DownloadItems(realm) end
+		tab:SetPredefinedBuildName()
+		return { started = true, what = what }
+	end
+	local api = main().api
+	if not api or not api.authToken then error("not authorized", 0) end
+	local m = main()
+	m.lastRealm = realm.id
+	tab.lastRealm = realm.id
+	if p.league then m.lastLeague = p.league; tab.lastLeague = p.league end
+	m.lastCharacterHash = common.sha1(p.name)
+	tab.lastCharacterHash = m.lastCharacterHash
+	local deleteJewels = p.deleteJewels and true or false
+	local clearItems, clearSkills, ignoreSwap = p.clearItems and true or false, p.clearSkills and true or false, p.ignoreWeaponSwap and true or false
+	tab.oauthLoading = true
+	api:DownloadCharacter(realm.realmCode, p.name, function(data, errMsg)
+		if data and data.character then
+			tab.oauthErrCode = nil
+			if what == "tree" then
+				tab:ImportPassiveTreeAndJewels(data.character, deleteJewels)
+			else
+				tab:ImportItemsAndSkills(data.character, clearItems, clearSkills, ignoreSwap)
+			end
+		else
+			tab.oauthErrCode = errMsg and ("Could not import: " .. errMsg) or "Could not import character"
+		end
+		tab.oauthLoading = false
+	end)
+	return { started = true, what = what }
+end
+
+-- The account-name section's "Close" button (:468-471).
+function M.import_site_reset()
+	local b = ensure_build()
+	local tab = import_tab(b)
+	tab.charImportMode = "GETACCOUNTNAME"
+	tab.charImportStatus = "Idle"
+	return { mode = tab.charImportMode }
+end
+
+probe("classes.PoEAPI.FetchAuthToken/ResetDetails/DownloadCharacterList/DownloadCharacter", function()
+	local c = class_of("PoEAPI")
+	return type(c) == "table" and type(c.FetchAuthToken) == "function" and type(c.ResetDetails) == "function"
+		and type(c.DownloadCharacterList) == "function" and type(c.DownloadCharacter) == "function"
+end)
+probe("classes.ImportTab.DownloadSiteCharacterList/DownloadPassiveTree/DownloadItems/BuildCharacterList/SetPredefinedBuildName", function()
+	local c = class_of("ImportTab")
+	return type(c) == "table" and type(c.DownloadSiteCharacterList) == "function" and type(c.DownloadPassiveTree) == "function"
+		and type(c.DownloadItems) == "function" and type(c.BuildCharacterList) == "function" and type(c.SetPredefinedBuildName) == "function"
+end)
+probe("LaunchServer.lua present (OAuth loopback)", function()
+	local f = io.open("LaunchServer.lua", "r")
+	if f then f:close() return true end
+	return false
+end)
+
 probe("classes.Build main-skill selectors", function()
 	local b = build()
 	return type(b) == "table" and type(b.RefreshSkillSelectControls) == "function" and type(b.SaveDB) == "function"
