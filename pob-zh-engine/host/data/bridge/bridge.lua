@@ -579,6 +579,7 @@ function M.tree_data(p)
 				frames = node_frames(tree, node),
 				blighted = node.isBlighted and true or false,
 				expansion = node.expansionJewel and true or false,
+				expansionParent = (node.expansionJewel and node.expansionJewel.parent) and true or false,
 				proxy = node.isProxy and true or false,
 				linked = linked,
 				masteryEffects = effects,
@@ -604,8 +605,8 @@ function M.tree_data(p)
 	for cid, class in pairs(tree.classes) do
 		if type(cid) == "number" and type(class) == "table" then
 			local ascs = {}
-			for _, a in ipairs(class.ascendancies or {}) do
-				ascs[#ascs + 1] = { id = a.id, name = a.name, nameZh = tr(a.name) }
+			for i, a in ipairs(class.ascendancies or {}) do
+				ascs[#ascs + 1] = { id = i, key = a.id, name = a.name, nameZh = tr(a.name) }
 			end
 			classes[#classes + 1] = {
 				id = cid, name = class.name, nameZh = tr(class.name),
@@ -616,9 +617,10 @@ function M.tree_data(p)
 	end
 	table.sort(classes, function(x, y) return x.id < y.id end)
 	local alternate = {}
-	for _, a in ipairs(tree.alternate_ascendancies or {}) do
-		alternate[#alternate + 1] = { id = a.id, name = a.name, nameZh = tr(a.name) }
+	for ascId, a in pairs(tree.alternate_ascendancies or {}) do
+		if type(a) == "table" then alternate[#alternate + 1] = { id = ascId, key = a.id, name = a.name, nameZh = tr(a.name) } end
 	end
+	table.sort(alternate, function(x, y) return tostring(x.id) < tostring(y.id) end)
 
 	local out = {
 		treeVersion = v,
@@ -679,12 +681,57 @@ function M.tree_assets(p)
 			end
 		end
 	end
+	-- Images PassiveTreeView loads by file path rather than through the tree's
+	-- asset table (its constructor, :28-70): the jewel radius rings. Sizes are
+	-- not needed -- the viewer draws them at the radius, not at sheet size.
+	local images = {}
+	for key, file in pairs(RING_IMAGES) do
+		if file_exists(file) then images[key] = file end
+	end
 	return { version = v, assets = as_object(assets), disabled = as_object(disabled),
-	         sheets = as_object(sheets), missingSheets = missing }
+	         sheets = as_object(sheets), missingSheets = missing, images = as_object(images) }
 end
 
 local function node_type_name(node)
 	return node and node.type or nil
+end
+
+-- PassiveTreeView:PassiveTreeView() image handles, by the field name it uses.
+RING_IMAGES = {
+	ring = "Assets/ring.png",
+	jewelShadedOuterRing = "Assets/ShadedOuterRing.png",
+	jewelShadedOuterRingFlipped = "Assets/ShadedOuterRingFlipped.png",
+	jewelShadedInnerRing = "Assets/ShadedInnerRing.png",
+	jewelShadedInnerRingFlipped = "Assets/ShadedInnerRingFlipped.png",
+	eternal1 = "TreeData/PassiveSkillScreenEternalEmpireJewelCircle1.png",
+	eternal2 = "TreeData/PassiveSkillScreenEternalEmpireJewelCircle2.png",
+	karui1 = "TreeData/PassiveSkillScreenKaruiJewelCircle1.png",
+	karui2 = "TreeData/PassiveSkillScreenKaruiJewelCircle2.png",
+	maraketh1 = "TreeData/PassiveSkillScreenMarakethJewelCircle1.png",
+	maraketh2 = "TreeData/PassiveSkillScreenMarakethJewelCircle2.png",
+	templar1 = "TreeData/PassiveSkillScreenTemplarJewelCircle1.png",
+	templar2 = "TreeData/PassiveSkillScreenTemplarJewelCircle2.png",
+	vaal1 = "TreeData/PassiveSkillScreenVaalJewelCircle1.png",
+	vaal2 = "TreeData/PassiveSkillScreenVaalJewelCircle2.png",
+	kalguur1 = "TreeData/PassiveSkillScreenKalguuranJewelCircle1.png",
+	kalguur2 = "TreeData/PassiveSkillScreenKalguuranJewelCircle2.png",
+}
+
+-- drawJewelRadius (PassiveTreeView:Draw) picks the timeless ring pair by the
+-- jewel's title; anything else gets the shaded rings.
+local TIMELESS_RINGS = {
+	{ "^Brutal Restraint", "maraketh" }, { "^Elegant Hubris", "eternal" }, { "^Glorious Vanity", "vaal" },
+	{ "^Lethal Pride", "karui" }, { "^Militant Faith", "templar" }, { "^Heroic Tragedy", "kalguur" },
+}
+local function ring_key(title)
+	for _, e in ipairs(TIMELESS_RINGS) do
+		if type(title) == "string" and title:match(e[1]) then return e[2] end
+	end
+	return nil
+end
+local function abyss_conquered(x)
+	local c = x and x.conqueredBy and x.conqueredBy.conqueror
+	return c and c.type and type(c.type) == "string" and c.type:match("^abyss_") and true or false
 end
 
 -- What the build did to the tree: allocations, per-node overrides (mastery
@@ -728,42 +775,92 @@ function M.get_tree_state()
 			}
 		end
 	end
-	-- Cluster jewel subgraphs: POB positions these itself (ProcessNode).
-	local dynamicNodes, dynamicGroups = {}, {}
-	for _, sg in pairs(spec.subGraphs or {}) do
+	-- Cluster jewel subgraphs: POB generates and positions these itself
+	-- (PassiveSpec:BuildSubgraph -> PassiveTree:ProcessNode). subGraph.nodes is
+	-- an array, so the id is the node's own; connectors are POB's BuildConnector
+	-- output (arcs included), serialised the way tree_data does the static ones.
+	local dynamicNodes, dynamicGroups, dynamicConnectors = {}, {}, {}
+	local seenConn = {}
+	for sgId, sg in pairs(spec.subGraphs or {}) do
 		if sg.group then
 			local orbits = {}
 			for o in pairs(sg.group.oo or {}) do orbits[#orbits + 1] = o end
 			table.sort(orbits)
-			dynamicGroups[#dynamicGroups + 1] = { x = sg.group.x, y = sg.group.y, orbits = orbits }
+			dynamicGroups[#dynamicGroups + 1] = {
+				id = sgId, x = sg.group.x, y = sg.group.y, orbits = orbits,
+				parentSocket = sg.parentSocket and sg.parentSocket.id or nil,
+			}
 		end
-		for id, node in pairs(sg.nodes or {}) do
-			if type(node.x) == "number" then
+		for _, node in ipairs(sg.nodes or {}) do
+			if type(node.id) == "number" and type(node.x) == "number" then
 				local links = {}
 				for _, other in ipairs(node.linked or {}) do links[#links + 1] = other.id end
-				local stats = {}
-				for i, s in ipairs(node.sd or {}) do stats[i] = s end
+				local stats, statsZh = {}, {}
+				for i, st in ipairs(node.sd or {}) do stats[i] = st; statsZh[i] = tr(st) end
 				dynamicNodes[#dynamicNodes + 1] = {
-					id = id, name = node.dn, nameZh = tr(node.dn), type = node.type,
-					stats = stats, x = node.x, y = node.y, icon = node.icon, links = links,
-					expansion = node.expansionJewel ~= nil, allocated = node.alloc and true or false,
+					id = node.id, name = node.dn, nameZh = tr(node.dn), type = node.type,
+					stats = stats, statsZh = statsZh, x = node.x, y = node.y, size = node.size or 0,
+					orbit = node.o, icon = node.icon, links = links, group = sgId,
+					frames = node_frames(tree, node),
+					expansion = node.expansionJewel ~= nil,
+					expansionSkill = node.expansionSkill and true or false,
+					allocated = node.alloc and true or false,
 				}
 			end
 		end
-	end
-	local sockets = {}
-	if b.itemsTab and b.itemsTab.GetSocketAndJewelForNodeID then
-		for id, node in pairs(spec.nodes) do
-			if node.type == "Socket" then
-				local ok, socket, jewel = pcall(b.itemsTab.GetSocketAndJewelForNodeID, b.itemsTab, id)
-				if ok and jewel then
-					sockets[#sockets + 1] = {
-						nodeId = id, itemId = socket and socket.selItemId, name = jewel.name,
-						title = jewel.title, baseName = jewel.baseName,
-					}
+		for _, c in ipairs(sg.connectors or {}) do
+			local a, b = c.nodeId1, c.nodeId2
+			if type(a) == "number" and type(b) == "number" then
+				local key = (a < b) and (a .. ":" .. b) or (b .. ":" .. a)
+				if not seenConn[key] then
+					seenConn[key] = true
+					local orbit = c.type and tonumber(c.type:match("^Orbit(%d+)$"))
+					dynamicConnectors[#dynamicConnectors + 1] = { a = a, b = b, orbit = orbit, group = sgId }
 				end
 			end
 		end
+	end
+	-- Every jewel socket the spec has (tree sockets + cluster inner sockets),
+	-- with what PassiveTreeView:Draw needs for it: the jewel, the overlay art
+	-- GetJewelSocketOverlay picks, and the radius drawJewelRadius would ring.
+	local sockets = {}
+	local viewer = b.treeTab and b.treeTab.viewer
+	local itemsTab = b.itemsTab
+	for id, node in pairs(spec.nodes) do
+		if node.type == "Socket" then
+			local e = {
+				nodeId = id,
+				expansion = node.expansionJewel ~= nil,
+				expansionSize = node.expansionJewel and node.expansionJewel.size or nil,
+				charm = (node.name == "Charm Socket" or node.dn == "Charm Socket") and true or false,
+			}
+			if itemsTab and itemsTab.sockets and itemsTab.sockets[id] and itemsTab.GetSocketAndJewelForNodeID then
+				local ok, socket, jewel = pcall(itemsTab.GetSocketAndJewelForNodeID, itemsTab, id)
+				if ok and jewel then
+					e.itemId = socket and socket.selItemId
+					e.name = jewel.name
+					e.title = jewel.title
+					e.baseName = jewel.baseName
+					e.nameZh = jewel.title and (tr(jewel.title) .. ", " .. tr(jewel.baseName or "")) or tr(jewel.name or "")
+					e.rarity = jewel.rarity
+					if viewer and viewer.GetJewelSocketOverlay then
+						local ok2, ov = pcall(viewer.GetJewelSocketOverlay, viewer, jewel, node.expansionJewel)
+						if ok2 and type(ov) == "string" then e.overlay = ov end
+					end
+					if jewel.jewelRadiusIndex and not abyss_conquered(jewel.jewelData) then
+						e.radiusIndex = jewel.jewelRadiusIndex
+					end
+					e.radiusLabel = jewel.jewelRadiusLabel
+					e.ringKey = ring_key(jewel.title)
+				end
+			end
+			sockets[#sockets + 1] = e
+		end
+	end
+	table.sort(sockets, function(x, y) return x.nodeId < y.nodeId end)
+	local radii = {}
+	for i, r in ipairs((data and data.jewelRadius) or {}) do
+		radii[i] = { inner = r.inner, outer = r.outer, col = r.col, label = r.label }
 	end
 	local info = M.get_build_info()
 	return {
@@ -775,7 +872,9 @@ function M.get_tree_state()
 		overrides = as_object(overrides),
 		dynamicNodes = dynamicNodes,
 		dynamicGroups = dynamicGroups,
+		dynamicConnectors = dynamicConnectors,
 		sockets = sockets,
+		jewelRadius = radii,
 		points = info.points,
 		rev = b.outputRevision,
 	}
@@ -1058,6 +1157,137 @@ probe("classes.UndoHandler.AddUndoState/Undo/Redo", function()
 end)
 probe("classes.Tooltip.AddLine", function() local c = class_of("Tooltip"); return type(c) == "table" and type(c.AddLine) == "function" end)
 probe("latestTreeVersion", function() return type(latestTreeVersion) == "string" end)
+probe("classes.PassiveTreeView.GetJewelSocketOverlay", function()
+	local c = class_of("PassiveTreeView")
+	return type(c) == "table" and type(c.GetJewelSocketOverlay) == "function"
+end)
+probe("classes.ItemsTab.GetSocketAndJewelForNodeID", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.GetSocketAndJewelForNodeID) == "function"
+end)
+probe("data.jewelRadius {inner,outer,col,label}", function()
+	local r = type(data) == "table" and data.jewelRadius
+	return type(r) == "table" and type(r[1]) == "table" and type(r[1].outer) == "number" and type(r[1].col) == "string"
+end)
+probe("classes.PassiveSpec.BuildClusterJewelGraphs + subGraphs shape", function()
+	local c = class_of("PassiveSpec")
+	return type(c) == "table" and type(c.BuildClusterJewelGraphs) == "function" and type(c.BuildSubgraph) == "function"
+end)
+
+-- ---------------------------------------------------------------------------
+-- Class / ascendancy switching (Build.lua's classDrop / ascendDrop /
+-- secondaryAscendDrop callbacks, :259-300)
+-- ---------------------------------------------------------------------------
+
+-- The lists those dropdowns are built from (UpdateClassDropdowns :1553 and
+-- UpdateSecondaryAscendancyDropdown :1113), ids being what Select* takes:
+-- the class id, the index into class.classes (0 = None), and the key of
+-- tree.alternate_ascendancies (0 = None).
+local function class_lists(b)
+	local spec = b.spec
+	local tree = spec.tree
+	local classes = {}
+	for cid, class in pairs(tree.classes) do
+		if type(cid) == "number" and type(class) == "table" then
+			local ascs = {}
+			for i = 0, #(class.classes or {}) do
+				local a = class.classes[i]
+				if a then ascs[#ascs + 1] = { id = i, name = a.name, nameZh = tr(a.name) } end
+			end
+			classes[#classes + 1] = { id = cid, name = class.name, nameZh = tr(class.name), ascendancies = ascs }
+		end
+	end
+	table.sort(classes, function(x, y) return x.name < y.name end)
+	local legacy = { Warden = true, Warlock = true, Primalist = true }
+	local sel = spec.curSecondaryAscendClassId or 0
+	local secondary = { { id = 0, name = "None", nameZh = tr("None") } }
+	local sortable = {}
+	for ascId, a in pairs(tree.alternate_ascendancies or {}) do
+		if type(a) == "table" and a.id and (not legacy[a.id] or ascId == sel) then
+			sortable[#sortable + 1] = { id = ascId, name = a.name, nameZh = tr(a.name) }
+		end
+	end
+	table.sort(sortable, function(x, y) return x.name < y.name end)
+	for _, e in ipairs(sortable) do secondary[#secondary + 1] = e end
+	return classes, secondary
+end
+
+local function class_current(spec)
+	return {
+		classId = spec.curClassId, className = spec.curClassName, classNameZh = tr(spec.curClassName),
+		ascendClassId = spec.curAscendClassId, ascendClassName = spec.curAscendClassName,
+		secondaryAscendClassId = spec.curSecondaryAscendClassId or 0,
+	}
+end
+
+function M.list_classes()
+	local b = ensure_build()
+	local classes, secondary = class_lists(b)
+	return { classes = classes, secondary = secondary, current = class_current(b.spec) }
+end
+
+-- set_class{classId, confirm?="reset"|"connect"}: classDrop's callback. When
+-- the tree has points and the new class is not connected, POB asks
+-- (Continue = reset the tree, Connect Path = ConnectToClass); the page asks
+-- instead and calls again with confirm.
+function M.set_class(p)
+	local b = ensure_build()
+	local spec = b.spec
+	local classId = p and tonumber(p.classId)
+	local class = classId and spec.tree.classes[classId]
+	if not class then error("bad classId " .. tostring(p and p.classId), 0) end
+	if classId == spec.curClassId then return M.get_tree_state() end
+	local confirm = p.confirm
+	ensure_undo_base(spec)
+	if spec:CountAllocNodes() == 0 or spec:IsClassConnected(classId) or confirm == "reset" then
+		spec:SelectClass(classId)
+	elseif confirm == "connect" then
+		if not spec:ConnectToClass(classId) then
+			return { needsConfirm = "class_change", classId = classId, className = class.name, classNameZh = tr(class.name), connectFailed = true }
+		end
+		spec:SelectClass(classId)
+	else
+		return { needsConfirm = "class_change", classId = classId, className = class.name, classNameZh = tr(class.name) }
+	end
+	return committed(b, spec)
+end
+
+-- set_ascendancy{ascendClassId}: ascendDrop's callback (index into class.classes, 0 = None).
+function M.set_ascendancy(p)
+	local b = ensure_build()
+	local spec = b.spec
+	local id = p and tonumber(p.ascendClassId)
+	local class = spec.tree.classes[spec.curClassId]
+	if not id or id < 0 or not class or (id > 0 and not class.classes[id]) then error("bad ascendClassId " .. tostring(p and p.ascendClassId), 0) end
+	if id == spec.curAscendClassId then return M.get_tree_state() end
+	ensure_undo_base(spec)
+	spec:SelectAscendClass(id)
+	return committed(b, spec)
+end
+
+-- set_secondary_ascendancy{ascendClassId}: secondaryAscendDrop's callback (key of tree.alternate_ascendancies, 0 = None).
+function M.set_secondary_ascendancy(p)
+	local b = ensure_build()
+	local spec = b.spec
+	if type(spec.SelectSecondaryAscendClass) ~= "function" then error("this POB has no secondary ascendancies", 0) end
+	local id = p and tonumber(p.ascendClassId)
+	if not id or id < 0 or (id > 0 and not (spec.tree.alternate_ascendancies or {})[id]) then error("bad ascendClassId " .. tostring(p and p.ascendClassId), 0) end
+	if id == (spec.curSecondaryAscendClassId or 0) then return M.get_tree_state() end
+	ensure_undo_base(spec)
+	spec:SelectSecondaryAscendClass(id)
+	return committed(b, spec)
+end
+
+probe("classes.PassiveSpec.SelectSecondaryAscendClass (optional)", function()
+	local c = class_of("PassiveSpec")
+	return type(c) == "table" and (c.SelectSecondaryAscendClass == nil or type(c.SelectSecondaryAscendClass) == "function")
+end)
+probe("tree.classes[id].classes[0..n] + alternate_ascendancies", function()
+	local t = launch.main.tree and launch.main.tree[latestTreeVersion]
+	if not t then t = launch.main:LoadTree(latestTreeVersion) end
+	local c = t and t.classes and t.classes[0]
+	return type(c) == "table" and type(c.classes) == "table" and type(c.classes[0]) == "table" and type(c.classes[0].name) == "string"
+end)
 
 -- ---------------------------------------------------------------------------
 -- Build header (top bar), save, import / export
@@ -1099,9 +1329,11 @@ function M.get_build_header()
 	local b = ensure_build()
 	local c = b.controls
 	b:RefreshSkillSelectControls(c, b.mainSocketGroup, "")
+	local classes, secondary = class_lists(b)
 	local h = {
 		buildName = b.buildName,
 		dbFileName = b.dbFileName or nil,
+		classes = classes, secondaryAscendancies = secondary, classPick = class_current(b.spec),
 		unsaved = b.unsaved and true or false,
 		level = b.characterLevel,
 		levelAuto = b.characterLevelAutoMode and true or false,

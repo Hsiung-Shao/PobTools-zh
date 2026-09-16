@@ -4,19 +4,63 @@
   import { api, type BuildHeader } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import ClassChangeDialog from "./ClassChangeDialog.svelte";
 
   const h = $derived(app.header);
   let levelDraft = $state<string>("");
   let saveAsOpen = $state(false);
   let saveAsName = $state("");
 
+  // class / ascendancy (Build.lua's classDrop / ascendDrop / secondaryAscendDrop)
+  const pick = $derived(h?.classPick ?? null);
+  const currentClass = $derived(h?.classes?.find((c) => c.id === pick?.classId) ?? null);
+  let classSel = $state<HTMLSelectElement | null>(null);
+  let ascSel = $state<HTMLSelectElement | null>(null);
+  let asc2Sel = $state<HTMLSelectElement | null>(null);
+  let classConfirm = $state<{ classId: number; className: string; connectFailed: boolean } | null>(null);
+
   $effect(() => {
     if (h) levelDraft = String(h.level);
+  });
+  // native selects keep whatever the user picked; put POB's answer back after every header refresh
+  $effect(() => {
+    if (!pick) return;
+    if (classSel) classSel.value = String(pick.classId);
+    if (ascSel) ascSel.value = String(pick.ascendClassId);
+    if (asc2Sel) asc2Sel.value = String(pick.secondaryAscendClassId);
   });
 
   async function setField(field: string, value: unknown) {
     const r = await app.run(() => api.setBuildField(field, value));
     if (r) await app.refresh();
+  }
+
+  async function changeClass(classId: number, confirm?: "reset" | "connect") {
+    const r = await app.run(() => api.setClass(classId, confirm));
+    if (!r) return app.refresh();
+    if (r.needsConfirm) {
+      classConfirm = { classId, className: r.classNameZh || r.className, connectFailed: !!r.connectFailed };
+      if (!r.connectFailed) return;
+    }
+    await app.afterTreeChange();
+  }
+  async function answerClass(mode: "reset" | "connect") {
+    if (!classConfirm) return;
+    const id = classConfirm.classId;
+    classConfirm = null;
+    await changeClass(id, mode);
+  }
+  async function cancelClass() {
+    classConfirm = null;
+    await app.refresh();
+  }
+  async function setAscendancy(id: number) {
+    const r = await app.run(() => api.setAscendancy(id));
+    await (r ? app.afterTreeChange() : app.refresh());
+  }
+  async function setSecondary(id: number) {
+    const r = await app.run(() => api.setSecondaryAscendancy(id));
+    await (r ? app.afterTreeChange() : app.refresh());
   }
 
   function commitLevel() {
@@ -72,6 +116,31 @@
       </button>
     </label>
 
+    {#if pick && h.classes}
+      <label class="field">
+        <span class="k">{t("bar.class")}</span>
+        <select class="{selectClass} cls" bind:this={classSel} disabled={app.busy > 0} onchange={(e) => void changeClass(Number(e.currentTarget.value))}>
+          {#each h.classes as c (c.id)}
+            <option value={c.id} selected={c.id === pick.classId}>{c.nameZh || c.name}</option>
+          {/each}
+        </select>
+        {#if currentClass}
+          <select class="{selectClass} cls" bind:this={ascSel} disabled={app.busy > 0} onchange={(e) => void setAscendancy(Number(e.currentTarget.value))}>
+            {#each currentClass.ascendancies as a (a.id)}
+              <option value={a.id} selected={a.id === pick.ascendClassId}>{a.nameZh || a.name}</option>
+            {/each}
+          </select>
+        {/if}
+        {#if h.secondaryAscendancies && h.secondaryAscendancies.length > 1}
+          <select class="{selectClass} cls" bind:this={asc2Sel} disabled={app.busy > 0} title={t("bar.ascend2")} onchange={(e) => void setSecondary(Number(e.currentTarget.value))}>
+            {#each h.secondaryAscendancies as a (a.id)}
+              <option value={a.id} selected={a.id === pick.secondaryAscendClassId}>{a.nameZh || a.name}</option>
+            {/each}
+          </select>
+        {/if}
+      </label>
+    {/if}
+
     <label class="field grow">
       <span class="k">{t("bar.mainSkill")}</span>
       <select class={selectClass} value={h.mainSocketGroup.index} onchange={(e) => setField("mainSocketGroup", Number(e.currentTarget.value))}>
@@ -123,6 +192,10 @@
       <button class="btn ghost sm" disabled={app.busy > 0} onclick={() => { saveAsName = h.buildName ?? ""; saveAsOpen = true; }}>{t("bar.saveAs")}</button>
     </span>
   </div>
+
+  {#if classConfirm}
+    <ClassChangeDialog className={classConfirm.className} connectFailed={classConfirm.connectFailed} onanswer={answerClass} oncancel={cancelClass} />
+  {/if}
 
   {#if saveAsOpen}
     <div class="modal">
@@ -177,6 +250,9 @@
     height: 24px;
     max-width: 260px;
     text-overflow: ellipsis;
+  }
+  .select.cls {
+    max-width: 130px;
   }
   .btn.on {
     color: var(--gold);

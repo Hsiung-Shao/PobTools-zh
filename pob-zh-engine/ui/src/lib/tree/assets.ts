@@ -21,6 +21,8 @@ export interface SpriteManifest {
   disabled: Record<string, SpriteRect>;
   sheets: Record<string, { w: number; h: number }>;
   missingSheets: string[];
+  /** Standalone images PassiveTreeView loads by path (jewel radius rings), by its field name. */
+  images?: Record<string, string>;
 }
 
 /** POB draws every tree sprite at its sheet size × 1.33 tree units. */
@@ -99,6 +101,25 @@ export class Sprites {
     this.draw(ctx, name, 0, 0, hw, hh);
     ctx.restore();
     return ok;
+  }
+
+  /**
+   * Draws one of the standalone images (manifest.images) centred at (x, y)
+   * as a `half`×2 square, rotated by `angle` radians — PassiveTreeView's
+   * DrawImageRotated for the jewel radius rings.
+   */
+  drawImage(ctx: CanvasRenderingContext2D, key: string, x: number, y: number, half: number, angle = 0, alpha = 1): boolean {
+    const file = this.manifest.images?.[key];
+    if (!file) return false;
+    const img = this.image(file);
+    if (!img) return false;
+    ctx.save();
+    ctx.translate(x, y);
+    if (angle) ctx.rotate(angle);
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(img, -half, -half, half * 2, half * 2);
+    ctx.restore();
+    return true;
   }
 
   /**

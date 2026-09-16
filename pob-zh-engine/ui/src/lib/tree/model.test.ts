@@ -57,6 +57,56 @@ describe("buildModel", () => {
     expect(m.rings).toHaveLength(1);
     expect(m.rings[0].art).toBe("PSGroupBackground1");
   });
+  it("applies PassiveSpec's filter: nodes in proxy groups and parented expansion sockets are dropped", () => {
+    const d: TreeData = {
+      ...data,
+      nodes: {
+        ...data.nodes,
+        "5": node({ id: 5, x: 500, y: 500, group: 9 }),
+        "6": node({ id: 6, x: 600, y: 600, type: "Socket", expansion: true, expansionParent: true }),
+        "7": node({ id: 7, x: 700, y: 700, type: "Socket", expansion: true }),
+      },
+      groups: [...data.groups, { id: 9, x: 500, y: 500, oo: [1], isProxy: true, ascStart: false }],
+    };
+    const mm = buildModel(d);
+    expect(mm.nodes.has(5)).toBe(false);
+    expect(mm.nodes.has(6)).toBe(false);
+    expect(mm.nodes.has(7)).toBe(true);
+    expect(mm.rings).toHaveLength(1); // no ring for the proxy group
+  });
+});
+
+describe("buildModel with cluster subgraphs", () => {
+  // The socket 7 is a large expansion socket on the static tree; POB's
+  // subgraph hangs off it with its own ids and its own connectors.
+  const d: TreeData = { ...data, nodes: { ...data.nodes, "7": node({ id: 7, x: 700, y: 700, type: "Socket", expansion: true }) } };
+  const dyn = [
+    { id: 66576, name: "e", type: "Normal", stats: [], x: 750, y: 700, size: 53.2, icon: null, links: [7, 66579], group: 66500, expansion: false, allocated: true, frames: { alloc: "A", path: "P", unalloc: "U" } },
+    { id: 66579, name: "n", type: "Notable", stats: ["x"], statsZh: ["叉"], x: 800, y: 700, icon: null, links: [66576], group: 66500, expansion: false, allocated: false },
+  ];
+  const groups = [{ id: 66500, x: 775, y: 700, orbits: [2], parentSocket: 7 }];
+  const conns = [
+    { a: 66576, b: 66579, orbit: 2, group: 66500 },
+    { a: 66576, b: 7, group: 66500 },
+  ];
+  const m = buildModel(d, dyn, groups, conns);
+  it("keeps POB's node ids: nothing static is overwritten", () => {
+    expect(m.nodes.size).toBe(3 + 1 + 2);
+    expect(m.nodes.get(1)!.kind).toBe("classStart");
+    expect(m.nodes.get(66576)!.dynamic).toBe(true);
+    expect(m.nodes.get(66576)!.size).toBe(53.2);
+    expect(m.nodes.get(66576)!.raw.frames).toEqual({ alloc: "A", path: "P", unalloc: "U" });
+    expect(m.nodes.get(66579)!.raw.statsZh).toEqual(["叉"]);
+    expect(m.nodes.get(66579)!.raw.frames!.alloc).toBe("NotableFrameAllocated");
+  });
+  it("turns POB's subgraph connectors into edges, arcs around the subgraph's group, and adds the cluster ring", () => {
+    const arc = m.edges.find((e) => e.a === 66576 && e.b === 66579)!;
+    expect(arc.arc).toEqual({ cx: 775, cy: 700, r: 162 });
+    const toSocket = m.edges.find((e) => (e.a === 66576 && e.b === 7) || (e.a === 7 && e.b === 66576))!;
+    expect(toSocket.arc).toBeNull();
+    expect(m.edges.filter((e) => e.a === 66576 || e.b === 66576)).toHaveLength(2); // link list adds no duplicates
+    expect(m.rings.some((r) => r.art === "GroupBackgroundMediumAlt")).toBe(true);
+  });
 });
 
 describe("HitIndex", () => {

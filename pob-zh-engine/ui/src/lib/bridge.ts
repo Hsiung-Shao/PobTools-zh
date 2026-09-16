@@ -257,9 +257,39 @@ export interface TreeState {
   overrides: Record<string, TreeOverride>;
   dynamicNodes: import("./tree/model").DynamicNode[];
   dynamicGroups: import("./tree/model").DynamicGroup[];
-  sockets: { nodeId: number; itemId?: number; name?: string; title?: string; baseName?: string }[];
+  dynamicConnectors?: import("./tree/model").DynamicConnector[];
+  sockets: TreeSocket[];
+  /** POB's data.jewelRadius for this tree version (col is a ^xRRGGBB code). */
+  jewelRadius?: JewelRadius[];
   points: BuildInfo["points"];
   rev: number;
+}
+
+/** A jewel socket as PassiveTreeView draws it: the jewel in it, its overlay art and the radius it rings. */
+export interface TreeSocket {
+  nodeId: number;
+  expansion: boolean;
+  expansionSize?: number;
+  charm: boolean;
+  itemId?: number;
+  name?: string;
+  nameZh?: string;
+  title?: string;
+  baseName?: string;
+  rarity?: string;
+  /** JewelSocketActive* / CharmSocketActive* (GetJewelSocketOverlay). */
+  overlay?: string;
+  /** 1-based index into jewelRadius; absent = no radius art. */
+  radiusIndex?: number;
+  radiusLabel?: string;
+  /** Timeless ring pair key (maraketh/eternal/vaal/karui/templar/kalguur). */
+  ringKey?: string;
+}
+export interface JewelRadius {
+  inner: number;
+  outer: number;
+  col: string;
+  label: string;
 }
 
 export interface MasteryChoice {
@@ -326,8 +356,40 @@ export interface BuildHeader {
   mainSkillMineCount?: number;
   mainSkillMinion?: DdField;
   mainSkillMinionSkill?: DdField;
+  /** Build.lua's classDrop / ascendDrop / secondaryAscendDrop lists and selection. */
+  classes?: ClassEntry[];
+  secondaryAscendancies?: AscEntry[];
+  classPick?: ClassPick;
   rev: number;
 }
+export interface AscEntry {
+  id: number;
+  name: string;
+  nameZh: string;
+}
+export interface ClassEntry {
+  id: number;
+  name: string;
+  nameZh: string;
+  ascendancies: AscEntry[];
+}
+export interface ClassPick {
+  classId: number;
+  className: string;
+  classNameZh: string;
+  ascendClassId: number;
+  ascendClassName?: string;
+  secondaryAscendClassId: number;
+}
+export interface ClassList {
+  classes: ClassEntry[];
+  secondary: AscEntry[];
+  current: ClassPick;
+}
+/** set_class: the new tree state, or POB's "Class Change" question. */
+export type SetClassResult =
+  | (TreeState & { needsConfirm?: undefined })
+  | { needsConfirm: "class_change"; classId: number; className: string; classNameZh: string; connectFailed?: boolean };
 export interface Committed {
   rev: number;
   unsaved: boolean;
@@ -597,6 +659,10 @@ export const api = {
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
   treeUndo: () => bridge.call<TreeState>("tree_undo", {}, 60000),
   treeRedo: () => bridge.call<TreeState>("tree_redo", {}, 60000),
+  listClasses: () => bridge.call<ClassList>("list_classes"),
+  setClass: (classId: number, confirm?: "reset" | "connect") => bridge.call<SetClassResult>("set_class", { classId, confirm }, 60000),
+  setAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_ascendancy", { ascendClassId }, 60000),
+  setSecondaryAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_secondary_ascendancy", { ascendClassId }, 60000),
   listBuilds: (subPath = "") => bridge.call<{ buildPath: string; subPath: string; entries: BuildEntry[] }>("list_builds", { subPath }),
   loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
   getSidebar: () => bridge.call<Sidebar>("get_sidebar"),

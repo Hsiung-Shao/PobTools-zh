@@ -608,6 +608,39 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          ts["points"].value("used", -1) + ts["points"].value("ascUsed", 0) + 2 <= allocCount + 4,
 			      okTs ? "alloc=" + std::to_string(allocCount) + " points=" + ts["points"].dump() : ts.dump().substr(0, 300));
 
+			// Cluster subgraphs come with POB's own node ids (never the array
+			// index), their own connectors, and every socket with its jewel.
+			{
+				int dyn = 0, dynStatic = 0, dynFramed = 0, conns = 0, socketsN = 0, withJewel = 0, withRadius = 0, overlays = 0;
+				std::set<long long> staticIds;
+				if (okTd) for (auto& [k, n] : td["nodes"].items()) staticIds.insert(n.value("id", -1LL));
+				if (okTs) {
+					for (auto& d : ts["dynamicNodes"]) {
+						dyn++;
+						long long id = d.value("id", -1LL);
+						// inner cluster sockets legitimately reuse the tree's expansion socket ids
+						if (id < 65536 && d.value("type", "") != "Socket") dynStatic++;
+						if (d.contains("frames") && d["frames"].is_object()) dynFramed++;
+					}
+					conns = (int)ts.value("dynamicConnectors", json::array()).size();
+					for (auto& s : ts["sockets"]) {
+						socketsN++;
+						if (s.contains("itemId")) withJewel++;
+						if (s.contains("radiusIndex")) withRadius++;
+						if (s.contains("overlay")) overlays++;
+					}
+				}
+				check("get_tree_state: cluster nodes carry POB's ids (none collide with the static tree), POB frames and connectors",
+				      okTs && dyn > 0 && dynStatic == 0 && dynFramed == dyn && conns >= dyn,
+				      "dyn=" + std::to_string(dyn) + " staticIdCollisions=" + std::to_string(dynStatic) + " framed=" + std::to_string(dynFramed) + " connectors=" + std::to_string(conns));
+				check("get_tree_state: every socket listed; socketed jewels carry overlay art and (for radius jewels) the radius index",
+				      okTs && socketsN >= 20 && withJewel > 0 && overlays == withJewel && withRadius >= 1 && ts.value("jewelRadius", json::array()).size() >= 5,
+				      "sockets=" + std::to_string(socketsN) + " jewels=" + std::to_string(withJewel) + " overlays=" + std::to_string(overlays) + " radius=" + std::to_string(withRadius));
+				check("tree_assets: jewel radius ring images resolved (Assets/ and TreeData/)",
+				      okTa && ta.contains("images") && ta["images"].contains("ring") && ta["images"].contains("jewelShadedOuterRing") && ta["images"].contains("maraketh1"),
+				      okTa ? ta.value("images", json::object()).dump().substr(0, 200) : "");
+			}
+
 			// A node one step outside the allocated set: an unallocated neighbour
 			// of an allocated node whose own neighbours are allocated.
 			long long target = -1;
@@ -699,6 +732,61 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          before["stats"].value("TotalDPS", 0.0) == afterHub["stats"].value("TotalDPS", 1.0),
 			      "hub=" + std::to_string(hub) + " deps=" + std::to_string(hubDeps) + " afterClick=" + std::to_string(hc.value("allocatedNodes", json::array()).size()) +
 			          " afterUndo=" + std::to_string(undoSet.size()) + "/" + std::to_string(origSet.size()) + " cluster=" + std::to_string(clusterCount));
+
+			// Class / ascendancy switching: Build.lua's classDrop / ascendDrop
+			// callbacks, with POB's confirm question when points would be lost.
+			{
+				json cl;
+				bool okCl = child.Call("list_classes", json::object(), cl, 30000);
+				long long curClass = okCl ? cl["current"].value("classId", -1LL) : -1;
+				long long curAsc = okCl ? cl["current"].value("ascendClassId", -1LL) : -1;
+				check("list_classes: seven classes, numeric ascendancy indices, current selection named",
+				      okCl && cl["classes"].size() == 7 && cl["classes"][0]["ascendancies"].size() >= 2 &&
+				          cl["classes"][0]["ascendancies"][0]["id"].is_number() && !cl["current"].value("className", "").empty(),
+				      okCl ? cl["current"].dump() : cl.dump().substr(0, 300));
+				long long other = -1;
+				if (okCl) for (auto& c : cl["classes"]) { long long id = c.value("id", -1LL); if (id != curClass) { other = id; break; } }
+				json q;
+				bool okQ = other >= 0 && child.Call("set_class", json{{"classId", other}}, q, 60000);
+				check("set_class with points on the tree asks (class_change) instead of resetting",
+				      okQ && q.value("needsConfirm", "") == "class_change" && q.value("classId", -1LL) == other, q.dump().substr(0, 200));
+				json rs;
+				bool okRs = okQ && child.Call("set_class", json{{"classId", other}, {"confirm", "reset"}}, rs, 60000);
+				// SelectClass leaves only the start nodes (class + ascendancy starts) allocated: zero points used
+				check("set_class confirm=reset: the tree is reset to the new class (no points used)",
+				      okRs && rs.value("classId", -1LL) == other && rs["allocatedNodes"].size() < 8 && rs["points"].value("used", -1) == 0 &&
+				          rs.value("allocCount", -1) == (int)rs["allocatedNodes"].size(),
+				      okRs ? "class=" + std::to_string(rs.value("classId", -1LL)) + " alloc=" + std::to_string(rs["allocatedNodes"].size()) + " used=" + std::to_string(rs["points"].value("used", -1)) : rs.dump().substr(0, 200));
+				json u1;
+				bool okU1c = okRs && child.Call("tree_undo", json::object(), u1, 60000);
+				std::set<long long> undoSet2;
+				for (auto& idj : u1.value("allocatedNodes", json::array())) undoSet2.insert(idj.get<long long>());
+				json stU;
+				child.Call("get_stats", json::object(), stU, 30000);
+				check("tree_undo after the class change restores the class, the allocated set and the DPS",
+				      okU1c && u1.value("classId", -1LL) == curClass && undoSet2 == origSet &&
+				          before["stats"].value("TotalDPS", 0.0) == stU["stats"].value("TotalDPS", 1.0),
+				      "class=" + std::to_string(u1.value("classId", -1LL)) + " alloc=" + std::to_string(undoSet2.size()) + "/" + std::to_string(origSet.size()));
+				long long otherAsc = -1;
+				if (okCl) for (auto& c : cl["classes"]) {
+					if (c.value("id", -1LL) != curClass) continue;
+					for (auto& a : c["ascendancies"]) { long long id = a.value("id", -1LL); if (id > 0 && id != curAsc) { otherAsc = id; break; } }
+				}
+				json as;
+				bool okAs = otherAsc > 0 && child.Call("set_ascendancy", json{{"ascendClassId", otherAsc}}, as, 60000);
+				json stA;
+				child.Call("get_stats", json::object(), stA, 30000);
+				json ub;
+				bool okUb = okAs && child.Call("tree_undo", json::object(), ub, 60000);
+				json stB;
+				child.Call("get_stats", json::object(), stB, 30000);
+				check("set_ascendancy switches the ascendancy (stats move) and tree_undo brings it back",
+				      okAs && as.value("ascendClassId", -1LL) == otherAsc &&
+				          (stA["stats"].value("TotalDPS", 0.0) != stU["stats"].value("TotalDPS", 0.0) || stA["stats"].value("Life", 0.0) != stU["stats"].value("Life", 0.0)) &&
+				          okUb && ub.value("ascendClassId", -1LL) == curAsc && stB["stats"].value("TotalDPS", 0.0) == stU["stats"].value("TotalDPS", 1.0),
+				      "asc " + std::to_string(curAsc) + "->" + std::to_string(otherAsc) + " dps " + std::to_string(stU["stats"].value("TotalDPS", 0.0)) + "/" +
+				          std::to_string(stA["stats"].value("TotalDPS", 0.0)) + "/" + std::to_string(stB["stats"].value("TotalDPS", 0.0)));
+			}
 
 			// a reachable, unallocated mastery: click asks, choose, undo
 			long long mastery = -1;

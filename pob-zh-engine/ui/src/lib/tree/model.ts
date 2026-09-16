@@ -40,6 +40,8 @@ export interface RawNode {
   frames?: FrameSet;
   blighted: boolean;
   expansion: boolean;
+  /** An expansion socket that lives inside a cluster proxy group (PassiveSpec drops these). */
+  expansionParent?: boolean;
   proxy: boolean;
   linked: number[];
   masteryEffects?: MasteryEffect[];
@@ -85,24 +87,40 @@ export interface TreeData {
   alternateAscendancies: { id: string; name: string; nameZh: string }[];
 }
 
-/** Cluster jewel subgraph node from `get_tree_state.dynamicNodes`. */
+/** Cluster jewel subgraph node from `get_tree_state.dynamicNodes` (POB's own id, position, frames). */
 export interface DynamicNode {
   id: number;
   name: string | null;
   nameZh?: string;
   type: string;
   stats: string[];
+  statsZh?: string[];
   x: number;
   y: number;
+  size?: number;
+  orbit?: number;
   icon: string | null;
   links: number[];
+  /** Subgraph id (the key of `spec.subGraphs`), same as its DynamicGroup.id. */
+  group?: number;
+  frames?: FrameSet;
   expansion: boolean;
+  expansionSkill?: boolean;
   allocated: boolean;
 }
 export interface DynamicGroup {
+  id?: number;
   x: number;
   y: number;
   orbits: number[];
+  parentSocket?: number;
+}
+/** One of `subGraph.connectors` (PassiveTree:BuildConnector), like RawConnector but with the subgraph it belongs to. */
+export interface DynamicConnector {
+  a: number;
+  b: number;
+  orbit?: number;
+  group?: number;
 }
 
 export interface TreeNode {
@@ -215,14 +233,25 @@ export class HitIndex {
   }
 }
 
-export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: DynamicGroup[] = []): TreeModel {
+const FALLBACK_FRAMES: Record<string, FrameSet> = {
+  socket: { alloc: "JewelSocketAltActive", path: "JewelSocketAltCanAllocate", unalloc: "JewelSocketAltNormal" },
+  notable: { alloc: "NotableFrameAllocated", path: "NotableFrameCanAllocate", unalloc: "NotableFrameUnallocated" },
+  keystone: { alloc: "KeystoneFrameAllocated", path: "KeystoneFrameCanAllocate", unalloc: "KeystoneFrameUnallocated" },
+  normal: { alloc: "PSSkillFrameActive", path: "PSSkillFrameHighlighted", unalloc: "PSSkillFrame" },
+};
+
+export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: DynamicGroup[] = [], dynConnectors: DynamicConnector[] = []): TreeModel {
   const groups = new Map<number, RawGroup>();
   for (const g of data.groups) groups.set(g.id, g);
 
   const nodes = new Map<number, TreeNode>();
   const classStart = new Map<string, number>();
   for (const raw of Object.values(data.nodes)) {
-    if (raw.proxy) continue;
+    // PassiveSpec's own node filter (PassiveSpec.lua:54): proxies, anything
+    // in a proxy group, and expansion sockets that belong to a proxy.
+    if (raw.proxy || raw.expansionParent) continue;
+    const g = raw.group != null ? groups.get(raw.group) : undefined;
+    if (g?.isProxy) continue;
     const kind = kindOf(raw.type);
     nodes.set(raw.id, { id: raw.id, kind, raw, x: raw.x, y: raw.y, size: raw.size, asc: raw.asc ?? null, linked: raw.linked, dynamic: false });
   }
@@ -253,13 +282,16 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
     const art = ringArt(g.oo, false);
     if (art) rings.push({ x: g.x, y: g.y, ...art });
   }
+  const dynGroupById = new Map<number, DynamicGroup>();
   for (const g of dynGroups) {
+    if (g.id != null) dynGroupById.set(g.id, g);
     const art = ringArt(g.orbits, true);
     if (art) rings.push({ x: g.x, y: g.y, ...art });
   }
 
-  // Cluster jewel nodes: POB generates and positions them per socketed jewel;
-  // they link to the parent socket and to each other, all straight lines.
+  // Cluster jewel nodes: POB generates and positions them per socketed jewel
+  // (PassiveSpec:BuildSubgraph); their ids are POB's own, so a socket inside a
+  // cluster keeps the id of the tree's expansion socket it stands in for.
   for (const d of dyn) {
     const kind = kindOf(d.type);
     const raw: RawNode = {
@@ -268,17 +300,14 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
       nameZh: d.nameZh ?? d.name ?? "",
       type: d.type,
       stats: d.stats,
-      statsZh: d.stats,
+      statsZh: d.statsZh ?? d.stats,
       x: d.x,
       y: d.y,
-      size: kind === "notable" ? 58 * 1.33 : kind === "socket" ? 58 * 1.33 : 40 * 1.33,
+      size: d.size && d.size > 0 ? d.size : kind === "notable" || kind === "socket" ? 58 * 1.33 : 40 * 1.33,
+      group: d.group,
+      orbit: d.orbit,
       icon: d.icon ?? undefined,
-      frames:
-        kind === "socket"
-          ? { alloc: "JewelSocketAltActive", path: "JewelSocketAltCanAllocate", unalloc: "JewelSocketAltNormal" }
-          : kind === "notable"
-            ? { alloc: "NotableFrameAllocated", path: "NotableFrameCanAllocate", unalloc: "NotableFrameUnallocated" }
-            : { alloc: "PSSkillFrameActive", path: "PSSkillFrameHighlighted", unalloc: "PSSkillFrame" },
+      frames: d.frames ?? FALLBACK_FRAMES[kind] ?? FALLBACK_FRAMES.normal,
       blighted: false,
       expansion: d.expansion,
       proxy: false,
@@ -287,14 +316,22 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
     nodes.set(d.id, { id: d.id, kind, raw, x: d.x, y: d.y, size: raw.size, asc: null, linked: d.links, dynamic: true });
   }
   const seen = new Set<string>();
-  for (const d of dyn) {
-    for (const other of d.links) {
-      const key = d.id < other ? `${d.id}:${other}` : `${other}:${d.id}`;
-      if (seen.has(key) || !nodes.has(other)) continue;
-      seen.add(key);
-      edges.push({ a: d.id, b: other, asc: null, arc: null });
+  const dynEdge = (a: number, b: number, orbit: number | undefined, group: number | undefined) => {
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    if (seen.has(key) || !nodes.has(a) || !nodes.has(b)) return;
+    seen.add(key);
+    let arc: Edge["arc"] = null;
+    if (orbit != null && group != null) {
+      const g = dynGroupById.get(group);
+      const r = data.orbitRadii[orbit];
+      if (g && r) arc = { cx: g.x, cy: g.y, r };
     }
-  }
+    edges.push({ a, b, asc: null, arc });
+  };
+  // POB's own connectors (arcs on the cluster's orbit); the link list is the
+  // fallback for a bridge that did not send them.
+  for (const c of dynConnectors) dynEdge(c.a, c.b, c.orbit, c.group);
+  for (const d of dyn) for (const other of d.links) dynEdge(d.id, other, undefined, undefined);
 
   const hit = new HitIndex();
   for (const n of nodes.values()) hit.add(n);

@@ -4,12 +4,14 @@
   // the hover conversation with the engine (node_hover for the path POB would
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
-  import { api, type MasteryChoice, type NodeInfo, type TreeState } from "$lib/bridge";
+  import { api, type MasteryChoice, type NodeInfo, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { pobRuns } from "$lib/pobtext";
   import { buildModel, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
   import { Sprites, ART_SCALE } from "$lib/tree/assets";
   import PobText from "../components/PobText.svelte";
+  import ClassChangeDialog from "../components/ClassChangeDialog.svelte";
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let wrap = $state<HTMLDivElement | null>(null);
@@ -37,6 +39,10 @@
   let hoverDep = $state<Set<number>>(new Set());
   let hoverCost = $state<number | null>(null);
   let hoverInfo = $state<NodeInfo | null>(null);
+  /** The socketed jewel's own tooltip when the hovered node is a filled socket. */
+  let hoverJewel = $state<{ name: string; lines: TooltipLine[] } | null>(null);
+  /** Nodes inside the hovered socket's radii, tinted like PassiveTreeView does (node id → colour). */
+  let radiusTint = $state<Map<number, string>>(new Map());
   const infoCache = new Map<string, NodeInfo>();
   let mouse = $state({ x: 0, y: 0 });
   let hoverTimer = 0;
@@ -50,6 +56,10 @@
 
   const allocated = $derived(new Set(tree?.allocatedNodes ?? []));
   const overrides = $derived(tree?.overrides ?? {});
+  const socketMap = $derived(new Map<number, TreeSocket>((tree?.sockets ?? []).map((s) => [s.nodeId, s])));
+  const jewelRadius = $derived(tree?.jewelRadius ?? []);
+  /** "^xRRGGBB" → CSS colour (POB's SetDrawColor on the radius rings). */
+  const pobColor = (code: string) => pobRuns(code + " ")[0]?.color ?? "#ffffff";
   const currentAsc = $derived(tree?.ascendClassName && tree.ascendClassName !== "None" ? tree.ascendClassName : null);
   const currentClass = $derived(tree?.className ?? null);
 
@@ -244,9 +254,21 @@
         }
         continue;
       }
+      const tint = radiusTint.get(n.id);
+      if (tint && !alloc) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(half * 0.9, 3), 0, Math.PI * 2);
+        ctx.fillStyle = tint;
+        ctx.globalAlpha = 0.45;
+        ctx.fill();
+        ctx.globalAlpha = foreign ? 0.55 : 1;
+      }
       if (n.kind === "socket") {
+        // frame, then the socketed jewel's overlay (PassiveTreeView:Draw, GetJewelSocketOverlay)
         const fr = n.raw.frames?.[st];
         if (fr) S.drawArt(ctx, fr, sx, sy, zoom);
+        const sk = socketMap.get(n.id);
+        if (alloc && sk?.overlay) S.drawArt(ctx, sk.overlay, sx, sy, zoom);
         continue;
       }
       if (showIcons) {
@@ -275,6 +297,70 @@
       }
     }
     ctx.globalAlpha = 1;
+
+    // jewel radii (PassiveTreeView:Draw's socket pass, above the nodes):
+    // every radius while a socket is hovered, the socketed jewel's own ring
+    // once allocated. Charm sockets and the inner cluster sockets get none.
+    if (S && tree) {
+      for (const sk of tree.sockets) {
+        if (sk.charm || (sk.expansion && sk.expansionSize !== 2)) continue;
+        const n = M.nodes.get(sk.nodeId);
+        if (!n || !visible(n.x, n.y)) continue;
+        const [sx, sy] = toScreen(n.x, n.y);
+        if (hover?.id === n.id) {
+          const thread = sk.radiusLabel === "Variable";
+          ctx.lineWidth = Math.max(1.5, 5 * zoom);
+          for (const rad of jewelRadius) {
+            if (thread ? rad.inner === 0 : rad.inner !== 0) continue;
+            ctx.strokeStyle = pobColor(rad.col);
+            ctx.beginPath();
+            ctx.arc(sx, sy, rad.outer * zoom, 0, Math.PI * 2);
+            ctx.stroke();
+            if (thread) {
+              ctx.beginPath();
+              ctx.arc(sx, sy, rad.inner * zoom, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+          }
+        }
+        if (allocated.has(n.id) && sk.radiusIndex) {
+          const rad = jewelRadius[sk.radiusIndex - 1];
+          if (!rad) continue;
+          const outer = rad.outer * zoom;
+          const inner = rad.inner * zoom * 1.06;
+          if (sk.ringKey) {
+            S.drawImage(ctx, `${sk.ringKey}1`, sx, sy, outer, -0.7);
+            S.drawImage(ctx, `${sk.ringKey}2`, sx, sy, outer, 0.7);
+          } else {
+            S.drawImage(ctx, "jewelShadedOuterRing", sx, sy, outer, -0.7);
+            S.drawImage(ctx, "jewelShadedOuterRingFlipped", sx, sy, outer, 0.7);
+            S.drawImage(ctx, "jewelShadedInnerRing", sx, sy, inner, -0.7);
+            S.drawImage(ctx, "jewelShadedInnerRingFlipped", sx, sy, inner, 0.7);
+          }
+        }
+      }
+    }
+  }
+
+  /** PassiveTree's nodesInRadius, for the hovered socket: first radius (in POB's order) each node falls in. */
+  function tintForSocket(n: TreeNode, sk: TreeSocket | undefined): Map<number, string> {
+    const out = new Map<number, string>();
+    if (!model || !sk || sk.charm || !jewelRadius.length) return out;
+    const thread = sk.radiusLabel === "Variable";
+    const maxR = Math.max(...jewelRadius.map((r) => r.outer));
+    for (const o of model.nodes.values()) {
+      if (o.id === n.id || o.kind === "classStart" || o.kind === "ascStart" || o.dynamic) continue;
+      const d2 = (o.x - n.x) ** 2 + (o.y - n.y) ** 2;
+      if (d2 > maxR * maxR) continue;
+      for (const rad of jewelRadius) {
+        if (thread ? rad.inner === 0 : rad.inner !== 0) continue;
+        if (d2 <= rad.outer * rad.outer && d2 >= rad.inner * rad.inner) {
+          out.set(o.id, pobColor(rad.col));
+          break;
+        }
+      }
+    }
+    return out;
   }
 
   // --- camera ----------------------------------------------------------------
@@ -433,20 +519,28 @@
     hoverDep = new Set();
     hoverCost = null;
     hoverInfo = null;
+    hoverJewel = null;
+    radiusTint = n?.kind === "socket" ? tintForSocket(n, socketMap.get(n.id)) : new Map();
     clearTimeout(hoverTimer);
     if (n) {
       const key = `${n.id}:${app.rev}`;
       const cached = infoCache.get(key) ?? null;
       hoverInfo = cached;
+      const sk = n.kind === "socket" ? socketMap.get(n.id) : undefined;
       hoverTimer = window.setTimeout(async () => {
         try {
-          const [hv, info] = await Promise.all([api.nodeHover(n.id), cached ? Promise.resolve(cached) : api.nodeInfo(n.id)]);
+          const [hv, info, jewel] = await Promise.all([
+            api.nodeHover(n.id),
+            cached ? Promise.resolve(cached) : api.nodeInfo(n.id),
+            sk?.itemId ? api.itemTooltip({ id: sk.itemId }) : Promise.resolve(null),
+          ]);
           if (hover?.id !== n.id) return;
           hoverPath = new Set(hv.path);
           hoverDep = new Set(hv.depends);
           hoverCost = hv.cost ?? null;
           infoCache.set(key, info);
           hoverInfo = info;
+          if (jewel) hoverJewel = { name: sk?.nameZh || sk?.name || "", lines: jewel.lines };
           repaint();
         } catch {
           /* engine busy or node vanished */
@@ -506,10 +600,11 @@
     if (!data) return;
     const dyn = tree?.dynamicNodes ?? [];
     const dynGroups = tree?.dynamicGroups ?? [];
-    const key = dyn.map((d) => `${d.id}@${d.x | 0},${d.y | 0}`).join("|");
+    const dynConnectors = tree?.dynamicConnectors ?? [];
+    const key = dyn.map((d) => `${d.id}@${d.x | 0},${d.y | 0}`).join("|") + `#${dynConnectors.length}`;
     if (model && key === dynKey) return;
     dynKey = key;
-    model = buildModel(data, dyn, dynGroups);
+    model = buildModel(data, dyn, dynGroups, dynConnectors);
     repaint();
   }
 
@@ -521,9 +616,11 @@
     api
       .getTreeState()
       .then((s) => {
+        const switched = tree != null && tree.className !== s.className;
         tree = s;
         infoCache.clear();
         rebuild();
+        if (switched) focusClass(); // the build bar changed the class: go look at the new start
       })
       .catch((e) => (app.error = String(e?.message ?? e)));
   });
@@ -614,17 +711,7 @@
     {/if}
 
     {#if classConfirm}
-      <div class="modal">
-        <div class="dialog">
-          <div class="menu-title">{t("tree.classChangeTitle")}</div>
-          <p>{t("tree.classChangeBody", { className: classConfirm.className })}</p>
-          <div class="actions">
-            <button class="btn" onclick={() => answerClass("connect")}>{t("tree.classChangeConnect")}</button>
-            <button class="btn primary" onclick={() => answerClass("reset")}>{t("tree.classChangeReset")}</button>
-            <button class="btn ghost" onclick={() => (classConfirm = null)}>{t("tree.cancel")}</button>
-          </div>
-        </div>
-      </div>
+      <ClassChangeDialog className={classConfirm.className} connectFailed={classConfirm.connectFailed} onanswer={answerClass} oncancel={() => (classConfirm = null)} />
     {/if}
 
     {#if hover && !masteryMenu && !classConfirm}
@@ -634,7 +721,16 @@
           <span class="kind">{kindLabel(hover)}</span>
         </div>
         <div class="tip-body">
-          {#if hoverInfo}
+          {#if hoverJewel}
+            <div class="line jewel-name">{hoverJewel.name}</div>
+            {#each hoverJewel.lines as l, i (i)}
+              {#if "sep" in l}
+                <hr />
+              {:else if i > 0}
+                <div class="line" class:center={l.center}><PobText text={l.text} muted="var(--c-magic)" /></div>
+              {/if}
+            {/each}
+          {:else if hoverInfo}
             {#each hoverInfo.lines as l, i (i)}
               {#if "sep" in l}
                 <hr />
@@ -782,35 +878,6 @@
     color: var(--ink-3);
     margin-top: 4px;
   }
-  .modal {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    background: var(--backdrop);
-  }
-  .dialog {
-    width: 440px;
-    padding: 16px 18px;
-    background: var(--surface-1);
-    border: 1px solid var(--edge-1);
-    border-radius: var(--radius-m);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  .dialog p {
-    margin: 0;
-    font-size: var(--fs-sm);
-    color: var(--ink-1);
-    line-height: 1.5;
-  }
-  .actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
   .tip {
     position: absolute;
     width: 320px;
@@ -833,6 +900,11 @@
   .tip-title .name {
     font-weight: 600;
     color: var(--ink-0);
+  }
+  .line.jewel-name {
+    color: var(--gold);
+    font-weight: 600;
+    margin-bottom: 2px;
   }
   .tip-title .name.keystone {
     color: var(--c-rare);
