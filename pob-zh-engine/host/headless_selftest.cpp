@@ -315,6 +315,66 @@ std::wstring FindSampleBuild(const std::wstring& buildsDir)
 
 } // namespace
 
+// Developer probe: `method|method:{"json":...}|...`, each answered in order,
+// all responses written as one JSON array. No sandbox on purpose -- this is
+// for looking at what the bridge says about a real install, not for changing it.
+int RunBridgeCall(const std::wstring& exeDir, const std::wstring& pobDir,
+                  const std::wstring& methods, const std::wstring& outFile)
+{
+	std::wstring dir = pobDir;
+	while (!dir.empty() && dir.back() == L'\\') dir.pop_back();
+	HeadlessProc::Options opt;
+	opt.exeDir = exeDir;
+	opt.launchLua = dir + L"\\Launch.lua";
+	opt.game = L"poe1";
+	opt.locale = L"zh-rTW";
+	{
+		wchar_t env[2048] = {};
+		if (GetEnvironmentVariableW(L"POB_ZH_BRIDGE", env, 2048)) opt.bridgeLua = env;
+		if (GetEnvironmentVariableW(L"POB_GAME", env, 2048) && env[0]) opt.game = env;
+		if (GetEnvironmentVariableW(L"POB_LOCALE", env, 2048) && env[0]) opt.locale = env;
+	}
+	HeadlessProc::Child child;
+	std::string err;
+	json out = json::array();
+	int rc = 0;
+	if (!child.Start(opt, err)) {
+		out.push_back(json{{"error", err}});
+		rc = 2;
+	} else {
+		json hello;
+		if (!child.WaitEvent("hello", hello, 90000)) {
+			out.push_back(json{{"error", "no hello"}, {"stray", child.StrayOutput()}});
+			rc = 2;
+		} else {
+			std::string spec = narrow(methods);
+			size_t pos = 0;
+			while (pos <= spec.size()) {
+				size_t bar = spec.find('|', pos);
+				std::string one = spec.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos);
+				pos = bar == std::string::npos ? spec.size() + 1 : bar + 1;
+				if (one.empty()) continue;
+				std::string method = one, params = "{}";
+				size_t colon = one.find(':');
+				if (colon != std::string::npos) { method = one.substr(0, colon); params = one.substr(colon + 1); }
+				// `@file` reads the JSON from a file: PowerShell strips the quotes
+				// out of an inline JSON argument before the process ever sees it.
+				if (!params.empty() && params[0] == '@') params = ReadFileA(widen(params.substr(1)));
+				json p;
+				try { p = json::parse(params); } catch (...) { p = json::object(); }
+				json r;
+				bool ok = child.Call(method, p, r, 120000);
+				out.push_back(json{{"method", method}, {ok ? "result" : "error", r}});
+				if (!ok) rc = 1;
+			}
+		}
+		child.Stop(5000);
+	}
+	std::wstring path = outFile.empty() ? exeDir + L"bridge_call.json" : outFile;
+	WriteFileA(path, out.dump(2));
+	return rc;
+}
+
 int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 {
 	g_rep.clear(); g_fail = 0; g_pass = 0;
@@ -454,6 +514,56 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		check("get_sidebar has rows with text", okSide && textRows > 10,
 		      "rows=" + std::to_string(rows) + " withText=" + std::to_string(textRows) + " translated=" + std::to_string(zhRows));
 		check("sidebar rows come back translated (zh-rTW dictionaries applied)", zhRows > 0);
+
+		// --- sidebar 1b: stat keys, breakdown, build list, build info ------------
+		{
+			int valueRows = 0, withStat = 0, doubleSpacer = 0, firstBd = -1;
+			bool prevSpacer = false;
+			if (okSide) {
+				int i = 0;
+				for (auto& r : sidebar["rows"]) {
+					i++;
+					bool spacer = !r.contains("lhs") && !r.contains("rhs");
+					if (spacer && prevSpacer) doubleSpacer++;
+					prevSpacer = spacer;
+					if (r.contains("rhs")) {
+						valueRows++;
+						if (r.contains("stat") && r["stat"].is_string()) withStat++;
+					}
+					if (firstBd < 0 && r.value("hasBreakdown", false)) firstBd = i;
+				}
+			}
+			// The per-entry wrapper is what puts `stat` on a row; POB's own rows
+			// never have it. Below 80% the sidebar would regroup wrongly.
+			check("sidebar value rows carry POB's stat key (per-entry wrapper)",
+			      valueRows > 10 && withStat * 10 >= valueRows * 8,
+			      "valueRows=" + std::to_string(valueRows) + " withStat=" + std::to_string(withStat));
+			check("per-entry wrapper did not change POB's spacer logic (no double spacer)", okSide && doubleSpacer == 0,
+			      "doubleSpacer=" + std::to_string(doubleSpacer));
+			json bd;
+			bool okBd = firstBd > 0 && child.Call("sidebar_breakdown", json{{"rowIndex", firstBd}}, bd, 30000);
+			check("sidebar_breakdown of the first breakdown row has sections",
+			      okBd && bd.contains("sections") && !bd["sections"].empty(),
+			      okBd ? bd.dump().substr(0, 300) : ("row=" + std::to_string(firstBd) + " " + bd.dump()));
+		}
+		{
+			json lb;
+			bool okLb = child.Call("list_builds", json::object(), lb, 30000);
+			bool found = false;
+			if (okLb) {
+				for (auto& e : lb["entries"]) {
+					if (widen(e.value("fileName", "")) == sample) found = true;
+				}
+			}
+			check("list_builds lists the sample build via POB's BuildListHelpers", okLb && found,
+			      okLb ? "entries=" + std::to_string(lb["entries"].size()) : lb.dump());
+			json bi;
+			bool okBi = okLoad && child.Call("get_build_info", json::object(), bi, 30000);
+			check("get_build_info has points parsed from POB's point display",
+			      okBi && bi["points"].value("usedMax", 0) >= 99 && bi["points"].value("ascMax", 0) == 8 &&
+			          bi["points"].value("used", -1) >= 0 && !bi.value("className", "").empty(),
+			      okBi ? bi["points"].dump() : bi.dump());
+		}
 
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;

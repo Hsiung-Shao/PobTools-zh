@@ -76,7 +76,7 @@ UINT DpiFor(HWND hwnd)
 }
 
 struct Window {
-	std::wstring exeDir, game, locale;
+	std::wstring exeDir, game, locale, openBuild;
 	LauncherConfig cfg;
 	HWND hwnd = nullptr;
 	ComPtr<ICoreWebView2Controller> controller;
@@ -154,6 +154,7 @@ struct Window {
 			{"exeDir", narrow(exeDir)},
 			{"pobDir", narrow(pobDir)},
 			{"version", POBTOOLS_VERSION_STRING},
+			{"open", narrow(openBuild)},
 			{"hosts", json{ {"app", narrow(kHostApp)}, {"pob", narrow(kHostPob)},
 			                {"data", narrow(kHostData)}, {"fonts", narrow(kHostFonts)} }},
 		};
@@ -271,14 +272,17 @@ struct Window {
 			PostMessageW(hwnd, WM_CLOSE, 0, 0);
 			return E_FAIL;
 		}
-		// The page may load its own files freely; the POB install, the data and
-		// font folders are readable but not cross-origin (the page is the only
-		// origin that should see them anyway).
+		// Four folders, four origins. The page fetches ui.json from data and
+		// @font-face pulls from fonts, and both are CORS requests from the app
+		// origin, so those two must ALLOW (the first build used DENY_CORS and
+		// the page silently stayed in English with the system font). The POB
+		// install is only ever drawn from with <img>/drawImage, which CORS does
+		// not gate, so it stays the strictest.
 		wv3->SetVirtualHostNameToFolderMapping(kHostApp, (exeDir + L"ui").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
 		if (!pobDir.empty())
 			wv3->SetVirtualHostNameToFolderMapping(kHostPob, pobDir.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
-		wv3->SetVirtualHostNameToFolderMapping(kHostData, (exeDir + L"Data").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
-		wv3->SetVirtualHostNameToFolderMapping(kHostFonts, (exeDir + L"Fonts").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+		wv3->SetVirtualHostNameToFolderMapping(kHostData, (exeDir + L"Data").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+		wv3->SetVirtualHostNameToFolderMapping(kHostFonts, (exeDir + L"Fonts").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
 
 		webview->AddScriptToExecuteOnDocumentCreated(BootScript().c_str(), nullptr);
 
@@ -404,7 +408,8 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 }
 
 int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
-                 const std::wstring& locale, const LauncherConfig& cfg)
+                 const std::wstring& locale, const LauncherConfig& cfg,
+                 const std::wstring& openBuild)
 {
 	std::wstring why;
 	if (!ModernUiAvailable(exeDir, &why)) {
@@ -419,6 +424,7 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 	w.exeDir = exeDir;
 	w.game = game;
 	w.locale = locale;
+	w.openBuild = openBuild;
 	w.cfg = cfg;
 	w.installs = DetectInstalls(exeDir);
 	const bool poe2 = (game == L"poe2");

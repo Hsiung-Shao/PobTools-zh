@@ -18,6 +18,8 @@ export interface HostInfo {
   exeDir: string;
   pobDir: string;
   version: string;
+  /** A build .xml to open as soon as the engine is up ("" = none). */
+  open?: string;
   hosts: { app: string; pob: string; data: string; fonts: string };
 }
 
@@ -157,6 +159,8 @@ export interface VersionInfo {
   headless: boolean;
   gate: GateResult;
   buildPath: string | null;
+  /** POB reopened its last build by itself at startup. */
+  buildLoaded: boolean;
 }
 
 export interface UpdateStatus {
@@ -166,8 +170,77 @@ export interface UpdateStatus {
   error: string | null;
 }
 
+export interface SidebarRow {
+  h: number;
+  lhs?: string;
+  rhs?: string;
+  lhsRaw?: string;
+  rhsRaw?: string;
+  stat?: string;
+  actor?: "player" | "minion";
+  align?: string;
+  hasBreakdown: boolean;
+}
+
+export interface Sidebar {
+  rows: SidebarRow[];
+  warnings: { text: string; raw: string }[];
+  rev: number;
+}
+
+export type BreakdownSection =
+  | { type: "text"; size: number; lines: string[] }
+  | { type: "table"; label?: string; footer?: string; cols: { label: string; key: string; right: boolean }[]; rows: Record<string, string>[] }
+  | { type: "radius"; radius: number };
+
+export interface BuildEntry {
+  isFolder: boolean;
+  folderName?: string;
+  fileName?: string;
+  fullFileName: string;
+  subPath: string;
+  buildName?: string;
+  level?: number;
+  className?: string;
+  ascendClassName?: string;
+  modified?: number;
+}
+
+export interface BuildInfo {
+  buildName: string;
+  dbFileName?: string;
+  unsaved: boolean;
+  level: number;
+  classId?: number;
+  className?: string;
+  classNameZh?: string;
+  ascendClassId?: number;
+  ascendClassName?: string;
+  ascendClassNameZh?: string;
+  treeVersion?: string;
+  points: {
+    used: number; ascUsed: number; secondaryAscUsed: number; sockets: number;
+    usedMax?: number; ascMax?: number; display?: string; req?: string;
+  };
+  rev: number;
+}
+
+export interface LoadedBuild {
+  buildName: string;
+  dbFileName: string;
+  outputRevision: number;
+  className?: string;
+  ascendClassName?: string;
+  level?: number;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
+  listBuilds: (subPath = "") => bridge.call<{ buildPath: string; subPath: string; entries: BuildEntry[] }>("list_builds", { subPath }),
+  loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
+  getSidebar: () => bridge.call<Sidebar>("get_sidebar"),
+  sidebarBreakdown: (rowIndex: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("sidebar_breakdown", { rowIndex }),
+  getBuildInfo: () => bridge.call<BuildInfo>("get_build_info"),
   selfCheck: () => bridge.call<GateResult>("self_check"),
   getUpdateStatus: () => bridge.call<UpdateStatus>("get_update_status"),
   checkUpdateAsync: () => bridge.call<{ started: boolean }>("check_update_async"),

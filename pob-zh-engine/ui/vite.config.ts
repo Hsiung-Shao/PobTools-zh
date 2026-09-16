@@ -2,7 +2,7 @@
 // dev-server bits removed: this page is served by WebView2 from dist\ui\ via
 // the https://app.pobtools/ virtual host, so every URL must be relative.
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config"; // vite's defineConfig plus the `test` block
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 export default defineConfig({

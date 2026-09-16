@@ -86,6 +86,13 @@ local function class_of(name)
 	return c
 end
 probe("classes.CalcsTab.BuildOutput", function() local c = class_of("CalcsTab"); return type(c) == "table" and type(c.BuildOutput) == "function" end)
+probe("buildMode.GetSidebarBreakdown", function() return type(launch.main.modes.BUILD.GetSidebarBreakdown) == "function" end)
+probe("classes.CalcBreakdownControl.SetBreakdownData", function() local c = class_of("CalcBreakdownControl"); return type(c) == "table" and type(c.SetBreakdownData) == "function" end)
+probe("Modules.BuildListHelpers.ScanFolder/FilterList/SortList", function()
+	local ok, h = pcall(require, "Modules.BuildListHelpers")
+	return ok and type(h) == "table" and type(h.ScanFolder) == "function" and type(h.FilterList) == "function" and type(h.SortList) == "function"
+end)
+probe("classes.PassiveSpec.CountAllocNodes", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.CountAllocNodes) == "function" end)
 probe("classes.PassiveSpec.AllocNode", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.AllocNode) == "function" and type(c.DeallocNode) == "function" end)
 probe("UpdateCheck.lua present", function() local f = io.open("UpdateCheck.lua", "r"); if f then f:close() return true end return false end)
 
@@ -138,9 +145,12 @@ local function is_scalar(v)
 	return t == "number" or t == "string" or t == "boolean"
 end
 
--- Sidebar rows carry only text. Wrapping AddDisplayStatList (rule 3) records
--- which actor each appended row belongs to and which stat key produced it,
--- so the UI can group without reading "^7Minion:" (rule 5).
+-- Sidebar rows carry only text. Wrapping AddDisplayStatList (rule 3) feeds it
+-- one stat entry at a time and tags every row that appended with the entry's
+-- stat key and the actor, so the UI can group by key and never has to read
+-- "^7Minion:" (rule 5). POB's own spacer logic only looks at the previous row,
+-- so splitting the list changes nothing it produces. (Technique from
+-- pob-redux's bridge, MIT.)
 local wrapped = false
 local function wrap_add_display_stat_list()
 	local B = build()
@@ -148,17 +158,19 @@ local function wrap_add_display_stat_list()
 	local orig = B.AddDisplayStatList
 	B.AddDisplayStatList = function(self, statList, actor, actorName)
 		local list = self.controls and self.controls.statBox and self.controls.statBox.list
-		local before = list and #list or 0
-		local r = orig(self, statList, actor, actorName)
-		if list then
-			for i = before + 1, #list do
-				local row = list[i]
-				if type(row) == "table" then
-					row.__actor = actorName
+		for _, statData in ipairs(statList) do
+			local before = list and #list or 0
+			orig(self, { statData }, actor, actorName)
+			if list then
+				for i = before + 1, #list do
+					local row = list[i]
+					if type(row) == "table" then
+						row.__stat = statData.stat or statData.labelStat
+						row.__actor = actorName
+					end
 				end
 			end
 		end
-		return r
 	end
 	wrapped = true
 end
@@ -182,6 +194,9 @@ function M.version()
 		-- Where POB keeps builds for this install (userPath .. "Builds/"); a
 		-- load_build_file path must start with it.
 		buildPath = launch.main and launch.main.buildPath or nil,
+		-- POB reopens the last build by itself at startup (Settings.xml); the
+		-- UI must not assume it starts empty.
+		buildLoaded = (build() and build().calcsTab and build().calcsTab.mainOutput) and true or false,
 	}
 end
 
@@ -260,13 +275,16 @@ function M.get_sidebar()
 	for i, row in ipairs(list) do
 		local lhs, rhs = row[1], row[2]
 		rows[i] = {
-			height = row.height,
+			h = row.height,
 			lhs = lhs and tr(lhs) or nil,
 			rhs = rhs and tr(rhs) or nil,
 			lhsRaw = lhs,
 			rhsRaw = rhs,
+			stat = row.__stat,
 			actor = row.__actor,
 			align = row.align,
+			-- Either key is enough for GetSidebarBreakdown to say something.
+			hasBreakdown = (row.breakdown ~= nil or row.modNames ~= nil) and true or false,
 		}
 	end
 	local warnings = {}
@@ -275,7 +293,137 @@ function M.get_sidebar()
 			warnings[i] = { text = tr(w), raw = w }
 		end
 	end
-	return { rows = rows, warnings = warnings, outputRevision = b.outputRevision }
+	return { rows = rows, warnings = warnings, rev = b.outputRevision, outputRevision = b.outputRevision }
+end
+
+-- The breakdown POB shows when a sidebar row is hovered: same three calls the
+-- classic window makes (Build.lua ShowDisplayStat -> GetSidebarBreakdown ->
+-- CalcBreakdownControl:SetBreakdownData), then read the control's section
+-- list and clear it again. rowIndex is 1-based into get_sidebar's rows.
+local function cell_text(v)
+	if type(v) == "number" then
+		if v == math.floor(v) then return tostring(math.floor(v)) end
+		return string.format("%.4g", v)
+	end
+	if v == nil then return "" end
+	return tostring(v)
+end
+
+function M.sidebar_breakdown(p)
+	local b = ensure_build()
+	local idx = p and tonumber(p.rowIndex)
+	local list = b.controls.statBox.list
+	local line = idx and list[idx]
+	if not line then error("no sidebar row " .. tostring(idx), 0) end
+	if not line.breakdown and not line.modNames then
+		return { sections = {}, rev = b.outputRevision }
+	end
+	local ctl = b.controls.breakdown
+	local data = b:GetSidebarBreakdown(line.breakdown, line.modNames, line.ignoredSections, line.actorName)
+	local sections = {}
+	local ok, err = pcall(function()
+		ctl:SetBreakdownData(data, false, line.actorName)
+		for _, s in ipairs(ctl.sectionList or {}) do
+			if s.type == "TEXT" then
+				local lines = {}
+				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
+				sections[#sections + 1] = { type = "text", size = s.textSize or 16, lines = lines }
+			elseif s.type == "TABLE" then
+				local cols, rows = {}, {}
+				for i, c in ipairs(s.colList or {}) do
+					cols[i] = { label = tr(c.label or ""), key = tostring(c.key), right = c.right and true or false }
+				end
+				for i, r in ipairs(s.rowList or {}) do
+					local row = {}
+					for _, c in ipairs(s.colList or {}) do
+						row[tostring(c.key)] = tr(cell_text(r[c.key]))
+					end
+					rows[i] = setmetatable(row, { __object = true })
+				end
+				sections[#sections + 1] = {
+					type = "table",
+					label = s.label and tr(s.label) or nil,
+					footer = s.footer and tr(s.footer) or nil,
+					cols = cols,
+					rows = rows,
+				}
+			elseif s.type == "RADIUS" then
+				sections[#sections + 1] = { type = "radius", radius = s.radius }
+			end
+		end
+	end)
+	ctl:SetBreakdownData() -- always clear, the classic window does too (ClearDisplayStat)
+	if not ok then error(err, 0) end
+	return { sections = sections, rev = b.outputRevision }
+end
+
+-- Builds under main.buildPath, scanned/filtered/sorted by POB's own helpers
+-- (Modules/BuildListHelpers: the same index the classic build list shows).
+function M.list_builds(p)
+	local subPath = p and p.subPath or ""
+	local helpers = require("Modules.BuildListHelpers")
+	local index = helpers.ScanFolder(subPath)
+	local list = helpers.FilterList(index, subPath, "")
+	helpers.SortList(list, main().buildSortMode or "NAME")
+	local entries = {}
+	for i, e in ipairs(list) do
+		entries[i] = {
+			isFolder = e.folderName ~= nil,
+			folderName = e.folderName,
+			fileName = e.fileName,
+			fullFileName = e.fullFileName,
+			subPath = e.subPath,
+			buildName = e.buildName,
+			level = e.level,
+			className = e.className,
+			ascendClassName = e.ascendClassName,
+			modified = e.modified,
+		}
+	end
+	return { buildPath = main().buildPath, subPath = subPath, entries = entries }
+end
+
+-- The header the UI shows: name, class, level, points. Points come from
+-- CountAllocNodes and the limits from the string POB itself formats for the
+-- point display (Build.lua EstimatePlayerProgress) -- the arithmetic behind
+-- usedMax lives there and nowhere else.
+local function strip_escapes(s)
+	if type(s) ~= "string" then return s end
+	return (s:gsub("%^x%x%x%x%x%x%x", ""):gsub("%^%d", ""))
+end
+
+function M.get_build_info()
+	local b = ensure_build()
+	local spec = b.spec
+	local used, ascUsed, secondaryAscUsed, sockets = 0, 0, 0, 0
+	if spec and spec.CountAllocNodes then
+		used, ascUsed, secondaryAscUsed, sockets = spec:CountAllocNodes()
+	end
+	local pd = b.controls.pointDisplay
+	local usedMax, ascMax
+	if pd and type(pd.str) == "string" then
+		local a, bm, c, d = strip_escapes(pd.str):match("(%d+)%s*/%s*(%d+)%s+(%d+)%s*/%s*(%d+)")
+		usedMax, ascMax = tonumber(bm), tonumber(d)
+	end
+	return {
+		buildName = b.buildName,
+		dbFileName = b.dbFileName or nil,
+		unsaved = b.unsaved and true or false,
+		level = b.characterLevel,
+		classId = spec and spec.curClassId,
+		className = spec and spec.curClassName,
+		classNameZh = spec and tr(spec.curClassName),
+		ascendClassId = spec and spec.curAscendClassId,
+		ascendClassName = spec and spec.curAscendClassName,
+		ascendClassNameZh = spec and tr(spec.curAscendClassName),
+		treeVersion = spec and spec.treeVersion,
+		points = {
+			used = used, ascUsed = ascUsed, secondaryAscUsed = secondaryAscUsed, sockets = sockets,
+			usedMax = usedMax, ascMax = ascMax,
+			display = pd and pd.str, req = pd and pd.req and tr(pd.req),
+		},
+		rev = b.outputRevision,
+	}
 end
 
 -- The build serialised the way POB saves it. The <PlayerStat> elements in it
@@ -332,6 +480,19 @@ end)
 run_probes()
 if not gate.ok then
 	log_error("gate failed: " .. table.concat(gate.failed, "; "))
+end
+-- Install the sidebar wrapper now, not on the first load_build_file: POB may
+-- already have reopened the last build during OnInit, and its rows were laid
+-- down before we existed -- refresh them once so they carry stat/actor too.
+do
+	local ok, err = pcall(function()
+		wrap_add_display_stat_list()
+		local b = build()
+		if b and b.calcsTab and b.calcsTab.mainOutput and b.RefreshStatList then
+			b:RefreshStatList()
+		end
+	end)
+	if not ok then log_error("sidebar wrapper: " .. tostring(err)) end
 end
 emit("gate_result", gate)
 emit("hello", {

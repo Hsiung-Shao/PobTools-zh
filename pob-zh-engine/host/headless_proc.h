@@ -90,3 +90,13 @@ private:
 // and proves a broken script ends the child with a non-zero exit code. Report
 // at <exeDir>headless_selftest.txt; returns the number of failed checks.
 int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverride);
+
+// --bridge-call <pobDir> <method> [paramsJson] [outFile]: developer probe.
+// Boots a headless engine against the given install (NOT a sandbox: it is the
+// real folder, so only read-only methods are sensible), calls one bridge
+// method and writes the raw JSON response to outFile (default
+// <exeDir>bridge_call.json). Returns 0 on a result, 1 on an error response,
+// 2 when the engine did not come up. `load=<build.xml>` may be prepended to
+// the method list, e.g. "load_build_file:{...}|get_sidebar".
+int RunBridgeCall(const std::wstring& exeDir, const std::wstring& pobDir,
+                  const std::wstring& methods, const std::wstring& outFile);

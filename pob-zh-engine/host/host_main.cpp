@@ -724,9 +724,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// The new interface: a WebView2 window driving a headless POB child. Reads
 	// pob-zh.ini like the other tools; an explicit game wins over the ini.
-	if (arg1 == L"--modern-ui") { // --modern-ui [poe1|poe2]
+	if (arg1 == L"--modern-ui") { // --modern-ui [poe1|poe2] [build.xml]
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
-		return ShowModernUi(dir, arg2.empty() ? c.game : arg2, c.locale, c);
+		return ShowModernUi(dir, arg2.empty() ? c.game : arg2, c.locale, c, arg3);
+	}
+
+	// Developer probe: one or more bridge calls against a real install, JSON out.
+	if (arg1 == L"--bridge-call") { // --bridge-call <pobDir> "<method>[:{json}]|..." [outFile]
+		return RunBridgeCall(dir, arg2, arg3, arg4);
 	}
 
 	// Headless engine end-to-end check against a sandbox copy of the PoE1 install.
