@@ -13,6 +13,7 @@
 #include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
+#include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "window_dock.h"
 #include "window_manager.h"   // DockTabLabel
@@ -1004,6 +1005,23 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// runtime, the loader DLL or the built page there is nothing to open, and a
 	// button that opens a message box is worse than no button.
 	const bool modernUiOk = !PobLaunch::RunningUnderWine() && ModernUiAvailable(exeDir, nullptr);
+	// The remembered compatibility verdict (PobTools\bridge_gate.json, written
+	// by the new-interface window). Re-read every couple of seconds: the
+	// window that just fell back to classic writes it while we are open.
+	BridgeGate::Verdict modernGate = BridgeGate::Read(exeDir);
+	double modernGateReadAt = glfwGetTime();
+	auto modernGateBlocked = [&]() {
+		return BridgeGate::BlocksModernUi(modernGate, installs.poe1Dir, installs.poe1Version);
+	};
+	auto modernGateTipText = [&](const LauncherStrings& S) {
+		std::string list;
+		size_t n = modernGate.failed.size();
+		for (size_t i = 0; i < n && i < 3; i++) list += (i ? "\n" : "") + modernGate.failed[i];
+		if (n > 3) list += "\n…";
+		char buf[1024];
+		snprintf(buf, sizeof(buf), S.modernGateTip, (int)n, list.c_str());
+		return std::string(buf);
+	};
 
 	// Monitor work area (screen minus taskbar), falling back to the video mode.
 	// Physical pixels, like everything GLFW reports on Windows.
@@ -1724,6 +1742,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		bool updaterBusy = ust.phase == AppUpdatePhase::AppDownloading ||
 		                   ust.phase == AppUpdatePhase::AppStaging ||
 		                   ust.phase == AppUpdatePhase::AppReadyToApply;
+		if (glfwGetTime() - modernGateReadAt > 2.0) {
+			modernGate = BridgeGate::Read(exeDir);
+			modernGateReadAt = glfwGetTime();
+		}
 
 		ImGuiIO& io = ImGui::GetIO();
 		ImGui::SetNextWindowPos(ImVec2(0, 0));
@@ -1863,6 +1885,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushFont(fonts.small);
 				ImGui::TextColored(ImVec4(0.94f, 0.72f, 0.27f, 1.0f), "%s", S.hangNotice);
 				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.hangNoticeTip);
+				ImGui::PopFont();
+				ImGui::Dummy(ImVec2(0, 4.0f * scale));
+			}
+			// The new interface fell back to classic on this POB version: one
+			// amber line, same place, gone once POB updates (the verdict is
+			// bound to the version it was taken against).
+			if (modernUiOk && modernGateBlocked()) {
+				char banner[512];
+				snprintf(banner, sizeof(banner), S.modernGateBanner, modernGate.pobVersion.c_str());
+				ImGui::PushFont(fonts.small);
+				ImGui::TextColored(ImVec4(0.94f, 0.72f, 0.27f, 1.0f), "%s", banner);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", modernGateTipText(S).c_str());
 				ImGui::PopFont();
 				ImGui::Dummy(ImVec2(0, 4.0f * scale));
 			}
@@ -2057,11 +2091,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (modernUiOk) {
 				ImGui::SameLine(0, gap);
 				// The WebView2 window is its own process and its own window even in
-				// tabbed mode (see spawnTool).
+				// tabbed mode (see spawnTool). Greyed while the remembered gate
+				// verdict says this POB version cannot drive it.
+				const bool blocked = modernGateBlocked();
+				if (blocked) ImGui::BeginDisabled();
 				if (ImGui::Button(S.modernUiTool, toolSize)) {
 					spawnTool(L"--modern-ui", PobLaunch::InstanceKind::ModernUi, S.modernUiTool);
 				}
-				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.modernUiTip);
+				if (blocked) ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+					if (blocked) ImGui::SetTooltip("%s", modernGateTipText(S).c_str());
+					else ImGui::SetTooltip("%s", S.modernUiTip);
+				}
 			}
 			ImGui::PopStyleColor();
 		}

@@ -268,6 +268,18 @@ bool ParseDataTagSeq(const std::string& tag, long long* seq);
 // Data\{poe1,poe2,launcher}\ came back true.
 bool IsTranslationDataRel(const std::wstring& rel);
 
+// Everything a data-<n> pack may carry: the translation data above plus the new
+// interface's bridge (Data\bridge\<name>.lua, one level, .lua only). The bridge
+// is code, but code that only calls into POB, and the reason it rides the data
+// line is the same reason the dictionaries do: POB's weekly beta can break it,
+// and a fix should not need an app release. Nothing else -- no other .lua, no
+// .dll anywhere -- is accepted, and a pack that carries anything else is refused
+// as a whole (ValidateDataPackStage), because one stray file means the pack is
+// not what it claims to be.
+bool IsDataPackRel(const std::wstring& rel);
+// The staged (extracted) pack: false with the first offending path in `offending`.
+bool ValidateDataPackStage(const std::wstring& stage, std::wstring* offending);
+
 // The installed translation-data stamp: the "data-<n>" tag inside
 // <exeDir>Data\translations_version.json, or "" when the file is absent or
 // unreadable. The stamp travels inside the packs themselves rather than being

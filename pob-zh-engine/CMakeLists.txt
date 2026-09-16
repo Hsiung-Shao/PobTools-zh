@@ -401,6 +401,7 @@ if (WIN32)
         # 多佔位符詞條的填位回歸 + 全量 A/B 快照工具
         host/placeholder_selftest.cpp
         host/pob_launch.cpp
+        host/bridge_gate.cpp
         host/window_manager.cpp
         host/window_dock.cpp
         # the editor selftest asks the REAL loader what the engine would

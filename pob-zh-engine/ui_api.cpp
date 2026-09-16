@@ -20,6 +20,7 @@
 #include "core/core_tex_manipulation.h"
 #include "translation_manager.h"
 #include "engine/headless_bridge.h"
+#include "engine/headless_ipc.h"
 #include "stb_image.h" // header only; the implementation lives in core_image.cpp
 
 /* OnFrame()
@@ -2588,6 +2589,22 @@ static int l_SpawnProcess(lua_State* L)
 	auto args = lua_tostring(L, 2);
 	if (cmdPath.stem() == "Update") {
 		pobcharm_redirect_update_restart(ui);
+	}
+	if (ui->headless) {
+		// The host (and the self-test) hear about every spawn. With
+		// POB_ZH_HEADLESS_DRYSPAWN=1 the process is not started at all: the
+		// self-test runs POB's "basic" update path without Update.exe taking
+		// over the sandbox, and inspects the op file and marker it left behind.
+		bool dry = false;
+		{
+			wchar_t v[8] = {};
+			dry = GetEnvironmentVariableW(L"POB_ZH_HEADLESS_DRYSPAWN", v, 8) > 0 && v[0] == L'1';
+		}
+		HeadlessIpc::SendEvent("spawn_process",
+			"{\"path\":" + HeadlessIpc::Quote(cmdPath.generic_u8string()) +
+			",\"args\":" + HeadlessIpc::Quote(args ? args : "") +
+			",\"dry\":" + (dry ? "true" : "false") + "}");
+		if (dry) return 0;
 	}
 	ui->sys->SpawnProcess(cmdPath, args);
 	return 0;

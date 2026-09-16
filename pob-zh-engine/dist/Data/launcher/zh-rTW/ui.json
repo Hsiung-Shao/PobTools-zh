@@ -57,6 +57,8 @@
   "status.updateChecking": "檢查 POB 更新中…",
   "status.updateNone": "POB 已是最新",
   "status.updateBlocked": "此視窗開著時 PobTools 本身不會更新",
+  "status.updating": "POB 正在更新自己,完成後視窗會重新開啟。",
+  "status.restarted": "POB 已重新啟動",
   "status.rev": "rev",
   "title.builds": "建置",
   "title.tree": "天賦樹",

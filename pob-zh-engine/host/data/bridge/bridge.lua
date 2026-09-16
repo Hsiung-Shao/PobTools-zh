@@ -462,6 +462,9 @@ end
 function M.apply_update(p)
 	local mode = p and p.mode or launch.updateAvailable
 	if mode ~= "normal" and mode ~= "basic" then error("no update to apply (mode=" .. tostring(mode) .. ")", 0) end
+	-- "basic" ends in Exit() inside this very call, so the reply never leaves;
+	-- the page learns what is happening from this event instead.
+	emit("update_applying", { mode = mode })
 	launch:ApplyUpdate(mode)
 	return { applied = mode }
 end
@@ -3309,6 +3312,10 @@ do
 	end)
 	if not ok then log_error("sidebar wrapper: " .. tostring(err)) end
 end
+-- The host remembers the verdict per POB version (PobTools\bridge_gate.json),
+-- so the version rides along with it.
+gate.pobVersion = type(launch) == "table" and launch.versionNumber or nil
+gate.pobBranch = type(launch) == "table" and launch.versionBranch or nil
 emit("gate_result", gate)
 emit("hello", {
 	protocol = 1,

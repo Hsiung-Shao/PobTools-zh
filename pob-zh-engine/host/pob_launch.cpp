@@ -1,4 +1,5 @@
 #include "pob_launch.h"
+#include "bridge_gate.h"
 #include "error_log.h"
 #include "../translate/startup_trace.h"
 
@@ -232,6 +233,30 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
 	set_env_both(L"POB_ZH_FONT_ALL", fontApplyAll ? L"1" : L"0");
 	// Percent, always written; sys_video.cpp reads it right after glfwCreateWindow.
 	set_env_both(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(windowOpacity).c_str());
+}
+
+RelaunchMarker ParseRelaunchMarker(const std::string& utf8)
+{
+	RelaunchMarker m;
+	size_t pos = 0;
+	bool first = true;
+	while (pos <= utf8.size()) {
+		size_t nl = utf8.find('\n', pos);
+		std::string ln = utf8.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+		pos = nl == std::string::npos ? utf8.size() + 1 : nl + 1;
+		while (!ln.empty() && (ln.back() == '\r' || ln.back() == ' ' || ln.back() == '\t')) ln.pop_back();
+		if (first) {
+			first = false;
+			if (!ln.empty()) {
+				int n = MultiByteToWideChar(CP_UTF8, 0, ln.c_str(), (int)ln.size(), nullptr, 0);
+				m.launchLua.resize(n);
+				MultiByteToWideChar(CP_UTF8, 0, ln.c_str(), (int)ln.size(), m.launchLua.data(), n);
+			}
+			continue;
+		}
+		if (ln == "ui=modern") m.modern = true;
+	}
+	return m;
 }
 
 unsigned long SpawnPobAndWait(const std::wstring& launchLua)
@@ -485,6 +510,52 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 	SetEvent(t3);
 	check("P14 mixed table reaps clean", RunningInstances().empty() &&
 	      PobRunningCount() == 0);
+
+	// The relaunch marker: one line (classic), two lines (new interface), and
+	// the shapes a hand-edited or future file could take.
+	{
+		RelaunchMarker m1 = ParseRelaunchMarker("D:/POB/Launch.lua");
+		check("P15 one-line marker is the classic relaunch", m1.launchLua == L"D:/POB/Launch.lua" && !m1.modern);
+		RelaunchMarker m2 = ParseRelaunchMarker("D:/POB/Launch.lua\nui=modern");
+		check("P16 ui=modern on line 2 asks for the new interface", m2.launchLua == L"D:/POB/Launch.lua" && m2.modern);
+		RelaunchMarker m3 = ParseRelaunchMarker("D:/POB/Launch.lua\r\nfuture=1\r\nui=classic\r\n");
+		check("P17 CRLF and unknown keys are ignored, ui=classic is not modern", m3.launchLua == L"D:/POB/Launch.lua" && !m3.modern);
+		RelaunchMarker m4 = ParseRelaunchMarker("");
+		check("P18 empty marker is no relaunch", m4.launchLua.empty() && !m4.modern);
+	}
+
+	// The remembered compatibility verdict of the new interface.
+	{
+		const std::wstring dir = exeDir + L"PobTools\\selftest_gate\\";
+		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+		CreateDirectoryW(dir.c_str(), nullptr);
+		DeleteFileW(BridgeGate::GatePath(dir).c_str());
+		BridgeGate::Verdict none = BridgeGate::Read(dir);
+		check("P19 no gate file = not present, not blocking", !none.present && !BridgeGate::BlocksModernUi(none, L"D:\\POB", "2.67.2"));
+		BridgeGate::Verdict v;
+		v.ok = false;
+		v.failed = { "classes.TreeTab.OpenMasteryPopup", "launch.ApplyUpdate" };
+		v.pobVersion = "2.67.2-16de4b82d";
+		v.pobBranch = "beta";
+		v.pobDir = L"D:\\POB\\PathOfBuildingCommunity";
+		bool wrote = BridgeGate::Write(dir, v);
+		BridgeGate::Verdict r = BridgeGate::Read(dir);
+		check("P20 a failing verdict round-trips and blocks the same install + version",
+		      wrote && r.present && !r.ok && r.failed.size() == 2 && r.failed[1] == "launch.ApplyUpdate" && r.pobVersion == v.pobVersion &&
+		          !r.checkedAtUtc.empty() && BridgeGate::BlocksModernUi(r, L"d:/pob/PathOfBuildingCommunity/", "2.67.2-16de4b82d"));
+		check("P21 another POB version or install is not blocked by it",
+		      !BridgeGate::BlocksModernUi(r, v.pobDir, "2.67.3") && !BridgeGate::BlocksModernUi(r, L"E:\\Other", "2.67.2-16de4b82d"));
+		BridgeGate::Verdict okv = v;
+		okv.ok = true;
+		okv.failed.clear();
+		BridgeGate::Write(dir, okv);
+		BridgeGate::Verdict r2 = BridgeGate::Read(dir);
+		check("P22 a passing verdict overwrites the failing one and never blocks", r2.present && r2.ok && !BridgeGate::BlocksModernUi(r2, v.pobDir, v.pobVersion));
+		BridgeGate::Verdict bad = BridgeGate::Parse("{not json");
+		check("P23 unreadable gate JSON counts as no file", !bad.present && bad.ok);
+		DeleteFileW(BridgeGate::GatePath(dir).c_str());
+		RemoveDirectoryW(dir.c_str());
+	}
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

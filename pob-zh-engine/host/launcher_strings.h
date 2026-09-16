@@ -51,6 +51,11 @@
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
 	X(modernUiTip,       u8"以新版介面開啟 PoE1 建置(側欄與天賦樹,測試中)", u8"Open a PoE1 build in the new interface (sidebar + tree, preview)") \
+	/* Phase 3: the new interface's compatibility gate failed against this POB
+	   version; the classic window opened instead and the button waits for the
+	   next POB update. %s = POB version, %d = failed probe count. */                              \
+	X(modernGateBanner,  u8"新介面與這版 POB(%s)不相容,已改開經典視窗;POB 更新後會再試", u8"The new interface is not compatible with this POB (%s); the classic window opened instead. It will try again after POB updates") \
+	X(modernGateTip,     u8"%d 項相容性檢查失敗:\n%s", u8"%d compatibility checks failed:\n%s") \
 	/* wide-layout section labels */                                                                 \
 	X(gamesSection,      u8"遊戲",                         u8"Games")                                 \
 	X(toolsSection,      u8"工具",                         u8"Tools")                                 \

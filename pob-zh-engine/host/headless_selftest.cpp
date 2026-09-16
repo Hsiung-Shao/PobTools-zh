@@ -9,6 +9,7 @@
 // check's integrity pass sees every manifest file where it expects it.
 
 #include "headless_proc.h"
+#include "pob_launch.h"
 
 #include "error_log.h"
 #include "launcher_config.h"
@@ -192,6 +193,28 @@ std::string ReadFileA(const std::wstring& path)
 	while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got > 0) out.append(buf, got);
 	CloseHandle(h);
 	return out;
+}
+
+// Runs a console program with the given working directory and waits for it;
+// returns false on spawn failure or timeout. Used for POB's own Update.exe.
+static bool RunAndWait(const std::wstring& exe, const std::wstring& args, const std::wstring& cwd,
+                       unsigned timeoutMs, unsigned long* exitCode)
+{
+	std::wstring cmd = L"\"" + exe + L"\" " + args;
+	std::vector<wchar_t> buf(cmd.begin(), cmd.end());
+	buf.push_back(0);
+	STARTUPINFOW si{};
+	si.cb = sizeof(si);
+	PROCESS_INFORMATION pi{};
+	if (!CreateProcessW(exe.c_str(), buf.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, cwd.c_str(), &si, &pi)) return false;
+	CloseHandle(pi.hThread);
+	bool done = WaitForSingleObject(pi.hProcess, timeoutMs) == WAIT_OBJECT_0;
+	if (!done) TerminateProcess(pi.hProcess, 1);
+	DWORD code = (DWORD)-1;
+	GetExitCodeProcess(pi.hProcess, &code);
+	CloseHandle(pi.hProcess);
+	if (exitCode) *exitCode = code;
+	return done;
 }
 
 bool WriteFileA(const std::wstring& path, const std::string& data)
@@ -443,6 +466,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		json gate;
 		bool gotGate = child.WaitEvent("gate_result", gate, 5000);
 		check("gate_result event", gotGate, gotGate ? gate.dump() : "");
+		check("gate_result names the POB version it was taken against (the host remembers it per version)",
+		      gotGate && !gate.value("pobVersion", "").empty(), gotGate ? gate.value("pobVersion", "") : "");
 		if (gotGate) {
 			check("compatibility gate ok (every probe found its POB surface)",
 			      gate.value("ok", false) && gate.value("checked", 0) > 0, gate.dump());
@@ -1265,6 +1290,52 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      upd.value("mode", "") == "none",
 			      "mode=" + upd.value("mode", "") + " error=" + upd.value("error", ""));
 		}
+		const bool untouchedNone = okUpd && upd.value("mode", "") == "none";
+		const std::string corruption = "\n-- pobtools headless selftest: deliberate corruption\n";
+
+		// --- POB's own "normal" update, end to end --------------------------------
+		// A program-part file with a wrong sha1 is exactly what UpdateCheck's
+		// integrity pass re-downloads; ApplyUpdate then Restart()s the Lua state
+		// in this same process, and the bridge comes back with it.
+		if (!untouchedNone) {
+			check("normal update round trip", true, "skipped: the untouched sandbox already differs from upstream (a POB update is pending)");
+		} else {
+			const std::wstring progRel = L"Classes\\Tooltip.lua";
+			const std::wstring progFile = sandbox + L"\\" + progRel;
+			const std::string manifest = ReadFileA(sandbox + L"\\manifest.xml");
+			bool inManifest = manifest.find("name=\"Classes/Tooltip.lua\"") != std::string::npos;
+			std::string orig = ReadFileA(progFile);
+			bool corrupted = inManifest && !orig.empty() && WriteFileA(progFile, orig + corruption);
+			json u1;
+			bool okU1 = corrupted && child.Call("check_update_sync", json::object(), u1, 300000);
+			check("a program file with the wrong sha1 makes POB's update check say \"normal\"",
+			      okU1 && u1.value("mode", "") == "normal",
+			      okU1 ? "mode=" + u1.value("mode", "") + " error=" + u1.value("error", "") : (inManifest ? u1.dump().substr(0, 300) : "Classes/Tooltip.lua not in manifest"));
+			json ap;
+			bool okAp = okU1 && u1.value("mode", "") == "normal" && child.Call("apply_update", json{{"mode", "normal"}}, ap, 300000);
+			json evR, evH;
+			bool gotRestart = okAp && child.WaitEvent("restarted", evR, 90000);
+			bool gotHello = gotRestart && child.WaitEvent("hello", evH, 90000);
+			check("apply_update{normal}: POB applied the files and Restart()ed the Lua state (restarted + hello events)",
+			      okAp && ap.value("applied", "") == "normal" && gotRestart && gotHello,
+			      "applied=" + ap.dump().substr(0, 120) + " restarted=" + std::to_string(gotRestart) + " hello=" + std::to_string(gotHello));
+			std::string after = ReadFileA(progFile);
+			json ver2, u2;
+			bool okVer2 = gotHello && child.Call("version", json::object(), ver2, 60000);
+			bool okU2 = okVer2 && child.Call("check_update_sync", json::object(), u2, 300000);
+			check("after the restart: the file is POB's again, Update\\opFile.txt is consumed, the bridge answers, and the check says \"none\"",
+			      gotHello && after.find(corruption) == std::string::npos && !after.empty() &&
+			          GetFileAttributesW((sandbox + L"\\Update\\opFile.txt").c_str()) == INVALID_FILE_ATTRIBUTES &&
+			          okVer2 && !ver2.value("pobVersion", "").empty() && okU2 && u2.value("mode", "") == "none",
+			      "restored=" + std::to_string(after.find(corruption) == std::string::npos) + " version=" + ver2.value("pobVersion", "") + " mode=" + u2.value("mode", "") + " err=" + u2.value("error", ""));
+			// the build again, so the shutdown checks below see the same state as before
+			json rl2, st5;
+			bool okRl2 = gotHello && child.Call("load_build_file", json{{"path", narrow(sandbox + L"\\Builds\\" + sample)}}, rl2, 120000) &&
+			             child.Call("get_stats", json::object(), st5, 30000);
+			check("the reloaded engine still opens the sample build and calculates it", okRl2 && st5.value("count", 0) > 100,
+			      okRl2 ? "stats=" + std::to_string(st5.value("count", 0)) : rl2.dump().substr(0, 200));
+			if (corrupted && after.find(corruption) != std::string::npos) WriteFileA(progFile, orig); // never leave the sandbox corrupted
+		}
 
 		// --- graceful shutdown --------------------------------------------------
 		child.Stop(10000);
@@ -1273,6 +1344,115 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		      "exit=" + std::to_string((long)child.ExitCode()));
 		std::string stray = child.StrayOutput();
 		if (!stray.empty()) line("INFO non-JSON output from child:\r\n" + stray.substr(0, 2000));
+
+		// --- POB's own "basic" update, dry run ----------------------------------
+		// A runtime-part file (lua\xml.lua) with a wrong sha1 forces "basic":
+		// ApplyUpdate moves the program files in-process, rewrites the op list's
+		// start line to this exe, drops the relaunch marker, spawns Update.exe
+		// and Exit()s. POB_ZH_HEADLESS_DRYSPAWN keeps Update.exe from taking
+		// over the sandbox; we run it ourselves afterwards without its start line.
+		if (!untouchedNone) {
+			check("basic update dry run", true, "skipped: the untouched sandbox already differs from upstream (a POB update is pending)");
+		} else {
+			const std::wstring rtFile = sandbox + L"\\lua\\xml.lua";
+			const std::string manifest = ReadFileA(sandbox + L"\\manifest.xml");
+			bool inManifest = manifest.find("name=\"lua/xml.lua\"") != std::string::npos;
+			std::string orig = ReadFileA(rtFile);
+			bool corrupted = inManifest && !orig.empty() && WriteFileA(rtFile, orig + corruption);
+			const std::wstring markerPath = exeDir + L"pob-zh.relaunch";
+			DeleteFileW(markerPath.c_str());
+			SetEnvironmentVariableW(L"POB_ZH_HEADLESS_DRYSPAWN", L"1");
+			HeadlessProc::Child b;
+			std::string berr;
+			json bh;
+			bool spawned = corrupted && b.Start(opt, berr) && b.WaitEvent("hello", bh, 90000);
+			SetEnvironmentVariableW(L"POB_ZH_HEADLESS_DRYSPAWN", nullptr);
+			json u3;
+			bool okU3 = spawned && b.Call("check_update_sync", json::object(), u3, 300000);
+			check("a runtime file with the wrong sha1 makes the update check say \"basic\"",
+			      okU3 && u3.value("mode", "") == "basic",
+			      okU3 ? "mode=" + u3.value("mode", "") + " error=" + u3.value("error", "") : (corrupted ? berr + " " + u3.dump().substr(0, 200) : "lua/xml.lua not in manifest"));
+			json ap3, evA, evS;
+			bool basic = okU3 && u3.value("mode", "") == "basic";
+			if (basic) b.Call("apply_update", json{{"mode", "basic"}}, ap3, 60000); // no reply: the child Exit()s inside the call
+			bool gotApplying = basic && b.WaitEvent("update_applying", evA, 30000);
+			bool gotSpawn = basic && b.WaitEvent("spawn_process", evS, 60000);
+			bool bExited = basic && b.WaitExit(15000);
+			std::wstring spawnPath = gotSpawn ? widen(evS.value("path", "")) : L"";
+			check("apply_update{basic}: update_applying event, a dry spawn_process for Update, and the child exits 0 within 15 s",
+			      gotApplying && gotSpawn && evS.value("dry", false) && spawnPath.size() >= 6 && spawnPath.compare(spawnPath.size() - 6, 6, L"Update") == 0 &&
+			          bExited && b.ExitCode() == 0,
+			      "applying=" + std::to_string(gotApplying) + " spawn=" + evS.dump().substr(0, 160) + " exited=" + std::to_string(bExited) + " code=" + std::to_string((long)b.ExitCode()));
+			if (!bExited && spawned) b.Stop(0);
+			// what the engine left for Update.exe and for the host
+			wchar_t exeBuf[MAX_PATH] = {};
+			GetModuleFileNameW(nullptr, exeBuf, MAX_PATH);
+			std::string hostExe = narrow(exeBuf);
+			for (auto& c : hostExe) if (c == '\\') c = '/';
+			std::string ops = ReadFileA(sandbox + L"\\Update\\opFileRuntime.txt");
+			std::string markerText = ReadFileA(markerPath);
+			DeleteFileW(markerPath.c_str());
+			PobLaunch::RelaunchMarker mk = PobLaunch::ParseRelaunchMarker(markerText);
+			std::string sandboxLua = narrow(sandbox + L"\\Launch.lua");
+			for (auto& c : sandboxLua) if (c == '\\') c = '/';
+			check("opFileRuntime.txt ends by starting pob-zh.exe, and the relaunch marker names this Launch.lua with ui=modern",
+			      basic && ops.find("start \"" + hostExe + "\"") != std::string::npos && mk.modern && narrow(mk.launchLua) == sandboxLua,
+			      "ops_tail=" + (ops.size() > 160 ? ops.substr(ops.size() - 160) : ops) + " marker=" + markerText.substr(0, 200));
+			// Update.exe itself, on the same op list minus the start line: the runtime file must come back.
+			std::string opsNoStart;
+			{
+				size_t p = 0;
+				while (p <= ops.size()) {
+					size_t nl = ops.find('\n', p);
+					std::string ln = ops.substr(p, nl == std::string::npos ? std::string::npos : nl - p);
+					p = nl == std::string::npos ? ops.size() + 1 : nl + 1;
+					if (ln.rfind("start ", 0) != 0 && !ln.empty()) opsNoStart += ln + "\n";
+				}
+			}
+			bool wroteOps = basic && WriteFileA(sandbox + L"\\Update\\opFileRuntime_test.txt", opsNoStart);
+			unsigned long updExit = (unsigned long)-1;
+			bool ranUpd = wroteOps && RunAndWait(sandbox + L"\\Update.exe", L"UpdateApply.lua Update/opFileRuntime_test.txt", sandbox, 120000, &updExit);
+			std::string rtAfter = ReadFileA(rtFile);
+			check("POB's Update.exe applies the runtime op list: exit 0 and lua\\xml.lua is POB's again",
+			      ranUpd && updExit == 0 && !rtAfter.empty() && rtAfter.find(corruption) == std::string::npos,
+			      "ran=" + std::to_string(ranUpd) + " exit=" + std::to_string((long)updExit) + " restored=" + std::to_string(rtAfter.find(corruption) == std::string::npos));
+			if (corrupted && rtAfter.find(corruption) != std::string::npos) WriteFileA(rtFile, orig);
+			// a fresh engine on the updated sandbox: manifest moved, nothing left to fetch
+			HeadlessProc::Child c3;
+			std::string c3err;
+			json c3h, u4;
+			bool okC3 = c3.Start(opt, c3err) && c3.WaitEvent("hello", c3h, 90000) && c3.Call("check_update_sync", json::object(), u4, 300000);
+			check("after the basic update the sandbox is current again (a fresh engine says \"none\")",
+			      okC3 && u4.value("mode", "") == "none", okC3 ? "mode=" + u4.value("mode", "") + " err=" + u4.value("error", "") : c3err + " " + u4.dump().substr(0, 200));
+			c3.Stop(10000);
+			Rmtree(sandbox + L"\\Update");
+		}
+
+		// --- a bridge whose probe no longer matches POB: the gate must say so --
+		// (what a POB update that renames a function looks like; the window
+		// falls back to classic on this verdict and the launcher greys its button)
+		{
+			std::wstring bridgeSrc = opt.bridgeLua.empty() ? exeDir + L"Data\\bridge\\bridge.lua" : opt.bridgeLua;
+			std::string src = ReadFileA(bridgeSrc);
+			const std::string needle = "type(launch.OnFrame) == \"function\"";
+			size_t at = src.find(needle);
+			const std::wstring brokenBridge = sandboxRoot + L"\\broken_bridge.lua";
+			bool made = at != std::string::npos && WriteFileA(brokenBridge, src.substr(0, at) + "type(launch.OnFrameNoSuchThing) == \"function\"" + src.substr(at + needle.size()));
+			HeadlessProc::Options gopt = opt;
+			gopt.bridgeLua = brokenBridge;
+			HeadlessProc::Child g;
+			std::string gerr;
+			json ggate;
+			bool gspawned = made && g.Start(gopt, gerr);
+			bool gotGate2 = gspawned && g.WaitEvent("gate_result", ggate, 90000);
+			bool named = false;
+			if (gotGate2) for (auto& f : ggate.value("failed", json::array())) if (f.is_string() && f.get<std::string>().find("launch.OnFrame") != std::string::npos) named = true;
+			check("a probe that no longer matches POB fails the gate, naming the probe and the POB version",
+			      gotGate2 && !ggate.value("ok", true) && named && !ggate.value("pobVersion", "").empty(),
+			      gotGate2 ? ggate.dump().substr(0, 300) : (made ? gerr : "could not derive a broken bridge from " + narrow(bridgeSrc)));
+			if (gspawned) g.Stop(5000);
+			DeleteFileW(brokenBridge.c_str());
+		}
 
 		// --- a broken script must end the child, not hang it --------------------
 		{

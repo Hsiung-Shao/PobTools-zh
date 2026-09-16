@@ -720,7 +720,7 @@ export const api = {
   selfCheck: () => bridge.call<GateResult>("self_check"),
   getUpdateStatus: () => bridge.call<UpdateStatus>("get_update_status"),
   checkUpdateAsync: () => bridge.call<{ started: boolean }>("check_update_async"),
-  applyUpdate: () => bridge.call<{ applied: string }>("apply_update", {}, 120000),
+  applyUpdate: (mode?: string, timeoutMs = 120000) => bridge.call<{ applied: string }>("apply_update", mode ? { mode } : {}, timeoutMs),
   getBuildHeader: () => bridge.call<BuildHeader>("get_build_header"),
   setBuildField: (field: string, value: unknown) => bridge.call<Committed>("set_build_field", { field, value }, 60000),
   saveBuild: () => bridge.call<SaveResult>("save_build", {}, 60000),

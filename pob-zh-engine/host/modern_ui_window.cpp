@@ -5,6 +5,7 @@
 #include "headless_proc.h"
 #include "launcher_config.h"
 #include "pob_launch.h"
+#include "bridge_gate.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -175,6 +176,43 @@ struct Window {
 	{
 		if (controller) controller->put_ZoomFactor(ClampModernZoom(cfg.modernZoom) / 100.0);
 	}
+
+	// The bridge's compatibility verdict (`gate_result`, once per Lua state).
+	// Remembered in PobTools\bridge_gate.json for the launcher; a failing one
+	// means this POB version cannot drive the new interface, so the classic
+	// window opens on the same install and this one closes. Returns true when
+	// the line was that failing verdict (nothing else should be sent to the
+	// page then).
+	bool OnGateLine(const std::string& line)
+	{
+		if (line.find("\"gate_result\"") == std::string::npos) return false;
+		json msg;
+		try { msg = json::parse(line); } catch (...) { return false; }
+		if (!msg.is_object() || msg.value("event", "") != "gate_result") return false;
+		const json& d = msg.contains("data") ? msg["data"] : json::object();
+		BridgeGate::Verdict v;
+		v.ok = d.value("ok", false);
+		if (d.contains("failed") && d["failed"].is_array())
+			for (auto& f : d["failed"]) if (f.is_string()) v.failed.push_back(f.get<std::string>());
+		v.pobVersion = d.value("pobVersion", "");
+		v.pobBranch = d.value("pobBranch", "");
+		v.pobDir = pobDir;
+		BridgeGate::Write(exeDir, v);
+		if (v.ok || gateFellBack) return false;
+		gateFellBack = true;
+		std::string why;
+		for (size_t i = 0; i < v.failed.size() && i < 5; i++) why += (i ? "; " : "") + v.failed[i];
+		PobLog::Error("modernui", "bridge gate failed for POB " + v.pobVersion + " (" + std::to_string(v.failed.size()) + " probes): " + why +
+		                          " -- opening the classic window instead");
+		PostEvent("host.gate_fallback", json{ {"failed", v.failed}, {"pobVersion", v.pobVersion} });
+		// The classic window on the same install; the engine mutex it holds
+		// keeps the launcher's "a POB is running" logic honest.
+		PobLaunch::SpawnPobDetached(launchLua, game);
+		exitCode = 3;
+		PostMessageW(hwnd, WM_CLOSE, 0, 0);
+		return true;
+	}
+	bool gateFellBack = false;
 
 	// The page asked the host itself for something. Anything not understood is
 	// answered with an error rather than silently forwarded to the child, where
@@ -383,12 +421,25 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	switch (msg) {
 	case WM_CHILD_LINE: {
 		std::unique_ptr<std::string> line((std::string*)lParam);
-		if (w && line) w->PostToPage(*line);
+		if (w && line) {
+			if (w->OnGateLine(*line)) return 0; // the gate failed: fell back to classic, closing
+			w->PostToPage(*line);
+		}
 		return 0;
 	}
 	case WM_CHILD_EXIT:
 		if (w) {
 			unsigned long code = w->child ? w->child->ExitCode() : (unsigned long)-1;
+			// POB's "basic" self-update: the engine wrote the relaunch marker,
+			// handed the runtime files to Update.exe and exited. Update.exe ends
+			// by starting pob-zh.exe, which reads the marker and reopens this
+			// window on the updated POB; this instance gets out of its way.
+			if (file_exists(w->exeDir + L"pob-zh.relaunch")) {
+				PobLog::Error("modernui", "headless child exited for a POB self-update; closing so the updater can reopen the window");
+				w->PostEvent("host.updating", json{ {"exitCode", (long long)code} });
+				PostMessageW(hwnd, WM_CLOSE, 0, 0);
+				return 0;
+			}
 			PobLog::Error("modernui", "headless child exited, code=" + std::to_string((long)code));
 			w->PostEvent("host.child_exited", json{ {"exitCode", (long long)code} });
 		}

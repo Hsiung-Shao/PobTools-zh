@@ -76,6 +76,16 @@ bool RunningUnderWine();
 // window message, so it takes effect live. No-op under Wine.
 void ApplyPobWindowOpacity(const std::wstring& game, int percent);
 
+// The relaunch marker (pob-zh.relaunch) the engine writes right before POB's
+// runtime updater takes over: line 1 is the Launch.lua to reopen, later lines
+// are key=value flags (`ui=modern` = the new interface was driving that POB).
+// Unknown keys are ignored so an older host still reads line 1.
+struct RelaunchMarker {
+	std::wstring launchLua;
+	bool modern = false;
+};
+RelaunchMarker ParseRelaunchMarker(const std::string& utf8);
+
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
 // failure to spawn.
 unsigned long SpawnPobAndWait(const std::wstring& launchLua);

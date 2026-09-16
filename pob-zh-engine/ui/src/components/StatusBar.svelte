@@ -27,7 +27,20 @@
 
   async function apply() {
     applying = true;
-    await app.run(() => api.applyUpdate());
+    const mode = upd?.available;
+    if (mode === "basic") {
+      // The engine hands the runtime files to Update.exe and exits inside this
+      // call, so no reply comes back; the host closes this window and the
+      // updater reopens it. A timeout here is the expected outcome.
+      app.notice = t("status.updating");
+      try {
+        await api.applyUpdate(mode, 8000);
+      } catch {
+        /* expected: the child exited before answering */
+      }
+      return;
+    }
+    await app.run(() => api.applyUpdate(mode ?? undefined));
     applying = false;
   }
 

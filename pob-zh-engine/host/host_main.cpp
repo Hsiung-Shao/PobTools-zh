@@ -276,19 +276,19 @@ static std::wstring relaunch_marker_path(const std::wstring& dir)
 	return dir + L"pob-zh.relaunch";
 }
 
-// Read and consume the marker; returns the Launch.lua path or empty.
-static std::wstring take_relaunch_marker(const std::wstring& dir)
+// Read and consume the marker: the Launch.lua to reopen, and whether the new
+// interface (rather than the classic window) was driving it.
+static PobLaunch::RelaunchMarker take_relaunch_marker(const std::wstring& dir)
 {
 	std::wstring marker = relaunch_marker_path(dir);
 	HANDLE h = CreateFileW(marker.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return L"";
+	if (h == INVALID_HANDLE_VALUE) return {};
 	char buf[2048];
 	DWORD read = 0;
 	ReadFile(h, buf, sizeof(buf) - 1, &read, nullptr);
 	CloseHandle(h);
 	DeleteFileW(marker.c_str());
-	buf[read] = '\0';
-	return from_utf8(std::string(buf, read));
+	return PobLaunch::ParseRelaunchMarker(std::string(buf, read));
 }
 
 // Spawning POB now lives in pob_launch.cpp: the launcher can also start it
@@ -817,7 +817,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Launcher mode. A pending relaunch marker (left by the engine when POB
 	// self-updated) bypasses the UI once and reopens the updated POB directly.
 	std::wstring ini = dir + L"pob-zh.ini";
-	std::wstring pendingLua = take_relaunch_marker(dir);
+	PobLaunch::RelaunchMarker pending = take_relaunch_marker(dir);
+	std::wstring pendingLua = pending.launchLua;
+	if (pending.modern && !launch_lua_from(pendingLua).empty()) {
+		// POB self-updated under the new interface: reopen that window on the
+		// same install (its game is in the folder name), then carry on as the
+		// launcher. Only the updater ever writes this marker, so no UI first.
+		LauncherConfig c = LoadLauncherConfig(ini);
+		std::wstring lowered = pendingLua;
+		for (auto& ch : lowered) ch = (wchar_t)towlower(ch);
+		std::wstring game = lowered.find(L"poe2") != std::wstring::npos ? L"poe2" : L"poe1";
+		ShowModernUi(dir, game, c.locale, c, L"");
+		pendingLua.clear();
+	}
 
 	// App self-updater: daily-throttled background check; the launcher header
 	// shows the result. Destructor joins the worker on every return path.

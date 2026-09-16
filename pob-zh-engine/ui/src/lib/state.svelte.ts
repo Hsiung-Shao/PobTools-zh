@@ -158,7 +158,18 @@ bridge.on("hello", async () => {
 });
 bridge.on("restarted", () => {
   app.engine = "booting";
-  app.notice = "POB restarted";
+  app.notice = t("status.restarted");
+});
+// POB is applying its own update: "normal" restarts the Lua state in place
+// (restarted + hello follow); "basic" ends the child and the host closes this
+// window so Update.exe can reopen it.
+bridge.on("update_applying", () => {
+  app.engine = "booting";
+  app.notice = t("status.updating");
+});
+bridge.on("host.updating", () => {
+  app.engine = "booting";
+  app.notice = t("status.updating");
 });
 bridge.on("host.child_exited", (d: any) => {
   app.engine = "gone";

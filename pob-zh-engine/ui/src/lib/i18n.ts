@@ -65,6 +65,8 @@ const EN: Record<string, string> = {
   "status.updateChecking": "checking for POB updates…",
   "status.updateNone": "POB is up to date",
   "status.updateBlocked": "PobTools app updates wait while this window is open",
+  "status.updating": "POB is updating itself; the window reopens when it is done.",
+  "status.restarted": "POB restarted",
   "status.rev": "rev",
   "title.builds": "Builds",
   "title.tree": "Tree",

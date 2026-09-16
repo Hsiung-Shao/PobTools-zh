@@ -459,6 +459,34 @@ bool IsTranslationDataRel(const std::wstring& rel)
 	       tail == L"item_meta.json" || tail == L"item_classes_zh.json";
 }
 
+bool IsDataPackRel(const std::wstring& rel)
+{
+	if (IsTranslationDataRel(rel)) return true;
+	std::wstring p = rel;
+	for (wchar_t& c : p) {
+		if (c == L'/') c = L'\\';
+		else c = (wchar_t)towlower(c);
+	}
+	const wchar_t* prefix = L"data\\bridge\\";
+	const size_t n = wcslen(prefix);
+	if (p.compare(0, n, prefix) != 0) return false;
+	const std::wstring leaf = p.substr(n);
+	return leaf.size() > 4 && leaf.find(L'\\') == std::wstring::npos &&
+	       leaf.compare(leaf.size() - 4, 4, L".lua") == 0;
+}
+
+bool ValidateDataPackStage(const std::wstring& stage, std::wstring* offending)
+{
+	std::vector<std::wstring> rels;
+	list_files_rec(stage, L"", &rels);
+	for (const std::wstring& rel : rels) {
+		if (IsDataPackRel(rel)) continue;
+		if (offending) *offending = rel;
+		return false;
+	}
+	return true;
+}
+
 std::string ReadLocalDataVersion(const std::wstring& exeDir)
 {
 	std::string content;
@@ -1261,6 +1289,18 @@ bool AppUpdater::doUpdateTranslations(std::string* err)
 		return false;
 	}
 
+	// Every file must be something a data pack is allowed to carry (dictionaries,
+	// the stamp, Data\bridge\*.lua). One file outside that set and the whole pack
+	// is refused, untouched: a signed pack with a stray .dll or a .lua in the
+	// wrong place is a packaging error we would rather notice than half-apply.
+	std::wstring offending;
+	if (!ValidateDataPackStage(stage, &offending)) {
+		if (err) *err = kMsgDataPackBad;
+		log_line(exeDir_, "data pack refused: " + narrow(offending) + " is not translation data");
+		remove_dir_rec(cacheDir);
+		return false;
+	}
+
 	std::vector<std::wstring> rels;
 	list_files_rec(stage, L"", &rels);
 	const bool packHasStamp = file_exists(stage + kDataStampRel);
@@ -1615,7 +1655,7 @@ int RunTranslationDataList(const std::wstring& dir, const std::wstring& outFile)
 
 	std::vector<std::wstring> hits;
 	for (const std::wstring& rel : all)
-		if (IsTranslationDataRel(rel)) hits.push_back(rel);
+		if (IsDataPackRel(rel)) hits.push_back(rel);
 	// Deterministic order: packaging diffs this output against the zip entries,
 	// and FindFirstFileW's order is not something to build an assertion on.
 	std::sort(hits.begin(), hits.end());
@@ -2012,6 +2052,14 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		}
 		check(ok, ("T8 IsTranslationDataRel classifies the pack contents" +
 		           (ok ? std::string() : (" -- wrong:" + bad))).c_str());
+		// The bridge rides the data line but is not translation data: the
+		// app-line apply keeps it, the data-line list and apply carry it.
+		check(!IsTranslationDataRel(L"Data\\bridge\\bridge.lua") && IsDataPackRel(L"Data\\bridge\\bridge.lua") &&
+		          IsDataPackRel(L"data/bridge/Bridge.LUA") && IsDataPackRel(L"Data\\poe1\\zh-rTW\\ui.json") &&
+		          !IsDataPackRel(L"Data\\bridge\\bridge.dll") && !IsDataPackRel(L"Data\\bridge\\sub\\a.lua") &&
+		          !IsDataPackRel(L"Data\\poe1\\zh-rTW\\a.lua") && !IsDataPackRel(L"Data\\evil.lua") &&
+		          !IsDataPackRel(L"lua\\sha2.lua") && !IsDataPackRel(L"Data\\bridge\\.lua"),
+		      "T8b IsDataPackRel = translation data + Data\\bridge\\*.lua, nothing else");
 	}
 
 	// T9: with translation updates off, an app update still swaps the exe and
@@ -2620,6 +2668,46 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		}
 
 		check(bad.empty(), ("T21 signed manifest -> payload gate -> extract, end to end" +
+		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// T22: a staged data pack is accepted only when every file is on the
+	// allowlist; one stray file refuses the whole pack and names it.
+	{
+		auto stageWith = [&](const wchar_t* tag, std::initializer_list<const wchar_t*> rels) {
+			std::wstring stage = root + L"t22_" + tag + L"\\";
+			for (const wchar_t* rel : rels) {
+				std::wstring full = stage + rel;
+				size_t slash = full.find_last_of(L'\\');
+				// every directory level, the stage included
+				for (size_t i = stage.size() - 1; i != std::wstring::npos && i < full.size(); i = full.find(L'\\', i + 1)) {
+					CreateDirectoryW(full.substr(0, i).c_str(), nullptr);
+					if (i >= slash) break;
+				}
+				write_file_atomic(full, "x");
+			}
+			return stage;
+		};
+		std::string bad;
+		std::wstring off;
+		std::wstring good = stageWith(L"good", { L"Data\\poe1\\zh-rTW\\ui.json", L"Data\\launcher\\zh-rTW\\ui.json",
+		                                         L"Data\\translations_version.json", L"Data\\bridge\\bridge.lua" });
+		if (!ValidateDataPackStage(good, &off)) bad += " good-pack-refused:" + narrow(off);
+		struct Bad { const wchar_t* tag; const wchar_t* rel; };
+		const Bad bads[] = {
+			{ L"dll",   L"Data\\bridge\\bridge.dll" },
+			{ L"deep",  L"Data\\bridge\\sub\\a.lua" },
+			{ L"lua",   L"Data\\poe1\\zh-rTW\\a.lua" },
+			{ L"top",   L"Data\\evil.lua" },
+			{ L"rt",    L"lua\\sha2.lua" },
+		};
+		for (const Bad& b : bads) {
+			std::wstring st = stageWith(b.tag, { L"Data\\poe1\\zh-rTW\\ui.json", L"Data\\bridge\\bridge.lua", b.rel });
+			off.clear();
+			if (ValidateDataPackStage(st, &off)) bad += " accepted:" + narrow(b.rel);
+			else if (off != b.rel) bad += " named-wrong-file:" + narrow(off) + "!=" + narrow(b.rel);
+		}
+		check(bad.empty(), ("T22 data pack allowlist: Data\\bridge\\*.lua rides along, anything else refuses the whole pack" +
 		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
 	}
 
