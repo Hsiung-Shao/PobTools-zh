@@ -104,7 +104,7 @@
   {#if err}<div class="bad selectable">{err}</div>{/if}
 
   <div class="ebody">
-    <!-- the live tooltip -->
+    <!-- 即時 tooltip -->
     <div class="tip" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
       {#each item.tooltip.lines as l}
         {#if "sep" in l}
@@ -116,7 +116,7 @@
     </div>
 
     {#if popup}
-      <!-- one of POB's dialogs, inline -->
+      <!-- POB 的 popup 之一,內嵌呈現 -->
       <section class="pop">
         <div class="ptitle"><span class="label">{popup.title ? t(`edit.popup.${popup.popup}`) : ""}</span></div>
         {#each popupFields as c (c.name)}
@@ -165,7 +165,7 @@
         </div>
       </section>
     {:else}
-      <!-- sockets -->
+      <!-- 插槽與連結 -->
       {#if item.socketShown.some((s) => s) || item.canAddSocket}
         <section class="sec">
           <span class="k">{t("edit.sockets")}</span>
@@ -185,7 +185,7 @@
         </section>
       {/if}
 
-      <!-- quality / catalyst / influence -->
+      <!-- 品質 / 催化劑 / 影響 -->
       {#if item.quality.shown || item.catalyst.shown || item.influence.shown}
         <section class="sec grid2">
           {#if item.quality.shown}
@@ -217,7 +217,7 @@
         </section>
       {/if}
 
-      <!-- variants -->
+      <!-- 變體 -->
       {#if item.variants.length || item.versions}
         <section class="sec grid2">
           {#if item.versions}
@@ -235,7 +235,7 @@
         </section>
       {/if}
 
-      <!-- cluster jewel crafting -->
+      <!-- 星團珠寶打造 -->
       {#if item.cluster}
         <section class="sec grid2">
           <span class="k">{t("edit.cluster")}</span>
@@ -247,7 +247,7 @@
         </section>
       {/if}
 
-      <!-- crafted affixes -->
+      <!-- 工藝物品的詞綴槽 -->
       {#if item.crafted && item.affixes.length}
         <section class="sec">
           <span class="k">{t("edit.affixes")}</span>
@@ -265,7 +265,7 @@
         </section>
       {/if}
 
-      <!-- value ranges -->
+      <!-- 數值範圍 -->
       {#if item.ranges.length}
         <section class="sec">
           <span class="k">{t("edit.ranges")}</span>
@@ -283,7 +283,7 @@
         </section>
       {/if}
 
-      <!-- explicit / crucible lines -->
+      <!-- 顯性 / Crucible 詞綴 -->
       {#if item.modLines.length}
         <section class="sec">
           <span class="k">{t("edit.mods")}</span>
@@ -298,7 +298,7 @@
         </section>
       {/if}
 
-      <!-- the dialogs -->
+      <!-- 開 POB 的 popup -->
       <section class="sec btns">
         {#if item.actions.enchant}<button class="btn sm" onclick={() => openPopup("enchant", 1)}>{t("edit.enchant")}</button>{/if}
         {#if item.actions.enchant2}<button class="btn sm" onclick={() => openPopup("enchant", 2)}>{t("edit.enchant2")}</button>{/if}

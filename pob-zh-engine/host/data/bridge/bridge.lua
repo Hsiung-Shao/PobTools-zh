@@ -2651,7 +2651,7 @@ function M.craft_item_options()
 	local cap = capture_popup(function() tab:CraftItem() end, false)
 	local rarities = {}
 	for i, e in ipairs(cap.controls.rarity.list) do
-		rarities[i] = { label = dd_label(e), labelZh = tr((dd_label(e):gsub("^%^x%x%x%x%x%x%x", ""):gsub("^%^%d", ""))), rarity = e.rarity }
+		rarities[i] = { label = dd_label(e), labelZh = tr(strip_escapes(dd_label(e))), rarity = e.rarity }
 	end
 	local types = {}
 	for i, t in ipairs(b.data.itemBaseTypeList) do
@@ -2989,9 +2989,10 @@ function M.delete_all_items()
 	return commit(b)
 end
 
--- equip_primary{id, alt=bool}: the list's Ctrl+Click (ItemListControl:OnSelClick):
--- toggle the item in its primary slot, second weapon set aware, Shift = the
--- second slot of a pair.
+-- equip_primary{id, alt=bool}: the list's Ctrl+Click, through
+-- ItemListControl:OnSelClick itself. It reads the modifier keys with the
+-- engine's IsKeyDown (a headless stub), so that global answers CTRL (and
+-- SHIFT for `alt`) for the duration of the call.
 function M.equip_primary(p)
 	local b = ensure_build()
 	local tab = b.itemsTab
@@ -2999,19 +3000,19 @@ function M.equip_primary(p)
 	if not it then error("no item " .. tostring(p and p.id), 0) end
 	local slotName = it:GetPrimarySlot()
 	if not (slotName and tab.slots[slotName]) then error("item has no primary slot", 0) end
-	if tab.slots[slotName].weaponSet == 1 and tab.activeItemSet.useSecondWeaponSet then slotName = slotName .. " Swap" end
-	if p.alt then
-		local altSlot = slotName:gsub("1", "2")
-		if tab:IsItemValidForSlot(it, altSlot) then slotName = altSlot end
+	local listCtl = item_list_control(tab)
+	local savedKey = IsKeyDown
+	IsKeyDown = function(key) return key == "CTRL" or (key == "SHIFT" and p.alt and true or false) end
+	local ok, err = pcall(listCtl.OnSelClick, listCtl, nil, it.id, false)
+	IsKeyDown = savedKey
+	if not ok then error(err, 0) end
+	local r = commit(b)
+	local equippedIn
+	for _, slot in ipairs(tab.orderedSlots) do
+		if slot.selItemId == it.id and not slot.inactive then equippedIn = slot.slotName break end
 	end
-	if tab.slots[slotName].selItemId == it.id then
-		tab.slots[slotName]:SetSelItemId(0)
-	else
-		tab.slots[slotName]:SetSelItemId(it.id)
-	end
-	local r = items_committed(b)
-	r.slotName = slotName
-	r.equipped = tab.slots[slotName].selItemId == it.id
+	r.slotName = equippedIn
+	r.equipped = equippedIn ~= nil
 	return r
 end
 
@@ -3125,9 +3126,9 @@ probe("classes.ItemsTab comparison (GetComparisonSlotNameForItem/GetEquippedSlot
 	return type(c) == "table" and type(c.GetComparisonSlotNameForItem) == "function" and type(c.GetEquippedSlotForItem) == "function"
 		and type(c.AddItemStatDifferences) == "function" and type(c.SortItemList) == "function"
 end)
-probe("classes.ItemListControl (FindEquippedAbyssJewel/FindSocketedJewel) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
+probe("classes.ItemListControl (FindEquippedAbyssJewel/FindSocketedJewel/OnSelClick) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
 	local l, d = class_of("ItemListControl"), class_of("ItemDBControl")
-	return type(l) == "table" and type(l.FindEquippedAbyssJewel) == "function" and type(l.FindSocketedJewel) == "function"
+	return type(l) == "table" and type(l.FindEquippedAbyssJewel) == "function" and type(l.FindSocketedJewel) == "function" and type(l.OnSelClick) == "function"
 		and type(d) == "table" and type(d.DoesItemMatchFilters) == "function" and type(d.LoadLeaguesAndTypes) == "function"
 		and type(d.SetSortMode) == "function" and type(d.ListBuilder) == "function"
 end)
