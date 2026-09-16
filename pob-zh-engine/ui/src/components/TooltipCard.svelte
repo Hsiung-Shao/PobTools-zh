@@ -12,9 +12,21 @@
     return m ? `#${m[1]}` : null;
   }
   const border = $derived(pobColor(accent) ?? "var(--edge-1)");
+  // Keep the whole card on screen: measured height, then shifted up / left
+  // when the anchor sits near the bottom or right edge.
+  let h = $state(0);
+  let w = $state(0);
+  const top = $derived.by(() => {
+    const vh = typeof window !== "undefined" ? window.innerHeight : 0;
+    return Math.round(vh && h ? Math.max(8, Math.min(y, vh - h - 8)) : y);
+  });
+  const left = $derived.by(() => {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 0;
+    return Math.round(vw && w ? Math.max(8, Math.min(x, vw - w - 8)) : x);
+  });
 </script>
 
-<div class="card" style:left={`${Math.round(x)}px`} style:top={`${Math.round(y)}px`} style:width={`${width}px`} style:border-top-color={border}>
+<div class="card" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-top-color={border}>
   {#each lines as l, i}
     {#if "sep" in l}
       <div class="sep"></div>
@@ -39,7 +51,7 @@
     pointer-events: none;
     font-size: var(--fs-xs);
     line-height: 1.45;
-    max-height: 80vh;
+    max-height: calc(100vh - 16px);
     overflow: hidden;
   }
   .line {

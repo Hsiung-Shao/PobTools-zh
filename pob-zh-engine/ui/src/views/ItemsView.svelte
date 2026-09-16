@@ -7,6 +7,7 @@
   import { t } from "$lib/i18n";
   import { equippedIn, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor } from "$lib/items";
   import { app } from "$lib/state.svelte";
+  import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
 
   let data = $state<ItemsList | null>(null);
@@ -126,15 +127,16 @@
       await changed();
     }
   }
+  // "Copy text": the item's raw text to the clipboard, with the outcome shown
+  // on the button (a copy that silently failed looked like a paste that did nothing).
+  let copyState = $state<"idle" | "ok" | "fail">("idle");
+  let copyTimer = 0;
   async function copyItem(id: number) {
     const r = await app.run(() => api.itemRaw(id));
-    if (r) {
-      try {
-        await navigator.clipboard.writeText(r.raw);
-      } catch {
-        /* clipboard blocked */
-      }
-    }
+    if (!r) return;
+    copyState = (await copyText(r.raw)) ? "ok" : "fail";
+    clearTimeout(copyTimer);
+    copyTimer = window.setTimeout(() => (copyState = "idle"), 1800);
   }
 
   // --- paste / add ---------------------------------------------------------------
@@ -168,13 +170,18 @@
     }
   }
   function onPasteBox(e: ClipboardEvent) {
-    // Ctrl+V into an empty box adds straight away (what the classic UI does).
+    // Ctrl+V into an empty box adds straight away (what the classic UI does);
+    // anything else stays in the box with a note saying why it was not added.
     if (pasteText.trim()) return;
     const text = e.clipboardData?.getData("text") ?? "";
+    pasteErr = null;
+    pasteNote = null;
     if (looksLikeItem(text)) {
       e.preventDefault();
       pasteText = text;
       void addPasted(true);
+    } else if (text.trim()) {
+      pasteErr = t("items.notItem");
     }
   }
 
@@ -317,7 +324,9 @@
           {/each}
         </select>
         <button class="btn sm" disabled={!equippedIn(data.slots, selected.id!).length} onclick={() => unequipAll(selected!.id!)}>{t("items.unequip")}</button>
-        <button class="btn sm" onclick={() => copyItem(selected!.id!)}>{t("items.copy")}</button>
+        <button class="btn sm" class:ok={copyState === "ok"} class:danger={copyState === "fail"} onclick={() => copyItem(selected!.id!)}>
+          {copyState === "ok" ? t("items.copied") : copyState === "fail" ? t("items.copyFailed") : t("items.copy")}
+        </button>
         <button class="btn sm danger" onclick={() => deleteItem(selected!.id!)}>{t("items.delete")}</button>
       </div>
     {/if}

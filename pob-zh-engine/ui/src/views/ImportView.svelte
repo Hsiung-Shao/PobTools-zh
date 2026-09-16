@@ -7,6 +7,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
+  import { copyText } from "$lib/clipboard";
 
   // --- account import ------------------------------------------------------
   let st = $state<ImportStatus | null>(null);
@@ -199,8 +200,7 @@
 
   async function copyExport() {
     try {
-      await navigator.clipboard.writeText(exported);
-      copied = true;
+      copied = await copyText(exported);
     } catch {
       copied = false;
     }
