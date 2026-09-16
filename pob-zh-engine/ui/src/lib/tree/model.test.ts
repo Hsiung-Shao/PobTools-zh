@@ -9,6 +9,9 @@ const node = (p: Partial<RawNode> & { id: number; x: number; y: number }): RawNo
   statsZh: [],
   size: 40,
   linked: [],
+  blighted: false,
+  expansion: false,
+  proxy: false,
   ...p,
 });
 
@@ -21,7 +24,7 @@ const data: TreeData = {
     "1": node({ id: 1, x: 0, y: 0, type: "ClassStart", classStartIndex: 3, linked: [2] }),
     "2": node({ id: 2, x: 100, y: 0, group: 7, orbit: 1, linked: [1, 3] }),
     "3": node({ id: 3, x: 200, y: 0, type: "Notable", group: 7, orbit: 1, linked: [2] }),
-    "4": node({ id: 4, x: 900, y: 900, type: "Mastery", proxy: true } as any),
+    "4": node({ id: 4, x: 900, y: 900, type: "Mastery", proxy: true }),
   },
   nodeCount: 4,
   groups: [{ id: 7, x: 150, y: 0, oo: [1], isProxy: false, ascStart: false }],
