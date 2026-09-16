@@ -204,5 +204,19 @@
   "calcs.showMinion": "顯示召喚物",
   "calcs.search": "搜尋列…",
   "calcs.breakdown": "細項",
-  "calcs.hidden": "這個區段不適用於選取的技能。"
+  "calcs.hidden": "這個區段不適用於選取的技能。",
+  "notes.hint": "隨建置儲存的自由文字。POB 色碼(^xRRGGBB、^7)會保留並在預覽顯示。",
+  "notes.preview": "預覽",
+  "notes.colors": "顏色",
+  "party.hint": "隊友提供的增益:把對方匯出的文字貼進來(與經典隊伍頁相同格式)。",
+  "party.partyMemberStats": "隊友屬性",
+  "party.aura": "光環",
+  "party.curse": "詛咒",
+  "party.warcry": "戰吼技能",
+  "party.link": "連結技能",
+  "party.enemyCond": "敵人狀態",
+  "party.enemyMods": "敵人詞綴",
+  "party.export": "匯出本建置的增益給隊友",
+  "party.exports": "本建置匯出的內容",
+  "party.apply": "套用"
 }

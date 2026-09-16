@@ -2512,6 +2512,132 @@ probe("classes.CalcsTab.CheckFlag + sectionList + formatCalcStr", function()
 end)
 
 -- ---------------------------------------------------------------------------
+-- Notes, Party
+-- ---------------------------------------------------------------------------
+
+-- NotesTab keeps the text only in its edit control and works out modFlag in
+-- Draw (never called headless), so both are handled here explicitly.
+function M.get_notes()
+	local b = ensure_build()
+	local tab = b.notesTab
+	tab:SetShowColorCodes(false)
+	return { text = tab.controls.edit.buf or "", unsaved = tab.modFlag and true or false, rev = b.outputRevision }
+end
+
+function M.set_notes(p)
+	local b = ensure_build()
+	local tab = b.notesTab
+	local text = p and p.text
+	if type(text) ~= "string" then error("params.text required", 0) end
+	if #text > 1024 * 1024 then error("notes too large", 0) end
+	tab:SetShowColorCodes(false)
+	tab.controls.edit:SetText(text)
+	tab.modFlag = (tab.lastContent ~= tab.controls.edit.buf)
+	b.buildFlag = true
+	frame()
+	return { unsaved = b.unsaved and true or false, rev = b.outputRevision }
+end
+
+-- PartyTab: seven text areas, each parsed by ParseBuffs into its list the way
+-- Load does; the export toggle lives on the tab as enableExportBuffs.
+local party_fields = {
+	{ key = "partyMemberStats", control = "editPartyMemberStats", buffType = "PartyMemberStats", last = "PartyMemberStats" },
+	{ key = "aura",             control = "editAuras",            buffType = "Aura",             last = "Aura",       simple = "simpleAuras" },
+	{ key = "curse",            control = "editCurses",           buffType = "Curse",            last = "Curse",      simple = "simpleCurses" },
+	{ key = "warcry",           control = "editWarcries",         buffType = "Warcry",           last = "Warcry",     simple = "simpleWarcries" },
+	{ key = "link",             control = "editLinks",            buffType = "Link",             last = "Link",       simple = "simpleLinks" },
+	{ key = "enemyCond",        control = "enemyCond",            buffType = "EnemyConditions",  last = "EnemyCond" },
+	{ key = "enemyMods",        control = "enemyMods",            buffType = "EnemyMods",        last = "EnemyMods",  simple = "simpleEnemyMods" },
+}
+
+local function party_parse(tab, f, text)
+	if f.buffType == "PartyMemberStats" then
+		tab:ParseBuffs(tab.actor.modDB, text, "PartyMemberStats", tab.actor.output)
+	elseif f.buffType == "EnemyConditions" then
+		tab:ParseBuffs(tab.enemyModList, text, "EnemyConditions")
+	elseif f.buffType == "EnemyMods" then
+		tab:ParseBuffs(tab.enemyModList, text, "EnemyMods", tab.controls[f.simple])
+	else
+		tab:ParseBuffs(tab.actor[f.buffType], text, f.buffType, tab.controls[f.simple])
+	end
+end
+
+function M.get_party()
+	local b = ensure_build()
+	local tab = b.partyTab
+	local fields = {}
+	for _, f in ipairs(party_fields) do
+		local ctl = tab.controls[f.control]
+		fields[f.key] = ctl and ctl.buf or ""
+	end
+	local exports = {}
+	if tab.enableExportBuffs then
+		for _, bt in ipairs({ "Aura", "Curse", "Warcry", "Link", "EnemyMods" }) do
+			local ok, txt = pcall(tab.exportBuffs, tab, bt)
+			exports[bt] = ok and txt or ""
+		end
+	end
+	return {
+		fields = as_object(fields),
+		enableExportBuffs = tab.enableExportBuffs and true or false,
+		exports = as_object(exports),
+		unsaved = tab.modFlag and true or false,
+		rev = b.outputRevision,
+	}
+end
+
+-- set_party{field, text} for the seven areas, or {field="enableExportBuffs", value=bool}.
+function M.set_party(p)
+	local b = ensure_build()
+	local tab = b.partyTab
+	local key = p and p.field
+	if key == "enableExportBuffs" then
+		tab.enableExportBuffs = p.value and true or false
+		tab.modFlag = true
+		b.buildFlag = true
+		frame()
+		return { unsaved = b.unsaved and true or false, rev = b.outputRevision }
+	end
+	local f
+	for _, e in ipairs(party_fields) do if e.key == key then f = e end end
+	if not f then error("unknown party field " .. tostring(key), 0) end
+	local text = p.text
+	if type(text) ~= "string" then error("params.text required", 0) end
+	if #text > 1024 * 1024 then error("text too large", 0) end
+	local ctl = tab.controls[f.control]
+	if not ctl then error("party control missing: " .. f.control, 0) end
+	ctl:SetText(text)
+	-- Re-parse everything the way Load does: the lists are rebuilt from scratch
+	-- per field, and the enemy list is shared by two fields.
+	if f.buffType == "EnemyConditions" or f.buffType == "EnemyMods" then
+		tab.enemyModList = new("ModList"):ModList()
+		party_parse(tab, party_fields[6], tab.controls.enemyCond.buf or "")
+		party_parse(tab, party_fields[7], tab.controls.enemyMods.buf or "")
+	elseif f.buffType == "PartyMemberStats" then
+		tab.actor.modDB = new("ModDB"):ModDB()
+		tab.actor.modDB.actor = tab.actor
+		tab.actor.output = {}
+		party_parse(tab, f, text)
+	else
+		tab.actor[f.buffType] = {}
+		party_parse(tab, f, text)
+	end
+	tab.modFlag = (tab.lastContent[f.last] ~= text) or tab.modFlag
+	b.buildFlag = true
+	frame()
+	return { unsaved = b.unsaved and true or false, rev = b.outputRevision }
+end
+
+probe("classes.NotesTab.SetShowColorCodes + edit control", function()
+	local c = class_of("NotesTab")
+	return type(c) == "table" and type(c.SetShowColorCodes) == "function"
+end)
+probe("classes.PartyTab.ParseBuffs/exportBuffs", function()
+	local c = class_of("PartyTab")
+	return type(c) == "table" and type(c.ParseBuffs) == "function" and type(c.exportBuffs) == "function"
+end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 

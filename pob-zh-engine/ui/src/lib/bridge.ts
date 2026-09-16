@@ -575,6 +575,16 @@ export interface CalcsData {
   rev: number;
 }
 
+// --- notes / party -------------------------------------------------------------
+
+export interface PartyData {
+  fields: Record<"partyMemberStats" | "aura" | "curse" | "warcry" | "link" | "enemyCond" | "enemyMods", string>;
+  enableExportBuffs: boolean;
+  exports: Record<string, string>;
+  unsaved: boolean;
+  rev: number;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
   treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
@@ -647,6 +657,11 @@ export const api = {
   getCalcs: () => bridge.call<CalcsData>("get_calcs", {}, 60000),
   setCalcsInput: (v: string, value: unknown) => bridge.call<Committed>("set_calcs_input", { var: v, value }, 60000),
   calcsBreakdown: (si: number, ui: number, ri: number, ci: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("calcs_breakdown", { si, ui, ri, ci }, 60000),
+  getNotes: () => bridge.call<{ text: string; unsaved: boolean; rev: number }>("get_notes"),
+  setNotes: (text: string) => bridge.call<Committed>("set_notes", { text }, 60000),
+  getParty: () => bridge.call<PartyData>("get_party", {}, 60000),
+  setParty: (field: string, text: string) => bridge.call<Committed>("set_party", { field, text }, 60000),
+  setPartyExport: (value: boolean) => bridge.call<Committed>("set_party", { field: "enableExportBuffs", value }, 60000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
 };

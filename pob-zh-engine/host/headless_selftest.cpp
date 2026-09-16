@@ -1026,6 +1026,40 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("set_calcs_input{misc_buffMode} round-trips", okCi && cal2["input"].value("misc_buffMode", "") == "UNBUFFED");
 		}
 
+		// --- 2e: notes + party ------------------------------------------------------
+		{
+			json n0, sn, n1, bi;
+			bool okN = okLoad && child.Call("get_notes", json::object(), n0, 30000) &&
+			           child.Call("set_notes", json{{"text", "bridge notes ^xFF0000red\nline two"}}, sn, 60000) &&
+			           child.Call("get_notes", json::object(), n1, 30000) && child.Call("get_build_info", json::object(), bi, 30000);
+			check("set_notes/get_notes round-trip through NotesTab's edit control and marks the build unsaved",
+			      okN && n1.value("text", "") == "bridge notes ^xFF0000red\nline two" && n1.value("unsaved", false) && bi.value("unsaved", false),
+			      okN ? n1.dump().substr(0, 120) : sn.dump().substr(0, 200));
+			json ex, dec;
+			bool okEx = okN && child.Call("export_code", json::object(), ex, 60000) && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
+			bool hasNotes = false;
+			if (okEx) for (auto& x : dec["sections"]) if (x.get<std::string>() == "Notes") hasNotes = true;
+			check("the notes travel in the build (export_code carries a <Notes> section)", okEx && hasNotes);
+			json rn;
+			child.Call("set_notes", json{{"text", n0.value("text", "")}}, rn, 60000);
+
+			json p0, sp, p1, sp2, p2;
+			bool okP = okLoad && child.Call("get_party", json::object(), p0, 60000) &&
+			           child.Call("set_party", json{{"field", "enemyCond"}, {"text", "Condition:Shocked"}}, sp, 60000) &&
+			           child.Call("get_party", json::object(), p1, 60000) &&
+			           child.Call("set_party", json{{"field", "enemyCond"}, {"text", ""}}, sp2, 60000) &&
+			           child.Call("get_party", json::object(), p2, 60000);
+			check("set_party/get_party round-trip through PartyTab's controls and ParseBuffs",
+			      okP && p0["fields"].contains("aura") && p0["fields"].size() == 7 && p1["fields"].value("enemyCond", "") == "Condition:Shocked" &&
+			          p1.value("unsaved", false) && p2["fields"].value("enemyCond", "x").empty(),
+			      okP ? p1["fields"].dump().substr(0, 160) : sp.dump().substr(0, 200));
+			json pe;
+			bool okPe = okP && child.Call("set_party", json{{"field", "enableExportBuffs"}, {"value", true}}, pe, 60000) && child.Call("get_party", json::object(), pe, 60000);
+			check("enableExportBuffs exposes this build's exported buff text", okPe && pe.value("enableExportBuffs", false) && pe.contains("exports"),
+			      okPe ? "exports=" + std::to_string(pe["exports"].size()) : pe.dump().substr(0, 200));
+			child.Call("set_party", json{{"field", "enableExportBuffs"}, {"value", false}}, pe, 60000);
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);

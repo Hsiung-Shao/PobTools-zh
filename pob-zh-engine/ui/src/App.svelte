@@ -15,6 +15,8 @@
   import SkillsView from "./views/SkillsView.svelte";
   import ConfigView from "./views/ConfigView.svelte";
   import CalcsView from "./views/CalcsView.svelte";
+  import NotesView from "./views/NotesView.svelte";
+  import PartyView from "./views/PartyView.svelte";
   import type { ViewId } from "$lib/state.svelte";
 
   // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
@@ -73,6 +75,10 @@
           <ConfigView />
         {:else if app.view === "calcs" && app.loaded}
           <CalcsView />
+        {:else if app.view === "notes" && app.loaded}
+          <NotesView />
+        {:else if app.view === "party" && app.loaded}
+          <PartyView />
         {:else if app.view !== "builds" && app.loaded}
           <div class="center"><p class="dim">{t("app.viewSoon")}</p></div>
         {:else}
