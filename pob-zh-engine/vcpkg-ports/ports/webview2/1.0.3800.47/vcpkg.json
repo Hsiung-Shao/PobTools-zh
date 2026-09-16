@@ -1,0 +1,8 @@
+{
+  "name": "webview2",
+  "version": "1.0.3800.47",
+  "description": "Microsoft Edge WebView2 SDK (loader DLL + headers). Local overlay copy of the upstream vcpkg port with the header-only wil dependency dropped: the host uses WRL ComPtr from the Windows SDK.",
+  "homepage": "https://docs.microsoft.com/en-us/microsoft-edge/webview2",
+  "license": "BSD-3-Clause",
+  "supports": "windows & (x86 | x64 | arm64)"
+}

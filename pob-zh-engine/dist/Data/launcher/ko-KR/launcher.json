@@ -1,5 +1,4 @@
 {
-  "_provenance": "machine-draft 2026-09-11: Korean drafted by the maintainer's assistant, not yet reviewed by a native speaker. Corrections welcome -- see docs/TRANSLATING.md",
   "entries": {
     "Path of Building Launcher": "Path of Building 런처",
     "Zero-pollution auto-injected Traditional Chinese translation and UI": "원본을 건드리지 않고 번역과 인터페이스를 자동 주입합니다",
@@ -19,6 +18,9 @@
     "Atlas strategy": "아틀라스 전략",
     "Timeless jewel": "타임리스 주얼",
     "Poe Regex": "Poe Regex",
+    "Stash tracker": "Stash tracker",
+    "Modern UI (Beta)": "Modern UI (Beta)",
+    "Open a PoE1 build in the new interface (sidebar + tree, preview)": "Open a PoE1 build in the new interface (sidebar + tree, preview)",
     "Games": "게임",
     "Tools": "도구",
     "Links": "링크",
@@ -131,6 +133,11 @@
     "POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.": "POB가 20초 넘게 응답하지 않습니다. 그때 무엇을 하고 있었는지가 설정 페이지의 문제 로그 폴더에 기록되었습니다. 신고할 때 오늘 파일들을 첨부하면 충분합니다. POB가 다시 응답하거나 닫히면 이 줄은 사라집니다.",
     "Program updates": "프로그램 업데이트",
     "Install new versions at startup": "시작 시 새 버전 자동 설치",
-    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools가 열릴 때 확인하고 새 버전이 있으면 오른쪽 위 버튼을 기다리지 않고 바로 설치한 뒤 스스로 다시 엽니다. 시작 직후, POB나 도구를 열기 전에만 동작하며 POB가 실행 중일 때는 절대 동작하지 않습니다. 번역 데이터는 아래에 별도 설정이 있습니다."
+    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools가 열릴 때 확인하고 새 버전이 있으면 오른쪽 위 버튼을 기다리지 않고 바로 설치한 뒤 스스로 다시 엽니다. 시작 직후, POB나 도구를 열기 전에만 동작하며 POB가 실행 중일 때는 절대 동작하지 않습니다. 번역 데이터는 아래에 별도 설정이 있습니다.",
+    "Official site": "Official site",
+    "Official trade (PoE1)": "Official trade (PoE1)",
+    "Official trade (PoE2)": "Official trade (PoE2)",
+    "Disenchant lookup": "Disenchant lookup",
+    "Chinese localisation": "Chinese localisation"
   }
 }

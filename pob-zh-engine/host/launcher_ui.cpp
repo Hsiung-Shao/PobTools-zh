@@ -13,6 +13,7 @@
 #include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
+#include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "window_dock.h"
 #include "window_manager.h"   // DockTabLabel
 // Tools that draw inside this window rather than in one of their own.
@@ -999,6 +1000,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	const bool tabbed = (cfg.windowMode == WindowMode::Tabbed);
 	int& storedW = tabbed ? cfg.tabWinW : cfg.winW;
 	int& storedH = tabbed ? cfg.tabWinH : cfg.winH;
+	// The new (WebView2) interface: decided once per launcher run. Without the
+	// runtime, the loader DLL or the built page there is nothing to open, and a
+	// button that opens a message box is worse than no button.
+	const bool modernUiOk = !PobLaunch::RunningUnderWine() && ModernUiAvailable(exeDir, nullptr);
 
 	// Monitor work area (screen minus taskbar), falling back to the video mode.
 	// Physical pixels, like everything GLFW reports on Windows.
@@ -1217,8 +1222,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (!PobLaunch::SpawnToolDetached(exeDir, flag, kind, &pid)) return;
 		anythingLaunched = true;
 		// In tabbed mode the tool becomes a tab here rather than a window of its
-		// own; in separate mode nothing else happens, exactly as before.
-		if (tabbed) dock.Track(pid, from_utf8(label));
+		// own; in separate mode nothing else happens, exactly as before. The new
+		// interface is the exception: the dock only adopts GLFW windows
+		// (window_dock.cpp find_cb) and its WebView2 window is plain Win32, so it
+		// stays a window of its own in both modes.
+		if (tabbed && kind != PobLaunch::InstanceKind::ModernUi) dock.Track(pid, from_utf8(label));
 	};
 	// KeepOpen mode: start POB the same way the tools are started (detached, the
 	// window stays up) instead of returning Launch. ShowLauncher tears down GLFW
@@ -1993,13 +2001,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		}
 		ImGui::Dummy(ImVec2(0, 8.0f * scale));
 
-		// Tools: secondary actions. Six buttons share the row, so the width
-		// divisor and the gap count must move together — five gaps between
-		// six buttons.
+		// Tools: secondary actions. The buttons share the row, so the width
+		// divisor and the gap count move together: nTools buttons, nTools-1
+		// gaps. The new-interface button only exists where WebView2 can run.
 		SectionLabel(fonts, scale, inner, S.toolsSection);
 		{
 			float gap = 12.0f * scale;
-			ImVec2 toolSize((inner - 5.0f * gap) / 6.0f, 46.0f * scale);
+			const int nTools = modernUiOk ? 7 : 6;
+			ImVec2 toolSize((inner - (nTools - 1) * gap) / (float)nTools, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
 			// The translation editor edits dist\Data\{game}\{locale}\*.json in
 			// place — the same files the engine loads — so its changes take
@@ -2044,6 +2053,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ImGui::Button(S.warehouseTool, toolSize)) {
 				if (tabbed) openPanel(&CreateWarehousePanel, S.warehouseTool);
 				else spawnTool(L"--warehouse", PobLaunch::InstanceKind::Warehouse, S.warehouseTool);
+			}
+			if (modernUiOk) {
+				ImGui::SameLine(0, gap);
+				// The WebView2 window is its own process and its own window even in
+				// tabbed mode (see spawnTool).
+				if (ImGui::Button(S.modernUiTool, toolSize)) {
+					spawnTool(L"--modern-ui", PobLaunch::InstanceKind::ModernUi, S.modernUiTool);
+				}
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", S.modernUiTip);
 			}
 			ImGui::PopStyleColor();
 		}

@@ -14,7 +14,8 @@
     "pkgconf",
     "re2",
     "sol2",
-    "zstd",
-    "zlib"
+    "webview2",
+    "zlib",
+    "zstd"
   ]
 }

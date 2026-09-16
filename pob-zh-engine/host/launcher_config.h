@@ -127,6 +127,13 @@ struct LauncherConfig {
 	// not, and switching modes should not drag the other mode's size along.
 	int            winW = 0, winH = 0;          // WindowMode::Separate
 	int            tabWinW = 0, tabWinH = 0;    // WindowMode::Tabbed
+	// The new (WebView2) interface window, --modern-ui. Its own pair for the
+	// same reason as above; 0 = default (1500x950 at the current scale).
+	int            modernWinW = 0, modernWinH = 0;
+	// 0 = classic POB window, 1 = the new interface. Read and written so an
+	// ini can carry the preference; the launcher's "start" button does not act
+	// on it yet (the new interface is a preview reached from its own button).
+	int            uiMode = 0;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Also draw ASCII in the POB window from the selected font (engine env
 	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.

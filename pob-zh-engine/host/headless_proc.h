@@ -10,6 +10,7 @@
 
 #include <json.hpp>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -61,6 +62,19 @@ public:
 	// Everything the child wrote that was not JSON (a crash dump, a stray
 	// print). Kept so a failing self-test can show it.
 	std::string StrayOutput();
+
+	// --- pass-through mode (the new UI window) -------------------------------
+	// The WebView2 window does not want typed calls: the page speaks the wire
+	// format itself, so the host only forwards lines both ways.
+	//
+	// Writes one line (no newline) to the child's stdin. false = stdin closed.
+	bool SendRaw(const std::string& jsonLine);
+	// Once set, every line the child writes goes to `sink` (reader thread!) and
+	// is NOT queued for Call/WaitEvent. `isJson` is false for a stray line. Pass
+	// nullptr to go back to the queued mode.
+	void SetLineSink(std::function<void(const std::string& line, bool isJson)> sink);
+	// Called once (reader thread) when the child's stdout reaches EOF.
+	void SetExitSink(std::function<void()> sink);
 
 private:
 	struct Impl;

@@ -1,0 +1,312 @@
+/* Design tokens and base controls.
+   Adapted from pob-redux (https://github.com/juddisjudd/pob-redux), MIT
+   License, (c) 2026 Judd. See NOTICE.md. Changes: the UI font is the shipped
+   Noto Sans TC/KR served by the host (fonts.pobtools) so Chinese and Korean
+   render; the Geist/Fontin font files are not bundled. */
+
+@font-face {
+  font-family: "Noto Sans TC";
+  src: url("https://fonts.pobtools/NotoSansTC-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  src: url("https://fonts.pobtools/NotoSansKR-Regular.ttf") format("truetype");
+  font-display: swap;
+}
+
+/* Monochrome, hairline. Accents are semantic only. Dark is the base; the
+   tree canvas draws PoB's dark art so it stays dark in any theme. */
+:root,
+.scope-dark {
+  color-scheme: dark;
+
+  --bg-0: #0b0b0c;
+  --bg-1: #101012;
+  --bg-2: #151518;
+  --bg-3: #1b1b1f;
+  --bg-hover: #202025;
+  --bg-active: #26262c;
+
+  --line-0: #1c1c21;
+  --line-1: #27272d;
+  --line-2: #35353d;
+
+  --fg-0: #f2f2f4;
+  --fg-1: #b9b9c1;
+  --fg-2: #8a8a94;
+  --fg-3: #76767f;
+  --fg-4: #484850;
+
+  --focus: #7f9dff;
+  --ok: #67d38a;
+  --warn: #e7b04e;
+  --bad: #f06a6a;
+
+  /* Path of Exile semantics, tuned for a dark neutral ground */
+  --c-life: #f25c5c;
+  --c-mana: #6f9cff;
+  --c-es: #5fd0e4;
+  --c-fire: #ff7c47;
+  --c-cold: #5fbfff;
+  --c-lightning: #ffd94f;
+  --c-chaos: #c67cff;
+  --c-physical: #d9c8a8;
+  --c-unique: #cf8a2e;
+  --c-rare: #e8d25f;
+  --c-magic: #7f8dff;
+  --c-normal: #d7d7dc;
+  --c-gem: #47d7b4;
+  --c-spirit: #f0cf74;
+  --c-currency: #cba64c;
+
+  --primary-hover: #ffffff;
+  --fade-off: 0.45;
+  --pob-mix: 100%;
+  --backdrop: rgb(0 0 0 / 0.55);
+  --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+:root {
+  --font-ui: "Segoe UI", "Noto Sans TC", "Noto Sans KR", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "Noto Sans TC", monospace;
+
+  --fs-2xs: 10px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+
+  --r-1: 3px;
+  --r-2: 5px;
+
+  --titlebar-h: 38px;
+  --statusbar-h: 24px;
+  --sidebar-w: 300px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+::selection {
+  background: rgba(127, 157, 255, 0.28);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+button,
+select,
+summary,
+[role="button"],
+[role="tab"],
+input[type="checkbox"],
+input[type="radio"] {
+  cursor: pointer;
+}
+button:disabled,
+select:disabled,
+input:disabled,
+[aria-disabled="true"] {
+  cursor: default;
+}
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-1);
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 80ms linear, border-color 80ms linear, color 80ms linear;
+}
+.btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--line-2);
+  color: var(--fg-0);
+}
+.btn:active {
+  background: var(--bg-active);
+}
+.btn:disabled {
+  opacity: var(--fade-off);
+  cursor: default;
+}
+.btn.primary {
+  background: var(--fg-0);
+  color: var(--bg-0);
+  border-color: var(--fg-0);
+  font-weight: 500;
+}
+.btn.primary:hover {
+  background: var(--primary-hover);
+}
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.btn.ghost:hover {
+  border-color: var(--line-1);
+}
+.btn.sm {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+
+.input,
+.select,
+.textarea {
+  appearance: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-1);
+  border-radius: var(--r-1);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font-size: var(--fs-sm);
+  outline: none;
+  min-width: 0;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px rgba(127, 157, 255, 0.25);
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--fg-3);
+}
+option,
+optgroup {
+  background-color: var(--bg-2);
+  color: var(--fg-0);
+}
+.select {
+  padding-right: 22px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%2380808a' stroke-width='1.2'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.label {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+.muted {
+  color: var(--fg-2);
+}
+.dim {
+  color: var(--fg-3);
+}
+.selectable {
+  user-select: text;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  padding: 1px 4px;
+  border: 1px solid var(--line-2);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  color: var(--fg-2);
+  background: var(--bg-2);
+}
+
+.hr {
+  height: 1px;
+  background: var(--line-0);
+}
+
+.panel {
+  background: var(--bg-1);
+  border: 1px solid var(--line-0);
+  border-radius: var(--r-2);
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 30px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-0);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}

@@ -8,7 +8,12 @@
       "kind": "filesystem",
       "path": "vcpkg-ports",
       "baseline": "2026-07-22",
-      "packages": ["glfw3", "gli", "luajit"]
+      "packages": [
+        "glfw3",
+        "gli",
+        "luajit",
+        "webview2"
+      ]
     }
   ]
 }

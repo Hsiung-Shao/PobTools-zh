@@ -57,6 +57,8 @@ struct Child::Impl {
 	std::string stray;
 	bool readerDone = false;
 	long long nextId = 1;
+	std::function<void(const std::string&, bool)> lineSink;
+	std::function<void()> exitSink;
 
 	void ReaderProc()
 	{
@@ -79,9 +81,14 @@ struct Child::Impl {
 			partial.erase(0, start);
 		}
 		if (!partial.empty()) Deliver(partial);
-		std::lock_guard<std::mutex> lock(mu);
-		readerDone = true;
-		cv.notify_all();
+		std::function<void()> onExit;
+		{
+			std::lock_guard<std::mutex> lock(mu);
+			readerDone = true;
+			onExit = exitSink;
+			cv.notify_all();
+		}
+		if (onExit) onExit();
 	}
 
 	void Deliver(const std::string& line)
@@ -90,6 +97,17 @@ struct Child::Impl {
 		bool ok = false;
 		if (!line.empty() && line[0] == '{') {
 			try { j = json::parse(line); ok = j.is_object(); } catch (...) { ok = false; }
+		}
+		std::function<void(const std::string&, bool)> sink;
+		{
+			std::lock_guard<std::mutex> lock(mu);
+			sink = lineSink;
+		}
+		if (sink) {
+			// Pass-through: the window forwards the line to the page as-is; parsing
+			// it here was only to tell JSON from a stray print.
+			sink(line, ok);
+			return;
 		}
 		std::lock_guard<std::mutex> lock(mu);
 		if (!ok) {
@@ -278,6 +296,27 @@ std::string Child::StrayOutput()
 {
 	std::lock_guard<std::mutex> lock(impl_->mu);
 	return impl_->stray;
+}
+
+bool Child::SendRaw(const std::string& jsonLine)
+{
+	if (impl_->childStdin == INVALID_HANDLE_VALUE) return false;
+	std::string line = jsonLine;
+	line.push_back('\n');
+	DWORD wrote = 0;
+	return WriteFile(impl_->childStdin, line.data(), (DWORD)line.size(), &wrote, nullptr) && wrote == line.size();
+}
+
+void Child::SetLineSink(std::function<void(const std::string&, bool)> sink)
+{
+	std::lock_guard<std::mutex> lock(impl_->mu);
+	impl_->lineSink = std::move(sink);
+}
+
+void Child::SetExitSink(std::function<void()> sink)
+{
+	std::lock_guard<std::mutex> lock(impl_->mu);
+	impl_->exitSink = std::move(sink);
 }
 
 } // namespace HeadlessProc

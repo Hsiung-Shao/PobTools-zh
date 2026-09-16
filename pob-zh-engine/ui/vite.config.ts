@@ -1,0 +1,27 @@
+// Build config. Adapted from pob-redux (MIT, (c) 2026 Judd) with the Tauri
+// dev-server bits removed: this page is served by WebView2 from dist\ui\ via
+// the https://app.pobtools/ virtual host, so every URL must be relative.
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
+
+export default defineConfig({
+  plugins: [svelte()],
+  base: "./",
+  resolve: {
+    alias: { $lib: fileURLToPath(new URL("./src/lib", import.meta.url)) },
+  },
+  clearScreen: false,
+  server: { port: 1420, strictPort: true },
+  build: {
+    // WebView2 is an evergreen Chromium; ES2022 is safe.
+    target: ["es2022", "chrome110"],
+    outDir: "../dist/ui",
+    emptyOutDir: true,
+    sourcemap: false,
+  },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"],
+  },
+});

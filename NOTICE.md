@@ -19,6 +19,8 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 | nlohmann/json 3.11.3 | MIT | © Niels Lohmann |
 | base64(`engine/common/base64.c`,來自 curl) | curl/MIT | © Daniel Stenberg 等 |
 | pure_lua_SHA(`engine/lua/sha2.lua`,POB 執行期備援模組) | MIT | © Egor Skriptunoff — https://github.com/Egor-Skriptunoff/pure_lua_SHA |
+| pob-redux(新介面 `pob-zh-engine/ui/` 取材/移植來源:PoB 色碼解析、設計 token、側欄分組、天賦樹幾何與繪製;各借用檔檔頭均註明) | MIT | © 2026 Judd — https://github.com/juddisjudd/pob-redux |
+| WebView2 SDK(`engine/WebView2Loader.dll` + 標頭;vcpkg `webview2` 1.0.3800.47) | BSD-3-Clause | © Microsoft Corporation。新介面視窗以它嵌入 Edge WebView2;**Evergreen Runtime 本身不隨附**,缺少時啟動器不顯示新介面按鈕並提示下載。 |
 | `engine/d3dcompiler_47.dll`(Direct3D HLSL 編譯器;repo 內來源 `pob-zh-engine/host/data/redist/`) | **Microsoft 可再散布元件** | © Microsoft Corporation。隨 Windows SDK 提供、明訂可再散布(檔案描述即 "Direct3D HLSL Compiler for Redistribution",FileVersion 10.0.10150.0);Path of Building Community 亦在自己的 exe 旁隨附同一顆,本專案收錄的就是那份。ANGLE 依名字載入它來編譯譯出的 HLSL;放在 `engine\` 是因為引擎不在 POB 目錄下,少了它 Wine/CrossOver 上的使用者會完全無法啟動 POB。 |
 
 > Path of Building Community 本體(`Path of Building.exe`、`Modules/`、`TreeData/` 等)
@@ -44,7 +46,7 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 
 ## 摘要
 
-- **程式碼**:MIT(本專案原創)+ MIT(SimpleGraphic / ImGui / json / curl base64)。
+- **程式碼**:MIT(本專案原創)+ MIT(SimpleGraphic / ImGui / json / curl base64 / pob-redux 取材)+ BSD-3(WebView2 SDK loader)。
 - **POB 本體**:MIT,但**不隨附**,使用者自備。
 - **翻譯 / 遊戲資料**:取材自 GGG 版權內容,以粉絲工具用途提供,非以 MIT 授權釋出。
 - **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布);韓文後援 Noto Sans KR(同為 SIL OFL 1.1)。

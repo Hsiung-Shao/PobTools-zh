@@ -213,6 +213,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		};
 		readPair(L"WindowW", L"WindowH", c.winW, c.winH);
 		readPair(L"TabbedWindowW", L"TabbedWindowH", c.tabWinW, c.tabWinH);
+		readPair(L"ModernWindowW", L"ModernWindowH", c.modernWinW, c.modernWinH);
+		// Same rule as WindowMode: anything but the one known value is the default.
+		c.uiMode = (read_ini_int(iniPath, L"UiMode", 0) == 1) ? 1 : 0;
 	}
 
 	wchar_t fbuf[128];
@@ -306,6 +309,12 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		std::to_wstring(cfg.tabWinW).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"TabbedWindowH",
 		std::to_wstring(cfg.tabWinH).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernWindowW",
+		std::to_wstring(cfg.modernWinW).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernWindowH",
+		std::to_wstring(cfg.modernWinH).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"UiMode",
+		std::to_wstring(cfg.uiMode).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontApplyAll",
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
@@ -1069,6 +1078,14 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	check("T8c WindowMode=1 selects Tabbed", wm() == 1, std::to_string(wm()));
 	write(L"PobTools", { { L"WindowMode", L"7" } });
 	check("T8d an unknown WindowMode falls back to Separate", wm() == 0, std::to_string(wm()));
+	// UiMode (the new interface): same shape, same fallback rule.
+	auto um = [&]() { return LoadLauncherConfig(ini).uiMode; };
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T8e no UiMode key defaults to classic (0)", um() == 0, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"1" } });
+	check("T8f UiMode=1 selects the new interface", um() == 1, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"modern" } });
+	check("T8g an unknown UiMode falls back to classic", um() == 0, std::to_string(um()));
 
 	// round trip, including the mirrored legacy key
 	for (int m = 0; m <= 2; m++) {
@@ -1284,6 +1301,22 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		c = LoadLauncherConfig(ini);
 		check("T17j separate size alone leaves the tabbed size at default",
 		      c.winW == 1280 && c.winH == 800 && c.tabWinW == 0 && c.tabWinH == 0);
+	}
+	{
+		// The new-interface window is a third, equally independent pair.
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.modernWinW = 1440; c.modernWinH = 900;
+		c.uiMode = 1;
+		SaveLauncherConfig(ini, c);
+		LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17k ModernWindow pair and UiMode round-trip",
+		      r.modernWinW == 1440 && r.modernWinH == 900 && r.uiMode == 1 &&
+		          r.winW == 0 && r.winH == 0 && r.tabWinW == 0 && r.tabWinH == 0);
+		DeleteFileW(ini.c_str());
+		write(L"PobTools", { { L"Game", L"poe1" }, { L"ModernWindowW", L"1440" } });
+		r = LoadLauncherConfig(ini);
+		check("T17l half a ModernWindow pair is no pair", r.modernWinW == 0 && r.modernWinH == 0);
 	}
 
 	// T18..T25 -- ResolveDictDir against synthetic folders. Every failure mode has

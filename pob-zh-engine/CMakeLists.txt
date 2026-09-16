@@ -347,6 +347,12 @@ if (WIN32)
         PATHS "${DEPS_DIR}" PATH_SUFFIXES "bin" REQUIRED NO_DEFAULT_PATH)
     find_file(BROTLICOMMON_DLL_RELEASE NAMES "brotlicommon.dll"
         PATHS "${DEPS_DIR}" PATH_SUFFIXES "bin" REQUIRED NO_DEFAULT_PATH)
+    # WebView2 SDK loader for the new UI window (host --modern-ui). Delay-loaded
+    # by pob-zh.exe like glfw3.dll, so it resolves from engine\ after
+    # SetDllDirectoryW and a machine without it fails with a message, not a
+    # missing-DLL box before main. The Evergreen Runtime itself is not shipped.
+    find_file(WEBVIEW2_LOADER_DLL_RELEASE NAMES "WebView2Loader.dll"
+        PATHS "${DEPS_DIR}" PATH_SUFFIXES "bin" REQUIRED NO_DEFAULT_PATH)
 
     install(FILES
         ${LuaJIT_DLL_RELEASE}
@@ -355,6 +361,7 @@ if (WIN32)
         ${PNG_DLL_RELEASE}
         ${BROTLIDEC_DLL_RELEASE}
         ${BROTLICOMMON_DLL_RELEASE}
+        ${WEBVIEW2_LOADER_DLL_RELEASE}
         DESTINATION "engine"
         CONFIGURATIONS Release MinSizeRel RelWithDebInfo
     )
@@ -464,6 +471,9 @@ if (WIN32)
         # headless POB child (stdio JSON) + its self-test against a sandbox install
         host/headless_proc.cpp
         host/headless_selftest.cpp
+        # the new UI: a Win32 window hosting WebView2, forwarding lines between
+        # the Svelte page (dist\ui) and the headless POB child
+        host/modern_ui_window.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp
@@ -520,8 +530,9 @@ if (WIN32)
     )
     set_property(TARGET pob-zh PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 delayimp)
-    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll")
+    find_package(unofficial-webview2 CONFIG REQUIRED)
+    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 unofficial::webview2::webview2 delayimp)
+    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll")
     set_target_properties(pob-zh PROPERTIES OUTPUT_NAME "pob-zh")
     install(TARGETS pob-zh RUNTIME DESTINATION ".")
     # Bundled base-type -> item-class map (generated from POB Data/Bases) and

@@ -49,6 +49,8 @@
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
 	X(regexTool,         u8"Poe Regex",                    u8"Poe Regex")                              \
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
+	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
+	X(modernUiTip,       u8"以新版介面開啟 PoE1 建置(側欄與天賦樹,測試中)", u8"Open a PoE1 build in the new interface (sidebar + tree, preview)") \
 	/* wide-layout section labels */                                                                 \
 	X(gamesSection,      u8"遊戲",                         u8"Games")                                 \
 	X(toolsSection,      u8"工具",                         u8"Tools")                                 \

@@ -39,6 +39,7 @@
 #include "placeholder_selftest.h"
 #include "pob_launch.h"
 #include "headless_proc.h" // --engine-headless / --headless-selftest
+#include "modern_ui_window.h" // --modern-ui
 #include "window_manager.h"
 #include "window_dock.h"
 #include "filter_editor.h"
@@ -719,6 +720,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
 		ShowWarehouseTool(dir, c.game, c.locale);
 		return 0;
+	}
+
+	// The new interface: a WebView2 window driving a headless POB child. Reads
+	// pob-zh.ini like the other tools; an explicit game wins over the ini.
+	if (arg1 == L"--modern-ui") { // --modern-ui [poe1|poe2]
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		return ShowModernUi(dir, arg2.empty() ? c.game : arg2, c.locale, c);
 	}
 
 	// Headless engine end-to-end check against a sandbox copy of the PoE1 install.
