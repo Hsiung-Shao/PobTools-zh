@@ -1,6 +1,6 @@
 <!-- 匯入 / 匯出:帳號匯入(POB 自己的 OAuth 與帳號名稱兩條流程,下載在引擎
      的子腳本裡跑,頁面輪詢 import_status)、分享碼(貼上 → 預覽 → 匯入)、
-     產生分享碼、角色 JSON 匯入。 -->
+     產生分享碼。 -->
 <script lang="ts">
   import { onDestroy, untrack } from "svelte";
   import { api, type AccountChar, type CodeInfo, type ImportStatus } from "$lib/bridge";
@@ -157,15 +157,6 @@
   let exported = $state("");
   let copied = $state(false);
 
-  let itemsJson = $state("");
-  let passivesJson = $state("");
-  let importTree = $state(true);
-  let importItems = $state(true);
-  let deleteJewels = $state(false);
-  let clearItems = $state(false);
-  let clearSkills = $state(false);
-  let ignoreWeaponSwap = $state(false);
-  let charResult = $state<string | null>(null);
 
   function onCodeInput() {
     clearTimeout(decodeTimer);
@@ -203,26 +194,6 @@
       copied = await copyText(exported);
     } catch {
       copied = false;
-    }
-  }
-
-  async function doCharImport() {
-    charResult = null;
-    const r = await app.run(() =>
-      api.importCharacter({
-        items: itemsJson.trim(),
-        passives: passivesJson.trim(),
-        importTree,
-        importItems,
-        deleteJewels,
-        clearItems,
-        clearSkills,
-        ignoreWeaponSwap,
-      }),
-    );
-    if (r) {
-      charResult = r.imported.join(" + ");
-      await app.refresh();
     }
   }
 </script>
@@ -376,33 +347,6 @@
     {/if}
   </section>
 
-  <section class="card">
-    <h2>{t("import.charTitle")}</h2>
-    <p class="dim">{t("import.charHint")}</p>
-    <div class="two">
-      <label class="col">
-        <span class="k">{t("import.charItems")}</span>
-        <textarea class="input area" rows="5" bind:value={itemsJson} placeholder={'{ "items": [...], "character": {...} }'}></textarea>
-      </label>
-      <label class="col">
-        <span class="k">{t("import.charPassives")}</span>
-        <textarea class="input area" rows="5" bind:value={passivesJson} placeholder={'{ "hashes": [...], "items": [...] }'}></textarea>
-      </label>
-    </div>
-    <div class="opts">
-      <label><input type="checkbox" bind:checked={importTree} /> {t("import.optTree")}</label>
-      <label><input type="checkbox" bind:checked={deleteJewels} disabled={!importTree} /> {t("import.optDeleteJewels")}</label>
-      <span class="vsep"></span>
-      <label><input type="checkbox" bind:checked={importItems} /> {t("import.optItems")}</label>
-      <label><input type="checkbox" bind:checked={clearItems} disabled={!importItems} /> {t("import.optClearItems")}</label>
-      <label><input type="checkbox" bind:checked={clearSkills} disabled={!importItems} /> {t("import.optClearSkills")}</label>
-      <label><input type="checkbox" bind:checked={ignoreWeaponSwap} disabled={!importItems} /> {t("import.optIgnoreSwap")}</label>
-    </div>
-    <div class="actions">
-      <button class="btn primary" disabled={app.busy > 0 || !app.loaded || (!itemsJson.trim() && !passivesJson.trim())} onclick={doCharImport}>{t("import.charGo")}</button>
-      {#if charResult}<span class="ok">{t("import.charDone", { what: charResult })}</span>{/if}
-    </div>
-  </section>
 </div>
 
 <style>
@@ -469,16 +413,6 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-  }
-  .two {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-  .col {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
   }
   .k {
     font-size: var(--fs-2xs);

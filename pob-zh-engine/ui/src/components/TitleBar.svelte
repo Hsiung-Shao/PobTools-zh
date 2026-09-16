@@ -14,6 +14,7 @@
     { id: "notes", key: "title.notes" },
     { id: "party", key: "title.party" },
     { id: "import", key: "title.import" },
+    { id: "settings", key: "settings.title" },
   ];
 
   // The OS window title carries the build name for the taskbar.
@@ -27,20 +28,12 @@
   <span class="brand"><i class="mark"></i>PobTools</span>
   <nav>
     {#each tabs as tb}
-      <button class="tab" class:on={app.view === tb.id} disabled={tb.id !== "builds" && !app.loaded} onclick={() => (app.view = tb.id)}>
+      <button class="tab" class:on={app.view === tb.id} disabled={tb.id !== "builds" && tb.id !== "settings" && !app.loaded} onclick={() => (app.view = tb.id)}>
         {t(tb.key)}
       </button>
     {/each}
   </nav>
   <span class="grow"></span>
-  <button class="gear" class:on={app.view === "settings"} title={t("settings.title")} aria-label={t("settings.title")} onclick={() => (app.view = "settings")}>
-    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M8.6 1.5h2.8l.4 2.1c.5.2 1 .4 1.4.7l2-.8 1.4 2.4-1.6 1.4c.1.5.1 1 0 1.5l1.6 1.4-1.4 2.4-2-.8c-.4.3-.9.6-1.4.7l-.4 2.1H8.6l-.4-2.1a6 6 0 0 1-1.4-.7l-2 .8-1.4-2.4 1.6-1.4a6 6 0 0 1 0-1.5L3.4 5.9l1.4-2.4 2 .8c.4-.3.9-.6 1.4-.7l.4-2.1ZM10 7a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
-      />
-    </svg>
-  </button>
   {#if app.info}
     <span class="build">
       <span class="bname">{app.info.buildName}</span>
@@ -100,23 +93,6 @@
   }
   .grow {
     flex: 1;
-  }
-  .gear {
-    appearance: none;
-    border: 0;
-    background: none;
-    color: var(--ink-2);
-    width: 28px;
-    height: 28px;
-    border-radius: var(--radius-s);
-    display: inline-grid;
-    place-items: center;
-    cursor: pointer;
-  }
-  .gear:hover,
-  .gear.on {
-    color: var(--ink-0);
-    background: var(--surface-hover);
   }
   .build {
     display: inline-flex;
