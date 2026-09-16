@@ -4,7 +4,7 @@
   // the hover conversation with the engine (node_hover for the path POB would
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
-  import { api, type NodeInfo, type TreeState } from "$lib/bridge";
+  import { api, type MasteryChoice, type NodeInfo, type TreeState } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { buildModel, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
@@ -43,6 +43,10 @@
 
   let search = $state("");
   let matches = $state<Set<number>>(new Set());
+
+  // questions the engine's click handler asks back
+  let masteryMenu = $state<{ id: number; name: string; x: number; y: number; effects: MasteryChoice[]; selected: number | null } | null>(null);
+  let classConfirm = $state<{ id: number; className: string; connectFailed: boolean } | null>(null);
 
   const allocated = $derived(new Set(tree?.allocatedNodes ?? []));
   const overrides = $derived(tree?.overrides ?? {});
@@ -362,9 +366,65 @@
     const [wx, wy] = toWorld(sx, sy);
     setHover(model.hit.at(wx, wy));
   }
-  function onUp() {
-    // 1c is read-only; 1d turns a click into tree_click.
+  async function onUp(e: PointerEvent) {
+    if (!drag) return;
+    const wasClick = !drag.moved;
     drag = null;
+    if (!wasClick || !hover || app.busy > 0 || e.button !== 0) return;
+    const n = hover;
+    if (n.kind === "ascStart" || n.kind === "classStart") return;
+    hoverPath = new Set();
+    hoverDep = new Set();
+    await clickNode(n.id, {});
+  }
+
+  /** Sends the click to POB and follows up on what it asked for. */
+  async function clickNode(id: number, extra: { effect?: number; confirm?: "reset" | "connect" }) {
+    const r = await app.run(() => api.treeClick(id, extra));
+    if (!r) return;
+    if ("needsMastery" in r && r.needsMastery) {
+      masteryMenu = { id: r.id, name: r.nameZh || r.name, x: mouse.x, y: mouse.y, effects: r.effects, selected: r.selected ?? null };
+      return;
+    }
+    if ("needsConfirm" in r && r.needsConfirm) {
+      classConfirm = { id: r.id, className: r.classNameZh || r.className, connectFailed: !!r.connectFailed };
+      return;
+    }
+    applyState(r as TreeState);
+  }
+
+  async function pickMastery(effect: number) {
+    if (!masteryMenu) return;
+    const id = masteryMenu.id;
+    masteryMenu = null;
+    const r = await app.run(() => api.selectMastery(id, effect));
+    if (r) applyState(r);
+  }
+
+  async function answerClass(mode: "reset" | "connect") {
+    if (!classConfirm) return;
+    const id = classConfirm.id;
+    classConfirm = null;
+    await clickNode(id, { confirm: mode });
+  }
+
+  async function undo() {
+    const r = await app.run(() => api.treeUndo());
+    if (r) applyState(r);
+  }
+  async function redo() {
+    const r = await app.run(() => api.treeRedo());
+    if (r) applyState(r);
+  }
+
+  /** A state that came back from a change: draw it now, then let the rest of the page catch up. */
+  function applyState(s: TreeState) {
+    tree = s;
+    infoCache.clear();
+    hoverInfo = null;
+    rebuild();
+    repaint();
+    void app.afterTreeChange();
   }
   function setHover(n: TreeNode | null) {
     if (n?.id === hover?.id) return;
@@ -397,6 +457,16 @@
   }
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
+    if (e.key === "Escape") {
+      masteryMenu = null;
+      classConfirm = null;
+      return;
+    }
+    if (e.ctrlKey && !e.shiftKey && (e.key === "z" || e.key === "y")) {
+      e.preventDefault();
+      void (e.key === "z" ? undo() : redo());
+      return;
+    }
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT")) return;
     if (e.key === "+" || e.key === "=") zoomTo(zoom * 1.3);
     else if (e.key === "-") zoomTo(zoom / 1.3);
@@ -443,10 +513,11 @@
     repaint();
   }
 
-  // state follows the build revision
+  // state follows the build revision (skipped when a click already brought it)
   $effect(() => {
-    void app.rev;
+    const rev = app.rev;
     if (!app.loaded) return;
+    if (tree && tree.rev === rev) return;
     api
       .getTreeState()
       .then((s) => {
@@ -503,6 +574,9 @@
     {#if matches.size}<span class="count num">{matches.size}</span>{/if}
     <button class="btn ghost sm" onclick={focusClass}>{t("sidebar.class")}</button>
     <button class="btn ghost sm" onclick={fitAll}>{t("tree.fit")}</button>
+    <span class="vsep"></span>
+    <button class="btn ghost sm" onclick={undo} disabled={app.busy > 0} title="Ctrl+Z">{t("tree.undo")}</button>
+    <button class="btn ghost sm" onclick={redo} disabled={app.busy > 0} title="Ctrl+Y">{t("tree.redo")}</button>
     <span class="spacer"></span>
     {#if tree}
       <span class="points num">
@@ -521,7 +595,39 @@
       <div class="veil dim">{t("tree.loading")}</div>
     {/if}
 
-    {#if hover}
+    {#if masteryMenu}
+      <div class="menu" style:left={`${Math.min(masteryMenu.x, w - 380)}px`} style:top={`${Math.min(masteryMenu.y, h - 40 * (masteryMenu.effects.length + 2))}px`}>
+        <div class="menu-title">{t("tree.masteryTitle")} · {masteryMenu.name}</div>
+        {#each masteryMenu.effects as e (e.effect)}
+          <button
+            class="choice"
+            class:on={e.effect === masteryMenu.selected}
+            disabled={e.takenBy != null && e.takenBy !== masteryMenu.id}
+            title={e.takenBy != null && e.takenBy !== masteryMenu.id ? t("tree.masteryTaken") : ""}
+            onclick={() => pickMastery(e.effect)}
+          >
+            {#each e.statsZh as s}<span><PobText text={s} muted="var(--c-magic)" /></span>{/each}
+          </button>
+        {/each}
+        <button class="choice cancel" onclick={() => (masteryMenu = null)}>{t("tree.cancel")}</button>
+      </div>
+    {/if}
+
+    {#if classConfirm}
+      <div class="modal">
+        <div class="dialog">
+          <div class="menu-title">{t("tree.classChangeTitle")}</div>
+          <p>{t("tree.classChangeBody", { className: classConfirm.className })}</p>
+          <div class="actions">
+            <button class="btn" onclick={() => answerClass("connect")}>{t("tree.classChangeConnect")}</button>
+            <button class="btn primary" onclick={() => answerClass("reset")}>{t("tree.classChangeReset")}</button>
+            <button class="btn ghost" onclick={() => (classConfirm = null)}>{t("tree.cancel")}</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if hover && !masteryMenu && !classConfirm}
       <div class="tip" style:left={`${Math.min(mouse.x + 16, w - 336)}px`} style:top={`${Math.min(mouse.y + 16, h - 80)}px`}>
         <div class="tip-title">
           <span class="name" class:keystone={hover.kind === "keystone"} class:notable={hover.kind === "notable"}>{nameOf(hover)}</span>
@@ -620,6 +726,90 @@
   }
   .ok {
     color: var(--ok);
+  }
+  .vsep {
+    width: 1px;
+    height: 16px;
+    background: var(--line-1);
+    margin: 0 4px;
+  }
+  .menu {
+    position: absolute;
+    min-width: 260px;
+    max-width: 380px;
+    padding: 6px;
+    background: var(--bg-1);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-2);
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .menu-title {
+    padding: 4px 8px 8px;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.06em;
+    color: var(--fg-2);
+  }
+  .choice {
+    appearance: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: var(--r-1);
+    background: transparent;
+    color: var(--fg-0);
+    font-size: var(--fs-xs);
+    text-align: left;
+    white-space: normal;
+    cursor: pointer;
+  }
+  .choice:hover:not(:disabled) {
+    background: var(--bg-hover);
+  }
+  .choice.on {
+    box-shadow: inset 2px 0 0 var(--ok);
+  }
+  .choice:disabled {
+    color: var(--fg-4);
+    cursor: default;
+  }
+  .choice.cancel {
+    color: var(--fg-3);
+    margin-top: 4px;
+  }
+  .modal {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--backdrop);
+  }
+  .dialog {
+    width: 440px;
+    padding: 16px 18px;
+    background: var(--bg-1);
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-2);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dialog p {
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--fg-1);
+    line-height: 1.5;
+  }
+  .actions {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
   .tip {
     position: absolute;

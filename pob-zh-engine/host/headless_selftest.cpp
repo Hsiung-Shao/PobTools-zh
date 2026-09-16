@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -563,6 +564,171 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okBi && bi["points"].value("usedMax", 0) >= 99 && bi["points"].value("ascMax", 0) == 8 &&
 			          bi["points"].value("used", -1) >= 0 && !bi.value("className", "").empty(),
 			      okBi ? bi["points"].dump() : bi.dump());
+		}
+
+		// --- tree 1c/1d: data, art, state, hover, click round trip, undo ---------
+		{
+			json td;
+			bool okTd = okLoad && child.Call("tree_data", json::object(), td, 120000);
+			int nodeCount = okTd ? td.value("nodeCount", 0) : 0;
+			int withXY = 0, withFrames = 0;
+			if (okTd) {
+				for (auto& [k, n] : td["nodes"].items()) {
+					if (n.contains("x") && n["x"].is_number() && n.contains("y")) withXY++;
+					if (n.contains("frames")) withFrames++;
+				}
+			}
+			check("tree_data: POB laid out >2500 nodes, every one with x/y",
+			      okTd && nodeCount > 2500 && withXY == nodeCount && td["connectors"].size() > 2000 && td["groups"].size() > 700,
+			      okTd ? "nodes=" + std::to_string(nodeCount) + " xy=" + std::to_string(withXY) + " frames=" + std::to_string(withFrames) +
+			                 " connectors=" + std::to_string(td["connectors"].size()) + " groups=" + std::to_string(td["groups"].size())
+			           : td.dump().substr(0, 300));
+			check("tree_data: frame names resolved for most nodes", okTd && withFrames * 10 >= nodeCount * 8);
+
+			json ta;
+			bool okTa = okLoad && child.Call("tree_assets", json::object(), ta, 60000);
+			int files = 0, missingFiles = 0;
+			if (okTa) {
+				for (auto& [file, sz] : ta["sheets"].items()) {
+					files++;
+					if (GetFileAttributesW((sandbox + L"\\" + widen(file)).c_str()) == INVALID_FILE_ATTRIBUTES) missingFiles++;
+				}
+			}
+			check("tree_assets: every sheet file exists under the install, frame + class art named",
+			      okTa && files > 10 && missingFiles == 0 && ta["assets"].contains("PSSkillFrame") && ta["assets"].contains("centerwitch") &&
+			          ta.value("missingSheets", json::array()).empty(),
+			      okTa ? "files=" + std::to_string(files) + " missing=" + std::to_string(missingFiles) + " assets=" + std::to_string(ta["assets"].size())
+			           : ta.dump().substr(0, 300));
+
+			json ts;
+			bool okTs = okLoad && child.Call("get_tree_state", json::object(), ts, 30000);
+			int allocCount = okTs ? (int)ts["allocatedNodes"].size() : 0;
+			check("get_tree_state: allocated list matches its count and the points POB counted",
+			      okTs && allocCount > 50 && ts.value("allocCount", -1) == allocCount &&
+			          ts["points"].value("used", -1) + ts["points"].value("ascUsed", 0) + 2 <= allocCount + 4,
+			      okTs ? "alloc=" + std::to_string(allocCount) + " points=" + ts["points"].dump() : ts.dump().substr(0, 300));
+
+			// A node one step outside the allocated set: an unallocated neighbour
+			// of an allocated node whose own neighbours are allocated.
+			long long target = -1;
+			if (okTd && okTs) {
+				std::set<long long> alloc;
+				for (auto& id : ts["allocatedNodes"]) alloc.insert(id.get<long long>());
+				for (auto& [k, n] : td["nodes"].items()) {
+					long long id = n.value("id", -1LL);
+					if (alloc.count(id) || n.value("type", "") != "Normal" || n.contains("asc")) continue;
+					for (auto& l : n["linked"]) {
+						if (alloc.count(l.get<long long>())) { target = id; break; }
+					}
+					if (target >= 0) break;
+				}
+			}
+			json hv;
+			bool okHv = target >= 0 && child.Call("node_hover", json{{"id", target}}, hv, 30000);
+			check("node_hover: an adjacent unallocated node costs 1 point along POB's path",
+			      okHv && hv.value("cost", -1) == 1 && hv["path"].size() == 1 && !hv.value("allocated", true),
+			      okHv ? hv.dump() : "target=" + std::to_string(target) + " " + hv.dump());
+
+			json ni;
+			bool okNi = target >= 0 && child.Call("node_info", json{{"id", target}}, ni, 30000);
+			check("node_info: POB's tooltip lines come through translated",
+			      okNi && ni["lines"].size() >= 2 && !ni.value("nameZh", "").empty(),
+			      okNi ? ni.dump().substr(0, 200) : ni.dump().substr(0, 300));
+
+			// click on, click off: state and stats must return to where they were
+			json before;
+			child.Call("get_stats", json::object(), before, 30000);
+			json c1;
+			bool okC1 = target >= 0 && child.Call("tree_click", json{{"id", target}}, c1, 60000);
+			bool nowAlloc = okC1 && c1.contains("allocatedNodes");
+			if (nowAlloc) {
+				nowAlloc = false;
+				for (auto& id : c1["allocatedNodes"]) if (id.get<long long>() == target) nowAlloc = true;
+			}
+			check("tree_click allocates the node (POB's AllocNode + recalculation)",
+			      okC1 && nowAlloc && c1["allocatedNodes"].size() == (size_t)allocCount + 1 && c1.value("rev", 0) > ts.value("rev", 0),
+			      okC1 ? "alloc=" + std::to_string(c1["allocatedNodes"].size()) + " rev=" + std::to_string(c1.value("rev", 0)) : c1.dump().substr(0, 300));
+			json u1;
+			bool okU1 = okC1 && child.Call("tree_undo", json::object(), u1, 60000);
+			check("tree_undo restores the allocation count", okU1 && u1["allocatedNodes"].size() == (size_t)allocCount,
+			      okU1 ? "alloc=" + std::to_string(u1["allocatedNodes"].size()) : u1.dump().substr(0, 300));
+			json r1;
+			bool okR1 = okU1 && child.Call("tree_redo", json::object(), r1, 60000);
+			check("tree_redo re-applies it", okR1 && r1["allocatedNodes"].size() == (size_t)allocCount + 1);
+			json c2;
+			bool okC2 = okR1 && child.Call("tree_click", json{{"id", target}}, c2, 60000);
+			json after;
+			child.Call("get_stats", json::object(), after, 30000);
+			check("tree_click again deallocates and the stats return to the original values",
+			      okC2 && c2["allocatedNodes"].size() == (size_t)allocCount && before.contains("stats") && after.contains("stats") &&
+			          before["stats"].value("Life", 0.0) == after["stats"].value("Life", 1.0) &&
+			          before["stats"].value("TotalDPS", 0.0) == after["stats"].value("TotalDPS", 1.0),
+			      okC2 ? "alloc=" + std::to_string(c2["allocatedNodes"].size()) : c2.dump().substr(0, 300));
+
+			// The allocated node with the most dependents (one next to the class
+			// start takes the whole tree with it): dealloc, undo, and the set
+			// must be identical, cluster-jewel nodes included. POB's own undo
+			// base is taken before cluster subgraphs exist, so without the
+			// bridge's ResetUndo this loses every cluster node.
+			long long hub = -1;
+			size_t hubDeps = 0;
+			if (okTs) {
+				for (auto& idj : ts["allocatedNodes"]) {
+					long long id = idj.get<long long>();
+					if (id >= 65536) continue;
+					json h;
+					if (child.Call("node_hover", json{{"id", id}}, h, 30000) && h.contains("depends") && h["depends"].size() > hubDeps) {
+						hubDeps = h["depends"].size();
+						hub = id;
+					}
+				}
+			}
+			std::set<long long> origSet;
+			for (auto& idj : ts.value("allocatedNodes", json::array())) origSet.insert(idj.get<long long>());
+			size_t clusterCount = 0;
+			for (long long id : origSet) if (id >= 65536) clusterCount++;
+			json hc, hu;
+			bool okHc = hub >= 0 && child.Call("tree_click", json{{"id", hub}}, hc, 60000);
+			bool okHu = okHc && child.Call("tree_undo", json::object(), hu, 60000);
+			std::set<long long> undoSet;
+			for (auto& idj : hu.value("allocatedNodes", json::array())) undoSet.insert(idj.get<long long>());
+			json afterHub;
+			child.Call("get_stats", json::object(), afterHub, 30000);
+			check("dealloc the hub node then undo: the allocated set is identical (cluster nodes too) and DPS matches",
+			      okHu && hc["allocatedNodes"].size() < origSet.size() && undoSet == origSet &&
+			          before["stats"].value("TotalDPS", 0.0) == afterHub["stats"].value("TotalDPS", 1.0),
+			      "hub=" + std::to_string(hub) + " deps=" + std::to_string(hubDeps) + " afterClick=" + std::to_string(hc.value("allocatedNodes", json::array()).size()) +
+			          " afterUndo=" + std::to_string(undoSet.size()) + "/" + std::to_string(origSet.size()) + " cluster=" + std::to_string(clusterCount));
+
+			// a reachable, unallocated mastery: click asks, choose, undo
+			long long mastery = -1;
+			if (okTd) {
+				std::set<long long> alloc;
+				for (auto& id : c2.value("allocatedNodes", json::array())) alloc.insert(id.get<long long>());
+				for (auto& [k, n] : td["nodes"].items()) {
+					long long id = n.value("id", -1LL);
+					if (alloc.count(id) || n.value("type", "") != "Mastery" || !n.contains("masteryEffects")) continue;
+					for (auto& l : n["linked"]) {
+						if (alloc.count(l.get<long long>())) { mastery = id; break; }
+					}
+					if (mastery >= 0) break;
+				}
+			}
+			json mc;
+			bool okMc = mastery >= 0 && child.Call("tree_click", json{{"id", mastery}}, mc, 60000);
+			bool asks = okMc && mc.value("needsMastery", false) && mc.contains("effects") && !mc["effects"].empty();
+			check("tree_click on an unallocated mastery asks for an effect", asks,
+			      okMc ? mc.dump().substr(0, 200) : "mastery=" + std::to_string(mastery) + " " + mc.dump().substr(0, 200));
+			json ms;
+			bool okMs = asks && child.Call("select_mastery", json{{"id", mastery}, {"effect", mc["effects"][0]["effect"]}}, ms, 60000);
+			bool masteryAlloc = false;
+			if (okMs) for (auto& id : ms["allocatedNodes"]) if (id.get<long long>() == mastery) masteryAlloc = true;
+			check("select_mastery allocates the mastery with that effect (TreeTab:SaveMasteryPopup)",
+			      okMs && masteryAlloc && ms["overrides"].contains(std::to_string(mastery)),
+			      okMs ? "alloc=" + std::to_string(ms["allocatedNodes"].size()) : ms.dump().substr(0, 300));
+			json mu;
+			bool okMu = okMs && child.Call("tree_undo", json::object(), mu, 60000);
+			check("tree_undo removes the mastery again", okMu && mu["allocatedNodes"].size() == (size_t)allocCount);
 		}
 
 		// --- POB's own update check, synchronously -----------------------------

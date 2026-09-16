@@ -852,7 +852,202 @@ function M.node_info(p)
 	}
 end
 
+-- POB takes the undo base state in PassiveSpec:Load, before PostLoad builds
+-- the cluster-jewel subgraphs, so undoing back to the start of the session
+-- drops every cluster node (and the sockets inside them) in classic POB too.
+-- While nothing has been changed yet the stack is that single stale entry;
+-- retaking it from the now-complete spec costs nothing and fixes the base.
+local function ensure_undo_base(spec)
+	if spec.undo and #spec.undo <= 1 and (not spec.redo or #spec.redo == 0) then
+		spec:ResetUndo()
+	end
+end
+
+-- After any change to the spec: the same three steps PassiveTreeView does
+-- after a click, then one POB frame so the calculation and sidebar catch up,
+-- then the state the page redraws from.
+local function committed(b, spec)
+	spec:AddUndoState()
+	if spec.SetWindowTitleWithBuildClass then spec:SetWindowTitleWithBuildClass() end
+	b.buildFlag = true
+	frame()
+	return M.get_tree_state()
+end
+
+-- The mastery effects POB would list for this node, with the ones another
+-- mastery of the same kind already took marked (OpenMasteryPopup's rule).
+local function mastery_choices(b, node)
+	local list = {}
+	for _, e in ipairs(node.masteryEffects or {}) do
+		local takenBy = nil
+		for nodeId, effectId in pairs(b.spec.masterySelections or {}) do
+			if effectId == e.effect and nodeId ~= node.id then takenBy = nodeId end
+		end
+		local stats, statsZh = {}, {}
+		for i, s in ipairs(e.sd or e.stats or {}) do stats[i] = s; statsZh[i] = tr(s) end
+		list[#list + 1] = { effect = e.effect, stats = stats, statsZh = statsZh, takenBy = takenBy }
+	end
+	return list
+end
+
+-- A left click on a node, exactly as PassiveTreeView.lua:391-518 handles it.
+-- Allocated -> DeallocNode. Ascendancy nodes may switch ascendancy or class
+-- (a cross-class switch that would reset the tree comes back as
+-- needsConfirm so the page can ask; `confirm` = "reset" | "connect" answers
+-- it). A mastery with effects comes back as needsMastery unless `effect` is
+-- given. Everything else -> AllocNode along POB's own path.
+function M.tree_click(p)
+	local b = ensure_build()
+	local spec = b.spec
+	ensure_undo_base(spec)
+	local id = p and tonumber(p.id)
+	local node = id and spec.nodes[id]
+	if not node then error("no node " .. tostring(id), 0) end
+
+	if node.alloc then
+		spec:DeallocNode(node)
+		return committed(b, spec)
+	end
+
+	if node.ascendancyName then
+		local tree = spec.tree
+		if node.isBloodline and tree.alternate_ascendancies then
+			local different = not spec.curSecondaryAscendClass or node.ascendancyName ~= spec.curSecondaryAscendClass.id
+			if different then
+				for bloodlineId, data in pairs(tree.alternate_ascendancies) do
+					if data.id == node.ascendancyName then
+						spec:SelectSecondaryAscendClass(bloodlineId)
+						break
+					end
+				end
+			end
+		else
+			local differentAsc = false
+			if spec.curAscendClassId == 0 or node.ascendancyName ~= spec.curAscendClassBaseName then
+				if not (spec.curSecondaryAscendClass and node.ascendancyName == spec.curSecondaryAscendClass.id) then
+					differentAsc = true
+				end
+			end
+			if differentAsc then
+				local targetAscId
+				for ascId, asc in pairs(spec.curClass.classes) do
+					if asc.id == node.ascendancyName then targetAscId = ascId break end
+				end
+				if targetAscId then
+					spec:SelectAscendClass(targetAscId)
+				else
+					local targetClassId, targetClass
+					for classId, classData in pairs(tree.classes) do
+						for ascId, asc in pairs(classData.classes or {}) do
+							if asc.id == node.ascendancyName then
+								targetClassId, targetClass, targetAscId = classId, classData, ascId
+								break
+							end
+						end
+						if targetClassId then break end
+					end
+					if targetClassId then
+						local used = spec:CountAllocNodes()
+						local confirm = p.confirm
+						if used == 0 or spec:IsClassConnected(targetClassId) or confirm == "reset" then
+							spec:SelectClass(targetClassId)
+							spec:SelectAscendClass(targetAscId)
+						elseif confirm == "connect" then
+							if spec:ConnectToClass(targetClassId) then
+								spec:SelectClass(targetClassId)
+								spec:SelectAscendClass(targetAscId)
+							else
+								return { needsConfirm = "class_change", id = id, className = targetClass.name,
+								         classNameZh = tr(targetClass.name), connectFailed = true }
+							end
+						else
+							return { needsConfirm = "class_change", id = id, className = targetClass.name,
+							         classNameZh = tr(targetClass.name), ascendClassName = node.ascendancyName }
+						end
+					end
+				end
+			end
+		end
+		-- fall through: allocate the clicked node in its (now current) ascendancy
+	end
+
+	node = spec.nodes[id]
+	if node and node.path and not node.alloc then
+		if node.type == "Mastery" and node.masteryEffects then
+			if p.effect then
+				return M.select_mastery({ id = id, effect = p.effect })
+			end
+			return { needsMastery = true, id = id, name = node.dn, nameZh = tr(node.dn),
+			         effects = mastery_choices(b, node), selected = spec.masterySelections and spec.masterySelections[id] or nil }
+		end
+		spec:AllocNode(node)
+	end
+	return committed(b, spec)
+end
+
+-- Choosing a mastery effect: TreeTab:SaveMasteryPopup does the whole
+-- sequence (stats swap, ProcessStats, masterySelections, AllocNode,
+-- AddUndoState); it only wants a list control with a selection and closes a
+-- popup we never opened, so hand it a stand-in and mute ClosePopup.
+function M.select_mastery(p)
+	local b = ensure_build()
+	local spec = b.spec
+	ensure_undo_base(spec)
+	local id = p and tonumber(p.id)
+	local effect = p and tonumber(p.effect)
+	local node = id and spec.nodes[id]
+	if not node then error("no node " .. tostring(id), 0) end
+	if not effect or not spec.tree.masteryEffects[effect] then error("no mastery effect " .. tostring(effect), 0) end
+	local m = main()
+	local savedClose = m.ClosePopup
+	m.ClosePopup = function() end
+	local ok, err = pcall(b.treeTab.SaveMasteryPopup, b.treeTab, node, { selValue = { id = effect } })
+	m.ClosePopup = savedClose
+	if not ok then error(err, 0) end
+	b.buildFlag = true
+	frame()
+	return M.get_tree_state()
+end
+
+-- Undo/redo restore through ImportFromNodeList, which parks cluster-jewel
+-- node ids whose subgraph is currently gone (the dealloc that disconnected
+-- the socket removed it) in allocSubgraphNodes and leaves them there until
+-- the next BuildClusterJewelGraphs. Classic POB shows the cluster nodes as
+-- lost until a jewel is touched; we finish the restore right away.
+local function after_undo(b)
+	local spec = b.spec
+	if spec.allocSubgraphNodes and #spec.allocSubgraphNodes > 0 then
+		spec:BuildClusterJewelGraphs()
+	end
+	b.buildFlag = true
+	frame()
+	return M.get_tree_state()
+end
+
+function M.tree_undo()
+	local b = ensure_build()
+	ensure_undo_base(b.spec)
+	b.spec:Undo()
+	return after_undo(b)
+end
+
+function M.tree_redo()
+	local b = ensure_build()
+	ensure_undo_base(b.spec)
+	b.spec:Redo()
+	return after_undo(b)
+end
+
 probe("main.LoadTree", function() return type(launch.main.LoadTree) == "function" end)
+probe("classes.TreeTab.SaveMasteryPopup/OpenMasteryPopup", function()
+	local c = class_of("TreeTab")
+	return type(c) == "table" and type(c.SaveMasteryPopup) == "function" and type(c.OpenMasteryPopup) == "function"
+end)
+probe("classes.PassiveSpec class switching", function()
+	local c = class_of("PassiveSpec")
+	return type(c) == "table" and type(c.SelectClass) == "function" and type(c.SelectAscendClass) == "function"
+		and type(c.IsClassConnected) == "function" and type(c.ConnectToClass) == "function"
+end)
 probe("classes.PassiveTree.ProcessNode", function() local c = class_of("PassiveTree"); return type(c) == "table" and type(c.ProcessNode) == "function" end)
 probe("classes.PassiveTreeView.AddNodeTooltip(4 params)", function()
 	local c = class_of("PassiveTreeView")

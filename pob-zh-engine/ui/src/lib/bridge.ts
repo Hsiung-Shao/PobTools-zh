@@ -262,6 +262,19 @@ export interface TreeState {
   rev: number;
 }
 
+export interface MasteryChoice {
+  effect: number;
+  stats: string[];
+  statsZh: string[];
+  takenBy?: number;
+}
+
+/** tree_click: either the new state, or a question the page has to answer. */
+export type TreeClickResult =
+  | (TreeState & { needsMastery?: undefined; needsConfirm?: undefined })
+  | { needsMastery: true; id: number; name: string; nameZh: string; effects: MasteryChoice[]; selected?: number }
+  | { needsConfirm: "class_change"; id: number; className: string; classNameZh: string; ascendClassName?: string; connectFailed?: boolean };
+
 export interface NodeHover {
   id: number;
   allocated: boolean;
@@ -294,6 +307,11 @@ export const api = {
   getTreeState: () => bridge.call<TreeState>("get_tree_state"),
   nodeHover: (id: number) => bridge.call<NodeHover>("node_hover", { id }),
   nodeInfo: (id: number) => bridge.call<NodeInfo>("node_info", { id }),
+  treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect" } = {}) =>
+    bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
+  selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
+  treeUndo: () => bridge.call<TreeState>("tree_undo", {}, 60000),
+  treeRedo: () => bridge.call<TreeState>("tree_redo", {}, 60000),
   listBuilds: (subPath = "") => bridge.call<{ buildPath: string; subPath: string; entries: BuildEntry[] }>("list_builds", { subPath }),
   loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
   getSidebar: () => bridge.call<Sidebar>("get_sidebar"),

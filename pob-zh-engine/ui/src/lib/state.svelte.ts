@@ -44,6 +44,15 @@ class AppState {
     return true;
   }
 
+  /**
+   * The tree changed in the engine (a click, an undo): POB recalculated in
+   * the same call, so pull the sidebar and header again. The tree view keys
+   * its own refresh on `rev`.
+   */
+  async afterTreeChange() {
+    await this.refresh();
+  }
+
   async loadBuild(path: string) {
     const ok = await this.run(async () => {
       await api.loadBuildFile(path);
