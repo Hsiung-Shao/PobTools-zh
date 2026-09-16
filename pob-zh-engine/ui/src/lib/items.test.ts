@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { equippedIn, groupSlots, looksLikeItem, rarityColor, slotsFor } from "./items";
+import { equippedIn, filterByLoadout, groupSlots, looksLikeItem, rarityColor, slotsFor, usedInBadge } from "./items";
+import type { ItemSummary } from "./bridge";
 import type { ItemSlot } from "./bridge";
 
 const slot = (p: Partial<ItemSlot> & { name: string }): ItemSlot => ({
@@ -59,5 +60,40 @@ describe("looksLikeItem", () => {
   it("rejects share codes and prose", () => {
     expect(looksLikeItem("eNrtvQd…")).toBe(false);
     expect(looksLikeItem("the rarity is high")).toBe(false);
+  });
+});
+
+const item = (p: Partial<ItemSummary> & { id: number }): ItemSummary => ({
+  name: `item ${p.id}`,
+  nameZh: `item ${p.id}`,
+  rarity: "RARE",
+  unsupported: false,
+  corrupted: false,
+  sockets: [],
+  influences: [],
+  clusterJewel: false,
+  ...p,
+});
+
+describe("filterByLoadout / usedInBadge", () => {
+  const items = [
+    item({ id: 1, usedIn: { kind: "slot", slot: "Helmet", otherSet: false } }),
+    item({ id: 2, usedIn: { kind: "slot", slot: "Helmet", setId: 2, setTitle: "Boss", otherSet: true } }),
+    item({ id: 3 }),
+    item({ id: 4, usedIn: { kind: "jewel", specTitle: "Default", otherSet: false } }),
+    item({ id: 5, usedIn: { kind: "abyss", setTitle: "Boss", otherSet: true } }),
+  ];
+  it("any keeps everything, unused keeps items with no usedIn, current keeps the active set's items", () => {
+    expect(filterByLoadout(items, "any", 1).map((i) => i.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(filterByLoadout(items, "unused", 1).map((i) => i.id)).toEqual([3]);
+    expect(filterByLoadout(items, "current", 1).map((i) => i.id)).toEqual([1, 4]);
+    expect(filterByLoadout(items, { setId: 2 }, 1).map((i) => i.id)).toEqual([2]);
+  });
+  it("badges: unused, used elsewhere (with the set/tree title), or nothing when used in the active set", () => {
+    expect(usedInBadge(items[0].usedIn)).toBeNull();
+    expect(usedInBadge(items[1].usedIn)).toEqual({ kind: "elsewhere", where: "Boss" });
+    expect(usedInBadge(undefined)).toEqual({ kind: "unused" });
+    expect(usedInBadge(items[3].usedIn)).toBeNull();
+    expect(usedInBadge(items[4].usedIn)).toEqual({ kind: "elsewhere", where: "Boss" });
   });
 });

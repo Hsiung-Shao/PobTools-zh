@@ -497,6 +497,21 @@ export interface ItemSummary {
   source?: string;
   /** item_db only: the text to add_item with. */
   raw?: string;
+  /** list_items: where the item is used (absent = unused), ItemListControl's own rule */
+  usedIn?: ItemUsedIn | null;
+  /** item_db with a stat sort: ListBuilder's measured power */
+  measuredPower?: number;
+}
+export interface ItemUsedIn {
+  kind: "slot" | "abyss" | "jewel";
+  slot?: string;
+  label?: string;
+  labelZh?: string;
+  setId?: number;
+  setTitle?: string;
+  specTitle?: string;
+  /** used, but in another item set / tree than the active one */
+  otherSet: boolean;
 }
 export interface ItemSlot {
   name: string;
@@ -525,6 +540,8 @@ export interface ItemsList {
 }
 export interface ItemTooltip {
   id?: number;
+  /** the slot the stat-difference block compared against */
+  compareSlot?: string;
   header?: string;
   color?: string;
   lines: TooltipLine[];
@@ -538,8 +555,116 @@ export interface ItemDbPage {
   page: number;
   size: number;
   items: ItemSummary[];
-  types: { type: string; typeZh: string }[];
+  /** a stat sort was asked for but more items match than the bridge will calculate */
+  tooMany?: boolean;
+  max?: number;
+  statSort?: boolean;
 }
+export interface DdOption {
+  label: string;
+  labelZh: string;
+}
+export interface ItemDbOptions {
+  kind: "unique" | "rare";
+  slot: DdOption[];
+  type: DdOption[];
+  searchMode: DdOption[];
+  league?: DdOption[];
+  requirement?: DdOption[];
+  obtainable?: DdOption[];
+  sort?: (DdOption & { sortMode: string; stat?: string })[];
+}
+export interface ItemDbQuery {
+  kind: "unique" | "rare";
+  slot?: number;
+  type?: number;
+  league?: number;
+  requirement?: number;
+  obtainable?: number;
+  searchMode?: number;
+  query?: string;
+  sortMode?: string;
+  page?: number;
+  size?: number;
+}
+
+// --- item editing (POB's displayItem session) ---------------------------------
+
+export interface ItemEditAffix {
+  index: number;
+  table: "prefixes" | "suffixes";
+  slot: number;
+  kind: string;
+  kindZh: string;
+  options: (DdOption & { tiers?: number; haveRange: boolean })[];
+  sel: number;
+  roll?: number;
+  rollShown: boolean;
+  tiers?: number;
+}
+export interface ItemEditState {
+  id?: number;
+  isNew: boolean;
+  raw: string;
+  summary: ItemSummary;
+  tooltip: { header?: string; color?: string; lines: TooltipLine[] };
+  sockets: { color: string; group: number }[];
+  socketShown: boolean[];
+  socketColors: string[];
+  links: { shown: boolean; on: boolean }[];
+  canAddSocket: boolean;
+  quality: { shown: boolean; value?: number };
+  catalyst: { shown: boolean; options: DdOption[]; sel: number; qualityShown: boolean; quality?: number };
+  influence: { shown: boolean; options: DdOption[]; sel: [number, number]; keys: string[]; current: string[] };
+  variants: { control: string; options: DdOption[]; sel: number; enabled: boolean }[];
+  versions?: { options: DdOption[]; sel: number };
+  affixes: ItemEditAffix[];
+  crafted: boolean;
+  ranges: { index: number; label: string; labelZh: string; range?: number; showSlider: boolean; mutable: boolean; mutated: boolean }[];
+  modLines: { index: number; text: string; textZh: string; disabled: boolean; kind?: "crafted" | "custom" | "crucible"; remove?: number }[];
+  cluster?: { options: DdOption[]; sel: number; nodeCount?: number; minNodes?: number; maxNodes?: number };
+  actions: Record<"enchant" | "enchant2" | "anoint" | "anoint2" | "anoint3" | "anoint4" | "corrupt" | "addImplicit" | "custom" | "crucible", boolean>;
+  popup?: string | null;
+}
+export type ItemEditPopupKind = "enchant" | "anoint" | "corrupt" | "custom" | "crucible" | "text" | "implicit";
+export interface ItemEditPopupControl {
+  name: string;
+  kind: "dropdown" | "edit" | "slider" | "check" | "button" | "nodes";
+  enabled: boolean;
+  options?: (DdOption & { id?: number })[];
+  sel?: number;
+  text?: string;
+  value?: number;
+  state?: boolean;
+  label?: string;
+  labelZh?: string;
+  search?: string;
+}
+export interface ItemEditPopup {
+  popup: ItemEditPopupKind | null;
+  title?: string;
+  controls: ItemEditPopupControl[];
+}
+export interface CraftOptions {
+  rarities: (DdOption & { rarity: string })[];
+  types: { type: string; typeZh: string; bases: (DdOption & { name: string })[] }[];
+  defaults: { rarity: number; type: number; base: number };
+}
+export type ItemEditSetParams =
+  | { quality: number }
+  | { catalyst: number }
+  | { catalystQuality: number }
+  | { influence: [number, number] }
+  | { variant: { control: string; sel: number } }
+  | { version: number }
+  | { socket: { index: number; color: string } }
+  | { link: { index: number; on: boolean } }
+  | { addSocket: true }
+  | { range: { index: number; value?: number; mutate?: boolean } }
+  | { modLine: { index: number; enabled: boolean } }
+  | { removeModLine: number }
+  | { cluster: { sel?: number; nodeCount?: number } }
+  | { raw: string };
 
 // --- skills ------------------------------------------------------------------
 
@@ -737,7 +862,7 @@ export const api = {
   importAccountCharacter: (p: AccountImportParams) => bridge.call<{ started: boolean; what: string }>("import_account_character", p, 30000),
   importSiteReset: () => bridge.call<{ mode: string }>("import_site_reset"),
   listItems: () => bridge.call<ItemsList>("list_items", {}, 60000),
-  itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
+  itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean; compare?: boolean; slotOnly?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
   itemRaw: (id: number) => bridge.call<{ raw: string }>("item_raw", { id }),
   addItem: (raw: string, opts: { equip?: boolean; slotName?: string } = {}) => bridge.call<Committed & { item: ItemSummary; reversed?: boolean }>("add_item", { raw, ...opts }, 60000),
   deleteItem: (id: number) => bridge.call<Committed>("delete_item", { id }, 60000),
@@ -749,7 +874,21 @@ export const api = {
   renameItemSet: (id: number, title: string) => bridge.call<Committed>("rename_item_set", { id, title }, 60000),
   deleteItemSet: (id: number) => bridge.call<Committed>("delete_item_set", { id }, 60000),
   setWeaponSwap: (on: boolean) => bridge.call<Committed>("set_weapon_swap", { on }, 60000),
-  itemDb: (p: { kind: "unique" | "rare"; query?: string; type?: string; page?: number; size?: number }) => bridge.call<ItemDbPage>("item_db", p, 120000),
+  itemDb: (p: ItemDbQuery) => bridge.call<ItemDbPage>("item_db", p, 300000),
+  itemDbOptions: (kind: "unique" | "rare") => bridge.call<ItemDbOptions>("item_db_options", { kind }, 180000),
+  sortItems: () => bridge.call<Committed>("sort_items", {}, 60000),
+  deleteUnusedItems: () => bridge.call<Committed & { deleted: number }>("delete_unused_items", {}, 60000),
+  deleteAllItems: () => bridge.call<Committed>("delete_all_items", {}, 60000),
+  equipPrimary: (id: number, alt: boolean) => bridge.call<Committed & { slotName: string; equipped: boolean }>("equip_primary", { id, alt }, 60000),
+  craftItemOptions: () => bridge.call<CraftOptions>("craft_item_options", {}, 60000),
+  itemEditBegin: (p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) => bridge.call<ItemEditState>("item_edit_begin", p, 60000),
+  itemEditState: () => bridge.call<ItemEditState>("item_edit_state", {}, 60000),
+  itemEditSet: (p: ItemEditSetParams) => bridge.call<ItemEditState>("item_edit_set", p, 60000),
+  itemEditAffix: (p: { index: number; sel?: number; roll?: number }) => bridge.call<ItemEditState>("item_edit_affix", p, 60000),
+  itemEditPopup: (p: { kind?: ItemEditPopupKind; action: "open" | "pick" | "apply" | "cancel"; slot?: number; name?: string; sel?: number; text?: string; state?: boolean; value?: number; button?: string }) =>
+    bridge.call<ItemEditPopup & Partial<ItemEditState>>("item_edit_popup", p, 120000),
+  itemEditCommit: (equip: boolean) => bridge.call<Committed & { id: number; added: boolean; item: ItemSummary }>("item_edit_commit", { equip }, 60000),
+  itemEditCancel: () => bridge.call<{ ok: boolean }>("item_edit_cancel", {}, 60000),
   listSkills: () => bridge.call<SkillsList>("list_skills", {}, 60000),
   addGroup: (p: { label?: string; slot?: string; gems?: { nameSpec: string; level?: number; quality?: number }[] }) => bridge.call<Committed & { index: number }>("add_group", p, 60000),
   deleteGroup: (index: number) => bridge.call<Committed>("delete_group", { index }, 60000),

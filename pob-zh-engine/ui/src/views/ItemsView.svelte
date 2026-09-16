@@ -1,38 +1,58 @@
-<!-- 物品頁:左 = 裝備欄格(POB 的 slot 佈局,含武器組切換、藥劑啟用、珠寶插槽),
-     中 = 所有物品(hover tooltip、裝備/卸下/複製/刪除),右 = 貼上新增 + 傳奇/稀有資料庫。
-     每個動作都是 POB 自己的 AddItem / DeleteItem / SetSelItemId。 -->
+<!-- 物品頁:左 = 裝備欄格(POB 的 slot 佈局,含武器組切換、藥劑啟用、珠寶插槽;可接受拖放),
+     中 = 所有物品(ItemListControl 的 loadout 篩選 / 排序 / 刪未使用 / 全刪、(未使用) 標記、
+     雙擊編輯、Ctrl+點擊裝到主欄位、拖曳),右 = 貼上新增 / 編輯面板 / 傳奇與稀有資料庫。
+     每個動作都是 POB 自己的函式或控制項回呼;hover tooltip 預設帶「替換後差異」。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type ItemDbPage, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
+  import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { equippedIn, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor } from "$lib/items";
+  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
   import { app } from "$lib/state.svelte";
   import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
+  import ItemEditor from "../components/ItemEditor.svelte";
+  import ItemDb from "../components/ItemDb.svelte";
 
   let data = $state<ItemsList | null>(null);
   let selectedId = $state<number | null>(null);
   let loadedRev = -1;
 
-  // hover tooltip (build items by id + slot; db entries by raw text)
+  // hover tooltip (build items by id + slot; db entries by raw text); the
+  // stat-difference block is POB's Ctrl+D toggle, remembered per viewer
   let tip = $state<{ lines: ItemTooltip["lines"]; color?: string; x: number; y: number } | null>(null);
   let tipTimer = 0;
   const tipCache = new Map<string, ItemTooltip>();
+  let compare = $state(true);
+  try {
+    compare = localStorage.getItem("pobtools.items.compare") !== "0";
+  } catch {
+    /* no storage */
+  }
+  function setCompare(v: boolean) {
+    compare = v;
+    tipCache.clear();
+    try {
+      localStorage.setItem("pobtools.items.compare", v ? "1" : "0");
+    } catch {
+      /* no storage */
+    }
+  }
+
+  // list toolbar
+  let loadout = $state<string>("any");
+  const loadoutFilter = $derived<LoadoutFilter>(loadout === "any" || loadout === "current" || loadout === "unused" ? loadout : { setId: Number(loadout) });
+  const listItems = $derived(data ? filterByLoadout(data.items, loadoutFilter, data.activeItemSetId) : []);
 
   // right column
-  let rightTab = $state<"paste" | "db">("paste");
+  let rightTab = $state<"paste" | "db" | "edit">("paste");
   let pasteText = $state("");
   let pasteErr = $state<string | null>(null);
   let pasteNote = $state<string | null>(null);
-  let dbKind = $state<"unique" | "rare">("unique");
-  let dbQuery = $state("");
-  let dbType = $state("");
-  let dbPage = $state(1);
-  let db = $state<ItemDbPage | null>(null);
-  let dbTimer = 0;
+  let edit = $state<ItemEditState | null>(null);
 
-  // item set dialogs
+  // dialogs
   let setDialog = $state<{ mode: "new" | "rename"; title: string; copy: boolean } | null>(null);
+  let craft = $state<{ opts: CraftOptions; rarity: number; type: number; base: number; title: string } | null>(null);
 
   const slotGroups = $derived(data ? groupSlots(data.slots) : []);
   const selected = $derived(data && selectedId != null ? itemById(data.items, selectedId) : undefined);
@@ -86,8 +106,8 @@
     tip = null;
   }
   const tipItem = (id: number, slotName: string | undefined, e: MouseEvent) =>
-    showTip(`i${id}:${slotName ?? ""}`, () => api.itemTooltip({ id, slotName }), e);
-  const tipRaw = (raw: string, rarity: string, e: MouseEvent) => showTip(`r${rarity}:${raw}`, () => api.itemTooltip({ raw, rarity, dbMode: true }), e);
+    showTip(`i${id}:${slotName ?? ""}:${compare}`, () => api.itemTooltip({ id, slotName, compare }), e);
+  const tipRaw = (raw: string, rarity: string, e: MouseEvent) => showTip(`r${rarity}:${compare}:${raw}`, () => api.itemTooltip({ raw, rarity, dbMode: true, compare }), e);
 
   // --- slots -------------------------------------------------------------------
   async function slotChange(slot: ItemSlot, value: string) {
@@ -108,6 +128,27 @@
     if (key === "weapons") return data?.useSecondWeaponSet ? t("items.weaponSet2") : t("items.weaponSet1");
     if (key === "jewels") return t("items.jewels");
     return "";
+  }
+
+  // drag an item from the list onto a slot (ItemSlotControl:CanReceiveDrag = IsItemValidForSlot, via `valid`)
+  let dragId = $state<number | null>(null);
+  function dragStart(e: DragEvent, id: number) {
+    dragId = id;
+    e.dataTransfer?.setData("text/plain", String(id));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  }
+  const canDrop = (s: ItemSlot) => dragId != null && s.valid.includes(dragId);
+  function dragOver(e: DragEvent, s: ItemSlot) {
+    if (canDrop(s)) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    }
+  }
+  async function drop(e: DragEvent, s: ItemSlot) {
+    e.preventDefault();
+    const id = dragId ?? Number(e.dataTransfer?.getData("text/plain"));
+    dragId = null;
+    if (id && s.valid.includes(id)) await equipTo(id, s.name);
   }
 
   // --- item actions ------------------------------------------------------------
@@ -138,6 +179,70 @@
     clearTimeout(copyTimer);
     copyTimer = window.setTimeout(() => (copyState = "idle"), 1800);
   }
+  function rowClick(e: MouseEvent, it: ItemSummary) {
+    selectedId = it.id!;
+    if (e.ctrlKey) void equipPrimary(it.id!, e.shiftKey);
+  }
+  async function equipPrimary(id: number, alt: boolean) {
+    const r = await app.run(() => api.equipPrimary(id, alt));
+    if (r) await changed();
+  }
+  async function sortItems() {
+    const r = await app.run(() => api.sortItems());
+    if (r) await changed();
+  }
+  async function deleteUnused() {
+    if (!data) return;
+    const n = data.items.filter((i) => !i.usedIn).length;
+    if (!n || !confirm(t("items.delUnusedConfirm", { n }))) return;
+    const r = await app.run(() => api.deleteUnusedItems());
+    if (r) await changed();
+  }
+  async function deleteAll() {
+    if (!data?.items.length || !confirm(t("items.delAllConfirm"))) return;
+    const r = await app.run(() => api.deleteAllItems());
+    if (r) {
+      selectedId = null;
+      await changed();
+    }
+  }
+
+  // --- editing (POB's displayItem) ---------------------------------------------
+  async function openEdit(p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) {
+    pasteErr = null;
+    try {
+      const r = await app.run(() => api.itemEditBegin(p));
+      if (r) {
+        edit = r;
+        rightTab = "edit";
+      }
+    } catch (e: any) {
+      pasteErr = String(e?.message ?? e);
+    }
+  }
+  function editClosed() {
+    edit = null;
+    if (rightTab === "edit") rightTab = "paste";
+  }
+  async function editDone(r: { id: number; added: boolean }) {
+    edit = null;
+    rightTab = "paste";
+    selectedId = r.id;
+    await changed();
+  }
+  async function openCraft() {
+    const opts = await app.run(() => api.craftItemOptions());
+    if (opts) craft = { opts, rarity: opts.defaults.rarity, type: opts.defaults.type, base: opts.defaults.base, title: "" };
+  }
+  async function craftCreate() {
+    if (!craft) return;
+    const c = craft;
+    craft = null;
+    const ty = c.opts.types[c.type - 1];
+    const base = ty?.bases[c.base - 1];
+    if (!ty || !base) return;
+    await openEdit({ craft: { rarity: c.opts.rarities[c.rarity - 1]?.rarity ?? "RARE", type: ty.type, base: base.name, title: c.title.trim() || undefined } });
+  }
 
   // --- paste / add ---------------------------------------------------------------
   async function addPasted(equip: boolean) {
@@ -160,7 +265,7 @@
     const raw = pasteText.trim();
     if (!raw) return;
     try {
-      const r = await api.itemTooltip({ raw });
+      const r = await api.itemTooltip({ raw, compare });
       const el = e.currentTarget as HTMLElement;
       const b = el.getBoundingClientRect();
       tip = { lines: r.lines, color: r.color, x: Math.round(Math.max(8, b.left - 360)), y: Math.round(Math.max(8, Math.min(b.top - 200, window.innerHeight - 420))) };
@@ -181,20 +286,9 @@
   }
 
   // --- database ------------------------------------------------------------------
-  function dbSearch(resetPage = true) {
-    clearTimeout(dbTimer);
-    if (resetPage) dbPage = 1;
-    dbTimer = window.setTimeout(async () => {
-      const r = await app.run(() => api.itemDb({ kind: dbKind, query: dbQuery.trim(), type: dbType, page: dbPage, size: 40 }));
-      if (r) db = r;
-    }, 150);
-  }
-  $effect(() => {
-    if (rightTab === "db" && !db) untrack(() => dbSearch());
-  });
-  async function addFromDb(it: ItemSummary) {
+  async function addFromDb(it: ItemSummary, equip: boolean) {
     if (!it.raw) return;
-    const r = await app.run(() => api.addItem(it.raw!, { equip: false }));
+    const r = await app.run(() => api.addItem(it.raw!, { equip }));
     if (r) {
       selectedId = r.item.id ?? null;
       await changed();
@@ -256,7 +350,7 @@
           {/if}
           {#each g.slots as s (s.name)}
             {@const it = data ? itemById(data.items, s.selItemId) : undefined}
-            <div class="slot" class:sub={!!s.parent}>
+            <div class="slot" class:sub={!!s.parent} class:drop={canDrop(s)} ondragover={(e) => dragOver(e, s)} ondrop={(e) => drop(e, s)}>
               <span class="sl" title={s.name}>{s.nodeId != null ? t("items.socketN", { n: s.socketIndex ?? "" }) : s.labelZh || s.label}</span>
               <select
                 class="select sm it"
@@ -286,12 +380,30 @@
   <section class="col list">
     <div class="head">
       <span class="label">{t("items.list")}</span>
-      {#if data}<span class="dim">{t("items.count", { n: data.items.length })}</span>{/if}
+      {#if data}<span class="dim">{t("items.count", { n: listItems.length })}</span>{/if}
+      <span class="grow"></span>
+      <label class="chk" title={t("items.compare")}><input type="checkbox" checked={compare} onchange={(e) => setCompare(e.currentTarget.checked)} /> {t("items.compare")}</label>
+    </div>
+    <div class="tools">
+      {#if data}
+        <select class="select sm" bind:value={loadout}>
+          <option value="any">{t("items.loadoutAny")}</option>
+          <option value="current">{t("items.loadoutCurrent")}</option>
+          <option value="unused">{t("items.loadoutUnused")}</option>
+          {#each data.itemSets as s}<option value={String(s.id)}>{setTitle(s)}</option>{/each}
+        </select>
+      {/if}
+      <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={sortItems}>{t("items.sort")}</button>
+      <button class="btn ghost sm" disabled={!data?.items.some((i) => !i.usedIn) || app.busy > 0} onclick={deleteUnused}>{t("items.delUnused")}</button>
+      <button class="btn ghost sm danger" disabled={!data?.items.length || app.busy > 0} onclick={deleteAll}>{t("items.delAll")}</button>
+      <span class="grow"></span>
+      <button class="btn sm" disabled={!data || app.busy > 0} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     <div class="scroll">
       {#if data}
-        {#each data.items as it (it.id)}
+        {#each listItems as it (it.id)}
           {@const where = equippedIn(data.slots, it.id!)}
+          {@const badge = usedInBadge(it.usedIn)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             class="row"
@@ -299,19 +411,27 @@
             role="option"
             aria-selected={selectedId === it.id}
             tabindex="0"
-            onclick={() => (selectedId = it.id!)}
+            draggable="true"
+            ondragstart={(e) => dragStart(e, it.id!)}
+            ondragend={() => (dragId = null)}
+            onclick={(e) => rowClick(e, it)}
+            ondblclick={() => openEdit({ id: it.id! })}
             onmouseenter={(e) => tipItem(it.id!, where[0]?.name, e)}
             onmouseleave={hideTip}
           >
             <span class="nm" style:color={rarityColor(it.rarity)}>{it.nameZh || it.name}</span>
-            {#if where.length}<span class="where">{where.map((s) => s.labelZh || s.label).join(", ")}</span>{/if}
+            {#if badge?.kind === "unused"}<span class="where unused">{t("items.unused")}</span>
+            {:else if badge?.kind === "elsewhere"}<span class="where">{t("items.usedIn", { where: badge.where })}</span>
+            {:else if where.length}<span class="where">{where.map((s) => s.labelZh || s.label).join(", ")}</span>{/if}
             {#if it.unsupported}<span class="bad small">!</span>{/if}
           </div>
         {/each}
       {/if}
     </div>
+    <p class="dim small hint">{t("items.listHint")}</p>
     {#if selected && data}
       <div class="actions">
+        <button class="btn sm primary" onclick={() => openEdit({ id: selected!.id! })}>{t("items.edit")}</button>
         <select class="select sm" value="" onchange={(e) => { const v = e.currentTarget.value; e.currentTarget.value = ""; if (v) void equipTo(selected!.id!, v); }}>
           <option value="">{t("items.equipTo")}</option>
           {#each slotsFor(data.slots, selected.id!) as s}
@@ -327,13 +447,16 @@
     {/if}
   </section>
 
-  <!-- 右:新增 / 資料庫 -->
+  <!-- 右:新增 / 編輯 / 資料庫 -->
   <section class="col right">
     <div class="head tabs">
       <button class="tab" class:on={rightTab === "paste"} onclick={() => (rightTab = "paste")}>{t("items.paste")}</button>
+      {#if edit}<button class="tab" class:on={rightTab === "edit"} onclick={() => (rightTab = "edit")}>{t("edit.title")}</button>{/if}
       <button class="tab" class:on={rightTab === "db"} onclick={() => (rightTab = "db")}>{t("items.db")}</button>
     </div>
-    {#if rightTab === "paste"}
+    {#if rightTab === "edit" && edit}
+      <ItemEditor item={edit} onchange={(s) => (edit = s)} onclose={editClosed} ondone={editDone} />
+    {:else if rightTab === "paste"}
       <div class="pane">
         <p class="dim">{t("items.pasteHint")}</p>
         <textarea class="input area" rows="14" bind:value={pasteText} onpaste={onPasteBox} placeholder="Rarity: RARE&#10;…"></textarea>
@@ -343,46 +466,11 @@
           <button class="btn primary" disabled={!pasteText.trim() || app.busy > 0} onclick={() => addPasted(true)}>{t("items.addEquip")}</button>
           <button class="btn" disabled={!pasteText.trim() || app.busy > 0} onclick={() => addPasted(false)}>{t("items.add")}</button>
           <button class="btn ghost" disabled={!pasteText.trim() || app.busy > 0} onclick={previewPasted} onmouseleave={() => (tip = null)}>{t("items.preview")}</button>
+          <button class="btn ghost" disabled={!pasteText.trim() || app.busy > 0} onclick={() => openEdit({ raw: pasteText.trim() })}>{t("items.edit")}</button>
         </div>
       </div>
     {:else}
-      <div class="pane db">
-        <div class="dbbar">
-          <span class="seg">
-            <button class:on={dbKind === "unique"} onclick={() => { dbKind = "unique"; dbType = ""; dbSearch(); }}>{t("items.dbUnique")}</button>
-            <button class:on={dbKind === "rare"} onclick={() => { dbKind = "rare"; dbType = ""; dbSearch(); }}>{t("items.dbRare")}</button>
-          </span>
-          <input class="input sm grow" placeholder={t("items.dbSearch")} bind:value={dbQuery} oninput={() => dbSearch()} />
-          {#if db}
-            <select class="select sm" bind:value={dbType} onchange={() => dbSearch()}>
-              <option value="">{t("items.dbAllTypes")}</option>
-              {#each db.types as ty}
-                <option value={ty.type}>{ty.typeZh || ty.type}</option>
-              {/each}
-            </select>
-          {/if}
-        </div>
-        <div class="scroll">
-          {#if db}
-            {#each db.items as it (it.name)}
-              <div class="row dbrow" onmouseenter={(e) => tipRaw(it.raw!, it.rarity, e)} onmouseleave={hideTip} role="listitem">
-                <span class="nm" style:color={rarityColor(it.rarity)}>{it.nameZh || it.name}</span>
-                <span class="dim small">{it.typeZh || it.type || ""}</span>
-                <button class="btn ghost sm" onclick={() => addFromDb(it)}>{t("items.dbAdd")}</button>
-              </div>
-            {/each}
-          {/if}
-        </div>
-        {#if db}
-          <div class="pager">
-            <span class="dim">{t("items.dbTotal", { n: db.total })}</span>
-            <span class="grow"></span>
-            <button class="btn ghost sm" disabled={dbPage <= 1} onclick={() => { dbPage--; dbSearch(false); }}>‹</button>
-            <span class="num dim">{dbPage} / {Math.max(1, Math.ceil(db.total / db.size))}</span>
-            <button class="btn ghost sm" disabled={dbPage * db.size >= db.total} onclick={() => { dbPage++; dbSearch(false); }}>›</button>
-          </div>
-        {/if}
-      </div>
+      <ItemDb onadd={addFromDb} onedit={(it) => openEdit({ raw: it.raw! })} ontip={tipRaw} onleave={hideTip} />
     {/if}
   </section>
 
@@ -405,13 +493,49 @@
       </div>
     </div>
   {/if}
+
+  {#if craft}
+    <div class="modal">
+      <div class="dialog craft">
+        <div class="label">{t("items.craftTitle")}</div>
+        <div class="crow">
+          <span class="k">{t("items.craftRarity")}</span>
+          <select class="select" bind:value={craft.rarity}>
+            {#each craft.opts.rarities as r, i}<option value={i + 1}>{r.labelZh || r.label}</option>{/each}
+          </select>
+        </div>
+        {#if craft.rarity >= 3}
+          <div class="crow">
+            <span class="k">{t("items.craftName")}</span>
+            <input class="input" bind:value={craft.title} />
+          </div>
+        {/if}
+        <div class="crow">
+          <span class="k">{t("items.craftType")}</span>
+          <select class="select" bind:value={craft.type} onchange={() => (craft!.base = 1)}>
+            {#each craft.opts.types as ty, i}<option value={i + 1}>{ty.typeZh || ty.type}</option>{/each}
+          </select>
+        </div>
+        <div class="crow">
+          <span class="k">{t("items.craftBase")}</span>
+          <select class="select" bind:value={craft.base}>
+            {#each craft.opts.types[craft.type - 1]?.bases ?? [] as b, i}<option value={i + 1}>{b.labelZh || b.label}</option>{/each}
+          </select>
+        </div>
+        <div class="btns right-align">
+          <button class="btn ghost" onclick={() => (craft = null)}>{t("tree.cancel")}</button>
+          <button class="btn primary" onclick={craftCreate}>{t("items.craftCreate")}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
   .page {
     height: 100%;
     display: grid;
-    grid-template-columns: 340px minmax(260px, 1fr) minmax(320px, 1.1fr);
+    grid-template-columns: 340px minmax(260px, 1fr) minmax(360px, 1.2fr);
     gap: 1px;
     background: var(--edge-0);
     min-height: 0;
@@ -433,6 +557,28 @@
   }
   .head .select {
     max-width: 150px;
+  }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--edge-0);
+    flex-wrap: wrap;
+  }
+  .tools .select {
+    max-width: 130px;
+  }
+  .grow {
+    flex: 1;
+  }
+  .chk {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--fs-2xs);
+    color: var(--ink-2);
+    white-space: nowrap;
   }
   .scroll {
     flex: 1;
@@ -486,6 +632,11 @@
     align-items: center;
     gap: 6px;
     margin: 2px 0;
+    border-radius: var(--radius-s);
+  }
+  .slot.drop {
+    outline: 1px dashed var(--gold);
+    outline-offset: 1px;
   }
   .slot.sub {
     grid-template-columns: 78px 1fr auto;
@@ -502,8 +653,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .select.sm,
-  .input.sm {
+  .select.sm {
     height: 24px;
     font-size: var(--fs-xs);
   }
@@ -540,8 +690,15 @@
     color: var(--ink-3);
     white-space: nowrap;
   }
+  .where.unused {
+    opacity: 0.7;
+  }
   .small {
     font-size: var(--fs-2xs);
+  }
+  .hint {
+    margin: 0;
+    padding: 2px 12px 6px;
   }
   .actions {
     display: flex;
@@ -564,8 +721,8 @@
     border: 0;
     border-bottom: 2px solid transparent;
     background: none;
-    height: 100%;
     padding: 0 10px;
+    height: 100%;
     color: var(--ink-2);
     font-size: var(--fs-sm);
   }
@@ -574,69 +731,38 @@
     border-bottom-color: var(--gold);
   }
   .pane {
-    flex: 1;
-    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
     padding: 10px 12px;
+    min-height: 0;
   }
   .pane p {
     margin: 0;
     font-size: var(--fs-xs);
   }
   .area {
-    flex: 1;
     height: auto;
-    min-height: 160px;
     padding: 8px 9px;
     font-family: var(--font-mono);
     font-size: var(--fs-xs);
-    resize: none;
+    resize: vertical;
     line-height: 1.4;
   }
   .btns {
     display: flex;
     gap: 6px;
+    flex-wrap: wrap;
   }
   .right-align {
     justify-content: flex-end;
   }
   .ok {
-    color: var(--ok);
+    color: var(--good);
     font-size: var(--fs-xs);
   }
   .bad {
     color: var(--bad);
-    font-size: var(--fs-xs);
-  }
-  .db {
-    padding: 0;
-    gap: 0;
-  }
-  .dbbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--edge-0);
-  }
-  .grow {
-    flex: 1;
-    min-width: 0;
-  }
-  .dbrow .btn {
-    opacity: 0;
-  }
-  .dbrow:hover .btn {
-    opacity: 1;
-  }
-  .pager {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border-top: 1px solid var(--edge-0);
     font-size: var(--fs-xs);
   }
   .modal {
@@ -648,20 +774,28 @@
     z-index: 30;
   }
   .dialog {
-    width: 380px;
-    padding: 16px 18px;
-    background: var(--surface-1);
+    width: 340px;
+    padding: 14px 16px;
+    background: var(--surface-2);
     border: 1px solid var(--edge-1);
-    border-left: 3px solid var(--gold);
     border-radius: var(--radius-m);
+    box-shadow: var(--shadow-float);
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
-  .chk {
-    display: inline-flex;
+  .dialog.craft {
+    width: 380px;
+  }
+  .crow {
+    display: grid;
+    grid-template-columns: 64px 1fr;
     align-items: center;
-    gap: 6px;
-    font-size: var(--fs-xs);
+    gap: 8px;
+  }
+  .k {
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
   }
 </style>
