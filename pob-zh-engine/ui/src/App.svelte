@@ -12,6 +12,7 @@
   import TreeView from "./views/TreeView.svelte";
   import ImportView from "./views/ImportView.svelte";
   import ItemsView from "./views/ItemsView.svelte";
+  import SkillsView from "./views/SkillsView.svelte";
   import type { ViewId } from "$lib/state.svelte";
 
   // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
@@ -64,6 +65,8 @@
           <ImportView />
         {:else if app.view === "items" && app.loaded}
           <ItemsView />
+        {:else if app.view === "skills" && app.loaded}
+          <SkillsView />
         {:else if app.view !== "builds" && app.loaded}
           <div class="center"><p class="dim">{t("app.viewSoon")}</p></div>
         {:else}

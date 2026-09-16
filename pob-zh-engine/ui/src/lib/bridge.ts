@@ -430,6 +430,78 @@ export interface ItemDbPage {
   types: { type: string; typeZh: string }[];
 }
 
+// --- skills ------------------------------------------------------------------
+
+export interface GemInstance {
+  index: number;
+  nameSpec: string;
+  name?: string;
+  nameZh?: string;
+  gemId?: string;
+  skillId?: string;
+  level: number;
+  quality: number;
+  enabled: boolean;
+  enableGlobal1: boolean;
+  enableGlobal2: boolean;
+  count?: number;
+  errMsg?: string;
+  color?: string;
+  support: boolean;
+  hasGlobalEffect: boolean;
+  naturalMaxLevel?: number;
+  reqLevel?: number;
+  matchesSocket: boolean;
+  fromItem: boolean;
+  fromNode: boolean;
+}
+export interface SocketGroup {
+  index: number;
+  label: string;
+  displayLabel?: string;
+  displayLabelZh?: string;
+  enabled: boolean;
+  includeInFullDPS: boolean;
+  slot?: string;
+  slotEnabled: boolean;
+  source: boolean;
+  sourceName?: string;
+  mainActiveSkill: number;
+  isMain: boolean;
+  gems: GemInstance[];
+  skills: { index: number; name?: string; nameZh?: string }[];
+}
+export interface SkillsList {
+  groups: SocketGroup[];
+  skillSets: { id: number; title?: string }[];
+  activeSkillSetId: number;
+  mainSocketGroup: number;
+  slotOptions: { name: string; label: string; labelZh: string }[];
+  defaultGemLevel?: string;
+  defaultGemQuality?: number;
+  rev: number;
+}
+export interface GemHit {
+  gemId: string;
+  name: string;
+  nameZh: string;
+  support: boolean;
+  color?: number;
+  tags: string[];
+  naturalMaxLevel?: number;
+  exceptional: boolean;
+}
+export interface GemPatch {
+  nameSpec?: string;
+  gemId?: string;
+  level?: number;
+  quality?: number;
+  enabled?: boolean;
+  enableGlobal1?: boolean;
+  enableGlobal2?: boolean;
+  count?: number;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
   treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
@@ -474,6 +546,22 @@ export const api = {
   deleteItemSet: (id: number) => bridge.call<Committed>("delete_item_set", { id }, 60000),
   setWeaponSwap: (on: boolean) => bridge.call<Committed>("set_weapon_swap", { on }, 60000),
   itemDb: (p: { kind: "unique" | "rare"; query?: string; type?: string; page?: number; size?: number }) => bridge.call<ItemDbPage>("item_db", p, 120000),
+  listSkills: () => bridge.call<SkillsList>("list_skills", {}, 60000),
+  addGroup: (p: { label?: string; slot?: string; gems?: { nameSpec: string; level?: number; quality?: number }[] }) => bridge.call<Committed & { index: number }>("add_group", p, 60000),
+  deleteGroup: (index: number) => bridge.call<Committed>("delete_group", { index }, 60000),
+  setGroup: (index: number, p: { label?: string; enabled?: boolean; includeInFullDPS?: boolean; slot?: string; mainActiveSkill?: number }) => bridge.call<Committed>("set_group", { index, ...p }, 60000),
+  moveGroup: (from: number, to: number) => bridge.call<Committed>("move_group", { from, to }, 60000),
+  addGem: (group: number, p: { nameSpec?: string; gemId?: string; level?: number; quality?: number; index?: number }) => bridge.call<Committed & { gem: GemInstance }>("add_gem", { group, ...p }, 60000),
+  setGem: (group: number, index: number, p: GemPatch) => bridge.call<Committed & { gem: GemInstance }>("set_gem", { group, index, ...p }, 60000),
+  deleteGem: (group: number, index: number) => bridge.call<Committed>("delete_gem", { group, index }, 60000),
+  moveGem: (group: number, from: number, to: number) => bridge.call<Committed>("move_gem", { group, from, to }, 60000),
+  gemTooltip: (group: number, index: number) => bridge.call<{ lines: TooltipLine[]; header?: string }>("gem_tooltip", { group, index }, 60000),
+  groupTooltip: (index: number) => bridge.call<{ lines: TooltipLine[] }>("group_tooltip", { index }, 60000),
+  gemSearch: (p: { query: string; limit?: number; supportOnly?: boolean; activeOnly?: boolean }) => bridge.call<{ gems: GemHit[] }>("gem_search", p, 60000),
+  setSkillSet: (id: number) => bridge.call<Committed>("set_skill_set", { id }, 60000),
+  newSkillSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_skill_set", { title, copyCurrent }, 60000),
+  renameSkillSet: (id: number, title: string) => bridge.call<Committed>("rename_skill_set", { id, title }, 60000),
+  deleteSkillSet: (id: number) => bridge.call<Committed>("delete_skill_set", { id }, 60000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
 };

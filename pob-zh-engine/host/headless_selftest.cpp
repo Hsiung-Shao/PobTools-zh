@@ -908,6 +908,59 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("item_tooltip{raw} previews a database entry without adding it", okDbTt && dbTt["lines"].size() >= 3);
 		}
 
+		// --- 2c: skills ----------------------------------------------------------
+		{
+			json sk;
+			bool okSk = okLoad && child.Call("list_skills", json::object(), sk, 60000);
+			int gemsTotal = 0, resolved = 0;
+			if (okSk) for (auto& g : sk["groups"]) for (auto& gm : g["gems"]) { gemsTotal++; if (!gm.contains("errMsg") && gm.contains("nameZh")) resolved++; }
+			check("list_skills: socket groups with POB-resolved gems, skill sets and the slot options",
+			      okSk && sk["groups"].size() >= 1 && gemsTotal >= 3 && resolved == gemsTotal && sk["skillSets"].size() >= 1 && sk["slotOptions"].size() == 13 &&
+			          sk.value("mainSocketGroup", 0) >= 1,
+			      okSk ? "groups=" + std::to_string(sk["groups"].size()) + " gems=" + std::to_string(gemsTotal) + " resolved=" + std::to_string(resolved)
+			           : sk.dump().substr(0, 300));
+			json gz, ge;
+			bool okGz = okLoad && child.Call("gem_search", json{{"query", u8"\u706b\u7403"}, {"limit", 5}}, gz, 60000);
+			bool okGe = okLoad && child.Call("gem_search", json{{"query", "spell echo"}, {"limit", 5}, {"supportOnly", true}}, ge, 60000);
+			check("gem_search finds gems by translated and English names",
+			      okGz && gz["gems"].size() >= 1 && gz["gems"][0].value("name", "") == "Fireball" && okGe && ge["gems"].size() >= 1 && ge["gems"][0].value("support", false),
+			      (okGz ? "zh=" + std::to_string(gz["gems"].size()) : gz.dump().substr(0, 100)) + (okGe ? " en=" + std::to_string(ge["gems"].size()) : ge.dump().substr(0, 100)));
+
+			// a new group with Fireball + Spell Echo becomes the main skill, DPS changes, delete restores
+			json st0;
+			child.Call("get_stats", json::object(), st0, 30000);
+			const int mainBefore = okSk ? sk.value("mainSocketGroup", 1) : 1;
+			json ag;
+			bool okAg = okSk && child.Call("add_group", json{{"label", "bridge test"}, {"gems", json::array({json{{"nameSpec", "Fireball"}}, json{{"nameSpec", "Spell Echo"}}})}}, ag, 60000);
+			const int newIdx = okAg ? ag.value("index", 0) : 0;
+			json sk2;
+			bool okSk2 = okAg && child.Call("list_skills", json::object(), sk2, 60000);
+			bool gemsOk = okSk2 && newIdx >= 1 && sk2["groups"].size() >= (size_t)newIdx && sk2["groups"][newIdx - 1]["gems"].size() == 2 &&
+			              sk2["groups"][newIdx - 1]["gems"][0].value("name", "") == "Fireball" && !sk2["groups"][newIdx - 1]["gems"][0].contains("errMsg") &&
+			              sk2["groups"][newIdx - 1]["gems"][1].value("support", false) && sk2["groups"][newIdx - 1]["skills"].size() == 1;
+			check("add_group resolves gem names through POB (FindSkillGem) and lists the active skill", gemsOk,
+			      okSk2 ? sk2["groups"][newIdx > 0 ? newIdx - 1 : 0].dump().substr(0, 300) : ag.dump().substr(0, 300));
+			json tt;
+			bool okTt = gemsOk && child.Call("gem_tooltip", json{{"group", newIdx}, {"index", 1}}, tt, 60000);
+			check("gem_tooltip: POB's gem tooltip for the new gem", okTt && tt["lines"].size() >= 3, okTt ? "" : tt.dump().substr(0, 200));
+			json sm, st1;
+			bool okSm = gemsOk && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", newIdx}}, sm, 60000) &&
+			            child.Call("get_stats", json::object(), st1, 30000);
+			check("making the new group the main skill changes TotalDPS",
+			      okSm && st0["stats"].value("TotalDPS", 0.0) != st1["stats"].value("TotalDPS", 0.0),
+			      okSm ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st1["stats"].value("TotalDPS", json()).dump() : sm.dump().substr(0, 200));
+			json sg, st2;
+			bool okSg = okSm && child.Call("set_gem", json{{"group", newIdx}, {"index", 1}, {"level", 1}}, sg, 60000) && child.Call("get_stats", json::object(), st2, 30000);
+			check("set_gem{level} recalculates", okSg && st1["stats"].value("TotalDPS", 0.0) != st2["stats"].value("TotalDPS", 0.0));
+			json dg, st3, sk3;
+			bool okDg = okSm && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", mainBefore}}, dg, 60000) &&
+			            child.Call("delete_group", json{{"index", newIdx}}, dg, 60000) && child.Call("get_stats", json::object(), st3, 30000) &&
+			            child.Call("list_skills", json::object(), sk3, 60000);
+			check("restoring the main group and deleting the new one restores the group count and TotalDPS",
+			      okDg && sk3["groups"].size() == sk["groups"].size() && st0["stats"].value("TotalDPS", 0.0) == st3["stats"].value("TotalDPS", 1.0),
+			      okDg ? "groups=" + std::to_string(sk3["groups"].size()) + " dps " + st3["stats"].value("TotalDPS", json()).dump() : dg.dump().substr(0, 200));
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);

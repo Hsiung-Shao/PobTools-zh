@@ -1774,6 +1774,377 @@ end)
 probe("main.uniqueDB/rareDB", function() return type(launch.main.uniqueDB) == "table" and type(launch.main.rareDB) == "table" end)
 
 -- ---------------------------------------------------------------------------
+-- Skills (socket groups, gems, skill sets)
+-- ---------------------------------------------------------------------------
+
+-- The socket-group slot dropdown POB offers (SkillsTab's groupSlotDropList is
+-- file-local; these are the item slots a group can be tied to).
+local group_slot_names = { "Weapon 1", "Weapon 2", "Weapon 1 Swap", "Weapon 2 Swap", "Helmet", "Body Armour", "Gloves", "Boots", "Amulet", "Ring 1", "Ring 2", "Ring 3", "Belt" }
+
+local function gem_summary(g, i)
+	local gd = g.gemData
+	local ge = g.grantedEffect or (gd and gd.grantedEffect)
+	local name = (ge and ge.name) or (gd and gd.name) or g.nameSpec
+	return {
+		index = i,
+		nameSpec = g.nameSpec,
+		name = name,
+		nameZh = tr(name),
+		gemId = g.gemId or (gd and gd.id) or nil,
+		skillId = g.skillId,
+		level = g.level,
+		quality = g.quality,
+		enabled = g.enabled and true or false,
+		enableGlobal1 = g.enableGlobal1 and true or false,
+		enableGlobal2 = g.enableGlobal2 and true or false,
+		count = g.count,
+		errMsg = g.errMsg,
+		color = g.color,
+		support = ge and ge.support and true or false,
+		hasGlobalEffect = ge and ge.hasGlobalEffect and true or false,
+		naturalMaxLevel = gd and gd.naturalMaxLevel or nil,
+		reqLevel = g.reqLevel,
+		matchesSocket = g.matchesSocket and true or false,
+		fromItem = g.fromItem and true or false,
+		fromNode = g.fromNode and true or false,
+	}
+end
+
+local function group_summary(g, i, b)
+	local gems = {}
+	for j, gem in ipairs(g.gemList or {}) do gems[j] = gem_summary(gem, j) end
+	local skills = {}
+	for j, as in ipairs(g.displaySkillList or {}) do
+		local ge = as.activeEffect and as.activeEffect.grantedEffect
+		skills[j] = { index = j, name = ge and ge.name, nameZh = ge and tr(ge.name) }
+	end
+	return {
+		index = i,
+		label = g.label or "",
+		displayLabel = g.displayLabel,
+		-- a user-typed label is shown verbatim; only POB's generated one is translated
+		displayLabelZh = (g.label and g.label ~= "") and g.displayLabel or tr(g.displayLabel),
+		enabled = g.enabled and true or false,
+		includeInFullDPS = g.includeInFullDPS and true or false,
+		slot = g.slot,
+		slotEnabled = g.slotEnabled ~= false,
+		source = g.source and true or false,
+		sourceName = g.sourceItem and g.sourceItem.name or (g.sourceNode and g.sourceNode.dn) or nil,
+		mainActiveSkill = g.mainActiveSkill or 1,
+		isMain = (b.mainSocketGroup == i),
+		gems = gems,
+		skills = skills,
+	}
+end
+
+function M.list_skills()
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local groups = {}
+	for i, g in ipairs(tab.socketGroupList) do groups[i] = group_summary(g, i, b) end
+	local sets = {}
+	for i, id in ipairs(tab.skillSetOrderList or {}) do
+		local set = tab.skillSets[id]
+		sets[i] = { id = id, title = set and set.title or nil }
+	end
+	local slots = {}
+	for i, n in ipairs(group_slot_names) do slots[i] = { name = n, label = n, labelZh = tr(n) } end
+	return {
+		groups = groups,
+		skillSets = sets,
+		activeSkillSetId = tab.activeSkillSetId,
+		mainSocketGroup = b.mainSocketGroup,
+		slotOptions = slots,
+		defaultGemLevel = tab.defaultGemLevel,
+		defaultGemQuality = tab.defaultGemQuality,
+		rev = b.outputRevision,
+	}
+end
+
+local function group_at(tab, i)
+	local g = tab.socketGroupList[tonumber(i or 0)]
+	if not g then error("no socket group " .. tostring(i), 0) end
+	return g
+end
+
+-- After any edit to a group: what the gem-slot callbacks do before the frame.
+local function skills_committed(b, g)
+	local tab = b.skillsTab
+	if g then tab:ProcessSocketGroup(g) end
+	tab:AddUndoState()
+	local r = commit(b)
+	tab:UpdateSocketGroups()
+	return r
+end
+
+-- add_group{label?, slot?, gems?=[{nameSpec,level?,quality?,enabled?,count?}]}:
+-- PasteSocketGroup's shape without the clipboard.
+function M.add_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = { label = p and p.label or "", enabled = true, gemList = {}, includeInFullDPS = false }
+	if p and p.slot and p.slot ~= "" then g.slot = p.slot end
+	for _, spec in ipairs(p and p.gems or {}) do
+		g.gemList[#g.gemList + 1] = {
+			nameSpec = spec.nameSpec or "", level = tonumber(spec.level) or 20, quality = tonumber(spec.quality) or 0,
+			enabled = spec.enabled ~= false, count = tonumber(spec.count) or 1, enableGlobal1 = true, enableGlobal2 = true, new = true,
+		}
+	end
+	table.insert(tab.socketGroupList, g)
+	if b.mainSocketGroup == nil or b.mainSocketGroup == 0 then b.mainSocketGroup = #tab.socketGroupList end
+	local r = skills_committed(b, g)
+	r.index = #tab.socketGroupList
+	return r
+end
+
+function M.delete_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local i = tonumber(p and p.index)
+	group_at(tab, i)
+	table.remove(tab.socketGroupList, i)
+	if b.mainSocketGroup and b.mainSocketGroup > #tab.socketGroupList then b.mainSocketGroup = math.max(1, #tab.socketGroupList) end
+	if tab.displayGroup and tab.SetDisplayGroup then pcall(tab.SetDisplayGroup, tab, tab.socketGroupList[1]) end
+	return skills_committed(b, nil)
+end
+
+-- set_group{index, label?, enabled?, includeInFullDPS?, slot? ("" = none), mainActiveSkill?}
+function M.set_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.index)
+	if p.label ~= nil then g.label = p.label end
+	if p.enabled ~= nil then g.enabled = p.enabled and true or false end
+	if p.includeInFullDPS ~= nil then g.includeInFullDPS = p.includeInFullDPS and true or false end
+	if p.slot ~= nil then g.slot = (p.slot ~= "" and p.slot) or nil end
+	if p.mainActiveSkill ~= nil then g.mainActiveSkill = tonumber(p.mainActiveSkill) or 1 end
+	return skills_committed(b, g)
+end
+
+function M.move_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local from, to = tonumber(p and p.from), tonumber(p and p.to)
+	group_at(tab, from)
+	if not to or to < 1 or to > #tab.socketGroupList then error("bad target index", 0) end
+	local g = table.remove(tab.socketGroupList, from)
+	table.insert(tab.socketGroupList, to, g)
+	if b.mainSocketGroup == from then b.mainSocketGroup = to
+	elseif from < b.mainSocketGroup and to >= b.mainSocketGroup then b.mainSocketGroup = b.mainSocketGroup - 1
+	elseif from > b.mainSocketGroup and to <= b.mainSocketGroup then b.mainSocketGroup = b.mainSocketGroup + 1 end
+	return skills_committed(b, nil)
+end
+
+-- add_gem{group, nameSpec|gemId, level?, quality?, enabled?, count?}
+function M.add_gem(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.group)
+	local gem = {
+		nameSpec = p.nameSpec or "", level = tonumber(p.level) or 20, quality = tonumber(p.quality) or tab.defaultGemQuality or 0,
+		enabled = p.enabled ~= false, count = tonumber(p.count) or 1, enableGlobal1 = true, enableGlobal2 = true, new = true,
+	}
+	if p.gemId and b.data.gems[p.gemId] then
+		gem.gemId = p.gemId
+		gem.nameSpec = b.data.gems[p.gemId].name
+	end
+	if gem.nameSpec == "" and not gem.gemId then error("nameSpec or gemId required", 0) end
+	local at = tonumber(p.index)
+	if at and at >= 1 and at <= #g.gemList + 1 then table.insert(g.gemList, at, gem) else table.insert(g.gemList, gem) end
+	-- POB picks the natural max level for a fresh gem (CreateGemSlot's flow).
+	tab:ProcessSocketGroup(g)
+	if gem.gemData and not p.level then
+		gem.level = tab:ProcessGemLevel(gem.gemData)
+		tab:ProcessSocketGroup(g)
+	end
+	local r = skills_committed(b, g)
+	r.gem = gem_summary(gem, #g.gemList)
+	return r
+end
+
+-- set_gem{group, index, nameSpec?|gemId?, level?, quality?, enabled?, enableGlobal1?, enableGlobal2?, count?}
+function M.set_gem(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.group)
+	local gem = g.gemList[tonumber(p.index or 0)]
+	if not gem then error("no gem " .. tostring(p.index), 0) end
+	if p.gemId ~= nil then
+		if p.gemId == "" or p.gemId == false then
+			gem.gemId, gem.skillId, gem.gemData = nil, nil, nil
+		else
+			if not b.data.gems[p.gemId] then error("unknown gemId " .. tostring(p.gemId), 0) end
+			gem.gemId = p.gemId
+			gem.skillId = nil
+			gem.nameSpec = b.data.gems[p.gemId].name
+		end
+	elseif p.nameSpec ~= nil then
+		gem.gemId, gem.skillId, gem.gemData = nil, nil, nil
+		gem.nameSpec = p.nameSpec
+	end
+	if p.level ~= nil then gem.level = tonumber(p.level) or gem.level end
+	if p.quality ~= nil then gem.quality = tonumber(p.quality) or gem.quality end
+	if p.enabled ~= nil then gem.enabled = p.enabled and true or false end
+	if p.enableGlobal1 ~= nil then gem.enableGlobal1 = p.enableGlobal1 and true or false end
+	if p.enableGlobal2 ~= nil then gem.enableGlobal2 = p.enableGlobal2 and true or false end
+	if p.count ~= nil then gem.count = tonumber(p.count) or gem.count end
+	local r = skills_committed(b, g)
+	r.gem = gem_summary(gem, tonumber(p.index))
+	return r
+end
+
+function M.delete_gem(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.group)
+	local i = tonumber(p.index or 0)
+	if not g.gemList[i] then error("no gem " .. tostring(p.index), 0) end
+	table.remove(g.gemList, i)
+	return skills_committed(b, g)
+end
+
+function M.move_gem(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.group)
+	local from, to = tonumber(p.from), tonumber(p.to)
+	if not g.gemList[from or 0] or not to or to < 1 or to > #g.gemList then error("bad gem index", 0) end
+	local gem = table.remove(g.gemList, from)
+	table.insert(g.gemList, to, gem)
+	return skills_committed(b, g)
+end
+
+-- gem_tooltip{group, index}: POB's own gem tooltip (Classes/GemTooltip).
+function M.gem_tooltip(p)
+	local b = ensure_build()
+	local g = group_at(b.skillsTab, p and p.group)
+	local gem = g.gemList[tonumber(p.index or 0)]
+	if not gem then error("no gem " .. tostring(p.index), 0) end
+	local gt = require("Classes.GemTooltip")
+	local tt = new("Tooltip"):Tooltip()
+	without_wrap(function() gt.AddGemTooltip(tt, b, gem) end)
+	return { lines = tooltip_lines(tt), header = tt.tooltipHeader }
+end
+
+function M.group_tooltip(p)
+	local b = ensure_build()
+	local g = group_at(b.skillsTab, p and p.index)
+	local tt = new("Tooltip"):Tooltip()
+	without_wrap(function() b.skillsTab:AddSocketGroupTooltip(tt, g) end)
+	return { lines = tooltip_lines(tt) }
+end
+
+-- gem_search{query, limit?, supportOnly?, activeOnly?}: the gems POB's own
+-- dropdown would list (same filters as GemSelectControl:PopulateGemList with
+-- "ALL" support types), matched on English and translated names.
+local gem_index
+local function gem_list(b)
+	if gem_index and gem_index.data == b.data then return gem_index.list end
+	local list = {}
+	for gemId, gd in pairs(b.data.gems) do
+		local ge = gd.grantedEffect
+		if ge and not ge.hideFromGemList then
+			local zh = tr(gd.name)
+			local tags = {}
+			for tg, on in pairs(gd.tags or {}) do if on then tags[#tags + 1] = tg end end
+			table.sort(tags)
+			list[#list + 1] = {
+				gemId = gemId, name = gd.name, nameZh = zh, key = gd.name:lower(), keyZh = (zh or ""):lower(),
+				support = ge.support and true or false, legacy = ge.legacy and true or false,
+				exceptional = (gd.tagString or ""):match("Exceptional") and true or false,
+				color = ge.color, tags = tags, naturalMaxLevel = gd.naturalMaxLevel,
+			}
+		end
+	end
+	table.sort(list, function(a, c) return a.key < c.key end)
+	gem_index = { data = b.data, list = list }
+	return list
+end
+
+function M.gem_search(p)
+	local b = ensure_build()
+	local q = p and type(p.query) == "string" and p.query:lower() or ""
+	local limit = math.min(100, tonumber(p and p.limit) or 30)
+	local showLegacy = b.skillsTab.showLegacyGems
+	local out = {}
+	for _, e in ipairs(gem_list(b)) do
+		if (showLegacy or not e.legacy)
+			and (not p or not p.supportOnly or e.support) and (not p or not p.activeOnly or not e.support)
+			and (q == "" or e.key:find(q, 1, true) or e.keyZh:find(q, 1, true)) then
+			out[#out + 1] = { gemId = e.gemId, name = e.name, nameZh = e.nameZh, support = e.support, color = e.color, tags = e.tags, naturalMaxLevel = e.naturalMaxLevel, exceptional = e.exceptional }
+			if #out >= limit then break end
+		end
+	end
+	return { gems = out }
+end
+
+function M.set_skill_set(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.skillSets[id] then error("no skill set " .. tostring(p and p.id), 0) end
+	tab:SetActiveSkillSet(id)
+	tab:AddUndoState()
+	return commit(b)
+end
+
+function M.new_skill_set(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local set = tab:NewSkillSet()
+	set.title = p and p.title or nil
+	if p and p.copyCurrent then
+		set.socketGroupList = copyTable(tab.socketGroupList)
+	end
+	table.insert(tab.skillSetOrderList, set.id)
+	tab:SetActiveSkillSet(set.id)
+	tab:AddUndoState()
+	local r = commit(b)
+	r.id = set.id
+	return r
+end
+
+function M.rename_skill_set(p)
+	local b = ensure_build()
+	local set = b.skillsTab.skillSets[tonumber(p and p.id or 0)]
+	if not set then error("no skill set " .. tostring(p and p.id), 0) end
+	set.title = p.title
+	return commit(b)
+end
+
+function M.delete_skill_set(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local id = tonumber(p and p.id)
+	if not id or not tab.skillSets[id] then error("no skill set " .. tostring(p and p.id), 0) end
+	if #tab.skillSetOrderList <= 1 then error("cannot delete the last skill set", 0) end
+	for i, v in ipairs(tab.skillSetOrderList) do
+		if v == id then table.remove(tab.skillSetOrderList, i) break end
+	end
+	if tab.activeSkillSetId == id then tab:SetActiveSkillSet(tab.skillSetOrderList[1]) end
+	tab.skillSets[id] = nil
+	tab:AddUndoState()
+	return commit(b)
+end
+
+probe("classes.SkillsTab.ProcessSocketGroup/UpdateSocketGroups/FindSkillGem/ProcessGemLevel", function()
+	local c = class_of("SkillsTab")
+	return type(c) == "table" and type(c.ProcessSocketGroup) == "function" and type(c.UpdateSocketGroups) == "function"
+		and type(c.FindSkillGem) == "function" and type(c.ProcessGemLevel) == "function" and type(c.AddSocketGroupTooltip) == "function"
+end)
+probe("classes.SkillsTab skill sets (NewSkillSet/SetActiveSkillSet)", function()
+	local c = class_of("SkillsTab")
+	return type(c) == "table" and type(c.NewSkillSet) == "function" and type(c.SetActiveSkillSet) == "function"
+end)
+probe("Classes.GemTooltip.AddGemTooltip", function()
+	local ok, gt = pcall(require, "Classes.GemTooltip")
+	return ok and type(gt) == "table" and type(gt.AddGemTooltip) == "function"
+end)
+probe("data.gems / gemForSkill", function()
+	return type(data) == "table" and type(data.gems) == "table" and type(data.gemForSkill) == "table"
+end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 
