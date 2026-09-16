@@ -468,6 +468,404 @@ function M.apply_update(p)
 end
 
 -- ---------------------------------------------------------------------------
+-- Passive tree
+-- ---------------------------------------------------------------------------
+
+local function as_object(t)
+	return setmetatable(t, { __object = true })
+end
+
+local function file_exists(path)
+	local f = io.open(path, "rb")
+	if f then f:close() return true end
+	return false
+end
+
+local function current_tree_version(p)
+	local v = p and p.version
+	if type(v) ~= "string" or v == "" then
+		local b = build()
+		v = b and b.spec and b.spec.treeVersion or latestTreeVersion
+	end
+	return v
+end
+
+-- The tree as POB has already laid it out: PassiveTree:PassiveTree() computed
+-- every node's x/y from group + orbit (ProcessNode), built the connector list
+-- (BuildConnector: straight line, or an arc around the group centre) and
+-- decided which frame art each node type uses (nodeOverlay). All of that is
+-- read here and handed over; nothing about the tree's geometry is recomputed
+-- on the page. Frame names follow PassiveTreeView.lua's rule per state.
+local FRAME_STATES = { "alloc", "path", "unalloc" }
+local CLASS_ART = { -- PassiveTreeView.lua: the class illustration, fixed per class id
+	[1] = { name = "BackgroundStr", x = -2750, y = 1600 },
+	[2] = { name = "BackgroundDex", x = 2550, y = 1600 },
+	[3] = { name = "BackgroundInt", x = -250, y = -2200 },
+	[4] = { name = "BackgroundStrDex", x = -150, y = 2350 },
+	[5] = { name = "BackgroundStrInt", x = -2100, y = -1500 },
+	[6] = { name = "BackgroundDexInt", x = 2350, y = -1950 },
+}
+
+local function node_frames(tree, node)
+	local ov = node.overlay
+	if not ov then return nil end
+	local frames = {}
+	local prefix = ""
+	if node.ascendancyName then
+		prefix = node.bloodlineOverlayPrefix or (tree.bloodlineSpritePrefixes and tree.bloodlineSpritePrefixes[node.ascendancyName]) or ""
+	end
+	for _, state in ipairs(FRAME_STATES) do
+		local name
+		if node.type == "Socket" then
+			name = ov[state .. (node.expansionJewel and "Alt" or "")]
+			if name and node.dn == "Charm Socket" then name = "Azmeri" .. name end
+		else
+			name = ov[state .. (node.ascendancyName and "Ascend" or "") .. (node.isBlighted and "Blighted" or "")]
+			if name and prefix ~= "" then name = prefix .. name end
+		end
+		frames[state] = name
+	end
+	return as_object(frames)
+end
+
+local treeCache = {}
+function M.tree_data(p)
+	local v = current_tree_version(p)
+	if treeCache[v] then return treeCache[v] end
+	local tree = main():LoadTree(v)
+	if not tree then error("no tree version " .. tostring(v), 0) end
+
+	-- groups: id, centre, which orbits are in use (ring art), ascendancy plate
+	local groups, groupIndex = {}, {}
+	for gid, g in pairs(tree.groups) do
+		groupIndex[g] = gid
+		local oo = {}
+		for o in pairs(g.oo or {}) do oo[#oo + 1] = o end
+		table.sort(oo)
+		groups[#groups + 1] = {
+			id = gid, x = g.x, y = g.y, oo = oo,
+			isProxy = g.isProxy and true or false,
+			asc = g.ascendancyName, ascStart = g.isAscendancyStart and true or false,
+		}
+	end
+
+	local nodes, count = {}, 0
+	for id, node in pairs(tree.nodes) do
+		if type(id) == "number" and type(node.x) == "number" then
+			count = count + 1
+			local stats, statsZh = {}, {}
+			for i, s in ipairs(node.sd or {}) do stats[i] = s; statsZh[i] = tr(s) end
+			local linked = {}
+			for i, other in ipairs(node.linkedId or {}) do linked[i] = other end
+			local effects
+			if node.masteryEffects then
+				effects = {}
+				for i, e in ipairs(node.masteryEffects) do
+					local es, esZh = {}, {}
+					for j, s in ipairs(e.sd or e.stats or {}) do es[j] = s; esZh[j] = tr(s) end
+					effects[i] = { effect = e.effect, stats = es, statsZh = esZh }
+				end
+			end
+			nodes[tostring(id)] = {
+				id = id, name = node.dn, nameZh = tr(node.dn), type = node.type,
+				stats = stats, statsZh = statsZh,
+				x = node.x, y = node.y, size = node.size or 0,
+				group = node.group and groupIndex[node.group] or nil,
+				orbit = node.o,
+				asc = node.ascendancyName,
+				classStartIndex = node.classStartIndex,
+				startArt = node.startArt,
+				icon = node.icon, activeIcon = node.activeIcon, inactiveIcon = node.inactiveIcon,
+				effectImage = node.activeEffectImage,
+				frames = node_frames(tree, node),
+				blighted = node.isBlighted and true or false,
+				expansion = node.expansionJewel and true or false,
+				proxy = node.isProxy and true or false,
+				linked = linked,
+				masteryEffects = effects,
+				flavour = node.flavourText,
+			}
+		end
+	end
+
+	-- connectors: POB built one entry per edge (two for arcs it mirrored);
+	-- the page only needs which pair, and whether it curves around a group.
+	local connectors, seen = {}, {}
+	for _, c in ipairs(tree.connectors or {}) do
+		local a, b = c.nodeId1, c.nodeId2
+		local key = (a < b) and (a .. ":" .. b) or (b .. ":" .. a)
+		if not seen[key] then
+			seen[key] = true
+			local orbit = c.type and tonumber(c.type:match("^Orbit(%d+)$"))
+			connectors[#connectors + 1] = { a = a, b = b, orbit = orbit, asc = c.ascendancyName }
+		end
+	end
+
+	local classes = {}
+	for cid, class in pairs(tree.classes) do
+		if type(cid) == "number" and type(class) == "table" then
+			local ascs = {}
+			for _, a in ipairs(class.ascendancies or {}) do
+				ascs[#ascs + 1] = { id = a.id, name = a.name, nameZh = tr(a.name) }
+			end
+			classes[#classes + 1] = {
+				id = cid, name = class.name, nameZh = tr(class.name),
+				startNodeId = class.startNodeId, ascendancies = ascs,
+				art = CLASS_ART[cid],
+			}
+		end
+	end
+	table.sort(classes, function(x, y) return x.id < y.id end)
+	local alternate = {}
+	for _, a in ipairs(tree.alternate_ascendancies or {}) do
+		alternate[#alternate + 1] = { id = a.id, name = a.name, nameZh = tr(a.name) }
+	end
+
+	local out = {
+		treeVersion = v,
+		size = tree.size,
+		bounds = { minX = tree.min_x, minY = tree.min_y, maxX = tree.max_x, maxY = tree.max_y },
+		orbitRadii = tree.orbitRadii,
+		nodes = as_object(nodes),
+		nodeCount = count,
+		groups = groups,
+		connectors = connectors,
+		classes = classes,
+		alternateAscendancies = alternate,
+	}
+	treeCache[v] = out
+	return out
+end
+
+-- Every named sprite and standalone image PassiveTree uses, as pixel rects
+-- into the files under TreeData (served to the page by the host). Sheet
+-- rects come from sprites.lua's own coords, not from the spriteMap's UVs:
+-- headless ImageSize() cannot read .webp, so those UVs would be wrong.
+local function sheet_file(v, filename)
+	local base = filename:gsub("%?%x+$", ""):gsub(".*/", "")
+	if file_exists("TreeData/" .. v .. "/" .. base) then return "TreeData/" .. v .. "/" .. base end
+	if file_exists("TreeData/" .. base) then return "TreeData/" .. base end
+	return nil
+end
+
+function M.tree_assets(p)
+	local v = current_tree_version(p)
+	local tree = main():LoadTree(v)
+	if not tree then error("no tree version " .. tostring(v), 0) end
+	local assets, disabled, sheets = {}, {}, {}
+	local missing = {}
+	for spriteType, data in pairs(tree.skillSprites or {}) do
+		local file = data.filename and sheet_file(v, data.filename)
+		if not file then
+			missing[#missing + 1] = tostring(spriteType)
+		else
+			sheets[file] = { w = data.w, h = data.h }
+			local bucket = (spriteType:match("Inactive$") or spriteType:match("Disabled$")) and disabled or assets
+			for name, c in pairs(data.coords or {}) do
+				bucket[name] = { file = file, x = c.x, y = c.y, w = c.w, h = c.h, ow = c.w, oh = c.h }
+			end
+		end
+	end
+	-- Standalone PNGs (frames, orbits, class plates...). Only the ones that are
+	-- real files: a few names PassiveTree fills from a sheet already have a rect.
+	for name, data in pairs(tree.assets or {}) do
+		if not assets[name] and type(data) == "table" and not data[1] then
+			local file
+			if file_exists("TreeData/" .. name .. ".png") then file = "TreeData/" .. name .. ".png"
+			elseif file_exists("TreeData/" .. v .. "/" .. name .. ".png") then file = "TreeData/" .. v .. "/" .. name .. ".png" end
+			if file then
+				local w, h = data.width or 0, data.height or 0
+				assets[name] = { file = file, x = 0, y = 0, w = w, h = h, ow = w, oh = h }
+				sheets[file] = { w = w, h = h }
+			end
+		end
+	end
+	return { version = v, assets = as_object(assets), disabled = as_object(disabled),
+	         sheets = as_object(sheets), missingSheets = missing }
+end
+
+local function node_type_name(node)
+	return node and node.type or nil
+end
+
+-- What the build did to the tree: allocations, per-node overrides (mastery
+-- choice, tattoos, timeless jewels), cluster subgraphs, points.
+function M.get_tree_state()
+	local b = ensure_build()
+	local spec = b.spec
+	if not spec then error("no spec", 0) end
+	local tree = spec.tree
+	local alloc = {}
+	for id, node in pairs(spec.nodes) do
+		if node.alloc then alloc[#alloc + 1] = id end
+	end
+	table.sort(alloc)
+	local overrides = {}
+	for id, node in pairs(spec.nodes) do
+		local tnode = tree.nodes[id]
+		local why = nil
+		if node.alloc and node.type == "Mastery" and spec.masterySelections and spec.masterySelections[id] then
+			why = "mastery"
+		elseif node.conqueredBy then
+			why = "conquered"
+		elseif spec.hashOverrides and spec.hashOverrides[id] then
+			why = "tattoo"
+		elseif tnode and node.dn ~= tnode.dn then
+			why = "renamed"
+		end
+		if why then
+			local stats = {}
+			for i, s in ipairs(node.sd or {}) do stats[i] = s end
+			local statsZh = {}
+			for i, s in ipairs(stats) do statsZh[i] = tr(s) end
+			overrides[tostring(id)] = {
+				why = why,
+				name = node.dn,
+				nameZh = tr(node.dn),
+				icon = (node.type == "Mastery" and node.activeIcon) or node.icon,
+				effect = node.activeEffectImage,
+				stats = stats,
+				statsZh = statsZh,
+			}
+		end
+	end
+	-- Cluster jewel subgraphs: POB positions these itself (ProcessNode).
+	local dynamicNodes, dynamicGroups = {}, {}
+	for _, sg in pairs(spec.subGraphs or {}) do
+		if sg.group then
+			local orbits = {}
+			for o in pairs(sg.group.oo or {}) do orbits[#orbits + 1] = o end
+			table.sort(orbits)
+			dynamicGroups[#dynamicGroups + 1] = { x = sg.group.x, y = sg.group.y, orbits = orbits }
+		end
+		for id, node in pairs(sg.nodes or {}) do
+			if type(node.x) == "number" then
+				local links = {}
+				for _, other in ipairs(node.linked or {}) do links[#links + 1] = other.id end
+				local stats = {}
+				for i, s in ipairs(node.sd or {}) do stats[i] = s end
+				dynamicNodes[#dynamicNodes + 1] = {
+					id = id, name = node.dn, nameZh = tr(node.dn), type = node.type,
+					stats = stats, x = node.x, y = node.y, icon = node.icon, links = links,
+					expansion = node.expansionJewel ~= nil, allocated = node.alloc and true or false,
+				}
+			end
+		end
+	end
+	local sockets = {}
+	if b.itemsTab and b.itemsTab.GetSocketAndJewelForNodeID then
+		for id, node in pairs(spec.nodes) do
+			if node.type == "Socket" then
+				local ok, socket, jewel = pcall(b.itemsTab.GetSocketAndJewelForNodeID, b.itemsTab, id)
+				if ok and jewel then
+					sockets[#sockets + 1] = {
+						nodeId = id, itemId = socket and socket.selItemId, name = jewel.name,
+						title = jewel.title, baseName = jewel.baseName,
+					}
+				end
+			end
+		end
+	end
+	local info = M.get_build_info()
+	return {
+		treeVersion = spec.treeVersion,
+		classId = spec.curClassId, className = spec.curClassName,
+		ascendClassId = spec.curAscendClassId, ascendClassName = spec.curAscendClassName,
+		allocatedNodes = alloc,
+		allocCount = #alloc,
+		overrides = as_object(overrides),
+		dynamicNodes = dynamicNodes,
+		dynamicGroups = dynamicGroups,
+		sockets = sockets,
+		points = info.points,
+		rev = b.outputRevision,
+	}
+end
+
+-- What allocating (or removing) this node would touch: POB's own path and
+-- dependency lists, recomputed by BuildAllDependsAndPaths after every change.
+function M.node_hover(p)
+	local b = ensure_build()
+	local id = p and tonumber(p.id)
+	local node = id and b.spec.nodes[id]
+	if not node then error("no node " .. tostring(id), 0) end
+	local path, depends = {}, {}
+	if node.alloc then
+		for _, n in ipairs(node.depends or {}) do depends[#depends + 1] = n.id end
+	elseif node.path then
+		for _, n in ipairs(node.path) do path[#path + 1] = n.id end
+	end
+	local cost = node.alloc and 0 or (node.pathDist or 1000)
+	if cost >= 1000 then cost = nil end
+	return { id = id, allocated = node.alloc and true or false, path = path, depends = depends, cost = cost }
+end
+
+-- The tooltip POB draws for a node, as lines. Wraps the viewer's own
+-- AddNodeTooltip (returnEarly: no stat-difference pass, which costs two full
+-- calculations per hover). AddNodeTooltip sets maxWidth=800 and the tooltip
+-- then wraps lines through main:WrapString, which needs real font metrics we
+-- do not have headless -- swap it for identity during the call and let the
+-- page wrap.
+function M.node_info(p)
+	local b = ensure_build()
+	local id = p and tonumber(p.id)
+	local node = id and b.spec.nodes[id]
+	if not node then error("no node " .. tostring(id), 0) end
+	local viewer = b.treeTab and b.treeTab.viewer
+	if not viewer or not viewer.AddNodeTooltip then error("tree viewer not available", 0) end
+	local tt = new("Tooltip"):Tooltip()
+	local savedWrap, savedDiff = main().WrapString, viewer.showStatDifferences
+	main().WrapString = function(_, s) return { s } end
+	viewer.showStatDifferences = false
+	local ok, err = pcall(viewer.AddNodeTooltip, viewer, tt, node, b, true)
+	main().WrapString = savedWrap
+	viewer.showStatDifferences = savedDiff
+	if not ok then error(err, 0) end
+	local lines = {}
+	for i, l in ipairs(tt.lines or {}) do
+		if l.text ~= nil then
+			lines[i] = { size = l.size, text = tr(l.text), raw = l.text, center = l.center and true or false, font = l.font }
+		else
+			lines[i] = { sep = l.size or 0 }
+		end
+	end
+	local effects = nil
+	if node.type == "Mastery" and node.masteryEffects then
+		effects = {}
+		for i, e in ipairs(node.masteryEffects) do
+			local stats = {}
+			for j, s in ipairs(e.sd or {}) do stats[j] = tr(s) end
+			effects[i] = { effect = e.effect, stats = stats }
+		end
+	end
+	local stats, statsZh = {}, {}
+	for i, s in ipairs(node.sd or {}) do stats[i] = s; statsZh[i] = tr(s) end
+	return {
+		id = id, name = node.dn, nameZh = tr(node.dn), type = node_type_name(node),
+		allocated = node.alloc and true or false,
+		header = tt.tooltipHeader or nil,
+		lines = lines,
+		stats = stats, statsZh = statsZh,
+		masteryEffects = effects,
+		masterySelected = b.spec.masterySelections and b.spec.masterySelections[id] or nil,
+		pathDist = node.pathDist,
+	}
+end
+
+probe("main.LoadTree", function() return type(launch.main.LoadTree) == "function" end)
+probe("classes.PassiveTree.ProcessNode", function() local c = class_of("PassiveTree"); return type(c) == "table" and type(c.ProcessNode) == "function" end)
+probe("classes.PassiveTreeView.AddNodeTooltip(4 params)", function()
+	local c = class_of("PassiveTreeView")
+	return type(c) == "table" and type(c.AddNodeTooltip) == "function" and nparams(c.AddNodeTooltip) == 5
+end)
+probe("classes.UndoHandler.AddUndoState/Undo/Redo", function()
+	local c = class_of("UndoHandler")
+	return type(c) == "table" and type(c.AddUndoState) == "function" and type(c.Undo) == "function" and type(c.Redo) == "function"
+end)
+probe("classes.Tooltip.AddLine", function() local c = class_of("Tooltip"); return type(c) == "table" and type(c.AddLine) == "function" end)
+probe("latestTreeVersion", function() return type(latestTreeVersion) == "string" end)
+
+-- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------
 

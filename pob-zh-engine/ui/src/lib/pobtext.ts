@@ -1,88 +1,88 @@
-/**
- * Path of Building colours strings with inline escapes: `^7` (palette index)
- * and `^xRRGGBB` (literal). These helpers split such strings into spans.
- *
- * Borrowed verbatim from pob-redux (https://github.com/juddisjudd/pob-redux),
- * MIT License, (c) 2026 Judd. See NOTICE.md.
- */
+// Path of Building colours its strings inline: `^N` picks one of ten palette
+// slots, `^xRRGGBB` sets a literal colour, and either stays in force until
+// the next code. These two helpers turn such a string into runs for the DOM.
+//
+// Palette slots follow POB's colorCodes order; the literal colours POB uses
+// for the game's own semantics (life red, mana blue, unique orange...) map to
+// our tokens so the page can restyle them, anything else passes through.
 
-export interface Span {
+export interface TextRun {
   text: string;
   color: string | null;
 }
 
-const PALETTE: Record<string, string> = {
-  "0": "var(--fg-4)",
-  "1": "var(--bad)",
-  "2": "var(--ok)",
-  "3": "var(--c-mana)",
-  "4": "var(--c-rare)",
-  "5": "var(--c-chaos)",
-  "6": "var(--c-es)",
-  "7": "var(--fg-0)",
-  "8": "var(--fg-2)",
-  "9": "var(--fg-3)",
-};
+const SLOT: readonly string[] = [
+  "var(--fg-4)", // ^0 black-ish
+  "var(--bad)", // ^1 red
+  "var(--ok)", // ^2 green
+  "var(--c-mana)", // ^3 blue
+  "var(--c-rare)", // ^4 yellow
+  "var(--c-chaos)", // ^5 purple
+  "var(--c-es)", // ^6 cyan
+  "var(--fg-0)", // ^7 white
+  "var(--fg-2)", // ^8 grey
+  "var(--fg-3)", // ^9 dark grey
+];
 
-// PoB's named colour codes, mapped onto the UI palette where they carry meaning.
-const HEX_ALIASES: Record<string, string> = {
-  "ff7070": "var(--c-life)",
+const KNOWN: Record<string, string> = {
+  ff7070: "var(--c-life)",
+  fdb8b8: "var(--c-life)",
   "7070ff": "var(--c-mana)",
   "88ffff": "var(--c-es)",
-  "b97123": "var(--c-unique)",
-  "ffff77": "var(--c-rare)",
+  b97123: "var(--c-unique)",
+  ffff77: "var(--c-rare)",
   "8888ff": "var(--c-magic)",
-  "c8c8c8": "var(--c-normal)",
+  c8c8c8: "var(--c-normal)",
   ffffff: "var(--fg-0)",
   "1aa29b": "var(--c-gem)",
   "74cabf": "var(--c-gem)",
-  "f5d076": "var(--c-spirit)",
-  "aa9e82": "var(--c-currency)",
+  aa9e82: "var(--c-currency)",
   "808080": "var(--fg-2)",
-  "e05030": "var(--bad)",
-  "ff9922": "var(--warn)",
+  e05030: "var(--bad)",
+  ff9922: "var(--warn)",
   "33ff77": "var(--ok)",
-  "fdb8b8": "var(--c-life)",
   "70ff70": "var(--ok)",
 };
 
-export function parsePobText(s: string | null | undefined): Span[] {
+const HEX = /^[0-9a-fA-F]{6}$/;
+
+export function pobRuns(s: string | null | undefined): TextRun[] {
   if (!s) return [];
-  const spans: Span[] = [];
+  const runs: TextRun[] = [];
   let color: string | null = null;
-  let buf = "";
+  let start = 0;
   let i = 0;
-  const flush = () => {
-    if (buf) spans.push({ text: buf, color });
-    buf = "";
+  const cut = (end: number) => {
+    if (end > start) runs.push({ text: s.slice(start, end), color });
   };
   while (i < s.length) {
-    const ch = s[i];
-    if (ch === "^" && i + 1 < s.length) {
-      const nx = s[i + 1];
-      if (nx === "x" && i + 7 < s.length && /^[0-9a-fA-F]{6}$/.test(s.slice(i + 2, i + 8))) {
-        flush();
+    if (s.charCodeAt(i) === 94 /* ^ */ && i + 1 < s.length) {
+      const next = s[i + 1];
+      if ((next === "x" || next === "X") && i + 8 <= s.length && HEX.test(s.slice(i + 2, i + 8))) {
+        cut(i);
         const hex = s.slice(i + 2, i + 8).toLowerCase();
-        color = HEX_ALIASES[hex] ?? `color-mix(in srgb, #${hex} var(--pob-mix, 100%), var(--fg-0))`;
+        color = KNOWN[hex] ?? `#${hex}`;
         i += 8;
+        start = i;
         continue;
       }
-      if (/[0-9]/.test(nx)) {
-        flush();
-        color = PALETTE[nx] ?? null;
+      if (next >= "0" && next <= "9") {
+        cut(i);
+        color = SLOT[next.charCodeAt(0) - 48] ?? null;
         i += 2;
+        start = i;
         continue;
       }
     }
-    buf += ch;
     i++;
   }
-  flush();
-  return spans;
+  cut(s.length);
+  return runs;
 }
 
-export function stripPobText(s: string | null | undefined): string {
-  return parsePobText(s)
-    .map((p) => p.text)
+/** The text with every colour code removed. */
+export function pobPlain(s: string | null | undefined): string {
+  return pobRuns(s)
+    .map((r) => r.text)
     .join("");
 }

@@ -70,5 +70,6 @@
   "tree.kind.socket": "珠寶插槽",
   "tree.kind.mastery": "專精",
   "tree.kind.classStart": "職業起點",
-  "tree.kind.ascStart": "升華起點"
+  "tree.kind.ascStart": "升華起點",
+  "tree.artMissing": "部分天賦樹圖檔找不到,先以線框顯示"
 }

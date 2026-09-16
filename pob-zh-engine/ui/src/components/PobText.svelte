@@ -1,9 +1,10 @@
-<!-- Borrowed from pob-redux (MIT, (c) 2026 Judd). See NOTICE.md. -->
 <script lang="ts">
-  import { parsePobText } from "$lib/pobtext";
+  // A POB-coloured string as spans. `muted` is the colour a run without a
+  // code takes (POB's default is white; a sidebar label wants softer).
+  import { pobRuns } from "$lib/pobtext";
 
-  let { text, defaultColor = null }: { text: string | null | undefined; defaultColor?: string | null } = $props();
-  const spans = $derived(parsePobText(text));
+  let { text, muted = null }: { text: string | null | undefined; muted?: string | null } = $props();
+  const runs = $derived(pobRuns(text));
 </script>
 
-{#each spans as s}<span style:color={s.color ?? defaultColor ?? undefined}>{s.text}</span>{/each}
+{#each runs as r}<span style:color={r.color ?? muted ?? undefined}>{r.text}</span>{/each}

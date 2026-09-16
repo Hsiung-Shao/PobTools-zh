@@ -117,7 +117,7 @@
             {:else if k === "head"}
               <div class="shead"><PobText text={r.lhs} /></div>
             {:else if k === "center"}
-              <div class="scenter"><PobText text={r.lhs} defaultColor="var(--fg-2)" /></div>
+              <div class="scenter"><PobText text={r.lhs} muted="var(--fg-2)" /></div>
             {:else}
               <div
                 class="srow"
@@ -131,7 +131,7 @@
                 onclick={(e) => r.hasBreakdown && rowBreakdown(e.clientY, rowIndex, true)}
                 onkeydown={(e) => e.key === "Enter" && r.hasBreakdown && rowBreakdown(200, rowIndex, true)}
               >
-                <span class="k"><PobText text={r.lhs?.replace(/[:：]\s*$/, "")} defaultColor="var(--fg-1)" /></span>
+                <span class="k"><PobText text={r.lhs?.replace(/[:：]\s*$/, "")} muted="var(--fg-1)" /></span>
                 <span class="v num"><PobText text={r.rhs} /></span>
               </div>
             {/if}

@@ -290,6 +290,11 @@ void DispatchPending(ui_main_c* ui)
 	lua_State* L = ui->L;
 	std::string line;
 	int handled = 0;
+	// POB addresses its own files relative to its folder ("TreeData/3_29/…");
+	// ui_main's PCall sets that working directory for OnFrame and resets it
+	// after, so a bridge call landing between frames would run in the engine's
+	// directory and see no tree at all.
+	ui->sys->SetWorkDir(ui->scriptWorkDir);
 	// Bounded per frame so a flood of requests cannot starve OnFrame (and with
 	// it POB's own update check) forever.
 	while (handled < 64 && HeadlessIpc::Pop(line)) {

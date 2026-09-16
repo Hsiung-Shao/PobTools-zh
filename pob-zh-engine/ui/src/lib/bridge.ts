@@ -234,8 +234,66 @@ export interface LoadedBuild {
   level?: number;
 }
 
+export type TreeData = import("./tree/model").TreeData;
+
+export interface TreeOverride {
+  why: "mastery" | "conquered" | "tattoo" | "renamed";
+  name: string;
+  nameZh: string;
+  icon?: string;
+  effect?: string;
+  stats: string[];
+  statsZh: string[];
+}
+
+export interface TreeState {
+  treeVersion: string;
+  classId?: number;
+  className?: string;
+  ascendClassId?: number;
+  ascendClassName?: string;
+  allocatedNodes: number[];
+  allocCount: number;
+  overrides: Record<string, TreeOverride>;
+  dynamicNodes: import("./tree/model").DynamicNode[];
+  dynamicGroups: import("./tree/model").DynamicGroup[];
+  sockets: { nodeId: number; itemId?: number; name?: string; title?: string; baseName?: string }[];
+  points: BuildInfo["points"];
+  rev: number;
+}
+
+export interface NodeHover {
+  id: number;
+  allocated: boolean;
+  path: number[];
+  depends: number[];
+  cost?: number;
+}
+
+export type TooltipLine = { size: number; text: string; raw: string; center: boolean; font?: string } | { sep: number };
+
+export interface NodeInfo {
+  id: number;
+  name: string;
+  nameZh: string;
+  type?: string;
+  allocated: boolean;
+  header?: string;
+  lines: TooltipLine[];
+  stats: string[];
+  statsZh: string[];
+  masteryEffects?: { effect: number; stats: string[] }[];
+  masterySelected?: number;
+  pathDist?: number;
+}
+
 export const api = {
   version: () => bridge.call<VersionInfo>("version"),
+  treeData: (version?: string) => bridge.call<TreeData>("tree_data", version ? { version } : {}, 120000),
+  treeAssets: (version?: string) => bridge.call<import("./tree/assets").SpriteManifest>("tree_assets", version ? { version } : {}, 60000),
+  getTreeState: () => bridge.call<TreeState>("get_tree_state"),
+  nodeHover: (id: number) => bridge.call<NodeHover>("node_hover", { id }),
+  nodeInfo: (id: number) => bridge.call<NodeInfo>("node_info", { id }),
   listBuilds: (subPath = "") => bridge.call<{ buildPath: string; subPath: string; entries: BuildEntry[] }>("list_builds", { subPath }),
   loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
   getSidebar: () => bridge.call<Sidebar>("get_sidebar"),

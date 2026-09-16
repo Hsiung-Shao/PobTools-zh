@@ -310,3 +310,13 @@ kbd {
     opacity: 1;
   }
 }
+
+/* Tree canvas and accent tokens (ours). */
+:root {
+  --accent: #5b9dff;
+  --gold: #e0b35a;
+  --gold-dim: #7a5e2a;
+  --tree-bg: #0d1014;
+  --tree-line: #2a3038;
+  --tree-line-lit: #4c5563;
+}

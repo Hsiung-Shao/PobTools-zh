@@ -54,6 +54,7 @@ const EN: Record<string, string> = {
   "title.tree": "Tree",
   "title.unsaved": "unsaved",
   "tree.loading": "Loading tree…",
+  "tree.artMissing": "Some tree art files were not found; showing a wireframe",
   "tree.search": "Search nodes…",
   "tree.fit": "Fit",
   "tree.undo": "Undo",
