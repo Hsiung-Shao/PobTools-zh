@@ -3046,6 +3046,7 @@ function M.get_calcs()
 	local out = {}
 	for si, sec in ipairs(tab.sectionList) do
 		local enabled = tab:CheckFlag(sec) and true or false
+		local anyRow = false
 		local subs = {}
 		for ui, sub in ipairs(sec.subSection or {}) do
 			local rows = {}
@@ -3066,6 +3067,7 @@ function M.get_calcs()
 						end
 					end
 					rows[#rows + 1] = as_object({ ri = ri, label = row.label, labelZh = row.label and tr(row.label) or nil, color = row.color, textSize = row.textSize, cells = cells })
+					anyRow = true
 				end
 			end
 			local extra
@@ -3075,6 +3077,8 @@ function M.get_calcs()
 			end
 			subs[ui] = as_object({ ui = ui, label = sub.label, labelZh = tr(sub.label), collapsed = sub.collapsed and true or false, extra = extra, rows = rows })
 		end
+		-- CalcSectionControl:UpdateSize: a section whose rows are all filtered out is not drawn
+		enabled = enabled and anyRow
 		out[si] = as_object({ si = si, id = sec.id, group = sec.group, colour = sec.colour, widthCols = sec.widthCols, enabled = enabled, subsections = subs })
 	end
 	-- the skill/mode selectors POB draws in its first section

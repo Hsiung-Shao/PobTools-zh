@@ -1,6 +1,7 @@
 <!-- 計算頁:緊湊表格。POB CalcsTab 的欄位規則(group 1 佔前三欄、寬三欄的區段橫跨、
      group 2 第四欄、group 3 第五欄)照排;每列 16px、標籤/數值兩欄對齊;cell 文字由 POB 的
-     formatCalcStr 產出,有細項的 cell hover 開細項浮層(與側欄同一個 BreakdownPanel)。 -->
+     formatCalcStr 產出,有細項的 cell hover 開細項浮層(與側欄同一個 BreakdownPanel)。
+     停用或沒有任何列的區段照 POB 不畫;技能/部位下拉在建置列,這裡只有增益模式與搜尋。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, type BreakdownSection, type CalcCell, type CalcsData } from "$lib/bridge";
@@ -87,7 +88,7 @@
   const groups = $derived.by(() => {
     const g: Record<1 | 2 | 3, CalcsData["sections"]> = { 1: [], 2: [], 3: [] };
     for (const s of data?.sections ?? []) {
-      if (s.id === "SkillSelect") continue;
+      if (s.id === "SkillSelect" || !s.enabled) continue;
       const k = (s.group === 2 || s.group === 3 ? s.group : 1) as 1 | 2 | 3;
       g[k].push(s);
     }
@@ -100,9 +101,9 @@
 </script>
 
 {#snippet section(sec: CalcsData["sections"][number])}
-  <section class="card" class:off={!sec.enabled} class:wide={sec.widthCols >= 3} style:--sec={pobColor(sec.colour) ?? "var(--gold)"}>
+  <section class="card" class:wide={sec.widthCols >= 3} style:--sec={pobColor(sec.colour) ?? "var(--gold)"}>
     {#each sec.subsections as sub (sub.ui)}
-      {@const rows = sec.enabled ? sub.rows.filter((r) => rowMatch(r.label, r.labelZh)) : []}
+      {@const rows = sub.rows.filter((r) => rowMatch(r.label, r.labelZh))}
       {@const closed = isCollapsed(sec.si, sub.ui, sub.collapsed)}
       {@const ncol = colCount(sub)}
       <div class="sub" class:multi={ncol > 1} style:--ncol={ncol}>
@@ -110,9 +111,8 @@
           <span class="caret" class:closed>▾</span>
           <span class="st">{sub.labelZh || sub.label || sec.id}</span>
           {#if sub.extra}<span class="extra"><PobText text={sub.extra} muted="var(--ink-2)" /></span>{/if}
-          {#if !sec.enabled}<span class="extra dim">{t("calcs.hidden")}</span>{/if}
         </button>
-        {#if sec.enabled && !closed}
+        {#if !closed}
           {#each rows as row (row.ri)}
             {@const cells = row.cells.filter((c) => !isSelector(c))}
             <div class="row" style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
@@ -144,22 +144,6 @@
 <div class="page">
   <div class="bar">
     {#if data}
-      <span class="k">{t("calcs.skill")}</span>
-      <select class="select sm wide" value={data.input.skill_number} onchange={(e) => setInput("skill_number", Number(e.currentTarget.value))}>
-        {#each data.selectors.mainSocketGroup?.list ?? [] as o}
-          <option value={o.val}>{o.labelZh || o.label}</option>
-        {/each}
-      </select>
-      {#if data.selectors.mainSkill}
-        <select class="select sm" value={data.selectors.mainSkill.index} onchange={(e) => setInput("mainActiveSkill", Number(e.currentTarget.value))}>
-          {#each data.selectors.mainSkill.list as o}<option value={o.val}>{o.labelZh || o.label}</option>{/each}
-        </select>
-      {/if}
-      {#if data.selectors.mainSkillPart}
-        <select class="select sm" value={data.selectors.mainSkillPart.index} onchange={(e) => setInput("skillPart", Number(e.currentTarget.value))}>
-          {#each data.selectors.mainSkillPart.list as o}<option value={o.val}>{o.labelZh || o.label}</option>{/each}
-        </select>
-      {/if}
       <span class="k">{t("calcs.mode")}</span>
       <select class="select sm" value={data.input.misc_buffMode} onchange={(e) => setInput("misc_buffMode", e.currentTarget.value)}>
         {#each ["EFFECTIVE", "COMBAT", "BUFFED", "UNBUFFED"] as m}<option value={m}>{t(`calcs.mode.${m}`)}</option>{/each}
@@ -225,9 +209,6 @@
     font-size: var(--fs-xs);
     max-width: 220px;
   }
-  .select.wide {
-    max-width: 320px;
-  }
   .chk {
     display: inline-flex;
     align-items: center;
@@ -283,9 +264,6 @@
   }
   .card.wide {
     grid-column: 1 / -1;
-  }
-  .card.off {
-    opacity: 0.45;
   }
   .sub + .sub {
     border-top: 1px solid var(--edge-0);
