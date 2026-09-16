@@ -114,7 +114,7 @@ const EN: Record<string, string> = {
   "items.deleteSet": "Delete set",
   "items.setName": "Set name",
   "items.paste": "Add an item",
-  "items.pasteHint": "Paste the item text copied from the game (Ctrl+C on an item) or from a trade site, then press Add. Ctrl+V straight into the box also works.",
+  "items.pasteHint": "Paste the item text copied from the game (Ctrl+C on an item) or from a trade site, check it with Preview if you like, then press Add or Add & equip.",
   "items.add": "Add",
   "items.preview": "Preview",
   "items.reversed": "Chinese item text was translated back to English for POB.",

@@ -179,7 +179,7 @@
   "items.deleteSet": "刪除物品集",
   "items.setName": "物品集名稱",
   "items.paste": "新增物品",
-  "items.pasteHint": "貼上從遊戲(對物品按 Ctrl+C)或交易站複製的物品文字,再按「新增」;直接在框裡 Ctrl+V 也可以。",
+  "items.pasteHint": "貼上從遊戲(對物品按 Ctrl+C)或交易站複製的物品文字,可先「預覽」確認,再按「新增」或「新增並裝備」。",
   "items.add": "新增",
   "items.preview": "預覽",
   "items.reversed": "中文物品文字已轉回英文交給 POB 解析。",

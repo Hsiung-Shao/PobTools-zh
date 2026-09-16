@@ -170,19 +170,14 @@
     }
   }
   function onPasteBox(e: ClipboardEvent) {
-    // Ctrl+V into an empty box adds straight away (what the classic UI does);
-    // anything else stays in the box with a note saying why it was not added.
+    // Pasting only fills the box: the item is added when one of the buttons
+    // below is pressed (the user asked for a confirmation step). Text that is
+    // not an item gets a note saying so.
     if (pasteText.trim()) return;
     const text = e.clipboardData?.getData("text") ?? "";
     pasteErr = null;
     pasteNote = null;
-    if (looksLikeItem(text)) {
-      e.preventDefault();
-      pasteText = text;
-      void addPasted(true);
-    } else if (text.trim()) {
-      pasteErr = t("items.notItem");
-    }
+    if (text.trim() && !looksLikeItem(text)) pasteErr = t("items.notItem");
   }
 
   // --- database ------------------------------------------------------------------

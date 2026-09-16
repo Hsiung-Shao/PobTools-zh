@@ -98,6 +98,37 @@
   let collapsed = $state<Record<string, boolean>>({});
   const isCollapsed = (si: number, ui: number, def: boolean) => collapsed[`${si}:${ui}`] ?? def;
   const toggle = (si: number, ui: number, def: boolean) => (collapsed[`${si}:${ui}`] = !isCollapsed(si, ui, def));
+
+  // Group 1 is packed the way CalcsTab:Draw does it: a one-column section goes
+  // into the shortest of the three columns, a three-wide section levels the
+  // columns and spans them. The height is estimated from the row count (the
+  // same numbers the CSS uses), so the packing is decided before layout.
+  type Sec = CalcsData["sections"][number];
+  type Band = { wide: Sec } | { cols: Sec[][] };
+  function secHeight(sec: Sec): number {
+    let h = 8;
+    for (const sub of sec.subsections) h += 18 + (isCollapsed(sec.si, sub.ui, sub.collapsed) ? 0 : sub.rows.length * 16);
+    return h;
+  }
+  const bands = $derived.by((): Band[] => {
+    const out: Band[] = [];
+    let cur: Sec[][] | null = null;
+    const colY = [0, 0, 0];
+    for (const sec of groups[1]) {
+      if (sec.widthCols >= 3) {
+        out.push({ wide: sec });
+        cur = null;
+        colY.fill(0);
+        continue;
+      }
+      if (!cur) out.push({ cols: (cur = [[], [], []]) });
+      let c = 0;
+      for (let i = 1; i < 3; i++) if (colY[i] < colY[c]) c = i;
+      cur[c].push(sec);
+      colY[c] += secHeight(sec) + 8;
+    }
+    return out;
+  });
 </script>
 
 {#snippet section(sec: CalcsData["sections"][number])}
@@ -160,7 +191,17 @@
     {#if data}
       <div class="wall">
         <div class="g1">
-          {#each groups[1] as sec (sec.si)}{@render section(sec)}{/each}
+          {#each bands as band, bi (bi)}
+            {#if "wide" in band}
+              {@render section(band.wide)}
+            {:else}
+              <div class="band">
+                {#each band.cols as col, ci (ci)}
+                  <div class="gcol">{#each col as sec (sec.si)}{@render section(sec)}{/each}</div>
+                {/each}
+              </div>
+            {/if}
+          {/each}
         </div>
         <div class="gcol">
           {#each groups[2] as sec (sec.si)}{@render section(sec)}{/each}
@@ -232,9 +273,14 @@
     align-items: start;
   }
   .g1 {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  .band {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    grid-auto-flow: dense;
     gap: 8px;
     align-items: start;
     min-width: 0;
@@ -261,9 +307,6 @@
     border-radius: var(--radius-s);
     padding: 0 6px 3px;
     min-width: 0;
-  }
-  .card.wide {
-    grid-column: 1 / -1;
   }
   .sub + .sub {
     border-top: 1px solid var(--edge-0);
