@@ -1122,11 +1122,178 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okDbR = okDbU && child.Call("item_db", json{{"kind", "rare"}, {"page", 1}, {"size", 5}}, dbR, 60000);
 			check("item_db: uniques searchable in English and in the translated name, rares listed, entries carry raw text",
 			      okDbU && dbU.value("total", 0) >= 3 && dbU["items"][0].contains("raw") && okDbZh && dbZh.value("total", 0) >= 1 &&
-			          okDbR && dbR.value("total", 0) > 50 && dbR["types"].size() > 3,
+			          okDbR && dbR.value("total", 0) > 50 && dbR["items"].size() && dbR["items"][0].contains("raw"),
 			      "en=" + std::to_string(dbU.value("total", 0)) + " zh=" + std::to_string(dbZh.value("total", 0)) + " rares=" + std::to_string(dbR.value("total", 0)));
 			json dbTt;
 			bool okDbTt = okDbU && dbU["items"].size() && child.Call("item_tooltip", json{{"raw", dbU["items"][0].value("raw", "")}, {"rarity", "UNIQUE"}, {"dbMode", true}}, dbTt, 60000);
 			check("item_tooltip{raw} previews a database entry without adding it", okDbTt && dbTt["lines"].size() >= 3);
+		}
+
+		// --- 2b2: item editing, comparison, list management, item databases ----
+		{
+			json li;
+			bool okLi = okLoad && child.Call("list_items", json::object(), li, 60000);
+			long long idRare = 0, idHelmet = 0, idUnused = 0, idUnusedRing = 0;
+			int usedSlot = 0, unusedN = 0;
+			if (okLi) for (auto& it : li["items"]) {
+				const bool used = it.contains("usedIn") && !it["usedIn"].is_null();
+				if (used) usedSlot++; else unusedN++;
+				const std::string rarity = it.value("rarity", ""), type = it.value("type", "");
+				const long long id = it.value("id", 0LL);
+				if (used && !idRare && rarity == "RARE" && type != "Jewel" && type != "Flask") idRare = id;
+				if (used && !idHelmet && type == "Helmet") idHelmet = id;
+				if (!used && !idUnused) idUnused = id;
+				if (!used && !idUnusedRing && type == "Ring") idUnusedRing = id;
+			}
+			check("list_items: usedIn says where each item is (slot / abyss / jewel) or is absent for unused ones",
+			      okLi && usedSlot >= 10 && unusedN >= 1 && idRare > 0,
+			      "used=" + std::to_string(usedSlot) + " unused=" + std::to_string(unusedN));
+
+			// editing session: changes stay on POB's displayItem until commit
+			json raw0, ed, edQ, edI;
+			bool okRaw0 = idRare > 0 && child.Call("item_raw", json{{"id", idRare}}, raw0, 60000);
+			bool okEd = okRaw0 && child.Call("item_edit_begin", json{{"id", idRare}}, ed, 60000);
+			check("item_edit_begin{id}: SetDisplayItem on a copy (tooltip, sockets, quality, influence, mod lines, actions)",
+			      okEd && !ed.value("isNew", true) && ed["tooltip"]["lines"].size() >= 3 && ed["sockets"].size() >= 1 && ed["quality"].value("shown", false) &&
+			          ed["modLines"].size() >= 1 && ed["influence"]["options"].size() >= 5 && ed["actions"].value("corrupt", false),
+			      okEd ? "sockets=" + std::to_string(ed["sockets"].size()) + " mods=" + std::to_string(ed["modLines"].size()) : ed.dump().substr(0, 300));
+			const int q0 = okEd && ed["quality"].contains("value") && !ed["quality"]["value"].is_null() ? ed["quality"].value("value", 0) : 0;
+			const int q1 = q0 == 27 ? 28 : 27;
+			bool okQ = okEd && child.Call("item_edit_set", json{{"quality", q1}}, edQ, 60000);
+			json raw1;
+			bool okRaw1 = okQ && child.Call("item_raw", json{{"id", idRare}}, raw1, 60000);
+			check("item_edit_set{quality}: the panel's EditControl callback changes the display item, the build's item is untouched",
+			      okQ && edQ["quality"].value("value", -1) == q1 && okRaw1 && raw1.value("raw", "") == raw0.value("raw", "x"),
+			      okQ ? "q " + std::to_string(q0) + " -> " + std::to_string(edQ["quality"].value("value", -1)) : edQ.dump().substr(0, 300));
+			bool okI = okQ && child.Call("item_edit_set", json{{"influence", json::array({2, 1})}}, edI, 60000);
+			check("item_edit_set{influence}: the influence dropdowns' callback (ResetInfluence + key) is applied",
+			      okI && edI["influence"]["current"].size() == 1 && edI["influence"]["sel"][0] == 2,
+			      okI ? edI["influence"]["current"].dump() : edI.dump().substr(0, 300));
+			// the Corrupt dialog, captured: pick the first implicit and press its own Corrupt button
+			json pc, pc2, pc3;
+			bool okPc = okI && child.Call("item_edit_popup", json{{"kind", "corrupt"}, {"action", "open"}}, pc, 60000);
+			int implicitOpts = 0;
+			if (okPc) for (auto& c : pc["controls"]) if (c.value("name", "") == "implicit1") implicitOpts = (int)c["options"].size();
+			bool okPc2 = okPc && implicitOpts > 1 && child.Call("item_edit_popup", json{{"action", "pick"}, {"name", "implicit1"}, {"sel", 2}}, pc2, 60000) &&
+			             child.Call("item_edit_popup", json{{"action", "apply"}, {"button", "save"}}, pc3, 60000);
+			check("item_edit_popup{corrupt}: the dialog's controls are read back, a pick and its Corrupt button go through the dialog's own closures",
+			      okPc2 && pc3["summary"].value("corrupted", false) && pc3["tooltip"]["lines"].size() > ed["tooltip"]["lines"].size() && pc3["popup"].is_null(),
+			      okPc ? "implicits=" + std::to_string(implicitOpts) + " lines " + std::to_string(ed["tooltip"]["lines"].size()) + " -> " + std::to_string(okPc2 ? pc3["tooltip"]["lines"].size() : 0) : pc.dump().substr(0, 300));
+			json cancel, raw2;
+			bool okCancel = okEd && child.Call("item_edit_cancel", json::object(), cancel, 60000) && child.Call("item_raw", json{{"id", idRare}}, raw2, 60000);
+			json edNone;
+			bool okNone = child.Call("item_edit_state", json::object(), edNone, 60000);
+			check("item_edit_cancel drops the display item; the build's item is still what it was; no session afterwards",
+			      okCancel && raw2.value("raw", "") == raw0.value("raw", "x") && !okNone && child.Alive(), edNone.dump().substr(0, 120));
+
+			// commit on the same id = POB's "Save": the build's item changes, then put it back
+			json edS, edS2, cm, raw3, cmBack;
+			bool okSave = okRaw0 && child.Call("item_edit_begin", json{{"id", idRare}}, edS, 60000) && child.Call("item_edit_set", json{{"quality", q1}}, edS2, 60000) &&
+			              child.Call("item_edit_commit", json{{"equip", true}}, cm, 60000) && child.Call("item_raw", json{{"id", idRare}}, raw3, 60000);
+			bool okRestore = okSave && child.Call("item_edit_begin", json{{"id", idRare}}, edS, 60000) && child.Call("item_edit_set", json{{"quality", q0}}, edS2, 60000) &&
+			                 child.Call("item_edit_commit", json{{"equip", true}}, cmBack, 60000) && child.Call("item_raw", json{{"id", idRare}}, raw2, 60000);
+			check("item_edit_commit on an existing id = Save (AddDisplayItem replaces it, raw changes), restoring puts the raw back",
+			      okSave && !cm.value("added", true) && cm.value("id", 0LL) == idRare && raw3.value("raw", "") != raw0.value("raw", "") &&
+			          raw3.value("raw", "").find("Quality: " + std::to_string(q1)) != std::string::npos && okRestore && raw2.value("raw", "") == raw0.value("raw", "x"),
+			      okSave ? "quality line " + (raw3.value("raw", "").find("Quality") != std::string::npos ? std::string("changed") : std::string("missing")) : cm.dump().substr(0, 300));
+
+			// craft a new rare from the Craft Item dialog, pick a prefix, add it to the build, delete it again
+			json co, edC, edA, cmC, liC, stC, delC;
+			bool okCo = okLoad && child.Call("craft_item_options", json::object(), co, 60000);
+			std::string craftType, craftBase;
+			if (okCo && co["types"].size()) { craftType = co["types"][0].value("type", ""); if (co["types"][0]["bases"].size()) craftBase = co["types"][0]["bases"][0].value("name", ""); }
+			check("craft_item_options: the Craft Item dialog's rarities plus POB's base types and bases",
+			      okCo && co["rarities"].size() >= 4 && co["types"].size() >= 40 && !craftBase.empty(),
+			      okCo ? "types=" + std::to_string(co["types"].size()) + " first=" + craftType + "/" + craftBase : co.dump().substr(0, 300));
+			bool okEdC = okCo && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", craftType}, {"base", craftBase}}}}, edC, 60000);
+			bool okEdA = okEdC && edC["affixes"].size() >= 1 && child.Call("item_edit_affix", json{{"index", 1}, {"sel", 2}}, edA, 60000);
+			check("item_edit_begin{craft}: Create through the dialog gives a new crafted item with affix slots; item_edit_affix picks a prefix through the dropdown's selFunc",
+			      okEdA && edC.value("isNew", false) && edC.value("crafted", false) && edA["modLines"].size() == 1 && edA["affixes"][0].value("sel", 1) == 2,
+			      okEdC ? "affixSlots=" + std::to_string(edC["affixes"].size()) + " mods after=" + std::to_string(okEdA ? edA["modLines"].size() : 0) : edC.dump().substr(0, 300));
+			bool okCmC = okEdA && child.Call("item_edit_commit", json{{"equip", false}}, cmC, 60000) && child.Call("list_items", json::object(), liC, 60000) &&
+			             child.Call("get_stats", json::object(), stC, 30000);
+			long long craftedId = okCmC ? cmC.value("id", 0LL) : 0;
+			check("item_edit_commit on a new item = Add to build (count +1, not equipped, stats still computable)",
+			      okCmC && cmC.value("added", false) && craftedId > 0 && liC["items"].size() == li["items"].size() + 1 && stC.contains("stats"),
+			      okCmC ? "id=" + std::to_string(craftedId) : cmC.dump().substr(0, 300));
+			if (craftedId > 0) child.Call("delete_item", json{{"id", craftedId}}, delC, 60000);
+
+			// the Enchant dialog on a helmet
+			if (idHelmet > 0) {
+				json edH, pe, cancelH;
+				bool okPe = child.Call("item_edit_begin", json{{"id", idHelmet}}, edH, 60000) && edH["actions"].value("enchant", false) &&
+				            child.Call("item_edit_popup", json{{"kind", "enchant"}, {"action", "open"}}, pe, 60000);
+				int enchOpts = 0;
+				if (okPe) for (auto& c : pe["controls"]) if (c.value("name", "") == "enchantment") enchOpts = (int)c["options"].size();
+				check("item_edit_popup{enchant}: the helmet's enchantment list comes from the dialog", okPe && enchOpts >= 1, okPe ? "options=" + std::to_string(enchOpts) : pe.dump().substr(0, 300));
+				child.Call("item_edit_cancel", json::object(), cancelH, 60000);
+			}
+
+			// comparison: the list tooltip of an unused item carries the stat-difference block
+			if (idUnused > 0) {
+				json ttC, ttN;
+				bool okTt = child.Call("item_tooltip", json{{"id", idUnused}}, ttC, 60000) && child.Call("item_tooltip", json{{"id", idUnused}, {"compare", false}}, ttN, 60000);
+				check("item_tooltip compares against POB's comparison slot by default (more lines than compare=false)",
+				      okTt && ttC["lines"].size() > ttN["lines"].size(),
+				      okTt ? std::to_string(ttN["lines"].size()) + " -> " + std::to_string(ttC["lines"].size()) : ttC.dump().substr(0, 200));
+			}
+
+			// Ctrl+Click: equip into the primary slot, click again to take it out, then restore the slot
+			if (idUnusedRing > 0) {
+				json ep1, ep2, liE, back;
+				bool okEp = child.Call("equip_primary", json{{"id", idUnusedRing}}, ep1, 60000) && child.Call("list_items", json::object(), liE, 60000);
+				std::string slotName = okEp ? ep1.value("slotName", "") : "";
+				long long prev = 0;
+				if (okLi) for (auto& sl : li["slots"]) if (sl.value("name", "") == slotName) prev = sl.value("selItemId", 0LL);
+				bool inSlot = false;
+				if (okEp) for (auto& sl : liE["slots"]) if (sl.value("name", "") == slotName && sl.value("selItemId", 0LL) == idUnusedRing) inSlot = true;
+				bool okEp2 = okEp && child.Call("equip_primary", json{{"id", idUnusedRing}}, ep2, 60000);
+				if (prev > 0) child.Call("equip_item", json{{"id", prev}, {"slotName", slotName}}, back, 60000);
+				check("equip_primary toggles the item in its primary slot (ItemListControl's Ctrl+Click)",
+				      okEp2 && ep1.value("equipped", false) && inSlot && !ep2.value("equipped", true), okEp ? "slot=" + slotName : ep1.dump().substr(0, 200));
+			}
+
+			// list management: Sort, then Del Unused (the sandbox's unused items go)
+			json so, liS, du, liD;
+			bool okSo = okLi && child.Call("sort_items", json::object(), so, 60000) && child.Call("list_items", json::object(), liS, 60000);
+			bool sortedOk = okSo && liS["items"].size() == li["items"].size();
+			bool okDu = okSo && child.Call("delete_unused_items", json::object(), du, 60000) && child.Call("list_items", json::object(), liD, 60000);
+			int stillUnused = 0;
+			if (okDu) for (auto& it : liD["items"]) if (!it.contains("usedIn") || it["usedIn"].is_null()) stillUnused++;
+			check("sort_items keeps every item; delete_unused_items removes exactly the unused ones (Del Unused's own rule)",
+			      sortedOk && okDu && du.value("deleted", -1) == unusedN && stillUnused == 0 && liD["items"].size() == li["items"].size() - unusedN,
+			      okDu ? "deleted=" + std::to_string(du.value("deleted", -1)) + " expected=" + std::to_string(unusedN) : du.dump().substr(0, 300));
+
+			// item databases through ItemDBControl's own filters and sort
+			json dbo, dbHelm, dbAll, dbStat, dbReq, dbRare;
+			bool okDbo = okLoad && child.Call("item_db_options", json{{"kind", "unique"}}, dbo, 180000);
+			check("item_db_options: ItemDBControl's slot/type/league/requirement/obtainable/search-mode/sort lists",
+			      okDbo && dbo["slot"].size() >= 10 && dbo["type"].size() >= 6 && dbo["league"].size() >= 5 && dbo["requirement"].size() == 4 && dbo["obtainable"].size() == 8 &&
+			          dbo["searchMode"].size() == 3 && dbo["sort"].size() >= 3,
+			      okDbo ? "slots=" + std::to_string(dbo["slot"].size()) + " leagues=" + std::to_string(dbo["league"].size()) + " sorts=" + std::to_string(dbo["sort"].size()) : dbo.dump().substr(0, 300));
+			int helmIdx = 0;
+			if (okDbo) for (size_t i = 0; i < dbo["slot"].size(); i++) if (dbo["slot"][i].value("label", "") == "Helmet") helmIdx = (int)i + 1;
+			bool okHelm = helmIdx > 0 && child.Call("item_db", json{{"kind", "unique"}, {"slot", helmIdx}, {"obtainable", 2}, {"page", 1}, {"size", 5}}, dbHelm, 120000) &&
+			              child.Call("item_db", json{{"kind", "unique"}, {"obtainable", 2}, {"page", 1}, {"size", 5}}, dbAll, 120000);
+			bool allHelm = okHelm && dbHelm["items"].size() == 5;
+			if (okHelm) for (auto& it : dbHelm["items"]) if (it.value("primarySlot", "") != "Helmet") allHelm = false;
+			check("item_db{slot}: DoesItemMatchFilters narrows to the slot (every hit's primary slot is Helmet, fewer than all)",
+			      allHelm && dbHelm.value("total", 0) > 50 && dbHelm.value("total", 0) < dbAll.value("total", 0),
+			      okHelm ? "helmets=" + std::to_string(dbHelm.value("total", 0)) + " all=" + std::to_string(dbAll.value("total", 0)) : dbHelm.dump().substr(0, 300));
+			std::string statMode = okDbo && dbo["sort"].size() >= 2 ? dbo["sort"][1].value("sortMode", "") : "";
+			bool okStat = okHelm && !statMode.empty() && child.Call("item_db", json{{"kind", "unique"}, {"slot", helmIdx}, {"obtainable", 2}, {"sortMode", statMode}, {"page", 1}, {"size", 4}}, dbStat, 300000);
+			bool descending = okStat && dbStat.value("statSort", false) && dbStat["items"].size() >= 2;
+			if (descending) for (size_t i = 1; i < dbStat["items"].size(); i++) if (dbStat["items"][i].value("measuredPower", 0.0) > dbStat["items"][i - 1].value("measuredPower", 0.0)) descending = false;
+			json dbTooMany;
+			bool okTooMany = okStat && child.Call("item_db", json{{"kind", "unique"}, {"obtainable", 2}, {"sortMode", statMode}, {"page", 1}, {"size", 4}}, dbTooMany, 120000);
+			check("item_db{sortMode=<stat>}: ListBuilder's GetMiscCalculator sort (measuredPower descending) within the cap, tooMany above it",
+			      descending && okTooMany && dbTooMany.value("tooMany", false) && dbTooMany["items"].empty(),
+			      okStat ? "mode=" + statMode + " first=" + std::to_string(dbStat["items"].size() ? dbStat["items"][0].value("measuredPower", 0.0) : 0.0) : dbStat.dump().substr(0, 300));
+			bool okReq = okHelm && child.Call("item_db", json{{"kind", "unique"}, {"obtainable", 2}, {"requirement", 3}, {"page", 1}, {"size", 5}}, dbReq, 120000) &&
+			             child.Call("item_db", json{{"kind", "rare"}, {"page", 1}, {"size", 3}}, dbRare, 120000);
+			check("item_db{requirement}: attribute requirements filter against the build's stats; the rare templates list too",
+			      okReq && dbReq.value("total", 0) > 0 && dbReq.value("total", 0) < dbAll.value("total", 0) && dbRare["items"].size() == 3,
+			      okReq ? "req=" + std::to_string(dbReq.value("total", 0)) + " rare=" + std::to_string(dbRare.value("total", 0)) : dbReq.dump().substr(0, 300));
 		}
 
 		// --- 2c: skills ----------------------------------------------------------

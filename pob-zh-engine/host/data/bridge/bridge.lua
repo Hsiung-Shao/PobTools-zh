@@ -2097,16 +2097,33 @@ local function item_summary(it)
 	}
 end
 
+-- Where an item is used, the way ItemListControl:GetRowValue decides it.
+local function item_used_in(tab, listCtl, it)
+	local abyss = listCtl:FindEquippedAbyssJewel(it.id, true)
+	if abyss then return { kind = "abyss", setTitle = abyss, otherSet = true } end
+	local tree = listCtl:FindSocketedJewel(it.id, true)
+	if tree then return { kind = "jewel", specTitle = tree, otherSet = true } end
+	local slot, set = tab:GetEquippedSlotForItem(it)
+	if not slot then return nil end
+	return { kind = "slot", slot = slot.slotName, label = slot.label, labelZh = tr(slot.label), setId = set and set.id or nil, setTitle = set and (set.title or "Default") or nil, otherSet = set ~= nil }
+end
+
 -- list_items: every item POB holds, the slot grid, item sets.
 function M.list_items()
 	local b = ensure_build()
 	local tab = b.itemsTab
 	-- Classic POB refreshes socket labels/activity from its Draw; do it here.
 	if tab.UpdateSockets then tab:UpdateSockets() end
+	local listCtl = tab.controls.itemList
 	local items = {}
 	for i, id in ipairs(tab.itemOrderList) do
 		local it = tab.items[id]
-		if it then items[#items + 1] = item_summary(it) end
+		if it then
+			local s = item_summary(it)
+			-- "(Unused)" / "Used in '<set>'" the way ItemListControl:GetRowValue decides it
+			if listCtl and it.base then s.usedIn = item_used_in(tab, listCtl, it) end
+			items[#items + 1] = s
+		end
 	end
 	local slots = {}
 	for i, slot in ipairs(tab.orderedSlots) do
@@ -2177,13 +2194,25 @@ function M.item_tooltip(p)
 		if not it then error("no item " .. tostring(p and p.id), 0) end
 		dbMode = p.dbMode and true or false
 	end
+	-- compare (default on) = the stat-difference block ("equipping this in
+	-- <slot> will give you: ..."); with no slot named POB's own choice
+	-- (GetComparisonSlotNameForItem) is used, as its list tooltips do.
+	local compare = not (p and p.compare == false)
 	local slot = p and p.slotName and tab.slots[p.slotName] or nil
+	if compare and not slot and it.base then
+		local name = tab:GetComparisonSlotNameForItem(it)
+		slot = name and tab.slots[name] or nil
+	end
 	local tt = new("Tooltip"):Tooltip()
-	local savedDiff = tab.showStatDifferences
-	tab.showStatDifferences = slot ~= nil
-	without_wrap(function() tab:AddItemTooltip(tt, it, slot, dbMode) end)
-	tab.showStatDifferences = savedDiff
+	local m = main()
+	local savedDiff, savedSlotOnly = tab.showStatDifferences, m.slotOnlyTooltips
+	tab.showStatDifferences = compare
+	if p and p.slotOnly ~= nil then m.slotOnlyTooltips = p.slotOnly and true or false end
+	local ok, err = pcall(without_wrap, function() tab:AddItemTooltip(tt, it, slot, dbMode) end)
+	tab.showStatDifferences, m.slotOnlyTooltips = savedDiff, savedSlotOnly
+	if not ok then error(err, 0) end
 	return {
+		compareSlot = slot and slot.slotName or nil,
 		id = it.id,
 		header = tt.tooltipHeader,
 		color = tt.color,
@@ -2344,64 +2373,6 @@ end
 -- item_db{kind="unique"|"rare", query?, type?, page?, size?}: POB's unique
 -- and rare databases (main.uniqueDB / rareDB), matched on English and
 -- translated names, paged.
-local db_cache = {}
-local function db_sorted(kind)
-	local m = main()
-	local db = kind == "rare" and m.rareDB or m.uniqueDB
-	if not db then error("item database missing", 0) end
-	-- POB parses the databases in a coroutine it resumes once per frame (Main.lua
-	-- onFrameFuncs.LoadItems, ~20 ms of work each); pump frames until it is done.
-	local pumps = 0
-	while db.loading and pumps < 2000 do
-		frame()
-		pumps = pumps + 1
-	end
-	if db.loading then error("item database still loading", 0) end
-	if db_cache[kind] and db_cache[kind].db == db then return db_cache[kind].list, db_cache[kind].types end
-	local list, typeSet = {}, {}
-	for name, it in pairs(db.list) do
-		local nameZh = (it.title and it.baseName) and (tr(it.title) .. ", " .. tr(it.baseName)) or tr(it.name)
-		list[#list + 1] = { it = it, key = (it.name or ""):lower(), keyZh = (nameZh or ""):lower(), nameZh = nameZh }
-		if it.type then typeSet[it.type] = true end
-	end
-	table.sort(list, function(a, b) return a.key < b.key end)
-	local types = {}
-	for t in pairs(typeSet) do types[#types + 1] = t end
-	table.sort(types)
-	db_cache[kind] = { db = db, list = list, types = types }
-	return list, types
-end
-
-function M.item_db(p)
-	ensure_build()
-	local kind = p and p.kind == "rare" and "rare" or "unique"
-	local list, types = db_sorted(kind)
-	local q = p and type(p.query) == "string" and p.query:lower() or ""
-	local wantType = p and p.type or nil
-	local page = math.max(1, tonumber(p and p.page) or 1)
-	local size = math.min(200, math.max(1, tonumber(p and p.size) or 50))
-	local hits = {}
-	for _, e in ipairs(list) do
-		local it = e.it
-		if (wantType == nil or wantType == "" or it.type == wantType)
-			and (q == "" or e.key:find(q, 1, true) or e.keyZh:find(q, 1, true)) then
-			hits[#hits + 1] = e
-		end
-	end
-	local out = {}
-	local first = (page - 1) * size
-	for i = first + 1, math.min(#hits, first + size) do
-		local e = hits[i]
-		local s = item_summary(e.it)
-		s.raw = e.it.raw
-		s.id = nil
-		out[#out + 1] = s
-	end
-	local typeList = {}
-	for i, t in ipairs(types) do typeList[i] = { type = t, typeZh = tr(t) } end
-	return { kind = kind, total = #hits, page = page, size = size, items = out, types = typeList }
-end
-
 probe("PobToolsReverseText (optional: engine DLL with the paste reverse translator)", function()
 	return PobToolsReverseText == nil or type(PobToolsReverseText) == "function"
 end)
@@ -2420,6 +2391,762 @@ probe("classes.Item(raw)/BuildRaw/GetPrimarySlot", function()
 	return type(c) == "table" and type(c.BuildRaw) == "function" and type(c.GetPrimarySlot) == "function" and type(c.BuildModList) == "function"
 end)
 probe("main.uniqueDB/rareDB", function() return type(launch.main.uniqueDB) == "table" and type(launch.main.rareDB) == "table" end)
+
+-- ---------------------------------------------------------------------------
+-- Items: the editing session (POB's own ItemsTab.displayItem and controls)
+-- ---------------------------------------------------------------------------
+-- Classic POB edits one item at a time in `itemsTab.displayItem`; every
+-- control on that panel (sockets, quality, influence, affix dropdowns, range
+-- sliders, custom-mod Remove buttons) is a real control object that exists
+-- headless too, so the page drives those controls' own callbacks instead of
+-- re-implementing what they do. Nothing recalculates until AddDisplayItem.
+
+local function edit_item()
+	local b = ensure_build()
+	local tab = b.itemsTab
+	if not tab.displayItem then error("no item is being edited; call item_edit_begin first", 0) end
+	return b, tab, tab.displayItem
+end
+
+local function ctl_shown(ctl)
+	if not ctl then return false end
+	local ok, v = pcall(ctl.IsShown, ctl)
+	return ok and v and true or false
+end
+
+-- A dropdown entry's label: entries are strings or tables with `label`.
+local function dd_label(e)
+	if type(e) == "table" then
+		local l = e.label
+		if type(l) == "function" then l = l() end
+		return tostring(l or "")
+	end
+	return tostring(e)
+end
+
+local function dd_options(ctl)
+	local out = {}
+	for i, e in ipairs(ctl and ctl.list or {}) do
+		local l = dd_label(e)
+		out[i] = { label = l, labelZh = tr(l) }
+	end
+	return out
+end
+
+-- The ItemsTab dialogs (Craft / Edit text / Enchant / Anoint / Corrupt / Add
+-- modifier / Crucible) keep their logic in closures over a `controls` table
+-- handed to main:OpenPopup. This runs `fn` with OpenPopup swapped for one
+-- that keeps that table and installs a stand-in popup (the corrupt dialog
+-- writes main.popups[1].height), with ClosePopup muted. With `keep` the
+-- stand-in stays in main.popups until popup_discard; otherwise it is removed
+-- again before returning.
+local function capture_popup(fn, keep)
+	local m = main()
+	local savedOpen, savedClose = m.OpenPopup, m.ClosePopup
+	local captured
+	m.OpenPopup = function(self, width, height, title, controls)
+		captured = { controls = controls or {}, title = title, width = width, height = height }
+		table.insert(self.popups, 1, captured)
+		return captured
+	end
+	m.ClosePopup = function() end
+	local ok, err = pcall(fn)
+	m.OpenPopup, m.ClosePopup = savedOpen, savedClose
+	if captured and not keep then
+		for i, p in ipairs(m.popups) do
+			if p == captured then table.remove(m.popups, i) break end
+		end
+	end
+	if not ok then error(err, 0) end
+	return captured
+end
+
+local function popup_discard(cap)
+	if not cap then return end
+	local m = main()
+	for i, p in ipairs(m.popups) do
+		if p == cap then table.remove(m.popups, i) break end
+	end
+end
+
+-- Runs a popup control's callback with ClosePopup muted (the dialogs' Save
+-- buttons close the popup themselves) and any dialog it opens captured.
+local function with_popup(fn)
+	return capture_popup(fn, false)
+end
+
+-- Runs a ListControl's coroutine ListBuilder to completion (classic POB
+-- resumes it once per frame from Draw).
+local function run_list_builder(ctl)
+	local co = coroutine.create(ctl.ListBuilder)
+	while coroutine.status(co) ~= "dead" do
+		local ok, err = coroutine.resume(co, ctl)
+		if not ok then error(err, 0) end
+	end
+end
+
+local edit_popup -- { kind, cap }
+
+local function close_edit_popup()
+	if edit_popup then
+		popup_discard(edit_popup.cap)
+		edit_popup = nil
+	end
+end
+
+local function mod_line_text(modLine)
+	local ok, s = pcall(itemLib.formatModLine, modLine)
+	if ok and type(s) == "string" then return s end
+	return tostring(modLine.line or "")
+end
+
+-- Everything the editing panel shows, read from POB's controls after they
+-- were refreshed by SetDisplayItem / the last callback.
+local function edit_state(p)
+	local b, tab, it = edit_item()
+	local c = tab.controls
+	local tt = new("Tooltip"):Tooltip()
+	local savedDiff = tab.showStatDifferences
+	tab.showStatDifferences = not (p and p.compare == false)
+	local ok, err = pcall(without_wrap, function() tab:AddItemTooltip(tt, it) end)
+	tab.showStatDifferences = savedDiff
+	if not ok then error(err, 0) end
+
+	local sockets = {}
+	for i, s in ipairs(it.sockets or {}) do sockets[i] = { color = s.color, group = s.group } end
+	local socketColors = {}
+	for _, e in ipairs(c.displayItemSocket1 and c.displayItemSocket1.list or {}) do socketColors[#socketColors + 1] = e.color end
+	local links = {}
+	for i = 1, 5 do links[i] = { shown = ctl_shown(c["displayItemLink" .. i]), on = c["displayItemLink" .. i] and c["displayItemLink" .. i].state and true or false } end
+	local socketShown = {}
+	for i = 1, 6 do socketShown[i] = ctl_shown(c["displayItemSocket" .. i]) end
+
+	-- influence: the two dropdowns share one list ("Influence" = none, then itemLib.influenceInfo.all)
+	local infl = { shown = ctl_shown(c.displayItemInfluence), options = dd_options(c.displayItemInfluence), sel = { c.displayItemInfluence.selIndex, c.displayItemInfluence2.selIndex }, keys = {} }
+	for i, info in ipairs(itemLib.influenceInfo.all) do
+		infl.keys[i] = info.key
+	end
+	local current = {}
+	for _, info in ipairs(itemLib.influenceInfo.all) do
+		if it[info.key] then current[#current + 1] = info.key end
+	end
+	infl.current = current
+
+	-- variants: either the group controls or the legacy variant/variantAlt dropdowns
+	local variants = {}
+	local variantCtls = { "displayItemVariant", "displayItemAltVariant", "displayItemAltVariant2", "displayItemAltVariant3", "displayItemAltVariant4", "displayItemAltVariant5" }
+	for _, name in ipairs(variantCtls) do
+		local ctl = c[name]
+		if ctl and ctl_shown(ctl) then
+			local en = ctl.enabled
+			if type(en) == "function" then en = en(ctl) end
+			variants[#variants + 1] = { control = name, options = dd_options(ctl), sel = ctl.selIndex or 1, enabled = en ~= false }
+		end
+	end
+	local versions
+	if it.usesVariantGroups and c.displayItemVersion and (it.versionList and #it.versionList > 1) then
+		versions = { options = dd_options(c.displayItemVersion), sel = c.displayItemVersion.selIndex or 1 }
+	end
+
+	-- affixes (crafted items): POB's dropdowns after UpdateAffixControls
+	local affixes = {}
+	if it.crafted then
+		for i = 1, (it.affixLimit or 0) do
+			local drop = c["displayItemAffix" .. i]
+			if drop and ctl_shown(drop) then
+				local lbl = c["displayItemAffixLabel" .. i]
+				local kind = lbl and dd_label(lbl) or ""
+				local opts = {}
+				for k, e in ipairs(drop.list or {}) do
+					local l = dd_label(e)
+					opts[k] = { label = l, labelZh = tr(l), tiers = type(e) == "table" and e.modList and #e.modList or nil, haveRange = type(e) == "table" and e.haveRange and true or false }
+				end
+				local slider = drop.slider
+				affixes[#affixes + 1] = {
+					index = i, table = drop.outputTable, slot = drop.outputIndex, kind = kind, kindZh = tr(kind),
+					options = opts, sel = drop.selIndex or 1,
+					roll = slider and slider.val or nil, rollShown = ctl_shown(slider), tiers = slider and slider.divCount or nil,
+				}
+			end
+		end
+	end
+
+	-- range lines (uniques/rares with rolled values, foulborn mutations)
+	local ranges = {}
+	if c.displayItemRangeLine then
+		for i, e in ipairs(c.displayItemRangeLine.list or {}) do
+			local ml = e.modLine
+			ranges[i] = {
+				index = i, label = e.label, labelZh = tr(e.label),
+				range = ml and ml.range or nil, showSlider = ml and ml.showSlider and true or false,
+				mutable = ml and ml.modId and ml.newModId and true or false, mutated = ml and ml.mutated and true or false,
+			}
+		end
+	end
+
+	-- explicit + crucible lines with their Remove buttons (UpdateCustomControls numbers them)
+	local modLines = {}
+	local removeIndex = 0
+	local removable = it.rareLikeUnique or it.rarity == "MAGIC" or it.rarity == "RARE" or (it.crucibleModLines and #it.crucibleModLines > 0)
+	local all = {}
+	for _, ml in ipairs(it.explicitModLines or {}) do all[#all + 1] = ml end
+	for _, ml in ipairs(it.crucibleModLines or {}) do all[#all + 1] = ml end
+	for i, ml in ipairs(all) do
+		local entry = { index = i, text = mod_line_text(ml), disabled = ml.disabled and true or false,
+			kind = ml.crafted and "crafted" or ml.custom and "custom" or ml.crucible and "crucible" or nil }
+		entry.textZh = tr(entry.text)
+		local okF, formatted = pcall(itemLib.formatModLine, ml)
+		if removable and (ml.custom or ml.crafted or ml.crucible) and okF and formatted then
+			removeIndex = removeIndex + 1
+			entry.remove = removeIndex
+		end
+		modLines[i] = entry
+	end
+
+	local cluster
+	if ctl_shown(c.displayItemClusterJewelSkill) then
+		local cj = it.clusterJewel
+		cluster = {
+			options = dd_options(c.displayItemClusterJewelSkill), sel = c.displayItemClusterJewelSkill.selIndex or 1,
+			nodeCount = it.clusterJewelNodeCount, minNodes = cj and cj.minNodes, maxNodes = cj and cj.maxNodes,
+		}
+	end
+
+	return {
+		id = it.id,
+		isNew = tab.items[it.id] == nil,
+		raw = it:BuildRaw(),
+		summary = item_summary(it),
+		tooltip = { header = tt.tooltipHeader, color = tt.color, lines = tooltip_lines(tt) },
+		sockets = sockets, socketShown = socketShown, socketColors = socketColors, links = links,
+		canAddSocket = ctl_shown(c.displayItemAddSocket),
+		quality = { shown = ctl_shown(c.displayItemQualityEdit), value = it.quality },
+		catalyst = { shown = ctl_shown(c.displayItemCatalyst), options = dd_options(c.displayItemCatalyst), sel = (it.catalyst or 0) + 1,
+			qualityShown = ctl_shown(c.displayItemCatalystQualityEdit), quality = it.catalystQuality },
+		influence = infl,
+		variants = variants, versions = versions,
+		affixes = affixes, crafted = it.crafted and true or false,
+		ranges = ranges,
+		modLines = modLines,
+		cluster = cluster,
+		actions = {
+			enchant = ctl_shown(c.displayItemEnchant), enchant2 = ctl_shown(c.displayItemEnchant2),
+			anoint = ctl_shown(c.displayItemAnoint), anoint2 = ctl_shown(c.displayItemAnoint2), anoint3 = ctl_shown(c.displayItemAnoint3), anoint4 = ctl_shown(c.displayItemAnoint4),
+			corrupt = ctl_shown(c.displayItemCorrupt), addImplicit = ctl_shown(c.displayItemAddImplicit),
+			custom = ctl_shown(c.displayItemAddCustom), crucible = ctl_shown(c.displayItemAddCrucible),
+		},
+		popup = edit_popup and edit_popup.kind or nil,
+	}
+end
+
+function M.item_edit_state(p)
+	return edit_state(p)
+end
+
+-- craft_item_options: the Craft Item dialog's rarity list plus POB's base
+-- type / base lists (build.data.itemBaseTypeList / itemBaseLists).
+function M.craft_item_options()
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local cap = capture_popup(function() tab:CraftItem() end, false)
+	local rarities = {}
+	for i, e in ipairs(cap.controls.rarity.list) do
+		rarities[i] = { label = dd_label(e), labelZh = tr((dd_label(e):gsub("^%^x%x%x%x%x%x%x", ""):gsub("^%^%d", ""))), rarity = e.rarity }
+	end
+	local types = {}
+	for i, t in ipairs(b.data.itemBaseTypeList) do
+		local bases = {}
+		for k, e in ipairs(b.data.itemBaseLists[t] or {}) do bases[k] = { label = e.label, labelZh = tr(e.label), name = e.name } end
+		types[i] = { type = t, typeZh = tr(t), bases = bases }
+	end
+	return { rarities = rarities, types = types, defaults = { rarity = cap.controls.rarity.selIndex, type = cap.controls.type.selIndex, base = cap.controls.base.selIndex } }
+end
+
+-- item_edit_begin{id | raw | craft={rarity,type,base,title?}}: start editing
+-- a copy of a build item (the list's double-click), pasted text
+-- (CreateDisplayItemFromRaw), or a new item from the Craft Item dialog.
+function M.item_edit_begin(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	close_edit_popup()
+	if p and p.id then
+		local src = tab.items[tonumber(p.id)]
+		if not src then error("no item " .. tostring(p.id), 0) end
+		local newItem = new("Item"):Item(src:BuildRaw())
+		newItem.id = src.id
+		tab:SetDisplayItem(newItem)
+	elseif p and p.raw then
+		local raw = normalize_item_text(p.raw)
+		tab:SetDisplayItem(nil)
+		tab:CreateDisplayItemFromRaw(raw, true)
+		if not tab.displayItem then error("item base not recognised", 0) end
+	elseif p and p.craft then
+		local cr = p.craft
+		local cap = capture_popup(function() tab:CraftItem() end, true)
+		local ctl = cap.controls
+		if cr.rarity then ctl.rarity:SelByValue(cr.rarity, "rarity") end
+		if cr.type then
+			for i, t in ipairs(ctl.type.list) do
+				if t == cr.type then ctl.type:SetSel(i) break end
+			end
+		end
+		if cr.base then
+			for i, e in ipairs(ctl.base.list) do
+				if e.name == cr.base or e.label == cr.base then ctl.base.selIndex = i break end
+			end
+		end
+		if cr.title and ctl.title then ctl.title:SetText(cr.title) end
+		-- Create: SetDisplayItem, then (for non-crafted rarities) the text editor, which we drop
+		local ok, err = pcall(with_popup, function() ctl.save.onClick() end)
+		popup_discard(cap)
+		if not ok then error(err, 0) end
+		if not tab.displayItem then error("craft did not produce an item", 0) end
+	else
+		error("params.id, params.raw or params.craft required", 0)
+	end
+	return edit_state(p)
+end
+
+function M.item_edit_cancel()
+	local b = ensure_build()
+	close_edit_popup()
+	b.itemsTab:SetDisplayItem(nil)
+	return { ok = true }
+end
+
+-- item_edit_commit{equip=true|false}: AddDisplayItem (POB's "Add to build" /
+-- "Save"): AddItem or replace, PopulateSlots, undo state, recalc.
+function M.item_edit_commit(p)
+	local b, tab, it = edit_item()
+	close_edit_popup()
+	local wasNew = tab.items[it.id] == nil
+	tab:AddDisplayItem(p and p.equip == false)
+	local r = commit(b)
+	r.id = it.id
+	r.added = wasNew
+	r.item = item_summary(it)
+	return r
+end
+
+-- item_edit_set{...}: one field per call, through the panel control's own
+-- callback. Returns the refreshed state.
+function M.item_edit_set(p)
+	local b, tab, it = edit_item()
+	local c = tab.controls
+	p = p or {}
+	if p.quality ~= nil then
+		c.displayItemQualityEdit:SetText(tostring(tonumber(p.quality) or 0), true)
+	elseif p.catalyst ~= nil then
+		c.displayItemCatalyst:SetSel(tonumber(p.catalyst) or 1)
+	elseif p.catalystQuality ~= nil then
+		c.displayItemCatalystQualityEdit:SetText(tostring(tonumber(p.catalystQuality) or 0), true)
+	elseif p.influence ~= nil then
+		-- two dropdown indices into the shared list (1 = none)
+		local a, bIdx = tonumber(p.influence[1]) or 1, tonumber(p.influence[2]) or 1
+		c.displayItemInfluence.selIndex = a
+		c.displayItemInfluence2.selIndex = bIdx
+		c.displayItemInfluence.selFunc(a, c.displayItemInfluence.list[a])
+	elseif p.variant then
+		local ctl = c[p.variant.control]
+		if not ctl or not ctl.selFunc then error("no variant control " .. tostring(p.variant.control), 0) end
+		ctl:SetSel(tonumber(p.variant.sel) or 1)
+	elseif p.version then
+		c.displayItemVersion:SetSel(tonumber(p.version) or 1)
+	elseif p.socket then
+		local i = tonumber(p.socket.index)
+		local drop = c["displayItemSocket" .. tostring(i)]
+		if not drop then error("no socket " .. tostring(i), 0) end
+		drop:SelByValue(p.socket.color, "color")
+		drop.selFunc(drop.selIndex, drop.list[drop.selIndex])
+	elseif p.link then
+		local i = tonumber(p.link.index)
+		local box = c["displayItemLink" .. tostring(i)]
+		if not box then error("no link " .. tostring(i), 0) end
+		box.state = p.link.on and true or false
+		box.changeFunc(box.state)
+	elseif p.addSocket then
+		if not ctl_shown(c.displayItemAddSocket) then error("no more sockets can be added", 0) end
+		c.displayItemAddSocket.onClick()
+	elseif p.range then
+		local i = tonumber(p.range.index)
+		if not c.displayItemRangeLine.list[i] then error("no range line " .. tostring(i), 0) end
+		c.displayItemRangeLine.selIndex = i
+		if p.range.mutate ~= nil then
+			c.displayItemMutatedCheckbox.changeFunc(p.range.mutate and true or false)
+		else
+			local v = math.max(0, math.min(1, tonumber(p.range.value) or 0))
+			c.displayItemRangeSlider.val = v
+			c.displayItemRangeSlider.changeFunc(v)
+		end
+	elseif p.modLine then
+		local i = tonumber(p.modLine.index)
+		local n = #(it.explicitModLines or {})
+		local ml = i <= n and it.explicitModLines[i] or it.crucibleModLines and it.crucibleModLines[i - n]
+		if not ml then error("no mod line " .. tostring(i), 0) end
+		if p.modLine.enabled ~= nil and (not ml.disabled) ~= (p.modLine.enabled and true or false) then
+			tab:ToggleDisplayItemModLine(ml)
+		end
+	elseif p.removeModLine then
+		local k = tonumber(p.removeModLine)
+		tab:UpdateCustomControls()
+		local btn = c["displayItemCustomModifierRemove" .. tostring(k)]
+		if not btn or btn.shown == false then error("no removable line " .. tostring(k), 0) end
+		btn.onClick()
+	elseif p.cluster then
+		if p.cluster.sel then
+			c.displayItemClusterJewelSkill:SetSel(tonumber(p.cluster.sel) or 1)
+		elseif p.cluster.nodeCount then
+			local cj = it.clusterJewel
+			local v = (tonumber(p.cluster.nodeCount) - cj.minNodes) / math.max(1, cj.maxNodes - cj.minNodes)
+			v = math.max(0, math.min(1, v))
+			c.displayItemClusterJewelNodeCount.val = v
+			c.displayItemClusterJewelNodeCount.changeFunc(v)
+		end
+	elseif p.raw then
+		local id = it.id
+		tab:CreateDisplayItemFromRaw(p.raw, false)
+		if tab.displayItem then tab.displayItem.id = id else error("item text not recognised", 0) end
+	else
+		error("nothing to set", 0)
+	end
+	return edit_state(p)
+end
+
+-- item_edit_affix{index, sel?, roll?}: the crafted-item affix dropdown /
+-- tier slider (the dropdown's selFunc writes prefixes/suffixes and Crafts).
+function M.item_edit_affix(p)
+	local b, tab, it = edit_item()
+	local c = tab.controls
+	local drop = c["displayItemAffix" .. tostring(tonumber(p and p.index))]
+	if not drop or not it.crafted then error("no affix slot " .. tostring(p and p.index), 0) end
+	if p.roll ~= nil then drop.slider.val = math.max(0, math.min(1, tonumber(p.roll) or 0)) end
+	if p.sel ~= nil then
+		local sel = math.max(1, math.min(#drop.list, tonumber(p.sel) or 1))
+		drop.selIndex = sel
+		drop.selFunc(sel, drop.list[sel])
+	elseif p.roll ~= nil then
+		drop.slider.changeFunc(drop.slider.val)
+	end
+	return edit_state(p)
+end
+
+-- The captured dialog as data: every control with a list / text / state.
+local function popup_state()
+	if not edit_popup then return { popup = nil } end
+	local ctls = {}
+	local names = {}
+	for name, ctl in pairs(edit_popup.cap.controls) do
+		if type(name) == "string" and type(ctl) == "table" then names[#names + 1] = name end
+	end
+	table.sort(names)
+	for _, name in ipairs(names) do
+		local ctl = edit_popup.cap.controls[name]
+		local sh = ctl.shown
+		if type(sh) == "function" then sh = sh(ctl) end
+		if sh ~= false then
+			local en = ctl.enabled
+			if type(en) == "function" then en = en(ctl) end
+			local entry = { name = name, enabled = en ~= false }
+			if name == "notableDB" then
+				if ctl.listBuildFlag ~= false or not ctl.list then run_list_builder(ctl) ctl.listBuildFlag = false end
+				entry.kind = "nodes"
+				local opts = {}
+				for i, node in ipairs(ctl.list or {}) do
+					opts[i] = { id = node.id, label = node.dn, labelZh = tr(node.dn) }
+					if ctl.selValue == node then entry.sel = i end
+				end
+				entry.options = opts
+				entry.search = ctl.controls.search and ctl.controls.search.buf or ""
+			elseif ctl.DropIndexToListIndex and ctl.list then
+				entry.kind = "dropdown"
+				entry.options = dd_options(ctl)
+				entry.sel = ctl.selIndex
+			elseif ctl.SetText and ctl.buf ~= nil then
+				entry.kind = "edit"
+				entry.text = ctl.buf
+			elseif ctl.GetDivVal then
+				entry.kind = "slider"
+				entry.value = ctl.val
+			elseif ctl.state ~= nil and ctl.changeFunc then
+				entry.kind = "check"
+				entry.state = ctl.state and true or false
+				entry.label = type(ctl.label) == "string" and ctl.label or nil
+			elseif ctl.onClick then
+				entry.kind = "button"
+				local l = ctl.label
+				if type(l) == "function" then l = l() end
+				entry.label = tostring(l or "")
+				entry.labelZh = tr(entry.label)
+			else
+				entry = nil
+			end
+			if entry then ctls[#ctls + 1] = entry end
+		end
+	end
+	return { popup = edit_popup.kind, title = edit_popup.cap.title, controls = ctls }
+end
+
+local popup_openers = {
+	enchant = function(tab, p) tab:EnchantDisplayItem(tonumber(p.slot) or 1) end,
+	anoint = function(tab, p) tab:AnointDisplayItem(tonumber(p.slot) or 1) end,
+	corrupt = function(tab) tab:CorruptDisplayItem() end,
+	custom = function(tab) tab:AddCustomModifierToDisplayItem() end,
+	crucible = function(tab) tab:AddCrucibleModifierToDisplayItem() end,
+	text = function(tab) tab:EditDisplayItemText() end,
+	implicit = function(tab) tab.controls.displayItemAddImplicit.onClick() end,
+}
+
+-- item_edit_popup{kind, action="open"|"pick"|"apply"|"cancel", name?, sel?, text?, state?, value?, button?}
+function M.item_edit_popup(p)
+	local b, tab, it = edit_item()
+	local action = p and p.action or "open"
+	if action == "open" then
+		local opener = popup_openers[p.kind or ""]
+		if not opener then error("unknown popup " .. tostring(p.kind), 0) end
+		close_edit_popup()
+		local cap = capture_popup(function() opener(tab, p) end, true)
+		if not cap then error("the dialog did not open", 0) end
+		edit_popup = { kind = p.kind, cap = cap }
+		return popup_state()
+	end
+	if not edit_popup then error("no dialog is open", 0) end
+	local ctls = edit_popup.cap.controls
+	if action == "pick" then
+		local ctl = ctls[p.name or ""]
+		if not ctl then error("no control " .. tostring(p.name), 0) end
+		with_popup(function()
+			if p.name == "notableDB" then
+				local want = tonumber(p.value)
+				for i, node in ipairs(ctl.list or {}) do
+					if node.id == want then ctl:SelectIndex(i) ctl.selIndex = i break end
+				end
+			elseif p.sel ~= nil then
+				ctl:SetSel(tonumber(p.sel) or 1)
+			elseif p.text ~= nil then
+				ctl:SetText(tostring(p.text), true)
+			elseif p.state ~= nil then
+				ctl.state = p.state and true or false
+				if ctl.changeFunc then ctl.changeFunc(ctl.state) end
+			end
+		end)
+		return popup_state()
+	end
+	if action == "apply" then
+		local btn = ctls[p.button or "save"]
+		if not btn or not btn.onClick then error("no button " .. tostring(p.button or "save"), 0) end
+		local en = btn.enabled
+		if type(en) == "function" then en = en(btn) end
+		if en == false then error("button is disabled", 0) end
+		local ok, err = pcall(with_popup, function() btn.onClick() end)
+		close_edit_popup()
+		if not ok then error(err, 0) end
+		if not tab.displayItem then error("the dialog closed the item", 0) end
+		return edit_state(p)
+	end
+	if action == "cancel" then
+		close_edit_popup()
+		return edit_state(p)
+	end
+	error("unknown action " .. tostring(action), 0)
+end
+
+-- ---------------------------------------------------------------------------
+-- Items: list management (ItemListControl's own buttons) and the databases
+-- ---------------------------------------------------------------------------
+
+local function item_list_control(tab)
+	local ctl = tab.controls.itemList
+	if not ctl then error("ItemsTab has no item list control", 0) end
+	return ctl
+end
+
+function M.sort_items()
+	local b = ensure_build()
+	item_list_control(b.itemsTab).controls.sort.onClick()
+	return commit(b)
+end
+
+function M.delete_unused_items()
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local before = #tab.itemOrderList
+	item_list_control(tab).controls.deleteUnused.onClick()
+	local r = commit(b)
+	r.deleted = before - #tab.itemOrderList
+	return r
+end
+
+-- Del All asks through main:OpenConfirmPopup; the page already asked.
+function M.delete_all_items()
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local m = main()
+	local saved = m.OpenConfirmPopup
+	m.OpenConfirmPopup = function(self, title, msg, confirmLabel, onConfirm) onConfirm() end
+	local ok, err = pcall(function() item_list_control(tab).controls.deleteAll.onClick() end)
+	m.OpenConfirmPopup = saved
+	if not ok then error(err, 0) end
+	return commit(b)
+end
+
+-- equip_primary{id, alt=bool}: the list's Ctrl+Click (ItemListControl:OnSelClick):
+-- toggle the item in its primary slot, second weapon set aware, Shift = the
+-- second slot of a pair.
+function M.equip_primary(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local it = tab.items[tonumber(p and p.id or 0)]
+	if not it then error("no item " .. tostring(p and p.id), 0) end
+	local slotName = it:GetPrimarySlot()
+	if not (slotName and tab.slots[slotName]) then error("item has no primary slot", 0) end
+	if tab.slots[slotName].weaponSet == 1 and tab.activeItemSet.useSecondWeaponSet then slotName = slotName .. " Swap" end
+	if p.alt then
+		local altSlot = slotName:gsub("1", "2")
+		if tab:IsItemValidForSlot(it, altSlot) then slotName = altSlot end
+	end
+	if tab.slots[slotName].selItemId == it.id then
+		tab.slots[slotName]:SetSelItemId(0)
+	else
+		tab.slots[slotName]:SetSelItemId(it.id)
+	end
+	local r = items_committed(b)
+	r.slotName = slotName
+	r.equipped = tab.slots[slotName].selItemId == it.id
+	return r
+end
+
+
+local function wait_db(kind)
+	local m = main()
+	local db = kind == "rare" and m.rareDB or m.uniqueDB
+	if not db then error("item database missing", 0) end
+	local pumps = 0
+	while db.loading and pumps < 2000 do
+		frame()
+		pumps = pumps + 1
+	end
+	if db.loading then error("item database still loading", 0) end
+	return db
+end
+
+local function db_control(tab, kind)
+	local ctl = kind == "rare" and tab.controls.rareDB or tab.controls.uniqueDB
+	if not ctl then error("ItemsTab has no " .. tostring(kind) .. " database control", 0) end
+	if not ctl.leaguesAndTypesLoaded then ctl:LoadLeaguesAndTypes() end
+	return ctl
+end
+
+-- item_db_options{kind}: the ItemDBControl's filter dropdowns.
+function M.item_db_options(p)
+	local b = ensure_build()
+	local kind = p and p.kind == "rare" and "rare" or "unique"
+	wait_db(kind)
+	local ctl = db_control(b.itemsTab, kind)
+	local c = ctl.controls
+	local out = { kind = kind, slot = dd_options(c.slot), type = dd_options(c.type), searchMode = dd_options(c.searchMode) }
+	if kind == "unique" then
+		out.league = dd_options(c.league)
+		out.requirement = dd_options(c.requirement)
+		out.obtainable = dd_options(c.obtainable)
+		local sorts = {}
+		for i, e in ipairs(ctl.sortDropList) do sorts[i] = { label = e.label, labelZh = tr(e.label), sortMode = e.sortMode, stat = e.stat } end
+		out.sort = sorts
+	end
+	return out
+end
+
+local DB_STAT_SORT_MAX = 300
+
+-- item_db{kind, slot, type, league, requirement, obtainable, searchMode,
+-- query, sortMode, page, size}: ItemDBControl's own filters (indices into
+-- item_db_options) and sort order; a stat sort runs GetMiscCalculator per
+-- item and slot, so it is refused above DB_STAT_SORT_MAX matches.
+function M.item_db(p)
+	local b = ensure_build()
+	p = p or {}
+	local kind = p.kind == "rare" and "rare" or "unique"
+	local db = wait_db(kind)
+	local ctl = db_control(b.itemsTab, kind)
+	local c = ctl.controls
+	local function setSel(dd, v) if dd then dd.selIndex = math.max(1, math.min(#dd.list, tonumber(v) or 1)) end end
+	setSel(c.slot, p.slot)
+	setSel(c.type, p.type)
+	setSel(c.league, p.league)
+	setSel(c.requirement, p.requirement)
+	setSel(c.obtainable, p.obtainable)
+	setSel(c.searchMode, p.searchMode)
+	c.search.buf = type(p.query) == "string" and p.query or ""
+	if c.sort then
+		local mode = "NAME"
+		for _, e in ipairs(ctl.sortDropList) do
+			if e.sortMode == p.sortMode then mode = e.sortMode end
+		end
+		ctl:SetSortMode(mode)
+	end
+	-- count first: the stat sort is the expensive part
+	local hits = 0
+	for _, it in pairs(db.list) do
+		if ctl:DoesItemMatchFilters(it) then hits = hits + 1 end
+	end
+	local statSort = ctl.sortDetail and ctl.sortDetail.stat and true or false
+	if statSort and hits > DB_STAT_SORT_MAX then
+		return { kind = kind, total = hits, tooMany = true, max = DB_STAT_SORT_MAX, page = 1, size = 0, items = {} }
+	end
+	run_list_builder(ctl)
+	local list = ctl.list or {}
+	local page = math.max(1, tonumber(p.page) or 1)
+	local size = math.min(200, math.max(1, tonumber(p.size) or 50))
+	local out = {}
+	local first = (page - 1) * size
+	for i = first + 1, math.min(#list, first + size) do
+		local it = list[i]
+		local s = item_summary(it)
+		s.raw = it.raw
+		s.id = nil
+		if statSort then s.measuredPower = it.measuredPower end
+		out[#out + 1] = s
+	end
+	return { kind = kind, total = #list, page = page, size = size, items = out, statSort = statSort }
+end
+
+probe("classes.ItemsTab display item editing (SetDisplayItem/AddDisplayItem/CreateDisplayItemFromRaw/UpdateAffixControls/ToggleDisplayItemModLine/UpdateCustomControls)", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.SetDisplayItem) == "function" and type(c.AddDisplayItem) == "function" and type(c.CreateDisplayItemFromRaw) == "function"
+		and type(c.UpdateAffixControls) == "function" and type(c.ToggleDisplayItemModLine) == "function" and type(c.UpdateCustomControls) == "function"
+end)
+probe("classes.ItemsTab dialogs (CraftItem/EditDisplayItemText/EnchantDisplayItem/AnointDisplayItem/CorruptDisplayItem/AddCustomModifierToDisplayItem/AddCrucibleModifierToDisplayItem)", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.CraftItem) == "function" and type(c.EditDisplayItemText) == "function" and type(c.EnchantDisplayItem) == "function"
+		and type(c.AnointDisplayItem) == "function" and type(c.CorruptDisplayItem) == "function" and type(c.AddCustomModifierToDisplayItem) == "function"
+		and type(c.AddCrucibleModifierToDisplayItem) == "function"
+end)
+probe("classes.ItemsTab comparison (GetComparisonSlotNameForItem/GetEquippedSlotForItem/AddItemStatDifferences/SortItemList)", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.GetComparisonSlotNameForItem) == "function" and type(c.GetEquippedSlotForItem) == "function"
+		and type(c.AddItemStatDifferences) == "function" and type(c.SortItemList) == "function"
+end)
+probe("classes.ItemListControl (FindEquippedAbyssJewel/FindSocketedJewel) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
+	local l, d = class_of("ItemListControl"), class_of("ItemDBControl")
+	return type(l) == "table" and type(l.FindEquippedAbyssJewel) == "function" and type(l.FindSocketedJewel) == "function"
+		and type(d) == "table" and type(d.DoesItemMatchFilters) == "function" and type(d.LoadLeaguesAndTypes) == "function"
+		and type(d.SetSortMode) == "function" and type(d.ListBuilder) == "function"
+end)
+probe("classes.Item editing (Craft/BuildAndParseRaw/ResetInfluence/CanHaveMod/NormaliseQuality/GetVariantGroupOptions)", function()
+	local c = class_of("Item")
+	return type(c) == "table" and type(c.Craft) == "function" and type(c.BuildAndParseRaw) == "function" and type(c.ResetInfluence) == "function"
+		and type(c.CanHaveMod) == "function" and type(c.NormaliseQuality) == "function" and type(c.GetVariantGroupOptions) == "function"
+end)
+probe("main.OpenPopup/ClosePopup/OpenConfirmPopup + itemLib.influenceInfo.all + data.itemBaseTypeList/itemBaseLists/powerStatList", function()
+	local m = launch.main
+	return type(m.OpenPopup) == "function" and type(m.ClosePopup) == "function" and type(m.OpenConfirmPopup) == "function"
+		and type(itemLib) == "table" and type(itemLib.influenceInfo) == "table" and type(itemLib.influenceInfo.all) == "table"
+		and type(data.itemBaseTypeList) == "table" and type(data.itemBaseLists) == "table" and type(data.powerStatList) == "table"
+end)
+probe("classes.DropDownControl.SetSel/SelByValue + EditControl.SetText + ListControl.SelectIndex", function()
+	local d, e, l = class_of("DropDownControl"), class_of("EditControl"), class_of("ListControl")
+	return type(d) == "table" and type(d.SetSel) == "function" and type(d.SelByValue) == "function"
+		and type(e) == "table" and type(e.SetText) == "function" and type(l) == "table" and type(l.SelectIndex) == "function"
+end)
 
 -- ---------------------------------------------------------------------------
 -- Skills (socket groups, gems, skill sets)
