@@ -52,6 +52,14 @@ inline constexpr int kLauncherFontSizeMax     = 26;
 // Out of range (hand-edited, non-numeric -> 0, a future build's value) means the
 // default, never "as small as it goes": 0 is what GetPrivateProfileIntW returns
 // for text, and 0 px would be a launcher with no readable text at all.
+// The new interface's zoom (percent) and base font size (px). Out-of-range
+// values fall back to the default rather than clamping, like the launcher's
+// own font size: a garbage ini key must never leave the page unreadable.
+inline constexpr int kModernZoomDefault = 100, kModernZoomMin = 70, kModernZoomMax = 200;
+inline constexpr int kModernFontSizeDefault = 13, kModernFontSizeMin = 11, kModernFontSizeMax = 18;
+inline int ClampModernZoom(int v) { return (v < kModernZoomMin || v > kModernZoomMax) ? kModernZoomDefault : v; }
+inline int ClampModernFontSize(int v) { return (v < kModernFontSizeMin || v > kModernFontSizeMax) ? kModernFontSizeDefault : v; }
+
 inline int ClampLauncherFontSize(int v)
 {
 	return (v < kLauncherFontSizeMin || v > kLauncherFontSizeMax) ? kLauncherFontSizeDefault : v;
@@ -130,6 +138,11 @@ struct LauncherConfig {
 	// The new (WebView2) interface window, --modern-ui. Its own pair for the
 	// same reason as above; 0 = default (1500x950 at the current scale).
 	int            modernWinW = 0, modernWinH = 0;
+	// The new interface's own scale knobs (its gear popover): WebView2 zoom
+	// in percent and the page's base font size in px. Independent of the
+	// launcher's fontSize, which never applies to POB or this window.
+	int            modernZoom = kModernZoomDefault;
+	int            modernFontSize = kModernFontSizeDefault;
 	// 0 = classic POB window, 1 = the new interface. Read and written so an
 	// ini can carry the preference; the launcher's "start" button does not act
 	// on it yet (the new interface is a preview reached from its own button).

@@ -1,6 +1,7 @@
 // App-wide state: engine status, the loaded build, sidebar, view.
 // Svelte 5 runes in a module so every component reads the same object.
 import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
+import { t } from "./i18n";
 
 export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import";
 
@@ -92,9 +93,27 @@ class AppState {
     await this.refresh();
   }
 
+  /** The tab a freshly loaded build opens on: POB_ZH_UI_VIEW (developer knob) or the tree. */
+  landingView(): ViewId {
+    const v = hostInfo.view as ViewId | undefined;
+    const ids: ViewId[] = ["tree", "items", "skills", "config", "calcs", "notes", "party", "import"];
+    return v && ids.includes(v) ? v : "tree";
+  }
+
   async loadBuild(path: string) {
     const ok = await this.run(async () => {
       await api.loadBuildFile(path);
+      return this.refresh();
+    });
+    if (ok) this.view = this.landingView();
+  }
+
+  /** POB's "New" button: an unnamed, unsaved build (Ctrl+S then asks where). */
+  async newBuild(name?: string, subPath?: string) {
+    if (this.info?.unsaved && !confirm(t("builds.unsavedPrompt"))) return;
+    const ok = await this.run(async () => {
+      await api.newBuild(name, subPath);
+      this.rev = 0;
       return this.refresh();
     });
     if (ok) this.view = "tree";
@@ -134,7 +153,7 @@ bridge.on("hello", async () => {
   } else if (app.version?.buildLoaded) {
     // POB reopened its last build itself (Settings.xml): show it.
     const ok = await app.run(() => app.refresh());
-    if (ok) app.view = "tree";
+    if (ok) app.view = app.landingView();
   }
 });
 bridge.on("restarted", () => {

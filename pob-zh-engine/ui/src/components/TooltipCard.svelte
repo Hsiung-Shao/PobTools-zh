@@ -14,7 +14,7 @@
   const border = $derived(pobColor(accent) ?? "var(--edge-1)");
 </script>
 
-<div class="card" style:left={`${x}px`} style:top={`${y}px`} style:width={`${width}px`} style:border-top-color={border}>
+<div class="card" style:left={`${Math.round(x)}px`} style:top={`${Math.round(y)}px`} style:width={`${width}px`} style:border-top-color={border}>
   {#each lines as l, i}
     {#if "sep" in l}
       <div class="sep"></div>

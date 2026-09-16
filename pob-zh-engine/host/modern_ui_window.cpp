@@ -146,8 +146,17 @@ struct Window {
 		}
 	}
 
+	json Prefs() const
+	{
+		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)} };
+	}
+
 	json Info() const
 	{
+		// POB_ZH_UI_VIEW=<tab id>: the page opens on that tab once a build is
+		// loaded. A developer knob for screenshots; unset in normal use.
+		wchar_t view[64] = {};
+		GetEnvironmentVariableW(L"POB_ZH_UI_VIEW", view, 64);
 		return json{
 			{"game", narrow(game)},
 			{"locale", narrow(locale)},
@@ -155,9 +164,16 @@ struct Window {
 			{"pobDir", narrow(pobDir)},
 			{"version", POBTOOLS_VERSION_STRING},
 			{"open", narrow(openBuild)},
+			{"view", narrow(view)},
+			{"prefs", Prefs()},
 			{"hosts", json{ {"app", narrow(kHostApp)}, {"pob", narrow(kHostPob)},
 			                {"data", narrow(kHostData)}, {"fonts", narrow(kHostFonts)} }},
 		};
+	}
+
+	void ApplyZoom()
+	{
+		if (controller) controller->put_ZoomFactor(ClampModernZoom(cfg.modernZoom) / 100.0);
 	}
 
 	// The page asked the host itself for something. Anything not understood is
@@ -198,6 +214,19 @@ struct Window {
 			StopChild();
 			bool ok = StartChild();
 			reply(json{ {"ok", ok} });
+		} else if (method == "host.get_prefs") {
+			reply(Prefs());
+		} else if (method == "host.set_prefs") {
+			// The page's gear popover. Zoom applies at once; both persist to the
+			// ini the way SaveWindowSize does (re-read, change ours, write).
+			LauncherConfig fresh = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+			if (params.contains("zoom")) fresh.modernZoom = ClampModernZoom(params.value("zoom", kModernZoomDefault));
+			if (params.contains("fontSize")) fresh.modernFontSize = ClampModernFontSize(params.value("fontSize", kModernFontSizeDefault));
+			cfg.modernZoom = fresh.modernZoom;
+			cfg.modernFontSize = fresh.modernFontSize;
+			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
+			ApplyZoom();
+			reply(Prefs());
 		} else {
 			fail("unknown_host_method", method);
 		}
@@ -316,6 +345,7 @@ struct Window {
 		RECT rc{};
 		GetClientRect(hwnd, &rc);
 		controller->put_Bounds(rc);
+		ApplyZoom(); // before the first paint, so the remembered scale never flashes
 		webview->Navigate((std::wstring(L"https://") + kHostApp + L"/index.html").c_str());
 		return S_OK;
 	}

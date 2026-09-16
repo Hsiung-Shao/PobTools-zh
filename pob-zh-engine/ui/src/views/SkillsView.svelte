@@ -55,8 +55,8 @@
   // --- tooltips ---------------------------------------------------------------
   function showTip(key: string, fetch: () => Promise<{ lines: TooltipLine[] }>, e: MouseEvent) {
     clearTimeout(tipTimer);
-    const x = Math.min(e.clientX + 18, window.innerWidth - 360);
-    const y = Math.min(e.clientY + 12, window.innerHeight - 360);
+    const x = Math.round(Math.min(e.clientX + 18, window.innerWidth - 360));
+    const y = Math.round(Math.min(e.clientY + 12, window.innerHeight - 360));
     const hit = tipCache.get(key);
     if (hit) {
       tip = { lines: hit, x, y };

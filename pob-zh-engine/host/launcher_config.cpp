@@ -214,6 +214,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		readPair(L"WindowW", L"WindowH", c.winW, c.winH);
 		readPair(L"TabbedWindowW", L"TabbedWindowH", c.tabWinW, c.tabWinH);
 		readPair(L"ModernWindowW", L"ModernWindowH", c.modernWinW, c.modernWinH);
+		c.modernZoom = ClampModernZoom(read_ini_int(iniPath, L"ModernZoom", kModernZoomDefault));
+		c.modernFontSize = ClampModernFontSize(read_ini_int(iniPath, L"ModernFontSize", kModernFontSizeDefault));
 		// Same rule as WindowMode: anything but the one known value is the default.
 		c.uiMode = (read_ini_int(iniPath, L"UiMode", 0) == 1) ? 1 : 0;
 	}
@@ -313,6 +315,10 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		std::to_wstring(cfg.modernWinW).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"ModernWindowH",
 		std::to_wstring(cfg.modernWinH).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernZoom",
+		std::to_wstring(ClampModernZoom(cfg.modernZoom)).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernFontSize",
+		std::to_wstring(ClampModernFontSize(cfg.modernFontSize)).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"UiMode",
 		std::to_wstring(cfg.uiMode).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());

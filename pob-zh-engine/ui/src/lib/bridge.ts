@@ -20,7 +20,15 @@ export interface HostInfo {
   version: string;
   /** A build .xml to open as soon as the engine is up ("" = none). */
   open?: string;
+  /** Tab to show once a build is loaded (POB_ZH_UI_VIEW, a developer knob). */
+  view?: string;
+  /** The window's remembered scale (pob-zh.ini ModernZoom / ModernFontSize). */
+  prefs?: UiPrefs;
   hosts: { app: string; pob: string; data: string; fonts: string };
+}
+export interface UiPrefs {
+  zoom: number;
+  fontSize: number;
 }
 
 export interface BridgeError {
@@ -521,6 +529,8 @@ export interface ItemTooltip {
   color?: string;
   lines: TooltipLine[];
   summary: ItemSummary;
+  /** The pasted text was Chinese and went through the reverse translator. */
+  reversed?: boolean;
 }
 export interface ItemDbPage {
   kind: "unique" | "rare";
@@ -729,7 +739,7 @@ export const api = {
   listItems: () => bridge.call<ItemsList>("list_items", {}, 60000),
   itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
   itemRaw: (id: number) => bridge.call<{ raw: string }>("item_raw", { id }),
-  addItem: (raw: string, opts: { equip?: boolean; slotName?: string } = {}) => bridge.call<Committed & { item: ItemSummary }>("add_item", { raw, ...opts }, 60000),
+  addItem: (raw: string, opts: { equip?: boolean; slotName?: string } = {}) => bridge.call<Committed & { item: ItemSummary; reversed?: boolean }>("add_item", { raw, ...opts }, 60000),
   deleteItem: (id: number) => bridge.call<Committed>("delete_item", { id }, 60000),
   equipItem: (id: number, slotName: string) => bridge.call<Committed>("equip_item", { id, slotName }, 60000),
   unequipSlot: (slotName: string) => bridge.call<Committed>("unequip_slot", { slotName }, 60000),
@@ -775,4 +785,11 @@ export const api = {
   setPartyExport: (value: boolean) => bridge.call<Committed>("set_party", { field: "enableExportBuffs", value }, 60000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
+  getPrefs: () => bridge.call<UiPrefs>("host.get_prefs"),
+  setPrefs: (p: Partial<UiPrefs>) => bridge.call<UiPrefs>("host.set_prefs", p),
+  // build list management (POB's New / New Folder / Copy / Rename / Delete)
+  newBuild: (name?: string, subPath?: string) => bridge.call<LoadedBuild>("new_build", { name, subPath }, 120000),
+  newFolder: (subPath: string, name: string) => bridge.call<{ path: string; subPath: string }>("new_folder", { subPath, name }),
+  renameBuild: (p: { path: string; subPath: string; isFolder: boolean; newName: string; copy?: boolean }) => bridge.call<{ path: string }>("rename_build", p),
+  deleteBuild: (p: { path: string; isFolder: boolean; recursive?: boolean }) => bridge.call<{ deleted: string }>("delete_build", p),
 };

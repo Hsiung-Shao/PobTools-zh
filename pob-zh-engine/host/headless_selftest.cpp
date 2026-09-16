@@ -911,6 +911,59 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      "mode=" + mode + " status=" + status.substr(0, 120));
 			}
 
+			// Build list management: New (an unnamed build), New Folder, Rename,
+			// Copy, Delete, all under the sandbox's build folder; then the sample
+			// build again so the checks below start from the same place.
+			{
+				json nb;
+				bool okNb = child.Call("new_build", json{{"name", "bridge_new"}}, nb, 120000);
+				json nbi;
+				bool okNbi = okNb && child.Call("get_build_info", json::object(), nbi, 30000);
+				check("new_build: an unnamed, file-less build with no points spent",
+				      okNb && nb.value("buildName", "") == "bridge_new" && !nb.contains("dbFileName") && okNbi && nbi["points"].value("used", -1) == 0,
+				      okNb ? nb.dump().substr(0, 200) + " " + (okNbi ? nbi["points"].dump() : "") : nb.dump().substr(0, 300));
+				json nf;
+				bool okNf = child.Call("new_folder", json{{"subPath", ""}, {"name", "bridge_dir"}}, nf, 30000);
+				check("new_folder creates a folder under the build folder", okNf && GetFileAttributesW((sandbox + L"\\Builds\\bridge_dir").c_str()) != INVALID_FILE_ATTRIBUTES, nf.dump().substr(0, 200));
+				json badNf;
+				bool okBadNf = child.Call("new_folder", json{{"subPath", ""}, {"name", "../escape"}}, badNf, 30000);
+				check("new_folder refuses path separators in the name", !okBadNf && child.Alive(), badNf.dump().substr(0, 200));
+				const std::wstring nbPath = sandbox + L"\\Builds\\bridge_new.xml";
+				DeleteFileW(nbPath.c_str());
+				json svn;
+				bool okSvn = child.Call("save_build_as", json{{"path", narrow(nbPath)}}, svn, 60000);
+				json rn;
+				bool okRn = okSvn && child.Call("rename_build", json{{"path", narrow(nbPath)}, {"subPath", ""}, {"isFolder", false}, {"newName", "bridge_renamed"}}, rn, 30000);
+				const std::wstring rnPath = sandbox + L"\\Builds\\bridge_renamed.xml";
+				json cp;
+				bool okCp = okRn && child.Call("rename_build", json{{"path", narrow(rnPath)}, {"subPath", ""}, {"isFolder", false}, {"newName", "bridge_copy"}, {"copy", true}}, cp, 30000);
+				const std::wstring cpPath = sandbox + L"\\Builds\\bridge_copy.xml";
+				json hdr;
+				child.Call("get_build_header", json::object(), hdr, 30000);
+				check("rename_build moves the saved file (the open build follows it) and copy=true duplicates it",
+				      okRn && okCp && GetFileAttributesW(nbPath.c_str()) == INVALID_FILE_ATTRIBUTES &&
+				          GetFileAttributesW(rnPath.c_str()) != INVALID_FILE_ATTRIBUTES && GetFileAttributesW(cpPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
+				          hdr.value("buildName", "") == "bridge_renamed",
+				      "rn=" + rn.dump().substr(0, 100) + " cp=" + cp.dump().substr(0, 100) + " name=" + hdr.value("buildName", ""));
+				json delOpen;
+				bool okDelOpen = child.Call("delete_build", json{{"path", narrow(rnPath)}, {"isFolder", false}}, delOpen, 30000);
+				check("delete_build refuses the build that is open", !okDelOpen && child.Alive(), delOpen.dump().substr(0, 200));
+				json delCp, delDir, delOut;
+				bool okDelCp = child.Call("delete_build", json{{"path", narrow(cpPath)}, {"isFolder", false}}, delCp, 30000);
+				bool okDelDir = child.Call("delete_build", json{{"path", narrow(sandbox + L"\\Builds\\bridge_dir")}, {"isFolder", true}}, delDir, 30000);
+				bool okDelOut = child.Call("delete_build", json{{"path", narrow(sandbox + L"\\Launch.lua")}, {"isFolder", false}}, delOut, 30000);
+				check("delete_build removes the copy and the empty folder, and refuses anything outside the build folder",
+				      okDelCp && okDelDir && GetFileAttributesW(cpPath.c_str()) == INVALID_FILE_ATTRIBUTES &&
+				          GetFileAttributesW((sandbox + L"\\Builds\\bridge_dir").c_str()) == INVALID_FILE_ATTRIBUTES && !okDelOut &&
+				          GetFileAttributesW((sandbox + L"\\Launch.lua").c_str()) != INVALID_FILE_ATTRIBUTES,
+				      delCp.dump().substr(0, 80) + " " + delDir.dump().substr(0, 80) + " " + delOut.dump().substr(0, 120));
+				// back to the sample build for everything that follows
+				json rl;
+				bool okRl = child.Call("load_build_file", json{{"path", narrow(sandbox + L"\\Builds\\" + sample)}}, rl, 120000);
+				DeleteFileW(rnPath.c_str());
+				check("load_build_file after the new-build round trip reopens the sample", okRl && rl.value("buildName", "") != "bridge_renamed", rl.dump().substr(0, 200));
+			}
+
 			// save as: under the sandbox's build folder, then reload it and run the oracle again
 			const std::wstring savePath = sandbox + L"\\Builds\\bridge_saveas.xml";
 			DeleteFileW(savePath.c_str());
@@ -1015,6 +1068,28 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json badAdd;
 			bool okBadAdd = child.Call("add_item", json{{"raw", "Rarity: RARE\nNonsense\nNot A Base At All\n"}}, badAdd, 60000);
 			check("add_item refuses text with no known base (error, engine stays up)", !okBadAdd && child.Alive(), badAdd.dump().substr(0, 200));
+
+			// Chinese item text (the game client's Ctrl+C) goes through the engine's
+			// reverse translator before Item(): the same jewel, written the way the
+			// Traditional Chinese client prints it, must resolve to the same base.
+			{
+				const std::string zhRaw = u8"稀有度: 魔法\n習武的 鈷藍珠寶\n鈷藍珠寶\n--------\n物品等級: 20\n--------\n增加 10% 最大生命\n";
+				json zhAdd;
+				bool okZh = child.Call("add_item", json{{"raw", zhRaw}, {"equip", false}}, zhAdd, 60000);
+				long long zhId = okZh ? zhAdd["item"].value("id", 0LL) : 0;
+				json zhRawBack;
+				bool okZhRaw = okZh && zhId > 0 && child.Call("item_raw", json{{"id", zhId}}, zhRawBack, 60000);
+				std::string en = okZhRaw ? zhRawBack.value("raw", "") : "";
+				check("add_item: Chinese item text is reverse-translated (Cobalt Jewel base, English raw kept) and reports reversed=true",
+				      okZh && zhAdd.value("reversed", false) && zhAdd["item"].value("baseName", "") == "Cobalt Jewel" && en.find("Cobalt Jewel") != std::string::npos &&
+				          en.find("Rarity: MAGIC") != std::string::npos,
+				      okZh ? zhAdd.dump().substr(0, 200) + " raw=" + en.substr(0, 80) : zhAdd.dump().substr(0, 300));
+				if (zhId > 0) { json del; child.Call("delete_item", json{{"id", zhId}}, del, 60000); }
+				json zhTip;
+				bool okZhTip = child.Call("item_tooltip", json{{"raw", zhRaw}}, zhTip, 60000);
+				check("item_tooltip{raw} previews Chinese item text through the same translator",
+				      okZhTip && zhTip.value("reversed", false) && zhTip["lines"].size() >= 2, zhTip.dump().substr(0, 200));
+			}
 
 			json dbU, dbZh, dbR;
 			bool okDbU = okLoad && child.Call("item_db", json{{"kind", "unique"}, {"query", "shavronne"}, {"page", 1}, {"size", 10}}, dbU, 180000);

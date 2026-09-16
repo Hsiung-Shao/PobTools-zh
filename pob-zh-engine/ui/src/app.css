@@ -79,12 +79,14 @@
   --font-ui: "Noto Sans TC", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
 
-  --fs-2xs: 10px;
-  --fs-xs: 11px;
-  --fs-sm: 12px;
-  --fs-md: 13px;
-  --fs-lg: 15px;
-  --fs-xl: 20px;
+  /* every size hangs off the base the gear popover sets (lib/prefs) */
+  --fs-base: 13px;
+  --fs-2xs: calc(var(--fs-base) - 3px);
+  --fs-xs: calc(var(--fs-base) - 2px);
+  --fs-sm: calc(var(--fs-base) - 1px);
+  --fs-md: var(--fs-base);
+  --fs-lg: calc(var(--fs-base) + 2px);
+  --fs-xl: calc(var(--fs-base) + 7px);
 
   --radius-s: 3px;
   --radius-m: 6px;
@@ -109,7 +111,6 @@ body {
   font-family: var(--font-ui);
   font-size: var(--fs-md);
   line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
 }

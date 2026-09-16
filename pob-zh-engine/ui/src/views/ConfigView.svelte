@@ -1,13 +1,36 @@
-<!-- 設定頁:POB 的 ConfigOptions 依區段兩欄排列;POB 判定不相關的選項預設隱藏。
-     值的型別對應 checkbox / number / select / text;placeholder 灰字;自訂詞綴區塊。 -->
+<!-- 設定頁:照 POB 原版 —— ConfigOptions 依區段順序排列(POB 的 col 1 全部在前、
+     col 2 在後),寬度夠時兩欄、不夠時單欄;每項一列「標籤 …… 值」,數字欄不截斷、
+     下拉依內容寬;POB 判定不相關的選項預設隱藏;tooltip 走我們的浮層;自訂詞綴區塊。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type ConfigItem, type ConfigList, type ConfigSection, type CustomModBlock } from "$lib/bridge";
+  import { api, type ConfigItem, type ConfigList, type ConfigSection, type CustomModBlock, type TooltipLine } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
+  import TooltipCard from "../components/TooltipCard.svelte";
 
   let data = $state<ConfigList | null>(null);
+  // tooltip (POB's per-control tooltipText), on hover after a short delay
+  let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
+  let tipTimer = 0;
+  function tipEnter(it: ConfigItem, e: MouseEvent) {
+    clearTimeout(tipTimer);
+    const text = it.tooltipZh || it.tooltip;
+    if (!text) return;
+    const el = e.currentTarget as HTMLElement;
+    tipTimer = window.setTimeout(() => {
+      const r = el.getBoundingClientRect();
+      const lines: TooltipLine[] = text.split("\n").map((s) => ({ size: 14, text: s, raw: s, center: false }));
+      const x = Math.round(Math.min(r.left + 24, window.innerWidth - 380));
+      const y = Math.round(r.bottom + 4 + 260 > window.innerHeight ? Math.max(8, r.top - 8 - Math.min(260, 20 * lines.length + 24)) : r.bottom + 4);
+      tip = { lines, x, y };
+    }, 220);
+  }
+  function tipLeave() {
+    clearTimeout(tipTimer);
+    tip = null;
+  }
+  const selectedLabel = (it: ConfigItem) => (it.list ?? []).find((o) => String(o.val ?? "") === String(it.value ?? ""));
   let loadedRev = -1;
   let filter = $state("");
   let showAll = $state(false);
@@ -115,38 +138,38 @@
                 <section class="card">
                   <h3>{sec.nameZh || sec.name}</h3>
                   {#each items as it (it.var)}
-                    <div class="opt" class:muted={!it.visible} title={it.tooltipZh || it.tooltip || ""}>
+                    {@const sel = it.type === "list" ? selectedLabel(it) : undefined}
+                    {@const selText = sel ? sel.labelZh || sel.label : ""}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
                       {#if it.type === "check"}
-                        <label class="row">
+                        <label class="lbl chkrow">
                           <input type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} />
-                          <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                          <span><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
                         </label>
                       {:else if it.type === "list"}
-                        <div class="row">
-                          <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                          <select class="select sm val" value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
-                            {#each it.list ?? [] as o}
-                              <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
-                            {/each}
-                          </select>
-                        </div>
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <select class="select sm val list" value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
+                          {#each it.list ?? [] as o}
+                            <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
+                          {/each}
+                        </select>
+                        {#if selText.length > 22}<div class="cur dim"><PobText text={selText} muted="var(--ink-2)" /></div>{/if}
                       {:else if it.type === "text"}
-                        <div class="row col2">
-                          <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                          <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
-                        </div>
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
                       {:else}
-                        <div class="row">
-                          <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                          <input
-                            class="input sm val num"
-                            type="number"
-                            step={it.type === "float" ? "0.1" : "1"}
-                            value={numVal(it.value)}
-                            placeholder={it.placeholder != null ? String(it.placeholder) : ""}
-                            onchange={(e) => set(it, e.currentTarget.value === "" ? null : Number(e.currentTarget.value))}
-                          />
-                        </div>
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <input
+                          class="input sm val num"
+                          class:wide={it.type === "float"}
+                          type="text"
+                          inputmode="decimal"
+                          value={numVal(it.value)}
+                          placeholder={it.placeholder != null ? String(it.placeholder) : ""}
+                          onchange={(e) => { const s = e.currentTarget.value.trim(); if (s === "") return void set(it, null); const n = Number(s); if (Number.isFinite(n)) void set(it, n); else e.currentTarget.value = numVal(it.value); }}
+                          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+                        />
                       {/if}
                       {#if !isDefault(it)}
                         <button class="btn ghost sm rst" title={t("config.reset")} onclick={() => reset(it)}>↺</button>
@@ -181,6 +204,8 @@
       </div>
     {/if}
   </div>
+
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
 
   {#if setDialog}
     <div class="modal">
@@ -240,9 +265,10 @@
     overflow-y: auto;
     padding: 12px 14px 24px;
   }
+  /* POB's two columns when there is room for them, one otherwise (col 1 first, col 2 after) */
   .cols {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
     gap: 12px;
     align-items: start;
   }
@@ -253,7 +279,7 @@
     min-width: 0;
   }
   .card {
-    padding: 10px 12px 12px;
+    padding: 8px 10px 10px;
     background: var(--surface-1);
     border: 1px solid var(--edge-0);
     border-radius: var(--radius-m);
@@ -276,13 +302,17 @@
     width: 2px;
     background: var(--gold);
   }
+  /* one option = one line: label on the left, its value on the right (POB's own row shape) */
   .opt {
-    display: flex;
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 4px;
+    column-gap: 10px;
     min-height: 26px;
-    padding: 1px 0;
+    padding: 1px 26px 1px 4px;
     border-radius: var(--radius-s);
+    font-size: var(--fs-sm);
   }
   .opt:hover {
     background: var(--surface-hover);
@@ -290,33 +320,55 @@
   .opt.muted {
     opacity: 0.55;
   }
-  .row {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-    font-size: var(--fs-sm);
-  }
-  .row.col2 {
-    flex-direction: column;
-    align-items: stretch;
+  .opt.text {
+    grid-template-columns: 1fr;
+    row-gap: 4px;
+    padding-top: 4px;
+    padding-bottom: 4px;
   }
   .lbl {
-    flex: 1;
     min-width: 0;
     line-height: 1.3;
   }
-  .val {
-    width: 150px;
-    flex: none;
+  .chkrow {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
   }
+  .cur {
+    grid-column: 1 / -1;
+    font-size: var(--fs-2xs);
+    padding-left: 2px;
+    margin-top: -2px;
+  }
+  /* values: numbers show whole (no spinner, wide enough for 7 digits), lists as wide as their text */
   .val.num {
-    width: 90px;
+    width: 9ch;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .val.num.wide {
+    width: 11ch;
+  }
+  .val.num::placeholder {
     text-align: right;
   }
+  .val.list {
+    width: auto;
+    min-width: 120px;
+    max-width: 280px;
+  }
   .rst {
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
     opacity: 0;
+    height: 20px;
+    padding: 0 4px;
   }
   .opt:hover .rst {
     opacity: 1;

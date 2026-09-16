@@ -22,6 +22,7 @@
   let rightTab = $state<"paste" | "db">("paste");
   let pasteText = $state("");
   let pasteErr = $state<string | null>(null);
+  let pasteNote = $state<string | null>(null);
   let dbKind = $state<"unique" | "rare">("unique");
   let dbQuery = $state("");
   let dbType = $state("");
@@ -62,8 +63,8 @@
   // --- tooltips ---------------------------------------------------------------
   function showTip(key: string, fetch: () => Promise<ItemTooltip>, e: MouseEvent) {
     clearTimeout(tipTimer);
-    const x = Math.min(e.clientX + 18, window.innerWidth - 360);
-    const y = Math.min(e.clientY + 12, window.innerHeight - 320);
+    const x = Math.round(Math.min(e.clientX + 18, window.innerWidth - 360));
+    const y = Math.round(Math.min(e.clientY + 12, window.innerHeight - 320));
     const hit = tipCache.get(key);
     if (hit) {
       tip = { lines: hit.lines, color: hit.color, x, y };
@@ -144,17 +145,35 @@
     try {
       const r = await api.addItem(raw, { equip });
       pasteText = "";
+      pasteNote = r.reversed ? t("items.reversed") : null;
       selectedId = r.item.id ?? null;
       await changed();
     } catch (e: any) {
       pasteErr = String(e?.message ?? e);
     }
   }
+  /** Shows the pasted text the way POB would read it, without adding it. */
+  async function previewPasted(e: MouseEvent) {
+    pasteErr = null;
+    const raw = pasteText.trim();
+    if (!raw) return;
+    try {
+      const r = await api.itemTooltip({ raw });
+      const el = e.currentTarget as HTMLElement;
+      const b = el.getBoundingClientRect();
+      tip = { lines: r.lines, color: r.color, x: Math.round(Math.max(8, b.left - 360)), y: Math.round(Math.max(8, Math.min(b.top - 200, window.innerHeight - 420))) };
+      pasteNote = (r as { reversed?: boolean }).reversed ? t("items.reversed") : null;
+    } catch (err: any) {
+      pasteErr = String(err?.message ?? err);
+    }
+  }
+  // Item text starts with the rarity or item-class line, in either client language.
+  const looksLikeItem = (s: string) => /^(Rarity|Item Class|稀有度|物品種類|物品类别|稀有度)\s*[:：]/m.test(s);
   function onPasteBox(e: ClipboardEvent) {
     // Ctrl+V into an empty box adds straight away (what the classic UI does).
     if (pasteText.trim()) return;
     const text = e.clipboardData?.getData("text") ?? "";
-    if (/^Rarity:/im.test(text) || /^Item Class:/im.test(text)) {
+    if (looksLikeItem(text)) {
       e.preventDefault();
       pasteText = text;
       void addPasted(true);
@@ -316,10 +335,12 @@
       <div class="pane">
         <p class="dim">{t("items.pasteHint")}</p>
         <textarea class="input area" rows="14" bind:value={pasteText} onpaste={onPasteBox} placeholder="Rarity: RARE&#10;…"></textarea>
-        {#if pasteErr}<div class="bad">{pasteErr}</div>{/if}
+        {#if pasteErr}<div class="bad selectable">{pasteErr}</div>{/if}
+        {#if pasteNote}<div class="ok">{pasteNote}</div>{/if}
         <div class="btns">
           <button class="btn primary" disabled={!pasteText.trim() || app.busy > 0} onclick={() => addPasted(true)}>{t("items.addEquip")}</button>
           <button class="btn" disabled={!pasteText.trim() || app.busy > 0} onclick={() => addPasted(false)}>{t("items.add")}</button>
+          <button class="btn ghost" disabled={!pasteText.trim() || app.busy > 0} onclick={previewPasted} onmouseleave={() => (tip = null)}>{t("items.preview")}</button>
         </div>
       </div>
     {:else}
@@ -578,6 +599,10 @@
   }
   .right-align {
     justify-content: flex-end;
+  }
+  .ok {
+    color: var(--ok);
+    font-size: var(--fs-xs);
   }
   .bad {
     color: var(--bad);

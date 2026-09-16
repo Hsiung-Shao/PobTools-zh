@@ -4,6 +4,7 @@
   import { bridge } from "$lib/bridge";
   import { loadLocale, t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { prefs } from "$lib/prefs.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import StatusBar from "./components/StatusBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -29,6 +30,22 @@
       void app.save();
       return;
     }
+    // window zoom, the browser's own shortcuts (WebView2's are switched off)
+    if (k === "=" || k === "+") {
+      e.preventDefault();
+      void prefs.zoomBy(1);
+      return;
+    }
+    if (k === "-") {
+      e.preventDefault();
+      void prefs.zoomBy(-1);
+      return;
+    }
+    if (k === "0") {
+      e.preventDefault();
+      void prefs.set({ zoom: 100 });
+      return;
+    }
     const n = Number(e.key);
     if (n >= 1 && n <= tabOrder.length) {
       const id = tabOrder[n - 1];
@@ -39,13 +56,20 @@
     }
   }
 
+  function onWheel(e: WheelEvent) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    void prefs.zoomBy(e.deltaY < 0 ? 1 : -1);
+  }
+
   let i18nReady = $state(false);
   onMount(() => {
+    prefs.init();
     void loadLocale().then(() => (i18nReady = true));
   });
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onwheel={onWheel} />
 
 {#if i18nReady}
   <div class="app">

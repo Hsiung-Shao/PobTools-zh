@@ -1903,6 +1903,114 @@ probe("LaunchServer.lua present (OAuth loopback)", function()
 	return false
 end)
 
+-- ---------------------------------------------------------------------------
+-- Build list management (Modules/BuildList.lua buttons, BuildListControl's
+-- NewFolder / RenameBuild / DeleteBuild). File operations stay under
+-- main.buildPath; the popups' inputs arrive as params.
+-- ---------------------------------------------------------------------------
+
+local function build_root()
+	local r = tostring(main().buildPath or "")
+	if r ~= "" and r:sub(-1) ~= "/" and r:sub(-1) ~= "\\" then r = r .. "/" end
+	return r
+end
+
+-- RenameBuild's EditControl filter: no path separators, wildcards, quotes or controls.
+local function safe_build_name(name)
+	if type(name) ~= "string" or not name:match("%S") or name:find('[\\/:%*%?"<>|%c]') then
+		error("bad name: " .. tostring(name), 0)
+	end
+	return (name:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function path_exists(path)
+	local f = io.open(path, "r")
+	if f then f:close() return true end
+	return false
+end
+
+-- new_build{name?, subPath?}: the list's "New" button (BuildList.lua:39-41).
+-- Main's mode switch shuts the open build down the way "<< Back" does.
+function M.new_build(p)
+	local m = main()
+	local name = (p and type(p.name) == "string" and p.name:match("%S")) and p.name or "Unnamed build"
+	if p and type(p.subPath) == "string" and m.modes.LIST then m.modes.LIST.subPath = p.subPath end
+	m:SetMode("BUILD", false, name)
+	return after_reinit()
+end
+
+-- new_folder{subPath?, name}: OpenNewFolderPopup's save (MakeDir under the list's folder).
+function M.new_folder(p)
+	local sub = (p and type(p.subPath) == "string") and p.subPath or ""
+	local name = safe_build_name(p and p.name)
+	local dir = build_root() .. sub .. name
+	if not under_build_path(dir) then error("path must be under the build folder", 0) end
+	if path_exists(dir) then error("already exists: " .. name, 0) end
+	local ok, err = MakeDir(dir)
+	if ok == false then error("cannot create folder: " .. tostring(err), 0) end
+	return { path = dir, subPath = sub .. name .. "/" }
+end
+
+-- rename_build{path, subPath, isFolder, newName, copy?}: RenameBuild's save
+-- button (BuildListControl.lua:122-148); copy=true is the "Copy" button.
+function M.rename_build(p)
+	if type(p) ~= "table" or type(p.path) ~= "string" then error("params.path required", 0) end
+	if not under_build_path(p.path) then error("path must be under the build folder", 0) end
+	local sub = type(p.subPath) == "string" and p.subPath or ""
+	local newName = safe_build_name(p.newName)
+	local dest = build_root() .. sub .. newName .. (p.isFolder and "" or ".xml")
+	if not under_build_path(dest) then error("path must be under the build folder", 0) end
+	if norm_path(dest) == norm_path(p.path) then return { path = dest, unchanged = true } end
+	if path_exists(dest) then error("already exists: " .. newName, 0) end
+	if p.copy then
+		if p.isFolder then
+			main():CopyFolder(p.path, dest)
+		else
+			local res, msg = copyFile(p.path, dest)
+			if not res then error("copy failed: " .. tostring(msg), 0) end
+		end
+	else
+		local res, msg = os.rename(p.path, dest)
+		if not res then error("rename failed: " .. tostring(msg), 0) end
+		-- the open build lives in that file: follow it, as SaveDBFile would
+		local b = build()
+		if b and b.dbFileName and norm_path(b.dbFileName) == norm_path(p.path) then
+			b.dbFileName = dest
+			b.buildName = newName
+		end
+	end
+	return { path = dest }
+end
+
+-- delete_build{path, isFolder, recursive?}: DeleteBuild (BuildListControl.lua:149-175).
+-- A non-empty folder needs recursive=true (POB asks first; the page does too).
+function M.delete_build(p)
+	if type(p) ~= "table" or type(p.path) ~= "string" then error("params.path required", 0) end
+	if not under_build_path(p.path) then error("path must be under the build folder", 0) end
+	if norm_path(p.path) == norm_path(build_root()) or norm_path(p.path) .. "/" == norm_path(build_root()) then
+		error("refusing to delete the build folder itself", 0)
+	end
+	if p.isFolder then
+		local nonEmpty = NewFileSearch(p.path .. "/*") or NewFileSearch(p.path .. "/*", true)
+		if nonEmpty and not p.recursive then error("folder not empty", 0) end
+		local res, msg = RemoveDir(p.path, nonEmpty and true or false)
+		if res == false then error("cannot delete folder: " .. tostring(msg), 0) end
+	else
+		local b = build()
+		if b and b.dbFileName and norm_path(b.dbFileName) == norm_path(p.path) then
+			error("that build is open; close or save it elsewhere first", 0)
+		end
+		local res, msg = os.remove(p.path)
+		if not res then error("cannot delete: " .. tostring(msg), 0) end
+	end
+	return { deleted = p.path }
+end
+
+probe("build list file ops (copyFile/CopyFolder/RemoveDir/NewFileSearch/os.rename)", function()
+	return type(copyFile) == "function" and type(launch.main.CopyFolder) == "function" and type(RemoveDir) == "function"
+		and type(NewFileSearch) == "function" and type(os.rename) == "function" and type(os.remove) == "function"
+end)
+
 probe("classes.Build main-skill selectors", function()
 	local b = build()
 	return type(b) == "table" and type(b.RefreshSkillSelectControls) == "function" and type(b.SaveDB) == "function"
@@ -2036,6 +2144,18 @@ function M.list_items()
 	}
 end
 
+-- Item text copied from the Chinese game client -> English, the way the
+-- engine's Paste() hook treats clipboard text in the classic window.
+-- PobToolsReverseText is that same reverse translator exposed to Lua; an
+-- older engine DLL without it passes the text through untouched.
+local function normalize_item_text(raw)
+	if type(raw) ~= "string" or not raw:find("[\128-\255]") then return raw, false end
+	if type(PobToolsReverseText) ~= "function" then return raw, false end
+	local out = PobToolsReverseText(raw)
+	if type(out) ~= "string" or out == "" then return raw, false end
+	return out, out ~= raw
+end
+
 -- item_tooltip{id | raw, slotName?, dbMode?}: POB's own item tooltip. With a
 -- slot the stat-difference block ("equipping this changes DPS by...") is
 -- included, exactly as hovering the item over that slot in the classic UI.
@@ -2044,7 +2164,9 @@ function M.item_tooltip(p)
 	local tab = b.itemsTab
 	local it, dbMode
 	if p and p.raw then
-		it = new("Item"):Item(p.raw, p.rarity, true)
+		local raw, reversed = normalize_item_text(p.raw)
+		it = new("Item"):Item(raw, p.rarity, true)
+		if reversed then p.reversed = true end
 		if it.base then it:BuildModList() end
 		dbMode = true
 	else
@@ -2064,6 +2186,7 @@ function M.item_tooltip(p)
 		color = tt.color,
 		lines = tooltip_lines(tt),
 		summary = item_summary(it),
+		reversed = (p and p.reversed) and true or false,
 	}
 end
 
@@ -2090,6 +2213,8 @@ function M.add_item(p)
 	local raw = p and p.raw
 	if type(raw) ~= "string" or #raw == 0 then error("params.raw required", 0) end
 	if #raw > 64 * 1024 then error("item text too large", 0) end
+	local reversed
+	raw, reversed = normalize_item_text(raw)
 	local it = new("Item"):Item(raw)
 	if not it.base then error("item base not recognised: " .. tostring(it.baseName or it.name), 0) end
 	local wantSlot = p.slotName and tab.slots[p.slotName] or nil
@@ -2103,6 +2228,7 @@ function M.add_item(p)
 	end
 	local r = items_committed(b)
 	r.item = item_summary(it)
+	r.reversed = reversed
 	return r
 end
 
@@ -2273,6 +2399,9 @@ function M.item_db(p)
 	return { kind = kind, total = #hits, page = page, size = size, items = out, types = typeList }
 end
 
+probe("PobToolsReverseText (optional: engine DLL with the paste reverse translator)", function()
+	return PobToolsReverseText == nil or type(PobToolsReverseText) == "function"
+end)
 probe("classes.ItemsTab.AddItem/DeleteItem/AddItemTooltip/IsItemValidForSlot/PopulateSlots", function()
 	local c = class_of("ItemsTab")
 	return type(c) == "table" and type(c.AddItem) == "function" and type(c.DeleteItem) == "function" and type(c.AddItemTooltip) == "function"

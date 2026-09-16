@@ -2754,6 +2754,25 @@ static int l_PobToolsReverse(lua_State* L)
 	return 1;
 }
 
+// PobToolsReverseText(text) -> text. The multi-line reverse translation the
+// Paste() hook runs on clipboard text (Chinese item text -> English POB can
+// parse), for callers that already hold the text: the headless bridge gets
+// pasted items from the page, never from the clipboard. Returns the input
+// unchanged when nothing translates.
+static int l_PobToolsReverseText(lua_State* L)
+{
+	const char* text = lua_tostring(L, 1);
+	if (!text) { lua_pushnil(L); return 1; }
+	char* reversed = translation_reverse_text(text);
+	if (reversed) {
+		lua_pushstring(L, reversed);
+		translation_free(reversed);
+	} else {
+		lua_pushstring(L, text);
+	}
+	return 1;
+}
+
 // PobToolsSetTranslate(enabled) -> previous enabled state. Lets POB turn off
 // DrawString translation while rendering content that must stay in English
 // (e.g. the About/Update changelog), then restore the previous state.
@@ -3002,6 +3021,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsItemTitle);
 	ADDFUNC(PobToolsTranslateDisplay);
 	ADDFUNC(PobToolsReverse);
+	ADDFUNC(PobToolsReverseText);
 	ADDFUNC(PobToolsWindowOpacity);
 	ADDFUNC(PobToolsBackground);
 	ADDFUNC(PobToolsSetTranslate);
@@ -3010,6 +3030,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsLogError);
 	ADDFUNCALIAS(PoeCharmTranslate, PobToolsTranslate);
 	ADDFUNCALIAS(PoeCharmReverse, PobToolsReverse);
+	ADDFUNCALIAS(PoeCharmReverseText, PobToolsReverseText);
 	ADDFUNCALIAS(PoeCharmSetTranslate, PobToolsSetTranslate);
 
 	// PobTools: load translation dictionaries (POB_LOCALE / POB_GAME env-driven).

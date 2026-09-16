@@ -18,7 +18,7 @@
       bd = null;
       return;
     }
-    const y = Math.max(48, Math.min(clientY - 36, window.innerHeight - 440));
+    const y = Math.round(Math.max(48, Math.min(clientY - 36, window.innerHeight - 440)));
     const key = `${rowIndex}:${app.rev}`;
     const show = (sections: BreakdownSection[]) => {
       bd = { sections, row: rowIndex, y, pinned: pin || (bd?.pinned && bd.row === rowIndex) || false };

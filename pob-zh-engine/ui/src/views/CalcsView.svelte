@@ -1,5 +1,6 @@
-<!-- 計算頁:POB 的 CalcSections 依 group 排成卡片牆,cell 文字由 POB 的 formatCalcStr 產出;
-     有細項的 cell hover 開細項浮層(與側欄同一個 BreakdownPanel)。 -->
+<!-- 計算頁:緊湊表格。POB CalcsTab 的欄位規則(group 1 佔前三欄、寬三欄的區段橫跨、
+     group 2 第四欄、group 3 第五欄)照排;每列 16px、標籤/數值兩欄對齊;cell 文字由 POB 的
+     formatCalcStr 產出,有細項的 cell hover 開細項浮層(與側欄同一個 BreakdownPanel)。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, type BreakdownSection, type CalcCell, type CalcsData } from "$lib/bridge";
@@ -54,8 +55,8 @@
       return;
     }
     if (bd?.pinned && !pin) return;
-    const x = Math.min(e.clientX + 16, window.innerWidth - 600);
-    const y = Math.min(e.clientY + 14, window.innerHeight - 380);
+    const x = Math.round(Math.min(e.clientX + 16, window.innerWidth - 600));
+    const y = Math.round(Math.min(e.clientY + 14, window.innerHeight - 380));
     const hit = bdCache.get(key);
     if (hit) {
       bd = { sections: hit, x, y, pinned: pin, key };
@@ -76,7 +77,62 @@
     if (bd && !bd.pinned) bd = null;
   }
   const isSelector = (c: CalcCell) => !!c.control;
+
+  // POB's column groups (CalcsTab:235-300): 1 = the first three columns, 2 = the fourth, 3 = the fifth
+  const groups = $derived.by(() => {
+    const g: Record<1 | 2 | 3, CalcsData["sections"]> = { 1: [], 2: [], 3: [] };
+    for (const s of data?.sections ?? []) {
+      if (s.id === "SkillSelect") continue;
+      const k = (s.group === 2 || s.group === 3 ? s.group : 1) as 1 | 2 | 3;
+      g[k].push(s);
+    }
+    return g;
+  });
+  // subsection collapse follows POB's own `collapsed`, toggled by clicking the head
+  let collapsed = $state<Record<string, boolean>>({});
+  const isCollapsed = (si: number, ui: number, def: boolean) => collapsed[`${si}:${ui}`] ?? def;
+  const toggle = (si: number, ui: number, def: boolean) => (collapsed[`${si}:${ui}`] = !isCollapsed(si, ui, def));
 </script>
+
+{#snippet section(sec: CalcsData["sections"][number])}
+  <section class="card" class:off={!sec.enabled} class:wide={sec.widthCols >= 3} style:--sec={pobColor(sec.colour) ?? "var(--gold)"}>
+    {#each sec.subsections as sub (sub.ui)}
+      {@const rows = sec.enabled ? sub.rows.filter((r) => rowMatch(r.label, r.labelZh)) : []}
+      {@const closed = isCollapsed(sec.si, sub.ui, sub.collapsed)}
+      <div class="sub">
+        <button class="subhead" onclick={() => toggle(sec.si, sub.ui, sub.collapsed)} title={closed ? "+" : "−"}>
+          <span class="caret" class:closed>▾</span>
+          <span class="st">{sub.labelZh || sub.label || sec.id}</span>
+          {#if sub.extra}<span class="extra"><PobText text={sub.extra} muted="var(--ink-2)" /></span>{/if}
+          {#if !sec.enabled}<span class="extra dim">{t("calcs.hidden")}</span>{/if}
+        </button>
+        {#if sec.enabled && !closed}
+          {#each rows as row (row.ri)}
+            {@const cells = row.cells.filter((c) => !isSelector(c))}
+            <div class="row" class:multi={cells.length > 1} style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
+              {#if row.label}<span class="rl" style:color={pobColor(row.color) ?? "var(--ink-2)"}>{row.labelZh || row.label}</span>{:else}<span class="rl"></span>{/if}
+              {#each cells as c (c.ci)}
+                {@const key = `${sec.si}:${sub.ui}:${row.ri}:${c.ci}`}
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <span
+                  class="cell"
+                  role={c.hasBreakdown ? "button" : undefined}
+                  class:live={c.hasBreakdown}
+                  class:pinned={bd?.pinned && bd.key === key}
+                  onmouseenter={(e) => c.hasBreakdown && showBd(key, sec.si, sub.ui, row.ri, c.ci, e, false)}
+                  onmouseleave={leaveBd}
+                  onclick={(e) => c.hasBreakdown && showBd(key, sec.si, sub.ui, row.ri, c.ci, e, true)}
+                >
+                  <PobText text={c.text ?? ""} />
+                </span>
+              {/each}
+            </div>
+          {/each}
+        {/if}
+      </div>
+    {/each}
+  </section>
+{/snippet}
 
 <div class="page">
   <div class="bar">
@@ -112,42 +168,15 @@
   <div class="scroll">
     {#if data}
       <div class="wall">
-        {#each data.sections.filter((s) => s.id !== "SkillSelect") as sec (sec.si)}
-          <section class="card" class:off={!sec.enabled} style:--sec={pobColor(sec.colour) ?? "var(--gold)"} style:grid-column={`span ${Math.min(3, Math.max(1, sec.widthCols))}`}>
-            {#each sec.subsections as sub (sub.ui)}
-              <div class="sub">
-                <div class="subhead">
-                  <span>{sub.labelZh || sub.label || sec.id}</span>
-                  {#if sub.extra}<span class="extra"><PobText text={sub.extra} muted="var(--ink-2)" /></span>{/if}
-                </div>
-                {#if sec.enabled}
-                  {#each sub.rows.filter((r) => rowMatch(r.label, r.labelZh)) as row (row.ri)}
-                    <div class="row" style:font-size={row.textSize ? `${Math.max(10, row.textSize - 2)}px` : undefined}>
-                      {#if row.label}<span class="rl" style:color={pobColor(row.color) ?? "var(--ink-2)"}>{row.labelZh || row.label}</span>{/if}
-                      {#each row.cells.filter((c) => !isSelector(c)) as c (c.ci)}
-                        {@const key = `${sec.si}:${sub.ui}:${row.ri}:${c.ci}`}
-                        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-                        <span
-                          class="cell"
-                          role={c.hasBreakdown ? "button" : undefined}
-                          class:live={c.hasBreakdown}
-                          class:pinned={bd?.pinned && bd.key === key}
-                          onmouseenter={(e) => c.hasBreakdown && showBd(key, sec.si, sub.ui, row.ri, c.ci, e, false)}
-                          onmouseleave={leaveBd}
-                          onclick={(e) => c.hasBreakdown && showBd(key, sec.si, sub.ui, row.ri, c.ci, e, true)}
-                        >
-                          <PobText text={c.text ?? ""} />
-                        </span>
-                      {/each}
-                    </div>
-                  {/each}
-                {:else}
-                  <div class="dim small pad">{t("calcs.hidden")}</div>
-                {/if}
-              </div>
-            {/each}
-          </section>
-        {/each}
+        <div class="g1">
+          {#each groups[1] as sec (sec.si)}{@render section(sec)}{/each}
+        </div>
+        <div class="gcol">
+          {#each groups[2] as sec (sec.si)}{@render section(sec)}{/each}
+        </div>
+        <div class="gcol">
+          {#each groups[3] as sec (sec.si)}{@render section(sec)}{/each}
+        </div>
       </div>
     {/if}
   </div>
@@ -205,83 +234,141 @@
   .scroll {
     flex: 1;
     overflow-y: auto;
-    padding: 12px 14px 24px;
+    padding: 8px 10px 20px;
   }
+  /* POB's five columns: group 1 spans the first three, groups 2 and 3 take one each */
   .wall {
     display: grid;
-    grid-template-columns: repeat(3, minmax(280px, 1fr));
-    gap: 10px;
+    grid-template-columns: minmax(0, 3fr) minmax(230px, 1fr) minmax(230px, 1fr);
+    gap: 8px;
     align-items: start;
+  }
+  .g1 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-auto-flow: dense;
+    gap: 8px;
+    align-items: start;
+    min-width: 0;
+  }
+  .gcol {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+  @media (max-width: 1360px) {
+    .wall {
+      grid-template-columns: 1fr;
+    }
+    .gcol {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
   }
   .card {
     background: var(--surface-1);
     border: 1px solid var(--edge-0);
     border-top: 2px solid var(--sec);
-    border-radius: var(--radius-m);
-    padding: 6px 10px 8px;
+    border-radius: var(--radius-s);
+    padding: 0 6px 3px;
     min-width: 0;
   }
+  .card.wide {
+    grid-column: 1 / -1;
+  }
   .card.off {
-    opacity: 0.5;
+    opacity: 0.45;
   }
   .sub + .sub {
-    margin-top: 8px;
-    padding-top: 6px;
     border-top: 1px solid var(--edge-0);
   }
   .subhead {
+    appearance: none;
+    width: 100%;
     display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 3px;
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.12em;
-    font-weight: 600;
+    align-items: center;
+    gap: 6px;
+    height: 18px;
+    padding: 0;
+    margin: 0;
+    background: none;
+    border: 0;
     color: var(--ink-2);
+    font: inherit;
+    font-size: var(--fs-2xs);
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+  .subhead:hover .st {
+    color: var(--ink-0);
+  }
+  .caret {
+    display: inline-block;
+    width: 8px;
+    font-size: 9px;
+    color: var(--ink-3);
+    transition: transform 0.1s;
+  }
+  .caret.closed {
+    transform: rotate(-90deg);
+  }
+  .st {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .extra {
+    margin-left: auto;
     letter-spacing: 0;
     font-weight: 400;
+    white-space: nowrap;
   }
+  /* one row = 16px: label column right-aligned, value column left-aligned */
   .row {
     display: flex;
     align-items: baseline;
-    gap: 6px;
-    min-height: 18px;
+    gap: 0;
+    height: 16px;
+    line-height: 16px;
     font-size: var(--fs-xs);
-    border-radius: 2px;
+  }
+  .row:hover {
+    background: var(--surface-hover);
   }
   .rl {
-    flex: 0 0 132px;
+    flex: 0 0 46%;
+    max-width: 190px;
+    padding-right: 6px;
     text-align: right;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  .row.multi .rl {
+    flex-basis: 150px;
+  }
   .cell {
-    flex: 1;
+    flex: 1 1 0;
     min-width: 0;
-    padding: 0 4px;
+    padding: 0 3px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    border-left: 1px solid var(--edge-0);
   }
   .cell.live {
     cursor: default;
-    box-shadow: inset 2px 0 0 var(--edge-2);
+    border-left-color: var(--edge-2);
   }
   .cell.live:hover,
   .cell.pinned {
     background: var(--gold-soft);
-    box-shadow: inset 2px 0 0 var(--gold);
-  }
-  .pad {
-    padding: 4px 0;
-  }
-  .small {
-    font-size: var(--fs-2xs);
+    border-left-color: var(--gold);
   }
   .float {
     position: fixed;

@@ -3,6 +3,7 @@
   import { api } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app, type ViewId } from "$lib/state.svelte";
+  import PrefsPopover from "./PrefsPopover.svelte";
 
   const tabs: { id: ViewId; key: string }[] = [
     { id: "builds", key: "title.builds" },
@@ -33,6 +34,7 @@
     {/each}
   </nav>
   <span class="grow"></span>
+  <PrefsPopover />
   {#if app.info}
     <span class="build">
       <span class="bname">{app.info.buildName}</span>
@@ -46,7 +48,7 @@
   .top {
     height: var(--titlebar-h);
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: 18px;
     padding: 0 16px;
     background: var(--surface-1);
