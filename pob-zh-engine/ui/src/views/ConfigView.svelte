@@ -1,6 +1,6 @@
-<!-- 設定頁:照 POB 原版 —— ConfigOptions 依區段順序排列(POB 的 col 1 全部在前、
-     col 2 在後),寬度夠時兩欄、不夠時單欄;每項一列「標籤 …… 值」,數字欄不截斷、
-     下拉依內容寬;POB 判定不相關的選項預設隱藏;tooltip 走我們的浮層;自訂詞綴區塊。 -->
+<!-- 配置頁:照 POB 原版 —— ConfigOptions 依區段順序排列(POB 的 col 1 全部在前、
+     col 2 在後),卡片以 CSS 多欄排版填滿寬度(視窗越寬欄越多,每欄平衡高度);
+     每項一列「標籤 …… 值」,數字欄不截斷、下拉依內容寬;POB 判定不相關的選項預設隱藏;tooltip 走我們的浮層;自訂詞綴區塊。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, type ConfigItem, type ConfigList, type ConfigSection, type CustomModBlock, type TooltipLine } from "$lib/bridge";
@@ -63,9 +63,10 @@
     return (it.labelZh ?? "").toLowerCase().includes(f) || (it.label ?? "").toLowerCase().includes(f) || it.var.toLowerCase().includes(f);
   }
   const hiddenCount = $derived(data ? data.sections.reduce((n, s) => n + s.items.filter((i) => !i.visible).length, 0) : 0);
-  const columns = $derived.by((): [ConfigSection[], ConfigSection[]] => {
-    if (!data) return [[], []];
-    return [data.sections.filter((s) => s.col !== 2), data.sections.filter((s) => s.col === 2)];
+  // POB's order: every col-1 section, then every col-2 section
+  const sections = $derived.by((): ConfigSection[] => {
+    if (!data) return [];
+    return [...data.sections.filter((s) => s.col !== 2), ...data.sections.filter((s) => s.col === 2)];
   });
 
   async function set(it: ConfigItem, value: unknown) {
@@ -130,77 +131,71 @@
   <div class="scroll">
     {#if data}
       <div class="cols">
-        {#each columns as col, ci}
-          <div class="col">
-            {#each col as sec (sec.name)}
-              {@const items = sec.items.filter(matches)}
-              {#if items.length}
-                <section class="card">
-                  <h3>{sec.nameZh || sec.name}</h3>
-                  {#each items as it (it.var)}
-                    {@const sel = it.type === "list" ? selectedLabel(it) : undefined}
-                    {@const selText = sel ? sel.labelZh || sel.label : ""}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
-                      {#if it.type === "check"}
-                        <label class="lbl chkrow">
-                          <input type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} />
-                          <span><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                        </label>
-                      {:else if it.type === "list"}
-                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                        <select class="select sm val list" value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
-                          {#each it.list ?? [] as o}
-                            <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
-                          {/each}
-                        </select>
-                        {#if selText.length > 22}<div class="cur dim"><PobText text={selText} muted="var(--ink-2)" /></div>{/if}
-                      {:else if it.type === "text"}
-                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                        <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
-                      {:else}
-                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                        <input
-                          class="input sm val num"
-                          class:wide={it.type === "float"}
-                          type="text"
-                          inputmode="decimal"
-                          value={numVal(it.value)}
-                          placeholder={it.placeholder != null ? String(it.placeholder) : ""}
-                          onchange={(e) => { const s = e.currentTarget.value.trim(); if (s === "") return void set(it, null); const n = Number(s); if (Number.isFinite(n)) void set(it, n); else e.currentTarget.value = numVal(it.value); }}
-                          onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-                        />
-                      {/if}
-                      {#if !isDefault(it)}
-                        <button class="btn ghost sm rst" title={t("config.reset")} onclick={() => reset(it)}>↺</button>
-                      {/if}
-                    </div>
-                  {/each}
-                </section>
-              {/if}
-            {/each}
-            {#if ci === 1}
-              <section class="card">
-                <h3>{t("config.custom")}</h3>
-                <p class="dim small">{t("config.customHint")}</p>
-                {#each custom as blk, i}
-                  <div class="block">
-                    <div class="bhead">
-                      <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
-                      <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
-                      <button class="btn ghost sm" onclick={() => { custom.splice(i, 1); customDirty = true; }}>×</button>
-                    </div>
-                    <textarea class="input area" rows="4" bind:value={blk.text} oninput={() => (customDirty = true)}></textarea>
-                  </div>
-                {/each}
-                <div class="btns">
-                  <button class="btn sm" onclick={() => { custom.push({ title: `Group ${custom.length + 1}`, text: "", enabled: true }); customDirty = true; }}>{t("config.customAdd")}</button>
-                  <button class="btn sm primary" disabled={!customDirty || app.busy > 0} onclick={applyCustom}>{t("config.customApply")}</button>
+        {#each sections as sec (sec.name)}
+          {@const items = sec.items.filter(matches)}
+          {#if items.length}
+            <section class="card">
+              <h3>{sec.nameZh || sec.name}</h3>
+              {#each items as it (it.var)}
+                {@const sel = it.type === "list" ? selectedLabel(it) : undefined}
+                {@const selText = sel ? sel.labelZh || sel.label : ""}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
+                  {#if it.type === "check"}
+                    <label class="lbl chkrow">
+                      <input type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} />
+                      <span><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                    </label>
+                  {:else if it.type === "list"}
+                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                    <select class="select sm val list" value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
+                      {#each it.list ?? [] as o}
+                        <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
+                      {/each}
+                    </select>
+                    {#if selText.length > 22}<div class="cur dim"><PobText text={selText} muted="var(--ink-2)" /></div>{/if}
+                  {:else if it.type === "text"}
+                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                    <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
+                  {:else}
+                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                    <input
+                      class="input sm val num"
+                      class:wide={it.type === "float"}
+                      type="text"
+                      inputmode="decimal"
+                      value={numVal(it.value)}
+                      placeholder={it.placeholder != null ? String(it.placeholder) : ""}
+                      onchange={(e) => { const s = e.currentTarget.value.trim(); if (s === "") return void set(it, null); const n = Number(s); if (Number.isFinite(n)) void set(it, n); else e.currentTarget.value = numVal(it.value); }}
+                      onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+                    />
+                  {/if}
+                  {#if !isDefault(it)}
+                    <button class="btn ghost sm rst" title={t("config.reset")} onclick={() => reset(it)}>↺</button>
+                  {/if}
                 </div>
-              </section>
-            {/if}
-          </div>
+              {/each}
+            </section>
+          {/if}
         {/each}
+        <section class="card">
+          <h3>{t("config.custom")}</h3>
+          <p class="dim small">{t("config.customHint")}</p>
+          {#each custom as blk, i}
+            <div class="block">
+              <div class="bhead">
+                <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
+                <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
+                <button class="btn ghost sm" onclick={() => { custom.splice(i, 1); customDirty = true; }}>×</button>
+              </div>
+              <textarea class="input area" rows="4" bind:value={blk.text} oninput={() => (customDirty = true)}></textarea>
+            </div>
+          {/each}
+          <div class="btns">
+            <button class="btn sm" onclick={() => { custom.push({ title: `Group ${custom.length + 1}`, text: "", enabled: true }); customDirty = true; }}>{t("config.customAdd")}</button>
+            <button class="btn sm primary" disabled={!customDirty || app.busy > 0} onclick={applyCustom}>{t("config.customApply")}</button>
+          </div>
+        </section>
       </div>
     {/if}
   </div>
@@ -260,26 +255,23 @@
     height: 24px;
     font-size: var(--fs-xs);
   }
+  .opt .val {
+    height: 20px;
+  }
   .scroll {
     flex: 1;
     overflow-y: auto;
     padding: 12px 14px 24px;
   }
-  /* POB's two columns when there is room for them, one otherwise (col 1 first, col 2 after) */
+  /* cards packed into as many columns as fit (POB's order runs down each column) */
   .cols {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
-    gap: 12px;
-    align-items: start;
-  }
-  .col {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    min-width: 0;
+    column-width: 300px;
+    column-gap: 10px;
   }
   .card {
-    padding: 8px 10px 10px;
+    break-inside: avoid;
+    margin: 0 0 10px;
+    padding: 6px 8px 8px;
     background: var(--surface-1);
     border: 1px solid var(--edge-0);
     border-radius: var(--radius-m);
@@ -308,11 +300,11 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    column-gap: 10px;
-    min-height: 26px;
-    padding: 1px 26px 1px 4px;
+    column-gap: 8px;
+    min-height: 22px;
+    padding: 0 24px 0 4px;
     border-radius: var(--radius-s);
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
   }
   .opt:hover {
     background: var(--surface-hover);
@@ -358,8 +350,8 @@
   }
   .val.list {
     width: auto;
-    min-width: 120px;
-    max-width: 280px;
+    min-width: 100px;
+    max-width: 200px;
   }
   .rst {
     position: absolute;
