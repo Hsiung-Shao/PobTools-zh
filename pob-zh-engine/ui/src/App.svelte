@@ -18,6 +18,7 @@
   import CalcsView from "./views/CalcsView.svelte";
   import NotesView from "./views/NotesView.svelte";
   import PartyView from "./views/PartyView.svelte";
+  import SettingsView from "./views/SettingsView.svelte";
   import type { ViewId } from "$lib/state.svelte";
 
   // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
@@ -74,7 +75,7 @@
 {#if i18nReady}
   <div class="app">
     <TitleBar />
-    {#if app.loaded && app.view !== "builds"}<BuildBar />{/if}
+    {#if app.loaded && app.view !== "builds" && app.view !== "settings"}<BuildBar />{/if}
     <div class="body">
       <Sidebar />
       <main class="view">
@@ -83,6 +84,8 @@
             <p class="bad">{t("app.childExited", { code: app.childExit ?? -1 })}</p>
             <button class="btn" onclick={() => bridge.call("host.restart_engine")}>{t("app.restartEngine")}</button>
           </div>
+        {:else if app.view === "settings"}
+          <SettingsView />
         {:else if app.engine === "booting"}
           <div class="center"><p class="dim pulse">{t("app.booting")}</p></div>
         {:else if app.gate && !app.gate.ok}

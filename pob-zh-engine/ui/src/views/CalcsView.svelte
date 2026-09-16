@@ -77,6 +77,11 @@
     if (bd && !bd.pinned) bd = null;
   }
   const isSelector = (c: CalcCell) => !!c.control;
+  // POB places every cell at a column index (`ci`); a row that has no cell in a
+  // column leaves it empty, so rows are laid out on one grid per subsection
+  // with as many value columns as the widest row uses.
+  const colCount = (sub: CalcsData["sections"][number]["subsections"][number]) =>
+    Math.max(1, ...sub.rows.flatMap((r) => r.cells.filter((c) => !isSelector(c)).map((c) => c.ci)));
 
   // POB's column groups (CalcsTab:235-300): 1 = the first three columns, 2 = the fourth, 3 = the fifth
   const groups = $derived.by(() => {
@@ -99,7 +104,8 @@
     {#each sec.subsections as sub (sub.ui)}
       {@const rows = sec.enabled ? sub.rows.filter((r) => rowMatch(r.label, r.labelZh)) : []}
       {@const closed = isCollapsed(sec.si, sub.ui, sub.collapsed)}
-      <div class="sub">
+      {@const ncol = colCount(sub)}
+      <div class="sub" class:multi={ncol > 1} style:--ncol={ncol}>
         <button class="subhead" onclick={() => toggle(sec.si, sub.ui, sub.collapsed)} title={closed ? "+" : "−"}>
           <span class="caret" class:closed>▾</span>
           <span class="st">{sub.labelZh || sub.label || sec.id}</span>
@@ -109,13 +115,14 @@
         {#if sec.enabled && !closed}
           {#each rows as row (row.ri)}
             {@const cells = row.cells.filter((c) => !isSelector(c))}
-            <div class="row" class:multi={cells.length > 1} style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
+            <div class="row" style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
               {#if row.label}<span class="rl" style:color={pobColor(row.color) ?? "var(--ink-2)"}>{row.labelZh || row.label}</span>{:else}<span class="rl"></span>{/if}
               {#each cells as c (c.ci)}
                 {@const key = `${sec.si}:${sub.ui}:${row.ri}:${c.ci}`}
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
                 <span
                   class="cell"
+                  style:grid-column={cells.length === 1 && ncol > 1 ? `${c.ci + 1} / -1` : c.ci + 1}
                   role={c.hasBreakdown ? "button" : undefined}
                   class:live={c.hasBreakdown}
                   class:pinned={bd?.pinned && bd.key === key}
@@ -326,11 +333,18 @@
     font-weight: 400;
     white-space: nowrap;
   }
-  /* one row = 16px: label column right-aligned, value column left-aligned */
+  /* one row = 16px: label column right-aligned, then POB's value columns on a
+     shared grid so column N lines up down the whole subsection */
+  .sub {
+    --label-w: minmax(0, 46%);
+  }
+  .sub.multi {
+    --label-w: 150px;
+  }
   .row {
-    display: flex;
+    display: grid;
+    grid-template-columns: var(--label-w) repeat(var(--ncol, 1), minmax(0, 1fr));
     align-items: baseline;
-    gap: 0;
     height: 16px;
     line-height: 16px;
     font-size: var(--fs-xs);
@@ -339,7 +353,7 @@
     background: var(--surface-hover);
   }
   .rl {
-    flex: 0 0 46%;
+    grid-column: 1;
     max-width: 190px;
     padding-right: 6px;
     text-align: right;
@@ -347,11 +361,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .row.multi .rl {
-    flex-basis: 150px;
-  }
   .cell {
-    flex: 1 1 0;
     min-width: 0;
     padding: 0 3px;
     white-space: nowrap;

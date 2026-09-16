@@ -16,7 +16,6 @@ const clampFont = (f: number) => Math.min(FONT_MAX, Math.max(FONT_MIN, Math.roun
 class UiPrefsState {
   zoom = $state(DEFAULTS.zoom);
   fontSize = $state(DEFAULTS.fontSize);
-  open = $state(false);
 
   init() {
     let p: Partial<UiPrefs> | undefined = hostInfo.prefs;
