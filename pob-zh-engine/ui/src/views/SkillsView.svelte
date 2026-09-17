@@ -238,21 +238,29 @@
   }
 
   // --- gems -------------------------------------------------------------------------
-  function search(q: string, into: (hits: GemHit[]) => void) {
+  // With "sort gems by DPS" on, POB's own picker does the search and the DPS
+  // estimate per gem (it is slow, so only for the slot being edited).
+  let searchBusy = $state(false);
+  function search(q: string, into: (hits: GemHit[]) => void, slot?: number) {
     clearTimeout(searchTimer);
     if (!q.trim()) {
       into([]);
       return;
     }
     searchTimer = window.setTimeout(async () => {
+      const byDps = !!gemOpts?.sortGemsByDPS && !!group && slot != null;
+      searchBusy = byDps;
       try {
-        const r = await api.gemSearch({ query: q.trim(), limit: 20 });
+        const r = await api.gemSearch(byDps ? { query: q.trim(), limit: 20, group: group!.index, index: slot, byDps: true } : { query: q.trim(), limit: 20 });
         into(r.gems);
       } catch {
         into([]);
       }
+      searchBusy = false;
     }, 120);
   }
+  const dpsColor = (h: GemHit) => (h.dpsColor && h.dpsColor.startsWith("^x") ? `#${h.dpsColor.slice(2)}` : undefined);
+  const dpsText = (h: GemHit) => (typeof h.dps === "number" ? Math.round(h.dps).toLocaleString() : "");
   async function addGem(hit: GemHit) {
     if (!group) return;
     addQuery = "";
@@ -552,7 +560,7 @@
                     placeholder={t("skills.searchGem")}
                     bind:value={addQuery}
                     onfocus={() => (addOpen = true)}
-                    oninput={() => { addOpen = true; search(addQuery, (h) => (addHits = h)); }}
+                    oninput={() => { addOpen = true; search(addQuery, (h) => (addHits = h), (group?.gems.length ?? 0) + 1); }}
                     onkeydown={(e) => { if (e.key === "Enter") void addGemByText(); if (e.key === "Escape") addOpen = false; }}
                     onblur={() => setTimeout(() => (addOpen = false), 150)}
                   />
@@ -562,6 +570,7 @@
                         <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }}>
                           <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
                           <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
+                          {#if h.dps != null}<span class="small num" style:color={dpsColor(h)}>{dpsText(h)}</span>{/if}
                         </button>
                       {/each}
                     </div>

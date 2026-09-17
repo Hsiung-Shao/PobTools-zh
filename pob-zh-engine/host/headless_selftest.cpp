@@ -1548,6 +1548,19 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okSg = okSm && child.Call("set_gem", json{{"group", newIdx}, {"index", 1}, {"level", 1}}, sg, 60000) && child.Call("get_stats", json::object(), st2, 30000);
 			check("set_gem{level} recalculates", okSg && st1["stats"].value("TotalDPS", 0.0) != st2["stats"].value("TotalDPS", 0.0));
 
+			// the gem picker sorted by DPS (GemSelectControl's own sort cache + DPS coroutine)
+			json gd;
+			const auto tGd = GetTickCount64();
+			bool okGd = gemsOk && child.Call("gem_search", json{{"group", newIdx}, {"index", 1}, {"query", "Fire"}, {"byDps", true}, {"limit", 8}}, gd, 600000);
+			bool dpsOk = okGd && gd.value("byDps", false) && !gd["gems"].empty();
+			if (dpsOk) {
+				bool anyDps = false;
+				for (auto& g : gd["gems"]) if (g.contains("dps") && g["dps"].is_number()) anyDps = true;
+				dpsOk = anyDps;
+			}
+			check("gem_search{byDps} runs POB's gem sort (its DPS estimate per gem) for that socket",
+			      dpsOk, okGd ? gd["gems"].dump().substr(0, 240) + " ms=" + std::to_string(GetTickCount64() - tGd) : gd.dump().substr(0, 200));
+
 			// CopySocketGroup / PasteSocketGroup through the bridge (no clipboard)
 			json cg, pg, sk4, dpg;
 			bool okCg = gemsOk && child.Call("copy_group", json{{"index", newIdx}}, cg, 60000);
@@ -1740,6 +1753,27 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("about lists POB's version history and help text (main:OpenAboutPopup's lists)",
 			      okAb && ab["changelog"].size() > 20 && ab["help"].size() > 20 && ab.value("version", "").find("Path of Building") != std::string::npos,
 			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
+		}
+
+		// the shared item list and shared item sets (main's two shared lists)
+		{
+			json li2, sh1, sh2, use, un1, un2, shEnd;
+			bool okLi = okLoad && child.Call("list_items", json::object(), li2, 60000);
+			const int shareId = (okLi && !li2["items"].empty()) ? li2["items"][0].value("id", 0) : 0;
+			const int setId = okLi && !li2["itemSets"].empty() ? li2["itemSets"][0].value("id", 0) : 0;
+			bool okSh = shareId > 0 && child.Call("share_item", json{{"id", shareId}}, sh1, 60000);
+			bool okShSet = okSh && setId > 0 && child.Call("share_item_set", json{{"id", setId}}, sh2, 60000);
+			bool okUse = okShSet && child.Call("use_shared_set", json{{"index", 1}}, use, 60000);
+			const int newSetId = okUse ? use.value("id", 0) : 0;
+			json delSet;
+			if (newSetId > 0) child.Call("delete_item_set", json{{"id", newSetId}}, delSet, 60000);
+			bool okUn = okShSet && child.Call("unshare", json{{"kind", "set"}, {"index", 1}}, un1, 30000) &&
+			            child.Call("unshare", json{{"kind", "item"}, {"index", 1}}, un2, 30000) &&
+			            child.Call("shared_items", json::object(), shEnd, 30000);
+			check("shared items: an item and an item set go to POB's shared lists, a shared set comes back as a new set, and both unshare",
+			      okSh && sh1["items"].size() == 1 && okShSet && sh2["sets"].size() == 1 && !sh2["sets"][0]["slots"].empty() &&
+			          okUse && newSetId > 0 && okUn && shEnd["items"].empty() && shEnd["sets"].empty(),
+			      "id=" + std::to_string(shareId) + " set=" + std::to_string(setId) + " new=" + std::to_string(newSetId) + " " + sh2.dump().substr(0, 160));
 		}
 
 		// the spectre library (Build.lua's Manage Spectres) and PoE2's stat sets

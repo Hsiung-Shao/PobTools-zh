@@ -220,6 +220,12 @@ export interface SpecList {
   tattoos: boolean;
 }
 
+/** POB's two shared lists (main.sharedItemList / sharedItemSetList). */
+export interface SharedItems {
+  items: { index: number; name: string; nameZh?: string; rarity?: string; raw: string }[];
+  sets: { index: number; title?: string; slots: Record<string, { name: string; nameZh?: string; rarity?: string }> }[];
+}
+
 /** One minion in POB's spectre/beast library. */
 export interface MinionEntry {
   id: string;
@@ -953,6 +959,10 @@ export interface GemHit {
   tags: string[];
   naturalMaxLevel?: number;
   exceptional: boolean;
+  /** Sorted by DPS (POB's gem picker): its estimate and the colour POB gives it. */
+  dps?: number;
+  dpsColor?: string;
+  canSupport?: boolean;
 }
 export interface GemPatch {
   nameSpec?: string;
@@ -1187,7 +1197,13 @@ export const api = {
   moveGem: (group: number, from: number, to: number) => bridge.call<Committed>("move_gem", { group, from, to }, 60000),
   gemTooltip: (group: number, index: number) => bridge.call<{ lines: TooltipLine[]; header?: string }>("gem_tooltip", { group, index }, 60000),
   groupTooltip: (index: number) => bridge.call<{ lines: TooltipLine[] }>("group_tooltip", { index }, 60000),
-  gemSearch: (p: { query: string; limit?: number; supportOnly?: boolean; activeOnly?: boolean }) => bridge.call<{ gems: GemHit[] }>("gem_search", p, 60000),
+  gemSearch: (p: { query: string; limit?: number; supportOnly?: boolean; activeOnly?: boolean; group?: number; index?: number; byDps?: boolean }) =>
+    bridge.call<{ gems: GemHit[]; byDps?: boolean; baseDps?: number; dpsField?: string }>("gem_search", p, 600000),
+  sharedItems: () => bridge.call<SharedItems>("shared_items", {}, 60000),
+  shareItem: (id: number) => bridge.call<SharedItems>("share_item", { id }, 60000),
+  shareItemSet: (id: number) => bridge.call<SharedItems>("share_item_set", { id }, 60000),
+  unshare: (kind: "item" | "set", index: number) => bridge.call<SharedItems>("unshare", { kind, index }, 60000),
+  useSharedSet: (index: number) => bridge.call<Committed & { id: number }>("use_shared_set", { index }, 60000),
   setSkillSet: (id: number) => bridge.call<Committed>("set_skill_set", { id }, 60000),
   newSkillSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_skill_set", { title, copyCurrent }, 60000),
   renameSkillSet: (id: number, title: string) => bridge.call<Committed>("rename_skill_set", { id, title }, 60000),

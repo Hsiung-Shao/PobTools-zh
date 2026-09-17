@@ -3110,6 +3110,107 @@ function M.import_tree_url(p)
 	return M.list_specs()
 end
 
+-- ---- Shared items and shared item sets (main.sharedItemList / -SetList) ----
+-- POB's two shared lists live on `main` and are saved with its settings; the
+-- classic UI fills them by dragging (SharedItemListControl:ReceiveDrag), the
+-- page calls these instead.
+
+local function shared_lists()
+	local m = main()
+	if type(m.sharedItemList) ~= "table" or type(m.sharedItemSetList) ~= "table" then error("this POB has no shared items", 0) end
+	return m
+end
+
+function M.shared_items()
+	local b = ensure_build()
+	local m = shared_lists()
+	local items = {}
+	for i, it in ipairs(m.sharedItemList) do
+		items[i] = { index = i, name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it.raw or it:BuildRaw() }
+	end
+	local sets = {}
+	for i, set in ipairs(m.sharedItemSetList) do
+		local slots = {}
+		for slotName, it in pairs(set.slots or {}) do
+			slots[slotName] = { name = it.name, nameZh = tr(it.name), rarity = it.rarity }
+		end
+		sets[i] = { index = i, title = set.title, slots = as_object(slots) }
+	end
+	return { items = items, sets = sets }
+end
+
+-- share_item{id}: what dragging a build item onto the shared list does.
+function M.share_item(p)
+	local b = ensure_build()
+	local m = shared_lists()
+	local it = b.itemsTab.items[tonumber(p and p.id or 0)]
+	if not it then error("no item " .. tostring(p and p.id), 0) end
+	local newItem = make("Item", it:BuildRaw())
+	table.insert(m.sharedItemList, newItem)
+	return M.shared_items()
+end
+
+-- share_item_set{id}: dragging an item set onto the shared set list.
+function M.share_item_set(p)
+	local b = ensure_build()
+	local m = shared_lists()
+	local tab = b.itemsTab
+	local set = tab.itemSets[tonumber(p and p.id or 0)]
+	if not set then error("no item set " .. tostring(p and p.id), 0) end
+	local shared = { title = set.title, slots = {} }
+	for slotName, slot in pairs(tab.slots) do
+		if not slot.nodeId then
+			local s = (set ~= tab.activeItemSet) and set[slotName] or slot
+			if s and s.selItemId ~= 0 then
+				local item = tab.items[s.selItemId]
+				if item then shared.slots[slotName] = make("Item", item:BuildRaw()) end
+			end
+		end
+	end
+	table.insert(m.sharedItemSetList, shared)
+	return M.shared_items()
+end
+
+-- unshare{kind="item"|"set", index}: the lists' Delete button.
+function M.unshare(p)
+	local m = shared_lists()
+	local list = (p and p.kind == "set") and m.sharedItemSetList or m.sharedItemList
+	local i = tonumber(p and p.index)
+	if not i or not list[i] then error("no shared entry " .. tostring(p and p.index), 0) end
+	table.remove(list, i)
+	return M.shared_items()
+end
+
+-- use_shared_set{index}: dragging a shared set back into the build (the set
+-- list's ReceiveDrag: a new item set with copies of its items).
+function M.use_shared_set(p)
+	local b = ensure_build()
+	local m = shared_lists()
+	local tab = b.itemsTab
+	local shared = m.sharedItemSetList[tonumber(p and p.index or 0)]
+	if not shared then error("no shared item set " .. tostring(p and p.index), 0) end
+	local set = tab:NewItemSet()
+	set.title = shared.title
+	for slotName, item in pairs(shared.slots or {}) do
+		local newItem = make("Item", item.raw or item:BuildRaw())
+		newItem:NormaliseQuality()
+		tab:AddItem(newItem, true)
+		if set[slotName] then set[slotName].selItemId = newItem.id end
+	end
+	table.insert(tab.itemSetOrderList, set.id)
+	tab:AddUndoState()
+	local r = commit(b)
+	r.id = set.id
+	return r
+end
+
+probe("main.sharedItemList/sharedItemSetList + ItemsTab.NewItemSet/AddItem", function()
+	local m = launch.main
+	local c = class_of("ItemsTab")
+	return type(m.sharedItemList) == "table" and type(m.sharedItemSetList) == "table"
+		and type(c) == "table" and type(c.NewItemSet) == "function" and type(c.AddItem) == "function"
+end)
+
 -- ---- Spectre / beast library (Build.lua's "Manage Spectres...") ------------
 -- The dialog is two drag-and-drop lists whose Save writes build.spectreList
 -- (PoE2 also has build.beastList); the page edits the same lists directly.
@@ -4981,8 +5082,64 @@ probe("SkillsTab imbued support + Optimise Sockets controls (PoE1)", function()
 		and type(c.optimiseSockets) == "table" and type(c.optimiseSockets.onClick) == "function"
 end, "skillImbued")
 
+-- gem_search{group, index, query, byDps=true}: POB's own gem picker for that
+-- slot -- its BuildList (name, tag and "+level of" matches), its sort cache
+-- and the DPS coroutine it runs over the frames, finished here in one go.
+local function gem_search_by_dps(b, p)
+	local tab = b.skillsTab
+	local g = group_at(tab, p.group)
+	display_group(tab, g)
+	local index = tonumber(p.index) or (#g.gemList + 1)
+	if type(tab.CreateGemSlot) == "function" and not (tab.gemSlots and tab.gemSlots[index]) then tab:CreateGemSlot(index) end
+	local slot = tab.gemSlots and tab.gemSlots[index]
+	local ctl = slot and slot.nameSpec
+	if not (ctl and type(ctl.BuildList) == "function" and type(ctl.UpdateSortCache) == "function" and type(ctl.DPSBuilder) == "function") then
+		return nil
+	end
+	local query = type(p.query) == "string" and p.query or ""
+	ctl.buf = query
+	-- POB fills its gem table and sort cache first; BuildList sorts with it
+	if type(ctl.PopulateGemList) == "function" then ctl:PopulateGemList() end
+	ctl:UpdateSortCache()
+	ctl:BuildList(query)
+	local co = coroutine.create(ctl.DPSBuilder)
+	local guard = 0
+	while coroutine.status(co) ~= "dead" and guard < 100000 do
+		local ok, err = coroutine.resume(co, ctl)
+		if not ok then error(err, 0) end
+		guard = guard + 1
+	end
+	ctl:SortGemList(ctl.list)
+	local cache = ctl.sortCache or {}
+	local limit = math.min(100, tonumber(p.limit) or 30)
+	local out = {}
+	for _, gemId in ipairs(ctl.list) do
+		-- the control keys its table by "<source>:<gemId>" (GemSelectControl:PopulateGemList)
+		local plain = type(gemId) == "string" and gemId:gsub("%w+:", "") or gemId
+		local gem = plain ~= "" and b.data.gems[plain]
+		if gem then
+			local ge = gem.grantedEffect
+			out[#out + 1] = {
+				gemId = plain, name = gem.name, nameZh = tr(gem.name),
+				support = ge and ge.support and true or false,
+				color = gem.color,
+				naturalMaxLevel = gem.naturalMaxLevel,
+				dps = cache.dps and cache.dps[gemId] or nil,
+				dpsColor = cache.dpsColor and cache.dpsColor[gemId] or nil,
+				canSupport = cache.canSupport and cache.canSupport[gemId] and true or false,
+			}
+			if #out >= limit then break end
+		end
+	end
+	return { gems = out, byDps = true, baseDps = cache.baseDPS, dpsField = cache.dpsField }
+end
+
 function M.gem_search(p)
 	local b = ensure_build()
+	if p and p.byDps and p.group then
+		local r = gem_search_by_dps(b, p)
+		if r then return r end
+	end
 	local q = p and type(p.query) == "string" and p.query:lower() or ""
 	local limit = math.min(100, tonumber(p and p.limit) or 30)
 	local showLegacy = b.skillsTab.showLegacyGems

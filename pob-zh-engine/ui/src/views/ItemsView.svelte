@@ -5,6 +5,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
+  import SharedItemsDialog from "../components/SharedItemsDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
@@ -336,6 +337,18 @@
     if (r) await changed();
   }
   const setTitle = (s: { id: number; title?: string }) => s.title || t("items.defaultSet");
+  // POB's shared item / item-set lists
+  let sharedOpen = $state(false);
+  async function shareItem(id: number) {
+    await app.run(() => api.shareItem(id));
+    app.notice = t("items.shareThis");
+  }
+  async function shareCurrentSet() {
+    if (!data) return;
+    const setId = data.activeItemSetId;
+    await app.run(() => api.shareItemSet(setId));
+    app.notice = t("items.shareSet");
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -353,6 +366,7 @@
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: "", copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.itemSets.find((s) => s.id === data!.activeItemSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.itemSets.length <= 1} onclick={deleteSet}>×</button>
+        <button class="btn ghost sm" title={t("items.shareSet")} onclick={shareCurrentSet}>⇪</button>
         <span class="grow"></span>
         <TreeSpecBar compact />
       {/if}
@@ -420,6 +434,7 @@
       <button class="btn ghost sm" disabled={!data?.items.some((i) => !i.usedIn) || app.busy > 0} onclick={deleteUnused}>{t("items.delUnused")}</button>
       <button class="btn ghost sm danger" disabled={!data?.items.length || app.busy > 0} onclick={deleteAll}>{t("items.delAll")}</button>
       <span class="grow"></span>
+      <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={() => (sharedOpen = true)}>{t("items.shared")}</button>
       <button class="btn sm" disabled={!data || app.busy > 0} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     <div class="scroll">
@@ -465,6 +480,7 @@
         <button class="btn sm" class:ok={copyState === "ok"} class:danger={copyState === "fail"} onclick={() => copyItem(selected!.id!)}>
           {copyState === "ok" ? t("items.copied") : copyState === "fail" ? t("items.copyFailed") : t("items.copy")}
         </button>
+        <button class="btn sm" onclick={() => shareItem(selected!.id!)}>{t("items.shareThis")}</button>
         <button class="btn sm danger" onclick={() => deleteItem(selected!.id!)}>{t("items.delete")}</button>
       </div>
     {/if}
@@ -553,6 +569,10 @@
     </div>
   {/if}
 </div>
+
+{#if sharedOpen}
+  <SharedItemsDialog onclose={() => (sharedOpen = false)} onedit={(raw) => openEdit({ raw })} />
+{/if}
 
 <style>
   .page {
