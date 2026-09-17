@@ -2104,22 +2104,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				if (tabbed) openPanel(&CreateWarehousePanel, S.warehouseTool);
 				else spawnTool(L"--warehouse", PobLaunch::InstanceKind::Warehouse, S.warehouseTool);
 			}
-			if (modernUiOk) {
-				ImGui::SameLine(0, gap);
-				// The WebView2 window is its own process and its own window even in
-				// tabbed mode (see spawnTool). Greyed while the remembered gate
-				// verdict says this POB version cannot drive it.
-				const bool blocked = modernGateBlocked();
-				if (blocked) ImGui::BeginDisabled();
-				if (ImGui::Button(S.modernUiTool, toolSize)) {
-					spawnTool(L"--modern-ui", PobLaunch::InstanceKind::ModernUi, S.modernUiTool);
-				}
-				if (blocked) ImGui::EndDisabled();
-				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-					if (blocked) ImGui::SetTooltip("%s", modernGateTipText(S).c_str());
-					else ImGui::SetTooltip("%s", S.modernUiTip);
-				}
-			}
+			// The new interface has no tool button of its own: the settings page's
+			// "Default interface" decides what the Launch button opens.
 			ImGui::PopStyleColor();
 		}
 		if (updaterBusy) ImGui::EndDisabled();
