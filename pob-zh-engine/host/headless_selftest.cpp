@@ -871,6 +871,60 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("tree_undo removes the mastery again", okMu && mu["allocatedNodes"].size() == (size_t)allocCount);
 		}
 
+		// --- 1e: the build's passive trees: list, copy/rename/move/delete, links, reset, convert ---
+		{
+			json ls0;
+			bool okLs0 = okLoad && child.Call("list_specs", json::object(), ls0, 30000);
+			const size_t n0 = okLs0 ? ls0["specs"].size() : 0;
+			const int act0 = okLs0 ? ls0.value("activeSpec", 1) : 1;
+			const int pts0 = (okLs0 && n0 > 0) ? ls0["specs"][act0 - 1].value("points", -1) : -1;
+			check("list_specs lists the build's trees with the active one, its points and the version choices",
+			      okLs0 && n0 >= 1 && pts0 > 0 && ls0["versions"].size() >= 1 && ls0["specs"][act0 - 1].value("active", false),
+			      ls0.dump().substr(0, 300));
+			json cp, rn, mv;
+			bool okCp = okLs0 && child.Call("spec_op", json{{"op", "copy"}, {"index", act0}, {"title", "bridge copy"}}, cp, 60000);
+			bool okRn = okCp && child.Call("spec_op", json{{"op", "rename"}, {"index", (int)n0 + 1}, {"title", "bridge renamed"}}, rn, 60000);
+			bool okMv = okRn && child.Call("spec_op", json{{"op", "move"}, {"index", (int)n0 + 1}, {"to", 1}}, mv, 60000);
+			bool listOk = okMv && mv["specs"].size() == n0 + 1 && mv["specs"][0].value("title", "") == "bridge renamed" &&
+			              mv["specs"][0].value("points", -1) == pts0 && mv.value("activeSpec", 0) == act0 + 1;
+			json badName;
+			bool okBad = child.Call("spec_op", json{{"op", "rename"}, {"index", 1}, {"title", "  "}}, badName, 30000);
+			check("spec_op copy (same points) + rename + move to the top keeps the active tree; an empty name is refused",
+			      listOk && !okBad && child.Alive(), mv.dump().substr(0, 300));
+			json ex, im;
+			bool okEx = listOk && child.Call("export_tree_url", json::object(), ex, 30000);
+			bool okIm = okEx && child.Call("import_tree_url", json{{"url", ex.value("url", "")}, {"title", "bridge link"}}, im, 60000);
+			bool linkOk = okIm && im["specs"].size() == n0 + 2 && im.value("activeSpec", 0) == (int)n0 + 2 &&
+			              im["specs"][n0 + 1].value("points", -1) > 0 && im["specs"][n0 + 1].value("points", -1) <= pts0 &&
+			              im["specs"][n0 + 1].value("title", "") == "bridge link";
+			json badLink;
+			bool okBadLink = child.Call("import_tree_url", json{{"url", "https://www.pathofexile.com/passive-skill-tree/3.25.0/notatree"}, {"title", "x"}}, badLink, 60000);
+			check("export_tree_url gives POB's link and import_tree_url makes a new, active tree (a link carries no cluster-jewel nodes, so at most the same points); a broken link is refused",
+			      linkOk && ex.value("url", "").rfind("https://", 0) == 0 && !okBadLink && child.Alive(),
+			      "pts0=" + std::to_string(pts0) + " n0=" + std::to_string(n0) + " act=" + std::to_string(im.value("activeSpec", 0)) + " specs=" + (okIm ? [&] { std::string o; for (auto& s : im["specs"]) o += s.value("title", "?") + ":" + std::to_string(s.value("points", -1)) + " "; return o; }() : im.dump().substr(0, 200)) + " bad=" + std::to_string(okBadLink));
+			json rs, rsLs;
+			bool okRs = linkOk && child.Call("reset_tree", json::object(), rs, 60000) && child.Call("list_specs", json::object(), rsLs, 30000);
+			check("reset_tree (POB's Reset Tree button) empties only the active tree",
+			      okRs && rsLs["specs"][n0 + 1].value("points", -1) == 0 && rsLs["specs"][0].value("points", -1) == pts0,
+			      okRs ? rsLs.dump().substr(0, 200) : rs.dump().substr(0, 200));
+			const std::string ver = ls0.value("treeVersion", "");
+			json cv;
+			bool okCv = okRs && child.Call("convert_tree", json{{"version", ver}, {"copy", true}}, cv, 120000);
+			check("convert_tree{copy} adds a converted copy after the active tree and makes it active",
+			      okCv && cv["specs"].size() == n0 + 3 && cv.value("activeSpec", 0) == (int)n0 + 3, cv.dump().substr(0, 200));
+			// back to the start: drop the three trees, the original active again
+			json d1, d2, d3, back, ls9;
+			bool okBack = okCv && child.Call("spec_op", json{{"op", "delete"}, {"index", (int)n0 + 3}}, d1, 60000) &&
+			              child.Call("spec_op", json{{"op", "delete"}, {"index", (int)n0 + 2}}, d2, 60000) &&
+			              child.Call("spec_op", json{{"op", "delete"}, {"index", 1}}, d3, 60000) &&
+			              child.Call("set_active_spec", json{{"index", act0}}, back, 60000) && child.Call("list_specs", json::object(), ls9, 30000);
+			json stBack;
+			child.Call("get_build_info", json::object(), stBack, 30000);
+			check("spec_op delete (POB's confirm answered) and set_active_spec restore the original tree list",
+			      okBack && ls9["specs"].size() == n0 && ls9.value("activeSpec", 0) == act0 && ls9["specs"][act0 - 1].value("points", -1) == pts0,
+			      okBack ? ls9.dump().substr(0, 200) : (d1.dump() + d2.dump() + d3.dump() + back.dump()).substr(0, 300));
+		}
+
 		// --- 2a: build header, level, share code, save-as, import ---------------
 		{
 			json hdr;
@@ -2107,6 +2161,27 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("import_code{replace} of the build's own code gives the same AverageDamage",
 		      okStImp && std::fabs(avgImp - avg) <= 1e-9 * std::fmax(1.0, std::fabs(avg)),
 		      std::to_string(avgImp) + " vs " + std::to_string(avg) + (okImp ? "" : " " + imp.dump().substr(0, 200)));
+
+		// PoE2's tree list: its PassiveSpecListControl and reset dialog (no links, no tattoos)
+		{
+			json ls0, cp, dl, rs, ls1, lnk;
+			bool okLs = child.Call("list_specs", json::object(), ls0, 30000);
+			const size_t n0 = okLs ? ls0["specs"].size() : 0;
+			const int act0 = okLs ? ls0.value("activeSpec", 1) : 1;
+			const int pts0 = (okLs && n0 > 0) ? ls0["specs"][act0 - 1].value("points", -1) : -1;
+			bool okCp = okLs && child.Call("spec_op", json{{"op", "copy"}, {"index", act0}, {"title", "poe2 copy"}}, cp, 60000);
+			bool okRs = okCp && child.Call("set_active_spec", json{{"index", (int)n0 + 1}}, ls1, 60000) && child.Call("reset_tree", json::object(), rs, 60000);
+			json after;
+			bool okAfter = okRs && child.Call("list_specs", json::object(), after, 30000);
+			bool okDl = okAfter && child.Call("spec_op", json{{"op", "delete"}, {"index", (int)n0 + 1}}, dl, 60000);
+			bool okLnk = child.Call("export_tree_url", json::object(), lnk, 30000);
+			check("PoE2: list_specs/spec_op copy/set_active_spec/reset_tree/delete through its own list control; tree links are refused",
+			      okDl && !ls0.value("treeLinks", true) && !ls0.value("tattoos", true) && cp["specs"].size() == n0 + 1 &&
+			          after["specs"][n0].value("points", -1) == 0 && after["specs"][act0 - 1].value("points", -1) == pts0 &&
+			          dl["specs"].size() == n0 && !okLnk && child.Alive(),
+			      "pts0=" + std::to_string(pts0) + " " + (okAfter ? after.dump().substr(0, 200) : (cp.dump() + rs.dump()).substr(0, 300)));
+			child.Call("set_active_spec", json{{"index", act0}}, ls1, 60000);
+		}
 
 		json ver2, saveAs, lb, loaded, stats2, saved;
 		child.Call("version", json::object(), ver2, 30000);

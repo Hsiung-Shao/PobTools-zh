@@ -4,6 +4,7 @@
   // the hover conversation with the engine (node_hover for the path POB would
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
+  import TreeSpecBar from "../components/TreeSpecBar.svelte";
   import { api, type MasteryChoice, type NodeInfo, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
@@ -824,6 +825,8 @@
 
 <div class="tree-page">
   <div class="toolbar">
+    <TreeSpecBar />
+    <span class="vsep"></span>
     <input class="input search" placeholder={t("tree.search")} bind:value={search} bind:this={searchEl} onkeydown={(e) => e.key === "Enter" && nextMatch()} />
     {#if matches.size}<span class="count num">{matches.size}</span>{/if}
     <button class="btn ghost sm" onclick={focusClass}>{t("sidebar.class")}</button>

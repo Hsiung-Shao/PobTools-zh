@@ -4,6 +4,7 @@
      每個動作都是 POB 自己的函式或控制項回呼;hover tooltip 預設帶「替換後差異」。 -->
 <script lang="ts">
   import { untrack } from "svelte";
+  import TreeSpecBar from "../components/TreeSpecBar.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
@@ -352,6 +353,8 @@
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: "", copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.itemSets.find((s) => s.id === data!.activeItemSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.itemSets.length <= 1} onclick={deleteSet}>×</button>
+        <span class="grow"></span>
+        <TreeSpecBar compact />
       {/if}
     </div>
     <div class="scroll">

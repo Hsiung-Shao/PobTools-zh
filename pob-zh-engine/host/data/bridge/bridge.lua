@@ -2872,6 +2872,210 @@ local function with_popup(fn)
 	return capture_popup(fn, false)
 end
 
+-- ---------------------------------------------------------------------------
+-- Passive trees of the build: TreeTab's tree selector and "Manage Passive
+-- Trees" (PassiveSpecListControl), Reset Tree / Remove All Tattoos, the tree
+-- link import/export dialogs and the version converter.
+-- ---------------------------------------------------------------------------
+
+-- The confirm button of main:OpenConfirmPopup: the button labelled confirmLabel.
+local function popup_button(cap, label)
+	for _, c in pairs(cap and cap.controls or {}) do
+		if type(c) == "table" and c.label == label and type(c.onClick) == "function" then return c end
+	end
+end
+
+function M.list_specs()
+	local b = ensure_build()
+	local tab = b.treeTab
+	local specs = {}
+	for i, s in ipairs(tab.specList) do
+		local used = s:CountAllocNodes()
+		local tv = treeVersions[s.treeVersion]
+		specs[i] = {
+			index = i,
+			title = s.title,
+			treeVersion = s.treeVersion,
+			versionLabel = tv and tv.display or s.treeVersion,
+			latest = s.treeVersion == latestTreeVersion,
+			className = s.curClassName,
+			classNameZh = tr(s.curClassName),
+			ascendClassName = s.curAscendClassName ~= "None" and s.curAscendClassName or nil,
+			ascendClassNameZh = s.curAscendClassName ~= "None" and tr(s.curAscendClassName) or nil,
+			points = used,
+			active = i == tab.activeSpec,
+		}
+	end
+	local versions = {}
+	for i, v in ipairs(tab.treeVersions or {}) do versions[i] = { value = v.value, label = v.label } end
+	return {
+		specs = specs,
+		activeSpec = tab.activeSpec,
+		treeVersion = b.spec.treeVersion,
+		versions = versions,
+		-- the tree is not on the latest version: POB shows its convert prompt
+		showConvert = tab.showConvert and true or false,
+		treeLinks = GAME ~= "poe2",
+		tattoos = GAME ~= "poe2",
+	}
+end
+
+-- set_active_spec{index}: the tree selector's selFunc (modFlag + SetActiveSpec).
+function M.set_active_spec(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	local i = tonumber(p and p.index)
+	if not i or not tab.specList[i] then error("no tree " .. tostring(p and p.index), 0) end
+	if i ~= tab.activeSpec then tab.controls.specSelect.selFunc(i, tab.controls.specSelect.list and tab.controls.specSelect.list[i]) end
+	b.buildFlag = true
+	frame()
+	return M.list_specs()
+end
+
+-- spec_op{op = "new"|"copy"|"rename"|"delete"|"move", index?, title?, to?}:
+-- the Manage Passive Trees buttons on a list control of our own; their name
+-- dialog (RenameSpec) and the delete confirmation are answered in place.
+function M.spec_op(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	p = p or {}
+	local ctl = make("PassiveSpecListControl", nil, { 0, 50, 350, 200 }, tab)
+	local i = tonumber(p.index)
+	local function select_row()
+		local s = i and tab.specList[i]
+		if not s then error("no tree " .. tostring(p.index), 0) end
+		ctl.selIndex, ctl.selValue = i, s
+	end
+	local function named(fn)
+		local title = type(p.title) == "string" and p.title or ""
+		if not title:match("%S") then error("a name is required", 0) end
+		local cap = capture_popup(fn)
+		local c = cap and cap.controls
+		if not (c and c.edit and c.save) then error("POB did not open its tree name dialog", 0) end
+		c.edit:SetText(title, true)
+		with_popup(function() c.save.onClick() end)
+	end
+	if p.op == "new" then
+		named(function() ctl.controls.new.onClick() end)
+	elseif p.op == "copy" then
+		select_row()
+		named(function() ctl.controls.copy.onClick() end)
+	elseif p.op == "rename" then
+		select_row()
+		named(function() ctl.controls.rename.onClick() end)
+	elseif p.op == "delete" then
+		select_row()
+		if #tab.specList <= 1 then error("cannot delete the only tree", 0) end
+		local cap = capture_popup(function() ctl:OnSelDelete(i, tab.specList[i]) end)
+		local btn = popup_button(cap, "Delete")
+		if not btn then error("POB did not ask to confirm the delete", 0) end
+		with_popup(function() btn.onClick() end)
+	elseif p.op == "move" then
+		select_row()
+		local to = tonumber(p.to)
+		if not to or to < 1 or to > #tab.specList then error("bad target position", 0) end
+		-- what ListControl's drag reorder does, then its OnOrderChange hook
+		table.insert(tab.specList, to, table.remove(tab.specList, i))
+		ctl:OnOrderChange()
+	else
+		error("unknown op " .. tostring(p.op), 0)
+	end
+	b.modFlag = true
+	b.buildFlag = true
+	frame()
+	return M.list_specs()
+end
+
+-- convert_tree{version, copy?, all?}: the version selector's Convert /
+-- Copy + Convert (OpenVersionConvertPopup) and Convert All.
+function M.convert_tree(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	local v = p and p.version
+	if type(v) ~= "string" or not treeVersions[v] then error("unknown tree version " .. tostring(v), 0) end
+	if p.all then
+		tab:ConvertAllToVersion(v)
+	else
+		tab:ConvertToVersion(v, not p.copy, false, true)
+	end
+	b.modFlag = true
+	b.buildFlag = true
+	frame()
+	return M.list_specs()
+end
+
+-- reset_tree{tattoos?}: "Reset Tree" / "Remove All Tattoos" in TreeTab's reset dialog.
+function M.reset_tree(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	ensure_undo_base(b.spec)
+	local cap = capture_popup(function() tab.controls.reset.onClick() end)
+	local c = cap and cap.controls or {}
+	local btn = (p and p.tattoos) and c.removeTattoo or c.reset
+	if not btn then error((p and p.tattoos) and "this POB has no tattoos" or "POB did not open its reset dialog", 0) end
+	with_popup(function() btn.onClick() end)
+	frame()
+	return M.get_tree_state()
+end
+
+-- export_tree_url{}: the link OpenExportPopup shows (spec:EncodeURL).
+function M.export_tree_url()
+	local b = ensure_build()
+	if GAME == "poe2" then error("PoE2's POB has no tree links", 0) end
+	local cap = capture_popup(function() b.treeTab:OpenExportPopup() end)
+	local edit = cap and cap.controls and cap.controls.edit
+	if not edit then error("POB did not open its export dialog", 0) end
+	return { url = edit.buf }
+end
+
+-- import_tree_url{url, title}: OpenImportPopup's Import -- a new tree from a
+-- pathofexile.com / poeplanner / poeskilltree link, made the active one.
+function M.import_tree_url(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	if GAME == "poe2" then error("PoE2's POB has no tree links", 0) end
+	local url = p and type(p.url) == "string" and p.url:match("^%s*(.-)%s*$") or ""
+	local title = p and type(p.title) == "string" and p.title or ""
+	if url == "" or not title:match("%S") then error("a link and a name are required", 0) end
+	-- POB resolves poeurl.com short links in a background script and finishes
+	-- the dialog later; the service is gone, so the page asks for the full link
+	if url:match("poeurl%.com/") then error("poeurl.com short links cannot be resolved; paste the full tree link", 0) end
+	local cap = capture_popup(function() tab:OpenImportPopup() end)
+	local c = cap and cap.controls
+	if not (c and c.name and c.edit and c.import and c.msg) then error("POB did not open its import dialog", 0) end
+	c.name:SetText(title, true)
+	c.edit:SetText(url, true)
+	local before = #tab.specList
+	-- PassiveSpec:DecodeURL raises on a malformed link; hand back its message
+	local ok, err = pcall(with_popup, function() c.import.onClick() end)
+	if not ok then
+		local first = tostring(err):match("^[^\n]*") or ""
+		error((first:gsub("^.-:%d+: ", "")), 0)
+	end
+	if #tab.specList == before then
+		local msg = type(c.msg.label) == "string" and strip_escapes(c.msg.label) or ""
+		error(msg ~= "" and msg or "the link could not be read", 0)
+	end
+	frame()
+	return M.list_specs()
+end
+
+probe("TreeTab tree list (SetActiveSpec/ConvertToVersion/ConvertAllToVersion + specSelect/reset controls) and PassiveSpecListControl (RenameSpec/OnSelDelete/OnOrderChange)", function()
+	local t, l = class_of("TreeTab"), class_of("PassiveSpecListControl")
+	local b = build()
+	return type(t) == "table" and type(t.SetActiveSpec) == "function" and type(t.ConvertToVersion) == "function"
+		and type(t.ConvertAllToVersion) == "function" and type(l) == "table" and type(l.RenameSpec) == "function"
+		and type(l.OnSelDelete) == "function" and type(l.OnOrderChange) == "function"
+		and type(treeVersions) == "table" and type(latestTreeVersion) == "string"
+		and (not (b and b.treeTab) or (type(b.treeTab.controls.specSelect.selFunc) == "function" and type(b.treeTab.controls.reset.onClick) == "function"))
+end)
+probe("TreeTab.OpenImportPopup/OpenExportPopup + PassiveSpec.EncodeURL/DecodeURL (PoE1 tree links)", function()
+	if GAME == "poe2" then return false end
+	local t, s = class_of("TreeTab"), class_of("PassiveSpec")
+	return type(t) == "table" and type(t.OpenImportPopup) == "function" and type(t.OpenExportPopup) == "function"
+		and type(s) == "table" and type(s.EncodeURL) == "function" and type(s.DecodeURL) == "function"
+end, "treeLinks")
+
 -- Runs a ListControl's coroutine ListBuilder to completion (classic POB
 -- resumes it once per frame from Draw).
 local function run_list_builder(ctl)

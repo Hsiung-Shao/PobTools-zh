@@ -185,6 +185,31 @@ export interface Caps {
   skillImbued?: boolean;
 }
 
+/** TreeTab's passive trees (list_specs). */
+export interface SpecList {
+  specs: {
+    index: number;
+    title?: string;
+    treeVersion: string;
+    versionLabel: string;
+    latest: boolean;
+    className: string;
+    classNameZh?: string;
+    ascendClassName?: string;
+    ascendClassNameZh?: string;
+    points: number;
+    active: boolean;
+  }[];
+  activeSpec: number;
+  treeVersion: string;
+  versions: { value: string; label: string }[];
+  showConvert: boolean;
+  /** PoE1: the tree link import/export dialogs. */
+  treeLinks: boolean;
+  /** PoE1: Reset also offers Remove All Tattoos. */
+  tattoos: boolean;
+}
+
 export interface GemOptionChoice {
   value: string;
   label: string;
@@ -952,6 +977,13 @@ export const api = {
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
   treeAttribute: (id: number, attribute: number) => bridge.call<TreeState>("tree_attribute", { id, attribute }, 60000),
   setAllocMode: (mode: number) => bridge.call<TreeState>("set_alloc_mode", { mode }, 60000),
+  listSpecs: () => bridge.call<SpecList>("list_specs", {}, 60000),
+  setActiveSpec: (index: number) => bridge.call<SpecList>("set_active_spec", { index }, 120000),
+  specOp: (p: { op: "new" | "copy" | "rename" | "delete" | "move"; index?: number; title?: string; to?: number }) => bridge.call<SpecList>("spec_op", p, 120000),
+  convertTree: (version: string, o: { copy?: boolean; all?: boolean }) => bridge.call<SpecList>("convert_tree", { version, ...o }, 180000),
+  resetTree: (tattoos: boolean) => bridge.call<TreeState>("reset_tree", { tattoos }, 120000),
+  exportTreeUrl: () => bridge.call<{ url: string }>("export_tree_url", {}, 60000),
+  importTreeUrl: (url: string, title: string) => bridge.call<SpecList>("import_tree_url", { url, title }, 120000),
   treeUndo: () => bridge.call<TreeState>("tree_undo", {}, 60000),
   treeRedo: () => bridge.call<TreeState>("tree_redo", {}, 60000),
   listClasses: () => bridge.call<ClassList>("list_classes"),
