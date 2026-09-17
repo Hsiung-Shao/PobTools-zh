@@ -127,6 +127,9 @@ void TrackHandleForTest(void* handle, const std::wstring& game);
 
 // Test seam: same, for a tool instance.
 void TrackToolHandleForTest(void* handle, InstanceKind kind);
+// Same, with a real pid so RunningInstances resolves that process's window
+// (the selftest passes its own pid and creates the windows itself).
+void TrackHandleForTestWithPid(void* handle, const std::wstring& game, unsigned long pid);
 
 // Headless checks for the tracking/reaping logic and the named marker.
 int RunPobLaunchSelfTest(const std::wstring& exeDir);

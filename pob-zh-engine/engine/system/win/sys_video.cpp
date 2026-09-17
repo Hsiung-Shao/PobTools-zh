@@ -368,26 +368,40 @@ static int ClampPct(int v, int fallback)
 	return (v < 0 || v > 100) ? fallback : v;
 }
 
+// A value changed: the UI loop must render even if it would otherwise be
+// asleep (no focus, cursor elsewhere -- see sys_IVideo::appearanceRedrawFrames).
+// Two frames, not one: the glass pass samples the previous frame's target.
+// Runs on the window's thread, which is the frame loop's thread (messages are
+// dispatched from glfwPollEvents), so a plain int is enough.
+static void RequestAppearanceRedraw()
+{
+	if (g_opacityVideo) g_opacityVideo->appearanceRedrawFrames = 2;
+}
+
 static LRESULT CALLBACK OpacityWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (msg == kMsgSetWindowOpacity) {
 		sys_opacity_trace("WM_APP opacity message received: %d", (int)wParam);
 		SetWindowOpacityPct(hwnd, (int)wParam);
+		RequestAppearanceRedraw();
 		return 0;
 	}
 	if (msg == kMsgSetGlassBlur) {
 		if (g_opacityVideo) g_opacityVideo->glassBlurPct = ClampPct((int)wParam, 0);
 		sys_opacity_trace("glass blur -> %d", (int)wParam);
+		RequestAppearanceRedraw();
 		return 0;
 	}
 	if (msg == kMsgSetBgBright) {
 		if (g_opacityVideo) g_opacityVideo->bgBrightPct = ClampPct((int)wParam, 50);
 		sys_opacity_trace("bg bright -> %d", (int)wParam);
+		RequestAppearanceRedraw();
 		return 0;
 	}
 	if (msg == kMsgSetTreeBg) {
 		if (g_opacityVideo) g_opacityVideo->treeBgPct = ClampPct((int)wParam, 100);
 		sys_opacity_trace("tree backdrop -> %d", (int)wParam);
+		RequestAppearanceRedraw();
 		return 0;
 	}
 	if (msg == WM_COPYDATA) {
@@ -398,6 +412,7 @@ static LRESULT CALLBACK OpacityWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 			while (n > 0 && p[n - 1] == '\0') --n; // tolerate a trailing NUL
 			g_opacityVideo->bgPath.assign(p ? p : "", p ? n : 0);
 			sys_opacity_trace("bg path -> '%s'", g_opacityVideo->bgPath.c_str());
+			RequestAppearanceRedraw();
 			return TRUE;
 		}
 	}

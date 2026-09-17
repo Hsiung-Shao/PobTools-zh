@@ -1524,15 +1524,26 @@ void r_renderer_c::EndFrame()
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, GetDrawRenderTarget().framebuffer);
 		{
-			// The window opacity (chrome fill alpha, see AdjacentMergeStrategy) is
-			// not part of the command stream, so an unchanged UI would otherwise
-			// be elided and keep presenting the old look after a slider change.
+			// The appearance values (chrome fill alpha, glass, background image
+			// and its brightness, tree backdrop) are not part of the command
+			// stream, so an unchanged UI would otherwise be elided and keep
+			// presenting the old look after a slider change. Every one of them
+			// is compared: brightness and the tree backdrop reach the stream
+			// through the injected Lua today, but that is the script's business,
+			// not a property this check may rely on.
 			const int pct = sys->video->windowOpacityPct;
 			const int glass = sys->video->glassBlurPct;
-			if (pct != lastOpacityPct_ || glass != lastGlassBlurPct_) {
+			const int bright = sys->video->bgBrightPct;
+			const int treeBg = sys->video->treeBgPct;
+			const std::string& bgPath = sys->video->bgPath;
+			if (pct != lastOpacityPct_ || glass != lastGlassBlurPct_ || bright != lastBgBrightPct_ ||
+			    treeBg != lastTreeBgPct_ || bgPath != lastBgPath_) {
 				// (0 is a valid value: panels fully gone.)
 				lastOpacityPct_ = pct;
 				lastGlassBlurPct_ = glass;
+				lastBgBrightPct_ = bright;
+				lastTreeBgPct_ = treeBg;
+				lastBgPath_ = bgPath;
 				lastFrameHash.clear();
 			}
 			glass_.rectsThisFrame = 0;

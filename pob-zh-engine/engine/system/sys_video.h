@@ -73,6 +73,13 @@ public:
 	// nodes), percent; 100 = upstream behaviour, lower lets the background
 	// image show through it, 0 = hidden.
 	int treeBgPct = 100;
+	// Frames the UI loop must still render because one of the values above
+	// just changed (set by the message handlers in sys_video.cpp, consumed by
+	// ui_main_c::Frame). Upstream POB stops rendering entirely while the
+	// window has no focus and the cursor is elsewhere -- exactly the state
+	// POB is in while the player drags a slider in the launcher -- so without
+	// this the new look only appeared once the cursor came back (2026-09-12).
+	int appearanceRedrawFrames = 0;
 
 	virtual	int		Apply(sys_vidSet_s* set) = 0;	// Apply settings
 

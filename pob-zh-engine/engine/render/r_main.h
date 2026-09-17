@@ -185,6 +185,9 @@ public:
 	float clearCol_[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	int lastOpacityPct_ = 100; // window opacity: forces a redraw (no frame elision) when it changes
 	int lastGlassBlurPct_ = 0; // same for the liquid-glass blur strength
+	int lastBgBrightPct_ = 50; // ...and the background image brightness
+	int lastTreeBgPct_ = 100;  // ...and the passive tree backdrop
+	std::string lastBgPath_;   // ...and the background image itself
 
 	// Liquid-glass panels (window opacity feature): what is already drawn
 	// under a chrome panel is downsampled to 1/4, blurred, and pasted back

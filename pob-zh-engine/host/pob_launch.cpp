@@ -38,10 +38,20 @@ void reap()
 	}
 }
 
+// The engine's main window is the one GLFW made; its class name starts with
+// "GLFW" (GLFW30 today). Everything else a POB process owns -- the engine's
+// console window (sys_console.cpp registers "SimpleGraphic Console Class"), the
+// IME and GLFW helper windows -- is not it.
+bool is_glfw_window(HWND hwnd)
+{
+	wchar_t cls[64] = {};
+	GetClassNameW(hwnd, cls, 64);
+	return wcsncmp(cls, L"GLFW", 4) == 0;
+}
+
 struct FindWindowCtx {
 	DWORD pid;
-	HWND  best;      // a GLFW window: what we actually want
-	HWND  fallback;  // any visible unowned top-level window of that process
+	HWND  found; // the GLFW window, or null
 };
 
 // The main window of a child process, or null while it has none yet.
@@ -51,9 +61,16 @@ struct FindWindowCtx {
 // "not found" is the normal answer for the first moments of a child's life and
 // must not be cached as "this one has no window".
 //
-// Matching on the GLFW class name rather than "first visible window of the pid"
-// is what keeps the engine's own console window (sys_console.cpp registers its
-// own class) from being picked up when the user has it open.
+// Only the GLFW class counts. There used to be a fallback to "the first visible
+// unowned window of the pid", meant as insurance; what it actually caught was
+// the engine's console window, which is created VISIBLE and stays the only
+// visible window of a fresh POB for its first ~0.3 s (the GLFW window is shown
+// during init, the console is hidden only after init). The launcher resolves
+// every 0.5 s, so about every other POB start latched onto the console, and
+// every appearance message and watchdog probe went to a window that ignored
+// them -- "the sliders do nothing until I restart POB a few times"
+// (2026-09-12). Nothing needs the fallback: a POB without a GLFW window is a
+// POB that has not finished starting.
 BOOL CALLBACK find_window_cb(HWND hwnd, LPARAM param)
 {
 	auto* ctx = (FindWindowCtx*)param;
@@ -62,22 +79,16 @@ BOOL CALLBACK find_window_cb(HWND hwnd, LPARAM param)
 	if (pid != ctx->pid) return TRUE;
 	if (!IsWindowVisible(hwnd)) return TRUE;
 	if (GetWindow(hwnd, GW_OWNER) != nullptr) return TRUE;
-
-	wchar_t cls[64] = {};
-	GetClassNameW(hwnd, cls, 64);
-	if (wcsncmp(cls, L"GLFW", 4) == 0) {
-		ctx->best = hwnd;
-		return FALSE; // found it, stop enumerating
-	}
-	if (!ctx->fallback) ctx->fallback = hwnd;
-	return TRUE;
+	if (!is_glfw_window(hwnd)) return TRUE;
+	ctx->found = hwnd;
+	return FALSE; // found it, stop enumerating
 }
 
 HWND resolve_main_window(DWORD pid)
 {
-	FindWindowCtx ctx{ pid, nullptr, nullptr };
+	FindWindowCtx ctx{ pid, nullptr };
 	EnumWindows(find_window_cb, (LPARAM)&ctx);
-	return ctx.best ? ctx.best : ctx.fallback;
+	return ctx.found;
 }
 
 std::wstring exe_path()
@@ -344,8 +355,10 @@ std::vector<InstanceInfo> RunningInstances()
 	for (Instance& in : g_instances) {
 		// Re-resolve while unknown: the window appears some time after the process
 		// does. Once found it is cached, but a stale handle is worse than none, so
-		// verify it still exists before handing it out.
-		if (in.hwnd && !IsWindow(in.hwnd)) in.hwnd = nullptr;
+		// verify it still exists -- and is still the GLFW window: a cached handle
+		// that somehow points at anything else heals on the next call instead of
+		// misdirecting messages until the next POB restart.
+		if (in.hwnd && (!IsWindow(in.hwnd) || !is_glfw_window(in.hwnd))) in.hwnd = nullptr;
 		if (!in.hwnd && in.pid) in.hwnd = resolve_main_window(in.pid);
 		out.push_back({ in.pid, in.kind, in.game, (void*)in.hwnd });
 	}
@@ -385,6 +398,13 @@ void TrackHandleForTest(void* handle, const std::wstring& game)
 void TrackToolHandleForTest(void* handle, InstanceKind kind)
 {
 	g_instances.push_back({ (HANDLE)handle, std::wstring(), kind, 0, nullptr });
+}
+
+void TrackHandleForTestWithPid(void* handle, const std::wstring& game, unsigned long pid)
+{
+	// A real pid: RunningInstances will enumerate that process's windows. The
+	// selftest passes its own pid and stands up the windows itself.
+	g_instances.push_back({ (HANDLE)handle, game, InstanceKind::Pob, (DWORD)pid, nullptr });
 }
 
 int RunPobLaunchSelfTest(const std::wstring& exeDir)
@@ -485,6 +505,57 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 	SetEvent(t3);
 	check("P14 mixed table reaps clean", RunningInstances().empty() &&
 	      PobRunningCount() == 0);
+
+	// P15-P17: which of a child's windows is "the POB window". The engine's
+	// console window is created VISIBLE and is the only visible window of a
+	// fresh POB for its first ~0.3 s (the GLFW window starts hidden); with the
+	// launcher polling every 0.5 s, a fallback to "any visible window" latched
+	// onto the console about every other start and every appearance message
+	// went there (2026-09-12). Both windows are stood up in THIS process,
+	// off-screen, so the check needs no engine and no desktop interaction.
+	{
+		HINSTANCE hi = GetModuleHandleW(nullptr);
+		const wchar_t* kConCls = L"PobToolsTest Console Class";
+		const wchar_t* kGlfwCls = L"GLFW30-PobToolsTest";
+		for (const wchar_t* cls : { kConCls, kGlfwCls }) {
+			WNDCLASSW wc{};
+			wc.lpfnWndProc = DefWindowProcW;
+			wc.hInstance = hi;
+			wc.lpszClassName = cls;
+			RegisterClassW(&wc);
+		}
+		auto make = [&](const wchar_t* cls) {
+			return CreateWindowExW(0, cls, L"", WS_POPUP | WS_VISIBLE, -30000, -30000, 10, 10,
+			                       nullptr, nullptr, hi, nullptr);
+		};
+		const DWORD me = GetCurrentProcessId();
+		HWND con = make(kConCls);
+		check("P15 a visible non-GLFW window is not taken for the POB window",
+		      con != nullptr && resolve_main_window(me) == nullptr);
+		HWND glfw = make(kGlfwCls);
+		check("P16 the GLFW-class window is the one resolved",
+		      glfw != nullptr && resolve_main_window(me) == glfw);
+		DestroyWindow(glfw);
+
+		HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		TrackHandleForTestWithPid(ev, L"poe1", me);
+		auto hwndOfMe = [&]() -> void* {
+			for (const InstanceInfo& i : RunningInstances())
+				if (i.pid == me) return i.hwnd;
+			return (void*)(intptr_t)-1; // not listed at all
+		};
+		check("P17a only the console-like window: the instance has no hwnd yet",
+		      hwndOfMe() == nullptr);
+		glfw = make(kGlfwCls);
+		check("P17b the GLFW window is picked up once it exists", hwndOfMe() == (void*)glfw);
+		DestroyWindow(glfw);
+		check("P17c a destroyed window is not handed out again", hwndOfMe() == nullptr);
+		SetEvent(ev);
+		RunningInstances(); // reaps the fake instance
+		DestroyWindow(con);
+		UnregisterClassW(kConCls, hi);
+		UnregisterClassW(kGlfwCls, hi);
+	}
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);

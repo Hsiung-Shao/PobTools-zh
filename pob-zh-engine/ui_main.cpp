@@ -451,11 +451,16 @@ void ui_main_c::Frame()
 		framesSinceWindowHidden++;
 	}
 	// Otherwise only runs frames if the mouse is on screen, there is an active coroutine, or there is an active subscript
-	else if (!sys->video->IsActive() && !sys->video->IsCursorOverWindow() && !hasActiveCoroutine && !hasSubscript) {
+	// -- or the launcher just changed an appearance setting (PobTools: the window
+	// is unfocused and the cursor is in the launcher at exactly that moment, and
+	// the new look must not wait for the cursor to come back).
+	else if (!sys->video->IsActive() && !sys->video->IsCursorOverWindow() && !hasActiveCoroutine && !hasSubscript &&
+	         sys->video->appearanceRedrawFrames <= 0) {
 		sys->Sleep(100);
 		return;
-	}	
-	
+	}
+	if (sys->video->appearanceRedrawFrames > 0) sys->video->appearanceRedrawFrames--;
+
 	if (renderer) {
 		// Prepare for rendering
 		renderer->BeginFrame();
