@@ -10,6 +10,12 @@ class AppState {
   gate = $state<GateResult | null>(null);
   version = $state<VersionInfo | null>(null);
   childExit = $state<number | null>(null);
+  /**
+   * Browser mode only: the page's line to the PobTools process. "lost" = no
+   * connection for a few seconds (it ended or crashed; it may come back),
+   * "closed" = it was ended (the page's End button or the launcher).
+   */
+  link = $state<"ok" | "lost" | "closed">("ok");
   error = $state<string | null>(null);
   notice = $state<string | null>(null);
   busy = $state(0);
@@ -180,6 +186,15 @@ bridge.on("host.updating", () => {
 bridge.on("host.child_exited", (d: any) => {
   app.engine = "gone";
   app.childExit = typeof d?.exitCode === "number" ? d.exitCode : -1;
+});
+bridge.on("host.disconnected", () => {
+  if (app.link === "ok") app.link = "lost";
+});
+bridge.on("host.reconnected", () => {
+  if (app.link === "lost") app.link = "ok";
+});
+bridge.on("host.closed", () => {
+  app.link = "closed";
 });
 bridge.on("error", (d: any) => {
   app.error = String(d?.message ?? d);

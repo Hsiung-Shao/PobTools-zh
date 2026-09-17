@@ -115,6 +115,19 @@
     </div>
     <StatusBar />
   </div>
+  {#if app.link !== "ok"}
+    <div class="linkveil" role="alertdialog" aria-live="assertive">
+      <div class="linkbox">
+        {#if app.link === "closed"}
+          <p class="linkhead">{t("app.linkClosed")}</p>
+          <p class="dim">{t("app.linkClosedHint")}</p>
+        {:else}
+          <p class="linkhead bad">{t("app.linkLost")}</p>
+          <p class="dim pulse">{t("app.linkLostHint")}</p>
+        {/if}
+      </div>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -142,6 +155,27 @@
   }
   .bad {
     color: var(--bad);
+  }
+  .linkveil {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--surface-0) 78%, transparent);
+  }
+  .linkbox {
+    max-width: 440px;
+    padding: 24px 28px;
+    text-align: center;
+    background: var(--surface-1);
+    border: 1px solid var(--edge-0);
+    border-radius: 8px;
+  }
+  .linkhead {
+    font-size: 1.1em;
+    font-weight: 600;
+    margin: 0 0 8px;
   }
   .pulse {
     animation: pulse 1.6s ease-in-out infinite;

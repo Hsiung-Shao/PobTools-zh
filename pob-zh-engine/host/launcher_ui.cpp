@@ -43,6 +43,7 @@
 #include <misc/cpp/imgui_stdlib.h> // InputText over std::string (the data-folder field)
 
 #include <atomic>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -1009,6 +1010,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// opens in the system browser instead, so the page being there is enough.
 	const bool modernUiOk = ModernUiAvailable(exeDir, nullptr) || ModernUiBrowserAvailable(exeDir);
 	const bool modernInBrowser = modernUiOk && !ModernUiAvailable(exeDir, nullptr);
+	// Browser-mode sessions (either game) that are running, whoever started
+	// them: the page can be closed without the program ending at once, so the
+	// launcher is where the user sees it and ends it. Asked off the UI thread
+	// every two seconds (a loopback request; a wedged server must not freeze
+	// the launcher).
+	struct BrowserRunning { bool poe1 = false, poe2 = false; };
+	BrowserRunning browserRunning;
+	std::future<BrowserRunning> browserPoll;
+	double browserPollAt = -10.0;
 	// The remembered compatibility verdict (PobTools\bridge_gate.json, written
 	// by the new-interface window). Re-read every couple of seconds: the
 	// window that just fell back to classic writes it while we are open.
@@ -2043,6 +2053,37 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					launchPob(true);
 				}
 			} else { launch = true; anythingLaunched = true; }
+		}
+		if (browserPoll.valid() && browserPoll.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+			browserRunning = browserPoll.get();
+		}
+		if (modernUiOk && !browserPoll.valid() && ImGui::GetTime() - browserPollAt > 2.0) {
+			browserPollAt = ImGui::GetTime();
+			browserPoll = std::async(std::launch::async, [exeDir]() {
+				BrowserRunning r;
+				r.poe1 = ModernUiBrowserRunning(exeDir, L"poe1");
+				r.poe2 = ModernUiBrowserRunning(exeDir, L"poe2");
+				return r;
+			});
+		}
+		for (int g = 0; g < 2; ++g) {
+			const bool on = g == 0 ? browserRunning.poe1 : browserRunning.poe2;
+			if (!on) continue;
+			const wchar_t* game = g == 0 ? L"poe1" : L"poe2";
+			ImGui::PushID(g == 0 ? "##browser1" : "##browser2");
+			ImGui::PushFont(fonts.small);
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextDisabled("%s%s", S.modernBrowserRunning, g == 0 ? S.poe1 : S.poe2);
+			ImGui::SameLine();
+			if (ImGui::SmallButton(S.modernBrowserOpen)) ModernUiBrowserOpen(exeDir, game);
+			ImGui::SameLine();
+			if (ImGui::SmallButton(S.modernBrowserStop)) {
+				ModernUiBrowserStop(exeDir, game);
+				(g == 0 ? browserRunning.poe1 : browserRunning.poe2) = false;
+				browserPollAt = ImGui::GetTime(); // the server needs a moment to go
+			}
+			ImGui::PopFont();
+			ImGui::PopID();
 		}
 		if (pobCount > 0) {
 			ImGui::PushFont(fonts.small);

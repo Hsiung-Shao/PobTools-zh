@@ -2089,7 +2089,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		// host.close ending it.
 		{
 			SetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", L"1");
-			const std::wstring urlFile = exeDir + L"PobTools\\modern_ui_url.txt";
+			const std::wstring urlFile = exeDir + L"PobTools\\modern_ui_url_poe2.txt";
 			DeleteFileW(urlFile.c_str());
 			LauncherConfig bcfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
 			std::atomic<int> brc{ -1000 };
@@ -2177,16 +2177,78 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			}
 			check("browser mode: the event stream carries the engine's hello and a POSTed host.info comes back on it",
 			      gotHello && gotInfo, stream.substr(0, 300));
-			std::string ignored;
-			if (port) http("POST", prefix + "~send", host, "{\"id\":77002,\"method\":\"host.close\",\"params\":{}}", ignored);
-			if (es != INVALID_SOCKET) closesocket(es);
+			// every message carries an id; a page that reconnects with Last-Event-ID
+			// continues after it instead of getting the whole history again
+			size_t lastId = std::string::npos;
+			for (size_t at = stream.find("\nid: "); at != std::string::npos; at = stream.find("\nid: ", at + 1)) {
+				lastId = (size_t)strtoull(stream.c_str() + at + 5, nullptr, 10);
+			}
+			if (lastId == std::string::npos && stream.find("\r\n\r\nid: ") != std::string::npos) lastId = 0;
+			bool resumed = false;
+			std::string again;
+			SOCKET es2 = (port && lastId != std::string::npos) ? connectLocal() : INVALID_SOCKET;
+			if (es2 != INVALID_SOCKET) {
+				std::string req = "GET " + prefix + "~events HTTP/1.1\r\nHost: " + host + "\r\nLast-Event-ID: " + std::to_string(lastId) + "\r\n\r\n";
+				send(es2, req.data(), (int)req.size(), 0);
+				std::string ignored;
+				http("POST", prefix + "~send", host, "{\"id\":77003,\"method\":\"host.info\",\"params\":{}}", ignored);
+				char buf[16384];
+				const ULONGLONG until = GetTickCount64() + 30000;
+				while (GetTickCount64() < until && again.find("\"id\":77003") == std::string::npos) {
+					int n = recv(es2, buf, sizeof(buf), 0);
+					if (n <= 0) break;
+					again.append(buf, n);
+				}
+				const size_t firstId = again.find("\nid: ");
+				resumed = again.find("\"id\":77003") != std::string::npos && again.find("\"event\":\"hello\"") == std::string::npos &&
+				          firstId != std::string::npos && strtoull(again.c_str() + firstId + 5, nullptr, 10) > lastId;
+				closesocket(es2);
+			}
+			check("browser mode: events carry ids and a reconnect with Last-Event-ID resumes after it (no replayed hello)",
+			      resumed, "last=" + std::to_string(lastId) + " " + again.substr(0, 200));
+
+			// one per game: the launcher sees it, and launching again reuses it
+			std::string runningUrl;
+			const bool seen = ModernUiBrowserRunning(exeDir, L"poe2", &runningUrl) && runningUrl == url;
+			const ULONGLONG t0 = GetTickCount64();
+			const int second = ShowModernUiInBrowser(exeDir, L"poe2", L"zh-rTW", bcfg, L"", sandbox);
+			const ULONGLONG took = GetTickCount64() - t0;
+			check("browser mode: the running session is found by its URL file, and a second launch reuses it and returns at once",
+			      seen && second == 0 && took < 5000 && ReadFileA(urlFile) == url && brc.load() == -1000,
+			      "seen=" + std::to_string(seen) + " rc=" + std::to_string(second) + " ms=" + std::to_string(took));
+
+			// ended from outside (the launcher's End): the open page is told first
+			const bool stopAsked = ModernUiBrowserStop(exeDir, L"poe2");
+			bool toldClosed = false;
+			if (es != INVALID_SOCKET) {
+				char buf[16384];
+				const ULONGLONG until = GetTickCount64() + 15000;
+				while (GetTickCount64() < until && !toldClosed) {
+					int n = recv(es, buf, sizeof(buf), 0);
+					if (n <= 0) break;
+					stream.append(buf, n);
+					toldClosed = stream.find("\"event\":\"host.closed\"") != std::string::npos;
+				}
+				closesocket(es);
+			}
 			bool stopped = false;
 			for (int i = 0; i < 60 && !stopped; i++) {
 				if (brc.load() != -1000) stopped = true; else Sleep(500);
 			}
-			check("browser mode: host.close ends the server (exit 0) and removes the URL file",
-			      stopped && brc.load() == 0 && GetFileAttributesW(urlFile.c_str()) == INVALID_FILE_ATTRIBUTES,
-			      "rc=" + std::to_string(brc.load()));
+			check("browser mode: ModernUiBrowserStop ends the server (exit 0), the page gets host.closed, the URL file is removed",
+			      stopAsked && toldClosed && stopped && brc.load() == 0 && GetFileAttributesW(urlFile.c_str()) == INVALID_FILE_ATTRIBUTES &&
+			          !ModernUiBrowserRunning(exeDir, L"poe2"),
+			      "stop=" + std::to_string(stopAsked) + " told=" + std::to_string(toldClosed) + " rc=" + std::to_string(brc.load()));
+
+			// a URL file left by a killed session is not taken for a running one
+			{
+				HANDLE h = CreateFileW(urlFile.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+				const std::string stale = "http://127.0.0.1:1/t/00000000000000000000000000000000/";
+				DWORD w = 0;
+				if (h != INVALID_HANDLE_VALUE) { WriteFile(h, stale.data(), (DWORD)stale.size(), &w, nullptr); CloseHandle(h); }
+			}
+			check("browser mode: a stale URL file (nothing listening) is not running and is removed",
+			      !ModernUiBrowserRunning(exeDir, L"poe2") && GetFileAttributesW(urlFile.c_str()) == INVALID_FILE_ATTRIBUTES, "");
 			if (stopped) server.join(); else server.detach();
 			WSACleanup();
 			SetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", nullptr);

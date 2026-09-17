@@ -1,6 +1,6 @@
 <!-- 頂列:品牌、分頁、右側目前建置。分頁用底線標示,不用膠囊。 -->
 <script lang="ts">
-  import { api, hostInfo } from "$lib/bridge";
+  import { api, bridge, hostInfo } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app, type ViewId } from "$lib/state.svelte";
 
@@ -25,6 +25,14 @@
     // in the system browser the tab title is the page's own
     if (hostInfo.browser) document.title = title ? `${title} - PobTools` : "PobTools";
   });
+
+  // In the system browser closing the tab does not end the program right away
+  // (it waits to see whether the page comes back), so the page has its own End.
+  function endProgram() {
+    if (app.info?.unsaved && !confirm(t("title.endUnsaved"))) return;
+    app.link = "closed";
+    void bridge.call("host.close").catch(() => {});
+  }
 </script>
 
 <header class="top">
@@ -43,6 +51,9 @@
       <span class="bcls">{app.info.ascendClassNameZh ?? app.info.classNameZh ?? ""}</span>
       {#if app.info.unsaved}<span class="unsaved">{t("title.unsaved")}</span>{/if}
     </span>
+  {/if}
+  {#if hostInfo.browser}
+    <button class="end" title={t("title.endHint")} onclick={endProgram}>{t("title.end")}</button>
   {/if}
 </header>
 
@@ -113,6 +124,19 @@
   .bcls {
     color: var(--gold);
     font-size: var(--fs-sm);
+  }
+  .end {
+    appearance: none;
+    border: 1px solid var(--edge-1);
+    background: none;
+    color: var(--ink-2);
+    font-size: var(--fs-sm);
+    padding: 2px 10px;
+    border-radius: 4px;
+  }
+  .end:hover {
+    color: var(--bad);
+    border-color: var(--bad);
   }
   .unsaved {
     color: var(--warn);

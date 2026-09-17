@@ -287,6 +287,7 @@ struct Server {
 			reply(info());
 		} else if (method == "host.close") {
 			reply(json{ {"ok", true} });
+			push(json{ {"event", "host.closed"} }.dump()); // every open page, not only the asker
 			quit = true;
 			cv.notify_all();
 		} else if (method == "host.set_title") {
@@ -338,9 +339,15 @@ struct Server {
 	std::string boot_script() const
 	{
 		const std::string b = prefix();
+		// The EventSource resumes after a drop by itself (Last-Event-ID, see
+		// serve_events); the page is told when the connection has been down for
+		// a few seconds (the program ended, or was ended) and when it returns.
 		return "<script>window.pobtools={"
-		       "send:function(l){fetch('" + b + "~send',{method:'POST',body:String(l),keepalive:true});},"
-		       "onMessage:function(fn){var es=new EventSource('" + b + "~events');es.onmessage=function(e){fn(e.data);};},"
+		       "send:function(l){fetch('" + b + "~send',{method:'POST',body:String(l),keepalive:true}).catch(function(){});},"
+		       "onMessage:function(fn){var es=new EventSource('" + b + "~events'),t=null,lost=false;"
+		       "es.onmessage=function(e){fn(e.data);};"
+		       "es.onopen=function(){if(t){clearTimeout(t);t=null;}if(lost){lost=false;fn('{\"event\":\"host.reconnected\"}');}};"
+		       "es.onerror=function(){if(!t&&!lost){t=setTimeout(function(){t=null;lost=true;fn('{\"event\":\"host.disconnected\"}');},4000);}};},"
 		       "info:" + info().dump() + "};</script>";
 	}
 
@@ -389,7 +396,7 @@ struct Server {
 		respond(s, 200, "OK", type, body);
 	}
 
-	void serve_events(SOCKET s)
+	void serve_events(SOCKET s, size_t resumeAfter)
 	{
 		const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream; charset=utf-8\r\n"
 		                         "Cache-Control: no-store\r\nConnection: keep-alive\r\n\r\n";
@@ -399,21 +406,27 @@ struct Server {
 			std::lock_guard<std::mutex> lk(mu);
 			streams++;
 			everConnected = true;
-			next = base; // a (re)connecting page gets everything still held
+			// a page that reconnects (Last-Event-ID) continues after what it has;
+			// a new page gets everything still held
+			next = resumeAfter == (size_t)-1 ? base : resumeAfter + 1;
 		}
-		for (;;) {
+		for (bool stop = false;;) {
 			std::vector<std::string> batch;
 			{
 				std::unique_lock<std::mutex> lk(mu);
 				cv.wait_for(lk, std::chrono::seconds(15), [&] { return quit.load() || next < base + queue.size(); });
-				if (quit) break;
+				stop = quit;
 				if (next < base) next = base;
+				if (next > base + queue.size()) next = base + queue.size();
 				while (next < base + queue.size()) batch.push_back(queue[next++ - base]);
 			}
+			// what was queued before the end (host.closed) still goes out
+			if (stop && batch.empty()) break;
 			std::string out;
 			if (batch.empty()) out = ": keep-alive\n\n";
-			for (const std::string& l : batch) out += "data: " + l + "\n\n";
-			if (!send_all(s, out)) break;
+			size_t id = next - batch.size();
+			for (const std::string& l : batch) out += "id: " + std::to_string(id++) + "\ndata: " + l + "\n\n";
+			if (!send_all(s, out) || stop) break;
 		}
 		std::lock_guard<std::mutex> lk(mu);
 		streams--;
@@ -452,7 +465,15 @@ struct Server {
 		const std::string pre = prefix();
 		if (target.compare(0, pre.size(), pre) != 0) { respond(s, 404, "Not Found", "text/plain", "not found"); return; }
 		const std::string rel = target.substr(pre.size());
-		if (method == "GET" && rel == "~events") { serve_events(s); return; }
+		if (method == "GET" && rel == "~events") {
+			size_t resume = (size_t)-1;
+			std::string lower = req.substr(0, headerEnd + 2);
+			for (auto& c : lower) c = (char)tolower((unsigned char)c);
+			size_t at = lower.find("\r\nlast-event-id:");
+			if (at != std::string::npos) resume = (size_t)strtoull(lower.c_str() + at + 16, nullptr, 10);
+			serve_events(s, resume);
+			return;
+		}
 		if (method == "POST" && rel == "~send") {
 			size_t len = 0;
 			{
@@ -514,7 +535,75 @@ struct Server {
 	}
 };
 
+std::wstring UrlFile(const std::wstring& exeDir, const std::wstring& game)
+{
+	return exeDir + L"PobTools\\modern_ui_url_" + (game == L"poe2" ? std::wstring(L"poe2") : std::wstring(L"poe1")) + L".txt";
+}
+
+// One short request to our own loopback server: status code, or -1.
+int LoopbackRequest(const std::string& url, const char* method, const std::string& body)
+{
+	if (url.rfind("http://127.0.0.1:", 0) != 0) return -1;
+	const int port = atoi(url.c_str() + 17);
+	const size_t slash = url.find('/', 17);
+	if (port <= 0 || slash == std::string::npos) return -1;
+	WSADATA wsa{};
+	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return -1;
+	int status = -1;
+	SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (s != INVALID_SOCKET) {
+		DWORD tmo = 1500;
+		setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tmo, sizeof(tmo));
+		setsockopt(s, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tmo, sizeof(tmo));
+		sockaddr_in a{};
+		a.sin_family = AF_INET;
+		a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		a.sin_port = htons((u_short)port);
+		if (connect(s, (sockaddr*)&a, sizeof(a)) == 0) {
+			const std::string req = std::string(method) + " " + url.substr(slash) + " HTTP/1.1\r\nHost: 127.0.0.1:" +
+			                        std::to_string(port) + "\r\nContent-Length: " + std::to_string(body.size()) +
+			                        "\r\nConnection: close\r\n\r\n" + body;
+			if (send_all(s, req)) {
+				char buf[64] = {};
+				const int n = recv(s, buf, sizeof(buf) - 1, 0);
+				if (n > 12 && strncmp(buf, "HTTP/1.1 ", 9) == 0) status = atoi(buf + 9);
+			}
+		}
+		closesocket(s);
+	}
+	WSACleanup();
+	return status;
+}
+
 } // namespace
+
+bool ModernUiBrowserRunning(const std::wstring& exeDir, const std::wstring& game, std::string* url)
+{
+	std::string u;
+	if (!read_file(UrlFile(exeDir, game), u) || u.empty()) return false;
+	if (LoopbackRequest(u, "GET", "") != 200) {
+		// the program ended without cleaning up (killed): the file is stale
+		DeleteFileW(UrlFile(exeDir, game).c_str());
+		return false;
+	}
+	if (url) *url = u;
+	return true;
+}
+
+bool ModernUiBrowserOpen(const std::wstring& exeDir, const std::wstring& game)
+{
+	std::string u;
+	if (!ModernUiBrowserRunning(exeDir, game, &u)) return false;
+	ShellExecuteW(nullptr, L"open", widen(u).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+	return true;
+}
+
+bool ModernUiBrowserStop(const std::wstring& exeDir, const std::wstring& game)
+{
+	std::string u;
+	if (!ModernUiBrowserRunning(exeDir, game, &u)) return false;
+	return LoopbackRequest(u + "~send", "POST", "{\"id\":-1,\"method\":\"host.close\"}") == 204;
+}
 
 bool ModernUiBrowserAvailable(const std::wstring& exeDir)
 {
@@ -551,6 +640,18 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	}
 	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
 	CreateDirectoryW((exeDir + L"PobTools\\cache").c_str(), nullptr);
+	wchar_t noBrowser[8] = {};
+	const bool openBrowser = !GetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", noBrowser, 8);
+	// One per game: launching again while it runs opens the running one's page
+	// instead of a second engine on the same install (they would overwrite
+	// each other's Settings.xml).
+	{
+		std::string running;
+		if (ModernUiBrowserRunning(exeDir, game, &running)) {
+			if (openBrowser) ShellExecuteW(nullptr, L"open", widen(running).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			return 0;
+		}
+	}
 	S.token = random_token();
 	if (!S.listen_loopback()) {
 		PobLog::Error("modernui", "browser mode: cannot listen on 127.0.0.1, WSA error " + std::to_string(WSAGetLastError()));
@@ -563,15 +664,14 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	// Where to find it again (and what a test harness reads): the URL is only
 	// good for this run, and only from this machine.
 	{
-		HANDLE h = CreateFileW((exeDir + L"PobTools\\modern_ui_url.txt").c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, 0, nullptr);
+		HANDLE h = CreateFileW(UrlFile(exeDir, game).c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, 0, nullptr);
 		if (h != INVALID_HANDLE_VALUE) {
 			DWORD w = 0;
 			WriteFile(h, url.data(), (DWORD)url.size(), &w, nullptr);
 			CloseHandle(h);
 		}
 	}
-	wchar_t noBrowser[8] = {};
-	if (!GetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", noBrowser, 8)) {
+	if (openBrowser) {
 		// Wine hands an http URL to winebrowser, which opens the host system's
 		// browser (xdg-open on Linux, open on macOS).
 		ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -595,7 +695,7 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	acceptor.join();
 	// give event-stream threads a moment to see `quit`
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
-	DeleteFileW((exeDir + L"PobTools\\modern_ui_url.txt").c_str());
+	DeleteFileW(UrlFile(exeDir, game).c_str());
 	const int code = S.exitCode;
 	// Connection threads are detached and may still be unwinding; the process
 	// is about to exit, so the server object is left for them rather than
