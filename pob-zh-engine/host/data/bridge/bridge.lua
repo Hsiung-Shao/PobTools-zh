@@ -3237,6 +3237,89 @@ probe("TreeTab.ModifyNodePopup/RemoveTattooFromNode + tree.tattoo (PoE1 tattoos)
 	return type(t) == "table" and type(t.ModifyNodePopup) == "function" and type(t.RemoveTattooFromNode) == "function"
 end, "tattoos")
 
+-- ---- Node power: the heat map and the Power Report --------------------------
+-- TreeTab's "Show Node Power" runs CalcsTab's PowerBuilder coroutine over the
+-- unallocated nodes (classic POB resumes it once per frame and shows a toast);
+-- here it is run to the end, then TreeTab:BuildPowerReportList formats it.
+
+function M.node_power(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	local calcs = b.calcsTab
+	local viewer = tab.viewer
+	p = p or {}
+	local stats = {}
+	for i, s in ipairs(tab.powerStatList or {}) do
+		stats[i] = { index = i, stat = s.stat, label = s.label, labelZh = tr(s.label) }
+	end
+	if p.enabled == false then
+		viewer.showHeatMap = false
+		tab.controls.treeHeatMap.state = false
+		return { enabled = false, stats = stats, theme = main().nodePowerTheme }
+	end
+	-- the depth limit (its drop-down / custom box)
+	if p.maxDepth ~= nil then
+		local d = tonumber(p.maxDepth)
+		calcs.nodePowerMaxDepth = (d and d > 0) and math.floor(d) or nil
+	end
+	local chosen
+	if p.stat ~= nil and p.stat ~= "" then
+		for _, s in ipairs(tab.powerStatList or {}) do
+			if s.stat == p.stat then chosen = s end
+		end
+		if not chosen then error("unknown power stat " .. tostring(p.stat), 0) end
+	end
+	tab.controls.treeHeatMap.state = true
+	tab.controls.treeHeatMap.changeFunc(true)
+	tab:SetPowerCalc(chosen)
+	-- run POB's builder to the end instead of a slice per frame
+	local guard = 0
+	repeat
+		calcs:BuildPower()
+		guard = guard + 1
+	until calcs.powerBuilder == nil or guard > 100000
+	if calcs.powerBuilder then error("the power builder did not finish", 0) end
+	viewer.heatMapStat = calcs.powerStat
+	local report = {}
+	for i, r in ipairs(tab:BuildPowerReportList(calcs.powerStat) or {}) do
+		local sd, sdZh = {}, {}
+		for j, line in ipairs(r.sd or {}) do sd[j] = line; sdZh[j] = tr(line) end
+		report[i] = {
+			id = r.id, name = r.name, nameZh = tr(r.name), type = r.type,
+			power = r.power, powerStr = r.powerStr, pathPower = r.pathPower, pathPowerStr = r.pathPowerStr,
+			pathDist = r.pathDist, allocated = r.allocated and true or false, x = r.x, y = r.y, sd = sd, sdZh = sdZh,
+		}
+	end
+	-- what the tree paints with: each unallocated node's power and the maxima
+	local nodes = {}
+	for id, node in pairs(b.spec.nodes) do
+		if not node.alloc and node.power and (node.power.offence or node.power.singleStat) then
+			nodes[tostring(id)] = { offence = node.power.offence, defence = node.power.defence, singleStat = node.power.singleStat }
+		end
+	end
+	return {
+		enabled = true,
+		stat = calcs.powerStat and calcs.powerStat.stat or nil,
+		stats = stats,
+		maxDepth = calcs.nodePowerMaxDepth,
+		theme = main().nodePowerTheme,
+		powerMax = calcs.powerMax and {
+			singleStat = calcs.powerMax.singleStat, offence = calcs.powerMax.offence, defence = calcs.powerMax.defence,
+		} or nil,
+		nodes = as_object(nodes),
+		report = report,
+		rev = b.outputRevision,
+	}
+end
+
+probe("CalcsTab.BuildPower/PowerBuilder + TreeTab.SetPowerCalc/BuildPowerReportList + data.powerStatList", function()
+	local c, t = class_of("CalcsTab"), class_of("TreeTab")
+	local b = build()
+	return type(c) == "table" and type(c.BuildPower) == "function" and type(c.PowerBuilder) == "function"
+		and type(t) == "table" and type(t.SetPowerCalc) == "function" and type(t.BuildPowerReportList) == "function"
+		and (not (b and b.treeTab) or type(b.treeTab.powerStatList) == "table")
+end)
+
 -- ---- Compare another tree (TreeTab compareCheck / compareSelect) ------------
 
 -- set_compare_spec{index | nil}: nil unticks Compare.

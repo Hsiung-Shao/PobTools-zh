@@ -5,7 +5,7 @@
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
-  import { api, type MasteryChoice, type NodeInfo, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
+  import { api, type MasteryChoice, type NodeInfo, type NodePower, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
@@ -51,6 +51,46 @@
 
   let search = $state("");
   let matches = $state<Set<number>>(new Set());
+
+  /** Show Node Power (TreeTab's heat map + Power Report). */
+  let power = $state<NodePower | null>(null);
+  let powerBusy = $state(false);
+  let powerStat = $state("");
+  let powerDepth = $state("5");
+  let reportOpen = $state(false);
+  async function runPower(opts: { enabled?: boolean; stat?: string; maxDepth?: number | null } = {}) {
+    powerBusy = true;
+    try {
+      const r = await api.nodePower(opts);
+      power = r.enabled ? r : null;
+      if (!r.enabled) reportOpen = false;
+      if (r.enabled) powerStat = r.stat ?? "";
+      repaint();
+    } catch (e: any) {
+      app.error = String(e?.message ?? e);
+      power = null;
+    }
+    powerBusy = false;
+  }
+  function togglePower(on: boolean) {
+    if (!on) return void runPower({ enabled: false });
+    void runPower({ stat: powerStat || undefined, maxDepth: powerDepth === "all" ? null : Number(powerDepth) });
+  }
+  // PassiveTreeView's colours: sqrt of the share of the maximum, POB's RED/BLUE theme
+  function heatColor(id: number): string | null {
+    const p = power?.nodes?.[String(id)];
+    const max = power?.powerMax;
+    if (!p || !max) return null;
+    const band = (v: number, m?: number) => (m && m > 0 ? Math.min(1, Math.sqrt(Math.max(v, 0) / m * 1.5)) : 0);
+    if (power?.stat) {
+      const c = Math.round(band(p.singleStat ?? 0, max.singleStat) * 255);
+      return `rgba(${c},0,0,0.85)`;
+    }
+    const dps = band(p.offence ?? 0, max.offence);
+    const def = band(p.defence ?? 0, max.defence);
+    const mix = (Math.max(dps - 0.5, 0) + Math.max(def - 0.5, 0)) / 2;
+    return `rgba(${Math.round(dps * 255)},${Math.round(mix * 255)},${Math.round(def * 255)},0.85)`;
+  }
 
   /** Ctrl+D: POB's stat differences in the node tooltip (PassiveTreeView.showStatDifferences). */
   let showDiff = $state(true);
@@ -418,6 +458,16 @@
         ctx.arc(sx, sy, Math.max(half, 3), 0, Math.PI * 2);
         ctx.fillStyle = "rgba(255,107,107,0.35)";
         ctx.fill();
+      }
+      // Show Node Power: POB tints unallocated nodes by their power
+      if (power && !alloc) {
+        const col = heatColor(n.id);
+        if (col) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 18 * zoom), 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
       }
       // Compare (TreeTab's Compare tick): only in the other tree / only in this one
       if (compareSet.size) {
@@ -951,6 +1001,25 @@
         {/each}
       </div>
     {/if}
+    <span class="vsep"></span>
+    <label class="chk small" title={t("tree.powerHint")}>
+      <input type="checkbox" checked={!!power} disabled={powerBusy || app.busy > 0} onchange={(e) => togglePower(e.currentTarget.checked)} />
+      {t("tree.power")}
+    </label>
+    {#if power}
+      <select class="select sm" value={powerStat} disabled={powerBusy} onchange={(e) => { powerStat = e.currentTarget.value; togglePower(true); }}>
+        {#each power.stats as s (s.index)}<option value={s.stat ?? ""}>{s.labelZh || s.label}</option>{/each}
+      </select>
+      <select class="select sm" value={powerDepth} disabled={powerBusy} onchange={(e) => { powerDepth = e.currentTarget.value; togglePower(true); }} title={t("tree.powerDepth")}>
+        <option value="all">{t("tree.powerDepthAll")}</option>
+        <option value="3">3</option>
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="15">15</option>
+      </select>
+      <button class="btn ghost sm" disabled={!power.report?.length} onclick={() => (reportOpen = !reportOpen)}>{t(reportOpen ? "tree.powerHide" : "tree.powerShow")}</button>
+    {/if}
+    {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>{/if}
     <span class="spacer"></span>
     {#if tree}
       <span class="points num">
@@ -984,6 +1053,32 @@
           </button>
         {/each}
         <button class="choice cancel" onclick={() => (masteryMenu = null)}>{t("tree.cancel")}</button>
+      </div>
+    {/if}
+
+    {#if reportOpen && power?.report?.length}
+      <div class="report">
+        <div class="rhead">
+          <span class="label">{t("tree.powerReport")}</span>
+          <span class="dim small">{power.stats.find((s) => (s.stat ?? "") === (power!.stat ?? ""))?.labelZh ?? ""}</span>
+          <span class="grow"></span>
+          <button class="btn ghost sm" onclick={() => (reportOpen = false)}>×</button>
+        </div>
+        <table class="rtable">
+          <thead>
+            <tr><th>{t("tree.powerNode")}</th><th class="n">{t("tree.powerValue")}</th><th class="n">{t("tree.powerPath")}</th><th class="n">{t("tree.powerDist")}</th></tr>
+          </thead>
+          <tbody>
+            {#each power.report.slice(0, 200) as r, i (`${r.id}:${i}`)}
+              <tr class:alloc={r.allocated} onclick={() => jumpTo(r.id)}>
+                <td title={r.sdZh.join(String.fromCharCode(10))}>{r.nameZh || r.name}</td>
+                <td class="n"><PobText text={r.powerStr} /></td>
+                <td class="n"><PobText text={r.pathPowerStr} /></td>
+                <td class="n dim">{r.pathDist ?? ""}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </div>
     {/if}
 
@@ -1074,6 +1169,7 @@
   }
   .toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding: 6px 12px;
@@ -1269,5 +1365,62 @@
   }
   .tname {
     color: var(--ink-0);
+  }
+  .report {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    width: 520px;
+    max-height: 46%;
+    display: flex;
+    flex-direction: column;
+    background: color-mix(in srgb, var(--surface-1) 94%, transparent);
+    border: 1px solid var(--edge-1);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .rhead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--edge-0);
+  }
+  .rtable {
+    display: block;
+    overflow: auto;
+    border-collapse: collapse;
+    font-size: var(--fs-sm);
+    table-layout: fixed;
+    width: 100%;
+  }
+  .rtable thead th {
+    position: sticky;
+    top: 0;
+    background: var(--surface-1);
+  }
+  .rtable td:first-child,
+  .rtable th:first-child {
+    width: 55%;
+    max-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rtable th,
+  .rtable td {
+    padding: 2px 8px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .rtable td.n,
+  .rtable th.n {
+    text-align: right;
+  }
+  .rtable tbody tr:hover {
+    background: var(--surface-2);
+    cursor: default;
+  }
+  .rtable tr.alloc td:first-child {
+    color: var(--gold);
   }
 </style>

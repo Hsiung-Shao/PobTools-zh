@@ -220,6 +220,32 @@ export interface SpecList {
   tattoos: boolean;
 }
 
+/** TreeTab's Show Node Power: the heat map's numbers and the Power Report. */
+export interface NodePower {
+  enabled: boolean;
+  stat?: string;
+  stats: { index: number; stat?: string; label: string; labelZh?: string }[];
+  maxDepth?: number;
+  theme?: string;
+  powerMax?: { singleStat?: number; offence?: number; defence?: number };
+  nodes?: Record<string, { offence?: number; defence?: number; singleStat?: number }>;
+  report?: {
+    id: number;
+    name: string;
+    nameZh?: string;
+    type?: string;
+    power: number;
+    powerStr: string;
+    pathPower: number;
+    pathPowerStr: string;
+    pathDist?: number;
+    allocated: boolean;
+    sd: string[];
+    sdZh: string[];
+  }[];
+  rev?: number;
+}
+
 /** Build.lua's loadout drop-down (list_loadouts). */
 export interface LoadoutList {
   entries: { index: number; label: string; labelZh?: string; kind: "header" | "action" | "loadout" }[];
@@ -1027,6 +1053,7 @@ export const api = {
   tattooOptions: (id: number, showLegacy?: boolean) => bridge.call<TattooOptions>("tattoo_options", { id, showLegacy }, 60000),
   tattooApply: (p: { id: number; tattoo?: string | number; reset?: boolean; showLegacy?: boolean }) => bridge.call<TreeState>("tattoo_apply", p, 60000),
   setCompareSpec: (index?: number) => bridge.call<TreeState>("set_compare_spec", index == null ? {} : { index }, 60000),
+  nodePower: (p: { enabled?: boolean; stat?: string; maxDepth?: number | null }) => bridge.call<NodePower>("node_power", p, 600000),
   treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number; trace?: number[] } = {}) =>
     bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),

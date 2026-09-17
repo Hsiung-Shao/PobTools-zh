@@ -931,6 +931,21 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      both && okTrU && trU["allocatedNodes"].size() == (size_t)allocCount && !okTrBad,
 			      "p1=" + std::to_string(p1) + " p2=" + std::to_string(p2) + " " + tr1.dump().substr(0, 120) + " " + trBad.dump().substr(0, 120));
 
+			// Show Node Power: the heat map's per-node power and the Power Report
+			json np0, np1, npOff;
+			const auto t0np = GetTickCount64();
+			bool okNp = child.Call("node_power", json{{"maxDepth", 3}}, np0, 600000);
+			std::string powerStat;
+			if (okNp) for (auto& st : np0["stats"]) if (powerStat.empty() && st.contains("stat")) powerStat = st.value("stat", "");
+			bool okNp1 = okNp && !powerStat.empty() && child.Call("node_power", json{{"stat", powerStat}, {"maxDepth", 3}}, np1, 600000);
+			bool okOff = child.Call("node_power", json{{"enabled", false}}, npOff, 60000);
+			bool powered = okNp && np0["nodes"].size() > 50 && np0["powerMax"].value("offence", 0.0) > 0.0;
+			bool reported = okNp1 && np1["report"].size() > 10 && np1["report"][0].contains("powerStr") && np1["report"][0].value("nameZh", "") != "";
+			check("node_power runs POB's PowerBuilder: every reachable node gets a power, a chosen stat gives its Power Report, and it can be switched off",
+			      powered && reported && okOff && !npOff.value("enabled", true),
+			      "nodes=" + std::to_string(np0["nodes"].size()) + " report=" + std::to_string(okNp1 ? np1["report"].size() : 0) +
+			          " stat=" + powerStat + " ms=" + std::to_string(GetTickCount64() - t0np));
+
 			// node tooltip with stat differences (Ctrl+D)
 			json nd0, nd1;
 			bool okNd = p2 >= 0 && child.Call("node_info", json{{"id", p2}}, nd0, 60000) && child.Call("node_info", json{{"id", p2}, {"diff", true}}, nd1, 60000);
