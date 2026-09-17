@@ -80,7 +80,10 @@ public:
 
 	virtual void	BeginFrame() = 0;
 	virtual void	EndFrame() = 0;
-	
+	// PobTools: did the last EndFrame reach the screen? An elided frame is not
+	// presented and so did not wait on vsync (see host/pob_frame_cap.h).
+	virtual bool	LastFramePresented() = 0;
+
 	virtual r_shaderHnd_c* RegisterShader(std::string_view name, int flags) = 0;
 	virtual r_shaderHnd_c* RegisterShaderFromImage(std::unique_ptr<image_c> img, int flags) = 0;
 	virtual void	GetShaderImageSize(r_shaderHnd_c* hnd, int &width, int &height) = 0;

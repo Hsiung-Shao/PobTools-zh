@@ -6,6 +6,7 @@
 
 #include "host/error_log.h"
 #include "host/hang_watch.h"
+#include "host/perf_log.h"
 #include "ui_local.h"
 
 #include <filesystem>
@@ -1130,7 +1131,21 @@ static int tr_strip_color_codes(const char* src, int src_len,
 
 // Translate a display string for rendering. Returns the translated string when a
 // translation exists, otherwise the original text unchanged.
+static std::string tr_display_impl(const char* text);
 static std::string tr_display(const char* text)
+{
+	// Performance log (opt-in): dictionary lookups are counted and timed, since
+	// every string POB draws or measures goes through here once per frame.
+	if (!PerfLog::Enabled()) return tr_display_impl(text);
+	const double tic = PerfLog::NowMs();
+	std::string out = tr_display_impl(text);
+	if (PerfLog::Recorder* r = PerfLog::Get()) {
+		r->AddCpu(PerfLog::CpuTranslate, PerfLog::NowMs() - tic);
+		r->Count(PerfLog::CountTranslations);
+	}
+	return out;
+}
+static std::string tr_display_impl(const char* text)
 {
 	if (!text) return std::string();
 	if (!translation_is_enabled()) return std::string(text);
@@ -1194,6 +1209,7 @@ static int l_DrawString(lua_State* L)
 		scaledHeight = (scaledHeight + 1) & ~1;
 	}
 	std::string s_text = tr_display(lua_tostring(L, 6));
+	if (PerfLog::Enabled()) if (PerfLog::Recorder* r = PerfLog::Get()) r->Count(PerfLog::CountStrings);
 	ui->renderer->DrawString(
 		left,
 		top,
@@ -2659,6 +2675,42 @@ static int l_PobToolsBackground(lua_State* L)
 	return 4;
 }
 
+// Performance log hooks for the injected Lua (poecharm_inject.lua). All are
+// harmless no-ops while POB_ZH_PERFLOG is off.
+//   PobToolsPerfEnabled() -> bool
+//   PobToolsPerfNow() -> milliseconds, high resolution
+//   PobToolsPerfMark(name, ms)   per-page draw time
+//   PobToolsPerfEvent(text)      an EVT line (recalculation, build loaded, ...)
+static int l_PobToolsPerfEnabled(lua_State* L)
+{
+	lua_pushboolean(L, PerfLog::Enabled());
+	return 1;
+}
+
+static int l_PobToolsPerfNow(lua_State* L)
+{
+	lua_pushnumber(L, PerfLog::NowMs());
+	return 1;
+}
+
+static int l_PobToolsPerfMark(lua_State* L)
+{
+	if (!PerfLog::Enabled()) return 0;
+	const char* name = lua_tostring(L, 1);
+	if (!name) return 0;
+	if (PerfLog::Recorder* r = PerfLog::Get()) r->Mark(name, lua_tonumber(L, 2));
+	return 0;
+}
+
+static int l_PobToolsPerfEvent(lua_State* L)
+{
+	if (!PerfLog::Enabled()) return 0;
+	const char* text = lua_tostring(L, 1);
+	if (!text) return 0;
+	if (PerfLog::Recorder* r = PerfLog::Get()) r->Event(text);
+	return 0;
+}
+
 static int l_PobToolsReverse(lua_State* L)
 {
 	const char* text = lua_tostring(L, 1);
@@ -2922,6 +2974,10 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNC(PobToolsLogError);
+	ADDFUNC(PobToolsPerfEnabled);
+	ADDFUNC(PobToolsPerfNow);
+	ADDFUNC(PobToolsPerfMark);
+	ADDFUNC(PobToolsPerfEvent);
 	ADDFUNCALIAS(PoeCharmTranslate, PobToolsTranslate);
 	ADDFUNCALIAS(PoeCharmReverse, PobToolsReverse);
 	ADDFUNCALIAS(PoeCharmSetTranslate, PobToolsSetTranslate);

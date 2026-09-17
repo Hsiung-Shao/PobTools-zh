@@ -137,6 +137,13 @@
     "Official trade (PoE1)": "官方交易行（PoE1）",
     "Official trade (PoE2)": "官方交易行（PoE2）",
     "Disenchant lookup": "拆粉查询",
-    "Chinese localisation": "中文化工具"
+    "Chinese localisation": "中文化工具",
+    "POB performance": "POB 性能",
+    "POB frame limit while focused": "POB 在前台时的画面更新上限",
+    "POB frame limit in the background": "POB 在后台时的画面更新上限",
+    "No limit": "不限",
+    "Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.": "限制 POB 窗口每秒绘制几次，降低显卡与 CPU 负担；修改后会立即应用到已打开的 POB。画面没有变化时本来就不会重绘。觉得拖动天赋树不够流畅再调高。",
+    "Performance diagnostics log": "性能诊断记录",
+    "Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.": "排查 POB 卡顿或显卡、CPU 占用过高时才打开。下次打开 POB 生效，记录写在问题记录文件夹的 perf-日期.log：用的是哪张显卡、在哪个页面与状态、每一段花了多少时间，关闭 POB 时会在最后附上各页面的消耗排名。不包含 build 内容或账号数据。查完记得关闭。"
   }
 }

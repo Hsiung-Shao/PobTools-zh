@@ -167,6 +167,13 @@ struct LauncherConfig {
 	// here so a machine where suspending threads is a problem can still opt out
 	// without a new build.
 	bool           hangWatch = true;
+	// POB window frame-rate caps (host/pob_frame_cap.h), fps, 0 = no cap. Global,
+	// not per game. Passed as POB_ZH_FPS_FG / POB_ZH_FPS_BG and pushed live.
+	int            pobFpsForeground = 60;
+	int            pobFpsBackground = 15;
+	// Opt-in performance log for POB (host/perf_log.h), POB_ZH_PERFLOG. Off by
+	// default; the settings page turns it on when someone is chasing a report.
+	bool           perfLog = false;
 };
 
 // ---- external dictionary folders -------------------------------------------

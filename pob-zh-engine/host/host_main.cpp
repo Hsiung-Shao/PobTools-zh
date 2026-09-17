@@ -27,6 +27,7 @@
 #include "http_client.h"
 #include "hang_watch.h"
 #include "frame_pacing.h"   // --frame-pacing-selftest
+#include "pob_frame_cap.h"  // --perf-selftest
 #include "launcher_config.h"
 #include "launcher_strings_io.h"
 #include "launcher_ui.h"
@@ -188,6 +189,9 @@ static void apply_locale_env(const std::wstring& dir)
 	// Same gap again: a POB started from the legacy CLI path would otherwise
 	// ignore an ini that turned the watchdog off ("absent" means on).
 	ensure(L"POB_ZH_HANGWATCH", L"HangWatch", L"1");
+	ensure(L"POB_ZH_FPS_FG", L"PobFpsForeground", L"60");
+	ensure(L"POB_ZH_FPS_BG", L"PobFpsBackground", L"15");
+	ensure(L"POB_ZH_PERFLOG", L"PerfLog", L"0");
 	// Appearance (per game, see AppearanceConfig): all of it goes through the
 	// config loader -- the per-game keys have a fallback chain (`ensure` has
 	// none) and the background is a path that may be non-ASCII.
@@ -590,6 +594,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--frame-pacing-selftest") {
 		return RunFramePacingSelfTest(dir);
 	}
+	// --perf-selftest: the POB window's frame cap / present rules and the
+	// opt-in performance log's recorder, on a fake clock.
+	if (arg1 == L"--perf-selftest") {
+		return RunPerfSelfTest(dir);
+	}
 	if (arg1 == L"--font-coverage-selftest") {
 		// headless: every shipped font must be able to draw every character the
 		// launcher shows. ImGui substitutes '?' silently, so nothing else catches it.
@@ -875,7 +884,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			                        dd.status == DataDirStatus::External ? dd.root : L"",
 			                        cfg.fontApplyAll, look.windowOpacity,
 			                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
-			                        look.treeBg, cfg.hangWatch);
+			                        look.treeBg, cfg.hangWatch,
+			                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
 		}
 		// Held for the whole run: the engine reads Data\*.json on a background
 		// thread right after start, and the updater's check (started above, still

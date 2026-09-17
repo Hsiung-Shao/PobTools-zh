@@ -47,7 +47,7 @@ void Error(const char* feature, const std::string& msg);
 // opens nothing looks broken.
 std::wstring LogDir();
 
-// Deletes error-YYYY-MM-DD.log files, and the watchdog's hang-/crash-<date>-...
+// Deletes error-YYYY-MM-DD.log and perf-YYYY-MM-DD.log files, and the watchdog's hang-/crash-<date>-...
 // .txt reports, older than `keepDays`. Returns how many. Only files in LogDir()
 // whose names match those exact shapes are considered -- never a wildcard sweep
 // of the directory.

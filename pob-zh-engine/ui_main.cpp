@@ -6,7 +6,11 @@
 
 #include "host/error_log.h"
 #include "host/hang_watch.h"
+#include "host/perf_log.h"
+#include "host/pob_frame_cap.h"
 #include "ui_local.h"
+
+#include <chrono>
 
 #include "translation_manager.h"
 #include "startup_trace.h"
@@ -417,9 +421,76 @@ void ui_main_c::ScriptInit()
 	}
 }
 
+// ---- performance log: where is the user? ------------------------------------
+namespace {
+
+double PerfNowSeconds()
+{
+	return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// t[key] without metamethods, left on the stack.
+void RawField(lua_State* L, int idx, const char* key)
+{
+	idx = idx < 0 ? lua_gettop(L) + idx + 1 : idx;
+	lua_pushstring(L, key);
+	lua_rawget(L, idx);
+}
+
+// POB's own Lua state, read for the log's page/state tags (field names checked
+// against POB's Modules/Main.lua, Modules/Build.lua, Classes/TreeTab.lua,
+// Classes/PassiveTreeView.lua). Raw reads only, so nothing here can run POB
+// code or raise a Lua error; a POB version that renamed a field reads "?".
+void PerfReadLuaState(lua_State* L, PerfLog::State& st)
+{
+	const int top = lua_gettop(L);
+	lua_getglobal(L, "main");
+	if (lua_istable(L, -1)) {
+		RawField(L, -1, "mode");
+		if (lua_type(L, -1) == LUA_TSTRING) st.mode = lua_tostring(L, -1);
+		lua_pop(L, 1);
+		RawField(L, -1, "popups");
+		if (lua_istable(L, -1)) st.popups = (int)lua_objlen(L, -1);
+		lua_pop(L, 1);
+		if (st.mode == "BUILD") {
+			RawField(L, -1, "modes");
+			if (lua_istable(L, -1)) {
+				RawField(L, -1, "BUILD");
+				if (lua_istable(L, -1)) {
+					RawField(L, -1, "viewMode");
+					if (lua_type(L, -1) == LUA_TSTRING) st.view = lua_tostring(L, -1);
+					lua_pop(L, 1);
+					if (st.view == "TREE") {
+						RawField(L, -1, "treeTab");
+						if (lua_istable(L, -1)) {
+							RawField(L, -1, "viewer");
+							if (lua_istable(L, -1)) {
+								RawField(L, -1, "zoomLevel");
+								if (lua_isnumber(L, -1)) st.treeZoom = (int)lua_tonumber(L, -1);
+								lua_pop(L, 1);
+								RawField(L, -1, "dragX");
+								st.treeDragging = !lua_isnil(L, -1);
+								lua_pop(L, 1);
+								RawField(L, -1, "searchStr");
+								st.treeSearch = lua_type(L, -1) == LUA_TSTRING && lua_objlen(L, -1) > 0;
+								lua_pop(L, 1);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	lua_settop(L, top);
+}
+
+} // namespace
+
 void ui_main_c::Frame()
 {
 	HangWatch::Stage("frame");
+	const double frameStart = PerfNowSeconds();
+	PerfLog::Recorder* const perf = PerfLog::Enabled() ? PerfLog::Get() : nullptr;
 	// POB_ZH_HANG_TEST=<seconds>: stall the frame loop on purpose, once, so the
 	// watchdog can be verified end to end on a real POB rather than only in the
 	// self-test's synthetic process. Unset for everybody who did not ask for it.
@@ -443,6 +514,67 @@ void ui_main_c::Frame()
 			break;
 		}
 	}
+	// POB_ZH_PERF_ASSUME_FOCUS=1: test only, like POB_ZH_HANG_TEST -- measure the
+	// focused frame loop in a sandbox without stealing focus from whoever is
+	// using the desktop. Unset for everybody who did not ask for it.
+	static const bool assumeFocus = [] { const char* v = getenv("POB_ZH_PERF_ASSUME_FOCUS"); return v && v[0] == '1'; }();
+	const bool windowActive = assumeFocus || sys->video->IsActive();
+	const bool cursorOver = sys->video->IsCursorOverWindow();
+	const PobFrameCap::CapInputs capBase = [&] {
+		PobFrameCap::CapInputs c;
+		c.active = windowActive;
+		c.foregroundFps = sys->video->fpsForeground;
+		c.backgroundFps = sys->video->fpsBackground;
+		c.refreshHz = sys->video->refreshHz;
+		return c;
+	}();
+
+	// Performance log (opt-in): the header once, then ten state samples a
+	// second -- often enough that an EVT lands within 0.1 s of what the user
+	// did -- and one SEC line a second. Runs before the idle gate below so a
+	// POB that is not drawing at all still reports where it is.
+	if (perf) {
+		static bool headerWritten = false;
+		if (!headerWritten && L) {
+			headerWritten = true;
+			const auto* v = sys->video;
+			const char* game = getenv("POB_GAME");
+			const char* locale = getenv("POB_LOCALE");
+			perf->Header({
+				{ "os", PerfLog::OsDescription() },
+				{ "game", game ? game : "" },
+				{ "locale", locale ? locale : "" },
+				{ "window", std::to_string(v->vid.size[0]) + "x" + std::to_string(v->vid.size[1]) },
+				{ "framebuffer", std::to_string(v->vid.fbSize[0]) + "x" + std::to_string(v->vid.fbSize[1]) },
+				{ "dpi_scale", std::to_string(v->vid.dpiScale) },
+				{ "monitor_refresh_hz", std::to_string(v->refreshHz) },
+				{ "fps_cap_foreground", std::to_string(v->fpsForeground) },
+				{ "fps_cap_background", std::to_string(v->fpsBackground) },
+				{ "appearance", "opacity=" + std::to_string(v->windowOpacityPct) + " glass=" + std::to_string(v->glassBlurPct) +
+				                " background_image=" + (v->bgPath.empty() ? "none" : "set") +
+				                " bg_bright=" + std::to_string(v->bgBrightPct) + " tree_backdrop=" + std::to_string(v->treeBgPct) },
+			});
+		}
+		static double lastStateSample = 0.0;
+		if (frameStart - lastStateSample >= 0.1 && L) {
+			lastStateSample = frameStart;
+			PerfLog::State st;
+			PerfReadLuaState(L, st);
+			st.active = windowActive;
+			st.cursorOver = cursorOver;
+			PerfLog::WindowFacts(sys->video->nativeWindow, st.minimized, st.occluded);
+			st.coroutine = hasActiveCoroutine || hasSubscript;
+			st.texAsync = renderer ? renderer->GetTexAsyncCount() : 0;
+			st.luaKB = lua_gc(L, LUA_GCCOUNT, 0);
+			st.fbW = sys->video->vid.fbSize[0];
+			st.fbH = sys->video->vid.fbSize[1];
+			PobFrameCap::CapInputs c = capBase;
+			st.fpsCap = PobFrameCap::EffectiveFps(c);
+			perf->SetState(st);
+		}
+		if (perf->SecondDue()) perf->Tick(PerfLog::SampleProcess());
+	}
+
 	// Always runs 10 frames after finishing the boot process
 	if (!sys->video->IsVisible() || sys->conWin->IsVisible() || restartFlag || didExit) {
 		framesSinceWindowHidden = 0;
@@ -454,12 +586,15 @@ void ui_main_c::Frame()
 	// -- or the launcher just changed an appearance setting (PobTools: the window
 	// is unfocused and the cursor is in the launcher at exactly that moment, and
 	// the new look must not wait for the cursor to come back).
-	else if (!sys->video->IsActive() && !sys->video->IsCursorOverWindow() && !hasActiveCoroutine && !hasSubscript &&
+	else if (!windowActive && !cursorOver && !hasActiveCoroutine && !hasSubscript &&
 	         sys->video->appearanceRedrawFrames <= 0) {
 		sys->Sleep(100);
+		if (perf) perf->IdleGated(100.0);
 		return;
 	}
 	if (sys->video->appearanceRedrawFrames > 0) sys->video->appearanceRedrawFrames--;
+
+	if (perf && renderer) perf->FrameBegin();
 
 	if (renderer) {
 		// Prepare for rendering
@@ -471,12 +606,15 @@ void ui_main_c::Frame()
 	renderEnable = true;
 
 	// Run subscript system
-	for (dword i = 0; i < subScriptSize; i++) {
-		if (subScriptList[i]) {
-			subScriptList[i]->SubScriptFrame();
-			if ( !subScriptList[i]->IsRunning() ) {
-				ui_ISubScript::FreeHandle(subScriptList[i]);
-				subScriptList[i] = NULL;
+	{
+		PerfLog::Scope perfSub(PerfLog::CpuSubscripts);
+		for (dword i = 0; i < subScriptSize; i++) {
+			if (subScriptList[i]) {
+				subScriptList[i]->SubScriptFrame();
+				if ( !subScriptList[i]->IsRunning() ) {
+					ui_ISubScript::FreeHandle(subScriptList[i]);
+					subScriptList[i] = NULL;
+				}
 			}
 		}
 	}
@@ -488,6 +626,7 @@ void ui_main_c::Frame()
 		// Where POB spends nearly all of its time, and where nearly every freeze
 		// worth reporting will be found sitting.
 		HangWatch::Scope watch("lua:OnFrame");
+		PerfLog::Scope perfLua(PerfLog::CpuLua);
 		PCall(extraArgs, 0);
 	}
 
@@ -510,8 +649,22 @@ void ui_main_c::Frame()
 	}
 
 	//sys->con->Printf("Finishing up...\n");
-	if ( !sys->video->IsActive() && !hasActiveCoroutine && !hasSubscript ) {
+	if ( !windowActive && !hasActiveCoroutine && !hasSubscript ) {
 		sys->Sleep(100);
+		if (perf) perf->AddCpu(PerfLog::CpuCapSleep, 100.0);
+	}
+	else if (renderer) {
+		// The frame cap (host/pob_frame_cap.h): sleep off what is left of this
+		// frame's budget. The branch above already slept far longer than any cap.
+		PobFrameCap::CapInputs c = capBase;
+		c.presented = renderer->LastFramePresented();
+		c.frameStart = frameStart;
+		c.now = PerfNowSeconds();
+		const double s = PobFrameCap::SleepSeconds(c);
+		if (s > 0.0) {
+			PobFrameCap::PreciseSleep(s);
+			if (perf) perf->AddCpu(PerfLog::CpuCapSleep, s * 1000.0);
+		}
 	}
 
 	while (restartFlag) {

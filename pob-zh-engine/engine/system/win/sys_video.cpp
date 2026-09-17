@@ -9,6 +9,8 @@
 
 #include "sys_local.h"
 #include "core.h"
+#include "../../../host/perf_log.h"
+#include "../../../host/pob_frame_cap.h"
 
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -362,6 +364,7 @@ static const UINT  kMsgSetGlassBlur   = WM_APP + 0x51; // wParam = percent
 static const UINT  kMsgSetBgBright    = WM_APP + 0x52; // wParam = percent
 static const UINT  kMsgSetTreeBg      = WM_APP + 0x53; // wParam = percent
 static const ULONG_PTR kCopyDataBgPath = 0x50;          // WM_COPYDATA: UTF-8 path, "" = none
+static const UINT  kMsgSetFrameCap    = WM_APP + 0x54; // wParam = foreground fps, lParam = background fps (0 = no cap)
 
 static int ClampPct(int v, int fallback)
 {
@@ -404,6 +407,17 @@ static LRESULT CALLBACK OpacityWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARA
 		RequestAppearanceRedraw();
 		return 0;
 	}
+	if (msg == kMsgSetFrameCap) {
+		if (g_opacityVideo) {
+			g_opacityVideo->fpsForeground = PobFrameCap::ClampFps((int)wParam);
+			g_opacityVideo->fpsBackground = PobFrameCap::ClampFps((int)lParam);
+			if (PerfLog::Enabled())
+				if (PerfLog::Recorder* r = PerfLog::Get())
+					r->Event("launcher set fps caps fg=" + std::to_string(g_opacityVideo->fpsForeground) +
+					         " bg=" + std::to_string(g_opacityVideo->fpsBackground));
+		}
+		return 0;
+	}
 	if (msg == WM_COPYDATA) {
 		const COPYDATASTRUCT* cds = (const COPYDATASTRUCT*)lParam;
 		if (cds && cds->dwData == kCopyDataBgPath && g_opacityVideo) {
@@ -432,6 +446,30 @@ static void ReadBackgroundEnv(sys_IVideo* video)
 	if (n > 0 && n < sizeof(buf)) video->treeBgPct = ClampPct(atoi(buf), 100);
 	sys_opacity_trace("background env: path='%s' bright=%d glass=%d", video->bgPath.c_str(),
 	                  video->bgBrightPct, video->glassBlurPct);
+}
+
+// Frame caps and the facts the frame loop / performance log need about the
+// window. Unlike the opacity subclass this also runs under Wine: the caps are
+// plain numbers and pacing matters there just as much.
+static void ReadFrameCapEnv(GLFWwindow* wnd, sys_IVideo* video)
+{
+	char buf[32];
+	DWORD n = GetEnvironmentVariableA("POB_ZH_FPS_FG", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->fpsForeground = PobFrameCap::ClampFps(atoi(buf));
+	n = GetEnvironmentVariableA("POB_ZH_FPS_BG", buf, sizeof(buf));
+	if (n > 0 && n < sizeof(buf)) video->fpsBackground = PobFrameCap::ClampFps(atoi(buf));
+	if (!wnd) return;
+	HWND hwnd = glfwGetWin32Window(wnd);
+	video->nativeWindow = hwnd;
+	if (HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) {
+		MONITORINFOEXW mi{};
+		mi.cbSize = sizeof(mi);
+		DEVMODEW dm{};
+		dm.dmSize = sizeof(dm);
+		if (GetMonitorInfoW(mon, &mi) && EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm) &&
+		    dm.dmDisplayFrequency > 1)
+			video->refreshHz = (int)dm.dmDisplayFrequency;
+	}
 }
 
 static void InstallWindowOpacity(GLFWwindow* wnd, sys_IVideo* video)
@@ -632,6 +670,7 @@ int sys_video_c::Apply(sys_vidSet_s* set)
 			glfwGetError(&errDesc);
 			sys->con->Printf("Could not create window, %s\n", errDesc);
 		}
+		ReadFrameCapEnv(wnd, this);
 		InstallWindowOpacity(wnd, this);
 
 		glfwMakeContextCurrent(wnd);

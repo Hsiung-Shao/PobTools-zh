@@ -131,6 +131,13 @@
     "POB has not responded for over 20 seconds. What it was doing at the time has been written to the problem log folder on the Settings page; attaching today's files to a report is enough. This line disappears once POB responds again or is closed.": "POB가 20초 넘게 응답하지 않습니다. 그때 무엇을 하고 있었는지가 설정 페이지의 문제 로그 폴더에 기록되었습니다. 신고할 때 오늘 파일들을 첨부하면 충분합니다. POB가 다시 응답하거나 닫히면 이 줄은 사라집니다.",
     "Program updates": "프로그램 업데이트",
     "Install new versions at startup": "시작 시 새 버전 자동 설치",
-    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools가 열릴 때 확인하고 새 버전이 있으면 오른쪽 위 버튼을 기다리지 않고 바로 설치한 뒤 스스로 다시 엽니다. 시작 직후, POB나 도구를 열기 전에만 동작하며 POB가 실행 중일 때는 절대 동작하지 않습니다. 번역 데이터는 아래에 별도 설정이 있습니다."
+    "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools가 열릴 때 확인하고 새 버전이 있으면 오른쪽 위 버튼을 기다리지 않고 바로 설치한 뒤 스스로 다시 엽니다. 시작 직후, POB나 도구를 열기 전에만 동작하며 POB가 실행 중일 때는 절대 동작하지 않습니다. 번역 데이터는 아래에 별도 설정이 있습니다.",
+    "POB performance": "POB 성능",
+    "POB frame limit while focused": "POB 활성 상태 화면 갱신 상한",
+    "POB frame limit in the background": "POB 비활성 상태 화면 갱신 상한",
+    "No limit": "제한 없음",
+    "Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.": "POB 창이 1초에 몇 번 그릴지 제한해 GPU와 CPU 부담을 줄입니다. 바꾸면 열려 있는 POB에 바로 적용됩니다. 화면이 바뀌지 않으면 원래 다시 그리지 않습니다. 패시브 트리를 끌 때 부드럽지 않으면 올리세요.",
+    "Performance diagnostics log": "성능 진단 기록",
+    "Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.": "POB 끊김이나 GPU·CPU 사용률이 높은 문제를 조사할 때만 켜세요. 다음에 POB를 열 때부터 적용되며, 문제 로그 폴더의 perf-날짜.log에 어떤 그래픽카드를 쓰는지, 어떤 페이지와 상태였는지, 각 단계에 걸린 시간을 기록하고 POB를 닫을 때 페이지별 사용량 순위를 덧붙입니다. 빌드 내용이나 계정 정보는 포함하지 않습니다. 조사가 끝나면 꺼 두세요."
   }
 }

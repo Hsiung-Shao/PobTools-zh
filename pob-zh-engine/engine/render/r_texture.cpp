@@ -181,6 +181,16 @@ bool t_manager_c::AsyncRemove(r_tex_c* tex)
 
 	if (tex->status == r_tex_c::PENDING_UPLOAD) {
 		RemovePendingTextureUpload(tex);
+		// PobTools: nothing will upload it now, so it must not stay "pending".
+		// Upstream left the status at PENDING_UPLOAD: a texture whose last
+		// handle was released mid-load (the passive tree does this with several
+		// ascendancy images) then never reached DONE, PurgeShaders never freed
+		// it, a later ForceLoad saw a known size and did nothing, and PumpShaders
+		// held frame elision off for the rest of the session -- the tree page
+		// redrew every frame forever (found with the performance log, 2026-09-17).
+		// INIT is the state a fresh load starts from.
+		tex->img = {};
+		tex->status = r_tex_c::INIT;
 	}
 	
 	return true;

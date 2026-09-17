@@ -198,6 +198,17 @@ static void post_pct(const std::wstring& game, UINT msg, int percent)
 }
 
 void ApplyPobBackgroundBright(const std::wstring& game, int percent) { post_pct(game, kMsgSetBgBright, percent); }
+
+static const UINT kMsgSetFrameCap = WM_APP + 0x54; // mirrored in engine sys_video.cpp
+
+void ApplyPobFrameCap(int fpsForeground, int fpsBackground)
+{
+	if (RunningUnderWine()) return;
+	for (const InstanceInfo& in : RunningInstances()) {
+		if (in.kind != InstanceKind::Pob || !in.hwnd) continue;
+		PostMessageW((HWND)in.hwnd, kMsgSetFrameCap, (WPARAM)fpsForeground, (LPARAM)fpsBackground);
+	}
+}
 void ApplyPobGlassBlur(const std::wstring& game, int percent)        { post_pct(game, kMsgSetGlassBlur, percent); }
 void ApplyPobTreeBackdrop(const std::wstring& game, int percent)     { post_pct(game, kMsgSetTreeBg, percent); }
 
@@ -222,7 +233,7 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
                   bool fontApplyAll, int windowOpacity,
                   const std::wstring& bgPath, int bgBright, int glassBlur, int treeBg,
-                  bool hangWatch)
+                  bool hangWatch, int fpsForeground, int fpsBackground, bool perfLog)
 {
 	// "0" only when the user opted out in the ini; the engine's watchdog reads it
 	// before it starts its thread. Always written for the same long-lived-process
@@ -243,6 +254,11 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
 	set_env_both(L"POB_ZH_FONT_ALL", fontApplyAll ? L"1" : L"0");
 	// Percent, always written; sys_video.cpp reads it right after glfwCreateWindow.
 	set_env_both(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(windowOpacity).c_str());
+	// Frame caps (fps, 0 = none) and the opt-in performance log; always written,
+	// same long-lived-process reason as above.
+	set_env_both(L"POB_ZH_FPS_FG", std::to_wstring(fpsForeground).c_str());
+	set_env_both(L"POB_ZH_FPS_BG", std::to_wstring(fpsBackground).c_str());
+	set_env_both(L"POB_ZH_PERFLOG", perfLog ? L"1" : L"0");
 }
 
 unsigned long SpawnPobAndWait(const std::wstring& launchLua)

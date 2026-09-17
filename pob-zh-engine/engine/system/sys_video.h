@@ -80,6 +80,14 @@ public:
 	// POB is in while the player drags a slider in the launcher -- so without
 	// this the new look only appeared once the cursor came back (2026-09-12).
 	int appearanceRedrawFrames = 0;
+	// Frame-rate caps for the POB window (host/pob_frame_cap.h), fps, 0 = none.
+	// POB_ZH_FPS_FG / POB_ZH_FPS_BG at window creation, a WM_APP message live.
+	int fpsForeground = 60;
+	int fpsBackground = 15;
+	// The monitor refresh rate at window creation (0 = unknown) and the native
+	// window handle (HWND on Windows), for the frame cap and the performance log.
+	int refreshHz = 0;
+	void* nativeWindow = nullptr;
 
 	virtual	int		Apply(sys_vidSet_s* set) = 0;	// Apply settings
 

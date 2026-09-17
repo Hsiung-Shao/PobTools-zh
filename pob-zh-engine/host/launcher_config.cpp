@@ -1,5 +1,6 @@
 #include "launcher_config.h"
 #include "error_log.h"
+#include "pob_frame_cap.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -263,6 +264,10 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	// Undocumented on purpose: the escape hatch for a machine the watchdog
 	// misbehaves on, not a setting to browse. Anything but 0 means on.
 	c.hangWatch = read_ini_int(iniPath, L"HangWatch", 1) != 0;
+	// Frame caps: anything outside 0..1000 is "no cap" rather than garbage.
+	c.pobFpsForeground = PobFrameCap::ClampFps(read_ini_int(iniPath, L"PobFpsForeground", PobFrameCap::kDefaultForegroundFps));
+	c.pobFpsBackground = PobFrameCap::ClampFps(read_ini_int(iniPath, L"PobFpsBackground", PobFrameCap::kDefaultBackgroundFps));
+	c.perfLog = read_ini_int(iniPath, L"PerfLog", 0) != 0;
 
 	c.proxy = read_ini_path(iniPath, L"Proxy");
 
@@ -311,6 +316,12 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"HangWatch",
 		cfg.hangWatch ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"PobFpsForeground",
+		std::to_wstring(PobFrameCap::ClampFps(cfg.pobFpsForeground)).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"PobFpsBackground",
+		std::to_wstring(PobFrameCap::ClampFps(cfg.pobFpsBackground)).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"PerfLog",
+		cfg.perfLog ? L"1" : L"0", iniPath.c_str());
 	for (int g = 0; g < 2; g++) {
 		const AppearanceConfig& a = cfg.look[g];
 		const std::wstring sfx = GameKeySuffix(g);
@@ -1199,6 +1210,30 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		check(on ? "T17g HangWatch round-trips on" : "T17h HangWatch round-trips off",
 		      LoadLauncherConfig(ini).hangWatch == (on != 0));
 	}
+
+	// T17p-r -- POB frame caps and the performance log. Defaults 60/15/off; values
+	// round-trip; a garbage cap reads as "no cap", never as a negative sleep.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	{
+		const LauncherConfig d = LoadLauncherConfig(ini);
+		check("T17p frame caps default to 60/15 and the perf log to off",
+		      d.pobFpsForeground == 60 && d.pobFpsBackground == 15 && !d.perfLog);
+	}
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.pobFpsForeground = 0;
+		c.pobFpsBackground = 30;
+		c.perfLog = true;
+		SaveLauncherConfig(ini, c);
+		const LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17q frame caps and perf log round-trip", r.pobFpsForeground == 0 && r.pobFpsBackground == 30 && r.perfLog);
+	}
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" }, { L"PobFpsForeground", L"-7" }, { L"PobFpsBackground", L"99999" } });
+	check("T17r out-of-range caps read as no cap", LoadLauncherConfig(ini).pobFpsForeground == 0 &&
+	      LoadLauncherConfig(ini).pobFpsBackground == 0);
 
 	// T17d/e -- the proxy field. Default must be empty (= follow the system
 	// proxy); a set value round-trips verbatim, normalization is the HTTP

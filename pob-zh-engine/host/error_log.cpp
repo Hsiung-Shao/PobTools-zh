@@ -215,6 +215,7 @@ int PobLog::PruneOlderThan(int keepDays)
 	//   error-YYYY-MM-DD.log
 	//   hang-YYYY-MM-DD-HHMMSS-<role>.txt
 	//   crash-YYYY-MM-DD-HHMMSS-<role>.txt
+	//   perf-YYYY-MM-DD.log   (performance diagnostics, perf_log.cpp)
 	auto dateAt = [](const std::wstring& fn, size_t at, std::wstring* date) {
 		if (fn.size() < at + 10) return false;
 		for (int i = 0; i < 10; i++) {
@@ -238,6 +239,7 @@ int PobLog::PruneOlderThan(int keepDays)
 		{ L"error-*.log", L"error-", L".log", true  },
 		{ L"hang-*.txt",  L"hang-",  L".txt", false },
 		{ L"crash-*.txt", L"crash-", L".txt", false },
+		{ L"perf-*.log",  L"perf-",  L".log", true  }, // opt-in diagnostics, perf_log.cpp
 	};
 
 	int removed = 0;
