@@ -187,6 +187,12 @@ export interface Caps {
   abyssJewels?: boolean;
   /** PoE1's SkillsTab imbued support picker and Optimise Sockets. */
   skillImbued?: boolean;
+  /** PoE1's tattoos (TreeTab:ModifyNodePopup). */
+  tattoos?: boolean;
+  /** PoE1's tree link import/export dialogs. */
+  treeLinks?: boolean;
+  /** PoE1's Add Mod browser for custom modifiers. */
+  configModBrowser?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -212,6 +218,14 @@ export interface SpecList {
   treeLinks: boolean;
   /** PoE1: Reset also offers Remove All Tattoos. */
   tattoos: boolean;
+}
+
+/** Build.lua's loadout drop-down (list_loadouts). */
+export interface LoadoutList {
+  entries: { index: number; label: string; labelZh?: string; kind: "header" | "action" | "loadout" }[];
+  selIndex: number;
+  activeLoadout?: number;
+  rev?: number;
 }
 
 export interface GemOptionChoice {
@@ -1019,6 +1033,10 @@ export const api = {
   treeAttribute: (id: number, attribute: number) => bridge.call<TreeState>("tree_attribute", { id, attribute }, 60000),
   setAllocMode: (mode: number) => bridge.call<TreeState>("set_alloc_mode", { mode }, 60000),
   listSpecs: () => bridge.call<SpecList>("list_specs", {}, 60000),
+  listLoadouts: () => bridge.call<LoadoutList>("list_loadouts", {}, 60000),
+  selectLoadout: (index: number, title?: string) => bridge.call<LoadoutList>("select_loadout", { index, title }, 120000),
+  configModSearch: (block: number, query: string, limit = 100) => bridge.call<{ mods: { text: string; textZh?: string; sources: string[] }[]; total: number }>("config_mod_search", { block, query, limit }, 60000),
+  configModAdd: (block: number, text: string) => bridge.call<ConfigList>("config_mod_add", { block, text }, 60000),
   setActiveSpec: (index: number) => bridge.call<SpecList>("set_active_spec", { index }, 120000),
   specOp: (p: { op: "new" | "copy" | "rename" | "delete" | "move"; index?: number; title?: string; to?: number }) => bridge.call<SpecList>("spec_op", p, 120000),
   convertTree: (version: string, o: { copy?: boolean; all?: boolean }) => bridge.call<SpecList>("convert_tree", { version, ...o }, 180000),

@@ -3090,6 +3090,64 @@ function M.import_tree_url(p)
 	return M.list_specs()
 end
 
+-- ---- Loadouts (Build.lua's loadout drop-down) -------------------------------
+
+-- The entries POB puts in that list: headers and its own commands are marked
+-- so the page can show them the way POB does (SyncLoadouts builds the list).
+local function loadout_kind(label)
+	if label == "Loadouts:" or label == "-----" then return "header" end
+	if label == "Sync" or label == "Help >>" or label == "New Loadout" or label == "Manage Loadouts" then return "action" end
+	return "loadout"
+end
+
+function M.list_loadouts()
+	local b = ensure_build()
+	if not b.SyncLoadouts then error("this POB has no loadouts", 0) end
+	b:SyncLoadouts()
+	local c = b.controls.buildLoadouts
+	local entries = {}
+	for i, v in ipairs(c.list or {}) do
+		local raw = type(v) == "table" and (v.label or v.val or "") or tostring(v)
+		local label = strip_escapes(raw)
+		entries[i] = { index = i, label = label, labelZh = tr(label), kind = loadout_kind(label) }
+	end
+	return { entries = entries, selIndex = c.selIndex or 1, activeLoadout = b.activeLoadout }
+end
+
+-- select_loadout{index, title?}: picking an entry. "New Loadout" opens POB's
+-- name dialog (PoE1) or its loadout manager (PoE2); a title answers the first.
+function M.select_loadout(p)
+	local b = ensure_build()
+	if not b.SyncLoadouts then error("this POB has no loadouts", 0) end
+	local c = b.controls.buildLoadouts
+	local i = tonumber(p and p.index)
+	local v = i and (c.list or {})[i]
+	if not v then error("no loadout entry " .. tostring(p and p.index), 0) end
+	local cap = capture_popup(function() c.selFunc(i, v) end)
+	local cc = cap and cap.controls
+	if cc and cc.edit and cc.save then
+		local title = type(p.title) == "string" and p.title or ""
+		if not title:match("%S") then error("a name is required for a new loadout", 0) end
+		cc.edit:SetText(title, true)
+		with_popup(function() cc.save.onClick() end)
+	elseif cap then
+		-- PoE2's loadout manager is a list control, not something to answer here
+		popup_discard(cap)
+	end
+	b.buildFlag = true
+	frame()
+	local r = M.list_loadouts()
+	r.rev = b.outputRevision
+	r.unsaved = b.unsaved and true or false
+	return r
+end
+
+probe("Build loadouts (SyncLoadouts + buildLoadouts drop-down)", function()
+	local b = build()
+	if not (b and b.controls and b.controls.buildLoadouts) then return true end
+	return type(b.SyncLoadouts) == "function" and type(b.controls.buildLoadouts.selFunc) == "function"
+end)
+
 -- ---- Tattoos (PoE1): right-click on a node, TreeTab:ModifyNodePopup ----------
 
 -- Which nodes a right-click sends to ModifyNodePopup: PassiveTreeView:Draw's
@@ -4862,6 +4920,71 @@ function M.set_custom_mods(p)
 	pcall(tab.UpdateCustomModsControls, tab)
 	return config_committed(b)
 end
+
+-- ---- Config: the Add Mod browser (Modules/ConfigModBrowser, PoE1) -----------
+
+local function mod_browser(b, blockIndex)
+	local tab = b.configTab
+	local set = config_set(tab)
+	local idx = tonumber(blockIndex) or 1
+	local blk = set.customModsList and set.customModsList[idx]
+	if not blk then error("no custom modifier group " .. tostring(blockIndex), 0) end
+	local ok, browser = pcall(require, "Modules.ConfigModBrowser")
+	if not ok or type(browser) ~= "table" or type(browser.OpenAddModPopup) ~= "function" then error("this POB has no mod browser", 0) end
+	local cap = capture_popup(function() browser.OpenAddModPopup(tab, blk) end)
+	local c = cap and cap.controls
+	if not (c and c.listControl and c.search and c.save) then error("POB did not open its mod browser", 0) end
+	return c
+end
+
+-- config_mod_search{block, query?, limit?}: what the Mod Browser lists for
+-- that custom-modifier group (its own fuzzy search does the filtering).
+function M.config_mod_search(p)
+	local b = ensure_build()
+	local c = mod_browser(b, p and p.block)
+	if type(p.query) == "string" then c.search:SetText(p.query, true) end
+	local limit = math.min(300, tonumber(p and p.limit) or 100)
+	local mods = {}
+	for i, m in ipairs(c.listControl.list or {}) do
+		if i > limit then break end
+		local sources = {}
+		for s in pairs(m.sources or {}) do sources[#sources + 1] = s end
+		table.sort(sources)
+		mods[i] = { text = m.text, textZh = tr(m.text), sources = sources }
+	end
+	return { mods = mods, total = #(c.listControl.list or {}), query = c.search.buf or "" }
+end
+
+-- config_mod_add{block, text}: the browser's Add button for that line.
+function M.config_mod_add(p)
+	local b = ensure_build()
+	local c = mod_browser(b, p and p.block)
+	local text = p and p.text
+	if type(text) ~= "string" or text == "" then error("params.text required", 0) end
+	local found
+	for i, m in ipairs(c.listControl.list or {}) do
+		if m.text == text then found = i end
+	end
+	if not found then
+		-- the list is filtered; search for it first, the way a user would
+		c.search:SetText(text, true)
+		for i, m in ipairs(c.listControl.list or {}) do
+			if m.text == text then found = i end
+		end
+	end
+	if not found then error("not a modifier the browser offers: " .. text, 0) end
+	c.listControl.selIndex = found
+	c.listControl.selValue = c.listControl.list[found]
+	with_popup(function() c.save.onClick() end)
+	frame()
+	return M.list_config()
+end
+
+probe("Modules.ConfigModBrowser.OpenAddModPopup (PoE1 Add Mod)", function()
+	if GAME == "poe2" then return false end
+	local ok, m = pcall(require, "Modules.ConfigModBrowser")
+	return ok and type(m) == "table" and type(m.OpenAddModPopup) == "function"
+end, "configModBrowser")
 
 function M.set_config_set(p)
 	local b = ensure_build()

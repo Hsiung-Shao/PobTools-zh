@@ -1619,6 +1619,21 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCm && st3["stats"].value("TotalDPS", 0.0) > st0["stats"].value("TotalDPS", 0.0) && st0["stats"].value("TotalDPS", 0.0) == st4["stats"].value("TotalDPS", 1.0),
 			      okCm ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump() : cm.dump().substr(0, 200));
 
+			// the Add Mod browser behind the custom-modifier group
+			json ms, ma, lc2, st5, cmReset;
+			bool okMs = okCf && child.Call("config_mod_search", json{{"block", 1}, {"query", "increased attack speed"}, {"limit", 20}}, ms, 60000);
+			const std::string pick = (okMs && !ms["mods"].empty()) ? ms["mods"][0].value("text", "") : "";
+			bool okMa = !pick.empty() && child.Call("config_mod_add", json{{"block", 1}, {"text", pick}}, ma, 60000) &&
+			            child.Call("list_config", json::object(), lc2, 60000);
+			bool added = false;
+			if (okMa) for (auto& blk : lc2["customMods"]) if (blk.value("text", "").find(pick) != std::string::npos) added = true;
+			json msBad;
+			bool okMsBad = child.Call("config_mod_add", json{{"block", 1}, {"text", "not a modifier at all"}}, msBad, 60000);
+			child.Call("set_custom_mods", json{{"list", json::array()}}, cmReset, 60000);
+			check("config_mod_search/config_mod_add drive POB's Mod Browser (its fuzzy search, its Add button); an unknown line is refused",
+			      okMs && !ms["mods"].empty() && added && !okMsBad && child.Alive(),
+			      "pick=" + pick + " total=" + std::to_string(ms.value("total", -1)) + " " + (okMa ? lc2["customMods"].dump().substr(0, 160) : ma.dump().substr(0, 160)));
+
 			json cal;
 			bool okCal = okLoad && child.Call("get_calcs", json::object(), cal, 60000);
 			int rows = 0, cells = 0, withBd = 0, enabledSecs = 0;
@@ -1710,6 +1725,33 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("about lists POB's version history and help text (main:OpenAboutPopup's lists)",
 			      okAb && ab["changelog"].size() > 20 && ab["help"].size() > 20 && ab.value("version", "").find("Path of Building") != std::string::npos,
 			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
+		}
+
+		// the loadout drop-down (Build.lua SyncLoadouts)
+		json lo, lo2;
+		bool okLo = okLoad && child.Call("list_loadouts", json::object(), lo, 60000);
+		int newLoadout = 0;
+		if (okLo) for (auto& e : lo["entries"]) if (e.value("label", "") == "New Loadout") newLoadout = e.value("index", 0);
+		bool okLo2 = newLoadout > 0 && child.Call("select_loadout", json{{"index", newLoadout}, {"title", "bridge loadout"}}, lo2, 60000);
+		bool madeLoadout = false;
+		if (okLo2) for (auto& e : lo2["entries"]) if (e.value("label", "").find("bridge loadout") != std::string::npos) madeLoadout = true;
+		int newAfter = 0, madeIdx = 0;
+		if (okLo2) for (auto& e : lo2["entries"]) {
+			if (e.value("label", "") == "New Loadout") newAfter = e.value("index", 0);
+			if (e.value("label", "").find("bridge loadout") != std::string::npos) madeIdx = e.value("index", 0);
+		}
+		json loBad, loPick;
+		bool okLoBad = newAfter > 0 && child.Call("select_loadout", json{{"index", newAfter}}, loBad, 60000);
+		bool okLoPick = madeIdx > 0 && child.Call("select_loadout", json{{"index", madeIdx}}, loPick, 60000);
+		check("list_loadouts/select_loadout: POB's loadout list, and New Loadout answered with a name adds one and it can be switched to (a nameless one is refused)",
+		      okLo && lo["entries"].size() >= 2 && madeLoadout && okLoPick && !okLoBad && child.Alive(),
+		      "new=" + std::to_string(newLoadout) + " made=" + std::to_string(madeLoadout) + " bad=" + std::to_string(okLoBad) + " " +
+                  (okLo2 ? lo2["entries"].dump().substr(0, 260) : lo2.dump().substr(0, 200)));
+
+		// back to the loadout the build had, so the rest of the run sees its sets
+		{
+			json back;
+			child.Call("select_loadout", json{{"index", 2}}, back, 60000);
 		}
 
 		// --- POB's Options dialog: read its controls, save through its Save -----

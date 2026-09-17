@@ -37,6 +37,43 @@
   let showAll = $state(false);
   let custom = $state<CustomModBlock[]>([]);
   let customDirty = $state(false);
+  // POB's Mod Browser for a custom-modifier group (Modules/ConfigModBrowser)
+  let modBrowser = $state<{ block: number; query: string; busy: boolean; total: number; mods: { text: string; textZh?: string; sources: string[] }[] } | null>(null);
+  let modTimer = 0;
+  async function openModBrowser(block: number) {
+    if (customDirty) await applyCustom();
+    modBrowser = { block, query: "", busy: true, total: 0, mods: [] };
+    await searchMods();
+  }
+  async function searchMods() {
+    if (!modBrowser) return;
+    const b = modBrowser;
+    b.busy = true;
+    try {
+      const r = await api.configModSearch(b.block, b.query, 200);
+      if (modBrowser !== b) return;
+      b.mods = r.mods;
+      b.total = r.total;
+    } catch (e: any) {
+      app.error = String(e?.message ?? e);
+    }
+    b.busy = false;
+  }
+  function queueModSearch() {
+    clearTimeout(modTimer);
+    modTimer = window.setTimeout(() => void searchMods(), 200);
+  }
+  async function addMod(text: string) {
+    if (!modBrowser) return;
+    const block = modBrowser.block;
+    modBrowser = null;
+    const r = await app.run(() => api.configModAdd(block, text));
+    if (r) {
+      custom = r.customMods.map((b) => ({ ...b }));
+      customDirty = false;
+      await app.afterTreeChange();
+    }
+  }
   let setDialog = $state<{ mode: "new" | "rename"; title: string; copy: boolean } | null>(null);
 
   async function reload() {
@@ -222,6 +259,9 @@
                       <div class="bhead">
                         <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
                         <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
+                        {#if app.has("configModBrowser")}
+                          <button class="btn ghost sm" title={t("config.addModHint")} onclick={() => openModBrowser(i + 1)}>{t("config.addMod")}</button>
+                        {/if}
                         <button class="btn ghost sm" onclick={() => { custom.splice(i, 1); customDirty = true; }}>×</button>
                       </div>
                       <textarea class="input area" rows="4" bind:value={blk.text} oninput={() => (customDirty = true)}></textarea>
@@ -253,6 +293,22 @@
     </div>
   {/if}
 </div>
+
+{#if modBrowser}
+  <div class="modal">
+    <div class="dialog wide">
+      <div class="label">{t("config.addMod")}</div>
+      <input class="input" placeholder={t("config.search")} bind:value={modBrowser.query} oninput={queueModSearch} />
+      <p class="dim small">{modBrowser.busy ? t("builds.loading") : t("config.modCount", { count: modBrowser.total })}</p>
+      <div class="modlist">
+        {#each modBrowser.mods as m (m.text)}
+          <button class="modrow" title={m.sources.join(String.fromCharCode(10))} onclick={() => addMod(m.text)}>{m.textZh || m.text}</button>
+        {/each}
+      </div>
+      <div class="btns"><button class="btn ghost" onclick={() => (modBrowser = null)}>{t("tree.cancel")}</button></div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .page {
@@ -463,5 +519,43 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    background: color-mix(in srgb, var(--surface-0) 70%, transparent);
+  }
+  .dialog.wide {
+    width: min(760px, calc(100vw - 32px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-radius: 8px;
+  }
+  .modlist {
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--edge-0);
+    border-radius: 4px;
+  }
+  .modrow {
+    display: block;
+    width: 100%;
+    text-align: left;
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--c-magic, var(--ink-1));
+    padding: 3px 10px;
+    font-size: var(--fs-sm);
+  }
+  .modrow:hover {
+    background: var(--surface-2);
   }
 </style>

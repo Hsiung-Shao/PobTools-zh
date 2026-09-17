@@ -1,6 +1,7 @@
 <!-- 建置列(頂列第二列):等級、主技能選擇、儲存。全部走 POB 自己的
      頂列控制項回呼(get_build_header / set_build_field / save_build*)。 -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import { api, type BuildHeader } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
@@ -8,6 +9,49 @@
 
   const h = $derived(app.header);
   let levelDraft = $state<string>("");
+  // Build.lua's loadout drop-down: one pick switches tree, items, skills and config
+  let loadouts = $state<import("$lib/bridge").LoadoutList | null>(null);
+  let loadoutRev = -1;
+  let newLoadout = $state<string | null>(null);
+  $effect(() => {
+    const rev = app.rev;
+    if (!app.loaded) return;
+    if (rev === loadoutRev) return;
+    loadoutRev = rev;
+    untrack(async () => {
+      try {
+        loadouts = await api.listLoadouts();
+      } catch {
+        loadouts = null;
+      }
+    });
+  });
+  async function pickLoadout(v: string) {
+    const i = Number(v);
+    const e = loadouts?.entries.find((x) => x.index === i);
+    if (!e) return;
+    if (e.label === "New Loadout") {
+      newLoadout = "";
+      return;
+    }
+    const r = await app.run(() => api.selectLoadout(i));
+    if (r) {
+      loadouts = r;
+      await app.refresh();
+    }
+  }
+  async function makeLoadout() {
+    const title = (newLoadout ?? "").trim();
+    const i = loadouts?.entries.find((x) => x.label === "New Loadout")?.index;
+    newLoadout = null;
+    if (!title || !i) return;
+    const r = await app.run(() => api.selectLoadout(i, title));
+    if (r) {
+      loadouts = r;
+      await app.refresh();
+    }
+  }
+
   let saveAsOpen = $state(false);
   let saveAsName = $state("");
   // the folder the build goes into, relative to POB's build folder ("" = top)
@@ -173,6 +217,13 @@
           <option value={o.val}>{o.labelZh || o.label}</option>
         {/each}
       </select>
+      {#if loadouts && loadouts.entries.length > 1}
+        <select class={selectClass} value={String(loadouts.selIndex)} title={t("bar.loadout")} onchange={(e) => pickLoadout(e.currentTarget.value)}>
+          {#each loadouts.entries as e (e.index)}
+            <option value={String(e.index)} disabled={e.kind === "header"}>{e.kind === "loadout" ? e.label : e.labelZh || e.label}</option>
+          {/each}
+        </select>
+      {/if}
       {#if h.mainSkill}
         <select class={selectClass} value={h.mainSkill.index} disabled={h.mainSkill.enabled === false} onchange={(e) => setField("mainSkill", Number(e.currentTarget.value))}>
           {#each h.mainSkill.list as o}
@@ -220,6 +271,21 @@
 
   {#if classConfirm}
     <ClassChangeDialog className={classConfirm.className} connectFailed={classConfirm.connectFailed} onanswer={answerClass} oncancel={cancelClass} />
+  {/if}
+
+  {#if newLoadout !== null}
+    <div class="modal">
+      <div class="dialog">
+        <div class="label">{t("bar.newLoadout")}</div>
+        <p class="dim">{t("bar.newLoadoutHint")}</p>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input" autofocus bind:value={newLoadout} onkeydown={(e) => e.key === "Enter" && makeLoadout()} />
+        <div class="dlg-actions">
+          <button class="btn ghost" onclick={() => (newLoadout = null)}>{t("tree.cancel")}</button>
+          <button class="btn primary" disabled={!newLoadout.trim()} onclick={makeLoadout}>OK</button>
+        </div>
+      </div>
+    </div>
   {/if}
 
   {#if saveAsOpen}
