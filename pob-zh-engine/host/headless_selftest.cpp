@@ -1742,6 +1742,20 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
 		}
 
+		// the spectre library (Build.lua's Manage Spectres) and PoE2's stat sets
+		{
+			json ml, sml, ml2, mlBad;
+			bool okMl = okLoad && child.Call("minion_library", json{{"kind", "spectre"}}, ml, 60000);
+			const std::string firstSpectre = (okMl && !ml["available"].empty()) ? ml["available"][0].value("id", "") : "";
+			bool okSml = !firstSpectre.empty() && child.Call("set_minion_library", json{{"kind", "spectre"}, {"ids", json::array({firstSpectre})}}, sml, 60000) &&
+			             child.Call("minion_library", json{{"kind", "spectre"}}, ml2, 60000);
+			bool okBadMl = child.Call("set_minion_library", json{{"kind", "spectre"}, {"ids", json::array({"NotAMinion"})}}, mlBad, 30000);
+			check("minion_library/set_minion_library: POB's spectre library (its own data.spectres), and an unknown minion is refused",
+			      okMl && ml["available"].size() > 50 && okSml && ml2["inBuild"].size() == 1 &&
+			          ml2["inBuild"][0].value("id", "") == firstSpectre && !ml2["inBuild"][0].value("name", "").empty() && !okBadMl && child.Alive(),
+			      "avail=" + std::to_string(okMl ? ml["available"].size() : 0) + " first=" + firstSpectre);
+		}
+
 		// per-tab undo/redo, and the build sites POB knows
 		{
 			json us, ag2, sk5, un, re, sk6, sk7, dgU, badTab;

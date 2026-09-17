@@ -223,6 +223,26 @@
       {/if}
 
       <!-- 品質 / 催化劑 / 影響 -->
+      {#if item.runeSockets || item.jewelSockets}
+        <div class="frow">
+          {#if item.runeSockets}
+            <span class="k">{t("edit.runeSockets")}</span>
+            <input class="input sm num" type="number" min="0" max="6" value={item.runeSockets.count} onchange={(e) => set({ runeSockets: Number(e.currentTarget.value) })} />
+          {/if}
+          {#if item.jewelSockets}
+            <span class="k">{t("edit.jewelSockets")}</span>
+            <input class="input sm num" type="number" min="0" max="6" value={item.jewelSockets.count} onchange={(e) => set({ jewelSockets: Number(e.currentTarget.value) })} />
+          {/if}
+        </div>
+      {/if}
+      {#if item.affixSort}
+        <div class="frow">
+          <span class="k">{t("edit.affixSort")}</span>
+          <select class="select sm" value={item.affixSort.sel} onchange={(e) => set({ affixSort: Number(e.currentTarget.value) })}>
+            {#each item.affixSort.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+          </select>
+        </div>
+      {/if}
       {#if item.quality.shown || item.catalyst.shown || item.influence.shown}
         <section class="sec grid2">
           {#if item.quality.shown}

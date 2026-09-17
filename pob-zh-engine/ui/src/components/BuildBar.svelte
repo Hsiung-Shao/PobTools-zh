@@ -6,6 +6,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import ClassChangeDialog from "./ClassChangeDialog.svelte";
+  import MinionLibrary from "./MinionLibrary.svelte";
 
   const h = $derived(app.header);
   let levelDraft = $state<string>("");
@@ -51,6 +52,9 @@
       await app.refresh();
     }
   }
+
+  // POB's spectre / beast library (Build.lua's Manage Spectres...)
+  let library = $state<"spectre" | "beast" | null>(null);
 
   let saveAsOpen = $state(false);
   let saveAsName = $state("");
@@ -253,6 +257,26 @@
           {/each}
         </select>
       {/if}
+      {#if h.statSet}
+        <select class={selectClass} value={h.statSet.index} disabled={h.statSet.enabled === false} onchange={(e) => setField("statSet", Number(e.currentTarget.value))} title={t("bar.statSet")}>
+          {#each h.statSet.list as o}
+            <option value={o.val}>{o.labelZh || o.label}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if h.minionLibrary}
+        <button class="btn ghost sm" onclick={() => (library = "spectre")}>{t("bar.spectres")}</button>
+      {/if}
+      {#if h.beastLibrary}
+        <button class="btn ghost sm" onclick={() => (library = "beast")}>{t("bar.beasts")}</button>
+      {/if}
+      {#if h.minionStatSet}
+        <select class={selectClass} value={h.minionStatSet.index} onchange={(e) => setField("minionStatSet", Number(e.currentTarget.value))} title={t("bar.statSet")}>
+          {#each h.minionStatSet.list as o}
+            <option value={o.val}>{o.labelZh || o.label}</option>
+          {/each}
+        </select>
+      {/if}
       {#if h.mainSkillMinionSkill}
         <select class={selectClass} value={h.mainSkillMinionSkill.index} onchange={(e) => setField("mainSkillMinionSkill", Number(e.currentTarget.value))}>
           {#each h.mainSkillMinionSkill.list as o}
@@ -271,6 +295,10 @@
 
   {#if classConfirm}
     <ClassChangeDialog className={classConfirm.className} connectFailed={classConfirm.connectFailed} onanswer={answerClass} oncancel={cancelClass} />
+  {/if}
+
+  {#if library}
+    <MinionLibrary kind={library} onclose={() => (library = null)} />
   {/if}
 
   {#if newLoadout !== null}

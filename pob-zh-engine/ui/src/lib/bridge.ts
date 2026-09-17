@@ -220,6 +220,15 @@ export interface SpecList {
   tattoos: boolean;
 }
 
+/** One minion in POB's spectre/beast library. */
+export interface MinionEntry {
+  id: string;
+  name: string;
+  nameZh?: string;
+  category?: string;
+  recommended?: boolean;
+}
+
 /** TreeTab's Show Node Power: the heat map's numbers and the Power Report. */
 export interface NodePower {
   enabled: boolean;
@@ -565,6 +574,13 @@ export interface BuildHeader {
   mainSkillMineCount?: number;
   mainSkillMinion?: DdField;
   mainSkillMinionSkill?: DdField;
+  /** PoE2: which stat set of the skill (and of the minion's skill) to use. */
+  statSet?: DdField;
+  minionStatSet?: DdField;
+  /** PoE1: the minion drop-down has POB's spectre library next to it. */
+  minionLibrary?: string;
+  /** PoE2 also has a beast library. */
+  beastLibrary?: boolean;
   /** Build.lua's classDrop / ascendDrop / secondaryAscendDrop lists and selection. */
   classes?: ClassEntry[];
   secondaryAscendancies?: AscEntry[];
@@ -821,6 +837,11 @@ export interface ItemEditState {
   versions?: { options: DdOption[]; sel: number };
   affixes: ItemEditAffix[];
   crafted: boolean;
+  /** PoE1: how the affix drop-downs are sorted (ItemsTab craftingSorting). */
+  affixSort?: { options: { label: string; labelZh?: string }[]; sel: number };
+  /** PoE2: the item's rune and jewel socket counts. */
+  runeSockets?: { count: number };
+  jewelSockets?: { count: number };
   ranges: { index: number; label: string; labelZh: string; range?: number; showSlider: boolean; mutable: boolean; mutated: boolean }[];
   modLines: { index: number; text: string; textZh: string; disabled: boolean; kind?: "crafted" | "custom" | "crucible"; remove?: number }[];
   cluster?: { options: DdOption[]; sel: number; nodeCount?: number; minNodes?: number; maxNodes?: number };
@@ -867,6 +888,9 @@ export type ItemEditSetParams =
   | { modLine: { index: number; enabled: boolean } }
   | { removeModLine: number }
   | { cluster: { sel?: number; nodeCount?: number } }
+  | { affixSort: number }
+  | { runeSockets: number }
+  | { jewelSockets: number }
   | { raw: string };
 
 // --- skills ------------------------------------------------------------------
@@ -1061,6 +1085,8 @@ export const api = {
   setAllocMode: (mode: number) => bridge.call<TreeState>("set_alloc_mode", { mode }, 60000),
   listSpecs: () => bridge.call<SpecList>("list_specs", {}, 60000),
   listLoadouts: () => bridge.call<LoadoutList>("list_loadouts", {}, 60000),
+  minionLibrary: (kind: "spectre" | "beast") => bridge.call<{ kind: string; inBuild: MinionEntry[]; available: MinionEntry[] }>("minion_library", { kind }, 60000),
+  setMinionLibrary: (kind: "spectre" | "beast", ids: string[]) => bridge.call<Committed>("set_minion_library", { kind, ids }, 60000),
   listBuildSites: () => bridge.call<{ sites: { id: string; label: string; canImport: boolean; canShare: boolean }[]; lastExport?: string }>("list_build_sites", {}, 60000),
   importFromUrl: (url: string) => bridge.call<{ site: string; label: string; code: string }>("import_from_url", { url }, 120000),
   shareBuild: (site: string) => bridge.call<{ site: string; url: string }>("share_build", { site }, 120000),

@@ -1685,6 +1685,16 @@ function M.get_build_header()
 	if dd_shown(c.mainSkillMinionSkill) then
 		h.mainSkillMinionSkill = { index = c.mainSkillMinionSkill.selIndex or 1, list = dd_entries(c.mainSkillMinionSkill) }
 	end
+	-- PoE2 only: which stat set of the skill to use, and the same for the minion's skill
+	if dd_shown(c.statSet) then
+		h.statSet = { index = c.statSet.selIndex or 1, list = dd_entries(c.statSet), enabled = c.statSet.enabled ~= false }
+	end
+	if dd_shown(c.mainSkillMinionSkillStatSet) then
+		h.minionStatSet = { index = c.mainSkillMinionSkillStatSet.selIndex or 1, list = dd_entries(c.mainSkillMinionSkillStatSet) }
+	end
+	-- PoE1 only: the spectre library button next to the minion drop-down
+	h.minionLibrary = (c.mainSkillMinionLibrary ~= nil) and "spectre" or nil
+	if c.mainSkillBeastLibrary then h.beastLibrary = true end
 	return h
 end
 
@@ -1744,6 +1754,16 @@ function M.set_build_field(p)
 		local src = main_src_instance(b)
 		if not src then error("no active skill", 0) end
 		src.skillMinionSkill = tonumber(v) or 1
+	elseif field == "statSet" or field == "minionStatSet" then
+		-- PoE2's stat-set drop-down: srcInstance.statSet[grantedEffectId] = index
+		local ctl = field == "statSet" and c.statSet or c.mainSkillMinionSkillStatSet
+		if not ctl then error("this POB has no stat sets", 0) end
+		local src = main_src_instance(b)
+		local e = ctl.list and ctl.list[tonumber(v) or 0]
+		if not src or type(e) ~= "table" then error("no stat set " .. tostring(v), 0) end
+		src.statSet = src.statSet or {}
+		src.statSet[e.grantedEffectId] = tonumber(v)
+		ctl.selIndex = tonumber(v)
 	else
 		error("unknown field " .. tostring(field), 0)
 	end
@@ -3090,6 +3110,65 @@ function M.import_tree_url(p)
 	return M.list_specs()
 end
 
+-- ---- Spectre / beast library (Build.lua's "Manage Spectres...") ------------
+-- The dialog is two drag-and-drop lists whose Save writes build.spectreList
+-- (PoE2 also has build.beastList); the page edits the same lists directly.
+
+local function minion_lists(b, kind)
+	if kind == "beast" then
+		if not b.beastList then error("this POB has no beast library", 0) end
+		return "beastList"
+	end
+	if not b.spectreList then error("this POB has no spectre library", 0) end
+	return "spectreList"
+end
+
+local function minion_entry(b, id)
+	local m = b.data.minions[id]
+	if not m then return nil end
+	return { id = id, name = m.name, nameZh = tr(m.name), category = m.monsterCategory,
+	         recommended = (m.extraFlags and (m.extraFlags.recommendedSpectre or m.extraFlags.recommendedBeast)) and true or false }
+end
+
+-- minion_library{kind="spectre"|"beast"}: what the library dialog shows.
+function M.minion_library(p)
+	local b = ensure_build()
+	local field = minion_lists(b, p and p.kind)
+	local inBuild = {}
+	for i, id in ipairs(b[field] or {}) do inBuild[i] = minion_entry(b, id) end
+	local available = {}
+	for id in pairs(b.data.spectres or {}) do
+		local e = minion_entry(b, id)
+		if e then available[#available + 1] = e end
+	end
+	table.sort(available, function(x, y)
+		if x.name == y.name then return x.id < y.id end
+		return x.name < y.name
+	end)
+	return { kind = p and p.kind or "spectre", inBuild = inBuild, available = available }
+end
+
+-- set_minion_library{kind, ids}: the dialog's Save.
+function M.set_minion_library(p)
+	local b = ensure_build()
+	local field = minion_lists(b, p and p.kind)
+	local list = {}
+	for _, id in ipairs(p and p.ids or {}) do
+		if not b.data.spectres[id] then error("not a spectre: " .. tostring(id), 0) end
+		list[#list + 1] = id
+	end
+	b[field] = list
+	b.modFlag = true
+	b.buildFlag = true
+	return commit(b)
+end
+
+probe("data.spectres/minions + build.spectreList (spectre library)", function()
+	local b = build()
+	if not b or not b.data then return true end
+	return type(b.data.spectres) == "table" and type(b.data.minions) == "table" and type(b.spectreList) == "table"
+end)
+
 -- ---- Per-tab undo / redo (each tab is an UndoHandler; Ctrl+Z / Ctrl+Y) ------
 
 local undo_tabs = {
@@ -3648,6 +3727,10 @@ local function edit_state(p)
 		influence = infl,
 		variants = variants, versions = versions,
 		affixes = affixes, crafted = it.crafted and true or false,
+		-- PoE1: how the affix drop-downs are sorted; PoE2: rune and jewel socket counts
+		affixSort = ctl_shown(c.craftingSorting) and { options = dd_options(c.craftingSorting), sel = c.craftingSorting.selIndex or 1 } or nil,
+		runeSockets = ctl_shown(c.displayItemSocketRuneEdit) and { count = it.itemSocketCount or 0 } or nil,
+		jewelSockets = ctl_shown(c.displayItemSocketJewelEdit) and { count = it.jewelSocketCount or 0 } or nil,
 		ranges = ranges,
 		modLines = modLines,
 		cluster = cluster,
@@ -3774,6 +3857,15 @@ function M.item_edit_set(p)
 		ctl:SetSel(tonumber(p.variant.sel) or 1)
 	elseif p.version then
 		c.displayItemVersion:SetSel(tonumber(p.version) or 1)
+	elseif p.affixSort ~= nil then
+		if not c.craftingSorting then error("this POB has no modifier sorting", 0) end
+		c.craftingSorting:SetSel(tonumber(p.affixSort) or 1)
+	elseif p.runeSockets ~= nil then
+		if not c.displayItemSocketRuneEdit then error("this POB has no rune sockets", 0) end
+		c.displayItemSocketRuneEdit:SetText(tostring(math.min(6, math.max(0, math.floor(tonumber(p.runeSockets) or 0)))), true)
+	elseif p.jewelSockets ~= nil then
+		if not c.displayItemSocketJewelEdit then error("this POB has no jewel sockets on items", 0) end
+		c.displayItemSocketJewelEdit:SetText(tostring(math.min(6, math.max(0, math.floor(tonumber(p.jewelSockets) or 0)))), true)
 	elseif p.socket then
 		local i = tonumber(p.socket.index)
 		local drop = c["displayItemSocket" .. tostring(i)]
