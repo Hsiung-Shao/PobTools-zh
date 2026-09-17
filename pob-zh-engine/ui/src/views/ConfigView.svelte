@@ -1,6 +1,7 @@
-<!-- 配置頁:照 POB 原版 —— ConfigOptions 依區段順序排列(POB 的 col 1 全部在前、
-     col 2 在後),卡片以 CSS 多欄排版填滿寬度(視窗越寬欄越多,每欄平衡高度);
-     每項一列「標籤 …… 值」,數字欄不截斷、下拉依內容寬;POB 判定不相關的選項預設隱藏;tooltip 走我們的浮層;自訂詞綴區塊。 -->
+<!-- 配置頁:照 POB 原版 ConfigTab —— 區段寬 360、欄距 370;每個區段先放進 ConfigOptions
+     指定的欄(col),那一欄放不下(超出可視高度)才改放最矮的欄(ConfigTab:Draw 的規則);
+     每列標籤靠右、控制項對齊在同一欄(POB 的控制項固定從 x=234 起);POB 判定不相關的選項
+     預設隱藏;tooltip 走我們的浮層;自訂詞綴區塊是 POB 的 col 1 最後一段。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, type ConfigItem, type ConfigList, type ConfigSection, type CustomModBlock, type TooltipLine } from "$lib/bridge";
@@ -63,10 +64,44 @@
     return (it.labelZh ?? "").toLowerCase().includes(f) || (it.label ?? "").toLowerCase().includes(f) || it.var.toLowerCase().includes(f);
   }
   const hiddenCount = $derived(data ? data.sections.reduce((n, s) => n + s.items.filter((i) => !i.visible).length, 0) : 0);
-  // POB's order: every col-1 section, then every col-2 section
-  const sections = $derived.by((): ConfigSection[] => {
+
+  // --- POB's column layout (ConfigTab:Draw) ------------------------------------
+  // Sections in POB's order; each goes into its own `col` when that column still
+  // has room for it within the visible height, otherwise into the shortest
+  // column. Heights are the cards' measured heights (a card's height does not
+  // depend on its column), with a row-count estimate before the first measure.
+  const COL_PITCH = 370;
+  const CUSTOM = "__custom";
+  let viewW = $state(0);
+  let viewH = $state(0);
+  const heights = $state<Record<string, number>>({});
+  type Placed = { key: string; sec: ConfigSection | null; items: ConfigItem[] };
+  const columns = $derived.by((): Placed[][] => {
     if (!data) return [];
-    return [...data.sections.filter((s) => s.col !== 2), ...data.sections.filter((s) => s.col === 2)];
+    const entries: (Placed & { col: number; est: number })[] = [];
+    for (const sec of data.sections) {
+      const items = sec.items.filter(matches);
+      if (!items.length) continue;
+      const est = 34 + items.reduce((h, it) => h + (it.type === "text" ? 96 : 24), 0);
+      entries.push({ key: sec.name, sec, items, col: sec.col || 1, est });
+    }
+    entries.push({ key: CUSTOM, sec: null, items: [], col: 1, est: 90 + custom.length * 120 });
+    const maxCol = Math.max(1, Math.floor((viewW - 10) / COL_PITCH));
+    const colY: number[] = Array.from({ length: maxCol }, () => 0);
+    const out: Placed[][] = Array.from({ length: maxCol }, () => []);
+    for (const e of entries) {
+      const h = heights[e.key] ?? e.est;
+      let col: number;
+      if (e.col >= 1 && e.col <= maxCol && colY[e.col - 1] + h + 28 <= viewH) {
+        col = e.col - 1;
+      } else {
+        col = 0;
+        for (let c = 1; c < maxCol; c++) if (colY[c] < colY[col]) col = c;
+      }
+      out[col].push(e);
+      colY[col] += h + 10;
+    }
+    return out.filter((c) => c.length);
   });
 
   async function set(it: ConfigItem, value: unknown) {
@@ -128,74 +163,79 @@
     {/if}
   </div>
 
-  <div class="scroll">
+  <div class="scroll" bind:clientWidth={viewW} bind:clientHeight={viewH}>
     {#if data}
       <div class="cols">
-        {#each sections as sec (sec.name)}
-          {@const items = sec.items.filter(matches)}
-          {#if items.length}
-            <section class="card">
-              <h3>{sec.nameZh || sec.name}</h3>
-              {#each items as it (it.var)}
-                {@const sel = it.type === "list" ? selectedLabel(it) : undefined}
-                {@const selText = sel ? sel.labelZh || sel.label : ""}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
-                  {#if it.type === "check"}
-                    <label class="lbl chkrow">
-                      <input type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} />
-                      <span><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                    </label>
-                  {:else if it.type === "list"}
-                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                    <select class="select sm val list" value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
-                      {#each it.list ?? [] as o}
-                        <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
-                      {/each}
-                    </select>
-                    {#if selText.length > 22}<div class="cur dim"><PobText text={selText} muted="var(--ink-2)" /></div>{/if}
-                  {:else if it.type === "text"}
-                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                    <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
-                  {:else}
-                    <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
-                    <input
-                      class="input sm val num"
-                      class:wide={it.type === "float"}
-                      type="text"
-                      inputmode="decimal"
-                      value={numVal(it.value)}
-                      placeholder={it.placeholder != null ? String(it.placeholder) : ""}
-                      onchange={(e) => { const s = e.currentTarget.value.trim(); if (s === "") return void set(it, null); const n = Number(s); if (Number.isFinite(n)) void set(it, n); else e.currentTarget.value = numVal(it.value); }}
-                      onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
-                    />
-                  {/if}
-                  {#if !isDefault(it)}
-                    <button class="btn ghost sm rst" title={t("config.reset")} onclick={() => reset(it)}>↺</button>
-                  {/if}
-                </div>
-              {/each}
-            </section>
-          {/if}
-        {/each}
-        <section class="card">
-          <h3>{t("config.custom")}</h3>
-          <p class="dim small">{t("config.customHint")}</p>
-          {#each custom as blk, i}
-            <div class="block">
-              <div class="bhead">
-                <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
-                <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
-                <button class="btn ghost sm" onclick={() => { custom.splice(i, 1); customDirty = true; }}>×</button>
-              </div>
-              <textarea class="input area" rows="4" bind:value={blk.text} oninput={() => (customDirty = true)}></textarea>
-            </div>
-          {/each}
-          <div class="btns">
-            <button class="btn sm" onclick={() => { custom.push({ title: `Group ${custom.length + 1}`, text: "", enabled: true }); customDirty = true; }}>{t("config.customAdd")}</button>
-            <button class="btn sm primary" disabled={!customDirty || app.busy > 0} onclick={applyCustom}>{t("config.customApply")}</button>
+        {#each columns as col, ci (ci)}
+          <div class="col">
+            {#each col as entry (entry.key)}
+              {#if entry.sec}
+                <section class="card" bind:clientHeight={heights[entry.key]}>
+                  <h3>{entry.sec.nameZh || entry.sec.name}</h3>
+                  {#each entry.items as it (it.var)}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
+                      {#if it.type === "check"}
+                        <label class="lbl" for={"cfg-" + it.var}><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></label>
+                        <span class="ctl"><input id={"cfg-" + it.var} type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} /></span>
+                      {:else if it.type === "list"}
+                        {@const sel = selectedLabel(it)}
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <span class="ctl">
+                          <select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
+                            {#each it.list ?? [] as o}
+                              <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
+                            {/each}
+                          </select>
+                        </span>
+                      {:else if it.type === "text"}
+                        <span class="lbl wide"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
+                      {:else}
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <span class="ctl">
+                          <input
+                            class="input sm num"
+                            type="text"
+                            inputmode="decimal"
+                            value={numVal(it.value)}
+                            placeholder={it.placeholder != null ? String(it.placeholder) : ""}
+                            onchange={(e) => { const v = e.currentTarget.value.trim(); if (v === "") return void set(it, null); const n = Number(v); if (Number.isFinite(n)) void set(it, n); else e.currentTarget.value = numVal(it.value); }}
+                            onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+                          />
+                        </span>
+                      {/if}
+                      {#if !isDefault(it) && it.type !== "text"}
+                        <button class="rst" title={t("config.reset")} onclick={() => reset(it)}>↺</button>
+                      {:else if it.type !== "text"}
+                        <span></span>
+                      {/if}
+                    </div>
+                  {/each}
+                </section>
+              {:else}
+                <section class="card" bind:clientHeight={heights[entry.key]}>
+                  <h3>{t("config.custom")}</h3>
+                  <p class="dim small">{t("config.customHint")}</p>
+                  {#each custom as blk, i}
+                    <div class="block">
+                      <div class="bhead">
+                        <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
+                        <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
+                        <button class="btn ghost sm" onclick={() => { custom.splice(i, 1); customDirty = true; }}>×</button>
+                      </div>
+                      <textarea class="input area" rows="4" bind:value={blk.text} oninput={() => (customDirty = true)}></textarea>
+                    </div>
+                  {/each}
+                  <div class="btns">
+                    <button class="btn sm" onclick={() => { custom.push({ title: `Group ${custom.length + 1}`, text: "", enabled: true }); customDirty = true; }}>{t("config.customAdd")}</button>
+                    <button class="btn sm primary" disabled={!customDirty || app.busy > 0} onclick={applyCustom}>{t("config.customApply")}</button>
+                  </div>
+                </section>
+              {/if}
+            {/each}
           </div>
-        </section>
+        {/each}
       </div>
     {/if}
   </div>
@@ -255,33 +295,36 @@
     height: 24px;
     font-size: var(--fs-xs);
   }
-  .opt .val {
-    height: 20px;
-  }
   .scroll {
     flex: 1;
-    overflow-y: auto;
-    padding: 12px 14px 24px;
+    overflow: auto;
+    padding: 10px 10px 24px;
   }
-  /* cards packed into as many columns as fit (POB's order runs down each column) */
+  /* POB: 360px sections on a 370px pitch */
   .cols {
-    column-width: 300px;
-    column-gap: 10px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .col {
+    width: 360px;
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
   .card {
-    break-inside: avoid;
-    margin: 0 0 10px;
-    padding: 6px 8px 8px;
+    padding: 4px 6px 6px;
     background: var(--surface-1);
     border: 1px solid var(--edge-0);
-    border-radius: var(--radius-m);
+    border-radius: var(--radius-s);
   }
   h3 {
-    margin: 0 0 6px;
-    padding-left: 10px;
+    margin: 0 0 4px;
+    padding-left: 8px;
     position: relative;
     font-size: var(--fs-2xs);
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     font-weight: 600;
     color: var(--ink-2);
   }
@@ -294,15 +337,15 @@
     width: 2px;
     background: var(--gold);
   }
-  /* one option = one line: label on the left, its value on the right (POB's own row shape) */
+  /* POB's row: the label ends against the control column, controls start at
+     one x down the whole section; the last column holds the reset arrow */
   .opt {
-    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 128px 16px;
     align-items: center;
-    column-gap: 8px;
+    column-gap: 6px;
     min-height: 22px;
-    padding: 0 24px 0 4px;
+    padding: 1px 0 1px 4px;
     border-radius: var(--radius-s);
     font-size: var(--fs-xs);
   }
@@ -314,56 +357,56 @@
   }
   .opt.text {
     grid-template-columns: 1fr;
-    row-gap: 4px;
-    padding-top: 4px;
-    padding-bottom: 4px;
+    row-gap: 3px;
+    padding: 3px 4px;
   }
   .lbl {
     min-width: 0;
-    line-height: 1.3;
+    text-align: right;
+    line-height: 1.25;
+    cursor: default;
   }
-  .chkrow {
-    grid-column: 1 / -1;
+  .lbl.wide {
+    text-align: left;
+  }
+  .ctl {
     display: flex;
     align-items: center;
-    gap: 8px;
-    cursor: pointer;
+    min-width: 0;
   }
-  .cur {
-    grid-column: 1 / -1;
-    font-size: var(--fs-2xs);
-    padding-left: 2px;
-    margin-top: -2px;
+  .ctl input[type="checkbox"] {
+    margin: 0;
   }
-  /* values: numbers show whole (no spinner, wide enough for 7 digits), lists as wide as their text */
-  .val.num {
-    width: 9ch;
-    text-align: right;
+  .ctl .select.sm,
+  .ctl .input.sm {
+    height: 20px;
+    font-size: var(--fs-xs);
+  }
+  .num {
+    width: 90px;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
-  .val.num.wide {
-    width: 11ch;
-  }
-  .val.num::placeholder {
-    text-align: right;
-  }
-  .val.list {
-    width: auto;
-    min-width: 100px;
-    max-width: 200px;
+  .list {
+    width: 128px;
+    min-width: 0;
+    text-overflow: ellipsis;
   }
   .rst {
-    position: absolute;
-    right: 2px;
-    top: 50%;
-    transform: translateY(-50%);
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--ink-3);
+    padding: 0;
+    font-size: var(--fs-2xs);
+    cursor: pointer;
     opacity: 0;
-    height: 20px;
-    padding: 0 4px;
   }
   .opt:hover .rst {
     opacity: 1;
+  }
+  .rst:hover {
+    color: var(--gold);
   }
   .area {
     height: auto;
