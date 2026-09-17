@@ -197,6 +197,7 @@ struct Window {
 		v.pobVersion = d.value("pobVersion", "");
 		v.pobBranch = d.value("pobBranch", "");
 		v.pobDir = pobDir;
+		v.bridgeHash = BridgeGate::BridgeFingerprint(exeDir);
 		BridgeGate::Write(exeDir, v);
 		if (v.ok || gateFellBack) return false;
 		gateFellBack = true;

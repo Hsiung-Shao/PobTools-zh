@@ -531,28 +531,59 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 		CreateDirectoryW(dir.c_str(), nullptr);
 		DeleteFileW(BridgeGate::GatePath(dir).c_str());
 		BridgeGate::Verdict none = BridgeGate::Read(dir);
-		check("P19 no gate file = not present, not blocking", !none.present && !BridgeGate::BlocksModernUi(none, L"D:\\POB", "2.67.2"));
+		check("P19 no gate file = not present, not blocking", !none.present && !BridgeGate::BlocksModernUi(none, L"D:\\POB", "2.67.2", "0123456789abcdef"));
 		BridgeGate::Verdict v;
 		v.ok = false;
 		v.failed = { "classes.TreeTab.OpenMasteryPopup", "launch.ApplyUpdate" };
 		v.pobVersion = "2.67.2-16de4b82d";
 		v.pobBranch = "beta";
 		v.pobDir = L"D:\\POB\\PathOfBuildingCommunity";
+		v.bridgeHash = "0123456789abcdef";
 		bool wrote = BridgeGate::Write(dir, v);
 		BridgeGate::Verdict r = BridgeGate::Read(dir);
 		check("P20 a failing verdict round-trips and blocks the same install + version",
 		      wrote && r.present && !r.ok && r.failed.size() == 2 && r.failed[1] == "launch.ApplyUpdate" && r.pobVersion == v.pobVersion &&
-		          !r.checkedAtUtc.empty() && BridgeGate::BlocksModernUi(r, L"d:/pob/PathOfBuildingCommunity/", "2.67.2-16de4b82d"));
+		          !r.checkedAtUtc.empty() && r.bridgeHash == v.bridgeHash && BridgeGate::BlocksModernUi(r, L"d:/pob/PathOfBuildingCommunity/", "2.67.2-16de4b82d", v.bridgeHash));
 		check("P21 another POB version or install is not blocked by it",
-		      !BridgeGate::BlocksModernUi(r, v.pobDir, "2.67.3") && !BridgeGate::BlocksModernUi(r, L"E:\\Other", "2.67.2-16de4b82d"));
+		      !BridgeGate::BlocksModernUi(r, v.pobDir, "2.67.3", v.bridgeHash) && !BridgeGate::BlocksModernUi(r, L"E:\\Other", "2.67.2-16de4b82d", v.bridgeHash));
+		check("P24 another bridge.lua (app or data update) is not blocked by it, nor is a verdict that names no bridge",
+		      !BridgeGate::BlocksModernUi(r, v.pobDir, v.pobVersion, "fedcba9876543210") && !BridgeGate::BlocksModernUi(r, v.pobDir, v.pobVersion, "") && [&] {
+			      BridgeGate::Verdict old = r;
+			      old.bridgeHash.clear();
+			      return !BridgeGate::BlocksModernUi(old, v.pobDir, v.pobVersion, v.bridgeHash);
+		      }());
 		BridgeGate::Verdict okv = v;
 		okv.ok = true;
 		okv.failed.clear();
 		BridgeGate::Write(dir, okv);
 		BridgeGate::Verdict r2 = BridgeGate::Read(dir);
-		check("P22 a passing verdict overwrites the failing one and never blocks", r2.present && r2.ok && !BridgeGate::BlocksModernUi(r2, v.pobDir, v.pobVersion));
+		check("P22 a passing verdict overwrites the failing one and never blocks", r2.present && r2.ok && !BridgeGate::BlocksModernUi(r2, v.pobDir, v.pobVersion, v.bridgeHash));
 		BridgeGate::Verdict bad = BridgeGate::Parse("{not json");
 		check("P23 unreadable gate JSON counts as no file", !bad.present && bad.ok);
+		// P25: the fingerprint follows bridge.lua's bytes
+		{
+			const std::wstring fdir = dir + L"fp\\";
+			CreateDirectoryW(fdir.c_str(), nullptr);
+			CreateDirectoryW((fdir + L"Data").c_str(), nullptr);
+			CreateDirectoryW((fdir + L"Data\\bridge").c_str(), nullptr);
+			const std::wstring bl = fdir + L"Data\\bridge\\bridge.lua";
+			auto put = [&](const char* text) {
+				HANDLE fh = CreateFileW(bl.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+				DWORD w = 0;
+				if (fh != INVALID_HANDLE_VALUE) { WriteFile(fh, text, (DWORD)strlen(text), &w, nullptr); CloseHandle(fh); }
+			};
+			const std::string missing = BridgeGate::BridgeFingerprint(fdir);
+			put("local BRIDGE_VERSION = \"0.1.0\"\n");
+			const std::string a1 = BridgeGate::BridgeFingerprint(fdir), a2 = BridgeGate::BridgeFingerprint(fdir);
+			put("local BRIDGE_VERSION = \"0.2.0\"\n");
+			const std::string b1 = BridgeGate::BridgeFingerprint(fdir);
+			check("P25 bridge fingerprint: empty without the file, stable for the same bytes, different after a change",
+			      missing.empty() && a1.size() == 16 && a1 == a2 && b1.size() == 16 && b1 != a1, a1 + " / " + b1);
+			DeleteFileW(bl.c_str());
+			RemoveDirectoryW((fdir + L"Data\\bridge").c_str());
+			RemoveDirectoryW((fdir + L"Data").c_str());
+			RemoveDirectoryW(fdir.c_str());
+		}
 		DeleteFileW(BridgeGate::GatePath(dir).c_str());
 		RemoveDirectoryW(dir.c_str());
 	}

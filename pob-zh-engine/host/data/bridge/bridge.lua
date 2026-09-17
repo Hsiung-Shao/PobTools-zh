@@ -26,7 +26,7 @@
 -- Phase 0 covers: boot, version, load a build, sidebar, flat stats, save to
 -- XML (the golden oracle), synchronous update check, update status.
 
-local BRIDGE_VERSION = "0.1.0"
+local BRIDGE_VERSION = "0.2.0"
 
 local emit = PobToolsBridgeEmit
 local setDispatcher = PobToolsBridgeSetDispatcher
@@ -68,7 +68,12 @@ probe("main.modes.BUILD", function() return type(launch.main.modes) == "table" a
 probe("main.SetMode", function() return type(launch.main.SetMode) == "function" end)
 probe("main.buildPath", function() return type(launch.main.buildPath) == "string" end)
 probe("buildMode.Init(5 params)", function() return nparams(launch.main.modes.BUILD.Init) == 6 end) -- self + 5
-probe("buildMode.AddDisplayStatList(3 params)", function() return nparams(launch.main.modes.BUILD.AddDisplayStatList) == 4 end)
+-- master 2.67.2: (statList, actor); beta: (statList, actor, actorName). The
+-- wrapper below takes either.
+probe("buildMode.AddDisplayStatList(statList, actor[, actorName])", function()
+	local n = nparams(launch.main.modes.BUILD.AddDisplayStatList)
+	return n == 3 or n == 4
+end)
 probe("buildMode.RefreshStatList", function() return type(launch.main.modes.BUILD.RefreshStatList) == "function" end)
 probe("buildMode.SaveDB", function() return type(launch.main.modes.BUILD.SaveDB) == "function" end)
 probe("buildMode.LoadDB", function() return type(launch.main.modes.BUILD.LoadDB) == "function" end)
@@ -85,8 +90,23 @@ local function class_of(name)
 	end
 	return c
 end
+-- POB's object construction differs between branches: master 2.67.2 runs the
+-- class constructor inside new(className, ...); beta returns the bare object
+-- and the caller runs it (new("X"):X(...)). make() uses whichever form this
+-- POB's own new() has, so every object is built the way POB builds it.
+local function make(className, ...)
+	local info = debug.getinfo(new, "u")
+	if info and info.isvararg then
+		return new(className, ...)
+	end
+	local obj = new(className)
+	return obj[className](obj, ...)
+end
+probe("new() builds objects (new(name, ...) or new(name):Name(...))", function()
+	local t = make("Tooltip")
+	return type(t) == "table" and type(t.AddLine) == "function"
+end)
 probe("classes.CalcsTab.BuildOutput", function() local c = class_of("CalcsTab"); return type(c) == "table" and type(c.BuildOutput) == "function" end)
-probe("buildMode.GetSidebarBreakdown", function() return type(launch.main.modes.BUILD.GetSidebarBreakdown) == "function" end)
 probe("classes.CalcBreakdownControl.SetBreakdownData", function() local c = class_of("CalcBreakdownControl"); return type(c) == "table" and type(c.SetBreakdownData) == "function" end)
 probe("Modules.BuildListHelpers.ScanFolder/FilterList/SortList", function()
 	local ok, h = pcall(require, "Modules.BuildListHelpers")
@@ -95,6 +115,17 @@ end)
 probe("classes.PassiveSpec.CountAllocNodes", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.CountAllocNodes) == "function" end)
 probe("classes.PassiveSpec.AllocNode", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.AllocNode) == "function" and type(c.DeallocNode) == "function" end)
 probe("UpdateCheck.lua present", function() local f = io.open("UpdateCheck.lua", "r"); if f then f:close() return true end return false end)
+
+-- What this POB offers beyond the gate. A missing capability turns one
+-- feature off on the page instead of refusing the whole interface: the
+-- sidebar breakdown (Build.lua GetSidebarBreakdown) is on the beta branch
+-- only, so on master the rows simply have no breakdown to open.
+local function capabilities()
+	local B = launch and launch.main and launch.main.modes and launch.main.modes.BUILD
+	return {
+		sidebarBreakdown = type(B) == "table" and type(B.GetSidebarBreakdown) == "function",
+	}
+end
 
 local gate = { ok = false, failed = {}, checked = 0 }
 
@@ -157,6 +188,16 @@ local function wrap_add_display_stat_list()
 	local orig = B.AddDisplayStatList
 	B.AddDisplayStatList = function(self, statList, actor, actorName)
 		local list = self.controls and self.controls.statBox and self.controls.statBox.list
+		-- Before actorName was passed in (master 2.67.2) RefreshStatList handed
+		-- over the actor itself; which one it is says the same thing.
+		if actorName == nil and type(actor) == "table" then
+			local env = self.calcsTab and self.calcsTab.mainEnv
+			if env and actor == env.minion then
+				actorName = "minion"
+			elseif env and actor == env.player then
+				actorName = "player"
+			end
+		end
 		for _, statData in ipairs(statList) do
 			local before = list and #list or 0
 			orig(self, { statData }, actor, actorName)
@@ -188,6 +229,7 @@ function M.version()
 		pobBranch = launch.versionBranch,
 		pobPlatform = launch.versionPlatform,
 		bridge = BRIDGE_VERSION,
+		caps = capabilities(),
 		headless = PobToolsHeadless and PobToolsHeadless() or false,
 		gate = gate,
 		-- Where POB keeps builds for this install (userPath .. "Builds/"); a
@@ -270,6 +312,7 @@ function M.get_sidebar()
 	local b = ensure_build()
 	local list = b.controls and b.controls.statBox and b.controls.statBox.list
 	if type(list) ~= "table" then error("statBox list missing", 0) end
+	local canBreakdown = type(b.GetSidebarBreakdown) == "function"
 	local rows = {}
 	for i, row in ipairs(list) do
 		local lhs, rhs = row[1], row[2]
@@ -282,8 +325,9 @@ function M.get_sidebar()
 			stat = row.__stat,
 			actor = row.__actor,
 			align = row.align,
-			-- Either key is enough for GetSidebarBreakdown to say something.
-			hasBreakdown = (row.breakdown ~= nil or row.modNames ~= nil) and true or false,
+			-- Either key is enough for GetSidebarBreakdown to say something;
+			-- without that function (master) there is nothing to open.
+			hasBreakdown = (canBreakdown and (row.breakdown ~= nil or row.modNames ~= nil)) and true or false,
 		}
 	end
 	local warnings = {}
@@ -314,7 +358,7 @@ function M.sidebar_breakdown(p)
 	local list = b.controls.statBox.list
 	local line = idx and list[idx]
 	if not line then error("no sidebar row " .. tostring(idx), 0) end
-	if not line.breakdown and not line.modNames then
+	if (not line.breakdown and not line.modNames) or type(b.GetSidebarBreakdown) ~= "function" then
 		return { sections = {}, rev = b.outputRevision }
 	end
 	local ctl = b.controls.breakdown
@@ -914,7 +958,7 @@ function M.node_info(p)
 	if not node then error("no node " .. tostring(id), 0) end
 	local viewer = b.treeTab and b.treeTab.viewer
 	if not viewer or not viewer.AddNodeTooltip then error("tree viewer not available", 0) end
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	local savedWrap, savedDiff = main().WrapString, viewer.showStatDifferences
 	main().WrapString = function(_, s) return { s } end
 	viewer.showStatDifferences = false
@@ -1150,9 +1194,12 @@ probe("classes.PassiveSpec class switching", function()
 		and type(c.IsClassConnected) == "function" and type(c.ConnectToClass) == "function"
 end)
 probe("classes.PassiveTree.ProcessNode", function() local c = class_of("PassiveTree"); return type(c) == "table" and type(c.ProcessNode) == "function" end)
-probe("classes.PassiveTreeView.AddNodeTooltip(4 params)", function()
+-- beta adds returnEarly; master (tooltip, node, build) ignores it and skips
+-- its stat-difference pass on showStatDifferences=false, which node_info sets.
+probe("classes.PassiveTreeView.AddNodeTooltip(tooltip, node, build[, returnEarly])", function()
 	local c = class_of("PassiveTreeView")
-	return type(c) == "table" and type(c.AddNodeTooltip) == "function" and nparams(c.AddNodeTooltip) == 5
+	local n = type(c) == "table" and type(c.AddNodeTooltip) == "function" and nparams(c.AddNodeTooltip)
+	return n == 4 or n == 5
 end)
 probe("classes.UndoHandler.AddUndoState/Undo/Redo", function()
 	local c = class_of("UndoHandler")
@@ -2185,7 +2232,7 @@ function M.item_tooltip(p)
 	local it, dbMode
 	if p and p.raw then
 		local raw, reversed = normalize_item_text(p.raw)
-		it = new("Item"):Item(raw, p.rarity, true)
+		it = make("Item", raw, p.rarity, true)
 		if reversed then p.reversed = true end
 		if it.base then it:BuildModList() end
 		dbMode = true
@@ -2203,7 +2250,7 @@ function M.item_tooltip(p)
 		local name = tab:GetComparisonSlotNameForItem(it)
 		slot = name and tab.slots[name] or nil
 	end
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	local m = main()
 	local savedDiff, savedSlotOnly = tab.showStatDifferences, m.slotOnlyTooltips
 	tab.showStatDifferences = compare
@@ -2247,7 +2294,7 @@ function M.add_item(p)
 	if #raw > 64 * 1024 then error("item text too large", 0) end
 	local reversed
 	raw, reversed = normalize_item_text(raw)
-	local it = new("Item"):Item(raw)
+	local it = make("Item", raw)
 	if not it.base then error("item base not recognised: " .. tostring(it.baseName or it.name), 0) end
 	local wantSlot = p.slotName and tab.slots[p.slotName] or nil
 	tab:AddItem(it, p.equip == false or wantSlot ~= nil)
@@ -2490,7 +2537,7 @@ end
 -- reminder text and ItemsTab:AppendAnointTooltip's "anointing this gives you"
 -- comparison. One calculation per node, so it is built on demand.
 local function notable_tooltip(ctl, index, node)
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	local ok, err = pcall(without_wrap, function() ctl:AddValueTooltip(tt, index, node) end)
 	if not ok then error(err, 0) end
 	return tooltip_lines(tt)
@@ -2516,7 +2563,7 @@ end
 local function edit_state(p)
 	local b, tab, it = edit_item()
 	local c = tab.controls
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	local savedDiff = tab.showStatDifferences
 	tab.showStatDifferences = not (p and p.compare == false)
 	local ok, err = pcall(without_wrap, function() tab:AddItemTooltip(tt, it) end)
@@ -2683,7 +2730,7 @@ function M.item_edit_begin(p)
 	if p and p.id then
 		local src = tab.items[tonumber(p.id)]
 		if not src then error("no item " .. tostring(p.id), 0) end
-		local newItem = new("Item"):Item(src:BuildRaw())
+		local newItem = make("Item", src:BuildRaw())
 		newItem.id = src.id
 		tab:SetDisplayItem(newItem)
 	elseif p and p.raw then
@@ -2903,7 +2950,9 @@ end
 local popup_openers = {
 	enchant = function(tab, p) tab:EnchantDisplayItem(tonumber(p.slot) or 1) end,
 	anoint = function(tab, p) tab:AnointDisplayItem(tonumber(p.slot) or 1) end,
-	corrupt = function(tab) tab:CorruptDisplayItem() end,
+	-- through the panel's own button: beta opens one dialog with a source
+	-- dropdown, master 2.67.2 passes the mod type ("Corrupted") itself
+	corrupt = function(tab) tab.controls.displayItemCorrupt.onClick() end,
 	custom = function(tab) tab:AddCustomModifierToDisplayItem() end,
 	crucible = function(tab) tab:AddCrucibleModifierToDisplayItem() end,
 	text = function(tab) tab:EditDisplayItemText() end,
@@ -3145,10 +3194,13 @@ probe("classes.ItemsTab dialogs (CraftItem/EditDisplayItemText/EnchantDisplayIte
 		and type(c.AnointDisplayItem) == "function" and type(c.CorruptDisplayItem) == "function" and type(c.AddCustomModifierToDisplayItem) == "function"
 		and type(c.AddCrucibleModifierToDisplayItem) == "function"
 end)
-probe("classes.ItemsTab comparison (GetComparisonSlotNameForItem/GetEquippedSlotForItem/AddItemStatDifferences/SortItemList)", function()
+-- The stat-difference block itself is AddItemTooltip's business (a separate
+-- AddItemStatDifferences on beta, inline on master); the bridge only toggles
+-- showStatDifferences and names the slot.
+probe("classes.ItemsTab comparison (GetComparisonSlotNameForItem/GetEquippedSlotForItem/SortItemList)", function()
 	local c = class_of("ItemsTab")
 	return type(c) == "table" and type(c.GetComparisonSlotNameForItem) == "function" and type(c.GetEquippedSlotForItem) == "function"
-		and type(c.AddItemStatDifferences) == "function" and type(c.SortItemList) == "function"
+		and type(c.SortItemList) == "function"
 end)
 probe("classes.ItemListControl (FindEquippedAbyssJewel/FindSocketedJewel/OnSelClick) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
 	local l, d = class_of("ItemListControl"), class_of("ItemDBControl")
@@ -3603,7 +3655,7 @@ function M.gem_tooltip(p)
 	local gem = g.gemList[tonumber(p.index or 0)]
 	if not gem then error("no gem " .. tostring(p.index), 0) end
 	local gt = require("Classes.GemTooltip")
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	without_wrap(function() gt.AddGemTooltip(tt, b, gem) end)
 	return { lines = tooltip_lines(tt), header = tt.tooltipHeader }
 end
@@ -3611,7 +3663,7 @@ end
 function M.group_tooltip(p)
 	local b = ensure_build()
 	local g = group_at(b.skillsTab, p and p.index)
-	local tt = new("Tooltip"):Tooltip()
+	local tt = make("Tooltip")
 	without_wrap(function() b.skillsTab:AddSocketGroupTooltip(tt, g) end)
 	return { lines = tooltip_lines(tt) }
 end
@@ -4196,11 +4248,11 @@ function M.set_party(p)
 	-- Re-parse everything the way Load does: the lists are rebuilt from scratch
 	-- per field, and the enemy list is shared by two fields.
 	if f.buffType == "EnemyConditions" or f.buffType == "EnemyMods" then
-		tab.enemyModList = new("ModList"):ModList()
+		tab.enemyModList = make("ModList")
 		party_parse(tab, party_fields[6], tab.controls.enemyCond.buf or "")
 		party_parse(tab, party_fields[7], tab.controls.enemyMods.buf or "")
 	elseif f.buffType == "PartyMemberStats" then
-		tab.actor.modDB = new("ModDB"):ModDB()
+		tab.actor.modDB = make("ModDB")
 		tab.actor.modDB.actor = tab.actor
 		tab.actor.output = {}
 		party_parse(tab, f, text)

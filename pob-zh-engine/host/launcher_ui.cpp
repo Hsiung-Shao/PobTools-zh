@@ -1009,9 +1009,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// by the new-interface window). Re-read every couple of seconds: the
 	// window that just fell back to classic writes it while we are open.
 	BridgeGate::Verdict modernGate = BridgeGate::Read(exeDir);
+	// the bridge the verdict is compared with; re-hashed with the verdict (a
+	// data-line update can replace bridge.lua while the launcher is open)
+	std::string modernBridgeHash = modernGate.present && !modernGate.ok ? BridgeGate::BridgeFingerprint(exeDir) : std::string();
 	double modernGateReadAt = glfwGetTime();
 	auto modernGateBlocked = [&]() {
-		return BridgeGate::BlocksModernUi(modernGate, installs.poe1Dir, installs.poe1Version);
+		return BridgeGate::BlocksModernUi(modernGate, installs.poe1Dir, installs.poe1Version, modernBridgeHash);
 	};
 	auto modernGateTipText = [&](const LauncherStrings& S) {
 		std::string list;
@@ -1744,6 +1747,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                   ust.phase == AppUpdatePhase::AppReadyToApply;
 		if (glfwGetTime() - modernGateReadAt > 2.0) {
 			modernGate = BridgeGate::Read(exeDir);
+			modernBridgeHash = modernGate.present && !modernGate.ok ? BridgeGate::BridgeFingerprint(exeDir) : std::string();
 			modernGateReadAt = glfwGetTime();
 		}
 

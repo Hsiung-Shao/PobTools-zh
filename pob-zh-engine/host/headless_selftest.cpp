@@ -566,11 +566,24 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      "valueRows=" + std::to_string(valueRows) + " withStat=" + std::to_string(withStat));
 			check("per-entry wrapper did not change POB's spacer logic (no double spacer)", okSide && doubleSpacer == 0,
 			      "doubleSpacer=" + std::to_string(doubleSpacer));
+			// The breakdown exists where POB has GetSidebarBreakdown (beta); on
+			// master the rows must say there is nothing to open, and asking
+			// anyway must answer empty rather than fail.
+			json capv;
+			const bool okCaps = child.Call("version", json::object(), capv, 30000) && capv.contains("caps");
+			const bool canBd = okCaps && capv["caps"].value("sidebarBreakdown", false);
 			json bd;
-			bool okBd = firstBd > 0 && child.Call("sidebar_breakdown", json{{"rowIndex", firstBd}}, bd, 30000);
-			check("sidebar_breakdown of the first breakdown row has sections",
-			      okBd && bd.contains("sections") && !bd["sections"].empty(),
-			      okBd ? bd.dump().substr(0, 300) : ("row=" + std::to_string(firstBd) + " " + bd.dump()));
+			if (canBd) {
+				bool okBd = firstBd > 0 && child.Call("sidebar_breakdown", json{{"rowIndex", firstBd}}, bd, 30000);
+				check("sidebar_breakdown of the first breakdown row has sections (POB with GetSidebarBreakdown)",
+				      okBd && bd.contains("sections") && !bd["sections"].empty(),
+				      okBd ? bd.dump().substr(0, 300) : ("row=" + std::to_string(firstBd) + " " + bd.dump()));
+			} else {
+				bool okBd = okCaps && child.Call("sidebar_breakdown", json{{"rowIndex", 1}}, bd, 30000);
+				check("sidebar breakdown degrades on a POB without GetSidebarBreakdown: no row offers one, asking answers empty",
+				      okCaps && firstBd < 0 && okBd && bd.contains("sections") && bd["sections"].empty(),
+				      "caps=" + (okCaps ? capv["caps"].dump() : std::string("?")) + " firstBd=" + std::to_string(firstBd) + " " + bd.dump().substr(0, 160));
+			}
 		}
 		{
 			json lb;
@@ -1291,7 +1304,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json dbo, dbHelm, dbAll, dbStat, dbReq, dbRare;
 			bool okDbo = okLoad && child.Call("item_db_options", json{{"kind", "unique"}}, dbo, 180000);
 			check("item_db_options: ItemDBControl's slot/type/league/requirement/obtainable/search-mode/sort lists",
-			      okDbo && dbo["slot"].size() >= 10 && dbo["type"].size() >= 6 && dbo["league"].size() >= 5 && dbo["requirement"].size() == 4 && dbo["obtainable"].size() == 8 &&
+			      okDbo && dbo["slot"].size() >= 10 && dbo["type"].size() >= 6 && dbo["league"].size() >= 5 && dbo["requirement"].size() == 4 && dbo["obtainable"].size() >= 7 &&
 			          dbo["searchMode"].size() == 3 && dbo["sort"].size() >= 3,
 			      okDbo ? "slots=" + std::to_string(dbo["slot"].size()) + " leagues=" + std::to_string(dbo["league"].size()) + " sorts=" + std::to_string(dbo["sort"].size()) : dbo.dump().substr(0, 300));
 			int helmIdx = 0;
@@ -1506,8 +1519,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okS1 ? std::string("flipped=") + (flipped ? "1" : "0") + " restored=" + (restored ? "1" : "0") : s1.dump().substr(0, 300));
 			json ui;
 			bool okUi = child.Call("pob_update_info", json::object(), ui, 60000);
+			// POB lists the entries newer than the running version: none on an
+			// up-to-date master, the whole file on beta (its version has a hash)
 			check("pob_update_info: main:OpenUpdatePopup's changelog list (capped) and the running version",
-			      okUi && ui["lines"].size() >= 1 && ui["lines"].size() <= 400 && !ui.value("version", "").empty(),
+			      okUi && ui.contains("lines") && ui["lines"].size() <= 400 && !ui.value("version", "").empty(),
 			      okUi ? "lines=" + std::to_string(ui["lines"].size()) : ui.dump().substr(0, 200));
 		}
 

@@ -57,6 +57,7 @@ Verdict Parse(const std::string& text)
 	v.pobBranch = j.value("pobBranch", "");
 	v.pobDir = widen_utf8(j.value("pobDir", ""));
 	v.checkedAtUtc = j.value("checkedAtUtc", "");
+	v.bridgeHash = j.value("bridgeHash", "");
 	return v;
 }
 
@@ -79,6 +80,7 @@ bool Write(const std::wstring& exeDir, const Verdict& v)
 		{"pobBranch", v.pobBranch},
 		{"pobDir", narrow_utf8(v.pobDir)},
 		{"checkedAtUtc", stamp},
+		{"bridgeHash", v.bridgeHash},
 	};
 	std::string text = j.dump(2);
 	const std::wstring path = GatePath(exeDir);
@@ -104,10 +106,35 @@ Verdict Read(const std::wstring& exeDir)
 	return Parse(text);
 }
 
-bool BlocksModernUi(const Verdict& v, const std::wstring& pobDir, const std::string& pobVersion)
+std::string BridgeFingerprint(const std::wstring& exeDir)
+{
+	HANDLE h = CreateFileW((exeDir + L"Data\\bridge\\bridge.lua").c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return {};
+	unsigned long long hash = 1469598103934665603ULL;
+	unsigned char buf[16384];
+	DWORD read = 0;
+	bool any = false;
+	while (ReadFile(h, buf, sizeof(buf), &read, nullptr) && read > 0) {
+		any = true;
+		for (DWORD i = 0; i < read; i++) {
+			hash ^= buf[i];
+			hash *= 1099511628211ULL;
+		}
+	}
+	CloseHandle(h);
+	if (!any) return {};
+	char hex[17];
+	snprintf(hex, sizeof(hex), "%016llx", hash);
+	return hex;
+}
+
+bool BlocksModernUi(const Verdict& v, const std::wstring& pobDir, const std::string& pobVersion, const std::string& bridgeHash)
 {
 	if (!v.present || v.ok) return false;
 	if (v.pobVersion.empty() || pobVersion.empty() || v.pobVersion != pobVersion) return false;
+	// A verdict taken by another bridge (or by a host that did not record one)
+	// says nothing about this bridge: let it try again.
+	if (v.bridgeHash.empty() || bridgeHash.empty() || v.bridgeHash != bridgeHash) return false;
 	if (!v.pobDir.empty() && !pobDir.empty() && lower(v.pobDir) != lower(pobDir)) return false;
 	return true;
 }
