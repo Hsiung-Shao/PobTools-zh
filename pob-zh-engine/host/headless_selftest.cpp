@@ -1942,6 +1942,15 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("set_alloc_mode 1 then a click: the node is allocated to weapon set 1 (nodeModes)",
 		      okM1 && m1.value("allocMode", -1) == 1 && okSc && sc["nodeModes"].value(std::to_string(setNode), 0) == 1,
 		      "node=" + std::to_string(setNode) + " " + (okSc ? sc["nodeModes"].dump() : sc.dump()).substr(0, 200));
+		// still in weapon-set mode: a keystone is global and stays on the main
+		// tree (PassiveTreeView's shouldBlockGlobalNodeAllocation), so the click
+		// is refused and nothing is allocated
+		int keystone = 0;
+		if (okTd) for (auto& [k, n] : td["nodes"].items()) if (n.value("type", "") == "Keystone" && !n.contains("asc")) { keystone = n.value("id", 0); break; }
+		json kb;
+		bool okKb = keystone && okSc && child.Call("tree_click", json{{"id", keystone}}, kb, 60000);
+		check("weapon-set mode refuses a keystone (blocked: weapon_set_global) and allocates nothing",
+		      okKb && kb.value("blocked", "") == "weapon_set_global", kb.dump().substr(0, 200));
 		json m0, undo;
 		child.Call("set_alloc_mode", json{{"mode", 0}}, m0, 60000);
 		bool okUndo = okSc && child.Call("tree_undo", json::object(), undo, 60000);

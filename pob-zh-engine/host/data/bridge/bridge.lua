@@ -1421,6 +1421,15 @@ end)
 probe("classes.PassiveTree.ProcessNode", function() local c = class_of("PassiveTree"); return type(c) == "table" and type(c.ProcessNode) == "function" end)
 -- beta adds returnEarly; master (tooltip, node, build) ignores it and skips
 -- its stat-difference pass on showStatDifferences=false, which node_info sets.
+-- PoE2's tree surfaces (attribute nodes, weapon-set allocation). Required on
+-- PoE2 -- tree_click/tree_attribute/set_alloc_mode call them -- and not
+-- applicable (true) on PoE1, which has neither.
+probe("classes.PassiveSpec.SwitchAttributeNode/BuildAllDependsAndPaths + PassiveTreeView.IsConnectedToWeaponSetNodes (PoE2)", function()
+	if GAME ~= "poe2" then return true end
+	local s, v = class_of("PassiveSpec"), class_of("PassiveTreeView")
+	return type(s) == "table" and type(s.SwitchAttributeNode) == "function" and type(s.BuildAllDependsAndPaths) == "function"
+		and type(v) == "table" and type(v.IsConnectedToWeaponSetNodes) == "function"
+end)
 probe("classes.PassiveTreeView.AddNodeTooltip(tooltip, node, build[, returnEarly])", function()
 	local c = class_of("PassiveTreeView")
 	local n = type(c) == "table" and type(c.AddNodeTooltip) == "function" and nparams(c.AddNodeTooltip)
