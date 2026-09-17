@@ -186,6 +186,53 @@
     }
   }
 
+  // build sites: a link from one of them, or sharing this build to one
+  let sites = $state<{ id: string; label: string; canImport: boolean; canShare: boolean }[]>([]);
+  let shareSite = $state("");
+  let linkUrl = $state("");
+  let linkBusy = $state(false);
+  let linkErr = $state("");
+  let shared = $state("");
+  $effect(() => {
+    if (!sites.length) {
+      untrack(async () => {
+        try {
+          const r = await api.listBuildSites();
+          sites = r.sites;
+          shareSite = r.lastExport && r.sites.some((s) => s.id === r.lastExport && s.canShare) ? r.lastExport : (r.sites.find((s) => s.canShare)?.id ?? "");
+        } catch {
+          sites = [];
+        }
+      });
+    }
+  });
+  async function fromLink() {
+    linkErr = "";
+    linkBusy = true;
+    try {
+      const r = await api.importFromUrl(linkUrl.trim());
+      code = r.code;
+      linkUrl = "";
+      await onCodeInput();
+    } catch (e: any) {
+      linkErr = String(e?.message ?? e);
+    }
+    linkBusy = false;
+  }
+  async function share() {
+    linkErr = "";
+    shared = "";
+    linkBusy = true;
+    try {
+      const r = await api.shareBuild(shareSite);
+      shared = r.url;
+      await copyText(shared);
+    } catch (e: any) {
+      linkErr = String(e?.message ?? e);
+    }
+    linkBusy = false;
+  }
+
   async function doExport() {
     copied = false;
     const r = await app.run(() => api.exportCode());
@@ -321,6 +368,15 @@
   <section class="card">
     <h2>{t("import.codeTitle")}</h2>
     <p class="dim">{t("import.codeHint")}</p>
+    <div class="actions">
+      <input class="input sm grow" placeholder={t("import.linkPlaceholder")} bind:value={linkUrl} onkeydown={(e) => e.key === "Enter" && linkUrl.trim() && fromLink()} />
+      <button class="btn sm" disabled={!linkUrl.trim() || linkBusy || app.busy > 0} onclick={fromLink}>{t("import.fromLink")}</button>
+      {#if linkBusy}<span class="dim">{t("import.working")}</span>{/if}
+    </div>
+    {#if sites.length}
+      <p class="dim small">{t("import.siteList", { sites: sites.filter((s) => s.canImport).map((s) => s.label).join("、") })}</p>
+    {/if}
+    {#if linkErr}<div class="bad">{linkErr}</div>{/if}
     <textarea class="input area" rows="4" bind:value={code} oninput={onCodeInput} placeholder={t("import.codePlaceholder")}></textarea>
     {#if previewErr}
       <div class="bad">{previewErr}</div>
@@ -350,7 +406,20 @@
         <button class="btn" onclick={copyExport}>{copied ? t("import.copied") : t("import.copy")}</button>
         <span class="dim num">{exported.length}</span>
       {/if}
+      {#if sites.some((s) => s.canShare)}
+        <span class="vsep"></span>
+        <select class="select sm" bind:value={shareSite}>
+          {#each sites.filter((s) => s.canShare) as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+        </select>
+        <button class="btn" disabled={!shareSite || linkBusy || app.busy > 0 || !app.loaded} onclick={share}>{t("import.share")}</button>
+      {/if}
     </div>
+    {#if shared}
+      <div class="actions">
+        <input class="input selectable grow" readonly value={shared} onfocus={(e) => e.currentTarget.select()} />
+        <span class="dim small">{t("import.shareCopied")}</span>
+      </div>
+    {/if}
     {#if exported}
       <textarea class="input area selectable" rows="4" readonly value={exported}></textarea>
     {/if}

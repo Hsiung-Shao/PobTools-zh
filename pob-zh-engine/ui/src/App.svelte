@@ -1,7 +1,7 @@
 <script lang="ts">
   // 版面殼:頂列 / 側欄 + 主視圖 / 狀態列。Phase 1 的主視圖:建置清單與天賦樹。
   import { onMount } from "svelte";
-  import { bridge } from "$lib/bridge";
+  import { api, bridge } from "$lib/bridge";
   import { loadLocale, t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { prefs } from "$lib/prefs.svelte";
@@ -30,6 +30,15 @@
       e.preventDefault();
       void app.save();
       return;
+    }
+    // each tab has POB's own undo stack (UndoHandler); the tree view handles its own
+    if ((k === "z" || k === "y") && !e.shiftKey && app.loaded && app.view !== "tree") {
+      const tab = ({ items: "items", skills: "skills", config: "config", notes: "notes", party: "party", calcs: "calcs" } as Record<string, string>)[app.view];
+      if (tab) {
+        e.preventDefault();
+        void app.run(() => api.tabUndo(tab, k === "y")).then((r) => r && app.refresh());
+        return;
+      }
     }
     // Build.lua: Ctrl+I opens the import tab, Ctrl+W leaves the build for the list
     if (k === "i" && !e.shiftKey && app.loaded) {

@@ -3090,6 +3090,124 @@ function M.import_tree_url(p)
 	return M.list_specs()
 end
 
+-- ---- Per-tab undo / redo (each tab is an UndoHandler; Ctrl+Z / Ctrl+Y) ------
+
+local undo_tabs = {
+	items = "itemsTab", skills = "skillsTab", config = "configTab", notes = "notesTab",
+	party = "partyTab", calcs = "calcsTab", tree = "treeTab",
+}
+
+-- tab_undo{tab, redo?}: what Ctrl+Z / Ctrl+Y do on that tab.
+function M.tab_undo(p)
+	local b = ensure_build()
+	local key = p and p.tab
+	local field = undo_tabs[key or ""]
+	local tab = field and b[field]
+	if not tab or type(tab.Undo) ~= "function" then error("no undo for " .. tostring(key), 0) end
+	if p.redo then tab:Redo() else tab:Undo() end
+	b.buildFlag = true
+	local r = commit(b)
+	r.canUndo = (tab.undo and tab.undo[2]) ~= nil
+	r.canRedo = (tab.redo and tab.redo[1]) ~= nil
+	return r
+end
+
+-- undo_state{}: which tabs currently have something to undo or redo.
+function M.undo_state()
+	local b = ensure_build()
+	local out = {}
+	for key, field in pairs(undo_tabs) do
+		local tab = b[field]
+		if tab and type(tab.Undo) == "function" then
+			out[key] = { canUndo = (tab.undo and tab.undo[2]) ~= nil, canRedo = (tab.redo and tab.redo[1]) ~= nil }
+		end
+	end
+	return { tabs = as_object(out) }
+end
+
+probe("UndoHandler on the tabs (Undo/Redo)", function()
+	local b = build()
+	if not b or not b.itemsTab then return true end
+	return type(b.itemsTab.Undo) == "function" and type(b.itemsTab.Redo) == "function"
+		and type(b.skillsTab.Undo) == "function" and type(b.configTab.Undo) == "function"
+end)
+
+-- ---- Build sites: import from a link, share a build (Modules/BuildSiteTools)
+
+-- POB does these in a background script and finishes from its frame loop; the
+-- bridge pumps frames until the callback has fired (or it gives up).
+local function pump_until(done, seconds)
+	local deadline = os.time() + (seconds or 30)
+	while not done() do
+		frame()
+		if os.time() > deadline then return false end
+	end
+	return true
+end
+
+local function build_sites()
+	if type(buildSites) ~= "table" or type(buildSites.websiteList) ~= "table" then error("this POB has no build sites", 0) end
+	return buildSites
+end
+
+-- list_build_sites{}: the sites POB knows, and which of them it can upload to.
+function M.list_build_sites()
+	local bs = build_sites()
+	local sites = {}
+	for i, s in ipairs(bs.websiteList) do
+		sites[i] = { id = s.id, label = s.label, canImport = s.downloadURL ~= nil, canShare = (s.postUrl and s.postFields and s.codeOut) and true or false }
+	end
+	return { sites = sites, lastExport = main().lastExportWebsite }
+end
+
+-- import_from_url{url}: the Import tab's "enter URL or code" for a build-site
+-- link -- downloads the raw build code (what import_code then takes).
+function M.import_from_url(p)
+	local bs = build_sites()
+	local url = p and type(p.url) == "string" and p.url:match("^%s*(.-)%s*$") or ""
+	if url == "" then error("params.url required", 0) end
+	local site
+	for _, s in ipairs(bs.websiteList) do
+		if s.matchURL and url:match(s.matchURL) then site = s end
+	end
+	if not site then error("not a build-site link POB knows", 0) end
+	local result, failed
+	bs.DownloadBuild(url, site, function(ok, body, from)
+		if ok then result = body else failed = tostring(body) end
+	end)
+	if not pump_until(function() return result ~= nil or failed ~= nil end, 60) then error("the download did not finish", 0) end
+	if failed then error(failed, 0) end
+	return { site = site.id, label = site.label, code = result }
+end
+
+-- share_build{site}: the Import tab's Share -- uploads this build's code and
+-- returns the link the site hands back.
+function M.share_build(p)
+	local b = ensure_build()
+	local bs = build_sites()
+	local site
+	for _, s in ipairs(bs.websiteList) do
+		if s.id == (p and p.site) and s.postUrl and s.postFields and s.codeOut then site = s end
+	end
+	if not site then error("that site cannot take uploads: " .. tostring(p and p.site), 0) end
+	local code = common.base64.encode(Deflate(b:SaveDB("code"))):gsub("+", "-"):gsub("/", "_")
+	local id = bs.UploadBuild(code, site)
+	if not id then error("the upload could not be started", 0) end
+	local link, failed
+	launch:RegisterSubScript(id, function(pasteLink, errMsg)
+		if errMsg then failed = tostring(errMsg) else link = tostring(pasteLink) end
+	end)
+	if not pump_until(function() return link ~= nil or failed ~= nil end, 60) then error("the upload did not finish", 0) end
+	if failed then error(failed, 0) end
+	main().lastExportWebsite = site.id
+	return { site = site.id, url = site.codeOut .. link }
+end
+
+probe("Modules.BuildSiteTools (websiteList/DownloadBuild/UploadBuild) + launch.RegisterSubScript", function()
+	return type(buildSites) == "table" and type(buildSites.websiteList) == "table" and type(buildSites.DownloadBuild) == "function"
+		and type(buildSites.UploadBuild) == "function" and type(launch.RegisterSubScript) == "function"
+end)
+
 -- ---- Loadouts (Build.lua's loadout drop-down) -------------------------------
 
 -- The entries POB puts in that list: headers and its own commands are marked

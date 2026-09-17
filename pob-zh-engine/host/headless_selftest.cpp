@@ -1742,6 +1742,32 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
 		}
 
+		// per-tab undo/redo, and the build sites POB knows
+		{
+			json us, ag2, sk5, un, re, sk6, sk7, dgU, badTab;
+			bool okUs = okLoad && child.Call("undo_state", json::object(), us, 30000);
+			bool okAg2 = okUs && child.Call("add_group", json{{"label", "undo test"}, {"gems", json::array({json{{"nameSpec", "Fireball"}}})}}, ag2, 60000) &&
+			             child.Call("list_skills", json::object(), sk5, 60000);
+			const size_t withGroup = okAg2 ? sk5["groups"].size() : 0;
+			bool okUn = okAg2 && child.Call("tab_undo", json{{"tab", "skills"}}, un, 60000) && child.Call("list_skills", json::object(), sk6, 60000);
+			bool okRe = okUn && child.Call("tab_undo", json{{"tab", "skills"}, {"redo", true}}, re, 60000) && child.Call("list_skills", json::object(), sk7, 60000);
+			if (okRe && sk7["groups"].size() == withGroup) child.Call("delete_group", json{{"index", (int)withGroup}}, dgU, 60000);
+			bool okBadTab = child.Call("tab_undo", json{{"tab", "nowhere"}}, badTab, 30000);
+			check("tab_undo/undo_state: each tab's own UndoHandler (Ctrl+Z / Ctrl+Y); an unknown tab is refused",
+			      okUs && us["tabs"].contains("items") && us["tabs"].contains("skills") && okUn && sk6["groups"].size() + 1 == withGroup &&
+			          okRe && sk7["groups"].size() == withGroup && !okBadTab && child.Alive(),
+			      "with=" + std::to_string(withGroup) + " undo=" + std::to_string(okUn ? sk6["groups"].size() : 0) +
+			          " redo=" + std::to_string(okRe ? sk7["groups"].size() : 0));
+			json bsites, badUrl;
+			bool okBs = child.Call("list_build_sites", json::object(), bsites, 30000);
+			int shareable = 0;
+			if (okBs) for (auto& s : bsites["sites"]) if (s.value("canShare", false)) shareable++;
+			bool okBadUrl = child.Call("import_from_url", json{{"url", "https://example.com/not-a-build"}}, badUrl, 30000);
+			check("list_build_sites lists POB's build sites (and which take uploads); a link from elsewhere is refused",
+			      okBs && bsites["sites"].size() >= 5 && shareable >= 2 && !okBadUrl && child.Alive(),
+			      okBs ? bsites["sites"].dump().substr(0, 200) : bsites.dump().substr(0, 200));
+		}
+
 		// the loadout drop-down (Build.lua SyncLoadouts)
 		json lo, lo2;
 		bool okLo = okLoad && child.Call("list_loadouts", json::object(), lo, 60000);
