@@ -143,9 +143,10 @@ struct LauncherConfig {
 	// launcher's fontSize, which never applies to POB or this window.
 	int            modernZoom = kModernZoomDefault;
 	int            modernFontSize = kModernFontSizeDefault;
-	// 0 = classic POB window, 1 = the new interface. Read and written so an
-	// ini can carry the preference; the launcher's "start" button does not act
-	// on it yet (the new interface is a preview reached from its own button).
+	// 0 = classic POB window, 1 = the new interface: what the launcher's
+	// "Launch" button opens for PoE1 (settings page, "Default interface").
+	// PoE2, a machine without WebView2 and a POB the bridge gate refused all
+	// open the classic window regardless (ModernUiUsableFor).
 	int            uiMode = 0;
 	std::wstring   fontFile;                // CJK font under Fonts\; empty = default
 	// Also draw ASCII in the POB window from the selected font (engine env

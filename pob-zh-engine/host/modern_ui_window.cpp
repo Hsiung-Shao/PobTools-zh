@@ -489,6 +489,13 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 	return true;
 }
 
+bool ModernUiUsableFor(const std::wstring& exeDir, const std::wstring& pobDir, const std::string& pobVersion)
+{
+	if (pobDir.empty() || !ModernUiAvailable(exeDir, nullptr)) return false;
+	const BridgeGate::Verdict v = BridgeGate::Read(exeDir);
+	return !BridgeGate::BlocksModernUi(v, pobDir, pobVersion, BridgeGate::BridgeFingerprint(exeDir));
+}
+
 int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
                  const std::wstring& locale, const LauncherConfig& cfg,
                  const std::wstring& openBuild)

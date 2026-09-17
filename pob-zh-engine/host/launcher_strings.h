@@ -51,6 +51,13 @@
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
 	X(modernUiTip,       u8"以新版介面開啟 PoE1 建置(側欄與天賦樹,測試中)", u8"Open a PoE1 build in the new interface (sidebar + tree, preview)") \
+	X(uiModeLabel,       u8"預設介面",                     u8"Default interface")                     \
+	X(uiModeClassic,     u8"經典",                         u8"Classic")                               \
+	X(uiModeModern,      u8"新介面(Beta)",                 u8"New interface (Beta)")                  \
+	X(uiModeHint,        u8"按「啟動」時開哪一種視窗。新介面目前只支援 PoE1,PoE2 一律開經典;這版 POB 與新介面不相容時也會開經典。工具列的「新介面(Beta)」按鈕不受這個設定影響。", \
+	                     u8"Which window the Launch button opens. The new interface supports PoE1 only, so PoE2 always opens the classic window, as does a POB version the new interface is not compatible with. The \"Modern UI (Beta)\" tool button is not affected.") \
+	X(uiModeUnavailable, u8"這台電腦無法使用新介面(需要 WebView2 Runtime,且不支援 Wine / CrossOver),「啟動」一律開經典視窗。", \
+	                     u8"The new interface cannot run on this computer (it needs the WebView2 Runtime and does not run under Wine / CrossOver); Launch always opens the classic window.") \
 	/* Phase 3: the new interface's compatibility gate failed against this POB
 	   version; the classic window opened instead and the button waits for the
 	   next POB update. %s = POB version, %d = failed probe count. */                              \

@@ -871,6 +871,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		startup_trace_mark("config + installs detected");
 
 		std::wstring launchLua;
+		// "Default interface: new" (close / return-after-exit modes; KeepOpen is
+		// handled inside the launcher): the WebView2 window in this process
+		// instead of the classic POB window, for PoE1 when it can run here.
+		bool openModern = false;
 		if (!pendingLua.empty()) {
 			launchLua = launch_lua_from(pendingLua);
 			pendingLua.clear();
@@ -911,6 +915,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			// POB_PATH still works as an override source when the sibling folder is absent.
 			if (launchLua.empty()) launchLua = resolve_launch_lua_legacy(dir);
 			if (launchLua.empty()) continue; // UI should have prevented this; just re-show
+			openModern = cfg.uiMode == 1 && cfg.game != L"poe2" && ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version);
 		}
 
 		{
@@ -930,7 +935,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// thread right after start, and the updater's check (started above, still
 		// on the network) would otherwise write a new pack straight over them.
 		appUpdater.SetHold(true);
-		PobLaunch::SpawnPobAndWait(launchLua);
+		if (openModern) {
+			// Blocks until the window closes, like SpawnPobAndWait; a refused gate
+			// makes the window open the classic POB itself and exit (code 3).
+			ShowModernUi(dir, L"poe1", cfg.locale, cfg, L"");
+		} else {
+			PobLaunch::SpawnPobAndWait(launchLua);
+		}
 		appUpdater.SetHold(false);
 
 		// POB self-updated: its updater is about to start a fresh pob-zh.exe

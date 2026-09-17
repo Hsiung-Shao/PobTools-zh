@@ -22,6 +22,11 @@ struct LauncherConfig;
 // `why` (optional) receives the first missing piece, for a message or a log.
 bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why);
 
+// ModernUiAvailable plus the remembered bridge gate for this POB (same
+// install, same version, same bridge.lua): what the launcher's "Launch"
+// button asks before it opens the new interface instead of the classic one.
+bool ModernUiUsableFor(const std::wstring& exeDir, const std::wstring& pobDir, const std::string& pobVersion);
+
 // Blocks until the window closes. Returns the process exit code. `openBuild`
 // (optional) is a build .xml the page loads as soon as the engine is up --
 // what a relaunch after a POB self-update, or a shell association, would pass.

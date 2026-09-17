@@ -1,5 +1,6 @@
 #include "pob_launch.h"
 #include "bridge_gate.h"
+#include "modern_ui_window.h"
 #include "error_log.h"
 #include "../translate/startup_trace.h"
 
@@ -584,6 +585,11 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 			RemoveDirectoryW((fdir + L"Data").c_str());
 			RemoveDirectoryW(fdir.c_str());
 		}
+		// P26: the Launch button's "open the new interface?" answer. A folder with
+		// no built page never qualifies, nor does an unknown POB; the gate part is
+		// P20-P24 above.
+		check("P26 ModernUiUsableFor: no ui\\index.html or no POB folder = the classic window",
+		      !ModernUiUsableFor(dir, L"D:\\POB\\PathOfBuildingCommunity", "2.67.2") && !ModernUiUsableFor(exeDir, L"", "2.67.2"));
 		DeleteFileW(BridgeGate::GatePath(dir).c_str());
 		RemoveDirectoryW(dir.c_str());
 	}

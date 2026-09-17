@@ -2008,7 +2008,19 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (GameRow("##launch1", S.poe1, installs.poe1Version, poe1Ok ? S.detected : S.missing,
 				poe1Ok, fonts, scale, inner, poe1Ok ? poe1Dir.c_str() : S.notFoundPoe1, S.launch)) {
 			poe2Sel = false;
-			if (keepOpen) launchPob(false); else { launch = true; anythingLaunched = true; }
+			// "Default interface: new" opens the WebView2 window instead, when it
+			// can run here and the remembered gate has not refused this POB. In
+			// the close/return modes host_main makes the same choice after
+			// ShowLauncher returns (it also re-checks the gate).
+			const bool modern = cfg.uiMode == 1 && modernUiOk && !modernGateBlocked();
+			if (keepOpen) {
+				if (modern) {
+					cfg.game = L"poe1";
+					spawnTool(L"--modern-ui", PobLaunch::InstanceKind::ModernUi, S.modernUiTool);
+				} else {
+					launchPob(false);
+				}
+			} else { launch = true; anythingLaunched = true; }
 		}
 		ImGui::Dummy(ImVec2(0, 2.0f * scale));
 		if (GameRow("##launch2", S.poe2, installs.poe2Version, poe2Ok ? S.detected : S.missing,
@@ -2388,6 +2400,36 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
 				ImGui::TextColored(ImVec4(0.95f, 0.66f, 0.25f, 1.0f), "%s", S.fontAtlasTrimmed);
 				ImGui::PopTextWrapPos();
+			}
+
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			ImGui::AlignTextToFramePadding();
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+			ImGui::TextUnformatted(S.uiModeLabel);
+			ImGui::PopStyleColor();
+			{
+				// What "Launch" opens for PoE1. Offered only where the new
+				// interface can run at all; elsewhere the row says why and the
+				// saved choice is left alone (an ini copied from a Windows machine
+				// keeps it).
+				if (!modernUiOk) ImGui::BeginDisabled();
+				int um = cfg.uiMode == 1 ? 1 : 0;
+				ImGui::SameLine(160.0f * scale);
+				ImGui::RadioButton(S.uiModeClassic, &um, 0);
+				ImGui::SameLine(0, 18.0f * scale);
+				ImGui::RadioButton(S.uiModeModern, &um, 1);
+				if (um != cfg.uiMode && modernUiOk) {
+					cfg.uiMode = um;
+					saveNow();
+				}
+				if (!modernUiOk) ImGui::EndDisabled();
+				ImGui::PushFont(fonts.small);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::TextWrapped("%s", modernUiOk ? S.uiModeHint : S.uiModeUnavailable);
+				ImGui::PopTextWrapPos();
+				ImGui::PopStyleColor();
+				ImGui::PopFont();
 			}
 
 			ImGui::Dummy(ImVec2(0, 10.0f * scale));
