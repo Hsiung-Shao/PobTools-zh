@@ -43,6 +43,13 @@ local function tr(s)
 	return zh or s
 end
 
+-- Which game this POB is for. The host names it (POB_GAME, the same variable
+-- that picks the translation dictionaries); PoE2's POB also numbers its tree
+-- versions from 0_1, which settles it when the variable is absent.
+local GAME = os.getenv("POB_GAME") == "poe2" and "poe2"
+	or (type(latestTreeVersion) == "string" and latestTreeVersion:match("^0_") and "poe2")
+	or "poe1"
+
 local function log_error(msg)
 	if PobToolsLogError then PobToolsLogError("bridge", msg) end
 end
@@ -52,7 +59,13 @@ end
 -- ---------------------------------------------------------------------------
 
 local probes = {}
-local function probe(name, fn) probes[#probes + 1] = { name = name, fn = fn } end
+-- probe(name, fn[, cap]): without `cap` a failure fails the gate (the new UI
+-- falls back to the classic window); with one, the failure only switches that
+-- capability off (capabilities()) and the page hides the feature. PoE2's
+-- Path of Building is a fork that never gained some PoE1 surfaces (item
+-- influences, enchant/crucible dialogs, the account-name import); those are
+-- capabilities, not reasons to refuse the whole interface.
+local function probe(name, fn, cap) probes[#probes + 1] = { name = name, fn = fn, cap = cap } end
 
 local function nparams(fn)
 	local info = debug.getinfo(fn, "u")
@@ -108,9 +121,9 @@ probe("new() builds objects (new(name, ...) or new(name):Name(...))", function()
 end)
 probe("classes.CalcsTab.BuildOutput", function() local c = class_of("CalcsTab"); return type(c) == "table" and type(c.BuildOutput) == "function" end)
 probe("classes.CalcBreakdownControl.SetBreakdownData", function() local c = class_of("CalcBreakdownControl"); return type(c) == "table" and type(c.SetBreakdownData) == "function" end)
-probe("Modules.BuildListHelpers.ScanFolder/FilterList/SortList", function()
+probe("Modules.BuildListHelpers.ScanFolder/SortList (+FilterList on PoE1)", function()
 	local ok, h = pcall(require, "Modules.BuildListHelpers")
-	return ok and type(h) == "table" and type(h.ScanFolder) == "function" and type(h.FilterList) == "function" and type(h.SortList) == "function"
+	return ok and type(h) == "table" and type(h.ScanFolder) == "function" and type(h.SortList) == "function"
 end)
 probe("classes.PassiveSpec.CountAllocNodes", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.CountAllocNodes) == "function" end)
 probe("classes.PassiveSpec.AllocNode", function() local c = class_of("PassiveSpec"); return type(c) == "table" and type(c.AllocNode) == "function" and type(c.DeallocNode) == "function" end)
@@ -120,17 +133,23 @@ probe("UpdateCheck.lua present", function() local f = io.open("UpdateCheck.lua",
 -- feature off on the page instead of refusing the whole interface: the
 -- sidebar breakdown (Build.lua GetSidebarBreakdown) is on the beta branch
 -- only, so on master the rows simply have no breakdown to open.
+local capMissing = {}
 local function capabilities()
 	local B = launch and launch.main and launch.main.modes and launch.main.modes.BUILD
-	return {
+	local caps = {
 		sidebarBreakdown = type(B) == "table" and type(B.GetSidebarBreakdown) == "function",
 	}
+	for _, p in ipairs(probes) do
+		if p.cap then caps[p.cap] = not capMissing[p.cap] end
+	end
+	return caps
 end
 
 local gate = { ok = false, failed = {}, checked = 0 }
 
 local function run_probes()
-	gate = { ok = true, failed = {}, checked = 0 }
+	gate = { ok = true, failed = {}, checked = 0, optional = {} }
+	capMissing = {}
 	if type(launch) == "table" and launch.promptMsg then
 		-- POB's own boot error (the popup nobody can see headless).
 		gate.ok = false
@@ -140,8 +159,14 @@ local function run_probes()
 		gate.checked = gate.checked + 1
 		local ok, res = pcall(p.fn)
 		if not ok or not res then
-			gate.ok = false
-			gate.failed[#gate.failed + 1] = p.name .. (ok and "" or (": " .. tostring(res)))
+			local why = p.name .. (ok and "" or (": " .. tostring(res)))
+			if p.cap then
+				capMissing[p.cap] = true
+				gate.optional[#gate.optional + 1] = why
+			else
+				gate.ok = false
+				gate.failed[#gate.failed + 1] = why
+			end
 		end
 	end
 	return gate
@@ -230,6 +255,7 @@ function M.version()
 		pobPlatform = launch.versionPlatform,
 		bridge = BRIDGE_VERSION,
 		caps = capabilities(),
+		game = GAME,
 		headless = PobToolsHeadless and PobToolsHeadless() or false,
 		gate = gate,
 		-- Where POB keeps builds for this install (userPath .. "Builds/"); a
@@ -405,8 +431,14 @@ end
 function M.list_builds(p)
 	local subPath = p and p.subPath or ""
 	local helpers = require("Modules.BuildListHelpers")
-	local index = helpers.ScanFolder(subPath)
-	local list = helpers.FilterList(index, subPath, "")
+	-- PoE1: ScanFolder indexes, FilterList picks the folder's entries. PoE2's
+	-- helpers predate that split: ScanFolder(subPath, filter) returns the list.
+	local list
+	if helpers.FilterList then
+		list = helpers.FilterList(helpers.ScanFolder(subPath), subPath, "")
+	else
+		list = helpers.ScanFolder(subPath, "")
+	end
 	helpers.SortList(list, main().buildSortMode or "NAME")
 	local entries = {}
 	for i, e in ipairs(list) do
@@ -556,6 +588,12 @@ local function node_frames(tree, node)
 	local ov = node.overlay
 	if not ov then return nil end
 	local frames = {}
+	if GAME == "poe2" then
+		-- PoE2 (PassiveTree:ProcessNode): node.overlay already is the node's own
+		-- set (ascendancy frames included), keyed by state.
+		for _, state in ipairs(FRAME_STATES) do frames[state] = ov[state] end
+		return as_object(frames)
+	end
 	local prefix = ""
 	if node.ascendancyName then
 		prefix = node.bloodlineOverlayPrefix or (tree.bloodlineSpritePrefixes and tree.bloodlineSpritePrefixes[node.ascendancyName]) or ""
@@ -592,6 +630,11 @@ function M.tree_data(p)
 			id = gid, x = g.x, y = g.y, oo = oo,
 			isProxy = g.isProxy and true or false,
 			asc = g.ascendancyName, ascStart = g.isAscendancyStart and true or false,
+			-- PoE2's renderGroup: only groups that name a background get one
+			bg = type(g.background) == "table" and {
+				image = g.background.image, half = g.background.isHalfImage and true or false,
+				offsetX = g.background.offsetX, offsetY = g.background.offsetY,
+			} or nil,
 		}
 	end
 
@@ -631,6 +674,16 @@ function M.tree_data(p)
 				linked = linked,
 				masteryEffects = effects,
 				flavour = node.flavourText,
+				-- PoE2 draws every node at PassiveTree:GetNodeTargetSize's half
+				-- extents (DrawAsset doubles them) instead of sheet size x 1.33.
+				draw = node.targetSize and {
+					w = node.targetSize.width, h = node.targetSize.height,
+					ow = node.targetSize.overlay and node.targetSize.overlay.width,
+					oh = node.targetSize.overlay and node.targetSize.overlay.height,
+					ew = node.targetSize.effect and node.targetSize.effect.width,
+					eh = node.targetSize.effect and node.targetSize.effect.height,
+				} or nil,
+				attribute = node.isAttribute and true or nil,
 			}
 		end
 	end
@@ -644,7 +697,15 @@ function M.tree_data(p)
 		if not seen[key] then
 			seen[key] = true
 			local orbit = c.type and tonumber(c.type:match("^Orbit(%d+)$"))
-			connectors[#connectors + 1] = { a = a, b = b, orbit = orbit, asc = c.ascendancyName }
+			local e = { a = a, b = b, orbit = orbit, asc = c.ascendancyName }
+			-- PassiveTree:BuildArc puts the arc's centre in the quad's first
+			-- vertex. PoE1 arcs always centre on the group; PoE2 connections can
+			-- curve around a point of their own, so hand over POB's.
+			local v = orbit and c.vert and c.vert.Normal
+			if v and type(v[1]) == "number" and type(v[2]) == "number" then
+				e.cx, e.cy = v[1], v[2]
+			end
+			connectors[#connectors + 1] = e
 		end
 	end
 
@@ -655,10 +716,29 @@ function M.tree_data(p)
 			for i, a in ipairs(class.ascendancies or {}) do
 				ascs[#ascs + 1] = { id = i, key = a.id, name = a.name, nameZh = tr(a.name) }
 			end
+			local bg
+			if GAME == "poe2" and type(class.background) == "table" then
+				-- PoE2 PassiveTreeView:Draw: the class plate, BGTreeActive turned
+				-- towards the start node, BGTree over it; each ascendancy its own
+				-- plate (full colour for the current one, 50% grey otherwise).
+				local cb = class.background
+				bg = { image = cb.image, x = cb.x, y = cb.y, w = cb.width, h = cb.height,
+				       active = cb.active and { w = cb.active.width, h = cb.active.height } or nil,
+				       center = cb.bg and { w = cb.bg.width, h = cb.bg.height } or nil, ascendancies = {} }
+				for ascId, a in pairs(class.classes or {}) do
+					if type(ascId) == "number" and ascId > 0 and type(a.background) == "table" then
+						local ab = a.background
+						bg.ascendancies[#bg.ascendancies + 1] = { id = ascId, key = a.id, image = ab.image,
+							x = ab.x, y = ab.y, w = ab.width, h = ab.height, replace = a.replace, replaceBy = a.replaceBy }
+						if ab.image and ascs[ascId] then ascs[ascId].bg = ab.image end
+					end
+				end
+			end
 			classes[#classes + 1] = {
 				id = cid, name = class.name, nameZh = tr(class.name),
 				startNodeId = class.startNodeId, ascendancies = ascs,
-				art = CLASS_ART[cid],
+				art = GAME ~= "poe2" and CLASS_ART[cid] or nil,
+				background = bg,
 			}
 		end
 	end
@@ -670,6 +750,8 @@ function M.tree_data(p)
 	table.sort(alternate, function(x, y) return tostring(x.id) < tostring(y.id) end)
 
 	local out = {
+		game = GAME,
+		artScale = tree.scaleImage,
 		treeVersion = v,
 		size = tree.size,
 		bounds = { minX = tree.min_x, minY = tree.min_y, maxX = tree.max_x, maxY = tree.max_y },
@@ -728,6 +810,56 @@ function M.tree_assets(p)
 			end
 		end
 	end
+	-- PoE2: art lives in DDS texture arrays (tree.ddsCoords: file -> sprite name
+	-- -> layer). The engine decodes each array once into PNG pages under
+	-- PobTools\cache (PobToolsTextureAtlas); a sprite is its layer's cell there.
+	-- "cache:" tells the page to load from the cache host, not the install.
+	local ddsFailed = {}
+	if type(tree.ddsCoords) == "table" then
+		for fileName, names in pairs(tree.ddsCoords) do
+			local stem = ("%s_%s_%s"):format(GAME, v, fileName:gsub("%.dds%.zst$", ""):gsub("%.dds$", "")):gsub("[^%w_%.%-]", "_")
+			local layout, why
+			if PobToolsTextureAtlas then
+				layout, why = PobToolsTextureAtlas("TreeData/" .. v .. "/" .. fileName, stem)
+			else
+				why = "engine without PobToolsTextureAtlas"
+			end
+			if not layout then
+				ddsFailed[#ddsFailed + 1] = fileName .. ": " .. tostring(why)
+			else
+				for _, page in ipairs(layout.pages) do
+					sheets["cache:" .. page.file] = { w = page.w, h = page.h }
+				end
+				local bucket = fileName:match("^skills%-disabled") and disabled or assets
+				for name, layer in pairs(names) do
+					local i = (tonumber(layer) or 1) - 1
+					local page = layout.pages[math.floor(i / layout.perPage) + 1]
+					if page then
+						local j = i % layout.perPage
+						local rect = { file = "cache:" .. page.file,
+							x = (j % layout.perRow) * layout.layerW, y = math.floor(j / layout.perRow) * layout.layerH,
+							w = layout.layerW, h = layout.layerH, ow = layout.srcW or layout.layerW, oh = layout.srcH or layout.layerH }
+						-- the same icon name in more than one sheet size: keep the largest
+						local prev = bucket[name]
+						if not prev or (prev.ow or 0) < rect.ow then bucket[name] = rect end
+					end
+				end
+			end
+		end
+		-- PoE2's standalone PNGs (connector and orbit art) are named by file.
+		for name, data in pairs(tree.assets or {}) do
+			if not assets[name] and type(data) == "table" and type(data[1]) == "string" then
+				local file = "TreeData/" .. v .. "/" .. data[1]
+				if file_exists(file) then
+					local w, h = data.width or 0, data.height or 0
+					assets[name] = { file = file, x = 0, y = 0, w = w, h = h, ow = w, oh = h }
+					sheets[file] = { w = w, h = h }
+				end
+			end
+		end
+	end
+	for _, f in ipairs(ddsFailed) do missing[#missing + 1] = f end
+
 	-- Images PassiveTreeView loads by file path rather than through the tree's
 	-- asset table (its constructor, :28-70): the jewel radius rings. Sizes are
 	-- not needed -- the viewer draws them at the radius, not at sheet size.
@@ -783,6 +915,14 @@ end
 
 -- What the build did to the tree: allocations, per-node overrides (mastery
 -- choice, tattoos, timeless jewels), cluster subgraphs, points.
+local function node_modes(spec)
+	local out = {}
+	for id, node in pairs(spec.nodes) do
+		if node.alloc and (node.allocMode or 0) > 0 then out[tostring(id)] = node.allocMode end
+	end
+	return out
+end
+
 function M.get_tree_state()
 	local b = ensure_build()
 	local spec = b.spec
@@ -802,7 +942,7 @@ function M.get_tree_state()
 		elseif node.conqueredBy then
 			why = "conquered"
 		elseif spec.hashOverrides and spec.hashOverrides[id] then
-			why = "tattoo"
+			why = (GAME == "poe2" and node.isAttribute) and "attribute" or "tattoo"
 		elseif tnode and node.dn ~= tnode.dn then
 			why = "renamed"
 		end
@@ -893,6 +1033,11 @@ function M.get_tree_state()
 					if viewer and viewer.GetJewelSocketOverlay then
 						local ok2, ov = pcall(viewer.GetJewelSocketOverlay, viewer, jewel, node.expansionJewel)
 						if ok2 and type(ov) == "string" then e.overlay = ov end
+					elseif GAME == "poe2" then
+						-- PoE2 PassiveTreeView:Draw names the art inline: a unique's own
+						-- title when the tree has art for it, else the base type.
+						local hasArt = jewel.rarity == "UNIQUE" and jewel.title and (tree.ddsMap and tree.ddsMap[jewel.title] or tree.assets[jewel.title] or tree.spriteMap and tree.spriteMap[jewel.title])
+						e.overlay = hasArt and jewel.title or jewel.baseName
 					end
 					if jewel.jewelRadiusIndex and not abyss_conquered(jewel.jewelData) then
 						e.radiusIndex = jewel.jewelRadiusIndex
@@ -916,6 +1061,10 @@ function M.get_tree_state()
 		ascendClassId = spec.curAscendClassId, ascendClassName = spec.curAscendClassName,
 		allocatedNodes = alloc,
 		allocCount = #alloc,
+		-- PoE2 weapon-set passives: the mode new points go to (0 = main tree,
+		-- 1/2 = weapon set) and every allocated node that belongs to a set.
+		allocMode = GAME == "poe2" and (spec.allocMode or 0) or nil,
+		nodeModes = GAME == "poe2" and as_object(node_modes(spec)) or nil,
 		overrides = as_object(overrides),
 		dynamicNodes = dynamicNodes,
 		dynamicGroups = dynamicGroups,
@@ -1049,6 +1198,27 @@ function M.tree_click(p)
 	local node = id and spec.nodes[id]
 	if not node then error("no node " .. tostring(id), 0) end
 
+	if GAME == "poe2" then
+		-- PassiveTreeView:Draw's click rules for keystones/sockets in
+		-- weapon-set mode (its local shouldBlockGlobalNode* helpers): they stay
+		-- on the main tree.
+		local global = node.type == "Keystone" or node.type == "Socket" or node.containJewelSocket
+		local viewer = b.treeTab and b.treeTab.viewer
+		if global and node.alloc and (node.allocMode or 0) == 0 and (spec.allocMode or 0) > 0 then
+			return { blocked = "weapon_set_global", id = id }
+		end
+		if global and not node.alloc and node.path and ((spec.allocMode or 0) > 0
+			or (viewer and viewer.IsConnectedToWeaponSetNodes and viewer:IsConnectedToWeaponSetNodes(node))) then
+			return { blocked = "weapon_set_global", id = id }
+		end
+		if node.alloc and node.isAttribute then
+			-- a plain click resets the chosen attribute and deallocates
+			spec.hashOverrides[id] = nil
+			spec:DeallocNode(node)
+			return committed(b, spec)
+		end
+	end
+
 	if node.alloc then
 		spec:DeallocNode(node)
 		return committed(b, spec)
@@ -1075,7 +1245,11 @@ function M.tree_click(p)
 			end
 			if differentAsc then
 				local targetAscId
-				for ascId, asc in pairs(spec.curClass.classes) do
+				-- (PoE2: an ascendancy that replaces another counts as that one)
+				if spec.curAscendClass and spec.curAscendClass.replace and node.ascendancyName == spec.curAscendClass.replace then
+					targetAscId = spec.curAscendClassId
+				end
+				for ascId, asc in pairs(targetAscId and {} or spec.curClass.classes) do
 					if asc.id == node.ascendancyName then targetAscId = ascId break end
 				end
 				if targetAscId then
@@ -1125,9 +1299,60 @@ function M.tree_click(p)
 			return { needsMastery = true, id = id, name = node.dn, nameZh = tr(node.dn),
 			         effects = mastery_choices(b, node), selected = spec.masterySelections and spec.masterySelections[id] or nil }
 		end
+		if GAME == "poe2" and node.isAttribute then
+			-- TreeTab:ModifyAttributePopup: pick Strength/Dexterity/Intelligence,
+			-- then SwitchAttributeNode + AllocNode.
+			local idx = p.attribute and tonumber(p.attribute)
+			if not idx then
+				local options = {}
+				for i, name in ipairs({ "Strength", "Dexterity", "Intelligence" }) do
+					options[i] = { index = i, name = name, nameZh = tr(name) }
+				end
+				return { needsAttribute = true, id = id, options = options, last = spec.attributeIndex }
+			end
+			spec:SwitchAttributeNode(id, idx)
+			spec.attributeIndex = idx
+			node = spec.nodes[id]
+		end
 		spec:AllocNode(node)
 	end
 	return committed(b, spec)
+end
+
+-- tree_attribute{id, attribute=1..3}: PoE2's right-click / hotkey switch of an
+-- allocated attribute node (PassiveTreeView:Draw, processAttributeHotkeys):
+-- SwitchAttributeNode, then the paths and dependencies rebuilt.
+function M.tree_attribute(p)
+	if GAME ~= "poe2" then error("attribute nodes are PoE2 only", 0) end
+	local b = ensure_build()
+	local spec = b.spec
+	ensure_undo_base(spec)
+	local id = p and tonumber(p.id)
+	local idx = p and tonumber(p.attribute)
+	local node = id and spec.nodes[id]
+	if not node or not node.isAttribute then error("not an attribute node: " .. tostring(id), 0) end
+	if not idx or idx < 1 or idx > 3 then error("attribute must be 1..3", 0) end
+	spec.attributeIndex = idx
+	spec:SwitchAttributeNode(id, idx)
+	if spec.nodes[id].alloc then
+		spec:BuildAllDependsAndPaths()
+	else
+		spec:AllocNode(spec.nodes[id])
+	end
+	return committed(b, spec)
+end
+
+-- set_alloc_mode{mode=0|1|2}: PoE2's weapon-set allocation mode (the tree
+-- tab's weapon set toggle; Build.lua cycles spec.allocMode).
+function M.set_alloc_mode(p)
+	if GAME ~= "poe2" then error("weapon-set allocation is PoE2 only", 0) end
+	local b = ensure_build()
+	local mode = p and tonumber(p.mode)
+	if not mode or mode < 0 or mode > 2 then error("mode must be 0, 1 or 2", 0) end
+	b.spec.allocMode = math.floor(mode)
+	b.spec:BuildAllDependsAndPaths()
+	frame()
+	return M.get_tree_state()
 end
 
 -- Choosing a mastery effect: TreeTab:SaveMasteryPopup does the whole
@@ -1335,7 +1560,9 @@ end)
 probe("tree.classes[id].classes[0..n] + alternate_ascendancies", function()
 	local t = launch.main.tree and launch.main.tree[latestTreeVersion]
 	if not t then t = launch.main:LoadTree(latestTreeVersion) end
-	local c = t and t.classes and t.classes[0]
+	-- PoE1 numbers classes from 0, PoE2 by the tree's integerId; either way
+	-- every class carries its ascendancies with "None" at index 0.
+	local _, c = next(t and t.classes or {})
 	return type(c) == "table" and type(c.classes) == "table" and type(c.classes[0]) == "table" and type(c.classes[0].name) == "string"
 end)
 
@@ -1551,7 +1778,9 @@ local function decode_share_code(code)
 	local doc, err = common.xml.ParseXML(xml)
 	if not doc then error("code did not decode to a build: " .. tostring(err), 0) end
 	local root = doc[1]
-	if type(root) ~= "table" or root.elem ~= "PathOfBuilding" then error("code is not a build file", 0) end
+	-- Build.lua LoadDB's root: PathOfBuilding (PoE1) / PathOfBuilding2 (PoE2)
+	local rootElem = GAME == "poe2" and "PathOfBuilding2" or "PathOfBuilding"
+	if type(root) ~= "table" or root.elem ~= rootElem then error("code is not a build file for this game", 0) end
 	return xml, root
 end
 
@@ -1840,6 +2069,7 @@ function M.fetch_characters(p)
 	hook_import_counters(tab)
 	local realm = realm_by_id(tab, (p and p.realm) or main().lastRealm or "PC")
 	if p and p.source == "site" then
+		if capMissing.siteImport then error("this Path of Building has no account-name import", 0) end
 		local name = p.accountName
 		if type(name) ~= "string" or not name:match("%S[#%-]%d%d%d%d$") then
 			error("account name needs its discriminator, e.g. Name#1234", 0)
@@ -1898,7 +2128,7 @@ function M.import_account_character(p)
 		c.siteCharImportItemsClearSkills.state = p.clearSkills and true or false
 		c.siteCharImportItemsIgnoreWeaponSwap.state = p.ignoreWeaponSwap and true or false
 		if what == "tree" then tab:DownloadPassiveTree(realm) else tab:DownloadItems(realm) end
-		tab:SetPredefinedBuildName()
+		if tab.SetPredefinedBuildName then tab:SetPredefinedBuildName() end
 		return { started = true, what = what }
 	end
 	local api = main().api
@@ -1942,11 +2172,15 @@ probe("classes.PoEAPI.FetchAuthToken/ResetDetails/DownloadCharacterList/Download
 	return type(c) == "table" and type(c.FetchAuthToken) == "function" and type(c.ResetDetails) == "function"
 		and type(c.DownloadCharacterList) == "function" and type(c.DownloadCharacter) == "function"
 end)
-probe("classes.ImportTab.DownloadSiteCharacterList/DownloadPassiveTree/DownloadItems/BuildCharacterList/SetPredefinedBuildName", function()
+probe("classes.ImportTab.DownloadPassiveTree/DownloadItems/BuildCharacterList", function()
 	local c = class_of("ImportTab")
-	return type(c) == "table" and type(c.DownloadSiteCharacterList) == "function" and type(c.DownloadPassiveTree) == "function"
-		and type(c.DownloadItems) == "function" and type(c.BuildCharacterList) == "function" and type(c.SetPredefinedBuildName) == "function"
+	return type(c) == "table" and type(c.DownloadPassiveTree) == "function"
+		and type(c.DownloadItems) == "function" and type(c.BuildCharacterList) == "function"
 end)
+probe("classes.ImportTab.DownloadSiteCharacterList/SetPredefinedBuildName (account-name import)", function()
+	local c = class_of("ImportTab")
+	return type(c) == "table" and type(c.DownloadSiteCharacterList) == "function" and type(c.SetPredefinedBuildName) == "function"
+end, "siteImport")
 probe("LaunchServer.lua present (OAuth loopback)", function()
 	local f = io.open("LaunchServer.lua", "r")
 	if f then f:close() return true end
@@ -2146,7 +2380,7 @@ end
 
 -- Where an item is used, the way ItemListControl:GetRowValue decides it.
 local function item_used_in(tab, listCtl, it)
-	local abyss = listCtl:FindEquippedAbyssJewel(it.id, true)
+	local abyss = listCtl.FindEquippedAbyssJewel and listCtl:FindEquippedAbyssJewel(it.id, true)
 	if abyss then return { kind = "abyss", setTitle = abyss, otherSet = true } end
 	local tree = listCtl:FindSocketedJewel(it.id, true)
 	if tree then return { kind = "jewel", specTitle = tree, otherSet = true } end
@@ -2221,6 +2455,48 @@ local function normalize_item_text(raw)
 	local out = PobToolsReverseText(raw)
 	if type(out) ~= "string" or out == "" then return raw, false end
 	return out, out ~= raw
+end
+
+-- parse_item_text{raw}: what a paste turns into before anything is added --
+-- the English text the reverse translator produced, and how POB's own parser
+-- (new("Item")) read it: base, rarity, names, and every mod line with the part
+-- modLib.parseMod could not use (modLine.extra). Lines still holding CJK after
+-- the reverse translation are listed so the page can point at them.
+function M.parse_item_text(p)
+	ensure_build()
+	local src = p and p.raw
+	if type(src) ~= "string" or src == "" then error("params.raw required", 0) end
+	local raw, reversed = normalize_item_text(src)
+	local untranslated = {}
+	for l in (raw .. "\n"):gmatch("([^\r\n]*)\r?\n") do
+		if l:find("[\128-\255]") then untranslated[#untranslated + 1] = l end
+	end
+	local ok, it = pcall(make, "Item", raw, p.rarity, true)
+	if not ok or type(it) ~= "table" then
+		return { reversed = reversed, text = raw, untranslated = untranslated, parsed = false, error = tostring(it) }
+	end
+	local lines = {}
+	local function take(kind, list)
+		for _, ml in ipairs(list or {}) do
+			if type(ml) == "table" and type(ml.line) == "string" then
+				lines[#lines + 1] = { kind = kind, line = ml.line, lineZh = tr(ml.line),
+				                      extra = ml.extra, unsupported = ml.extra ~= nil and true or false }
+			end
+		end
+	end
+	take("rune", it.runeModLines)
+	take("enchant", it.enchantModLines)
+	take("classRequirement", it.classRequirementModLines)
+	take("implicit", it.implicitModLines)
+	take("explicit", it.explicitModLines)
+	take("crucible", it.crucibleModLines)
+	return {
+		reversed = reversed, text = raw, untranslated = untranslated, parsed = it.base ~= nil,
+		rarity = it.rarity, name = it.name, title = it.title, baseName = it.baseName, type = it.type,
+		titleZh = it.title and tr(it.title) or nil, baseNameZh = it.baseName and tr(it.baseName) or nil,
+		itemLevel = it.itemLevel, quality = it.quality, corrupted = it.corrupted and true or false,
+		lines = lines,
+	}
 end
 
 -- item_tooltip{id | raw, slotName?, dbMode?}: POB's own item tooltip. With a
@@ -2580,15 +2856,19 @@ local function edit_state(p)
 	for i = 1, 6 do socketShown[i] = ctl_shown(c["displayItemSocket" .. i]) end
 
 	-- influence: the two dropdowns share one list ("Influence" = none, then itemLib.influenceInfo.all)
-	local infl = { shown = ctl_shown(c.displayItemInfluence), options = dd_options(c.displayItemInfluence), sel = { c.displayItemInfluence.selIndex, c.displayItemInfluence2.selIndex }, keys = {} }
-	for i, info in ipairs(itemLib.influenceInfo.all) do
-		infl.keys[i] = info.key
+	-- (PoE2 items have no influences: no controls, nothing to show)
+	local infl = { shown = false, options = {}, sel = {}, keys = {}, current = {} }
+	if c.displayItemInfluence and itemLib.influenceInfo and itemLib.influenceInfo.all then
+		infl = { shown = ctl_shown(c.displayItemInfluence), options = dd_options(c.displayItemInfluence), sel = { c.displayItemInfluence.selIndex, c.displayItemInfluence2.selIndex }, keys = {} }
+		for i, info in ipairs(itemLib.influenceInfo.all) do
+			infl.keys[i] = info.key
+		end
+		local current = {}
+		for _, info in ipairs(itemLib.influenceInfo.all) do
+			if it[info.key] then current[#current + 1] = info.key end
+		end
+		infl.current = current
 	end
-	local current = {}
-	for _, info in ipairs(itemLib.influenceInfo.all) do
-		if it[info.key] then current[#current + 1] = info.key end
-	end
-	infl.current = current
 
 	-- variants: either the group controls or the legacy variant/variantAlt dropdowns
 	local variants = {}
@@ -2842,6 +3122,7 @@ function M.item_edit_set(p)
 		local ml = i <= n and it.explicitModLines[i] or it.crucibleModLines and it.crucibleModLines[i - n]
 		if not ml then error("no mod line " .. tostring(i), 0) end
 		if p.modLine.enabled ~= nil and (not ml.disabled) ~= (p.modLine.enabled and true or false) then
+			if not tab.ToggleDisplayItemModLine then error("this Path of Building cannot switch mod lines off", 0) end
 			tab:ToggleDisplayItemModLine(ml)
 		end
 	elseif p.removeModLine then
@@ -2948,13 +3229,19 @@ local function popup_state()
 end
 
 local popup_openers = {
-	enchant = function(tab, p) tab:EnchantDisplayItem(tonumber(p.slot) or 1) end,
+	enchant = function(tab, p)
+		if not tab.EnchantDisplayItem then error("this Path of Building has no enchant dialog", 0) end
+		tab:EnchantDisplayItem(tonumber(p.slot) or 1)
+	end,
 	anoint = function(tab, p) tab:AnointDisplayItem(tonumber(p.slot) or 1) end,
 	-- through the panel's own button: beta opens one dialog with a source
 	-- dropdown, master 2.67.2 passes the mod type ("Corrupted") itself
 	corrupt = function(tab) tab.controls.displayItemCorrupt.onClick() end,
 	custom = function(tab) tab:AddCustomModifierToDisplayItem() end,
-	crucible = function(tab) tab:AddCrucibleModifierToDisplayItem() end,
+	crucible = function(tab)
+		if not tab.AddCrucibleModifierToDisplayItem then error("this Path of Building has no crucible dialog", 0) end
+		tab:AddCrucibleModifierToDisplayItem()
+	end,
 	text = function(tab) tab:EditDisplayItemText() end,
 	implicit = function(tab) tab.controls.displayItemAddImplicit.onClick() end,
 }
@@ -3183,17 +3470,28 @@ function M.item_db(p)
 	return { kind = kind, total = #list, page = page, size = size, items = out, statSort = statSort }
 end
 
-probe("classes.ItemsTab display item editing (SetDisplayItem/AddDisplayItem/CreateDisplayItemFromRaw/UpdateAffixControls/ToggleDisplayItemModLine/UpdateCustomControls)", function()
+probe("classes.ItemsTab display item editing (SetDisplayItem/AddDisplayItem/CreateDisplayItemFromRaw/UpdateAffixControls/UpdateCustomControls)", function()
 	local c = class_of("ItemsTab")
 	return type(c) == "table" and type(c.SetDisplayItem) == "function" and type(c.AddDisplayItem) == "function" and type(c.CreateDisplayItemFromRaw) == "function"
-		and type(c.UpdateAffixControls) == "function" and type(c.ToggleDisplayItemModLine) == "function" and type(c.UpdateCustomControls) == "function"
+		and type(c.UpdateAffixControls) == "function" and type(c.UpdateCustomControls) == "function"
 end)
-probe("classes.ItemsTab dialogs (CraftItem/EditDisplayItemText/EnchantDisplayItem/AnointDisplayItem/CorruptDisplayItem/AddCustomModifierToDisplayItem/AddCrucibleModifierToDisplayItem)", function()
+probe("classes.ItemsTab.ToggleDisplayItemModLine", function()
 	local c = class_of("ItemsTab")
-	return type(c) == "table" and type(c.CraftItem) == "function" and type(c.EditDisplayItemText) == "function" and type(c.EnchantDisplayItem) == "function"
+	return type(c) == "table" and type(c.ToggleDisplayItemModLine) == "function"
+end, "itemModLineToggle")
+probe("classes.ItemsTab dialogs (CraftItem/EditDisplayItemText/AnointDisplayItem/CorruptDisplayItem/AddCustomModifierToDisplayItem)", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.CraftItem) == "function" and type(c.EditDisplayItemText) == "function"
 		and type(c.AnointDisplayItem) == "function" and type(c.CorruptDisplayItem) == "function" and type(c.AddCustomModifierToDisplayItem) == "function"
-		and type(c.AddCrucibleModifierToDisplayItem) == "function"
 end)
+probe("classes.ItemsTab.EnchantDisplayItem", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.EnchantDisplayItem) == "function"
+end, "itemEnchant")
+probe("classes.ItemsTab.AddCrucibleModifierToDisplayItem", function()
+	local c = class_of("ItemsTab")
+	return type(c) == "table" and type(c.AddCrucibleModifierToDisplayItem) == "function"
+end, "itemCrucible")
 -- The stat-difference block itself is AddItemTooltip's business (a separate
 -- AddItemStatDifferences on beta, inline on master); the bridge only toggles
 -- showStatDifferences and names the slot.
@@ -3202,23 +3500,28 @@ probe("classes.ItemsTab comparison (GetComparisonSlotNameForItem/GetEquippedSlot
 	return type(c) == "table" and type(c.GetComparisonSlotNameForItem) == "function" and type(c.GetEquippedSlotForItem) == "function"
 		and type(c.SortItemList) == "function"
 end)
-probe("classes.ItemListControl (FindEquippedAbyssJewel/FindSocketedJewel/OnSelClick) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
+probe("classes.ItemListControl.FindEquippedAbyssJewel", function()
+	local l = class_of("ItemListControl")
+	return type(l) == "table" and type(l.FindEquippedAbyssJewel) == "function"
+end, "abyssJewels")
+probe("classes.ItemListControl (FindSocketedJewel/OnSelClick) + ItemDBControl (DoesItemMatchFilters/LoadLeaguesAndTypes/SetSortMode/ListBuilder)", function()
 	local l, d = class_of("ItemListControl"), class_of("ItemDBControl")
-	return type(l) == "table" and type(l.FindEquippedAbyssJewel) == "function" and type(l.FindSocketedJewel) == "function" and type(l.OnSelClick) == "function"
+	return type(l) == "table" and type(l.FindSocketedJewel) == "function" and type(l.OnSelClick) == "function"
 		and type(d) == "table" and type(d.DoesItemMatchFilters) == "function" and type(d.LoadLeaguesAndTypes) == "function"
 		and type(d.SetSortMode) == "function" and type(d.ListBuilder) == "function"
 end)
-probe("classes.Item editing (Craft/BuildAndParseRaw/ResetInfluence/CanHaveMod/NormaliseQuality/GetVariantGroupOptions)", function()
+probe("classes.Item editing (Craft/BuildAndParseRaw/NormaliseQuality)", function()
 	local c = class_of("Item")
-	return type(c) == "table" and type(c.Craft) == "function" and type(c.BuildAndParseRaw) == "function" and type(c.ResetInfluence) == "function"
-		and type(c.CanHaveMod) == "function" and type(c.NormaliseQuality) == "function" and type(c.GetVariantGroupOptions) == "function"
+	return type(c) == "table" and type(c.Craft) == "function" and type(c.BuildAndParseRaw) == "function" and type(c.NormaliseQuality) == "function"
 end)
-probe("main.OpenPopup/ClosePopup/OpenConfirmPopup + itemLib.influenceInfo.all + data.itemBaseTypeList/itemBaseLists/powerStatList", function()
+probe("main.OpenPopup/ClosePopup/OpenConfirmPopup + data.itemBaseTypeList/itemBaseLists/powerStatList", function()
 	local m = launch.main
 	return type(m.OpenPopup) == "function" and type(m.ClosePopup) == "function" and type(m.OpenConfirmPopup) == "function"
-		and type(itemLib) == "table" and type(itemLib.influenceInfo) == "table" and type(itemLib.influenceInfo.all) == "table"
 		and type(data.itemBaseTypeList) == "table" and type(data.itemBaseLists) == "table" and type(data.powerStatList) == "table"
 end)
+probe("itemLib.influenceInfo.all (item influences)", function()
+	return type(itemLib) == "table" and type(itemLib.influenceInfo) == "table" and type(itemLib.influenceInfo.all) == "table"
+end, "itemInfluence")
 probe("classes.NotableDBControl.AddValueTooltip + ItemsTab.AppendAnointTooltip/anointItem/getAnoint", function()
 	local n, i = class_of("NotableDBControl"), class_of("ItemsTab")
 	return type(n) == "table" and type(n.AddValueTooltip) == "function"
@@ -3507,7 +3810,8 @@ local function skills_committed(b, g)
 	if g then tab:ProcessSocketGroup(g) end
 	tab:AddUndoState()
 	local r = commit(b)
-	tab:UpdateSocketGroups()
+	-- PoE1 re-runs its socket bookkeeping here; PoE2's SkillsTab has none.
+	if tab.UpdateSocketGroups then tab:UpdateSocketGroups() end
 	return r
 end
 
@@ -3761,9 +4065,9 @@ function M.delete_skill_set(p)
 	return commit(b)
 end
 
-probe("classes.SkillsTab.ProcessSocketGroup/UpdateSocketGroups/FindSkillGem/ProcessGemLevel", function()
+probe("classes.SkillsTab.ProcessSocketGroup/FindSkillGem/ProcessGemLevel/AddSocketGroupTooltip", function()
 	local c = class_of("SkillsTab")
-	return type(c) == "table" and type(c.ProcessSocketGroup) == "function" and type(c.UpdateSocketGroups) == "function"
+	return type(c) == "table" and type(c.ProcessSocketGroup) == "function"
 		and type(c.FindSkillGem) == "function" and type(c.ProcessGemLevel) == "function" and type(c.AddSocketGroupTooltip) == "function"
 end)
 probe("classes.SkillsTab skill sets (NewSkillSet/SetActiveSkillSet)", function()

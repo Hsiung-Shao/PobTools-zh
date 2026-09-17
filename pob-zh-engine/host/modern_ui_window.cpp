@@ -31,6 +31,8 @@ constexpr wchar_t kHostApp[] = L"app.pobtools";
 constexpr wchar_t kHostPob[] = L"pob.pobtools";
 constexpr wchar_t kHostData[] = L"data.pobtools";
 constexpr wchar_t kHostFonts[] = L"fonts.pobtools";
+// Art the engine decoded for the page (PobToolsTextureAtlas: PoE2 tree DDS arrays).
+constexpr wchar_t kHostCache[] = L"cache.pobtools";
 
 std::string narrow(const std::wstring& w)
 {
@@ -168,7 +170,7 @@ struct Window {
 			{"view", narrow(view)},
 			{"prefs", Prefs()},
 			{"hosts", json{ {"app", narrow(kHostApp)}, {"pob", narrow(kHostPob)},
-			                {"data", narrow(kHostData)}, {"fonts", narrow(kHostFonts)} }},
+			                {"data", narrow(kHostData)}, {"fonts", narrow(kHostFonts)}, {"cache", narrow(kHostCache)} }},
 		};
 	}
 
@@ -351,6 +353,9 @@ struct Window {
 			wv3->SetVirtualHostNameToFolderMapping(kHostPob, pobDir.c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
 		wv3->SetVirtualHostNameToFolderMapping(kHostData, (exeDir + L"Data").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
 		wv3->SetVirtualHostNameToFolderMapping(kHostFonts, (exeDir + L"Fonts").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
+		CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
+		CreateDirectoryW((exeDir + L"PobTools\\cache").c_str(), nullptr);
+		wv3->SetVirtualHostNameToFolderMapping(kHostCache, (exeDir + L"PobTools\\cache").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
 
 		webview->AddScriptToExecuteOnDocumentCreated(BootScript().c_str(), nullptr);
 

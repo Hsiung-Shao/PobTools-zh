@@ -11,11 +11,13 @@
 
   let {
     item,
+    report = null,
     onchange,
     onclose,
     ondone,
   }: {
     item: ItemEditState;
+    report?: { untranslated: string[]; unsupported: string[] } | null;
     onchange: (s: ItemEditState) => void;
     onclose: () => void;
     ondone: (r: { id: number; added: boolean }) => void;
@@ -130,6 +132,16 @@
     <button class="btn ghost sm" disabled={app.busy > 0} onclick={cancel}>{t("edit.cancel")}</button>
   </div>
   {#if err}<div class="bad selectable">{err}</div>{/if}
+  {#if report && (report.untranslated.length || report.unsupported.length)}
+    <details class="report">
+      <summary>
+        {#if report.untranslated.length}<span class="warn">{t("edit.pasteUntranslated", { n: report.untranslated.length })}</span>{/if}
+        {#if report.unsupported.length}<span class="dim">{t("edit.pasteUnsupported", { n: report.unsupported.length })}</span>{/if}
+      </summary>
+      {#each report.untranslated as l}<div class="rline warn selectable">{l}</div>{/each}
+      {#each report.unsupported as l}<div class="rline dim selectable">{l}</div>{/each}
+    </details>
+  {/if}
 
   <div class="ebody">
     <!-- 即時 tooltip -->
@@ -314,7 +326,9 @@
           <span class="k">{t("edit.mods")}</span>
           {#each item.modLines as m (m.index)}
             <div class="mrow" class:off={m.disabled}>
-              <input type="checkbox" checked={!m.disabled} title={t("edit.on")} onchange={(e) => set({ modLine: { index: m.index, enabled: e.currentTarget.checked } })} />
+              {#if app.has("itemModLineToggle")}
+                <input type="checkbox" checked={!m.disabled} title={t("edit.on")} onchange={(e) => set({ modLine: { index: m.index, enabled: e.currentTarget.checked } })} />
+              {/if}
               <span class="mt"><PobText text={m.textZh || m.text} /></span>
               {#if m.kind}<span class="dim small">{t(`edit.kind.${m.kind}`)}</span>{/if}
               {#if m.remove}<button class="btn ghost sm" onclick={() => set({ removeModLine: m.remove! })}>{t("edit.remove")}</button>{/if}
@@ -584,5 +598,23 @@
   }
   .nrow.on {
     background: var(--gold-soft);
+  }
+  .report {
+    font-size: var(--fs-xs);
+    padding: 4px 8px;
+    border: 1px solid var(--edge-0);
+    border-radius: var(--radius-s);
+  }
+  .report summary {
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+  }
+  .report .rline {
+    padding-left: 12px;
+    font-family: var(--font-mono);
+  }
+  .report .warn {
+    color: var(--warn);
   }
 </style>

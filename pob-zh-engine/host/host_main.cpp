@@ -690,6 +690,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// nothing survives.
 		return RunPasteSelftest();
 	}
+	if (arg1 == L"--paste-selftest-poe2") {
+		// headless: real PoE2 zh-TW copies through the paste path, PoE2 dictionaries.
+		return RunPasteSelftestPoe2();
+	}
 	if (arg1 == L"--item-name-selftest") {
 		// headless: POB builds "<title>, <base type>" at runtime, so the finished
 		// name is never a dictionary key. Replays one real build's equipment and
@@ -737,6 +741,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Headless engine end-to-end check against a sandbox copy of the PoE1 install.
 	if (arg1 == L"--headless-selftest") { // --headless-selftest [pobDir]
 		return RunHeadlessSelfTest(dir, arg2);
+	}
+	if (arg1 == L"--headless-selftest-poe2") { // --headless-selftest-poe2 [pobDir]
+		return RunHeadlessSelfTestPoe2(dir, arg2);
 	}
 
 	// Internal headless engine child (new UI / self-test): same as --engine but
@@ -873,7 +880,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		std::wstring launchLua;
 		// "Default interface: new" (close / return-after-exit modes; KeepOpen is
 		// handled inside the launcher): the WebView2 window in this process
-		// instead of the classic POB window, for PoE1 when it can run here.
+		// instead of the classic POB window, for either game when it can run here.
 		bool openModern = false;
 		if (!pendingLua.empty()) {
 			launchLua = launch_lua_from(pendingLua);
@@ -915,7 +922,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			// POB_PATH still works as an override source when the sibling folder is absent.
 			if (launchLua.empty()) launchLua = resolve_launch_lua_legacy(dir);
 			if (launchLua.empty()) continue; // UI should have prevented this; just re-show
-			openModern = cfg.uiMode == 1 && cfg.game != L"poe2" && ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version);
+			openModern = cfg.uiMode == 1 && (cfg.game == L"poe2"
+				? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
+				: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 		}
 
 		{
@@ -938,7 +947,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		if (openModern) {
 			// Blocks until the window closes, like SpawnPobAndWait; a refused gate
 			// makes the window open the classic POB itself and exit (code 3).
-			ShowModernUi(dir, L"poe1", cfg.locale, cfg, L"");
+			ShowModernUi(dir, cfg.game == L"poe2" ? L"poe2" : L"poe1", cfg.locale, cfg, L"");
 		} else {
 			PobLaunch::SpawnPobAndWait(launchLua);
 		}

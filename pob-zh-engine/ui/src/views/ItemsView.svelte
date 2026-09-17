@@ -48,6 +48,8 @@
   let pasteText = $state("");
   let pasteErr = $state<string | null>(null);
   let pasteNote = $state<string | null>(null);
+  /** For a pasted item: lines the reverse translation left Chinese, lines POB could not use. */
+  let editReport = $state<{ untranslated: string[]; unsupported: string[] } | null>(null);
   let edit = $state<ItemEditState | null>(null);
 
   // dialogs
@@ -211,9 +213,17 @@
   async function openEdit(p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) {
     pasteErr = null;
     try {
-      const r = await app.run(() => api.itemEditBegin(p));
+      // a pasted text also gets POB's reading of it line by line, so the editor
+      // can say which lines did not survive (still Chinese / not understood)
+      const [r, parsed] = await Promise.all([
+        app.run(() => api.itemEditBegin(p)),
+        p.raw ? api.parseItemText(p.raw).catch(() => null) : Promise.resolve(null),
+      ]);
       if (r) {
         edit = r;
+        editReport = parsed
+          ? { untranslated: parsed.untranslated, unsupported: (parsed.lines ?? []).filter((l) => l.unsupported && !l.line.includes("??")).map((l) => l.lineZh || l.line) }
+          : null;
         rightTab = "edit";
       }
     } catch (e: any) {
@@ -222,10 +232,12 @@
   }
   function editClosed() {
     edit = null;
+    editReport = null;
     if (rightTab === "edit") rightTab = "paste";
   }
   async function editDone(r: { id: number; added: boolean }) {
     edit = null;
+    editReport = null;
     pasteText = "";
     rightTab = "paste";
     selectedId = r.id;
@@ -463,7 +475,7 @@
       <button class="tab" class:on={rightTab === "db"} onclick={() => (rightTab = "db")}>{t("items.db")}</button>
     </div>
     {#if rightTab === "edit" && edit}
-      <ItemEditor item={edit} onchange={(s) => (edit = s)} onclose={editClosed} ondone={editDone} />
+      <ItemEditor item={edit} report={editReport} onchange={(s) => (edit = s)} onclose={editClosed} ondone={editDone} />
     {:else if rightTab === "paste"}
       <div class="pane">
         <p class="dim">{t("items.pasteHint")}</p>

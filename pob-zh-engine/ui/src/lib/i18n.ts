@@ -134,6 +134,8 @@ const EN: Record<string, string> = {
   "items.add": "Add",
   "items.preview": "Preview",
   "items.reversed": "Chinese item text was translated back to English for POB.",
+  "edit.pasteUntranslated": "{n} line(s) could not be turned back into English (POB ignores them)",
+  "edit.pasteUnsupported": "{n} line(s) POB does not support",
   "items.addEquip": "Add and equip",
   "items.copy": "Copy text",
   "items.copied": "Copied",
@@ -381,6 +383,18 @@ const EN: Record<string, string> = {
   "tree.kind.mastery": "Mastery",
   "tree.kind.classStart": "Class start",
   "tree.kind.ascStart": "Ascendancy start",
+  "tree.kind.image": "Decoration",
+  "tree.attrTitle": "Choose an attribute",
+  "tree.attr.Strength": "Strength",
+  "tree.attr.Dexterity": "Dexterity",
+  "tree.attr.Intelligence": "Intelligence",
+  "tree.attrSwitch": "right-click to switch attribute",
+  "tree.allocMode": "New points",
+  "tree.allocMain": "Passive tree",
+  "tree.allocSet1": "Weapon set 1",
+  "tree.allocSet2": "Weapon set 2",
+  "tree.blockedGlobal": "Keystones and jewel sockets can only be allocated on the main passive tree",
+  "tree.setN": "weapon set {n}",
 };
 
 let table: Record<string, string> = { ...EN };

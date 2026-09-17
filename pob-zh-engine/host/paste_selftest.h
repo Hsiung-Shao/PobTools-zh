@@ -5,3 +5,6 @@
 #pragma once
 
 int RunPasteSelftest();
+
+// PoE2 dictionaries, real PoE2 zh-TW copies (paste_fixtures_poe2.h).
+int RunPasteSelftestPoe2();

@@ -91,6 +91,12 @@ private:
 // at <exeDir>headless_selftest.txt; returns the number of failed checks.
 int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverride);
 
+// --headless-selftest-poe2 [pobDir]: the same against PoE2's Path of Building,
+// with a build made through the bridge as the oracle (tree art decoded into the
+// cache, attribute nodes, weapon-set passives, the PoE1-only capabilities off).
+// Report at <exeDir>headless_selftest_poe2.txt.
+int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobDirOverride);
+
 // --bridge-call <pobDir> <method> [paramsJson] [outFile]: developer probe.
 // Boots a headless engine against the given install (NOT a sandbox: it is the
 // real folder, so only read-only methods are sensible), calls one bridge

@@ -12,6 +12,9 @@ export interface SpriteRect {
   y: number;
   w: number;
   h: number;
+  /** The art's own size when the cell was stored downscaled (large PoE2 plates). */
+  ow?: number;
+  oh?: number;
 }
 
 export interface SpriteManifest {
@@ -42,6 +45,11 @@ export class Sprites {
   }
 
   static url(file: string): string {
+    // "cache:" = decoded by the engine into PobTools\cache (PoE2's DDS arrays)
+    if (file.startsWith("cache:")) {
+      const rel = file.slice(6);
+      return `https://${hostInfo.hosts.cache ?? "cache.pobtools"}/${rel.split("/").map(encodeURIComponent).join("/")}`;
+    }
     return `https://${hostInfo.hosts.pob}/${file.split("/").map(encodeURIComponent).join("/")}`;
   }
 
@@ -86,12 +94,12 @@ export class Sprites {
     return true;
   }
 
-  /** Draws `name` at POB's DrawAsset size: sheet pixels × 1.33 × zoom. */
-  drawArt(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, zoom: number, mirrored = false): boolean {
+  /** Draws `name` at POB's DrawAsset size: the art's pixels × `scale` (PoE1 1.33, PoE2 scaleImage) × zoom. */
+  drawArt(ctx: CanvasRenderingContext2D, name: string, x: number, y: number, zoom: number, mirrored = false, scale = ART_SCALE): boolean {
     const r = this.rect(name);
     if (!r) return false;
-    const hw = r.w * ART_SCALE * zoom;
-    const hh = r.h * ART_SCALE * zoom;
+    const hw = (r.ow ?? r.w) * scale * zoom;
+    const hh = (r.oh ?? r.h) * scale * zoom;
     if (!mirrored) return this.draw(ctx, name, x, y, hw, hh);
     // Half image: the top half as-is, the bottom half flipped (PoB's isHalf).
     const ok = this.draw(ctx, name, x, y - hh, hw, hh);

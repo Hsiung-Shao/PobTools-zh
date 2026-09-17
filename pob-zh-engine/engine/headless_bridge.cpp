@@ -5,6 +5,7 @@
 #include "ui_local.h"
 
 #include "engine/headless_ipc.h"
+#include "engine/texture_atlas.h"
 
 #include <json.hpp> // nlohmann::json (deps/nlohmann)
 
@@ -242,6 +243,8 @@ void InstallStubs(lua_State* L, ui_main_c* ui)
 	lua_setglobal(L, "PobToolsHeadless");
 	lua_pushcfunction(L, l_DrawStringWidthHeadless);
 	lua_setglobal(L, "DrawStringWidth");
+	// PoE2's tree art is DDS arrays; the page draws PNG (texture_atlas.cpp).
+	TextureAtlas::Register(L);
 
 	// The rest are plain enough to state in Lua. Every one of these asserts on
 	// ui->renderer in ui_api.cpp, and RenderInit is what would have created it.

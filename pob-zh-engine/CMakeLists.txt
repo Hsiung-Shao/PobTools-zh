@@ -69,6 +69,8 @@ set(SIMPLEGRAPHIC_SOURCES
     "engine/headless_ipc.h"
     "engine/headless_bridge.cpp"
     "engine/headless_bridge.h"
+    "engine/texture_atlas.cpp"
+    "engine/texture_atlas.h"
     "ui.h"
     "ui_api.cpp"
     # Shared failure log. Compiled into BOTH targets on purpose: the engine

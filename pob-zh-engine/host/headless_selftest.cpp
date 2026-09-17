@@ -9,6 +9,7 @@
 // check's integrity pass sees every manifest file where it expects it.
 
 #include "headless_proc.h"
+#include "paste_fixtures_poe2.h"
 #include "pob_launch.h"
 
 #include "error_log.h"
@@ -255,9 +256,13 @@ std::vector<std::pair<std::string, std::string>> ParsePlayerStats(const std::str
 
 std::string ManifestVersion(const std::string& manifest)
 {
-	size_t a = manifest.find("<Version number=\"");
-	if (a == std::string::npos) return {};
-	a += strlen("<Version number=\"");
+	// <Version number="2.67.2" .../> on PoE1; PoE2 writes platform/branch first
+	size_t tag = manifest.find("<Version ");
+	if (tag == std::string::npos) return {};
+	size_t end = manifest.find('>', tag);
+	size_t a = manifest.find(" number=\"", tag);
+	if (a == std::string::npos || (end != std::string::npos && a > end)) return {};
+	a += strlen(" number=\"");
 	size_t b = manifest.find('"', a);
 	return b == std::string::npos ? std::string() : manifest.substr(a, b - a);
 }
@@ -1727,6 +1732,341 @@ done:
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
 	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
 
+	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+		FILE* f = nullptr;
+		freopen_s(&f, "CONOUT$", "w", stdout);
+	}
+	printf("%s", g_rep.c_str());
+	WriteFileA(reportPath, g_rep);
+	return g_fail;
+}
+
+// --headless-selftest-poe2 [pobDir]: the same engine and bridge against PoE2's
+// Path of Building (a fork with its own tree art, classes, weapon-set passives
+// and attribute nodes, and without some PoE1 surfaces). A PoE2 install ships no
+// builds, so the test makes one through the bridge and uses POB's own save of
+// it as the oracle. Report at <exeDir>headless_selftest_poe2.txt.
+int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobDirOverride)
+{
+	g_rep.clear(); g_fail = 0; g_pass = 0;
+	const std::wstring reportPath = exeDir + L"headless_selftest_poe2.txt";
+	DeleteFileW(reportPath.c_str());
+	line("PobTools --headless-selftest-poe2");
+
+	std::wstring pobDir = pobDirOverride;
+	if (pobDir.empty()) {
+		InstallInfo info = DetectInstalls(exeDir);
+		pobDir = info.poe2Dir;
+	}
+	while (!pobDir.empty() && pobDir.back() == L'\\') pobDir.pop_back();
+	check("PoE2 install found", !pobDir.empty() && IsDir(pobDir), narrow(pobDir));
+	if (pobDir.empty() || !IsDir(pobDir)) {
+		line("no PoE2 Path of Building install beside the exe; pass its folder as the second argument");
+	} else {
+		const std::wstring sandboxRoot = exeDir + L"PobTools\\sandbox";
+		const std::wstring sandbox = sandboxRoot + L"\\PathOfBuildingCommunity-PoE2";
+		Rmtree(sandbox);
+		MkdirP(sandboxRoot);
+		CopyStats st;
+		CopyTree(pobDir, sandbox, L"", st);
+		MkdirP(sandbox + L"\\Builds");
+		check("sandbox copied (TreeData junctioned)", st.errors == 0 && st.files > 50 && IsReparse(sandbox + L"\\TreeData"),
+		      "files=" + std::to_string(st.files) + " errors=" + std::to_string(st.errors));
+		const std::string manifestVersion = ManifestVersion(ReadFileA(sandbox + L"\\manifest.xml"));
+
+		HeadlessProc::Options opt;
+		opt.exeDir = exeDir;
+		opt.launchLua = sandbox + L"\\Launch.lua";
+		opt.game = L"poe2";
+		opt.locale = L"zh-rTW";
+		{
+			wchar_t env[2048] = {};
+			if (GetEnvironmentVariableW(L"POB_ZH_BRIDGE", env, 2048)) opt.bridgeLua = env;
+		}
+		HeadlessProc::Child child;
+		std::string err;
+		check("headless child spawned", child.Start(opt, err), err);
+		json hello, gate, ver;
+		bool gotHello = child.WaitEvent("hello", hello, 90000);
+		check("hello event within 90 s, POB version = manifest", gotHello && hello.value("pobVersion", "") == manifestVersion,
+		      gotHello ? hello.value("pobVersion", "") + " vs " + manifestVersion : child.StrayOutput());
+		bool gotGate = child.WaitEvent("gate_result", gate, 5000);
+		check("compatibility gate ok on PoE2's POB (PoE1-only surfaces are capabilities, not failures)",
+		      gotGate && gate.value("ok", false), gotGate ? gate.dump().substr(0, 600) : "");
+		bool okVer = child.Call("version", json::object(), ver, 30000);
+		check("version names the game poe2", okVer && ver.value("game", "") == "poe2", ver.dump().substr(0, 200));
+		if (okVer) {
+			const json& caps = ver["caps"];
+			check("capabilities switched off where PoE2's POB has no such surface (influence, enchant, crucible, account-name import)",
+			      caps.value("itemInfluence", true) == false && caps.value("itemEnchant", true) == false &&
+			          caps.value("itemCrucible", true) == false && caps.value("siteImport", true) == false,
+			      caps.dump());
+		}
+
+		// --- a new build ---------------------------------------------------------
+		json nb, cls;
+		bool okNew = child.Call("new_build", json::object(), nb, 120000);
+		check("new_build", okNew, nb.dump().substr(0, 200));
+		bool okCls = child.Call("list_classes", json::object(), cls, 30000);
+		size_t nCls = okCls ? cls["classes"].size() : 0;
+		bool ascOk = nCls > 0;
+		for (size_t i = 0; okCls && i < nCls; i++) if (cls["classes"][i]["ascendancies"].size() < 2) ascOk = false;
+		check("list_classes: PoE2's classes, each with ascendancies after None", nCls >= 8 && ascOk, "classes=" + std::to_string(nCls));
+
+		// --- tree ------------------------------------------------------------------
+		json td, ta, ts;
+		bool okTs = child.Call("get_tree_state", json::object(), ts, 30000);
+		std::string version = okTs ? ts.value("treeVersion", "") : "";
+		bool okTd = !version.empty() && child.Call("tree_data", json{{"version", version}}, td, 120000);
+		int nodeCount = okTd ? td.value("nodeCount", 0) : 0;
+		int arcsWithCentre = 0, sized = 0;
+		if (okTd) {
+			for (auto& c : td["connectors"]) if (c.contains("orbit") && c.contains("cx")) arcsWithCentre++;
+			for (auto& [k, n] : td["nodes"].items()) if (n.contains("draw")) sized++;
+		}
+		check("tree_data: POB laid out the PoE2 tree (>3000 nodes, target sizes, arc centres from BuildArc)",
+		      okTd && nodeCount > 3000 && sized * 10 >= nodeCount * 9 && arcsWithCentre > 100,
+		      "nodes=" + std::to_string(nodeCount) + " sized=" + std::to_string(sized) + " arcs=" + std::to_string(arcsWithCentre));
+		bool classBg = false;
+		if (okTd) for (auto& c : td["classes"]) if (c.contains("background") && !c["background"]["ascendancies"].empty()) classBg = true;
+		check("tree_data: class plates and ascendancy plates named", classBg);
+
+		ULONGLONG t0 = GetTickCount64();
+		bool okTa = !version.empty() && child.Call("tree_assets", json{{"version", version}}, ta, 300000);
+		ULONGLONG firstMs = GetTickCount64() - t0;
+		int cacheRects = 0;
+		std::string oneCacheFile;
+		if (okTa) {
+			for (auto& [k, r] : ta["assets"].items()) {
+				std::string f = r.value("file", "");
+				if (f.rfind("cache:", 0) == 0) { cacheRects++; if (oneCacheFile.empty()) oneCacheFile = f.substr(6); }
+			}
+		}
+		std::wstring onDisk = exeDir + L"PobTools\\cache\\" + widen(oneCacheFile);
+		for (auto& ch : onDisk) if (ch == L'/') ch = L'\\';
+		check("tree_assets: every DDS array decoded into cached PNG pages (no missing sheets)",
+		      okTa && ta["missingSheets"].empty() && cacheRects > 500 && GetFileAttributesW(onDisk.c_str()) != INVALID_FILE_ATTRIBUTES,
+		      "cacheRects=" + std::to_string(cacheRects) + " ms=" + std::to_string(firstMs) + " missing=" + (okTa ? ta["missingSheets"].dump().substr(0, 200) : ta.dump().substr(0, 200)));
+		t0 = GetTickCount64();
+		json ta2;
+		bool okTa2 = child.Call("tree_assets", json{{"version", version}}, ta2, 60000);
+		ULONGLONG secondMs = GetTickCount64() - t0;
+		check("tree_assets again answers from the cache (unchanged art is not decoded twice)", okTa2 && secondMs < 5000 && secondMs * 3 < firstMs + 3000,
+		      "first=" + std::to_string(firstMs) + "ms second=" + std::to_string(secondMs) + "ms");
+
+		// A path from the class start: breadth-first over POB's links, normal
+		// nodes only, the first few in order so every click is adjacent.
+		int startId = 0;
+		if (okTd && okTs) {
+			for (auto& c : td["classes"]) if (c.value("name", "") == ts.value("className", "")) startId = c.value("startNodeId", 0);
+		}
+		std::vector<int> pathIds;
+		int attrId = 0;
+		if (startId && okTd) {
+			std::set<int> seen{ startId };
+			std::vector<int> queue{ startId };
+			for (size_t qi = 0; qi < queue.size() && pathIds.size() < 12; qi++) {
+				const json& cur = td["nodes"][std::to_string(queue[qi])];
+				for (auto& nb2 : cur["linked"]) {
+					int id = nb2.get<int>();
+					const std::string key = std::to_string(id);
+					if (seen.count(id) || !td["nodes"].contains(key)) continue;
+					const json& n = td["nodes"][key];
+					if (n.contains("asc") || (n.value("type", "") != "Normal" && n.value("type", "") != "Notable")) continue;
+					seen.insert(id);
+					queue.push_back(id);
+					pathIds.push_back(id);
+					if (!attrId && n.value("attribute", false)) attrId = id;
+				}
+			}
+		}
+		int allocated = okTs ? ts.value("allocCount", 0) : 0;
+		int asked = 0, clicked = 0;
+		bool attrOverride = false;
+		for (int id : pathIds) {
+			json r;
+			if (!child.Call("tree_click", json{{"id", id}}, r, 60000)) break;
+			if (r.value("needsAttribute", false)) {
+				asked++;
+				if (!child.Call("tree_click", json{{"id", id}, {"attribute", 2}}, r, 60000)) break;
+				if (r["overrides"].contains(std::to_string(id)) && r["overrides"][std::to_string(id)].value("why", "") == "attribute") attrOverride = true;
+			}
+			if (r.value("allocCount", 0) == allocated + 1) { allocated++; clicked++; }
+		}
+		check("tree_click allocates a path from the class start, one node per click",
+		      !pathIds.empty() && clicked == (int)pathIds.size(),
+		      "path=" + std::to_string(pathIds.size()) + " allocated=" + std::to_string(clicked));
+		check("attribute nodes ask which attribute (ModifyAttributePopup) and the choice sticks (hashOverrides)",
+		      attrId == 0 || (asked > 0 && attrOverride), "asked=" + std::to_string(asked) + " attrId=" + std::to_string(attrId));
+		if (attrId) {
+			json sw;
+			bool okSw = child.Call("tree_attribute", json{{"id", attrId}, {"attribute", 3}}, sw, 60000);
+			const std::string key = std::to_string(attrId);
+			check("tree_attribute switches an allocated attribute node without deallocating it",
+			      okSw && sw.value("allocCount", 0) == allocated && sw["overrides"].contains(key) &&
+			          sw["overrides"][key].value("name", "") != "",
+			      okSw ? sw["overrides"].value(key, json::object()).dump().substr(0, 200) : sw.dump().substr(0, 200));
+		}
+
+		// weapon-set allocation
+		json m1;
+		bool okM1 = child.Call("set_alloc_mode", json{{"mode", 1}}, m1, 60000);
+		int setNode = 0;
+		if (okM1 && startId && okTd) {
+			// any unallocated neighbour of an allocated normal node
+			std::set<int> alloc;
+			for (auto& a : m1["allocatedNodes"]) alloc.insert(a.get<int>());
+			for (int id : pathIds) {
+				for (auto& nb2 : td["nodes"][std::to_string(id)]["linked"]) {
+					int o = nb2.get<int>();
+					const std::string key = std::to_string(o);
+					if (alloc.count(o) || !td["nodes"].contains(key)) continue;
+					const json& n = td["nodes"][key];
+					if (n.value("type", "") == "Normal" && !n.contains("asc") && !n.value("attribute", false)) { setNode = o; break; }
+				}
+				if (setNode) break;
+			}
+		}
+		json sc;
+		bool okSc = setNode && child.Call("tree_click", json{{"id", setNode}}, sc, 60000);
+		check("set_alloc_mode 1 then a click: the node is allocated to weapon set 1 (nodeModes)",
+		      okM1 && m1.value("allocMode", -1) == 1 && okSc && sc["nodeModes"].value(std::to_string(setNode), 0) == 1,
+		      "node=" + std::to_string(setNode) + " " + (okSc ? sc["nodeModes"].dump() : sc.dump()).substr(0, 200));
+		json m0, undo;
+		child.Call("set_alloc_mode", json{{"mode", 0}}, m0, 60000);
+		bool okUndo = okSc && child.Call("tree_undo", json::object(), undo, 60000);
+		check("tree_undo takes the weapon-set node back", okUndo && undo.value("allocCount", -1) == allocated,
+		      okUndo ? std::to_string(undo.value("allocCount", -1)) + " vs " + std::to_string(allocated) : undo.dump().substr(0, 200));
+
+		// --- items and skills ----------------------------------------------------
+		const std::string bow = "Rarity: Rare\nStorm Thirst\nRecurve Bow\n--------\nItem Level: 80\n--------\n"
+		                        "Adds 20 to 60 Lightning Damage\n+120 to Accuracy Rating\n15% increased Attack Speed\n";
+		json ai, ag, stats;
+		bool okAi = child.Call("add_item", json{{"raw", bow}, {"slotName", "Weapon 1"}, {"equip", true}}, ai, 60000);
+		check("add_item parses a PoE2 bow and equips it", okAi && ai["item"].value("baseName", "") == "Recurve Bow", ai.dump().substr(0, 300));
+		bool okAg = child.Call("add_group", json{{"slot", "Weapon 1"}, {"gems", json::array({ json{{"nameSpec", "Lightning Arrow"}} })}}, ag, 60000);
+		bool okSt = okAg && child.Call("get_stats", json::object(), stats, 30000);
+		double avg = okSt ? stats["stats"].value("AverageDamage", 0.0) : 0.0;
+		check("add_group Lightning Arrow on the bow: POB calculates damage", okAg && avg > 0, "AverageDamage=" + std::to_string(avg));
+
+		int bowId = okAi ? ai["item"].value("id", 0) : 0;
+		json tt;
+		bool okTt = bowId && child.Call("item_tooltip", json{{"id", bowId}}, tt, 60000);
+		int zhLines = 0;
+		if (okTt) for (auto& l : tt["lines"]) if (l.contains("text") && l.value("text", "") != l.value("raw", "")) zhLines++;
+		check("item_tooltip: POB's tooltip for the bow, translated", okTt && tt["lines"].size() > 5 && zhLines > 0,
+		      "lines=" + std::to_string(okTt ? tt["lines"].size() : 0) + " zh=" + std::to_string(zhLines));
+
+		json eb, es, ec, rawAfter;
+		bool okEb = bowId && child.Call("item_edit_begin", json{{"id", bowId}}, eb, 60000);
+		bool okEs = okEb && child.Call("item_edit_set", json{{"quality", 20}}, es, 60000);
+		bool q20 = false;
+		if (okEs) for (auto& l : es["tooltip"]["lines"]) if (l.value("raw", "").find("20%") != std::string::npos) q20 = true;
+		bool okEc = okEs && child.Call("item_edit_cancel", json::object(), ec, 60000);
+		bool okRaw = okEc && child.Call("item_raw", json{{"id", bowId}}, rawAfter, 30000);
+		check("item editing on PoE2: quality 20 shows in the edit tooltip, cancel leaves the build's bow unchanged",
+		      okEs && q20 && okRaw && rawAfter.value("raw", "").find("Quality: +20%") == std::string::npos,
+		      okEs ? "" : es.dump().substr(0, 300));
+
+		json dbo;
+		bool okDbo = child.Call("item_db_options", json{{"kind", "unique"}}, dbo, 180000);
+		check("item_db_options: PoE2's unique database filters", okDbo && dbo.contains("slot") && dbo["slot"].size() > 5, dbo.dump().substr(0, 200));
+
+		// --- a real zh-TW PoE2 copy through the paste path ------------------------
+		{
+			const PoE2PasteFixture* wand = nullptr;
+			for (const PoE2PasteFixture& fx : kPoe2PasteFixtures) if (std::string(fx.name) == "wand-rare-dueling-wand-01") wand = &fx;
+			json pt;
+			bool okPt = wand && child.Call("parse_item_text", json{{"raw", wand->text}}, pt, 60000);
+			int unsupported = 0;
+			if (okPt) for (auto& l : pt["lines"]) if (l.value("unsupported", false)) unsupported++;
+			check("parse_item_text: a zh-TW PoE2 wand comes back in English, POB reads its base and every line",
+			      okPt && pt.value("reversed", false) && pt.value("parsed", false) && pt["untranslated"].empty() &&
+			          pt["lines"].size() >= 7 && unsupported == 0,
+			      okPt ? "base=" + pt.value("baseName", "") + " lines=" + std::to_string(pt["lines"].size()) +
+			                 " untranslated=" + pt["untranslated"].dump().substr(0, 200) + " unsupported=" + std::to_string(unsupported)
+			           : pt.dump().substr(0, 200));
+		}
+
+		// --- config, calcs, notes --------------------------------------------------
+		json lc, gc;
+		bool okLc = child.Call("list_config", json::object(), lc, 60000);
+		std::string checkVar;
+		if (okLc) {
+			for (auto& s : lc["sections"]) {
+				for (auto& it : s["items"]) {
+					if (it.value("type", "") == "check" && it.value("visible", false)) { checkVar = it.value("var", ""); break; }
+				}
+				if (!checkVar.empty()) break;
+			}
+		}
+		json sc1, rc1;
+		bool okSc1 = !checkVar.empty() && child.Call("set_config", json{{"var", checkVar}, {"value", true}}, sc1, 60000);
+		bool okRc1 = okSc1 && child.Call("reset_config", json{{"var", checkVar}}, rc1, 60000);
+		check("list_config: PoE2's ConfigOptions sections; a checkbox sets and resets", okLc && lc["sections"].size() > 3 && okRc1,
+		      "var=" + checkVar);
+		bool okGc = child.Call("get_calcs", json::object(), gc, 60000);
+		check("get_calcs: PoE2's CalcSections laid out", okGc && gc["sections"].size() > 10, okGc ? "" : gc.dump().substr(0, 200));
+
+		// --- share code and save oracle --------------------------------------------
+		json ex, dec;
+		bool okEx = child.Call("export_code", json::object(), ex, 60000);
+		bool okDec = okEx && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
+		check("export_code -> decode_code on a PoE2 build", okDec, dec.dump().substr(0, 200));
+		json imp, stImp;
+		bool okImp = okDec && child.Call("import_code", json{{"code", ex.value("code", "")}, {"mode", "replace"}}, imp, 180000);
+		bool okStImp = okImp && child.Call("get_stats", json::object(), stImp, 30000);
+		double avgImp = okStImp ? stImp["stats"].value("AverageDamage", 0.0) : -1;
+		check("import_code{replace} of the build's own code gives the same AverageDamage",
+		      okStImp && std::fabs(avgImp - avg) <= 1e-9 * std::fmax(1.0, std::fabs(avg)),
+		      std::to_string(avgImp) + " vs " + std::to_string(avg) + (okImp ? "" : " " + imp.dump().substr(0, 200)));
+
+		json ver2, saveAs, lb, loaded, stats2, saved;
+		child.Call("version", json::object(), ver2, 30000);
+		const std::string buildPath = ver2.value("buildPath", "");
+		const std::string file = buildPath + "selftest_poe2.xml";
+		bool okSaveAs = !buildPath.empty() && child.Call("save_build_as", json{{"path", file}}, saveAs, 60000);
+		bool okLb = okSaveAs && child.Call("list_builds", json::object(), lb, 30000);
+		bool listed = false;
+		if (okLb) for (auto& e : lb["entries"]) if (e.value("fileName", "") == "selftest_poe2.xml" || e.value("buildName", "") == "selftest_poe2") listed = true;
+		check("save_build_as then list_builds finds it (PoE2's BuildListHelpers)", okSaveAs && listed, lb.dump().substr(0, 300));
+		bool okLoad = okSaveAs && child.Call("load_build_file", json{{"path", file}}, loaded, 120000);
+		bool okSt2 = okLoad && child.Call("get_stats", json::object(), stats2, 30000);
+		bool okSave = okSt2 && child.Call("save_xml", json::object(), saved, 60000);
+		if (okSave) {
+			auto oracle = ParsePlayerStats(saved.value("xml", ""));
+			int missing = 0;
+			std::vector<std::string> exs;
+			int bad = CompareStats(oracle, stats2["stats"], 1e-9, missing, exs);
+			std::string detail = "checked=" + std::to_string(oracle.size()) + " bad=" + std::to_string(bad) + " missing=" + std::to_string(missing);
+			for (auto& e : exs) detail += "; " + e;
+			check("hard oracle after reload: every <PlayerStat> POB saves equals get_stats (rel 1e-9)",
+			      oracle.size() > 20 && bad == 0 && missing == 0, detail);
+		} else {
+			check("hard oracle after reload: every <PlayerStat> POB saves equals get_stats (rel 1e-9)", false, loaded.dump().substr(0, 300));
+		}
+		json allocAfter;
+		bool okAa = okLoad && child.Call("get_tree_state", json::object(), allocAfter, 30000);
+		check("the reloaded build keeps its allocation and attribute choices", okAa && allocAfter.value("allocCount", 0) == allocated &&
+		      (attrId == 0 || allocAfter["overrides"].contains(std::to_string(attrId))),
+		      okAa ? std::to_string(allocAfter.value("allocCount", 0)) + " vs " + std::to_string(allocated) : "");
+
+		// --- import ------------------------------------------------------------------
+		json is, fc;
+		bool okIs = child.Call("import_status", json::object(), is, 60000);
+		bool poe2Realm = false;
+		if (okIs) for (auto& r : is["realms"]) if (r.value("realmCode", "") == "poe2") poe2Realm = true;
+		check("import_status lists the PoE2 realm", okIs && poe2Realm, is.value("realms", json::array()).dump());
+		bool okFc = child.Call("fetch_characters", json{{"source", "site"}, {"realm", "PoE2"}, {"accountName", "Someone#1234"}}, fc, 30000);
+		check("fetch_characters{site} is refused on PoE2's POB (no account-name import) and the child survives",
+		      !okFc && child.Alive(), fc.dump().substr(0, 200));
+
+		child.Stop(5000);
+		Rmtree(sandbox);
+	}
+
+	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
+	line(g_fail == 0 ? "ALL PASS" : "FAILURES");
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);

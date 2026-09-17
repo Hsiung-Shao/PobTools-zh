@@ -70,6 +70,9 @@
       } else if (s.recalculated) {
         await app.refresh();
       }
+      // PoE2's POB has one realm ("PoE2"); fall back to the first it lists
+      if (s.realms.length && !s.realms.some((r) => r.id === oRealm)) oRealm = s.realms[0].id;
+      if (s.realms.length && !s.realms.some((r) => r.id === sRealm)) sRealm = s.realms[0].id;
       if (!oFiltered.some((c) => c.name === oChar)) oChar = oFiltered[0]?.name ?? "";
       if (!sFiltered.some((c) => c.name === sChar)) sChar = sFiltered[0]?.name ?? "";
     } catch (e: any) {
@@ -258,6 +261,7 @@
     {#if doneMsg}<div class="ok">{doneMsg}</div>{/if}
   </section>
 
+  {#if app.has("siteImport")}
   <section class="card">
     <h2>{t("import.siteTitle")}</h2>
     <p class="dim">{t("import.siteHint")}</p>
@@ -308,6 +312,7 @@
       </div>
     {/if}
   </section>
+  {/if}
 
   <section class="card">
     <h2>{t("import.codeTitle")}</h2>

@@ -132,3 +132,37 @@ describe("HitIndex", () => {
     expect(h.at(5000, 5000)).toBeNull(); // class starts are not hit targets
   });
 });
+
+describe("buildModel (PoE2)", () => {
+  const poe2: TreeData = {
+    ...data,
+    game: "poe2",
+    treeVersion: "0_5",
+    nodes: {
+      ...data.nodes,
+      "5": node({ id: 5, x: 150, y: 0, type: "OnlyImage", group: 7, size: 0 }),
+    },
+    nodeCount: 5,
+    groups: [
+      { id: 7, x: 150, y: 0, oo: [1], isProxy: false, ascStart: false },
+      { id: 8, x: 500, y: 500, oo: [2], isProxy: false, ascStart: false, bg: { image: "PSGroupBackground2", half: false } },
+    ],
+    // POB's own arc centre (BuildArc's first vertex), not the group centre
+    connectors: [
+      { a: 1, b: 2 },
+      { a: 2, b: 3, orbit: 1, cx: 150, cy: 40 },
+    ],
+  };
+  const m = buildModel(poe2);
+  it("uses the arc centre POB computed", () => {
+    expect(m.poe2).toBe(true);
+    expect(m.edges.find((e) => e.a === 2)!.arc).toEqual({ cx: 150, cy: 40, r: 82 });
+  });
+  it("draws group art only where the group names it", () => {
+    expect(m.rings).toEqual([{ x: 500, y: 500, art: "PSGroupBackground2", mirrored: false }]);
+  });
+  it("keeps group centre images out of hit testing", () => {
+    expect(m.nodes.get(5)!.kind).toBe("image");
+    expect(m.hit.at(150, 0)).toBeNull();
+  });
+});

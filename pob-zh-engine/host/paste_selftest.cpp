@@ -26,6 +26,7 @@
 
 #include "paste_selftest.h"
 #include "paste_fixtures.h"
+#include "paste_fixtures_poe2.h"
 
 #include <windows.h>
 
@@ -502,5 +503,67 @@ int RunPasteSelftest()
 	}
 
 	printf("\npaste selftest: %d passed, %d failed\n", g_pass, g_fail);
+	return g_fail == 0 ? 0 : 1;
+}
+
+// --paste-selftest-poe2: PoE2's client writes a different item text than PoE1's
+// (no space between a number and the words, "需求: 等級 24" on one line, GGG
+// markup left on a unique's name, " — 無法變動的值"), and PoE2 had no
+// item_metadata.json at all until it was generated from GGPK. Fourteen real
+// zh-TW PoE2 copies (paste_fixtures_poe2.h) must come back with their unique's
+// English name and no Chinese beyond the lines each fixture names.
+int RunPasteSelftestPoe2()
+{
+	SetEnvironmentVariableA("POB_LOCALE", "zh-rTW");
+	SetEnvironmentVariableA("POB_GAME", "poe2");
+	translation_init();
+	printf("paste selftest (PoE2): locale=%s entries=%d\n",
+	       translation_get_locale() ? translation_get_locale() : "(null)",
+	       translation_get_count());
+
+	printf("\n-- real PoE2 copies --\n");
+	for (const PoE2PasteFixture& fx : kPoe2PasteFixtures) {
+		const std::string out = rev(fx.text);
+		const std::vector<std::string> ls = split_lines(out);
+		int chinese = 0;
+		for (const std::string& l : ls) if (has_non_ascii(l)) chinese++;
+		bool header = out.find("Item Class: ") != std::string::npos && out.find("Rarity: ") != std::string::npos;
+		bool title = !fx.uniqueName[0];
+		if (!title) for (const std::string& l : ls) if (l == fx.uniqueName) title = true;
+		char what[256];
+		snprintf(what, sizeof(what), "%s: headers, name, %d Chinese line(s) (allowed %d)", fx.name, chinese, fx.allowedChinese);
+		check(header && title && chinese <= fx.allowedChinese, what);
+		if (!(header && title && chinese <= fx.allowedChinese)) {
+			for (const std::string& l : ls) if (has_non_ascii(l)) printf("           still Chinese: %s\n", l.c_str());
+		}
+	}
+
+	printf("\n-- the PoE2 spellings, one line at a time --\n");
+	auto inItem = [](const char* line) {
+		std::string item = "物品種類: 戒指\n稀有度: 稀有\n末日 環\n紅玉戒指\n--------\n物品等級: 80\n--------\n";
+		item += line;
+		item += "\n";
+		return rev(item.c_str());
+	};
+	check(inItem("+77(60-80)最大生命").find("+77(60-80) to maximum Life") != std::string::npos,
+	      "no space between the roll and the words (whitespace-blind pattern)");
+	check(inItem("增加49(25-50)%生命恢復率").find("49(25-50)% increased Life Recovery rate") != std::string::npos,
+	      "increased: word before the number, no spaces");
+	check(inItem("獲得等同於最大生命8%-12%的物理荊棘傷害").find("8% - 12%") != std::string::npos,
+	      "8%-12%: the dash after a percentage is a range, not a sign");
+	check(rev("物品種類: 腰帶\n稀有度: 傳奇\n鞭策九尾\n實用腰帶\n--------\n需求: 等級 55\n").find("Requires: Level 55") != std::string::npos,
+	      "需求: 等級 55 -> Requires: Level 55 (header words)");
+	check(rev("物品種類: 長矛\n稀有度: 稀有\n活屍 刀鋒\n翱翔長矛\n--------\n物理傷害: 127 到 213 (augmented)\n").find("Physical Damage: 127-213 (augmented)") != std::string::npos,
+	      "127 到 213 -> 127-213 (damage range)");
+	check(rev("物品種類: 長矛\n稀有度: 稀有\n活屍 刀鋒\n翱翔長矛\n--------\n物品等級: 82\n--------\n賦予技能: 長矛投擲\n").find("Grants Skill: Spear Throw") != std::string::npos,
+	      "賦予技能: <name> -> Grants Skill: <English name> (header names)");
+	check(rev("物品種類: 珠寶\n稀有度: 傳奇\n操縱蛻變\n鑽石\n--------\n範圍: 可變的 (augmented)\n").find("Radius: Variable (augmented)") != std::string::npos,
+	      "範圍: 可變的 (augmented) -> Radius: Variable (augmented)");
+	check(rev("物品種類: 戒指\n稀有度: 傳奇\n[1.00E|裂紋怪客]\n紅玉戒指\n").find("\nCracklecreep\n") != std::string::npos,
+	      "GGG markup on the unique's name is read as the shown words");
+	check(inItem("藥劑以外的生命恢復無法使生命恢復到高於貧血狀態 — 無法變動的值").find(" - Unscalable Value") != std::string::npos,
+	      "PoE2's unscalable marker (無法變動的值) becomes POB's ' - Unscalable Value'");
+
+	printf("\npaste selftest (PoE2): %d passed, %d failed\n", g_pass, g_fail);
 	return g_fail == 0 ? 0 : 1;
 }

@@ -1013,9 +1013,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// data-line update can replace bridge.lua while the launcher is open)
 	std::string modernBridgeHash = modernGate.present && !modernGate.ok ? BridgeGate::BridgeFingerprint(exeDir) : std::string();
 	double modernGateReadAt = glfwGetTime();
-	auto modernGateBlocked = [&]() {
-		return BridgeGate::BlocksModernUi(modernGate, installs.poe1Dir, installs.poe1Version, modernBridgeHash);
+	// Per game: the verdict names the install it was taken against, so a
+	// refused PoE1 POB never greys out PoE2's new interface or the other way.
+	auto modernGateBlockedFor = [&](bool poe2) {
+		return poe2 ? BridgeGate::BlocksModernUi(modernGate, installs.poe2Dir, installs.poe2Version, modernBridgeHash)
+		            : BridgeGate::BlocksModernUi(modernGate, installs.poe1Dir, installs.poe1Version, modernBridgeHash);
 	};
+	auto modernGateBlocked = [&]() { return modernGateBlockedFor(false) || modernGateBlockedFor(true); };
 	auto modernGateTipText = [&](const LauncherStrings& S) {
 		std::string list;
 		size_t n = modernGate.failed.size();
@@ -1895,7 +1899,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// The new interface fell back to classic on this POB version: one
 			// amber line, same place, gone once POB updates (the verdict is
 			// bound to the version it was taken against).
-			if (modernUiOk && modernGateBlocked()) {
+			if (modernUiOk && cfg.uiMode == 1 && modernGateBlocked()) {
 				char banner[512];
 				snprintf(banner, sizeof(banner), S.modernGateBanner, modernGate.pobVersion.c_str());
 				ImGui::PushFont(fonts.small);
@@ -2012,7 +2016,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// can run here and the remembered gate has not refused this POB. In
 			// the close/return modes host_main makes the same choice after
 			// ShowLauncher returns (it also re-checks the gate).
-			const bool modern = cfg.uiMode == 1 && modernUiOk && !modernGateBlocked();
+			const bool modern = cfg.uiMode == 1 && modernUiOk && !modernGateBlockedFor(false);
 			if (keepOpen) {
 				if (modern) {
 					cfg.game = L"poe1";
@@ -2026,7 +2030,15 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		if (GameRow("##launch2", S.poe2, installs.poe2Version, poe2Ok ? S.detected : S.missing,
 				poe2Ok, fonts, scale, inner, poe2Ok ? poe2Dir.c_str() : S.notFoundPoe2, S.launch)) {
 			poe2Sel = true;
-			if (keepOpen) launchPob(true); else { launch = true; anythingLaunched = true; }
+			const bool modern = cfg.uiMode == 1 && modernUiOk && !modernGateBlockedFor(true);
+			if (keepOpen) {
+				if (modern) {
+					cfg.game = L"poe2";
+					spawnTool(L"--modern-ui", PobLaunch::InstanceKind::ModernUi, S.modernUiTool);
+				} else {
+					launchPob(true);
+				}
+			} else { launch = true; anythingLaunched = true; }
 		}
 		if (pobCount > 0) {
 			ImGui::PushFont(fonts.small);

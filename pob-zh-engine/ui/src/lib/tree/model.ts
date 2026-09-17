@@ -3,7 +3,7 @@
 // centres. Nothing geometric is derived here beyond turning POB's "this edge
 // curves around its group" into an arc the canvas can stroke.
 
-export type NodeKind = "normal" | "notable" | "keystone" | "socket" | "mastery" | "classStart" | "ascStart";
+export type NodeKind = "normal" | "notable" | "keystone" | "socket" | "mastery" | "classStart" | "ascStart" | "image";
 
 export interface FrameSet {
   alloc?: string;
@@ -46,6 +46,10 @@ export interface RawNode {
   linked: number[];
   masteryEffects?: MasteryEffect[];
   flavour?: string;
+  /** PoE2: PassiveTree:GetNodeTargetSize half extents (base w/h, overlay ow/oh, effect ew/eh). */
+  draw?: { w?: number; h?: number; ow?: number; oh?: number; ew?: number; eh?: number };
+  /** PoE2 attribute node (Strength/Dexterity/Intelligence chosen on allocation). */
+  attribute?: boolean;
 }
 
 export interface RawGroup {
@@ -56,6 +60,8 @@ export interface RawGroup {
   isProxy: boolean;
   asc?: string;
   ascStart: boolean;
+  /** PoE2: the group's own background art (renderGroup), when it names one. */
+  bg?: { image: string; half: boolean; offsetX?: number; offsetY?: number };
 }
 
 export interface RawConnector {
@@ -63,6 +69,21 @@ export interface RawConnector {
   b: number;
   orbit?: number;
   asc?: string;
+  /** Arc centre POB computed (PassiveTree:BuildArc); PoE2 arcs need not centre on the group. */
+  cx?: number;
+  cy?: number;
+}
+
+/** PoE2 class plate: image at x,y (half extents w,h), BGTreeActive/BGTree sizes, the ascendancy plates. */
+export interface ClassBackground {
+  image: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  active?: { w: number; h: number };
+  center?: { w: number; h: number };
+  ascendancies: { id: number; key: string; image: string; x: number; y: number; w: number; h: number; replace?: string; replaceBy?: string }[];
 }
 
 export interface RawClass {
@@ -72,9 +93,13 @@ export interface RawClass {
   startNodeId?: number;
   ascendancies: { id: string; name: string; nameZh: string }[];
   art?: { name: string; x: number; y: number };
+  background?: ClassBackground;
 }
 
 export interface TreeData {
+  game?: "poe1" | "poe2";
+  /** PassiveTree.scaleImage (PoE2 draws group art at sheet size x this). */
+  artScale?: number;
   treeVersion: string;
   size: number;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
@@ -161,6 +186,7 @@ export interface AscPlate {
 }
 
 export interface TreeModel {
+  poe2: boolean;
   version: string;
   size: number;
   bounds: TreeData["bounds"];
@@ -187,6 +213,8 @@ function kindOf(type: string): NodeKind {
       return "classStart";
     case "AscendClassStart":
       return "ascStart";
+    case "OnlyImage":
+      return "image";
     default:
       return "normal";
   }
@@ -205,7 +233,7 @@ export class HitIndex {
   private cell = 600;
   private cells = new Map<string, TreeNode[]>();
   add(n: TreeNode) {
-    if (n.size <= 0 || n.kind === "classStart") return;
+    if (n.size <= 0 || n.kind === "classStart" || n.kind === "image") return;
     const k = `${Math.floor(n.x / this.cell)}:${Math.floor(n.y / this.cell)}`;
     let list = this.cells.get(k);
     if (!list) this.cells.set(k, (list = []));
@@ -263,7 +291,10 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
     const b = nodes.get(c.b);
     if (!a || !b) continue;
     let arc: Edge["arc"] = null;
-    if (c.orbit != null && a.raw.group != null) {
+    if (c.orbit != null && c.cx != null && c.cy != null) {
+      const r = data.orbitRadii[c.orbit];
+      if (r) arc = { cx: c.cx, cy: c.cy, r };
+    } else if (c.orbit != null && a.raw.group != null) {
       const g = groups.get(a.raw.group);
       const r = data.orbitRadii[c.orbit];
       if (g && r) arc = { cx: g.x, cy: g.y, r };
@@ -271,10 +302,16 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
     edges.push({ a: a.id, b: b.id, asc: c.asc ?? null, arc });
   }
 
+  const poe2 = data.game === "poe2";
   const rings: GroupRing[] = [];
   const plates: AscPlate[] = [];
   for (const g of data.groups) {
     if (g.isProxy) continue;
+    if (poe2) {
+      // PoE2 renderGroup: art only where the group names it; ascendancy plates come with the classes
+      if (g.bg) rings.push({ x: g.x + (g.bg.offsetX ?? 0), y: g.y + (g.bg.offsetY ?? 0), art: g.bg.image, mirrored: g.bg.half });
+      continue;
+    }
     if (g.asc) {
       if (g.ascStart) plates.push({ asc: g.asc, x: g.x, y: g.y, art: `Classes${g.asc}` });
       continue;
@@ -336,5 +373,5 @@ export function buildModel(data: TreeData, dyn: DynamicNode[] = [], dynGroups: D
   const hit = new HitIndex();
   for (const n of nodes.values()) hit.add(n);
 
-  return { version: data.treeVersion, size: data.size, bounds: data.bounds, nodes, edges, rings, plates, classes: data.classes, classStart, hit };
+  return { poe2, version: data.treeVersion, size: data.size, bounds: data.bounds, nodes, edges, rings, plates, classes: data.classes, classStart, hit };
 }

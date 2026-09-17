@@ -24,7 +24,7 @@ export interface HostInfo {
   view?: string;
   /** The window's remembered scale (pob-zh.ini ModernZoom / ModernFontSize). */
   prefs?: UiPrefs;
-  hosts: { app: string; pob: string; data: string; fonts: string };
+  hosts: { app: string; pob: string; data: string; fonts: string; cache?: string };
 }
 export interface UiPrefs {
   zoom: number;
@@ -146,7 +146,7 @@ export const hostInfo: HostInfo = isHosted
       exeDir: "",
       pobDir: "",
       version: "dev",
-      hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "data.pobtools", fonts: "fonts.pobtools" },
+      hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "data.pobtools", fonts: "fonts.pobtools", cache: "cache.pobtools" },
     };
 
 export const bridge = new Bridge(isHosted ? window.pobtools! : new MockTransport());
@@ -159,7 +159,34 @@ export interface GateResult {
   checked: number;
 }
 
+/** What this POB offers beyond the gate (bridge capabilities()); a false one hides a feature. */
+export interface Caps {
+  sidebarBreakdown?: boolean;
+  siteImport?: boolean;
+  itemEnchant?: boolean;
+  itemCrucible?: boolean;
+  itemInfluence?: boolean;
+  itemModLineToggle?: boolean;
+  abyssJewels?: boolean;
+}
+
+/** bridge parse_item_text: the pasted text after reverse translation, and what POB's parser made of it. */
+export interface ParsedItemText {
+  reversed: boolean;
+  text: string;
+  /** Lines still holding Chinese after the reverse translation (POB turns them into '?'). */
+  untranslated: string[];
+  parsed: boolean;
+  rarity?: string;
+  title?: string;
+  baseName?: string;
+  lines?: { kind: string; line: string; lineZh: string; unsupported: boolean }[];
+}
+
 export interface VersionInfo {
+  /** "poe1" or "poe2": which Path of Building the engine runs. */
+  game?: "poe1" | "poe2";
+  caps?: Caps;
   pobVersion: string;
   pobBranch: string;
   pobPlatform: string;
@@ -302,6 +329,9 @@ export interface TreeState {
   /** POB's data.jewelRadius for this tree version (col is a ^xRRGGBB code). */
   jewelRadius?: JewelRadius[];
   points: BuildInfo["points"];
+  /** PoE2: where new points go (0 main tree, 1/2 weapon set) and each allocated weapon-set node's set. */
+  allocMode?: number;
+  nodeModes?: Record<string, number>;
   rev: number;
 }
 
@@ -343,7 +373,9 @@ export interface MasteryChoice {
 export type TreeClickResult =
   | (TreeState & { needsMastery?: undefined; needsConfirm?: undefined })
   | { needsMastery: true; id: number; name: string; nameZh: string; effects: MasteryChoice[]; selected?: number }
-  | { needsConfirm: "class_change"; id: number; className: string; classNameZh: string; ascendClassName?: string; connectFailed?: boolean };
+  | { needsConfirm: "class_change"; id: number; className: string; classNameZh: string; ascendClassName?: string; connectFailed?: boolean }
+  | { needsAttribute: true; id: number; options: { index: number; name: string; nameZh: string }[]; last?: number }
+  | { blocked: "weapon_set_global"; id: number };
 
 export interface NodeHover {
   id: number;
@@ -862,9 +894,11 @@ export const api = {
   getTreeState: () => bridge.call<TreeState>("get_tree_state"),
   nodeHover: (id: number) => bridge.call<NodeHover>("node_hover", { id }),
   nodeInfo: (id: number) => bridge.call<NodeInfo>("node_info", { id }),
-  treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect" } = {}) =>
+  treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number } = {}) =>
     bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
+  treeAttribute: (id: number, attribute: number) => bridge.call<TreeState>("tree_attribute", { id, attribute }, 60000),
+  setAllocMode: (mode: number) => bridge.call<TreeState>("set_alloc_mode", { mode }, 60000),
   treeUndo: () => bridge.call<TreeState>("tree_undo", {}, 60000),
   treeRedo: () => bridge.call<TreeState>("tree_redo", {}, 60000),
   listClasses: () => bridge.call<ClassList>("list_classes"),
@@ -901,6 +935,7 @@ export const api = {
   listItems: () => bridge.call<ItemsList>("list_items", {}, 60000),
   itemTooltip: (p: { id?: number; raw?: string; rarity?: string; slotName?: string; dbMode?: boolean; compare?: boolean; slotOnly?: boolean }) => bridge.call<ItemTooltip>("item_tooltip", p, 60000),
   itemRaw: (id: number) => bridge.call<{ raw: string }>("item_raw", { id }),
+  parseItemText: (raw: string) => bridge.call<ParsedItemText>("parse_item_text", { raw }, 60000),
   addItem: (raw: string, opts: { equip?: boolean; slotName?: string } = {}) => bridge.call<Committed & { item: ItemSummary; reversed?: boolean }>("add_item", { raw, ...opts }, 60000),
   deleteItem: (id: number) => bridge.call<Committed>("delete_item", { id }, 60000),
   equipItem: (id: number, slotName: string) => bridge.call<Committed>("equip_item", { id, slotName }, 60000),

@@ -192,6 +192,30 @@ static std::vector<std::string>       s_mod_suffixes_vec;
 static std::vector<HeaderMapping_Dyn> s_mod_annotations_vec;
 /* English header name → its translatable values (e.g. Radius → 大/中/小). */
 static std::unordered_map<std::string, std::vector<HeaderMapping_Dyn>> s_header_values;
+/* English header name -> word substitutions inside its value, e.g. Requires:
+** 等級 -> Level, 力量 -> Str; "*" applies under every header (the weapon damage
+** range " 到 " -> "-"). Longest Chinese first, like the annotations. */
+static std::unordered_map<std::string, std::vector<HeaderMapping_Dyn>> s_header_words;
+/* The advanced copy's "unscalable value" marker words, after the em-dash. PoE1's
+** client writes 無法使用的值, PoE2's 無法變動的值 (clientstrings
+** DescriptionLabelFixedValueStat); item_metadata may add more. */
+static std::vector<std::string> s_unscalable_markers;
+/* Whitespace-blind reverse patterns. PoE2's client prints a modifier with no
+** space between a number and the words ("+77(60-80)最大生命") while the
+** dictionaries carry GGG's template spacing ("{0} 最大生命"); the exact pattern
+** map therefore never sees those lines. Keyed on the pattern with every space
+** removed. Two templates that differ only by spacing but translate differently
+** are ambiguous: they are recorded and never answered, because picking one
+** would be a guess. */
+static std::unordered_map<std::string, FillPlan> s_reverse_pattern_compact;
+static std::unordered_map<std::string, std::string> s_reverse_pattern_compact_origin;
+static std::unordered_set<std::string> s_reverse_pattern_compact_ambiguous;
+/* The spaced pattern each compact key was registered from. */
+static std::unordered_map<std::string, std::string> s_reverse_pattern_compact_src;
+/* Headers whose value is itself a name the dictionaries know ("賦予技能: 長矛投擲"
+** -> "Grants Skill: Spear Throw"): every run of non-ASCII text in the value is
+** looked up whole in the exact reverse map. */
+static std::unordered_set<std::string> s_header_names;
 /* Lines the game COMPOSES as "<prefix><an ordinary stat>" rather than storing
 ** whole. GGPK holds only the template, so the composed string is absent from
 ** every dictionary — translate it the same way it was built.
@@ -376,6 +400,44 @@ static std::string normalize_whitespace(const std::string &s) {
     return result;
 }
 
+/* A pattern key with every ASCII and ideographic space removed. */
+static std::string compact_key(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == ' ' || s[i] == '\t') continue;
+        if ((unsigned char)s[i] == 0xE3 && i + 2 < s.size() &&
+            (unsigned char)s[i + 1] == 0x80 && (unsigned char)s[i + 2] == 0x80) {
+            i += 2;
+            continue;
+        }
+        r += s[i];
+    }
+    return r;
+}
+
+static void register_compact_pattern(const std::string &key, const FillPlan &plan, const std::string &origin) {
+    const std::string ck = compact_key(key);
+    if (ck.empty() || s_reverse_pattern_compact_ambiguous.count(ck)) return;
+    auto it = s_reverse_pattern_compact.find(ck);
+    if (it == s_reverse_pattern_compact.end() || s_reverse_pattern_compact_src[ck] == key) {
+        /* new, or the same spaced pattern again: last-wins, as the exact map does */
+        s_reverse_pattern_compact[ck] = plan;
+        s_reverse_pattern_compact_origin[ck] = origin;
+        s_reverse_pattern_compact_src[ck] = key;
+        return;
+    }
+    auto lower = [](std::string t) {
+        for (auto &c : t) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        return t;
+    };
+    if (lower(it->second.text) == lower(plan.text) && it->second.src == plan.src) return;
+    s_reverse_pattern_compact.erase(it);
+    s_reverse_pattern_compact_origin.erase(ck);
+    s_reverse_pattern_compact_src.erase(ck);
+    s_reverse_pattern_compact_ambiguous.insert(ck);
+}
+
 /* ========== Helper: replace digits with # for pattern matching ========== */
 
 /* ========== Helper: check if position starts a (X-Y) range pattern ========== */
@@ -415,7 +477,9 @@ static bool absorb_sign(std::string &result) {
     if (result.empty()) return false;
     char back = result.back();
     if (back == '+') { result.pop_back(); return true; }
-    if (back == '-' && (result.size() < 2 || result[result.size() - 2] != '#')) {
+    /* "8%-12%" is a range too: the '-' after a percentage separates. */
+    const bool after_percent = result.size() >= 3 && result[result.size() - 2] == '%' && result[result.size() - 3] == '#';
+    if (back == '-' && !after_percent && (result.size() < 2 || result[result.size() - 2] != '#')) {
         result.pop_back();
         return true;
     }
@@ -1179,6 +1243,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             ensure_reverse_plan();
             s_reverse_pattern[norm_value] = reverse_plan;
             s_reverse_pattern_origin[norm_value] = origin;
+            register_compact_pattern(norm_value, reverse_plan, origin);
             s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan_slots(slots_key, slots_value, norm_value);
         }
         std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
@@ -1216,6 +1281,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                         if (!s_reverse_pattern.count(nv)) {
                             s_reverse_pattern[nv] = build_fill_plan(v, k, nk);
                             s_reverse_pattern_origin[nv] = origin;
+                            register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
                         if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
@@ -1335,6 +1401,27 @@ static bool load_json_item_metadata(const std::string &filepath) {
                      [](const HeaderMapping_Dyn &a, const HeaderMapping_Dyn &b) {
                          return a.chinese.size() > b.chinese.size();
                      });
+
+    if (doc.contains("header_words") && doc["header_words"].is_object()) {
+        for (auto it = doc["header_words"].begin(); it != doc["header_words"].end(); ++it) {
+            auto &vec = s_header_words[it.key()];
+            load_mappings(it.value(), vec);
+            std::stable_sort(vec.begin(), vec.end(), [](const HeaderMapping_Dyn &a, const HeaderMapping_Dyn &b) {
+                return a.chinese.size() > b.chinese.size();
+            });
+        }
+    }
+    if (doc.contains("header_names") && doc["header_names"].is_array()) {
+        for (auto &item : doc["header_names"]) {
+            if (item.is_string()) s_header_names.insert(item.get<std::string>());
+        }
+    }
+    if (doc.contains("unscalable_markers") && doc["unscalable_markers"].is_array()) {
+        for (auto &item : doc["unscalable_markers"]) {
+            if (item.is_string() && !item.get<std::string>().empty())
+                s_unscalable_markers.push_back(item.get<std::string>());
+        }
+    }
 
     if (doc.contains("skip_patterns") && doc["skip_patterns"].is_array()) {
         for (auto &item : doc["skip_patterns"]) {
@@ -1789,6 +1876,13 @@ void translation_shutdown(void) {
     s_composite_prefixes_vec.clear();
     s_affix_names.clear();
     s_header_values.clear();
+    s_header_words.clear();
+    s_unscalable_markers.clear();
+    s_reverse_pattern_compact.clear();
+    s_reverse_pattern_compact_origin.clear();
+    s_reverse_pattern_compact_ambiguous.clear();
+    s_reverse_pattern_compact_src.clear();
+    s_header_names.clear();
     s_reverse_origin.clear();
     s_reverse_pattern_origin.clear();
     s_synonym_rules.clear();
@@ -2566,6 +2660,8 @@ static const char* find_header_prefix(const std::string &key_part,
 
 /* ========== Helper: try to translate item header "key: value" lines ========== */
 
+static std::string strip_suffix(const std::string &line, std::string &suffix);
+
 static bool try_header_translate(const std::string &line, std::string &out) {
     /* Check for "key: value" pattern */
     size_t colon = line.find(':');
@@ -2591,9 +2687,15 @@ static bool try_header_translate(const std::string &line, std::string &out) {
             if (vs != std::string::npos) value_part = value_part.substr(vs);
             size_t ve = value_part.find_last_not_of(" \t\r\n");
             if (ve != std::string::npos) value_part = value_part.substr(0, ve + 1);
+            std::string value_suffix;
             const char *val_eng = find_header_mapping(value_part, hv->second);
+            if (!val_eng) {
+                /* "範圍: 可變的 (augmented)" -- the value, then GGG's modifier note */
+                std::string bare = strip_suffix(value_part, value_suffix);
+                if (!value_suffix.empty()) val_eng = find_header_mapping(bare, hv->second);
+            }
             if (val_eng) {
-                out = std::string(eng) + ": " + val_eng;
+                out = std::string(eng) + ": " + val_eng + value_suffix;
                 return true;
             }
         }
@@ -2636,8 +2738,30 @@ static bool try_header_translate(const std::string &line, std::string &out) {
                 OutputDebugStringA(dbg);
             }
         }
-        /* Generic header: replace key, keep value as-is */
+        /* Generic header: replace key, keep value as-is -- apart from the
+        ** words item_metadata.header_words names for this header (需求: 等級 78
+        ** -> Requires: Level 78; 127 到 213 -> 127-213 under every header). */
         out = std::string(eng) + rest;
+        for (const char *scope : { eng, "*" }) {
+            auto hw = s_header_words.find(scope);
+            if (hw == s_header_words.end()) continue;
+            for (auto &w : hw->second) replace_all(out, w.chinese, w.english);
+        }
+        if (s_header_names.count(eng)) {
+            std::string named;
+            size_t i = 0;
+            while (i < out.size()) {
+                if ((unsigned char)out[i] < 0x80) { named += out[i++]; continue; }
+                size_t j = i;
+                while (j < out.size() && ((unsigned char)out[j] >= 0x80 ||
+                       (out[j] == ' ' && j + 1 < out.size() && (unsigned char)out[j + 1] >= 0x80))) j++;
+                const std::string run = out.substr(i, j - i);
+                auto rit = s_reverse.find(run);
+                named += (rit != s_reverse.end()) ? rit->second : run;
+                i = j;
+            }
+            out = named;
+        }
         return true;
     }
 
@@ -2677,20 +2801,30 @@ static std::string strip_suffix(const std::string &line, std::string &suffix) {
      * that merely ends with the same characters. */
     {
         static const char kUnscalableZh[] =
-            "\xe7\x84\xa1\xe6\xb3\x95\xe4\xbd\xbf\xe7\x94\xa8\xe7\x9a\x84\xe5\x80\xbc"; /* 無法使用的值 */
+            "\xe7\x84\xa1\xe6\xb3\x95\xe4\xbd\xbf\xe7\x94\xa8\xe7\x9a\x84\xe5\x80\xbc"; /* 無法使用的值 (PoE1) */
         static const char kEmDash[] = "\xe2\x80\x94";                                   /* — U+2014 */
-        const size_t ulen = sizeof(kUnscalableZh) - 1;
-        if (line.size() > ulen &&
-            line.compare(line.size() - ulen, ulen, kUnscalableZh) == 0) {
+        auto try_marker = [&](const std::string &marker, std::string &out) {
+            const size_t ulen = marker.size();
+            if (ulen == 0 || line.size() <= ulen ||
+                line.compare(line.size() - ulen, ulen, marker) != 0) return false;
             size_t p = line.size() - ulen;
             while (p > 0 && line[p - 1] == ' ') p--;
-            if (p >= 3 && line.compare(p - 3, 3, kEmDash) == 0) {
-                p -= 3;
-                while (p > 0 && line[p - 1] == ' ') p--;
-                if (p > 0) {
-                    suffix = " - Unscalable Value";
-                    return line.substr(0, p);
-                }
+            if (p < 3 || line.compare(p - 3, 3, kEmDash) != 0) return false;
+            p -= 3;
+            while (p > 0 && line[p - 1] == ' ') p--;
+            if (p == 0) return false;
+            out = line.substr(0, p);
+            return true;
+        };
+        std::string stripped;
+        if (try_marker(kUnscalableZh, stripped)) {
+            suffix = " - Unscalable Value";
+            return stripped;
+        }
+        for (const std::string &m : s_unscalable_markers) {
+            if (try_marker(m, stripped)) {
+                suffix = " - Unscalable Value";
+                return stripped;
             }
         }
     }
@@ -2984,8 +3118,20 @@ static std::string reverse_one_line(const std::string &line, LineKind kind = Lin
     return out;
 }
 
-static std::string reverse_one_line_impl(const std::string &line, LineKind kind) {
-    if (line.empty()) return REV("empty", line);
+static std::string reverse_one_line_impl(const std::string &line_in, LineKind kind) {
+    if (line_in.empty()) return REV("empty", line_in);
+    /* GGG markup that survived into the copied text ("[1.00E|裂紋怪客]" on a
+     * PoE2 unique's name): the words the client shows are the part after the
+     * pipe. Only a line that carries non-ASCII inside the brackets is touched,
+     * so an English "[...]" line stays as it was. */
+    std::string line_markup;
+    if (line_in.find('[') != std::string::npos && line_in.find(']') != std::string::npos) {
+        const std::string shown = strip_brackets(line_in);
+        bool cjk = false;
+        for (unsigned char c : shown) if (c >= 0x80) { cjk = true; break; }
+        if (cjk && shown != line_in) line_markup = shown;
+    }
+    const std::string &line = line_markup.empty() ? line_in : line_markup;
 
     /* 0. Separator lines. The 3.29+ copy format emits variable-width dash
      * rows (matching the section width); POB only recognises exactly
@@ -3388,6 +3534,25 @@ static std::string reverse_one_line_impl(const std::string &line, LineKind kind)
                     return REV("sign-fuzzy", result);
                 }
             }
+        }
+    }
+
+    /* 5d. Whitespace-blind: the same pattern with every space removed (PoE2's
+     * client writes no space between a number and the words). Sign handled as
+     * in 5c. Ambiguous compact keys were never stored. */
+    {
+        std::string ck = compact_key(pattern);
+        std::string sign_prefix;
+        auto cit = s_reverse_pattern_compact.find(ck);
+        if (cit == s_reverse_pattern_compact.end() && ck.size() >= 2 && (ck[0] == '+' || ck[0] == '-') && ck[1] == '#') {
+            sign_prefix = ck.substr(0, 1);
+            cit = s_reverse_pattern_compact.find(ck.substr(1));
+        }
+        if (cit != s_reverse_pattern_compact.end()) {
+            std::string result = sign_prefix + fill_plan(cit->second, hash_slot_values(core, /*normalize_ph=*/false)) + suffix;
+            const std::string noted = sign_prefix.empty() ? ck : ck.substr(1);
+            rev_note(noted, s_reverse_pattern_compact_origin.count(noted) ? s_reverse_pattern_compact_origin[noted] : "?");
+            return REV("compact", result);
         }
     }
 

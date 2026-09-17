@@ -53,8 +53,19 @@
   // questions the engine's click handler asks back
   let masteryMenu = $state<{ id: number; name: string; x: number; y: number; effects: MasteryChoice[]; selected: number | null } | null>(null);
   let classConfirm = $state<{ id: number; className: string; connectFailed: boolean } | null>(null);
+  /** PoE2 attribute node: allocate with a choice ("alloc") or switch an allocated one ("switch"). */
+  let attrMenu = $state<{ id: number; mode: "alloc" | "switch"; x: number; y: number; options: { index: number; name: string; nameZh: string }[]; last?: number } | null>(null);
+  const ATTRS = [
+    { index: 1, name: "Strength", nameZh: "" },
+    { index: 2, name: "Dexterity", nameZh: "" },
+    { index: 3, name: "Intelligence", nameZh: "" },
+  ];
+  // POB's colorCodes NEGATIVE / POSITIVE: weapon set 1 / 2 allocations
+  const SET_COLOR = ["", "#dd0022", "#33ff77"];
 
   const allocated = $derived(new Set(tree?.allocatedNodes ?? []));
+  const nodeModes = $derived(tree?.nodeModes ?? {});
+  const modeOf = (id: number) => nodeModes[String(id)] ?? 0;
   const overrides = $derived(tree?.overrides ?? {});
   const socketMap = $derived(new Map<number, TreeSocket>((tree?.sockets ?? []).map((s) => [s.nodeId, s])));
   const jewelRadius = $derived(tree?.jewelRadius ?? []);
@@ -125,7 +136,60 @@
     const y1 = cy + (h / 2 + pad) / zoom;
     const visible = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
 
-    if (S) {
+    if (S && M.poe2) {
+      // PoE2 PassiveTreeView:Draw: background, the class plate (with its
+      // ascendancy's art once chosen), BGTreeActive turned to the start node,
+      // BGTree, then every ascendancy plate (the current one lit).
+      S.cover(ctx, "Background2", w, h, 96);
+      const cls = M.classes.find((c) => c.name === currentClass);
+      const bg = cls?.background;
+      if (cls && bg) {
+        const [bx, by] = toScreen(bg.x, bg.y);
+        const ascArt = currentAsc ? bg.ascendancies.find((a) => a.key === currentAsc)?.image : undefined;
+        S.draw(ctx, ascArt ?? bg.image, bx, by, bg.w * zoom, bg.h * zoom);
+        const start = cls.startNodeId != null ? M.nodes.get(cls.startNodeId) : undefined;
+        if (start && bg.active) {
+          ctx.save();
+          ctx.translate(bx, by);
+          ctx.rotate(Math.PI / 2 + Math.atan2(start.y - bg.y, start.x - bg.x));
+          S.draw(ctx, "BGTreeActive", 0, 0, bg.active.w * zoom, bg.active.h * zoom);
+          ctx.restore();
+        }
+        if (bg.center) S.draw(ctx, "BGTree", bx, by, bg.center.w * zoom, bg.center.h * zoom);
+      }
+      for (const c of M.classes) {
+        for (const a of c.background?.ascendancies ?? []) {
+          if (a.replaceBy && a.replaceBy === currentAsc) continue;
+          if (a.replace && a.key !== currentAsc) continue;
+          if (!visible(a.x, a.y)) continue;
+          const [ax, ay] = toScreen(a.x, a.y);
+          ctx.globalAlpha = a.key === currentAsc ? 1 : 0.5;
+          S.draw(ctx, a.image, ax, ay, a.w * zoom, a.h * zoom);
+        }
+      }
+      ctx.globalAlpha = 1;
+      for (const g of M.rings) {
+        if (!visible(g.x, g.y)) continue;
+        const [gx, gy] = toScreen(g.x, g.y);
+        S.drawArt(ctx, g.art, gx, gy, zoom, g.mirrored, data?.artScale ?? 1);
+      }
+      // notable glows and group centre images sit under the connectors
+      if (zoom > 0.03) {
+        for (const n of M.nodes.values()) {
+          const eff = overrides[String(n.id)]?.effect ?? n.raw.effectImage;
+          const d = n.raw.draw;
+          if (!eff || !visible(n.x, n.y)) continue;
+          const lit = allocated.has(n.id) || hoverPath.has(n.id);
+          const hw = (n.kind === "image" ? d?.w : d?.ew) ?? 0;
+          const hh = (n.kind === "image" ? d?.h : d?.eh) ?? 0;
+          if (!hw) continue;
+          const [sx, sy] = toScreen(n.x, n.y);
+          ctx.globalAlpha = n.kind === "image" || !lit ? 0.15 : 1;
+          S.draw(ctx, eff, sx, sy, hw * zoom, hh * zoom);
+        }
+        ctx.globalAlpha = 1;
+      }
+    } else if (S) {
       S.cover(ctx, "Background2", w, h, 96);
       // class illustration + group rings + class start plates (POB's layer order)
       const cls = M.classes.find((c) => c.name === currentClass);
@@ -164,7 +228,7 @@
     }
 
     // connectors: one pass per style so each style is a single stroke
-    type Style = "dim" | "lit" | "path" | "alloc" | "dep";
+    type Style = "dim" | "lit" | "path" | "alloc" | "dep" | "set1" | "set2";
     const buckets = new Map<Style, typeof M.edges>();
     for (const e of M.edges) {
       const a = M.nodes.get(e.a)!;
@@ -174,7 +238,10 @@
       const ab = allocated.has(b.id);
       let st: Style = "dim";
       if (hoverDep.size && hoverDep.has(a.id) && hoverDep.has(b.id)) st = "dep";
-      else if (aa && ab) st = "alloc";
+      else if (aa && ab) {
+        const m = e.asc ? 0 : modeOf(a.id) || modeOf(b.id);
+        st = m === 1 ? "set1" : m === 2 ? "set2" : "alloc";
+      }
       else if (hoverPath.size) {
         const on = (n: TreeNode) => n.id === hover?.id || hoverPath.has(n.id) || allocated.has(n.id);
         if (on(a) && on(b)) st = "path";
@@ -190,9 +257,11 @@
       path: { color: pal.path, width: 9, alpha: 1 },
       alloc: { color: pal.alloc, width: 10, alpha: 1 },
       dep: { color: pal.dep, width: 10, alpha: 1 },
+      set1: { color: SET_COLOR[1], width: 10, alpha: 1 },
+      set2: { color: SET_COLOR[2], width: 10, alpha: 1 },
     };
     ctx.lineCap = "round";
-    for (const st of ["dim", "lit", "path", "alloc", "dep"] as Style[]) {
+    for (const st of ["dim", "lit", "path", "alloc", "set1", "set2", "dep"] as Style[]) {
       const list = buckets.get(st);
       if (!list?.length) continue;
       ctx.beginPath();
@@ -240,6 +309,57 @@
         ctx.arc(sx, sy, Math.max(half * 0.6, 1.5), 0, Math.PI * 2);
         ctx.fillStyle = alloc ? pal.alloc : st === "path" ? pal.path : pal.node;
         ctx.fill();
+        continue;
+      }
+      if (M.poe2) {
+        // PoE2: every piece at GetNodeTargetSize's half extents
+        const d = n.raw.draw ?? {};
+        if (n.kind === "image") continue;
+        if (n.kind === "ascStart") {
+          S.draw(ctx, "AscendancyMiddle", sx, sy, (d.ow ?? d.w ?? 50) * zoom, (d.oh ?? d.h ?? 50) * zoom);
+          continue;
+        }
+        if (n.kind === "socket") {
+          const fr = n.raw.frames?.[st];
+          if (fr && d.w) S.draw(ctx, fr, sx, sy, d.w * zoom, (d.h ?? d.w) * zoom);
+          const sk = socketMap.get(n.id);
+          if (alloc && sk?.overlay && d.ow) S.draw(ctx, sk.overlay, sx, sy, d.ow * zoom, (d.oh ?? d.ow) * zoom);
+        } else {
+          if (showIcons && d.w) {
+            const icon = iconOf(n, alloc);
+            if (icon && S.draw(ctx, icon, sx, sy, d.w * zoom, (d.h ?? d.w) * zoom) && !alloc && hover?.id !== n.id) {
+              // PassiveTreeView:LessLuminance on unallocated art
+              ctx.beginPath();
+              ctx.arc(sx, sy, d.w * zoom, 0, Math.PI * 2);
+              ctx.fillStyle = "rgba(0,0,0,0.45)";
+              ctx.fill();
+            }
+          }
+          const fr = n.raw.frames?.[st];
+          if (fr && d.ow) S.draw(ctx, fr, sx, sy, d.ow * zoom, (d.oh ?? d.ow) * zoom);
+          const m = alloc && !n.asc ? modeOf(n.id) : 0;
+          if (m && d.ow) {
+            ctx.beginPath();
+            ctx.arc(sx, sy, d.ow * zoom * 0.8, 0, Math.PI * 2);
+            ctx.strokeStyle = SET_COLOR[m];
+            ctx.lineWidth = Math.max(1.5, 8 * zoom);
+            ctx.stroke();
+          }
+        }
+        ctx.globalAlpha = 1;
+        if (hoverDep.has(n.id) && hover?.id !== n.id) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 3), 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(255,107,107,0.35)";
+          ctx.fill();
+        }
+        if (matches.has(n.id)) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 24 * zoom) + 5, 0, Math.PI * 2);
+          ctx.strokeStyle = pal.search;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
         continue;
       }
       if (n.kind === "ascStart") {
@@ -456,18 +576,36 @@
     if (!drag) return;
     const wasClick = !drag.moved;
     drag = null;
-    if (!wasClick || !hover || app.busy > 0 || e.button !== 0) return;
+    if (!wasClick || !hover || app.busy > 0) return;
     const n = hover;
-    if (n.kind === "ascStart" || n.kind === "classStart") return;
+    if (e.button === 2 && model?.poe2 && n.raw.attribute) {
+      // PoE2: right-click an attribute node to pick which attribute it grants
+      attrMenu = { id: n.id, mode: allocated.has(n.id) ? "switch" : "alloc", x: mouse.x, y: mouse.y, options: attrOptions() };
+      return;
+    }
+    if (e.button !== 0) return;
+    if (n.kind === "ascStart" || n.kind === "classStart" || n.kind === "image") return;
     hoverPath = new Set();
     hoverDep = new Set();
     await clickNode(n.id, {});
   }
 
   /** Sends the click to POB and follows up on what it asked for. */
-  async function clickNode(id: number, extra: { effect?: number; confirm?: "reset" | "connect" }) {
+  function attrOptions() {
+    return ATTRS.map((a) => ({ ...a, nameZh: t(`tree.attr.${a.name}`) }));
+  }
+
+  async function clickNode(id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number }) {
     const r = await app.run(() => api.treeClick(id, extra));
     if (!r) return;
+    if ("needsAttribute" in r && r.needsAttribute) {
+      attrMenu = { id: r.id, mode: "alloc", x: mouse.x, y: mouse.y, options: r.options.map((o) => ({ ...o, nameZh: o.nameZh || t(`tree.attr.${o.name}`) })), last: r.last };
+      return;
+    }
+    if ("blocked" in r && r.blocked) {
+      app.notice = t("tree.blockedGlobal");
+      return;
+    }
     if ("needsMastery" in r && r.needsMastery) {
       masteryMenu = { id: r.id, name: r.nameZh || r.name, x: mouse.x, y: mouse.y, effects: r.effects, selected: r.selected ?? null };
       return;
@@ -477,6 +615,23 @@
       return;
     }
     applyState(r as TreeState);
+  }
+
+  async function pickAttribute(index: number) {
+    if (!attrMenu) return;
+    const { id, mode } = attrMenu;
+    attrMenu = null;
+    if (mode === "alloc") {
+      await clickNode(id, { attribute: index });
+    } else {
+      const r = await app.run(() => api.treeAttribute(id, index));
+      if (r) applyState(r);
+    }
+  }
+
+  async function setAllocMode(mode: number) {
+    const r = await app.run(() => api.setAllocMode(mode));
+    if (r) applyState(r);
   }
 
   async function pickMastery(effect: number) {
@@ -554,6 +709,7 @@
     if (e.key === "Escape") {
       masteryMenu = null;
       classConfirm = null;
+      attrMenu = null;
       return;
     }
     if (e.ctrlKey && !e.shiftKey && (e.key === "z" || e.key === "y")) {
@@ -581,7 +737,7 @@
     }
     const s = new Set<number>();
     for (const n of model.nodes.values()) {
-      if (n.kind === "classStart" || n.kind === "ascStart") continue;
+      if (n.kind === "classStart" || n.kind === "ascStart" || n.kind === "image") continue;
       const r = n.raw;
       if (
         r.name.toLowerCase().includes(q) ||
@@ -637,7 +793,8 @@
         data = d;
         sprites = s;
         artMissing = s.manifest.missingSheets.length > 0;
-        s.warm("Background2", "PSSkillFrame", "PSGroupBackground1", "PSGroupBackground2", "PSGroupBackground3");
+        if (d.game === "poe2") s.warm("Background2", "PSSkillFrame", "BGTree", "BGTreeActive");
+        else s.warm("Background2", "PSSkillFrame", "PSGroupBackground1", "PSGroupBackground2", "PSGroupBackground3");
         dynKey = "";
         rebuild();
         loadError = null;
@@ -674,6 +831,17 @@
     <span class="vsep"></span>
     <button class="btn ghost sm" onclick={undo} disabled={app.busy > 0} title="Ctrl+Z">{t("tree.undo")}</button>
     <button class="btn ghost sm" onclick={redo} disabled={app.busy > 0} title="Ctrl+Y">{t("tree.redo")}</button>
+    {#if model?.poe2 && tree}
+      <span class="vsep"></span>
+      <span class="dim small">{t("tree.allocMode")}</span>
+      <div class="seg">
+        {#each [0, 1, 2] as m (m)}
+          <button class="btn sm" class:primary={(tree.allocMode ?? 0) === m} disabled={app.busy > 0} onclick={() => setAllocMode(m)}>
+            {#if m}<i class="dot" style:background={SET_COLOR[m]}></i>{/if}{t(m === 0 ? "tree.allocMain" : m === 1 ? "tree.allocSet1" : "tree.allocSet2")}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <span class="spacer"></span>
     {#if tree}
       <span class="points num">
@@ -710,11 +878,21 @@
       </div>
     {/if}
 
+    {#if attrMenu}
+      <div class="menu" style:left={`${Math.min(attrMenu.x, w - 240)}px`} style:top={`${Math.min(attrMenu.y, h - 200)}px`}>
+        <div class="menu-title">{t("tree.attrTitle")}</div>
+        {#each attrMenu.options as o (o.index)}
+          <button class="choice" class:on={o.index === attrMenu.last} onclick={() => pickAttribute(o.index)}>{o.nameZh || o.name}</button>
+        {/each}
+        <button class="choice cancel" onclick={() => (attrMenu = null)}>{t("tree.cancel")}</button>
+      </div>
+    {/if}
+
     {#if classConfirm}
       <ClassChangeDialog className={classConfirm.className} connectFailed={classConfirm.connectFailed} onanswer={answerClass} oncancel={() => (classConfirm = null)} />
     {/if}
 
-    {#if hover && !masteryMenu && !classConfirm}
+    {#if hover && !masteryMenu && !classConfirm && !attrMenu}
       <div class="tip" style:left={`${Math.min(mouse.x + 16, w - 336)}px`} style:top={`${Math.min(mouse.y + 16, h - 80)}px`}>
         <div class="tip-title">
           <span class="name" class:keystone={hover.kind === "keystone"} class:notable={hover.kind === "notable"}>{nameOf(hover)}</span>
@@ -744,7 +922,8 @@
         </div>
         <div class="tip-foot">
           {#if allocated.has(hover.id)}
-            <span class="ok">{t("tree.allocated")}</span>
+            <span class="ok">{t("tree.allocated")}{#if modeOf(hover.id)} · {t("tree.setN", { n: modeOf(hover.id) })}{/if}</span>
+            {#if model?.poe2 && hover.raw.attribute}<span class="dim">{t("tree.attrSwitch")}</span>{/if}
             <span class="dim">{hoverDep.size > 1 ? t("tree.clickRemoveN", { n: hoverDep.size }) : t("tree.clickRemove")}</span>
           {:else if hoverCost != null}
             <span>{t("tree.pointsN", { n: hoverCost })}</span>
@@ -941,5 +1120,17 @@
     padding: 6px 12px 8px;
     border-top: 1px solid var(--edge-0);
     font-size: var(--fs-xs);
+  }
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+  }
+  .seg .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
   }
 </style>

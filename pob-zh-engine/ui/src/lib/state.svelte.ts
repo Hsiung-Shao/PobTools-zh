@@ -23,6 +23,12 @@ class AppState {
   /** POB's outputRevision after the last refresh; everything cached is keyed on it. */
   rev = $state(0);
   loaded = $derived(this.info !== null);
+  /** PoE2's Path of Building (bridge version.game; the host's game before the engine answers). */
+  poe2 = $derived((this.version?.game ?? hostInfo.game) === "poe2");
+  /** A capability POB lacks is false; unknown (older bridge) counts as present. */
+  has(cap: keyof NonNullable<VersionInfo["caps"]>): boolean {
+    return this.version?.caps?.[cap] !== false;
+  }
 
   /** Runs one engine call with the busy counter and error surfacing. */
   async run<T>(fn: () => Promise<T>): Promise<T | undefined> {
