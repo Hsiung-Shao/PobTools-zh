@@ -25,6 +25,8 @@ export interface HostInfo {
   /** The window's remembered scale (pob-zh.ini ModernZoom / ModernFontSize). */
   prefs?: UiPrefs;
   hosts: { app: string; pob: string; data: string; fonts: string; cache?: string };
+  /** Served by the system-browser fallback (Wine / CrossOver): hosts are full URLs. */
+  browser?: boolean;
 }
 export interface UiPrefs {
   zoom: number;
@@ -148,6 +150,17 @@ export const hostInfo: HostInfo = isHosted
       version: "dev",
       hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "data.pobtools", fonts: "fonts.pobtools", cache: "cache.pobtools" },
     };
+
+/**
+ * URL of `path` under one of the host's folders. The WebView2 window names a
+ * virtual host ("pob.pobtools"); the browser fallback hands over a full URL
+ * ("http://127.0.0.1:port/t/<token>/~pob").
+ */
+export function hostUrl(host: keyof HostInfo["hosts"], path: string, info: HostInfo = hostInfo): string {
+  const h = info.hosts[host] ?? `${host}.pobtools`;
+  const base = h.includes("://") ? h : `https://${h}`;
+  return `${base}/${path}`;
+}
 
 export const bridge = new Bridge(isHosted ? window.pobtools! : new MockTransport());
 

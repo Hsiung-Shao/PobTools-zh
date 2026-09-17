@@ -39,7 +39,8 @@
 #include "placeholder_selftest.h"
 #include "pob_launch.h"
 #include "headless_proc.h" // --engine-headless / --headless-selftest
-#include "modern_ui_window.h" // --modern-ui
+#include "modern_ui_window.h"
+#include "modern_ui_browser.h" // --modern-ui
 #include "window_manager.h"
 #include "window_dock.h"
 #include "filter_editor.h"
@@ -731,6 +732,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--modern-ui") { // --modern-ui [poe1|poe2] [build.xml]
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
 		return ShowModernUi(dir, arg2.empty() ? c.game : arg2, c.locale, c, arg3);
+	}
+	// The same, forced into the system browser (what Wine / CrossOver get; on
+	// Windows a way to test it).
+	if (arg1 == L"--modern-ui-browser") { // --modern-ui-browser [poe1|poe2] [build.xml]
+		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
+		return ShowModernUiInBrowser(dir, arg2.empty() ? c.game : arg2, c.locale, c, arg3);
 	}
 
 	// Developer probe: one or more bridge calls against a real install, JSON out.

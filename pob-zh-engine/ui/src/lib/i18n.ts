@@ -4,7 +4,7 @@
 // Data\launcher\<locale>\ui.json through the host's data.pobtools mapping --
 // the same folder the launcher's own strings live in, so the signed
 // translation-data line can update them without an app release.
-import { hostInfo, isHosted } from "./bridge";
+import { hostInfo, hostUrl, isHosted } from "./bridge";
 
 const EN: Record<string, string> = {
   "app.title": "PobTools",
@@ -409,7 +409,7 @@ export function loadLocale(): Promise<void> {
   if (ready) return ready;
   const loc = locale();
   if (!isHosted || loc === "en") return (ready = Promise.resolve());
-  ready = fetch(`https://${hostInfo.hosts.data}/launcher/${loc}/ui.json`)
+  ready = fetch(hostUrl("data", `launcher/${loc}/ui.json`))
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
       if (j && typeof j === "object") table = { ...EN, ...(j as Record<string, string>) };

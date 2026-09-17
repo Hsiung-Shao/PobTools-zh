@@ -22,6 +22,9 @@ struct LauncherConfig;
 // `why` (optional) receives the first missing piece, for a message or a log.
 bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why);
 
+// (Where WebView2 cannot run, ShowModernUi opens the same page in the system
+// browser instead -- modern_ui_browser.h -- so "usable" below counts that too.)
+
 // ModernUiAvailable plus the remembered bridge gate for this POB (same
 // install, same version, same bridge.lua): what the launcher's "Launch"
 // button asks before it opens the new interface instead of the classic one.

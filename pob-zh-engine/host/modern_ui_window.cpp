@@ -6,6 +6,7 @@
 #include "launcher_config.h"
 #include "pob_launch.h"
 #include "bridge_gate.h"
+#include "modern_ui_browser.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -496,7 +497,7 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 
 bool ModernUiUsableFor(const std::wstring& exeDir, const std::wstring& pobDir, const std::string& pobVersion)
 {
-	if (pobDir.empty() || !ModernUiAvailable(exeDir, nullptr)) return false;
+	if (pobDir.empty() || !(ModernUiAvailable(exeDir, nullptr) || ModernUiBrowserAvailable(exeDir))) return false;
 	const BridgeGate::Verdict v = BridgeGate::Read(exeDir);
 	return !BridgeGate::BlocksModernUi(v, pobDir, pobVersion, BridgeGate::BridgeFingerprint(exeDir));
 }
@@ -506,6 +507,12 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
                  const std::wstring& openBuild)
 {
 	std::wstring why;
+	if (!ModernUiAvailable(exeDir, &why) && ModernUiBrowserAvailable(exeDir)) {
+		// Wine / CrossOver, or Windows without the WebView2 Runtime: the same
+		// page in the system browser.
+		PobLog::Error("modernui", "no WebView2 (" + narrow(why) + "): opening the new interface in the system browser");
+		return ShowModernUiInBrowser(exeDir, game, locale, cfg, openBuild);
+	}
 	if (!ModernUiAvailable(exeDir, &why)) {
 		PobLog::Error("modernui", "cannot open: " + narrow(why));
 		MessageBoxW(nullptr,

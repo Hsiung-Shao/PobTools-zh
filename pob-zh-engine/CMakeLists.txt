@@ -477,6 +477,9 @@ if (WIN32)
         # the new UI: a Win32 window hosting WebView2, forwarding lines between
         # the Svelte page (dist\ui) and the headless POB child
         host/modern_ui_window.cpp
+        # ...or, where WebView2 cannot run (Wine / CrossOver), the same page in
+        # the system browser over a loopback HTTP server
+        host/modern_ui_browser.cpp
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp

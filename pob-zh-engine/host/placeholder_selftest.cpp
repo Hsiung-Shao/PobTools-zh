@@ -79,10 +79,12 @@ struct TeeOut {
 	{
 		fflush(stdout);
 		if (f) fclose(f);
-		if (AttachConsole(ATTACH_PARENT_PROCESS)) {
-			FILE* c = nullptr;
-			freopen_s(&c, "CONOUT$", "w", stdout);
-		}
+		// Replay the report to the console we were started from. Without one
+		// (redirected, or under Wine) stdout is the file just closed above, and
+		// writing to it is what made the process exit 9 (EBADF) with a clean report.
+		if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
+		FILE* c = nullptr;
+		if (freopen_s(&c, "CONOUT$", "w", stdout) != 0) return;
 		FILE* r = nullptr;
 		_wfopen_s(&r, path.c_str(), L"rb");
 		if (r) {

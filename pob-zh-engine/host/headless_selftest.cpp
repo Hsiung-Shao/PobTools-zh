@@ -9,6 +9,7 @@
 // check's integrity pass sees every manifest file where it expects it.
 
 #include "headless_proc.h"
+#include "modern_ui_browser.h"
 #include "paste_fixtures_poe2.h"
 #include "pob_launch.h"
 
@@ -16,11 +17,14 @@
 #include "launcher_config.h"
 
 #define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
 #include <windows.h>
 #include <winioctl.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <thread>
 #include <cstring>
 #include <set>
 #include <string>
@@ -173,7 +177,11 @@ void CopyTree(const std::wstring& src, const std::wstring& dst, const std::wstri
 		if (ShouldSkip(r)) continue;
 		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
 			if (ShouldJunction(r)) {
-				if (MakeJunction(dst + L"\\" + n, src + L"\\" + n)) st.junctions++; else st.errors++;
+				// Wine has no mount-point reparse points (FSCTL_SET_REPARSE_POINT
+				// fails there): copy the folder instead -- slower, same content.
+				if (MakeJunction(dst + L"\\" + n, src + L"\\" + n)) st.junctions++;
+				else if (PobLaunch::RunningUnderWine()) { RemoveDirectoryW((dst + L"\\" + n).c_str()); CopyTree(src + L"\\" + n, dst + L"\\" + n, r, st); }
+				else st.errors++;
 			} else if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
 				CopyTree(src + L"\\" + n, dst + L"\\" + n, r, st);
 			}
@@ -435,7 +443,8 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		check("sandbox copied", st.errors == 0 && st.files > 100,
 		      "files=" + std::to_string(st.files) + " dirs=" + std::to_string(st.dirs) +
 		          " junctions=" + std::to_string(st.junctions) + " errors=" + std::to_string(st.errors));
-		check("sandbox TreeData is a junction (not a copy)", IsReparse(sandbox + L"\\TreeData"));
+		check("sandbox TreeData is a junction (not a copy; under Wine, which has no junctions, a copy)",
+		      IsReparse(sandbox + L"\\TreeData") || (PobLaunch::RunningUnderWine() && IsDir(sandbox + L"\\TreeData")));
 
 		const std::wstring sample = FindSampleBuild(pobDir + L"\\Builds");
 		check("a saved build with <PlayerStat> exists to use as the oracle", !sample.empty(), narrow(sample));
@@ -1770,7 +1779,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		CopyStats st;
 		CopyTree(pobDir, sandbox, L"", st);
 		MkdirP(sandbox + L"\\Builds");
-		check("sandbox copied (TreeData junctioned)", st.errors == 0 && st.files > 50 && IsReparse(sandbox + L"\\TreeData"),
+		check("sandbox copied (TreeData junctioned; copied under Wine)", st.errors == 0 && st.files > 50 &&
+		      (IsReparse(sandbox + L"\\TreeData") || (PobLaunch::RunningUnderWine() && IsDir(sandbox + L"\\TreeData"))),
 		      "files=" + std::to_string(st.files) + " errors=" + std::to_string(st.errors));
 		const std::string manifestVersion = ManifestVersion(ReadFileA(sandbox + L"\\manifest.xml"));
 
@@ -2062,6 +2072,117 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		      !okFc && child.Alive(), fc.dump().substr(0, 200));
 
 		child.Stop(5000);
+
+		// --- the system-browser fallback (what Wine / CrossOver get) -------------
+		// The loopback server against this sandbox: the page with its boot
+		// script, the folder mounts, the refusals (token, climbing, Host), the
+		// event stream carrying the engine's hello, a host.* round trip and
+		// host.close ending it.
+		{
+			SetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", L"1");
+			const std::wstring urlFile = exeDir + L"PobTools\\modern_ui_url.txt";
+			DeleteFileW(urlFile.c_str());
+			LauncherConfig bcfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+			std::atomic<int> brc{ -1000 };
+			std::thread server([&]() { brc = ShowModernUiInBrowser(exeDir, L"poe2", L"zh-rTW", bcfg, L"", sandbox); });
+			std::string url;
+			for (int i = 0; i < 120 && url.empty(); i++) {
+				url = ReadFileA(urlFile);
+				if (url.empty()) Sleep(500);
+			}
+			int port = 0;
+			std::string prefix;
+			if (url.rfind("http://127.0.0.1:", 0) == 0) {
+				port = atoi(url.c_str() + 17);
+				size_t slash = url.find('/', 17);
+				if (slash != std::string::npos) prefix = url.substr(slash);
+			}
+			check("browser mode: the server listens on 127.0.0.1 under a /t/<token>/ URL", port > 0 && prefix.size() > 30, url);
+
+			WSADATA wsa{};
+			WSAStartup(MAKEWORD(2, 2), &wsa);
+			auto connectLocal = [&]() -> SOCKET {
+				SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+				sockaddr_in a{};
+				a.sin_family = AF_INET;
+				a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+				a.sin_port = htons((u_short)port);
+				if (connect(s, (sockaddr*)&a, sizeof(a)) != 0) { closesocket(s); return INVALID_SOCKET; }
+				DWORD tmo = 15000;
+				setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tmo, sizeof(tmo));
+				return s;
+			};
+			// one request, Connection: close -> status code and body
+			auto http = [&](const std::string& method, const std::string& path, const std::string& host, const std::string& body, std::string& out) -> int {
+				SOCKET s = connectLocal();
+				if (s == INVALID_SOCKET) return -1;
+				std::string req = method + " " + path + " HTTP/1.1\r\nHost: " + host + "\r\nContent-Length: " +
+				                  std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+				send(s, req.data(), (int)req.size(), 0);
+				std::string resp;
+				char buf[16384];
+				int n;
+				while ((n = recv(s, buf, sizeof(buf), 0)) > 0) resp.append(buf, n);
+				closesocket(s);
+				size_t sp = resp.find(' ');
+				size_t he = resp.find("\r\n\r\n");
+				out = he == std::string::npos ? std::string() : resp.substr(he + 4);
+				return sp == std::string::npos ? 0 : atoi(resp.c_str() + sp + 1);
+			};
+			const std::string host = "127.0.0.1:" + std::to_string(port);
+			std::string body;
+			int page = port ? http("GET", prefix, host, "", body) : -1;
+			check("browser mode: the page is served with the window.pobtools boot script injected",
+			      page == 200 && body.find("window.pobtools") != std::string::npos && body.find("\"browser\":true") != std::string::npos,
+			      std::to_string(page));
+			int font = port ? http("GET", prefix + "~fonts/NotoSansTC-Regular.ttf", host, "", body) : -1;
+			int badTok = port ? http("GET", "/t/00000000000000000000000000000000/", host, "", body) : -1;
+			int climb = port ? http("GET", prefix + "~pob/../../pob-zh.ini", host, "", body) : -1;
+			int badHost = port ? http("GET", prefix, "evil.example", "", body) : -1;
+			check("browser mode: fonts are served; a wrong token, climbing out and a foreign Host header are refused",
+			      font == 200 && badTok == 404 && climb == 403 && badHost == 421,
+			      "font=" + std::to_string(font) + " token=" + std::to_string(badTok) + " climb=" + std::to_string(climb) + " host=" + std::to_string(badHost));
+
+			// the event stream: the engine's hello, then a host.info answer
+			SOCKET es = port ? connectLocal() : INVALID_SOCKET;
+			std::string stream;
+			bool gotHello = false, gotInfo = false;
+			if (es != INVALID_SOCKET) {
+				std::string req = "GET " + prefix + "~events HTTP/1.1\r\nHost: " + host + "\r\n\r\n";
+				send(es, req.data(), (int)req.size(), 0);
+				char buf[16384];
+				const ULONGLONG until = GetTickCount64() + 120000;
+				bool asked = false;
+				while (GetTickCount64() < until && !gotInfo) {
+					int n = recv(es, buf, sizeof(buf), 0);
+					if (n <= 0) break;
+					stream.append(buf, n);
+					if (!gotHello && stream.find("\"event\":\"hello\"") != std::string::npos) gotHello = true;
+					if (gotHello && !asked) {
+						asked = true;
+						std::string ignored;
+						http("POST", prefix + "~send", host, "{\"id\":77001,\"method\":\"host.info\",\"params\":{}}", ignored);
+					}
+					if (stream.find("\"id\":77001") != std::string::npos && stream.find("\"browser\":true", stream.find("\"id\":77001")) != std::string::npos) gotInfo = true;
+				}
+			}
+			check("browser mode: the event stream carries the engine's hello and a POSTed host.info comes back on it",
+			      gotHello && gotInfo, stream.substr(0, 300));
+			std::string ignored;
+			if (port) http("POST", prefix + "~send", host, "{\"id\":77002,\"method\":\"host.close\",\"params\":{}}", ignored);
+			if (es != INVALID_SOCKET) closesocket(es);
+			bool stopped = false;
+			for (int i = 0; i < 60 && !stopped; i++) {
+				if (brc.load() != -1000) stopped = true; else Sleep(500);
+			}
+			check("browser mode: host.close ends the server (exit 0) and removes the URL file",
+			      stopped && brc.load() == 0 && GetFileAttributesW(urlFile.c_str()) == INVALID_FILE_ATTRIBUTES,
+			      "rc=" + std::to_string(brc.load()));
+			if (stopped) server.join(); else server.detach();
+			WSACleanup();
+			SetEnvironmentVariableW(L"POB_ZH_NO_BROWSER", nullptr);
+		}
+
 		Rmtree(sandbox);
 	}
 

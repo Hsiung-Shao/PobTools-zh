@@ -56,8 +56,10 @@
 	X(uiModeModern,      u8"新介面(Beta)",                 u8"New interface (Beta)")                  \
 	X(uiModeHint,        u8"按「啟動」時開哪一種視窗(PoE1 與 PoE2 都適用)。這版 POB 與新介面不相容時會開經典。", \
 	                     u8"Which window the Launch button opens, for PoE1 and PoE2 alike. A POB version the new interface is not compatible with opens the classic window.") \
-	X(uiModeUnavailable, u8"這台電腦無法使用新介面(需要 WebView2 Runtime,且不支援 Wine / CrossOver),「啟動」一律開經典視窗。", \
-	                     u8"The new interface cannot run on this computer (it needs the WebView2 Runtime and does not run under Wine / CrossOver); Launch always opens the classic window.") \
+	X(uiModeUnavailable, u8"找不到新介面的頁面檔(ui\\index.html),「啟動」一律開經典視窗。", \
+	                     u8"The new interface's page (ui\\index.html) is missing; Launch always opens the classic window.") \
+	X(uiModeBrowser,     u8"按「啟動」時開哪一種視窗(PoE1 與 PoE2 都適用)。這台電腦沒有 WebView2(例如 macOS / Linux 的 CrossOver、Wine),新介面會在系統瀏覽器開啟;關掉分頁即結束。", \
+	                     u8"Which window the Launch button opens, for PoE1 and PoE2 alike. This computer has no WebView2 (CrossOver / Wine on macOS or Linux), so the new interface opens in the system browser; closing the tab ends it.") \
 	/* Phase 3: the new interface's compatibility gate failed against this POB
 	   version; the classic window opened instead and the button waits for the
 	   next POB update. %s = POB version, %d = failed probe count. */                              \

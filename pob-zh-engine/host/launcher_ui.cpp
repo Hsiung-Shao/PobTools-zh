@@ -15,6 +15,7 @@
 #include "pob_launch.h"
 #include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
+#include "modern_ui_browser.h" // ModernUiBrowserAvailable: the system-browser fallback
 #include "window_dock.h"
 #include "window_manager.h"   // DockTabLabel
 // Tools that draw inside this window rather than in one of their own.
@@ -1004,7 +1005,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// The new (WebView2) interface: decided once per launcher run. Without the
 	// runtime, the loader DLL or the built page there is nothing to open, and a
 	// button that opens a message box is worse than no button.
-	const bool modernUiOk = !PobLaunch::RunningUnderWine() && ModernUiAvailable(exeDir, nullptr);
+	// Under Wine / CrossOver (or without the WebView2 Runtime) the new interface
+	// opens in the system browser instead, so the page being there is enough.
+	const bool modernUiOk = ModernUiAvailable(exeDir, nullptr) || ModernUiBrowserAvailable(exeDir);
+	const bool modernInBrowser = modernUiOk && !ModernUiAvailable(exeDir, nullptr);
 	// The remembered compatibility verdict (PobTools\bridge_gate.json, written
 	// by the new-interface window). Re-read every couple of seconds: the
 	// window that just fell back to classic writes it while we are open.
@@ -2065,11 +2069,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 		// Tools: secondary actions. The buttons share the row, so the width
 		// divisor and the gap count move together: nTools buttons, nTools-1
-		// gaps. The new-interface button only exists where WebView2 can run.
+		// gaps.
 		SectionLabel(fonts, scale, inner, S.toolsSection);
 		{
 			float gap = 12.0f * scale;
-			const int nTools = modernUiOk ? 7 : 6;
+			const int nTools = 6;
 			ImVec2 toolSize((inner - (nTools - 1) * gap) / (float)nTools, 46.0f * scale);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.84f, 0.91f, 0.92f, 1.0f));
 			// The translation editor edits dist\Data\{game}\{locale}\*.json in
@@ -2424,7 +2428,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushFont(fonts.small);
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
-				ImGui::TextWrapped("%s", modernUiOk ? S.uiModeHint : S.uiModeUnavailable);
+				ImGui::TextWrapped("%s", !modernUiOk ? S.uiModeUnavailable : modernInBrowser ? S.uiModeBrowser : S.uiModeHint);
 				ImGui::PopTextWrapPos();
 				ImGui::PopStyleColor();
 				ImGui::PopFont();

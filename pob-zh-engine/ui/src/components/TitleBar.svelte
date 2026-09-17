@@ -1,6 +1,6 @@
 <!-- 頂列:品牌、分頁、右側目前建置。分頁用底線標示,不用膠囊。 -->
 <script lang="ts">
-  import { api } from "$lib/bridge";
+  import { api, hostInfo } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app, type ViewId } from "$lib/state.svelte";
 
@@ -20,7 +20,10 @@
   // The OS window title carries the build name for the taskbar.
   $effect(() => {
     const name = app.info?.buildName;
-    void api.setTitle(name ? `${name}${app.info?.unsaved ? " •" : ""}` : "");
+    const title = name ? `${name}${app.info?.unsaved ? " •" : ""}` : "";
+    void api.setTitle(title);
+    // in the system browser the tab title is the page's own
+    if (hostInfo.browser) document.title = title ? `${title} - PobTools` : "PobTools";
   });
 </script>
 

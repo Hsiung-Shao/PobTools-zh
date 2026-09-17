@@ -23,3 +23,12 @@ describe("Sprites", () => {
   });
   it("uses POB's 1.33 art scale", () => expect(ART_SCALE).toBeCloseTo(1.33));
 });
+
+describe("hostUrl", () => {
+  it("names a WebView2 virtual host, or takes the browser fallback's full URL as is", async () => {
+    const { hostUrl } = await import("$lib/bridge");
+    const base = { game: "poe2", locale: "zh-rTW", exeDir: "", pobDir: "", version: "t" };
+    expect(hostUrl("pob", "TreeData/a.png", { ...base, hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "d", fonts: "f" } })).toBe("https://pob.pobtools/TreeData/a.png");
+    expect(hostUrl("cache", "tree/x-1.png", { ...base, hosts: { app: "a", pob: "p", data: "d", fonts: "f", cache: "http://127.0.0.1:5000/t/abc/~cache" } })).toBe("http://127.0.0.1:5000/t/abc/~cache/tree/x-1.png");
+  });
+});

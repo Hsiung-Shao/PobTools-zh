@@ -4,7 +4,7 @@
 // host's pob.pobtools virtual host, so a POB update that ships new art is
 // picked up on the next load with no build step.
 
-import { api, hostInfo } from "$lib/bridge";
+import { api, hostUrl } from "$lib/bridge";
 
 export interface SpriteRect {
   file: string;
@@ -46,11 +46,9 @@ export class Sprites {
 
   static url(file: string): string {
     // "cache:" = decoded by the engine into PobTools\cache (PoE2's DDS arrays)
-    if (file.startsWith("cache:")) {
-      const rel = file.slice(6);
-      return `https://${hostInfo.hosts.cache ?? "cache.pobtools"}/${rel.split("/").map(encodeURIComponent).join("/")}`;
-    }
-    return `https://${hostInfo.hosts.pob}/${file.split("/").map(encodeURIComponent).join("/")}`;
+    const enc = (p: string) => p.split("/").map(encodeURIComponent).join("/");
+    if (file.startsWith("cache:")) return hostUrl("cache", enc(file.slice(6)));
+    return hostUrl("pob", enc(file));
   }
 
   has(name: string): boolean {
