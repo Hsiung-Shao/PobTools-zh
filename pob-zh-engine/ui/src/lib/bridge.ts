@@ -181,6 +181,35 @@ export interface Caps {
   itemInfluence?: boolean;
   itemModLineToggle?: boolean;
   abyssJewels?: boolean;
+  /** PoE1's SkillsTab imbued support picker and Optimise Sockets. */
+  skillImbued?: boolean;
+}
+
+export interface GemOptionChoice {
+  value: string;
+  label: string;
+  labelZh?: string;
+  description?: string;
+}
+/** SkillsTab's "Gem Options" section. */
+export interface GemOptions {
+  sortGemsByDPS: boolean;
+  sortGemsByDPSField: string;
+  sortFields: GemOptionChoice[];
+  defaultGemLevel: string;
+  defaultGemLevels: GemOptionChoice[];
+  defaultGemQuality: number;
+  showSupportGemTypes: string;
+  supportGemTypes: GemOptionChoice[];
+  showLegacyGems: boolean;
+}
+/** What a group's detail shows beyond set_group's fields. */
+export interface GroupExtras {
+  index: number;
+  count: number;
+  countShown: boolean;
+  imbued?: { shown: boolean; enabled: boolean; name?: string; nameZh?: string };
+  optimiseSockets?: { shown: boolean; enabled: boolean };
 }
 
 /** bridge parse_item_text: the pasted text after reverse translation, and what POB's parser made of it. */
@@ -272,6 +301,17 @@ export type BreakdownSection =
   | { type: "text"; size: number; lines: string[] }
   | { type: "table"; label?: string; footer?: string; cols: { label: string; key: string; right: boolean }[]; rows: Record<string, string>[] }
   | { type: "radius"; radius: number };
+
+export interface BuildListResult {
+  buildPath: string;
+  subPath: string;
+  entries: BuildEntry[];
+  /** POB's search box text in effect (main.filterBuildList). */
+  filter?: string;
+  /** main.buildSortMode and the choices of POB's sort drop-down. */
+  sortMode?: string;
+  sortModes?: { sortMode: string; label: string }[];
+}
 
 export interface BuildEntry {
   isFolder: boolean;
@@ -918,7 +958,10 @@ export const api = {
   setClass: (classId: number, confirm?: "reset" | "connect") => bridge.call<SetClassResult>("set_class", { classId, confirm }, 60000),
   setAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_ascendancy", { ascendClassId }, 60000),
   setSecondaryAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_secondary_ascendancy", { ascendClassId }, 60000),
-  listBuilds: (subPath = "") => bridge.call<{ buildPath: string; subPath: string; entries: BuildEntry[] }>("list_builds", { subPath }),
+  listBuilds: (subPath = "", opts: { filter?: string; sortMode?: string } = {}) =>
+    bridge.call<BuildListResult>("list_builds", { subPath, ...opts }),
+  moveBuild: (p: { path: string; subPath: string; isFolder: boolean; name: string; targetSubPath: string; copy?: boolean }) =>
+    bridge.call<{ path: string }>("move_build", p),
   loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
   getSidebar: () => bridge.call<Sidebar>("get_sidebar"),
   sidebarBreakdown: (rowIndex: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("sidebar_breakdown", { rowIndex }),
@@ -980,6 +1023,15 @@ export const api = {
   deleteGroup: (index: number) => bridge.call<Committed>("delete_group", { index }, 60000),
   setGroup: (index: number, p: { label?: string; enabled?: boolean; includeInFullDPS?: boolean; slot?: string; mainActiveSkill?: number }) => bridge.call<Committed>("set_group", { index, ...p }, 60000),
   moveGroup: (from: number, to: number) => bridge.call<Committed>("move_group", { from, to }, 60000),
+  groupExtras: (index: number) => bridge.call<GroupExtras>("group_extras", { index }, 60000),
+  setGroupCount: (index: number, count: number) => bridge.call<Committed>("set_group_count", { index, count }, 60000),
+  setImbuedSupport: (index: number, gemId?: string) => bridge.call<Committed>("set_imbued_support", { index, gemId }, 60000),
+  optimiseSockets: (index: number) => bridge.call<Committed>("optimise_sockets", { index }, 60000),
+  copyGroup: (index: number) => bridge.call<{ text: string }>("copy_group", { index }, 60000),
+  pasteGroup: (text: string) => bridge.call<Committed & { index: number }>("paste_group", { text }, 60000),
+  getGemOptions: () => bridge.call<GemOptions>("get_gem_options", {}, 60000),
+  setGemOptions: (p: Partial<Pick<GemOptions, "sortGemsByDPS" | "sortGemsByDPSField" | "defaultGemLevel" | "defaultGemQuality" | "showSupportGemTypes" | "showLegacyGems">>) =>
+    bridge.call<GemOptions>("set_gem_options", p, 60000),
   addGem: (group: number, p: { nameSpec?: string; gemId?: string; level?: number; quality?: number; index?: number }) => bridge.call<Committed & { gem: GemInstance }>("add_gem", { group, ...p }, 60000),
   setGem: (group: number, index: number, p: GemPatch) => bridge.call<Committed & { gem: GemInstance }>("set_gem", { group, index, ...p }, 60000),
   deleteGem: (group: number, index: number) => bridge.call<Committed>("delete_gem", { group, index }, 60000),
@@ -1003,7 +1055,7 @@ export const api = {
   getCalcs: () => bridge.call<CalcsData>("get_calcs", {}, 60000),
   setCalcsInput: (v: string, value: unknown) => bridge.call<Committed>("set_calcs_input", { var: v, value }, 60000),
   calcsBreakdown: (si: number, ui: number, ri: number, ci: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("calcs_breakdown", { si, ui, ri, ci }, 60000),
-  getNotes: () => bridge.call<{ text: string; unsaved: boolean; rev: number }>("get_notes"),
+  getNotes: () => bridge.call<{ text: string; unsaved: boolean; rev: number; colours?: { code: string; name: string }[] }>("get_notes"),
   setNotes: (text: string) => bridge.call<Committed>("set_notes", { text }, 60000),
   getParty: () => bridge.call<PartyData>("get_party", {}, 60000),
   setParty: (field: string, text: string) => bridge.call<Committed>("set_party", { field, text }, 60000),

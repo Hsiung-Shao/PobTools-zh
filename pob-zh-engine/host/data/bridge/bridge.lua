@@ -428,18 +428,33 @@ end
 
 -- Builds under main.buildPath, scanned/filtered/sorted by POB's own helpers
 -- (Modules/BuildListHelpers: the same index the classic build list shows).
+-- list_builds{subPath, filter?, sortMode?}: the build list screen. `filter`
+-- is its search box (main.filterBuildList: PoE1 matches words and class:x
+-- across the subfolders, PoE2 globs file names in this folder), `sortMode`
+-- its sort drop-down (main.buildSortMode, which POB keeps in Settings.xml).
 function M.list_builds(p)
 	local subPath = p and p.subPath or ""
 	local helpers = require("Modules.BuildListHelpers")
+	local m = main()
+	local sortModes = {}
+	for i, s in ipairs(helpers.buildSortDropList or {}) do
+		sortModes[i] = { sortMode = s.sortMode, label = s.label }
+		if p and p.sortMode == s.sortMode then m.buildSortMode = s.sortMode end
+	end
+	local filter = ""
+	if p and type(p.filter) == "string" then
+		filter = p.filter
+		m.filterBuildList = filter
+	end
 	-- PoE1: ScanFolder indexes, FilterList picks the folder's entries. PoE2's
 	-- helpers predate that split: ScanFolder(subPath, filter) returns the list.
 	local list
 	if helpers.FilterList then
-		list = helpers.FilterList(helpers.ScanFolder(subPath), subPath, "")
+		list = helpers.FilterList(helpers.ScanFolder(subPath), subPath, filter)
 	else
-		list = helpers.ScanFolder(subPath, "")
+		list = helpers.ScanFolder(subPath, filter)
 	end
-	helpers.SortList(list, main().buildSortMode or "NAME")
+	helpers.SortList(list, m.buildSortMode or "NAME")
 	local entries = {}
 	for i, e in ipairs(list) do
 		entries[i] = {
@@ -455,7 +470,7 @@ function M.list_builds(p)
 			modified = e.modified,
 		}
 	end
-	return { buildPath = main().buildPath, subPath = subPath, entries = entries }
+	return { buildPath = m.buildPath, subPath = subPath, entries = entries, filter = filter, sortMode = m.buildSortMode or "NAME", sortModes = sortModes }
 end
 
 -- The header the UI shows: name, class, level, points. Points come from
@@ -2299,6 +2314,56 @@ function M.delete_build(p)
 	return { deleted = p.path }
 end
 
+-- move_build{path, subPath, isFolder, name, targetSubPath, copy?}: the build
+-- list's cut/copy + paste into another folder and dragging onto a folder
+-- (BuildList.lua OnFrame Ctrl+V, BuildListControl ReceiveDrag). A file keeps
+-- its name with listMode:GetDestName's "[2]" suffix when taken; a folder
+-- cannot go inside itself (BuildListHelpers.CanMoveToSubPath).
+function M.move_build(p)
+	if type(p) ~= "table" or type(p.path) ~= "string" or type(p.name) ~= "string" then error("params.path and params.name required", 0) end
+	local sub = type(p.subPath) == "string" and p.subPath or ""
+	local target = type(p.targetSubPath) == "string" and p.targetSubPath or ""
+	local root = build_root()
+	if not under_build_path(p.path) or not under_build_path(root .. target) then error("path must be under the build folder", 0) end
+	local entry = { subPath = sub, folderName = p.isFolder and p.name or nil, fileName = (not p.isFolder) and p.name or nil }
+	local helpers = require("Modules.BuildListHelpers")
+	local can
+	if helpers.CanMoveToSubPath then
+		can = helpers.CanMoveToSubPath(entry, target)
+	else
+		-- PoE2's helpers have no CanMoveToSubPath (its paste does not check);
+		-- the same two conditions as PoE1's, so a folder never recurses into itself
+		can = sub ~= target and not (p.isFolder and target:sub(1, #(sub .. p.name .. "/")) == sub .. p.name .. "/")
+	end
+	if not can then error(p.isFolder and "a folder cannot be moved or copied into itself" or "already in that folder", 0) end
+	local m = main()
+	local dest
+	if p.isFolder then
+		dest = root .. target .. p.name
+		if path_exists(dest) then error("already exists: " .. p.name, 0) end
+		if p.copy then
+			m:CopyFolder(p.path, dest)
+		else
+			m:MoveFolder(p.name, root .. sub, root .. target)
+		end
+	else
+		dest = m.modes.LIST:GetDestName(target, p.name)
+		local res, msg
+		if p.copy then res, msg = copyFile(p.path, dest) else res, msg = os.rename(p.path, dest) end
+		if not res then error((p.copy and "copy failed: " or "move failed: ") .. tostring(msg), 0) end
+		local b = build()
+		if not p.copy and b and b.dbFileName and norm_path(b.dbFileName) == norm_path(p.path) then b.dbFileName = dest end
+	end
+	return { path = dest }
+end
+
+probe("build list move/paste (main.MoveFolder, listMode.GetDestName, buildSortDropList)", function()
+	local m = launch.main
+	local ok, helpers = pcall(require, "Modules.BuildListHelpers")
+	return type(m.MoveFolder) == "function" and type(m.modes) == "table" and type(m.modes.LIST) == "table"
+		and type(m.modes.LIST.GetDestName) == "function" and ok and type(helpers.buildSortDropList) == "table"
+end)
+
 probe("build list file ops (copyFile/CopyFolder/RemoveDir/NewFileSearch/os.rename)", function()
 	return type(copyFile) == "function" and type(launch.main.CopyFolder) == "function" and type(RemoveDir) == "function"
 		and type(NewFileSearch) == "function" and type(os.rename) == "function" and type(os.remove) == "function"
@@ -4008,6 +4073,212 @@ local function gem_list(b)
 	return list
 end
 
+-- ---- Gem Options section and the per-group extras -------------------------
+-- Everything below drives SkillsTab's own controls (their list/selFunc/
+-- changeFunc/onClick), the way a click would.
+
+local function dropdown_options(c, key)
+	local out = {}
+	for i, v in ipairs(c and c.list or {}) do
+		out[i] = { value = v[key], label = v.label, labelZh = tr(v.label), description = v.description }
+	end
+	return out
+end
+
+local function select_dropdown(c, key, value)
+	for i, v in ipairs(c.list or {}) do
+		if v[key] == value then
+			c.selIndex = i
+			if c.selFunc then c.selFunc(i, v) end
+			return
+		end
+	end
+	error("unknown option " .. tostring(value), 0)
+end
+
+-- get_gem_options{}: SkillsTab's "Gem Options" (sort gems by DPS and by what,
+-- default gem level / quality, which supports to show, legacy gems).
+function M.get_gem_options()
+	local tab = ensure_build().skillsTab
+	local c = tab.controls
+	return {
+		sortGemsByDPS = tab.sortGemsByDPS and true or false,
+		sortGemsByDPSField = tab.sortGemsByDPSField,
+		sortFields = dropdown_options(c.sortGemsByDPSFieldControl, "type"),
+		defaultGemLevel = tab.defaultGemLevel,
+		defaultGemLevels = dropdown_options(c.defaultLevel, "gemLevel"),
+		defaultGemQuality = tab.defaultGemQuality,
+		showSupportGemTypes = tab.showSupportGemTypes,
+		supportGemTypes = dropdown_options(c.showSupportGemTypes, "show"),
+		showLegacyGems = tab.showLegacyGems and true or false,
+	}
+end
+
+-- set_gem_options{sortGemsByDPS?, sortGemsByDPSField?, defaultGemLevel?, defaultGemQuality?, showSupportGemTypes?, showLegacyGems?}
+function M.set_gem_options(p)
+	local tab = ensure_build().skillsTab
+	local c = tab.controls
+	p = p or {}
+	if p.sortGemsByDPS ~= nil then
+		c.sortGemsByDPS.state = p.sortGemsByDPS and true or false
+		c.sortGemsByDPS.changeFunc(c.sortGemsByDPS.state)
+	end
+	if p.sortGemsByDPSField ~= nil then select_dropdown(c.sortGemsByDPSFieldControl, "type", p.sortGemsByDPSField) end
+	if p.defaultGemLevel ~= nil then select_dropdown(c.defaultLevel, "gemLevel", p.defaultGemLevel) end
+	if p.defaultGemQuality ~= nil then c.defaultQuality:SetText(tostring(math.floor(tonumber(p.defaultGemQuality) or 0)), true) end
+	if p.showSupportGemTypes ~= nil then select_dropdown(c.showSupportGemTypes, "show", p.showSupportGemTypes) end
+	if p.showLegacyGems ~= nil then
+		c.showLegacyGems.state = p.showLegacyGems and true or false
+		c.showLegacyGems.changeFunc(c.showLegacyGems.state)
+	end
+	return M.get_gem_options()
+end
+
+probe("SkillsTab Gem Options controls (sortGemsByDPS/sortGemsByDPSFieldControl/defaultLevel/defaultQuality/showSupportGemTypes/showLegacyGems)", function()
+	local b = build()
+	if not (b and b.skillsTab) then return true end
+	local c = b.skillsTab.controls
+	return type(c.sortGemsByDPS) == "table" and type(c.sortGemsByDPS.changeFunc) == "function"
+		and type(c.sortGemsByDPSFieldControl) == "table" and type(c.sortGemsByDPSFieldControl.selFunc) == "function"
+		and type(c.defaultLevel) == "table" and type(c.defaultLevel.selFunc) == "function"
+		and type(c.defaultQuality) == "table" and type(c.defaultQuality.SetText) == "function"
+		and type(c.showSupportGemTypes) == "table" and type(c.showLegacyGems) == "table" and type(c.showLegacyGems.changeFunc) == "function"
+end)
+
+-- The group's extras need it to be SkillsTab's display group: the controls'
+-- closures read self.displayGroup.
+-- a control's shown/enabled: a function, a flag, or absent (= true)
+local function ctrl_flag(ctrl, field)
+	local v = ctrl and ctrl[field]
+	if type(v) == "function" then return v() and true or false end
+	if v == nil then return true end
+	return v and true or false
+end
+local function on_enabled(ctrl) return ctrl_flag(ctrl, "enabled") end
+
+local function display_group(tab, g)
+	if tab.displayGroup ~= g then tab:SetDisplayGroup(g) end
+end
+
+-- set_group_count{index, count}: "Count:" of a group granted by an item or node.
+function M.set_group_count(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.index)
+	if not g.source then error("only a group from an item or passive has a count", 0) end
+	display_group(tab, g)
+	tab.controls.groupCount:SetText(tostring(tonumber(p.count) or 1), true)
+	return skills_committed(b, g)
+end
+
+-- group_extras{index}: what the group detail shows beyond set_group's fields
+-- (count, imbued support, Optimise Sockets) and whether each applies.
+function M.group_extras(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.index)
+	display_group(tab, g)
+	local c = tab.controls
+	local on = ctrl_flag
+	local imbued = c.imbuedSupport and {
+		shown = on(c.imbuedSupportLabel, "shown"),
+		enabled = on(c.imbuedSupport, "enabled"),
+		name = g.imbuedSupport,
+		nameZh = g.imbuedSupport and tr(g.imbuedSupport) or nil,
+	} or nil
+	return {
+		index = tonumber(p.index),
+		count = g.groupCount or 1,
+		countShown = g.source ~= nil,
+		imbued = imbued,
+		optimiseSockets = c.optimiseSockets and { shown = on(c.optimiseSockets, "shown"), enabled = on(c.optimiseSockets, "enabled") } or nil,
+	}
+end
+
+-- set_imbued_support{index, gemId|nil}: the Imbued Support gem picker and its
+-- "x" (PoE1). The picker's own change function does the work.
+function M.set_imbued_support(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local c = tab.controls
+	if not c.imbuedSupport then error("this POB has no imbued supports", 0) end
+	local g = group_at(tab, p and p.index)
+	display_group(tab, g)
+	if not on_enabled(c.imbuedSupport) then error("imbued support is not available for this group", 0) end
+	if p.gemId and p.gemId ~= "" then
+		local gem = b.data.gems[p.gemId]
+		if not gem or not (gem.grantedEffect and gem.grantedEffect.support) then error("not a support gem: " .. tostring(p.gemId), 0) end
+		c.imbuedSupport.gemChangeFunc(p.gemId, nil, nil, true, g.slot)
+	else
+		c.imbuedSupportClear.onClick()
+	end
+	return skills_committed(b, g)
+end
+
+-- optimise_sockets{index}: "Optimise Sockets" -- rebuild the item's sockets
+-- to match the groups assigned to it (PoE1).
+function M.optimise_sockets(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local c = tab.controls
+	if not c.optimiseSockets then error("this POB has no Optimise Sockets", 0) end
+	local g = group_at(tab, p and p.index)
+	display_group(tab, g)
+	if not on_enabled(c.optimiseSockets) then error("nothing to optimise for this group", 0) end
+	c.optimiseSockets.onClick()
+	b.itemsTab:PopulateSlots()
+	return skills_committed(b, g)
+end
+
+-- copy_group{index} -> {text}: CopySocketGroup's clipboard text (Copy is
+-- caught so the page puts it on the clipboard itself).
+function M.copy_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.index)
+	local text
+	local saved = Copy
+	Copy = function(s) text = s end
+	local ok, err = pcall(tab.CopySocketGroup, tab, g)
+	Copy = saved
+	if not ok then error(err, 0) end
+	return { text = text or "" }
+end
+
+-- paste_group{text}: PasteSocketGroup on that text (it adds the group, selects
+-- it and flags the build; nothing is added when no gem line parses).
+function M.paste_group(p)
+	local b = ensure_build()
+	local tab = b.skillsTab
+	if type(p) ~= "table" or type(p.text) ~= "string" then error("params.text required", 0) end
+	local before = #tab.socketGroupList
+	local saved = Paste
+	Paste = function() return nil end
+	local ok, err = pcall(tab.PasteSocketGroup, tab, p.text)
+	Paste = saved
+	if not ok then error(err, 0) end
+	if #tab.socketGroupList == before then error("no gems found in the pasted text", 0) end
+	local r = skills_committed(b, tab.socketGroupList[#tab.socketGroupList])
+	r.index = #tab.socketGroupList
+	return r
+end
+
+probe("SkillsTab.SetDisplayGroup/CopySocketGroup/PasteSocketGroup + groupCount control", function()
+	local c = class_of("SkillsTab")
+	local b = build()
+	return type(c) == "table" and type(c.SetDisplayGroup) == "function" and type(c.CopySocketGroup) == "function"
+		and type(c.PasteSocketGroup) == "function" and (not (b and b.skillsTab) or type(b.skillsTab.controls.groupCount) == "table")
+end)
+probe("SkillsTab imbued support + Optimise Sockets controls (PoE1)", function()
+	local b = build()
+	if GAME == "poe2" then return false end
+	if not (b and b.skillsTab) then return true end
+	local c = b.skillsTab.controls
+	return type(c.imbuedSupport) == "table" and type(c.imbuedSupport.gemChangeFunc) == "function"
+		and type(c.imbuedSupportClear) == "table" and type(c.imbuedSupportClear.onClick) == "function"
+		and type(c.optimiseSockets) == "table" and type(c.optimiseSockets.onClick) == "function"
+end, "skillImbued")
+
 function M.gem_search(p)
 	local b = ensure_build()
 	local q = p and type(p.query) == "string" and p.query:lower() or ""
@@ -4472,7 +4743,20 @@ function M.get_notes()
 	local b = ensure_build()
 	local tab = b.notesTab
 	tab:SetShowColorCodes(false)
-	return { text = tab.controls.edit.buf or "", unsaved = tab.modFlag and true or false, rev = b.outputRevision }
+	-- the colour buttons above POB's editor, in its order: each label is the
+	-- colour code followed by the name (NotesTab.lua "colorCodes.X.."X"")
+	local colours = {}
+	for _, n in ipairs({ "normal", "magic", "rare", "unique", "fire", "cold", "lightning", "chaos", "strength", "dexterity", "intelligence", "default" }) do
+		local c = tab.controls[n]
+		local label = c and c.label
+		if type(label) == "function" then label = label() end
+		if type(label) == "string" then
+			local code, name = label:match("^(%^x%x%x%x%x%x%x)(.*)$")
+			if not code then code, name = label:match("^(%^%d)(.*)$") end
+			if code then colours[#colours + 1] = { code = code, name = name } end
+		end
+	end
+	return { text = tab.controls.edit.buf or "", unsaved = tab.modFlag and true or false, rev = b.outputRevision, colours = colours }
 end
 
 function M.set_notes(p)

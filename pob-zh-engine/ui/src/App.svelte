@@ -31,6 +31,17 @@
       void app.save();
       return;
     }
+    // Build.lua: Ctrl+I opens the import tab, Ctrl+W leaves the build for the list
+    if (k === "i" && !e.shiftKey && app.loaded) {
+      e.preventDefault();
+      app.view = "import";
+      return;
+    }
+    if (k === "w" && !e.shiftKey && app.loaded) {
+      e.preventDefault();
+      app.view = "builds";
+      return;
+    }
     // window zoom, the browser's own shortcuts (WebView2's are switched off)
     if (k === "=" || k === "+") {
       e.preventDefault();

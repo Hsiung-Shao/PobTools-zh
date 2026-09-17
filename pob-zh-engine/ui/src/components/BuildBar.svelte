@@ -10,6 +10,32 @@
   let levelDraft = $state<string>("");
   let saveAsOpen = $state(false);
   let saveAsName = $state("");
+  // the folder the build goes into, relative to POB's build folder ("" = top)
+  let saveAsDir = $state("");
+  let saveAsFolders = $state<string[]>([]);
+  let saveAsNewFolder = $state<string | null>(null);
+  async function openSaveAs() {
+    saveAsName = h?.buildName ?? "";
+    const root = app.buildPath.split(String.fromCharCode(92)).join("/").replace(/[/]+$/, "").toLowerCase();
+    const file = (h?.dbFileName ?? "").split(String.fromCharCode(92)).join("/");
+    const dir = file.slice(0, file.lastIndexOf("/") + 1);
+    saveAsDir = file && dir.toLowerCase().startsWith(root + "/") ? dir.slice(root.length + 1) : "";
+    saveAsOpen = true;
+    await loadFolders(saveAsDir);
+  }
+  async function loadFolders(dir: string) {
+    const r = await app.run(() => api.listBuilds(dir, { filter: "" }));
+    if (!r) return;
+    saveAsDir = r.subPath;
+    saveAsFolders = r.entries.filter((e) => e.isFolder).map((e) => e.folderName ?? "");
+  }
+  async function makeFolder() {
+    const name = (saveAsNewFolder ?? "").trim();
+    saveAsNewFolder = null;
+    if (!name) return;
+    const r = await app.run(() => api.newFolder(saveAsDir, name));
+    if (r) await loadFolders(saveAsDir + name + "/");
+  }
 
   // class / ascendancy (Build.lua's classDrop / ascendDrop / secondaryAscendDrop)
   const pick = $derived(h?.classPick ?? null);
@@ -72,8 +98,7 @@
   async function save() {
     if (!h) return;
     if (!h.dbFileName) {
-      saveAsName = h.buildName ?? "";
-      saveAsOpen = true;
+      void openSaveAs();
       return;
     }
     await app.save();
@@ -83,7 +108,7 @@
     const name = saveAsName.trim();
     if (!name) return;
     saveAsOpen = false;
-    await app.saveAs(name);
+    await app.saveAs(saveAsDir + name);
   }
 
   export function onKey(e: KeyboardEvent): boolean {
@@ -189,7 +214,7 @@
     <span class="actions">
       {#if app.savedAt}<span class="dim savedat">{t("bar.savedAt", { time: app.savedAt })}</span>{/if}
       <button class="btn sm" class:primary={h.unsaved} disabled={app.busy > 0} title="Ctrl+S" onclick={save}>{t("bar.save")}</button>
-      <button class="btn ghost sm" disabled={app.busy > 0} onclick={() => { saveAsName = h.buildName ?? ""; saveAsOpen = true; }}>{t("bar.saveAs")}</button>
+      <button class="btn ghost sm" disabled={app.busy > 0} onclick={openSaveAs}>{t("bar.saveAs")}</button>
     </span>
   </div>
 
@@ -202,6 +227,25 @@
       <div class="dialog">
         <div class="label">{t("bar.saveAsTitle")}</div>
         <p class="dim">{t("bar.saveAsBody")}</p>
+        <div class="folders">
+          <div class="fpath dim">{app.buildPath}{saveAsDir}</div>
+          <div class="flist">
+            {#if saveAsDir}
+              <button class="frow" onclick={() => loadFolders(saveAsDir.replace(/[^/]+[/]$/, ""))}>↑ ..</button>
+            {/if}
+            {#each saveAsFolders as f}
+              <button class="frow" onclick={() => loadFolders(saveAsDir + f + "/")}>📁 {f}</button>
+            {/each}
+          </div>
+          {#if saveAsNewFolder !== null}
+            <span class="fnew">
+              <input class="input" placeholder={t("builds.newFolder")} bind:value={saveAsNewFolder} onkeydown={(e) => e.key === "Enter" && makeFolder()} />
+              <button class="btn sm" onclick={makeFolder} disabled={!saveAsNewFolder.trim()}>OK</button>
+            </span>
+          {:else}
+            <button class="btn ghost sm" onclick={() => (saveAsNewFolder = "")}>{t("builds.newFolder")}</button>
+          {/if}
+        </div>
         <input class="input" bind:value={saveAsName} onkeydown={(e) => e.key === "Enter" && saveAs()} />
         <div class="dlg-actions">
           <button class="btn ghost" onclick={() => (saveAsOpen = false)}>{t("tree.cancel")}</button>
@@ -292,6 +336,39 @@
   .dlg-actions {
     display: flex;
     justify-content: flex-end;
+    gap: 6px;
+  }
+  .folders {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .fpath {
+    font-size: var(--fs-xs);
+    word-break: break-all;
+  }
+  .flist {
+    max-height: 180px;
+    overflow: auto;
+    border: 1px solid var(--edge-0);
+    border-radius: 4px;
+  }
+  .frow {
+    display: block;
+    width: 100%;
+    text-align: left;
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--ink-1);
+    padding: 3px 8px;
+  }
+  .frow:hover {
+    background: var(--surface-2);
+  }
+  .fnew {
+    display: flex;
     gap: 6px;
   }
 </style>

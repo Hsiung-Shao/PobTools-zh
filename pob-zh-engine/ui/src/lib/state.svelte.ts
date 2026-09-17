@@ -113,6 +113,7 @@ class AppState {
   }
 
   async loadBuild(path: string) {
+    if (this.info?.unsaved && !confirm(t("builds.unsavedOpen"))) return;
     const ok = await this.run(async () => {
       await api.loadBuildFile(path);
       return this.refresh();

@@ -2,7 +2,8 @@
      (名稱搜尋、等級/品質/啟用/全域/數量)。每個改動都經 POB 的 ProcessSocketGroup。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type GemHit, type GemInstance, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
+  import { api, type GemHit, type GemInstance, type GemOptions, type GroupExtras, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
+  import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -25,6 +26,130 @@
   let setDialog = $state<{ mode: "new" | "rename"; title: string; copy: boolean } | null>(null);
 
   const group = $derived(data ? data.groups.find((g) => g.index === sel) : undefined);
+
+  // the selected group's count / imbued support / Optimise Sockets
+  let extras = $state<GroupExtras | null>(null);
+  let countDraft = $state("");
+  let imbuedQuery = $state("");
+  let imbuedHits = $state<GemHit[]>([]);
+  let imbuedOpen = $state(false);
+  let imbuedTimer = 0;
+  async function loadExtras(i: number) {
+    try {
+      const x = await api.groupExtras(i);
+      if (x.index !== sel) return;
+      extras = x;
+      countDraft = String(x.count);
+    } catch {
+      extras = null;
+    }
+  }
+  $effect(() => {
+    const i = sel;
+    const rev = app.rev;
+    void rev;
+    if (!data || !data.groups.some((g) => g.index === i)) return;
+    untrack(() => void loadExtras(i));
+  });
+  async function applyCount() {
+    if (!group || !extras || String(extras.count) === countDraft) return;
+    const n = Math.max(1, Math.floor(Number(countDraft) || 1));
+    const r = await app.run(() => api.setGroupCount(group.index, n));
+    if (r) await changed();
+  }
+  function searchImbued(q: string) {
+    clearTimeout(imbuedTimer);
+    if (!q.trim()) {
+      imbuedHits = [];
+      return;
+    }
+    imbuedTimer = window.setTimeout(async () => {
+      try {
+        imbuedHits = (await api.gemSearch({ query: q.trim(), limit: 20, supportOnly: true })).gems;
+      } catch {
+        imbuedHits = [];
+      }
+    }, 120);
+  }
+  async function setImbued(gemId?: string) {
+    if (!group) return;
+    imbuedOpen = false;
+    imbuedQuery = "";
+    const r = await app.run(() => api.setImbuedSupport(group.index, gemId));
+    if (r) await changed();
+  }
+  async function optimise() {
+    if (!group) return;
+    const r = await app.run(() => api.optimiseSockets(group.index));
+    if (r) await changed();
+  }
+
+  // CopySocketGroup / PasteSocketGroup
+  let pasteDialog = $state<{ text: string } | null>(null);
+  async function copyGroup() {
+    if (!group) return;
+    const r = await app.run(() => api.copyGroup(group.index));
+    if (r && (await copyText(r.text))) app.notice = t("skills.copied");
+  }
+  async function openPaste() {
+    let text = "";
+    try {
+      text = (await navigator.clipboard?.readText?.()) ?? "";
+    } catch {
+      text = "";
+    }
+    pasteDialog = { text };
+  }
+  async function pasteOk() {
+    if (!pasteDialog) return;
+    const text = pasteDialog.text;
+    pasteDialog = null;
+    const r = await app.run(() => api.pasteGroup(text));
+    if (r) {
+      sel = r.index;
+      await changed();
+    }
+  }
+
+  // Gem Options (the section under POB's group list)
+  let gemOpts = $state<GemOptions | null>(null);
+  let gemOptsOpen = $state(false);
+  let qualityDraft = $state("");
+  async function toggleGemOpts() {
+    gemOptsOpen = !gemOptsOpen;
+    if (gemOptsOpen) {
+      const r = await app.run(() => api.getGemOptions());
+      if (r) {
+        gemOpts = r;
+        qualityDraft = String(r.defaultGemQuality ?? 0);
+      }
+    }
+  }
+  async function patchGemOpts(p: Parameters<typeof api.setGemOptions>[0]) {
+    const r = await app.run(() => api.setGemOptions(p));
+    if (r) {
+      gemOpts = r;
+      qualityDraft = String(r.defaultGemQuality ?? 0);
+    }
+  }
+  const choiceLabel = (c: { label: string; labelZh?: string }) => c.labelZh || c.label;
+
+  // SkillListControl: right click = main group, Ctrl+right = Full DPS, Ctrl+click = enable
+  async function rowContext(e: MouseEvent, g: SocketGroup) {
+    e.preventDefault();
+    const r = e.ctrlKey
+      ? await app.run(() => api.setGroup(g.index, { includeInFullDPS: !g.includeInFullDPS }))
+      : await app.run(() => api.setBuildField("mainSocketGroup", g.index));
+    if (r) await changed();
+  }
+  async function rowClick(e: MouseEvent, g: SocketGroup) {
+    if (e.ctrlKey) {
+      const r = await app.run(() => api.setGroup(g.index, { enabled: !g.enabled }));
+      if (r) await changed();
+      return;
+    }
+    select(g.index);
+  }
 
   async function reload() {
     const r = await app.run(() => api.listSkills());
@@ -222,7 +347,8 @@
             role="option"
             aria-selected={g.index === sel}
             tabindex="0"
-            onclick={() => select(g.index)}
+            onclick={(e) => rowClick(e, g)}
+            oncontextmenu={(e) => rowContext(e, g)}
             onmouseenter={(e) => showTip(`g${g.index}`, () => api.groupTooltip(g.index), e)}
             onmouseleave={hideTip}
           >
@@ -240,8 +366,34 @@
       <button class="btn sm" onclick={addGroup}>{t("skills.newGroup")}</button>
       <button class="btn ghost sm" disabled={!group || group.index <= 1} onclick={() => moveGroup(-1)}>↑</button>
       <button class="btn ghost sm" disabled={!group || !data || group.index >= data.groups.length} onclick={() => moveGroup(1)}>↓</button>
+      <button class="btn ghost sm" disabled={!group} title={t("skills.copyGroupHint")} onclick={copyGroup}>{t("skills.copyGroup")}</button>
+      <button class="btn ghost sm" onclick={openPaste}>{t("skills.pasteGroup")}</button>
       <span class="grow"></span>
       <button class="btn sm danger" disabled={!group || group.source} onclick={deleteGroup}>{t("skills.deleteGroup")}</button>
+    </div>
+    <div class="gemopts">
+      <button class="btn ghost sm" onclick={toggleGemOpts}>{gemOptsOpen ? "▾" : "▸"} {t("skills.gemOptions")}</button>
+      {#if gemOptsOpen && gemOpts}
+        <div class="optgrid">
+          <label class="chk"><input type="checkbox" checked={gemOpts.sortGemsByDPS} onchange={(e) => patchGemOpts({ sortGemsByDPS: e.currentTarget.checked })} /> {t("skills.sortByDps")}</label>
+          <select class="select sm" value={gemOpts.sortGemsByDPSField} disabled={!gemOpts.sortGemsByDPS} onchange={(e) => patchGemOpts({ sortGemsByDPSField: e.currentTarget.value })}>
+            {#each gemOpts.sortFields as c}<option value={c.value}>{choiceLabel(c)}</option>{/each}
+          </select>
+          <span class="k">{t("skills.defaultLevel")}</span>
+          <select class="select sm" value={gemOpts.defaultGemLevel} onchange={(e) => patchGemOpts({ defaultGemLevel: e.currentTarget.value })}
+            title={gemOpts.defaultGemLevels.find((c) => c.value === gemOpts!.defaultGemLevel)?.description ?? ""}>
+            {#each gemOpts.defaultGemLevels as c}<option value={c.value} title={c.description ?? ""}>{choiceLabel(c)}</option>{/each}
+          </select>
+          <span class="k">{t("skills.defaultQuality")}</span>
+          <input class="input sm num" type="number" min="0" max="23" bind:value={qualityDraft}
+            onchange={() => patchGemOpts({ defaultGemQuality: Math.max(0, Math.min(23, Math.floor(Number(qualityDraft) || 0))) })} />
+          <span class="k">{t("skills.showSupports")}</span>
+          <select class="select sm" value={gemOpts.showSupportGemTypes} onchange={(e) => patchGemOpts({ showSupportGemTypes: e.currentTarget.value })}>
+            {#each gemOpts.supportGemTypes as c}<option value={c.value}>{choiceLabel(c)}</option>{/each}
+          </select>
+          <label class="chk"><input type="checkbox" checked={gemOpts.showLegacyGems} onchange={(e) => patchGemOpts({ showLegacyGems: e.currentTarget.checked })} /> {t("skills.showLegacy")}</label>
+        </div>
+      {/if}
     </div>
   </section>
 
@@ -280,6 +432,45 @@
                 {/each}
               </select>
             </label>
+          </div>
+        {/if}
+        {#if extras && (extras.countShown || extras.imbued?.shown || extras.optimiseSockets?.shown)}
+          <div class="frow">
+            {#if extras.countShown}
+              <label class="f">
+                <span class="k">{t("skills.groupCount")}</span>
+                <input class="input sm num cnt" type="number" min="1" bind:value={countDraft} onblur={applyCount} onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()} />
+              </label>
+            {/if}
+            {#if extras.optimiseSockets?.shown}
+              <button class="btn sm" disabled={!extras.optimiseSockets.enabled} title={t("skills.optimiseHint")} onclick={optimise}>{t("skills.optimise")}</button>
+            {/if}
+            {#if extras.imbued?.shown}
+              <span class="f">
+                <span class="k">{t("skills.imbued")}</span>
+                <span class="combo imb">
+                  <input class="input sm" disabled={!extras.imbued.enabled} placeholder={extras.imbued.nameZh || extras.imbued.name || t("skills.imbuedNone")}
+                    bind:value={imbuedQuery}
+                    oninput={() => { imbuedOpen = true; searchImbued(imbuedQuery); }}
+                    onfocus={() => (imbuedOpen = true)}
+                    onblur={() => setTimeout(() => (imbuedOpen = false), 150)} />
+                  {#if imbuedOpen && imbuedHits.length}
+                    <div class="drop">
+                      {#each imbuedHits as h}
+                        <button class="hit" onmousedown={(e) => { e.preventDefault(); void setImbued(h.gemId); }}>
+                          <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                          <span class="dim small">{h.name}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </span>
+                {#if extras.imbued.name}
+                  <span class="imbname">{extras.imbued.nameZh || extras.imbued.name}</span>
+                  <button class="btn ghost sm" disabled={!extras.imbued.enabled} title={t("skills.imbuedClear")} onclick={() => setImbued()}>×</button>
+                {/if}
+              </span>
+            {/if}
           </div>
         {/if}
         {#if group.enabled && !group.slotEnabled}<div class="warn small">{t("skills.disabledSet")}</div>{/if}
@@ -388,6 +579,17 @@
   </section>
 
   {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
+
+  {#if pasteDialog}
+    <div class="modal">
+      <div class="dialog">
+        <div class="label">{t("skills.pasteGroup")}</div>
+        <p class="dim small">{t("skills.pasteHint")}</p>
+        <textarea class="input pastebox" bind:value={pasteDialog.text}></textarea>
+        <div class="btns"><button class="btn ghost" onclick={() => (pasteDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!pasteDialog.text.trim()} onclick={pasteOk}>OK</button></div>
+      </div>
+    </div>
+  {/if}
 
   {#if setDialog}
     <div class="modal">
@@ -651,5 +853,31 @@
     display: flex;
     justify-content: flex-end;
     gap: 6px;
+  }
+  .gemopts {
+    border-top: 1px solid var(--edge-0);
+    padding: 6px 10px;
+  }
+  .optgrid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 10px;
+    align-items: center;
+    padding: 6px 2px;
+  }
+  .cnt {
+    width: 70px;
+  }
+  .imb {
+    position: relative;
+    width: 220px;
+  }
+  .imbname {
+    color: var(--ink-0);
+  }
+  .pastebox {
+    width: 100%;
+    min-height: 140px;
+    font-family: var(--font-mono, monospace);
   }
 </style>

@@ -12,22 +12,21 @@
   let timer = 0;
   let ta = $state<HTMLTextAreaElement | null>(null);
 
-  const colours: [string, string][] = [
-    ["^xE05030", "life"],
-    ["^x7070FF", "mana"],
-    ["^x88FFFF", "es"],
-    ["^xB97123", "fire"],
-    ["^x3F6DB3", "cold"],
-    ["^xADAA47", "lightning"],
-    ["^xD02090", "chaos"],
-    ["^7", "default"],
-  ];
+  // POB's own colour buttons (NotesTab: NORMAL ... INTELLIGENCE, DEFAULT)
+  let colours = $state<{ code: string; name: string }[]>([]);
+  const swatch = (code: string) => (code.startsWith("^x") ? `#${code.slice(2)}` : "var(--ink-0)");
+  const colourLabel = (name: string) => {
+    const k = `notes.col.${name}`;
+    const v = t(k);
+    return v === k ? name : v;
+  };
 
   async function reload() {
     const r = await app.run(() => api.getNotes());
     if (r) {
       text = r.text;
       saved = r.text;
+      if (r.colours?.length) colours = r.colours;
       loadedRev = r.rev;
     }
   }
@@ -66,11 +65,11 @@
 
 <div class="page">
   <div class="bar">
-    <span class="dim small">{t("notes.hint")}</span>
+    <span class="dim small hint">{t("notes.hint")}</span>
     <span class="grow"></span>
     <span class="k">{t("notes.colors")}</span>
-    {#each colours as [code, name]}
-      <button class="sw" title={code} style:color={`var(--c-${name}, var(--ink-0))`} onclick={() => insertColour(code)}>■</button>
+    {#each colours as c}
+      <button class="sw" title={c.code} style:color={swatch(c.code)} onclick={() => insertColour(c.code)}>{colourLabel(c.name)}</button>
     {/each}
   </div>
   <div class="two">
@@ -96,9 +95,10 @@
   .bar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
-    height: 36px;
-    padding: 0 12px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
@@ -115,10 +115,15 @@
   }
   .sw {
     appearance: none;
-    border: 0;
+    border: 1px solid var(--edge-0);
+    border-radius: 3px;
     background: none;
-    font-size: 14px;
-    padding: 0 2px;
+    font-size: var(--fs-xs);
+    padding: 1px 6px;
+    white-space: nowrap;
+  }
+  .sw:hover {
+    border-color: var(--edge-1);
   }
   .two {
     flex: 1;

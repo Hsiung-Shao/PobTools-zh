@@ -997,14 +997,34 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				          GetFileAttributesW(rnPath.c_str()) != INVALID_FILE_ATTRIBUTES && GetFileAttributesW(cpPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
 				          hdr.value("buildName", "") == "bridge_renamed",
 				      "rn=" + rn.dump().substr(0, 100) + " cp=" + cp.dump().substr(0, 100) + " name=" + hdr.value("buildName", ""));
+				// the list screen's search box and sort drop-down
+				json lbf;
+				bool okLbf = child.Call("list_builds", json{{"subPath", ""}, {"filter", "bridge_copy"}, {"sortMode", "LEVEL"}}, lbf, 30000);
+				bool onlyCopy = okLbf && lbf["entries"].size() >= 1;
+				if (okLbf) for (auto& e : lbf["entries"]) if (e.value("buildName", "") != "bridge_copy") onlyCopy = false;
+				json lbs;
+				child.Call("list_builds", json{{"subPath", ""}, {"filter", ""}, {"sortMode", "NAME"}}, lbs, 30000);
+				check("list_builds{filter, sortMode}: POB's search keeps only the match, the sort mode sticks and its choices are listed",
+				      onlyCopy && lbf.value("sortMode", "") == "LEVEL" && lbf["sortModes"].size() >= 4 && lbs.value("sortMode", "") == "NAME",
+				      lbf.dump().substr(0, 300));
+				// cut + paste into a folder, copy + paste back, and a folder into itself
+				const std::wstring movedPath = sandbox + L"\\Builds\\bridge_dir\\bridge_copy.xml";
+				json mv, mvBack, mvSelf;
+				bool okMv = child.Call("move_build", json{{"path", narrow(cpPath)}, {"subPath", ""}, {"isFolder", false}, {"name", "bridge_copy.xml"}, {"targetSubPath", "bridge_dir/"}}, mv, 30000);
+				bool okMvBack = okMv && child.Call("move_build", json{{"path", narrow(movedPath)}, {"subPath", "bridge_dir/"}, {"isFolder", false}, {"name", "bridge_copy.xml"}, {"targetSubPath", ""}, {"copy", true}}, mvBack, 30000);
+				bool okMvSelf = child.Call("move_build", json{{"path", narrow(sandbox + L"\\Builds\\bridge_dir")}, {"subPath", ""}, {"isFolder", true}, {"name", "bridge_dir"}, {"targetSubPath", "bridge_dir/"}}, mvSelf, 30000);
+				check("move_build moves a build into a folder, copy=true copies it back, and a folder cannot go into itself",
+				      okMv && okMvBack && GetFileAttributesW(movedPath.c_str()) != INVALID_FILE_ATTRIBUTES && GetFileAttributesW(cpPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
+				          !okMvSelf && child.Alive(),
+				      mv.dump().substr(0, 120) + " " + mvBack.dump().substr(0, 120) + " " + mvSelf.dump().substr(0, 120));
 				json delOpen;
 				bool okDelOpen = child.Call("delete_build", json{{"path", narrow(rnPath)}, {"isFolder", false}}, delOpen, 30000);
 				check("delete_build refuses the build that is open", !okDelOpen && child.Alive(), delOpen.dump().substr(0, 200));
 				json delCp, delDir, delOut;
 				bool okDelCp = child.Call("delete_build", json{{"path", narrow(cpPath)}, {"isFolder", false}}, delCp, 30000);
-				bool okDelDir = child.Call("delete_build", json{{"path", narrow(sandbox + L"\\Builds\\bridge_dir")}, {"isFolder", true}}, delDir, 30000);
+				bool okDelDir = child.Call("delete_build", json{{"path", narrow(sandbox + L"\\Builds\\bridge_dir")}, {"isFolder", true}, {"recursive", true}}, delDir, 30000);
 				bool okDelOut = child.Call("delete_build", json{{"path", narrow(sandbox + L"\\Launch.lua")}, {"isFolder", false}}, delOut, 30000);
-				check("delete_build removes the copy and the empty folder, and refuses anything outside the build folder",
+				check("delete_build removes the copy and the folder (recursive), and refuses anything outside the build folder",
 				      okDelCp && okDelDir && GetFileAttributesW(cpPath.c_str()) == INVALID_FILE_ATTRIBUTES &&
 				          GetFileAttributesW((sandbox + L"\\Builds\\bridge_dir").c_str()) == INVALID_FILE_ATTRIBUTES && !okDelOut &&
 				          GetFileAttributesW((sandbox + L"\\Launch.lua").c_str()) != INVALID_FILE_ATTRIBUTES,
@@ -1390,6 +1410,50 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json sg, st2;
 			bool okSg = okSm && child.Call("set_gem", json{{"group", newIdx}, {"index", 1}, {"level", 1}}, sg, 60000) && child.Call("get_stats", json::object(), st2, 30000);
 			check("set_gem{level} recalculates", okSg && st1["stats"].value("TotalDPS", 0.0) != st2["stats"].value("TotalDPS", 0.0));
+
+			// CopySocketGroup / PasteSocketGroup through the bridge (no clipboard)
+			json cg, pg, sk4, dpg;
+			bool okCg = gemsOk && child.Call("copy_group", json{{"index", newIdx}}, cg, 60000);
+			bool okPg = okCg && child.Call("paste_group", json{{"text", cg.value("text", "")}}, pg, 60000);
+			bool okSk4 = okPg && child.Call("list_skills", json::object(), sk4, 60000);
+			const int pastedIdx = okPg ? pg.value("index", 0) : 0;
+			bool pasteOk = okSk4 && cg.value("text", "").find("Fireball") != std::string::npos && pastedIdx == newIdx + 1 &&
+			               sk4["groups"].size() > (size_t)newIdx && sk4["groups"][pastedIdx - 1]["gems"].size() == 2 &&
+			               sk4["groups"][pastedIdx - 1].value("label", "") == "bridge test";
+			json badPaste;
+			bool okBadPaste = child.Call("paste_group", json{{"text", "not a gem list"}}, badPaste, 60000);
+			check("copy_group gives CopySocketGroup's text and paste_group adds the same group back; text without gems is refused",
+			      pasteOk && !okBadPaste && child.Alive(), cg.dump().substr(0, 160) + " " + pg.dump().substr(0, 100));
+			if (pastedIdx > 0) child.Call("delete_group", json{{"index", pastedIdx}}, dpg, 60000);
+
+			// Gem Options
+			json go0, go1, go2;
+			bool okGo = child.Call("get_gem_options", json::object(), go0, 30000) &&
+			            child.Call("set_gem_options", json{{"defaultGemQuality", 17}, {"showLegacyGems", !go0.value("showLegacyGems", false)}, {"defaultGemLevel", "corruptedMaximum"}}, go1, 30000);
+			bool goOk = okGo && go1.value("defaultGemQuality", -1) == 17 && go1.value("showLegacyGems", false) != go0.value("showLegacyGems", false) &&
+			            go1.value("defaultGemLevel", "") == "corruptedMaximum" && go0["sortFields"].size() >= 5 && go0["defaultGemLevels"].size() >= 2 &&
+			            go0["supportGemTypes"].size() >= 2;
+			json badGo;
+			bool okBadGo = child.Call("set_gem_options", json{{"defaultGemLevel", "no such level"}}, badGo, 30000);
+			child.Call("set_gem_options", json{{"defaultGemQuality", go0.value("defaultGemQuality", 0)}, {"showLegacyGems", go0.value("showLegacyGems", false)},
+			                                   {"defaultGemLevel", go0.value("defaultGemLevel", "normalMaximum")}}, go2, 30000);
+			check("get/set_gem_options drive SkillsTab's Gem Options controls (and refuse an unknown level)",
+			      goOk && !okBadGo && go2.value("defaultGemQuality", -1) == go0.value("defaultGemQuality", -2), go1.dump().substr(0, 240));
+
+			// group extras: count only for item groups; imbued support on a slotted group (PoE1)
+			json gx0, ss1, isup, gx1, iclr, gx2, ss2;
+			bool okGx = gemsOk && child.Call("group_extras", json{{"index", newIdx}}, gx0, 30000);
+			bool okImb = okGx && child.Call("set_group", json{{"index", newIdx}, {"slot", "Helmet"}}, ss1, 60000) &&
+			             child.Call("set_imbued_support", json{{"index", newIdx}, {"gemId", "Metadata/Items/Gems/SkillGemSupportControlledDestruction"}}, isup, 60000) &&
+			             child.Call("group_extras", json{{"index", newIdx}}, gx1, 30000) &&
+			             child.Call("set_imbued_support", json{{"index", newIdx}}, iclr, 60000) &&
+			             child.Call("group_extras", json{{"index", newIdx}}, gx2, 30000) &&
+			             child.Call("set_group", json{{"index", newIdx}, {"slot", ""}}, ss2, 60000);
+			json cnt;
+			bool okCnt = child.Call("set_group_count", json{{"index", newIdx}, {"count", 3}}, cnt, 30000);
+			check("group_extras + set_imbued_support: a slotted group takes an imbued support and clears it; count is refused for a socketed group",
+			      okImb && !gx0.value("countShown", true) && gx1["imbued"].value("name", "") != "" && !gx2["imbued"].contains("name") && !okCnt && child.Alive(),
+			      gx1.dump().substr(0, 200) + " " + isup.dump().substr(0, 160));
 			json dg, st3, sk3;
 			bool okDg = okSm && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", mainBefore}}, dg, 60000) &&
 			            child.Call("delete_group", json{{"index", newIdx}}, dg, 60000) && child.Call("get_stats", json::object(), st3, 30000) &&
@@ -1473,6 +1537,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("set_notes/get_notes round-trip through NotesTab's edit control and marks the build unsaved",
 			      okN && n1.value("text", "") == "bridge notes ^xFF0000red\nline two" && n1.value("unsaved", false) && bi.value("unsaved", false),
 			      okN ? n1.dump().substr(0, 120) : sn.dump().substr(0, 200));
+			bool colourCodes = okN && n0["colours"].is_array() && n0["colours"].size() == 12;
+			if (colourCodes) for (auto& c : n0["colours"]) if (c.value("code", "").rfind("^", 0) != 0 || c.value("name", "").empty()) colourCodes = false;
+			check("get_notes lists NotesTab's 12 colour buttons (code + name read from their labels)", colourCodes,
+			      okN ? n0["colours"].dump().substr(0, 200) : "");
 			json ex, dec;
 			bool okEx = okN && child.Call("export_code", json::object(), ex, 60000) && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
 			bool hasNotes = false;
