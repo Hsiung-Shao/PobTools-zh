@@ -2485,6 +2485,17 @@ local function run_list_builder(ctl)
 	end
 end
 
+-- What POB puts in the tooltip of a notable in the Anoint dialog:
+-- NotableDBControl:AddValueTooltip -- the node's name, its own lines, the
+-- reminder text and ItemsTab:AppendAnointTooltip's "anointing this gives you"
+-- comparison. One calculation per node, so it is built on demand.
+local function notable_tooltip(ctl, index, node)
+	local tt = new("Tooltip"):Tooltip()
+	local ok, err = pcall(without_wrap, function() ctl:AddValueTooltip(tt, index, node) end)
+	if not ok then error(err, 0) end
+	return tooltip_lines(tt)
+end
+
 local edit_popup -- { kind, cap }
 
 local function close_edit_popup()
@@ -2857,6 +2868,9 @@ local function popup_state()
 				end
 				entry.options = opts
 				entry.search = ctl.controls.search and ctl.controls.search.buf or ""
+				if entry.sel and ctl.list[entry.sel] then
+					entry.tooltip = notable_tooltip(ctl, entry.sel, ctl.list[entry.sel])
+				end
 			elseif ctl.DropIndexToListIndex and ctl.list then
 				entry.kind = "dropdown"
 				entry.options = dd_options(ctl)
@@ -2942,6 +2956,16 @@ function M.item_edit_popup(p)
 		if not ok then error(err, 0) end
 		if not tab.displayItem then error("the dialog closed the item", 0) end
 		return edit_state(p)
+	end
+	if action == "tip" then
+		-- the hovered notable's effect, without changing the selection
+		local ctl = ctls[p.name or ""]
+		if not ctl or not ctl.list then error("no control " .. tostring(p.name), 0) end
+		local want = tonumber(p.value)
+		for i, node in ipairs(ctl.list) do
+			if node.id == want then return { id = node.id, tooltip = notable_tooltip(ctl, i, node) } end
+		end
+		error("no node " .. tostring(p.value), 0)
 	end
 	if action == "cancel" then
 		close_edit_popup()
@@ -3142,6 +3166,11 @@ probe("main.OpenPopup/ClosePopup/OpenConfirmPopup + itemLib.influenceInfo.all + 
 	return type(m.OpenPopup) == "function" and type(m.ClosePopup) == "function" and type(m.OpenConfirmPopup) == "function"
 		and type(itemLib) == "table" and type(itemLib.influenceInfo) == "table" and type(itemLib.influenceInfo.all) == "table"
 		and type(data.itemBaseTypeList) == "table" and type(data.itemBaseLists) == "table" and type(data.powerStatList) == "table"
+end)
+probe("classes.NotableDBControl.AddValueTooltip + ItemsTab.AppendAnointTooltip/anointItem/getAnoint", function()
+	local n, i = class_of("NotableDBControl"), class_of("ItemsTab")
+	return type(n) == "table" and type(n.AddValueTooltip) == "function"
+		and type(i) == "table" and type(i.AppendAnointTooltip) == "function" and type(i.anointItem) == "function" and type(i.getAnoint) == "function"
 end)
 probe("classes.DropDownControl.SetSel/SelByValue + EditControl.SetText + ListControl.SelectIndex", function()
 	local d, e, l = class_of("DropDownControl"), class_of("EditControl"), class_of("ListControl")

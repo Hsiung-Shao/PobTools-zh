@@ -639,6 +639,8 @@ export interface ItemEditPopupControl {
   label?: string;
   labelZh?: string;
   search?: string;
+  /** notable lists: what the selected node does (POB's own anoint tooltip) */
+  tooltip?: TooltipLine[];
 }
 export interface ItemEditPopup {
   popup: ItemEditPopupKind | null;
@@ -887,6 +889,7 @@ export const api = {
   itemEditAffix: (p: { index: number; sel?: number; roll?: number }) => bridge.call<ItemEditState>("item_edit_affix", p, 60000),
   itemEditPopup: (p: { kind?: ItemEditPopupKind; action: "open" | "pick" | "apply" | "cancel"; slot?: number; name?: string; sel?: number; text?: string; state?: boolean; value?: number; button?: string }) =>
     bridge.call<ItemEditPopup & Partial<ItemEditState>>("item_edit_popup", p, 120000),
+  itemEditPopupTip: (name: string, value: number) => bridge.call<{ id: number; tooltip: TooltipLine[] }>("item_edit_popup", { action: "tip", name, value }, 120000),
   itemEditCommit: (equip: boolean) => bridge.call<Committed & { id: number; added: boolean; item: ItemSummary }>("item_edit_commit", { equip }, 60000),
   itemEditCancel: () => bridge.call<{ ok: boolean }>("item_edit_cancel", {}, 60000),
   listSkills: () => bridge.call<SkillsList>("list_skills", {}, 60000),

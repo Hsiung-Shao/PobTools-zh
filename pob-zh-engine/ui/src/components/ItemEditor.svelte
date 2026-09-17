@@ -23,6 +23,10 @@
 
   let popup = $state<ItemEditPopup | null>(null);
   let popupSearch = $state("");
+  // the hovered notable's effect in the Anoint dialog (one calculation per node,
+  // so it is fetched on hover the way POB builds its list tooltip)
+  let nodeTip = $state<{ id: number; lines: TooltipLine[] } | null>(null);
+  let nodeTipTimer = 0;
   let rawOpen = $state(false);
   let rawText = $state("");
   let err = $state<string | null>(null);
@@ -56,6 +60,7 @@
   // --- POB's dialogs, captured -------------------------------------------------
   async function openPopup(kind: ItemEditPopupKind, slot?: number) {
     popupSearch = "";
+    nodeTip = null;
     const r = await run(() => api.itemEditPopup({ kind, action: "open", slot }));
     if (r) popup = r as ItemEditPopup;
   }
@@ -73,6 +78,19 @@
   async function cancelPopup() {
     await run(() => api.itemEditPopup({ action: "cancel" }));
     popup = null;
+    nodeTip = null;
+  }
+  function hoverNode(name: string, id: number | undefined) {
+    clearTimeout(nodeTipTimer);
+    if (id == null) return;
+    nodeTipTimer = window.setTimeout(async () => {
+      try {
+        const r = await api.itemEditPopupTip(name, id);
+        nodeTip = { id: r.id, lines: r.tooltip };
+      } catch {
+        /* the dialog moved on */
+      }
+    }, 180);
   }
   const isCloseButton = (name: string) => name === "close" || name === "cancel";
   const popupButtons = $derived(popup ? popup.controls.filter((c: ItemEditPopupControl) => c.kind === "button") : []);
@@ -88,6 +106,16 @@
   const name = $derived(item.summary.nameZh || item.summary.name);
   const bigLine = (l: TooltipLine) => "size" in l && l.size >= 18;
 </script>
+
+{#snippet tipBody(lines: TooltipLine[])}
+  {#each lines as l}
+    {#if "sep" in l}
+      <div class="sep"></div>
+    {:else}
+      <div class="line" class:center={l.center} class:big={bigLine(l)} class:small={l.size <= 12}><PobText text={l.text} /></div>
+    {/if}
+  {/each}
+{/snippet}
 
 <div class="editor">
   <div class="ehead">
@@ -106,13 +134,7 @@
   <div class="ebody">
     <!-- 即時 tooltip -->
     <div class="tip" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
-      {#each item.tooltip.lines as l}
-        {#if "sep" in l}
-          <div class="sep"></div>
-        {:else}
-          <div class="line" class:center={l.center} class:big={bigLine(l)} class:small={l.size <= 12}><PobText text={l.text} /></div>
-        {/if}
-      {/each}
+      {@render tipBody(item.tooltip.lines)}
     </div>
 
     {#if popup}
@@ -140,14 +162,17 @@
             {:else if c.kind === "nodes" && c.options}
               <div class="nodes">
                 <input class="input sm" placeholder={t("edit.search")} bind:value={popupSearch} />
-                <div class="nlist">
+                <div class="nlist" onmouseleave={() => clearTimeout(nodeTipTimer)} role="presentation">
                   {#each filterOpts(c.options, popupSearch).slice(0, 200) as { o, i }}
-                    <label class="nrow" class:on={c.sel === i + 1}>
+                    <label class="nrow" class:on={c.sel === i + 1} onmouseenter={() => hoverNode(c.name, o.id)}>
                       <input type="radio" name="node" checked={c.sel === i + 1} onchange={() => pick(c.name, { value: o.id })} />
                       <span>{o.labelZh || o.label}</span>
                     </label>
                   {/each}
                 </div>
+                {#if nodeTip || c.tooltip}
+                  <div class="tip node">{@render tipBody(nodeTip?.lines ?? c.tooltip ?? [])}</div>
+                {/if}
               </div>
             {/if}
           </div>
@@ -533,6 +558,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  .tip.node {
+    max-height: 30vh;
+    margin-top: 6px;
+    border-top-color: var(--gold);
   }
   .nlist {
     max-height: 220px;

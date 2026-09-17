@@ -1229,6 +1229,29 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				child.Call("item_edit_cancel", json::object(), cancelH, 60000);
 			}
 
+			// the Anoint dialog on an amulet: the notable list plus what a notable does
+			{
+				long long idAmulet = 0;
+				if (okLi) for (auto& it : li["items"]) if (it.value("type", "") == "Amulet") { idAmulet = it.value("id", 0LL); break; }
+				json edA2, pa, tip, cancelA;
+				bool okPa = idAmulet > 0 && child.Call("item_edit_begin", json{{"id", idAmulet}}, edA2, 60000) && edA2["actions"].value("anoint", false) &&
+				            child.Call("item_edit_popup", json{{"kind", "anoint"}, {"action", "open"}}, pa, 120000);
+				long long firstNode = 0;
+				int nodeOpts = 0;
+				if (okPa) for (auto& c : pa["controls"]) if (c.value("name", "") == "notableDB") {
+					nodeOpts = (int)c["options"].size();
+					if (nodeOpts) firstNode = c["options"][0].value("id", 0LL);
+				}
+				bool okTip = firstNode > 0 && child.Call("item_edit_popup", json{{"action", "tip"}, {"name", "notableDB"}, {"value", firstNode}}, tip, 120000);
+				int tipLines = okTip ? (int)tip["tooltip"].size() : 0;
+				bool hasCompare = false;
+				if (okTip) for (auto& l : tip["tooltip"]) if (l.contains("text") && l.value("text", "").find("^x") != std::string::npos) hasCompare = true;
+				check("item_edit_popup{anoint}: the notable list, and a node's own effect plus AppendAnointTooltip's comparison",
+				      okPa && nodeOpts > 100 && okTip && tipLines >= 3 && hasCompare,
+				      okPa ? "nodes=" + std::to_string(nodeOpts) + " tipLines=" + std::to_string(tipLines) : pa.dump().substr(0, 300));
+				child.Call("item_edit_cancel", json::object(), cancelA, 60000);
+			}
+
 			// comparison: the list tooltip of an unused item carries the stat-difference block
 			if (idUnused > 0) {
 				json ttC, ttN;

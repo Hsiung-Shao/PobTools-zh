@@ -226,6 +226,7 @@
   }
   async function editDone(r: { id: number; added: boolean }) {
     edit = null;
+    pasteText = "";
     rightTab = "paste";
     selectedId = r.id;
     await changed();
@@ -264,10 +265,10 @@
     pasteErr = null;
     const raw = pasteText.trim();
     if (!raw) return;
+    // the button's box has to be read now: after the await `currentTarget` is null
+    const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
     try {
       const r = await api.itemTooltip({ raw, compare });
-      const el = e.currentTarget as HTMLElement;
-      const b = el.getBoundingClientRect();
       tip = { lines: r.lines, color: r.color, x: Math.round(Math.max(8, b.left - 360)), y: Math.round(Math.max(8, Math.min(b.top - 200, window.innerHeight - 420))) };
       pasteNote = (r as { reversed?: boolean }).reversed ? t("items.reversed") : null;
     } catch (err: any) {
@@ -275,14 +276,21 @@
     }
   }
   function onPasteBox(e: ClipboardEvent) {
-    // Pasting only fills the box: the item is added when one of the buttons
-    // below is pressed (the user asked for a confirmation step). Text that is
-    // not an item gets a note saying so.
+    // Pasting opens the item in the editor, where POB's own tooltip shows what
+    // it read; nothing is added until one of the editor's buttons is pressed.
+    // Text that is not an item gets a note saying so.
     if (pasteText.trim()) return;
     const text = e.clipboardData?.getData("text") ?? "";
     pasteErr = null;
     pasteNote = null;
-    if (text.trim() && !looksLikeItem(text)) pasteErr = t("items.notItem");
+    if (!text.trim()) return;
+    if (!looksLikeItem(text)) {
+      pasteErr = t("items.notItem");
+      return;
+    }
+    e.preventDefault();
+    pasteText = text;
+    void openEdit({ raw: text });
   }
 
   // --- database ------------------------------------------------------------------
