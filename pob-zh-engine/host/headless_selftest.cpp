@@ -869,6 +869,74 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json mu;
 			bool okMu = okMs && child.Call("tree_undo", json::object(), mu, 60000);
 			check("tree_undo removes the mastery again", okMu && mu["allocatedNodes"].size() == (size_t)allocCount);
+
+			// tattoos (PoE1): a keystone takes one, Reset Node removes it
+			std::set<long long> allocSet;
+			if (okTs) for (auto& v : ts["allocatedNodes"]) allocSet.insert(v.get<long long>());
+			long long strNode = -1, plainNotable = -1;
+			if (okTd) for (auto& [k, n] : td["nodes"].items()) {
+				const long long nid = n.value("id", -1LL);
+				if (strNode < 0 && n.value("type", "") == "Keystone" && !n.contains("asc")) strNode = nid;
+				if (plainNotable < 0 && n.value("type", "") == "Notable" && !n.contains("asc") && n["stats"].size() > 0 &&
+				    n["stats"][0].get<std::string>().find("to Strength") == std::string::npos && n["stats"][0].get<std::string>().find("to Dexterity") == std::string::npos &&
+				    n["stats"][0].get<std::string>().find("to Intelligence") == std::string::npos) plainNotable = nid;
+			}
+			json to, tap, tst, trs, tst2, tno;
+			bool okTo = strNode >= 0 && child.Call("tattoo_options", json{{"id", strNode}}, to, 60000);
+			bool okTap = okTo && to.value("allowed", false) && !to["options"].empty() &&
+			             child.Call("tattoo_apply", json{{"id", strNode}, {"tattoo", to["options"][0]["id"]}}, tap, 60000) &&
+			             child.Call("get_tree_state", json::object(), tst, 30000);
+			bool tattooed = okTap && tst["overrides"].contains(std::to_string(strNode)) && tst["overrides"][std::to_string(strNode)].value("why", "") == "tattoo";
+			bool okTrs = tattooed && child.Call("tattoo_apply", json{{"id", strNode}, {"reset", true}}, trs, 60000) && child.Call("get_tree_state", json::object(), tst2, 30000);
+			bool okTno = plainNotable >= 0 && child.Call("tattoo_options", json{{"id", plainNotable}}, tno, 60000);
+			check("tattoo_options/tattoo_apply: POB's Replace Modifier dialog tattoos a keystone and Reset Node restores it; a plain notable is not offered",
+			      tattooed && okTrs && !tst2["overrides"].contains(std::to_string(strNode)) && okTno && !tno.value("allowed", true),
+			      "str=" + std::to_string(strNode) + " " + (okTo ? to.dump().substr(0, 160) : to.dump().substr(0, 200)) + " " + tap.dump().substr(0, 120));
+
+			// Compare: the other tree's allocation comes with the state; unticking drops it
+			json cmp1, cmp0;
+			bool okCmp = child.Call("set_compare_spec", json{{"index", 1}}, cmp1, 60000) && child.Call("set_compare_spec", json::object(), cmp0, 60000);
+			check("set_compare_spec ticks Compare (its allocated nodes come with the tree state) and unticks it",
+			      okCmp && cmp1.contains("compare") && cmp1["compare"]["allocatedNodes"].size() > 0 && !cmp0.contains("compare"),
+			      cmp1.value("compare", json()).dump().substr(0, 120));
+
+			// Shift-traced path: two unallocated linked nodes next to the tree, allocated along that path
+			long long p1 = -1, p2 = -1;
+			if (okTd) {
+				for (auto& [k, n] : td["nodes"].items()) {
+					const long long a = n.value("id", -1LL);
+					if (allocSet.count(a) || n.contains("asc") || n.value("type", "") != "Normal") continue;
+					bool nextToTree = false;
+					for (auto& l : n["linked"]) if (allocSet.count(l.get<long long>())) nextToTree = true;
+					if (!nextToTree) continue;
+					for (auto& l : n["linked"]) {
+						const long long bId = l.get<long long>();
+						const auto& bn = td["nodes"].value(std::to_string(bId), json());
+						if (!allocSet.count(bId) && bn.is_object() && bn.value("type", "") == "Normal" && !bn.contains("asc")) { p1 = a; p2 = bId; break; }
+					}
+					if (p1 >= 0) break;
+				}
+			}
+			json tr1, trU, trBad;
+			bool okTr = p1 >= 0 && child.Call("tree_click", json{{"id", p2}, {"trace", json::array({p1, p2})}}, tr1, 60000);
+			bool both = false;
+			if (okTr) {
+				int hits = 0;
+				for (auto& v : tr1["allocatedNodes"]) if (v.get<long long>() == p1 || v.get<long long>() == p2) hits++;
+				both = hits == 2;
+			}
+			bool okTrU = okTr && child.Call("tree_undo", json::object(), trU, 60000);
+			bool okTrBad = p1 >= 0 && child.Call("tree_click", json{{"id", p2}, {"trace", json::array({p2, p1})}}, trBad, 60000);
+			check("tree_click{path}: a Shift-traced path is allocated as traced; a path not ending at the node is refused",
+			      both && okTrU && trU["allocatedNodes"].size() == (size_t)allocCount && !okTrBad,
+			      "p1=" + std::to_string(p1) + " p2=" + std::to_string(p2) + " " + tr1.dump().substr(0, 120) + " " + trBad.dump().substr(0, 120));
+
+			// node tooltip with stat differences (Ctrl+D)
+			json nd0, nd1;
+			bool okNd = p2 >= 0 && child.Call("node_info", json{{"id", p2}}, nd0, 60000) && child.Call("node_info", json{{"id", p2}, {"diff", true}}, nd1, 60000);
+			check("node_info{diff} adds POB's stat comparison lines to the node tooltip",
+			      okNd && nd1["lines"].size() > nd0["lines"].size(),
+			      okNd ? std::to_string(nd0["lines"].size()) + " -> " + std::to_string(nd1["lines"].size()) : nd1.dump().substr(0, 200));
 		}
 
 		// --- 1e: the build's passive trees: list, copy/rename/move/delete, links, reset, convert ---

@@ -5,7 +5,8 @@
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
-  import { api, type MasteryChoice, type NodeInfo, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
+  import { api, type MasteryChoice, type NodeInfo, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
+  import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { pobRuns } from "$lib/pobtext";
@@ -50,6 +51,15 @@
 
   let search = $state("");
   let matches = $state<Set<number>>(new Set());
+
+  /** Ctrl+D: POB's stat differences in the node tooltip (PassiveTreeView.showStatDifferences). */
+  let showDiff = $state(true);
+  /** Shift held: the traced path POB would allocate along (PassiveTreeView.tracePath). */
+  let trace = $state<number[]>([]);
+  /** PoE1 right-click: TreeTab's Replace Modifier (tattoo) dialog. */
+  let tattooMenu = $state<(TattooOptions & { x: number; y: number; query: string }) | null>(null);
+  /** The compare tree's allocation (TreeTab's Compare), for the overlay. */
+  const compareSet = $derived(new Set(tree?.compare?.allocatedNodes ?? []));
 
   // questions the engine's click handler asks back
   let masteryMenu = $state<{ id: number; name: string; x: number; y: number; effects: MasteryChoice[]; selected: number | null } | null>(null);
@@ -409,6 +419,17 @@
         ctx.fillStyle = "rgba(255,107,107,0.35)";
         ctx.fill();
       }
+      // Compare (TreeTab's Compare tick): only in the other tree / only in this one
+      if (compareSet.size) {
+        const inCompare = compareSet.has(n.id);
+        if (inCompare !== alloc) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 20 * zoom) + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = inCompare ? "rgba(90,220,140,0.9)" : "rgba(255,107,107,0.9)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
       if (matches.has(n.id)) {
         ctx.beginPath();
         ctx.arc(sx, sy, Math.max(half, 24 * zoom) + 5, 0, Math.PI * 2);
@@ -544,6 +565,15 @@
   // --- input -----------------------------------------------------------------
   let drag: { sx: number; sy: number; cx0: number; cy0: number; moved: boolean } | null = null;
 
+  function onKeyUp(e: KeyboardEvent) {
+    if (e.key === "Shift") {
+      traceMode = false;
+      trace = [];
+      hoverPath = new Set();
+      repaint();
+    }
+  }
+
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     const r = canvas!.getBoundingClientRect();
@@ -579,6 +609,11 @@
     drag = null;
     if (!wasClick || !hover || app.busy > 0) return;
     const n = hover;
+    if (e.button === 2 && !model?.poe2) {
+      // PoE1: right-click offers this node's tattoo (TreeTab:ModifyNodePopup)
+      void openTattoo(n.id);
+      return;
+    }
     if (e.button === 2 && model?.poe2 && n.raw.attribute) {
       // PoE2: right-click an attribute node to pick which attribute it grants
       attrMenu = { id: n.id, mode: allocated.has(n.id) ? "switch" : "alloc", x: mouse.x, y: mouse.y, options: attrOptions() };
@@ -586,9 +621,11 @@
     }
     if (e.button !== 0) return;
     if (n.kind === "ascStart" || n.kind === "classStart" || n.kind === "image") return;
+    const traced = trace.length > 1 && trace[trace.length - 1] === n.id ? [...trace] : undefined;
     hoverPath = new Set();
     hoverDep = new Set();
-    await clickNode(n.id, {});
+    trace = [];
+    await clickNode(n.id, traced ? { trace: traced } : {});
   }
 
   /** Sends the click to POB and follows up on what it asked for. */
@@ -596,7 +633,28 @@
     return ATTRS.map((a) => ({ ...a, nameZh: t(`tree.attr.${a.name}`) }));
   }
 
-  async function clickNode(id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number }) {
+  // --- tattoos (PoE1) -------------------------------------------------------
+  async function openTattoo(id: number, showLegacy?: boolean) {
+    let o: TattooOptions;
+    try {
+      o = await api.tattooOptions(id, showLegacy);
+    } catch (e: any) {
+      app.error = String(e?.message ?? e);
+      return;
+    }
+    if (!o.allowed) return;
+    tattooMenu = { ...o, x: mouse.x, y: mouse.y, query: "" };
+  }
+  async function applyTattoo(tattoo?: string | number) {
+    if (!tattooMenu) return;
+    const id = tattooMenu.id;
+    const legacy = tattooMenu.showLegacy;
+    tattooMenu = null;
+    const r = await app.run(() => api.tattooApply(tattoo == null ? { id, reset: true, showLegacy: legacy } : { id, tattoo, showLegacy: legacy }));
+    if (r) applyState(r);
+  }
+
+  async function clickNode(id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number; trace?: number[] }) {
     const r = await app.run(() => api.treeClick(id, extra));
     if (!r) return;
     if ("needsAttribute" in r && r.needsAttribute) {
@@ -679,7 +737,7 @@
     radiusTint = n?.kind === "socket" ? tintForSocket(n, socketMap.get(n.id)) : new Map();
     clearTimeout(hoverTimer);
     if (n) {
-      const key = `${n.id}:${app.rev}`;
+      const key = `${n.id}:${app.rev}:${showDiff ? 1 : 0}`;
       const cached = infoCache.get(key) ?? null;
       hoverInfo = cached;
       const sk = n.kind === "socket" ? socketMap.get(n.id) : undefined;
@@ -687,12 +745,19 @@
         try {
           const [hv, info, jewel] = await Promise.all([
             api.nodeHover(n.id),
-            cached ? Promise.resolve(cached) : api.nodeInfo(n.id),
+            cached ? Promise.resolve(cached) : api.nodeInfo(n.id, showDiff),
             sk?.itemId ? api.itemTooltip({ id: sk.itemId }) : Promise.resolve(null),
           ]);
           if (hover?.id !== n.id) return;
-          hoverPath = new Set(hv.path);
-          hoverDep = new Set(hv.depends);
+          // Shift: keep extending the traced path instead of showing the shortest one
+          if (traceMode) {
+            extendTrace(n.id, hv.path);
+            hoverPath = new Set(trace);
+            hoverDep = new Set();
+          } else {
+            hoverPath = new Set(hv.path);
+            hoverDep = new Set(hv.depends);
+          }
           hoverCost = hv.cost ?? null;
           infoCache.set(key, info);
           hoverInfo = info;
@@ -705,8 +770,48 @@
     }
     repaint();
   }
+  // PassiveTreeView's trace mode: the first hover seeds the path POB would
+  // take, each further hover of a linked node extends it (or trims back to it).
+  let traceMode = $state(false);
+  function extendTrace(id: number, path: number[]) {
+    if (!trace.length) {
+      trace = [...path].reverse();
+      if (trace[trace.length - 1] !== id) trace.push(id);
+      return;
+    }
+    const last = trace[trace.length - 1];
+    if (id === last) return;
+    const node = model?.nodes.get(id);
+    if (!node || !node.linked.includes(last)) return;
+    const at = trace.indexOf(id);
+    if (at >= 0) trace = trace.slice(0, at + 1);
+    else trace = [...trace, id];
+  }
+  async function copyNodeText() {
+    if (!hover || hover.kind === "socket") return;
+    const lines = hoverInfo?.stats ?? hover.raw.stats ?? [];
+    if (await copyText(`# ${hover.raw.name}\n${lines.join("\n")}\n`)) app.notice = t("tree.copied");
+  }
+
   function onKey(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
+    if (e.key === "Shift" && !traceMode) {
+      traceMode = true;
+      trace = [];
+    }
+    if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "d") {
+      e.preventDefault();
+      showDiff = !showDiff;
+      infoCache.clear();
+      hoverInfo = null;
+      app.notice = t(showDiff ? "tree.diffOn" : "tree.diffOff");
+      return;
+    }
+    if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "c" && hover) {
+      e.preventDefault();
+      void copyNodeText();
+      return;
+    }
     if (e.key === "Escape") {
       masteryMenu = null;
       classConfirm = null;
@@ -813,6 +918,7 @@
     if (wrap) ro.observe(wrap);
     resize();
     window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
     return () => {
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
@@ -878,6 +984,24 @@
           </button>
         {/each}
         <button class="choice cancel" onclick={() => (masteryMenu = null)}>{t("tree.cancel")}</button>
+      </div>
+    {/if}
+
+    {#if tattooMenu}
+      <div class="menu tattoo" style:left={`${Math.min(tattooMenu.x, w - 420)}px`} style:top={`${Math.min(tattooMenu.y, h - 320)}px`}>
+        <div class="menu-title">{t("tree.tattooTitle")} · {tattooMenu.nameZh || tattooMenu.name}{tattooMenu.count ? ` · ${tattooMenu.count}` : ""}</div>
+        <input class="input sm" placeholder={t("tree.search")} bind:value={tattooMenu.query} />
+        <div class="tattoo-list">
+          {#each (tattooMenu.options ?? []).filter((o) => !tattooMenu!.query || (o.nameZh ?? o.name).includes(tattooMenu!.query) || o.linesZh.join(" ").includes(tattooMenu!.query)) as o (o.id)}
+            <button class="choice" onclick={() => applyTattoo(o.id)}>
+              <span class="tname">{o.nameZh || o.name}</span>
+              <span class="dim small">{o.linesZh.join(" / ")}</span>
+            </button>
+          {/each}
+        </div>
+        <label class="chk small"><input type="checkbox" checked={tattooMenu.showLegacy} onchange={(e) => openTattoo(tattooMenu!.id, e.currentTarget.checked)} /> {t("tree.tattooLegacy")}</label>
+        <button class="choice" onclick={() => applyTattoo()}>{t("tree.tattooReset")}</button>
+        <button class="choice cancel" onclick={() => (tattooMenu = null)}>{t("tree.cancel")}</button>
       </div>
     {/if}
 
@@ -1135,5 +1259,15 @@
     border-radius: 50%;
     margin-right: 5px;
     vertical-align: middle;
+  }
+  .menu.tattoo {
+    width: 420px;
+  }
+  .tattoo-list {
+    max-height: 260px;
+    overflow: auto;
+  }
+  .tname {
+    color: var(--ink-0);
   }
 </style>

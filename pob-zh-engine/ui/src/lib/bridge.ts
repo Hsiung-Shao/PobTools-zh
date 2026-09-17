@@ -403,6 +403,8 @@ export interface TreeState {
   ascendClassName?: string;
   allocatedNodes: number[];
   allocCount: number;
+  /** TreeTab's Compare: the other tree, when it is ticked. */
+  compare?: { index: number; title?: string; allocatedNodes: number[] };
   overrides: Record<string, TreeOverride>;
   dynamicNodes: import("./tree/model").DynamicNode[];
   dynamicGroups: import("./tree/model").DynamicGroup[];
@@ -458,6 +460,19 @@ export type TreeClickResult =
   | { needsConfirm: "class_change"; id: number; className: string; classNameZh: string; ascendClassName?: string; connectFailed?: boolean }
   | { needsAttribute: true; id: number; options: { index: number; name: string; nameZh: string }[]; last?: number }
   | { blocked: "weapon_set_global"; id: number };
+
+/** TreeTab:ModifyNodePopup for one node (PoE1 tattoos). */
+export interface TattooOptions {
+  id: number;
+  allowed: boolean;
+  name?: string;
+  nameZh?: string;
+  isTattoo?: boolean;
+  selected?: number;
+  showLegacy?: boolean;
+  count?: string;
+  options?: { index: number; id: string | number; name: string; nameZh?: string; lines: string[]; linesZh: string[] }[];
+}
 
 export interface NodeHover {
   id: number;
@@ -994,8 +1009,11 @@ export const api = {
   treeAssets: (version?: string) => bridge.call<import("./tree/assets").SpriteManifest>("tree_assets", version ? { version } : {}, 60000),
   getTreeState: () => bridge.call<TreeState>("get_tree_state"),
   nodeHover: (id: number) => bridge.call<NodeHover>("node_hover", { id }),
-  nodeInfo: (id: number) => bridge.call<NodeInfo>("node_info", { id }),
-  treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number } = {}) =>
+  nodeInfo: (id: number, diff = false) => bridge.call<NodeInfo>("node_info", { id, diff }, 60000),
+  tattooOptions: (id: number, showLegacy?: boolean) => bridge.call<TattooOptions>("tattoo_options", { id, showLegacy }, 60000),
+  tattooApply: (p: { id: number; tattoo?: string | number; reset?: boolean; showLegacy?: boolean }) => bridge.call<TreeState>("tattoo_apply", p, 60000),
+  setCompareSpec: (index?: number) => bridge.call<TreeState>("set_compare_spec", index == null ? {} : { index }, 60000),
+  treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number; trace?: number[] } = {}) =>
     bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
   treeAttribute: (id: number, attribute: number) => bridge.call<TreeState>("tree_attribute", { id, attribute }, 60000),

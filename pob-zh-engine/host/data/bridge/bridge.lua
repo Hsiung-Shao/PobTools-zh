@@ -948,6 +948,21 @@ function M.get_tree_state()
 		if node.alloc then alloc[#alloc + 1] = id end
 	end
 	table.sort(alloc)
+	-- TreeTab's Compare: the other tree's allocated nodes (viewer.compareSpec)
+	local compare
+	local viewer = b.treeTab and b.treeTab.viewer
+	if viewer then
+		-- TreeTab:Draw hands the viewer its compare tree each frame; headless, here
+		viewer.compareSpec = b.treeTab.isComparing and b.treeTab.specList[b.treeTab.activeCompareSpec] or nil
+	end
+	if viewer and viewer.compareSpec then
+		local cAlloc = {}
+		for id, node in pairs(viewer.compareSpec.nodes) do
+			if node.alloc then cAlloc[#cAlloc + 1] = id end
+		end
+		table.sort(cAlloc)
+		compare = { index = b.treeTab.activeCompareSpec, title = viewer.compareSpec.title, allocatedNodes = cAlloc }
+	end
 	local overrides = {}
 	for id, node in pairs(spec.nodes) do
 		local tnode = tree.nodes[id]
@@ -1075,6 +1090,7 @@ function M.get_tree_state()
 		classId = spec.curClassId, className = spec.curClassName,
 		ascendClassId = spec.curAscendClassId, ascendClassName = spec.curAscendClassName,
 		allocatedNodes = alloc,
+		compare = compare,
 		allocCount = #alloc,
 		-- PoE2 weapon-set passives: the mode new points go to (0 = main tree,
 		-- 1/2 = weapon set) and every allocated node that belongs to a set.
@@ -1125,8 +1141,9 @@ function M.node_info(p)
 	local tt = make("Tooltip")
 	local savedWrap, savedDiff = main().WrapString, viewer.showStatDifferences
 	main().WrapString = function(_, s) return { s } end
-	viewer.showStatDifferences = false
-	local ok, err = pcall(viewer.AddNodeTooltip, viewer, tt, node, b, true)
+	viewer.showStatDifferences = (p.diff and true) or false
+	-- returnEarly stops before the allocation part (the stat differences among it)
+	local ok, err = pcall(viewer.AddNodeTooltip, viewer, tt, node, b, not p.diff)
 	main().WrapString = savedWrap
 	viewer.showStatDifferences = savedDiff
 	if not ok then error(err, 0) end
@@ -1329,7 +1346,20 @@ function M.tree_click(p)
 			spec.attributeIndex = idx
 			node = spec.nodes[id]
 		end
-		spec:AllocNode(node)
+		-- Shift held: PassiveTreeView's traced path (tracePath) ends at the
+		-- clicked node and AllocNode takes it instead of the shortest path
+		local trace
+		if type(p.trace) == "table" and #p.trace > 0 then
+			trace = {}
+			for i, pid in ipairs(p.trace) do
+				local pn = spec.nodes[tonumber(pid) or -1]
+				if not pn then error("path: no node " .. tostring(pid), 0) end
+				if i > 1 and not isValueInArray(pn.linked, trace[i - 1]) then error("path: nodes are not linked in order", 0) end
+				trace[i] = pn
+			end
+			if trace[#trace] ~= node then error("path must end at the clicked node", 0) end
+		end
+		spec:AllocNode(node, trace)
 	end
 	return committed(b, spec)
 end
@@ -3059,6 +3089,123 @@ function M.import_tree_url(p)
 	frame()
 	return M.list_specs()
 end
+
+-- ---- Tattoos (PoE1): right-click on a node, TreeTab:ModifyNodePopup ----------
+
+-- Which nodes a right-click sends to ModifyNodePopup: PassiveTreeView:Draw's
+-- RIGHT-click branch (inline there, nothing to call), mastery sockets aside.
+local function tattoo_target(node)
+	if node.expansionSkill then return false end
+	if node.isTattoo or node.type == "Keystone" then return true end
+	if node.type == "Normal" and (node.dn == "Strength" or node.dn == "Dexterity" or node.dn == "Intelligence") then return true end
+	if node.type == "Notable" and node.sd and #node.sd > 0 and (node.sd[1]:match("+30 to Dexterity") or node.sd[1]:match("+30 to Strength") or node.sd[1]:match("+30 to Intelligence")) then return true end
+	if not node.alloc and node.type == "Mastery" and node.masteryEffects then return true end
+	return false
+end
+
+local function tattoo_popup(b, node)
+	local cap = capture_popup(function() b.treeTab:ModifyNodePopup(node) end)
+	local c = cap and cap.controls
+	if not (c and c.modSelect and c.save and c.reset) then error("POB did not open its tattoo dialog", 0) end
+	return c
+end
+
+local function tattoo_list(b, c)
+	local out = {}
+	for i, g in ipairs(c.modSelect.list or {}) do
+		local lines, linesZh = {}, {}
+		for j, d in ipairs(g.descriptions or {}) do lines[j] = d; linesZh[j] = tr(d) end
+		local tn = b.spec.tree.tattoo and b.spec.tree.tattoo.nodes[g.id]
+		out[i] = { index = i, id = g.id, name = tn and tn.dn or g.label, nameZh = tn and tr(tn.dn) or nil, lines = lines, linesZh = linesZh }
+	end
+	return out
+end
+
+-- tattoo_options{id, showLegacy?}: what the dialog offers for that node.
+function M.tattoo_options(p)
+	if GAME == "poe2" then error("PoE2 has no tattoos", 0) end
+	local b = ensure_build()
+	local id = p and tonumber(p.id)
+	local node = id and b.spec.nodes[id]
+	if not node then error("no node " .. tostring(p and p.id), 0) end
+	if not tattoo_target(node) then return { id = id, allowed = false } end
+	if p.showLegacy ~= nil then b.treeTab.showLegacyTattoo = p.showLegacy and true or false end
+	local c = tattoo_popup(b, node)
+	local count = c.totalTattoos and c.totalTattoos.label
+	if type(count) == "function" then count = count() end
+	return {
+		id = id,
+		allowed = true,
+		name = node.dn,
+		nameZh = tr(node.dn),
+		isTattoo = node.isTattoo and true or false,
+		selected = c.modSelect.selIndex,
+		showLegacy = b.treeTab.showLegacyTattoo and true or false,
+		count = type(count) == "string" and strip_escapes(count) or nil,
+		options = tattoo_list(b, c),
+	}
+end
+
+-- tattoo_apply{id, tattoo (a tattoo node id) | reset=true, showLegacy?}: the
+-- dialog's Add / Reset Node.
+function M.tattoo_apply(p)
+	if GAME == "poe2" then error("PoE2 has no tattoos", 0) end
+	local b = ensure_build()
+	local spec = b.spec
+	ensure_undo_base(spec)
+	local id = p and tonumber(p.id)
+	local node = id and spec.nodes[id]
+	if not node then error("no node " .. tostring(p and p.id), 0) end
+	if not tattoo_target(node) then error("this node cannot take a tattoo", 0) end
+	if p.showLegacy ~= nil then b.treeTab.showLegacyTattoo = p.showLegacy and true or false end
+	local c = tattoo_popup(b, node)
+	if p.reset then
+		with_popup(function() c.reset.onClick() end)
+	else
+		local found
+		for i, g in ipairs(c.modSelect.list or {}) do
+			if g.id == p.tattoo then found = i end
+		end
+		if not found then error("that tattoo does not fit this node: " .. tostring(p.tattoo), 0) end
+		c.modSelect.selIndex = found
+		with_popup(function() c.save.onClick() end)
+	end
+	return committed(b, spec)
+end
+
+probe("TreeTab.ModifyNodePopup/RemoveTattooFromNode + tree.tattoo (PoE1 tattoos)", function()
+	if GAME == "poe2" then return false end
+	local t = class_of("TreeTab")
+	return type(t) == "table" and type(t.ModifyNodePopup) == "function" and type(t.RemoveTattooFromNode) == "function"
+end, "tattoos")
+
+-- ---- Compare another tree (TreeTab compareCheck / compareSelect) ------------
+
+-- set_compare_spec{index | nil}: nil unticks Compare.
+function M.set_compare_spec(p)
+	local b = ensure_build()
+	local tab = b.treeTab
+	local c = tab.controls
+	local i = p and tonumber(p.index)
+	if i then
+		if not tab.specList[i] then error("no tree " .. tostring(p.index), 0) end
+		c.compareCheck.state = true
+		c.compareCheck.changeFunc(true)
+		c.compareSelect.selFunc(i, c.compareSelect.list and c.compareSelect.list[i])
+	else
+		c.compareCheck.state = false
+		c.compareCheck.changeFunc(false)
+	end
+	frame()
+	return M.get_tree_state()
+end
+
+probe("TreeTab compareCheck/compareSelect + SetCompareSpec", function()
+	local t = class_of("TreeTab")
+	local b = build()
+	return type(t) == "table" and type(t.SetCompareSpec) == "function"
+		and (not (b and b.treeTab) or (type(b.treeTab.controls.compareCheck.changeFunc) == "function" and type(b.treeTab.controls.compareSelect.selFunc) == "function"))
+end)
 
 probe("TreeTab tree list (SetActiveSpec/ConvertToVersion/ConvertAllToVersion + specSelect/reset controls) and PassiveSpecListControl (RenameSpec/OnSelDelete/OnOrderChange)", function()
 	local t, l = class_of("TreeTab"), class_of("PassiveSpecListControl")

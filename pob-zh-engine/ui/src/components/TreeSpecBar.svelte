@@ -89,6 +89,15 @@
       d.error = String(e?.message ?? e);
     }
   }
+  // TreeTab's Compare tick + its tree drop-down in one control
+  let compare = $state<number | null>(null);
+  async function setCompare(v: string) {
+    const i = v ? Number(v) : null;
+    compare = i;
+    const r = await app.run(() => api.setCompareSpec(i ?? undefined));
+    if (r) await app.afterTreeChange();
+  }
+
   async function exportLink() {
     const r = await app.run(() => api.exportTreeUrl());
     if (r) linkOut = r.url;
@@ -103,6 +112,12 @@
     <button class="btn ghost sm" onclick={() => { manage = true; manageSel = specs!.activeSpec; }}>{t("tree.specManage")}</button>
     <select class="select sm ver" value={specs.treeVersion} title={t("tree.version")} onchange={(e) => { const v = e.currentTarget.value; e.currentTarget.value = specs!.treeVersion; if (v !== specs!.treeVersion) convert = v; }} disabled={app.busy > 0}>
       {#each specs.versions as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
+    </select>
+    <select class="select sm cmp" value={String(compare ?? "")} title={t("tree.compare")} onchange={(e) => setCompare(e.currentTarget.value)} disabled={app.busy > 0}>
+      <option value="">{t("tree.compare")}: {t("tree.compareOff")}</option>
+      {#each specs.specs as s (s.index)}
+        {#if s.index !== specs.activeSpec}<option value={String(s.index)}>{t("tree.compare")}: {s.title || t("tree.specDefault")}</option>{/if}
+      {/each}
     </select>
     <button class="btn ghost sm" onclick={() => (reset = true)} disabled={app.busy > 0}>{t(specs.tattoos ? "tree.resetTattoos" : "tree.reset")}</button>
   {/if}
@@ -266,5 +281,8 @@
   }
   .grow {
     flex: 1;
+  }
+  .cmp {
+    max-width: 200px;
   }
 </style>
