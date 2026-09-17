@@ -96,7 +96,7 @@ class AppState {
   /** The tab a freshly loaded build opens on: POB_ZH_UI_VIEW (developer knob) or the tree. */
   landingView(): ViewId {
     const v = hostInfo.view as ViewId | undefined;
-    const ids: ViewId[] = ["tree", "items", "skills", "config", "calcs", "notes", "party", "import"];
+    const ids: ViewId[] = ["tree", "items", "skills", "config", "calcs", "notes", "party", "import", "settings"];
     return v && ids.includes(v) ? v : "tree";
   }
 

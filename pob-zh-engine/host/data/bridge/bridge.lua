@@ -3179,6 +3179,183 @@ probe("classes.DropDownControl.SetSel/SelByValue + EditControl.SetText + ListCon
 end)
 
 -- ---------------------------------------------------------------------------
+-- POB's own Options dialog and update dialog
+-- ---------------------------------------------------------------------------
+-- main:OpenOptionsPopup builds every option as a control whose callback writes
+-- the setting on `main`; its Save button applies the proxy/build path, writes
+-- the manifest branch (the weekly-beta opt-in) and SaveSettings(). The page
+-- reads those controls and hands back only the values the user changed; they
+-- go through the same callbacks and the same Save. Nothing here knows what an
+-- option means.
+
+-- POB's DPI override reopens the dialog from its callback and scales the
+-- classic window; the new window has its own zoom, so it is not offered.
+local OPTION_SKIP = { dpiScaleOverride = true }
+
+local function option_kind(ctl)
+	if type(ctl) ~= "table" then return nil end
+	if ctl.DropIndexToListIndex and ctl.list then return "dropdown" end
+	if ctl.SetText and ctl.buf ~= nil then return "edit" end
+	if ctl.GetDivVal then return "slider" end
+	-- a CheckBoxControl's state stays nil until POB assigns it (an option never
+	-- saved in Settings.xml), so it is recognised by its callback alone
+	if ctl.changeFunc then return "check" end
+	return nil
+end
+
+local function open_options()
+	-- the dialog sizes itself from main.screenW/H, which the first OnFrame sets
+	if not main().screenH then frame() end
+	return capture_popup(function() main():OpenOptionsPopup() end, true)
+end
+
+local function read_options(cap)
+	local controls = cap.controls
+	local hdrApp, hdrBuild = controls["section-app-label"], controls["section-build-label"]
+	local function num(v) return type(v) == "number" and v or 0 end
+	-- POB lays the two sections out side by side when the screen is wide
+	-- enough and one above the other otherwise; the build header's position
+	-- says which, and so which section a control is in.
+	local twoCol = hdrBuild and num(hdrBuild.x) >= 600
+	-- A row's caption is the LabelControl POB anchors to the control's left
+	-- ({"RIGHT", control, "LEFT"}); a checkbox carries its caption itself.
+	local captionOf = {}
+	for _, c in pairs(controls) do
+		if type(c) == "table" and c.label ~= nil and not option_kind(c) and c.anchor and type(c.anchor.other) == "table" and c.anchor.point == "RIGHT" then
+			captionOf[c.anchor.other] = c
+		end
+	end
+	local items = {}
+	for name, ctl in pairs(controls) do
+		local kind = type(name) == "string" and not OPTION_SKIP[name] and name ~= "save" and name ~= "cancel" and option_kind(ctl)
+		if kind then
+			-- a control anchored to another one (the proxy URL box) sits on that row
+			local row = ctl
+			if ctl.anchor and type(ctl.anchor.other) == "table" and ctl.anchor.other ~= controls.sectionAnchor then row = ctl.anchor.other end
+			local x, y = num(row.x), num(row.y)
+			local build = hdrBuild and (twoCol and x >= 600 or (not twoCol and y > num(hdrBuild.y))) or false
+			local lblCtl = captionOf[ctl]
+			local label = lblCtl and lblCtl.label or ctl.label
+			if type(label) == "function" then label = label() end
+			label = type(label) == "string" and label or nil
+			local tip = type(ctl.tooltipText) == "string" and ctl.tooltipText or nil
+			local e = { name = name, kind = kind, section = build and "build" or "app", y = y, x = x, anchoredTo = row ~= ctl and row == controls.proxyType and "proxyType" or nil,
+				label = label, labelZh = label and tr(label) or nil, tooltip = tip, tooltipZh = tip and tr(tip) or nil }
+			if kind == "dropdown" then
+				e.options = dd_options(ctl)
+				e.sel = ctl.selIndex or 1
+			elseif kind == "edit" then
+				e.text = ctl.buf
+			elseif kind == "check" then
+				e.state = ctl.state and true or false
+			elseif kind == "slider" then
+				e.value = ctl.val
+			end
+			items[#items + 1] = e
+		end
+	end
+	table.sort(items, function(a, b)
+		if a.section ~= b.section then return a.section == "app" end
+		if a.y ~= b.y then return a.y < b.y end
+		return a.x < b.x
+	end)
+	local function title(ctl)
+		local l = ctl and ctl.label
+		if type(l) == "function" then l = l() end
+		return type(l) == "string" and l or nil
+	end
+	return {
+		sections = {
+			{ id = "app", title = title(hdrApp), titleZh = title(hdrApp) and tr(title(hdrApp)) or nil },
+			{ id = "build", title = title(hdrBuild), titleZh = title(hdrBuild) and tr(title(hdrBuild)) or nil },
+		},
+		options = items,
+		branch = launch.versionBranch,
+		version = launch.versionNumber,
+	}
+end
+
+-- pob_options: the Options dialog's controls, grouped as POB groups them.
+function M.pob_options()
+	local cap = open_options()
+	local ok, res = pcall(read_options, cap)
+	popup_discard(cap)
+	if not ok then error(res, 0) end
+	return res
+end
+
+-- set_pob_options{values={name=value}}: each value through its control's own
+-- callback, then the dialog's Save. A failure puts the old values back
+-- through the dialog's Cancel.
+function M.set_pob_options(p)
+	local values = p and p.values
+	if type(values) ~= "table" then error("params.values required", 0) end
+	local cap = open_options()
+	local controls = cap.controls
+	local ok, err = pcall(function()
+		for name, v in pairs(values) do
+			local ctl = controls[name]
+			local kind = type(name) == "string" and not OPTION_SKIP[name] and option_kind(ctl)
+			if not kind then error("no option " .. tostring(name), 0) end
+			if kind == "dropdown" then
+				ctl:SetSel(tonumber(v) or 1)
+			elseif kind == "edit" then
+				ctl:SetText(tostring(v), true)
+			elseif kind == "check" then
+				ctl.state = v and true or false
+				if ctl.changeFunc then ctl.changeFunc(ctl.state) end
+			elseif kind == "slider" then
+				ctl.val = math.max(0, math.min(1, tonumber(v) or 0))
+				if ctl.changeFunc then ctl.changeFunc(ctl.val) end
+			end
+		end
+		controls.save.onClick()
+	end)
+	if not ok then
+		pcall(function() controls.cancel.onClick() end)
+		popup_discard(cap)
+		error(err, 0)
+	end
+	popup_discard(cap)
+	-- report the saved state from a fresh dialog, as reopening Options would show it
+	local cap2 = open_options()
+	local ok2, r = pcall(read_options, cap2)
+	popup_discard(cap2)
+	if not ok2 then error(r, 0) end
+	r.saved = true
+	return r
+end
+
+-- pob_update_info: what POB's "Update Ready" dialog shows -- the changelog
+-- entries newer than this version (main:OpenUpdatePopup reads changelog.txt,
+-- which the update check has just downloaded).
+function M.pob_update_info()
+	local cap = capture_popup(function() main():OpenUpdatePopup() end, false)
+	local lines = {}
+	local list = cap and cap.controls.changeLog and cap.controls.changeLog.list or {}
+	-- On the beta branch the version never equals a changelog heading, so POB
+	-- lists the whole file; the newest entries are what matters.
+	local MAX = 400
+	for i, e in ipairs(list) do
+		if i > MAX then break end
+		lines[i] = { text = e[1], height = e.height }
+	end
+	return {
+		available = launch.updateAvailable,
+		version = launch.versionNumber,
+		branch = launch.versionBranch,
+		lines = lines,
+		truncated = #list > MAX,
+	}
+end
+
+probe("main.OpenOptionsPopup/SaveSettings/SetManifestBranch/OpenUpdatePopup + launch.CheckForUpdate/ApplyUpdate", function()
+	local m = launch.main
+	return type(m.OpenOptionsPopup) == "function" and type(m.SaveSettings) == "function" and type(m.SetManifestBranch) == "function"
+		and type(m.OpenUpdatePopup) == "function" and type(launch.CheckForUpdate) == "function" and type(launch.ApplyUpdate) == "function"
+end)
+
+-- ---------------------------------------------------------------------------
 -- Skills (socket groups, gems, skill sets)
 -- ---------------------------------------------------------------------------
 

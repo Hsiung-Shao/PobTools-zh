@@ -1471,6 +1471,46 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			child.Call("set_party", json{{"field", "enableExportBuffs"}, {"value", false}}, pe, 60000);
 		}
 
+		// --- POB's Options dialog: read its controls, save through its Save -----
+		{
+			json po, ver, s1, s2;
+			bool okPo = okLoad && child.Call("pob_options", json::object(), po, 60000) && child.Call("version", json::object(), ver, 30000);
+			bool hasBeta = false, hasProto = false, hasDpi = false, proxyLabelled = false, sepState = false, bothSections = false;
+			int n = 0, app = 0, bld = 0;
+			if (okPo) for (auto& o : po["options"]) {
+				n++;
+				const std::string name = o.value("name", ""), kind = o.value("kind", ""), sec = o.value("section", "");
+				if (sec == "app") app++; else if (sec == "build") bld++;
+				if (name == "betaTest" && kind == "check") hasBeta = true;
+				if (name == "connectionProtocol" && kind == "dropdown" && o["options"].size() == 3) hasProto = true;
+				if (name == "dpiScaleOverride") hasDpi = true;
+				if (name == "proxyType" && o.contains("label")) proxyLabelled = true;
+				if (name == "showThousandsSeparators") sepState = o.value("state", false);
+			}
+			bothSections = app >= 10 && bld >= 10;
+			check("pob_options: main:OpenOptionsPopup's controls in its two sections (beta opt-in, protocol, captions), the DPI override left out",
+			      okPo && n >= 25 && bothSections && hasBeta && hasProto && !hasDpi && proxyLabelled,
+			      okPo ? "options=" + std::to_string(n) + " app=" + std::to_string(app) + " build=" + std::to_string(bld) : po.dump().substr(0, 300));
+			// Save also writes the manifest branch from the beta box: keep it on the branch the sandbox has
+			const bool beta = okPo && ver.value("pobBranch", "") == "beta";
+			bool okS1 = okPo && child.Call("set_pob_options", json{{"values", json{{"showThousandsSeparators", !sepState}, {"betaTest", beta}}}}, s1, 60000);
+			bool flipped = false;
+			if (okS1) for (auto& o : s1["options"]) if (o.value("name", "") == "showThousandsSeparators") flipped = o.value("state", sepState) == !sepState;
+			bool okS2 = okS1 && child.Call("set_pob_options", json{{"values", json{{"showThousandsSeparators", sepState}, {"betaTest", beta}}}}, s2, 60000);
+			bool restored = false;
+			if (okS2) for (auto& o : s2["options"]) if (o.value("name", "") == "showThousandsSeparators") restored = o.value("state", !sepState) == sepState;
+			json bad;
+			bool okBad = child.Call("set_pob_options", json{{"values", json{{"noSuchOption", 1}}}}, bad, 60000);
+			check("set_pob_options goes through the dialog's callbacks and Save (a toggle round-trips) and refuses unknown names",
+			      okS1 && s1.value("saved", false) && flipped && okS2 && restored && !okBad && child.Alive(),
+			      okS1 ? std::string("flipped=") + (flipped ? "1" : "0") + " restored=" + (restored ? "1" : "0") : s1.dump().substr(0, 300));
+			json ui;
+			bool okUi = child.Call("pob_update_info", json::object(), ui, 60000);
+			check("pob_update_info: main:OpenUpdatePopup's changelog list (capped) and the running version",
+			      okUi && ui["lines"].size() >= 1 && ui["lines"].size() <= 400 && !ui.value("version", "").empty(),
+			      okUi ? "lines=" + std::to_string(ui["lines"].size()) : ui.dump().substr(0, 200));
+		}
+
 		// --- POB's own update check, synchronously -----------------------------
 		json upd;
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);

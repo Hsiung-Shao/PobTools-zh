@@ -177,6 +177,38 @@ export interface UpdateStatus {
   progress: string | null;
   error: string | null;
 }
+/** POB's "Update Ready" dialog: the changelog entries newer than this version. */
+export interface PobUpdateInfo {
+  available?: string | null;
+  version?: string;
+  branch?: string;
+  lines: { text?: string; height?: number }[];
+  truncated?: boolean;
+}
+/** One control of POB's Options dialog, as the dialog built it. */
+export interface PobOption {
+  name: string;
+  kind: "dropdown" | "edit" | "check" | "slider";
+  section: "app" | "build";
+  label?: string;
+  labelZh?: string;
+  tooltip?: string;
+  tooltipZh?: string;
+  /** drawn on the same row as this control (the proxy URL next to its scheme) */
+  anchoredTo?: string;
+  options?: { label: string; labelZh: string }[];
+  sel?: number;
+  text?: string;
+  state?: boolean;
+  value?: number;
+}
+export interface PobOptions {
+  sections: { id: "app" | "build"; title?: string; titleZh?: string }[];
+  options: PobOption[];
+  branch?: string;
+  version?: string;
+  saved?: boolean;
+}
 
 export interface SidebarRow {
   h: number;
@@ -847,6 +879,9 @@ export const api = {
   selfCheck: () => bridge.call<GateResult>("self_check"),
   getUpdateStatus: () => bridge.call<UpdateStatus>("get_update_status"),
   checkUpdateAsync: () => bridge.call<{ started: boolean }>("check_update_async"),
+  pobUpdateInfo: () => bridge.call<PobUpdateInfo>("pob_update_info", {}, 60000),
+  pobOptions: () => bridge.call<PobOptions>("pob_options", {}, 60000),
+  setPobOptions: (values: Record<string, string | number | boolean>) => bridge.call<PobOptions>("set_pob_options", { values }, 60000),
   applyUpdate: (mode?: string, timeoutMs = 120000) => bridge.call<{ applied: string }>("apply_update", mode ? { mode } : {}, timeoutMs),
   getBuildHeader: () => bridge.call<BuildHeader>("get_build_header"),
   setBuildField: (field: string, value: unknown) => bridge.call<Committed>("set_build_field", { field, value }, 60000),
