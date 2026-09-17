@@ -3535,6 +3535,159 @@ probe("TreeTab.ModifyNodePopup/RemoveTattooFromNode + tree.tattoo (PoE1 tattoos)
 	return type(t) == "table" and type(t.ModifyNodePopup) == "function" and type(t.RemoveTattooFromNode) == "function"
 end, "tattoos")
 
+-- ---- Find a Timeless Jewel (TreeTab:FindTimelessJewel) ----------------------
+-- The dialog is ~1600 lines of controls around POB's own search; the bridge
+-- keeps it open (captured, never drawn), drives its controls and reads
+-- build.timelessData for the results.
+
+local tj_popup = nil
+
+local function tj_controls()
+	if not tj_popup or not tj_popup.controls then error("the timeless jewel search is not open", 0) end
+	return tj_popup.controls
+end
+
+local function tj_state(b)
+	local c = tj_controls()
+	local td = b.timelessData or {}
+	local function dd(ctl, sel)
+		if not ctl then return nil end
+		return { options = dd_options(ctl), sel = sel or ctl.selIndex or 1, shown = ctl_shown(ctl) }
+	end
+	local results = {}
+	for i, r in ipairs(td.searchResults or {}) do
+		if i > 500 then break end
+		results[i] = { index = i, label = strip_escapes(r.label or ""), seed = r.seed, total = r.total, socketLabel = r.socketLabel }
+	end
+	return {
+		jewel = dd(c.jewelSelect),
+		conqueror = dd(c.conquerorSelect),
+		socket = dd(c.socketSelect),
+		node = dd(c.nodeSelect),
+		fallbackWeights = dd(c.fallbackWeightsList),
+		abyssAscendancy = dd(c.abyssAscendancySelect),
+		devotion1 = dd(c.devotionSelect1),
+		devotion2 = dd(c.devotionSelect2),
+		filterNodes = c.socketFilter and { state = c.socketFilter.state and true or false, shown = ctl_shown(c.socketFilter) } or nil,
+		socketJewel = c.socketAllocate and { state = c.socketAllocate.state and true or false, shown = ctl_shown(c.socketAllocate) } or nil,
+		protectAllocated = c.protectAllocated and { state = c.protectAllocated.state and true or false, shown = ctl_shown(c.protectAllocated) } or nil,
+		nodeDistance = c.socketFilterAdditionalDistance and { value = c.socketFilterAdditionalDistance.val, shown = ctl_shown(c.socketFilterAdditionalDistance) } or nil,
+		weights = {
+			primary = c.nodeSlider and c.nodeSlider.val or nil,
+			secondary = c.nodeSlider2 and c.nodeSlider2.val or nil,
+			minimum = c.nodeSlider3 and c.nodeSlider3.val or nil,
+			-- the numbers POB prints next to each slider
+			primaryLabel = c.nodeSliderValue and strip_escapes(tostring(c.nodeSliderValue.label or "")) or nil,
+			secondaryLabel = c.nodeSlider2Value and strip_escapes(tostring(c.nodeSlider2Value.label or "")) or nil,
+			minimumLabel = c.nodeSlider3Value and strip_escapes(tostring(c.nodeSlider3Value.label or "")) or nil,
+			distanceLabel = c.socketFilterAdditionalDistanceValue and strip_escapes(tostring(c.socketFilterAdditionalDistanceValue.label or "")) or nil,
+		},
+		totalMinimumWeight = c.totalMinimumWeight and c.totalMinimumWeight.buf or nil,
+		searchList = c.searchList and c.searchList.buf or "",
+		searchListFallback = c.searchListFallback and c.searchListFallback.buf or "",
+		results = results,
+		resultCount = #(td.searchResults or {}),
+	}
+end
+
+-- tj_open{}: opens POB's "Find a Timeless Jewel" dialog (kept, not drawn).
+function M.tj_open()
+	local b = ensure_build()
+	if GAME == "poe2" then error("PoE2 has no timeless jewels", 0) end
+	if tj_popup then popup_discard(tj_popup) end
+	tj_popup = capture_popup(function() b.treeTab:FindTimelessJewel() end, true)
+	if not (tj_popup and tj_popup.controls and tj_popup.controls.searchButton) then
+		tj_popup = nil
+		error("POB did not open its timeless jewel dialog", 0)
+	end
+	return tj_state(b)
+end
+
+-- tj_set{...}: one of the dialog's controls, through its own callback.
+function M.tj_set(p)
+	local b = ensure_build()
+	local c = tj_controls()
+	p = p or {}
+	local function pick(ctl, v)
+		local i = tonumber(v)
+		if not ctl or not i or not (ctl.list or {})[i] then error("no such option " .. tostring(v), 0) end
+		ctl.selIndex = i
+		if ctl.selFunc then ctl.selFunc(i, ctl.list[i]) end
+	end
+	local function slide(ctl, v)
+		if not ctl then error("no such slider", 0) end
+		ctl.val = math.max(0, math.min(1, tonumber(v) or 0))
+		if ctl.changeFunc then ctl.changeFunc(ctl.val) end
+	end
+	local function tick(ctl, v)
+		if not ctl then error("no such checkbox", 0) end
+		ctl.state = v and true or false
+		if ctl.changeFunc then ctl.changeFunc(ctl.state) end
+	end
+	if p.jewel ~= nil then pick(c.jewelSelect, p.jewel) end
+	if p.conqueror ~= nil then pick(c.conquerorSelect, p.conqueror) end
+	if p.socket ~= nil then pick(c.socketSelect, p.socket) end
+	if p.node ~= nil then pick(c.nodeSelect, p.node) end
+	if p.fallbackWeights ~= nil then pick(c.fallbackWeightsList, p.fallbackWeights) end
+	if p.abyssAscendancy ~= nil then pick(c.abyssAscendancySelect, p.abyssAscendancy) end
+	if p.devotion1 ~= nil then pick(c.devotionSelect1, p.devotion1) end
+	if p.devotion2 ~= nil then pick(c.devotionSelect2, p.devotion2) end
+	if p.filterNodes ~= nil then tick(c.socketFilter, p.filterNodes) end
+	if p.socketJewel ~= nil then tick(c.socketAllocate, p.socketJewel) end
+	if p.protectAllocated ~= nil then tick(c.protectAllocated, p.protectAllocated) end
+	if p.primary ~= nil then slide(c.nodeSlider, p.primary) end
+	if p.secondary ~= nil then slide(c.nodeSlider2, p.secondary) end
+	if p.minimum ~= nil then slide(c.nodeSlider3, p.minimum) end
+	if p.nodeDistance ~= nil then slide(c.socketFilterAdditionalDistance, p.nodeDistance) end
+	if p.totalMinimumWeight ~= nil then c.totalMinimumWeight:SetText(tostring(p.totalMinimumWeight), true) end
+	if p.searchList ~= nil then c.searchList:SetText(tostring(p.searchList), true) end
+	if p.searchListFallback ~= nil then c.searchListFallback:SetText(tostring(p.searchListFallback), true) end
+	if p.generateFallback then c.fallbackWeightsButton.onClick() end
+	if p.reset then c.resetButton.onClick() end
+	return tj_state(b)
+end
+
+-- tj_search{}: the dialog's Search button (POB's own seed search).
+function M.tj_search()
+	local b = ensure_build()
+	local c = tj_controls()
+	c.searchButton.onClick()
+	return tj_state(b)
+end
+
+-- tj_result{index, action="item"|"socket"}: the jewel text for a result row,
+-- or POB's own click on it (which sockets the jewel when Socket Jewel is on).
+function M.tj_result(p)
+	local b = ensure_build()
+	local c = tj_controls()
+	local i = tonumber(p and p.index)
+	local data = i and (b.timelessData.searchResults or {})[i]
+	if not data then error("no result " .. tostring(p and p.index), 0) end
+	local list = c.searchResults
+	if p.action == "socket" then
+		list.selIndex = i
+		list:OnSelClick(i, data, true)
+		frame()
+		return { ok = true, state = tj_state(b) }
+	end
+	local item = list:GetJewelItem(data)
+	return { raw = type(item) == "table" and (item.raw or item:BuildRaw()) or tostring(item) }
+end
+
+-- tj_close{}: Cancel.
+function M.tj_close()
+	if tj_popup then popup_discard(tj_popup) end
+	tj_popup = nil
+	return { ok = true }
+end
+
+probe("TreeTab.FindTimelessJewel + TimelessJewelListControl/TimelessJewelSocketControl (PoE1)", function()
+	if GAME == "poe2" then return false end
+	local t = class_of("TreeTab")
+	return type(t) == "table" and type(t.FindTimelessJewel) == "function"
+		and type(class_of("TimelessJewelListControl")) == "table" and type(class_of("TimelessJewelSocketControl")) == "table"
+end, "timelessJewel")
+
 -- ---- Node power: the heat map and the Power Report --------------------------
 -- TreeTab's "Show Node Power" runs CalcsTab's PowerBuilder coroutine over the
 -- unallocated nodes (classic POB resumes it once per frame and shows a toast);

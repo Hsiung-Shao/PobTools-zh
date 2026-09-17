@@ -5,6 +5,7 @@
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
+  import TimelessJewelDialog from "../components/TimelessJewelDialog.svelte";
   import { api, type MasteryChoice, type NodeInfo, type NodePower, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
@@ -51,6 +52,9 @@
 
   let search = $state("");
   let matches = $state<Set<number>>(new Set());
+
+  /** PoE1's "Find a Timeless Jewel" dialog. */
+  let tjOpen = $state(false);
 
   /** Show Node Power (TreeTab's heat map + Power Report). */
   let power = $state<NodePower | null>(null);
@@ -1001,6 +1005,9 @@
         {/each}
       </div>
     {/if}
+    {#if !model?.poe2 && app.has("timelessJewel")}
+      <button class="btn ghost sm" onclick={() => (tjOpen = true)}>{t("tj.open")}</button>
+    {/if}
     <span class="vsep"></span>
     <label class="chk small" title={t("tree.powerHint")}>
       <input type="checkbox" checked={!!power} disabled={powerBusy || app.busy > 0} onchange={(e) => togglePower(e.currentTarget.checked)} />
@@ -1054,6 +1061,10 @@
         {/each}
         <button class="choice cancel" onclick={() => (masteryMenu = null)}>{t("tree.cancel")}</button>
       </div>
+    {/if}
+
+    {#if tjOpen}
+      <TimelessJewelDialog onclose={() => (tjOpen = false)} />
     {/if}
 
     {#if reportOpen && power?.report?.length}

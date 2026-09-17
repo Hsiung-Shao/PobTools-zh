@@ -193,6 +193,8 @@ export interface Caps {
   treeLinks?: boolean;
   /** PoE1's Add Mod browser for custom modifiers. */
   configModBrowser?: boolean;
+  /** PoE1's "Find a Timeless Jewel" dialog. */
+  timelessJewel?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -233,6 +235,34 @@ export interface MinionEntry {
   nameZh?: string;
   category?: string;
   recommended?: boolean;
+}
+
+/** One of the timeless jewel dialog's drop-downs. */
+export interface TjField {
+  options: { label: string; labelZh?: string }[];
+  sel: number;
+  shown: boolean;
+}
+/** TreeTab's "Find a Timeless Jewel" as the bridge drives it. */
+export interface TimelessState {
+  jewel?: TjField;
+  conqueror?: TjField;
+  socket?: TjField;
+  node?: TjField;
+  fallbackWeights?: TjField;
+  abyssAscendancy?: TjField;
+  devotion1?: TjField;
+  devotion2?: TjField;
+  filterNodes?: { state: boolean; shown: boolean };
+  socketJewel?: { state: boolean; shown: boolean };
+  protectAllocated?: { state: boolean; shown: boolean };
+  nodeDistance?: { value?: number; shown: boolean };
+  weights?: { primary?: number; secondary?: number; minimum?: number; primaryLabel?: string; secondaryLabel?: string; minimumLabel?: string; distanceLabel?: string };
+  totalMinimumWeight?: string;
+  searchList?: string;
+  searchListFallback?: string;
+  results?: { index: number; label: string; seed: number; total: number; socketLabel?: string }[];
+  resultCount?: number;
 }
 
 /** TreeTab's Show Node Power: the heat map's numbers and the Power Report. */
@@ -1088,6 +1118,11 @@ export const api = {
   tattooApply: (p: { id: number; tattoo?: string | number; reset?: boolean; showLegacy?: boolean }) => bridge.call<TreeState>("tattoo_apply", p, 60000),
   setCompareSpec: (index?: number) => bridge.call<TreeState>("set_compare_spec", index == null ? {} : { index }, 60000),
   nodePower: (p: { enabled?: boolean; stat?: string; maxDepth?: number | null }) => bridge.call<NodePower>("node_power", p, 600000),
+  tjOpen: () => bridge.call<TimelessState>("tj_open", {}, 120000),
+  tjSet: (p: Record<string, unknown>) => bridge.call<TimelessState>("tj_set", p, 120000),
+  tjSearch: () => bridge.call<TimelessState>("tj_search", {}, 900000),
+  tjResult: (index: number, action?: "socket") => bridge.call<{ raw: string; ok?: boolean }>("tj_result", { index, action }, 120000),
+  tjClose: () => bridge.call<{ ok: boolean }>("tj_close", {}, 30000),
   treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number; trace?: number[] } = {}) =>
     bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),

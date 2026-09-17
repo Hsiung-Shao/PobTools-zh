@@ -1755,6 +1755,26 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
 		}
 
+		// Find a Timeless Jewel: POB's dialog driven through the bridge
+		{
+			json tj0, tj1, tjs, tjr, tjc;
+			const auto tTj = GetTickCount64();
+			bool okTj = okLoad && child.Call("tj_open", json::object(), tj0, 120000);
+			const size_t sockets = okTj ? tj0["socket"]["options"].size() : 0;
+			bool okSet = okTj && sockets > 1 &&
+			             child.Call("tj_set", json{{"jewel", 2}, {"socket", 2}, {"searchList", "1 Added Passive Skill is Concentrated Effect"}}, tj1, 120000);
+			bool okSearch = okSet && child.Call("tj_search", json::object(), tjs, 600000);
+			bool okRaw = true;
+			if (okSearch && tjs.value("resultCount", 0) > 0) {
+				okRaw = child.Call("tj_result", json{{"index", 1}}, tjr, 60000) && tjr.value("raw", "").find("Lethal Pride") != std::string::npos;
+			}
+			child.Call("tj_close", json::object(), tjc, 30000);
+			check("tj_open/tj_set/tj_search: POB's timeless jewel dialog answers with its jewel types, sockets and seed results",
+			      okTj && tj0["jewel"]["options"].size() >= 5 && sockets >= 1 && okSet && okSearch && okRaw && child.Alive(),
+			      "sockets=" + std::to_string(sockets) + " results=" + std::to_string(okSearch ? tjs.value("resultCount", -1) : -1) +
+			          " ms=" + std::to_string(GetTickCount64() - tTj) + " " + (okTj ? "" : tj0.dump().substr(0, 200)));
+		}
+
 		// the shared item list and shared item sets (main's two shared lists)
 		{
 			json li2, sh1, sh2, use, un1, un2, shEnd;
