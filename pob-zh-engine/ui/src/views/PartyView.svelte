@@ -2,7 +2,8 @@
      加上「匯出本建置增益」開關與匯出內容(唯讀)。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type PartyData } from "$lib/bridge";
+  import { api, type PartyData, type PartyImportState } from "$lib/bridge";
+  import PobText from "../components/PobText.svelte";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
 
@@ -37,6 +38,55 @@
       await app.afterTreeChange();
     }
   }
+  // PartyTab's import row: a party member's code or build-site URL into one list or all
+  let imp = $state<PartyImportState | null>(null);
+  let code = $state("");
+  let dest = $state(1);
+  let append = $state(false);
+  let impMsg = $state("");
+  $effect(() => {
+    if (!app.loaded) return;
+    untrack(async () => {
+      try {
+        imp = await api.partyImportState();
+        dest = imp.destination || 1;
+        append = imp.append;
+      } catch {
+        imp = null;
+      }
+    });
+  });
+  async function doImport() {
+    impMsg = "";
+    let r: PartyImportState;
+    try {
+      r = await api.partyImport(code.trim(), dest, append);
+    } catch (e: any) {
+      impMsg = String(e?.message ?? e);
+      return;
+    }
+    // a build-site URL downloads first; POB finishes the import when it arrives
+    for (let i = 0; r.fetching && i < 60; i++) {
+      await new Promise((res) => setTimeout(res, 500));
+      r = await api.partyImportState();
+    }
+    imp = r;
+    impMsg = r.fetching ? "" : r.detailZh || r.detail;
+    if (!r.fetching) {
+      code = "";
+      await reload();
+      await app.afterTreeChange();
+    }
+  }
+  async function action(a: "clear" | "disable" | "rebuild") {
+    if (a === "clear" && !confirm(t("party.clearConfirm"))) return;
+    const r = await app.run(() => api.partyAction(a));
+    if (r) {
+      await reload();
+      await app.afterTreeChange();
+    }
+  }
+
   async function toggleExport(v: boolean) {
     const r = await app.run(() => api.setPartyExport(v));
     if (r) {
@@ -54,6 +104,21 @@
       <label class="chk"><input type="checkbox" checked={data.enableExportBuffs} onchange={(e) => toggleExport(e.currentTarget.checked)} /> {t("party.export")}</label>
     {/if}
   </div>
+  {#if imp}
+    <div class="bar imp">
+      <input class="input sm code" placeholder={t("party.importHint")} bind:value={code} onkeydown={(e) => e.key === "Enter" && code.trim() && doImport()} />
+      <select class="select sm" bind:value={dest} title={t("party.destination")}>
+        {#each imp.destinations as d (d.index)}<option value={d.index}>{d.labelZh || d.label}</option>{/each}
+      </select>
+      <label class="chk" title={t("party.appendHint")}><input type="checkbox" bind:checked={append} /> {t("party.append")}</label>
+      <button class="btn primary sm" disabled={!code.trim() || app.busy > 0} onclick={doImport}>{t("party.import")}</button>
+      {#if impMsg}<span class="small"><PobText text={impMsg} /></span>{/if}
+      <span class="grow"></span>
+      <button class="btn ghost sm" title={t("party.clearHint")} onclick={() => action("clear")}>{t("party.clear")}</button>
+      <button class="btn ghost sm" title={t("party.disableHint")} onclick={() => action("disable")}>{t("party.disable")}</button>
+      <button class="btn ghost sm" title={t("party.rebuildHint")} onclick={() => action("rebuild")}>{t("party.rebuild")}</button>
+    </div>
+  {/if}
   <div class="scroll">
     {#if data}
       <div class="grid">
@@ -180,5 +245,15 @@
     white-space: pre-wrap;
     max-height: 200px;
     overflow-y: auto;
+  }
+  .imp {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 36px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  .code {
+    width: 320px;
   }
 </style>

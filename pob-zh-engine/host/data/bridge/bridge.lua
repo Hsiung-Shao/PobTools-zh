@@ -5025,6 +5025,120 @@ function M.get_party()
 	}
 end
 
+-- party_import_state{}: the Party tab's import row -- the destination
+-- choices, whether the pasted code/URL checked out, a download in flight.
+function M.party_import_state()
+	local b = ensure_build()
+	local tab = b.partyTab
+	local c = tab.controls
+	-- the tab's own download callback runs from the frame loop
+	if tab.importCodeFetching then frame() end
+	local dests = {}
+	for i, d in ipairs(c.importCodeDestination.list or {}) do
+		dests[i] = { index = i, label = type(d) == "table" and d.label or d, labelZh = tr(type(d) == "table" and d.label or d) }
+	end
+	return {
+		destinations = dests,
+		destination = c.importCodeDestination.selIndex,
+		append = c.appendNotReplace.state and true or false,
+		valid = tab.importCodeValid and true or false,
+		fetching = tab.importCodeFetching and true or false,
+		detail = type(tab.importCodeDetail) == "string" and strip_escapes(tab.importCodeDetail) or "",
+		detailZh = type(tab.importCodeDetail) == "string" and tr(strip_escapes(tab.importCodeDetail)) or "",
+		rev = b.outputRevision,
+	}
+end
+
+-- party_import{code, destination?, append?}: paste into "Import party code"
+-- (its change function checks the code or recognises a build site URL), pick
+-- the destination and Append, press Import. A site URL downloads first: poll
+-- party_import_state until fetching is false.
+function M.party_import(p)
+	local b = ensure_build()
+	local tab = b.partyTab
+	local c = tab.controls
+	if type(p) ~= "table" or type(p.code) ~= "string" then error("params.code required", 0) end
+	local d = tonumber(p.destination) or 1
+	if not (c.importCodeDestination.list or {})[d] then error("unknown destination " .. tostring(p.destination), 0) end
+	c.importCodeDestination.selIndex = d
+	c.appendNotReplace.state = p.append and true or false
+	c.importCodeIn:SetText(p.code, true)
+	if not tab.importCodeValid then
+		local why = strip_escapes(tab.importCodeDetail or "")
+		error(why ~= "" and tr(why) or "invalid party code", 0)
+	end
+	c.importCodeGo.onClick()
+	tab.modFlag = true
+	b.buildFlag = true
+	frame()
+	return M.party_import_state()
+end
+
+-- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party
+-- Effects and Rebuild All.
+function M.party_action(p)
+	local b = ensure_build()
+	local c = b.partyTab.controls
+	local btn = ({ clear = c.clear, disable = c.removeEffects, rebuild = c.rebuild })[p and p.action or ""]
+	if not btn then error("unknown action " .. tostring(p and p.action), 0) end
+	btn.onClick()
+	b.partyTab.modFlag = true
+	return commit(b)
+end
+
+probe("PartyTab import row (importCodeIn/importCodeDestination/appendNotReplace/importCodeGo) and Clear/Disable/Rebuild buttons", function()
+	local b = build()
+	if not (b and b.partyTab) then return true end
+	local c = b.partyTab.controls
+	return type(c.importCodeIn) == "table" and type(c.importCodeIn.changeFunc) == "function"
+		and type(c.importCodeDestination) == "table" and type(c.appendNotReplace) == "table"
+		and type(c.importCodeGo) == "table" and type(c.importCodeGo.onClick) == "function"
+		and type(c.clear) == "table" and type(c.removeEffects) == "table" and type(c.rebuild) == "table"
+end)
+
+-- about{}: main:OpenAboutPopup's two lists (version history, help) as rows of
+-- columns with POB's colour codes, and its version line.
+function M.about()
+	local m = main()
+	local cap = capture_popup(function() m:OpenAboutPopup() end)
+	local c = cap and cap.controls
+	if not (c and c.changelog and c.helpLabel) then error("POB did not open its About dialog", 0) end
+	local function rows(list)
+		local out = {}
+		for i, r in ipairs(list or {}) do
+			local cols = {}
+			for j, v in ipairs(r) do cols[j] = v end
+			out[i] = { height = r.height, cols = cols }
+		end
+		return out
+	end
+	local changelog = rows(c.changelog.list)
+	c.helpLabel.onClick()
+	local help = rows(c.changelog.list)
+	local version = c.version and c.version.label
+	if type(version) == "function" then version = version() end
+	return { version = version, changelog = changelog, help = help }
+end
+
+-- remove_account_history{name}: the "X" next to the account name history.
+function M.remove_account_history(p)
+	local b = ensure_build()
+	local tab = import_tab(b)
+	local c = tab.controls
+	if not (c.siteAccountHistory and c.siteRemoveAccount) then error("this POB has no account name history", 0) end
+	local name = p and p.name
+	local found
+	for i, v in ipairs(c.siteAccountHistory.list or {}) do
+		if v == name then found = i end
+	end
+	if not found then error("not in the history: " .. tostring(name), 0) end
+	c.siteAccountHistory.selIndex = found
+	c.siteRemoveAccount.onClick()
+	return M.import_status()
+end
+
+probe("main.OpenAboutPopup (changelog/helpLabel controls)", function() return type(launch.main.OpenAboutPopup) == "function" end)
+
 -- set_party{field, text} for the seven areas, or {field="enableExportBuffs", value=bool}.
 function M.set_party(p)
 	local b = ensure_build()

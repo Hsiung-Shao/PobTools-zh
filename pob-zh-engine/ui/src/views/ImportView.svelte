@@ -277,6 +277,10 @@
           {#each st?.accountHistory ?? [] as a (a)}<option value={a}></option>{/each}
         </datalist>
       </label>
+      {#if (st?.accountHistory ?? []).includes(sAccount) && !siteReady}
+        <button class="btn ghost sm" title={t("import.historyRemove")} disabled={app.busy > 0}
+          onclick={async () => { const r = await app.run(() => api.removeAccountHistory(sAccount)); if (r) { st = r; sAccount = ""; } }}>×</button>
+      {/if}
       {#if siteReady}
         <button class="btn ghost sm" disabled={app.busy > 0 || busySite} onclick={closeSite}>{t("import.siteClose")}</button>
       {:else}

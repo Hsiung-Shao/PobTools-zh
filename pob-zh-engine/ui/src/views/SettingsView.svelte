@@ -3,6 +3,8 @@
      與快捷鍵一覽;不需要開建置。 -->
 <script lang="ts">
   import { untrack } from "svelte";
+  import AboutDialog from "../components/AboutDialog.svelte";
+  let aboutOpen = $state(false);
   import { api, type PobOption, type PobOptions } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS } from "$lib/prefs.svelte";
@@ -133,6 +135,7 @@
       </div>
       <div class="foot">
         <span class="dim hint">{t("settings.pobVersion", { version: pob.version ?? "", branch: pob.branch ?? "" })}</span>
+        <button class="btn ghost sm" onclick={() => (aboutOpen = true)}>{t("about.open")}</button>
         <span class="btns">
           <button class="btn ghost sm" disabled={!dirty || app.busy > 0} onclick={() => (draft = {})}>{t("settings.pobRevert")}</button>
           <button class="btn primary sm" disabled={!dirty || app.busy > 0} onclick={savePob}>{t("settings.pobSave")}</button>
@@ -153,6 +156,8 @@
     </dl>
   </section>
 </div>
+
+{#if aboutOpen}<AboutDialog onclose={() => (aboutOpen = false)} />{/if}
 
 <style>
   .page {

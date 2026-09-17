@@ -97,8 +97,12 @@ export class Bridge {
       const p = this.pending.get(msg.id)!;
       this.pending.delete(msg.id);
       clearTimeout(p.timer);
-      if (msg.error) p.reject(msg.error as BridgeError);
-      else p.resolve(msg.result);
+      if (msg.error) {
+        // the engine appends a Lua stack trace to a raised error; the page shows the message
+        const e = msg.error as BridgeError;
+        if (typeof e.message === "string") e.message = e.message.split(/\s*stack traceback:/)[0].trim();
+        p.reject(e);
+      } else p.resolve(msg.result);
       return;
     }
     if (msg && typeof msg.event === "string") {
@@ -957,6 +961,25 @@ export interface CalcsData {
 
 // --- notes / party -------------------------------------------------------------
 
+/** PartyTab's import row. */
+export interface PartyImportState {
+  destinations: { index: number; label: string; labelZh?: string }[];
+  destination: number;
+  append: boolean;
+  valid: boolean;
+  fetching: boolean;
+  detail: string;
+  detailZh?: string;
+  rev: number;
+}
+
+/** main:OpenAboutPopup's lists: rows of columns with POB colour codes. */
+export interface AboutData {
+  version?: string;
+  changelog: { height: number; cols: string[] }[];
+  help: { height: number; cols: string[] }[];
+}
+
 export interface PartyData {
   fields: Record<"partyMemberStats" | "aura" | "curse" | "warcry" | "link" | "enemyCond" | "enemyMods", string>;
   enableExportBuffs: boolean;
@@ -1090,6 +1113,11 @@ export const api = {
   getNotes: () => bridge.call<{ text: string; unsaved: boolean; rev: number; colours?: { code: string; name: string }[] }>("get_notes"),
   setNotes: (text: string) => bridge.call<Committed>("set_notes", { text }, 60000),
   getParty: () => bridge.call<PartyData>("get_party", {}, 60000),
+  partyImportState: () => bridge.call<PartyImportState>("party_import_state", {}, 60000),
+  partyImport: (code: string, destination: number, append: boolean) => bridge.call<PartyImportState>("party_import", { code, destination, append }, 120000),
+  partyAction: (action: "clear" | "disable" | "rebuild") => bridge.call<Committed>("party_action", { action }, 60000),
+  about: () => bridge.call<AboutData>("about", {}, 60000),
+  removeAccountHistory: (name: string) => bridge.call<ImportStatus>("remove_account_history", { name }, 60000),
   setParty: (field: string, text: string) => bridge.call<Committed>("set_party", { field, text }, 60000),
   setPartyExport: (value: boolean) => bridge.call<Committed>("set_party", { field: "enableExportBuffs", value }, 60000),
   hostInfo: () => bridge.call<HostInfo>("host.info"),

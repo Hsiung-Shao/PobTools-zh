@@ -1617,7 +1617,31 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okPe = okP && child.Call("set_party", json{{"field", "enableExportBuffs"}, {"value", true}}, pe, 60000) && child.Call("get_party", json::object(), pe, 60000);
 			check("enableExportBuffs exposes this build's exported buff text", okPe && pe.value("enableExportBuffs", false) && pe.contains("exports"),
 			      okPe ? "exports=" + std::to_string(pe["exports"].size()) : pe.dump().substr(0, 200));
+			// this build's own export (with its buffs) imported into the party lists, then Clear
+			json ec, pst, pim, pgot, pclr, pafter, pbad;
+			bool okEc = okPe && child.Call("export_code", json::object(), ec, 60000);
 			child.Call("set_party", json{{"field", "enableExportBuffs"}, {"value", false}}, pe, 60000);
+			bool okPst = okEc && child.Call("party_import_state", json::object(), pst, 30000);
+			bool okPim = okPst && child.Call("party_import", json{{"code", ec.value("code", "")}, {"destination", 1}}, pim, 60000) &&
+			             child.Call("get_party", json::object(), pgot, 60000);
+			bool okPclr = okPim && child.Call("party_action", json{{"action", "clear"}}, pclr, 60000) && child.Call("get_party", json::object(), pafter, 60000);
+			bool okPbad = child.Call("party_import", json{{"code", "not a code"}}, pbad, 30000);
+			bool anyFilled = false, allEmpty = okPclr;
+			if (okPim) for (auto& [k, v] : pgot["fields"].items()) if (v.is_string() && !v.get<std::string>().empty()) anyFilled = true;
+			if (okPclr) for (auto& [k, v] : pafter["fields"].items()) if (v.is_string() && !v.get<std::string>().empty()) allEmpty = false;
+			check("party_import brings a build's exported buffs into the party lists (destination All); Clear empties them; a bad code is refused",
+			      okPim && pst["destinations"].size() == 8 && pim.value("valid", false) && anyFilled && allEmpty && !okPbad && child.Alive(),
+			      (okPim ? pgot["fields"].dump() : pim.dump()).substr(0, 240) + " " + pbad.dump().substr(0, 100));
+			json pdis, preb;
+			bool okAct = child.Call("party_action", json{{"action", "disable"}}, pdis, 60000) && child.Call("party_action", json{{"action", "rebuild"}}, preb, 60000);
+			json pbadAct;
+			bool okBadAct = child.Call("party_action", json{{"action", "explode"}}, pbadAct, 30000);
+			check("party_action disable/rebuild run PartyTab's buttons; an unknown action is refused", okAct && !okBadAct && child.Alive(), pdis.dump().substr(0, 120));
+			json ab;
+			bool okAb = child.Call("about", json::object(), ab, 60000);
+			check("about lists POB's version history and help text (main:OpenAboutPopup's lists)",
+			      okAb && ab["changelog"].size() > 20 && ab["help"].size() > 20 && ab.value("version", "").find("Path of Building") != std::string::npos,
+			      okAb ? "changelog=" + std::to_string(ab["changelog"].size()) + " help=" + std::to_string(ab["help"].size()) : ab.dump().substr(0, 200));
 		}
 
 		// --- POB's Options dialog: read its controls, save through its Save -----
