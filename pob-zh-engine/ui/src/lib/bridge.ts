@@ -201,6 +201,10 @@ export interface Caps {
   compareTab?: boolean;
   /** POB's "Buy Similar" search builder. */
   buySimilar?: boolean;
+  /** The gem picker can sort by DPS (GemSelectControl's own sort cache). */
+  gemDpsSort?: boolean;
+  /** The trade pane's search weight dialog. */
+  tradeWeights?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
