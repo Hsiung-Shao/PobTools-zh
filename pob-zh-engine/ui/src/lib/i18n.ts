@@ -66,6 +66,10 @@ const EN: Record<string, string> = {
   "settings.keyTabs": "Switch tabs",
   "settings.keySave": "Save the build",
   "settings.keyZoom": "Window zoom",
+  "settings.keyEnglish": "Show POB's original English (press again to go back)",
+  "settings.keyRename": "Rename the selected build or folder",
+  "app.englishOn": "Showing the original English (F2)",
+  "app.englishOff": "Showing the translation (F2)",
   "settings.comboZoom": "Ctrl + wheel / Ctrl + / Ctrl − / Ctrl 0",
   "sidebar.build": "Build",
   "sidebar.class": "Class",
@@ -625,6 +629,24 @@ const EN: Record<string, string> = {
 
 let table: Record<string, string> = { ...EN };
 let ready: Promise<void> | null = null;
+// What loadLocale() fetched, kept so F2 can put it back. Empty until then (and
+// for locale "en", where there is nothing to swap).
+let locTable: Record<string, string> = {};
+let showEnglish = false;
+
+/**
+ * F2's other half: the engine's switch turns POB's own strings back to English,
+ * this turns ours. Pure data -- callers re-render (App keys the page on
+ * app.langRev), because t() reads this table at call time and is not a rune.
+ */
+export function setEnglish(on: boolean): void {
+  showEnglish = on;
+  table = on ? { ...EN } : { ...EN, ...locTable };
+}
+
+export function isEnglish(): boolean {
+  return showEnglish;
+}
 
 export function locale(): string {
   return hostInfo.locale || "en";
@@ -638,7 +660,10 @@ export function loadLocale(): Promise<void> {
   ready = fetch(hostUrl("data", `launcher/${loc}/ui.json`))
     .then((r) => (r.ok ? r.json() : null))
     .then((j) => {
-      if (j && typeof j === "object") table = { ...EN, ...(j as Record<string, string>) };
+      if (j && typeof j === "object") {
+        locTable = j as Record<string, string>;
+        if (!showEnglish) table = { ...EN, ...locTable };
+      }
     })
     .catch(() => {});
   return ready;

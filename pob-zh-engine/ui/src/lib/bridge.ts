@@ -205,6 +205,8 @@ export interface Caps {
   gemDpsSort?: boolean;
   /** The trade pane's search weight dialog. */
   tradeWeights?: boolean;
+  /** The engine can turn display translation off (what F2 does). */
+  translateToggle?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -433,6 +435,8 @@ export interface VersionInfo {
   buildPath: string | null;
   /** POB reopened its last build by itself at startup. */
   buildLoaded: boolean;
+  /** Display translation is on (F2 turns it off); absent on an engine without the switch. */
+  translate?: boolean;
 }
 
 export interface UpdateStatus {
@@ -1283,6 +1287,7 @@ export const api = {
   decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
   importCode: (code: string, mode: "replace" | "new") => bridge.call<LoadedBuild>("import_code", { code, mode }, 180000),
   importCharacter: (p: CharImportParams) => bridge.call<Committed & { imported: string[] }>("import_character", p, 180000),
+  setTranslate: (p: { enabled: boolean }) => bridge.call<{ enabled: boolean }>("set_translate", p, 60000),
   importStatus: () => bridge.call<ImportStatus>("import_status", {}, 60000),
   oauthStart: () => bridge.call<{ started?: boolean; authorized?: boolean; url?: string }>("oauth_start", {}, 30000),
   oauthLogout: () => bridge.call<{ authorized: boolean }>("oauth_logout"),

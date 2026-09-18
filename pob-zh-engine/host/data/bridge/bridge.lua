@@ -77,6 +77,12 @@ probe("launch.versionNumber", function() return type(launch.versionNumber) == "s
 probe("launch.CheckForUpdate", function() return type(launch.CheckForUpdate) == "function" end)
 probe("launch.ApplyUpdate", function() return type(launch.ApplyUpdate) == "function" end)
 probe("launch.OnFrame", function() return type(launch.OnFrame) == "function" end)
+-- The engine's own display-translation switch, which the classic window gives
+-- to F2. A capability, not a requirement: an engine without it simply has no
+-- "show the original English" hotkey, and the page hides the entry.
+probe("PobToolsSetTranslate/PobToolsGetTranslate (F2's switch)", function()
+	return type(PobToolsSetTranslate) == "function" and type(PobToolsGetTranslate) == "function"
+end, "translateToggle")
 probe("main.modes.BUILD", function() return type(launch.main.modes) == "table" and type(launch.main.modes.BUILD) == "table" end)
 probe("main.SetMode", function() return type(launch.main.SetMode) == "function" end)
 probe("main.buildPath", function() return type(launch.main.buildPath) == "string" end)
@@ -265,8 +271,33 @@ function M.pump(p)
 	return { frames = frames, seconds = secs }
 end
 
+-- nil when the engine has no switch at all, true/false when it has one.
+local function translate_state()
+	if type(PobToolsGetTranslate) ~= "function" then return nil end
+	return PobToolsGetTranslate() and true or false
+end
+
+-- set_translate{enabled}: the same switch the classic window's F2 flips
+-- (ui_main.cpp KEY_F2 -> translation_set_enabled). tr() above goes through
+-- PobToolsTranslateDisplay, whose first act is to check that flag, so turning
+-- it off makes EVERY string this bridge answers with come back in POB's own
+-- English -- including the ones that have no separate English field (sidebar
+-- and calcs breakdowns, mastery effects). The page then re-reads what it shows.
+function M.set_translate(p)
+	if not (PobToolsSetTranslate and PobToolsGetTranslate) then
+		error("this engine has no translation switch", 0)
+	end
+	local on = not (p and p.enabled == false)
+	PobToolsSetTranslate(on)
+	return { enabled = translate_state() }
+end
+
 function M.version()
 	return {
+		-- Whether display translation is on right now, so a page that opens
+		-- after the switch was flipped starts in step with it. Written the long
+		-- way on purpose: `a and b or nil` turns a legitimate false into nil.
+		translate = translate_state(),
 		pobVersion = launch.versionNumber,
 		pobBranch = launch.versionBranch,
 		pobPlatform = launch.versionPlatform,

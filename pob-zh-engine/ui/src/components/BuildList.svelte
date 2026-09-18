@@ -83,7 +83,9 @@
     } else if (k.ctrlKey && key === "v" && clip) {
       k.preventDefault();
       void paste();
-    } else if (k.key === "F2" && selEntry) {
+      // F2 belongs to the language toggle, the way the engine takes it in the
+      // classic window; renaming moved to Ctrl+R (every row also has a button).
+    } else if (k.ctrlKey && key === "r" && selEntry) {
       k.preventDefault();
       dialog = { kind: "rename", entry: selEntry, name: nameOf(selEntry) };
     } else if (k.key === "Delete" && selEntry) {

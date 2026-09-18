@@ -61,6 +61,8 @@
     ["Ctrl + 1 … 9", "settings.keyTabs"],
     ["Ctrl + S", "settings.keySave"],
     [t("settings.comboZoom"), "settings.keyZoom"],
+    ["F2", "settings.keyEnglish"],
+    ["Ctrl + R", "settings.keyRename"],
   ] as const;
 </script>
 

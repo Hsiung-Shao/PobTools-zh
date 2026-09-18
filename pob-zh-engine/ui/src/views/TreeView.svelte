@@ -1,3 +1,11 @@
+<script lang="ts" module>
+  // Where the camera was when this view last went away. Module scope on
+  // purpose: the instance is destroyed and rebuilt whenever the page is
+  // re-keyed (F2's language flip), and coming back to a tree scrolled to the
+  // middle at default zoom reads as "it lost my place".
+  const lastCam = { cx: 0, cy: 0, zoom: 0.12 };
+</script>
+
 <script lang="ts">
   // The passive tree. POB has already placed every node and decided its art
   // (bridge tree_data / tree_assets); this view is the camera, the canvas and
@@ -28,10 +36,11 @@
   let artMissing = $state(false);
   let tree = $state<TreeState | null>(null);
 
-  // camera
-  let cx = 0;
-  let cy = 0;
-  let zoom = 0.12;
+  // camera -- restored from the module memo below, so a remount (F2 re-keys the
+  // whole page) does not throw the user back to the middle of the tree.
+  let cx = lastCam.cx;
+  let cy = lastCam.cy;
+  let zoom = lastCam.zoom;
   let w = $state(0);
   let h = $state(0);
   let dpr = 1;
@@ -974,8 +983,12 @@
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
     return () => {
+      lastCam.cx = cx;
+      lastCam.cy = cy;
+      lastCam.zoom = zoom;
       ro.disconnect();
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
       if (raf) cancelAnimationFrame(raf);
     };
   });

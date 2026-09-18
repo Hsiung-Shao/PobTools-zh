@@ -1,7 +1,7 @@
 // App-wide state: engine status, the loaded build, sidebar, view.
 // Svelte 5 runes in a module so every component reads the same object.
 import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
-import { t } from "./i18n";
+import { setEnglish, t } from "./i18n";
 
 export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "compare" | "settings";
 
@@ -28,6 +28,15 @@ class AppState {
   savedAt = $state<string | null>(null);
   /** POB's outputRevision after the last refresh; everything cached is keyed on it. */
   rev = $state(0);
+  /** F2: showing POB's original English instead of the translation. */
+  english = $state(false);
+  /**
+   * Bumped by the F2 toggle. App keys the whole page on it, which is what makes
+   * every t() call re-evaluate (t reads a plain table, not a rune) and every
+   * view re-fetch (POB's outputRevision does NOT move when only the display
+   * language changed, so `rev` alone would leave the old strings on screen).
+   */
+  langRev = $state(0);
   loaded = $derived(this.info !== null);
   /** PoE2's Path of Building (bridge version.game; the host's game before the engine answers). */
   poe2 = $derived((this.version?.game ?? hostInfo.game) === "poe2");
@@ -59,6 +68,26 @@ class AppState {
     this.header = header;
     this.rev = side.rev;
     return true;
+  }
+
+  /**
+   * F2, the new interface's half of it: flip the engine's display-translation
+   * switch (the same one the classic window's F2 flips), swap our own strings,
+   * then re-read. POB's text arrives already translated -- there is no English
+   * copy of a sidebar breakdown line -- so the only way back to English is to
+   * ask the engine again with the switch off.
+   */
+  async toggleEnglish(): Promise<void> {
+    if (!this.has("translateToggle")) return;
+    const want = !this.english;
+    const r = await this.run(() => api.setTranslate({ enabled: !want }));
+    if (!r) return;
+    this.english = r.enabled === false;
+    setEnglish(this.english);
+    this.langRev++;
+    if (this.version) this.version = { ...this.version, translate: r.enabled };
+    if (this.loaded) await this.run(() => this.refresh());
+    this.notice = this.english ? t("app.englishOn") : t("app.englishOff");
   }
 
   /** Build:Init ran again (import): every cached view is stale, like a fresh load. */

@@ -557,6 +557,42 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		      "rows=" + std::to_string(rows) + " withText=" + std::to_string(textRows) + " translated=" + std::to_string(zhRows));
 		check("sidebar rows come back translated (zh-rTW dictionaries applied)", zhRows > 0);
 
+		// --- F2's switch: the page's way back to POB's original English ----------
+		// Nothing the bridge answers with carries an English copy of a breakdown
+		// line, so "show the original" can only mean asking again with the
+		// engine's display translation off -- the same flag the classic window's
+		// F2 flips. Proven on the sidebar, where each row carries both forms.
+		{
+			json off, on, verOff;
+			const bool okOff = child.Call("set_translate", json{{"enabled", false}}, off, 30000);
+			json sideOff;
+			const bool okSideOff = okOff && child.Call("get_sidebar", json::object(), sideOff, 30000);
+			int offText = 0, offSame = 0;
+			if (okSideOff)
+				for (auto& r : sideOff["rows"])
+					if (r.contains("lhs")) {
+						offText++;
+						if (r.value("lhs", "") == r.value("lhsRaw", "")) offSame++;
+					}
+			const bool okVerOff = child.Call("version", json::object(), verOff, 30000);
+			const bool okOn = child.Call("set_translate", json{{"enabled", true}}, on, 30000);
+			json sideOn;
+			const bool okSideOn = okOn && child.Call("get_sidebar", json::object(), sideOn, 30000);
+			int onZh = 0;
+			if (okSideOn)
+				for (auto& r : sideOn["rows"])
+					if (r.contains("lhs") && r.value("lhs", "") != r.value("lhsRaw", "")) onZh++;
+			check("set_translate{false} gives POB's original English back, {true} restores the translation",
+			      okOff && off.value("enabled", true) == false && okSideOff && offText > 10 && offSame == offText &&
+			          okVerOff && verOff.value("translate", true) == false &&
+			          okOn && on.value("enabled", false) == true && okSideOn && onZh > 0,
+			      "off: " + std::to_string(offSame) + "/" + std::to_string(offText) +
+			          " rows equal their raw, version.translate=" +
+			          (okVerOff ? verOff["translate"].dump() : "?") + "; on: " + std::to_string(onZh) + " translated");
+			check("the translation switch is a capability the page can test for",
+			      okVerOff && verOff["caps"].value("translateToggle", false), "");
+		}
+
 		// --- sidebar 1b: stat keys, breakdown, build list, build info ------------
 		{
 			int valueRows = 0, withStat = 0, doubleSpacer = 0, firstBd = -1;
@@ -2555,6 +2591,34 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("the reloaded build keeps its allocation and attribute choices", okAa && allocAfter.value("allocCount", 0) == allocated &&
 		      (attrId == 0 || allocAfter["overrides"].contains(std::to_string(attrId))),
 		      okAa ? std::to_string(allocAfter.value("allocCount", 0)) + " vs " + std::to_string(allocated) : "");
+
+		// --- F2's switch on PoE2's POB too ---------------------------------------
+		// Same flag, same bridge code, different dictionaries: worth its own
+		// check because this is the game where "it only works on PoE1" hides.
+		{
+			json off, on, sideOff, sideOn, ver;
+			const bool okOff = child.Call("set_translate", json{{"enabled", false}}, off, 30000) &&
+			                   child.Call("get_sidebar", json::object(), sideOff, 30000);
+			int offText = 0, offSame = 0;
+			if (okOff)
+				for (auto& r : sideOff["rows"])
+					if (r.contains("lhs")) {
+						offText++;
+						if (r.value("lhs", "") == r.value("lhsRaw", "")) offSame++;
+					}
+			const bool okVer = child.Call("version", json::object(), ver, 30000);
+			const bool okOn = child.Call("set_translate", json{{"enabled", true}}, on, 30000) &&
+			                  child.Call("get_sidebar", json::object(), sideOn, 30000);
+			int onZh = 0;
+			if (okOn)
+				for (auto& r : sideOn["rows"])
+					if (r.contains("lhs") && r.value("lhs", "") != r.value("lhsRaw", "")) onZh++;
+			check("PoE2: set_translate turns the sidebar back to POB's English and returns",
+			      okOff && offText > 5 && offSame == offText && okVer &&
+			          ver["caps"].value("translateToggle", false) && ver.value("translate", true) == false &&
+			          okOn && onZh > 0,
+			      "off " + std::to_string(offSame) + "/" + std::to_string(offText) + ", on " + std::to_string(onZh));
+		}
 
 		// --- import ------------------------------------------------------------------
 		json is, fc;

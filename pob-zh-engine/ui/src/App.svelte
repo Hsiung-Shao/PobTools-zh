@@ -25,6 +25,14 @@
   // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
   const tabOrder: ViewId[] = ["builds", "tree", "items", "skills", "config", "calcs", "notes", "party", "import"];
   function onKey(e: KeyboardEvent) {
+    // F2 first: it is the one shortcut that is not Ctrl-based, and it means the
+    // same here as in the classic window -- show POB's original English.
+    if (e.key === "F2" && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (!app.has("translateToggle")) return;
+      e.preventDefault();
+      void app.toggleEnglish();
+      return;
+    }
     if (!e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "s" && !e.shiftKey && app.loaded) {
@@ -93,7 +101,11 @@
 
 <svelte:window onkeydown={onKey} onwheel={onWheel} />
 
+<!-- keyed on the language flip: t() reads a plain table, so nothing re-renders
+     by itself, and the views have to re-fetch because POB's outputRevision does
+     not move when only the display language changed. -->
 {#if i18nReady}
+  {#key app.langRev}
   <div class="app">
     <TitleBar />
     {#if app.loaded && app.view !== "builds" && app.view !== "settings"}<BuildBar />{/if}
@@ -151,6 +163,7 @@
       </div>
     </div>
   {/if}
+  {/key}
 {/if}
 
 <style>
