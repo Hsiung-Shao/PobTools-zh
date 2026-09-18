@@ -19,6 +19,14 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.0 (2026-09-18, early build)\n"
+	u8"Added\n"
+	u8"　·New interface (Beta): one more button in the launcher opens a build in a new window. The sidebar, passive tree, items, skills, config, calcs, notes, party, compare and import/export are all there, POB keeps updating itself as usual, and the classic window is always one click away.\n"
+	u8"　·The new interface supports PoE2, and Chinese item text can be pasted into it directly.\n"
+	u8"　·Where there is no WebView2 (CrossOver or Wine on macOS and Linux), the new interface opens in the system browser instead.\n"
+	u8"　·Trade panel in the new interface: POB's own Query Options dialog is shown and editable, and hovering a search result shows the item and what equipping it would change.\n"
+	u8"　·Note: this is an early build, published to everyone who ticked \"Join the beta\". The new interface is still being tested; please report what you run into.\n"
+	u8"\n"
 	u8"v1.6.0 (2026-09-18)\n"
 	u8"Fixed\n"
 	u8"　·Appearance settings needed POB to be restarted before they showed: they now apply to a running POB as soon as you change them.\n"
