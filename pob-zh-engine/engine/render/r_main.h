@@ -16,6 +16,8 @@
 #include <imgui.h>
 #include <vector>
 
+#include "r_perf_gpu.h"
+
 // =======
 // Classes
 // =======
@@ -72,6 +74,7 @@ public:
 
 	void	BeginFrame();
 	void	EndFrame();
+	bool	LastFramePresented() { return lastFramePresented_; }
 	
 	r_shaderHnd_c* RegisterShader(std::string_view shname, int flags);
 	r_shaderHnd_c* RegisterShaderFromImage(std::unique_ptr<image_c> img, int flags);
@@ -185,6 +188,9 @@ public:
 	float clearCol_[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	int lastOpacityPct_ = 100; // window opacity: forces a redraw (no frame elision) when it changes
 	int lastGlassBlurPct_ = 0; // same for the liquid-glass blur strength
+	int lastBgBrightPct_ = 50; // ...and the background image brightness
+	int lastTreeBgPct_ = 100;  // ...and the passive tree backdrop
+	std::string lastBgPath_;   // ...and the background image itself
 
 	// Liquid-glass panels (window opacity feature): what is already drawn
 	// under a chrome panel is downsampled to 1/4, blurred, and pasted back
@@ -207,6 +213,21 @@ public:
 
 	uint64_t totalFrames{};
 	uint64_t drawnFrames{};
+
+	// Present only what changed (host/pob_frame_cap.h). An elided frame keeps
+	// the previous image on screen instead of blitting and swapping it again.
+	bool   lastFramePresented_ = true;
+	double lastPresentTime_ = -1.0e9;     // seconds, steady clock
+	int    lastPresentFb_[2] = { -1, -1 };
+
+	// Opt-in performance log (host/perf_log.h): why the hash was cleared (so a
+	// redraw can be attributed), the layer ids behind the last digest (so the
+	// layers that changed can be named), and the GPU timer queries.
+	int perfClearReason_ = 4; // PerfLog::DrawFirst
+	std::vector<std::pair<int, int>> perfLastLayerIds_;
+	int perfPendingTextures_ = 0;          // textures holding elision off (PumpShaders)
+	std::string perfPendingExample_;
+	r_perfGpu_c perfGpu_;
 
 	struct FrameStats {
 		std::deque<float> midFrameStepDurations;

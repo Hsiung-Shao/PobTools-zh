@@ -892,7 +892,8 @@ int RunDockSpike(const std::wstring& exeDir, bool spawnPob, bool verbose)
 		PobLaunch::SetEngineEnv(game, cfg.locale, cfg.fontFile, std::wstring(),
 		                        cfg.fontApplyAll, look.windowOpacity,
 		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
-		                        look.treeBg, cfg.hangWatch);
+		                        look.treeBg, cfg.hangWatch,
+		                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
 		unsigned long pid = 0;
 		if (PobLaunch::SpawnPobDetached(l, game, &pid))
 			dock.Track(pid, poe2 ? L"PoE2" : L"PoE1");

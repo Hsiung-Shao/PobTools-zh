@@ -265,7 +265,18 @@
 	X(linkDisenchant,    u8"拆粉查詢",                     u8"Disenchant lookup")                     \
 	/* Column head over our own tools; the other two columns are headed PoE1 and
 	   PoE2, which need no translation. */                                       \
-	X(linkGroupTools,    u8"中文化工具",                   u8"Chinese localisation")
+	X(linkGroupTools,    u8"中文化工具",                   u8"Chinese localisation")                  \
+	/* POB window performance (settings page): frame caps and the opt-in
+	   performance log (host/pob_frame_cap.h, host/perf_log.h). */             \
+	X(sectionPobPerf,    u8"POB 效能",                     u8"POB performance")                       \
+	X(pobFpsForeground,  u8"POB 在前景時的畫面更新上限",   u8"POB frame limit while focused")         \
+	X(pobFpsBackground,  u8"POB 在背景時的畫面更新上限",   u8"POB frame limit in the background")     \
+	X(pobFpsUnlimited,   u8"不限",                         u8"No limit")                              \
+	X(pobFpsHint,        u8"限制 POB 視窗每秒畫幾次，降低顯示卡與 CPU 負擔；改了會立刻套用到開著的 POB。畫面沒有變化時本來就不會重畫。覺得拖曳天賦樹不夠順再調高。", \
+	                     u8"Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.") \
+	X(perfLogChk,        u8"效能診斷記錄",                 u8"Performance diagnostics log")           \
+	X(perfLogHint,       u8"排查 POB 卡頓或顯示卡、CPU 使用率過高時才開。下次開啟 POB 生效，記錄寫在問題紀錄資料夾的 perf-日期.log：用的是哪張顯示卡、在哪個頁面與狀態、每一段花了多少時間，關閉 POB 時會在最後附上各頁面的耗用排名。不含 build 內容或帳號資料。查完記得關掉。", \
+	                     u8"Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

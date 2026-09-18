@@ -861,6 +861,64 @@ local function patchMainBackground()
 	end
 end
 
+-- Performance log (launcher: 效能診斷記錄; engine: host/perf_log.h). Only when
+-- it is on: each tab's Draw, the build recalculation and both modes' OnFrame
+-- are timed and reported by name, so the log can say "the Items tab spends
+-- 9 ms a frame" instead of just "Lua is slow". Wrapping is plain and
+-- transparent: arguments and every return value pass through untouched.
+-- A class or method this POB does not have is noted once in the log and
+-- skipped -- a renamed tab must never break POB, only lose its label.
+local perfOn = type(PobToolsPerfEnabled) == "function" and PobToolsPerfEnabled()
+local perfWrapped = {}
+local PERF_DRAW = {
+	TreeTab = "tree", PassiveTreeView = "tree_view", ItemsTab = "items", SkillsTab = "skills",
+	CalcsTab = "calcs", ConfigTab = "config", NotesTab = "notes", PartyTab = "party", ImportTab = "import",
+}
+local function perfWrap(owner, method, label, onDone)
+	local orig = owner[method]
+	if type(orig) ~= "function" then return false end
+	owner[method] = function(...)
+		local t0 = PobToolsPerfNow()
+		local r = { orig(...) }
+		local ms = PobToolsPerfNow() - t0
+		PobToolsPerfMark(label, ms)
+		if onDone then onDone(ms) end
+		return unpack(r, 1, table.maxn(r))
+	end
+	return true
+end
+local function perfApplyAll()
+	if not perfOn then return end
+	for cls, label in pairs(PERF_DRAW) do
+		if not perfWrapped[cls] and common.classes[cls] then
+			perfWrapped[cls] = true
+			if not perfWrap(common.classes[cls], "Draw", label) then
+				PobToolsPerfEvent("perf: " .. cls .. ".Draw not found, its time stays inside lua")
+			end
+		end
+	end
+	if not perfWrapped.BuildOutput and common.classes.CalcsTab then
+		perfWrapped.BuildOutput = true
+		perfWrap(common.classes.CalcsTab, "BuildOutput", "recalc", function(ms)
+			if ms >= 20 then PobToolsPerfEvent(string.format("build recalculated in %.0f ms", ms)) end
+		end)
+	end
+	if type(main) == "table" and type(main.modes) == "table" then
+		for mode, label in pairs({ LIST = "list_frame", BUILD = "build_frame" }) do
+			local key = "mode:" .. mode
+			if not perfWrapped[key] and type(main.modes[mode]) == "table" then
+				perfWrapped[key] = true
+				perfWrap(main.modes[mode], "OnFrame", label)
+				if mode == "BUILD" then
+					perfWrap(main.modes[mode], "Init", "build_load", function(ms)
+						PobToolsPerfEvent(string.format("build opened in %.0f ms", ms))
+					end)
+				end
+			end
+		end
+	end
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
@@ -869,6 +927,10 @@ local function tryApplyAll()
 	end
 	local ok, err = pcall(patchMainBackground)
 	if not ok then log("patch FAILED main.DrawBackground: " .. tostring(err)) end
+	if perfOn then
+		local pok, perr = pcall(perfApplyAll)
+		if not pok then log("perf wrap FAILED: " .. tostring(perr)) end
+	end
 end
 
 tryApplyAll() -- classes already loaded at injection time

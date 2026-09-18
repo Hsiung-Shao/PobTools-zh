@@ -153,6 +153,13 @@
     "Official trade (PoE2)": "官方交易市集（PoE2）",
     "Disenchant lookup": "拆粉查詢",
     "Chinese localisation": "中文化工具",
+    "POB performance": "POB 效能",
+    "POB frame limit while focused": "POB 在前景時的畫面更新上限",
+    "POB frame limit in the background": "POB 在背景時的畫面更新上限",
+    "No limit": "不限",
+    "Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.": "限制 POB 視窗每秒畫幾次，降低顯示卡與 CPU 負擔；改了會立刻套用到開著的 POB。畫面沒有變化時本來就不會重畫。覺得拖曳天賦樹不夠順再調高。",
+    "Performance diagnostics log": "效能診斷記錄",
+    "Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.": "排查 POB 卡頓或顯示卡、CPU 使用率過高時才開。下次開啟 POB 生效，記錄寫在問題紀錄資料夾的 perf-日期.log：用的是哪張顯示卡、在哪個頁面與狀態、每一段花了多少時間，關閉 POB 時會在最後附上各頁面的耗用排名。不含 build 內容或帳號資料。查完記得關掉。",
     "Open a PoE1 build in the new interface (sidebar + tree, preview)": "以新版介面開啟 PoE1 建置(側欄與天賦樹,測試中)",
     "Translation data updated to v": "翻譯資料已更新至 v"
   }

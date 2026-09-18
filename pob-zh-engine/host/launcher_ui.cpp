@@ -1287,7 +1287,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                            ? dictDir[slot].root : std::wstring(),
 		                        cfg.fontApplyAll, look.windowOpacity,
 		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
-		                        look.treeBg, cfg.hangWatch);
+		                        look.treeBg, cfg.hangWatch,
+		                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (lua.empty()) {
 			// Nothing to launch and, until v0.28.0, nothing said about it: the
@@ -2622,6 +2623,57 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 				ImGui::TextUnformatted(S.betaChannelHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
+			}
+
+			// --- POB performance ------------------------------------------------
+			// The frame caps apply live (PobLaunch::ApplyPobFrameCap); the
+			// diagnostics log only on the next POB start, because it is read once.
+			ImGui::Dummy(ImVec2(0, 10.0f * scale));
+			SectionLabel(fonts, scale, inner, S.sectionPobPerf);
+			{
+				auto fpsCombo = [&](const char* id, const char* label, int& value, std::initializer_list<int> options) {
+					ImGui::AlignTextToFramePadding();
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+					ImGui::TextUnformatted(label);
+					ImGui::PopStyleColor();
+					ImGui::SameLine(260.0f * scale);
+					ImGui::SetNextItemWidth(120.0f * scale);
+					auto name = [&](int v) { return v <= 0 ? std::string(S.pobFpsUnlimited) : std::to_string(v) + " fps"; };
+					bool changed = false;
+					if (ImGui::BeginCombo(id, name(value).c_str())) {
+						for (int v : options) {
+							if (ImGui::Selectable(name(v).c_str(), v == value) && v != value) {
+								value = v;
+								changed = true;
+							}
+						}
+						ImGui::EndCombo();
+					}
+					return changed;
+				};
+				bool capChanged = false;
+				capChanged |= fpsCombo("##pobfpsfg", S.pobFpsForeground, cfg.pobFpsForeground, { 0, 30, 60, 90, 120, 144 });
+				capChanged |= fpsCombo("##pobfpsbg", S.pobFpsBackground, cfg.pobFpsBackground, { 0, 5, 10, 15, 30 });
+				if (capChanged) {
+					saveNow();
+					PobLaunch::ApplyPobFrameCap(cfg.pobFpsForeground, cfg.pobFpsBackground);
+				}
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.pobFpsHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
+
+				bool perf = cfg.perfLog;
+				if (ImGui::Checkbox(S.perfLogChk, &perf)) {
+					cfg.perfLog = perf;
+					saveNow();
+				}
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.perfLogHint);
 				ImGui::PopStyleColor();
 				ImGui::PopTextWrapPos();
 			}

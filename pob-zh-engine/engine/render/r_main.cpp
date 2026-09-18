@@ -10,6 +10,8 @@
 #include "startup_trace.h"
 
 #include "common/base64.h"
+#include "../../host/perf_log.h"
+#include "../../host/pob_frame_cap.h"
 
 #include <algorithm>
 #include <array>
@@ -1259,12 +1261,48 @@ void r_renderer_c::Shutdown()
 void r_renderer_c::PumpShaders()
 {
 	texMan->ProcessPendingTextureUploads();
+	// Only textures something still holds a handle to can appear in a frame; a
+	// released one that has not finished loading must not keep every frame
+	// from being elided (see t_manager_c::AsyncRemove).
+	if (!PerfLog::Enabled()) {
+		for (size_t idx = 0; idx < numShader; ++idx)
+			if (auto* sh = shaderList[idx]; sh && sh->refCount > 0)
+				if (auto tex = sh->tex; tex && tex->status != r_tex_c::DONE) {
+					inhibitElision = true;
+					break;
+				}
+		return;
+	}
+	// Performance log: the same test, but counting every texture that holds
+	// elision off and naming one, because a texture that never finishes keeps
+	// a static page redrawing forever -- worth a line in a report.
+	int pending = 0;
+	const r_tex_c* example = nullptr;
 	for (size_t idx = 0; idx < numShader; ++idx)
-		if (auto* sh = shaderList[idx])
+		if (auto* sh = shaderList[idx]; sh && sh->refCount > 0)
 			if (auto tex = sh->tex; tex && tex->status != r_tex_c::DONE) {
 				inhibitElision = true;
-				break;
+				if (!example) example = &*tex;
+				pending++;
 			}
+	std::string name;
+	if (example) {
+		// file name only: a user-chosen background image lives under their profile
+		const std::string& f = example->fileName;
+		const size_t slash = f.find_last_of("/\\");
+		name = (slash == std::string::npos ? f : f.substr(slash + 1)) + " status=" + std::to_string((int)example->status.load());
+	}
+	if ((pending > 0) != (perfPendingTextures_ > 0) || name != perfPendingExample_) {
+		if (PerfLog::Recorder* r = PerfLog::Get()) {
+			if (pending > 0)
+				r->Event("frame elision held off by " + std::to_string(pending) + " unfinished texture(s), e.g. " +
+				         (name.empty() ? std::string("(image from memory)") : name));
+			else
+				r->Event("all textures finished: frame elision possible again");
+		}
+	}
+	perfPendingTextures_ = pending;
+	perfPendingExample_ = name;
 }
 
 void r_renderer_c::BeginFrame()
@@ -1493,7 +1531,53 @@ void r_renderer_c::EndFrame()
 	if (inhibitElision || elideFrames != !!r_elideFrames->intVal) {
 		elideFrames = !!r_elideFrames->intVal;
 		lastFrameHash.clear();
+		perfClearReason_ = inhibitElision ? PerfLog::DrawInhibited
+		                 : elideFrames ? PerfLog::DrawFirst : PerfLog::DrawNoElision;
 	}
+
+	// Performance log (opt-in): collect finished GPU timings, and remember the
+	// layer ids behind this frame's digest so changed layers can be named.
+	PerfLog::Recorder* const perf = PerfLog::Enabled() ? PerfLog::Get() : nullptr;
+	std::vector<std::pair<int, int>> perfLayerIds;
+	if (perf) {
+		static bool perfHeaderWritten = false;
+		if (!perfHeaderWritten) {
+			perfHeaderWritten = true;
+			perfGpu_.Init();
+			perf->SetGpuSupported(perfGpu_.Supported());
+			const char* glVersion = (const char*)glGetString(GL_VERSION);
+			perf->Header({
+				{ "gl_vendor", st_vendor ? st_vendor : "?" },
+				{ "gl_renderer", st_renderer ? st_renderer : "?" },
+				{ "gl_version", glVersion ? glVersion : "?" },
+				{ "gpu_timer", perfGpu_.Supported() ? "EXT_disjoint_timer_query" : "unsupported" },
+			});
+		}
+		perfGpu_.Poll(perf);
+		size_t cmds = 0;
+		perfLayerIds.reserve(numLayer);
+		for (int l = 0; l < numLayer; l++) {
+			perfLayerIds.push_back({ layerSort[l]->layer, layerSort[l]->subLayer });
+			cmds += layerSort[l]->numCmd;
+		}
+		perf->Count(PerfLog::CountDrawCmds, (long)cmds);
+	}
+	// Names the layers whose digest differs from the last drawn frame's.
+	auto perfReportChangedLayers = [&](const std::vector<uint8_t>& digest) {
+		if (!perf) return;
+		if (lastFrameHash.empty() || lastFrameHash.size() != digest.size() || perfLastLayerIds_ != perfLayerIds) {
+			if (!lastFrameHash.empty()) perf->LayerChanged(-1, -1); // the layer set itself changed
+		}
+		else {
+			for (size_t i = 0; i < perfLayerIds.size() && (i + 1) * 8 <= digest.size(); i++) {
+				if (memcmp(digest.data() + i * 8, lastFrameHash.data() + i * 8, 8) != 0)
+					perf->LayerChanged(perfLayerIds[i].first, perfLayerIds[i].second);
+			}
+		}
+		perfLastLayerIds_ = perfLayerIds;
+	};
+	int perfDrawReason = PerfLog::DrawHashChanged;
+	const auto perfHashTic = PerfLog::Enabled() ? PerfLog::NowMs() : 0.0;
 
 	std::future<std::optional<std::vector<uint8_t>>> elidedFrameHashFut;
 	if (elideFrames) {
@@ -1517,6 +1601,7 @@ void r_renderer_c::EndFrame()
 	}
 
 	elidedFrameHashFut.wait();
+	if (perf) perf->AddCpu(PerfLog::CpuHash, PerfLog::NowMs() - perfHashTic);
 
 	++totalFrames;
 	bool decideDraw = false;
@@ -1524,19 +1609,33 @@ void r_renderer_c::EndFrame()
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, GetDrawRenderTarget().framebuffer);
 		{
-			// The window opacity (chrome fill alpha, see AdjacentMergeStrategy) is
-			// not part of the command stream, so an unchanged UI would otherwise
-			// be elided and keep presenting the old look after a slider change.
+			// The appearance values (chrome fill alpha, glass, background image
+			// and its brightness, tree backdrop) are not part of the command
+			// stream, so an unchanged UI would otherwise be elided and keep
+			// presenting the old look after a slider change. Every one of them
+			// is compared: brightness and the tree backdrop reach the stream
+			// through the injected Lua today, but that is the script's business,
+			// not a property this check may rely on.
 			const int pct = sys->video->windowOpacityPct;
 			const int glass = sys->video->glassBlurPct;
-			if (pct != lastOpacityPct_ || glass != lastGlassBlurPct_) {
+			const int bright = sys->video->bgBrightPct;
+			const int treeBg = sys->video->treeBgPct;
+			const std::string& bgPath = sys->video->bgPath;
+			if (pct != lastOpacityPct_ || glass != lastGlassBlurPct_ || bright != lastBgBrightPct_ ||
+			    treeBg != lastTreeBgPct_ || bgPath != lastBgPath_) {
 				// (0 is a valid value: panels fully gone.)
 				lastOpacityPct_ = pct;
 				lastGlassBlurPct_ = glass;
+				lastBgBrightPct_ = bright;
+				lastTreeBgPct_ = treeBg;
+				lastBgPath_ = bgPath;
 				lastFrameHash.clear();
+				perfClearReason_ = PerfLog::DrawAppearance;
 			}
 			glass_.rectsThisFrame = 0;
 		}
+		const double perfLayersTic = perf ? PerfLog::NowMs() : 0.0;
+		if (perf) perfGpu_.Begin(PerfLog::GpuLayers);
 		glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 		int l{};
 		for (l = 0; l < numLayer; l++) {
@@ -1549,10 +1648,13 @@ void r_renderer_c::EndFrame()
 						break;
 					}
 					else {
+						perfDrawReason = lastFrameHash.empty() ? perfClearReason_ : PerfLog::DrawHashChanged;
+						perfReportChangedLayers(*commandDigest);
 						lastFrameHash = *commandDigest;
 					}
 				}
 				else {
+					perfDrawReason = PerfLog::DrawNoElision;
 					lastFrameHash.clear();
 				}
 			}
@@ -1568,20 +1670,30 @@ void r_renderer_c::EndFrame()
 			presentRtt = 1 - presentRtt;
 			++drawnFrames;
 		}
+		if (perf) {
+			perfGpu_.End();
+			perf->AddCpu(PerfLog::CpuLayers, PerfLog::NowMs() - perfLayersTic);
+			perf->Count(PerfLog::CountGlassRects, glass_.rectsThisFrame);
+		}
 	}
 
 	if (!decideDraw) {
 		if (auto commandDigest = elidedFrameHashFut.get()) {
+			perfDrawReason = lastFrameHash.empty() ? perfClearReason_ : PerfLog::DrawHashChanged;
+			perfReportChangedLayers(*commandDigest);
 			lastFrameHash = *commandDigest;
 		}
 		else {
+			perfDrawReason = PerfLog::DrawNoElision;
 			lastFrameHash.clear();
 		}
 	}
+	if (elideDraw) perfDrawReason = PerfLog::DrawElided;
 
 	if (inhibitElision) {
 		// If we explicitly inhibited elision due to things like incomplete textures, make sure that the next frame is drawn.
 		lastFrameHash.clear();
+		perfClearReason_ = PerfLog::DrawInhibited;
 	}
 
 	for (int l = 0; l < numLayer; ++l) {
@@ -1589,7 +1701,9 @@ void r_renderer_c::EndFrame()
 	}
 	delete[] layerSort;
 
-	{
+	// The blit to the default framebuffer, run below only if this frame is
+	// presented at all.
+	auto blitToScreen = [&]() {
 		auto& rtt = GetPresentRenderTarget();
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1617,7 +1731,7 @@ void r_renderer_c::EndFrame()
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glBindTexture(GL_TEXTURE_2D, 0);
 		glUseProgram(0);
-	}
+	};
 
 	if (showHash) {
 		if (ImGui::Begin("Hash")) {
@@ -1652,10 +1766,40 @@ void r_renderer_c::EndFrame()
 	}
 
 	ImGui::Render();
-	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
-	// Swap output buffers
-	openGL->Swap();
+	// Present only a picture that changed (host/pob_frame_cap.h): an elided
+	// frame leaves the previous image on screen, except when the size changed,
+	// a screenshot or ImGui content needs this frame, or a second has passed.
+	{
+		const ImDrawData* dd = ImGui::GetDrawData();
+		PobFrameCap::PresentInputs pin;
+		pin.elided = elideDraw;
+		pin.sizeChanged = sys->video->vid.fbSize[0] != lastPresentFb_[0] || sys->video->vid.fbSize[1] != lastPresentFb_[1];
+		pin.screenshot = takeScreenshot != R_SSNONE;
+		pin.imguiContent = dd && dd->Valid && dd->TotalVtxCount > 0;
+		pin.firstFrame = totalFrames <= 1;
+		pin.now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+		pin.lastPresent = lastPresentTime_;
+		lastFramePresented_ = PobFrameCap::ShouldPresent(pin);
+		if (lastFramePresented_) {
+			const double perfBlitTic = perf ? PerfLog::NowMs() : 0.0;
+			if (perf) perfGpu_.Begin(PerfLog::GpuPresent);
+			blitToScreen();
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			if (perf) {
+				perfGpu_.End();
+				perf->AddCpu(PerfLog::CpuBlit, PerfLog::NowMs() - perfBlitTic);
+			}
+			// Swap output buffers
+			const double perfSwapTic = perf ? PerfLog::NowMs() : 0.0;
+			openGL->Swap();
+			if (perf) perf->AddCpu(PerfLog::CpuSwap, PerfLog::NowMs() - perfSwapTic);
+			lastPresentTime_ = pin.now;
+			lastPresentFb_[0] = sys->video->vid.fbSize[0];
+			lastPresentFb_[1] = sys->video->vid.fbSize[1];
+		}
+		if (perf) perf->FrameEnd((PerfLog::DrawReason)perfDrawReason, lastFramePresented_);
+	}
 
 	// Take screenshot
 	switch (takeScreenshot) {
@@ -1698,7 +1842,9 @@ void r_renderer_c::PurgeShaders()
 {
 	// Delete released shaders
 	for (int s = 0; s < numShader; s++) {
-		if (shaderList[s] && shaderList[s]->refCount == 0 && shaderList[s]->tex->status == r_tex_c::DONE) {
+		// (INIT too: a released texture whose load was abandoned, see AsyncRemove)
+		if (shaderList[s] && shaderList[s]->refCount == 0 &&
+		    (shaderList[s]->tex->status == r_tex_c::DONE || shaderList[s]->tex->status == r_tex_c::INIT)) {
 			delete shaderList[s];
 			shaderList[s] = NULL;
 		}
@@ -1879,6 +2025,17 @@ void r_renderer_c::DrawGlassPanel(float x, float y, float w, float h)
 	const int rh = (std::min)(H4, (std::max)(1, (int)((y1 - y0) / 4.0f)));
 	auto& draw = GetDrawRenderTarget();
 
+	// Performance log: the glass passes get their own CPU and GPU time. GPU
+	// timer queries cannot nest, so the layer query is closed around them and
+	// reopened after.
+	const bool perfOn = PerfLog::Enabled();
+	PerfLog::Scope perfGlassCpu(PerfLog::CpuGlass);
+	const bool perfResumeLayers = perfOn && perfGpu_.Active() == PerfLog::GpuLayers;
+	if (perfResumeLayers) {
+		perfGpu_.End();
+		perfGpu_.Begin(PerfLog::GpuGlass);
+	}
+
 	GLint prevFB;
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFB);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1963,6 +2120,10 @@ void r_renderer_c::DrawGlassPanel(float x, float y, float w, float h)
 	glBindFramebuffer(GL_FRAMEBUFFER, prevFB);
 	glViewport(0, 0, W, H);
 	g.rectsThisFrame++;
+	if (perfResumeLayers) {
+		perfGpu_.End();
+		perfGpu_.Begin(PerfLog::GpuLayers);
+	}
 }
 
 void r_renderer_c::SetClearColor(const col4_t col)

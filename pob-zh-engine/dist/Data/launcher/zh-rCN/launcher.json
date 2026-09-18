@@ -141,6 +141,26 @@
     "Official trade (PoE2)": "官方交易行（PoE2）",
     "Disenchant lookup": "拆粉查询",
     "Chinese localisation": "中文化工具",
-    "Translation data updated to v": "翻译数据已更新至 v"
+    "Translation data updated to v": "翻译数据已更新至 v",
+    "POB performance": "POB 性能",
+    "POB frame limit while focused": "POB 在前台时的画面更新上限",
+    "POB frame limit in the background": "POB 在后台时的画面更新上限",
+    "No limit": "不限",
+    "Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.": "限制 POB 窗口每秒绘制几次，降低显卡与 CPU 负担；修改后会立即应用到已打开的 POB。画面没有变化时本来就不会重绘。觉得拖动天赋树不够流畅再调高。",
+    "Performance diagnostics log": "性能诊断记录",
+    "Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.": "排查 POB 卡顿或显卡、CPU 占用过高时才打开。下次打开 POB 生效，记录写在问题记录文件夹的 perf-日期.log：用的是哪张显卡、在哪个页面与状态、每一段花了多少时间，关闭 POB 时会在最后附上各页面的消耗排名。不包含 build 内容或账号数据。查完记得关闭。",
+    "Open a build in the new interface (preview)": "用新版界面打开构建（测试中）",
+    "Default interface": "默认界面",
+    "Classic": "经典",
+    "New interface (Beta)": "新界面(Beta)",
+    "Which window the Launch button opens, for PoE1 and PoE2 alike. A POB version the new interface is not compatible with opens the classic window.": "按「启动」时打开哪一种窗口(PoE1 与 PoE2 都适用)。这版 POB 与新界面不兼容时会打开经典窗口。",
+    "The new interface's page (ui\\index.html) is missing; Launch always opens the classic window.": "找不到新界面的页面文件(ui\\index.html),「启动」一律打开经典窗口。",
+    "Which window the Launch button opens, for PoE1 and PoE2 alike. This computer has no WebView2 (CrossOver / Wine on macOS or Linux), so the new interface opens in the system browser; end it with the page's End button or here. Closing only the tab ends it about 20 seconds later.": "按「启动」时打开哪一种窗口(PoE1 与 PoE2 都适用)。这台电脑没有 WebView2(例如 macOS / Linux 的 CrossOver、Wine),新界面会在系统浏览器打开;按页面右上角「结束」或在这里结束,只关标签页的话约 20 秒后结束。",
+    "New interface (browser) running: ": "新界面(浏览器)运行中：",
+    "Open page": "打开页面",
+    "Copy address": "复制网址",
+    "End": "结束",
+    "The new interface is not compatible with this POB (%s); the classic window opened instead. It will try again after POB updates": "新界面与这版 POB(%s)不兼容,已改开经典窗口;POB 更新后会再试",
+    "%d compatibility checks failed:\n%s": "%d 项兼容性检查失败:\n%s"
   }
 }

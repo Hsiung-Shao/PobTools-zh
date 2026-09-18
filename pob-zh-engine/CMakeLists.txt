@@ -80,6 +80,11 @@ set(SIMPLEGRAPHIC_SOURCES
     # Same reasoning for the hang/crash watchdog: POB runs in its own process,
     # so the engine has to watch its own frame loop.
     "host/hang_watch.cpp"
+    # Frame cap + opt-in performance log for the POB window; the pure parts are
+    # also linked into the exe for --perf-selftest.
+    "host/pob_frame_cap.cpp"
+    "host/perf_log.cpp"
+    "engine/render/r_perf_gpu.cpp"
     "ui_console.cpp"
     "ui_console.h"
     "ui_debug.cpp"
@@ -389,6 +394,10 @@ if (WIN32)
         # idle / minimised / unchanged-frame pacing of the ImGui loops
         host/frame_pacing.cpp
         host/frame_pacing_selftest.cpp
+        # POB window frame cap + performance log (engine code, tested headless here)
+        host/pob_frame_cap.cpp
+        host/perf_log.cpp
+        host/perf_selftest.cpp
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp

@@ -14,6 +14,7 @@
 #include "../../../host/hang_watch.h"
 #include "../../../host/error_log.h"
 #include "../../headless_ipc.h"
+#include "../../../host/perf_log.h"
 
 #include "core.h"
 
@@ -757,6 +758,9 @@ bool sys_main_c::Run(int argc, char** argv)
 				Error(threadError);
 			}
 		}
+
+		// The performance log's per-page summary, if the log is on.
+		PerfLog::Shutdown();
 
 		// Shutdown engine
 		startup_trace_mark("shutdown: frame loop left, core shutting down");

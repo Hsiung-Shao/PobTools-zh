@@ -52,7 +52,8 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
                   bool fontApplyAll = true, int windowOpacity = 100,
                   const std::wstring& bgPath = std::wstring(), int bgBright = 50,
-                  int glassBlur = 0, int treeBg = 100, bool hangWatch = true);
+                  int glassBlur = 0, int treeBg = 100, bool hangWatch = true,
+                  int fpsForeground = 60, int fpsBackground = 15, bool perfLog = false);
 
 // Live counterparts for the background image (absolute path, "" = none), its
 // brightness and the liquid-glass blur; same delivery as ApplyPobWindowOpacity
@@ -63,6 +64,9 @@ void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath);
 void ApplyPobBackgroundBright(const std::wstring& game, int percent);
 void ApplyPobGlassBlur(const std::wstring& game, int percent);
 void ApplyPobTreeBackdrop(const std::wstring& game, int percent);
+// Live frame-rate caps (fps, 0 = none) for every running POB, both games: the
+// caps are global. Same WM_APP channel; no-op under Wine.
+void ApplyPobFrameCap(int fpsForeground, int fpsBackground);
 
 // True under Wine / CrossOver (ntdll exports wine_get_version). The window
 // opacity feature is Windows-only: on macOS the framebuffer alpha already leaks
@@ -141,6 +145,9 @@ void TrackHandleForTest(void* handle, const std::wstring& game);
 
 // Test seam: same, for a tool instance.
 void TrackToolHandleForTest(void* handle, InstanceKind kind);
+// Same, with a real pid so RunningInstances resolves that process's window
+// (the selftest passes its own pid and creates the windows itself).
+void TrackHandleForTestWithPid(void* handle, const std::wstring& game, unsigned long pid);
 
 // Headless checks for the tracking/reaping logic and the named marker.
 int RunPobLaunchSelfTest(const std::wstring& exeDir);
