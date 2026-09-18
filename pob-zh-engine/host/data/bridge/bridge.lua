@@ -4014,6 +4014,9 @@ function M.trade_find_best(p)
 	local wait = capture_popup(function() opt.controls.generateQuery.onClick() end, true)
 	popup_discard(opt)
 	local gen = tq.tradeQueryGenerator
+	if type(gen) ~= "table" or type(gen.calcContext) ~= "table" then
+		error("POB's query generator is not the one this bridge knows", 0)
+	end
 	local ok = trade_wait(b, tonumber(p and p.timeout) or 120, function()
 		if c["uri" .. i].buf ~= urlBefore or tq.resultTbl[i] ~= hadResults then return true end
 		-- the query is a coroutine POB resumes in its own OnFrame; when it is
@@ -4123,6 +4126,22 @@ probe("ItemsTab.tradeQuery (TradeQuery:PriceItem) + TradeQueryRequests/Generator
 	if not (b and b.itemsTab) then return true end
 	return type(b.itemsTab.tradeQuery) == "table" and type(b.itemsTab.tradeQuery.PriceItem) == "function"
 		and type(class_of("TradeQueryRequests")) == "table" and type(class_of("TradeQueryGenerator")) == "table"
+end, "tradeQuery")
+
+-- What "Find best" actually rides on: RequestQuery opens the Query Options
+-- dialog, its Execute calls StartQuery, and OnFrame resumes the coroutine until
+-- FinishQuery writes the URL. ItemsTab:UpdateSockets is in here too because
+-- PriceItem reads socket state that only Draw would otherwise have computed.
+-- (The dialog's own control key is checked when it is opened, not here: naming
+-- it would mean opening the pane, and that talks to the trade site.)
+probe("TradeQueryGenerator RequestQuery/StartQuery/OnFrame/FinishQuery + ItemsTab:UpdateSockets", function()
+	local c = class_of("TradeQueryGenerator")
+	if type(c) ~= "table" then return false end
+	if type(c.RequestQuery) ~= "function" or type(c.StartQuery) ~= "function"
+		or type(c.OnFrame) ~= "function" or type(c.FinishQuery) ~= "function" then return false end
+	local b = build()
+	if not (b and b.itemsTab) then return true end
+	return type(b.itemsTab.UpdateSockets) == "function"
 end, "tradeQuery")
 
 -- ---- Buy similar (Classes/CompareBuySimilar) --------------------------------
