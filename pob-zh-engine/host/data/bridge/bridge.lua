@@ -4138,6 +4138,12 @@ end, "buySimilar")
 
 -- ---- Trade: the search weights dialog (TradeQuery:SetStatWeights) -----------
 
+probe("TradeQuery.SetStatWeights + TradeStatWeightMultiplierListControl (search weights)", function()
+	local c = class_of("TradeQuery")
+	return type(c) == "table" and type(c.SetStatWeights) == "function"
+		and type(class_of("TradeStatWeightMultiplierListControl")) == "table"
+end, "tradeWeights")
+
 -- trade_weights{} / trade_weights_set{weights=[{stat,weight}], reset?}
 function M.trade_weights(p)
 	local b = ensure_build()
@@ -5919,6 +5925,12 @@ local function gem_search_by_dps(b, p)
 	end
 	return { gems = out, byDps = true, baseDps = cache.baseDPS, dpsField = cache.dpsField }
 end
+
+probe("GemSelectControl sorted by DPS (PopulateGemList/UpdateSortCache/BuildList/DPSBuilder/SortGemList)", function()
+	local c = class_of("GemSelectControl")
+	return type(c) == "table" and type(c.PopulateGemList) == "function" and type(c.UpdateSortCache) == "function"
+		and type(c.BuildList) == "function" and type(c.DPSBuilder) == "function" and type(c.SortGemList) == "function"
+end, "gemDpsSort")
 
 function M.gem_search(p)
 	local b = ensure_build()

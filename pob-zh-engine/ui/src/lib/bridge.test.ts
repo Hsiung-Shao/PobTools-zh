@@ -35,6 +35,17 @@ describe("Bridge", () => {
     t.reply({ id: req.id, error: { code: "lua_error", message: "boom" } });
     await expect(p).rejects.toEqual({ code: "lua_error", message: "boom" });
   });
+  it("drops the engine's Lua stack trace from an error message", async () => {
+    const t = new FakeTransport();
+    const b = new Bridge(t);
+    const p = b.call("x");
+    const req = JSON.parse(t.sent[0]);
+    t.reply({
+      id: req.id,
+      error: { code: "lua_error", message: "that build could not be read\nstack traceback:\n\t[C]: in function 'error'\n\tbridge.lua:42" },
+    });
+    await expect(p).rejects.toEqual({ code: "lua_error", message: "that build could not be read" });
+  });
   it("times out", async () => {
     const t = new FakeTransport();
     const b = new Bridge(t);
