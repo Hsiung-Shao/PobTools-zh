@@ -1154,6 +1154,10 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okMv && okMvBack && GetFileAttributesW(movedPath.c_str()) != INVALID_FILE_ATTRIBUTES && GetFileAttributesW(cpPath.c_str()) != INVALID_FILE_ATTRIBUTES &&
 				          !okMvSelf && child.Alive(),
 				      mv.dump().substr(0, 120) + " " + mvBack.dump().substr(0, 120) + " " + mvSelf.dump().substr(0, 120));
+				// the moved copy is deleted before its folder: POB's recursive
+				// RemoveDir does not delete a non-empty folder under Wine
+				json delMoved;
+				child.Call("delete_build", json{{"path", narrow(movedPath)}, {"isFolder", false}}, delMoved, 30000);
 				json delOpen;
 				bool okDelOpen = child.Call("delete_build", json{{"path", narrow(rnPath)}, {"isFolder", false}}, delOpen, 30000);
 				check("delete_build refuses the build that is open", !okDelOpen && child.Alive(), delOpen.dump().substr(0, 200));
