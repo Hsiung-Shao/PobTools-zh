@@ -1015,7 +1015,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// launcher is where the user sees it and ends it. Asked off the UI thread
 	// every two seconds (a loopback request; a wedged server must not freeze
 	// the launcher).
-	struct BrowserRunning { bool poe1 = false, poe2 = false; };
+	// The addresses come along for the ride: under CrossOver the system browser
+	// may not open, and then copying the address is the only way in.
+	struct BrowserRunning { bool poe1 = false, poe2 = false; std::string url1, url2; };
 	BrowserRunning browserRunning;
 	std::future<BrowserRunning> browserPoll;
 	double browserPollAt = -10.0;
@@ -2061,8 +2063,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			browserPollAt = ImGui::GetTime();
 			browserPoll = std::async(std::launch::async, [exeDir]() {
 				BrowserRunning r;
-				r.poe1 = ModernUiBrowserRunning(exeDir, L"poe1");
-				r.poe2 = ModernUiBrowserRunning(exeDir, L"poe2");
+				r.poe1 = ModernUiBrowserRunning(exeDir, L"poe1", &r.url1);
+				r.poe2 = ModernUiBrowserRunning(exeDir, L"poe2", &r.url2);
 				return r;
 			});
 		}
@@ -2077,6 +2079,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			ImGui::SameLine();
 			if (ImGui::SmallButton(S.modernBrowserOpen)) ModernUiBrowserOpen(exeDir, game);
 			ImGui::SameLine();
+			const std::string& burl = g == 0 ? browserRunning.url1 : browserRunning.url2;
+			if (!burl.empty()) {
+				// CrossOver often has no browser to hand the address to; the
+				// user pastes it into the Mac's own browser instead.
+				if (ImGui::SmallButton(S.modernBrowserCopyUrl)) ImGui::SetClipboardText(burl.c_str());
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", burl.c_str());
+				ImGui::SameLine();
+			}
 			if (ImGui::SmallButton(S.modernBrowserStop)) {
 				ModernUiBrowserStop(exeDir, game);
 				(g == 0 ? browserRunning.poe1 : browserRunning.poe2) = false;

@@ -673,8 +673,16 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	}
 	if (openBrowser) {
 		// Wine hands an http URL to winebrowser, which opens the host system's
-		// browser (xdg-open on Linux, open on macOS).
-		ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+		// browser (xdg-open on Linux, open on macOS). Under CrossOver that can
+		// fail (no browser bottle association); say where the page is instead
+		// of leaving the user with nothing to click.
+		HINSTANCE rc = ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+		if ((INT_PTR)rc <= 32) {
+			PobLog::Error("modernui", "browser mode: could not open a browser (code " + std::to_string((INT_PTR)rc) +
+			                              "); open this address yourself: " + url);
+			printf("%s\n", url.c_str());
+			fflush(stdout);
+		}
 	}
 
 	const auto started = std::chrono::steady_clock::now();

@@ -62,6 +62,7 @@
 	                     u8"Which window the Launch button opens, for PoE1 and PoE2 alike. This computer has no WebView2 (CrossOver / Wine on macOS or Linux), so the new interface opens in the system browser; end it with the page's End button or here. Closing only the tab ends it about 20 seconds later.") \
 	X(modernBrowserRunning, u8"新介面(瀏覽器)執行中：", u8"New interface (browser) running: ") \
 	X(modernBrowserOpen, u8"開啟頁面",                     u8"Open page")                             \
+	X(modernBrowserCopyUrl, u8"複製網址",                  u8"Copy address")                          \
 	X(modernBrowserStop, u8"結束",                         u8"End")                                   \
 	/* Phase 3: the new interface's compatibility gate failed against this POB
 	   version; the classic window opened instead and the button waits for the
