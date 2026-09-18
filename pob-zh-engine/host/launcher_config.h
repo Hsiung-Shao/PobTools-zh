@@ -176,6 +176,13 @@ struct LauncherConfig {
 	// uninvited is a program the user cannot predict. See ShouldAutoApplyApp for
 	// the (deliberately narrow) moment it is allowed to act.
 	bool           autoApplyAppUpdate = false;
+	// Take the beta line: app updates come from the newest release of any kind
+	// instead of releases/latest, so GitHub prereleases are offered too. OFF by
+	// default -- a prerelease is a test build. Turning it back off never
+	// downgrades (PlanUpdates only ever offers a HIGHER version), so a beta
+	// tester keeps what they have until the stable line catches up.
+	// ⚠ The translation-data line is NOT forked: both channels share data-<n>.
+	bool           betaChannel = false;
 	// HTTP proxy for the launcher's own downloads (update checks, translation
 	// data, atlas data, filter icons), as "host:port". Empty = follow the system
 	// proxy automatically — GitHub is unreachable without one for many

@@ -98,6 +98,7 @@ static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 	X(kMsgChecking,        u8"檢查更新中…")                                     \
 	X(kMsgUpToDate,        u8"已是最新版 v")                                     \
 	X(kMsgAppFound,        u8"發現新版 v")                                       \
+	X(kMsgBetaTag,         u8"（beta）")                                         \
 	X(kMsgAppCurrent,      u8"（目前 v")                                         \
 	X(kMsgCloseParen,      u8"）")                                               \
 	/* 翻譯資料線 */                                                            \
@@ -175,10 +176,10 @@ static std::string MsgUpToDate()
 {
 	return std::string(kMsgUpToDate) + POBTOOLS_VERSION_STRING;
 }
-static std::string MsgAppAvailable(const std::string& ver)
+static std::string MsgAppAvailable(const std::string& ver, bool beta)
 {
-	return std::string(kMsgAppFound) + ver + kMsgAppCurrent + POBTOOLS_VERSION_STRING +
-	       kMsgCloseParen;
+	return std::string(kMsgAppFound) + ver + (beta ? kMsgBetaTag : "") +
+	       kMsgAppCurrent + POBTOOLS_VERSION_STRING + kMsgCloseParen;
 }
 static std::string MsgAppDownloading(const std::string& ver)
 {
@@ -1059,38 +1060,135 @@ static bool pick_manifest_pair(const ordered_json& release,
 	return false;
 }
 
+// What one release object says about the app line. A struct of its own rather
+// than AppUpdater::RemoteRelease (which is private, so a free function cannot
+// name it) -- and the reason for pulling this apart from the HTTP call is that
+// with the parsing welded to GetString there was no way to check asset
+// selection, the manifest tag binding or the beta pick without talking to
+// GitHub. The self-test drives the two functions below directly (T23, T23b).
+struct AppReleasePick {
+	std::string ver;                 // tag without the leading v
+	std::string url, sha, name;
+	std::string manifestUrl, manifestSig, manifestTag;
+	bool prerelease = false;
+	bool hasApp = false;
+};
+
+// One release object -> AppReleasePick. `rejected` collects what the caller
+// should write to the log; it never fails the parse.
+static bool read_app_release_json(const ordered_json& j, AppReleasePick* out,
+                                  std::string* rejected)
+{
+	const std::string rawTag = j.value("tag_name", std::string());
+	std::string tag = rawTag;
+	if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
+	out->ver = tag;
+	out->prerelease = j.value("prerelease", false);
+	std::string why;
+	out->hasApp = pick_asset(j, kAppAssetPrefix, &out->url, &out->sha, &out->name, &why);
+	if (!why.empty() && rejected) *rejected = "app asset rejected: " + why;
+	// ⚠ manifest 綁的是 release 的**原始** tag("v0.26.0"),不是去掉 v 之後
+	// 的版號字串。兩者混用會讓 tag 比對永遠不符,而那個失敗長得像「簽章
+	// 壞了」—— 是最難查的那種。
+	std::string mUrl, mSig;
+	if (pick_manifest_pair(j, &mUrl, &mSig)) {
+		out->manifestUrl = mUrl;
+		out->manifestSig = mSig;
+		out->manifestTag = rawTag;
+	} else if (out->hasApp && rejected && rejected->empty()) {
+		*rejected = "app release " + rawTag + " has no signed manifest";
+	}
+	return out->hasApp;
+}
+
+// The beta line. releases/latest is GitHub's own "newest release that is
+// neither draft nor prerelease", which is precisely what a beta must not be --
+// so this walks the list instead and takes the highest version of ANY kind.
+// Skipped, and why:
+//   draft            — not published; nobody is supposed to see it yet.
+//   unparsable tag   — this is what keeps the data line out: "data-12" has no
+//                      leading v and parse_semver refuses it, so a data
+//                      release can never be mistaken for a program version.
+//                      A future "v2.0.0-rc1" is likewise ignored rather than
+//                      half-understood.
+//   no update asset  — a release without PobTools-update-<ver>.zip is not an
+//                      app release (a data release carries only the data zip).
+// ⚠ Highest wins, computed here: the list comes back ordered by created_at, so
+// a beta cut from an older commit sorts after the stable release it supersedes.
+// Same trap fetchDataRelease documents for data-<n>.
+static bool pick_beta_app_release(const ordered_json& arr, AppReleasePick* out,
+                                  std::vector<std::string>* rejected)
+{
+	bool found = false;
+	std::tuple<int, int, int> best{ -1, -1, -1 };
+	for (const auto& r : arr) {
+		if (r.value("draft", false)) continue;
+		std::string tag = r.value("tag_name", std::string());
+		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
+		std::tuple<int, int, int> v;
+		if (!parse_semver(tag, &v)) continue;
+		if (found && !(v > best)) continue;
+		AppReleasePick cand;
+		std::string why;
+		const bool ok = read_app_release_json(r, &cand, &why);
+		if (!why.empty() && rejected) rejected->push_back(why);
+		if (!ok) continue;
+		best = v;
+		found = true;
+		*out = cand;
+	}
+	return found;
+}
+
 bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
 {
+	// The beta line reads the list; the stable line reads GitHub's own idea of
+	// "latest", which is what keeps a prerelease invisible to it.
+	const bool beta = betaChannel_.load();
+	// Written down every check: which line an install is on is the first thing a
+	// bug report needs, and the two paths are otherwise indistinguishable from
+	// the outside (both can answer with the same version).
+	log_line(exeDir_, beta ? "app line: beta (release list)"
+	                       : "app line: stable (releases/latest)");
 	std::string body;
 	{
 		HttpsClient api(kApiHost);
-		if (!api.GetString(kLatestPath, body, err, &stop_)) return false;
+		if (!api.GetString(beta ? kReleasesPath : kLatestPath, body, err, &stop_))
+			return false;
 	}
+	AppReleasePick pick;
 	try {
 		ordered_json j = ordered_json::parse(body);
-		const std::string rawTag = j.value("tag_name", std::string());
-		std::string tag = rawTag;
-		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
-		rel->appVer = tag;
-		std::string why;
-		rel->hasApp = pick_asset(j, kAppAssetPrefix, &rel->appUrl, &rel->appSha,
-		                         &rel->appName, &why);
-		if (!why.empty()) log_line(exeDir_, "app asset rejected: " + why);
-		// ⚠ manifest 綁的是 release 的**原始** tag("v0.26.0"),不是去掉 v 之後
-		// 的版號字串。兩者混用會讓 tag 比對永遠不符,而那個失敗長得像「簽章
-		// 壞了」—— 是最難查的那種。
-		std::string mUrl, mSig;
-		if (pick_manifest_pair(j, &mUrl, &mSig)) {
-			rel->appManifest.url = mUrl;
-			rel->appManifest.sigUrl = mSig;
-			rel->appManifest.tag = rawTag;
-		} else if (rel->hasApp) {
-			log_line(exeDir_, "app release " + rawTag + " has no signed manifest");
+		if (beta) {
+			if (!j.is_array()) { if (err) *err = kMsgBadReleaseList; return false; }
+			std::vector<std::string> rejected;
+			const bool found = pick_beta_app_release(j, &pick, &rejected);
+			for (const auto& why : rejected) log_line(exeDir_, why);
+			if (!found) {
+				// Not one release on the whole list carries an app asset. Said out
+				// loud rather than swallowed: the beta line is opt-in, and answering
+				// "up to date" would hide the one thing it was turned on to see.
+				if (err) *err = kMsgNoAppAsset;
+				return false;
+			}
+		} else {
+			std::string why;
+			read_app_release_json(j, &pick, &why);
+			if (!why.empty()) log_line(exeDir_, why);
 		}
 	} catch (...) {
-		if (err) *err = kMsgBadReleaseInfo;
+		if (err) *err = beta ? kMsgBadReleaseList : kMsgBadReleaseInfo;
 		return false;
 	}
+	rel->appVer = pick.ver;
+	rel->appUrl = pick.url;
+	rel->appSha = pick.sha;
+	rel->appName = pick.name;
+	rel->hasApp = pick.hasApp;
+	rel->appPrerelease = pick.prerelease;
+	rel->appManifest.url = pick.manifestUrl;
+	rel->appManifest.sigUrl = pick.manifestSig;
+	rel->appManifest.tag = pick.manifestTag;
 	// ⚠ 這裡解析失敗就整個檢查失敗,是刻意的:releases/latest 回了一個不是
 	// semver 的 tag,代表有人把 data-<n> 發成了正式 release,那正是本次改版
 	// 最高風險的那一格 —— 沉默地繼續會讓使用者以為自己是最新版。
@@ -1244,7 +1342,7 @@ bool AppUpdater::doCheck(std::string* err)
 
 	if (plan.promptApp) {
 		setPhase(AppUpdatePhase::AppAvailable,
-		         MsgAppAvailable(rel.appVer));
+		         MsgAppAvailable(rel.appVer, rel.appPrerelease));
 	} else {
 		// 沒有程式更新時,不要把翻譯線剛設好的通知蓋掉;兩線都沒事才報最新版。
 		std::lock_guard<std::mutex> lk(stMx_);
@@ -1592,8 +1690,12 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	u.loadState();
 	// The CLI has to honour the same opt-out as the UI, or "update from a script"
 	// becomes the one path that still overwrites edited dictionaries.
-	const bool wantTrans = LoadLauncherConfig(exeDir + L"pob-zh.ini").updateTranslations;
-	u.SetTranslationUpdates(wantTrans);
+	const LauncherConfig cliCfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+	u.SetTranslationUpdates(cliCfg.updateTranslations);
+	// ...and the same channel, or the CLI is the one path that cannot see (or
+	// verify) the beta line.
+	u.SetBetaChannel(cliCfg.betaChannel);
+	const bool wantTrans = cliCfg.updateTranslations;
 	{
 		std::lock_guard<std::mutex> lk(u.stMx_);
 		u.st_.localVer = POBTOOLS_VERSION_STRING;
@@ -2249,7 +2351,8 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		// The composed messages, driven with stand-in版號/標籤 -- these are what a
 		// user actually sees, and the only place a stray literal could hide.
 		expectCovered(MsgUpToDate());
-		expectCovered(MsgAppAvailable("9.9.9"));
+		expectCovered(MsgAppAvailable("9.9.9", false));
+		expectCovered(MsgAppAvailable("9.9.9", true));
 		expectCovered(MsgAppDownloading("9.9.9"));
 		expectCovered(MsgDataAvailable("data-42"));
 		expectCovered(MsgDataDownloading("data-42"));
@@ -2709,6 +2812,106 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		}
 		check(bad.empty(), ("T22 data pack allowlist: Data\\bridge\\*.lua rides along, anything else refuses the whole pack" +
 		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+	}
+
+	// --- the beta line: which release the app check takes ---------------------
+	// This is the whole safety argument of the channel, so it is checked against
+	// JSON rather than against the network: the stable line asks GitHub for
+	// releases/latest (which is defined to skip prereleases), and the beta line
+	// picks from the list itself.
+	{
+		auto asset = [](const char* name) {
+			ordered_json a;
+			a["name"] = name;
+			a["browser_download_url"] = std::string("https://x/") + name;
+			a["digest"] = "sha256:" + std::string(64, 'a');
+			return a;
+		};
+		auto release = [&](const char* tag, bool pre, bool draft,
+		                   std::vector<std::string> names) {
+			ordered_json r;
+			r["tag_name"] = tag;
+			r["prerelease"] = pre;
+			r["draft"] = draft;
+			ordered_json arr = ordered_json::array();
+			for (const auto& n : names) arr.push_back(asset(n.c_str()));
+			r["assets"] = arr;
+			return r;
+		};
+		auto appAssets = [](const char* ver) {
+			const std::string v = ver;
+			return std::vector<std::string>{ "PobTools-update-" + v + ".zip",
+			                                 "PobTools-" + v + ".zip",
+			                                 "SHA256SUMS-" + v + ".txt",
+			                                 "PobTools-manifest-v" + v + ".json",
+			                                 "PobTools-manifest-v" + v + ".json.sig" };
+		};
+		// Deliberately out of order (the real list is sorted by created_at, not by
+		// tag) and deliberately mixed: a data release, a draft, a release with no
+		// app asset, an older beta.
+		ordered_json list = ordered_json::array({
+			release("v1.5.0", false, false, appAssets("1.5.0")),
+			release("data-12", true, false, { "PobTools-Data-12.zip",
+			                                  "PobTools-manifest-data-12.json",
+			                                  "PobTools-manifest-data-12.json.sig" }),
+			release("v1.6.0", true, false, appAssets("1.6.0")),
+			release("v1.7.0", true, true, appAssets("1.7.0")),   // draft
+			release("v1.6.1", true, false, { "SHA256SUMS-1.6.1.txt" }), // no app zip
+			release("v1.4.0", false, false, appAssets("1.4.0")),
+		});
+		AppReleasePick pick;
+		std::vector<std::string> rejected;
+		const bool found = pick_beta_app_release(list, &pick, &rejected);
+		std::string bad;
+		if (!found) bad += " not-found";
+		if (found && pick.ver != "1.6.0") bad += " picked-" + pick.ver;
+		if (found && !pick.prerelease) bad += " prerelease-flag-lost";
+		if (found && pick.name != "PobTools-update-1.6.0.zip") bad += " asset-" + pick.name;
+		if (found && pick.manifestTag != "v1.6.0") bad += " manifest-tag-" + pick.manifestTag;
+		// the draft must not win even though it is the highest number there
+		if (found && pick.ver == "1.7.0") bad += " draft-taken";
+		// and with nothing installable on the list at all it has to say so
+		ordered_json dataOnly = ordered_json::array({
+			release("data-12", true, false, { "PobTools-Data-12.zip" }),
+		});
+		AppReleasePick none;
+		if (pick_beta_app_release(dataOnly, &none, nullptr)) bad += " data-release-taken";
+		check(bad.empty(), ("T23 beta line takes the highest version of any kind, skipping drafts, "
+		                    "data-<n> and releases with no app asset" +
+		                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+
+		// T23b: the stable path is the same parser on a single object. A
+		// regression here would mean the refactor changed what everybody who is
+		// NOT on the beta line sees.
+		AppReleasePick one;
+		std::string why;
+		const bool okOne = read_app_release_json(
+			release("v1.5.0", false, false, appAssets("1.5.0")), &one, &why);
+		std::string bad2;
+		if (!okOne) bad2 += " no-asset";
+		if (one.ver != "1.5.0") bad2 += " ver-" + one.ver;         // leading v stripped
+		if (one.prerelease) bad2 += " prerelease-set";
+		if (one.manifestTag != "v1.5.0") bad2 += " manifest-tag-" + one.manifestTag; // raw tag
+		if (one.manifestUrl.find("PobTools-manifest-v1.5.0.json") == std::string::npos ||
+		    one.manifestSig.find(".json.sig") == std::string::npos)
+			bad2 += " manifest-pair";
+		if (!why.empty()) bad2 += " unexpected-log:" + why;
+		check(bad2.empty(), ("T23b the stable path reads one release object the same as before: "
+		                     "v stripped from the version, raw tag bound to the manifest" +
+		                     (bad2.empty() ? std::string() : (" --" + bad2))).c_str());
+	}
+
+	// T24 -- leaving the beta line never downgrades. The tester is on 1.6.0 while
+	// releases/latest is still 1.5.0; the honest answer is "up to date", and the
+	// wrong one (offering 1.5.0) would walk the install backwards over a config
+	// and a dictionary set the older build may not understand.
+	{
+		const UpdatePlan back = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
+		                                    false, -1, -1, true);
+		const UpdatePlan fwd = PlanUpdates(true, { 1, 7, 0 }, { 1, 6, 0 },
+		                                   false, -1, -1, true);
+		check(!back.promptApp && fwd.promptApp,
+		      "T24 turning the beta line off does not downgrade (older remote is never offered)");
 	}
 
 	remove_dir_rec(root);

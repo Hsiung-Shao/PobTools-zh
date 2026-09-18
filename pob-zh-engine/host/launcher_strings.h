@@ -248,6 +248,13 @@
 	X(autoAppUpdate,     u8"啟動後自動安裝新版本",         u8"Install new versions at startup")       \
 	X(autoAppUpdateHint, u8"PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。", \
 	                     u8"PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.") \
+	/* v1.6.0: the beta line. The hint has to carry all four facts -- what an
+	   early build is, that it can be broken, that turning it back off does not
+	   walk the install backwards, and that the dictionaries are the same ones
+	   the stable line gets -- because nobody reads a hint twice. */            \
+	X(betaChannel,       u8"參加 beta 測試（搶先版）", u8"Join the beta (early builds)") \
+	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後不會退回舊版，會等正式版追上來。翻譯資料與正式版共用同一份。", \
+	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.") \
 	/* Link-board labels that are NOT proper nouns. The rest of kLinks stays
 	   hard-coded: site names (PoeDB, poe.ninja, FilterBlade...) read the same in
 	   every language, and the Chinese-community links keep their Chinese labels

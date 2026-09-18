@@ -117,8 +117,15 @@ itself. It only acts right after startup, **before you have opened POB or any to
 never while a POB is running (that would touch files POB has open). A new version found
 while you are already working still waits for the button in the top right.
 
+**To try early builds**: tick "Join the beta (early builds)" in the "Program updates"
+section of the Settings page (off by default). Program updates then come from builds that
+have not been made official yet; those are test builds and may have problems that are not
+fixed yet. Turning it back off **does not downgrade** -- you keep the version you have
+until the stable line catches up. The translation data is the same either way.
+
 Advanced: you can also run `pob-zh.exe --app-update-check` (check only) or
-`pob-zh.exe --app-update` (check and update, no automatic restart) from the command line.
+`pob-zh.exe --app-update` (check and update, no automatic restart) from the command line;
+both follow whichever line the Settings page selects.
 
 > **Networks that cannot reach GitHub** (e.g. regions that need a proxy): the "Network"
 > section of the Settings page accepts an HTTP proxy (such as `127.0.0.1:7890`); leave it

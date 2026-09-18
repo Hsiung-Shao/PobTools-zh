@@ -92,6 +92,17 @@ public:
 	void SetTranslationUpdates(bool on) { transUpdates_.store(on); }
 	bool TranslationUpdatesEnabled() const { return transUpdates_.load(); }
 
+	// Main thread. The beta line: the app check reads the release LIST and takes
+	// the highest version of any kind, instead of releases/latest (which GitHub
+	// defines as the newest release that is neither draft nor prerelease). That
+	// definition is what keeps a beta invisible to everybody else -- no client
+	// change was needed for the stable line, and none is possible for the ones
+	// already installed. Like SetTranslationUpdates this gates the WORKER, not a
+	// button: the check runs on its own schedule.
+	// ⚠ The data line is untouched; both channels share the same data-<n>.
+	void SetBetaChannel(bool on) { betaChannel_.store(on); }
+	bool BetaChannelEnabled() const { return betaChannel_.load(); }
+
 	// Main thread. Valid in TransAvailable: apply the pending translation pack
 	// once, regardless of the setting above. Turning the setting off must not mean
 	// "you can never have new translations again".
@@ -153,6 +164,9 @@ private:
 		std::string appName;               // 資產檔名 — manifest 是按檔名對接的
 		SignedManifestRef appManifest;
 		bool hasApp = false;
+		// Only the beta line can ever see one, and only so the prompt can say so:
+		// "new version available" for a test build is a half-truth.
+		bool appPrerelease = false;
 		// Data 線 (highest data-<n> among /releases)
 		std::string dataTag;               // "data-3" verbatim — NOT a semver
 		long long   dataSeq = -1;          // 3; -1 = none found
@@ -164,7 +178,7 @@ private:
 
 	void workerLoop();
 	bool doCheck(std::string* err);            // worker
-	bool fetchAppRelease(RemoteRelease* rel, std::string* err);  // worker: releases/latest
+	bool fetchAppRelease(RemoteRelease* rel, std::string* err);  // worker: releases/latest, or the list on the beta line
 	bool fetchDataRelease(RemoteRelease* rel, std::string* err); // worker: /releases scan
 	bool doUpdateTranslations(std::string* err); // worker (invoked from doCheck)
 	bool doUpdateApp(std::string* err);        // worker
@@ -195,6 +209,7 @@ private:
 	std::atomic<bool> stop_{ false };
 	std::atomic<bool> hold_{ false };           // see SetHold
 	std::atomic<bool> transUpdates_{ true };    // see SetTranslationUpdates
+	std::atomic<bool> betaChannel_{ false };    // see SetBetaChannel
 
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;

@@ -852,7 +852,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// Before the first check: the worker downloads and applies translation packs
 	// on its own schedule, so the opt-out has to be in place before it runs, not
 	// merely reflected in the UI afterwards.
-	appUpdater.SetTranslationUpdates(LoadLauncherConfig(ini).updateTranslations);
+	{
+		const LauncherConfig updCfg = LoadLauncherConfig(ini);
+		appUpdater.SetTranslationUpdates(updCfg.updateTranslations);
+		// Same reason, same moment: the first check has to already know which
+		// channel it is on, or a beta tester's first check of the session is a
+		// stable-line one.
+		appUpdater.SetBetaChannel(updCfg.betaChannel);
+	}
 	appUpdater.RequestCheck(AppUpdater::CheckReason::Background);
 	startup_trace_mark("app updater started");
 

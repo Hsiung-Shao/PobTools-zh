@@ -265,6 +265,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	// Default 0: never install a new version, close and reopen the program on a
 	// user who did not ask for that.
 	c.autoApplyAppUpdate = read_ini_int(iniPath, L"AutoApplyAppUpdate", 0) != 0;
+	// Default 0: a prerelease is a test build, so nobody joins the beta line by
+	// accident (or by a corrupt ini).
+	c.betaChannel = read_ini_int(iniPath, L"BetaChannel", 0) != 0;
 	// Undocumented on purpose: the escape hatch for a machine the watchdog
 	// misbehaves on, not a setting to browse. Anything but 0 means on.
 	c.hangWatch = read_ini_int(iniPath, L"HangWatch", 1) != 0;
@@ -367,6 +370,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		cfg.updateTranslations ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"AutoApplyAppUpdate",
 		cfg.autoApplyAppUpdate ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"BetaChannel",
+		cfg.betaChannel ? L"1" : L"0", iniPath.c_str());
 
 	WritePrivateProfileStringW(kSection, L"Proxy", cfg.proxy.c_str(), iniPath.c_str());
 }
@@ -1206,6 +1211,21 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		SaveLauncherConfig(ini, c);
 		check(on ? "T17j AutoApplyAppUpdate round-trips on" : "T17k AutoApplyAppUpdate round-trips off",
 		      LoadLauncherConfig(ini).autoApplyAppUpdate == (on != 0));
+	}
+
+	// T17m -- the beta line. Same shape of case as AutoApplyAppUpdate above and
+	// for the same reason: OFF by default is the whole point, because the beta
+	// line offers GitHub prereleases and nobody should be on it unasked.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T17m BetaChannel defaults to OFF", !LoadLauncherConfig(ini).betaChannel);
+	for (int on = 0; on <= 1; on++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.betaChannel = (on != 0);
+		SaveLauncherConfig(ini, c);
+		check(on ? "T17n BetaChannel round-trips on" : "T17o BetaChannel round-trips off",
+		      LoadLauncherConfig(ini).betaChannel == (on != 0));
 	}
 
 	// T17f -- the watchdog escape hatch. Default must be ON: an install that

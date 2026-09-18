@@ -2600,6 +2600,30 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::TextUnformatted(S.autoAppUpdateHint);
 				ImGui::PopStyleColor();
 				ImGui::PopTextWrapPos();
+
+				// The beta line. In the same section as the switch above because
+				// both answer "which program update do I get, and when" -- and
+				// below it, because this one is the opt-in that changes WHICH
+				// build, which is the bigger decision of the two.
+				ImGui::Dummy(ImVec2(0, 6.0f * scale));
+				bool beta = cfg.betaChannel;
+				if (ImGui::Checkbox(S.betaChannel, &beta)) {
+					cfg.betaChannel = beta;
+					saveNow();
+					// Straight to the worker, like the translation switch: the
+					// check runs on its own schedule. And check again right away --
+					// somebody who just ticked this wants to know now whether
+					// there is an early build, not at the next background tick.
+					if (appUpd) {
+						appUpd->SetBetaChannel(beta);
+						appUpd->RequestCheck(AppUpdater::CheckReason::UserAsked);
+					}
+				}
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.betaChannelHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
 			}
 
 			// --- translation data -------------------------------------------
