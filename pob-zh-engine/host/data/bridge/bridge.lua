@@ -4132,8 +4132,10 @@ end, "tradeQuery")
 -- dialog, its Execute calls StartQuery, and OnFrame resumes the coroutine until
 -- FinishQuery writes the URL. ItemsTab:UpdateSockets is in here too because
 -- PriceItem reads socket state that only Draw would otherwise have computed.
--- (The dialog's own control key is checked when it is opened, not here: naming
--- it would mean opening the pane, and that talks to the trade site.)
+-- (The Query Options dialog's own control keys are checked when that dialog is
+-- opened, not here: it only exists once a row's Find best is pressed, and that
+-- row only exists after PriceItem has opened the trade pane -- which talks to
+-- the trade site. A probe must never do that.)
 probe("TradeQueryGenerator RequestQuery/StartQuery/OnFrame/FinishQuery + ItemsTab:UpdateSockets", function()
 	local c = class_of("TradeQueryGenerator")
 	if type(c) ~= "table" then return false end
