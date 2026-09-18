@@ -132,6 +132,8 @@
     "Program updates": "程式更新",
     "Install new versions at startup": "啟動後自動安裝新版本",
     "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools 一開啟就檢查，有新版本就直接裝好並重新開啟，不必按右上角那個按鈕。只在剛啟動、還沒開過 POB 或任何工具時才會動手；有 POB 在跑時一律不動。翻譯資料的自動更新是下面那個獨立的設定。",
+    "Join the beta (early builds)": "參加 beta 測試（搶先版）",
+    "With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.": "打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後不會退回舊版，會等正式版追上來。翻譯資料與正式版共用同一份。",
     "Official site": "官方網站",
     "Official trade (PoE1)": "官方交易市集（PoE1）",
     "Official trade (PoE2)": "官方交易市集（PoE2）",

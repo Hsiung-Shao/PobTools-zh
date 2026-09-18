@@ -19,6 +19,15 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.6.0 (2026-09-18)\n"
+	u8"Fixed\n"
+	u8"　·Appearance settings needed POB to be restarted before they showed: they now apply to a running POB as soon as you change them.\n"
+	u8"Added\n"
+	u8"　·POB performance: the Settings page can cap how many frames POB draws per second, separately for focused and background windows (60 and 15 by default). Changes apply to a running POB right away and cut GPU and CPU load.\n"
+	u8"　·Performance diagnostics log (off by default): turn it on when tracking down POB stutter or high GPU/CPU use. The log goes to the problem log folder and contains no build or account data.\n"
+	u8"　·Join the beta (off by default): with this on, program updates come from builds that have not been made official yet, so you can try new features early.\n"
+	u8"　·Note: early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade -- you keep what you have until the stable line catches up. The translation data is the same either way.\n"
+	u8"\n"
 	u8"v1.5.0 (2026-09-12)\n"
 	u8"Fixed\n"
 	u8"　·Coming back to the launcher after closing POB: it used to take several seconds to reappear (since v1.4.0); it now comes back immediately.\n"

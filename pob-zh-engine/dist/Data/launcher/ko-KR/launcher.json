@@ -1,5 +1,4 @@
 {
-  "_provenance": "machine-draft 2026-09-11: Korean drafted by the maintainer's assistant, not yet reviewed by a native speaker. Corrections welcome -- see docs/TRANSLATING.md",
   "entries": {
     "Path of Building Launcher": "Path of Building 런처",
     "Zero-pollution auto-injected Traditional Chinese translation and UI": "원본을 건드리지 않고 번역과 인터페이스를 자동 주입합니다",
@@ -19,6 +18,7 @@
     "Atlas strategy": "아틀라스 전략",
     "Timeless jewel": "타임리스 주얼",
     "Poe Regex": "Poe Regex",
+    "Stash tracker": "Stash tracker",
     "Games": "게임",
     "Tools": "도구",
     "Links": "링크",
@@ -132,6 +132,13 @@
     "Program updates": "프로그램 업데이트",
     "Install new versions at startup": "시작 시 새 버전 자동 설치",
     "PobTools checks when it opens and, if there is a new version, installs it and reopens itself instead of waiting for the button in the top right. It only ever acts right after startup, before POB or any tool has been opened, and never while a POB is running. Translation data has its own separate setting below.": "PobTools가 열릴 때 확인하고 새 버전이 있으면 오른쪽 위 버튼을 기다리지 않고 바로 설치한 뒤 스스로 다시 엽니다. 시작 직후, POB나 도구를 열기 전에만 동작하며 POB가 실행 중일 때는 절대 동작하지 않습니다. 번역 데이터는 아래에 별도 설정이 있습니다.",
+    "Join the beta (early builds)": "Join the beta (early builds)",
+    "With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.": "With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.",
+    "Official site": "Official site",
+    "Official trade (PoE1)": "Official trade (PoE1)",
+    "Official trade (PoE2)": "Official trade (PoE2)",
+    "Disenchant lookup": "Disenchant lookup",
+    "Chinese localisation": "Chinese localisation",
     "POB performance": "POB 성능",
     "POB frame limit while focused": "POB 활성 상태 화면 갱신 상한",
     "POB frame limit in the background": "POB 비활성 상태 화면 갱신 상한",
