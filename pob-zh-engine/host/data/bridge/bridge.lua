@@ -3535,6 +3535,252 @@ probe("TreeTab.ModifyNodePopup/RemoveTattooFromNode + tree.tattoo (PoE1 tattoos)
 	return type(t) == "table" and type(t.ModifyNodePopup) == "function" and type(t.RemoveTattooFromNode) == "function"
 end, "tattoos")
 
+-- a control's shown/enabled: a function, a flag, or absent (= true)
+local function ctrl_flag(ctrl, field)
+	local v = ctrl and ctrl[field]
+	if type(v) == "function" then return v() and true or false end
+	if v == nil then return true end
+	return v and true or false
+end
+local function on_enabled(ctrl) return ctrl_flag(ctrl, "enabled") end
+local ctl_enabled = on_enabled
+
+-- ---- Trade: "Trade for these items" (Classes/TradeQuery) --------------------
+-- The price-builder pane is POB's own: a row per slot with Find best (its
+-- weighted query generator), a trade URL, Price Item (the search), the result
+-- drop-down, Import Item and the whisper. The bridge keeps the pane open and
+-- pumps frames while POB's background requests run.
+
+local trade_popup = nil
+
+local function trade_tab(b)
+	local tq = b.itemsTab and b.itemsTab.tradeQuery
+	if not tq then error("this POB has no trade query", 0) end
+	return tq
+end
+
+local function label_of(ctl)
+	if not ctl then return nil end
+	local l = ctl.label
+	if type(l) == "function" then l = l(ctl) end
+	return type(l) == "string" and strip_escapes(l) or nil
+end
+
+local function trade_state(b)
+	local tq = trade_tab(b)
+	local c = tq.controls
+	local function dd(ctl)
+		if not ctl then return nil end
+		return { options = dd_options(ctl), sel = ctl.selIndex or 1, enabled = ctl_enabled(ctl) }
+	end
+	local rows = {}
+	for i, slotTbl in ipairs(tq.slotTables or {}) do
+		local results = {}
+		local list = c["resultDropdown" .. i] and c["resultDropdown" .. i].list or {}
+		for j, entry in ipairs(list) do
+			local label = strip_escapes(type(entry) == "table" and (entry.label or entry.val or "") or tostring(entry))
+			local sorted = tq.sortedResultTbl[i] and tq.sortedResultTbl[i][j]
+			local res = sorted and tq.resultTbl[i] and tq.resultTbl[i][sorted.index]
+			results[j] = { index = j, label = label, labelZh = tr(label), amount = res and res.amount, currency = res and res.currency }
+		end
+		rows[i] = {
+			index = i,
+			name = slotTbl.slotName,
+			nameZh = tr(slotTbl.slotName),
+			unique = slotTbl.unique and true or false,
+			url = c["uri" .. i] and c["uri" .. i].buf or "",
+			validUrl = c["uri" .. i] and c["uri" .. i].validURL and true or false,
+			searching = label_of(c["priceButton" .. i]) == "Searching...",
+			canPrice = ctl_enabled(c["priceButton" .. i]),
+			canFindBest = ctl_enabled(c["bestButton" .. i]),
+			hasResults = tq.resultTbl[i] ~= nil,
+			selected = c["resultDropdown" .. i] and c["resultDropdown" .. i].selIndex or 1,
+			whisper = label_of(c["whisperButton" .. i]),
+			results = results,
+		}
+	end
+	return {
+		authenticated = (main().api and main().api.authToken) and true or false,
+		authLabel = type(tq.loginStatus) == "function" and strip_escapes(tq.loginStatus()) or nil,
+		realm = dd(c.realm),
+		league = dd(c.league),
+		tradeType = dd(c.tradeTypeSelection),
+		sort = dd(c.itemSortSelection),
+		itemSet = dd(c.setSelect),
+		fetchPages = c.fetchCountEdit and c.fetchCountEdit.buf or nil,
+		notice = label_of(c.pbNotice) or "",
+		totalPrice = label_of(c.fullPrice) or "",
+		rows = rows,
+	}
+end
+
+-- Pumps POB's frame loop while one of its background requests is in flight.
+local function trade_wait(b, seconds, done)
+	local deadline = os.time() + (seconds or 60)
+	while not done() do
+		frame()
+		if os.time() > deadline then return false end
+	end
+	frame()
+	return true
+end
+
+function M.trade_open()
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	if trade_popup then popup_discard(trade_popup) end
+	trade_popup = capture_popup(function() tq:PriceItem() end, true)
+	if not (trade_popup and tq.slotTables) then
+		trade_popup = nil
+		error("POB did not open its trade pane", 0)
+	end
+	-- the realm/league lists arrive from the site in the background
+	trade_wait(b, 15, function() return (tq.controls.league.list or {})[1] ~= nil end)
+	return trade_state(b)
+end
+
+-- trade_set{realm?, league?, tradeType?, sort?, itemSet?, fetchPages?, url={row,text}}
+function M.trade_set(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local c = tq.controls
+	p = p or {}
+	local function pick(ctl, v)
+		local i = tonumber(v)
+		if not ctl or not i or not (ctl.list or {})[i] then error("no such option " .. tostring(v), 0) end
+		ctl:SetSel(i)
+	end
+	if p.realm ~= nil then pick(c.realm, p.realm) end
+	if p.league ~= nil then pick(c.league, p.league) end
+	if p.tradeType ~= nil then pick(c.tradeTypeSelection, p.tradeType) end
+	if p.sort ~= nil then pick(c.itemSortSelection, p.sort) end
+	if p.itemSet ~= nil then pick(c.setSelect, p.itemSet) end
+	if p.fetchPages ~= nil then c.fetchCountEdit:SetText(tostring(p.fetchPages), true) end
+	if p.url ~= nil then
+		local row = tonumber(p.url.row)
+		local ctl = row and c["uri" .. row]
+		if not ctl then error("no trade row " .. tostring(p.url and p.url.row), 0) end
+		ctl:SetText(tostring(p.url.text or ""), true)
+	end
+	return trade_state(b)
+end
+
+-- trade_find_best{row}: the row's "Find best" (POB's weighted query generator).
+-- Without a login POB puts the search URL in the row instead of searching.
+function M.trade_find_best(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local c = tq.controls
+	local i = tonumber(p and p.row)
+	if not i or not c["bestButton" .. i] then error("no trade row " .. tostring(p and p.row), 0) end
+	local urlBefore = c["uri" .. i].buf
+	local hadResults = tq.resultTbl[i]
+	c["bestButton" .. i].onClick()
+	trade_wait(b, tonumber(p and p.timeout) or 120, function()
+		return c["uri" .. i].buf ~= urlBefore or tq.resultTbl[i] ~= hadResults
+	end)
+	return trade_state(b)
+end
+
+-- trade_price{row}: the row's "Price Item" (search the URL in that row).
+function M.trade_price(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local c = tq.controls
+	local i = tonumber(p and p.row)
+	if not i or not c["priceButton" .. i] then error("no trade row " .. tostring(p and p.row), 0) end
+	if not ctl_enabled(c["priceButton" .. i]) then error("that row cannot be searched yet (log in and paste a trade URL)", 0) end
+	c["priceButton" .. i].onClick()
+	trade_wait(b, tonumber(p and p.timeout) or 180, function() return label_of(c["priceButton" .. i]) ~= "Searching..." end)
+	return trade_state(b)
+end
+
+-- trade_pick{row, index}: choosing one of the results.
+function M.trade_pick(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local i, j = tonumber(p and p.row), tonumber(p and p.index)
+	local ctl = i and tq.controls["resultDropdown" .. i]
+	if not ctl or not j or not (ctl.list or {})[j] then error("no such result", 0) end
+	ctl:SetSel(j)
+	frame()
+	return trade_state(b)
+end
+
+-- trade_import{row}: "Import Item" -- the chosen result into the item editor.
+function M.trade_import(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local i = tonumber(p and p.row)
+	local btn = i and tq.controls["importButton" .. i]
+	if not btn then error("no trade row " .. tostring(p and p.row), 0) end
+	if not ctl_enabled(btn) then error("nothing to import in that row", 0) end
+	btn.onClick()
+	frame()
+	local r = commit(b)
+	r.state = trade_state(b)
+	return r
+end
+
+-- trade_reset{row}: the "<< Search" button (drop the results, search again).
+function M.trade_reset(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local i = tonumber(p and p.row)
+	if not i or not tq.controls["changeButton" .. i] then error("no trade row " .. tostring(p and p.row), 0) end
+	tq.controls["changeButton" .. i].onClick()
+	return trade_state(b)
+end
+
+-- trade_whisper{row}: the whisper button's text (POB copies it to the clipboard).
+function M.trade_whisper(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local i = tonumber(p and p.row)
+	local btn = i and tq.controls["whisperButton" .. i]
+	if not btn then error("no trade row " .. tostring(p and p.row), 0) end
+	local text
+	local saved = Copy
+	Copy = function(s) text = s end
+	local ok, err = pcall(btn.onClick)
+	Copy = saved
+	if not ok then error(err, 0) end
+	return { text = text or label_of(btn) or "" }
+end
+
+-- trade_auth{}: the pane's login button (POB opens the site in the browser).
+function M.trade_auth()
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	tq.controls.tradeAuthButton.onClick()
+	frame()
+	return trade_state(b)
+end
+
+-- trade_refresh{}: pumps POB's frame loop briefly so a background request
+-- (the realm/league lists, a search) can finish, then reports the pane again.
+function M.trade_refresh(p)
+	local b = ensure_build()
+	trade_tab(b)
+	local until_ = os.time() + math.min(10, math.max(0, tonumber(p and p.seconds) or 1))
+	repeat frame() until os.time() >= until_
+	return trade_state(b)
+end
+
+function M.trade_close()
+	if trade_popup then popup_discard(trade_popup) end
+	trade_popup = nil
+	main().onFrameFuncs["TradeQueryGenerator"] = nil
+	return { ok = true }
+end
+
+probe("ItemsTab.tradeQuery (TradeQuery:PriceItem) + TradeQueryRequests/Generator", function()
+	local b = build()
+	if not (b and b.itemsTab) then return true end
+	return type(b.itemsTab.tradeQuery) == "table" and type(b.itemsTab.tradeQuery.PriceItem) == "function"
+		and type(class_of("TradeQueryRequests")) == "table" and type(class_of("TradeQueryGenerator")) == "table"
+end, "tradeQuery")
+
 -- ---- Find a Timeless Jewel (TreeTab:FindTimelessJewel) ----------------------
 -- The dialog is ~1600 lines of controls around POB's own search; the bridge
 -- keeps it open (captured, never drawn), drives its controls and reads
@@ -5103,14 +5349,6 @@ end)
 
 -- The group's extras need it to be SkillsTab's display group: the controls'
 -- closures read self.displayGroup.
--- a control's shown/enabled: a function, a flag, or absent (= true)
-local function ctrl_flag(ctrl, field)
-	local v = ctrl and ctrl[field]
-	if type(v) == "function" then return v() and true or false end
-	if v == nil then return true end
-	return v and true or false
-end
-local function on_enabled(ctrl) return ctrl_flag(ctrl, "enabled") end
 
 local function display_group(tab, g)
 	if tab.displayGroup ~= g then tab:SetDisplayGroup(g) end

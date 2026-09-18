@@ -6,6 +6,7 @@
   import { untrack } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
   import SharedItemsDialog from "../components/SharedItemsDialog.svelte";
+  import TradeDialog from "../components/TradeDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
@@ -337,8 +338,9 @@
     if (r) await changed();
   }
   const setTitle = (s: { id: number; title?: string }) => s.title || t("items.defaultSet");
-  // POB's shared item / item-set lists
+  // POB's shared item / item-set lists and its trade pane
   let sharedOpen = $state(false);
+  let tradeOpen = $state(false);
   async function shareItem(id: number) {
     await app.run(() => api.shareItem(id));
     app.notice = t("items.shareThis");
@@ -435,6 +437,9 @@
       <button class="btn ghost sm danger" disabled={!data?.items.length || app.busy > 0} onclick={deleteAll}>{t("items.delAll")}</button>
       <span class="grow"></span>
       <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={() => (sharedOpen = true)}>{t("items.shared")}</button>
+      {#if app.has("tradeQuery")}
+        <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={() => (tradeOpen = true)}>{t("trade.open")}</button>
+      {/if}
       <button class="btn sm" disabled={!data || app.busy > 0} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     <div class="scroll">
@@ -569,6 +574,10 @@
     </div>
   {/if}
 </div>
+
+{#if tradeOpen}
+  <TradeDialog onclose={() => (tradeOpen = false)} />
+{/if}
 
 {#if sharedOpen}
   <SharedItemsDialog onclose={() => (sharedOpen = false)} onedit={(raw) => openEdit({ raw })} />

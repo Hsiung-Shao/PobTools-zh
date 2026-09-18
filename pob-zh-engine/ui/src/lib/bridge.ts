@@ -195,6 +195,8 @@ export interface Caps {
   configModBrowser?: boolean;
   /** PoE1's "Find a Timeless Jewel" dialog. */
   timelessJewel?: boolean;
+  /** POB's trade pane ("Trade for these items"). */
+  tradeQuery?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -235,6 +237,35 @@ export interface MinionEntry {
   nameZh?: string;
   category?: string;
   recommended?: boolean;
+}
+
+/** POB's price-builder pane (TradeQuery:PriceItem). */
+export interface TradeState {
+  authenticated: boolean;
+  authLabel?: string;
+  realm?: TjField;
+  league?: TjField;
+  tradeType?: TjField;
+  sort?: TjField;
+  itemSet?: TjField;
+  fetchPages?: string;
+  notice?: string;
+  totalPrice?: string;
+  rows?: {
+    index: number;
+    name: string;
+    nameZh?: string;
+    unique: boolean;
+    url: string;
+    validUrl: boolean;
+    searching: boolean;
+    canPrice: boolean;
+    canFindBest: boolean;
+    hasResults: boolean;
+    selected: number;
+    whisper?: string;
+    results: { index: number; label: string; labelZh?: string; amount?: number; currency?: string }[];
+  }[];
 }
 
 /** One of the timeless jewel dialog's drop-downs. */
@@ -1118,6 +1149,17 @@ export const api = {
   tattooApply: (p: { id: number; tattoo?: string | number; reset?: boolean; showLegacy?: boolean }) => bridge.call<TreeState>("tattoo_apply", p, 60000),
   setCompareSpec: (index?: number) => bridge.call<TreeState>("set_compare_spec", index == null ? {} : { index }, 60000),
   nodePower: (p: { enabled?: boolean; stat?: string; maxDepth?: number | null }) => bridge.call<NodePower>("node_power", p, 600000),
+  tradeOpen: () => bridge.call<TradeState>("trade_open", {}, 120000),
+  tradeSet: (p: Record<string, unknown>) => bridge.call<TradeState>("trade_set", p, 60000),
+  tradeFindBest: (row: number) => bridge.call<TradeState>("trade_find_best", { row }, 300000),
+  tradePrice: (row: number) => bridge.call<TradeState>("trade_price", { row }, 300000),
+  tradePick: (row: number, index: number) => bridge.call<TradeState>("trade_pick", { row, index }, 60000),
+  tradeImport: (row: number) => bridge.call<Committed & { state: TradeState }>("trade_import", { row }, 120000),
+  tradeReset: (row: number) => bridge.call<TradeState>("trade_reset", { row }, 60000),
+  tradeWhisper: (row: number) => bridge.call<{ text: string }>("trade_whisper", { row }, 60000),
+  tradeAuth: () => bridge.call<TradeState>("trade_auth", {}, 120000),
+  tradeRefresh: (seconds = 1) => bridge.call<TradeState>("trade_refresh", { seconds }, 60000),
+  tradeClose: () => bridge.call<{ ok: boolean }>("trade_close", {}, 30000),
   tjOpen: () => bridge.call<TimelessState>("tj_open", {}, 120000),
   tjSet: (p: Record<string, unknown>) => bridge.call<TimelessState>("tj_set", p, 120000),
   tjSearch: () => bridge.call<TimelessState>("tj_search", {}, 900000),

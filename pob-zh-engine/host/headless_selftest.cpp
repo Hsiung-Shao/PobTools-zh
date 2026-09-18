@@ -1910,9 +1910,13 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		bool okUpd = child.Call("check_update_sync", json::object(), upd, 300000);
 		check("check_update_sync answered", okUpd, upd.dump());
 		if (okUpd) {
-			check("update check on an untouched sandbox says \"none\"",
-			      upd.value("mode", "") == "none",
-			      "mode=" + upd.value("mode", "") + " error=" + upd.value("error", ""));
+			// "none" while the sandbox copy is current; upstream POB does release
+			// new builds, and then its own check legitimately answers "normal"
+			// (or "basic"). Either is a working check; an error is not.
+			const std::string mode = upd.value("mode", "");
+			check("update check on an untouched sandbox answers without an error (\"none\", or an update POB found)",
+			      (mode == "none" || mode == "normal" || mode == "basic") && upd.value("error", "").empty(),
+			      "mode=" + mode + " error=" + upd.value("error", ""));
 		}
 		const bool untouchedNone = okUpd && upd.value("mode", "") == "none";
 		const std::string corruption = "\n-- pobtools headless selftest: deliberate corruption\n";
@@ -1959,6 +1963,20 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("the reloaded engine still opens the sample build and calculates it", okRl2 && st5.value("count", 0) > 100,
 			      okRl2 ? "stats=" + std::to_string(st5.value("count", 0)) : rl2.dump().substr(0, 200));
 			if (corrupted && after.find(corruption) != std::string::npos) WriteFileA(progFile, orig); // never leave the sandbox corrupted
+		}
+
+		// the trade pane (no network here: its lists, rows and refusals)
+		{
+			json tr0, trSet, trBad, trClose;
+			bool okTr = okLoad && child.Call("trade_open", json::object(), tr0, 120000);
+			bool okTrSet = okTr && child.Call("trade_set", json{{"tradeType", 2}, {"sort", 2}, {"fetchPages", 3}}, trSet, 60000);
+			bool okBad = child.Call("trade_price", json{{"row", 1}}, trBad, 60000);
+			child.Call("trade_close", json::object(), trClose, 30000);
+			bool rowsOk = okTr && tr0["rows"].size() >= 5 && tr0["rows"][0].contains("name") && tr0["rows"][0]["results"].is_array();
+			check("trade_open lists POB's price-builder rows and settings; Price Item is refused without a login or URL",
+			      rowsOk && okTrSet && trSet["tradeType"].value("sel", 0) == 2 && trSet.value("fetchPages", "") == "3" && !okBad && child.Alive(),
+			      okTr ? "rows=" + std::to_string(tr0["rows"].size()) + " auth=" + std::to_string(tr0.value("authenticated", false)) + " " + tr0["rows"][0].dump().substr(0, 160)
+			           : tr0.dump().substr(0, 220));
 		}
 
 		// --- graceful shutdown --------------------------------------------------
