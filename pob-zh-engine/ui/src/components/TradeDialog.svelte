@@ -135,6 +135,7 @@
         <input class="input sm num pages" value={st.fetchPages ?? ""} disabled={busy !== null} onchange={(e) => set({ fetchPages: Number(e.currentTarget.value) })} />
       </div>
       {#if st.notice}<p class="notice">{st.notice}</p>{/if}
+      {#if st.timedOut}<p class="notice">{t("trade.stillRunning")}</p>{/if}
       <div class="rows">
         {#each st.rows ?? [] as r (r.index)}
           <div class="row">

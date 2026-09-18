@@ -400,7 +400,9 @@ int RunBridgeCall(const std::wstring& exeDir, const std::wstring& pobDir,
 				json p;
 				try { p = json::parse(params); } catch (...) { p = json::object(); }
 				json r;
-				bool ok = child.Call(method, p, r, 120000);
+				// POB's own long jobs (the weighted trade query, the timeless
+				// jewel search) run well past two minutes on a big build
+				bool ok = child.Call(method, p, r, 600000);
 				out.push_back(json{{"method", method}, {ok ? "result" : "error", r}});
 				if (!ok) rc = 1;
 			}
@@ -2026,6 +2028,31 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okTr = okLoad && child.Call("trade_open", json::object(), tr0, 120000);
 			bool okTrSet = okTr && child.Call("trade_set", json{{"tradeType", 2}, {"sort", 2}, {"fetchPages", 3}}, trSet, 60000);
 			bool okBad = child.Call("trade_price", json{{"row", 1}}, trBad, 60000);
+			// "Find best" without a login only builds POB's weighted search URL:
+			// that part is local, so it is checked whenever the league list (which
+			// does come from the site) arrived.
+			// the realm and league lists come from the site through POB's own
+			// background request; give them a few pumps before deciding
+			for (int i = 0; okTr && i < 5 && tr0["league"]["options"].empty(); i++) {
+				json pump;
+				if (!child.Call("trade_refresh", json{{"seconds", 5}}, pump, 60000)) break;
+				tr0["league"] = pump["league"];
+				tr0["rows"] = pump["rows"];
+			}
+			const bool leagues = okTr && !tr0["league"]["options"].empty();
+			json trBest;
+			std::string bestUrl;
+			bool bestOk = true;
+			if (leagues) {
+				bestOk = child.Call("trade_find_best", json{{"row", 1}, {"timeout", 240}}, trBest, 300000);
+				if (bestOk) for (auto& r : trBest["rows"]) if (r.value("index", 0) == 1) bestUrl = r.value("url", "");
+				bestOk = bestOk && !trBest.value("timedOut", false)
+				         && bestUrl.find("/trade/search") != std::string::npos && bestUrl.find("?q=") != std::string::npos;
+			}
+			check(leagues ? "trade_find_best builds POB's weighted search URL for a slot (no login needed)"
+			              : "trade_find_best needs a league list from the site; it was not reachable, so the row stays disabled",
+			      leagues ? bestOk : (okTr && !tr0["rows"][0].value("canFindBest", true)),
+			      "leagues=" + std::to_string(leagues ? tr0["league"]["options"].size() : 0) + " url=" + bestUrl.substr(0, 110));
 			child.Call("trade_close", json::object(), trClose, 30000);
 			bool rowsOk = okTr && tr0["rows"].size() >= 5 && tr0["rows"][0].contains("name") && tr0["rows"][0]["results"].is_array();
 			check("trade_open lists POB's price-builder rows and settings; Price Item is refused without a login or URL",

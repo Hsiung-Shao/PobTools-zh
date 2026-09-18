@@ -2892,7 +2892,18 @@ local function capture_popup(fn, keep)
 	local savedOpen, savedClose = m.OpenPopup, m.ClosePopup
 	local captured
 	m.OpenPopup = function(self, width, height, title, controls)
-		captured = { controls = controls or {}, title = title, width = width, height = height }
+		-- main:OnFrame calls popups[1]:ProcessInput every frame; a captured
+		-- popup that is kept on the stack has to answer it, or that error ends
+		-- the frame before POB gets to its onFrameFuncs (the trade query and
+		-- anything else it drives per frame would never run).
+		captured = {
+			controls = controls or {},
+			title = title,
+			width = width,
+			height = height,
+			ProcessInput = function() end,
+			Draw = function() end,
+		}
 		table.insert(self.popups, 1, captured)
 		return captured
 	end
@@ -3928,6 +3939,10 @@ function M.trade_open()
 	local b = ensure_build()
 	local tq = trade_tab(b)
 	if trade_popup then popup_discard(trade_popup) end
+	-- PriceItem walks itemsTab.sockets and reads spec.nodes for every socket it
+	-- believes is active; "inactive" is only set in ItemsTab:Draw, so headless
+	-- has to run UpdateSockets first or the pane dies on a stale socket node.
+	if b.itemsTab and b.itemsTab.UpdateSockets then b.itemsTab:UpdateSockets() end
 	trade_popup = capture_popup(function() tq:PriceItem() end, true)
 	if not (trade_popup and tq.slotTables) then
 		trade_popup = nil
@@ -3972,13 +3987,43 @@ function M.trade_find_best(p)
 	local c = tq.controls
 	local i = tonumber(p and p.row)
 	if not i or not c["bestButton" .. i] then error("no trade row " .. tostring(p and p.row), 0) end
+	if not ctl_enabled(c["bestButton" .. i]) then error("that row cannot be searched yet (the league list has not arrived)", 0) end
 	local urlBefore = c["uri" .. i].buf
 	local hadResults = tq.resultTbl[i]
-	c["bestButton" .. i].onClick()
-	trade_wait(b, tonumber(p and p.timeout) or 120, function()
-		return c["uri" .. i].buf ~= urlBefore or tq.resultTbl[i] ~= hadResults
+	-- "Find best" opens POB's own "Query Options" popup; its Execute button is
+	-- what actually starts the weighted query, so drive that (its defaults are
+	-- the ones POB remembers between searches).
+	local opt = capture_popup(function() c["bestButton" .. i].onClick() end, true)
+	if not (opt and opt.controls.generateQuery) then
+		popup_discard(opt)
+		error("POB did not offer its query options", 0)
+	end
+	if p and p.options then
+		for name, v in pairs(p.options) do
+			local ctl = opt.controls[name]
+			if ctl then
+				if type(v) == "boolean" then ctl.state = v
+				elseif type(v) == "number" and ctl.list then ctl:SetSel(v)
+				else ctl:SetText(tostring(v), true) end
+			end
+		end
+	end
+	-- Execute starts the weighted query and opens a "Please Wait" popup that
+	-- POB's own OnFrame drives. That popup is kept on the stack: FinishQuery
+	-- ends with main:ClosePopup(), which would otherwise close the trade pane.
+	local wait = capture_popup(function() opt.controls.generateQuery.onClick() end, true)
+	popup_discard(opt)
+	local gen = tq.tradeQueryGenerator
+	local ok = trade_wait(b, tonumber(p and p.timeout) or 120, function()
+		if c["uri" .. i].buf ~= urlBefore or tq.resultTbl[i] ~= hadResults then return true end
+		-- the query is a coroutine POB resumes in its own OnFrame; when it is
+		-- done the callback has already run (it may have set a notice instead)
+		return gen and gen.calcContext and gen.calcContext.co == nil
 	end)
-	return trade_state(b)
+	popup_discard(wait)
+	local st = trade_state(b)
+	st.timedOut = not ok
+	return st
 end
 
 -- trade_price{row}: the row's "Price Item" (search the URL in that row).

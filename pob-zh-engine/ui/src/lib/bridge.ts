@@ -299,6 +299,8 @@ export interface TradeState {
   fetchPages?: string;
   notice?: string;
   totalPrice?: string;
+  /** POB's weighted search was still running when the call gave up. */
+  timedOut?: boolean;
   rows?: {
     index: number;
     name: string;

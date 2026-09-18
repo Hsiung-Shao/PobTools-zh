@@ -172,6 +172,7 @@ const EN: Record<string, string> = {
   "items.buySimilar": "Buy similar",
   "items.buySimilarHint": "Build a trade search for an item like this one (opens the trade site)",
   "trade.weights": "Search weights",
+  "trade.stillRunning": "POB is still building the weighted search; press Find best again in a moment",
   "trade.weightsTitle": "Stat weight multipliers",
   "trade.open": "Trade\u2026",
   "trade.title": "Trade for these items",

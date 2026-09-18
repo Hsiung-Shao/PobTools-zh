@@ -332,6 +332,7 @@
   "items.buySimilar": "找類似物品",
   "items.buySimilarHint": "為類似的物品產生交易搜尋(會開啟交易站)",
   "trade.weights": "搜尋權重",
+  "trade.stillRunning": "POB 的權重搜尋還在計算，稍後再按一次「找最佳」",
   "trade.weightsTitle": "數值權重倍率",
   "trade.open": "交易…",
   "trade.title": "為這些物品找交易",
