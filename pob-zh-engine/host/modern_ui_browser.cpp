@@ -671,17 +671,21 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 			CloseHandle(h);
 		}
 	}
+	// Anyone running this from a terminal gets the address for free, whatever
+	// happens next.
+	printf("%s\n", url.c_str());
+	fflush(stdout);
 	if (openBrowser) {
 		// Wine hands an http URL to winebrowser, which opens the host system's
 		// browser (xdg-open on Linux, open on macOS). Under CrossOver that can
-		// fail (no browser bottle association); say where the page is instead
-		// of leaving the user with nothing to click.
+		// fail; say where the page is instead of leaving the user with nothing
+		// to click. Measured under Wine: with no xdg-open on PATH at all this
+		// still reports success, so the failure code is not something to rely
+		// on -- the "never connected" branch below is what really catches it.
 		HINSTANCE rc = ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 		if ((INT_PTR)rc <= 32) {
 			PobLog::Error("modernui", "browser mode: could not open a browser (code " + std::to_string((INT_PTR)rc) +
 			                              "); open this address yourself: " + url);
-			printf("%s\n", url.c_str());
-			fflush(stdout);
 		}
 	}
 
@@ -691,7 +695,11 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 		std::lock_guard<std::mutex> lk(S.mu);
 		const auto now = std::chrono::steady_clock::now();
 		if (!S.everConnected && now - started > std::chrono::seconds(kFirstConnectSeconds)) {
-			PobLog::Error("modernui", "browser mode: the page never connected; stopping");
+			// Nobody ever arrived: on Wine/CrossOver that usually means the
+			// desktop had no browser to hand the address to, so leave the
+			// address behind rather than just the fact that it failed.
+			PobLog::Error("modernui", "browser mode: the page never connected; stopping. "
+			                              "If no browser opened, open this address while it is running: " + url);
 			break;
 		}
 		if (S.everConnected && S.streams == 0 && now - S.lastStreamSeen > std::chrono::seconds(kGoneSeconds)) break;
