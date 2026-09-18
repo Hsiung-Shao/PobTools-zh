@@ -1,11 +1,14 @@
 <!-- POB 的交易面板(TradeQuery:PriceItem):每個裝備欄一列,可產生加權搜尋、
-     貼上交易網址查價、挑結果、匯入物品或取得密語。面板本體在引擎那邊開著。 -->
+     貼上交易網址查價、挑結果、匯入物品或取得密語。面板本體在引擎那邊開著。
+     「找最佳」會開 POB 自己的「查詢選項」對話框;結果清單 hover 時顯示 POB
+     的物品 tooltip(含「裝上去會給你」的差異)。 -->
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
-  import { api, type TradeState } from "$lib/bridge";
+  import { api, type TradeMods, type TradeOptionControl, type TradeOptions, type TradeResultTooltip, type TradeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import TooltipCard from "./TooltipCard.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -93,6 +96,127 @@
     }
   }
 
+  // --- POB's "Query Options" dialog ("Find best" opens it) --------------------
+  let opts = $state<TradeOptions | null>(null);
+  // the two buttons at its bottom are ours; every other control is POB's
+  const skipControl = (name: string) => name === "generateQuery" || name === "cancel" || /^mod\w*SelectorClear\d+$/.test(name);
+  const optShown = $derived((opts?.controls ?? []).filter((c) => !(c.kind === "button" && skipControl(c.name))));
+  // controls POB anchors to the right of another one belong on its row
+  const optRows = $derived(optShown.filter((c) => !c.after || !optShown.some((o) => o.name === c.after)));
+  const optExtra = (name: string) => optShown.filter((c) => c.after === name);
+  // POB's own caption for the row, then the control's own label, then its name
+  const optName = (c: { captionZh?: string; caption?: string; labelZh?: string; label?: string; name: string }) =>
+    c.captionZh || c.caption || c.labelZh || c.label || c.name;
+
+  async function findBest(row: number) {
+    busy = row;
+    err = null;
+    try {
+      opts = await api.tradeOptionsOpen(row);
+      modPicker = null;
+    } catch (e: any) {
+      err = String(e?.message ?? e);
+    }
+    busy = null;
+  }
+  async function optSet(p: Parameters<typeof api.tradeOptionsSet>[0]) {
+    try {
+      opts = await api.tradeOptionsSet(p);
+    } catch (e: any) {
+      err = String(e?.message ?? e);
+    }
+  }
+  async function optExecute() {
+    const row = opts?.row ?? 0;
+    opts = null;
+    modPicker = null;
+    await run(() => api.tradeOptionsExecute(), row);
+  }
+  async function optCancel() {
+    opts = null;
+    modPicker = null;
+    await run(() => api.tradeOptionsCancel());
+  }
+
+  // one mod selector's list: thousands of entries, so the engine searches
+  let modPicker = $state<{ prefix: string; row: number; query: string } | null>(null);
+  let modList = $state<TradeMods | null>(null);
+  let modTimer = 0;
+  function openModPicker(prefix: string, row: number) {
+    modPicker = { prefix, row, query: "" };
+    modList = null;
+    void loadMods();
+  }
+  async function loadMods() {
+    if (!modPicker) return;
+    const want = modPicker;
+    try {
+      const r = await api.tradeOptionsMods({ prefix: want.prefix, query: want.query, limit: 60 });
+      if (modPicker === want || (modPicker && modPicker.prefix === want.prefix && modPicker.row === want.row)) modList = r;
+    } catch (e: any) {
+      err = String(e?.message ?? e);
+    }
+  }
+  function modQuery(q: string) {
+    if (!modPicker) return;
+    modPicker = { ...modPicker, query: q };
+    clearTimeout(modTimer);
+    modTimer = window.setTimeout(loadMods, 160);
+  }
+  async function pickMod(index: number) {
+    const p = modPicker;
+    if (!p) return;
+    modPicker = null;
+    await optSet({ mod: { prefix: p.prefix, row: p.row, sel: index } });
+  }
+
+  // --- the result tooltip (POB's own: the item plus the stat difference) -----
+  let tip = $state<{ lines: TradeResultTooltip["lines"]; color?: string; x: number; y: number } | null>(null);
+  let tipTimer = 0;
+  const tipCache = new Map<string, TradeResultTooltip>();
+  function showTip(row: number, index: number, e: MouseEvent) {
+    clearTimeout(tipTimer);
+    const x = Math.round(Math.min(e.clientX + 18, window.innerWidth - 380));
+    const y = Math.round(Math.min(e.clientY + 12, window.innerHeight - 320));
+    const key = `${row}:${index}`;
+    const hit = tipCache.get(key);
+    if (hit) {
+      tip = { lines: hit.lines, color: hit.color, x, y };
+      return;
+    }
+    tipTimer = window.setTimeout(async () => {
+      try {
+        const r = await api.tradeResultTooltip(row, index);
+        tipCache.set(key, r);
+        tip = { lines: r.lines, color: r.color, x, y };
+      } catch {
+        tip = null;
+      }
+    }, 120);
+  }
+  function hideTip() {
+    clearTimeout(tipTimer);
+    tip = null;
+  }
+
+  // the results of a row as a list of our own, so hovering one can show POB's
+  // tooltip for it (a native <select> gives no hover of its options)
+  let openRow = $state<number | null>(null);
+  function toggleRow(row: number) {
+    openRow = openRow === row ? null : row;
+    hideTip();
+  }
+  async function pickResult(row: number, index: number) {
+    openRow = null;
+    hideTip();
+    tipCache.clear();
+    await run(() => api.tradePick(row, index), row);
+  }
+  function resultLabel(r: NonNullable<TradeState["rows"]>[number]): string {
+    const hit = r.results.find((x) => x.index === r.selected) ?? r.results[0];
+    return hit ? hit.labelZh || hit.label : "";
+  }
+
   function openUrl(url: string) {
     if (url) window.open(url, "_blank", "noopener");
   }
@@ -140,14 +264,41 @@
         {#each st.rows ?? [] as r (r.index)}
           <div class="row">
             <span class="slot" class:unique={r.unique}>{r.nameZh || r.name}</span>
-            <button class="btn sm" disabled={busy !== null || !r.canFindBest} title={t("trade.findBestHint")} onclick={() => run(() => api.tradeFindBest(r.index), r.index)}>{t("trade.findBest")}</button>
+            <button class="btn sm" disabled={busy !== null || !r.canFindBest} title={t("trade.findBestHint")} onclick={() => findBest(r.index)}>{t("trade.findBest")}</button>
             <input class="input sm url" placeholder={t("trade.urlHint")} bind:value={urls[r.index]} onchange={() => set({ url: { row: r.index, text: urls[r.index] } }, r.index)} />
             <button class="btn ghost sm" disabled={!urls[r.index]} title={t("trade.openUrl")} onclick={() => openUrl(urls[r.index])}>↗</button>
             <button class="btn sm" disabled={busy !== null || !r.canPrice} onclick={() => run(() => api.tradePrice(r.index), r.index)}>{t("trade.price")}</button>
             {#if r.hasResults}
-              <select class="select sm results" value={r.selected} disabled={busy !== null} onchange={(e) => run(() => api.tradePick(r.index, Number(e.currentTarget.value)), r.index)}>
-                {#each r.results as res}<option value={res.index}>{res.labelZh || res.label}</option>{/each}
-              </select>
+              <div class="results">
+                <button
+                  class="combo"
+                  disabled={busy !== null}
+                  title={t("trade.resultHint")}
+                  onclick={() => toggleRow(r.index)}
+                  onmouseenter={(e) => showTip(r.index, r.selected, e)}
+                  onmouseleave={hideTip}
+                >
+                  <span class="txt">{resultLabel(r)}</span>
+                  <span class="caret">▾</span>
+                </button>
+                {#if openRow === r.index}
+                  <ul class="list">
+                    {#each r.results as res (res.index)}
+                      <li>
+                        <button
+                          class="opt"
+                          class:on={res.index === r.selected}
+                          onclick={() => pickResult(r.index, res.index)}
+                          onmouseenter={(e) => showTip(r.index, res.index, e)}
+                          onmouseleave={hideTip}
+                        >
+                          {res.labelZh || res.label}
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
               <button class="btn sm" disabled={busy !== null} onclick={() => importItem(r.index)}>{t("trade.import")}</button>
               <button class="btn ghost sm" disabled={busy !== null} onclick={() => whisper(r.index)}>{t("trade.whisper")}</button>
               <button class="btn ghost sm" disabled={busy !== null} onclick={() => run(() => api.tradeReset(r.index), r.index)}>{t("trade.again")}</button>
@@ -179,6 +330,84 @@
   </div>
 </div>
 
+{#if opts}
+  <div class="modal opts">
+    <div class="dialog narrow">
+      <div class="top">
+        <span class="label">{t("trade.options")}</span>
+        <span class="grow"></span>
+        <button class="btn ghost sm" onclick={optCancel}>{t("tree.cancel")}</button>
+        <button class="btn primary sm" onclick={optExecute}>{t("trade.execute")}</button>
+      </div>
+      <p class="dim small">{t("trade.optionsHint")}</p>
+      <div class="olist">
+        {#snippet widget(c: TradeOptionControl)}
+          {#if c.kind === "check"}
+            <input type="checkbox" checked={c.state} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: e.currentTarget.checked } })} />
+          {:else if c.kind === "dropdown"}
+            <select class="select sm" value={c.sel} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: Number(e.currentTarget.value) } })}>
+              {#each c.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+            </select>
+          {:else if c.kind === "edit"}
+            <input class="input sm" value={c.text ?? ""} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: e.currentTarget.value } })} />
+          {:else if c.kind === "label"}
+            <span class="oval">{c.labelZh || c.label}</span>
+          {/if}
+        {/snippet}
+        {#each optRows as c (c.name)}
+          {#if c.kind === "mod"}
+            <div class="orow mod">
+              <button class="combo grow" onclick={() => openModPicker(c.prefix!, c.row!)}>
+                <span class="txt">{c.labelZh || c.label || t("trade.modSearch")}</span>
+                <span class="caret">▾</span>
+              </button>
+              {#if c.sel && c.sel > 1}
+                <input
+                  class="input sm num min"
+                  placeholder={t("trade.modMin")}
+                  value={c.min ?? ""}
+                  onchange={(e) => optSet({ mod: { prefix: c.prefix!, row: c.row!, min: e.currentTarget.value } })}
+                />
+                <button class="btn ghost sm" title={t("trade.modClear")} onclick={() => optSet({ mod: { prefix: c.prefix!, row: c.row!, sel: 1 } })}>✕</button>
+              {/if}
+            </div>
+          {:else}
+            <div class="orow" class:label-only={c.kind === "label"}>
+              <span class="oname" title={c.tooltipZh || c.tooltip}>{c.kind === "label" ? c.captionZh || c.caption || "" : optName(c)}</span>
+              {@render widget(c)}
+              {#each optExtra(c.name) as x (x.name)}{@render widget(x)}{/each}
+            </div>
+          {/if}
+        {/each}
+      </div>
+      {#if modPicker}
+        <div class="picker">
+          <input
+            class="input sm"
+            placeholder={t("trade.modSearch")}
+            value={modPicker.query}
+            oninput={(e) => modQuery(e.currentTarget.value)}
+          />
+          <ul class="list">
+            {#each modList?.mods ?? [] as m (m.index)}
+              <li><button class="opt" onclick={() => pickMod(m.index)}>{m.labelZh || m.label}</button></li>
+            {/each}
+          </ul>
+          {#if modList && modList.total > modList.mods.length}
+            <p class="dim small">{t("trade.modMore", { n: modList.total - modList.mods.length })}</p>
+          {/if}
+          <div class="top">
+            <span class="grow"></span>
+            <button class="btn ghost sm" onclick={() => (modPicker = null)}>{t("tree.cancel")}</button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+{#if tip}<TooltipCard lines={tip.lines} accent={tip.color} x={tip.x} y={tip.y} width={360} />{/if}
+
 <style>
   .modal {
     position: fixed;
@@ -187,6 +416,9 @@
     display: grid;
     place-items: center;
     background: color-mix(in srgb, var(--surface-0) 74%, transparent);
+  }
+  .modal.opts {
+    z-index: 250;
   }
   .dialog {
     width: min(1180px, calc(100vw - 24px));
@@ -199,6 +431,9 @@
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
     border-radius: 8px;
+  }
+  .dialog.narrow {
+    width: min(560px, calc(100vw - 24px));
   }
   .top,
   .bar {
@@ -232,8 +467,69 @@
     min-width: 120px;
   }
   .results {
+    position: relative;
     flex: 1;
     min-width: 160px;
+  }
+  .combo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 3px 8px;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: inherit;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s, 4px);
+    cursor: pointer;
+  }
+  .combo:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .combo .txt {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .list {
+    position: absolute;
+    z-index: 30;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    max-height: 320px;
+    overflow: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    background: var(--surface-2);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s, 4px);
+    box-shadow: var(--shadow-float);
+  }
+  .opt {
+    display: block;
+    width: 100%;
+    padding: 3px 8px;
+    font: inherit;
+    font-size: var(--fs-sm);
+    color: inherit;
+    text-align: left;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .opt:hover {
+    background: var(--surface-3, var(--surface-1));
+  }
+  .opt.on {
+    color: var(--gold);
   }
   .pages {
     width: 70px;
@@ -271,5 +567,45 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .olist {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .orow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .orow .oname {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-sm);
+  }
+  .orow.label-only .oname {
+    color: var(--ink-1);
+  }
+  .orow .oval {
+    font-size: var(--fs-sm);
+  }
+  .orow.mod {
+    position: relative;
+  }
+  .min {
+    width: 72px;
+  }
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border: 1px solid var(--edge-1);
+    border-radius: 6px;
+  }
+  .picker .list {
+    position: static;
+    max-height: 240px;
+    box-shadow: none;
   }
 </style>

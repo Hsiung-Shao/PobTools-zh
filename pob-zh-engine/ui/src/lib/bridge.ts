@@ -320,6 +320,52 @@ export interface TradeState {
   }[];
 }
 
+/** One row of POB's "Query Options" dialog (the one "Find best" opens). */
+export interface TradeOptionControl {
+  name: string;
+  kind: "dropdown" | "edit" | "check" | "button" | "label" | "mod";
+  enabled: boolean;
+  label?: string;
+  labelZh?: string;
+  /** POB draws the row's caption as a label of its own; folded in here */
+  caption?: string;
+  captionZh?: string;
+  /** anchored to the right of that control: POB draws them on one row */
+  after?: string;
+  tooltip?: string;
+  tooltipZh?: string;
+  /** dropdown */
+  options?: { label: string; labelZh?: string }[];
+  sel?: number;
+  /** edit */
+  text?: string;
+  /** check */
+  state?: boolean;
+  /** mod selector: which list it belongs to and its row in it */
+  prefix?: string;
+  row?: number;
+  min?: string;
+}
+export interface TradeOptions {
+  row: number;
+  title?: string;
+  controls: TradeOptionControl[];
+}
+export interface TradeMods {
+  prefix: string;
+  mods: { index: number; label: string; labelZh?: string }[];
+  total: number;
+  query: string;
+}
+/** POB's tooltip for one search result (the item plus the stat difference). */
+export interface TradeResultTooltip {
+  row: number;
+  index: number;
+  header?: string;
+  color?: string;
+  lines: TooltipLine[];
+}
+
 /** One of the timeless jewel dialog's drop-downs. */
 export interface TjField {
   options: { label: string; labelZh?: string }[];
@@ -1218,6 +1264,13 @@ export const api = {
   tradeOpen: () => bridge.call<TradeState>("trade_open", {}, 120000),
   tradeSet: (p: Record<string, unknown>) => bridge.call<TradeState>("trade_set", p, 60000),
   tradeFindBest: (row: number) => bridge.call<TradeState>("trade_find_best", { row }, 300000),
+  tradeOptionsOpen: (row: number) => bridge.call<TradeOptions>("trade_options_open", { row }, 120000),
+  tradeOptionsMods: (p: { prefix?: string; query?: string; limit?: number }) => bridge.call<TradeMods>("trade_options_mods", p, 60000),
+  tradeOptionsSet: (p: { values?: Record<string, boolean | number | string>; mod?: { prefix: string; row: number; sel?: number; min?: string } }) =>
+    bridge.call<TradeOptions>("trade_options_set", p, 60000),
+  tradeOptionsExecute: () => bridge.call<TradeState>("trade_options_execute", {}, 300000),
+  tradeOptionsCancel: () => bridge.call<TradeState>("trade_options_cancel", {}, 60000),
+  tradeResultTooltip: (row: number, index: number) => bridge.call<TradeResultTooltip>("trade_result_tooltip", { row, index }, 60000),
   tradePrice: (row: number) => bridge.call<TradeState>("trade_price", { row }, 300000),
   tradePick: (row: number, index: number) => bridge.call<TradeState>("trade_pick", { row, index }, 60000),
   tradeImport: (row: number) => bridge.call<Committed & { state: TradeState }>("trade_import", { row }, 120000),

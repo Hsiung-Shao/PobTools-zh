@@ -4035,6 +4035,7 @@ end, "compareTab")
 -- pumps frames while POB's background requests run.
 
 local trade_popup = nil
+local trade_options, trade_options_close
 
 local function trade_tab(b)
 	local tq = b.itemsTab and b.itemsTab.tradeQuery
@@ -4111,6 +4112,7 @@ end
 function M.trade_open()
 	local b = ensure_build()
 	local tq = trade_tab(b)
+	trade_options_close()
 	if trade_popup then popup_discard(trade_popup) end
 	-- PriceItem walks itemsTab.sockets and reads spec.nodes for every socket it
 	-- believes is active; "inactive" is only set in ItemsTab:Draw, so headless
@@ -4152,46 +4154,242 @@ function M.trade_set(p)
 	return trade_state(b)
 end
 
--- trade_find_best{row}: the row's "Find best" (POB's weighted query generator).
--- Without a login POB puts the search URL in the row instead of searching.
-function M.trade_find_best(p)
-	local b = ensure_build()
+-- ---- "Query Options" (the dialog POB opens behind "Find best") -------------
+-- bestButton only opens that dialog; its Execute button (generateQuery) is
+-- what starts the weighted query. The page shows the dialog itself, so the
+-- bridge keeps it open: trade_options_open -> _set -> _execute / _cancel.
+-- Its mod selectors carry thousands of entries, so the state only names what
+-- each row has picked; the list itself is asked for with trade_options_mods.
+
+function trade_options_close()
+	if trade_options then popup_discard(trade_options.cap) end
+	trade_options = nil
+end
+
+-- "modSelector3" / "modNotSelector3" -> prefix, row ("modSelectorMin3" is not one)
+local function mod_selector_name(name)
+	local prefix, i = name:match("^(mod%a*Selector)(%d+)$")
+	return prefix, tonumber(i)
+end
+
+-- POB writes the sort weights into labels of its own ("1.00: Full DPS"); the
+-- dictionaries know the stat, not the joined line.
+local function tr_label(s)
+	local zh = tr(s)
+	if zh ~= s then return zh end
+	local head, stat = s:match("^([%d%.]+: )(.+)$")
+	if head and stat then return head .. tr(stat) end
+	return zh
+end
+
+local function trade_options_open_dialog(b, row)
 	local tq = trade_tab(b)
 	local c = tq.controls
-	local i = tonumber(p and p.row)
-	if not i or not c["bestButton" .. i] then error("no trade row " .. tostring(p and p.row), 0) end
+	local i = tonumber(row)
+	if not i or not c["bestButton" .. i] then error("no trade row " .. tostring(row), 0) end
 	if not ctl_enabled(c["bestButton" .. i]) then error("that row cannot be searched yet (the league list has not arrived)", 0) end
-	local urlBefore = c["uri" .. i].buf
-	local hadResults = tq.resultTbl[i]
-	-- "Find best" opens POB's own "Query Options" popup; its Execute button is
-	-- what actually starts the weighted query, so drive that (its defaults are
-	-- the ones POB remembers between searches).
-	local opt = capture_popup(function() c["bestButton" .. i].onClick() end, true)
-	if not (opt and opt.controls.generateQuery) then
-		popup_discard(opt)
+	trade_options_close()
+	local cap = capture_popup(function() c["bestButton" .. i].onClick() end, true)
+	if not (cap and cap.controls and cap.controls.generateQuery) then
+		popup_discard(cap)
 		error("POB did not offer its query options", 0)
 	end
-	if p and p.options then
-		for name, v in pairs(p.options) do
-			local ctl = opt.controls[name]
-			if ctl then
-				if type(v) == "boolean" then ctl.state = v
-				elseif type(v) == "number" and ctl.list then ctl:SetSel(v)
-				else ctl:SetText(tostring(v), true) end
+	trade_options = { cap = cap, row = i, url = c["uri" .. i].buf, results = tq.resultTbl[i] }
+	return cap
+end
+
+local function trade_options_dialog()
+	if not trade_options then error("the query options dialog is not open", 0) end
+	return trade_options.cap.controls
+end
+
+-- The dialog as data, in the order POB lays it out (its own anchors; the two
+-- buttons at the bottom of the popup sort last). POB writes the caption of a
+-- row as a label of its own anchored to the left of the control; those are
+-- folded into the control they name.
+local function trade_options_state()
+	local c = trade_options_dialog()
+	local names, byCtl = {}, {}
+	for name, ctl in pairs(c) do
+		if type(name) == "string" and type(ctl) == "table" then
+			names[#names + 1] = name
+			byCtl[ctl] = name
+		end
+	end
+	table.sort(names)
+	local entries, byName = {}, {}
+	for _, name in ipairs(names) do
+		local ctl = c[name]
+		local sh = ctl.shown
+		if type(sh) == "function" then sh = sh(ctl) end
+		if sh ~= false then
+			local en = ctl.enabled
+			if type(en) == "function" then en = en(ctl) end
+			local entry = { name = name, enabled = en ~= false }
+			local prefix, row = mod_selector_name(name)
+			if prefix then
+				local sel = ctl.selIndex or 1
+				local minBox = c[prefix .. "Min" .. row]
+				entry.kind, entry.prefix, entry.row, entry.sel = "mod", prefix, row, sel
+				entry.min = minBox and minBox.buf or nil
+				if sel > 1 and ctl.list and ctl.list[sel] then
+					entry.label = strip_escapes(dd_label(ctl.list[sel]))
+					entry.labelZh = tr(entry.label)
+				end
+			elseif ctl.DropIndexToListIndex and ctl.list then
+				entry.kind = "dropdown"
+				entry.options = dd_options(ctl)
+				entry.sel = ctl.selIndex
+			elseif ctl.SetText and ctl.buf ~= nil then
+				entry.kind = "edit"
+				entry.text = ctl.buf
+			elseif ctl.state ~= nil and ctl.changeFunc then
+				entry.kind = "check"
+				entry.state = ctl.state and true or false
+			elseif ctl.onClick then
+				entry.kind = "button"
+			else
+				local l = ctl.label
+				if type(l) == "function" then l = l(ctl) end
+				if type(l) == "string" then entry.kind = "label" else entry = nil end
+			end
+			if entry then
+				if not entry.label then
+					local l = ctl.label
+					if type(l) == "function" then l = l(ctl) end
+					if type(l) == "string" then
+						entry.label = strip_escapes(l)
+						entry.labelZh = tr_label(entry.label)
+					end
+				end
+				local tip = type(ctl.tooltipText) == "string" and strip_escapes(ctl.tooltipText) or nil
+				entry.tooltip, entry.tooltipZh = tip, tip and tr(tip) or nil
+				local okPos, _, y = pcall(ctl.GetPos, ctl)
+				entry.order = (okPos and type(y) == "number") and y or 0
+				-- Execute and Cancel hang off the bottom edge of the popup
+				if entry.order < 0 then entry.order = 100000 - entry.order end
+				entry.anchor = ctl.anchor
+				entries[#entries + 1] = entry
+				byName[name] = entry
 			end
 		end
 	end
-	-- Execute starts the weighted query and opens a "Please Wait" popup that
-	-- POB's own OnFrame drives. That popup is kept on the stack: FinishQuery
-	-- ends with main:ClosePopup(), which would otherwise close the trade pane.
-	local wait = capture_popup(function() opt.controls.generateQuery.onClick() end, true)
-	popup_discard(opt)
+	-- a label anchored with its right edge to another control's left edge is
+	-- that control's caption, not a row of its own; a control anchored to the
+	-- right of another one shares its row (POB's "Max Price: [__] [currency]")
+	local kept = {}
+	for _, entry in ipairs(entries) do
+		local a = entry.anchor
+		local other = type(a) == "table" and byName[byCtl[a.other] or ""] or nil
+		local caption = other and entry.kind == "label" and a.point == "RIGHT" and a.otherPoint == "LEFT"
+		if caption and not other.caption then
+			other.caption, other.captionZh = entry.label, entry.labelZh
+		else
+			if other and a.point == "LEFT" and a.otherPoint == "RIGHT" then entry.after = other.name end
+			kept[#kept + 1] = entry
+		end
+		entry.anchor = nil
+	end
+	table.sort(kept, function(x, y)
+		if x.order ~= y.order then return x.order < y.order end
+		return x.name < y.name
+	end)
+	return { row = trade_options.row, title = trade_options.cap.title, controls = kept }
+end
+
+-- trade_options_open{row}
+function M.trade_options_open(p)
+	local b = ensure_build()
+	trade_options_open_dialog(b, p and p.row)
+	return trade_options_state()
+end
+
+-- trade_options_mods{prefix, query?, limit?}: what one of the dialog's mod
+-- selectors offers. Index 1 is POB's own "+ Add Required Stat" (picking it
+-- clears the row again).
+function M.trade_options_mods(p)
+	local c = trade_options_dialog()
+	local prefix = tostring((p and p.prefix) or "modSelector")
+	local ctl = c[prefix .. "1"]
+	if not ctl or not ctl.list then error("no mod selector " .. prefix, 0) end
+	local q = (p and type(p.query) == "string") and p.query:lower() or ""
+	local limit = math.min(400, math.max(1, tonumber(p and p.limit) or 200))
+	local mods, total = {}, 0
+	for i, e in ipairs(ctl.list) do
+		local label = strip_escapes(dd_label(e))
+		local labelZh = tr(label)
+		if q == "" or label:lower():find(q, 1, true) or labelZh:lower():find(q, 1, true) then
+			total = total + 1
+			if #mods < limit then mods[#mods + 1] = { index = i, label = label, labelZh = labelZh } end
+		end
+	end
+	return { prefix = prefix, mods = mods, total = total, query = q }
+end
+
+-- trade_options_set{values={<control name>=bool|number(selection)|text},
+--                   mod={prefix, row, sel?, min?}}
+function M.trade_options_set(p)
+	local c = trade_options_dialog()
+	p = p or {}
+	local values = type(p.values) == "table" and p.values or {}
+	for name, v in pairs(values) do
+		local ctl = c[name]
+		if ctl then
+			if type(v) == "boolean" then
+				ctl.state = v
+				if ctl.changeFunc then ctl.changeFunc(ctl.state) end
+			elseif ctl.list and type(v) == "number" then
+				ctl:SetSel(v)
+			elseif ctl.SetText then
+				ctl:SetText(tostring(v), true)
+			end
+		end
+	end
+	local m = type(p.mod) == "table" and p.mod or nil
+	if m then
+		local prefix, row = tostring(m.prefix or "modSelector"), tonumber(m.row) or 1
+		local ctl = c[prefix .. row]
+		if not ctl or not ctl.list then error("no mod selector " .. prefix .. tostring(m.row), 0) end
+		if m.sel ~= nil then
+			-- through its own selFunc: SetSel is a no-op when the index has not
+			-- changed, and picking again after a row was removed needs the callback
+			local sel = math.max(1, math.min(#ctl.list, tonumber(m.sel) or 1))
+			ctl.selIndex = sel
+			if ctl.selFunc then ctl.selFunc(sel, ctl.list[sel]) end
+		end
+		if m.min ~= nil then
+			local box = c[prefix .. "Min" .. row]
+			if box then box:SetText(tostring(m.min), true) end
+		end
+	end
+	return trade_options_state()
+end
+
+-- The dialog's Execute button: it starts the weighted query and opens a
+-- "Please Wait" popup that POB's own OnFrame drives. That popup is kept on
+-- the stack: FinishQuery ends with main:ClosePopup(), which would otherwise
+-- close the trade pane.
+local function trade_options_execute_now(b, timeout)
+	local tq = trade_tab(b)
+	local c = tq.controls
+	if not trade_options then error("the query options dialog is not open", 0) end
+	local o = trade_options
+	local i = o.row
+	local exec = o.cap.controls.generateQuery
+	if not ctl_enabled(exec) then
+		local tip = type(exec.tooltipText) == "string" and (" (" .. strip_escapes(exec.tooltipText) .. ")") or ""
+		error("POB cannot run this query yet" .. tip, 0)
+	end
+	local wait = capture_popup(function() exec.onClick() end, true)
+	popup_discard(o.cap)
+	trade_options = nil
 	local gen = tq.tradeQueryGenerator
 	if type(gen) ~= "table" or type(gen.calcContext) ~= "table" then
+		popup_discard(wait)
 		error("POB's query generator is not the one this bridge knows", 0)
 	end
-	local ok = trade_wait(b, tonumber(p and p.timeout) or 120, function()
-		if c["uri" .. i].buf ~= urlBefore or tq.resultTbl[i] ~= hadResults then return true end
+	local ok = trade_wait(b, tonumber(timeout) or 120, function()
+		if c["uri" .. i].buf ~= o.url or tq.resultTbl[i] ~= o.results then return true end
 		-- the query is a coroutine POB resumes in its own OnFrame; when it is
 		-- done the callback has already run (it may have set a notice instead)
 		return gen and gen.calcContext and gen.calcContext.co == nil
@@ -4200,6 +4398,30 @@ function M.trade_find_best(p)
 	local st = trade_state(b)
 	st.timedOut = not ok
 	return st
+end
+
+-- trade_options_execute{timeout?}
+function M.trade_options_execute(p)
+	local b = ensure_build()
+	return trade_options_execute_now(b, p and p.timeout)
+end
+
+-- trade_options_cancel{}: the dialog's Cancel (nothing is searched).
+function M.trade_options_cancel()
+	local b = ensure_build()
+	trade_options_close()
+	return trade_state(b)
+end
+
+-- trade_find_best{row, options?, timeout?}: "Find best" from end to end, with
+-- the Query Options dialog left at POB's own defaults (`options` is keyed by
+-- the dialog's control names).
+-- Without a login POB puts the search URL in the row instead of searching.
+function M.trade_find_best(p)
+	local b = ensure_build()
+	trade_options_open_dialog(b, p and p.row)
+	if p and type(p.options) == "table" then M.trade_options_set({ values = p.options }) end
+	return trade_options_execute_now(b, p and p.timeout)
 end
 
 -- trade_price{row}: the row's "Price Item" (search the URL in that row).
@@ -4225,6 +4447,28 @@ function M.trade_pick(p)
 	ctl:SetSel(j)
 	frame()
 	return trade_state(b)
+end
+
+-- trade_result_tooltip{row, index, compare?}: what POB shows when the result
+-- drop-down is open and one of its entries is hovered -- the item itself plus
+-- the "using this item will give you" block against what is equipped there.
+function M.trade_result_tooltip(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local i, j = tonumber(p and p.row), tonumber(p and p.index)
+	local ctl = i and tq.controls["resultDropdown" .. i]
+	if not ctl or type(ctl.tooltipFunc) ~= "function" then error("no trade row " .. tostring(p and p.row), 0) end
+	if not j or not (ctl.list or {})[j] then error("no such result", 0) end
+	local tab = b.itemsTab
+	local tt = make("Tooltip")
+	local saved = tab.showStatDifferences
+	tab.showStatDifferences = not (p and p.compare == false)
+	local ok, err = pcall(without_wrap, function()
+		ctl.tooltipFunc(tt, "OUT", j, dd_label(ctl.list[j]))
+	end)
+	tab.showStatDifferences = saved
+	if not ok then error(err, 0) end
+	return { row = i, index = j, header = tt.tooltipHeader, color = tt.color, lines = tooltip_lines(tt) }
 end
 
 -- trade_import{row}: "Import Item" -- the chosen result into the item editor.
@@ -4288,6 +4532,7 @@ function M.trade_refresh(p)
 end
 
 function M.trade_close()
+	trade_options_close()
 	if trade_popup then popup_discard(trade_popup) end
 	trade_popup = nil
 	main().onFrameFuncs["TradeQueryGenerator"] = nil

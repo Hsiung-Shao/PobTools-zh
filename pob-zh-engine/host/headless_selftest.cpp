@@ -2089,6 +2089,56 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			              : "trade_find_best needs a league list from the site; it was not reachable, so the row stays disabled",
 			      leagues ? bestOk : (okTr && !tr0["rows"][0].value("canFindBest", true)),
 			      "leagues=" + std::to_string(leagues ? tr0["league"]["options"].size() : 0) + " url=" + bestUrl.substr(0, 110));
+			// POB's "Query Options" dialog (what "Find best" opens): the page
+			// shows it instead of the bridge answering for it, so its controls
+			// have to come out, take a mod filter, and go away again.
+			json trOpt, trMods, trModsQ, trPick, trMin, trClosed, trClosedMods, trTip;
+			bool optOk = false, modsOk = false, pickOk = false, closedOk = false;
+			std::string modLabel;
+			if (leagues) {
+				optOk = child.Call("trade_options_open", json{{"row", 1}}, trOpt, 120000);
+				bool hasExec = false, hasMod = false, hasCheck = false;
+				if (optOk) for (auto& c : trOpt["controls"]) {
+					const std::string kind = c.value("kind", ""), name = c.value("name", "");
+					if (name == "generateQuery" && kind == "button") hasExec = true;
+					if (kind == "mod") hasMod = true;
+					if (kind == "check") hasCheck = true;
+				}
+				optOk = optOk && hasExec && hasMod && hasCheck;
+				modsOk = optOk && child.Call("trade_options_mods", json{{"prefix", "modSelector"}}, trMods, 60000)
+				         && trMods["mods"].size() > 1 && trMods.value("total", 0) > 20;
+				if (modsOk) modLabel = trMods["mods"][1].value("label", "");
+				// its own search: a whole entry of the list matches at least itself
+				modsOk = modsOk && !modLabel.empty()
+				         && child.Call("trade_options_mods", json{{"prefix", "modSelector"}, {"query", modLabel}}, trModsQ, 60000)
+				         && trModsQ.value("total", 0) >= 1 && trModsQ.value("total", 0) < trMods.value("total", 0);
+				const int modIndex = modsOk ? trMods["mods"][1].value("index", 0) : 0;
+				pickOk = modsOk && child.Call("trade_options_set",
+				                              json{{"mod", json{{"prefix", "modSelector"}, {"row", 1}, {"sel", modIndex}}}}, trPick, 60000);
+				bool picked = false;
+				if (pickOk) for (auto& c : trPick["controls"])
+					if (c.value("kind", "") == "mod" && c.value("row", 0) == 1 && c.value("label", "") == modLabel) picked = true;
+				pickOk = pickOk && picked
+				         && child.Call("trade_options_set", json{{"mod", json{{"prefix", "modSelector"}, {"row", 1}, {"min", "50"}}}}, trMin, 60000);
+				bool minSet = false;
+				if (pickOk) for (auto& c : trMin["controls"])
+					if (c.value("kind", "") == "mod" && c.value("row", 0) == 1 && c.value("min", "") == "50") minSet = true;
+				pickOk = pickOk && minSet;
+				// Cancel takes the dialog back off POB's popup stack
+				closedOk = child.Call("trade_options_cancel", json::object(), trClosed, 60000)
+				           && !child.Call("trade_options_mods", json{{"prefix", "modSelector"}}, trClosedMods, 30000);
+			}
+			check(leagues ? "trade_options_open hands out POB's Query Options, its mod list searches, a filter sticks, and Cancel closes it"
+			              : "trade_options_open needs a league list from the site; it was not reachable, so the dialog cannot be opened",
+			      leagues ? (optOk && modsOk && pickOk && closedOk && child.Alive())
+			              : (okTr && !tr0["rows"][0].value("canFindBest", true)),
+			      optOk ? "controls=" + std::to_string(trOpt["controls"].size()) + " mods=" + std::to_string(trMods.value("total", 0))
+			                  + " mod=" + modLabel.substr(0, 60)
+			            : trOpt.dump().substr(0, 200));
+			// the result tooltip is POB's own; with nothing searched it is refused
+			check("trade_result_tooltip refuses a row that has no results yet",
+			      !child.Call("trade_result_tooltip", json{{"row", 1}, {"index", 1}}, trTip, 30000) && child.Alive(),
+			      trTip.dump().substr(0, 160));
 			child.Call("trade_close", json::object(), trClose, 30000);
 			bool rowsOk = okTr && tr0["rows"].size() >= 5 && tr0["rows"][0].contains("name") && tr0["rows"][0]["results"].is_array();
 			check("trade_open lists POB's price-builder rows and settings; Price Item is refused without a login or URL",
