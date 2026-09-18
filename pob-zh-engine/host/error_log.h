@@ -42,6 +42,21 @@ namespace PobLog {
 // can be grepped for without guessing at capitalisation.
 void Error(const char* feature, const std::string& msg);
 
+// One NORMAL event, one line, in a separate file: PobTools\logs\diag-<date>.log.
+//
+// The error log above is failures only, on purpose -- an empty file means a
+// healthy install, and that answer is worth keeping. But some paths we cannot
+// run here (CrossOver on a Mac: no Apple hardware, and a licence we do not
+// have) can only be diagnosed from what the machine that CAN run them writes
+// down. For those, "nothing went wrong" is not the same as "it worked": we need
+// to know which browser the desktop actually opened, or that it opened none.
+//
+// Same guarantees as Error: one line each, newlines collapsed, never throws,
+// never interrupts the user. The cap is per feature tag and higher (200), since
+// a diagnostic trace is useless truncated at ten lines; it is still a cap, so a
+// per-frame mistake cannot fill the disk.
+void Diag(const char* feature, const std::string& msg);
+
 // <install>\PobTools\logs\, created if absent. Also what the settings page's
 // "open the log folder" button opens, which is why it creates: a button that
 // opens nothing looks broken.

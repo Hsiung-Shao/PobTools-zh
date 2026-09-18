@@ -510,7 +510,9 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 	if (!ModernUiAvailable(exeDir, &why) && ModernUiBrowserAvailable(exeDir)) {
 		// Wine / CrossOver, or Windows without the WebView2 Runtime: the same
 		// page in the system browser.
-		PobLog::Error("modernui", "no WebView2 (" + narrow(why) + "): opening the new interface in the system browser");
+		// Not a failure: on Wine and on CrossOver this IS the supported path, so
+		// it belongs in the diagnostic trace rather than the failures-only log.
+		PobLog::Diag("modernui", "no WebView2 (" + narrow(why) + "): opening the new interface in the system browser");
 		return ShowModernUiInBrowser(exeDir, game, locale, cfg, openBuild);
 	}
 	if (!ModernUiAvailable(exeDir, &why)) {

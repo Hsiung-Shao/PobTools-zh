@@ -64,6 +64,15 @@ std::wstring TodayName()
 	return n;
 }
 
+std::wstring DiagTodayName()
+{
+	SYSTEMTIME st{};
+	GetLocalTime(&st);
+	wchar_t n[64];
+	swprintf_s(n, L"diag-%04d-%02d-%02d.log", st.wYear, st.wMonth, st.wDay);
+	return n;
+}
+
 std::string ReadAll(const std::wstring& path)
 {
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -329,6 +338,36 @@ int RunErrorLogSelfTest(const std::wstring& exeDir)
 		}
 		check("T9 an unwritable log location is silent, not fatal", !threw);
 		PobLog::SetDirForTest(box);
+	}
+
+	// T10 -- Diag() is a SECOND file. The error log's value is that an empty file
+	// means a healthy install; if normal events landed there that answer would be
+	// gone. It exists for the paths we cannot run ourselves (CrossOver on a Mac),
+	// so its lines carry the same version/feature/timestamp shape, and retention
+	// must sweep it too or a diagnostic trace would accumulate forever.
+	{
+		PobLog::ResetCapsForTest();
+		DeleteFileW(today.c_str());
+		DeleteFileW((box + DiagTodayName()).c_str());
+		PobLog::Diag("modernui", "browser mode started: host=Wine 9.0 on Darwin");
+		const std::vector<std::string> diag = Lines(ReadAll(box + DiagTodayName()));
+		check("T10 Diag writes to diag-<date>.log", diag.size() == 1,
+		      std::to_string(diag.size()) + " line(s)");
+		check("T10b it is not in the failure log", ReadAll(today).empty());
+		if (!diag.empty()) {
+			check("T10c same shape as a failure line (time, version, feature)",
+			      diag[0][0] == '[' && diag[0].find("v" POBTOOLS_VERSION_STRING) != std::string::npos &&
+			          diag[0].find("[modernui]") != std::string::npos,
+			      diag[0]);
+			check("T10d it keeps the message", diag[0].find("Darwin") != std::string::npos, diag[0]);
+		}
+		// retention: an old diag file goes the same way an old error log does
+		PobLog::ResetCapsForTest();
+		check("T10e an old diag log is pruned", Touch(box + L"diag-2001-01-01.log") &&
+		          PobLog::PruneOlderThan(1) >= 1 &&
+		          GetFileAttributesW((box + L"diag-2001-01-01.log").c_str()) == INVALID_FILE_ATTRIBUTES);
+		check("T10f today's diag log survives",
+		      GetFileAttributesW((box + DiagTodayName()).c_str()) != INVALID_FILE_ATTRIBUTES);
 	}
 
 	PobLog::SetDirForTest(L"");

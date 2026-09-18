@@ -56,6 +56,30 @@ std::wstring widen(const std::string& s)
 	return w;
 }
 
+// "Windows", or what Wine is pretending for and what it is really running on.
+// ntdll exports both under Wine/CrossOver and neither on real Windows, so this
+// is also how we tell a Mac bottle (Darwin) from a Linux one.
+std::string HostDescription()
+{
+	HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+	if (!ntdll) return "Windows";
+	using VersionFun = const char*();
+	using HostFun = void(const char**, const char**);
+	auto ver = (VersionFun*)GetProcAddress(ntdll, "wine_get_version");
+	if (!ver) return "Windows";
+	auto host = (HostFun*)GetProcAddress(ntdll, "wine_get_host_version");
+	const char* sysname = nullptr;
+	const char* release = nullptr;
+	if (host) host(&sysname, &release);
+	std::string out = "Wine ";
+	out += ver() ? ver() : "?";
+	out += " on ";
+	out += sysname ? sysname : "?";
+	if (release && *release) { out += " "; out += release; }
+	if (sysname && std::string(sysname) == "Darwin") out += " (macOS -- CrossOver or similar)";
+	return out;
+}
+
 bool file_exists(const std::wstring& p)
 {
 	DWORD a = GetFileAttributesW(p.c_str());
@@ -156,6 +180,7 @@ struct Server {
 	size_t base = 0;
 	int streams = 0;
 	bool everConnected = false;
+	bool loggedAgent = false;   // the connecting browser is written down once
 	std::chrono::steady_clock::time_point lastStreamSeen = std::chrono::steady_clock::now();
 	std::atomic<bool> quit{ false };
 	int exitCode = 0;
@@ -471,6 +496,25 @@ struct Server {
 			for (auto& c : lower) c = (char)tolower((unsigned char)c);
 			size_t at = lower.find("\r\nlast-event-id:");
 			if (at != std::string::npos) resume = (size_t)strtoull(lower.c_str() + at + 16, nullptr, 10);
+			// Which browser actually arrived. On a Mac this is the answer we
+			// cannot get any other way: whether the desktop opened Safari, some
+			// other browser, or nothing at all. Logged once per session.
+			{
+				std::lock_guard<std::mutex> lk(mu);
+				if (!loggedAgent) {
+					loggedAgent = true;
+					std::string ua = "(no User-Agent)";
+					const size_t ut = lower.find("\r\nuser-agent:");
+					if (ut != std::string::npos) {
+						const size_t from = ut + 13, to = lower.find("\r\n", from);
+						if (to != std::string::npos) {
+							ua = req.substr(from, to - from);
+							while (!ua.empty() && (ua.front() == ' ' || ua.front() == '\t')) ua.erase(ua.begin());
+						}
+					}
+					PobLog::Diag("modernui", "browser mode: a page connected; User-Agent: " + ua);
+				}
+			}
 			serve_events(s, resume);
 			return;
 		}
@@ -675,6 +719,13 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	// happens next.
 	printf("%s\n", url.c_str());
 	fflush(stdout);
+	// What this machine is, written down before anything can go wrong with it.
+	// Browser mode is the only new-interface path on Wine and on CrossOver, and
+	// CrossOver we cannot run here at all (no Apple hardware, and a licence we
+	// do not have) -- so the machine that CAN run it has to be able to tell us
+	// what happened, in one file, without a round trip.
+	PobLog::Diag("modernui", "browser mode started for " + narrow(game) + ": host=" + HostDescription() +
+	                             ", address=" + url + ", open a browser=" + (openBrowser ? "yes" : "no (POB_ZH_NO_BROWSER)"));
 	if (openBrowser) {
 		// Wine hands an http URL to winebrowser, which opens the host system's
 		// browser (xdg-open on Linux, open on macOS). Under CrossOver that can
@@ -683,18 +734,23 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 		// still reports success, so the failure code is not something to rely
 		// on -- the "never connected" branch below is what really catches it.
 		HINSTANCE rc = ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+		PobLog::Diag("modernui", "asked the desktop to open the address; ShellExecute said " +
+		                             std::to_string((INT_PTR)rc) +
+		                             " (>32 means it started a handler -- under Wine that is NOT proof a browser opened)");
 		if ((INT_PTR)rc <= 32) {
 			PobLog::Error("modernui", "browser mode: could not open a browser (code " + std::to_string((INT_PTR)rc) +
 			                              "); open this address yourself: " + url);
 		}
 	}
 
+	const char* why = "the page was closed";
 	const auto started = std::chrono::steady_clock::now();
 	while (!S.quit) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		std::lock_guard<std::mutex> lk(S.mu);
 		const auto now = std::chrono::steady_clock::now();
 		if (!S.everConnected && now - started > std::chrono::seconds(kFirstConnectSeconds)) {
+			why = "no page ever connected";
 			// Nobody ever arrived: on Wine/CrossOver that usually means the
 			// desktop had no browser to hand the address to, so leave the
 			// address behind rather than just the fact that it failed.
@@ -703,6 +759,14 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 			break;
 		}
 		if (S.everConnected && S.streams == 0 && now - S.lastStreamSeen > std::chrono::seconds(kGoneSeconds)) break;
+	}
+	if (S.quit) why = "it was ended (the page's End button, or the launcher)";
+	{
+		std::lock_guard<std::mutex> lk(S.mu);   // the acceptor threads still run
+		PobLog::Diag("modernui", std::string("browser mode ended: ") + why + ", after " +
+		                             std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
+		                                                std::chrono::steady_clock::now() - started).count()) +
+		                             " s, a page connected=" + (S.everConnected ? "yes" : "no"));
 	}
 	S.quit = true;
 	S.cv.notify_all();

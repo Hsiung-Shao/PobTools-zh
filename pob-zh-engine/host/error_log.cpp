@@ -48,6 +48,9 @@ std::wstring g_testDir;   // non-empty only during a self-test
 // let a per-frame failure write ten more lines every minute, which is the same
 // unbounded growth again, just slower.
 const int kMaxPerIncident = 10;
+// Diag() is a trace, so its cap is per feature tag rather than per message, and
+// higher: ten lines would cut a browser-mode session off mid-story.
+const int kMaxDiagPerFeature = 200;
 
 std::map<std::string, int> g_seen;   // feature\x1fmessage -> times written
 
@@ -121,6 +124,22 @@ void PobLog::SetDirForTest(const std::wstring& dir)
 
 namespace {
 
+// Appends one already-built line to `stem`-<date>.log. Callers hold g_mx.
+void WriteLineTo(const std::wstring& dir, const wchar_t* stem, const std::string& line)
+{
+	SYSTEMTIME st{};
+	GetLocalTime(&st);
+	wchar_t name[64];
+	swprintf_s(name, L"%s-%04d-%02d-%02d.log", stem, st.wYear, st.wMonth, st.wDay);
+	HANDLE h = CreateFileW((dir + name).c_str(), FILE_APPEND_DATA,
+	                       FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+	                       OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return;   // deliberately silent; see the header
+	DWORD wrote = 0;
+	WriteFile(h, line.data(), (DWORD)line.size(), &wrote, nullptr);
+	CloseHandle(h);
+}
+
 // Appends one already-built line. Callers hold g_mx.
 void WriteLine(const std::wstring& dir, const std::string& line)
 {
@@ -182,6 +201,29 @@ void PobLog::Error(const char* feature, const std::string& msg)
 	WriteLine(dir, line);
 }
 
+void PobLog::Diag(const char* feature, const std::string& msg)
+{
+	if (!feature || !*feature) feature = "unknown";
+	std::lock_guard<std::mutex> lk(g_mx);
+
+	const std::wstring dir = EnsureDir();
+	if (dir.empty()) return;
+
+	// Capped per tag, not per message: a trace is a sequence of DIFFERENT lines,
+	// so the error log's "same incident ten times" key would never fire and a
+	// runaway caller could fill the disk.
+	const std::string key = std::string("\x1e") + feature;
+	int& times = g_seen[key];
+	if (times >= kMaxDiagPerFeature) return;
+	times++;
+
+	std::string line = Stamp() + "v" POBTOOLS_VERSION_STRING " [" + feature + "] " + Flatten(msg);
+	if (times == kMaxDiagPerFeature)
+		line += u8"（已達 " + std::to_string(kMaxDiagPerFeature) + u8" 行上限，這個標籤之後不再記錄）";
+	line += "\r\n";
+	WriteLineTo(dir, L"diag", line);
+}
+
 int PobLog::PruneOlderThan(int keepDays)
 {
 	if (keepDays < 0) return 0;
@@ -236,6 +278,7 @@ int PobLog::PruneOlderThan(int keepDays)
 	struct Shape { const wchar_t* pattern; const wchar_t* prefix; const wchar_t* suffix; bool fixedWidth; };
 	const Shape shapes[] = {
 		{ L"error-*.log", L"error-", L".log", true  },
+		{ L"diag-*.log",  L"diag-",  L".log", true  },
 		{ L"hang-*.txt",  L"hang-",  L".txt", false },
 		{ L"crash-*.txt", L"crash-", L".txt", false },
 	};
