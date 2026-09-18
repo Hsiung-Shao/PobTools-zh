@@ -17,8 +17,11 @@ export default defineConfig(({ mode }) => ({
   clearScreen: false,
   server: { port: 1420, strictPort: true },
   build: {
-    // WebView2 is an evergreen Chromium; ES2022 is safe.
-    target: ["es2022", "chrome110"],
+    // WebView2 is an evergreen Chromium, but browser mode (Wine, CrossOver on
+    // macOS, Linux) hands the page to whatever the desktop uses -- Safari on a
+    // Mac. Naming those browsers is what makes esbuild lower syntax they lack;
+    // leaving only chrome110 here would ship Chromium-only output to them.
+    target: ["es2022", "chrome110", "safari16", "firefox115"],
     outDir: "../dist/ui",
     emptyOutDir: true,
     sourcemap: false,
