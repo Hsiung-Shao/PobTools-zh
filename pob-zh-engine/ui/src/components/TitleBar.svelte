@@ -13,6 +13,7 @@
     { id: "calcs", key: "title.calcs" },
     { id: "notes", key: "title.notes" },
     { id: "party", key: "title.party" },
+    { id: "compare", key: "title.compare" },
     { id: "import", key: "title.import" },
     { id: "settings", key: "settings.title" },
   ];

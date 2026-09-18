@@ -18,6 +18,7 @@
   import CalcsView from "./views/CalcsView.svelte";
   import NotesView from "./views/NotesView.svelte";
   import PartyView from "./views/PartyView.svelte";
+  import CompareView from "./views/CompareView.svelte";
   import SettingsView from "./views/SettingsView.svelte";
   import type { ViewId } from "$lib/state.svelte";
 
@@ -126,6 +127,8 @@
           <NotesView />
         {:else if app.view === "party" && app.loaded}
           <PartyView />
+        {:else if app.view === "compare" && app.loaded}
+          <CompareView />
         {:else if app.view !== "builds" && app.loaded}
           <div class="center"><p class="dim">{t("app.viewSoon")}</p></div>
         {:else}

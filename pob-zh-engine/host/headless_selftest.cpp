@@ -1965,6 +1965,36 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			if (corrupted && after.find(corruption) != std::string::npos) WriteFileA(progFile, orig); // never leave the sandbox corrupted
 		}
 
+		// the Compare tab: this build compared against its own share code
+		{
+			json ex2, cl, cs, ctree, citems, cskills, cconf, crm;
+			bool okEx = okLoad && child.Call("export_code", json::object(), ex2, 60000);
+			bool okCl = okEx && child.Call("compare_load", json{{"code", ex2.value("code", "")}, {"label", "self"}}, cl, 180000);
+			bool okCs = okCl && child.Call("compare_state", json::object(), cs, 60000) &&
+			            child.Call("compare_tree", json::object(), ctree, 60000) &&
+			            child.Call("compare_items", json::object(), citems, 60000) &&
+			            child.Call("compare_skills", json::object(), cskills, 60000) &&
+			            child.Call("compare_config", json::object(), cconf, 60000);
+			bool sameBuild = okCs && ctree["onlyInCompare"].empty() && ctree["onlyInPrimary"].empty() && cconf["rows"].empty();
+			bool statsOk = okCs && cs["stats"].size() > 10;
+			bool noDiff = true;
+			if (statsOk) for (auto& r : cs["stats"]) if (r.contains("diff")) noDiff = false;
+			bool itemsSame = okCs && !citems["rows"].empty();
+			if (itemsSame) for (auto& r : citems["rows"]) if (r.contains("primary") && r.contains("compare") && !r.value("same", false)) itemsSame = false;
+			json cbad;
+			bool okBad2 = child.Call("compare_load", json{{"code", "not a code"}}, cbad, 60000);
+			if (okCl) child.Call("compare_remove", json{{"index", 1}}, crm, 60000);
+			check("compare_load/compare_state: this build against its own code shows no differences (tree, items, config, stats)",
+			      okCl && statsOk && sameBuild && noDiff && itemsSame && !okBad2 && child.Alive(),
+			      "stats=" + std::to_string(statsOk ? cs["stats"].size() : 0) + " noDiff=" + std::to_string(noDiff) + " itemsSame=" + std::to_string(itemsSame) +
+			          " bad=" + std::to_string(okBad2) + " " + [&] {
+				          std::string o;
+				          if (statsOk) for (auto& r : cs["stats"]) if (r.contains("diff")) o += r.value("label", "?") + "=" + r.value("diff", "") + " ";
+				          if (okCs) for (auto& r : citems["rows"]) if (!r.value("same", false)) o += "[" + r.value("slot", "?") + "]";
+				          return o.substr(0, 260);
+			          }());
+		}
+
 		// the trade pane (no network here: its lists, rows and refusals)
 		{
 			json tr0, trSet, trBad, trClose;

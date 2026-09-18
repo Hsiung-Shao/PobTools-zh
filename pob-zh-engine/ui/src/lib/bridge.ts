@@ -197,6 +197,8 @@ export interface Caps {
   timelessJewel?: boolean;
   /** POB's trade pane ("Trade for these items"). */
   tradeQuery?: boolean;
+  /** POB's Compare tab. */
+  compareTab?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -237,6 +239,46 @@ export interface MinionEntry {
   nameZh?: string;
   category?: string;
   recommended?: boolean;
+}
+
+/** POB's Compare tab: the loaded comparison builds and the Summary table. */
+export interface CompareState {
+  builds: { index: number; label?: string; buildName?: string; className?: string; ascendClassName?: string; level?: number; active: boolean }[];
+  activeIndex: number;
+  stats?: { gap?: boolean; stat?: string; label?: string; labelZh?: string; primary?: string; compare?: string; diff?: string; diffPercent?: string; better?: boolean }[];
+  sets?: {
+    specs: { index: number; title?: string }[];
+    activeSpec: number;
+    itemSets: { id: number; title?: string }[];
+    activeItemSetId?: number;
+    skillSets: { id: number; title?: string }[];
+    activeSkillSetId?: number;
+    configSets: { id: number; title?: string }[];
+    activeConfigSetId?: number;
+  };
+}
+export interface CompareTree {
+  treeVersion?: string;
+  allocatedNodes: number[];
+  onlyInCompare: number[];
+  onlyInPrimary: number[];
+  points?: number;
+}
+export interface CompareItemsRows {
+  rows: {
+    slot: string;
+    slotZh?: string;
+    same: boolean;
+    primary?: { name: string; nameZh?: string; rarity?: string; raw: string };
+    compare?: { name: string; nameZh?: string; rarity?: string; raw: string };
+  }[];
+}
+export interface CompareSkills {
+  primary: { index: number; label?: string; labelZh?: string; slot?: string; enabled: boolean; isMain: boolean; gems: { name: string; nameZh?: string; level?: number; quality?: number; enabled: boolean }[] }[];
+  compare: CompareSkills["primary"];
+}
+export interface CompareConfigRows {
+  rows: { var: string; label?: string; labelZh?: string; primary?: string; compare?: string }[];
 }
 
 /** POB's price-builder pane (TradeQuery:PriceItem). */
@@ -1149,6 +1191,16 @@ export const api = {
   tattooApply: (p: { id: number; tattoo?: string | number; reset?: boolean; showLegacy?: boolean }) => bridge.call<TreeState>("tattoo_apply", p, 60000),
   setCompareSpec: (index?: number) => bridge.call<TreeState>("set_compare_spec", index == null ? {} : { index }, 60000),
   nodePower: (p: { enabled?: boolean; stat?: string; maxDepth?: number | null }) => bridge.call<NodePower>("node_power", p, 600000),
+  compareState: () => bridge.call<CompareState>("compare_state", {}, 60000),
+  compareLoad: (p: { code?: string; xml?: string; path?: string; label?: string }) => bridge.call<CompareState>("compare_load", p, 180000),
+  compareSelect: (index: number) => bridge.call<CompareState>("compare_select", { index }, 60000),
+  compareRemove: (index: number) => bridge.call<CompareState>("compare_remove", { index }, 60000),
+  compareSet: (p: Record<string, unknown>) => bridge.call<CompareState>("compare_set", p, 120000),
+  compareTree: () => bridge.call<CompareTree>("compare_tree", {}, 60000),
+  compareItems: () => bridge.call<CompareItemsRows>("compare_items", {}, 60000),
+  compareSkills: () => bridge.call<CompareSkills>("compare_skills", {}, 60000),
+  compareConfig: () => bridge.call<CompareConfigRows>("compare_config", {}, 60000),
+  compareUse: (what: "tree" | "item" | "config", slot?: string) => bridge.call<Committed>("compare_use", { what, slot }, 120000),
   tradeOpen: () => bridge.call<TradeState>("trade_open", {}, 120000),
   tradeSet: (p: Record<string, unknown>) => bridge.call<TradeState>("trade_set", p, 60000),
   tradeFindBest: (row: number) => bridge.call<TradeState>("trade_find_best", { row }, 300000),

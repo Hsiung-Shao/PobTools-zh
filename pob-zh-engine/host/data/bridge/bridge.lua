@@ -3545,6 +3545,305 @@ end
 local function on_enabled(ctrl) return ctrl_flag(ctrl, "enabled") end
 local ctl_enabled = on_enabled
 
+-- ---- Compare tab (Classes/CompareTab + CompareEntry) ------------------------
+-- POB keeps the other build in a CompareEntry (a build-like object it can
+-- recalculate); everything the Compare tab shows is drawn straight from those
+-- two outputs, so the numbers here come from POB while the rows are ours.
+
+local function compare_tab(b)
+	local ct = b.compareTab
+	if not ct then error("this POB has no compare tab", 0) end
+	return ct
+end
+
+local function compare_entry(b)
+	local ct = compare_tab(b)
+	local e = ct.compareEntries[ct.activeCompareIndex or 0]
+	if not e then error("no comparison build loaded", 0) end
+	return ct, e
+end
+
+-- What DrawStatList picks and how it formats it (Draw-only in POB).
+local function compare_stat_rows(b, entry)
+	local primary, compare = b.calcsTab.mainOutput or {}, entry:GetOutput() or {}
+	local pActor = b.calcsTab.mainEnv and b.calcsTab.mainEnv.player
+	local cActor = entry.calcsTab and entry.calcsTab.mainEnv and entry.calcsTab.mainEnv.player
+	local pFlags = (pActor and pActor.mainSkill and pActor.mainSkill.skillFlags) or {}
+	local cFlags = (cActor and cActor.mainSkill and cActor.mainSkill.skillFlags) or {}
+	local function matches(flag, notFlag, flags)
+		if flag and not flags[flag] then return false end
+		if notFlag and flags[notFlag] then return false end
+		return true
+	end
+	local rows = {}
+	for _, sd in ipairs(b.displayStats or {}) do
+		if not sd.stat and not sd.label then
+			rows[#rows + 1] = { gap = true }
+		elseif sd.stat and sd.stat ~= "SkillDPS" and not sd.hideStat
+			and (matches(sd.flag, sd.notFlag, pFlags) or matches(sd.flag, sd.notFlag, cFlags)) then
+			local pv, cv = primary[sd.stat] or 0, compare[sd.stat] or 0
+			if sd.childStat then
+				pv = type(pv) == "table" and pv[sd.childStat] or 0
+				cv = type(cv) == "table" and cv[sd.childStat] or 0
+			end
+			if type(pv) == "table" or type(cv) == "table" then pv, cv = 0, 0 end
+			if (pv ~= 0 or cv ~= 0) and (not sd.condFunc or sd.condFunc(pv, primary) or sd.condFunc(cv, compare)) then
+				local fmt = sd.fmt or "d"
+				local mult = (sd.pc or sd.mod) and 100 or 1
+				local diff = cv - pv
+				local better = nil
+				if diff > 0.001 or diff < -0.001 then
+					better = (sd.lowerIsBetter and diff < 0) or (not sd.lowerIsBetter and diff > 0)
+				end
+				rows[#rows + 1] = {
+					stat = sd.stat,
+					label = sd.label or sd.stat,
+					labelZh = tr(sd.label or sd.stat),
+					primary = formatNumSep(string.format("%" .. fmt, pv * mult)),
+					compare = formatNumSep(string.format("%" .. fmt, cv * mult)),
+					diff = better ~= nil and formatNumSep(string.format("%+" .. fmt, diff * mult)) or nil,
+					diffPercent = (better ~= nil and pv ~= 0) and string.format("%+.1f%%", cv / pv * 100 - 100) or nil,
+					better = better,
+				}
+			end
+		end
+	end
+	return rows
+end
+
+local function compare_sets(entry)
+	local function names(orderList, sets)
+		local out = {}
+		for i, id in ipairs(orderList or {}) do out[i] = { id = id, title = sets and sets[id] and sets[id].title or nil } end
+		return out
+	end
+	return {
+		specs = (function()
+			local out = {}
+			for i, s in ipairs(entry.treeTab and entry.treeTab.specList or {}) do out[i] = { index = i, title = s.title } end
+			return out
+		end)(),
+		activeSpec = entry.treeTab and entry.treeTab.activeSpec or 1,
+		itemSets = names(entry.itemsTab and entry.itemsTab.itemSetOrderList, entry.itemsTab and entry.itemsTab.itemSets),
+		activeItemSetId = entry.itemsTab and entry.itemsTab.activeItemSetId,
+		skillSets = names(entry.skillsTab and entry.skillsTab.skillSetOrderList, entry.skillsTab and entry.skillsTab.skillSets),
+		activeSkillSetId = entry.skillsTab and entry.skillsTab.activeSkillSetId,
+		configSets = names(entry.configTab and entry.configTab.configSetOrderList, entry.configTab and entry.configTab.configSets),
+		activeConfigSetId = entry.configTab and entry.configTab.activeConfigSetId,
+	}
+end
+
+-- compare_state{}: the loaded comparison builds and, for the active one, the
+-- stat table the Summary view draws.
+function M.compare_state()
+	local b = ensure_build()
+	local ct = compare_tab(b)
+	local builds = {}
+	for i, e in ipairs(ct.compareEntries or {}) do
+		builds[i] = { index = i, label = e.label, buildName = e.buildName, className = e.spec and e.spec.curClassName,
+		              ascendClassName = e.spec and e.spec.curAscendClassName, level = e.characterLevel, active = i == ct.activeCompareIndex }
+	end
+	local r = { builds = builds, activeIndex = ct.activeCompareIndex or 0 }
+	if ct.compareEntries[ct.activeCompareIndex or 0] then
+		local e = ct.compareEntries[ct.activeCompareIndex]
+		r.stats = compare_stat_rows(b, e)
+		r.sets = compare_sets(e)
+	end
+	return r
+end
+
+-- compare_load{code|xml|path, label?}: the Compare tab's Import (a share code,
+-- a build file, or XML text).
+function M.compare_load(p)
+	local b = ensure_build()
+	local ct = compare_tab(b)
+	p = p or {}
+	local label = type(p.label) == "string" and p.label or nil
+	local before = #(ct.compareEntries or {})
+	if type(p.code) == "string" and p.code ~= "" then
+		-- POB's own import reports a bad code in the pane instead of failing
+		ct:ImportFromCode(p.code)
+	else
+		local xml = p.xml
+		if type(p.path) == "string" and p.path ~= "" then
+			if not under_build_path(p.path) then error("path must be under the build folder", 0) end
+			local f = io.open(p.path, "r")
+			if not f then error("cannot open " .. p.path, 0) end
+			xml = f:read("*a")
+			f:close()
+			label = label or p.path:match("([^/\\]+)%.xml$")
+		end
+		if type(xml) ~= "string" or xml == "" then error("params.code, params.xml or params.path required", 0) end
+		ct:ImportBuild(xml, label or "Comparison build")
+	end
+	if #(ct.compareEntries or {}) == before then error("that build could not be read", 0) end
+	frame()
+	return M.compare_state()
+end
+
+-- compare_select{index} / compare_remove{index}: the build selector and Remove.
+function M.compare_select(p)
+	local b = ensure_build()
+	local ct = compare_tab(b)
+	local i = tonumber(p and p.index)
+	if not i or not ct.compareEntries[i] then error("no comparison build " .. tostring(p and p.index), 0) end
+	ct.activeCompareIndex = i
+	if ct.UpdateBuildSelector then ct:UpdateBuildSelector() end
+	return M.compare_state()
+end
+
+function M.compare_remove(p)
+	local b = ensure_build()
+	local ct = compare_tab(b)
+	local i = tonumber(p and p.index)
+	if not i or not ct.compareEntries[i] then error("no comparison build " .. tostring(p and p.index), 0) end
+	ct:RemoveBuild(i)
+	return M.compare_state()
+end
+
+-- compare_set{spec?, itemSet?, skillSet?, configSet?, mainSocketGroup?}: the
+-- comparison build's own set selectors.
+function M.compare_set(p)
+	local b = ensure_build()
+	local ct, e = compare_entry(b)
+	p = p or {}
+	if p.spec ~= nil then e:SetActiveSpec(tonumber(p.spec) or 1) end
+	if p.itemSet ~= nil then e:SetActiveItemSet(tonumber(p.itemSet)) end
+	if p.skillSet ~= nil then e:SetActiveSkillSet(tonumber(p.skillSet)) end
+	if p.configSet ~= nil and e.configTab and e.configTab.SetActiveConfigSet then e.configTab:SetActiveConfigSet(tonumber(p.configSet)) end
+	if p.mainSocketGroup ~= nil then e:SetMainSocketGroup(tonumber(p.mainSocketGroup) or 1) end
+	e:Rebuild()
+	frame()
+	return M.compare_state()
+end
+
+-- compare_tree{}: what the Tree view overlays -- each side's allocation.
+function M.compare_tree()
+	local b = ensure_build()
+	local _, e = compare_entry(b)
+	local spec = e:GetSpec()
+	local alloc, only, missing = {}, {}, {}
+	local mine = {}
+	for id, node in pairs(b.spec.nodes) do if node.alloc then mine[id] = true end end
+	for id, node in pairs(spec.nodes or {}) do
+		if node.alloc then
+			alloc[#alloc + 1] = id
+			if not mine[id] then only[#only + 1] = id end
+		end
+	end
+	for id in pairs(mine) do
+		if not (spec.nodes[id] and spec.nodes[id].alloc) then missing[#missing + 1] = id end
+	end
+	table.sort(alloc); table.sort(only); table.sort(missing)
+	return { treeVersion = spec.treeVersion, allocatedNodes = alloc, onlyInCompare = only, onlyInPrimary = missing,
+	         points = select(1, spec:CountAllocNodes()) }
+end
+
+-- compare_items{}: slot by slot, both sides' item.
+function M.compare_items()
+	local b = ensure_build()
+	local _, e = compare_entry(b)
+	local rows = {}
+	for _, slot0 in ipairs(b.itemsTab.orderedSlots or {}) do
+		local slotName = slot0.slotName
+		local function itemIn(tab, set)
+			local slot = set and set[slotName]
+			local id = slot and slot.selItemId
+			local it = id and id ~= 0 and tab.items[id]
+			return it and { name = it.name, nameZh = tr(it.name), rarity = it.rarity, raw = it:BuildRaw() } or nil
+		end
+		local mine = itemIn(b.itemsTab, b.itemsTab.activeItemSet)
+		local theirs = e.itemsTab and itemIn(e.itemsTab, e.itemsTab.activeItemSet) or nil
+		if mine or theirs then
+			rows[#rows + 1] = {
+				slot = slotName, slotZh = tr(slotName),
+				primary = mine, compare = theirs,
+				same = (mine and theirs and mine.raw == theirs.raw) and true or false,
+			}
+		end
+	end
+	return { rows = rows }
+end
+
+-- compare_skills{}: both sides' socket groups (label and gems).
+function M.compare_skills()
+	local b = ensure_build()
+	local _, e = compare_entry(b)
+	local function groups(tab, build)
+		local out = {}
+		for i, g in ipairs(tab and tab.socketGroupList or {}) do
+			local gems = {}
+			for j, gem in ipairs(g.gemList or {}) do
+				local name = (gem.gemData and gem.gemData.name) or gem.nameSpec
+				gems[j] = { name = name, nameZh = tr(name), level = gem.level, quality = gem.quality, enabled = gem.enabled and true or false }
+			end
+			out[i] = { index = i, label = g.displayLabel or g.label, labelZh = tr(g.displayLabel or g.label or ""), slot = g.slot,
+			           enabled = g.enabled and true or false, isMain = build and build.mainSocketGroup == i or false, gems = gems }
+		end
+		return out
+	end
+	return { primary = groups(b.skillsTab, b), compare = groups(e.skillsTab, e) }
+end
+
+-- compare_config{}: the config options that differ (FormatConfigValue).
+function M.compare_config()
+	local b = ensure_build()
+	local ct, e = compare_entry(b)
+	local rows = {}
+	local mine = b.configTab.input or {}
+	local theirs = (e.configTab and e.configTab.input) or {}
+	local seen = {}
+	local function add(var)
+		if seen[var] then return end
+		seen[var] = true
+		local varData
+		for _, v in ipairs(b.configTab.varList or {}) do if v.var == var then varData = v end end
+		if not varData or not varData.label then return end
+		local pv, cv = mine[var], theirs[var]
+		if ct.NormalizeConfigVals then pv, cv = ct:NormalizeConfigVals(varData, pv, cv) end
+		if pv ~= cv then
+			rows[#rows + 1] = {
+				var = var, label = varData.label, labelZh = tr(varData.label),
+				primary = ct:FormatConfigValue(varData, pv), compare = ct:FormatConfigValue(varData, cv),
+			}
+		end
+	end
+	for var in pairs(mine) do add(var) end
+	for var in pairs(theirs) do add(var) end
+	table.sort(rows, function(x, y) return (x.label or "") < (y.label or "") end)
+	return { rows = rows }
+end
+
+-- compare_use{what="tree"|"item"|"config", slot?, copyOnly?}: the Compare tab's
+-- own "copy to this build" actions.
+function M.compare_use(p)
+	local b = ensure_build()
+	local ct, e = compare_entry(b)
+	local what = p and p.what
+	if what == "tree" then
+		ct:CopyCompareSpecToPrimary(not p.copyOnly)
+	elseif what == "item" then
+		if type(p.slot) ~= "string" then error("params.slot required", 0) end
+		ct:CopyCompareItemToPrimary(p.slot, e, not p.copyOnly)
+	elseif what == "config" then
+		ct:CopyCompareConfig()
+	else
+		error("unknown target " .. tostring(what), 0)
+	end
+	b.buildFlag = true
+	return commit(b)
+end
+
+probe("Build.compareTab (CompareTab/CompareEntry: ImportBuild/ImportFromCode/CopyCompareSpecToPrimary/CopyCompareItemToPrimary/CopyCompareConfig)", function()
+	local b = build()
+	local c, ce = class_of("CompareTab"), class_of("CompareEntry")
+	if not (type(c) == "table" and type(ce) == "table") then return false end
+	return type(c.ImportBuild) == "function" and type(c.ImportFromCode) == "function" and type(c.CopyCompareSpecToPrimary) == "function"
+		and type(c.CopyCompareItemToPrimary) == "function" and type(c.CopyCompareConfig) == "function"
+		and type(ce.GetOutput) == "function" and type(ce.Rebuild) == "function"
+		and (not b or type(b.compareTab) == "table")
+end, "compareTab")
+
 -- ---- Trade: "Trade for these items" (Classes/TradeQuery) --------------------
 -- The price-builder pane is POB's own: a row per slot with Find best (its
 -- weighted query generator), a trade URL, Price Item (the search), the result

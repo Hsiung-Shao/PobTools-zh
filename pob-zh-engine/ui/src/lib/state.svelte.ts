@@ -3,7 +3,7 @@
 import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
 import { t } from "./i18n";
 
-export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "settings";
+export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "compare" | "settings";
 
 class AppState {
   engine = $state<"booting" | "ready" | "gone">("booting");
