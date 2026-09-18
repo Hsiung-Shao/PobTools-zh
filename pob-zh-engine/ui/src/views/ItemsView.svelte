@@ -338,6 +338,15 @@
     if (r) await changed();
   }
   const setTitle = (s: { id: number; title?: string }) => s.title || t("items.defaultSet");
+  // POB's "Buy Similar": it builds the trade search, the page opens it
+  async function buySimilar(id: number) {
+    const r = await app.run(() => api.buySimilar({ id }));
+    if (r?.url) {
+      await copyText(r.url);
+      window.open(r.url, "_blank", "noopener");
+    }
+  }
+
   // POB's shared item / item-set lists and its trade pane
   let sharedOpen = $state(false);
   let tradeOpen = $state(false);
@@ -486,6 +495,9 @@
           {copyState === "ok" ? t("items.copied") : copyState === "fail" ? t("items.copyFailed") : t("items.copy")}
         </button>
         <button class="btn sm" onclick={() => shareItem(selected!.id!)}>{t("items.shareThis")}</button>
+        {#if app.has("buySimilar")}
+          <button class="btn sm" title={t("items.buySimilarHint")} onclick={() => buySimilar(selected!.id!)}>{t("items.buySimilar")}</button>
+        {/if}
         <button class="btn sm danger" onclick={() => deleteItem(selected!.id!)}>{t("items.delete")}</button>
       </div>
     {/if}

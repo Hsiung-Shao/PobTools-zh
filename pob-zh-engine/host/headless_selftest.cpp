@@ -1995,6 +1995,27 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			          }());
 		}
 
+		// Buy Similar builds a trade URL from an item; the weights dialog lists POB's stats
+		{
+			json li3, bs, bsBad, tw, twSet;
+			bool okLi3 = okLoad && child.Call("list_items", json::object(), li3, 60000);
+			const int buyId = (okLi3 && !li3["items"].empty()) ? li3["items"][0].value("id", 0) : 0;
+			bool okBs = buyId > 0 && child.Call("buy_similar", json{{"id", buyId}}, bs, 120000);
+			bool okBsBad = child.Call("buy_similar", json{{"id", 999999}}, bsBad, 30000);
+			check("buy_similar builds POB's trade search URL for an item; an unknown item is refused",
+			      okBs && bs.value("url", "").find("/trade/search") != std::string::npos && !okBsBad && child.Alive(),
+			      okBs ? bs.value("url", "").substr(0, 120) : bs.dump().substr(0, 200));
+			bool okTw = child.Call("trade_weights", json::object(), tw, 120000);
+			const std::string wStat = (okTw && !tw["stats"].empty()) ? tw["stats"][0].value("stat", "") : "";
+			bool okTwSet = okTw && !wStat.empty() &&
+			               child.Call("trade_weights", json{{"weights", json::array({json{{"stat", wStat}, {"weight", 0.5}}})}}, twSet, 120000);
+			bool weighted = false;
+			if (okTwSet) for (auto& s2 : twSet["selected"]) if (s2.value("stat", "") == wStat) weighted = true;
+			check("trade_weights lists POB's weightable stats and saving one keeps it in the sort selection",
+			      okTw && tw["stats"].size() > 5 && okTwSet && weighted,
+			      okTw ? "stats=" + std::to_string(tw["stats"].size()) + " stat=" + wStat + " sel=" + (okTwSet ? twSet["selected"].dump().substr(0, 140) : "") : tw.dump().substr(0, 200));
+		}
+
 		// the trade pane (no network here: its lists, rows and refusals)
 		{
 			json tr0, trSet, trBad, trClose;

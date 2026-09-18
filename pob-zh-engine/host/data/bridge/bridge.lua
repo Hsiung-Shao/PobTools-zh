@@ -4080,6 +4080,102 @@ probe("ItemsTab.tradeQuery (TradeQuery:PriceItem) + TradeQueryRequests/Generator
 		and type(class_of("TradeQueryRequests")) == "table" and type(class_of("TradeQueryGenerator")) == "table"
 end, "tradeQuery")
 
+-- ---- Buy similar (Classes/CompareBuySimilar) --------------------------------
+-- The dialog builds a trade-site URL from the item's own mods; the page asks
+-- for that URL and opens it itself.
+
+local buy_popup = nil
+
+-- buy_similar{id | slot}: opens POB's Buy Similar for that item and reports
+-- the mod rows it offers plus the URL it has built so far.
+function M.buy_similar(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local ok, buy = pcall(require, "Classes.CompareBuySimilar")
+	if not ok or type(buy) ~= "table" or type(buy.openPopup) ~= "function" then error("this POB has no Buy Similar", 0) end
+	local item, slotName
+	if p and p.id then
+		item = tab.items[tonumber(p.id)]
+		slotName = nil
+	elseif p and type(p.slot) == "string" then
+		local slot = tab.slots[p.slot]
+		local id = slot and slot.selItemId
+		item = id and id ~= 0 and tab.items[id] or nil
+		slotName = p.slot
+	end
+	if not item then error("no item for Buy Similar", 0) end
+	if buy_popup then popup_discard(buy_popup) end
+	buy_popup = capture_popup(function() buy.openPopup(item, slotName, b) end, true)
+	local c = buy_popup and buy_popup.controls
+	if not (c and c.search) then
+		buy_popup = nil
+		error("POB did not open its Buy Similar dialog", 0)
+	end
+	-- its league list arrives from the site
+	trade_wait(b, 10, function() return (c.leagueDrop and c.leagueDrop.list and c.leagueDrop.list[1] ~= "Loading...") end)
+	-- the URL is rebuilt by the dialog's own callbacks; nudge the realm one
+	if c.realmDrop and c.realmDrop.selFunc then
+		c.realmDrop.selFunc(c.realmDrop.selIndex or 1, (c.realmDrop.list or {})[c.realmDrop.selIndex or 1])
+	end
+	local url
+	local savedCopy, savedOpen = Copy, OpenURL
+	Copy = function(s) url = s end
+	OpenURL = function() end
+	pcall(c.search.onClick)
+	Copy, OpenURL = savedCopy, savedOpen
+	local leagues = c.leagueDrop and dd_options(c.leagueDrop) or {}
+	local realms = c.realmDrop and dd_options(c.realmDrop) or {}
+	popup_discard(buy_popup)
+	buy_popup = nil
+	if not url or url == "" then error("POB could not build a search for that item", 0) end
+	return { url = url, item = item.name, itemZh = tr(item.name), leagues = leagues, realms = realms }
+end
+
+probe("Classes.CompareBuySimilar.openPopup (Buy Similar)", function()
+	local ok, m = pcall(require, "Classes.CompareBuySimilar")
+	return ok and type(m) == "table" and type(m.openPopup) == "function"
+end, "buySimilar")
+
+-- ---- Trade: the search weights dialog (TradeQuery:SetStatWeights) -----------
+
+-- trade_weights{} / trade_weights_set{weights=[{stat,weight}], reset?}
+function M.trade_weights(p)
+	local b = ensure_build()
+	local tq = trade_tab(b)
+	local cap = capture_popup(function() tq:SetStatWeights(tq.statSortSelectionList) end)
+	local c = cap and cap.controls
+	if not (c and c.ListControl and c.finalise) then error("POB did not open its search weight dialog", 0) end
+	local list = c.ListControl.list or {}
+	if p and p.reset then
+		with_popup(function() c.reset.onClick() end)
+		return M.trade_weights()
+	end
+	if p and type(p.weights) == "table" then
+		for _, w in ipairs(p.weights) do
+			for _, row in ipairs(list) do
+				if row.stat and row.stat.stat == w.stat then
+					row.stat.weightMult = math.max(0, math.min(1, tonumber(w.weight) or 0))
+					row.label = string.format("%.2f      :  %s", row.stat.weightMult, row.stat.label)
+				end
+			end
+		end
+		with_popup(function() c.finalise.onClick() end)
+		return M.trade_weights()
+	end
+	local stats = {}
+	for i, row in ipairs(list) do
+		if row.stat then
+			stats[#stats + 1] = { index = i, stat = row.stat.stat, label = row.stat.label, labelZh = tr(row.stat.label), weight = row.stat.weightMult or 0 }
+		end
+	end
+	popup_discard(cap)
+	local chosen = {}
+	for i, s in ipairs(tq.statSortSelectionList or {}) do
+		chosen[i] = { stat = s.stat, label = s.label, labelZh = tr(s.label), weight = s.weightMult }
+	end
+	return { stats = stats, selected = chosen }
+end
+
 -- ---- Find a Timeless Jewel (TreeTab:FindTimelessJewel) ----------------------
 -- The dialog is ~1600 lines of controls around POB's own search; the bridge
 -- keeps it open (captured, never drawn), drives its controls and reads

@@ -67,6 +67,32 @@
     }
     busy = null;
   }
+  // POB's "Adjust search weights" (the stat multipliers its Find best uses)
+  let weights = $state<{ stats: { stat: string; label: string; labelZh?: string; weight: number }[]; selected: { stat: string; label: string; labelZh?: string; weight: number }[] } | null>(null);
+  let weightsOpen = $state(false);
+  let draft = $state<Record<string, number>>({});
+  async function openWeights() {
+    weightsOpen = true;
+    try {
+      weights = await api.tradeWeights();
+      draft = {};
+      for (const s of weights.selected) draft[s.stat] = s.weight;
+    } catch (e: any) {
+      err = String(e?.message ?? e);
+    }
+  }
+  async function saveWeights() {
+    const list = Object.entries(draft)
+      .filter(([, w]) => w > 0)
+      .map(([stat, weight]) => ({ stat, weight }));
+    try {
+      weights = await api.tradeWeights({ weights: list });
+      weightsOpen = false;
+    } catch (e: any) {
+      err = String(e?.message ?? e);
+    }
+  }
+
   function openUrl(url: string) {
     if (url) window.open(url, "_blank", "noopener");
   }
@@ -104,6 +130,7 @@
         <select class="select sm" value={st.sort?.sel} disabled={busy !== null} onchange={(e) => set({ sort: Number(e.currentTarget.value) })}>
           {#each st.sort?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
         </select>
+        <button class="btn sm" disabled={busy !== null} onclick={openWeights}>{t("trade.weights")}</button>
         <span class="k">{t("trade.pages")}</span>
         <input class="input sm num pages" value={st.fetchPages ?? ""} disabled={busy !== null} onchange={(e) => set({ fetchPages: Number(e.currentTarget.value) })} />
       </div>
@@ -128,6 +155,25 @@
         {/each}
       </div>
       {#if st.totalPrice}<p class="total">{st.totalPrice}</p>{/if}
+      {#if weightsOpen && weights}
+        <div class="weights">
+          <div class="top">
+            <span class="label">{t("trade.weightsTitle")}</span>
+            <span class="grow"></span>
+            <button class="btn ghost sm" onclick={() => (weightsOpen = false)}>{t("tree.cancel")}</button>
+            <button class="btn primary sm" onclick={saveWeights}>{t("bar.save")}</button>
+          </div>
+          <div class="wlist">
+            {#each weights.stats as s (s.stat)}
+              <label class="wrow">
+                <span class="wname">{s.labelZh || s.label}</span>
+                <input type="range" min="0" max="1" step="0.05" value={draft[s.stat] ?? 0} onchange={(e) => (draft[s.stat] = Number(e.currentTarget.value))} />
+                <span class="num">{(draft[s.stat] ?? 0).toFixed(2)}</span>
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -199,5 +245,30 @@
   }
   .grow {
     flex: 1;
+  }
+  .weights {
+    border: 1px solid var(--edge-1);
+    border-radius: 6px;
+    padding: 10px;
+  }
+  .wlist {
+    max-height: 260px;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+  }
+  .wrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-sm);
+  }
+  .wname {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

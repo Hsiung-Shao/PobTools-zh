@@ -199,6 +199,8 @@ export interface Caps {
   tradeQuery?: boolean;
   /** POB's Compare tab. */
   compareTab?: boolean;
+  /** POB's "Buy Similar" search builder. */
+  buySimilar?: boolean;
 }
 
 /** TreeTab's passive trees (list_specs). */
@@ -1211,6 +1213,9 @@ export const api = {
   tradeWhisper: (row: number) => bridge.call<{ text: string }>("trade_whisper", { row }, 60000),
   tradeAuth: () => bridge.call<TradeState>("trade_auth", {}, 120000),
   tradeRefresh: (seconds = 1) => bridge.call<TradeState>("trade_refresh", { seconds }, 60000),
+  tradeWeights: (p: { weights?: { stat: string; weight: number }[]; reset?: boolean } = {}) =>
+    bridge.call<{ stats: { index: number; stat: string; label: string; labelZh?: string; weight: number }[]; selected: { stat: string; label: string; labelZh?: string; weight: number }[] }>("trade_weights", p, 120000),
+  buySimilar: (p: { id?: number; slot?: string }) => bridge.call<{ url: string; item: string; itemZh?: string }>("buy_similar", p, 120000),
   tradeClose: () => bridge.call<{ ok: boolean }>("trade_close", {}, 30000),
   tjOpen: () => bridge.call<TimelessState>("tj_open", {}, 120000),
   tjSet: (p: Record<string, unknown>) => bridge.call<TimelessState>("tj_set", p, 120000),
