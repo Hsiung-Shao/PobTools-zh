@@ -779,6 +779,8 @@ export interface AccountChar {
 }
 export interface ImportStatus {
   authorized: boolean;
+  /** PoE2's POB runs the whole import itself; progress and errors come from its own status line. */
+  selfDriving?: boolean;
   oauth: { loading: boolean; errCode?: string; timer?: number; rateLimitEnd?: number; now: number; url?: string };
   site: { mode: string; status?: string; statusZh?: string; accountName?: string; characters: AccountChar[] };
   realms: { id: string; label: string; realmCode: string }[];

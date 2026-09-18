@@ -248,6 +248,23 @@ local M = {}
 
 function M.ping() return { pong = true } end
 
+-- pump{seconds}: run POB's frame loop for a while and answer. POB's downloads
+-- (character import, trade, update check) finish on later frames, so a test --
+-- or a page that would rather wait than poll -- needs a way to give them time
+-- inside one call. Capped: the host has its own timeout and a bridge call that
+-- never returns is worse than one that returns early.
+function M.pump(p)
+	local secs = tonumber(p and p.seconds) or 1
+	if secs < 0 then secs = 0 elseif secs > 60 then secs = 60 end
+	local deadline = os.time() + secs
+	local frames = 0
+	repeat
+		frame()
+		frames = frames + 1
+	until os.time() >= deadline
+	return { frames = frames, seconds = secs }
+end
+
 function M.version()
 	return {
 		pobVersion = launch.versionNumber,
@@ -2021,15 +2038,49 @@ local function hook_import_counters(tab)
 	end
 end
 
+-- The two POBs import characters through DIFFERENT shapes, and only one of
+-- them can be driven the way this bridge drives everything else.
+--
+-- PoE1 (beta) splits the tab in two: an OAuth section that leaves the fetched
+-- list in `characterList[realmCode]`, and an account-name section whose own
+-- controls are prefixed `site...`. Its PoEAPI hands the callback a DECODED
+-- table, and a rate limit arrives as (nil, "Response code: 429", timeNext).
+--
+-- PoE2 has one section and does the whole job itself: ImportTab
+-- DownloadCharacterList / DownloadPassiveTree / DownloadItems read its own
+-- controls, decode the body, set charImportStatus and handle 401/403/404/429.
+-- Its PoEAPI hands the callback a RAW JSON STRING, and a rate limit arrives as
+-- (timeNext, "Response code: 429") -- different argument, different position.
+--
+-- So on PoE2 we call POB's own functions instead of repeating any of that.
+-- Detected by the function, never by the game name (rule 2).
+local function import_self_driving(tab)
+	return type(tab.DownloadCharacterList) == "function"
+end
+
+-- charImportStatus is a string, except while rate-limited: then it is a
+-- closure that counts the remaining seconds down.
+local function import_status_text(v)
+	if type(v) == "function" then
+		local ok, s = pcall(v)
+		return ok and type(s) == "string" and s or nil
+	end
+	return type(v) == "string" and v or nil
+end
+
 -- realmList is file-local in ImportTab.lua; the realm dropdown holds it.
 local function realm_entries(tab)
 	local dd = tab.controls.accountRealm or tab.controls.siteAccountRealm
 	return (dd and dd.list) or {}
 end
 local function realm_by_id(tab, id)
-	for _, r in ipairs(realm_entries(tab)) do
+	local list = realm_entries(tab)
+	for _, r in ipairs(list) do
 		if r.id == id or r.realmCode == id then return r end
 	end
+	-- PoE2's POB offers exactly one realm; a stale "PC" in Settings.xml (or a
+	-- page that has not refreshed yet) must not dead-end the import.
+	if #list == 1 then return list[1] end
 	error("unknown realm " .. tostring(id), 0)
 end
 
@@ -2059,6 +2110,15 @@ function M.import_status()
 	end
 	local characters = {}
 	for code, list in pairs(tab.characterList or {}) do characters[code] = char_summaries(list, code) end
+	-- PoE2 keeps the fetched list in lastCharList and has no characterList at
+	-- all; report it under the realm it was fetched for so the page's account
+	-- section finds it the same way on both games.
+	local selfDriving = import_self_driving(tab)
+	if selfDriving and tab.lastCharList then
+		local dd = tab.controls.accountRealm
+		local r = dd and (dd.list or {})[dd.selIndex or 1]
+		if r and r.realmCode then characters[r.realmCode] = char_summaries(tab.lastCharList, nil) end
+	end
 	local history = {}
 	for name in pairs(m.gameAccounts or {}) do history[#history + 1] = name end
 	table.sort(history, function(x, y) return x:lower() < y:lower() end)
@@ -2070,11 +2130,29 @@ function M.import_status()
 		commit(b)
 		recalculated = true
 	end
+	-- On PoE2 the progress and the errors live in POB's own charImportMode /
+	-- charImportStatus, so map them onto the same two fields the page watches
+	-- (otherwise it would poll a "loading" flag nothing ever sets, which is
+	-- exactly how a fetch looked like it hung forever).
+	local statusText = import_status_text(tab.charImportStatus)
+	local loading = tab.oauthLoading and true or false
+	local errCode = tab.oauthErrCode
+	if selfDriving then
+		loading = tab.charImportMode == "DOWNLOADCHARLIST" or tab.charImportMode == "IMPORTING"
+		-- POB colours its own outcomes; only a coloured line is a verdict, and
+		-- the positive one says "successfully". Plain lines ("Idle",
+		-- "Retrieving character list...") are progress, not errors.
+		if not errCode and statusText and statusText:find("^%^") then
+			local plain = strip_escapes(statusText)
+			if plain ~= "" and not plain:find("successfully") then errCode = plain end
+		end
+	end
 	return {
 		authorized = (api and api.authToken ~= nil) and true or false,
+		selfDriving = selfDriving,
 		oauth = {
-			loading = tab.oauthLoading and true or false,
-			errCode = tab.oauthErrCode,
+			loading = loading,
+			errCode = errCode,
 			timer = tab.oauthTimer,
 			rateLimitEnd = tab.rateLimitEndTime,
 			now = os.time(),
@@ -2082,8 +2160,8 @@ function M.import_status()
 		},
 		site = {
 			mode = tab.charImportMode,
-			status = tab.charImportStatus,
-			statusZh = tab.charImportStatus and tr(tab.charImportStatus) or nil,
+			status = statusText,
+			statusZh = statusText and tr(statusText) or nil,
 			accountName = site and site.buf or nil,
 			characters = char_summaries(tab.lastCharList, nil),
 		},
@@ -2157,6 +2235,16 @@ function M.fetch_characters(p)
 	end
 	local api = main().api
 	if not api or not api.authToken then error("not authorized", 0) end
+	if import_self_driving(tab) then
+		-- PoE2: press its own Start. It reads the realm dropdown, calls the
+		-- API, decodes the body (a raw JSON string there, not a table) and
+		-- fills charSelect / lastCharList / charImportStatus itself -- including
+		-- the 401/403/404/429 messages, which arrive in a different shape than
+		-- PoE1's and used to be dropped on the floor here.
+		tab.controls.accountRealm:SelByValue(realm.id, "id")
+		tab:DownloadCharacterList()
+		return { started = true, mode = tab.charImportMode }
+	end
 	tab.controls.accountRealm:SelByValue(realm.id, "id")
 	tab.oauthLoading = true
 	api:DownloadCharacterList(realm.realmCode, function(body, err, timeNext)
@@ -2188,6 +2276,44 @@ function M.import_account_character(p)
 	local what = p.what == "items" and "items" or "tree"
 	local realm = realm_by_id(tab, p.realm or main().lastRealm or "PC")
 	local c = tab.controls
+	if p.source == "site" and capMissing.siteImport then
+		error("this Path of Building has no account-name import", 0)
+	end
+	if import_self_driving(tab) then
+		-- PoE2: pick the character in POB's own dropdown, set its own
+		-- checkboxes (ImportPassiveTreeAndJewels reads them, they are not
+		-- arguments here), then press the button it would press.
+		if tab.charImportMode ~= "SELECTCHAR" then
+			error("fetch the character list first (mode " .. tostring(tab.charImportMode) .. ")", 0)
+		end
+		c.accountRealm:SelByValue(realm.id, "id")
+		if p.league and c.charSelectLeague then
+			for i, e in ipairs(c.charSelectLeague.list or {}) do
+				if e.league == p.league then c.charSelectLeague.selIndex = i break end
+			end
+			tab:BuildCharacterList(p.league)
+		end
+		local function find(name)
+			for i, e in ipairs(c.charSelect.list or {}) do
+				if e.char and e.char.name == name then return i end
+			end
+		end
+		local sel = find(p.name)
+		if not sel then
+			-- charSelect only holds the league its dropdown is on; nil is
+			-- POB's own "All", which is what the page means by no league.
+			tab:BuildCharacterList(nil)
+			sel = find(p.name)
+		end
+		if not sel then error("character not in the fetched list: " .. p.name, 0) end
+		c.charSelect.selIndex = sel
+		if c.charImportTreeClearJewels then c.charImportTreeClearJewels.state = p.deleteJewels and true or false end
+		if c.charImportItemsClearItems then c.charImportItemsClearItems.state = p.clearItems and true or false end
+		if c.charImportItemsClearSkills then c.charImportItemsClearSkills.state = p.clearSkills and true or false end
+		if c.charImportItemsIgnoreWeaponSwap then c.charImportItemsIgnoreWeaponSwap.state = p.ignoreWeaponSwap and true or false end
+		if what == "tree" then tab:DownloadPassiveTree() else tab:DownloadItems() end
+		return { started = true, what = what }
+	end
 	if p.source == "site" then
 		if tab.charImportMode ~= "SELECTCHAR" then error("fetch the character list first (mode " .. tostring(tab.charImportMode) .. ")", 0) end
 		tab:BuildCharacterList(realm.realmCode, nil, tab.lastCharList, c.siteCharSelect)
@@ -2251,6 +2377,22 @@ probe("classes.ImportTab.DownloadPassiveTree/DownloadItems/BuildCharacterList", 
 	return type(c) == "table" and type(c.DownloadPassiveTree) == "function"
 		and type(c.DownloadItems) == "function" and type(c.BuildCharacterList) == "function"
 end)
+-- One of the two import shapes must be whole: PoE2's self-driving
+-- DownloadCharacterList + its own controls, or PoE1's characterList + site
+-- controls. Half of either is an upstream rename, and the import is the one
+-- feature where a silent half-match looks like "it just never finds anything".
+probe("ImportTab drives its own import (PoE2) or exposes the OAuth list (PoE1)", function()
+	local b = build()
+	if not (b and b.importTab and b.importTab.controls) then return true end
+	local tab, c = b.importTab, b.importTab.controls
+	if type(tab.DownloadCharacterList) == "function" then
+		return type(tab.DownloadPassiveTree) == "function" and type(tab.DownloadItems) == "function"
+			and type(c.accountRealm) == "table" and type(c.charSelect) == "table"
+			and type(c.charImportTreeClearJewels) == "table" and type(c.charImportItemsClearItems) == "table"
+	end
+	return type(tab.characterList) == "table" and type(c.accountRealm) == "table"
+end)
+
 probe("classes.ImportTab.DownloadSiteCharacterList/SetPredefinedBuildName (account-name import)", function()
 	local c = class_of("ImportTab")
 	return type(c) == "table" and type(c.DownloadSiteCharacterList) == "function" and type(c.SetPredefinedBuildName) == "function"

@@ -2566,6 +2566,35 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		check("fetch_characters{site} is refused on PoE2's POB (no account-name import) and the child survives",
 		      !okFc && child.Alive(), fc.dump().substr(0, 200));
 
+		// PoE2's ImportTab runs the whole import itself, in a shape that has
+		// nothing in common with PoE1's: a raw JSON body, its own controls, its
+		// own status line. The bridge must report that it took that path, or it
+		// is back to driving PoE1's fields on a tab that does not have them --
+		// which is exactly how the character list stayed empty forever.
+		check("import_status reports PoE2's self-driving import shape",
+		      okIs && is.value("selfDriving", false) && is["site"].contains("mode"),
+		      okIs ? ("selfDriving=" + std::to_string(is.value("selfDriving", false)) +
+		              " mode=" + is["site"].value("mode", "?")) : "");
+		// Nothing was fetched, so there is no character to import: the refusal
+		// must name the fetch, not blow up on a nil list.
+		json impRes;
+		const bool okAcctImp = child.Call("import_account_character",
+		                              json{{"source", "oauth"}, {"realm", "PoE2"}, {"name", "Nobody"}, {"what", "tree"}},
+		                              impRes, 30000);
+		const std::string impMsg = okAcctImp ? "" : impRes.value("message", impRes.dump());
+		check("import_account_character on PoE2 refuses cleanly before any download",
+		      !okAcctImp && child.Alive() &&
+		          (impMsg.find("fetch the character list first") != std::string::npos ||
+		           impMsg.find("not in the fetched list") != std::string::npos),
+		      impMsg.substr(0, 160));
+		// pump is what lets a caller give POB's own frame loop time inside one
+		// call; every async import/trade test leans on it.
+		json pumped;
+		const bool okPump = child.Call("pump", json{{"seconds", 1}}, pumped, 30000);
+		check("pump runs POB's frame loop for the seconds asked",
+		      okPump && pumped.value("frames", 0) > 0 && pumped.value("seconds", 0) == 1,
+		      pumped.dump().substr(0, 120));
+
 		child.Stop(5000);
 
 		// --- the system-browser fallback (what Wine / CrossOver get) -------------
