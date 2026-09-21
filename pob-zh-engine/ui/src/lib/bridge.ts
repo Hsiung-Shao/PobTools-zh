@@ -1011,8 +1011,11 @@ export interface ItemEditState {
   /** PoE2: the item's rune and jewel socket counts. */
   runeSockets?: { count: number };
   jewelSockets?: { count: number };
+  /** PoE2: the rune / soul core in each augment socket (POB's "Rune #i" drop-downs). */
+  runeSlots?: { index: number; options: (DdOption & { name: string; nameZh?: string })[]; sel: number }[];
   ranges: { index: number; label: string; labelZh: string; range?: number; showSlider: boolean; mutable: boolean; mutated: boolean }[];
-  modLines: { index: number; text: string; textZh: string; disabled: boolean; kind?: "crafted" | "custom" | "crucible"; remove?: number }[];
+  /** every line POB draws, in its own order; `section` says which list it is in */
+  modLines: { index: number; section?: "buff" | "rune" | "enchant" | "scourge" | "implicit" | "explicit" | "crucible"; text: string; textZh: string; disabled: boolean; kind?: "crafted" | "custom" | "crucible"; remove?: number }[];
   cluster?: { options: DdOption[]; sel: number; nodeCount?: number; minNodes?: number; maxNodes?: number };
   actions: Record<"enchant" | "enchant2" | "anoint" | "anoint2" | "anoint3" | "anoint4" | "corrupt" | "addImplicit" | "custom" | "crucible", boolean>;
   popup?: string | null;
@@ -1060,6 +1063,7 @@ export type ItemEditSetParams =
   | { affixSort: number }
   | { runeSockets: number }
   | { jewelSockets: number }
+  | { rune: { index: number; sel: number } }
   | { raw: string };
 
 // --- skills ------------------------------------------------------------------

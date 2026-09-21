@@ -19,6 +19,14 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.1 (2026-09-21, early build)\n"
+	u8"Fixed\n"
+	u8"　·Editing an item in the new interface: implicit modifiers were missing from the modifier list, and a unique's value rows were blank and their sliders did nothing.\n"
+	u8"　·In the item text editor, enchant and rune lines came out garbled (numbers split in two, tags translated), which broke the modifier when saved back.\n"
+	u8"　·PoE2: pasting an item copied from the trade site added a fake modifier for its Dex/Str/Int requirement.\n"
+	u8"Added\n"
+	u8"　·Editing an item in the new interface: PoE2 items get a rune picker for each socket, and the modifier list shows what the runes add.\n"
+	u8"\n"
 	u8"v1.7.0 (2026-09-18, early build)\n"
 	u8"Added\n"
 	u8"　·New interface (Beta): one more button in the launcher opens a build in a new window. The sidebar, passive tree, items, skills, config, calcs, notes, party, compare and import/export are all there, POB keeps updating itself as usual, and the classic window is always one click away.\n"

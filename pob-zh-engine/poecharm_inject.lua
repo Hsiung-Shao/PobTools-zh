@@ -649,6 +649,47 @@ end
 --
 -- Double translation is not a concern: the fragments DrawString later sees are
 -- Chinese, and Chinese matches no English key.
+-- The attribute lines of a pasted "Requirements:" block. A trade-site copy is
+--
+--   Requirements:
+--   Level: 70
+--   Dex: 99
+--
+-- and PoE1's POB consumes all three (Item.lua: specName == "Dex" ... writes
+-- self.requirements). The PoE2 fork kept the "Requirements:" header and the
+-- Level line but never ported the attribute branch, so "Dex: 99" falls through
+-- to the mod parser and the item ends up wearing a modifier that reads
+-- "Dex: 99 (Not supported in PoB yet)" -- reported from a Chinese trade-site
+-- paste, but it happens with the English text just the same.
+--
+-- The requirement itself is not lost: POB computes it from the base item and
+-- the mods (the tooltip already said "Requires Level 70, 99 Dex"), so dropping
+-- the line is exactly what PoE1 ends up showing.
+local ATTR_REQ = { Str = true, Strength = true, Dex = true, Dexterity = true,
+                   Int = true, Intelligence = true }
+PATCHES["Item"] = function(class)
+	local orig = class.ParseRaw
+	if not orig then error("Item has no ParseRaw to wrap") end
+	class.ParseRaw = function(self, raw, ...)
+		if type(raw) == "string" and raw:find("Requirements:", 1, true) then
+			local out, seenBlock = {}, false
+			for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
+				local trimmed = line:match("^%s*(.-)%s*$")
+				if trimmed == "Requirements:" then
+					seenBlock = true
+					t_insert(out, line)
+				elseif seenBlock and ATTR_REQ[(trimmed:match("^(%a+):%s*%d+"))] then
+					-- dropped on purpose; see the note above
+				else
+					t_insert(out, line)
+				end
+			end
+			raw = table.concat(out, "\n")
+		end
+		return orig(self, raw, ...)
+	end
+end
+
 PATCHES["Tooltip"] = function(class)
 	local orig = class.AddLine
 	if not orig then error("Tooltip has no AddLine to wrap") end
@@ -753,6 +794,7 @@ local PATCH_SYMPTOM = {
 	SearchHost              = "天賦樹搜尋框打不進中文",
 	EditControl             = "輸入框貼上中文會變成問號",
 	Tooltip                 = "提示視窗的中文顯示",
+	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
 }
 
 local function applyPatch(name, class)

@@ -2349,6 +2349,41 @@ const char* translation_lookup(const char *english) {
         }
     }
 
+    /* 3.45 POB's raw item-text tags. A line in the "Edit item text" box (and
+     *      in the unique database) can carry one or more "{...}" prefixes:
+     *      "{enchant}{rune}36% increased Armour, Evasion and Energy Shield",
+     *      "{variant:2}...", "{range:0.5}...", "{crafted}...". None of them is
+     *      part of any dictionary key, so the exact match above misses and the
+     *      glossary below takes the line apart word by word. Field-reported as
+     *      "{附魔}{符紋}3增加 6% 護甲，閃避和能量護盾": the tag words
+     *      translated, and "6% increased Armour, Evasion and Energy Shield"
+     *      matched INSIDE "36% increased ...", leaving a stray "3".
+     *
+     *      Translate the body on its own and put the tags back verbatim. They
+     *      are POB syntax, not prose -- that box is editable and saved straight
+     *      back into the item, so a translated tag is a corrupted item, not
+     *      merely an ugly line. */
+    if (input.size() > 2 && input[0] == '{') {
+        size_t p = 0;
+        while (p < input.size() && input[p] == '{') {
+            const size_t close = input.find('}', p + 1);
+            if (close == std::string::npos) break;
+            p = close + 1;
+        }
+        /* the body cannot start with '{', so this branch cannot recurse */
+        if (p > 0 && p < input.size()) {
+            const std::string body = input.substr(p);
+            if (const char *body_zh = translation_lookup(body.c_str())) {
+                if (body != body_zh) {
+                    std::string combined = input.substr(0, p);
+                    combined += body_zh;
+                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
+                    return iter->second.c_str();
+                }
+            }
+        }
+    }
+
     /* 3.5 Trailing parenthetical note: POB appends notes such as
      *     " (Not Supported in PoB yet)" to otherwise-translatable lines,
      *     which defeats the exact and pattern matches above. Split the note

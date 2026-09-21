@@ -1412,6 +1412,47 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("item_edit_cancel drops the display item; the build's item is still what it was; no session afterwards",
 			      okCancel && raw2.value("raw", "") == raw0.value("raw", "x") && !okNone && child.Alive(), edNone.dump().substr(0, 120));
 
+			// Every mod line POB draws, not just the explicit ones. A unique with an
+			// implicit and rolled ranges is the case that caught this: the panel
+			// listed four of its five lines (the missing one being the implicit,
+			// the line the tooltip prints above the separator), and every range row
+			// came back blank because the drop-down's list is plain strings while
+			// the data lives on the item.
+			json edU;
+			const char* kUniqueRaw =
+			    "Rarity: UNIQUE\nGoldrim\nLeather Cap\nImplicits: 1\n{range:0.5}+(10-20) to Evasion Rating\n"
+			    "{range:0.5}+(30-40)% to all Elemental Resistances\n";
+			bool okU = child.Call("item_edit_begin", json{{"raw", kUniqueRaw}}, edU, 60000);
+			int implicitLines = 0, explicitLines = 0, labelledRanges = 0;
+			if (okU) {
+				for (auto& m : edU["modLines"]) {
+					const std::string sec = m.value("section", "");
+					if (sec == "implicit") implicitLines++;
+					else if (sec == "explicit") explicitLines++;
+				}
+				for (auto& r : edU["ranges"])
+					if (!r.value("label", "").empty() && r.contains("range") && !r["range"].is_null()) labelledRanges++;
+			}
+			check("item_edit_state lists the implicit lines too, tagged by section, and every range row carries its text and roll",
+			      okU && implicitLines >= 1 && explicitLines >= 1 && labelledRanges == (int)edU["ranges"].size() &&
+			          edU["ranges"].size() >= 2,
+			      okU ? "implicit=" + std::to_string(implicitLines) + " explicit=" + std::to_string(explicitLines) +
+			                " ranges=" + std::to_string(edU["ranges"].size()) + " labelled=" + std::to_string(labelledRanges)
+			          : edU.dump().substr(0, 300));
+			// the roll of the FIRST line (the implicit) has to move: with the index
+			// space still starting at the explicits, this wrote to the wrong line
+			json edU2;
+			const double roll0 = (okU && !edU["ranges"].empty()) ? edU["ranges"][0].value("range", -1.0) : -1.0;
+			bool okU2 = okU && child.Call("item_edit_set", json{{"range", json{{"index", 1}, {"value", 1.0}}}}, edU2, 60000);
+			const double roll1 = okU2 && !edU2["ranges"].empty() ? edU2["ranges"][0].value("range", -1.0) : -1.0;
+			check("item_edit_set{range} moves the line it names (the implicit is line 1, not the first explicit)",
+			      okU2 && roll0 >= 0.0 && roll1 > roll0,
+			      "roll " + std::to_string(roll0) + " -> " + std::to_string(roll1));
+			json edUc;
+			child.Call("item_edit_cancel", json::object(), edUc, 60000);
+
+
+
 			// commit on the same id = POB's "Save": the build's item changes, then put it back
 			json edS, edS2, cm, raw3, cmBack;
 			bool okSave = okRaw0 && child.Call("item_edit_begin", json{{"id", idRare}}, edS, 60000) && child.Call("item_edit_set", json{{"quality", q1}}, edS2, 60000) &&
@@ -1433,9 +1474,15 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCo ? "types=" + std::to_string(co["types"].size()) + " first=" + craftType + "/" + craftBase : co.dump().substr(0, 300));
 			bool okEdC = okCo && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", craftType}, {"base", craftBase}}}}, edC, 60000);
 			bool okEdA = okEdC && edC["affixes"].size() >= 1 && child.Call("item_edit_affix", json{{"index", 1}, {"sel", 2}}, edA, 60000);
+			// count the EXPLICIT lines: modLines carries every list POB draws, so a
+			// base with an implicit of its own would otherwise fail this
+			int craftExplicit = 0;
+			if (okEdA) for (auto& m : edA["modLines"]) if (m.value("section", "") == "explicit") craftExplicit++;
 			check("item_edit_begin{craft}: Create through the dialog gives a new crafted item with affix slots; item_edit_affix picks a prefix through the dropdown's selFunc",
-			      okEdA && edC.value("isNew", false) && edC.value("crafted", false) && edA["modLines"].size() == 1 && edA["affixes"][0].value("sel", 1) == 2,
-			      okEdC ? "affixSlots=" + std::to_string(edC["affixes"].size()) + " mods after=" + std::to_string(okEdA ? edA["modLines"].size() : 0) : edC.dump().substr(0, 300));
+			      okEdA && edC.value("isNew", false) && edC.value("crafted", false) && craftExplicit == 1 && edA["affixes"][0].value("sel", 1) == 2,
+			      okEdC ? "affixSlots=" + std::to_string(edC["affixes"].size()) + " explicit after=" + std::to_string(craftExplicit) +
+			                  " total=" + std::to_string(okEdA ? edA["modLines"].size() : 0)
+			            : edC.dump().substr(0, 300));
 			bool okCmC = okEdA && child.Call("item_edit_commit", json{{"equip", false}}, cmC, 60000) && child.Call("list_items", json::object(), liC, 60000) &&
 			             child.Call("get_stats", json::object(), stC, 30000);
 			long long craftedId = okCmC ? cmC.value("id", 0LL) : 0;
@@ -2549,13 +2596,75 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			json pt;
 			bool okPt = wand && child.Call("parse_item_text", json{{"raw", wand->text}}, pt, 60000);
 			int unsupported = 0;
-			if (okPt) for (auto& l : pt["lines"]) if (l.value("unsupported", false)) unsupported++;
+			std::string unsupportedText;
+			// Only lines the paste actually carries count. The wand names no rune, so
+			// POB infers one from the "(rune)" line (Hedgewitch Assandra's Rune of
+			// Wisdom) and adds that rune's Bonded line itself -- a stat POB has no
+			// parser for. That line is POB's own guess, not text we translated.
+			const std::string pastedText = okPt ? pt.value("text", "") : "";
+			if (okPt) for (auto& l : pt["lines"]) if (l.value("unsupported", false) && pastedText.find(l.value("line", "")) != std::string::npos) { unsupported++; unsupportedText += " [" + l.dump().substr(0, 160) + "]"; }
 			check("parse_item_text: a zh-TW PoE2 wand comes back in English, POB reads its base and every line",
 			      okPt && pt.value("reversed", false) && pt.value("parsed", false) && pt["untranslated"].empty() &&
 			          pt["lines"].size() >= 7 && unsupported == 0,
 			      okPt ? "base=" + pt.value("baseName", "") + " lines=" + std::to_string(pt["lines"].size()) +
-			                 " untranslated=" + pt["untranslated"].dump().substr(0, 200) + " unsupported=" + std::to_string(unsupported)
+			                 " untranslated=" + pt["untranslated"].dump().substr(0, 200) + " unsupported=" + std::to_string(unsupported) + unsupportedText
 			           : pt.dump().substr(0, 200));
+		}
+
+		// --- a trade-site paste: the "Requirements:" block ------------------------
+		// PoE1's POB consumes "Dex: 99" into the item's requirements; the PoE2
+		// fork kept the header and the Level line but never ported the attribute
+		// branch, so the line fell through to the mod parser and the item wore a
+		// modifier reading "Dex: 99 (Not supported in PoB yet)". Dropped in
+		// poecharm_inject.lua -- POB works the requirement out from the base and
+		// the mods anyway, which is what PoE1 ends up showing.
+		{
+			const char* kTradePaste =
+			    "Rarity: Rare\nPandemonium Star\nDesert Cap\n--------\nHelmet\n"
+			    "Quality: +20% (augmented)\nEvasion Rating: 806 (augmented)\n--------\n"
+			    "Requirements:\nLevel: 70\nDex: 99\n--------\nSockets: S \n--------\n"
+			    "Item Level: 80\n--------\n+183 to Evasion Rating\n+65 to maximum Mana\n"
+			    "+30% to Cold Resistance\n+32% to Lightning Resistance\n"
+			    "Gain Deflection Rating equal to 21% of Evasion Rating\n"
+			    "36% increased Evasion Rating\n+39 to maximum Life\n--------\nNote: ~b/o 2 chaos\n";
+			json tp, tpCancel;
+			bool okTp = child.Call("item_edit_begin", json{{"raw", kTradePaste}}, tp, 60000);
+			int mods = 0;
+			bool sawAttrLine = false;
+			if (okTp) {
+				for (auto& m : tp["modLines"]) {
+					mods++;
+					if (m.value("text", "").find("Dex:") != std::string::npos) sawAttrLine = true;
+				}
+			}
+			check("a trade-site paste's \"Requirements:\" block does not turn Dex/Str/Int into a modifier",
+			      okTp && mods == 7 && !sawAttrLine && tp["summary"].value("baseName", "") == "Desert Cap",
+			      okTp ? "mods=" + std::to_string(mods) + " attrLine=" + std::to_string(sawAttrLine) +
+			                 " base=" + tp["summary"].value("baseName", "")
+			           : tp.dump().substr(0, 300));
+			// The helmet has one augment socket: the panel must offer POB's "Rune #1"
+			// drop-down (field-reported missing from the new UI), and picking a rune
+			// must put its line into the item under the "rune" section.
+			if (okTp) {
+				int slots = tp.contains("runeSlots") ? (int)tp["runeSlots"].size() : 0;
+				int pick = 0;
+				if (slots == 1)
+					for (size_t k = 0; k < tp["runeSlots"][0]["options"].size(); k++)
+						if (tp["runeSlots"][0]["options"][k].value("name", "") == "Greater Glacial Rune") pick = (int)k + 1;
+				json rs;
+				bool okRs = pick > 0 && child.Call("item_edit_set", json{{"rune", {{"index", 1}, {"sel", pick}}}}, rs, 60000);
+				int runeLines = 0;
+				std::string runeText;
+				if (okRs)
+					for (auto& m : rs["modLines"])
+						if (m.value("section", "") == "rune") { runeLines++; runeText = m.value("text", ""); }
+				check("PoE2 augment sockets: the Rune #1 drop-down is offered and picking a rune adds its line",
+				      okRs && rs["runeSlots"][0].value("sel", 0) == pick && runeLines >= 1 &&
+				          runeText.find("Cold Resistance") != std::string::npos,
+				      "slots=" + std::to_string(slots) + " pick=" + std::to_string(pick) +
+				          " runeLines=" + std::to_string(runeLines) + " text=" + runeText);
+			}
+			child.Call("item_edit_cancel", json::object(), tpCancel, 60000);
 		}
 
 		// --- config, calcs, notes --------------------------------------------------

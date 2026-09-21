@@ -4976,6 +4976,38 @@ local function close_edit_popup()
 	end
 end
 
+-- Every mod line of the item, in the order ItemsTab draws them (its own list
+-- at Classes/ItemsTab.lua: buff, enchant, scourge, implicit, explicit,
+-- crucible). Reporting only the explicit ones -- which is what this did until
+-- 2026-09-19 -- loses the implicit entirely: the panel showed four lines for an
+-- item that has five, and the one missing was the one the tooltip prints above
+-- the separator. The state and item_edit_set share this function so an index
+-- means the same thing on both sides.
+local function edit_mod_lines(it)
+	local out = {}
+	-- A unique's list holds one line per variant; only the chosen one is part of
+	-- the item (POB's own CheckModLineVariant, used by the tooltip). Listing the
+	-- others would show two of the same modifier with different numbers.
+	local function shown(ml)
+		if not ml.variantList then return true end
+		if type(it.CheckModLineVariant) == "function" then return it:CheckModLineVariant(ml) and true or false end
+		return ml.variantList[it.variant] and true or false
+	end
+	local function take(section, list)
+		for _, ml in ipairs(list or {}) do
+			if shown(ml) then out[#out + 1] = { section = section, ml = ml } end
+		end
+	end
+	take("buff", it.buffModLines)
+	take("rune", it.runeModLines)
+	take("enchant", it.enchantModLines)
+	take("scourge", it.scourgeModLines)
+	take("implicit", it.implicitModLines)
+	take("explicit", it.explicitModLines)
+	take("crucible", it.crucibleModLines)
+	return out
+end
+
 local function mod_line_text(modLine)
 	local ok, s = pcall(itemLib.formatModLine, modLine)
 	if ok and type(s) == "string" then return s end
@@ -5057,28 +5089,27 @@ local function edit_state(p)
 		end
 	end
 
-	-- range lines (uniques/rares with rolled values, foulborn mutations)
+	-- Range lines (uniques/rares with rolled values, foulborn mutations).
+	-- ⚠ Read from the ITEM, not from displayItemRangeLine.list: that control's
+	-- list is plain strings (UpdateDisplayItemRangeLines inserts modLine.line),
+	-- so `e.label` and `e.modLine` were both nil and every row came out blank.
 	local ranges = {}
-	if c.displayItemRangeLine then
-		for i, e in ipairs(c.displayItemRangeLine.list or {}) do
-			local ml = e.modLine
-			ranges[i] = {
-				index = i, label = e.label, labelZh = tr(e.label),
-				range = ml and ml.range or nil, showSlider = ml and ml.showSlider and true or false,
-				mutable = ml and ml.modId and ml.newModId and true or false, mutated = ml and ml.mutated and true or false,
-			}
-		end
+	for i, ml in ipairs(it.rangeLineList or {}) do
+		local label = tostring(ml.line or "")
+		ranges[i] = {
+			index = i, label = label, labelZh = tr(label),
+			range = ml.range, showSlider = true,
+			mutable = (ml.modId and ml.newModId) and true or false, mutated = ml.mutated and true or false,
+		}
 	end
 
-	-- explicit + crucible lines with their Remove buttons (UpdateCustomControls numbers them)
+	-- every mod line with its Remove button (UpdateCustomControls numbers them)
 	local modLines = {}
 	local removeIndex = 0
 	local removable = it.rareLikeUnique or it.rarity == "MAGIC" or it.rarity == "RARE" or (it.crucibleModLines and #it.crucibleModLines > 0)
-	local all = {}
-	for _, ml in ipairs(it.explicitModLines or {}) do all[#all + 1] = ml end
-	for _, ml in ipairs(it.crucibleModLines or {}) do all[#all + 1] = ml end
-	for i, ml in ipairs(all) do
-		local entry = { index = i, text = mod_line_text(ml), disabled = ml.disabled and true or false,
+	for i, e in ipairs(edit_mod_lines(it)) do
+		local ml = e.ml
+		local entry = { index = i, section = e.section, text = mod_line_text(ml), disabled = ml.disabled and true or false,
 			kind = ml.crafted and "crafted" or ml.custom and "custom" or ml.crucible and "crucible" or nil }
 		entry.textZh = tr(entry.text)
 		local okF, formatted = pcall(itemLib.formatModLine, ml)
@@ -5087,6 +5118,23 @@ local function edit_state(p)
 			entry.remove = removeIndex
 		end
 		modLines[i] = entry
+	end
+
+	-- PoE2: which rune / soul core sits in each augment socket (POB's
+	-- "Rune #i" drop-downs; one per socket, list = GetValidRunesForItem)
+	local runes
+	for i = 1, 6 do
+		local drop = c["displayItemRune" .. i]
+		if drop and ctl_shown(drop) then
+			runes = runes or {}
+			local opts = {}
+			for k, e in ipairs(drop.list or {}) do
+				local l = dd_label(e)
+				local name = type(e) == "table" and tostring(e.name or "") or l
+				opts[k] = { label = l, labelZh = tr(l), name = name, nameZh = tr(name) }
+			end
+			runes[#runes + 1] = { index = i, options = opts, sel = drop.selIndex or 1 }
+		end
 	end
 
 	local cluster
@@ -5116,6 +5164,7 @@ local function edit_state(p)
 		affixSort = ctl_shown(c.craftingSorting) and { options = dd_options(c.craftingSorting), sel = c.craftingSorting.selIndex or 1 } or nil,
 		runeSockets = ctl_shown(c.displayItemSocketRuneEdit) and { count = it.itemSocketCount or 0 } or nil,
 		jewelSockets = ctl_shown(c.displayItemSocketJewelEdit) and { count = it.jewelSocketCount or 0 } or nil,
+		runeSlots = runes,
 		ranges = ranges,
 		modLines = modLines,
 		cluster = cluster,
@@ -5248,6 +5297,14 @@ function M.item_edit_set(p)
 	elseif p.runeSockets ~= nil then
 		if not c.displayItemSocketRuneEdit then error("this POB has no rune sockets", 0) end
 		c.displayItemSocketRuneEdit:SetText(tostring(math.min(6, math.max(0, math.floor(tonumber(p.runeSockets) or 0)))), true)
+	elseif p.rune then
+		local i = tonumber(p.rune.index)
+		local drop = i and c["displayItemRune" .. i]
+		if not (drop and ctl_shown(drop)) then error("no rune socket " .. tostring(p.rune.index), 0) end
+		local k = tonumber(p.rune.sel) or 1
+		if not drop.list[k] then error("no rune option " .. tostring(p.rune.sel), 0) end
+		drop.selIndex = k
+		drop.selFunc(k, drop.list[k])
 	elseif p.jewelSockets ~= nil then
 		if not c.displayItemSocketJewelEdit then error("this POB has no jewel sockets on items", 0) end
 		c.displayItemSocketJewelEdit:SetText(tostring(math.min(6, math.max(0, math.floor(tonumber(p.jewelSockets) or 0)))), true)
@@ -5268,19 +5325,26 @@ function M.item_edit_set(p)
 		c.displayItemAddSocket.onClick()
 	elseif p.range then
 		local i = tonumber(p.range.index)
-		if not c.displayItemRangeLine.list[i] then error("no range line " .. tostring(i), 0) end
+		if not (i and it.rangeLineList and it.rangeLineList[i]) then error("no range line " .. tostring(i), 0) end
 		c.displayItemRangeLine.selIndex = i
 		if p.range.mutate ~= nil then
 			c.displayItemMutatedCheckbox.changeFunc(p.range.mutate and true or false)
 		else
 			local v = math.max(0, math.min(1, tonumber(p.range.value) or 0))
-			c.displayItemRangeSlider.val = v
-			c.displayItemRangeSlider.changeFunc(v)
+			-- ⚠ Two different sliders draw this, and only one of them works at a
+			-- time: with "show all affixes" on, a unique gets one stacked slider
+			-- per line and displayItemRangeSlider's own callback bails out (it
+			-- looks the line up through the drop-down, which is hidden then), so
+			-- driving that one silently did nothing.
+			local stacked = c["displayItemStackedRangeSlider" .. i]
+			local ctl = (stacked and ctl_shown(stacked)) and stacked or c.displayItemRangeSlider
+			ctl.val = v
+			ctl.changeFunc(v)
 		end
 	elseif p.modLine then
 		local i = tonumber(p.modLine.index)
-		local n = #(it.explicitModLines or {})
-		local ml = i <= n and it.explicitModLines[i] or it.crucibleModLines and it.crucibleModLines[i - n]
+		local e = i and edit_mod_lines(it)[i]
+		local ml = e and e.ml
 		if not ml then error("no mod line " .. tostring(i), 0) end
 		if p.modLine.enabled ~= nil and (not ml.disabled) ~= (p.modLine.enabled and true or false) then
 			if not tab.ToggleDisplayItemModLine then error("this Path of Building cannot switch mod lines off", 0) end

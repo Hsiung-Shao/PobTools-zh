@@ -651,6 +651,35 @@ int RunEditorSelftest(const std::string& games)
 		RemoveDirectoryW(extRoot.c_str());
 	}
 
+	// T39-T41: POB's raw item-text tags. A line in the "Edit item text" box
+	// carries "{enchant}{rune}", "{variant:N}", "{range:N}" prefixes that no
+	// dictionary key has. Without the tag-aware step the whole-line match misses
+	// and the glossary takes the line apart word by word -- field-reported as
+	// "{附魔}{符紋}3增加 6% 護甲，閃避和能量護盾": the TAGS translated, and
+	// "6% increased ..." matched inside "36% increased ...", leaving a stray "3".
+	// That box is editable and saved straight back into the item, so a translated
+	// tag is a corrupted item, not merely an ugly line.
+	printf("\n=== raw item-text tags (poe2) ===\n");
+	SetEnvironmentVariableW(L"POB_GAME", L"poe2");
+	SetEnvironmentVariableW(L"POB_LOCALE", L"zh-rTW");
+	translation_reload();
+	{
+		const std::string plain = engine_says("36% increased Armour, Evasion and Energy Shield");
+		const std::string tagged = engine_says("{enchant}{rune}36% increased Armour, Evasion and Energy Shield");
+		check(!plain.empty() && tagged == "{enchant}{rune}" + plain,
+		      "T39 {enchant}{rune} stays verbatim and the body translates as if it stood alone");
+		const std::string bondedPlain = engine_says("Bonded: +40 to maximum Life");
+		const std::string bonded = engine_says("{enchant}{rune}Bonded: +40 to maximum Life");
+		check(!bondedPlain.empty() && bonded == "{enchant}{rune}" + bondedPlain,
+		      "T40 ...the same for a line the tags used to hide from the dictionary entirely");
+		const std::string body = engine_says("+(5-10)% to Critical Damage Bonus");
+		const std::string variant = engine_says("{variant:2}{range:0.5}+(5-10)% to Critical Damage Bonus");
+		check(!body.empty() && variant == "{variant:2}{range:0.5}" + body,
+		      "T41 the unique database's own tags ({variant}/{range}) are left alone too");
+	}
+	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+	translation_reload();
+
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);
 	if (g_fail == 0) {
 		printf("結論：透過編輯器的修正確實會生效；但同一個英文鍵存在多個檔案時，\n"

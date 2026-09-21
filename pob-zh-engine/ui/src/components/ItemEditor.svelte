@@ -235,6 +235,16 @@
           {/if}
         </div>
       {/if}
+      {#if item.runeSlots}
+        {#each item.runeSlots as r (r.index)}
+          <div class="frow">
+            <span class="k">{t("edit.rune", { n: r.index })}</span>
+            <select class="select sm grow" value={r.sel} onchange={(e) => set({ rune: { index: r.index, sel: Number(e.currentTarget.value) } })}>
+              {#each r.options as o, i}<option value={i + 1}>{i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）`}</option>{/each}
+            </select>
+          </div>
+        {/each}
+      {/if}
       {#if item.affixSort}
         <div class="frow">
           <span class="k">{t("edit.affixSort")}</span>
@@ -349,6 +359,7 @@
               {#if app.has("itemModLineToggle")}
                 <input type="checkbox" checked={!m.disabled} title={t("edit.on")} onchange={(e) => set({ modLine: { index: m.index, enabled: e.currentTarget.checked } })} />
               {/if}
+              {#if m.section && m.section !== "explicit"}<span class="tag">{t(`edit.section.${m.section}`)}</span>{/if}
               <span class="mt"><PobText text={m.textZh || m.text} /></span>
               {#if m.kind}<span class="dim small">{t(`edit.kind.${m.kind}`)}</span>{/if}
               {#if m.remove}<button class="btn ghost sm" onclick={() => set({ removeModLine: m.remove! })}>{t("edit.remove")}</button>{/if}
@@ -508,6 +519,14 @@
     color: var(--ink-2);
   }
   .arow,
+  .tag {
+    flex: 0 0 auto;
+    padding: 0 5px;
+    font-size: var(--fs-2xs);
+    color: var(--ink-1);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s, 4px);
+  }
   .mrow {
     display: flex;
     align-items: center;
