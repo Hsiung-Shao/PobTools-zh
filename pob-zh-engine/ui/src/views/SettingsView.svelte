@@ -7,7 +7,17 @@
   let aboutOpen = $state(false);
   import { api, type PobOption, type PobOptions } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS } from "$lib/prefs.svelte";
+  import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS, THEMES, ACCENTS, type Theme } from "$lib/prefs.svelte";
+
+  // Each theme button is a small picture of that theme: page, panel, text, accent.
+  const SWATCH: Record<Theme, [string, string, string, string]> = {
+    slate: ["#0e1116", "#192029", "#ece6d8", "#d8aa4b"],
+    light: ["#f4f1ea", "#e4dfd4", "#1c1e23", "#946510"],
+    contrast: ["#000000", "#1b1b1b", "#ffffff", "#ffc83d"],
+    parchment: ["#1a140e", "#2a2117", "#efe2c4", "#e0a94a"],
+  };
+  const fontName = (f: string) => f.replace(/\.ttf$/i, "");
+  const lookIsDefault = $derived(prefs.theme === DEFAULTS.theme && prefs.accent === DEFAULTS.accent && prefs.font === DEFAULTS.font);
   import { app } from "$lib/state.svelte";
 
   // POB's Options dialog: read from its controls, edited as a draft, saved
@@ -116,7 +126,53 @@
     </div>
     <div class="foot">
       <span class="dim hint">{t("prefs.hint")}</span>
-      <button class="btn ghost sm" disabled={prefs.zoom === DEFAULTS.zoom && prefs.fontSize === DEFAULTS.fontSize} onclick={() => prefs.reset()}>{t("prefs.reset")}</button>
+      <button class="btn ghost sm" disabled={prefs.zoom === DEFAULTS.zoom && prefs.fontSize === DEFAULTS.fontSize} onclick={() => prefs.set({ zoom: DEFAULTS.zoom, fontSize: DEFAULTS.fontSize })}>{t("prefs.reset")}</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>{t("look.title")}</h2>
+    <div class="lrow">
+      <span class="k">{t("look.theme")}</span>
+      <div class="themes" role="radiogroup" aria-label={t("look.theme")}>
+        {#each THEMES as th (th)}
+          <button class="theme" class:on={prefs.theme === th} role="radio" aria-checked={prefs.theme === th} aria-label={t(`look.theme.${th}`)} onclick={() => prefs.set({ theme: th })}>
+            <span class="sw" style:background={SWATCH[th][0]}>
+              <span class="sw-panel" style:background={SWATCH[th][1]}>
+                <span class="sw-line" style:background={SWATCH[th][2]}></span>
+                <span class="sw-line short" style:background={SWATCH[th][3]}></span>
+              </span>
+            </span>
+            <span class="tname">{t(`look.theme.${th}`)}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+    <div class="lrow">
+      <span class="k">{t("look.accent")}</span>
+      <div class="accents">
+        <button class="dot auto" class:on={!prefs.accent} title={t("look.accentTheme")} aria-label={t("look.accentTheme")} onclick={() => prefs.set({ accent: "" })}>{t("look.accentAuto")}</button>
+        {#each ACCENTS as c (c)}
+          <button class="dot" class:on={prefs.accent === c} style:background={c} title={c} aria-label={c} onclick={() => prefs.set({ accent: c })}></button>
+        {/each}
+        <label class="dot custom" class:on={!!prefs.accent && !(ACCENTS as readonly string[]).includes(prefs.accent)} title={t("look.accentCustom")}>
+          <input type="color" value={prefs.accent || "#d8aa4b"} onchange={(e) => prefs.set({ accent: e.currentTarget.value })} aria-label={t("look.accentCustom")} />
+        </label>
+      </div>
+    </div>
+    <div class="lrow">
+      <span class="k">{t("look.font")}</span>
+      <div class="fontctl">
+        <select class="select sm" value={prefs.font} onchange={(e) => prefs.set({ font: e.currentTarget.value })}>
+          <option value="">{t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" })}</option>
+          {#each prefs.fonts as f (f)}<option value={f}>{fontName(f)}</option>{/each}
+        </select>
+        <span class="sample">天賦樹 詞綴 Passive Tree 패시브 트리 1,234.5%</span>
+      </div>
+    </div>
+    <div class="foot">
+      <span class="dim hint">{t("look.hint")}</span>
+      <button class="btn ghost sm" disabled={lookIsDefault} onclick={() => prefs.set({ theme: DEFAULTS.theme, accent: DEFAULTS.accent, font: DEFAULTS.font })}>{t("prefs.reset")}</button>
     </div>
   </section>
 
@@ -276,6 +332,116 @@
   }
   .hint {
     font-size: var(--fs-2xs);
+  }
+  .lrow {
+    display: grid;
+    grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    padding: 5px 0;
+  }
+  .themes,
+  .accents,
+  .fontctl {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .theme {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 5px;
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-m);
+    background: var(--surface-2);
+    color: var(--ink-1);
+    cursor: pointer;
+  }
+  .theme:hover {
+    background: var(--surface-hover);
+  }
+  .theme.on {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold);
+    color: var(--ink-0);
+  }
+  .sw {
+    display: flex;
+    align-items: flex-end;
+    width: 64px;
+    height: 40px;
+    padding: 6px 0 0 8px;
+    border-radius: var(--radius-s);
+    box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.35);
+  }
+  .sw-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    padding: 6px;
+    border-radius: 3px 0 0 0;
+  }
+  .sw-line {
+    display: block;
+    height: 3px;
+    width: 80%;
+    border-radius: 2px;
+  }
+  .sw-line.short {
+    width: 45%;
+  }
+  .tname {
+    font-size: var(--fs-2xs);
+    white-space: nowrap;
+  }
+  .dot {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--surface-1);
+    box-shadow: 0 0 0 1px var(--edge-2);
+    cursor: pointer;
+  }
+  .dot.on {
+    box-shadow: 0 0 0 2px var(--ink-0);
+  }
+  .dot.auto {
+    width: auto;
+    min-width: 24px;
+    padding: 0 9px;
+    border-radius: 12px;
+    background: var(--surface-2);
+    color: var(--ink-1);
+    font-size: var(--fs-2xs);
+    white-space: nowrap;
+  }
+  .dot.custom {
+    position: relative;
+    overflow: hidden;
+    background: conic-gradient(#e0645a, #d8aa4b, #4fbf7a, #3fc1c9, #5b9dff, #a77bff, #e0645a);
+  }
+  .dot.custom input {
+    position: absolute;
+    inset: -8px;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .fontctl .select.sm {
+    max-width: 280px;
+  }
+  .sample {
+    color: var(--ink-1);
+    font-size: var(--fs-md);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .keys {
     display: grid;

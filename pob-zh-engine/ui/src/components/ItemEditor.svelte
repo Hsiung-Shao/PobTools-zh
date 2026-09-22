@@ -145,7 +145,7 @@
 
   <div class="ebody">
     <!-- 即時 tooltip -->
-    <div class="tip" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
+    <div class="tip pob-dark" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
       {@render tipBody(item.tooltip.lines)}
     </div>
 

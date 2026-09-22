@@ -15,7 +15,10 @@
   font-display: swap;
 }
 
-:root {
+/* 色票。預設主題(slate)。同一組值也給淺色主題裡的「深色島」(.pob-dark:
+   物品/技能 tooltip、天賦樹)——那些是遊戲自己的配色與美術,放在淺底上會讀不清。 */
+:root,
+:root[data-theme="light"] .pob-dark {
   color-scheme: dark;
 
   /* 面 */
@@ -38,10 +41,11 @@
   --ink-3: #6d6c66;
   --ink-4: #45464a;
 
-  /* 強調 */
-  --gold: #d8aa4b;
-  --gold-soft: rgba(216, 170, 75, 0.16);
-  --gold-dim: #7c6230;
+  /* 強調:--accent-user 是設定頁選的強調色(lib/prefs 寫在 :root),沒選就用主題自己的 */
+  --gold: var(--accent-user, #d8aa4b);
+  --gold-soft: color-mix(in srgb, var(--gold) 16%, transparent);
+  --gold-dim: color-mix(in srgb, var(--gold) 55%, black);
+  --on-gold: var(--on-accent-user, #17120a);
   --accent: #5b9dff;
   --accent-soft: rgba(91, 157, 255, 0.18);
   --focus: var(--accent);
@@ -75,8 +79,11 @@
   --tree-bg: #0b0e13;
   --tree-line: #262e3a;
   --tree-line-lit: #4a5566;
+}
 
-  --font-ui: "Noto Sans TC", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+:root {
+  /* "PobTools UI" = 設定頁選的字型(lib/prefs 注入 @font-face);韓文永遠有 Noto Sans KR 補 */
+  --font-ui: "PobTools UI", "Noto Sans TC", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, ui-monospace, "Noto Sans TC", monospace;
 
   /* every size hangs off the base the settings page sets (lib/prefs) */
@@ -94,6 +101,121 @@
   --titlebar-h: 40px;
   --statusbar-h: 24px;
   --sidebar-w: 304px;
+}
+
+/* 淺色:淺底深字。稀有度/元素色換成在淺底上讀得清的深一階。 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --surface-0: #f4f1ea;
+  --surface-1: #ece8df;
+  --surface-2: #e4dfd4;
+  --surface-3: #d9d3c6;
+  --surface-hover: #d1cabb;
+  --surface-active: #c7bfae;
+  --edge-0: #d8d1c3;
+  --edge-1: #c3bbab;
+  --edge-2: #a39a88;
+  --ink-0: #1c1e23;
+  --ink-1: #373a41;
+  --ink-2: #5a5c64;
+  --ink-3: #777981;
+  --ink-4: #a2a3a7;
+  --gold: var(--accent-user, #946510);
+  --gold-dim: color-mix(in srgb, var(--gold) 45%, white);
+  --on-gold: var(--on-accent-user, #ffffff);
+  --accent: #2f6fd6;
+  --accent-soft: rgba(47, 111, 214, 0.14);
+  --ok: #23784a;
+  --warn: #946400;
+  --bad: #c03434;
+  --c-life: #c23434;
+  --c-mana: #3355c6;
+  --c-es: #0d7c92;
+  --c-fire: #c0501a;
+  --c-cold: #1d77c0;
+  --c-lightning: #856900;
+  --c-chaos: #8a3cc2;
+  --c-physical: #75653f;
+  --c-unique: #a05f0e;
+  --c-relic: #2c862c;
+  --c-rare: #7f6d00;
+  --c-magic: #4652c8;
+  --c-normal: #4a4b52;
+  --c-gem: #0c8568;
+  --c-spirit: #8a6f14;
+  --c-currency: #7a6022;
+  --dim-opacity: 0.5;
+  --backdrop: rgba(40, 34, 24, 0.35);
+  --shadow-float: 0 10px 32px rgba(40, 30, 10, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+:root[data-theme="light"] .pob-dark {
+  color: var(--ink-0);
+}
+
+/* 高對比:純黑底、純白字、邊框加亮。 */
+:root[data-theme="contrast"] {
+  --surface-0: #000000;
+  --surface-1: #0a0a0a;
+  --surface-2: #121212;
+  --surface-3: #1b1b1b;
+  --surface-hover: #292929;
+  --surface-active: #363636;
+  --edge-0: #5c5c5c;
+  --edge-1: #8c8c8c;
+  --edge-2: #b8b8b8;
+  --ink-0: #ffffff;
+  --ink-1: #f2f2f2;
+  --ink-2: #d4d4d4;
+  --ink-3: #b4b4b4;
+  --ink-4: #858585;
+  --gold: var(--accent-user, #ffc83d);
+  --accent: #74b4ff;
+  --accent-soft: rgba(116, 180, 255, 0.22);
+  --ok: #5dff9a;
+  --warn: #ffd24a;
+  --bad: #ff6b6b;
+  --dim-opacity: 0.62;
+  --backdrop: rgba(0, 0, 0, 0.75);
+  --tree-bg: #000000;
+  --tree-line: #3d3d3d;
+  --tree-line-lit: #8c8c8c;
+}
+
+/* 羊皮紙:暖棕底、羊皮紙墨色,接近遊戲本身的色調。 */
+:root[data-theme="parchment"] {
+  --surface-0: #1a140e;
+  --surface-1: #211a12;
+  --surface-2: #2a2117;
+  --surface-3: #33291d;
+  --surface-hover: #3d3123;
+  --surface-active: #47392a;
+  --edge-0: #2e2418;
+  --edge-1: #3f3222;
+  --edge-2: #59472f;
+  --ink-0: #efe2c4;
+  --ink-1: #d3c4a2;
+  --ink-2: #a49579;
+  --ink-3: #817359;
+  --ink-4: #584e3b;
+  --gold: var(--accent-user, #e0a94a);
+  --accent: #7fb3d6;
+  --accent-soft: rgba(127, 179, 214, 0.18);
+  --backdrop: rgba(12, 8, 4, 0.62);
+  --tree-bg: #130e09;
+  --tree-line: #33291d;
+  --tree-line-lit: #5d4b33;
+}
+
+/* POB 字串裡的字面色碼(^xRRGGBB,不在 pobtext 的對照表裡)是為深底挑的,
+   淺色主題下把過亮的壓暗;深色島裡照原樣。 */
+.pob-lit {
+  color: var(--pc);
+}
+:root[data-theme="light"] .pob-lit {
+  color: oklch(from var(--pc) min(l, 0.5) c h);
+}
+:root[data-theme="light"] .pob-dark .pob-lit {
+  color: var(--pc);
 }
 
 *,
@@ -199,13 +321,13 @@ input:disabled {
 .btn.primary {
   background: var(--gold);
   border-color: var(--gold);
-  color: #17120a;
+  color: var(--on-gold);
   font-weight: 600;
 }
 .btn.primary:hover:not(:disabled) {
   background: #e6bb5f;
   border-color: #e6bb5f;
-  color: #17120a;
+  color: var(--on-gold);
 }
 .btn.ghost {
   background: transparent;

@@ -217,6 +217,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		readPair(L"ModernWindowW", L"ModernWindowH", c.modernWinW, c.modernWinH);
 		c.modernZoom = ClampModernZoom(read_ini_int(iniPath, L"ModernZoom", kModernZoomDefault));
 		c.modernFontSize = ClampModernFontSize(read_ini_int(iniPath, L"ModernFontSize", kModernFontSizeDefault));
+		c.modernTheme = NormalizeModernTheme(read_ini_path(iniPath, L"ModernTheme"));
+		c.modernAccent = NormalizeModernAccent(read_ini_path(iniPath, L"ModernAccent"));
+		c.modernFont = NormalizeModernFont(read_ini_path(iniPath, L"ModernFont"));
 		// Same rule as WindowMode: anything but the one known value is the default.
 		c.uiMode = (read_ini_int(iniPath, L"UiMode", 0) == 1) ? 1 : 0;
 	}
@@ -327,6 +330,9 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		std::to_wstring(ClampModernZoom(cfg.modernZoom)).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"ModernFontSize",
 		std::to_wstring(ClampModernFontSize(cfg.modernFontSize)).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernTheme", NormalizeModernTheme(cfg.modernTheme).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernAccent", NormalizeModernAccent(cfg.modernAccent).c_str(), iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"ModernFont", NormalizeModernFont(cfg.modernFont).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"UiMode",
 		std::to_wstring(cfg.uiMode).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
@@ -684,6 +690,34 @@ int CopyBuiltinDictionary(const std::wstring& exeDir, DictSlot slot,
 	int n = copy_tree(src, dst, err);
 	if (n == 0 && err) *err = u8"內建資料夾裡沒有可複製的字典";
 	return n <= 0 ? -1 : n;
+}
+
+std::wstring NormalizeModernTheme(const std::wstring& v)
+{
+	for (const wchar_t* t : { L"slate", L"light", L"contrast", L"parchment" })
+		if (v == t) return v;
+	return L"slate";
+}
+
+std::wstring NormalizeModernAccent(const std::wstring& v)
+{
+	if (v.size() != 7 || v[0] != L'#') return L"";
+	std::wstring out = L"#";
+	for (size_t i = 1; i < 7; i++) {
+		wchar_t ch = v[i];
+		if (ch >= L'A' && ch <= L'F') ch = (wchar_t)(ch - L'A' + L'a');
+		if (!((ch >= L'0' && ch <= L'9') || (ch >= L'a' && ch <= L'f'))) return L"";
+		out += ch;
+	}
+	return out;
+}
+
+std::wstring NormalizeModernFont(const std::wstring& v)
+{
+	if (v.empty() || v.size() > 120) return L"";
+	if (v.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos || v[0] == L'.') return L"";
+	if (v.size() < 5 || _wcsicmp(v.c_str() + v.size() - 4, L".ttf") != 0) return L"";
+	return v;
 }
 
 std::vector<std::wstring> ListAvailableFonts(const std::wstring& exeDir)
@@ -1277,6 +1311,39 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	write(L"PobTools", { { L"Game", L"poe1" }, { L"PobFpsForeground", L"-7" }, { L"PobFpsBackground", L"99999" } });
 	check("T17r out-of-range caps read as no cap", LoadLauncherConfig(ini).pobFpsForeground == 0 &&
 	      LoadLauncherConfig(ini).pobFpsBackground == 0);
+
+	// T17s-u -- the new interface's look. Defaults: the slate theme, the theme's
+	// own accent, the launcher's font. A value this build does not know (an old
+	// theme name, a colour typed by hand, a path smuggled into the font) must
+	// read back as that default, never be passed on to the page.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	{
+		LauncherConfig d = LoadLauncherConfig(ini);
+		check("T17s new-interface look defaults to slate / theme accent / launcher font",
+		      d.modernTheme == L"slate" && d.modernAccent.empty() && d.modernFont.empty());
+	}
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.modernTheme = L"parchment";
+		c.modernAccent = L"#5B9DFF";
+		c.modernFont = L"FZ_ZY.ttf";
+		SaveLauncherConfig(ini, c);
+		LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17t new-interface look round-trips (accent lower-cased)",
+		      r.modernTheme == L"parchment" && r.modernAccent == L"#5b9dff" && r.modernFont == L"FZ_ZY.ttf");
+	}
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" }, { L"ModernTheme", L"neon" }, { L"ModernAccent", L"red" },
+	                       { L"ModernFont", L"..\\..\\Windows\\Fonts\\x.ttf" } });
+	{
+		LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17u unknown theme, bad colour and a path for the font read as the defaults",
+		      r.modernTheme == L"slate" && r.modernAccent.empty() && r.modernFont.empty() &&
+		          NormalizeModernAccent(L"#12345").empty() && NormalizeModernFont(L"a.otf").empty() &&
+		          NormalizeModernFont(L"NotoSansTC-Regular.TTF") == L"NotoSansTC-Regular.TTF");
+	}
 
 	// T17d/e -- the proxy field. Default must be empty (= follow the system
 	// proxy); a set value round-trips verbatim, normalization is the HTTP

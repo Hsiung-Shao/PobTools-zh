@@ -60,6 +60,17 @@ inline constexpr int kModernFontSizeDefault = 13, kModernFontSizeMin = 11, kMode
 inline int ClampModernZoom(int v) { return (v < kModernZoomMin || v > kModernZoomMax) ? kModernZoomDefault : v; }
 inline int ClampModernFontSize(int v) { return (v < kModernFontSizeMin || v > kModernFontSizeMax) ? kModernFontSizeDefault : v; }
 
+// The new interface's look (settings page, "Appearance"). Same rule as the
+// numbers above: a value this build does not know reads as the default.
+//   theme  -- one of the page's built-in themes; anything else is "slate"
+//   accent -- "#rrggbb" (lower-cased) or empty = the theme's own accent
+//   font   -- a file name under Fonts\ or empty = follow the launcher's Font=.
+//             Only a bare *.ttf name is kept: the page loads it from the
+//             fonts.pobtools mapping, which must never be handed a path.
+std::wstring NormalizeModernTheme(const std::wstring& v);
+std::wstring NormalizeModernAccent(const std::wstring& v);
+std::wstring NormalizeModernFont(const std::wstring& v);
+
 inline int ClampLauncherFontSize(int v)
 {
 	return (v < kLauncherFontSizeMin || v > kLauncherFontSizeMax) ? kLauncherFontSizeDefault : v;
@@ -143,6 +154,9 @@ struct LauncherConfig {
 	// launcher's fontSize, which never applies to POB or this window.
 	int            modernZoom = kModernZoomDefault;
 	int            modernFontSize = kModernFontSizeDefault;
+	std::wstring   modernTheme = L"slate";
+	std::wstring   modernAccent;            // "#rrggbb"; empty = the theme's own
+	std::wstring   modernFont;              // Fonts\ file name; empty = the launcher's
 	// 0 = classic POB window, 1 = the new interface: what the launcher's
 	// "Launch" button opens, for either game (settings page, "Default
 	// interface"). A machine without WebView2 and a POB the bridge gate refused

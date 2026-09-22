@@ -7,4 +7,6 @@
   const runs = $derived(pobRuns(text));
 </script>
 
-{#each runs as r}<span style:color={r.color ?? muted ?? undefined}>{r.text}</span>{/each}
+<!-- A literal ^xRRGGBB (not one of pobtext's tokens) was picked for a dark
+     background: .pob-lit lets the light theme darken it (app.css). -->
+{#each runs as r}{#if r.color?.startsWith("#")}<span class="pob-lit" style:--pc={r.color}>{r.text}</span>{:else}<span style:color={r.color ?? muted ?? undefined}>{r.text}</span>{/if}{/each}

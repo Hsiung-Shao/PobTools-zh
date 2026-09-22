@@ -215,7 +215,7 @@
     padding: 1px 7px;
     border-radius: 9px;
     background: var(--gold);
-    color: #17120a;
+    color: var(--on-gold);
     font-weight: 600;
   }
   .bad {

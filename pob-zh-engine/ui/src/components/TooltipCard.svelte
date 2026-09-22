@@ -26,7 +26,7 @@
   });
 </script>
 
-<div class="card" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-top-color={border}>
+<div class="card pob-dark" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-top-color={border}>
   {#each lines as l, i}
     {#if "sep" in l}
       <div class="sep"></div>

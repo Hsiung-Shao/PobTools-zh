@@ -31,6 +31,15 @@ export interface HostInfo {
 export interface UiPrefs {
   zoom: number;
   fontSize: number;
+  /** "slate" | "light" | "contrast" | "parchment" (pob-zh.ini ModernTheme). */
+  theme?: string;
+  /** "#rrggbb", or "" for the theme's own accent (ModernAccent). */
+  accent?: string;
+  /** A Fonts\ file name, or "" to follow the launcher (ModernFont). */
+  font?: string;
+  /** Read-only, from the host: the launcher's Font= and every Fonts\*.ttf. */
+  launcherFont?: string;
+  fonts?: string[];
 }
 
 export interface BridgeError {

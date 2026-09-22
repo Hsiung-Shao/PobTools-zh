@@ -152,7 +152,14 @@ struct Window {
 
 	json Prefs() const
 	{
-		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)} };
+		json fonts = json::array();
+		for (const std::wstring& f : ListAvailableFonts(exeDir)) fonts.push_back(narrow(f));
+		// The launcher's own choice, re-read: "follow the launcher" must show what
+		// the launcher uses NOW, not what it used when this window opened.
+		const std::wstring launcherFont = LoadLauncherConfig(exeDir + L"pob-zh.ini").fontFile;
+		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
+		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
+		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts} };
 	}
 
 	json Info() const
@@ -268,6 +275,18 @@ struct Window {
 			if (params.contains("fontSize")) fresh.modernFontSize = ClampModernFontSize(params.value("fontSize", kModernFontSizeDefault));
 			cfg.modernZoom = fresh.modernZoom;
 			cfg.modernFontSize = fresh.modernFontSize;
+			if (params.contains("theme") && params["theme"].is_string()) fresh.modernTheme = NormalizeModernTheme(widen(params["theme"].get<std::string>()));
+			if (params.contains("accent") && params["accent"].is_string()) fresh.modernAccent = NormalizeModernAccent(widen(params["accent"].get<std::string>()));
+			if (params.contains("font") && params["font"].is_string()) {
+				// Only a file that is actually under Fonts\ -- anything else means "follow the launcher".
+				std::wstring f = NormalizeModernFont(widen(params["font"].get<std::string>()));
+				bool listed = false;
+				for (const std::wstring& a : ListAvailableFonts(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
+				fresh.modernFont = listed ? f : L"";
+			}
+			cfg.modernTheme = fresh.modernTheme;
+			cfg.modernAccent = fresh.modernAccent;
+			cfg.modernFont = fresh.modernFont;
 			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
 			ApplyZoom();
 			reply(Prefs());

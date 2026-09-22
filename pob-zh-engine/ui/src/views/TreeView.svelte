@@ -18,6 +18,7 @@
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { prefs } from "$lib/prefs.svelte";
   import { pobRuns } from "$lib/pobtext";
   import { buildModel, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
   import { Sprites, ART_SCALE } from "$lib/tree/assets";
@@ -975,6 +976,14 @@
     })();
   });
 
+  // Theme / accent changed on the settings page: the canvas has no CSS of its
+  // own, so it re-reads the tokens and paints again.
+  $effect(() => {
+    void prefs.rev;
+    readPalette();
+    repaint();
+  });
+
   onMount(() => {
     readPalette();
     const ro = new ResizeObserver(resize);
@@ -1049,7 +1058,7 @@
       </span>
     {/if}
   </div>
-  <div class="stage" bind:this={wrap}>
+  <div class="stage pob-dark" bind:this={wrap}>
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
     {#if artMissing && model}<div class="note">{t("tree.artMissing")}</div>{/if}
     {#if loadError}
