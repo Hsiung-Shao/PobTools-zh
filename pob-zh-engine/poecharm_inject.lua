@@ -690,6 +690,31 @@ PATCHES["Item"] = function(class)
 	end
 end
 
+-- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
+-- the newly shown affix drop-down empty -- the rune's selFunc rebuilt the item
+-- but never called UpdateAffixControls, so the new row's list was stale/empty
+-- and merely hovering it crashed POB (ItemsTab.lua tooltipFunc: attempt to
+-- index local 'value' (a nil value)). Upstream master 0.23.1 has the bug in
+-- English too; their dev branch added exactly this call. Harmless once POB
+-- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
+PATCHES["ItemsTab"] = function(class)
+	local ok = wrapConstructor(class, "ItemsTab", function(self)
+		for i = 1, 6 do
+			local drop = self.controls and self.controls["displayItemRune" .. i]
+			if drop and type(drop.selFunc) == "function" then
+				local orig = drop.selFunc
+				drop.selFunc = function(...)
+					orig(...)
+					if self.displayItem and self.displayItem.crafted and self.UpdateAffixControls then
+						self:UpdateAffixControls()
+					end
+				end
+			end
+		end
+	end)
+	if not ok then error("ItemsTab has no constructor to wrap") end
+end
+
 PATCHES["Tooltip"] = function(class)
 	local orig = class.AddLine
 	if not orig then error("Tooltip has no AddLine to wrap") end
@@ -794,6 +819,7 @@ local PATCH_SYMPTOM = {
 	SearchHost              = "天賦樹搜尋框打不進中文",
 	EditControl             = "輸入框貼上中文會變成問號",
 	Tooltip                 = "提示視窗的中文顯示",
+	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
 }
 

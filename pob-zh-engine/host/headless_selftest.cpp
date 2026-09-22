@@ -2667,6 +2667,41 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), tpCancel, 60000);
 		}
 
+		// --- a rune that changes the affix limit ------------------------------------
+		// Field report: craft a weapon, pick "+1 Suffix Modifier allowed" (Serle's
+		// Triumph) and merely hovering the new suffix row crashed POB -- the rune's
+		// selFunc never called UpdateAffixControls, so that row's list was empty
+		// (upstream master 0.23.1, English too; poecharm_inject PATCHES["ItemsTab"]).
+		// Every affix row shown after the pick must have a list its selection is in.
+		{
+			json co, ed, rs, cancel;
+			std::string type, base;
+			if (child.Call("craft_item_options", json::object(), co, 60000))
+				for (auto& ty : co["types"]) {
+					std::string tn = ty.value("type", "");
+					if ((tn == "Staff" || tn == "Quarterstaff" || tn == "Two Handed Mace") && ty["bases"].size()) {
+						type = tn;
+						base = ty["bases"][ty["bases"].size() - 1].value("name", "");
+						break;
+					}
+				}
+			bool okEd = !type.empty() && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", type}, {"base", base}}}}, ed, 60000);
+			int pick = 0, before = okEd ? (int)ed["affixes"].size() : 0;
+			if (okEd && ed.contains("runeSlots") && ed["runeSlots"].size())
+				for (size_t k = 0; k < ed["runeSlots"][0]["options"].size(); k++)
+					if (ed["runeSlots"][0]["options"][k].value("name", "") == "Serle's Triumph") pick = (int)k + 1;
+			bool okRs = pick > 0 && child.Call("item_edit_set", json{{"rune", {{"index", 1}, {"sel", pick}}}}, rs, 60000);
+			int after = okRs ? (int)rs["affixes"].size() : 0, broken = 0;
+			if (okRs)
+				for (auto& a : rs["affixes"])
+					if (a["options"].empty() || a.value("sel", 0) < 1 || a.value("sel", 0) > (int)a["options"].size()) broken++;
+			check("PoE2: a rune that allows one more suffix gives the new row a real list (no crash on hover)",
+			      okRs && after == before + 1 && broken == 0,
+			      "type=" + type + "/" + base + " pick=" + std::to_string(pick) + " rows " + std::to_string(before) + "->" +
+			          std::to_string(after) + " broken=" + std::to_string(broken));
+			child.Call("item_edit_cancel", json::object(), cancel, 60000);
+		}
+
 		// --- config, calcs, notes --------------------------------------------------
 		json lc, gc;
 		bool okLc = child.Call("list_config", json::object(), lc, 60000);
