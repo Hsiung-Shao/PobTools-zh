@@ -22,12 +22,19 @@
   color-scheme: dark;
 
   /* 面 */
-  --surface-0: #0e1116;
-  --surface-1: #131820;
-  --surface-2: #192029;
-  --surface-3: #202834;
-  --surface-hover: #242d3a;
-  --surface-active: #2a3442;
+  --surface-0-c: #0e1116;
+  --surface-1-c: #131820;
+  --surface-2-c: #192029;
+  --surface-3-c: #202834;
+  --surface-hover-c: #242d3a;
+  --surface-active-c: #2a3442;
+  /* 面板實際用的色:實色 × 面板透明度(有背景圖時 lib/prefs 設 --panel-pct,否則 100%) */
+  --surface-0: color-mix(in srgb, var(--surface-0-c) var(--panel-pct), transparent);
+  --surface-1: color-mix(in srgb, var(--surface-1-c) var(--panel-pct), transparent);
+  --surface-2: color-mix(in srgb, var(--surface-2-c) var(--panel-pct), transparent);
+  --surface-3: color-mix(in srgb, var(--surface-3-c) var(--panel-pct), transparent);
+  --surface-hover: color-mix(in srgb, var(--surface-hover-c) var(--panel-pct), transparent);
+  --surface-active: color-mix(in srgb, var(--surface-active-c) var(--panel-pct), transparent);
 
   /* 邊 */
   --edge-0: #1d2430;
@@ -106,12 +113,12 @@
 /* 淺色:淺底深字。稀有度/元素色換成在淺底上讀得清的深一階。 */
 :root[data-theme="light"] {
   color-scheme: light;
-  --surface-0: #f4f1ea;
-  --surface-1: #ece8df;
-  --surface-2: #e4dfd4;
-  --surface-3: #d9d3c6;
-  --surface-hover: #d1cabb;
-  --surface-active: #c7bfae;
+  --surface-0-c: #f4f1ea;
+  --surface-1-c: #ece8df;
+  --surface-2-c: #e4dfd4;
+  --surface-3-c: #d9d3c6;
+  --surface-hover-c: #d1cabb;
+  --surface-active-c: #c7bfae;
   --edge-0: #d8d1c3;
   --edge-1: #c3bbab;
   --edge-2: #a39a88;
@@ -154,12 +161,12 @@
 
 /* 高對比:純黑底、純白字、邊框加亮。 */
 :root[data-theme="contrast"] {
-  --surface-0: #000000;
-  --surface-1: #0a0a0a;
-  --surface-2: #121212;
-  --surface-3: #1b1b1b;
-  --surface-hover: #292929;
-  --surface-active: #363636;
+  --surface-0-c: #000000;
+  --surface-1-c: #0a0a0a;
+  --surface-2-c: #121212;
+  --surface-3-c: #1b1b1b;
+  --surface-hover-c: #292929;
+  --surface-active-c: #363636;
   --edge-0: #5c5c5c;
   --edge-1: #8c8c8c;
   --edge-2: #b8b8b8;
@@ -183,12 +190,12 @@
 
 /* 羊皮紙:暖棕底、羊皮紙墨色,接近遊戲本身的色調。 */
 :root[data-theme="parchment"] {
-  --surface-0: #1a140e;
-  --surface-1: #211a12;
-  --surface-2: #2a2117;
-  --surface-3: #33291d;
-  --surface-hover: #3d3123;
-  --surface-active: #47392a;
+  --surface-0-c: #1a140e;
+  --surface-1-c: #211a12;
+  --surface-2-c: #2a2117;
+  --surface-3-c: #33291d;
+  --surface-hover-c: #3d3123;
+  --surface-active-c: #47392a;
   --edge-0: #2e2418;
   --edge-1: #3f3222;
   --edge-2: #59472f;
@@ -204,6 +211,35 @@
   --tree-bg: #130e09;
   --tree-line: #33291d;
   --tree-line-lit: #5d4b33;
+}
+
+/* 背景圖(設定頁「背景」;App.svelte 的 .bgimg 層)。
+   html 底色是實色,圖畫在它上面,body 透明,頁面底色改由 .app 以面板透明度畫。
+   提示框(深色島)永遠實色,圖再亮也讀得清。 */
+:root {
+  --panel-pct: 100%;
+}
+:root[data-bg] body {
+  background: transparent;
+}
+:root[data-bg] {
+  background: var(--surface-0-c);
+}
+:root[data-bg] .view {
+  background: var(--surface-0);
+}
+/* 天賦樹自己畫底(TreeView 依「天賦樹底圖」透明度),不再疊一層頁面底色 */
+:root[data-bg] .view:has(.stage) {
+  background: transparent;
+}
+:root[data-bg] .pob-dark {
+  --panel-pct: 100%;
+  --surface-0: var(--surface-0-c);
+  --surface-1: var(--surface-1-c);
+  --surface-2: var(--surface-2-c);
+  --surface-3: var(--surface-3-c);
+  --surface-hover: var(--surface-hover-c);
+  --surface-active: var(--surface-active-c);
 }
 
 /* POB 字串裡的字面色碼(^xRRGGBB,不在 pobtext 的對照表裡)是為深底挑的,

@@ -212,10 +212,23 @@ struct Server {
 		for (const std::wstring& f : ListAvailableFonts(exeDir)) fonts.push_back(narrow(f));
 		// The launcher's own choice, re-read: "follow the launcher" must show what
 		// the launcher uses NOW, not what it used when this window opened.
-		const std::wstring launcherFont = LoadLauncherConfig(exeDir + L"pob-zh.ini").fontFile;
+		const LauncherConfig fromIni = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+		const std::wstring launcherFont = fromIni.fontFile;
+		// Background: this window's game only. "launcherLook" is the launcher's
+		// Appearance set, re-read for the same reason as the font.
+		const int g = GameIndex(game);
+		auto lookJson = [](const AppearanceConfig& a, bool follow) {
+			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background))},
+			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
+			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)} };
+		};
+		json backgrounds = json::array();
+		for (const std::wstring& f : ListAvailableBackgrounds(exeDir)) backgrounds.push_back(narrow(f));
 		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
 		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
-		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts} };
+		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
+		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow)},
+		             {"launcherLook", lookJson(fromIni.look[g], true)}, {"backgrounds", backgrounds} };
 	}
 
 	json info() const
@@ -228,7 +241,7 @@ struct Server {
 			{"version", POBTOOLS_VERSION_STRING}, {"open", narrow(openBuild)}, {"view", narrow(view)},
 			{"prefs", prefs()}, {"browser", true},
 			{"hosts", json{ {"app", b.substr(0, b.size() - 1)}, {"pob", b + "~pob"}, {"data", b + "~data"},
-			                {"fonts", b + "~fonts"}, {"cache", b + "~cache"} }},
+			                {"fonts", b + "~fonts"}, {"cache", b + "~cache"}, {"bg", b + "~bg"} }},
 		};
 	}
 
@@ -328,6 +341,11 @@ struct Server {
 			cv.notify_all();
 		} else if (method == "host.set_title") {
 			reply(json{ {"ok", true} }); // the page sets document.title itself
+		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
+			// The one folder outside the POB install the page may open: where the
+			// launcher and the page both look for background images.
+			ShellExecuteW(nullptr, L"explore", BackgroundsDir(exeDir).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+			reply(json{ {"ok", true} });
 		} else if (method == "host.open_folder") {
 			std::wstring p = widen(params.value("path", ""));
 			for (auto& c : p) if (c == L'/') c = L'\\';
@@ -358,6 +376,27 @@ struct Server {
 			cfg.modernTheme = fresh.modernTheme;
 			cfg.modernAccent = fresh.modernAccent;
 			cfg.modernFont = fresh.modernFont;
+			if (params.contains("look") && params["look"].is_object()) {
+				// {follow:true} = back to the launcher's set; anything else is the
+				// page's own set (the page sends all five values with it).
+				const json& l = params["look"];
+				ModernLookConfig& m = fresh.modernLook[GameIndex(game)];
+				m.follow = l.value("follow", false);
+				if (!m.follow) {
+					if (l.contains("background") && l["background"].is_string()) {
+						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()));
+						bool listed = f.empty();
+						for (const std::wstring& a : ListAvailableBackgrounds(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
+						m.look.background = listed ? f : L"";
+					}
+					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
+					m.look.bgBright = ClampPercent(num("bgBright", m.look.bgBright), kBgBrightDefault);
+					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
+					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
+					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
+				}
+				cfg.modernLook[GameIndex(game)] = m;
+			}
 			SaveLauncherConfig(exeDir + L"pob-zh.ini", fresh);
 			reply(prefs());
 		} else {
@@ -406,7 +445,7 @@ struct Server {
 		struct Root { const char* name; std::wstring dir; };
 		const Root roots[] = {
 			{ "~pob/", pobDir + L"\\" }, { "~data/", exeDir + L"Data\\" }, { "~fonts/", exeDir + L"Fonts\\" },
-			{ "~cache/", exeDir + L"PobTools\\cache\\" },
+			{ "~cache/", exeDir + L"PobTools\\cache\\" }, { "~bg/", BackgroundsDir(exeDir) },
 		};
 		std::string sub = rel;
 		std::wstring root = exeDir + L"ui\\";

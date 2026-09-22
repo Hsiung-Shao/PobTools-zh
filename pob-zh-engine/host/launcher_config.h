@@ -115,6 +115,17 @@ struct AppearanceConfig {
 	// through the tree area too.
 	int            treeBg = 100;
 };
+// The new interface's own copy of the same five knobs, per game. `follow`
+// (the default) means "use the launcher's set for that game"; the page
+// clears it the moment the user changes anything there.
+struct ModernLookConfig {
+	bool            follow = true;
+	AppearanceConfig look;
+};
+// A background image the page may load: a bare png/jpg/jpeg/webp file name
+// under PobTools\Backgrounds\, never a path (it is served over bg.pobtools).
+std::wstring NormalizeBackgroundFile(const std::wstring& v);
+
 // "poe1" -> 0, "poe2" -> 1 (anything else counts as PoE1).
 inline int GameIndex(const std::wstring& game) { return game == L"poe2" ? 1 : 0; }
 inline const wchar_t* GameKeySuffix(int idx) { return idx == 1 ? L"Poe2" : L"Poe1"; }
@@ -174,6 +185,8 @@ struct LauncherConfig {
 	// launcher's "Appearance" tab edits them and pushes changes live to the POB
 	// windows of that game; SetEngineEnv passes the starting game's set.
 	AppearanceConfig look[2];
+	// The new interface's background set, per game (settings page "Background").
+	ModernLookConfig modernLook[2];
 	// Per-slot dictionary folder to read instead of <exeDir>Data\<slot>\.
 	// Empty = built-in. Each one points at the folder that directly CONTAINS the
 	// <locale> sub-folders, i.e. exactly what you get by copying Data\poe1

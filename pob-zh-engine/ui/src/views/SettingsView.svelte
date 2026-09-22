@@ -5,7 +5,7 @@
   import { untrack } from "svelte";
   import AboutDialog from "../components/AboutDialog.svelte";
   let aboutOpen = $state(false);
-  import { api, type PobOption, type PobOptions } from "$lib/bridge";
+  import { api, bridge, isHosted, type PobOption, type PobOptions } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS, THEMES, ACCENTS, type Theme } from "$lib/prefs.svelte";
 
@@ -17,6 +17,16 @@
     parchment: ["#1a140e", "#2a2117", "#efe2c4", "#e0a94a"],
   };
   const fontName = (f: string) => f.replace(/\.ttf$/i, "");
+  // Background card: shows what is on screen (the launcher's set while following);
+  // any change there makes it the page's own (prefs.setLook).
+  const bg = $derived(prefs.effectiveLook);
+  const BG_SLIDERS = [
+    ["bgBright", "bg.bright"],
+    ["panelOpacity", "bg.panelOpacity"],
+    ["glassBlur", "bg.blur"],
+    ["treeBg", "bg.treeBg"],
+  ] as const;
+  const openBgFolder = () => bridge.call("host.open_folder", { which: "backgrounds" }).catch(() => {});
   const lookIsDefault = $derived(prefs.theme === DEFAULTS.theme && prefs.accent === DEFAULTS.accent && prefs.font === DEFAULTS.font);
   import { app } from "$lib/state.svelte";
 
@@ -176,6 +186,38 @@
     </div>
   </section>
 
+  <section class="card">
+    <h2>{t("bg.title")}</h2>
+    <label class="follow">
+      <input type="checkbox" checked={prefs.look.follow} onchange={(e) => (e.currentTarget.checked ? prefs.followLauncher() : prefs.setLook({}))} />
+      <span>{t("bg.follow")}</span>
+    </label>
+    <div class="lrow">
+      <span class="k">{t("bg.image")}</span>
+      <div class="fontctl">
+        <select class="select sm" value={bg.background} onchange={(e) => prefs.setLook({ background: e.currentTarget.value })}>
+          <option value="">{t("bg.none")}</option>
+          {#each prefs.backgrounds as f (f)}<option value={f}>{f}</option>{/each}
+          {#if bg.background && !prefs.backgrounds.includes(bg.background)}<option value={bg.background}>{bg.background}</option>{/if}
+        </select>
+        {#if isHosted}
+          <button class="btn ghost sm" onclick={openBgFolder}>{t("bg.openFolder")}</button>
+          <button class="btn ghost sm" onclick={() => prefs.refreshBackgrounds()}>{t("bg.refresh")}</button>
+        {/if}
+      </div>
+    </div>
+    {#each BG_SLIDERS as [key, label] (key)}
+      <div class="row">
+        <span class="k">{t(label)}</span>
+        <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={!bg.background} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />
+        <span class="num val">{bg[key]}%</span>
+      </div>
+    {/each}
+    <div class="foot">
+      <span class="dim hint">{t("bg.hint")}</span>
+    </div>
+  </section>
+
   <section class="card wide">
     <h2>{t("settings.pob")}</h2>
     <p class="dim hint">{t("settings.pobHint")}</p>
@@ -332,6 +374,15 @@
   }
   .hint {
     font-size: var(--fs-2xs);
+  }
+  .follow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    font-size: var(--fs-sm);
+    color: var(--ink-1);
+    cursor: pointer;
   }
   .lrow {
     display: grid;

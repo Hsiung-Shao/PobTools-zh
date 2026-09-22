@@ -141,10 +141,14 @@
 
   // --- palette (from the page's tokens, read once) ---------------------------
   const pal = { bg: "#0d1014", line: "#2a3038", lineLit: "#4c5563", path: "#5b9dff", alloc: "#e0b35a", allocEdge: "#7a5e2a", dep: "#ff6b6b", search: "#ffcc66", node: "#1a1f26", nodeEdge: "#3a4250" };
+  let treeAlpha = 1;
   function readPalette() {
     const cs = getComputedStyle(wrap ?? document.documentElement);
     const v = (n: string, fb: string) => cs.getPropertyValue(n).trim() || fb;
     pal.bg = v("--tree-bg", pal.bg);
+    // background image showing through the tree (settings page "Tree backdrop opacity")
+    const a = parseFloat(v("--tree-alpha", "1"));
+    treeAlpha = Number.isFinite(a) ? Math.min(1, Math.max(0, a)) : 1;
     pal.line = v("--tree-line", pal.line);
     pal.lineLit = v("--tree-line-lit", pal.lineLit);
     pal.path = v("--accent", pal.path);
@@ -191,8 +195,11 @@
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = true;
+    ctx.clearRect(0, 0, w, h);
+    ctx.globalAlpha = treeAlpha;
     ctx.fillStyle = pal.bg;
     ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
 
     const pad = 3000 * zoom;
     const x0 = cx - (w / 2 + pad) / zoom;
@@ -205,7 +212,10 @@
       // PoE2 PassiveTreeView:Draw: background, the class plate (with its
       // ascendancy's art once chosen), BGTreeActive turned to the start node,
       // BGTree, then every ascendancy plate (the current one lit).
+      // the tree's own tiled backdrop: what "Tree backdrop" fades (as in the classic window)
+      ctx.globalAlpha = treeAlpha;
       S.cover(ctx, "Background2", w, h, 96);
+      ctx.globalAlpha = 1;
       const cls = M.classes.find((c) => c.name === currentClass);
       const bg = cls?.background;
       if (cls && bg) {
@@ -255,7 +265,10 @@
         ctx.globalAlpha = 1;
       }
     } else if (S) {
+      // the tree's own tiled backdrop: what "Tree backdrop" fades (as in the classic window)
+      ctx.globalAlpha = treeAlpha;
       S.cover(ctx, "Background2", w, h, 96);
+      ctx.globalAlpha = 1;
       // class illustration + group rings + class start plates (POB's layer order)
       const cls = M.classes.find((c) => c.name === currentClass);
       if (cls?.art && visible(cls.art.x, cls.art.y)) {
@@ -1227,7 +1240,10 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    background: var(--tree-bg, #0d1014);
+    background: color-mix(in srgb, var(--tree-bg, #0d1014) calc(var(--tree-alpha, 1) * 100%), transparent);
+  }
+  :global(:root[data-bg]) .stage {
+    background: transparent;
   }
   canvas {
     display: block;

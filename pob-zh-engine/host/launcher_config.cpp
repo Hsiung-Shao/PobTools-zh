@@ -254,6 +254,18 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 			a.background = decoded.empty() ? read_ini_path(iniPath, L"Background") : decoded;
 		}
 	}
+	for (int g = 0; g < 2; g++) {
+		ModernLookConfig& m = c.modernLook[g];
+		const std::wstring sfx = GameKeySuffix(g);
+		auto key = [&](const wchar_t* base) { return std::wstring(base) + sfx; };
+		m.follow = read_ini_int(iniPath, key(L"ModernLookFollow").c_str(), 1) != 0;
+		m.look.windowOpacity = ClampWindowOpacity(read_ini_int(iniPath, key(L"ModernPanelOpacity").c_str(), kWindowOpacityDefault));
+		m.look.bgBright = ClampPercent(read_ini_int(iniPath, key(L"ModernBgBright").c_str(), kBgBrightDefault), kBgBrightDefault);
+		m.look.glassBlur = ClampPercent(read_ini_int(iniPath, key(L"ModernGlassBlur").c_str(), 0), 0);
+		m.look.treeBg = ClampPercent(read_ini_int(iniPath, key(L"ModernTreeBg").c_str(), 100), 100);
+		std::wstring decoded = utf8_of_hex(read_ini_path(iniPath, key(L"ModernBackgroundHex").c_str()));
+		m.look.background = NormalizeBackgroundFile(decoded.empty() ? read_ini_path(iniPath, key(L"ModernBackground").c_str()) : decoded);
+	}
 	c.fontSize = ClampLauncherFontSize(read_ini_int(iniPath, L"FontSize", kLauncherFontSizeDefault));
 
 	// Hex copy first (see hex_of_utf8): it is the codepage-proof spelling. A
@@ -361,6 +373,24 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 			WritePrivateProfileStringW(kSection, (L"BackgroundHex" + sfx).c_str(), nullptr, iniPath.c_str());
 		else
 			WritePrivateProfileStringW(kSection, (L"BackgroundHex" + sfx).c_str(), hex_of_utf8(a.background).c_str(), iniPath.c_str());
+	}
+	for (int g = 0; g < 2; g++) {
+		const ModernLookConfig& m = cfg.modernLook[g];
+		const std::wstring sfx = GameKeySuffix(g);
+		auto put = [&](const wchar_t* base, const std::wstring& v) {
+			WritePrivateProfileStringW(kSection, (base + sfx).c_str(), v.c_str(), iniPath.c_str());
+		};
+		put(L"ModernLookFollow", m.follow ? L"1" : L"0");
+		put(L"ModernPanelOpacity", std::to_wstring(ClampWindowOpacity(m.look.windowOpacity)));
+		put(L"ModernBgBright", std::to_wstring(ClampPercent(m.look.bgBright, kBgBrightDefault)));
+		put(L"ModernGlassBlur", std::to_wstring(ClampPercent(m.look.glassBlur, 0)));
+		put(L"ModernTreeBg", std::to_wstring(ClampPercent(m.look.treeBg, 100)));
+		const std::wstring bg = NormalizeBackgroundFile(m.look.background);
+		put(L"ModernBackground", bg);
+		if (bg.empty() || is_ascii(bg))
+			WritePrivateProfileStringW(kSection, (L"ModernBackgroundHex" + sfx).c_str(), nullptr, iniPath.c_str());
+		else
+			put(L"ModernBackgroundHex", hex_of_utf8(bg));
 	}
 	// The shared set from the first test builds: migrated above, gone from here on.
 	for (const wchar_t* k : { L"WindowOpacity", L"Background", L"BackgroundHex", L"BackgroundBright", L"GlassBlur", L"TreeBackdrop" })
@@ -690,6 +720,17 @@ int CopyBuiltinDictionary(const std::wstring& exeDir, DictSlot slot,
 	int n = copy_tree(src, dst, err);
 	if (n == 0 && err) *err = u8"內建資料夾裡沒有可複製的字典";
 	return n <= 0 ? -1 : n;
+}
+
+std::wstring NormalizeBackgroundFile(const std::wstring& v)
+{
+	if (v.empty() || v.size() > 200 || v[0] == L'.') return L"";
+	if (v.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) return L"";
+	const size_t dot = v.rfind(L'.');
+	if (dot == std::wstring::npos) return L"";
+	std::wstring ext = v.substr(dot + 1);
+	for (auto& ch : ext) ch = (wchar_t)towlower(ch);
+	return (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"webp") ? v : L"";
 }
 
 std::wstring NormalizeModernTheme(const std::wstring& v)
@@ -1343,6 +1384,44 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      r.modernTheme == L"slate" && r.modernAccent.empty() && r.modernFont.empty() &&
 		          NormalizeModernAccent(L"#12345").empty() && NormalizeModernFont(L"a.otf").empty() &&
 		          NormalizeModernFont(L"NotoSansTC-Regular.TTF") == L"NotoSansTC-Regular.TTF");
+	}
+
+	// T17v-x -- the new interface's background set. Follows the launcher until
+	// the user changes something on the page; the two games keep their own.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	{
+		LauncherConfig d = LoadLauncherConfig(ini);
+		check("T17v new-interface background follows the launcher by default, both games",
+		      d.modernLook[0].follow && d.modernLook[1].follow && d.modernLook[0].look.background.empty() &&
+		          d.modernLook[0].look.bgBright == kBgBrightDefault && d.modernLook[0].look.treeBg == 100);
+	}
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.modernLook[0].follow = false;
+		c.modernLook[0].look.background = L"\u80cc\u666f.webp";
+		c.modernLook[0].look.bgBright = 30;
+		c.modernLook[0].look.windowOpacity = 40;
+		c.modernLook[0].look.glassBlur = 55;
+		c.modernLook[0].look.treeBg = 0;
+		SaveLauncherConfig(ini, c);
+		LauncherConfig r = LoadLauncherConfig(ini);
+		const AppearanceConfig& a = r.modernLook[0].look;
+		check("T17w new-interface background round-trips (non-ASCII name, 0 kept) and PoE2 is untouched",
+		      !r.modernLook[0].follow && a.background == L"\u80cc\u666f.webp" && a.bgBright == 30 &&
+		          a.windowOpacity == 40 && a.glassBlur == 55 && a.treeBg == 0 &&
+		          r.modernLook[1].follow && r.modernLook[1].look.background.empty());
+	}
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" }, { L"ModernBackgroundPoe1", L"..\\x.png" },
+	                       { L"ModernBgBrightPoe1", L"250" }, { L"ModernTreeBgPoe1", L"-3" } });
+	{
+		LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17x a path for the image and out-of-range numbers read as the defaults",
+		      r.modernLook[0].look.background.empty() && r.modernLook[0].look.bgBright == kBgBrightDefault &&
+		          r.modernLook[0].look.treeBg == 100 && NormalizeBackgroundFile(L"a.gif").empty() &&
+		          NormalizeBackgroundFile(L"A.JPEG") == L"A.JPEG");
 	}
 
 	// T17d/e -- the proxy field. Default must be empty (= follow the system

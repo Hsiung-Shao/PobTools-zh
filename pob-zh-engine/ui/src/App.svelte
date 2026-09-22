@@ -104,6 +104,8 @@
 <!-- keyed on the language flip: t() reads a plain table, so nothing re-renders
      by itself, and the views have to re-fetch because POB's outputRevision does
      not move when only the display language changed. -->
+<!-- the background image (settings page "Background"; styled by the --bg-* vars lib/prefs sets) -->
+<div class="bgimg" aria-hidden="true"></div>
 {#if i18nReady}
   {#key app.langRev}
   <div class="app">
@@ -167,6 +169,20 @@
 {/if}
 
 <style>
+  .bgimg {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--bg-image) center / cover no-repeat;
+    filter: brightness(var(--bg-bright, 1)) blur(var(--bg-blur, 0px));
+    /* blur pulls the edges in; a little overscan keeps them off-screen */
+    transform: scale(1.04);
+  }
+  :global(:root[data-bg]) .bgimg {
+    display: block;
+  }
   .app {
     height: 100%;
     display: flex;

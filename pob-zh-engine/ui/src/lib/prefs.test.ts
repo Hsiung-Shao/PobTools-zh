@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normAccent, normFontFile, normTheme, onColor, ACCENTS } from "./prefs.svelte";
+import { normAccent, normFontFile, normTheme, onColor, ACCENTS, normBgFile, normLook, lookVars, LOOK_DEFAULT } from "./prefs.svelte";
 
 // Mirrors host/launcher_config.cpp NormalizeModern* (--launcher-config-selftest
 // T17s-u): the page and the ini must agree on what is a valid value.
@@ -30,5 +30,26 @@ describe("appearance prefs", () => {
     expect(onColor("#1a237e")).toBe("#ffffff");
     expect(onColor("#946510")).toBe("#ffffff");
     for (const c of ACCENTS) expect(["#17120a", "#ffffff"]).toContain(onColor(c));
+  });
+  it("background file is a bare picture name (host NormalizeBackgroundFile)", () => {
+    expect(normBgFile("ynQsfhbtoegqAym.webp")).toBe("ynQsfhbtoegqAym.webp");
+    expect(normBgFile("背景.JPEG")).toBe("背景.JPEG");
+    expect(normBgFile("a.gif")).toBe("");
+    expect(normBgFile(String.raw`..\x.png`)).toBe("");
+    expect(normBgFile("C:/x.png")).toBe("");
+  });
+  it("a garbled look falls back to the launcher's defaults, 0 is kept", () => {
+    const l = normLook({ follow: false, background: "x.png", bgBright: 250, panelOpacity: 0, glassBlur: -1, treeBg: 40 });
+    expect(l).toEqual({ follow: false, background: "x.png", bgBright: 50, panelOpacity: 0, glassBlur: 0, treeBg: 40 });
+    expect(normLook(undefined)).toEqual(LOOK_DEFAULT);
+  });
+  it("no image means no background CSS at all; otherwise the percents become CSS values", () => {
+    expect(lookVars({ ...LOOK_DEFAULT, panelOpacity: 20 }, (f) => f)).toBeNull();
+    const v = lookVars({ follow: false, background: "a b.png", bgBright: 30, panelOpacity: 40, glassBlur: 50, treeBg: 0 }, (f) => `https://bg.pobtools/${encodeURIComponent(f)}`)!;
+    expect(v["--bg-image"]).toBe('url("https://bg.pobtools/a%20b.png")');
+    expect(v["--bg-bright"]).toBe("0.3");
+    expect(v["--panel-pct"]).toBe("40%");
+    expect(v["--bg-blur"]).toBe("12px");
+    expect(v["--tree-alpha"]).toBe("0");
   });
 });

@@ -24,7 +24,7 @@ export interface HostInfo {
   view?: string;
   /** The window's remembered scale (pob-zh.ini ModernZoom / ModernFontSize). */
   prefs?: UiPrefs;
-  hosts: { app: string; pob: string; data: string; fonts: string; cache?: string };
+  hosts: { app: string; pob: string; data: string; fonts: string; cache?: string; bg?: string };
   /** Served by the system-browser fallback (Wine / CrossOver): hosts are full URLs. */
   browser?: boolean;
 }
@@ -40,6 +40,21 @@ export interface UiPrefs {
   /** Read-only, from the host: the launcher's Font= and every Fonts\*.ttf. */
   launcherFont?: string;
   fonts?: string[];
+  /** This window's game: the page's background set (`follow` = use the launcher's). */
+  look?: BgLook;
+  /** Read-only: the launcher's Appearance set for the same game, and PobTools\Backgrounds\*. */
+  launcherLook?: BgLook;
+  backgrounds?: string[];
+}
+export interface BgLook {
+  follow: boolean;
+  /** file name under PobTools\Backgrounds\, "" = none */
+  background: string;
+  /** percent: image brightness, panel opacity (100 = solid), image blur, tree backdrop opacity */
+  bgBright: number;
+  panelOpacity: number;
+  glassBlur: number;
+  treeBg: number;
 }
 
 export interface BridgeError {
@@ -161,7 +176,7 @@ export const hostInfo: HostInfo = isHosted
       exeDir: "",
       pobDir: "",
       version: "dev",
-      hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "data.pobtools", fonts: "fonts.pobtools", cache: "cache.pobtools" },
+      hosts: { app: "app.pobtools", pob: "pob.pobtools", data: "data.pobtools", fonts: "fonts.pobtools", cache: "cache.pobtools", bg: "bg.pobtools" },
     };
 
 /**
