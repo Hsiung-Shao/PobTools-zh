@@ -217,6 +217,8 @@ struct Window {
 		return true;
 	}
 	bool gateFellBack = false;
+	// The child told us it handed POB to Update.exe (PobLaunch::IsUpdaterHandoffLine).
+	bool updaterHandoff = false;
 
 	// The page asked the host itself for something. Anything not understood is
 	// answered with an error rather than silently forwarded to the child, where
@@ -430,6 +432,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		std::unique_ptr<std::string> line((std::string*)lParam);
 		if (w && line) {
 			if (w->OnGateLine(*line)) return 0; // the gate failed: fell back to classic, closing
+			if (PobLaunch::IsUpdaterHandoffLine(*line)) w->updaterHandoff = true;
 			w->PostToPage(*line);
 		}
 		return 0;
@@ -441,7 +444,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			// handed the runtime files to Update.exe and exited. Update.exe ends
 			// by starting pob-zh.exe, which reads the marker and reopens this
 			// window on the updated POB; this instance gets out of its way.
-			if (file_exists(w->exeDir + L"pob-zh.relaunch")) {
+			if (w->updaterHandoff || file_exists(w->exeDir + L"pob-zh.relaunch")) {
 				PobLog::Error("modernui", "headless child exited for a POB self-update; closing so the updater can reopen the window");
 				w->PostEvent("host.updating", json{ {"exitCode", (long long)code} });
 				PostMessageW(hwnd, WM_CLOSE, 0, 0);

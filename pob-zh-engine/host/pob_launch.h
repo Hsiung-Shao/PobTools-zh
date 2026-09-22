@@ -90,6 +90,15 @@ struct RelaunchMarker {
 };
 RelaunchMarker ParseRelaunchMarker(const std::string& utf8);
 
+// True for the headless child's `spawn_process` event that hands POB's
+// runtime files to Update.exe (a real spawn, not the self-test's dry run).
+// The new interface's windows latch this: once seen, the child's exit means
+// "close, the updater reopens us". The marker file cannot be the signal on its
+// own -- Update.exe starts pob-zh.exe, which reads and DELETES the marker,
+// often before the old window has even noticed its child is gone, and the old
+// window then stayed open next to the new one.
+bool IsUpdaterHandoffLine(const std::string& jsonLine);
+
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
 // failure to spawn.
 unsigned long SpawnPobAndWait(const std::wstring& launchLua);

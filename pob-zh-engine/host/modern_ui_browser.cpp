@@ -183,6 +183,9 @@ struct Server {
 	bool loggedAgent = false;   // the connecting browser is written down once
 	std::chrono::steady_clock::time_point lastStreamSeen = std::chrono::steady_clock::now();
 	std::atomic<bool> quit{ false };
+	// The child told us it handed POB to Update.exe (PobLaunch::IsUpdaterHandoffLine);
+	// set on the pipe reader, read when the child exits.
+	std::atomic<bool> updaterHandoff{ false };
 	int exitCode = 0;
 	bool gateFellBack = false;
 
@@ -272,11 +275,12 @@ struct Server {
 				return;
 			}
 			if (on_gate_line(line)) return;
+			if (PobLaunch::IsUpdaterHandoffLine(line)) updaterHandoff = true;
 			push(line);
 		});
 		child->SetExitSink([this]() {
 			unsigned long code = child ? child->ExitCode() : (unsigned long)-1;
-			if (file_exists(exeDir + L"pob-zh.relaunch")) {
+			if (updaterHandoff || file_exists(exeDir + L"pob-zh.relaunch")) {
 				// POB's own "basic" self-update: Update.exe starts pob-zh.exe again,
 				// which reads the marker and opens the page anew.
 				event("host.updating", json{ {"exitCode", (long long)code} });

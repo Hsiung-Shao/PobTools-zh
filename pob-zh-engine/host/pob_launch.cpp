@@ -7,6 +7,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <json.hpp>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -287,6 +289,20 @@ RelaunchMarker ParseRelaunchMarker(const std::string& utf8)
 	return m;
 }
 
+bool IsUpdaterHandoffLine(const std::string& jsonLine)
+{
+	if (jsonLine.find("\"spawn_process\"") == std::string::npos) return false;
+	nlohmann::json msg = nlohmann::json::parse(jsonLine, nullptr, false);
+	if (!msg.is_object() || msg.value("event", "") != "spawn_process") return false;
+	const nlohmann::json& d = msg.contains("data") ? msg["data"] : nlohmann::json();
+	if (!d.is_object() || d.value("dry", false)) return false;
+	std::string path = d.value("path", "");
+	size_t slash = path.find_last_of("/\\");
+	std::string stem = slash == std::string::npos ? path : path.substr(slash + 1);
+	for (char& c : stem) c = (char)tolower((unsigned char)c);
+	return stem == "update" || stem == "update.exe";
+}
+
 unsigned long SpawnPobAndWait(const std::wstring& launchLua)
 {
 	PROCESS_INFORMATION pi{};
@@ -559,6 +575,19 @@ int RunPobLaunchSelfTest(const std::wstring& exeDir)
 		check("P17 CRLF and unknown keys are ignored, ui=classic is not modern", m3.launchLua == L"D:/POB/Launch.lua" && !m3.modern);
 		RelaunchMarker m4 = ParseRelaunchMarker("");
 		check("P18 empty marker is no relaunch", m4.launchLua.empty() && !m4.modern);
+	}
+
+	// The updater hand-off the new interface closes on (see IsUpdaterHandoffLine).
+	{
+		check("P30a Update.exe spawned for real is the hand-off",
+		      IsUpdaterHandoffLine(R"({"event":"spawn_process","data":{"path":"D:/POB/Update","args":"UpdateApply.lua Update/opFileRuntime.txt","dry":false}})") &&
+		          IsUpdaterHandoffLine(R"({"event":"spawn_process","data":{"path":"C:\\P\\UPDATE.EXE","args":"","dry":false}})"));
+		check("P30b the self-test's dry spawn is not",
+		      !IsUpdaterHandoffLine(R"({"event":"spawn_process","data":{"path":"D:/POB/Update","args":"","dry":true}})"));
+		check("P30c another program, a reply or junk is not",
+		      !IsUpdaterHandoffLine(R"({"event":"spawn_process","data":{"path":"D:/POB/Updater2","dry":false}})") &&
+		          !IsUpdaterHandoffLine(R"({"id":3,"result":{"spawn_process":1}})") &&
+		          !IsUpdaterHandoffLine("spawn_process {not json"));
 	}
 
 	// The remembered compatibility verdict of the new interface.
