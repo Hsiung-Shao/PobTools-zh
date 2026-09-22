@@ -19,6 +19,16 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.2 (2026-09-23)\n"
+	u8"Fixed\n"
+	u8"　·After applying a POB update from the new interface, the old window stayed open next to the new one.\n"
+	u8"　·PoE2: after picking a rune such as \"+1 Suffix Modifier allowed\", hovering the new affix row made POB throw an error.\n"
+	u8"Added\n"
+	u8"　·The new interface is out of early access: everything in 1.7.0 and 1.7.1 reaches everyone from this version on.\n"
+	u8"　·New interface settings: theme (Slate, Light, High contrast, Parchment), accent colour and font.\n"
+	u8"　·New interface settings: background image, brightness, panel opacity, frosted blur and tree backdrop, same as the launcher's Appearance tab by default.\n"
+	u8"　·External links: the PoE2 price checker in Chinese.\n"
+	u8"\n"
 	u8"v1.7.1 (2026-09-21, early build)\n"
 	u8"Fixed\n"
 	u8"　·Editing an item in the new interface: implicit modifiers were missing from the modifier list, and a unique's value rows were blank and their sliders did nothing.\n"

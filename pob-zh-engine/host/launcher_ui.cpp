@@ -128,10 +128,10 @@ static const LinkEntry kLinksPoe2[] = {
 	{ u8"Reddit r/PathOfExile2",  L"https://www.reddit.com/r/PathOfExile2/" },
 };
 // Ours. Three install routes for the trade-site extension (the stores are what
-// most people want; the GitHub release is for manual installs), then the
-// price-check fork -- PoE1 only for now, because the PoE2 price checker
-// (Exiled Exchange 2) already ships Traditional Chinese of its own. The label
-// says (PoE1) so that gap is visible instead of looking like it covers both.
+// most people want; the GitHub release is for manual installs), then the two
+// price checkers: the awakened-poe-trade fork for PoE1 and the Exiled Exchange 2
+// fork for PoE2 (our own zh-TW data, installable next to the official EE2). The
+// labels carry the game so neither looks like it covers both.
 static const LinkEntry kLinksTools[] = {
 	{ u8"交易市集中文化（Chrome）",
 	  L"https://chromewebstore.google.com/detail/poe-market-zh/ipnmbepaghlkapopikbpcchblhfkieed" },
@@ -141,6 +141,8 @@ static const LinkEntry kLinksTools[] = {
 	  L"https://github.com/Hsiung-Shao/poe-market-zh/releases/latest" },
 	{ u8"查價器中文化（PoE1）",
 	  L"https://github.com/Hsiung-Shao/awakened-poe-trade-zh-TW/releases/latest" },
+	{ u8"查價器中文化（PoE2）",
+	  L"https://github.com/Hsiung-Shao/Exiled-Exchange-2-zh-TW/releases/latest" },
 };
 
 struct LinkColumn {
