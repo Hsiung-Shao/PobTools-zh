@@ -425,6 +425,8 @@ const EN: Record<string, string> = {
   "bar.spectres": "Spectres\u2026",
   "bar.beasts": "Beasts\u2026",
   "edit.affixSort": "Modifier sorting",
+  "edit.runes": "Runes",
+  "edit.resizePreview": "Drag to resize the item preview",
   "edit.runeSockets": "Rune sockets",
   "edit.rune": "Rune #{n}",
   "edit.runeNone": "None",

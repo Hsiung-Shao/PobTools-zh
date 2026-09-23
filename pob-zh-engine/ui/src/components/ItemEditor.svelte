@@ -33,6 +33,49 @@
   let rawText = $state("");
   let err = $state<string | null>(null);
 
+  // Narrow layout: the preview sits above the controls at a FIXED height and
+  // scrolls inside itself, so changing an affix (which changes the tooltip's
+  // length) never moves the controls under the pointer. The divider between
+  // them drags; the height is kept per viewer.
+  const PV_KEY = "pobtools.editorPreviewH";
+  let previewH = $state(260);
+  try {
+    const v = Number(localStorage.getItem(PV_KEY));
+    if (v >= 120 && v <= 900) previewH = v;
+  } catch {
+    /* private mode */
+  }
+  let workEl = $state<HTMLDivElement | null>(null);
+  function dragSplit(e: PointerEvent) {
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+    const y0 = e.clientY;
+    const h0 = previewH;
+    const max = Math.max(160, (workEl?.clientHeight ?? 600) - 140);
+    const move = (ev: PointerEvent) => (previewH = Math.round(Math.min(max, Math.max(120, h0 + ev.clientY - y0))));
+    const up = () => {
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", up);
+      try {
+        localStorage.setItem(PV_KEY, String(previewH));
+      } catch {
+        /* private mode */
+      }
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", up);
+  }
+  function nudgeSplit(e: KeyboardEvent) {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    previewH = Math.min(900, Math.max(120, previewH + (e.key === "ArrowDown" ? 24 : -24)));
+    try {
+      localStorage.setItem(PV_KEY, String(previewH));
+    } catch {
+      /* private mode */
+    }
+  }
+
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
     err = null;
     try {
@@ -143,11 +186,17 @@
     </details>
   {/if}
 
-  <div class="ebody">
-    <!-- 即時 tooltip -->
-    <div class="tip pob-dark" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
-      {@render tipBody(item.tooltip.lines)}
+  <div class="ework" bind:this={workEl} style:--pv-h={`${previewH}px`}>
+    <!-- 即時 tooltip:固定大小、自己捲動,改詞綴時不會把下方控制項推開 -->
+    <div class="preview">
+      <div class="tip pob-dark" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
+        {@render tipBody(item.tooltip.lines)}
+      </div>
     </div>
+    <!-- a focusable window splitter (ARIA separator with a value); Svelte does not know that pattern -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div class="split" role="separator" aria-orientation="horizontal" aria-label={t("edit.resizePreview")} aria-valuenow={previewH} aria-valuemin={120} aria-valuemax={900} tabindex="0" onpointerdown={dragSplit} onkeydown={nudgeSplit}></div>
+  <div class="ebody">
 
     {#if popup}
       <!-- POB 的 popup 之一,內嵌呈現 -->
@@ -202,6 +251,47 @@
         </div>
       </section>
     {:else}
+      <!-- 基本:品質、符文/珠寶插槽數、催化劑、影響 —— 固定在控制項最上面 -->
+      {#if item.quality.shown || item.runeSockets || item.jewelSockets || item.catalyst.shown || item.influence.shown}
+        <section class="sec base">
+          {#if item.quality.shown}
+            <label class="fld"><span class="k">{t("edit.quality")}</span>
+              <input class="input sm num" type="number" min="0" max="30" value={item.quality.value ?? 0} onchange={(e) => set({ quality: Number(e.currentTarget.value) })} />
+            </label>
+          {/if}
+          {#if item.runeSockets}
+            <label class="fld"><span class="k">{t("edit.runeSockets")}</span>
+              <input class="input sm num" type="number" min="0" max="6" value={item.runeSockets.count} onchange={(e) => set({ runeSockets: Number(e.currentTarget.value) })} />
+            </label>
+          {/if}
+          {#if item.jewelSockets}
+            <label class="fld"><span class="k">{t("edit.jewelSockets")}</span>
+              <input class="input sm num" type="number" min="0" max="6" value={item.jewelSockets.count} onchange={(e) => set({ jewelSockets: Number(e.currentTarget.value) })} />
+            </label>
+          {/if}
+          {#if item.catalyst.shown}
+            <label class="fld"><span class="k">{t("edit.catalyst")}</span>
+              <select class="select sm" value={item.catalyst.sel} onchange={(e) => set({ catalyst: Number(e.currentTarget.value) })}>
+                {#each item.catalyst.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+              </select>
+              {#if item.catalyst.qualityShown}
+                <input class="input sm num" type="number" min="0" max="30" aria-label={t("edit.catalyst")} value={item.catalyst.quality ?? 0} onchange={(e) => set({ catalystQuality: Number(e.currentTarget.value) })} />
+              {/if}
+            </label>
+          {/if}
+          {#if item.influence.shown}
+            <span class="fld"><span class="k">{t("edit.influence")}</span>
+              <select class="select sm" aria-label={t("edit.influence")} value={item.influence.sel[0]} onchange={(e) => set({ influence: [Number(e.currentTarget.value), item.influence.sel[1]] })}>
+                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+              </select>
+              <select class="select sm" aria-label={t("edit.influence")} value={item.influence.sel[1]} onchange={(e) => set({ influence: [item.influence.sel[0], Number(e.currentTarget.value)] })}>
+                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+              </select>
+            </span>
+          {/if}
+        </section>
+      {/if}
+
       <!-- 插槽與連結 -->
       {#if item.socketShown.some((s) => s) || item.canAddSocket}
         <section class="sec">
@@ -222,65 +312,20 @@
         </section>
       {/if}
 
-      <!-- 品質 / 催化劑 / 影響 -->
-      {#if item.runeSockets || item.jewelSockets}
-        <div class="frow">
-          {#if item.runeSockets}
-            <span class="k">{t("edit.runeSockets")}</span>
-            <input class="input sm num" type="number" min="0" max="6" value={item.runeSockets.count} onchange={(e) => set({ runeSockets: Number(e.currentTarget.value) })} />
-          {/if}
-          {#if item.jewelSockets}
-            <span class="k">{t("edit.jewelSockets")}</span>
-            <input class="input sm num" type="number" min="0" max="6" value={item.jewelSockets.count} onchange={(e) => set({ jewelSockets: Number(e.currentTarget.value) })} />
-          {/if}
-        </div>
-      {/if}
+      <!-- 符文:每個插槽一列,寬的時候兩欄 -->
       {#if item.runeSlots}
-        {#each item.runeSlots as r (r.index)}
-          <div class="frow">
-            <span class="k">{t("edit.rune", { n: r.index })}</span>
-            <select class="select sm grow" value={r.sel} onchange={(e) => set({ rune: { index: r.index, sel: Number(e.currentTarget.value) } })}>
-              {#each r.options as o, i}<option value={i + 1}>{i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）`}</option>{/each}
-            </select>
+        <section class="sec">
+          <span class="k">{t("edit.runes")}</span>
+          <div class="runes">
+            {#each item.runeSlots as r (r.index)}
+              <label class="rune">
+                <span class="rn">{r.index}</span>
+                <select class="select sm wide" value={r.sel} onchange={(e) => set({ rune: { index: r.index, sel: Number(e.currentTarget.value) } })}>
+                  {#each r.options as o, i}<option value={i + 1}>{i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）`}</option>{/each}
+                </select>
+              </label>
+            {/each}
           </div>
-        {/each}
-      {/if}
-      {#if item.affixSort}
-        <div class="frow">
-          <span class="k">{t("edit.affixSort")}</span>
-          <select class="select sm" value={item.affixSort.sel} onchange={(e) => set({ affixSort: Number(e.currentTarget.value) })}>
-            {#each item.affixSort.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-          </select>
-        </div>
-      {/if}
-      {#if item.quality.shown || item.catalyst.shown || item.influence.shown}
-        <section class="sec grid2">
-          {#if item.quality.shown}
-            <span class="k">{t("edit.quality")}</span>
-            <input class="input sm num" type="number" min="0" max="30" value={item.quality.value ?? 0} onchange={(e) => set({ quality: Number(e.currentTarget.value) })} />
-          {/if}
-          {#if item.catalyst.shown}
-            <span class="k">{t("edit.catalyst")}</span>
-            <span class="row">
-              <select class="select sm" value={item.catalyst.sel} onchange={(e) => set({ catalyst: Number(e.currentTarget.value) })}>
-                {#each item.catalyst.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
-              {#if item.catalyst.qualityShown}
-                <input class="input sm num" type="number" min="0" max="30" value={item.catalyst.quality ?? 0} onchange={(e) => set({ catalystQuality: Number(e.currentTarget.value) })} />
-              {/if}
-            </span>
-          {/if}
-          {#if item.influence.shown}
-            <span class="k">{t("edit.influence")}</span>
-            <span class="row">
-              <select class="select sm" value={item.influence.sel[0]} onchange={(e) => set({ influence: [Number(e.currentTarget.value), item.influence.sel[1]] })}>
-                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
-              <select class="select sm" value={item.influence.sel[1]} onchange={(e) => set({ influence: [item.influence.sel[0], Number(e.currentTarget.value)] })}>
-                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
-            </span>
-          {/if}
         </section>
       {/if}
 
@@ -317,7 +362,16 @@
       <!-- 工藝物品的詞綴槽 -->
       {#if item.crafted && item.affixes.length}
         <section class="sec">
-          <span class="k">{t("edit.affixes")}</span>
+          <div class="shead">
+            <span class="k">{t("edit.affixes")}</span>
+            {#if item.affixSort}
+              <label class="fld sort"><span class="k">{t("edit.affixSort")}</span>
+                <select class="select sm" value={item.affixSort.sel} onchange={(e) => set({ affixSort: Number(e.currentTarget.value) })}>
+                  {#each item.affixSort.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
+                </select>
+              </label>
+            {/if}
+          </div>
           {#each item.affixes as a (a.index)}
             <div class="arow">
               <span class="ak"><PobText text={a.kindZh || a.kind} muted="var(--ink-2)" /></span>
@@ -399,6 +453,7 @@
       {/if}
     {/if}
   </div>
+  </div>
 </div>
 
 <style>
@@ -426,13 +481,99 @@
   .grow {
     flex: 1;
   }
-  .ebody {
+  /* preview + controls. Stacked by default: the preview has a fixed height
+     (the divider drags it) and scrolls on its own, the controls scroll below.
+     Wide enough for both: side by side, each column scrolling on its own. */
+  .ework {
     flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: var(--pv-h, 260px) 6px minmax(0, 1fr);
+    container-type: inline-size;
+  }
+  .preview {
+    min-height: 0;
     overflow-y: auto;
-    padding: 8px 10px 16px;
+    padding: 8px 10px 0;
+  }
+  .split {
+    cursor: row-resize;
+    position: relative;
+  }
+  .split::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 2px;
+    width: 36px;
+    height: 2px;
+    margin-left: -18px;
+    border-radius: 1px;
+    background: var(--edge-2);
+  }
+  .split:hover::after,
+  .split:focus-visible::after {
+    background: var(--gold);
+  }
+  .split:focus-visible {
+    outline: none;
+  }
+  .ebody {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 4px 10px 16px;
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  @container (min-width: 860px) {
+    .ework {
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+    }
+    .split {
+      display: none;
+    }
+    .preview {
+      padding: 8px 0 12px 10px;
+    }
+    .ebody {
+      padding-top: 8px;
+    }
+  }
+  .sec.base {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 18px;
+  }
+  .fld {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .shead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .runes {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 4px 12px;
+  }
+  .rune {
+    display: grid;
+    grid-template-columns: 18px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+  .rn {
+    font-size: var(--fs-2xs);
+    color: var(--ink-3);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .tip {
     padding: 8px 12px 10px;
@@ -442,8 +583,6 @@
     border-radius: var(--radius-m);
     font-size: var(--fs-xs);
     line-height: 1.45;
-    max-height: 42vh;
-    overflow-y: auto;
   }
   .line {
     white-space: pre-wrap;
@@ -487,12 +626,6 @@
     font-size: var(--fs-2xs);
     letter-spacing: 0.1em;
     color: var(--ink-3);
-  }
-  .row {
-    display: inline-flex;
-    gap: 6px;
-    align-items: center;
-    flex-wrap: wrap;
   }
   .select.sm,
   .input.sm {

@@ -587,6 +587,8 @@
   "bar.spectres": "幽魂庫…",
   "bar.beasts": "野獸庫…",
   "edit.affixSort": "詞綴排序",
+  "edit.runes": "符文",
+  "edit.resizePreview": "拖曳調整物品預覽的高度",
   "edit.runeSockets": "符文插槽",
   "edit.rune": "符文 #{n}",
   "edit.runeNone": "（無）",
