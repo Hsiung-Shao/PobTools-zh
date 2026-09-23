@@ -401,6 +401,8 @@ export interface TimelessState {
   jewel?: TjField;
   conqueror?: TjField;
   socket?: TjField;
+  /** Tree node id per socket option, 1:1 with socket.options (-1 = All Sockets). */
+  socketIds?: number[];
   node?: TjField;
   fallbackWeights?: TjField;
   abyssAscendancy?: TjField;

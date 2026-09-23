@@ -1857,6 +1857,15 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			if (okSearch && tjs.value("resultCount", 0) > 0) {
 				okRaw = child.Call("tj_result", json{{"index", 1}}, tjr, 60000) && tjr.value("raw", "").find("Lethal Pride") != std::string::npos;
 			}
+			// every socket option carries its tree node (the page maps where it is);
+			// the first is "All Sockets" (-1), the rest are real jewel sockets
+			bool idsOk = okTj && tj0.contains("socketIds") && tj0["socketIds"].size() == sockets && sockets > 1 &&
+			             tj0["socketIds"][0].get<int>() == -1;
+			int realIds = 0;
+			if (idsOk) for (size_t i = 1; i < sockets; i++) if (tj0["socketIds"][i].get<int>() > 0) realIds++;
+			check("tj_open: every socket option names its tree node (for the page's socket map)",
+			      idsOk && realIds == (int)sockets - 1,
+			      "sockets=" + std::to_string(sockets) + " ids=" + (okTj && tj0.contains("socketIds") ? tj0["socketIds"].dump().substr(0, 120) : std::string("none")));
 			child.Call("tj_close", json::object(), tjc, 30000);
 			check("tj_open/tj_set/tj_search: POB's timeless jewel dialog answers with its jewel types, sockets and seed results",
 			      okTj && tj0["jewel"]["options"].size() >= 5 && sockets >= 1 && okSet && okSearch && okRaw && child.Alive(),

@@ -4694,6 +4694,13 @@ local function tj_state(b)
 		jewel = dd(c.jewelSelect),
 		conqueror = dd(c.conquerorSelect),
 		socket = dd(c.socketSelect),
+		-- the tree node behind each socket option (-1 = "All Sockets"): the page
+		-- draws where it is, as POB's own socket drop-down does on hover
+		socketIds = (function()
+			local ids = {}
+			for i, e in ipairs(c.socketSelect and c.socketSelect.list or {}) do ids[i] = type(e) == "table" and tonumber(e.id) or -1 end
+			return ids
+		end)(),
 		node = dd(c.nodeSelect),
 		fallbackWeights = dd(c.fallbackWeightsList),
 		abyssAscendancy = dd(c.abyssAscendancySelect),

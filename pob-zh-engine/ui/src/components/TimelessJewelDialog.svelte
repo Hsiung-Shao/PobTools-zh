@@ -6,8 +6,15 @@
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import type { TreeModel } from "$lib/tree/model";
+  import SocketPreview from "./SocketPreview.svelte";
 
-  let { onclose }: { onclose: () => void } = $props();
+  let {
+    onclose,
+    model = null,
+    allocated = new Set<number>(),
+    radius = 1500,
+  }: { onclose: () => void; model?: TreeModel | null; allocated?: Set<number>; radius?: number } = $props();
 
   let st = $state<TimelessState | null>(null);
   let busy = $state(false);
@@ -15,6 +22,27 @@
   let searchList = $state("");
   let fallbackList = $state("");
   let minWeight = $state("");
+
+  // Socket picker: POB's own drop-down shows a zoomed tree of the socket under
+  // the mouse, so a plain <select> (no hover) lost where each socket is. Rows
+  // preview on hover; with the list closed the chosen socket stays on the map.
+  let socketOpen = $state(false);
+  let socketHover = $state<number | null>(null);
+  let spickEl = $state<HTMLDivElement | null>(null);
+  function outside(e: PointerEvent) {
+    if (socketOpen && spickEl && !spickEl.contains(e.target as Node)) {
+      socketOpen = false;
+      socketHover = null;
+    }
+  }
+  const socketIdAt = (i: number) => st?.socketIds?.[i] ?? -1;
+  const previewId = $derived(socketHover != null ? socketIdAt(socketHover) : socketIdAt((st?.socket?.sel ?? 1) - 1));
+  function pickSocket(i: number) {
+    socketOpen = false;
+    socketHover = null;
+    if (i + 1 !== st?.socket?.sel) void set({ socket: i + 1 });
+  }
+
 
   async function run<T>(fn: () => Promise<TimelessState>) {
     busy = true;
@@ -51,6 +79,8 @@
   }
 </script>
 
+<svelte:window onpointerdown={outside} />
+
 <div class="modal">
   <div class="dialog">
     <div class="top">
@@ -61,6 +91,7 @@
     </div>
     {#if err}<p class="bad">{err}</p>{/if}
     {#if st}
+      <div class="head">
       <div class="grid">
         <span class="k">{t("tj.jewel")}</span>
         <select class="select sm" value={st.jewel?.sel} disabled={busy} onchange={(e) => set({ jewel: Number(e.currentTarget.value) })}>
@@ -71,9 +102,19 @@
           {#each st.conqueror?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
         </select>
         <span class="k">{t("tj.socket")}</span>
-        <select class="select sm" value={st.socket?.sel} disabled={busy} onchange={(e) => set({ socket: Number(e.currentTarget.value) })}>
-          {#each st.socket?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <div class="spick" bind:this={spickEl}>
+          <button class="select sm sbtn" disabled={busy} aria-haspopup="listbox" aria-expanded={socketOpen} onclick={() => (socketOpen = !socketOpen)}>
+            {st.socket?.options[(st.socket?.sel ?? 1) - 1]?.labelZh || st.socket?.options[(st.socket?.sel ?? 1) - 1]?.label || ""}
+          </button>
+          {#if socketOpen}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="slist" role="listbox" tabindex="-1" onmouseleave={() => (socketHover = null)} onkeydown={(e) => e.key === "Escape" && (socketOpen = false)}>
+              {#each st.socket?.options ?? [] as o, i}
+                <button class="sopt" class:on={i + 1 === st.socket?.sel} role="option" aria-selected={i + 1 === st.socket?.sel} onmouseenter={() => (socketHover = i)} onfocus={() => (socketHover = i)} onclick={() => pickSocket(i)}>{o.labelZh || o.label}</button>
+              {/each}
+            </div>
+          {/if}
+        </div>
         {#if st.devotion1?.shown}
           <span class="k">{t("tj.devotion")}</span>
           <span class="two">
@@ -122,6 +163,14 @@
         <textarea class="input area" rows="4" bind:value={searchList} onchange={() => set({ searchList })}></textarea>
         <span class="k">{t("tj.fallbackList")}</span>
         <textarea class="input area" rows="3" bind:value={fallbackList} onchange={() => set({ searchListFallback: fallbackList })}></textarea>
+      </div>
+        <div class="sprev">
+          {#if model && previewId > 0}
+            <SocketPreview {model} {allocated} nodeId={previewId} {radius} />
+          {:else}
+            <div class="sprev-empty dim">{t("tj.allSocketsHint")}</div>
+          {/if}
+        </div>
       </div>
       <div class="acts">
         <button class="btn" disabled={busy} onclick={() => set({ reset: true })}>{t("tj.reset")}</button>
@@ -172,6 +221,74 @@
     display: flex;
     align-items: center;
     gap: 10px;
+  }
+  .head {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .head .grid {
+    flex: 1;
+    min-width: 0;
+  }
+  .sprev {
+    flex: none;
+    width: 262px;
+  }
+  .sprev-empty {
+    width: 262px;
+    height: 262px;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    text-align: center;
+    font-size: var(--fs-xs);
+    border: 1px dashed var(--edge-1);
+    border-radius: var(--radius-m);
+  }
+  .spick {
+    position: relative;
+    min-width: 0;
+  }
+  .sbtn {
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+  }
+  .slist {
+    position: absolute;
+    z-index: 5;
+    left: 0;
+    right: 0;
+    top: calc(100% + 2px);
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 3px;
+    background: var(--surface-2);
+    border: 1px solid var(--edge-2);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-float);
+  }
+  .sopt {
+    text-align: left;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: var(--radius-s);
+    background: none;
+    color: var(--ink-1);
+    font: inherit;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  .sopt:hover,
+  .sopt:focus-visible {
+    background: var(--surface-hover);
+    color: var(--ink-0);
+  }
+  .sopt.on {
+    color: var(--gold);
   }
   .grid {
     display: grid;

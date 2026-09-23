@@ -567,6 +567,7 @@ const EN: Record<string, string> = {
   "tj.title": "Find a timeless jewel",
   "tj.jewel": "Jewel type",
   "tj.conqueror": "Conqueror",
+  "tj.allSocketsHint": "Searching every socket. Pick one to see where it is on the tree.",
   "tj.socket": "Jewel socket",
   "tj.devotion": "Devotion modifiers",
   "tj.abyssAsc": "Required ascendancy outcome",

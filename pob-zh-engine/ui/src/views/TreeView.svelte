@@ -134,6 +134,8 @@
   const overrides = $derived(tree?.overrides ?? {});
   const socketMap = $derived(new Map<number, TreeSocket>((tree?.sockets ?? []).map((s) => [s.nodeId, s])));
   const jewelRadius = $derived(tree?.jewelRadius ?? []);
+  // Timeless jewels cover POB's radius index 3 ("Large"; nodesInRadius[3] in TreeTab)
+  const tjRadius = $derived(jewelRadius[2]?.outer ?? Math.max(1200, ...jewelRadius.map((r) => r.outer)));
   /** "^xRRGGBB" → CSS colour (POB's SetDrawColor on the radius rings). */
   const pobColor = (code: string) => pobRuns(code + " ")[0]?.color ?? "#ffffff";
   const currentAsc = $derived(tree?.ascendClassName && tree.ascendClassName !== "None" ? tree.ascendClassName : null);
@@ -1099,7 +1101,7 @@
     {/if}
 
     {#if tjOpen}
-      <TimelessJewelDialog onclose={() => (tjOpen = false)} />
+      <TimelessJewelDialog onclose={() => (tjOpen = false)} {model} {allocated} radius={tjRadius} />
     {/if}
 
     {#if reportOpen && power?.report?.length}

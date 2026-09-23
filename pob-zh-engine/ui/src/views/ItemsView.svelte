@@ -87,8 +87,15 @@
   }
 
   // --- tooltips ---------------------------------------------------------------
+  // Every hide bumps tipGen, and a fetch only shows its card if nothing hid it in
+  // the meantime: without that, a tooltip requested on the way through a row
+  // arrived after the mouse had left (or the row was gone -- double-click opens
+  // the editor and unmounts it, so its mouseleave never fires) and stayed on
+  // screen over the editor with nothing left to close it.
+  let tipGen = 0;
   function showTip(key: string, fetch: () => Promise<ItemTooltip>, e: MouseEvent) {
     clearTimeout(tipTimer);
+    const gen = ++tipGen;
     const x = Math.round(Math.min(e.clientX + 18, window.innerWidth - 360));
     const y = Math.round(Math.min(e.clientY + 12, window.innerHeight - 320));
     const hit = tipCache.get(key);
@@ -100,14 +107,15 @@
       try {
         const r = await fetch();
         tipCache.set(key, r);
-        tip = { lines: r.lines, color: r.color, x, y };
+        if (gen === tipGen) tip = { lines: r.lines, color: r.color, x, y };
       } catch {
-        tip = null;
+        if (gen === tipGen) tip = null;
       }
     }, 120);
   }
   function hideTip() {
     clearTimeout(tipTimer);
+    tipGen++;
     tip = null;
   }
   const tipItem = (id: number, slotName: string | undefined, e: MouseEvent) =>
@@ -214,6 +222,7 @@
 
   // --- editing (POB's displayItem) ---------------------------------------------
   async function openEdit(p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) {
+    hideTip();
     pasteErr = null;
     try {
       // a pasted text also gets POB's reading of it line by line, so the editor
@@ -363,7 +372,8 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="page" onmouseleave={hideTip}>
+<!-- any click or scroll dismisses a hover card: the row under it may be about to go away or move -->
+<div class="page" onmouseleave={hideTip} onpointerdown={hideTip} onwheel={hideTip}>
   <!-- 左:裝備欄 -->
   <section class="col slots">
     <div class="head">

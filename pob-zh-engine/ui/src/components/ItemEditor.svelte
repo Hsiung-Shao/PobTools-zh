@@ -324,9 +324,12 @@
               <select class="select sm wide" value={a.sel} onchange={(e) => affix(a.index, { sel: Number(e.currentTarget.value) })}>
                 {#each a.options as o, i}<option value={i + 1}>{(o.labelZh || o.label).replace(/\^x[0-9a-fA-F]{6}|\^\d/g, "")}{o.tiers && o.tiers > 1 ? ` (${o.tiers})` : ""}</option>{/each}
               </select>
-              {#if a.rollShown}
-                <input class="slider" type="range" min="0" max="1" step="0.01" value={a.roll ?? 0.5} title={t("edit.roll")} onchange={(e) => affix(a.index, { roll: Number(e.currentTarget.value) })} />
-              {/if}
+              <span class="roll">
+                {#if a.rollShown}
+                  <input class="slider" type="range" min="0" max="1" step="0.01" value={a.roll ?? 0.5} title={t("edit.roll")} aria-label={t("edit.roll")} onchange={(e) => affix(a.index, { roll: Number(e.currentTarget.value) })} />
+                  <span class="rv">{Math.round((a.roll ?? 0.5) * 100)}%</span>
+                {/if}
+              </span>
             </div>
           {/each}
         </section>
@@ -337,11 +340,14 @@
         <section class="sec">
           <span class="k">{t("edit.ranges")}</span>
           {#each item.ranges as r (r.index)}
-            <div class="arow">
+            <div class="arow range">
               <span class="rl"><PobText text={r.labelZh || r.label} muted="var(--ink-1)" /></span>
-              {#if r.showSlider}
-                <input class="slider" type="range" min="0" max="1" step="0.01" value={r.range ?? 0.5} onchange={(e) => set({ range: { index: r.index, value: Number(e.currentTarget.value) } })} />
-              {/if}
+              <span class="roll">
+                {#if r.showSlider}
+                  <input class="slider" type="range" min="0" max="1" step="0.01" value={r.range ?? 0.5} aria-label={t("edit.roll")} onchange={(e) => set({ range: { index: r.index, value: Number(e.currentTarget.value) } })} />
+                  <span class="rv">{Math.round((r.range ?? 0.5) * 100)}%</span>
+                {/if}
+              </span>
               {#if r.mutable}
                 <label class="link" title={t("edit.mutate")}><input type="checkbox" checked={r.mutated} onchange={(e) => set({ range: { index: r.index, mutate: e.currentTarget.checked } })} /> {t("edit.mutate")}</label>
               {/if}
@@ -518,7 +524,50 @@
     font-size: var(--fs-2xs);
     color: var(--ink-2);
   }
-  .arow,
+  /* One line per affix: kind | modifier | roll. The slider column is always
+     there (empty for a modifier with nothing to roll), so the drop-downs line
+     up; a stacked label / drop-down / slider cost three lines per affix. */
+  .arow {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) 168px;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+  }
+  .arow.range {
+    grid-template-columns: minmax(0, 1fr) 168px auto;
+  }
+  /* a narrow editor column (small window, big zoom): the drop-down keeps the room */
+  .sec:has(> .arow) {
+    container-type: inline-size;
+  }
+  @container (max-width: 520px) {
+    .arow {
+      grid-template-columns: max-content minmax(0, 1fr) 104px;
+    }
+    .arow.range {
+      grid-template-columns: minmax(0, 1fr) 104px auto;
+    }
+    .rv {
+      display: none;
+    }
+  }
+  .roll {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .roll .slider {
+    flex: 1;
+    min-width: 0;
+  }
+  .rv {
+    width: 34px;
+    text-align: right;
+    font-size: var(--fs-2xs);
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+  }
   .tag {
     flex: 0 0 auto;
     padding: 0 5px;
@@ -534,9 +583,9 @@
     font-size: var(--fs-xs);
   }
   .ak {
-    width: 52px;
-    flex: none;
+    min-width: 48px;
     font-size: var(--fs-2xs);
+    white-space: nowrap;
   }
   .rl {
     flex: 1;
