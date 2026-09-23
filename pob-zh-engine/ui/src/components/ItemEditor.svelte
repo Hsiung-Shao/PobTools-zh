@@ -794,8 +794,11 @@
     flex-direction: column;
     gap: 4px;
   }
+  /* the node tooltip in a popup (anoint etc.) scrolls inside its own box; the
+     live preview's .tip does not need this (its .preview pane scrolls) */
   .tip.node {
     max-height: 30vh;
+    overflow-y: auto;
     margin-top: 6px;
     border-top-color: var(--gold);
   }
