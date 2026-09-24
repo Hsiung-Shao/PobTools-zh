@@ -5077,12 +5077,33 @@ local function edit_state(p)
 	-- A hybrid affix is listed as its stat lines joined with "/" ("#% increased
 	-- Physical Damage/+# to Accuracy Rating"), which no dictionary has as one key:
 	-- translate each line on its own and join them back the same way.
+	-- PoE2 radius jewels: POB shortens "Notable Passive Skills in Radius also
+	-- grant X" to "Notable: X" for the list (ItemsTab), a form no dictionary has.
+	-- Translate the full official line, then shorten the Chinese the same way.
+	local RADIUS_ZH = { Small = "小型天賦", Notable = "核心天賦" }
+	local function tr_radius(l)
+		local kind, rest = l:match("^(%a+): (.+)$")
+		if not (kind and RADIUS_ZH[kind]) then return nil end
+		local full = kind .. " Passive Skills in Radius also grant " .. rest
+		local z = tr(full)
+		if z == full then
+			-- a few radius lines have no "also grant" entry, only the stat itself
+			local zr = tr(rest)
+			if zr == rest then return nil end
+			return RADIUS_ZH[kind] .. "：" .. zr
+		end
+		local lead = "範圍內" .. RADIUS_ZH[kind] .. "也會賦予"
+		if z:sub(1, #lead) == lead then z = RADIUS_ZH[kind] .. "：" .. z:sub(#lead + 1):gsub("^%s+", "") end
+		return z
+	end
 	local function tr_affix(l)
 		local z = tr(l)
+		if z == l then z = tr_radius(l) or z end
 		if z ~= l or not l:find("/", 1, true) then return z end
 		local parts, changed = {}, false
 		for part in (l .. "/"):gmatch("([^/]*)/") do
 			local pz = tr(part)
+			if pz == part then pz = tr_radius(part) or pz end
 			if pz ~= part then changed = true end
 			parts[#parts + 1] = pz
 		end

@@ -2698,6 +2698,47 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), tpCancel, 60000);
 		}
 
+		// --- craft drop-downs of a radius jewel -------------------------------------
+		// POB lists "Notable Passive Skills in Radius also grant X" as "Notable: X",
+		// a form no dictionary has; the bridge translates the full official line and
+		// shortens it the same way. Every option must come back in Chinese.
+		{
+			json co, ed, cancel;
+			std::string type, base;
+			if (child.Call("craft_item_options", json::object(), co, 60000))
+				for (auto& ty : co["types"]) {
+					const std::string tn = ty.value("type", "");
+					if (tn.find("Jewel") == std::string::npos) continue;
+					// the radius lines live on the Time-Lost jewels
+					for (auto& bs : ty["bases"])
+						if (bs.value("name", "").find("Time-Lost") != std::string::npos) {
+							type = tn;
+							base = bs.value("name", "");
+							break;
+						}
+					if (!base.empty()) break;
+				}
+			bool okEd = !type.empty() && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", type}, {"base", base}}}}, ed, 60000);
+			int opts = 0, radius = 0, english = 0;
+			std::string firstEnglish;
+			if (okEd)
+				for (auto& a : ed["affixes"])
+					for (auto& o : a["options"]) {
+						opts++;
+						const std::string l = o.value("label", ""), z = o.value("labelZh", "");
+						if (l.rfind("Small: ", 0) == 0 || l.rfind("Notable: ", 0) == 0) radius++;
+						if (l != "None" && (z.empty() || z == l)) {
+							english++;
+							if (firstEnglish.empty()) firstEnglish = l;
+						}
+					}
+			check("PoE2 craft drop-downs of a jewel: every option translated, 'Small:/Notable:' radius lines included",
+			      okEd && opts > 20 && radius > 10 && english == 0,
+			      type + "/" + base + " options=" + std::to_string(opts) + " radius=" + std::to_string(radius) +
+			          " english=" + std::to_string(english) + (firstEnglish.empty() ? "" : " e.g. " + firstEnglish));
+			child.Call("item_edit_cancel", json::object(), cancel, 60000);
+		}
+
 		// --- a rune that changes the affix limit ------------------------------------
 		// Field report: craft a weapon, pick "+1 Suffix Modifier allowed" (Serle's
 		// Triumph) and merely hovering the new suffix row crashed POB -- the rune's
