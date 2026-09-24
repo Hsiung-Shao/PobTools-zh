@@ -19,6 +19,18 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.3 (2026-09-24)\n"
+	u8"Fixed\n"
+	u8"　·Most of the affix drop-downs when crafting an item were in English (PoE1 and PoE2); nearly all of them are now translated.\n"
+	u8"　·New interface item editor: picking an affix made the preview above grow and pushed every control below it down.\n"
+	u8"　·New interface item editor: each affix took three lines (label, drop-down, slider).\n"
+	u8"　·New interface: an item tooltip could stay on screen and never go away.\n"
+	u8"　·New interface anoint and similar dialogs: the passive's description spilled out of its box over the buttons.\n"
+	u8"Added\n"
+	u8"　·New interface timeless jewels: picking a socket shows where it is on the tree and what its radius covers.\n"
+	u8"Changed\n"
+	u8"　·New interface item editor: the preview stays at the top (drag the divider to resize it), quality and rune/jewel socket counts sit together at the top, and runes are a compact list.\n"
+	u8"\n"
 	u8"v1.7.2 (2026-09-23)\n"
 	u8"Fixed\n"
 	u8"　·After applying a POB update from the new interface, the old window stayed open next to the new one.\n"
