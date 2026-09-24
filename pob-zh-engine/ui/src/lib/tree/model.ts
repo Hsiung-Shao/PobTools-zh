@@ -50,6 +50,26 @@ export interface RawNode {
   draw?: { w?: number; h?: number; ow?: number; oh?: number; ew?: number; eh?: number };
   /** PoE2 attribute node (Strength/Dexterity/Intelligence chosen on allocation). */
   attribute?: boolean;
+  /**
+   * PoE2 (the Oracle's hidden passives, node.unlockConstraint): every node listed
+   * must be allocated before this one is drawn, hoverable or searchable.
+   */
+  unlock?: number[];
+}
+
+/** POB2's node whose unallocated hover previews the hidden passives waiting on it (PassiveTreeView unseenPathHover). */
+export const UNSEEN_PATH_NODE = 5571;
+
+/**
+ * PassiveTreeView:checkUnlockConstraints, inverted: true while the node is still
+ * hidden. `preview` = the unallocated UNSEEN_PATH_NODE is under the mouse, which
+ * shows the nodes that wait on it first.
+ */
+export function isLocked(raw: Pick<RawNode, "unlock">, allocated: ReadonlySet<number>, preview = false): boolean {
+  const u = raw.unlock;
+  if (!u?.length) return false;
+  if (preview && u[0] === UNSEEN_PATH_NODE) return false;
+  return u.some((id) => !allocated.has(id));
 }
 
 export interface RawGroup {

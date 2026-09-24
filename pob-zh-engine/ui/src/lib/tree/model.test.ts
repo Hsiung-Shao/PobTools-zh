@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModel, HitIndex, type RawNode, type TreeData, type TreeNode } from "./model";
+import { buildModel, HitIndex, isLocked, UNSEEN_PATH_NODE, type RawNode, type TreeData, type TreeNode } from "./model";
 
 const node = (p: Partial<RawNode> & { id: number; x: number; y: number }): RawNode => ({
   name: `n${p.id}`,
@@ -164,5 +164,19 @@ describe("buildModel (PoE2)", () => {
   it("keeps group centre images out of hit testing", () => {
     expect(m.nodes.get(5)!.kind).toBe("image");
     expect(m.hit.at(150, 0)).toBeNull();
+  });
+});
+
+describe("POB2 hidden passives (unlockConstraint)", () => {
+  it("stay hidden until every node they wait on is allocated", () => {
+    expect(isLocked({}, new Set())).toBe(false);
+    expect(isLocked({ unlock: [] }, new Set())).toBe(false);
+    expect(isLocked({ unlock: [1, 2] }, new Set([1]))).toBe(true);
+    expect(isLocked({ unlock: [1, 2] }, new Set([1, 2]))).toBe(false);
+  });
+  it("hovering the unallocated unseen-path node previews only the ones waiting on it", () => {
+    expect(isLocked({ unlock: [UNSEEN_PATH_NODE] }, new Set(), true)).toBe(false);
+    expect(isLocked({ unlock: [UNSEEN_PATH_NODE] }, new Set(), false)).toBe(true);
+    expect(isLocked({ unlock: [42] }, new Set(), true)).toBe(true);
   });
 });

@@ -20,7 +20,7 @@
   import { app } from "$lib/state.svelte";
   import { prefs } from "$lib/prefs.svelte";
   import { pobRuns } from "$lib/pobtext";
-  import { buildModel, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
+  import { buildModel, isLocked, UNSEEN_PATH_NODE, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
   import { Sprites, ART_SCALE } from "$lib/tree/assets";
   import PobText from "../components/PobText.svelte";
   import ClassChangeDialog from "../components/ClassChangeDialog.svelte";
@@ -138,6 +138,11 @@
   const SET_COLOR = ["", "#dd0022", "#33ff77"];
 
   const allocated = $derived(new Set(tree?.allocatedNodes ?? []));
+  // POB2's hidden passives (the Oracle): not drawn, hovered or found until what
+  // they wait on is allocated, as in the classic window; hovering the unallocated
+  // unseen-path node previews them.
+  const unseenPreview = $derived(hover?.id === UNSEEN_PATH_NODE && !allocated.has(UNSEEN_PATH_NODE));
+  const locked = (n: TreeNode) => isLocked(n.raw, allocated, unseenPreview);
   const nodeModes = $derived(tree?.nodeModes ?? {});
   const modeOf = (id: number) => nodeModes[String(id)] ?? 0;
   const overrides = $derived(tree?.overrides ?? {});
@@ -264,7 +269,7 @@
         for (const n of M.nodes.values()) {
           const eff = overrides[String(n.id)]?.effect ?? n.raw.effectImage;
           const d = n.raw.draw;
-          if (!eff || !visible(n.x, n.y)) continue;
+          if (!eff || !visible(n.x, n.y) || locked(n)) continue;
           const lit = allocated.has(n.id) || hoverPath.has(n.id);
           const hw = (n.kind === "image" ? d?.w : d?.ew) ?? 0;
           const hh = (n.kind === "image" ? d?.h : d?.eh) ?? 0;
@@ -323,6 +328,7 @@
       const a = M.nodes.get(e.a)!;
       const b = M.nodes.get(e.b)!;
       if (!visible(a.x, a.y) && !visible(b.x, b.y)) continue;
+      if (locked(a) || locked(b)) continue;
       const aa = allocated.has(a.id);
       const ab = allocated.has(b.id);
       let st: Style = "dim";
@@ -384,7 +390,7 @@
     // nodes
     const showIcons = zoom > 0.035;
     for (const n of M.nodes.values()) {
-      if (!visible(n.x, n.y) || n.kind === "classStart") continue;
+      if (!visible(n.x, n.y) || n.kind === "classStart" || locked(n)) continue;
       const [sx, sy] = toScreen(n.x, n.y);
       const alloc = allocated.has(n.id);
       const st = stateOf(n);
@@ -689,7 +695,8 @@
     }
     if (!model) return;
     const [wx, wy] = toWorld(sx, sy);
-    setHover(model.hit.at(wx, wy));
+    const at = model.hit.at(wx, wy);
+    setHover(at && !locked(at) ? at : null);
   }
   async function onUp(e: PointerEvent) {
     if (!drag) return;
@@ -931,7 +938,7 @@
     }
     const s = new Set<number>();
     for (const n of model.nodes.values()) {
-      if (n.kind === "classStart" || n.kind === "ascStart" || n.kind === "image") continue;
+      if (n.kind === "classStart" || n.kind === "ascStart" || n.kind === "image" || locked(n)) continue;
       const r = n.raw;
       if (
         r.name.toLowerCase().includes(q) ||

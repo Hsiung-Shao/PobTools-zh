@@ -718,6 +718,15 @@ function M.tree_data(p)
 					effects[i] = { effect = e.effect, stats = es, statsZh = esZh }
 				end
 			end
+			-- PoE2 (the Oracle's hidden passives): the nodes that must all be
+			-- allocated before this one is drawn, hoverable or searchable at all
+			-- (PassiveTreeView:checkUnlockConstraints)
+			local unlock
+			if node.unlockConstraint and node.unlockConstraint.nodes then
+				unlock = {}
+				for i, nid in ipairs(node.unlockConstraint.nodes) do unlock[i] = nid end
+				if #unlock == 0 then unlock = nil end
+			end
 			nodes[tostring(id)] = {
 				id = id, name = node.dn, nameZh = tr(node.dn), type = node.type,
 				stats = stats, statsZh = statsZh,
@@ -747,6 +756,7 @@ function M.tree_data(p)
 					eh = node.targetSize.effect and node.targetSize.effect.height,
 				} or nil,
 				attribute = node.isAttribute and true or nil,
+				unlock = unlock,
 			}
 		end
 	end
