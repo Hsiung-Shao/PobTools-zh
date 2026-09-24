@@ -1508,7 +1508,14 @@ static void delete_old_backups(const std::wstring& exeDir, int retries)
 	};
 	if (file_exists(exeDir + L"pob-zh.exe.old")) tryDelete(exeDir + L"pob-zh.exe.old");
 	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((exeDir + L"engine\\*.old").c_str(), &fd);
+	HANDLE h = FindFirstFileW((exeDir + L"*.dll.old").c_str(), &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) tryDelete(exeDir + fd.cFileName);
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+	h = FindFirstFileW((exeDir + L"engine\\*.old").c_str(), &fd);
 	if (h != INVALID_HANDLE_VALUE) {
 		do {
 			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
@@ -1518,8 +1525,40 @@ static void delete_old_backups(const std::wstring& exeDir, int retries)
 	}
 }
 
+int RemoveStrayRootDlls(const std::wstring& exeDir)
+{
+	// Only for the engine\ layout: a legacy flat install keeps its DLLs beside
+	// the exe on purpose. And only a root DLL whose twin lives in engine\ -- a
+	// file we do not ship there is not ours to touch.
+	if (!file_exists(exeDir + L"engine\\SimpleGraphic.dll")) return 0;
+	int removed = 0;
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((exeDir + L"*.dll").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return 0;
+	do {
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+		const std::wstring name = fd.cFileName;
+		if (!file_exists(exeDir + L"engine\\" + name)) continue;
+		const std::wstring p = exeDir + name;
+		// already loaded by this process (or another launcher): cannot be
+		// deleted, but a loaded image can be renamed; the *.dll.old goes next time
+		if (DeleteFileW(p.c_str()) ||
+		    MoveFileExW(p.c_str(), (p + L".old").c_str(), MOVEFILE_REPLACE_EXISTING)) {
+			removed++;
+			log_line(exeDir, "removed stray root DLL (engine\\ has its own copy): " + narrow(name));
+		}
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+	return removed;
+}
+
 void CleanupAppUpdateLeftovers(const std::wstring& exeDir)
 {
+	// v1.7.0-1.7.3 packages carried copies of engine\ DLLs in the install root
+	// by mistake. The exe's folder is searched first, so the launcher loaded
+	// those instead of engine\'s -- and held them locked, which made the next
+	// update fail to replace glfw3.dll. Take them out before anything loads one.
+	RemoveStrayRootDlls(exeDir);
 	// One attempt, no retry sleeps: this runs before the launcher window exists,
 	// and right after an update the .old files are still held by the exiting
 	// previous exe -- five 200 ms retries used to put up to a second in front of
@@ -1568,7 +1607,13 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 		std::vector<std::wstring> content, boot;
 		int skippedTrans = 0;
 		for (const std::wstring& rel : rels) {
-			if (rel == L"pob-zh.exe" || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
+			// Root-level DLLs too: Windows searches the exe's own folder BEFORE the
+			// SetDllDirectoryW(engine\\) one, so a DLL sitting beside pob-zh.exe is
+			// the copy the running launcher has loaded -- overwriting it fails
+			// ("內容檔替換失敗: glfw3.dll", field report on 1.7.3), renaming works.
+			const bool rootDll = rel.find(L'\\') == std::wstring::npos && rel.size() > 4 &&
+			                     _wcsicmp(rel.c_str() + rel.size() - 4, L".dll") == 0;
+			if (rel == L"pob-zh.exe" || rootDll || rel.compare(0, 7, L"engine\\") == 0) { boot.push_back(rel); continue; }
 			// Normally a no-op since v0.19.0: PobTools-update-<ver>.zip carries no
 			// dictionaries at all. Kept as the last line of defence for the two
 			// cases where the stage DOES hold them -- someone pointed at the full
@@ -2102,6 +2147,43 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		     readPrefix(inst + L"engine\\glfw3.dll") == "OLD" &&
 		     readPrefix(inst + L"engine\\libGLESv2.dll") == "OLD";
 		check(ok, "T7 mid-swap failure rolls boot files back");
+	}
+
+	// T25: a root-level DLL the running launcher has loaded is replaced by
+	// renaming, not overwriting (field report on 1.7.3: 「內容檔替換失敗:
+	// glfw3.dll」). A real DLL image is mapped to hold it the way the loader does.
+	{
+		std::wstring inst = root + L"\\t25\\inst\\";
+		std::wstring stage = root + L"\\t25\\stage\\";
+		bool ok = setupInstall(inst, stage);
+		wchar_t sys[MAX_PATH];
+		GetSystemDirectoryW(sys, MAX_PATH);
+		ok = ok && CopyFileW((std::wstring(sys) + L"\\version.dll").c_str(), (inst + L"glfw3.dll").c_str(), FALSE);
+		ok = ok && writeSmall(stage + L"glfw3.dll", "NEW");
+		HMODULE held = ok ? LoadLibraryExW((inst + L"glfw3.dll").c_str(), nullptr, DONT_RESOLVE_DLL_REFERENCES) : nullptr;
+		std::string aerr;
+		const bool applied = held && ApplyStagedAppUpdateAndRelaunch(inst, stage, "9.9.9", false, &aerr) == 0;
+		if (held) FreeLibrary(held);
+		ok = ok && held && applied && readPrefix(inst + L"glfw3.dll") == "NEW" && file_exists(inst + L"glfw3.dll.old");
+		check(ok, ("T25 a loaded root-level DLL is swapped by rename, not overwritten" +
+		           (aerr.empty() ? std::string() : " (" + aerr + ")")).c_str());
+	}
+
+	// T26: stray root copies of engine\ DLLs are removed at start; a root DLL with
+	// no engine\ twin, and every DLL of a legacy flat install, are left alone.
+	{
+		std::wstring inst = root + L"\\t26\\inst\\";
+		std::wstring flat = root + L"\\t26\\flat\\";
+		bool ok = writeSmall(inst + L"engine\\SimpleGraphic.dll", "E") && writeSmall(inst + L"engine\\fmt.dll", "E") &&
+		          writeSmall(inst + L"fmt.dll", "R") && writeSmall(inst + L"SimpleGraphic.dll", "R") &&
+		          writeSmall(inst + L"userplugin.dll", "U") &&
+		          writeSmall(flat + L"SimpleGraphic.dll", "F") && writeSmall(flat + L"fmt.dll", "F");
+		const int n = ok ? RemoveStrayRootDlls(inst) : -1;
+		const int nFlat = ok ? RemoveStrayRootDlls(flat) : -1;
+		ok = ok && n == 2 && !file_exists(inst + L"fmt.dll") && !file_exists(inst + L"SimpleGraphic.dll") &&
+		     file_exists(inst + L"userplugin.dll") && file_exists(inst + L"engine\\fmt.dll") &&
+		     nFlat == 0 && file_exists(flat + L"fmt.dll");
+		check(ok, "T26 stray root copies of engine DLLs are removed; foreign DLLs and flat installs are not");
 	}
 
 	// T8: what counts as translation data -- now the line between the two release

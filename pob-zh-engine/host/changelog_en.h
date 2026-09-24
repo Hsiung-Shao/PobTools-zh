@@ -19,6 +19,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.4 (2026-09-24)\n"
+	u8"Fixed\n"
+	u8"　·Updating to 1.7.3 failed with \"content file replace failed: glfw3.dll\" on installs that had been updated through 1.7.0-1.7.2.\n"
+	u8"\n"
 	u8"v1.7.3 (2026-09-24)\n"
 	u8"Fixed\n"
 	u8"　·Most of the affix drop-downs when crafting an item were in English (PoE1 and PoE2); nearly all of them are now translated.\n"

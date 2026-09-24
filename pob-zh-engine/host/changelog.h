@@ -19,6 +19,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v1.7.4（2026-09-24）\n"
+	u8"修正\n"
+	u8"　·自動更新到 1.7.3 失敗,顯示「內容檔替換失敗: glfw3.dll」(先前從 1.7.0~1.7.2 更新過來的安裝會遇到)。\n"
+	u8"\n"
 	u8"v1.7.3（2026-09-24）\n"
 	u8"修正\n"
 	u8"　·打造物品的詞綴下拉大半顯示英文(PoE1、PoE2 都有),現在幾乎全部顯示中文。\n"

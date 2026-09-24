@@ -329,6 +329,10 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 // Every-start best-effort cleanup: deletes *.old leftovers and the download
 // cache from a previous swap. Safe to call unconditionally.
 void CleanupAppUpdateLeftovers(const std::wstring& exeDir);
+// Delete (or rename to *.old when loaded) every DLL in the install root that
+// also exists in engine\\ -- stray copies the exe would load instead of
+// engine\\'s. Returns how many were taken out. Called by the cleanup above.
+int RemoveStrayRootDlls(const std::wstring& exeDir);
 
 // "pob-zh.exe --app-update" (checkOnly=false) / "--app-update-check" (true):
 // headless check (+ translation catch-up + app stage/swap, without relaunch).
