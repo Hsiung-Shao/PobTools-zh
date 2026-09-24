@@ -572,8 +572,19 @@ static std::string digits_to_hash(const std::string &s, std::vector<std::string>
             append_slot(",");
         } else {
             in_number = false;
-            /* 原文自己就寫著 '#':它也會成為一個待填格,但沒有對應的數值 */
-            if (c == '#' && slots) slots->push_back(std::string());
+            if (c == '#') {
+                /* 原文自己就寫著 '#'(POB 工藝介面的詞綴下拉:"+# to all Attributes"):
+                ** 它也是一個待填格,而且要跟數字一樣吃掉前面的正負號。否則
+                ** "+5 to all Attributes" 的鍵是 "# to all Attributes",同一條詞綴寫成
+                ** "+#" 卻變成 "+# to all Attributes",整份字典都對不上 —— POE1 工藝下拉
+                ** 大半顯示英文就是這個。吃掉的正負號留在這一格的值裡("+#"),填回
+                ** 譯文時照原樣放回;沒有正負號的仍是空字串 = 「沒有數值」。 */
+                char sign = result.empty() ? '\0' : result.back();
+                bool absorbed = absorb_sign(result);
+                result += '#';
+                if (slots) slots->push_back(absorbed ? std::string(1, sign) + "#" : std::string());
+                continue;
+            }
             result += c;
         }
     }
@@ -999,7 +1010,8 @@ int translation_debug_slot_mismatch(const char *text) {
     std::vector<std::string> nums = extract_numbers(normalize_placeholders(text));
     size_t j = 0, bad = 0;
     for (const std::string &v : vals) {
-        if (v.empty()) continue;
+        /* 原文自帶的 '#' 不是數字:空字串,或吃掉了正負號的 "+#" / "-#" */
+        if (v.empty() || v.back() == '#') continue;
         if (j >= nums.size() || nums[j] != v) bad++;
         j++;
     }

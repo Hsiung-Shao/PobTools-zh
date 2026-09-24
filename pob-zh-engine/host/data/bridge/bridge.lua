@@ -5073,7 +5073,21 @@ local function edit_state(p)
 		versions = { options = dd_options(c.displayItemVersion), sel = c.displayItemVersion.selIndex or 1 }
 	end
 
-	-- affixes (crafted items): POB's dropdowns after UpdateAffixControls
+	-- affixes (crafted items): POB's dropdowns after UpdateAffixControls.
+	-- A hybrid affix is listed as its stat lines joined with "/" ("#% increased
+	-- Physical Damage/+# to Accuracy Rating"), which no dictionary has as one key:
+	-- translate each line on its own and join them back the same way.
+	local function tr_affix(l)
+		local z = tr(l)
+		if z ~= l or not l:find("/", 1, true) then return z end
+		local parts, changed = {}, false
+		for part in (l .. "/"):gmatch("([^/]*)/") do
+			local pz = tr(part)
+			if pz ~= part then changed = true end
+			parts[#parts + 1] = pz
+		end
+		return changed and table.concat(parts, "/") or z
+	end
 	local affixes = {}
 	if it.crafted then
 		for i = 1, (it.affixLimit or 0) do
@@ -5084,7 +5098,7 @@ local function edit_state(p)
 				local opts = {}
 				for k, e in ipairs(drop.list or {}) do
 					local l = dd_label(e)
-					opts[k] = { label = l, labelZh = tr(l), tiers = type(e) == "table" and e.modList and #e.modList or nil, haveRange = type(e) == "table" and e.haveRange and true or false }
+					opts[k] = { label = l, labelZh = tr_affix(l), tiers = type(e) == "table" and e.modList and #e.modList or nil, haveRange = type(e) == "table" and e.haveRange and true or false }
 				end
 				local slider = drop.slider
 				affixes[#affixes + 1] = {

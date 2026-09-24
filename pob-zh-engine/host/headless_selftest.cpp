@@ -1473,6 +1473,28 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCo && co["rarities"].size() >= 4 && co["types"].size() >= 40 && !craftBase.empty(),
 			      okCo ? "types=" + std::to_string(co["types"].size()) + " first=" + craftType + "/" + craftBase : co.dump().substr(0, 300));
 			bool okEdC = okCo && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", craftType}, {"base", craftBase}}}}, edC, 60000);
+			// the affix drop-downs read "+# to maximum Life" / "A/B" (hybrids): every
+			// option must come back translated. A literal '#' used to keep its sign out
+			// of the dictionary key and a hybrid was looked up as one string, so a
+			// third of these lists stayed English (field report, 165 of 474).
+			{
+				int opts = 0, english = 0;
+				std::string firstEnglish;
+				if (okEdC)
+					for (auto& a : edC["affixes"])
+						for (auto& o : a["options"]) {
+							opts++;
+							const std::string l = o.value("label", ""), z = o.value("labelZh", "");
+							if (l != "None" && (z.empty() || z == l)) {
+								english++;
+								if (firstEnglish.empty()) firstEnglish = l;
+							}
+						}
+				check("craft drop-downs: every affix option is translated ('+#' placeholders, A/B hybrids)",
+				      okEdC && opts > 20 && english == 0,
+				      craftType + "/" + craftBase + " options=" + std::to_string(opts) + " english=" + std::to_string(english) +
+				          (firstEnglish.empty() ? "" : " e.g. " + firstEnglish));
+			}
 			bool okEdA = okEdC && edC["affixes"].size() >= 1 && child.Call("item_edit_affix", json{{"index", 1}, {"sel", 2}}, edA, 60000);
 			// count the EXPLICIT lines: modLines carries every list POB draws, so a
 			// base with an implicit of its own would otherwise fail this

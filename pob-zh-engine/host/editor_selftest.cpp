@@ -680,6 +680,34 @@ int RunEditorSelftest(const std::string& games)
 	SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 	translation_reload();
 
+	// T42-T45: the crafting drop-down's '#' placeholders. POB lists affixes as
+	// "+# to all Attributes (9)"; a number absorbs its sign into the key
+	// ("+5 ..." -> "# ...") but a literal '#' did not ("+# ..."), so most of the
+	// PoE1 affix list stayed English although the dictionary had every line.
+	// The '#' form must come out exactly as the numeric form with '#' for the number.
+	printf("\n=== '#' placeholders (crafting drop-down) ===\n");
+	{
+		auto same_as_number = [&](const char* hashForm, const char* numForm, const char* num, const char* name) {
+			const std::string viaNum = engine_says(numForm);
+			const std::string viaHash = engine_says(hashForm);
+			std::string want = viaNum;
+			const size_t p = want.find(num);
+			if (p != std::string::npos) want.replace(p, strlen(num), "#");
+			check(!viaNum.empty() && viaNum != numForm && viaHash == want, name);
+			if (viaHash != want) printf("           got '%s' want '%s'\n", viaHash.c_str(), want.c_str());
+		};
+		same_as_number("+# to all Attributes", "+5 to all Attributes", "5", "T42 '+#' takes its sign like a number (all Attributes)");
+		same_as_number("+#% to Fire Resistance", "+37% to Fire Resistance", "37", "T43 ...and with a percent (Fire Resistance)");
+		same_as_number("-#% to Cold Resistance", "-20% to Cold Resistance", "20", "T44 ...and a minus sign");
+		// an unsigned '#' that already had its own dictionary entry keeps it
+		// (that entry spells the spacing differently from the numeric one, so
+		// only "translated, '#' kept" is asserted)
+		const std::string unsignedHash = engine_says("#% increased Fire Damage");
+		check(!unsignedHash.empty() && unsignedHash != "#% increased Fire Damage" && unsignedHash.find('#') != std::string::npos &&
+		          unsignedHash.find("increased") == std::string::npos,
+		      "T45 an unsigned '#' that already translated keeps doing so");
+	}
+
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);
 	if (g_fail == 0) {
 		printf("結論：透過編輯器的修正確實會生效；但同一個英文鍵存在多個檔案時，\n"
