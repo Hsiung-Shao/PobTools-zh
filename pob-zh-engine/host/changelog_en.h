@@ -19,6 +19,18 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.5 (2026-09-25)\n"
+	u8"Fixed\n"
+	u8"　·New interface Items, Skills and Notes: they stayed solid with a background picture and panel opacity set.\n"
+	u8"　·New interface tree (PoE2): the Oracle's hidden passives showed from the start; they now appear only after The Unseen Path is allocated, as in the original.\n"
+	u8"　·New interface tree Compare: after leaving the tree tab and coming back, the drop-down said off while still comparing.\n"
+	u8"Added\n"
+	u8"　·New interface build list: clickable path, a \"..\" row and an Up one level button, Backspace goes up too; returning to the list stays in the folder you were in.\n"
+	u8"　·New interface: the mouse's back / forward buttons go to the previous / next screen (Alt + Left / Right as well).\n"
+	u8"　·New interface tree Compare: a legend for the green and red rings with how many points each tree has more; with only one tree it says to add one first.\n"
+	u8"　·New interface background: choose where it shows (the whole window / only behind the passive tree).\n"
+	u8"　·New interface background: mp4 / webm videos (the launcher still shows pictures only).\n"
+	u8"\n"
 	u8"v1.7.4 (2026-09-24)\n"
 	u8"Fixed\n"
 	u8"　·Updating to 1.7.3 failed with \"content file replace failed: glfw3.dll\" on installs that had been updated through 1.7.0-1.7.2.\n"
