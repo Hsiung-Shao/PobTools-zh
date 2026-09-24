@@ -3,9 +3,12 @@
   // sort them. Double-click (or Enter) loads one; folders descend. The bar
   // has POB's New / New Folder; each row's hover actions are Open / Copy /
   // Rename / Delete (BuildListControl's RenameBuild / DeleteBuild).
-  import { onMount } from "svelte";
+  // The folder being shown is app.buildsSubPath, so it survives leaving the list
+  // and the mouse's back button (app.goBack) can walk up it.
+  import { onMount, untrack } from "svelte";
   import { api, bridge, type BuildEntry } from "$lib/bridge";
   import { t } from "$lib/i18n";
+  import { folderCrumbs, parentFolder } from "$lib/nav";
   import { app } from "$lib/state.svelte";
 
   let entries = $state<BuildEntry[]>([]);
@@ -32,6 +35,7 @@
     entries = r.entries;
     buildPath = r.buildPath;
     subPath = r.subPath;
+    app.buildsSubPath = r.subPath;
     if (typeof r.sortMode === "string") sortMode = r.sortMode;
     if (r.sortModes) sortModes = r.sortModes;
   }
@@ -91,6 +95,9 @@
     } else if (k.key === "Delete" && selEntry) {
       k.preventDefault();
       void remove(selEntry);
+    } else if (k.key === "Backspace" && !k.ctrlKey && !k.altKey && subPath) {
+      k.preventDefault();
+      up();
     }
   }
   // the path shown before a search hit that lives in a subfolder (GetRowValue)
@@ -102,9 +109,10 @@
   }
 
   function up() {
-    const parent = subPath.replace(/[^/]+\/$/, "");
-    void refresh(parent);
+    void refresh(parentFolder(subPath));
   }
+  const crumbs = $derived(folderCrumbs(subPath));
+  const parentPath = $derived(parentFolder(subPath));
 
   function fmtDate(ts?: number) {
     if (!ts) return "";
@@ -137,7 +145,15 @@
   }
 
   onMount(() => {
-    void refresh("");
+    void refresh(app.buildsSubPath);
+  });
+  // app.goBack() (the mouse's back button) moves the folder from outside
+  $effect(() => {
+    const want = app.buildsSubPath;
+    untrack(() => {
+      // only once the first listing is in (onMount does that one)
+      if (buildPath && want !== subPath && !loading) void refresh(want);
+    });
   });
 </script>
 
@@ -145,8 +161,21 @@
 
 <div class="list">
   <div class="bar">
-    <span class="label">{t("builds.title")}</span>
-    <span class="dim path selectable">{buildPath}{subPath}</span>
+    <nav class="crumbs" title={buildPath + subPath}>
+      {#if subPath}
+        <button class="crumb" onclick={() => refresh("")}>{t("builds.title")}</button>
+      {:else}
+        <span class="label">{t("builds.title")}</span>
+      {/if}
+      {#each crumbs as c, i (c.path)}
+        <span class="sep dim">›</span>
+        {#if i < crumbs.length - 1}
+          <button class="crumb" onclick={() => refresh(c.path)}>{c.name}</button>
+        {:else}
+          <span class="label here">{c.name}</span>
+        {/if}
+      {/each}
+    </nav>
     <span class="grow"></span>
     <input class="input search" type="search" placeholder={t("builds.searchHint")} bind:value={filter} oninput={onSearch} />
     <select class="input sort" value={sortMode} onchange={(e) => refresh(subPath, { sortMode: e.currentTarget.value })} title={t("builds.sort")}>
@@ -159,14 +188,32 @@
     <button class="btn primary sm" disabled={app.busy > 0} onclick={() => app.newBuild(undefined, subPath)}>{t("builds.new")}</button>
     <button class="btn sm" disabled={app.busy > 0} onclick={() => (dialog = { kind: "newFolder", name: "" })}>{t("builds.newFolder")}</button>
     <span class="vsep"></span>
-    {#if subPath}<button class="btn sm" onclick={up}>↑</button>{/if}
+    {#if subPath}<button class="btn sm" title={t("builds.upHint")} onclick={up}>↑ {t("builds.up")}</button>{/if}
     <button class="btn sm" onclick={() => refresh()}>{t("builds.refresh")}</button>
     <button class="btn sm" onclick={() => bridge.call("host.open_folder", { path: buildPath + subPath })}>{t("builds.openFolder")}</button>
   </div>
+  {#if subPath}
+    <!-- "..": up one folder; builds can be dragged onto it too -->
+    <div
+      class="row folder parent"
+      class:drop={dropOn === "..parent"}
+      role="button"
+      tabindex="0"
+      title={t("builds.upHint")}
+      ondblclick={up}
+      onkeydown={(k) => k.key === "Enter" && up()}
+      ondragover={(ev) => { if (dragging && canMoveTo(dragging, parentPath)) { ev.preventDefault(); dropOn = "..parent"; } }}
+      ondragleave={() => { if (dropOn === "..parent") dropOn = null; }}
+      ondrop={(ev) => { ev.preventDefault(); const d = dragging; dragging = null; dropOn = null; if (d) void moveTo(d, parentPath, false); }}
+    >
+      <span class="name">📁 ..</span>
+      <span class="dim">{t("builds.up")}</span>
+    </div>
+  {/if}
   {#if loading && entries.length === 0}
     <div class="dim pad">{t("builds.loading")}</div>
   {:else if entries.length === 0}
-    <div class="dim pad">{t("builds.empty", { path: buildPath })}</div>
+    <div class="dim pad">{t("builds.empty", { path: buildPath + subPath })}</div>
   {:else}
     <div class="rows">
       {#each entries as e (e.fullFileName)}
@@ -249,11 +296,32 @@
   .row.drop {
     outline: 1px dashed var(--gold);
   }
-  .path {
-    font-size: var(--fs-xs);
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .crumb {
+    border: 0;
+    background: none;
+    padding: 2px 4px;
+    border-radius: var(--radius-s);
+    color: var(--gold);
+    font: inherit;
+    cursor: pointer;
+  }
+  .crumb:hover {
+    background: var(--surface-hover);
+  }
+  .label.here {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+  .row.parent {
+    margin-top: 6px;
   }
   .grow {
     flex: 1;

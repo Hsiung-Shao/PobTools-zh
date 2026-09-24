@@ -3145,6 +3145,8 @@ function M.list_specs()
 	return {
 		specs = specs,
 		activeSpec = tab.activeSpec,
+		-- TreeTab's Compare tick + drop-down (nil = not comparing)
+		compareSpec = tab.isComparing and tab.specList[tab.activeCompareSpec] and tab.activeCompareSpec or nil,
 		treeVersion = b.spec.treeVersion,
 		versions = versions,
 		-- the tree is not on the latest version: POB shows its convert prompt

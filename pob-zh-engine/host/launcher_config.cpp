@@ -264,7 +264,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		m.look.glassBlur = ClampPercent(read_ini_int(iniPath, key(L"ModernGlassBlur").c_str(), 0), 0);
 		m.look.treeBg = ClampPercent(read_ini_int(iniPath, key(L"ModernTreeBg").c_str(), 100), 100);
 		std::wstring decoded = utf8_of_hex(read_ini_path(iniPath, key(L"ModernBackgroundHex").c_str()));
-		m.look.background = NormalizeBackgroundFile(decoded.empty() ? read_ini_path(iniPath, key(L"ModernBackground").c_str()) : decoded);
+		m.look.background = NormalizeBackgroundFile(decoded.empty() ? read_ini_path(iniPath, key(L"ModernBackground").c_str()) : decoded, true);
+		m.bgScope = read_ini_int(iniPath, key(L"ModernBgScope").c_str(), 0) == 1 ? 1 : 0;
 	}
 	c.fontSize = ClampLauncherFontSize(read_ini_int(iniPath, L"FontSize", kLauncherFontSizeDefault));
 
@@ -385,7 +386,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		put(L"ModernBgBright", std::to_wstring(ClampPercent(m.look.bgBright, kBgBrightDefault)));
 		put(L"ModernGlassBlur", std::to_wstring(ClampPercent(m.look.glassBlur, 0)));
 		put(L"ModernTreeBg", std::to_wstring(ClampPercent(m.look.treeBg, 100)));
-		const std::wstring bg = NormalizeBackgroundFile(m.look.background);
+		put(L"ModernBgScope", m.bgScope == 1 ? L"1" : L"0");
+		const std::wstring bg = NormalizeBackgroundFile(m.look.background, true);
 		put(L"ModernBackground", bg);
 		if (bg.empty() || is_ascii(bg))
 			WritePrivateProfileStringW(kSection, (L"ModernBackgroundHex" + sfx).c_str(), nullptr, iniPath.c_str());
@@ -722,15 +724,31 @@ int CopyBuiltinDictionary(const std::wstring& exeDir, DictSlot slot,
 	return n <= 0 ? -1 : n;
 }
 
-std::wstring NormalizeBackgroundFile(const std::wstring& v)
+static std::wstring lower_ext(const std::wstring& v)
 {
-	if (v.empty() || v.size() > 200 || v[0] == L'.') return L"";
-	if (v.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) return L"";
 	const size_t dot = v.rfind(L'.');
 	if (dot == std::wstring::npos) return L"";
 	std::wstring ext = v.substr(dot + 1);
 	for (auto& ch : ext) ch = (wchar_t)towlower(ch);
-	return (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"webp") ? v : L"";
+	return ext;
+}
+
+static bool is_image_ext(const std::wstring& ext)
+{
+	return ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"webp";
+}
+
+bool IsVideoBackground(const std::wstring& v)
+{
+	const std::wstring ext = lower_ext(v);
+	return ext == L"mp4" || ext == L"webm";
+}
+
+std::wstring NormalizeBackgroundFile(const std::wstring& v, bool allowVideo)
+{
+	if (v.empty() || v.size() > 200 || v[0] == L'.') return L"";
+	if (v.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos) return L"";
+	return is_image_ext(lower_ext(v)) || (allowVideo && IsVideoBackground(v)) ? v : L"";
 }
 
 std::wstring NormalizeModernTheme(const std::wstring& v)
@@ -784,7 +802,7 @@ std::wstring BackgroundsDir(const std::wstring& exeDir)
 	return dir;
 }
 
-std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir)
+std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir, bool includeVideo)
 {
 	std::vector<std::wstring> out;
 	const std::wstring dir = BackgroundsDir(exeDir);
@@ -794,11 +812,7 @@ std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir)
 		do {
 			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
 			std::wstring name = fd.cFileName;
-			size_t dot = name.rfind(L'.');
-			if (dot == std::wstring::npos) continue;
-			std::wstring ext = name.substr(dot + 1);
-			for (auto& ch : ext) ch = (wchar_t)towlower(ch);
-			if (ext == L"png" || ext == L"jpg" || ext == L"jpeg" || ext == L"webp")
+			if (is_image_ext(lower_ext(name)) || (includeVideo && IsVideoBackground(name)))
 				out.push_back(name);
 		} while (FindNextFileW(h, &fd));
 		FindClose(h);
@@ -1405,6 +1419,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		c.modernLook[0].look.windowOpacity = 40;
 		c.modernLook[0].look.glassBlur = 55;
 		c.modernLook[0].look.treeBg = 0;
+		c.modernLook[0].bgScope = 1;
 		SaveLauncherConfig(ini, c);
 		LauncherConfig r = LoadLauncherConfig(ini);
 		const AppearanceConfig& a = r.modernLook[0].look;
@@ -1412,16 +1427,32 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		      !r.modernLook[0].follow && a.background == L"\u80cc\u666f.webp" && a.bgBright == 30 &&
 		          a.windowOpacity == 40 && a.glassBlur == 55 && a.treeBg == 0 &&
 		          r.modernLook[1].follow && r.modernLook[1].look.background.empty());
+		check("T17y background scope round-trips per game (PoE1 tree-only, PoE2 whole window)",
+		      r.modernLook[0].bgScope == 1 && r.modernLook[1].bgScope == 0);
+	}
+	{
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.modernLook[1].follow = false;
+		c.modernLook[1].look.background = L"loop.MP4";
+		SaveLauncherConfig(ini, c);
+		const LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17z a video background round-trips for the new interface only",
+		      r.modernLook[1].look.background == L"loop.MP4" && IsVideoBackground(L"a.webm") &&
+		          !IsVideoBackground(L"a.png") && NormalizeBackgroundFile(L"a.mp4").empty() &&
+		          NormalizeBackgroundFile(L"a.mp4", true) == L"a.mp4" &&
+		          NormalizeBackgroundFile(L"a.mov", true).empty());
 	}
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" }, { L"ModernBackgroundPoe1", L"..\\x.png" },
-	                       { L"ModernBgBrightPoe1", L"250" }, { L"ModernTreeBgPoe1", L"-3" } });
+	                       { L"ModernBgBrightPoe1", L"250" }, { L"ModernTreeBgPoe1", L"-3" },
+	                       { L"ModernBgScopePoe1", L"7" } });
 	{
 		LauncherConfig r = LoadLauncherConfig(ini);
 		check("T17x a path for the image and out-of-range numbers read as the defaults",
 		      r.modernLook[0].look.background.empty() && r.modernLook[0].look.bgBright == kBgBrightDefault &&
 		          r.modernLook[0].look.treeBg == 100 && NormalizeBackgroundFile(L"a.gif").empty() &&
-		          NormalizeBackgroundFile(L"A.JPEG") == L"A.JPEG");
+		          NormalizeBackgroundFile(L"A.JPEG") == L"A.JPEG" && r.modernLook[0].bgScope == 0);
 	}
 
 	// T17d/e -- the proxy field. Default must be empty (= follow the system

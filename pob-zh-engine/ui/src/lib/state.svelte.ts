@@ -2,6 +2,7 @@
 // Svelte 5 runes in a module so every component reads the same object.
 import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
 import { setEnglish, t } from "./i18n";
+import { parentFolder, ViewHistory } from "./nav";
 
 export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "compare" | "settings";
 
@@ -20,7 +21,41 @@ class AppState {
   notice = $state<string | null>(null);
   busy = $state(0);
 
-  view = $state<ViewId>("builds");
+  #view = $state<ViewId>("builds");
+  /** Every tab switch goes through here, so the back / forward history sees it. */
+  get view(): ViewId {
+    return this.#view;
+  }
+  set view(v: ViewId) {
+    this.history.visit(this.#view, v);
+    this.#view = v;
+  }
+  /** The mouse's back / forward buttons (App.svelte); see lib/nav. */
+  readonly history = new ViewHistory<ViewId>();
+  /**
+   * The build list's folder ("" = POB's build folder, else "a/b/"). Lives here,
+   * not in BuildList, so coming back to the list lands where it was left.
+   */
+  buildsSubPath = $state("");
+  /** A screen that can be shown right now: the build tabs need a loaded build. */
+  private canShow = (v: ViewId) => v === "builds" || v === "settings" || this.loaded;
+  /** Back button: up one folder in the build list first, then the previous screen. */
+  goBack(): boolean {
+    if (this.#view === "builds" && this.buildsSubPath) {
+      this.buildsSubPath = parentFolder(this.buildsSubPath);
+      return true;
+    }
+    const v = this.history.goBack(this.#view, this.canShow);
+    if (v === undefined) return false;
+    this.#view = v;
+    return true;
+  }
+  goForward(): boolean {
+    const v = this.history.goForward(this.#view, this.canShow);
+    if (v === undefined) return false;
+    this.#view = v;
+    return true;
+  }
   info = $state<BuildInfo | null>(null);
   sidebar = $state<Sidebar | null>(null);
   header = $state<BuildHeader | null>(null);
@@ -166,7 +201,8 @@ class AppState {
     this.sidebar = null;
     this.header = null;
     this.rev = 0;
-    this.view = "builds";
+    this.#view = "builds";
+    this.history.clear();
   }
 }
 

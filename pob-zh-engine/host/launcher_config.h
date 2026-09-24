@@ -121,10 +121,18 @@ struct AppearanceConfig {
 struct ModernLookConfig {
 	bool            follow = true;
 	AppearanceConfig look;
+	// Where the picture shows: 0 behind the whole window, 1 only behind the
+	// passive tree (every other tab stays solid). The launcher has no such knob,
+	// so following it means 0.
+	int             bgScope = 0;
 };
-// A background image the page may load: a bare png/jpg/jpeg/webp file name
-// under PobTools\Backgrounds\, never a path (it is served over bg.pobtools).
-std::wstring NormalizeBackgroundFile(const std::wstring& v);
+// A background the page may load: a bare png/jpg/jpeg/webp file name under
+// PobTools\Backgrounds\, never a path (it is served over bg.pobtools). With
+// allowVideo also mp4/webm -- the new interface can play those, the launcher
+// and the classic POB window (ImGui / OpenGL, no video decoder) cannot.
+std::wstring NormalizeBackgroundFile(const std::wstring& v, bool allowVideo = false);
+// mp4 / webm: the page draws it with <video> instead of a CSS image.
+bool IsVideoBackground(const std::wstring& v);
 
 // "poe1" -> 0, "poe2" -> 1 (anything else counts as PoE1).
 inline int GameIndex(const std::wstring& game) { return game == L"poe2" ? 1 : 0; }
@@ -350,7 +358,7 @@ std::vector<std::wstring> ListAvailableFonts(const std::wstring& exeDir);
 // webp), file names only; the folder is created on first use so "open folder"
 // always has somewhere to go. Update packages never touch PobTools\.
 std::wstring BackgroundsDir(const std::wstring& exeDir);
-std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir);
+std::vector<std::wstring> ListAvailableBackgrounds(const std::wstring& exeDir, bool includeVideo = false);
 // Absolute path for a configured background, empty when unset or missing.
 std::wstring ResolveBackgroundPath(const std::wstring& exeDir, const std::wstring& file);
 

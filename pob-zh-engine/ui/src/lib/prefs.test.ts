@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normAccent, normFontFile, normTheme, onColor, ACCENTS, normBgFile, normLook, lookVars, LOOK_DEFAULT } from "./prefs.svelte";
+import { normAccent, normFontFile, normTheme, onColor, ACCENTS, normBgFile, normLook, lookVars, LOOK_DEFAULT, isVideoFile } from "./prefs.svelte";
 
 // Mirrors host/launcher_config.cpp NormalizeModern* (--launcher-config-selftest
 // T17s-u): the page and the ini must agree on what is a valid value.
@@ -40,7 +40,9 @@ describe("appearance prefs", () => {
   });
   it("a garbled look falls back to the launcher's defaults, 0 is kept", () => {
     const l = normLook({ follow: false, background: "x.png", bgBright: 250, panelOpacity: 0, glassBlur: -1, treeBg: 40 });
-    expect(l).toEqual({ follow: false, background: "x.png", bgBright: 50, panelOpacity: 0, glassBlur: 0, treeBg: 40 });
+    expect(l).toEqual({ follow: false, background: "x.png", bgBright: 50, panelOpacity: 0, glassBlur: 0, treeBg: 40, bgScope: 0 });
+    expect(normLook({ bgScope: 1 }).bgScope).toBe(1);
+    expect(normLook({ bgScope: 7 }).bgScope).toBe(0);
     expect(normLook(undefined)).toEqual(LOOK_DEFAULT);
   });
   it("no image means no background CSS at all; otherwise the percents become CSS values", () => {
@@ -51,5 +53,19 @@ describe("appearance prefs", () => {
     expect(v["--panel-pct"]).toBe("40%");
     expect(v["--bg-blur"]).toBe("12px");
     expect(v["--tree-alpha"]).toBe("0");
+  });
+  it("a video is its own element: no CSS image; mp4/webm pass, other clips do not (host T17z)", () => {
+    expect(normBgFile("loop.MP4")).toBe("loop.MP4");
+    expect(normBgFile("a.webm")).toBe("a.webm");
+    expect(normBgFile("a.mov")).toBe("");
+    expect(isVideoFile("a.webm")).toBe(true);
+    expect(isVideoFile("a.png")).toBe(false);
+    const v = lookVars({ ...LOOK_DEFAULT, background: "loop.mp4" }, (f) => f)!;
+    expect(v["--bg-image"]).toBe("none");
+  });
+  it("only behind the tree: the panels stay solid whatever their opacity says", () => {
+    const v = lookVars({ ...LOOK_DEFAULT, background: "a.png", panelOpacity: 30, bgScope: 1, treeBg: 50 }, (f) => f)!;
+    expect(v["--panel-pct"]).toBe("100%");
+    expect(v["--tree-alpha"]).toBe("0.5");
   });
 });

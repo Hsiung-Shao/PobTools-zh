@@ -17,13 +17,15 @@ export const ACCENTS = ["#d8aa4b", "#5b9dff", "#4fbf7a", "#a77bff", "#e0645a", "
 
 export const DEFAULTS = { zoom: 100, fontSize: 13, theme: "slate" as Theme, accent: "", font: "" };
 /** The launcher's own defaults (launcher_config.h AppearanceConfig): no image, 50 % bright, solid panels. */
-export const LOOK_DEFAULT: BgLook = { follow: true, background: "", bgBright: 50, panelOpacity: 100, glassBlur: 0, treeBg: 100 };
+export const LOOK_DEFAULT: BgLook = { follow: true, background: "", bgBright: 50, panelOpacity: 100, glassBlur: 0, treeBg: 100, bgScope: 0 };
 
 const pct = (v: unknown, def: number) => (typeof v === "number" && v >= 0 && v <= 100 ? Math.round(v) : def);
-/** Same rule as the host (NormalizeBackgroundFile). */
+/** Same rule as the host (NormalizeBackgroundFile with allowVideo). */
 export function normBgFile(v: unknown): string {
-  return typeof v === "string" && /^[^\\/:*?"<>|.][^\\/:*?"<>|]{0,199}\.(png|jpe?g|webp)$/i.test(v) ? v : "";
+  return typeof v === "string" && /^[^\\/:*?"<>|.][^\\/:*?"<>|]{0,199}\.(png|jpe?g|webp|mp4|webm)$/i.test(v) ? v : "";
 }
+/** mp4 / webm: drawn with a <video> (App.svelte), not as a CSS image. */
+export const isVideoFile = (v: string) => /\.(mp4|webm)$/i.test(v);
 export function normLook(v: Partial<BgLook> | undefined, follow = true): BgLook {
   return {
     follow: v?.follow ?? follow,
@@ -32,16 +34,19 @@ export function normLook(v: Partial<BgLook> | undefined, follow = true): BgLook 
     panelOpacity: pct(v?.panelOpacity, LOOK_DEFAULT.panelOpacity),
     glassBlur: pct(v?.glassBlur, LOOK_DEFAULT.glassBlur),
     treeBg: pct(v?.treeBg, LOOK_DEFAULT.treeBg),
+    bgScope: v?.bgScope === 1 ? 1 : 0,
   };
 }
 /** The CSS the background set turns into (App's .bgimg layer, app.css, the tree canvas). */
 export function lookVars(l: BgLook, url: (file: string) => string): Record<string, string> | null {
   if (!l.background) return null;
   return {
-    "--bg-image": `url("${url(l.background)}")`,
+    // a video is its own element; the CSS image stays empty then
+    "--bg-image": isVideoFile(l.background) ? "none" : `url("${url(l.background)}")`,
     "--bg-bright": String(l.bgBright / 100),
     "--bg-blur": `${Math.round((l.glassBlur / 100) * 24)}px`,
-    "--panel-pct": `${l.panelOpacity}%`,
+    // "only behind the tree": the panels around it stay solid
+    "--panel-pct": l.bgScope === 1 ? "100%" : `${l.panelOpacity}%`,
     "--tree-alpha": String(l.treeBg / 100),
   };
 }
@@ -89,6 +94,14 @@ class UiPrefsState {
   backgrounds = $state<string[]>([]);
   /** Bumped whenever colours change; the tree canvas re-reads its palette on it. */
   rev = $state(0);
+  /**
+   * A background is set: App turns it on (the `data-bg` attribute) on every tab,
+   * or only on the passive tree when `bgTreeOnly`. `bgVideo` is the clip's URL
+   * when the background is an mp4 / webm.
+   */
+  bgSet = $state(false);
+  bgTreeOnly = $state(false);
+  bgVideo = $state<string | null>(null);
 
   /** The file the page actually draws with. */
   get effectiveFont(): string {
@@ -150,12 +163,15 @@ class UiPrefsState {
       root.style.removeProperty("--on-accent-user");
     }
     applyFontFace(this.effectiveFont);
-    const vars = lookVars(this.effectiveLook, (f) => hostUrl("bg", encodeURIComponent(f)));
+    const l = this.effectiveLook;
+    const url = (f: string) => hostUrl("bg", encodeURIComponent(f));
+    const vars = lookVars(l, url);
     for (const k of LOOK_VARS) root.style.removeProperty(k);
-    if (vars) {
-      for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
-      root.dataset.bg = "1";
-    } else delete root.dataset.bg;
+    if (vars) for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+    // data-bg itself is App's to set: whether it is on depends on the tab too
+    this.bgSet = !!vars;
+    this.bgTreeOnly = l.bgScope === 1;
+    this.bgVideo = vars && isVideoFile(l.background) ? url(l.background) : null;
     this.rev++;
   }
 
@@ -184,7 +200,11 @@ class UiPrefsState {
   }
   /** A change on the settings page's Background card: from then on the page keeps its own set. */
   setLook(change: Partial<BgLook>) {
-    return this.set({ look: { ...this.effectiveLook, ...change, follow: false } });
+    const next = { ...this.effectiveLook, ...change, follow: false };
+    // Switching to "only behind the tree" with the tree's own backdrop still solid
+    // would show nothing at all; start it half see-through instead.
+    if (change.bgScope === 1 && this.effectiveLook.bgScope !== 1 && next.treeBg >= 90) next.treeBg = 50;
+    return this.set({ look: next });
   }
   followLauncher() {
     return this.set({ look: { ...this.look, follow: true } });

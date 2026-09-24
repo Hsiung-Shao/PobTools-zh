@@ -114,6 +114,15 @@
   let tattooMenu = $state<(TattooOptions & { x: number; y: number; query: string }) | null>(null);
   /** The compare tree's allocation (TreeTab's Compare), for the overlay. */
   const compareSet = $derived(new Set(tree?.compare?.allocatedNodes ?? []));
+  /** The legend's counts: allocated only in the compared tree / only in this one. */
+  const compareDiff = $derived.by(() => {
+    if (!compareSet.size) return null;
+    let there = 0;
+    let here = 0;
+    for (const id of compareSet) if (!allocated.has(id)) there++;
+    for (const id of allocated) if (!compareSet.has(id)) here++;
+    return { there, here };
+  });
 
   // questions the engine's click handler asks back
   let masteryMenu = $state<{ id: number; name: string; x: number; y: number; effects: MasteryChoice[]; selected: number | null } | null>(null);
@@ -1076,6 +1085,14 @@
   <div class="stage pob-dark" bind:this={wrap}>
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
     {#if artMissing && model}<div class="note">{t("tree.artMissing")}</div>{/if}
+    {#if compareDiff && tree?.compare}
+      <!-- what the Compare rings mean (the canvas draws them; see paint) -->
+      <div class="cmp-legend">
+        <span class="cmp-title">{t("tree.compareWith", { name: tree.compare.title || t("tree.specDefault") })}</span>
+        <span><i class="ring there"></i>{t("tree.compareOnlyThere", { n: compareDiff.there })}</span>
+        <span><i class="ring here"></i>{t("tree.compareOnlyHere", { n: compareDiff.here })}</span>
+      </div>
+    {/if}
     {#if loadError}
       <div class="veil bad">{loadError}</div>
     {:else if !model}
@@ -1262,6 +1279,40 @@
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
     border-radius: var(--radius-s);
+  }
+  .cmp-legend {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    font-size: var(--fs-xs);
+    color: var(--ink-1);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s);
+    pointer-events: none;
+  }
+  .cmp-title {
+    color: var(--ink-0);
+  }
+  .cmp-legend .ring {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 50%;
+    border: 2px solid;
+    vertical-align: -1px;
+  }
+  /* the same two colours paint() strokes the rings in */
+  .ring.there {
+    border-color: rgba(90, 220, 140, 0.9);
+  }
+  .ring.here {
+    border-color: rgba(255, 107, 107, 0.9);
   }
   .veil {
     position: absolute;

@@ -55,6 +55,8 @@ export interface BgLook {
   panelOpacity: number;
   glassBlur: number;
   treeBg: number;
+  /** where it shows: 0 the whole window, 1 only behind the passive tree (the launcher's set is always 0) */
+  bgScope?: number;
 }
 
 export interface BridgeError {
@@ -249,6 +251,8 @@ export interface SpecList {
     active: boolean;
   }[];
   activeSpec: number;
+  /** TreeTab's Compare: the tree drawn against this one (absent = off). */
+  compareSpec?: number;
   treeVersion: string;
   versions: { value: string; label: string }[];
   showConvert: boolean;

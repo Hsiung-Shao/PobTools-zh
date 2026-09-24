@@ -7,7 +7,7 @@
   let aboutOpen = $state(false);
   import { api, bridge, isHosted, type PobOption, type PobOptions } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS, THEMES, ACCENTS, type Theme } from "$lib/prefs.svelte";
+  import { prefs, ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, FONT_MIN, FONT_MAX, DEFAULTS, THEMES, ACCENTS, isVideoFile, type Theme } from "$lib/prefs.svelte";
 
   // Each theme button is a small picture of that theme: page, panel, text, accent.
   const SWATCH: Record<Theme, [string, string, string, string]> = {
@@ -83,6 +83,7 @@
     [t("settings.comboZoom"), "settings.keyZoom"],
     ["F2", "settings.keyEnglish"],
     ["Ctrl + R", "settings.keyRename"],
+    [t("settings.comboBack"), "settings.keyBack"],
   ] as const;
 </script>
 
@@ -206,15 +207,25 @@
         {/if}
       </div>
     </div>
+    <div class="lrow">
+      <span class="k">{t("bg.scope")}</span>
+      <select class="select sm" value={String(bg.bgScope ?? 0)} disabled={!bg.background} onchange={(e) => prefs.setLook({ bgScope: Number(e.currentTarget.value) })}>
+        <option value="0">{t("bg.scopeWindow")}</option>
+        <option value="1">{t("bg.scopeTree")}</option>
+      </select>
+    </div>
     {#each BG_SLIDERS as [key, label] (key)}
+      <!-- "only behind the tree" keeps the panels solid: their opacity does not apply -->
+      {@const off = !bg.background || (key === "panelOpacity" && bg.bgScope === 1)}
       <div class="row">
         <span class="k">{t(label)}</span>
-        <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={!bg.background} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />
-        <span class="num val">{bg[key]}%</span>
+        <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={off} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />
+        <span class="num val" class:dim={off}>{bg[key]}%</span>
       </div>
     {/each}
     <div class="foot">
       <span class="dim hint">{t("bg.hint")}</span>
+      {#if isVideoFile(bg.background)}<span class="dim hint">{t("bg.videoHint")}</span>{/if}
     </div>
   </section>
 

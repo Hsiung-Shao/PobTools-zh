@@ -15,6 +15,7 @@
 
 #include <json.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -125,6 +126,8 @@ const char* mime_for(const std::wstring& path)
 	if (ext == L"otf") return "font/otf";
 	if (ext == L"woff2") return "font/woff2";
 	if (ext == L"ico") return "image/x-icon";
+	if (ext == L"mp4") return "video/mp4";
+	if (ext == L"webm") return "video/webm";
 	return "application/octet-stream";
 }
 
@@ -217,18 +220,20 @@ struct Server {
 		// Background: this window's game only. "launcherLook" is the launcher's
 		// Appearance set, re-read for the same reason as the font.
 		const int g = GameIndex(game);
-		auto lookJson = [](const AppearanceConfig& a, bool follow) {
-			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background))},
+		// The launcher's set never carries a video (it cannot play one) nor a scope.
+		auto lookJson = [](const AppearanceConfig& a, bool follow, int scope, bool video) {
+			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background, video))},
 			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
-			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)} };
+			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)},
+			             {"bgScope", scope == 1 ? 1 : 0} };
 		};
 		json backgrounds = json::array();
-		for (const std::wstring& f : ListAvailableBackgrounds(exeDir)) backgrounds.push_back(narrow(f));
+		for (const std::wstring& f : ListAvailableBackgrounds(exeDir, true)) backgrounds.push_back(narrow(f));
 		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
 		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
 		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
-		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow)},
-		             {"launcherLook", lookJson(fromIni.look[g], true)}, {"backgrounds", backgrounds} };
+		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow, cfg.modernLook[g].bgScope, true)},
+		             {"launcherLook", lookJson(fromIni.look[g], true, 0, false)}, {"backgrounds", backgrounds} };
 	}
 
 	json info() const
@@ -384,9 +389,9 @@ struct Server {
 				m.follow = l.value("follow", false);
 				if (!m.follow) {
 					if (l.contains("background") && l["background"].is_string()) {
-						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()));
+						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()), true);
 						bool listed = f.empty();
-						for (const std::wstring& a : ListAvailableBackgrounds(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
+						for (const std::wstring& a : ListAvailableBackgrounds(exeDir, true)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
 						m.look.background = listed ? f : L"";
 					}
 					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
@@ -394,6 +399,7 @@ struct Server {
 					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
 					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
 					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
+					m.bgScope = num("bgScope", m.bgScope) == 1 ? 1 : 0;
 				}
 				cfg.modernLook[GameIndex(game)] = m;
 			}
@@ -463,11 +469,73 @@ struct Server {
 		return true;
 	}
 
-	void serve_file(SOCKET s, const std::string& rel)
+	// A video background, streamed in pieces with Range support: Safari will not
+	// play an mp4 at all without 206 answers, and reading a whole clip into memory
+	// on every loop is not what an idle background should cost. `lowerHead` is the
+	// request's header block, lower-cased.
+	void serve_media(SOCKET s, const std::wstring& path, const std::string& lowerHead)
+	{
+		HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+		                       FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+		if (h == INVALID_HANDLE_VALUE) { respond(s, 404, "Not Found", "text/plain", "not found"); return; }
+		LARGE_INTEGER sz{};
+		GetFileSizeEx(h, &sz);
+		const unsigned long long total = (unsigned long long)sz.QuadPart;
+		unsigned long long from = 0, to = total ? total - 1 : 0;
+		bool partial = false;
+		const size_t at = lowerHead.find("\r\nrange: bytes=");
+		if (at != std::string::npos && total > 0) {
+			const char* p = lowerHead.c_str() + at + 15;
+			char* end = nullptr;
+			if (*p == '-') { // "bytes=-N": the last N bytes
+				const unsigned long long n = strtoull(p + 1, &end, 10);
+				from = n >= total ? 0 : total - n;
+				partial = n > 0;
+			} else if (*p >= '0' && *p <= '9') {
+				from = strtoull(p, &end, 10);
+				if (end && *end == '-' && end[1] >= '0' && end[1] <= '9') to = (std::min)(strtoull(end + 1, nullptr, 10), total - 1);
+				partial = true;
+			}
+			if (partial && (from >= total || from > to)) {
+				CloseHandle(h);
+				char head[256];
+				snprintf(head, sizeof(head),
+				         "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */%llu\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", total);
+				send_all(s, head);
+				return;
+			}
+		}
+		const unsigned long long len = total ? to - from + 1 : 0;
+		char head[512];
+		int n = snprintf(head, sizeof(head), "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %llu\r\nAccept-Ranges: bytes\r\n",
+		                 partial ? "206 Partial Content" : "200 OK", mime_for(path), len);
+		if (partial) n += snprintf(head + n, sizeof(head) - n, "Content-Range: bytes %llu-%llu/%llu\r\n", from, to, total);
+		snprintf(head + n, sizeof(head) - n, "Cache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n");
+		bool ok = send_all(s, head);
+		LARGE_INTEGER pos{};
+		pos.QuadPart = (LONGLONG)from;
+		ok = ok && SetFilePointerEx(h, pos, nullptr, FILE_BEGIN);
+		static thread_local char buf[256 * 1024];
+		for (unsigned long long left = len; ok && left > 0;) {
+			DWORD got = 0;
+			if (!ReadFile(h, buf, (DWORD)(std::min)((unsigned long long)sizeof(buf), left), &got, nullptr) || got == 0) break;
+			// the page seeking away closes the socket: stop quietly
+			for (DWORD off = 0; ok && off < got;) {
+				const int sent = send(s, buf + off, (int)(got - off), 0);
+				if (sent <= 0) ok = false;
+				else off += (DWORD)sent;
+			}
+			left -= got;
+		}
+		CloseHandle(h);
+	}
+
+	void serve_file(SOCKET s, const std::string& rel, const std::string& lowerHead)
 	{
 		std::wstring path;
 		bool isApp = false;
 		if (!resolve(rel, path, isApp)) { respond(s, 403, "Forbidden", "text/plain", "forbidden"); return; }
+		if (!isApp && IsVideoBackground(path)) { serve_media(s, path, lowerHead); return; }
 		std::string body;
 		if (!read_file(path, body)) { respond(s, 404, "Not Found", "text/plain", "not found"); return; }
 		const char* type = mime_for(path);
@@ -600,7 +668,12 @@ struct Server {
 			page_line(body);
 			return;
 		}
-		if (method == "GET") { serve_file(s, rel); return; }
+		if (method == "GET") {
+			std::string lower = req.substr(0, headerEnd + 2);
+			for (auto& c : lower) c = (char)tolower((unsigned char)c);
+			serve_file(s, rel, lower);
+			return;
+		}
 		respond(s, 405, "Method Not Allowed", "text/plain", "method not allowed");
 	}
 

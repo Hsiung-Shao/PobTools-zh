@@ -163,18 +163,20 @@ struct Window {
 		// Background: this window's game only. "launcherLook" is the launcher's
 		// Appearance set, re-read for the same reason as the font.
 		const int g = GameIndex(game);
-		auto lookJson = [](const AppearanceConfig& a, bool follow) {
-			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background))},
+		// The launcher's set never carries a video (it cannot play one) nor a scope.
+		auto lookJson = [](const AppearanceConfig& a, bool follow, int scope, bool video) {
+			return json{ {"follow", follow}, {"background", narrow(NormalizeBackgroundFile(a.background, video))},
 			             {"bgBright", ClampPercent(a.bgBright, kBgBrightDefault)}, {"panelOpacity", ClampWindowOpacity(a.windowOpacity)},
-			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)} };
+			             {"glassBlur", ClampPercent(a.glassBlur, 0)}, {"treeBg", ClampPercent(a.treeBg, 100)},
+			             {"bgScope", scope == 1 ? 1 : 0} };
 		};
 		json backgrounds = json::array();
-		for (const std::wstring& f : ListAvailableBackgrounds(exeDir)) backgrounds.push_back(narrow(f));
+		for (const std::wstring& f : ListAvailableBackgrounds(exeDir, true)) backgrounds.push_back(narrow(f));
 		return json{ {"zoom", ClampModernZoom(cfg.modernZoom)}, {"fontSize", ClampModernFontSize(cfg.modernFontSize)},
 		             {"theme", narrow(NormalizeModernTheme(cfg.modernTheme))}, {"accent", narrow(NormalizeModernAccent(cfg.modernAccent))},
 		             {"font", narrow(NormalizeModernFont(cfg.modernFont))}, {"launcherFont", narrow(launcherFont)}, {"fonts", fonts},
-		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow)},
-		             {"launcherLook", lookJson(fromIni.look[g], true)}, {"backgrounds", backgrounds} };
+		             {"look", lookJson(cfg.modernLook[g].look, cfg.modernLook[g].follow, cfg.modernLook[g].bgScope, true)},
+		             {"launcherLook", lookJson(fromIni.look[g], true, 0, false)}, {"backgrounds", backgrounds} };
 	}
 
 	json Info() const
@@ -315,9 +317,9 @@ struct Window {
 				m.follow = l.value("follow", false);
 				if (!m.follow) {
 					if (l.contains("background") && l["background"].is_string()) {
-						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()));
+						std::wstring f = NormalizeBackgroundFile(widen(l["background"].get<std::string>()), true);
 						bool listed = f.empty();
-						for (const std::wstring& a : ListAvailableBackgrounds(exeDir)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
+						for (const std::wstring& a : ListAvailableBackgrounds(exeDir, true)) if (_wcsicmp(a.c_str(), f.c_str()) == 0) listed = true;
 						m.look.background = listed ? f : L"";
 					}
 					auto num = [&](const char* k, int def) { return l.contains(k) && l[k].is_number() ? l[k].get<int>() : def; };
@@ -325,6 +327,7 @@ struct Window {
 					m.look.windowOpacity = ClampWindowOpacity(num("panelOpacity", m.look.windowOpacity));
 					m.look.glassBlur = ClampPercent(num("glassBlur", m.look.glassBlur), 0);
 					m.look.treeBg = ClampPercent(num("treeBg", m.look.treeBg), 100);
+					m.bgScope = num("bgScope", m.bgScope) == 1 ? 1 : 0;
 				}
 				cfg.modernLook[GameIndex(game)] = m;
 			}
@@ -517,9 +520,14 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	case WM_SIZE:
 		if (w && w->controller) {
-			RECT rc{};
-			GetClientRect(hwnd, &rc);
-			w->controller->put_Bounds(rc);
+			// Minimized: tell WebView2 the page is hidden, so it stops drawing (and
+			// a video background pauses -- document.visibilityState follows this).
+			w->controller->put_IsVisible(wParam == SIZE_MINIMIZED ? FALSE : TRUE);
+			if (wParam != SIZE_MINIMIZED) {
+				RECT rc{};
+				GetClientRect(hwnd, &rc);
+				w->controller->put_Bounds(rc);
+			}
 		}
 		return 0;
 	case WM_DPICHANGED: {

@@ -89,13 +89,16 @@
       d.error = String(e?.message ?? e);
     }
   }
-  // TreeTab's Compare tick + its tree drop-down in one control
-  let compare = $state<number | null>(null);
+  // TreeTab's Compare tick + its tree drop-down in one control. What is being
+  // compared comes back from POB with the spec list, so leaving the tab and coming
+  // back (or switching trees) still shows it.
+  const compare = $derived(specs?.compareSpec ?? null);
   async function setCompare(v: string) {
     const i = v ? Number(v) : null;
-    compare = i;
     const r = await app.run(() => api.setCompareSpec(i ?? undefined));
-    if (r) await app.afterTreeChange();
+    if (!r) return;
+    await app.afterTreeChange();
+    await reload();
   }
 
   async function exportLink() {
@@ -113,7 +116,8 @@
     <select class="select sm ver" value={specs.treeVersion} title={t("tree.version")} onchange={(e) => { const v = e.currentTarget.value; e.currentTarget.value = specs!.treeVersion; if (v !== specs!.treeVersion) convert = v; }} disabled={app.busy > 0}>
       {#each specs.versions as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
     </select>
-    <select class="select sm cmp" value={String(compare ?? "")} title={t("tree.compare")} onchange={(e) => setCompare(e.currentTarget.value)} disabled={app.busy > 0}>
+    <select class="select sm cmp" value={String(compare ?? "")} title={t(specs.specs.length < 2 ? "tree.compareNeedTwo" : "tree.compareHint")}
+      onchange={(e) => setCompare(e.currentTarget.value)} disabled={app.busy > 0 || (specs.specs.length < 2 && compare == null)}>
       <option value="">{t("tree.compare")}: {t("tree.compareOff")}</option>
       {#each specs.specs as s (s.index)}
         {#if s.index !== specs.activeSpec}<option value={String(s.index)}>{t("tree.compare")}: {s.title || t("tree.specDefault")}</option>{/if}

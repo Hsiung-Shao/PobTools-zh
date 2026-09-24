@@ -610,15 +610,17 @@
     height: 100%;
     display: grid;
     grid-template-columns: 340px minmax(260px, 1fr) minmax(360px, 1.2fr);
-    gap: 1px;
-    background: var(--edge-0);
     min-height: 0;
   }
+  /* column rules as borders, not a solid fill behind a 1px gap: the fill hid the
+     background image, and a second surface here stacked on the one .view paints */
   .col {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--surface-0);
+  }
+  .col + .col {
+    border-left: 1px solid var(--edge-0);
   }
   .head {
     display: flex;

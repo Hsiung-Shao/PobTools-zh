@@ -130,8 +130,11 @@
     min-height: 0;
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    background: var(--edge-0);
+  }
+  /* the rule between the halves as a border, not a solid fill behind a gap (it hid
+     the background image) */
+  .preview {
+    border-left: 1px solid var(--edge-0);
   }
   .area {
     height: 100%;
@@ -142,7 +145,7 @@
     font-size: var(--fs-sm);
     line-height: 1.5;
     resize: none;
-    background: var(--surface-0);
+    background: transparent;
   }
   .preview {
     background: var(--surface-1);

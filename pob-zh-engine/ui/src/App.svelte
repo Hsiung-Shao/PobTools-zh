@@ -33,6 +33,12 @@
       void app.toggleEnglish();
       return;
     }
+    // Alt+Left / Alt+Right: the browser's back / forward, same as the mouse's side buttons
+    if (e.altKey && !e.ctrlKey && !e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      e.preventDefault();
+      navigate(e.key === "ArrowLeft");
+      return;
+    }
     if (!e.ctrlKey || e.altKey) return;
     const k = e.key.toLowerCase();
     if (k === "s" && !e.shiftKey && app.loaded) {
@@ -86,6 +92,24 @@
     }
   }
 
+  // Back / forward. Not while a dialog is open: it would switch the screen under
+  // it and leave the dialog (and whatever was typed in it) floating over another tab.
+  function navigate(back: boolean) {
+    if (document.querySelector('.modal, [aria-modal="true"]')) return;
+    if (back) app.goBack();
+    else app.goForward();
+  }
+  // The mouse's side buttons (button 3 = back, 4 = forward). preventDefault on
+  // mouseup is also what stops WebView2 / the browser from running its own
+  // history navigation on them.
+  function onMouseUp(e: MouseEvent) {
+    if (e.button !== 3 && e.button !== 4) return;
+    e.preventDefault();
+    navigate(e.button === 3);
+  }
+  function blockSideButton(e: MouseEvent) {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+  }
   function onWheel(e: WheelEvent) {
     if (!e.ctrlKey) return;
     e.preventDefault();
@@ -97,15 +121,40 @@
     prefs.init();
     void loadLocale().then(() => (i18nReady = true));
   });
+  // The background is on (data-bg, which app.css keys every see-through surface
+  // on) when one is set -- on every tab, or with "only behind the passive tree"
+  // just on that tab; every other tab then stays solid and draws no picture.
+  const bgOn = $derived(prefs.bgSet && (!prefs.bgTreeOnly || app.view === "tree"));
+  $effect(() => {
+    document.documentElement.toggleAttribute("data-bg", bgOn);
+  });
+  // A video background stops while the window is hidden or minimized (the
+  // WebView2 host marks the page hidden then) -- it would decode for nobody.
+  let video = $state<HTMLVideoElement | null>(null);
+  function syncVideo() {
+    if (!video) return;
+    if (document.hidden || !bgOn) video.pause();
+    else void video.play().catch(() => {});
+  }
+  $effect(() => {
+    void bgOn;
+    void prefs.bgVideo;
+    syncVideo();
+  });
 </script>
 
-<svelte:window onkeydown={onKey} onwheel={onWheel} />
+<svelte:window onkeydown={onKey} onwheel={onWheel} onmouseup={onMouseUp} onmousedown={blockSideButton} onauxclick={blockSideButton} />
 
 <!-- keyed on the language flip: t() reads a plain table, so nothing re-renders
      by itself, and the views have to re-fetch because POB's outputRevision does
      not move when only the display language changed. -->
 <!-- the background image (settings page "Background"; styled by the --bg-* vars lib/prefs sets) -->
-<div class="bgimg" aria-hidden="true"></div>
+<svelte:document onvisibilitychange={syncVideo} />
+{#if prefs.bgVideo}
+  <video class="bgimg" bind:this={video} src={prefs.bgVideo} autoplay muted loop playsinline disablepictureinpicture aria-hidden="true"></video>
+{:else}
+  <div class="bgimg" aria-hidden="true"></div>
+{/if}
 {#if i18nReady}
   {#key app.langRev}
   <div class="app">
@@ -179,6 +228,11 @@
     filter: brightness(var(--bg-bright, 1)) blur(var(--bg-blur, 0px));
     /* blur pulls the edges in; a little overscan keeps them off-screen */
     transform: scale(1.04);
+  }
+  video.bgimg {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
   :global(:root[data-bg]) .bgimg {
     display: block;
