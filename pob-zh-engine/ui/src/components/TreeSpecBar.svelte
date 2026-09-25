@@ -99,6 +99,7 @@
     if (!r) return;
     await app.afterTreeChange();
     await reload();
+    app.treeNonce++; // no recalculation happened, so the revision alone would not redraw the rings
   }
 
   async function exportLink() {

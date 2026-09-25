@@ -114,9 +114,12 @@
   let tattooMenu = $state<(TattooOptions & { x: number; y: number; query: string }) | null>(null);
   /** The compare tree's allocation (TreeTab's Compare), for the overlay. */
   const compareSet = $derived(new Set(tree?.compare?.allocatedNodes ?? []));
+  // comparing is POB's switch, not "the other tree has nodes": an empty tree is a
+  // legitimate thing to compare with (every allocated node is then "only here")
+  const comparing = $derived(!!tree?.compare);
   /** The legend's counts: allocated only in the compared tree / only in this one. */
   const compareDiff = $derived.by(() => {
-    if (!compareSet.size) return null;
+    if (!comparing) return null;
     let there = 0;
     let here = 0;
     for (const id of compareSet) if (!allocated.has(id)) there++;
@@ -404,7 +407,7 @@
         }
       }
       // Compare (TreeTab's Compare tick): only in the other tree / only in this one
-      if (compareSet.size) {
+      if (comparing) {
         const inCompare = compareSet.has(n.id);
         if (inCompare !== alloc) {
           ctx.beginPath();
@@ -844,6 +847,13 @@
     rebuild();
     repaint();
     void app.afterTreeChange();
+    // the node under the mouse changed (allocated, new mastery effect): ask for
+    // its tooltip again instead of leaving it empty until the mouse moves off
+    const h = hover;
+    if (h) {
+      hover = null;
+      setHover(model?.nodes.get(h.id) ?? h);
+    }
   }
   function setHover(n: TreeNode | null) {
     if (n?.id === hover?.id) return;
@@ -989,11 +999,16 @@
     repaint();
   }
 
-  // state follows the build revision (skipped when a click already brought it)
+  // state follows the build revision (skipped when a click already brought it),
+  // and app.treeNonce: tree changes POB does not recalculate for (the Compare
+  // drop-down) leave the revision alone
+  let seenNonce = app.treeNonce;
   $effect(() => {
     const rev = app.rev;
+    const nonce = app.treeNonce;
     if (!app.loaded) return;
-    if (tree && tree.rev === rev) return;
+    if (tree && tree.rev === rev && nonce === seenNonce) return;
+    seenNonce = nonce;
     api
       .getTreeState()
       .then((s) => {

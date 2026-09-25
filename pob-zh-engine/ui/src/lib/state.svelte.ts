@@ -167,6 +167,8 @@ class AppState {
 
   /** The window is being closed with unsaved changes: App asks Save / Don't save / Cancel. */
   closeAsk = $state(false);
+  /** Bumped when the tree changed without a recalculation (Compare): TreeView re-reads its state. */
+  treeNonce = $state(0);
   /** A tree jewel socket to bring into view on the Items tab (right-click on the tree). */
   focusSocketNode = $state<number | null>(null);
   /** Bumped to ask BuildBar for its Save As dialog (a build that has no file yet). */
