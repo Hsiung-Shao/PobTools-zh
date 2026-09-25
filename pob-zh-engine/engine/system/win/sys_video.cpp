@@ -11,6 +11,8 @@
 #include "core.h"
 #include "../../../host/perf_log.h"
 #include "../../../host/pob_frame_cap.h"
+#include "../../../host/error_log.h"
+#include <imm.h> // the IME result string (OpacityWndProc)
 
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -381,8 +383,91 @@ static void RequestAppearanceRedraw()
 	if (g_opacityVideo) g_opacityVideo->appearanceRedrawFrames = 2;
 }
 
+// Chinese / Japanese / Korean input. The text the user picks in the IME is
+// taken here, from WM_IME_COMPOSITION's result string, and handed to POB as
+// characters directly, instead of leaving it to DefWindowProc's relay
+// (WM_IME_COMPOSITION -> WM_IME_CHAR -> WM_CHAR -> GLFW's char callback). With
+// Sogou Pinyin the picked characters never reached POB's edit boxes that way,
+// while plain typing did (report 2026-09-25, classic Save As box).
+// The result is then cut from the message before it goes on, so the relay
+// cannot deliver it a second time; an IME that still sends WM_IME_CHAR for
+// text already delivered is swallowed by count, and one that only ever sends
+// WM_IME_CHAR is delivered from there.
+#pragma comment(lib, "imm32")
+static int      g_imeSwallow = 0;      // WM_IME_CHARs still expected for text already delivered
+static wchar_t  g_imeHighSurrogate = 0;
+static unsigned g_imeLogged = 0;       // which delivery paths the diagnostic log has seen (once each)
+
+static void ImeLogOnce(unsigned bit, const std::string& what)
+{
+	if (g_imeLogged & bit) return;
+	g_imeLogged |= bit;
+	PobLog::Diag("ime", what);
+}
+
+static void ImeDeliver(uint32_t cp)
+{
+	if (cp < 32 || !g_opacityVideo) return;
+	sys_main_c* sys = static_cast<sys_video_c*>(g_opacityVideo)->sys;
+	if (sys && sys->core) sys->core->KeyEvent((int)cp, KE_CHAR);
+}
+
+// UTF-16 units in order; a surrogate pair becomes one codepoint.
+static void ImeDeliverUnit(wchar_t u)
+{
+	if (u >= 0xD800 && u <= 0xDBFF) {
+		g_imeHighSurrogate = u;
+		return;
+	}
+	if (u >= 0xDC00 && u <= 0xDFFF) {
+		if (g_imeHighSurrogate)
+			ImeDeliver(0x10000 + (((uint32_t)g_imeHighSurrogate - 0xD800) << 10) + ((uint32_t)u - 0xDC00));
+		g_imeHighSurrogate = 0;
+		return;
+	}
+	g_imeHighSurrogate = 0;
+	ImeDeliver(u);
+}
+
+// true when the result string was delivered (the caller strips it from lParam)
+static bool ImeTakeResult(HWND hwnd)
+{
+	HIMC himc = ImmGetContext(hwnd);
+	if (!himc) return false;
+	bool took = false;
+	const LONG bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
+	if (bytes > 0) {
+		std::wstring text((size_t)bytes / sizeof(wchar_t), L'\0');
+		const LONG got = ImmGetCompositionStringW(himc, GCS_RESULTSTR, text.data(), (DWORD)bytes);
+		if (got > 0) {
+			text.resize((size_t)got / sizeof(wchar_t));
+			g_imeHighSurrogate = 0;
+			for (wchar_t u : text) ImeDeliverUnit(u);
+			g_imeSwallow = (int)text.size();
+			took = true;
+			ImeLogOnce(1, "IME text arrives as a composition result (" + std::to_string(text.size()) + " UTF-16 units)");
+		}
+	}
+	ImmReleaseContext(hwnd, himc);
+	return took;
+}
+
 static LRESULT CALLBACK OpacityWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+	if (msg == WM_IME_STARTCOMPOSITION) g_imeSwallow = 0;
+	if (msg == WM_IME_COMPOSITION && (lParam & GCS_RESULTSTR) && ImeTakeResult(hwnd)) {
+		lParam &= ~(LPARAM)(GCS_RESULTSTR | GCS_RESULTCLAUSE | GCS_RESULTREADSTR | GCS_RESULTREADCLAUSE);
+		if (!lParam) return 0;
+	}
+	if (msg == WM_IME_CHAR) {
+		if (g_imeSwallow > 0) {
+			--g_imeSwallow;
+		} else {
+			ImeLogOnce(2, "IME text arrives as WM_IME_CHAR only");
+			ImeDeliverUnit((wchar_t)wParam);
+		}
+		return 0;
+	}
 	if (msg == kMsgSetWindowOpacity) {
 		sys_opacity_trace("WM_APP opacity message received: %d", (int)wParam);
 		SetWindowOpacityPct(hwnd, (int)wParam);
