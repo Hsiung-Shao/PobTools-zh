@@ -232,7 +232,12 @@
 :root[data-bg] .view:has(.stage) {
   background: transparent;
 }
-:root[data-bg] .pob-dark {
+/* Pop-up layers stay solid too: a dialog, menu or floating panel at the panel
+   opacity blends into the page it covers and reads as one mess (the minion
+   library over the Config tab). .modal is every dialog's backdrop, so its
+   dialog box and everything inside inherit the solid set from it. */
+:root[data-bg] .pob-dark,
+:root[data-bg] :is(.modal, .float, .drop, .menu, .linkveil, [role="dialog"], [role="menu"], [role="listbox"]) {
   --panel-pct: 100%;
   --surface-0: var(--surface-0-c);
   --surface-1: var(--surface-1-c);
