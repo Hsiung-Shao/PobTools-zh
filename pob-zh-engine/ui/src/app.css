@@ -406,8 +406,10 @@ input:disabled {
 .input::placeholder {
   color: var(--ink-3);
 }
+/* 原生下拉的選項清單:底色一定用實色。面板透明度讓 --surface-2 帶 alpha 時,
+   Chromium 會丟掉半透明底色改畫預設淺色清單,淺色字就整片看不見。 */
 option {
-  background-color: var(--surface-2);
+  background-color: var(--surface-2-c);
   color: var(--ink-0);
 }
 

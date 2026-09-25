@@ -340,6 +340,7 @@
 <div class="page" onmouseleave={hideTip}>
   <section class="col left">
     <div class="head">
+      <div class="setctl">
       <span class="label">{t("skills.groups")}</span>
       {#if data}
         <select class="select sm" value={String(data.activeSkillSetId)} onchange={(e) => setChange(e.currentTarget.value)} title={t("skills.skillSet")}>
@@ -351,6 +352,11 @@
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.skillSets.find((s) => s.id === data!.activeSkillSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.skillSets.length <= 1} onclick={deleteSet}>×</button>
       {/if}
+      </div>
+      <div class="grpctl">
+        <button class="btn sm" onclick={addGroup}>{t("skills.newGroup")}</button>
+        <button class="btn sm danger" disabled={!group || group.source} onclick={deleteGroup}>{t("skills.deleteGroup")}</button>
+      </div>
     </div>
     <div class="scroll">
       {#if data}
@@ -379,13 +385,10 @@
       {/if}
     </div>
     <div class="actions">
-      <button class="btn sm" onclick={addGroup}>{t("skills.newGroup")}</button>
       <button class="btn ghost sm" disabled={!group || group.index <= 1} onclick={() => moveGroup(-1)}>↑</button>
       <button class="btn ghost sm" disabled={!group || !data || group.index >= data.groups.length} onclick={() => moveGroup(1)}>↓</button>
       <button class="btn ghost sm" disabled={!group} title={t("skills.copyGroupHint")} onclick={copyGroup}>{t("skills.copyGroup")}</button>
       <button class="btn ghost sm" onclick={openPaste}>{t("skills.pasteGroup")}</button>
-      <span class="grow"></span>
-      <button class="btn sm danger" disabled={!group || group.source} onclick={deleteGroup}>{t("skills.deleteGroup")}</button>
     </div>
     <div class="gemopts">
       <button class="btn ghost sm" onclick={toggleGemOpts}>{gemOptsOpen ? "▾" : "▸"} {t("skills.gemOptions")}</button>
@@ -641,16 +644,34 @@
      end (the set drop-down, its buttons and the tree selector did) */
   .head {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 4px 6px;
+    gap: 6px;
     min-height: 36px;
-    padding: 4px 12px;
+    padding: 4px 10px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
   .head .label {
     white-space: nowrap;
+  }
+  /* one row: the skill-set controls give way (the set name shortens) so the
+     socket-group add / delete at the right end always show whole */
+  .head .setctl {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .head .setctl .select {
+    flex: 0 1 auto;
+    min-width: 44px;
+    text-overflow: ellipsis;
+  }
+  .head .grpctl {
+    flex: none;
+    display: flex;
+    gap: 4px;
   }
   .head .select {
     min-width: 0;
@@ -710,10 +731,6 @@
     padding: 8px 10px;
     border-top: 1px solid var(--edge-0);
     background: var(--surface-1);
-  }
-  .actions .grow {
-    flex: 1;
-    padding: 0;
   }
   .btn.danger:hover:not(:disabled) {
     color: var(--bad);

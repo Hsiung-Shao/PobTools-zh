@@ -5,12 +5,23 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
+  import { TextHistory } from "$lib/textHistory";
 
   let text = $state("");
   let saved = $state("");
   let loadedRev = -1;
   let timer = 0;
   let ta = $state<HTMLTextAreaElement | null>(null);
+  // Our own Ctrl+Z / Ctrl+Y: the colour buttons and the reload after a save set
+  // the text from script, which empties the text box's own undo stack.
+  const history = new TextHistory();
+  const snap = () => {
+    const v = ta?.value ?? text;
+    return { text: v, start: ta?.selectionStart ?? v.length, end: ta?.selectionEnd ?? v.length };
+  };
+  // what the box held after the last change: an input records it as the step
+  // back (input, not beforeinput -- script-driven edits send no beforeinput)
+  let last = { text: "", start: 0, end: 0 };
 
   // POB's own colour buttons (NotesTab: NORMAL ... INTELLIGENCE, DEFAULT)
   let colours = $state<{ code: string; name: string }[]>([]);
@@ -24,8 +35,11 @@
   async function reload() {
     const r = await app.run(() => api.getNotes());
     if (r) {
+      // other notes (another build, a re-import): what came before is not theirs
+      if (r.text !== text) history.reset();
       text = r.text;
       saved = r.text;
+      last = { text, start: text.length, end: text.length };
       if (r.colours?.length) colours = r.colours;
       loadedRev = r.rev;
     }
@@ -46,6 +60,36 @@
       await app.refresh();
     }
   }
+  // the context menu's Undo / Redo come here, not through the keys
+  function onBeforeInput(e: InputEvent) {
+    if (e.inputType === "historyUndo" || e.inputType === "historyRedo") {
+      e.preventDefault();
+      step(e.inputType === "historyRedo");
+    }
+  }
+  function onTyped(e: Event) {
+    const kind = (e as InputEvent).inputType ?? "";
+    if (last.text !== (ta?.value ?? text)) history.record(last, Date.now(), kind.startsWith("insertFromPaste") || kind.startsWith("deleteBy"));
+    last = snap();
+    onInput();
+  }
+  function onKey(e: KeyboardEvent) {
+    if (!e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "z" || k === "y") {
+      e.preventDefault();
+      e.stopPropagation();
+      step(k === "y" || e.shiftKey);
+    }
+  }
+  function step(redo: boolean) {
+    const s = redo ? history.redo(snap()) : history.undo(snap());
+    if (!s) return;
+    text = s.text;
+    last = s;
+    queueMicrotask(() => ta?.setSelectionRange(s.start, s.end));
+    onInput();
+  }
   function onInput() {
     clearTimeout(timer);
     timer = window.setTimeout(() => void flush(), 800);
@@ -64,6 +108,8 @@
       const last = sel.match(/.*(\^x[0-9a-fA-F]{6})/s)?.[1] ?? "^7";
       piece = code + sel.replace(/\^x[0-9a-fA-F]{6}/g, "") + last;
     }
+    history.record(snap(), Date.now(), true);
+    last = { text: text.slice(0, s) + piece + text.slice(e), start: s + piece.length, end: s + piece.length };
     text = text.slice(0, s) + piece + text.slice(e);
     queueMicrotask(() => {
       ta!.focus();
@@ -83,7 +129,7 @@
     {/each}
   </div>
   <div class="two">
-    <textarea class="input area" bind:this={ta} bind:value={text} oninput={onInput} onblur={flush} spellcheck="false"></textarea>
+    <textarea class="input area" bind:this={ta} bind:value={text} onbeforeinput={onBeforeInput} onkeydown={onKey} oninput={onTyped} onblur={flush} spellcheck="false"></textarea>
     <div class="preview">
       <div class="label">{t("notes.preview")}</div>
       <div class="pv">
