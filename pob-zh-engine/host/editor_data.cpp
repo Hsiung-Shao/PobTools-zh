@@ -300,6 +300,7 @@ size_t SetEntry(EditorModel& model, int fileIdx, const std::string& key, const s
 	for (size_t i = 0; i < model.entries.size(); i++) {
 		if (model.entries[i].fileIdx == fileIdx && model.entries[i].key == key) {
 			model.entries[i].value = value;
+			model.entries[i].edited = true;
 			model.files[fileIdx].dirty = true;
 			return i;
 		}
@@ -309,6 +310,7 @@ size_t SetEntry(EditorModel& model, int fileIdx, const std::string& key, const s
 	e.value = value;
 	e.structured = false;
 	e.fileIdx = fileIdx;
+	e.edited = true;
 	model.entries.push_back(std::move(e));
 	model.files[fileIdx].dirty = true;
 	return model.entries.size() - 1;
@@ -381,6 +383,8 @@ int SaveAll(EditorModel& model, std::string* err)
 		std::string fileErr;
 		if (SaveFile(model.files[i], &fileErr)) {
 			saved++;
+			for (EditorEntry& e : model.entries)
+				if (e.fileIdx == (int)i) e.edited = false;
 		} else {
 			failed++;
 			// Per file, not just the first one: the caller only surfaces the
@@ -402,6 +406,13 @@ int DirtyCount(const EditorModel& model)
 {
 	int n = 0;
 	for (const EditorFile& f : model.files) if (f.dirty) n++;
+	return n;
+}
+
+int DirtyEntryCount(const EditorModel& model)
+{
+	int n = 0;
+	for (const EditorEntry& e : model.entries) if (e.edited) n++;
 	return n;
 }
 

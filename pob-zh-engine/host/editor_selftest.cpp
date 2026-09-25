@@ -203,9 +203,13 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		      "T5 engine returns the on-disk value before editing");
 
 		SetEntry(model, fidx, key, sentinel + before);
+		const int editsBefore = DirtyEntryCount(model);
 		std::string err;
 		int saved = SaveAll(model, &err);
 		check(saved > 0, "T6 SaveAll writes the edited file");
+		// the save button counts edits, not files (one edit here, one file)
+		check(editsBefore == 1 && DirtyEntryCount(model) == 0 && DirtyCount(model) == 0,
+		      "T6b pending-edit count is per entry and clears on save");
 
 		std::string after = engine_says(key.c_str());
 		check(after == sentinel + before,

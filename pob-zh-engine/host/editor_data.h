@@ -15,6 +15,7 @@ struct EditorEntry {
 	std::string value;        // current translation (the field the user edits)
 	bool structured = false;  // JSON value is an object; only "翻譯" is written back
 	int fileIdx = -1;         // index into EditorModel::files
+	bool edited = false;      // changed since the last save (the "N 筆待儲存" count)
 };
 
 // One dictionary JSON file (e.g. ui.json), with its parsed document kept for
@@ -116,6 +117,9 @@ int SaveAll(EditorModel& model, std::string* err);
 
 // Number of files with unsaved edits.
 int DirtyCount(const EditorModel& model);
+// Entries changed since the last save. DirtyCount is FILES: six edits in
+// stats.json are one dirty file, and a "儲存全部 (1)" label read as "one edit".
+int DirtyEntryCount(const EditorModel& model);
 
 // Read <exeDir>\translate_misses.log and return strings absent from all
 // dictionary keys. *logFound is false when the log file does not exist.

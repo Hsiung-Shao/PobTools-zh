@@ -678,7 +678,10 @@ end
 local treeCache = {}
 function M.tree_data(p)
 	local v = current_tree_version(p)
-	if treeCache[v] then return treeCache[v] end
+	-- names and stats are translated in here, so the cache is per display
+	-- language: F2 must get the English copy, not the one built first
+	local cacheKey = v .. (translate_state() == false and ":en" or ":zh")
+	if treeCache[cacheKey] then return treeCache[cacheKey] end
 	local tree = main():LoadTree(v)
 	if not tree then error("no tree version " .. tostring(v), 0) end
 
@@ -836,7 +839,7 @@ function M.tree_data(p)
 		classes = classes,
 		alternateAscendancies = alternate,
 	}
-	treeCache[v] = out
+	treeCache[cacheKey] = out
 	return out
 end
 
@@ -1200,17 +1203,57 @@ function M.node_info(p)
 	local savedWrap, savedDiff = main().WrapString, viewer.showStatDifferences
 	main().WrapString = function(_, s) return { s } end
 	viewer.showStatDifferences = (p.diff and true) or false
-	-- returnEarly stops before the allocation part (the stat differences among it)
-	local ok, err = pcall(viewer.AddNodeTooltip, viewer, tt, node, b, not p.diff)
+	-- The 4th argument differs between the games. PoE1: returnEarly, which stops
+	-- before the allocation part (the stat differences among it). PoE2:
+	-- incSmallPassiveSkillEffect, a NUMBER that PassiveTreeView:Draw sums over the
+	-- allocated nodes -- passing PoE1's boolean made every PoE2 hover fail
+	-- (arithmetic on a boolean), so the page fell back to its cached text and
+	-- F2 could not reach tree tooltips. PoE2 has no returnEarly; the stat
+	-- difference pass follows showStatDifferences, set above.
+	local fourth = not p.diff
+	if GAME == "poe2" then
+		fourth = 0
+		for _, n in pairs(b.spec.allocNodes or {}) do
+			if n.modList then fourth = fourth + (n.modList:Sum("INC", nil, "SmallPassiveSkillEffect") or 0) end
+		end
+	end
+	local ok, err = pcall(viewer.AddNodeTooltip, viewer, tt, node, b, fourth)
 	main().WrapString = savedWrap
 	viewer.showStatDifferences = savedDiff
 	if not ok then error(err, 0) end
+	local src = tt.lines or {}
+	if GAME == "poe2" and not p.diff then
+		-- PoE2's stand-in for returnEarly: with stat differences off, what follows
+		-- the flavour text starts with a separator and the "enable stat
+		-- differences" tip (then path length, gold, classic-window key tips).
+		-- The page has its own footer for those; cut there, as PoE1 does.
+		for i, l in ipairs(src) do
+			if type(l.text) == "string" and l.text:find("Tip: Press Ctrl+D to enable", 1, true) then
+				local cut = (i > 1 and src[i - 1].text == nil) and i - 1 or i
+				local kept = {}
+				for j = 1, cut - 1 do kept[j] = src[j] end
+				src = kept
+				break
+			end
+		end
+	end
+	-- Lines that only make sense in the classic window: the page's own footer
+	-- shows the point count, and hiding a tooltip by holding a key is not a
+	-- thing there. (Ctrl+C, Ctrl+D and the Shift trace do work, so their tips stay.)
+	local function classic_only(t)
+		if type(t) ~= "string" then return false end
+		return t == "^x80A080" or t:find("points to node", 1, true) ~= nil
+			or t:find("nodes in trace path", 1, true) ~= nil
+			or t:find("to hide this tooltip", 1, true) ~= nil
+	end
 	local lines = {}
-	for i, l in ipairs(tt.lines or {}) do
+	for _, l in ipairs(src) do
 		if l.text ~= nil then
-			lines[i] = { size = l.size, text = tr(l.text), raw = l.text, center = l.center and true or false, font = l.font }
+			if not classic_only(l.text) then
+				lines[#lines + 1] = { size = l.size, text = tr(l.text), raw = l.text, center = l.center and true or false, font = l.font }
+			end
 		else
-			lines[i] = { sep = l.size or 0 }
+			lines[#lines + 1] = { sep = l.size or 0 }
 		end
 	end
 	local effects = nil

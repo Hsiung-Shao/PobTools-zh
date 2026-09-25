@@ -366,14 +366,17 @@ public:
 		if (ImGui::Button(u8"缺漏掃描")) { focusMiss = true; runScan(); }
 		ImGui::SameLine();
 		int dirty = DirtyCount(model);
+		// The label counts EDITS; files are what SaveAll writes, shown beside it.
+		const int dirtyEntries = DirtyEntryCount(model);
 		{
-			std::string saveLabel = dirty > 0 ? (std::string(u8"儲存全部 (") + std::to_string(dirty) + ")") : u8"儲存全部";
+			std::string saveLabel = dirty > 0 ? (std::string(u8"儲存全部 (") + std::to_string(dirtyEntries) + u8" 筆)") : u8"儲存全部";
 			ImGui::BeginDisabled(dirty == 0);
 			PobUi::PushPrimaryButton();
 			if (ImGui::Button(saveLabel.c_str())) {
 				std::string err;
 				int saved = SaveAll(model, &err);
-				status = err.empty() ? (std::string(u8"已儲存 ") + std::to_string(saved) + u8" 個檔案")
+				status = err.empty() ? (std::string(u8"已儲存 ") + std::to_string(dirtyEntries) + u8" 筆（" +
+				                        std::to_string(saved) + u8" 個檔案）")
 				                     : (std::string(u8"儲存失敗：") + err);
 			}
 			PobUi::PopButtonStyle();
@@ -387,6 +390,18 @@ public:
 
 		// --- status strip ---
 		ImGui::Spacing();
+		// Built-in dictionaries are what a translation update replaces wholesale
+		// (app_update applies the data pack over Data\ in the install folder).
+		// A player who edits them loses the work on the next data-<n> and only
+		// sees "my change did nothing" (field report, 2026-09-25). Say so here,
+		// where the edit happens; the launcher's Translation data section is the
+		// way out (an external folder the updater never writes to).
+		if (model.localeExists && slotDir[gi].status != DataDirStatus::External) {
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::StatusColor(PobUi::StatusTone::Warning));
+			ImGui::TextWrapped(u8"注意：這裡改的是內建字典，程式自動更新翻譯資料時會被新版整份覆蓋。"
+			                   u8"要保留自己的翻譯，請先到啟動器「設定 → 翻譯資料」把這組字典指到安裝目錄以外的資料夾，再回來編輯。");
+			ImGui::PopStyleColor();
+		}
 		// Read through the host every frame rather than cached at Init: the launcher
 		// rebuilds its atlas when the font changes, and this answer changes with it.
 		if (!host_->cjkOk) {
@@ -401,7 +416,7 @@ public:
 				model.files.size(), filtered.size(), model.entries.size());
 			if (dirty > 0) {
 				ImGui::SameLine(0, 16 * scale);
-				ImGui::TextColored(PobUi::StatusColor(PobUi::StatusTone::Warning), u8"%d 筆待儲存", dirty);
+				ImGui::TextColored(PobUi::StatusColor(PobUi::StatusTone::Warning), u8"%d 筆待儲存（%d 個檔案）", dirtyEntries, dirty);
 			}
 			if (!status.empty()) {
 				ImGui::SameLine(0, 16 * scale);
@@ -568,8 +583,10 @@ public:
 						// editor_data so it can be asserted headlessly.
 						const bool big = NeedsExpandedEditor(e);
 						ImGui::SetNextItemWidth(big ? -(28.0f * scale) : -FLT_MIN);
-						if (ImGui::InputText("##v", &e.value))
+						if (ImGui::InputText("##v", &e.value)) {
 							model.files[e.fileIdx].dirty = true;
+							e.edited = true;
+						}
 						// Taken here, while "the last item" is still the box: the
 						// expand button below would otherwise be what gets asked.
 						const bool boxHovered = ImGui::IsItemHovered() && !ImGui::IsItemActive();
@@ -750,6 +767,7 @@ public:
 					if (bigText != e.value) {
 						e.value = bigText;
 						model.files[e.fileIdx].dirty = true;
+						e.edited = true;
 					}
 					bigIdx = -1;
 					ImGui::CloseCurrentPopup();
