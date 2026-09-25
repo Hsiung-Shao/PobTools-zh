@@ -45,8 +45,15 @@ describe("appearance prefs", () => {
     expect(normLook({ bgScope: 7 }).bgScope).toBe(0);
     expect(normLook(undefined)).toEqual(LOOK_DEFAULT);
   });
-  it("no image means no background CSS at all; otherwise the percents become CSS values", () => {
-    expect(lookVars({ ...LOOK_DEFAULT, panelOpacity: 20 }, (f) => f)).toBeNull();
+  it("no image: nothing while panels and tree are solid, the plain backdrop once they are not", () => {
+    expect(lookVars({ ...LOOK_DEFAULT, glassBlur: 80, bgBright: 10 }, (f) => f)).toBeNull();
+    const n = lookVars({ ...LOOK_DEFAULT, panelOpacity: 20, glassBlur: 80 }, (f) => f)!;
+    expect(n["--bg-image"]).toBe("none");
+    expect(n["--panel-pct"]).toBe("20%");
+    expect(n["--bg-blur"]).toBe("0px");
+    expect(lookVars({ ...LOOK_DEFAULT, treeBg: 40 }, (f) => f)!["--tree-alpha"]).toBe("0.4");
+  });
+  it("with an image the percents become CSS values", () => {
     const v = lookVars({ follow: false, background: "a b.png", bgBright: 30, panelOpacity: 40, glassBlur: 50, treeBg: 0 }, (f) => `https://bg.pobtools/${encodeURIComponent(f)}`)!;
     expect(v["--bg-image"]).toBe('url("https://bg.pobtools/a%20b.png")');
     expect(v["--bg-bright"]).toBe("0.3");

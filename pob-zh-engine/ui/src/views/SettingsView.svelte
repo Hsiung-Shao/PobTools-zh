@@ -209,14 +209,15 @@
     </div>
     <div class="lrow">
       <span class="k">{t("bg.scope")}</span>
-      <select class="select sm" value={String(bg.bgScope ?? 0)} disabled={!bg.background} onchange={(e) => prefs.setLook({ bgScope: Number(e.currentTarget.value) })}>
+      <select class="select sm" value={String(bg.bgScope ?? 0)} onchange={(e) => prefs.setLook({ bgScope: Number(e.currentTarget.value) })}>
         <option value="0">{t("bg.scopeWindow")}</option>
         <option value="1">{t("bg.scopeTree")}</option>
       </select>
     </div>
     {#each BG_SLIDERS as [key, label] (key)}
-      <!-- "only behind the tree" keeps the panels solid: their opacity does not apply -->
-      {@const off = !bg.background || (key === "panelOpacity" && bg.bgScope === 1)}
+      <!-- "only behind the tree" keeps the panels solid: their opacity does not apply;
+           with no image there is nothing for the blur to blur -->
+      {@const off = (key === "glassBlur" && !bg.background) || (key === "panelOpacity" && bg.bgScope === 1)}
       <div class="row">
         <span class="k">{t(label)}</span>
         <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={off} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />

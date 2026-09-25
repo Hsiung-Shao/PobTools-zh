@@ -37,14 +37,19 @@ export function normLook(v: Partial<BgLook> | undefined, follow = true): BgLook 
     bgScope: v?.bgScope === 1 ? 1 : 0,
   };
 }
-/** The CSS the background set turns into (App's .bgimg layer, app.css, the tree canvas). */
+/**
+ * The CSS the background set turns into (App's .bgimg layer, app.css, the tree
+ * canvas), or null when it changes nothing on screen. No image is a background
+ * too: the theme's base colour at the chosen brightness, which see-through
+ * panels and the tree then show -- only the blur needs a picture to act on.
+ */
 export function lookVars(l: BgLook, url: (file: string) => string): Record<string, string> | null {
-  if (!l.background) return null;
+  if (!l.background && l.panelOpacity >= 100 && l.treeBg >= 100) return null;
   return {
     // a video is its own element; the CSS image stays empty then
-    "--bg-image": isVideoFile(l.background) ? "none" : `url("${url(l.background)}")`,
+    "--bg-image": !l.background || isVideoFile(l.background) ? "none" : `url("${url(l.background)}")`,
     "--bg-bright": String(l.bgBright / 100),
-    "--bg-blur": `${Math.round((l.glassBlur / 100) * 24)}px`,
+    "--bg-blur": l.background ? `${Math.round((l.glassBlur / 100) * 24)}px` : "0px",
     // "only behind the tree": the panels around it stay solid
     "--panel-pct": l.bgScope === 1 ? "100%" : `${l.panelOpacity}%`,
     "--tree-alpha": String(l.treeBg / 100),
@@ -95,7 +100,7 @@ class UiPrefsState {
   /** Bumped whenever colours change; the tree canvas re-reads its palette on it. */
   rev = $state(0);
   /**
-   * A background is set: App turns it on (the `data-bg` attribute) on every tab,
+   * A background is set (an image, or see-through panels / tree over the plain one): App turns it on (the `data-bg` attribute) on every tab,
    * or only on the passive tree when `bgTreeOnly`. `bgVideo` is the clip's URL
    * when the background is an mp4 / webm.
    */

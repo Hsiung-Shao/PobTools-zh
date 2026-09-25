@@ -70,7 +70,7 @@
   "bg.panelOpacity": "面板透明度",
   "bg.blur": "霧面模糊",
   "bg.treeBg": "天賦樹底圖",
-  "bg.hint": "把 png / jpg / webp 圖片或 mp4 / webm 影片放進 PobTools\\Backgrounds\\（與啟動器共用；啟動器本身只顯示圖片）。在這裡改任何一項就不再跟隨啟動器；每個遊戲各記一組。",
+  "bg.hint": "把 png / jpg / webp 圖片或 mp4 / webm 影片放進 PobTools\\Backgrounds\\（與啟動器共用；啟動器本身只顯示圖片）。在這裡改任何一項就不再跟隨啟動器；每個遊戲各記一組。沒有背景圖時，面板與天賦樹透出的是主題底色（可調亮度）；霧面模糊需要圖片才有效果。",
   "bg.scope": "套用範圍",
   "bg.scopeWindow": "整個視窗",
   "bg.scopeTree": "只有天賦樹",

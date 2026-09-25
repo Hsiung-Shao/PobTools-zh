@@ -279,7 +279,8 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background: var(--bg-image) center / cover no-repeat;
+    /* no image: the theme's base colour, which the brightness then dims */
+    background: var(--bg-image) center / cover no-repeat var(--surface-0-c);
     filter: brightness(var(--bg-bright, 1)) blur(var(--bg-blur, 0px));
     /* blur pulls the edges in; a little overscan keeps them off-screen */
     transform: scale(1.04);

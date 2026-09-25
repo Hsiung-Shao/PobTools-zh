@@ -78,7 +78,7 @@ const EN: Record<string, string> = {
   "bg.panelOpacity": "Panel opacity",
   "bg.blur": "Frosted blur",
   "bg.treeBg": "Tree backdrop",
-  "bg.hint": "Put png / jpg / webp pictures, or mp4 / webm videos, into PobTools\\Backgrounds\\ (shared with the launcher; the launcher itself shows pictures only). Changing anything here stops following the launcher; each game keeps its own set.",
+  "bg.hint": "Put png / jpg / webp pictures, or mp4 / webm videos, into PobTools\\Backgrounds\\ (shared with the launcher; the launcher itself shows pictures only). Changing anything here stops following the launcher; each game keeps its own set. With no picture, see-through panels and the tree show the theme's base colour at the chosen brightness; the blur needs a picture.",
   "bg.scope": "Show it",
   "bg.scopeWindow": "Behind the whole window",
   "bg.scopeTree": "Only behind the passive tree",
