@@ -19,7 +19,7 @@
 
 #define POBTOOLS_VER_MAJOR 1
 #define POBTOOLS_VER_MINOR 7
-#define POBTOOLS_VER_PATCH 5
+#define POBTOOLS_VER_PATCH 6
 
 #define PT_VER_STR2(x) #x
 #define PT_VER_STR(x) PT_VER_STR2(x)
