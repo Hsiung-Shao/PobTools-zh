@@ -134,6 +134,11 @@
     }
   }
   const choiceLabel = (c: { label: string; labelZh?: string }) => c.labelZh || c.label;
+  // what the number at the right of a search hit is (the gem-options sort field)
+  const dpsHint = $derived.by(() => {
+    const f = gemOpts?.sortFields.find((c) => c.value === gemOpts!.sortGemsByDPSField);
+    return t("skills.dpsHint", { field: f ? choiceLabel(f) : "DPS" });
+  });
 
   // SkillListControl: right click = main group, Ctrl+right = Full DPS, Ctrl+click = enable
   async function rowContext(e: MouseEvent, g: SocketGroup) {
@@ -577,11 +582,12 @@
                   />
                   {#if addOpen && addHits.length}
                     <div class="drop">
+                      {#if addHits.some((h) => h.dps != null)}<div class="drophint">{dpsHint}</div>{/if}
                       {#each addHits as h}
                         <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }}>
                           <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
                           <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
-                          {#if h.dps != null}<span class="small num" style:color={dpsColor(h)}>{dpsText(h)}</span>{/if}
+                          {#if h.dps != null}<span class="small num" style:color={dpsColor(h)} title={dpsHint}>{dpsText(h)}</span>{/if}
                         </button>
                       {/each}
                     </div>
@@ -844,6 +850,16 @@
     box-shadow: var(--shadow-float);
     display: flex;
     flex-direction: column;
+  }
+  .drophint {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 4px 9px;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--edge-0);
   }
   .hit {
     appearance: none;

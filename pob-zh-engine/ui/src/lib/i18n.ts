@@ -423,6 +423,7 @@ const EN: Record<string, string> = {
   "skills.copied": "Group copied to the clipboard",
   "skills.gemOptions": "Gem options",
   "skills.sortByDps": "Sort gems by DPS",
+  "skills.dpsHint": "Number on the right: {field} with this gem added to the socket group (green higher, red lower, yellow unchanged)",
   "skills.defaultLevel": "Default gem level",
   "skills.defaultQuality": "Default gem quality",
   "skills.showSupports": "Show support gems",

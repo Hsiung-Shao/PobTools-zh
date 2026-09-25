@@ -590,6 +590,7 @@
   "skills.copied": "已複製技能組",
   "skills.gemOptions": "技能寶石選項",
   "skills.sortByDps": "寶石依 DPS 排序",
+  "skills.dpsHint": "右側數字：把這顆寶石放進此插槽組後的「{field}」（綠＝提高、紅＝降低、黃＝不變）",
   "skills.defaultLevel": "預設技能寶石等級",
   "skills.defaultQuality": "預設技能寶石品質",
   "skills.showSupports": "顯示輔助寶石",
