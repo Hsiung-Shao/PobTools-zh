@@ -47,7 +47,7 @@
   const listItems = $derived(data ? filterByLoadout(data.items, loadoutFilter, data.activeItemSetId) : []);
 
   // right column
-  let rightTab = $state<"paste" | "db" | "edit">("paste");
+  let rightTab = $state<"paste" | "db" | "edit" | "craft">("paste");
   let pasteText = $state("");
   let pasteErr = $state<string | null>(null);
   let pasteNote = $state<string | null>(null);
@@ -255,14 +255,17 @@
     selectedId = r.id;
     await changed();
   }
+  // "Craft" is the right pane's third tab (it used to be a dialog behind a button
+  // in the list's toolbar); its choices stay as they were between visits.
   async function openCraft() {
+    rightTab = "craft";
+    if (craft) return;
     const opts = await app.run(() => api.craftItemOptions());
     if (opts) craft = { opts, rarity: opts.defaults.rarity, type: opts.defaults.type, base: opts.defaults.base, title: "" };
   }
   async function craftCreate() {
     if (!craft) return;
     const c = craft;
-    craft = null;
     const ty = c.opts.types[c.type - 1];
     const base = ty?.bases[c.base - 1];
     if (!ty || !base) return;
@@ -333,7 +336,7 @@
     if (r) await changed();
   }
   async function setDialogOk() {
-    if (!setDialog || !data) return;
+    if (!setDialog || !data || !setDialog.title.trim()) return;
     const d = setDialog;
     setDialog = null;
     const r = d.mode === "new" ? await app.run(() => api.newItemSet(d.title.trim(), d.copy)) : await app.run(() => api.renameItemSet(data!.activeItemSetId, d.title.trim()));
@@ -341,8 +344,9 @@
   }
   async function deleteSet() {
     if (!data || data.itemSets.length <= 1) return;
-    if (!confirm(t("items.deleteSet") + "?")) return;
     const id = data.activeItemSetId;
+    const cur = data.itemSets.find((s) => s.id === id);
+    if (!confirm(t("items.deleteSetConfirm", { name: cur ? setTitle(cur) : "" }))) return;
     const r = await app.run(() => api.deleteItemSet(id));
     if (r) await changed();
   }
@@ -384,7 +388,7 @@
             <option value={String(s.id)}>{setTitle(s)}</option>
           {/each}
         </select>
-        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: "", copy: false })}>+</button>
+        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("items.newSetName"), copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.itemSets.find((s) => s.id === data!.activeItemSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.itemSets.length <= 1} onclick={deleteSet}>×</button>
         <button class="btn ghost sm" title={t("items.shareSet")} onclick={shareCurrentSet}>⇪</button>
@@ -459,7 +463,6 @@
       {#if app.has("tradeQuery")}
         <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={() => (tradeOpen = true)}>{t("trade.open")}</button>
       {/if}
-      <button class="btn sm" disabled={!data || app.busy > 0} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     <div class="scroll">
       {#if data}
@@ -519,6 +522,7 @@
       <button class="tab" class:on={rightTab === "paste"} onclick={() => (rightTab = "paste")}>{t("items.paste")}</button>
       {#if edit}<button class="tab" class:on={rightTab === "edit"} onclick={() => (rightTab = "edit")}>{t("edit.title")}</button>{/if}
       <button class="tab" class:on={rightTab === "db"} onclick={() => (rightTab = "db")}>{t("items.db")}</button>
+      <button class="tab" class:on={rightTab === "craft"} disabled={!data} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     {#if rightTab === "edit" && edit}
       <ItemEditor item={edit} report={editReport} onchange={(s) => (edit = s)} onclose={editClosed} ondone={editDone} />
@@ -534,6 +538,41 @@
           <button class="btn ghost" disabled={!pasteText.trim() || app.busy > 0} onclick={previewPasted} onmouseleave={() => (tip = null)}>{t("items.preview")}</button>
           <button class="btn ghost" disabled={!pasteText.trim() || app.busy > 0} onclick={() => openEdit({ raw: pasteText.trim() })}>{t("items.edit")}</button>
         </div>
+      </div>
+    {:else if rightTab === "craft"}
+      <div class="pane craft">
+        <p class="dim">{t("items.craftTitle")}</p>
+        {#if craft}
+          <div class="crow">
+            <span class="k">{t("items.craftRarity")}</span>
+            <select class="select" bind:value={craft.rarity}>
+              {#each craft.opts.rarities as r, i}<option value={i + 1}>{r.labelZh || r.label}</option>{/each}
+            </select>
+          </div>
+          {#if craft.rarity >= 3}
+            <div class="crow">
+              <span class="k">{t("items.craftName")}</span>
+              <input class="input" bind:value={craft.title} />
+            </div>
+          {/if}
+          <div class="crow">
+            <span class="k">{t("items.craftType")}</span>
+            <select class="select" bind:value={craft.type} onchange={() => (craft!.base = 1)}>
+              {#each craft.opts.types as ty, i}<option value={i + 1}>{ty.typeZh || ty.type}</option>{/each}
+            </select>
+          </div>
+          <div class="crow">
+            <span class="k">{t("items.craftBase")}</span>
+            <select class="select" bind:value={craft.base}>
+              {#each craft.opts.types[craft.type - 1]?.bases ?? [] as b, i}<option value={i + 1}>{b.labelZh || b.label}</option>{/each}
+            </select>
+          </div>
+          <div class="btns">
+            <button class="btn primary" disabled={app.busy > 0} onclick={craftCreate}>{t("items.craftCreate")}</button>
+          </div>
+        {:else}
+          <p class="dim pulse">{t("app.booting")}</p>
+        {/if}
       </div>
     {:else}
       <ItemDb onadd={addFromDb} onedit={(it) => openEdit({ raw: it.raw! })} ontip={tipRaw} onleave={hideTip} />
@@ -554,47 +593,12 @@
         {/if}
         <div class="btns right-align">
           <button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button>
-          <button class="btn primary" onclick={setDialogOk}>OK</button>
+          <button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button>
         </div>
       </div>
     </div>
   {/if}
 
-  {#if craft}
-    <div class="modal">
-      <div class="dialog craft">
-        <div class="label">{t("items.craftTitle")}</div>
-        <div class="crow">
-          <span class="k">{t("items.craftRarity")}</span>
-          <select class="select" bind:value={craft.rarity}>
-            {#each craft.opts.rarities as r, i}<option value={i + 1}>{r.labelZh || r.label}</option>{/each}
-          </select>
-        </div>
-        {#if craft.rarity >= 3}
-          <div class="crow">
-            <span class="k">{t("items.craftName")}</span>
-            <input class="input" bind:value={craft.title} />
-          </div>
-        {/if}
-        <div class="crow">
-          <span class="k">{t("items.craftType")}</span>
-          <select class="select" bind:value={craft.type} onchange={() => (craft!.base = 1)}>
-            {#each craft.opts.types as ty, i}<option value={i + 1}>{ty.typeZh || ty.type}</option>{/each}
-          </select>
-        </div>
-        <div class="crow">
-          <span class="k">{t("items.craftBase")}</span>
-          <select class="select" bind:value={craft.base}>
-            {#each craft.opts.types[craft.type - 1]?.bases ?? [] as b, i}<option value={i + 1}>{b.labelZh || b.label}</option>{/each}
-          </select>
-        </div>
-        <div class="btns right-align">
-          <button class="btn ghost" onclick={() => (craft = null)}>{t("tree.cancel")}</button>
-          <button class="btn primary" onclick={craftCreate}>{t("items.craftCreate")}</button>
-        </div>
-      </div>
-    </div>
-  {/if}
 </div>
 
 {#if tradeOpen}
@@ -622,17 +626,24 @@
   .col + .col {
     border-left: 1px solid var(--edge-0);
   }
+  /* wraps onto a second row in a narrow column instead of clipping its right
+     end (the set drop-down, its buttons and the tree selector did) */
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    height: 36px;
-    padding: 0 12px;
+    gap: 4px 6px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
+  .head .label {
+    white-space: nowrap;
+  }
   .head .select {
-    max-width: 150px;
+    min-width: 0;
+    max-width: 100%;
   }
   .tools {
     display: flex;
@@ -860,8 +871,8 @@
     flex-direction: column;
     gap: 10px;
   }
-  .dialog.craft {
-    width: 380px;
+  .pane.craft .crow + .crow {
+    margin-top: 8px;
   }
   .crow {
     display: grid;

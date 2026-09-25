@@ -335,6 +335,9 @@ function M.load_build_file(p)
 	frame() -- mode switch + Build:Init + first BuildOutput
 	frame() -- anything the first pass flagged again
 	local b = ensure_build()
+	-- a build saved by an older bridge may list a set twice or list a deleted one
+	-- (repaired in memory each load; written back with the user's next save)
+	if M._repair_set_orders then M._repair_set_orders(b) end
 	return {
 		buildName = b.buildName,
 		dbFileName = b.dbFileName,
@@ -1727,7 +1730,61 @@ end)
 
 -- Every mutation on the build ends the way POB's own control callbacks do:
 -- modFlag + buildFlag, then one frame so mainOutput and the sidebar catch up.
+-- ---- Item / skill / config set order lists ---------------------------------
+-- POB2's NewItemSet / NewSkillSet / NewConfigSet append the new id to the order
+-- list themselves; POB1's do not. The bridge used to append unconditionally, so
+-- under POB2 every new set was listed twice ("預設" three times after one +).
+-- Deleting then removed one copy and the set itself, leaving an id with no set,
+-- and POB2's SyncLoadouts (Build.lua:668, identifyLinks) indexed nil on it
+-- (field report 2026-09-25). These helpers append once, remove every copy, and
+-- repair lists an older bridge already wrote that way.
+local function order_add(list, id)
+	for _, v in ipairs(list) do if v == id then return end end
+	list[#list + 1] = id
+end
+local function order_remove_all(list, id)
+	local at
+	for i = #list, 1, -1 do
+		if list[i] == id then table.remove(list, i); at = i end
+	end
+	return at
+end
+local function order_repair(list, sets)
+	if type(list) ~= "table" or type(sets) ~= "table" then return false end
+	local seen, out, changed = {}, {}, false
+	for _, v in ipairs(list) do
+		if sets[v] and not seen[v] then seen[v] = true; out[#out + 1] = v else changed = true end
+	end
+	if changed then
+		for i = #list, 1, -1 do list[i] = nil end
+		for i, v in ipairs(out) do list[i] = v end
+	end
+	return changed
+end
+local function sync_loadouts(b)
+	if b.SyncLoadouts then pcall(b.SyncLoadouts, b) end
+end
+local function repair_set_orders(b)
+	local fixed = false
+	if b.itemsTab then fixed = order_repair(b.itemsTab.itemSetOrderList, b.itemsTab.itemSets) or fixed end
+	if b.skillsTab then fixed = order_repair(b.skillsTab.skillSetOrderList, b.skillsTab.skillSets) or fixed end
+	if b.configTab then fixed = order_repair(b.configTab.configSetOrderList, b.configTab.configSets) or fixed end
+	if fixed then sync_loadouts(b) end
+	return fixed
+end
+-- Deleting a set: every copy of its id goes, the one before it becomes active
+-- (SkillsSetService:DeleteSkillSet's rule), loadouts follow.
+local function delete_set(b, list, sets, id)
+	local at = order_remove_all(list, id) or 1
+	sets[id] = nil
+	return list[math.max(1, at - 1)]
+end
+-- load_build_file sits above this point in the file; it reaches the repair
+-- through M (a local declared later would be an unset global there).
+M._repair_set_orders = repair_set_orders
+
 local function commit(b)
+	repair_set_orders(b)
 	b.modFlag = true
 	b.buildFlag = true
 	frame()
@@ -3003,9 +3060,10 @@ function M.new_item_set(p)
 		end
 		set.useSecondWeaponSet = tab.activeItemSet.useSecondWeaponSet
 	end
-	table.insert(tab.itemSetOrderList, set.id)
+	order_add(tab.itemSetOrderList, set.id)
 	tab:SetActiveItemSet(set.id)
 	tab:AddUndoState()
+	sync_loadouts(b)
 	local r = commit(b)
 	r.id = set.id
 	return r
@@ -3016,6 +3074,7 @@ function M.rename_item_set(p)
 	local set = b.itemsTab.itemSets[tonumber(p and p.id or 0)]
 	if not set then error("no item set " .. tostring(p and p.id), 0) end
 	set.title = p.title
+	sync_loadouts(b)
 	return commit(b)
 end
 
@@ -3025,12 +3084,11 @@ function M.delete_item_set(p)
 	local id = tonumber(p and p.id)
 	if not id or not tab.itemSets[id] then error("no item set " .. tostring(p and p.id), 0) end
 	if #tab.itemSetOrderList <= 1 then error("cannot delete the last item set", 0) end
-	for i, v in ipairs(tab.itemSetOrderList) do
-		if v == id then table.remove(tab.itemSetOrderList, i) break end
-	end
-	if tab.activeItemSetId == id then tab:SetActiveItemSet(tab.itemSetOrderList[1]) end
-	tab.itemSets[id] = nil
+	local wasActive = tab.activeItemSetId == id
+	local nextId = delete_set(b, tab.itemSetOrderList, tab.itemSets, id)
+	if wasActive then tab:SetActiveItemSet(nextId) end
 	tab:AddUndoState()
+	sync_loadouts(b)
 	return commit(b)
 end
 
@@ -3436,8 +3494,9 @@ function M.use_shared_set(p)
 		tab:AddItem(newItem, true)
 		if set[slotName] then set[slotName].selItemId = newItem.id end
 	end
-	table.insert(tab.itemSetOrderList, set.id)
+	order_add(tab.itemSetOrderList, set.id)
 	tab:AddUndoState()
+	sync_loadouts(b)
 	local r = commit(b)
 	r.id = set.id
 	return r
@@ -6616,9 +6675,10 @@ function M.new_skill_set(p)
 	if p and p.copyCurrent then
 		set.socketGroupList = copyTable(tab.socketGroupList)
 	end
-	table.insert(tab.skillSetOrderList, set.id)
+	order_add(tab.skillSetOrderList, set.id)
 	tab:SetActiveSkillSet(set.id)
 	tab:AddUndoState()
+	sync_loadouts(b)
 	local r = commit(b)
 	r.id = set.id
 	return r
@@ -6629,6 +6689,7 @@ function M.rename_skill_set(p)
 	local set = b.skillsTab.skillSets[tonumber(p and p.id or 0)]
 	if not set then error("no skill set " .. tostring(p and p.id), 0) end
 	set.title = p.title
+	sync_loadouts(b)
 	return commit(b)
 end
 
@@ -6638,12 +6699,11 @@ function M.delete_skill_set(p)
 	local id = tonumber(p and p.id)
 	if not id or not tab.skillSets[id] then error("no skill set " .. tostring(p and p.id), 0) end
 	if #tab.skillSetOrderList <= 1 then error("cannot delete the last skill set", 0) end
-	for i, v in ipairs(tab.skillSetOrderList) do
-		if v == id then table.remove(tab.skillSetOrderList, i) break end
-	end
-	if tab.activeSkillSetId == id then tab:SetActiveSkillSet(tab.skillSetOrderList[1]) end
-	tab.skillSets[id] = nil
+	local wasActive = tab.activeSkillSetId == id
+	local nextId = delete_set(b, tab.skillSetOrderList, tab.skillSets, id)
+	if wasActive then tab:SetActiveSkillSet(nextId) end
 	tab:AddUndoState()
+	sync_loadouts(b)
 	return commit(b)
 end
 
@@ -6899,9 +6959,10 @@ function M.new_config_set(p)
 		set.placeholder = copyTable(cur.placeholder)
 		set.customModsList = copyTable(cur.customModsList or {})
 	end
-	table.insert(tab.configSetOrderList, set.id)
+	order_add(tab.configSetOrderList, set.id)
 	tab:SetActiveConfigSet(set.id)
 	tab:AddUndoState()
+	sync_loadouts(b)
 	local r = commit(b)
 	r.id = set.id
 	return r
@@ -6912,6 +6973,7 @@ function M.rename_config_set(p)
 	local set = b.configTab.configSets[tonumber(p and p.id or 0)]
 	if not set then error("no config set " .. tostring(p and p.id), 0) end
 	set.title = p.title
+	sync_loadouts(b)
 	return commit(b)
 end
 
@@ -6921,12 +6983,11 @@ function M.delete_config_set(p)
 	local id = tonumber(p and p.id)
 	if not id or not tab.configSets[id] then error("no config set " .. tostring(p and p.id), 0) end
 	if #tab.configSetOrderList <= 1 then error("cannot delete the last config set", 0) end
-	for i, v in ipairs(tab.configSetOrderList) do
-		if v == id then table.remove(tab.configSetOrderList, i) break end
-	end
-	if tab.activeConfigSetId == id then tab:SetActiveConfigSet(tab.configSetOrderList[1]) end
-	tab.configSets[id] = nil
+	local wasActive = tab.activeConfigSetId == id
+	local nextId = delete_set(b, tab.configSetOrderList, tab.configSets, id)
+	if wasActive then tab:SetActiveConfigSet(nextId) end
 	tab:AddUndoState()
+	sync_loadouts(b)
 	return commit(b)
 end
 

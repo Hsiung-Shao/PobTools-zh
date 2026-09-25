@@ -332,6 +332,12 @@ struct InstallInfo {
 
 LauncherConfig LoadLauncherConfig(const std::wstring& iniPath);
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg);
+// The launcher's save. It holds the ini it read at startup, but the new
+// interface (another process) owns the Modern* keys and writes them while the
+// launcher is open; saving the launcher's stale copy put them back to what they
+// were when the launcher started ("the new interface forgets it stopped
+// following the launcher", 2026-09-25). This takes those keys from disk first.
+void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& cfg);
 InstallInfo DetectInstalls(const std::wstring& exeDir);
 
 // Detected PoE1 POB install dir with a trailing backslash; L"" when none.

@@ -1260,7 +1260,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// lets them be told apart later without parsing window titles
 	auto spawnTool = [&](const wchar_t* flag, PobLaunch::InstanceKind kind, const char* label) {
 		syncCfgFromUi();
-		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+		SaveLauncherConfigKeepModern(exeDir + L"pob-zh.ini", cfg);
 		unsigned long pid = 0;
 		if (!PobLaunch::SpawnToolDetached(exeDir, flag, kind, &pid)) return;
 		anythingLaunched = true;
@@ -1278,7 +1278,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	auto launchPob = [&](bool poe2) {
 		syncCfgFromUi();
 		cfg.game = poe2 ? L"poe2" : L"poe1"; // the row that was clicked, not the selection
-		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);   // the child's safety net
+		SaveLauncherConfigKeepModern(exeDir + L"pob-zh.ini", cfg);   // the child's safety net
 		// Only a validated external folder is passed on (see the settings page),
 		// and only the one for the game being started; a broken path leaves POB on
 		// the built-in dictionaries.
@@ -1358,7 +1358,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// changes take effect.
 	auto saveNow = [&]() {
 		syncCfgFromUi(); // language / game are widget state until now
-		SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+		SaveLauncherConfigKeepModern(exeDir + L"pob-zh.ini", cfg);
 		savedUntil = ImGui::GetTime() + 3.0;
 	};
 	// Resize the window from the settings page. `remember` decides what the ini
@@ -1507,7 +1507,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						// Straight to the ini: saveNow() would flash "saved" on
 						// every drag, which is noise for something this passive.
 						syncCfgFromUi();
-						SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+						SaveLauncherConfigKeepModern(exeDir + L"pob-zh.ini", cfg);
 					}
 				}
 			}
@@ -3216,7 +3216,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				// to the same folder by hand would be a pointless second step.
 				cfg.dataDir[copySlot] = copyDest;
 				resolveDict(copySlot);
-				SaveLauncherConfig(exeDir + L"pob-zh.ini", cfg);
+				SaveLauncherConfigKeepModern(exeDir + L"pob-zh.ini", cfg);
 				savedUntil = ImGui::GetTime() + 3.0;
 			}
 			copyDest.clear();

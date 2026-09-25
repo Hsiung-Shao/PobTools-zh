@@ -911,7 +911,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		}
 		if (launchLua.empty()) {
 			LauncherResult res = ShowLauncher(cfg, installs, dir, &appUpdater);
-			SaveLauncherConfig(ini, cfg); // remember choices regardless of outcome
+			SaveLauncherConfigKeepModern(ini, cfg); // remember choices regardless of outcome
 			if (res == LauncherResult::ApplyAppUpdate) {
 				AppUpdater::Status ust = appUpdater.Poll();
 				appUpdater.Shutdown(); // worker idle; join before touching engine\*

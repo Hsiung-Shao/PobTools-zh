@@ -2698,6 +2698,46 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			child.Call("item_edit_cancel", json::object(), tpCancel, 60000);
 		}
 
+		// --- item / skill / config sets --------------------------------------------
+		// POB2's New*Set appends the id to the order list itself; the bridge used to
+		// append again, so one "+" listed the set twice and deleting it left an id
+		// with no set, which SyncLoadouts (Build.lua:668) then crashed on. Each kind:
+		// add one, it is listed once; delete it, the list is back to what it was and
+		// the loadout sync (list_loadouts calls SyncLoadouts unguarded) still works.
+		{
+			struct Kind { const char* list; const char* field; const char* add; const char* del; };
+			const Kind kinds[] = {
+				{ "list_skills", "skillSets", "new_skill_set", "delete_skill_set" },
+				{ "list_items", "itemSets", "new_item_set", "delete_item_set" },
+				{ "list_config", "configSets", "new_config_set", "delete_config_set" },
+			};
+			for (const Kind& k : kinds) {
+				auto idsOf = [&](const json& r) {
+					std::vector<int> v;
+					if (r.contains(k.field))
+						for (auto& e : r[k.field]) v.push_back(e.value("id", 0));
+					return v;
+				};
+				json r0, added, r1, removed, r2, lo;
+				const bool ok0 = child.Call(k.list, json::object(), r0, 60000);
+				const std::vector<int> before = idsOf(r0);
+				const bool okAdd = ok0 && child.Call(k.add, json{{"title", "selftest set"}}, added, 60000) &&
+				                   child.Call(k.list, json::object(), r1, 60000);
+				const std::vector<int> after = idsOf(r1);
+				const std::set<int> uniq(after.begin(), after.end());
+				const int newId = added.value("id", 0);
+				const bool okDel = okAdd && child.Call(k.del, json{{"id", newId}}, removed, 60000) &&
+				                   child.Call(k.list, json::object(), r2, 60000);
+				const std::vector<int> end = idsOf(r2);
+				const bool okLoad = okDel && child.Call("list_loadouts", json::object(), lo, 60000);
+				check(std::string("PoE2 ") + k.field + ": a new set is listed once, deleting it leaves no dangling id, loadouts still sync",
+				      okAdd && after.size() == before.size() + 1 && uniq.size() == after.size() && okDel && end == before && okLoad,
+				      "before=" + std::to_string(before.size()) + " after=" + std::to_string(after.size()) +
+				          " unique=" + std::to_string(uniq.size()) + " end=" + std::to_string(end.size()) +
+				          (okLoad ? "" : " loadouts=" + lo.dump().substr(0, 160)));
+			}
+		}
+
 		// --- craft drop-downs of a radius jewel -------------------------------------
 		// POB lists "Notable Passive Skills in Radius also grant X" as "Notable: X",
 		// a form no dictionary has; the bridge translates the full official line and

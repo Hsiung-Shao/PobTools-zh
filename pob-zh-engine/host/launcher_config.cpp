@@ -305,6 +305,20 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	return c;
 }
 
+void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& cfg)
+{
+	const LauncherConfig disk = LoadLauncherConfig(iniPath);
+	cfg.modernWinW = disk.modernWinW;
+	cfg.modernWinH = disk.modernWinH;
+	cfg.modernZoom = disk.modernZoom;
+	cfg.modernFontSize = disk.modernFontSize;
+	cfg.modernTheme = disk.modernTheme;
+	cfg.modernAccent = disk.modernAccent;
+	cfg.modernFont = disk.modernFont;
+	for (int g = 0; g < 2; g++) cfg.modernLook[g] = disk.modernLook[g];
+	SaveLauncherConfig(iniPath, cfg);
+}
+
 void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 {
 	// Only the first write is checked. Every line below goes to the same file
@@ -1555,6 +1569,25 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		write(L"PobTools", { { L"Game", L"poe1" }, { L"ModernWindowW", L"1440" } });
 		r = LoadLauncherConfig(ini);
 		check("T17l half a ModernWindow pair is no pair", r.modernWinW == 0 && r.modernWinH == 0);
+	}
+	{
+		// T17m2 -- the launcher saving its stale copy must not undo what the new
+		// interface wrote meanwhile, and must still write its own fields.
+		DeleteFileW(ini.c_str());
+		LauncherConfig launcher;          // what the launcher read at startup
+		SaveLauncherConfig(ini, launcher);
+		LauncherConfig modern = LoadLauncherConfig(ini);   // the new interface, later
+		modern.modernTheme = L"light";
+		modern.modernZoom = 130;
+		modern.modernLook[1].follow = false;
+		modern.modernLook[1].look.background = L"a.png";
+		SaveLauncherConfig(ini, modern);
+		launcher.fontSize = 17;           // a launcher-owned change, then its save
+		SaveLauncherConfigKeepModern(ini, launcher);
+		const LauncherConfig r = LoadLauncherConfig(ini);
+		check("T17m2 the launcher's save keeps the new interface's settings and writes its own",
+		      r.modernTheme == L"light" && r.modernZoom == 130 && !r.modernLook[1].follow &&
+		          r.modernLook[1].look.background == L"a.png" && r.fontSize == 17);
 	}
 
 	// T18..T25 -- ResolveDictDir against synthetic folders. Every failure mode has

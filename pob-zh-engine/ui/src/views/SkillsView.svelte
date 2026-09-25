@@ -312,7 +312,7 @@
     if (r) await changed();
   }
   async function setDialogOk() {
-    if (!setDialog || !data) return;
+    if (!setDialog || !data || !setDialog.title.trim()) return;
     const d = setDialog;
     const active = data.activeSkillSetId;
     setDialog = null;
@@ -320,8 +320,10 @@
     if (r) await changed();
   }
   async function deleteSet() {
-    if (!data || data.skillSets.length <= 1 || !confirm(t("items.deleteSet") + "?")) return;
+    if (!data || data.skillSets.length <= 1) return;
     const id = data.activeSkillSetId;
+    const cur = data.skillSets.find((s) => s.id === id);
+    if (!confirm(t("skills.deleteSetConfirm", { name: cur ? setTitle(cur) : "" }))) return;
     const r = await app.run(() => api.deleteSkillSet(id));
     if (r) await changed();
   }
@@ -339,7 +341,7 @@
             <option value={String(s.id)}>{setTitle(s)}</option>
           {/each}
         </select>
-        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: "", copy: false })}>+</button>
+        <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("skills.newSetName"), copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.skillSets.find((s) => s.id === data!.activeSkillSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.skillSets.length <= 1} onclick={deleteSet}>×</button>
       {/if}
@@ -606,7 +608,7 @@
         <div class="label">{setDialog.mode === "new" ? t("skills.skillSet") : t("skills.skillSet")}</div>
         <input class="input" placeholder={t("items.setName")} bind:value={setDialog.title} onkeydown={(e) => e.key === "Enter" && setDialogOk()} />
         {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
-        <div class="btns"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" onclick={setDialogOk}>OK</button></div>
+        <div class="btns"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button></div>
       </div>
     </div>
   {/if}
@@ -629,17 +631,24 @@
   .col + .col {
     border-left: 1px solid var(--edge-0);
   }
+  /* wraps onto a second row in a narrow column instead of clipping its right
+     end (the set drop-down, its buttons and the tree selector did) */
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
-    height: 36px;
-    padding: 0 12px;
+    gap: 4px 6px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
+  .head .label {
+    white-space: nowrap;
+  }
   .head .select {
-    max-width: 150px;
+    min-width: 0;
+    max-width: 100%;
   }
   .scroll {
     flex: 1;
@@ -690,6 +699,7 @@
   }
   .actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding: 8px 10px;
     border-top: 1px solid var(--edge-0);

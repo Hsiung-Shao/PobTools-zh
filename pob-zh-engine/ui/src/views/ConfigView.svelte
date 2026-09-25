@@ -167,7 +167,7 @@
     if (r) await changed();
   }
   async function setDialogOk() {
-    if (!setDialog || !data) return;
+    if (!setDialog || !data || !setDialog.title.trim()) return;
     const d = setDialog;
     const active = data.activeConfigSetId;
     setDialog = null;
@@ -175,8 +175,10 @@
     if (r) await changed();
   }
   async function deleteSet() {
-    if (!data || data.configSets.length <= 1 || !confirm(t("items.deleteSet") + "?")) return;
+    if (!data || data.configSets.length <= 1) return;
     const id = data.activeConfigSetId;
+    const cur = data.configSets.find((s) => s.id === id);
+    if (!confirm(t("config.deleteSetConfirm", { name: cur ? setTitle(cur) : "" }))) return;
     const r = await app.run(() => api.deleteConfigSet(id));
     if (r) await changed();
   }
@@ -194,7 +196,7 @@
       <select class="select sm" value={String(data.activeConfigSetId)} onchange={(e) => setChange(e.currentTarget.value)}>
         {#each data.configSets as s}<option value={String(s.id)}>{setTitle(s)}</option>{/each}
       </select>
-      <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: "", copy: true })}>+</button>
+      <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("config.newSetName"), copy: true })}>+</button>
       <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.configSets.find((s) => s.id === data!.activeConfigSetId)?.title ?? "", copy: false })}>✎</button>
       <button class="btn ghost sm" disabled={data.configSets.length <= 1} onclick={deleteSet}>×</button>
     {/if}
@@ -288,7 +290,7 @@
         <div class="label">{t("config.configSet")}</div>
         <input class="input" placeholder={t("items.setName")} bind:value={setDialog.title} onkeydown={(e) => e.key === "Enter" && setDialogOk()} />
         {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
-        <div class="btns right"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" onclick={setDialogOk}>OK</button></div>
+        <div class="btns right"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button></div>
       </div>
     </div>
   {/if}
