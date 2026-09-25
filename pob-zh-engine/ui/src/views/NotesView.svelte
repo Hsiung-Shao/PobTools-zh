@@ -50,14 +50,24 @@
     clearTimeout(timer);
     timer = window.setTimeout(() => void flush(), 800);
   }
+  // NotesTab:SetColor. No selection: insert the code. A selection: colour it --
+  // its own ^xRRGGBB codes are dropped, the new code goes in front and the colour
+  // that was in effect at its end goes after it, so the text that follows keeps
+  // its colour. (Replacing the selection with the code deleted what was selected.)
   function insertColour(code: string) {
     if (!ta) return;
     const s = ta.selectionStart;
     const e = ta.selectionEnd;
-    text = text.slice(0, s) + code + text.slice(e);
+    let piece = code;
+    if (e > s) {
+      const sel = text.slice(s, e);
+      const last = sel.match(/.*(\^x[0-9a-fA-F]{6})/s)?.[1] ?? "^7";
+      piece = code + sel.replace(/\^x[0-9a-fA-F]{6}/g, "") + last;
+    }
+    text = text.slice(0, s) + piece + text.slice(e);
     queueMicrotask(() => {
       ta!.focus();
-      ta!.setSelectionRange(s + code.length, s + code.length);
+      ta!.setSelectionRange(s + piece.length, s + piece.length);
     });
     onInput();
   }

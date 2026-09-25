@@ -389,6 +389,39 @@
 
     // nodes
     const showIcons = zoom > 0.035;
+    // Node Power heat, the Compare rings and search hits: one pass shared by both
+    // games' drawing (PoE2's branch used to `continue` before reaching them, so
+    // neither Node Power nor Compare showed anything on a PoE2 tree).
+    const overlays = (n: TreeNode, sx: number, sy: number, half: number, alloc: boolean) => {
+      // Show Node Power: POB tints unallocated nodes by their power
+      if (power && !alloc) {
+        const col = heatColor(n.id);
+        if (col) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 18 * zoom), 0, Math.PI * 2);
+          ctx.fillStyle = col;
+          ctx.fill();
+        }
+      }
+      // Compare (TreeTab's Compare tick): only in the other tree / only in this one
+      if (compareSet.size) {
+        const inCompare = compareSet.has(n.id);
+        if (inCompare !== alloc) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(half, 20 * zoom) + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = inCompare ? "rgba(90,220,140,0.9)" : "rgba(255,107,107,0.9)";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+      if (matches.has(n.id)) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(half, 24 * zoom) + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = pal.search;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    };
     for (const n of M.nodes.values()) {
       if (!visible(n.x, n.y) || n.kind === "classStart" || locked(n)) continue;
       const [sx, sy] = toScreen(n.x, n.y);
@@ -413,6 +446,16 @@
         if (n.kind === "ascStart") {
           S.draw(ctx, "AscendancyMiddle", sx, sy, (d.ow ?? d.w ?? 50) * zoom, (d.oh ?? d.h ?? 50) * zoom);
           continue;
+        }
+        // hovering a jewel socket tints the nodes in its radius (as the PoE1 branch does)
+        const tint = radiusTint.get(n.id);
+        if (tint && !alloc && d.ow) {
+          ctx.beginPath();
+          ctx.arc(sx, sy, d.ow * zoom * 0.9, 0, Math.PI * 2);
+          ctx.fillStyle = tint;
+          ctx.globalAlpha = 0.45;
+          ctx.fill();
+          ctx.globalAlpha = foreign ? 0.55 : 1;
         }
         if (n.kind === "socket") {
           const fr = n.raw.frames?.[st];
@@ -448,13 +491,8 @@
           ctx.fillStyle = "rgba(255,107,107,0.35)";
           ctx.fill();
         }
-        if (matches.has(n.id)) {
-          ctx.beginPath();
-          ctx.arc(sx, sy, Math.max(half, 24 * zoom) + 5, 0, Math.PI * 2);
-          ctx.strokeStyle = pal.search;
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
-        }
+        // PoE2 sizes come from GetNodeTargetSize (half extents), not n.size
+        overlays(n, sx, sy, d.ow ? d.ow * zoom * 0.85 : half, alloc);
         continue;
       }
       if (n.kind === "ascStart") {
@@ -503,34 +541,7 @@
         ctx.fillStyle = "rgba(255,107,107,0.35)";
         ctx.fill();
       }
-      // Show Node Power: POB tints unallocated nodes by their power
-      if (power && !alloc) {
-        const col = heatColor(n.id);
-        if (col) {
-          ctx.beginPath();
-          ctx.arc(sx, sy, Math.max(half, 18 * zoom), 0, Math.PI * 2);
-          ctx.fillStyle = col;
-          ctx.fill();
-        }
-      }
-      // Compare (TreeTab's Compare tick): only in the other tree / only in this one
-      if (compareSet.size) {
-        const inCompare = compareSet.has(n.id);
-        if (inCompare !== alloc) {
-          ctx.beginPath();
-          ctx.arc(sx, sy, Math.max(half, 20 * zoom) + 3, 0, Math.PI * 2);
-          ctx.strokeStyle = inCompare ? "rgba(90,220,140,0.9)" : "rgba(255,107,107,0.9)";
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        }
-      }
-      if (matches.has(n.id)) {
-        ctx.beginPath();
-        ctx.arc(sx, sy, Math.max(half, 24 * zoom) + 5, 0, Math.PI * 2);
-        ctx.strokeStyle = pal.search;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
+      overlays(n, sx, sy, half, alloc);
     }
     ctx.globalAlpha = 1;
 
@@ -704,6 +715,19 @@
     drag = null;
     if (!wasClick || !hover || app.busy > 0) return;
     const n = hover;
+    // PassiveTreeView's right-click, in its order: an allocated jewel socket goes
+    // to the Items tab to pick its jewel (both games); an allocated mastery
+    // reopens its effect list (PoE1); anything else is a tattoo (PoE1).
+    if (e.button === 2 && n.kind === "socket" && allocated.has(n.id)) {
+      app.focusSocketNode = n.id;
+      app.view = "items";
+      return;
+    }
+    if (e.button === 2 && !model?.poe2 && n.kind === "mastery" && allocated.has(n.id)) {
+      const r = await app.run(() => api.masteryOptions(n.id));
+      if (r) masteryMenu = { id: r.id, name: r.nameZh || r.name, x: mouse.x, y: mouse.y, effects: r.effects, selected: r.selected ?? null };
+      return;
+    }
     if (e.button === 2 && !model?.poe2) {
       // PoE1: right-click offers this node's tattoo (TreeTab:ModifyNodePopup)
       void openTattoo(n.id);

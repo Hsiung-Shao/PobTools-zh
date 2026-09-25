@@ -1,13 +1,17 @@
 <!-- 計算頁:緊湊表格。POB CalcsTab 的欄位規則(group 1 佔前三欄、寬三欄的區段橫跨、
      group 2 第四欄、group 3 第五欄)照排;每列 16px、標籤/數值兩欄對齊;cell 文字由 POB 的
      formatCalcStr 產出,有細項的 cell hover 開細項浮層(與側欄同一個 BreakdownPanel)。
-     停用或沒有任何列的區段照 POB 不畫;技能/部位下拉在建置列,這裡只有增益模式與搜尋。 -->
+     停用或沒有任何列的區段照 POB 不畫。第一區「檢視技能細節」照 POB 畫出它自己的控制項
+     (插槽組、主動技能、能力組、部位、階段、地雷、召喚物、召喚物技能、計算模式、幽魂/野獸庫),
+     選項由 bridge 讀自 POB 的控制項、設定時跑控制項自己的回呼;它改的是計算頁的 skill_number,
+     與建置列的主技能分開(經典 POB 也是兩份)。 -->
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, type BreakdownSection, type CalcCell, type CalcsData } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
+  import MinionLibrary from "../components/MinionLibrary.svelte";
   import PobText from "../components/PobText.svelte";
 
   let data = $state<CalcsData | null>(null);
@@ -31,6 +35,19 @@
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });
+  // the "View Skill Details" controls (POB's own, see get_calcs / set_calcs_control)
+  let library = $state<"spectre" | "beast" | null>(null);
+  async function setControl(name: string, value: number | string | boolean) {
+    const r = await app.run(() => api.setCalcsControl(name, value));
+    if (r) {
+      await reload();
+      await app.afterTreeChange();
+    }
+  }
+  function pressControl(name: string) {
+    if (name === "mainSkillMinionLibrary") library = "spectre";
+    else if (name === "mainSkillBeastLibrary") library = "beast";
+  }
   async function setInput(v: string, value: unknown) {
     const r = await app.run(() => api.setCalcsInput(v, value));
     if (r) {
@@ -88,7 +105,7 @@
   const groups = $derived.by(() => {
     const g: Record<1 | 2 | 3, CalcsData["sections"]> = { 1: [], 2: [], 3: [] };
     for (const s of data?.sections ?? []) {
-      if (s.id === "SkillSelect" || !s.enabled) continue;
+      if (!s.enabled) continue;
       const k = (s.group === 2 || s.group === 3 ? s.group : 1) as 1 | 2 | 3;
       g[k].push(s);
     }
@@ -146,8 +163,25 @@
         {#if !closed}
           {#each rows as row (row.ri)}
             {@const cells = row.cells.filter((c) => !isSelector(c))}
-            <div class="row" style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
+            {@const ctls = row.cells.filter((c) => isSelector(c) && c.widget?.shown)}
+            <div class="row" class:ctlrow={ctls.length > 0} style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
               {#if row.label}<span class="rl" style:color={pobColor(row.color) ?? "var(--ink-2)"}>{row.labelZh || row.label}</span>{:else}<span class="rl"></span>{/if}
+              {#each ctls as c (c.ci)}
+                {@const w = c.widget!}
+                <span class="cell ctl" style:grid-column={ncol > 1 ? "2 / -1" : undefined}>
+                  {#if w.kind === "dropdown"}
+                    <select class="select sm" value={String(w.index ?? 1)} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, Number(e.currentTarget.value))}>
+                      {#each w.list ?? [] as o, i (i)}<option value={String(i + 1)}>{o.labelZh || o.label}</option>{/each}
+                    </select>
+                  {:else if w.kind === "edit"}
+                    <input class="input sm num" value={String(w.value ?? "")} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, e.currentTarget.value)} />
+                  {:else if w.kind === "check"}
+                    <input type="checkbox" checked={!!w.value} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, e.currentTarget.checked)} />
+                  {:else if w.kind === "button"}
+                    <button class="btn ghost sm" disabled={!w.enabled} onclick={() => pressControl(c.control!)}>{w.labelZh || w.label}</button>
+                  {/if}
+                </span>
+              {/each}
               {#each cells as c (c.ci)}
                 {@const key = `${sec.si}:${sub.ui}:${row.ri}:${c.ci}`}
                 <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -219,6 +253,8 @@
       <div class="fbody"><BreakdownPanel sections={bd.sections} /></div>
     </div>
   {/if}
+
+{#if library}<MinionLibrary kind={library} onclose={() => (library = null)} />{/if}
 </div>
 
 <style>
@@ -381,6 +417,22 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* the "View Skill Details" controls: a row holds one control, not a value */
+  .row.ctlrow {
+    min-height: 24px;
+    align-items: center;
+  }
+  .cell.ctl {
+    overflow: visible;
+    font-family: inherit;
+    border-left: 0;
+  }
+  .cell.ctl .select {
+    max-width: 100%;
+  }
+  .cell.ctl .input {
+    width: 64px;
   }
   .cell {
     min-width: 0;

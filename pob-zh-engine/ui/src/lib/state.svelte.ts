@@ -144,17 +144,51 @@ class AppState {
     }
   }
 
-  /** Saves under POB's build folder: `name` may carry a sub-folder ("dir/name"). */
-  async saveAs(name: string) {
+  /**
+   * Saves under POB's build folder: `name` may carry a sub-folder ("dir/name").
+   * "exists" = another build already has that file and nothing was written; the
+   * caller asks, then calls again with `overwrite`.
+   */
+  async saveAs(name: string, overwrite = false): Promise<"saved" | "exists" | "failed"> {
     const buildPath = this.buildPath;
-    if (!buildPath) return;
+    if (!buildPath) return "failed";
     const rel = name.replace(/\\/g, "/").replace(/^\/+/, "");
     const path = `${buildPath}${rel}${rel.toLowerCase().endsWith(".xml") ? "" : ".xml"}`;
-    const r = await this.run(() => api.saveBuildAs(path));
-    if (r) {
-      this.stamp();
-      await this.refresh();
+    const r = await this.run(() => api.saveBuildAs(path, overwrite));
+    if (!r) return "failed";
+    if (r.exists) return "exists";
+    this.stamp();
+    await this.refresh();
+    const after = this.afterSaveAs;
+    this.afterSaveAs = null;
+    after?.();
+    return "saved";
+  }
+
+  /** The window is being closed with unsaved changes: App asks Save / Don't save / Cancel. */
+  closeAsk = $state(false);
+  /** A tree jewel socket to bring into view on the Items tab (right-click on the tree). */
+  focusSocketNode = $state<number | null>(null);
+  /** Bumped to ask BuildBar for its Save As dialog (a build that has no file yet). */
+  saveAsRequest = $state(0);
+  /** Runs once after the next successful Save As (closing the window after "Save"). */
+  afterSaveAs: (() => void) | null = null;
+  /**
+   * Ctrl+S and every "save first?" answer. A build with no file yet (new, or
+   * imported as a new build) has nothing to save to: open Save As instead of
+   * letting save_build error. True when the build is saved by the time it returns.
+   */
+  async saveOrAsk(then?: () => void): Promise<boolean> {
+    if (!this.header?.dbFileName) {
+      if (this.view === "builds" || this.view === "settings") this.view = this.landingView();
+      this.afterSaveAs = then ?? null;
+      this.saveAsRequest++;
+      return false;
     }
+    await this.save();
+    const ok = !this.info?.unsaved;
+    if (ok) then?.();
+    return ok;
   }
 
   /** POB's build folder with a trailing separator (from version / list_builds). */
@@ -258,6 +292,13 @@ bridge.on("host.disconnected", () => {
 });
 bridge.on("host.reconnected", () => {
   if (app.link === "lost") app.link = "ok";
+});
+// The window's X (WebView2 host): answer at once, then close, or ask about an
+// unsaved build first (App.svelte shows the question).
+bridge.on("host.close_requested", () => {
+  void bridge.call("host.close_ack").catch(() => {});
+  if (app.info?.unsaved && app.engine === "ready") app.closeAsk = true;
+  else void bridge.call("host.close").catch(() => {});
 });
 bridge.on("host.closed", () => {
   app.link = "closed";

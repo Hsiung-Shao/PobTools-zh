@@ -91,6 +91,17 @@
             <b class:over={overCap(info.points.ascUsed, info.points.ascMax)}>{info.points.ascUsed}</b><span class="dim">/{info.points.ascMax ?? "?"}</span>
           </dd>
         </div>
+        {#if info.points.weaponSets?.length}
+          <!-- PoE2: POB's point display has the two weapon sets between them -->
+          <div class="ws" title={t("sidebar.weaponSetsHint")}>
+            <dt>{t("sidebar.weaponSets")}</dt>
+            <dd class="num">
+              {#each info.points.weaponSets as w, i}
+                {#if i}<span class="dim"> · </span>{/if}<b class:over={overCap(w.used, w.max)}>{w.used}</b><span class="dim">/{w.max}</span>
+              {/each}
+            </dd>
+          </div>
+        {/if}
       </dl>
     </section>
 
@@ -196,6 +207,9 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin: 12px 0 0;
+  }
+  .facts .ws {
+    grid-column: 1 / -1;
   }
   .facts div {
     padding: 6px 8px;

@@ -541,10 +541,23 @@ function M.get_build_info()
 		used, ascUsed, secondaryAscUsed, sockets = spec:CountAllocNodes()
 	end
 	local pd = b.controls.pointDisplay
-	local usedMax, ascMax
+	local usedMax, ascMax, ws
 	if pd and type(pd.str) == "string" then
-		local a, bm, c, d = strip_escapes(pd.str):match("(%d+)%s*/%s*(%d+)%s+(%d+)%s*/%s*(%d+)")
-		usedMax, ascMax = tonumber(bm), tonumber(d)
+		-- Build.lua's pointDisplay. PoE1: "used / max   asc / max". PoE2 has four
+		-- pairs: passives, weapon set 1, weapon set 2, ascendancy -- reading only
+		-- the first two took weapon set 1's cap for the ascendancy cap (3/24 shown
+		-- where POB says 3/8), and counted weapon-set points as ordinary ones.
+		local pairs_ = {}
+		for u, m in strip_escapes(pd.str):gmatch("(%d+)%s*/%s*(%d+)") do
+			pairs_[#pairs_ + 1] = { tonumber(u), tonumber(m) }
+		end
+		if GAME == "poe2" and #pairs_ >= 4 then
+			used, usedMax = pairs_[1][1], pairs_[1][2]
+			ws = { { used = pairs_[2][1], max = pairs_[2][2] }, { used = pairs_[3][1], max = pairs_[3][2] } }
+			ascUsed, ascMax = pairs_[4][1], pairs_[4][2]
+		elseif #pairs_ >= 2 then
+			usedMax, ascMax = pairs_[1][2], pairs_[2][2]
+		end
 	end
 	return {
 		buildName = b.buildName,
@@ -561,6 +574,8 @@ function M.get_build_info()
 		points = {
 			used = used, ascUsed = ascUsed, secondaryAscUsed = secondaryAscUsed, sockets = sockets,
 			usedMax = usedMax, ascMax = ascMax,
+			-- PoE2: weapon set 1 / 2 passives (used / cap each)
+			weaponSets = ws,
 			display = pd and pd.str, req = pd and pd.req and tr(pd.req),
 		},
 		rev = b.outputRevision,
@@ -1508,6 +1523,18 @@ end
 -- sequence (stats swap, ProcessStats, masterySelections, AllocNode,
 -- AddUndoState); it only wants a list control with a selection and closes a
 -- popup we never opened, so hand it a stand-in and mute ClosePopup.
+-- mastery_options{id}: the effect list for a mastery that is ALREADY allocated
+-- (PassiveTreeView: right-click on it opens OpenMasteryPopup to change the
+-- effect). tree_click only offers the list while allocating.
+function M.mastery_options(p)
+	local b = ensure_build()
+	local id = p and tonumber(p.id)
+	local node = id and b.spec.nodes[id]
+	if not node or node.type ~= "Mastery" or not node.masteryEffects then error("not a mastery: " .. tostring(id), 0) end
+	return { id = id, name = node.dn, nameZh = tr(node.dn), effects = mastery_choices(b, node),
+	         selected = b.spec.masterySelections and b.spec.masterySelections[id] or nil }
+end
+
 function M.select_mastery(p)
 	local b = ensure_build()
 	local spec = b.spec
@@ -1965,6 +1992,16 @@ function M.save_build_as(p)
 	end
 	local name = path:match("([^\\]+)%.xml$")
 	if not name or name:find("[\\/:%*%?\"<>|%c]") then error("bad build name", 0) end
+	-- Another build already has this file: say so instead of overwriting it
+	-- (OpenSaveAsPopup disables Save for an existing name). Saving over the
+	-- build's own file is not "another build".
+	if not (p and p.overwrite) and (b.dbFileName or ""):lower() ~= path:lower() then
+		local f = io.open(path, "r")
+		if f then
+			f:close()
+			return { exists = true, path = path, buildName = name }
+		end
+	end
 	local m = main()
 	local dir = path:match("^(.*)\\[^\\]+$")
 	if dir then MakeDir(dir) end
@@ -6220,10 +6257,21 @@ function M.delete_group(p)
 	local b = ensure_build()
 	local tab = b.skillsTab
 	local i = tonumber(p and p.index)
-	group_at(tab, i)
+	local g = group_at(tab, i)
+	if g.source then error("this socket group comes from an equipped item and cannot be deleted", 0) end
 	table.remove(tab.socketGroupList, i)
+	if tab.RebuildImbuedSupportBySlot then tab:RebuildImbuedSupportBySlot() end
+	if tab.displayGroup == g and tab.SetDisplayGroup then pcall(tab.SetDisplayGroup, tab, nil) end
+	-- SkillListControl:OnSelDelete: a group after the deleted one moves up one
+	-- place, so do the indexes that point at it. Only clamping to the new length
+	-- (what this did before) left the main skill on whichever group slid into
+	-- its old slot.
+	if b.mainSocketGroup and b.mainSocketGroup > i then b.mainSocketGroup = b.mainSocketGroup - 1 end
+	local input = b.calcsTab and b.calcsTab.input
+	if input and type(input.skill_number) == "number" and input.skill_number > i then
+		input.skill_number = input.skill_number - 1
+	end
 	if b.mainSocketGroup and b.mainSocketGroup > #tab.socketGroupList then b.mainSocketGroup = math.max(1, #tab.socketGroupList) end
-	if tab.displayGroup and tab.SetDisplayGroup then pcall(tab.SetDisplayGroup, tab, tab.socketGroupList[1]) end
 	return skills_committed(b, nil)
 end
 
@@ -6248,9 +6296,17 @@ function M.move_group(p)
 	if not to or to < 1 or to > #tab.socketGroupList then error("bad target index", 0) end
 	local g = table.remove(tab.socketGroupList, from)
 	table.insert(tab.socketGroupList, to, g)
-	if b.mainSocketGroup == from then b.mainSocketGroup = to
-	elseif from < b.mainSocketGroup and to >= b.mainSocketGroup then b.mainSocketGroup = b.mainSocketGroup - 1
-	elseif from > b.mainSocketGroup and to <= b.mainSocketGroup then b.mainSocketGroup = b.mainSocketGroup + 1 end
+	-- SkillListControl:OnOrderChange, for both indexes that name a group
+	local function follow(v)
+		if type(v) ~= "number" then return v end
+		if v == from then return to end
+		if from < v and to >= v then return v - 1 end
+		if from > v and to <= v then return v + 1 end
+		return v
+	end
+	b.mainSocketGroup = follow(b.mainSocketGroup)
+	local input = b.calcsTab and b.calcsTab.input
+	if input then input.skill_number = follow(input.skill_number) end
 	return skills_committed(b, nil)
 end
 
@@ -7034,6 +7090,51 @@ local function calcs_actor(tab)
 	return tab.input.showMinion and tab.calcsEnv.minion or tab.calcsEnv.player
 end
 
+-- A control POB draws inside a Calcs row (the "View Skill Details" section:
+-- socket group, active skill, stat set, part, stages, mines, minion, minion
+-- skill, calculation mode, the libraries), described so the page can draw its
+-- own widget and hand the choice back to set_calcs_control, which runs the
+-- control's own callback -- every selector POB has, in both games, without the
+-- bridge knowing what each one does.
+local function calcs_widget(c)
+	if type(c) ~= "table" then return nil end
+	local enabled = c.enabled
+	if type(enabled) == "function" then enabled = enabled(c) end
+	local w = { shown = dd_shown(c), enabled = enabled ~= false }
+	if c.list ~= nil and c.selFunc ~= nil then
+		w.kind = "dropdown"
+		w.index = c.selIndex or 1
+		w.list = dd_entries(c)
+	elseif c.buf ~= nil then
+		w.kind = "edit"
+		w.value = c.buf
+	elseif c.state ~= nil and c.changeFunc ~= nil then
+		w.kind = "check"
+		w.value = c.state and true or false
+	elseif c.onClick ~= nil then
+		w.kind = "button"
+		local label = type(c.label) == "function" and c.label(c) or c.label
+		w.label = label
+		w.labelZh = label and tr(label) or nil
+	else
+		return nil
+	end
+	return w
+end
+
+local function calcs_control(tab, name)
+	for _, sec in ipairs(tab.sectionList or {}) do
+		for _, sub in ipairs(sec.subSection or {}) do
+			for _, row in ipairs(sub.data or {}) do
+				for _, col in ipairs(row) do
+					if col.controlName == name and col.control then return col.control end
+				end
+			end
+		end
+	end
+	return nil
+end
+
 -- get_calcs: every section/subsection/row/cell of POB's Calcs tab, formatted
 -- by POB's own formatCalcStr against the CALCS environment, with the flags
 -- POB uses to hide rows (CheckFlag). Cells are addressable for breakdowns.
@@ -7041,6 +7142,10 @@ function M.get_calcs()
 	local b = ensure_build()
 	local tab = b.calcsTab
 	local actor = calcs_actor(tab)
+	local sel0 = tab.sectionList[1]
+	if sel0 and sel0.controls and sel0.controls.mainSocketGroup then
+		b:RefreshSkillSelectControls(sel0.controls, tab.input.skill_number, "Calcs")
+	end
 	local out = {}
 	for si, sec in ipairs(tab.sectionList) do
 		local enabled = tab:CheckFlag(sec) and true or false
@@ -7061,7 +7166,7 @@ function M.get_calcs()
 								control = col.controlName,
 							})
 						elseif col.controlName then
-							cells[#cells + 1] = as_object({ ci = ci, control = col.controlName })
+							cells[#cells + 1] = as_object({ ci = ci, control = col.controlName, widget = calcs_widget(col.control) })
 						end
 					end
 					rows[#rows + 1] = as_object({ ri = ri, label = row.label, labelZh = row.label and tr(row.label) or nil, color = row.color, textSize = row.textSize, cells = cells })
@@ -7122,6 +7227,34 @@ function M.set_calcs_input(p)
 		src.skillPartCalcs = tonumber(v) or 1
 	else
 		error("unknown calcs input " .. tostring(var), 0)
+	end
+	tab:AddUndoState()
+	return commit(b)
+end
+
+-- set_calcs_control{name, value}: a Calcs-row control, through its own callback
+-- (dropdown: value = 1-based index; edit: text; check: boolean). A button
+-- (the spectre / beast library) is not pressed here: its popup is the page's.
+function M.set_calcs_control(p)
+	local b = ensure_build()
+	local tab = b.calcsTab
+	local name = p and p.name
+	local c = type(name) == "string" and calcs_control(tab, name)
+	if not c then error("no calcs control " .. tostring(name), 0) end
+	local w = calcs_widget(c)
+	if not w then error("unsupported calcs control " .. name, 0) end
+	if w.kind == "dropdown" then
+		local i = tonumber(p.value)
+		if not i or not c.list[i] then error("bad index for " .. name, 0) end
+		c.selIndex = i
+		c.selFunc(i, c.list[i])
+	elseif w.kind == "edit" then
+		c:SetText(tostring(p.value or ""), true)
+	elseif w.kind == "check" then
+		c.state = p.value and true or false
+		c.changeFunc(c.state)
+	else
+		error("press " .. name .. " in the page", 0)
 	end
 	tab:AddUndoState()
 	return commit(b)

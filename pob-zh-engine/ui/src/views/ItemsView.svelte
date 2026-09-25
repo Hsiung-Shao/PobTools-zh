@@ -13,6 +13,7 @@
   import { app } from "$lib/state.svelte";
   import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
+  import SlotSelect from "../components/SlotSelect.svelte";
   import ItemEditor from "../components/ItemEditor.svelte";
   import ItemDb from "../components/ItemDb.svelte";
 
@@ -48,6 +49,27 @@
 
   // right column
   let rightTab = $state<"paste" | "db" | "edit" | "craft">("paste");
+  // A right-click on a tree socket lands here (app.focusSocketNode): scroll its
+  // slot into view, flash it and put the focus on its drop-down, which is where
+  // "choose the jewel for this socket" happens.
+  let flashSlot = $state<string | null>(null);
+  $effect(() => {
+    const nodeId = app.focusSocketNode;
+    const slots = data?.slots;
+    if (nodeId == null || !slots) return;
+    const s = slots.find((x) => x.nodeId === nodeId);
+    untrack(() => {
+      app.focusSocketNode = null;
+      if (!s) return;
+      flashSlot = s.name;
+      queueMicrotask(() => {
+        const el = document.querySelector<HTMLElement>(`.slot[data-slot="${CSS.escape(s.name)}"]`);
+        el?.scrollIntoView({ block: "center" });
+        el?.querySelector<HTMLElement>(".slotdd")?.focus();
+      });
+      setTimeout(() => (flashSlot = null), 1600);
+    });
+  });
   let pasteText = $state("");
   let pasteErr = $state<string | null>(null);
   let pasteNote = $state<string | null>(null);
@@ -412,22 +434,21 @@
           {/if}
           {#each g.slots as s (s.name)}
             {@const it = data ? itemById(data.items, s.selItemId) : undefined}
-            <div class="slot" class:sub={!!s.parent} class:drop={canDrop(s)} ondragover={(e) => dragOver(e, s)} ondrop={(e) => drop(e, s)}>
+            <div class="slot" class:sub={!!s.parent} class:drop={canDrop(s)} class:flash={flashSlot === s.name} data-slot={s.name} ondragover={(e) => dragOver(e, s)} ondrop={(e) => drop(e, s)}>
               <span class="sl" title={s.name}>{s.nodeId != null ? t("items.socketN", { n: s.socketIndex ?? "" }) : s.labelZh || s.label}</span>
-              <select
-                class="select sm it"
-                style:color={it ? rarityColor(it.rarity) : "var(--ink-3)"}
-                value={String(s.selItemId)}
-                onchange={(e) => slotChange(s, e.currentTarget.value)}
-                onmouseenter={(e) => it && tipItem(it.id!, s.name, e)}
-                onmouseleave={hideTip}
-              >
-                <option value="0">{t("items.none")}</option>
-                {#each s.valid as id}
-                  {@const v = data ? itemById(data.items, id) : undefined}
-                  {#if v}<option value={String(id)}>{v.nameZh || v.name}</option>{/if}
-                {/each}
-              </select>
+              <!-- each entry previews against what the slot holds (ItemSlotControl) -->
+              <SlotSelect
+                value={s.selItemId}
+                label={it ? it.nameZh || it.name : t("items.none")}
+                color={it ? rarityColor(it.rarity) : "var(--ink-3)"}
+                options={s.valid.flatMap((id) => {
+                  const v = data ? itemById(data.items, id) : undefined;
+                  return v ? [{ id, label: v.nameZh || v.name, color: rarityColor(v.rarity) }] : [];
+                })}
+                onpick={(id) => slotChange(s, String(id))}
+                ontip={(id, e) => tipItem(id, s.name, e)}
+                onleave={hideTip}
+              />
               {#if s.isFlask}
                 <input type="checkbox" title={t("items.flaskActive")} checked={s.active} disabled={s.selItemId === 0} onchange={() => toggleFlask(s)} />
               {/if}
@@ -744,10 +765,12 @@
     height: 24px;
     font-size: var(--fs-xs);
   }
-  .select.it {
+  /* the slot drop-down is SlotSelect's button: reach it across the component */
+  .slot :global(.slotdd) {
     width: 100%;
     min-width: 0;
-    text-overflow: ellipsis;
+    height: 24px;
+    font-size: var(--fs-xs);
   }
   .row {
     display: flex;
@@ -870,6 +893,11 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+  .slot.flash {
+    outline: 2px solid var(--gold);
+    outline-offset: 1px;
+    border-radius: var(--radius-s);
   }
   .pane.craft .crow + .crow {
     margin-top: 8px;

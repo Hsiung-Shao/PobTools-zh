@@ -1722,6 +1722,27 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("restoring the main group and deleting the new one restores the group count and TotalDPS",
 			      okDg && sk3["groups"].size() == sk["groups"].size() && st0["stats"].value("TotalDPS", 0.0) == st3["stats"].value("TotalDPS", 1.0),
 			      okDg ? "groups=" + std::to_string(sk3["groups"].size()) + " dps " + st3["stats"].value("TotalDPS", json()).dump() : dg.dump().substr(0, 200));
+
+			// Deleting a group ABOVE the main one: the main skill must stay on the
+			// same group (SkillListControl:OnSelDelete moves the index up by one).
+			// Clamping only, as before, left it on whatever slid into the old slot.
+			json k0, a1, a2, sm2, del1, k1, restore, del2;
+			bool okM = child.Call("list_skills", json::object(), k0, 60000);
+			const int n0 = okM ? (int)k0["groups"].size() : 0;
+			const int main0 = okM ? k0.value("mainSocketGroup", 1) : 1;
+			okM = okM && child.Call("add_group", json{{"label", "del A"}, {"gems", json::array({json{{"nameSpec", "Fireball"}}})}}, a1, 60000) &&
+			      child.Call("add_group", json{{"label", "del B"}, {"gems", json::array({json{{"nameSpec", "Fireball"}}})}}, a2, 60000) &&
+			      child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", n0 + 2}}, sm2, 60000) &&
+			      child.Call("delete_group", json{{"index", n0 + 1}}, del1, 60000) &&
+			      child.Call("list_skills", json::object(), k1, 60000);
+			const int mainAfter = okM ? k1.value("mainSocketGroup", 0) : 0;
+			const std::string mainLabel = okM && mainAfter >= 1 && mainAfter <= (int)k1["groups"].size()
+				? k1["groups"][mainAfter - 1].value("label", "") : "";
+			check("deleting a group above the main one keeps the main skill on the same group",
+			      okM && mainAfter == n0 + 1 && mainLabel == "del B",
+			      "main=" + std::to_string(mainAfter) + " label=" + mainLabel);
+			child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", main0}}, restore, 60000);
+			child.Call("delete_group", json{{"index", n0 + 1}}, del2, 60000);
 		}
 
 		// --- 2d: config + calcs ---------------------------------------------------

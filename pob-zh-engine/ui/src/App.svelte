@@ -43,12 +43,14 @@
     const k = e.key.toLowerCase();
     if (k === "s" && !e.shiftKey && app.loaded) {
       e.preventDefault();
-      void app.save();
+      void app.saveOrAsk();
       return;
     }
-    // each tab has POB's own undo stack (UndoHandler); the tree view handles its own
+    // each tab has POB's own undo stack (UndoHandler); the tree view handles its own.
+    // Notes and Party are not on the list: POB has no undo for them (tab_undo
+    // errored) and they are text boxes, whose own Ctrl+Z is the undo that works.
     if ((k === "z" || k === "y") && !e.shiftKey && app.loaded && app.view !== "tree") {
-      const tab = ({ items: "items", skills: "skills", config: "config", notes: "notes", party: "party", calcs: "calcs" } as Record<string, string>)[app.view];
+      const tab = ({ items: "items", skills: "skills", config: "config", calcs: "calcs" } as Record<string, string>)[app.view];
       if (tab) {
         e.preventDefault();
         void app.run(() => api.tabUndo(tab, k === "y")).then((r) => r && app.refresh());
@@ -107,6 +109,17 @@
     e.preventDefault();
     navigate(e.button === 3);
   }
+  // the unsaved-build question when the window's X is pressed
+  const closeWindow = () => void bridge.call("host.close").catch(() => {});
+  function closeDiscard() {
+    app.closeAsk = false;
+    closeWindow();
+  }
+  async function closeSave() {
+    app.closeAsk = false;
+    // a build with no file yet opens Save As; the window closes after it saves
+    await app.saveOrAsk(closeWindow);
+  }
   function blockSideButton(e: MouseEvent) {
     if (e.button === 3 || e.button === 4) e.preventDefault();
   }
@@ -144,6 +157,21 @@
 </script>
 
 <svelte:window onkeydown={onKey} onwheel={onWheel} onmouseup={onMouseUp} onmousedown={blockSideButton} onauxclick={blockSideButton} />
+
+{#if app.closeAsk}
+  <!-- the window's X with an unsaved build (the classic window's CanExit) -->
+  <div class="modal closeask" role="dialog" aria-modal="true">
+    <div class="dialog">
+      <div class="label">{t("close.title")}</div>
+      <p>{t("close.unsaved", { name: app.info?.buildName ?? "" })}</p>
+      <div class="dlg-actions">
+        <button class="btn ghost" onclick={() => (app.closeAsk = false)}>{t("tree.cancel")}</button>
+        <button class="btn danger" onclick={closeDiscard}>{t("close.discard")}</button>
+        <button class="btn primary" onclick={closeSave}>{t("close.save")}</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- keyed on the language flip: t() reads a plain table, so nothing re-renders
      by itself, and the views have to re-fetch because POB's outputRevision does
@@ -218,6 +246,33 @@
 {/if}
 
 <style>
+  .closeask {
+    position: fixed;
+    inset: 0;
+    z-index: 400;
+    display: grid;
+    place-items: center;
+    background: var(--backdrop);
+  }
+  .closeask .dialog {
+    width: 420px;
+    padding: 16px 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--edge-1);
+    border-left: 3px solid var(--gold);
+    border-radius: var(--radius-m);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .closeask p {
+    margin: 0;
+  }
+  .closeask .dlg-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
   .bgimg {
     display: none;
     position: fixed;

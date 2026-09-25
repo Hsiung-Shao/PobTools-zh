@@ -52,8 +52,8 @@
     const mode = upd?.available;
     if (mode !== "normal" && mode !== "basic") return;
     if (saveFirst) {
-      await app.save();
-      if (app.info?.unsaved) return;
+      // a build with no file yet opens Save As instead; the update waits for it
+      if (!(await app.saveOrAsk())) return;
     }
     dialog = null;
     applying = true;

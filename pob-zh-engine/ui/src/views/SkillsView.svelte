@@ -115,15 +115,16 @@
   let gemOpts = $state<GemOptions | null>(null);
   let gemOptsOpen = $state(false);
   let qualityDraft = $state("");
+  async function loadGemOpts() {
+    const r = await app.run(() => api.getGemOptions());
+    if (r) {
+      gemOpts = r;
+      qualityDraft = String(r.defaultGemQuality ?? 0);
+    }
+  }
   async function toggleGemOpts() {
     gemOptsOpen = !gemOptsOpen;
-    if (gemOptsOpen) {
-      const r = await app.run(() => api.getGemOptions());
-      if (r) {
-        gemOpts = r;
-        qualityDraft = String(r.defaultGemQuality ?? 0);
-      }
-    }
+    if (gemOptsOpen) await loadGemOpts();
   }
   async function patchGemOpts(p: Parameters<typeof api.setGemOptions>[0]) {
     const r = await app.run(() => api.setGemOptions(p));
@@ -153,6 +154,9 @@
 
   async function reload() {
     const r = await app.run(() => api.listSkills());
+    // The gem search reads "sort by DPS" from these options; they used to load
+    // only when the panel was expanded, so POB's default (on) never applied.
+    if (!gemOpts) void loadGemOpts();
     if (r) {
       data = r;
       loadedRev = r.rev;
@@ -213,6 +217,8 @@
   }
   async function deleteGroup() {
     if (!group) return;
+    // SkillListControl:OnSelDelete asks first when the group has gems in it
+    if (group.gems.length && !confirm(t("skills.deleteGroupConfirm", { name: group.displayLabelZh || group.displayLabel || group.label }))) return;
     const r = await app.run(() => api.deleteGroup(group.index));
     if (r) await changed();
   }

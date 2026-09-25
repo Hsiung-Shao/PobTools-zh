@@ -111,6 +111,33 @@ struct Window {
 		PostToPage(json{ {"event", name}, {"data", data} }.dump());
 	}
 
+	// Closing. The user's X asks the page first (unsaved build: Save / Don't
+	// save / Cancel, the classic window's CanExit); the page answers at once
+	// with host.close_ack and later with host.close, or with nothing if the
+	// user cancels. A page that does not ack within kCloseAckMs (hung, or the
+	// engine is gone and the page with it) is not waited for. Closes the host
+	// decides on itself -- a POB update handing over, WebView2 failing -- go
+	// straight through CloseNow.
+	static constexpr UINT_PTR kCloseTimer = 7;
+	static constexpr UINT kCloseAckMs = 3000;
+	bool closeApproved = false;
+	bool closeAsked = false;
+	void CloseNow()
+	{
+		closeApproved = true;
+		closeAsked = false;
+		KillTimer(hwnd, kCloseTimer);
+		PostMessageW(hwnd, WM_CLOSE, 0, 0);
+	}
+	bool AskPageToClose()
+	{
+		if (closeApproved || !webview || !pageReady) return false;
+		closeAsked = true;
+		PostEvent("host.close_requested", json::object());
+		SetTimer(hwnd, kCloseTimer, kCloseAckMs, nullptr);
+		return true;
+	}
+
 	bool StartChild()
 	{
 		child = std::make_unique<HeadlessProc::Child>();
@@ -237,7 +264,7 @@ struct Window {
 		// keeps the launcher's "a POB is running" logic honest.
 		PobLaunch::SpawnPobDetached(launchLua, game);
 		exitCode = 3;
-		PostMessageW(hwnd, WM_CLOSE, 0, 0);
+		CloseNow();
 		return true;
 	}
 	bool gateFellBack = false;
@@ -263,7 +290,12 @@ struct Window {
 			reply(Info());
 		} else if (method == "host.close") {
 			reply(json{ {"ok", true} });
-			PostMessageW(hwnd, WM_CLOSE, 0, 0);
+			CloseNow();
+		} else if (method == "host.close_ack") {
+			// the page got the question and is asking the user: no deadline now
+			closeAsked = false;
+			KillTimer(hwnd, kCloseTimer);
+			reply(json{ {"ok", true} });
 		} else if (method == "host.set_title") {
 			std::wstring t = widen(params.value("text", ""));
 			SetWindowTextW(hwnd, t.empty() ? L"PobTools" : (t + L" - PobTools").c_str());
@@ -381,7 +413,7 @@ struct Window {
 			PobLog::Error("modernui", "WebView2 controller creation failed, hr=" + std::to_string((long)hr));
 			MessageBoxW(hwnd, L"WebView2 無法建立(詳見 PobTools\\logs)。", L"PobTools", MB_ICONERROR | MB_OK);
 			exitCode = 2;
-			PostMessageW(hwnd, WM_CLOSE, 0, 0);
+			CloseNow();
 			return hr;
 		}
 		controller = ctl;
@@ -405,7 +437,7 @@ struct Window {
 			PobLog::Error("modernui", "WebView2 runtime too old: ICoreWebView2_3 (virtual host mapping) missing");
 			MessageBoxW(hwnd, L"WebView2 Runtime 版本太舊,請更新 Microsoft Edge WebView2。", L"PobTools", MB_ICONERROR | MB_OK);
 			exitCode = 2;
-			PostMessageW(hwnd, WM_CLOSE, 0, 0);
+			CloseNow();
 			return E_FAIL;
 		}
 		// Four folders, four origins. The page fetches ui.json from data and
@@ -467,7 +499,7 @@ struct Window {
 			PobLog::Error("modernui", "WebView2 environment creation failed, hr=" + std::to_string((long)hr));
 			MessageBoxW(hwnd, L"WebView2 環境無法建立(詳見 PobTools\\logs)。", L"PobTools", MB_ICONERROR | MB_OK);
 			exitCode = 2;
-			PostMessageW(hwnd, WM_CLOSE, 0, 0);
+			CloseNow();
 			return hr;
 		}
 		return env->CreateCoreWebView2Controller(hwnd,
@@ -511,7 +543,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			if (w->updaterHandoff || file_exists(w->exeDir + L"pob-zh.relaunch")) {
 				PobLog::Error("modernui", "headless child exited for a POB self-update; closing so the updater can reopen the window");
 				w->PostEvent("host.updating", json{ {"exitCode", (long long)code} });
-				PostMessageW(hwnd, WM_CLOSE, 0, 0);
+				w->CloseNow();
 				return 0;
 			}
 			PobLog::Error("modernui", "headless child exited, code=" + std::to_string((long)code));
@@ -537,12 +569,20 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 	case WM_CLOSE:
+		if (w && w->AskPageToClose()) return 0; // the page answers with host.close
 		if (w) {
 			w->SaveWindowSize();
 			w->StopChild();
 		}
 		DestroyWindow(hwnd);
 		return 0;
+	case WM_TIMER:
+		if (w && wParam == Window::kCloseTimer) {
+			KillTimer(hwnd, Window::kCloseTimer);
+			if (w->closeAsked) w->CloseNow(); // no answer: the page is not there to ask
+			return 0;
+		}
+		break;
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;

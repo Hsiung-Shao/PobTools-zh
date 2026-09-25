@@ -145,18 +145,25 @@
 
   async function save() {
     if (!h) return;
-    if (!h.dbFileName) {
-      void openSaveAs();
-      return;
-    }
-    await app.save();
+    await app.saveOrAsk();
   }
+  // app.saveOrAsk (Ctrl+S, a "save first?" answer) asks for this dialog
+  let seenSaveAsRequest = app.saveAsRequest;
+  $effect(() => {
+    const n = app.saveAsRequest;
+    if (n !== seenSaveAsRequest) {
+      seenSaveAsRequest = n;
+      void openSaveAs();
+    }
+  });
 
   async function saveAs() {
     const name = saveAsName.trim();
     if (!name) return;
     saveAsOpen = false;
-    await app.saveAs(saveAsDir + name);
+    const path = saveAsDir + name;
+    // another build already has this name: POB greys Save out, here we ask
+    if ((await app.saveAs(path)) === "exists" && confirm(t("bar.overwriteConfirm", { name }))) await app.saveAs(path, true);
   }
 
   export function onKey(e: KeyboardEvent): boolean {

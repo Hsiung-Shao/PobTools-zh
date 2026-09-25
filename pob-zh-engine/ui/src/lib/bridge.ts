@@ -616,6 +616,8 @@ export interface BuildInfo {
   points: {
     used: number; ascUsed: number; secondaryAscUsed: number; sockets: number;
     usedMax?: number; ascMax?: number; display?: string; req?: string;
+    /** PoE2: weapon set 1 and 2 passives */
+    weaponSets?: { used: number; max: number }[];
   };
   rev: number;
 }
@@ -1205,12 +1207,24 @@ export interface ConfigList {
   activeConfigSetId: number;
   rev: number;
 }
+/** A control POB draws in a Calcs row, as get_calcs describes it (set_calcs_control sets it). */
+export interface CalcWidget {
+  kind: "dropdown" | "edit" | "check" | "button";
+  shown: boolean;
+  enabled: boolean;
+  index?: number;
+  list?: { val?: unknown; label: string; labelZh?: string }[];
+  value?: string | boolean;
+  label?: string;
+  labelZh?: string;
+}
 export interface CalcCell {
   ci: number;
   text?: string;
   raw?: string;
   hasBreakdown?: boolean;
   control?: string;
+  widget?: CalcWidget;
 }
 export interface CalcRow {
   ri: number;
@@ -1323,6 +1337,8 @@ export const api = {
   tjClose: () => bridge.call<{ ok: boolean }>("tj_close", {}, 30000),
   treeClick: (id: number, extra: { effect?: number; confirm?: "reset" | "connect"; attribute?: number; trace?: number[] } = {}) =>
     bridge.call<TreeClickResult>("tree_click", { id, ...extra }, 60000),
+  /** The effect list of an allocated mastery (right-click changes its effect). */
+  masteryOptions: (id: number) => bridge.call<{ id: number; name: string; nameZh?: string; effects: MasteryChoice[]; selected?: number }>("mastery_options", { id }, 60000),
   selectMastery: (id: number, effect: number) => bridge.call<TreeState>("select_mastery", { id, effect }, 60000),
   treeAttribute: (id: number, attribute: number) => bridge.call<TreeState>("tree_attribute", { id, attribute }, 60000),
   setAllocMode: (mode: number) => bridge.call<TreeState>("set_alloc_mode", { mode }, 60000),
@@ -1368,7 +1384,8 @@ export const api = {
   getBuildHeader: () => bridge.call<BuildHeader>("get_build_header"),
   setBuildField: (field: string, value: unknown) => bridge.call<Committed>("set_build_field", { field, value }, 60000),
   saveBuild: () => bridge.call<SaveResult>("save_build", {}, 60000),
-  saveBuildAs: (path: string) => bridge.call<SaveResult>("save_build_as", { path }, 60000),
+  /** `exists` comes back (nothing written) when another build already has that file; resend with `overwrite`. */
+  saveBuildAs: (path: string, overwrite = false) => bridge.call<SaveResult & { exists?: boolean }>("save_build_as", overwrite ? { path, overwrite } : { path }, 60000),
   revertBuild: () => bridge.call<LoadedBuild>("revert_build", {}, 120000),
   exportCode: () => bridge.call<{ code: string; bytes: number }>("export_code", {}, 60000),
   decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
@@ -1452,6 +1469,8 @@ export const api = {
   renameConfigSet: (id: number, title: string) => bridge.call<Committed>("rename_config_set", { id, title }, 60000),
   deleteConfigSet: (id: number) => bridge.call<Committed>("delete_config_set", { id }, 60000),
   getCalcs: () => bridge.call<CalcsData>("get_calcs", {}, 60000),
+  /** A control in a Calcs row (skill / stat set / part / stages / minion / mode ...), through POB's own callback. */
+  setCalcsControl: (name: string, value: number | string | boolean) => bridge.call<Committed>("set_calcs_control", { name, value }, 60000),
   setCalcsInput: (v: string, value: unknown) => bridge.call<Committed>("set_calcs_input", { var: v, value }, 60000),
   calcsBreakdown: (si: number, ui: number, ri: number, ci: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("calcs_breakdown", { si, ui, ri, ci }, 60000),
   getNotes: () => bridge.call<{ text: string; unsaved: boolean; rev: number; colours?: { code: string; name: string }[] }>("get_notes"),
