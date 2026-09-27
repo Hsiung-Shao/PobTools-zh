@@ -2082,12 +2082,25 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okU1 ? "mode=" + u1.value("mode", "") + " error=" + u1.value("error", "") : (inManifest ? u1.dump().substr(0, 300) : "Classes/Tooltip.lua not in manifest"));
 			json ap;
 			bool okAp = okU1 && u1.value("mode", "") == "normal" && child.Call("apply_update", json{{"mode", "normal"}}, ap, 300000);
+			// Both events, and in this order: the page takes "hello" as "ready";
+			// a "restarted" behind it left the new interface on "booting" forever.
+			int iRestart = -1, iHello = -1;
+			for (int waited = 0; okAp && waited < 90000 && (iRestart < 0 || iHello < 0); waited += 200) {
+				const std::vector<json> evs = child.Events();
+				iRestart = iHello = -1;
+				for (int i = 0; i < (int)evs.size(); ++i) {
+					const std::string n = evs[i].value("event", "");
+					if (n == "restarted" && iRestart < 0) iRestart = i;
+					if (n == "hello" && iHello < 0) iHello = i;
+				}
+				if (iRestart < 0 || iHello < 0) Sleep(200);
+			}
 			json evR, evH;
-			bool gotRestart = okAp && child.WaitEvent("restarted", evR, 90000);
-			bool gotHello = gotRestart && child.WaitEvent("hello", evH, 90000);
-			check("apply_update{normal}: POB applied the files and Restart()ed the Lua state (restarted + hello events)",
-			      okAp && ap.value("applied", "") == "normal" && gotRestart && gotHello,
-			      "applied=" + ap.dump().substr(0, 120) + " restarted=" + std::to_string(gotRestart) + " hello=" + std::to_string(gotHello));
+			bool gotRestart = okAp && child.WaitEvent("restarted", evR, 1000);
+			bool gotHello = gotRestart && child.WaitEvent("hello", evH, 1000);
+			check("apply_update{normal}: POB applied the files and Restart()ed the Lua state (restarted, then hello)",
+			      okAp && ap.value("applied", "") == "normal" && gotRestart && gotHello && iRestart < iHello,
+			      "applied=" + ap.dump().substr(0, 120) + " restarted@" + std::to_string(iRestart) + " hello@" + std::to_string(iHello));
 			std::string after = ReadFileA(progFile);
 			json ver2, u2;
 			bool okVer2 = gotHello && child.Call("version", json::object(), ver2, 60000);

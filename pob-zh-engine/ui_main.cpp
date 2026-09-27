@@ -709,12 +709,16 @@ void ui_main_c::Frame()
 		if (renderer) {
 			renderer->PurgeShaders();
 		}
-		ScriptInit();
-		if (headless && !didExit && !restartFlag) {
-			// The Lua state (and with it POB's freshly updated code) was rebuilt;
-			// the host's view of the build is stale and must be reloaded.
+		if (headless && !didExit) {
+			// The Lua state (and with it POB's freshly updated code) is being
+			// rebuilt; the host's view of the build is stale. Said BEFORE
+			// ScriptInit: that loads the bridge, whose "hello" is the signal that
+			// the new state is ready. Sent after it, "restarted" arrived behind
+			// that hello and left the page waiting for a second one that never
+			// comes (new interface stuck on "booting" after a POB update).
 			HeadlessIpc::SendEvent("restarted", "{}");
 		}
+		ScriptInit();
 	}
 }
 

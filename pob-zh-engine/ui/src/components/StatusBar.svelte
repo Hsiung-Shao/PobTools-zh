@@ -1,6 +1,6 @@
 <!-- 底部狀態列:引擎狀態、POB 版本、相容閘門、POB 自己的更新、錯誤/提示、rev。 -->
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { api, type PobUpdateInfo, type UpdateStatus } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
@@ -33,6 +33,12 @@
   onMount(() => {
     void poll();
     return () => clearTimeout(timer);
+  });
+  // The engine (re)became ready -- first boot, or the Lua state POB's own update
+  // restarted: ask again now, not in up to 30 s ("update available" stayed up
+  // after the update had been applied).
+  $effect(() => {
+    if (app.engine === "ready") untrack(() => void poll());
   });
 
   /** POB's "Check for Update" button: launch:CheckForUpdate. */

@@ -270,8 +270,10 @@ bridge.on("hello", async () => {
     if (ok) app.view = app.landingView();
   }
 });
+// Only a notice: readiness is hello's to say. An engine from before 1.7.7 sends
+// this AFTER the new state's hello, so setting "booting" here left the page
+// waiting forever; update_applying has already set "booting" anyway.
 bridge.on("restarted", () => {
-  app.engine = "booting";
   app.notice = t("status.restarted");
 });
 // POB is applying its own update: "normal" restarts the Lua state in place
