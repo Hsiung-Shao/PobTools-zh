@@ -33,6 +33,11 @@ public:
 
 	dword	subScriptSize = 0;
 	ui_ISubScript** subScriptList = nullptr;
+	// One pass of the subscript system: finished background scripts deliver
+	// their OnSubFinished / OnSubError callbacks and are freed. The frame loop
+	// runs it every frame; PumpSubScripts() lets the headless bridge run it
+	// while one request waits on an upload/download. Returns how many still run.
+	int		RunSubScripts();
 
 	std::optional<sol::state> solState;
 	lua_State* L = nullptr;

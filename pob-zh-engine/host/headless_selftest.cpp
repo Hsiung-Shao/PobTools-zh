@@ -1975,6 +1975,14 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("list_build_sites lists POB's build sites (and which take uploads); a link from elsewhere is refused",
 			      okBs && bsites["sites"].size() >= 5 && shareable >= 2 && !okBadUrl && child.Alive(),
 			      okBs ? bsites["sites"].dump().substr(0, 200) : bsites.dump().substr(0, 200));
+			// Share and import-from-link wait inside one request for POB's upload /
+			// download subscript; its callback used to run only between requests,
+			// so both always timed out after 60 s (field report: pob.codes Share).
+			json sr;
+			bool okSr = child.Call("subscript_roundtrip", json::object(), sr, 30000);
+			check("one request can wait on POB's background work (a subscript finishes inside it: Share / import from link)",
+			      okSr && sr.contains("value") && sr["value"].is_number() && sr["value"].get<double>() == 42.0,
+			      sr.dump().substr(0, 200));
 		}
 
 		// the loadout drop-down (Build.lua SyncLoadouts)

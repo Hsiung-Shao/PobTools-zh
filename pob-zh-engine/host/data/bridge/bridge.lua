@@ -3651,10 +3651,17 @@ end)
 
 -- POB does these in a background script and finishes from its frame loop; the
 -- bridge pumps frames until the callback has fired (or it gives up).
+-- Waits inside one request for POB's background work. The finished-subscript
+-- callbacks (OnSubFinished -> the upload/download callback) are delivered by
+-- the engine's subscript pass, which the frame loop only runs BETWEEN requests;
+-- PumpSubScripts (engine 1.7.7+) runs it here. Without it every Share and every
+-- import from a build-site link waited the full time and failed.
 local function pump_until(done, seconds)
 	local deadline = os.time() + (seconds or 30)
 	while not done() do
+		if PumpSubScripts then PumpSubScripts(10) end
 		frame()
+		if done() then break end
 		if os.time() > deadline then return false end
 	end
 	return true
@@ -3716,6 +3723,17 @@ function M.share_build(p)
 	if failed then error(failed, 0) end
 	main().lastExportWebsite = site.id
 	return { site = site.id, url = site.codeOut .. link }
+end
+
+-- subscript_roundtrip{}: the self-test's proof that one request can wait on
+-- POB's background work (pump_until) -- a trivial subscript, no network.
+function M.subscript_roundtrip()
+	local id = LaunchSubScript("return 6 * 7", "", "")
+	if not id then error("LaunchSubScript returned nothing", 0) end
+	local got
+	launch:RegisterSubScript(id, function(v) got = v end)
+	if not pump_until(function() return got ~= nil end, 10) then error("the subscript did not finish", 0) end
+	return { value = got }
 end
 
 probe("Modules.BuildSiteTools (websiteList/DownloadBuild/UploadBuild) + launch.RegisterSubScript", function()

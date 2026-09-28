@@ -637,15 +637,7 @@ void ui_main_c::Frame()
 	// Run subscript system
 	{
 		PerfLog::Scope perfSub(PerfLog::CpuSubscripts);
-		for (dword i = 0; i < subScriptSize; i++) {
-			if (subScriptList[i]) {
-				subScriptList[i]->SubScriptFrame();
-				if ( !subScriptList[i]->IsRunning() ) {
-					ui_ISubScript::FreeHandle(subScriptList[i]);
-					subScriptList[i] = NULL;
-				}
-			}
-		}
+		RunSubScripts();
 	}
 
 	// Headless: hand the host's queued requests to the bridge. Before OnFrame so
@@ -720,6 +712,23 @@ void ui_main_c::Frame()
 		}
 		ScriptInit();
 	}
+}
+
+int ui_main_c::RunSubScripts()
+{
+	int running = 0;
+	for (dword i = 0; i < subScriptSize; i++) {
+		if (subScriptList[i]) {
+			subScriptList[i]->SubScriptFrame();
+			if ( !subScriptList[i]->IsRunning() ) {
+				ui_ISubScript::FreeHandle(subScriptList[i]);
+				subScriptList[i] = NULL;
+			} else {
+				running++;
+			}
+		}
+	}
+	return running;
 }
 
 void ui_main_c::HeadlessLoadBridge()

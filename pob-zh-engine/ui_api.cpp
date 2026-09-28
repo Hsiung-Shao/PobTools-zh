@@ -2105,6 +2105,26 @@ static int l_IsSubScriptRunning(lua_State* L)
 	return 1;
 }
 
+// running = PumpSubScripts([waitMs]) -- PobTools, for the headless bridge: one
+// pass of the frame loop's subscript system, so a bridge request that waits on
+// POB's own background work (a build-site upload or download) sees it finish.
+// Without it the completion callbacks only ran between requests, and a request
+// that waited for one always timed out (new-interface Share / import from link).
+// waitMs (<= 50) sleeps when something is still running, so a wait loop does
+// not spin a core.
+static int l_PumpSubScripts(lua_State* L)
+{
+	ui_main_c* ui = GetUIPtr(L);
+	const int running = ui->RunSubScripts();
+	if (running > 0 && lua_isnumber(L, 1)) {
+		int ms = (int)lua_tointeger(L, 1);
+		if (ms > 50) ms = 50;
+		if (ms > 0) ui->sys->Sleep(ms);
+	}
+	lua_pushinteger(L, running);
+	return 1;
+}
+
 // ---- PobTools in-memory source patches --------------------------------------
 // A few POB modules get a tiny anchored patch at load time so the translated
 // DISPLAY text can participate in searches; the files on disk stay untouched
@@ -3061,6 +3081,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(LaunchSubScript);
 	ADDFUNC(AbortSubScript);
 	ADDFUNC(IsSubScriptRunning);
+	ADDFUNC(PumpSubScripts);
 	ADDFUNC(LoadModule);
 	ADDFUNC(PLoadModule);
 	ADDFUNC(PCall);
