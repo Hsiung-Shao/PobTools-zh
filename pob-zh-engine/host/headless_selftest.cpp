@@ -1779,20 +1779,29 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCm && st3["stats"].value("TotalDPS", 0.0) > st0["stats"].value("TotalDPS", 0.0) && st0["stats"].value("TotalDPS", 0.0) == st4["stats"].value("TotalDPS", 1.0),
 			      okCm ? "dps " + st0["stats"].value("TotalDPS", json()).dump() + " -> " + st3["stats"].value("TotalDPS", json()).dump() : cm.dump().substr(0, 200));
 
-			// the Add Mod browser behind the custom-modifier group
+			// the Add Mod browser behind the custom-modifier group -- a POB that has
+			// none (master 2.67.2: caps.configModBrowser false) gets no button on the
+			// page either, so there is nothing to drive
+			json mbv;
+			const bool hasModBrowser = child.Call("version", json::object(), mbv, 30000) &&
+			                           mbv["caps"].value("configModBrowser", false);
 			json ms, ma, lc2, st5, cmReset;
-			bool okMs = okCf && child.Call("config_mod_search", json{{"block", 1}, {"query", "increased attack speed"}, {"limit", 20}}, ms, 60000);
+			bool okMs = hasModBrowser && okCf && child.Call("config_mod_search", json{{"block", 1}, {"query", "increased attack speed"}, {"limit", 20}}, ms, 60000);
 			const std::string pick = (okMs && !ms["mods"].empty()) ? ms["mods"][0].value("text", "") : "";
 			bool okMa = !pick.empty() && child.Call("config_mod_add", json{{"block", 1}, {"text", pick}}, ma, 60000) &&
 			            child.Call("list_config", json::object(), lc2, 60000);
 			bool added = false;
 			if (okMa) for (auto& blk : lc2["customMods"]) if (blk.value("text", "").find(pick) != std::string::npos) added = true;
 			json msBad;
-			bool okMsBad = child.Call("config_mod_add", json{{"block", 1}, {"text", "not a modifier at all"}}, msBad, 60000);
-			child.Call("set_custom_mods", json{{"list", json::array()}}, cmReset, 60000);
-			check("config_mod_search/config_mod_add drive POB's Mod Browser (its fuzzy search, its Add button); an unknown line is refused",
-			      okMs && !ms["mods"].empty() && added && !okMsBad && child.Alive(),
-			      "pick=" + pick + " total=" + std::to_string(ms.value("total", -1)) + " " + (okMa ? lc2["customMods"].dump().substr(0, 160) : ma.dump().substr(0, 160)));
+			bool okMsBad = hasModBrowser && child.Call("config_mod_add", json{{"block", 1}, {"text", "not a modifier at all"}}, msBad, 60000);
+			if (hasModBrowser) child.Call("set_custom_mods", json{{"list", json::array()}}, cmReset, 60000);
+			if (!hasModBrowser)
+				check("config_mod_search/config_mod_add drive POB's Mod Browser", true,
+				      "skipped: this POB has no Mod Browser (caps.configModBrowser=false; the page hides it)");
+			else
+				check("config_mod_search/config_mod_add drive POB's Mod Browser (its fuzzy search, its Add button); an unknown line is refused",
+				      okMs && !ms["mods"].empty() && added && !okMsBad && child.Alive(),
+				      "pick=" + pick + " total=" + std::to_string(ms.value("total", -1)) + " " + (okMa ? lc2["customMods"].dump().substr(0, 160) : ma.dump().substr(0, 160)));
 
 			json cal;
 			bool okCal = okLoad && child.Call("get_calcs", json::object(), cal, 60000);
@@ -2146,8 +2155,16 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			json cbad;
 			bool okBad2 = child.Call("compare_load", json{{"code", "not a code"}}, cbad, 60000);
 			if (okCl) child.Call("compare_remove", json{{"index", 1}}, crm, 60000);
-			check("compare_load/compare_state: this build against its own code shows no differences (tree, items, config, stats)",
-			      okCl && statsOk && sameBuild && noDiff && itemsSame && !okBad2 && child.Alive(),
+			// POB's own CompareEntry before beta 2026-09-25 ("Fix compare tab not
+			// checking socket colours") builds its socket groups before the items
+			// load, so the compared copy of a build calculates lower than the build
+			// itself -- in classic POB's Compare tab too. Stats must match only on a
+			// POB that has that fix; tree, items and config must match everywhere.
+			const bool pobCompareFixed =
+			    ReadFileA(sandbox + L"\\Classes\\CompareEntry.lua").find("UpdateSocketGroups") != std::string::npos;
+			check(pobCompareFixed ? "compare_load/compare_state: this build against its own code shows no differences (tree, items, config, stats)"
+			                      : "compare_load/compare_state: this build against its own code has the same tree, items and config (stats: upstream POB without its compare socket-group fix)",
+			      okCl && statsOk && sameBuild && (noDiff || !pobCompareFixed) && itemsSame && !okBad2 && child.Alive(),
 			      "stats=" + std::to_string(statsOk ? cs["stats"].size() : 0) + " noDiff=" + std::to_string(noDiff) + " itemsSame=" + std::to_string(itemsSame) +
 			          " bad=" + std::to_string(okBad2) + " " + [&] {
 				          std::string o;

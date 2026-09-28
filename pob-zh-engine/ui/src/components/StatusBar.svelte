@@ -34,11 +34,13 @@
     void poll();
     return () => clearTimeout(timer);
   });
-  // The engine (re)became ready -- first boot, or the Lua state POB's own update
-  // restarted: ask again now, not in up to 30 s ("update available" stayed up
-  // after the update had been applied).
+  // A fresh Lua state -- first boot, or the one POB's own update restarted: ask
+  // again now, not in up to 30 s ("update available" stayed up after the update
+  // had been applied). Keyed on hello, not on engine === "ready": the
+  // booting -> ready flip of an update can land in one batch and never show.
   $effect(() => {
-    if (app.engine === "ready") untrack(() => void poll());
+    void app.helloRev;
+    untrack(() => void poll());
   });
 
   /** POB's "Check for Update" button: launch:CheckForUpdate. */

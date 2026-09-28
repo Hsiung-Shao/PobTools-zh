@@ -8,6 +8,8 @@ export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs"
 
 class AppState {
   engine = $state<"booting" | "ready" | "gone">("booting");
+  /** Bumped on every hello: a fresh Lua state (boot, or after POB's own update). */
+  helloRev = $state(0);
   gate = $state<GateResult | null>(null);
   version = $state<VersionInfo | null>(null);
   childExit = $state<number | null>(null);
@@ -252,6 +254,7 @@ bridge.on("gate_result", (d) => {
 let openedOnce = false;
 bridge.on("hello", async () => {
   app.engine = "ready";
+  app.helloRev++;
   app.childExit = null;
   app.reset();
   try {
