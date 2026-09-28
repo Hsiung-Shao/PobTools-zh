@@ -1497,6 +1497,21 @@ bool AppUpdater::doUpdateApp(std::string* err)
 
 // ---- swap / cleanup -----------------------------------------------------------
 
+// Moves a file that may be running or loaded out of the way as <path>.old. A
+// previous backup still held by a process that runs from it (a POB or new-
+// interface window left open across the last update runs from pob-zh.exe.old)
+// can be neither deleted nor replaced; then .old2 ... .old9 are tried instead of
+// failing the whole update (field report 2026-09-28: 「備份失敗: pob-zh.exe」).
+// Returns the backup path, or "" when every name is taken.
+static std::wstring move_to_backup(const std::wstring& p)
+{
+	for (int n = 1; n <= 9; n++) {
+		const std::wstring bak = p + (n == 1 ? std::wstring(L".old") : L".old" + std::to_wstring(n));
+		if (MoveFileExW(p.c_str(), bak.c_str(), MOVEFILE_REPLACE_EXISTING)) return bak;
+	}
+	return std::wstring();
+}
+
 static void delete_old_backups(const std::wstring& exeDir, int retries)
 {
 	auto tryDelete = [&](const std::wstring& p) {
@@ -1506,16 +1521,23 @@ static void delete_old_backups(const std::wstring& exeDir, int retries)
 			Sleep(200);
 		}
 	};
-	if (file_exists(exeDir + L"pob-zh.exe.old")) tryDelete(exeDir + L"pob-zh.exe.old");
+	// *.old and the numbered *.old2..9 move_to_backup falls back to
 	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((exeDir + L"*.dll.old").c_str(), &fd);
+	HANDLE h = FindFirstFileW((exeDir + L"pob-zh.exe.old*").c_str(), &fd);
 	if (h != INVALID_HANDLE_VALUE) {
 		do {
 			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) tryDelete(exeDir + fd.cFileName);
 		} while (FindNextFileW(h, &fd));
 		FindClose(h);
 	}
-	h = FindFirstFileW((exeDir + L"engine\\*.old").c_str(), &fd);
+	h = FindFirstFileW((exeDir + L"*.dll.old*").c_str(), &fd);
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) tryDelete(exeDir + fd.cFileName);
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+	}
+	h = FindFirstFileW((exeDir + L"engine\\*.old*").c_str(), &fd);
 	if (h != INVALID_HANDLE_VALUE) {
 		do {
 			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
@@ -1542,8 +1564,7 @@ int RemoveStrayRootDlls(const std::wstring& exeDir)
 		const std::wstring p = exeDir + name;
 		// already loaded by this process (or another launcher): cannot be
 		// deleted, but a loaded image can be renamed; the *.dll.old goes next time
-		if (DeleteFileW(p.c_str()) ||
-		    MoveFileExW(p.c_str(), (p + L".old").c_str(), MOVEFILE_REPLACE_EXISTING)) {
+		if (DeleteFileW(p.c_str()) || !move_to_backup(p).empty()) {
 			removed++;
 			log_line(exeDir, "removed stray root DLL (engine\\ has its own copy): " + narrow(name));
 		}
@@ -1634,19 +1655,20 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 		// bootable set (exe + engine DLLs): back up as *.old, then move the
 		// staged replacement in (same volume = atomic rename). Renaming works
 		// on the running exe and on loaded DLL images.
-		struct Rb { std::wstring dst; bool backedUp = false; bool placed = false; };
+		struct Rb { std::wstring dst; std::wstring bak; bool placed = false; };
 		std::vector<Rb> rb;
 		bool ok = true;
 		for (const std::wstring& rel : boot) {
 			Rb r;
 			r.dst = exeDir + rel;
 			if (file_exists(r.dst)) {
-				if (!MoveFileExW(r.dst.c_str(), (r.dst + L".old").c_str(), MOVEFILE_REPLACE_EXISTING)) {
+				r.bak = move_to_backup(r.dst);
+				if (r.bak.empty()) {
 					msg = kMsgBackupFailed + narrow(rel);
 					ok = false;
 					break;
 				}
-				r.backedUp = true;
+				if (r.bak != r.dst + L".old") log_line(exeDir, "backup: " + narrow(rel) + ".old is held, used " + narrow(r.bak.substr(exeDir.size())));
 			}
 			rb.push_back(r);
 		}
@@ -1670,8 +1692,8 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 		if (!ok) {
 			for (auto it = rb.rbegin(); it != rb.rend(); ++it) {
 				if (it->placed) DeleteFileW(it->dst.c_str());
-				if (it->backedUp)
-					MoveFileExW((it->dst + L".old").c_str(), it->dst.c_str(), MOVEFILE_REPLACE_EXISTING);
+				if (!it->bak.empty())
+					MoveFileExW(it->bak.c_str(), it->dst.c_str(), MOVEFILE_REPLACE_EXISTING);
 			}
 			msg += kMsgRolledBack;
 			break;
@@ -2147,6 +2169,31 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		     readPrefix(inst + L"engine\\glfw3.dll") == "OLD" &&
 		     readPrefix(inst + L"engine\\libGLESv2.dll") == "OLD";
 		check(ok, "T7 mid-swap failure rolls boot files back");
+	}
+
+	// T27: the previous update's pob-zh.exe.old is still held -- a window left
+	// open across that update runs from it -- so it can be neither deleted nor
+	// replaced. The update backs up under the next free name instead of failing
+	// (field report 2026-09-28: 「備份失敗: pob-zh.exe（已還原舊版）」).
+	{
+		std::wstring inst = root + L"\\t27\\inst\\";
+		std::wstring stage = root + L"\\t27\\stage\\";
+		bool ok = setupInstall(inst, stage) && writeBig(inst + L"pob-zh.exe.old", "PRV");
+		// a running image is held without FILE_SHARE_DELETE: no delete, no replace
+		HANDLE held = CreateFileW((inst + L"pob-zh.exe.old").c_str(), GENERIC_READ, FILE_SHARE_READ,
+		                          nullptr, OPEN_EXISTING, 0, nullptr);
+		std::string aerr;
+		const bool applied = ok && held != INVALID_HANDLE_VALUE &&
+		                     ApplyStagedAppUpdateAndRelaunch(inst, stage, "9.9.9", false, &aerr) == 0;
+		if (held != INVALID_HANDLE_VALUE) CloseHandle(held);
+		ok = ok && applied && readPrefix(inst + L"pob-zh.exe") == "NEW" &&
+		     readPrefix(inst + L"pob-zh.exe.old") == "PRV" && readPrefix(inst + L"pob-zh.exe.old2") == "OLD" &&
+		     readPrefix(inst + L"engine\\SimpleGraphic.dll") == "NEW";
+		// ...and the next start clears both
+		CleanupAppUpdateLeftovers(inst);
+		ok = ok && !file_exists(inst + L"pob-zh.exe.old") && !file_exists(inst + L"pob-zh.exe.old2");
+		check(ok, ("T27 a held pob-zh.exe.old does not fail the update (backs up as .old2), cleanup removes both" +
+		           (aerr.empty() ? std::string() : " (" + aerr + ")")).c_str());
 	}
 
 	// T25: a root-level DLL the running launcher has loaded is replaced by
