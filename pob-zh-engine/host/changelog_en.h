@@ -19,6 +19,15 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.7 (2026-10-01)\n"
+	u8"Fixed\n"
+	u8"　·New interface: after POB applied its own update and restarted, the window stayed on loading (engine booting).\n"
+	u8"　·New interface: \"POB update available / Apply\" stayed up after the update had been applied.\n"
+	u8"　·New interface export: sharing to pob.codes and other sites hung for about a minute and failed; importing from a link did the same.\n"
+	u8"　·Auto-update: with a window from before the previous update still open, the next update failed with \"backup failed\".\n"
+	u8"Changed\n"
+	u8"　·External links: the price checker is now ExileAppraiser, one app for PoE1 and PoE2.\n"
+	u8"\n"
 	u8"v1.7.6 (2026-09-26)\n"
 	u8"Fixed\n"
 	u8"　·Classic POB: Chinese typed with IMEs such as Sogou never reached the box after picking the characters (the Save As name, for one).\n"
