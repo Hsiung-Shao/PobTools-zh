@@ -164,8 +164,25 @@
           {#each rows as row (row.ri)}
             {@const cells = row.cells.filter((c) => !isSelector(c))}
             {@const ctls = row.cells.filter((c) => isSelector(c) && c.widget?.shown)}
+            <!-- a row with a single breakdown cell (Aura/Buff, Curses, ...) often has its
+                 value far right of the label; the label opens the same breakdown -->
+            {@const bdCells = cells.filter((c) => c.hasBreakdown)}
+            {@const lone = bdCells.length === 1 ? bdCells[0] : null}
+            {@const loneKey = lone ? `${sec.si}:${sub.ui}:${row.ri}:${lone.ci}` : ""}
             <div class="row" class:ctlrow={ctls.length > 0} style:font-size={row.textSize && row.textSize > 16 ? `${row.textSize - 4}px` : undefined}>
-              {#if row.label}<span class="rl" style:color={pobColor(row.color) ?? "var(--ink-2)"}>{row.labelZh || row.label}</span>{:else}<span class="rl"></span>{/if}
+              {#if row.label}
+                <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                <span
+                  class="rl"
+                  style:color={pobColor(row.color) ?? "var(--ink-2)"}
+                  role={lone ? "button" : undefined}
+                  class:live={!!lone}
+                  class:pinned={!!lone && bd?.pinned && bd.key === loneKey}
+                  onmouseenter={(e) => lone && showBd(loneKey, sec.si, sub.ui, row.ri, lone.ci, e, false)}
+                  onmouseleave={() => lone && leaveBd()}
+                  onclick={(e) => lone && showBd(loneKey, sec.si, sub.ui, row.ri, lone.ci, e, true)}>{row.labelZh || row.label}</span
+                >
+              {:else}<span class="rl"></span>{/if}
               {#each ctls as c (c.ci)}
                 {@const w = c.widget!}
                 <span class="cell ctl" style:grid-column={ncol > 1 ? "2 / -1" : undefined}>
@@ -449,9 +466,20 @@
     border-left-color: var(--edge-2);
   }
   .cell.live:hover,
-  .cell.pinned {
+  .cell.pinned,
+  .row:has(.rl.live:hover) .cell.live,
+  .row:has(.rl.pinned) .cell.live {
     background: var(--gold-soft);
     border-left-color: var(--gold);
+  }
+  /* a label that opens its row's only breakdown (see the row markup) */
+  .rl.live {
+    cursor: default;
+  }
+  .rl.live:hover,
+  .rl.pinned {
+    text-decoration: underline dotted var(--gold);
+    text-underline-offset: 3px;
   }
   .float {
     position: fixed;

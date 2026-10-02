@@ -7140,6 +7140,21 @@ local function calcs_widget(c)
 	return w
 end
 
+-- The controls inside a Calcs section ("View Skill Details") are shown only
+-- when their row is enabled, and POB computes the row's `enabled` (and runs
+-- the section's updateFunc, which refreshes those selectors) only in
+-- CalcSectionControl:UpdateSize, which it calls from Draw. Headless nothing
+-- draws, so every such control read as hidden. UpdateSize itself only lays
+-- out (GetPos/GetSize), so running it here is safe.
+local function calcs_update_control_sections(tab)
+	for _, sec in ipairs(tab.sectionList or {}) do
+		if sec.hasControls and type(sec.UpdateSize) == "function" then
+			local ok, err = pcall(sec.UpdateSize, sec)
+			if not ok then log_error("calcs section " .. tostring(sec.id) .. " UpdateSize: " .. tostring(err)) end
+		end
+	end
+end
+
 local function calcs_control(tab, name)
 	for _, sec in ipairs(tab.sectionList or {}) do
 		for _, sub in ipairs(sec.subSection or {}) do
@@ -7164,6 +7179,7 @@ function M.get_calcs()
 	if sel0 and sel0.controls and sel0.controls.mainSocketGroup then
 		b:RefreshSkillSelectControls(sel0.controls, tab.input.skill_number, "Calcs")
 	end
+	calcs_update_control_sections(tab)
 	local out = {}
 	for si, sec in ipairs(tab.sectionList) do
 		local enabled = tab:CheckFlag(sec) and true or false
@@ -7259,6 +7275,7 @@ function M.set_calcs_control(p)
 	local name = p and p.name
 	local c = type(name) == "string" and calcs_control(tab, name)
 	if not c then error("no calcs control " .. tostring(name), 0) end
+	calcs_update_control_sections(tab)
 	local w = calcs_widget(c)
 	if not w then error("unsupported calcs control " .. name, 0) end
 	if w.kind == "dropdown" then

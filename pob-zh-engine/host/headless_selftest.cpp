@@ -1824,6 +1824,28 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			      okCal && cal["sections"].size() > 20 && enabledSecs > 10 && rows > 100 && cells > 150 && withBd > 100 && cal["selectors"].contains("mainSocketGroup"),
 			      okCal ? "sections=" + std::to_string(cal["sections"].size()) + " rows=" + std::to_string(rows) + " cells=" + std::to_string(cells) + " bd=" + std::to_string(withBd)
 			            : cal.dump().substr(0, 300));
+			// The "View Skill Details" controls are shown only when their row is
+			// enabled, which POB computes in CalcSectionControl:UpdateSize (a Draw
+			// path); headless the bridge has to run it or the page hides them.
+			bool sgShown = false, modeShown = false;
+			size_t modeItems = 0;
+			if (okCal) for (auto& sec : cal["sections"]) {
+				if (sec.value("id", "") != "SkillSelect") continue;
+				for (auto& sub : sec["subsections"]) for (auto& row : sub["rows"]) for (auto& c : row["cells"]) {
+					if (!c.contains("widget") || !c["widget"].is_object()) continue;
+					const json& w = c["widget"];
+					std::string ctl = c.value("control", "");
+					if (ctl == "mainSocketGroup") sgShown = w.value("shown", false);
+					if (ctl == "mode") {
+						modeShown = w.value("shown", false);
+						if (w.contains("list") && w["list"].is_array()) modeItems = w["list"].size();
+					}
+				}
+			}
+			check("get_calcs: SkillSelect's socket group / calculation mode controls are shown (row enabled via UpdateSize) and mode has its list",
+			      okCal && sgShown && modeShown && modeItems > 0,
+			      "mainSocketGroup.shown=" + std::string(sgShown ? "true" : "false") + " mode.shown=" + std::string(modeShown ? "true" : "false") +
+			          " mode.list=" + std::to_string(modeItems));
 			json bd;
 			bool okBd = bdSi > 0 && child.Call("calcs_breakdown", json{{"si", bdSi}, {"ui", bdUi}, {"ri", bdRi}, {"ci", bdCi}}, bd, 60000);
 			check("calcs_breakdown: a cell's breakdown sections through CalcBreakdownControl", okBd && bd["sections"].size() >= 1,
