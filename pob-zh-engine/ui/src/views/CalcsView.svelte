@@ -10,6 +10,7 @@
   import { api, type BreakdownSection, type CalcCell, type CalcsData } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { fitFloat, pointAnchor } from "$lib/floatFit";
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
   import MinionLibrary from "../components/MinionLibrary.svelte";
   import PobText from "../components/PobText.svelte";
@@ -73,8 +74,10 @@
       return;
     }
     if (bd?.pinned && !pin) return;
-    const x = Math.round(Math.min(e.clientX + 16, window.innerWidth - 600));
-    const y = Math.round(Math.min(e.clientY + 14, window.innerHeight - 380));
+    // only the cursor point is kept; where the panel goes is decided by fitFloat
+    // once it has been laid out and its real size is known
+    const x = e.clientX;
+    const y = e.clientY;
     const hit = bdCache.get(key);
     if (hit) {
       bd = { sections: hit, x, y, pinned: pin, key };
@@ -265,7 +268,7 @@
   </div>
 
   {#if bd}
-    <div class="float" style:left={`${bd.x}px`} style:top={`${bd.y}px`}>
+    <div class="float" class:pinned={bd.pinned} use:fitFloat={pointAnchor(bd.x, bd.y)}>
       <div class="fhead"><span class="label">{t("calcs.breakdown")}</span>{#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}</div>
       <div class="fbody"><BreakdownPanel sections={bd.sections} /></div>
     </div>
@@ -481,12 +484,18 @@
     text-decoration: underline dotted var(--gold);
     text-underline-offset: 3px;
   }
+  /* The breakdown panel is as wide and as tall as its content, up to the window
+     size minus fitFloat's 10px margin; fitFloat then puts it where it fits (next
+     to the cursor when there is room, anywhere inside the window otherwise).
+     Tables wrap their free-text columns instead of scrolling (BreakdownPanel). */
   .float {
     position: fixed;
+    left: 0;
+    top: 0;
     z-index: 40;
-    width: 580px;
-    max-width: calc(100vw - 40px);
-    max-height: 60vh;
+    width: max-content;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
     display: flex;
     flex-direction: column;
     background: var(--surface-2);
@@ -506,8 +515,14 @@
     font-size: var(--fs-2xs);
     color: var(--gold);
   }
+  /* Last resort only: content taller than the whole window scrolls here. A pinned
+     panel in that state takes the mouse so the wheel can reach it. */
   .fbody {
+    min-height: 0;
     padding: 10px 14px 12px;
     overflow-y: auto;
+  }
+  .float.pinned:global([data-fit-tall]) {
+    pointer-events: auto;
   }
 </style>

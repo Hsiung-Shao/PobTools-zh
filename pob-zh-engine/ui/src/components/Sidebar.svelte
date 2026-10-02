@@ -7,8 +7,10 @@
   import { t } from "$lib/i18n";
   import { groupSidebar } from "$lib/sidebar-groups";
   import { app } from "$lib/state.svelte";
+  import { fitFloat, type FloatAnchor } from "$lib/floatFit";
 
-  let bd = $state<{ sections: BreakdownSection[]; row: number; y: number; pinned: boolean } | null>(null);
+  let bd = $state<{ sections: BreakdownSection[]; row: number; anchor: FloatAnchor; pinned: boolean } | null>(null);
+  let sideEl: HTMLElement | undefined = $state();
   let bdTimer = 0;
   const bdCache = new Map<string, BreakdownSection[]>();
 
@@ -18,10 +20,17 @@
       bd = null;
       return;
     }
-    const y = Math.round(Math.max(48, Math.min(clientY - 36, window.innerHeight - 440)));
+    // The panel prefers to sit right of the sidebar with its top a little above
+    // the row; fitFloat moves it (above the row, over the sidebar, ...) when the
+    // window has no room there, once its real size is known.
+    const r = sideEl?.getBoundingClientRect();
+    const anchor: FloatAnchor = {
+      x: { after: (r?.right ?? 0) + 10, before: (r?.left ?? 0) - 10 },
+      y: { after: clientY - 36, before: clientY + 36 },
+    };
     const key = `${rowIndex}:${app.rev}`;
     const show = (sections: BreakdownSection[]) => {
-      bd = { sections, row: rowIndex, y, pinned: pin || (bd?.pinned && bd.row === rowIndex) || false };
+      bd = { sections, row: rowIndex, anchor, pinned: pin || (bd?.pinned && bd.row === rowIndex) || false };
     };
     const hit = bdCache.get(key);
     if (hit) {
@@ -66,7 +75,7 @@
   const overCap = (used: number, max?: number | null) => max != null && used > max;
 </script>
 
-<aside class="side">
+<aside class="side" bind:this={sideEl}>
   {#if info}
     <section class="summary">
       <div class="name" title={info.dbFileName ?? ""}>{info.buildName}</div>
@@ -153,7 +162,7 @@
   {/if}
 
   {#if bd}
-    <div class="float" style:top={`${bd.y}px`}>
+    <div class="float" class:pinned={bd.pinned} use:fitFloat={bd.anchor}>
       <div class="float-head">
         <span class="label">{t("sidebar.breakdown")}</span>
         {#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}
@@ -333,13 +342,15 @@
     place-items: center;
   }
 
-  /* 細項浮層:貼在側欄右邊 */
+  /* 細項浮層:寬高跟著內容走(上限是視窗扣掉 fitFloat 的 10px 邊距),
+     位置由 fitFloat 量過實際大小後決定,優先貼在側欄右邊;表格的長文字欄換行而不捲動。 */
   .float {
     position: fixed;
-    left: calc(var(--sidebar-w) + 10px);
-    width: 580px;
-    max-width: calc(100vw - var(--sidebar-w) - 28px);
-    max-height: 62vh;
+    left: 0;
+    top: 0;
+    width: max-content;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
     display: flex;
     flex-direction: column;
     background: var(--surface-2);
@@ -362,8 +373,13 @@
     color: var(--gold);
     letter-spacing: 0.08em;
   }
+  /* 最後手段:內容比整個視窗還高才在這裡捲動;釘住時讓浮層接滑鼠,滾輪才捲得到 */
   .float-body {
+    min-height: 0;
     padding: 10px 14px 12px;
     overflow-y: auto;
+  }
+  .float.pinned:global([data-fit-tall]) {
+    pointer-events: auto;
   }
 </style>
