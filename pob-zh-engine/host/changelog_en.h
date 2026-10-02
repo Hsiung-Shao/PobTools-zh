@@ -19,6 +19,13 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.8 (2026-10-02)\n"
+	u8"Fixed\n"
+	u8"　·New interface Calcs: the socket group, active skill, skill part and calculation mode selectors under Skill details were missing, so the skill could not be picked there.\n"
+	u8"　·New interface breakdown panels: the right-hand columns were cut off behind a scrollbar, and the panel did not move to fit the window.\n"
+	u8"Changed\n"
+	u8"　·New interface Calcs: pointing at the \"Aura and Buff Skills\" or \"Curses and Debuffs\" label also shows its breakdown.\n"
+	u8"\n"
 	u8"v1.7.7 (2026-10-01)\n"
 	u8"Fixed\n"
 	u8"　·New interface: after POB applied its own update and restarted, the window stayed on loading (engine booting).\n"
