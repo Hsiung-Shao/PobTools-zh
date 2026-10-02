@@ -277,6 +277,8 @@ const EN: Record<string, string> = {
   "items.copied": "Copied",
   "items.copyFailed": "Copy failed",
   "items.notItem": "That text does not look like an item (no Rarity / Item Class line); nothing was added.",
+  "items.noRarity": "The Rarity line is missing from this item text and its rarity cannot be worked out (no Prefix / Suffix lines); nothing was added.",
+  "items.rarityRestored": "The Rarity line was missing; set to {r} from the Prefix / Suffix slot lines.",
   "items.delete": "Delete",
   "items.unequip": "Unequip",
   "items.equipTo": "Equip to…",

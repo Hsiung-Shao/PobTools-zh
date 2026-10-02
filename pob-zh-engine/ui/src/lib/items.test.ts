@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equippedIn, filterByLoadout, groupSlots, looksLikeItem, rarityColor, slotsFor, usedInBadge } from "./items";
+import { equippedIn, filterByLoadout, groupSlots, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge } from "./items";
 import type { ItemSummary } from "./bridge";
 import type { ItemSlot } from "./bridge";
 
@@ -60,6 +60,70 @@ describe("looksLikeItem", () => {
   it("rejects share codes and prose", () => {
     expect(looksLikeItem("eNrtvQd…")).toBe(false);
     expect(looksLikeItem("the rarity is high")).toBe(false);
+  });
+});
+
+const RARE_RAW = `New Item
+Sinister Quarterstaff
+Crafted: true
+Prefix: {range:0.87}LocalAddedFireDamageTwoHand7
+Prefix: {range:0.73}LocalAddedLightningDamageTwoHand8
+Prefix: None
+Suffix: {range:0.949}LocalCriticalStrikeChance6
+Suffix: {range:0.5}LocalIncreasedAttackSpeed7
+Suffix: {range:0.5}EssenceAttackSkillLevel2H1
+Item Level: 83
+Quality: 20
+Sockets: S S S
+Rune: Soul Core of Citaqualotl
+LevelReq: 67
+Implicits: 5
+{enchant}{rune}30% increased Elemental Damage with Attacks
+{crafted}+3 to Level of all Attack Skills`;
+
+describe("restoreRarity", () => {
+  it("restores RARE from three prefix and three suffix slots", () => {
+    const r = restoreRarity(RARE_RAW);
+    expect(r.rarity).toBe("RARE");
+    expect(r.text).toBe("Rarity: RARE\n" + RARE_RAW);
+    expect(looksLikeItem(RARE_RAW)).toBe(true);
+  });
+  it("restores MAGIC from one prefix and one suffix slot", () => {
+    const magic = "Hale Sinister Quarterstaff of Haste\nCrafted: true\nPrefix: {range:0.5}LocalIncreasedPhysicalDamage1\nSuffix: None\nItem Level: 40\nLevelReq: 30\nImplicits: 0";
+    const r = restoreRarity(magic);
+    expect(r.rarity).toBe("MAGIC");
+    expect(r.text.startsWith("Rarity: MAGIC\n")).toBe(true);
+  });
+  it("treats a two-slot list as RARE (rare jewel) and CRLF text the same", () => {
+    expect(restoreRarity("Crafted: true\r\nPrefix: None\r\nPrefix: None\r\nSuffix: None\r\nSuffix: None\r\nLevelReq: 1").rarity).toBe("RARE");
+  });
+  it("does not guess when a 'modifiers allowed' line makes two slots ambiguous", () => {
+    const t = "Crafted: true\nPrefix: None\nPrefix: None\nSuffix: None\nLevelReq: 1\n+1 Prefix Modifier allowed";
+    expect(restoreRarity(t)).toEqual({ text: t, rarity: null });
+    expect(restoreRarity(t + "\nPrefix: None").rarity).toBe("RARE");
+  });
+  it("gives null for POB raw text without Prefix/Suffix lines", () => {
+    const t = "Some Unique\nCoral Ring\nItem Level: 80\nLevelReq: 50\nImplicits: 1\n+10 to Strength";
+    expect(looksLikePobRaw(t)).toBe(true);
+    expect(restoreRarity(t)).toEqual({ text: t, rarity: null });
+    expect(looksLikeItem(t)).toBe(false);
+  });
+  it("leaves text that already has a rarity line alone", () => {
+    const t = "Rarity: UNIQUE\n" + RARE_RAW;
+    expect(restoreRarity(t)).toEqual({ text: t, rarity: null });
+    expect(looksLikePobRaw(t)).toBe(false);
+    expect(looksLikeItem(t)).toBe(true);
+  });
+  it("leaves Chinese game copy alone", () => {
+    const t = "稀有度: 稀有\n末日面紗\n鈷藍珠寶\nPrefix: x\nSuffix: y";
+    expect(restoreRarity(t)).toEqual({ text: t, rarity: null });
+    expect(looksLikeItem(t)).toBe(true);
+  });
+  it("rejects random text and a lone key", () => {
+    for (const t of ["eNrtvQd…", "the rarity is high", "Prefix: something\nand prose", "hello\nworld"]) {
+      expect(restoreRarity(t)).toEqual({ text: t, rarity: null });
+      expect(looksLikeItem(t)).toBe(false);
+    }
   });
 });
 

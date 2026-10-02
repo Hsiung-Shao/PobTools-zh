@@ -68,9 +68,51 @@ export function itemById(items: ItemSummary[], id: number): ItemSummary | undefi
   return items.find((i) => i.id === id);
 }
 
-/** Pasted text that starts like an item (the rarity or item-class line), in either client language. */
+const RARITY_LINE = /^(Rarity|Item Class|稀有度|物品種類|物品类别)\s*[:：]/m;
+
+/** Keys only POB's own raw item writer produces (ItemClass:BuildRaw), never the game's copy format. */
+const POB_RAW_KEYS = /^(Prefix|Suffix|Implicits|LevelReq|Item Level|Crafted|Quality|Sockets|Rune|Catalyst|CatalystQuality|Unique ID|League)\s*:/gm;
+
+/** True when the text has no rarity line but carries at least two distinct POB-raw keys. */
+export function looksLikePobRaw(s: string): boolean {
+  if (RARITY_LINE.test(s)) return false;
+  const keys = new Set<string>();
+  for (const m of s.matchAll(POB_RAW_KEYS)) keys.add(m[1]);
+  return keys.size >= 2;
+}
+
+/**
+ * POB's own item text always starts with "Rarity: X" (BuildRaw, Item.lua), but a
+ * copy can lose that first line; POB then reads the item as UNIQUE. When the line is
+ * missing from text that is clearly POB-raw, work the rarity out from the affix-slot
+ * lines BuildRaw writes (only for crafted items, only MAGIC and RARE):
+ *   - Item.lua:1292-1307 sizes the slots: MAGIC affixLimit 2 (1 prefix + 1 suffix),
+ *     RARE 6 (3+3; jewels 4 = 2+2). "+N prefix/suffix modifiers allowed" lines
+ *     (Item.lua:966/968) move a list's limit, and a MAGIC list is capped at 2.
+ *   - Item.lua:1432-1437 writes one "Prefix:" / "Suffix:" line per slot (None included).
+ * So three or more slots of one kind is RARE; two is RARE unless a "modifiers allowed"
+ * line could have widened a MAGIC item (then it is ambiguous); at most one of each is
+ * MAGIC unless such a line is present. No slot lines at all (or ambiguous) gives null:
+ * the rarity cannot be known and is not guessed.
+ */
+export function restoreRarity(text: string): { text: string; rarity: string | null } {
+  if (!looksLikePobRaw(text)) return { text, rarity: null };
+  const prefixes = (text.match(/^Prefix\s*:/gm) ?? []).length;
+  const suffixes = (text.match(/^Suffix\s*:/gm) ?? []).length;
+  if (prefixes + suffixes === 0) return { text, rarity: null };
+  const widened = /[+-]\d+\s+(prefix|suffix)\s+modifiers?\s+allowed/i.test(text);
+  const most = Math.max(prefixes, suffixes);
+  let rarity: string | null;
+  if (most >= 3) rarity = "RARE";
+  else if (widened) rarity = null;
+  else rarity = most >= 2 ? "RARE" : "MAGIC";
+  if (!rarity) return { text, rarity: null };
+  return { text: "Rarity: " + rarity + "\n" + text, rarity };
+}
+
+/** Pasted text that starts like an item (the rarity or item-class line), in either client language, or POB-raw text whose rarity line can be restored. */
 export function looksLikeItem(s: string): boolean {
-  return /^(Rarity|Item Class|稀有度|物品種類|物品类别)\s*[:：]/m.test(s);
+  return RARITY_LINE.test(s) || restoreRarity(s).rarity !== null;
 }
 
 /** The list's loadout filter (ItemListControl's dropdown): any / current set / unused / one item set. */

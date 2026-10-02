@@ -443,6 +443,8 @@
   "items.copied": "已複製",
   "items.copyFailed": "複製失敗",
   "items.notItem": "這段文字不像物品(沒有 稀有度 / 物品種類 行),沒有新增。",
+  "items.noRarity": "這段文字缺少「稀有度」那一行,而且沒有前綴 / 後綴欄位可推斷,沒有新增。",
+  "items.rarityRestored": "文字裡沒有稀有度那一行,依前綴/後綴欄位補為:{r}",
   "items.delete": "刪除",
   "items.unequip": "卸下",
   "items.equipTo": "裝備到…",
