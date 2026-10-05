@@ -2,9 +2,9 @@
      (名稱搜尋、等級/品質/啟用/全域/數量)。每個改動都經 POB 的 ProcessSocketGroup。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type GemDps, type GemHit, type GemInstance, type GemOptions, type GroupExtras, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
+  import { api, type GemHit, type GemInstance, type GemOptions, type GroupExtras, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
-  import { dpsDeltaColor, dpsDeltaText, formatSignedNumber, formatSignedPct } from "$lib/gemDps";
+  import { dpsDeltaColor, dpsDeltaText, formatSignedNumber } from "$lib/gemDps";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -13,8 +13,8 @@
   let sel = $state<number>(1);
   let loadedRev = -1;
 
-  type TipData = { lines: TooltipLine[]; dps?: GemDps };
-  let tip = $state<{ lines: TooltipLine[]; x: number; y: number; summary: { text: string; color?: string } | null } | null>(null);
+  type TipData = { lines: TooltipLine[] };
+  let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
   let tipTimer = 0;
   // bumped by every show/hide, so a tooltip that finishes loading after the
   // mouse has moved on does not pop up
@@ -206,21 +206,13 @@
   }
 
   // --- tooltips ---------------------------------------------------------------
-  // The DPS line at the top of a gem card: what removing / enabling / choosing
-  // the gem does to the gem sort's DPS field, in POB's colours.
-  function dpsSummary(d: GemDps | undefined): { text: string; color?: string } | null {
-    if (!d || typeof d.delta !== "number") return null;
-    const key = d.mode === "remove" ? "skills.dpsRemove" : d.mode === "enable" ? "skills.dpsEnable" : "skills.dpsSelect";
-    const delta = typeof d.pct === "number" ? `${formatSignedPct(d.pct)} (${formatSignedNumber(d.delta)})` : formatSignedNumber(d.delta);
-    return { text: t(key, { delta }), color: dpsDeltaColor(d.delta) };
-  }
   function showTip(key: string, fetch: () => Promise<TipData>, e: MouseEvent, delay = 120, at?: { x: number; y: number }) {
     clearTimeout(tipTimer);
     const seq = ++tipSeq;
     const x = Math.round(at ? at.x : Math.min(e.clientX + 18, window.innerWidth - 360));
     const y = Math.round(at ? at.y : Math.min(e.clientY + 12, window.innerHeight - 360));
     const show = (d: TipData) => {
-      if (seq === tipSeq) tip = { lines: d.lines, x, y, summary: dpsSummary(d.dps) };
+      if (seq === tipSeq) tip = { lines: d.lines, x, y };
     };
     const hit = tipCache.get(key);
     if (hit) {
@@ -230,7 +222,7 @@
     tipTimer = window.setTimeout(async () => {
       try {
         const r = await fetch();
-        tipCache.set(key, { lines: r.lines, dps: r.dps });
+        tipCache.set(key, { lines: r.lines });
         show(r);
       } catch {
         if (seq === tipSeq) tip = null;
@@ -720,7 +712,7 @@
     {/if}
   </section>
 
-  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} summary={tip.summary} />{/if}
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
 
   {#if pasteDialog}
     <div class="modal">

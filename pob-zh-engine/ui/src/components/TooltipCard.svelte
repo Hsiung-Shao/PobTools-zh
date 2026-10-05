@@ -4,15 +4,13 @@
   import type { TooltipLine } from "$lib/bridge";
   import PobText from "./PobText.svelte";
 
-  // summary: one prominent line above POB's own (the skills page's DPS change)
   let {
     lines,
     accent = null,
     x = 0,
     y = 0,
     width = 340,
-    summary = null,
-  }: { lines: TooltipLine[]; accent?: string | null; x?: number; y?: number; width?: number; summary?: { text: string; color?: string } | null } = $props();
+  }: { lines: TooltipLine[]; accent?: string | null; x?: number; y?: number; width?: number } = $props();
 
   function pobColor(code: string | null | undefined): string | null {
     if (!code) return null;
@@ -35,9 +33,6 @@
 </script>
 
 <div class="card pob-dark" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-top-color={border}>
-  {#if summary}
-    <div class="summary" style:color={summary.color ?? null}>{summary.text}</div>
-  {/if}
   {#each lines as l, i}
     {#if "sep" in l}
       <div class="sep"></div>
@@ -64,15 +59,6 @@
     line-height: 1.45;
     max-height: calc(100vh - 16px);
     overflow: hidden;
-  }
-  .summary {
-    margin: 0 -12px 6px;
-    padding: 2px 12px 6px;
-    border-bottom: 1px solid var(--edge-1);
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
   }
   .line {
     white-space: pre-wrap;
