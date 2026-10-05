@@ -9,7 +9,7 @@
   import TradeDialog from "../components/TradeDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, rarityColor, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
+  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
   import { app } from "$lib/state.svelte";
   import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -242,10 +242,25 @@
     }
   }
 
+  function restoredNote(rarity: string): string {
+    return t("items.rarityRestored", { r: t("notes.col." + rarity) });
+  }
+
   // --- editing (POB's displayItem) ---------------------------------------------
   async function openEdit(p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) {
     hideTip();
     pasteErr = null;
+    if (p.raw) {
+      // POB's own text starts with "Rarity:"; when that line was lost POB would read the item as unique
+      const fixed = restoreRarity(p.raw);
+      if (fixed.rarity) {
+        p = { ...p, raw: fixed.text };
+        pasteNote = restoredNote(fixed.rarity);
+      } else if (looksLikePobRaw(p.raw)) {
+        pasteErr = t("items.noRarity");
+        return;
+      }
+    }
     try {
       // a pasted text also gets POB's reading of it line by line, so the editor
       // can say which lines did not survive (still Chinese / not understood)
@@ -267,12 +282,14 @@
   function editClosed() {
     edit = null;
     editReport = null;
+    pasteNote = null;
     if (rightTab === "edit") rightTab = "paste";
   }
   async function editDone(r: { id: number; added: boolean }) {
     edit = null;
     editReport = null;
     pasteText = "";
+    pasteNote = null;
     rightTab = "paste";
     selectedId = r.id;
     await changed();
@@ -297,12 +314,18 @@
   // --- paste / add ---------------------------------------------------------------
   async function addPasted(equip: boolean) {
     pasteErr = null;
-    const raw = pasteText.trim();
+    let raw = pasteText.trim();
     if (!raw) return;
+    const fixed = restoreRarity(raw);
+    if (fixed.rarity) raw = fixed.text;
+    else if (looksLikePobRaw(raw)) {
+      pasteErr = t("items.noRarity");
+      return;
+    }
     try {
       const r = await api.addItem(raw, { equip });
       pasteText = "";
-      pasteNote = r.reversed ? t("items.reversed") : null;
+      pasteNote = r.reversed ? t("items.reversed") : fixed.rarity ? restoredNote(fixed.rarity) : null;
       selectedId = r.item.id ?? null;
       await changed();
     } catch (e: any) {
@@ -312,14 +335,20 @@
   /** Shows the pasted text the way POB would read it, without adding it. */
   async function previewPasted(e: MouseEvent) {
     pasteErr = null;
-    const raw = pasteText.trim();
+    let raw = pasteText.trim();
     if (!raw) return;
+    const fixed = restoreRarity(raw);
+    if (fixed.rarity) raw = fixed.text;
+    else if (looksLikePobRaw(raw)) {
+      pasteErr = t("items.noRarity");
+      return;
+    }
     // the button's box has to be read now: after the await `currentTarget` is null
     const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
     try {
       const r = await api.itemTooltip({ raw, compare });
       tip = { lines: r.lines, color: r.color, x: Math.round(Math.max(8, b.left - 360)), y: Math.round(Math.max(8, Math.min(b.top - 200, window.innerHeight - 420))) };
-      pasteNote = (r as { reversed?: boolean }).reversed ? t("items.reversed") : null;
+      pasteNote = (r as { reversed?: boolean }).reversed ? t("items.reversed") : fixed.rarity ? restoredNote(fixed.rarity) : null;
     } catch (err: any) {
       pasteErr = String(err?.message ?? err);
     }
@@ -334,11 +363,12 @@
     pasteNote = null;
     if (!text.trim()) return;
     if (!looksLikeItem(text)) {
-      pasteErr = t("items.notItem");
+      pasteErr = t(looksLikePobRaw(text) ? "items.noRarity" : "items.notItem");
       return;
     }
     e.preventDefault();
-    pasteText = text;
+    // a lost "Rarity:" line is put back (openEdit adds the note); the box shows the restored text
+    pasteText = restoreRarity(text).text;
     void openEdit({ raw: text });
   }
 
@@ -546,6 +576,7 @@
       <button class="tab" class:on={rightTab === "craft"} disabled={!data} onclick={openCraft}>{t("items.craft")}</button>
     </div>
     {#if rightTab === "edit" && edit}
+      {#if pasteNote}<div class="ok edit-note">{pasteNote}</div>{/if}
       <ItemEditor item={edit} report={editReport} onchange={(s) => (edit = s)} onclose={editClosed} ondone={editDone} />
     {:else if rightTab === "paste"}
       <div class="pane">
@@ -870,6 +901,10 @@
   .ok {
     color: var(--good);
     font-size: var(--fs-xs);
+  }
+  .edit-note {
+    flex: none;
+    padding: 6px 12px 0;
   }
   .bad {
     color: var(--bad);
