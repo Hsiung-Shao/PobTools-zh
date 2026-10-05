@@ -2,8 +2,9 @@
      (名稱搜尋、等級/品質/啟用/全域/數量)。每個改動都經 POB 的 ProcessSocketGroup。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type GemHit, type GemInstance, type GemOptions, type GroupExtras, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
+  import { api, type GemDps, type GemHit, type GemInstance, type GemOptions, type GroupExtras, type SkillsList, type SocketGroup, type TooltipLine } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
+  import { dpsDeltaColor, dpsDeltaText, formatSignedNumber, formatSignedPct } from "$lib/gemDps";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -12,14 +13,24 @@
   let sel = $state<number>(1);
   let loadedRev = -1;
 
-  let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
+  type TipData = { lines: TooltipLine[]; dps?: GemDps };
+  let tip = $state<{ lines: TooltipLine[]; x: number; y: number; summary: { text: string; color?: string } | null } | null>(null);
   let tipTimer = 0;
-  const tipCache = new Map<string, TooltipLine[]>();
+  // bumped by every show/hide, so a tooltip that finishes loading after the
+  // mouse has moved on does not pop up
+  let tipSeq = 0;
+  const tipCache = new Map<string, TipData>();
 
   // gem search box (add row) and inline rename of an existing gem
   let addQuery = $state("");
   let addHits = $state<GemHit[]>([]);
   let addOpen = $state(false);
+  // "supportable": the empty add box lists the supports that can support this
+  // group, best DPS gain first; "search": what was typed
+  let addMode = $state<"supportable" | "search">("search");
+  let addBusy = $state(false);
+  let addSeq = 0;
+  const supportableCache = new Map<string, GemHit[]>();
   let searchTimer = 0;
   let editGem = $state<{ index: number; query: string; hits: GemHit[] } | null>(null);
   let labelDraft = $state("");
@@ -129,6 +140,9 @@
   async function patchGemOpts(p: Parameters<typeof api.setGemOptions>[0]) {
     const r = await app.run(() => api.setGemOptions(p));
     if (r) {
+      // the DPS field / default level and quality feed every cached compare
+      tipCache.clear();
+      supportableCache.clear();
       gemOpts = r;
       qualityDraft = String(r.defaultGemQuality ?? 0);
     }
@@ -138,6 +152,10 @@
   const dpsHint = $derived.by(() => {
     const f = gemOpts?.sortFields.find((c) => c.value === gemOpts!.sortGemsByDPSField);
     return t("skills.dpsHint", { field: f ? choiceLabel(f) : "DPS" });
+  });
+  const supportableHint = $derived.by(() => {
+    const f = gemOpts?.sortFields.find((c) => c.value === gemOpts!.sortGemsByDPSField);
+    return t("skills.supportableHint", { field: f ? choiceLabel(f) : "DPS" });
   });
 
   // SkillListControl: right click = main group, Ctrl+right = Full DPS, Ctrl+click = enable
@@ -166,6 +184,7 @@
       data = r;
       loadedRev = r.rev;
       tipCache.clear();
+      supportableCache.clear();
       if (!r.groups.some((g) => g.index === sel)) sel = r.groups.length ? Math.min(sel, r.groups.length) : 1;
       labelDraft = r.groups.find((g) => g.index === sel)?.label ?? "";
     }
@@ -187,29 +206,52 @@
   }
 
   // --- tooltips ---------------------------------------------------------------
-  function showTip(key: string, fetch: () => Promise<{ lines: TooltipLine[] }>, e: MouseEvent) {
+  // The DPS line at the top of a gem card: what removing / enabling / choosing
+  // the gem does to the gem sort's DPS field, in POB's colours.
+  function dpsSummary(d: GemDps | undefined): { text: string; color?: string } | null {
+    if (!d || typeof d.delta !== "number") return null;
+    const key = d.mode === "remove" ? "skills.dpsRemove" : d.mode === "enable" ? "skills.dpsEnable" : "skills.dpsSelect";
+    const delta = typeof d.pct === "number" ? `${formatSignedPct(d.pct)} (${formatSignedNumber(d.delta)})` : formatSignedNumber(d.delta);
+    return { text: t(key, { delta }), color: dpsDeltaColor(d.delta) };
+  }
+  function showTip(key: string, fetch: () => Promise<TipData>, e: MouseEvent, delay = 120, at?: { x: number; y: number }) {
     clearTimeout(tipTimer);
-    const x = Math.round(Math.min(e.clientX + 18, window.innerWidth - 360));
-    const y = Math.round(Math.min(e.clientY + 12, window.innerHeight - 360));
+    const seq = ++tipSeq;
+    const x = Math.round(at ? at.x : Math.min(e.clientX + 18, window.innerWidth - 360));
+    const y = Math.round(at ? at.y : Math.min(e.clientY + 12, window.innerHeight - 360));
+    const show = (d: TipData) => {
+      if (seq === tipSeq) tip = { lines: d.lines, x, y, summary: dpsSummary(d.dps) };
+    };
     const hit = tipCache.get(key);
     if (hit) {
-      tip = { lines: hit, x, y };
+      show(hit);
       return;
     }
     tipTimer = window.setTimeout(async () => {
       try {
         const r = await fetch();
-        tipCache.set(key, r.lines);
-        tip = { lines: r.lines, x, y };
+        tipCache.set(key, { lines: r.lines, dps: r.dps });
+        show(r);
       } catch {
-        tip = null;
+        if (seq === tipSeq) tip = null;
       }
-    }, 120);
+    }, delay);
   }
   const hideTip = () => {
     clearTimeout(tipTimer);
+    tipSeq++;
     tip = null;
   };
+  // a candidate in a gem drop-down: POB's picker hover, beside the list
+  function showCandidateTip(e: MouseEvent, slot: number, h: GemHit) {
+    if (!group || !app.has("gemCompareTooltip")) return;
+    const g = group.index;
+    const drop = (e.currentTarget as HTMLElement).closest(".drop")?.getBoundingClientRect();
+    const row = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // right of the list, or left of it when that would run off the window (never over it)
+    const at = drop ? { x: drop.right + 376 <= window.innerWidth ? drop.right + 8 : Math.max(8, drop.left - 368), y: row.top } : undefined;
+    showTip(`cand:${app.rev}:${g}:${slot}:${h.gemId}`, () => api.gemCandidateTooltip(g, slot, h.gemId), e, 150, at);
+  }
 
   // --- groups -------------------------------------------------------------------
   async function addGroup() {
@@ -251,15 +293,17 @@
   // --- gems -------------------------------------------------------------------------
   // With "sort gems by DPS" on, POB's own picker does the search and the DPS
   // estimate per gem (it is slow, so only for the slot being edited).
+  // The add row always asks for the DPS order (alwaysDps); replacing a gem
+  // follows the Gem Options switch, as POB's own picker does.
   let searchBusy = $state(false);
-  function search(q: string, into: (hits: GemHit[]) => void, slot?: number) {
+  function search(q: string, into: (hits: GemHit[]) => void, slot?: number, alwaysDps = false) {
     clearTimeout(searchTimer);
     if (!q.trim()) {
       into([]);
       return;
     }
     searchTimer = window.setTimeout(async () => {
-      const byDps = !!gemOpts?.sortGemsByDPS && !!group && slot != null;
+      const byDps = (alwaysDps ? app.has("gemDpsSort") : !!gemOpts?.sortGemsByDPS) && !!group && slot != null;
       searchBusy = byDps;
       try {
         const r = await api.gemSearch(byDps ? { query: q.trim(), limit: 20, group: group!.index, index: slot, byDps: true } : { query: q.trim(), limit: 20 });
@@ -270,13 +314,67 @@
       searchBusy = false;
     }, 120);
   }
+  // Clicking into the empty add box: every support POB says can support this
+  // group, sorted by how much DPS it adds (its own picker's estimate). Kept per
+  // build revision and group, so focusing again does not recalculate.
+  async function openSupportable() {
+    if (!group) return;
+    addOpen = true;
+    if (addQuery.trim()) return;
+    clearTimeout(searchTimer);
+    addMode = "supportable";
+    const g = group.index;
+    const slot = group.gems.length + 1;
+    const key = `${app.rev}:${g}`;
+    const cached = supportableCache.get(key);
+    if (cached) {
+      addHits = cached;
+      return;
+    }
+    const seq = ++addSeq;
+    addHits = [];
+    addBusy = true;
+    let hits: GemHit[] = [];
+    let byDps = false;
+    try {
+      const r = await api.gemSearch({ query: "", limit: 60, group: g, index: slot, byDps: true, supportableOnly: true });
+      hits = r.gems;
+      byDps = !!r.byDps;
+    } catch {
+      // PoE2's POB (no DPS sort) or an older bridge: the plain support list
+      try {
+        hits = (await api.gemSearch({ query: "", limit: 60, supportOnly: true })).gems;
+      } catch {
+        hits = [];
+      }
+    }
+    if (seq !== addSeq) return;
+    addBusy = false;
+    if (byDps) supportableCache.set(key, hits);
+    if (addMode === "supportable" && !addQuery.trim()) addHits = hits;
+  }
+  function addInput() {
+    addOpen = true;
+    if (!addQuery.trim()) {
+      void openSupportable();
+      return;
+    }
+    addSeq++;
+    addBusy = false;
+    addMode = "search";
+    search(addQuery, (h) => (addHits = h), (group?.gems.length ?? 0) + 1, true);
+  }
+  function closeAdd() {
+    addOpen = false;
+    hideTip();
+  }
   const dpsColor = (h: GemHit) => (h.dpsColor && h.dpsColor.startsWith("^x") ? `#${h.dpsColor.slice(2)}` : undefined);
   const dpsText = (h: GemHit) => (typeof h.dps === "number" ? Math.round(h.dps).toLocaleString() : "");
   async function addGem(hit: GemHit) {
     if (!group) return;
     addQuery = "";
     addHits = [];
-    addOpen = false;
+    closeAdd();
     const r = await app.run(() => api.addGem(group.index, { gemId: hit.gemId }));
     if (r) await changed();
   }
@@ -285,7 +383,7 @@
     if (addHits.length) return addGem(addHits[0]);
     const q = addQuery.trim();
     addQuery = "";
-    addOpen = false;
+    closeAdd();
     const r = await app.run(() => api.addGem(group.index, { nameSpec: q }));
     if (r) await changed();
   }
@@ -296,6 +394,7 @@
   }
   async function pickGem(g: GemInstance, hit: GemHit) {
     editGem = null;
+    hideTip();
     await patchGem(g, { gemId: hit.gemId });
   }
   async function deleteGem(g: GemInstance) {
@@ -521,13 +620,16 @@
                   {#if editGem && editGem.index === g.index}
                     <div class="combo">
                       <!-- svelte-ignore a11y_autofocus -->
-                      <input class="input sm" autofocus bind:value={editGem.query} oninput={() => search(editGem!.query, (h) => (editGem!.hits = h))} onkeydown={(e) => { if (e.key === "Escape") editGem = null; if (e.key === "Enter" && editGem?.hits[0]) void pickGem(g, editGem.hits[0]); }} onblur={() => setTimeout(() => (editGem = null), 150)} />
+                      <input class="input sm" autofocus bind:value={editGem.query} oninput={() => search(editGem!.query, (h) => (editGem!.hits = h), g.index)} onkeydown={(e) => { if (e.key === "Escape") { editGem = null; hideTip(); } if (e.key === "Enter" && editGem?.hits[0]) void pickGem(g, editGem.hits[0]); }} onblur={() => setTimeout(() => { editGem = null; hideTip(); }, 150)} />
                       {#if editGem.hits.length}
                         <div class="drop">
                           {#each editGem.hits as h}
-                            <button class="hit" onmousedown={(e) => { e.preventDefault(); void pickGem(g, h); }}>
+                            <button class="hit" onmousedown={(e) => { e.preventDefault(); void pickGem(g, h); }} onmouseenter={(e) => showCandidateTip(e, g.index, h)} onmouseleave={hideTip}>
                               <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
                               {#if h.support}<span class="dim small">{t("skills.support")}</span>{/if}
+                              {#if h.delta != null}
+                                <span class="small num delta" style:color={dpsDeltaColor(h.delta)}>{dpsDeltaText(h)}</span>
+                              {/if}
                             </button>
                           {/each}
                         </div>
@@ -575,19 +677,33 @@
                     class="input sm"
                     placeholder={t("skills.searchGem")}
                     bind:value={addQuery}
-                    onfocus={() => (addOpen = true)}
-                    oninput={() => { addOpen = true; search(addQuery, (h) => (addHits = h), (group?.gems.length ?? 0) + 1); }}
-                    onkeydown={(e) => { if (e.key === "Enter") void addGemByText(); if (e.key === "Escape") addOpen = false; }}
-                    onblur={() => setTimeout(() => (addOpen = false), 150)}
+                    onfocus={() => void openSupportable()}
+                    oninput={addInput}
+                    onkeydown={(e) => { if (e.key === "Enter") void addGemByText(); if (e.key === "Escape") closeAdd(); }}
+                    onblur={() => setTimeout(closeAdd, 150)}
                   />
-                  {#if addOpen && addHits.length}
+                  {#if addOpen && (addHits.length || addBusy || (addMode === "supportable" && !addQuery.trim()))}
                     <div class="drop">
-                      {#if addHits.some((h) => h.dps != null)}<div class="drophint">{dpsHint}</div>{/if}
-                      {#each addHits as h}
-                        <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }}>
-                          <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
-                          <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
-                          {#if h.dps != null}<span class="small num" style:color={dpsColor(h)} title={dpsHint}>{dpsText(h)}</span>{/if}
+                      {#if addBusy}
+                        <div class="drophint">{t("skills.calcDps")}</div>
+                      {:else if addMode === "supportable" && !addQuery.trim()}
+                        <div class="drophint">{addHits.length ? supportableHint : t("skills.noSupportable")}</div>
+                      {:else if addHits.some((h) => h.dps != null)}
+                        <div class="drophint">{dpsHint}</div>
+                      {/if}
+                      {#each addHits as h (h.gemId)}
+                        <button class="hit" onmousedown={(e) => { e.preventDefault(); void addGem(h); }} onmouseenter={(e) => showCandidateTip(e, (group?.gems.length ?? 0) + 1, h)} onmouseleave={hideTip}>
+                          <span class="hname">
+                            <span style:color={gemColor(h)}>{h.nameZh || h.name}</span>
+                            <span class="dim small">{h.name}{h.support ? ` · ${t("skills.support")}` : ""}</span>
+                          </span>
+                          {#if h.delta != null}
+                            <span class="small num delta" style:color={dpsDeltaColor(h.delta)} title={dpsHint}>
+                              {dpsDeltaText(h)}{#if h.pct != null}<span class="amt">{formatSignedNumber(h.delta)}</span>{/if}
+                            </span>
+                          {:else if h.dps != null}
+                            <span class="small num" style:color={dpsColor(h)} title={dpsHint}>{dpsText(h)}</span>
+                          {/if}
                         </button>
                       {/each}
                     </div>
@@ -604,7 +720,7 @@
     {/if}
   </section>
 
-  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} summary={tip.summary} />{/if}
 
   {#if pasteDialog}
     <div class="modal">
@@ -875,6 +991,21 @@
   }
   .hit:hover {
     background: var(--surface-hover);
+  }
+  .hname {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .delta {
+    flex: none;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .delta .amt {
+    margin-left: 6px;
+    opacity: 0.75;
   }
   .small {
     font-size: var(--fs-2xs);

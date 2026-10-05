@@ -2,8 +2,9 @@
      的子腳本裡跑,頁面輪詢 import_status)、分享碼(貼上 → 預覽 → 匯入)、
      產生分享碼。 -->
 <script lang="ts">
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { api, type AccountChar, type CodeInfo, type ImportStatus } from "$lib/bridge";
+  import { classifyClipboard, looksLikeBuildUrl, looksLikeShareCode, shouldAutoFill } from "$lib/buildCode";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
@@ -233,6 +234,76 @@
     linkBusy = false;
   }
 
+  // --- clipboard: a share code / build link comes in on its own (entering the
+  // page, the window getting focus back, a click into either box) when its box
+  // is empty; a right click on a box replaces that box with the clipboard.
+  // Only ever fills a field: importing is always the user's button.
+  let lastAuto = "";
+  let clipNote = $state<string | null>(null);
+  function putCode(text: string) {
+    code = text;
+    onCodeInput();
+  }
+  // explicit = a click into a box: the user is there, so text brought in
+  // before (and since cleared) may come in again
+  async function pullClipboard(explicit = false) {
+    if (app.view !== "import") return;
+    const found = classifyClipboard(await api.readClipboard());
+    if (!found) return;
+    const seen = explicit ? "" : lastAuto;
+    if (found.kind === "code" && shouldAutoFill(found, code, seen)) {
+      lastAuto = found.text;
+      putCode(found.text);
+      clipNote = t("import.fromClipboard");
+    } else if (found.kind === "url" && shouldAutoFill(found, linkUrl, seen)) {
+      lastAuto = found.text;
+      linkUrl = found.text;
+      clipNote = t("import.linkFromClipboard");
+    }
+  }
+  const onWindowFocus = () => void pullClipboard();
+  onMount(() => {
+    void pullClipboard();
+    window.addEventListener("focus", onWindowFocus);
+    return () => window.removeEventListener("focus", onWindowFocus);
+  });
+
+  // Right click: paste the clipboard over the box (whatever it is -- the user
+  // asked); a link aimed at the code box, or a code at the link box, goes to
+  // the box it belongs in.
+  async function pasteOver(e: MouseEvent, target: "code" | "link") {
+    e.preventDefault();
+    const text = (await api.readClipboard()).trim();
+    if (!text) return;
+    lastAuto = text;
+    if (target === "code" && looksLikeBuildUrl(text)) {
+      linkUrl = text;
+      clipNote = t("import.linkFromClipboard");
+    } else if (target === "link" && looksLikeShareCode(text)) {
+      putCode(text);
+      clipNote = t("import.fromClipboard");
+    } else if (target === "code") {
+      putCode(text);
+      clipNote = null;
+    } else {
+      linkUrl = text;
+      clipNote = null;
+    }
+  }
+  // Ctrl+V of a link into the code box (or a code into the link box) goes where it belongs.
+  function pasteInto(e: ClipboardEvent, target: "code" | "link") {
+    const text = e.clipboardData?.getData("text/plain")?.trim() ?? "";
+    if (target === "code" && looksLikeBuildUrl(text)) {
+      e.preventDefault();
+      linkUrl = text;
+      clipNote = t("import.linkFromClipboard");
+    } else if (target === "link" && looksLikeShareCode(text)) {
+      e.preventDefault();
+      putCode(text);
+      clipNote = t("import.fromClipboard");
+    }
+  }
+
   async function doExport() {
     copied = false;
     const r = await app.run(() => api.exportCode());
@@ -369,7 +440,9 @@
     <h2>{t("import.codeTitle")}</h2>
     <p class="dim">{t("import.codeHint")}</p>
     <div class="actions">
-      <input class="input sm grow" placeholder={t("import.linkPlaceholder")} bind:value={linkUrl} onkeydown={(e) => e.key === "Enter" && linkUrl.trim() && fromLink()} />
+      <input class="input sm grow" placeholder={t("import.linkPlaceholder")} bind:value={linkUrl} onkeydown={(e) => e.key === "Enter" && linkUrl.trim() && fromLink()}
+        onclick={() => void pullClipboard(true)} onfocus={() => void pullClipboard(true)}
+        oncontextmenu={(e) => pasteOver(e, "link")} onpaste={(e) => pasteInto(e, "link")} />
       <button class="btn sm" disabled={!linkUrl.trim() || linkBusy || app.busy > 0} onclick={fromLink}>{t("import.fromLink")}</button>
       {#if linkBusy}<span class="dim">{t("import.working")}</span>{/if}
     </div>
@@ -377,7 +450,10 @@
       <p class="dim small">{t("import.siteList", { sites: sites.filter((s) => s.canImport).map((s) => s.label).join("、") })}</p>
     {/if}
     {#if linkErr}<div class="bad">{linkErr}</div>{/if}
-    <textarea class="input area" rows="4" bind:value={code} oninput={onCodeInput} placeholder={t("import.codePlaceholder")}></textarea>
+    <textarea class="input area" rows="4" bind:value={code} oninput={onCodeInput} placeholder={t("import.codePlaceholder")}
+      onclick={() => void pullClipboard(true)} onfocus={() => void pullClipboard(true)}
+      oncontextmenu={(e) => pasteOver(e, "code")} onpaste={(e) => pasteInto(e, "code")}></textarea>
+    {#if clipNote}<div class="dim small clipnote">{clipNote}</div>{/if}
     {#if previewErr}
       <div class="bad">{previewErr}</div>
     {:else if preview}
@@ -465,6 +541,10 @@
   }
   p {
     margin: 0;
+    font-size: var(--fs-xs);
+  }
+  .clipnote {
+    margin-top: -4px;
     font-size: var(--fs-xs);
   }
   .area {

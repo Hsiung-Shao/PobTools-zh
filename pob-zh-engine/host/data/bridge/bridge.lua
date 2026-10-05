@@ -6407,16 +6407,73 @@ function M.move_gem(p)
 	return skills_committed(b, g)
 end
 
--- gem_tooltip{group, index}: POB's own gem tooltip (Classes/GemTooltip).
+-- The number POB's gem sort compares (GemSelectControl:DPSBuilder): Full DPS
+-- when that is the field, else a minion skill's combined DPS, else the field.
+local function gem_dps_of(output, field)
+	if type(output) ~= "table" then return 0 end
+	return (field == "FullDPS" and output[field] ~= nil and output[field])
+		or (output.Minion and output.Minion.CombinedDPS)
+		or (output[field] ~= nil and output[field]) or 0
+end
+
+local function gem_dps_compare(field, calcBase, output)
+	local base, other = gem_dps_of(calcBase, field), gem_dps_of(output, field)
+	local delta = other - base
+	return { field = field, base = base, other = other, delta = delta, pct = base ~= 0 and delta / base * 100 or nil }
+end
+
+-- A CALCULATOR pass rewrites every group's displayGemList (CalcSetup), the
+-- way CalcOutputWithThisGem saves and puts back its own group's.
+local function keep_display_gem_lists(tab)
+	local saved = {}
+	for i, grp in ipairs(tab.socketGroupList) do saved[i] = grp.displayGemList end
+	return function()
+		for i, grp in ipairs(tab.socketGroupList) do grp.displayGemList = saved[i] end
+	end
+end
+
+local function gem_compare_ready(b)
+	return b.calcsTab and type(b.calcsTab.GetMiscCalculator) == "function" and type(b.AddStatComparesToTooltip) == "function"
+end
+
+-- gem_tooltip{group, index}: POB's own gem tooltip (Classes/GemTooltip), and
+-- under it what turning this gem off (or, when it is off, on) would change --
+-- POB's own stat compare, from one calculator pass with `enabled` flipped and
+-- put back before anything else runs. dps = {field, base, other, delta, pct,
+-- mode = "remove" | "enable"} in the gem sort's DPS field.
 function M.gem_tooltip(p)
 	local b = ensure_build()
-	local g = group_at(b.skillsTab, p and p.group)
+	local tab = b.skillsTab
+	local g = group_at(tab, p and p.group)
 	local gem = g.gemList[tonumber(p.index or 0)]
 	if not gem then error("no gem " .. tostring(p.index), 0) end
 	local gt = require("Classes.GemTooltip")
 	local tt = make("Tooltip")
 	without_wrap(function() gt.AddGemTooltip(tt, b, gem) end)
-	return { lines = tooltip_lines(tt), header = tt.tooltipHeader }
+	local dps
+	if gem_compare_ready(b) and gem.gemData then
+		local calcFunc, calcBase = b.calcsTab:GetMiscCalculator(b)
+		if calcFunc and calcBase then
+			local field = tab.sortGemsByDPSField or "CombinedDPS"
+			local was = gem.enabled
+			local restore = keep_display_gem_lists(tab)
+			gem.enabled = not was
+			local ok, output = pcall(calcFunc, nil, field == "FullDPS")
+			gem.enabled = was
+			restore()
+			if ok and type(output) == "table" then
+				without_wrap(function()
+					tt:AddSeparator(10)
+					b:AddStatComparesToTooltip(tt, calcBase, output, was and "^7Removing this gem will give you:" or "^7Enabling this gem will give you:")
+				end)
+				dps = gem_dps_compare(field, calcBase, output)
+				dps.mode = was and "remove" or "enable"
+			else
+				log_error("gem_tooltip compare: " .. tostring(output))
+			end
+		end
+	end
+	return { lines = tooltip_lines(tt), header = tt.tooltipHeader, dps = dps }
 end
 
 function M.group_tooltip(p)
@@ -6655,15 +6712,23 @@ end, "skillImbued")
 -- gem_search{group, index, query, byDps=true}: POB's own gem picker for that
 -- slot -- its BuildList (name, tag and "+level of" matches), its sort cache
 -- and the DPS coroutine it runs over the frames, finished here in one go.
-local function gem_search_by_dps(b, p)
+-- The GemSelectControl of that group's gem row `index` (the one past the
+-- last gem is the "add" row), its group made SkillsTab's display group: the
+-- control's closures read skillsTab.displayGroup.
+local function gem_slot_control(b, p)
 	local tab = b.skillsTab
 	local g = group_at(tab, p.group)
 	display_group(tab, g)
 	local index = tonumber(p.index) or (#g.gemList + 1)
+	if index < 1 or index > #g.gemList + 1 then error("bad gem index " .. tostring(p.index), 0) end
 	if type(tab.CreateGemSlot) == "function" and not (tab.gemSlots and tab.gemSlots[index]) then tab:CreateGemSlot(index) end
 	local slot = tab.gemSlots and tab.gemSlots[index]
-	local ctl = slot and slot.nameSpec
-	if not (ctl and type(ctl.BuildList) == "function" and type(ctl.UpdateSortCache) == "function" and type(ctl.DPSBuilder) == "function") then
+	return slot and slot.nameSpec, g, index
+end
+
+local function gem_search_by_dps(b, p)
+	local ctl = gem_slot_control(b, p)
+	if not (ctl and type(ctl.BuildList) == "function" and type(ctl.UpdateSortCache) == "function" and type(ctl.SortGemList) == "function") then
 		return nil
 	end
 	local query = type(p.query) == "string" and p.query or ""
@@ -6672,43 +6737,146 @@ local function gem_search_by_dps(b, p)
 	if type(ctl.PopulateGemList) == "function" then ctl:PopulateGemList() end
 	ctl:UpdateSortCache()
 	ctl:BuildList(query)
-	local co = coroutine.create(ctl.DPSBuilder)
-	local guard = 0
-	while coroutine.status(co) ~= "dead" and guard < 100000 do
-		local ok, err = coroutine.resume(co, ctl)
-		if not ok then error(err, 0) end
-		guard = guard + 1
+	-- PoE1's picker spreads the DPS estimates over frames (DPSBuilder, run to
+	-- the end here); PoE2's computes them inside UpdateSortCache already.
+	if type(ctl.DPSBuilder) == "function" then
+		local co = coroutine.create(ctl.DPSBuilder)
+		local guard = 0
+		while coroutine.status(co) ~= "dead" and guard < 100000 do
+			local ok, err = coroutine.resume(co, ctl)
+			if not ok then error(err, 0) end
+			guard = guard + 1
+		end
 	end
 	ctl:SortGemList(ctl.list)
 	local cache = ctl.sortCache or {}
 	local limit = math.min(100, tonumber(p.limit) or 30)
-	local out = {}
-	for _, gemId in ipairs(ctl.list) do
+	local field = cache.dpsField or cache.sortType or b.skillsTab.sortGemsByDPSField or "CombinedDPS"
+	local baseDps = cache.baseDPS
+	if baseDps == nil and gem_compare_ready(b) then
+		-- PoE2 keeps no baseDPS in the cache; the same rule over the calculator's base output
+		local _, calcBase = b.calcsTab:GetMiscCalculator(b)
+		baseDps = gem_dps_of(calcBase, field)
+	end
+	local all = {}
+	for order, gemId in ipairs(ctl.list) do
 		-- the control keys its table by "<source>:<gemId>" (GemSelectControl:PopulateGemList)
 		local plain = type(gemId) == "string" and gemId:gsub("%w+:", "") or gemId
 		local gem = plain ~= "" and b.data.gems[plain]
-		if gem then
-			local ge = gem.grantedEffect
-			out[#out + 1] = {
+		local canSupport = cache.canSupport and cache.canSupport[gemId] and true or false
+		local ge = gem and gem.grantedEffect
+		local support = ge and ge.support and true or false
+		-- supportableOnly: the supports POB marks as able to support this group's skills
+		if gem and (not p.supportableOnly or (support and canSupport)) then
+			local dps = cache.dps and cache.dps[gemId] or nil
+			local delta = (type(dps) == "number" and type(baseDps) == "number") and dps - baseDps or nil
+			all[#all + 1] = {
 				gemId = plain, name = gem.name, nameZh = tr(gem.name),
-				support = ge and ge.support and true or false,
+				support = support,
 				color = gem.color,
 				naturalMaxLevel = gem.naturalMaxLevel,
-				dps = cache.dps and cache.dps[gemId] or nil,
+				dps = dps,
 				dpsColor = cache.dpsColor and cache.dpsColor[gemId] or nil,
-				canSupport = cache.canSupport and cache.canSupport[gemId] and true or false,
+				canSupport = canSupport,
+				delta = delta,
+				pct = (delta and baseDps ~= 0) and delta / baseDps * 100 or nil,
+				order = order,
 			}
-			if #out >= limit then break end
 		end
 	end
-	return { gems = out, byDps = true, baseDps = cache.baseDPS, dpsField = cache.dpsField }
+	-- SortGemList orders by DPS only while "Sort gems by DPS" is on; this call
+	-- was asked for the DPS order, so it is applied here either way (POB's
+	-- keys: can-support first, then DPS, then the list's own order).
+	table.sort(all, function(x, y)
+		if x.canSupport ~= y.canSupport then return x.canSupport end
+		local dx, dy = x.dps or 0, y.dps or 0
+		if dx ~= dy then return dx > dy end
+		return x.order < y.order
+	end)
+	local out = {}
+	for i = 1, math.min(limit, #all) do
+		all[i].order = nil
+		out[i] = all[i]
+	end
+	return { gems = out, byDps = true, baseDps = baseDps, dpsField = field, total = #all }
 end
 
-probe("GemSelectControl sorted by DPS (PopulateGemList/UpdateSortCache/BuildList/DPSBuilder/SortGemList)", function()
+-- DPSBuilder is PoE1's (a per-frame coroutine); PoE2's UpdateSortCache does the estimates itself.
+probe("GemSelectControl sorted by DPS (PopulateGemList/UpdateSortCache/BuildList/SortGemList[, DPSBuilder])", function()
 	local c = class_of("GemSelectControl")
 	return type(c) == "table" and type(c.PopulateGemList) == "function" and type(c.UpdateSortCache) == "function"
-		and type(c.BuildList) == "function" and type(c.DPSBuilder) == "function" and type(c.SortGemList) == "function"
+		and type(c.BuildList) == "function" and type(c.SortGemList) == "function"
 end, "gemDpsSort")
+
+-- gem_candidate_tooltip{group, index, gemId}: what POB's gem picker shows when
+-- the mouse rests on a gem in its list (GemSelectControl:Draw) -- the gem's
+-- tooltip at the default level/quality and "Selecting this gem will give you:"
+-- from CalcOutputWithThisGem in that row. dps as gem_tooltip's (mode "select").
+probe("GemSelectControl:CalcOutputWithThisGem + build:AddStatComparesToTooltip (gem compare tooltips)", function()
+	local c = class_of("GemSelectControl")
+	local bm = launch.main.modes.BUILD
+	local ct = class_of("CalcsTab")
+	return type(c) == "table" and type(c.CalcOutputWithThisGem) == "function"
+		and type(bm.AddStatComparesToTooltip) == "function"
+		and type(ct) == "table" and type(ct.GetMiscCalculator) == "function"
+end, "gemCompareTooltip")
+
+function M.gem_candidate_tooltip(p)
+	local b = ensure_build()
+	if type(p) ~= "table" or type(p.gemId) ~= "string" then error("params.gemId required", 0) end
+	local gemData = b.data.gems[p.gemId]
+	if not gemData then error("unknown gem " .. p.gemId, 0) end
+	local tab = b.skillsTab
+	local ctl, g, index = gem_slot_control(b, p)
+	if not (ctl and type(ctl.CalcOutputWithThisGem) == "function" and gem_compare_ready(b)) then
+		error("this POB cannot compare gems", 0)
+	end
+	local calcFunc, calcBase = b.calcsTab:GetMiscCalculator(b)
+	if not (calcFunc and calcBase) then error("no calculator yet", 0) end
+	local field = tab.sortGemsByDPSField or "CombinedDPS"
+	-- CalcOutputWithThisGem puts the row back only when the pass returns
+	local prev = g.gemList[index]
+	local prevData, prevLevel, prevEffect
+	if prev then prevData, prevLevel, prevEffect = prev.gemData, prev.level, prev.displayEffect end
+	local restore = keep_display_gem_lists(tab)
+	local ok, output = pcall(ctl.CalcOutputWithThisGem, ctl, calcFunc, gemData, field == "FullDPS")
+	restore()
+	if not ok then
+		if prev then
+			prev.gemData, prev.level, prev.displayEffect = prevData, prevLevel, prevEffect
+		else
+			g.gemList[index] = nil
+		end
+		error(output, 0)
+	end
+	local inst = {
+		level = tab:ProcessGemLevel(gemData),
+		quality = tab.defaultGemQuality or 0,
+		qualityId = "Default",
+		count = 1,
+		enabled = true,
+		enableGlobal1 = true,
+		enableGlobal2 = true,
+		gemId = gemData.id,
+		nameSpec = gemData.name,
+		skillId = gemData.grantedEffectId,
+		displayEffect = nil,
+		gemData = gemData,
+		-- the PoE2 picker adds these two; nil on PoE1
+		corruptLevel = tab.defaultCorruptionLevel,
+		corrupted = tab.defaultCorruptionState == true or nil,
+	}
+	local gt = require("Classes.GemTooltip")
+	local tt = make("Tooltip")
+	without_wrap(function()
+		gt.AddGemTooltip(tt, b, inst)
+		tt:AddSeparator(10)
+		b:AddStatComparesToTooltip(tt, calcBase, output, "^7Selecting this gem will give you:")
+	end)
+	local dps = gem_dps_compare(field, calcBase, output)
+	dps.mode = "select"
+	return { lines = tooltip_lines(tt), header = tt.tooltipHeader, dps = dps, gemId = p.gemId }
+end
 
 function M.gem_search(p)
 	local b = ensure_build()
@@ -6722,7 +6890,7 @@ function M.gem_search(p)
 	local out = {}
 	for _, e in ipairs(gem_list(b)) do
 		if (showLegacy or not e.legacy)
-			and (not p or not p.supportOnly or e.support) and (not p or not p.activeOnly or not e.support)
+			and (not p or not (p.supportOnly or p.supportableOnly) or e.support) and (not p or not p.activeOnly or not e.support)
 			and (q == "" or e.key:find(q, 1, true) or e.keyZh:find(q, 1, true)) then
 			out[#out + 1] = { gemId = e.gemId, name = e.name, nameZh = e.nameZh, support = e.support, color = e.color, tags = e.tags, naturalMaxLevel = e.naturalMaxLevel, exceptional = e.exceptional }
 			if #out >= limit then break end

@@ -1672,6 +1672,61 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("gem_search{byDps} runs POB's gem sort (its DPS estimate per gem) for that socket",
 			      dpsOk, okGd ? gd["gems"].dump().substr(0, 240) + " ms=" + std::to_string(GetTickCount64() - tGd) : gd.dump().substr(0, 200));
 
+			// hovering a gem: its tooltip plus what removing it would do (enabled
+			// flipped for one calculator pass, then put back)
+			{
+				auto anyLine = [](const json& lines, const char* en, const char* zh) {
+					for (auto& l : lines) {
+						if (!l.is_object()) continue;
+						if (l.value("raw", "").find(en) != std::string::npos || l.value("text", "").find(zh) != std::string::npos) return true;
+					}
+					return false;
+				};
+				json stA, rt, stB, skR;
+				bool okRt = gemsOk && child.Call("get_stats", json::object(), stA, 30000) &&
+				            child.Call("gem_tooltip", json{{"group", newIdx}, {"index", 2}}, rt, 120000) &&
+				            child.Call("get_stats", json::object(), stB, 30000) && child.Call("list_skills", json::object(), skR, 60000);
+				bool rtOk = okRt && rt.contains("dps") && rt["dps"].is_object() && rt["dps"].value("mode", "") == "remove" &&
+				            rt["dps"].value("other", 0.0) < rt["dps"].value("base", 0.0) && rt["dps"].value("delta", 0.0) < 0 &&
+				            anyLine(rt["lines"], "Removing this gem will give you", u8"移除這個技能寶石") &&
+				            stA["stats"].value("TotalDPS", 0.0) == stB["stats"].value("TotalDPS", 0.0) &&
+				            skR["groups"].size() >= (size_t)newIdx && skR["groups"][newIdx - 1]["gems"].size() == 2 &&
+				            skR["groups"][newIdx - 1]["gems"][1].value("enabled", false);
+				check("gem_tooltip{dps}: removing the main skill's support lowers its DPS, the compare lines say so, and the gem/stats are untouched afterwards",
+				      rtOk, okRt ? rt["dps"].dump() : rt.dump().substr(0, 200));
+
+				json ct, skC, stC;
+				bool okCt = gemsOk &&child.Call("gem_candidate_tooltip", json{{"group", newIdx}, {"index", 3}, {"gemId", "Metadata/Items/Gems/SkillGemSupportControlledDestruction"}}, ct, 120000);
+				bool okCt2 = okCt && child.Call("list_skills", json::object(), skC, 60000) && child.Call("get_stats", json::object(), stC, 30000);
+				bool ctOk = okCt2 && ct.contains("dps") && ct["dps"].is_object() && ct["dps"].value("mode", "") == "select" &&
+				            ct["dps"].contains("base") && ct["dps"].contains("other") &&
+				            anyLine(ct["lines"], "Selecting this gem will give you", u8"選擇這個技能寶石") &&
+				            skC["groups"][newIdx - 1]["gems"].size() == 2 && stA["stats"].value("TotalDPS", 0.0) == stC["stats"].value("TotalDPS", 0.0);
+				json badCt;
+				bool okBadCt = child.Call("gem_candidate_tooltip", json{{"group", newIdx}, {"index", 3}, {"gemId", "no/such/gem"}}, badCt, 30000);
+				check("gem_candidate_tooltip: POB's picker hover (gem tooltip + \"Selecting this gem\" compare) without leaving the gem in the group; unknown gem refused",
+				      ctOk && !okBadCt, okCt ? ct["dps"].dump() + " lines=" + std::to_string(ct["lines"].size()) : ct.dump().substr(0, 200));
+
+				json sa;
+				const auto tSa = GetTickCount64();
+				bool okSa = gemsOk && child.Call("gem_search", json{{"group", newIdx}, {"index", 3}, {"query", ""}, {"byDps", true}, {"supportableOnly", true}, {"limit", 60}}, sa, 600000);
+				bool saOk = okSa && sa.value("byDps", false) && sa["gems"].size() >= 5;
+				double prev = 1e300;
+				int ups = 0;
+				if (saOk) for (auto& g : sa["gems"]) {
+					if (!g.value("support", false) || !g.value("canSupport", false) || !g.contains("dps") || !g.contains("delta")) saOk = false;
+					double d = g.value("dps", 0.0);
+					if (d > prev) saOk = false;
+					prev = d;
+					if (std::abs(g.value("delta", 0.0) - (d - sa.value("baseDps", 0.0))) > 1e-6 * (1 + std::abs(d))) saOk = false;
+					if (g.value("delta", 0.0) > 0) ups++;
+				}
+				check("gem_search{query=\"\", supportableOnly}: only supports POB marks as able to support the group, DPS descending, with delta = dps - baseDps",
+				      saOk && ups >= 1, okSa ? "n=" + std::to_string(sa["gems"].size()) + " ups=" + std::to_string(ups) + " first=" + (sa["gems"].empty() ? std::string() : sa["gems"][0].dump().substr(0, 160)) +
+				                                   " ms=" + std::to_string(GetTickCount64() - tSa)
+				                             : sa.dump().substr(0, 200));
+			}
+
 			// CopySocketGroup / PasteSocketGroup through the bridge (no clipboard)
 			json cg, pg, sk4, dpg;
 			bool okCg = gemsOk && child.Call("copy_group", json{{"index", newIdx}}, cg, 60000);
@@ -2677,6 +2732,45 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		bool okSt = okAg && child.Call("get_stats", json::object(), stats, 30000);
 		double avg = okSt ? stats["stats"].value("AverageDamage", 0.0) : 0.0;
 		check("add_group Lightning Arrow on the bow: POB calculates damage", okAg && avg > 0, "AverageDamage=" + std::to_string(avg));
+
+		// The empty add row: supports that can support the group, by the DPS
+		// PoE2's picker estimates inside UpdateSortCache (it has no DPSBuilder),
+		// and the picker hover / gem hover compares.
+		{
+			const int gi = okAg ? ag.value("index", 0) : 0;
+			json sm, sa;
+			bool okSm = gi > 0 && child.Call("set_build_field", json{{"field", "mainSocketGroup"}, {"value", gi}}, sm, 60000);
+			bool okSa = okSm && child.Call("gem_search", json{{"group", gi}, {"index", 2}, {"query", ""}, {"byDps", true}, {"supportableOnly", true}, {"limit", 60}}, sa, 600000);
+			bool saOk = okSa && sa.value("byDps", false) && sa["gems"].size() >= 3 && sa.contains("baseDps");
+			double prev = 1e300;
+			int ups = 0;
+			if (saOk) for (auto& g : sa["gems"]) {
+				if (!g.value("support", false) || !g.value("canSupport", false) || !g.contains("dps") || !g.contains("delta")) saOk = false;
+				double d = g.value("dps", 0.0);
+				if (d > prev) saOk = false;
+				prev = d;
+				if (std::abs(g.value("delta", 0.0) - (d - sa.value("baseDps", 0.0))) > 1e-6 * (1 + std::abs(d))) saOk = false;
+				if (g.value("delta", 0.0) > 0) ups++;
+			}
+			check("PoE2 gem_search{query=\"\", supportableOnly}: supports that can support the group, DPS descending, delta = dps - baseDps",
+			      saOk && ups >= 1, okSa ? "n=" + std::to_string(sa["gems"].size()) + " ups=" + std::to_string(ups) + " base=" + sa.value("baseDps", json()).dump() +
+			                                   " first=" + (sa["gems"].empty() ? std::string() : sa["gems"][0].dump().substr(0, 160))
+			                             : sa.dump().substr(0, 200));
+			json ct, sk;
+			const std::string cand = saOk ? sa["gems"][0].value("gemId", "") : "";
+			bool okCt = !cand.empty() && child.Call("gem_candidate_tooltip", json{{"group", gi}, {"index", 2}, {"gemId", cand}}, ct, 120000) &&
+			            child.Call("list_skills", json::object(), sk, 60000);
+			bool ctOk = okCt && ct.contains("dps") && ct["dps"].value("mode", "") == "select" && ct["lines"].size() >= 3 &&
+			            std::abs(ct["dps"].value("other", 0.0) - sa["gems"][0].value("dps", 0.0)) <= 0.01 * (1 + std::abs(ct["dps"].value("other", 0.0))) &&
+			            sk["groups"].size() >= (size_t)gi && sk["groups"][gi - 1]["gems"].size() == 1;
+			check("PoE2 gem_candidate_tooltip: the picker hover compare agrees with the sorted list and leaves the group as it was",
+			      ctOk, okCt ? ct["dps"].dump() + " list=" + sa["gems"][0].value("dps", json()).dump() : ct.dump().substr(0, 200));
+			json rt;
+			bool okRt = gi > 0 && child.Call("gem_tooltip", json{{"group", gi}, {"index", 1}}, rt, 120000);
+			check("PoE2 gem_tooltip{dps}: removing the group's only skill gem drops its DPS",
+			      okRt && rt.contains("dps") && rt["dps"].value("mode", "") == "remove" && rt["dps"].value("other", 0.0) < rt["dps"].value("base", 0.0),
+			      okRt ? rt["dps"].dump() : rt.dump().substr(0, 200));
+		}
 
 		int bowId = okAi ? ai["item"].value("id", 0) : 0;
 		json tt;

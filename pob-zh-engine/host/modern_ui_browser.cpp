@@ -6,6 +6,7 @@
 #include "headless_proc.h"
 #include "launcher_config.h"
 #include "pob_launch.h"
+#include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -346,6 +347,10 @@ struct Server {
 			cv.notify_all();
 		} else if (method == "host.set_title") {
 			reply(json{ {"ok", true} }); // the page sets document.title itself
+		} else if (method == "host.read_clipboard") {
+			// Same as the window: the system browser may not allow
+			// navigator.clipboard on an http:// loopback page.
+			reply(json{ {"text", ReadClipboardUtf8(nullptr)} });
 		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
 			// The one folder outside the POB install the page may open: where the
 			// launcher and the page both look for background images.

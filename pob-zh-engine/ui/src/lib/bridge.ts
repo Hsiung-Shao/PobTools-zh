@@ -229,6 +229,8 @@ export interface Caps {
   buySimilar?: boolean;
   /** The gem picker can sort by DPS (GemSelectControl's own sort cache). */
   gemDpsSort?: boolean;
+  /** The gem picker's hover compare (CalcOutputWithThisGem + AddStatComparesToTooltip). */
+  gemCompareTooltip?: boolean;
   /** The trade pane's search weight dialog. */
   tradeWeights?: boolean;
   /** The engine can turn display translation off (what F2 does). */
@@ -1162,6 +1164,25 @@ export interface GemHit {
   dps?: number;
   dpsColor?: string;
   canSupport?: boolean;
+  /** dps minus the slot's current DPS (baseDps), and that as a percentage of it. */
+  delta?: number;
+  pct?: number;
+}
+/** What a gem changes in the gem sort's DPS field (POB's own calculator pass). */
+export interface GemDps {
+  field: string;
+  base: number;
+  other: number;
+  delta: number;
+  /** absent when base is 0 */
+  pct?: number;
+  /** remove = hovering an enabled gem, enable = a disabled one, select = a picker candidate */
+  mode: "remove" | "enable" | "select";
+}
+export interface GemTooltipResult {
+  lines: TooltipLine[];
+  header?: string;
+  dps?: GemDps;
 }
 export interface GemPatch {
   nameSpec?: string;
@@ -1446,10 +1467,14 @@ export const api = {
   setGem: (group: number, index: number, p: GemPatch) => bridge.call<Committed & { gem: GemInstance }>("set_gem", { group, index, ...p }, 60000),
   deleteGem: (group: number, index: number) => bridge.call<Committed>("delete_gem", { group, index }, 60000),
   moveGem: (group: number, from: number, to: number) => bridge.call<Committed>("move_gem", { group, from, to }, 60000),
-  gemTooltip: (group: number, index: number) => bridge.call<{ lines: TooltipLine[]; header?: string }>("gem_tooltip", { group, index }, 60000),
+  gemTooltip: (group: number, index: number) => bridge.call<GemTooltipResult>("gem_tooltip", { group, index }, 60000),
+  /** POB's gem-picker hover: the candidate in that row and "Selecting this gem will give you:". */
+  gemCandidateTooltip: (group: number, index: number, gemId: string) =>
+    bridge.call<GemTooltipResult>("gem_candidate_tooltip", { group, index, gemId }, 120000),
   groupTooltip: (index: number) => bridge.call<{ lines: TooltipLine[] }>("group_tooltip", { index }, 60000),
-  gemSearch: (p: { query: string; limit?: number; supportOnly?: boolean; activeOnly?: boolean; group?: number; index?: number; byDps?: boolean }) =>
-    bridge.call<{ gems: GemHit[]; byDps?: boolean; baseDps?: number; dpsField?: string }>("gem_search", p, 600000),
+  /** byDps + group: POB's picker for that row; supportableOnly keeps the supports it marks as able to support the group. */
+  gemSearch: (p: { query: string; limit?: number; supportOnly?: boolean; activeOnly?: boolean; group?: number; index?: number; byDps?: boolean; supportableOnly?: boolean }) =>
+    bridge.call<{ gems: GemHit[]; byDps?: boolean; baseDps?: number; dpsField?: string; total?: number }>("gem_search", p, 600000),
   sharedItems: () => bridge.call<SharedItems>("shared_items", {}, 60000),
   shareItem: (id: number) => bridge.call<SharedItems>("share_item", { id }, 60000),
   shareItemSet: (id: number) => bridge.call<SharedItems>("share_item_set", { id }, 60000),
@@ -1487,6 +1512,21 @@ export const api = {
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
   getPrefs: () => bridge.call<UiPrefs>("host.get_prefs"),
   setPrefs: (p: Partial<UiPrefs>) => bridge.call<UiPrefs>("host.set_prefs", p),
+  /** The system clipboard as text: the host reads it (WebView2 prompts or refuses
+   *  navigator.clipboard), then the browser API, then "". Never throws. */
+  readClipboard: async (): Promise<string> => {
+    try {
+      const r = await bridge.call<{ text: string }>("host.read_clipboard", {}, 5000);
+      if (typeof r?.text === "string") return r.text;
+    } catch {
+      /* an older host, or the mock transport */
+    }
+    try {
+      return (await navigator.clipboard?.readText?.()) ?? "";
+    } catch {
+      return "";
+    }
+  },
   // build list management (POB's New / New Folder / Copy / Rename / Delete)
   newBuild: (name?: string, subPath?: string) => bridge.call<LoadedBuild>("new_build", { name, subPath }, 120000),
   newFolder: (subPath: string, name: string) => bridge.call<{ path: string; subPath: string }>("new_folder", { subPath, name }),

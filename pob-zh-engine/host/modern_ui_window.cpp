@@ -7,6 +7,7 @@
 #include "pob_launch.h"
 #include "bridge_gate.h"
 #include "modern_ui_browser.h"
+#include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -300,6 +301,10 @@ struct Window {
 			std::wstring t = widen(params.value("text", ""));
 			SetWindowTextW(hwnd, t.empty() ? L"PobTools" : (t + L" - PobTools").c_str());
 			reply(json{ {"ok", true} });
+		} else if (method == "host.read_clipboard") {
+			// The page's paste: WebView2 asks the user before navigator.clipboard
+			// reads (or refuses outright), so the import page reads it here.
+			reply(json{ {"text", ReadClipboardUtf8(hwnd)} });
 		} else if (method == "host.open_folder" && params.value("which", "") == "backgrounds") {
 			// The one folder outside the POB install the page may open: where the
 			// launcher and the page both look for background images.

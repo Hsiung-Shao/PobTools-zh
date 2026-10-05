@@ -2272,6 +2272,8 @@
     "Recovers {0} Mana over {1} Seconds": "{1} 秒内回复 {0} 魔力",
     "Remove this gem.": "移除这个宝石.",
     "Selecting this gem will give you:": "选择这个技能宝石会给你:",
+    "Removing this gem will give you:": "移除这个技能宝石会给你:",
+    "Enabling this gem will give you:": "启用这个技能宝石会给你:",
     "Are you sure you want to delete all socket groups in this build?": "确定要删除 BD 中的所有插槽么?",
     "Can support Strength threshold jewels": "可以选择 ^xE05030力量 ^7门槛珠宝",
     "Can support Intelligence threshold jewels": "可以选择 ^x7070FF智慧 ^7门槛珠宝",
