@@ -19,6 +19,16 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.7.9 (2026-10-05)\n"
+	u8"Fixed\n"
+	u8"　·New interface item paste: on PoE2, mods in Chinese item text such as critical hit chance were turned into PoE1 wording or wrong sentences that POB2 did not recognise.\n"
+	u8"　·New interface item paste: POB-format items without a Rarity line were rejected or treated as Unique (the rarity is now worked out from the Prefix / Suffix lines).\n"
+	u8"　·Mod translations: entries belonging to the other game had crept into the PoE1 and PoE2 mod translations and have been removed.\n"
+	u8"Added\n"
+	u8"　·New interface Skills: pointing at a gem shows how removing or enabling it changes DPS.\n"
+	u8"　·New interface Skills: when adding a support gem, the supports that fit the group are listed by DPS gain, largest first (PoE1 and PoE2).\n"
+	u8"　·New interface Import: a share code or build link on the clipboard is filled in automatically; right-click a box to replace it with the clipboard.\n"
+	u8"\n"
 	u8"v1.7.8 (2026-10-02)\n"
 	u8"Fixed\n"
 	u8"　·New interface Calcs: the socket group, active skill, skill part and calculation mode selectors under Skill details were missing, so the skill could not be picked there.\n"
