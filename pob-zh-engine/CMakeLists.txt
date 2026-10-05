@@ -502,6 +502,9 @@ if (WIN32)
         host/sig_verify.cpp
         # 搜尋字串產生器：核心 + 資料 + UI + 自檢
         host/regex_gen.cpp
+        host/regex_match.cpp
+        host/regex_numeric.cpp
+        host/regex_frag.cpp
         host/regex_data.cpp
         host/regex_state.cpp
         host/regex_tool_ui.cpp

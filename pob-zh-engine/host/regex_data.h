@@ -11,6 +11,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 struct RegexEntryDef {
@@ -28,9 +29,18 @@ struct RegexEntryDef {
 	std::vector<std::string> hiddenEn;
 };
 
+// Page kind (schema 2 `kind`, exile-appraiser regex/src/data.ts:27): mods /
+// names are corpus pages (the cover algorithm in regex_gen); numeric / sockets
+// are algorithmic pages built in code, never read from the file. A schema-1
+// file has no `kind` = mods; an unknown kind also reads as mods (data.ts:167),
+// so a newer generator still yields a usable corpus page here.
+enum class RegexPageKind { Mods, Names, Numeric, Sockets };
+
 struct RegexPageDef {
 	std::string id;
+	RegexPageKind kind = RegexPageKind::Mods;
 	std::string title;
+	std::string titleEn;             // schema 2; empty in schema 1
 	// "poe1" / "poe2". A page belongs to the game whose file it came from, and
 	// the launcher's current game only decides the ORDER: both catalogues stay
 	// visible, because someone with PoE2 selected may still want to look up a
@@ -39,6 +49,7 @@ struct RegexPageDef {
 	std::string note;
 	int limit = 250;                 // the client's search field, in characters
 	std::vector<std::string> groups;
+	std::vector<std::string> groupsEn;   // schema 2; empty in schema 1
 	std::vector<RegexEntryDef> entries;
 	// Text every item of this page carries (property labels, the base name, the
 	// flavour paragraph, the random words rare names are made of). A token that
@@ -51,6 +62,21 @@ struct RegexPageDef {
 	std::vector<std::string> namePrefixEn;
 	std::vector<std::string> nameSuffixEn;
 };
+
+// Schema 2 top-level `labels{zh,en}`: clientstrings key -> text, normalized by
+// RegexNormalizeLabel. Kept in file order (it is small; a linear lookup is fine).
+struct RegexLabels {
+	std::vector<std::pair<std::string, std::string>> zh;
+	std::vector<std::pair<std::string, std::string>> en;
+	bool present = false;            // false = schema 1 (data.ts: labels = null)
+	const std::string* Find(bool zhSide, const std::string& key) const;
+};
+
+// data.ts:175 normalizeLabel: "[Id|Text]" -> Text, "[Id]" -> Id, "{0}" -> "#".
+std::string RegexNormalizeLabel(const std::string& s);
+
+// data.ts:122 + :167 pageKind: "mods"/"names"/"numeric"/"sockets"; anything else = Mods.
+RegexPageKind RegexPageKindFrom(const std::string& s);
 
 class RegexDataset {
 public:
@@ -68,9 +94,14 @@ public:
 	// same to anyone who does not already know which files ship.
 	bool HasGame(const std::string& game) const;
 
+	// The `labels` of that game's file; nullptr when the file is not loaded.
+	// A schema-1 file loads with present == false.
+	const RegexLabels* Labels(const std::string& game) const;
+
 private:
 	bool LoadOne(const std::wstring& exeDir, const std::wstring& game, std::string* err);
 
 	std::vector<RegexPageDef> pages_;
+	std::vector<std::pair<std::string, RegexLabels>> labels_;   // game -> labels
 	std::string source_;
 };
