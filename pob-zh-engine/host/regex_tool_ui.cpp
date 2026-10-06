@@ -46,6 +46,15 @@
 // each game has a vendor page. Their rows are an input + a fragment, not a line
 // to cut tokens from. Their ticks and values live in memory only for now; saving
 // them (regex_ui.json schema 5) is a later step, so the file format is unchanged.
+//
+// Multi-page merge (R4, exile-appraiser combine.ts / RegexCombined.vue): every
+// page of the current game with ticks, plus free-typed custom terms and excludes,
+// go into ONE string (RegexAlgo::Combine). The output switches between that
+// merged string and the current page's own ("合併 / 單頁", B's outScope, default
+// merged); a "已選（合併）" view lists which pages take part, what each costs,
+// the custom / exclude chips and the merge conflicts. Ticks live per page, so
+// they survive switching pages either way. Custom text, excludes and the scope
+// are memory only for now (R5 extends regex_ui.json).
 
 namespace {
 
@@ -212,7 +221,8 @@ public:
 		const float avail = ImGui::GetContentRegionAvail().x;
 		const float leftW = std::max(340.0f, avail * 0.54f);
 		ImGui::BeginChild("##rx_left", ImVec2(leftW, 0), false);
-		drawList();
+		if (view_ == View::Combined) drawCombinedView();
+		else drawList();
 		ImGui::EndChild();
 		ImGui::SameLine();
 		ImGui::BeginChild("##rx_right", ImVec2(0, 0), false);
@@ -315,6 +325,7 @@ private:
 			ps.corpusReady = false;
 			ps.dirty = true;
 		}
+		combinedDirty_ = true;
 	}
 	std::string pageId() const
 	{
@@ -438,6 +449,7 @@ private:
 	void picksChanged()
 	{
 		st().dirty = true;
+		combinedDirty_ = true;
 		st().filterDirty = true;   // ticked rows move to the top; see refreshFilter
 		copied_ = false;
 		RegexPagePicks& p = state_.PicksFor(pageId());
@@ -455,6 +467,7 @@ private:
 	void algoChanged(int idx)
 	{
 		pages_[idx].dirty = true;
+		combinedDirty_ = true;
 		if (refs_[idx].IsSection()) {
 			// The section's output is part of its host page's string.
 			for (int i = 0; i < (int)refs_.size(); i++)
@@ -482,14 +495,31 @@ private:
 			ImGui::EndCombo();
 		}
 		ImGui::SameLine(0, 16 * host_->scale);
+		// RegexPanel.vue view seg: the merged overview or the page's own list.
+		{
+			const std::string merged = u8"已選（合併）· " + std::to_string(combineOrderIdx(true).size()) +
+			                           u8" 頁###rx_view_combined";
+			if (segButton(merged.c_str(), view_ == View::Combined)) view_ = View::Combined;
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"目前遊戲所有有勾選的清單、自訂文字與排除詞，合成一串");
+			ImGui::SameLine(0, 2 * host_->scale);
+			if (segButton(u8"單頁清單###rx_view_page", view_ == View::Page)) view_ = View::Page;
+		}
+		ImGui::SameLine(0, 16 * host_->scale);
 		ImGui::SetNextItemWidth(170 * host_->scale);
 		if (ImGui::BeginCombo(u8"清單", refs_[page_].Title().c_str())) {
 			// Numeric sections are not pages of their own: they sit on top of
-			// their host page (exile-appraiser step 32, listedPages).
+			// their host page (exile-appraiser step 32, listedPages). The count
+			// includes the section, as store.ts pagePickCount does.
 			for (size_t i = 0; i < refs_.size(); i++) {
 				if (refs_[i].Game() != selGame_ || refs_[i].IsSection()) continue;
-				if (ImGui::Selectable(refs_[i].Title().c_str(), page_ == (int)i))
+				const int n = pagePickCount((int)i);
+				const std::string label = refs_[i].Title() + (n ? u8"（" + std::to_string(n) + u8"）" : std::string()) +
+				                          "###rx_pg" + std::to_string(i);
+				if (ImGui::Selectable(label.c_str(), page_ == (int)i)) {
 					switchPage((int)i);
+					view_ = View::Page;   // store.ts switchPage: back to the page's list
+				}
 			}
 			ImGui::EndCombo();
 		}
@@ -508,12 +538,16 @@ private:
 		if (changed && m != (int)mode_) {
 			mode_ = (RegexGen::Mode)m;
 			st().dirty = true;
+			combinedDirty_ = true;
+			copied_ = false;
 			state_.mode = modeId();
 			stateDirty_ = true;
 		}
 
-		ImGui::SameLine(0, 24 * host_->scale);
-		ImGui::TextDisabled(u8"已勾選 %d / %d", pickCount(), (int)refs_[page_].Size());
+		if (view_ == View::Page) {
+			ImGui::SameLine(0, 24 * host_->scale);
+			ImGui::TextDisabled(u8"已勾選 %d / %d", pickCount(), (int)refs_[page_].Size());
+		}
 
 		// Right-hand end of the header row. It belongs to the whole panel rather
 		// than to the list toolbar: it changes how both columns read, and the
@@ -538,7 +572,7 @@ private:
 		}
 
 		const std::string& note = pageNote();
-		if (!note.empty()) {
+		if (view_ == View::Page && !note.empty()) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 			ImGui::TextWrapped("%s", note.c_str());
 			ImGui::PopStyleColor();
@@ -724,21 +758,51 @@ private:
 		PageState& s = st();
 		if (!isAlgo() && !s.corpusReady) buildCorpus();
 		if (s.dirty) recompute();
+		// RegexPanel.vue `out`: the merged string or this page's own.
+		const RegexAlgo::CombineResult& out = scopeCombined_ ? combinedAll() : s.combined;
 
+		ImGui::AlignTextToFramePadding();
 		ImGui::TextDisabled(u8"貼進遊戲搜尋列");
-		std::string q = s.combined.query;
+		{
+			// The out-scope seg, right-aligned on the same row.
+			const char* a = u8"合併";
+			const char* b = u8"單頁";
+			const ImGuiStyle& style = ImGui::GetStyle();
+			const float w = ImGui::CalcTextSize(a).x + ImGui::CalcTextSize(b).x + style.FramePadding.x * 4 + 2 * host_->scale;
+			ImGui::SameLine();
+			const float after = ImGui::GetCursorPosX();
+			ImGui::SameLine(std::max(after, ImGui::GetContentRegionMax().x - w));
+			if (segButton(a, scopeCombined_)) setScope(true);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"合併 = 所有有勾選的清單合成一串；單頁 = 只有目前這份清單");
+			ImGui::SameLine(0, 2 * host_->scale);
+			if (segButton(b, !scopeCombined_)) setScope(false);
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"合併 = 所有有勾選的清單合成一串；單頁 = 只有目前這份清單");
+		}
+		std::string q = out.query;
 		ImGui::InputTextMultiline("##rx_out", &q, ImVec2(-1, 70 * host_->scale),
 		                          ImGuiInputTextFlags_ReadOnly);
 
-		const int len = s.combined.length;
-		const int lim = limit();
+		// combine.ts `limit`: the smallest limit of the pages taking part (250).
+		const int len = out.length;
+		const int lim = out.limit;
 		ImGui::PushStyleColor(ImGuiCol_Text, len > lim ? kBad : (len > lim * 4 / 5 ? kWarn : kGood));
 		ImGui::Text(u8"長度 %d / %d 字", len, lim);
 		ImGui::PopStyleColor();
-		if (len > lim) {
+		// RegexPanel.vue partsText: what each part costs, when more than one part.
+		if (scopeCombined_ && out.perPage.size() + (out.custom.empty() ? 0 : 1) + (out.excludes.empty() ? 0 : 1) > 1) {
+			std::string parts;
+			for (const RegexAlgo::PageContribution& c : out.perPage)
+				parts += (parts.empty() ? "" : u8" · ") + pageTitleInGame(c.id) + " " + std::to_string(c.length);
+			if (!out.custom.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"自訂文字 ") + std::to_string(out.customLength);
+			if (!out.excludes.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"排除詞 ") + std::to_string(out.excludesLength);
 			ImGui::SameLine();
-			ImGui::TextColored(kBad, u8"超過上限，請減少勾選");
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextWrapped("%s", parts.c_str());
+			ImGui::PopStyleColor();
 		}
+		if (len > lim) ImGui::TextColored(kBad, u8"超過上限，請減少勾選（遊戲搜尋列最多 %d 字）", lim);
 		// Whatever the panel last did, said next to the thing it changed. It used
 		// to sit at the very top, three sections away from the string it was
 		// talking about.
@@ -748,9 +812,9 @@ private:
 			if (ImGui::SmallButton(u8"知道了###rx_notice")) notice_.clear();
 		}
 
-		ImGui::BeginDisabled(s.combined.query.empty());
+		ImGui::BeginDisabled(out.query.empty());
 		if (ImGui::Button(u8"複製", ImVec2(90 * host_->scale, 0))) {
-			copyRequest_ = s.combined.query;
+			copyRequest_ = out.query;
 			copied_ = false;
 		}
 		ImGui::EndDisabled();
@@ -770,6 +834,21 @@ private:
 		if (copied_) {
 			ImGui::SameLine();
 			ImGui::TextColored(kGood, u8"已複製");
+		}
+
+		// Merged: the details live in the merged view (RegexCombined.vue); here
+		// only how many conflicts there are, and a way there.
+		if (scopeCombined_) {
+			if (!out.conflicts.empty()) {
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextColored(kWarn, u8"%d 個合併衝突", (int)out.conflicts.size());
+				if (view_ != View::Combined) {
+					ImGui::SameLine();
+					if (ImGui::SmallButton(u8"查看###rx_see_combined")) view_ = View::Combined;
+				}
+			}
+			if (!out.custom.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
+			return;
 		}
 
 		// Two things the player cannot check for themselves, so both are stated
@@ -1120,6 +1199,7 @@ private:
 		const int first = firstPageOf(g);
 		if (first < 0) return;
 		selGame_ = g;
+		combinedDirty_ = true;   // the merge is per game
 		switchPage(first);
 		state_.game = selGame_;
 		stateDirty_ = true;
@@ -1516,6 +1596,318 @@ private:
 		ImGui::Separator();
 	}
 
+	// ---- multi-page merge (R4) ---------------------------------------------------
+	//
+	// exile-appraiser store.ts `combined` / RegexCombined.vue. Everything below
+	// is per game: the merge only ever takes the selected game's pages.
+
+	// The page's ticks as indices (corpus or algorithmic).
+	std::vector<int> picksOf(int idx) const
+	{
+		if (refs_[idx].algo) return pages_[idx].algo.Picks();
+		std::vector<int> out;
+		for (int i = 0; i < (int)pages_[idx].picked.size(); i++)
+			if (pages_[idx].picked[i]) out.push_back(i);
+		return out;
+	}
+
+	// pages/index.ts:55 combineOrder over the selected game, as indices into
+	// refs_: listed pages in order, each host followed by its section.
+	// embed.ts:35 combineSels keeps only those with ticks (`pickedOnly`).
+	std::vector<int> combineOrderIdx(bool pickedOnly) const
+	{
+		std::vector<int> out;
+		for (int i = 0; i < (int)refs_.size(); i++) {
+			if (refs_[i].Game() != selGame_ || refs_[i].IsSection()) continue;
+			out.push_back(i);
+			const int sec = sectionIndexOf(i);
+			if (sec >= 0) out.push_back(sec);
+		}
+		if (pickedOnly)
+			out.erase(std::remove_if(out.begin(), out.end(), [&](int i) { return picksOf(i).empty(); }), out.end());
+		return out;
+	}
+
+	// store.ts pagePickCount: a page's ticks plus its section's.
+	int pagePickCount(int idx) const
+	{
+		int n = (int)picksOf(idx).size();
+		const int sec = sectionIndexOf(idx);
+		if (sec >= 0) n += pages_[sec].algo.Count();
+		return n;
+	}
+
+	// The page's corpus in the output language, built on first use (the merge
+	// needs every ticked page's, not just the one on screen).
+	void ensureCorpus(int idx)
+	{
+		PageState& ps = pages_[idx];
+		if (!refs_[idx].corpus || ps.corpusReady) return;
+		RegexAlgo::BuildPageCorpus(*refs_[idx].corpus, fragLang(), ps.corpus);
+		ps.corpusReady = true;
+		ps.dirty = true;
+	}
+
+	// store.ts `combined`: every page of the game with ticks + custom + excludes.
+	const RegexAlgo::CombineResult& combinedAll()
+	{
+		if (!combinedDirty_) return combined_;
+		std::vector<RegexAlgo::CombineSel> sels;
+		for (int i : combineOrderIdx(true)) {
+			RegexAlgo::CombineSel sel;
+			sel.page = refs_[i];
+			sel.picks = picksOf(i);
+			if (refs_[i].algo) {
+				sel.values = &pages_[i].algo.values;
+			} else {
+				ensureCorpus(i);
+				sel.corpus = &pages_[i].corpus;
+			}
+			sels.push_back(std::move(sel));
+		}
+		combined_ = RegexAlgo::Combine(fragLang(), mode_, sels, custom_, excludes_, &unions_);
+		combinedDirty_ = false;
+		return combined_;
+	}
+
+	void setScope(bool combined)
+	{
+		if (combined == scopeCombined_) return;
+		scopeCombined_ = combined;
+		copied_ = false;
+	}
+
+	// A page title within the selected game (gem_names / vendor_bases exist in both).
+	std::string pageTitleInGame(const std::string& id) const
+	{
+		for (const RegexAlgo::PageRef& p : refs_)
+			if (p.Id() == id && p.Game() == selGame_) return p.Title();
+		return pageTitleById(id);
+	}
+
+	// pages/index.ts:45 hostIdOf, as an index: a section -> its host page.
+	int hostIndexOf(int idx) const
+	{
+		if (!refs_[idx].IsSection()) return idx;
+		for (int i = 0; i < (int)refs_.size(); i++)
+			if (refs_[i].corpus && refs_[i].Id() == refs_[idx].algo->sectionOf && refs_[i].Game() == refs_[idx].Game())
+				return i;
+		return idx;
+	}
+
+	// store.ts clearAllPicks: every page of the game, values kept.
+	void clearAllPicks()
+	{
+		for (int i : combineOrderIdx(true)) {
+			PageState& ps = pages_[i];
+			if (refs_[i].algo) {
+				std::fill(ps.algo.picked.begin(), ps.algo.picked.end(), (char)0);
+			} else {
+				std::fill(ps.picked.begin(), ps.picked.end(), (char)0);
+				RegexPagePicks& saved = state_.PicksFor(refs_[i].Id());
+				saved.keys.clear();
+				saved.alt.clear();
+				stateDirty_ = true;
+				saveFailed_ = false;
+			}
+			ps.dirty = true;
+			ps.filterDirty = true;
+		}
+		// A host's single-page output carries its section.
+		for (PageState& ps : pages_) ps.dirty = true;
+		combinedDirty_ = true;
+		copied_ = false;
+		notice_ = u8"已清除這個遊戲所有清單的勾選（數值條件的數值保留）。";
+	}
+
+	// store.ts addCustom / removeCustom: trimmed, no duplicates.
+	bool addChip(std::vector<std::string>& list, std::string& draft)
+	{
+		const std::string t = RegexAlgo::JsTrim(draft);
+		if (t.empty() || std::find(list.begin(), list.end(), t) != list.end()) return false;
+		list.push_back(t);
+		draft.clear();
+		combinedDirty_ = true;
+		copied_ = false;
+		return true;
+	}
+
+	void drawChips(const char* id, const char* title, const char* hint, const char* placeholder,
+	               std::vector<std::string>& list, std::string& draft)
+	{
+		ImGui::PushID(id);
+		ImGui::TextUnformatted(title);
+		ImGui::SameLine();
+		ImGui::TextDisabled("%s", hint);
+		int remove = -1;
+		const float right = ImGui::GetContentRegionMax().x;
+		for (int i = 0; i < (int)list.size(); i++) {
+			ImGui::PushID(i);
+			// A chip: the text and its own remove button, wrapped like words.
+			const float w = ImGui::CalcTextSize(list[i].c_str()).x + ImGui::GetFrameHeight() +
+			                ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
+			if (i > 0) {
+				ImGui::SameLine();
+				if (ImGui::GetCursorPosX() + w > right) ImGui::NewLine();
+			}
+			ImGui::BeginGroup();
+			// Plain text, not a button label: typed text may contain "##".
+			ImGui::TextUnformatted(list[i].c_str());
+			ImGui::SameLine(0, 1 * host_->scale);
+			if (ImGui::SmallButton(u8"×")) remove = i;
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"移除");
+			ImGui::EndGroup();
+			ImGui::PopID();
+		}
+		if (remove >= 0) {
+			list.erase(list.begin() + remove);
+			combinedDirty_ = true;
+			copied_ = false;
+		}
+		ImGui::SetNextItemWidth(180 * host_->scale);
+		const bool entered = ImGui::InputTextWithHint("##draft", placeholder, &draft, ImGuiInputTextFlags_EnterReturnsTrue);
+		ImGui::SameLine();
+		ImGui::BeginDisabled(RegexAlgo::JsTrim(draft).empty());
+		const bool clicked = ImGui::SmallButton(u8"加入");
+		ImGui::EndDisabled();
+		if ((entered || clicked) && addChip(list, draft) && entered) ImGui::SetKeyboardFocusHere(-1);
+		ImGui::PopID();
+	}
+
+	// combine.ts:46 conflict kinds, worded as RegexCombined.vue's i18n.
+	std::string conflictText(const RegexAlgo::Conflict& c) const
+	{
+		using RegexAlgo::ConflictKind;
+		const std::string page = c.page.empty() ? std::string() : pageTitleInGame(c.page);
+		switch (c.kind) {
+		case ConflictKind::Extra: return page + u8"：也會選到未勾選的「" + c.text + u8"」";
+		case ConflictKind::Missing: return page + u8"：「" + c.text + u8"」沒被選到";
+		case ConflictKind::Ambient: return u8"片段「" + c.text + u8"」會中每件物品都有的文字";
+		case ConflictKind::Fragment: return page + u8"：條件片段會誤中詞綴行（" + c.text + u8"）";
+		case ConflictKind::Exclude: return page + u8"：排除詞與已勾選的詞綴衝突（" + c.text + u8"）";
+		case ConflictKind::Invalid: return page + u8"：「" + c.text + u8"」的輸入不成立，已略過";
+		}
+		return c.text;
+	}
+
+	// RegexCombined.vue: which pages take part and what each costs, the custom /
+	// exclude chips, and the merge conflicts.
+	void drawCombinedView()
+	{
+		using namespace RegexAlgo;
+		const CombineResult& r = combinedAll();
+		const std::vector<int> picked = combineOrderIdx(true);
+
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted((std::string(u8"已選（合併）· ") + GameLabel(selGame_)).c_str());
+		ImGui::SameLine();
+		const char* clearLabel = u8"全部清除";
+		ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
+		                         ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(clearLabel).x -
+		                         ImGui::GetStyle().FramePadding.x * 2));
+		ImGui::BeginDisabled(picked.empty());
+		if (ImGui::SmallButton(clearLabel)) clearAllPicks();
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(u8"取消這個遊戲所有清單（含數值條件）的勾選；自訂文字與排除詞保留");
+
+		ImGui::BeginChild("##rx_comb", ImVec2(0, 0), true);
+		if (picked.empty()) {
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextWrapped(u8"還沒有勾選任何清單。切到「單頁清單」勾選，勾好的清單會在這裡合成一串。");
+			ImGui::PopStyleColor();
+		} else {
+			const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH |
+			                              ImGuiTableFlags_RowBg;
+			if (ImGui::BeginTable("##rx_comb_pages", 4, flags)) {
+				ImGui::TableSetupColumn(u8"清單", ImGuiTableColumnFlags_WidthStretch, 2.4f);
+				ImGui::TableSetupColumn(u8"勾選", ImGuiTableColumnFlags_WidthStretch, 0.7f);
+				ImGui::TableSetupColumn(u8"貢獻長度", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+				ImGui::TableSetupColumn(u8"無法單獨指定", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+				ImGui::TableHeadersRow();
+				int jump = -1;
+				for (int i : picked) {
+					const PageContribution* c = nullptr;
+					for (const PageContribution& x : r.perPage)
+						if (x.id == refs_[i].Id()) c = &x;
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::PushID(i);
+					// Clicking a row goes to that page (a section: its host page).
+					if (ImGui::Selectable(refs_[i].Title().c_str(), false)) jump = hostIndexOf(i);
+					if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"到這份清單");
+					if (refs_[i].algo) {
+						ImGui::SameLine();
+						ImGui::TextDisabled(u8"數值 / 條件");
+					}
+					ImGui::PopID();
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d", (int)picksOf(i).size());
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%d", c ? c->length : 0);
+					ImGui::TableSetColumnIndex(3);
+					const int un = c ? c->unresolved : 0;
+					if (un > 0) ImGui::TextColored(kWarn, "%d", un);
+					else ImGui::Text("0");
+				}
+				if (!r.custom.empty()) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextUnformatted(u8"自訂文字");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d", (int)r.custom.size());
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%d", r.customLength);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::TextDisabled(u8"—");
+				}
+				if (!r.excludes.empty()) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::TextUnformatted(u8"排除詞");
+					ImGui::TableSetColumnIndex(1);
+					ImGui::Text("%d", (int)r.excludes.size());
+					ImGui::TableSetColumnIndex(2);
+					ImGui::Text("%d", r.excludesLength);
+					ImGui::TableSetColumnIndex(3);
+					ImGui::TextDisabled(u8"—");
+				}
+				ImGui::EndTable();
+				if (jump >= 0) {
+					switchPage(jump);
+					view_ = View::Page;
+				}
+			}
+		}
+
+		ImGui::Spacing();
+		drawChips("rx_custom", u8"自訂文字", u8"每項各自一個條件（同時成立），原樣比對", u8"輸入文字後按 Enter",
+		          custom_, customDraft_);
+		if (!custom_.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
+		ImGui::Spacing();
+		drawChips("rx_excludes", u8"排除詞", u8"併進唯一的排除條件（!）：有其中任一個就不選", u8"例如：反射",
+		          excludes_, excludeDraft_);
+
+		if (!r.conflicts.empty()) {
+			ImGui::Spacing();
+			const std::string head = std::to_string(r.conflicts.size()) + u8" 個合併衝突###rx_conflicts";
+			ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
+			const bool open = ImGui::CollapsingHeader(head.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+			ImGui::PopStyleColor();
+			if (open) {
+				// Merging unrelated pages can report thousands of `extra` lines;
+				// the first few hundred say everything the player can act on.
+				const size_t shown = std::min<size_t>(r.conflicts.size(), 300);
+				ImGui::PushTextWrapPos(0.0f);
+				for (size_t k = 0; k < shown; k++) ImGui::BulletText("%s", conflictText(r.conflicts[k]).c_str());
+				ImGui::PopTextWrapPos();
+				if (r.conflicts.size() > shown)
+					ImGui::TextDisabled(u8"（另有 %d 個未列出）", (int)(r.conflicts.size() - shown));
+			}
+		}
+		ImGui::EndChild();
+	}
+
 	const ToolPanelHost* host_ = nullptr;
 	std::wstring exeDir_, game_;
 	RegexDataset data_;
@@ -1525,6 +1917,15 @@ private:
 	std::vector<RegexAlgo::PageRef> refs_;
 	// Host page ids whose numeric section is folded. Memory only for now.
 	std::set<std::string> collapsed_;
+	// R4 merge. Memory only for now (R5 extends regex_ui.json with them).
+	enum class View { Page, Combined };
+	View view_ = View::Page;           // store.ts panelView, default the page list
+	bool scopeCombined_ = true;        // state.ts outScope, default 'combined'
+	std::vector<std::string> custom_, excludes_;
+	std::string customDraft_, excludeDraft_;
+	RegexAlgo::CombineResult combined_;
+	bool combinedDirty_ = true;
+	RegexAlgo::UnionCorpusCache unions_;
 	bool dataOk_ = false;
 	std::string dataErr_;
 	std::string selGame_ = "poe1";   // which game's lists are showing

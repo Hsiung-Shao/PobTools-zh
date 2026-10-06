@@ -6,10 +6,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <set>
 
 // Port of exile-appraiser regex/src: pages/numeric-pages.ts, pages/vendor-pages.ts,
-// pages/index.ts, sections.ts, view.ts, combine.ts (single page). File:line in the
+// pages/index.ts, sections.ts, view.ts, combine.ts. File:line in the
 // comments refer to those files at 0155244.
 
 namespace RegexAlgo {
@@ -663,7 +664,7 @@ std::vector<SummaryItem> SectionSummary(const AlgoPage& page, const std::vector<
 	return out;
 }
 
-// ---- single-page output ------------------------------------------------------
+// ---- combine ------------------------------------------------------
 
 void BuildPageCorpus(const RegexPageDef& page, Lang lang, RegexGen::Corpus& out)
 {
@@ -704,18 +705,125 @@ const char* ConflictKindId(ConflictKind k)
 	return "?";
 }
 
-CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<CombineSel>& sels)
+std::string JsTrim(const std::string& t)
+{
+	// JS WhiteSpace + LineTerminator, on code points.
+	std::u32string cps;
+	RxDecodeUtf8(t, cps);
+	auto isWs = [](char32_t c) {
+		return c == 0x09 || c == 0x0A || c == 0x0B || c == 0x0C || c == 0x0D || c == 0x20 || c == 0xA0 ||
+		       c == 0x1680 || (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F ||
+		       c == 0x205F || c == 0x3000 || c == 0xFEFF;
+	};
+	size_t a = 0, b = cps.size();
+	while (a < b && isWs(cps[a])) a++;
+	while (b > a && isWs(cps[b - 1])) b--;
+	// Trimming only removes whole code points at the ends, so cut the UTF-8 at
+	// the same places: the byte length of the dropped code points.
+	auto bytesOf = [](char32_t c) -> size_t { return c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; };
+	size_t lead = 0, trail = 0;
+	for (size_t i = 0; i < a; i++) lead += bytesOf(cps[i]);
+	for (size_t i = b; i < cps.size(); i++) trail += bytesOf(cps[i]);
+	return (lead + trail >= t.size()) ? std::string() : t.substr(lead, t.size() - lead - trail);
+}
+
+// combine.ts:85 escapeTerm
+std::string EscapeTerm(const std::string& s)
+{
+	// s.replace(/"/g, '').trim()
+	std::string q;
+	for (char c : s)
+		if (c != '"') q += c;
+	const std::string t = JsTrim(q);
+	// .replace(/[\\^$.|?*+()[\]{}]/g, c => '\\' + c)
+	static const std::string kSpecial = "\\^$.|?*+()[]{}";
+	std::string out;
+	for (char c : t) {
+		if (kSpecial.find(c) != std::string::npos) out += '\\';
+		out += c;
+	}
+	return (!out.empty() && out[0] == '!') ? "\\" + out : out;
+}
+
+namespace {
+
+// data.ts entryLines: the lines in `lang`, else the other language; hidden text
+// follows the language the entry ended up in.
+void EntryLines(const RegexEntryDef& d, Lang lang, RegexGen::Entry& e)
+{
+	const bool zh = (lang == Lang::Zh);
+	const std::vector<std::string>& want = zh ? d.zh : d.en;
+	const std::vector<std::string>& fallback = zh ? d.en : d.zh;
+	const bool useWant = !want.empty();
+	e.texts = useWant ? want : fallback;
+	e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+}
+
+// data.ts pageAmbient, appended (combine.ts:126-129).
+void AppendAmbient(const RegexPageDef& p, Lang lang, RegexGen::Ambient& amb)
+{
+	const bool zh = (lang == Lang::Zh);
+	const auto add = [](std::vector<std::string>& to, const std::vector<std::string>& from) {
+		to.insert(to.end(), from.begin(), from.end());
+	};
+	add(amb.lines, zh ? p.ambientZh : p.ambientEn);
+	add(amb.nameLeft, zh ? p.namePrefixZh : p.namePrefixEn);
+	add(amb.nameRight, zh ? p.nameSuffixZh : p.nameSuffixEn);
+}
+
+} // namespace
+
+// combine.ts:108 unionCorpus (the cached, several-page branch; :113 lookup,
+// :132 unshift, :133 keep 4)
+const UnionCorpusCache::Union& UnionCorpusCache::Get(const std::vector<const RegexPageDef*>& pages, Lang lang)
+{
+	for (const std::unique_ptr<Union>& u : items_)
+		if (u->lang == lang && u->pages == pages) return *u;   // find() does not reorder
+	auto u = std::make_unique<Union>();
+	u->pages = pages;
+	u->lang = lang;
+	std::vector<RegexGen::Entry> entries;
+	RegexGen::Ambient amb;
+	for (const RegexPageDef* p : pages) {
+		u->offsets.push_back((int)entries.size());
+		for (const RegexEntryDef& d : p->entries) {
+			RegexGen::Entry e;
+			e.id = p->id + ":" + d.id;
+			EntryLines(d, lang, e);
+			entries.push_back(std::move(e));
+			u->owner.emplace_back(p->id, d.id);
+		}
+		AppendAmbient(*p, lang, amb);
+	}
+	u->corpus.Reset(std::move(entries), std::move(amb));
+	items_.insert(items_.begin(), std::move(u));
+	if (items_.size() > 4) items_.pop_back();
+	return *items_.front();
+}
+
+// combine.ts:148 combine
+CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineSel>& sels,
+                      const std::vector<std::string>& customIn, const std::vector<std::string>& excludesIn,
+                      UnionCorpusCache* cache)
 {
 	using RegexGen::Mode;
 	CombineResult res;
 	std::vector<std::string> anyTokens, allTerms, algoTerms, noneTokens, modTokens;
 	struct AlgoFrag { std::string page, entry, frag; OwnLineFn own; };
 	std::vector<AlgoFrag> algoFrags;
-	const CombineSel* corpusSel = nullptr;
-	std::vector<int> corpusPicks, corpusUnresolved;
+	// combine.ts:157-158 corpusSels / corpusUnresolved
+	struct CorpusPart {
+		const RegexPageDef* page;
+		const RegexGen::Corpus* corpus;
+		std::vector<int> picks, unresolved;
+	};
+	std::vector<CorpusPart> corpusSels;
+	// Corpora built here for a sel that came without one (stable addresses).
+	std::vector<std::unique_ptr<RegexGen::Corpus>> owned;
 	int limit = 250;
 
 	for (const CombineSel& sel : sels) {
+		// combine.ts:163 dedupe, keep integers in range, sort
 		const int n = (int)sel.page.Size();
 		std::set<int> uniq;
 		for (int i : sel.picks)
@@ -724,6 +832,7 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 		if (picks.empty()) continue;
 		limit = std::min(limit, sel.page.Limit() ? sel.page.Limit() : 250);
 		if (sel.page.algo) {
+			// combine.ts:167-186 algorithmic page: each pick is a term of its own
 			const AlgoPage& p = *sel.page.algo;
 			PageContribution c;
 			c.id = p.id;
@@ -747,10 +856,16 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 			res.perPage.push_back(std::move(c));
 			continue;
 		}
+		// combine.ts:188-199 corpus page
 		const RegexPageDef& p = *sel.page.corpus;
-		if (p.kind != RegexPageKind::Mods && p.kind != RegexPageKind::Names) continue;
-		if (!sel.corpus) continue;
-		RegexGen::Result r = sel.corpus->Build(picks, mode);
+		if (p.kind != RegexPageKind::Mods && p.kind != RegexPageKind::Names) continue;   // isCorpusPage
+		const RegexGen::Corpus* corpus = sel.corpus;
+		if (!corpus) {
+			owned.push_back(std::make_unique<RegexGen::Corpus>());
+			BuildPageCorpus(p, lang, *owned.back());
+			corpus = owned.back().get();
+		}
+		RegexGen::Result r = corpus->Build(picks, mode);
 		modTokens.insert(modTokens.end(), r.tokens.begin(), r.tokens.end());
 		if (mode == Mode::Any) anyTokens.insert(anyTokens.end(), r.tokens.begin(), r.tokens.end());
 		else if (mode == Mode::None) noneTokens.insert(noneTokens.end(), r.tokens.begin(), r.tokens.end());
@@ -764,15 +879,27 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 		for (const std::string& t : r.tokens)
 			c.length += RegexGen::CharCount(mode == Mode::All ? QuoteIfNeeded(t) : t) + 1;
 		res.perPage.push_back(std::move(c));
-		if (!corpusSel) {
-			corpusSel = &sel;
-			corpusPicks = picks;
-			corpusUnresolved = r.unresolved;
+		corpusSels.push_back({&p, corpus, picks, r.unresolved});
+		if (!res.hasCorpus) {
 			res.corpusResult = std::move(r);
 			res.hasCorpus = true;
 		}
 	}
 
+	// combine.ts:202 custom text: escaped, a term of its own, unverified
+	for (const std::string& t : customIn) {
+		CustomTerm c{t, EscapeTerm(t)};
+		if (!c.term.empty()) res.custom.push_back(std::move(c));
+	}
+	// combine.ts:204-205 excludes join the none term (a leading '!' is escaped
+	// too, or the first exclude would stack with the term's own '!' into "!!")
+	for (const std::string& t : excludesIn) {
+		ExcludeToken x{t, EscapeTerm(t)};
+		if (!x.token.empty()) res.excludes.push_back(std::move(x));
+	}
+	for (const ExcludeToken& x : res.excludes) noneTokens.push_back(x.token);
+
+	// combine.ts:207-211 order: any, all, algorithmic, custom, none
 	std::vector<std::string> terms;
 	if (!anyTokens.empty()) {
 		std::string t = "\"";
@@ -781,6 +908,7 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 	}
 	terms.insert(terms.end(), allTerms.begin(), allTerms.end());
 	terms.insert(terms.end(), algoTerms.begin(), algoTerms.end());
+	for (const CustomTerm& c : res.custom) terms.push_back(QuoteIfNeeded(c.term));
 	if (!noneTokens.empty()) {
 		std::string t = "\"!";
 		Join(t, noneTokens, "|");
@@ -801,36 +929,64 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 		}
 	}
 
+	// combine.ts:213-266 verification over the union of the corpus pages
 	res.check.ok = true;
-	if (corpusSel) {
-		const RegexGen::Corpus& corpus = *corpusSel->corpus;
-		const std::string& pid = corpusSel->page.Id();
-		res.check = corpus.Verify(corpusPicks, res.verifyQuery);
-		const std::set<int> unresolvedSet(corpusUnresolved.begin(), corpusUnresolved.end());
+	if (!corpusSels.empty()) {
+		// combine.ts:109-111 one page: its own corpus; several: the (cached) union
+		const RegexGen::Corpus* corpus = nullptr;
+		std::vector<int> offsets;
+		std::vector<std::pair<std::string, std::string>> ownerOne;
+		const std::vector<std::pair<std::string, std::string>>* owner = nullptr;
+		UnionCorpusCache localCache;
+		if (corpusSels.size() == 1) {
+			corpus = corpusSels[0].corpus;
+			offsets = {0};
+			for (const RegexEntryDef& d : corpusSels[0].page->entries) ownerOne.emplace_back(corpusSels[0].page->id, d.id);
+			owner = &ownerOne;
+		} else {
+			std::vector<const RegexPageDef*> pages;
+			for (const CorpusPart& s : corpusSels) pages.push_back(s.page);
+			const UnionCorpusCache::Union& u = (cache ? *cache : localCache).Get(pages, lang);
+			corpus = &u.corpus;
+			offsets = u.offsets;
+			owner = &u.owner;
+		}
+		std::vector<int> selected;
+		std::set<int> unresolvedSet;
+		for (size_t k = 0; k < corpusSels.size(); k++) {
+			for (int i : corpusSels[k].picks) selected.push_back(offsets[k] + i);
+			for (int i : corpusSels[k].unresolved) unresolvedSet.insert(offsets[k] + i);
+		}
+		res.check = corpus->Verify(selected, res.verifyQuery);
+		// combine.ts:227 `u.corpus.at(i).texts[0] ?? entry`
 		auto textOf = [&](int i) {
-			const RegexGen::Entry& e = corpus.At(i);
-			return e.texts.empty() ? e.id : e.texts[0];
+			const RegexGen::Entry& e = corpus->At(i);
+			return e.texts.empty() ? (*owner)[i].second : e.texts[0];
 		};
 		for (int i : res.check.extra)
-			res.conflicts.push_back({ConflictKind::Extra, pid, corpus.At(i).id, textOf(i)});
+			res.conflicts.push_back({ConflictKind::Extra, (*owner)[i].first, (*owner)[i].second, textOf(i)});
 		for (int i : res.check.missing) {
 			if (unresolvedSet.count(i)) continue;
-			res.conflicts.push_back({ConflictKind::Missing, pid, corpus.At(i).id, textOf(i)});
+			res.conflicts.push_back({ConflictKind::Missing, (*owner)[i].first, (*owner)[i].second, textOf(i)});
 		}
 		for (const std::string& a : res.check.ambient)
 			res.conflicts.push_back({ConflictKind::Ambient, std::string(), std::string(), a});
 
-		// combine.ts:138 SAMPLES / :140 instantiate: '#' stands for these values.
-		if (!algoFrags.empty()) {
+		// combine.ts:238-247 the union's lines with '#' instantiated (:138 SAMPLES,
+		// :140 instantiate); only built when something needs them.
+		struct Line { int idx; std::u32string cps; std::string text; const std::string* raw; };
+		std::vector<Line> lines;
+		bool linesReady = false;
+		auto getLines = [&]() -> const std::vector<Line>& {
+			if (linesReady) return lines;
+			linesReady = true;
 			static const char* const kSamples[] = {"1", "5", "10", "16", "20", "30", "50", "80", "100", "150", "300"};
-			struct Line { std::u32string cps; std::string text; const std::string* raw; };
-			std::vector<Line> lines;
-			for (size_t i = 0; i < corpus.Size(); i++) {
-				const RegexGen::Entry& e = corpus.At(i);
+			for (size_t i = 0; i < corpus->Size(); i++) {
+				const RegexGen::Entry& e = corpus->At(i);
 				for (const auto* list : {&e.texts, &e.hidden}) {
 					for (const std::string& l : *list) {
 						if (l.find('#') == std::string::npos) {
-							lines.push_back({{}, l, &l});
+							lines.push_back({(int)i, {}, l, &l});
 							continue;
 						}
 						for (const char* s : kSamples) {
@@ -839,28 +995,47 @@ CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<Co
 								if (ch == '#') t += s;
 								else t += ch;
 							}
-							lines.push_back({{}, std::move(t), &l});
+							lines.push_back({(int)i, {}, std::move(t), &l});
 						}
 					}
 				}
 			}
 			for (Line& l : lines) RxDecodeUtf8(l.text, l.cps);
-			for (const AlgoFrag& f : algoFrags) {
+			return lines;
+		};
+		// combine.ts:248-253 an algorithmic fragment that hits a union line (not its own)
+		for (const AlgoFrag& f : algoFrags) {
+			std::string err;
+			const std::optional<Rx> rx = RxCompile(f.frag, &err);   // safeRegExp(src) with 'i'
+			if (!rx) continue;
+			for (const Line& l : getLines()) {
+				if (RxSearchCps(*rx, l.cps) != RxStatus::Match) continue;
+				if (f.own && f.own(*l.raw)) continue;
+				res.conflicts.push_back({ConflictKind::Fragment, f.page, f.entry, f.frag + u8" ⇐ " + l.text});
+				break;
+			}
+		}
+		// combine.ts:254-265 an exclude that hits a ticked line contradicts itself (any / all)
+		if (mode != Mode::None) {
+			const std::set<int> picked(selected.begin(), selected.end());
+			for (const ExcludeToken& x : res.excludes) {
 				std::string err;
-				const std::optional<Rx> rx = RxCompile(f.frag, &err);
+				const std::optional<Rx> rx = RxCompile(x.token, &err);
 				if (!rx) continue;
-				for (const Line& l : lines) {
+				for (const Line& l : getLines()) {
+					if (!picked.count(l.idx)) continue;
 					if (RxSearchCps(*rx, l.cps) != RxStatus::Match) continue;
-					if (f.own && f.own(*l.raw)) continue;
-					res.conflicts.push_back({ConflictKind::Fragment, f.page, f.entry, f.frag + u8" ⇐ " + l.text});
+					res.conflicts.push_back({ConflictKind::Exclude, (*owner)[l.idx].first, (*owner)[l.idx].second,
+					                         x.text + u8" ⇐ " + l.text});
 					break;
 				}
 			}
 		}
 	}
 
-	// combine.ts orders invalid conflicts first (pushed while walking pages), then
-	// extra / missing / ambient / fragment; the vector already follows that order.
+	// combine.ts:268-282
+	for (const CustomTerm& c : res.custom) res.customLength += RegexGen::CharCount(QuoteIfNeeded(c.term)) + 1;
+	for (const ExcludeToken& x : res.excludes) res.excludesLength += RegexGen::CharCount(x.token) + 1;
 	res.length = RegexGen::CharCount(res.query);
 	res.limit = limit;
 	res.ok = res.conflicts.empty() && res.check.missing.empty();

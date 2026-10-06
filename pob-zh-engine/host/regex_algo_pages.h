@@ -1,7 +1,7 @@
 // Algorithmic pages of the Poe Regex tool: the numeric section on top of the
 // map / waystone modifier pages, and the vendor page. Ported from exile-appraiser
 // `regex/src/pages/{types,index,numeric-pages,vendor-pages}.ts`, `sections.ts`,
-// `view.ts` (condText / sectionSummary) and the single-page part of `combine.ts`;
+// `view.ts` (condText / sectionSummary) and `combine.ts` (multi-page merge, R4);
 // every function names the TS file:line it mirrors, and regex_r3_golden.inc (made
 // by running that TS over our own Data files) holds them to identical output.
 //
@@ -26,6 +26,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -178,13 +179,13 @@ struct SummaryItem {
 std::vector<SummaryItem> SectionSummary(const AlgoPage& page, const std::vector<int>& picked,
                                         const ValueMap& values, Lang labelLang);
 
-// ---- single-page output (combine.ts, one corpus page at most) -----------------
+// ---- combine (combine.ts): several pages, custom text, excludes -----------------
 
 // regex_tool_ui.cpp buildCorpus / data.ts:243 buildCorpus: the whole page in one language.
 void BuildPageCorpus(const RegexPageDef& page, Lang lang, RegexGen::Corpus& out);
 
 // combine.ts:18 CombineSel. `corpus` is the page's corpus in the output language
-// (corpus pages only; the caller caches it).
+// (corpus pages only; the caller caches it). Null = Combine builds one for this call.
 struct CombineSel {
 	PageRef page;
 	std::vector<int> picks;
@@ -202,33 +203,91 @@ struct PageContribution {
 	std::vector<std::string> fragments;
 };
 
+// combine.ts:46 ConflictKind
 enum class ConflictKind { Extra, Missing, Ambient, Fragment, Exclude, Invalid };
 const char* ConflictKindId(ConflictKind k);   // "extra" ... as in combine.ts:46
 
+// combine.ts:48 Conflict. `page` / `entry` empty when the TS leaves them undefined.
 struct Conflict {
 	ConflictKind kind;
 	std::string page, entry, text;
 };
 
+// combine.ts:63-64 custom / excludes items (custom terms are always unverified).
+struct CustomTerm {
+	std::string text, term;
+};
+struct ExcludeToken {
+	std::string text, token;
+};
+
+// combine.ts:58 CombineResult
 struct CombineResult {
 	std::string query;
 	int length = 0;
 	int limit = 250;
 	std::vector<PageContribution> perPage;
+	std::vector<CustomTerm> custom;
+	std::vector<ExcludeToken> excludes;
+	int customLength = 0;     // each term (quoted if needed) + 1
+	int excludesLength = 0;   // each token + 1
 	std::string verifyQuery;
 	RegexGen::Check check;
 	std::vector<Conflict> conflicts;
 	bool ok = true;
-	// The corpus page's Build() result (unresolved picks, tokens) for the panel;
-	// empty when no corpus page had picks.
+	// The FIRST corpus page's Build() result (unresolved picks, tokens) for the
+	// panel's single-page details; empty when no corpus page had picks.
 	RegexGen::Result corpusResult;
 	bool hasCorpus = false;
 };
 
-// combine.ts:148 combine, restricted to what the single-page output needs: at
-// most ONE corpus page (plus algorithmic pages), no custom text, no excludes.
-// The union corpus of several pages, custom terms and excludes are R4. With one
-// corpus page and no algorithmic picks the query equals that page's Build().query.
-CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<CombineSel>& sels);
+// JS String.prototype.trim: WhiteSpace + LineTerminator code points off both ends
+// (store.ts addCustom trims the typed text with it; escapeTerm trims again).
+std::string JsTrim(const std::string& s);
+
+// combine.ts:85 escapeTerm: user text -> a literal search term. Drops '"' (term
+// boundary), trims (JS String.prototype.trim whitespace), escapes regex syntax
+// \ ^ $ . | ? * + ( ) [ ] { }, and escapes a leading '!'.
+std::string EscapeTerm(const std::string& s);
+
+// combine.ts:98-135 unionCorpus and its cache: the corpus pages taking part,
+// entries and ambient text concatenated, entry ids "<page>:<entry>". Kept by the
+// caller (the panel) so repeated recomputes with the same pages do not rebuild
+// the index; the TS keeps the last 4 (combine.ts:133), and so does this.
+class UnionCorpusCache {
+public:
+	struct Union {
+		std::vector<const RegexPageDef*> pages;
+		Lang lang = Lang::Zh;
+		RegexGen::Corpus corpus;
+		std::vector<int> offsets;
+		std::vector<std::pair<std::string, std::string>> owner;   // union index -> (page id, entry id)
+	};
+	// Two or more pages; a single page goes through the page's own corpus.
+	const Union& Get(const std::vector<const RegexPageDef*>& pages, Lang lang);
+	void Clear() { items_.clear(); }
+
+private:
+	std::vector<std::unique_ptr<Union>> items_;   // most recent first
+};
+
+// combine.ts:148 combine. Corpus pages follow `mode` (any: all tokens in ONE
+// "a|b" term; all: one term per token; none: all into the single "!a|b" term),
+// each algorithmic pick is a term of its own, custom text is escaped into
+// terms of its own (unverified), excludes join the "!" term. Order: any, all,
+// algorithmic, custom, none. Verify runs over the union of the corpus pages;
+// fragments and excludes are checked line by line with the R1 matcher.
+// `cache` null = the union is built for this call only.
+CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineSel>& sels,
+                      const std::vector<std::string>& custom = {},
+                      const std::vector<std::string>& excludes = {},
+                      UnionCorpusCache* cache = nullptr);
+
+// The single-page output (store.ts pageCombined): Combine with no custom text
+// and no excludes. Kept as a name because the panel and R3 tests use it.
+inline CombineResult CombineSingle(Lang lang, RegexGen::Mode mode, const std::vector<CombineSel>& sels)
+{
+	return Combine(lang, mode, sels);
+}
 
 } // namespace RegexAlgo

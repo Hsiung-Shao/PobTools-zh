@@ -25,6 +25,8 @@ using RegexGen::Mode;
 
 // regex_selftest_r3.cpp: the R3 part (numeric section, vendor page, single-page output).
 void RegexR3Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r4.cpp: the R4 part (multi-page merge, custom text, excludes).
+void RegexR4Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
 namespace {
 
@@ -1654,6 +1656,8 @@ void PortTests(const std::wstring& exeDir)
 	FragmentTests(exeDir);
 	line("");
 	RegexR3Tests(exeDir, &check, &line);
+	line("");
+	RegexR4Tests(exeDir, &check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
 }
 
