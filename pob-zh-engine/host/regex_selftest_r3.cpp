@@ -114,9 +114,12 @@ const char* InputKindId(InputKind k)
 	case InputKind::Select: return "select";
 	case InputKind::Colors: return "colors";
 	case InputKind::Count: return "count";
+	case InputKind::Rarity: return "rarity";
 	}
 	return "?";
 }
+
+json OptListJ(const std::optional<std::vector<std::string>>& v) { return v ? json(*v) : json(nullptr); }
 
 const char* OpId(RangeOp o)
 {
@@ -163,6 +166,15 @@ json PageJ(const AlgoPage& p)
 		case InputKind::Colors:
 			in["maxTotal"] = e.input.maxTotal;
 			break;
+		case InputKind::Rarity: {
+			// step 40 (rarity.ts): options = the rarities, corruption = uncorrupted / corrupted
+			json opts = json::array(), corr = json::array();
+			for (const AlgoOption& o : e.input.options) opts.push_back({{"id", o.id}, {"zh", o.zh}, {"en", o.en}});
+			for (const AlgoOption& o : e.input.corruption) corr.push_back({{"id", o.id}, {"zh", o.zh}, {"en", o.en}});
+			in["options"] = opts;
+			in["corruption"] = corr;
+			break;
+		}
 		}
 		in["def"] = ValueJ(e.input.def);
 		entries.push_back({{"id", e.def.id}, {"g", e.def.group}, {"zh", e.def.zh}, {"en", e.def.en},
@@ -265,6 +277,23 @@ void GoldenR3(const std::map<std::string, Game>& games)
 			if (f != r[6] || c != r[7])
 				fail(kind, r[2].get<std::string>() + "/" + e->def.id + " " + r[4].dump() + " " + r[5].get<std::string>() +
 				     ": got " + f.dump() + " " + c.dump() + ", want " + r[6].dump() + " " + r[7].dump());
+		} else if (kind == "terms") {
+			// step 40: [terms, game, page, entry, value, lang, terms | null]
+			const AlgoEntry* e = git->second.Entry(r[2].get<std::string>(), r[3].get<std::string>());
+			if (!e || !e->terms) { fail(kind, "missing terms " + r[3].dump()); continue; }
+			const json got = OptListJ(e->terms(ValueFrom(r[4]), LangOf(r[5].get<std::string>())));
+			if (got != r[6]) fail(kind, r[2].get<std::string>() + "/" + e->def.id + " " + r[4].dump() + ": got " + got.dump() + " want " + r[6].dump());
+		} else if (kind == "rchoice") {
+			// step 40: [rchoice, input, parsed, encoded, {rarity id: toggled}, {uncorrupted, corrupted}]
+			const std::string in = r[1].get<std::string>();
+			const RarityChoice pc = ParseRarityChoice(in);
+			const json parsed = {{"rarity", pc.rarity}, {"corruption", CorruptionId(pc.corruption)}};
+			json tr = json::object();
+			for (const char* id : {"normal", "magic", "rare", "unique"}) tr[id] = ToggleRarityIn(in, id);
+			const json tc = {{"uncorrupted", ToggleCorruptionIn(in, Corruption::Uncorrupted)},
+			                 {"corrupted", ToggleCorruptionIn(in, Corruption::Corrupted)}};
+			if (parsed != r[2] || EncodeRarityChoice(pc) != r[3].get<std::string>() || tr != r[4] || tc != r[5])
+				fail(kind, json(in).dump() + ": got " + parsed.dump() + " " + EncodeRarityChoice(pc) + " " + tr.dump() + " " + tc.dump());
 		} else if (kind == "own") {
 			const AlgoEntry* e = git->second.Entry(r[2].get<std::string>(), r[3].get<std::string>());
 			const bool got = e && e->ownLine && e->ownLine(r[4].get<std::string>());
@@ -321,9 +350,17 @@ void GoldenR3(const std::map<std::string, Game>& games)
 				const std::string eid = key.substr(0, colon) == "rarity" ? kRarityEntryId : "tier";
 				const AlgoEntry* e = G.Entry(sec->id, eid);
 				AlgoValue v;
-				if (eid == "tier") v = ValueFrom(json::parse(key.substr(colon + 1)));
-				else v.choice = key.substr(colon + 1);
-				const std::optional<std::string> f = e ? e->fragment(v, lang) : std::nullopt;
+				std::optional<std::string> f;
+				if (eid == "tier") {
+					v = ValueFrom(json::parse(key.substr(colon + 1)));
+					if (e) f = e->fragment(v, lang);
+				} else {
+					// step 40: "rarity:<choice>" = that choice's first term (a rarity subset, or "|c")
+					v.choice = key.substr(colon + 1);
+					v.hasChoice = true;
+					if (e && e->terms)
+						if (const std::optional<std::vector<std::string>> ts = e->terms(v, lang)) f = ts->front();
+				}
 				std::string err;
 				const std::optional<Rx> rx = f ? RxCompile(*f, &err) : std::nullopt;
 				std::vector<int> hits;
@@ -370,9 +407,11 @@ void CompositionTests(const RegexDataset& ds, const std::map<std::string, Game>&
 		std::vector<std::string> ids;
 		for (const AlgoPage& p : G.algo) ids.push_back(p.id);
 		const bool poe1 = std::string(g) == "poe1";
-		check(ids == (poe1 ? std::vector<std::string>{"map_numeric", "vendor_items"}
-		                   : std::vector<std::string>{"waystone_numeric", "vendor_items_poe2"}),
-		      std::string(g) + ": numeric section + vendor page, in that order");
+		// pages.test.ts:149 (B d5ccb47): + the rarity / corruption condition sections
+		check(ids == (poe1 ? std::vector<std::string>{"map_numeric", "vendor_items", "vendor_bases_cond", "item_mod_values_cond"}
+		                   : std::vector<std::string>{"waystone_numeric", "vendor_items_poe2", "vendor_bases_cond", "tablet_mods_cond",
+		                                              "item_mod_values_poe2_cond"}),
+		      std::string(g) + ": numeric section + vendor page + condition sections, in that order");
 		int dupes = 0, noDefault = 0;
 		for (const AlgoPage& p : G.algo) {
 			std::set<std::string> seen;
@@ -387,7 +426,8 @@ void CompositionTests(const RegexDataset& ds, const std::map<std::string, Game>&
 		const std::string host = poe1 ? "map_mods" : "waystone_mods";
 		const std::string sec = poe1 ? "map_numeric" : "waystone_numeric";
 		const std::string vendor = poe1 ? "vendor_items" : "vendor_items_poe2";
-		const std::string other = poe1 ? "logbook_mods" : "tablet_mods";
+		// sections.test.ts:25 (B d5ccb47): tablet_mods has a condition section now
+		const std::string other = poe1 ? "logbook_mods" : "relic_mods";
 		const std::vector<std::string> listed = Ids(ListedPages(G.pages));
 		auto has = [&](const std::string& id) { return std::find(listed.begin(), listed.end(), id) != listed.end(); };
 		const AlgoPage* secP = SectionPageOf(G.pages, host);
@@ -401,7 +441,13 @@ void CompositionTests(const RegexDataset& ds, const std::map<std::string, Game>&
 	}
 	check(SectionHostOf("map_numeric") == "map_mods" && SectionHostOf("map_mods").empty() && SectionHostOf("toString").empty() &&
 	      SectionIdOf("waystone_mods") == "waystone_numeric" && NumericKeyOf("map_numeric") == "map_mods" &&
-	      NumericKeyOf("vendor_items") == "vendor_items", "section id mapping (sections.ts)");
+	      NumericKeyOf("vendor_items") == "vendor_items" &&
+	      // sections.test.ts:146 (B d5ccb47): the four condition sections
+	      SectionHostOf("vendor_bases_cond") == "vendor_bases" && SectionHostOf("tablet_mods_cond") == "tablet_mods" &&
+	      SectionHostOf("item_mod_values_cond") == "item_mod_values" &&
+	      SectionHostOf("item_mod_values_poe2_cond") == "item_mod_values_poe2" &&
+	      SectionIdOf("item_mod_values") == "item_mod_values_cond" && NumericKeyOf("tablet_mods_cond") == "tablet_mods",
+	      "section id mapping (sections.ts)");
 	check(NumericPages("poe1", nullptr).empty() && VendorPages("poe2", nullptr).empty(), "no labels (schema 1) = no algorithmic pages");
 	{
 		// A label set missing the rarity option keys drops the row, not the page.
@@ -588,24 +634,52 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 			check(false, std::string(g) + ": rarity row exists");
 			continue;
 		}
+		// strict-fragments.test.ts ③ (B d5ccb47, step 40): the rarity | corruption row
 		std::vector<std::string> optIds;
 		for (const AlgoOption& o : e->input.options) optIds.push_back(o.id);
-		check(e->input.kind == InputKind::Select && optIds == std::vector<std::string>{"normal", "magic", "rare", "unique"},
-		      std::string(g) + ": rarity row is the last select with normal / magic / rare / unique" +
-		      (sec->entries.back().def.id == kRarityEntryId ? "" : " (NOT last)"));
+		std::vector<std::vector<std::string>> corr;
+		for (const AlgoOption& o : e->input.corruption) corr.push_back({o.id, o.zh, o.en});
+		auto ch = [](const std::vector<std::string>& rarity, Corruption c = Corruption::None) {
+			RarityChoice rc;
+			rc.rarity = rarity;
+			rc.corruption = c;
+			AlgoValue v;
+			v.choice = EncodeRarityChoice(rc);
+			v.hasChoice = true;
+			return v;
+		};
+		const std::vector<std::string> all4 = {"normal", "magic", "rare", "unique"};
+		check(e->input.kind == InputKind::Rarity && optIds == all4 && sec->entries.back().def.id == kRarityEntryId &&
+		      !e->input.options.empty() && e->input.options[0].zh == (std::string(g) == "poe1" ? u8"普通" : u8"中") &&
+		      corr == std::vector<std::vector<std::string>>{{"uncorrupted", u8"未汙染", "Not Corrupted"}, {"corrupted", u8"已汙染", "Corrupted"}} &&
+		      e->input.def.choice == "rare" && e->terms && !e->terms(ch({}), Lang::Zh) && !e->terms(ch(all4), Lang::Zh) &&
+		      e->terms(ch(all4, Corruption::Uncorrupted), Lang::Zh) == std::vector<std::string>{u8"!^已汙染$"},
+		      std::string(g) + ": rarity | corruption row is the last one; 4 rarities + not / corrupted; default still rare");
+		// every non-empty, non-full subset (all four = no rarity term)
+		std::vector<std::vector<std::string>> subsets;
+		for (int m = 1; m < (1 << 4) - 1; m++) {
+			std::vector<std::string> sub;
+			for (int i = 0; i < 4; i++)
+				if (m & (1 << i)) sub.push_back(optIds[i]);
+			subsets.push_back(sub);
+		}
 		int wrong = 0, falseHits = 0, corpusHits = 0;
 		std::string first;
 		for (Lang lang : {Lang::Zh, Lang::En}) {
 			const std::string label = lang == Lang::Zh ? e->def.zh[0] : e->def.en[0];
 			const std::string itemR = lang == Lang::Zh ? u8"物品稀有度" : "Item Rarity";
 			const std::string monR = lang == Lang::Zh ? u8"怪物稀有度" : "Monster Rarity";
-			for (const AlgoOption& o : e->input.options) {
-				AlgoValue v;
-				v.choice = o.id;
-				const Rx r = comp(*e->fragment(v, lang));
+			for (const std::vector<std::string>& pick : subsets) {
+				const std::optional<std::vector<std::string>> ts = e->terms(ch(pick), lang);
+				if (!ts || ts->size() != 1) {
+					wrong++;
+					continue;
+				}
+				const Rx r = comp(ts->front());
 				for (const AlgoOption& opt : e->input.options)
 					for (const char* sep : {": ", u8"：", ":", u8"： "})
-						if (RxSearch(r, label + sep + (lang == Lang::Zh ? opt.zh : opt.en)) != (opt.id == o.id)) wrong++;
+						if (RxSearch(r, label + sep + (lang == Lang::Zh ? opt.zh : opt.en)) !=
+						    (std::find(pick.begin(), pick.end(), opt.id) != pick.end())) wrong++;
 				for (int n = 0; n <= 999; n++)
 					for (const std::string& lab : {itemR, monR})
 						for (const std::string& l : {lab + ": +" + Num(n) + "%", lab + u8"：+" + Num(n) + "%", lab + ": " + Num(n) + "% (augmented)"})
@@ -616,10 +690,62 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 					}
 			}
 		}
-		check(wrong == 0 && falseHits == 0, std::string(g) + ": each option hits its own line in four separator forms, no other; "
-		      "item / monster rarity 0-999 never");
-		check(corpusHits == 0, std::string(g) + ": no rarity fragment hits any corpus line of either game (" + Num((long long)lines.size()) +
+		check(wrong == 0 && falseHits == 0, std::string(g) + ": each of the 14 rarity subsets hits exactly its options' lines in four "
+		      "separator forms; item / monster rarity 0-999 never");
+		check(corpusHits == 0, std::string(g) + ": no rarity subset hits any corpus line of either game (" + Num((long long)lines.size()) +
 		      " lines)" + (corpusHits ? " -- " + first : std::string()));
+		// the corrupted term hits the "已汙染" line itself and nothing else in the corpus
+		int corrBad = 0;
+		std::string corrFirst;
+		for (Lang lang : {Lang::Zh, Lang::En}) {
+			const std::string word = lang == Lang::Zh ? u8"已汙染" : "Corrupted";
+			const Rx r = comp(e->terms(ch({}, Corruption::Corrupted), lang)->front());
+			if (!RxSearch(r, word)) corrBad++;
+			for (const std::string& l : lines)
+				if (l != word && RxSearch(r, l)) { if (!corrBad++) corrFirst = l; }
+		}
+		check(corrBad == 0, std::string(g) + u8": the corrupted term hits 「已汙染 / Corrupted」 itself, no other corpus line" +
+		      (corrBad ? " -- " + corrFirst : std::string()));
+	}
+	{
+		// single = step 35 rarityFragment verbatim; several in the fixed order; corruption a term of its own
+		const AlgoEntry& e = *games.at("poe1").Entry("map_numeric", kRarityEntryId);
+		const AlgoEntry& e2 = *games.at("poe2").Entry("waystone_numeric", kRarityEntryId);
+		auto v = [](const std::string& c) { AlgoValue x; x.choice = c; x.hasChoice = true; return x; };
+		check(*e.fragment(v("rare"), Lang::Zh) == *RegexFrag::RarityFragment(u8"稀有度", u8"稀有") &&
+		      *e.fragment(v("rare"), Lang::Zh) == u8"稀有度[:：] *稀有" && *e.fragment(v("normal"), Lang::Zh) == u8"稀有度[:：] *普通" &&
+		      *e.fragment(v("unique"), Lang::En) == u8"Rarity[:：] *Unique" &&
+		      e.terms(v("mr|u"), Lang::Zh) == std::vector<std::string>{u8"稀有度[:：] *(魔法|稀有)", u8"!^已汙染$"} &&
+		      e.terms(v("nru|c"), Lang::En) == std::vector<std::string>{u8"Rarity[:：] *(Normal|Rare|Unique)", "^Corrupted$"} &&
+		      e2.terms(v("nm"), Lang::Zh) == std::vector<std::string>{u8"稀有度[:：] *(中|魔法)"} &&
+		      *e.fragment(v("m|c"), Lang::Zh) == u8"稀有度[:：] *魔法 ^已汙染$",
+		      "rarity row: single = step-35 fragment verbatim; several in fixed order; corruption its own term");
+		auto P = [](const std::string& c) {
+			const RarityChoice r = ParseRarityChoice(c);
+			std::string o;
+			for (const std::string& x : r.rarity) o += x + ",";
+			return o + "|" + CorruptionId(r.corruption);
+		};
+		RarityChoice nu;
+		nu.rarity = {"unique", "normal"};
+		nu.corruption = Corruption::Corrupted;
+		RarityChoice r1;
+		r1.rarity = {"rare"};
+		RarityChoice all4u;
+		all4u.rarity = {"normal", "magic", "rare", "unique"};
+		all4u.corruption = Corruption::Uncorrupted;
+		bool legacy1 = true;
+		for (const char* id : {"normal", "magic", "rare", "unique"}) legacy1 = legacy1 && EncodeRarityChoice(ParseRarityChoice(id)).size() == 1;
+		check(P("mr|u") == "magic,rare,|uncorrupted" && P("|c") == "|corrupted" && P("magic") == "magic,|" && P("xyz|q") == "|" &&
+		      P("") == "|" && EncodeRarityChoice(nu) == "nu|c" && EncodeRarityChoice(r1) == "r" &&
+		      ToggleRarityIn("rare", "magic") == "mr" && ToggleRarityIn("mr|u", "rare") == "m|u" &&
+		      ToggleCorruptionIn("m", Corruption::Uncorrupted) == "m|u" && ToggleCorruptionIn("m|u", Corruption::Corrupted) == "m|c" &&
+		      ToggleCorruptionIn("m|c", Corruption::Corrupted) == "m" && legacy1 && EncodeRarityChoice(all4u).size() <= 16,
+		      "rarity choice codec (new format, legacy words, damaged) and the two button toggles");
+		check(*CondText(e, v("rare"), Lang::Zh) == u8"稀有" && *CondText(e, v("normal"), Lang::Zh) == u8"普通" &&
+		      *CondText(e, v("unique"), Lang::En) == "Unique" && *CondText(e, v("mr|u"), Lang::Zh) == u8"魔法、稀有 · 未汙染" &&
+		      *CondText(e, v("|c"), Lang::En) == "Corrupted" && !CondText(e, v("nope"), Lang::Zh),
+		      u8"condText: 「魔法、稀有 · 未汙染」; legacy words read; nothing picked = invalid");
 	}
 
 	// ④ tier: synthetic names 0..99

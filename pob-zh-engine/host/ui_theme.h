@@ -122,6 +122,14 @@ void PushPrimaryButton();
 void PushDangerButton();
 void PopButtonStyle();
 
+// Glyph ranges every ImGui host adds to its body face on top of Default +
+// ChineseFull (+ Korean): the Arrows and Mathematical Operators blocks. Neither
+// is in ImGui's CJK table, so "≥ ≤ ⇐ →" used to come out of the atlas as '?'
+// whatever the font -- FZ_ZY and both Noto faces all carry ≥ / ≤ (the shipped
+// fonts are merged as fallbacks, so a gap in one is filled by another).
+// ImWchar is 16-bit in this build (static_assert in ui_theme.cpp).
+const unsigned short* SymbolGlyphRanges();
+
 ImVec4 Accent();
 ImVec4 MutedText();
 ImVec4 StatusColor(StatusTone tone);

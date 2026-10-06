@@ -10,8 +10,11 @@
 #include <set>
 
 // Port of exile-appraiser regex/src: pages/numeric-pages.ts, pages/vendor-pages.ts,
-// pages/index.ts, sections.ts, view.ts, combine.ts. File:line in the
-// comments refer to those files at 0155244.
+// pages/index.ts, sections.ts, view.ts, combine.ts, rarity.ts. File:line in the
+// comments refer to those files at 0155244, except the step-40 parts (rarity.ts,
+// the rarity | corruption row, condition sections, multi-term rows in combine):
+// those cite exile-appraiser d5ccb47 (B worktree branch
+// claude/realtime-currency-rates-60c13d, not yet on B main as of 2026-10-07).
 
 namespace RegexAlgo {
 
@@ -117,14 +120,17 @@ const NumSpec kPoe2Waystone[] = {
 	{"effectiveness", "ItemDisplayMapMonsterEffectiveness", 3, true, 20},
 };
 
-// numeric-pages.ts:49 rarity row
-const char* const kRarityLabelKey = "ItemDisplayStringRarity";
 struct OptKey { const char* id; const char* key; };
-const OptKey kRarityOptions[] = {
-	{"normal", "ItemDisplayStringNormal"},
-	{"magic", "ItemDisplayStringMagic"},
-	{"rare", "ItemDisplayStringRare"},
-	{"unique", "ItemDisplayStringUnique"},
+
+// rarity.ts:19-27 (step 40, B d5ccb47)
+const char* const kRarityLabelKey = "ItemDisplayStringRarity";
+const char* const kCorruptedLabelKey = "ItemPopupCorrupted";
+struct RarityOpt { const char* id; char letter; const char* key; };
+const RarityOpt kRarityOptions[] = {
+	{"normal", 'n', "ItemDisplayStringNormal"},
+	{"magic", 'm', "ItemDisplayStringMagic"},
+	{"rare", 'r', "ItemDisplayStringRare"},
+	{"unique", 'u', "ItemDisplayStringUnique"},
 };
 
 // numeric-pages.ts:68 numEntry
@@ -154,37 +160,6 @@ std::optional<AlgoEntry> NumEntry(const NumSpec& s, const RegexLabels& labels)
 			return RegexFrag::StrictPropertyFragment(lang == Lang::Zh ? lz : le, v, digits, percent);
 		};
 	}
-	return e;
-}
-
-// numeric-pages.ts:95 rarityEntry
-std::optional<AlgoEntry> RarityEntry(const RegexLabels& labels)
-{
-	const std::string* zh = Label(labels, true, kRarityLabelKey);
-	const std::string* en = Label(labels, false, kRarityLabelKey);
-	if (!zh || !en) return std::nullopt;
-	std::vector<AlgoOption> opts;
-	for (const OptKey& o : kRarityOptions) {
-		const std::string* oz = Label(labels, true, o.key);
-		const std::string* oe = Label(labels, false, o.key);
-		if (oz && oe) opts.push_back({o.id, *oz, *oe});
-	}
-	if (opts.empty()) return std::nullopt;
-	AlgoEntry e;
-	e.def = BaseDef(kRarityEntryId, 0, RegexFrag::LabelBase(*zh), RegexFrag::LabelBase(*en));
-	e.input.kind = InputKind::Select;
-	e.input.options = opts;
-	bool hasRare = false;
-	for (const AlgoOption& o : opts) hasRare |= (o.id == "rare");
-	e.input.def.choice = hasRare ? "rare" : opts[0].id;
-	const std::string lz = *zh, le = *en;
-	e.fragment = [lz, le, opts](const AlgoValue& v, Lang lang) -> std::optional<std::string> {
-		if (!HasChoice(v)) return std::nullopt;
-		for (const AlgoOption& o : opts)
-			if (o.id == v.choice)
-				return RegexFrag::RarityFragment(lang == Lang::Zh ? lz : le, lang == Lang::Zh ? o.zh : o.en);
-		return std::nullopt;
-	};
 	return e;
 }
 
@@ -229,29 +204,38 @@ void Join(std::string& out, const std::vector<std::string>& parts, const char* s
 	}
 }
 
+// combine.ts:81 quoteIfNeeded (step 40, B d5ccb47): a term starting
+// with '!' (the "uncorrupted" row) is quoted too, so the '!' covers the whole term.
 std::string QuoteIfNeeded(const std::string& t)
 {
-	return t.find(' ') != std::string::npos ? "\"" + t + "\"" : t;
+	return (t.find(' ') != std::string::npos || (!t.empty() && t[0] == '!')) ? "\"" + t + "\"" : t;
 }
 
 } // namespace
 
 const char* const kRarityEntryId = "item_rarity_class";
 
+// numeric-pages.ts:52 NUMERIC_LABEL_KEYS (step 40: ...RARITY_LABEL_KEYS, B d5ccb47)
 std::vector<std::string> NumericLabelKeys(const std::string& game)
 {
 	std::vector<std::string> out;
 	if (game == "poe1") for (const NumSpec& s : kPoe1Map) out.push_back(s.key);
 	else for (const NumSpec& s : kPoe2Waystone) out.push_back(s.key);
-	out.push_back(kRarityLabelKey);
-	for (const OptKey& o : kRarityOptions) out.push_back(o.key);
+	for (const std::string& k : RarityLabelKeys()) out.push_back(k);
 	return out;
 }
 
+// vendor-pages.ts:21 VENDOR_LABEL_KEYS (step 40, B d5ccb47)
 std::vector<std::string> VendorLabelKeys(const std::string& game)
 {
-	if (game != "poe1") return {"ItemLevelPopup", "Quality", "ItemPopupCorrupted", "Level"};
-	std::vector<std::string> out = {"ItemLevelPopup", "Quality", "ItemDisplayStringSockets", "ItemPopupCorrupted", "Level"};
+	const std::vector<std::string>& rk = RarityLabelKeys();
+	if (game != "poe1") {
+		std::vector<std::string> out = {"ItemLevelPopup", "Quality", "Level"};
+		out.insert(out.end(), rk.begin(), rk.end());
+		return out;
+	}
+	std::vector<std::string> out = {"ItemLevelPopup", "Quality", "ItemDisplayStringSockets", "Level"};
+	out.insert(out.end(), rk.begin(), rk.end());
 	for (const OptKey& i : kInfluences) out.push_back(i.key);
 	return out;
 }
@@ -269,7 +253,10 @@ std::vector<AlgoPage> NumericPages(const std::string& game, const RegexLabels* l
 		for (const NumSpec& s : kPoe2Waystone)
 			if (auto e = NumEntry(s, *labels)) entries.push_back(std::move(*e));
 	}
-	if (auto r = RarityEntry(*labels)) entries.push_back(std::move(*r));
+	// numeric-pages.ts:89 (step 40, B d5ccb47): the rarity row is the
+	// rarity | corruption condition row now; id and default unchanged -> old values
+	// read the same and give the same output.
+	if (auto r = RarityConditionEntry(labels, kRarityEntryId, "rare")) entries.push_back(std::move(*r));
 	if (entries.empty()) return {};
 	AlgoPage p;
 	p.game = game;
@@ -393,16 +380,10 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 		};
 		entries.push_back(std::move(e));
 	}
-	if (const std::optional<ZhEn> corrupted = L(lab, "ItemPopupCorrupted")) {
-		AlgoEntry e;
-		e.def = BaseDef("corrupted", 1, RegexFrag::LabelBase(corrupted->zh), RegexFrag::LabelBase(corrupted->en));
-		e.input.kind = InputKind::Select;
-		const ZhEn s = *corrupted;
-		e.fragment = [s](const AlgoValue&, Lang lang) {
-			return RegexFrag::WholeLine({lang == Lang::Zh ? s.zh : s.en});
-		};
-		entries.push_back(std::move(e));
-	}
+	// vendor-pages.ts:105 (step 40, B d5ccb47): the old "corrupted"
+	// tick row became the rarity | corruption row; id still `corrupted`, default
+	// "|c" (only corrupted) -> old bookmarks / codes give the same "^已汙染$".
+	if (auto cond = RarityConditionEntry(labels, "corrupted", "|c", 1)) entries.push_back(std::move(*cond));
 	if (poe1) {
 		struct Infl { std::string id; ZhEn t; };
 		std::vector<Infl> infl;
@@ -449,27 +430,43 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 	return {std::move(p)};
 }
 
-// pages/index.ts:22 algoPages
+// pages/index.ts:23 algoPages (step 40, B d5ccb47: + condition sections)
 std::vector<AlgoPage> AlgoPages(const std::string& game, const RegexLabels* labels)
 {
 	std::vector<AlgoPage> out = NumericPages(game, labels);
 	for (AlgoPage& p : VendorPages(game, labels)) out.push_back(std::move(p));
+	for (AlgoPage& p : ConditionSections(game, labels)) out.push_back(std::move(p));
 	return out;
 }
 
 // ---- sections.ts -------------------------------------------------------------
 
+namespace {
+// sections.ts:20 SECTION_HOSTS (step 40, B d5ccb47: + the four
+// condition sections), in the TS object's order.
+const std::pair<const char*, const char*> kSectionHosts[] = {
+	{"map_numeric", "map_mods"},
+	{"waystone_numeric", "waystone_mods"},
+	{"vendor_bases_cond", "vendor_bases"},
+	{"tablet_mods_cond", "tablet_mods"},
+	{"item_mod_values_cond", "item_mod_values"},
+	{"item_mod_values_poe2_cond", "item_mod_values_poe2"},
+};
+} // namespace
+
+// sections.ts:30 sectionHostOf
 std::string SectionHostOf(const std::string& pageId)
 {
-	if (pageId == "map_numeric") return "map_mods";
-	if (pageId == "waystone_numeric") return "waystone_mods";
+	for (const auto& h : kSectionHosts)
+		if (pageId == h.first) return h.second;
 	return std::string();
 }
 
+// sections.ts:35 sectionIdOf: the first section naming this host.
 std::string SectionIdOf(const std::string& hostId)
 {
-	if (hostId == "map_mods") return "map_numeric";
-	if (hostId == "waystone_mods") return "waystone_numeric";
+	for (const auto& h : kSectionHosts)
+		if (hostId == h.second) return h.first;
 	return std::string();
 }
 
@@ -632,6 +629,8 @@ std::vector<int> AlgoSelection::Picks() const
 std::optional<std::string> CondText(const AlgoEntry& e, const AlgoValue& v, Lang lang)
 {
 	if (!ValueUsable(e, v, lang)) return std::nullopt;
+	// view.ts:112 (step 40, B d5ccb47): "魔法、稀有 · 未汙染"
+	if (e.input.kind == InputKind::Rarity) return RarityConditionText(e, v, lang);
 	if (e.input.kind == InputKind::Select) {
 		for (const AlgoOption& o : e.input.options)
 			if (HasChoice(v) && o.id == v.choice) return lang == Lang::En ? o.en : o.zh;
@@ -841,17 +840,25 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 			for (int i : picks) {
 				const AlgoEntry& e = p.entries[i];
 				const AlgoValue& v = sel.values ? ValueOf(*sel.values, e) : e.input.def;
-				const std::optional<std::string> f = e.fragment ? e.fragment(v, lang) : std::nullopt;
-				if (!f) {
+				// combine.ts:174-181 (step 40, B d5ccb47): a row may give
+				// several terms (rarity | corruption), each an AND term of its own
+				std::optional<std::vector<std::string>> ts;
+				if (e.terms) ts = e.terms(v, lang);
+				else if (e.fragment) {
+					if (std::optional<std::string> f = e.fragment(v, lang)) ts = std::vector<std::string>{*f};
+				}
+				if (!ts || ts->empty()) {
 					c.unresolved++;
 					const std::vector<std::string>& names = lang == Lang::Zh ? e.def.zh : e.def.en;
 					res.conflicts.push_back({ConflictKind::Invalid, p.id, e.def.id, names.empty() ? e.def.id : names[0]});
 					continue;
 				}
-				c.fragments.push_back(*f);
-				algoTerms.push_back(QuoteIfNeeded(*f));
-				algoFrags.push_back({p.id, e.def.id, *f, e.ownLine});
-				c.length += RegexGen::CharCount(QuoteIfNeeded(*f)) + 1;
+				for (const std::string& f : *ts) {
+					c.fragments.push_back(f);
+					algoTerms.push_back(QuoteIfNeeded(f));
+					algoFrags.push_back({p.id, e.def.id, f, e.ownLine});
+					c.length += RegexGen::CharCount(QuoteIfNeeded(f)) + 1;
+				}
 			}
 			res.perPage.push_back(std::move(c));
 			continue;
@@ -1005,6 +1012,8 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 		};
 		// combine.ts:248-253 an algorithmic fragment that hits a union line (not its own)
 		for (const AlgoFrag& f : algoFrags) {
+			// combine.ts:261 (step 40, B d5ccb47): a negated term ("!...") never "hits" a line
+			if (!f.frag.empty() && f.frag[0] == '!') continue;
 			std::string err;
 			const std::optional<Rx> rx = RxCompile(f.frag, &err);   // safeRegExp(src) with 'i'
 			if (!rx) continue;
@@ -1040,6 +1049,245 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	res.limit = limit;
 	res.ok = res.conflicts.empty() && res.check.missing.empty();
 	return res;
+}
+
+// ---- rarity.ts (step 40) ------------------------------------------------------------
+//
+// exile-appraiser regex/src/rarity.ts @ d5ccb47 (B worktree branch
+// claude/realtime-currency-rates-60c13d, not yet on B main as of 2026-10-07). One row, two button groups
+// "普通 魔法 稀有 傳奇 | 未汙染 已汙染": rarities multi-select, corruption one of
+// two (or neither). Value in AlgoValue.choice: rarity letters n / m / r / u (in
+// that order) + optional "|u" (uncorrupted) / "|c" (corrupted); the step-35 single
+// words normal / magic / rare / unique read as that one. Two AND terms:
+//   rarity:     one picked = rarityFragment (step 35 as is); several =
+//               "稀有度[:：] *(魔法|稀有)" in the fixed order; all four = no term
+//   corruption: corrupted = "^已汙染$" (whole line); uncorrupted = "!^已汙染$"
+
+// rarity.ts:28 RARITY_LABEL_KEYS
+const std::vector<std::string>& RarityLabelKeys()
+{
+	static const std::vector<std::string> keys = [] {
+		std::vector<std::string> k = {kRarityLabelKey};
+		for (const RarityOpt& o : kRarityOptions) k.push_back(o.key);
+		k.push_back(kCorruptedLabelKey);
+		return k;
+	}();
+	return keys;
+}
+
+const char* CorruptionId(Corruption c)
+{
+	return c == Corruption::Uncorrupted ? "uncorrupted" : c == Corruption::Corrupted ? "corrupted" : "";
+}
+
+// rarity.ts:39 parseRarityChoice
+RarityChoice ParseRarityChoice(const std::string& choice)
+{
+	RarityChoice out;
+	const std::string c = JsTrim(choice);
+	for (const RarityOpt& o : kRarityOptions)
+		if (c == o.id) {
+			out.rarity.push_back(o.id);
+			return out;
+		}
+	// Only the complete format /^[nmru]*(\|[uc])?$/: a bad value is not read in
+	// part ("nope" must not become "normal").
+	size_t i = 0;
+	while (i < c.size() && (c[i] == 'n' || c[i] == 'm' || c[i] == 'r' || c[i] == 'u')) i++;
+	const std::string letters = c.substr(0, i);
+	char corr = 0;
+	if (i < c.size()) {
+		if (!(c.size() == i + 2 && c[i] == '|' && (c[i + 1] == 'u' || c[i + 1] == 'c'))) return out;
+		corr = c[i + 1];
+	}
+	for (const RarityOpt& o : kRarityOptions)
+		if (letters.find(o.letter) != std::string::npos) out.rarity.push_back(o.id);
+	out.corruption = corr == 'u' ? Corruption::Uncorrupted : corr == 'c' ? Corruption::Corrupted : Corruption::None;
+	return out;
+}
+
+// rarity.ts:52 encodeRarityChoice
+std::string EncodeRarityChoice(const RarityChoice& c)
+{
+	std::string letters;
+	for (const RarityOpt& o : kRarityOptions)
+		if (std::find(c.rarity.begin(), c.rarity.end(), o.id) != c.rarity.end()) letters += o.letter;
+	if (c.corruption == Corruption::None) return letters;
+	return letters + (c.corruption == Corruption::Uncorrupted ? "|u" : "|c");
+}
+
+// rarity.ts:58 toggleRarityIn
+std::string ToggleRarityIn(const std::string& choice, const std::string& id)
+{
+	RarityChoice c = ParseRarityChoice(choice);
+	auto it = std::find(c.rarity.begin(), c.rarity.end(), id);
+	if (it != c.rarity.end()) c.rarity.erase(it);
+	else c.rarity.push_back(id);
+	return EncodeRarityChoice(c);
+}
+
+// rarity.ts:65 toggleCorruptionIn
+std::string ToggleCorruptionIn(const std::string& choice, Corruption corruption)
+{
+	RarityChoice c = ParseRarityChoice(choice);
+	c.corruption = c.corruption == corruption ? Corruption::None : corruption;
+	return EncodeRarityChoice(c);
+}
+
+namespace {
+
+// rarity.ts:70 ConditionLabels / :76 conditionLabels
+struct ConditionLabels {
+	ZhEn label;
+	std::vector<AlgoOption> rarity;
+	ZhEn corrupted;
+};
+
+std::optional<ConditionLabels> ConditionLabelsOf(const RegexLabels* labels)
+{
+	if (!Usable(labels)) return std::nullopt;
+	const std::optional<ZhEn> label = L(*labels, kRarityLabelKey);
+	const std::optional<ZhEn> corrupted = L(*labels, kCorruptedLabelKey);
+	if (!label || !corrupted) return std::nullopt;
+	ConditionLabels out;
+	out.label = *label;
+	out.corrupted = *corrupted;
+	for (const RarityOpt& o : kRarityOptions)
+		if (const std::optional<ZhEn> t = L(*labels, o.key)) out.rarity.push_back({o.id, t->zh, t->en});
+	if (out.rarity.empty()) return std::nullopt;
+	return out;
+}
+
+// rarity.ts:94 conditionTerms: the rarity term, the corruption term; neither = nullopt
+std::optional<std::vector<std::string>> ConditionTerms(const ConditionLabels& l, const AlgoValue& v, Lang lang)
+{
+	const RarityChoice c = ParseRarityChoice(v.choice);
+	std::vector<std::string> out;
+	std::vector<std::string> vals;
+	for (const AlgoOption& o : l.rarity)
+		if (std::find(c.rarity.begin(), c.rarity.end(), o.id) != c.rarity.end()) vals.push_back(lang == Lang::Zh ? o.zh : o.en);
+	if (!vals.empty() && vals.size() < l.rarity.size()) {
+		const std::string& label = lang == Lang::Zh ? l.label.zh : l.label.en;
+		std::optional<std::string> f;
+		if (vals.size() == 1) {
+			f = RegexFrag::RarityFragment(label, vals[0]);
+		} else {
+			std::string alt;
+			for (size_t i = 0; i < vals.size(); i++) alt += (i ? "|" : "") + JsTrim(vals[i]);
+			f = RegexFrag::LabelBase(label) + u8"[:：] *(" + alt + ")";
+		}
+		if (f) out.push_back(*f);
+	}
+	if (c.corruption != Corruption::None) {
+		if (const std::optional<std::string> line = RegexFrag::WholeLine({lang == Lang::Zh ? l.corrupted.zh : l.corrupted.en}))
+			out.push_back(c.corruption == Corruption::Uncorrupted ? "!" + *line : *line);
+	}
+	if (out.empty()) return std::nullopt;
+	return out;
+}
+
+} // namespace
+
+// rarity.ts:115 rarityConditionEntry
+std::optional<AlgoEntry> RarityConditionEntry(const RegexLabels* labels, const std::string& id, const std::string& def, int g)
+{
+	const std::optional<ConditionLabels> lo = ConditionLabelsOf(labels);
+	if (!lo) return std::nullopt;
+	const ConditionLabels l = *lo;
+	const std::string corruptedZh = RegexFrag::LabelBase(l.corrupted.zh);
+	const std::string corruptedEn = RegexFrag::LabelBase(l.corrupted.en);
+	AlgoEntry e;
+	e.def = BaseDef(id, g, RegexFrag::LabelBase(l.label.zh), RegexFrag::LabelBase(l.label.en));
+	e.input.kind = InputKind::Rarity;
+	e.input.options = l.rarity;
+	// "未汙染" is interface text (the game only prints "已汙染"): drop a leading 已, add 未
+	const std::string yi = u8"已";
+	const std::string zhBase = corruptedZh.compare(0, yi.size(), yi) == 0 ? corruptedZh.substr(yi.size()) : corruptedZh;
+	e.input.corruption = {
+		{"uncorrupted", u8"未" + zhBase, "Not " + corruptedEn},
+		{"corrupted", corruptedZh, corruptedEn},
+	};
+	e.input.def.choice = def;
+	e.input.def.hasChoice = true;
+	e.terms = [l](const AlgoValue& v, Lang lang) { return ConditionTerms(l, v, lang); };
+	e.fragment = [l](const AlgoValue& v, Lang lang) -> std::optional<std::string> {
+		const std::optional<std::vector<std::string>> ts = ConditionTerms(l, v, lang);
+		if (!ts) return std::nullopt;
+		std::string out;
+		Join(out, *ts, " ");
+		return out;
+	};
+	// The corruption term matches the whole "已汙染" line: that corpus line itself
+	// (ambient / hidden) is what it is meant to match.
+	e.ownLine = [l](const std::string& line) { return line == l.corrupted.zh || line == l.corrupted.en; };
+	return e;
+}
+
+// rarity.ts:147 CONDITION_SECTIONS
+const std::vector<std::string>& ConditionSectionIds(const std::string& game)
+{
+	static const std::vector<std::string> poe1 = {"vendor_bases_cond", "item_mod_values_cond"};
+	static const std::vector<std::string> poe2 = {"vendor_bases_cond", "tablet_mods_cond", "item_mod_values_poe2_cond"};
+	return game == "poe2" ? poe2 : poe1;
+}
+
+// rarity.ts:153 isConditionSectionId
+bool IsConditionSectionId(const std::string& id)
+{
+	for (const char* g : {"poe1", "poe2"}) {
+		const std::vector<std::string>& ids = ConditionSectionIds(g);
+		if (std::find(ids.begin(), ids.end(), id) != ids.end()) return true;
+	}
+	return false;
+}
+
+// rarity.ts:158 conditionSections: built even when the host is missing (combine
+// order only follows hosts that exist).
+std::vector<AlgoPage> ConditionSections(const std::string& game, const RegexLabels* labels)
+{
+	const std::optional<AlgoEntry> e = RarityConditionEntry(labels, kRarityEntryId, "r");
+	if (!e) return {};
+	std::vector<AlgoPage> out;
+	for (const std::string& id : ConditionSectionIds(game)) {
+		AlgoPage p;
+		p.game = game;
+		p.id = id;
+		p.kind = RegexPageKind::Numeric;
+		p.sectionOf = SectionHostOf(id);
+		p.title = u8"稀有度 / 汙染";
+		p.titleEn = "Rarity / corruption";
+		p.note = u8"物品稀有度(可多選)與是否汙染,各自一個 term(同時成立);與這一頁的勾選合成同一條字串。";
+		p.limit = 250;
+		p.groups = {u8"條件"};
+		p.groupsEn = {"Conditions"};
+		p.entries = {*e};
+		out.push_back(std::move(p));
+	}
+	return out;
+}
+
+// rarity.ts:183 rarityConditionText
+std::optional<std::string> RarityConditionText(const AlgoEntry& e, const AlgoValue& v, Lang lang)
+{
+	if (e.input.kind != InputKind::Rarity) return std::nullopt;
+	const RarityChoice c = ParseRarityChoice(v.choice);
+	auto name = [lang](const AlgoOption& o) { return lang == Lang::En ? o.en : o.zh; };
+	std::vector<std::string> parts;
+	std::string r;
+	int n = 0;
+	for (const AlgoOption& o : e.input.options)
+		if (std::find(c.rarity.begin(), c.rarity.end(), o.id) != c.rarity.end())
+			r += (n++ ? std::string(lang == Lang::En ? ", " : u8"、") : std::string()) + name(o);
+	if (n) parts.push_back(r);
+	for (const AlgoOption& o : e.input.corruption)
+		if (o.id == CorruptionId(c.corruption)) {
+			parts.push_back(name(o));
+			break;
+		}
+	if (parts.empty()) return std::nullopt;
+	std::string out;
+	Join(out, parts, u8" · ");
+	return out;
 }
 
 } // namespace RegexAlgo

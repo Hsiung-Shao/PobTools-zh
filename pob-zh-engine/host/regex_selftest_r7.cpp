@@ -611,7 +611,10 @@ void FixedTests(std::map<std::string, GameData>& G, const std::vector<RegexAlgo:
 			const std::optional<RegexBookmark> body = RegexEmbed::BookmarkBodyOf(pages, ip, pm, vm, "poe1", "any", lang);
 			const std::optional<RegexEmbed::BookmarkApply> ap = body ? RegexEmbed::BookmarkApplyOf(pages, *body) : std::nullopt;
 			rounds++;
-			if (!ap || ap->page != g.page.id || ap->missed != 0 || ap->picks.size() != 1 || ap->picks[0].second != picks) continue;
+			// Step 40: the page has a rarity | corruption section now; a bookmark
+			// without `num` restores it unticked (the second pick entry, empty).
+			if (!ap || ap->page != g.page.id || ap->missed != 0 || ap->picks.empty() || ap->picks[0].second != picks) continue;
+			if (ap->picks.size() != 2 || ap->picks[1].first != "item_mod_values_cond" || !ap->picks[1].second.empty()) continue;
 			RegexAlgo::ValueMap back;
 			for (const auto& v : ap->values)
 				if (v.first == g.page.id)

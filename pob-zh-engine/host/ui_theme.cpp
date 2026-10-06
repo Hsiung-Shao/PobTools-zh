@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstring>   // memcmp, for the style round-trip check
+#include <type_traits>
 
 namespace {
 
@@ -20,6 +21,18 @@ bool Near(float a, float b)
 } // namespace
 
 namespace PobUi {
+
+static_assert(std::is_same<ImWchar, unsigned short>::value, "SymbolGlyphRanges assumes a 16-bit ImWchar");
+
+const unsigned short* SymbolGlyphRanges()
+{
+	static const ImWchar ranges[] = {
+		0x2190, 0x21FF,   // Arrows (⇐ in the regex conflict list)
+		0x2200, 0x22FF,   // Mathematical Operators (≥ ≤ in the regex tool)
+		0,
+	};
+	return ranges;
+}
 
 void ApplyTheme(float scale, Density density)
 {

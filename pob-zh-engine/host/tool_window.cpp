@@ -238,6 +238,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				b.AddRanges(fullCjk ? io.Fonts->GetGlyphRangesChineseFull()
 				                    : io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 				if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
+				b.AddRanges(PobUi::SymbolGlyphRanges());   // ≥ ≤ ⇐: not in the CJK table
 				b.BuildRanges(&ranges);
 				// Body and small: the primary face, every fallback, then the icons --
 				// last, so a text font that uses the same Private Use Area keeps its

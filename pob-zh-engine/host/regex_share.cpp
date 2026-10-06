@@ -522,26 +522,38 @@ Resolved Resolve(const State& s, const std::vector<PageRef>& pages)
 		miss(kv.first, r.missed);
 	}
 	for (const auto& kv : s.numeric) {
-		// a host page id -> its section; anything else (the vendor page) -> itself
+		// share.ts:256-266 (step 40, B d5ccb47): a host page
+		// id -> its section; anything else (the vendor page) -> itself. A host that is
+		// itself algorithmic (the item-mod values page + its rarity | corruption
+		// section) shares the key with its section: each gets the entry ids it has.
 		const RegexAlgo::AlgoPage* sec = RegexAlgo::SectionPageOf(mine, kv.first, s.game);
-		PageRef ref;
-		if (sec) ref.algo = sec;
-		else if (const PageRef* p = findPage(kv.first)) ref = *p;
-		else {
+		const PageRef* own = findPage(kv.first);
+		std::vector<PageRef> targets;
+		if (sec) {
+			PageRef r;
+			r.algo = sec;
+			targets.push_back(r);
+			if (own && own->algo) targets.push_back(*own);
+		} else if (own) {
+			targets.push_back(*own);
+		}
+		if (targets.empty()) {
 			unknown(kv.first);
 			continue;
 		}
-		RegexValueList m;
-		for (const auto& e : kv.second) {
-			bool exists = false;
-			if (ref.algo) {
-				for (const RegexAlgo::AlgoEntry& a : ref.algo->entries) exists = exists || a.def.id == e.first;
-			} else {
-				for (const RegexEntryDef& d : ref.corpus->entries) exists = exists || d.id == e.first;
+		for (const PageRef& ref : targets) {
+			RegexValueList m;
+			for (const auto& e : kv.second) {
+				bool exists = false;
+				if (ref.algo) {
+					for (const RegexAlgo::AlgoEntry& a : ref.algo->entries) exists = exists || a.def.id == e.first;
+				} else {
+					for (const RegexEntryDef& d : ref.corpus->entries) exists = exists || d.id == e.first;
+				}
+				if (exists) RegexValueSet(m, e.first, e.second);
 			}
-			if (exists) RegexValueSet(m, e.first, e.second);
+			Slot(out.values, ref.Id()) = std::move(m);
 		}
-		Slot(out.values, ref.Id()) = std::move(m);
 	}
 	return out;
 }
@@ -586,7 +598,10 @@ State StateOf(const std::string& game, const std::vector<PageRef>& pages, const 
 				}
 				RegexValueSet(m, e.def.id, cur ? *cur : e.input.def);
 			}
-			Slot(s.numeric, RegexAlgo::NumericKeyOf(p.Id())) = std::move(m);
+			// embed.ts:131 (step 40, B d5ccb47): a host algorithmic page and
+			// its section share the host id (entry ids never overlap) -> merged
+			RegexValueList& dst = Slot(s.numeric, RegexAlgo::NumericKeyOf(p.Id()));
+			for (const auto& kv : m) RegexValueSet(dst, kv.first, kv.second);
 		}
 	}
 	return s;

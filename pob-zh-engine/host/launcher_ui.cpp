@@ -598,6 +598,8 @@ static LauncherFonts LoadFonts(ImFontAtlas* atlas, std::shared_ptr<const FontBui
 			b.AddRanges(in->rangesPrecise.Data);
 			if (fullCjk) b.AddRanges(atlas->GetGlyphRangesChineseFull());
 			if (korean) b.AddRanges(atlas->GetGlyphRangesKorean());
+			// ≥ ≤ ⇐ for the embedded tools (not in the CJK table; a few hundred glyphs at most)
+			b.AddRanges(PobUi::SymbolGlyphRanges());
 			b.BuildRanges(&out.ranges->full);
 		}
 		const float scale = in->scale * sizeMul;
@@ -4369,6 +4371,34 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 
 	std::vector<const char*> texts;
 	CollectLauncherTexts(texts, overlays);
+	// The symbols the tool panels draw that are NOT CJK (the regex tool's ≥ / ≤
+	// buttons and condition text, its "a ⇐ b" conflict lines, separators): judged
+	// with the launcher strings below (some shipped font must carry each), and
+	// first checked against the ranges the two ImGui hosts actually put in the
+	// atlas -- a glyph every font has still draws as '?' when the atlas skips it.
+	static const char* const kToolSymbols = u8"≥≤⇐–—…·×～";
+	texts.push_back(kToolSymbols);
+	{
+		ImGui::CreateContext();
+		ImFontAtlas* a = ImGui::GetIO().Fonts;
+		const ImWchar* tables[] = {a->GetGlyphRangesDefault(), a->GetGlyphRangesChineseFull(), PobUi::SymbolGlyphRanges()};
+		std::string outside;
+		ForEachCodepoint(kToolSymbols, [&](unsigned cp) {
+			bool in = false;
+			for (const ImWchar* r : tables)
+				for (; r && r[0]; r += 2)
+					if (cp >= r[0] && cp <= r[1]) in = true;
+			if (!in) {
+				char buf[16];
+				snprintf(buf, sizeof buf, " U+%04X", cp);
+				outside += buf;
+			}
+		});
+		ImGui::DestroyContext();
+		printf("  [%s]  tool-panel symbols are inside the hosts' glyph ranges%s\n",
+		       outside.empty() ? "PASS" : "FAIL", outside.c_str());
+		if (!outside.empty()) return 1;
+	}
 
 	// unique codepoints, in first-seen order so the report reads like the source
 	std::vector<unsigned> want;

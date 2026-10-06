@@ -133,15 +133,17 @@ std::optional<RegexBookmark> BookmarkBodyOf(const std::vector<PageRef>& pages, c
 	body.alt = std::move(k.alt);
 	if (page.algo && !own.empty())
 		body.numeric = TickedValues(*page.algo, own, values, RegexAlgo::NumericKeyOf(page.Id()));
-	if (page.corpus) {
-		if (const AlgoPage* sec = FindSection(pages, page.Id())) {
-			const std::vector<int>& sp = PicksIn(picks, sec->id);
-			if (!sp.empty()) {
-				PageRef sr;
-				sr.algo = sec;
-				body.num = PageKeysOf(sr, sp).keys;
-				body.numeric = TickedValues(*sec, sp, values, RegexAlgo::NumericKeyOf(sec->id));
-			}
+	// embed.ts:55-64: any page with a section (step 40, B d5ccb47: the item-mod values page -- itself algorithmic -- has the
+	// rarity | corruption section; both store their values under the host id and
+	// their entry ids never overlap -> merged, the section's after the page's own)
+	if (const AlgoPage* sec = FindSection(pages, page.Id())) {
+		const std::vector<int>& sp = PicksIn(picks, sec->id);
+		if (!sp.empty()) {
+			PageRef sr;
+			sr.algo = sec;
+			body.num = PageKeysOf(sr, sp).keys;
+			for (const auto& kv : TickedValues(*sec, sp, values, RegexAlgo::NumericKeyOf(sec->id)))
+				RegexValueSet(body.numeric, kv.first, kv.second);
 		}
 	}
 	if (body.keys.empty() && body.num.empty()) return std::nullopt;
@@ -175,7 +177,8 @@ std::optional<BookmarkApply> BookmarkApplyOf(const std::vector<PageRef>& pages, 
 	const Applied r = ApplyPageKeys(*page, keys, alt);
 	out.picks.emplace_back(page->Id(), r.picked);
 	out.missed += r.missed;
-	const AlgoPage* sec = page->corpus ? FindSection(pages, page->Id()) : nullptr;
+	// embed.ts:100 (step 40: any host, the item-mod values page included)
+	const AlgoPage* sec = FindSection(pages, page->Id());
 	if (sec) {
 		// A host bookmark is the whole page: one without `num` (saved before the
 		// section existed) restores the section unticked.
@@ -186,8 +189,14 @@ std::optional<BookmarkApply> BookmarkApplyOf(const std::vector<PageRef>& pages, 
 		out.missed += rs.missed;
 		if (!b.numeric.empty() && !num.empty())
 			out.values.emplace_back(RegexAlgo::NumericKeyOf(sec->id), b.numeric);
-	} else if (!b.numeric.empty() && page->algo) {
-		out.values.emplace_back(page->Id(), b.numeric);
+	}
+	// embed.ts:109 (step 40, B d5ccb47): an algorithmic page's own
+	// values, merged into the same store key when its section already put them there
+	if (!b.numeric.empty() && page->algo) {
+		auto it = std::find_if(out.values.begin(), out.values.end(),
+		                       [&](const std::pair<std::string, RegexValueList>& v) { return v.first == page->Id(); });
+		if (it == out.values.end()) out.values.emplace_back(page->Id(), b.numeric);
+		else for (const auto& kv : b.numeric) RegexValueSet(it->second, kv.first, kv.second);
 	}
 	return out;
 }

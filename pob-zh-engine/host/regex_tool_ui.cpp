@@ -363,10 +363,12 @@ private:
 		return refs_[page_].corpus ? refs_[page_].corpus->note : refs_[page_].algo->note;
 	}
 
-	// The numeric section of page `host` (same game), as an index into refs_; -1 if none.
+	// The numeric / condition section of page `host` (same game), as an index into
+	// refs_; -1 if none. Step 40: a host may itself be algorithmic (the item-mod
+	// values page carries the rarity | corruption section).
 	int sectionIndexOf(int host) const
 	{
-		if (host < 0 || host >= (int)refs_.size() || !refs_[host].corpus) return -1;
+		if (host < 0 || host >= (int)refs_.size() || refs_[host].IsSection()) return -1;
 		for (int i = 0; i < (int)refs_.size(); i++)
 			if (refs_[i].IsSection() && refs_[i].algo->sectionOf == refs_[host].Id() &&
 			    refs_[i].algo->game == refs_[host].Game())
@@ -482,7 +484,8 @@ private:
 			const RegexAlgo::PageRef& ref = refs_[i];
 			if (ref.algo) {
 				if (const RegexValueList* m = state_.NumericOf(RegexAlgo::NumericKeyOf(ref.Id())))
-					for (const auto& kv : *m) pages_[i].algo.values[kv.first] = kv.second;
+					for (const auto& kv : *m)
+						if (ownsValue((int)i, kv.first)) pages_[i].algo.values[kv.first] = kv.second;
 			}
 			// The item-mod values page has no entries until it is loaded: its
 			// ticks are restored then (finishItemMods), else every saved key
@@ -533,6 +536,26 @@ private:
 		pages_[idx].filterDirty = true;
 	}
 
+	// Does algorithmic page `idx` own value `id`? A host that is itself algorithmic
+	// (the item-mod values page) and its rarity | corruption section keep their
+	// values under the same store key (the host id; entry ids never overlap), so
+	// each page only takes -- and only writes back -- its own entries' values.
+	// Otherwise a stale copy on one page would overwrite the other's newer value.
+	bool ownsValue(int idx, const std::string& id) const
+	{
+		if (!refs_[idx].algo) return false;
+		if (refs_[idx].IsSection()) {
+			for (const RegexAlgo::AlgoEntry& e : refs_[idx].algo->entries)
+				if (e.def.id == id) return true;
+			return false;
+		}
+		const int sec = sectionIndexOf(idx);
+		if (sec >= 0)
+			for (const RegexAlgo::AlgoEntry& e : refs_[sec].algo->entries)
+				if (e.def.id == id) return false;
+		return true;
+	}
+
 	// store.ts syncCurrent: page idx's ticks -> its saved record. A section's
 	// ticks are its host's `num`; the vendor page's are entry ids.
 	void syncCurrent(int idx)
@@ -555,6 +578,7 @@ private:
 		if (!refs_[idx].algo) return;
 		RegexValueList& dst = state_.NumericFor(RegexAlgo::NumericKeyOf(refs_[idx].Id()));
 		for (const auto& kv : pages_[idx].algo.values) {
+			if (!ownsValue(idx, kv.first)) continue;
 			const RegexFrag::AlgoValue* had = RegexValueFind(dst, kv.first);
 			if (!had || had->min != kv.second.min || had->max != kv.second.max ||
 			    had->choice != kv.second.choice || RegexFrag::HasChoice(*had) != RegexFrag::HasChoice(kv.second))
@@ -715,8 +739,15 @@ private:
 	void drawList()
 	{
 		if (isAlgo()) {
-			if (isItemPage(page_)) drawItemModPage(page_);
-			else drawAlgoPage(page_);
+			if (isItemPage(page_)) {
+				// RegexPanel.vue (step 40, B d5ccb47): the
+				// rarity | corruption section above the item-mod list, loaded or not
+				const int sec = sectionIndexOf(page_);
+				if (sec >= 0) drawSection(page_, sec);
+				drawItemModPage(page_);
+			} else {
+				drawAlgoPage(page_);
+			}
 			return;
 		}
 		const int sec = sectionIndexOf(page_);
@@ -1067,7 +1098,12 @@ private:
 		RegexEmbed::ValuesMap values;
 		auto add = [&](int i) {
 			picks[refs_[i].Id()] = picksOf(i);
-			if (refs_[i].algo) values[RegexAlgo::NumericKeyOf(refs_[i].Id())] = pages_[i].algo.values;
+			// merged: the item-mod values page and its section share the store key
+			if (refs_[i].algo) {
+				RegexAlgo::ValueMap& dst = values[RegexAlgo::NumericKeyOf(refs_[i].Id())];
+				for (const auto& kv : pages_[i].algo.values)
+					if (ownsValue(i, kv.first)) dst[kv.first] = kv.second;
+			}
 		};
 		add(page_);
 		const int sec = sectionIndexOf(page_);
@@ -1289,7 +1325,9 @@ private:
 		                   : b.mode == "none" ? u8"一個都沒有" : u8"含任一個";
 		std::string meta = pageTitleIn(b.game, b.page) + u8" · " + modeZh + u8" · " +
 		                   (b.lang == "en" ? "English" : u8"繁中") + u8" · " + std::to_string(b.keys.size()) + u8" 項";
-		if (!b.num.empty()) meta += u8" ＋ 數值條件 " + std::to_string(b.num.size()) + u8" 項";
+		if (!b.num.empty())
+			meta += (RegexAlgo::IsConditionSectionId(RegexAlgo::SectionIdOf(b.page)) ? std::string(u8" ＋ 稀有度 / 汙染")
+			                                                                        : u8" ＋ 數值條件 " + std::to_string(b.num.size()) + u8" 項");
 		ImGui::TextUnformatted(meta.c_str());
 		ImGui::PopStyleColor();
 		if (ImGui::SmallButton(u8"載入")) loadBookmark(i);
@@ -1414,7 +1452,8 @@ private:
 			for (int idx = 0; idx < (int)refs_.size(); idx++) {
 				if (!refs_[idx].algo || refs_[idx].Game() != g || RegexAlgo::NumericKeyOf(refs_[idx].Id()) != v.first)
 					continue;
-				for (const auto& kv : v.second) pages_[idx].algo.values[kv.first] = kv.second;
+				for (const auto& kv : v.second)
+					if (ownsValue(idx, kv.first)) pages_[idx].algo.values[kv.first] = kv.second;
 				syncValues(idx);
 			}
 		for (PageState& ps : pages_) ps.dirty = true;   // mode / values changed under them
@@ -1705,7 +1744,8 @@ private:
 			picks[refs_[i].Id()] = picksOf(i);
 			if (refs_[i].algo) {
 				RegexAlgo::ValueMap& dst = values[RegexAlgo::NumericKeyOf(refs_[i].Id())];
-				for (const auto& kv : pages_[i].algo.values) dst[kv.first] = kv.second;
+				for (const auto& kv : pages_[i].algo.values)
+					if (ownsValue(i, kv.first)) dst[kv.first] = kv.second;
 			}
 		}
 		const RegexShare::State st = RegexShare::StateOf(selGame_, gamePages(selGame_), picks, values, modeId(),
@@ -1745,7 +1785,8 @@ private:
 		for (const auto& kv : RegexShare::ResolvedValues(r.values))
 			for (int idx = 0; idx < (int)refs_.size(); idx++) {
 				if (!refs_[idx].algo || refs_[idx].Game() != g || RegexAlgo::NumericKeyOf(refs_[idx].Id()) != kv.first) continue;
-				for (const auto& e : kv.second) pages_[idx].algo.values[e.first] = e.second;
+				for (const auto& e : kv.second)
+					if (ownsValue(idx, e.first)) pages_[idx].algo.values[e.first] = e.second;
 				syncValues(idx);
 			}
 		state_.custom = s.custom;
@@ -1996,7 +2037,7 @@ private:
 
 	int sectionPickCount() const
 	{
-		if (!hasPage() || isAlgo()) return 0;
+		if (!hasPage()) return 0;
 		const int sec = sectionIndexOf(page_);
 		return sec >= 0 ? pages_[sec].algo.Count() : 0;
 	}
@@ -2041,6 +2082,20 @@ private:
 		const bool r = ImGui::SmallButton(label);
 		if (on) ImGui::PopStyleColor();
 		return r;
+	}
+
+	// SameLine when an item `w` wide still fits in the cell, else the next line
+	// (the .rx-algo-input flex-wrap of RegexAlgoList.vue): a row of buttons in a
+	// narrow input column wraps instead of running under the fragment column.
+	void sameLineOrWrap(float w, float spacing)
+	{
+		// GetContentRegionMax is the cell's work rect inside a table (window-relative)
+		const float right = ImGui::GetWindowPos().x + ImGui::GetContentRegionMax().x;
+		if (ImGui::GetItemRectMax().x + spacing + w <= right) ImGui::SameLine(0, spacing);
+	}
+	float smallButtonWidth(const char* label) const
+	{
+		return ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2;
 	}
 
 	void drawAlgoRow(int idx, int i)
@@ -2138,6 +2193,43 @@ private:
 			if (numField("##min", cur.min, n)) next = WithNum(e, cur, false, n);
 			break;
 		}
+		case InputKind::Rarity: {
+			// RegexAlgoList.vue (step 40, B d5ccb47):
+			// "普通 魔法 稀有 傳奇 | 未汙染 已汙染" -- rarities multi-select, corruption
+			// one of two (clicking the lit one clears it), a divider between
+			const RarityChoice rc = ParseRarityChoice(cur.choice);
+			const float sp = 2 * host_->scale;
+			bool first = true;
+			for (const AlgoOption& o : e.input.options) {
+				const std::string label = o.zh + "###r_" + o.id;
+				if (!first) sameLineOrWrap(smallButtonWidth(label.c_str()), sp);
+				first = false;
+				const bool lit = std::find(rc.rarity.begin(), rc.rarity.end(), o.id) != rc.rarity.end();
+				if (segButton(label.c_str(), lit)) next = WithChoice(cur, ToggleRarityIn(cur.choice, o.id));
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"%s（可多選）", o.en.c_str());
+			}
+			{
+				// the divider: a thin vertical rule the height of a button
+				const float h = ImGui::GetFrameHeight() - ImGui::GetStyle().FramePadding.y * 2;
+				const float dw = 9 * host_->scale;
+				sameLineOrWrap(dw, sp);
+				const ImVec2 p = ImGui::GetCursorScreenPos();
+				ImGui::Dummy(ImVec2(dw, h > 0 ? h : ImGui::GetTextLineHeight()));
+				const float x = p.x + dw * 0.5f;
+				ImGui::GetWindowDrawList()->AddLine(ImVec2(x, p.y + 1), ImVec2(x, p.y + (h > 0 ? h : ImGui::GetTextLineHeight()) - 1),
+				                                    ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
+			}
+			for (const AlgoOption& o : e.input.corruption) {
+				const std::string label = o.zh + "###c_" + o.id;
+				sameLineOrWrap(smallButtonWidth(label.c_str()), sp);
+				const Corruption c = o.id == "uncorrupted" ? Corruption::Uncorrupted : Corruption::Corrupted;
+				if (segButton(label.c_str(), rc.corruption == c)) next = WithChoice(cur, ToggleCorruptionIn(cur.choice, c));
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip(c == Corruption::Uncorrupted ? u8"排除「已汙染」行（再點一次取消）"
+					                                               : u8"只要有「已汙染」行（再點一次取消）");
+			}
+			break;
+		}
 		case InputKind::Colors: {
 			static const char kLetters[3] = {'r', 'g', 'b'};
 			static const ImVec4 kDot[3] = {ImVec4(0.90f, 0.35f, 0.30f, 1), ImVec4(0.40f, 0.80f, 0.45f, 1), ImVec4(0.40f, 0.60f, 0.95f, 1)};
@@ -2167,8 +2259,13 @@ private:
 		const std::optional<std::string> f = e.fragment(ValueOf(s.algo.values, e), fragLang());
 		ImGui::AlignTextToFramePadding();
 		if (f) {
+			// Wrapped inside the cell, never clipped: a fragment is the thing to
+			// check before pasting, so all of it has to be readable. Only rows whose
+			// fragment is longer than the column grow (a long token is cut anywhere).
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::PushTextWrapPos(0.0f);
 			ImGui::TextUnformatted(f->c_str());
+			ImGui::PopTextWrapPos();
 			ImGui::PopStyleColor();
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", f->c_str());
 		} else {
@@ -2188,9 +2285,11 @@ private:
 			ImGui::PushID(g);
 			const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH;
 			if (ImGui::BeginTable("##rx_algo", 3, flags)) {
-				ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.1f);
-				ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.6f);
-				ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+				// Name | input | fragment. The fragment wraps in its cell (drawAlgoRow), so
+				// it gets the larger share; the input column wraps its buttons.
+				ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+				ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.35f);
+				ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.65f);
 				for (int i = 0; i < (int)page.entries.size(); i++) {
 					if (page.entries[i].def.group != g) continue;
 					ImGui::TableNextRow();
@@ -2422,19 +2521,23 @@ private:
 	// The numeric section on top of a host page (exile-appraiser
 	// RegexNumericSection.vue): a foldable block whose terms join the modifier
 	// tokens below in one string. Folded, its header still says what is set.
+	// Step 40 (B d5ccb47): the same block draws the
+	// one-row "稀有度 / 汙染" condition sections (section_title_cond / _hint_cond).
 	void drawSection(int host, int sec)
 	{
 		using namespace RegexAlgo;
 		PageState& ss = pages_[sec];
 		const AlgoPage& page = *refs_[sec].algo;
 		const std::string hostId = refs_[host].Id();
+		const bool cond = IsConditionSectionId(page.id);
+		const char* title = cond ? u8"稀有度 / 汙染" : u8"數值條件";
 		const bool collapsed = std::find(state_.collapsed.begin(), state_.collapsed.end(), hostId) != state_.collapsed.end();
 		ImGui::PushID("rx_sec");
 		bool toggle = ImGui::ArrowButton("##toggle", collapsed ? ImGuiDir_Right : ImGuiDir_Down);
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(collapsed ? u8"展開數值條件" : u8"收合數值條件");
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"%s%s", collapsed ? u8"展開" : u8"收合", title);
 		ImGui::SameLine();
 		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(u8"數值條件");
+		ImGui::TextUnformatted(title);
 		if (ImGui::IsItemClicked()) toggle = true;
 		ImGui::SameLine();
 		ImGui::TextDisabled(u8"已設 %d / %d", ss.algo.Count(), (int)page.entries.size());
@@ -2450,10 +2553,16 @@ private:
 		if (ImGui::IsItemHovered()) {
 			ImGui::BeginTooltip();
 			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
-			ImGui::TextUnformatted(u8"階級、物品數量、稀有度等屬性行的數值；每個勾選各自一個條件（同時成立），"
-			                       u8"與下方詞綴合成同一條字串。改數值會自動勾選。寫法依社群實用格式「標籤: +N%」"
-			                       u8"（半形／全形冒號、+ 可有可無，只比對冒號後的整個數字，不跨行）；"
-			                       u8"階級比對名稱「（階級 N）」；稀有度比對「稀有度: 稀有」行。");
+			// i18n cmn-Hant.json ppz.regex.section_hint / section_hint_cond (step 40)
+			if (cond)
+				ImGui::TextUnformatted(u8"物品稀有度可多選、汙染二選一（再點一次取消），各自一個條件（同時成立），"
+				                       u8"與下方勾選合成同一條字串。點按鈕會自動勾選。");
+			else
+				ImGui::TextUnformatted(u8"階級、物品數量、稀有度等屬性行的數值；每個勾選各自一個條件（同時成立），"
+				                       u8"與下方詞綴合成同一條字串。改數值會自動勾選。寫法依社群實用格式「標籤: +N%」"
+				                       u8"（半形／全形冒號、+ 可有可無，只比對冒號後的整個數字，不跨行）；"
+				                       u8"階級比對名稱「（階級 N）」；稀有度 / 汙染列：稀有度可多選（比對「稀有度: 稀有」行），"
+				                       u8"汙染二選一（再點一次取消；未汙染 = 排除「已汙染」行），兩者各自一個條件。");
 			ImGui::PopTextWrapPos();
 			ImGui::EndTooltip();
 		}
@@ -2464,7 +2573,8 @@ private:
 			algoChanged(sec);
 		}
 		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有數值條件的勾選");
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(cond ? u8"取消稀有度 / 汙染條件的勾選" : u8"取消所有數值條件的勾選");
 		if (toggle) {
 			// store.ts setCollapsed: remembered per host page
 			if (collapsed) state_.collapsed.erase(std::remove(state_.collapsed.begin(), state_.collapsed.end(), hostId), state_.collapsed.end());
@@ -2476,7 +2586,7 @@ private:
 			// view.ts sectionSummary: ticked rows in row order, "地圖階級 ≥16 · 物品數量 ≥80%".
 			const std::vector<SummaryItem> items = SectionSummary(page, ss.algo.Picks(), ss.algo.values, RegexFrag::Lang::Zh);
 			if (items.empty()) {
-				ImGui::TextDisabled(u8"沒有設定數值條件");
+				ImGui::TextDisabled(cond ? u8"沒有設定稀有度 / 汙染條件" : u8"沒有設定數值條件");
 			} else {
 				std::string ok, bad;
 				for (const SummaryItem& it : items) {
@@ -2602,7 +2712,7 @@ private:
 	{
 		if (!refs_[idx].IsSection()) return idx;
 		for (int i = 0; i < (int)refs_.size(); i++)
-			if (refs_[i].corpus && refs_[i].Id() == refs_[idx].algo->sectionOf && refs_[i].Game() == refs_[idx].Game())
+			if (!refs_[i].IsSection() && refs_[i].Id() == refs_[idx].algo->sectionOf && refs_[i].Game() == refs_[idx].Game())
 				return i;
 		return idx;
 	}

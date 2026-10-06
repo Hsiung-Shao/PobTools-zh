@@ -1,4 +1,6 @@
-// --regex-selftest, R8 part: share codes and templates (regex_share). Ports
+// --regex-selftest, R8 part: share codes and templates (regex_share), plus the
+// step-40 rarity | corruption row's wiring / bookmark / share round trips
+// (exile-appraiser regex/test/rarity.test.ts @ d5ccb47). Ports
 // exile-appraiser regex/test/share.test.ts and the v1 -> v2 share-code cases of
 // sections.test.ts, adds what only exists here (miniz gzip with our own header /
 // trailer: CRC, ISIZE, truncation, flipped bytes, a zip bomb, oversized input),
@@ -714,6 +716,266 @@ void WriteDump()
 	     u8"，用 tools/regex_port/verify-a-codes.mts 讓 exile-appraiser 解碼");
 }
 
+// ---- step 40: the rarity | corruption row (exile-appraiser regex/test/rarity.test.ts @ d5ccb47) ----
+
+AlgoValue Ch(const std::vector<std::string>& rarity, Corruption c = Corruption::None)
+{
+	RarityChoice rc;
+	rc.rarity = rarity;
+	rc.corruption = c;
+	AlgoValue v;
+	v.choice = EncodeRarityChoice(rc);
+	v.hasChoice = true;
+	return v;
+}
+
+int EntryIdx(const PageRef& p, const std::string& id)
+{
+	if (!p.algo) return -1;
+	for (int i = 0; i < (int)p.algo->entries.size(); i++)
+		if (p.algo->entries[i].def.id == id) return i;
+	return -1;
+}
+
+// embed.ts combineSels(pages, picks, values, only) + combine()
+CombineResult CombineOnly(const Game& g, const RegexEmbed::PicksMap& picks, const RegexEmbed::ValuesMap& values,
+                          const std::string& only, RegexFrag::Lang lang, RegexGen::Mode mode)
+{
+	std::vector<CombineSel> sels;
+	for (const PageRef& p : CombineOrder(g.pages, &only)) {
+		CombineSel s;
+		s.page = p;
+		auto it = picks.find(p.Id());
+		if (it != picks.end()) s.picks = it->second;
+		if (p.algo) {
+			auto v = values.find(NumericKeyOf(p.Id()));
+			if (v != values.end()) s.values = &v->second;
+		}
+		sels.push_back(s);
+	}
+	return Combine(lang, mode, sels);
+}
+
+void RarityTests(std::map<std::string, Game>& G)
+{
+	line("  step 40: rarity | corruption row (rarity.test.ts)");
+	using RegexFrag::Lang;
+	using RegexGen::Mode;
+	// 條件區接線: hosts, default, not listed, single page = host + section
+	{
+		bool ok = true;
+		std::string why;
+		for (auto& kv : G) {
+			const Game& g = kv.second;
+			for (const std::string& id : ConditionSectionIds(g.id)) {
+				const std::string host = SectionHostOf(id);
+				const AlgoPage* sec = SectionPageOf(g.pages, host, g.id);
+				if (!sec || sec->id != id || sec->entries.size() != 1 || sec->entries[0].def.id != kRarityEntryId ||
+				    sec->entries[0].input.kind != InputKind::Rarity || sec->entries[0].input.def.choice != "r") {
+					ok = false;
+					why = g.id + " " + id;
+				}
+				for (const PageRef& p : ListedPages(g.pages))
+					if (p.Id() == id) { ok = false; why = id + " listed"; }
+				if (g.Find(host)) {
+					std::vector<std::string> order;
+					for (const PageRef& p : CombineOrder(g.pages, &host)) order.push_back(p.Id());
+					if (order != std::vector<std::string>{host, id}) { ok = false; why = host + " order"; }
+				}
+			}
+		}
+		check(ok && ConditionSectionIds("poe1") == std::vector<std::string>{"vendor_bases_cond", "item_mod_values_cond"} &&
+		      ConditionSectionIds("poe2") == std::vector<std::string>{"vendor_bases_cond", "tablet_mods_cond", "item_mod_values_poe2_cond"},
+		      u8"條件區：物品基底（兩遊戲）、碑牌詞綴（PoE2）、物品詞綴數值（兩遊戲）；不在清單、單頁 = 宿主 + 條件區" + (ok ? "" : "  " + why));
+	}
+	// 商店頁: the old "corrupted" row id, default "|c" -> the old output verbatim
+	{
+		bool ok = true;
+		for (const char* gid : {"poe1", "poe2"}) {
+			const Game& g = G[gid];
+			const std::string vid = std::string(gid) == "poe1" ? "vendor_items" : "vendor_items_poe2";
+			const PageRef* v = g.Find(vid);
+			const int ci = v ? EntryIdx(*v, "corrupted") : -1;
+			if (ci < 0) { ok = false; continue; }
+			const AlgoEntry& e = v->algo->entries[ci];
+			ok = ok && e.input.kind == InputKind::Rarity && e.input.def.choice == "|c";
+			const CombineResult q = CombineOnly(g, {{vid, {ci}}}, {}, vid, Lang::Zh, Mode::Any);
+			ok = ok && q.query == u8"^已汙染$";
+			const CombineResult q2 = CombineOnly(g, {{vid, {ci}}}, {{vid, {{"corrupted", Ch({"rare"}, Corruption::Uncorrupted)}}}}, vid,
+			                                     Lang::En, Mode::Any);
+			ok = ok && q2.query == u8"\"Rarity[:：] *Rare\" \"!^Corrupted$\"";
+		}
+		check(ok, u8"商店頁：原「已汙染」列換成條件列，id 仍是 corrupted、預設只有已汙染 → 舊勾選輸出逐字相同（^已汙染$）");
+	}
+	// combine: one row, two AND terms; '!' quoted; mode-independent; no conflicts
+	{
+		const Game& g = G["poe2"];
+		const AlgoPage* sec = SectionPageOf(g.pages, "vendor_bases", "poe2");
+		bool ok = sec != nullptr;
+		std::string why;
+		for (Mode mode : {Mode::Any, Mode::All, Mode::None}) {
+			if (!sec) break;
+			const CombineResult r = CombineOnly(g, {{"vendor_bases", {0}}, {sec->id, {0}}},
+			                                    {{"vendor_bases", {{kRarityEntryId, Ch({"normal", "magic"}, Corruption::Uncorrupted)}}}},
+			                                    "vendor_bases", Lang::Zh, mode);
+			const std::string want = u8"\"稀有度[:：] *(中|魔法)\" \"!^已汙染$\"";
+			bool m = r.query.find(want) != std::string::npos;
+			const std::string tail = u8" \"!^已汙染$\"";
+			if (mode != Mode::None)
+				m = m && r.query.size() >= tail.size() && r.query.compare(r.query.size() - tail.size(), tail.size(), tail) == 0;
+			const PageContribution* pc = nullptr;
+			for (const PageContribution& c : r.perPage)
+				if (c.id == sec->id) pc = &c;
+			m = m && pc && pc->fragments == std::vector<std::string>{u8"稀有度[:：] *(中|魔法)", u8"!^已汙染$"} &&
+			    pc->length == RegexGen::CharCount(want + " ") && r.conflicts.empty();
+			if (!m) { ok = false; why = r.query; }
+		}
+		check(ok, u8"一列兩個 AND term：稀有度、汙染各自一個，`!` 開頭加引號，不受模式影響，無衝突" + (ok ? "" : "  " + why));
+	}
+	{
+		bool ok = true;
+		for (const char* gid : {"poe1", "poe2"}) {
+			const Game& g = G[gid];
+			const AlgoPage* sec = SectionPageOf(g.pages, "vendor_bases", gid);
+			if (!sec) { ok = false; continue; }
+			const CombineResult r = CombineOnly(g, {{"vendor_bases", {0, 1}}, {sec->id, {0}}},
+			                                    {{"vendor_bases", {{kRarityEntryId, Ch({}, Corruption::Corrupted)}}}}, "vendor_bases",
+			                                    Lang::Zh, Mode::Any);
+			const std::string tail = u8" ^已汙染$";
+			ok = ok && r.query.size() >= tail.size() && r.query.compare(r.query.size() - tail.size(), tail.size(), tail) == 0;
+			for (const Conflict& c : r.conflicts) ok = ok && c.kind != ConflictKind::Fragment;
+		}
+		const Game& g1 = G["poe1"];
+		const AlgoPage* sec = SectionPageOf(g1.pages, "vendor_bases", "poe1");
+		const CombineResult r = CombineOnly(g1, {{sec->id, {0}}}, {{"vendor_bases", {{kRarityEntryId, Ch({})}}}}, "vendor_bases",
+		                                    Lang::Zh, Mode::Any);
+		check(ok, u8"已汙染 term 對有「已汙染」行的語料頁不算誤中（ownLine）");
+		check(r.query.empty() && r.conflicts.size() == 1 && r.conflicts[0].kind == ConflictKind::Invalid,
+		      u8"什麼都沒選 = 輸入不成立（invalid），不輸出");
+	}
+	// 舊值相容: a schema-5 state's legacy word reads the same
+	{
+		RegexUiState st;
+		const bool parsed = st.Parse(u8"{\"schema\":5,\"current\":[{\"page\":\"waystone_mods\",\"keys\":[],\"alt\":[],\"num\":[\"item_rarity_class\"]}],"
+		                             u8"\"numeric\":{\"waystone_mods\":{\"item_rarity_class\":{\"choice\":\"magic\"}}}}");
+		const Game& g = G["poe2"];
+		const AlgoPage* sec = SectionPageOf(g.pages, "waystone_mods", "poe2");
+		RegexEmbed::ValuesMap vm;
+		if (const RegexValueList* m = st.NumericOf("waystone_mods"))
+			for (const auto& kv : *m) vm["waystone_mods"][kv.first] = kv.second;
+		PageRef sr;
+		sr.algo = sec;
+		const CombineResult q = CombineOnly(g, {{sec->id, {EntryIdx(sr, kRarityEntryId)}}}, vm, "waystone_mods", Lang::Zh, Mode::Any);
+		check(parsed && q.query == u8"\"稀有度[:：] *魔法\"", u8"schema 5 state 的 item_rarity_class 舊單字照讀，輸出與第 35 步相同：" + q.query);
+	}
+	// 書籤: vendor_bases + its condition section round trip
+	{
+		const Game& g = G["poe1"];
+		const PageRef* host = g.Find("vendor_bases");
+		const AlgoPage* sec = SectionPageOf(g.pages, "vendor_bases", "poe1");
+		const RegexEmbed::PicksMap picks{{"vendor_bases", {2, 5}}, {sec->id, {0}}};
+		const RegexEmbed::ValuesMap values{{"vendor_bases", {{kRarityEntryId, Ch({"normal"}, Corruption::Uncorrupted)}}}};
+		const std::optional<RegexBookmark> body = RegexEmbed::BookmarkBodyOf(g.pages, *host, picks, values, "poe1", "any", "zh");
+		const std::string want = CombineOnly(g, picks, values, "vendor_bases", Lang::Zh, Mode::Any).query;
+		bool ok = body && body->num == std::vector<std::string>{kRarityEntryId} && body->numeric.size() == 1 &&
+		          body->numeric[0].second.choice == "n|u" && want.find(u8"\"稀有度[:：] *普通\" \"!^已汙染$\"") != std::string::npos;
+		if (ok) {
+			const std::optional<RegexEmbed::BookmarkApply> a = RegexEmbed::BookmarkApplyOf(g.pages, *body);
+			RegexEmbed::PicksMap bp;
+			RegexEmbed::ValuesMap bv;
+			if (a) {
+				for (const auto& p : a->picks) bp[p.first] = p.second;
+				for (const auto& v : a->values)
+					for (const auto& kv : v.second) bv[v.first][kv.first] = kv.second;
+			}
+			ok = a && CombineOnly(g, bp, bv, "vendor_bases", Lang::Zh, Mode::Any).query == want;
+		}
+		check(ok, u8"書籤：物品基底 + 條件區往返，單頁輸出相同");
+	}
+	// 物品詞綴數值頁: the host's own values and the section's share the store key
+	{
+		int ok = 0, n = 0;
+		std::string why;
+		for (const char* gid : {"poe1", "poe2"}) {
+			Game& g = G[gid];
+			if (!g.itemOk) continue;
+			n++;
+			const std::string pid = IM::PageId(gid);
+			const PageRef* page = g.Find(pid);
+			const AlgoPage* sec = SectionPageOf(g.pages, pid, gid);
+			if (!page || !sec || sec->id != pid + "_cond" || page->Size() == 0) { why = "wiring"; continue; }
+			const std::string e0 = page->algo->entries[0].def.id;
+			AlgoValue seven;
+			seven.min = 7;
+			const RegexEmbed::PicksMap picks{{pid, {0}}, {sec->id, {0}}};
+			const RegexEmbed::ValuesMap values{{pid, {{e0, seven}, {kRarityEntryId, Ch({"rare"}, Corruption::Uncorrupted)}}}};
+			const std::string want = CombineOnly(g, picks, values, pid, Lang::En, Mode::Any).query;
+			const std::string tail = u8" \"Rarity[:：] *Rare\" \"!^Corrupted$\"";
+			if (want.size() < tail.size() || want.compare(want.size() - tail.size(), tail.size(), tail) != 0) { why = want; continue; }
+			// bookmark
+			const std::optional<RegexBookmark> body = RegexEmbed::BookmarkBodyOf(g.pages, *page, picks, values, gid, "any", "en");
+			if (!body || body->numeric.size() != 2 || !RegexValueFind(body->numeric, e0) || !RegexValueFind(body->numeric, kRarityEntryId)) {
+				why = "bookmark body";
+				continue;
+			}
+			const std::optional<RegexEmbed::BookmarkApply> a = RegexEmbed::BookmarkApplyOf(g.pages, *body);
+			RegexEmbed::PicksMap bp;
+			RegexEmbed::ValuesMap bv;
+			if (a) {
+				for (const auto& p : a->picks) bp[p.first] = p.second;
+				for (const auto& v : a->values)
+					for (const auto& kv : v.second) bv[v.first][kv.first] = kv.second;
+			}
+			if (!a || bv[pid].size() != 2 || CombineOnly(g, bp, bv, pid, Lang::En, Mode::Any).query != want) { why = "bookmark apply"; continue; }
+			// share code
+			const S::State st = S::StateOf(gid, g.pages, picks, values, "any", {}, {});
+			Dump(std::string("rarity item-mods + cond ") + gid, st);   // A -> B: verify-a-codes.mts
+			S::Normalized d;
+			std::string err;
+			if (!S::Decode(S::Encode(st), d, &err) || !d.warnings.empty()) { why = "decode " + err; continue; }
+			const RegexValueList* nv = nullptr;
+			for (const auto& kv : d.state.numeric)
+				if (kv.first == pid) nv = &kv.second;
+			if (!nv || nv->size() != 2) { why = "share numeric"; continue; }
+			const S::Resolved r = S::Resolve(d.state, g.pages);
+			const S::ValueLists back = S::ResolvedValues(r.values);
+			RegexEmbed::ValuesMap rv;
+			for (const auto& kv : back)
+				for (const auto& e : kv.second) rv[kv.first][e.first] = e.second;
+			RegexEmbed::PicksMap rp;
+			for (const auto& kv : r.picks) rp[kv.first] = kv.second;
+			if (rp[pid] != std::vector<int>{0} || rp[sec->id] != std::vector<int>{0} || rv[pid].size() != 2 ||
+			    CombineOnly(g, rp, rv, pid, Lang::En, Mode::Any).query != want) { why = "share resolve"; continue; }
+			ok++;
+		}
+		check(n > 0 && ok == n, u8"物品詞綴數值頁：宿主自己的數值與條件區共用存放鍵 → 書籤 / 分享碼兩邊都保留（" + Num(ok) + " / " + Num(n) + u8" 遊戲）" +
+		                            (why.empty() ? "" : "  " + why));
+	}
+	// 分享碼: the tablet condition section (sections + numeric under the host id)
+	{
+		const Game& g = G["poe2"];
+		const AlgoPage* sec = SectionPageOf(g.pages, "tablet_mods", "poe2");
+		const RegexEmbed::PicksMap picks{{"tablet_mods", {1}}, {sec->id, {0}}};
+		const RegexEmbed::ValuesMap values{{"tablet_mods", {{kRarityEntryId, Ch({"magic"})}}}};
+		const S::State st = S::StateOf("poe2", g.pages, picks, values, "any", {}, {});
+		Dump("rarity tablet cond", st);
+		bool ok = st.sections.size() == 1 && st.sections[0].first == "tablet_mods" &&
+		          st.sections[0].second == std::vector<std::string>{kRarityEntryId} && st.numeric.size() == 1 &&
+		          st.numeric[0].first == "tablet_mods" && st.numeric[0].second.size() == 1 && st.numeric[0].second[0].second.choice == "m";
+		S::Normalized d;
+		std::string err;
+		ok = ok && S::Decode(S::Encode(st), d, &err);
+		const S::Resolved r = S::Resolve(d.state, g.pages);
+		auto it = r.picks.find(sec->id);
+		ok = ok && it != r.picks.end() && it->second == std::vector<int>{0};
+		const S::ValueLists back = S::ResolvedValues(r.values);
+		bool val = false;
+		for (const auto& kv : back)
+			if (kv.first == "tablet_mods") val = kv.second.size() == 1 && kv.second[0].second.choice == "m";
+		check(ok && val, u8"分享碼：碑牌條件區（sections + numeric 以宿主 id 為鍵）往返");
+	}
+}
+
 } // namespace
 
 void RegexR8Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -758,6 +1020,8 @@ void RegexR8Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 	lap("round trips");
 	GoldenR8(G);
 	lap("golden");
+	RarityTests(G);
+	lap("rarity | corruption");
 	WriteDump();
 	line("    (R8 checks took " + Num((long long)(GetTickCount() - t0)) + " ms)");
 }

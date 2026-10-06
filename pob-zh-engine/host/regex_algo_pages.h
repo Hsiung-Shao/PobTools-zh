@@ -10,11 +10,15 @@
 // in regex_gen. Each ticked entry has an input (a range, a choice, colours) and
 // a fragment builder (regex_frag), and the fragment is one search term of its own.
 //
-// Two pages per game:
+// Per game:
 //   map_numeric / waystone_numeric   the numeric SECTION of map_mods / waystone_mods
 //                                    (`sectionOf`); never in the page list, its
 //                                    output joins the host page's in one string
 //   vendor_items / vendor_items_poe2 a page of its own in the list
+//   *_cond                           step 40 (rarity.ts): a one-row "rarity |
+//                                    corruption" section on vendor_bases, tablet_mods
+//                                    (PoE2) and the item-mod values page; same
+//                                    embedding as the numeric sections
 //
 // Pure: no ImGui, no files. The panel (regex_tool_ui.cpp) and --regex-selftest
 // both drive this.
@@ -38,7 +42,9 @@ using RegexFrag::Lang;
 using RegexFrag::RangeOp;
 
 // pages/types.ts:29 AlgoInput kinds.
-enum class InputKind { Range, Select, Colors, Count };
+// Rarity (step 40, rarity.ts): rarity multi-select + corruption one-of-two;
+// `choice` = rarity letters (n / m / r / u) + optional "|u" / "|c".
+enum class InputKind { Range, Select, Colors, Count, Rarity };
 
 // pages/types.ts:23 AlgoOption
 struct AlgoOption {
@@ -53,13 +59,16 @@ struct AlgoInput {
 	bool percent = false;               // Range
 	std::vector<RangeOp> ops;           // Range: the operators offered, in order
 	int lo = 0, hi = 0;                 // Range / Count
-	std::vector<AlgoOption> options;    // Select / Count
+	std::vector<AlgoOption> options;    // Select / Count / Rarity (the rarities)
+	std::vector<AlgoOption> corruption; // Rarity: uncorrupted, corrupted
 	int maxTotal = 0;                   // Colors
 	AlgoValue def;
 };
 
 using FragmentFn = std::function<std::optional<std::string>(const AlgoValue&, Lang)>;
 using OwnLineFn = std::function<bool(const std::string&)>;
+// pages/types.ts AlgoEntry.terms (step 40): one row -> several AND terms; nullopt = invalid.
+using TermsFn = std::function<std::optional<std::vector<std::string>>(const AlgoValue&, Lang)>;
 
 // pages/types.ts:37 AlgoEntry. `def` carries id / group / zh[0] / en[0] like a
 // corpus entry, so row text and keys work the same way.
@@ -68,6 +77,9 @@ struct AlgoEntry {
 	AlgoInput input;
 	bool untested = false;   // the client display is an assumption not yet seen in game
 	FragmentFn fragment;     // nullopt = the input does not describe anything
+	// Set on the rarity | corruption row: Combine adds each term on its own and
+	// `fragment` is only the display (terms joined by a space).
+	TermsFn terms;
 	// The corpus line (with '#') is itself what this entry matches (the tier
 	// fragment and map names): skipped by the fragment conflict check.
 	OwnLineFn ownLine;
@@ -95,7 +107,41 @@ std::vector<AlgoPage> NumericPages(const std::string& game, const RegexLabels* l
 std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* labels);
 std::vector<AlgoPage> AlgoPages(const std::string& game, const RegexLabels* labels);
 
-extern const char* const kRarityEntryId;   // numeric-pages.ts:92 "item_rarity_class"
+extern const char* const kRarityEntryId;   // numeric-pages.ts:50 RARITY_ENTRY_ID "item_rarity_class"
+
+// ---- rarity.ts (step 40): the rarity | corruption condition row --------------------
+// Line numbers: exile-appraiser d5ccb47 (B worktree branch
+// claude/realtime-currency-rates-60c13d, not yet on B main as of 2026-10-07).
+
+// rarity.ts:28 RARITY_LABEL_KEYS: label, the four rarities, ItemPopupCorrupted.
+const std::vector<std::string>& RarityLabelKeys();
+
+// rarity.ts:30 Corruption / :32 RarityChoice
+enum class Corruption { None, Uncorrupted, Corrupted };
+struct RarityChoice {
+	std::vector<std::string> rarity;   // option ids in the fixed order normal, magic, rare, unique
+	Corruption corruption = Corruption::None;
+};
+// rarity.ts:39 parseRarityChoice: legacy single words read as that one; any
+// other malformed value = nothing picked.
+RarityChoice ParseRarityChoice(const std::string& choice);
+// rarity.ts:52 encodeRarityChoice
+std::string EncodeRarityChoice(const RarityChoice& c);
+// rarity.ts:58 toggleRarityIn / :65 toggleCorruptionIn (clicking the picked one again clears it)
+std::string ToggleRarityIn(const std::string& choice, const std::string& id);
+std::string ToggleCorruptionIn(const std::string& choice, Corruption c);
+const char* CorruptionId(Corruption c);   // "" / "uncorrupted" / "corrupted"
+
+// rarity.ts:115 rarityConditionEntry: `id` = the saved key, `def` = the default
+// choice; nullopt when a label is missing (never a guessed translation).
+std::optional<AlgoEntry> RarityConditionEntry(const RegexLabels* labels, const std::string& id,
+                                              const std::string& def, int g = 0);
+// rarity.ts:147 CONDITION_SECTIONS / :153 isConditionSectionId / :158 conditionSections
+const std::vector<std::string>& ConditionSectionIds(const std::string& game);
+bool IsConditionSectionId(const std::string& id);
+std::vector<AlgoPage> ConditionSections(const std::string& game, const RegexLabels* labels);
+// rarity.ts:183 rarityConditionText: "魔法、稀有 · 未汙染"; nullopt = nothing picked.
+std::optional<std::string> RarityConditionText(const AlgoEntry& e, const AlgoValue& v, Lang lang);
 
 // ---- sections.ts ------------------------------------------------------------
 
