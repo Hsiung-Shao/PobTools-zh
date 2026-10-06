@@ -7,6 +7,7 @@
 #include "regex_folders.h"
 #include "regex_gen.h"
 #include "regex_itemmods.h"
+#include "regex_share.h"
 #include "regex_state.h"
 #include "error_log.h"
 #include "tool_panel.h"
@@ -73,6 +74,13 @@
 // group), drag to reorder or into a folder, with up / down buttons and a
 // "move to" menu as the non-drag way. No hotkeys and no paste-into-game: those
 // are exile-appraiser overlay features this panel does not have.
+//
+// Share codes and templates (R8, exile-appraiser share.ts / RegexPanel.vue): the
+// whole game's ticks, values, custom text and excludes as one gzip+base64url
+// string ("複製分享碼"), pasted back through a dialog ("貼上分享碼"), and seven
+// hand-written templates (Data/regex_templates.json). Both OVERWRITE every list
+// of that game, so both ask first (B's confirm dialogs). Codes travel both ways
+// with exile-appraiser except for the item-mod values page, whose keys differ.
 
 namespace {
 
@@ -201,7 +209,7 @@ const char* GameLabel(const std::string& g)
 // Which modal wants to open. Raised by a button deep inside a child window and
 // acted on at the top level, because OpenPopup and BeginPopupModal have to be
 // called from the same ID scope or the popup simply never appears.
-enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDelete };
+enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDelete, Paste, Template };
 
 // The left column: the merged overview or the page's own list (store.ts panelView).
 enum class View { Page, Combined };
@@ -242,6 +250,13 @@ public:
 				if (selGame_.empty() && data_.HasGame(g)) selGame_ = g;
 		}
 
+		// R8 templates: a missing / broken file only disables the drop-down.
+		{
+			std::vector<std::string> errs;
+			if (!RegexShare::LoadTemplates(exeDir_, templates_, errs, &templatesErr_))
+				PobLog::Error("data", "regex_templates.json: " + templatesErr_);
+			for (const std::string& e : errs) PobLog::Error("data", "regex_templates.json: " + e);
+		}
 		state_.Load(exeDir_);   // a fresh install has no file; the defaults are fine
 		restoreState();
 		lang_ = state_.lang == "en" ? Lang::En : Lang::Zh;
@@ -298,6 +313,11 @@ public:
 			WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, copyRequest_);
 			copied_ = true;
 			copyRequest_.clear();
+		}
+		if (!shareCopyRequest_.empty()) {
+			shareCopied_ = WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, shareCopyRequest_) ? 1 : 2;
+			shareCopiedAt_ = std::chrono::steady_clock::now();
+			shareCopyRequest_.clear();
 		}
 		// Written here rather than in Frame(): this is the one place a panel is
 		// allowed to touch the disk, and it runs at most once per frame.
@@ -671,6 +691,8 @@ private:
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip(u8"在每一列下面加上另一種語言的原文");
 		}
+
+		drawShareRow();
 
 		const std::string& note = pageNote();
 		if (view_ == View::Page && !note.empty()) {
@@ -1449,7 +1471,12 @@ private:
 			ImGui::OpenPopup("###rx_folder");
 		} else if (opening == Modal::FolderDelete) {
 			ImGui::OpenPopup("###rx_fdel");
+		} else if (opening == Modal::Paste) {
+			ImGui::OpenPopup("###rx_paste");
+		} else if (opening == Modal::Template) {
+			ImGui::OpenPopup("###rx_tpl");
 		}
+		drawShareModals(opening);
 
 		const std::string title = (renameMode_ ? std::string(u8"重新命名書籤")
 		                                       : std::string(u8"存成書籤")) + "###rx_name";
@@ -1559,6 +1586,274 @@ private:
 			markStateDirty();
 		}
 		editIdx_ = -1;
+	}
+
+	// ---- share codes and templates (R8) ---------------------------------------
+	//
+	// exile-appraiser RegexPanel.vue head tools row: template drop-down, copy /
+	// paste share code. store.ts currentShareState / makeShareCode / applyCombo.
+
+	// Is the item-mod values page of game g still unloaded while the saved state has ticks on it?
+	bool itemTicksPending(const std::string& g) const
+	{
+		const int ip = itemPageIndex(g);
+		if (ip < 0 || imv_[GameIdx(g)].phase == ItemModLoad::Phase::Ready) return false;
+		for (const RegexPagePicks& c : state_.current)
+			if (c.page == refs_[ip].Id() && !c.keys.empty()) return true;
+		return false;
+	}
+
+	bool hasShareable() const
+	{
+		return !combineOrderIdx(true).empty() || !state_.custom.empty() || !state_.excludes.empty() ||
+		       itemTicksPending(selGame_);
+	}
+
+	// RegexPanel.vue openPaste: /^[A-Za-z0-9_-]{16,}$/
+	static bool LooksLikeCode(const std::string& s)
+	{
+		if (s.size() < 16) return false;
+		for (char c : s)
+			if (!(isalnum((unsigned char)c) || c == '-' || c == '_')) return false;
+		return true;
+	}
+
+	void drawShareRow()
+	{
+		// Templates of the selected game (RegexPanel.vue myTemplates).
+		int mine = 0;
+		for (const RegexShare::Template& t : templates_) mine += t.game == selGame_ ? 1 : 0;
+		const std::string ph = u8"套用範本…（" + std::to_string(mine) + u8"）";
+		ImGui::SetNextItemWidth(200 * host_->scale);
+		ImGui::BeginDisabled(mine == 0);
+		if (ImGui::BeginCombo("##rx_tplcombo", ph.c_str())) {
+			for (int i = 0; i < (int)templates_.size(); i++) {
+				const RegexShare::Template& t = templates_[i];
+				if (t.game != selGame_) continue;
+				if (ImGui::Selectable((t.nameZh + "###tpl" + std::to_string(i)).c_str(), false)) {
+					tplPending_ = i;
+					modal_ = Modal::Template;
+				}
+				if (ImGui::IsItemHovered() && !t.descZh.empty()) {
+					ImGui::BeginTooltip();
+					ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28);
+					ImGui::TextUnformatted(t.descZh.c_str());
+					ImGui::PopTextWrapPos();
+					ImGui::EndTooltip();
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			if (!templatesErr_.empty()) ImGui::SetTooltip(u8"範本檔載入失敗：%s", templatesErr_.c_str());
+			else if (mine == 0) ImGui::SetTooltip(u8"%s 沒有內建範本", GameLabel(selGame_));
+			else ImGui::SetTooltip(u8"內建的常用組合；套用前會先確認（會覆蓋 %s 目前所有清單的勾選）", GameLabel(selGame_));
+		}
+		ImGui::SameLine();
+		const bool any = hasShareable();
+		ImGui::BeginDisabled(!any);
+		if (ImGui::SmallButton(u8"複製分享碼")) makeShareCode();
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+			ImGui::TextUnformatted(any ? u8"把目前遊戲所有清單的勾選、數值、自訂文字與排除詞壓成一串分享碼。"
+			                           : u8"先勾選幾項（或加自訂文字 / 排除詞）才有東西可以分享。");
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(u8"分享碼與 exile-appraiser 互通；只有「物品詞綴數值」頁例外："
+			                       u8"這裡的鍵是 GGPK stat id、那邊是交易站 stat id，"
+			                       u8"所以那一頁的勾選對方讀不到（對方的也讀不進來，會回報找不到幾項）。");
+			ImGui::PopStyleColor();
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"貼上分享碼")) {
+			// RegexPanel.vue openPaste: pre-filled when the clipboard looks like a code
+			pasteBuf_.clear();
+			pasteErr_.clear();
+			const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+			if (LooksLikeCode(clip)) pasteBuf_ = clip;
+			modal_ = Modal::Paste;
+		}
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"貼上別人給的分享碼並套用（套用前會先確認）");
+		if (shareCopied_) {
+			if (std::chrono::steady_clock::now() - shareCopiedAt_ > std::chrono::milliseconds(2500)) {
+				shareCopied_ = 0;
+			} else {
+				ImGui::SameLine();
+				if (shareCopied_ == 1) ImGui::TextColored(kGood, u8"已複製分享碼");
+				else ImGui::TextColored(kBad, u8"複製失敗");
+			}
+		}
+	}
+
+	// store.ts makeShareCode / currentShareState: every page of the game with ticks.
+	void makeShareCode()
+	{
+		// Ticks saved on the item-mod page but not restored yet (it loads in the
+		// background): load it now, or the code would silently leave them out.
+		if (itemTicksPending(selGame_) && !ensureItemModsNow(selGame_)) {
+			notice_ = u8"物品詞綴資料載入失敗（" + imv_[GameIdx(selGame_)].err + u8"），沒有產生分享碼：那一頁的勾選會漏掉。";
+			return;
+		}
+		RegexEmbed::PicksMap picks;
+		RegexEmbed::ValuesMap values;
+		for (int i = 0; i < (int)refs_.size(); i++) {
+			if (refs_[i].Game() != selGame_) continue;
+			picks[refs_[i].Id()] = picksOf(i);
+			if (refs_[i].algo) {
+				RegexAlgo::ValueMap& dst = values[RegexAlgo::NumericKeyOf(refs_[i].Id())];
+				for (const auto& kv : pages_[i].algo.values) dst[kv.first] = kv.second;
+			}
+		}
+		const RegexShare::State st = RegexShare::StateOf(selGame_, gamePages(selGame_), picks, values, modeId(),
+		                                                 state_.custom, state_.excludes);
+		shareCopyRequest_ = RegexShare::Encode(st);
+		shareCopied_ = 0;
+	}
+
+	// store.ts applyCombo: OVERWRITE every page of the code's game (ticks; values
+	// merged in), custom text, excludes and mode; show the merged view. Returns
+	// false (with *err, nothing changed) when it cannot be applied at all.
+	bool applyCombo(const RegexShare::State& s, const std::string& what, const std::vector<std::string>& warnings,
+	                std::string* err)
+	{
+		const std::string g = s.game;
+		if (firstPageOf(g) < 0) {
+			if (err) *err = std::string(u8"這個安裝沒有 ") + GameLabel(g) + u8" 的清單（Data\\regex_" + g + u8".json），無法套用。";
+			return false;
+		}
+		// The item-mod values page resolves against its entries: load it first (store.ts prepareItemMods).
+		const std::string itemId = RegexItemMods::PageId(g);
+		bool needItem = false;
+		for (const auto& kv : s.pages) needItem = needItem || kv.first == itemId;
+		for (const auto& kv : s.numeric) needItem = needItem || kv.first == itemId;
+		if (needItem && itemPageIndex(g) >= 0 && !ensureItemModsNow(g)) {
+			if (err) *err = u8"物品詞綴資料載入失敗（" + imv_[GameIdx(g)].err + u8"），沒有套用。";
+			return false;
+		}
+		if (selGame_ != g) switchGame(g);
+		const RegexShare::Resolved r = RegexShare::Resolve(s, gamePages(g));
+		for (int idx = 0; idx < (int)refs_.size(); idx++) {
+			if (refs_[idx].Game() != g) continue;
+			auto it = r.picks.find(refs_[idx].Id());
+			setTicks(idx, it != r.picks.end() ? it->second : std::vector<int>());
+			syncCurrent(idx);
+		}
+		for (const auto& kv : RegexShare::ResolvedValues(r.values))
+			for (int idx = 0; idx < (int)refs_.size(); idx++) {
+				if (!refs_[idx].algo || refs_[idx].Game() != g || RegexAlgo::NumericKeyOf(refs_[idx].Id()) != kv.first) continue;
+				for (const auto& e : kv.second) pages_[idx].algo.values[e.first] = e.second;
+				syncValues(idx);
+			}
+		state_.custom = s.custom;
+		state_.excludes = s.excludes;
+		mode_ = ModeFromId(s.mode);
+		state_.mode = modeId();
+		state_.game = selGame_;
+		setScope(true);
+		setView(View::Combined);
+		for (PageState& ps : pages_) {
+			ps.dirty = true;
+			ps.filterDirty = true;
+		}
+		combinedDirty_ = true;
+		copied_ = false;
+		markStateDirty();
+
+		std::string msg = u8"已套用" + what;
+		if (r.missed > 0 || !r.unknownPages.empty()) {
+			std::string pages;
+			for (const std::string& id : r.unknownPages) pages += (pages.empty() ? "" : u8"、") + id;
+			msg += u8"，但有 " + std::to_string(r.missed) + u8" 項在目前資料找不到";
+			if (!pages.empty()) msg += u8"（不存在的清單：" + pages + u8"）";
+			for (const auto& kv : r.missedByPage)
+				if (RegexItemMods::IsPageId(kv.first))
+					msg += u8"；其中 " + std::to_string(kv.second) + u8" 項在「物品詞綴數值」頁："
+					       u8"這一頁的鍵是 GGPK stat id，與 exile-appraiser 的交易站 stat id 不互通";
+		}
+		msg += u8"。";
+		if (!warnings.empty()) {
+			msg += u8"分享碼有 " + std::to_string(warnings.size()) + u8" 處格式不對，已略過：";
+			for (size_t i = 0; i < warnings.size() && i < 3; i++) msg += (i ? u8"；" : "") + warnings[i];
+			if (warnings.size() > 3) msg += u8"…";
+		}
+		notice_ = msg;
+		for (const std::string& w : warnings) PobLog::Diag("regex", u8"分享碼警告：" + w);
+		return true;
+	}
+
+	void drawShareModals(Modal opening)
+	{
+		if (ImGui::BeginPopupModal(u8"貼上分享碼###rx_paste", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::TextUnformatted(u8"把別人給的分享碼貼在下面（剪貼簿裡像分享碼的內容會自動帶入）。");
+			if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
+			ImGui::InputTextMultiline("##rx_paste_code", &pasteBuf_, ImVec2(440 * host_->scale, 90 * host_->scale));
+			ImGui::PushTextWrapPos(440 * host_->scale);
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(u8"套用後會覆蓋分享碼那個遊戲目前所有清單的勾選、數值、自訂文字、排除詞與模式"
+			                       u8"（不影響書籤；要保留目前的勾選，先存成書籤）。");
+			ImGui::PopStyleColor();
+			if (!pasteErr_.empty()) ImGui::TextColored(kBad, "%s", pasteErr_.c_str());
+			ImGui::PopTextWrapPos();
+			const bool empty = RegexAlgo::JsTrim(pasteBuf_).empty();
+			ImGui::BeginDisabled(empty);
+			if (ImGui::Button(u8"套用", ImVec2(90 * host_->scale, 0))) {
+				RegexShare::Normalized d;
+				std::string err;
+				if (!RegexShare::Decode(pasteBuf_, d, &err)) {
+					pasteErr_ = u8"分享碼無法套用：" + err;
+					if (err.find(u8"版本不符") != std::string::npos)
+						pasteErr_ += u8"（可能是較新版本的 PobTools / exile-appraiser 產的）";
+				} else if (!applyCombo(d.state, std::string(u8"分享碼（") + GameLabel(d.state.game) + u8"）", d.warnings, &err)) {
+					pasteErr_ = u8"分享碼無法套用：" + err;
+				} else {
+					ImGui::CloseCurrentPopup();
+				}
+			}
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			if (ImGui::Button(u8"從剪貼簿貼上")) {
+				pasteBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+				pasteErr_.clear();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+
+		if (ImGui::BeginPopupModal(u8"套用範本###rx_tpl", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			const bool valid = tplPending_ >= 0 && tplPending_ < (int)templates_.size();
+			if (!valid) {
+				ImGui::TextUnformatted(u8"這個範本已經不在了。");
+			} else {
+				const RegexShare::Template& t = templates_[tplPending_];
+				ImGui::Text(u8"套用範本「%s」", t.nameZh.c_str());
+				ImGui::PushTextWrapPos(420 * host_->scale);
+				if (!t.descZh.empty()) ImGui::TextUnformatted(t.descZh.c_str());
+				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+				ImGui::Text(u8"會覆蓋 %s 目前所有清單的勾選、數值、自訂文字、排除詞與模式（不影響書籤）。", GameLabel(t.game));
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
+			}
+			ImGui::BeginDisabled(!valid);
+			if (ImGui::Button(u8"套用", ImVec2(90 * host_->scale, 0))) {
+				const RegexShare::Template t = templates_[tplPending_];
+				std::string err;
+				if (!applyCombo(t.state, u8"範本「" + t.nameZh + u8"」", {}, &err)) notice_ = u8"範本無法套用：" + err;
+				tplPending_ = -1;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) {
+				tplPending_ = -1;
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 	}
 
 	// ---- plumbing ------------------------------------------------------------
@@ -2565,6 +2860,14 @@ private:
 
 	std::string copyRequest_;
 	bool copied_ = false;
+	// R8: share code on its way to the clipboard, and how that went (1 ok, 2 failed).
+	std::string shareCopyRequest_;
+	int shareCopied_ = 0;
+	std::chrono::steady_clock::time_point shareCopiedAt_;
+	std::vector<RegexShare::Template> templates_;
+	std::string templatesErr_;
+	int tplPending_ = -1;                 // the template the confirm dialog is about
+	std::string pasteBuf_, pasteErr_;     // the paste dialog
 	ItemModLoad imv_[2];   // R7, per game (kGames order)
 	int t17Cache_ = -1;
 	bool t17Present_ = false;

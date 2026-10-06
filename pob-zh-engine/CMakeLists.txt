@@ -511,12 +511,14 @@ if (WIN32)
         host/regex_folders.cpp
         host/regex_embed.cpp
         host/regex_itemmods.cpp
+        host/regex_share.cpp
         host/regex_tool_ui.cpp
         host/regex_selftest.cpp
         host/regex_selftest_r3.cpp
         host/regex_selftest_r4.cpp
         host/regex_selftest_r5.cpp
         host/regex_selftest_r7.cpp
+        host/regex_selftest_r8.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
@@ -627,6 +629,9 @@ if (WIN32)
     # first time the page is opened.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_itemmods_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_itemmods_poe2.json" DESTINATION "Data")
+    # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim
+    # (hand-written; keys are language-neutral English lines / algorithmic entry ids).
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_templates.json" DESTINATION "Data")
     # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
     # which is gitignored and has no install rule -- so a `cmake --install` into a
     # fresh prefix, or any cleanup of dist\, silently lost it. Nothing reported the

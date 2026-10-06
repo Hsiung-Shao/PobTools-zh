@@ -1,0 +1,143 @@
+{
+ "schema": 1,
+ "source": "exile-appraiser 內建範本(手寫);鍵 = 語料頁英文第一行 / 演算法頁項目 id,對應 data/regex/regex_poe*.json 與 regex/src/pages/",
+ "templates": [
+  {
+   "id": "poe1_t17_danger",
+   "game": "poe1",
+   "name": { "zh": "T17 危險詞綴(排除)", "en": "T17 dangerous mods (exclude)" },
+   "desc": {
+    "zh": "排除 T17 常見的高危詞綴:藥劑效果降低、攻擊格擋、血漬鋸刃、核息、隕石、光環影響敵人、稀有怪復甦、偷取恢復降低。依 build 自行增減。",
+    "en": "Excludes common high-risk T17 modifiers: less flask effect, attack block, sawblades, volatile cores, meteors, auras affecting enemies, reviving rares, reduced leech. Adjust for your build."
+   },
+   "mode": "none",
+   "pages": {
+    "map_mods": [
+     "Players have #% less effect of Flasks applied to them",
+     "Monsters have #% Chance to Block Attack Damage",
+     "Players are assaulted by Bloodstained Sawblades",
+     "Rare Monsters have Volatile Cores",
+     "Players are targeted by a Meteor when they use a Flask",
+     "Auras from Player Skills which affect Allies also affect Enemies",
+     "Rare monsters in area Temporarily Revive on death",
+     "Players have #% reduced Maximum total Life, Mana and Energy Shield Recovery per second from Leech"
+    ]
+   },
+   "numeric": {},
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe1_no_reflect_maxres",
+   "game": "poe1",
+   "name": { "zh": "地圖無反射 / 無 -最大抗性", "en": "Maps: no reflect / no -max res" },
+   "desc": {
+    "zh": "排除元素荊棘、物理荊棘(反射)與「玩家全部最大抗性降低」。",
+    "en": "Excludes elemental thorns, physical thorns (reflect) and reduced maximum resistances."
+   },
+   "mode": "none",
+   "pages": {
+    "map_mods": [
+     "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage",
+     "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage",
+     "Players have #% to all maximum Resistances"
+    ]
+   },
+   "numeric": {},
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe1_vendor_6l",
+   "game": "poe1",
+   "name": { "zh": "6L 商店", "en": "6-link vendor" },
+   "desc": {
+    "zh": "商店裡 6 連結的物品(插槽顯示 R-G-B 不翻譯的假設待實測)。",
+    "en": "6-linked items in a vendor (assumes socket letters are not translated; untested in the zh client)."
+   },
+   "mode": "any",
+   "pages": { "vendor_items": ["links"] },
+   "numeric": { "vendor_items": { "links": { "choice": "6" } } },
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe1_vendor_rgb",
+   "game": "poe1",
+   "name": { "zh": "RGB 鏈接商店", "en": "RGB-linked vendor" },
+   "desc": {
+    "zh": "紅綠藍相鄰連結(任意順序),賣給商人換彩色石。插槽字母假設待實測。",
+    "en": "Adjacent linked red, green and blue sockets in any order (vendor for Chromatic Orbs). Socket-letter assumption untested."
+   },
+   "mode": "any",
+   "pages": { "vendor_items": ["link_colors"] },
+   "numeric": { "vendor_items": { "link_colors": { "choice": "rgb" } } },
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe1_logbook_safe",
+   "game": "poe1",
+   "name": { "zh": "探險日誌 高價值(排除難打詞綴)", "en": "Logbooks: worth running (exclude nasty mods)" },
+   "desc": {
+    "zh": "日誌的詞綴不直接標示價值(清單只有怪物 / 玩家詞綴);這組排除反射、無法回復、-最大抗性,保留可以放心跑的日誌。",
+    "en": "Logbook modifiers do not state value directly (the list only has monster/player mods); this excludes reflect, no regeneration and -max res so the rest are safe to run."
+   },
+   "mode": "none",
+   "pages": {
+    "logbook_mods": [
+     "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage",
+     "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage",
+     "Players cannot Regenerate Life, Mana or Energy Shield",
+     "Players have #% to all maximum Resistances"
+    ]
+   },
+   "numeric": {},
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe2_waystone_danger",
+   "game": "poe2",
+   "name": { "zh": "換界石危險詞綴(排除)", "en": "Waystone dangerous mods (exclude)" },
+   "desc": {
+    "zh": "排除玩家最大抗性降低、元素穿透、恢復率降低、額外混沌傷害、時空鎖鏈。依 build 自行增減。",
+    "en": "Excludes reduced max resistances, elemental penetration, less recovery, extra chaos damage and Temporal Chains. Adjust for your build."
+   },
+   "mode": "none",
+   "pages": {
+    "waystone_mods": [
+     "#% maximum Player Resistances",
+     "Monster Damage Penetrates #% Elemental Resistances",
+     "Players have #% less Recovery Rate of Life and Energy Shield",
+     "Monsters deal #% of Damage as Extra Chaos",
+     "Players are periodically Cursed with Temporal Chains"
+    ]
+   },
+   "numeric": {},
+   "custom": [],
+   "excludes": []
+  },
+  {
+   "id": "poe2_tablet_value",
+   "game": "poe2",
+   "name": { "zh": "碑牌 高價值", "en": "Tablets: high value" },
+   "desc": {
+    "zh": "通用碑牌中提高收益的詞綴:物品稀有度、換界石數量、額外隨機詞綴、怪物群大小(任一)。",
+    "en": "Generic tablet modifiers that raise rewards: item rarity, waystone quantity, additional random modifier, pack size (any of)."
+   },
+   "mode": "any",
+   "pages": {
+    "tablet_mods": [
+     "#% increased Rarity of Items found in Map",
+     "#% increased Quantity of Waystones found in Map",
+     "Map has # additional random Modifier",
+     "#% increased Pack Size in Map"
+    ]
+   },
+   "numeric": {},
+   "custom": [],
+   "excludes": []
+  }
+ ]
+}

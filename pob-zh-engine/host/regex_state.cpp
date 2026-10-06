@@ -1,4 +1,5 @@
 #include "regex_state.h"
+#include "regex_state_json.h"
 
 #include "regex_algo_pages.h"   // RegexAlgo::SectionHostOf (sections.ts)
 #include "regex_folders.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 
 #include <json.hpp>   // nlohmann::ordered_json (deps/nlohmann)
@@ -143,6 +145,14 @@ ordered_json NumberJson(double d)
 	// JSON.stringify prints an integral double without a fraction; nlohmann
 	// would print "16.0". Every value here went through Math.trunc.
 	if (std::fabs(d) < 1e15) return (long long)d;
+	// 1e15 .. 2^64: JS writes the SHORTEST round-trip digits out positionally
+	// (12345678901234567000), not the exact binary value nor an exponent.
+	if (std::floor(d) == d && std::fabs(d) < 1.8e19) {
+		const std::string digits = RegexStateJson::JsIntegral(std::fabs(d));
+		const unsigned long long u = std::strtoull(digits.c_str(), nullptr, 10);
+		if (d > 0) return u;
+		if (u <= 9223372036854775807ull) return -(long long)u;
+	}
 	return d;
 }
 
@@ -185,6 +195,37 @@ std::vector<std::string> UnionKeys(const std::vector<std::string>& a, const std:
 }
 
 } // namespace
+
+namespace RegexStateJson {
+std::string JsIntegral(double d)
+{
+	// nlohmann prints the shortest round-trip digits ("1.2345678901234567e+19",
+	// "1000000000000000.0"); lay them out as an integer.
+	const std::string s = ordered_json(d < 0 ? -d : d).dump();
+	const size_t e = s.find_first_of("eE");
+	const std::string mant = s.substr(0, e);
+	int exp = e == std::string::npos ? 0 : std::atoi(s.c_str() + e + 1);
+	std::string digits;
+	int point = -1;
+	for (char c : mant) {
+		if (c == '.') point = (int)digits.size();
+		else if (c >= '0' && c <= '9') digits += c;
+	}
+	if (point < 0) point = (int)digits.size();
+	point += exp;
+	std::string out = point <= 0 ? std::string("0") : digits.substr(0, std::min<size_t>(digits.size(), (size_t)point));
+	while ((int)out.size() < point) out += '0';
+	const size_t nz = out.find_first_not_of('0');
+	out = nz == std::string::npos ? std::string("0") : out.substr(nz);
+	return (d < 0 && out != "0" ? "-" : "") + out;
+}
+bool ValueFrom(const ordered_json& raw, AlgoValue& v) { return NumericValue(raw, v); }
+ordered_json ValueTo(const AlgoValue& v) { return ValueJson(v); }
+std::vector<std::string> UnionKeys(const std::vector<std::string>& a, const std::vector<std::string>& b)
+{
+	return ::UnionKeys(a, b);
+}
+} // namespace RegexStateJson
 
 const AlgoValue* RegexValueFind(const RegexValueList& m, const std::string& id)
 {
