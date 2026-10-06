@@ -451,6 +451,7 @@ bool RegexUiState::Parse(const std::string& text)
 				uncatCollapsed.push_back(x);
 		}
 		panelView = OneOf(Str(doc, "panelView", "page"), "page", "combined", nullptr);
+		exileAppraiserExe = Str(doc, "exileAppraiserExe", "");
 		RegexMigrateSections(*this);
 		RegexFolders::Normalize(*this);
 	} catch (const std::exception&) {
@@ -515,6 +516,7 @@ std::string RegexUiState::Serialize() const
 	doc["folders"] = std::move(fo);
 	doc["uncatCollapsed"] = uncatCollapsed;
 	if (panelView != "page") doc["panelView"] = panelView;
+	if (!exileAppraiserExe.empty()) doc["exileAppraiserExe"] = exileAppraiserExe;
 	return doc.dump(1, '\t');
 }
 

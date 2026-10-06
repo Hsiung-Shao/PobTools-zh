@@ -125,6 +125,10 @@ struct RegexUiState {
 	std::vector<RegexBookmarkFolder> folders[2];   // [0] poe1, [1] poe2
 	std::vector<std::string> uncatCollapsed;       // games whose "uncategorised" is folded
 	std::string panelView = "page";    // PobTools only: page | combined
+	// PobTools only: the ExileAppraiser.exe the user picked by hand (regex_send.h);
+	// written only when set, so the file stays schema 5 and exile-appraiser's
+	// state.ts (which drops keys it does not know) is unaffected.
+	std::string exileAppraiserExe;
 
 	// ---- file ----
 	// The schema the loaded file declared: 0 = no file / no "schema" key.

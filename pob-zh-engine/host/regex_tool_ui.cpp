@@ -7,6 +7,7 @@
 #include "regex_folders.h"
 #include "regex_gen.h"
 #include "regex_itemmods.h"
+#include "regex_send.h"
 #include "regex_share.h"
 #include "regex_state.h"
 #include "error_log.h"
@@ -264,6 +265,10 @@ public:
 		scopeCombined_ = state_.outScope != "page";
 		view_ = state_.panelView == "combined" ? View::Combined : View::Page;
 		bmTab_ = bmTabFollow_ = selGame_;
+		// "送到 ExileAppraiser": sweep temp files left by earlier sessions, and
+		// find the exe once so the button can say whether it will work.
+		RegexSend::SweepTempDir(RegexSend::DefaultTempDir(), RegexSend::kTempMaxAgeSeconds);
+		relocateExileAppraiser();
 		if (state_.SaveBlocked())
 			notice_ = u8"regex_ui.json 是較新版本的 PobTools 寫的（schema " + std::to_string(state_.loadedSchema) +
 			          u8"），這個版本不會覆寫它：可以照常使用，但這次的變更（勾選、書籤）不會保存。";
@@ -272,7 +277,13 @@ public:
 
 	const char* InitError() const override { return ""; }
 
-	~RegexToolPanel() override { joinItemMods(); }
+	~RegexToolPanel() override
+	{
+		joinItemMods();
+		// Only files old enough that ExileAppraiser has surely read them; the rest
+		// go in a later session's sweep (regex_send.h).
+		RegexSend::CleanupSession(sendFiles_, RegexSend::kSessionMinAgeSeconds);
+	}
 
 	void Frame() override
 	{
@@ -319,6 +330,7 @@ public:
 			shareCopiedAt_ = std::chrono::steady_clock::now();
 			shareCopyRequest_.clear();
 		}
+		runSendRequests();
 		// Written here rather than in Frame(): this is the one place a panel is
 		// allowed to touch the disk, and it runs at most once per frame.
 		flushState();
@@ -1717,6 +1729,8 @@ private:
 			modal_ = Modal::Paste;
 		}
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"貼上別人給的分享碼並套用（套用前會先確認）");
+		ImGui::SameLine();
+		drawSendButton(any);
 		if (shareCopied_) {
 			if (std::chrono::steady_clock::now() - shareCopiedAt_ > std::chrono::milliseconds(2500)) {
 				shareCopied_ = 0;
@@ -1731,11 +1745,21 @@ private:
 	// store.ts makeShareCode / currentShareState: every page of the game with ticks.
 	void makeShareCode()
 	{
+		std::string code;
+		if (!buildShareCode(code)) return;
+		shareCopyRequest_ = std::move(code);
+		shareCopied_ = 0;
+	}
+
+	// The code "複製分享碼" copies and "送到 ExileAppraiser" sends. False (notice_
+	// set) when the item-mod page's saved ticks could not be loaded.
+	bool buildShareCode(std::string& out)
+	{
 		// Ticks saved on the item-mod page but not restored yet (it loads in the
 		// background): load it now, or the code would silently leave them out.
 		if (itemTicksPending(selGame_) && !ensureItemModsNow(selGame_)) {
 			notice_ = u8"物品詞綴資料載入失敗（" + imv_[GameIdx(selGame_)].err + u8"），沒有產生分享碼：那一頁的勾選會漏掉。";
-			return;
+			return false;
 		}
 		RegexEmbed::PicksMap picks;
 		RegexEmbed::ValuesMap values;
@@ -1750,8 +1774,128 @@ private:
 		}
 		const RegexShare::State st = RegexShare::StateOf(selGame_, gamePages(selGame_), picks, values, modeId(),
 		                                                 state_.custom, state_.excludes);
-		shareCopyRequest_ = RegexShare::Encode(st);
-		shareCopied_ = 0;
+		out = RegexShare::Encode(st);
+		return true;
+	}
+
+	// ---- 送到 ExileAppraiser (regex_send.h) ------------------------------------
+	// Frame() only records what was asked; the registry / file dialog / process
+	// start happen in RunDeferred, like the clipboard and the save.
+
+	void relocateExileAppraiser()
+	{
+		sendLoc_ = RegexSend::Locate(RegexSend::RealEnv(), RegexSend::Widen(state_.exileAppraiserExe));
+		sendLocAt_ = std::chrono::steady_clock::now();
+	}
+
+	void setSendMessage(bool ok, const std::string& msg)
+	{
+		sendOk_ = ok;
+		sendMsg_ = msg;
+		sendMsgAt_ = std::chrono::steady_clock::now();
+		if (ok) PobLog::Diag("regex", u8"送到 ExileAppraiser：" + msg);
+		else PobLog::Error("regex", u8"送到 ExileAppraiser：" + msg);
+	}
+
+	void drawSendButton(bool any)
+	{
+		const bool found = !sendLoc_.exe.empty();
+		const std::string label = std::string(found ? u8"送到 ExileAppraiser" : u8"找不到 ExileAppraiser，手動指定…") +
+		                          "###rx_send";
+		ImGui::BeginDisabled(!any);
+		if (ImGui::SmallButton(label.c_str())) {
+			std::string code;
+			if (buildShareCode(code)) {
+				sendCode_ = std::move(code);
+				sendRequest_ = true;
+			}
+		}
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+			ImGui::OpenPopup("##rx_send_menu");
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			// The answer can change under us (installed / started meanwhile): refresh
+			// at most every few seconds while the pointer rests here.
+			if (std::chrono::steady_clock::now() - sendLocAt_ > std::chrono::seconds(3)) relocateWanted_ = true;
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
+			if (!any) ImGui::TextUnformatted(u8"先勾選幾項（或加自訂文字 / 排除詞）才有東西可以送。");
+			else ImGui::TextUnformatted(u8"把目前遊戲的分享碼直接交給 ExileAppraiser；"
+			                            u8"它會跳出確認對話框，按「套用」才會覆蓋那邊的勾選。");
+			if (found) {
+				ImGui::Text(u8"位置：%s", RegexSend::Narrow(sendLoc_.exe).c_str());
+				ImGui::Text(u8"來源：%s", RegexSend::SourceLabel(sendLoc_.source));
+			} else {
+				ImGui::TextColored(kWarn, u8"在登錄、預設安裝路徑與執行中的程式都找不到 ExileAppraiser.exe；"
+				                          u8"按下會請你手動指定（可攜版請指定它的 exe）。");
+			}
+			if (sendLoc_.manualMissing)
+				ImGui::TextColored(kWarn, u8"手動指定的檔案已不存在：%s", state_.exileAppraiserExe.c_str());
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(u8"需要 ExileAppraiser v0.2.1 以上（舊版只會叫出視窗，不會套用）。");
+			ImGui::TextUnformatted(u8"「物品詞綴數值」頁的勾選不互通（兩邊的鍵不同），那邊會回報找不到。");
+			ImGui::TextUnformatted(u8"右鍵：手動指定 / 清除 ExileAppraiser.exe 的位置。");
+			ImGui::PopStyleColor();
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		if (ImGui::BeginPopup("##rx_send_menu")) {
+			if (ImGui::MenuItem(u8"手動指定 ExileAppraiser.exe…")) pickRequest_ = true;
+			if (ImGui::MenuItem(u8"清除手動指定", nullptr, false, !state_.exileAppraiserExe.empty())) {
+				state_.exileAppraiserExe.clear();
+				markStateDirty();
+				relocateWanted_ = true;
+			}
+			if (!state_.exileAppraiserExe.empty()) ImGui::TextDisabled(u8"目前：%s", state_.exileAppraiserExe.c_str());
+			ImGui::EndPopup();
+		}
+		if (!sendMsg_.empty()) {
+			if (std::chrono::steady_clock::now() - sendMsgAt_ > std::chrono::seconds(sendOk_ ? 6 : 15)) {
+				sendMsg_.clear();
+			} else {
+				ImGui::SameLine();
+				ImGui::TextColored(sendOk_ ? kGood : kBad, "%s", sendMsg_.c_str());
+			}
+		}
+	}
+
+	// True when a file was picked (and stored).
+	bool pickExileAppraiser()
+	{
+		const std::wstring init = sendLoc_.exe.empty() ? std::wstring() : RegexSend::DirOf(sendLoc_.exe);
+		const std::wstring picked = RegexSend::PickExeDialog(host_ ? host_->hostHwnd : nullptr, init);
+		if (picked.empty()) return false;
+		state_.exileAppraiserExe = RegexSend::Narrow(picked);
+		markStateDirty();
+		relocateExileAppraiser();
+		return true;
+	}
+
+	void runSendRequests()
+	{
+		if (pickRequest_) {
+			pickRequest_ = false;
+			if (pickExileAppraiser()) setSendMessage(true, u8"已指定 " + state_.exileAppraiserExe);
+		}
+		if (relocateWanted_) {
+			relocateWanted_ = false;
+			relocateExileAppraiser();
+		}
+		if (!sendRequest_) return;
+		sendRequest_ = false;
+		const std::string code = std::move(sendCode_);
+		sendCode_.clear();
+		relocateExileAppraiser();   // fresh: it may have moved / closed since the last look
+		if (sendLoc_.exe.empty() && !pickExileAppraiser()) {
+			setSendMessage(false, u8"沒有送出：找不到 ExileAppraiser.exe（右鍵可手動指定）");
+			return;
+		}
+		const std::wstring tmp = RegexSend::DefaultTempDir();
+		if (code.size() > RegexSend::kMaxInlineChars) RegexSend::SweepTempDir(tmp, RegexSend::kTempMaxAgeSeconds);
+		const RegexSend::Result r = RegexSend::Send(sendLoc_.exe, code, tmp, RegexSend::RealLauncher(),
+		                                            RegexSend::NowStamp(), RegexSend::RandomU32());
+		if (!r.tempFile.empty()) sendFiles_.push_back(r.tempFile);
+		setSendMessage(r.ok, r.message);
 	}
 
 	// store.ts applyCombo: OVERWRITE every page of the code's game (ticks; values
@@ -2974,6 +3118,16 @@ private:
 	std::string shareCopyRequest_;
 	int shareCopied_ = 0;
 	std::chrono::steady_clock::time_point shareCopiedAt_;
+	// 送到 ExileAppraiser: where it is (refreshed on hover / before each send),
+	// requests from Frame() for RunDeferred, the last result, this session's temp files.
+	RegexSend::Located sendLoc_;
+	std::chrono::steady_clock::time_point sendLocAt_;
+	bool relocateWanted_ = false, pickRequest_ = false, sendRequest_ = false;
+	std::string sendCode_;
+	std::string sendMsg_;
+	bool sendOk_ = false;
+	std::chrono::steady_clock::time_point sendMsgAt_;
+	std::vector<std::wstring> sendFiles_;
 	std::vector<RegexShare::Template> templates_;
 	std::string templatesErr_;
 	int tplPending_ = -1;                 // the template the confirm dialog is about
