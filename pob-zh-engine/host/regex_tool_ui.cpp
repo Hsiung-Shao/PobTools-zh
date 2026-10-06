@@ -3,6 +3,8 @@
 #include "clipboard_util.h"
 #include "regex_algo_pages.h"
 #include "regex_data.h"
+#include "regex_embed.h"
+#include "regex_folders.h"
 #include "regex_gen.h"
 #include "regex_state.h"
 #include "error_log.h"
@@ -17,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -44,8 +47,7 @@
 // waystone modifier pages carry a collapsible numeric SECTION on top (tier,
 // quantity, rarity ...) whose terms join the modifier tokens in one string, and
 // each game has a vendor page. Their rows are an input + a fragment, not a line
-// to cut tokens from. Their ticks and values live in memory only for now; saving
-// them (regex_ui.json schema 5) is a later step, so the file format is unchanged.
+// to cut tokens from.
 //
 // Multi-page merge (R4, exile-appraiser combine.ts / RegexCombined.vue): every
 // page of the current game with ticks, plus free-typed custom terms and excludes,
@@ -53,8 +55,19 @@
 // merged string and the current page's own ("合併 / 單頁", B's outScope, default
 // merged); a "已選（合併）" view lists which pages take part, what each costs,
 // the custom / exclude chips and the merge conflicts. Ticks live per page, so
-// they survive switching pages either way. Custom text, excludes and the scope
-// are memory only for now (R5 extends regex_ui.json).
+// they survive switching pages either way.
+//
+// Persistence (R5, regex_ui.json schema 5 = exile-appraiser's state.ts): every
+// page's ticks (a section's under its host's `num`), algorithmic values, custom
+// text, excludes, output scope, the merged / page view and folded sections all
+// go to state_ the moment they change. A bookmark is the whole page (embed.ts):
+// a host page carries its section, the vendor page its values.
+//
+// Bookmarks (R6, exile-appraiser folders.ts / RegexBookmarks.vue): PoE1 / PoE2
+// tabs, one level of folders (add / rename / delete / fold, an "uncategorised"
+// group), drag to reorder or into a folder, with up / down buttons and a
+// "move to" menu as the non-drag way. No hotkeys and no paste-into-game: those
+// are exile-appraiser overlay features this panel does not have.
 
 namespace {
 
@@ -159,7 +172,10 @@ const char* GameLabel(const std::string& g)
 // Which modal wants to open. Raised by a button deep inside a child window and
 // acted on at the top level, because OpenPopup and BeginPopupModal have to be
 // called from the same ID scope or the popup simply never appears.
-enum class Modal { None, Save, Rename, Delete };
+enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDelete };
+
+// The left column: the merged overview or the page's own list (store.ts panelView).
+enum class View { Page, Combined };
 
 class RegexToolPanel : public IToolPanel {
 public:
@@ -197,6 +213,12 @@ public:
 		restoreState();
 		lang_ = state_.lang == "en" ? Lang::En : Lang::Zh;
 		bilingual_ = state_.bilingual;
+		scopeCombined_ = state_.outScope != "page";
+		view_ = state_.panelView == "combined" ? View::Combined : View::Page;
+		bmTab_ = bmTabFollow_ = selGame_;
+		if (state_.SaveBlocked())
+			notice_ = u8"regex_ui.json 是較新版本的 PobTools 寫的（schema " + std::to_string(state_.loadedSchema) +
+			          u8"），這個版本不會覆寫它：可以照常使用，但這次的變更（勾選、書籤）不會保存。";
 		return true;   // a missing data file is a message, not a dead tab
 	}
 
@@ -343,6 +365,11 @@ private:
 	void flushState()
 	{
 		if (!stateDirty_ || saveFailed_) return;
+		// A newer build's file: not ours to overwrite (said once, at Init).
+		if (state_.SaveBlocked()) {
+			stateDirty_ = false;
+			return;
+		}
 		// The return value used to be dropped. Bookmarks are the only thing this
 		// tool holds that the player cannot rebuild from anywhere else, so a save
 		// that quietly did nothing would surface days later as "my bookmarks are
@@ -377,26 +404,35 @@ private:
 		// list is filtered by game, and an unfilled one would have no column to
 		// appear in. One that names a page this build no longer ships stays
 		// empty on purpose and is counted in the panel instead of vanishing.
+		bool filled = false;
 		for (RegexBookmark& b : state_.bookmarks) {
 			if (!b.game.empty()) continue;
 			const std::string g = gameOfPage(b.page);
 			if (g.empty()) continue;
 			b.game = g;
+			filled = true;
 			stateDirty_ = true;
 		}
+		// A filled-in bookmark may name a folder: list it and keep the order
+		// invariant (store.ts onCatalogueReady).
+		if (filled) RegexFolders::Normalize(state_);
 
+		// Every page's saved ticks (a section's live in its host's `num`) and
+		// every algorithmic page's values (a section's under its host id).
 		int missedTotal = 0;
 		std::string firstPage;
-		for (size_t i = 0; i < data_.Pages().size(); i++) {
-			const RegexPageDef& def = data_.Pages()[i];
-			for (const RegexPagePicks& saved : state_.current) {
-				if (saved.page != def.id) continue;
-				const int missed = applyKeys(def.entries, pages_[i].picked,
-				                             saved.keys, saved.alt);
-				if (missed > 0) {
-					missedTotal += missed;
-					if (firstPage.empty()) firstPage = def.title;
-				}
+		for (size_t i = 0; i < refs_.size(); i++) {
+			const RegexAlgo::PageRef& ref = refs_[i];
+			if (ref.algo) {
+				if (const RegexValueList* m = state_.NumericOf(RegexAlgo::NumericKeyOf(ref.Id())))
+					for (const auto& kv : *m) pages_[i].algo.values[kv.first] = kv.second;
+			}
+			const std::optional<RegexEmbed::Applied> r = RegexEmbed::SavedPicksOf(ref, state_);
+			if (!r) continue;
+			setTicks((int)i, r->picked);
+			if (r->missed > 0) {
+				missedTotal += r->missed;
+				if (firstPage.empty()) firstPage = refs_[hostIndexOf((int)i)].Title();
 			}
 		}
 		if (missedTotal > 0)
@@ -415,33 +451,51 @@ private:
 		     : mode_ == RegexGen::Mode::None ? "none" : "any";
 	}
 
-	// Keys -> ticks, through the shared resolver in regex_state so --regex-selftest
-	// exercises the same code the panel does.
-	static int applyKeys(const std::vector<RegexEntryDef>& defs, std::vector<char>& picked,
-	                     const std::vector<std::string>& keys,
-	                     const std::vector<std::string>& alt)
+	// Overwrite one page's ticks (corpus or algorithmic) from a list of indices.
+	void setTicks(int idx, const std::vector<int>& picked)
 	{
-		std::vector<std::string> entryKeys, entryAlt;
-		entryKeys.reserve(defs.size());
-		entryAlt.reserve(defs.size());
-		for (const RegexEntryDef& d : defs) {
-			entryKeys.push_back(KeyOf(d));
-			entryAlt.push_back(ZhLine(d));
-		}
-		return RegexResolveKeys(keys, alt, entryKeys, entryAlt, picked);
+		std::vector<char>& v = refs_[idx].algo ? pages_[idx].algo.picked : pages_[idx].picked;
+		std::fill(v.begin(), v.end(), (char)0);
+		for (int i : picked)
+			if (i >= 0 && i < (int)v.size()) v[i] = 1;
+		pages_[idx].dirty = true;
+		pages_[idx].filterDirty = true;
 	}
 
-	void collectKeys(std::vector<std::string>& keys, std::vector<std::string>& alt) const
+	// store.ts syncCurrent: page idx's ticks -> its saved record. A section's
+	// ticks are its host's `num`; the vendor page's are entry ids.
+	void syncCurrent(int idx)
 	{
-		keys.clear();
-		alt.clear();
-		if (isAlgo()) return;   // algorithmic picks are not saved yet (regex_ui.json schema 5)
-		const PageState& s = st();
-		for (int i = 0; i < (int)entries().size(); i++) {
-			if (i >= (int)s.picked.size() || !s.picked[i]) continue;
-			keys.push_back(KeyOf(entries()[i]));
-			alt.push_back(ZhLine(entries()[i]));
+		const RegexAlgo::PageRef& ref = refs_[idx];
+		const RegexEmbed::Keys k = RegexEmbed::PageKeysOf(ref, picksOf(idx));
+		if (ref.IsSection()) {
+			state_.PicksFor(ref.algo->sectionOf).num = k.keys;
+		} else {
+			RegexPagePicks& p = state_.PicksFor(ref.Id());
+			p.keys = k.keys;
+			p.alt = k.alt;
 		}
+		markStateDirty();
+	}
+
+	// store.ts setValue: an algorithmic page's values -> numeric[store key].
+	void syncValues(int idx)
+	{
+		if (!refs_[idx].algo) return;
+		RegexValueList& dst = state_.NumericFor(RegexAlgo::NumericKeyOf(refs_[idx].Id()));
+		for (const auto& kv : pages_[idx].algo.values) {
+			const RegexFrag::AlgoValue* had = RegexValueFind(dst, kv.first);
+			if (!had || had->min != kv.second.min || had->max != kv.second.max ||
+			    had->choice != kv.second.choice || RegexFrag::HasChoice(*had) != RegexFrag::HasChoice(kv.second))
+				RegexValueSet(dst, kv.first, kv.second);
+		}
+		markStateDirty();
+	}
+
+	void markStateDirty()
+	{
+		stateDirty_ = true;
+		saveFailed_ = false;   // a fresh change deserves a fresh attempt
 	}
 
 	// Everything that changes what is ticked funnels through here, so there is
@@ -452,30 +506,25 @@ private:
 		combinedDirty_ = true;
 		st().filterDirty = true;   // ticked rows move to the top; see refreshFilter
 		copied_ = false;
-		RegexPagePicks& p = state_.PicksFor(pageId());
-		collectKeys(p.keys, p.alt);
+		syncCurrent(page_);
 		state_.game = selGame_;
 		state_.page = pageId();
 		state_.mode = modeId();
-		stateDirty_ = true;
-		saveFailed_ = false;   // a fresh change deserves a fresh attempt
 	}
 
-	// A tick or a value on an algorithmic page changed. Kept in memory only:
-	// the saved format has no room for values yet, and writing the ticks
-	// without them would restore conditions the player never set.
+	// A tick or a value on an algorithmic page changed.
 	void algoChanged(int idx)
 	{
 		pages_[idx].dirty = true;
 		combinedDirty_ = true;
 		if (refs_[idx].IsSection()) {
 			// The section's output is part of its host page's string.
-			for (int i = 0; i < (int)refs_.size(); i++)
-				if (refs_[i].corpus && refs_[i].Id() == refs_[idx].algo->sectionOf &&
-				    refs_[i].Game() == refs_[idx].Game())
-					pages_[i].dirty = true;
+			const int host = hostIndexOf(idx);
+			if (host != idx) pages_[host].dirty = true;
 		}
 		copied_ = false;
+		syncCurrent(idx);
+		syncValues(idx);
 	}
 
 	// ---- header --------------------------------------------------------------
@@ -499,11 +548,11 @@ private:
 		{
 			const std::string merged = u8"已選（合併）· " + std::to_string(combineOrderIdx(true).size()) +
 			                           u8" 頁###rx_view_combined";
-			if (segButton(merged.c_str(), view_ == View::Combined)) view_ = View::Combined;
+			if (segButton(merged.c_str(), view_ == View::Combined)) setView(View::Combined);
 			if (ImGui::IsItemHovered())
 				ImGui::SetTooltip(u8"目前遊戲所有有勾選的清單、自訂文字與排除詞，合成一串");
 			ImGui::SameLine(0, 2 * host_->scale);
-			if (segButton(u8"單頁清單###rx_view_page", view_ == View::Page)) view_ = View::Page;
+			if (segButton(u8"單頁清單###rx_view_page", view_ == View::Page)) setView(View::Page);
 		}
 		ImGui::SameLine(0, 16 * host_->scale);
 		ImGui::SetNextItemWidth(170 * host_->scale);
@@ -518,7 +567,7 @@ private:
 				                          "###rx_pg" + std::to_string(i);
 				if (ImGui::Selectable(label.c_str(), page_ == (int)i)) {
 					switchPage((int)i);
-					view_ = View::Page;   // store.ts switchPage: back to the page's list
+					setView(View::Page);   // store.ts switchPage: back to the page's list
 				}
 			}
 			ImGui::EndCombo();
@@ -844,7 +893,7 @@ private:
 				ImGui::TextColored(kWarn, u8"%d 個合併衝突", (int)out.conflicts.size());
 				if (view_ != View::Combined) {
 					ImGui::SameLine();
-					if (ImGui::SmallButton(u8"查看###rx_see_combined")) view_ = View::Combined;
+					if (ImGui::SmallButton(u8"查看###rx_see_combined")) setView(View::Combined);
 				}
 			}
 			if (!out.custom.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
@@ -907,93 +956,328 @@ private:
 	}
 
 	// ---- bookmarks -----------------------------------------------------------
+	//
+	// R6 (exile-appraiser RegexBookmarks.vue): PoE1 / PoE2 tabs, one level of
+	// folders, drag to reorder / into a folder. The folder logic itself is
+	// regex_folders (pure, under --regex-selftest); this only draws it. Edits
+	// made while drawing are queued in bmAction_ and applied after the list, so
+	// no index the loop is still using moves under it.
+
+	// One game's pages (corpus + algorithmic, sections included): page ids repeat
+	// across games (gem_names, vendor_bases), so RegexEmbed always looks within one.
+	std::vector<RegexAlgo::PageRef> gamePages(const std::string& g) const
+	{
+		std::vector<RegexAlgo::PageRef> out;
+		for (const RegexAlgo::PageRef& p : refs_)
+			if (p.Game() == g) out.push_back(p);
+		return out;
+	}
+	int indexInGame(const std::string& g, const std::string& id) const
+	{
+		for (int i = 0; i < (int)refs_.size(); i++)
+			if (refs_[i].Game() == g && refs_[i].Id() == id) return i;
+		return -1;
+	}
+	std::string pageTitleIn(const std::string& g, const std::string& id) const
+	{
+		const int i = indexInGame(g, id);
+		return i >= 0 ? refs_[i].Title() : pageTitleById(id);
+	}
+
+	// store.ts currentBookmarkBody: the page on screen (+ its section) as a bookmark.
+	std::optional<RegexBookmark> currentBookmarkBody() const
+	{
+		if (!hasPage()) return std::nullopt;
+		RegexEmbed::PicksMap picks;
+		RegexEmbed::ValuesMap values;
+		auto add = [&](int i) {
+			picks[refs_[i].Id()] = picksOf(i);
+			if (refs_[i].algo) values[RegexAlgo::NumericKeyOf(refs_[i].Id())] = pages_[i].algo.values;
+		};
+		add(page_);
+		const int sec = sectionIndexOf(page_);
+		if (sec >= 0) add(sec);
+		return RegexEmbed::BookmarkBodyOf(gamePages(selGame_), refs_[page_], picks, values, selGame_, modeId(),
+		                                  lang_ == Lang::En ? "en" : "zh");
+	}
+
+	struct BmAction {
+		enum Kind { None, ToFolder, Before, Step, FolderTo, FolderStep, Fold } kind = None;
+		int index = -1;      // bookmark
+		int before = -1;     // Before: the bookmark to land in front of
+		int delta = 0;       // Step / FolderStep
+		int to = 0;          // FolderTo
+		bool on = false;     // Fold
+		std::string folder;  // ToFolder / FolderTo / FolderStep / Fold ("" = uncategorised)
+	};
+
+	void applyBmAction()
+	{
+		const BmAction a = bmAction_;
+		bmAction_ = BmAction{};
+		bool changed = false;
+		switch (a.kind) {
+		case BmAction::None: return;
+		case BmAction::ToFolder: changed = RegexFolders::MoveBookmark(state_, a.index, a.folder) >= 0; break;
+		case BmAction::Before: changed = RegexFolders::MoveBookmark(state_, a.index, std::string(), a.before) >= 0; break;
+		case BmAction::Step: changed = RegexFolders::MoveBookmarkBy(state_, a.index, a.delta) != a.index; break;
+		case BmAction::FolderTo: changed = RegexFolders::MoveTo(state_, bmTab_, a.folder, a.to); break;
+		case BmAction::FolderStep: changed = RegexFolders::MoveBy(state_, bmTab_, a.folder, a.delta); break;
+		case BmAction::Fold: changed = RegexFolders::SetCollapsed(state_, bmTab_, a.folder, a.on); break;
+		}
+		if (changed) markStateDirty();
+	}
 
 	void drawBookmarks()
 	{
-		int mine = 0, elsewhere = 0, orphans = 0;
+		// The tab follows the list's game when that changes (RegexBookmarks.vue
+		// watches selGame); a tab picked by hand stays until then.
+		if (bmTabFollow_ != selGame_) bmTab_ = bmTabFollow_ = selGame_;
+		int count[2] = {0, 0}, orphans = 0;
 		for (const RegexBookmark& b : state_.bookmarks) {
 			if (b.game.empty()) orphans++;
-			else if (b.game == selGame_) mine++;
-			else elsewhere++;
+			else count[b.game == "poe2" ? 1 : 0]++;
 		}
+		const int tabIdx = bmTab_ == "poe2" ? 1 : 0;
 
 		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled(u8"書籤（%s）", GameLabel(selGame_));
-		ImGui::SameLine();
-		const int picks = pickCount();
-		ImGui::BeginDisabled(picks == 0 || isAlgo());
+		ImGui::TextDisabled(u8"書籤");
+		for (int gi = 0; gi < 2; gi++) {
+			const std::string g = kGames[gi];
+			// A game with neither a catalogue nor bookmarks has nothing to show.
+			if (firstPageOf(g) < 0 && count[gi] == 0) continue;
+			ImGui::SameLine(0, (gi ? 2.0f : 8.0f) * host_->scale);
+			const std::string label = std::string(GameLabel(g)) + u8"（" + std::to_string(count[gi]) +
+			                          u8"）###rx_bmtab" + g;
+			if (segButton(label.c_str(), bmTab_ == g)) bmTab_ = g;
+		}
+		ImGui::SameLine(0, 12 * host_->scale);
+		const int picks = pickCount() + sectionPickCount();
+		ImGui::BeginDisabled(picks == 0);
 		if (ImGui::SmallButton(u8"存成書籤")) {
-			nameBuf_ = pageTitleById(pageId()) + " " + std::to_string(picks) + u8" 項";
+			nameBuf_ = pageTitleIn(selGame_, pageId()) + " " + std::to_string(picks) + u8" 項";
 			editIdx_ = -1;
 			modal_ = Modal::Save;
 		}
 		ImGui::EndDisabled();
-		if (isAlgo() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(u8"這一頁的條件目前還不能存成書籤");
-		else if (picks == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		if (picks == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 			ImGui::SetTooltip(u8"先勾選幾項才有東西可以存");
-		else if (sectionPickCount() > 0 && ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"書籤只存詞綴的勾選，上方的數值條件目前不會存進去");
+		else if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(u8"把目前這一頁存成 %s 的書籤（放在未分類）：勾選、數值條件與數值、模式、輸出語言",
+			                  GameLabel(selGame_));
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"新增資料夾")) {
+			nameBuf_.clear();
+			folderErr_.clear();
+			modal_ = Modal::FolderAdd;
+		}
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(u8"在 %s 的書籤裡新增一個資料夾（只有一層）", GameLabel(bmTab_));
 
-		// The other game's bookmarks are hidden, not gone. Saying how many there
-		// are is the difference between a filter and a bookmark that looks lost.
-		if (elsewhere > 0) {
-			const std::string other = (selGame_ == "poe2") ? "poe1" : "poe2";
-			const std::string msg = std::string(GameLabel(other)) + u8" 還有 " +
-			                        std::to_string(elsewhere) + u8" 筆";
-			const float w = ImGui::CalcTextSize(msg.c_str()).x;
-			ImGui::SameLine(ImGui::GetContentRegionMax().x - w);
+		if (bmTab_ != selGame_) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(msg.c_str());
+			ImGui::TextWrapped(u8"這是 %s 的書籤：「載入」會切換到 %s；「更新」要先在上方切到 %s。",
+			                   GameLabel(bmTab_), GameLabel(bmTab_), GameLabel(bmTab_));
 			ImGui::PopStyleColor();
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"切換上方的遊戲就看得到");
 		}
 
-		if (mine == 0) {
+		const RegexFolders::Grouped grouped = RegexFolders::GroupBookmarks(state_, bmTab_, false);
+		if (count[tabIdx] == 0 && !grouped.headers) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 			ImGui::TextWrapped(u8"%s 還沒有書籤。勾好一組常用的詞綴後按「存成書籤」，"
-			                   u8"下次可以直接叫回來。", GameLabel(selGame_));
+			                   u8"下次可以直接叫回來。", GameLabel(bmTab_));
 			ImGui::PopStyleColor();
 			drawOrphanNote(orphans);
 			return;
 		}
 
 		ImGui::BeginChild("##rx_bm", ImVec2(0, 0), true);
-		for (int i = 0; i < (int)state_.bookmarks.size(); i++) {
-			const RegexBookmark& b = state_.bookmarks[i];
-			if (b.game != selGame_) continue;
-			ImGui::PushID(i);
-			ImGui::TextUnformatted(b.name.c_str());
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			const char* modeZh = b.mode == "all" ? u8"全部都有"
-			                   : b.mode == "none" ? u8"一個都沒有" : u8"含任一個";
-			ImGui::Text(u8"%s · %s · %s · %d 項", pageTitleById(b.page).c_str(), modeZh,
-			            b.lang == "en" ? "English" : u8"繁中", (int)b.keys.size());
-			ImGui::PopStyleColor();
-			if (ImGui::SmallButton(u8"載入")) loadBookmark(i);
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"更新")) updateBookmark(i);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"用目前的清單、模式與勾選覆寫這個書籤");
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"改名")) {
-				nameBuf_ = b.name;
-				editIdx_ = i;
-				modal_ = Modal::Rename;
+		for (size_t gi = 0; gi < grouped.groups.size(); gi++) {
+			const RegexFolders::Group& grp = grouped.groups[gi];
+			ImGui::PushID((int)gi);
+			if (grouped.headers) drawFolderHeader(grp);
+			if (!grouped.headers || !grp.collapsed) {
+				if (grouped.headers) ImGui::Indent(14 * host_->scale);
+				if (grp.items.empty() && grouped.headers) {
+					ImGui::TextDisabled(u8"（空的：把書籤拖到這裡）");
+					if (ImGui::BeginDragDropTarget()) {
+						if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM"))
+							bmAction_ = BmAction{BmAction::ToFolder, *(const int*)pl->Data, -1, 0, 0, false, grp.folder};
+						ImGui::EndDragDropTarget();
+					}
+				}
+				for (size_t k = 0; k < grp.items.size(); k++)
+					drawBookmarkRow(grp.items[k], grp, k);
+				if (grouped.headers) ImGui::Unindent(14 * host_->scale);
 			}
-			ImGui::SameLine();
-			PobUi::PushDangerButton();
-			if (ImGui::SmallButton(u8"刪除")) {
-				editIdx_ = i;
-				modal_ = Modal::Delete;
-			}
-			PobUi::PopButtonStyle();
-			ImGui::Separator();
 			ImGui::PopID();
 		}
 		drawOrphanNote(orphans);
 		ImGui::EndChild();
+		applyBmAction();
+	}
+
+	// A folder's header (or "uncategorised"): fold arrow, name + count, grip and
+	// buttons. A drop target for bookmarks (-> end of this folder) and folders
+	// (upper / lower half -> before / after this one).
+	void drawFolderHeader(const RegexFolders::Group& grp)
+	{
+		const bool uncat = grp.folder.empty();
+		const std::vector<RegexBookmarkFolder>& list = state_.Folders(bmTab_);
+		int fi = -1;
+		for (int i = 0; i < (int)list.size(); i++)
+			if (list[i].name == grp.folder) fi = i;
+		ImGui::BeginGroup();
+		if (ImGui::ArrowButton("##fold", grp.collapsed ? ImGuiDir_Right : ImGuiDir_Down))
+			bmAction_ = BmAction{BmAction::Fold, -1, -1, 0, 0, !grp.collapsed, grp.folder};
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip(grp.collapsed ? u8"展開" : u8"收合");
+		if (!uncat) {
+			ImGui::SameLine();
+			ImGui::SmallButton(u8"::##fgrip");
+			if (ImGui::IsItemHovered() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+				ImGui::SetTooltip(u8"拖曳來排序資料夾");
+			if (ImGui::BeginDragDropSource()) {
+				ImGui::SetDragDropPayload("RX_FOLDER", &fi, sizeof fi);
+				ImGui::Text(u8"移動資料夾：%s", grp.folder.c_str());
+				ImGui::EndDragDropSource();
+			}
+		}
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		const std::string label = (uncat ? std::string(u8"未分類") : grp.folder) + u8"（" +
+		                          std::to_string(grp.items.size()) + u8"）";
+		ImGui::TextUnformatted(label.c_str());
+		if (ImGui::IsItemClicked()) bmAction_ = BmAction{BmAction::Fold, -1, -1, 0, 0, !grp.collapsed, grp.folder};
+		if (!uncat) {
+			ImGui::SameLine();
+			if (ImGui::SmallButton(u8"上移###fup")) bmAction_ = BmAction{BmAction::FolderStep, -1, -1, -1, 0, false, grp.folder};
+			ImGui::SameLine(0, 2 * host_->scale);
+			if (ImGui::SmallButton(u8"下移###fdown")) bmAction_ = BmAction{BmAction::FolderStep, -1, -1, 1, 0, false, grp.folder};
+			ImGui::SameLine();
+			if (ImGui::SmallButton(u8"改名###fren")) {
+				folderEdit_ = grp.folder;
+				nameBuf_ = grp.folder;
+				folderErr_.clear();
+				modal_ = Modal::FolderRename;
+			}
+			ImGui::SameLine();
+			PobUi::PushDangerButton();
+			if (ImGui::SmallButton(u8"刪除###fdel")) {
+				folderEdit_ = grp.folder;
+				modal_ = Modal::FolderDelete;
+			}
+			PobUi::PopButtonStyle();
+		}
+		ImGui::EndGroup();
+		if (ImGui::BeginDragDropTarget()) {
+			const ImVec2 r0 = ImGui::GetItemRectMin(), r1 = ImGui::GetItemRectMax();
+			const bool lower = ImGui::GetMousePos().y > (r0.y + r1.y) * 0.5f;
+			const ImGuiDragDropFlags f = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM", f)) {
+				ImGui::GetWindowDrawList()->AddRect(r0, r1, ImGui::GetColorU32(ImGuiCol_DragDropTarget), 3.0f, 0, 2.0f);
+				if (pl->IsDelivery())
+					bmAction_ = BmAction{BmAction::ToFolder, *(const int*)pl->Data, -1, 0, 0, false, grp.folder};
+			}
+			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_FOLDER", f)) {
+				const float y = (uncat || lower) ? r1.y : r0.y;
+				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(r1.x, y),
+				                                    ImGui::GetColorU32(ImGuiCol_DragDropTarget), 2.0f);
+				const int src = *(const int*)pl->Data;
+				if (pl->IsDelivery() && src >= 0 && src < (int)list.size()) {
+					// moveFolderTo: before / after this header; "uncategorised" = last.
+					int to = uncat ? (int)list.size() - 1 : (lower ? fi + 1 : fi);
+					if (!uncat && src < to) to--;
+					bmAction_ = BmAction{BmAction::FolderTo, -1, -1, 0, to, false, list[src].name};
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+	}
+
+	void drawBookmarkRow(int i, const RegexFolders::Group& grp, size_t k)
+	{
+		const RegexBookmark& b = state_.bookmarks[i];
+		ImGui::PushID(i);
+		ImGui::BeginGroup();
+		ImGui::SmallButton(u8"::##grip");
+		if (ImGui::IsItemHovered() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+			ImGui::SetTooltip(u8"拖曳來排序，或拖進資料夾");
+		if (ImGui::BeginDragDropSource()) {
+			ImGui::SetDragDropPayload("RX_BM", &i, sizeof i);
+			ImGui::Text(u8"移動書籤：%s", b.name.c_str());
+			ImGui::EndDragDropSource();
+		}
+		ImGui::SameLine();
+		ImGui::TextUnformatted(b.name.c_str());
+		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+		const char* modeZh = b.mode == "all" ? u8"全部都有"
+		                   : b.mode == "none" ? u8"一個都沒有" : u8"含任一個";
+		std::string meta = pageTitleIn(b.game, b.page) + u8" · " + modeZh + u8" · " +
+		                   (b.lang == "en" ? "English" : u8"繁中") + u8" · " + std::to_string(b.keys.size()) + u8" 項";
+		if (!b.num.empty()) meta += u8" ＋ 數值條件 " + std::to_string(b.num.size()) + u8" 項";
+		ImGui::TextUnformatted(meta.c_str());
+		ImGui::PopStyleColor();
+		if (ImGui::SmallButton(u8"載入")) loadBookmark(i);
+		ImGui::SameLine();
+		const bool sameGame = b.game == selGame_;
+		ImGui::BeginDisabled(!sameGame);
+		if (ImGui::SmallButton(u8"更新")) updateBookmark(i);
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(sameGame ? u8"用目前這一頁的勾選、數值條件、模式與輸出語言覆寫這個書籤"
+			                           : u8"這個書籤屬於另一個遊戲：先在上方切換遊戲才能更新");
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"改名")) {
+			nameBuf_ = b.name;
+			editIdx_ = i;
+			modal_ = Modal::Rename;
+		}
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"移到…")) ImGui::OpenPopup("##mv");
+		if (ImGui::BeginPopup("##mv")) {
+			if (ImGui::Selectable(u8"未分類###mv_uncat", b.folder.empty()))
+				bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, std::string()};
+			const std::vector<RegexBookmarkFolder>& list = state_.Folders(b.game);
+			for (int f = 0; f < (int)list.size(); f++)
+				if (ImGui::Selectable((list[f].name + "###mvf" + std::to_string(f)).c_str(), b.folder == list[f].name))
+					bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, list[f].name};
+			if (list.empty()) ImGui::TextDisabled(u8"還沒有資料夾：先按上方的「新增資料夾」");
+			ImGui::EndPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"上移")) bmAction_ = BmAction{BmAction::Step, i, -1, -1, 0, false, std::string()};
+		ImGui::SameLine(0, 2 * host_->scale);
+		if (ImGui::SmallButton(u8"下移")) bmAction_ = BmAction{BmAction::Step, i, -1, 1, 0, false, std::string()};
+		ImGui::SameLine();
+		PobUi::PushDangerButton();
+		if (ImGui::SmallButton(u8"刪除")) {
+			editIdx_ = i;
+			modal_ = Modal::Delete;
+		}
+		PobUi::PopButtonStyle();
+		ImGui::EndGroup();
+		// A bookmark dropped on this row lands in front of it (upper half) or
+		// after it (lower half), and in its folder.
+		if (ImGui::BeginDragDropTarget()) {
+			const ImVec2 r0 = ImGui::GetItemRectMin(), r1 = ImGui::GetItemRectMax();
+			const bool lower = ImGui::GetMousePos().y > (r0.y + r1.y) * 0.5f;
+			const ImGuiDragDropFlags f = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
+			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM", f)) {
+				const float y = lower ? r1.y + 1 : r0.y - 1;
+				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(r1.x, y),
+				                                    ImGui::GetColorU32(ImGuiCol_DragDropTarget), 2.0f);
+				if (pl->IsDelivery()) {
+					const int src = *(const int*)pl->Data;
+					if (!lower) bmAction_ = BmAction{BmAction::Before, src, i, 0, 0, false, std::string()};
+					else if (k + 1 < grp.items.size())
+						bmAction_ = BmAction{BmAction::Before, src, grp.items[k + 1], 0, 0, false, std::string()};
+					else bmAction_ = BmAction{BmAction::ToFolder, src, -1, 0, 0, false, b.folder};
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+		ImGui::Separator();
+		ImGui::PopID();
 	}
 
 	// A bookmark whose page id belongs to no loaded catalogue -- saved against a
@@ -1006,73 +1290,88 @@ private:
 		if (orphans <= 0) return;
 		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 		ImGui::TextWrapped(u8"另有 %d 筆書籤存在這個版本沒有的清單上，沒有顯示"
-		                   u8"（資料仍保留在 PobTools\regex_ui.json）。", orphans);
+		                   u8"（資料仍保留在 PobTools\\regex_ui.json）。", orphans);
 		ImGui::PopStyleColor();
 	}
 
+	// store.ts loadBookmark / embed.ts bookmarkApplyOf: the bookmark's page (and
+	// its section) is overwritten -- a bookmark is the whole page -- and every
+	// other page keeps its ticks.
 	void loadBookmark(int i)
 	{
 		if (i < 0 || i >= (int)state_.bookmarks.size()) return;
-		// By value: switchPage and the ticks below both run while `state_` is
-		// being read, and a reference into a vector that anything appends to is
-		// a dangling pointer waiting for a slow day.
+		// By value: everything below writes to state_.
 		const RegexBookmark b = state_.bookmarks[i];
-		int target = -1;
-		for (size_t p = 0; p < data_.Pages().size(); p++)
-			if (data_.Pages()[p].id == b.page) target = (int)p;
+		const std::string g = b.game.empty() ? gameOfPage(b.page) : b.game;
+		const std::optional<RegexEmbed::BookmarkApply> a =
+			g.empty() ? std::nullopt : RegexEmbed::BookmarkApplyOf(gamePages(g), b);
+		const int target = a ? indexInGame(g, a->page) : -1;
 		if (target < 0) {
 			notice_ = u8"書籤「" + b.name + u8"」的清單「" + pageTitleById(b.page) +
 			          u8"」在這個版本不存在，沒有載入。";
 			return;
 		}
-		// The list is filtered by game, so this normally already matches; it is
-		// spelled out anyway because a bookmark carries its own game and loading
-		// one must never leave the selector pointing somewhere else.
-		selGame_ = data_.Pages()[target].game;
-		state_.game = selGame_;
-		switchPage(target);   // corpus pages share their index between data_ and refs_
-		// A bookmark is the whole page: one saved before the numeric section
-		// existed restores with the section unticked, so the string it gives is
-		// the one it gave when it was saved (exile-appraiser step 32).
-		const int sec = sectionIndexOf(page_);
-		if (sec >= 0 && pages_[sec].algo.Count() > 0) {
-			std::fill(pages_[sec].algo.picked.begin(), pages_[sec].algo.picked.end(), (char)0);
-			algoChanged(sec);
+		// The bookmark carries its own game: loading one never leaves the
+		// selector pointing somewhere else.
+		if (selGame_ != g) {
+			selGame_ = g;
+			combinedDirty_ = true;
 		}
+		state_.game = selGame_;
+		switchPage(target);
+		setView(View::Page);
 		mode_ = ModeFromId(b.mode);
 		state_.mode = modeId();
 		setLang(b.lang == "en" ? Lang::En : Lang::Zh);
-		const int missed = applyKeys(entries(), st().picked, b.keys, b.alt);
-		notice_ = missed > 0
-			? u8"已載入書籤「" + b.name + u8"」，但其中 " + std::to_string(missed) +
+		for (const auto& p : a->picks) {
+			const int idx = indexInGame(g, p.first);
+			if (idx < 0) continue;
+			setTicks(idx, p.second);
+			syncCurrent(idx);
+		}
+		for (const auto& v : a->values)
+			for (int idx = 0; idx < (int)refs_.size(); idx++) {
+				if (!refs_[idx].algo || refs_[idx].Game() != g || RegexAlgo::NumericKeyOf(refs_[idx].Id()) != v.first)
+					continue;
+				for (const auto& kv : v.second) pages_[idx].algo.values[kv.first] = kv.second;
+				syncValues(idx);
+			}
+		for (PageState& ps : pages_) ps.dirty = true;   // mode / values changed under them
+		combinedDirty_ = true;
+		copied_ = false;
+		notice_ = a->missed > 0
+			? u8"已載入書籤「" + b.name + u8"」，但其中 " + std::to_string(a->missed) +
 			  u8" 項在目前的資料裡找不到（賽季更新後詞條可能有變動）。"
 			: u8"已載入書籤「" + b.name + u8"」。";
-		st().filterDirty = true;
-		picksChanged();
+		state_.page = pageId();
+		markStateDirty();
 	}
 
+	// store.ts updateBookmark: the page on screen overwrites the bookmark; its
+	// name, folder (and exile-appraiser hotkey) stay.
 	void updateBookmark(int i)
 	{
 		if (i < 0 || i >= (int)state_.bookmarks.size()) return;
-		if (isAlgo()) {
-			notice_ = u8"這一頁的條件目前還不能存成書籤，書籤沒有更新。";
+		RegexBookmark& b = state_.bookmarks[i];
+		if (b.game != selGame_) {
+			notice_ = u8"書籤「" + b.name + u8"」屬於 " + GameLabel(b.game) + u8"，先切到那個遊戲再更新。";
 			return;
 		}
-		std::vector<std::string> keys, alt;
-		collectKeys(keys, alt);
-		if (keys.empty()) {
+		std::optional<RegexBookmark> body = currentBookmarkBody();
+		if (!body) {
 			notice_ = u8"目前一項都沒有勾選，沒有更新書籤（要清空請改用刪除）。";
 			return;
 		}
-		RegexBookmark& b = state_.bookmarks[i];
-		b.page = pageId();
-		b.game = selGame_;
-		b.mode = modeId();
-		b.lang = (lang_ == Lang::En) ? "en" : "zh";
-		b.keys = std::move(keys);
-		b.alt = std::move(alt);
+		b.page = body->page;
+		b.game = body->game;
+		b.mode = body->mode;
+		b.lang = body->lang;
+		b.keys = std::move(body->keys);
+		b.alt = std::move(body->alt);
+		b.numeric = std::move(body->numeric);
+		b.num = std::move(body->num);
 		notice_ = u8"書籤「" + b.name + u8"」已更新為目前的勾選。";
-		stateDirty_ = true;
+		markStateDirty();
 	}
 
 	void drawModals()
@@ -1086,6 +1385,11 @@ private:
 			ImGui::OpenPopup("###rx_name");
 		} else if (opening == Modal::Delete) {
 			ImGui::OpenPopup("###rx_del");
+		} else if (opening == Modal::FolderAdd || opening == Modal::FolderRename) {
+			folderRenameMode_ = (opening == Modal::FolderRename);
+			ImGui::OpenPopup("###rx_folder");
+		} else if (opening == Modal::FolderDelete) {
+			ImGui::OpenPopup("###rx_fdel");
 		}
 
 		const std::string title = (renameMode_ ? std::string(u8"重新命名書籤")
@@ -1119,9 +1423,56 @@ private:
 				if (valid) {
 					notice_ = u8"已刪除書籤「" + state_.bookmarks[editIdx_].name + u8"」。";
 					state_.bookmarks.erase(state_.bookmarks.begin() + editIdx_);
-					stateDirty_ = true;
+					markStateDirty();
 				}
 				editIdx_ = -1;
+				ImGui::CloseCurrentPopup();
+			}
+			PobUi::PopButtonStyle();
+			ImGui::SameLine();
+			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+
+		const std::string ftitle = (folderRenameMode_ ? std::string(u8"重新命名資料夾")
+		                                              : std::string(u8"新增資料夾")) + "###rx_folder";
+		if (ImGui::BeginPopupModal(ftitle.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			ImGui::TextDisabled(u8"%s 的書籤", GameLabel(bmTab_));
+			ImGui::SetNextItemWidth(320 * host_->scale);
+			if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
+			const bool entered = ImGui::InputText(u8"名稱###fname", &nameBuf_, ImGuiInputTextFlags_EnterReturnsTrue);
+			if (!folderErr_.empty()) ImGui::TextColored(kBad, "%s", folderErr_.c_str());
+			if (ImGui::Button(u8"確定", ImVec2(90 * host_->scale, 0)) || entered) {
+				const RegexFolders::Result r = folderRenameMode_
+					? RegexFolders::Rename(state_, bmTab_, folderEdit_, nameBuf_)
+					: RegexFolders::Add(state_, bmTab_, nameBuf_);
+				if (r == RegexFolders::Result::Ok) {
+					const std::string n = RegexFolders::NormalizeName(nameBuf_);
+					notice_ = folderRenameMode_ ? u8"資料夾已改名為「" + n + u8"」。" : u8"已新增資料夾「" + n + u8"」。";
+					markStateDirty();
+					ImGui::CloseCurrentPopup();
+				} else {
+					folderErr_ = r == RegexFolders::Result::Empty ? u8"名稱不能是空白。"
+					           : r == RegexFolders::Result::Duplicate ? u8"已經有同名的資料夾。"
+					                                                  : u8"這個資料夾已經不在了。";
+				}
+			}
+			ImGui::SameLine();
+			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+
+		if (ImGui::BeginPopupModal(u8"刪除資料夾###rx_fdel", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+			const int n = RegexFolders::Counts(state_, bmTab_)[folderEdit_];
+			ImGui::Text(u8"確定要刪除資料夾「%s」？", folderEdit_.c_str());
+			ImGui::TextDisabled(u8"裡面的 %d 筆書籤會移回未分類，書籤本身不會刪除。", n);
+			PobUi::PushDangerButton();
+			if (ImGui::Button(u8"刪除", ImVec2(90 * host_->scale, 0))) {
+				const int moved = RegexFolders::Delete(state_, bmTab_, folderEdit_);
+				if (moved >= 0) {
+					notice_ = u8"已刪除資料夾「" + folderEdit_ + u8"」，" + std::to_string(moved) + u8" 筆書籤移回未分類。";
+					markStateDirty();
+				}
 				ImGui::CloseCurrentPopup();
 			}
 			PobUi::PopButtonStyle();
@@ -1137,21 +1488,16 @@ private:
 			if (editIdx_ < (int)state_.bookmarks.size()) {
 				state_.bookmarks[editIdx_].name = nameBuf_;
 				notice_ = u8"書籤已改名為「" + nameBuf_ + u8"」。";
-				stateDirty_ = true;
+				markStateDirty();
 			}
-		} else {
-			RegexBookmark b;
-			b.name = nameBuf_;
-			b.page = pageId();
-			b.game = selGame_;
-			b.mode = modeId();
-			b.lang = (lang_ == Lang::En) ? "en" : "zh";
-			collectKeys(b.keys, b.alt);
-			if (!b.keys.empty()) {
-				state_.bookmarks.push_back(std::move(b));
-				notice_ = u8"已存成書籤「" + nameBuf_ + u8"」。";
-				stateDirty_ = true;
-			}
+		} else if (std::optional<RegexBookmark> body = currentBookmarkBody()) {
+			// store.ts saveBookmark: appended = this game's uncategorised, which
+			// sorts last, so the order invariant holds without a sort.
+			body->name = nameBuf_;
+			state_.bookmarks.push_back(std::move(*body));
+			bmTab_ = selGame_;
+			notice_ = u8"已存成書籤「" + nameBuf_ + u8"」。";
+			markStateDirty();
 		}
 		editIdx_ = -1;
 	}
@@ -1529,7 +1875,7 @@ private:
 		PageState& ss = pages_[sec];
 		const AlgoPage& page = *refs_[sec].algo;
 		const std::string hostId = refs_[host].Id();
-		const bool collapsed = collapsed_.count(hostId) > 0;
+		const bool collapsed = std::find(state_.collapsed.begin(), state_.collapsed.end(), hostId) != state_.collapsed.end();
 		ImGui::PushID("rx_sec");
 		bool toggle = ImGui::ArrowButton("##toggle", collapsed ? ImGuiDir_Right : ImGuiDir_Down);
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip(collapsed ? u8"展開數值條件" : u8"收合數值條件");
@@ -1567,8 +1913,10 @@ private:
 		ImGui::EndDisabled();
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有數值條件的勾選");
 		if (toggle) {
-			if (collapsed) collapsed_.erase(hostId);
-			else collapsed_.insert(hostId);
+			// store.ts setCollapsed: remembered per host page
+			if (collapsed) state_.collapsed.erase(std::remove(state_.collapsed.begin(), state_.collapsed.end(), hostId), state_.collapsed.end());
+			else state_.collapsed.push_back(hostId);
+			markStateDirty();
 		}
 
 		if (collapsed) {
@@ -1665,15 +2013,26 @@ private:
 			}
 			sels.push_back(std::move(sel));
 		}
-		combined_ = RegexAlgo::Combine(fragLang(), mode_, sels, custom_, excludes_, &unions_);
+		combined_ = RegexAlgo::Combine(fragLang(), mode_, sels, state_.custom, state_.excludes, &unions_);
 		combinedDirty_ = false;
 		return combined_;
+	}
+
+	// store.ts setPanelView; remembered (panelView, a PobTools-only field).
+	void setView(View v)
+	{
+		if (v == view_) return;
+		view_ = v;
+		state_.panelView = v == View::Combined ? "combined" : "page";
+		markStateDirty();
 	}
 
 	void setScope(bool combined)
 	{
 		if (combined == scopeCombined_) return;
 		scopeCombined_ = combined;
+		state_.outScope = combined ? "combined" : "page";
+		markStateDirty();
 		copied_ = false;
 	}
 
@@ -1700,16 +2059,9 @@ private:
 	{
 		for (int i : combineOrderIdx(true)) {
 			PageState& ps = pages_[i];
-			if (refs_[i].algo) {
-				std::fill(ps.algo.picked.begin(), ps.algo.picked.end(), (char)0);
-			} else {
-				std::fill(ps.picked.begin(), ps.picked.end(), (char)0);
-				RegexPagePicks& saved = state_.PicksFor(refs_[i].Id());
-				saved.keys.clear();
-				saved.alt.clear();
-				stateDirty_ = true;
-				saveFailed_ = false;
-			}
+			if (refs_[i].algo) std::fill(ps.algo.picked.begin(), ps.algo.picked.end(), (char)0);
+			else std::fill(ps.picked.begin(), ps.picked.end(), (char)0);
+			syncCurrent(i);
 			ps.dirty = true;
 			ps.filterDirty = true;
 		}
@@ -1727,6 +2079,7 @@ private:
 		if (t.empty() || std::find(list.begin(), list.end(), t) != list.end()) return false;
 		list.push_back(t);
 		draft.clear();
+		markStateDirty();
 		combinedDirty_ = true;
 		copied_ = false;
 		return true;
@@ -1761,6 +2114,7 @@ private:
 		}
 		if (remove >= 0) {
 			list.erase(list.begin() + remove);
+			markStateDirty();
 			combinedDirty_ = true;
 			copied_ = false;
 		}
@@ -1875,18 +2229,18 @@ private:
 				ImGui::EndTable();
 				if (jump >= 0) {
 					switchPage(jump);
-					view_ = View::Page;
+					setView(View::Page);
 				}
 			}
 		}
 
 		ImGui::Spacing();
 		drawChips("rx_custom", u8"自訂文字", u8"每項各自一個條件（同時成立），原樣比對", u8"輸入文字後按 Enter",
-		          custom_, customDraft_);
-		if (!custom_.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
+		          state_.custom, customDraft_);
+		if (!state_.custom.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
 		ImGui::Spacing();
 		drawChips("rx_excludes", u8"排除詞", u8"併進唯一的排除條件（!）：有其中任一個就不選", u8"例如：反射",
-		          excludes_, excludeDraft_);
+		          state_.excludes, excludeDraft_);
 
 		if (!r.conflicts.empty()) {
 			ImGui::Spacing();
@@ -1915,13 +2269,10 @@ private:
 	// every page (corpus first, same index as data_.Pages()) as one list.
 	std::vector<RegexAlgo::AlgoPage> algo_;
 	std::vector<RegexAlgo::PageRef> refs_;
-	// Host page ids whose numeric section is folded. Memory only for now.
-	std::set<std::string> collapsed_;
-	// R4 merge. Memory only for now (R5 extends regex_ui.json with them).
-	enum class View { Page, Combined };
+	// R4 merge. Custom text / excludes live in state_ (saved); the view and
+	// scope are mirrored there (panelView / outScope).
 	View view_ = View::Page;           // store.ts panelView, default the page list
 	bool scopeCombined_ = true;        // state.ts outScope, default 'combined'
-	std::vector<std::string> custom_, excludes_;
 	std::string customDraft_, excludeDraft_;
 	RegexAlgo::CombineResult combined_;
 	bool combinedDirty_ = true;
@@ -1945,6 +2296,12 @@ private:
 	Modal modal_ = Modal::None;
 	bool renameMode_ = false;
 	int editIdx_ = -1;
+	// R6 bookmark list: which game's tab, the game it last followed, the
+	// queued drag / button edit, and the folder modals' target and error.
+	std::string bmTab_ = "poe1", bmTabFollow_ = "poe1";
+	BmAction bmAction_;
+	bool folderRenameMode_ = false;
+	std::string folderEdit_, folderErr_;
 	std::string nameBuf_;
 	std::string notice_;
 
