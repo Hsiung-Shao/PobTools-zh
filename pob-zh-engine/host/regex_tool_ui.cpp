@@ -1,6 +1,7 @@
 #include "regex_tool.h"
 
 #include "clipboard_util.h"
+#include "regex_algo_pages.h"
 #include "regex_data.h"
 #include "regex_gen.h"
 #include "regex_state.h"
@@ -14,6 +15,9 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -35,6 +39,13 @@
 // the QUERY uses is the player's choice, because the two are not interchangeable:
 // a token cut from the Chinese only avoids false positives among the Chinese
 // lines, and pasting it into an English client would match nothing at all.
+//
+// Algorithmic pages (regex_algo_pages, ported from exile-appraiser): the map /
+// waystone modifier pages carry a collapsible numeric SECTION on top (tier,
+// quantity, rarity ...) whose terms join the modifier tokens in one string, and
+// each game has a vendor page. Their rows are an input + a fragment, not a line
+// to cut tokens from. Their ticks and values live in memory only for now; saving
+// them (regex_ui.json schema 5) is a later step, so the file format is unchanged.
 
 namespace {
 
@@ -119,6 +130,11 @@ struct PageState {
 	bool hideT17 = false;
 	std::vector<int> visible;      // entry indices passing the filter
 	bool filterDirty = true;
+	// Algorithmic pages (vendor page, numeric section): ticks + values.
+	RegexAlgo::AlgoSelection algo;
+	// This page's output: its own picks plus, for a host page, its numeric
+	// section (exile-appraiser store.ts pageCombined).
+	RegexAlgo::CombineResult combined;
 };
 
 // The panel is two-level: pick the game, then the list. Both games' catalogues
@@ -144,9 +160,20 @@ public:
 		exeDir_ = h.exeDir;
 		game_ = h.game.empty() ? std::wstring(L"poe1") : h.game;
 		dataOk_ = data_.Load(exeDir_, game_, &dataErr_);
-		pages_.resize(data_.Pages().size());
-		for (size_t i = 0; i < data_.Pages().size(); i++)
-			pages_[i].picked.assign(data_.Pages()[i].entries.size(), 0);
+		// Corpus pages first, in the data's order, so a corpus page's index here
+		// is its index in data_.Pages(); the algorithmic pages of both games after
+		// them (store.ts:116 appends algoPages to each catalogue). `algo_` is
+		// filled once and never grows again: refs_ point into it.
+		for (const char* g : kGames)
+			for (RegexAlgo::AlgoPage& p : RegexAlgo::AlgoPages(g, data_.Labels(g)))
+				algo_.push_back(std::move(p));
+		for (const RegexPageDef& p : data_.Pages()) refs_.push_back({&p, nullptr});
+		for (const RegexAlgo::AlgoPage& p : algo_) refs_.push_back({nullptr, &p});
+		pages_.resize(refs_.size());
+		for (size_t i = 0; i < refs_.size(); i++) {
+			pages_[i].picked.assign(refs_[i].Size(), 0);
+			if (refs_[i].algo) pages_[i].algo.Reset(refs_[i].Size());
+		}
 		// The launcher's game is the opening answer, but only if it has a
 		// catalogue: offering an empty PoE2 tab to someone whose Data folder
 		// predates it would be a dead end, not information.
@@ -226,19 +253,37 @@ public:
 	const char* PanelId() const override { return "regex"; }
 
 private:
-	bool hasPage() const { return page_ >= 0 && page_ < (int)data_.Pages().size(); }
+	bool hasPage() const { return page_ >= 0 && page_ < (int)refs_.size(); }
 	PageState& st() { return pages_[page_]; }
 	const PageState& st() const { return pages_[page_]; }
 
+	// The current page is an algorithmic one (the vendor page); everything that
+	// reads entries() / groups() is for corpus pages only.
+	bool isAlgo() const { return refs_[page_].algo != nullptr; }
 	const std::vector<RegexEntryDef>& entries() const
 	{
-		return data_.Pages()[page_].entries;
+		return refs_[page_].corpus->entries;
 	}
 	const std::vector<std::string>& groups() const
 	{
-		return data_.Pages()[page_].groups;
+		return refs_[page_].corpus->groups;
 	}
-	int limit() const { return data_.Pages()[page_].limit; }
+	int limit() const { return refs_[page_].Limit(); }
+	const std::string& pageNote() const
+	{
+		return refs_[page_].corpus ? refs_[page_].corpus->note : refs_[page_].algo->note;
+	}
+
+	// The numeric section of page `host` (same game), as an index into refs_; -1 if none.
+	int sectionIndexOf(int host) const
+	{
+		if (host < 0 || host >= (int)refs_.size() || !refs_[host].corpus) return -1;
+		for (int i = 0; i < (int)refs_.size(); i++)
+			if (refs_[i].IsSection() && refs_[i].algo->sectionOf == refs_[host].Id() &&
+			    refs_[i].algo->game == refs_[host].Game())
+				return i;
+		return -1;
+	}
 
 	// ---- games ---------------------------------------------------------------
 
@@ -246,8 +291,8 @@ private:
 	// catalogue at all", which is why the caller never asks that separately.
 	int firstPageOf(const std::string& g) const
 	{
-		for (size_t i = 0; i < data_.Pages().size(); i++)
-			if (data_.Pages()[i].game == g) return (int)i;
+		for (size_t i = 0; i < refs_.size(); i++)
+			if (refs_[i].Game() == g && !refs_[i].IsSection()) return (int)i;
 		return -1;
 	}
 	// Which game a page id belongs to; empty when no loaded catalogue has it.
@@ -255,8 +300,8 @@ private:
 	// and it is reported rather than quietly filed under one of the games.
 	std::string gameOfPage(const std::string& id) const
 	{
-		for (const RegexPageDef& p : data_.Pages())
-			if (p.id == id) return p.game;
+		for (const RegexAlgo::PageRef& p : refs_)
+			if (p.Id() == id) return p.Game();
 		return std::string();
 	}
 
@@ -273,12 +318,12 @@ private:
 	}
 	std::string pageId() const
 	{
-		return hasPage() ? data_.Pages()[page_].id : std::string();
+		return hasPage() ? refs_[page_].Id() : std::string();
 	}
 	std::string pageTitleById(const std::string& id) const
 	{
-		for (const RegexPageDef& p : data_.Pages())
-			if (p.id == id) return p.title;
+		for (const RegexAlgo::PageRef& p : refs_)
+			if (p.Id() == id) return p.Title();
 		return id;
 	}
 
@@ -311,8 +356,8 @@ private:
 		// a catalogue; otherwise Init's answer stands.
 		if (!state_.game.empty() && data_.HasGame(state_.game)) selGame_ = state_.game;
 		page_ = firstPageOf(selGame_);
-		for (size_t i = 0; i < data_.Pages().size(); i++)
-			if (data_.Pages()[i].id == state_.page && data_.Pages()[i].game == selGame_)
+		for (size_t i = 0; i < refs_.size(); i++)
+			if (refs_[i].Id() == state_.page && refs_[i].Game() == selGame_ && !refs_[i].IsSection())
 				page_ = (int)i;
 		mode_ = ModeFromId(state_.mode);
 
@@ -379,6 +424,7 @@ private:
 	{
 		keys.clear();
 		alt.clear();
+		if (isAlgo()) return;   // algorithmic picks are not saved yet (regex_ui.json schema 5)
 		const PageState& s = st();
 		for (int i = 0; i < (int)entries().size(); i++) {
 			if (i >= (int)s.picked.size() || !s.picked[i]) continue;
@@ -403,6 +449,22 @@ private:
 		saveFailed_ = false;   // a fresh change deserves a fresh attempt
 	}
 
+	// A tick or a value on an algorithmic page changed. Kept in memory only:
+	// the saved format has no room for values yet, and writing the ticks
+	// without them would restore conditions the player never set.
+	void algoChanged(int idx)
+	{
+		pages_[idx].dirty = true;
+		if (refs_[idx].IsSection()) {
+			// The section's output is part of its host page's string.
+			for (int i = 0; i < (int)refs_.size(); i++)
+				if (refs_[i].corpus && refs_[i].Id() == refs_[idx].algo->sectionOf &&
+				    refs_[i].Game() == refs_[idx].Game())
+					pages_[i].dirty = true;
+		}
+		copied_ = false;
+	}
+
 	// ---- header --------------------------------------------------------------
 
 	void drawHeader()
@@ -421,10 +483,12 @@ private:
 		}
 		ImGui::SameLine(0, 16 * host_->scale);
 		ImGui::SetNextItemWidth(170 * host_->scale);
-		if (ImGui::BeginCombo(u8"清單", data_.Pages()[page_].title.c_str())) {
-			for (size_t i = 0; i < data_.Pages().size(); i++) {
-				if (data_.Pages()[i].game != selGame_) continue;
-				if (ImGui::Selectable(data_.Pages()[i].title.c_str(), page_ == (int)i))
+		if (ImGui::BeginCombo(u8"清單", refs_[page_].Title().c_str())) {
+			// Numeric sections are not pages of their own: they sit on top of
+			// their host page (exile-appraiser step 32, listedPages).
+			for (size_t i = 0; i < refs_.size(); i++) {
+				if (refs_[i].Game() != selGame_ || refs_[i].IsSection()) continue;
+				if (ImGui::Selectable(refs_[i].Title().c_str(), page_ == (int)i))
 					switchPage((int)i);
 			}
 			ImGui::EndCombo();
@@ -449,7 +513,7 @@ private:
 		}
 
 		ImGui::SameLine(0, 24 * host_->scale);
-		ImGui::TextDisabled(u8"已勾選 %d / %d", pickCount(), (int)entries().size());
+		ImGui::TextDisabled(u8"已勾選 %d / %d", pickCount(), (int)refs_[page_].Size());
 
 		// Right-hand end of the header row. It belongs to the whole panel rather
 		// than to the list toolbar: it changes how both columns read, and the
@@ -473,7 +537,7 @@ private:
 				ImGui::SetTooltip(u8"在每一列下面加上另一種語言的原文");
 		}
 
-		const std::string& note = data_.Pages()[page_].note;
+		const std::string& note = pageNote();
 		if (!note.empty()) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 			ImGui::TextWrapped("%s", note.c_str());
@@ -483,6 +547,7 @@ private:
 
 	int pickCount() const
 	{
+		if (isAlgo()) return st().algo.Count();
 		int n = 0;
 		for (char c : st().picked) n += c ? 1 : 0;
 		return n;
@@ -492,6 +557,12 @@ private:
 
 	void drawList()
 	{
+		if (isAlgo()) {
+			drawAlgoPage(page_);
+			return;
+		}
+		const int sec = sectionIndexOf(page_);
+		if (sec >= 0) drawSection(page_, sec);
 		PageState& s = st();
 		ImGui::SetNextItemWidth(150 * host_->scale);
 		if (ImGui::InputTextWithHint("##rx_search", u8"搜尋中英文…", &s.search))
@@ -651,15 +722,15 @@ private:
 	void drawOutput()
 	{
 		PageState& s = st();
-		if (!s.corpusReady) buildCorpus();
+		if (!isAlgo() && !s.corpusReady) buildCorpus();
 		if (s.dirty) recompute();
 
 		ImGui::TextDisabled(u8"貼進遊戲搜尋列");
-		std::string q = s.result.query;
+		std::string q = s.combined.query;
 		ImGui::InputTextMultiline("##rx_out", &q, ImVec2(-1, 70 * host_->scale),
 		                          ImGuiInputTextFlags_ReadOnly);
 
-		const int len = s.result.length;
+		const int len = s.combined.length;
 		const int lim = limit();
 		ImGui::PushStyleColor(ImGuiCol_Text, len > lim ? kBad : (len > lim * 4 / 5 ? kWarn : kGood));
 		ImGui::Text(u8"長度 %d / %d 字", len, lim);
@@ -677,9 +748,9 @@ private:
 			if (ImGui::SmallButton(u8"知道了###rx_notice")) notice_.clear();
 		}
 
-		ImGui::BeginDisabled(s.result.query.empty());
+		ImGui::BeginDisabled(s.combined.query.empty());
 		if (ImGui::Button(u8"複製", ImVec2(90 * host_->scale, 0))) {
-			copyRequest_ = s.result.query;
+			copyRequest_ = s.combined.query;
 			copied_ = false;
 		}
 		ImGui::EndDisabled();
@@ -717,16 +788,40 @@ private:
 			ImGui::PopStyleColor();
 		}
 
-		if (!s.result.tokens.empty() &&
+		// Numeric / vendor conditions that did not make it into the string, or
+		// that would also hit a modifier line of this page.
+		{
+			int invalid = 0;
+			std::vector<std::string> clash;
+			for (const RegexAlgo::Conflict& c : s.combined.conflicts) {
+				if (c.kind == RegexAlgo::ConflictKind::Invalid) invalid++;
+				else if (c.kind == RegexAlgo::ConflictKind::Fragment) clash.push_back(c.text);
+			}
+			if (invalid > 0)
+				ImGui::TextColored(kWarn, u8"有 %d 個數值條件輸入不成立，沒有放進字串。", invalid);
+			if (!clash.empty()) {
+				ImGui::TextColored(kWarn, u8"有 %d 個數值條件也會中這一頁的詞綴：", (int)clash.size());
+				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+				for (const std::string& t : clash) ImGui::BulletText("%s", t.c_str());
+				ImGui::PopStyleColor();
+			}
+		}
+
+		// Corpus tokens, then the numeric / vendor terms, as they appear in the string.
+		std::vector<std::string> parts = s.result.tokens;
+		for (const RegexAlgo::PageContribution& c : s.combined.perPage)
+			if (c.kind == RegexPageKind::Numeric || c.kind == RegexPageKind::Sockets)
+				parts.insert(parts.end(), c.fragments.begin(), c.fragments.end());
+		if (!parts.empty() &&
 		    ImGui::CollapsingHeader((u8"用到的片段（" +
-		                             std::to_string(s.result.tokens.size()) +
+		                             std::to_string(parts.size()) +
 		                             u8" 段）###rx_tok").c_str())) {
 			ImGui::TextDisabled(u8"括號只是為了看清楚頭尾的空白，不要打進去");
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
 			// Bracketed, because a space at either end of a token is significant
 			// and otherwise invisible: " 傷" and "傷" are different searches, and
 			// the first is the one that does not also match 怪物傷害.
-			for (const std::string& t : s.result.tokens)
+			for (const std::string& t : parts)
 				ImGui::BulletText(u8"「%s」", t.c_str());
 			ImGui::PopStyleColor();
 		}
@@ -747,15 +842,19 @@ private:
 		ImGui::TextDisabled(u8"書籤（%s）", GameLabel(selGame_));
 		ImGui::SameLine();
 		const int picks = pickCount();
-		ImGui::BeginDisabled(picks == 0);
+		ImGui::BeginDisabled(picks == 0 || isAlgo());
 		if (ImGui::SmallButton(u8"存成書籤")) {
 			nameBuf_ = pageTitleById(pageId()) + " " + std::to_string(picks) + u8" 項";
 			editIdx_ = -1;
 			modal_ = Modal::Save;
 		}
 		ImGui::EndDisabled();
-		if (picks == 0 && ImGui::IsItemHovered())
+		if (isAlgo() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(u8"這一頁的條件目前還不能存成書籤");
+		else if (picks == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 			ImGui::SetTooltip(u8"先勾選幾項才有東西可以存");
+		else if (sectionPickCount() > 0 && ImGui::IsItemHovered())
+			ImGui::SetTooltip(u8"書籤只存詞綴的勾選，上方的數值條件目前不會存進去");
 
 		// The other game's bookmarks are hidden, not gone. Saying how many there
 		// are is the difference between a filter and a bookmark that looks lost.
@@ -852,7 +951,15 @@ private:
 		// one must never leave the selector pointing somewhere else.
 		selGame_ = data_.Pages()[target].game;
 		state_.game = selGame_;
-		switchPage(target);
+		switchPage(target);   // corpus pages share their index between data_ and refs_
+		// A bookmark is the whole page: one saved before the numeric section
+		// existed restores with the section unticked, so the string it gives is
+		// the one it gave when it was saved (exile-appraiser step 32).
+		const int sec = sectionIndexOf(page_);
+		if (sec >= 0 && pages_[sec].algo.Count() > 0) {
+			std::fill(pages_[sec].algo.picked.begin(), pages_[sec].algo.picked.end(), (char)0);
+			algoChanged(sec);
+		}
 		mode_ = ModeFromId(b.mode);
 		state_.mode = modeId();
 		setLang(b.lang == "en" ? Lang::En : Lang::Zh);
@@ -868,6 +975,10 @@ private:
 	void updateBookmark(int i)
 	{
 		if (i < 0 || i >= (int)state_.bookmarks.size()) return;
+		if (isAlgo()) {
+			notice_ = u8"這一頁的條件目前還不能存成書籤，書籤沒有更新。";
+			return;
+		}
 		std::vector<std::string> keys, alt;
 		collectKeys(keys, alt);
 		if (keys.empty()) {
@@ -1056,53 +1167,364 @@ private:
 	// token also hit something else?" is a question about the whole list, and
 	// building it from the selection would make the answer change as the player
 	// ticks -- which is exactly the bug that produces false positives.
+	//
+	// The lines are the ones in the language being built for: "no false
+	// positives" is a claim about ONE language's list, so the corpus has to be
+	// the one the player will paste into (RegexAlgo::BuildPageCorpus, shared
+	// with --regex-selftest).
 	void buildCorpus()
 	{
 		PageState& s = st();
-		std::vector<RegexGen::Entry> es;
-		es.reserve(entries().size());
-		for (const RegexEntryDef& d : entries()) {
-			RegexGen::Entry e;
-			e.id = d.id;
-			// The lines in the language being built for. "No false positives" is
-			// a claim about ONE language's list: two entries the Chinese cannot
-			// tell apart may be trivially separable in English, and the other way
-			// round, so the corpus has to be the one the player will paste into.
-			const bool zh = (lang_ == Lang::Zh);
-			const std::vector<std::string>& want = zh ? d.zh : d.en;
-			const std::vector<std::string>& fallback = zh ? d.en : d.zh;
-			const bool useWant = !want.empty();
-			e.texts = useWant ? want : fallback;
-			// The hidden text follows the language the entry actually ended up
-			// in, not the panel's setting: an entry that fell back to English
-			// lines must not carry Chinese tags.
-			e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
-			es.push_back(std::move(e));
-		}
-		const RegexPageDef& page = data_.Pages()[page_];
-		const bool zh = (lang_ == Lang::Zh);
-		RegexGen::Ambient amb;
-		amb.lines = zh ? page.ambientZh : page.ambientEn;
-		amb.nameLeft = zh ? page.namePrefixZh : page.namePrefixEn;
-		amb.nameRight = zh ? page.nameSuffixZh : page.nameSuffixEn;
-		s.corpus.Reset(std::move(es), std::move(amb));
+		RegexAlgo::BuildPageCorpus(*refs_[page_].corpus, fragLang(), s.corpus);
 		s.corpusReady = true;
 		s.dirty = true;
 	}
 
+	RegexFrag::Lang fragLang() const { return lang_ == Lang::Zh ? RegexFrag::Lang::Zh : RegexFrag::Lang::En; }
+
+	// The page's string: its own picks, plus its numeric section for a host
+	// page, in one go (exile-appraiser store.ts pageCombined). With no section
+	// picks this is exactly the corpus Build() query, as before.
 	void recompute()
 	{
 		PageState& s = st();
-		std::vector<int> sel;
-		for (int i = 0; i < (int)s.picked.size(); i++)
-			if (s.picked[i]) sel.push_back(i);
-		s.result = s.corpus.Build(sel, mode_);
+		std::vector<RegexAlgo::CombineSel> sels;
+		RegexAlgo::CombineSel own;
+		own.page = refs_[page_];
+		if (isAlgo()) {
+			own.picks = s.algo.Picks();
+			own.values = &s.algo.values;
+		} else {
+			for (int i = 0; i < (int)s.picked.size(); i++)
+				if (s.picked[i]) own.picks.push_back(i);
+			own.corpus = &s.corpus;
+		}
+		sels.push_back(own);
+		const int sec = sectionIndexOf(page_);
+		if (sec >= 0) {
+			RegexAlgo::CombineSel b;
+			b.page = refs_[sec];
+			b.picks = pages_[sec].algo.Picks();
+			b.values = &pages_[sec].algo.values;
+			sels.push_back(b);
+		}
+		s.combined = RegexAlgo::CombineSingle(fragLang(), mode_, sels);
+		s.result = s.combined.corpusResult;
 		s.dirty = false;
+	}
+
+	int sectionPickCount() const
+	{
+		if (!hasPage() || isAlgo()) return 0;
+		const int sec = sectionIndexOf(page_);
+		return sec >= 0 ? pages_[sec].algo.Count() : 0;
+	}
+
+	// ---- algorithmic rows (vendor page, numeric section) -----------------------
+	//
+	// Row layout after exile-appraiser RegexAlgoList.vue: tick + name | input |
+	// the fragment this row produces. Editing a value ticks the row.
+
+	static std::string NumText(double v)
+	{
+		char buf[32];
+		if (std::floor(v) == v && std::fabs(v) < 1e15) snprintf(buf, sizeof buf, "%.0f", v);
+		else snprintf(buf, sizeof buf, "%g", v);
+		return buf;
+	}
+
+	// A number box that can be empty. Returns true when edited; `out` is the
+	// new value, nullopt when the box was cleared or holds no number (TS:
+	// `raw === '' || !Number.isFinite(n)` deletes the bound).
+	bool numField(const char* id, const std::optional<double>& val, std::optional<double>& out)
+	{
+		std::string buf = val ? NumText(*val) : std::string();
+		ImGui::SetNextItemWidth(56 * host_->scale);
+		if (!ImGui::InputText(id, &buf, ImGuiInputTextFlags_CharsDecimal)) return false;
+		size_t a = buf.find_first_not_of(" \t");
+		if (a == std::string::npos) {
+			out.reset();
+			return true;
+		}
+		const std::string t = buf.substr(a);
+		char* end = nullptr;
+		const double v = std::strtod(t.c_str(), &end);
+		if (end && *end == '\0' && std::isfinite(v)) out = v;
+		else out.reset();
+		return true;
+	}
+
+	bool segButton(const char* label, bool on)
+	{
+		if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		const bool r = ImGui::SmallButton(label);
+		if (on) ImGui::PopStyleColor();
+		return r;
+	}
+
+	void drawAlgoRow(int idx, int i)
+	{
+		using namespace RegexAlgo;
+		PageState& s = pages_[idx];
+		const AlgoPage& page = *refs_[idx].algo;
+		const AlgoEntry& e = page.entries[i];
+		ImGui::PushID(i);
+		bool on = s.algo.picked[i] != 0;
+		if (on)
+			ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImGuiCol_Header, 0.55f));
+
+		ImGui::TableSetColumnIndex(0);
+		if (ImGui::Checkbox("##on", &on)) {
+			s.algo.picked[i] = on ? 1 : 0;
+			algoChanged(idx);
+		}
+		ImGui::SameLine();
+		ImGui::TextUnformatted(e.def.zh.empty() ? e.def.id.c_str() : e.def.zh[0].c_str());
+		if (ImGui::IsItemHovered() && !e.def.en.empty()) ImGui::SetTooltip("%s", e.def.en[0].c_str());
+		if (e.untested) {
+			ImGui::SameLine();
+			ImGui::TextColored(kWarn, u8"待實測");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip(u8"假設繁中客戶端的插槽顯示為 R-G-B（顏色字母與 - 不翻譯），尚未進遊戲確認。");
+		}
+
+		ImGui::TableSetColumnIndex(1);
+		const AlgoValue cur = ValueOf(s.algo.values, e);   // a copy: the edit below replaces it
+		std::optional<AlgoValue> next;
+		std::optional<double> n;
+		switch (e.input.kind) {
+		case InputKind::Range: {
+			const RangeOp op = OpOf(e, cur);
+			if (e.input.ops.size() > 1) {
+				for (size_t k = 0; k < e.input.ops.size(); k++) {
+					const RangeOp o = e.input.ops[k];
+					if (k) ImGui::SameLine(0, 2 * host_->scale);
+					const char* label = o == RangeOp::Ge ? u8"≥" : o == RangeOp::Le ? u8"≤" : u8"區間";
+					if (segButton(label, op == o)) next = WithOp(e, cur, o);
+				}
+			} else {
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextDisabled(u8"≥");
+			}
+			if (op != RangeOp::Le) {
+				ImGui::SameLine();
+				if (numField("##min", cur.min, n)) next = WithNum(e, cur, false, n);
+			}
+			if (op == RangeOp::Range) {
+				ImGui::SameLine();
+				ImGui::TextDisabled(u8"–");
+			}
+			if (op != RangeOp::Ge) {
+				ImGui::SameLine();
+				if (numField("##max", cur.max, n)) next = WithNum(e, cur, true, n);
+			}
+			if (e.input.percent) {
+				ImGui::SameLine();
+				ImGui::TextDisabled("%%");
+			}
+			break;
+		}
+		case InputKind::Select: {
+			const std::vector<AlgoOption>& opts = e.input.options;
+			if (opts.size() > 5) {
+				// Many options (the eight influences): a drop-down keeps the row narrow.
+				std::string curText = cur.choice;
+				for (const AlgoOption& o : opts)
+					if (o.id == cur.choice) curText = o.zh;
+				ImGui::SetNextItemWidth(130 * host_->scale);
+				if (ImGui::BeginCombo("##choice", curText.c_str())) {
+					for (const AlgoOption& o : opts)
+						if (ImGui::Selectable(o.zh.c_str(), o.id == cur.choice)) next = WithChoice(cur, o.id);
+					ImGui::EndCombo();
+				}
+			} else {
+				for (size_t k = 0; k < opts.size(); k++) {
+					if (k) ImGui::SameLine(0, 2 * host_->scale);
+					if (segButton(opts[k].zh.c_str(), cur.choice == opts[k].id)) next = WithChoice(cur, opts[k].id);
+				}
+			}
+			break;
+		}
+		case InputKind::Count: {
+			const std::vector<AlgoOption>& opts = e.input.options;
+			for (size_t k = 0; k < opts.size(); k++) {
+				if (k) ImGui::SameLine(0, 2 * host_->scale);
+				if (segButton(opts[k].zh.c_str(), cur.choice == opts[k].id)) next = WithChoice(cur, opts[k].id);
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled(u8"≥");
+			ImGui::SameLine();
+			if (numField("##min", cur.min, n)) next = WithNum(e, cur, false, n);
+			break;
+		}
+		case InputKind::Colors: {
+			static const char kLetters[3] = {'r', 'g', 'b'};
+			static const ImVec4 kDot[3] = {ImVec4(0.90f, 0.35f, 0.30f, 1), ImVec4(0.40f, 0.80f, 0.45f, 1), ImVec4(0.40f, 0.60f, 0.95f, 1)};
+			for (int k = 0; k < 3; k++) {
+				if (k) ImGui::SameLine();
+				ImGui::PushID(k);
+				ImGui::AlignTextToFramePadding();
+				ImGui::TextColored(kDot[k], "%c", kLetters[k] - 'a' + 'A');
+				ImGui::SameLine(0, 3 * host_->scale);
+				const std::optional<double> count = (double)ColorCount(cur, kLetters[k]);
+				if (numField("##n", count, n)) {
+					// TS: Math.trunc(Number(value) || 0), clamped 0..6
+					const int c = n ? (int)std::trunc(*n) : 0;
+					next = WithColor(cur, kLetters[k], c);
+				}
+				ImGui::PopID();
+			}
+			break;
+		}
+		}
+		if (next) {
+			s.algo.SetValue(page, i, *next);   // editing a value ticks the row
+			algoChanged(idx);
+		}
+
+		ImGui::TableSetColumnIndex(2);
+		const std::optional<std::string> f = e.fragment(ValueOf(s.algo.values, e), fragLang());
+		ImGui::AlignTextToFramePadding();
+		if (f) {
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(f->c_str());
+			ImGui::PopStyleColor();
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", f->c_str());
+		} else {
+			ImGui::TextColored(kBad, u8"（輸入不成立）");
+		}
+		ImGui::PopID();
+	}
+
+	void drawAlgoRows(int idx)
+	{
+		const RegexAlgo::AlgoPage& page = *refs_[idx].algo;
+		for (int g = 0; g < (int)page.groups.size(); g++) {
+			bool any = false;
+			for (const RegexAlgo::AlgoEntry& e : page.entries) any |= (e.def.group == g);
+			if (!any) continue;
+			if (page.groups.size() > 1) ImGui::TextDisabled("%s", page.groups[g].c_str());
+			ImGui::PushID(g);
+			const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH;
+			if (ImGui::BeginTable("##rx_algo", 3, flags)) {
+				ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.1f);
+				ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.6f);
+				ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+				for (int i = 0; i < (int)page.entries.size(); i++) {
+					if (page.entries[i].def.group != g) continue;
+					ImGui::TableNextRow();
+					drawAlgoRow(idx, i);
+				}
+				ImGui::EndTable();
+			}
+			ImGui::PopID();
+		}
+	}
+
+	// The vendor page: the rows are the whole list.
+	void drawAlgoPage(int idx)
+	{
+		PageState& s = pages_[idx];
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextDisabled(u8"每個勾選各自一個條件（同時成立）；改數值會自動勾選。");
+		ImGui::SameLine();
+		ImGui::BeginDisabled(s.algo.Count() == 0);
+		if (ImGui::SmallButton(u8"清除")) {
+			std::fill(s.algo.picked.begin(), s.algo.picked.end(), (char)0);
+			algoChanged(idx);
+		}
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有勾選");
+		ImGui::BeginChild("##rx_algo_rows", ImVec2(0, 0), true);
+		drawAlgoRows(idx);
+		ImGui::EndChild();
+	}
+
+	// The numeric section on top of a host page (exile-appraiser
+	// RegexNumericSection.vue): a foldable block whose terms join the modifier
+	// tokens below in one string. Folded, its header still says what is set.
+	void drawSection(int host, int sec)
+	{
+		using namespace RegexAlgo;
+		PageState& ss = pages_[sec];
+		const AlgoPage& page = *refs_[sec].algo;
+		const std::string hostId = refs_[host].Id();
+		const bool collapsed = collapsed_.count(hostId) > 0;
+		ImGui::PushID("rx_sec");
+		bool toggle = ImGui::ArrowButton("##toggle", collapsed ? ImGuiDir_Right : ImGuiDir_Down);
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip(collapsed ? u8"展開數值條件" : u8"收合數值條件");
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted(u8"數值條件");
+		if (ImGui::IsItemClicked()) toggle = true;
+		ImGui::SameLine();
+		ImGui::TextDisabled(u8"已設 %d / %d", ss.algo.Count(), (int)page.entries.size());
+		int contrib = 0;
+		for (const PageContribution& c : pages_[host].combined.perPage)
+			if (c.id == page.id) contrib = c.length;
+		if (contrib > 0) {
+			ImGui::SameLine();
+			ImGui::TextDisabled(u8"%d 字", contrib);
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled("(?)");
+		if (ImGui::IsItemHovered()) {
+			ImGui::BeginTooltip();
+			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+			ImGui::TextUnformatted(u8"階級、物品數量、稀有度等屬性行的數值；每個勾選各自一個條件（同時成立），"
+			                       u8"與下方詞綴合成同一條字串。改數值會自動勾選。寫法依社群實用格式「標籤: +N%」"
+			                       u8"（半形／全形冒號、+ 可有可無，只比對冒號後的整個數字，不跨行）；"
+			                       u8"階級比對名稱「（階級 N）」；稀有度比對「稀有度: 稀有」行。");
+			ImGui::PopTextWrapPos();
+			ImGui::EndTooltip();
+		}
+		ImGui::SameLine();
+		ImGui::BeginDisabled(ss.algo.Count() == 0);
+		if (ImGui::SmallButton(u8"清除###rx_sec_clear")) {
+			std::fill(ss.algo.picked.begin(), ss.algo.picked.end(), (char)0);
+			algoChanged(sec);
+		}
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有數值條件的勾選");
+		if (toggle) {
+			if (collapsed) collapsed_.erase(hostId);
+			else collapsed_.insert(hostId);
+		}
+
+		if (collapsed) {
+			// view.ts sectionSummary: ticked rows in row order, "地圖階級 ≥16 · 物品數量 ≥80%".
+			const std::vector<SummaryItem> items = SectionSummary(page, ss.algo.Picks(), ss.algo.values, RegexFrag::Lang::Zh);
+			if (items.empty()) {
+				ImGui::TextDisabled(u8"沒有設定數值條件");
+			} else {
+				std::string ok, bad;
+				for (const SummaryItem& it : items) {
+					if (it.cond) ok += (ok.empty() ? "" : u8" · ") + it.label + " " + *it.cond;
+					else bad += (bad.empty() ? "" : u8"、") + it.label;
+				}
+				if (!ok.empty()) {
+					ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+					ImGui::TextWrapped("%s", ok.c_str());
+					ImGui::PopStyleColor();
+				}
+				if (!bad.empty()) ImGui::TextColored(kBad, u8"輸入不成立：%s", bad.c_str());
+			}
+		} else {
+			drawAlgoRows(sec);
+		}
+		ImGui::PopID();
+		ImGui::Separator();
 	}
 
 	const ToolPanelHost* host_ = nullptr;
 	std::wstring exeDir_, game_;
 	RegexDataset data_;
+	// Algorithmic pages of both games, built once from the data's labels, and
+	// every page (corpus first, same index as data_.Pages()) as one list.
+	std::vector<RegexAlgo::AlgoPage> algo_;
+	std::vector<RegexAlgo::PageRef> refs_;
+	// Host page ids whose numeric section is folded. Memory only for now.
+	std::set<std::string> collapsed_;
 	bool dataOk_ = false;
 	std::string dataErr_;
 	std::string selGame_ = "poe1";   // which game's lists are showing

@@ -24,7 +24,14 @@ struct AlgoValue {
 	std::optional<double> min;
 	std::optional<double> max;
 	std::string choice;
+	// TS tells `choice: ''` apart from no choice at all (view.ts condText returns
+	// '' for the first and null for the second). A non-empty `choice` is present
+	// either way; this flag only marks an explicitly EMPTY one. See HasChoice.
+	bool hasChoice = false;
 };
+
+// Is `choice` defined (TS `v.choice !== undefined`)?
+inline bool HasChoice(const AlgoValue& v) { return v.hasChoice || !v.choice.empty(); }
 
 // pages/types.ts:11 RangeOp; None = TS null.
 enum class RangeOp { None, Ge, Le, Range };

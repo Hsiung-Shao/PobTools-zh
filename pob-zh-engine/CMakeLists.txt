@@ -505,10 +505,12 @@ if (WIN32)
         host/regex_match.cpp
         host/regex_numeric.cpp
         host/regex_frag.cpp
+        host/regex_algo_pages.cpp
         host/regex_data.cpp
         host/regex_state.cpp
         host/regex_tool_ui.cpp
         host/regex_selftest.cpp
+        host/regex_selftest_r3.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
