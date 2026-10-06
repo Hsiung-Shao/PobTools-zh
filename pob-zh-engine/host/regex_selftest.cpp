@@ -29,6 +29,8 @@ void RegexR3Tests(const std::wstring& exeDir, void (*check)(bool, const std::str
 void RegexR4Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_r5.cpp: the R5 / R6 part (state schema 5, bookmark folders, bookmark snapshots).
 void RegexR5Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r7.cpp: the R7 part (item-mod values page).
+void RegexR7Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
 namespace {
 
@@ -1662,6 +1664,8 @@ void PortTests(const std::wstring& exeDir)
 	RegexR4Tests(exeDir, &check, &line);
 	line("");
 	RegexR5Tests(exeDir, &check, &line);
+	line("");
+	RegexR7Tests(exeDir, &check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
 }
 

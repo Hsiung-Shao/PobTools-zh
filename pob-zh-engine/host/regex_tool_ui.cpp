@@ -6,6 +6,7 @@
 #include "regex_embed.h"
 #include "regex_folders.h"
 #include "regex_gen.h"
+#include "regex_itemmods.h"
 #include "regex_state.h"
 #include "error_log.h"
 #include "tool_panel.h"
@@ -17,7 +18,11 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <memory>
+#include <thread>
 #include <cstdlib>
 #include <optional>
 #include <set>
@@ -157,6 +162,30 @@ struct PageState {
 	// This page's output: its own picks plus, for a host page, its numeric
 	// section (exile-appraiser store.ts pageCombined).
 	RegexAlgo::CombineResult combined;
+	// Item-mod values page (R7, RegexItemModList.vue): "only ticked" and the
+	// filtered rows (ticked first, then at most kListCap more), rebuilt when the
+	// search / group / ticks change.
+	bool pickedOnly = false;
+	std::vector<int> imvRows;
+	int imvTotal = 0;
+};
+
+// R7: the item-mod values page of one game is built the first time it is opened
+// (store.ts ensureItemMods) -- a few thousand modifiers, ~0.1-0.3 s to read and
+// index -- on a worker thread; the panel polls `done` once per frame.
+struct ItemModLoad {
+	enum class Phase { Idle, Loading, Ready, Error };
+	Phase phase = Phase::Idle;
+	std::string err;
+	long long ms = 0;
+	int count = 0;
+	std::vector<int> groupCounts;
+	std::thread worker;
+	std::atomic<bool> done{false};
+	// Written by the worker before `done`, read by the panel after it.
+	std::unique_ptr<RegexItemMods::Data> result;
+	std::string resultErr;
+	long long resultMs = 0;
 };
 
 // The panel is two-level: pick the game, then the list. Both games' catalogues
@@ -189,9 +218,13 @@ public:
 		// is its index in data_.Pages(); the algorithmic pages of both games after
 		// them (store.ts:116 appends algoPages to each catalogue). `algo_` is
 		// filled once and never grows again: refs_ point into it.
-		for (const char* g : kGames)
+		for (const char* g : kGames) {
 			for (RegexAlgo::AlgoPage& p : RegexAlgo::AlgoPages(g, data_.Labels(g)))
 				algo_.push_back(std::move(p));
+			// R7 (store.ts:116): the item-mod values page, without entries until
+			// it is first opened. Only for a game that has a catalogue at all.
+			if (data_.HasGame(g)) algo_.push_back(RegexItemMods::MakePage(g, nullptr));
+		}
 		for (const RegexPageDef& p : data_.Pages()) refs_.push_back({&p, nullptr});
 		for (const RegexAlgo::AlgoPage& p : algo_) refs_.push_back({nullptr, &p});
 		pages_.resize(refs_.size());
@@ -224,8 +257,11 @@ public:
 
 	const char* InitError() const override { return ""; }
 
+	~RegexToolPanel() override { joinItemMods(); }
+
 	void Frame() override
 	{
+		pollItemMods();
 		if (!dataOk_) {
 			ImGui::TextColored(kBad, u8"搜尋字串資料載入失敗：%s", dataErr_.c_str());
 			ImGui::TextDisabled(u8"請確認安裝目錄的 Data 底下有 regex_poe1.json / regex_poe2.json。");
@@ -280,6 +316,7 @@ public:
 		// land between a tick and the next deferred pass, and bookmarks are the
 		// one thing here the player cannot recreate from anywhere else.
 		flushState();
+		joinItemMods();
 	}
 	PobUi::Density Density() const override { return PobUi::Density::Compact; }
 	const char* PanelId() const override { return "regex"; }
@@ -427,6 +464,10 @@ private:
 				if (const RegexValueList* m = state_.NumericOf(RegexAlgo::NumericKeyOf(ref.Id())))
 					for (const auto& kv : *m) pages_[i].algo.values[kv.first] = kv.second;
 			}
+			// The item-mod values page has no entries until it is loaded: its
+			// ticks are restored then (finishItemMods), else every saved key
+			// would read as "not found" (store.ts onCatalogueReady).
+			if (isItemPage((int)i)) continue;
 			const std::optional<RegexEmbed::Applied> r = RegexEmbed::SavedPicksOf(ref, state_);
 			if (!r) continue;
 			setTicks((int)i, r->picked);
@@ -438,6 +479,16 @@ private:
 		if (missedTotal > 0)
 			notice_ = u8"上次的勾選有 " + std::to_string(missedTotal) + u8" 項（" + firstPage +
 			          u8" 等）在目前的資料裡找不到，可能是賽季更新後詞條有變動。";
+		// Saved ticks on an item-mod values page, or it is the remembered page:
+		// load it in the background now (it restores itself when ready).
+		for (const char* g : kGames) {
+			const int ip = itemPageIndex(g);
+			if (ip < 0) continue;
+			bool want = (selGame_ == g && page_ == ip);
+			for (const RegexPagePicks& c : state_.current)
+				if (c.page == refs_[ip].Id() && !c.keys.empty()) want = true;
+			if (want) startItemMods(g);
+		}
 	}
 
 	static RegexGen::Mode ModeFromId(const std::string& id)
@@ -516,6 +567,7 @@ private:
 	void algoChanged(int idx)
 	{
 		pages_[idx].dirty = true;
+		pages_[idx].filterDirty = true;   // the item-mod page keeps ticked rows on top
 		combinedDirty_ = true;
 		if (refs_[idx].IsSection()) {
 			// The section's output is part of its host page's string.
@@ -641,7 +693,8 @@ private:
 	void drawList()
 	{
 		if (isAlgo()) {
-			drawAlgoPage(page_);
+			if (isItemPage(page_)) drawItemModPage(page_);
+			else drawAlgoPage(page_);
 			return;
 		}
 		const int sec = sectionIndexOf(page_);
@@ -1303,6 +1356,12 @@ private:
 		// By value: everything below writes to state_.
 		const RegexBookmark b = state_.bookmarks[i];
 		const std::string g = b.game.empty() ? gameOfPage(b.page) : b.game;
+		// store.ts loadBookmark: an item-mod values bookmark loads that page first
+		// (here synchronously: the click is the moment, and it takes well under a second).
+		if (RegexItemMods::IsPageId(b.page) && !g.empty() && !ensureItemModsNow(g)) {
+			notice_ = u8"書籤「" + b.name + u8"」的物品詞綴資料載入失敗：" + imv_[GameIdx(g)].err;
+			return;
+		}
 		const std::optional<RegexEmbed::BookmarkApply> a =
 			g.empty() ? std::nullopt : RegexEmbed::BookmarkApplyOf(gamePages(g), b);
 		const int target = a ? indexInGame(g, a->page) : -1;
@@ -1527,6 +1586,7 @@ private:
 
 	void switchPage(int p)
 	{
+		if (p >= 0 && p < (int)refs_.size() && isItemPage(p)) startItemMods(refs_[p].Game());
 		if (p == page_) return;
 		page_ = p;
 		copied_ = false;
@@ -1863,6 +1923,204 @@ private:
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有勾選");
 		ImGui::BeginChild("##rx_algo_rows", ImVec2(0, 0), true);
 		drawAlgoRows(idx);
+		ImGui::EndChild();
+	}
+
+	// ---- item-mod values page (R7, RegexItemModList.vue) ---------------------------
+
+	static int GameIdx(const std::string& g) { return g == "poe2" ? 1 : 0; }
+	bool isItemPage(int idx) const
+	{
+		return idx >= 0 && idx < (int)refs_.size() && refs_[idx].algo && RegexItemMods::IsPageId(refs_[idx].Id());
+	}
+	int itemPageIndex(const std::string& g) const
+	{
+		for (int i = 0; i < (int)refs_.size(); i++)
+			if (refs_[i].Game() == g && isItemPage(i)) return i;
+		return -1;
+	}
+
+	// store.ts ensureItemMods: start the background load (once; again after an error).
+	void startItemMods(const std::string& g)
+	{
+		ItemModLoad& L = imv_[GameIdx(g)];
+		if (L.phase == ItemModLoad::Phase::Ready || L.phase == ItemModLoad::Phase::Loading) return;
+		if (itemPageIndex(g) < 0) return;
+		if (L.worker.joinable()) L.worker.join();
+		L.phase = ItemModLoad::Phase::Loading;
+		L.err.clear();
+		L.result.reset();
+		L.done = false;
+		const std::wstring dir = exeDir_;
+		ItemModLoad* lp = &L;
+		L.worker = std::thread([lp, dir, g]() {
+			const auto t0 = std::chrono::steady_clock::now();
+			std::unique_ptr<RegexItemMods::Data> d(new RegexItemMods::Data);
+			std::string err;
+			const bool ok = RegexItemMods::LoadFile(dir, g, *d, &err);
+			lp->resultMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+			lp->resultErr = err;
+			if (ok) lp->result = std::move(d);
+			lp->done = true;
+		});
+	}
+
+	void pollItemMods()
+	{
+		for (int gi = 0; gi < 2; gi++)
+			if (imv_[gi].phase == ItemModLoad::Phase::Loading && imv_[gi].done) finishItemMods(gi);
+	}
+
+	// Load now and wait (a bookmark that needs the page). True when ready.
+	bool ensureItemModsNow(const std::string& g)
+	{
+		ItemModLoad& L = imv_[GameIdx(g)];
+		if (L.phase == ItemModLoad::Phase::Ready) return true;
+		startItemMods(g);
+		if (L.phase != ItemModLoad::Phase::Loading) return false;
+		if (L.worker.joinable()) L.worker.join();
+		finishItemMods(GameIdx(g));
+		return L.phase == ItemModLoad::Phase::Ready;
+	}
+
+	// The worker is done: swap the entries into the page (same AlgoPage object,
+	// so refs_ stays valid), size the ticks, restore this page's saved ticks.
+	void finishItemMods(int gi)
+	{
+		ItemModLoad& L = imv_[gi];
+		if (L.worker.joinable()) L.worker.join();
+		const std::string g = kGames[gi];
+		L.ms = L.resultMs;
+		if (!L.result) {
+			L.phase = ItemModLoad::Phase::Error;
+			L.err = L.resultErr.empty() ? std::string(u8"未知錯誤") : L.resultErr;
+			PobLog::Error("data", "regex_itemmods_" + g + ".json: " + L.err);
+			return;
+		}
+		const int idx = itemPageIndex(g);
+		RegexAlgo::AlgoPage* page = nullptr;
+		for (RegexAlgo::AlgoPage& a : algo_)
+			if (a.game == g && RegexItemMods::IsPageId(a.id)) page = &a;
+		if (idx < 0 || !page) {
+			L.phase = ItemModLoad::Phase::Error;
+			L.err = u8"清單裡沒有這一頁";
+			return;
+		}
+		*page = RegexItemMods::MakePage(g, L.result.get());
+		L.result.reset();   // the page holds what it needs (templates + anchors)
+		L.count = (int)page->entries.size();
+		L.groupCounts = RegexItemMods::GroupCounts(*page);
+		PageState& ps = pages_[idx];
+		ps.picked.assign(page->entries.size(), 0);
+		ps.algo.picked.assign(page->entries.size(), 0);   // values (restored at Init) stay
+		ps.dirty = true;
+		ps.filterDirty = true;
+		combinedDirty_ = true;
+		L.phase = ItemModLoad::Phase::Ready;
+		PobLog::Diag("data", "regex item-mod values " + g + ": " + std::to_string(L.count) + " entries in " +
+		                         std::to_string(L.ms) + " ms");
+		if (const std::optional<RegexEmbed::Applied> r = RegexEmbed::SavedPicksOf(refs_[idx], state_)) {
+			setTicks(idx, r->picked);
+			if (r->missed > 0)
+				notice_ = u8"上次的勾選有 " + std::to_string(r->missed) + u8" 項（" + refs_[idx].Title() +
+				          u8"）在目前的資料裡找不到，可能是賽季更新後詞條有變動。";
+		}
+	}
+
+	void joinItemMods()
+	{
+		for (ItemModLoad& L : imv_)
+			if (L.worker.joinable()) L.worker.join();
+	}
+
+	void drawItemModPage(int idx)
+	{
+		const std::string g = refs_[idx].Game();
+		ItemModLoad& L = imv_[GameIdx(g)];
+		if (L.phase == ItemModLoad::Phase::Error) {
+			ImGui::TextColored(kBad, u8"物品詞綴資料載入失敗：%s", L.err.c_str());
+			ImGui::SameLine();
+			if (ImGui::SmallButton(u8"重試###rx_imv_retry")) startItemMods(g);
+			return;
+		}
+		if (L.phase != ItemModLoad::Phase::Ready) {
+			if (L.phase == ItemModLoad::Phase::Idle) startItemMods(g);
+			ImGui::TextDisabled(u8"載入物品詞綴中…（第一次打開要整理幾千條詞綴的模板與唯一片段）");
+			return;
+		}
+		PageState& s = pages_[idx];
+		const RegexAlgo::AlgoPage& page = *refs_[idx].algo;
+		ImGui::SetNextItemWidth(190 * host_->scale);
+		if (ImGui::InputTextWithHint("##rx_imv_search", u8"搜尋繁中 / 英文（空白分隔多個字）", &s.search))
+			s.filterDirty = true;
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(150 * host_->scale);
+		const std::string allLabel = u8"全部分類（" + std::to_string(page.entries.size()) + u8"）";
+		const std::string curLabel = s.groupFilter < 0 || s.groupFilter >= (int)page.groups.size()
+			? allLabel
+			: page.groups[s.groupFilter] + u8"（" + std::to_string(L.groupCounts[s.groupFilter]) + u8"）";
+		if (ImGui::BeginCombo("##rx_imv_group", curLabel.c_str())) {
+			if (ImGui::Selectable(allLabel.c_str(), s.groupFilter < 0)) {
+				s.groupFilter = -1;
+				s.filterDirty = true;
+			}
+			for (int gi = 0; gi < (int)page.groups.size(); gi++) {
+				const std::string label = page.groups[gi] + u8"（" + std::to_string(L.groupCounts[gi]) + u8"）###imvg" + std::to_string(gi);
+				if (ImGui::Selectable(label.c_str(), s.groupFilter == gi)) {
+					s.groupFilter = gi;
+					s.filterDirty = true;
+				}
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::SameLine();
+		if (ImGui::Checkbox(u8"只看已勾選", &s.pickedOnly)) s.filterDirty = true;
+		ImGui::SameLine();
+		ImGui::BeginDisabled(s.algo.Count() == 0);
+		if (ImGui::SmallButton(u8"清除###rx_imv_clear")) {
+			std::fill(s.algo.picked.begin(), s.algo.picked.end(), (char)0);
+			algoChanged(idx);
+		}
+		ImGui::EndDisabled();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有勾選");
+
+		if (s.filterDirty) {
+			RegexItemMods::Filter f;
+			f.search = s.search;
+			f.group = s.groupFilter;
+			f.pickedOnly = s.pickedOnly;
+			const RegexItemMods::Filtered r = RegexItemMods::FilterRows(page, s.algo.Picks(), f, RegexItemMods::kListCap);
+			s.imvRows = r.rows;
+			s.imvTotal = r.total;
+			s.filterDirty = false;
+		}
+		ImGui::SameLine();
+		ImGui::TextDisabled(u8"顯示 %d / 符合 %d", (int)s.imvRows.size(), s.imvTotal);
+
+		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+		ImGui::TextWrapped(u8"已勾選的永遠在最上面；每個勾選各自一個條件（同時成立），改數值會自動勾選。"
+		                   u8"只收恰好一個整數數值的詞綴，負值在 ≥ 條件下會被當成正數。");
+		if (s.imvTotal > (int)s.imvRows.size())
+			ImGui::TextWrapped(u8"還有 %d 條符合：用搜尋或分類縮小範圍。", s.imvTotal - (int)s.imvRows.size());
+		ImGui::PopStyleColor();
+		if (s.imvRows.empty()) {
+			ImGui::TextDisabled(u8"沒有符合的詞綴");
+			return;
+		}
+		ImGui::BeginChild("##rx_imv_rows", ImVec2(0, 0), true);
+		const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH;
+		if (ImGui::BeginTable("##rx_imv", 3, flags)) {
+			ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+			ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.4f);
+			ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+			// A copy: ticking a row re-filters next frame, never under this loop.
+			const std::vector<int> rows = s.imvRows;
+			for (int i : rows) {
+				ImGui::TableNextRow();
+				drawAlgoRow(idx, i);
+			}
+			ImGui::EndTable();
+		}
 		ImGui::EndChild();
 	}
 
@@ -2307,6 +2565,7 @@ private:
 
 	std::string copyRequest_;
 	bool copied_ = false;
+	ItemModLoad imv_[2];   // R7, per game (kGames order)
 	int t17Cache_ = -1;
 	bool t17Present_ = false;
 	ToolCloseState close_ = ToolCloseState::Open;
