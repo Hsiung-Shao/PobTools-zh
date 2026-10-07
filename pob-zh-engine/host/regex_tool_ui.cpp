@@ -2,6 +2,7 @@
 
 #include "clipboard_util.h"
 #include "regex_algo_pages.h"
+#include "regex_bookmarks_share.h"
 #include "regex_data.h"
 #include "regex_embed.h"
 #include "regex_folders.h"
@@ -17,6 +18,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
+#include <imgui_internal.h>   // PushItemFlag(ImGuiItemFlags_MixedValue): the half-ticked folder box
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
@@ -210,7 +212,7 @@ const char* GameLabel(const std::string& g)
 // Which modal wants to open. Raised by a button deep inside a child window and
 // acted on at the top level, because OpenPopup and BeginPopupModal have to be
 // called from the same ID scope or the popup simply never appears.
-enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDelete, Paste, Template };
+enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDelete, Paste, Template, SendPick, ImportPack };
 
 // The left column: the merged overview or the page's own list (store.ts panelView).
 enum class View { Page, Combined };
@@ -1196,6 +1198,11 @@ private:
 		}
 		if (ImGui::IsItemHovered())
 			ImGui::SetTooltip(u8"在 %s 的書籤裡新增一個資料夾（只有一層）", GameLabel(bmTab_));
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"匯入書籤包")) openImport();
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(u8"貼上別人給的書籤包（「送到 ExileAppraiser」對話框的「複製書籤包」，或 ExileAppraiser 產的），"
+			                  u8"加進書籤：同名會改名加「 (2)」，不動目前的勾選。加入前會先預覽。");
 
 		if (bmTab_ != selGame_) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
@@ -1526,8 +1533,14 @@ private:
 			ImGui::OpenPopup("###rx_paste");
 		} else if (opening == Modal::Template) {
 			ImGui::OpenPopup("###rx_tpl");
+		} else if (opening == Modal::SendPick) {
+			ImGui::OpenPopup("###rx_sendpick");
+		} else if (opening == Modal::ImportPack) {
+			ImGui::OpenPopup("###rx_import");
 		}
 		drawShareModals(opening);
+		drawSendPickModal();
+		drawImportModal(opening);
 
 		const std::string title = (renameMode_ ? std::string(u8"重新命名書籤")
 		                                       : std::string(u8"存成書籤")) + "###rx_name";
@@ -1730,13 +1743,13 @@ private:
 		}
 		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"貼上別人給的分享碼並套用（套用前會先確認）");
 		ImGui::SameLine();
-		drawSendButton(any);
+		drawSendButton();
 		if (shareCopied_) {
 			if (std::chrono::steady_clock::now() - shareCopiedAt_ > std::chrono::milliseconds(2500)) {
 				shareCopied_ = 0;
 			} else {
 				ImGui::SameLine();
-				if (shareCopied_ == 1) ImGui::TextColored(kGood, u8"已複製分享碼");
+				if (shareCopied_ == 1) ImGui::TextColored(kGood, u8"已複製%s", shareCopiedWhat_.c_str());
 				else ImGui::TextColored(kBad, u8"複製失敗");
 			}
 		}
@@ -1748,6 +1761,7 @@ private:
 		std::string code;
 		if (!buildShareCode(code)) return;
 		shareCopyRequest_ = std::move(code);
+		shareCopiedWhat_ = u8"分享碼";
 		shareCopied_ = 0;
 	}
 
@@ -1797,18 +1811,30 @@ private:
 		else PobLog::Error("regex", u8"送到 ExileAppraiser：" + msg);
 	}
 
-	void drawSendButton(bool any)
+	// Bookmarks that can be sent (they have a game; the dialog lists them by game).
+	int sendableBookmarks() const
+	{
+		int n = 0;
+		for (const RegexBookmark& b : state_.bookmarks) n += b.game.empty() ? 0 : 1;
+		return n;
+	}
+
+	// "送到 ExileAppraiser…": opens "選擇要傳送的書籤" (a bookmark pack, --regex-bookmarks).
+	// The old one-click send of the current ticks (--regex-share) is gone from the
+	// panel; "複製分享碼" covers that, and RegexSend keeps the share kind as logic.
+	void drawSendButton()
 	{
 		const bool found = !sendLoc_.exe.empty();
-		const std::string label = std::string(found ? u8"送到 ExileAppraiser" : u8"找不到 ExileAppraiser，手動指定…") +
+		const int have = sendableBookmarks();
+		const std::string label = std::string(found ? u8"送到 ExileAppraiser…" : u8"送到 ExileAppraiser（找不到，右鍵指定）…") +
 		                          "###rx_send";
-		ImGui::BeginDisabled(!any);
+		ImGui::BeginDisabled(have == 0);
 		if (ImGui::SmallButton(label.c_str())) {
-			std::string code;
-			if (buildShareCode(code)) {
-				sendCode_ = std::move(code);
-				sendRequest_ = true;
-			}
+			sendSel_ = RegexBookmarksShare::Selection{};
+			sendPickTab_ = bmTab_;
+			sendPickTabSet_ = true;
+			modal_ = Modal::SendPick;
+			relocateWanted_ = true;
 		}
 		ImGui::EndDisabled();
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
@@ -1819,21 +1845,23 @@ private:
 			if (std::chrono::steady_clock::now() - sendLocAt_ > std::chrono::seconds(3)) relocateWanted_ = true;
 			ImGui::BeginTooltip();
 			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
-			if (!any) ImGui::TextUnformatted(u8"先勾選幾項（或加自訂文字 / 排除詞）才有東西可以送。");
-			else ImGui::TextUnformatted(u8"把目前遊戲的分享碼直接交給 ExileAppraiser；"
-			                            u8"它會跳出確認對話框，按「套用」才會覆蓋那邊的勾選。");
+			if (have == 0) ImGui::TextUnformatted(u8"還沒有書籤可以送：先「存成書籤」。");
+			else ImGui::TextUnformatted(u8"選幾筆書籤（或整個資料夾，PoE1 / PoE2 可以混選）交給 ExileAppraiser，"
+			                            u8"加進它的書籤。");
+			ImGui::TextUnformatted(u8"ExileAppraiser 會跳出確認框，按「加入」才寫入；同名的會改名加「 (2)」，"
+			                       u8"不動它目前的勾選。");
 			if (found) {
 				ImGui::Text(u8"位置：%s", RegexSend::Narrow(sendLoc_.exe).c_str());
 				ImGui::Text(u8"來源：%s", RegexSend::SourceLabel(sendLoc_.source));
 			} else {
 				ImGui::TextColored(kWarn, u8"在登錄、預設安裝路徑與執行中的程式都找不到 ExileAppraiser.exe；"
-				                          u8"按下會請你手動指定（可攜版請指定它的 exe）。");
+				                          u8"送出時會請你手動指定（可攜版請指定它的 exe）。");
 			}
 			if (sendLoc_.manualMissing)
 				ImGui::TextColored(kWarn, u8"手動指定的檔案已不存在：%s", state_.exileAppraiserExe.c_str());
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"需要 ExileAppraiser v0.2.1 以上（舊版只會叫出視窗，不會套用）。");
-			ImGui::TextUnformatted(u8"「物品詞綴數值」頁的勾選不互通（兩邊的鍵不同），那邊會回報找不到。");
+			ImGui::TextUnformatted(u8"需要 ExileAppraiser v0.2.1 以上（舊版只會叫出視窗，不會加入）。");
+			ImGui::TextUnformatted(u8"「物品詞綴數值」頁的書籤鍵不互通（兩邊的鍵不同），那邊會標「找不到」。");
 			ImGui::TextUnformatted(u8"右鍵：手動指定 / 清除 ExileAppraiser.exe 的位置。");
 			ImGui::PopStyleColor();
 			ImGui::PopTextWrapPos();
@@ -1857,6 +1885,223 @@ private:
 				ImGui::TextColored(sendOk_ ? kGood : kBad, "%s", sendMsg_.c_str());
 			}
 		}
+	}
+
+	// A checkbox that can show "some" (ImGuiItemFlags_MixedValue). True when clicked;
+	// the caller ticks everything on a click from None / Some and clears from All.
+	static bool TriCheckbox(const char* label, RegexBookmarksShare::Tri t)
+	{
+		bool v = t == RegexBookmarksShare::Tri::All;
+		const bool mixed = t == RegexBookmarksShare::Tri::Some;
+		if (mixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+		const bool clicked = ImGui::Checkbox(label, &v);
+		if (mixed) ImGui::PopItemFlag();
+		return clicked;
+	}
+
+	// "選擇要傳送的書籤": PoE1 / PoE2 tabs, each folder (and 未分類) a tri-state box
+	// over its bookmarks. The model is regex_bookmarks_share (Selection / PackOf).
+	void drawSendPickModal()
+	{
+		namespace BS = RegexBookmarksShare;
+		if (!ImGui::BeginPopupModal(u8"選擇要傳送的書籤###rx_sendpick", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+		const float sc = host_->scale;
+		ImGui::PushTextWrapPos(500 * sc);
+		ImGui::TextUnformatted(u8"勾選要交給 ExileAppraiser 的書籤：可以整個資料夾、也可以逐筆，PoE1 / PoE2 可以混選。");
+		ImGui::PopTextWrapPos();
+		if (ImGui::SmallButton(u8"全選")) BS::SetAll(state_, sendSel_, true);
+		ImGui::SameLine();
+		if (ImGui::SmallButton(u8"全不選")) BS::SetAll(state_, sendSel_, false);
+
+		if (ImGui::BeginTabBar("##rx_sendpick_tabs")) {
+			for (const char* g : kGames) {
+				int total = 0, picked = 0;
+				for (int i = 0; i < (int)state_.bookmarks.size(); i++)
+					if (state_.bookmarks[i].game == g) {
+						total++;
+						picked += sendSel_.bookmarks.count(i) ? 1 : 0;
+					}
+				const std::string tab = std::string(GameLabel(g)) + u8"（" + std::to_string(picked) + "/" + std::to_string(total) +
+				                        u8"）###rx_sp_" + g;
+				ImGuiTabItemFlags tf = 0;
+				if (sendPickTabSet_ && sendPickTab_ == g) tf |= ImGuiTabItemFlags_SetSelected;
+				if (!ImGui::BeginTabItem(tab.c_str(), nullptr, tf)) continue;
+				ImGui::BeginChild("##rx_sp_list", ImVec2(500 * sc, 320 * sc), true);
+				const RegexFolders::Grouped grouped = RegexFolders::GroupBookmarks(state_, g, false);
+				bool any = false;
+				for (size_t gi = 0; gi < grouped.groups.size(); gi++) {
+					const RegexFolders::Group& grp = grouped.groups[gi];
+					if (grp.folder.empty() && grp.items.empty()) continue;
+					any = true;
+					ImGui::PushID((int)gi);
+					const BS::Tri t = BS::GroupTri(state_, sendSel_, g, grp.folder);
+					const std::string head = (grp.folder.empty() ? std::string(u8"未分類") : grp.folder) + u8"（" +
+					                         std::to_string(grp.items.size()) + u8" 筆）###grp";
+					if (TriCheckbox(head.c_str(), t)) BS::SetGroup(state_, sendSel_, g, grp.folder, t != BS::Tri::All);
+					if (grp.items.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip(u8"空資料夾：勾了會在對方建立同名資料夾");
+					ImGui::Indent(22 * sc);
+					for (int i : grp.items) {
+						const RegexBookmark& b = state_.bookmarks[i];
+						ImGui::PushID(i);
+						bool on = sendSel_.bookmarks.count(i) > 0;
+						const std::string name = b.name + "###bm";
+						if (ImGui::Checkbox(name.c_str(), &on)) {
+							if (on) sendSel_.bookmarks.insert(i);
+							else sendSel_.bookmarks.erase(i);
+						}
+						ImGui::SameLine();
+						ImGui::TextDisabled("%s", pageTitleIn(g, b.page).c_str());
+						if (RegexItemMods::IsPageId(b.page)) {
+							ImGui::SameLine();
+							ImGui::TextColored(kWarn, u8"（鍵不互通）");
+						}
+						ImGui::PopID();
+					}
+					ImGui::Unindent(22 * sc);
+					ImGui::PopID();
+				}
+				if (!any) ImGui::TextDisabled(u8"%s 沒有書籤。", GameLabel(g));
+				ImGui::EndChild();
+				ImGui::EndTabItem();
+			}
+			sendPickTabSet_ = false;
+			ImGui::EndTabBar();
+		}
+
+		BS::PackStats st;
+		const BS::Pack pack = BS::PackOf(state_, sendSel_, &st);
+		const int n = st.bookmarks[0] + st.bookmarks[1];
+		const int nf = st.folders[0] + st.folders[1];
+		std::string summary = u8"已選 " + std::to_string(n) + u8" 筆（PoE1 " + std::to_string(st.bookmarks[0]) + u8"、PoE2 " +
+		                      std::to_string(st.bookmarks[1]) + u8"）";
+		if (nf > 0) summary += u8"，資料夾 " + std::to_string(nf) + u8" 個";
+		ImGui::TextUnformatted(summary.c_str());
+		ImGui::PushTextWrapPos(500 * sc);
+		if (st.itemMod > 0)
+			ImGui::TextColored(kWarn, u8"其中 %d 筆是「物品詞綴數值」頁：兩邊的鍵不互通（這裡是 GGPK stat id、那邊是交易站 stat id），"
+			                          u8"ExileAppraiser 會照樣加入，但標「找不到」。", st.itemMod);
+		if (st.skipped > 0)
+			ImGui::TextColored(kWarn, u8"有 %d 筆缺名稱 / 頁 / 勾選，不會送出。", st.skipped);
+		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+		if (!sendLoc_.exe.empty()) ImGui::Text(u8"送到：%s", RegexSend::Narrow(sendLoc_.exe).c_str());
+		else ImGui::TextUnformatted(u8"找不到 ExileAppraiser.exe：按「送出」會請你手動指定。");
+		ImGui::TextUnformatted(u8"對方會跳確認框，按「加入」才寫入；同名改名加「 (2)」；不帶熱鍵；不動它目前的勾選。需要 v0.2.1 以上。");
+		ImGui::PopStyleColor();
+		ImGui::PopTextWrapPos();
+
+		ImGui::BeginDisabled(st.Empty());
+		if (ImGui::Button(u8"送出", ImVec2(90 * sc, 0))) {
+			sendCode_ = BS::Encode(pack);
+			sendKind_ = RegexSend::Kind::Bookmarks;
+			sendWhat_ = std::to_string(n) + u8" 筆書籤" + (nf ? u8"、" + std::to_string(nf) + u8" 個資料夾" : std::string());
+			sendRequest_ = true;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button(u8"複製書籤包")) {
+			shareCopyRequest_ = BS::Encode(pack);
+			shareCopiedWhat_ = u8"書籤包（" + std::to_string(n) + u8" 筆）";
+			shareCopied_ = 0;
+			ImGui::CloseCurrentPopup();
+		}
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(u8"不送出，把書籤包複製到剪貼簿（對方用「匯入書籤包」加入；ExileAppraiser 也讀得懂同一種碼）");
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button(u8"取消", ImVec2(90 * sc, 0))) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+
+	// ---- 匯入書籤包 (bookmarks-share.ts decodeBookmarks + mergeBookmarks, the receiving side here) ----
+
+	void openImport()
+	{
+		importBuf_.clear();
+		importFor_ = "\x01";   // never equal to a real buffer: parsed on the first frame
+		const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+		if (LooksLikeCode(clip)) importBuf_ = clip;
+		modal_ = Modal::ImportPack;
+	}
+
+	void drawImportModal(Modal opening)
+	{
+		namespace BS = RegexBookmarksShare;
+		if (!ImGui::BeginPopupModal(u8"匯入書籤包###rx_import", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+		const float sc = host_->scale;
+		ImGui::TextUnformatted(u8"把書籤包貼在下面（剪貼簿裡像碼的內容會自動帶入）。");
+		if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
+		ImGui::InputTextMultiline("##rx_import_code", &importBuf_, ImVec2(460 * sc, 80 * sc));
+		if (importBuf_ != importFor_) {
+			importFor_ = importBuf_;
+			importErr_.clear();
+			importOk_ = false;
+			if (!RegexAlgo::JsTrim(importBuf_).empty()) {
+				std::string err;
+				importOk_ = BS::Decode(importBuf_, importPack_, &err);
+				if (!importOk_) {
+					RegexShare::Normalized sh;
+					importErr_ = RegexShare::Decode(importBuf_, sh, nullptr)
+						? std::string(u8"這是分享碼，不是書籤包：請用上方的「貼上分享碼」。")
+						: u8"書籤包無法讀取：" + err;
+				}
+			}
+		}
+		ImGui::PushTextWrapPos(460 * sc);
+		bool canAdd = false;
+		if (!importErr_.empty()) {
+			ImGui::TextColored(kBad, "%s", importErr_.c_str());
+		} else if (importOk_) {
+			const BS::MergeResult m = BS::Merge(state_, importPack_.pack);
+			int per[2] = {0, 0}, itemMod = 0;
+			for (const RegexBookmark& b : importPack_.pack.bookmarks) {
+				per[b.game == "poe2" ? 1 : 0]++;
+				itemMod += RegexItemMods::IsPageId(b.page) ? 1 : 0;
+			}
+			canAdd = !m.added.empty() || !m.foldersCreated.empty();
+			ImGui::Text(u8"會加入 %d 筆書籤（PoE1 %d、PoE2 %d）", (int)m.added.size(), per[0], per[1]);
+			if (!m.foldersCreated.empty()) {
+				std::string f;
+				for (const auto& c : m.foldersCreated) f += (f.empty() ? "" : u8"、") + std::string(GameLabel(c.first)) + " " + c.second;
+				ImGui::Text(u8"新資料夾：%s", f.c_str());
+			}
+			if (!m.renamed.empty()) {
+				std::string r;
+				for (size_t i = 0; i < m.renamed.size() && i < 6; i++)
+					r += (i ? u8"、" : "") + m.renamed[i].originalName + u8" → " + m.renamed[i].name;
+				if (m.renamed.size() > 6) r += u8"…";
+				ImGui::TextColored(kWarn, u8"同名改名：%s", r.c_str());
+			}
+			if (itemMod > 0)
+				ImGui::TextColored(kWarn, u8"其中 %d 筆是「物品詞綴數值」頁：若來自 ExileAppraiser，鍵不互通，載入時會回報找不到。", itemMod);
+			if (!importPack_.warnings.empty())
+				ImGui::TextColored(kWarn, u8"書籤包有 %d 處格式不對，已略過（第一處：%s）", (int)importPack_.warnings.size(),
+				                   importPack_.warnings[0].c_str());
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
+			ImGui::TextUnformatted(u8"只加入書籤與資料夾：目前的勾選、數值、自訂文字、排除詞與模式都不動。");
+			ImGui::PopStyleColor();
+		}
+		ImGui::PopTextWrapPos();
+		ImGui::BeginDisabled(!canAdd);
+		if (ImGui::Button(u8"加入", ImVec2(90 * sc, 0))) {
+			const BS::MergeResult m = BS::Merge(state_, importPack_.pack);
+			state_.bookmarks = m.state.bookmarks;
+			state_.folders[0] = m.state.folders[0];
+			state_.folders[1] = m.state.folders[1];
+			if (!m.added.empty()) bmTab_ = m.added.front().game;
+			notice_ = u8"已從書籤包加入 " + std::to_string(m.added.size()) + u8" 筆書籤" +
+			          (m.renamed.empty() ? std::string() : u8"（" + std::to_string(m.renamed.size()) + u8" 筆同名已改名）") +
+			          (m.foldersCreated.empty() ? std::string() : u8"，新資料夾 " + std::to_string(m.foldersCreated.size()) + u8" 個") +
+			          u8"。";
+			for (const std::string& w : importPack_.warnings) PobLog::Diag("regex", u8"書籤包警告：" + w);
+			markStateDirty();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+		if (ImGui::Button(u8"從剪貼簿貼上")) importBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+		ImGui::SameLine();
+		if (ImGui::Button(u8"取消", ImVec2(90 * sc, 0))) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
 	}
 
 	// True when a file was picked (and stored).
@@ -1884,7 +2129,11 @@ private:
 		if (!sendRequest_) return;
 		sendRequest_ = false;
 		const std::string code = std::move(sendCode_);
+		const RegexSend::Kind kind = sendKind_;
+		const std::string what = std::move(sendWhat_);
 		sendCode_.clear();
+		sendWhat_.clear();
+		sendKind_ = RegexSend::Kind::Bookmarks;
 		relocateExileAppraiser();   // fresh: it may have moved / closed since the last look
 		if (sendLoc_.exe.empty() && !pickExileAppraiser()) {
 			setSendMessage(false, u8"沒有送出：找不到 ExileAppraiser.exe（右鍵可手動指定）");
@@ -1893,9 +2142,12 @@ private:
 		const std::wstring tmp = RegexSend::DefaultTempDir();
 		if (code.size() > RegexSend::kMaxInlineChars) RegexSend::SweepTempDir(tmp, RegexSend::kTempMaxAgeSeconds);
 		const RegexSend::Result r = RegexSend::Send(sendLoc_.exe, code, tmp, RegexSend::RealLauncher(),
-		                                            RegexSend::NowStamp(), RegexSend::RandomU32());
+		                                            RegexSend::NowStamp(), RegexSend::RandomU32(),
+		                                            RegexSend::kMaxInlineChars, kind);
 		if (!r.tempFile.empty()) sendFiles_.push_back(r.tempFile);
-		setSendMessage(r.ok, r.message);
+		setSendMessage(r.ok, (r.ok && !what.empty() ? what + u8"：" : std::string()) + r.message);
+		// Also in the notice line, which stays until dismissed (the message beside the button fades).
+		notice_ = u8"送到 ExileAppraiser：" + sendMsg_;
 	}
 
 	// store.ts applyCombo: OVERWRITE every page of the code's game (ticks; values
@@ -1988,9 +2240,12 @@ private:
 			if (ImGui::Button(u8"套用", ImVec2(90 * host_->scale, 0))) {
 				RegexShare::Normalized d;
 				std::string err;
+				RegexBookmarksShare::Normalized bp;
 				if (!RegexShare::Decode(pasteBuf_, d, &err)) {
 					pasteErr_ = u8"分享碼無法套用：" + err;
-					if (err.find(u8"版本不符") != std::string::npos)
+					if (RegexBookmarksShare::Decode(pasteBuf_, bp, nullptr))
+						pasteErr_ = u8"這是書籤包，不是分享碼：請用書籤區的「匯入書籤包」。";
+					else if (err.find(u8"版本不符") != std::string::npos)
 						pasteErr_ += u8"（可能是較新版本的 PobTools / exile-appraiser 產的）";
 				} else if (!applyCombo(d.state, std::string(u8"分享碼（") + GameLabel(d.state.game) + u8"）", d.warnings, &err)) {
 					pasteErr_ = u8"分享碼無法套用：" + err;
@@ -3116,6 +3371,7 @@ private:
 	bool copied_ = false;
 	// R8: share code on its way to the clipboard, and how that went (1 ok, 2 failed).
 	std::string shareCopyRequest_;
+	std::string shareCopiedWhat_ = u8"分享碼";   // what the "已複製…" note names (分享碼 / 書籤包)
 	int shareCopied_ = 0;
 	std::chrono::steady_clock::time_point shareCopiedAt_;
 	// 送到 ExileAppraiser: where it is (refreshed on hover / before each send),
@@ -3124,6 +3380,17 @@ private:
 	std::chrono::steady_clock::time_point sendLocAt_;
 	bool relocateWanted_ = false, pickRequest_ = false, sendRequest_ = false;
 	std::string sendCode_;
+	// What sendCode_ is: the panel sends bookmark packs only (the share-code kind
+	// stays in regex_send for the logic and its self-test; "複製分享碼" hands over ticks).
+	RegexSend::Kind sendKind_ = RegexSend::Kind::Bookmarks;
+	std::string sendWhat_;                 // "3 筆書籤、1 個資料夾", for the result line
+	RegexBookmarksShare::Selection sendSel_;   // the "選擇要傳送的書籤" dialog
+	std::string sendPickTab_ = "poe1";
+	bool sendPickTabSet_ = false;
+	// 匯入書籤包: the pasted text, what was last parsed, and its result.
+	std::string importBuf_, importFor_, importErr_;
+	bool importOk_ = false;
+	RegexBookmarksShare::Normalized importPack_;
 	std::string sendMsg_;
 	bool sendOk_ = false;
 	std::chrono::steady_clock::time_point sendMsgAt_;

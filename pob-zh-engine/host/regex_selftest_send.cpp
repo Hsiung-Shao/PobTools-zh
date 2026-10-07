@@ -335,6 +335,57 @@ void PlanAndSendTests()
 		check(!r.ok && l.calls == 0, "Send, bad code: nothing launched");
 	}
 
+	line("[send-bookmarks] bookmark packs: --regex-bookmarks / --regex-bookmarks-file (exile-appraiser c9a7aae)");
+	// The four flags (--regex-share, --regex-share-file, --regex-bookmarks, --regex-bookmarks-file):
+	// exactly one on any command line we build, or ExileAppraiser answers both-flags.
+	auto oneFlag = [](const std::vector<std::wstring>& v, const std::wstring& want) {
+		int n = 0;
+		for (size_t i = 1; i < v.size(); i++)
+			for (const wchar_t* f : {L"--regex-share=", L"--regex-share-file=", L"--regex-bookmarks=", L"--regex-bookmarks-file="})
+				if (v[i].rfind(f, 0) == 0) n++;
+		return v.size() == 2 && n == 1 && v[1].rfind(want, 0) == 0;
+	};
+	check(std::string(RS::FlagCode(RS::Kind::Bookmarks)) == "--regex-bookmarks=" &&
+	          std::string(RS::FlagFile(RS::Kind::Bookmarks)) == "--regex-bookmarks-file=" &&
+	          std::string(RS::FlagCode(RS::Kind::Share)) == "--regex-share=" &&
+	          std::string(RS::FlagFile(RS::Kind::Share)) == "--regex-share-file=",
+	      "flag names as docs/regex-share-cli.md");
+	check(RS::PlanSend("H4sIAAA_-z", dir, L"20261007-120000", 11, p, &err, RS::kMaxInlineChars, RS::Kind::Bookmarks) &&
+	          p.tempFile.empty() && p.arg == L"--regex-bookmarks=H4sIAAA_-z",
+	      "bookmark pack, short: inline as --regex-bookmarks=<code>");
+	check(RS::PlanSend(at, dir, L"20261007-120000", 12, p, &err, RS::kMaxInlineChars, RS::Kind::Bookmarks) && p.tempFile.empty(),
+	      "bookmark pack, exactly 30000 characters: still inline");
+	check(RS::PlanSend(over, dir, L"20261007-120000", 13, p, &err, RS::kMaxInlineChars, RS::Kind::Bookmarks) &&
+	          !p.tempFile.empty() && p.arg == L"--regex-bookmarks-file=" + p.tempFile && ReadBytes(p.tempFile) == over &&
+	          RS::IsTempFileName(p.tempFile.substr(p.tempFile.find_last_of(L'\\') + 1)),
+	      "bookmark pack, 30001 characters: --regex-bookmarks-file=<temp file> (same name pattern, so the same sweep)");
+	DeleteFileW(p.tempFile.c_str());
+	check(!RS::PlanSend("", dir, L"x", 14, p, &err, RS::kMaxInlineChars, RS::Kind::Bookmarks) && err == u8"沒有書籤包" &&
+	          !RS::PlanSend("a b", dir, L"x", 14, p, &err, RS::kMaxInlineChars, RS::Kind::Bookmarks) &&
+	          err.find(u8"書籤包") != std::string::npos,
+	      "bookmark pack: empty / bad charset refused, the message names the pack");
+	{
+		FakeLauncher l;
+		const RS::Result r = RS::Send(exe, "H4sIbm", dir, l, L"s", 15, RS::kMaxInlineChars, RS::Kind::Bookmarks);
+		const std::vector<std::wstring> v = Argv(l.cmd);
+		check(r.ok && l.calls == 1 && oneFlag(v, L"--regex-bookmarks=H4sIbm") && r.message.find(u8"加入") != std::string::npos,
+		      "Send(bookmarks): one argument, --regex-bookmarks=<code>, no other regex flag; result asks to press 加入");
+	}
+	{
+		FakeLauncher l;
+		l.watchFile = RS::JoinPath(dir, RS::TempFileName(L"s", 16));
+		const RS::Result r = RS::Send(exe, std::string(20, 'Q'), dir, l, L"s", 16, 10, RS::Kind::Bookmarks);
+		const std::vector<std::wstring> v = Argv(l.cmd);
+		check(r.ok && l.fileExistedAtLaunch && oneFlag(v, L"--regex-bookmarks-file=") && v[1] == L"--regex-bookmarks-file=" + l.watchFile,
+		      "Send(bookmarks), long: one argument, --regex-bookmarks-file=<path> only");
+		DeleteFileW(r.tempFile.c_str());
+	}
+	{
+		FakeLauncher l;
+		const RS::Result r = RS::Send(exe, "H4sIabc", dir, l, L"s", 17);
+		check(r.ok && oneFlag(Argv(l.cmd), L"--regex-share=H4sIabc"), "Send(share) unchanged: --regex-share=<code> only");
+	}
+
 	line("[send-cleanup] temp file sweep / session clean-up");
 	check(RS::IsTempFileName(L"regex-share-20261007-120000-abcdef01.txt") && !RS::IsTempFileName(L"regex-share-.txt") &&
 	          !RS::IsTempFileName(L"regex-share-a.txt.bak") && !RS::IsTempFileName(L"other.txt") &&

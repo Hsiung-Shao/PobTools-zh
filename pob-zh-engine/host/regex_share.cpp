@@ -451,27 +451,37 @@ std::string Encode(const State& s)
 	return Base64Url(Gzip(ToJson(s)));
 }
 
-bool Decode(const std::string& code, Normalized& out, std::string* err)
+bool GunzipCode(const std::string& code, const std::string& label, std::string& json, std::string* err)
 {
+	json.clear();
 	const std::string text = RegexAlgo::JsTrim(code);
 	if (text.empty()) {
-		if (err) *err = "分享碼是空的";
+		if (err) *err = label + "是空的";
 		return false;
 	}
 	if (text.size() > kMaxCodeChars) {
-		if (err) *err = "分享碼太長(" + std::to_string(text.size()) + " 字元)";
+		if (err) *err = label + "太長(" + std::to_string(text.size()) + " 字元)";
 		return false;
 	}
-	std::string bytes, json, why;
+	std::string bytes, why;
 	bool ok = FromBase64Url(text, bytes, &why) && Gunzip(bytes, json, kMaxJsonBytes, &why);
 	if (ok && !ValidUtf8(json)) {
 		ok = false;
 		why = "內容不是合法的 UTF-8";
 	}
 	if (!ok) {
-		if (err) *err = "分享碼無法解壓縮(" + why + ")";
+		json.clear();
+		if (err) *err = label + "無法解壓縮(" + why + ")";
 		return false;
 	}
+	return true;
+}
+
+bool Decode(const std::string& code, Normalized& out, std::string* err)
+{
+	// share.ts:243 decodeShare = normalizeShareState(gunzipBase64url(code, '分享碼'), true)
+	std::string json;
+	if (!GunzipCode(code, "分享碼", json, err)) return false;
 	return NormalizeJson(json, true, out, err);
 }
 

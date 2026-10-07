@@ -371,17 +371,24 @@ uint32_t RandomU32()
 	return static_cast<uint32_t>(rd());
 }
 
+const char* FlagCode(Kind k) { return k == Kind::Bookmarks ? kFlagBookmarks : kFlagCode; }
+const char* FlagFile(Kind k) { return k == Kind::Bookmarks ? kFlagBookmarksFile : kFlagFile; }
+
+namespace {
+std::wstring FlagW(const char* f) { return std::wstring(f, f + std::char_traits<char>::length(f)); }
+}
+
 bool PlanSend(const std::string& code, const std::wstring& tempDir, const std::wstring& stamp, uint32_t rnd,
-              Plan& out, std::string* err, size_t maxInline)
+              Plan& out, std::string* err, size_t maxInline, Kind kind)
 {
 	out = Plan{};
+	const std::string what = kind == Kind::Bookmarks ? u8"書籤包" : u8"分享碼";
 	if (!IsCodeCharset(code)) {
-		if (err) *err = code.empty() ? u8"沒有分享碼" : u8"分享碼含有 base64url 以外的字元";
+		if (err) *err = code.empty() ? u8"沒有" + what : what + u8"含有 base64url 以外的字元";
 		return false;
 	}
 	if (code.size() <= maxInline) {
-		out.arg = std::wstring(kFlagCode, kFlagCode + std::char_traits<char>::length(kFlagCode)) +
-		          std::wstring(code.begin(), code.end());
+		out.arg = FlagW(FlagCode(kind)) + std::wstring(code.begin(), code.end());
 		return true;
 	}
 	if (tempDir.empty()) {
@@ -409,7 +416,7 @@ bool PlanSend(const std::string& code, const std::wstring& tempDir, const std::w
 		return false;
 	}
 	out.tempFile = path;
-	out.arg = std::wstring(kFlagFile, kFlagFile + std::char_traits<char>::length(kFlagFile)) + path;
+	out.arg = FlagW(FlagFile(kind)) + path;
 	return true;
 }
 
@@ -460,12 +467,12 @@ int CleanupSession(std::vector<std::wstring>& files, long long minAgeSeconds, un
 }
 
 Result Send(const std::wstring& exe, const std::string& code, const std::wstring& tempDir, Launcher& launcher,
-            const std::wstring& stamp, uint32_t rnd, size_t maxInline)
+            const std::wstring& stamp, uint32_t rnd, size_t maxInline, Kind kind)
 {
 	Result r;
 	Plan plan;
 	std::string err;
-	if (!PlanSend(code, tempDir, stamp, rnd, plan, &err, maxInline)) {
+	if (!PlanSend(code, tempDir, stamp, rnd, plan, &err, maxInline, kind)) {
 		r.message = u8"沒有送出：" + err;
 		return r;
 	}
@@ -477,8 +484,12 @@ Result Send(const std::wstring& exe, const std::string& code, const std::wstring
 	}
 	r.ok = true;
 	r.tempFile = plan.tempFile;
-	r.message = plan.tempFile.empty() ? u8"已送出，請到 ExileAppraiser 確認套用"
-	                                  : u8"已送出（分享碼較長，經暫存檔傳遞），請到 ExileAppraiser 確認套用";
+	if (kind == Kind::Bookmarks)
+		r.message = plan.tempFile.empty() ? u8"已送出，請到 ExileAppraiser 按「加入」"
+		                                  : u8"已送出（書籤包較長，經暫存檔傳遞），請到 ExileAppraiser 按「加入」";
+	else
+		r.message = plan.tempFile.empty() ? u8"已送出，請到 ExileAppraiser 確認套用"
+		                                  : u8"已送出（分享碼較長，經暫存檔傳遞），請到 ExileAppraiser 確認套用";
 	return r;
 }
 

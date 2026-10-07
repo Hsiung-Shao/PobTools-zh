@@ -35,6 +35,8 @@ void RegexR7Tests(const std::wstring& exeDir, void (*check)(bool, const std::str
 void RegexR8Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_send.cpp: "送到 ExileAppraiser" (locator, command line, temp files).
 void RegexSendTests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r9.cpp: bookmark packs (送到 ExileAppraiser / 匯入書籤包).
+void RegexR9Tests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
 namespace {
 
@@ -1674,6 +1676,8 @@ void PortTests(const std::wstring& exeDir)
 	RegexR8Tests(exeDir, &check, &line);
 	line("");
 	RegexSendTests(&check, &line);
+	line("");
+	RegexR9Tests(&check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
 }
 

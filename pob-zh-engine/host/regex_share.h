@@ -95,6 +95,13 @@ std::string ToJson(const State& s);
 std::string Encode(const State& s);
 bool Decode(const std::string& code, Normalized& out, std::string* err);
 
+// share.ts:230 gunzipBase64url (exile-appraiser c9a7aae) up to the JSON TEXT:
+// trim, empty / too long, base64url + gunzip + UTF-8 check. `label` names the
+// thing in the error ("分享碼" / "書籤包"): "<label>是空的", "<label>太長(n 字元)",
+// "<label>無法解壓縮(...)". The share code and the bookmark pack
+// (regex_bookmarks_share.h) both go through it. JSON.parse is the caller's.
+bool GunzipCode(const std::string& code, const std::string& label, std::string& json, std::string* err);
+
 // share.ts:211 ResolvedState. Keys are INTERNAL page ids (a section's own id,
 // e.g. map_numeric), as the TS has them.
 struct Resolved {

@@ -54,7 +54,9 @@ std::string Str(const ordered_json& j, const char* key, const char* def)
 {
 	auto it = j.find(key);
 	if (it == j.end()) return def;
-	if (!it->is_string()) throw std::runtime_error(std::string("field ") + key + " is not a string");
+	// state.ts str(): the message is the TS one ("欄位 name 不是字串"); the bookmark
+	// pack (regex_bookmarks_share.cpp) puts it in its warning.
+	if (!it->is_string()) throw std::runtime_error(std::string("欄位 ") + key + " 不是字串");
 	return it->get<std::string>();
 }
 
@@ -226,6 +228,34 @@ std::vector<std::string> UnionKeys(const std::vector<std::string>& a, const std:
 	return ::UnionKeys(a, b);
 }
 } // namespace RegexStateJson
+
+bool RegexParseBookmark(const ordered_json& b, RegexBookmark& rec)
+{
+	// exile-appraiser state.ts:174 parseBookmark (c9a7aae)
+	rec = RegexBookmark{};
+	if (!b.is_object()) return false;
+	rec.name = Str(b, "name", "");
+	rec.page = Str(b, "page", "");
+	// Absent in files written before the list was split by game. Left empty for
+	// the panel to fill in from the page id, which is the only place that knows
+	// which catalogue a page came from.
+	rec.game = GameOf(Str(b, "game", ""));
+	rec.mode = OneOf(Str(b, "mode", "any"), "any", "all", "none");
+	rec.lang = OneOf(Str(b, "lang", "zh"), "zh", "en", nullptr);
+	rec.keys = StringArray(b, "keys");
+	rec.alt = StringArray(b, "alt");
+	auto nm = b.find("numeric");
+	if (nm != b.end() && nm->is_object()) rec.numeric = NumericMap(*nm);
+	rec.num = StringArray(b, "num");
+	auto hk = b.find("hotkey");
+	if (hk != b.end() && hk->is_string()) rec.hotkey = RegexAlgo::JsTrim(hk->get<std::string>());
+	auto fd = b.find("folder");
+	if (fd != b.end() && fd->is_string() && !RegexAlgo::JsTrim(fd->get<std::string>()).empty())
+		rec.folder = fd->get<std::string>();
+	// A nameless or empty bookmark is not something the UI can offer, and keeping
+	// it would put a blank row in the list forever.
+	return !(rec.name.empty() || rec.page.empty() || (rec.keys.empty() && rec.num.empty()));
+}
 
 const AlgoValue* RegexValueFind(const RegexValueList& m, const std::string& id)
 {
@@ -402,29 +432,8 @@ bool RegexUiState::Parse(const std::string& text)
 		auto bm = doc.find("bookmarks");
 		if (bm != doc.end() && bm->is_array()) {
 			for (const auto& b : *bm) {
-				if (!b.is_object()) continue;
 				RegexBookmark rec;
-				rec.name = Str(b, "name", "");
-				rec.page = Str(b, "page", "");
-				// Absent in files written before the list was split by game. Left
-				// empty for the panel to fill in from the page id, which is the only
-				// place that knows which catalogue a page came from.
-				rec.game = GameOf(Str(b, "game", ""));
-				rec.mode = OneOf(Str(b, "mode", "any"), "any", "all", "none");
-				rec.lang = OneOf(Str(b, "lang", "zh"), "zh", "en", nullptr);
-				rec.keys = StringArray(b, "keys");
-				rec.alt = StringArray(b, "alt");
-				auto nm = b.find("numeric");
-				if (nm != b.end() && nm->is_object()) rec.numeric = NumericMap(*nm);
-				rec.num = StringArray(b, "num");
-				auto hk = b.find("hotkey");
-				if (hk != b.end() && hk->is_string()) rec.hotkey = RegexAlgo::JsTrim(hk->get<std::string>());
-				auto fd = b.find("folder");
-				if (fd != b.end() && fd->is_string() && !RegexAlgo::JsTrim(fd->get<std::string>()).empty())
-					rec.folder = fd->get<std::string>();
-				// A nameless or empty bookmark is not something the UI can offer,
-				// and keeping it would put a blank row in the list forever.
-				if (rec.name.empty() || rec.page.empty() || (rec.keys.empty() && rec.num.empty())) continue;
+				if (!RegexParseBookmark(b, rec)) continue;
 				bookmarks.push_back(std::move(rec));
 			}
 		}

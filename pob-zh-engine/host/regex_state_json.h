@@ -26,3 +26,11 @@ std::vector<std::string> UnionKeys(const std::vector<std::string>& a, const std:
 std::string JsIntegral(double d);
 
 } // namespace RegexStateJson
+
+struct RegexBookmark;
+// exile-appraiser state.ts:174 parseBookmark (c9a7aae), shared by the state file
+// (RegexUiState::Parse) and the bookmark pack (regex_bookmarks_share.cpp): false =
+// not an object / no name / no page / neither keys nor num (skip it); a field of
+// the wrong type THROWS std::runtime_error("欄位 <key> 不是字串") -- the state file
+// then refuses the whole file, the pack skips just this bookmark.
+bool RegexParseBookmark(const nlohmann::ordered_json& b, RegexBookmark& rec);
