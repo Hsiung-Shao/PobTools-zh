@@ -62,12 +62,13 @@ inline constexpr const char Compass[] = "\xee\x82\x9b"; // compass U+E09B
 inline constexpr const char List[] = "\xee\x84\x86"; // list U+E106
 inline constexpr const char StickyNote[] = "\xee\x8c\x83"; // sticky-note U+E303
 inline constexpr const char Minus[] = "\xee\x84\x9c"; // minus U+E11C
+inline constexpr const char Camera[] = "\xee\x81\xa4"; // camera U+E064
 
 // The one range the icon font is merged over (min..max of the codepoints above).
-inline constexpr unsigned short kRangeFirst = 0xE06C;
+inline constexpr unsigned short kRangeFirst = 0xE064;
 inline constexpr unsigned short kRangeLast  = 0xE529;
 // For the selftest: one icon that must be in the atlas.
 inline constexpr unsigned short kProbe = 0xE1B4; // zap
-inline constexpr int kCount = 53;
+inline constexpr int kCount = 54;
 
 } // namespace PobIcon

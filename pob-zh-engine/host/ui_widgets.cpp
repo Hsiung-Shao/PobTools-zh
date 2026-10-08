@@ -55,11 +55,13 @@ struct CardState {
 	ImVec2 pos;
 	float width = 0.0f;
 	bool padded = false;
+	float minHeight = 0.0f;
 	bool anyRow = false;   // a row was already drawn: the next one gets a divider
 	bool head = false;
 	float headBottom = 0.0f;
 };
 std::vector<CardState*> g_cards;
+float g_cardNatural = 0.0f;   // CardNaturalHeight: the last card CardEnd closed
 
 struct RowState {
 	ImVec2 pos;
@@ -663,7 +665,8 @@ void ProgressBar(float fraction, float width)
 
 // ---- cards and rows -------------------------------------------------------
 
-void CardBegin(const char* id, const char* icon, const char* title, const char* note, bool padded, float width)
+void CardBegin(const char* id, const char* icon, const char* title, const char* note, bool padded, float width,
+               float minHeight)
 {
 	ImGui::PushID(id);
 	CardState* c = new CardState();
@@ -671,6 +674,7 @@ void CardBegin(const char* id, const char* icon, const char* title, const char* 
 	c->pos = ImGui::GetCursorScreenPos();
 	c->width = width > 0.0f ? width : ImGui::GetContentRegionAvail().x;
 	c->padded = padded;
+	c->minHeight = minHeight;
 	c->split.Split(c->dl, 2);
 	c->split.SetCurrentChannel(c->dl, 1);
 	g_cards.push_back(c);
@@ -746,6 +750,8 @@ void CardEnd()
 	ImGui::EndGroup();
 	if (!c->padded) bottom = ImGui::GetItemRectMax().y;
 	if (c->head && bottom < c->headBottom) bottom = c->headBottom;
+	g_cardNatural = bottom - c->pos.y;
+	if (c->minHeight > 0.0f && bottom < c->pos.y + c->minHeight) bottom = c->pos.y + c->minHeight;
 	const ImVec2 a = c->pos, b(c->pos.x + c->width, bottom);
 	c->split.SetCurrentChannel(c->dl, 0);
 	c->dl->AddRectFilled(a, b, Tok::Surface1, D(8.0f));
@@ -757,6 +763,8 @@ void CardEnd()
 	ImGui::Dummy(ImVec2(b.x - a.x, b.y - a.y));
 	ImGui::PopID();
 }
+
+float CardNaturalHeight() { return g_cardNatural; }
 
 float RowGap() { return D(8.0f); }
 

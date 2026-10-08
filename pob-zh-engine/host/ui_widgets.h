@@ -151,9 +151,15 @@ void MenuSeparator();
 // draws a head row (icon + heading + right-aligned hint). `padded` = content
 // padding (space-4 / space-5); unpadded cards are for SettingRows, which pad
 // themselves.
+// `minHeight` stretches the card to at least that tall (cards side by side in a
+// row: pass the row's tallest CardNaturalHeight from the previous frame).
 void CardBegin(const char* id, const char* icon = nullptr, const char* title = nullptr,
-               const char* note = nullptr, bool padded = false, float width = 0.0f);
+               const char* note = nullptr, bool padded = false, float width = 0.0f,
+               float minHeight = 0.0f);
 void CardEnd();
+// The height the card just closed by CardEnd needed for its content, before
+// `minHeight` stretched it.
+float CardNaturalHeight();
 // A button on the right of the innermost card's head row (cards with a title).
 bool CardHeadButton(const char* label, BtnKind kind = BtnKind::Ghost, const char* icon = nullptr);
 // Inner content box of the innermost card (screen x and width).

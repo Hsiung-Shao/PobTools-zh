@@ -172,12 +172,13 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		// Where the icon font sits on a text line depends on the primary face's
 		// ascent (ui_icons_data.h), the same rule the launcher uses.
 		const float primaryAscent = PobIcon::HheaAscentRatio(ttf);
-		// ToolPanelHost::big -- twelve glyphs, so it costs nothing and both hosts can
-		// offer it unconditionally rather than the panel having two layouts.
+		// ToolPanelHost::big -- a score of glyphs, so it costs nothing and both hosts
+		// can offer it unconditionally rather than the panel having two layouts.
+		// Keep in step with the launcher's rangesDigits (launcher_ui.cpp).
 		static ImVector<ImWchar> bigRanges;
 		bigRanges.clear();
 		ImFontGlyphRangesBuilder bb;
-		bb.AddText("0123456789 /");
+		bb.AddText(kBigFontGlyphs);
 		bb.BuildRanges(&bigRanges);
 
 		// One attempt at a glyph set; true when the built atlas is uploadable.

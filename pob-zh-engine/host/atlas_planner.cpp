@@ -1246,18 +1246,24 @@ private:
 		    },
 		    &b.costPrices);
 
-		// The cost card leads the panel's top row and the revenue-record buttons
-		// close its 設定 page (user layout, 2026-09-12): the panel calls back
-		// into these during its Frame() below, so this frame's figures are
-		// handed over first.
+		// The cost card sits beside the panel's 主要增減, the bind button ends its
+		// action row, and the revenue-record buttons close its 設定 page (user
+		// layout, 2026-10-08): the panel calls back into these during its Frame()
+		// below, so this frame's figures are handed over first.
 		sidePs_ = ps;
 		sideCost_ = cost;
 		if (!warehouse_) {
 			WarehouseEmbed e;
 			e.topCard = [this] { renderCostCard(sidePs_, sideCost_); };
-			e.topCardHeight = [this] { return costCardHeight(sidePs_, sideCost_); };
+			e.topBar = [this] { renderBindBar(sideCost_); };
+			e.topBarWidth = [this] { return bindBarWidth(); };
 			e.settingsBottom = [this] { renderBindButtons(sideCost_); };
 			e.page           = &profitPage_;
+			// A setup banner's 「前往設定」: our tab row owns the pages.
+			e.goPage = [this](int p) {
+				profitMode_ = true;
+				profitPage_ = p;
+			};
 			warehouse_.reset(CreateWarehousePanelEmbedded(e));
 			warehouseOk_ = warehouse_->Init(*host_);
 		}
@@ -1282,79 +1288,88 @@ private:
 		return note;
 	}
 
-	// What the cost card's content needs, so the panel can size its top row to
-	// the tallest of the three cards. Mirrors renderCostCard's rows.
-	float costCardHeight(const NinjaPriceFeed::Status& ps, const MapCostSummary& cost) const
+	// Right-aligned text in what is left of the current line (a table cell).
+	static void CostRightText(const char* text, const ImVec4& col)
 	{
-		const ImGuiStyle& sty = ImGui::GetStyle();
-		const float text = ImGui::GetTextLineHeightWithSpacing();
-		const float frame = ImGui::GetFrameHeightWithSpacing();
-		// The action row is design-system small buttons (PobUi::Button Sm).
-		const float btnRow = (std::max)(ImGui::GetFrameHeight(), std::floor(PobUi::D(28.0f))) + sty.ItemSpacing.y;
-		// Table rows hold input fields: a frame plus the cell padding.
-		const float row = ImGui::GetFrameHeight() + sty.CellPadding.y * 2.0f;
-		const size_t rows = (std::max)((size_t)1, cost.lines.size()) + 1; // + the map row
-		float h = text                                                     // title + total
-		          + btnRow                                                 // record / clear / refresh
-		          + ImGui::GetTextLineHeight() + sty.CellPadding.y * 2.0f  // table header
-		          + row * (float)rows + sty.ItemSpacing.y * 2.0f           // items, rule
-		          + frame;                                                 // planned maps + plan total
-		if (!ps.prices && !ps.error.empty()) h += text * 2.0f;             // the fetch error, wrapped
-		if (!CostNote(cost).empty()) h += text;
-		return h;
+		const float w = ImGui::CalcTextSize(text).x;
+		const float avail = ImGui::GetContentRegionAvail().x;
+		if (avail > w) ImGui::SetCursorPosX(ImGui::GetCursorPosX() + avail - w);
+		ImGui::TextColored(col, "%s", text);
 	}
 
-	// The project's per-map cost: the first card of the revenue panel's top row
-	// (user layout, 2026-09-12), laid out like its neighbours -- title left,
-	// total right -- and edited in place. Cost basis = what was actually PAID:
-	// a bulk buyer records the market once and the cost stops floating; a batch
-	// buyer types each batch's price into the 成本單價 column.
+	// The project's per-map cost, beside the revenue panel's 主要增減 (design
+	// 2026-10-08). The panel draws the card (padded); this is its content,
+	// laid out in PobUi::CardInnerWidth(): a head row -- title, total, the two
+	// price actions --, the item table, and the plan footer. Cost basis = what
+	// was actually PAID: a bulk buyer records the market once and the cost stops
+	// floating; a batch buyer types each batch's price into the 單價 column.
 	void renderCostCard(const NinjaPriceFeed::Status& ps, const MapCostSummary& cost)
 	{
 		AtlasBuildEntry& b = buildFile.Active();
 		const ImVec4 dim = PobUi::TokV4(Tok::TextMuted);
+		const ImVec4 faint = PobUi::TokV4(Tok::TextFaint);
+		const ImVec4 text = PobUi::TokV4(Tok::Text);
 		const double rate = ps.divineRate;
 		auto money = [rate](double chaos) { return WhFmt::FormatValue(chaos, true, rate); };
 		const std::string note = CostNote(cost);
+		const float innerX = PobUi::CardInnerX(), innerW = PobUi::CardInnerWidth();
+		ImFont* small = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
+		const float smallPx = small->FontSize;
 
-		PobUi::Heading(u8"每張圖成本");
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"方案：%s", b.name.c_str());
+		// ---- head: title, total ...... 清除記錄 | 記錄目前市價 | 重新取得價格
 		{
+			const ImVec2 head = ImGui::GetCursorScreenPos();
+			const float btnH = std::floor(PobUi::D(28.0f));
+			const float headH = (std::max)(btnH, ImGui::GetTextLineHeight());
+			ImGui::SetCursorScreenPos(ImVec2(head.x, head.y + std::floor((headH - ImGui::GetTextLineHeight()) * 0.5f)));
+			PobUi::Heading(u8"每張圖成本");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"方案：%s", b.name.c_str());
 			const std::string tot = std::string(u8"合計 ") + money(cost.totalChaos);
-			ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(tot.c_str()).x);
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x + PobUi::D(10.0f),
+			                                 head.y + std::floor((headH - ImGui::GetFontSize()) * 0.5f)));
 			ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", tot.c_str());
-		}
 
-		if (PobUi::Button(u8"記錄目前市價", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f,
-		                  ps.prices && !cost.lines.empty())) {
-			for (const MapCostLine& l : cost.lines)
-				if (l.marketEach > 0.0) b.costPrices[l.id] = l.marketEach;
-			b.costRecordedUtc = (long long)std::time(nullptr);
-			saveActive();
-		}
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-			std::string tip = u8"一次大量購入：按一下記錄當下市價，之後成本固定、不再隨市價浮動。\n"
-			                  u8"分批購入：直接在「成本單價」欄輸入實際買價。";
-			if (b.costRecordedUtc > 0) tip += u8"\n目前的記錄：" + FmtLocalUtc(b.costRecordedUtc);
-			else if (!b.costPrices.empty()) tip += u8"\n目前的成本為手動輸入";
-			ImGui::SetTooltip("%s", tip.c_str());
-		}
-		if (!b.costPrices.empty()) {
-			ImGui::SameLine(0, PobUi::D(8.0f));
-			if (PobUi::Button(u8"清除記錄", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) {
-				b.costPrices.clear();
-				b.costRecordedUtc = 0;
+			const char* lClear = u8"清除記錄";
+			const char* lRecord = u8"記錄目前市價";
+			const char* lRefresh = ps.busy ? u8"取得價格中…##refresh" : u8"重新取得價格##refresh";
+			const float gap = PobUi::D(4.0f);
+			float w = PobUi::ButtonWidth(lRecord, PobUi::BtnSize::Sm) + gap +
+			          PobUi::ButtonWidth(lRefresh, PobUi::BtnSize::Sm, PobIcon::Refresh);
+			if (!b.costPrices.empty()) w += PobUi::ButtonWidth(lClear, PobUi::BtnSize::Sm) + gap;
+			ImGui::SetCursorScreenPos(ImVec2(innerX + innerW - w, head.y + std::floor((headH - btnH) * 0.5f)));
+			if (!b.costPrices.empty()) {
+				if (PobUi::Button(lClear, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) {
+					b.costPrices.clear();
+					b.costRecordedUtc = 0;
+					saveActive();
+				}
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"清除記錄的成本單價，回到跟隨市價");
+				ImGui::SameLine(0, gap);
+			}
+			if (PobUi::Button(lRecord, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f,
+			                  ps.prices && !cost.lines.empty())) {
+				for (const MapCostLine& l : cost.lines)
+					if (l.marketEach > 0.0) b.costPrices[l.id] = l.marketEach;
+				b.costRecordedUtc = (long long)std::time(nullptr);
 				saveActive();
 			}
-		}
-		ImGui::SameLine(0, PobUi::D(8.0f));
-		if (PobUi::Button(ps.busy ? u8"取得價格中…##refresh" : u8"重新整理價格##refresh", PobUi::BtnKind::Secondary,
-		                  PobUi::BtnSize::Sm, PobIcon::Refresh, 0.0f, !ps.busy))
-			priceFeed_.Request("poe1", costLeague_, true);
-		if (ps.prices && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-			const long long mins =
-			    ps.fetchedUtc > 0 ? ((long long)std::time(nullptr) - ps.fetchedUtc) / 60 : 0;
-			ImGui::SetTooltip(u8"poe.ninja · %s · %lld 分鐘前", ps.league.c_str(), mins < 0 ? 0 : mins);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+				std::string tip = u8"一次大量購入：按一下記錄當下市價，之後成本固定、不再隨市價浮動。\n"
+				                  u8"分批購入：直接在「單價」欄輸入實際買價。";
+				if (b.costRecordedUtc > 0) tip += u8"\n目前的記錄：" + FmtLocalUtc(b.costRecordedUtc);
+				else if (!b.costPrices.empty()) tip += u8"\n目前的成本為手動輸入";
+				ImGui::SetTooltip("%s", tip.c_str());
+			}
+			ImGui::SameLine(0, gap);
+			if (PobUi::Button(lRefresh, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Refresh, 0.0f, !ps.busy))
+				priceFeed_.Request("poe1", costLeague_, true);
+			if (ps.prices && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+				const long long mins =
+				    ps.fetchedUtc > 0 ? ((long long)std::time(nullptr) - ps.fetchedUtc) / 60 : 0;
+				ImGui::SetTooltip(u8"poe.ninja · %s · %lld 分鐘前", ps.league.c_str(), mins < 0 ? 0 : mins);
+			}
+			ImGui::SetCursorScreenPos(head);
+			ImGui::Dummy(ImVec2(innerW, headH));
 		}
 		if (!ps.prices && !ps.error.empty()) {
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::Danger));
@@ -1367,31 +1382,46 @@ private:
 			return;
 		}
 		// Column widths from what they hold (header vs a sample value), not a
-		// fixed N*scale: the user's font size is not part of `scale`.
+		// fixed N*scale: the user's font size is not part of `scale`. The name
+		// column takes the rest and wraps instead of cutting a long name.
 		const ImGuiStyle& sty = ImGui::GetStyle();
 		auto fit = [&sty](const char* header, const char* sample) {
 			const float h = ImGui::CalcTextSize(header).x, s = ImGui::CalcTextSize(sample).x;
 			return (h > s ? h : s) + sty.CellPadding.x * 2.0f;
 		};
-		// Four columns in a third of the window: the market price moved into the
-		// 成本單價 tooltip, and an unpriced line says so in its 小計 cell.
-		// Table (design system): header on surface-1, rows split by border-subtle.
+		const float iconSz = (std::min)(ImGui::GetTextLineHeight(), PobUi::D(22.0f));
+		// Table (design system): muted header on surface-1, rows split by border-subtle.
 		ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, PobUi::TokV4(Tok::Surface1));
 		ImGui::PushStyleColor(ImGuiCol_TableBorderLight, PobUi::TokV4(Tok::BorderSubtle));
 		ImGui::PushStyleColor(ImGuiCol_TableBorderStrong, PobUi::TokV4(Tok::Border));
-		if (ImGui::BeginTable("##costlines", 5, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH)) {
-			ImGui::TableSetupColumn("##ic", ImGuiTableColumnFlags_WidthFixed,
-			                        20.0f * scale + sty.CellPadding.x * 2.0f);
+		// The price fields are the design's compact 28 px inputs, so a row is
+		// not twice the height of its text.
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+		                    ImVec2(PobUi::D(8.0f), (std::max)(1.0f, std::floor((PobUi::D(28.0f) - ImGui::GetFontSize()) * 0.5f))));
+		const float textDy = (std::max)(0.0f, std::floor((ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f));
+		const float iconDy = (std::max)(0.0f, std::floor((ImGui::GetFrameHeight() - iconSz) * 0.5f));
+		if (ImGui::BeginTable("##costlines", 4, ImGuiTableFlags_BordersInnerH, ImVec2(innerW, 0.0f))) {
 			ImGui::TableSetupColumn(u8"項目", ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn(u8"數量", ImGuiTableColumnFlags_WidthFixed, fit(u8"數量", "x99"));
-			ImGui::TableSetupColumn(u8"成本單價", ImGuiTableColumnFlags_WidthFixed,
-			                        fit(u8"成本單價", "9999.9") + sty.FramePadding.x * 2.0f);
+			ImGui::TableSetupColumn(u8"每張用量", ImGuiTableColumnFlags_WidthFixed, fit(u8"每張用量", "x99"));
+			ImGui::TableSetupColumn(u8"單價", ImGuiTableColumnFlags_WidthFixed,
+			                        (std::max)(fit(u8"單價", "9999.9"), PobUi::D(84.0f) + sty.CellPadding.x * 2.0f));
 			ImGui::TableSetupColumn(u8"小計", ImGuiTableColumnFlags_WidthFixed,
 			                        (std::max)(fit(u8"小計", "9999.9 c"), fit(u8"小計", u8"不可交易")));
-			ImGui::TableHeadersRow();
+			// Header labels muted, the figures' columns right-aligned.
+			ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+			for (int c = 0; c < 4; c++) {
+				if (!ImGui::TableSetColumnIndex(c)) continue;
+				const char* label = ImGui::TableGetColumnName(c);
+				const ImVec2 p = ImGui::GetCursorScreenPos();
+				const float cellW = ImGui::GetContentRegionAvail().x;
+				ImGui::PushID(c);
+				ImGui::TableHeader("##hdr");
+				ImGui::PopID();
+				const float tw = ImGui::CalcTextSize(label).x;
+				ImGui::GetWindowDrawList()->AddText(ImVec2(c == 0 ? p.x : p.x + cellW - tw, p.y), Tok::TextMuted, label);
+			}
 			if (cost.lines.empty()) {
 				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
 				ImGui::TableNextColumn();
 				PobUi::Hint(u8"此方案的地圖格沒有放聖甲蟲或碎片");
 			}
@@ -1400,15 +1430,29 @@ private:
 				ImGui::PushID(l.id.c_str());
 				ImGui::TableNextColumn();
 				icons.RequestPath(l.art);
-				if (unsigned tex = icons.TextureByPath(l.art))
-					ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(20.0f * scale, 20.0f * scale));
-				ImGui::TableNextColumn();
+				// Icon and text centred on the price field's height.
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + iconDy);
+				const ImVec2 ip = ImGui::GetCursorScreenPos();
+				if (unsigned tex = icons.TextureByPath(l.art)) {
+					ImGui::Image((ImTextureID)(intptr_t)tex, ImVec2(iconSz, iconSz));
+				} else {
+					ImGui::GetWindowDrawList()->AddRectFilled(ip, ImVec2(ip.x + iconSz, ip.y + iconSz), Tok::Surface3,
+					                                          PobUi::D(4.0f));
+					ImGui::Dummy(ImVec2(iconSz, iconSz));
+				}
+				ImGui::SameLine(0, PobUi::D(8.0f));
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() - iconDy + textDy);
 				const std::string& nm = (showZh && !l.zh.empty()) ? l.zh : l.en;
-				ImGui::TextUnformatted(nm.c_str());
+				ImGui::TextWrapped("%s", nm.c_str());
 				if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", (&nm == &l.en ? l.zh : l.en).c_str());
 				ImGui::TableNextColumn();
-				ImGui::Text("x%d", l.qty);
-				// 成本單價: the recorded/typed price, or -- dimmed -- the market it
+				{
+					char q[16];
+					snprintf(q, sizeof(q), "x%d", l.qty);
+					ImGui::SetCursorPosY(ImGui::GetCursorPosY() + textDy);
+					CostRightText(q, text);
+				}
+				// 單價: the recorded/typed price, or -- dimmed -- the market it
 				// currently follows. Typing a price fixes it for this project.
 				ImGui::TableNextColumn();
 				double unit = l.chaosEach;
@@ -1430,8 +1474,8 @@ private:
 					                  market.c_str());
 				}
 				ImGui::TableNextColumn();
-				if (l.priced) ImGui::TextUnformatted(money(l.chaosTotal).c_str());
-				else ImGui::TextColored(dim, "%s", l.tradable ? u8"未估價" : u8"不可交易");
+				if (l.priced) CostRightText(money(l.chaosTotal).c_str(), text);
+				else CostRightText(l.tradable ? u8"未估價" : u8"不可交易", dim);
 				ImGui::PopID();
 			}
 
@@ -1439,53 +1483,132 @@ private:
 			// whatever the player pays -- typed once per project, saved with it.
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();
-			ImGui::TableNextColumn();
+			{
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + iconDy);
+				const ImVec2 ip = ImGui::GetCursorScreenPos();
+				ImGui::GetWindowDrawList()->AddRectFilled(ip, ImVec2(ip.x + iconSz, ip.y + iconSz), Tok::Surface3,
+				                                          PobUi::D(4.0f));
+				ImGui::Dummy(ImVec2(iconSz, iconSz));
+				ImGui::SameLine(0, PobUi::D(8.0f));
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() - iconDy + textDy);
+			}
 			std::string mapLabel = u8"地圖";
 			if (const AtlasMapDef* md = b.mapId.empty() ? nullptr : mapDb.ById(b.mapId))
 				mapLabel += u8"：" + ((showZh && !md->zhItem.empty()) ? md->zhItem : md->enItem);
 			if (b.mapTier > 0 && b.mapTier != kMapTierUnique) mapLabel += " T" + std::to_string(b.mapTier);
-			ImGui::AlignTextToFramePadding();
-			ImGui::TextUnformatted(mapLabel.c_str());
-			if (ImGui::IsItemHovered())
+			ImGui::TextWrapped("%s", mapLabel.c_str());
+			const bool mapHover = ImGui::IsItemHovered();
+			ImGui::SameLine(0, PobUi::D(6.0f));
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (ImGui::GetFontSize() - smallPx) * 0.5f);
+			PobUi::Hint(u8"自己填");
+			if (mapHover || ImGui::IsItemHovered())
 				ImGui::SetTooltip(u8"poe.ninja 已無一般地圖報價，請自行輸入單價（混沌石）；0 = 不計入");
 			ImGui::TableNextColumn();
-			ImGui::TextUnformatted("x1");
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + textDy);
+			CostRightText("x1", text);
 			ImGui::TableNextColumn();
 			double v = b.mapPrice;
 			ImGui::SetNextItemWidth(-FLT_MIN);
 			if (ImGui::InputDouble("##mapprice", &v, 0.0, 0.0, "%.1f")) b.mapPrice = v < 0.0 ? 0.0 : v;
 			if (ImGui::IsItemDeactivatedAfterEdit()) saveActive();
 			ImGui::TableNextColumn();
-			if (cost.mapIncluded) ImGui::TextUnformatted(money(cost.mapChaos).c_str());
-			else ImGui::TextColored(dim, "-");
+			if (cost.mapIncluded) CostRightText(money(cost.mapChaos).c_str(), text);
+			else CostRightText(u8"—", faint);
 			ImGui::EndTable();
 		}
+		ImGui::PopStyleVar();
 		ImGui::PopStyleColor(3);
 
-		// The whole plan: the maps the player means to run x the per-map cost,
-		// its total right-aligned like the card's own.
-		ImGui::Separator();
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(u8"計畫張數");
-		ImGui::SameLine();
-		int planned = b.plannedMaps;
-		ImGui::SetNextItemWidth(ImGui::CalcTextSize("0000000").x + sty.FramePadding.x * 2.0f);
-		if (ImGui::InputInt("##planned", &planned, 0, 0))
-			b.plannedMaps = planned < 0 ? 0 : (std::min)(planned, 1000000);
-		if (ImGui::IsItemDeactivatedAfterEdit()) saveActive();
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"這個方案打算跑幾張圖；0 = 不計算總成本");
-		if (b.plannedMaps > 0) {
+		// ---- footer: 計畫張數 [ ] ...... 總成本 X
+		// The whole plan: the maps the player means to run x the per-map cost.
+		{
+			ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+			const ImVec2 p = ImGui::GetCursorScreenPos();
+			ImGui::GetWindowDrawList()->AddLine(ImVec2(innerX, p.y), ImVec2(innerX + innerW, p.y), Tok::BorderSubtle, 1.0f);
+			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+			const ImVec2 row = ImGui::GetCursorScreenPos();
+			const float fh = ImGui::GetFrameHeight();
+			ImGui::SetCursorScreenPos(ImVec2(row.x, row.y + std::floor((fh - smallPx) * 0.5f)));
+			PobUi::Hint(u8"計畫張數");
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x + PobUi::D(10.0f), row.y));
+			int planned = b.plannedMaps;
+			ImGui::SetNextItemWidth((std::max)(PobUi::D(70.0f), ImGui::CalcTextSize("0000000").x + sty.FramePadding.x * 2.0f));
+			if (ImGui::InputInt("##planned", &planned, 0, 0))
+				b.plannedMaps = planned < 0 ? 0 : (std::min)(planned, 1000000);
+			if (ImGui::IsItemDeactivatedAfterEdit()) saveActive();
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"這個方案打算跑幾張圖；0 = 不計算總成本");
 			const std::string plan =
-			    std::string(u8"總成本 ") + money(cost.totalChaos * (double)b.plannedMaps);
-			ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(plan.c_str()).x);
-			ImGui::AlignTextToFramePadding();
-			ImGui::TextColored(PobUi::TokV4(Tok::AccentText), "%s", plan.c_str());
+			    b.plannedMaps > 0 ? money(cost.totalChaos * (double)b.plannedMaps) : std::string(u8"—");
+			const float planW = ImGui::CalcTextSize(plan.c_str()).x;
+			const char* planLabel = u8"總成本";
+			const float labelW = small->CalcTextSizeA(smallPx, FLT_MAX, 0.0f, planLabel).x;
+			const float right = innerX + innerW;
+			ImGui::SetCursorScreenPos(ImVec2(right - planW - PobUi::D(8.0f) - labelW, row.y + std::floor((fh - smallPx) * 0.5f)));
+			PobUi::Hint(planLabel);
+			ImGui::SetCursorScreenPos(ImVec2(right - planW, row.y + std::floor((fh - ImGui::GetFontSize()) * 0.5f)));
+			ImGui::TextColored(b.plannedMaps > 0 ? text : faint, "%s", plan.c_str());
+			ImGui::SetCursorScreenPos(row);
+			ImGui::Dummy(ImVec2(innerW, fh));
 		}
 		if (!note.empty()) {
-			ImGui::PushStyleColor(ImGuiCol_Text, dim);
-			ImGui::TextWrapped(u8"（%s）", note.c_str());
-			ImGui::PopStyleColor();
+			const std::string n = u8"（" + note + u8"）";
+			PobUi::Hint(n.c_str());
 		}
+	}
+
+	// The revenue panel's action row ends with this (design 2026-10-08): bind
+	// the interval on screen -- the panel's session start to its newest
+	// snapshot, which is what the dialog proposes -- to this project. The 設定
+	// page keeps its own entry (renderBindButtons).
+	std::string bindBarLabel()
+	{
+		const AtlasBuildEntry& b = buildFile.Active();
+		// A long project name is cut: the row also holds the snapshot button,
+		// the session pill and the schedule.
+		std::string name = b.name;
+		if (name.size() > 30) {
+			size_t cut = 0;
+			for (size_t i = 0; i < name.size();) {
+				const unsigned char c = (unsigned char)name[i];
+				const size_t n = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : c >= 0xC0 ? 2 : 1;
+				if (i + n > 27) break;
+				i += n;
+				cut = i;
+			}
+			name = name.substr(0, cut) + u8"…";
+		}
+		return (b.profit.empty() ? std::string(u8"綁定到「") : std::string(u8"重新綁定「")) + name +
+		       u8"」##bindtop";
+	}
+	float bindBarWidth()
+	{
+		ImFont* small = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
+		const float hintW = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, u8"這個區間").x;
+		return hintW + PobUi::D(8.0f) +
+		       PobUi::ButtonWidth(bindBarLabel().c_str(), PobUi::BtnSize::Md, PobIcon::Link);
+	}
+	void renderBindBar(const MapCostSummary& cost)
+	{
+		AtlasBuildEntry& b = buildFile.Active();
+		ImFont* small = PobUi::Fonts().small ? PobUi::Fonts().small : ImGui::GetFont();
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const float rowH = PobUi::ControlH();
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + std::floor((rowH - small->FontSize) * 0.5f)));
+		PobUi::Hint(u8"這個區間");
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMax().x + PobUi::D(8.0f), p.y));
+		const bool canBind = !planningMode; // the sandbox never writes the file
+		const std::string label = bindBarLabel();
+		const bool open = PobUi::Button(label.c_str(), PobUi::BtnKind::Secondary, PobUi::BtnSize::Md, PobIcon::Link,
+		                                0.0f, canBind);
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			if (!b.profit.empty()) drawProfitTooltip(b.profit);
+			else
+				PobUi::Tooltip(canBind ? u8"把一段快照區間的收益綁定到這個方案：\n"
+				                         u8"存進方案檔，並隨匯出檔與分享碼分享。"
+				                       : u8"規劃模式不會寫入方案檔；結束規劃後再綁定。");
+		}
+		if (open) openBindDialog();
+		renderBindDialog(cost);
 	}
 
 	static std::string FmtLocalUtc(long long utc)

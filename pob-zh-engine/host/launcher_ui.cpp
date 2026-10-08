@@ -415,7 +415,7 @@ struct FontBuildInput {
 	// string tables, which the translation editor may reload), so a worker never
 	// has to look at them.
 	ImVector<ImWchar> rangesPrecise;
-	ImVector<ImWchar> rangesDigits; // "0123456789 /" for ToolPanelHost::big
+	ImVector<ImWchar> rangesDigits; // kBigFontGlyphs, for ToolPanelHost::big
 	float primaryAscent = 0.8f;     // HheaAscentRatio of the primary face
 	float scale = 1.0f;
 	// Whatever the driver will take. Queried on the main thread (it needs the GL
@@ -518,7 +518,7 @@ static std::shared_ptr<const FontBuildInput> PrepareFontInput(
 	}
 	{
 		ImFontGlyphRangesBuilder b;
-		b.AddText("0123456789 /");
+		b.AddText(kBigFontGlyphs);
 		b.BuildRanges(&in->rangesDigits);
 	}
 	if (in->ttf && !in->ttf->empty()) in->primaryAscent = HheaAscentRatio(*in->ttf);
