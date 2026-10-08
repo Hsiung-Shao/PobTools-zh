@@ -476,6 +476,8 @@ std::string LocaleDisplayName(const std::wstring& slotRoot, const std::string& l
 		if (meta.contains("display_name") && meta["display_name"].is_string())
 			return meta["display_name"].get<std::string>();
 	} catch (...) {
+		// A broken meta.json just has no display name: the caller (localeLabel)
+		// falls back to the locale code instead.
 	}
 	return std::string();
 }
