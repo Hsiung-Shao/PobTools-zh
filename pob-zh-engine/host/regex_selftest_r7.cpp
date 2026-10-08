@@ -631,7 +631,7 @@ void FixedTests(std::map<std::string, GameData>& G, const std::vector<RegexAlgo:
 			const std::string qb = RegexAlgo::CombineSingle(L, RegexGen::Mode::Any, {b}).query;
 			if (!qa.empty() && qa == qb && body->keys.size() == picks.size()) okN++;
 		}
-		check(okN == rounds, u8"書籤往返（物品詞綴數值頁）：" + Num(okN) + " / " + Num(rounds) + u8" 組單頁輸出逐字相同，鍵 = GGPK stat id");
+		check(okN == rounds, u8"書籤往返（物品詞綴數值頁）：" + Num(okN) + " / " + Num(rounds) + u8" 組單頁輸出逐字相同，鍵 = 交易站 stat id");
 	}
 }
 

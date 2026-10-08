@@ -15,10 +15,19 @@
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "ui_theme.h"
+#include "ui_widgets.h"
+#include "ui_icons.h"
+
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>   // ShellExecuteW: "開啟資料夾" on the data error
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
-#include <imgui_internal.h>   // PushItemFlag(ImGuiItemFlags_MixedValue): the half-ticked folder box
+#include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
@@ -83,7 +92,13 @@
 // string ("複製分享碼"), pasted back through a dialog ("貼上分享碼"), and seven
 // hand-written templates (Data/regex_templates.json). Both OVERWRITE every list
 // of that game, so both ask first (B's confirm dialogs). Codes travel both ways
-// with exile-appraiser except for the item-mod values page, whose keys differ.
+// with exile-appraiser, every page included (2026-10-09: the item-mod values
+// page reads the same stats.ndjson and keys by trade stat id).
+//
+// Look (2026-10-09 design, Regex*.dc.html): one header row, the list column +
+// a 450 px output / bookmark column, .it / .nr rows, cards, dialogs and menus
+// from ui_widgets; POBTOOLS_REGEX_STATE renders each draft's state for a
+// POBTOOLS_TOOL_SHOT screenshot.
 
 namespace {
 
@@ -177,6 +192,7 @@ struct PageState {
 	// filtered rows (ticked first, then at most kListCap more), rebuilt when the
 	// search / group / ticks change.
 	bool pickedOnly = false;
+	char searchBuf[128] = {};      // the SearchField's buffer, mirrored into `search`
 	std::vector<int> imvRows;
 	int imvTotal = 0;
 };
@@ -217,12 +233,291 @@ enum class Modal { None, Save, Rename, Delete, FolderAdd, FolderRename, FolderDe
 // The left column: the merged overview or the page's own list (store.ts panelView).
 enum class View { Page, Combined };
 
+// ---- design-system pieces this panel needs and ui_widgets does not have ------
+//
+// The 2026-10-09 design (Regex*.dc.html, regex.css): rows are .it (tick + two
+// lines), numeric / condition rows are .nr (name | controls | fragment, 1.1 /
+// 1.6 / 1.3), groups are .gbox, the compact segmented control inside a row is
+// .rx .pt-seg (13 px labels, 26 px tall). Everything is in design px through
+// PobUi::D, so it follows the font-size setting and the tool density.
+
+namespace Tok = PobUi::Tok;
+
+float Dp(float v) { return std::floor(PobUi::D(v)); }
+
+ImFont* SmallF()
+{
+	const PobUi::WidgetFonts& f = PobUi::Fonts();
+	return f.small ? f.small : ImGui::GetFont();
+}
+ImFont* BodyF()
+{
+	const PobUi::WidgetFonts& f = PobUi::Fonts();
+	return f.body ? f.body : ImGui::GetFont();
+}
+ImVec2 TextSz(ImFont* f, const char* s, float wrap = 0.0f)
+{
+	return f->CalcTextSizeA(f->FontSize, FLT_MAX, wrap, s);
+}
+void DrawTextAt(ImDrawList* dl, ImFont* f, ImVec2 p, ImU32 col, const char* s, float wrap = 0.0f)
+{
+	dl->AddText(f, f->FontSize, p, col, s, nullptr, wrap);
+}
+// Small text as an item, optionally wrapped at `wrap` px from here.
+void SmallText(const char* s, ImU32 col = Tok::TextMuted, float wrap = 0.0f)
+{
+	ImGui::PushFont(SmallF());
+	ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(col));
+	if (wrap > 0.0f) ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
+	ImGui::TextUnformatted(s);
+	if (wrap > 0.0f) ImGui::PopTextWrapPos();
+	ImGui::PopStyleColor();
+	ImGui::PopFont();
+}
+
+// UTF-8 text broken into lines no wider than `width`, anywhere (CSS
+// word-break: break-all). ImGui only breaks at spaces, and a search string is
+// one long word: the output box and the fragments need this.
+std::vector<std::string> WrapAnywhere(ImFont* f, const std::string& s, float width)
+{
+	std::vector<std::string> out;
+	std::string line;
+	float w = 0.0f;
+	for (size_t i = 0; i < s.size();) {
+		const unsigned char c = (unsigned char)s[i];
+		const size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+		const std::string ch = s.substr(i, n);
+		i += n;
+		if (ch == "\n") {
+			out.push_back(line);
+			line.clear();
+			w = 0.0f;
+			continue;
+		}
+		const float cw = f->CalcTextSizeA(f->FontSize, FLT_MAX, 0.0f, ch.c_str()).x;
+		if (!line.empty() && w + cw > width) {
+			out.push_back(line);
+			line.clear();
+			w = 0.0f;
+		}
+		line += ch;
+		w += cw;
+	}
+	if (!line.empty() || out.empty()) out.push_back(line);
+	return out;
+}
+// Draws the wrapped lines as one item; returns its height.
+float WrappedBlock(ImFont* f, const std::string& s, float width, ImU32 col)
+{
+	const std::vector<std::string> lines = WrapAnywhere(f, s, width);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const float lh = f->FontSize * 1.25f;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	for (size_t i = 0; i < lines.size(); i++)
+		DrawTextAt(dl, f, ImVec2(p.x, p.y + std::floor(lh * (float)i + (lh - f->FontSize) * 0.5f)), col, lines[i].c_str());
+	const float h = std::ceil(lh * (float)lines.size());
+	ImGui::Dummy(ImVec2(width, h));
+	return h;
+}
+
+// .cb: a 15 px square, accent-filled with a tick when on; `mixed` = a dash
+// (a folder some of whose bookmarks are picked).
+void DrawCheck(ImDrawList* dl, ImVec2 p, bool on, bool mixed = false)
+{
+	const float s = Dp(15.0f);
+	const ImVec2 b(p.x + s, p.y + s);
+	if (on || mixed) {
+		dl->AddRectFilled(p, b, Tok::Accent, Dp(4.0f));
+		if (mixed) {
+			dl->AddLine(ImVec2(p.x + s * 0.25f, p.y + s * 0.5f), ImVec2(p.x + s * 0.75f, p.y + s * 0.5f), Tok::OnAccent, std::max(1.5f, Dp(2.0f)));
+		} else {
+			const ImVec2 pts[3] = {ImVec2(p.x + s * 0.24f, p.y + s * 0.52f), ImVec2(p.x + s * 0.43f, p.y + s * 0.70f),
+			                       ImVec2(p.x + s * 0.77f, p.y + s * 0.32f)};
+			dl->AddPolyline(pts, 3, Tok::OnAccent, 0, std::max(1.5f, Dp(2.0f)));
+		}
+	} else {
+		dl->AddRect(p, b, Tok::BorderStrong, Dp(4.0f), 0, std::max(1.0f, PobUi::D(1.5f)));
+	}
+}
+
+// A clickable tick + label as one item (the "只看已勾選" style toggle).
+bool CheckLabel(const char* id, const char* label, bool on)
+{
+	ImGui::PushID(id);
+	const float s = Dp(15.0f), gap = Dp(6.0f);
+	const ImVec2 ts = TextSz(SmallF(), label);
+	const float h = std::max(s, ts.y);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const bool click = ImGui::InvisibleButton("##ck", ImVec2(s + gap + ts.x, h));
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	DrawCheck(dl, ImVec2(p.x, p.y + std::floor((h - s) * 0.5f)), on);
+	DrawTextAt(dl, SmallF(), ImVec2(p.x + s + gap, p.y + std::floor((h - ts.y) * 0.5f)),
+	           ImGui::IsItemHovered() ? Tok::Text : Tok::TextMuted, label);
+	if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+	ImGui::PopID();
+	return click;
+}
+
+// Pill (.t17 / .test / pt-pill): small text on a soft fill.
+void Pill(const char* text, ImU32 fg, ImU32 bg)
+{
+	const ImVec2 ts = TextSz(SmallF(), text);
+	const float padX = Dp(6.0f), h = ts.y + Dp(2.0f);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	dl->AddRectFilled(p, ImVec2(p.x + ts.x + padX * 2, p.y + h), bg, h * 0.5f);
+	DrawTextAt(dl, SmallF(), ImVec2(p.x + padX, p.y + Dp(1.0f)), fg, text);
+	ImGui::Dummy(ImVec2(ts.x + padX * 2, h));
+}
+float PillW(const char* text) { return TextSz(SmallF(), text).x + Dp(12.0f); }
+
+// The row segmented control (.rx .pt-seg): every option is its own button and
+// `lit` says which look selected -- exactly one for a choice, any number for the
+// rarity multi-select. Returns the clicked option or -1.
+float SegItemW(const char* label) { return TextSz(SmallF(), label).x + Dp(20.0f); }
+float SegTogglesW(const char* const* labels, int n)
+{
+	float w = Dp(6.0f) + Dp(2.0f) * (float)(n > 0 ? n - 1 : 0);
+	for (int i = 0; i < n; i++) w += SegItemW(labels[i]);
+	return w;
+}
+int SegToggles(const char* id, const char* const* labels, const bool* lit, int n, const char* const* tips = nullptr)
+{
+	ImGui::PushID(id);
+	const float h = Dp(26.0f), w = SegTogglesW(labels, n);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Tok::Surface2, Dp(7.0f));
+	dl->AddRect(p, ImVec2(p.x + w, p.y + h), Tok::Border, Dp(7.0f), 0, 1.0f);
+	int clicked = -1;
+	float x = p.x + Dp(3.0f);
+	const float ih = h - Dp(6.0f);
+	for (int i = 0; i < n; i++) {
+		const float iw = SegItemW(labels[i]);
+		ImGui::SetCursorScreenPos(ImVec2(x, p.y + Dp(3.0f)));
+		ImGui::PushID(i);
+		if (ImGui::InvisibleButton("##sg", ImVec2(iw, ih))) clicked = i;
+		const bool hov = ImGui::IsItemHovered();
+		ImGui::PopID();
+		if (hov && tips && tips[i] && *tips[i]) PobUi::Tooltip(tips[i]);
+		const ImVec2 a(x, p.y + Dp(3.0f)), b(x + iw, p.y + Dp(3.0f) + ih);
+		if (lit[i]) {
+			dl->AddRectFilled(a, b, Tok::AccentSoft, Dp(5.0f));
+			dl->AddRect(a, b, Tok::Accent, Dp(5.0f), 0, 1.0f);
+		} else if (hov) {
+			dl->AddRectFilled(a, b, Tok::Surface3, Dp(5.0f));
+		}
+		const ImVec2 ts = TextSz(SmallF(), labels[i]);
+		DrawTextAt(dl, SmallF(), ImVec2(x + std::floor((iw - ts.x) * 0.5f), a.y + std::floor((ih - ts.y) * 0.5f)),
+		           lit[i] || hov ? Tok::Text : Tok::TextMuted, labels[i]);
+		if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		x += iw + Dp(2.0f);
+	}
+	ImGui::SetCursorScreenPos(p);
+	ImGui::Dummy(ImVec2(w, h));
+	ImGui::PopID();
+	return clicked;
+}
+
+// .vsep: a 1 px rule the height of a row control.
+void VSep()
+{
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const float w = Dp(9.0f), h = Dp(22.0f);
+	ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x + w * 0.5f, p.y + Dp(2.0f)), ImVec2(p.x + w * 0.5f, p.y + Dp(2.0f) + h),
+	                                    Tok::Border, 1.0f);
+	ImGui::Dummy(ImVec2(w, Dp(26.0f)));
+}
+
+// .gbox: a hairline-bordered group with an overline title; content between Begin / End.
+struct GBox {
+	ImVec2 p0;
+	float w = 0.0f;
+};
+GBox GBoxBegin(const char* title, float width)
+{
+	GBox g;
+	g.p0 = ImGui::GetCursorScreenPos();
+	g.w = width;
+	ImGui::SetCursorScreenPos(ImVec2(g.p0.x + Dp(6.0f), g.p0.y + Dp(6.0f)));
+	ImGui::BeginGroup();
+	if (title && *title) {
+		ImGui::SetCursorScreenPos(ImVec2(g.p0.x + Dp(16.0f), ImGui::GetCursorScreenPos().y + Dp(4.0f)));
+		SmallText(title, Tok::TextMuted);
+		ImGui::Dummy(ImVec2(0, Dp(2.0f)));
+	}
+	return g;
+}
+void GBoxEnd(const GBox& g)
+{
+	ImGui::EndGroup();
+	const float bottom = ImGui::GetItemRectMax().y + Dp(6.0f);
+	ImGui::GetWindowDrawList()->AddRect(g.p0, ImVec2(g.p0.x + g.w, bottom), Tok::BorderSubtle, Dp(10.0f), 0, 1.0f);
+	ImGui::SetCursorScreenPos(ImVec2(g.p0.x, bottom));
+	ImGui::Dummy(ImVec2(g.w, Dp(8.0f)));
+}
+
+// A meter (.meter): track + fill in the length's colour.
+void Meter(float fraction, float width, ImU32 col)
+{
+	const float h = std::max(3.0f, Dp(6.0f));
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const float boxH = Dp(18.0f);
+	ImGui::Dummy(ImVec2(width, boxH));
+	const float y = p.y + std::floor((boxH - h) * 0.5f);
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	dl->AddRectFilled(ImVec2(p.x, y), ImVec2(p.x + width, y + h), Tok::Surface3, h * 0.5f);
+	const float f = fraction < 0.0f ? 0.0f : (fraction > 1.0f ? 1.0f : fraction);
+	if (f > 0.0f) dl->AddRectFilled(ImVec2(p.x, y), ImVec2(p.x + std::max(h, width * f), y + h), col, h * 0.5f);
+}
+
+// A dialog's button row that does NOT close the popup by itself (a paste that
+// fails keeps the dialog open with its error). Right-aligned like DialogButtons.
+PobUi::DialogResult DlgButtons(float inner, const char* cancel, const char* secondary, const char* primary,
+                               bool primaryEnabled = true, bool danger = false)
+{
+	using PobUi::DialogResult;
+	DialogResult res = DialogResult::None;
+	ImGui::Dummy(ImVec2(0, Dp(12.0f)));
+	const float gap = Dp(8.0f), minW = Dp(88.0f);
+	float total = 0.0f;
+	int n = 0;
+	for (const char* b : {cancel, secondary, primary})
+		if (b) {
+			total += PobUi::ButtonWidth(b, PobUi::BtnSize::Md, nullptr, minW);
+			n++;
+		}
+	total += gap * (float)(n > 0 ? n - 1 : 0);
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, inner - total));
+	bool first = true;
+	auto place = [&]() { if (!first) ImGui::SameLine(0, gap); first = false; };
+	if (cancel) { place(); if (PobUi::Button(cancel, PobUi::BtnKind::Secondary, PobUi::BtnSize::Md, nullptr, minW)) res = DialogResult::Cancel; }
+	if (secondary) { place(); if (PobUi::Button(secondary, PobUi::BtnKind::Secondary, PobUi::BtnSize::Md, nullptr, minW)) res = DialogResult::Secondary; }
+	if (primary) {
+		place();
+		if (PobUi::Button(primary, danger ? PobUi::BtnKind::Danger : PobUi::BtnKind::Primary, PobUi::BtnSize::Md, nullptr, minW,
+		                  primaryEnabled))
+			res = DialogResult::Primary;
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_Escape)) res = DialogResult::Cancel;
+	return res;
+}
+
 class RegexToolPanel : public IToolPanel {
 public:
 	bool Init(const ToolPanelHost& h) override
 	{
 		host_ = &h;
 		exeDir_ = h.exeDir;
+		// Test aid (POBTOOLS_REGEX_STATE, with POBTOOLS_TOOL_SHOT): a known state for a
+		// screenshot of each design draft; regex_ui.json is neither read nor written.
+		{
+			wchar_t st[32] = {};
+			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_REGEX_STATE", st, 32);
+			if (n > 0 && n < 32)
+				for (const wchar_t* c = st; *c; c++) testState_ += (char)(*c < 128 ? *c : '?');
+			testMode_ = !testState_.empty() || GetEnvironmentVariableW(L"POBTOOLS_TOOL_SHOT", nullptr, 0) > 0;
+		}
 		game_ = h.game.empty() ? std::wstring(L"poe1") : h.game;
 		dataOk_ = data_.Load(exeDir_, game_, &dataErr_);
 		// Corpus pages first, in the data's order, so a corpus page's index here
@@ -260,7 +555,7 @@ public:
 				PobLog::Error("data", "regex_templates.json: " + templatesErr_);
 			for (const std::string& e : errs) PobLog::Error("data", "regex_templates.json: " + e);
 		}
-		state_.Load(exeDir_);   // a fresh install has no file; the defaults are fine
+		if (!testMode_) state_.Load(exeDir_);   // a fresh install has no file; the defaults are fine
 		restoreState();
 		lang_ = state_.lang == "en" ? Lang::En : Lang::Zh;
 		bilingual_ = state_.bilingual;
@@ -269,8 +564,10 @@ public:
 		bmTab_ = bmTabFollow_ = selGame_;
 		// "送到 ExileAppraiser": sweep temp files left by earlier sessions, and
 		// find the exe once so the button can say whether it will work.
-		RegexSend::SweepTempDir(RegexSend::DefaultTempDir(), RegexSend::kTempMaxAgeSeconds);
-		relocateExileAppraiser();
+		if (!testMode_) {
+			RegexSend::SweepTempDir(RegexSend::DefaultTempDir(), RegexSend::kTempMaxAgeSeconds);
+			relocateExileAppraiser();
+		}
 		if (state_.SaveBlocked())
 			notice_ = u8"regex_ui.json 是較新版本的 PobTools 寫的（schema " + std::to_string(state_.loadedSchema) +
 			          u8"），這個版本不會覆寫它：可以照常使用，但這次的變更（勾選、書籤）不會保存。";
@@ -290,49 +587,80 @@ public:
 	void Frame() override
 	{
 		pollItemMods();
-		if (!dataOk_) {
-			ImGui::TextColored(kBad, u8"搜尋字串資料載入失敗：%s", dataErr_.c_str());
-			ImGui::TextDisabled(u8"請確認安裝目錄的 Data 底下有 regex_poe1.json / regex_poe2.json。");
+		if (!testApplied_) {
+			testApplied_ = true;
+			applyTestState();
+		}
+		if (!dataOk_ || testState_ == "dataerr") {
+			drawDataError();
 			return;
 		}
 		drawHeader();
-		ImGui::Separator();
 		// Guarded because every panel below reaches for the current page. Load()
 		// having succeeded does not promise a page survived the entry filter.
 		if (!hasPage()) {
-			ImGui::TextColored(kWarn, u8"這個版本沒有任何可用的清單。");
+			PobUi::Banner("rx_nopage", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, u8"這個版本沒有任何可用的清單",
+			              nullptr, false, nullptr, false);
 			return;
 		}
 
+		// Design: the list column takes the rest, the output / bookmark column is
+		// 450 px (narrower windows give it at most 45%).
 		const float avail = ImGui::GetContentRegionAvail().x;
-		const float leftW = std::max(340.0f, avail * 0.54f);
-		ImGui::BeginChild("##rx_left", ImVec2(leftW, 0), false);
+		const float gap = Dp(14.0f);
+		const float asideW = std::floor(std::min(PobUi::D(450.0f), avail * 0.45f));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+		ImGui::BeginChild("##rx_left", ImVec2(avail - asideW - gap, 0), false);
 		if (view_ == View::Combined) drawCombinedView();
 		else drawList();
 		ImGui::EndChild();
-		ImGui::SameLine();
+		ImGui::SameLine(0, gap);
 		ImGui::BeginChild("##rx_right", ImVec2(0, 0), false);
 		drawOutput();
-		ImGui::Separator();
+		drawNotice();
 		drawBookmarks();
 		ImGui::EndChild();
+		ImGui::PopStyleVar();
 
 		drawModals();
+	}
+
+	// RegexStates "清單資料讀不到": what is missing and where it should be.
+	void drawDataError()
+	{
+		std::string missing;
+		for (const char* g : kGames) {
+			const DWORD a = GetFileAttributesW((exeDir_ + L"Data\\regex_" + std::wstring(g, g + 4) + L".json").c_str());
+			if (a == INVALID_FILE_ATTRIBUTES) missing += (missing.empty() ? "" : u8"、") + std::string("regex_") + g + ".json";
+		}
+		if (testState_ == "dataerr") missing = "regex_poe2.json";   // the screenshot of this state
+		std::string desc = missing.empty() ? (u8"清單檔讀取失敗：" + dataErr_)
+		                                   : (u8"安裝目錄的 Data 底下缺少 " + missing + u8"。");
+		desc += u8"重新解壓縮完整的 PobTools 或更新翻譯資料。";
+		if (PobUi::Banner("rx_dataerr", PobUi::BannerTone::Bad, PobIcon::CircleX, u8"讀不到搜尋字串資料", desc.c_str(), false,
+		                  u8"開啟資料夾", false) == PobUi::BannerResult::Action)
+			openDataDir_ = true;
 	}
 
 	void RunDeferred() override
 	{
 		if (!copyRequest_.empty()) {
-			WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, copyRequest_);
+			if (!testMode_) WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, copyRequest_);
 			copied_ = true;
 			copyRequest_.clear();
 		}
 		if (!shareCopyRequest_.empty()) {
-			shareCopied_ = WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, shareCopyRequest_) ? 1 : 2;
+			shareCopied_ = (testMode_ || WriteClipboardUtf8(host_ ? host_->hostHwnd : nullptr, shareCopyRequest_)) ? 1 : 2;
 			shareCopiedAt_ = std::chrono::steady_clock::now();
 			shareCopyRequest_.clear();
+			if (shareCopied_ == 1) PobUi::ShowToast((u8"已複製" + shareCopiedWhat_).c_str(), PobUi::Tone::Ok);
+			else PobUi::ShowToast(u8"複製失敗", PobUi::Tone::Bad);
 		}
-		runSendRequests();
+		if (openDataDir_) {
+			openDataDir_ = false;
+			if (!testMode_) ShellExecuteW(nullptr, L"open", (exeDir_ + L"Data").c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+		}
+		if (!testMode_) runSendRequests();
 		// Written here rather than in Frame(): this is the one place a panel is
 		// allowed to touch the disk, and it runs at most once per frame.
 		flushState();
@@ -438,6 +766,10 @@ private:
 	void flushState()
 	{
 		if (!stateDirty_ || saveFailed_) return;
+		if (testMode_) {   // a screenshot never writes the player's file
+			stateDirty_ = false;
+			return;
+		}
 		// A newer build's file: not ours to overwrite (said once, at Init).
 		if (state_.SaveBlocked()) {
 			stateDirty_ = false;
@@ -637,107 +969,216 @@ private:
 		syncValues(idx);
 	}
 
-	// ---- header --------------------------------------------------------------
+	// ---- header ----------------------------------------------------------------
 
+	// One header row (Regex.dc.html .pt-thead): icon + name | game | view |
+	// list (page view) | mode | ... | copy / paste share code | more | bilingual.
+	// Items flow left to right and wrap to a second row when the window is narrow.
 	void drawHeader()
 	{
-		// Game first, then that game's list. A game with no catalogue is not
-		// offered at all: a selectable option that leads to an empty panel is
-		// worse than not seeing it, and --regex-selftest fails when either file
-		// is missing from the install, so this cannot hide a packaging mistake.
-		ImGui::SetNextItemWidth(88 * host_->scale);
-		if (ImGui::BeginCombo(u8"遊戲", GameLabel(selGame_))) {
+		const float H = PobUi::ControlH();
+		const float gap = Dp(10.0f);
+		const ImVec2 origin = ImGui::GetCursorScreenPos();
+		const float right = origin.x + ImGui::GetContentRegionAvail().x;
+		float x = origin.x, y = origin.y;
+		auto slot = [&](float w) {
+			if (x > origin.x && x + w > right) {
+				x = origin.x;
+				y += H + Dp(8.0f);
+			}
+			ImGui::SetCursorScreenPos(ImVec2(x, y));
+			x += w + gap;
+		};
+		auto vcenter = [&](float h) { ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y + std::floor((H - h) * 0.5f))); };
+
+		// icon + name
+		{
+			const PobUi::WidgetFonts& wf = PobUi::Fonts();
+			const float iconPx = Dp(20.0f);
+			const char* title = "Poe Regex";
+			const float hw = wf.heading ? wf.heading->CalcTextSizeA(wf.headingPx > 0 ? wf.headingPx : wf.heading->FontSize, FLT_MAX, 0.0f, title).x
+			                            : ImGui::CalcTextSize(title).x;
+			const float iw = PobUi::IconWidth(PobIcon::CodeXml, iconPx);
+			slot(iw + (iw > 0 ? Dp(8.0f) : 0.0f) + hw);
+			PobUi::IconAt(ImGui::GetWindowDrawList(), ImVec2(ImGui::GetCursorScreenPos().x, y + std::floor((H - iconPx) * 0.5f)),
+			              PobIcon::CodeXml, Tok::AccentText, iconPx);
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + iw + (iw > 0 ? Dp(8.0f) : 0.0f), y));
+			vcenter(ImGui::GetTextLineHeight());
+			PobUi::Heading(title);
+		}
+
+		// game: only games with a catalogue are offered (an option that leads to
+		// an empty panel is worse than not seeing it; --regex-selftest fails when
+		// either file is missing from the install, so this cannot hide a packaging
+		// mistake).
+		{
+			std::vector<const char*> labels;
+			std::vector<std::string> ids;
+			int sel = 0;
 			for (const char* g : kGames) {
 				if (firstPageOf(g) < 0) continue;
-				if (ImGui::Selectable(GameLabel(g), selGame_ == g)) switchGame(g);
+				if (selGame_ == g) sel = (int)ids.size();
+				ids.push_back(g);
+				labels.push_back(GameLabel(g));
 			}
-			ImGui::EndCombo();
+			slot(PobUi::SegmentedWidth(labels.data(), (int)labels.size()));
+			if (PobUi::Segmented("##rxgame", &sel, labels.data(), (int)labels.size())) switchGame(ids[sel]);
 		}
-		ImGui::SameLine(0, 16 * host_->scale);
-		// RegexPanel.vue view seg: the merged overview or the page's own list.
+
+		// view: the merged overview or the page's own list (RegexPanel.vue view seg)
 		{
-			const std::string merged = u8"已選（合併）· " + std::to_string(combineOrderIdx(true).size()) +
-			                           u8" 頁###rx_view_combined";
-			if (segButton(merged.c_str(), view_ == View::Combined)) setView(View::Combined);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"目前遊戲所有有勾選的清單、自訂文字與排除詞，合成一串");
-			ImGui::SameLine(0, 2 * host_->scale);
-			if (segButton(u8"單頁清單###rx_view_page", view_ == View::Page)) setView(View::Page);
+			const std::string merged = u8"已選（合併）· " + std::to_string(combineOrderIdx(true).size()) + u8" 頁";
+			const char* labels[2] = {merged.c_str(), u8"單頁清單"};
+			int sel = view_ == View::Combined ? 0 : 1;
+			slot(PobUi::SegmentedWidth(labels, 2));
+			if (PobUi::Segmented("##rxview", &sel, labels, 2)) setView(sel == 0 ? View::Combined : View::Page);
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"已選（合併）：目前遊戲所有有勾選的清單、自訂文字與排除詞，合成一串");
 		}
-		ImGui::SameLine(0, 16 * host_->scale);
-		ImGui::SetNextItemWidth(170 * host_->scale);
-		if (ImGui::BeginCombo(u8"清單", refs_[page_].Title().c_str())) {
-			// Numeric sections are not pages of their own: they sit on top of
-			// their host page (exile-appraiser step 32, listedPages). The count
-			// includes the section, as store.ts pagePickCount does.
+
+		// the list (page view): "地圖詞綴 (5)", each option noted with its size
+		if (view_ == View::Page) {
+			std::vector<int> idx;
+			std::vector<std::string> lab, note;
+			int sel = 0;
 			for (size_t i = 0; i < refs_.size(); i++) {
 				if (refs_[i].Game() != selGame_ || refs_[i].IsSection()) continue;
 				const int n = pagePickCount((int)i);
-				const std::string label = refs_[i].Title() + (n ? u8"（" + std::to_string(n) + u8"）" : std::string()) +
-				                          "###rx_pg" + std::to_string(i);
-				if (ImGui::Selectable(label.c_str(), page_ == (int)i)) {
-					switchPage((int)i);
-					setView(View::Page);   // store.ts switchPage: back to the page's list
-				}
+				if ((int)i == page_) sel = (int)idx.size();
+				idx.push_back((int)i);
+				lab.push_back(refs_[i].Title() + (n ? " (" + std::to_string(n) + ")" : std::string()));
+				const bool itemPending = isItemPage((int)i) && imv_[GameIdx(selGame_)].phase != ItemModLoad::Phase::Ready;
+				note.push_back(itemPending ? std::string(u8"第一次開啟時載入") : std::to_string(refs_[i].Size()) + u8" 條");
 			}
-			ImGui::EndCombo();
-		}
-		ImGui::SameLine(0, 24 * host_->scale);
-
-		// The three shapes the client's search actually has. Changing this
-		// changes the string, not the picks, so it lives next to the list.
-		int m = (int)mode_;
-		bool changed = false;
-		changed |= ImGui::RadioButton(u8"含任一個", &m, 0); ImGui::SameLine();
-		changed |= ImGui::RadioButton(u8"全部都有", &m, 1); ImGui::SameLine();
-		changed |= ImGui::RadioButton(u8"一個都沒有", &m, 2);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"「一個都沒有」產生的是排除字串（開頭的 ! ），"
-			                  u8"用來把有這些詞綴的東西藏起來。");
-		if (changed && m != (int)mode_) {
-			mode_ = (RegexGen::Mode)m;
-			st().dirty = true;
-			combinedDirty_ = true;
-			copied_ = false;
-			state_.mode = modeId();
-			stateDirty_ = true;
+			std::vector<const char*> lp, np;
+			for (size_t i = 0; i < lab.size(); i++) {
+				lp.push_back(lab[i].c_str());
+				np.push_back(note[i].c_str());
+			}
+			const float w = std::max(Dp(190.0f), PobUi::SelectFitWidth(lp.data(), (int)lp.size()));
+			slot(w);
+			if (PobUi::Select("##rxpage", &sel, lp.data(), np.data(), (int)lp.size(), w) && idx[sel] != page_) switchPage(idx[sel]);
 		}
 
-		if (view_ == View::Page) {
-			ImGui::SameLine(0, 24 * host_->scale);
-			ImGui::TextDisabled(u8"已勾選 %d / %d", pickCount(), (int)refs_[page_].Size());
-		}
-
-		// Right-hand end of the header row. It belongs to the whole panel rather
-		// than to the list toolbar: it changes how both columns read, and the
-		// toolbar is the row that runs out of width first.
+		// the three shapes the client's search has; changes the string, not the picks
 		{
-			const char* label = u8"雙語顯示";
-			const float w = ImGui::GetFrameHeight() +
-			                ImGui::GetStyle().ItemInnerSpacing.x +
-			                ImGui::CalcTextSize(label).x;
-			// Right-aligned, but never to the left of where the row already is:
-			// a narrow window would otherwise draw this on top of the mode radios
-			// instead of wrapping, and an overlap reads as a rendering bug.
-			ImGui::SameLine();
-			const float after = ImGui::GetCursorPosX();
-			ImGui::SameLine(std::max(after, ImGui::GetContentRegionMax().x - w));
-			if (ImGui::Checkbox(label, &bilingual_)) {
-				state_.bilingual = bilingual_;
-				stateDirty_ = true;
+			const char* labels[3] = {u8"含任一個", u8"全部都有", u8"一個都沒有"};
+			const char* tips[3] = {u8"任一項中就選（一個 term 裡用 | 串起來）", u8"每一項都要中（每項各自一個 term）",
+			                       u8"一項都不能中：產生排除字串（開頭的 !），把有這些詞綴的東西藏起來"};
+			int m = (int)mode_;
+			slot(PobUi::SegmentedWidth(labels, 3));
+			if (PobUi::SegmentedEx("##rxmode", &m, labels, 3, nullptr, tips) && m != (int)mode_) {
+				mode_ = (RegexGen::Mode)m;
+				for (PageState& ps : pages_) ps.dirty = true;
+				combinedDirty_ = true;
+				copied_ = false;
+				state_.mode = modeId();
+				markStateDirty();
 			}
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"在每一列下面加上另一種語言的原文");
 		}
 
-		drawShareRow();
-
-		const std::string& note = pageNote();
-		if (view_ == View::Page && !note.empty()) {
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped("%s", note.c_str());
+		// right end: share code buttons, the more menu, the bilingual switch
+		const bool copiedNow = shareCopied_ == 1 && std::chrono::steady_clock::now() - shareCopiedAt_ < std::chrono::milliseconds(2500);
+		const char* copyLbl = copiedNow ? u8"已複製" : u8"複製分享碼";
+		const char* copyIcon = copiedNow ? PobIcon::Check : PobIcon::Copy;
+		const char* pasteLbl = u8"貼上分享碼";
+		const char* biLbl = u8"雙語顯示";
+		const float smH = Dp(28.0f);
+		const float wCopy = PobUi::ButtonWidth(copyLbl, PobUi::BtnSize::Sm, copyIcon);
+		const float wPaste = PobUi::ButtonWidth(pasteLbl, PobUi::BtnSize::Sm);
+		const float wMore = PobUi::ButtonWidth("##rxmore", PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, smH);
+		const float wBi = TextSz(SmallF(), biLbl).x + Dp(8.0f) + PobUi::SwitchWidth();
+		const float blockW = wCopy + gap + wPaste + Dp(6.0f) + wMore + gap + wBi;
+		if (x + blockW > right && x > origin.x) {
+			x = origin.x;
+			y += H + Dp(8.0f);
+		}
+		x = std::max(x, right - blockW);
+		ImGui::SetCursorScreenPos(ImVec2(x, y + std::floor((H - smH) * 0.5f)));
+		const bool any = hasShareable();
+		if (copiedNow) {
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::Success));
+			PobUi::Button(copyLbl, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, copyIcon);
 			ImGui::PopStyleColor();
+		} else if (PobUi::Button(copyLbl, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, copyIcon, 0.0f, any)) {
+			makeShareCode();
 		}
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			PobUi::Tooltip(any ? u8"把目前遊戲所有清單的勾選、數值、自訂文字與排除詞壓成一串分享碼。分享碼可以直接貼進流亡鑑價（ExileAppraiser），兩邊格式相同。"
+			                   : u8"沒有任何勾選、自訂文字或排除詞時沒有東西可以分享。");
+		ImGui::SameLine(0, gap);
+		if (PobUi::Button(pasteLbl, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) openPaste();
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"貼上別人給的分享碼並套用（套用前會先確認）");
+		ImGui::SameLine(0, Dp(6.0f));
+		if (PobUi::Button("##rxmore", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, smH) ||
+		    testOpenMore_) {
+			testOpenMore_ = false;
+			ImGui::OpenPopup("##rxmoremenu");
+		}
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"範本、送到 ExileAppraiser、匯入書籤包");
+		drawMoreMenu();
+		ImGui::SameLine(0, gap);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y + std::floor((H - TextSz(SmallF(), biLbl).y) * 0.5f)));
+		SmallText(biLbl);
+		ImGui::SameLine(0, Dp(8.0f));
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y + std::floor((H - ImGui::GetFrameHeight()) * 0.5f)));
+		if (PobUi::Switch("##rxbi", &bilingual_)) {
+			state_.bilingual = bilingual_;
+			markStateDirty();
+		}
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在每一列下面加上另一種語言的原文");
+
+		ImGui::SetCursorScreenPos(ImVec2(origin.x, y + H + Dp(10.0f)));
+		ImGui::Dummy(ImVec2(0, 0));
+	}
+
+	// The header's more menu: templates of this game, 送到 ExileAppraiser, 匯入書籤包,
+	// where ExileAppraiser.exe is. (Not in the design: PobTools / exile-appraiser
+	// features the drafts do not cover, put where the design keeps secondary actions.)
+	void drawMoreMenu()
+	{
+		// under the button that opened it, right-aligned (not wherever the mouse is)
+		ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y + Dp(4.0f)), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+		if (!PobUi::BeginMenuPopup("##rxmoremenu")) return;
+		int mine = 0;
+		for (const RegexShare::Template& t : templates_) mine += t.game == selGame_ ? 1 : 0;
+		PobUi::Overline((std::string(u8"套用範本（") + GameLabel(selGame_) + u8"）").c_str());
+		if (!templatesErr_.empty()) SmallText((u8"範本檔載入失敗：" + templatesErr_).c_str(), Tok::Danger);
+		else if (mine == 0) SmallText(u8"這個遊戲沒有內建範本", Tok::TextFaint);
+		for (int i = 0; i < (int)templates_.size(); i++) {
+			const RegexShare::Template& t = templates_[i];
+			if (t.game != selGame_) continue;
+			ImGui::PushID(i);
+			if (PobUi::MenuRow(PobIcon::FileText, t.nameZh.c_str())) {
+				tplPending_ = i;
+				modal_ = Modal::Template;
+			}
+			if (ImGui::IsItemHovered() && !t.descZh.empty()) PobUi::Tooltip(t.descZh.c_str());
+			ImGui::PopID();
+		}
+		PobUi::MenuSeparator();
+		const int have = sendableBookmarks();
+		if (PobUi::MenuRow(PobIcon::Share, u8"送到 ExileAppraiser…", nullptr, have > 0)) openSendPick();
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			if (std::chrono::steady_clock::now() - sendLocAt_ > std::chrono::seconds(3)) relocateWanted_ = true;
+			std::string tip = have == 0 ? std::string(u8"還沒有書籤可以送：先「存成書籤」。")
+			                            : std::string(u8"選幾筆書籤（或整個資料夾，PoE1 / PoE2 可以混選）交給 ExileAppraiser，加進它的書籤。"
+			                                          u8"它會跳出確認框，按「加入」才寫入。需要 v0.2.1 以上。");
+			tip += sendLoc_.exe.empty() ? std::string(u8"\n找不到 ExileAppraiser.exe：送出時會請你手動指定。")
+			                            : u8"\n位置：" + RegexSend::Narrow(sendLoc_.exe) + u8"（" + RegexSend::SourceLabel(sendLoc_.source) + u8"）";
+			if (sendLoc_.manualMissing) tip += u8"\n手動指定的檔案已不存在：" + state_.exileAppraiserExe;
+			PobUi::Tooltip(tip.c_str());
+		}
+		if (PobUi::MenuRow(PobIcon::Download, u8"匯入書籤包…")) openImport();
+		if (ImGui::IsItemHovered())
+			PobUi::Tooltip(u8"貼上別人給的書籤包（或 ExileAppraiser 產的），加進書籤：同名會改名加「 (2)」，不動目前的勾選。加入前會先預覽。");
+		PobUi::MenuSeparator();
+		if (PobUi::MenuRow(PobIcon::FolderOpen, u8"手動指定 ExileAppraiser.exe…")) pickRequest_ = true;
+		if (PobUi::MenuRow(PobIcon::X, u8"清除手動指定", nullptr, !state_.exileAppraiserExe.empty())) {
+			state_.exileAppraiserExe.clear();
+			markStateDirty();
+			relocateWanted_ = true;
+		}
+		PobUi::EndMenuPopup();
 	}
 
 	int pickCount() const
@@ -750,12 +1191,21 @@ private:
 
 	// ---- the list ------------------------------------------------------------
 
+	// The page's own explanation, above everything else on the page.
+	void drawPageNote()
+	{
+		const std::string& note = pageNote();
+		if (note.empty()) return;
+		SmallText(note.c_str(), Tok::TextMuted, ImGui::GetContentRegionAvail().x);
+		ImGui::Dummy(ImVec2(0, Dp(6.0f)));
+	}
+
 	void drawList()
 	{
+		drawPageNote();
 		if (isAlgo()) {
 			if (isItemPage(page_)) {
-				// RegexPanel.vue (step 40, B d5ccb47): the
-				// rarity | corruption section above the item-mod list, loaded or not
+				// RegexItemMods.dc.html: the rarity | corruption card above the list, loaded or not
 				const int sec = sectionIndexOf(page_);
 				if (sec >= 0) drawSection(page_, sec);
 				drawItemModPage(page_);
@@ -767,73 +1217,97 @@ private:
 		const int sec = sectionIndexOf(page_);
 		if (sec >= 0) drawSection(page_, sec);
 		PageState& s = st();
-		ImGui::SetNextItemWidth(150 * host_->scale);
-		if (ImGui::InputTextWithHint("##rx_search", u8"搜尋中英文…", &s.search))
+
+		// toolbar: search | group | T17 | ticked count | select all / clear
+		const float gap = Dp(8.0f);
+		const float avail = ImGui::GetContentRegionAvail().x;
+		std::vector<const char*> gl;
+		std::string gAll = u8"全部分類";
+		gl.push_back(gAll.c_str());
+		for (const std::string& g : groups()) gl.push_back(g.c_str());
+		const float groupW = groups().empty() ? 0.0f : std::max(Dp(110.0f), PobUi::SelectFitWidth(gl.data(), (int)gl.size()));
+		const char* t17Labels[3] = {u8"全部", u8"只看 T17", u8"排除 T17"};
+		const bool t17 = pageHasT17();
+		const float t17W = t17 ? PobUi::SegmentedWidth(t17Labels, 3) : 0.0f;
+		const std::string count = u8"已勾選 " + std::to_string(pickCount()) + " / " + std::to_string((int)refs_[page_].Size());
+		const float countW = TextSz(SmallF(), count.c_str()).x;
+		const float btnW = PobUi::ButtonWidth(u8"全選", PobUi::BtnSize::Sm) + PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm) + Dp(4.0f);
+		const float fixed = (groupW > 0 ? groupW + gap : 0) + (t17W > 0 ? t17W + gap : 0) + countW + gap + btnW;
+		const bool oneRow = avail - fixed >= Dp(160.0f);
+		const float searchW = oneRow ? avail - fixed - gap : avail;
+		syncSearchBuf(s);
+		if (PobUi::SearchField("##rx_search", s.searchBuf, (int)sizeof s.searchBuf, u8"搜尋中英文…", searchW)) {
+			s.search = s.searchBuf;
 			s.filterDirty = true;
-		if (!groups().empty()) {
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(130 * host_->scale);
-			const char* label = s.groupFilter < 0 ? u8"全部分類"
-			                                      : groups()[s.groupFilter].c_str();
-			if (ImGui::BeginCombo("##rx_group", label)) {
-				if (ImGui::Selectable(u8"全部分類", s.groupFilter < 0)) {
-					s.groupFilter = -1;
-					s.filterDirty = true;
-				}
-				for (int g = 0; g < (int)groups().size(); g++) {
-					if (ImGui::Selectable(groups()[g].c_str(), s.groupFilter == g)) {
-						s.groupFilter = g;
-						s.filterDirty = true;
-					}
-				}
-				ImGui::EndCombo();
+		}
+		const float rowY = ImGui::GetItemRectMin().y, H = ImGui::GetItemRectSize().y;
+		auto next = [&](float w, bool first) {
+			if (first && !oneRow) ImGui::Dummy(ImVec2(0, Dp(2.0f)));
+			else ImGui::SameLine(0, gap);
+			(void)w;
+		};
+		bool first = true;
+		if (groupW > 0) {
+			next(groupW, first);
+			first = false;
+			int sel = s.groupFilter + 1;
+			if (PobUi::Select("##rx_group", &sel, gl.data(), nullptr, (int)gl.size(), groupW) && sel - 1 != s.groupFilter) {
+				s.groupFilter = sel - 1;
+				s.filterDirty = true;
 			}
 		}
-		if (pageHasT17()) {
-			// One three-way control rather than two checkboxes: "only" and
-			// "exclude" are mutually exclusive, and two boxes that silently
-			// untick each other are a worse explanation than a list of three.
-			ImGui::SameLine();
-			ImGui::SetNextItemWidth(120 * host_->scale);
-			const int cur = s.t17Only ? 1 : (s.hideT17 ? 2 : 0);
-			const char* names[3] = {u8"T17：全部", u8"T17：只看", u8"T17：排除"};
-			if (ImGui::BeginCombo("##rx_t17", names[cur])) {
-				for (int i = 0; i < 3; i++) {
-					if (!ImGui::Selectable(names[i], cur == i)) continue;
-					s.t17Only = (i == 1);
-					s.hideT17 = (i == 2);
-					s.filterDirty = true;
-				}
-				ImGui::EndCombo();
+		if (t17) {
+			next(t17W, first);
+			first = false;
+			int cur = s.t17Only ? 1 : (s.hideT17 ? 2 : 0);
+			if (PobUi::Segmented("##rx_t17", &cur, t17Labels, 3)) {
+				s.t17Only = cur == 1;
+				s.hideT17 = cur == 2;
+				s.filterDirty = true;
 			}
 		}
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"全選")) {
-			refreshFilter();
+		next(countW, first);
+		const float lineY = oneRow ? rowY : ImGui::GetCursorScreenPos().y;
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, lineY + std::floor((H - TextSz(SmallF(), "A").y) * 0.5f)));
+		SmallText(count.c_str());
+		ImGui::SameLine(0, gap);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, lineY + std::floor((H - Dp(28.0f)) * 0.5f)));
+		if (s.filterDirty) refreshFilter();
+		if (PobUi::Button(u8"全選", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) {
 			for (int i : s.visible) s.picked[i] = 1;
 			picksChanged();
 		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"把目前篩選出來的 %d 項全部勾選", (int)s.visible.size());
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"清除")) {
+		if (ImGui::IsItemHovered()) PobUi::Tooltip((u8"把目前篩選出來的 " + std::to_string(s.visible.size()) + u8" 項全部勾選").c_str());
+		ImGui::SameLine(0, Dp(4.0f));
+		if (PobUi::Button(u8"清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, pickCount() > 0)) {
 			std::fill(s.picked.begin(), s.picked.end(), (char)0);
 			picksChanged();
 		}
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"取消所有勾選");
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, std::max(ImGui::GetCursorScreenPos().y, lineY + H)));
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
 
 		if (s.filterDirty) refreshFilter();
+		if (s.visible.empty()) {
+			// RegexStates "搜尋沒有結果"
+			const bool filtered = !s.search.empty() || s.groupFilter >= 0 || s.t17Only || s.hideT17;
+			const std::string title = !s.search.empty() ? u8"找不到「" + s.search + u8"」" : std::string(u8"沒有符合的項目");
+			if (PobUi::EmptyState("rx_none", PobIcon::Search, title.c_str(), u8"試試英文或較短的關鍵字。分類與T17篩選也會影響結果。",
+			                      filtered ? u8"清除篩選" : nullptr)) {
+				s.search.clear();
+				s.searchBuf[0] = 0;
+				s.groupFilter = -1;
+				s.t17Only = s.hideT17 = false;
+				s.filterDirty = true;
+			}
+			return;
+		}
 
-		ImGui::BeginChild("##rx_rows", ImVec2(0, 0), true);
-		// A row is one line, or two when the bilingual switch is on, so the clipper
-		// cannot work the height out for itself. It is given one, and each row is
-		// then PINNED to that height rather than left to whatever the widgets
-		// happened to measure: a per-row error of a fraction of a pixel is
-		// invisible at the top of a long list and puts the bottom out of reach.
-		const ImGuiStyle& style = ImGui::GetStyle();
-		const float textH = bilingual_ ? ImGui::GetTextLineHeight() * 2 + style.ItemSpacing.y
-		                               : ImGui::GetTextLineHeight();
-		const float rowH = std::max(ImGui::GetFrameHeight(), textH) + style.ItemSpacing.y;
+		// .it rows: a row is one line, or two with the bilingual switch, so the
+		// clipper is given the height and every row is PINNED to it.
+		ImGui::BeginChild("##rx_rows", ImVec2(0, 0), false);
+		const float padY = Dp(6.0f);
+		const float textH = BodyF()->FontSize + (bilingual_ ? SmallF()->FontSize + Dp(2.0f) : 0.0f);
+		const float rowH = std::floor(textH + padY * 2.0f);
 		const float top = ImGui::GetCursorPosY();
 		ImGuiListClipper clip;
 		clip.Begin((int)s.visible.size(), rowH);
@@ -846,233 +1320,276 @@ private:
 		ImGui::EndChild();
 	}
 
+	void syncSearchBuf(PageState& s)
+	{
+		if (s.search != s.searchBuf) {
+			const size_t n = std::min(s.search.size(), sizeof s.searchBuf - 1);
+			memcpy(s.searchBuf, s.search.data(), n);
+			s.searchBuf[n] = 0;
+		}
+	}
+
 	void drawRow(PageState& s, int idx, float rowH)
 	{
 		const RegexEntryDef& e = entries()[idx];
 		ImGui::PushID(idx);
-		bool on = s.picked[idx] != 0;
-		if (on) {
-			// Drawn behind the row, in its own space, so it costs no layout.
-			const ImVec2 p0 = ImGui::GetCursorScreenPos();
-			const ImVec2 p1(p0.x + ImGui::GetContentRegionAvail().x, p0.y + rowH);
-			ImGui::GetWindowDrawList()->AddRectFilled(
-				ImVec2(p0.x - 2, p0.y - 1), p1, ImGui::GetColorU32(ImGuiCol_Header, 0.55f),
-				3.0f * host_->scale);
+		const float w = ImGui::GetContentRegionAvail().x;
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const bool click = ImGui::InvisibleButton("##row", ImVec2(w, rowH - Dp(2.0f)));
+		const bool hov = ImGui::IsItemHovered();
+		const bool on = s.picked[idx] != 0;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		if (on || hov)
+			dl->AddRectFilled(p, ImVec2(p.x + w, p.y + rowH - Dp(2.0f)), on ? Tok::AccentSoft : Tok::Surface2, Dp(6.0f));
+		const float padX = Dp(10.0f), padY = Dp(6.0f);
+		DrawCheck(dl, ImVec2(p.x + padX, p.y + padY + Dp(3.0f)), on);
+		float tx = p.x + padX + Dp(15.0f) + Dp(10.0f);
+		const float maxW = p.x + w - padX - tx;
+		std::string label = LineIn(e, lang_);
+		ImGui::PushClipRect(ImVec2(tx, p.y), ImVec2(p.x + w - padX, p.y + rowH), true);
+		DrawTextAt(dl, BodyF(), ImVec2(tx, p.y + padY), Tok::Text, label.c_str());
+		float lx = tx + TextSz(BodyF(), label.c_str()).x;
+		const size_t extra = (lang_ == Lang::Zh ? e.zh.size() : e.en.size());
+		if (e.t17) {
+			const ImVec2 ts = TextSz(SmallF(), "T17");
+			const float px = lx + Dp(6.0f), py = p.y + padY + std::floor((BodyF()->FontSize - ts.y) * 0.5f);
+			dl->AddRectFilled(ImVec2(px, py - Dp(1.0f)), ImVec2(px + ts.x + Dp(12.0f), py + ts.y + Dp(1.0f)), Tok::WarningSoft, ts.y);
+			DrawTextAt(dl, SmallF(), ImVec2(px + Dp(6.0f), py), Tok::Warning, "T17");
+			lx = px + ts.x + Dp(12.0f);
 		}
-		if (ImGui::Checkbox("##pick", &on)) {
-			s.picked[idx] = on ? 1 : 0;
+		if (extra > 1) {
+			const std::string more = u8"另有 " + std::to_string(extra - 1) + u8" 行";
+			DrawTextAt(dl, SmallF(), ImVec2(lx + Dp(6.0f), p.y + padY + std::floor((BodyF()->FontSize - SmallF()->FontSize) * 0.5f)),
+			           Tok::TextFaint, more.c_str());
+		}
+		if (bilingual_) {
+			const std::string other = OtherLine(e, lang_);
+			DrawTextAt(dl, SmallF(), ImVec2(tx, p.y + padY + BodyF()->FontSize + Dp(2.0f)),
+			           other.empty() ? Tok::TextFaint : Tok::TextMuted,
+			           other.empty() ? (lang_ == Lang::Zh ? u8"沒有英文對照" : u8"沒有中文對照") : other.c_str());
+		}
+		(void)maxW;
+		ImGui::PopClipRect();
+		if (click) {
+			s.picked[idx] = on ? 0 : 1;
 			picksChanged();
 		}
-		ImGui::SameLine();
-		ImGui::BeginGroup();
-		{
-			std::string label = LineIn(e, lang_);
-			const size_t extra = (lang_ == Lang::Zh ? e.zh.size() : e.en.size());
-			if (extra > 1)
-				label += u8"  （另有 " + std::to_string(extra - 1) + u8" 行）";
-			if (e.t17) {
-				ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-				ImGui::TextUnformatted("T17");
-				ImGui::PopStyleColor();
-				ImGui::SameLine();
-			}
-			ImGui::TextUnformatted(label.c_str());
-			if (bilingual_) {
-				const std::string other = OtherLine(e, lang_);
-				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-				ImGui::TextUnformatted(other.empty() ? u8"（沒有對照）" : other.c_str());
-				ImGui::PopStyleColor();
-			}
+		if (hov) {
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			drawEntryTooltip(e);
 		}
-		ImGui::EndGroup();
-		if (ImGui::IsItemHovered()) drawEntryTooltip(e);
 		ImGui::PopID();
 	}
 
 	void drawEntryTooltip(const RegexEntryDef& e)
 	{
 		ImGui::BeginTooltip();
+		ImGui::PushTextWrapPos(Dp(380.0f));
 		for (const std::string& l : e.zh) ImGui::TextUnformatted(l.c_str());
 		if (!e.en.empty()) {
 			ImGui::Separator();
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			for (const std::string& l : e.en) ImGui::TextUnformatted(l.c_str());
-			ImGui::PopStyleColor();
+			for (const std::string& l : e.en) SmallText(l.c_str());
 		}
 		if (!e.affixZh.empty()) {
 			ImGui::Separator();
-			ImGui::TextDisabled(u8"來源詞綴：%s", e.affixZh.c_str());
+			SmallText((u8"來源詞綴：" + e.affixZh).c_str());
 		}
-		// What the search reads besides the line. Shown because it explains
-		// why a token is longer than the line alone would need -- and cut to a
-		// few rows, since a reminder text can run to a paragraph.
+		// What the search reads besides the line: it explains why a token is
+		// longer than the line alone would need.
 		const std::vector<std::string>& hidden = (lang_ == Lang::Zh) ? e.hiddenZh : e.hiddenEn;
 		if (!hidden.empty()) {
 			ImGui::Separator();
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"遊戲搜尋也會比對：");
+			SmallText(u8"遊戲搜尋也會比對：");
 			const size_t shown = hidden.size() < 4 ? hidden.size() : 4;
-			for (size_t i = 0; i < shown; i++) ImGui::BulletText("%s", hidden[i].c_str());
-			if (hidden.size() > shown)
-				ImGui::Text(u8"（另有 %d 行）", (int)(hidden.size() - shown));
-			ImGui::PopStyleColor();
+			for (size_t i = 0; i < shown; i++) SmallText((u8"· " + hidden[i]).c_str());
+			if (hidden.size() > shown) SmallText((u8"另有 " + std::to_string(hidden.size() - shown) + u8" 行").c_str(), Tok::TextFaint);
 		}
+		ImGui::PopTextWrapPos();
 		ImGui::EndTooltip();
 	}
 
 	// ---- output --------------------------------------------------------------
 
+	// Regex.dc.html "貼進遊戲搜尋列" card: scope, the string, the length meter
+	// (three colours, RegexLimit.dc.html), per-page costs, output language +
+	// copy, conflicts; single-page details below.
 	void drawOutput()
 	{
 		PageState& s = st();
 		if (!isAlgo() && !s.corpusReady) buildCorpus();
 		if (s.dirty) recompute();
-		// RegexPanel.vue `out`: the merged string or this page's own.
 		const RegexAlgo::CombineResult& out = scopeCombined_ ? combinedAll() : s.combined;
 
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled(u8"貼進遊戲搜尋列");
+		PobUi::CardBegin("rx_out", nullptr, nullptr, nullptr, true);
+		const float inner = PobUi::CardInnerWidth();
+		const float x0 = ImGui::GetCursorScreenPos().x;
 		{
-			// The out-scope seg, right-aligned on the same row.
-			const char* a = u8"合併";
-			const char* b = u8"單頁";
-			const ImGuiStyle& style = ImGui::GetStyle();
-			const float w = ImGui::CalcTextSize(a).x + ImGui::CalcTextSize(b).x + style.FramePadding.x * 4 + 2 * host_->scale;
-			ImGui::SameLine();
-			const float after = ImGui::GetCursorPosX();
-			ImGui::SameLine(std::max(after, ImGui::GetContentRegionMax().x - w));
-			if (segButton(a, scopeCombined_)) setScope(true);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"合併 = 所有有勾選的清單合成一串；單頁 = 只有目前這份清單");
-			ImGui::SameLine(0, 2 * host_->scale);
-			if (segButton(b, !scopeCombined_)) setScope(false);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"合併 = 所有有勾選的清單合成一串；單頁 = 只有目前這份清單");
+			const char* scope[2] = {u8"合併", u8"單頁"};
+			const char* tips[2] = {u8"所有有勾選的清單合成一串", u8"只有目前這份清單（含它的數值條件）"};
+			const float sw = PobUi::SegmentedWidth(scope, 2);
+			const float y = ImGui::GetCursorScreenPos().y;
+			const float H = PobUi::ControlH();
+			ImGui::SetCursorScreenPos(ImVec2(x0, y + std::floor((H - BodyF()->FontSize) * 0.5f)));
+			ImGui::TextUnformatted(u8"貼進遊戲搜尋列");
+			ImGui::SetCursorScreenPos(ImVec2(x0 + inner - sw, y));
+			int sc = scopeCombined_ ? 0 : 1;
+			if (PobUi::SegmentedEx("##rx_scope", &sc, scope, 2, nullptr, tips)) setScope(sc == 0);
+			ImGui::SetCursorScreenPos(ImVec2(x0, y + H + Dp(8.0f)));
 		}
-		std::string q = out.query;
-		ImGui::InputTextMultiline("##rx_out", &q, ImVec2(-1, 70 * host_->scale),
-		                          ImGuiInputTextFlags_ReadOnly);
-
-		// combine.ts `limit`: the smallest limit of the pages taking part (250).
-		const int len = out.length;
-		const int lim = out.limit;
-		ImGui::PushStyleColor(ImGuiCol_Text, len > lim ? kBad : (len > lim * 4 / 5 ? kWarn : kGood));
-		ImGui::Text(u8"長度 %d / %d 字", len, lim);
-		ImGui::PopStyleColor();
-		// RegexPanel.vue partsText: what each part costs, when more than one part.
+		// .out: the string, wrapped anywhere (it is one long word), min 3 lines
+		{
+			const ImVec2 p = ImGui::GetCursorScreenPos();
+			const float padX = Dp(12.0f), padY = Dp(10.0f);
+			const std::vector<std::string> lines = WrapAnywhere(BodyF(), out.query, inner - padX * 2);
+			const float lh = std::floor(BodyF()->FontSize * 1.4f);
+			const float h = std::max(Dp(66.0f), lh * (float)lines.size() + padY * 2);
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			dl->AddRectFilled(p, ImVec2(p.x + inner, p.y + h), Tok::Surface2, Dp(6.0f));
+			dl->AddRect(p, ImVec2(p.x + inner, p.y + h), Tok::Border, Dp(6.0f), 0, 1.0f);
+			if (out.query.empty()) {
+				DrawTextAt(dl, SmallF(), ImVec2(p.x + padX, p.y + padY), Tok::TextFaint,
+				           scopeCombined_ ? u8"勾選清單裡的項目，這裡就會出現要貼的字串" : u8"這一頁還沒有勾選");
+			} else {
+				for (size_t i = 0; i < lines.size(); i++)
+					DrawTextAt(dl, BodyF(), ImVec2(p.x + padX, p.y + padY + lh * (float)i + std::floor((lh - BodyF()->FontSize) * 0.5f)), Tok::Text,
+					           lines[i].c_str());
+			}
+			ImGui::Dummy(ImVec2(inner, h));
+			if (ImGui::IsItemHovered() && !out.query.empty()) PobUi::Tooltip(u8"按「複製」放進剪貼簿，再到遊戲的搜尋列貼上（Ctrl+V）");
+		}
+		// meter + length: ok / over 4/5 / over the limit
+		const int len = out.length, lim = out.limit;
+		const ImU32 lenCol = len > lim ? Tok::Danger : (len * 5 > lim * 4 ? Tok::Warning : (len > 0 ? Tok::Success : Tok::TextMuted));
+		{
+			const std::string t = std::to_string(len) + " / " + std::to_string(lim) + u8" 字";
+			const float tw = TextSz(SmallF(), t.c_str()).x;
+			const float y = ImGui::GetCursorScreenPos().y + Dp(4.0f);
+			ImGui::SetCursorScreenPos(ImVec2(x0, y));
+			Meter(lim > 0 ? (float)len / (float)lim : 0.0f, inner - tw - Dp(10.0f), lenCol == Tok::TextMuted ? Tok::Accent : lenCol);
+			ImGui::SetCursorScreenPos(ImVec2(x0 + inner - tw, y + std::floor((Dp(18.0f) - SmallF()->FontSize) * 0.5f)));
+			SmallText(t.c_str(), lenCol == Tok::TextMuted ? Tok::Text : lenCol);
+			ImGui::SetCursorScreenPos(ImVec2(x0, y + Dp(18.0f) + Dp(4.0f)));
+		}
+		if (len > lim) SmallText(u8"超過上限，請減少勾選（超過時仍可複製，由你自行刪減）", Tok::Danger, inner);
+		else if (len * 5 > lim * 4) SmallText(u8"超過4/5，再勾幾項就會到上限", Tok::TextMuted, inner);
+		// RegexPanel.vue partsText: what each part costs, when more than one part
 		if (scopeCombined_ && out.perPage.size() + (out.custom.empty() ? 0 : 1) + (out.excludes.empty() ? 0 : 1) > 1) {
 			std::string parts;
 			for (const RegexAlgo::PageContribution& c : out.perPage)
-				parts += (parts.empty() ? "" : u8" · ") + pageTitleInGame(c.id) + " " + std::to_string(c.length);
-			if (!out.custom.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"自訂文字 ") + std::to_string(out.customLength);
-			if (!out.excludes.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"排除詞 ") + std::to_string(out.excludesLength);
-			ImGui::SameLine();
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped("%s", parts.c_str());
-			ImGui::PopStyleColor();
+				parts += (parts.empty() ? "" : u8" · ") + contributionName(c.id) + " " + std::to_string(c.length);
+			if (!out.custom.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"自訂 ") + std::to_string(out.customLength);
+			if (!out.excludes.empty()) parts += (parts.empty() ? "" : u8" · ") + std::string(u8"排除 ") + std::to_string(out.excludesLength);
+			SmallText(parts.c_str(), Tok::TextMuted, inner);
 		}
-		if (len > lim) ImGui::TextColored(kBad, u8"超過上限，請減少勾選（遊戲搜尋列最多 %d 字）", lim);
-		// Whatever the panel last did, said next to the thing it changed. It used
-		// to sit at the very top, three sections away from the string it was
-		// talking about.
-		if (!notice_.empty()) {
-			ImGui::TextColored(kWarn, "%s", notice_.c_str());
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"知道了###rx_notice")) notice_.clear();
-		}
-
-		ImGui::BeginDisabled(out.query.empty());
-		if (ImGui::Button(u8"複製", ImVec2(90 * host_->scale, 0))) {
-			copyRequest_ = out.query;
-			copied_ = false;
-		}
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		// Next to the copy button because that is the decision it changes: which
-		// client the copied string is for.
-		ImGui::SetNextItemWidth(150 * host_->scale);
-		if (ImGui::BeginCombo("##rx_lang", lang_ == Lang::Zh ? u8"輸出：繁體中文"
-		                                                     : u8"輸出：English")) {
-			if (ImGui::Selectable(u8"輸出：繁體中文", lang_ == Lang::Zh)) setLang(Lang::Zh);
-			if (ImGui::Selectable(u8"輸出：English", lang_ == Lang::En)) setLang(Lang::En);
-			ImGui::EndCombo();
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"要貼進哪一種語言的遊戲客戶端。"
-			                  u8"兩邊產生的片段完全不同，不能互換使用。");
-		if (copied_) {
-			ImGui::SameLine();
-			ImGui::TextColored(kGood, u8"已複製");
-		}
-
-		// Merged: the details live in the merged view (RegexCombined.vue); here
-		// only how many conflicts there are, and a way there.
-		if (scopeCombined_) {
-			if (!out.conflicts.empty()) {
-				ImGui::AlignTextToFramePadding();
-				ImGui::TextColored(kWarn, u8"%d 個合併衝突", (int)out.conflicts.size());
-				if (view_ != View::Combined) {
-					ImGui::SameLine();
-					if (ImGui::SmallButton(u8"查看###rx_see_combined")) setView(View::Combined);
-				}
-			}
-			if (!out.custom.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
-			return;
-		}
-
-		// Two things the player cannot check for themselves, so both are stated
-		// rather than implied: which picks the string could not express, and what
-		// it is actually made of.
-		if (!s.result.unresolved.empty()) {
-			ImGui::TextColored(kWarn, u8"有 %d 項無法單獨指定：",
-			                   (int)s.result.unresolved.size());
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			for (int i : s.result.unresolved)
-				ImGui::BulletText("%s", LineIn(entries()[i], lang_).c_str());
-			ImGui::TextWrapped(u8"清單裡有其他項目印出一模一樣的文字，"
-			                   u8"或這一行能用的每一段字也出現在每張物品都有的文字裡"
-			                   u8"（詞綴名稱、階層、提示說明、已汙染這類標籤），"
-			                   u8"遊戲的搜尋沒有辦法只中它。");
-			ImGui::PopStyleColor();
-		}
-
-		// Numeric / vendor conditions that did not make it into the string, or
-		// that would also hit a modifier line of this page.
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+		// output language + copy
 		{
-			int invalid = 0;
-			std::vector<std::string> clash;
-			for (const RegexAlgo::Conflict& c : s.combined.conflicts) {
-				if (c.kind == RegexAlgo::ConflictKind::Invalid) invalid++;
-				else if (c.kind == RegexAlgo::ConflictKind::Fragment) clash.push_back(c.text);
-			}
-			if (invalid > 0)
-				ImGui::TextColored(kWarn, u8"有 %d 個數值條件輸入不成立，沒有放進字串。", invalid);
-			if (!clash.empty()) {
-				ImGui::TextColored(kWarn, u8"有 %d 個數值條件也會中這一頁的詞綴：", (int)clash.size());
-				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-				for (const std::string& t : clash) ImGui::BulletText("%s", t.c_str());
-				ImGui::PopStyleColor();
+			const char* langs[2] = {u8"輸出：繁體中文", u8"輸出：English"};
+			int li = lang_ == Lang::Zh ? 0 : 1;
+			const float lw = std::max(Dp(140.0f), PobUi::SelectFitWidth(langs, 2));
+			const float y = ImGui::GetCursorScreenPos().y;
+			if (PobUi::Select("##rx_lang", &li, langs, nullptr, 2, lw)) setLang(li == 0 ? Lang::Zh : Lang::En);
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"要貼進哪一種語言的遊戲客戶端。兩邊產生的片段完全不同，不能互換使用。");
+			const char* cl = copied_ ? u8"已複製" : u8"複製";
+			const float cw = PobUi::ButtonWidth(cl, PobUi::BtnSize::Md, copied_ ? PobIcon::Check : PobIcon::Copy, Dp(88.0f));
+			ImGui::SetCursorScreenPos(ImVec2(x0 + inner - cw, y));
+			if (PobUi::Button(cl, PobUi::BtnKind::Primary, PobUi::BtnSize::Md, copied_ ? PobIcon::Check : PobIcon::Copy, Dp(88.0f),
+			                  !out.query.empty())) {
+				copyRequest_ = out.query;
+				copied_ = false;
 			}
 		}
 
-		// Corpus tokens, then the numeric / vendor terms, as they appear in the string.
+		if (scopeCombined_) {
+			// the merge details live in the merged view; here how many, and a way there
+			std::string body;
+			if (!out.conflicts.empty()) body = std::to_string(out.conflicts.size()) + u8" 個合併衝突";
+			if (!out.custom.empty()) body += (body.empty() ? "" : u8"。") + std::string(u8"自訂文字不經驗證，可能誤中其他物品。");
+			if (!body.empty()) {
+				ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+				const bool canJump = !out.conflicts.empty() && view_ != View::Combined;
+				if (PobUi::Banner("rx_outwarn", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, body.c_str(), nullptr, false,
+				                  canJump ? u8"查看" : nullptr, false, true, inner) == PobUi::BannerResult::Action)
+					setView(View::Combined);
+			}
+		} else {
+			drawSingleDetails(s, inner);
+		}
+		PobUi::CardEnd();
+		ImGui::Dummy(ImVec2(0, Dp(6.0f)));
+	}
+
+	// A page id in the per-page cost line: a numeric section says so.
+	std::string contributionName(const std::string& id) const
+	{
+		for (const RegexAlgo::PageRef& p : refs_)
+			if (p.Id() == id && p.Game() == selGame_) {
+				if (p.IsSection())
+					return pageTitleInGame(p.algo->sectionOf) + (RegexAlgo::IsConditionSectionId(id) ? u8"條件" : u8"數值條件");
+				return p.Title();
+			}
+		return id;
+	}
+
+	// Single page: what the string could not express, conditions that did not
+	// make it, and the fragments it is made of (collapsible, RegexLimit.dc.html).
+	void drawSingleDetails(PageState& s, float inner)
+	{
+		int invalid = 0;
+		std::vector<std::string> clash;
+		for (const RegexAlgo::Conflict& c : s.combined.conflicts) {
+			if (c.kind == RegexAlgo::ConflictKind::Invalid) invalid++;
+			else if (c.kind == RegexAlgo::ConflictKind::Fragment) clash.push_back(c.text);
+		}
+		if (invalid > 0) SmallText((u8"有 " + std::to_string(invalid) + u8" 個數值條件輸入不成立，沒有放進字串。").c_str(), Tok::Warning, inner);
+		if (!clash.empty()) {
+			SmallText((u8"有 " + std::to_string(clash.size()) + u8" 個數值條件也會中這一頁的詞綴：").c_str(), Tok::Warning, inner);
+			for (const std::string& t : clash) SmallText((u8"· " + t).c_str(), Tok::TextMuted, inner);
+		}
+		if (!s.result.unresolved.empty()) {
+			const std::string head = u8"有 " + std::to_string(s.result.unresolved.size()) + u8" 項無法單獨指定";
+			if (PobUi::CollapsingSection(head.c_str(), "###rx_unres", nullptr, nullptr, false)) {
+				for (int i : s.result.unresolved) SmallText((u8"· " + LineIn(entries()[i], lang_)).c_str(), Tok::Text, inner);
+				SmallText(u8"清單裡有其他項目印出一模一樣的文字，或這一行能用的每一段字也出現在每張物品都有的文字裡"
+				          u8"（詞綴名稱、階層、提示說明、已汙染這類標籤），遊戲的搜尋沒有辦法只中它。",
+				          Tok::TextMuted, inner);
+			}
+		}
 		std::vector<std::string> parts = s.result.tokens;
 		for (const RegexAlgo::PageContribution& c : s.combined.perPage)
 			if (c.kind == RegexPageKind::Numeric || c.kind == RegexPageKind::Sockets)
 				parts.insert(parts.end(), c.fragments.begin(), c.fragments.end());
-		if (!parts.empty() &&
-		    ImGui::CollapsingHeader((u8"用到的片段（" +
-		                             std::to_string(parts.size()) +
-		                             u8" 段）###rx_tok").c_str())) {
-			ImGui::TextDisabled(u8"括號只是為了看清楚頭尾的空白，不要打進去");
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			// Bracketed, because a space at either end of a token is significant
-			// and otherwise invisible: " 傷" and "傷" are different searches, and
-			// the first is the one that does not also match 怪物傷害.
-			for (const std::string& t : parts)
-				ImGui::BulletText(u8"「%s」", t.c_str());
-			ImGui::PopStyleColor();
+		if (!parts.empty()) {
+			const std::string head = u8"用到的片段（" + std::to_string(parts.size()) + u8" 段）";
+			if (PobUi::CollapsingSection(head.c_str(), "###rx_tok", nullptr, nullptr, false)) {
+				SmallText(u8"括號只是為了看清楚頭尾的空白，不要打進去", Tok::TextFaint, inner);
+				// bracketed: a space at either end of a token is significant and otherwise invisible
+				for (const std::string& t : parts) WrappedBlock(SmallF(), u8"「" + t + u8"」", inner, Tok::TextMuted);
+			}
 		}
+	}
+
+	// Whatever the panel last did, said under the output (RegexShare.dc.html
+	// "套用之後": a warning banner with a title and an explanation).
+	void drawNotice()
+	{
+		if (notice_.empty()) return;
+		const PobUi::BannerResult r =
+			PobUi::Banner("rx_notice", noticeWarn_ ? PobUi::BannerTone::Warn : PobUi::BannerTone::Info,
+			              noticeWarn_ ? PobIcon::TriangleAlert : PobIcon::Info, notice_.c_str(),
+			              noticeDesc_.empty() ? nullptr : noticeDesc_.c_str(), false, u8"知道了", false);
+		if (r == PobUi::BannerResult::Action) {
+			notice_.clear();
+			noticeDesc_.clear();
+			noticeWarn_ = false;
+		}
+		ImGui::Dummy(ImVec2(0, Dp(6.0f)));
+	}
+	void say(const std::string& msg, bool warn = false, const std::string& desc = std::string())
+	{
+		notice_ = msg;
+		noticeWarn_ = warn;
+		noticeDesc_ = desc;
 	}
 
 	// ---- bookmarks -----------------------------------------------------------
@@ -1153,6 +1670,10 @@ private:
 		if (changed) markStateDirty();
 	}
 
+	// The bookmark card (Regex.dc.html, RegexBookmarks.dc.html): "書籤 · PoE1",
+	// the PoE1 / PoE2 tabs (a game's bookmarks stay reachable from the other),
+	// 存成書籤 and a more menu (folders, import, send); rows with 載入 and a ⋯
+	// menu; folders as foldable groups; drag to reorder or into a folder.
 	void drawBookmarks()
 	{
 		// The tab follows the list's game when that changes (RegexBookmarks.vue
@@ -1164,92 +1685,116 @@ private:
 			else count[b.game == "poe2" ? 1 : 0]++;
 		}
 		const int tabIdx = bmTab_ == "poe2" ? 1 : 0;
-
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled(u8"書籤");
-		for (int gi = 0; gi < 2; gi++) {
-			const std::string g = kGames[gi];
-			// A game with neither a catalogue nor bookmarks has nothing to show.
-			if (firstPageOf(g) < 0 && count[gi] == 0) continue;
-			ImGui::SameLine(0, (gi ? 2.0f : 8.0f) * host_->scale);
-			const std::string label = std::string(GameLabel(g)) + u8"（" + std::to_string(count[gi]) +
-			                          u8"）###rx_bmtab" + g;
-			if (segButton(label.c_str(), bmTab_ == g)) bmTab_ = g;
-		}
-		ImGui::SameLine(0, 12 * host_->scale);
-		const int picks = pickCount() + sectionPickCount();
-		ImGui::BeginDisabled(picks == 0);
-		if (ImGui::SmallButton(u8"存成書籤")) {
-			nameBuf_ = pageTitleIn(selGame_, pageId()) + " " + std::to_string(picks) + u8" 項";
-			editIdx_ = -1;
-			modal_ = Modal::Save;
-		}
-		ImGui::EndDisabled();
-		if (picks == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(u8"先勾選幾項才有東西可以存");
-		else if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"把目前這一頁存成 %s 的書籤（放在未分類）：勾選、數值條件與數值、模式、輸出語言",
-			                  GameLabel(selGame_));
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"新增資料夾")) {
-			nameBuf_.clear();
-			folderErr_.clear();
-			modal_ = Modal::FolderAdd;
-		}
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"在 %s 的書籤裡新增一個資料夾（只有一層）", GameLabel(bmTab_));
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"匯入書籤包")) openImport();
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"貼上別人給的書籤包（「送到 ExileAppraiser」對話框的「複製書籤包」，或 ExileAppraiser 產的），"
-			                  u8"加進書籤：同名會改名加「 (2)」，不動目前的勾選。加入前會先預覽。");
-
-		if (bmTab_ != selGame_) {
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped(u8"這是 %s 的書籤：「載入」會切換到 %s；「更新」要先在上方切到 %s。",
-			                   GameLabel(bmTab_), GameLabel(bmTab_), GameLabel(bmTab_));
-			ImGui::PopStyleColor();
+		const float availH = ImGui::GetContentRegionAvail().y;
+		PobUi::CardBegin("rx_bmcard", nullptr, nullptr, nullptr, false, 0.0f, std::max(Dp(160.0f), availH - Dp(2.0f)));
+		const ImVec2 c0 = ImGui::GetCursorScreenPos();
+		const float cw = ImGui::GetContentRegionAvail().x;
+		const float padX = Dp(14.0f), headH = Dp(44.0f);
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		// head: title, game tabs, save, more
+		{
+			const std::string title = std::string(u8"書籤 · ") + GameLabel(bmTab_);
+			const float ty = c0.y + std::floor((headH - BodyF()->FontSize) * 0.5f);
+			DrawTextAt(dl, BodyF(), ImVec2(c0.x + padX, ty), Tok::Text, title.c_str());
+			float x = c0.x + padX + TextSz(BodyF(), title.c_str()).x + Dp(10.0f);
+			std::string l0 = "PoE1 " + std::to_string(count[0]), l1 = "PoE2 " + std::to_string(count[1]);
+			const char* tl[2] = {l0.c_str(), l1.c_str()};
+			const bool lit[2] = {tabIdx == 0, tabIdx == 1};
+			const bool both = firstPageOf("poe2") >= 0 || count[1] > 0;
+			if (both) {
+				ImGui::SetCursorScreenPos(ImVec2(x, c0.y + std::floor((headH - Dp(26.0f)) * 0.5f)));
+				const int k = SegToggles("##rx_bmtab", tl, lit, 2);
+				if (k >= 0) bmTab_ = kGames[k];
+			}
+			const int picks = pickCount() + sectionPickCount();
+			const float moreW = PobUi::ButtonWidth("##rxbmmore", PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(28.0f));
+			const float saveW = PobUi::ButtonWidth(u8"存成書籤", PobUi::BtnSize::Sm);
+			const float by = c0.y + std::floor((headH - Dp(28.0f)) * 0.5f);
+			ImGui::SetCursorScreenPos(ImVec2(c0.x + cw - padX - moreW - Dp(4.0f) - saveW, by));
+			if (PobUi::Button(u8"存成書籤", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, picks > 0)) openSave(picks);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				PobUi::Tooltip(picks == 0 ? u8"先勾選幾項才有東西可以存"
+				                          : (std::string(u8"把目前這一頁存成 ") + GameLabel(selGame_) + u8" 的書籤：勾選、數值條件、模式與輸出語言").c_str());
+			ImGui::SameLine(0, Dp(4.0f));
+			if (PobUi::Button("##rxbmmore", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(28.0f)))
+				ImGui::OpenPopup("##rxbmmoremenu");
+			// under the button that opened it, right-aligned (not wherever the mouse is)
+			ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y + Dp(4.0f)), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+			if (PobUi::BeginMenuPopup("##rxbmmoremenu")) {
+				if (PobUi::MenuRow(PobIcon::Folder, u8"新增資料夾…")) {
+					nameBuf_.clear();
+					folderErr_.clear();
+					modal_ = Modal::FolderAdd;
+				}
+				if (PobUi::MenuRow(PobIcon::Download, u8"匯入書籤包…")) openImport();
+				if (PobUi::MenuRow(PobIcon::Share, u8"送到 ExileAppraiser…", nullptr, sendableBookmarks() > 0)) openSendPick();
+				PobUi::EndMenuPopup();
+			}
+			dl->AddLine(ImVec2(c0.x + 1, c0.y + headH), ImVec2(c0.x + cw - 1, c0.y + headH), Tok::BorderSubtle, 1.0f);
+			ImGui::SetCursorScreenPos(ImVec2(c0.x, c0.y + headH + 1));
 		}
 
 		const RegexFolders::Grouped grouped = RegexFolders::GroupBookmarks(state_, bmTab_, false);
+		const float listH = std::max(Dp(100.0f), availH - Dp(2.0f) - headH - 2);
 		if (count[tabIdx] == 0 && !grouped.headers) {
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped(u8"%s 還沒有書籤。勾好一組常用的詞綴後按「存成書籤」，"
-			                   u8"下次可以直接叫回來。", GameLabel(bmTab_));
-			ImGui::PopStyleColor();
-			drawOrphanNote(orphans);
+			// RegexBookmarks.dc.html "還沒有書籤"
+			ImGui::SetCursorScreenPos(ImVec2(c0.x + Dp(10.0f), ImGui::GetCursorScreenPos().y + Dp(10.0f)));
+			const std::string t = std::string(GameLabel(bmTab_)) + u8" 還沒有書籤";
+			const int picks = pickCount() + sectionPickCount();
+			if (PobUi::EmptyState("rx_bmempty", PobIcon::FileText, t.c_str(), u8"勾好一組常用的詞綴後按「存成書籤」，下次直接叫回來。",
+			                      bmTab_ == selGame_ && picks > 0 ? u8"存成書籤" : nullptr, cw - Dp(20.0f)))
+				openSave(picks);
+			ImGui::SetCursorScreenPos(ImVec2(c0.x + padX, ImGui::GetCursorScreenPos().y + Dp(6.0f)));
+			drawOrphanNote(orphans, cw - padX * 2);
+			PobUi::CardEnd();
 			return;
 		}
 
-		ImGui::BeginChild("##rx_bm", ImVec2(0, 0), true);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, 0));
+		ImGui::BeginChild("##rx_bm", ImVec2(cw, listH), false);
+		bool anyMissing = false;
 		for (size_t gi = 0; gi < grouped.groups.size(); gi++) {
 			const RegexFolders::Group& grp = grouped.groups[gi];
 			ImGui::PushID((int)gi);
 			if (grouped.headers) drawFolderHeader(grp);
 			if (!grouped.headers || !grp.collapsed) {
-				if (grouped.headers) ImGui::Indent(14 * host_->scale);
 				if (grp.items.empty() && grouped.headers) {
-					ImGui::TextDisabled(u8"（空的：把書籤拖到這裡）");
+					ImGui::SetCursorPosX(ImGui::GetCursorPosX() + Dp(36.0f));
+					SmallText(u8"空的：把書籤拖到這裡", Tok::TextFaint);
 					if (ImGui::BeginDragDropTarget()) {
 						if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM"))
 							bmAction_ = BmAction{BmAction::ToFolder, *(const int*)pl->Data, -1, 0, 0, false, grp.folder};
 						ImGui::EndDragDropTarget();
 					}
+					ImGui::Dummy(ImVec2(0, Dp(6.0f)));
 				}
-				for (size_t k = 0; k < grp.items.size(); k++)
-					drawBookmarkRow(grp.items[k], grp, k);
-				if (grouped.headers) ImGui::Unindent(14 * host_->scale);
+				for (size_t k = 0; k < grp.items.size(); k++) {
+					anyMissing |= indexInGame(bmTab_, state_.bookmarks[grp.items[k]].page) < 0;
+					drawBookmarkRow(grp.items[k], grp, k, grouped.headers);
+				}
 			}
 			ImGui::PopID();
 		}
-		drawOrphanNote(orphans);
+		ImGui::Dummy(ImVec2(0, Dp(6.0f)));
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
+		if (anyMissing)
+			SmallText(u8"標「清單已下架」的書籤：這個版本沒有那份清單了，書籤先保留不刪；之後清單回來就能再載入。", Tok::TextMuted, cw - padX * 2);
+		if (bmTab_ != selGame_) {
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
+			SmallText((std::string(u8"這是 ") + GameLabel(bmTab_) + u8" 的書籤：「載入」會切換到 " + GameLabel(bmTab_) + u8"。").c_str(),
+			          Tok::TextMuted, cw - padX * 2);
+		}
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
+		drawOrphanNote(orphans, cw - padX * 2);
 		ImGui::EndChild();
+		ImGui::PopStyleVar(2);
+		PobUi::CardEnd();
 		applyBmAction();
 	}
 
-	// A folder's header (or "uncategorised"): fold arrow, name + count, grip and
-	// buttons. A drop target for bookmarks (-> end of this folder) and folders
-	// (upper / lower half -> before / after this one).
+	// A folder's header (or "未分類"): fold chevron, name + count, a ⋯ menu.
+	// The whole row is the drag handle for folders and a drop target for both.
 	void drawFolderHeader(const RegexFolders::Group& grp)
 	{
 		const bool uncat = grp.folder.empty();
@@ -1257,64 +1802,30 @@ private:
 		int fi = -1;
 		for (int i = 0; i < (int)list.size(); i++)
 			if (list[i].name == grp.folder) fi = i;
-		ImGui::BeginGroup();
-		if (ImGui::ArrowButton("##fold", grp.collapsed ? ImGuiDir_Right : ImGuiDir_Down))
-			bmAction_ = BmAction{BmAction::Fold, -1, -1, 0, 0, !grp.collapsed, grp.folder};
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(grp.collapsed ? u8"展開" : u8"收合");
-		if (!uncat) {
-			ImGui::SameLine();
-			ImGui::SmallButton(u8"::##fgrip");
-			if (ImGui::IsItemHovered() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
-				ImGui::SetTooltip(u8"拖曳來排序資料夾");
-			if (ImGui::BeginDragDropSource()) {
-				ImGui::SetDragDropPayload("RX_FOLDER", &fi, sizeof fi);
-				ImGui::Text(u8"移動資料夾：%s", grp.folder.c_str());
-				ImGui::EndDragDropSource();
-			}
+		const float w = ImGui::GetContentRegionAvail().x, h = Dp(32.0f), padX = Dp(10.0f);
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const float moreW = uncat ? 0.0f : PobUi::ButtonWidth("##fmore", PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(26.0f));
+		const bool click = ImGui::InvisibleButton("##fhead", ImVec2(w - moreW - padX, h));
+		const bool hov = ImGui::IsItemHovered();
+		if (click) bmAction_ = BmAction{BmAction::Fold, -1, -1, 0, 0, !grp.collapsed, grp.folder};
+		if (!uncat && ImGui::BeginDragDropSource()) {
+			ImGui::SetDragDropPayload("RX_FOLDER", &fi, sizeof fi);
+			ImGui::Text(u8"移動資料夾：%s", grp.folder.c_str());
+			ImGui::EndDragDropSource();
 		}
-		ImGui::SameLine();
-		ImGui::AlignTextToFramePadding();
-		const std::string label = (uncat ? std::string(u8"未分類") : grp.folder) + u8"（" +
-		                          std::to_string(grp.items.size()) + u8"）";
-		ImGui::TextUnformatted(label.c_str());
-		if (ImGui::IsItemClicked()) bmAction_ = BmAction{BmAction::Fold, -1, -1, 0, 0, !grp.collapsed, grp.folder};
-		if (!uncat) {
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"上移###fup")) bmAction_ = BmAction{BmAction::FolderStep, -1, -1, -1, 0, false, grp.folder};
-			ImGui::SameLine(0, 2 * host_->scale);
-			if (ImGui::SmallButton(u8"下移###fdown")) bmAction_ = BmAction{BmAction::FolderStep, -1, -1, 1, 0, false, grp.folder};
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"改名###fren")) {
-				folderEdit_ = grp.folder;
-				nameBuf_ = grp.folder;
-				folderErr_.clear();
-				modal_ = Modal::FolderRename;
-			}
-			ImGui::SameLine();
-			PobUi::PushDangerButton();
-			if (ImGui::SmallButton(u8"刪除###fdel")) {
-				folderEdit_ = grp.folder;
-				modal_ = Modal::FolderDelete;
-			}
-			PobUi::PopButtonStyle();
-		}
-		ImGui::EndGroup();
 		if (ImGui::BeginDragDropTarget()) {
 			const ImVec2 r0 = ImGui::GetItemRectMin(), r1 = ImGui::GetItemRectMax();
 			const bool lower = ImGui::GetMousePos().y > (r0.y + r1.y) * 0.5f;
 			const ImGuiDragDropFlags f = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
 			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM", f)) {
-				ImGui::GetWindowDrawList()->AddRect(r0, r1, ImGui::GetColorU32(ImGuiCol_DragDropTarget), 3.0f, 0, 2.0f);
-				if (pl->IsDelivery())
-					bmAction_ = BmAction{BmAction::ToFolder, *(const int*)pl->Data, -1, 0, 0, false, grp.folder};
+				ImGui::GetWindowDrawList()->AddRect(r0, r1, Tok::Accent, Dp(6.0f), 0, 2.0f);
+				if (pl->IsDelivery()) bmAction_ = BmAction{BmAction::ToFolder, *(const int*)pl->Data, -1, 0, 0, false, grp.folder};
 			}
 			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_FOLDER", f)) {
 				const float y = (uncat || lower) ? r1.y : r0.y;
-				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(r1.x, y),
-				                                    ImGui::GetColorU32(ImGuiCol_DragDropTarget), 2.0f);
+				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(r1.x, y), Tok::Accent, 2.0f);
 				const int src = *(const int*)pl->Data;
 				if (pl->IsDelivery() && src >= 0 && src < (int)list.size()) {
-					// moveFolderTo: before / after this header; "uncategorised" = last.
 					int to = uncat ? (int)list.size() - 1 : (lower ? fi + 1 : fi);
 					if (!uncat && src < to) to--;
 					bmAction_ = BmAction{BmAction::FolderTo, -1, -1, 0, to, false, list[src].name};
@@ -1322,82 +1833,102 @@ private:
 			}
 			ImGui::EndDragDropTarget();
 		}
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		if (hov) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Tok::Surface2, Dp(5.0f));
+		float x = p.x + padX;
+		const float iconPx = SmallF()->FontSize;
+		const float ty = p.y + std::floor((h - BodyF()->FontSize) * 0.5f);
+		if (PobUi::Fonts().icons) {
+			PobUi::IconAt(dl, ImVec2(x, p.y + std::floor((h - iconPx) * 0.5f)), grp.collapsed ? PobIcon::ChevronRight : PobIcon::ChevronDown,
+			              Tok::TextMuted, iconPx);
+			x += PobUi::IconWidth(PobIcon::ChevronDown, iconPx) + Dp(6.0f);
+			PobUi::IconAt(dl, ImVec2(x, p.y + std::floor((h - iconPx) * 0.5f)), grp.collapsed ? PobIcon::Folder : PobIcon::FolderOpen,
+			              Tok::TextMuted, iconPx);
+			x += PobUi::IconWidth(PobIcon::Folder, iconPx) + Dp(6.0f);
+		}
+		const std::string name = uncat ? std::string(u8"未分類") : grp.folder;
+		DrawTextAt(dl, BodyF(), ImVec2(x, ty), Tok::Text, name.c_str());
+		x += TextSz(BodyF(), name.c_str()).x + Dp(8.0f);
+		DrawTextAt(dl, SmallF(), ImVec2(x, p.y + std::floor((h - SmallF()->FontSize) * 0.5f)), Tok::TextMuted,
+		           (std::to_string(grp.items.size()) + u8" 筆").c_str());
+		if (!uncat) {
+			ImGui::SetCursorScreenPos(ImVec2(p.x + w - padX - moreW, p.y + std::floor((h - Dp(28.0f)) * 0.5f)));
+			if (PobUi::Button("##fmore", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(26.0f)))
+				ImGui::OpenPopup("##fmenu");
+			// under the button that opened it, right-aligned (not wherever the mouse is)
+			ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y + Dp(4.0f)), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+			if (PobUi::BeginMenuPopup("##fmenu")) {
+				if (PobUi::MenuRow(PobIcon::Pencil, u8"改名…")) {
+					folderEdit_ = grp.folder;
+					nameBuf_ = grp.folder;
+					folderErr_.clear();
+					modal_ = Modal::FolderRename;
+				}
+				if (PobUi::MenuRow(nullptr, u8"上移", nullptr, fi > 0))
+					bmAction_ = BmAction{BmAction::FolderStep, -1, -1, -1, 0, false, grp.folder};
+				if (PobUi::MenuRow(nullptr, u8"下移", nullptr, fi >= 0 && fi + 1 < (int)list.size()))
+					bmAction_ = BmAction{BmAction::FolderStep, -1, -1, 1, 0, false, grp.folder};
+				PobUi::MenuSeparator();
+				if (PobUi::MenuRow(PobIcon::Trash, u8"刪除資料夾…", nullptr, true, true)) {
+					folderEdit_ = grp.folder;
+					modal_ = Modal::FolderDelete;
+				}
+				PobUi::EndMenuPopup();
+			}
+		}
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + h));
+		ImGui::Dummy(ImVec2(0, 0));
 	}
 
-	void drawBookmarkRow(int i, const RegexFolders::Group& grp, size_t k)
+	std::string bookmarkMeta(const RegexBookmark& b) const
+	{
+		const char* modeZh = b.mode == "all" ? u8"全部都有" : b.mode == "none" ? u8"一個都沒有" : u8"含任一個";
+		std::string meta = pageTitleIn(b.game, b.page) + u8" · " + modeZh + u8" · " + (b.lang == "en" ? "English" : u8"繁中") +
+		                   u8" · " + std::to_string(b.keys.size()) + u8" 項";
+		if (!b.num.empty())
+			meta += RegexAlgo::IsConditionSectionId(RegexAlgo::SectionIdOf(b.page)) ? std::string(u8" ＋ 稀有度 / 汙染")
+			                                                                       : u8" ＋ 數值條件 " + std::to_string(b.num.size()) + u8" 項";
+		return meta;
+	}
+
+	// .bm: name + what it holds | 載入 | ⋯ (update, rename, move, delete). A row
+	// whose list this build does not ship is muted with "清單已下架" and no 載入.
+	void drawBookmarkRow(int i, const RegexFolders::Group& grp, size_t k, bool inFolder)
 	{
 		const RegexBookmark& b = state_.bookmarks[i];
 		ImGui::PushID(i);
-		ImGui::BeginGroup();
-		ImGui::SmallButton(u8"::##grip");
-		if (ImGui::IsItemHovered() && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
-			ImGui::SetTooltip(u8"拖曳來排序，或拖進資料夾");
+		const bool missing = indexInGame(b.game.empty() ? bmTab_ : b.game, b.page) < 0;
+		const float w = ImGui::GetContentRegionAvail().x;
+		const float padX = Dp(14.0f), padY = Dp(8.0f);
+		const float indent = inFolder ? Dp(22.0f) : 0.0f;
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		if (k > 0 || inFolder) dl->AddLine(ImVec2(p.x + indent + padX, p.y), ImVec2(p.x + w - padX, p.y), Tok::BorderSubtle, 1.0f);
+		const float moreW = PobUi::ButtonWidth("##bmore", PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(26.0f));
+		const char* loadL = u8"載入";
+		const char* pillL = u8"清單已下架";
+		const float actW = missing ? PillW(pillL) : PobUi::ButtonWidth(loadL, PobUi::BtnSize::Sm);
+		const std::string meta = bookmarkMeta(b);
+		const float textW = w - indent - padX * 2 - actW - moreW - Dp(16.0f);
+		const float h = padY * 2 + BodyF()->FontSize + Dp(2.0f) + SmallF()->FontSize;
+		// the text area: drag handle (and a double-click loads)
+		ImGui::SetCursorScreenPos(ImVec2(p.x + indent, p.y));
+		ImGui::InvisibleButton("##bmtext", ImVec2(std::max(1.0f, textW + padX), h));
+		const bool hov = ImGui::IsItemHovered();
+		if (hov && !missing && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) loadBookmark(i);
+		if (hov) PobUi::Tooltip((b.name + "\n" + meta + u8"\n拖曳來排序或拖進資料夾；按兩下載入").c_str());
 		if (ImGui::BeginDragDropSource()) {
 			ImGui::SetDragDropPayload("RX_BM", &i, sizeof i);
 			ImGui::Text(u8"移動書籤：%s", b.name.c_str());
 			ImGui::EndDragDropSource();
 		}
-		ImGui::SameLine();
-		ImGui::TextUnformatted(b.name.c_str());
-		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-		const char* modeZh = b.mode == "all" ? u8"全部都有"
-		                   : b.mode == "none" ? u8"一個都沒有" : u8"含任一個";
-		std::string meta = pageTitleIn(b.game, b.page) + u8" · " + modeZh + u8" · " +
-		                   (b.lang == "en" ? "English" : u8"繁中") + u8" · " + std::to_string(b.keys.size()) + u8" 項";
-		if (!b.num.empty())
-			meta += (RegexAlgo::IsConditionSectionId(RegexAlgo::SectionIdOf(b.page)) ? std::string(u8" ＋ 稀有度 / 汙染")
-			                                                                        : u8" ＋ 數值條件 " + std::to_string(b.num.size()) + u8" 項");
-		ImGui::TextUnformatted(meta.c_str());
-		ImGui::PopStyleColor();
-		if (ImGui::SmallButton(u8"載入")) loadBookmark(i);
-		ImGui::SameLine();
-		const bool sameGame = b.game == selGame_;
-		ImGui::BeginDisabled(!sameGame);
-		if (ImGui::SmallButton(u8"更新")) updateBookmark(i);
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(sameGame ? u8"用目前這一頁的勾選、數值條件、模式與輸出語言覆寫這個書籤"
-			                           : u8"這個書籤屬於另一個遊戲：先在上方切換遊戲才能更新");
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"改名")) {
-			nameBuf_ = b.name;
-			editIdx_ = i;
-			modal_ = Modal::Rename;
-		}
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"移到…")) ImGui::OpenPopup("##mv");
-		if (ImGui::BeginPopup("##mv")) {
-			if (ImGui::Selectable(u8"未分類###mv_uncat", b.folder.empty()))
-				bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, std::string()};
-			const std::vector<RegexBookmarkFolder>& list = state_.Folders(b.game);
-			for (int f = 0; f < (int)list.size(); f++)
-				if (ImGui::Selectable((list[f].name + "###mvf" + std::to_string(f)).c_str(), b.folder == list[f].name))
-					bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, list[f].name};
-			if (list.empty()) ImGui::TextDisabled(u8"還沒有資料夾：先按上方的「新增資料夾」");
-			ImGui::EndPopup();
-		}
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"上移")) bmAction_ = BmAction{BmAction::Step, i, -1, -1, 0, false, std::string()};
-		ImGui::SameLine(0, 2 * host_->scale);
-		if (ImGui::SmallButton(u8"下移")) bmAction_ = BmAction{BmAction::Step, i, -1, 1, 0, false, std::string()};
-		ImGui::SameLine();
-		PobUi::PushDangerButton();
-		if (ImGui::SmallButton(u8"刪除")) {
-			editIdx_ = i;
-			modal_ = Modal::Delete;
-		}
-		PobUi::PopButtonStyle();
-		ImGui::EndGroup();
-		// A bookmark dropped on this row lands in front of it (upper half) or
-		// after it (lower half), and in its folder.
 		if (ImGui::BeginDragDropTarget()) {
 			const ImVec2 r0 = ImGui::GetItemRectMin(), r1 = ImGui::GetItemRectMax();
 			const bool lower = ImGui::GetMousePos().y > (r0.y + r1.y) * 0.5f;
 			const ImGuiDragDropFlags f = ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect;
 			if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("RX_BM", f)) {
 				const float y = lower ? r1.y + 1 : r0.y - 1;
-				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(r1.x, y),
-				                                    ImGui::GetColorU32(ImGuiCol_DragDropTarget), 2.0f);
+				ImGui::GetWindowDrawList()->AddLine(ImVec2(r0.x, y), ImVec2(p.x + w, y), Tok::Accent, 2.0f);
 				if (pl->IsDelivery()) {
 					const int src = *(const int*)pl->Data;
 					if (!lower) bmAction_ = BmAction{BmAction::Before, src, i, 0, 0, false, std::string()};
@@ -1408,22 +1939,82 @@ private:
 			}
 			ImGui::EndDragDropTarget();
 		}
-		ImGui::Separator();
+		{
+			const float tx = p.x + indent + padX;
+			ImGui::PushClipRect(ImVec2(tx, p.y), ImVec2(tx + std::max(1.0f, textW), p.y + h), true);
+			DrawTextAt(dl, BodyF(), ImVec2(tx, p.y + padY), missing ? Tok::TextMuted : Tok::Text, b.name.c_str());
+			DrawTextAt(dl, SmallF(), ImVec2(tx, p.y + padY + BodyF()->FontSize + Dp(2.0f)), Tok::TextMuted, meta.c_str());
+			ImGui::PopClipRect();
+		}
+		const float by = p.y + std::floor((h - Dp(28.0f)) * 0.5f);
+		float bx = p.x + w - padX - moreW - Dp(4.0f) - actW;
+		if (missing) {
+			ImGui::SetCursorScreenPos(ImVec2(bx, p.y + std::floor((h - SmallF()->FontSize - Dp(2.0f)) * 0.5f)));
+			Pill(pillL, Tok::Warning, Tok::WarningSoft);
+		} else {
+			ImGui::SetCursorScreenPos(ImVec2(bx, by));
+			if (PobUi::Button(loadL, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) loadBookmark(i);
+			if (ImGui::IsItemHovered())
+				PobUi::Tooltip(b.game == selGame_ ? u8"載入這組勾選（覆蓋這一頁目前的勾選；其他頁不動）"
+				                                  : (std::string(u8"載入並切換到 ") + GameLabel(b.game)).c_str());
+		}
+		ImGui::SetCursorScreenPos(ImVec2(p.x + w - padX - moreW, by));
+		if (PobUi::Button("##bmore", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, Dp(26.0f)) ||
+		    testOpenBmMenu_ == i) {
+			testOpenBmMenu_ = -1;
+			ImGui::OpenPopup("##bmmenu");
+		}
+		// under the button that opened it, right-aligned (not wherever the mouse is)
+		ImGui::SetNextWindowPos(ImVec2(ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y + Dp(4.0f)), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+		if (PobUi::BeginMenuPopup("##bmmenu")) {
+			const bool sameGame = b.game == selGame_;
+			if (PobUi::MenuRow(PobIcon::Refresh, u8"用目前的勾選更新", nullptr, sameGame && !missing)) updateBookmark(i);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				PobUi::Tooltip(sameGame ? u8"用目前這一頁的勾選、數值條件、模式與輸出語言覆寫這個書籤（名稱與資料夾不變）"
+				                        : u8"這個書籤屬於另一個遊戲：先在上方切換遊戲才能更新");
+			if (PobUi::MenuRow(PobIcon::Pencil, u8"改名…")) {
+				nameBuf_ = b.name;
+				editIdx_ = i;
+				nameErr_.clear();
+				modal_ = Modal::Rename;
+			}
+			const std::vector<RegexBookmarkFolder>& list = state_.Folders(b.game);
+			if (!list.empty()) {
+				PobUi::MenuSeparator();
+				PobUi::Overline(u8"移到資料夾");
+				if (PobUi::MenuRow(b.folder.empty() ? PobIcon::Check : nullptr, u8"未分類"))
+					bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, std::string()};
+				for (int f = 0; f < (int)list.size(); f++) {
+					ImGui::PushID(f);
+					if (PobUi::MenuRow(b.folder == list[f].name ? PobIcon::Check : nullptr, list[f].name.c_str()))
+						bmAction_ = BmAction{BmAction::ToFolder, i, -1, 0, 0, false, list[f].name};
+					ImGui::PopID();
+				}
+			}
+			PobUi::MenuSeparator();
+			if (PobUi::MenuRow(nullptr, u8"上移", nullptr, k > 0)) bmAction_ = BmAction{BmAction::Step, i, -1, -1, 0, false, std::string()};
+			if (PobUi::MenuRow(nullptr, u8"下移", nullptr, k + 1 < grp.items.size()))
+				bmAction_ = BmAction{BmAction::Step, i, -1, 1, 0, false, std::string()};
+			PobUi::MenuSeparator();
+			if (PobUi::MenuRow(PobIcon::Trash, u8"刪除書籤…", nullptr, true, true)) {
+				editIdx_ = i;
+				modal_ = Modal::Delete;
+			}
+			PobUi::EndMenuPopup();
+		}
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + h));
+		ImGui::Dummy(ImVec2(0, 0));
 		ImGui::PopID();
 	}
 
-	// A bookmark whose page id belongs to no loaded catalogue -- saved against a
-	// list this build dropped, or against a Data file that is not installed. It
-	// is still in regex_ui.json and still written back on every save; what it has
-	// lost is a game to be filed under, so it is counted here rather than shown
-	// as a row that no button could act on.
-	void drawOrphanNote(int orphans)
+	// A bookmark whose page id belongs to no loaded catalogue and that carries no
+	// game: still in regex_ui.json and written back on every save, counted here
+	// rather than shown as a row no button could act on.
+	void drawOrphanNote(int orphans, float width)
 	{
 		if (orphans <= 0) return;
-		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-		ImGui::TextWrapped(u8"另有 %d 筆書籤存在這個版本沒有的清單上，沒有顯示"
-		                   u8"（資料仍保留在 PobTools\\regex_ui.json）。", orphans);
-		ImGui::PopStyleColor();
+		SmallText((u8"另有 " + std::to_string(orphans) + u8" 筆書籤存在這個版本沒有的清單上，沒有顯示（資料仍保留在 PobTools\\regex_ui.json）。").c_str(),
+		          Tok::TextMuted, width);
 	}
 
 	// store.ts loadBookmark / embed.ts bookmarkApplyOf: the bookmark's page (and
@@ -1513,143 +2104,249 @@ private:
 		markStateDirty();
 	}
 
+	void openSave(int picks)
+	{
+		nameBuf_ = pageTitleIn(selGame_, pageId()) + " " + std::to_string(picks) + u8" 項";
+		editIdx_ = -1;
+		nameErr_.clear();
+		modal_ = Modal::Save;
+	}
+
+	// Is `name` already a bookmark of game g (other than `except`)? (RegexBookmarks.dc.html
+	// "已經有同名的書籤"; a PobTools rule -- exile-appraiser allows duplicates.)
+	bool nameTaken(const std::string& g, const std::string& name, int except) const
+	{
+		const std::string n = RegexAlgo::JsTrim(name);
+		for (int i = 0; i < (int)state_.bookmarks.size(); i++)
+			if (i != except && state_.bookmarks[i].game == g && state_.bookmarks[i].name == n) return true;
+		return false;
+	}
+
+	// Every dialog, at the top level: OpenPopup and BeginPopupModal must share
+	// an ID scope, so requests travel up here from the child that raised them.
 	void drawModals()
 	{
-		// OpenPopup and BeginPopupModal must be called from the same ID scope, so
-		// the request travels up here from whatever child window raised it.
 		const Modal opening = modal_;
 		modal_ = Modal::None;
-		if (opening == Modal::Save || opening == Modal::Rename) {
-			renameMode_ = (opening == Modal::Rename);
-			ImGui::OpenPopup("###rx_name");
-		} else if (opening == Modal::Delete) {
-			ImGui::OpenPopup("###rx_del");
-		} else if (opening == Modal::FolderAdd || opening == Modal::FolderRename) {
-			folderRenameMode_ = (opening == Modal::FolderRename);
-			ImGui::OpenPopup("###rx_folder");
-		} else if (opening == Modal::FolderDelete) {
-			ImGui::OpenPopup("###rx_fdel");
-		} else if (opening == Modal::Paste) {
-			ImGui::OpenPopup("###rx_paste");
-		} else if (opening == Modal::Template) {
-			ImGui::OpenPopup("###rx_tpl");
-		} else if (opening == Modal::SendPick) {
-			ImGui::OpenPopup("###rx_sendpick");
-		} else if (opening == Modal::ImportPack) {
-			ImGui::OpenPopup("###rx_import");
+		bool oName = false, oDel = false, oFolder = false, oFolderDel = false, oPaste = false, oTpl = false, oSend = false, oImport = false;
+		switch (opening) {
+		case Modal::Save: case Modal::Rename: renameMode_ = opening == Modal::Rename; oName = true; break;
+		case Modal::Delete: oDel = true; break;
+		case Modal::FolderAdd: case Modal::FolderRename: folderRenameMode_ = opening == Modal::FolderRename; oFolder = true; break;
+		case Modal::FolderDelete: oFolderDel = true; break;
+		case Modal::Paste: oPaste = true; break;
+		case Modal::Template: oTpl = true; break;
+		case Modal::SendPick: oSend = true; break;
+		case Modal::ImportPack: oImport = true; break;
+		case Modal::None: break;
 		}
-		drawShareModals(opening);
-		drawSendPickModal();
-		drawImportModal(opening);
+		using PobUi::DialogResult;
 
-		const std::string title = (renameMode_ ? std::string(u8"重新命名書籤")
-		                                       : std::string(u8"存成書籤")) + "###rx_name";
-		if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			ImGui::SetNextItemWidth(320 * host_->scale);
-			if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
-			const bool entered = ImGui::InputText(u8"名稱", &nameBuf_,
-			                                      ImGuiInputTextFlags_EnterReturnsTrue);
-			const bool ok = !nameBuf_.empty();
-			ImGui::BeginDisabled(!ok);
-			if (ImGui::Button(u8"確定", ImVec2(90 * host_->scale, 0)) || (entered && ok)) {
-				commitName();
-				ImGui::CloseCurrentPopup();
-			}
-			ImGui::EndDisabled();
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
-		}
-
-		if (ImGui::BeginPopupModal(u8"刪除書籤###rx_del", nullptr,
-		                           ImGuiWindowFlags_AlwaysAutoResize)) {
-			const bool valid = editIdx_ >= 0 && editIdx_ < (int)state_.bookmarks.size();
-			ImGui::TextUnformatted(valid
-				? (u8"確定要刪除書籤「" + state_.bookmarks[editIdx_].name + u8"」？").c_str()
-				: u8"這個書籤已經不在了。");
-			ImGui::TextDisabled(u8"刪掉就沒有了，沒有復原。");
-			PobUi::PushDangerButton();
-			if (ImGui::Button(u8"刪除", ImVec2(90 * host_->scale, 0))) {
-				if (valid) {
-					notice_ = u8"已刪除書籤「" + state_.bookmarks[editIdx_].name + u8"」。";
-					state_.bookmarks.erase(state_.bookmarks.begin() + editIdx_);
-					markStateDirty();
+		// 存成書籤 / 重新命名書籤
+		{
+			const std::string g = renameMode_ && editIdx_ >= 0 && editIdx_ < (int)state_.bookmarks.size() ? state_.bookmarks[editIdx_].game
+			                                                                                              : selGame_;
+			const bool empty = RegexAlgo::JsTrim(nameBuf_).empty();
+			const bool dup = !empty && nameTaken(g, nameBuf_, renameMode_ ? editIdx_ : -1);
+			if (PobUi::BeginDialog("###rx_name", &oName, renameMode_ ? u8"重新命名書籤" : u8"存成書籤", nullptr, nullptr, 340.0f)) {
+				const float inner = ImGui::GetContentRegionAvail().x;
+				if (!renameMode_) SmallText(u8"名稱");
+				PobUi::PushControlFrame();
+				ImGui::SetNextItemWidth(inner);
+				if (oName || opening != Modal::None) ImGui::SetKeyboardFocusHere();
+				ImGui::InputText("##bmname", &nameBuf_);
+				PobUi::PopControlFrame();
+				if (dup) SmallText(u8"已經有同名的書籤", Tok::Danger);
+				if (!renameMode_) {
+					if (std::optional<RegexBookmark> body = currentBookmarkBody()) {
+						const char* modeZh = body->mode == "all" ? u8"全部都有" : body->mode == "none" ? u8"一個都沒有" : u8"含任一個";
+						std::string what = u8"會記住：" + pageTitleIn(body->game, body->page) + u8" · " + modeZh + u8" · " +
+						                   (body->lang == "en" ? "English" : u8"繁體中文") + u8" · " + std::to_string(body->keys.size()) + u8" 項";
+						if (!body->num.empty()) what += u8"＋條件 " + std::to_string(body->num.size()) + u8" 項";
+						SmallText(what.c_str(), Tok::TextMuted, inner);
+					}
 				}
-				editIdx_ = -1;
-				ImGui::CloseCurrentPopup();
+				const DialogResult r = DlgButtons(inner, u8"取消", nullptr, renameMode_ ? u8"改名" : u8"儲存", !empty && !dup);
+				const bool enter = !empty && !dup && (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter));
+				if (r == DialogResult::Primary || enter) {
+					commitName();
+					ImGui::CloseCurrentPopup();
+				} else if (r == DialogResult::Cancel) {
+					ImGui::CloseCurrentPopup();
+				}
+				PobUi::EndDialog();
 			}
-			PobUi::PopButtonStyle();
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
 		}
 
-		const std::string ftitle = (folderRenameMode_ ? std::string(u8"重新命名資料夾")
-		                                              : std::string(u8"新增資料夾")) + "###rx_folder";
-		if (ImGui::BeginPopupModal(ftitle.c_str(), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			ImGui::TextDisabled(u8"%s 的書籤", GameLabel(bmTab_));
-			ImGui::SetNextItemWidth(320 * host_->scale);
+		// 刪除書籤
+		{
+			const bool valid = editIdx_ >= 0 && editIdx_ < (int)state_.bookmarks.size();
+			const std::string t = valid ? u8"刪除「" + state_.bookmarks[editIdx_].name + u8"」？" : std::string(u8"這個書籤已經不在了");
+			const DialogResult r = PobUi::ConfirmDialog("###rx_del", &oDel, t.c_str(), u8"刪掉之後沒辦法復原。", nullptr, u8"取消",
+			                                            valid ? u8"刪除" : nullptr, nullptr);
+			if (r == DialogResult::Danger && valid) {
+				say(u8"已刪除書籤「" + state_.bookmarks[editIdx_].name + u8"」。");
+				state_.bookmarks.erase(state_.bookmarks.begin() + editIdx_);
+				editIdx_ = -1;
+				markStateDirty();
+			}
+		}
+
+		// 新增 / 重新命名資料夾
+		if (PobUi::BeginDialog("###rx_folder", &oFolder, folderRenameMode_ ? u8"重新命名資料夾" : u8"新增資料夾",
+		                       (std::string(GameLabel(bmTab_)) + u8" 的書籤（資料夾只有一層）").c_str(), nullptr, 340.0f)) {
+			const float inner = ImGui::GetContentRegionAvail().x;
+			PobUi::PushControlFrame();
+			ImGui::SetNextItemWidth(inner);
 			if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
-			const bool entered = ImGui::InputText(u8"名稱###fname", &nameBuf_, ImGuiInputTextFlags_EnterReturnsTrue);
-			if (!folderErr_.empty()) ImGui::TextColored(kBad, "%s", folderErr_.c_str());
-			if (ImGui::Button(u8"確定", ImVec2(90 * host_->scale, 0)) || entered) {
-				const RegexFolders::Result r = folderRenameMode_
-					? RegexFolders::Rename(state_, bmTab_, folderEdit_, nameBuf_)
-					: RegexFolders::Add(state_, bmTab_, nameBuf_);
-				if (r == RegexFolders::Result::Ok) {
+			ImGui::InputText("##fname", &nameBuf_);
+			PobUi::PopControlFrame();
+			if (!folderErr_.empty()) SmallText(folderErr_.c_str(), Tok::Danger);
+			const bool empty = RegexAlgo::JsTrim(nameBuf_).empty();
+			DialogResult r = DlgButtons(inner, u8"取消", nullptr, folderRenameMode_ ? u8"改名" : u8"新增", !empty);
+			if (!empty && (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter))) r = DialogResult::Primary;
+			if (r == DialogResult::Primary) {
+				const RegexFolders::Result fr = folderRenameMode_ ? RegexFolders::Rename(state_, bmTab_, folderEdit_, nameBuf_)
+				                                                  : RegexFolders::Add(state_, bmTab_, nameBuf_);
+				if (fr == RegexFolders::Result::Ok) {
 					const std::string n = RegexFolders::NormalizeName(nameBuf_);
-					notice_ = folderRenameMode_ ? u8"資料夾已改名為「" + n + u8"」。" : u8"已新增資料夾「" + n + u8"」。";
+					say(folderRenameMode_ ? u8"資料夾已改名為「" + n + u8"」。" : u8"已新增資料夾「" + n + u8"」。");
 					markStateDirty();
 					ImGui::CloseCurrentPopup();
 				} else {
-					folderErr_ = r == RegexFolders::Result::Empty ? u8"名稱不能是空白。"
-					           : r == RegexFolders::Result::Duplicate ? u8"已經有同名的資料夾。"
-					                                                  : u8"這個資料夾已經不在了。";
+					folderErr_ = fr == RegexFolders::Result::Empty ? u8"名稱不能是空白"
+					           : fr == RegexFolders::Result::Duplicate ? u8"已經有同名的資料夾" : u8"這個資料夾已經不在了";
 				}
-			}
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
-		}
-
-		if (ImGui::BeginPopupModal(u8"刪除資料夾###rx_fdel", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			const int n = RegexFolders::Counts(state_, bmTab_)[folderEdit_];
-			ImGui::Text(u8"確定要刪除資料夾「%s」？", folderEdit_.c_str());
-			ImGui::TextDisabled(u8"裡面的 %d 筆書籤會移回未分類，書籤本身不會刪除。", n);
-			PobUi::PushDangerButton();
-			if (ImGui::Button(u8"刪除", ImVec2(90 * host_->scale, 0))) {
-				const int moved = RegexFolders::Delete(state_, bmTab_, folderEdit_);
-				if (moved >= 0) {
-					notice_ = u8"已刪除資料夾「" + folderEdit_ + u8"」，" + std::to_string(moved) + u8" 筆書籤移回未分類。";
-					markStateDirty();
-				}
+			} else if (r == DialogResult::Cancel) {
 				ImGui::CloseCurrentPopup();
 			}
-			PobUi::PopButtonStyle();
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
+			PobUi::EndDialog();
 		}
+
+		// 刪除資料夾
+		{
+			const int n = RegexFolders::Counts(state_, bmTab_)[folderEdit_];
+			const std::string t = u8"刪除資料夾「" + folderEdit_ + u8"」？";
+			const std::string body = u8"裡面的 " + std::to_string(n) + u8" 筆書籤會移回未分類，書籤本身不會刪除。";
+			if (PobUi::ConfirmDialog("###rx_fdel", &oFolderDel, t.c_str(), body.c_str(), nullptr, u8"取消", u8"刪除", nullptr) ==
+			    DialogResult::Danger) {
+				const int moved = RegexFolders::Delete(state_, bmTab_, folderEdit_);
+				if (moved >= 0) {
+					say(u8"已刪除資料夾「" + folderEdit_ + u8"」，" + std::to_string(moved) + u8" 筆書籤移回未分類。");
+					markStateDirty();
+				}
+			}
+		}
+
+		drawPasteDialog(oPaste, opening);
+		drawTemplateDialog(oTpl);
+		drawSendPickModal(oSend);
+		drawImportModal(oImport, opening);
 	}
 
 	void commitName()
 	{
+		const std::string name = RegexAlgo::JsTrim(nameBuf_);
 		if (editIdx_ >= 0) {
 			if (editIdx_ < (int)state_.bookmarks.size()) {
-				state_.bookmarks[editIdx_].name = nameBuf_;
-				notice_ = u8"書籤已改名為「" + nameBuf_ + u8"」。";
+				state_.bookmarks[editIdx_].name = name;
+				say(u8"書籤已改名為「" + name + u8"」。");
 				markStateDirty();
 			}
 		} else if (std::optional<RegexBookmark> body = currentBookmarkBody()) {
 			// store.ts saveBookmark: appended = this game's uncategorised, which
 			// sorts last, so the order invariant holds without a sort.
-			body->name = nameBuf_;
+			body->name = name;
 			state_.bookmarks.push_back(std::move(*body));
 			bmTab_ = selGame_;
-			notice_ = u8"已存成書籤「" + nameBuf_ + u8"」。";
+			say(u8"已存成書籤「" + name + u8"」。");
 			markStateDirty();
 		}
 		editIdx_ = -1;
+	}
+
+	// RegexShare.dc.html "貼上分享碼" / "分享碼無法套用".
+	void openPaste()
+	{
+		pasteBuf_.clear();
+		pasteErr_.clear();
+		pasteAuto_ = false;
+		// RegexPanel.vue openPaste: pre-filled when the clipboard looks like a code
+		if (!testMode_) {
+			const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+			if (LooksLikeCode(clip)) {
+				pasteBuf_ = clip;
+				pasteAuto_ = true;
+			}
+		}
+		modal_ = Modal::Paste;
+	}
+
+	void drawPasteDialog(bool& open, Modal opening)
+	{
+		if (!PobUi::BeginDialog("###rx_paste", &open, u8"貼上分享碼", u8"套用後會覆蓋分享碼那個遊戲目前所有清單的勾選。", nullptr, 480.0f))
+			return;
+		const float inner = ImGui::GetContentRegionAvail().x;
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+		ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(pasteErr_.empty() ? Tok::Border : Tok::Danger));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+		ImGui::PushFont(SmallF());
+		if (opening == Modal::Paste) ImGui::SetKeyboardFocusHere();
+		if (ImGui::InputTextMultiline("##rx_paste_code", &pasteBuf_, ImVec2(inner, Dp(72.0f)))) {
+			pasteErr_.clear();
+			pasteAuto_ = false;
+		}
+		ImGui::PopFont();
+		ImGui::PopStyleVar();
+		ImGui::PopStyleColor();
+		if (!pasteErr_.empty()) SmallText(pasteErr_.c_str(), Tok::Danger, inner);
+		else if (pasteAuto_) SmallText(u8"剪貼簿裡的分享碼已自動帶入", Tok::TextMuted, inner);
+		else SmallText(u8"不影響書籤；要保留目前的勾選，先存成書籤。", Tok::TextMuted, inner);
+		const bool empty = RegexAlgo::JsTrim(pasteBuf_).empty();
+		const PobUi::DialogResult r = DlgButtons(inner, u8"取消", u8"從剪貼簿貼上", u8"套用", !empty);
+		if (r == PobUi::DialogResult::Primary) {
+			RegexShare::Normalized d;
+			std::string err;
+			RegexBookmarksShare::Normalized bp;
+			if (!RegexShare::Decode(pasteBuf_, d, &err)) {
+				pasteErr_ = u8"分享碼無法套用：" + err;
+				if (RegexBookmarksShare::Decode(pasteBuf_, bp, nullptr))
+					pasteErr_ = u8"這是書籤包，不是分享碼：請用「匯入書籤包」。";
+				else if (err.find(u8"版本不符") != std::string::npos)
+					pasteErr_ += u8"（可能是較新版本的 PobTools / ExileAppraiser 產的）";
+			} else if (!applyCombo(d.state, std::string(u8"分享碼（") + GameLabel(d.state.game) + u8"）", d.warnings, &err)) {
+				pasteErr_ = u8"分享碼無法套用：" + err;
+			} else {
+				ImGui::CloseCurrentPopup();
+			}
+		} else if (r == PobUi::DialogResult::Secondary) {
+			if (!testMode_) pasteBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+			pasteErr_.clear();
+			pasteAuto_ = false;
+		} else if (r == PobUi::DialogResult::Cancel) {
+			ImGui::CloseCurrentPopup();
+		}
+		PobUi::EndDialog();
+	}
+
+	void drawTemplateDialog(bool& open)
+	{
+		const bool valid = tplPending_ >= 0 && tplPending_ < (int)templates_.size();
+		const std::string title = valid ? u8"套用範本「" + templates_[tplPending_].nameZh + u8"」？" : std::string(u8"這個範本已經不在了");
+		std::string body;
+		if (valid) {
+			const RegexShare::Template& t = templates_[tplPending_];
+			body = t.descZh + (t.descZh.empty() ? "" : "\n") + u8"會覆蓋 " + GameLabel(t.game) +
+			       u8" 目前所有清單的勾選、數值、自訂文字、排除詞與模式（不影響書籤）。";
+		}
+		const PobUi::DialogResult r = PobUi::ConfirmDialog("###rx_tpl", &open, title.c_str(), body.c_str(), nullptr, u8"取消", nullptr,
+		                                                   valid ? u8"套用" : nullptr);
+		if (r == PobUi::DialogResult::Primary && valid) {
+			const RegexShare::Template t = templates_[tplPending_];
+			std::string err;
+			if (!applyCombo(t.state, u8"範本「" + t.nameZh + u8"」", {}, &err)) say(u8"範本無法套用：" + err, true);
+		}
+		if (r != PobUi::DialogResult::None) tplPending_ = -1;
 	}
 
 	// ---- share codes and templates (R8) ---------------------------------------
@@ -1680,77 +2377,6 @@ private:
 		for (char c : s)
 			if (!(isalnum((unsigned char)c) || c == '-' || c == '_')) return false;
 		return true;
-	}
-
-	void drawShareRow()
-	{
-		// Templates of the selected game (RegexPanel.vue myTemplates).
-		int mine = 0;
-		for (const RegexShare::Template& t : templates_) mine += t.game == selGame_ ? 1 : 0;
-		const std::string ph = u8"套用範本…（" + std::to_string(mine) + u8"）";
-		ImGui::SetNextItemWidth(200 * host_->scale);
-		ImGui::BeginDisabled(mine == 0);
-		if (ImGui::BeginCombo("##rx_tplcombo", ph.c_str())) {
-			for (int i = 0; i < (int)templates_.size(); i++) {
-				const RegexShare::Template& t = templates_[i];
-				if (t.game != selGame_) continue;
-				if (ImGui::Selectable((t.nameZh + "###tpl" + std::to_string(i)).c_str(), false)) {
-					tplPending_ = i;
-					modal_ = Modal::Template;
-				}
-				if (ImGui::IsItemHovered() && !t.descZh.empty()) {
-					ImGui::BeginTooltip();
-					ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28);
-					ImGui::TextUnformatted(t.descZh.c_str());
-					ImGui::PopTextWrapPos();
-					ImGui::EndTooltip();
-				}
-			}
-			ImGui::EndCombo();
-		}
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-			if (!templatesErr_.empty()) ImGui::SetTooltip(u8"範本檔載入失敗：%s", templatesErr_.c_str());
-			else if (mine == 0) ImGui::SetTooltip(u8"%s 沒有內建範本", GameLabel(selGame_));
-			else ImGui::SetTooltip(u8"內建的常用組合；套用前會先確認（會覆蓋 %s 目前所有清單的勾選）", GameLabel(selGame_));
-		}
-		ImGui::SameLine();
-		const bool any = hasShareable();
-		ImGui::BeginDisabled(!any);
-		if (ImGui::SmallButton(u8"複製分享碼")) makeShareCode();
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
-			ImGui::TextUnformatted(any ? u8"把目前遊戲所有清單的勾選、數值、自訂文字與排除詞壓成一串分享碼。"
-			                           : u8"先勾選幾項（或加自訂文字 / 排除詞）才有東西可以分享。");
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"分享碼可以直接貼進流亡鑑價（ExileAppraiser），兩邊格式相同（每一頁都互通）。");
-			ImGui::PopStyleColor();
-			ImGui::PopTextWrapPos();
-			ImGui::EndTooltip();
-		}
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"貼上分享碼")) {
-			// RegexPanel.vue openPaste: pre-filled when the clipboard looks like a code
-			pasteBuf_.clear();
-			pasteErr_.clear();
-			const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
-			if (LooksLikeCode(clip)) pasteBuf_ = clip;
-			modal_ = Modal::Paste;
-		}
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"貼上別人給的分享碼並套用（套用前會先確認）");
-		ImGui::SameLine();
-		drawSendButton();
-		if (shareCopied_) {
-			if (std::chrono::steady_clock::now() - shareCopiedAt_ > std::chrono::milliseconds(2500)) {
-				shareCopied_ = 0;
-			} else {
-				ImGui::SameLine();
-				if (shareCopied_ == 1) ImGui::TextColored(kGood, u8"已複製%s", shareCopiedWhat_.c_str());
-				else ImGui::TextColored(kBad, u8"複製失敗");
-			}
-		}
 	}
 
 	// store.ts makeShareCode / currentShareState: every page of the game with ticks.
@@ -1817,154 +2443,97 @@ private:
 		return n;
 	}
 
-	// "送到 ExileAppraiser…": opens "選擇要傳送的書籤" (a bookmark pack, --regex-bookmarks).
-	// The old one-click send of the current ticks (--regex-share) is gone from the
-	// panel; "複製分享碼" covers that, and RegexSend keeps the share kind as logic.
-	void drawSendButton()
+	void openSendPick()
 	{
-		const bool found = !sendLoc_.exe.empty();
-		const int have = sendableBookmarks();
-		const std::string label = std::string(found ? u8"送到 ExileAppraiser…" : u8"送到 ExileAppraiser（找不到，右鍵指定）…") +
-		                          "###rx_send";
-		ImGui::BeginDisabled(have == 0);
-		if (ImGui::SmallButton(label.c_str())) {
-			sendSel_ = RegexBookmarksShare::Selection{};
-			sendPickTab_ = bmTab_;
-			sendPickTabSet_ = true;
-			modal_ = Modal::SendPick;
-			relocateWanted_ = true;
-		}
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-			ImGui::OpenPopup("##rx_send_menu");
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-			// The answer can change under us (installed / started meanwhile): refresh
-			// at most every few seconds while the pointer rests here.
-			if (std::chrono::steady_clock::now() - sendLocAt_ > std::chrono::seconds(3)) relocateWanted_ = true;
-			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32);
-			if (have == 0) ImGui::TextUnformatted(u8"還沒有書籤可以送：先「存成書籤」。");
-			else ImGui::TextUnformatted(u8"選幾筆書籤（或整個資料夾，PoE1 / PoE2 可以混選）交給 ExileAppraiser，"
-			                            u8"加進它的書籤。");
-			ImGui::TextUnformatted(u8"ExileAppraiser 會跳出確認框，按「加入」才寫入；同名的會改名加「 (2)」，"
-			                       u8"不動它目前的勾選。");
-			if (found) {
-				ImGui::Text(u8"位置：%s", RegexSend::Narrow(sendLoc_.exe).c_str());
-				ImGui::Text(u8"來源：%s", RegexSend::SourceLabel(sendLoc_.source));
-			} else {
-				ImGui::TextColored(kWarn, u8"在登錄、預設安裝路徑與執行中的程式都找不到 ExileAppraiser.exe；"
-				                          u8"送出時會請你手動指定（可攜版請指定它的 exe）。");
-			}
-			if (sendLoc_.manualMissing)
-				ImGui::TextColored(kWarn, u8"手動指定的檔案已不存在：%s", state_.exileAppraiserExe.c_str());
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"需要 ExileAppraiser v0.2.1 以上（舊版只會叫出視窗，不會加入）。");
-			ImGui::TextUnformatted(u8"「物品詞綴數值」頁的書籤鍵不互通（兩邊的鍵不同），那邊會標「找不到」。");
-			ImGui::TextUnformatted(u8"右鍵：手動指定 / 清除 ExileAppraiser.exe 的位置。");
-			ImGui::PopStyleColor();
-			ImGui::PopTextWrapPos();
-			ImGui::EndTooltip();
-		}
-		if (ImGui::BeginPopup("##rx_send_menu")) {
-			if (ImGui::MenuItem(u8"手動指定 ExileAppraiser.exe…")) pickRequest_ = true;
-			if (ImGui::MenuItem(u8"清除手動指定", nullptr, false, !state_.exileAppraiserExe.empty())) {
-				state_.exileAppraiserExe.clear();
-				markStateDirty();
-				relocateWanted_ = true;
-			}
-			if (!state_.exileAppraiserExe.empty()) ImGui::TextDisabled(u8"目前：%s", state_.exileAppraiserExe.c_str());
-			ImGui::EndPopup();
-		}
-		if (!sendMsg_.empty()) {
-			if (std::chrono::steady_clock::now() - sendMsgAt_ > std::chrono::seconds(sendOk_ ? 6 : 15)) {
-				sendMsg_.clear();
-			} else {
-				ImGui::SameLine();
-				ImGui::TextColored(sendOk_ ? kGood : kBad, "%s", sendMsg_.c_str());
-			}
-		}
+		sendSel_ = RegexBookmarksShare::Selection{};
+		sendPickTab_ = bmTab_;
+		modal_ = Modal::SendPick;
+		relocateWanted_ = true;
 	}
 
-	// A checkbox that can show "some" (ImGuiItemFlags_MixedValue). True when clicked;
-	// the caller ticks everything on a click from None / Some and clears from All.
-	static bool TriCheckbox(const char* label, RegexBookmarksShare::Tri t)
-	{
-		bool v = t == RegexBookmarksShare::Tri::All;
-		const bool mixed = t == RegexBookmarksShare::Tri::Some;
-		if (mixed) ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
-		const bool clicked = ImGui::Checkbox(label, &v);
-		if (mixed) ImGui::PopItemFlag();
-		return clicked;
-	}
-
-	// "選擇要傳送的書籤": PoE1 / PoE2 tabs, each folder (and 未分類) a tri-state box
-	// over its bookmarks. The model is regex_bookmarks_share (Selection / PackOf).
-	void drawSendPickModal()
+	// "送到 ExileAppraiser": PoE1 / PoE2 tabs, each folder (and 未分類) a tri-state
+	// tick over its bookmarks (regex_bookmarks_share Selection / PackOf). Not in
+	// the drafts: built from the same dialog, segmented and tick pieces.
+	void drawSendPickModal(bool& open)
 	{
 		namespace BS = RegexBookmarksShare;
-		if (!ImGui::BeginPopupModal(u8"選擇要傳送的書籤###rx_sendpick", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-		const float sc = host_->scale;
-		ImGui::PushTextWrapPos(500 * sc);
-		ImGui::TextUnformatted(u8"勾選要交給 ExileAppraiser 的書籤：可以整個資料夾、也可以逐筆，PoE1 / PoE2 可以混選。");
-		ImGui::PopTextWrapPos();
-		if (ImGui::SmallButton(u8"全選")) BS::SetAll(state_, sendSel_, true);
-		ImGui::SameLine();
-		if (ImGui::SmallButton(u8"全不選")) BS::SetAll(state_, sendSel_, false);
-
-		if (ImGui::BeginTabBar("##rx_sendpick_tabs")) {
-			for (const char* g : kGames) {
-				int total = 0, picked = 0;
-				for (int i = 0; i < (int)state_.bookmarks.size(); i++)
-					if (state_.bookmarks[i].game == g) {
-						total++;
-						picked += sendSel_.bookmarks.count(i) ? 1 : 0;
-					}
-				const std::string tab = std::string(GameLabel(g)) + u8"（" + std::to_string(picked) + "/" + std::to_string(total) +
-				                        u8"）###rx_sp_" + g;
-				ImGuiTabItemFlags tf = 0;
-				if (sendPickTabSet_ && sendPickTab_ == g) tf |= ImGuiTabItemFlags_SetSelected;
-				if (!ImGui::BeginTabItem(tab.c_str(), nullptr, tf)) continue;
-				ImGui::BeginChild("##rx_sp_list", ImVec2(500 * sc, 320 * sc), true);
-				const RegexFolders::Grouped grouped = RegexFolders::GroupBookmarks(state_, g, false);
-				bool any = false;
-				for (size_t gi = 0; gi < grouped.groups.size(); gi++) {
-					const RegexFolders::Group& grp = grouped.groups[gi];
-					if (grp.folder.empty() && grp.items.empty()) continue;
-					any = true;
-					ImGui::PushID((int)gi);
-					const BS::Tri t = BS::GroupTri(state_, sendSel_, g, grp.folder);
-					const std::string head = (grp.folder.empty() ? std::string(u8"未分類") : grp.folder) + u8"（" +
-					                         std::to_string(grp.items.size()) + u8" 筆）###grp";
-					if (TriCheckbox(head.c_str(), t)) BS::SetGroup(state_, sendSel_, g, grp.folder, t != BS::Tri::All);
-					if (grp.items.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip(u8"空資料夾：勾了會在對方建立同名資料夾");
-					ImGui::Indent(22 * sc);
-					for (int i : grp.items) {
-						const RegexBookmark& b = state_.bookmarks[i];
-						ImGui::PushID(i);
-						bool on = sendSel_.bookmarks.count(i) > 0;
-						const std::string name = b.name + "###bm";
-						if (ImGui::Checkbox(name.c_str(), &on)) {
-							if (on) sendSel_.bookmarks.insert(i);
-							else sendSel_.bookmarks.erase(i);
-						}
-						ImGui::SameLine();
-						ImGui::TextDisabled("%s", pageTitleIn(g, b.page).c_str());
-						if (RegexItemMods::IsPageId(b.page)) {
-							ImGui::SameLine();
-							ImGui::TextColored(kWarn, u8"（鍵不互通）");
-						}
-						ImGui::PopID();
-					}
-					ImGui::Unindent(22 * sc);
-					ImGui::PopID();
+		if (!PobUi::BeginDialog("###rx_sendpick", &open, u8"送到 ExileAppraiser",
+		                        u8"勾選要交給 ExileAppraiser 的書籤：可以整個資料夾、也可以逐筆，PoE1 / PoE2 可以混選。", nullptr, 560.0f))
+			return;
+		const float inner = ImGui::GetContentRegionAvail().x;
+		ImGui::Dummy(ImVec2(0, Dp(6.0f)));
+		std::string labels[2];
+		for (int gi = 0; gi < 2; gi++) {
+			int total = 0, picked = 0;
+			for (int i = 0; i < (int)state_.bookmarks.size(); i++)
+				if (state_.bookmarks[i].game == kGames[gi]) {
+					total++;
+					picked += sendSel_.bookmarks.count(i) ? 1 : 0;
 				}
-				if (!any) ImGui::TextDisabled(u8"%s 沒有書籤。", GameLabel(g));
-				ImGui::EndChild();
-				ImGui::EndTabItem();
-			}
-			sendPickTabSet_ = false;
-			ImGui::EndTabBar();
+			labels[gi] = std::string(GameLabel(kGames[gi])) + "  " + std::to_string(picked) + "/" + std::to_string(total);
 		}
+		const char* lp[2] = {labels[0].c_str(), labels[1].c_str()};
+		int tab = sendPickTab_ == "poe2" ? 1 : 0;
+		if (PobUi::Segmented("##sp_tab", &tab, lp, 2)) sendPickTab_ = kGames[tab];
+		ImGui::SameLine(0, Dp(12.0f));
+		if (PobUi::Button(u8"全選", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) BS::SetAll(state_, sendSel_, true);
+		ImGui::SameLine(0, Dp(4.0f));
+		if (PobUi::Button(u8"全不選", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) BS::SetAll(state_, sendSel_, false);
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+
+		const std::string g = sendPickTab_;
+		const ImVec2 lp0 = ImGui::GetCursorScreenPos();
+		const float listH = Dp(260.0f);
+		ImGui::GetWindowDrawList()->AddRectFilled(lp0, ImVec2(lp0.x + inner, lp0.y + listH), Tok::Surface1, Dp(8.0f));
+		ImGui::GetWindowDrawList()->AddRect(lp0, ImVec2(lp0.x + inner, lp0.y + listH), Tok::BorderSubtle, Dp(8.0f), 0, 1.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Dp(8.0f), Dp(6.0f)));
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+		ImGui::BeginChild("##rx_sp_list", ImVec2(inner, listH), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+		const RegexFolders::Grouped grouped = RegexFolders::GroupBookmarks(state_, g, false);
+		bool any = false;
+		auto tickRow = [&](const char* id, const std::string& text, const std::string& note, bool on, bool mixed, float indent) {
+			ImGui::PushID(id);
+			const float w = ImGui::GetContentRegionAvail().x;
+			const float h = Dp(28.0f);
+			const ImVec2 p = ImGui::GetCursorScreenPos();
+			const bool click = ImGui::InvisibleButton("##t", ImVec2(w, h));
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			if (ImGui::IsItemHovered()) dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), Tok::Surface2, Dp(5.0f));
+			DrawCheck(dl, ImVec2(p.x + indent + Dp(6.0f), p.y + std::floor((h - Dp(15.0f)) * 0.5f)), on, mixed);
+			const float tx = p.x + indent + Dp(6.0f) + Dp(15.0f) + Dp(8.0f);
+			DrawTextAt(dl, BodyF(), ImVec2(tx, p.y + std::floor((h - BodyF()->FontSize) * 0.5f)), Tok::Text, text.c_str());
+			if (!note.empty())
+				DrawTextAt(dl, SmallF(), ImVec2(tx + TextSz(BodyF(), text.c_str()).x + Dp(8.0f), p.y + std::floor((h - SmallF()->FontSize) * 0.5f)),
+				           Tok::TextMuted, note.c_str());
+			ImGui::PopID();
+			return click;
+		};
+		for (size_t gi = 0; gi < grouped.groups.size(); gi++) {
+			const RegexFolders::Group& grp = grouped.groups[gi];
+			if (grp.folder.empty() && grp.items.empty()) continue;
+			any = true;
+			ImGui::PushID((int)gi);
+			const BS::Tri t = BS::GroupTri(state_, sendSel_, g, grp.folder);
+			const std::string head = grp.folder.empty() ? std::string(u8"未分類") : grp.folder;
+			if (tickRow("grp", head, std::to_string(grp.items.size()) + u8" 筆" + (grp.items.empty() ? u8"（空資料夾：勾了會在對方建立同名資料夾）" : ""),
+			            t == BS::Tri::All, t == BS::Tri::Some, 0.0f))
+				BS::SetGroup(state_, sendSel_, g, grp.folder, t != BS::Tri::All);
+			for (int i : grp.items) {
+				const RegexBookmark& b = state_.bookmarks[i];
+				ImGui::PushID(i);
+				const bool on = sendSel_.bookmarks.count(i) > 0;
+				if (tickRow("bm", b.name, pageTitleIn(g, b.page), on, false, Dp(24.0f))) {
+					if (on) sendSel_.bookmarks.erase(i);
+					else sendSel_.bookmarks.insert(i);
+				}
+				ImGui::PopID();
+			}
+			ImGui::PopID();
+		}
+		if (!any) SmallText((std::string(GameLabel(g)) + u8" 沒有書籤。").c_str(), Tok::TextFaint);
+		ImGui::EndChild();
+		ImGui::PopStyleColor();
+		ImGui::PopStyleVar();
 
 		BS::PackStats st;
 		const BS::Pack pack = BS::PackOf(state_, sendSel_, &st);
@@ -1973,38 +2542,30 @@ private:
 		std::string summary = u8"已選 " + std::to_string(n) + u8" 筆（PoE1 " + std::to_string(st.bookmarks[0]) + u8"、PoE2 " +
 		                      std::to_string(st.bookmarks[1]) + u8"）";
 		if (nf > 0) summary += u8"，資料夾 " + std::to_string(nf) + u8" 個";
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
 		ImGui::TextUnformatted(summary.c_str());
-		ImGui::PushTextWrapPos(500 * sc);
-		if (st.skipped > 0)
-			ImGui::TextColored(kWarn, u8"有 %d 筆缺名稱 / 頁 / 勾選，不會送出。", st.skipped);
-		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-		if (!sendLoc_.exe.empty()) ImGui::Text(u8"送到：%s", RegexSend::Narrow(sendLoc_.exe).c_str());
-		else ImGui::TextUnformatted(u8"找不到 ExileAppraiser.exe：按「送出」會請你手動指定。");
-		ImGui::TextUnformatted(u8"對方會跳確認框，按「加入」才寫入；同名改名加「 (2)」；不帶熱鍵；不動它目前的勾選。需要 v0.2.1 以上。");
-		ImGui::PopStyleColor();
-		ImGui::PopTextWrapPos();
-
-		ImGui::BeginDisabled(st.Empty());
-		if (ImGui::Button(u8"送出", ImVec2(90 * sc, 0))) {
+		if (st.skipped > 0) SmallText((u8"有 " + std::to_string(st.skipped) + u8" 筆缺名稱 / 頁 / 勾選，不會送出。").c_str(), Tok::Warning, inner);
+		SmallText(sendLoc_.exe.empty() ? u8"找不到 ExileAppraiser.exe：按「送出」會請你手動指定。"
+		                               : (u8"送到：" + RegexSend::Narrow(sendLoc_.exe)).c_str(),
+		          Tok::TextMuted, inner);
+		SmallText(u8"對方會跳確認框，按「加入」才寫入；同名改名加「 (2)」；不帶熱鍵；不動它目前的勾選。需要 v0.2.1 以上。", Tok::TextMuted, inner);
+		const PobUi::DialogResult r = DlgButtons(inner, u8"取消", u8"複製書籤包", u8"送出", !st.Empty());
+		if (r == PobUi::DialogResult::Primary) {
 			sendCode_ = BS::Encode(pack);
 			sendKind_ = RegexSend::Kind::Bookmarks;
 			sendWhat_ = std::to_string(n) + u8" 筆書籤" + (nf ? u8"、" + std::to_string(nf) + u8" 個資料夾" : std::string());
 			sendRequest_ = true;
 			ImGui::CloseCurrentPopup();
-		}
-		ImGui::SameLine();
-		if (ImGui::Button(u8"複製書籤包")) {
+		} else if (r == PobUi::DialogResult::Secondary && !st.Empty()) {
+			// not sent: the pack to the clipboard (匯入書籤包 here, or ExileAppraiser, reads it)
 			shareCopyRequest_ = BS::Encode(pack);
 			shareCopiedWhat_ = u8"書籤包（" + std::to_string(n) + u8" 筆）";
 			shareCopied_ = 0;
 			ImGui::CloseCurrentPopup();
+		} else if (r == PobUi::DialogResult::Cancel) {
+			ImGui::CloseCurrentPopup();
 		}
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(u8"不送出，把書籤包複製到剪貼簿（對方用「匯入書籤包」加入；ExileAppraiser 也讀得懂同一種碼）");
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		if (ImGui::Button(u8"取消", ImVec2(90 * sc, 0))) ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+		PobUi::EndDialog();
 	}
 
 	// ---- 匯入書籤包 (bookmarks-share.ts decodeBookmarks + mergeBookmarks, the receiving side here) ----
@@ -2013,19 +2574,26 @@ private:
 	{
 		importBuf_.clear();
 		importFor_ = "\x01";   // never equal to a real buffer: parsed on the first frame
-		const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
-		if (LooksLikeCode(clip)) importBuf_ = clip;
+		if (!testMode_) {
+			const std::string clip = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+			if (LooksLikeCode(clip)) importBuf_ = clip;
+		}
 		modal_ = Modal::ImportPack;
 	}
 
-	void drawImportModal(Modal opening)
+	void drawImportModal(bool& open, Modal opening)
 	{
 		namespace BS = RegexBookmarksShare;
-		if (!ImGui::BeginPopupModal(u8"匯入書籤包###rx_import", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
-		const float sc = host_->scale;
-		ImGui::TextUnformatted(u8"把書籤包貼在下面（剪貼簿裡像碼的內容會自動帶入）。");
-		if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
-		ImGui::InputTextMultiline("##rx_import_code", &importBuf_, ImVec2(460 * sc, 80 * sc));
+		if (!PobUi::BeginDialog("###rx_import", &open, u8"匯入書籤包", u8"把書籤包貼在下面（剪貼簿裡像碼的內容會自動帶入）。", nullptr, 480.0f))
+			return;
+		const float inner = ImGui::GetContentRegionAvail().x;
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+		if (opening == Modal::ImportPack) ImGui::SetKeyboardFocusHere();
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+		ImGui::PushFont(SmallF());
+		ImGui::InputTextMultiline("##rx_import_code", &importBuf_, ImVec2(inner, Dp(72.0f)));
+		ImGui::PopFont();
+		ImGui::PopStyleVar();
 		if (importBuf_ != importFor_) {
 			importFor_ = importBuf_;
 			importErr_.clear();
@@ -2035,68 +2603,58 @@ private:
 				importOk_ = BS::Decode(importBuf_, importPack_, &err);
 				if (!importOk_) {
 					RegexShare::Normalized sh;
-					importErr_ = RegexShare::Decode(importBuf_, sh, nullptr)
-						? std::string(u8"這是分享碼，不是書籤包：請用上方的「貼上分享碼」。")
-						: u8"書籤包無法讀取：" + err;
+					importErr_ = RegexShare::Decode(importBuf_, sh, nullptr) ? std::string(u8"這是分享碼，不是書籤包：請用「貼上分享碼」。")
+					                                                         : u8"書籤包無法讀取：" + err;
 				}
 			}
 		}
-		ImGui::PushTextWrapPos(460 * sc);
 		bool canAdd = false;
 		if (!importErr_.empty()) {
-			ImGui::TextColored(kBad, "%s", importErr_.c_str());
+			SmallText(importErr_.c_str(), Tok::Danger, inner);
 		} else if (importOk_) {
 			const BS::MergeResult m = BS::Merge(state_, importPack_.pack);
-			int per[2] = {0, 0}, itemMod = 0;
-			for (const RegexBookmark& b : importPack_.pack.bookmarks) {
-				per[b.game == "poe2" ? 1 : 0]++;
-				itemMod += RegexItemMods::IsPageId(b.page) ? 1 : 0;
-			}
+			int per[2] = {0, 0};
+			for (const RegexBookmark& b : importPack_.pack.bookmarks) per[b.game == "poe2" ? 1 : 0]++;
 			canAdd = !m.added.empty() || !m.foldersCreated.empty();
-			ImGui::Text(u8"會加入 %d 筆書籤（PoE1 %d、PoE2 %d）", (int)m.added.size(), per[0], per[1]);
+			ImGui::TextUnformatted((u8"會加入 " + std::to_string(m.added.size()) + u8" 筆書籤（PoE1 " + std::to_string(per[0]) + u8"、PoE2 " +
+			                        std::to_string(per[1]) + u8"）").c_str());
 			if (!m.foldersCreated.empty()) {
 				std::string f;
 				for (const auto& c : m.foldersCreated) f += (f.empty() ? "" : u8"、") + std::string(GameLabel(c.first)) + " " + c.second;
-				ImGui::Text(u8"新資料夾：%s", f.c_str());
+				SmallText((u8"新資料夾：" + f).c_str(), Tok::TextMuted, inner);
 			}
 			if (!m.renamed.empty()) {
 				std::string r;
 				for (size_t i = 0; i < m.renamed.size() && i < 6; i++)
 					r += (i ? u8"、" : "") + m.renamed[i].originalName + u8" → " + m.renamed[i].name;
 				if (m.renamed.size() > 6) r += u8"…";
-				ImGui::TextColored(kWarn, u8"同名改名：%s", r.c_str());
+				SmallText((u8"同名改名：" + r).c_str(), Tok::Warning, inner);
 			}
-			if (itemMod > 0)
-				ImGui::TextColored(kWarn, u8"其中 %d 筆是「物品詞綴數值」頁：若來自 ExileAppraiser，鍵不互通，載入時會回報找不到。", itemMod);
 			if (!importPack_.warnings.empty())
-				ImGui::TextColored(kWarn, u8"書籤包有 %d 處格式不對，已略過（第一處：%s）", (int)importPack_.warnings.size(),
-				                   importPack_.warnings[0].c_str());
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"只加入書籤與資料夾：目前的勾選、數值、自訂文字、排除詞與模式都不動。");
-			ImGui::PopStyleColor();
+				SmallText((u8"書籤包有 " + std::to_string(importPack_.warnings.size()) + u8" 處格式不對，已略過（第一處：" +
+				           importPack_.warnings[0] + u8"）").c_str(),
+				          Tok::Warning, inner);
+			SmallText(u8"只加入書籤與資料夾：目前的勾選、數值、自訂文字、排除詞與模式都不動。", Tok::TextMuted, inner);
 		}
-		ImGui::PopTextWrapPos();
-		ImGui::BeginDisabled(!canAdd);
-		if (ImGui::Button(u8"加入", ImVec2(90 * sc, 0))) {
+		const PobUi::DialogResult r = DlgButtons(inner, u8"取消", u8"從剪貼簿貼上", u8"加入", canAdd);
+		if (r == PobUi::DialogResult::Primary) {
 			const BS::MergeResult m = BS::Merge(state_, importPack_.pack);
 			state_.bookmarks = m.state.bookmarks;
 			state_.folders[0] = m.state.folders[0];
 			state_.folders[1] = m.state.folders[1];
 			if (!m.added.empty()) bmTab_ = m.added.front().game;
-			notice_ = u8"已從書籤包加入 " + std::to_string(m.added.size()) + u8" 筆書籤" +
-			          (m.renamed.empty() ? std::string() : u8"（" + std::to_string(m.renamed.size()) + u8" 筆同名已改名）") +
-			          (m.foldersCreated.empty() ? std::string() : u8"，新資料夾 " + std::to_string(m.foldersCreated.size()) + u8" 個") +
-			          u8"。";
+			say(u8"已從書籤包加入 " + std::to_string(m.added.size()) + u8" 筆書籤" +
+			    (m.renamed.empty() ? std::string() : u8"（" + std::to_string(m.renamed.size()) + u8" 筆同名已改名）") +
+			    (m.foldersCreated.empty() ? std::string() : u8"，新資料夾 " + std::to_string(m.foldersCreated.size()) + u8" 個") + u8"。");
 			for (const std::string& w : importPack_.warnings) PobLog::Diag("regex", u8"書籤包警告：" + w);
 			markStateDirty();
 			ImGui::CloseCurrentPopup();
+		} else if (r == PobUi::DialogResult::Secondary) {
+			if (!testMode_) importBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
+		} else if (r == PobUi::DialogResult::Cancel) {
+			ImGui::CloseCurrentPopup();
 		}
-		ImGui::EndDisabled();
-		ImGui::SameLine();
-		if (ImGui::Button(u8"從剪貼簿貼上")) importBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
-		ImGui::SameLine();
-		if (ImGui::Button(u8"取消", ImVec2(90 * sc, 0))) ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+		PobUi::EndDialog();
 	}
 
 	// True when a file was picked (and stored).
@@ -2142,7 +2700,8 @@ private:
 		if (!r.tempFile.empty()) sendFiles_.push_back(r.tempFile);
 		setSendMessage(r.ok, (r.ok && !what.empty() ? what + u8"：" : std::string()) + r.message);
 		// Also in the notice line, which stays until dismissed (the message beside the button fades).
-		notice_ = u8"送到 ExileAppraiser：" + sendMsg_;
+		say(u8"送到 ExileAppraiser：" + sendMsg_, !r.ok);
+		PobUi::ShowToast(r.ok ? u8"已送到 ExileAppraiser" : u8"送到 ExileAppraiser 失敗", r.ok ? PobUi::Tone::Ok : PobUi::Tone::Bad);
 	}
 
 	// store.ts applyCombo: OVERWRITE every page of the code's game (ticks; values
@@ -2199,100 +2758,29 @@ private:
 		for (const auto& kv : s.pages)
 			if (kv.first == itemId)
 				for (const std::string& key : kv.second) legacyItemKeys += RegexItemMods::IsLegacyKey(key) ? 1 : 0;
-		std::string msg = u8"已套用" + what;
+		PobUi::ShowToast((u8"已套用" + what).c_str(), PobUi::Tone::Ok);
+		std::string title, desc;
 		if (r.missed > 0 || !r.unknownPages.empty()) {
+			// no spaces inside the sentence: ImGui wraps CJK text only at spaces
+			title = u8"已套用" + what + u8"，但有" + std::to_string(r.missed > 0 ? r.missed : (int)r.unknownPages.size()) + u8"項在目前資料找不到";
 			std::string pages;
 			for (const std::string& id : r.unknownPages) pages += (pages.empty() ? "" : u8"、") + id;
-			msg += u8"，但有 " + std::to_string(r.missed) + u8" 項在目前資料找不到";
-			if (!pages.empty()) msg += u8"（不存在的清單：" + pages + u8"）";
+			if (!pages.empty()) desc += u8"不存在的清單：" + pages + u8"。";
 			for (const auto& kv : r.missedByPage)
 				if (RegexItemMods::IsPageId(kv.first) && legacyItemKeys > 0)
-					msg += u8"；其中 " + std::to_string(legacyItemKeys) + u8" 項是「物品詞綴數值」頁的舊版鍵（GGPK stat id），"
-					       u8"這一頁已改用交易站 stat id，請重新勾選";
+					desc += u8"其中 " + std::to_string(legacyItemKeys) + u8" 項是「物品詞綴數值」頁的舊版鍵（GGPK stat id）：這一頁已改用交易站 stat id，請重新勾選。";
+			desc += u8"可能是對方的版本比較新或比較舊。";
 		}
-		msg += u8"。";
 		if (!warnings.empty()) {
-			msg += u8"分享碼有 " + std::to_string(warnings.size()) + u8" 處格式不對，已略過：";
-			for (size_t i = 0; i < warnings.size() && i < 3; i++) msg += (i ? u8"；" : "") + warnings[i];
-			if (warnings.size() > 3) msg += u8"…";
+			if (title.empty()) title = u8"已套用" + what + u8"，但分享碼有 " + std::to_string(warnings.size()) + u8" 處格式不對，已略過";
+			desc += u8"格式不對：";
+			for (size_t i = 0; i < warnings.size() && i < 3; i++) desc += (i ? u8"；" : "") + warnings[i];
+			if (warnings.size() > 3) desc += u8"…";
 		}
-		notice_ = msg;
+		if (!title.empty()) say(title, true, desc);
+		else notice_.clear();
 		for (const std::string& w : warnings) PobLog::Diag("regex", u8"分享碼警告：" + w);
 		return true;
-	}
-
-	void drawShareModals(Modal opening)
-	{
-		if (ImGui::BeginPopupModal(u8"貼上分享碼###rx_paste", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			ImGui::TextUnformatted(u8"把別人給的分享碼貼在下面（剪貼簿裡像分享碼的內容會自動帶入）。");
-			if (opening != Modal::None) ImGui::SetKeyboardFocusHere();
-			ImGui::InputTextMultiline("##rx_paste_code", &pasteBuf_, ImVec2(440 * host_->scale, 90 * host_->scale));
-			ImGui::PushTextWrapPos(440 * host_->scale);
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"套用後會覆蓋分享碼那個遊戲目前所有清單的勾選、數值、自訂文字、排除詞與模式"
-			                       u8"（不影響書籤；要保留目前的勾選，先存成書籤）。");
-			ImGui::PopStyleColor();
-			if (!pasteErr_.empty()) ImGui::TextColored(kBad, "%s", pasteErr_.c_str());
-			ImGui::PopTextWrapPos();
-			const bool empty = RegexAlgo::JsTrim(pasteBuf_).empty();
-			ImGui::BeginDisabled(empty);
-			if (ImGui::Button(u8"套用", ImVec2(90 * host_->scale, 0))) {
-				RegexShare::Normalized d;
-				std::string err;
-				RegexBookmarksShare::Normalized bp;
-				if (!RegexShare::Decode(pasteBuf_, d, &err)) {
-					pasteErr_ = u8"分享碼無法套用：" + err;
-					if (RegexBookmarksShare::Decode(pasteBuf_, bp, nullptr))
-						pasteErr_ = u8"這是書籤包，不是分享碼：請用書籤區的「匯入書籤包」。";
-					else if (err.find(u8"版本不符") != std::string::npos)
-						pasteErr_ += u8"（可能是較新版本的 PobTools / exile-appraiser 產的）";
-				} else if (!applyCombo(d.state, std::string(u8"分享碼（") + GameLabel(d.state.game) + u8"）", d.warnings, &err)) {
-					pasteErr_ = u8"分享碼無法套用：" + err;
-				} else {
-					ImGui::CloseCurrentPopup();
-				}
-			}
-			ImGui::EndDisabled();
-			ImGui::SameLine();
-			if (ImGui::Button(u8"從剪貼簿貼上")) {
-				pasteBuf_ = RegexAlgo::JsTrim(ReadClipboardUtf8(host_ ? host_->hostHwnd : nullptr));
-				pasteErr_.clear();
-			}
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) ImGui::CloseCurrentPopup();
-			ImGui::EndPopup();
-		}
-
-		if (ImGui::BeginPopupModal(u8"套用範本###rx_tpl", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-			const bool valid = tplPending_ >= 0 && tplPending_ < (int)templates_.size();
-			if (!valid) {
-				ImGui::TextUnformatted(u8"這個範本已經不在了。");
-			} else {
-				const RegexShare::Template& t = templates_[tplPending_];
-				ImGui::Text(u8"套用範本「%s」", t.nameZh.c_str());
-				ImGui::PushTextWrapPos(420 * host_->scale);
-				if (!t.descZh.empty()) ImGui::TextUnformatted(t.descZh.c_str());
-				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-				ImGui::Text(u8"會覆蓋 %s 目前所有清單的勾選、數值、自訂文字、排除詞與模式（不影響書籤）。", GameLabel(t.game));
-				ImGui::PopStyleColor();
-				ImGui::PopTextWrapPos();
-			}
-			ImGui::BeginDisabled(!valid);
-			if (ImGui::Button(u8"套用", ImVec2(90 * host_->scale, 0))) {
-				const RegexShare::Template t = templates_[tplPending_];
-				std::string err;
-				if (!applyCombo(t.state, u8"範本「" + t.nameZh + u8"」", {}, &err)) notice_ = u8"範本無法套用：" + err;
-				tplPending_ = -1;
-				ImGui::CloseCurrentPopup();
-			}
-			ImGui::EndDisabled();
-			ImGui::SameLine();
-			if (ImGui::Button(u8"取消", ImVec2(90 * host_->scale, 0))) {
-				tplPending_ = -1;
-				ImGui::CloseCurrentPopup();
-			}
-			ImGui::EndPopup();
-		}
 	}
 
 	// ---- plumbing ------------------------------------------------------------
@@ -2445,22 +2933,24 @@ private:
 	// Row layout after exile-appraiser RegexAlgoList.vue: tick + name | input |
 	// the fragment this row produces. Editing a value ticks the row.
 
-	static std::string NumText(double v)
-	{
-		char buf[32];
-		if (std::floor(v) == v && std::fabs(v) < 1e15) snprintf(buf, sizeof buf, "%.0f", v);
-		else snprintf(buf, sizeof buf, "%g", v);
-		return buf;
-	}
-
-	// A number box that can be empty. Returns true when edited; `out` is the
-	// new value, nullopt when the box was cleared or holds no number (TS:
-	// `raw === '' || !Number.isFinite(n)` deletes the bound).
-	bool numField(const char* id, const std::optional<double>& val, std::optional<double>& out)
+	// A number box that can be empty (.num: 58 px, right-aligned). Returns true
+	// when edited; `out` is the new value, nullopt when the box was cleared or
+	// holds no number (TS: `raw === '' || !Number.isFinite(n)` deletes the bound).
+	bool numField(const char* id, const std::optional<double>& val, std::optional<double>& out, float w = 0.0f)
 	{
 		std::string buf = val ? NumText(*val) : std::string();
-		ImGui::SetNextItemWidth(56 * host_->scale);
-		if (!ImGui::InputText(id, &buf, ImGuiInputTextFlags_CharsDecimal)) return false;
+		ImGui::PushFont(SmallF());
+		const float h = Dp(26.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Dp(6.0f), std::max(0.0f, std::floor((h - SmallF()->FontSize) * 0.5f))));
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+		ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Tok::Border));
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::ColorConvertU32ToFloat4(Tok::Surface2));
+		ImGui::SetNextItemWidth(w > 0 ? w : Dp(58.0f));
+		const bool edited = ImGui::InputText(id, &buf, ImGuiInputTextFlags_CharsDecimal);
+		ImGui::PopStyleColor(2);
+		ImGui::PopStyleVar(2);
+		ImGui::PopFont();
+		if (!edited) return false;
 		size_t a = buf.find_first_not_of(" \t");
 		if (a == std::string::npos) {
 			out.reset();
@@ -2474,171 +2964,225 @@ private:
 		return true;
 	}
 
-	bool segButton(const char* label, bool on)
+	static std::string NumText(double v)
 	{
-		if (on) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-		const bool r = ImGui::SmallButton(label);
-		if (on) ImGui::PopStyleColor();
-		return r;
+		char buf[32];
+		if (std::floor(v) == v && std::fabs(v) < 1e15) snprintf(buf, sizeof buf, "%.0f", v);
+		else snprintf(buf, sizeof buf, "%g", v);
+		return buf;
 	}
 
-	// SameLine when an item `w` wide still fits in the cell, else the next line
-	// (the .rx-algo-input flex-wrap of RegexAlgoList.vue): a row of buttons in a
-	// narrow input column wraps instead of running under the fragment column.
-	void sameLineOrWrap(float w, float spacing)
-	{
-		// GetContentRegionMax is the cell's work rect inside a table (window-relative)
-		const float right = ImGui::GetWindowPos().x + ImGui::GetContentRegionMax().x;
-		if (ImGui::GetItemRectMax().x + spacing + w <= right) ImGui::SameLine(0, spacing);
-	}
-	float smallButtonWidth(const char* label) const
-	{
-		return ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2;
-	}
+	// Lays the controls of one .nr cell out left to right, wrapping inside the
+	// cell (the .ctl flex-wrap): next(w) moves the cursor to where an item `w`
+	// wide goes.
+	struct Flow {
+		float x0, right, x, y, lineH, gap;
+		void next(float w)
+		{
+			if (x > x0 && x + w > right) {
+				x = x0;
+				y += lineH + gap;
+			}
+			ImGui::SetCursorScreenPos(ImVec2(x, y));
+			x += w + gap;
+		}
+		float bottom() const { return y + lineH; }
+	};
 
-	void drawAlgoRow(int idx, int i)
+	// .nr: tick + name | the input | the fragment it gives (1.1 / 1.6 / 1.3 with
+	// minimums 150 / 220 / 120). A ticked row is tinted (warning-soft); clicking
+	// the name ticks / unticks; editing a value ticks the row.
+	void drawAlgoRow(int idx, int i, float width)
 	{
 		using namespace RegexAlgo;
 		PageState& s = pages_[idx];
 		const AlgoPage& page = *refs_[idx].algo;
 		const AlgoEntry& e = page.entries[i];
 		ImGui::PushID(i);
-		bool on = s.algo.picked[i] != 0;
-		if (on)
-			ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, ImGui::GetColorU32(ImGuiCol_Header, 0.55f));
-
-		ImGui::TableSetColumnIndex(0);
-		if (ImGui::Checkbox("##on", &on)) {
-			s.algo.picked[i] = on ? 1 : 0;
-			algoChanged(idx);
+		const bool on = s.algo.picked[i] != 0;
+		const float padX = Dp(10.0f), padY = Dp(6.0f), colGap = Dp(10.0f);
+		const float inner = width - padX * 2 - colGap * 2;
+		float c0 = inner * 1.1f / 4.0f, c1 = inner * 1.6f / 4.0f, c2 = inner * 1.3f / 4.0f;
+		if (inner >= PobUi::D(490.0f)) {
+			c0 = std::max(c0, PobUi::D(150.0f));
+			c1 = std::max(c1, PobUi::D(220.0f));
+			c2 = inner - c0 - c1;
 		}
-		ImGui::SameLine();
-		ImGui::TextUnformatted(e.def.zh.empty() ? e.def.id.c_str() : e.def.zh[0].c_str());
-		if (ImGui::IsItemHovered() && !e.def.en.empty()) ImGui::SetTooltip("%s", e.def.en[0].c_str());
-		if (e.untested) {
-			ImGui::SameLine();
-			ImGui::TextColored(kWarn, u8"待實測");
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip(u8"假設繁中客戶端的插槽顯示為 R-G-B（顏色字母與 - 不翻譯），尚未進遊戲確認。");
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		ImDrawListSplitter split;
+		split.Split(dl, 2);
+		split.SetCurrentChannel(dl, 1);
+		const float rowH0 = Dp(26.0f);
+
+		// name (clickable)
+		const float nx = p.x + padX;
+		const std::string name = e.def.zh.empty() ? e.def.id : e.def.zh[0];
+		ImGui::SetCursorScreenPos(ImVec2(nx, p.y + padY));
+		const bool click = ImGui::InvisibleButton("##name", ImVec2(c0, rowH0));
+		const bool hovName = ImGui::IsItemHovered();
+		if (hovName) {
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			if (!e.def.en.empty()) PobUi::Tooltip(e.def.en[0].c_str());
+		}
+		DrawCheck(dl, ImVec2(nx, p.y + padY + std::floor((rowH0 - Dp(15.0f)) * 0.5f)), on);
+		const float tx = nx + Dp(15.0f) + Dp(8.0f);
+		float nameBottom = p.y + padY + rowH0;
+		{
+			const float tw = c0 - Dp(23.0f);
+			const std::vector<std::string> lines = WrapAnywhere(BodyF(), name, std::max(Dp(40.0f), tw));
+			const float lh = BodyF()->FontSize * 1.25f;
+			float ty = p.y + padY + std::floor((rowH0 - BodyF()->FontSize) * 0.5f);
+			for (const std::string& l : lines) {
+				DrawTextAt(dl, BodyF(), ImVec2(tx, ty), Tok::Text, l.c_str());
+				ty += lh;
+			}
+			nameBottom = std::max(nameBottom, ty);
+			if (e.untested) {
+				const char* t = u8"待實測";
+				const float lastW = TextSz(BodyF(), lines.back().c_str()).x;
+				ImVec2 pp(tx + lastW + Dp(6.0f), ty - lh + std::floor((BodyF()->FontSize - SmallF()->FontSize) * 0.5f));
+				if (pp.x + PillW(t) > nx + c0) pp = ImVec2(tx, ty);
+				ImGui::SetCursorScreenPos(pp);
+				Pill(t, Tok::Warning, Tok::WarningSoft);
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"假設繁中客戶端的插槽顯示為 R-G-B（顏色字母與 - 不翻譯），尚未進遊戲確認。");
+				nameBottom = std::max(nameBottom, ImGui::GetItemRectMax().y);
+			}
 		}
 
-		ImGui::TableSetColumnIndex(1);
+		// input
+		Flow fl{nx + c0 + colGap, nx + c0 + colGap + c1, nx + c0 + colGap, p.y + padY, rowH0, Dp(6.0f)};
 		const AlgoValue cur = ValueOf(s.algo.values, e);   // a copy: the edit below replaces it
 		std::optional<AlgoValue> next;
 		std::optional<double> n;
+		auto hint = [&](const char* t) {
+			const float w = TextSz(SmallF(), t).x;
+			fl.next(w);
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, fl.y + std::floor((rowH0 - SmallF()->FontSize) * 0.5f)));
+			SmallText(t);
+		};
 		switch (e.input.kind) {
 		case InputKind::Range: {
 			const RangeOp op = OpOf(e, cur);
 			if (e.input.ops.size() > 1) {
-				for (size_t k = 0; k < e.input.ops.size(); k++) {
-					const RangeOp o = e.input.ops[k];
-					if (k) ImGui::SameLine(0, 2 * host_->scale);
-					const char* label = o == RangeOp::Ge ? u8"≥" : o == RangeOp::Le ? u8"≤" : u8"區間";
-					if (segButton(label, op == o)) next = WithOp(e, cur, o);
+				std::vector<const char*> labels;
+				std::vector<char> lit;
+				for (RangeOp o : e.input.ops) {
+					labels.push_back(o == RangeOp::Ge ? u8"≥" : o == RangeOp::Le ? u8"≤" : u8"區間");
+					lit.push_back(op == o);
 				}
+				fl.next(SegTogglesW(labels.data(), (int)labels.size()));
+				const int k = SegToggles("##ops", labels.data(), (const bool*)lit.data(), (int)labels.size());
+				if (k >= 0) next = WithOp(e, cur, e.input.ops[k]);
 			} else {
-				ImGui::AlignTextToFramePadding();
-				ImGui::TextDisabled(u8"≥");
+				hint(u8"≥");
 			}
 			if (op != RangeOp::Le) {
-				ImGui::SameLine();
+				fl.next(Dp(58.0f));
 				if (numField("##min", cur.min, n)) next = WithNum(e, cur, false, n);
 			}
-			if (op == RangeOp::Range) {
-				ImGui::SameLine();
-				ImGui::TextDisabled(u8"–");
-			}
+			if (op == RangeOp::Range) hint(u8"–");
 			if (op != RangeOp::Ge) {
-				ImGui::SameLine();
+				fl.next(Dp(58.0f));
 				if (numField("##max", cur.max, n)) next = WithNum(e, cur, true, n);
 			}
-			if (e.input.percent) {
-				ImGui::SameLine();
-				ImGui::TextDisabled("%%");
-			}
+			if (e.input.percent) hint("%");
 			break;
 		}
 		case InputKind::Select: {
 			const std::vector<AlgoOption>& opts = e.input.options;
 			if (opts.size() > 5) {
-				// Many options (the eight influences): a drop-down keeps the row narrow.
-				std::string curText = cur.choice;
-				for (const AlgoOption& o : opts)
-					if (o.id == cur.choice) curText = o.zh;
-				ImGui::SetNextItemWidth(130 * host_->scale);
-				if (ImGui::BeginCombo("##choice", curText.c_str())) {
-					for (const AlgoOption& o : opts)
-						if (ImGui::Selectable(o.zh.c_str(), o.id == cur.choice)) next = WithChoice(cur, o.id);
-					ImGui::EndCombo();
-				}
-			} else {
+				// many options (the eight influences): a drop-down keeps the row narrow
+				std::vector<const char*> labels;
+				int sel = -1;
 				for (size_t k = 0; k < opts.size(); k++) {
-					if (k) ImGui::SameLine(0, 2 * host_->scale);
-					if (segButton(opts[k].zh.c_str(), cur.choice == opts[k].id)) next = WithChoice(cur, opts[k].id);
+					labels.push_back(opts[k].zh.c_str());
+					if (opts[k].id == cur.choice) sel = (int)k;
 				}
+				const float w = std::max(Dp(170.0f), PobUi::SelectFitWidth(labels.data(), (int)labels.size()));
+				fl.next(w);
+				int s2 = sel < 0 ? 0 : sel;
+				if (PobUi::Select("##choice", &s2, labels.data(), nullptr, (int)labels.size(), w) || (sel < 0 && false))
+					next = WithChoice(cur, opts[s2].id);
+			} else {
+				std::vector<const char*> labels;
+				std::vector<char> lit;
+				for (const AlgoOption& o : opts) {
+					labels.push_back(o.zh.c_str());
+					lit.push_back(cur.choice == o.id);
+				}
+				fl.next(SegTogglesW(labels.data(), (int)labels.size()));
+				const int k = SegToggles("##choice", labels.data(), (const bool*)lit.data(), (int)labels.size());
+				if (k >= 0) next = WithChoice(cur, opts[k].id);
 			}
 			break;
 		}
 		case InputKind::Count: {
 			const std::vector<AlgoOption>& opts = e.input.options;
-			for (size_t k = 0; k < opts.size(); k++) {
-				if (k) ImGui::SameLine(0, 2 * host_->scale);
-				if (segButton(opts[k].zh.c_str(), cur.choice == opts[k].id)) next = WithChoice(cur, opts[k].id);
+			std::vector<const char*> labels;
+			std::vector<char> lit;
+			for (const AlgoOption& o : opts) {
+				labels.push_back(o.zh.c_str());
+				lit.push_back(cur.choice == o.id);
 			}
-			ImGui::SameLine();
-			ImGui::TextDisabled(u8"≥");
-			ImGui::SameLine();
-			if (numField("##min", cur.min, n)) next = WithNum(e, cur, false, n);
+			fl.next(SegTogglesW(labels.data(), (int)labels.size()));
+			const int k = SegToggles("##color", labels.data(), (const bool*)lit.data(), (int)labels.size());
+			if (k >= 0) next = WithChoice(cur, opts[k].id);
+			hint(u8"≥");
+			fl.next(Dp(44.0f));
+			if (numField("##min", cur.min, n, Dp(44.0f))) next = WithNum(e, cur, false, n);
 			break;
 		}
 		case InputKind::Rarity: {
-			// RegexAlgoList.vue (step 40, B d5ccb47):
-			// "普通 魔法 稀有 傳奇 | 未汙染 已汙染" -- rarities multi-select, corruption
+			// "普通 魔法 稀有 傳奇 | 未汙染 已汙染": rarities multi-select, corruption
 			// one of two (clicking the lit one clears it), a divider between
 			const RarityChoice rc = ParseRarityChoice(cur.choice);
-			const float sp = 2 * host_->scale;
-			bool first = true;
+			std::vector<const char*> rl, rt;
+			std::vector<char> rlit;
+			std::vector<std::string> tips;
 			for (const AlgoOption& o : e.input.options) {
-				const std::string label = o.zh + "###r_" + o.id;
-				if (!first) sameLineOrWrap(smallButtonWidth(label.c_str()), sp);
-				first = false;
-				const bool lit = std::find(rc.rarity.begin(), rc.rarity.end(), o.id) != rc.rarity.end();
-				if (segButton(label.c_str(), lit)) next = WithChoice(cur, ToggleRarityIn(cur.choice, o.id));
-				if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"%s（可多選）", o.en.c_str());
+				rl.push_back(o.zh.c_str());
+				rlit.push_back(std::find(rc.rarity.begin(), rc.rarity.end(), o.id) != rc.rarity.end());
+				tips.push_back(o.en + u8"（可多選）");
 			}
-			{
-				// the divider: a thin vertical rule the height of a button
-				const float h = ImGui::GetFrameHeight() - ImGui::GetStyle().FramePadding.y * 2;
-				const float dw = 9 * host_->scale;
-				sameLineOrWrap(dw, sp);
-				const ImVec2 p = ImGui::GetCursorScreenPos();
-				ImGui::Dummy(ImVec2(dw, h > 0 ? h : ImGui::GetTextLineHeight()));
-				const float x = p.x + dw * 0.5f;
-				ImGui::GetWindowDrawList()->AddLine(ImVec2(x, p.y + 1), ImVec2(x, p.y + (h > 0 ? h : ImGui::GetTextLineHeight()) - 1),
-				                                    ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
-			}
+			for (const std::string& t : tips) rt.push_back(t.c_str());
+			fl.next(SegTogglesW(rl.data(), (int)rl.size()));
+			const int k = SegToggles("##rar", rl.data(), (const bool*)rlit.data(), (int)rl.size(), rt.data());
+			if (k >= 0) next = WithChoice(cur, ToggleRarityIn(cur.choice, e.input.options[k].id));
+			fl.next(Dp(9.0f));
+			VSep();
+			std::vector<const char*> cl;
+			std::vector<char> clit;
+			std::vector<Corruption> cv;
 			for (const AlgoOption& o : e.input.corruption) {
-				const std::string label = o.zh + "###c_" + o.id;
-				sameLineOrWrap(smallButtonWidth(label.c_str()), sp);
+				cl.push_back(o.zh.c_str());
 				const Corruption c = o.id == "uncorrupted" ? Corruption::Uncorrupted : Corruption::Corrupted;
-				if (segButton(label.c_str(), rc.corruption == c)) next = WithChoice(cur, ToggleCorruptionIn(cur.choice, c));
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip(c == Corruption::Uncorrupted ? u8"排除「已汙染」行（再點一次取消）"
-					                                               : u8"只要有「已汙染」行（再點一次取消）");
+				cv.push_back(c);
+				clit.push_back(rc.corruption == c);
 			}
+			const char* ctips[2] = {u8"排除「已汙染」行（再點一次取消）", u8"只要有「已汙染」行（再點一次取消）"};
+			fl.next(SegTogglesW(cl.data(), (int)cl.size()));
+			const int c = SegToggles("##cor", cl.data(), (const bool*)clit.data(), (int)cl.size(), cl.size() == 2 ? ctips : nullptr);
+			if (c >= 0) next = WithChoice(next ? *next : cur, ToggleCorruptionIn(cur.choice, cv[c]));
 			break;
 		}
 		case InputKind::Colors: {
 			static const char kLetters[3] = {'r', 'g', 'b'};
-			static const ImVec4 kDot[3] = {ImVec4(0.90f, 0.35f, 0.30f, 1), ImVec4(0.40f, 0.80f, 0.45f, 1), ImVec4(0.40f, 0.60f, 0.95f, 1)};
+			static const ImU32 kDot[3] = {IM_COL32(0xc0, 0x39, 0x2b, 255), IM_COL32(0x27, 0xae, 0x60, 255), IM_COL32(0x2e, 0x6f, 0xd0, 255)};
 			for (int k = 0; k < 3; k++) {
-				if (k) ImGui::SameLine();
 				ImGui::PushID(k);
-				ImGui::AlignTextToFramePadding();
-				ImGui::TextColored(kDot[k], "%c", kLetters[k] - 'a' + 'A');
-				ImGui::SameLine(0, 3 * host_->scale);
+				const float d = Dp(18.0f);
+				fl.next(d);
+				const ImVec2 cp = ImGui::GetCursorScreenPos();
+				const ImVec2 cc(cp.x + d * 0.5f, fl.y + rowH0 * 0.5f);
+				dl->AddCircleFilled(cc, d * 0.5f, kDot[k]);
+				const char L[2] = {(char)(kLetters[k] - 'a' + 'A'), 0};
+				const ImVec2 ls = TextSz(SmallF(), L);
+				DrawTextAt(dl, SmallF(), ImVec2(cc.x - ls.x * 0.5f, cc.y - ls.y * 0.5f), Tok::OnAccent, L);
+				ImGui::Dummy(ImVec2(d, rowH0));
+				fl.next(Dp(44.0f));
 				const std::optional<double> count = (double)ColorCount(cur, kLetters[k]);
-				if (numField("##n", count, n)) {
+				if (numField("##n", count, n, Dp(44.0f))) {
 					// TS: Math.trunc(Number(value) || 0), clamped 0..6
 					const int c = n ? (int)std::trunc(*n) : 0;
 					next = WithColor(cur, kLetters[k], c);
@@ -2652,69 +3196,76 @@ private:
 			s.algo.SetValue(page, i, *next);   // editing a value ticks the row
 			algoChanged(idx);
 		}
-
-		ImGui::TableSetColumnIndex(2);
-		const std::optional<std::string> f = e.fragment(ValueOf(s.algo.values, e), fragLang());
-		ImGui::AlignTextToFramePadding();
-		if (f) {
-			// Wrapped inside the cell, never clipped: a fragment is the thing to
-			// check before pasting, so all of it has to be readable. Only rows whose
-			// fragment is longer than the column grow (a long token is cut anywhere).
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::PushTextWrapPos(0.0f);
-			ImGui::TextUnformatted(f->c_str());
-			ImGui::PopTextWrapPos();
-			ImGui::PopStyleColor();
-			if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", f->c_str());
-		} else {
-			ImGui::TextColored(kBad, u8"（輸入不成立）");
+		if (click) {
+			s.algo.picked[i] = on ? 0 : 1;
+			algoChanged(idx);
 		}
+
+		// fragment: what this row puts in the string (ticked rows), wrapped whole
+		float fragBottom = p.y + padY + rowH0;
+		if (on) {
+			const std::optional<std::string> f = e.fragment(ValueOf(s.algo.values, e), fragLang());
+			const float fx = nx + c0 + colGap + c1 + colGap;
+			const std::string text = f ? *f : std::string(u8"輸入不成立");
+			const std::vector<std::string> lines = WrapAnywhere(SmallF(), text, std::max(Dp(40.0f), c2));
+			const float lh = SmallF()->FontSize * 1.3f;
+			float fy = p.y + padY + std::floor((rowH0 - SmallF()->FontSize) * 0.5f);
+			for (const std::string& l : lines) {
+				DrawTextAt(dl, SmallF(), ImVec2(fx, fy), f ? Tok::TextMuted : Tok::Danger, l.c_str());
+				fy += lh;
+			}
+			fragBottom = std::max(fragBottom, fy);
+			if (f && ImGui::IsMouseHoveringRect(ImVec2(fx, p.y), ImVec2(fx + c2, fragBottom))) PobUi::Tooltip(f->c_str());
+		}
+		const float bottom = std::max({nameBottom, fl.bottom(), fragBottom}) + padY;
+		split.SetCurrentChannel(dl, 0);
+		if (on) dl->AddRectFilled(p, ImVec2(p.x + width, bottom), Tok::WarningSoft, Dp(6.0f));
+		else if (ImGui::IsMouseHoveringRect(p, ImVec2(p.x + width, bottom))) dl->AddRectFilled(p, ImVec2(p.x + width, bottom), Tok::Surface2, Dp(6.0f));
+		split.Merge(dl);
+		ImGui::SetCursorScreenPos(ImVec2(p.x, bottom + Dp(1.0f)));
+		ImGui::Dummy(ImVec2(width, 0));
 		ImGui::PopID();
 	}
 
-	void drawAlgoRows(int idx)
+	// The rows of an algorithmic page / section; groups as .gbox when there is
+	// more than one (the vendor page: 插槽與連結 / 物品屬性 / 勢力).
+	void drawAlgoRows(int idx, bool boxes)
 	{
 		const RegexAlgo::AlgoPage& page = *refs_[idx].algo;
+		const float w = ImGui::GetContentRegionAvail().x;
 		for (int g = 0; g < (int)page.groups.size(); g++) {
 			bool any = false;
 			for (const RegexAlgo::AlgoEntry& e : page.entries) any |= (e.def.group == g);
 			if (!any) continue;
-			if (page.groups.size() > 1) ImGui::TextDisabled("%s", page.groups[g].c_str());
 			ImGui::PushID(g);
-			const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH;
-			if (ImGui::BeginTable("##rx_algo", 3, flags)) {
-				// Name | input | fragment. The fragment wraps in its cell (drawAlgoRow), so
-				// it gets the larger share; the input column wraps its buttons.
-				ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-				ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.35f);
-				ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.65f);
-				for (int i = 0; i < (int)page.entries.size(); i++) {
-					if (page.entries[i].def.group != g) continue;
-					ImGui::TableNextRow();
-					drawAlgoRow(idx, i);
-				}
-				ImGui::EndTable();
-			}
+			const bool box = boxes && page.groups.size() > 1;
+			GBox gb;
+			if (box) gb = GBoxBegin(page.groups[g].c_str(), w);
+			const float rw = box ? w - Dp(12.0f) : w;
+			for (int i = 0; i < (int)page.entries.size(); i++)
+				if (page.entries[i].def.group == g) drawAlgoRow(idx, i, rw);
+			if (box) GBoxEnd(gb);
 			ImGui::PopID();
 		}
 	}
 
-	// The vendor page: the rows are the whole list.
+	// The vendor page (RegexVendor.dc.html): the rows are the whole list.
 	void drawAlgoPage(int idx)
 	{
 		PageState& s = pages_[idx];
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextDisabled(u8"每個勾選各自一個條件（同時成立）；改數值會自動勾選。");
-		ImGui::SameLine();
-		ImGui::BeginDisabled(s.algo.Count() == 0);
-		if (ImGui::SmallButton(u8"清除")) {
+		const float avail = ImGui::GetContentRegionAvail().x;
+		const float cw = PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm);
+		const float y = ImGui::GetCursorScreenPos().y;
+		SmallText(u8"每個勾選各自一個條件（同時成立）；改數值會自動勾選。", Tok::TextMuted, avail - cw - Dp(10.0f));
+		const float after = ImGui::GetCursorScreenPos().y;
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + avail - cw, y - Dp(4.0f)));
+		if (PobUi::Button(u8"清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, s.algo.Count() > 0)) {
 			std::fill(s.algo.picked.begin(), s.algo.picked.end(), (char)0);
 			algoChanged(idx);
 		}
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有勾選");
-		ImGui::BeginChild("##rx_algo_rows", ImVec2(0, 0), true);
-		drawAlgoRows(idx);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetItemRectMin().x - (avail - cw), std::max(after, ImGui::GetItemRectMax().y) + Dp(4.0f)));
+		ImGui::BeginChild("##rx_algo_rows", ImVec2(0, 0), false);
+		drawAlgoRows(idx, true);
 		ImGui::EndChild();
 	}
 
@@ -2825,57 +3376,35 @@ private:
 			if (L.worker.joinable()) L.worker.join();
 	}
 
+	// RegexItemMods.dc.html: toolbar (search | category with counts | only ticked
+	// | shown / matching), the rules of the page, rows grouped by category (the
+	// ticked ones first, in a group of their own), at most kListCap more.
 	void drawItemModPage(int idx)
 	{
 		const std::string g = refs_[idx].Game();
 		ItemModLoad& L = imv_[GameIdx(g)];
 		if (L.phase == ItemModLoad::Phase::Error) {
-			ImGui::TextColored(kBad, u8"物品詞綴資料載入失敗：%s", L.err.c_str());
-			ImGui::SameLine();
-			if (ImGui::SmallButton(u8"重試###rx_imv_retry")) startItemMods(g);
+			if (PobUi::Banner("rx_imverr", PobUi::BannerTone::Bad, PobIcon::CircleX, u8"物品詞綴載入失敗", L.err.c_str(), false, u8"重試",
+			                  false) == PobUi::BannerResult::Action && !testMode_)
+				startItemMods(g);
 			return;
 		}
 		if (L.phase != ItemModLoad::Phase::Ready) {
 			if (L.phase == ItemModLoad::Phase::Idle) startItemMods(g);
-			ImGui::TextDisabled(u8"載入物品詞綴中…（第一次打開要整理幾千條詞綴的模板與唯一片段）");
+			SmallText(u8"載入物品詞綴（第一次開這一頁要讀詞綴表，約1秒）…", Tok::TextMuted);
 			return;
 		}
 		PageState& s = pages_[idx];
 		const RegexAlgo::AlgoPage& page = *refs_[idx].algo;
-		ImGui::SetNextItemWidth(190 * host_->scale);
-		if (ImGui::InputTextWithHint("##rx_imv_search", u8"搜尋繁中 / 英文（空白分隔多個字）", &s.search))
-			s.filterDirty = true;
-		ImGui::SameLine();
-		ImGui::SetNextItemWidth(150 * host_->scale);
-		const std::string allLabel = u8"全部分類（" + std::to_string(page.entries.size()) + u8"）";
-		const std::string curLabel = s.groupFilter < 0 || s.groupFilter >= (int)page.groups.size()
-			? allLabel
-			: page.groups[s.groupFilter] + u8"（" + std::to_string(L.groupCounts[s.groupFilter]) + u8"）";
-		if (ImGui::BeginCombo("##rx_imv_group", curLabel.c_str())) {
-			if (ImGui::Selectable(allLabel.c_str(), s.groupFilter < 0)) {
-				s.groupFilter = -1;
-				s.filterDirty = true;
-			}
-			for (int gi = 0; gi < (int)page.groups.size(); gi++) {
-				const std::string label = page.groups[gi] + u8"（" + std::to_string(L.groupCounts[gi]) + u8"）###imvg" + std::to_string(gi);
-				if (ImGui::Selectable(label.c_str(), s.groupFilter == gi)) {
-					s.groupFilter = gi;
-					s.filterDirty = true;
-				}
-			}
-			ImGui::EndCombo();
-		}
-		ImGui::SameLine();
-		if (ImGui::Checkbox(u8"只看已勾選", &s.pickedOnly)) s.filterDirty = true;
-		ImGui::SameLine();
-		ImGui::BeginDisabled(s.algo.Count() == 0);
-		if (ImGui::SmallButton(u8"清除###rx_imv_clear")) {
-			std::fill(s.algo.picked.begin(), s.algo.picked.end(), (char)0);
-			algoChanged(idx);
-		}
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(u8"取消所有勾選");
+		const float avail = ImGui::GetContentRegionAvail().x, gap = Dp(8.0f);
 
+		std::vector<std::string> gl;
+		gl.push_back(u8"全部分類 (" + std::to_string(page.entries.size()) + ")");
+		for (int gi = 0; gi < (int)page.groups.size(); gi++)
+			gl.push_back(page.groups[gi] + " (" + std::to_string(gi < (int)L.groupCounts.size() ? L.groupCounts[gi] : 0) + ")");
+		std::vector<const char*> glp;
+		for (const std::string& x : gl) glp.push_back(x.c_str());
+		const float groupW = std::max(Dp(140.0f), PobUi::SelectFitWidth(glp.data(), (int)glp.size()));
 		if (s.filterDirty) {
 			RegexItemMods::Filter f;
 			f.search = s.search;
@@ -2886,41 +3415,89 @@ private:
 			s.imvTotal = r.total;
 			s.filterDirty = false;
 		}
-		ImGui::SameLine();
-		ImGui::TextDisabled(u8"顯示 %d / 符合 %d", (int)s.imvRows.size(), s.imvTotal);
-
-		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-		ImGui::TextWrapped(u8"已勾選的永遠在最上面；每個勾選各自一個條件（同時成立），改數值會自動勾選。"
-		                   u8"只收恰好一個整數數值的詞綴，負值在 ≥ 條件下會被當成正數。");
-		if (s.imvTotal > (int)s.imvRows.size())
-			ImGui::TextWrapped(u8"還有 %d 條符合：用搜尋或分類縮小範圍。", s.imvTotal - (int)s.imvRows.size());
-		ImGui::PopStyleColor();
+		const std::string shown = u8"顯示 " + std::to_string(s.imvRows.size()) + u8" / 符合 " + std::to_string(s.imvTotal);
+		const char* onlyL = u8"只看已勾選";
+		const float onlyW = Dp(21.0f) + TextSz(SmallF(), onlyL).x;
+		const float shownW = TextSz(SmallF(), shown.c_str()).x;
+		const float clearW = PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm);
+		const float fixed = groupW + onlyW + shownW + clearW + gap * 4;
+		const bool oneRow = avail - fixed >= Dp(160.0f);
+		syncSearchBuf(s);
+		if (PobUi::SearchField("##rx_imv_search", s.searchBuf, (int)sizeof s.searchBuf, u8"搜尋繁中 / 英文（空白分隔多個字）",
+		                       oneRow ? avail - fixed : avail)) {
+			s.search = s.searchBuf;
+			s.filterDirty = true;
+		}
+		const float H = ImGui::GetItemRectSize().y;
+		if (oneRow) ImGui::SameLine(0, gap);
+		const float lineY = ImGui::GetCursorScreenPos().y;
+		int sel = s.groupFilter + 1;
+		if (PobUi::Select("##rx_imv_group", &sel, glp.data(), nullptr, (int)glp.size(), groupW) && sel - 1 != s.groupFilter) {
+			s.groupFilter = sel - 1;
+			s.filterDirty = true;
+		}
+		ImGui::SameLine(0, gap);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, lineY + std::floor((H - Dp(15.0f)) * 0.5f)));
+		if (CheckLabel("rx_imv_only", onlyL, s.pickedOnly)) {
+			s.pickedOnly = !s.pickedOnly;
+			s.filterDirty = true;
+		}
+		ImGui::SameLine(0, gap);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, lineY + std::floor((H - SmallF()->FontSize) * 0.5f)));
+		SmallText(shown.c_str());
+		ImGui::SameLine(0, gap);
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, lineY + std::floor((H - Dp(28.0f)) * 0.5f)));
+		if (PobUi::Button(u8"清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, s.algo.Count() > 0)) {
+			std::fill(s.algo.picked.begin(), s.algo.picked.end(), (char)0);
+			algoChanged(idx);
+		}
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetWindowPos().x + ImGui::GetCursorStartPos().x - ImGui::GetScrollX(), lineY + H + Dp(6.0f)));
+		SmallText(u8"只收恰好一個數值的詞綴；數值只認整數，小數詞綴不收；負值在≥條件下會被當成正數命中。"
+		          u8"有些片段會加行首／行尾錨點，避開文字相同但更長的詞綴。",
+		          Tok::TextMuted, avail);
+		ImGui::Dummy(ImVec2(0, Dp(4.0f)));
 		if (s.imvRows.empty()) {
-			ImGui::TextDisabled(u8"沒有符合的詞綴");
+			const std::string t = s.search.empty() ? std::string(u8"沒有符合的詞綴") : u8"找不到「" + s.search + u8"」";
+			if (PobUi::EmptyState("rx_imv_none", PobIcon::Search, t.c_str(), u8"試試英文或較短的關鍵字，或換一個分類。",
+			                      (!s.search.empty() || s.groupFilter >= 0 || s.pickedOnly) ? u8"清除篩選" : nullptr)) {
+				s.search.clear();
+				s.searchBuf[0] = 0;
+				s.groupFilter = -1;
+				s.pickedOnly = false;
+				s.filterDirty = true;
+			}
 			return;
 		}
-		ImGui::BeginChild("##rx_imv_rows", ImVec2(0, 0), true);
-		const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH;
-		if (ImGui::BeginTable("##rx_imv", 3, flags)) {
-			ImGui::TableSetupColumn("name", ImGuiTableColumnFlags_WidthStretch, 1.3f);
-			ImGui::TableSetupColumn("input", ImGuiTableColumnFlags_WidthStretch, 1.4f);
-			ImGui::TableSetupColumn("frag", ImGuiTableColumnFlags_WidthStretch, 1.3f);
-			// A copy: ticking a row re-filters next frame, never under this loop.
-			const std::vector<int> rows = s.imvRows;
-			for (int i : rows) {
-				ImGui::TableNextRow();
-				drawAlgoRow(idx, i);
-			}
-			ImGui::EndTable();
+		ImGui::BeginChild("##rx_imv_rows", ImVec2(0, 0), false);
+		const float w = ImGui::GetContentRegionAvail().x;
+		// A copy: ticking a row re-filters next frame, never under this loop.
+		const std::vector<int> rows = s.imvRows;
+		size_t k = 0;
+		// the ticked rows (FilterRows puts them first)
+		size_t nPicked = 0;
+		while (nPicked < rows.size() && s.algo.picked[rows[nPicked]]) nPicked++;
+		if (nPicked > 0) {
+			const GBox gb = GBoxBegin(u8"已勾選", w);
+			for (; k < nPicked; k++) drawAlgoRow(idx, rows[k], w - Dp(12.0f));
+			GBoxEnd(gb);
 		}
+		while (k < rows.size()) {
+			const int grp = page.entries[rows[k]].def.group;
+			const GBox gb = GBoxBegin(grp >= 0 && grp < (int)page.groups.size() ? page.groups[grp].c_str() : "", w);
+			ImGui::PushID((int)k);
+			for (; k < rows.size() && page.entries[rows[k]].def.group == grp; k++) drawAlgoRow(idx, rows[k], w - Dp(12.0f));
+			ImGui::PopID();
+			GBoxEnd(gb);
+		}
+		if (s.imvTotal > (int)s.imvRows.size())
+			SmallText((u8"還有 " + std::to_string(s.imvTotal - (int)s.imvRows.size()) + u8" 條符合，請輸入更多字或選分類縮小範圍。").c_str(),
+			          Tok::TextMuted, w);
 		ImGui::EndChild();
 	}
 
-	// The numeric section on top of a host page (exile-appraiser
-	// RegexNumericSection.vue): a foldable block whose terms join the modifier
-	// tokens below in one string. Folded, its header still says what is set.
-	// Step 40 (B d5ccb47): the same block draws the
-	// one-row "稀有度 / 汙染" condition sections (section_title_cond / _hint_cond).
+	// The numeric / condition section on top of a host page (Regex.dc.html
+	// "數值條件" card, RegexItemMods.dc.html "稀有度 / 汙染"): a foldable card whose
+	// head says how many are set and what they cost; folded, it lists them.
 	void drawSection(int host, int sec)
 	{
 		using namespace RegexAlgo;
@@ -2931,78 +3508,85 @@ private:
 		const char* title = cond ? u8"稀有度 / 汙染" : u8"數值條件";
 		const bool collapsed = std::find(state_.collapsed.begin(), state_.collapsed.end(), hostId) != state_.collapsed.end();
 		ImGui::PushID("rx_sec");
-		bool toggle = ImGui::ArrowButton("##toggle", collapsed ? ImGuiDir_Right : ImGuiDir_Down);
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"%s%s", collapsed ? u8"展開" : u8"收合", title);
-		ImGui::SameLine();
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted(title);
-		if (ImGui::IsItemClicked()) toggle = true;
-		ImGui::SameLine();
-		ImGui::TextDisabled(u8"已設 %d / %d", ss.algo.Count(), (int)page.entries.size());
-		int contrib = 0;
-		for (const PageContribution& c : pages_[host].combined.perPage)
-			if (c.id == page.id) contrib = c.length;
-		if (contrib > 0) {
-			ImGui::SameLine();
-			ImGui::TextDisabled(u8"%d 字", contrib);
-		}
-		ImGui::SameLine();
-		ImGui::TextDisabled("(?)");
+		PobUi::CardBegin("rx_seccard", nullptr, nullptr, nullptr, false);
+		const ImVec2 c0 = ImGui::GetCursorScreenPos();
+		const float cw = ImGui::GetContentRegionAvail().x;
+		const float headH = Dp(38.0f), padX = Dp(12.0f);
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		const bool toggle = ImGui::InvisibleButton("##head", ImVec2(cw, headH));
 		if (ImGui::IsItemHovered()) {
-			ImGui::BeginTooltip();
-			ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
-			// i18n cmn-Hant.json ppz.regex.section_hint / section_hint_cond (step 40)
-			if (cond)
-				ImGui::TextUnformatted(u8"物品稀有度可多選、汙染二選一（再點一次取消），各自一個條件（同時成立），"
-				                       u8"與下方勾選合成同一條字串。點按鈕會自動勾選。");
-			else
-				ImGui::TextUnformatted(u8"階級、物品數量、稀有度等屬性行的數值；每個勾選各自一個條件（同時成立），"
-				                       u8"與下方詞綴合成同一條字串。改數值會自動勾選。寫法依社群實用格式「標籤: +N%」"
-				                       u8"（半形／全形冒號、+ 可有可無，只比對冒號後的整個數字，不跨行）；"
-				                       u8"階級比對名稱「（階級 N）」；稀有度 / 汙染列：稀有度可多選（比對「稀有度: 稀有」行），"
-				                       u8"汙染二選一（再點一次取消；未汙染 = 排除「已汙染」行），兩者各自一個條件。");
-			ImGui::PopTextWrapPos();
-			ImGui::EndTooltip();
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			PobUi::Tooltip(cond ? u8"物品稀有度可多選、汙染二選一（再點一次取消），各自一個條件（同時成立），與下方勾選合成同一條字串。點按鈕會自動勾選。"
+			                    : u8"階級、物品數量、稀有度等屬性行的數值；每個勾選各自一個條件（同時成立），與下方詞綴合成同一條字串。"
+			                      u8"寫法依社群實用格式「標籤: +N%」（半形／全形冒號、+可有可無，只比對冒號後的整個數字，不跨行）；"
+			                      u8"階級比對名稱「（階級N）」。");
 		}
-		ImGui::SameLine();
-		ImGui::BeginDisabled(ss.algo.Count() == 0);
-		if (ImGui::SmallButton(u8"清除###rx_sec_clear")) {
-			std::fill(ss.algo.picked.begin(), ss.algo.picked.end(), (char)0);
-			algoChanged(sec);
+		{
+			float x = c0.x + padX;
+			const float iconPx = SmallF()->FontSize;
+			if (PobUi::Fonts().icons) {
+				PobUi::IconAt(dl, ImVec2(x, c0.y + std::floor((headH - iconPx) * 0.5f)), collapsed ? PobIcon::ChevronRight : PobIcon::ChevronDown,
+				              Tok::TextMuted, iconPx);
+				x += PobUi::IconWidth(PobIcon::ChevronDown, iconPx) + Dp(8.0f);
+			}
+			DrawTextAt(dl, BodyF(), ImVec2(x, c0.y + std::floor((headH - BodyF()->FontSize) * 0.5f)), Tok::Text, title);
+			x += TextSz(BodyF(), title).x + Dp(8.0f);
+			const std::string setN = u8"已設 " + std::to_string(ss.algo.Count()) + " / " + std::to_string(page.entries.size());
+			DrawTextAt(dl, SmallF(), ImVec2(x, c0.y + std::floor((headH - SmallF()->FontSize) * 0.5f)), Tok::TextMuted, setN.c_str());
+			int contrib = 0;
+			for (const PageContribution& c : pages_[host].combined.perPage)
+				if (c.id == page.id) contrib = c.length;
+			if (contrib > 0) {
+				const std::string cs = std::to_string(contrib) + u8" 字";
+				const float w = TextSz(SmallF(), cs.c_str()).x;
+				DrawTextAt(dl, SmallF(), ImVec2(c0.x + cw - padX - w, c0.y + std::floor((headH - SmallF()->FontSize) * 0.5f)), Tok::Text, cs.c_str());
+			}
+			dl->AddLine(ImVec2(c0.x + 1, c0.y + headH), ImVec2(c0.x + cw - 1, c0.y + headH), Tok::BorderSubtle, 1.0f);
 		}
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(cond ? u8"取消稀有度 / 汙染條件的勾選" : u8"取消所有數值條件的勾選");
 		if (toggle) {
 			// store.ts setCollapsed: remembered per host page
 			if (collapsed) state_.collapsed.erase(std::remove(state_.collapsed.begin(), state_.collapsed.end(), hostId), state_.collapsed.end());
 			else state_.collapsed.push_back(hostId);
 			markStateDirty();
 		}
-
+		ImGui::SetCursorScreenPos(ImVec2(c0.x + padX, c0.y + headH + Dp(6.0f)));
 		if (collapsed) {
-			// view.ts sectionSummary: ticked rows in row order, "地圖階級 ≥16 · 物品數量 ≥80%".
+			// view.ts sectionSummary: ticked rows in row order, "地圖階級 ≥16 · 物品數量 ≥80%"
 			const std::vector<SummaryItem> items = SectionSummary(page, ss.algo.Picks(), ss.algo.values, RegexFrag::Lang::Zh);
 			if (items.empty()) {
-				ImGui::TextDisabled(cond ? u8"沒有設定稀有度 / 汙染條件" : u8"沒有設定數值條件");
+				SmallText(cond ? u8"沒有設定稀有度 / 汙染條件" : u8"沒有設定數值條件", Tok::TextFaint);
 			} else {
 				std::string ok, bad;
 				for (const SummaryItem& it : items) {
 					if (it.cond) ok += (ok.empty() ? "" : u8" · ") + it.label + " " + *it.cond;
 					else bad += (bad.empty() ? "" : u8"、") + it.label;
 				}
-				if (!ok.empty()) {
-					ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-					ImGui::TextWrapped("%s", ok.c_str());
-					ImGui::PopStyleColor();
-				}
-				if (!bad.empty()) ImGui::TextColored(kBad, u8"輸入不成立：%s", bad.c_str());
+				if (!ok.empty()) SmallText(ok.c_str(), Tok::TextMuted, cw - padX * 2);
+				if (!bad.empty()) SmallText((u8"輸入不成立：" + bad).c_str(), Tok::Danger, cw - padX * 2);
 			}
+			ImGui::Dummy(ImVec2(0, Dp(4.0f)));
 		} else {
-			drawAlgoRows(sec);
+			const float clearW = PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm);
+			const float y = ImGui::GetCursorScreenPos().y;
+			SmallText(cond ? u8"物品稀有度可多選、汙染二選一，各自一個條件（同時成立），與下方勾選合成同一條字串；點按鈕會自動勾選。"
+			               : u8"每個勾選各自一個條件（同時成立），與下方詞綴合成同一條字串；改數值會自動勾選。",
+			          Tok::TextMuted, cw - padX * 2 - clearW - Dp(10.0f));
+			const float after = ImGui::GetItemRectMax().y;
+			ImGui::SetCursorScreenPos(ImVec2(c0.x + cw - padX - clearW, y - Dp(4.0f)));
+			if (PobUi::Button(u8"清除###rx_sec_clear", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, ss.algo.Count() > 0)) {
+				std::fill(ss.algo.picked.begin(), ss.algo.picked.end(), (char)0);
+				algoChanged(sec);
+			}
+			ImGui::SetCursorScreenPos(ImVec2(c0.x + Dp(6.0f), std::max(after, ImGui::GetItemRectMax().y) + Dp(4.0f)));
+			ImGui::BeginGroup();
+			const float rw = cw - Dp(12.0f);
+			for (int i = 0; i < (int)page.entries.size(); i++) drawAlgoRow(sec, i, rw);
+			ImGui::EndGroup();
+			ImGui::Dummy(ImVec2(0, Dp(4.0f)));
 		}
+		PobUi::CardEnd();
 		ImGui::PopID();
-		ImGui::Separator();
+		ImGui::Dummy(ImVec2(0, Dp(8.0f)));
 	}
 
 	// ---- multi-page merge (R4) ---------------------------------------------------
@@ -3146,32 +3730,44 @@ private:
 		return true;
 	}
 
+	// RegexLimit.dc.html 自訂文字 / 排除詞 cards: the chips (.chipw, × removes) and
+	// an input + 加入 (Enter adds).
 	void drawChips(const char* id, const char* title, const char* hint, const char* placeholder,
 	               std::vector<std::string>& list, std::string& draft)
 	{
 		ImGui::PushID(id);
+		PobUi::CardBegin("chipcard", nullptr, nullptr, nullptr, true);
+		const float inner = PobUi::CardInnerWidth();
+		const float x0 = ImGui::GetCursorScreenPos().x;
 		ImGui::TextUnformatted(title);
-		ImGui::SameLine();
-		ImGui::TextDisabled("%s", hint);
+		SmallText(hint, Tok::TextMuted, inner);
 		int remove = -1;
-		const float right = ImGui::GetContentRegionMax().x;
-		for (int i = 0; i < (int)list.size(); i++) {
-			ImGui::PushID(i);
-			// A chip: the text and its own remove button, wrapped like words.
-			const float w = ImGui::CalcTextSize(list[i].c_str()).x + ImGui::GetFrameHeight() +
-			                ImGui::GetStyle().FramePadding.x * 2 + ImGui::GetStyle().ItemSpacing.x;
-			if (i > 0) {
-				ImGui::SameLine();
-				if (ImGui::GetCursorPosX() + w > right) ImGui::NewLine();
+		if (!list.empty()) {
+			ImGui::Dummy(ImVec2(0, Dp(2.0f)));
+			float x = x0, y = ImGui::GetCursorScreenPos().y;
+			const float h = Dp(24.0f), gap = Dp(6.0f);
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			for (int i = 0; i < (int)list.size(); i++) {
+				ImGui::PushID(i);
+				const ImVec2 ts = TextSz(SmallF(), list[i].c_str());
+				const float xw = TextSz(SmallF(), u8"×").x;
+				const float w = Dp(10.0f) + ts.x + Dp(6.0f) + xw + Dp(8.0f);
+				if (x > x0 && x + w > x0 + inner) {
+					x = x0;
+					y += h + gap;
+				}
+				dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), Tok::Surface3, h * 0.5f);
+				DrawTextAt(dl, SmallF(), ImVec2(x + Dp(10.0f), y + std::floor((h - ts.y) * 0.5f)), Tok::Text, list[i].c_str());
+				ImGui::SetCursorScreenPos(ImVec2(x + Dp(10.0f) + ts.x + Dp(2.0f), y));
+				if (ImGui::InvisibleButton("##x", ImVec2(xw + Dp(10.0f), h))) remove = i;
+				const bool hov = ImGui::IsItemHovered();
+				DrawTextAt(dl, SmallF(), ImVec2(x + Dp(10.0f) + ts.x + Dp(6.0f), y + std::floor((h - ts.y) * 0.5f)),
+				           hov ? Tok::Danger : Tok::TextFaint, u8"×");
+				if (hov) PobUi::Tooltip(u8"移除");
+				x += w + gap;
+				ImGui::PopID();
 			}
-			ImGui::BeginGroup();
-			// Plain text, not a button label: typed text may contain "##".
-			ImGui::TextUnformatted(list[i].c_str());
-			ImGui::SameLine(0, 1 * host_->scale);
-			if (ImGui::SmallButton(u8"×")) remove = i;
-			if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"移除");
-			ImGui::EndGroup();
-			ImGui::PopID();
+			ImGui::SetCursorScreenPos(ImVec2(x0, y + h + Dp(6.0f)));
 		}
 		if (remove >= 0) {
 			list.erase(list.begin() + remove);
@@ -3179,21 +3775,26 @@ private:
 			combinedDirty_ = true;
 			copied_ = false;
 		}
-		ImGui::SetNextItemWidth(180 * host_->scale);
+		const float addW = PobUi::ButtonWidth(u8"加入", PobUi::BtnSize::Sm);
+		PobUi::PushControlFrame();
+		ImGui::SetNextItemWidth(inner - addW - Dp(6.0f));
 		const bool entered = ImGui::InputTextWithHint("##draft", placeholder, &draft, ImGuiInputTextFlags_EnterReturnsTrue);
-		ImGui::SameLine();
-		ImGui::BeginDisabled(RegexAlgo::JsTrim(draft).empty());
-		const bool clicked = ImGui::SmallButton(u8"加入");
-		ImGui::EndDisabled();
+		PobUi::PopControlFrame();
+		const float ih = ImGui::GetItemRectSize().y;
+		ImGui::SameLine(0, Dp(6.0f));
+		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetItemRectMin().y + std::floor((ih - Dp(28.0f)) * 0.5f)));
+		const bool clicked = PobUi::Button(u8"加入", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !RegexAlgo::JsTrim(draft).empty());
 		if ((entered || clicked) && addChip(list, draft) && entered) ImGui::SetKeyboardFocusHere(-1);
+		PobUi::CardEnd();
 		ImGui::PopID();
+		ImGui::Dummy(ImVec2(0, Dp(8.0f)));
 	}
 
 	// combine.ts:46 conflict kinds, worded as RegexCombined.vue's i18n.
 	std::string conflictText(const RegexAlgo::Conflict& c) const
 	{
 		using RegexAlgo::ConflictKind;
-		const std::string page = c.page.empty() ? std::string() : pageTitleInGame(c.page);
+		const std::string page = c.page.empty() ? std::string() : contributionName(c.page);
 		switch (c.kind) {
 		case ConflictKind::Extra: return page + u8"：也會選到未勾選的「" + c.text + u8"」";
 		case ConflictKind::Missing: return page + u8"：「" + c.text + u8"」沒被選到";
@@ -3205,122 +3806,382 @@ private:
 		return c.text;
 	}
 
-	// RegexCombined.vue: which pages take part and what each costs, the custom /
-	// exclude chips, and the merge conflicts.
+	// RegexLimit.dc.html "已選（合併）": which pages take part and what each
+	// costs, the custom / exclude cards, and the merge conflicts.
 	void drawCombinedView()
 	{
 		using namespace RegexAlgo;
 		const CombineResult& r = combinedAll();
 		const std::vector<int> picked = combineOrderIdx(true);
-
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted((std::string(u8"已選（合併）· ") + GameLabel(selGame_)).c_str());
-		ImGui::SameLine();
-		const char* clearLabel = u8"全部清除";
-		ImGui::SameLine(std::max(ImGui::GetCursorPosX(),
-		                         ImGui::GetContentRegionMax().x - ImGui::CalcTextSize(clearLabel).x -
-		                         ImGui::GetStyle().FramePadding.x * 2));
-		ImGui::BeginDisabled(picked.empty());
-		if (ImGui::SmallButton(clearLabel)) clearAllPicks();
-		ImGui::EndDisabled();
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-			ImGui::SetTooltip(u8"取消這個遊戲所有清單（含數值條件）的勾選；自訂文字與排除詞保留");
-
-		ImGui::BeginChild("##rx_comb", ImVec2(0, 0), true);
-		if (picked.empty()) {
-			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextWrapped(u8"還沒有勾選任何清單。切到「單頁清單」勾選，勾好的清單會在這裡合成一串。");
-			ImGui::PopStyleColor();
+		{
+			const float avail = ImGui::GetContentRegionAvail().x;
+			const float y = ImGui::GetCursorScreenPos().y, x = ImGui::GetCursorScreenPos().x;
+			const float cw = PobUi::ButtonWidth(u8"全部清除", PobUi::BtnSize::Sm);
+			ImGui::SetCursorScreenPos(ImVec2(x, y + std::floor((Dp(28.0f) - BodyF()->FontSize) * 0.5f)));
+			ImGui::TextUnformatted((std::string(u8"已選（合併）· ") + GameLabel(selGame_)).c_str());
+			ImGui::SetCursorScreenPos(ImVec2(x + avail - cw, y));
+			if (PobUi::Button(u8"全部清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, !picked.empty())) clearAllPicks();
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				PobUi::Tooltip(u8"取消這個遊戲所有清單（含數值條件）的勾選；自訂文字與排除詞保留");
+			ImGui::SetCursorScreenPos(ImVec2(x, y + Dp(28.0f) + Dp(8.0f)));
+		}
+		ImGui::BeginChild("##rx_comb", ImVec2(0, 0), false);
+		if (picked.empty() && r.custom.empty() && r.excludes.empty()) {
+			PobUi::EmptyState("rx_comb_empty", PobIcon::List, u8"還沒有勾選任何清單", u8"切到「單頁清單」勾選，勾好的清單會在這裡合成一串。");
+			ImGui::Dummy(ImVec2(0, Dp(8.0f)));
 		} else {
-			const ImGuiTableFlags flags = ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH |
-			                              ImGuiTableFlags_RowBg;
-			if (ImGui::BeginTable("##rx_comb_pages", 4, flags)) {
-				ImGui::TableSetupColumn(u8"清單", ImGuiTableColumnFlags_WidthStretch, 2.4f);
-				ImGui::TableSetupColumn(u8"勾選", ImGuiTableColumnFlags_WidthStretch, 0.7f);
-				ImGui::TableSetupColumn(u8"貢獻長度", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-				ImGui::TableSetupColumn(u8"無法單獨指定", ImGuiTableColumnFlags_WidthStretch, 1.2f);
-				ImGui::TableHeadersRow();
-				int jump = -1;
-				for (int i : picked) {
-					const PageContribution* c = nullptr;
-					for (const PageContribution& x : r.perPage)
-						if (x.id == refs_[i].Id()) c = &x;
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::PushID(i);
-					// Clicking a row goes to that page (a section: its host page).
-					if (ImGui::Selectable(refs_[i].Title().c_str(), false)) jump = hostIndexOf(i);
-					if (ImGui::IsItemHovered()) ImGui::SetTooltip(u8"到這份清單");
-					if (refs_[i].algo) {
-						ImGui::SameLine();
-						ImGui::TextDisabled(u8"數值 / 條件");
-					}
-					ImGui::PopID();
-					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%d", (int)picksOf(i).size());
-					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%d", c ? c->length : 0);
-					ImGui::TableSetColumnIndex(3);
-					const int un = c ? c->unresolved : 0;
-					if (un > 0) ImGui::TextColored(kWarn, "%d", un);
-					else ImGui::Text("0");
+			// .pt-table: name (a link to the page) + badge | ticked | cost | not single-able
+			const float w = ImGui::GetContentRegionAvail().x;
+			const float colW[4] = {w * 0.46f, w * 0.14f, w * 0.18f, w * 0.22f};
+			const char* heads[4] = {u8"清單", u8"勾選", u8"貢獻長度", u8"無法單獨指定"};
+			const float rowH = Dp(34.0f);
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			ImVec2 p = ImGui::GetCursorScreenPos();
+			auto cellRight = [&](int c, float y, const std::string& t, ImU32 col) {
+				float cx = p.x;
+				for (int k = 0; k <= c; k++) cx += colW[k];
+				const float tw = TextSz(BodyF(), t.c_str()).x;
+				DrawTextAt(dl, BodyF(), ImVec2(cx - Dp(10.0f) - tw, y + std::floor((rowH - BodyF()->FontSize) * 0.5f)), col, t.c_str());
+			};
+			{
+				float cx = p.x;
+				for (int c = 0; c < 4; c++) {
+					const float tw = TextSz(SmallF(), heads[c]).x;
+					const float tx = c == 0 ? cx + Dp(10.0f) : cx + colW[c] - Dp(10.0f) - tw;
+					DrawTextAt(dl, SmallF(), ImVec2(tx, p.y + std::floor((rowH - SmallF()->FontSize) * 0.5f)), Tok::TextMuted, heads[c]);
+					cx += colW[c];
 				}
-				if (!r.custom.empty()) {
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(u8"自訂文字");
-					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%d", (int)r.custom.size());
-					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%d", r.customLength);
-					ImGui::TableSetColumnIndex(3);
-					ImGui::TextDisabled(u8"—");
+				dl->AddLine(ImVec2(p.x, p.y + rowH), ImVec2(p.x + w, p.y + rowH), Tok::Border, 1.0f);
+			}
+			float y = p.y + rowH;
+			int jump = -1;
+			for (int i : picked) {
+				const PageContribution* c = nullptr;
+				for (const PageContribution& x : r.perPage)
+					if (x.id == refs_[i].Id()) c = &x;
+				ImGui::PushID(i);
+				const int hostIdx = hostIndexOf(i);
+				const std::string name = refs_[hostIdx].Title();
+				ImGui::SetCursorScreenPos(ImVec2(p.x + Dp(10.0f), y + std::floor((rowH - BodyF()->FontSize) * 0.5f)));
+				if (PobUi::Link(name.c_str(), Tok::AccentText)) jump = hostIdx;
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"到這份清單");
+				if (refs_[i].algo && (refs_[i].IsSection() || refs_[i].algo->kind == RegexPageKind::Numeric ||
+				                      refs_[i].algo->kind == RegexPageKind::Sockets)) {
+					const char* badge = refs_[i].IsSection() ? (IsConditionSectionId(refs_[i].Id()) ? u8"條件" : u8"數值")
+					                                         : (isItemPage(i) ? u8"數值" : u8"條件");
+					ImGui::SameLine(0, Dp(6.0f));
+					ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y + std::floor((rowH - SmallF()->FontSize - Dp(2.0f)) * 0.5f)));
+					Pill(badge, Tok::TextMuted, Tok::Surface3);
 				}
-				if (!r.excludes.empty()) {
-					ImGui::TableNextRow();
-					ImGui::TableSetColumnIndex(0);
-					ImGui::TextUnformatted(u8"排除詞");
-					ImGui::TableSetColumnIndex(1);
-					ImGui::Text("%d", (int)r.excludes.size());
-					ImGui::TableSetColumnIndex(2);
-					ImGui::Text("%d", r.excludesLength);
-					ImGui::TableSetColumnIndex(3);
-					ImGui::TextDisabled(u8"—");
-				}
-				ImGui::EndTable();
-				if (jump >= 0) {
-					switchPage(jump);
-					setView(View::Page);
-				}
+				ImGui::PopID();
+				cellRight(1, y, std::to_string(picksOf(i).size()), Tok::Text);
+				cellRight(2, y, std::to_string(c ? c->length : 0), Tok::Text);
+				const int un = c ? c->unresolved : 0;
+				cellRight(3, y, std::to_string(un), un > 0 ? Tok::Warning : Tok::Text);
+				dl->AddLine(ImVec2(p.x, y + rowH), ImVec2(p.x + w, y + rowH), Tok::BorderSubtle, 1.0f);
+				y += rowH;
+			}
+			auto extraRow = [&](const char* name, int n, int len) {
+				DrawTextAt(dl, BodyF(), ImVec2(p.x + Dp(10.0f), y + std::floor((rowH - BodyF()->FontSize) * 0.5f)), Tok::Text, name);
+				cellRight(1, y, std::to_string(n), Tok::Text);
+				cellRight(2, y, std::to_string(len), Tok::Text);
+				cellRight(3, y, u8"—", Tok::TextFaint);
+				dl->AddLine(ImVec2(p.x, y + rowH), ImVec2(p.x + w, y + rowH), Tok::BorderSubtle, 1.0f);
+				y += rowH;
+			};
+			if (!r.custom.empty()) extraRow(u8"自訂文字", (int)r.custom.size(), r.customLength);
+			if (!r.excludes.empty()) extraRow(u8"排除詞", (int)r.excludes.size(), r.excludesLength);
+			ImGui::SetCursorScreenPos(ImVec2(p.x, y + Dp(12.0f)));
+			ImGui::Dummy(ImVec2(w, 0));
+			if (jump >= 0) {
+				switchPage(jump);
+				setView(View::Page);
 			}
 		}
 
-		ImGui::Spacing();
-		drawChips("rx_custom", u8"自訂文字", u8"每項各自一個條件（同時成立），原樣比對", u8"輸入文字後按 Enter",
-		          state_.custom, customDraft_);
-		if (!state_.custom.empty()) ImGui::TextDisabled(u8"自訂文字不經驗證，可能誤中其他物品。");
-		ImGui::Spacing();
-		drawChips("rx_excludes", u8"排除詞", u8"併進唯一的排除條件（!）：有其中任一個就不選", u8"例如：反射",
-		          state_.excludes, excludeDraft_);
+		drawChips("rx_custom", u8"自訂文字", u8"每項各自一個條件（同時成立），原樣比對", u8"輸入文字後按 Enter", state_.custom, customDraft_);
+		drawChips("rx_excludes", u8"排除詞", u8"併進唯一的排除條件（!）：有其中任一個就不選", u8"例如：反射", state_.excludes, excludeDraft_);
 
 		if (!r.conflicts.empty()) {
-			ImGui::Spacing();
-			const std::string head = std::to_string(r.conflicts.size()) + u8" 個合併衝突###rx_conflicts";
-			ImGui::PushStyleColor(ImGuiCol_Text, kWarn);
-			const bool open = ImGui::CollapsingHeader(head.c_str(), ImGuiTreeNodeFlags_DefaultOpen);
-			ImGui::PopStyleColor();
-			if (open) {
-				// Merging unrelated pages can report thousands of `extra` lines;
-				// the first few hundred say everything the player can act on.
-				const size_t shown = std::min<size_t>(r.conflicts.size(), 300);
-				ImGui::PushTextWrapPos(0.0f);
-				for (size_t k = 0; k < shown; k++) ImGui::BulletText("%s", conflictText(r.conflicts[k]).c_str());
-				ImGui::PopTextWrapPos();
-				if (r.conflicts.size() > shown)
-					ImGui::TextDisabled(u8"（另有 %d 個未列出）", (int)(r.conflicts.size() - shown));
+			PobUi::CardBegin("rx_conf", nullptr, nullptr, nullptr, true);
+			const float inner = PobUi::CardInnerWidth();
+			const std::string head = std::to_string(r.conflicts.size()) + u8" 個合併衝突";
+			const ImVec2 hp = ImGui::GetCursorScreenPos();
+			if (ImGui::InvisibleButton("##confhead", ImVec2(inner, BodyF()->FontSize + Dp(4.0f)))) conflictsOpen_ = !conflictsOpen_;
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			float x = hp.x;
+			if (PobUi::Fonts().icons) {
+				PobUi::IconAt(dl, ImVec2(x, hp.y + Dp(2.0f)), conflictsOpen_ ? PobIcon::ChevronDown : PobIcon::ChevronRight, Tok::Warning,
+				              BodyF()->FontSize);
+				x += PobUi::IconWidth(PobIcon::ChevronDown, BodyF()->FontSize) + Dp(6.0f);
 			}
+			DrawTextAt(dl, BodyF(), ImVec2(x, hp.y + Dp(2.0f)), Tok::Warning, head.c_str());
+			if (conflictsOpen_) {
+				// merging unrelated pages can report thousands of `extra` lines;
+				// the first few hundred say everything the player can act on
+				const size_t shown = std::min<size_t>(r.conflicts.size(), 300);
+				for (size_t k = 0; k < shown; k++) WrappedBlock(SmallF(), conflictText(r.conflicts[k]), inner, Tok::Text);
+				if (r.conflicts.size() > shown)
+					SmallText((u8"另有 " + std::to_string(r.conflicts.size() - shown) + u8" 個未列出").c_str(), Tok::TextFaint);
+			}
+			PobUi::CardEnd();
 		}
 		ImGui::EndChild();
+	}
+
+	// ---- POBTOOLS_REGEX_STATE (test aid, with POBTOOLS_TOOL_SHOT) ------------------
+	//
+	// A known state for each design draft, built in memory: nothing is read from
+	// or written to regex_ui.json, the clipboard is never touched, nothing is sent.
+	//   single | combined | limitwarn | limitbad | vendor | itemmods | imvloading |
+	//   imverror | copied | more | paste | sharefail | applied | bookmarks | bmempty |
+	//   bmmenu | save | rename | delete | folderdel | pagemenu | nosearch | dataerr |
+	//   sendpick | import | en
+	int entryIndex(int idx, const std::string& id) const
+	{
+		if (refs_[idx].algo) {
+			for (int i = 0; i < (int)refs_[idx].algo->entries.size(); i++)
+				if (refs_[idx].algo->entries[i].def.id == id) return i;
+		} else {
+			for (int i = 0; i < (int)refs_[idx].corpus->entries.size(); i++)
+				if (refs_[idx].corpus->entries[i].id == id) return i;
+		}
+		return -1;
+	}
+	// the first corpus entries whose English line contains each needle (or the first rows)
+	std::vector<int> findEntries(int idx, const std::vector<std::string>& needles) const
+	{
+		std::vector<int> out;
+		const std::vector<RegexEntryDef>& es = refs_[idx].corpus->entries;
+		for (const std::string& n : needles)
+			for (int i = 0; i < (int)es.size(); i++)
+				if (!es[i].en.empty() && es[i].en[0].find(n) != std::string::npos &&
+				    std::find(out.begin(), out.end(), i) == out.end()) {
+					out.push_back(i);
+					break;
+				}
+		for (int i = 0; out.size() < needles.size() && i < (int)es.size(); i++)
+			if (std::find(out.begin(), out.end(), i) == out.end()) out.push_back(i);
+		std::sort(out.begin(), out.end());
+		return out;
+	}
+	void testValue(int idx, const std::string& id, const RegexFrag::AlgoValue& v)
+	{
+		const int i = entryIndex(idx, id);
+		if (i < 0) return;
+		pages_[idx].algo.SetValue(*refs_[idx].algo, i, v);
+		algoChanged(idx);
+	}
+	static RegexFrag::AlgoValue TV(std::optional<double> mn, std::optional<double> mx = std::nullopt, const char* choice = nullptr)
+	{
+		RegexFrag::AlgoValue v;
+		v.min = mn;
+		v.max = mx;
+		if (choice) {
+			v.choice = choice;
+			v.hasChoice = true;
+		}
+		return v;
+	}
+	void testTicks(int idx, const std::vector<int>& picks)
+	{
+		if (idx < 0) return;
+		setTicks(idx, picks);
+		syncCurrent(idx);
+		pages_[idx].dirty = true;
+		combinedDirty_ = true;
+	}
+	// The map page with two modifiers, three numeric conditions and one custom term (Regex.dc.html).
+	void testSingle()
+	{
+		switchGame("poe1");
+		const int mm = indexInGame("poe1", "map_mods");
+		if (mm < 0) return;
+		switchPage(mm);
+		testTicks(mm, findEntries(mm, {"maximum Player Resistances", "reflect"}));
+		const int sec = sectionIndexOf(mm);
+		if (sec >= 0) {
+			testValue(sec, "tier", TV(16));
+			testValue(sec, "quantity", TV(80));
+			testValue(sec, "item_rarity_class", TV(std::nullopt, std::nullopt, "mr|u"));
+		}
+		state_.custom = {u8"6 連結"};
+		setView(View::Page);
+		setScope(true);
+	}
+	void testBookmarks()
+	{
+		auto add = [&](const char* name, const char* game, const char* page, const char* mode, int n, const char* folder) {
+			RegexBookmark b;
+			b.name = name;
+			b.game = game;
+			b.page = page;
+			b.mode = mode;
+			b.lang = "zh";
+			const int idx = indexInGame(game, page);
+			for (int i = 0; i < n; i++) {
+				if (idx >= 0 && refs_[idx].corpus && i < (int)refs_[idx].corpus->entries.size()) {
+					b.keys.push_back(KeyOf(refs_[idx].corpus->entries[i]));
+					b.alt.push_back(ZhLine(refs_[idx].corpus->entries[i]));
+				} else {
+					b.keys.push_back("Old line " + std::to_string(i));
+					b.alt.push_back(u8"舊詞綴 " + std::to_string(i));
+				}
+			}
+			b.folder = folder;
+			state_.bookmarks.push_back(b);
+		};
+		RegexFolders::Add(state_, "poe1", u8"T16 刷圖");
+		add(u8"T16 不能刷的詞綴", "poe1", "map_mods", "none", 7, u8"T16 刷圖");
+		add(u8"T16 刷圖", "poe1", "map_mods", "any", 5, u8"T16 刷圖");
+		add(u8"商店 6L 紅藍綠", "poe1", "vendor_items", "any", 0, "");
+		add(u8"3.25 劫盜契約書", "poe1", "heist_contract_mods_325", "any", 6, "");
+		add(u8"換界石 T15", "poe2", "waystone_mods", "any", 3, "");
+		RegexFolders::Normalize(state_);
+	}
+	void applyTestState()
+	{
+		const std::string& t = testState_;
+		if (t.empty()) return;
+		if (t == "dataerr") return;
+		if (t == "single" || t == "copied" || t == "more" || t == "save" || t == "en") {
+			testSingle();
+			if (t == "copied") {
+				shareCopied_ = 1;
+				shareCopiedAt_ = std::chrono::steady_clock::now() + std::chrono::hours(1);
+			}
+			if (t == "more") testOpenMore_ = true;
+			if (t == "save") openSave(pickCount() + sectionPickCount());
+			if (t == "en") setLang(Lang::En);
+			testBookmarks();
+		} else if (t == "combined") {
+			testSingle();
+			const int sc = indexInGame("poe1", "scarabs");
+			if (sc >= 0) testTicks(sc, {0, 3, 7, 12});
+			state_.excludes = {u8"反射"};
+			setView(View::Combined);
+			testBookmarks();
+		} else if (t == "limitwarn" || t == "limitbad") {
+			switchGame("poe1");
+			const int mm = indexInGame("poe1", "map_mods");
+			switchPage(mm);
+			mode_ = RegexGen::Mode::All;
+			const int target = t == "limitwarn" ? 205 : 262;
+			std::vector<int> picks;
+			for (int i = 0; i < (int)refs_[mm].Size(); i++) {
+				picks.push_back(i);
+				testTicks(mm, picks);
+				if (combinedAll().length >= target) break;
+			}
+			setView(View::Combined);
+		} else if (t == "vendor") {
+			switchGame("poe1");
+			const int v = indexInGame("poe1", "vendor_items");
+			if (v >= 0) {
+				switchPage(v);
+				testValue(v, "links", TV(std::nullopt, std::nullopt, "6"));
+				testValue(v, "link_colors", TV(std::nullopt, std::nullopt, "rgb"));
+				testValue(v, "corrupted", TV(std::nullopt, std::nullopt, "|c"));
+			}
+			setScope(false);
+			setView(View::Page);
+			testBookmarks();
+		} else if (t == "itemmods" || t == "imvloading" || t == "imverror") {
+			switchGame("poe1");
+			const int ip = itemPageIndex("poe1");
+			if (ip < 0) return;
+			const int sec = sectionIndexOf(ip);
+			if (sec >= 0) testValue(sec, "item_rarity_class", TV(std::nullopt, std::nullopt, "r"));
+			setScope(false);
+			setView(View::Page);
+			if (t == "imvloading" || t == "imverror") {
+				page_ = ip;
+				ItemModLoad& L = imv_[0];
+				L.phase = t == "imverror" ? ItemModLoad::Phase::Error : ItemModLoad::Phase::Loading;
+				L.err = u8"找不到 stats 資料（Data\\regex_stats\\poe1\\cmn-Hant\\stats.ndjson.gz）";
+				return;
+			}
+			switchPage(ip);
+			if (!ensureItemModsNow("poe1")) return;
+			const RegexAlgo::AlgoPage& page = *refs_[ip].algo;
+			for (int i = 0; i < (int)page.entries.size(); i++) {
+				const std::string& en = page.entries[i].def.en.empty() ? std::string() : page.entries[i].def.en[0];
+				if (en == "+# to maximum Life") testValue(ip, page.entries[i].def.id, TV(80));
+				if (en == "#% increased maximum Life") testValue(ip, page.entries[i].def.id, TV(8));
+			}
+			PageState& s = pages_[ip];
+			s.search = u8"生命";
+			s.groupFilter = 0;   // 生命
+			s.filterDirty = true;
+		} else if (t == "paste" || t == "sharefail") {
+			testSingle();
+			std::string code;
+			buildShareCode(code);
+			modal_ = Modal::Paste;
+			if (t == "paste") {
+				pasteBuf_ = code;
+				pasteAuto_ = true;
+			} else {
+				pasteBuf_ = "H4sI@@AAAAA6tWKkpVslIqTi0uSs1V";
+				RegexShare::Normalized d;
+				std::string err;
+				RegexShare::Decode(pasteBuf_, d, &err);
+				pasteErr_ = u8"分享碼無法套用：" + err;
+			}
+		} else if (t == "applied") {
+			testSingle();
+			RegexShare::State s;
+			s.game = "poe1";
+			s.mode = "any";
+			const int mm = indexInGame("poe1", "map_mods");
+			s.pages.push_back({"map_mods", {KeyOf(refs_[mm].corpus->entries[2]), "No such modifier line"}});
+			s.pages.push_back({"heist_contract_mods", {"a", "b"}});
+			std::string err;
+			applyCombo(s, u8"分享碼（PoE1）", {}, &err);
+			testBookmarks();
+		} else if (t == "bookmarks" || t == "bmmenu" || t == "rename" || t == "delete" || t == "folderdel" || t == "sendpick" ||
+		           t == "import") {
+			testSingle();
+			testBookmarks();
+			if (t == "bmmenu") testOpenBmMenu_ = 0;
+			if (t == "rename") {
+				editIdx_ = 0;
+				nameBuf_ = u8"T16 刷圖";
+				modal_ = Modal::Rename;
+			}
+			if (t == "delete") {
+				editIdx_ = 0;
+				modal_ = Modal::Delete;
+			}
+			if (t == "folderdel") {
+				folderEdit_ = u8"T16 刷圖";
+				modal_ = Modal::FolderDelete;
+			}
+			if (t == "sendpick") {
+				openSendPick();
+				RegexBookmarksShare::SetGroup(state_, sendSel_, "poe1", u8"T16 刷圖", true);
+			}
+			if (t == "import") {
+				RegexBookmarksShare::Selection all;
+				RegexBookmarksShare::SetAll(state_, all, true);
+				const std::string code = RegexBookmarksShare::Encode(RegexBookmarksShare::PackOf(state_, all, nullptr));
+				openImport();
+				importBuf_ = code;
+			}
+		} else if (t == "bmempty") {
+			testSingle();
+		} else if (t == "pagemenu") {
+			switchGame("poe2");
+			setView(View::Page);
+			PobUi::TestOpenSelect("##rxpage");
+		} else if (t == "nosearch") {
+			testSingle();
+			PageState& s = st();
+			s.search = u8"腐化的屍體";
+			s.filterDirty = true;
+		}
+		for (PageState& ps : pages_) ps.dirty = true;
+		combinedDirty_ = true;
 	}
 
 	const ToolPanelHost* host_ = nullptr;
@@ -3399,6 +4260,16 @@ private:
 	int tplPending_ = -1;                 // the template the confirm dialog is about
 	std::string pasteBuf_, pasteErr_;     // the paste dialog
 	ItemModLoad imv_[2];   // R7, per game (kGames order)
+	std::string noticeDesc_;      // the notice banner's explanation line
+	bool noticeWarn_ = false;     // warning tone (something did not come through)
+	bool pasteAuto_ = false;      // the paste dialog was filled from the clipboard
+	std::string nameErr_;
+	bool conflictsOpen_ = true;
+	bool openDataDir_ = false;    // "開啟資料夾" on the data error (RunDeferred)
+	// POBTOOLS_REGEX_STATE / POBTOOLS_TOOL_SHOT: a fixed state, nothing read or written
+	bool testMode_ = false, testApplied_ = false, testOpenMore_ = false;
+	int testOpenBmMenu_ = -1;
+	std::string testState_;
 	int t17Cache_ = -1;
 	bool t17Present_ = false;
 	ToolCloseState close_ = ToolCloseState::Open;
@@ -3418,7 +4289,7 @@ void ShowRegexTool(const std::wstring& exeDir, const std::wstring& game,
 	ToolWindowDesc desc;
 	// "PobTools — Poe Regex"
 	desc.titleUtf8 = "PobTools \xe2\x80\x94 Poe Regex";
-	desc.defW = 1200;
-	desc.defH = 800;
+	desc.defW = 1280;   // the design's window (Regex.dc.html)
+	desc.defH = 860;
 	RunToolWindow(panel, desc, exeDir, game, locale);
 }

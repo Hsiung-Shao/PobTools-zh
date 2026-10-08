@@ -18,11 +18,11 @@
 // Decoding refuses a bad header, a CRC / length mismatch, trailing bytes and
 // anything that inflates past kMaxJsonBytes (a zip bomb stops there).
 //
-// Interop: every page shares keys with exile-appraiser EXCEPT the item-mod
-// values page, whose entry ids here are GGPK stat ids (regex_itemmods.h). Its
-// keys in a code from there resolve to nothing and are counted in `missed`
-// (and per page in `missedByPage`), never dropped silently; a code made here
-// with that page is read there without it.
+// Interop: every page shares keys with exile-appraiser, the item-mod values
+// page included since 2026-10-09 (both read the same stats.ndjson and key it by
+// trade stat id, regex_itemmods.h). Keys that resolve to nothing -- another
+// data version, or that page's old GGPK stat ids -- are counted in `missed`
+// (and per page in `missedByPage`), never dropped silently.
 //
 // Pure: no ImGui. LoadTemplates is the only function that touches a file.
 #pragma once

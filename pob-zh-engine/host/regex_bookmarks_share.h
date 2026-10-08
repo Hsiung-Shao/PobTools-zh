@@ -97,7 +97,7 @@ Tri AllTri(const RegexUiState& s, const Selection& sel);
 struct PackStats {
 	int bookmarks[2] = {0, 0};   // sent, per game
 	int folders[2] = {0, 0};
-	int itemMod = 0;             // sent bookmarks on the item-mod values page (keys not shared)
+	int itemMod = 0;             // sent bookmarks on the item-mod values page (a count only: its keys are shared since 2026-10-09)
 	int skipped = 0;             // ticked but unsendable (no game / no name / page / keys)
 	bool Empty() const { return bookmarks[0] + bookmarks[1] + folders[0] + folders[1] == 0; }
 };
