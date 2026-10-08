@@ -17,7 +17,12 @@
    "Quality": "品質",
    "ItemDisplayStringSockets": "插槽",
    "Level": "等級",
-   "ItemPopupCorrupted": "已汙染"
+   "ItemPopupCorrupted": "已汙染",
+   "ItemDisplayStringRarity": "稀有度",
+   "ItemDisplayStringNormal": "中",
+   "ItemDisplayStringMagic": "魔法",
+   "ItemDisplayStringRare": "稀有",
+   "ItemDisplayStringUnique": "傳奇"
   },
   "en": {
    "ItemDisplayMapTier": "Waystone Tier",
@@ -33,7 +38,12 @@
    "Quality": "Quality",
    "ItemDisplayStringSockets": "Sockets",
    "Level": "Level",
-   "ItemPopupCorrupted": "Corrupted"
+   "ItemPopupCorrupted": "Corrupted",
+   "ItemDisplayStringRarity": "Rarity",
+   "ItemDisplayStringNormal": "Normal",
+   "ItemDisplayStringMagic": "Magic",
+   "ItemDisplayStringRare": "Rare",
+   "ItemDisplayStringUnique": "Unique"
   }
  },
  "pages": [
@@ -1322,6 +1332,65 @@
      ]
     },
     {
+     "id": "TowerAdditionalStrongbox1",
+     "zh": [
+      "地圖內含有額外的一個保險箱"
+     ],
+     "en": [
+      "Map contains an additional Strongbox"
+     ],
+     "g": 0,
+     "affixZh": "收藏家之、隔間之",
+     "hiddenZh": [
+      "後綴 \"收藏家之\"(階層：#)",
+      "收藏家之探險碑牌",
+      "收藏家之深淵碑牌",
+      "收藏家之神廟碑牌",
+      "收藏家之祭祀碑牌",
+      "收藏家之總督碑牌",
+      "收藏家之裂痕碑牌",
+      "收藏家之譫妄碑牌",
+      "收藏家之輻照碑牌",
+      "後綴 \"隔間之\"(階層：#)",
+      "隔間之探險碑牌",
+      "隔間之深淵碑牌",
+      "隔間之神廟碑牌",
+      "隔間之祭祀碑牌",
+      "隔間之總督碑牌",
+      "隔間之裂痕碑牌",
+      "隔間之譫妄碑牌",
+      "隔間之輻照碑牌",
+      "地圖內含有額外的#個保險箱"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Antiquarian\" (Tier: #)",
+      "Expedition Tablet of the Antiquarian",
+      "Abyss Tablet of the Antiquarian",
+      "Temple Tablet of the Antiquarian",
+      "Ritual Tablet of the Antiquarian",
+      "Overseer Tablet of the Antiquarian",
+      "Breach Tablet of the Antiquarian",
+      "Delirium Tablet of the Antiquarian",
+      "Irradiated Tablet of the Antiquarian",
+      "Suffix Modifier \"of Compartments\" (Tier: #)",
+      "Expedition Tablet of Compartments",
+      "Abyss Tablet of Compartments",
+      "Temple Tablet of Compartments",
+      "Ritual Tablet of Compartments",
+      "Overseer Tablet of Compartments",
+      "Breach Tablet of Compartments",
+      "Delirium Tablet of Compartments",
+      "Irradiated Tablet of Compartments",
+      "Map contains # additional Strongboxes"
+     ],
+     "altZh": [
+      "地圖內含有額外的#個保險箱"
+     ],
+     "altEn": [
+      "Map contains # additional Strongboxes"
+     ]
+    },
+    {
      "id": "TowerAdditionalStoneCircle",
      "zh": [
       "地圖內含有額外的一個召喚法陣"
@@ -1352,6 +1421,124 @@
       "Summoner's Breach Tablet",
       "Summoner's Delirium Tablet",
       "Summoner's Irradiated Tablet"
+     ]
+    },
+    {
+     "id": "TowerAdditionalShrine1",
+     "zh": [
+      "地圖內含有額外的一個神殿"
+     ],
+     "en": [
+      "Map contains an additional Shrine"
+     ],
+     "g": 0,
+     "affixZh": "奉獻之、崇拜之",
+     "hiddenZh": [
+      "後綴 \"奉獻之\"(階層：#)",
+      "奉獻之探險碑牌",
+      "奉獻之深淵碑牌",
+      "奉獻之神廟碑牌",
+      "奉獻之祭祀碑牌",
+      "奉獻之總督碑牌",
+      "奉獻之裂痕碑牌",
+      "奉獻之譫妄碑牌",
+      "奉獻之輻照碑牌",
+      "後綴 \"崇拜之\"(階層：#)",
+      "崇拜之探險碑牌",
+      "崇拜之深淵碑牌",
+      "崇拜之神廟碑牌",
+      "崇拜之祭祀碑牌",
+      "崇拜之總督碑牌",
+      "崇拜之裂痕碑牌",
+      "崇拜之譫妄碑牌",
+      "崇拜之輻照碑牌",
+      "地圖內含有額外的#個神殿"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Devoted\" (Tier: #)",
+      "Expedition Tablet of the Devoted",
+      "Abyss Tablet of the Devoted",
+      "Temple Tablet of the Devoted",
+      "Ritual Tablet of the Devoted",
+      "Overseer Tablet of the Devoted",
+      "Breach Tablet of the Devoted",
+      "Delirium Tablet of the Devoted",
+      "Irradiated Tablet of the Devoted",
+      "Suffix Modifier \"of Worship\" (Tier: #)",
+      "Expedition Tablet of Worship",
+      "Abyss Tablet of Worship",
+      "Temple Tablet of Worship",
+      "Ritual Tablet of Worship",
+      "Overseer Tablet of Worship",
+      "Breach Tablet of Worship",
+      "Delirium Tablet of Worship",
+      "Irradiated Tablet of Worship",
+      "Map contains # additional Shrines"
+     ],
+     "altZh": [
+      "地圖內含有額外的#個神殿"
+     ],
+     "altEn": [
+      "Map contains # additional Shrines"
+     ]
+    },
+    {
+     "id": "TowerAdditionalEssence1",
+     "zh": [
+      "地圖內含有額外的一個精髓"
+     ],
+     "en": [
+      "Map contains an additional Essence"
+     ],
+     "g": 0,
+     "affixZh": "晶化的、晶石之",
+     "hiddenZh": [
+      "前綴 \"晶化的\"(階層：#)",
+      "晶化的探險碑牌",
+      "晶化的深淵碑牌",
+      "晶化的神廟碑牌",
+      "晶化的祭祀碑牌",
+      "晶化的總督碑牌",
+      "晶化的裂痕碑牌",
+      "晶化的譫妄碑牌",
+      "晶化的輻照碑牌",
+      "後綴 \"晶石之\"(階層：#)",
+      "晶石之探險碑牌",
+      "晶石之深淵碑牌",
+      "晶石之神廟碑牌",
+      "晶石之祭祀碑牌",
+      "晶石之總督碑牌",
+      "晶石之裂痕碑牌",
+      "晶石之譫妄碑牌",
+      "晶石之輻照碑牌",
+      "地圖內含有額外的#個精髓"
+     ],
+     "hiddenEn": [
+      "Prefix Modifier \"Crystallised\" (Tier: #)",
+      "Crystallised Expedition Tablet",
+      "Crystallised Abyss Tablet",
+      "Crystallised Temple Tablet",
+      "Crystallised Ritual Tablet",
+      "Crystallised Overseer Tablet",
+      "Crystallised Breach Tablet",
+      "Crystallised Delirium Tablet",
+      "Crystallised Irradiated Tablet",
+      "Suffix Modifier \"of Crystals\" (Tier: #)",
+      "Expedition Tablet of Crystals",
+      "Abyss Tablet of Crystals",
+      "Temple Tablet of Crystals",
+      "Ritual Tablet of Crystals",
+      "Overseer Tablet of Crystals",
+      "Breach Tablet of Crystals",
+      "Delirium Tablet of Crystals",
+      "Irradiated Tablet of Crystals",
+      "Map contains # additional Essences"
+     ],
+     "altZh": [
+      "地圖內含有額外的#個精髓"
+     ],
+     "altEn": [
+      "Map contains # additional Essences"
      ]
     },
     {
@@ -1417,7 +1604,11 @@
       "Overseer Tablet of Undertaking",
       "Breach Tablet of Undertaking",
       "Delirium Tablet of Undertaking",
-      "Irradiated Tablet of Undertaking"
+      "Irradiated Tablet of Undertaking",
+      "Map has # additional random Modifiers"
+     ],
+     "altEn": [
+      "Map has # additional random Modifiers"
      ]
     },
     {
@@ -1934,7 +2125,8 @@
       "入侵之總督碑牌",
       "入侵之裂痕碑牌",
       "入侵之譫妄碑牌",
-      "入侵之輻照碑牌"
+      "入侵之輻照碑牌",
+      "地圖內的不穩定裂痕會在穩定後生成#名額外稀有怪物]"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of the Invasion\" (Tier: #)",
@@ -1945,7 +2137,14 @@
       "Overseer Tablet of the Invasion",
       "Breach Tablet of the Invasion",
       "Delirium Tablet of the Invasion",
-      "Irradiated Tablet of the Invasion"
+      "Irradiated Tablet of the Invasion",
+      "Unstable Breaches in Map spawn # additional Rare Monsters when Stabilised"
+     ],
+     "altZh": [
+      "地圖內的不穩定裂痕會在穩定後生成#名額外稀有怪物]"
+     ],
+     "altEn": [
+      "Unstable Breaches in Map spawn # additional Rare Monsters when Stabilised"
      ]
     },
     {
@@ -2132,7 +2331,8 @@
       "珍寶之總督碑牌",
       "珍寶之裂痕碑牌",
       "珍寶之譫妄碑牌",
-      "珍寶之輻照碑牌"
+      "珍寶之輻照碑牌",
+      "地圖中的探險含有#個埋藏的保險箱"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Treasure\" (Tier: #)",
@@ -2143,7 +2343,55 @@
       "Overseer Tablet of Treasure",
       "Breach Tablet of Treasure",
       "Delirium Tablet of Treasure",
-      "Irradiated Tablet of Treasure"
+      "Irradiated Tablet of Treasure",
+      "Expeditions contain # buried Strongboxes in Map"
+     ],
+     "altZh": [
+      "地圖中的探險含有#個埋藏的保險箱"
+     ],
+     "altEn": [
+      "Expeditions contain # buried Strongboxes in Map"
+     ]
+    },
+    {
+     "id": "TowerExpeditionVaalRemnants",
+     "zh": [
+      "地圖中的探險含有1個瓦爾遺物"
+     ],
+     "en": [
+      "Expeditions contain 1 Vaal Relic in Map"
+     ],
+     "g": 2,
+     "affixZh": "過去之",
+     "hiddenZh": [
+      "後綴 \"過去之\"(階層：#)",
+      "過去之探險碑牌",
+      "過去之深淵碑牌",
+      "過去之神廟碑牌",
+      "過去之祭祀碑牌",
+      "過去之總督碑牌",
+      "過去之裂痕碑牌",
+      "過去之譫妄碑牌",
+      "過去之輻照碑牌",
+      "地圖中的探險含有#個瓦爾遺物"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Past\" (Tier: #)",
+      "Expedition Tablet of the Past",
+      "Abyss Tablet of the Past",
+      "Temple Tablet of the Past",
+      "Ritual Tablet of the Past",
+      "Overseer Tablet of the Past",
+      "Breach Tablet of the Past",
+      "Delirium Tablet of the Past",
+      "Irradiated Tablet of the Past",
+      "Expeditions contain # Vaal Relics in Map"
+     ],
+     "altZh": [
+      "地圖中的探險含有#個瓦爾遺物"
+     ],
+     "altEn": [
+      "Expeditions contain # Vaal Relics in Map"
      ]
     },
     {
@@ -2165,7 +2413,8 @@
       "護存之總督碑牌",
       "護存之裂痕碑牌",
       "護存之譫妄碑牌",
-      "護存之輻照碑牌"
+      "護存之輻照碑牌",
+      "地圖中的探險含有#個額外封存於冰霜中的頭目"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Preservation\" (Tier: #)",
@@ -2176,7 +2425,14 @@
       "Overseer Tablet of Preservation",
       "Breach Tablet of Preservation",
       "Delirium Tablet of Preservation",
-      "Irradiated Tablet of Preservation"
+      "Irradiated Tablet of Preservation",
+      "Expeditions contain # Additional Bosses encased in ice in Map"
+     ],
+     "altZh": [
+      "地圖中的探險含有#個額外封存於冰霜中的頭目"
+     ],
+     "altEn": [
+      "Expeditions contain # Additional Bosses encased in ice in Map"
      ]
     },
     {
@@ -2198,7 +2454,8 @@
       "守望之總督碑牌",
       "守望之裂痕碑牌",
       "守望之譫妄碑牌",
-      "守望之輻照碑牌"
+      "守望之輻照碑牌",
+      "地圖中的探險含有#個額外維里西姆守望"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Sentinels\" (Tier: #)",
@@ -2209,7 +2466,14 @@
       "Overseer Tablet of Sentinels",
       "Breach Tablet of Sentinels",
       "Delirium Tablet of Sentinels",
-      "Irradiated Tablet of Sentinels"
+      "Irradiated Tablet of Sentinels",
+      "Expeditions contain # Additional Verisium Sentries in Map"
+     ],
+     "altZh": [
+      "地圖中的探險含有#個額外維里西姆守望"
+     ],
+     "altEn": [
+      "Expeditions contain # Additional Verisium Sentries in Map"
      ]
     },
     {
@@ -2264,7 +2528,8 @@
       "遠古邪惡之總督碑牌",
       "遠古邪惡之裂痕碑牌",
       "遠古邪惡之譫妄碑牌",
-      "遠古邪惡之輻照碑牌"
+      "遠古邪惡之輻照碑牌",
+      "地圖中前#名出土的符文怪物會是稀有怪物"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Ancient Evil\" (Tier: #)",
@@ -2275,7 +2540,47 @@
       "Overseer Tablet of Ancient Evil",
       "Breach Tablet of Ancient Evil",
       "Delirium Tablet of Ancient Evil",
-      "Irradiated Tablet of Ancient Evil"
+      "Irradiated Tablet of Ancient Evil",
+      "The first # unearthed Runic Monsters will be Rare Monsters in Map"
+     ],
+     "altZh": [
+      "地圖中前#名出土的符文怪物會是稀有怪物"
+     ],
+     "altEn": [
+      "The first # unearthed Runic Monsters will be Rare Monsters in Map"
+     ]
+    },
+    {
+     "id": "TowerExpeditionExplosionRadius",
+     "zh": [
+      "增加#%地圖中探險炸藥的範圍效果"
+     ],
+     "en": [
+      "#% increased Expedition Explosive Area of Effect in Map"
+     ],
+     "g": 2,
+     "affixZh": "拆除之",
+     "hiddenZh": [
+      "後綴 \"拆除之\"(階層：#)",
+      "拆除之探險碑牌",
+      "拆除之深淵碑牌",
+      "拆除之神廟碑牌",
+      "拆除之祭祀碑牌",
+      "拆除之總督碑牌",
+      "拆除之裂痕碑牌",
+      "拆除之譫妄碑牌",
+      "拆除之輻照碑牌"
+     ],
+     "hiddenEn": [
+      "Suffix Modifier \"of the Demolition\" (Tier: #)",
+      "Expedition Tablet of the Demolition",
+      "Abyss Tablet of the Demolition",
+      "Temple Tablet of the Demolition",
+      "Ritual Tablet of the Demolition",
+      "Overseer Tablet of the Demolition",
+      "Breach Tablet of the Demolition",
+      "Delirium Tablet of the Demolition",
+      "Irradiated Tablet of the Demolition"
      ]
     },
     {
@@ -2792,7 +3097,8 @@
       "祈禱之總督碑牌",
       "祈禱之裂痕碑牌",
       "祈禱之譫妄碑牌",
-      "祈禱之輻照碑牌"
+      "祈禱之輻照碑牌",
+      "地圖內的祭祀神壇可以額外重骰#次"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Prayers\" (Tier: #)",
@@ -2803,7 +3109,14 @@
       "Overseer Tablet of Prayers",
       "Breach Tablet of Prayers",
       "Delirium Tablet of Prayers",
-      "Irradiated Tablet of Prayers"
+      "Irradiated Tablet of Prayers",
+      "Ritual Altars in Map allow rerolling Favours # additional times"
+     ],
+     "altZh": [
+      "地圖內的祭祀神壇可以額外重骰#次"
+     ],
+     "altEn": [
+      "Ritual Altars in Map allow rerolling Favours # additional times"
      ]
     },
     {
@@ -3368,159 +3681,6 @@
      ]
     },
     {
-     "id": "TowerAdditionalStrongbox1",
-     "zh": [
-      "地圖內含有額外的一個保險箱"
-     ],
-     "en": [
-      "Map contains an additional Strongbox"
-     ],
-     "g": 6,
-     "affixZh": "收藏家之、隔間之",
-     "hiddenZh": [
-      "後綴 \"收藏家之\"(階層：#)",
-      "收藏家之探險碑牌",
-      "收藏家之深淵碑牌",
-      "收藏家之神廟碑牌",
-      "收藏家之祭祀碑牌",
-      "收藏家之總督碑牌",
-      "收藏家之裂痕碑牌",
-      "收藏家之譫妄碑牌",
-      "收藏家之輻照碑牌",
-      "後綴 \"隔間之\"(階層：#)",
-      "隔間之探險碑牌",
-      "隔間之深淵碑牌",
-      "隔間之神廟碑牌",
-      "隔間之祭祀碑牌",
-      "隔間之總督碑牌",
-      "隔間之裂痕碑牌",
-      "隔間之譫妄碑牌",
-      "隔間之輻照碑牌"
-     ],
-     "hiddenEn": [
-      "Suffix Modifier \"of the Antiquarian\" (Tier: #)",
-      "Expedition Tablet of the Antiquarian",
-      "Abyss Tablet of the Antiquarian",
-      "Temple Tablet of the Antiquarian",
-      "Ritual Tablet of the Antiquarian",
-      "Overseer Tablet of the Antiquarian",
-      "Breach Tablet of the Antiquarian",
-      "Delirium Tablet of the Antiquarian",
-      "Irradiated Tablet of the Antiquarian",
-      "Suffix Modifier \"of Compartments\" (Tier: #)",
-      "Expedition Tablet of Compartments",
-      "Abyss Tablet of Compartments",
-      "Temple Tablet of Compartments",
-      "Ritual Tablet of Compartments",
-      "Overseer Tablet of Compartments",
-      "Breach Tablet of Compartments",
-      "Delirium Tablet of Compartments",
-      "Irradiated Tablet of Compartments"
-     ]
-    },
-    {
-     "id": "TowerAdditionalShrine1",
-     "zh": [
-      "地圖內含有額外的一個神殿"
-     ],
-     "en": [
-      "Map contains an additional Shrine"
-     ],
-     "g": 6,
-     "affixZh": "奉獻之、崇拜之",
-     "hiddenZh": [
-      "後綴 \"奉獻之\"(階層：#)",
-      "奉獻之探險碑牌",
-      "奉獻之深淵碑牌",
-      "奉獻之神廟碑牌",
-      "奉獻之祭祀碑牌",
-      "奉獻之總督碑牌",
-      "奉獻之裂痕碑牌",
-      "奉獻之譫妄碑牌",
-      "奉獻之輻照碑牌",
-      "後綴 \"崇拜之\"(階層：#)",
-      "崇拜之探險碑牌",
-      "崇拜之深淵碑牌",
-      "崇拜之神廟碑牌",
-      "崇拜之祭祀碑牌",
-      "崇拜之總督碑牌",
-      "崇拜之裂痕碑牌",
-      "崇拜之譫妄碑牌",
-      "崇拜之輻照碑牌"
-     ],
-     "hiddenEn": [
-      "Suffix Modifier \"of the Devoted\" (Tier: #)",
-      "Expedition Tablet of the Devoted",
-      "Abyss Tablet of the Devoted",
-      "Temple Tablet of the Devoted",
-      "Ritual Tablet of the Devoted",
-      "Overseer Tablet of the Devoted",
-      "Breach Tablet of the Devoted",
-      "Delirium Tablet of the Devoted",
-      "Irradiated Tablet of the Devoted",
-      "Suffix Modifier \"of Worship\" (Tier: #)",
-      "Expedition Tablet of Worship",
-      "Abyss Tablet of Worship",
-      "Temple Tablet of Worship",
-      "Ritual Tablet of Worship",
-      "Overseer Tablet of Worship",
-      "Breach Tablet of Worship",
-      "Delirium Tablet of Worship",
-      "Irradiated Tablet of Worship"
-     ]
-    },
-    {
-     "id": "TowerAdditionalEssence1",
-     "zh": [
-      "地圖內含有額外的一個精髓"
-     ],
-     "en": [
-      "Map contains an additional Essence"
-     ],
-     "g": 6,
-     "affixZh": "晶化的、晶石之",
-     "hiddenZh": [
-      "前綴 \"晶化的\"(階層：#)",
-      "晶化的探險碑牌",
-      "晶化的深淵碑牌",
-      "晶化的神廟碑牌",
-      "晶化的祭祀碑牌",
-      "晶化的總督碑牌",
-      "晶化的裂痕碑牌",
-      "晶化的譫妄碑牌",
-      "晶化的輻照碑牌",
-      "後綴 \"晶石之\"(階層：#)",
-      "晶石之探險碑牌",
-      "晶石之深淵碑牌",
-      "晶石之神廟碑牌",
-      "晶石之祭祀碑牌",
-      "晶石之總督碑牌",
-      "晶石之裂痕碑牌",
-      "晶石之譫妄碑牌",
-      "晶石之輻照碑牌"
-     ],
-     "hiddenEn": [
-      "Prefix Modifier \"Crystallised\" (Tier: #)",
-      "Crystallised Expedition Tablet",
-      "Crystallised Abyss Tablet",
-      "Crystallised Temple Tablet",
-      "Crystallised Ritual Tablet",
-      "Crystallised Overseer Tablet",
-      "Crystallised Breach Tablet",
-      "Crystallised Delirium Tablet",
-      "Crystallised Irradiated Tablet",
-      "Suffix Modifier \"of Crystals\" (Tier: #)",
-      "Expedition Tablet of Crystals",
-      "Abyss Tablet of Crystals",
-      "Temple Tablet of Crystals",
-      "Ritual Tablet of Crystals",
-      "Overseer Tablet of Crystals",
-      "Breach Tablet of Crystals",
-      "Delirium Tablet of Crystals",
-      "Irradiated Tablet of Crystals"
-     ]
-    },
-    {
      "id": "TowerMapBossAdditionalSpirit",
      "zh": [
       "地圖內含有額外的一個阿茲莫里魂靈"
@@ -3539,7 +3699,8 @@
       "妖精之總督碑牌",
       "妖精之裂痕碑牌",
       "妖精之譫妄碑牌",
-      "妖精之輻照碑牌"
+      "妖精之輻照碑牌",
+      "地圖內含有額外的#個阿茲莫里魂靈"
      ],
      "hiddenEn": [
       "Suffix Modifier \"of Wisps\" (Tier: #)",
@@ -3550,7 +3711,14 @@
       "Overseer Tablet of Wisps",
       "Breach Tablet of Wisps",
       "Delirium Tablet of Wisps",
-      "Irradiated Tablet of Wisps"
+      "Irradiated Tablet of Wisps",
+      "Map contains # additional Azmeri Spirits"
+     ],
+     "altZh": [
+      "地圖內含有額外的#個阿茲莫里魂靈"
+     ],
+     "altEn": [
+      "Map contains # additional Azmeri Spirits"
      ]
     },
     {

@@ -302,7 +302,8 @@ int CharCount(const std::string& utf8)
 struct Corpus::Impl {
 	std::vector<Entry> entries;
 	std::vector<Prepped> prepped;   // printed text: proposes tokens, means "found"
-	std::vector<Prepped> hidden;    // per entry, veto only
+	std::vector<Prepped> hidden;    // per entry, veto only (alts folded in)
+	std::vector<Prepped> alts;      // per entry, other wordings a token must also hit
 	Prepped ambient;                // the page's every-item text, veto only
 	Options opt;
 	// token -> every entry whose printed text literally contains it
@@ -334,6 +335,15 @@ struct Corpus::Impl {
 			if (tok.tail ? rightFull.count(b) : rightHeads.count(b)) return true;
 		}
 		return false;
+	}
+
+	// Does a token that hits entry e's printed text also certainly hit every
+	// other wording of it? Only then does it find the entry (see Entry::alts).
+	bool CoversAlts(int e, const Token& tok) const
+	{
+		for (const Line& ln : alts[e].lines)
+			if (!AlwaysMatchesLine(ln, tok)) return false;
+		return true;
 	}
 
 	// Everything the token hits that the player did not pick. The indexes
@@ -388,6 +398,7 @@ void Corpus::Reset(std::vector<Entry> entries, Ambient ambient, const Options& o
 	m.opt.maxTokenChars = std::max(1, m.opt.maxTokenChars);
 	m.prepped.clear();
 	m.hidden.clear();
+	m.alts.clear();
 	m.index.clear();
 	m.hiddenIndex.clear();
 	m.ambientIndex.clear();
@@ -399,9 +410,16 @@ void Corpus::Reset(std::vector<Entry> entries, Ambient ambient, const Options& o
 	m.rightFull.clear();
 	m.prepped.reserve(m.entries.size());
 	m.hidden.reserve(m.entries.size());
+	m.alts.reserve(m.entries.size());
 	for (const Entry& e : m.entries) {
 		m.prepped.push_back(Prep(e.texts));
-		m.hidden.push_back(Prep(e.hidden));
+		// The other wordings are on the item too, so they veto exactly as
+		// hidden text does; the data usually carries them there already, and a
+		// duplicate line indexes to the same keys.
+		std::vector<std::string> veto = e.hidden;
+		veto.insert(veto.end(), e.alts.begin(), e.alts.end());
+		m.hidden.push_back(Prep(veto));
+		m.alts.push_back(Prep(e.alts));
 	}
 	for (int i = 0; i < (int)m.prepped.size(); i++) {
 		if (m.prepped[i].hasNumber) m.numbered.push_back(i);
@@ -486,6 +504,7 @@ Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
 			const Candidate* best = nullptr;
 			for (const Candidate& c : cands) {
 				if (c.hits->size() != 1 || (*c.hits)[0] != s) continue;
+				if (!m.CoversAlts(s, c.tok)) continue;
 				bool ownHiddenOnly = true;
 				if (c.hiddenHits)
 					for (int h : *c.hiddenHits)
@@ -513,7 +532,8 @@ Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
 			double bestScore = 0.0;
 			for (const Candidate& c : cands) {
 				int fresh = 0;
-				for (int h : *c.hits) if (isSelected[h] && !done[h]) fresh++;
+				for (int h : *c.hits)
+					if (isSelected[h] && !done[h] && m.CoversAlts(h, c.tok)) fresh++;
 				if (fresh == 0) continue;
 				const double score = (double)fresh / (double)c.cost;
 				// Ties broken by cost then by text, so the same picks always
@@ -529,7 +549,10 @@ Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
 			if (!best) break;
 			r.tokens.push_back(Render(best->tok));
 			for (int h : *best->hits)
-				if (isSelected[h] && !done[h]) { done[h] = true; left--; }
+				if (isSelected[h] && !done[h] && m.CoversAlts(h, best->tok)) {
+					done[h] = true;
+					left--;
+				}
 		}
 		for (int s : picks) if (!done[s]) r.unresolved.push_back(s);
 
@@ -574,13 +597,25 @@ Check Corpus::Verify(const std::vector<int>& selected, const std::string& query)
 	for (const std::string& term : terms) {
 		const std::vector<Token> alts = ParseAlternation(term);
 		for (int e = 0; e < (int)m.entries.size(); e++) {
+			bool found = false;
 			for (const Token& t : alts) {
 				// "Certainly finds" reads printed text only; "might hit" reads
 				// the hidden text as well. The asymmetry is the same one as
 				// around numbers, and for the same reason.
-				if (AlwaysMatches(m.prepped[e], t)) definite[e] = true;
+				if (AlwaysMatches(m.prepped[e], t)) found = true;
 				if (MayMatch(m.prepped[e], t) || MayMatch(m.hidden[e], t)) possible[e] = true;
 			}
+			// An item may print any one of the entry's wordings, so the term
+			// certainly finds it only if every other wording is matched too.
+			if (found) {
+				for (const Line& ln : m.alts[e].lines) {
+					bool any = false;
+					for (const Token& t : alts)
+						if (AlwaysMatchesLine(ln, t)) { any = true; break; }
+					if (!any) { found = false; break; }
+				}
+			}
+			if (found) definite[e] = true;
 		}
 		for (const Token& t : alts)
 			if (MayMatch(m.ambient, t) || m.JoinsName(t)) chk.ambient.push_back(Render(t));

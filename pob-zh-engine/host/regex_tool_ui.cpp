@@ -1077,6 +1077,7 @@ private:
 			// in, not the panel's setting: an entry that fell back to English
 			// lines must not carry Chinese tags.
 			e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+			e.alts = useWant ? (zh ? d.altZh : d.altEn) : (zh ? d.altEn : d.altZh);
 			es.push_back(std::move(e));
 		}
 		const RegexPageDef& page = data_.Pages()[page_];
