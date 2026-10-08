@@ -10,6 +10,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -1258,6 +1259,105 @@ void MenuSeparator()
 	ImGui::Dummy(ImVec2(0, D(3.0f)));
 }
 
+// ---- empty state ----------------------------------------------------------
+
+namespace {
+struct EmptyMetrics { float padX, padY, gap, iconPx, textW; };
+EmptyMetrics EmptyLayout(float width)
+{
+	EmptyMetrics m;
+	m.padX = D(24.0f);
+	m.padY = D(24.0f);
+	m.gap = D(8.0f);
+	m.iconPx = std::floor(D(28.0f));
+	m.textW = std::max(D(60.0f), width - m.padX * 2.0f);
+	return m;
+}
+} // namespace
+
+float EmptyStateHeight(const char* title, const char* hint, bool action, float width)
+{
+	const EmptyMetrics m = EmptyLayout(width);
+	float h = m.padY * 2.0f;
+	if (g_fonts.icons) h += m.iconPx + m.gap;
+	h += TextSize(BodyFont(), BodyPx(), title, m.textW).y;
+	if (hint && *hint) h += m.gap * 0.5f + TextSize(SmallFont(), SmallPx(), hint, m.textW).y;
+	if (action) h += m.gap * 1.5f + std::floor(D(36.0f));
+	return std::ceil(h);
+}
+
+bool EmptyState(const char* id, const char* icon, const char* title, const char* hint, const char* action,
+                float width, float height)
+{
+	ImGui::PushID(id);
+	const float w = width > 0.0f ? width : ImGui::GetContentRegionAvail().x;
+	const float need = EmptyStateHeight(title, hint, action != nullptr, w);
+	const float h = std::max(need, height);
+	const EmptyMetrics m = EmptyLayout(w);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+
+	// Dashed outline (border token): ImGui has no dash style, so segments.
+	const float dash = D(6.0f), space = D(4.0f);
+	auto dashed = [&](ImVec2 a, ImVec2 b) {
+		const float len = std::sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+		if (len <= 0.0f) return;
+		const ImVec2 dir((b.x - a.x) / len, (b.y - a.y) / len);
+		for (float t = 0.0f; t < len; t += dash + space) {
+			const float e = std::min(t + dash, len);
+			dl->AddLine(ImVec2(a.x + dir.x * t, a.y + dir.y * t), ImVec2(a.x + dir.x * e, a.y + dir.y * e),
+			            Tok::Border, 1.0f);
+		}
+	};
+	const ImVec2 q(p.x + w - 1.0f, p.y + h - 1.0f);
+	dashed(ImVec2(p.x, p.y), ImVec2(q.x, p.y));
+	dashed(ImVec2(q.x, p.y), ImVec2(q.x, q.y));
+	dashed(ImVec2(q.x, q.y), ImVec2(p.x, q.y));
+	dashed(ImVec2(p.x, q.y), ImVec2(p.x, p.y));
+
+	// Centred column, vertically too when the box is taller than its content.
+	float y = p.y + std::floor((h - need) * 0.5f) + m.padY;
+	const float cx = p.x + w * 0.5f;
+	if (g_fonts.icons && icon) {
+		IconAt(dl, ImVec2(std::floor(cx - IconWidth(icon, m.iconPx) * 0.5f), y), icon, Tok::TextFaint, m.iconPx);
+	}
+	if (g_fonts.icons) y += m.iconPx + m.gap;
+	// Each wrapped line centred on its own.
+	auto centred = [&](ImFont* f, float px, ImU32 col, const char* text) {
+		const char* s = text;
+		const char* end = text + std::strlen(text);
+		while (s < end) {
+			const char* lineEnd = f->CalcWordWrapPositionA(px / f->FontSize, s, end, m.textW);
+			if (lineEnd == s) lineEnd = s + 1;
+			const char* nl = (const char*)std::memchr(s, '\n', (size_t)(lineEnd - s));
+			if (nl) lineEnd = nl;
+			const ImVec2 ls = f->CalcTextSizeA(px, FLT_MAX, 0.0f, s, lineEnd);
+			dl->AddText(f, px, ImVec2(std::floor(cx - ls.x * 0.5f), y), col, s, lineEnd);
+			y += std::max(ls.y, px);   // one line, as CalcTextSizeA counts them
+			s = lineEnd;
+			while (s < end && (*s == ' ' || *s == '\n')) s++;
+		}
+	};
+	if (title && *title) centred(BodyFont(), BodyPx(), Tok::Text, title);
+	if (hint && *hint) {
+		y += m.gap * 0.5f;
+		centred(SmallFont(), SmallPx(), Tok::TextMuted, hint);
+	}
+	bool clicked = false;
+	if (action) {
+		y += m.gap * 1.5f;
+		const float bw = ButtonWidth(action, BtnSize::Md);
+		ImGui::SetCursorScreenPos(ImVec2(std::floor(cx - bw * 0.5f), y));
+		const float prev = g_lineBoxH;
+		g_lineBoxH = 0.0f;
+		clicked = Button(action, BtnKind::Primary, BtnSize::Md);
+		g_lineBoxH = prev;
+	}
+	ImGui::SetCursorScreenPos(p);
+	ImGui::Dummy(ImVec2(w, h));
+	ImGui::PopID();
+	return clicked;
+}
 
 // ---- selftest -------------------------------------------------------------
 
@@ -1285,6 +1385,15 @@ bool RunWidgetSelfTest()
 	ok = ok && SegmentedWidth(seg, 2) > SegmentedWidth(seg, 1);
 	ok = ok && ButtonWidth("x", BtnSize::Md, nullptr, 200.0f) == 200.0f;
 	ok = ok && ButtonWidth("long label here", BtnSize::Lg) > ButtonWidth("long label here", BtnSize::Sm);
+	// EmptyState: an action adds a button's height; a narrower box wraps the hint
+	// onto more lines and so is never shorter.
+	{
+		const char* hint = "a hint long enough to wrap onto a second line in a narrow box";
+		const float plain = EmptyStateHeight("Title", hint, false, 600.0f);
+		ok = ok && EmptyStateHeight("Title", hint, true, 600.0f) > plain;
+		ok = ok && EmptyStateHeight("Title", hint, false, 160.0f) > plain;
+		ok = ok && EmptyStateHeight("Title", nullptr, false, 600.0f) < plain;
+	}
 	ImGui::DestroyContext();
 	SetWidgetFonts(WidgetFonts());
 	return ok;

@@ -15,14 +15,15 @@
 #include "passive_tree_data.h"
 
 #include <imgui.h>
+#include <functional>
 #include <string>
 #include <vector>
 
 // Per-node highlight class the caller computes (parallel to data.nodes).
 enum : unsigned char {
 	kPtHiNone = 0,
-	kPtHiAffected = 1,   // stats rolled/added by the jewel (gold)
-	kPtHiReplaced = 2,   // notable/keystone swapped for another (blue)
+	kPtHiAffected = 1,   // stats rolled/added by the jewel (gold ring)
+	kPtHiReplaced = 2,   // notable/keystone swapped for another (gold double ring)
 };
 
 struct PassiveTreeInput {
@@ -32,12 +33,15 @@ struct PassiveTreeInput {
 	const std::vector<char>* disabled = nullptr;          // per-node: dimmed & excluded
 	const std::vector<char>* selected = nullptr;          // per-node: draw a "picked" marker
 	int emphasize = -1;                                   // node index to ring-pulse (list pick)
+	// Drawn last, inside the canvas clip, with the canvas rect (legend, notes).
+	std::function<void(ImDrawList*, ImVec2 min, ImVec2 max)> overlay;
 };
 
 struct PassiveTreeOutput {
 	int hoveredNode = -1;                    // node under the cursor (-1 none)
 	int clickedSocket = -1;                  // a socket clicked this frame (-1 none)
 	int clickedNode = -1;                    // a non-socket node clicked this frame (-1 none)
+	ImVec2 canvasMin{ 0, 0 }, canvasMax{ 0, 0 }; // the canvas rect this frame (screen)
 };
 
 class PassiveTreeView {

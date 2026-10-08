@@ -182,6 +182,15 @@ bool SideNavItem(const char* icon, const char* label, bool active, float width);
 bool ToolTile(const char* id, const char* icon, const char* name, const char* badge,
               const char* hint, bool dot, const ImVec2& size, bool enabled = true);
 
+// EmptyState: a section with nothing in it yet says what will appear and how to
+// start. Dashed outline, faint icon, one-line title, a hint (wrapped) and an
+// optional primary action; content centred in `width` x `height` (0 = the
+// available width / the content's own height). True when the action is pressed.
+bool EmptyState(const char* id, const char* icon, const char* title, const char* hint,
+                const char* action = nullptr, float width = 0.0f, float height = 0.0f);
+// The height EmptyState needs for this content at this width (no minimum).
+float EmptyStateHeight(const char* title, const char* hint, bool action, float width);
+
 // ---- transient ----------------------------------------------------------
 // Bottom-right toast, 4 s, one at a time (a new one replaces the old).
 void ShowToast(const char* text, Tone tone = Tone::Ok);
