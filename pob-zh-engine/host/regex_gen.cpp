@@ -1,6 +1,8 @@
 #include "regex_gen.h"
 
 #include <algorithm>
+#include <cstring>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -22,6 +24,8 @@ inline bool IsNumChar(char c)
 {
 	return (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+';
 }
+
+inline bool IsMeta(char c) { return c != 0 && std::strchr(kMeta, c) != nullptr; }
 
 inline char LowerAscii(char c) { return (c >= 'A' && c <= 'Z') ? char(c - 'A' + 'a') : c; }
 
@@ -179,6 +183,10 @@ bool MatchFrom(const std::string& tok, size_t ti,
 bool MayMatchLine(const Line& ln, const Token& t)
 {
 	if (t.body.empty()) return true;
+	// No number on the line: nothing to be permissive about, and "for some
+	// roll" is "always". Most lines (and nearly all hidden ones) are like this,
+	// and Verify asks every line of every page in the merge about every token.
+	if (ln.frags.size() == 1) return AlwaysMatchesLine(ln, t);
 	std::vector<Atom> atoms = Atoms(ln);
 	if (t.head) return MatchFrom(t.body, 0, atoms, 0, t.tail);
 	for (size_t start = 0; start < atoms.size(); start++) {
@@ -209,24 +217,48 @@ bool MayMatch(const Prepped& p, const Token& t)
 template <class F>
 void ForEachToken(const Prepped& p, int maxChars, bool anchors, F&& sink)
 {
+	// One Token, refilled in place: this runs once per substring of every line
+	// on the page (a few million for the English gem list, whose hidden text is
+	// the gems' descriptions), so a fresh string per substring was most of the
+	// cost of preparing a corpus. Sinks take it by const& and copy only what
+	// they keep.
+	Token t;
+	std::vector<size_t> off;
 	for (const Line& ln : p.lines) {
 		const size_t nf = ln.frags.size();
 		for (size_t fi = 0; fi < nf; fi++) {
 			const std::string& f = ln.frags[fi];
 			if (f.empty()) continue;
-			std::vector<size_t> off = CharOffsets(f);
+			off.clear();
+			for (size_t i = 0; i < f.size();) {
+				off.push_back(i);
+				const unsigned char c = (unsigned char)f[i];
+				i += (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+			}
+			off.push_back(f.size());
 			const size_t nc = off.size() - 1;
 			for (size_t a = 0; a < nc; a++) {
 				for (size_t b = a + 1; b <= nc && (int)(b - a) <= maxChars; b++) {
-					std::string body = f.substr(off[a], off[b] - off[a]);
-					if (body.find_first_of(kMeta) != std::string::npos) continue;
-					sink(Token{body, false, false});
+					// Growing b only adds characters, so once the newest one is
+					// syntax every longer token from `a` contains it too.
+					if (IsMeta(f[off[b - 1]])) break;
+					t.body.assign(f, off[a], off[b] - off[a]);
+					t.head = false;
+					t.tail = false;
+					// A sink returning bool can prune: false for the unanchored
+					// token means no longer token from `a` is wanted either (it
+					// would contain this one), anchored forms included.
+					if constexpr (std::is_same_v<decltype(sink(t)), bool>) {
+						if (!sink(t)) break;
+					} else {
+						sink(t);
+					}
 					if (!anchors) continue;
 					const bool atStart = (fi == 0 && a == 0);
 					const bool atEnd = (fi == nf - 1 && b == nc);
-					if (atStart) sink(Token{body, true, false});
-					if (atEnd) sink(Token{body, false, true});
-					if (atStart && atEnd) sink(Token{body, true, true});
+					if (atStart) { t.head = true; t.tail = false; sink(t); }
+					if (atEnd) { t.head = false; t.tail = true; sink(t); }
+					if (atStart && atEnd) { t.head = true; t.tail = true; sink(t); }
 				}
 			}
 		}
@@ -403,26 +435,45 @@ void Corpus::Reset(std::vector<Entry> entries, Ambient ambient, const Options& o
 		m.prepped.push_back(Prep(e.texts));
 		m.hidden.push_back(Prep(e.hidden));
 	}
+	// Entries are visited in order, so "already listed for this entry" is
+	// "the list ends in i": no per-entry set of the tokens seen so far, and
+	// each list comes out ascending (Safe binary-searches them).
+	auto add = [](std::vector<int>& list, int i) {
+		if (list.empty() || list.back() != i) list.push_back(i);
+	};
 	for (int i = 0; i < (int)m.prepped.size(); i++) {
 		if (m.prepped[i].hasNumber) m.numbered.push_back(i);
-		std::unordered_set<Token, TokenHash> seen;
-		ForEachToken(m.prepped[i], m.opt.maxTokenChars, m.opt.anchors,
-		             [&](const Token& t) {
-			if (seen.insert(t).second) m.index[t].push_back(i);
-		});
-		// Same enumeration over the hidden lines, so a literal lookup is as
-		// complete for them as it is for the printed ones -- but into a map of
-		// its own (see Impl).
 		if (m.hidden[i].hasNumber) m.numberedHidden.push_back(i);
-		std::unordered_set<Token, TokenHash> seenHidden;
-		ForEachToken(m.hidden[i], m.opt.maxTokenChars, m.opt.anchors,
-		             [&](const Token& t) {
-			if (seenHidden.insert(t).second) m.hiddenIndex[t].push_back(i);
+		if (!m.opt.index) continue;
+		ForEachToken(m.prepped[i], m.opt.maxTokenChars, m.opt.anchors,
+		             [&](const Token& t) { add(m.index[t], i); });
+	}
+	// Same enumeration over the hidden and ambient lines, so a literal lookup is
+	// as complete for them as it is for the printed ones -- but into maps of
+	// their own (see Impl), and only for tokens some entry PRINTS. Those maps
+	// are only ever asked about a candidate, and every candidate is cut from a
+	// printed line (Build), so a token no entry prints would never be looked up.
+	// The gem lists' hidden text is the gems' descriptions -- forty times the
+	// printed text -- and indexing all of it was most of the time it took to
+	// open that page.
+	m.ambient = Prep(ambient.lines);
+	if (m.opt.index) {
+		// Pruned: the index holds every substring of every printed fragment, so
+		// when a token is not in it, nothing that contains it is either.
+		// (Only the unanchored token's answer is read for pruning.)
+		const bool prune = m.opt.pruneHidden;
+		for (int i = 0; i < (int)m.hidden.size(); i++)
+			ForEachToken(m.hidden[i], m.opt.maxTokenChars, m.opt.anchors, [&](const Token& t) -> bool {
+				if (prune && !m.index.count(t)) return false;
+				add(m.hiddenIndex[t], i);
+				return true;
+			});
+		ForEachToken(m.ambient, m.opt.maxTokenChars, m.opt.anchors, [&](const Token& t) -> bool {
+			if (prune && !m.index.count(t)) return false;
+			m.ambientIndex.insert(t);
+			return true;
 		});
 	}
-	m.ambient = Prep(ambient.lines);
-	ForEachToken(m.ambient, m.opt.maxTokenChars, m.opt.anchors,
-	             [&](const Token& t) { m.ambientIndex.insert(t); });
 	// Name seams. Every piece that could be one side of a straddling token: up
 	// to maxTokenChars characters, the whole word included.
 	auto sides = [&](const std::vector<std::string>& words, bool left) {
@@ -446,7 +497,7 @@ Result Corpus::Build(const std::vector<int>& selected, Mode mode) const
 {
 	const Impl& m = *impl_;
 	Result r;
-	if (selected.empty() || m.entries.empty()) return r;
+	if (selected.empty() || m.entries.empty() || !m.opt.index) return r;
 
 	std::vector<bool> isSelected(m.entries.size(), false);
 	std::vector<int> picks;
@@ -578,8 +629,10 @@ Check Corpus::Verify(const std::vector<int>& selected, const std::string& query)
 				// "Certainly finds" reads printed text only; "might hit" reads
 				// the hidden text as well. The asymmetry is the same one as
 				// around numbers, and for the same reason.
-				if (AlwaysMatches(m.prepped[e], t)) definite[e] = true;
-				if (MayMatch(m.prepped[e], t) || MayMatch(m.hidden[e], t)) possible[e] = true;
+				// Always implies may, so a settled entry needs no more scanning.
+				if (definite[e] && possible[e]) break;
+				if (!definite[e] && AlwaysMatches(m.prepped[e], t)) definite[e] = possible[e] = true;
+				if (!possible[e] && (MayMatch(m.prepped[e], t) || MayMatch(m.hidden[e], t))) possible[e] = true;
 			}
 		}
 		for (const Token& t : alts)

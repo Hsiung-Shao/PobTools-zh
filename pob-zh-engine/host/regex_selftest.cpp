@@ -605,7 +605,7 @@ void DataTests(const std::wstring& exeDir)
 		// the other, hidden text following whichever the entry ended up in.
 		// `full` = false leaves the hidden and ambient text out, which is only
 		// used to report how much of the page they cost.
-		auto build = [&](bool full) {
+		auto build = [&](bool full, const RegexGen::Options& opt = RegexGen::Options{}) {
 			std::vector<Entry> es;
 			es.reserve(p.entries.size());
 			for (const RegexEntryDef& d : p.entries) {
@@ -627,10 +627,23 @@ void DataTests(const std::wstring& exeDir)
 				amb.nameRight = useZh ? p.nameSuffixZh : p.nameSuffixEn;
 			}
 			Corpus c;
-			c.Reset(std::move(es), std::move(amb));
+			c.Reset(std::move(es), std::move(amb), opt);
 			return c;
 		};
+		// Timed because this is what the panel pays, on the UI thread, the first
+		// time a page is opened (and again after switching the output language).
+		// Reported, not asserted: it is a property of the machine as much as of
+		// the code. The gem lists were 0.3-0.9 s before 2026-10-08.
+		LARGE_INTEGER qf, q0, q1;
+		QueryPerformanceFrequency(&qf);
+		QueryPerformanceCounter(&q0);
 		Corpus c = build(true);
+		QueryPerformanceCounter(&q1);
+		{
+			char buf[64];
+			snprintf(buf, sizeof buf, "%.1f", (double)(q1.QuadPart - q0.QuadPart) * 1000.0 / (double)qf.QuadPart);
+			line(std::string("        corpus prepared in ") + buf + " ms");
+		}
 		Corpus bare = build(false);
 
 		// Shape of the new fields. Every page carries the lines its items all
@@ -729,6 +742,46 @@ void DataTests(const std::wstring& exeDir)
 			const char* names[3] = {"Any", "None", "All"};
 			check(bad == 0, std::string(names[mi]) + ": " + std::to_string(kRounds) +
 			      " random picks round-trip" + (bad ? " -- " + firstWhy : ""));
+		}
+
+		// The two shortcuts that keep opening a page and ticking in the merged
+		// view instant (2026-10-08): hidden / ambient text indexed only for
+		// tokens some entry prints, and the merged view's union corpus built
+		// without indexes at all. Each against the slow reference, pick for pick:
+		// the shortcut is only allowed to be faster, never different.
+		{
+			RegexGen::Options fullOpt;
+			fullOpt.pruneHidden = false;
+			RegexGen::Options verifyOnly;
+			verifyOnly.index = false;
+			const Corpus ref = build(true, fullOpt);
+			const Corpus vo = build(true, verifyOnly);
+			int diffBuild = 0, diffVerify = 0;
+			std::string firstDiff;
+			const int rounds = (int)p.entries.size() > 1000 ? 20 : 40;
+			for (int mi = 0; mi < 3; mi++) {
+				Rng rng{0xD1FFu + (unsigned)mi * 104729u};
+				for (int round = 0; round < rounds; round++) {
+					const int n = 1 + rng.below(6);
+					std::vector<int> sel;
+					for (int k = 0; k < n; k++) sel.push_back(rng.below((int)p.entries.size()));
+					const RegexGen::Result a = c.Build(sel, modes[mi]);
+					const RegexGen::Result b = ref.Build(sel, modes[mi]);
+					if (a.query != b.query || a.unresolved != b.unresolved || a.tokens != b.tokens) {
+						if (!diffBuild && firstDiff.empty()) firstDiff = a.query + " vs " + b.query;
+						diffBuild++;
+					}
+					const RegexGen::Check va = c.Verify(sel, a.query);
+					const RegexGen::Check vb = vo.Verify(sel, a.query);
+					if (va.ok != vb.ok || va.missing != vb.missing || va.extra != vb.extra || va.ambient != vb.ambient) {
+						if (firstDiff.empty()) firstDiff = "verify " + a.query;
+						diffVerify++;
+					}
+				}
+			}
+			check(diffBuild == 0 && diffVerify == 0 && vo.Build({0}, Mode::Any).query.empty(),
+			      "pruned hidden index == full index, and a verify-only corpus verifies the same (" +
+			      std::to_string(rounds * 3) + " random picks)" + (firstDiff.empty() ? "" : " -- " + firstDiff));
 		}
 
 		// How often the shortening actually pays, and whether a realistic pick

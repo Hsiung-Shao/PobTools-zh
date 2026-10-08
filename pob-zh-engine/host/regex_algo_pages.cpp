@@ -794,7 +794,13 @@ const UnionCorpusCache::Union& UnionCorpusCache::Get(const std::vector<const Reg
 		}
 		AppendAmbient(*p, lang, amb);
 	}
-	u->corpus.Reset(std::move(entries), std::move(amb));
+	// Verify-only (Combine never calls Build on the union; each page builds its
+	// tokens from its own corpus), so no token index: re-indexing every ticked
+	// page whenever the set of ticked pages changed was the half-second freeze
+	// on ticking a box once a gem list was in the merge.
+	RegexGen::Options opt;
+	opt.index = false;
+	u->corpus.Reset(std::move(entries), std::move(amb), opt);
 	items_.insert(items_.begin(), std::move(u));
 	if (items_.size() > 4) items_.pop_back();
 	return *items_.front();
