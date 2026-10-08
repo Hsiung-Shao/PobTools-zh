@@ -41,11 +41,62 @@ Path of Exile 及其所有遊戲內容、名稱、素材之著作權屬 **Grindi
 
 > 使用者可在啟動器底部的「字型」下拉切換任一放在 `Fonts\` 的 `.ttf`。
 
+### 圖示
+
+| 檔案 | 授權 | 說明 |
+|---|---|---|
+| `pob-zh-engine/host/data/icons_lucide.inc`(編進 `pob-zh.exe`,不是獨立檔案) | **ISC**(部分圖示另有 MIT) | Lucide Icons 1.47.0(npm `lucide-static`)的 `lucide.ttf`,只保留啟動器用到的 38 個圖示。Copyright (c) 2026 Lucide Icons and Contributors。其中衍生自 Feather 的圖示(如 check、chevron-down、x、info、search、link、download、external-link)另以 MIT 授權,Copyright (c) 2013-present Cole Bemis。兩份授權全文與 Lucide 原始 `LICENSE` 相同,保留於該 `.inc` 檔頭與下方。 |
+
+<details><summary>Lucide ISC License / Feather MIT License 全文</summary>
+
+```
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+The MIT License (MIT) (for the icons derived from Feather)
+
+Copyright (c) 2013-present Cole Bemis
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 ---
 
 ## 摘要
 
 - **程式碼**:MIT(本專案原創)+ MIT(SimpleGraphic / ImGui / json / curl base64)+ BSD-3(WebView2 SDK loader)。
+- **圖示**:Lucide 子集字型(ISC,部分衍生自 Feather 的圖示為 MIT),編進 `pob-zh.exe`。
 - **POB 本體**:MIT,但**不隨附**,使用者自備。
 - **翻譯 / 遊戲資料**:取材自 GGG 版權內容,以粉絲工具用途提供,非以 MIT 授權釋出。
 - **字型**:預設 Noto Sans TC(SIL OFL 1.1,可自由隨附散布);韓文後援 Noto Sans KR(同為 SIL OFL 1.1)。

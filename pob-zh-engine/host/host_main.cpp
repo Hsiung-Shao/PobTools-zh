@@ -68,6 +68,7 @@
 #include "app_update.h"
 #include "sig_verify.h"
 #include "ui_theme.h"
+#include "ui_widgets.h"
 #include "../translate/startup_trace.h"
 
 #pragma comment(lib, "shell32.lib")
@@ -649,7 +650,23 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// Headless shared-theme invariants (no GLFW window or renderer required).
 	if (arg1 == L"--ui-theme-selftest") {
-		return PobUi::RunThemeSelfTest() ? 0 : 1;
+		// headless: the shared style, the design tokens it must agree with, and
+		// the launcher widgets' size maths. Written to a report like the other
+		// selftests -- an exit code alone says nothing about what was checked.
+		const bool theme = PobUi::RunThemeSelfTest();
+		const bool widgets = PobUi::RunWidgetSelfTest();
+		std::string rep = std::string(theme ? "PASS" : "FAIL") + " theme: style, density swap, design tokens\n" +
+		                  (widgets ? "PASS" : "FAIL") + " widgets: design px -> screen px, control sizes\n" +
+		                  ((theme && widgets) ? "RESULT PASS\n" : "RESULT FAIL\n");
+		CreateDirectoryW((dir + L"PobTools").c_str(), nullptr);
+		HANDLE h = CreateFileW((dir + L"PobTools\\ui_theme_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,
+		                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h != INVALID_HANDLE_VALUE) {
+			DWORD w = 0;
+			WriteFile(h, rep.data(), (DWORD)rep.size(), &w, nullptr);
+			CloseHandle(h);
+		}
+		return (theme && widgets) ? 0 : 1;
 	}
 	if (arg1 == L"--pob-protocol-selftest") {
 		// headless: the pob:// URI whitelist and a registry round-trip on a

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 struct ImVec4;
 // Declared at global scope on purpose: a `struct ImGuiStyle&` written inside
 // namespace PobUi would declare PobUi::ImGuiStyle, a brand new incomplete type
@@ -7,6 +9,60 @@ struct ImVec4;
 struct ImGuiStyle;
 
 namespace PobUi {
+
+// Design-system colour tokens (PobTools design system, tokens.json), packed the
+// way IM_COL32 packs them (R in the low byte) so they can go straight into a draw
+// list. One value per meaning: the dozen hand-typed status colours that used to
+// be scattered through launcher_ui.cpp are these now.
+namespace Tok {
+constexpr std::uint32_t Rgb(unsigned r, unsigned g, unsigned b, unsigned a = 255)
+{
+	return (std::uint32_t)((a << 24) | (b << 16) | (g << 8) | r);
+}
+inline constexpr std::uint32_t Bg            = Rgb(0x0b, 0x10, 0x14);
+inline constexpr std::uint32_t Surface1      = Rgb(0x0f, 0x16, 0x1b);
+inline constexpr std::uint32_t Surface2      = Rgb(0x14, 0x1d, 0x23);
+inline constexpr std::uint32_t Surface3      = Rgb(0x1c, 0x28, 0x2f);
+inline constexpr std::uint32_t SurfaceRaised = Rgb(0x11, 0x19, 0x1f);
+inline constexpr std::uint32_t Border        = Rgb(0x2b, 0x39, 0x42);
+inline constexpr std::uint32_t BorderSubtle  = Rgb(0x22, 0x2e, 0x36);
+inline constexpr std::uint32_t BorderStrong  = Rgb(0x3b, 0x4e, 0x58);
+inline constexpr std::uint32_t Text          = Rgb(0xed, 0xf3, 0xf5);
+inline constexpr std::uint32_t TextMuted     = Rgb(0x88, 0x99, 0xa2);
+inline constexpr std::uint32_t TextFaint     = Rgb(0x66, 0x75, 0x7e);
+inline constexpr std::uint32_t Accent        = Rgb(0x63, 0x66, 0xf1);
+inline constexpr std::uint32_t AccentHover   = Rgb(0x4f, 0x46, 0xe5);
+inline constexpr std::uint32_t AccentText    = Rgb(0xa5, 0xb4, 0xfc);
+inline constexpr std::uint32_t AccentSoft    = Rgb(0x25, 0x28, 0x4a);
+inline constexpr std::uint32_t OnAccent      = Rgb(0xff, 0xff, 0xff);
+inline constexpr std::uint32_t Success       = Rgb(0x66, 0xd3, 0x8f);
+inline constexpr std::uint32_t SuccessSoft   = Rgb(0x12, 0x27, 0x1c);
+inline constexpr std::uint32_t Warning       = Rgb(0xe8, 0xb5, 0x5b);
+inline constexpr std::uint32_t WarningSoft   = Rgb(0x2a, 0x23, 0x12);
+inline constexpr std::uint32_t Danger        = Rgb(0xef, 0x69, 0x6f);
+inline constexpr std::uint32_t DangerSoft    = Rgb(0x2c, 0x15, 0x17);
+inline constexpr std::uint32_t DangerFill    = Rgb(0x65, 0x2b, 0x2f);
+inline constexpr std::uint32_t DangerFillHover = Rgb(0x85, 0x33, 0x39);  // PushDangerButton's hover
+inline constexpr std::uint32_t OnDanger      = Rgb(0xff, 0xeb, 0xec);
+inline constexpr std::uint32_t Update        = Rgb(0x81, 0x8c, 0xf8);
+inline constexpr std::uint32_t Scrim         = Rgb(0x00, 0x00, 0x00, 0xa0);
+inline constexpr std::uint32_t Canvas        = Rgb(0x08, 0x0a, 0x0c);
+// Banner outlines (component styles, not tokens of their own in tokens.json).
+inline constexpr std::uint32_t BannerWarnEdge = Rgb(0x4a, 0x3c, 0x1c);
+inline constexpr std::uint32_t BannerBadEdge  = Rgb(0x4d, 0x24, 0x27);
+// Canvas nodes shared by the atlas planner and the timeless-jewel view.
+inline constexpr std::uint32_t TreeKeystone  = Rgb(0xd9, 0x73, 0xd9);
+inline constexpr std::uint32_t TreeNotable   = Rgb(0xf2, 0xcc, 0x66);
+inline constexpr std::uint32_t TreeSocket    = Rgb(0x6f, 0xa8, 0xff);
+inline constexpr std::uint32_t TreeLink      = Rgb(0x5a, 0x5f, 0x6e);
+inline constexpr std::uint32_t TreeLinkOn    = Rgb(0x74, 0xca, 0xf4);
+inline constexpr std::uint32_t TreeAdd       = Rgb(0x66, 0xd3, 0x8f);
+inline constexpr std::uint32_t TreeRemove    = Rgb(0xef, 0x69, 0x6f);
+inline constexpr std::uint32_t TreeHit       = TreeNotable;
+} // namespace Tok
+
+// A token as the float colour ImGui's style API takes.
+ImVec4 TokV4(std::uint32_t c);
 
 enum class Density {
 	Comfortable,

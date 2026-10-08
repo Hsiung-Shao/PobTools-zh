@@ -147,22 +147,28 @@ void PopButtonStyle()
 	ImGui::PopStyleColor(4);
 }
 
+ImVec4 TokV4(std::uint32_t c)
+{
+	return ImGui::ColorConvertU32ToFloat4(c);
+}
+
 ImVec4 Accent()
 {
-	return Rgba(99, 102, 241);
+	return TokV4(Tok::Accent);
 }
 
 ImVec4 MutedText()
 {
-	return Rgba(136, 153, 162);
+	return TokV4(Tok::TextMuted);
 }
 
+// The design system's three status colours, one meaning each.
 ImVec4 StatusColor(StatusTone tone)
 {
 	switch (tone) {
-		case StatusTone::Success: return Rgba(102, 211, 143);
-		case StatusTone::Warning: return Rgba(232, 181, 91);
-		case StatusTone::Error:   return Rgba(239, 105, 111);
+		case StatusTone::Success: return TokV4(Tok::Success);
+		case StatusTone::Warning: return TokV4(Tok::Warning);
+		case StatusTone::Error:   return TokV4(Tok::Danger);
 		default:                  return MutedText();
 	}
 }
@@ -241,6 +247,33 @@ bool RunThemeSelfTest()
 		BuildStyle(b, 1.25f, Density::Canvas);   // same inputs, already-filled target
 		BuildStyle(b, 1.25f, Density::Canvas);
 		ok = ok && sameStyle(a, b);
+	}
+	// The tokens are the colours BuildStyle already used for the same jobs: a
+	// drift between the two would mean a card drawn from the tokens no longer
+	// matches the child window it sits next to.
+	{
+		ImGuiStyle t;
+		BuildStyle(t, 1.0f, Density::Comfortable);
+		auto same = [](const ImVec4& v, std::uint32_t c) {
+			const ImVec4 w = ImGui::ColorConvertU32ToFloat4(c);
+			return Near(v.x, w.x) && Near(v.y, w.y) && Near(v.z, w.z) && Near(v.w, w.w);
+		};
+		ok = ok && same(t.Colors[ImGuiCol_WindowBg], Tok::Bg) &&
+		     same(t.Colors[ImGuiCol_ChildBg], Tok::Surface1) &&
+		     same(t.Colors[ImGuiCol_FrameBg], Tok::Surface2) &&
+		     same(t.Colors[ImGuiCol_FrameBgHovered], Tok::Surface3) &&
+		     same(t.Colors[ImGuiCol_Border], Tok::Border) &&
+		     same(t.Colors[ImGuiCol_Text], Tok::Text) &&
+		     same(t.Colors[ImGuiCol_TextDisabled], Tok::TextMuted) &&
+		     same(t.Colors[ImGuiCol_CheckMark], Tok::Accent);
+		// status colours come from the tokens, nowhere else
+		ok = ok && same(StatusColor(StatusTone::Success), Tok::Success) &&
+		     same(StatusColor(StatusTone::Warning), Tok::Warning) &&
+		     same(StatusColor(StatusTone::Error), Tok::Danger) &&
+		     same(Accent(), Tok::Accent) && same(MutedText(), Tok::TextMuted);
+		// packing: R in the low byte, like IM_COL32
+		ok = ok && Tok::Bg == IM_COL32(0x0b, 0x10, 0x14, 0xff) &&
+		     Tok::Scrim == IM_COL32(0, 0, 0, 0xa0) && Tok::TreeHit == Tok::TreeNotable;
 	}
 	ImGui::DestroyContext();
 	return ok;

@@ -401,6 +401,8 @@ if (WIN32)
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp
+        # launcher widgets from the design system (cards, rows, switches, toasts)
+        host/ui_widgets.cpp
         host/launcher_ui.cpp
         host/launcher_editor.cpp
         host/editor_data.cpp
