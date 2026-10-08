@@ -6,6 +6,7 @@
 #include "atlas_stat_agg.h" // StripStatMarkup for tooltip stat lines
 #include "editor_util.h"   // EdReadFile / EdWiden
 #include "image_tex.h"
+#include "ui_theme.h"     // design tokens: the tree-* palette
 
 #include <imgui_internal.h> // ImLengthSqr
 
@@ -15,15 +16,18 @@
 
 // ---- palette ----------------------------------------------------------------
 
-static const ImU32 kColEdgeOff = IM_COL32(90, 95, 110, 140);
-static const ImU32 kColEdgeOn = IM_COL32(116, 202, 244, 240);   // allocated: light blue (poeplanner style)
-static const ImU32 kColEdgePath = IM_COL32(120, 200, 150, 220); // preview: green
-static const ImU32 kColEdgeLose = IM_COL32(224, 80, 80, 220);   // removal: red
-static const ImU32 kColHoverRing = IM_COL32(255, 255, 255, 90);
-static const ImU32 kColTargetRing = IM_COL32(255, 205, 110, 150); // deliberately picked
-static const ImU32 kColWantRing = IM_COL32(94, 234, 140, 255);    // planning mode: "want"
-static const ImU32 kColAvoidRing = IM_COL32(248, 113, 113, 245);  // ruled out by the user
-static const ImU32 kColMechRing = IM_COL32(255, 226, 110, 235);   // mechanic highlight
+// Every hue is a design token (ui_theme.h, tree-*); only the alpha is local.
+namespace Tok = PobUi::Tok;
+static constexpr ImU32 WithA(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
+static const ImU32 kColEdgeOff = WithA(Tok::TreeLink, 140);
+static const ImU32 kColEdgeOn = WithA(Tok::TreeLinkOn, 240);    // allocated
+static const ImU32 kColEdgePath = WithA(Tok::TreeAdd, 220);     // preview: path to add
+static const ImU32 kColEdgeLose = WithA(Tok::TreeRemove, 220);  // preview: what a removal loses
+static const ImU32 kColHoverRing = WithA(Tok::Text, 90);
+static const ImU32 kColTargetRing = WithA(Tok::TreeNotable, 150); // deliberately picked
+static const ImU32 kColWantRing = Tok::TreeAdd;                   // planning mode: "want"
+static const ImU32 kColAvoidRing = WithA(Tok::TreeRemove, 245);   // ruled out by the user
+static const ImU32 kColMechRing = WithA(Tok::TreeHit, 235);       // mechanic highlight
 
 // How long the cursor must rest on a node before its minimum-point plan is
 // solved. Without this, sweeping the tree would run one solve per node passed.
@@ -373,7 +377,7 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 			float a = focusTimer_ / kFocusDuration;
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              (std::max(n.on.w, n.on.h) * 0.5f + 24.0f) * zoom_,
-			              IM_COL32(255, 220, 120, (int)(255 * a)), 0, 3.0f);
+			              WithA(Tok::TreeHit, (unsigned)(255 * a)), 0, 3.0f);
 		}
 	}
 }
@@ -387,7 +391,7 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 			? masteryLabel_[hoverMastery_] : m.name;
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * uiScale, 12.0f * uiScale));
 		ImGui::BeginTooltip();
-		ImGui::TextColored(ImVec4(1.0f, 0.89f, 0.43f, 1.0f), "%s", lbl.empty() ? "?" : lbl.c_str());
+		ImGui::TextColored(PobUi::TokV4(Tok::TreeHit), "%s", lbl.empty() ? "?" : lbl.c_str());
 		ImGui::TextDisabled(mechMasteries_.count(hoverMastery_)
 			? u8"點擊取消標示" : u8"點擊標示這個機制的所有位置");
 		ImGui::EndTooltip();
@@ -400,11 +404,10 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * uiScale, FLT_MAX));
 	ImGui::BeginTooltip();
 
-	ImVec4 nameCol =
-		n.kind == kAtlasKeystone ? ImVec4(0.85f, 0.45f, 0.85f, 1.0f) :
-		n.kind == kAtlasNotable ? ImVec4(0.95f, 0.80f, 0.40f, 1.0f) :
-		n.kind == kAtlasWormhole ? ImVec4(0.55f, 0.80f, 0.95f, 1.0f) :
-		ImVec4(0.90f, 0.90f, 0.90f, 1.0f);
+	const ImVec4 nameCol = PobUi::TokV4(PobUi::TreeKindColor(
+		n.kind == kAtlasKeystone ? PobUi::TreeKind::Keystone :
+		n.kind == kAtlasNotable ? PobUi::TreeKind::Notable :
+		n.kind == kAtlasWormhole ? PobUi::TreeKind::Wormhole : PobUi::TreeKind::Small));
 	const std::string& dispName = zh ? zh->NodeName(n.id, n.name) : n.name;
 	ImGui::TextColored(nameCol, "%s", dispName.empty() ? (n.kind == kAtlasStart ? u8"輿圖起點" : "?") : dispName.c_str());
 	// cost badge next to the name, poeplanner style (+N / -N nodes)
@@ -413,22 +416,22 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 		int net = planPoints_ - d.UsedPoints();
 		ImGui::SameLine(0, 14.0f * uiScale);
 		if (net > 0)
-			ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f), u8"+%d 點", net);
+			ImGui::TextColored(PobUi::TokV4(Tok::Success), u8"+%d 點", net);
 		else if (net < 0)
-			ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f), u8"-%d 點", -net);
+			ImGui::TextColored(PobUi::TokV4(Tok::Danger), u8"-%d 點", -net);
 		else
 			ImGui::TextDisabled(u8"±0 點");
 	}
 	if (n.target) {
 		ImGui::SameLine(0, 10.0f * uiScale);
-		ImGui::TextColored(ImVec4(1.0f, 0.80f, 0.43f, 1.0f), u8"[目標]");
+		ImGui::TextColored(PobUi::TokV4(Tok::TreeNotable), u8"[目標]");
 	}
 
 	// 明確 wrap 寬度:TextWrapped 會跟著「目前視窗寬」換行,而 auto-resize
 	// tooltip 的寬度由最寬的不換行元件(短標題)決定 → 一行七八字的窄條。
 	ImGui::PushTextWrapPos(380.0f * uiScale);
 	for (const std::string& s : n.stats) {
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.68f, 0.90f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
 		ImGui::TextUnformatted(StripStatMarkup(zh ? zh->StatLine(s) : s).c_str());
 		ImGui::PopStyleColor();
 	}
@@ -443,15 +446,15 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 			ImGui::TextDisabled(u8"計算路徑…");
 		} else if (n.alloc) {
 			int lose = (int)hoverDrop_.size();
-			ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+			ImGui::TextColored(PobUi::TokV4(Tok::Danger),
 			                   lose > 1 ? u8"點擊移除，連帶失去 %d 點" : u8"點擊移除（%d 點）", lose);
 		} else if (hoverAdd_.empty()) {
 			ImGui::TextDisabled(u8"無法從已配置的節點連到這裡");
 		} else if (planPoints_ > d.TotalPoints()) {
-			ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+			ImGui::TextColored(PobUi::TokV4(Tok::Danger),
 			                   u8"要 %d 點，超過上限 %d 點", planPoints_, d.TotalPoints());
 		} else {
-			ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f),
+			ImGui::TextColored(PobUi::TokV4(Tok::Success),
 			                   u8"點擊配置 %d 點，共 %d 點", (int)hoverAdd_.size(), planPoints_);
 		}
 	} else if (!planReady_) {
@@ -461,19 +464,19 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	} else if (planNoop_) {
 		ImGui::TextDisabled(u8"連接用節點，沒有目標依賴它（點擊無效）");
 	} else if (planPoints_ > d.TotalPoints()) {
-		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		ImGui::TextColored(PobUi::TokV4(Tok::Danger),
 		                   u8"要 %d 點，超過上限 %d 點", planPoints_, d.TotalPoints());
 	} else if (n.alloc && n.target) {
-		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		ImGui::TextColored(PobUi::TokV4(Tok::Danger),
 		                   u8"點擊取消這個目標（剩 %d 點）", planPoints_);
 	} else if (n.alloc) {
-		ImGui::TextColored(ImVec4(0.88f, 0.35f, 0.35f, 1.0f),
+		ImGui::TextColored(PobUi::TokV4(Tok::Danger),
 		                   u8"連接用節點，點擊會放棄它後面的目標（剩 %d 點）", planPoints_);
 	} else {
-		ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.55f, 1.0f),
+		ImGui::TextColored(PobUi::TokV4(Tok::Success),
 		                   u8"點擊設為目標，共 %d 點", planPoints_);
 		if (!hoverDrop_.empty())
-			ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f),
+			ImGui::TextColored(PobUi::TokV4(Tok::Warning),
 			                   u8"其中 %d 個連接用節點會改道", (int)hoverDrop_.size());
 		if (!planExact_)
 			ImGui::TextDisabled(u8"目標超過 %d 個，這是近似解", AtlasOptExactCap());
@@ -516,7 +519,7 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	}
 	clickedMastery_ = -1;
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.031f, 0.035f, 0.047f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, PobUi::TokV4(Tok::Canvas));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 	ImGui::BeginChild("##atlascanvas", ImVec2(0, 0), false,
 		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
@@ -709,8 +712,8 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 		ImVec2 ts = ImGui::CalcTextSize(buf);
 		ImVec2 pad(10.0f * uiScale, 5.0f * uiScale);
 		ImVec2 p0 = vpPos_ + ImVec2(12.0f * uiScale, 12.0f * uiScale);
-		dl->AddRectFilled(p0, p0 + ts + pad + pad, IM_COL32(16, 18, 24, 215), 6.0f * uiScale);
-		dl->AddText(p0 + pad, IM_COL32(240, 244, 250, 255), buf);
+		dl->AddRectFilled(p0, p0 + ts + pad + pad, WithA(Tok::SurfaceRaised, 215), 6.0f * uiScale);
+		dl->AddText(p0 + pad, Tok::Text, buf);
 	}
 
 	// Refused click: a single line in the toolbar reads as "nothing happened",
@@ -721,9 +724,9 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 		ImVec2 pad(14.0f * uiScale, 9.0f * uiScale);
 		ImVec2 box = ts + pad + pad;
 		ImVec2 p0(vpPos_.x + (vpSize_.x - box.x) * 0.5f, vpPos_.y + 26.0f * uiScale);
-		dl->AddRectFilled(p0, p0 + box, IM_COL32(60, 18, 22, (int)(235 * fade)), 6.0f * uiScale);
-		dl->AddRect(p0, p0 + box, IM_COL32(224, 80, 80, (int)(230 * fade)), 6.0f * uiScale, 0, 2.0f);
-		dl->AddText(p0 + pad, IM_COL32(255, 200, 200, (int)(255 * fade)), status_.c_str());
+		dl->AddRectFilled(p0, p0 + box, WithA(Tok::DangerSoft, (unsigned)(235 * fade)), 6.0f * uiScale);
+		dl->AddRect(p0, p0 + box, WithA(Tok::Danger, (unsigned)(230 * fade)), 6.0f * uiScale, 0, 2.0f);
+		dl->AddText(p0 + pad, WithA(Tok::OnDanger, (unsigned)(255 * fade)), status_.c_str());
 	}
 	dl->PopClipRect();
 

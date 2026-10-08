@@ -59,7 +59,16 @@ inline constexpr std::uint32_t TreeLinkOn    = Rgb(0x74, 0xca, 0xf4);
 inline constexpr std::uint32_t TreeAdd       = Rgb(0x66, 0xd3, 0x8f);
 inline constexpr std::uint32_t TreeRemove    = Rgb(0xef, 0x69, 0x6f);
 inline constexpr std::uint32_t TreeHit       = TreeNotable;
+// The two kinds the atlas planner lists beside keystones and notables (2026-10-08).
+inline constexpr std::uint32_t TreeWormhole  = Rgb(0x8c, 0xcc, 0xf2);
+inline constexpr std::uint32_t TreeSmall     = Rgb(0xb8, 0xc2, 0xd1);
 } // namespace Tok
+
+// Node kinds on a passive-style canvas, and the one colour each is drawn and
+// listed in. Shared so the atlas planner and the timeless-jewel view cannot
+// drift apart again (each used to carry its own copy of the hues).
+enum class TreeKind { Keystone, Wormhole, Notable, Small, Socket };
+std::uint32_t TreeKindColor(TreeKind kind);
 
 // A token as the float colour ImGui's style API takes.
 ImVec4 TokV4(std::uint32_t c);

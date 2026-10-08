@@ -132,6 +132,17 @@ void Hint(const char* text, float wrapWidth, std::uint32_t col)
 	ImGui::PopFont();
 }
 
+void Heading(const char* text, std::uint32_t col)
+{
+	if (!text || !*text) return;
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const ImVec2 ts = TextSize(HeadingFont(), HeadingPx(), text);
+	const float lineH = std::max(ts.y, ImGui::GetTextLineHeight());
+	ImGui::Dummy(ImVec2(ts.x, lineH));
+	DrawText(ImGui::GetWindowDrawList(), HeadingFont(), HeadingPx(), ImVec2(p.x, p.y + std::floor((lineH - ts.y) * 0.5f)),
+	         col ? col : Tok::Text, text);
+}
+
 void Overline(const char* text)
 {
 	ImGui::PushFont(SmallFont());
@@ -368,6 +379,14 @@ float SegmentedWidth(const char* const* labels, int count)
 
 bool Segmented(const char* id, int* selected, const char* const* labels, int count, bool enabled)
 {
+	if (enabled) return SegmentedEx(id, selected, labels, count, nullptr, nullptr);
+	bool flags[16] = {};   // all false: the whole control is disabled
+	return SegmentedEx(id, selected, labels, count > 16 ? 16 : count, flags, nullptr);
+}
+
+bool SegmentedEx(const char* id, int* selected, const char* const* labels, int count,
+                 const bool* itemEnabled, const char* const* tips)
+{
 	ImGui::PushID(id);
 	const float h = ControlH();
 	const float boxH = BoxH(h);
@@ -385,25 +404,28 @@ bool Segmented(const char* id, int* selected, const char* const* labels, int cou
 		const float iw = SegItemW(labels[i]);
 		ImGui::SetCursorScreenPos(ImVec2(x, p.y + D(3.0f)));
 		ImGui::PushID(i);
-		ImGui::BeginDisabled(!enabled);
+		const bool itemOn = !itemEnabled || itemEnabled[i];
+		ImGui::BeginDisabled(!itemOn);
 		const bool click = ImGui::InvisibleButton("##seg", ImVec2(iw, ih));
 		const bool hov = ImGui::IsItemHovered();
+		const bool hovAny = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
 		ImGui::EndDisabled();
 		ImGui::PopID();
+		if (hovAny && tips && tips[i] && *tips[i]) Tooltip(tips[i]);
 		const bool sel = (*selected == i);
 		const ImVec2 a(x, p.y + D(3.0f)), b(x + iw, p.y + D(3.0f) + ih);
 		if (sel) {
 			dl->AddRectFilled(a, b, Tok::AccentSoft, D(5.0f));
-			dl->AddRect(a, b, enabled ? Tok::Accent : WithAlpha(Tok::Accent, 0.5f), D(5.0f), 0, 1.0f);
-		} else if (hov && enabled) {
+			dl->AddRect(a, b, itemOn ? Tok::Accent : WithAlpha(Tok::Accent, 0.5f), D(5.0f), 0, 1.0f);
+		} else if (hov && itemOn) {
 			dl->AddRectFilled(a, b, Tok::Surface3, D(5.0f));
 		}
 		const ImVec2 ts = TextSize(SmallFont(), SmallPx(), labels[i]);
-		const ImU32 tc = !enabled ? Tok::TextFaint : (sel ? Tok::Text : (hov ? Tok::Text : Tok::TextMuted));
+		const ImU32 tc = (!itemOn && !sel) ? Tok::TextFaint : (sel ? Tok::Text : (hov ? Tok::Text : Tok::TextMuted));
 		DrawText(dl, SmallFont(), SmallPx(), ImVec2(x + std::floor((iw - ts.x) * 0.5f), a.y + std::floor((ih - ts.y) * 0.5f)),
 		         tc, labels[i]);
-		if (click && enabled && !sel) { *selected = i; changed = true; }
-		if (hov && enabled) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		if (click && itemOn && !sel) { *selected = i; changed = true; }
+		if (hov && itemOn) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 		x += iw + D(2.0f);
 	}
 	// One item for the whole control so SameLine / layout see its real extent.
@@ -918,10 +940,12 @@ void DrawToast()
 
 // ---- dialog ---------------------------------------------------------------
 
-DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, const char* body,
-                           const char* mono, const char* cancel, const char* danger, const char* primary)
+namespace {
+float g_dialogInner = 0.0f;
+}
+
+bool BeginDialog(const char* popupId, bool* open, const char* title, const char* body, const char* mono)
 {
-	DialogResult res = DialogResult::None;
 	if (open && *open) {
 		ImGui::OpenPopup(popupId);
 		*open = false;
@@ -935,52 +959,297 @@ DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, c
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, D(12.0f));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(D(24.0f), D(24.0f)));
 	ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
-	if (ImGui::BeginPopupModal(popupId, nullptr,
-	                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
-	                           ImGuiWindowFlags_NoSavedSettings)) {
-		const float inner = w - D(48.0f);
-		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + inner);
-		{
-			// heading size without a face of its own: draw-list text, then the room
-			const ImVec2 tp = ImGui::GetCursorScreenPos();
-			const ImVec2 ts = TextSize(HeadingFont(), HeadingPx(), title, inner);
-			DrawText(ImGui::GetWindowDrawList(), HeadingFont(), HeadingPx(), tp, Tok::Text, title, inner);
-			ImGui::Dummy(ts);
-		}
-		ImGui::Dummy(ImVec2(0, D(4.0f)));
-		if (body && *body) {
-			ImGui::PushFont(SmallFont());
-			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextMuted));
-			ImGui::TextUnformatted(body);
-			ImGui::PopStyleColor();
-			ImGui::PopFont();
-		}
-		if (mono && *mono) {
-			ImGui::Dummy(ImVec2(0, D(2.0f)));
-			Numeric(mono, Tok::Text);
-		}
-		ImGui::PopTextWrapPos();
-		ImGui::Dummy(ImVec2(0, D(12.0f)));
-		float total = 0.0f;
-		const float gap = D(8.0f);
-		const char* btns[3] = { cancel, danger, primary };
-		int n = 0;
-		for (const char* b : btns) if (b) { total += ButtonWidth(b, BtnSize::Md, nullptr, D(88.0f)); n++; }
-		total += gap * (float)(n > 0 ? n - 1 : 0);
-		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, inner - total));
-		bool first = true;
-		auto place = [&]() { if (!first) ImGui::SameLine(0, gap); first = false; };
-		if (cancel) { place(); if (Button(cancel, BtnKind::Secondary, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Cancel; }
-		if (danger) { place(); if (Button(danger, BtnKind::Danger, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Danger; }
-		if (primary) { place(); if (Button(primary, BtnKind::Primary, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Primary; }
-		if (ImGui::IsKeyPressed(ImGuiKey_Escape)) res = DialogResult::Cancel;
-		if (res != DialogResult::None) ImGui::CloseCurrentPopup();
-		ImGui::EndPopup();
+	if (!ImGui::BeginPopupModal(popupId, nullptr,
+	                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+	                            ImGuiWindowFlags_NoSavedSettings)) {
+		ImGui::PopStyleVar(3);
+		ImGui::PopStyleColor(2);
+		return false;
 	}
-	ImGui::PopStyleVar(3);
-	ImGui::PopStyleColor(2);
+	const float inner = w - D(48.0f);
+	g_dialogInner = inner;
+	ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + inner);
+	{
+		// heading size without a face of its own: draw-list text, then the room
+		const ImVec2 tp = ImGui::GetCursorScreenPos();
+		const ImVec2 ts = TextSize(HeadingFont(), HeadingPx(), title, inner);
+		DrawText(ImGui::GetWindowDrawList(), HeadingFont(), HeadingPx(), tp, Tok::Text, title, inner);
+		ImGui::Dummy(ts);
+	}
+	ImGui::Dummy(ImVec2(0, D(4.0f)));
+	if (body && *body) {
+		ImGui::PushFont(SmallFont());
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextMuted));
+		ImGui::TextUnformatted(body);
+		ImGui::PopStyleColor();
+		ImGui::PopFont();
+	}
+	if (mono && *mono) {
+		ImGui::Dummy(ImVec2(0, D(2.0f)));
+		Numeric(mono, Tok::Text);
+	}
+	ImGui::PopTextWrapPos();
+	return true;
+}
+
+DialogResult DialogButtons(const char* cancel, const char* secondary, const char* danger, const char* primary,
+                           bool primaryEnabled, bool enterIsPrimary)
+{
+	DialogResult res = DialogResult::None;
+	const float inner = g_dialogInner > 0.0f ? g_dialogInner : ImGui::GetContentRegionAvail().x;
+	ImGui::Dummy(ImVec2(0, D(12.0f)));
+	float total = 0.0f;
+	const float gap = D(8.0f);
+	const char* btns[4] = { cancel, secondary, danger, primary };
+	int n = 0;
+	for (const char* b : btns) if (b) { total += ButtonWidth(b, BtnSize::Md, nullptr, D(88.0f)); n++; }
+	total += gap * (float)(n > 0 ? n - 1 : 0);
+	ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, inner - total));
+	bool first = true;
+	auto place = [&]() { if (!first) ImGui::SameLine(0, gap); first = false; };
+	if (cancel) { place(); if (Button(cancel, BtnKind::Secondary, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Cancel; }
+	if (secondary) { place(); if (Button(secondary, BtnKind::Secondary, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Secondary; }
+	if (danger) { place(); if (Button(danger, BtnKind::Danger, BtnSize::Md, nullptr, D(88.0f))) res = DialogResult::Danger; }
+	if (primary) {
+		place();
+		if (Button(primary, BtnKind::Primary, BtnSize::Md, nullptr, D(88.0f), primaryEnabled)) res = DialogResult::Primary;
+	}
+	if (ImGui::IsKeyPressed(ImGuiKey_Escape)) res = DialogResult::Cancel;
+	if (enterIsPrimary && primary && primaryEnabled &&
+	    (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter)))
+		res = DialogResult::Primary;
+	if (res != DialogResult::None) ImGui::CloseCurrentPopup();
 	return res;
 }
+
+void EndDialog()
+{
+	ImGui::EndPopup();
+	ImGui::PopStyleVar(3);
+	ImGui::PopStyleColor(2);
+	g_dialogInner = 0.0f;
+}
+
+DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, const char* body,
+                           const char* mono, const char* cancel, const char* danger, const char* primary)
+{
+	if (!BeginDialog(popupId, open, title, body, mono)) return DialogResult::None;
+	const DialogResult res = DialogButtons(cancel, nullptr, danger, primary);
+	EndDialog();
+	return res;
+}
+
+// ---- tabs, sections, slots, menus -------------------------------------------
+
+int PageTabs(const char* id, int selected, const char* const* labels, int count, float width)
+{
+	ImGui::PushID(id);
+	const float w = width > 0.0f ? width : ImGui::GetContentRegionAvail().x;
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const float h = std::floor(D(38.0f));
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	float x = p.x;
+	int out = selected;
+	for (int i = 0; i < count; i++) {
+		const ImVec2 ts = TextSize(BodyFont(), BodyPx(), labels[i]);
+		const float tw = ts.x + D(28.0f);
+		ImGui::SetCursorScreenPos(ImVec2(x, p.y));
+		ImGui::PushID(i);
+		const bool click = ImGui::InvisibleButton("##tab", ImVec2(tw, h));
+		const bool hov = ImGui::IsItemHovered();
+		ImGui::PopID();
+		const bool sel = i == selected;
+		if (hov && !sel)
+			dl->AddRectFilled(ImVec2(x, p.y), ImVec2(x + tw, p.y + h), Tok::Surface1, D(5.0f), ImDrawFlags_RoundCornersTop);
+		DrawText(dl, BodyFont(), BodyPx(), ImVec2(x + D(14.0f), p.y + std::floor((h - ts.y) * 0.5f)),
+		         (sel || hov) ? Tok::Text : Tok::TextMuted, labels[i]);
+		if (sel) dl->AddRectFilled(ImVec2(x, p.y + h - 2.0f), ImVec2(x + tw, p.y + h), Tok::Accent);
+		if (click) out = i;
+		if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+		x += tw + D(2.0f);
+	}
+	dl->AddLine(ImVec2(p.x, p.y + h - 0.5f), ImVec2(p.x + w, p.y + h - 0.5f), Tok::Border, 1.0f);
+	ImGui::SetCursorScreenPos(p);
+	ImGui::Dummy(ImVec2(w, h));
+	ImGui::PopID();
+	return out;
+}
+
+bool CollapsingSection(const char* label, const char* id, const char* icon, const char* note, bool defaultOpen)
+{
+	const ImGuiID gid = ImGui::GetID(id);
+	ImGuiStorage* st = ImGui::GetStateStorage();
+	bool open = st->GetInt(gid, defaultOpen ? 1 : 0) != 0;
+	const float w = ImGui::GetContentRegionAvail().x;
+	const float h = std::floor(BodyPx() + D(20.0f));
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const bool click = ImGui::InvisibleButton(id, ImVec2(w, h));
+	const bool hov = ImGui::IsItemHovered();
+	if (click) {
+		open = !open;
+		st->SetInt(gid, open ? 1 : 0);
+	}
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	if (hov) dl->AddRectFilled(p, p + ImVec2(w, h), Tok::Surface2, D(5.0f));
+	dl->AddLine(ImVec2(p.x, p.y + 0.5f), ImVec2(p.x + w, p.y + 0.5f), Tok::BorderSubtle, 1.0f);
+	float x = p.x + D(4.0f);
+	const float ty = p.y + std::floor((h - BodyPx()) * 0.5f);
+	if (g_fonts.icons) {
+		IconAt(dl, ImVec2(x, ty), open ? PobIcon::ChevronDown : PobIcon::ChevronRight, Tok::TextMuted, BodyPx());
+		x += IconWidth(PobIcon::ChevronDown, BodyPx()) + D(6.0f);
+		if (icon) {
+			IconAt(dl, ImVec2(x, ty), icon, Tok::AccentText, BodyPx());
+			x += IconWidth(icon, BodyPx()) + D(8.0f);
+		}
+	} else {
+		DrawText(dl, BodyFont(), BodyPx(), ImVec2(x, ty), Tok::TextMuted, open ? "-" : "+");
+		x += TextSize(BodyFont(), BodyPx(), "+ ").x;
+	}
+	DrawText(dl, BodyFont(), BodyPx(), ImVec2(x, ty), Tok::Text, label);
+	if (note && *note) {
+		const float lx = x + TextSize(BodyFont(), BodyPx(), label).x + D(12.0f);
+		const ImVec2 ns = TextSize(SmallFont(), SmallPx(), note);
+		const float nx = std::max(lx, p.x + w - D(6.0f) - ns.x);
+		dl->PushClipRect(ImVec2(lx, p.y), ImVec2(p.x + w - D(4.0f), p.y + h), true);
+		DrawText(dl, SmallFont(), SmallPx(), ImVec2(nx, p.y + std::floor((h - ns.y) * 0.5f)), Tok::TextMuted, note);
+		dl->PopClipRect();
+	}
+	if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+	return open;
+}
+
+namespace {
+void DashedRect(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, float dash)
+{
+	auto line = [&](ImVec2 p, ImVec2 q) {
+		const float len = std::sqrt((q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y));
+		if (len <= 0.0f) return;
+		const ImVec2 dir((q.x - p.x) / len, (q.y - p.y) / len);
+		for (float t = 0.0f; t < len; t += dash * 2.0f) {
+			const float e = std::min(len, t + dash);
+			dl->AddLine(ImVec2(p.x + dir.x * t, p.y + dir.y * t), ImVec2(p.x + dir.x * e, p.y + dir.y * e), col, 1.0f);
+		}
+	};
+	a += ImVec2(0.5f, 0.5f);
+	b -= ImVec2(0.5f, 0.5f);
+	line(a, ImVec2(b.x, a.y));
+	line(ImVec2(b.x, a.y), b);
+	line(b, ImVec2(a.x, b.y));
+	line(ImVec2(a.x, b.y), a);
+}
+} // namespace
+
+bool Slot(const char* id, unsigned texture, const char* text, bool filled, float size, bool enabled)
+{
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImGui::BeginDisabled(!enabled);
+	const bool click = ImGui::InvisibleButton(id, ImVec2(size, size));
+	const bool hov = ImGui::IsItemHovered();
+	ImGui::EndDisabled();
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImVec2 q = p + ImVec2(size, size);
+	const float r = D(5.0f);
+	dl->AddRectFilled(p, q, (hov && enabled) ? Tok::Surface3 : Tok::Surface2, r);
+	if (filled) {
+		dl->AddRect(p, q, (hov && enabled) ? Tok::BorderStrong : Tok::Border, r, 0, 1.0f);
+		if (texture) {
+			const float pad = std::floor(size * 0.08f);
+			dl->AddImage((ImTextureID)(intptr_t)texture, p + ImVec2(pad, pad), q - ImVec2(pad, pad));
+		} else if (text && *text) {
+			const ImVec2 ts = TextSize(SmallFont(), SmallPx(), text);
+			dl->PushClipRect(p, q, true);
+			DrawText(dl, SmallFont(), SmallPx(), p + ImVec2(std::floor((size - ts.x) * 0.5f), std::floor((size - ts.y) * 0.5f)),
+			         Tok::AccentText, text);
+			dl->PopClipRect();
+		}
+	} else {
+		DashedRect(dl, p, q, (hov && enabled) ? Tok::TextMuted : Tok::BorderStrong, D(3.0f));
+		const ImU32 c = (hov && enabled) ? Tok::Text : Tok::TextFaint;
+		if (g_fonts.icons) {
+			const float px = SmallPx();
+			const float iw = IconWidth(PobIcon::Plus, px);
+			IconAt(dl, p + ImVec2(std::floor((size - iw) * 0.5f), std::floor((size - px) * 0.5f)), PobIcon::Plus, c, px);
+		} else {
+			const ImVec2 ts = TextSize(BodyFont(), BodyPx(), "+");
+			DrawText(dl, BodyFont(), BodyPx(), p + ImVec2(std::floor((size - ts.x) * 0.5f), std::floor((size - ts.y) * 0.5f)), c, "+");
+		}
+	}
+	if (hov && enabled) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+	return click && enabled;
+}
+
+bool SearchField(const char* id, char* buf, int bufSize, const char* hint, float width)
+{
+	std::string h = hint ? hint : "";
+	if (g_fonts.icons) h = std::string(PobIcon::Search) + "  " + h;
+	PushControlFrame();
+	ImGui::SetNextItemWidth(width);
+	const bool changed = ImGui::InputTextWithHint(id, h.c_str(), buf, (size_t)bufSize, ImGuiInputTextFlags_EscapeClearsAll);
+	PopControlFrame();
+	return changed;
+}
+
+bool BeginMenuPopup(const char* id)
+{
+	ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGui::ColorConvertU32ToFloat4(Tok::SurfaceRaised));
+	ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Tok::Border));
+	ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, D(8.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(D(6.0f), D(6.0f)));
+	ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
+	if (ImGui::BeginPopup(id)) return true;
+	ImGui::PopStyleVar(3);
+	ImGui::PopStyleColor(2);
+	return false;
+}
+
+void EndMenuPopup()
+{
+	ImGui::EndPopup();
+	ImGui::PopStyleVar(3);
+	ImGui::PopStyleColor(2);
+}
+
+bool MenuRow(const char* icon, const char* label, const char* shortcut, bool enabled, bool danger)
+{
+	const float h = std::floor(BodyPx() + D(12.0f));
+	const float iconW = g_fonts.icons ? IconWidth(PobIcon::Check, BodyPx()) + D(10.0f) : 0.0f;
+	const float scW = (shortcut && *shortcut) ? TextSize(SmallFont(), SmallPx(), shortcut).x + D(24.0f) : 0.0f;
+	const float need = D(10.0f) + iconW + TextSize(BodyFont(), BodyPx(), label).x + scW + D(10.0f);
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImGui::PushID(label);
+	ImGui::BeginDisabled(!enabled);
+	// `need` is what the row reports, so an auto-sized popup grows to its widest
+	// row; SpanAvailWidth then stretches the highlight across the popup.
+	const bool click = ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAvailWidth, ImVec2(need, h));
+	ImGui::EndDisabled();
+	ImGui::PopID();
+	const float w = std::max(ImGui::GetItemRectSize().x, need);
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImU32 fg = !enabled ? Tok::TextFaint : danger ? Tok::Danger : Tok::Text;
+	float x = p.x + D(10.0f);
+	const float ty = p.y + std::floor((h - BodyPx()) * 0.5f);
+	if (g_fonts.icons) {
+		if (icon) IconAt(dl, ImVec2(x, ty), icon, !enabled ? Tok::TextFaint : danger ? Tok::Danger : Tok::TextMuted, BodyPx());
+		x += iconW;
+	}
+	DrawText(dl, BodyFont(), BodyPx(), ImVec2(x, ty), fg, label);
+	if (shortcut && *shortcut) {
+		const ImVec2 ss = TextSize(SmallFont(), SmallPx(), shortcut);
+		DrawText(dl, SmallFont(), SmallPx(), ImVec2(p.x + w - D(10.0f) - ss.x, p.y + std::floor((h - ss.y) * 0.5f)),
+		         Tok::TextMuted, shortcut);
+	}
+	return click && enabled;
+}
+
+void MenuSeparator()
+{
+	ImGui::Dummy(ImVec2(0, D(2.0f)));
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	const float w = ImGui::GetContentRegionAvail().x;
+	ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x, p.y), ImVec2(p.x + w, p.y), Tok::BorderSubtle, 1.0f);
+	ImGui::Dummy(ImVec2(0, D(3.0f)));
+}
+
 
 // ---- selftest -------------------------------------------------------------
 

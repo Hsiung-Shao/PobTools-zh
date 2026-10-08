@@ -147,6 +147,17 @@ void PopButtonStyle()
 	ImGui::PopStyleColor(4);
 }
 
+std::uint32_t TreeKindColor(TreeKind kind)
+{
+	switch (kind) {
+		case TreeKind::Keystone: return Tok::TreeKeystone;
+		case TreeKind::Wormhole: return Tok::TreeWormhole;
+		case TreeKind::Notable:  return Tok::TreeNotable;
+		case TreeKind::Socket:   return Tok::TreeSocket;
+		default:                 return Tok::TreeSmall;
+	}
+}
+
 ImVec4 TokV4(std::uint32_t c)
 {
 	return ImGui::ColorConvertU32ToFloat4(c);
@@ -274,6 +285,12 @@ bool RunThemeSelfTest()
 		// packing: R in the low byte, like IM_COL32
 		ok = ok && Tok::Bg == IM_COL32(0x0b, 0x10, 0x14, 0xff) &&
 		     Tok::Scrim == IM_COL32(0, 0, 0, 0xa0) && Tok::TreeHit == Tok::TreeNotable;
+		// one colour per node kind, all distinct (a list stripe has to tell them apart)
+		ok = ok && TreeKindColor(TreeKind::Keystone) == Tok::TreeKeystone &&
+		     TreeKindColor(TreeKind::Notable) == Tok::TreeNotable &&
+		     TreeKindColor(TreeKind::Wormhole) != TreeKindColor(TreeKind::Small) &&
+		     TreeKindColor(TreeKind::Wormhole) != TreeKindColor(TreeKind::Notable) &&
+		     TreeKindColor(TreeKind::Small) != TreeKindColor(TreeKind::Keystone);
 	}
 	ImGui::DestroyContext();
 	return ok;

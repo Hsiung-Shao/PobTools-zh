@@ -45,6 +45,8 @@ void PushControlFrame();
 void PopControlFrame();
 
 // ---- text ---------------------------------------------------------------
+// Heading-size text as one item (card titles, the tool header's name).
+void Heading(const char* text, std::uint32_t col = 0);
 void Hint(const char* text, float wrapWidth = 0.0f, std::uint32_t col = 0);   // small, text-muted
 void Overline(const char* text);                                         // small, text-muted
 // Overline + a hairline to the right edge of `width`.
@@ -80,6 +82,10 @@ bool Switch(const char* id, bool* value, bool enabled = true);
 float SwitchWidth();
 
 bool Segmented(const char* id, int* selected, const char* const* labels, int count, bool enabled = true);
+// Per option: `itemEnabled` (null = all) and a tooltip (null = none) shown on
+// hover even while that option is disabled -- the place to say WHY it is.
+bool SegmentedEx(const char* id, int* selected, const char* const* labels, int count,
+                 const bool* itemEnabled, const char* const* tips);
 float SegmentedWidth(const char* const* labels, int count);
 
 // Select (combo) with an optional right-aligned note per option. `labels` and
@@ -117,6 +123,30 @@ BannerResult Banner(const char* id, BannerTone tone, const char* icon, const cha
 void ProgressBar(float fraction, float width);
 
 // ---- layout -------------------------------------------------------------
+// Page tabs (Tabs, underline style): label row + 1 px border, the selected tab
+// underlined in accent. Returns the selection after this frame's click.
+int PageTabs(const char* id, int selected, const char* const* labels, int count, float width = 0.0f);
+
+// A collapsible section header for a side panel: optional icon + label, a
+// right-aligned hint, a hairline above. `id` is the ImGui id ("###astrohdr")
+// so the label may change (counts, language) without losing the open state.
+bool CollapsingSection(const char* label, const char* id, const char* icon = nullptr,
+                       const char* note = nullptr, bool defaultOpen = true);
+
+// A square slot (map device, astrolabe quadrant): an image or a short text when
+// filled; a dashed outline and a plus when empty. True on click.
+bool Slot(const char* id, unsigned texture, const char* text, bool filled, float size, bool enabled = true);
+
+// A search box: TextField look, a magnifier in front of the hint.
+bool SearchField(const char* id, char* buf, int bufSize, const char* hint, float width);
+
+// Menus (the tool header's more menu, slot menus): popup styling + rows with an
+// optional icon. `danger` colours the row (delete, reset).
+bool BeginMenuPopup(const char* id);
+void EndMenuPopup();
+bool MenuRow(const char* icon, const char* label, const char* shortcut = nullptr, bool enabled = true,
+             bool danger = false);
+void MenuSeparator();
 // Card: surface-1 + border + radius-md, height follows the content. `title`
 // draws a head row (icon + heading + right-aligned hint). `padded` = content
 // padding (space-4 / space-5); unpadded cards are for SettingRows, which pad
@@ -157,10 +187,20 @@ bool ToastVisible();
 // Confirmation dialog: title is the question, body the consequence, `mono` the
 // path or name involved. Buttons right-aligned: cancel | danger | primary (null
 // to omit). Opens itself when `open` is set; Esc = cancel.
-enum class DialogResult { None, Cancel, Danger, Primary };
+enum class DialogResult { None, Cancel, Danger, Primary, Secondary };
 DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, const char* body,
                            const char* mono, const char* cancel, const char* danger,
                            const char* primary);
+// The same dialog in parts, for one that needs its own content (a name field):
+//   if (BeginDialog(id, &open, title, body)) { ...content...;
+//       r = DialogButtons(...); EndDialog(); }
+// DialogButtons closes the popup on any answer; Esc = cancel, and Enter =
+// primary when `enterIsPrimary` (a single text field).
+bool BeginDialog(const char* popupId, bool* open, const char* title, const char* body,
+                 const char* mono = nullptr);
+DialogResult DialogButtons(const char* cancel, const char* secondary, const char* danger,
+                           const char* primary, bool primaryEnabled = true, bool enterIsPrimary = false);
+void EndDialog();
 
 // Headless checks for the widget maths (no GL): D(), ControlH, widths.
 bool RunWidgetSelfTest();
