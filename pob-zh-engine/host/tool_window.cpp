@@ -5,6 +5,7 @@
 #include "launcher_config.h"   // ResolveConfiguredFontPath
 #include "tool_panel.h"
 #include "frame_pacing.h"      // idle wait, minimised = no present, unchanged frame = no present
+#include "live_resize.h"       // drawing during a border drag
 #include "ui_theme.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -22,8 +23,8 @@
 #include <string>
 #include <vector>
 
-// See the refresh callback in RunToolWindow: the next frame is presented even
-// if its draw data matches the last one.
+// Set by the refresh and framebuffer-size callbacks (live_resize.h): the next
+// frame is presented even if its draw data matches the last one.
 static bool g_toolRedraw = true;
 
 namespace {
@@ -100,9 +101,11 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	};
 	// Unchanged frames are not presented (frame_pacing.h); a refresh or a resize
 	// invalidates the picture without changing the draw data, so both force one.
-	// One tool window per process, hence the file-level flag.
-	glfwSetWindowRefreshCallback(win, [](GLFWwindow*) { g_toolRedraw = true; });
-	glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int, int) { g_toolRedraw = true; });
+	// The refresh callback also draws while a border is being dragged
+	// (live_resize.h). One tool window per process, hence the file-level flag.
+	// Before the ImGui backend, which chains the callbacks it needs and leaves
+	// these two.
+	LiveResize::Install(win, &g_toolRedraw);
 	g_toolRedraw = true;
 
 	IMGUI_CHECKVERSION();
@@ -244,9 +247,11 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		// only changed frames. `nextWait` is decided at the bottom of each pass.
 		FramePacing::Pacer pacer;
 		double nextWait = 0.0;
-		while (running) {
-			if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
-			else glfwPollEvents();
+		// One frame. `live` = called from the refresh callback in the middle of
+		// a border drag (live_resize.h): draw and present, nothing else -- the
+		// close request and the deferred work wait for the main loop, which runs
+		// again as soon as the drag ends.
+		auto frame = [&](bool live) {
 			pacer.BeginFrame(glfwGetTime());
 			ImGui_ImplOpenGL3_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
@@ -265,11 +270,11 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			// The window's own X becomes a close REQUEST, held until the panel
 			// answers: a panel with unsaved work answers by drawing a prompt, and
 			// obeying the close immediately would take the prompt down with it.
-			if (glfwWindowShouldClose(win)) {
+			if (!live && glfwWindowShouldClose(win)) {
 				glfwSetWindowShouldClose(win, GLFW_FALSE);
 				panel.RequestClose();
 			}
-			switch (panel.CloseState()) {
+			if (!live) switch (panel.CloseState()) {
 				case ToolCloseState::Closed:    running = false; break;
 				case ToolCloseState::Cancelled: break;  // the user stayed; carry on
 				default: break;
@@ -294,17 +299,29 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 				glfwSwapBuffers(win);
 			}
+			if (live) return;
 			// After the swap: the picture is in the swap chain before the window is
 			// on screen. Showing it delivers a WM_PAINT, whose refresh callback
 			// presents once more on the next pass.
 			showIfDue(present);
 			nextWait = pacer.WaitSeconds(glfwGetTime());
+		};
+		LiveResize::SetDraw([&] { frame(true); });
+		while (running) {
+			// A border drag runs inside these two calls (and draws through `frame`).
+			if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
+			else glfwPollEvents();
+			// The frame and the deferred work: no live frame may start in here,
+			// e.g. from a WM_PAINT delivered inside a file dialog.
+			LiveResize::MainScope inMain;
+			frame(false);
 
 			// After the frame is on screen, so a modal dialog does not appear over a
 			// half-drawn window and a long pause does not eat a frame the user is
 			// waiting on.
 			panel.RunDeferred();
 		}
+		LiveResize::SetDraw(nullptr);   // the loop's state goes out of scope here
 	}
 
 	// While the GL context is still current: the panel may be holding textures.
@@ -313,6 +330,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+	LiveResize::Uninstall(win);
 	glfwDestroyWindow(win);
 	glfwTerminate();
 	return rc;

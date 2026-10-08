@@ -14,6 +14,7 @@
 #include "error_log.h"
 #include "hang_watch.h"       // heartbeat, and the POB windows the watchdog asks after
 #include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
+#include "live_resize.h"      // drawing during a border drag
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
 #include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
@@ -1285,8 +1286,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// data has to say so: a WM_PAINT-style refresh (uncovered, restored) and a
 	// resize (the framebuffer behind the old picture is gone). Installed before
 	// the ImGui backend, which chains the callbacks it needs and leaves these.
-	glfwSetWindowRefreshCallback(win, [](GLFWwindow*) { g_launcherRedraw = true; });
-	glfwSetFramebufferSizeCallback(win, [](GLFWwindow*, int, int) { g_launcherRedraw = true; });
+	// The refresh callback also draws the frame while a border is being dragged
+	// (live_resize.h); the frame function is handed over just before the loop.
+	LiveResize::Install(win, &g_launcherRedraw);
 	g_launcherRedraw = true;
 
 	IMGUI_CHECKVERSION();
@@ -1566,7 +1568,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	int clActive = 0, clJump = -1;
 	float clLockY = -1.0f;
 	// settings: side navigation
-	constexpr int kSettingsSections = 7;
+	static constexpr int kSettingsSections = 7;   // static: used as an array bound inside the frame lambda (MSVC C2131)
 	int setActive = startSection >= 0 ? startSection : 0, setJump = startSection;
 	float setLockY = -1.0f;
 	// "Open in PoB" registration state, re-read every couple of seconds
@@ -1699,9 +1701,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// once.
 	FramePacing::Pacer pacer;
 	double nextWait = 0.0;
-	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
-		if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
-		else glfwPollEvents();
+	// One frame. `live` = called from the refresh callback in the middle of a
+	// border drag (live_resize.h): lay out, draw and present at the new size,
+	// but change nothing that exists -- no close sequences, no atlas rebuilds or
+	// swaps, no dock bookkeeping, no dialogs, no panel deferred work or reaping,
+	// no automatic update. The main loop's next pass does all of that the
+	// moment the drag ends. (No click can land in a live frame: the system
+	// size loop owns the mouse.)
+	auto frame = [&](bool live) {
 		pacer.BeginFrame(glfwGetTime());
 
 		// The heartbeat the watchdog thread is watching. One store per frame; if
@@ -1766,11 +1773,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// very next frame. Asking straight off the signal meant a panel that put up
 		// a prompt got its answer, closed its own tab -- and the window it was asked
 		// on behalf of stayed open, because by then nothing remembered why.
-		if (glfwWindowShouldClose(win) && !panels.empty()) {
+		if (!live && glfwWindowShouldClose(win) && !panels.empty()) {
 			closingPanels = true;
 			glfwSetWindowShouldClose(win, GLFW_FALSE);
 		}
-		if (closingPanels) {
+		if (!live && closingPanels) {
 			bool waiting = false, cancelled = false;
 			for (EmbeddedPanel& ep : panels) {
 				const ToolCloseState cs = ep.panel->RequestClose();
@@ -1790,11 +1797,11 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				glfwSetWindowShouldClose(win, GLFW_TRUE);
 			}
 		}
-		if (tabbed && glfwWindowShouldClose(win) && !dock.Empty()) {
+		if (!live && tabbed && glfwWindowShouldClose(win) && !dock.Empty()) {
 			closingTabs = true;
 			glfwSetWindowShouldClose(win, GLFW_FALSE);
 		}
-		if (tabbed && closingTabs) {
+		if (!live && tabbed && closingTabs) {
 			if (dock.Empty()) {
 				glfwSetWindowShouldClose(win, GLFW_TRUE);
 			} else {
@@ -1828,7 +1835,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// only here, between frames), and let the atlas path below rebuild the
 		// faces at the new size. A window still at its mode default is resized to
 		// the new default with it; a remembered size is the user's and stays.
-		if (pendingScale > 0.0f) {
+		if (!live && pendingScale > 0.0f) {
 			const bool atDefault = (storedW == 0 || storedH == 0);
 			scale = pendingScale;
 			pendingScale = 0.0f;
@@ -1846,7 +1853,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 			fontChanged = true;
 		}
-		if (fontChanged) {
+		if (!live && fontChanged) {
 			fontChanged = false;
 			fontWorker.Discard();
 			ImGui_ImplOpenGL3_DestroyFontsTexture();
@@ -1874,7 +1881,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// ClearTexData had already dropped the pixels.
 		// (Not "once the window is visible": FirstShow can put it up before any
 		// frame when the start stalls, and shot mode never shows it at all.)
-		if (fontWorker.Done() && pacer.PresentedOnce()) {
+		if (!live && fontWorker.Done() && pacer.PresentedOnce()) {
 			LauncherFonts full;
 			ImFontAtlas* fullAtlas = fontWorker.Take(&full);
 			ImGuiIO& io = ImGui::GetIO();
@@ -2013,7 +2020,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ai.pobBusy = pobBusy;
 				ai.anythingLaunched = anythingLaunched;
 				ai.alreadyTried = autoApplyTried;
-				if (ShouldAutoApplyApp(ai)) {
+				if (!live && ShouldAutoApplyApp(ai)) {
 					autoApplyTried = true;
 					appUpd->StartAppUpdate();
 					ust = appUpd->Poll();
@@ -3834,7 +3841,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 		// Docked windows: reap, adopt, position, z-order. After ImGui::End so the
 		// strip height measured above is the one actually laid out this frame.
-		if (tabbed) {
+		if (!live && tabbed) {
 			if (closeDockTab >= 0) dock.RequestClose((size_t)closeDockTab);
 			// While shutting down, show whichever tab is being closed, so a "save
 			// your build?" prompt is on screen rather than behind another tab.
@@ -3845,7 +3852,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 
 		// A tool that refused to open. Here for the same reason a panel's dialogs
 		// are: the frame is over and the docked windows have been dealt with.
-		if (!panelInitError.empty()) {
+		if (!live && !panelInitError.empty()) {
 			const std::wstring why = from_utf8(panelInitError);
 			panelInitError.clear();
 			MessageBoxW(glfwGetWin32Window(win), why.c_str(), L"PobTools", MB_ICONERROR | MB_OK);
@@ -3857,7 +3864,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// dialogs open, and Dock::Update is what hides the docked POB windows when a
 		// panel tab is selected -- doing it the other way round could put a modal
 		// dialog underneath a window that had not been hidden yet.
-		for (size_t i = 0; i < panels.size();) {
+		for (size_t i = 0; !live && i < panels.size();) {
 			EmbeddedPanel& ep = panels[i];
 			ep.panel->RunDeferred();
 
@@ -3901,7 +3908,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (r == PobUi::DialogResult::Danger) doCopy = true;
 			else if (r == PobUi::DialogResult::Cancel) copyDest.clear();
 		}
-		if (doCopy) {
+		if (!live && doCopy) {
 			doCopy = false;
 			std::string cerr;
 			int n = CopyBuiltinDictionary(exeDir, (DictSlot)copySlot, copyDest, &cerr);
@@ -3950,13 +3957,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// Test aid (POBTOOLS_LAUNCHER_SHOT): read back this frame once the full
 			// atlas is in and the page has settled, write it out and close. The
 			// window is never shown, so nothing appears on anyone's screen.
-			if (!shotPath.empty() && (fontInputFullDone || !fontWorker.Running()) && glfwGetTime() - shotSince > 2.5) {
+			if (!live && !shotPath.empty() && (fontInputFullDone || !fontWorker.Running()) && glfwGetTime() - shotSince > 2.5) {
 				WriteFramebufferBmp(shotPath, fbW, fbH);
 				shotPath.clear();
 				glfwSetWindowShouldClose(win, GLFW_TRUE);
 			}
 			glfwSwapBuffers(win);
 		}
+		if (live) return;
 		// First frame is in the swap chain: now the window can appear with content
 		// already on it (or, past kFirstShowLimit, without). Shot mode stays hidden.
 		if (!shotMode && firstShow.Due(present, glfwGetTime())) {
@@ -3965,7 +3973,18 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			                           : "no frame presented yet, window shown anyway");
 		}
 		nextWait = pacer.WaitSeconds(glfwGetTime());
+	};
+	LiveResize::SetDraw([&] { frame(true); });
+	while (!glfwWindowShouldClose(win) && !launch && !openEditor && !applyUpdate) {
+		// A border drag runs inside these two calls (and draws through `frame`).
+		if (nextWait > 0.0) glfwWaitEventsTimeout(nextWait);
+		else glfwPollEvents();
+		// No live frame may start inside this one: the dialogs, clipboard calls
+		// and panel deferred work in it pump messages too.
+		LiveResize::MainScope inMain;
+		frame(false);
 	}
+	LiveResize::SetDraw(nullptr); // the frame's state is about to be torn down
 
 	syncCfgFromUi(); // host_main saves cfg after this returns
 
@@ -4001,6 +4020,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
+	LiveResize::Uninstall(win);
 	glfwDestroyWindow(win);
 	glfwTerminate();
 

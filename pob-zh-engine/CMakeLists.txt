@@ -394,6 +394,7 @@ if (WIN32)
         # idle / minimised / unchanged-frame pacing of the ImGui loops
         host/frame_pacing.cpp
         host/frame_pacing_selftest.cpp
+        host/live_resize.cpp
         # POB window frame cap + performance log (engine code, tested headless here)
         host/pob_frame_cap.cpp
         host/perf_log.cpp

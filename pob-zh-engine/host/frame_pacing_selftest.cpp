@@ -6,6 +6,7 @@
 // the screen and the draw data may disagree.
 
 #include "frame_pacing.h"
+#include "live_resize.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -202,6 +203,44 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		FirstShow loop;
 		loop.Start(0.0);
 		check("P6h first loop pass: presented, therefore shown", loop.Due(p.ShouldRender(in, &f.data), 0.5));
+	}
+
+	// P7 -- LiveResize::Gate: a frame is drawn from the refresh callback only
+	// inside the system size/move loop, never on top of the main loop's own
+	// frame or deferred work (a dialog pumping messages), never re-entrantly.
+	{
+		using LiveResize::Gate;
+		Gate g;
+		check("P7 outside a size/move loop the callback does not draw", !g.BeginLive(false));
+		check("P7b inside one, between main-loop passes, it does", g.BeginLive(true) && g.InLive());
+		check("P7c not again while that live frame runs (re-entry)", !g.BeginLive(true));
+		g.EndLive();
+		check("P7d after it ends the next one may start", g.BeginLive(true));
+		g.EndLive();
+		check("P7e live frames are counted", g.LiveFrames() == 2);
+		g.EnterMain();
+		check("P7f never during the main loop's frame / deferred work", !g.BeginLive(true) && g.InMain());
+		g.EnterMain(); // a nested pump inside it (a dialog opened from RunDeferred)
+		g.LeaveMain();
+		check("P7g still blocked while the outer main pass is open", !g.BeginLive(true));
+		g.LeaveMain();
+		check("P7h main pass over: allowed again", !g.InMain() && g.BeginLive(true));
+		g.EndLive();
+		g.LeaveMain(); // unbalanced leave must not underflow into "allowed forever / never"
+		g.EnterMain();
+		check("P7i an extra LeaveMain cannot unlock a later main pass", !g.BeginLive(true));
+		g.LeaveMain();
+		{
+			Gate& mg = LiveResize::MainGate();
+			const bool before = mg.InMain();
+			{
+				LiveResize::MainScope scope;
+				check("P7j MainScope blocks live frames for its lifetime", mg.InMain() && !mg.BeginLive(true));
+			}
+			check("P7k and releases them when it ends", mg.InMain() == before);
+		}
+		// No window, no loop: the calling thread is not in a size/move loop.
+		check("P7l InSizeMoveLoop is false outside a drag", !LiveResize::InSizeMoveLoop());
 	}
 
 	// P5 -- ImGuiActivity() reads the real io, so it is checked against a real
