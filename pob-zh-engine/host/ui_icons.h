@@ -47,12 +47,27 @@ inline constexpr const char MessageCircle[] = "\xee\x84\x96"; // message-circle 
 inline constexpr const char Coffee[] = "\xee\x82\x96"; // coffee U+E096
 inline constexpr const char Palette[] = "\xee\x87\x9d"; // palette U+E1DD
 inline constexpr const char History[] = "\xee\x87\xb5"; // history U+E1F5
+inline constexpr const char Undo[] = "\xee\x8a\xa1"; // undo-2 U+E2A1
+inline constexpr const char Map[] = "\xee\x84\x90"; // map U+E110
+inline constexpr const char Layers[] = "\xee\x94\xa9"; // layers U+E529
+inline constexpr const char GitCompare[] = "\xee\x8d\x99"; // git-compare U+E359
+inline constexpr const char Minimize[] = "\xee\x84\x9b"; // minimize-2 U+E11B
+inline constexpr const char Share[] = "\xee\x85\x96"; // share-2 U+E156
+inline constexpr const char MoreHorizontal[] = "\xee\x82\xb6"; // ellipsis U+E0B6
+inline constexpr const char Trash[] = "\xee\x86\x8e"; // trash-2 U+E18E
+inline constexpr const char Pencil[] = "\xee\x87\xb9"; // pencil U+E1F9
+inline constexpr const char CopyPlus[] = "\xee\x8f\xbd"; // copy-plus U+E3FD
+inline constexpr const char Upload[] = "\xee\x86\x9e"; // upload U+E19E
+inline constexpr const char Compass[] = "\xee\x82\x9b"; // compass U+E09B
+inline constexpr const char List[] = "\xee\x84\x86"; // list U+E106
+inline constexpr const char StickyNote[] = "\xee\x8c\x83"; // sticky-note U+E303
+inline constexpr const char Minus[] = "\xee\x84\x9c"; // minus U+E11C
 
 // The one range the icon font is merged over (min..max of the codepoints above).
 inline constexpr unsigned short kRangeFirst = 0xE06C;
-inline constexpr unsigned short kRangeLast  = 0xE426;
+inline constexpr unsigned short kRangeLast  = 0xE529;
 // For the selftest: one icon that must be in the atlas.
 inline constexpr unsigned short kProbe = 0xE1B4; // zap
-inline constexpr int kCount = 38;
+inline constexpr int kCount = 53;
 
 } // namespace PobIcon

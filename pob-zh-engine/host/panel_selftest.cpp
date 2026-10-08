@@ -19,6 +19,9 @@
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
 #include "ui_theme.h"
+#include "ui_widgets.h"      // the panels draw with the design-system widgets
+#include "ui_icons.h"
+#include "ui_icons_data.h"   // icons merged into the faces, as both real hosts do
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -109,7 +112,24 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			ImGui::CreateContext();
 			ImGui::GetIO().IniFilename = nullptr;
 			PobUi::ApplyTheme(1.0f, PobUi::Density::Comfortable);
-			ImGui::GetIO().Fonts->AddFontDefault();
+			// The built-in face with the icon font merged in, at two sizes: both
+			// real hosts hand the panels body + small faces that carry the icons,
+			// and the icon branches of the widgets are a different code path from
+			// the no-icon fallbacks (they size and place glyphs, not text).
+			ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+			ImFontConfig defCfg;
+			defCfg.SizePixels = 13.0f;
+			ImFont* stBody = atlas->AddFontDefault(&defCfg);
+			ImFontConfig iconMerge;
+			iconMerge.MergeMode = true;
+			PobIcon::MergeInto(atlas, 13.0f, iconMerge, 0.8f);
+			ImFontConfig smallCfg;
+			smallCfg.SizePixels = 11.0f;
+			ImFont* stSmall = atlas->AddFontDefault(&smallCfg);
+			PobIcon::MergeInto(atlas, 11.0f, iconMerge, 0.8f);
+			atlas->Build();
+			const bool stIcons = PobIcon::FaceHasIcons(stBody) && PobIcon::FaceHasIcons(stSmall);
+			rep.check("P0 the icon font is merged into the selftest's body and small faces", stIcons);
 			ImGui_ImplGlfw_InitForOpenGL(win, false);   // false: install no callbacks
 			ImGui_ImplOpenGL3_Init("#version 100");
 
@@ -120,10 +140,10 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			host.scale = 1.0f;
 			host.hostHwnd = glfwGetWin32Window(win);
 			host.embedded = true;
-			host.body = ImGui::GetIO().Fonts->Fonts[0];
+			host.body = stBody;
 			// Both real hosts always supply one, so that is the configuration worth
 			// exercising here.
-			host.big = ImGui::GetIO().Fonts->Fonts[0];
+			host.big = stBody;
 			host.cjkOk = false;   // the default font has no CJK; the panel must cope
 
 			// Every panel, not just one: the contract is the same for all of them and
@@ -160,6 +180,18 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				ImGui_ImplOpenGL3_NewFrame();
 				ImGui_ImplGlfw_NewFrame();
 				ImGui::NewFrame();
+				{
+					// What both hosts do every frame (launcher_ui.cpp, tool_window.cpp).
+					PobUi::WidgetFonts wf;
+					wf.body = stBody;
+					wf.small = stSmall;
+					wf.heading = stBody;
+					wf.headingPx = 15.0f;
+					wf.title = stBody;
+					wf.scale = 1.0f;
+					wf.icons = stIcons;
+					PobUi::SetWidgetFonts(wf);
+				}
 
 				// NOT the whole viewport, and not at the origin: a panel that reads
 				// io.DisplaySize or assumes it starts at (0,0) draws off its own area,
@@ -243,6 +275,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			panel.reset();
 			} // for each panel
 
+			PobUi::SetWidgetFonts(PobUi::WidgetFonts());   // the faces die with the context
 			ImGui_ImplOpenGL3_Shutdown();
 			ImGui_ImplGlfw_Shutdown();
 			ImGui::DestroyContext();

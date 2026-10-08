@@ -7,6 +7,9 @@
 #include "frame_pacing.h"      // idle wait, minimised = no present, unchanged frame = no present
 #include "live_resize.h"       // drawing during a border drag
 #include "ui_theme.h"
+#include "ui_widgets.h"      // PobUi::SetWidgetFonts, toasts
+#include "ui_icons_data.h"   // the icon font, merged into body / small
+#include "gl_shot.h"         // POBTOOLS_TOOL_SHOT
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -20,6 +23,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -29,7 +33,12 @@ static bool g_toolRedraw = true;
 
 namespace {
 
-const float kFontSize = 18.0f;
+// The launcher's sizes (launcher_ui.cpp), so a tool looks the same as its own
+// window and as a launcher tab: the design system's 16 px body is 19 px here,
+// and every widget size goes through PobUi::D() on that 19/16 ratio.
+const float kFontSize = 19.0f;
+const float kSmallFontSize = 15.0f;   // hints, pills, numerics
+const float kHeadingFontSize = 20.0f; // drawn with the body face (WidgetFonts::headingPx)
 const float kBigFontSize = 30.0f;   // ToolPanelHost::big
 
 } // namespace
@@ -94,6 +103,14 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	// white rectangle for the 330-410 ms the atlas and the panel take to build.
 	FramePacing::FirstShow firstShow;
 	firstShow.Start(glfwGetTime());
+	// POBTOOLS_TOOL_SHOT=<file.bmp>: never show the window; draw until the panel
+	// has settled, save that frame and quit. A screenshot with nothing on anyone's
+	// screen and no input sent (a panel may add its own variable for which page,
+	// e.g. POBTOOLS_ATLAS_PAGE).
+	std::wstring shotPath = ShotEnv(L"POBTOOLS_TOOL_SHOT");
+	const bool shotMode = !shotPath.empty();
+	const double shotSince = glfwGetTime();
+	const double kShotSettle = 3.0;   // icon downloads and the first layout passes
 	auto showIfDue = [&](bool presented) {
 		if (firstShow.Due(presented, glfwGetTime())) {
 			glfwShowWindow(win);
@@ -119,8 +136,10 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	const std::wstring primaryFontPath = ResolveConfiguredFontPath(exeDir);
 	std::vector<unsigned char> ttf = EdReadFile(primaryFontPath);
 	ImFont* font = nullptr;
+	ImFont* fontSmall = nullptr;
 	ImFont* fontBig = nullptr;
 	bool cjkOk = false;
+	bool iconsOk = false;
 	if (!ttf.empty()) {
 		ImGuiIO& io = ImGui::GetIO();
 		// Must outlive the atlas: ImGui stores the pointer and re-reads it on every
@@ -150,6 +169,9 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 		}
 		ImFontConfig cfgMerge = cfg;
 		cfgMerge.MergeMode = true;
+		// Where the icon font sits on a text line depends on the primary face's
+		// ascent (ui_icons_data.h), the same rule the launcher uses.
+		const float primaryAscent = PobIcon::HheaAscentRatio(ttf);
 		// ToolPanelHost::big -- twelve glyphs, so it costs nothing and both hosts can
 		// offer it unconditionally rather than the panel having two layouts.
 		static ImVector<ImWchar> bigRanges;
@@ -172,11 +194,19 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			                    : io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
 			if (korean) b.AddRanges(io.Fonts->GetGlyphRangesKorean());
 			b.BuildRanges(&ranges);
-			font = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kFontSize * scale,
-			                                      &cfg, ranges.Data);
-			for (std::vector<unsigned char>& fb : fallbackTtfs)
-				io.Fonts->AddFontFromMemoryTTF(fb.data(), (int)fb.size(), kFontSize * scale,
-				                               &cfgMerge, ranges.Data);
+			// Body and small: the primary face, every fallback, then the icons --
+			// last, so a text font that uses the same Private Use Area keeps its
+			// glyphs. Small carries the same glyph set as body because a tool's
+			// hints quote node, map and item names, not just fixed strings.
+			auto addFace = [&](float px) -> ImFont* {
+				ImFont* f = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), px, &cfg, ranges.Data);
+				for (std::vector<unsigned char>& fb : fallbackTtfs)
+					io.Fonts->AddFontFromMemoryTTF(fb.data(), (int)fb.size(), px, &cfgMerge, ranges.Data);
+				PobIcon::MergeInto(io.Fonts, px, cfgMerge, primaryAscent);
+				return f;
+			};
+			font = addFace(kFontSize * scale);
+			fontSmall = addFace(kSmallFontSize * scale);
 			fontBig = io.Fonts->AddFontFromMemoryTTF(ttf.data(), (int)ttf.size(), kBigFontSize * scale,
 			                                         &cfg, bigRanges.Data);
 			if (!io.Fonts->Build()) return false;
@@ -203,16 +233,21 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			                      "using ImGui's built-in ASCII font");
 			io.Fonts->Clear();
 			font = nullptr;
+			fontSmall = nullptr;
 			fontBig = nullptr;
 		}
 		if (font)
 			cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
+		// Measured on the faces the widgets draw with, not assumed from "the TTF
+		// loaded": without them every icon would be a '?'.
+		iconsOk = PobIcon::FaceHasIcons(font) && PobIcon::FaceHasIcons(fontSmall);
 	}
 	if (!font) font = ImGui::GetIO().Fonts->AddFontDefault();
+	if (!fontSmall) fontSmall = font;
 	// Check point before Init, the other slow step: only past kFirstShowLimit, i.e.
 	// when the atlas alone took that long. None after Init -- the loop's first
 	// pass presents a few milliseconds later and shows the window with content.
-	showIfDue(false);
+	if (!shotMode) showIfDue(false);
 
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
 	ImGui_ImplOpenGL3_Init("#version 100");
@@ -256,6 +291,19 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			ImGui_ImplOpenGL3_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
 			ImGui::NewFrame();
+			// Every frame, with the real scale: the widgets size themselves from it
+			// (PobUi::D), and the faces are only valid for this atlas.
+			{
+				PobUi::WidgetFonts wf;
+				wf.body = font;
+				wf.small = fontSmall;
+				wf.heading = font;
+				wf.headingPx = std::floor(kHeadingFontSize * scale);
+				wf.title = font;
+				wf.scale = scale;
+				wf.icons = iconsOk;
+				PobUi::SetWidgetFonts(wf);
+			}
 			ImGui::PushFont(font);
 
 			ImGuiIO& io = ImGui::GetIO();
@@ -266,6 +314,7 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
 			panel.Frame();
 			ImGui::End();
+			PobUi::DrawToast();   // results the panel reported with ShowToast
 
 			// The window's own X becomes a close REQUEST, held until the panel
 			// answers: a panel with unsaved work answers by drawing a prompt, and
@@ -286,8 +335,9 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			pace.now = glfwGetTime();
 			pace.iconified = glfwGetWindowAttrib(win, GLFW_ICONIFIED) != 0;
 			pace.activity = FramePacing::ImGuiActivity();
-			pace.busy = panel.CloseState() == ToolCloseState::Asking; // a prompt answered over frames
-			pace.forceRender = g_toolRedraw;
+			pace.busy = panel.CloseState() == ToolCloseState::Asking || // a prompt answered over frames
+			            PobUi::ToastVisible();                         // its fade is not input-driven
+			pace.forceRender = g_toolRedraw || shotMode;
 			g_toolRedraw = false;
 			const bool present = pacer.ShouldRender(pace, ImGui::GetDrawData());
 			if (present) {
@@ -297,13 +347,20 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				glClearColor(0.043f, 0.063f, 0.078f, 1.0f);
 				glClear(GL_COLOR_BUFFER_BIT);
 				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+				// Test aid (POBTOOLS_TOOL_SHOT): once the panel has settled, read this
+				// frame back, write it out and quit. The window is never shown.
+				if (!live && shotMode && !shotPath.empty() && glfwGetTime() - shotSince > kShotSettle) {
+					WriteFramebufferBmp(shotPath, fbW, fbH);
+					shotPath.clear();
+					running = false;
+				}
 				glfwSwapBuffers(win);
 			}
 			if (live) return;
 			// After the swap: the picture is in the swap chain before the window is
 			// on screen. Showing it delivers a WM_PAINT, whose refresh callback
 			// presents once more on the next pass.
-			showIfDue(present);
+			if (!shotMode) showIfDue(present);
 			nextWait = pacer.WaitSeconds(glfwGetTime());
 		};
 		LiveResize::SetDraw([&] { frame(true); });
