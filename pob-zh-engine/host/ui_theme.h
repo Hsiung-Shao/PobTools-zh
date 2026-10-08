@@ -78,6 +78,16 @@ inline constexpr std::uint32_t FxBrown       = Rgb(0x80, 0x60, 0x40);
 inline constexpr std::uint32_t RarityMagic   = Rgb(0x88, 0x88, 0xff);
 inline constexpr std::uint32_t RarityRare    = Rgb(0xd6, 0xb5, 0x6a);
 inline constexpr std::uint32_t RarityUnique  = Rgb(0xaf, 0x60, 0x25);
+// The translation editor's source-file badges (2026-10-09 design, te.css .src.a-d):
+// a file keeps its hue by a hash of its name.
+inline constexpr std::uint32_t SrcBlueBg     = Rgb(0x1e, 0x2a, 0x44);
+inline constexpr std::uint32_t SrcBlueFg     = Rgb(0x9f, 0xb8, 0xff);
+inline constexpr std::uint32_t SrcPurpleBg   = Rgb(0x2a, 0x21, 0x40);
+inline constexpr std::uint32_t SrcPurpleFg   = Rgb(0xc9, 0xa8, 0xff);
+inline constexpr std::uint32_t SrcGreenBg    = Rgb(0x1f, 0x33, 0x28);
+inline constexpr std::uint32_t SrcGreenFg    = Rgb(0x8f, 0xd6, 0xa6);
+inline constexpr std::uint32_t SrcAmberBg    = Rgb(0x3a, 0x2a, 0x1a);
+inline constexpr std::uint32_t SrcAmberFg    = Rgb(0xe8, 0xb5, 0x5b);
 } // namespace Tok
 
 // Node kinds on a passive-style canvas, and the one colour each is drawn and

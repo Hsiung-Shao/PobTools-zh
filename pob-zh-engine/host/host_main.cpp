@@ -33,6 +33,7 @@
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
+#include "trans_editor_logic.h"   // RunTransEditorSelftest
 #include "panel_selftest.h"
 #include "paste_selftest.h"
 #include "item_name_selftest.h"
@@ -799,6 +800,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		std::string games = "both";
 		if (!arg2.empty()) games.assign(arg2.begin(), arg2.end()); // ASCII keywords
 		return RunEditorSelftest(games);
+	}
+	if (arg1 == L"--trans-editor-selftest") {
+		// headless: the translation editor's add-entry notices, undo stack, the
+		// multi-line checks, fill / withdraw, byte-exact saving and the panel's
+		// switch / reload / save flow -- on a %TEMP% copy of the dictionaries.
+		// Report: PobTools\trans_editor_selftest.txt
+		return RunTransEditorSelftest(dir);
 	}
 	if (arg1 == L"--paste-trace") {
 		// headless: one item, one row per line -- which rule fired, which

@@ -3812,6 +3812,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				for (const LauncherStringStore& st : strStore) strOverlays.push_back(&st.s);
 				fontChanged = true;
 			}
+			// "前往設定" in the translation editor: Settings > Translation data
+			// (section 5). Only navigates -- nothing is changed for the user.
+			if (TranslationEditorPanelWantsSettings(ep.panel.get())) {
+				pageForce = 2;
+				setJump = 5;
+				setActive = 5;
+				if (tabbed) launcherTabForce = true;
+			}
 
 			const ToolCloseState cs = ep.panel->CloseState();
 			if (cs == ToolCloseState::Asking) {

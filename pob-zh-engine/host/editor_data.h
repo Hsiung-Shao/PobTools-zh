@@ -15,7 +15,12 @@ struct EditorEntry {
 	std::string value;        // current translation (the field the user edits)
 	bool structured = false;  // JSON value is an object; only "翻譯" is written back
 	int fileIdx = -1;         // index into EditorModel::files
-	bool edited = false;      // changed since the last save (the "N 筆待儲存" count)
+	// Differs from what is on disk: value != orig, or the row does not exist on
+	// disk yet (added). Recomputed by RefreshEdited, so typing a value back to
+	// what it was -- or undoing to it -- stops counting as a change.
+	bool edited = false;
+	std::string orig;         // value at the last load / save
+	bool added = false;       // created in this session, not on disk yet
 };
 
 // One dictionary JSON file (e.g. ui.json), with its parsed document kept for
@@ -33,6 +38,9 @@ struct EditorFile {
 	// loads it. The dictionary is merged in that order and the LAST file to
 	// define a key wins, so an edit to a lower-ranked file has no effect.
 	int order = -1;
+	// A key was taken out of `doc` (RemoveAddedEntry after a failed save had
+	// written it there); the file needs saving even with no edited entry.
+	bool docChanged = false;
 };
 
 // Everything loaded for one game+locale.
@@ -50,9 +58,20 @@ struct EditorModel {
 
 // One untranslated string scanned from translate_misses.log (already filtered
 // to those NOT present in any dictionary key).
+//
+// The engine writes two families of lines (translation_manager.cpp,
+// log_translation_miss):
+//   MISS|<text>      POB drew English text that no dictionary key matched.
+//   REV |<text>      the PASTE path (an item copied in game, Chinese, pasted into
+//   FLAVOUR |<text>  POB) met a line it could not turn back into English. These
+//   PROPERTY |<text> are Chinese game text, NOT dictionary keys: writing one as a
+//                    key would add a Chinese "English" entry that nothing ever
+//                    looks up. They are listed (reverse = true) so a translator
+//                    can find the entry whose wording does not match the game.
 struct MissEntry {
 	std::string text;        // the untranslated string
-	bool reverse = false;    // true: REV| line (Chinese→English reverse failure)
+	bool reverse = false;    // true: a paste-side line (REV / FLAVOUR / PROPERTY)
+	std::string tag;         // the log's own tag, trimmed ("MISS", "REV", ...)
 };
 
 // Load all dictionary files for one locale of one dictionary set.
@@ -106,14 +125,32 @@ std::vector<int> FilesContaining(const EditorModel& model, const std::string& ke
 int WinnerFileIdx(const EditorModel& model, const std::string& key);
 
 // Update an existing entry's value, or append a new entry, in the given file.
-// Marks the owning file dirty. Returns the entry index in model.entries.
+// Refreshes the entry's edited flag and the owning file's dirty flag (a value set
+// back to what is on disk is not a change). Returns the entry index.
 size_t SetEntry(EditorModel& model, int fileIdx, const std::string& key, const std::string& value);
+
+// Index of the entry (fileIdx, key) in model.entries, or -1.
+long long FindEntry(const EditorModel& model, int fileIdx, const std::string& key);
+
+// Remove an entry that was ADDED in this session (it is also taken out of the
+// file's document, should a failed save have put it there). Entries that exist on
+// disk are never removed -- the editor has no delete. Indices after it shift.
+bool RemoveAddedEntry(EditorModel& model, size_t entryIdx);
+
+// edited = added || value != orig, then the owning file's dirty flag.
+void RefreshEdited(EditorModel& model, size_t entryIdx);
+// dirty = any entry of the file edited, or an entry was taken out of its document.
+void RefreshFileDirty(EditorModel& model, int fileIdx);
 
 // Persist one file's edits (backup .bak, then atomic replace). false on error.
 bool SaveFile(EditorFile& file, std::string* err);
 
-// Save every dirty file. Returns count saved; *err collects the first failure.
-int SaveAll(EditorModel& model, std::string* err);
+// Save every dirty file. Returns count saved; *err collects the first failure,
+// *failedFiles (optional) the name of every file that did not save.
+int SaveAll(EditorModel& model, std::string* err, std::vector<std::string>* failedFiles = nullptr);
+
+// meta.json's display_name for one locale folder ("繁體中文"), empty if none.
+std::string LocaleDisplayName(const std::wstring& slotRoot, const std::string& locale);
 
 // Number of files with unsaved edits.
 int DirtyCount(const EditorModel& model);
@@ -122,5 +159,9 @@ int DirtyCount(const EditorModel& model);
 int DirtyEntryCount(const EditorModel& model);
 
 // Read <exeDir>\translate_misses.log and return strings absent from all
-// dictionary keys. *logFound is false when the log file does not exist.
-std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel& model, bool* logFound);
+// dictionary keys. *logFound is false when the log file does not exist;
+// *logged (optional) is the number of distinct lines the log held, already
+// translated ones included; *logWrite (optional) the log's last-write time
+// as a FILETIME value (0 when unknown).
+std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel& model, bool* logFound,
+                                  int* logged = nullptr, unsigned long long* logWrite = nullptr);

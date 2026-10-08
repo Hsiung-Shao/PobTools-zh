@@ -69,12 +69,13 @@ inline constexpr const char Play[] = "\xee\x84\xbc"; // play U+E13C
 inline constexpr const char Square[] = "\xee\x85\xa7"; // square U+E167
 inline constexpr const char Volume[] = "\xee\x86\xab"; // volume-2 U+E1AB
 inline constexpr const char Save[] = "\xee\x85\x8d"; // save U+E14D
+inline constexpr const char Maximize[] = "\xee\x84\x93"; // maximize-2 U+E113
 
 // The one range the icon font is merged over (min..max of the codepoints above).
 inline constexpr unsigned short kRangeFirst = 0xE064;
 inline constexpr unsigned short kRangeLast  = 0xE529;
 // For the selftest: one icon that must be in the atlas.
 inline constexpr unsigned short kProbe = 0xE1B4; // zap
-inline constexpr int kCount = 60;
+inline constexpr int kCount = 61;
 
 } // namespace PobIcon

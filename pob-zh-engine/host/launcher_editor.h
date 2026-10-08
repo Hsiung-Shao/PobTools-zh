@@ -20,3 +20,12 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 // with are now stale. The launcher checks it and reloads.
 IToolPanel* CreateTranslationEditorPanel();
 bool TranslationEditorPanelSaved(IToolPanel* panel);
+// "前往設定" was pressed in the tab: the launcher opens Settings > Translation
+// data. The panel never changes a setting itself. Reading it clears it.
+bool TranslationEditorPanelWantsSettings(IToolPanel* panel);
+
+// Headless driver for --trans-editor-selftest: runs one of the panel's own entry
+// points ("edit", "switchgame:1", "switchlocale:<code>", "reload", "save",
+// "undo", "answer:save|discard|cancel", "onlymodified") and returns its state as
+// "undo=N modified=N files=N game=N locale=X pending=X shown=N ...".
+std::string TranslationEditorTestOp(IToolPanel* panel, const std::string& op);

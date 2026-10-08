@@ -410,6 +410,8 @@ if (WIN32)
         host/launcher_editor.cpp
         host/editor_data.cpp
         host/editor_selftest.cpp
+        host/trans_editor_logic.cpp
+        host/trans_editor_selftest.cpp
         host/paste_selftest.cpp
         # POB 執行時拼出來的物品名(「<標題>, <基底>」)的正向翻譯回歸
         host/item_name_selftest.cpp
