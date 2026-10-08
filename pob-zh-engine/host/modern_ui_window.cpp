@@ -6,6 +6,7 @@
 #include "launcher_config.h"
 #include "pob_launch.h"
 #include "bridge_gate.h"
+#include "pob_protocol.h" // a link handed over by a second pob-zh.exe (WM_COPYDATA)
 #include "modern_ui_browser.h"
 #include "clipboard_util.h"
 
@@ -83,7 +84,7 @@ UINT DpiFor(HWND hwnd)
 }
 
 struct Window {
-	std::wstring exeDir, game, locale, openBuild;
+	std::wstring exeDir, game, locale, openBuild, importUri;
 	LauncherConfig cfg;
 	HWND hwnd = nullptr;
 	ComPtr<ICoreWebView2Controller> controller;
@@ -220,6 +221,7 @@ struct Window {
 			{"pobDir", narrow(pobDir)},
 			{"version", POBTOOLS_VERSION_STRING},
 			{"open", narrow(openBuild)},
+			{"importUri", narrow(importUri)},
 			{"view", narrow(view)},
 			{"prefs", Prefs()},
 			{"hosts", json{ {"app", narrow(kHostApp)}, {"pob", narrow(kHostPob)},
@@ -263,7 +265,7 @@ struct Window {
 		PostEvent("host.gate_fallback", json{ {"failed", v.failed}, {"pobVersion", v.pobVersion} });
 		// The classic window on the same install; the engine mutex it holds
 		// keeps the launcher's "a POB is running" logic honest.
-		PobLaunch::SpawnPobDetached(launchLua, game);
+		PobLaunch::SpawnPobDetached(launchLua, game, nullptr, importUri);
 		exitCode = 3;
 		CloseNow();
 		return true;
@@ -567,6 +569,22 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			}
 		}
 		return 0;
+	case WM_COPYDATA: {
+		// An "Open in PoB" link for this game while this window is open
+		// (open_pob_link in host_main): the page asks about an unsaved build,
+		// then imports it here instead of a second window opening.
+		const COPYDATASTRUCT* cds = (const COPYDATASTRUCT*)lParam;
+		std::wstring uri;
+		if (!w || !cds || !PobProtocol::ParseLinkCopyData((unsigned long)cds->dwData, cds->lpData, cds->cbData, &uri)) {
+			if (cds && cds->dwData == PobProtocol::kLinkCopyDataMagic)
+				PobLog::Error("protocol", "new interface: refused a handed-over link that is not a valid pob:// URI");
+			return FALSE;
+		}
+		w->PostEvent("host.import_link", json{ {"uri", narrow(uri)} });
+		if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+		SetForegroundWindow(hwnd);
+		return TRUE;
+	}
 	case WM_DPICHANGED: {
 		const RECT* r = (const RECT*)lParam;
 		SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
@@ -589,6 +607,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 		}
 		break;
 	case WM_DESTROY:
+		RemovePropW(hwnd, PobProtocol::kPropGame);
 		PostQuitMessage(0);
 		return 0;
 	}
@@ -621,7 +640,7 @@ bool ModernUiUsableFor(const std::wstring& exeDir, const std::wstring& pobDir, c
 
 int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
                  const std::wstring& locale, const LauncherConfig& cfg,
-                 const std::wstring& openBuild)
+                 const std::wstring& openBuild, const std::wstring& importUri)
 {
 	std::wstring why;
 	if (!ModernUiAvailable(exeDir, &why) && ModernUiBrowserAvailable(exeDir)) {
@@ -630,7 +649,7 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 		// Not a failure: on Wine and on CrossOver this IS the supported path, so
 		// it belongs in the diagnostic trace rather than the failures-only log.
 		PobLog::Diag("modernui", "no WebView2 (" + narrow(why) + "): opening the new interface in the system browser");
-		return ShowModernUiInBrowser(exeDir, game, locale, cfg, openBuild);
+		return ShowModernUiInBrowser(exeDir, game, locale, cfg, openBuild, L"", importUri);
 	}
 	if (!ModernUiAvailable(exeDir, &why)) {
 		PobLog::Error("modernui", "cannot open: " + narrow(why));
@@ -645,6 +664,7 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 	w.game = game;
 	w.locale = locale;
 	w.openBuild = openBuild;
+	w.importUri = importUri;
 	w.cfg = cfg;
 	w.installs = DetectInstalls(exeDir);
 	const bool poe2 = (game == L"poe2");
@@ -689,6 +709,10 @@ int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
 		return 1;
 	}
 	SetWindowLongPtrW(w.hwnd, GWLP_USERDATA, (LONG_PTR)&w);
+	// Which game this window drives: a later "Open in PoB" link for the same
+	// game is handed to it (PobProtocol::FindModernUiWindow) rather than
+	// opening a second window on the same install.
+	SetPropW(w.hwnd, PobProtocol::kPropGame, (HANDLE)(INT_PTR)(poe2 ? 2 : 1));
 	ShowWindow(w.hwnd, SW_SHOWNORMAL);
 
 	// The child boots (~2-3 s with dictionaries) while WebView2 initialises;

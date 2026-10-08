@@ -158,6 +158,21 @@
 
 <svelte:window onkeydown={onKey} onwheel={onWheel} onmouseup={onMouseUp} onmousedown={blockSideButton} onauxclick={blockSideButton} />
 
+{#if app.linkAsk}
+  <!-- an "Open in PoB" link arrived with an unsaved build open (classic POB asks the same on close) -->
+  <div class="modal closeask" role="dialog" aria-modal="true">
+    <div class="dialog">
+      <div class="label">{t("link.title")}</div>
+      <p>{t("link.unsaved", { name: app.info?.buildName ?? "" })}</p>
+      <div class="dlg-actions">
+        <button class="btn ghost" onclick={() => app.linkCancel()}>{t("tree.cancel")}</button>
+        <button class="btn danger" onclick={() => app.linkDiscard()}>{t("close.discard")}</button>
+        <button class="btn primary" onclick={() => void app.linkSave()}>{t("close.save")}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if app.closeAsk}
   <!-- the window's X with an unsaved build (the classic window's CanExit) -->
   <div class="modal closeask" role="dialog" aria-modal="true">

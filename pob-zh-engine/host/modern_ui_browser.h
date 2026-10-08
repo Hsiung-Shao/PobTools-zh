@@ -37,4 +37,5 @@ bool ModernUiBrowserStop(const std::wstring& exeDir, const std::wstring& game);
 int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
                           const std::wstring& locale, const LauncherConfig& cfg,
                           const std::wstring& openBuild = std::wstring(),
-                          const std::wstring& pobDirOverride = std::wstring());
+                          const std::wstring& pobDirOverride = std::wstring(),
+                          const std::wstring& importUri = std::wstring());

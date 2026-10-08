@@ -13,6 +13,7 @@
 #include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
 #include "pob_launch.h"
+#include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
 #include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "modern_ui_browser.h" // ModernUiBrowserAvailable: the system-browser fallback
@@ -2673,6 +2674,36 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ImGui::PushTextWrapPos(inner - 40.0f * scale);
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
 				ImGui::TextUnformatted(S.perfLogHint);
+				ImGui::PopStyleColor();
+				ImGui::PopTextWrapPos();
+			}
+
+			// --- "Open in PoB" links (pob:// / pob2://) -----------------------
+			// Hidden under Wine: the browser runs on the host system, so a link
+			// clicked there never reaches this registry.
+			if (!PobLaunch::RunningUnderWine()) {
+				ImGui::Dummy(ImVec2(0, 10.0f * scale));
+				SectionLabel(fonts, scale, inner, S.sectionPobLinks);
+				static bool protoFailed = false;
+				bool proto = cfg.pobProtocol;
+				if (ImGui::Checkbox(S.pobProtocolChk, &proto)) {
+					wchar_t exeBuf[MAX_PATH] = {};
+					GetModuleFileNameW(nullptr, exeBuf, MAX_PATH);
+					const bool ok = proto ? PobProtocol::RegisterPobProtocol(exeBuf)
+					                      : PobProtocol::UnregisterPobProtocol(exeBuf);
+					protoFailed = !ok;
+					if (ok) {
+						cfg.pobProtocol = proto;
+						saveNow();
+					} else if (proto) {
+						// Half-written registration: take back whatever did land.
+						PobProtocol::UnregisterPobProtocol(exeBuf);
+					}
+				}
+				if (protoFailed) ImGui::TextColored(ImVec4(0.94f, 0.27f, 0.27f, 1.0f), "%s", S.pobProtocolFail);
+				ImGui::PushTextWrapPos(inner - 40.0f * scale);
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+				ImGui::TextUnformatted(S.pobProtocolHint);
 				ImGui::PopStyleColor();
 				ImGui::PopTextWrapPos();
 			}

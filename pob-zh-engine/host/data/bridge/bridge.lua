@@ -3702,6 +3702,47 @@ function M.import_from_url(p)
 	return { site = site.id, label = site.label, code = result }
 end
 
+-- import_from_uri{uri}: an "Open in PoB" link (pob://<site>/<id>, PoE2
+-- pob2://...) the host received from the browser -- what POB's Main.lua does
+-- with arg[1] at startup: DownloadBuild without a site, so POB itself maps the
+-- scheme and site id to its download URL. Returns the raw build code (what
+-- import_code then takes). The host has already whitelisted the URI; it is
+-- checked again here because the page could send anything.
+-- Same grammar as the host's PobProtocol::ParsePobUri (normalized form):
+-- pob[2]://<site>/<seg>(/<seg>)*[?k=v(&k=v)*], values unreserved or %XX.
+local function valid_pob_uri(uri)
+	if #uri > 512 then return false end
+	local path, query = uri:match("^pob2?://[%w_%-]+/([%w_%-/]+)(.*)$")
+	if not path or path:find("//", 1, true) or path:sub(-1) == "/" then return false end
+	if query == "" then return true end
+	if query:sub(1, 1) ~= "?" then return false end
+	for pair in (query:sub(2) .. "&"):gmatch("(.-)&") do
+		local k, v = pair:match("^([%w_%-]+)=(.*)$")
+		if not k then return false end
+		-- %XX escapes removed, anything left must be unreserved (a stray % fails too)
+		if v:gsub("%%%x%x", ""):find("[^%w_%.~%+%-]") then return false end
+	end
+	return true
+end
+
+function M.import_from_uri(p)
+	local bs = build_sites()
+	local uri = p and type(p.uri) == "string" and p.uri or ""
+	if not valid_pob_uri(uri) then error("not a pob:// link", 0) end
+	local result, failed, from
+	bs.DownloadBuild(uri, nil, function(ok, body, url)
+		from = url
+		if ok then result = body else failed = tostring(body) end
+	end)
+	if not pump_until(function() return result ~= nil or failed ~= nil end, 60) then error("the download did not finish", 0) end
+	if failed then error(failed, 0) end
+	local site
+	for _, s in ipairs(bs.websiteList) do
+		if uri:lower():match("^pob2?://" .. s.id:lower() .. "/") then site = s end
+	end
+	return { site = site and site.id or "", label = site and site.label or "", code = result, url = from }
+end
+
 -- share_build{site}: the Import tab's Share -- uploads this build's code and
 -- returns the link the site hands back.
 function M.share_build(p)

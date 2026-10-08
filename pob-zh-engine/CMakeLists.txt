@@ -413,6 +413,8 @@ if (WIN32)
         host/placeholder_selftest.cpp
         host/pob_launch.cpp
         host/bridge_gate.cpp
+        # pob:// / pob2:// "Open in PoB" links (HKCU registration + URI whitelist)
+        host/pob_protocol.cpp
         host/window_manager.cpp
         host/window_dock.cpp
         # the editor selftest asks the REAL loader what the engine would

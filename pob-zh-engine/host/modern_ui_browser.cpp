@@ -6,6 +6,7 @@
 #include "headless_proc.h"
 #include "launcher_config.h"
 #include "pob_launch.h"
+#include "pob_protocol.h" // host.import_link: a link for an already running session
 #include "clipboard_util.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -169,7 +170,7 @@ void respond(SOCKET s, int code, const char* status, const char* type, const std
 }
 
 struct Server {
-	std::wstring exeDir, game, locale, openBuild, pobDir, launchLua;
+	std::wstring exeDir, game, locale, openBuild, importUri, pobDir, launchLua;
 	LauncherConfig cfg;
 	std::string token;
 	int port = 0;
@@ -244,7 +245,7 @@ struct Server {
 		const std::string b = origin() + prefix();
 		return json{
 			{"game", narrow(game)}, {"locale", narrow(locale)}, {"exeDir", narrow(exeDir)}, {"pobDir", narrow(pobDir)},
-			{"version", POBTOOLS_VERSION_STRING}, {"open", narrow(openBuild)}, {"view", narrow(view)},
+			{"version", POBTOOLS_VERSION_STRING}, {"open", narrow(openBuild)}, {"importUri", narrow(importUri)}, {"view", narrow(view)},
 			{"prefs", prefs()}, {"browser", true},
 			{"hosts", json{ {"app", b.substr(0, b.size() - 1)}, {"pob", b + "~pob"}, {"data", b + "~data"},
 			                {"fonts", b + "~fonts"}, {"cache", b + "~cache"}, {"bg", b + "~bg"} }},
@@ -272,7 +273,7 @@ struct Server {
 		gateFellBack = true;
 		PobLog::Error("modernui", "browser mode: bridge gate failed for POB " + v.pobVersion + " -- opening the classic window instead");
 		event("host.gate_fallback", json{ {"failed", v.failed}, {"pobVersion", v.pobVersion} });
-		PobLaunch::SpawnPobDetached(launchLua, game);
+		PobLaunch::SpawnPobDetached(launchLua, game, nullptr, importUri);
 		exitCode = 3;
 		quit = true;
 		cv.notify_all();
@@ -345,6 +346,22 @@ struct Server {
 			push(json{ {"event", "host.closed"} }.dump()); // every open page, not only the asker
 			quit = true;
 			cv.notify_all();
+		} else if (method == "host.import_link") {
+			// A second pob-zh.exe got an "Open in PoB" link for this game while
+			// this session runs (ShowModernUiInBrowser, below): every page is told,
+			// and asks about an unsaved build before importing. `nonce` lets a page
+			// opened later (which is replayed the whole queue) skip links that were
+			// already handled.
+			std::wstring uri;
+			const std::string raw = params.value("uri", "");
+			if (raw.size() > 1024 || !PobProtocol::ParsePobUri(widen(raw), nullptr, &uri)) {
+				fail("bad_params", "not a pob:// link");
+				return;
+			}
+			const long long nonce = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(
+				std::chrono::system_clock::now().time_since_epoch()).count();
+			event("host.import_link", json{ {"uri", narrow(uri)}, {"nonce", nonce} });
+			reply(json{ {"ok", true} });
 		} else if (method == "host.set_title") {
 			reply(json{ {"ok", true} }); // the page sets document.title itself
 		} else if (method == "host.read_clipboard") {
@@ -796,7 +813,8 @@ bool ModernUiBrowserAvailable(const std::wstring& exeDir)
 
 int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
                           const std::wstring& locale, const LauncherConfig& cfg,
-                          const std::wstring& openBuild, const std::wstring& pobDirOverride)
+                          const std::wstring& openBuild, const std::wstring& pobDirOverride,
+                          const std::wstring& importUri)
 {
 	auto srv = std::make_unique<Server>();
 	Server& S = *srv;
@@ -805,6 +823,7 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	S.locale = locale;
 	S.cfg = cfg;
 	S.openBuild = openBuild;
+	S.importUri = importUri;
 	const InstallInfo installs = DetectInstalls(exeDir);
 	const bool poe2 = game == L"poe2";
 	S.pobDir = poe2 ? installs.poe2Dir : installs.poe1Dir;
@@ -832,6 +851,13 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 	{
 		std::string running;
 		if (ModernUiBrowserRunning(exeDir, game, &running)) {
+			// An "Open in PoB" link must not be dropped just because the session
+			// already runs: hand it over first, then show the page.
+			if (!importUri.empty()) {
+				const json req{ {"id", -1}, {"method", "host.import_link"}, {"params", json{ {"uri", narrow(importUri)} }} };
+				if (LoopbackRequest(running + "~send", "POST", req.dump()) != 204)
+					PobLog::Error("protocol", "browser mode: could not hand the link to the running session");
+			}
 			if (openBrowser) ShellExecuteW(nullptr, L"open", widen(running).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 			return 0;
 		}

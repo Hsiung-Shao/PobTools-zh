@@ -292,6 +292,7 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.pobFpsForeground = PobFrameCap::ClampFps(read_ini_int(iniPath, L"PobFpsForeground", PobFrameCap::kDefaultForegroundFps));
 	c.pobFpsBackground = PobFrameCap::ClampFps(read_ini_int(iniPath, L"PobFpsBackground", PobFrameCap::kDefaultBackgroundFps));
 	c.perfLog = read_ini_int(iniPath, L"PerfLog", 0) != 0;
+	c.pobProtocol = read_ini_int(iniPath, L"PobProtocol", 0) != 0;
 
 	c.proxy = read_ini_path(iniPath, L"Proxy");
 
@@ -373,6 +374,8 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 		std::to_wstring(PobFrameCap::ClampFps(cfg.pobFpsBackground)).c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"PerfLog",
 		cfg.perfLog ? L"1" : L"0", iniPath.c_str());
+	WritePrivateProfileStringW(kSection, L"PobProtocol",
+		cfg.pobProtocol ? L"1" : L"0", iniPath.c_str());
 	for (int g = 0; g < 2; g++) {
 		const AppearanceConfig& a = cfg.look[g];
 		const std::wstring sfx = GameKeySuffix(g);
@@ -1375,6 +1378,18 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		SaveLauncherConfig(ini, c);
 		const LauncherConfig r = LoadLauncherConfig(ini);
 		check("T17q frame caps and perf log round-trip", r.pobFpsForeground == 0 && r.pobFpsBackground == 30 && r.perfLog);
+	}
+	// T17q2 -- the pob:// link switch: off unless the ini says 1, and it round-trips.
+	DeleteFileW(ini.c_str());
+	write(L"PobTools", { { L"Game", L"poe1" } });
+	check("T17q2a PobProtocol defaults to off", !LoadLauncherConfig(ini).pobProtocol);
+	for (int on = 1; on >= 0; on--) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.pobProtocol = on != 0;
+		SaveLauncherConfig(ini, c);
+		check(on ? "T17q2b PobProtocol round-trips on" : "T17q2c PobProtocol round-trips off",
+		      LoadLauncherConfig(ini).pobProtocol == (on != 0));
 	}
 	DeleteFileW(ini.c_str());
 	write(L"PobTools", { { L"Game", L"poe1" }, { L"PobFpsForeground", L"-7" }, { L"PobFpsBackground", L"99999" } });

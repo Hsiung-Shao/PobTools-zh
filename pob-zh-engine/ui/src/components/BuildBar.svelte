@@ -163,7 +163,10 @@
     saveAsOpen = false;
     const path = saveAsDir + name;
     // another build already has this name: POB greys Save out, here we ask
-    if ((await app.saveAs(path)) === "exists" && confirm(t("bar.overwriteConfirm", { name }))) await app.saveAs(path, true);
+    let r = await app.saveAs(path);
+    if (r === "exists" && confirm(t("bar.overwriteConfirm", { name }))) r = await app.saveAs(path, true);
+    // not saved after all: a pending "then" (close, import a link) is dropped
+    if (r !== "saved") app.cancelSaveAs();
   }
 
   export function onKey(e: KeyboardEvent): boolean {
@@ -349,7 +352,7 @@
         </div>
         <input class="input" bind:value={saveAsName} onkeydown={(e) => e.key === "Enter" && saveAs()} />
         <div class="dlg-actions">
-          <button class="btn ghost" onclick={() => (saveAsOpen = false)}>{t("tree.cancel")}</button>
+          <button class="btn ghost" onclick={() => { saveAsOpen = false; app.cancelSaveAs(); }}>{t("tree.cancel")}</button>
           <button class="btn primary" onclick={saveAs} disabled={!saveAsName.trim()}>{t("bar.save")}</button>
         </div>
       </div>

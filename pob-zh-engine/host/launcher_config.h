@@ -237,6 +237,10 @@ struct LauncherConfig {
 	// Opt-in performance log for POB (host/perf_log.h), POB_ZH_PERFLOG. Off by
 	// default; the settings page turns it on when someone is chasing a report.
 	bool           perfLog = false;
+	// "Open in PoB" links (pob:// / pob2://, host/pob_protocol.h) handled by this
+	// install. Off by default: turning it on writes HKCU\Software\Classes and
+	// takes the links over from an official POB install.
+	bool           pobProtocol = false;
 };
 
 // ---- external dictionary folders -------------------------------------------

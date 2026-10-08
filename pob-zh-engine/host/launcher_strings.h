@@ -276,7 +276,14 @@
 	                     u8"Limits how many times a second the POB window draws, which lowers GPU and CPU load; changes apply to running POB windows immediately. A picture that has not changed is not redrawn anyway. Raise it if dragging the passive tree feels choppy.") \
 	X(perfLogChk,        u8"效能診斷記錄",                 u8"Performance diagnostics log")           \
 	X(perfLogHint,       u8"排查 POB 卡頓或顯示卡、CPU 使用率過高時才開。下次開啟 POB 生效，記錄寫在問題紀錄資料夾的 perf-日期.log：用的是哪張顯示卡、在哪個頁面與狀態、每一段花了多少時間，關閉 POB 時會在最後附上各頁面的耗用排名。不含 build 內容或帳號資料。查完記得關掉。", \
-	                     u8"Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.")
+	                     u8"Turn on only while chasing POB stutter or high GPU/CPU use. Takes effect the next time POB opens and writes perf-<date>.log into the problem log folder: which GPU is used, which page and state POB was in, and how long each part took, with a ranking of pages by cost appended when POB closes. No build contents or account data. Turn it off again when done.") \
+	/* "Open in PoB" links (settings page, host/pob_protocol.h): pob:// and
+	   pob2:// from poe.ninja / pobb.in and the other build sites. */            \
+	X(sectionPobLinks,   u8"網站連結",                     u8"Website links")                         \
+	X(pobProtocolChk,    u8"用 PobTools 開啟網站的「Open in PoB」連結", u8"Open websites' \"Open in PoB\" links with PobTools") \
+	X(pobProtocolHint,   u8"讓 poe.ninja / pobb.in 等網站的「Open in PoB」開啟 PobTools(會取代官方安裝版 POB 的連結)。點連結時不顯示啟動器,直接依「預設介面」開啟中文化 POB 並匯入那個建置。只寫入目前使用者的登錄檔;取消勾選只移除指向這個 PobTools 的登記。", \
+	                     u8"Lets the \"Open in PoB\" buttons on poe.ninja, pobb.in and other sites open PobTools (this replaces the official POB install's link handling). A link skips the launcher and opens the localised POB in your default interface with that build imported. Only the current user's registry is written; unticking removes only the registration that points at this PobTools.") \
+	X(pobProtocolFail,   u8"無法變更連結登記(登錄檔寫入失敗),已還原勾選。", u8"Could not change the link registration (registry write failed); the setting was reverted.")
 
 struct LauncherStrings {
 #define PT_LS_FIELD(name, zh, en) const char* name;

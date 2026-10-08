@@ -49,6 +49,13 @@ public:
 	char**	scriptArgv = nullptr;
 	bool	restartFlag = false;
 	bool	didExit = false;
+	// PobTools: CanExit() refused (POB opened its "Save changes?" popup). The
+	// window carries the prop "PobTools.ExitPending" until the popups are gone;
+	// if POB is still alive then, the user cancelled and "PobTools.ExitCancelled"
+	// is set instead. Lets the pob:// link handler (host/pob_protocol.h) know
+	// whether to replace this POB or leave it alone.
+	bool	exitPending = false;
+	void	PollExitPending();
 	bool	renderEnable = false;
 	// POB_ZH_HEADLESS=1: run POB's Lua with no window, no GL, Draw* as no-ops,
 	// and talk to the host over stdio (engine/headless_ipc.h). Read once in Init.
