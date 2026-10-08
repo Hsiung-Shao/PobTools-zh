@@ -3,6 +3,7 @@
 #include "regex_itemmods.h"
 
 #include "regex_numeric.h"
+#include "regex_share.h"   // Gunzip
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
@@ -458,6 +459,34 @@ std::optional<ModAnchor> ChooseAnchor(const ModIndex& idx, const std::string& tm
 const char* PageId(const std::string& game) { return game == "poe2" ? "item_mod_values_poe2" : "item_mod_values"; }
 bool IsPageId(const std::string& id) { return id == "item_mod_values" || id == "item_mod_values_poe2"; }
 
+bool IsLegacyKey(const std::string& key)
+{
+	// The trade ids stats.ndjson carries, with the category prefix dropped:
+	// stat_N, skill_N, support_N, indexable_skill_N, indexable_support_N,
+	// sanctum_effect_N, lake_N, mod_N, pseudo_<words>[_N], any of them followed
+	// by "|..." (a composite id, or this page's "<id>|<ref>"). Not one of the
+	// 7988 GGPK stat ids the page used before (checked against both old files)
+	// has that shape: they are snake_case phrases ("base_maximum_life").
+	// i.e. /^(stat|skill|support|indexable_skill|indexable_support|sanctum_effect|lake|mod|pseudo_[a-z_]+)(_\d+)?(\|.*)?$/
+	const size_t bar = key.find('|');
+	std::string head = key.substr(0, bar);
+	// optional trailing _<digits>
+	size_t end = head.size();
+	while (end > 0 && head[end - 1] >= '0' && head[end - 1] <= '9') end--;
+	if (end < head.size() && end > 0 && head[end - 1] == '_') head.resize(end - 1);
+	else if (end < head.size()) return true;   // digits not preceded by '_'
+	static const char* const kPrefixes[] = {"stat", "skill", "support", "indexable_skill", "indexable_support",
+	                                        "sanctum_effect", "lake", "mod"};
+	for (const char* p : kPrefixes)
+		if (head == p) return false;
+	if (head.compare(0, 7, "pseudo_") == 0 && head.size() > 7) {
+		for (size_t i = 7; i < head.size(); i++)
+			if (!((head[i] >= 'a' && head[i] <= 'z') || head[i] == '_')) return true;
+		return false;
+	}
+	return true;
+}
+
 static const char* const kCatZh[kCategoryCount] = {u8"生命", u8"魔力", u8"能量護盾", u8"抗性", u8"屬性",
                                                    u8"攻速 / 施速", u8"傷害", u8"移動速度", u8"其他"};
 static const char* const kCatEn[kCategoryCount] = {"Life", "Mana", "Energy Shield", "Resistances", "Attributes",
@@ -532,55 +561,75 @@ const char* ReasonId(int r) { return r >= 0 && r < kReasonCount ? kReasonIds[r] 
 
 // ---- data file -------------------------------------------------------------------
 
-bool ParseFile(const std::string& body, std::vector<StatLite>& zh, std::vector<StatLite>& en, std::string* err)
+// :90 liteOf: one stat object -> StatLite; false = TS null (no ref / no matchers).
+static bool LiteOf(const nlohmann::json& s, StatLite& out)
 {
 	using nlohmann::json;
-	zh.clear();
-	en.clear();
-	try {
-		const json doc = json::parse(body);
-		const auto st = doc.find("stats");
-		if (st == doc.end() || !st->is_array()) {
-			if (err) *err = u8"資料檔缺少 stats 陣列";
-			return false;
-		}
-		zh.reserve(st->size() + 1);
-		en.reserve(st->size() + 1);
-		for (const json& s : *st) {
-			if (!s.is_object()) continue;
-			StatLite base;
-			base.ref = s.value("ref", std::string());
-			base.statId = s.value("id", std::string());
-			base.hasId = true;
-			base.dp = s.value("dp", false);
-			for (int li = 0; li < 2; li++) {
-				StatLite l = base;
-				const auto rows = s.find(li == 0 ? "zh" : "en");
-				if (rows != s.end() && rows->is_array())
-					for (const json& r : *rows) {
-						if (!r.is_array() || r.size() < 2 || !r[0].is_string()) continue;
-						const std::string text = r[0].get<std::string>();
-						const int kind = r[1].is_number_integer() ? r[1].get<int>() : 0;
-						l.strings.push_back(text);
-						if (kind == 0) l.plain.push_back(text);
-						if (kind != 1) l.same.push_back(text);
-					}
-				(li == 0 ? zh : en).push_back(std::move(l));
+	out = StatLite();
+	const auto r = s.find("ref");
+	if (r != s.end() && r->is_string()) out.ref = r->get<std::string>();
+	const auto ms = s.find("matchers");
+	if (out.ref.empty() || ms == s.end() || !ms->is_array()) return false;
+	for (const json& m : *ms) {
+		if (!m.is_object()) continue;
+		const auto str = m.find("string");
+		if (str == m.end() || !str->is_string()) continue;
+		const std::string text = str->get<std::string>();
+		out.strings.push_back(text);
+		const auto neg = m.find("negate");
+		const bool negate = neg != m.end() && neg->is_boolean() && neg->get<bool>();
+		if (!negate) out.same.push_back(text);
+		// `m.value === undefined`: the key is absent (a JSON null is not undefined)
+		if (!negate && m.find("value") == m.end()) out.plain.push_back(text);
+	}
+	const auto tr = s.find("trade");
+	if (tr != s.end() && tr->is_object()) {
+		const auto ids = tr->find("ids");
+		if (ids != tr->end() && ids->is_object()) {
+			for (const char* c : {"explicit", "implicit", "crafted", "fractured"}) {   // :52 ITEM_MOD_TRADE_CATS
+				const auto v = ids->find(c);
+				if (v == ids->end() || !v->is_array() || v->empty() || !(*v)[0].is_string()) continue;
+				const std::string id = (*v)[0].get<std::string>();
+				const size_t dot = id.find('.');
+				out.statId = dot == std::string::npos ? id : id.substr(dot + 1);
+				out.hasId = true;
+				break;
 			}
 		}
-		for (int li = 0; li < 2; li++) {
-			StatLite other;
-			const auto o = doc.find(li == 0 ? "otherZh" : "otherEn");
-			if (o != doc.end() && o->is_array())
-				for (const json& x : *o)
-					if (x.is_string()) other.strings.push_back(x.get<std::string>());
-			(li == 0 ? zh : en).push_back(std::move(other));
-		}
-	} catch (const std::exception& ex) {
-		if (err) *err = std::string(u8"解析失敗：") + ex.what();
-		return false;
 	}
+	const auto dp = s.find("dp");
+	out.dp = dp != s.end() && dp->is_boolean() && dp->get<bool>();
 	return true;
+}
+
+// :129 parseStatsNdjson. Lines are trimmed of ASCII whitespace only (JS trim()
+// also drops U+00A0 / U+3000 ..., which a JSON line never starts or ends with);
+// a line that is not JSON, or not an object, is skipped like the TS.
+std::vector<StatLite> ParseStatsNdjson(const std::string& text)
+{
+	std::vector<StatLite> out;
+	size_t start = 0;
+	auto ws = [](char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f'; };
+	while (start < text.size()) {
+		size_t end = text.find('\n', start);
+		if (end == std::string::npos) end = text.size();
+		size_t a = start, b = end;
+		start = end + 1;
+		while (a < b && ws(text[a])) a++;
+		while (b > a && ws(text[b - 1])) b--;
+		if (a == b) continue;
+		nlohmann::json j = nlohmann::json::parse(text.begin() + a, text.begin() + b, nullptr, false);
+		if (j.is_discarded() || !j.is_object()) continue;
+		const auto st = j.find("stats");
+		StatLite l;
+		if (st != j.end() && st->is_array()) {
+			for (const nlohmann::json& s : *st)
+				if (s.is_object() && LiteOf(s, l)) out.push_back(std::move(l));
+		} else if (LiteOf(j, l)) {
+			out.push_back(std::move(l));
+		}
+	}
+	return out;
 }
 
 namespace {
@@ -685,15 +734,12 @@ Data BuildData(const std::string& game, const std::vector<StatLite>& zhStats, co
 	return d;
 }
 
-bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, std::string* err)
+namespace {
+
+bool ReadWhole(const std::wstring& path, std::string& body)
 {
-	const std::wstring path = exeDir + L"Data\\regex_itemmods_" + (game == "poe2" ? L"poe2" : L"poe1") + L".json";
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) {
-		if (err) *err = u8"找不到 Data\\regex_itemmods_" + game + ".json";
-		return false;
-	}
-	std::string body;
+	if (h == INVALID_HANDLE_VALUE) return false;
 	LARGE_INTEGER size{};
 	bool ok = false;
 	if (GetFileSizeEx(h, &size) && size.QuadPart > 0 && size.QuadPart < (1ll << 28)) {
@@ -702,14 +748,47 @@ bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, st
 		ok = ReadFile(h, &body[0], (DWORD)body.size(), &read, nullptr) && read == body.size();
 	}
 	CloseHandle(h);
-	if (!ok) {
-		if (err) *err = u8"讀不到 Data\\regex_itemmods_" + game + ".json";
+	return ok;
+}
+
+} // namespace
+
+bool LoadStatsText(const std::wstring& exeDir, const std::string& game, Lang lang, std::string& text, std::string* err)
+{
+	const std::string rel = std::string("Data\\regex_stats\\") + (game == "poe2" ? "poe2" : "poe1") + "\\" +
+	                        (lang == Lang::Zh ? "cmn-Hant" : "en") + "\\stats.ndjson.gz";
+	std::wstring wrel;
+	for (char c : rel) wrel += (wchar_t)(unsigned char)c;
+	std::string gz;
+	if (!ReadWhole(exeDir + wrel, gz)) {
+		if (err) *err = u8"找不到 stats 資料（" + rel + u8"）";
 		return false;
 	}
+	std::string why;
+	if (!RegexShare::Gunzip(gz, text, kMaxStatsBytes, &why)) {
+		if (err) *err = u8"stats 資料損毀（" + rel + u8"：" + why + u8"）";
+		return false;
+	}
+	return true;
+}
+
+bool LoadStats(const std::wstring& exeDir, const std::string& game, std::vector<StatLite>& zh, std::vector<StatLite>& en,
+               std::string* err)
+{
+	zh.clear();
+	en.clear();
+	for (Lang l : {Lang::Zh, Lang::En}) {
+		std::string text;
+		if (!LoadStatsText(exeDir, game, l, text, err)) return false;
+		(l == Lang::Zh ? zh : en) = ParseStatsNdjson(text);
+	}
+	return true;
+}
+
+bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, std::string* err)
+{
 	std::vector<StatLite> zh, en;
-	if (!ParseFile(body, zh, en, err)) return false;
-	body.clear();
-	body.shrink_to_fit();
+	if (!LoadStats(exeDir, game, zh, en, err)) return false;
 	out = BuildData(game, zh, en);
 	return true;
 }
@@ -725,10 +804,9 @@ RegexAlgo::AlgoPage MakePage(const std::string& game, const Data* data)
 	page.title = u8"物品詞綴數值";
 	page.titleEn = "Item mod values";
 	page.note = std::string(game == "poe2" ? "PoE2" : "PoE1") +
-	            u8" 物品詞綴（前綴 / 後綴 / 固定 / 工藝 / 腐化）的數值條件，每條各自一個條件（同時成立）。"
-	            u8"模板取自遊戲檔（GGPK），片段預設是整行（行首 / 行尾錨點），太長才以詞為單位往回縮，"
-	            u8"並保證在同一份詞綴描述檔的全部文字中唯一；只收恰好一個數值的詞綴（「附加 # 至 # 火焰傷害」這類不收），"
-	            u8"小數與負值不支援。";
+	            u8" 物品詞綴(明確 / 固定 / 工藝 / 破裂)的數值條件,每條各自一個 term(同時成立)。模板取自 stats.ndjson,"
+	            u8"片段預設是整行模板文字(行首 / 行尾錨點),太長才以詞為單位往回縮,並保證在全部詞綴模板中唯一;"
+	            u8"只收恰好一個數值的詞綴(「附加 # 至 # 火焰傷害」這類不收),小數與負值不支援。";
 	page.limit = 250;
 	for (int i = 0; i < kCategoryCount; i++) {
 		page.groups.push_back(kCatZh[i]);

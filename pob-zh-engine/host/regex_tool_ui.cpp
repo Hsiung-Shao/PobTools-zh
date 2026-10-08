@@ -1725,9 +1725,7 @@ private:
 			ImGui::TextUnformatted(any ? u8"把目前遊戲所有清單的勾選、數值、自訂文字與排除詞壓成一串分享碼。"
 			                           : u8"先勾選幾項（或加自訂文字 / 排除詞）才有東西可以分享。");
 			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
-			ImGui::TextUnformatted(u8"分享碼與 exile-appraiser 互通；只有「物品詞綴數值」頁例外："
-			                       u8"這裡的鍵是 GGPK stat id、那邊是交易站 stat id，"
-			                       u8"所以那一頁的勾選對方讀不到（對方的也讀不進來，會回報找不到幾項）。");
+			ImGui::TextUnformatted(u8"分享碼可以直接貼進流亡鑑價（ExileAppraiser），兩邊格式相同（每一頁都互通）。");
 			ImGui::PopStyleColor();
 			ImGui::PopTextWrapPos();
 			ImGui::EndTooltip();
@@ -1977,9 +1975,6 @@ private:
 		if (nf > 0) summary += u8"，資料夾 " + std::to_string(nf) + u8" 個";
 		ImGui::TextUnformatted(summary.c_str());
 		ImGui::PushTextWrapPos(500 * sc);
-		if (st.itemMod > 0)
-			ImGui::TextColored(kWarn, u8"其中 %d 筆是「物品詞綴數值」頁：兩邊的鍵不互通（這裡是 GGPK stat id、那邊是交易站 stat id），"
-			                          u8"ExileAppraiser 會照樣加入，但標「找不到」。", st.itemMod);
 		if (st.skipped > 0)
 			ImGui::TextColored(kWarn, u8"有 %d 筆缺名稱 / 頁 / 勾選，不會送出。", st.skipped);
 		ImGui::PushStyleColor(ImGuiCol_Text, PobUi::MutedText());
@@ -2200,6 +2195,10 @@ private:
 		copied_ = false;
 		markStateDirty();
 
+		int legacyItemKeys = 0;   // the item-mod page's pre-2026-10-09 keys (GGPK stat ids)
+		for (const auto& kv : s.pages)
+			if (kv.first == itemId)
+				for (const std::string& key : kv.second) legacyItemKeys += RegexItemMods::IsLegacyKey(key) ? 1 : 0;
 		std::string msg = u8"已套用" + what;
 		if (r.missed > 0 || !r.unknownPages.empty()) {
 			std::string pages;
@@ -2207,9 +2206,9 @@ private:
 			msg += u8"，但有 " + std::to_string(r.missed) + u8" 項在目前資料找不到";
 			if (!pages.empty()) msg += u8"（不存在的清單：" + pages + u8"）";
 			for (const auto& kv : r.missedByPage)
-				if (RegexItemMods::IsPageId(kv.first))
-					msg += u8"；其中 " + std::to_string(kv.second) + u8" 項在「物品詞綴數值」頁："
-					       u8"這一頁的鍵是 GGPK stat id，與 exile-appraiser 的交易站 stat id 不互通";
+				if (RegexItemMods::IsPageId(kv.first) && legacyItemKeys > 0)
+					msg += u8"；其中 " + std::to_string(legacyItemKeys) + u8" 項是「物品詞綴數值」頁的舊版鍵（GGPK stat id），"
+					       u8"這一頁已改用交易站 stat id，請重新勾選";
 		}
 		msg += u8"。";
 		if (!warnings.empty()) {
@@ -2787,7 +2786,7 @@ private:
 		if (!L.result) {
 			L.phase = ItemModLoad::Phase::Error;
 			L.err = L.resultErr.empty() ? std::string(u8"未知錯誤") : L.resultErr;
-			PobLog::Error("data", "regex_itemmods_" + g + ".json: " + L.err);
+			PobLog::Error("data", "regex_stats\\" + g + ": " + L.err);
 			return;
 		}
 		const int idx = itemPageIndex(g);

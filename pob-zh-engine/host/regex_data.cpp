@@ -146,6 +146,27 @@ const std::string* RegexLabels::Find(bool zhSide, const std::string& key) const
 	return nullptr;
 }
 
+RegexLabels RegexMergeLabels(const RegexLabels& primary, const RegexLabels& fallback)
+{
+	// {...fallback, ...primary}: fallback's keys in their order (a primary value
+	// replacing the text in place), then primary's other keys in theirs.
+	RegexLabels out;
+	out.present = true;
+	for (int side = 0; side < 2; side++) {
+		const auto& f = side == 0 ? fallback.zh : fallback.en;
+		const auto& p = side == 0 ? primary.zh : primary.en;
+		auto& o = side == 0 ? out.zh : out.en;
+		o = f;
+		for (const auto& kv : p) {
+			bool done = false;
+			for (auto& x : o)
+				if (x.first == kv.first) { x.second = kv.second; done = true; break; }
+			if (!done) o.push_back(kv);
+		}
+	}
+	return out;
+}
+
 const RegexLabels* RegexDataset::Labels(const std::string& game) const
 {
 	for (const auto& g : labels_)
@@ -244,6 +265,28 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 			labels.present = true;
 			labels.zh = LabelMap(*lab, "zh");
 			labels.en = LabelMap(*lab, "en");
+		}
+		// node.ts:38 loadLabelsFor: the data file's labels win key by key, the
+		// stand-in Data\regex_labels_<game>.json (exile-appraiser
+		// data/regex/labels.<game>.json, verbatim) fills the keys it lacks
+		// (data.ts:186 mergeLabels). A missing or broken stand-in = no fallback.
+		{
+			std::string fb;
+			if (ReadFileUtf8(exeDir + L"Data\\regex_labels_" + game + L".json", fb)) {
+				try {
+					ordered_json fdoc = ordered_json::parse(fb);
+					const auto inner = fdoc.find("labels");
+					const ordered_json& m = (inner != fdoc.end() && inner->is_object()) ? *inner : fdoc;
+					if (m.is_object()) {
+						RegexLabels fallback;
+						fallback.zh = LabelMap(m, "zh");
+						fallback.en = LabelMap(m, "en");
+						labels = RegexMergeLabels(labels, fallback);
+					}
+				} catch (const std::exception& ex) {
+					PobLog::Error("data", "regex_labels_" + gameId + ".json parse failed: " + ex.what());
+				}
+			}
 		}
 		if (pages_.size() > before) labels_.emplace_back(gameId, std::move(labels));
 	} catch (const std::exception& ex) {

@@ -37,6 +37,8 @@ void RegexR8Tests(const std::wstring& exeDir, void (*check)(bool, const std::str
 void RegexSendTests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_r9.cpp: bookmark packs (送到 ExileAppraiser / 匯入書籤包).
 void RegexR9Tests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_parity.cpp: the literal vectors of exile-appraiser's own tests.
+void RegexParityTests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
 namespace {
 
@@ -1731,6 +1733,8 @@ void PortTests(const std::wstring& exeDir)
 	RegexSendTests(&check, &line);
 	line("");
 	RegexR9Tests(&check, &line);
+	line("");
+	RegexParityTests(exeDir, &check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
 }
 

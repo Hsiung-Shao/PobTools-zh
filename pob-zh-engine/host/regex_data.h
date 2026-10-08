@@ -72,6 +72,10 @@ struct RegexLabels {
 	const std::string* Find(bool zhSide, const std::string& key) const;
 };
 
+// data.ts:186 mergeLabels with both present: primary (the data file's) wins key
+// by key, fallback (Data\regex_labels_<game>.json) fills the rest.
+RegexLabels RegexMergeLabels(const RegexLabels& primary, const RegexLabels& fallback);
+
 // data.ts:175 normalizeLabel: "[Id|Text]" -> Text, "[Id]" -> Id, "{0}" -> "#".
 std::string RegexNormalizeLabel(const std::string& s);
 

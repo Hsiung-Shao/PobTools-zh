@@ -1,8 +1,8 @@
 // --regex-selftest, R7 part: the item-mod values page (regex_itemmods).
 //
-//   * load Data\regex_itemmods_<game>.json the way the panel does (time + memory);
-//   * regex_r7_golden.inc: exile-appraiser's own item-mods.ts / combine.ts run over THIS
-//     data file (tools/regex_port/gen-golden-r7.ts) -- counts, every entry and anchor
+//   * load Data\regex_stats\<game>\{cmn-Hant,en}\stats.ndjson.gz the way the panel does (time + memory);
+//   * regex_r7_golden.inc: exile-appraiser's own item-mods.ts / combine.ts run over the
+//     same stats.ndjson (tools/regex_port/gen-golden-r7.ts) -- counts, every entry and anchor
 //     (hashed + verbatim samples), every fragment over 16 conditions, chooseAnchor with
 //     other limits, categories, filterItemMods, and merges with the map pages;
 //   * item-mods.test.ts (1) uniqueness, FULL: every selectable entry x language, its
@@ -654,7 +654,7 @@ void RegexR7Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 		QueryPerformanceCounter(&b);
 		const size_t m1 = PrivateBytes();
 		const long long ms = (b.QuadPart - a.QuadPart) * 1000 / f.QuadPart;
-		check(g.ok && !g.data.entries.empty(), std::string(u8"載入 Data\\regex_itemmods_") + game + u8".json（同面板的延遲載入）：" +
+		check(g.ok && !g.data.entries.empty(), std::string(u8"載入 Data\\regex_stats\\") + game + u8"（stats.ndjson.gz 兩語，同面板的延遲載入）：" +
 		                                           Num((long long)g.data.entries.size()) + u8" 條可選 / 物品詞綴 " + Num(g.data.itemStats) +
 		                                           u8"，讀檔 + 解析 + 建索引 + 選錨點 " + Num(ms) + u8" ms，留存記憶體約 " +
 		                                           Num((long long)((m1 > m0 ? m1 - m0 : 0) / 1024)) + " KB" + (g.ok ? "" : "  " + err));
@@ -662,10 +662,8 @@ void RegexR7Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 		std::string ex;
 		for (int i = 0; i < IM::kReasonCount; i++) ex += std::string(i ? ", " : "") + IM::ReasonId(i) + " " + Num(g.data.excluded[i]);
 		line(std::string("    ") + game + u8"：同字併列 " + Num(g.data.merged) + u8"；排除 " + ex);
-		std::string body;
-		ReadAll(exeDir + L"Data\\regex_itemmods_" + (std::string(game) == "poe2" ? L"poe2" : L"poe1") + L".json", body);
 		std::string perr;
-		IM::ParseFile(body, g.zh, g.en, &perr);
+		IM::LoadStats(exeDir, game, g.zh, g.en, &perr);
 		g.zhIdx = IM::BuildIndex(g.zh, Lang::Zh);
 		g.enIdx = IM::BuildIndex(g.en, Lang::En);
 		line(std::string("    ") + game + u8" 語料：繁中 " + Num((long long)IM::IndexLineCount(*g.zhIdx)) + u8" 行 / " +

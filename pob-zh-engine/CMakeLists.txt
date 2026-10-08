@@ -523,6 +523,7 @@ if (WIN32)
         host/regex_selftest_r8.cpp
         host/regex_selftest_send.cpp
         host/regex_selftest_r9.cpp
+        host/regex_selftest_parity.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
@@ -629,10 +630,15 @@ if (WIN32)
     # page with its game, so a PoE1 player can still read the PoE2 list.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe2.json" DESTINATION "Data")
-    # Item-mod values page (R7): tools/gen_regex_itemmods.py out of the GGPK, loaded the
-    # first time the page is opened.
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_itemmods_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_itemmods_poe2.json" DESTINATION "Data")
+    # Label stand-ins for the numeric sections / vendor pages: exile-appraiser
+    # data/regex/labels.<game>.json verbatim; the catalogue's own `labels` win key by key.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe2.json" DESTINATION "Data")
+    # Item-mod values page: exile-appraiser's stats.ndjson (trade stat ids, so share
+    # codes interoperate), gzip-compressed (6.8 MB -> 0.9 MB); loaded the first time the
+    # page is opened. Source commit and hashes: host/data/regex_stats/MANIFEST.json.
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_stats/" DESTINATION "Data/regex_stats"
+            FILES_MATCHING PATTERN "*.gz")
     # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim
     # (hand-written; keys are language-neutral English lines / algorithmic entry ids).
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_templates.json" DESTINATION "Data")

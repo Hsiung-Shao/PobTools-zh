@@ -2,18 +2,19 @@
 // item modifier ("+# to maximum Life"), each ticked row its own term
 // "^\+?<number range> 最大生命$". Ported from exile-appraiser
 // `regex/src/pages/item-mods.ts` (step 37); every function names the TS line it
-// mirrors and regex_r7_golden.inc (that TS run over OUR data file) holds them to
+// mirrors and regex_r7_golden.inc (that TS run over the SAME data) holds them to
 // identical output.
 //
-// Data: NOT the trade site's stats.ndjson the TS reads -- the project's rule is
-// "GGPK first", so Data\regex_itemmods_<game>.json is produced from the GGPK by
-// the local tools/gen_regex_itemmods.py: one record per stat group (key = the
-// GGPK stat id, `ref` = the English template; lines tagged plain / negated /
-// fixed) plus `otherZh/otherEn`, every other line of the description files those
-// items print through (the uniqueness corpus). Parsed here into the same
-// StatLite shape item-mods.ts builds from stats.ndjson, then the same
-// buildItemModData. Consequence: this page's entry ids are GGPK stat ids, so its
-// share-code keys do not match exile-appraiser's (every other page's do).
+// Data (2026-10-09, user decision: share codes must interoperate on every page):
+// the very stats.ndjson exile-appraiser reads (data/<game>/{cmn-Hant,en}/, itself
+// a byte-for-byte copy of APT / EE2's stat table), shipped gzip-compressed as
+// Data\regex_stats\<game>\<lang>\stats.ndjson.gz (host/data/regex_stats/
+// MANIFEST.json records the source commit and the SHA-256 of the uncompressed
+// bytes). Entry ids are therefore trade-site stat ids ("stat_3299347043", or
+// "stat_…|<ref>" when two entries share one), the same keys exile-appraiser's
+// share codes and bookmarks carry. Until this change the page read a GGPK-made
+// Data\regex_itemmods_<game>.json keyed by GGPK stat ids ("base_maximum_life");
+// such keys no longer resolve and are reported (IsLegacyKey), never dropped.
 //
 // String semantics follow JavaScript: the algorithm runs on UTF-16 code units
 // (lengths, slices, the sort order, the 40 / 60 length caps), English is folded
@@ -65,10 +66,23 @@ struct StatLite {
 	std::vector<std::string> same;      // non-negated (fixed included)
 };
 
-// Data\regex_itemmods_<game>.json -> the two languages' StatLite lists
-// (tools/regex_port/r7-adapter.ts aStats, the exact same mapping).
-bool ParseFile(const std::string& body, std::vector<StatLite>& zh, std::vector<StatLite>& en,
-               std::string* err);
+// item-mods.ts:129 parseStatsNdjson (groups flattened, broken lines skipped).
+std::vector<StatLite> ParseStatsNdjson(const std::string& text);
+
+// Inflated stats.ndjson larger than this is refused (the real files are 0.9-2.6 MB).
+constexpr size_t kMaxStatsBytes = 64u << 20;
+
+// Data\regex_stats\<game>\<cmn-Hant|en>\stats.ndjson.gz, inflated. False + *err
+// ("找不到 stats 資料（…）" / "stats 資料損毀（…）") when missing or broken.
+bool LoadStatsText(const std::wstring& exeDir, const std::string& game, Lang lang, std::string& text,
+                   std::string* err);
+// Both languages, parsed (node.ts loadItemModData's two reads).
+bool LoadStats(const std::wstring& exeDir, const std::string& game, std::vector<StatLite>& zh,
+               std::vector<StatLite>& en, std::string* err);
+
+// A key this page wrote before it switched to trade stat ids: a GGPK stat id
+// such as "base_maximum_life" -- anything not shaped like a trade id (see .cpp).
+bool IsLegacyKey(const std::string& key);
 
 // item-mods.ts:401 ModAnchor (p / s in UTF-8; cost in UTF-16 units)
 struct ModAnchor {
@@ -121,7 +135,7 @@ struct Data {
 // item-mods.ts:497 buildItemModData
 Data BuildData(const std::string& game, const std::vector<StatLite>& zh, const std::vector<StatLite>& en);
 
-// Read + parse + build Data\regex_itemmods_<game>.json. False with *err on a
+// LoadStats + BuildData (node.ts:56 loadItemModData). False with *err on a
 // missing / broken file.
 bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, std::string* err);
 

@@ -8,8 +8,8 @@
 // by running share.ts / embed.ts / combine.ts over our Data files:
 //   * codes exile-appraiser produced decode here to the same JSON, and resolve /
 //     combine on our data to the same picks, values, misses and query strings;
-//   * codes from there carrying ITS item-mod page (trade stat ids) come back with
-//     every such key counted as missed, per page;
+//   * codes from there carrying its item-mod page resolve completely: since
+//     2026-10-09 both sides key that page by trade stat id (same stats.ndjson);
 //   * v1 legacy codes, normalizeShareState cases (state, warnings, errors) and
 //     damaged codes (accepted / refused) all match.
 // The other direction (codes made HERE decoded by exile-appraiser) needs Node:
@@ -611,16 +611,19 @@ void GoldenR8(std::map<std::string, Game>& G)
 			if (kind == "code") {
 				codes++;
 				byteSame += S::Encode(d.state) == code ? 1 : 0;
-				// exile-appraiser's item-mod page: every key it carries is reported as missed on that page
+				// exile-appraiser's item-mod page: every key it carries (trade stat ids) resolves here
 				if (label.find("b-item-mods") != std::string::npos) {
 					itemCodes++;
-					int keys = 0;
+					int keys = 0, picked = 0;
 					for (const auto& kv : d.state.pages)
 						if (IM::IsPageId(kv.first)) keys += (int)kv.second.size();
-					int reported = 0;
-					for (const auto& kv : res.missedByPage)
-						if (IM::IsPageId(kv.first)) reported = kv.second;
-					if (keys > 0 && reported == keys && res.missed == keys) itemMissOk++;
+					for (const auto& kv : res.picks)
+						if (IM::IsPageId(kv.first)) picked += (int)kv.second.size();
+					bool legacy = false;
+					for (const auto& kv : d.state.pages)
+						if (IM::IsPageId(kv.first))
+							for (const std::string& key : kv.second) legacy |= IM::IsLegacyKey(key);
+					if (keys > 0 && picked == keys && res.missed == 0 && res.missedByPage.empty() && !legacy) itemMissOk++;
 				}
 			}
 			Dump("re-encoded " + label, d.state);
@@ -674,7 +677,7 @@ void GoldenR8(std::map<std::string, Game>& G)
 		                                          u8" 筆與 TS 相同");
 	for (const std::string& m : failMsgs) line("      " + m);
 	check(itemCodes > 0 && itemMissOk == itemCodes,
-	      u8"exile-appraiser 物品詞綴頁的鍵（交易站 stat id）在這裡全部回報為找不到、歸在該頁：" + Num(itemMissOk) + " / " + Num(itemCodes) + u8" 組");
+	      u8"exile-appraiser 物品詞綴頁的鍵（交易站 stat id）在這裡全部還原、0 項找不到：" + Num(itemMissOk) + " / " + Num(itemCodes) + u8" 組");
 	line(u8"    同一狀態本工具重新編碼與 exile-appraiser 的碼逐位元組相同：" + Num(byteSame) + " / " + Num(codes) +
 	     u8"（JSON 逐字相同；gzip 標頭相同；deflate 位元組由 miniz 與 zlib 各自決定，不要求相同）");
 }
