@@ -6,6 +6,9 @@
 // the screen and the draw data may disagree.
 
 #include "frame_pacing.h"
+#include "live_resize.h"
+#include "tool_window.h"     // ToolZoom::Watch
+#include "launcher_config.h" // LauncherZoom
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -175,6 +178,73 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		check("P4h minimised overrides busy for the wait", Near(p.WaitSeconds(20.1), kIdleWait));
 	}
 
+	// P6 -- FirstShow: the hidden window appears with its first presented
+	// frame, exactly once, and never stays hidden past the limit.
+	{
+		FirstShow s;
+		s.Start(5.0);
+		check("P6 not before anything was presented", !s.Due(false, 5.3) && !s.Shown());
+		check("P6b a check point inside the limit keeps it hidden", !s.Due(false, 5.0 + kFirstShowLimit - 0.01));
+		check("P6c the pass that presented shows it", s.Due(true, 5.4) && s.Shown());
+		check("P6d and only once", !s.Due(true, 5.5) && !s.Due(false, 50.0));
+		FirstShow late;
+		late.Start(1.0);
+		check("P6e no present by the limit: shown anyway (no invisible process)",
+		      late.Due(false, 1.0 + kFirstShowLimit) && late.Shown());
+		check("P6f the present after that does not show it again", !late.Due(true, 4.0));
+		FirstShow slow;
+		slow.Start(0.0);
+		check("P6g a first present after a slow start is still the show", slow.Due(true, 10.0));
+		// The pacer always presents the first frame, so a loop that asks with
+		// ShouldRender's answer shows the window on its first pass.
+		Pacer p;
+		Frame f;
+		Inputs in;
+		in.now = 0.5;
+		p.BeginFrame(in.now);
+		FirstShow loop;
+		loop.Start(0.0);
+		check("P6h first loop pass: presented, therefore shown", loop.Due(p.ShouldRender(in, &f.data), 0.5));
+	}
+
+	// P7 -- LiveResize::Gate: a frame is drawn from the refresh callback only
+	// inside the system size/move loop, never on top of the main loop's own
+	// frame or deferred work (a dialog pumping messages), never re-entrantly.
+	{
+		using LiveResize::Gate;
+		Gate g;
+		check("P7 outside a size/move loop the callback does not draw", !g.BeginLive(false));
+		check("P7b inside one, between main-loop passes, it does", g.BeginLive(true) && g.InLive());
+		check("P7c not again while that live frame runs (re-entry)", !g.BeginLive(true));
+		g.EndLive();
+		check("P7d after it ends the next one may start", g.BeginLive(true));
+		g.EndLive();
+		check("P7e live frames are counted", g.LiveFrames() == 2);
+		g.EnterMain();
+		check("P7f never during the main loop's frame / deferred work", !g.BeginLive(true) && g.InMain());
+		g.EnterMain(); // a nested pump inside it (a dialog opened from RunDeferred)
+		g.LeaveMain();
+		check("P7g still blocked while the outer main pass is open", !g.BeginLive(true));
+		g.LeaveMain();
+		check("P7h main pass over: allowed again", !g.InMain() && g.BeginLive(true));
+		g.EndLive();
+		g.LeaveMain(); // unbalanced leave must not underflow into "allowed forever / never"
+		g.EnterMain();
+		check("P7i an extra LeaveMain cannot unlock a later main pass", !g.BeginLive(true));
+		g.LeaveMain();
+		{
+			Gate& mg = LiveResize::MainGate();
+			const bool before = mg.InMain();
+			{
+				LiveResize::MainScope scope;
+				check("P7j MainScope blocks live frames for its lifetime", mg.InMain() && !mg.BeginLive(true));
+			}
+			check("P7k and releases them when it ends", mg.InMain() == before);
+		}
+		// No window, no loop: the calling thread is not in a size/move loop.
+		check("P7l InSizeMoveLoop is false outside a drag", !LiveResize::InSizeMoveLoop());
+	}
+
 	// P5 -- ImGuiActivity() reads the real io, so it is checked against a real
 	// context, headless: no window, no renderer, input injected through the
 	// same event queue the GLFW backend feeds. Every branch of the OR gets a
@@ -243,6 +313,32 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		frame([] { ImGui::Begin("w"); ImGui::InputText("##t", text, sizeof(text)); ImGui::End(); });
 		check("P5l a focused text field is (caret must blink)", ImGuiActivity());
 		ImGui::DestroyContext(ctx);
+	}
+
+	// P8 -- a standalone tool window follows the launcher's font size
+	// (ToolZoom::Watch): a stat once a second, a re-read only when the ini was
+	// written, a rebuild only when FontSize itself changed.
+	{
+		using ToolZoom::Watch;
+		Watch w;
+		w.Start(10.0, 111, 19);
+		check("P8 not due inside the interval", !w.Due(10.0) && !w.Due(10.0 + ToolZoom::kPollInterval - 0.01));
+		check("P8b due once the interval has passed", w.Due(10.0 + ToolZoom::kPollInterval));
+		check("P8c a clock that went backwards is due", w.Due(9.0));
+		check("P8d same stamp: no re-read", !w.StampChanged(11.0, 111));
+		check("P8e and the interval restarts", !w.Due(11.5) && w.Due(12.0));
+		check("P8f a new stamp asks for a re-read", w.StampChanged(12.0, 222));
+		check("P8g other settings saved (FontSize unchanged): no rebuild", !w.Commit(222, 19) && w.FontSize() == 19);
+		check("P8h committed stamp is not re-read again", !w.StampChanged(13.0, 222));
+		check("P8i FontSize 19 -> 26: rebuild", w.StampChanged(14.0, 333) && w.Commit(333, 26) && w.FontSize() == 26);
+		check("P8j FontSize 26 -> 14: rebuild", w.StampChanged(15.0, 444) && w.Commit(444, 14) && w.FontSize() == 14);
+		// A read that raced a save is not committed by the caller: the stamp stays
+		// the old one, so the next poll sees a change and reads again.
+		check("P8k an uncommitted read is retried on the next poll", w.StampChanged(16.0, 555) && w.StampChanged(17.0, 555));
+		check("P8l ini gone (stamp 0) is a change, read as defaults", w.StampChanged(18.0, 0) && w.Commit(0, 19));
+		// The scale the window rebuilds at: content scale x the launcher's zoom.
+		check("P8m zoom at 14 / 19 / 26", Near(LauncherZoom(14), 14.0 / 19.0) && Near(LauncherZoom(19), 1.0) &&
+		      Near(LauncherZoom(26), 26.0 / 19.0));
 	}
 
 	line("");

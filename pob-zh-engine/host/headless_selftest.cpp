@@ -2069,6 +2069,22 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("one request can wait on POB's background work (a subscript finishes inside it: Share / import from link)",
 			      okSr && sr.contains("value") && sr["value"].is_number() && sr["value"].get<double>() == 42.0,
 			      sr.dump().substr(0, 200));
+			// "Open in PoB" (pob://): ONLINE -- a real poe.ninja button link (2026-10,
+			// Allflame ladder character), downloaded by POB's own DownloadBuild and
+			// decoded; a link that breaks the whitelist is refused before any download.
+			json fu, fuDec, fuBad, fuBad2;
+			const std::string ninjaUri =
+				"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp";
+			bool okFu = child.Call("import_from_uri", json{{"uri", ninjaUri}}, fu, 90000);
+			bool okFuDec = okFu && child.Call("decode_code", json{{"code", fu.value("code", "")}}, fuDec, 60000);
+			bool okFuBad = child.Call("import_from_uri", json{{"uri", "pob://poeninja/a\"b"}}, fuBad, 30000);
+			bool okFuBad2 = child.Call("import_from_uri", json{{"uri", "https://poe.ninja/x"}}, fuBad2, 30000);
+			check("import_from_uri: a real poe.ninja pob:// link downloads a decodable build (site PoeNinja); malformed links are refused",
+			      okFu && fu.value("site", "") == "PoeNinja" && fu.value("code", "").size() > 100 && okFuDec &&
+			          fuDec.value("level", 0) > 0 && !okFuBad && !okFuBad2 && child.Alive(),
+			      okFu ? ("site=" + fu.value("site", "") + " len=" + std::to_string(fu.value("code", "").size()) +
+			              " lvl=" + std::to_string(okFuDec ? fuDec.value("level", 0) : -1))
+			           : fu.dump().substr(0, 200));
 		}
 
 		// the loadout drop-down (Build.lua SyncLoadouts)
@@ -3014,6 +3030,21 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		bool okEx = child.Call("export_code", json::object(), ex, 60000);
 		bool okDec = okEx && child.Call("decode_code", json{{"code", ex.value("code", "")}}, dec, 60000);
 		check("export_code -> decode_code on a PoE2 build", okDec, dec.dump().substr(0, 200));
+		{
+			// "Open in PoB" (pob2://): ONLINE -- a real poe.ninja PoE2 button link
+			// (2026-10, Forbidden Rites ladder character) through POB2's DownloadBuild;
+			// PoE1's pob:// scheme is not this POB's and must fail.
+			json fu, fuDec, fuOther;
+			bool okFu = child.Call("import_from_uri",
+			                       json{{"uri", "pob2://poeninja/overview/code?account=perceptionofreality-7468&name=BABYROSHANCOM&overview=forbidden-rites"}},
+			                       fu, 90000);
+			bool okFuDec = okFu && child.Call("decode_code", json{{"code", fu.value("code", "")}}, fuDec, 60000);
+			bool okOther = child.Call("import_from_uri", json{{"uri", "pob://poeninja/overview/code?account=x&name=y"}}, fuOther, 60000);
+			check("PoE2 import_from_uri: a real poe.ninja pob2:// link downloads a decodable build; a pob:// (PoE1) link is not this POB's",
+			      okFu && fu.value("site", "") == "PoeNinja" && okFuDec && fuDec.value("level", 0) > 0 && !okOther && child.Alive(),
+			      okFu ? ("len=" + std::to_string(fu.value("code", "").size()) + " lvl=" + std::to_string(okFuDec ? fuDec.value("level", 0) : -1))
+			           : fu.dump().substr(0, 200));
+		}
 		json imp, stImp;
 		bool okImp = okDec && child.Call("import_code", json{{"code", ex.value("code", "")}, {"mode", "replace"}}, imp, 180000);
 		bool okStImp = okImp && child.Call("get_stats", json::object(), stImp, 30000);

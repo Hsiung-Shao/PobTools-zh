@@ -394,6 +394,7 @@ if (WIN32)
         # idle / minimised / unchanged-frame pacing of the ImGui loops
         host/frame_pacing.cpp
         host/frame_pacing_selftest.cpp
+        host/live_resize.cpp
         # POB window frame cap + performance log (engine code, tested headless here)
         host/pob_frame_cap.cpp
         host/perf_log.cpp
@@ -401,10 +402,16 @@ if (WIN32)
         host/launcher_config.cpp
         host/launcher_strings_io.cpp
         host/ui_theme.cpp
+        # launcher widgets from the design system (cards, rows, switches, toasts)
+        host/ui_icons_data.cpp
+        host/gl_shot.cpp
+        host/ui_widgets.cpp
         host/launcher_ui.cpp
         host/launcher_editor.cpp
         host/editor_data.cpp
         host/editor_selftest.cpp
+        host/trans_editor_logic.cpp
+        host/trans_editor_selftest.cpp
         host/paste_selftest.cpp
         # POB 執行時拼出來的物品名(「<標題>, <基底>」)的正向翻譯回歸
         host/item_name_selftest.cpp
@@ -413,6 +420,8 @@ if (WIN32)
         host/placeholder_selftest.cpp
         host/pob_launch.cpp
         host/bridge_gate.cpp
+        # pob:// / pob2:// "Open in PoB" links (HKCU registration + URI whitelist)
+        host/pob_protocol.cpp
         host/window_manager.cpp
         host/window_dock.cpp
         # the editor selftest asks the REAL loader what the engine would
@@ -422,6 +431,7 @@ if (WIN32)
         translate/startup_trace.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
+        host/filter_file_watch.cpp
         host/filter_selftest.cpp
         host/filter_schema.cpp
         host/filter_card_ui.cpp
@@ -494,10 +504,28 @@ if (WIN32)
         host/sig_verify.cpp
         # 搜尋字串產生器：核心 + 資料 + UI + 自檢
         host/regex_gen.cpp
+        host/regex_match.cpp
+        host/regex_numeric.cpp
+        host/regex_frag.cpp
+        host/regex_algo_pages.cpp
         host/regex_data.cpp
         host/regex_state.cpp
+        host/regex_folders.cpp
+        host/regex_embed.cpp
+        host/regex_itemmods.cpp
+        host/regex_share.cpp
+        host/regex_bookmarks_share.cpp
+        host/regex_send.cpp
         host/regex_tool_ui.cpp
         host/regex_selftest.cpp
+        host/regex_selftest_r3.cpp
+        host/regex_selftest_r4.cpp
+        host/regex_selftest_r5.cpp
+        host/regex_selftest_r7.cpp
+        host/regex_selftest_r8.cpp
+        host/regex_selftest_send.cpp
+        host/regex_selftest_r9.cpp
+        host/regex_selftest_parity.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
@@ -604,6 +632,18 @@ if (WIN32)
     # page with its game, so a PoE1 player can still read the PoE2 list.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe2.json" DESTINATION "Data")
+    # Label stand-ins for the numeric sections / vendor pages: exile-appraiser
+    # data/regex/labels.<game>.json verbatim; the catalogue's own `labels` win key by key.
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe1.json" DESTINATION "Data")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe2.json" DESTINATION "Data")
+    # Item-mod values page: exile-appraiser's stats.ndjson (trade stat ids, so share
+    # codes interoperate), gzip-compressed (6.8 MB -> 0.9 MB); loaded the first time the
+    # page is opened. Source commit and hashes: host/data/regex_stats/MANIFEST.json.
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_stats/" DESTINATION "Data/regex_stats"
+            FILES_MATCHING PATTERN "*.gz")
+    # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim
+    # (hand-written; keys are language-neutral English lines / algorithmic entry ids).
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_templates.json" DESTINATION "Data")
     # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
     # which is gitignored and has no install rule -- so a `cmake --install` into a
     # fresh prefix, or any cleanup of dist\, silently lost it. Nothing reported the

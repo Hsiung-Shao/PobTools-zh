@@ -35,6 +35,10 @@ struct FilterLine {
 	std::vector<FilterToken> values;
 	std::string trailingComment;  // trailing " # ..." kept verbatim (leading spaces + '#' included)
 	bool dirty = false;           // true -> rebuild from fields; false -> emit raw
+	// Stable identity given by FilterDocumentEditor (0 = not yet assigned). It
+	// survives value edits, #! disabling and restoring, so a line can be matched
+	// with what the file said when it was loaded. Never serialized.
+	unsigned uid = 0;
 };
 
 struct FilterBlock {

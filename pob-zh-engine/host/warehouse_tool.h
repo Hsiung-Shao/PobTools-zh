@@ -16,17 +16,28 @@ IToolPanel* CreateWarehousePanel();
 // What a host embedding the revenue panel adds -- the atlas planner's 收益 and
 // 設定 tabs. Every member is optional.
 struct WarehouseEmbed {
-	// Both drawn inside the panel's frame and ID scope. topCard is a first card
-	// in the revenue page's top row (the project's per-map cost), bordered and
-	// sized like the other two; topCardHeight says how tall its content wants
-	// to be, and the row takes the tallest. settingsBottom closes the settings
-	// page's left column (the revenue-record buttons).
+	// Both drawn inside the panel's frame and ID scope. topCard fills a card
+	// beside the revenue page's 主要增減 (the project's per-map cost): the panel
+	// draws the card itself (PobUi::CardBegin, padded) and calls this for its
+	// content, which lays itself out in PobUi::CardInnerWidth(). The card's
+	// height follows that content. settingsBottom closes the settings page's
+	// left column (the revenue-record buttons).
 	std::function<void()> topCard, settingsBottom;
+	// Unused since the 2026-10-08 redesign (the card is as tall as its content);
+	// kept so an older host still compiles.
 	std::function<float()> topCardHeight;
+	// The right end of the revenue page's action row (the atlas planner's
+	// 「綁定到「方案」」 button and its dialog). topBarWidth says how wide it is,
+	// so the panel can right-align it; topBar draws it from the cursor.
+	std::function<void()> topBar;
+	std::function<float()> topBarWidth;
 	// Set: the host's own tab bar picks the page (0 = 收益, 1 = 說明, 2 = 設定;
 	// anything else reads as 收益) and the panel draws no tab bar of its own.
 	// Null: the panel offers 「收益 / 說明 / 設定」 itself.
 	const int* page = nullptr;
+	// With `page` set: how the panel asks the host to show another page (the
+	// 「前往設定」 action of a setup banner). Null = the banner has no action.
+	std::function<void(int)> goPage;
 };
 
 // CreateWarehousePanel() keeps its plain signature: the launcher and the panel

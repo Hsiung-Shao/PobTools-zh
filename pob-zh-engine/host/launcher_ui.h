@@ -11,6 +11,7 @@ enum class LauncherResult {
 	// (filter editor / atlas planner / timeless jewel spawn as child processes
 	// inside the launcher loop — no result values; the window stays open)
 	ApplyAppUpdate,    // updater staged a new version; caller must swap + relaunch
+	Relaunch,          // "restart now" after the window mode changed: show the launcher again
 	Quit,              // window closed (or UI could not be created)
 };
 

@@ -16,6 +16,7 @@
 
 #include "filter_model.h"
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Durable reference to a block across structural mutations: blocks[] indices are
@@ -29,9 +30,17 @@ struct BlockAnchor {
 	bool valid() const { return headerLineIdx >= 0; }
 };
 
+// How a block compares with the baseline (the file as last loaded or saved).
+enum class BlockChange {
+	Same,       // byte-identical to the baseline
+	Modified,   // the block existed and its lines differ
+	Added,      // no baseline block (a new custom rule, an import)
+};
+
 class FilterDocumentEditor {
 public:
-	void Attach(FilterFile* f) { f_ = f; version_++; }
+	// Attaching drops any baseline (it belonged to the previous file).
+	void Attach(FilterFile* f) { f_ = f; version_++; ClearBaseline(); AssignUids(); }
 	FilterFile* file() { return f_; }
 	const FilterFile* file() const { return f_; }
 
@@ -95,9 +104,50 @@ public:
 	void RebuildBlocks();
 	unsigned structureVersion() const { return version_; }
 
+	// ---- baseline: "what the file on disk says" ----------------------------
+	// A snapshot of every block's own lines (header through its last syntax or
+	// "#!" line; the blank / comment gap before the next block is not part of
+	// it), keyed by the header line's uid. Taken after a load or a save. It never
+	// touches the lines themselves, so serialization is unaffected.
+	void CaptureBaseline();
+	void ClearBaseline();
+	bool HasBaseline() const { return hasBaseline_; }
+	BlockChange BlockState(int blockIdx) const;
+	// The baseline version of a current line (matched by uid); nullptr when the
+	// line is new or there is no baseline.
+	const FilterLine* BaselineLine(int lineIdx) const;
+	// The line differs from its baseline version (a new line counts as changed).
+	bool LineChanged(int lineIdx) const;
+	// Put a Modified block's lines back to the baseline (a data-layer mutation:
+	// structural, version bumped). Returns the block's index afterwards, -1 when
+	// the block has no baseline. Clears model.dirty when the whole file then
+	// matches the baseline again.
+	int RestoreBlock(int blockIdx);
+	// Baseline blocks that no longer exist (a deleted custom rule).
+	int RemovedBaselineBlocks() const;
+	// Unsaved changes as the editor counts them: modified + added + removed
+	// blocks. With settle, a file whose edits were all undone by hand (dirty but
+	// byte-identical to the baseline) is marked clean and reports 0.
+	int UnsavedBlockCount(bool settle);
+	// The whole file serializes to the baseline's bytes.
+	bool MatchesBaseline() const;
+
 private:
+	// Index of the last line that belongs to the block itself.
+	int BodyEnd(int blockIdx) const;
+	void AssignUids();
+
 	FilterFile* f_ = nullptr;
 	unsigned version_ = 0;
 	int batchDepth_ = 0;
 	bool pendingRebuild_ = false;
+	unsigned nextUid_ = 1;
+
+	struct BaseBlock { std::vector<FilterLine> body; };   // clean copies
+	bool hasBaseline_ = false;
+	std::unordered_map<unsigned, BaseBlock> base_;        // header uid -> block
+	std::unordered_map<unsigned, const FilterLine*> baseLine_;  // line uid -> its copy
+	std::string baseText_;                                 // SerializeFilter at capture
+	unsigned settleCheckedAt_ = ~0u;                       // UnsavedBlockCount's memo
+	bool settleMatched_ = false;
 };

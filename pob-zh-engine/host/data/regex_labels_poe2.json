@@ -1,0 +1,50 @@
+{
+ "schema": 1,
+ "game": "poe2",
+ "source": "pob-zh-engine tools/ggpk2_zh/out/poe2/tables/clientstrings.json(clientstrings,欄 Text;meta game_version 4.5.5.2)",
+ "note": "暫代檔:PobTools regex_poe*.json 升到 schema 2 自帶 labels 後,regex/src/data.ts 優先讀資料檔內的 labels。{0} 已換成 #。",
+ "labels": {
+  "zh": {
+   "ItemDisplayMapTier": "換界石階級",
+   "ItemDisplayMapItemRarity": "物品稀有度",
+   "ItemDisplayMapPack": "怪群大小",
+   "ItemDisplayMapMonsterRarity": "怪物稀有度",
+   "ItemDisplayMapWaystoneDropChance": "換界石掉落機率",
+   "ItemDisplayMapMagicMonsterQuantityBonus": "魔法怪物",
+   "ItemDisplayMapRareMonsterQuantityBonus": "稀有怪物",
+   "ItemDisplayMapExperienceGained": "獲得經驗值",
+   "ItemDisplayMapMonsterEffectiveness": "怪物效能",
+   "ItemLevelPopup": "物品等級 #",
+   "Quality": "品質",
+   "ItemDisplayStringSockets": "插槽",
+   "ItemPopupCorrupted": "已汙染",
+   "Level": "等級",
+   "ItemDisplayStringRarity": "稀有度",
+   "ItemDisplayStringNormal": "中",
+   "ItemDisplayStringMagic": "魔法",
+   "ItemDisplayStringRare": "稀有",
+   "ItemDisplayStringUnique": "傳奇"
+  },
+  "en": {
+   "ItemDisplayMapTier": "Waystone Tier",
+   "ItemDisplayMapItemRarity": "Item Rarity",
+   "ItemDisplayMapPack": "Pack Size",
+   "ItemDisplayMapMonsterRarity": "Monster Rarity",
+   "ItemDisplayMapWaystoneDropChance": "Waystone Drop Chance",
+   "ItemDisplayMapMagicMonsterQuantityBonus": "Magic Monsters",
+   "ItemDisplayMapRareMonsterQuantityBonus": "Rare Monsters",
+   "ItemDisplayMapExperienceGained": "Experience Gained",
+   "ItemDisplayMapMonsterEffectiveness": "Monster Effectiveness",
+   "ItemLevelPopup": "Item Level #",
+   "Quality": "Quality",
+   "ItemDisplayStringSockets": "Sockets",
+   "ItemPopupCorrupted": "Corrupted",
+   "Level": "Level",
+   "ItemDisplayStringRarity": "Rarity",
+   "ItemDisplayStringNormal": "Normal",
+   "ItemDisplayStringMagic": "Magic",
+   "ItemDisplayStringRare": "Rare",
+   "ItemDisplayStringUnique": "Unique"
+  }
+ }
+}

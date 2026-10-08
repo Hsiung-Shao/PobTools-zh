@@ -34,6 +34,10 @@ struct RenamePlanEntry {
 	std::vector<int> refLines;         // CustomAlertSound lines referencing oldName
 };
 
+// "6maps (1).mp3": the " (n)" a browser adds when it saves a second copy of a
+// file. A filter references the plain name, so such a file never plays.
+bool SoundNameHasDownloadSuffix(const std::wstring& fileName);
+
 // Rules <-> json text (pure, for tests and Save/LoadRules).
 std::string SoundRulesToJson(const std::vector<NamingRule>& rules);
 bool SoundRulesFromJson(const std::string& text, std::vector<NamingRule>* out);
@@ -52,6 +56,9 @@ class SoundLibraryService {
 public:
 	// Reads the folder from pob-zh.ini and the rules from Data\sound_rules.json.
 	void Init(const std::wstring& exeDir);
+	// A test run: this folder, nothing persisted (SetFolder / SaveRules write
+	// neither pob-zh.ini nor Data\sound_rules.json).
+	void InitForTest(const std::wstring& exeDir, const std::wstring& folder);
 
 	const std::wstring& folder() const { return folder_; }
 	void SetFolder(const std::wstring& folder);   // persists to ini + rescans
@@ -81,6 +88,7 @@ public:
 
 private:
 	std::wstring exeDir_, folder_;
+	bool readOnly_ = false;
 	std::vector<SoundFileInfo> files_;
 	std::vector<NamingRule> rules_;
 };

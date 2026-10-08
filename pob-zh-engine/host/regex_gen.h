@@ -109,6 +109,16 @@ struct Options {
 	// '^' and '$' anchor to the ends of one printed line, which is often what
 	// makes a token unique at all ("r damage$" beats spelling out the phrase).
 	bool anchors = true;
+	// Build the token indexes that Build() reads. Off for a corpus that is only
+	// ever asked to Verify() -- the merged view's union of several pages, which
+	// would otherwise re-index every page it contains each time the set of
+	// ticked pages changes (half a second and more with a gem list in it).
+	// Build() on a corpus prepared without them returns an empty Result.
+	bool index = true;
+	// Index hidden and ambient text only for tokens some entry prints (the only
+	// tokens Build() ever looks up). Off = index all of it, which gives the same
+	// answers far more slowly; --regex-selftest builds both and compares.
+	bool pruneHidden = true;
 };
 
 struct Result {

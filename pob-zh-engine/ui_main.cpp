@@ -600,6 +600,10 @@ void ui_main_c::Frame()
 		if (perf->SecondDue()) perf->Tick(PerfLog::SampleProcess());
 	}
 
+	// A refused close (save question) waiting for its answer; before the idle
+	// gate so a cancel is reported even if POB then sits in the background.
+	PollExitPending();
+
 	// Always runs 10 frames after finishing the boot process
 	if (headless) {
 		// Pacing belongs to the host's request stream (sys_main.cpp's headless
@@ -847,7 +851,56 @@ bool ui_main_c::CanExit()
 		ret = !!lua_toboolean(L, -1);
 		lua_pop(L, 1);
 	}
+#ifdef _WIN32
+	// Refused = POB asked "save changes?" (Build.lua buildMode:CanExit). Tell
+	// whoever sent the close (the pob:// link handler) that an answer is
+	// pending; PollExitPending reports a cancel. Cancelled is cleared FIRST so a
+	// watcher that saw Pending can trust any Cancelled that follows.
+	if (!ret && !headless && sys->video->nativeWindow) {
+		HWND hwnd = (HWND)sys->video->nativeWindow;
+		RemovePropW(hwnd, L"PobTools.ExitCancelled");
+		SetPropW(hwnd, L"PobTools.ExitPending", (HANDLE)1);
+		exitPending = true;
+	}
+#endif
 	return ret;
+}
+
+// While a refused close is pending: once POB has no popup left and is still
+// running (no Exit(), no restart), the user chose Cancel -- on the save
+// question or on the Save As dialog that "Save" opens for a never-saved build.
+// Only reads Lua tables (launch.main.popups); calls nothing in POB. When the
+// table is not where it is expected, nothing is reported (the watcher keeps
+// waiting) rather than a false "cancelled".
+void ui_main_c::PollExitPending()
+{
+#ifdef _WIN32
+	if (!exitPending || !L || didExit || restartFlag || !sys->video->nativeWindow) return;
+	const int top = lua_gettop(L);
+	bool known = false, popupOpen = true;
+	lua_getfield(L, LUA_REGISTRYINDEX, "uicallbacks");
+	if (lua_istable(L, -1)) {
+		lua_getfield(L, -1, "MainObject");
+		if (lua_istable(L, -1)) {
+			lua_getfield(L, -1, "main");
+			if (lua_istable(L, -1)) {
+				lua_getfield(L, -1, "popups");
+				if (lua_istable(L, -1)) {
+					known = true;
+					lua_rawgeti(L, -1, 1);
+					popupOpen = !lua_isnil(L, -1);
+				}
+			}
+		}
+	}
+	lua_settop(L, top);
+	if (known && !popupOpen) {
+		exitPending = false;
+		HWND hwnd = (HWND)sys->video->nativeWindow;
+		SetPropW(hwnd, L"PobTools.ExitCancelled", (HANDLE)1);
+		RemovePropW(hwnd, L"PobTools.ExitPending");
+	}
+#endif
 }
 
 // ==============

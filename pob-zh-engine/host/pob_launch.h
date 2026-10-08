@@ -109,8 +109,12 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua);
 // `outPid` receives the new process id. Callers that need it must take it from
 // here rather than fishing the last entry out of RunningInstances(): that list is
 // reaped and re-ordered, so "the one I just started" is an assumption, not a fact.
+//
+// `uri` (optional) is an "Open in PoB" link (pob:// / pob2://): it becomes the
+// engine's arg[1], which POB's Main.lua downloads and imports. It is passed on
+// only if PobProtocol::ParsePobUri accepts it.
 bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
-                      unsigned long* outPid = nullptr);
+                      unsigned long* outPid = nullptr, const std::wstring& uri = std::wstring());
 
 // Start one of the tool windows (--atlas / --filter-editor / --timeless-jewel /
 // --regex / --warehouse / --translation-editor) and track it the same way. The child

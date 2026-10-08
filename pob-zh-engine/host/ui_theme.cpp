@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstring>   // memcmp, for the style round-trip check
+#include <type_traits>
 
 namespace {
 
@@ -20,6 +21,18 @@ bool Near(float a, float b)
 } // namespace
 
 namespace PobUi {
+
+static_assert(std::is_same<ImWchar, unsigned short>::value, "SymbolGlyphRanges assumes a 16-bit ImWchar");
+
+const unsigned short* SymbolGlyphRanges()
+{
+	static const ImWchar ranges[] = {
+		0x2190, 0x21FF,   // Arrows (⇐ in the regex conflict list)
+		0x2200, 0x22FF,   // Mathematical Operators (≥ ≤ in the regex tool)
+		0,
+	};
+	return ranges;
+}
 
 void ApplyTheme(float scale, Density density)
 {
@@ -147,22 +160,39 @@ void PopButtonStyle()
 	ImGui::PopStyleColor(4);
 }
 
+std::uint32_t TreeKindColor(TreeKind kind)
+{
+	switch (kind) {
+		case TreeKind::Keystone: return Tok::TreeKeystone;
+		case TreeKind::Wormhole: return Tok::TreeWormhole;
+		case TreeKind::Notable:  return Tok::TreeNotable;
+		case TreeKind::Socket:   return Tok::TreeSocket;
+		default:                 return Tok::TreeSmall;
+	}
+}
+
+ImVec4 TokV4(std::uint32_t c)
+{
+	return ImGui::ColorConvertU32ToFloat4(c);
+}
+
 ImVec4 Accent()
 {
-	return Rgba(99, 102, 241);
+	return TokV4(Tok::Accent);
 }
 
 ImVec4 MutedText()
 {
-	return Rgba(136, 153, 162);
+	return TokV4(Tok::TextMuted);
 }
 
+// The design system's three status colours, one meaning each.
 ImVec4 StatusColor(StatusTone tone)
 {
 	switch (tone) {
-		case StatusTone::Success: return Rgba(102, 211, 143);
-		case StatusTone::Warning: return Rgba(232, 181, 91);
-		case StatusTone::Error:   return Rgba(239, 105, 111);
+		case StatusTone::Success: return TokV4(Tok::Success);
+		case StatusTone::Warning: return TokV4(Tok::Warning);
+		case StatusTone::Error:   return TokV4(Tok::Danger);
 		default:                  return MutedText();
 	}
 }
@@ -241,6 +271,39 @@ bool RunThemeSelfTest()
 		BuildStyle(b, 1.25f, Density::Canvas);   // same inputs, already-filled target
 		BuildStyle(b, 1.25f, Density::Canvas);
 		ok = ok && sameStyle(a, b);
+	}
+	// The tokens are the colours BuildStyle already used for the same jobs: a
+	// drift between the two would mean a card drawn from the tokens no longer
+	// matches the child window it sits next to.
+	{
+		ImGuiStyle t;
+		BuildStyle(t, 1.0f, Density::Comfortable);
+		auto same = [](const ImVec4& v, std::uint32_t c) {
+			const ImVec4 w = ImGui::ColorConvertU32ToFloat4(c);
+			return Near(v.x, w.x) && Near(v.y, w.y) && Near(v.z, w.z) && Near(v.w, w.w);
+		};
+		ok = ok && same(t.Colors[ImGuiCol_WindowBg], Tok::Bg) &&
+		     same(t.Colors[ImGuiCol_ChildBg], Tok::Surface1) &&
+		     same(t.Colors[ImGuiCol_FrameBg], Tok::Surface2) &&
+		     same(t.Colors[ImGuiCol_FrameBgHovered], Tok::Surface3) &&
+		     same(t.Colors[ImGuiCol_Border], Tok::Border) &&
+		     same(t.Colors[ImGuiCol_Text], Tok::Text) &&
+		     same(t.Colors[ImGuiCol_TextDisabled], Tok::TextMuted) &&
+		     same(t.Colors[ImGuiCol_CheckMark], Tok::Accent);
+		// status colours come from the tokens, nowhere else
+		ok = ok && same(StatusColor(StatusTone::Success), Tok::Success) &&
+		     same(StatusColor(StatusTone::Warning), Tok::Warning) &&
+		     same(StatusColor(StatusTone::Error), Tok::Danger) &&
+		     same(Accent(), Tok::Accent) && same(MutedText(), Tok::TextMuted);
+		// packing: R in the low byte, like IM_COL32
+		ok = ok && Tok::Bg == IM_COL32(0x0b, 0x10, 0x14, 0xff) &&
+		     Tok::Scrim == IM_COL32(0, 0, 0, 0xa0) && Tok::TreeHit == Tok::TreeNotable;
+		// one colour per node kind, all distinct (a list stripe has to tell them apart)
+		ok = ok && TreeKindColor(TreeKind::Keystone) == Tok::TreeKeystone &&
+		     TreeKindColor(TreeKind::Notable) == Tok::TreeNotable &&
+		     TreeKindColor(TreeKind::Wormhole) != TreeKindColor(TreeKind::Small) &&
+		     TreeKindColor(TreeKind::Wormhole) != TreeKindColor(TreeKind::Notable) &&
+		     TreeKindColor(TreeKind::Small) != TreeKindColor(TreeKind::Keystone);
 	}
 	ImGui::DestroyContext();
 	return ok;

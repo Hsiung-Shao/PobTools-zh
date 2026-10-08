@@ -1,19 +1,44 @@
 #include "regex_selftest.h"
 
 #include "regex_data.h"
+#include "regex_frag.h"
 #include "regex_gen.h"
+#include "regex_match.h"
+#include "regex_numeric.h"
 #include "regex_state.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include <json.hpp>   // nlohmann (deps/nlohmann): parses the golden fixture
 
 using RegexGen::Corpus;
 using RegexGen::Entry;
 using RegexGen::Mode;
+
+// regex_selftest_r3.cpp: the R3 part (numeric section, vendor page, single-page output).
+void RegexR3Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r4.cpp: the R4 part (multi-page merge, custom text, excludes).
+void RegexR4Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r5.cpp: the R5 / R6 part (state schema 5, bookmark folders, bookmark snapshots).
+void RegexR5Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r7.cpp: the R7 part (item-mod values page).
+void RegexR7Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r8.cpp: the R8 part (share codes + templates).
+void RegexR8Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_send.cpp: "送到 ExileAppraiser" (locator, command line, temp files).
+void RegexSendTests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r9.cpp: bookmark packs (送到 ExileAppraiser / 匯入書籤包).
+void RegexR9Tests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_parity.cpp: the literal vectors of exile-appraiser's own tests.
+void RegexParityTests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
 namespace {
 
@@ -582,7 +607,7 @@ void DataTests(const std::wstring& exeDir)
 		// the other, hidden text following whichever the entry ended up in.
 		// `full` = false leaves the hidden and ambient text out, which is only
 		// used to report how much of the page they cost.
-		auto build = [&](bool full) {
+		auto build = [&](bool full, const RegexGen::Options& opt = RegexGen::Options{}) {
 			std::vector<Entry> es;
 			es.reserve(p.entries.size());
 			for (const RegexEntryDef& d : p.entries) {
@@ -604,10 +629,23 @@ void DataTests(const std::wstring& exeDir)
 				amb.nameRight = useZh ? p.nameSuffixZh : p.nameSuffixEn;
 			}
 			Corpus c;
-			c.Reset(std::move(es), std::move(amb));
+			c.Reset(std::move(es), std::move(amb), opt);
 			return c;
 		};
+		// Timed because this is what the panel pays, on the UI thread, the first
+		// time a page is opened (and again after switching the output language).
+		// Reported, not asserted: it is a property of the machine as much as of
+		// the code. The gem lists were 0.3-0.9 s before 2026-10-08.
+		LARGE_INTEGER qf, q0, q1;
+		QueryPerformanceFrequency(&qf);
+		QueryPerformanceCounter(&q0);
 		Corpus c = build(true);
+		QueryPerformanceCounter(&q1);
+		{
+			char buf[64];
+			snprintf(buf, sizeof buf, "%.1f", (double)(q1.QuadPart - q0.QuadPart) * 1000.0 / (double)qf.QuadPart);
+			line(std::string("        corpus prepared in ") + buf + " ms");
+		}
 		Corpus bare = build(false);
 
 		// Shape of the new fields. Every page carries the lines its items all
@@ -706,6 +744,46 @@ void DataTests(const std::wstring& exeDir)
 			const char* names[3] = {"Any", "None", "All"};
 			check(bad == 0, std::string(names[mi]) + ": " + std::to_string(kRounds) +
 			      " random picks round-trip" + (bad ? " -- " + firstWhy : ""));
+		}
+
+		// The two shortcuts that keep opening a page and ticking in the merged
+		// view instant (2026-10-08): hidden / ambient text indexed only for
+		// tokens some entry prints, and the merged view's union corpus built
+		// without indexes at all. Each against the slow reference, pick for pick:
+		// the shortcut is only allowed to be faster, never different.
+		{
+			RegexGen::Options fullOpt;
+			fullOpt.pruneHidden = false;
+			RegexGen::Options verifyOnly;
+			verifyOnly.index = false;
+			const Corpus ref = build(true, fullOpt);
+			const Corpus vo = build(true, verifyOnly);
+			int diffBuild = 0, diffVerify = 0;
+			std::string firstDiff;
+			const int rounds = (int)p.entries.size() > 1000 ? 20 : 40;
+			for (int mi = 0; mi < 3; mi++) {
+				Rng rng{0xD1FFu + (unsigned)mi * 104729u};
+				for (int round = 0; round < rounds; round++) {
+					const int n = 1 + rng.below(6);
+					std::vector<int> sel;
+					for (int k = 0; k < n; k++) sel.push_back(rng.below((int)p.entries.size()));
+					const RegexGen::Result a = c.Build(sel, modes[mi]);
+					const RegexGen::Result b = ref.Build(sel, modes[mi]);
+					if (a.query != b.query || a.unresolved != b.unresolved || a.tokens != b.tokens) {
+						if (!diffBuild && firstDiff.empty()) firstDiff = a.query + " vs " + b.query;
+						diffBuild++;
+					}
+					const RegexGen::Check va = c.Verify(sel, a.query);
+					const RegexGen::Check vb = vo.Verify(sel, a.query);
+					if (va.ok != vb.ok || va.missing != vb.missing || va.extra != vb.extra || va.ambient != vb.ambient) {
+						if (firstDiff.empty()) firstDiff = "verify " + a.query;
+						diffVerify++;
+					}
+				}
+			}
+			check(diffBuild == 0 && diffVerify == 0 && vo.Build({0}, Mode::Any).query.empty(),
+			      "pruned hidden index == full index, and a verify-only corpus verifies the same (" +
+			      std::to_string(rounds * 3) + " random picks)" + (firstDiff.empty() ? "" : " -- " + firstDiff));
 		}
 
 		// How often the shortening actually pays, and whether a realistic pick
@@ -829,6 +907,837 @@ void DataTests(const std::wstring& exeDir)
 	}
 }
 
+// ---- R1/R2: the exile-appraiser port (regex_match / regex_numeric / regex_frag)
+
+#include "regex_port_golden.inc"
+
+using RegexFrag::AlgoValue;
+using RegexNumeric::NumRange;
+
+std::optional<double> Opt(int v) { return v < 0 ? std::nullopt : std::optional<double>(v); }
+
+// cond: min / max as ints, -1 = absent
+AlgoValue Val(int mn, int mx)
+{
+	AlgoValue v;
+	v.min = Opt(mn);
+	v.max = Opt(mx);
+	return v;
+}
+
+std::string Num(int n) { return std::to_string(n); }
+
+// 1 = match, 0 = no match, -1 = compile error, -2 = aborted
+int RxRun(const std::string& pat, const std::string& text, RxFlags f = {})
+{
+	std::string err;
+	std::optional<Rx> rx = RxCompile(pat, &err, f);
+	if (!rx) return -1;
+	RxStatus st = RxSearchEx(*rx, text);
+	return st == RxStatus::Match ? 1 : st == RxStatus::NoMatch ? 0 : -2;
+}
+
+std::string Quote(const std::string& s)
+{
+	std::string out = "\"";
+	for (char c : s) {
+		if (c == '\n') out += "\\n";
+		else if (c == '\r') out += "\\r";
+		else if (c == '\t') out += "\\t";
+		else if ((unsigned char)c < 0x20) { char b[8]; snprintf(b, sizeof b, "\\x%02x", (unsigned char)c); out += b; }
+		else out += c;
+	}
+	return out + "\"";
+}
+
+void MatcherTests()
+{
+	line("[R1] regex matcher (regex_match.h): syntax, case, UTF-8, errors, limits");
+	struct Case { const char* pat; const char* text; int want; };
+	const Case cases[] = {
+		// literals, '.', alternation, groups
+		{"abc", "xabcx", 1}, {"^abc$", "xabc", 0}, {"a.c", "abc", 1}, {"a.c", "a\nc", 0},
+		{"a|b|c", "zzc", 1}, {"(a|ab)c", "abc", 1}, {"(?:x|y)+z", "xyxz", 1}, {"(?:x|y)+z", "z", 0},
+		{"a||b", "", 1}, {"(?:)", "", 1},
+		// quantifiers
+		{"a{2}", "aa", 1}, {"^a{2}$", "aaa", 0}, {"^a{2,}$", "aaaa", 1}, {"^a{2,3}$", "aaaa", 0},
+		{"^a{0}b$", "b", 1}, {"^a?b$", "b", 1}, {"^a*$", "", 1}, {"^a+$", "", 0},
+		{"a*?b", "aaab", 1}, {"^(?:ab)?c$", "abc", 1}, {"^(?:a+){2,}$", "a", 0}, {"^(?:a+){2,}$", "aa", 1},
+		{"^(?:a{0,2}){3}c$", "aaaaaac", 1}, {"^(?:a{0,2}){3}c$", "aaaaaaac", 0},
+		// Annex B literals
+		{"a{,3}", "a{,3}", 1}, {"a{", "a{", 1}, {"a{2", "a{2", 1}, {"]", "]", 1}, {"}", "}", 1},
+		// classes
+		{"[a-c]+", "zzb", 1}, {"^[^0-9]$", "5", 0}, {"^[^0-9]$", "x", 1}, {"[\\d-z]", "-", 1},
+		{"[]", "a", 0}, {"[^]", "\n", 1}, {"[\\]]", "]", 1}, {"^[a\\-z]$", "-", 1}, {"^[a\\-z]$", "b", 0},
+		{"[\\b]", "\b", 1}, {"^[\\s\\S]$", "\n", 1}, {"^[\\D]$", "5", 0}, {"^[^\\D]$", "5", 1},
+		// escapes
+		{"\\d+", "x12", 1}, {"^\\D$", "5", 0}, {"\\s", u8"a　b", 1}, {"\\s", u8"a b", 1},
+		{"^\\S$", " ", 0}, {"^\\w+$", "a_9", 1}, {"\\W", "abc", 0}, {"\\x41", "A", 1}, {"\\u4e2d", u8"中", 1},
+		{"\\+\\)\\.", "+).", 1}, {"\\t", "\t", 1}, {"^\\cA$", "\x01", 1}, {"\\c", "\\c", 1}, {"\\q", "q", 1},
+		// word boundaries, lookahead
+		{"\\bfoo\\b", "a foo b", 1}, {"\\bfoo\\b", "afoo", 0}, {"\\Bfoo", "xfoo", 1},
+		{"(?=a)a", "a", 1}, {"(?!a).", "a", 0}, {"ab(?=c)", "abd", 0}, {"^(?:(?!b).)*$", "acd", 1},
+		// the ES empty-iteration rule (these would loop forever without it)
+		{"(a*)*b", "aaab", 1}, {"(a|)*c", "c", 1}, {"^(a*)*$", "aaa", 1},
+		// case-insensitive (ASCII)
+		{"FIRE", "fire", 1}, {"fire", "FIRE Damage", 1}, {"[A-Z]", "q", 1}, {"[^a]", "A", 0}, {"^[a-c]$", "B", 1},
+		// UTF-8: one code point per '.'
+		{"^.$", u8"中", 1}, {"^..$", u8"中", 0}, {u8"中.文", u8"中X文", 1}, {u8"[^中]", u8"中", 0},
+		{u8"[:：]", u8"：", 1}, {u8"階級 *16）", u8"地圖（階級16）", 1}, {u8"階級 *16）", u8"地圖（階級 16）", 1},
+		{u8"^(中|文)+$", u8"文中文", 1}, {u8"[一-龥]", u8"x字y", 1},
+		// anchors
+		{"^$", "", 1}, {"^$", "a", 0}, {"a$|^b", "ba", 1}, {"a$|^b", "ab", 0},
+	};
+	int bad = 0;
+	std::string first;
+	for (const Case& c : cases) {
+		int got = RxRun(c.pat, c.text);
+		if (got != c.want) {
+			if (!bad) first = std::string(c.pat) + " vs " + Quote(c.text) + " -> " + std::to_string(got);
+			bad++;
+		}
+	}
+	check(bad == 0, std::to_string(sizeof cases / sizeof cases[0]) + " syntax cases" +
+	      (bad ? " -- " + std::to_string(bad) + " wrong, first " + first : std::string()));
+
+	{
+		RxFlags cs;
+		cs.icase = false;
+		RxFlags dot;
+		dot.dotAll = true;
+		check(RxRun("A", "a", cs) == 0 && RxRun("A", "A", cs) == 1 && RxRun("[A-Z]", "q", cs) == 0,
+		      "icase = false is case-sensitive");
+		check(RxCanonicalize(U'a') == U'A' && RxCanonicalize(0x00B5) == 0x039C && RxCanonicalize(0x00FF) == 0x0178 &&
+		      RxCanonicalize(0x00DF) == 0x00DF && RxCanonicalize(0x017F) == 0x017F && RxCanonicalize(0x212A) == 0x212A &&
+		      RxCanonicalize(0x01C5) == 0x01C4 && RxCanonicalize(0x4E2D) == 0x4E2D,
+		      "Canonicalize: a->A, micro->Greek Mu, y-diaeresis->U+0178; sharp s, long s, Kelvin unchanged; Dz titlecase->DZ");
+		check(RxRun(u8"µ", u8"μ") == 1 && RxRun(u8"[ä]", u8"Ä") == 1 && RxRun(u8"É", u8"é") == 1 &&
+		      RxRun(u8"[Ａ-Ｚ]", u8"ｑ") == 1 && RxRun("k", u8"K") == 0 && RxRun("s", u8"ſ") == 0,
+		      "non-ASCII case folding follows JS (and k/s never meet Kelvin/long s)");
+		check(RxRun("a.c", "a\nc", dot) == 1 && RxRun("a.c", "a\rc", dot) == 1 && RxRun("a.c", u8"a c") == 0,
+		      "dotAll lets '.' cross line terminators; without it U+2028 is one too");
+	}
+
+	{
+		const char* errs[] = {"x{2,1}", "*a", "a**", "[z-a]", "(a", "a)", "[abc", "\\", "a{2}{3}",
+		                      "^*", "$+", "\\b+", "?", "(?<=a)b", "(?<!a)b", "\\1", "a\\02", "(?x)", "\xff"};
+		int ok = 0;
+		std::string leak;
+		for (const char* p : errs) {
+			std::string err;
+			if (!RxCompile(p, &err) && !err.empty()) ok++;
+			else if (leak.empty()) leak = p;
+		}
+		check(ok == (int)(sizeof errs / sizeof errs[0]),
+		      "malformed / unsupported patterns are rejected with a message (" + std::to_string(ok) + ")" +
+		      (leak.empty() ? std::string() : " -- accepted " + Quote(leak)));
+		std::string err;
+		RxCompile("a{2,1}", &err);
+		line("    e.g. a{2,1}: " + err);
+	}
+
+	{
+		// Exponential backtracking: JS would hang here; we must give up and say so.
+		Rx rx = *RxCompile("(a+)+b", nullptr);
+		uint64_t steps = 0;
+		RxStatus st = RxSearchEx(rx, std::string(28, 'a') + "c", RxLimits{}, &steps);
+		check(st == RxStatus::Aborted, "catastrophic (a+)+b gives up at the step limit (" +
+		      std::to_string(steps) + " steps) instead of answering");
+		check(!RxSearch(rx, std::string(28, 'a') + "c"), "and RxSearch reports that as no match");
+		check(RxSearch(rx, "aaab"), "the same pattern still matches normally");
+
+		// Deep group repetition: must stop at the depth limit, not overflow the stack.
+		Rx deep = *RxCompile("^(?:ab)*$", nullptr);
+		std::string longText;
+		for (int i = 0; i < 5000; i++) longText += "ab";
+		check(RxSearchEx(deep, longText) == RxStatus::Aborted, "5000 group iterations hit the depth limit cleanly");
+		check(RxSearchEx(deep, "abababab") == RxStatus::Match, "a short one matches");
+		// .* uses the single-character fast path: long text, no depth.
+		Rx dotStar = *RxCompile(u8"物品數量.*%", nullptr);
+		check(RxSearch(dotStar, u8"物品數量" + std::string(20000, 'x') + "%"), ".* over 20000 characters");
+
+		Rx frag = *RxCompile(*RegexFrag::StrictPropertyFragment(u8"物品數量", Val(80, -1), 3, true), nullptr);
+		steps = 0;
+		RxSearchEx(frag, u8"地圖（階級 16）\n物品數量: +86% (augmented)", RxLimits{}, &steps);
+		line("    a strict fragment over a two-line text: " + std::to_string(steps) + " steps");
+		check(steps < 2000, "real fragments stay far below the step limit");
+	}
+}
+
+// Golden fixture from exile-appraiser (regex_port_golden.inc): every function's
+// output must be byte-identical to the TypeScript, and the matcher must agree
+// with node's RegExp on every (pattern, flags, text).
+void GoldenTests()
+{
+	line("[R2-golden] exile-appraiser outputs, byte for byte (regex_port_golden.inc)");
+	using nlohmann::json;
+	struct Tally { int n = 0, bad = 0; std::vector<std::string> first; };
+	std::vector<std::pair<std::string, Tally>> tallies;
+	auto tally = [&](const std::string& k) -> Tally& {
+		for (auto& t : tallies) if (t.first == k) return t.second;
+		tallies.emplace_back(k, Tally{});
+		return tallies.back().second;
+	};
+	auto num = [](const json& j) { return j.is_null() ? std::optional<double>() : std::optional<double>(j.get<double>()); };
+	auto optStr = [](const std::optional<std::string>& s) { return s ? json(*s) : json(nullptr); };
+	std::vector<std::string> rxTexts;
+	int parseErr = 0;
+	for (const char* rec : kRegexPortGolden) {
+		json r;
+		try {
+			r = json::parse(rec);
+		} catch (...) {
+			parseErr++;
+			continue;
+		}
+		const std::string kind = r[0].get<std::string>();
+		if (kind == "rxTexts") {
+			rxTexts = r[1].get<std::vector<std::string>>();
+			continue;
+		}
+		json got, want = r.back();
+		if (kind == "range") {
+			got = RegexNumeric::RangeRegex(NumRange{num(r[1]), num(r[2])}, r[3].get<int>());
+		} else if (kind == "readable") {
+			got = RegexNumeric::ReadableRangeRegex(NumRange{num(r[1]), num(r[2])}, r[3].get<int>(), r[4].get<bool>());
+		} else if (kind == "labelBase") {
+			got = RegexFrag::LabelBase(r[1].get<std::string>());
+		} else if (kind == "prop") {
+			AlgoValue v{num(r[2]), num(r[3]), ""};
+			got = optStr(RegexFrag::PropertyFragment(r[1].get<std::string>(), v, r[4].get<int>(), r[5].get<bool>(), r[6].get<bool>()));
+		} else if (kind == "strict") {
+			AlgoValue v{num(r[2]), num(r[3]), ""};
+			got = optStr(RegexFrag::StrictPropertyFragment(r[1].get<std::string>(), v, r[4].get<int>(), r[5].get<bool>()));
+		} else if (kind == "tier") {
+			AlgoValue v{num(r[1]), num(r[2]), ""};
+			got = optStr(RegexFrag::MapTierFragment(v, r[3].get<int>(),
+			             r[4].get<std::string>() == "zh" ? RegexFrag::Lang::Zh : RegexFrag::Lang::En));
+		} else if (kind == "rarity") {
+			got = optStr(RegexFrag::RarityFragment(r[1].get<std::string>(), r[2].get<std::string>()));
+		} else if (kind == "whole") {
+			got = optStr(RegexFrag::WholeLine(r[1].get<std::vector<std::string>>()));
+		} else if (kind == "linked") {
+			got = optStr(RegexFrag::LinkedSockets(r[1].get<int>()));
+		} else if (kind == "colors") {
+			got = optStr(RegexFrag::LinkColors(r[1].get<std::string>()));
+		} else if (kind == "count") {
+			got = optStr(RegexFrag::SocketColorCount(r[1].get<std::string>(), r[2].get<std::string>(), r[3].get<int>()));
+		} else if (kind == "tierLine") {
+			got = RegexFrag::IsTierNameLine(r[1].get<std::string>());
+		} else if (kind == "normLabel") {
+			got = RegexNormalizeLabel(r[1].get<std::string>());
+		} else if (kind == "rx") {
+			RxFlags f;
+			const std::string flags = r[2].get<std::string>();
+			f.icase = flags.find('i') != std::string::npos;
+			f.dotAll = flags.find('s') != std::string::npos;
+			std::string err;
+			std::optional<Rx> rx = RxCompile(r[1].get<std::string>(), &err, f);
+			if (!rx) {
+				got = "error";
+			} else {
+				std::string bits;
+				for (const std::string& t : rxTexts) {
+					RxStatus st = RxSearchEx(*rx, t);
+					bits += st == RxStatus::Match ? '1' : st == RxStatus::NoMatch ? '0' : 'A';
+				}
+				got = bits;
+			}
+		} else {
+			got = "unknown kind";
+		}
+		Tally& t = tally(kind);
+		t.n++;
+		if (got != want) {
+			t.bad++;
+			if (t.first.size() < 5) t.first.push_back(r.dump() + " -> got " + got.dump());
+		}
+	}
+	check(parseErr == 0 && !tallies.empty(), "fixture parses (" + std::to_string(sizeof kRegexPortGolden / sizeof kRegexPortGolden[0]) +
+	      " lines, " + std::to_string(parseErr) + " unparsable)");
+	for (const auto& kt : tallies) {
+		const Tally& t = kt.second;
+		check(t.bad == 0, kt.first + ": " + std::to_string(t.n - t.bad) + "/" + std::to_string(t.n) + " identical");
+		for (const std::string& f : t.first) line("    " + f);
+	}
+}
+
+// numeric.test.ts: every fragment, matched as a whole against each number, must
+// agree with the range definition -- checked with the R1 matcher.
+struct NumberTexts {
+	std::vector<std::u32string> n;   // "0" .. "9999"
+	NumberTexts()
+	{
+		for (int i = 0; i < 10000; i++) {
+			std::u32string s;
+			for (char c : std::to_string(i)) s += (char32_t)c;
+			n.push_back(std::move(s));
+		}
+	}
+};
+
+std::optional<Rx> WholeRx(const std::string& src)
+{
+	return RxCompile("^(?:" + src + ")$", nullptr);
+}
+
+void NumericTests()
+{
+	using RegexNumeric::RangeRegex;
+	using RegexNumeric::ReadableRangeRegex;
+	using RegexNumeric::NaiveRangeRegex;
+	static const NumberTexts T;
+	line("[R2-numeric] rangeRegex / readableRangeRegex value by value (numeric.test.ts)");
+
+	check(RangeRegex({16, std::nullopt}, 2) == "(1[6-9]|[2-9]\\d)", ">=16 (2 digits) = (1[6-9]|[2-9]\\d)");
+	check(RangeRegex({std::nullopt, 5}, 1) == "[0-5]", "<=5 (1 digit) = [0-5]");
+	check(RangeRegex({0, 50}, 3) == "([1-4]?\\d|50)", "0-50 (3 digits) merges with ?");
+	check(RangeRegex({80, std::nullopt}, 3) == "([89]\\d|\\d\\d\\d)", ">=80 (3 digits)");
+	check(RangeRegex({50, 10}, 2).empty() && RangeRegex({100, std::nullopt}, 2).empty(), "an empty set is \"\"");
+
+	// One range against 0..999 (rangeRegex) -- returns the first disagreeing N or -1.
+	auto mismatch = [&](const NumRange& r, int digits, std::string& src) -> int {
+		src = RangeRegex(r, digits);
+		std::optional<Rx> rx = WholeRx(src);
+		if (!rx) return -2;
+		const double top = RegexNumeric::DomainMax(digits);
+		for (int n = 0; n <= 999; n++) {
+			const bool want = n <= top && n >= (r.min ? *r.min : 0) && n <= (r.max ? *r.max : top);
+			if ((RxSearchCps(*rx, T.n[n]) == RxStatus::Match) != want) return n;
+		}
+		if (src.size() > NaiveRangeRegex(r, digits).size()) return -3;
+		return -1;
+	};
+	struct Group { int count = 0, bad = 0; std::string first; };
+	auto run = [&](Group& g, const NumRange& r, int digits) {
+		std::string src;
+		int m = mismatch(r, digits, src);
+		g.count++;
+		if (m != -1) {
+			if (!g.bad) {
+				g.first = "min=" + (r.min ? Num((int)*r.min) : std::string("-")) + " max=" +
+				          (r.max ? Num((int)*r.max) : std::string("-")) + " digits=" + Num(digits) + " src=" + src +
+				          (m == -2 ? " (does not compile)" : m == -3 ? " (longer than naive)" : " N=" + Num(m));
+			}
+			g.bad++;
+		}
+	};
+	auto report = [&](const Group& g, const std::string& what) {
+		check(g.bad == 0, what + ": " + Num(g.count) + " ranges x 0-999" + (g.bad ? " -- " + Num(g.bad) + " wrong, first " + g.first : std::string()));
+	};
+	for (int digits = 1; digits <= 3; digits++) {
+		Group g;
+		const int top = (int)RegexNumeric::DomainMax(digits);
+		for (int n = 0; n <= top; n++) {
+			run(g, {(double)n, std::nullopt}, digits);
+			run(g, {std::nullopt, (double)n}, digits);
+		}
+		report(g, "digits=" + Num(digits) + " >=N and <=N");
+	}
+	{
+		Group g;
+		for (int a = 0; a <= 99; a++)
+			for (int b = a; b <= 99; b++) run(g, {(double)a, (double)b}, 2);
+		report(g, "digits=2 every interval (5050)");
+	}
+	// numeric.test.ts:60-73: 15 fixed + 3000 LCG intervals (seed 12345).
+	auto lcg = [](unsigned seed) {
+		return [seed]() mutable { seed = seed * 1103515245u + 12345u; return (int)(seed % 1000u); };
+	};
+	{
+		Group g;
+		const int fixed[][2] = {{0, 0}, {0, 999}, {1, 100}, {60, 86}, {68, 83}, {75, 100}, {80, 120}, {100, 999},
+		                        {83, 86}, {50, 150}, {99, 101}, {9, 10}, {199, 200}, {0, 9}, {10, 99}};
+		for (const auto& f : fixed) run(g, {(double)f[0], (double)f[1]}, 3);
+		auto rnd = lcg(12345);
+		for (int i = 0; i < 3000; i++) {
+			int a = rnd(), b = rnd();
+			run(g, {(double)(std::min)(a, b), (double)(std::max)(a, b)}, 3);
+		}
+		report(g, "digits=3 fixed + 3000 LCG intervals (seed 12345)");
+	}
+	{
+		int bad = 0;
+		for (int n = 0; n <= 999; n += 7) {
+			const NumRange rs[3] = {{(double)n, std::nullopt}, {std::nullopt, (double)n}, {(double)n, (double)(std::min)(999, n + 37)}};
+			for (const NumRange& r : rs) {
+				const std::string s = RangeRegex(r, 3);
+				for (char c : s)
+					if (!(isdigit((unsigned char)c) || c == 'd' || c == '\\' || c == '[' || c == ']' || c == '-' ||
+					      c == '?' || c == '|' || c == '(' || c == ')')) bad++;
+			}
+		}
+		check(bad == 0, "rangeRegex uses only \\d [] ? | () and digits (no {n}, no upper-case escapes)");
+	}
+
+	// ---- readable (numeric.test.ts:116-185): 0..9999
+	check(ReadableRangeRegex({30, std::nullopt}, 3, true) == "([3-9][0-9]|[1-9][0-9]{2,})", "readable >=30 open");
+	check(ReadableRangeRegex({5, std::nullopt}, 3, true) == "([5-9]|[1-9][0-9]{1,})", "readable >=5 open");
+	check(ReadableRangeRegex({100, std::nullopt}, 3, true) == "[1-9][0-9]{2,}" &&
+	      ReadableRangeRegex({10, std::nullopt}, 3, true) == "[1-9][0-9]{1,}", "readable >=100 / >=10 open");
+	check(ReadableRangeRegex({16, std::nullopt}, 2) == "(1[6-9]|[2-9][0-9])", "readable >=16 bounded");
+	check(ReadableRangeRegex({std::nullopt, 50}, 3, true) == "([1-4]?[0-9]|50)" &&
+	      ReadableRangeRegex({60, 150}, 3, true) == "([6-9][0-9]|1[0-4][0-9]|150)", "readable <=50 / 60-150");
+	check(ReadableRangeRegex({50, 10}, 3, true).empty() && ReadableRangeRegex({100, std::nullopt}, 2).empty(),
+	      "readable empty set is \"\"");
+	check(RangeRegex({80, std::nullopt}, 3) == "([89]\\d|\\d\\d\\d)", "the shortest form is unaffected");
+
+	auto runReadable = [&](Group& g, const NumRange& r, int digits, bool open) {
+		const std::string s = ReadableRangeRegex(r, digits, open);
+		g.count++;
+		std::string why;
+		std::optional<Rx> rx = WholeRx(s);
+		const bool openTop = open && !r.max;
+		if (!rx) {
+			why = "does not compile";
+		} else {
+			const double top = openTop ? 1e300 : RegexNumeric::DomainMax(digits);
+			for (int n = 0; n <= 9999 && why.empty(); n++) {
+				const bool want = n <= top && n >= (r.min ? *r.min : 0) && n <= (r.max ? *r.max : top);
+				if ((RxSearchCps(*rx, T.n[n]) == RxStatus::Match) != want) why = "N=" + Num(n);
+			}
+			if (why.empty() && s.find('\\') != std::string::npos) why = "contains a backslash";
+			if (why.empty() && !openTop && s.find_first_of("{}") != std::string::npos) why = "{} without an open top";
+			for (int n = 1; n <= 999 && why.empty(); n += 13)
+				if (RxSearch(*rx, "0" + Num(n))) why = "matches leading zero 0" + Num(n);
+		}
+		if (!why.empty()) {
+			if (!g.bad) g.first = "min=" + (r.min ? Num((int)*r.min) : std::string("-")) + " max=" +
+			                      (r.max ? Num((int)*r.max) : std::string("-")) + " src=" + s + " " + why;
+			g.bad++;
+		}
+	};
+	auto reportR = [&](const Group& g, const std::string& what) {
+		check(g.bad == 0, what + ": " + Num(g.count) + " ranges x 0-9999" + (g.bad ? " -- " + Num(g.bad) + " wrong, first " + g.first : std::string()));
+	};
+	{
+		Group g;
+		for (int n = 0; n <= 999; n++) runReadable(g, {(double)n, std::nullopt}, 3, true);
+		reportR(g, "readable open >=N");
+	}
+	{
+		Group g;
+		for (int n = 0; n <= 999; n++) runReadable(g, {std::nullopt, (double)n}, 3, true);
+		auto rnd = lcg(777);
+		for (int i = 0; i < 3000; i++) {
+			int a = rnd(), b = rnd();
+			runReadable(g, {(double)(std::min)(a, b), (double)(std::max)(a, b)}, 3, true);
+		}
+		reportR(g, "readable open <=N + 3000 LCG intervals (seed 777)");
+	}
+	{
+		Group g;
+		for (int digits = 1; digits <= 2; digits++) {
+			for (int n = 0; n <= (int)RegexNumeric::DomainMax(digits); n++) {
+				runReadable(g, {(double)n, std::nullopt}, digits, false);
+				runReadable(g, {std::nullopt, (double)n}, digits, false);
+			}
+		}
+		for (int a = 0; a <= 99; a++)
+			for (int b = a; b <= 99; b++) runReadable(g, {(double)a, (double)b}, 2, false);
+		reportR(g, "readable bounded digits 1/2 >=N, <=N and every 2-digit interval");
+	}
+}
+
+// pages.test.ts + strict-fragments.test.ts, the parts that need no
+// exile-appraiser fixture files; the corpus checks run on our own catalogue.
+void FragmentTests(const std::wstring& exeDir)
+{
+	using namespace RegexFrag;
+	line("[R2-frag] fragment builders value by value (pages.test.ts, strict-fragments.test.ts)");
+	RxFlags dotAll;
+	dotAll.dotAll = true;
+	auto comp = [](const std::string& s, RxFlags f = {}) { return *RxCompile(s, nullptr, f); };
+
+	struct Cond { int mn, mx; };
+	auto ok = [](const Cond& c, int n) { return (c.mn < 0 || n >= c.mn) && (c.mx < 0 || n <= c.mx); };
+
+	// -- propertyFragment (pages.test.ts:41-99)
+	{
+		const Cond conds[] = {{80, -1}, {7, -1}, {150, -1}, {-1, 50}, {-1, 5}, {60, 86}, {100, 120}};
+		int bad = 0;
+		std::string first;
+		for (const Cond& c : conds) {
+			const std::string f = *PropertyFragment(u8"物品數量", Val(c.mn, c.mx), 3, true);
+			Rx r = comp(f);
+			for (int n = 0; n <= 999; n++) {
+				const std::string v = Num(n);
+				const std::string ls[] = {u8"物品數量: +" + v + "%", u8"物品數量：+" + v + "%", u8"物品數量 +" + v + "%",
+				                          u8"物品數量: +" + v + "% (augmented)"};
+				for (const std::string& l : ls)
+					if (RxSearch(r, l) != ok(c, n)) { if (!bad++) first = f + " x " + l; }
+			}
+			const std::string g = *PropertyFragment(u8"物品等級：#", Val(c.mn, c.mx), 3, false);
+			Rx rg = comp(g);
+			for (int n = 0; n <= 999; n++) {
+				const std::string v = Num(n);
+				const std::string ls[] = {u8"物品等級: " + v, u8"物品等級：" + v, u8"物品等級 " + v};
+				for (const std::string& l : ls)
+					if (RxSearch(rg, l) != ok(c, n)) { if (!bad++) first = g + " x " + l; }
+			}
+		}
+		check(bad == 0, "propertyFragment: percent and plain, 7 conditions x 0-999 x separators" + (bad ? " -- " + first : std::string()));
+		const std::string f = *PropertyFragment("Item Level #", Val(84, -1), 3, false);
+		check(f == "Item Level.*[^\\d](8[4-9]|9\\d|\\d\\d\\d)" && RxRun(f, "item level: 86") == 1 &&
+		      RxRun(f, "Item Level: 83") == 0, "English label, case-insensitive: " + f);
+		const std::string gem = *PropertyFragment(u8"等級", Val(20, -1), 2, false, true);
+		check(RxRun(gem, u8"等級: 20 (最高)") == 1 && RxRun(gem, u8"等級: 19") == 0 &&
+		      RxRun(gem, u8"物品等級：84") == 0 && RxRun(gem, u8"需求 等級 70") == 0, "gem level anchored at line start: " + gem);
+		int esc = 0;
+		for (const Cond& c : conds)
+			for (bool pct : {true, false}) {
+				const std::string s = *PropertyFragment("X", Val(c.mn, c.mx), 3, pct);
+				if (s.find("\\D") != std::string::npos || s.find("\\W") != std::string::npos ||
+				    s.find("\\S") != std::string::npos || s.find_first_of("{}") != std::string::npos) esc++;
+			}
+		check(esc == 0, "no upper-case escapes and no {n}");
+		check(!PropertyFragment("X", AlgoValue{}, 3, true) && !PropertyFragment("X", Val(90, 10), 3, true),
+		      "an input that describes nothing is null");
+	}
+
+	// -- sockets (pages.test.ts:101-145)
+	{
+		const std::string choices[] = {"rgb", "rrg", "gg", "rgbb", "rrggbb"};
+		int bad = 0, n = 0;
+		std::string first;
+		for (const std::string& choice : choices) {
+			const std::string f = *LinkColors(choice);
+			Rx r = comp(f);
+			std::string want = choice;
+			std::sort(want.begin(), want.end());
+			for (int len = 2; len <= 6; len++) {
+				int total = 1;
+				for (int i = 0; i < len; i++) total *= 3;
+				for (int code = 0; code < total; code++) {
+					std::string s;
+					for (int i = 0, x = code; i < len; i++, x /= 3) s += "rgb"[x % 3];
+					std::string text = "Sockets: ";
+					for (int i = 0; i < len; i++) {
+						if (i) text += '-';
+						text += (char)toupper((unsigned char)s[i]);
+					}
+					bool expect = false;
+					for (size_t i = 0; i + choice.size() <= s.size(); i++) {
+						std::string w = s.substr(i, choice.size());
+						std::sort(w.begin(), w.end());
+						if (w == want) expect = true;
+					}
+					n++;
+					if (RxSearch(r, text) != expect) { if (!bad++) first = f + " x " + text; }
+				}
+			}
+		}
+		check(bad == 0, "linkColors: 5 choices x every R/G/B link of length 2-6 (" + Num(n) + ")" + (bad ? " -- " + first : std::string()));
+		check(*LinkColors("rgb") == "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)", "linkColors(rgb) = " + *LinkColors("rgb"));
+		check(RxRun(*LinkColors("rgb"), "Sockets: R-G B") == 0, "an unlinked socket breaks the chain");
+		const std::string six = *LinkedSockets(6), five = *LinkedSockets(5);
+		check(RxRun(six, u8"插槽: R-G-B-R-G-B") == 1 && RxRun(six, u8"插槽: R-G-B R-G-B") == 0 &&
+		      RxRun(six, u8"插槽: R-G-B-R-G") == 0 && RxRun(five, u8"插槽: R-G-B-R-G B") == 1, "linkedSockets 6L / 5L");
+		const std::string blue = *SocketColorCount(u8"插槽", "b", 3);
+		check(RxRun(blue, u8"插槽: B-B R-B") == 1 && RxRun(blue, u8"插槽: B-B-R-G") == 0, "socketColorCount >= 3 blue: " + blue);
+		check(*WholeLine({u8"已汙染"}) == u8"^已汙染$" && RxRun(*WholeLine({u8"塑者之物", u8"尊師之物"}), u8"尊師之物") == 1 &&
+		      RxRun(*WholeLine({u8"塑者之物", u8"尊師之物"}), u8"塑者之物地圖") == 0, "wholeLine");
+	}
+
+	// -- strictPropertyFragment (strict-fragments.test.ts ①)
+	const Cond strictConds[] = {{80, -1}, {30, -1}, {7, -1}, {100, -1}, {150, -1}, {0, -1}, {-1, 50},
+	                            {-1, 5}, {-1, 0}, {60, 86}, {100, 120}, {9, 10}};
+	{
+		int bad = 0;
+		std::string first;
+		for (const Cond& c : strictConds) {
+			const std::string f = *StrictPropertyFragment(u8"物品數量", Val(c.mn, c.mx), 3, true);
+			Rx r = comp(f);
+			for (int n = 0; n <= 999; n++) {
+				const std::string v = Num(n), lab = u8"物品數量";
+				const std::string ls[] = {lab + ": +" + v + "%", lab + ": +" + v + "% (augmented)", lab + u8"：+" + v + "%",
+				                          lab + ":+" + v + "%", lab + u8"： +" + v + "%", lab + ": " + v + "%",
+				                          lab + ":" + v + "%", lab + u8"：" + v + "%", lab + ": +" + v + " %"};
+				for (const std::string& l : ls)
+					if (RxSearch(r, l) != ok(c, n)) { if (!bad++) first = f + " x " + l; }
+			}
+			for (int n : {1000, 1234, 99999})
+				if (RxSearch(r, u8"物品數量: +" + Num(n) + "%") != (c.mx < 0 || n <= c.mx)) { if (!bad++) first = f + " x " + Num(n); }
+		}
+		check(bad == 0, "strict percent: 12 conditions x 0-999 x 9 separators, open top above 999" + (bad ? " -- " + first : std::string()));
+		Rx any = comp(*StrictPropertyFragment(u8"物品數量", Val(0, -1), 3, true));
+		Rx le = comp(*StrictPropertyFragment(u8"物品數量", Val(-1, 50), 3, true));
+		check(!RxSearch(any, u8"物品數量 +80%") && !RxSearch(any, u8"物品數量: -80%") &&
+		      !RxSearch(any, u8"地圖掉落物品數量增加 80%") && !RxSearch(le, u8"物品數量: +150%"),
+		      "no colon / negative / another label / a bigger number: no match");
+		bad = 0;
+		for (const Cond& c : strictConds) {
+			const std::string f = *StrictPropertyFragment(u8"物品等級", Val(c.mn, c.mx), 3, false);
+			Rx r = comp(f);
+			for (int n = 0; n <= 999; n++) {
+				const std::string v = Num(n);
+				const std::string ls[] = {u8"物品等級: " + v, u8"物品等級：" + v, u8"物品等級 " + v, u8"物品等級:" + v + " (x)"};
+				for (const std::string& l : ls)
+					if (RxSearch(r, l) != ok(c, n)) { if (!bad++) first = f + " x " + l; }
+			}
+		}
+		check(bad == 0, "strict plain: [:：]? and the <= / range tail" + (bad ? " -- " + first : std::string()));
+	}
+
+	// -- cross-line negatives (②): the strict form never reaches into the next line
+	{
+		const char* labs[] = {u8"物品數量", u8"物品稀有度", u8"怪群大小", "Item Quantity", "Item Rarity", "Monster Pack Size"};
+		int bad = 0, oldHits = 0;
+		std::string first;
+		for (const char* lab : labs) {
+			for (const Cond& c : strictConds) {
+				const std::string f = *StrictPropertyFragment(lab, Val(c.mn, c.mx), 3, true);
+				const std::string old = *PropertyFragment(lab, Val(c.mn, c.mx), 3, true);
+				int badN = -1, goodN = -1;
+				for (int n : {0, 5, 49, 51, 79, 99, 121, 149, 999}) if (!ok(c, n)) { badN = n; break; }
+				for (int n : {999, 120, 86, 80, 60, 50, 10, 5, 0}) if (ok(c, n)) { goodN = n; break; }
+				if (badN < 0 || goodN < 0) continue;
+				const std::string L = lab;
+				const std::string texts[] = {
+					L + ": +" + Num(badN) + u8"% (augmented)\n其他屬性: +" + Num(goodN) + "% (augmented)",
+					L + ": +" + Num(badN) + "% (augmented)\n+" + Num(goodN) + "%",
+					L + ": +" + Num(badN) + "%\n" + Num(goodN) + "%"};
+				Rx r = comp(f), rd = comp(f, dotAll), od = comp(old, dotAll);
+				for (const std::string& t : texts) {
+					if (RxSearch(r, t) || RxSearch(rd, t)) { if (!bad++) first = f + " x " + Quote(t); }
+					if (RxSearch(od, t)) oldHits++;
+				}
+			}
+		}
+		check(bad == 0, "strict: a failing value on the label line never borrows the next line's number" + (bad ? " -- " + first : std::string()));
+		check(oldHits > 0, "while the old .* form does, with '.' crossing lines (" + Num(oldHits) + " hits) -- the negatives mean something");
+		const std::string t = *MapTierFragment(Val(16, -1), 2, Lang::Zh);
+		const std::string text = u8"地圖（階級 14）\n--------\n怪物等級: 16）";
+		check(RxRun(t, text) == 0 && RxRun(t, text, dotAll) == 0, "tier: the name's number decides, not the next line's");
+	}
+
+	// -- rarity (③), synthetic part
+	struct Opt2 { const char* zh; const char* en; };
+	const Opt2 rarities[] = {{u8"普通", "Normal"}, {u8"魔法", "Magic"}, {u8"稀有", "Rare"}, {u8"傳奇", "Unique"}};
+	std::vector<std::pair<Rx, std::string>> rarityRx;
+	{
+		int bad = 0;
+		std::string first;
+		for (int lang = 0; lang < 2; lang++) {
+			const std::string label = lang == 0 ? u8"稀有度" : "Rarity";
+			const std::string itemR = lang == 0 ? u8"物品稀有度" : "Item Rarity";
+			const std::string monR = lang == 0 ? u8"怪物稀有度" : "Monster Rarity";
+			for (const Opt2& o : rarities) {
+				const std::string f = *RarityFragment(label, lang == 0 ? o.zh : o.en);
+				Rx r = comp(f);
+				rarityRx.emplace_back(r, f);
+				for (const Opt2& other : rarities)
+					for (const char* sep : {": ", u8"：", ":", u8"： "}) {
+						const std::string l = label + sep + (lang == 0 ? other.zh : other.en);
+						if (RxSearch(r, l) != (&other == &o)) { if (!bad++) first = f + " x " + l; }
+					}
+				for (int n = 0; n <= 999; n++)
+					for (const std::string& lab : {itemR, monR}) {
+						const std::string v = Num(n);
+						const std::string ls[] = {lab + ": +" + v + "%", lab + u8"：+" + v + "%", lab + ": " + v + "% (augmented)"};
+						for (const std::string& l : ls)
+							if (RxSearch(r, l)) { if (!bad++) first = f + " hits " + l; }
+					}
+			}
+		}
+		check(bad == 0, "rarity: 4 options x separators hit only their own value; item / monster rarity 0-999 never" + (bad ? " -- " + first : std::string()));
+		check(!RarityFragment(u8"稀有度", "") && !RarityFragment("", u8"稀有"), "rarityFragment: empty input is null");
+	}
+
+	// -- tier names (④), synthetic part
+	{
+		int bad = 0;
+		std::string first;
+		for (const Cond& c : strictConds) {
+			const std::optional<std::string> fz = MapTierFragment(Val(c.mn, c.mx), 2, Lang::Zh);
+			const std::optional<std::string> fe = MapTierFragment(Val(c.mn, c.mx), 2, Lang::En);
+			if (!fz || !fe) {
+				// No 2-digit tier satisfies it (>= 100 ...): null is the right
+				// answer exactly when no n in 0-99 would pass. (The TS test turns
+				// null into /null/ here, which happens to match nothing.)
+				for (int n = 0; n <= 99; n++)
+					if (ok(c, n) || fz || fe) { if (!bad++) first = "null fragment for a satisfiable tier " + Num(n); }
+				continue;
+			}
+			Rx zh = comp(*fz);
+			Rx en = comp(*fe);
+			for (int n = 0; n <= 99; n++) {
+				const std::string v = Num(n);
+				for (const std::string& t : {u8"地圖（階級 " + v + u8"）", u8"凋落的 地圖（階級 " + v + u8"）",
+				                             u8"換界石（階級 " + v + u8"）", u8"堅定的地圖（階級" + v + u8"）"})
+					if (RxSearch(zh, t) != ok(c, n)) { if (!bad++) first = t; }
+				for (const std::string& t : {"Map (Tier " + v + ")", "Blighted Map (Tier " + v + ")", "Waystone (Tier " + v + ")"})
+					if (RxSearch(en, t) != ok(c, n)) { if (!bad++) first = t; }
+			}
+		}
+		check(bad == 0, "map tier: 12 conditions x names 0-99, both languages" + (bad ? " -- " + first : std::string()));
+		check(IsTierNameLine(u8"地圖（階級#）") && IsTierNameLine(u8"地圖（階級 #）") && IsTierNameLine("map (tier #)") &&
+		      !IsTierNameLine("Map (Tier 16)") && !IsTierNameLine(u8"{ 前綴 \"x\" (階級: 1) }"), "isTierNameLine");
+	}
+
+	// -- ③④ against every corpus line we ship (both games, both languages,
+	// hidden and ambient included, '#' replaced by sample values)
+	{
+		RegexDataset ds;
+		std::string err;
+		if (!ds.Load(exeDir, L"poe1", &err)) {
+			check(false, "load the catalogue for the corpus checks: " + err);
+			return;
+		}
+		std::vector<std::string> lines;
+		{
+			std::vector<std::string> raw;
+			for (const RegexPageDef& p : ds.Pages()) {
+				if (p.kind != RegexPageKind::Mods && p.kind != RegexPageKind::Names) continue;
+				for (const auto* v : {&p.ambientZh, &p.ambientEn}) raw.insert(raw.end(), v->begin(), v->end());
+				for (const RegexEntryDef& e : p.entries)
+					for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn}) raw.insert(raw.end(), v->begin(), v->end());
+			}
+			std::vector<std::string> out;
+			const char* vals[] = {"1", "5", "14", "16", "20", "30", "50", "80", "100", "150"};
+			for (const std::string& l : raw) {
+				if (l.find('#') == std::string::npos) { out.push_back(l); continue; }
+				for (const char* v : vals) {
+					std::string s;
+					for (char ch : l) { if (ch == '#') s += v; else s += ch; }
+					out.push_back(std::move(s));
+				}
+			}
+			std::sort(out.begin(), out.end());
+			out.erase(std::unique(out.begin(), out.end()), out.end());
+			lines = std::move(out);
+		}
+		check(lines.size() > 1000, "corpus lines with sample values: " + Num((int)lines.size()));
+		int hits = 0;
+		std::string first;
+		for (const auto& rr : rarityRx)
+			for (const std::string& l : lines)
+				if (RxSearch(rr.first, l)) { if (!hits++) first = rr.second + " hits " + l; }
+		check(hits == 0, "no rarity fragment hits any corpus line" + (hits ? " -- " + first : std::string()));
+
+		RxFlags cs;
+		cs.icase = false;
+		Rx isName = *RxCompile(u8"（階級 *\\d+）|\\(Tier \\d+\\)", nullptr, cs);
+		std::vector<std::string> names, rest;
+		for (const std::string& l : lines) (RxSearch(isName, l) ? names : rest).push_back(l);
+		check(std::find(names.begin(), names.end(), u8"地圖（階級16）") != names.end() &&
+		      std::find(names.begin(), names.end(), "Map (Tier 16)") != names.end(),
+		      "the corpus holds map names with their tier (" + Num((int)names.size()) + " lines) -- a correct hit");
+		rest.push_back(u8"{ 前綴 \"x\" (階級: 1) }");
+		rest.push_back("{ Prefix Modifier \"Shocking\" (Tier: 1) }");
+		rest.push_back(u8"換界石階級: 16");
+		hits = 0;
+		for (const AlgoValue& v : {Val(1, -1), Val(-1, 99)})
+			for (Lang lang : {Lang::Zh, Lang::En}) {
+				const std::string f = *MapTierFragment(v, 2, lang);
+				Rx r = comp(f);
+				for (const std::string& l : rest)
+					if (RxSearch(r, l)) { if (!hits++) first = f + " hits " + l; }
+			}
+		check(hits == 0, "tier fragments hit no other corpus line, nor the advanced-mod \"(階級: 1)\"" + (hits ? " -- " + first : std::string()));
+	}
+}
+
+// R1 item 2: schema 2 `labels` and `kind` (exile-appraiser data.ts), and a
+// schema-1 file still loading the way it always did.
+void SchemaTests(const std::wstring& exeDir)
+{
+	line("[R1-data] catalogue schema 2: labels{zh,en} and page kind");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "load: " + err);
+		return;
+	}
+	for (const char* game : {"poe1", "poe2"}) {
+		const RegexLabels* lab = ds.Labels(game);
+		check(lab && lab->present && lab->zh.size() >= 10 && lab->zh.size() == lab->en.size(),
+		      std::string(game) + ": labels present, zh " + Num(lab ? (int)lab->zh.size() : -1) + " / en " +
+		      Num(lab ? (int)lab->en.size() : -1));
+		int raw = 0;
+		if (lab)
+			for (const auto* side : {&lab->zh, &lab->en})
+				for (const auto& kv : *side)
+					if (kv.second.find('[') != std::string::npos || kv.second.find('{') != std::string::npos || kv.second.empty()) raw++;
+		check(raw == 0, std::string(game) + ": no label keeps [..] or {n} markup after normalizing");
+		const std::string* tier = lab ? lab->Find(true, "ItemDisplayMapTier") : nullptr;
+		check(tier && !tier->empty(), std::string(game) + ": ItemDisplayMapTier (zh) = " + (tier ? *tier : std::string("<missing>")));
+	}
+	int mods = 0, names = 0, other = 0, noEn = 0, groupMismatch = 0;
+	for (const RegexPageDef& p : ds.Pages()) {
+		if (p.kind == RegexPageKind::Mods) mods++;
+		else if (p.kind == RegexPageKind::Names) names++;
+		else other++;
+		if (p.titleEn.empty()) noEn++;
+		if (!p.groupsEn.empty() && p.groupsEn.size() != p.groups.size()) groupMismatch++;
+	}
+	check(other == 0 && mods > 0 && names > 0, "shipped pages are mods (" + Num(mods) + ") or names (" + Num(names) + "), never algorithmic");
+	check(noEn == 0 && groupMismatch == 0, "every page has titleEn and groupsEn matches groups");
+	check(RegexPageKindFrom("names") == RegexPageKind::Names && RegexPageKindFrom("numeric") == RegexPageKind::Numeric &&
+	      RegexPageKindFrom("sockets") == RegexPageKind::Sockets && RegexPageKindFrom("future") == RegexPageKind::Mods &&
+	      RegexPageKindFrom("") == RegexPageKind::Mods, "kind: known names map, anything else reads as mods");
+
+	// A schema-1 file (no kind, no labels, no titleEn) in a scratch install.
+	wchar_t tmp[MAX_PATH] = {};
+	if (!GetTempPathW(MAX_PATH, tmp)) {
+		check(false, "no temp directory for the schema-1 check");
+		return;
+	}
+	const std::wstring dir = std::wstring(tmp) + L"pobtools_regex_selftest_schema\\";
+	CreateDirectoryW(dir.c_str(), nullptr);
+	CreateDirectoryW((dir + L"Data").c_str(), nullptr);
+	const std::wstring file = dir + L"Data\\regex_poe1.json";
+	const std::string body =
+		u8"{\"schema\":1,\"pages\":[{\"id\":\"a\",\"title\":\"A\",\"groups\":[\"g\"],\"entries\":[{\"id\":\"x\",\"zh\":[\"甲\"],\"en\":[\"X\"]}]},"
+		u8"{\"id\":\"b\",\"kind\":\"future\",\"title\":\"B\",\"groups\":[],\"entries\":[{\"id\":\"y\",\"zh\":[\"乙\"]}]}]}";
+	HANDLE h = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h != INVALID_HANDLE_VALUE) {
+		DWORD w = 0;
+		WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr);
+		CloseHandle(h);
+	}
+	RegexDataset old;
+	const bool loaded = old.Load(dir, L"poe1", &err);
+	check(loaded && old.Pages().size() == 2 && old.Pages()[0].kind == RegexPageKind::Mods &&
+	      old.Pages()[1].kind == RegexPageKind::Mods && old.Pages()[0].titleEn.empty() &&
+	      old.Labels("poe1") && !old.Labels("poe1")->present && !old.Labels("poe2"),
+	      "a schema-1 file loads as before: kind = mods, no labels, no titleEn");
+	DeleteFileW(file.c_str());
+	RemoveDirectoryW((dir + L"Data").c_str());
+	RemoveDirectoryW(dir.c_str());
+}
+
+void PortTests(const std::wstring& exeDir)
+{
+	const DWORD t0 = GetTickCount();
+	MatcherTests();
+	line("");
+	SchemaTests(exeDir);
+	line("");
+	GoldenTests();
+	line("");
+	NumericTests();
+	line("");
+	FragmentTests(exeDir);
+	line("");
+	RegexR3Tests(exeDir, &check, &line);
+	line("");
+	RegexR4Tests(exeDir, &check, &line);
+	line("");
+	RegexR5Tests(exeDir, &check, &line);
+	line("");
+	RegexR7Tests(exeDir, &check, &line);
+	line("");
+	RegexR8Tests(exeDir, &check, &line);
+	line("");
+	RegexSendTests(&check, &line);
+	line("");
+	RegexR9Tests(&check, &line);
+	line("");
+	RegexParityTests(exeDir, &check, &line);
+	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
+}
+
 } // namespace
 
 int RunRegexSelfTest(const std::wstring& exeDir)
@@ -841,6 +1750,8 @@ int RunRegexSelfTest(const std::wstring& exeDir)
 	StateTests();
 	line("");
 	DataTests(exeDir);
+	line("");
+	PortTests(exeDir);
 	line("");
 	line("PASS " + std::to_string(g_pass) + "   FAIL " + std::to_string(g_fail));
 	line(g_fail == 0 ? "ALL PASS" : "FAILURES");

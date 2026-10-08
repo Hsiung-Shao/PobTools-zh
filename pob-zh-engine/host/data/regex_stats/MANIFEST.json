@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "source": "exile-appraiser data/<game>/<lang>/stats.ndjson (APT / EE2 stat table, verbatim); gzip -9, no name, mtime 0",
+ "commit": "87121ad4929fd8e40d2cace1a7b2e6c728d49667",
+ "files": {
+  "poe1/cmn-Hant/stats.ndjson.gz": {
+   "source": "data/poe1/cmn-Hant/stats.ndjson",
+   "bytes": 2463891,
+   "sha256": "f376a3220c16027e2df299cc51ff3da5cc773be79f2654eb6bef626ef1c271fa",
+   "gzBytes": 355211,
+   "gzSha256": "5c9217097fc1cb83154529e1db458d79f187bd187383a5f5c48168cbefea7cbd"
+  },
+  "poe1/en/stats.ndjson.gz": {
+   "source": "data/poe1/en/stats.ndjson",
+   "bytes": 2570220,
+   "sha256": "99d3748587bf8f1b307bd9d111491c9b9b5157e2dcac92d296dd9b26984193a2",
+   "gzBytes": 270044,
+   "gzSha256": "62d1772e81bf8625abf7c2696b20fd2a504bcc3fc89407e0784824e79a7abc65"
+  },
+  "poe2/cmn-Hant/stats.ndjson.gz": {
+   "source": "data/poe2/cmn-Hant/stats.ndjson",
+   "bytes": 866912,
+   "sha256": "9aa5101f985b88cb572a56ed9d0341d083c2c48f98a4414c7c73d63ca9b48590",
+   "gzBytes": 157499,
+   "gzSha256": "aa7c45eddacb5f867d1f1b073a161c9001e7e817003c253befde5b363d7c31ee"
+  },
+  "poe2/en/stats.ndjson.gz": {
+   "source": "data/poe2/en/stats.ndjson",
+   "bytes": 897905,
+   "sha256": "fc2b48dbbc3529cec97a6a8c4b72117ded1c258980e191b0aeeb308c44c1e9ac",
+   "gzBytes": 124349,
+   "gzSha256": "c594ec4811f9744fa883fd76d2590e8dec96ae91347db5f6837e8ea4c40c8d20"
+  }
+ }
+}

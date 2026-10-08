@@ -13,11 +13,16 @@
 #include "item_library.h"
 #include "paste_fixtures.h"
 #include "clipboard_util.h"
+#include "editor_shell.h"
+#include "filter_file_watch.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdio>
+#include <cstdint>
 #include <fstream>
+
+#include <imgui.h>
 
 namespace {
 
@@ -517,11 +522,19 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T10b same-name replace is a no-op");
 	}
 
-	// ---- T11: big-file health (only when a real filter is installed) -----
+	// ---- T11: big-file health (the bundled NeverSink fixture) --------------
+	// Reads Filters\default.filter next to the exe -- never the user's own
+	// filters in Documents (a selftest does not touch the user's game files).
 	{
-		std::vector<FilterListEntry> found = ListFilters();
+		std::vector<FilterListEntry> found;
+		{
+			FilterListEntry e;
+			e.path = exeDir + L"Filters\\default.filter";
+			e.name = "Filters\\default.filter";
+			if (GetFileAttributesW(e.path.c_str()) != INVALID_FILE_ATTRIBUTES) found.push_back(e);
+		}
 		if (found.empty()) {
-			rep.note("T11 skipped: no .filter in Documents\\My Games\\Path of Exile");
+			rep.note("T11 skipped: no Filters\\default.filter next to the exe");
 		} else {
 			bool ok = false;
 			FilterFile f = LoadFilter(found.front().path, &ok);
@@ -913,6 +926,285 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		bool sawHem = false;
 		for (const std::string& k : res.unknownConds) if (k == "HasExplicitMod") sawHem = true;
 		rep.check(sawHem, "T18 HasExplicitMod reported as not simulated");
+	}
+
+	// ---- T19: baseline snapshot + "modified" ------------------------------
+	{
+		const std::string src = synthetic_crlf();
+		FilterFile f = ParseFilter(src);
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		const std::string before = SerializeFilter(f);
+		doc.CaptureBaseline();
+		rep.check(doc.HasBaseline() && SerializeFilter(f) == before && before == src,
+		          "T19 capturing the baseline leaves the bytes alone");
+		bool allSame = true;
+		for (int i = 0; i < (int)f.blocks.size(); i++) allSame &= doc.BlockState(i) == BlockChange::Same;
+		rep.check(allSame && doc.UnsavedBlockCount(false) == 0, "T19 fresh baseline: every block Same, 0 unsaved");
+
+		const int fs = doc.FindLine(0, "SetFontSize");
+		FilterSetValueInt(f.lines[fs], 0, 40);
+		f.dirty = true;
+		rep.check(doc.BlockState(0) == BlockChange::Modified && doc.BlockState(1) == BlockChange::Same &&
+		          doc.BlockState(2) == BlockChange::Same && doc.BlockState(3) == BlockChange::Same,
+		          "T19 a value edit marks only its block Modified");
+		const FilterLine* bl = doc.BaselineLine(fs);
+		rep.check(bl && FilterValueInt(*bl, 0, 0) == 45 && doc.LineChanged(fs),
+		          "T19 the baseline line still says 45 (shown as 原本)",
+		          bl ? FilterSerializeLine(*bl) : std::string("null"));
+		rep.check(!doc.LineChanged(doc.FindLine(0, "SetTextColor")), "T19 an untouched line is not changed");
+		rep.check(doc.UnsavedBlockCount(false) == 1, "T19 unsaved count = 1 block");
+
+		FilterSetValueInt(f.lines[fs], 0, 45);
+		rep.check(doc.BlockState(0) == BlockChange::Same, "T19 typing the old value back is Same again");
+		rep.check(doc.UnsavedBlockCount(true) == 0 && !f.dirty, "T19 ...and settling marks the file clean");
+
+		const int rl = doc.FindLine(0, "Rarity");
+		doc.CommentOutLine(rl);
+		f.dirty = true;
+		const FilterLine* rb = doc.BaselineLine(rl);
+		rep.check(doc.BlockState(0) == BlockChange::Modified && rb && rb->kind == FilterLineKind::Condition,
+		          "T19 a disabled (#!) line keeps its identity: the baseline is the live line");
+		doc.RestoreLine(rl);
+		rep.check(doc.BlockState(0) == BlockChange::Same, "T19 restoring it is Same again");
+	}
+
+	// ---- T20: restore one block -> byte-exact round-trip -------------------
+	{
+		const std::string src = synthetic_crlf();
+		FilterFile f = ParseFilter(src);
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		doc.CaptureBaseline();
+		// block 0: a value edit, an inserted line, a disabled line, Show -> Hide
+		FilterSetValueInt(f.lines[doc.FindLine(0, "SetFontSize")], 0, 30);
+		doc.InsertLine(0, "Quality", ">=", { FilterToken{ "20", false } });
+		doc.CommentOutLine(doc.FindLine(0, "Rarity"));
+		{
+			FilterLine& h = f.lines[f.blocks[0].headerLineIdx];
+			h.keyword = "Hide";
+			h.dirty = true;
+			f.blocks[0].hide = true;
+		}
+		// block 3: Hide -> Show
+		{
+			FilterLine& h = f.lines[f.blocks[3].headerLineIdx];
+			h.keyword = "Show";
+			h.dirty = true;
+			f.blocks[3].hide = false;
+		}
+		f.dirty = true;
+		rep.check(doc.BlockState(0) == BlockChange::Modified && doc.BlockState(3) == BlockChange::Modified &&
+		          doc.UnsavedBlockCount(false) == 2, "T20 two blocks edited");
+		const int nb = doc.RestoreBlock(0);
+		rep.check(nb == 0 && doc.BlockState(0) == BlockChange::Same && !f.blocks[0].hide,
+		          "T20 RestoreBlock puts block 0 back (index kept)", std::to_string(nb));
+		rep.check(doc.BlockState(3) == BlockChange::Modified && f.dirty, "T20 ...and leaves the other block alone");
+		doc.RestoreBlock(3);
+		rep.check(SerializeFilter(f) == src, "T20 every edited block restored: the file is byte-for-byte the original");
+		rep.check(!f.dirty && doc.UnsavedBlockCount(true) == 0, "T20 ...and clean again");
+		// the restored lines are real lines again: edit + restore once more
+		FilterSetValueInt(f.lines[doc.FindLine(0, "SetFontSize")], 0, 33);
+		f.dirty = true;
+		doc.RestoreBlock(0);
+		rep.check(SerializeFilter(f) == src && !f.dirty, "T20 restore is repeatable");
+	}
+
+	// ---- T21: a new custom rule is Added, not Modified ----------------------
+	{
+		const std::string src = synthetic_crlf();
+		FilterFile f = ParseFilter(src);
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		doc.CaptureBaseline();
+		CustomZone z = EnsureCustomZone(doc);
+		const int nb = doc.CreateBlockAtLine(z.endLine, false, u8"PobTools custom rule");
+		doc.InsertLine(nb, "BaseType", "", { FilterToken{ "Divine Orb", true } });
+		rep.check(nb >= 0 && doc.BlockState(nb) == BlockChange::Added, "T21 new custom rule is Added (新增)");
+		bool othersSame = true;
+		for (int i = 0; i < (int)f.blocks.size(); i++)
+			if (i != nb) othersSame &= doc.BlockState(i) == BlockChange::Same;
+		rep.check(othersSame, "T21 the NeverSink blocks stay Same");
+		rep.check(doc.RestoreBlock(nb) == -1, "T21 an added block has nothing to restore");
+		rep.check(doc.UnsavedBlockCount(false) == 1, "T21 unsaved count = 1");
+		const int nlines = 0;
+		(void)nlines;
+		doc.RemoveBlock(nb);
+		rep.check(doc.RemovedBaselineBlocks() == 0 && doc.UnsavedBlockCount(true) == 1 && f.dirty,
+		          "T21 deleting it again still leaves the zone markers unsaved");
+		const int dup = doc.DuplicateBlock(1);
+		rep.check(dup >= 0 && doc.BlockState(dup) == BlockChange::Added && doc.BlockState(1) == BlockChange::Same,
+		          "T21 a duplicated block is Added, its source stays Same");
+	}
+
+	// ---- T22/T23/T24 need a scratch folder ---------------------------------
+	wchar_t tmpBuf2[MAX_PATH] = L"";
+	GetTempPathW(MAX_PATH, tmpBuf2);
+	const std::wstring scratch = std::wstring(tmpBuf2) + L"pobtools_fe_st_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+	CreateDirectoryW(scratch.c_str(), nullptr);
+
+	// ---- T22: external modification ----------------------------------------
+	{
+		const std::wstring path = scratch + L"watch.filter";
+		auto writeFile = [](const std::wstring& p, const std::string& data) {
+			std::ofstream o(p, std::ios::binary);
+			o.write(data.data(), (std::streamsize)data.size());
+		};
+		auto bumpTime = [](const std::wstring& p, long long secs) {
+			HANDLE h = CreateFileW(p.c_str(), FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+			                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return false;
+			FILETIME ft{};
+			GetFileTime(h, nullptr, nullptr, &ft);
+			ULARGE_INTEGER u;
+			u.LowPart = ft.dwLowDateTime;
+			u.HighPart = ft.dwHighDateTime;
+			u.QuadPart += (unsigned long long)(secs * 10000000LL);
+			ft.dwLowDateTime = u.LowPart;
+			ft.dwHighDateTime = u.HighPart;
+			const bool ok = SetFileTime(h, nullptr, nullptr, &ft) != 0;
+			CloseHandle(h);
+			return ok;
+		};
+		writeFile(path, synthetic_crlf());
+
+		ExternalChangeWatch w;
+		w.Reset(path);
+		rep.check(!w.Poll(0.0), "T22 nothing changed yet");
+		const bool bumped = bumpTime(path, 10);
+		rep.check(bumped && !w.Poll(0.5), "T22 polls at most every 2 s");
+		rep.check(w.Poll(2.5) && w.changed(), "T22 a new write time (outside write) is detected");
+		w.Acknowledge();
+		rep.check(!w.Poll(5.0), "T22 dismissed: the current stamp is the new normal");
+
+		// the editor's own save must not report itself (EditorShell::Save shows
+		// a toast, so it runs inside a scratch ImGui context)
+		ImGuiContext* prevCtx = ImGui::GetCurrentContext();
+		ImGuiContext* ctx = ImGui::CreateContext();
+		ImGui::SetCurrentContext(ctx);
+		{
+			EditorShell sh;
+			sh.exeDir = scratch;
+			sh.testMode = true;   // no ini writes
+			const bool opened = sh.OpenByPath(path, true);
+			rep.check(opened && sh.watch.path() == path && sh.doc.HasBaseline(), "T22 OpenByPath starts the watch and the baseline");
+			FilterSetValueInt(sh.model.lines[sh.doc.FindLine(0, "SetFontSize")], 0, 41);
+			sh.model.dirty = true;
+			rep.check(sh.UnsavedCount() == 1, "T22 one unsaved block before saving");
+			const bool saved = sh.Save();
+			rep.check(saved && !sh.watch.Poll(100.0), "T22 our own save is not reported as an outside change");
+			rep.check(sh.UnsavedCount() == 0 && !sh.model.dirty &&
+			          sh.doc.BlockState(0) == BlockChange::Same, "T22 after saving, the saved file is the new baseline");
+			bumpTime(path, 20);
+			rep.check(sh.watch.Poll(200.0), "T22 an outside write after our save is still caught");
+		}
+		ImGui::DestroyContext(ctx);
+		ImGui::SetCurrentContext(prevCtx);
+		DeleteFileW(path.c_str());
+		DeleteFileW((path + L".bak").c_str());
+	}
+
+	// ---- T23: filter chip counts ---------------------------------------------
+	{
+		EditorShell sh;
+		sh.testMode = true;
+		sh.model = ParseFilter(synthetic_crlf());
+		sh.loaded = true;
+		sh.doc.Attach(&sh.model);
+		sh.doc.CaptureBaseline();
+		EdRebuildRows(sh);
+		const ChipCounts c0 = sh.chipCounts;
+		rep.check(c0.all == 4 && c0.shown == 3 && c0.hidden == 1 && c0.changed == 0 && c0.custom == 0,
+		          "T23 counts on load: 4 all / 3 shown / 1 hidden / 0 changed / 0 custom",
+		          std::to_string(c0.all) + "/" + std::to_string(c0.shown) + "/" + std::to_string(c0.hidden) + "/" +
+		              std::to_string(c0.changed) + "/" + std::to_string(c0.custom));
+		// a custom rule (added) + a value edit (modified)
+		CustomZone z = EnsureCustomZone(sh.doc);
+		const int nb = sh.doc.CreateBlockAtLine(z.endLine, false, u8"PobTools custom rule");
+		sh.doc.InsertLine(nb, "BaseType", "", { FilterToken{ "Divine Orb", true } });
+		EdRebuildRows(sh);
+		int vaal = -1;
+		for (int i = 0; i < (int)sh.model.blocks.size(); i++)
+			for (int li : sh.model.blocks[i].lineIdx)
+				if (sh.model.lines[li].keyword == "BaseType" && FilterHasValue(sh.model.lines[li], "Vaal Orb")) vaal = i;
+		FilterSetValueInt(sh.model.lines[sh.doc.FindLine(vaal, "SetFontSize")], 0, 36);
+		sh.model.dirty = true;
+		EdRefreshRowStates(sh);
+		const ChipCounts c1 = sh.chipCounts;
+		rep.check(c1.all == 5 && c1.shown == 4 && c1.hidden == 1 && c1.changed == 2 && c1.custom == 1,
+		          "T23 after an add + an edit: 5 / 4 / 1 / 2 changed / 1 custom",
+		          std::to_string(c1.all) + "/" + std::to_string(c1.shown) + "/" + std::to_string(c1.hidden) + "/" +
+		              std::to_string(c1.changed) + "/" + std::to_string(c1.custom));
+		sh.chip = RuleChip::Changed;
+		EdRebuildVisRows(sh);
+		rep.check((int)sh.visRows.size() == 2, "T23 the 已修改 chip lists exactly those two", std::to_string(sh.visRows.size()));
+		sh.chip = RuleChip::Hidden;
+		EdRebuildVisRows(sh);
+		rep.check((int)sh.visRows.size() == 1 && sh.model.blocks[sh.visRows[0]].hide, "T23 the 隱藏 chip lists the Hide block");
+		// hiding one more block under the 隱藏 chip updates the list by itself
+		SetBlockHide(sh, sh.model.blocks[vaal], true);
+		EdRefreshRowStates(sh);
+		rep.check((int)sh.visRows.size() == 2 && sh.chipCounts.hidden == 2, "T23 a show/hide change refreshes counts and the chip list");
+		sh.chip = RuleChip::Custom;
+		EdRebuildVisRows(sh);
+		rep.check((int)sh.visRows.size() == 1 && sh.rows[sh.visRows[0]].custom, "T23 the 自訂 chip lists the custom rule");
+		// visList: group headings interleaved, never a heading without a rule after it
+		sh.chip = RuleChip::All;
+		EdRebuildVisRows(sh);
+		bool headingsOk = !sh.visList.empty() && sh.visList.front().block < 0;
+		for (size_t i = 0; i + 1 < sh.visList.size(); i++)
+			if (sh.visList[i].block < 0 && sh.visList[i + 1].block < 0) headingsOk = false;
+		rep.check(headingsOk && sh.visList.back().block >= 0, "T23 the list interleaves group headings correctly");
+	}
+
+	// ---- T24: recently used colours --------------------------------------------
+	{
+		std::vector<std::uint32_t> list;
+		for (int i = 0; i < 10; i++) {
+			const int c[4] = { i, 10 + i, 20 + i, 255 };
+			PushRecentColor(list, c);
+		}
+		const int again[4] = { 7, 17, 27, 255 };
+		PushRecentColor(list, again);
+		rep.check((int)list.size() == kRecentColorMax && list[0] == ((7u << 24) | (17u << 16) | (27u << 8) | 255u) &&
+		          list[1] == ((9u << 24) | (19u << 16) | (29u << 8) | 255u),
+		          "T24 newest first, at most 8, a reused colour moves to the front without a duplicate");
+		int dups = 0;
+		for (size_t i = 0; i < list.size(); i++)
+			for (size_t j = i + 1; j < list.size(); j++) if (list[i] == list[j]) dups++;
+		rep.check(dups == 0, "T24 no duplicates");
+
+		EditorShell a;
+		a.exeDir = scratch;
+		a.recentColors = list;
+		SaveEditorSettings(a);
+		EditorShell b;
+		b.exeDir = scratch;
+		LoadEditorSettings(b);
+		rep.check(b.recentColors == list, "T24 saved to pob-zh.ini and read back identically",
+		          EncodeRecentColors(b.recentColors));
+		rep.check(DecodeRecentColors("x;300,0,0,0;1,2,3,4;1,2,3,4") == std::vector<std::uint32_t>{ 0x01020304u },
+		          "T24 garbage and out-of-range entries are dropped");
+		EditorShell t;
+		t.exeDir = scratch;
+		t.testMode = true;
+		t.recentColors = { 0xffffffffu };
+		SaveEditorSettings(t);   // a test run writes nothing
+		EditorShell r;
+		r.exeDir = scratch;
+		LoadEditorSettings(r);
+		rep.check(r.recentColors == list, "T24 a test run does not write the ini");
+		DeleteFileW((scratch + L"pob-zh.ini").c_str());
+	}
+	RemoveDirectoryW(scratch.c_str());
+	rep.check(GetFileAttributesW(scratch.c_str()) == INVALID_FILE_ATTRIBUTES, "T24 the scratch folder is gone");
+
+	// ---- T25: sound file names with a download suffix ------------------------
+	{
+		rep.check(SoundNameHasDownloadSuffix(L"6maps (1).mp3") && SoundNameHasDownloadSuffix(L"alert (12).wav") &&
+		          !SoundNameHasDownloadSuffix(L"6maps.mp3") && !SoundNameHasDownloadSuffix(L"(1).mp3") &&
+		          !SoundNameHasDownloadSuffix(L"map(1).mp3") && !SoundNameHasDownloadSuffix(L"map ().mp3"),
+		          "T25 \" (n)\" download suffix detected, plain names not");
 	}
 
 	rep.note("failures=" + std::to_string(rep.failures));

@@ -1,5 +1,6 @@
 #include "pob_launch.h"
 #include "bridge_gate.h"
+#include "pob_protocol.h"
 #include "modern_ui_window.h"
 #include "error_log.h"
 #include "../translate/startup_trace.h"
@@ -130,10 +131,17 @@ std::wstring marker_name(const std::wstring& exeDir)
 	return buf;
 }
 
-bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi)
+bool spawn(const std::wstring& launchLua, PROCESS_INFORMATION& pi, const std::wstring& uri = std::wstring())
 {
 	std::wstring exe = exe_path();
 	std::wstring cmd = L"\"" + exe + L"\" --engine \"" + launchLua + L"\"";
+	// The link came from a web page: only the whitelisted, normalized form ever
+	// reaches a command line (no quotes or spaces can survive ParsePobUri).
+	std::wstring safeUri;
+	if (!uri.empty()) {
+		if (PobProtocol::ParsePobUri(uri, nullptr, &safeUri)) cmd += L" \"" + safeUri + L"\"";
+		else PobLog::Error("protocol", "spawn: refused a link that is not a valid pob:// URI");
+	}
 	std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
 	cmdBuf.push_back(L'\0');
 	STARTUPINFOW si{};
@@ -321,10 +329,10 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua)
 }
 
 bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
-                      unsigned long* outPid)
+                      unsigned long* outPid, const std::wstring& uri)
 {
 	PROCESS_INFORMATION pi{};
-	if (!spawn(launchLua, pi)) return false;
+	if (!spawn(launchLua, pi, uri)) return false;
 	CloseHandle(pi.hThread);
 	// handle closed when it is reaped
 	g_instances.push_back({ pi.hProcess, game, InstanceKind::Pob, pi.dwProcessId, nullptr });

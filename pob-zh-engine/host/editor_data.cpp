@@ -191,6 +191,7 @@ EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 			} else {
 				continue; // unsupported value type
 			}
+			e.orig = e.value;
 			model.entries.push_back(std::move(e));
 		}
 	}
@@ -295,25 +296,69 @@ int FindFileIdx(const EditorModel& model, const std::string& name)
 	return -1;
 }
 
+long long FindEntry(const EditorModel& model, int fileIdx, const std::string& key)
+{
+	for (size_t i = 0; i < model.entries.size(); i++)
+		if (model.entries[i].fileIdx == fileIdx && model.entries[i].key == key) return (long long)i;
+	return -1;
+}
+
+void RefreshFileDirty(EditorModel& model, int fileIdx)
+{
+	if (fileIdx < 0 || fileIdx >= (int)model.files.size()) return;
+	bool any = model.files[fileIdx].docChanged;
+	for (size_t i = 0; !any && i < model.entries.size(); i++)
+		if (model.entries[i].fileIdx == fileIdx && model.entries[i].edited) any = true;
+	model.files[fileIdx].dirty = any;
+}
+
+void RefreshEdited(EditorModel& model, size_t entryIdx)
+{
+	if (entryIdx >= model.entries.size()) return;
+	EditorEntry& e = model.entries[entryIdx];
+	const bool was = e.edited;
+	e.edited = e.added || e.value != e.orig;
+	// The file flag only needs the full scan when this entry is what could have
+	// cleared it; turning an entry on is enough to turn the file on.
+	if (e.edited) model.files[e.fileIdx].dirty = true;
+	else if (was || model.files[e.fileIdx].dirty) RefreshFileDirty(model, e.fileIdx);
+}
+
 size_t SetEntry(EditorModel& model, int fileIdx, const std::string& key, const std::string& value)
 {
-	for (size_t i = 0; i < model.entries.size(); i++) {
-		if (model.entries[i].fileIdx == fileIdx && model.entries[i].key == key) {
-			model.entries[i].value = value;
-			model.entries[i].edited = true;
-			model.files[fileIdx].dirty = true;
-			return i;
-		}
+	const long long at = FindEntry(model, fileIdx, key);
+	if (at >= 0) {
+		model.entries[(size_t)at].value = value;
+		RefreshEdited(model, (size_t)at);
+		return (size_t)at;
 	}
 	EditorEntry e;
 	e.key = key;
 	e.value = value;
 	e.structured = false;
 	e.fileIdx = fileIdx;
+	e.added = true;
 	e.edited = true;
 	model.entries.push_back(std::move(e));
 	model.files[fileIdx].dirty = true;
 	return model.entries.size() - 1;
+}
+
+bool RemoveAddedEntry(EditorModel& model, size_t entryIdx)
+{
+	if (entryIdx >= model.entries.size() || !model.entries[entryIdx].added) return false;
+	const int fi = model.entries[entryIdx].fileIdx;
+	const std::string key = model.entries[entryIdx].key;
+	model.entries.erase(model.entries.begin() + (ptrdiff_t)entryIdx);
+	// A failed save may already have synced the key into the document; the next
+	// save would write it back out without this.
+	auto& entries = model.files[fi].doc["entries"];
+	if (entries.is_object() && entries.contains(key)) {
+		entries.erase(key);
+		model.files[fi].docChanged = true;
+	}
+	RefreshFileDirty(model, fi);
+	return true;
 }
 
 bool SaveFile(EditorFile& file, std::string* err)
@@ -374,7 +419,7 @@ static void sync_entries_into_doc(EditorModel& model, int fileIdx)
 	}
 }
 
-int SaveAll(EditorModel& model, std::string* err)
+int SaveAll(EditorModel& model, std::string* err, std::vector<std::string>* failedFiles)
 {
 	int saved = 0, failed = 0;
 	for (size_t i = 0; i < model.files.size(); i++) {
@@ -383,10 +428,16 @@ int SaveAll(EditorModel& model, std::string* err)
 		std::string fileErr;
 		if (SaveFile(model.files[i], &fileErr)) {
 			saved++;
+			model.files[i].docChanged = false;
 			for (EditorEntry& e : model.entries)
-				if (e.fileIdx == (int)i) e.edited = false;
+				if (e.fileIdx == (int)i) {
+					e.edited = false;
+					e.added = false;
+					e.orig = e.value;
+				}
 		} else {
 			failed++;
+			if (failedFiles) failedFiles->push_back(model.files[i].name);
 			// Per file, not just the first one: the caller only surfaces the
 			// first error, and "3 of 8 files did not save" is a different story
 			// from "one did". What is at stake is somebody's hand-written
@@ -416,15 +467,40 @@ int DirtyEntryCount(const EditorModel& model)
 	return n;
 }
 
-std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel& model, bool* logFound)
+std::string LocaleDisplayName(const std::wstring& slotRoot, const std::string& locale)
+{
+	std::string content;
+	if (!read_file_utf8(locale_dir(slotRoot, locale) + L"meta.json", content)) return std::string();
+	try {
+		ordered_json meta = ordered_json::parse(content);
+		if (meta.contains("display_name") && meta["display_name"].is_string())
+			return meta["display_name"].get<std::string>();
+	} catch (...) {
+		// A broken meta.json just has no display name: the caller (localeLabel)
+		// falls back to the locale code instead.
+	}
+	return std::string();
+}
+
+std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel& model, bool* logFound,
+                                  int* logged, unsigned long long* logWrite)
 {
 	std::vector<MissEntry> out;
 	std::string content;
-	if (!read_file_utf8(exeDir + L"translate_misses.log", content)) {
+	if (logged) *logged = 0;
+	if (logWrite) *logWrite = 0;
+	const std::wstring logPath = exeDir + L"translate_misses.log";
+	if (!read_file_utf8(logPath, content)) {
 		if (logFound) *logFound = false;
 		return out;
 	}
 	if (logFound) *logFound = true;
+	if (logWrite) {
+		WIN32_FILE_ATTRIBUTE_DATA a{};
+		if (GetFileAttributesExW(logPath.c_str(), GetFileExInfoStandard, &a))
+			*logWrite = ((unsigned long long)a.ftLastWriteTime.dwHighDateTime << 32) | a.ftLastWriteTime.dwLowDateTime;
+	}
+	std::unordered_set<std::string> loggedSet;
 
 	// All dictionary keys (raw + colour-stripped) for fast "already present" tests.
 	std::unordered_set<std::string> keys;
@@ -451,6 +527,7 @@ std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel&
 		while (!tag.empty() && (tag.back() == ' ' || tag.back() == '\t')) tag.pop_back();
 		std::string text = line.substr(bar + 1);
 		if (text.empty()) continue;
+		if (logged && loggedSet.insert(text).second) (*logged)++;
 
 		bool present = keys.count(text) || keys.count(strip_color_codes(text));
 		if (present) continue;
@@ -458,7 +535,11 @@ std::vector<MissEntry> ScanMisses(const std::wstring& exeDir, const EditorModel&
 
 		MissEntry m;
 		m.text = text;
-		m.reverse = (tag == "REV");
+		m.tag = tag;
+		// Only MISS is a forward miss (English the dictionaries lack). REV, and the
+		// paste grammar's FLAVOUR / PROPERTY drops, are Chinese lines from a pasted
+		// item -- see MissEntry.
+		m.reverse = (tag != "MISS");
 		out.push_back(std::move(m));
 	}
 	return out;

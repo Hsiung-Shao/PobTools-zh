@@ -33,12 +33,14 @@
 #include "launcher_ui.h"
 #include "launcher_editor.h"
 #include "editor_selftest.h"
+#include "trans_editor_logic.h"   // RunTransEditorSelftest
 #include "panel_selftest.h"
 #include "paste_selftest.h"
 #include "item_name_selftest.h"
 #include "paste_trace.h"
 #include "placeholder_selftest.h"
 #include "pob_launch.h"
+#include "pob_protocol.h"   // pob:// / pob2:// "Open in PoB" links
 #include "headless_proc.h" // --engine-headless / --headless-selftest
 #include "modern_ui_window.h"
 #include "modern_ui_browser.h" // --modern-ui
@@ -67,6 +69,7 @@
 #include "app_update.h"
 #include "sig_verify.h"
 #include "ui_theme.h"
+#include "ui_widgets.h"
 #include "../translate/startup_trace.h"
 
 #pragma comment(lib, "shell32.lib")
@@ -230,8 +233,11 @@ static void apply_locale_env(const std::wstring& dir)
 }
 
 // Load SimpleGraphic.dll (from the engine DLL directory) and run POB.
-// Blocks until POB exits.
-static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua)
+// Blocks until POB exits. `extraArg` (optional) becomes POB's arg[1]: an
+// "Open in PoB" link that Main.lua downloads and imports. Callers pass only a
+// URI that PobProtocol::ParsePobUri accepted.
+static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua,
+                      const std::wstring& extraArg = std::wstring())
 {
 	std::wstring dllPath = dllDir + L"SimpleGraphic.dll";
 	// ALTERED_SEARCH_PATH: resolve SimpleGraphic's dependencies (fmt.dll etc.)
@@ -264,9 +270,12 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua)
 	std::string luaUtf8 = to_utf8(launchLua);
 	std::vector<char> arg0(luaUtf8.begin(), luaUtf8.end());
 	arg0.push_back('\0');
-	char* argv[1] = { arg0.data() };
+	std::string extraUtf8 = to_utf8(extraArg);
+	std::vector<char> arg1(extraUtf8.begin(), extraUtf8.end());
+	arg1.push_back('\0');
+	char* argv[2] = { arg0.data(), arg1.data() };
 
-	const int rc = RunLuaFileAsWin(1, argv);
+	const int rc = RunLuaFileAsWin(extraArg.empty() ? 1 : 2, argv);
 	// The gap between this and the launcher's "POB child exited" mark is the
 	// process teardown (DLL unloads, static destructors) nothing else can time.
 	startup_trace_mark("engine returned (code %d); process teardown follows", rc);
@@ -294,6 +303,112 @@ static PobLaunch::RelaunchMarker take_relaunch_marker(const std::wstring& dir)
 	CloseHandle(h);
 	DeleteFileW(marker.c_str());
 	return PobLaunch::ParseRelaunchMarker(std::string(buf, read));
+}
+
+// The engine environment for one POB run (game, language, font, dictionaries,
+// appearance, frame caps): what the launcher loop and the pob:// link path
+// both hand to the child. `game` is passed separately because a link decides
+// the game by its scheme, not by the launcher's last choice.
+static void apply_engine_env(const LauncherConfig& cfg, const std::wstring& dir, const std::wstring& game)
+{
+	// Only a folder that actually holds dictionaries is handed over; a
+	// broken setting must leave POB on the built-in ones rather than with
+	// no translations at all.
+	const DictSlot slot = (game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
+	DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
+	const AppearanceConfig& look = cfg.look[GameIndex(game)];
+	PobLaunch::SetEngineEnv(game, cfg.locale, cfg.fontFile,
+	                        dd.status == DataDirStatus::External ? dd.root : L"",
+	                        cfg.fontApplyAll, look.windowOpacity,
+	                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
+	                        look.treeBg, cfg.hangWatch,
+	                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
+}
+
+// An "Open in PoB" link (pob://<site>/<id> or pob2://...), started by the
+// browser through the HKCU registration (pob_protocol.h). Skips the launcher
+// screen and the updater and opens POB the way the user's interface setting
+// says: the new interface (which imports the build itself) when it is chosen
+// and usable for that POB, otherwise the classic window with the link as its
+// arg[1]. `extraArgs` = anything after the URI on the command line, which a
+// well-formed link never produces (the registration quotes "%1").
+static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bool extraArgs)
+{
+	std::wstring game, uri;
+	// The raw command line too: argv parsing swallows quotes, which would let a
+	// link with '"' in it through as a different, valid-looking link.
+	if (!extraArgs && !PobProtocol::PobUriCommandLineIsClean(GetCommandLineW(), rawUri)) extraArgs = true;
+	if (extraArgs || !PobProtocol::ParsePobUri(rawUri, &game, &uri)) {
+		std::string shown = to_utf8(rawUri.substr(0, 300));
+		for (char& c : shown) if ((unsigned char)c < 0x20) c = '?';
+		PobLog::Error("protocol", "refused a link that is not a valid pob:// URI" +
+		                              std::string(extraArgs ? " (quotes or extra arguments on the command line)" : "") + ": " + shown);
+		MessageBoxW(nullptr,
+			L"無法開啟這個 Path of Building 連結:格式不正確。\n\n"
+			L"只接受建置網站「Open in PoB」按鈕產生的 pob:// 或 pob2:// 連結;"
+			L"這個連結含有不允許的字元(引號、空白、反斜線等)或格式不對。",
+			L"PobTools", MB_ICONERROR | MB_OK);
+		return 1;
+	}
+	const std::wstring ini = dir + L"pob-zh.ini";
+	const LauncherConfig cfg = LoadLauncherConfig(ini);
+	const InstallInfo installs = DetectInstalls(dir);
+	const bool poe2 = game == L"poe2";
+	std::wstring launchLua = poe2 ? installs.poe2Lua : installs.poe1Lua;
+	// POB_PATH (the legacy override) only ever meant the PoE1 install.
+	if (launchLua.empty() && !poe2) launchLua = resolve_launch_lua_legacy(dir);
+	if (launchLua.empty()) {
+		PobLog::Error("protocol", std::string("no ") + (poe2 ? "PoE2" : "PoE1") + " POB install for link " + to_utf8(uri));
+		MessageBoxW(nullptr,
+			poe2 ? L"找不到 PoE2 版 POB(Path of Building PoE2)。\n\n"
+			       L"請把 PoE2 版 POB 資料夾放在 pob-zh.exe 旁邊,再點一次連結。"
+			     : L"找不到 PoE1 版 POB(Path of Building Community)。\n\n"
+			       L"請把 POB 資料夾放在 pob-zh.exe 旁邊,再點一次連結。",
+			L"PobTools", MB_ICONERROR | MB_OK);
+		return 1;
+	}
+	PobLog::Diag("protocol", "opening link " + to_utf8(uri) + " for " + to_utf8(game));
+	apply_engine_env(cfg, dir, game);
+	const bool openModern = cfg.uiMode == 1 && (poe2
+		? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
+		: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
+	const std::wstring self = exe_path();
+	if (openModern) {
+		// Same game already open in the new interface: hand the link to that
+		// window (it asks about an unsaved build and swaps the build in place)
+		// instead of a second window on the same install. Browser mode does the
+		// same inside ShowModernUiInBrowser.
+		if (void* mw = PobProtocol::FindModernUiWindow(game, self)) {
+			if (PobProtocol::SendLinkToModernUi(mw, uri)) {
+				PobLog::Diag("protocol", "link handed to the open new-interface window");
+				return 0;
+			}
+			PobLog::Error("protocol", "the open new-interface window did not take the link; opening another one");
+		}
+		// Blocks until the window closes; a refused bridge gate makes the window
+		// open the classic POB itself, link included (exit code 3).
+		return ShowModernUi(dir, game, cfg.locale, cfg, L"", uri);
+	}
+	// Same game already open in the classic window: close the one used last
+	// (top of the z-order) through POB's own "save changes?" question first, so
+	// the two never share the install (Settings.xml is written by whoever
+	// closes last). Save / Don't Save end that POB; Cancel keeps it and drops
+	// the link.
+	if (void* pw = PobProtocol::FindLastPobWindow(game, self)) {
+		switch (PobProtocol::ClosePobWindowAndWait(pw)) {
+		case PobProtocol::CloseResult::Cancelled:
+			PobLog::Diag("protocol", "the open POB kept its build (cancelled); link not opened");
+			return 0;
+		case PobProtocol::CloseResult::Closed:
+			PobLog::Diag("protocol", "the open POB closed; opening the link");
+			break;
+		case PobProtocol::CloseResult::NoAnswer:
+			// Not initialised yet, or not answering: phase 1's behaviour.
+			PobLog::Error("protocol", "the open POB neither closed nor asked within 5 s; opening the link in a new window");
+			break;
+		}
+	}
+	return PobLaunch::SpawnPobDetached(launchLua, game, nullptr, uri) ? 0 : 1;
 }
 
 // Spawning POB now lives in pob_launch.cpp: the launcher can also start it
@@ -335,6 +450,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	std::wstring arg2 = (argvW && argc >= 3) ? argvW[2] : L"";
 	std::wstring arg3 = (argvW && argc >= 4) ? argvW[3] : L"";
 	std::wstring arg4 = (argvW && argc >= 5) ? argvW[4] : L"";
+	const int argCount = argvW ? argc : 0;
 	if (argvW) LocalFree(argvW);
 
 	// Proxy for every WinHTTP session, before any dispatch: the launcher's
@@ -535,7 +651,28 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// Headless shared-theme invariants (no GLFW window or renderer required).
 	if (arg1 == L"--ui-theme-selftest") {
-		return PobUi::RunThemeSelfTest() ? 0 : 1;
+		// headless: the shared style, the design tokens it must agree with, and
+		// the launcher widgets' size maths. Written to a report like the other
+		// selftests -- an exit code alone says nothing about what was checked.
+		const bool theme = PobUi::RunThemeSelfTest();
+		const bool widgets = PobUi::RunWidgetSelfTest();
+		std::string rep = std::string(theme ? "PASS" : "FAIL") + " theme: style, density swap, design tokens\n" +
+		                  (widgets ? "PASS" : "FAIL") + " widgets: design px -> screen px, control sizes\n" +
+		                  ((theme && widgets) ? "RESULT PASS\n" : "RESULT FAIL\n");
+		CreateDirectoryW((dir + L"PobTools").c_str(), nullptr);
+		HANDLE h = CreateFileW((dir + L"PobTools\\ui_theme_selftest.txt").c_str(), GENERIC_WRITE, 0, nullptr,
+		                       CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (h != INVALID_HANDLE_VALUE) {
+			DWORD w = 0;
+			WriteFile(h, rep.data(), (DWORD)rep.size(), &w, nullptr);
+			CloseHandle(h);
+		}
+		return (theme && widgets) ? 0 : 1;
+	}
+	if (arg1 == L"--pob-protocol-selftest") {
+		// headless: the pob:// URI whitelist and a registry round-trip on a
+		// test-only scheme (never the real pob / pob2)
+		return PobProtocol::RunPobProtocolSelfTest(dir);
 	}
 	if (arg1 == L"--pob-launch-selftest") {
 		// headless: instance tracking/reaping and the "a POB is running" marker,
@@ -663,6 +800,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		std::string games = "both";
 		if (!arg2.empty()) games.assign(arg2.begin(), arg2.end()); // ASCII keywords
 		return RunEditorSelftest(games);
+	}
+	if (arg1 == L"--trans-editor-selftest") {
+		// headless: the translation editor's add-entry notices, undo stack, the
+		// multi-line checks, fill / withdraw, byte-exact saving and the panel's
+		// switch / reload / save flow -- on a %TEMP% copy of the dictionaries.
+		// Report: PobTools\trans_editor_selftest.txt
+		return RunTransEditorSelftest(dir);
 	}
 	if (arg1 == L"--paste-trace") {
 		// headless: one item, one row per line -- which rule fired, which
@@ -795,7 +939,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// swap engine\*.dll out from under it.
 		PobLaunch::HoldEngineRunningMarker(dir);
 		apply_locale_env(dir); // no-op when inherited; safety net for manual use
-		return run_engine(engineDir, launchLua);
+		// arg3: an "Open in PoB" link for POB's Main.lua (arg[1]). Checked again
+		// here -- this child can be started by hand -- and dropped if invalid.
+		std::wstring link;
+		if (!arg3.empty() && !PobProtocol::ParsePobUri(arg3, nullptr, &link)) {
+			PobLog::Error("protocol", "--engine: ignored an argument that is not a valid pob:// URI");
+			link.clear();
+		}
+		return run_engine(engineDir, launchLua, link);
+	}
+
+	// "Open in PoB" link from a browser (pob://... / pob2://...).
+	if (PobProtocol::LooksLikePobUri(arg1)) {
+		return open_pob_link(dir, arg1, argCount > 2);
 	}
 
 	// Legacy CLI: explicit path = skip the UI, run in-process (old behaviour).
@@ -877,6 +1033,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// install nobody looks after never accumulates anything worth noticing.
 	PobLog::PruneOlderThan(30);
 
+	// "Open in PoB" links switched on, but HKCU no longer points here (the
+	// folder was moved, or an official POB install took the links back):
+	// re-register quietly, once per launcher start.
+	if (LoadLauncherConfig(ini).pobProtocol && !PobLaunch::RunningUnderWine()) {
+		const std::wstring self = exe_path();
+		if (PobProtocol::QueryPobProtocol(self) != PobProtocol::State::Ours) {
+			if (PobProtocol::RegisterPobProtocol(self))
+				PobLog::Diag("protocol", "pob:// / pob2:// re-registered to " + to_utf8(self));
+		}
+	}
+
 	// From here on the launcher window is the only thing between the user and a
 	// freeze, so start watching our own frame loop -- and, through SetPeers in
 	// the launcher UI, the POB processes we start. While POB runs in the mode
@@ -936,6 +1103,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				appUpdater.SetHold(false);
 				continue; // back to the launcher screen
 			}
+			// The window mode is decided when the launcher window is created, so
+			// "restart now" is a fresh ShowLauncher with the saved config -- in this
+			// process, which keeps the record of the POB windows it started.
+			if (res == LauncherResult::Relaunch) continue;
 			// filter editor / atlas planner / timeless jewel are spawned as
 			// child processes from inside the launcher loop (window stays open)
 			if (res != LauncherResult::Launch) {
@@ -950,20 +1121,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 		}
 
-		{
-			// Only a folder that actually holds dictionaries is handed over; a
-			// broken setting must leave POB on the built-in ones rather than with
-			// no translations at all.
-			const DictSlot slot = (cfg.game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
-			DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
-			const AppearanceConfig& look = cfg.look[GameIndex(cfg.game)];
-			PobLaunch::SetEngineEnv(cfg.game, cfg.locale, cfg.fontFile,
-			                        dd.status == DataDirStatus::External ? dd.root : L"",
-			                        cfg.fontApplyAll, look.windowOpacity,
-			                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
-			                        look.treeBg, cfg.hangWatch,
-			                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
-		}
+		apply_engine_env(cfg, dir, cfg.game);
 		// Held for the whole run: the engine reads Data\*.json on a background
 		// thread right after start, and the updater's check (started above, still
 		// on the network) would otherwise write a new pack straight over them.

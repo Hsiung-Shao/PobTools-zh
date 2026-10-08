@@ -29,6 +29,8 @@ struct BatchStyleOp {
 // Apply the op to every listed block. Returns the number of lines touched.
 int ApplyBatchStyle(EditorShell& s, const std::vector<int>& blockIdx, const BatchStyleOp& op);
 
-// The 批量修改 modal (call every frame; opens via ImGui::OpenPopup("##batchmodal")).
-// Applies to the ticked blocks in s.batchSel on confirm.
-void DrawBatchModal(EditorShell& s);
+// The 批量修改 dialog: open it with OpenBatchDialog, draw it every frame with
+// DrawBatchDialog (at the page's top level). Applies to the ticked blocks in
+// s.batchSel on confirm.
+void OpenBatchDialog(EditorShell& s);
+void DrawBatchDialog(EditorShell& s);

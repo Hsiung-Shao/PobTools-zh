@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { app } from "./state.svelte";
 
 describe("AppState.run", () => {
@@ -49,5 +49,82 @@ describe("AppState.run", () => {
     expect(app.goBack()).toBe(true); // the list the page started on
     expect(app.view).toBe("builds");
     expect(app.goBack()).toBe(false);
+  });
+});
+
+describe("an Open in PoB link while a build is open (host.import_link)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    app.info = null;
+    app.linkAsk = null;
+    app.afterSaveAs = null;
+  });
+  it("nothing unsaved: the build is replaced at once, no question", () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    app.info = { unsaved: false } as any;
+    app.onImportLink("pob://poeninja/a");
+    expect(imp).toHaveBeenCalledWith("pob://poeninja/a");
+    expect(app.linkAsk).toBeNull();
+  });
+  it("unsaved, Save: asks first, then saves and imports after the save", async () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    const save = vi.spyOn(app, "saveOrAsk").mockImplementation(async (then?: () => void) => {
+      then?.();
+      return true;
+    });
+    app.info = { unsaved: true } as any;
+    app.onImportLink("pob://poeninja/b");
+    expect(app.linkAsk).toBe("pob://poeninja/b");
+    expect(imp).not.toHaveBeenCalled();
+    await app.linkSave();
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(imp).toHaveBeenCalledWith("pob://poeninja/b");
+    expect(app.linkAsk).toBeNull();
+  });
+  it("unsaved, Save on a never-saved build: the import waits for Save As (afterSaveAs)", async () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    app.info = { unsaved: true } as any;
+    app.header = { dbFileName: undefined } as any;
+    app.onImportLink("pob://poeninja/c");
+    const req = app.saveAsRequest;
+    await app.linkSave();
+    expect(app.saveAsRequest).toBe(req + 1);
+    expect(imp).not.toHaveBeenCalled();
+    expect(app.afterSaveAs).not.toBeNull();
+    app.afterSaveAs?.();
+    expect(imp).toHaveBeenCalledWith("pob://poeninja/c");
+  });
+  it("unsaved, Don't save: imports without saving", () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    const save = vi.spyOn(app, "saveOrAsk");
+    app.info = { unsaved: true } as any;
+    app.onImportLink("pob://poeninja/d");
+    app.linkDiscard();
+    expect(imp).toHaveBeenCalledWith("pob://poeninja/d");
+    expect(save).not.toHaveBeenCalled();
+    expect(app.linkAsk).toBeNull();
+  });
+  it("unsaved, Cancel: nothing happens", () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    const save = vi.spyOn(app, "saveOrAsk");
+    app.info = { unsaved: true } as any;
+    app.onImportLink("pob://poeninja/e");
+    app.linkCancel();
+    expect(imp).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(app.linkAsk).toBeNull();
+  });
+  it("a cancelled Save As drops the pending action (no import on a later save)", () => {
+    app.afterSaveAs = () => {};
+    app.cancelSaveAs();
+    expect(app.afterSaveAs).toBeNull();
+  });
+  it("browser mode replays old events to a new page: a link nonce is handled once", () => {
+    const imp = vi.spyOn(app, "importLink").mockResolvedValue(undefined);
+    app.info = { unsaved: false } as any;
+    const nonce = 1700000000000 + Math.floor(Math.random() * 1e6);
+    app.onImportLink("pob://poeninja/f", nonce);
+    app.onImportLink("pob://poeninja/f", nonce);
+    expect(imp).toHaveBeenCalledTimes(1);
   });
 });

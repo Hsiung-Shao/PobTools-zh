@@ -33,6 +33,10 @@ bool ModernUiUsableFor(const std::wstring& exeDir, const std::wstring& pobDir, c
 // Blocks until the window closes. Returns the process exit code. `openBuild`
 // (optional) is a build .xml the page loads as soon as the engine is up --
 // what a relaunch after a POB self-update, or a shell association, would pass.
+// `importUri` (optional) is a validated "Open in PoB" link (pob:// / pob2://,
+// see pob_protocol.h): the page downloads and imports it once the engine is
+// up, and a bridge-gate fallback hands it to the classic window instead.
 int ShowModernUi(const std::wstring& exeDir, const std::wstring& game,
                  const std::wstring& locale, const LauncherConfig& cfg,
-                 const std::wstring& openBuild = std::wstring());
+                 const std::wstring& openBuild = std::wstring(),
+                 const std::wstring& importUri = std::wstring());

@@ -178,6 +178,46 @@ class AppState {
   /** Runs once after the next successful Save As (closing the window after "Save"). */
   afterSaveAs: (() => void) | null = null;
   /**
+   * Save As was dismissed (Cancel, overwrite declined, or the save failed): the
+   * pending "after" (close the window, import a link) must not fire on some
+   * later, unrelated save.
+   */
+  cancelSaveAs() {
+    this.afterSaveAs = null;
+  }
+
+  /**
+   * An "Open in PoB" link arrived while this window is open (host.import_link):
+   * with an unsaved build, App asks Save / Don't save / Cancel first (linkAsk =
+   * the link); otherwise the build is replaced at once.
+   */
+  linkAsk = $state<string | null>(null);
+  onImportLink(uri: string, nonce?: number) {
+    if (!uri) return;
+    if (nonce !== undefined && !markLinkHandled(nonce)) return;
+    if (this.info?.unsaved) {
+      this.linkAsk = uri;
+      return;
+    }
+    void this.importLink(uri);
+  }
+  /** "Save": save (Save As for a build with no file yet), then import. */
+  async linkSave() {
+    const uri = this.linkAsk;
+    this.linkAsk = null;
+    if (!uri) return;
+    await this.saveOrAsk(() => void this.importLink(uri));
+  }
+  /** "Don't save": drop the changes and import. */
+  linkDiscard() {
+    const uri = this.linkAsk;
+    this.linkAsk = null;
+    if (uri) void this.importLink(uri);
+  }
+  linkCancel() {
+    this.linkAsk = null;
+  }
+  /**
    * Ctrl+S and every "save first?" answer. A build with no file yet (new, or
    * imported as a new build) has nothing to save to: open Save As instead of
    * letting save_build error. True when the build is saved by the time it returns.
@@ -223,6 +263,30 @@ class AppState {
     if (ok) this.view = this.landingView();
   }
 
+  /**
+   * An "Open in PoB" link the host was started with (a build site's button):
+   * download it, import it as a new unsaved build and land on the tree -- what
+   * the classic POB does with the same link (Main.lua, newModeChangeToTree).
+   */
+  async importLink(uri: string) {
+    let failed = "";
+    const ok = await this.run(async () => {
+      try {
+        const r = await api.importFromUri(uri);
+        // import_code replaces the build POB has open; at boot there may be none yet.
+        if (!this.version?.buildLoaded) await api.newBuild();
+        await api.importCode(r.code, "new");
+      } catch (e: any) {
+        failed = String(e?.message ?? e);
+        throw e;
+      }
+      this.rev = 0;
+      return this.refresh();
+    });
+    if (ok) this.view = "tree";
+    else this.error = t("import.linkFailed", { error: failed || this.error || "" });
+  }
+
   /** POB's "New" button: an unnamed, unsaved build (Ctrl+S then asks where). */
   async newBuild(name?: string, subPath?: string) {
     if (this.info?.unsaved && !confirm(t("builds.unsavedPrompt"))) return;
@@ -244,6 +308,28 @@ class AppState {
   }
 }
 
+/**
+ * Browser mode replays the whole event queue to a page opened later, so a link
+ * one page already handled would be imported again by the next tab. The host
+ * stamps each link with a nonce; handled ones are remembered per origin.
+ * Storage failing (private window, blocked) leaves only this page's own memory.
+ */
+const handledHere = new Set<number>();
+function markLinkHandled(nonce: number): boolean {
+  if (handledHere.has(nonce)) return false;
+  handledHere.add(nonce);
+  const key = "pobtools.handledLinks";
+  try {
+    const seen: number[] = JSON.parse(localStorage.getItem(key) ?? "[]");
+    if (seen.includes(nonce)) return false;
+    seen.push(nonce);
+    localStorage.setItem(key, JSON.stringify(seen.slice(-50)));
+  } catch {
+    /* no storage: handle it */
+  }
+  return true;
+}
+
 export const app = new AppState();
 
 // Engine events. `hello` arrives once per Lua state: at boot and again after a
@@ -252,6 +338,7 @@ bridge.on("gate_result", (d) => {
   app.gate = d as GateResult;
 });
 let openedOnce = false;
+let importedOnce = false;
 bridge.on("hello", async () => {
   app.engine = "ready";
   app.helloRev++;
@@ -263,8 +350,14 @@ bridge.on("hello", async () => {
   } catch (e: any) {
     app.error = String(e?.message ?? e);
   }
-  // The host was asked to open a build (command line); once per page life.
-  if (!openedOnce && hostInfo.open) {
+  // Started from an "Open in PoB" link: import it; once per page life (a POB
+  // self-update's second hello must not import it again).
+  if (!importedOnce && hostInfo.importUri) {
+    importedOnce = true;
+    openedOnce = true;
+    void app.importLink(hostInfo.importUri);
+  } else if (!openedOnce && hostInfo.open) {
+    // The host was asked to open a build (command line); once per page life.
     openedOnce = true;
     void app.loadBuild(hostInfo.open);
   } else if (app.version?.buildLoaded) {
@@ -306,6 +399,11 @@ bridge.on("host.close_requested", () => {
   void bridge.call("host.close_ack").catch(() => {});
   if (app.info?.unsaved && app.engine === "ready") app.closeAsk = true;
   else void bridge.call("host.close").catch(() => {});
+});
+// An "Open in PoB" link for this game while the window is open (WebView2:
+// WM_COPYDATA from a second pob-zh.exe; browser mode: host.import_link).
+bridge.on("host.import_link", (d: any) => {
+  app.onImportLink(String(d?.uri ?? ""), typeof d?.nonce === "number" ? d.nonce : undefined);
 });
 bridge.on("host.closed", () => {
   app.link = "closed";

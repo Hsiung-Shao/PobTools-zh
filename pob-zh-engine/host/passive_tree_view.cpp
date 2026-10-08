@@ -5,6 +5,7 @@
 #include "editor_util.h"   // EdReadFile / EdWiden
 #include "image_tex.h"
 #include "launcher_config.h" // FindPoe1Dir
+#include "ui_theme.h"       // Tok::Tree*, TreeKindColor
 
 #include <imgui_internal.h> // ImLengthSqr
 
@@ -13,15 +14,21 @@
 
 // ---- palette ----------------------------------------------------------------
 
-static const ImU32 kColEdge       = IM_COL32(88, 94, 108, 150);
-static const ImU32 kColEdgeInRad  = IM_COL32(150, 130, 70, 200);
-static const ImU32 kColHoverRing  = IM_COL32(255, 255, 255, 110);
-static const ImU32 kColAffected   = IM_COL32(240, 60, 60, 255);    // matched: red
-static const ImU32 kColReplaced   = IM_COL32(255, 130, 70, 255);   // replaced notable: orange-red
-static const ImU32 kColSocket     = IM_COL32(150, 160, 180, 220);
-static const ImU32 kColSocketSel  = IM_COL32(255, 205, 90, 255);
-static const ImU32 kColRadiusFill = IM_COL32(255, 205, 90, 26);
-static const ImU32 kColRadiusRing = IM_COL32(255, 205, 90, 150);
+// Design-system tokens (ui_theme.h). The jewel's reach and the nodes it changes
+// are both TreeHit (gold) -- the window's text says "以金框標示", and a red ring
+// for the same thing contradicted it. Sockets take their kind colour, shared with
+// the side lists through PobUi::TreeKindColor.
+namespace Tok = PobUi::Tok;
+static ImU32 WithAlpha(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
+static const ImU32 kColEdge       = WithAlpha(Tok::TreeLink, 150);
+static const ImU32 kColEdgeInRad  = WithAlpha(Tok::TreeHit, 150);
+static const ImU32 kColHoverRing  = WithAlpha(Tok::Text, 110);
+static const ImU32 kColAffected   = Tok::TreeHit;                    // changed by the seed
+static const ImU32 kColReplaced   = Tok::TreeHit;                    // replaced: same hue, double ring
+static const ImU32 kColSocket     = WithAlpha(PobUi::TreeKindColor(PobUi::TreeKind::Socket), 220);
+static const ImU32 kColSocketSel  = PobUi::TreeKindColor(PobUi::TreeKind::Socket);
+static const ImU32 kColSocketFill = WithAlpha(Tok::Surface2, 235);
+static const ImU32 kColRadiusRing = WithAlpha(Tok::TreeHit, 217);    // opacity .85, as the design
 
 static const float kFocusMinZoom = 0.14f;
 static const float kMaxZoom = 0.7f;
@@ -120,13 +127,15 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	PassiveTreeOutput out;
 	ImGuiIO& io = ImGui::GetIO();
 
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.027f, 0.031f, 0.043f, 1.0f));
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, PobUi::TokV4(Tok::Canvas));
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 	ImGui::BeginChild("##ptcanvas", ImVec2(0, 0), false,
 		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
 	vpPos_ = ImGui::GetCursorScreenPos();
 	vpSize_ = ImGui::GetContentRegionAvail();
+	out.canvasMin = vpPos_;
+	out.canvasMax = vpPos_ + vpSize_;
 	if (vpSize_.x < 32.0f || vpSize_.y < 32.0f) {
 		ImGui::EndChild();
 		ImGui::PopStyleVar();
@@ -271,7 +280,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			ImVec2 c = worldToScreen(ImVec2(n.x, n.y));
 			bool sel = (i == in.selectedSocket);
 			float rad = (sel ? 26.0f : 20.0f) * zoom_ + 3.0f;
-			dl->AddCircleFilled(c, rad, IM_COL32(20, 24, 34, 235), 20);
+			dl->AddCircleFilled(c, rad, kColSocketFill, 20);
 			dl->AddCircle(c, rad, sel ? kColSocketSel : kColSocket, 20, sel ? 3.5f : 2.0f);
 			if (sel) dl->AddCircleFilled(c, rad * 0.45f, kColSocketSel, 16);
 			continue;
@@ -297,12 +306,13 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 				             ImVec2(f.uv[0], f.uv[1]), ImVec2(f.uv[2], f.uv[3]));
 			}
 		}
-		// a node whose rolled affix MATCHES the search: red ring, drawn a bit
-		// larger than the node itself so it reads as a halo around it.
-		// (a SELECTED node needs no ring — its lit-up icon already stands out.)
+		// a node the seed changes: a gold (TreeHit) ring, drawn a bit larger than
+		// the node itself so it reads as a halo around it. A REPLACED node gets a
+		// second, inner ring -- same hue, so the legend's one swatch covers both.
 		if (h) {
-			float ring = (std::max(n.off.w, n.off.h) * 0.5f + 22.0f) * zoom_;
-			dl->AddCircle(c, std::max(ring, 8.0f), h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);
+			float ring = std::max((std::max(n.off.w, n.off.h) * 0.5f + 22.0f) * zoom_, 8.0f);
+			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);
+			if (h == kPtHiReplaced) dl->AddCircle(c, std::max(ring - 6.0f, 4.0f), kColReplaced, 0, 2.0f);
 		}
 		if (i == hover_)
 			dl->AddCircle(c, std::max((std::max(n.off.w, n.off.h) * 0.5f + 16.0f) * zoom_, 5.0f),
@@ -316,9 +326,12 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 			float pulse = 0.5f + 0.5f * sinf((float)ImGui::GetTime() * 4.0f);
 			float base = (std::max(n.off.w, n.off.h) * 0.5f + 18.0f) * zoom_;
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)), std::max(base + pulse * 6.0f, 8.0f),
-			              IM_COL32(255, 235, 130, 200 + (int)(pulse * 55)), 0, 3.5f);
+			              WithAlpha(Tok::TreeHit, 200 + (unsigned)(pulse * 55)), 0, 3.5f);
 		}
 	}
+
+	// caller's overlay (legend, notes): inside the canvas, above the tree
+	if (in.overlay) in.overlay(dl, vpPos_, vpPos_ + vpSize_);
 
 	dl->PopClipRect();
 

@@ -59,12 +59,126 @@ std::vector<std::string> NestedStringArray(const ordered_json& j, const char* ke
 	return StringArray(*it, sub);
 }
 
+// data.ts:196 parseLabels, one language: non-string values are skipped, text
+// goes through RegexNormalizeLabel.
+std::vector<std::pair<std::string, std::string>> LabelMap(const ordered_json& labels,
+                                                          const char* lang)
+{
+	std::vector<std::pair<std::string, std::string>> out;
+	auto it = labels.find(lang);
+	if (it == labels.end() || !it->is_object()) return out;
+	for (auto kv = it->begin(); kv != it->end(); ++kv) {
+		if (!kv.value().is_string()) continue;
+		out.emplace_back(kv.key(), RegexNormalizeLabel(kv.value().get<std::string>()));
+	}
+	return out;
+}
+
 } // namespace
+
+std::string RegexNormalizeLabel(const std::string& s)
+{
+	// .replace(/\[([^\]|]*)\|([^\]]*)\]/g, '$2')
+	// .replace(/\[([^\]|]*)\]/g, '$1')
+	// .replace(/\{\d+\}/g, '#')
+	// Each pattern is deterministic (the classes exclude the delimiter that
+	// must follow), so a left-to-right scan that skips one character on a
+	// failed start is exactly the global replace. All delimiters are ASCII, so
+	// scanning bytes never splits a UTF-8 character.
+	std::string a;
+	for (size_t i = 0; i < s.size();) {
+		if (s[i] == '[') {
+			size_t j = i + 1;
+			while (j < s.size() && s[j] != ']' && s[j] != '|') j++;
+			if (j < s.size() && s[j] == '|') {
+				size_t k = j + 1;
+				while (k < s.size() && s[k] != ']') k++;
+				if (k < s.size()) {
+					a.append(s, j + 1, k - j - 1);
+					i = k + 1;
+					continue;
+				}
+			}
+		}
+		a += s[i++];
+	}
+	std::string b;
+	for (size_t i = 0; i < a.size();) {
+		if (a[i] == '[') {
+			size_t j = i + 1;
+			while (j < a.size() && a[j] != ']' && a[j] != '|') j++;
+			if (j < a.size() && a[j] == ']') {
+				b.append(a, i + 1, j - i - 1);
+				i = j + 1;
+				continue;
+			}
+		}
+		b += a[i++];
+	}
+	std::string c;
+	for (size_t i = 0; i < b.size();) {
+		if (b[i] == '{') {
+			size_t j = i + 1;
+			while (j < b.size() && b[j] >= '0' && b[j] <= '9') j++;
+			if (j > i + 1 && j < b.size() && b[j] == '}') {
+				c += '#';
+				i = j + 1;
+				continue;
+			}
+		}
+		c += b[i++];
+	}
+	return c;
+}
+
+RegexPageKind RegexPageKindFrom(const std::string& s)
+{
+	if (s == "names") return RegexPageKind::Names;
+	if (s == "numeric") return RegexPageKind::Numeric;
+	if (s == "sockets") return RegexPageKind::Sockets;
+	return RegexPageKind::Mods;
+}
+
+const std::string* RegexLabels::Find(bool zhSide, const std::string& key) const
+{
+	for (const auto& kv : zhSide ? zh : en)
+		if (kv.first == key) return &kv.second;
+	return nullptr;
+}
+
+RegexLabels RegexMergeLabels(const RegexLabels& primary, const RegexLabels& fallback)
+{
+	// {...fallback, ...primary}: fallback's keys in their order (a primary value
+	// replacing the text in place), then primary's other keys in theirs.
+	RegexLabels out;
+	out.present = true;
+	for (int side = 0; side < 2; side++) {
+		const auto& f = side == 0 ? fallback.zh : fallback.en;
+		const auto& p = side == 0 ? primary.zh : primary.en;
+		auto& o = side == 0 ? out.zh : out.en;
+		o = f;
+		for (const auto& kv : p) {
+			bool done = false;
+			for (auto& x : o)
+				if (x.first == kv.first) { x.second = kv.second; done = true; break; }
+			if (!done) o.push_back(kv);
+		}
+	}
+	return out;
+}
+
+const RegexLabels* RegexDataset::Labels(const std::string& game) const
+{
+	for (const auto& g : labels_)
+		if (g.first == game) return &g.second;
+	return nullptr;
+}
 
 bool RegexDataset::Load(const std::wstring& exeDir, const std::wstring& preferred,
                         std::string* err)
 {
 	pages_.clear();
+	labels_.clear();
 	source_.clear();
 
 	// Preferred first so the combo opens on the game the launcher is set to, but
@@ -109,10 +223,13 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 			RegexPageDef page;
 			page.game = gameId;
 			page.id = p.value("id", std::string());
+			page.kind = RegexPageKindFrom(p.value("kind", std::string("mods")));
 			page.title = p.value("title", std::string());
+			page.titleEn = p.value("titleEn", std::string());
 			page.note = p.value("note", std::string());
 			page.limit = p.value("limit", 250);
 			page.groups = StringArray(p, "groups");
+			page.groupsEn = StringArray(p, "groupsEn");
 			page.ambientZh = StringArray(p, "ambientZh");
 			page.ambientEn = StringArray(p, "ambientEn");
 			page.namePrefixZh = NestedStringArray(p, "nameWordsZh", "prefix");
@@ -142,6 +259,36 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 			}
 			if (!page.entries.empty()) pages_.push_back(std::move(page));
 		}
+		RegexLabels labels;
+		const auto lab = doc.find("labels");
+		if (lab != doc.end() && lab->is_object()) {
+			labels.present = true;
+			labels.zh = LabelMap(*lab, "zh");
+			labels.en = LabelMap(*lab, "en");
+		}
+		// node.ts:38 loadLabelsFor: the data file's labels win key by key, the
+		// stand-in Data\regex_labels_<game>.json (exile-appraiser
+		// data/regex/labels.<game>.json, verbatim) fills the keys it lacks
+		// (data.ts:186 mergeLabels). A missing or broken stand-in = no fallback.
+		{
+			std::string fb;
+			if (ReadFileUtf8(exeDir + L"Data\\regex_labels_" + game + L".json", fb)) {
+				try {
+					ordered_json fdoc = ordered_json::parse(fb);
+					const auto inner = fdoc.find("labels");
+					const ordered_json& m = (inner != fdoc.end() && inner->is_object()) ? *inner : fdoc;
+					if (m.is_object()) {
+						RegexLabels fallback;
+						fallback.zh = LabelMap(m, "zh");
+						fallback.en = LabelMap(m, "en");
+						labels = RegexMergeLabels(labels, fallback);
+					}
+				} catch (const std::exception& ex) {
+					PobLog::Error("data", "regex_labels_" + gameId + ".json parse failed: " + ex.what());
+				}
+			}
+		}
+		if (pages_.size() > before) labels_.emplace_back(gameId, std::move(labels));
 	} catch (const std::exception& ex) {
 		// One bad file must not take the other game's catalogue down with it, so
 		// only this file's pages are rolled back.

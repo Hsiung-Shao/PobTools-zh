@@ -48,13 +48,18 @@ struct ToolPanelHost {
 	bool embedded = false;
 
 	ImFont* body = nullptr;   // CJK-capable; what panels draw with
-	// Digits and '/' only, at roughly 1.6x body. For the one thing a panel wants
-	// big enough to read across the room -- the atlas planner's points counter.
-	// Deliberately not a full face: twelve glyphs cost nothing, a second CJK face
-	// costs more atlas than the whole rest of the launcher.
+	// kBigFontGlyphs only (digits, '/', and what a money figure needs: "+-.,~"
+	// and the "c" / "d" currency suffixes), at roughly 1.6x body. For the few
+	// things a panel wants big enough to read across the room -- the atlas
+	// planner's points counter, the stash tracker's KPI figures. Deliberately not
+	// a full face: a score of glyphs costs nothing, a second CJK face costs more
+	// atlas than the whole rest of the launcher.
 	ImFont* big = nullptr;
 	bool cjkOk = false;       // false = the font could not supply Chinese glyphs
 };
+
+// The characters ToolPanelHost::big carries; both hosts build it from this.
+inline constexpr const char kBigFontGlyphs[] = "0123456789 /+-.,~cd";
 
 // Why a panel is still on screen after being asked to close.
 enum class ToolCloseState {

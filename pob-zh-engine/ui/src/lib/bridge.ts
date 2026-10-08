@@ -20,6 +20,8 @@ export interface HostInfo {
   version: string;
   /** A build .xml to open as soon as the engine is up ("" = none). */
   open?: string;
+  /** An "Open in PoB" link (pob:// / pob2://) to download and import once the engine is up ("" = none). */
+  importUri?: string;
   /** Tab to show once a build is loaded (POB_ZH_UI_VIEW, a developer knob). */
   view?: string;
   /** The window's remembered scale (pob-zh.ini ModernZoom / ModernFontSize). */
@@ -1369,6 +1371,8 @@ export const api = {
   setMinionLibrary: (kind: "spectre" | "beast", ids: string[]) => bridge.call<Committed>("set_minion_library", { kind, ids }, 60000),
   listBuildSites: () => bridge.call<{ sites: { id: string; label: string; canImport: boolean; canShare: boolean }[]; lastExport?: string }>("list_build_sites", {}, 60000),
   importFromUrl: (url: string) => bridge.call<{ site: string; label: string; code: string }>("import_from_url", { url }, 120000),
+  /** POB's own startup import of an "Open in PoB" link (DownloadBuild without a site). */
+  importFromUri: (uri: string) => bridge.call<{ site: string; label: string; code: string; url?: string }>("import_from_uri", { uri }, 120000),
   shareBuild: (site: string) => bridge.call<{ site: string; url: string }>("share_build", { site }, 120000),
   tabUndo: (tab: string, redo = false) => bridge.call<Committed & { canUndo: boolean; canRedo: boolean }>("tab_undo", { tab, redo }, 60000),
   undoState: () => bridge.call<{ tabs: Record<string, { canUndo: boolean; canRedo: boolean }> }>("undo_state", {}, 60000),
