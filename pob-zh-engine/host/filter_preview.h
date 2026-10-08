@@ -87,3 +87,8 @@ bool SynthesizePreviewItem(const FilterFile& f, int blockIdx, const FilterI18n& 
 
 // 掉落預覽 section (left controls + in-game-style loot canvas).
 void DrawDropPreviewSection(EditorShell& s);
+
+// Test aids (POBTOOLS_FILTER_STATE): a seeded random batch with one tooltip
+// forced open; a pasted item from text (no clipboard).
+void PreviewTestDrops(EditorShell& s, unsigned seed, int tipIdx);
+void PreviewTestImport(EditorShell& s, const std::string& itemText);

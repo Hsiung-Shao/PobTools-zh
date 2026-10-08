@@ -1009,13 +1009,14 @@ namespace {
 float g_dialogInner = 0.0f;
 }
 
-bool BeginDialog(const char* popupId, bool* open, const char* title, const char* body, const char* mono)
+bool BeginDialog(const char* popupId, bool* open, const char* title, const char* body, const char* mono,
+                 float width)
 {
 	if (open && *open) {
 		ImGui::OpenPopup(popupId);
 		*open = false;
 	}
-	const float w = std::floor(D(440.0f));
+	const float w = std::floor(D(width > 0.0f ? width : 440.0f));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(w, 0), ImVec2(w, FLT_MAX));
 	const ImGuiIO& io = ImGui::GetIO();
 	ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -1025,7 +1026,7 @@ bool BeginDialog(const char* popupId, bool* open, const char* title, const char*
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(D(24.0f), D(24.0f)));
 	ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.0f);
 	if (!ImGui::BeginPopupModal(popupId, nullptr,
-	                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
+	                            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
 	                            ImGuiWindowFlags_NoSavedSettings)) {
 		ImGui::PopStyleVar(3);
 		ImGui::PopStyleColor(2);
@@ -1331,7 +1332,8 @@ EmptyMetrics EmptyLayout(float width)
 }
 } // namespace
 
-float EmptyStateHeight(const char* title, const char* hint, bool action, float width)
+namespace {
+float EmptyHeightEx(const char* title, const char* hint, bool action, const char* mono, float width)
 {
 	const EmptyMetrics m = EmptyLayout(width);
 	float h = m.padY * 2.0f;
@@ -1339,15 +1341,28 @@ float EmptyStateHeight(const char* title, const char* hint, bool action, float w
 	h += TextSize(BodyFont(), BodyPx(), title, m.textW).y;
 	if (hint && *hint) h += m.gap * 0.5f + TextSize(SmallFont(), SmallPx(), hint, m.textW).y;
 	if (action) h += m.gap * 1.5f + std::floor(D(36.0f));
+	if (mono && *mono) h += m.gap + SmallPx();
 	return std::ceil(h);
+}
+} // namespace
+
+float EmptyStateHeight(const char* title, const char* hint, bool action, float width)
+{
+	return EmptyHeightEx(title, hint, action, nullptr, width);
 }
 
 bool EmptyState(const char* id, const char* icon, const char* title, const char* hint, const char* action,
                 float width, float height)
 {
+	return EmptyStateEx(id, icon, title, hint, action, nullptr, nullptr, width, height) == 1;
+}
+
+int EmptyStateEx(const char* id, const char* icon, const char* title, const char* hint, const char* action,
+                 const char* secondary, const char* mono, float width, float height)
+{
 	ImGui::PushID(id);
 	const float w = width > 0.0f ? width : ImGui::GetContentRegionAvail().x;
-	const float need = EmptyStateHeight(title, hint, action != nullptr, w);
+	const float need = EmptyHeightEx(title, hint, action != nullptr, mono, w);
 	const float h = std::max(need, height);
 	const EmptyMetrics m = EmptyLayout(w);
 	const ImVec2 p = ImGui::GetCursorScreenPos();
@@ -1399,15 +1414,26 @@ bool EmptyState(const char* id, const char* icon, const char* title, const char*
 		y += m.gap * 0.5f;
 		centred(SmallFont(), SmallPx(), Tok::TextMuted, hint);
 	}
-	bool clicked = false;
+	int clicked = 0;
 	if (action) {
 		y += m.gap * 1.5f;
 		const float bw = ButtonWidth(action, BtnSize::Md);
-		ImGui::SetCursorScreenPos(ImVec2(std::floor(cx - bw * 0.5f), y));
+		const float bw2 = secondary ? ButtonWidth(secondary, BtnSize::Md) + m.gap : 0.0f;
+		ImGui::SetCursorScreenPos(ImVec2(std::floor(cx - (bw + bw2) * 0.5f), y));
 		const float prev = g_lineBoxH;
 		g_lineBoxH = 0.0f;
-		clicked = Button(action, BtnKind::Primary, BtnSize::Md);
+		if (Button(action, BtnKind::Primary, BtnSize::Md)) clicked = 1;
+		if (secondary) {
+			ImGui::SetCursorScreenPos(ImVec2(std::floor(cx - (bw + bw2) * 0.5f) + bw + m.gap, y));
+			if (Button(secondary, BtnKind::Secondary, BtnSize::Md)) clicked = 2;
+		}
 		g_lineBoxH = prev;
+		y += std::floor(D(36.0f));
+	}
+	if (mono && *mono) {
+		y += m.gap;
+		const ImVec2 ms = TextSize(SmallFont(), SmallPx(), mono);
+		DrawText(dl, SmallFont(), SmallPx(), ImVec2(std::floor(cx - ms.x * 0.5f), y), Tok::TextMuted, mono);
 	}
 	ImGui::SetCursorScreenPos(p);
 	ImGui::Dummy(ImVec2(w, h));

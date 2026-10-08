@@ -138,10 +138,18 @@ void SoundLibraryService::Init(const std::wstring& exeDir)
 	Rescan();
 }
 
+void SoundLibraryService::InitForTest(const std::wstring& exeDir, const std::wstring& folder)
+{
+	Init(exeDir);
+	readOnly_ = true;
+	folder_ = folder;
+	Rescan();
+}
+
 void SoundLibraryService::SetFolder(const std::wstring& folder)
 {
 	folder_ = folder;
-	SetSoundFolder(folder);
+	if (!readOnly_) SetSoundFolder(folder);
 	Rescan();
 }
 
@@ -169,6 +177,7 @@ void SoundLibraryService::Rescan()
 
 bool SoundLibraryService::SaveRules(std::string* err)
 {
+	if (readOnly_) return true;   // a test run writes nothing
 	std::wstring dir = exeDir_ + L"Data";
 	CreateDirectoryW(dir.c_str(), nullptr);
 	std::ofstream o(dir + L"\\sound_rules.json", std::ios::binary);

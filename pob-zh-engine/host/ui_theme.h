@@ -62,6 +62,22 @@ inline constexpr std::uint32_t TreeHit       = TreeNotable;
 // The two kinds the atlas planner lists beside keystones and notables (2026-10-08).
 inline constexpr std::uint32_t TreeWormhole  = Rgb(0x8c, 0xcc, 0xf2);
 inline constexpr std::uint32_t TreeSmall     = Rgb(0xb8, 0xc2, 0xd1);
+// The game's eleven beam / minimap colour tokens and its rarity colours, as the
+// filter editor shows them (2026-10-09 design: FilterDetail palette).
+inline constexpr std::uint32_t FxRed         = Rgb(0xe0, 0x40, 0x40);
+inline constexpr std::uint32_t FxGreen       = Rgb(0x40, 0xc0, 0x60);
+inline constexpr std::uint32_t FxBlue        = Rgb(0x40, 0x80, 0xe0);
+inline constexpr std::uint32_t FxWhite       = Rgb(0xe0, 0xe0, 0xe0);
+inline constexpr std::uint32_t FxYellow      = Rgb(0xe0, 0xc0, 0x40);
+inline constexpr std::uint32_t FxCyan        = Rgb(0x40, 0xd0, 0xd0);
+inline constexpr std::uint32_t FxGrey        = Rgb(0xa0, 0xa0, 0xa0);
+inline constexpr std::uint32_t FxPink        = Rgb(0xe0, 0x80, 0xc0);
+inline constexpr std::uint32_t FxOrange      = Rgb(0xe0, 0x80, 0x40);
+inline constexpr std::uint32_t FxPurple      = Rgb(0xa0, 0x60, 0xe0);
+inline constexpr std::uint32_t FxBrown       = Rgb(0x80, 0x60, 0x40);
+inline constexpr std::uint32_t RarityMagic   = Rgb(0x88, 0x88, 0xff);
+inline constexpr std::uint32_t RarityRare    = Rgb(0xd6, 0xb5, 0x6a);
+inline constexpr std::uint32_t RarityUnique  = Rgb(0xaf, 0x60, 0x25);
 } // namespace Tok
 
 // Node kinds on a passive-style canvas, and the one colour each is drawn and

@@ -7,12 +7,17 @@
 #include "audio_player.h"
 #include "sound_manager.h"   // GetSoundFolder
 #include "ui_theme.h"
+#include "ui_widgets.h"
+#include "ui_icons.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <cfloat>
+#include <cmath>
+#include <memory>
 #include <cstdlib>
 #include <string>
 #include <vector>
@@ -420,11 +425,11 @@ bool SynthesizePreviewItem(const FilterFile& f, int blockIdx, const FilterI18n& 
 }
 
 // ---------------------------------------------------------------------------
-// UI
+// UI (design: FilterPreview.dc.html)
 
-namespace {
+namespace Tok = PobUi::Tok;
 
-struct DropEntry {
+struct PvDropEntry {
 	PreviewItem item;
 	PreviewResult res;
 	float jitter = 0;
@@ -433,38 +438,45 @@ struct DropEntry {
 	std::vector<ImportIssue> importWarnings;
 };
 
-// section-local state (single editor window)
-std::vector<DropEntry> g_drops;
-PreviewItem g_item;                 // the configurable "current item"
-std::string g_itemZh;               // display name of g_item
-std::string g_search;
-int g_masterVol = 80;               // preview master volume %
-bool g_autoPlay = true;
-std::string g_soundNote;            // what the last evaluation would play
-ImportedItem g_import;              // last "paste from game" parse result
-bool g_importTried = false;         // a paste happened (show summary/warnings)
+// Per-panel state (used to be file statics, which two tabs would have shared).
+struct PreviewUiState {
+	std::vector<PvDropEntry> drops;
+	PreviewItem item;                   // the configurable "current item"
+	std::string itemZh;                 // display name of item
+	char search[128] = "";
+	int masterVol = 80;                 // preview master volume %
+	bool autoPlay = true;
+	std::string soundNote;              // what the last evaluation would play
+	ImportedItem imp;                   // last "paste from game" parse result
+	bool importTried = false;           // a paste happened (show summary/warnings)
+	int testTip = -1;                   // test aid: draw this drop's tooltip
+};
 
-ImU32 col32(const unsigned char c[4]) { return IM_COL32(c[0], c[1], c[2], c[3]); }
+namespace {
 
-// PlayEffect beam colour tokens.
-ImU32 effectColor(const std::string& tok)
+PreviewUiState& PUI(EditorShell& s)
 {
-	struct { const char* t; ImU32 c; } k[] = {
-		{ "Red", IM_COL32(230, 60, 60, 255) }, { "Green", IM_COL32(80, 220, 100, 255) },
-		{ "Blue", IM_COL32(90, 120, 250, 255) }, { "Brown", IM_COL32(160, 110, 60, 255) },
-		{ "White", IM_COL32(240, 240, 240, 255) }, { "Yellow", IM_COL32(240, 220, 80, 255) },
-		{ "Cyan", IM_COL32(60, 220, 220, 255) }, { "Grey", IM_COL32(130, 130, 130, 255) },
-		{ "Orange", IM_COL32(240, 150, 50, 255) }, { "Pink", IM_COL32(240, 120, 200, 255) },
-		{ "Purple", IM_COL32(170, 90, 240, 255) },
-	};
-	for (auto& e : k)
-		if (tok.rfind(e.t, 0) == 0) return e.c;
-	return IM_COL32(200, 200, 200, 255);
+	if (!s.previewUi) s.previewUi = std::make_shared<PreviewUiState>();
+	return *s.previewUi;
 }
 
-PreviewItem itemFromLib(const EditorShell& s, const LibItem& li)
+ImU32 col32(const unsigned char c[4]) { return IM_COL32(c[0], c[1], c[2], c[3]); }
+ImFont* SmallFace() { const PobUi::WidgetFonts& wf = PobUi::Fonts(); return wf.small ? wf.small : ImGui::GetFont(); }
+
+// The game's rarity colours (Tok::Rarity*).
+ImU32 RarityColor(int r)
 {
-	PreviewItem it = g_item;         // keep the user's property tweaks (ilvl 等)
+	switch (r) {
+		case 1: return Tok::RarityMagic;
+		case 2: return Tok::RarityRare;
+		case 3: return Tok::RarityUnique;
+		default: return Tok::Text;
+	}
+}
+
+PreviewItem itemFromLib(const PreviewUiState& u, const LibItem& li)
+{
+	PreviewItem it = u.item;         // keep the user's property tweaks (ilvl 等)
 	it.baseType = li.en;
 	it.classId = li.enClass;
 	bool uniq = false, flat = false;
@@ -475,63 +487,68 @@ PreviewItem itemFromLib(const EditorShell& s, const LibItem& li)
 	}
 	if (li.enClass == "StackableCurrency" || li.enClass == "DivinationCard" ||
 	    ciContains(li.enClass, "gem") || ciContains(li.enClass, "quest")) flat = true;
-	it.rarity = uniq ? 3 : (flat ? 0 : g_item.rarity);
+	it.rarity = uniq ? 3 : (flat ? 0 : u.item.rarity);
 	return it;
+}
+
+std::wstring SoundFolder(EditorShell& s)
+{
+	if (!s.soundsInit) { s.sounds.Init(s.exeDir); s.soundsInit = true; }
+	return s.sounds.folder();
 }
 
 // Play the sound the evaluation resolved (custom mp3 for real; built-ins are
 // game assets we don't have — note them instead).
-void playResultSound(const EditorShell& s, const PreviewResult& r)
+void playResultSound(EditorShell& s, PreviewUiState& u, const PreviewResult& r)
 {
-	g_soundNote.clear();
-	if (r.hidden) { g_soundNote = u8"（隱藏規則 — 無音效）"; return; }
+	u.soundNote.clear();
+	if (r.hidden) { u.soundNote = u8"隱藏的規則不播音效"; return; }
 	if (!r.customSound.empty()) {
 		std::wstring file = EdWiden(r.customSound);
-		std::wstring path = (file.find(L':') != std::wstring::npos)
-			? file : (GetSoundFolder() + L"\\" + file);
-		int pct = (int)((float)std::clamp(r.customVol, 0, 300) / 300.f * (float)g_masterVol + 0.5f);
-		bool ok = PlayAudioFileVol(path, pct);
-		g_soundNote = ok ? (u8"播放 " + r.customSound)
-		                 : (u8"找不到/無法播放 " + r.customSound + u8"（確認音效檔在遊戲資料夾）");
+		std::wstring path = (file.find(L':') != std::wstring::npos) ? file : (SoundFolder(s) + L"\\" + file);
+		int pct = (int)((float)std::clamp(r.customVol, 0, 300) / 300.f * (float)u.masterVol + 0.5f);
+		const bool ok = !s.testMode && PlayAudioFileVol(path, pct);
+		u.soundNote = ok ? (u8"播放 " + r.customSound)
+		                 : (u8"沒辦法播放 " + r.customSound + u8"（確認音效檔在音效資料夾）");
 	} else if (r.alertId > 0) {
-		g_soundNote = u8"內建音效 #" + std::to_string(r.alertId) + u8"（遊戲資產，編輯器無法試聽）";
+		u.soundNote = u8"內建音效 " + std::to_string(r.alertId) + u8" 號（遊戲裡的音檔，這裡沒辦法試聽）";
 	} else {
-		g_soundNote = u8"此規則沒有音效";
+		u.soundNote = u8"這條規則沒有音效";
 	}
 }
 
-void evalDrops(EditorShell& s)
+void evalDrops(EditorShell& s, PreviewUiState& u)
 {
-	for (DropEntry& d : g_drops) d.res = EvaluatePreview(s.model, d.item, s.i18n);
+	for (PvDropEntry& d : u.drops) d.res = EvaluatePreview(s.model, d.item, s.i18n);
 }
 
-void showSingle(EditorShell& s)
+void showSingle(EditorShell& s, PreviewUiState& u)
 {
-	if (g_item.baseType.empty()) return;
-	g_drops.clear();
-	DropEntry d;
-	d.item = g_item;
+	if (u.item.baseType.empty()) return;
+	u.drops.clear();
+	PvDropEntry d;
+	d.item = u.item;
 	d.jitter = 0;
 	d.res = EvaluatePreview(s.model, d.item, s.i18n);
-	g_drops.push_back(std::move(d));
-	if (g_autoPlay) playResultSound(s, g_drops[0].res);
+	u.drops.push_back(std::move(d));
+	if (u.autoPlay) playResultSound(s, u, u.drops[0].res);
 }
 
 // Put the last successfully pasted game item on the canvas. The label mirrors
 // the game: name line for rare/unique, pasted base line otherwise.
-void importShow(EditorShell& s, bool append)
+void importShow(EditorShell& s, PreviewUiState& u, bool append)
 {
-	if (!g_import.ok) return;
-	if (!append) g_drops.clear();
-	DropEntry d;
-	d.item = g_import.item;
-	d.item.areaLevel = g_item.areaLevel;   // FilterBlade-style: UI supplies it
+	if (!u.imp.ok) return;
+	if (!append) u.drops.clear();
+	PvDropEntry d;
+	d.item = u.imp.item;
+	d.item.areaLevel = u.item.areaLevel;   // FilterBlade-style: UI supplies it
 	d.imported = true;
-	d.labelOverride = !g_import.name.empty() ? g_import.name : g_import.baseRaw;
-	d.importWarnings = g_import.warnings;
+	d.labelOverride = !u.imp.name.empty() ? u.imp.name : u.imp.baseRaw;
+	d.importWarnings = u.imp.warnings;
 	d.res = EvaluatePreview(s.model, d.item, s.i18n);
-	g_drops.push_back(std::move(d));
-	if (g_autoPlay) playResultSound(s, g_drops.back().res);
+	u.drops.push_back(std::move(d));
+	if (u.autoPlay) playResultSound(s, u, u.drops.back().res);
 }
 
 // NeverSink 標記解析:區塊 header 的 $type-> 第一節段(分類鍵)與 $tier-> 全路徑。
@@ -561,11 +578,11 @@ std::string nsTierPath(const std::string& header)
 // 「每個類別都出」;同類別內最多取 2 個「不同 $tier」的區塊(不同階級),
 // 物品名稱全批不重複。合成後仍走完整 first-match 判定(可能被更前面的
 // 規則攔截 — 那正是遊戲內會發生的事)。
-void randomDrops(EditorShell& s)
+void randomDrops(EditorShell& s, PreviewUiState& u)
 {
 	const FilterFile& f = s.model;
 	if (f.blocks.empty()) return;
-	g_drops.clear();
+	u.drops.clear();
 
 	// group Show blocks by top category, keeping the file's category order
 	std::vector<std::pair<std::string, std::vector<int>>> groups;
@@ -583,7 +600,7 @@ void randomDrops(EditorShell& s)
 
 	std::vector<std::string> usedBase;
 	auto baseUsed = [&usedBase](const std::string& b) {
-		for (const std::string& u : usedBase) if (u == b) return true;
+		for (const std::string& x : usedBase) if (x == b) return true;
 		return false;
 	};
 
@@ -602,305 +619,477 @@ void randomDrops(EditorShell& s)
 			if (!SynthesizePreviewItem(f, bi, s.i18n, s.library.items(), &it)) continue;
 			if (baseUsed(it.baseType)) continue;             // 物品不重複
 			usedBase.push_back(it.baseType);
-			DropEntry d;
+			PvDropEntry d;
 			d.item = it;
 			d.jitter = (float)((rand() % 240) - 120);
 			d.res = EvaluatePreview(f, d.item, s.i18n);
-			g_drops.push_back(std::move(d));
+			u.drops.push_back(std::move(d));
 			firstTier = tier;
 			taken++;
 		}
 	}
 
 	// 大字在上的視覺排序(貴重的通常字大),被攔截成隱藏的排最後
-	std::stable_sort(g_drops.begin(), g_drops.end(), [](const DropEntry& a, const DropEntry& b) {
+	std::stable_sort(u.drops.begin(), u.drops.end(), [](const PvDropEntry& a, const PvDropEntry& b) {
 		if (a.res.hidden != b.res.hidden) return !a.res.hidden;
 		return a.res.fontSize > b.res.fontSize;
 	});
-	if (g_autoPlay) {
-		for (const DropEntry& d : g_drops)
-			if (!d.res.hidden && !d.res.customSound.empty()) { playResultSound(s, d.res); return; }
-		g_soundNote = u8"（本批掉落沒有自訂音效規則）";
+	if (u.autoPlay) {
+		for (const PvDropEntry& d : u.drops)
+			if (!d.res.hidden && !d.res.customSound.empty()) { playResultSound(s, u, d.res); return; }
+		u.soundNote = u8"這一批掉落沒有自訂音效";
 	}
+}
+
+// Section heading with optional right-side buttons: draws the title, returns
+// the x where buttons may start (laid out by the caller from the right).
+void SectionTitle(const char* t)
+{
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImFont* f = SmallFace();
+	ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + std::floor((std::floor(PobUi::D(28.0f)) - f->FontSize) * 0.5f)));
+	ImGui::PushFont(f);
+	ImGui::TextUnformatted(t);
+	ImGui::PopFont();
+	ImGui::SetCursorScreenPos(p);
+}
+
+void SectionRule()
+{
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+	const ImVec2 q = ImGui::GetCursorScreenPos();
+	ImGui::GetWindowDrawList()->AddLine(ImVec2(p.x - PobUi::D(12.0f), q.y), ImVec2(p.x + ImGui::GetContentRegionAvail().x + PobUi::D(12.0f), q.y),
+	                                    Tok::BorderSubtle, 1.0f);
+	ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+}
+
+// A labelled property row: 72 design px label, controls after.
+void PropLabel(const char* t)
+{
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + std::floor((PobUi::ControlH() - SmallFace()->FontSize) * 0.5f)));
+	PobUi::Hint(t);
+	ImGui::SetCursorScreenPos(ImVec2(p.x + std::floor(PobUi::D(76.0f)), p.y));
+}
+
+bool SmallInt(const char* id, int* v, int lo, int hi)
+{
+	PobUi::PushControlFrame();
+	ImGui::SetNextItemWidth(std::floor(PobUi::D(60.0f)));
+	const bool ch = ImGui::InputInt(id, v, 0, 0);
+	PobUi::PopControlFrame();
+	if (ch) *v = std::clamp(*v, lo, hi);
+	return ch;
+}
+
+bool TickLabel(const char* id, const char* label, bool* v)
+{
+	const float px = std::floor(PobUi::D(15.0f));
+	const ImVec2 p = ImGui::GetCursorScreenPos();
+	ImFont* f = SmallFace();
+	const ImVec2 ts = f->CalcTextSizeA(f->FontSize, FLT_MAX, 0.0f, label);
+	const float h = PobUi::ControlH();
+	const bool click = ImGui::InvisibleButton(id, ImVec2(px + PobUi::D(6.0f) + ts.x, h));
+	if (click) *v = !*v;
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	const ImVec2 b(p.x, p.y + std::floor((h - px) * 0.5f));
+	if (*v) {
+		dl->AddRectFilled(b, b + ImVec2(px, px), Tok::Accent, PobUi::D(4.0f));
+		if (PobUi::Fonts().icons)
+			PobUi::IconAt(dl, b + ImVec2(std::floor(px * 0.12f), std::floor(px * 0.08f)), PobIcon::Check, Tok::OnAccent, std::floor(px * 0.8f));
+	} else {
+		dl->AddRect(b, b + ImVec2(px, px), Tok::BorderStrong, PobUi::D(4.0f), 0, 1.5f);
+	}
+	dl->AddText(f, f->FontSize, ImVec2(p.x + px + PobUi::D(6.0f), p.y + std::floor((h - ts.y) * 0.5f)), Tok::Text, label);
+	return click;
+}
+
+void DrawDropTooltip(const EditorShell& s, const PvDropEntry& d, const ImVec2* at)
+{
+	const PreviewResult& r = d.res;
+	if (at) ImGui::SetNextWindowPos(*at, ImGuiCond_Always);
+	ImGui::BeginTooltip();
+	ImGui::PushTextWrapPos(std::floor(PobUi::D(300.0f)));
+	const std::string rule = (r.blockIdx >= 0 && r.blockIdx < (int)s.rows.size()) ? s.rows[r.blockIdx].label : std::string();
+	if (r.matched) ImGui::TextUnformatted((u8"命中：" + rule).c_str());
+	else ImGui::TextUnformatted(u8"沒有規則命中（遊戲預設樣式）");
+	ImGui::PushFont(SmallFace());
+	std::string line2 = r.hidden ? std::string(u8"隱藏") : (u8"字級 " + std::to_string(r.fontSize));
+	if (!r.customSound.empty()) line2 += u8" · 音效 自訂 " + r.customSound;
+	else if (r.alertId > 0) line2 += u8" · 音效 內建 " + std::to_string(r.alertId) + u8" 號";
+	ImGui::TextUnformatted(line2.c_str());
+	if (!r.unknownConds.empty()) {
+		std::string u = u8"未模擬的條件：";
+		for (size_t k = 0; k < r.unknownConds.size() && k < 6; k++) u += (k ? ", " : "") + r.unknownConds[k];
+		u += u8"（視為不符）";
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::Warning));
+		ImGui::TextUnformatted(u.c_str());
+		ImGui::PopStyleColor();
+	}
+	for (size_t k = 0; k < d.importWarnings.size() && k < 4; k++) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::Warning));
+		ImGui::TextUnformatted((u8"※ " + d.importWarnings[k].msg).c_str());
+		ImGui::PopStyleColor();
+	}
+	if (r.matched) {
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextMuted));
+		ImGui::TextUnformatted(u8"點一下跳到這條規則");
+		ImGui::PopStyleColor();
+	}
+	ImGui::PopFont();
+	ImGui::PopTextWrapPos();
+	ImGui::EndTooltip();
 }
 
 } // namespace
 
 void DrawDropPreviewSection(EditorShell& s)
 {
-	if (!s.loaded) { ImGui::TextDisabled(u8"開啟一個 .filter 後即可預覽掉落。"); return; }
+	if (!s.loaded) {
+		const ImVec2 avail = ImGui::GetContentRegionAvail();
+		const float w = (std::min)(avail.x - PobUi::D(32.0f), PobUi::D(520.0f));
+		ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(std::floor((avail.x - w) * 0.5f), std::floor(avail.y * 0.3f)));
+		PobUi::EmptyState("##pvnofile", PobIcon::Funnel, u8"還沒開啟過濾器", u8"開啟一個 .filter 之後，這裡用它判定掉落物品的樣子", nullptr, w);
+		return;
+	}
 	if (s.doc.file() != &s.model) s.doc.Attach(&s.model);
 	if (s.rowsVersion != s.doc.structureVersion()) EdRebuildRows(s);
+	PreviewUiState& u = PUI(s);
 
-	const float ctrlW = 330 * s.scale;
+	const float H = ImGui::GetContentRegionAvail().y;
+	const float ctrlW = std::floor(PobUi::D(340.0f));
+	const ImVec2 origin = ImGui::GetCursorScreenPos();
+	ImDrawList* wdl = ImGui::GetWindowDrawList();
+	wdl->AddRectFilled(origin, origin + ImVec2(ctrlW, H), Tok::Surface1);
+	wdl->AddLine(origin + ImVec2(ctrlW - 1.0f, 0), origin + ImVec2(ctrlW - 1.0f, H), Tok::Border, 1.0f);
 
-	// ---- left: item picker + properties + sound ----
-	ImGui::BeginChild("##pvctrl", ImVec2(ctrlW, 0), true);
+	// ---- left: import, item, properties, generate ----
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(12.0f), PobUi::D(10.0f)));
+	ImGui::BeginChild("##pvctrl", ImVec2(ctrlW - 1.0f, H), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+	ImGui::PopStyleVar();
+	const float cw = ImGui::GetContentRegionAvail().x;
+	const float smH = std::floor(PobUi::D(28.0f));
 
-	// ---- import a real item copied from the game (FilterBlade-style) ----
-	if (ImGui::CollapsingHeader(u8"從遊戲匯入物品", ImGuiTreeNodeFlags_DefaultOpen)) {
-		auto pasteImport = [&s](bool append) {
-			std::string txt = ReadClipboardUtf8(s.hostHwnd);
-			g_import = ParseGameItemText(txt, s.i18n, s.library.items());
-			g_importTried = true;
-			if (g_import.ok) importShow(s, append);
+	// import from the game
+	{
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		SectionTitle(u8"從遊戲匯入物品");
+		const float b2 = PobUi::ButtonWidth(u8"加入畫布", PobUi::BtnSize::Sm);
+		const float b1 = PobUi::ButtonWidth(u8"貼上並顯示", PobUi::BtnSize::Sm);
+		auto pasteImport = [&](bool append) {
+			const std::string txt = ReadClipboardUtf8(s.hostHwnd);
+			u.imp = ParseGameItemText(txt, s.i18n, s.library.items());
+			u.importTried = true;
+			if (u.imp.ok) importShow(s, u, append);
 			// on failure the previous canvas is kept; warnings explain below
 		};
-		PobUi::PushPrimaryButton();
-		if (ImGui::Button(u8"貼上並顯示", ImVec2((ctrlW - 30 * s.scale) * 0.5f, 0)))
-			pasteImport(false);
-		ImGui::SameLine();
-		if (ImGui::Button(u8"貼上並加入畫布", ImVec2(-1, 0)))
-			pasteImport(true);
-		PobUi::PopButtonStyle();
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(u8"遊戲內對物品按 Ctrl+C，回來按這裡。\n"
-			                  u8"「加入畫布」不清空現有樣本，方便多件比較。");
-
-		if (g_importTried) {
-			ImGui::PushTextWrapPos(ctrlW - 16 * s.scale);
-			if (g_import.ok) {
-				if (!g_import.name.empty())
-					ImGui::Text(u8"名稱：%s", g_import.name.c_str());
-				std::string zhBase = s.i18n.DisplayName(g_import.baseEn);
-				ImGui::Text(u8"基底：%s%s%s", zhBase.c_str(),
-					zhBase == g_import.baseEn ? "" : "  ",
-					zhBase == g_import.baseEn ? "" : ("(" + g_import.baseEn + ")").c_str());
-				static const char* kRarZh[] = { u8"普通", u8"魔法", u8"稀有", u8"傳奇" };
-				std::string info = kRarZh[std::clamp(g_import.item.rarity, 0, 3)];
-				info += u8" · 物等 " + std::to_string(g_import.item.itemLevel);
-				if (g_import.item.quality) info += u8" · 品質 " + std::to_string(g_import.item.quality);
-				if (!g_import.socketsRaw.empty()) info += u8" · 插槽 " + g_import.socketsRaw;
-				if (g_import.item.stackSize > 1) info += u8" · ×" + std::to_string(g_import.item.stackSize);
-				ImGui::TextDisabled("%s", info.c_str());
+		ImGui::SetCursorScreenPos(ImVec2(p.x + cw - b1 - b2 - PobUi::D(6.0f), p.y));
+		if (PobUi::Button(u8"貼上並顯示", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) pasteImport(false);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在遊戲裡對物品按 Ctrl+C，再按這裡");
+		ImGui::SameLine(0, PobUi::D(6.0f));
+		if (PobUi::Button(u8"加入畫布", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) pasteImport(true);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"不清空畫布，加在現有的樣本旁邊比較");
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + smH + PobUi::D(6.0f)));
+		if (u.importTried) {
+			if (u.imp.ok) {
+				auto kv = [&](const char* k, const std::string& v, ImU32 col) {
+					const ImVec2 q = ImGui::GetCursorScreenPos();
+					ImGui::PushFont(SmallFace());
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextMuted));
+					ImGui::TextUnformatted(k);
+					ImGui::PopStyleColor();
+					ImGui::PopFont();
+					ImGui::SetCursorScreenPos(ImVec2(q.x + std::floor(PobUi::D(76.0f)), q.y));
+					ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + cw - PobUi::D(76.0f));
+					ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(col));
+					ImGui::PushFont(SmallFace());
+					ImGui::TextUnformatted(v.c_str());
+					ImGui::PopFont();
+					ImGui::PopStyleColor();
+					ImGui::PopTextWrapPos();
+				};
+				std::string zhBase = s.i18n.DisplayName(u.imp.baseEn);
+				std::string name = u.imp.name.empty() ? zhBase : (u.imp.name + u8" · " + zhBase);
+				kv(u8"名稱", name, Tok::Text);
+				static const char* kRarZh[] = { u8"一般", u8"魔法", u8"稀有", u8"傳奇" };
+				kv(u8"稀有度", kRarZh[std::clamp(u.imp.item.rarity, 0, 3)], RarityColor(u.imp.item.rarity));
+				kv(u8"物等 / 品質", std::to_string(u.imp.item.itemLevel) + u8" · " + std::to_string(u.imp.item.quality) + "%", Tok::Text);
+				if (!u.imp.socketsRaw.empty()) kv(u8"插槽", u.imp.socketsRaw, Tok::Text);
+				if (u.imp.item.stackSize > 1) kv(u8"堆疊", std::to_string(u.imp.item.stackSize), Tok::Text);
 				std::string flags;
 				auto addFlag = [&flags](bool on, const char* zh) {
 					if (on) { if (!flags.empty()) flags += u8"、"; flags += zh; }
 				};
-				addFlag(g_import.item.corrupted, u8"已汙染");
-				addFlag(g_import.item.mirrored, u8"已鏡像");
-				addFlag(g_import.item.fractured, u8"破裂");
-				addFlag(g_import.item.synthesised, u8"追憶");
-				addFlag(!g_import.item.identified && g_import.item.rarity >= 1, u8"未鑑定");
-				addFlag(g_import.item.enchanted, u8"附魔");
-				addFlag(g_import.item.replica, u8"贗品");
-				addFlag(g_import.item.blightedMap, u8"凋落");
-				addFlag((g_import.item.influence & kInfShaper) != 0, u8"塑者");
-				addFlag((g_import.item.influence & kInfElder) != 0, u8"尊師");
-				addFlag((g_import.item.influence & kInfCrusader) != 0, u8"聖戰士");
-				addFlag((g_import.item.influence & kInfRedeemer) != 0, u8"救贖者");
-				addFlag((g_import.item.influence & kInfHunter) != 0, u8"狩獵者");
-				addFlag((g_import.item.influence & kInfWarlord) != 0, u8"總督軍");
-				addFlag(g_import.exarch, u8"灼烙");
-				addFlag(g_import.eater, u8"吞噬");
-				if (!flags.empty()) ImGui::TextDisabled(u8"狀態：%s", flags.c_str());
-				ImGui::TextDisabled(u8"區域等級沿用下方「物品屬性」的設定");
+				addFlag(u.imp.item.corrupted, u8"已汙染");
+				addFlag(u.imp.item.mirrored, u8"已鏡像");
+				addFlag(u.imp.item.fractured, u8"破裂");
+				addFlag(u.imp.item.synthesised, u8"追憶");
+				addFlag(!u.imp.item.identified && u.imp.item.rarity >= 1, u8"未鑑定");
+				addFlag(u.imp.item.enchanted, u8"附魔");
+				addFlag(u.imp.item.replica, u8"贗品");
+				addFlag(u.imp.item.blightedMap, u8"凋落");
+				addFlag((u.imp.item.influence & kInfShaper) != 0, u8"塑者");
+				addFlag((u.imp.item.influence & kInfElder) != 0, u8"尊師");
+				addFlag((u.imp.item.influence & kInfCrusader) != 0, u8"聖戰士");
+				addFlag((u.imp.item.influence & kInfRedeemer) != 0, u8"救贖者");
+				addFlag((u.imp.item.influence & kInfHunter) != 0, u8"狩獵者");
+				addFlag((u.imp.item.influence & kInfWarlord) != 0, u8"總督軍");
+				addFlag(u.imp.exarch, u8"灼烙");
+				addFlag(u.imp.eater, u8"吞噬");
+				if (!flags.empty()) kv(u8"狀態", flags, Tok::Text);
+				ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+				const std::string al = u8"區域等級沿用下方設定的" + std::to_string(u.item.areaLevel);
+				PobUi::Banner("##pvarea", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, al.c_str(),
+				              u8"物品文字裡沒有區域等級，要用下方「物品 / 區域」的第二格。", false, nullptr, false, true, cw);
+			} else {
+				PobUi::Banner("##pvfail", PobUi::BannerTone::Bad, PobIcon::CircleX, u8"剪貼簿裡不是遊戲的物品文字",
+				              u8"在遊戲裡對物品按 Ctrl+C 之後再試一次。", false, nullptr, false, true, cw);
 			}
-			for (const ImportIssue& w : g_import.warnings)
-				ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.30f, 1.0f), u8"※ %s", w.msg.c_str());
-			ImGui::PopTextWrapPos();
+			for (const ImportIssue& w : u.imp.warnings) {
+				const std::string t = u8"※ " + w.msg;
+				PobUi::Hint(t.c_str(), cw, Tok::Warning);
+			}
 		}
-		ImGui::Spacing();
 	}
+	SectionRule();
 
-	ImGui::Separator();
-	ImGui::TextUnformatted(u8"物品");
-	ImGui::SetNextItemWidth(-1);
-	ImGui::InputTextWithHint("##pvsearch", u8"搜尋物品（中/英文）…", &g_search);
+	// item search
 	{
-		std::string lower = EdToLowerAscii(g_search);
-		ImGui::BeginChild("##pvlist", ImVec2(0, 150 * s.scale), true);
-		if (!g_search.empty()) {
+		ImGui::PushFont(SmallFace());
+		ImGui::TextUnformatted(u8"物品");
+		ImGui::PopFont();
+		PobUi::SearchField("##pvsearch", u.search, (int)sizeof(u.search), u8"搜尋物品（中 / 英文）", cw);
+		const std::string q = u.search;
+		const std::string lower = EdToLowerAscii(q);
+		const float rowH = std::floor(ImGui::GetTextLineHeight() + PobUi::D(8.0f));
+		if (!q.empty()) {
+			ImGui::BeginChild("##pvlist", ImVec2(cw, rowH * 5.0f + PobUi::D(4.0f)), false);
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			ImFont* sf = SmallFace();
 			int shown = 0;
 			for (const LibItem& it : s.library.items()) {
-				if (!EdContainsCI(it.en, lower) && it.zh.find(g_search) == std::string::npos) continue;
-				std::string lbl = it.zh == it.en ? it.en : (it.zh + "  (" + it.en + ")");
-				if (ImGui::Selectable(lbl.c_str(), g_item.baseType == it.en)) {
-					g_item = itemFromLib(s, it);
-					g_itemZh = it.zh;
-					showSingle(s);
+				if (!EdContainsCI(it.en, lower) && it.zh.find(q) == std::string::npos) continue;
+				ImGui::PushID(shown);
+				const ImVec2 rp = ImGui::GetCursorScreenPos();
+				const float rw = ImGui::GetContentRegionAvail().x;
+				const bool click = ImGui::InvisibleButton("##it", ImVec2(rw, rowH));
+				const bool hov = ImGui::IsItemHovered();
+				const bool on = u.item.baseType == it.en;
+				if (on || hov) dl->AddRectFilled(rp, rp + ImVec2(rw, rowH), on ? Tok::AccentSoft : Tok::Surface2, PobUi::D(5.0f));
+				const std::string zh = it.zh.empty() ? it.en : it.zh;
+				dl->AddText(ImVec2(rp.x + PobUi::D(8.0f), rp.y + std::floor((rowH - ImGui::GetTextLineHeight()) * 0.5f)), Tok::Text, zh.c_str());
+				const std::string cls = s.i18n.ClassNameZh(it.enClass);
+				if (!cls.empty()) {
+					const ImVec2 cs = sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, cls.c_str());
+					dl->AddText(sf, sf->FontSize, ImVec2(rp.x + rw - cs.x - PobUi::D(8.0f), rp.y + std::floor((rowH - cs.y) * 0.5f)),
+					            Tok::TextMuted, cls.c_str());
 				}
-				if (++shown >= 60) { ImGui::TextDisabled(u8"…（縮小關鍵字看更多）"); break; }
+				if (hov && it.zh != it.en) PobUi::Tooltip(it.en.c_str());
+				if (click) {
+					u.item = itemFromLib(u, it);
+					u.itemZh = it.zh;
+					showSingle(s, u);
+				}
+				ImGui::PopID();
+				if (++shown >= 60) { PobUi::Hint(u8"…（再多打幾個字縮小範圍）"); break; }
 			}
-			if (!shown) ImGui::TextDisabled(u8"沒有相符物品");
+			if (!shown) PobUi::Hint(u8"沒有相符的物品");
+			ImGui::EndChild();
+		} else if (!u.item.baseType.empty()) {
+			const std::string t = u8"目前：" + (u.itemZh.empty() ? u.item.baseType : u.itemZh);
+			PobUi::Hint(t.c_str());
 		} else {
-			ImGui::TextDisabled(u8"輸入關鍵字，點擊物品即預覽");
+			PobUi::Hint(u8"輸入名稱，點一下物品就預覽");
 		}
-		ImGui::EndChild();
 	}
+	SectionRule();
 
-	if (!g_item.baseType.empty())
-		ImGui::Text(u8"目前：%s", (g_itemZh.empty() ? g_item.baseType : g_itemZh).c_str());
-
-	ImGui::Separator();
-	ImGui::TextUnformatted(u8"物品屬性");
+	// item properties
 	{
-		static const char* kRar[] = { u8"普通", u8"魔法", u8"稀有", u8"傳奇" };
-		ImGui::SetNextItemWidth(120 * s.scale);
-		ImGui::Combo(u8"稀有度", &g_item.rarity, kRar, 4);
-		ImGui::SetNextItemWidth(160 * s.scale);
-		ImGui::SliderInt(u8"物品等級", &g_item.itemLevel, 1, 100);
-		ImGui::SetNextItemWidth(160 * s.scale);
-		ImGui::SliderInt(u8"區域等級", &g_item.areaLevel, 1, 90);
-		ImGui::SetNextItemWidth(120 * s.scale);
-		ImGui::InputInt(u8"堆疊數量", &g_item.stackSize);
-		g_item.stackSize = std::clamp(g_item.stackSize, 1, 100);
-		ImGui::SetNextItemWidth(120 * s.scale);
-		ImGui::SliderInt(u8"品質", &g_item.quality, 0, 30);
-		ImGui::SetNextItemWidth(120 * s.scale);
-		ImGui::SliderInt(u8"插槽", &g_item.sockets, 0, 6);
-		ImGui::SetNextItemWidth(120 * s.scale);
-		ImGui::SliderInt(u8"連結", &g_item.linkedSockets, 0, 6);
-		ImGui::Checkbox(u8"已鑑定", &g_item.identified);
-		ImGui::SameLine();
-		ImGui::Checkbox(u8"已汙染", &g_item.corrupted);
-		ImGui::SameLine();
-		ImGui::Checkbox(u8"破裂", &g_item.fractured);
-	}
-	if (ImGui::Button(u8"套用屬性重新判定", ImVec2(-1, 0))) {
-		for (DropEntry& d : g_drops) {
-			// Imported items carry their REAL parsed fields — only the area
-			// level (which the text never has) follows the panel.
-			if (d.imported) { d.item.areaLevel = g_item.areaLevel; continue; }
-			// carry the tweaks onto every generated drop of the same base kind
-			PreviewItem& pi = d.item;
-			pi.rarity = (pi.rarity == 3) ? 3 : g_item.rarity;
-			pi.itemLevel = g_item.itemLevel; pi.areaLevel = g_item.areaLevel;
-			pi.stackSize = g_item.stackSize; pi.quality = g_item.quality;
-			pi.sockets = g_item.sockets; pi.linkedSockets = g_item.linkedSockets;
-			pi.identified = g_item.identified; pi.corrupted = g_item.corrupted;
-			pi.fractured = g_item.fractured;
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		SectionTitle(u8"物品屬性");
+		const char* reLbl = u8"套用並重新判定";
+		const float rb = PobUi::ButtonWidth(reLbl, PobUi::BtnSize::Sm);
+		ImGui::SetCursorScreenPos(ImVec2(p.x + cw - rb, p.y));
+		if (PobUi::Button(reLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) {
+			for (PvDropEntry& d : u.drops) {
+				// Imported items carry their REAL parsed fields — only the area
+				// level (which the text never has) follows the panel.
+				if (d.imported) { d.item.areaLevel = u.item.areaLevel; continue; }
+				PreviewItem& pi = d.item;
+				pi.rarity = (pi.rarity == 3) ? 3 : u.item.rarity;
+				pi.itemLevel = u.item.itemLevel; pi.areaLevel = u.item.areaLevel;
+				pi.stackSize = u.item.stackSize; pi.quality = u.item.quality;
+				pi.sockets = u.item.sockets; pi.linkedSockets = u.item.linkedSockets;
+				pi.identified = u.item.identified; pi.corrupted = u.item.corrupted;
+				pi.fractured = u.item.fractured;
+			}
+			evalDrops(s, u);
 		}
-		evalDrops(s);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"把這些屬性套到畫布上的樣本再判定一次（匯入的物品只套區域等級）");
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + smH + PobUi::D(6.0f)));
+		static const char* kRar[4] = { u8"一般", u8"魔法", u8"稀有", u8"傳奇" };
+		PropLabel(u8"稀有度");
+		PobUi::Segmented("##rar", &u.item.rarity, kRar, 4);
+		PropLabel(u8"物品 / 區域");
+		SmallInt("##ilvl", &u.item.itemLevel, 1, 100);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"物品等級");
+		ImGui::SameLine(0, PobUi::D(6.0f));
+		SmallInt("##alvl", &u.item.areaLevel, 1, 90);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"區域等級");
+		PropLabel(u8"堆疊 / 品質");
+		SmallInt("##stack", &u.item.stackSize, 1, 100);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"堆疊數量");
+		ImGui::SameLine(0, PobUi::D(6.0f));
+		SmallInt("##qual", &u.item.quality, 0, 30);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"品質");
+		PropLabel(u8"插槽 / 連結");
+		SmallInt("##sock", &u.item.sockets, 0, 6);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"插槽數");
+		ImGui::SameLine(0, PobUi::D(6.0f));
+		SmallInt("##link", &u.item.linkedSockets, 0, 6);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"最大連結數");
+		PropLabel(u8"狀態");
+		TickLabel("##idf", u8"已鑑定", &u.item.identified);
+		ImGui::SameLine(0, PobUi::D(10.0f));
+		TickLabel("##cor", u8"已汙染", &u.item.corrupted);
+		ImGui::SameLine(0, PobUi::D(10.0f));
+		TickLabel("##frc", u8"破裂", &u.item.fractured);
 	}
+	SectionRule();
 
-	ImGui::Separator();
-	ImGui::TextUnformatted(u8"產生");
-	PobUi::PushPrimaryButton();
-	if (ImGui::Button(u8"顯示此物品", ImVec2((ctrlW - 30 * s.scale) * 0.5f, 0))) showSingle(s);
-	ImGui::SameLine();
-	if (ImGui::Button(u8"隨機掉落（全類別）", ImVec2(-1, 0))) randomDrops(s);
-	PobUi::PopButtonStyle();
-	if (ImGui::IsItemHovered())
-		ImGui::SetTooltip(u8"每個 NeverSink 類別各取樣 1-2 條不同階級的規則，物品不重複");
-	if (ImGui::Button(u8"清除", ImVec2(-1, 0))) { g_drops.clear(); g_soundNote.clear(); }
+	// generate + sound
+	{
+		const float g = PobUi::D(6.0f);
+		const float bClear = PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm);
+		const float bHalf = std::floor((cw - bClear - g * 2.0f) * 0.5f);
+		if (PobUi::Button(u8"顯示這個物品", PobUi::BtnKind::Primary, PobUi::BtnSize::Sm, nullptr, bHalf, !u.item.baseType.empty()))
+			showSingle(s, u);
+		ImGui::SameLine(0, g);
+		if (PobUi::Button(u8"隨機掉落一批", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, bHalf)) randomDrops(s, u);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"每個 NeverSink 類別抽 1~2 條不同階級的規則，物品不重複");
+		ImGui::SameLine(0, g);
+		if (PobUi::Button(u8"清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) { u.drops.clear(); u.soundNote.clear(); }
 
-	ImGui::Separator();
-	ImGui::TextUnformatted(u8"音效");
-	ImGui::SetNextItemWidth(-60 * s.scale);
-	ImGui::SliderInt(u8"音量", &g_masterVol, 0, 100, "%d%%");
-	ImGui::Checkbox(u8"預覽時自動播放", &g_autoPlay);
-	if (ImGui::Button(u8"再播一次", ImVec2(120 * s.scale, 0))) {
-		for (const DropEntry& d : g_drops)
-			if (!d.res.hidden && !d.res.customSound.empty()) { playResultSound(s, d.res); break; }
+		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + std::floor((PobUi::ControlH() - SmallFace()->FontSize) * 0.5f)));
+		PobUi::Hint(u8"音量");
+		ImGui::SetCursorScreenPos(ImVec2(p.x + PobUi::D(40.0f), p.y));
+		ImGui::SetNextItemWidth(std::floor(PobUi::D(130.0f)));
+		ImGui::SliderInt("##mvol", &u.masterVol, 0, 100, "%d%%");
+		const float swW = PobUi::SwitchWidth();
+		ImFont* sf = SmallFace();
+		const float apW = sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, u8"自動播放").x;
+		ImGui::SetCursorScreenPos(ImVec2(p.x + cw - swW - apW - PobUi::D(8.0f), p.y + std::floor((PobUi::ControlH() - sf->FontSize) * 0.5f)));
+		PobUi::Hint(u8"自動播放");
+		ImGui::SetCursorScreenPos(ImVec2(p.x + cw - swW, p.y));
+		PobUi::Switch("##autoplay", &u.autoPlay);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"預覽時自動播放命中規則的自訂音效");
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + PobUi::ControlH() + PobUi::D(4.0f)));
+		if (PobUi::Button(u8"再播一次", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Play)) {
+			for (const PvDropEntry& d : u.drops)
+				if (!d.res.hidden && !d.res.customSound.empty()) { playResultSound(s, u, d.res); break; }
+		}
+		ImGui::SameLine(0, g);
+		if (PobUi::Button(u8"停止", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Square)) StopAudio();
+		if (!u.soundNote.empty()) PobUi::Hint(u.soundNote.c_str(), cw);
 	}
-	ImGui::SameLine();
-	if (ImGui::Button(u8"停止")) StopAudio();
-	if (!g_soundNote.empty()) {
-		ImGui::PushTextWrapPos(ctrlW - 16 * s.scale);
-		ImGui::TextDisabled("%s", g_soundNote.c_str());
-		ImGui::PopTextWrapPos();
-	}
-
 	ImGui::EndChild();
-	ImGui::SameLine();
+	ImGui::PopStyleColor();
 
 	// ---- right: loot canvas ----
-	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.05f, 0.055f, 0.07f, 1.0f));
-	ImGui::BeginChild("##pvcanvas", ImVec2(0, 0), true);
+	ImGui::SetCursorScreenPos(origin + ImVec2(ctrlW, 0));
+	const float canW = ImGui::GetContentRegionAvail().x;
+	wdl->AddRectFilled(origin + ImVec2(ctrlW, 0), origin + ImVec2(ctrlW + canW, H), Tok::Canvas);
+	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(16.0f), PobUi::D(12.0f)));
+	ImGui::BeginChild("##pvcanvas", ImVec2(canW, H), false, ImGuiWindowFlags_AlwaysUseWindowPadding);
+	ImGui::PopStyleVar();
 	ImDrawList* dl = ImGui::GetWindowDrawList();
-	if (g_drops.empty()) {
-		ImGui::TextDisabled(u8"左側搜尋並點選物品，或按「隨機掉落」。標籤樣式即當前過濾器判定結果。");
+	if (u.drops.empty()) {
+		const ImVec2 avail = ImGui::GetContentRegionAvail();
+		const float w = (std::min)(avail.x, PobUi::D(460.0f));
+		ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(std::floor((avail.x - w) * 0.5f), std::floor(avail.y * 0.3f)));
+		PobUi::EmptyState("##pvempty", PobIcon::Search, u8"畫布是空的",
+		                  u8"左側搜尋並點一個物品，或按「隨機掉落一批」。標籤樣子就是目前過濾器判定的結果。", nullptr, w);
 	} else {
 		int nHid = 0;
-		for (const DropEntry& d : g_drops) if (d.res.hidden) nHid++;
-		ImGui::TextDisabled(u8"%d 個掉落樣本%s　· hover 看命中規則，點擊跳至編輯",
-			(int)g_drops.size(),
-			nHid ? (u8"（含 " + std::to_string(nHid) + u8" 個被隱藏）").c_str() : "");
-		ImGui::Spacing();
+		for (const PvDropEntry& d : u.drops) if (d.res.hidden) nHid++;
+		std::string head = std::to_string((int)u.drops.size()) + u8" 件";
+		if (nHid) head += u8"（" + std::to_string(nHid) + u8" 件被隱藏）";
+		head += u8" · 點標籤跳到命中的規則";
+		PobUi::Hint(head.c_str());
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 		ImFont* font = ImGui::GetFont();
 		const float baseFs = ImGui::GetFontSize();
 		const float cx = ImGui::GetContentRegionAvail().x * 0.5f;
 		int jump = -1;
-		for (int i = 0; i < (int)g_drops.size(); i++) {
-			DropEntry& d = g_drops[i];
+		for (int i = 0; i < (int)u.drops.size(); i++) {
+			PvDropEntry& d = u.drops[i];
 			const PreviewResult& r = d.res;
-			std::string zh = s.i18n.DisplayName(d.item.baseType);
-			std::string label = d.labelOverride.empty() ? zh : d.labelOverride;
+			std::string label = d.labelOverride.empty() ? s.i18n.DisplayName(d.item.baseType) : d.labelOverride;
 			if (d.item.stackSize > 1) label += u8" ×" + std::to_string(d.item.stackSize);
 
 			ImGui::PushID(i);
 			if (r.hidden) {
-				std::string t = u8"（已隱藏） " + label;
-				float lx = cx - ImGui::CalcTextSize(t.c_str()).x * 0.5f + d.jitter * s.scale;
-				ImGui::SetCursorPosX(std::max(0.0f, lx));
-				ImGui::TextDisabled("%s", t.c_str());
-				if (ImGui::IsItemHovered()) {
-					ImGui::SetTooltip(u8"%s\n命中 Hide 規則：%s（點擊跳至該規則）", d.item.baseType.c_str(),
-						(r.blockIdx >= 0 && r.blockIdx < (int)s.rows.size()) ? s.rows[r.blockIdx].label.c_str() : "?");
-				}
+				const std::string t = u8"（已隱藏）" + label;
+				const float lx = cx - ImGui::CalcTextSize(t.c_str()).x * 0.5f + d.jitter * PobUi::D(1.0f);
+				ImGui::SetCursorPosX((std::max)(ImGui::GetStyle().WindowPadding.x, lx));
+				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextFaint));
+				ImGui::TextUnformatted(t.c_str());
+				ImGui::PopStyleColor();
+				if (ImGui::IsItemHovered()) DrawDropTooltip(s, d, nullptr);
 				if (ImGui::IsItemClicked()) jump = r.blockIdx;
+				if (u.testTip == i) { const ImVec2 at = ImGui::GetItemRectMax() + ImVec2(PobUi::D(12.0f), 0); DrawDropTooltip(s, d, &at); }
 				ImGui::PopID();
-				ImGui::Dummy(ImVec2(0, 4 * s.scale));
+				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 				continue;
 			}
 
 			const float px = baseFs * (float)r.fontSize / 32.0f;
-			ImVec2 tsz = font->CalcTextSizeA(px, FLT_MAX, 0.0f, label.c_str());
+			const ImVec2 tsz = font->CalcTextSizeA(px, FLT_MAX, 0.0f, label.c_str());
 			const float padX = 0.45f * px, padY = 0.22f * px;
 			const float w = tsz.x + 2 * padX, h = tsz.y + 2 * padY;
 
-			float lx = cx + d.jitter * s.scale - w * 0.5f;
-			ImGui::SetCursorPosX(std::max(0.0f, lx));
-			bool clicked = ImGui::InvisibleButton("##lbl", ImVec2(w, h));
-			bool hov = ImGui::IsItemHovered();
-			ImVec2 pmin = ImGui::GetItemRectMin(), pmax = ImGui::GetItemRectMax();
+			const float lx = cx + d.jitter * PobUi::D(1.0f) - w * 0.5f;
+			ImGui::SetCursorPosX((std::max)(ImGui::GetStyle().WindowPadding.x, lx));
+			const bool clicked = ImGui::InvisibleButton("##lbl", ImVec2(w, h));
+			const bool hov = ImGui::IsItemHovered();
+			const ImVec2 pmin = ImGui::GetItemRectMin(), pmax = ImGui::GetItemRectMax();
 
 			// beam behind the label
 			if (!r.playEffect.empty()) {
-				ImU32 bc = effectColor(r.playEffect);
-				float bx = (pmin.x + pmax.x) * 0.5f;
-				float top = std::max(ImGui::GetWindowPos().y, pmin.y - 90 * s.scale);
-				dl->AddRectFilledMultiColor(ImVec2(bx - 2.5f * s.scale, top), ImVec2(bx + 2.5f * s.scale, pmin.y),
-					bc & 0x00FFFFFF, bc & 0x00FFFFFF, bc, bc);
+				const ImU32 bc = EdEffectColor(r.playEffect);
+				const float bx = (pmin.x + pmax.x) * 0.5f;
+				const float top = (std::max)(ImGui::GetWindowPos().y, pmin.y - PobUi::D(90.0f));
+				dl->AddRectFilledMultiColor(ImVec2(bx - PobUi::D(2.5f), top), ImVec2(bx + PobUi::D(2.5f), pmin.y),
+				                            bc & 0x00FFFFFF, bc & 0x00FFFFFF, (bc & 0x00FFFFFF) | 0x90000000u,
+				                            (bc & 0x00FFFFFF) | 0x90000000u);
 			}
-
-			dl->AddRectFilled(pmin, pmax, col32(r.back), 2 * s.scale);
-			if (r.hasBorder) dl->AddRect(pmin, pmax, col32(r.border), 2 * s.scale, 0, std::max(1.5f, 0.06f * px));
+			dl->AddRectFilled(pmin, pmax, col32(r.back));
+			if (r.hasBorder) dl->AddRect(pmin, pmax, col32(r.border), 0.0f, 0, (std::max)(1.5f, 0.06f * px));
 			dl->AddText(font, px, ImVec2(pmin.x + padX, pmin.y + padY), col32(r.text), label.c_str());
-			if (hov) dl->AddRect(pmin, pmax, IM_COL32(255, 255, 255, 110), 2 * s.scale, 0, 1.5f * s.scale);
-
+			if (hov) {
+				dl->AddRect(pmin - ImVec2(2, 2), pmax + ImVec2(2, 2), Tok::Accent, 0.0f, 0, 1.5f);
+				ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			}
 			// minimap icon marker to the right
 			if (!r.minimapIcon.empty()) {
-				ImU32 mc = effectColor(r.minimapIcon.find(' ') != std::string::npos
-					? r.minimapIcon.substr(r.minimapIcon.find(' ') + 1) : r.minimapIcon);
-				dl->AddCircleFilled(ImVec2(pmax.x + 12 * s.scale, (pmin.y + pmax.y) * 0.5f), 5 * s.scale, mc);
+				const size_t sp = r.minimapIcon.find(' ');
+				const ImU32 mc = EdEffectColor(sp != std::string::npos ? r.minimapIcon.substr(sp + 1) : r.minimapIcon);
+				dl->AddCircleFilled(ImVec2(pmax.x + PobUi::D(12.0f), (pmin.y + pmax.y) * 0.5f), PobUi::D(5.0f), mc);
 			}
-
-			if (hov) {
-				std::string tip = d.item.baseType;
-				if (d.imported) tip += u8"（匯入物品）";
-				if (r.matched && r.blockIdx >= 0 && r.blockIdx < (int)s.rows.size())
-					tip += u8"\n命中規則：" + s.rows[r.blockIdx].label + u8"\n字體 " + std::to_string(r.fontSize);
-				else
-					tip += u8"\n沒有規則命中（遊戲預設樣式）";
-				if (!r.customSound.empty()) tip += u8"\n自訂音效：" + r.customSound;
-				else if (r.alertId > 0) tip += u8"\n內建音效 #" + std::to_string(r.alertId);
-				if (!r.unknownConds.empty()) {
-					tip += u8"\n未模擬條件（視為不符）：";
-					for (size_t k = 0; k < r.unknownConds.size() && k < 6; k++)
-						tip += (k ? ", " : "") + r.unknownConds[k];
-				}
-				for (size_t k = 0; k < d.importWarnings.size() && k < 4; k++)
-					tip += u8"\n※ " + d.importWarnings[k].msg;
-				if (r.matched) tip += u8"\n（點擊跳至該規則編輯）";
-				ImGui::SetTooltip("%s", tip.c_str());
-			}
+			if (hov) DrawDropTooltip(s, d, nullptr);
+			if (u.testTip == i) { const ImVec2 at(pmax.x + PobUi::D(24.0f), pmin.y); DrawDropTooltip(s, d, &at); }
 			if (clicked && r.matched) jump = r.blockIdx;
 			ImGui::PopID();
-			ImGui::Dummy(ImVec2(0, 8 * s.scale));
+			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
 		}
 		if (jump >= 0 && jump < (int)s.model.blocks.size()) {
+			s.scrollToSel = true;
 			s.selectedBlock = jump;
 			s.selAnchor = s.doc.CaptureAnchor(jump);
 			s.section = Section::FilterEdit;
@@ -908,4 +1097,25 @@ void DrawDropPreviewSection(EditorShell& s)
 	}
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
+	ImGui::SetCursorScreenPos(origin + ImVec2(0, H));
+}
+
+// ---- test aids ----------------------------------------------------------------
+
+void PreviewTestDrops(EditorShell& s, unsigned seed, int tipIdx)
+{
+	PreviewUiState& u = PUI(s);
+	srand(seed);
+	u.autoPlay = false;
+	randomDrops(s, u);
+	u.testTip = tipIdx;
+}
+
+void PreviewTestImport(EditorShell& s, const std::string& itemText)
+{
+	PreviewUiState& u = PUI(s);
+	u.imp = ParseGameItemText(itemText, s.i18n, s.library.items());
+	u.importTried = true;
+	u.autoPlay = false;
+	if (u.imp.ok) importShow(s, u, true);
 }

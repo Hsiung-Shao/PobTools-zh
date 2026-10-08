@@ -226,6 +226,11 @@ bool ToolTile(const char* id, const char* icon, const char* name, const char* ba
 // available width / the content's own height). True when the action is pressed.
 bool EmptyState(const char* id, const char* icon, const char* title, const char* hint,
                 const char* action = nullptr, float width = 0.0f, float height = 0.0f);
+// The same with a secondary action beside the primary one and an optional mono
+// line (a path) under the buttons. Returns 0, 1 (primary) or 2 (secondary).
+int EmptyStateEx(const char* id, const char* icon, const char* title, const char* hint,
+                 const char* action, const char* secondary, const char* mono,
+                 float width = 0.0f, float height = 0.0f);
 // The height EmptyState needs for this content at this width (no minimum).
 float EmptyStateHeight(const char* title, const char* hint, bool action, float width);
 
@@ -249,8 +254,9 @@ DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, c
 //       r = DialogButtons(...); EndDialog(); }
 // DialogButtons closes the popup on any answer; Esc = cancel, and Enter =
 // primary when `enterIsPrimary` (a single text field).
+// `width` in design px (0 = the standard 440).
 bool BeginDialog(const char* popupId, bool* open, const char* title, const char* body,
-                 const char* mono = nullptr);
+                 const char* mono = nullptr, float width = 0.0f);
 DialogResult DialogButtons(const char* cancel, const char* secondary, const char* danger,
                            const char* primary, bool primaryEnabled = true, bool enterIsPrimary = false);
 void EndDialog();

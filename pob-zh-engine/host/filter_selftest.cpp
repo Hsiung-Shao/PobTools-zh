@@ -517,11 +517,19 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T10b same-name replace is a no-op");
 	}
 
-	// ---- T11: big-file health (only when a real filter is installed) -----
+	// ---- T11: big-file health (the bundled NeverSink fixture) --------------
+	// Reads Filters\default.filter next to the exe -- never the user's own
+	// filters in Documents (a selftest does not touch the user's game files).
 	{
-		std::vector<FilterListEntry> found = ListFilters();
+		std::vector<FilterListEntry> found;
+		{
+			FilterListEntry e;
+			e.path = exeDir + L"Filters\\default.filter";
+			e.name = "Filters\\default.filter";
+			if (GetFileAttributesW(e.path.c_str()) != INVALID_FILE_ATTRIBUTES) found.push_back(e);
+		}
 		if (found.empty()) {
-			rep.note("T11 skipped: no .filter in Documents\\My Games\\Path of Exile");
+			rep.note("T11 skipped: no Filters\\default.filter next to the exe");
 		} else {
 			bool ok = false;
 			FilterFile f = LoadFilter(found.front().path, &ok);
