@@ -197,21 +197,6 @@ void open_url(const std::string& url)
 	ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
-// Open the trade site pre-filled to search for a specific jewel seed.
-void open_trade_search(const std::string& tradeStatId, int seed,
-                       const std::string& league, int platform, int realmIdx)
-{
-	if (tradeStatId.empty()) return;
-	open_url(TradeSearchUrl(realmIdx, league, platform, TradeQueryJson(tradeStatId, seed)));
-}
-
-void open_trade_search_multi(const std::string& tradeStatId, const std::vector<int>& seeds,
-                             const std::string& league, int platform, int realmIdx)
-{
-	if (tradeStatId.empty() || seeds.empty()) return;
-	open_url(TradeSearchUrl(realmIdx, league, platform, TradeQueryJsonMulti(tradeStatId, seeds)));
-}
-
 // Background one-shot fetch of the current trade leagues. The API lists every
 // realm in one array ({"id":"Allflame","realm":"pc",...}), current league first,
 // so keep the realm alongside the id and preserve that order.
@@ -749,13 +734,30 @@ public:
 		drawBanners(ptUst);
 		ImGui::PopID();
 
-		// Three columns: the form (left), the tree (middle), results + the chosen
-		// seed (right). Proportions follow the design (380 | * | 400 of 1440).
+		// Up to four columns: the form | the tree | the chosen seed | the results.
+		// The seed column only exists while a seed is chosen (the tree takes its
+		// room back otherwise). On the seed page there are no results: the chosen
+		// seed is the right-hand column and is always there.
+		const bool showResults = mode == 0;
+		const bool showDetail = mode == 1 || detailSeed >= 0;
+		const bool four = showResults && showDetail;
 		const float availW = ImGui::GetContentRegionAvail().x;
-		const float leftW = std::floor(std::clamp(availW * 0.264f, PobUi::D(260.0f), PobUi::D(380.0f)));
-		const float rightW = std::floor(std::clamp(availW * 0.278f, PobUi::D(280.0f), PobUi::D(400.0f)));
-		float midW = availW - leftW - rightW;
-		if (midW < PobUi::D(200.0f)) midW = PobUi::D(200.0f);
+		float leftW = std::floor(std::clamp(availW * (four ? 0.23f : 0.264f), PobUi::D(260.0f), PobUi::D(380.0f)));
+		float colW = std::floor(std::clamp(availW * (four ? 0.235f : 0.278f), PobUi::D(280.0f), PobUi::D(400.0f)));
+		const int sideCols = (showResults ? 1 : 0) + (showDetail ? 1 : 0);
+		float midW = availW - leftW - colW * sideCols;
+		// Keep the tree usable: give back from the side columns first, then the form.
+		const float minTree = PobUi::D(300.0f);
+		if (midW < minTree && sideCols > 0) {
+			const float give = (std::min)((minTree - midW) / sideCols, colW - PobUi::D(250.0f));
+			if (give > 0.0f) { colW = std::floor(colW - give); midW = availW - leftW - colW * sideCols; }
+		}
+		if (midW < minTree) {
+			const float give = (std::min)(minTree - midW, leftW - PobUi::D(240.0f));
+			if (give > 0.0f) { leftW = std::floor(leftW - give); midW = availW - leftW - colW * sideCols; }
+		}
+		if (midW < PobUi::D(160.0f)) midW = PobUi::D(160.0f);
+		midW = std::floor(midW);
 
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(ImGui::GetStyle().ItemSpacing.x, ImGui::GetStyle().ItemSpacing.y));
 		const ImVec2 colTop = ImGui::GetCursorScreenPos();
@@ -775,20 +777,55 @@ public:
 		ImGui::EndChild();
 		ImGui::PopID();
 
-		ImGui::SameLine(0.0f, 0.0f);
-		ImGui::PushID("tjright");
-		beginSidePanel("##right", 0.0f);
-		drawRight();
-		endSidePanel();
-		ImGui::PopID();
+		std::vector<float> rules = { colTop.x + leftW - 0.5f, colTop.x + leftW + midW + 0.5f };
+		if (showDetail) {
+			ImGui::SameLine(0.0f, 0.0f);
+			ImGui::PushID("tjdetail");
+			// the right-most column fills the rest (no rounding gap at the edge)
+			beginSidePanel("##detailcol", showResults ? colW : 0.0f);
+			drawDetailColumn(!showResults);
+			endSidePanel();
+			ImGui::PopID();
+			if (showResults) rules.push_back(colTop.x + leftW + midW + colW + 0.5f);
+		}
+		if (showResults) {
+			ImGui::SameLine(0.0f, 0.0f);
+			ImGui::PushID("tjright");
+			beginSidePanel("##right", 0.0f);
+			drawResultsColumn();
+			endSidePanel();
+			ImGui::PopID();
+		}
 		ImGui::PopStyleVar();
 
 		// the column rules (border token), over the children's edges
 		ImDrawList* dl = ImGui::GetWindowDrawList();
-		dl->AddLine(ImVec2(colTop.x + leftW - 0.5f, colTop.y), ImVec2(colTop.x + leftW - 0.5f, colTop.y + colH),
-		            Tok::Border, 1.0f);
-		dl->AddLine(ImVec2(colTop.x + leftW + midW + 0.5f, colTop.y),
-		            ImVec2(colTop.x + leftW + midW + 0.5f, colTop.y + colH), Tok::Border, 1.0f);
+		for (float x : rules) dl->AddLine(ImVec2(x, colTop.y), ImVec2(x, colTop.y + colH), Tok::Border, 1.0f);
+
+		// Popups opened from inside the columns are begun here, at the panel's
+		// top level, never inside a child window.
+		ImGui::PushID("tjtrade");
+		drawTradePopup();
+		ImGui::PopID();
+
+		// Test aid (POBTOOLS_TJ_STATE=tradedump): once the search is in, send the
+		// first group and then the whole list through the same path as the
+		// buttons; under a test aid that path writes the URL and the decoded query
+		// to POBTOOLS_TJ_TRADE_DUMP instead of opening a browser.
+		if (testState_ == "tradedump" && !testDumped_ && job.done.load() && !job.running.load() &&
+		    !job.results.empty()) {
+			testDumped_ = true;
+			std::map<int, std::vector<int>, std::greater<int>> g;
+			for (const auto& h : job.results) g[h.matches].push_back(h.seed);
+			// the first group with a few seeds in it (a one-seed group shows little)
+			auto pick = g.begin();
+			for (auto it = g.begin(); it != g.end(); ++it)
+				if (it->second.size() >= 3) { pick = it; break; }
+			tradeSeeds(pick->second, "group");
+			std::vector<int> all;
+			for (const auto& h : job.results) all.push_back(h.seed);
+			tradeSeeds(all, "all");
+		}
 	}
 
 	// ---- header ------------------------------------------------------------
@@ -928,7 +965,7 @@ public:
 		if (PobUi::Button("##more", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, smH))
 			openMore_ = true;
 		moreAnchor_ = ImVec2(ImGui::GetItemRectMax().x, ImGui::GetItemRectMax().y + PobUi::D(4.0f));
-		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"更多：交易站區域、聯盟、平台、天賦樹更新");
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"更多：天賦樹更新");
 
 		// the row, then the header's bottom rule
 		ImGui::SetCursorScreenPos(hp);
@@ -943,8 +980,9 @@ public:
 		drawMoreMenu(ust, updBusy, verText);
 	}
 
-	// The more menu: trade export settings and the tree update. Opened and begun
-	// here, at the panel's top level -- never from inside a child window.
+	// The more menu: the tree update (the trade settings have their own row above
+	// the results). Opened and begun here, at the panel's top level -- never from
+	// inside a child window.
 	void drawMoreMenu(const PassiveTreeUpdater::Status& ust, bool updBusy, const std::string& verText)
 	{
 		if (openMore_) {
@@ -954,71 +992,6 @@ public:
 		ImGui::SetNextWindowPos(moreAnchor_, ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
 		if (!PobUi::BeginMenuPopup("##tjmore")) return;
 		const float padX = PobUi::D(10.0f);
-		auto section = [&](const char* t) {
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
-			PobUi::Overline(t);
-		};
-
-		section(u8"交易站區域");
-		for (int r = 0; r < kTradeRealmCount; r++) {
-			if (PobUi::MenuRow(tradeRealm == r ? PobIcon::Check : nullptr, kTradeRealms[r].label) && tradeRealm != r) {
-				tradeRealm = r;
-				// League names are region-specific, so the current pick and the
-				// cached list are both meaningless now: refetch and re-default.
-				if (!kTradeRealms[r].consoles) tradePlatform = 0;
-				leagues.SetHost(kTradeRealms[r].hostW);
-				leagueUserSet = false;
-				saveTjUi();
-			}
-		}
-		PobUi::MenuSeparator();
-
-		section(u8"聯盟");
-		{
-			const float w = std::floor(PobUi::D(240.0f));
-			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
-			std::vector<std::string> lgList = leagues.ForPlatform(tradePlatform);
-			if (!lgList.empty()) {
-				std::vector<const char*> p;
-				int sel = -1;
-				for (size_t i = 0; i < lgList.size(); i++) {
-					p.push_back(lgList[i].c_str());
-					if (lgList[i] == tradeLeague) sel = (int)i;
-				}
-				if (PobUi::Select("##league", &sel, p.data(), nullptr, (int)p.size(), w) && sel >= 0) {
-					tradeLeague = lgList[sel];
-					leagueUserSet = true;
-					saveTjUi();
-				}
-			} else {
-				PobUi::PushControlFrame();
-				ImGui::SetNextItemWidth(w);
-				if (ImGui::InputText("##league", &tradeLeague)) leagueUserSet = true;
-				if (ImGui::IsItemDeactivatedAfterEdit()) saveTjUi();
-				PobUi::PopControlFrame();
-			}
-			ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
-		}
-		if (PobUi::MenuRow(PobIcon::Refresh, leagues.running.load() ? u8"聯盟清單取得中…" : u8"重新取得聯盟清單",
-		                   nullptr, !leagues.running.load() && !testMode_)) {
-			leagues.done = false;
-			leagues.start();
-		}
-		// Consoles are an international-realm concept; the .tw site has none.
-		if (kTradeRealms[tradeRealm].consoles) {
-			PobUi::MenuSeparator();
-			section(u8"平台");
-			const char* plats[3] = { "PC", "Xbox", "PlayStation" };
-			for (int i = 0; i < 3; i++) {
-				// Only remember the choice. Deliberately NOT clearing leagueUserSet:
-				// switching platform never re-defaulted the league before.
-				if (PobUi::MenuRow(tradePlatform == i ? PobIcon::Check : nullptr, plats[i]) && tradePlatform != i) {
-					tradePlatform = i;
-					saveTjUi();
-				}
-			}
-		}
-		PobUi::MenuSeparator();
 		if (PobUi::MenuRow(PobIcon::Refresh, u8"檢查天賦樹更新", nullptr, !updBusy && !testMode_))
 			ptUpdater.RequestCheck(true);
 		if (verInMenu_ && !verText.empty()) {
@@ -1027,6 +1000,212 @@ public:
 		}
 		(void)ust;
 		PobUi::EndMenuPopup();
+	}
+
+	// ---- trade settings ----------------------------------------------------
+	// A standing row over the results ("交易站：國際服 · <league> · PC"): every
+	// trade button depends on it, so it is in sight rather than in a menu. A
+	// click opens the editor below it; with no league it is a warning.
+	static const char* platformLabel(int p) { return p == 1 ? "Xbox" : p == 2 ? "PlayStation" : "PC"; }
+
+	void drawTradeRow()
+	{
+		const PobUi::WidgetFonts& wf = PobUi::Fonts();
+		ImFont* small = wf.small ? wf.small : ImGui::GetFont();
+		ImFont* body = wf.body ? wf.body : ImGui::GetFont();
+		const bool noLeague = tradeLeague.empty();
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const float w = ImGui::GetContentRegionAvail().x;
+		const float h = std::floor(PobUi::D(34.0f));
+		const bool click = ImGui::InvisibleButton("##traderow", ImVec2(w, h));
+		const bool hov = ImGui::IsItemHovered();
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		const float r = PobUi::D(6.0f);
+		dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h),
+		                  noLeague ? Tok::WarningSoft : (hov ? Tok::Surface3 : Tok::Surface2), r);
+		dl->AddRect(p, ImVec2(p.x + w, p.y + h), noLeague ? Tok::BannerWarnEdge : Tok::Border, r);
+
+		const float px = body->FontSize;
+		const float padX = PobUi::D(10.0f);
+		float x = p.x + padX;
+		const float ty = p.y + std::floor((h - px) * 0.5f);
+		const char* icon = noLeague ? PobIcon::TriangleAlert : PobIcon::Globe;
+		PobUi::IconAt(dl, ImVec2(x, ty), icon, noLeague ? Tok::Warning : Tok::TextMuted, px);
+		x += PobUi::IconWidth(icon, px) + (wf.icons ? PobUi::D(6.0f) : 0.0f);
+		std::string val = std::string(kTradeRealms[tradeRealm].label) + u8" · " +
+		                  (noLeague ? std::string(u8"未設定聯盟，點此設定") : tradeLeague);
+		if (kTradeRealms[tradeRealm].consoles) val += std::string(u8" · ") + platformLabel(tradePlatform);
+		const float chevW = PobUi::IconWidth(PobIcon::ChevronDown, px);
+		// the "交易站" caption goes first when the column is too narrow for both
+		const char* lbl = u8"交易站";
+		const float lblW = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, lbl).x + PobUi::D(8.0f);
+		const float valW = body->CalcTextSizeA(px, FLT_MAX, 0.0f, val.c_str()).x;
+		if (x + lblW + valW <= p.x + w - padX - chevW - PobUi::D(6.0f)) {
+			const float sy = p.y + std::floor((h - small->FontSize) * 0.5f);
+			dl->AddText(small, small->FontSize, ImVec2(x, sy), noLeague ? Tok::Warning : Tok::TextMuted, lbl);
+			x += lblW;
+		}
+		const float maxW = p.x + w - padX - chevW - PobUi::D(6.0f) - x;
+		dl->PushClipRect(ImVec2(x, p.y), ImVec2(x + (std::max)(0.0f, maxW), p.y + h), true);
+		dl->AddText(body, px, ImVec2(x, ty), noLeague ? Tok::Warning : Tok::Text, val.c_str());
+		dl->PopClipRect();
+		PobUi::IconAt(dl, ImVec2(p.x + w - padX - chevW, ty), PobIcon::ChevronDown, Tok::TextMuted, px);
+
+		if (hov) {
+			ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			const std::string tip = noLeague ? std::string(u8"還沒設定聯盟，交易按鈕無法使用。點擊設定區域與聯盟。")
+			                                 : u8"交易站：" + val + u8"。點擊修改區域、聯盟與平台（會記住，下次沿用）";
+			PobUi::Tooltip(tip.c_str());
+		}
+		if (click) openTrade_ = true;
+		tradeAnchor_ = ImVec2(p.x, p.y + h + PobUi::D(4.0f));
+		tradeRowW_ = w;
+	}
+
+	// The editor the row opens. Begun at the panel's top level (Frame), with its
+	// OpenPopup in the same ID scope.
+	void drawTradePopup()
+	{
+		if (openTrade_) {
+			ImGui::OpenPopup("##tjtradeset");
+			openTrade_ = false;
+		}
+		ImGui::SetNextWindowPos(tradeAnchor_, ImGuiCond_Appearing);
+		if (!PobUi::BeginMenuPopup("##tjtradeset")) return;
+		const float padX = PobUi::D(10.0f);
+		const float w = std::floor((std::max)(PobUi::D(260.0f), tradeRowW_ - padX * 2.0f));
+		auto section = [&](const char* t) {
+			ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX);
+			PobUi::Overline(t);
+		};
+		auto indent = [&]() { ImGui::SetCursorPosX(ImGui::GetCursorPosX() + padX); };
+
+		section(u8"區域");
+		indent();
+		{
+			const char* realms[2] = { kTradeRealms[0].label, kTradeRealmCount > 1 ? kTradeRealms[1].label : "" };
+			int sel = tradeRealm;
+			if (PobUi::Segmented("##realm", &sel, realms, (std::min)(kTradeRealmCount, 2)) && sel != tradeRealm) {
+				tradeRealm = sel;
+				// League names are region-specific, so the current pick and the
+				// cached list are both meaningless now: refetch and re-default.
+				if (!kTradeRealms[sel].consoles) tradePlatform = 0;
+				leagues.SetHost(kTradeRealms[sel].hostW);
+				leagueUserSet = false;
+				saveTjUi();
+			}
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+
+		section(u8"聯盟");
+		{
+			const char* refLbl = u8"重新取得";
+			const float bw = PobUi::ButtonWidth(refLbl, PobUi::BtnSize::Sm, PobIcon::Refresh);
+			const float fw = w - bw - PobUi::D(6.0f);
+			const float H = PobUi::ControlH();
+			const float smH = std::floor(PobUi::D(28.0f));
+			indent();
+			const ImVec2 rp = ImGui::GetCursorScreenPos();
+			std::vector<std::string> lgList = leagues.ForPlatform(tradePlatform);
+			if (!lgList.empty()) {
+				std::vector<const char*> lp;
+				int sel = -1;
+				for (size_t i = 0; i < lgList.size(); i++) {
+					lp.push_back(lgList[i].c_str());
+					if (lgList[i] == tradeLeague) sel = (int)i;
+				}
+				if (PobUi::Select("##league", &sel, lp.data(), nullptr, (int)lp.size(), fw) && sel >= 0) {
+					tradeLeague = lgList[sel];
+					leagueUserSet = true;
+					saveTjUi();
+				}
+			} else {
+				PobUi::PushControlFrame();
+				ImGui::SetNextItemWidth(fw);
+				if (ImGui::InputTextWithHint("##league", u8"聯盟名稱（例：Standard）", &tradeLeague)) leagueUserSet = true;
+				if (ImGui::IsItemDeactivatedAfterEdit()) saveTjUi();
+				PobUi::PopControlFrame();
+			}
+			ImGui::SetCursorScreenPos(ImVec2(rp.x + fw + PobUi::D(6.0f), rp.y + std::floor((H - smH) * 0.5f)));
+			const bool canFetch = !leagues.running.load() && !testMode_;
+			if (PobUi::Button(leagues.running.load() ? u8"取得中…" : refLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm,
+			                  PobIcon::Refresh, 0.0f, canFetch)) {
+				leagues.done = false;
+				leagues.start();
+			}
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				PobUi::Tooltip(u8"從交易站重新取得目前的聯盟清單");
+			ImGui::SetCursorScreenPos(ImVec2(rp.x - padX, rp.y + H));
+			ImGui::Dummy(ImVec2(0, 0));
+		}
+		// Consoles are an international-realm concept; the .tw site has none.
+		if (kTradeRealms[tradeRealm].consoles) {
+			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+			section(u8"平台");
+			indent();
+			const char* plats[3] = { "PC", "Xbox", "PlayStation" };
+			int sel = tradePlatform;
+			// Only remember the choice. Deliberately NOT clearing leagueUserSet:
+			// switching platform never re-defaulted the league before.
+			if (PobUi::Segmented("##plat", &sel, plats, 3) && sel != tradePlatform) {
+				tradePlatform = sel;
+				saveTjUi();
+			}
+		}
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+		indent();
+		PobUi::Hint(u8"設定會記住，下次開啟沿用。", w);
+		ImGui::Dummy(ImVec2(w + padX * 2.0f, PobUi::D(2.0f)));
+		PobUi::EndMenuPopup();
+	}
+
+	// Every trade search goes through here. Under a test aid nothing is opened:
+	// the URL and its decoded query go to POBTOOLS_TJ_TRADE_DUMP instead.
+	void openTrade(const std::string& url, const char* tag)
+	{
+		if (url.empty()) return;
+		tradeHintShown = true;
+		if (!testMode_) { open_url(url); return; }
+		wchar_t path[MAX_PATH] = L"";
+		const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_TRADE_DUMP", path, MAX_PATH);
+		if (n == 0 || n >= MAX_PATH) return;
+		std::wstring file = path;
+		if (tag && *tag) file += L"." + widen(tag) + L".txt";
+		// decode the q= parameter back out of the URL, so the file shows what the
+		// trade site will receive and not what we meant to send
+		std::string q;
+		const size_t qp = url.find("?q=");
+		if (qp != std::string::npos) {
+			for (size_t i = qp + 3; i < url.size(); i++) {
+				if (url[i] == '%' && i + 2 < url.size()) {
+					q += (char)strtol(url.substr(i + 1, 2).c_str(), nullptr, 16);
+					i += 2;
+				} else q += url[i];
+			}
+		}
+		std::string pretty;
+		try { pretty = nlohmann::json::parse(q).dump(2); } catch (...) { pretty = "INVALID JSON: " + q; }
+		const std::string out = "URL:\n" + url + "\n\nDecoded q=:\n" + pretty + "\n";
+		HANDLE f = CreateFileW(file.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (f == INVALID_HANDLE_VALUE) return;
+		DWORD wr = 0;
+		WriteFile(f, out.data(), (DWORD)out.size(), &wr, nullptr);
+		CloseHandle(f);
+	}
+
+	void tradeSeed(int seed)
+	{
+		if (tradeOff()) return;
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJson(tradeStatId_, seed)), "seed");
+	}
+
+	// Several seeds in one search: a "count >= 1" stat group, one filter per seed
+	// (min = max = seed) on the chosen conqueror's seed stat. Capped at
+	// kMaxTradeSeeds; the caller says so next to the button.
+	void tradeSeeds(const std::vector<int>& seeds, const char* tag)
+	{
+		if (tradeOff() || seeds.empty()) return;
+		openTrade(TradeSearchUrl(tradeRealm, tradeLeague, tradePlatform, TradeQueryJsonMulti(tradeStatId_, seeds)), tag);
 	}
 
 	// Banners under the header: a failed tree update, a failed paste or copy.
@@ -1149,32 +1328,47 @@ public:
 		const float bottomH = hintH + PobUi::D(6.0f) + std::floor(PobUi::D(44.0f));
 		const float scrollH = ImGui::GetContentRegionAvail().y - bottomH - PobUi::D(12.0f);
 
-		ImGui::BeginChild("##formscroll", ImVec2(0, (std::max)(scrollH, PobUi::D(80.0f))), false);
+		const float formH = (std::max)(scrollH, PobUi::D(80.0f));
+		ImGui::BeginChild("##formscroll", ImVec2(0, formH), false);
+		const float formTop = ImGui::GetCursorScreenPos().y;
 		drawAbyssBanner();
 		PobUi::Heading(u8"想要的詞綴");
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
 
-		// add a stat: type to filter, pick from the list
+		// add a stat: the whole pool is always listed; typing filters it
 		const float fw = ImGui::GetContentRegionAvail().x;
-		PobUi::SearchField("##statfilter", statFilter_, (int)sizeof(statFilter_), u8"輸入關鍵字加入詞綴…", fw);
+		PobUi::SearchField("##statfilter", statFilter_, (int)sizeof(statFilter_), u8"輸入關鍵字篩選詞綴…", fw);
 		const std::string filter = statFilter_;
-		if (!filter.empty() || browseAll_) {
-			const float rowH = ImGui::GetTextLineHeightWithSpacing();
-			int matches = 0;
-			for (const auto& t : templates) {
+		std::vector<const TJStatTemplate*> shownT;
+		shownT.reserve(templates.size());
+		for (const auto& t : templates) {
+			const std::string& disp = t.zh.empty() ? t.en : t.zh;
+			if (contains_ci(disp, filter) || contains_ci(t.en, filter)) shownT.push_back(&t);
+		}
+		{
+			const std::string cnt = filter.empty()
+				? u8"全部 " + std::to_string(templates.size()) + u8" 條，點選加入"
+				: u8"符合 " + std::to_string(shownT.size()) + u8" / " + std::to_string(templates.size()) + u8" 條";
+			PobUi::Hint(cnt.c_str());
+		}
+		// The list takes whatever height the rest of the form leaves (measured on
+		// the previous frame), but never less than a few rows: below that the
+		// whole form scrolls instead.
+		const float rowH = ImGui::GetTextLineHeightWithSpacing();
+		const float listMin = std::floor(rowH * 5.0f + PobUi::D(12.0f));
+		const float listH = std::floor((std::max)(listMin, formH - formOtherH_ - PobUi::D(4.0f)));
+		const float listTop = ImGui::GetCursorScreenPos().y;
+		ImGui::PushStyleColor(ImGuiCol_ChildBg, PobUi::TokV4(Tok::Surface2));
+		ImGui::PushStyleColor(ImGuiCol_Border, PobUi::TokV4(Tok::Border));
+		ImGui::BeginChild("##statpick", ImVec2(0, listH), true);
+		if (shownT.empty())
+			PobUi::Hint((u8"沒有符合「" + filter + u8"」的詞綴").c_str(), ImGui::GetContentRegionAvail().x);
+		ImGuiListClipper clip;
+		clip.Begin((int)shownT.size(), rowH);
+		while (clip.Step()) {
+			for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
+				const TJStatTemplate& t = *shownT[i];
 				const std::string& disp = t.zh.empty() ? t.en : t.zh;
-				if (contains_ci(disp, filter) || contains_ci(t.en, filter)) matches++;
-			}
-			const float listH = (std::min)(PobUi::D(200.0f), (std::max)(1, (std::min)(matches, 300)) * rowH + PobUi::D(12.0f));
-			ImGui::PushStyleColor(ImGuiCol_ChildBg, PobUi::TokV4(Tok::Surface2));
-			ImGui::PushStyleColor(ImGuiCol_Border, PobUi::TokV4(Tok::Border));
-			ImGui::BeginChild("##statpick", ImVec2(0, listH), true);
-			if (matches == 0) PobUi::Hint((u8"沒有符合「" + filter + u8"」的詞綴").c_str());
-			int shown = 0;
-			for (const auto& t : templates) {
-				const std::string& disp = t.zh.empty() ? t.en : t.zh;
-				if (!contains_ci(disp, filter) && !contains_ci(t.en, filter)) continue;
-				if (++shown > 300) break;
 				bool exists = false;
 				for (auto& wr : wants) if (wr.en == t.en) exists = true;
 				ImGui::PushID(t.en.c_str());
@@ -1184,16 +1378,14 @@ public:
 					statFilter_[0] = '\0';   // added: clear the box for the next one
 				}
 				ImGui::EndDisabled();
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && exists)
+					PobUi::Tooltip(u8"已在下方的詞綴表中");
 				ImGui::PopID();
 			}
-			ImGui::EndChild();
-			ImGui::PopStyleColor(2);
 		}
-		if (filter.empty()) {
-			const std::string lbl = browseAll_ ? std::string(u8"收起詞綴清單")
-			                                   : u8"瀏覽全部詞綴（" + std::to_string(templates.size()) + u8"）";
-			if (PobUi::Link(lbl.c_str())) browseAll_ = !browseAll_;
-		}
+		ImGui::EndChild();
+		ImGui::PopStyleColor(2);
+		const float listBottom = ImGui::GetCursorScreenPos().y;
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 
 		// the picked stats: 詞綴 / 最小值 / 權重 / 移除
@@ -1260,6 +1452,8 @@ public:
 		labelRow(u8"必須包含全部詞綴",
 		         u8"開啟時，只滿足其中一條的種子不會出現。關閉後只要命中任一條就算，權重高的仍排前面。",
 		         PobUi::SwitchWidth(), H, [&]() { PobUi::Switch("##requireall", &requireAll); });
+		// everything in the form except the list, for next frame's list height
+		formOtherH_ = (ImGui::GetCursorScreenPos().y - formTop) - (listBottom - listTop);
 		ImGui::EndChild(); // ##formscroll
 
 		// pinned: where the jewel sits + the one primary action
@@ -1432,7 +1626,7 @@ public:
 	bool tradeOff() const { return tradeStatId_.empty() || tradeLeague.empty(); }
 	const char* tradeOffWhy() const
 	{
-		return tradeStatId_.empty() ? u8"這個征服者沒有交易站詞綴" : u8"先在「⋯」選單設定聯盟";
+		return tradeStatId_.empty() ? u8"這個征服者沒有交易站詞綴" : u8"先在結果欄上方的「交易站」設定聯盟";
 	}
 
 	// ---- middle: the tree --------------------------------------------------
@@ -1482,7 +1676,7 @@ public:
 				else if (treeAbyss) st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜此插槽被征服的天賦以金框標示";
 				else st += u8"｜種子 " + std::to_string(detailSeed) + u8"｜半徑內受影響節點以金框標示";
 			}
-			const float textW = (std::max)(PobUi::D(60.0f), w - pickW - PobUi::D(24.0f));
+			const float textW = (std::max)(PobUi::D(60.0f), w - pickW - PobUi::D(40.0f));
 			ImGui::SetCursorScreenPos(ImVec2(p.x + PobUi::D(12.0f), p.y + std::floor((rowH - smallLineH()) * 0.5f)));
 			PobUi::Hint(Ellipsize(st, textW).c_str());
 			if (ImGui::IsItemHovered() && Ellipsize(st, textW) != st) PobUi::Tooltip(st.c_str());
@@ -1808,36 +2002,39 @@ public:
 		ImGui::TextColored(PobUi::TokV4(col), "%s", s);
 	}
 
-	// ---- right: results, then the chosen seed --------------------------------
-	void drawRight()
+	// ---- the right-most column's bottom: the POB cross-check reminder ----------
+	// Only after the user actually opened a trade search, so it does not add
+	// noise to the normal search flow. Returns the height to keep free for it.
+	float pobTipReserve() const
+	{
+		return (tradeHintShown && !tradeHintClosed_) ? infoBannerH_ + PobUi::D(8.0f) : 0.0f;
+	}
+	void drawPobTip(float bottom)
+	{
+		if (!(tradeHintShown && !tradeHintClosed_)) return;
+		const float y = bottom - infoBannerH_;
+		if (y > ImGui::GetCursorScreenPos().y) ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y));
+		// No arrow glyphs here: the CJK font atlas does not carry them and they
+		// render as tofu (see error_imgui_font_atlas_missing_glyphs).
+		if (PobUi::Banner("##pobcheck", PobUi::BannerTone::Info, PobIcon::Info, u8"買之前先在 POB 確認一次",
+		                  u8"把交易站上的珠寶複製進 POB 的物品欄，對照天賦加成與這裡列的詞綴；對不上請回報。",
+		                  false, nullptr, true) == PobUi::BannerResult::Close)
+			tradeHintClosed_ = true;
+		infoBannerH_ = ImGui::GetItemRectSize().y;
+	}
+
+	// ---- right: the trade row, then the results at full height ----------------
+	void drawResultsColumn()
 	{
 		const float bottom = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y;
-		// The cross-check reminder. Only after the user actually opened a trade
-		// search, so it does not add noise to the normal search flow.
-		const bool tradeTip = tradeHintShown && !tradeHintClosed_;
-		const float reserve = tradeTip ? infoBannerH_ + PobUi::D(8.0f) : 0.0f;
-		if (mode == 0) {
-			drawResults(bottom - reserve);
-			ImGui::Dummy(ImVec2(0, PobUi::D(8.0f)));
-		}
-		drawDetail(bottom - reserve);
-		if (tradeTip) {
-			const float y = bottom - infoBannerH_;
-			if (y > ImGui::GetCursorScreenPos().y) ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, y));
-			// No arrow glyphs here: the CJK font atlas does not carry them and they
-			// render as tofu (see error_imgui_font_atlas_missing_glyphs).
-			if (PobUi::Banner("##pobcheck", PobUi::BannerTone::Info, PobIcon::Info, u8"買之前先在 POB 確認一次",
-			                  u8"把交易站上的珠寶複製進 POB 的物品欄，對照天賦加成與這裡列的詞綴；對不上請回報。",
-			                  false, nullptr, true) == PobUi::BannerResult::Close)
-				tradeHintClosed_ = true;
-			infoBannerH_ = ImGui::GetItemRectSize().y;
-		}
+		drawTradeRow();
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+		drawResults(bottom - pobTipReserve());
+		drawPobTip(bottom);
 	}
 
 	void drawResults(float bottom)
 	{
-		const float startY = ImGui::GetCursorScreenPos().y;
-		const float maxH = std::floor((bottom - startY) * 0.46f);
 		if (job.running.load()) {
 			PobUi::Heading(u8"搜尋中…");
 			PobUi::Hint(u8"正在掃描這顆珠寶的所有種子，通常幾秒內完成。", ImGui::GetContentRegionAvail().x);
@@ -1867,12 +2064,41 @@ public:
 			ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + lineH));
 			ImGui::Dummy(ImVec2(w, PobUi::D(4.0f)));
 		}
-		labelRow(u8"依命中節點數分組", u8"分組後可以把同一組的種子一次送到交易站搜尋（每次最多 40 個）",
+		labelRow(u8"依命中節點數分組", u8"分組後每組標頭有「交易查詢整組」，把那一組的種子一次送到交易站（每次最多 40 個）",
 		         PobUi::SwitchWidth(), std::floor(PobUi::D(28.0f)), [&]() { PobUi::Switch("##group", &groupResults); });
-		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
-		const float tableH = (std::max)(PobUi::D(120.0f), maxH - (ImGui::GetCursorScreenPos().y - startY));
-		if (groupResults) drawGroupedResults(tableH);
-		else drawResultList(tableH);
+		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+		if (!groupResults) {
+			// ungrouped: one search for the whole list, from the top
+			std::vector<int> seeds;
+			for (const auto& h : job.results) seeds.push_back(h.seed);
+			const int n = (int)(std::min)(seeds.size(), kMaxTradeSeeds);
+			drawTradeGroupButton(seeds, (u8"交易查詢全部（前 " + std::to_string(n) + u8" 個）").c_str(), "all", 0.0f);
+			ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+		}
+		const float listH = (std::max)(PobUi::D(120.0f), bottom - ImGui::GetCursorScreenPos().y);
+		if (groupResults) drawGroupedResults(listH);
+		else drawResultList(listH);
+	}
+
+	// A trade button for several seeds, with what happens past the cap said in
+	// its tooltip (and in a hint beside it when the cap actually bites).
+	void drawTradeGroupButton(const std::vector<int>& seeds, const char* label, const char* tag, float minW)
+	{
+		const bool capped = seeds.size() > kMaxTradeSeeds;
+		if (PobUi::Button(label, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, minW, !tradeOff()))
+			tradeSeeds(seeds, tag);
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+			std::string tip;
+			if (tradeOff()) tip = tradeOffWhy();
+			else {
+				tip = u8"一次在交易站搜尋 " + std::to_string((std::min)(seeds.size(), kMaxTradeSeeds)) +
+				      u8" 個種子（任一符合即列出，即時購買）。";
+				if (capped)
+					tip += u8"交易站一次查詢最多 " + std::to_string(kMaxTradeSeeds) + u8" 個種子，這裡共 " +
+					       std::to_string(seeds.size()) + u8" 個，只送排名最前的 " + std::to_string(kMaxTradeSeeds) + u8" 個。";
+			}
+			PobUi::Tooltip(tip.c_str());
+		}
 	}
 
 	// ---- result list: one block per seed, its matched stats right under it ----
@@ -2079,7 +2305,8 @@ public:
 		ImGui::PushStyleColor(ImGuiCol_Header, PobUi::TokV4(Tok::AccentSoft));
 		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, PobUi::TokV4(Tok::Surface2));
 		ImGui::PushStyleColor(ImGuiCol_HeaderActive, PobUi::TokV4(Tok::AccentSoft));
-		if (ImGui::Selectable("##blk", sel, 0, ImVec2(w, total - PobUi::D(2.0f)))) detailSeed = h.seed;
+		// clicking the chosen seed again folds its column away
+		if (ImGui::Selectable("##blk", sel, 0, ImVec2(w, total - PobUi::D(2.0f)))) detailSeed = sel ? -1 : h.seed;
 		ImGui::PopStyleColor(3);
 		if (sel) dl->AddRectFilled(p, ImVec2(p.x + std::floor(PobUi::D(3.0f)), p.y + total - PobUi::D(2.0f)), Tok::Accent);
 
@@ -2119,13 +2346,11 @@ public:
 		ImGui::SetCursorScreenPos(ImVec2(actLeft, p.y + std::floor((headH - smH) * 0.5f)));
 		if (showView) {
 			if (PobUi::Button(u8"查看", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) detailSeed = h.seed;
-			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在下方列出這個種子的全部變化，並在樹上標示");
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在天賦樹旁展開這個種子的全部變化，並在樹上標示");
 			ImGui::SameLine(0.0f, gapA);
 		}
-		if (PobUi::Button(u8"交易", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !tradeOff())) {
-			open_trade_search(tradeStatId_, h.seed, tradeLeague, tradePlatform, tradeRealm);
-			tradeHintShown = true;
-		}
+		if (PobUi::Button(u8"交易", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !tradeOff()))
+			tradeSeed(h.seed);
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 			PobUi::Tooltip(tradeOff() ? tradeOffWhy() : u8"在交易站搜尋這個種子（即時購買）");
 		ImGui::SameLine(0.0f, PobUi::D(4.0f));
@@ -2201,8 +2426,8 @@ public:
 		ImGui::EndChild();
 	}
 
-	// Seeds grouped by how many nodes matched (desc), like Vilsol; each group
-	// can go to the trade site in one search.
+	// Seeds grouped by how many nodes matched (desc), like Vilsol. Each group's
+	// header carries its own trade button: the whole group in one search.
 	void drawGroupedResults(float height)
 	{
 		refreshSummaryCache();
@@ -2212,36 +2437,90 @@ public:
 		ImGui::BeginChild("##resg", ImVec2(0, height), false);
 		bool firstGroup = true;
 		for (auto& kv : groups) {
-			char lbl[64], id[32], note[64];
-			snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", kv.first);
-			snprintf(id, sizeof(id), "##grp%d", kv.first);
-			snprintf(note, sizeof(note), u8"%d 個種子", (int)kv.second.size());
-			const bool open = PobUi::CollapsingSection(lbl, id, nullptr, note, firstGroup);
-			firstGroup = false;
-			if (!open) continue;
 			ImGui::PushID(kv.first);
-			if (PobUi::Button(u8"交易查詢整組", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, 0.0f,
-			                  !tradeOff())) {
-				std::vector<int> seeds;
-				for (auto* h : kv.second) seeds.push_back(h->seed);
-				open_trade_search_multi(tradeStatId_, seeds, tradeLeague, tradePlatform, tradeRealm);
-				tradeHintShown = true;
+			std::vector<int> seeds;
+			for (auto* h : kv.second) seeds.push_back(h->seed);
+			const bool open = groupHeader(kv.first, (int)kv.second.size(), seeds, firstGroup);
+			firstGroup = false;
+			if (open) {
+				drawSeedList(kv.second);
+				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-				PobUi::Tooltip(tradeOff() ? tradeOffWhy() : u8"一次搜尋這一組的所有種子");
-			if (kv.second.size() > kMaxTradeSeeds) {
-				ImGui::SameLine(0.0f, PobUi::D(8.0f));
-				ImGui::AlignTextToFramePadding();
-				PobUi::Hint(u8"（交易取前 40 個）");
-			}
-			drawSeedList(kv.second);
 			ImGui::PopID();
-			ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 		}
 		ImGui::EndChild();
 	}
 
-	// The chosen seed: title + copy / trade, then what it changes.
+	// "命中 N 個節點 · M 個種子" + a chevron that folds the group, and on the
+	// right the group's trade button. Open state kept in ImGui storage, like
+	// PobUi::CollapsingSection (which has no room for a button).
+	bool groupHeader(int matches, int count, const std::vector<int>& seeds, bool defaultOpen)
+	{
+		const PobUi::WidgetFonts& wf = PobUi::Fonts();
+		ImFont* body = wf.body ? wf.body : ImGui::GetFont();
+		ImFont* small = wf.small ? wf.small : ImGui::GetFont();
+		const ImGuiID gid = ImGui::GetID("##grpopen");
+		ImGuiStorage* st = ImGui::GetStateStorage();
+		bool open = st->GetInt(gid, defaultOpen ? 1 : 0) != 0;
+
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const float w = ImGui::GetContentRegionAvail().x;
+		const float h = std::floor(PobUi::D(36.0f));
+		const float smH = std::floor(PobUi::D(28.0f));
+		const int n = (int)(std::min)(seeds.size(), kMaxTradeSeeds);
+		const char* tlbl = u8"交易查詢整組";
+		const float bw = PobUi::ButtonWidth(tlbl, PobUi::BtnSize::Sm, PobIcon::ExternalLink);
+		const float toggleW = (std::max)(PobUi::D(40.0f), w - bw - PobUi::D(8.0f));
+
+		ImGui::SetNextItemAllowOverlap();
+		if (ImGui::InvisibleButton("##grptoggle", ImVec2(toggleW, h))) {
+			open = !open;
+			st->SetInt(gid, open ? 1 : 0);
+		}
+		const bool hov = ImGui::IsItemHovered();
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		dl->AddRectFilled(p, ImVec2(p.x + w, p.y + h), hov ? Tok::Surface3 : Tok::Surface2, PobUi::D(5.0f));
+		float x = p.x + PobUi::D(6.0f);
+		const float px = body->FontSize;
+		const float ty = p.y + std::floor((h - px) * 0.5f);
+		if (wf.icons) {
+			PobUi::IconAt(dl, ImVec2(x, ty), open ? PobIcon::ChevronDown : PobIcon::ChevronRight, Tok::TextMuted, px);
+			x += PobUi::IconWidth(PobIcon::ChevronDown, px) + PobUi::D(4.0f);
+		}
+		char lbl[64], note[64];
+		snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", matches);
+		// past the cap the note says how many go to the trade site (the button's
+		// tooltip says why)
+		if (seeds.size() > kMaxTradeSeeds) snprintf(note, sizeof(note), u8"%d 個種子・交易取前 %d", count, n);
+		else snprintf(note, sizeof(note), u8"%d 個種子", count);
+		dl->PushClipRect(p, ImVec2(p.x + toggleW, p.y + h), true);
+		dl->AddText(body, px, ImVec2(x, ty), Tok::Text, lbl);
+		x += body->CalcTextSizeA(px, FLT_MAX, 0.0f, lbl).x + PobUi::D(8.0f);
+		dl->AddText(small, small->FontSize, ImVec2(x, p.y + std::floor((h - small->FontSize) * 0.5f)), Tok::TextMuted, note);
+		dl->PopClipRect();
+		if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+		ImGui::SetCursorScreenPos(ImVec2(p.x + w - bw - PobUi::D(4.0f), p.y + std::floor((h - smH) * 0.5f)));
+		drawTradeGroupButton(seeds, tlbl, "group", 0.0f);
+		ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + h + PobUi::D(4.0f)));
+		ImGui::Dummy(ImVec2(w, 0.0f));
+		return open;
+	}
+
+	// The chosen seed's column, between the tree and the results (or, on the
+	// seed page, the right-most column -- which then carries the trade row).
+	void drawDetailColumn(bool rightmost)
+	{
+		const float bottom = ImGui::GetWindowPos().y + ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y;
+		if (rightmost) {
+			drawTradeRow();
+			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+		}
+		drawDetail(bottom - (rightmost ? pobTipReserve() : 0.0f));
+		if (rightmost) drawPobTip(bottom);
+	}
+
+	// The chosen seed: title (+ fold), copy / trade, then what it changes.
 	void drawDetail(float bottom)
 	{
 		const float availH = bottom - ImGui::GetCursorScreenPos().y;
@@ -2251,27 +2530,28 @@ public:
 			const std::string t = detailSeed >= 0
 				? u8"種子 " + std::to_string(detailSeed) + u8" 已載入，還沒選插槽" : std::string(u8"還沒選插槽");
 			PobUi::EmptyState("##nosocket", PobIcon::Crosshair, t.c_str(),
-			                  detailSeed >= 0 ? u8"在中間的天賦樹上點一個珠寶插槽（你放這顆珠寶的位置），就會列出這個種子對插槽範圍內天賦的變化。"
-			                                  : u8"在中間的天賦樹上點一個珠寶插槽。",
-			                  nullptr, 0.0f, mode == 1 ? availH : 0.0f);
+			                  detailSeed >= 0 ? u8"在天賦樹上點一個珠寶插槽（你放這顆珠寶的位置），就會列出這個種子對插槽範圍內天賦的變化。"
+			                                  : u8"在天賦樹上點一個珠寶插槽。",
+			                  nullptr, 0.0f, availH);
 			return;
 		}
 		if (detailSeed < 0) {
 			PobUi::EmptyState("##noseed", PobIcon::Gem, u8"還沒選種子",
-			                  mode == 0 ? u8"在上方的結果點一列，就會在這裡列出它的變化。"
+			                  mode == 0 ? u8"在右側的結果點一個種子，就會在這裡列出它的變化。"
 			                            : u8"在左側輸入種子後按「查詢」，或從遊戲貼上珠寶。",
-			                  nullptr, 0.0f, mode == 1 ? availH : 0.0f);
+			                  nullptr, 0.0f, availH);
 			return;
 		}
 
-		PobUi::CardBegin("##detail", nullptr, nullptr, nullptr, true);
-		const float innerX = PobUi::CardInnerX();
-		const float innerW = PobUi::CardInnerWidth();
+		const float innerX = ImGui::GetCursorScreenPos().x;
+		const float innerW = ImGui::GetContentRegionAvail().x;
+		const PobUi::WidgetFonts& wf = PobUi::Fonts();
 		const float smH = std::floor(PobUi::D(28.0f));
 
-		// head: title left, actions right (wrapped under the title when narrow).
-		// "in radius" is only true for the Legion jewels: the Abyss ones name
-		// their conquered passives in the file and scatter them over the tree.
+		// head: title left, a fold button right (search page only: on the seed
+		// page this column is the page). "in radius" is only true for the Legion
+		// jewels: the Abyss ones name their conquered passives in the file and
+		// scatter them over the tree.
 		char title[96];
 		snprintf(title, sizeof(title),
 		         TJIsZorath(jewelType) ? u8"種子 %d 對這一帶天賦的效果"
@@ -2280,19 +2560,25 @@ public:
 		         detailSeed);
 		const char* copyLbl = u8"複製給 POB";
 		const char* tradeLbl = u8"交易搜尋";
-		const float btnsW = PobUi::ButtonWidth(copyLbl, PobUi::BtnSize::Sm, PobIcon::Copy) + PobUi::D(4.0f) +
-		                    PobUi::ButtonWidth(tradeLbl, PobUi::BtnSize::Sm, PobIcon::ExternalLink);
-		const PobUi::WidgetFonts& wf = PobUi::Fonts();
-		const float titleW = wf.heading ? wf.heading->CalcTextSizeA(
-			wf.headingPx > 0 ? wf.headingPx : wf.heading->FontSize, FLT_MAX, 0.0f, title).x : ImGui::CalcTextSize(title).x;
 		const ImVec2 hp = ImGui::GetCursorScreenPos();
-		const bool oneLine = titleW + PobUi::D(12.0f) + btnsW <= innerW;
 		const float lineH = (std::max)(smH, ImGui::GetTextLineHeight());
+		const bool closable = mode == 0;
+		const float closeW = closable ? smH + PobUi::D(4.0f) : 0.0f;
 		ImGui::SetCursorScreenPos(ImVec2(hp.x, hp.y + std::floor((lineH - ImGui::GetTextLineHeight()) * 0.5f)));
-		PobUi::Heading(title);
-		float bx = oneLine ? innerX + innerW - btnsW : innerX;
-		float by = oneLine ? hp.y + std::floor((lineH - smH) * 0.5f) : hp.y + lineH + PobUi::D(6.0f);
-		ImGui::SetCursorScreenPos(ImVec2(bx, by));
+		{
+			const float tw = innerW - closeW;
+			ImGui::PushClipRect(ImVec2(hp.x, hp.y), ImVec2(hp.x + tw, hp.y + lineH), true);
+			PobUi::Heading(title);
+			ImGui::PopClipRect();
+		}
+		if (closable) {
+			ImGui::SetCursorScreenPos(ImVec2(innerX + innerW - smH, hp.y + std::floor((lineH - smH) * 0.5f)));
+			if (PobUi::Button("##closedetail", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::X, smH))
+				detailSeed = -1;
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"收起這一欄（再點結果中的種子可重新展開）");
+		}
+		const float by = hp.y + lineH + PobUi::D(6.0f);
+		ImGui::SetCursorScreenPos(ImVec2(innerX, by));
 		// Hand the jewel to PoB the way PoB expects to receive items: as the
 		// game's own copy text on the clipboard.
 		if (PobUi::Button(copyLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Copy)) copyForPob(detailSeed);
@@ -2300,10 +2586,8 @@ public:
 			PobUi::Tooltip(u8"複製成遊戲的物品文字格式，貼進 POB「物品」分頁即可建立這顆珠寶");
 		ImGui::SameLine(0.0f, PobUi::D(4.0f));
 		if (PobUi::Button(tradeLbl, PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::ExternalLink, 0.0f,
-		                  !tradeOff())) {
-			open_trade_search(tradeStatId_, detailSeed, tradeLeague, tradePlatform, tradeRealm);
-			tradeHintShown = true;
-		}
+		                  !tradeOff()))
+			tradeSeed(detailSeed);
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 			PobUi::Tooltip(tradeOff() ? tradeOffWhy() : u8"在交易站搜尋這個種子（即時購買）");
 		ImGui::SetCursorScreenPos(ImVec2(innerX, by + smH + PobUi::D(10.0f)));
@@ -2386,12 +2670,11 @@ public:
 		}
 
 		// the list fills the rest of the card
-		const float listH = (std::max)(PobUi::D(80.0f), bottom - ImGui::GetCursorScreenPos().y - PobUi::D(16.0f) - 2.0f);
+		const float listH = (std::max)(PobUi::D(80.0f), bottom - ImGui::GetCursorScreenPos().y);
 		ImGui::BeginChild("##aff", ImVec2(innerW, listH), false);
 		if (listView == 0) drawStatList(innerW);
 		else drawNodeList(innerW);
 		ImGui::EndChild();
-		PobUi::CardEnd();
 	}
 
 	void drawAffectedEmpty(float w)
@@ -2504,7 +2787,11 @@ public:
 	// ---- POBTOOLS_TJ_STATE (test aid, with POBTOOLS_TOOL_SHOT) ---------------
 	// Opens the window in a known state for a hidden-window screenshot: Lethal
 	// Pride, the socket with the most notables in reach, three wanted stats.
-	//   search  = the form filled in        results = after a search (first seed picked)
+	//   search  = the form filled in        results = after a search (no seed picked)
+	//   resultsseed = after a search, first seed picked (its column open)
+	//   tradepanel = the trade settings editor open   noleague = no league set (warning row)
+	//   tradedump = a search, then a group and the whole list "sent" to the trade
+	//               site: written to POBTOOLS_TJ_TRADE_DUMP(.group/.all.txt), never opened
 	//   seed    = the seed page, a seed looked up       menu = the more menu open
 	//   paste   = a jewel "pasted" (TJItemText round-trip, no clipboard)
 	//   seederr = the seed page's error banner (empty seed)
@@ -2543,11 +2830,14 @@ public:
 		const int lo = ds->seedMin.count(jewelType) ? ds->seedMin.at(jewelType) : 10000;
 		const int hi = ds->seedMax.count(jewelType) ? ds->seedMax.at(jewelType) : 18000;
 		const int mid = lo + (hi - lo) / 2;
-		if (testState_ == "results" || testState_ == "resultsflat") {
+		if (testState_ == "results" || testState_ == "resultsflat" || testState_ == "resultsseed" ||
+		    testState_ == "tradepanel" || testState_ == "noleague" || testState_ == "tradedump") {
 			mode = 0;
-			groupResults = testState_ == "results";   // resultsflat = the ungrouped list
-			autoPick_ = true;
-			tradeHintShown = true;   // as if a trade search had been opened
+			groupResults = testState_ != "resultsflat";   // resultsflat = the ungrouped list
+			autoPick_ = testState_ == "resultsseed";      // the seed column open
+			tradeHintShown = testState_ == "resultsseed"; // as if a trade search had been opened
+			if (testState_ == "tradepanel") openTrade_ = true;
+			if (testState_ == "noleague") tradeLeague.clear();
 			runSearch();
 		} else if (testState_ == "seed") {
 			mode = 1;
@@ -2704,7 +2994,6 @@ private:
 	float minTotalWeight = 0.0f;
 	bool requireAll = true;       // picking several stats means "all of them"
 	char statFilter_[128] = "";   // the add-a-stat search box
-	bool browseAll_ = false;      // show the whole stat list with an empty box
 	std::vector<WantRow> wants;
 	std::string seedText = "500";
 	std::string seedErr_;         // the seed page's own error (banner on that page)
@@ -2718,6 +3007,13 @@ private:
 	// header: the more menu, and whether the tree version moved into it
 	bool openMore_ = false;
 	ImVec2 moreAnchor_{ 0, 0 };
+	// the trade settings row and the editor it opens
+	bool openTrade_ = false;
+	ImVec2 tradeAnchor_{ 0, 0 };
+	float tradeRowW_ = 0.0f;
+	// the search form, minus the stat list, last frame (sizes the list)
+	float formOtherH_ = 0.0f;
+	bool testDumped_ = false;     // POBTOOLS_TJ_STATE=tradedump: done once
 	bool verInMenu_ = false;
 	// banners: a failure that needs the user (paste, copy, data); a dismissed
 	// tree-update error stays dismissed until the message changes

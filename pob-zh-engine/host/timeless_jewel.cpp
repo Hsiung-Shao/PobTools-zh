@@ -1512,6 +1512,54 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 		check(TradeQueryJsonMulti("x", {}).find("\"filters\":[]") != std::string::npos,
 		      "no seeds yields an empty filter list, not garbage");
 
+		// The group search as the trade site will parse it (the shape of a
+		// search built by hand on the site): one "count" group with min 1, one
+		// filter per seed -- the conqueror's seed stat with min = max = that seed,
+		// in rank order -- and the cap applied by keeping the FIRST seeds.
+		{
+			auto shapeOk = [&](const std::string& json, const std::string& stat, const std::vector<int>& seeds,
+			                   std::string* why) {
+				nlohmann::json j;
+				try { j = nlohmann::json::parse(json); } catch (...) { *why = "not JSON"; return false; }
+				const auto& st = j["query"]["stats"];
+				if (!st.is_array() || st.size() != 1) { *why = "stats groups != 1"; return false; }
+				if (st[0].value("type", "") != "count") { *why = "group type not count"; return false; }
+				if (!st[0].contains("value") || st[0]["value"].value("min", -1) != 1) { *why = "count min != 1"; return false; }
+				const auto& f = st[0]["filters"];
+				const size_t want = (std::min)(seeds.size(), kMaxTradeSeeds);
+				if (!f.is_array() || f.size() != want) {
+					*why = "filters " + std::to_string(f.is_array() ? f.size() : 0) + " != " + std::to_string(want);
+					return false;
+				}
+				for (size_t i = 0; i < want; i++) {
+					if (f[i].value("id", "") != stat) { *why = "filter " + std::to_string(i) + " stat id"; return false; }
+					const int mn = f[i]["value"].value("min", -1), mx = f[i]["value"].value("max", -2);
+					if (mn != seeds[i] || mx != seeds[i]) { *why = "filter " + std::to_string(i) + " min/max"; return false; }
+				}
+				if (j["query"]["status"].value("option", "") != "securable") { *why = "status"; return false; }
+				return true;
+			};
+			std::string why;
+			const std::vector<int> grp = { 10998, 11009, 11036, 11057 };
+			check(shapeOk(TradeQueryJsonMulti("explicit.pseudo_timeless_jewel_kaom", grp),
+			              "explicit.pseudo_timeless_jewel_kaom", grp, &why),
+			      "group query JSON: count>=1 group, one min=max filter per seed", why);
+			why.clear();
+			check(shapeOk(TradeQueryJsonMulti("explicit.pseudo_timeless_jewel_kaom", many),
+			              "explicit.pseudo_timeless_jewel_kaom", many, &why),
+			      "capped group query keeps the first 40 seeds, in order", why);
+			// and it survives the URL: decode q= back and it is the same document
+			const std::string url = TradeSearchUrl(0, "Standard", 0, TradeQueryJsonMulti("explicit.pseudo_timeless_jewel_kaom", grp));
+			std::string dec;
+			const size_t qp = url.find("?q=");
+			for (size_t i = qp == std::string::npos ? url.size() : qp + 3; i < url.size(); i++) {
+				if (url[i] == '%' && i + 2 < url.size()) { dec += (char)strtol(url.substr(i + 1, 2).c_str(), nullptr, 16); i += 2; }
+				else dec += url[i];
+			}
+			check(dec == TradeQueryJsonMulti("explicit.pseudo_timeless_jewel_kaom", grp),
+			      "group query round-trips through the url's q= parameter");
+		}
+
 		// Remembered region/league/platform. Round-tripped through the real file
 		// because that is what breaks (encoding, missing dir); the user's own
 		// state is saved and put back afterwards.

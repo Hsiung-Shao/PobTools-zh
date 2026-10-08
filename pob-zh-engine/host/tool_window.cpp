@@ -102,6 +102,17 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	};
 	int winW = 0, winH = 0;
 	defaultSize(zoom, &winW, &winH);
+	// Test aid, only with POBTOOLS_TOOL_SHOT: POBTOOLS_TOOL_SHOT_SIZE=<w>x<h>
+	// renders the hidden window at that size (a layout at someone else's size).
+	if (!ShotEnv(L"POBTOOLS_TOOL_SHOT").empty()) {
+		const std::wstring sz = ShotEnv(L"POBTOOLS_TOOL_SHOT_SIZE");
+		int sw = 0, sh = 0;
+		if (!sz.empty() && swscanf_s(sz.c_str(), L"%dx%d", &sw, &sh) == 2 && sw >= 400 && sh >= 300 &&
+		    sw <= 8192 && sh <= 8192) {
+			winW = sw;
+			winH = sh;
+		}
+	}
 
 	GLFWwindow* win = glfwCreateWindow(winW, winH, desc.titleUtf8, nullptr, nullptr);
 	if (!win) {
