@@ -1095,6 +1095,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				appUpdater.SetHold(false);
 				continue; // back to the launcher screen
 			}
+			// The window mode is decided when the launcher window is created, so
+			// "restart now" is a fresh ShowLauncher with the saved config -- in this
+			// process, which keeps the record of the POB windows it started.
+			if (res == LauncherResult::Relaunch) continue;
 			// filter editor / atlas planner / timeless jewel are spawned as
 			// child processes from inside the launcher loop (window stays open)
 			if (res != LauncherResult::Launch) {

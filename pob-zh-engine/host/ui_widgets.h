@@ -26,7 +26,8 @@ namespace PobUi {
 struct WidgetFonts {
 	ImFont* body = nullptr;     // 19 px at 100%: labels, buttons, values
 	ImFont* small = nullptr;    // 15 px: hints, pills, overlines, numbers
-	ImFont* heading = nullptr;  // 20 px: card and dialog headings
+	ImFont* heading = nullptr;  // card and dialog headings, drawn at headingPx
+	float headingPx = 0.0f;     // 20 px at 100% (0 = the face's own size)
 	ImFont* title = nullptr;    // 26 px: the window title
 	float scale = 1.0f;         // monitor DPI x font-size zoom
 	bool icons = false;         // the Lucide subset was merged into the faces
@@ -90,6 +91,7 @@ struct SliderResult {
 	bool changed = false;   // dragged this frame (preview)
 	bool released = false;  // drag ended with an edit (commit)
 	bool reset = false;     // "reset to default" pressed (commit, value = def)
+	bool active = false;    // being dragged right now (do not mirror the setting)
 };
 // Track + current value (numeric) + "reset" ghost button, or the word "default"
 // when the value already is the default. `edit` is the scratch value the caller
@@ -110,7 +112,7 @@ enum class BannerResult { None, Action, Close };
 // the current content region. `descMono` draws the description as a Numeric.
 BannerResult Banner(const char* id, BannerTone tone, const char* icon, const char* title,
                     const char* desc, bool descMono, const char* action, bool closable,
-                    bool actionEnabled = true);
+                    bool actionEnabled = true, float width = 0.0f);
 
 void ProgressBar(float fraction, float width);
 
@@ -122,6 +124,8 @@ void ProgressBar(float fraction, float width);
 void CardBegin(const char* id, const char* icon = nullptr, const char* title = nullptr,
                const char* note = nullptr, bool padded = false, float width = 0.0f);
 void CardEnd();
+// A button on the right of the innermost card's head row (cards with a title).
+bool CardHeadButton(const char* label, BtnKind kind = BtnKind::Ghost, const char* icon = nullptr);
 // Inner content box of the innermost card (screen x and width).
 float CardInnerX();
 float CardInnerWidth();

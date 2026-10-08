@@ -27,7 +27,7 @@ ImFont* SmallFont() { return g_fonts.small ? g_fonts.small : BodyFont(); }
 ImFont* HeadingFont() { return g_fonts.heading ? g_fonts.heading : BodyFont(); }
 float BodyPx() { return g_fonts.body ? g_fonts.body->FontSize : ImGui::GetFontSize(); }
 float SmallPx() { return g_fonts.small ? g_fonts.small->FontSize : BodyPx(); }
-float HeadingPx() { return g_fonts.heading ? g_fonts.heading->FontSize : BodyPx(); }
+float HeadingPx() { return g_fonts.headingPx > 0.0f ? g_fonts.headingPx : (g_fonts.heading ? g_fonts.heading->FontSize : BodyPx()); }
 
 ImVec2 TextSize(ImFont* f, float px, const char* text, float wrap = 0.0f)
 {
@@ -493,6 +493,7 @@ SliderResult SliderWithReset(const char* id, int* edit, int min, int max, int de
 	ImGui::SetNextItemWidth(trackWidth);
 	r.changed = ImGui::SliderInt("##s", edit, min, max, "", ImGuiSliderFlags_AlwaysClamp);
 	const bool active = ImGui::IsItemActive();
+	r.active = active;
 	const bool hovered = ImGui::IsItemHovered();
 	r.released = ImGui::IsItemDeactivatedAfterEdit();
 	ImGui::PopStyleVar(2);
@@ -566,11 +567,11 @@ void StatusPill(Tone tone, const char* text)
 
 BannerResult Banner(const char* id, BannerTone tone, const char* icon, const char* title,
                     const char* desc, bool descMono, const char* action, bool closable,
-                    bool actionEnabled)
+                    bool actionEnabled, float bannerWidth)
 {
 	BannerResult res = BannerResult::None;
 	ImGui::PushID(id);
-	const float width = ImGui::GetContentRegionAvail().x;
+	const float width = bannerWidth > 0.0f ? bannerWidth : ImGui::GetContentRegionAvail().x;
 	const ImVec2 p = ImGui::GetCursorScreenPos();
 	const float padX = D(16.0f), padY = D(12.0f), gap = D(12.0f);
 	ImU32 bg = Tok::Surface1, edge = Tok::Border, iconCol = Tok::AccentText;
@@ -680,6 +681,23 @@ void CardBegin(const char* id, const char* icon, const char* title, const char* 
 		ImGui::BeginGroup();
 		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + c->width - padX * 2.0f);
 	}
+}
+
+bool CardHeadButton(const char* label, BtnKind kind, const char* icon)
+{
+	if (g_cards.empty() || !g_cards.back()->head) return false;
+	CardState* c = g_cards.back();
+	const ImVec2 keep = ImGui::GetCursorScreenPos();
+	const float w = ButtonWidth(label, BtnSize::Sm, icon);
+	const float h = std::floor(D(28.0f));
+	const float headH = c->headBottom - c->pos.y;
+	ImGui::SetCursorScreenPos(ImVec2(c->pos.x + c->width - D(20.0f) - w, c->pos.y + std::floor((headH - h) * 0.5f)));
+	const float prev = g_lineBoxH;
+	g_lineBoxH = 0.0f;
+	const bool clicked = Button(label, kind, BtnSize::Sm, icon);
+	g_lineBoxH = prev;
+	ImGui::SetCursorScreenPos(keep);
+	return clicked;
 }
 
 float CardInnerX()
@@ -922,9 +940,13 @@ DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, c
 	                           ImGuiWindowFlags_NoSavedSettings)) {
 		const float inner = w - D(48.0f);
 		ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + inner);
-		ImGui::PushFont(HeadingFont());
-		ImGui::TextUnformatted(title);
-		ImGui::PopFont();
+		{
+			// heading size without a face of its own: draw-list text, then the room
+			const ImVec2 tp = ImGui::GetCursorScreenPos();
+			const ImVec2 ts = TextSize(HeadingFont(), HeadingPx(), title, inner);
+			DrawText(ImGui::GetWindowDrawList(), HeadingFont(), HeadingPx(), tp, Tok::Text, title, inner);
+			ImGui::Dummy(ts);
+		}
 		ImGui::Dummy(ImVec2(0, D(4.0f)));
 		if (body && *body) {
 			ImGui::PushFont(SmallFont());
