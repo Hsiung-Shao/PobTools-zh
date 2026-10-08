@@ -7,6 +7,8 @@
 
 #include "frame_pacing.h"
 #include "live_resize.h"
+#include "tool_window.h"     // ToolZoom::Watch
+#include "launcher_config.h" // LauncherZoom
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -311,6 +313,32 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		frame([] { ImGui::Begin("w"); ImGui::InputText("##t", text, sizeof(text)); ImGui::End(); });
 		check("P5l a focused text field is (caret must blink)", ImGuiActivity());
 		ImGui::DestroyContext(ctx);
+	}
+
+	// P8 -- a standalone tool window follows the launcher's font size
+	// (ToolZoom::Watch): a stat once a second, a re-read only when the ini was
+	// written, a rebuild only when FontSize itself changed.
+	{
+		using ToolZoom::Watch;
+		Watch w;
+		w.Start(10.0, 111, 19);
+		check("P8 not due inside the interval", !w.Due(10.0) && !w.Due(10.0 + ToolZoom::kPollInterval - 0.01));
+		check("P8b due once the interval has passed", w.Due(10.0 + ToolZoom::kPollInterval));
+		check("P8c a clock that went backwards is due", w.Due(9.0));
+		check("P8d same stamp: no re-read", !w.StampChanged(11.0, 111));
+		check("P8e and the interval restarts", !w.Due(11.5) && w.Due(12.0));
+		check("P8f a new stamp asks for a re-read", w.StampChanged(12.0, 222));
+		check("P8g other settings saved (FontSize unchanged): no rebuild", !w.Commit(222, 19) && w.FontSize() == 19);
+		check("P8h committed stamp is not re-read again", !w.StampChanged(13.0, 222));
+		check("P8i FontSize 19 -> 26: rebuild", w.StampChanged(14.0, 333) && w.Commit(333, 26) && w.FontSize() == 26);
+		check("P8j FontSize 26 -> 14: rebuild", w.StampChanged(15.0, 444) && w.Commit(444, 14) && w.FontSize() == 14);
+		// A read that raced a save is not committed by the caller: the stamp stays
+		// the old one, so the next poll sees a change and reads again.
+		check("P8k an uncommitted read is retried on the next poll", w.StampChanged(16.0, 555) && w.StampChanged(17.0, 555));
+		check("P8l ini gone (stamp 0) is a change, read as defaults", w.StampChanged(18.0, 0) && w.Commit(0, 19));
+		// The scale the window rebuilds at: content scale x the launcher's zoom.
+		check("P8m zoom at 14 / 19 / 26", Near(LauncherZoom(14), 14.0 / 19.0) && Near(LauncherZoom(19), 1.0) &&
+		      Near(LauncherZoom(26), 26.0 / 19.0));
 	}
 
 	line("");

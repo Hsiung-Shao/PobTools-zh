@@ -677,6 +677,9 @@ public:
 
 	void Frame() override
 	{
+		// The host's font-size zoom can change while the panel is open (the
+		// launcher's slider; a tool window follows the ini): read it per frame.
+		scale = host_->scale;
 		// Updater results land on the worker thread; applied here, on the GL thread.
 		PassiveTreeUpdater::Status ptUst = ptUpdater.Poll();
 		if (ptUst.reloadPending) {

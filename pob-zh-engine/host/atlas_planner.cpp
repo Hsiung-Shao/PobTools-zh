@@ -236,6 +236,9 @@ public:
 
 	void Frame() override
 	{
+		// The host's font-size zoom can change while the panel is open (the
+		// launcher's slider; a tool window follows the ini): read it per frame.
+		scale = host_->scale;
 		// Re-read every frame and never cached: the launcher rebuilds its glyph
 		// atlas when the user changes font, and every ImFont* from before that is
 		// dangling afterwards.

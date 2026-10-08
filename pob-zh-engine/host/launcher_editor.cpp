@@ -301,6 +301,9 @@ public:
 
 	void Frame() override
 	{
+		// The host's font-size zoom can change while the panel is open (the
+		// launcher's slider; a tool window follows the ini): read it per frame.
+		scale = host_->scale;
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextColored(PobUi::Accent(), u8"翻譯資料庫");
 		ImGui::SameLine(0, 18 * scale);

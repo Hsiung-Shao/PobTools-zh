@@ -1480,6 +1480,30 @@ bool RunWidgetSelfTest()
 		}
 		ok = ok && !ToolDensity() && ControlH() == launcherH;
 	}
+	// Tool density at every font-size setting the launcher offers (14 / 19 / 26,
+	// i.e. scale = n/19): the faces are 19 / 15 px times the scale (tool_window.cpp,
+	// launcher_ui.cpp), the boxes are design px times the same scale, so the
+	// ratio is fixed and only the floor() rounding moves -- worst at 14. Every
+	// box that holds a line of text keeps at least 3 px above and below it (the
+	// tightest is the pill at 14: floor(24.5 * 14/19) = 18 around an 11 px face).
+	{
+		const float sizes[3] = { 14.0f, 19.0f, 26.0f };
+		for (float n : sizes) {
+			const float z = n / 19.0f;
+			f.scale = z;
+			SetWidgetFonts(f);
+			ToolDensityScope tool;
+			const float body = 19.0f * z, small = 15.0f * z;
+			auto room = [](float box, float text) { return (box - text) * 0.5f >= 3.0f; };
+			ok = ok && room(ControlH(), body);                    // input / select / Md button
+			ok = ok && room(std::floor(D(28.0f)), small);         // Sm button
+			ok = ok && room(std::floor(D(44.0f)), body);          // Lg button
+			ok = ok && room(std::floor(D(24.0f)), small);         // pill
+			ok = ok && room(std::floor(D(22.0f)), 0.0f) && D(10.0f) >= 1.0f;  // switch, gaps never vanish
+		}
+		f.scale = 1.0f;
+		SetWidgetFonts(f);
+	}
 	ImGui::DestroyContext();
 	SetWidgetFonts(WidgetFonts());
 	return ok;

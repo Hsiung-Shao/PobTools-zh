@@ -46,6 +46,9 @@ public:
 
 	void Frame() override
 	{
+		// The host's font-size zoom can change while the panel is open (the
+		// launcher's slider; a tool window follows the ini): read it per frame.
+		shell_.scale = host_->scale;
 		DrawTopToolbar(shell_);
 		ImGui::Separator();
 		if (!shell_.cjkOk) {
