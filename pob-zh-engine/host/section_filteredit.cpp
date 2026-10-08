@@ -106,6 +106,8 @@ std::string StripStyleMarkers(const std::string& label)
 	return out.empty() ? label : out;
 }
 
+unsigned RefreshStates(EditorShell& s);   // below
+
 void RebuildRows(EditorShell& s)
 {
 	const FilterFile& f = s.model;
@@ -162,6 +164,7 @@ void RebuildRows(EditorShell& s)
 	if (s.selectedBlock >= 0) s.selAnchor = s.doc.CaptureAnchor(s.selectedBlock);
 	s.batchSel.assign(f.blocks.size(), 0);
 	s.rowsVersion = s.doc.structureVersion();
+	s.rowStateSig = RefreshStates(s);
 	EdRebuildVisRows(s);
 }
 
@@ -354,11 +357,64 @@ bool EdBlockIsCustom(const EditorShell& s, int bi)
 	return bi >= 0 && bi < (int)s.rows.size() && s.rows[bi].custom;
 }
 
+ChipCounts CountChips(const std::vector<BlockListRow>& rows)
+{
+	ChipCounts c;
+	for (const BlockListRow& r : rows) {
+		c.all++;
+		(r.hide ? c.hidden : c.shown)++;
+		if (r.change != BlockChange::Same) c.changed++;
+		if (r.custom) c.custom++;
+	}
+	return c;
+}
+
+bool RowPassesChip(RuleChip chip, const BlockListRow& r)
+{
+	switch (chip) {
+		case RuleChip::Shown:   return !r.hide;
+		case RuleChip::Hidden:  return r.hide;
+		case RuleChip::Changed: return r.change != BlockChange::Same;
+		case RuleChip::Custom:  return r.custom;
+		default:                return true;
+	}
+}
+
+namespace {
+// Each row's show / hide and baseline state, and the chip counts. Returns a
+// signature of the flags (the list depends on them under some chips).
+unsigned RefreshStates(EditorShell& s)
+{
+	unsigned sig = 2166136261u;
+	const bool dirty = s.model.dirty && s.doc.file() == &s.model;
+	const int n = (std::min)((int)s.rows.size(), (int)s.model.blocks.size());
+	for (int i = 0; i < n; i++) {
+		BlockListRow& r = s.rows[i];
+		r.hide = s.model.blocks[i].hide;
+		// a clean file equals its baseline by definition: skip the comparison
+		r.change = dirty ? s.doc.BlockState(i) : BlockChange::Same;
+		sig = (sig ^ (unsigned)((r.hide ? 1 : 0) | ((int)r.change << 1))) * 16777619u;
+	}
+	s.chipCounts = CountChips(s.rows);
+	return sig;
+}
+} // namespace
+
+void EdRefreshRowStates(EditorShell& s)
+{
+	const unsigned sig = RefreshStates(s);
+	if (sig != s.rowStateSig) {
+		s.rowStateSig = sig;
+		if (s.chip == RuleChip::Shown || s.chip == RuleChip::Hidden || s.chip == RuleChip::Changed) EdRebuildVisRows(s);
+	}
+}
+
 void EdRebuildVisRows(EditorShell& s)
 {
 	s.visRows.clear();
 	s.visRows.reserve(s.rows.size());
 	for (int i = 0; i < (int)s.rows.size(); i++) {
+		if (!RowPassesChip(s.chip, s.rows[i])) continue;
 		if (!s.searchLower.empty() && !EdContainsCI(s.rows[i].haystack, s.searchLower)) continue;
 		s.visRows.push_back(i);
 	}
@@ -398,6 +454,48 @@ bool DrawBlockList(EditorShell& s, float height)
 		EdRebuildVisRows(s);
 	}
 	ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
+
+	// filter chips with counts (built with the rows; nothing translated here)
+	{
+		const ChipCounts& c = s.chipCounts;
+		const struct { RuleChip chip; const char* zh; int n; } chips[5] = {
+			{ RuleChip::All, u8"全部", c.all }, { RuleChip::Shown, u8"顯示", c.shown },
+			{ RuleChip::Hidden, u8"隱藏", c.hidden }, { RuleChip::Changed, u8"已修改", c.changed },
+			{ RuleChip::Custom, u8"自訂", c.custom },
+		};
+		const PobUi::WidgetFonts& cwf = PobUi::Fonts();
+		ImFont* cf = cwf.small ? cwf.small : ImGui::GetFont();
+		const float h = std::floor(cf->FontSize + PobUi::D(6.0f));
+		const float x0 = ImGui::GetCursorScreenPos().x;
+		float x = x0, y = ImGui::GetCursorScreenPos().y;
+		ImDrawList* cdl = ImGui::GetWindowDrawList();
+		for (const auto& ch : chips) {
+			const std::string t = std::string(ch.zh) + " " + std::to_string(ch.n);
+			const ImVec2 ts = cf->CalcTextSizeA(cf->FontSize, FLT_MAX, 0.0f, t.c_str());
+			const float w = ts.x + PobUi::D(16.0f);
+			if (x > x0 && x + w > x0 + innerW) { x = x0; y += h + PobUi::D(4.0f); }
+			ImGui::SetCursorScreenPos(ImVec2(x, y));
+			ImGui::PushID((int)ch.chip);
+			const bool click = ImGui::InvisibleButton("##chip", ImVec2(w, h));
+			const bool hov = ImGui::IsItemHovered();
+			ImGui::PopID();
+			const bool on = s.chip == ch.chip;
+			cdl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), on ? Tok::AccentSoft : (hov ? Tok::Surface3 : Tok::Surface2), h * 0.5f);
+			cdl->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), on ? Tok::Accent : Tok::Border, h * 0.5f, 0, 1.0f);
+			cdl->AddText(cf, cf->FontSize, ImVec2(x + PobUi::D(8.0f), y + std::floor((h - ts.y) * 0.5f)), on ? Tok::Text : Tok::TextMuted,
+			             t.c_str());
+			if (hov) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			if (hov && ch.chip == RuleChip::Changed)
+				PobUi::Tooltip(u8"和最後一次載入或儲存的檔案比，有改過或新增的規則（也就是還沒儲存的變更）");
+			if (click && !on) {
+				s.chip = ch.chip;
+				EdRebuildVisRows(s);
+			}
+			x += w + PobUi::D(4.0f);
+		}
+		ImGui::SetCursorScreenPos(ImVec2(x0, y + h + PobUi::D(6.0f)));
+		ImGui::Dummy(ImVec2(0, 0));
+	}
 
 	int nBlocks = 0, nSel = 0;
 	for (int bi : s.visRows) { (void)bi; nBlocks++; }
@@ -529,10 +627,8 @@ bool DrawBlockList(EditorShell& s, float height)
 			}
 
 			// label + markers
-			bool blockDirty = false;
-			for (int li : b.lineIdx)
-				if (s.model.lines[li].dirty) { blockDirty = true; break; }
-			const char* mark = blockDirty ? u8"已修改" : nullptr;
+			const char* mark = row.change == BlockChange::Modified ? u8"已修改"
+			                 : (row.change == BlockChange::Added ? u8"新增" : nullptr);
 			const char* hid = b.hide ? u8"隱藏" : nullptr;
 			const float tx = p.x + lead + PobUi::D(10.0f);
 			const float tRight = swp.x - PobUi::D(8.0f);
@@ -579,7 +675,7 @@ bool DrawBlockList(EditorShell& s, float height)
 
 // Middle pane: title row + label preview + cards. Returns true after a
 // structural mutation.
-bool DrawMiddle(EditorShell& s, bool* wantDelete)
+bool DrawMiddle(EditorShell& s, bool* wantDelete, bool* wantUndo)
 {
 	const int bi = s.selectedBlock;
 	if (bi < 0 || bi >= (int)s.model.blocks.size()) {
@@ -597,7 +693,11 @@ bool DrawMiddle(EditorShell& s, bool* wantDelete)
 		const char* shLabels[2] = { u8"顯示", u8"隱藏" };
 		const float segW = PobUi::SegmentedWidth(shLabels, 2);
 		const float delW = custom ? PobUi::ButtonWidth(u8"刪除規則", PobUi::BtnSize::Sm, PobIcon::Trash) + PobUi::D(8.0f) : 0.0f;
-		const float titleW = (std::max)(PobUi::D(80.0f), avail - segW - delW - PobUi::D(12.0f));
+		const BlockChange change = s.doc.BlockState(bi);
+		const char* undoLbl = u8"還原這條的修改";
+		const float undoW = change == BlockChange::Modified
+			? PobUi::ButtonWidth(undoLbl, PobUi::BtnSize::Sm, PobIcon::Undo) + PobUi::D(8.0f) : 0.0f;
+		const float titleW = (std::max)(PobUi::D(80.0f), avail - segW - delW - undoW - PobUi::D(12.0f));
 		const PobUi::WidgetFonts& wf = PobUi::Fonts();
 		ImFont* hf = wf.heading ? wf.heading : ImGui::GetFont();
 		const float hpx = wf.headingPx > 0 ? wf.headingPx : hf->FontSize;
@@ -609,15 +709,29 @@ bool DrawMiddle(EditorShell& s, bool* wantDelete)
 		dl->AddText(hf, hpx, ImVec2(p.x, ty), Tok::Text, row.label.c_str(), nullptr, 0.0f, &clip);
 		std::string where = custom ? std::string(u8"自訂規則") : std::string(u8"NeverSink 預設規則");
 		if (row.label.find(u8"【") == std::string::npos && !custom) where = u8"規則";
-		bool dirty = false;
-		for (int li : b.lineIdx) if (s.model.lines[li].dirty) { dirty = true; break; }
-		if (dirty) where += u8" · 有修改還沒儲存";
+		if (change == BlockChange::Added) {
+			where += u8" · 新增，還沒儲存";
+		} else if (change == BlockChange::Modified) {
+			// changed lines + baseline lines that are gone
+			int nChanged = 0;
+			for (int li : b.lineIdx)
+				if (s.doc.BaselineLine(li) ? s.doc.LineChanged(li) : (s.model.lines[li].kind != FilterLineKind::Blank &&
+				                                                      s.model.lines[li].kind != FilterLineKind::Comment))
+					nChanged++;
+			where += u8" · 有 " + std::to_string((std::max)(1, nChanged)) + u8" 處修改";
+		}
 		where += u8" · 第 " + std::to_string(bi + 1) + u8" 條";
 		dl->AddText(sf, sf->FontSize, ImVec2(p.x, ty + hpx + PobUi::D(2.0f)), Tok::TextMuted, where.c_str(), nullptr, 0.0f, &clip);
 		if (ImGui::IsMouseHoveringRect(ImVec2(clip.x, clip.y), ImVec2(clip.z, clip.w)))
 			PobUi::Tooltip(row.label.c_str());
 
-		float x = p.x + avail - segW - delW;
+		float x = p.x + avail - segW - delW - undoW;
+		if (undoW > 0.0f) {
+			ImGui::SetCursorScreenPos(ImVec2(x, p.y + std::floor((rowH - PobUi::D(28.0f)) * 0.5f)));
+			if (PobUi::Button(undoLbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Undo)) *wantUndo = true;
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"把這條規則恢復成最後一次載入或儲存時的樣子");
+			x += undoW;
+		}
 		if (custom) {
 			ImGui::SetCursorScreenPos(ImVec2(x, p.y + std::floor((rowH - PobUi::D(28.0f)) * 0.5f)));
 			if (PobUi::Button(u8"刪除規則", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Trash)) *wantDelete = true;
@@ -665,6 +779,7 @@ void DrawFilterEditSection(EditorShell& s)
 	}
 	if (s.doc.file() != &s.model) s.doc.Attach(&s.model);
 	if (s.rowsVersion != s.doc.structureVersion()) RebuildRows(s);
+	EdRefreshRowStates(s);
 
 	const float H = ImGui::GetContentRegionAvail().y;
 	const float totalW = ImGui::GetContentRegionAvail().x;
@@ -700,7 +815,18 @@ void DrawFilterEditSection(EditorShell& s)
 		PobUi::EmptyState("##batchhint", PobIcon::List, u8"批量修改", hint.c_str(), nullptr, 0.0f,
 		                  ImGui::GetContentRegionAvail().y);
 	} else {
-		mutated = DrawMiddle(s, &wantDelete);
+		bool wantUndo = false;
+		mutated = DrawMiddle(s, &wantDelete, &wantUndo);
+		if (wantUndo && !mutated) {
+			// through the data layer, never by editing lines from here
+			const int nb = s.doc.RestoreBlock(s.selectedBlock);
+			if (nb >= 0) {
+				s.selectedBlock = nb;
+				s.selAnchor = s.doc.CaptureAnchor(nb);
+			}
+			s.Notify(u8"已還原這條規則的修改");
+			mutated = true;
+		}
 	}
 	ImGui::EndChild();
 

@@ -3,11 +3,13 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
+#include <cwchar>
 #include <cwctype>
 
 #pragma comment(lib, "winmm.lib")
 
 static bool g_mciOpen = false;
+static std::wstring g_curPath;   // the file last started ("" after StopAudio)
 
 static std::wstring ext_lower(const std::wstring& p)
 {
@@ -24,6 +26,27 @@ void StopAudio()
 		mciSendStringW(L"close pobsnd", nullptr, 0, nullptr);
 		g_mciOpen = false;
 	}
+	g_curPath.clear();
+}
+
+bool AudioIsPlaying()
+{
+	if (!g_mciOpen) return false;
+	wchar_t mode[64] = L"";
+	if (mciSendStringW(L"status pobsnd mode", mode, 64, nullptr) != 0) return false;
+	return wcscmp(mode, L"playing") == 0;
+}
+
+const std::wstring& AudioCurrentPath() { return g_curPath; }
+
+bool PlaySystemCue(int id)
+{
+	StopAudio();
+	// five distinct Windows sounds, cycled over the game's sixteen ids
+	static const wchar_t* kCues[5] = { L"SystemAsterisk", L"SystemExclamation", L"SystemNotification",
+	                                   L"SystemQuestion", L"SystemHand" };
+	if (id < 1) id = 1;
+	return PlaySoundW(kCues[(id - 1) % 5], nullptr, SND_ALIAS | SND_ASYNC | SND_NODEFAULT) == TRUE;
 }
 
 bool PlayAudioFile(const std::wstring& path)
@@ -33,7 +56,9 @@ bool PlayAudioFile(const std::wstring& path)
 
 	std::wstring e = ext_lower(path);
 	if (e == L".wav") {
-		return PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT) == TRUE;
+		const bool ok = PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT) == TRUE;
+		if (ok) g_curPath = path;
+		return ok;
 	}
 
 	// Compressed formats via MCI (needs a system codec; mp3/wav always work).
@@ -41,6 +66,7 @@ bool PlayAudioFile(const std::wstring& path)
 	if (mciSendStringW(open.c_str(), nullptr, 0, nullptr) != 0) return false;
 	g_mciOpen = true;
 	if (mciSendStringW(L"play pobsnd", nullptr, 0, nullptr) != 0) { StopAudio(); return false; }
+	g_curPath = path;
 	return true;
 }
 
@@ -62,5 +88,6 @@ bool PlayAudioFileVol(const std::wstring& path, int volumePct)
 	std::wstring vol = L"setaudio pobsnd volume to " + std::to_wstring(volumePct * 10);
 	mciSendStringW(vol.c_str(), nullptr, 0, nullptr);   // best-effort (needs digital-video capable device? mp3 ok)
 	if (mciSendStringW(L"play pobsnd", nullptr, 0, nullptr) != 0) { StopAudio(); return false; }
+	g_curPath = path;
 	return true;
 }

@@ -34,6 +34,10 @@ struct RenamePlanEntry {
 	std::vector<int> refLines;         // CustomAlertSound lines referencing oldName
 };
 
+// "6maps (1).mp3": the " (n)" a browser adds when it saves a second copy of a
+// file. A filter references the plain name, so such a file never plays.
+bool SoundNameHasDownloadSuffix(const std::wstring& fileName);
+
 // Rules <-> json text (pure, for tests and Save/LoadRules).
 std::string SoundRulesToJson(const std::vector<NamingRule>& rules);
 bool SoundRulesFromJson(const std::string& text, std::vector<NamingRule>* out);

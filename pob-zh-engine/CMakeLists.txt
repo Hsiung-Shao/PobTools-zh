@@ -429,6 +429,7 @@ if (WIN32)
         translate/startup_trace.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
+        host/filter_file_watch.cpp
         host/filter_selftest.cpp
         host/filter_schema.cpp
         host/filter_card_ui.cpp

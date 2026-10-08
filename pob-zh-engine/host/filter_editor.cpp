@@ -36,6 +36,7 @@
 void SoundsTestOpenPlan(EditorShell& s);          // section_sounds.cpp
 void CardTestOpenPop(EditorShell& s, int which);  // filter_card_ui.cpp
 void BatchTestPreset(EditorShell& s);             // filter_batch.cpp
+void CardTestInput(EditorShell& s, const char* text);  // filter_card_ui.cpp
 
 namespace {
 
@@ -215,8 +216,13 @@ private:
 			return;
 		}
 		if (f == 2) {
-			if (st == "detail-color") CardTestOpenPop(shell_, 1);
+			if (st == "detail-color") {
+				// in memory only (a test run never writes the ini)
+				shell_.recentColors = { 0xffffffffu, 0xff0000ffu, 0xd6b56affu, 0x0000ffffu };
+				CardTestOpenPop(shell_, 1);
+			}
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
+			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
 			if (st == "batch") {
 				int n = 0;
@@ -229,6 +235,19 @@ private:
 			if (st == "preview") PreviewTestDrops(shell_, 7u, 0);
 			if (st == "preview-import") PreviewTestImport(shell_, kFxBoots);
 			if (st == "soundsplan") SoundsTestOpenPlan(shell_);
+			if (st == "sounds") SoundsTestPlaying(shell_, L"2currency.mp3");
+			if (st == "extchange") {
+				// as if another program had rewritten the file: the watch's
+				// recorded stamp no longer matches (nothing on disk is touched)
+				shell_.watch.MarkChangedForTest();
+			}
+			if (st == "rules-changed") {
+				shell_.chip = RuleChip::Changed;
+				shell_.search.clear();
+				shell_.searchLower.clear();
+				shell_.searchBuf[0] = 0;
+				EdRebuildVisRows(shell_);
+			}
 			if (st == "unsaved") {
 				shell_.pendingAction = EdPendingAction::OpenPath;
 				shell_.pendingPath = shell_.fileList.back().path;
@@ -266,7 +285,28 @@ private:
 	void seedEdits()
 	{
 		FilterDocumentEditor& doc = shell_.doc;
-		// a custom rule: 神聖石 stacks of 5+, with a custom sound
+		// the NeverSink block holding Divine Orb
+		int target = -1;
+		for (int i = 0; i < (int)shell_.model.blocks.size() && target < 0; i++) {
+			const FilterBlock& b = shell_.model.blocks[i];
+			for (int li : b.lineIdx) {
+				const FilterLine& ln = shell_.model.lines[li];
+				if (ln.kind == FilterLineKind::Condition && ln.keyword == "BaseType") {
+					for (const FilterToken& t : ln.values)
+						if (t.text == "Divine Orb") { target = i; break; }
+				}
+				if (target >= 0) break;
+			}
+		}
+		// Two conditions the design's example has, as if the file had them:
+		// added, then taken as the baseline (in memory -- nothing is saved).
+		if (target >= 0) {
+			doc.InsertLine(target, "StackSize", ">=", { FilterToken{ "3", false } });
+			doc.InsertLine(target, "AreaLevel", ">=", { FilterToken{ "68", false } });
+			doc.CaptureBaseline();
+		}
+		const BlockAnchor targetAnchor = target >= 0 ? doc.CaptureAnchor(target) : BlockAnchor{};
+		// a custom rule: 神聖石 stacks of 5+, with a custom sound (新增)
 		CustomZone z = EnsureCustomZone(doc);
 		if (z.present()) {
 			const int nb = doc.CreateBlockAtLine(z.endLine, false, u8"PobTools custom rule");
@@ -280,24 +320,10 @@ private:
 				doc.InsertLine(nb, "CustomAlertSound", "", { FilterToken{ "2currency.mp3", true }, FilterToken{ "300", false } });
 			}
 		}
-		// the NeverSink block holding Divine Orb
-		int target = -1;
-		const CustomZone z2 = FindCustomZone(shell_.model);
-		for (int i = 0; i < (int)shell_.model.blocks.size() && target < 0; i++) {
-			const FilterBlock& b = shell_.model.blocks[i];
-			if (z2.present() && b.headerLineIdx > z2.beginLine && b.headerLineIdx < z2.endLine) continue;
-			for (int li : b.lineIdx) {
-				const FilterLine& ln = shell_.model.lines[li];
-				if (ln.kind == FilterLineKind::Condition && ln.keyword == "BaseType") {
-					for (const FilterToken& t : ln.values)
-						if (t.text == "Divine Orb") { target = i; break; }
-				}
-				if (target >= 0) break;
-			}
-		}
+		// the edits on the Divine Orb block: >= 3 becomes >= 1, AreaLevel disabled
+		// the custom rule went in above it: find the block again by its anchor
+		if (target >= 0) target = doc.ResolveAnchor(targetAnchor);
 		if (target >= 0) {
-			doc.InsertLine(target, "StackSize", ">=", { FilterToken{ "3", false } });
-			doc.InsertLine(target, "AreaLevel", ">=", { FilterToken{ "68", false } });
 			const int al = doc.FindLine(target, "AreaLevel");
 			if (al >= 0) doc.CommentOutLine(al);
 			const int ss = doc.FindLine(target, "StackSize");

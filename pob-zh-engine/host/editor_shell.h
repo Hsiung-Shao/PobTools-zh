@@ -14,6 +14,7 @@
 
 #include "filter_data.h"
 #include "filter_doc_editor.h"
+#include "filter_file_watch.h"
 #include "sound_library_service.h"
 #include "filter_i18n.h"
 #include "item_library.h"
@@ -38,9 +39,23 @@ struct BlockListRow {
 	std::string haystack;   // lower-cased label + English + Chinese summary, for search
 	int group = 0;          // index into EditorShell::groupNames
 	bool custom = false;    // inside the PobTools custom zone
-	bool hide = false;
-	bool dirty = false;
+	bool hide = false;      // refreshed every frame (EdRefreshRowStates)
+	BlockChange change = BlockChange::Same;   // against the baseline, refreshed every frame
 };
+
+// The list's filter chips: 全部 / 顯示 / 隱藏 / 已修改 / 自訂.
+enum class RuleChip { All, Shown, Hidden, Changed, Custom };
+struct ChipCounts { int all = 0, shown = 0, hidden = 0, changed = 0, custom = 0; };
+// Pure: the counts over a row list, and whether a row passes a chip. "Changed"
+// is modified or added (unsaved against the baseline).
+ChipCounts CountChips(const std::vector<BlockListRow>& rows);
+bool RowPassesChip(RuleChip chip, const BlockListRow& row);
+
+// Recently used colours (RGBA packed as 0xRRGGBBAA), newest first, at most 8.
+constexpr int kRecentColorMax = 8;
+void PushRecentColor(std::vector<std::uint32_t>& list, const int rgba[4]);
+std::string EncodeRecentColors(const std::vector<std::uint32_t>& list);
+std::vector<std::uint32_t> DecodeRecentColors(const std::string& text);
 
 // One line of the clipped block list: a group heading or a rule.
 struct BlockListEntry {
@@ -111,6 +126,8 @@ struct EditorShell {
 
 	// the open filter
 	FilterFile model;
+	ExternalChangeWatch watch;   // the open file changed on disk by someone else
+	std::vector<std::uint32_t> recentColors;   // newest first (pob-zh.ini FilterRecentColors)
 	bool loaded = false;
 	std::string status;          // last action message (also shown as a toast)
 	std::wstring loadFailedPath; // non-empty: the last open failed (Banner + 重試)
@@ -138,6 +155,9 @@ struct EditorShell {
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
 	std::string search, searchLower;
+	RuleChip chip = RuleChip::All;
+	ChipCounts chipCounts;           // refreshed every frame (EdRefreshRowStates)
+	unsigned rowStateSig = 0;        // hide/change flags the visible list was built from
 	char searchBuf[256] = "";
 	char addSearchBuf[128] = "";     // the add-column's search box
 
@@ -168,8 +188,10 @@ struct EditorShell {
 	bool SaveAs(const std::wstring& path);
 	// A message for the user: kept in status and shown as a toast.
 	void Notify(const std::string& text, bool error = false);
-	// Number of unsaved changes, as the header and the dialogs count them.
-	int UnsavedCount() const;
+	// Number of unsaved changes, as the header and the dialogs count them:
+	// modified + added + removed blocks against the baseline. A file whose
+	// edits were all undone by hand counts 0 and is marked clean again.
+	int UnsavedCount();
 };
 
 // --- shell chrome ---
@@ -192,6 +214,7 @@ void DrawDropPreviewSection(EditorShell& s); // 掉落預覽 (filter_preview.cpp
 void DrawSoundsSection(EditorShell& s);      // 音效
 // Test aid: open the batch-rename plan (section_sounds.cpp).
 void SoundsTestOpenPlan(EditorShell& s);
+void SoundsTestPlaying(EditorShell& s, const std::wstring& name);
 
 // Set a block's Show/Hide verb (header keyword + b.hide), marking dirty. No-op if
 // already in that state.
@@ -202,6 +225,9 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 void EdRebuildRows(EditorShell& s);
 // Rebuild only the search-filtered list (search text / filter changed).
 void EdRebuildVisRows(EditorShell& s);
+// Per frame: each row's show/hide and baseline state, the chip counts, and the
+// visible list when a chip that depends on them is active.
+void EdRefreshRowStates(EditorShell& s);
 
 // Fill fileList: the test folder in a test run, Documents otherwise.
 void EdRefreshFileList(EditorShell& s);

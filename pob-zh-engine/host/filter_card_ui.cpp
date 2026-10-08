@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Tok = PobUi::Tok;
@@ -133,12 +134,11 @@ enum class CardPop { None, Color, Minimap, Effect, Sound };
 
 struct CardUiState {
 	// BaseType / Class text input (one line at a time)
-	std::string input;
-	const void* inputLine = nullptr;
-	std::vector<LibItem> live;
+	std::unordered_map<unsigned, std::string> inputs;   // line uid -> text typed
+	std::vector<LibItem> live;      // candidates for liveUid's text
+	unsigned liveUid = 0;
 	std::string liveFor;
 	bool liveClass = false;
-	bool notFound = false;          // Enter on a name the catalog does not know
 	// popovers
 	CardPop pop = CardPop::None;    // open (or opening) popover
 	bool openReq = false;
@@ -146,6 +146,9 @@ struct CardUiState {
 	ImVec2 anchor{ 0, 0 };
 	char rgbaBuf[48] = "";
 	int rgbaFor = -1;               // channel the buffer mirrors
+	// a picker drag goes into 最近用過 once, when the drag ends
+	bool recentPending = false;
+	int recentRgba[4] = { 0, 0, 0, 0 };
 };
 
 namespace {
@@ -525,22 +528,16 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		changed = true;
 	}
 
-	// the input (one line at a time keeps its text)
-	if (u.inputLine != (const void*)&ln) {
-		u.input.clear();
-		u.live.clear();
-		u.liveFor.clear();
-		u.notFound = false;
-		u.inputLine = &ln;
-	}
+	// the text typed for this line (kept per line uid, so two list rows in one
+	// block do not wipe each other's input)
+	std::string& in = u.inputs[ln.uid];
 	const float inW = std::floor(PobUi::D(200.0f));
 	Flow(inW, false);
 	PobUi::PushControlFrame();
 	ImGui::SetNextItemWidth(inW);
-	const bool enter = ImGui::InputTextWithHint("##manual", u8"輸入物品名稱，可中文", &u.input,
+	const bool enter = ImGui::InputTextWithHint("##manual", u8"輸入物品名稱，可中文", &in,
 	                                            ImGuiInputTextFlags_EnterReturnsTrue);
 	PobUi::PopControlFrame();
-	if (ImGui::IsItemEdited()) u.notFound = false;
 
 	const bool classCard = (ln.keyword == "Class");
 	auto addToken = [&](const std::string& en) {
@@ -549,18 +546,18 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 			MarkEdited(s);
 			changed = true;
 		}
-		u.input.clear();
+		in.clear();
 		u.liveFor.clear();
 		u.live.clear();
-		u.notFound = false;
 	};
 
 	// live candidates (Chinese or English substring)
-	if (translateInput && !u.input.empty() && (u.liveFor != u.input || u.liveClass != classCard)) {
-		u.liveFor = u.input;
+	if (translateInput && !in.empty() && (u.liveUid != ln.uid || u.liveFor != in || u.liveClass != classCard)) {
+		u.liveFor = in;
+		u.liveUid = ln.uid;
 		u.liveClass = classCard;
 		u.live.clear();
-		const std::string lower = EdToLowerAscii(u.input);
+		const std::string lower = EdToLowerAscii(in);
 		if (classCard) {
 			std::vector<std::string> seen;
 			for (const LibItem& it : s.library.items()) {
@@ -568,7 +565,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 				if (std::find(seen.begin(), seen.end(), it.enClass) != seen.end()) continue;
 				seen.push_back(it.enClass);
 				const std::string zh = s.i18n.ClassNameZh(it.enClass);
-				if (EdContainsCI(it.enClass, lower) || zh.find(u.input) != std::string::npos) {
+				if (EdContainsCI(it.enClass, lower) || zh.find(in) != std::string::npos) {
 					LibItem cand;
 					cand.en = it.enClass;
 					cand.zh = zh;
@@ -577,7 +574,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 			}
 		} else {
 			for (const LibItem& it : s.library.items()) {
-				if (EdContainsCI(it.en, lower) || it.zh.find(u.input) != std::string::npos) {
+				if (EdContainsCI(it.en, lower) || it.zh.find(in) != std::string::npos) {
 					u.live.push_back(it);
 					if (u.live.size() >= 40) break;
 				}
@@ -585,21 +582,20 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		}
 	}
 
-	if (enter && !u.input.empty()) {
+	if (enter && !in.empty()) {
 		std::string token;
 		if (translateInput) {
 			for (const LibItem& it : u.live)
-				if (it.en == u.input || it.zh == u.input) { token = it.en; break; }
+				if (it.en == in || it.zh == in) { token = it.en; break; }
 			if (token.empty() && u.live.size() == 1) token = u.live[0].en;
 			if (token.empty() && !u.live.empty()) token = u.live[0].en;   // the highlighted first row
 		} else {
-			token = u.input;
+			token = in;
 		}
 		if (!token.empty()) addToken(token);
-		else u.notFound = true;
 	}
 
-	if (translateInput && !u.input.empty() && !u.live.empty()) {
+	if (translateInput && !in.empty() && u.liveUid == ln.uid && !u.live.empty()) {
 		// the candidate menu, under the input
 		ImGui::NewLine();
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetCursorScreenPos().y - PobUi::D(4.0f)));
@@ -627,11 +623,15 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 			const std::string zh = it.zh.empty() ? it.en : it.zh;
 			dl->AddText(ImVec2(x, ty), Tok::Text, zh.c_str());
 			x += ImGui::CalcTextSize(zh.c_str()).x + PobUi::D(8.0f);
-			if (it.zh != it.en)
-				dl->AddText(sf, sf->FontSize, ImVec2(x, ty + (ImGui::GetTextLineHeight() - sf->FontSize) * 0.5f), Tok::TextMuted, it.en.c_str());
 			// the class, so two items of one name tell apart
 			std::string cls = classCard ? std::string() : s.i18n.ClassNameZh(it.enClass);
 			if (i == 0 && cls.empty()) cls = u8"Enter 加入";
+			const float clsW = cls.empty() ? 0.0f : sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, cls.c_str()).x + PobUi::D(24.0f);
+			if (it.zh != it.en) {
+				const ImVec4 clip(x, rp.y, rp.x + rw - clsW, rp.y + rowH);
+				dl->AddText(sf, sf->FontSize, ImVec2(x, ty + (ImGui::GetTextLineHeight() - sf->FontSize) * 0.5f), Tok::TextMuted,
+				            it.en.c_str(), nullptr, 0.0f, &clip);
+			}
 			if (!cls.empty()) {
 				const ImVec2 cs = sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, cls.c_str());
 				const ImVec2 bp(rp.x + rw - cs.x - PobUi::D(16.0f), rp.y + std::floor((rowH - cs.y - PobUi::D(4.0f)) * 0.5f));
@@ -646,10 +646,10 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		ImGui::PopStyleVar(2);
 		ImGui::PopStyleColor(2);
 		if (!picked.empty()) addToken(picked);
-	} else if (translateInput && !u.input.empty() && u.live.empty()) {
+	} else if (translateInput && !in.empty() && u.liveUid == ln.uid && u.live.empty()) {
 		ImGui::NewLine();
 		PobUi::Hint(u8"遊戲內沒有這個名稱。過濾器只認英文名稱，用原文加入會比對不到物品。", g_rowRight - ImGui::GetCursorScreenPos().x);
-		if (PobUi::Button(u8"仍以原文加入", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) addToken(u.input);
+		if (PobUi::Button(u8"仍以原文加入", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) addToken(in);
 	}
 	return changed;
 }
@@ -773,9 +773,17 @@ bool SummaryLink(const char* text)
 	return click;
 }
 
+const char* const kCueTip = u8"只是 Windows 提示音，不是遊戲實際音效：遊戲的內建音檔不在電腦上，這裡只能讓你聽到「會響」";
+
+void PlayCue(EditorShell& s, const FilterLine& ln)
+{
+	if (s.testMode) return;   // a screenshot run makes no sound
+	PlaySystemCue(FilterValueInt(ln, 0, 1));
+}
+
 void PlayCustom(EditorShell& s, const FilterLine& ln)
 {
-	if (ln.values.empty()) return;
+	if (ln.values.empty() || s.testMode) return;
 	std::wstring file = EdWiden(ln.values[0].text);
 	if (!s.soundsInit) {
 		s.sounds.Init(s.exeDir);
@@ -818,10 +826,12 @@ void DrawCardWidgets(EditorShell& s, FilterLine& ln, const CardSchema& cs)
 		case CardKind::SoundCustom: {
 			const std::string sum = CardSoundSummary(ln);
 			if (SummaryLink(sum.c_str())) RequestPop(s, CardPop::Sound);
-			if (cs.kind == CardKind::SoundCustom) {
-				ImGui::SameLine(0, PobUi::D(10.0f));
-				if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play)) PlayCustom(s, ln);
+			ImGui::SameLine(0, PobUi::D(10.0f));
+			if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play)) {
+				if (cs.kind == CardKind::SoundCustom) PlayCustom(s, ln);
+				else PlayCue(s, ln);
 			}
+			if (ImGui::IsItemHovered() && cs.kind == CardKind::SoundBuiltin) PobUi::Tooltip(kCueTip);
 			break;
 		}
 		case CardKind::MinimapIcon: {
@@ -874,6 +884,18 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 	}
 
 	bool mutated = false;
+	// Against the baseline (the file as last loaded / saved). A whole new block
+	// is marked once in the list, not on every one of its lines.
+	const bool blockAdded = s.doc.BlockState(blockIdx) == BlockChange::Added;
+	auto changePill = [&](int li) {
+		if (blockAdded || !s.doc.HasBaseline()) return;
+		const FilterLine* bl = s.doc.BaselineLine(li);
+		if (!bl) { ModPill(u8"新增"); return; }
+		if (!s.doc.LineChanged(li)) return;
+		if (bl->kind == FilterLineKind::Comment) { ModPill(u8"已修改（原本停用）"); return; }
+		const std::string was = CardValueZh(*bl, s.i18n);
+		ModPill(was.empty() ? std::string(u8"已修改") : (u8"已修改（原本 " + was + u8"）"));
+	};
 	auto drawRow = [&](CRow& r, bool first) {
 		if (r.disabled) {
 			const std::string title = FilterSchemaKeywordZh(r.parsed.keyword);
@@ -884,6 +906,10 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 			ImGui::SetCursorScreenPos(ImGui::GetCursorScreenPos() + ImVec2(0, ty));
 			PobUi::Hint(v.c_str());
 			if (ImGui::IsItemHovered()) PobUi::Tooltip(LineEn(r.parsed).c_str());
+			if (!blockAdded && s.doc.HasBaseline()) {
+				const FilterLine* bl = s.doc.BaselineLine(r.li);
+				if (bl && bl->kind != FilterLineKind::Comment) ModPill(u8"已修改（原本有效）");
+			}
 			const bool restore = RowFinish(row);
 			ImGui::PopID();
 			if (restore) { s.doc.RestoreLine(r.li); mutated = true; }
@@ -897,7 +923,7 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 		Row row = RowStart(title.c_str(), tip, u8"停用", first, false);
 		if (r.cs) DrawCardWidgets(s, ln, *r.cs);
 		else DrawRawFallbackWidget(ln);
-		if (ln.dirty) ModPill(u8"已修改");
+		changePill(r.li);
 		const bool disable = RowFinish(row);
 		ImGui::PopID();
 		if (disable) { s.doc.CommentOutLine(r.li); mutated = true; }
@@ -960,7 +986,8 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 					? u8"字級 " + std::to_string(FilterValueInt(s.model.lines[live[3]], 0, 32)) : std::string(u8"字級 預設");
 				PobUi::Hint(fs.c_str());
 				bool lookDirty = false;
-				for (int k = 0; k < 4; k++) if (live[k] >= 0 && s.model.lines[live[k]].dirty) lookDirty = true;
+				if (!blockAdded && s.doc.HasBaseline())
+					for (int k = 0; k < 4; k++) if (live[k] >= 0 && s.doc.LineChanged(live[k])) lookDirty = true;
 				ImGui::SetCursorScreenPos(base);
 				ImGui::Dummy(ImVec2((sw + PobUi::D(6.0f)) * 3 + PobUi::D(80.0f), PobUi::ControlH()));
 				if (lookDirty) ModPill(u8"已修改");
@@ -1175,9 +1202,14 @@ bool CardEffectEditor(const char* id, std::string* color, bool* temp)
 
 bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 {
-	(void)s;
 	ImGui::PushID(id);
 	bool changed = false;
+	CardUiState& ru = UI(s);
+	auto remember = [&](const int c[4]) {
+		PushRecentColor(s.recentColors, c);
+		SaveEditorSettings(s);   // pob-zh.ini [PobTools] FilterRecentColors (not in a test run)
+		ru.recentPending = false;
+	};
 	float col[4] = { rgba[0] / 255.f, rgba[1] / 255.f, rgba[2] / 255.f, rgba[3] / 255.f };
 	ImGui::SetNextItemWidth(std::floor(PobUi::D(220.0f)));
 	if (ImGui::ColorPicker4("##pick", col,
@@ -1186,6 +1218,8 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 	                        ImGuiColorEditFlags_PickerHueBar)) {
 		for (int i = 0; i < 4; i++) rgba[i] = std::clamp((int)(col[i] * 255.f + 0.5f), 0, 255);
 		changed = true;
+		ru.recentPending = true;
+		for (int i = 0; i < 4; i++) ru.recentRgba[i] = rgba[i];
 	}
 	// RGBA as typed text ("255 0 0 255")
 	{
@@ -1211,9 +1245,40 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 			if (n >= 3) {
 				for (int i = 0; i < 4; i++) rgba[i] = std::clamp(v[i], 0, 255);
 				changed = true;
+				remember(rgba);
 			}
 		}
 	}
+	// 最近用過 (newest first)
+	if (!s.recentColors.empty()) {
+		const float sw = std::floor(PobUi::D(22.0f));
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		int picked = -1;
+		for (int i = 0; i < (int)s.recentColors.size(); i++) {
+			const std::uint32_t c = s.recentColors[i];
+			const unsigned char cc[4] = { (unsigned char)(c >> 24), (unsigned char)(c >> 16), (unsigned char)(c >> 8), (unsigned char)c };
+			ImGui::SetCursorScreenPos(ImVec2(p.x + (sw + PobUi::D(6.0f)) * i, p.y));
+			ImGui::PushID(i);
+			if (EdSwatch("##rc", cc, cc, 22.0f, true)) picked = i;
+			if (ImGui::IsItemHovered()) {
+				char t[48];
+				std::snprintf(t, sizeof(t), "%d %d %d %d", cc[0], cc[1], cc[2], cc[3]);
+				PobUi::Tooltip(t);
+			}
+			ImGui::PopID();
+		}
+		ImGui::SetCursorScreenPos(ImVec2(p.x + (sw + PobUi::D(6.0f)) * (float)s.recentColors.size() + PobUi::D(4.0f),
+		                                 p.y + std::floor((sw - SmallF()->FontSize) * 0.5f)));
+		PobUi::Hint(u8"最近用過");
+		if (picked >= 0) {
+			const std::uint32_t c = s.recentColors[picked];
+			rgba[0] = (int)(c >> 24) & 255; rgba[1] = (int)(c >> 16) & 255; rgba[2] = (int)(c >> 8) & 255; rgba[3] = (int)c & 255;
+			changed = true;
+			remember(rgba);
+		}
+	}
+	// a drag in the picker counts once it is let go
+	if (ru.recentPending && !ImGui::IsAnyItemActive()) remember(ru.recentRgba);
 	ImGui::PopID();
 	return changed;
 }
@@ -1408,7 +1473,14 @@ bool DrawCardPopovers(EditorShell& s)
 				}
 				volume(ln, 300);
 				ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
-				PobUi::Hint(u8"內建音效是遊戲裡的音檔，這裡沒辦法試聽");
+				if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play)) PlayCue(s, ln);
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(kCueTip);
+				ImGui::SameLine(0, PobUi::D(8.0f));
+				{
+					const ImVec2 hp = ImGui::GetCursorScreenPos();
+					ImGui::SetCursorScreenPos(ImVec2(hp.x, hp.y + std::floor((std::floor(PobUi::D(28.0f)) - SmallF()->FontSize) * 0.5f)));
+					PobUi::Hint(u8"內建音效沒有遊戲音檔，試聽只播提示音");
+				}
 			} else if (src == 1 && cl >= 0) {
 				FilterLine& ln = s.model.lines[cl];
 				if (!s.soundsInit) { s.sounds.Init(s.exeDir); s.soundsInit = true; }
@@ -1471,4 +1543,15 @@ void CardTestOpenPop(EditorShell& s, int which)
 	u.colorChan = 0;
 	u.rgbaFor = -1;
 	u.anchor = ImVec2(PobUi::D(520.0f), PobUi::D(300.0f));
+}
+
+// Test aid (POBTOOLS_FILTER_STATE=detail-basetype): text typed into the
+// selected block's BaseType input, so the candidate list shows.
+void CardTestInput(EditorShell& s, const char* text)
+{
+	CardUiState& u = UI(s);
+	const int li = s.doc.FindLine(s.selectedBlock, "BaseType");
+	if (li < 0) return;
+	u.inputs[s.model.lines[li].uid] = text;
+	u.liveFor.clear();
 }

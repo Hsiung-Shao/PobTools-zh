@@ -1,6 +1,7 @@
 #include "filter_doc_editor.h"
 #include "filter_parser.h"
 
+#include <algorithm>
 #include <cstdlib>
 
 namespace {
@@ -25,6 +26,7 @@ void comment_out(FilterLine& ln)
 	repl.kind = FilterLineKind::Comment;
 	repl.indent = ln.indent;
 	repl.raw = ln.indent + "#! " + body;
+	repl.uid = ln.uid;   // the same line, disabled: it keeps its identity
 	ln = std::move(repl);
 }
 
@@ -118,6 +120,7 @@ bool FilterDocumentEditor::RestoreLine(int lineIdx)
 {
 	FilterLine parsed;
 	if (!IsDisabledLine(lineIdx, &parsed)) return false;
+	parsed.uid = f_->lines[lineIdx].uid;
 	f_->lines[lineIdx] = std::move(parsed);
 	f_->dirty = true;
 	RebuildBlocks();
@@ -170,6 +173,7 @@ int FilterDocumentEditor::DuplicateBlock(int blockIdx)
 	const FilterBlock& b = f_->blocks[blockIdx];
 	int first = b.lineIdx.front(), last = b.lineIdx.back();
 	std::vector<FilterLine> copy(f_->lines.begin() + first, f_->lines.begin() + last + 1);
+	for (FilterLine& ln : copy) ln.uid = 0;   // a copy is a new block (fresh uids on rebuild)
 	int at = last + 1;
 	f_->lines.insert(f_->lines.begin() + at, copy.begin(), copy.end());
 	f_->dirty = true;
@@ -265,5 +269,161 @@ void FilterDocumentEditor::RebuildBlocks()
 	if (!f_) return;
 	if (batchDepth_ > 0) { pendingRebuild_ = true; return; }
 	RebuildFilterBlocks(*f_);
+	AssignUids();
 	version_++;
+}
+
+// ---- baseline -----------------------------------------------------------------
+
+namespace {
+
+// A line that belongs to its block: syntax, or a "#!" line this editor disabled.
+bool OwnLine(const FilterLine& ln)
+{
+	if (is_syntax(ln.kind)) return true;
+	if (ln.kind != FilterLineKind::Comment) return false;
+	return ln.raw.compare(ln.indent.size(), 2, "#!") == 0;
+}
+
+bool SameText(const FilterLine& cur, const FilterLine& base)
+{
+	// base is a clean copy (raw == its serialization); a clean current line
+	// serializes to its raw, so only a dirty one needs rebuilding.
+	if (!cur.dirty) return cur.raw == base.raw;
+	return FilterSerializeLine(cur) == base.raw;
+}
+
+} // namespace
+
+void FilterDocumentEditor::AssignUids()
+{
+	if (!f_) return;
+	for (FilterLine& ln : f_->lines)
+		if (ln.uid == 0) ln.uid = nextUid_++;
+}
+
+int FilterDocumentEditor::BodyEnd(int blockIdx) const
+{
+	const FilterBlock& b = f_->blocks[blockIdx];
+	int end = b.headerLineIdx;
+	for (int li : b.lineIdx)
+		if (OwnLine(f_->lines[li])) end = (std::max)(end, li);
+	return end;
+}
+
+void FilterDocumentEditor::ClearBaseline()
+{
+	settleCheckedAt_ = ~0u;
+	hasBaseline_ = false;
+	base_.clear();
+	baseLine_.clear();
+	baseText_.clear();
+}
+
+void FilterDocumentEditor::CaptureBaseline()
+{
+	ClearBaseline();
+	if (!f_) return;
+	AssignUids();
+	for (int bi = 0; bi < (int)f_->blocks.size(); bi++) {
+		const FilterBlock& b = f_->blocks[bi];
+		BaseBlock& bb = base_[f_->lines[b.headerLineIdx].uid];
+		const int end = BodyEnd(bi);
+		for (int li = b.headerLineIdx; li <= end; li++) {
+			FilterLine c = f_->lines[li];
+			c.raw = FilterSerializeLine(c);
+			c.dirty = false;
+			bb.body.push_back(std::move(c));
+		}
+	}
+	// pointers into the vectors, which no longer change
+	for (auto& kv : base_)
+		for (const FilterLine& ln : kv.second.body) baseLine_[ln.uid] = &ln;
+	baseText_ = SerializeFilter(*f_);
+	hasBaseline_ = true;
+}
+
+BlockChange FilterDocumentEditor::BlockState(int blockIdx) const
+{
+	if (!hasBaseline_ || !f_ || blockIdx < 0 || blockIdx >= (int)f_->blocks.size()) return BlockChange::Same;
+	const FilterBlock& b = f_->blocks[blockIdx];
+	auto it = base_.find(f_->lines[b.headerLineIdx].uid);
+	if (it == base_.end()) return BlockChange::Added;
+	const std::vector<FilterLine>& body = it->second.body;
+	const int end = BodyEnd(blockIdx);
+	if (end - b.headerLineIdx + 1 != (int)body.size()) return BlockChange::Modified;
+	for (int i = 0; i < (int)body.size(); i++)
+		if (!SameText(f_->lines[b.headerLineIdx + i], body[i])) return BlockChange::Modified;
+	return BlockChange::Same;
+}
+
+const FilterLine* FilterDocumentEditor::BaselineLine(int lineIdx) const
+{
+	if (!hasBaseline_ || !f_ || lineIdx < 0 || lineIdx >= (int)f_->lines.size()) return nullptr;
+	auto it = baseLine_.find(f_->lines[lineIdx].uid);
+	return it == baseLine_.end() ? nullptr : it->second;
+}
+
+bool FilterDocumentEditor::LineChanged(int lineIdx) const
+{
+	if (!hasBaseline_) return false;
+	const FilterLine* b = BaselineLine(lineIdx);
+	if (!b) return true;
+	return !SameText(f_->lines[lineIdx], *b);
+}
+
+int FilterDocumentEditor::RestoreBlock(int blockIdx)
+{
+	if (!hasBaseline_ || !f_ || blockIdx < 0 || blockIdx >= (int)f_->blocks.size()) return -1;
+	const int h = f_->blocks[blockIdx].headerLineIdx;
+	auto it = base_.find(f_->lines[h].uid);
+	if (it == base_.end()) return -1;
+	const int end = BodyEnd(blockIdx);
+	f_->lines.erase(f_->lines.begin() + h, f_->lines.begin() + end + 1);
+	f_->lines.insert(f_->lines.begin() + h, it->second.body.begin(), it->second.body.end());
+	f_->dirty = true;
+	RebuildBlocks();
+	if (MatchesBaseline()) f_->dirty = false;
+	for (int i = 0; i < (int)f_->blocks.size(); i++)
+		if (f_->blocks[i].headerLineIdx == h) return i;
+	return -1;
+}
+
+int FilterDocumentEditor::RemovedBaselineBlocks() const
+{
+	if (!hasBaseline_ || !f_) return 0;
+	int present = 0;
+	for (const FilterBlock& b : f_->blocks)
+		if (base_.count(f_->lines[b.headerLineIdx].uid)) present++;
+	return (int)base_.size() - present;
+}
+
+bool FilterDocumentEditor::MatchesBaseline() const
+{
+	return hasBaseline_ && f_ && SerializeFilter(*f_) == baseText_;
+}
+
+int FilterDocumentEditor::UnsavedBlockCount(bool settle)
+{
+	if (!f_ || !f_->dirty) return 0;
+	if (!hasBaseline_) return 1;
+	int n = 0;
+	for (int i = 0; i < (int)f_->blocks.size(); i++)
+		if (BlockState(i) != BlockChange::Same) n++;
+	n += RemovedBaselineBlocks();
+	if (n == 0) {
+		// every block is back to what the file says; something outside the
+		// blocks may still differ (the custom zone's markers)
+		// Only lines between blocks can differ now, and those change only through
+		// structural edits: one full comparison per structure version is enough.
+		if (settle) {
+			if (settleCheckedAt_ != version_) {
+				settleCheckedAt_ = version_;
+				settleMatched_ = MatchesBaseline();
+			}
+			if (settleMatched_) { f_->dirty = false; return 0; }
+		}
+		return 1;
+	}
+	return n;
 }

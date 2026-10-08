@@ -138,6 +138,18 @@ void SoundLibraryService::Init(const std::wstring& exeDir)
 	Rescan();
 }
 
+bool SoundNameHasDownloadSuffix(const std::wstring& name)
+{
+	// stem ends with " (" digits ")"
+	const size_t dot = name.find_last_of(L'.');
+	const std::wstring stem = dot == std::wstring::npos ? name : name.substr(0, dot);
+	if (stem.size() < 4 || stem.back() != L')') return false;
+	size_t i = stem.size() - 1;
+	size_t digits = 0;
+	while (i > 0 && stem[i - 1] >= L'0' && stem[i - 1] <= L'9') { i--; digits++; }
+	return digits > 0 && i >= 2 && stem[i - 1] == L'(' && stem[i - 2] == L' ';
+}
+
 void SoundLibraryService::InitForTest(const std::wstring& exeDir, const std::wstring& folder)
 {
 	Init(exeDir);

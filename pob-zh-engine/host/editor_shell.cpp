@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cstdio>
 #include <cmath>
 #include <string>
 
@@ -161,6 +162,8 @@ bool EditorShell::OpenByPath(const std::wstring& path, bool force)
 	loaded = true;
 	selectedBlock = model.blocks.empty() ? -1 : 0;
 	doc.Attach(&model);              // bumps structureVersion -> row caches rebuild
+	doc.CaptureBaseline();           // "已修改" is measured against this
+	watch.Reset(model.path);
 	selAnchor = BlockAnchor{};
 	batchMode = false;
 	batchSel.clear();
@@ -215,6 +218,11 @@ bool EditorShell::Save()
 		Notify(u8"儲存失敗：" + err, true);
 		return false;
 	}
+	// what is on disk now is the new baseline -- and our own write is not an
+	// outside change
+	if (doc.file() != &model) doc.Attach(&model);
+	doc.CaptureBaseline();
+	watch.Reset(model.path);
 	Notify(u8"已儲存。到遊戲「選項 > 遊戲 > UI」重新選一次過濾器才會生效");
 	return true;
 }
@@ -240,15 +248,61 @@ bool EditorShell::SaveAs(const std::wstring& path)
 	return ok;
 }
 
-int EditorShell::UnsavedCount() const
+int EditorShell::UnsavedCount()
 {
 	if (!loaded || !model.dirty) return 0;
-	int n = 0;
-	for (const FilterBlock& b : model.blocks) {
-		for (int li : b.lineIdx)
-			if (model.lines[li].dirty) { n++; break; }
+	if (doc.file() != &model) doc.Attach(&model);
+	return doc.UnsavedBlockCount(true);
+}
+
+// ---- recently used colours ----------------------------------------------------
+
+namespace {
+std::uint32_t PackRgba(const int c[4])
+{
+	auto b = [](int v) { return (std::uint32_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); };
+	return (b(c[0]) << 24) | (b(c[1]) << 16) | (b(c[2]) << 8) | b(c[3]);
+}
+} // namespace
+
+void PushRecentColor(std::vector<std::uint32_t>& list, const int rgba[4])
+{
+	const std::uint32_t c = PackRgba(rgba);
+	list.erase(std::remove(list.begin(), list.end(), c), list.end());
+	list.insert(list.begin(), c);
+	if ((int)list.size() > kRecentColorMax) list.resize(kRecentColorMax);
+}
+
+std::string EncodeRecentColors(const std::vector<std::uint32_t>& list)
+{
+	std::string out;
+	for (std::uint32_t c : list) {
+		if (!out.empty()) out += ';';
+		out += std::to_string((c >> 24) & 255) + ',' + std::to_string((c >> 16) & 255) + ',' +
+		       std::to_string((c >> 8) & 255) + ',' + std::to_string(c & 255);
 	}
-	return n > 0 ? n : 1;
+	return out;
+}
+
+std::vector<std::uint32_t> DecodeRecentColors(const std::string& text)
+{
+	std::vector<std::uint32_t> out;
+	size_t p = 0;
+	while (p < text.size() && (int)out.size() < kRecentColorMax) {
+		size_t e = text.find(';', p);
+		if (e == std::string::npos) e = text.size();
+		int v[4] = { -1, -1, -1, -1 };
+		if (sscanf_s(text.substr(p, e - p).c_str(), "%d,%d,%d,%d", &v[0], &v[1], &v[2], &v[3]) == 4) {
+			bool ok = true;
+			for (int k = 0; k < 4; k++) if (v[k] < 0 || v[k] > 255) ok = false;
+			if (ok) {
+				const std::uint32_t c = PackRgba(v);
+				if (std::find(out.begin(), out.end(), c) == out.end()) out.push_back(c);
+			}
+		}
+		p = e + 1;
+	}
+	return out;
 }
 
 // ---- settings persistence (pob-zh.ini [PobTools]) ---------------------------
@@ -261,6 +315,9 @@ void LoadEditorSettings(EditorShell& s)
 	s.league = EdNarrow(buf);
 	if (s.league.empty()) s.league = "Mirage";
 	s.economyEnabled = GetPrivateProfileIntW(L"PobTools", L"EconomyEnabled", 0, ini.c_str()) != 0;
+	wchar_t rc[512] = L"";
+	GetPrivateProfileStringW(L"PobTools", L"FilterRecentColors", L"", rc, 512, ini.c_str());
+	s.recentColors = DecodeRecentColors(EdNarrow(rc));
 }
 
 void SaveEditorSettings(EditorShell& s)
@@ -269,6 +326,8 @@ void SaveEditorSettings(EditorShell& s)
 	std::wstring ini = s.exeDir + L"pob-zh.ini";
 	WritePrivateProfileStringW(L"PobTools", L"League", EdWiden(s.league).c_str(), ini.c_str());
 	WritePrivateProfileStringW(L"PobTools", L"EconomyEnabled", s.economyEnabled ? L"1" : L"0", ini.c_str());
+	WritePrivateProfileStringW(L"PobTools", L"FilterRecentColors", EdWiden(EncodeRecentColors(s.recentColors)).c_str(),
+	                           ini.c_str());
 }
 
 void EdRefreshFileList(EditorShell& s)
@@ -500,6 +559,26 @@ void DrawEditorHeader(EditorShell& s)
 
 void DrawEditorBanners(EditorShell& s)
 {
+	// the open file changed on disk (someone else wrote it)
+	if (s.loaded && !s.model.path.empty()) {
+		s.watch.Poll(ImGui::GetTime());
+		if (s.watch.changed()) {
+			const int n = s.UnsavedCount();
+			const std::string desc = n > 0
+				? (u8"重新載入會放棄你在這裡還沒儲存的" + std::to_string(n) + u8"處變更。")
+				: std::string(u8"重新載入就會看到新的內容。");
+			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+			const PobUi::BannerResult r = PobUi::Banner("##feextchange", PobUi::BannerTone::Warn, PobIcon::TriangleAlert,
+				u8"這個檔案在 PobTools 外被改過", desc.c_str(), false, u8"重新載入", true);
+			if (r == PobUi::BannerResult::Action) {
+				// the banner already said what reloading throws away
+				const std::wstring p = s.model.path;
+				s.OpenByPath(p, true);
+			} else if (r == PobUi::BannerResult::Close) {
+				s.watch.Acknowledge();
+			}
+		}
+	}
 	if (!s.loadFailedPath.empty()) {
 		std::wstring p = s.loadFailedPath;
 		size_t slash = p.find_last_of(L"\\/");

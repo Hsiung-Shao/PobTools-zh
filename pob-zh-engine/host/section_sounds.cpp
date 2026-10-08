@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
+#include <cwchar>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -52,6 +53,7 @@ struct SoundsUiState {
 	const void* countsModel = nullptr;
 	std::string folderEdit;
 	bool folderEditing = false;
+	std::wstring testPlaying;   // test aid: show this file as playing
 };
 
 namespace {
@@ -530,14 +532,35 @@ void DrawSoundsSection(EditorShell& s)
 			if (i) ldl->AddLine(ImVec2(cardX + 1, p.y), ImVec2(cardX + rightW - 1, p.y), Tok::BorderSubtle, 1.0f);
 			const std::wstring full = s.sounds.folder() + L"\\" + fi.name;
 			const float by = p.y + std::floor((rowH - smH) * 0.5f);
+			// playing: asked from MCI each frame (it ends on its own)
+			const bool playing = (!u.testPlaying.empty() && u.testPlaying == fi.name) ||
+			                     (AudioIsPlaying() && _wcsicmp(AudioCurrentPath().c_str(), full.c_str()) == 0);
+			if (playing)
+				ldl->AddRectFilled(ImVec2(cardX + 1.0f, p.y + 1.0f), ImVec2(cardX + rightW - 1.0f, p.y + rowH), Tok::AccentSoft);
 			ImGui::SetCursorScreenPos(ImVec2(p.x, by));
-			if (PobUi::Button("##play", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Play, smH)) PlayAudioFileVol(full, 100);
-			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"試聽");
+			if (PobUi::Button("##play", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, playing ? PobIcon::Square : PobIcon::Play, smH)) {
+				if (playing) StopAudio();
+				else if (!s.testMode) PlayAudioFileVol(full, 100);
+			}
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(playing ? u8"停止" : u8"試聽");
 			const std::string nm = EdNarrow(fi.name);
 			const float tx = p.x + smH + PobUi::D(8.0f);
 			const ImVec4 clip(tx, p.y, p.x + nameW, p.y + rowH);
-			ldl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(tx, p.y + std::floor((rowH - ImGui::GetTextLineHeight()) * 0.5f)),
-			             Tok::Text, nm.c_str(), nullptr, 0.0f, &clip);
+			const float nty = p.y + std::floor((rowH - ImGui::GetTextLineHeight()) * 0.5f);
+			ldl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(tx, nty), Tok::Text, nm.c_str(), nullptr, 0.0f, &clip);
+			float mx = tx + ImGui::CalcTextSize(nm.c_str()).x + PobUi::D(8.0f);
+			if (playing) {
+				ImFont* sf2 = SmallFace();
+				ldl->AddText(sf2, sf2->FontSize, ImVec2(mx, p.y + std::floor((rowH - sf2->FontSize) * 0.5f)), Tok::TextMuted, u8"播放中");
+				mx += sf2->CalcTextSizeA(sf2->FontSize, FLT_MAX, 0.0f, u8"播放中").x + PobUi::D(8.0f);
+			}
+			if (SoundNameHasDownloadSuffix(fi.name) && mx + PobUi::PillWidth(u8"檔名有下載後綴") < p.x + nameW) {
+				ImGui::SetCursorScreenPos(ImVec2(mx, p.y + std::floor((rowH - PobUi::D(24.0f)) * 0.5f)));
+				PobUi::StatusPill(PobUi::Tone::Warn, u8"檔名有下載後綴");
+				if (ImGui::IsItemHovered())
+					PobUi::Tooltip(u8"瀏覽器下載同名檔案時會自動在檔名加上「 (1)」。過濾器引用的是原本的檔名（例如 6maps.mp3），"
+					               u8"所以這個檔案永遠不會被播放。按「改名…」把後綴去掉。");
+			}
 			const int refs = RefCountOf(s, fi.name);
 			ImGui::SetCursorScreenPos(ImVec2(p.x + nameW + PobUi::D(8.0f), p.y));
 			RefPill(refs, refW, rowH);
@@ -576,6 +599,12 @@ void DrawSoundsSection(EditorShell& s)
 	DrawPlanDialog(s, u);
 	DrawRenameOne(s, u);
 	DrawReplaceRefs(s, u);
+}
+
+// Test aid: show a file as playing (the test files are not real audio).
+void SoundsTestPlaying(EditorShell& s, const std::wstring& name)
+{
+	SUI(s).testPlaying = name;
 }
 
 // Test aid: open the batch-rename plan as if the button were pressed.

@@ -287,6 +287,10 @@ void DrawBatchDialog(EditorShell& s)
 				for (const std::string& t : ids) idp.push_back(t.c_str());
 				int sel = std::clamp(op.soundId, 1, 16) - 1;
 				if (PobUi::Select("##sid", &sel, idp.data(), nullptr, 16, std::floor(PobUi::D(90.0f)))) op.soundId = sel + 1;
+				ImGui::SameLine(0, PobUi::D(8.0f));
+				if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play) && !s.testMode)
+					PlaySystemCue(op.soundId);
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"只是 Windows 提示音，不是遊戲實際音效");
 			} else {
 				if (!s.soundsInit) { s.sounds.Init(s.exeDir); s.soundsInit = true; }
 				std::vector<std::string> names;
@@ -309,7 +313,7 @@ void DrawBatchDialog(EditorShell& s)
 					                                                                     PobUi::SelectFitWidth(np.data(), (int)np.size()))));
 					if (PobUi::Select("##sfile", &sel, np.data(), nullptr, (int)np.size(), fw)) op.customPath = names[sel];
 					ImGui::SameLine(0, PobUi::D(8.0f));
-					if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play))
+					if (PobUi::Button(u8"試聽", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Play) && !s.testMode)
 						PlayAudioFileVol(s.sounds.folder() + L"\\" + EdWiden(op.customPath), std::clamp(op.volume / 3, 0, 100));
 				}
 			}
