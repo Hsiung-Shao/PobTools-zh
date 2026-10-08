@@ -441,7 +441,10 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 			try {
 				auto doc = nlohmann::ordered_json::parse(after);
 				for (auto& [k, v] : doc["entries"].items()) { (void)v; keysAfter.push_back(k); }
-			} catch (...) {}
+			} catch (const std::exception& ex) {
+				// a save that wrote invalid JSON is itself the failure
+				rep.check("E5e- the saved ui.json parses", false, ex.what());
+			}
 			const bool order = keysAfter.size() == keysBefore.size() + 1 &&
 			                   std::equal(keysBefore.begin(), keysBefore.end(), keysAfter.begin()) &&
 			                   keysAfter.back() == "__pobtools_te_selftest__";
