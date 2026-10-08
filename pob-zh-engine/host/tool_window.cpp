@@ -88,7 +88,16 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 	}
 	glfwMakeContextCurrent(win);
 	glfwSwapInterval(1);
-	glfwShowWindow(win);
+	// NOT shown yet: GLFW_VISIBLE is false above, and the window goes on screen
+	// with its first presented frame (FramePacing::FirstShow). Shown here it was a
+	// white rectangle for the 330-410 ms the atlas and the panel take to build.
+	FramePacing::FirstShow firstShow;
+	firstShow.Start(glfwGetTime());
+	auto showIfDue = [&](bool presented) {
+		if (firstShow.Due(presented, glfwGetTime())) {
+			glfwShowWindow(win);
+		}
+	};
 	// Unchanged frames are not presented (frame_pacing.h); a refresh or a resize
 	// invalidates the picture without changing the draw data, so both force one.
 	// One tool window per process, hence the file-level flag.
@@ -197,6 +206,10 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			cjkOk = font->FindGlyphNoFallback((ImWchar)0x555F /* 啟 */) != nullptr;
 	}
 	if (!font) font = ImGui::GetIO().Fonts->AddFontDefault();
+	// Check point before Init, the other slow step: only past kFirstShowLimit, i.e.
+	// when the atlas alone took that long. None after Init -- the loop's first
+	// pass presents a few milliseconds later and shows the window with content.
+	showIfDue(false);
 
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
 	ImGui_ImplOpenGL3_Init("#version 100");
@@ -271,7 +284,8 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			pace.busy = panel.CloseState() == ToolCloseState::Asking; // a prompt answered over frames
 			pace.forceRender = g_toolRedraw;
 			g_toolRedraw = false;
-			if (pacer.ShouldRender(pace, ImGui::GetDrawData())) {
+			const bool present = pacer.ShouldRender(pace, ImGui::GetDrawData());
+			if (present) {
 				int fbW = 0, fbH = 0;
 				glfwGetFramebufferSize(win, &fbW, &fbH);
 				glViewport(0, 0, fbW, fbH);
@@ -280,6 +294,10 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 				ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 				glfwSwapBuffers(win);
 			}
+			// After the swap: the picture is in the swap chain before the window is
+			// on screen. Showing it delivers a WM_PAINT, whose refresh callback
+			// presents once more on the next pass.
+			showIfDue(present);
 			nextWait = pacer.WaitSeconds(glfwGetTime());
 
 			// After the frame is on screen, so a modal dialog does not appear over a

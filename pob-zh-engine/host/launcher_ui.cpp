@@ -1247,6 +1247,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// NOT shown yet: the window goes on screen right after its first frame has been
 	// presented (see the main loop), so there is never a black window waiting for
 	// the atlas. Until v0.24 it was shown here and stayed blank for ~300 ms.
+	// FirstShow also puts it up kFirstShowLimit after this point if no frame has
+	// been presented by then, so a stalled start is never an invisible process.
+	FramePacing::FirstShow firstShow;
+	firstShow.Start(glfwGetTime());
 	startup_trace_mark("window created + GL context current");
 	// The texture limit is the one thing the font worker needs from GL, and GL is
 	// main-thread only, so it is read once here and handed over.
@@ -1362,6 +1366,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	ImGui_ImplGlfw_InitForOpenGL(win, true);
 	ImGui_ImplOpenGL3_Init("#version 100");
 	startup_trace_mark("ImGui backends initialised");
+	if (GetEnvironmentVariableW(L"POBTOOLS_LAUNCHER_SHOT", nullptr, 0) == 0 && firstShow.Due(false, glfwGetTime()))
+		glfwShowWindow(win); // only past the limit; shot mode never shows
 
 	// Pre-select an available game if the remembered one is missing.
 	bool poe2Sel = (cfg.game == L"poe2");
@@ -1581,7 +1587,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	}
 	const bool shotMode = !shotPath.empty();
 	double shotSince = glfwGetTime();
-	bool presentedOnce = false;
 	bool fontInputFullDone = false;
 	// appearance: thumbnails, and which game the slider scratch values belong to
 	int lookGameShown = -1;
@@ -1862,12 +1867,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// io.Fonts is at DestroyContext, so the old atlas is ours to free here.
 		// Nothing between this and NewFrame may measure text: ImGui's current
 		// font still points into the old atlas until NewFrame resets it.
-		// Only once the window is up, i.e. after the first frame: the backend
+		// Only after the first frame has been presented: the backend
 		// creates its device objects (font texture included) lazily in the first
 		// NewFrame, and a swap before that would have CreateFontsTexture run twice
 		// -- the second time re-rasterising the whole block on this thread because
 		// ClearTexData had already dropped the pixels.
-		if (fontWorker.Done() && (glfwGetWindowAttrib(win, GLFW_VISIBLE) || presentedOnce)) {
+		// (Not "once the window is visible": FirstShow can put it up before any
+		// frame when the start stalls, and shot mode never shows it at all.)
+		if (fontWorker.Done() && pacer.PresentedOnce()) {
 			LauncherFonts full;
 			ImFontAtlas* fullAtlas = fontWorker.Take(&full);
 			ImGuiIO& io = ImGui::GetIO();
@@ -3932,7 +3939,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		            (tabbed && !dock.Empty());
 		pace.forceRender = g_launcherRedraw || !shotPath.empty();
 		g_launcherRedraw = false;
-		if (pacer.ShouldRender(pace, ImGui::GetDrawData())) {
+		const bool present = pacer.ShouldRender(pace, ImGui::GetDrawData());
+		if (present) {
 			int fbW = 0, fbH = 0;
 			glfwGetFramebufferSize(win, &fbW, &fbH);
 			glViewport(0, 0, fbW, fbH);
@@ -3948,15 +3956,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				glfwSetWindowShouldClose(win, GLFW_TRUE);
 			}
 			glfwSwapBuffers(win);
-			presentedOnce = true;
-			if (!glfwGetWindowAttrib(win, GLFW_VISIBLE) && shotMode) {
-				// shot mode: stay hidden
-			} else if (!glfwGetWindowAttrib(win, GLFW_VISIBLE)) {
-				// First frame is in the swap chain: now the window can appear with
-				// content already on it.
-				glfwShowWindow(win);
-				startup_trace_mark("first frame presented, window shown");
-			}
+		}
+		// First frame is in the swap chain: now the window can appear with content
+		// already on it (or, past kFirstShowLimit, without). Shot mode stays hidden.
+		if (!shotMode && firstShow.Due(present, glfwGetTime())) {
+			glfwShowWindow(win);
+			startup_trace_mark(present ? "first frame presented, window shown"
+			                           : "no frame presented yet, window shown anyway");
 		}
 		nextWait = pacer.WaitSeconds(glfwGetTime());
 	}

@@ -86,6 +86,47 @@ private:
 	bool     fast_          = false;
 };
 
+// When a window created hidden (GLFW_VISIBLE false) goes on screen.
+//
+// Showing it as soon as it exists puts a white rectangle on the desktop for as
+// long as the glyph atlas and the panel take to build -- measured at 330-410 ms
+// for the Poe Regex tool window. So the window appears on the pass whose frame
+// was actually presented: the picture is in the swap chain before the window
+// is, and the first thing anyone sees is the finished UI.
+//
+// A window that never presents must still appear (an invisible process is one
+// nobody can close), so the caller also asks between its slow start-up steps,
+// and kFirstShowLimit after Start the answer is yes regardless. Only the main
+// thread can show the window (ShowWindow on another thread's window waits for
+// that thread), so the limit is honoured at those check points and on every
+// loop pass -- a step that never returns still leaves the window hidden.
+constexpr double kFirstShowLimit = 2.0;
+
+class FirstShow {
+public:
+	// Right after the hidden window has been created.
+	void Start(double now) { start_ = now; started_ = true; }
+
+	// True exactly once: on the first call with `presented`, or the first call
+	// at least kFirstShowLimit after Start. Before the loop, pass false.
+	bool Due(bool presented, double now)
+	{
+		if (shown_) return false;
+		if (presented || (started_ && now - start_ >= kFirstShowLimit)) {
+			shown_ = true;
+			return true;
+		}
+		return false;
+	}
+
+	bool Shown() const { return shown_; }
+
+private:
+	double start_ = 0.0;
+	bool started_ = false;
+	bool shown_ = false;
+};
+
 } // namespace FramePacing
 
 // --frame-pacing-selftest: the decision table and the hash, headless. 0 = pass.

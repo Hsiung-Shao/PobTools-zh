@@ -175,6 +175,35 @@ int RunFramePacingSelfTest(const std::wstring& exeDir)
 		check("P4h minimised overrides busy for the wait", Near(p.WaitSeconds(20.1), kIdleWait));
 	}
 
+	// P6 -- FirstShow: the hidden window appears with its first presented
+	// frame, exactly once, and never stays hidden past the limit.
+	{
+		FirstShow s;
+		s.Start(5.0);
+		check("P6 not before anything was presented", !s.Due(false, 5.3) && !s.Shown());
+		check("P6b a check point inside the limit keeps it hidden", !s.Due(false, 5.0 + kFirstShowLimit - 0.01));
+		check("P6c the pass that presented shows it", s.Due(true, 5.4) && s.Shown());
+		check("P6d and only once", !s.Due(true, 5.5) && !s.Due(false, 50.0));
+		FirstShow late;
+		late.Start(1.0);
+		check("P6e no present by the limit: shown anyway (no invisible process)",
+		      late.Due(false, 1.0 + kFirstShowLimit) && late.Shown());
+		check("P6f the present after that does not show it again", !late.Due(true, 4.0));
+		FirstShow slow;
+		slow.Start(0.0);
+		check("P6g a first present after a slow start is still the show", slow.Due(true, 10.0));
+		// The pacer always presents the first frame, so a loop that asks with
+		// ShouldRender's answer shows the window on its first pass.
+		Pacer p;
+		Frame f;
+		Inputs in;
+		in.now = 0.5;
+		p.BeginFrame(in.now);
+		FirstShow loop;
+		loop.Start(0.0);
+		check("P6h first loop pass: presented, therefore shown", loop.Due(p.ShouldRender(in, &f.data), 0.5));
+	}
+
 	// P5 -- ImGuiActivity() reads the real io, so it is checked against a real
 	// context, headless: no window, no renderer, input injected through the
 	// same event queue the GLFW backend feeds. Every branch of the OR gets a
