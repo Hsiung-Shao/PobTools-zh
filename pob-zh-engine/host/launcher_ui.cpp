@@ -3707,7 +3707,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				const ImGuiStyle keep = ImGui::GetStyle();
 				ImGui::GetStyle() = styleFor(ep.panel->Density());
 				ImGui::PushFont(fonts.body);
-				ep.panel->Frame();
+				{
+					PobUi::ToolDensityScope toolDensity;   // tools draw compact, the launcher does not
+					ep.panel->Frame();
+				}
 				ImGui::PopFont();
 				ImGui::GetStyle() = keep;
 				ImGui::PopID();

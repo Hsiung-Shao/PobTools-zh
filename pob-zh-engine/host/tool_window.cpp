@@ -313,7 +313,10 @@ int RunToolWindow(IToolPanel& panel, const ToolWindowDesc& desc,
 			ImGui::Begin("##toolwindow", nullptr,
 				ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
 				ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-			panel.Frame();
+			{
+				PobUi::ToolDensityScope toolDensity;   // the design's compact density for tools
+				panel.Frame();
+			}
 			ImGui::End();
 			PobUi::DrawToast();   // results the panel reported with ShowToast
 

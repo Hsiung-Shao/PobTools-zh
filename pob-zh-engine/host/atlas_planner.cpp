@@ -362,7 +362,8 @@ public:
 					wf.headingPx > 0 ? wf.headingPx : wf.heading->FontSize, FLT_MAX, 0.0f, u8"輿圖策略").x
 					: ImGui::CalcTextSize(u8"輿圖策略").x;
 				const float projW = std::floor(PobUi::D(200.0f));
-				const float seasonW = std::floor(PobUi::D(150.0f));
+				const float seasonW = (std::max)(std::floor(PobUi::D(150.0f)),
+				                                 PobUi::SelectFitWidth(seasonPtrs.data(), (int)seasonPtrs.size()));
 				float leftW = PobUi::IconWidth(PobIcon::Crosshair, iconPx) + PobUi::D(8.0f) + headingW + gap +
 				              projW + gap + PobUi::SegmentedWidth(modeLabels, 3);
 				if (!viewTag.empty()) leftW += gap + seasonW;
@@ -2960,7 +2961,8 @@ private:
 			ImGui::SetCursorScreenPos(ImVec2(rp.x + cs.x + PobUi::D(6.0f), rp.y));
 			int sel = -1;
 			for (size_t i = 0; i < tags.size(); i++) if (tags[i] == slot) sel = (int)i;
-			if (PobUi::Select(id, &sel, tagPtrs.data(), nullptr, (int)tagPtrs.size(), std::floor(PobUi::D(110.0f))) &&
+			if (PobUi::Select(id, &sel, tagPtrs.data(), nullptr, (int)tagPtrs.size(),
+			                  (std::max)(std::floor(PobUi::D(110.0f)), PobUi::SelectFitWidth(tagPtrs.data(), (int)tagPtrs.size()))) &&
 			    sel >= 0 && tags[sel] != slot) {
 				slot = tags[sel];
 				return true;

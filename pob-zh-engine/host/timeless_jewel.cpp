@@ -309,9 +309,33 @@ static void push_line(TJTransform& out, const TJEntry& e, size_t i,
 	out.linesZh.push_back(zh);
 }
 
-TJPaste TJParsePaste(const TJDataset& ds, const std::string& text)
+// The advanced copy (Ctrl+Alt+C) annotates every rolled value with its range
+// in ASCII parentheses -- "7984(2000-10000)", and on the conqueror the whole
+// set "(Venarius-Maxarius)". Those are not this jewel's seed or conqueror, so
+// drop every "(...-...)" before reading anything. Explanatory lines use
+// full-width parentheses in zh, and plain English ones carry no '-'.
+static std::string TJStripRanges(const std::string& text)
+{
+	std::string out;
+	out.reserve(text.size());
+	for (size_t i = 0; i < text.size(); i++) {
+		if (text[i] == '(') {
+			const size_t close = text.find(')', i + 1);
+			const size_t nl = text.find('\n', i + 1);
+			if (close != std::string::npos && (nl == std::string::npos || close < nl)) {
+				const std::string inner = text.substr(i + 1, close - i - 1);
+				if (inner.find('-') != std::string::npos) { i = close; continue; }
+			}
+		}
+		out += text[i];
+	}
+	return out;
+}
+
+TJPaste TJParsePaste(const TJDataset& ds, const std::string& rawText)
 {
 	TJPaste out;
+	const std::string text = TJStripRanges(rawText);
 	size_t namePos = std::string::npos;
 	// pass 0 = English name, pass 1 = Chinese (only if English found nothing)
 	for (int pass = 0; pass < 2 && !out.jewelType; pass++) {
@@ -1272,6 +1296,36 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 			TJPaste p = TJParsePaste(ds, c.txt);
 			check(p.jewelType == c.type && p.seed == c.seed, c.what,
 			      "type=" + std::to_string(p.jewelType) + " seed=" + std::to_string(p.seed));
+		}
+		// The advanced copy (Ctrl+Alt+C) puts the seed's range and the jewel's
+		// conqueror set in parentheses on the same line: the seed must not be the
+		// range's upper bound, nor the conqueror one of the alternatives. The
+		// first case is a user's real zh-TW client copy, verbatim.
+		struct QCase { const char* txt; int seed; const char* conq; const char* what; };
+		const QCase qcases[] = {
+			{ u8"物品種類: 珠寶\n稀有度: 傳奇\n激進的信仰\n永恆珠寶\n--------\n僅限: 1 威宏史觀\n範圍: 大\n"
+			  u8"--------\n物品等級: 84\n--------\n{ 傳奇詞綴 }\n"
+			  u8"為了禮讚 7984(2000-10000) 名受到聖宗瑪薩里歐斯感化的信眾所雕刻(伊爾莉斯-瑪薩里歐斯)\n"
+			  u8"範圍內的天賦臣服於聖宗\n（被征服的天賦無法被其它珠寶影響）\n威宏史觀 — 無法使用的值\n"
+			  u8"{ 傳奇詞綴— 法術,詛咒 }\n每 10 個奉獻，減少 4% 你身上詛咒的持續時間\n"
+			  u8"{ 傳奇詞綴— 元素,抗性 }\n每 10 個奉獻 +2% 全部元素抗性\n--------\n"
+			  u8"他們相信自己是最忠誠的，但這種信念變成了壓迫。\n--------\n"
+			  u8"放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。",
+			  7984, "Maxarius", "paste zh-TW advanced copy (Radiant Faith 7984)" },
+			{ "Carved to glorify 7984(2000-10000) new faithful converted by High Templar Maxarius(Venarius-Maxarius)\n"
+			  "Passives in radius are Conquered by the Templars", 7984, "Maxarius", "paste en advanced copy (range)" },
+			{ "Carved to glorify 7984 new faithful converted by High Templar Maxarius\n"
+			  "Passives in radius are Conquered by the Templars", 7984, "Maxarius", "paste en plain copy" },
+			{ "Carved to glorify 2500(2000-10000) new faithful converted by High Templar Venarius(Venarius-Maxarius)\n"
+			  "Passives in radius are Conquered by the Templars", 2500, "Venarius", "paste en advanced copy (first conqueror)" },
+		};
+		for (const QCase& c : qcases) {
+			TJPaste p = TJParsePaste(ds, c.txt);
+			const auto it = ds.conquerors.find(4);
+			const std::string conq = (it != ds.conquerors.end() && p.jewelType == 4 && p.conqIndex >= 0 &&
+			                          p.conqIndex < (int)it->second.size()) ? it->second[p.conqIndex].name : "";
+			check(p.jewelType == 4 && p.seed == c.seed && conq == c.conq, c.what,
+			      "type=" + std::to_string(p.jewelType) + " seed=" + std::to_string(p.seed) + " conq=" + conq);
 		}
 	}
 

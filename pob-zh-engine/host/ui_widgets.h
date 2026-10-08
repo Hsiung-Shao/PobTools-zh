@@ -40,6 +40,24 @@ float D(float designPx);
 // The height of one control (button md, select, text field): D(36).
 float ControlH();
 
+// Tool panels (atlas, warehouse, timeless jewel, ...) use the design's compact
+// density: while a scope is open every design px is scaled by kToolDensity, so
+// a md control is ~31 launcher-design px instead of 36 and Sm ~24 instead of 28,
+// and cards / rows pad with space-3. Fonts are untouched (text stays crisp).
+// Both hosts open one around panel->Frame(): the tool window and the
+// launcher's embedded tab. Nests; restores the previous density on exit.
+constexpr float kToolDensity = 0.86f;
+struct ToolDensityScope {
+	ToolDensityScope();
+	~ToolDensityScope();
+	ToolDensityScope(const ToolDensityScope&) = delete;
+	ToolDensityScope& operator=(const ToolDensityScope&) = delete;
+private:
+	float prev_;
+};
+// True inside a ToolDensityScope.
+bool ToolDensity();
+
 // FramePadding that makes InputText / Combo exactly ControlH() tall.
 void PushControlFrame();
 void PopControlFrame();
@@ -90,8 +108,28 @@ float SegmentedWidth(const char* const* labels, int count);
 
 // Select (combo) with an optional right-aligned note per option. `labels` and
 // `notes` are parallel; a null note means none. True when the selection changed.
+// The popup widens past `width` when the longest label + space-4 + the longest
+// note would not fit, so a note never runs into its label.
 bool Select(const char* id, int* selected, const char* const* labels, const char* const* notes,
             int count, float width, bool enabled = true);
+
+// The option row geometry Select draws with (x relative to the row's left).
+struct SelectLayout {
+	float popupW = 0.0f;    // outer popup width (>= the button width)
+	float contentW = 0.0f;  // the row width inside it
+	float labelX = 0.0f;    // where labels start (after the check mark)
+	float labelMaxW = 0.0f; // the widest label
+	float noteMaxW = 0.0f;  // the widest note (0 = no notes)
+	float gap = 0.0f;       // minimum label -> note gap (space-4)
+};
+SelectLayout SelectLayoutFor(const char* const* labels, const char* const* notes, int count, float width);
+// The button width that shows the longest label whole (text + padding + the
+// arrow). Callers that size a Select in design px take the max with this: in a
+// tool's compact density the box shrinks but the text does not.
+float SelectFitWidth(const char* const* labels, int count);
+// Test aid (hidden-window screenshots): the next Select drawn with this id opens
+// its popup by itself. One shot.
+void TestOpenSelect(const char* id);
 
 struct SliderResult {
 	bool changed = false;   // dragged this frame (preview)

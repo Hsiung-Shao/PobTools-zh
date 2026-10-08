@@ -1334,7 +1334,7 @@ private:
 		const float rowW = ImGui::GetContentRegionAvail().x;
 		PobUi::Segmented("##wh_view", &detailView_, kViews, 2);
 		ImGui::SameLine(0, gap);
-		if (PobUi::Select("##wh_cat", &catFilter_, kCats, nullptr, 8, D(130.0f))) filterDirty_ = true;
+		if (PobUi::Select("##wh_cat", &catFilter_, kCats, nullptr, 8, (std::max)(D(130.0f), PobUi::SelectFitWidth(kCats, 8)))) filterDirty_ = true;
 		ImGui::SameLine(0, gap);
 
 		// "與 09/11 20:59 相比 +16.9d", right-aligned; the search takes the rest.

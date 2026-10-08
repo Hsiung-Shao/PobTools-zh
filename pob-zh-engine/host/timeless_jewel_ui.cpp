@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <unordered_map>
 #include <cctype>
 #include <cfloat>
 #include <cmath>
@@ -1366,8 +1367,23 @@ public:
 			detailSeed = -1;
 			return;
 		}
+		const int seed = atoi(s.c_str());
+		// Out of range is a wrong seed (a misread paste, a typo), not "no change":
+		// say so instead of listing whatever the table happens to hold there.
+		{
+			const auto lo = ds->seedMin.find(jewelType), hi = ds->seedMax.find(jewelType);
+			const int mul = jewelType == 5 ? 20 : 1;   // Elegant Hubris: item seed = table seed x 20
+			if (lo != ds->seedMin.end() && hi != ds->seedMax.end() &&
+			    (seed < lo->second * mul || seed > hi->second * mul || seed % mul != 0)) {
+				seedErr_ = u8"種子 " + std::to_string(seed) + u8" 不在" + JewelZhShort(jewelType) + u8"的範圍（" +
+				           std::to_string(lo->second * mul) + "-" + std::to_string(hi->second * mul) +
+				           (mul > 1 ? u8"，且須是 20 的倍數" : "") + u8"）內，請確認珠寶上的數字。";
+				detailSeed = -1;
+				return;
+			}
+		}
 		seedErr_.clear();
-		detailSeed = atoi(s.c_str());
+		detailSeed = seed;
 	}
 
 	// Paste from the game: jewel, conqueror and seed in one go, then straight to
@@ -1853,82 +1869,54 @@ public:
 		ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 		const float tableH = (std::max)(PobUi::D(120.0f), maxH - (ImGui::GetCursorScreenPos().y - startY));
 		if (groupResults) drawGroupedResults(tableH);
-		else drawResultTable(tableH);
+		else drawResultList(tableH);
 	}
 
-	void drawResultTable(float height)
+	// ---- result list: one block per seed, its matched stats right under it ----
+	//
+	// Nobody remembers seeds: each block says what the seed DOES for the stats
+	// the user picked (only those). Same stat on several nodes is merged: an
+	// identical line shows "x N"; a single-number line with different rolls shows
+	// the sum (what the game adds up) and how many nodes made it. A line with
+	// several numbers is not summed -- there is no honest single total.
+
+	struct SeedLine {
+		std::string pre, num, post;   // num = the summed value (empty = none)
+		std::string note;             // muted tail: "x6" / "3 個節點合計"
+		std::string colorKey;         // for stat_color
+		bool big = false;             // a notable / keystone contributed
+	};
+	struct SeedSummary { std::vector<SeedLine> lines; };
+
+	static int countNumbers(const std::string& s)
 	{
-		const float smH = std::floor(PobUi::D(28.0f));
-		// one height for every row (the clipper needs it): the Sm buttons + cell padding
-		const float rowH = smH + ImGui::GetStyle().CellPadding.y * 2.0f;
-		auto centreLine = [&]() {
-			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + std::floor((smH - ImGui::GetTextLineHeight()) * 0.5f));
-		};
-		const float actW = PobUi::ButtonWidth(u8"交易", PobUi::BtnSize::Sm) + PobUi::D(4.0f) + smH;
-		pushTableStyle();
-		if (ImGui::BeginTable("##res", 4, ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerH, ImVec2(0, height))) {
-			ImGui::TableSetupScrollFreeze(0, 1);
-			ImGui::TableSetupColumn(u8"種子", ImGuiTableColumnFlags_WidthStretch);
-			ImGui::TableSetupColumn(u8"權重", ImGuiTableColumnFlags_WidthFixed, std::floor(PobUi::D(56.0f)));
-			ImGui::TableSetupColumn(u8"詞綴", ImGuiTableColumnFlags_WidthFixed, std::floor(PobUi::D(48.0f)));
-			ImGui::TableSetupColumn(u8"動作", ImGuiTableColumnFlags_WidthFixed, actW);
-			const bool right[4] = { false, true, true, true };
-			headerRow(4, right);
-			const int nw = (int)wants.size();
-			ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
-			ImGuiListClipper clip;
-			clip.Begin((int)job.results.size(), rowH);
-			while (clip.Step()) {
-				for (int r = clip.DisplayStart; r < clip.DisplayEnd; r++) {
-					const TJSeedHit& h = job.results[r];
-					ImGui::TableNextRow(0, rowH);
-					ImGui::PushID(h.seed);
-					ImGui::TableNextColumn();
-					// the whole row selects the seed (replaces the old 查看 button)
-					if (ImGui::Selectable(std::to_string(h.seed).c_str(), detailSeed == h.seed,
-					                      ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowOverlap,
-					                      ImVec2(0, smH)))
-						detailSeed = h.seed;
-					ImGui::TableNextColumn();
-					char buf[32];
-					snprintf(buf, sizeof(buf), "%.1f", h.weight);
-					centreLine();
-					rightText(buf, Tok::Text);
-					ImGui::TableNextColumn();
-					// Coverage next to the score: with several stats picked, "weight 3"
-					// alone cannot tell all three stats once from one stat three times.
-					snprintf(buf, sizeof(buf), "%d/%d", h.distinctWants, nw);
-					centreLine();
-					rightText(buf, h.distinctWants < nw ? Tok::TextMuted : Tok::Text);
-					ImGui::TableNextColumn();
-					const float cellX = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x - actW;
-					ImGui::SetCursorScreenPos(ImVec2(cellX, ImGui::GetCursorScreenPos().y));
-					if (PobUi::Button(u8"交易", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !tradeOff())) {
-						open_trade_search(tradeStatId_, h.seed, tradeLeague, tradePlatform, tradeRealm);
-						tradeHintShown = true;
-					}
-					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-						PobUi::Tooltip(tradeOff() ? tradeOffWhy() : u8"在交易站搜尋這個種子（即時購買）");
-					ImGui::SameLine(0.0f, PobUi::D(4.0f));
-					if (PobUi::Button("##copy", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Copy, smH))
-						copyForPob(h.seed);
-					if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"複製給 POB：貼進 POB 的物品欄 (Ctrl+V)");
-					ImGui::PopID();
-				}
+		int n = 0;
+		for (size_t i = 0; i < s.size(); i++)
+			if (isdigit((unsigned char)s[i])) {
+				n++;
+				while (i < s.size() && (isdigit((unsigned char)s[i]) || s[i] == '.')) i++;
 			}
-			ImGui::PopStyleVar();
-			ImGui::EndTable();
+		return n;
+	}
+	static std::string fmtSum(double v)
+	{
+		char b[32];
+		if (std::fabs(v - std::round(v)) < 1e-6) snprintf(b, sizeof(b), "%.0f", v);
+		else {
+			snprintf(b, sizeof(b), "%.2f", v);
+			std::string s = b;
+			while (!s.empty() && s.back() == '0') s.pop_back();
+			if (!s.empty() && s.back() == '.') s.pop_back();
+			return s;
 		}
-		popTableStyle();
+		return b;
 	}
 
-	// Seeds grouped by how many nodes matched (desc), like Vilsol; each group
-	// can go to the trade site in one search.
-	void drawGroupedResults(float height)
+	// The nodes the result list judges a seed on: the socket's in-radius nodes
+	// (the picked subset when any are picked) -- the same set the search used.
+	// Zorath is judged on that neighbourhood too; 7-10 get theirs from the file.
+	std::vector<int> resultNodes() const
 	{
-		// the socket's picked in-radius nodes (or all) + wanted set. Zorath is
-		// judged on the same neighbourhood the search used; only 7-10 get their
-		// node list from the file instead.
 		std::vector<int> inRad;
 		if (selSocket >= 0 && (!TJIsAbyss(jewelType) || TJIsZorath(jewelType))) {
 			std::vector<int> rad = ptData.NodesInRadius(selSocket, 1800.0f);
@@ -1941,13 +1929,285 @@ public:
 				inRad.push_back(idx);
 			}
 		}
+		return inRad;
+	}
+
+	// Everything a cached summary depends on. Cheap enough to build per frame.
+	std::string summarySig() const
+	{
+		std::string s = std::to_string(jewelType) + "|" + conquerorId_ + "|" + std::to_string(selSocket) + "|" +
+		                std::to_string(scope) + "|" + std::to_string(job.results.size()) + "|" +
+		                (job.results.empty() ? std::string() : std::to_string(job.results[0].seed)) + "|";
+		for (const auto& w : wants) {
+			char b[64];
+			snprintf(b, sizeof(b), "|%.3f|%.3f|", w.minValue, w.weight);
+			s += w.en + b;
+		}
+		unsigned h = 2166136261u;
+		for (size_t i = 0; i < ptSelected.size(); i++) h = (h ^ (ptSelected[i] ? 1u : 0u) ^ (unsigned)i) * 16777619u;
+		return s + std::to_string(h);
+	}
+
+	SeedSummary buildSummary(int seed)
+	{
+		SeedSummary out;
 		const TJWantMatcher matcher = makeMatcher();
+		struct Acc { std::vector<std::string> zh; std::vector<double> val; bool single = true; bool big = false; };
+		std::vector<std::pair<const TJWantStat*, Acc>> acc;   // first-seen order
+		auto take = [&](const TJTransform& t, bool big) {
+			for (size_t i = 0; i < t.lines.size(); i++) {
+				const TJWantStat* w = matcher.Match(t.lines[i]);
+				if (!w) continue;   // below 最小值 counts for nothing, so it shows as nothing
+				const std::string& zh = (i < t.linesZh.size() && !t.linesZh[i].empty()) ? t.linesZh[i] : t.lines[i];
+				Acc* a = nullptr;
+				for (auto& kv : acc) if (kv.first == w) { a = &kv.second; break; }
+				if (!a) { acc.push_back({ w, Acc() }); a = &acc.back().second; }
+				a->zh.push_back(zh);
+				a->val.push_back(TJStatValue(t.lines[i]));
+				if (countNumbers(t.lines[i]) != 1 || countNumbers(zh) != 1) a->single = false;
+				a->big = a->big || big;
+			}
+		};
+		auto isBig = [](int kind) { return kind == kPtNotable || kind == kPtKeystone; };
+		if (TJIsAbyss(jewelType)) {
+			std::map<int, TJAbyssMod> rec;
+			bool got = false;
+			if (selSocket >= 0) {
+				if (TJIsZorath(jewelType)) {
+					std::vector<int> ids;
+					for (int idx : resultNodesCache_) ids.push_back(ptData.nodes[idx].id);
+					got = TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, seed, rec);
+				} else {
+					got = TJAbyssReadSocket(*ds, *blob, *abyssLut, ptData.nodes[selSocket].id, seed, rec);
+				}
+			}
+			if (got)
+				for (const auto& m : rec) {
+					if (!TJAbyssInScope(scope, m.first, *ds, &ptKind)) continue;
+					TJTransform t = TJAbyssApply(*ds, m.second);
+					const auto k = ptKind.find(m.first);
+					if (t.ok) take(t, k != ptKind.end() && isBig(k->second));
+				}
+		} else {
+			for (int idx : resultNodesCache_) {
+				const PtNode& n = ptData.nodes[idx];
+				const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
+				TJTransform t = TJApply(*ds, *blob, jewelType, seed, n.id, nt, n.stats,
+				                        ConquerorType(jewelType), conquerorId_, n.name);
+				if (t.ok) take(t, isBig(n.kind));
+			}
+		}
+		for (auto& kv : acc) {
+			Acc& a = kv.second;
+			SeedLine L;
+			L.big = a.big;
+			L.colorKey = a.zh.front();
+			const int n = (int)a.zh.size();
+			bool same = true;
+			for (const auto& z : a.zh) if (z != a.zh.front()) { same = false; break; }
+			if (same) {
+				L.pre = a.zh.front();
+				if (n > 1) L.note = u8"×" + std::to_string(n);
+			} else if (a.single) {
+				// the one number in the zh line is the rolled value: swap in the sum
+				const std::string& z = a.zh.front();
+				size_t p = 0;
+				while (p < z.size() && !isdigit((unsigned char)z[p])) p++;
+				size_t e = p;
+				while (e < z.size() && (isdigit((unsigned char)z[e]) || z[e] == '.')) e++;
+				double sum = 0;
+				for (double v : a.val) sum += v;
+				L.pre = z.substr(0, p);
+				L.num = fmtSum(sum);
+				L.post = z.substr(e);
+				L.note = std::to_string(n) + u8" 個節點合計";
+			} else {
+				// several numbers per line: no single total to show, so the template
+				std::string zh;
+				for (const auto& w : wants) if (TJNormalizeStat(w.en) == kv.first->tmpl || w.en == kv.first->tmpl) { zh = w.zh; break; }
+				L.pre = zh.empty() ? a.zh.front() : zh;
+				L.note = std::to_string(n) + u8" 個節點，數值不同";
+			}
+			out.lines.push_back(std::move(L));
+		}
+		return out;
+	}
+
+	const SeedSummary& summaryFor(int seed)
+	{
+		auto it = sumCache_.find(seed);
+		if (it != sumCache_.end()) return it->second;
+		return sumCache_.emplace(seed, buildSummary(seed)).first->second;
+	}
+
+	void refreshSummaryCache()
+	{
+		const std::string sig = summarySig();
+		if (sig == sumSig_) return;
+		sumSig_ = sig;
+		sumCache_.clear();
+		resultNodesCache_ = resultNodes();
+	}
+
+	float blockHeaderH() const { return std::floor(PobUi::D(28.0f)); }
+	float blockLineH() const { return std::floor(ImGui::GetTextLineHeight() + PobUi::D(3.0f)); }
+	float blockH(int lines) const
+	{
+		return blockHeaderH() + (float)lines * blockLineH() + std::floor(PobUi::D(8.0f));
+	}
+
+	// One seed's block at the cursor, exactly blockH(lines) tall.
+	void drawSeedBlock(const TJSeedHit& h, const SeedSummary& sum)
+	{
+		ImGui::PushID(h.seed);
+		const float headH = blockHeaderH();
+		const float lineH = blockLineH();
+		const float total = blockH((int)sum.lines.size());
+		const ImVec2 p = ImGui::GetCursorScreenPos();
+		const float w = ImGui::GetContentRegionAvail().x;
+		const bool sel = detailSeed == h.seed;
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		const PobUi::WidgetFonts& wf = PobUi::Fonts();
+		ImFont* small = wf.small ? wf.small : ImGui::GetFont();
+		ImFont* body = wf.body ? wf.body : ImGui::GetFont();
+
+		// the whole block selects the seed
+		ImGui::SetNextItemAllowOverlap();
+		ImGui::PushStyleColor(ImGuiCol_Header, PobUi::TokV4(Tok::AccentSoft));
+		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, PobUi::TokV4(Tok::Surface2));
+		ImGui::PushStyleColor(ImGuiCol_HeaderActive, PobUi::TokV4(Tok::AccentSoft));
+		if (ImGui::Selectable("##blk", sel, 0, ImVec2(w, total - PobUi::D(2.0f)))) detailSeed = h.seed;
+		ImGui::PopStyleColor(3);
+		if (sel) dl->AddRectFilled(p, ImVec2(p.x + std::floor(PobUi::D(3.0f)), p.y + total - PobUi::D(2.0f)), Tok::Accent);
+
+		// head: 種子 N, weight and coverage (numeric), actions on the right
+		const float padX = std::floor(PobUi::D(10.0f));
+		char head[48];
+		snprintf(head, sizeof(head), u8"種子 %d", h.seed);
+		const float ty = p.y + std::floor((headH - ImGui::GetTextLineHeight()) * 0.5f);
+		dl->AddText(body, body->FontSize, ImVec2(p.x + padX, ty), sel ? Tok::AccentText : Tok::Text, head);
+		const float titleEnd = p.x + padX + body->CalcTextSizeA(body->FontSize, FLT_MAX, 0.0f, head).x;
+		const int nw = (int)wants.size();
+		char wmeta[48], cmeta[48];
+		snprintf(wmeta, sizeof(wmeta), u8"權重 %.1f", h.weight);
+		snprintf(cmeta, sizeof(cmeta), u8"詞綴 %d/%d", h.distinctWants, nw);
+		const float metaW = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, wmeta).x + PobUi::D(10.0f) +
+		                    small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, cmeta).x;
+
+		// actions on the right. In a narrow column 查看 goes first (clicking the
+		// block does the same), so the numbers never run under a button.
+		const float smH = std::floor(PobUi::D(28.0f));
+		const float gapA = PobUi::D(4.0f);
+		const float viewW = PobUi::ButtonWidth(u8"查看", PobUi::BtnSize::Sm) + gapA;
+		const float baseW = PobUi::ButtonWidth(u8"交易", PobUi::BtnSize::Sm) + gapA + smH;
+		const bool showView = titleEnd + PobUi::D(10.0f) + metaW + PobUi::D(10.0f) <= p.x + w - gapA - baseW - viewW;
+		const float actW = baseW + (showView ? viewW : 0.0f);
+		const float actLeft = p.x + w - actW - gapA;
+
+		// 種子 N, then weight and coverage (numeric face), clipped short of the actions
+		const float sy = p.y + std::floor((headH - small->FontSize) * 0.5f);
+		dl->PushClipRect(ImVec2(p.x, p.y), ImVec2(actLeft - PobUi::D(6.0f), p.y + headH), true);
+		float x = titleEnd + PobUi::D(10.0f);
+		dl->AddText(small, small->FontSize, ImVec2(x, sy), Tok::TextMuted, wmeta);
+		x += small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, wmeta).x + PobUi::D(10.0f);
+		dl->AddText(small, small->FontSize, ImVec2(x, sy), h.distinctWants < nw ? Tok::TextMuted : Tok::Text, cmeta);
+		dl->PopClipRect();
+
+		ImGui::SetCursorScreenPos(ImVec2(actLeft, p.y + std::floor((headH - smH) * 0.5f)));
+		if (showView) {
+			if (PobUi::Button(u8"查看", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) detailSeed = h.seed;
+			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"在下方列出這個種子的全部變化，並在樹上標示");
+			ImGui::SameLine(0.0f, gapA);
+		}
+		if (PobUi::Button(u8"交易", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !tradeOff())) {
+			open_trade_search(tradeStatId_, h.seed, tradeLeague, tradePlatform, tradeRealm);
+			tradeHintShown = true;
+		}
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			PobUi::Tooltip(tradeOff() ? tradeOffWhy() : u8"在交易站搜尋這個種子（即時購買）");
+		ImGui::SameLine(0.0f, PobUi::D(4.0f));
+		if (PobUi::Button("##copy", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, PobIcon::Copy, smH)) copyForPob(h.seed);
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"複製給 POB：貼進 POB 的物品欄 (Ctrl+V)");
+
+		// matched stats, one per wanted stat; gold dot = a notable / keystone gave it
+		const float lx = p.x + padX + PobUi::D(14.0f);
+		const float clipR = p.x + w - PobUi::D(6.0f);
+		dl->PushClipRect(ImVec2(p.x, p.y), ImVec2(clipR, p.y + total), true);
+		for (size_t i = 0; i < sum.lines.size(); i++) {
+			const SeedLine& L = sum.lines[i];
+			const float ly = p.y + headH + (float)i * lineH;
+			const float cy = ly + std::floor(ImGui::GetTextLineHeight() * 0.5f);
+			dl->AddCircleFilled(ImVec2(p.x + padX + PobUi::D(4.0f), cy), (std::max)(2.0f, PobUi::D(2.5f)),
+			                    L.big ? Tok::TreeHit : Tok::TextFaint, 12);
+			const ImU32 col = colorStats ? ImGui::ColorConvertFloat4ToU32(stat_color(L.colorKey)) : Tok::Text;
+			float tx = lx;
+			auto put = [&](ImFont* f, const std::string& s, ImU32 c) {
+				if (s.empty()) return;
+				dl->AddText(f, f->FontSize, ImVec2(tx, f == small ? ly + std::floor((ImGui::GetTextLineHeight() - small->FontSize) * 0.5f) : ly),
+				            c, s.c_str());
+				tx += f->CalcTextSizeA(f->FontSize, FLT_MAX, 0.0f, s.c_str()).x;
+			};
+			put(body, L.pre, col);
+			put(body, L.num, Tok::TreeHit);   // the summed value stands out
+			put(body, L.post, col);
+			if (!L.note.empty()) {
+				tx += PobUi::D(8.0f);
+				put(small, L.note, Tok::TextMuted);
+			}
+		}
+		dl->PopClipRect();
+
+		ImGui::SetCursorScreenPos(p);
+		ImGui::Dummy(ImVec2(w, total));
+		ImGui::PopID();
+	}
+
+	// A virtualised run of seed blocks inside the current scrolling child: only
+	// blocks that intersect the visible area are built (summaries are cached).
+	void drawSeedList(const std::vector<const TJSeedHit*>& list)
+	{
+		const ImVec2 clipMin = ImGui::GetWindowDrawList()->GetClipRectMin();
+		const ImVec2 clipMax = ImGui::GetWindowDrawList()->GetClipRectMax();
+		float skipped = 0.0f;
+		auto flush = [&]() {
+			if (skipped > 0.0f) { ImGui::Dummy(ImVec2(1.0f, skipped)); skipped = 0.0f; }
+		};
+		const float gap = ImGui::GetStyle().ItemSpacing.y;
+		for (const TJSeedHit* h : list) {
+			// a block's height is known before its summary is: one line per wanted
+			// stat it satisfies (the summary replaces the estimate once built)
+			auto it = sumCache_.find(h->seed);
+			const int lines = it != sumCache_.end() ? (int)it->second.lines.size() : h->distinctWants;
+			const float bh = blockH(lines) + gap;
+			const float y = ImGui::GetCursorScreenPos().y + skipped;
+			if (y + bh < clipMin.y || y > clipMax.y) { skipped += bh; continue; }
+			flush();
+			drawSeedBlock(*h, summaryFor(h->seed));
+		}
+		flush();
+	}
+
+	void drawResultList(float height)
+	{
+		refreshSummaryCache();
+		std::vector<const TJSeedHit*> all;
+		all.reserve(job.results.size());
+		for (const auto& h : job.results) all.push_back(&h);
+		ImGui::BeginChild("##resl", ImVec2(0, height), false);
+		drawSeedList(all);
+		ImGui::EndChild();
+	}
+
+	// Seeds grouped by how many nodes matched (desc), like Vilsol; each group
+	// can go to the trade site in one search.
+	void drawGroupedResults(float height)
+	{
+		refreshSummaryCache();
 		std::map<int, std::vector<const TJSeedHit*>, std::greater<int>> groups;
 		for (const auto& h : job.results) groups[h.matches].push_back(&h);
 
 		ImGui::BeginChild("##resg", ImVec2(0, height), false);
 		bool firstGroup = true;
-		const int nw = (int)wants.size();
 		for (auto& kv : groups) {
 			char lbl[64], id[32], note[64];
 			snprintf(lbl, sizeof(lbl), u8"命中 %d 個節點", kv.first);
@@ -1971,85 +2231,8 @@ public:
 				ImGui::AlignTextToFramePadding();
 				PobUi::Hint(u8"（交易取前 40 個）");
 			}
+			drawSeedList(kv.second);
 			ImGui::PopID();
-
-			int shown = 0;
-			for (auto* h : kv.second) {
-				if (++shown > 50) {
-					PobUi::Hint((u8"還有 " + std::to_string((int)kv.second.size() - 50) + u8" 個（請縮小條件）").c_str());
-					break;
-				}
-				ImGui::PushID(h->seed);
-				char head[96];
-				snprintf(head, sizeof(head), u8"種子 %d", h->seed);
-				char meta[96];
-				snprintf(meta, sizeof(meta), u8"權重 %.1f · 詞綴 %d/%d", h->weight, h->distinctWants, nw);
-				const ImVec2 p = ImGui::GetCursorScreenPos();
-				const float w = ImGui::GetContentRegionAvail().x;
-				const bool sel = detailSeed == h->seed;
-				const float actW = PobUi::ButtonWidth(u8"交易", PobUi::BtnSize::Sm);
-				ImGui::SetNextItemAllowOverlap();
-				if (ImGui::Selectable("##row", sel, 0, ImVec2(w, std::floor(PobUi::D(28.0f))))) detailSeed = h->seed;
-				ImGui::SetCursorScreenPos(ImVec2(p.x + PobUi::D(4.0f), p.y + std::floor((PobUi::D(28.0f) - ImGui::GetTextLineHeight()) * 0.5f)));
-				ImGui::TextColored(PobUi::TokV4(Tok::Text), "%s", head);
-				ImGui::SameLine(0.0f, PobUi::D(10.0f));
-				PobUi::Hint(meta);
-				ImGui::SetCursorScreenPos(ImVec2(p.x + w - actW, p.y));
-				if (PobUi::Button(u8"交易", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, nullptr, 0.0f, !tradeOff())) {
-					open_trade_search(tradeStatId_, h->seed, tradeLeague, tradePlatform, tradeRealm);
-					tradeHintShown = true;
-				}
-				ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + std::floor(PobUi::D(28.0f)) + ImGui::GetStyle().ItemSpacing.y));
-				// this seed's matched affixes only (no node name), on the picked
-				// nodes -- keeps the list compact
-				auto drawMatched = [&](const TJTransform& t) {
-					for (size_t i = 0; i < t.lines.size(); i++) {
-						const TJWantStat* wnt = matcher.Match(t.lines[i]);
-						if (!wnt) continue; // below 最小值 counts for nothing, so it shows as nothing
-						const std::string& zh = (i < t.linesZh.size() && !t.linesZh[i].empty()) ? t.linesZh[i] : t.lines[i];
-						ImGui::PushStyleColor(ImGuiCol_Text, colorStats ? stat_color(zh) : PobUi::TokV4(Tok::TextMuted));
-						// Show what this line contributed, so the seed's rank is legible.
-						if (wnt->weight != 1.0) ImGui::BulletText(u8"%s  [權重 %.1f]", zh.c_str(), wnt->weight);
-						else ImGui::BulletText("%s", zh.c_str());
-						ImGui::PopStyleColor();
-					}
-				};
-				if (TJIsAbyss(jewelType)) {
-					// For 7-10 inRad is empty and always will be -- the conquered
-					// passives come from the file. Zorath is the other way round:
-					// the file has an answer for every passive, so the
-					// neighbourhood decides which answers are worth showing.
-					std::map<int, TJAbyssMod> rec;
-					bool got = false;
-					if (selSocket >= 0) {
-						if (TJIsZorath(jewelType)) {
-							std::vector<int> ids;
-							ids.reserve(inRad.size());
-							for (int idx : inRad) ids.push_back(ptData.nodes[idx].id);
-							got = TJAbyssReadNodes(*ds, *blob, *abyssLut, ids, h->seed, rec);
-						} else {
-							got = TJAbyssReadSocket(*ds, *blob, *abyssLut, ptData.nodes[selSocket].id, h->seed, rec);
-						}
-					}
-					if (got) {
-						for (const auto& m : rec) {
-							if (!TJAbyssInScope(scope, m.first, *ds, &ptKind)) continue;
-							TJTransform t = TJAbyssApply(*ds, m.second);
-							if (t.ok) drawMatched(t);
-						}
-					}
-				} else {
-					for (int idx : inRad) {
-						const PtNode& n = ptData.nodes[idx];
-						const char* nt = n.kind == kPtKeystone ? "Keystone" : n.kind == kPtNotable ? "Notable" : "Normal";
-						TJTransform t = TJApply(*ds, *blob, jewelType, h->seed, n.id, nt, n.stats,
-						                        ConquerorType(jewelType), conquerorId_, n.name);
-						if (t.ok) drawMatched(t);
-					}
-				}
-				ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
-				ImGui::PopID();
-			}
 			ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 		}
 		ImGui::EndChild();
@@ -2060,7 +2243,13 @@ public:
 	{
 		const float availH = bottom - ImGui::GetCursorScreenPos().y;
 		if (selSocket < 0) {
-			PobUi::EmptyState("##nosocket", PobIcon::Crosshair, u8"還沒選插槽", u8"在中間的天賦樹上點一個珠寶插槽。",
+			// A seed that is already known (pasted / looked up) only needs a socket;
+			// say that, with the seed, instead of a generic empty panel.
+			const std::string t = detailSeed >= 0
+				? u8"種子 " + std::to_string(detailSeed) + u8" 已載入，還沒選插槽" : std::string(u8"還沒選插槽");
+			PobUi::EmptyState("##nosocket", PobIcon::Crosshair, t.c_str(),
+			                  detailSeed >= 0 ? u8"在中間的天賦樹上點一個珠寶插槽（你放這顆珠寶的位置），就會列出這個種子對插槽範圍內天賦的變化。"
+			                                  : u8"在中間的天賦樹上點一個珠寶插槽。",
 			                  nullptr, 0.0f, mode == 1 ? availH : 0.0f);
 			return;
 		}
@@ -2177,7 +2366,8 @@ public:
 			if (listView == 0) {
 				const ImVec2 q = ImGui::GetCursorScreenPos();
 				const char* sorts[4] = { u8"依數量", u8"依字母", u8"依稀有度", u8"依數值" };
-				PobUi::Select("##statsort", &statSort, sorts, nullptr, 4, std::floor(PobUi::D(120.0f)));
+				PobUi::Select("##statsort", &statSort, sorts, nullptr, 4,
+				              (std::max)(std::floor(PobUi::D(120.0f)), PobUi::SelectFitWidth(sorts, 4)));
 				const char* splitLbl = u8"大點／一般分開";
 				const float sw = ((ImFont*)sf)->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, splitLbl).x;
 				ImGui::SetCursorScreenPos(ImVec2(rx, q.y + std::floor((H - std::floor(PobUi::D(22.0f))) * 0.5f)));
@@ -2315,6 +2505,8 @@ public:
 	//   seed    = the seed page, a seed looked up       menu = the more menu open
 	//   paste   = a jewel "pasted" (TJItemText round-trip, no clipboard)
 	//   seederr = the seed page's error banner (empty seed)
+//   resultsflat = results without grouping   jewelmenu = the jewel Select open
+//   pastenosock = paste with no socket picked; POBTOOLS_TJ_PASTE_FILE = text to paste
 	// Nothing is written: under a test aid the league fetch, the tree-update
 	// check and tj_ui.json are all off.
 	void applyTestState()
@@ -2348,8 +2540,9 @@ public:
 		const int lo = ds->seedMin.count(jewelType) ? ds->seedMin.at(jewelType) : 10000;
 		const int hi = ds->seedMax.count(jewelType) ? ds->seedMax.at(jewelType) : 18000;
 		const int mid = lo + (hi - lo) / 2;
-		if (testState_ == "results") {
+		if (testState_ == "results" || testState_ == "resultsflat") {
 			mode = 0;
+			groupResults = testState_ == "results";   // resultsflat = the ungrouped list
 			autoPick_ = true;
 			tradeHintShown = true;   // as if a trade search had been opened
 			runSearch();
@@ -2359,9 +2552,26 @@ public:
 			querySeed();
 		} else if (testState_ == "menu") {
 			openMore_ = true;
-		} else if (testState_ == "paste") {
+		} else if (testState_ == "paste" || testState_ == "pastenosock") {
 			mode = 0;   // the paste must be what switches to the seed page
-			applyPaste(TJItemText(*ds, jewelType, conquerorSel, mid));
+			// POBTOOLS_TJ_PASTE_FILE = a real copied item text (UTF-8) to paste
+			// instead of our own round-trip text
+			std::string txt = TJItemText(*ds, jewelType, conquerorSel, mid);
+			wchar_t path[MAX_PATH] = L"";
+			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_TJ_PASTE_FILE", path, MAX_PATH);
+			if (n > 0 && n < MAX_PATH) {
+				HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+				if (f != INVALID_HANDLE_VALUE) {
+					std::string buf(1 << 16, '\0');
+					DWORD got = 0;
+					if (ReadFile(f, buf.data(), (DWORD)buf.size(), &got, nullptr)) { buf.resize(got); txt = buf; }
+					CloseHandle(f);
+				}
+			}
+			if (testState_ == "pastenosock") selSocket = -1;
+			applyPaste(txt);
+		} else if (testState_ == "jewelmenu") {
+			PobUi::TestOpenSelect("##jewel");
 		} else if (testState_ == "seederr") {
 			mode = 1;
 			seedText.clear();
@@ -2557,7 +2767,12 @@ private:
 	int tradeRealm = 0;                          // index into kTradeRealms
 	LeagueFetch leagues;
 	TjUiState tjUi;                              // remembers region/league/platform
-	bool groupResults = false;                   // group seeds by # of nodes matched (the design: a table)
+	bool groupResults = true;                    // group seeds by # of nodes matched (the default before the redesign)
+	// result-list summaries (matched stats per seed), rebuilt when anything they
+	// depend on changes (summarySig)
+	std::unordered_map<int, SeedSummary> sumCache_;
+	std::string sumSig_;
+	std::vector<int> resultNodesCache_;
 
 	// --- affected-node list display option ---
 	bool colorStats = true;

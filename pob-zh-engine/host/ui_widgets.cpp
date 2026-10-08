@@ -20,6 +20,15 @@ namespace {
 
 WidgetFonts g_fonts;
 
+// Tool panels draw denser than the launcher (the design's compact density):
+// every design px is scaled by this while a ToolDensityScope is open.
+float g_density = 1.0f;
+std::string g_testOpenSelect;   // TestOpenSelect
+bool Compact() { return g_density < 1.0f; }
+// Card / row padding: space-5 x space-4 in the launcher, space-3 in tools.
+float CardPadX() { return Compact() ? D(14.0f) : D(20.0f); }
+float CardPadY() { return Compact() ? D(14.0f) : D(16.0f); }
+
 // The launcher's body face is 19 px where the design's is 16.
 constexpr float kDesignToImGui = 19.0f / 16.0f;
 
@@ -111,7 +120,11 @@ ImU32 WithAlpha(ImU32 c, float a)
 void SetWidgetFonts(const WidgetFonts& f) { g_fonts = f; }
 const WidgetFonts& Fonts() { return g_fonts; }
 
-float D(float px) { return px * kDesignToImGui * g_fonts.scale; }
+float D(float px) { return px * kDesignToImGui * g_fonts.scale * g_density; }
+
+ToolDensityScope::ToolDensityScope() : prev_(g_density) { g_density = kToolDensity; }
+ToolDensityScope::~ToolDensityScope() { g_density = prev_; }
+bool ToolDensity() { return Compact(); }
 float ControlH() { return std::floor(D(36.0f)); }
 
 void PushControlFrame()
@@ -440,6 +453,35 @@ bool SegmentedEx(const char* id, int* selected, const char* const* labels, int c
 
 // ---- select ---------------------------------------------------------------
 
+float SelectFitWidth(const char* const* labels, int count)
+{
+	float w = 0.0f;
+	for (int i = 0; i < count; i++)
+		if (labels && labels[i]) w = std::max(w, TextSize(BodyFont(), BodyPx(), labels[i]).x);
+	return std::ceil(w + D(12.0f) * 2.0f + ControlH());
+}
+
+void TestOpenSelect(const char* id) { g_testOpenSelect = id ? id : ""; }
+
+SelectLayout SelectLayoutFor(const char* const* labels, const char* const* notes, int count, float width)
+{
+	SelectLayout l;
+	l.labelX = g_fonts.icons ? IconWidth(PobIcon::Check, BodyPx()) + D(6.0f) : 0.0f;
+	l.gap = D(16.0f);   // space-4
+	for (int i = 0; i < count; i++) {
+		if (labels && labels[i]) l.labelMaxW = std::max(l.labelMaxW, TextSize(BodyFont(), BodyPx(), labels[i]).x);
+		if (notes && notes[i] && *notes[i])
+			l.noteMaxW = std::max(l.noteMaxW, TextSize(SmallFont(), SmallPx(), notes[i]).x);
+	}
+	const float need = std::ceil(l.labelX + l.labelMaxW + (l.noteMaxW > 0.0f ? l.gap + l.noteMaxW : 0.0f));
+	// The combo popup pads by FramePadding.x each side (PushControlFrame: D(12)),
+	// plus a scrollbar past 20 rows.
+	const float chrome = D(12.0f) * 2.0f + (count > 20 ? ImGui::GetStyle().ScrollbarSize : 0.0f);
+	l.popupW = std::max(width, need + chrome);
+	l.contentW = l.popupW - chrome;
+	return l;
+}
+
 bool Select(const char* id, int* selected, const char* const* labels, const char* const* notes,
             int count, float width, bool enabled)
 {
@@ -453,6 +495,21 @@ bool Select(const char* id, int* selected, const char* const* labels, const char
 	ImGui::SetNextItemWidth(width);
 	const char* preview = (*selected >= 0 && *selected < count) ? labels[*selected] : "";
 	ImGui::BeginDisabled(!enabled);
+	// The popup auto-sizes to its items, but the rows are drawn by hand, so tell
+	// it how wide they need to be: otherwise it stays at the button's width and a
+	// long note lands on top of its label.
+	const SelectLayout lay = SelectLayoutFor(labels, notes, count, width);
+	if (!g_testOpenSelect.empty() && g_testOpenSelect == id) {
+		g_testOpenSelect.clear();
+		ImGui::OpenPopupEx(ImHashStr("##ComboPopup", 0, ImGui::GetCurrentWindow()->GetID(id)));
+	}
+	{
+		const float rowH = ImGui::GetTextLineHeight() + D(6.0f);
+		const int vis = std::min(count, 20);   // ImGuiComboFlags_HeightLarge
+		const float maxH = rowH * (float)vis + ImGui::GetStyle().ItemSpacing.y * (float)std::max(0, vis - 1) +
+		                   ImGui::GetStyle().WindowPadding.y * 2.0f;
+		ImGui::SetNextWindowSizeConstraints(ImVec2(lay.popupW, 0.0f), ImVec2(FLT_MAX, maxH));
+	}
 	if (ImGui::BeginCombo(id, preview, ImGuiComboFlags_HeightLarge)) {
 		const float noteRight = ImGui::GetContentRegionAvail().x;
 		for (int i = 0; i < count; i++) {
@@ -464,11 +521,10 @@ bool Select(const char* id, int* selected, const char* const* labels, const char
 			}
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			const float ty = rowStart.y + D(3.0f);
-			float lx = rowStart.x;
+			const float lx = rowStart.x + lay.labelX;
 			if (sel && g_fonts.icons) {
-				IconAt(dl, ImVec2(lx, ty), PobIcon::Check, Tok::AccentText, BodyPx());
+				IconAt(dl, ImVec2(rowStart.x, ty), PobIcon::Check, Tok::AccentText, BodyPx());
 			}
-			lx += g_fonts.icons ? IconWidth(PobIcon::Check, BodyPx()) + D(6.0f) : 0.0f;
 			DrawText(dl, BodyFont(), BodyPx(), ImVec2(lx, ty), Tok::Text, labels[i]);
 			if (notes && notes[i] && *notes[i]) {
 				const ImVec2 ns = TextSize(SmallFont(), SmallPx(), notes[i]);
@@ -680,7 +736,7 @@ void CardBegin(const char* id, const char* icon, const char* title, const char* 
 	c->split.SetCurrentChannel(c->dl, 1);
 	g_cards.push_back(c);
 	ImGui::BeginGroup();
-	const float padX = D(20.0f), padY = D(16.0f);
+	const float padX = CardPadX(), padY = CardPadY();
 	if (title) {
 		c->head = true;
 		const float headH = std::max(HeadingPx(), BodyPx()) + padY * 2.0f;
@@ -718,7 +774,7 @@ bool CardHeadButton(const char* label, BtnKind kind, const char* icon)
 	const float w = ButtonWidth(label, BtnSize::Sm, icon);
 	const float h = std::floor(D(28.0f));
 	const float headH = c->headBottom - c->pos.y;
-	ImGui::SetCursorScreenPos(ImVec2(c->pos.x + c->width - D(20.0f) - w, c->pos.y + std::floor((headH - h) * 0.5f)));
+	ImGui::SetCursorScreenPos(ImVec2(c->pos.x + c->width - CardPadX() - w, c->pos.y + std::floor((headH - h) * 0.5f)));
 	const float prev = g_lineBoxH;
 	g_lineBoxH = 0.0f;
 	const bool clicked = Button(label, kind, BtnSize::Sm, icon);
@@ -730,12 +786,12 @@ bool CardHeadButton(const char* label, BtnKind kind, const char* icon)
 float CardInnerX()
 {
 	if (g_cards.empty()) return ImGui::GetCursorScreenPos().x;
-	return g_cards.back()->pos.x + D(20.0f);
+	return g_cards.back()->pos.x + CardPadX();
 }
 float CardInnerWidth()
 {
 	if (g_cards.empty()) return ImGui::GetContentRegionAvail().x;
-	return g_cards.back()->width - D(40.0f);
+	return g_cards.back()->width - CardPadX() * 2.0f;
 }
 
 void CardEnd()
@@ -746,7 +802,7 @@ void CardEnd()
 	if (c->padded) {
 		ImGui::PopTextWrapPos();
 		ImGui::EndGroup();
-		bottom = ImGui::GetItemRectMax().y + D(16.0f);
+		bottom = ImGui::GetItemRectMax().y + CardPadY();
 	}
 	ImGui::EndGroup();
 	if (!c->padded) bottom = ImGui::GetItemRectMax().y;
@@ -771,7 +827,7 @@ float RowGap() { return D(8.0f); }
 
 void RowBegin(const char* label, const char* hint, float ctrlWidth, float ctrlHeight, const char* tip, bool disabled)
 {
-	const float padX = D(20.0f), padY = D(16.0f);
+	const float padX = CardPadX(), padY = Compact() ? D(10.0f) : D(16.0f);
 	float x0, w;
 	if (!g_cards.empty()) {
 		x0 = g_cards.back()->pos.x;
@@ -1266,8 +1322,8 @@ struct EmptyMetrics { float padX, padY, gap, iconPx, textW; };
 EmptyMetrics EmptyLayout(float width)
 {
 	EmptyMetrics m;
-	m.padX = D(24.0f);
-	m.padY = D(24.0f);
+	m.padX = Compact() ? D(16.0f) : D(24.0f);
+	m.padY = Compact() ? D(16.0f) : D(24.0f);
 	m.gap = D(8.0f);
 	m.iconPx = std::floor(D(28.0f));
 	m.textW = std::max(D(60.0f), width - m.padX * 2.0f);
@@ -1393,6 +1449,36 @@ bool RunWidgetSelfTest()
 		ok = ok && EmptyStateHeight("Title", hint, true, 600.0f) > plain;
 		ok = ok && EmptyStateHeight("Title", hint, false, 160.0f) > plain;
 		ok = ok && EmptyStateHeight("Title", nullptr, false, 600.0f) < plain;
+	}
+	// Select: with notes far longer than the button, the popup grows so that every
+	// label's right edge + space-4 stays left of every note's left edge (notes are
+	// right-aligned to contentW), and nothing runs past the row.
+	{
+		const char* lab[3] = { "Glorious Vanity XX", "Brutal", "Lethal Pride" };
+		const char* nts[3] = { "a fairly long english note", nullptr, "Lethal Pride note" };
+		const SelectLayout l = SelectLayoutFor(lab, nts, 3, 60.0f);
+		ok = ok && l.popupW > 60.0f;
+		for (int i = 0; i < 3; i++) {
+			const float labelRight = l.labelX + TextSize(BodyFont(), BodyPx(), lab[i]).x;
+			const float noteLeft = nts[i] ? l.contentW - TextSize(SmallFont(), SmallPx(), nts[i]).x : l.contentW;
+			ok = ok && labelRight + l.gap <= noteLeft + 0.5f && noteLeft >= 0.0f;
+		}
+		// a wide button is kept as is
+		ok = ok && SelectLayoutFor(lab, nts, 3, 2000.0f).popupW == 2000.0f;
+		// no notes: no gap is reserved
+		ok = ok && SelectLayoutFor(lab, nullptr, 3, 0.0f).noteMaxW == 0.0f;
+	}
+	// Tool density: controls shrink (36 -> ~31 design px), fonts do not, and the
+	// scope restores the launcher's sizes.
+	{
+		const float launcherH = ControlH();
+		{
+			ToolDensityScope tool;
+			ok = ok && ToolDensity();
+			ok = ok && ControlH() < launcherH;
+			ok = ok && std::fabs(ControlH() / kDesignToImGui - 36.0f * kToolDensity) < 1.0f;
+		}
+		ok = ok && !ToolDensity() && ControlH() == launcherH;
 	}
 	ImGui::DestroyContext();
 	SetWidgetFonts(WidgetFonts());

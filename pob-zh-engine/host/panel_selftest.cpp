@@ -214,7 +214,10 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 						const ImGuiStyle keep = ImGui::GetStyle();
 						ImGui::GetStyle() = panelStyle;
 						before = snapshot();
-						panel->Frame();
+						{
+							PobUi::ToolDensityScope toolDensity;   // as both hosts do
+							panel->Frame();
+						}
 						after = snapshot();
 						if (!(before == after)) balanced = false;
 						everDrew = true;
