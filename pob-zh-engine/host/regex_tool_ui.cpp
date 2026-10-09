@@ -1027,7 +1027,7 @@ private:
 
 		// view: the merged overview or the page's own list (RegexPanel.vue view seg)
 		{
-			const std::string merged = u8"已選（合併）· " + std::to_string(combineOrderIdx(true).size()) + u8" 頁";
+			const std::string merged = u8"已選（合併）· " + std::to_string(mergeIdx().size()) + u8" 頁";
 			const char* labels[2] = {merged.c_str(), u8"單頁清單"};
 			int sel = view_ == View::Combined ? 0 : 1;
 			slot(PobUi::SegmentedWidth(labels, 2));
@@ -1446,7 +1446,12 @@ private:
 			ImDrawList* dl = ImGui::GetWindowDrawList();
 			dl->AddRectFilled(p, ImVec2(p.x + inner, p.y + h), Tok::Surface2, Dp(6.0f));
 			dl->AddRect(p, ImVec2(p.x + inner, p.y + h), Tok::Border, Dp(6.0f), 0, 1.0f);
-			if (out.query.empty()) {
+			bool condClash = false;
+			for (const RegexAlgo::Conflict& c : out.conflicts) condClash |= c.kind == RegexAlgo::ConflictKind::ConditionClash;
+			if (out.query.empty() && condClash) {
+				// R10 (en: "The rarity / corruption conditions contradict each other")
+				DrawTextAt(dl, SmallF(), ImVec2(p.x + padX, p.y + padY), Tok::Danger, u8"稀有度 / 汙染條件互相矛盾，無法合成字串");
+			} else if (out.query.empty()) {
 				DrawTextAt(dl, SmallF(), ImVec2(p.x + padX, p.y + padY), Tok::TextFaint,
 				           scopeCombined_ ? u8"勾選清單裡的項目，這裡就會出現要貼的字串" : u8"這一頁還沒有勾選");
 			} else {
@@ -1457,6 +1462,10 @@ private:
 			ImGui::Dummy(ImVec2(inner, h));
 			if (ImGui::IsItemHovered() && !out.query.empty()) PobUi::Tooltip(u8"按「複製」放進剪貼簿，再到遊戲的搜尋列貼上（Ctrl+V）");
 		}
+		// R10: the merge only takes the current page's kind of item
+		// (en: "N more page(s) with picks are a different item and were left out")
+		if (scopeCombined_ && mergeSkipped_ > 0)
+			SmallText((u8"另有 " + std::to_string(mergeSkipped_) + u8" 頁的勾選屬於其他物品，未併入").c_str(), Tok::TextMuted, inner);
 		// meter + length: ok / over 4/5 / over the limit
 		const int len = out.length, lim = out.limit;
 		const ImU32 lenCol = len > lim ? Tok::Danger : (len * 5 > lim * 4 ? Tok::Warning : (len > 0 ? Tok::Success : Tok::TextMuted));
@@ -1536,12 +1545,18 @@ private:
 	void drawSingleDetails(PageState& s, float inner)
 	{
 		int invalid = 0;
-		std::vector<std::string> clash;
+		std::vector<std::string> clash, condClash;
 		for (const RegexAlgo::Conflict& c : s.combined.conflicts) {
 			if (c.kind == RegexAlgo::ConflictKind::Invalid) invalid++;
 			else if (c.kind == RegexAlgo::ConflictKind::Fragment) clash.push_back(c.text);
+			else if (c.kind == RegexAlgo::ConflictKind::ConditionClash) condClash.push_back(c.text);
 		}
 		if (invalid > 0) SmallText((u8"有 " + std::to_string(invalid) + u8" 個數值條件輸入不成立，沒有放進字串。").c_str(), Tok::Warning, inner);
+		// R10 (en: "The rarity / corruption conditions contradict each other; no string was made:")
+		if (!condClash.empty()) {
+			SmallText(u8"稀有度 / 汙染條件互相矛盾，無法合成字串：", Tok::Danger, inner);
+			for (const std::string& t : condClash) SmallText((u8"· " + t).c_str(), Tok::TextMuted, inner);
+		}
 		if (!clash.empty()) {
 			SmallText((u8"有 " + std::to_string(clash.size()) + u8" 個數值條件也會中這一頁的詞綴：").c_str(), Tok::Warning, inner);
 			for (const std::string& t : clash) SmallText((u8"· " + t).c_str(), Tok::TextMuted, inner);
@@ -2811,6 +2826,7 @@ private:
 		if (p >= 0 && p < (int)refs_.size() && isItemPage(p)) startItemMods(refs_[p].Game());
 		if (p == page_) return;
 		page_ = p;
+		combinedDirty_ = true;   // R10: the merge takes the current page's item group
 		copied_ = false;
 		st().filterDirty = true;
 		st().dirty = true;
@@ -3642,11 +3658,39 @@ private:
 	}
 
 	// store.ts `combined`: every page of the game with ticks + custom + excludes.
+	// R10: the ticked pages the merge takes -- those of the current page's item
+	// group (RegexAlgo::PlanMerge); `skipped` = the other pages with ticks.
+	std::vector<int> mergeIdx(int* skipped = nullptr) const
+	{
+		const std::vector<int> all = combineOrderIdx(true);
+		std::vector<std::string> ids;
+		for (int i : all) ids.push_back(refs_[i].Id());
+		const RegexAlgo::MergePlan plan = RegexAlgo::PlanMerge(hasPage() ? refs_[page_].Id() : std::string(), ids);
+		if (skipped) *skipped = plan.skippedPages;
+		std::vector<int> out;
+		for (int i : all)
+			if (std::find(plan.merged.begin(), plan.merged.end(), refs_[i].Id()) != plan.merged.end()) out.push_back(i);
+		return out;
+	}
+
 	const RegexAlgo::CombineResult& combinedAll()
 	{
 		if (!combinedDirty_) return combined_;
 		std::vector<RegexAlgo::CombineSel> sels;
-		for (int i : combineOrderIdx(true)) {
+		const std::vector<int> merged = mergeIdx(&mergeSkipped_);
+		for (int i : merged) {
+			// R10: a ticked section whose host has no ticks still brings the host's
+			// corpus (no picks): the condition terms are shortened against it.
+			if (refs_[i].IsSection()) {
+				const int h = hostIndexOf(i);
+				if (h != i && refs_[h].corpus && std::find(merged.begin(), merged.end(), h) == merged.end()) {
+					ensureCorpus(h);
+					RegexAlgo::CombineSel host;
+					host.page = refs_[h];
+					host.corpus = &pages_[h].corpus;
+					sels.push_back(std::move(host));
+				}
+			}
 			RegexAlgo::CombineSel sel;
 			sel.page = refs_[i];
 			sel.picks = picksOf(i);
@@ -3802,6 +3846,8 @@ private:
 		case ConflictKind::Fragment: return page + u8"：條件片段會誤中詞綴行（" + c.text + u8"）";
 		case ConflictKind::Exclude: return page + u8"：排除詞與已勾選的詞綴衝突（" + c.text + u8"）";
 		case ConflictKind::Invalid: return page + u8"：「" + c.text + u8"」的輸入不成立，已略過";
+		// R10 (en: "rarity / corruption conditions contradict each other (...); no string was made")
+		case ConflictKind::ConditionClash: return page + u8"：稀有度 / 汙染條件互相矛盾（" + c.text + u8"），無法合成字串";
 		}
 		return c.text;
 	}
@@ -3812,7 +3858,7 @@ private:
 	{
 		using namespace RegexAlgo;
 		const CombineResult& r = combinedAll();
-		const std::vector<int> picked = combineOrderIdx(true);
+		const std::vector<int> picked = mergeIdx();
 		{
 			const float avail = ImGui::GetContentRegionAvail().x;
 			const float y = ImGui::GetCursorScreenPos().y, x = ImGui::GetCursorScreenPos().x;
@@ -3820,14 +3866,18 @@ private:
 			ImGui::SetCursorScreenPos(ImVec2(x, y + std::floor((Dp(28.0f) - BodyF()->FontSize) * 0.5f)));
 			ImGui::TextUnformatted((std::string(u8"已選（合併）· ") + GameLabel(selGame_)).c_str());
 			ImGui::SetCursorScreenPos(ImVec2(x + avail - cw, y));
-			if (PobUi::Button(u8"全部清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, !picked.empty())) clearAllPicks();
+			if (PobUi::Button(u8"全部清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, !combineOrderIdx(true).empty())) clearAllPicks();
 			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 				PobUi::Tooltip(u8"取消這個遊戲所有清單（含數值條件）的勾選；自訂文字與排除詞保留");
 			ImGui::SetCursorScreenPos(ImVec2(x, y + Dp(28.0f) + Dp(8.0f)));
 		}
 		ImGui::BeginChild("##rx_comb", ImVec2(0, 0), false);
 		if (picked.empty() && r.custom.empty() && r.excludes.empty()) {
-			PobUi::EmptyState("rx_comb_empty", PobIcon::List, u8"還沒有勾選任何清單", u8"切到「單頁清單」勾選，勾好的清單會在這裡合成一串。");
+			if (mergeSkipped_ > 0)   // R10 (en: "No picks for this kind of item")
+				PobUi::EmptyState("rx_comb_empty", PobIcon::List, u8"這類物品還沒有勾選",
+				                  (u8"另有 " + std::to_string(mergeSkipped_) + u8" 頁的勾選屬於其他物品，未併入；切到那一頁就會合成那一類。").c_str());
+			else
+				PobUi::EmptyState("rx_comb_empty", PobIcon::List, u8"還沒有勾選任何清單", u8"切到「單頁清單」勾選，勾好的清單會在這裡合成一串。");
 			ImGui::Dummy(ImVec2(0, Dp(8.0f)));
 		} else {
 			// .pt-table: name (a link to the page) + badge | ticked | cost | not single-able
@@ -4198,6 +4248,7 @@ private:
 	std::string customDraft_, excludeDraft_;
 	RegexAlgo::CombineResult combined_;
 	bool combinedDirty_ = true;
+	int mergeSkipped_ = 0;   // R10: ticked pages of other item groups, set by combinedAll()
 	RegexAlgo::UnionCorpusCache unions_;
 	bool dataOk_ = false;
 	std::string dataErr_;

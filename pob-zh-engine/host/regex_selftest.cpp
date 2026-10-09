@@ -37,6 +37,9 @@ void RegexR8Tests(const std::wstring& exeDir, void (*check)(bool, const std::str
 void RegexSendTests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_r9.cpp: bookmark packs (送到 ExileAppraiser / 匯入書籤包).
 void RegexR9Tests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r10.cpp: merging within one item group, condition de-duplication,
+// shortened condition fragments checked against real copied item text.
+void RegexR10Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_parity.cpp: the literal vectors of exile-appraiser's own tests.
 void RegexParityTests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
@@ -1453,13 +1456,15 @@ void FragmentTests(const std::wstring& exeDir)
 				const std::string ls[] = {lab + ": +" + v + "%", lab + ": +" + v + "% (augmented)", lab + u8"：+" + v + "%",
 				                          lab + ":+" + v + "%", lab + u8"： +" + v + "%", lab + ": " + v + "%",
 				                          lab + ":" + v + "%", lab + u8"：" + v + "%", lab + ": +" + v + " %"};
-				for (const std::string& l : ls)
-					if (RxSearch(r, l) != ok(c, n)) { if (!bad++) first = f + " x " + l; }
+				// R10: the game prints "物品數量: +68% (augmented)" -- only the ": " forms
+				// (ls[0], ls[1], ls[5]) are the fragment's; the other separators never hit.
+				for (int k = 0; k < 9; k++)
+					if (RxSearch(r, ls[k]) != ((k == 0 || k == 1 || k == 5) && ok(c, n))) { if (!bad++) first = f + " x " + ls[k]; }
 			}
 			for (int n : {1000, 1234, 99999})
 				if (RxSearch(r, u8"物品數量: +" + Num(n) + "%") != (c.mx < 0 || n <= c.mx)) { if (!bad++) first = f + " x " + Num(n); }
 		}
-		check(bad == 0, "strict percent: 12 conditions x 0-999 x 9 separators, open top above 999" + (bad ? " -- " + first : std::string()));
+		check(bad == 0, "strict percent: 12 conditions x 0-999 x 9 separators (only the game's \": \" forms hit), open top above 999" + (bad ? " -- " + first : std::string()));
 		Rx any = comp(*StrictPropertyFragment(u8"物品數量", Val(0, -1), 3, true));
 		Rx le = comp(*StrictPropertyFragment(u8"物品數量", Val(-1, 50), 3, true));
 		check(!RxSearch(any, u8"物品數量 +80%") && !RxSearch(any, u8"物品數量: -80%") &&
@@ -1733,6 +1738,8 @@ void PortTests(const std::wstring& exeDir)
 	RegexSendTests(&check, &line);
 	line("");
 	RegexR9Tests(&check, &line);
+	line("");
+	RegexR10Tests(exeDir, &check, &line);
 	line("");
 	RegexParityTests(exeDir, &check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");
