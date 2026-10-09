@@ -197,7 +197,9 @@ std::optional<std::string> StrictPropertyFragment(const std::string& label, cons
 	if (re.empty()) return std::nullopt;
 	const std::string base = LabelBase(label);
 	if (base.empty()) return std::nullopt;
-	if (percent) return base + u8"[:：] *\\+?" + re + " *%";
+	// R10: the game prints "怪群大小: +13% (augmented)" / "物品數量: +68% (augmented)"
+	// (both games, copied from the client): half-width colon, one space, no space before %.
+	if (percent) return base + ": \\+?" + re + "%";
 	return base + u8"[:：]? *\\+?" + re + (op == RangeOp::Ge ? "" : "([^0-9]|$)");
 }
 
@@ -208,11 +210,16 @@ bool IsTierNameLine(const std::string& line)
 	return rx && RxSearch(*rx, line);
 }
 
-std::optional<std::string> MapTierFragment(const AlgoValue& v, int digits, Lang lang)
+std::optional<std::string> MapTierFragment(const AlgoValue& v, int digits, Lang lang, int hi)
 {
 	const RangeOp op = RangeOpOf(v);
 	if (op == RangeOp::None) return std::nullopt;
-	const std::string re = RegexNumeric::ReadableRangeRegex(RangeFor(v, op), digits);
+	NumRange r = RangeFor(v, op);
+	// R10: a >= condition on a tier with a known top ("≥15" of 1..16) is the closed
+	// range up to it: "1[56]" instead of "(1[5-9]|[2-9][0-9])". A minimum above the
+	// top (a stored value from outside the input's range) keeps the open form.
+	if (op == RangeOp::Ge && hi > 0 && *v.min <= (double)hi) r.max = (double)hi;
+	const std::string re = RegexNumeric::ReadableRangeRegex(r, digits);
 	if (re.empty()) return std::nullopt;
 	// frag.ts:72 TIER_NAME_FORMAT
 	if (lang == Lang::Zh) return u8"階級 *" + re + u8"）";

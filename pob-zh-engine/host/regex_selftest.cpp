@@ -37,6 +37,9 @@ void RegexR8Tests(const std::wstring& exeDir, void (*check)(bool, const std::str
 void RegexSendTests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_r9.cpp: bookmark packs (送到 ExileAppraiser / 匯入書籤包).
 void RegexR9Tests(void (*check)(bool, const std::string&), void (*line)(const std::string&));
+// regex_selftest_r10.cpp: merging within one item group, condition de-duplication,
+// shortened condition fragments checked against real copied item text.
+void RegexR10Tests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 // regex_selftest_parity.cpp: the literal vectors of exile-appraiser's own tests.
 void RegexParityTests(const std::wstring& exeDir, void (*check)(bool, const std::string&), void (*line)(const std::string&));
 
@@ -347,6 +350,46 @@ void SyntheticTests()
 		RegexGen::Check v = d.Verify({0}, "\"^abc\"");
 		check(!v.ok && v.extra.size() == 1, "and Verify sees the anchored hidden hit");
 	}
+
+	line("[T17] a modifier's other wordings must be found too");
+	{
+		// The Overseer tablet's 1..2 roll: "an additional Strongbox" at 1,
+		// "# additional Strongboxes" at 2. "ox$" finds the first and misses the
+		// second; the chance line next to it shares "strongboxes".
+		Entry a;
+		a.id = "box";
+		a.texts = {"Map contains an additional Strongbox"};
+		a.alts = {"Map contains # additional Strongboxes"};
+		Entry b;
+		b.id = "chance";
+		b.texts = {"Map has #% increased chance to contain Strongboxes"};
+		Corpus c = MakeEx({a, b});
+		for (Mode mode : {Mode::Any, Mode::All}) {
+			RegexGen::Result r = c.Build({0}, mode);
+			check(r.exact && c.Verify({0}, r.query).ok,
+			      "the token covers both wordings: " + r.query);
+			check(r.query.find("ox$") == std::string::npos, "and is not the singular-only \"ox$\"");
+		}
+		RegexGen::Check v = c.Verify({0}, "\"ox$\"");
+		check(!v.ok && v.missing.size() == 1, "a term that misses the other wording is a miss");
+		RegexGen::Result r2 = c.Build({1}, Mode::Any);
+		check(r2.exact && c.Verify({1}, r2.query).ok,
+		      "the other wording vetoes like hidden text for everyone else: " + r2.query);
+		// Where only the singular can be told apart, the honest answer is "cannot
+		// be singled out" -- and without alts the old singular-only answer.
+		Entry x;
+		x.id = "box";
+		x.texts = {"box"};
+		x.alts = {"# boxes"};
+		Entry y;
+		y.id = "found";
+		y.texts = {"boxes found"};
+		Corpus d = MakeEx({x, y});
+		check(!d.Build({0}, Mode::Any).exact, "a wording no token can cover leaves the pick unresolved");
+		x.alts.clear();
+		Corpus e = MakeEx({x, y});
+		check(e.Build({0}, Mode::Any).query == "\"x$\"", "an entry without alts behaves as before");
+	}
 }
 
 
@@ -620,6 +663,10 @@ void DataTests(const std::wstring& exeDir)
 				if (full)
 					e.hidden = useWant ? (useZh ? d.hiddenZh : d.hiddenEn)
 					                   : (useZh ? d.hiddenEn : d.hiddenZh);
+				// Printed text, not hidden: kept even when the hidden text is
+				// left out, so "stuck by hidden text" stays about hidden text.
+				e.alts = useWant ? (useZh ? d.altZh : d.altEn)
+				                 : (useZh ? d.altEn : d.altZh);
 				es.push_back(std::move(e));
 			}
 			RegexGen::Ambient amb;
@@ -1453,13 +1500,15 @@ void FragmentTests(const std::wstring& exeDir)
 				const std::string ls[] = {lab + ": +" + v + "%", lab + ": +" + v + "% (augmented)", lab + u8"：+" + v + "%",
 				                          lab + ":+" + v + "%", lab + u8"： +" + v + "%", lab + ": " + v + "%",
 				                          lab + ":" + v + "%", lab + u8"：" + v + "%", lab + ": +" + v + " %"};
-				for (const std::string& l : ls)
-					if (RxSearch(r, l) != ok(c, n)) { if (!bad++) first = f + " x " + l; }
+				// R10: the game prints "物品數量: +68% (augmented)" -- only the ": " forms
+				// (ls[0], ls[1], ls[5]) are the fragment's; the other separators never hit.
+				for (int k = 0; k < 9; k++)
+					if (RxSearch(r, ls[k]) != ((k == 0 || k == 1 || k == 5) && ok(c, n))) { if (!bad++) first = f + " x " + ls[k]; }
 			}
 			for (int n : {1000, 1234, 99999})
 				if (RxSearch(r, u8"物品數量: +" + Num(n) + "%") != (c.mx < 0 || n <= c.mx)) { if (!bad++) first = f + " x " + Num(n); }
 		}
-		check(bad == 0, "strict percent: 12 conditions x 0-999 x 9 separators, open top above 999" + (bad ? " -- " + first : std::string()));
+		check(bad == 0, "strict percent: 12 conditions x 0-999 x 9 separators (only the game's \": \" forms hit), open top above 999" + (bad ? " -- " + first : std::string()));
 		Rx any = comp(*StrictPropertyFragment(u8"物品數量", Val(0, -1), 3, true));
 		Rx le = comp(*StrictPropertyFragment(u8"物品數量", Val(-1, 50), 3, true));
 		check(!RxSearch(any, u8"物品數量 +80%") && !RxSearch(any, u8"物品數量: -80%") &&
@@ -1733,6 +1782,8 @@ void PortTests(const std::wstring& exeDir)
 	RegexSendTests(&check, &line);
 	line("");
 	RegexR9Tests(&check, &line);
+	line("");
+	RegexR10Tests(exeDir, &check, &line);
 	line("");
 	RegexParityTests(exeDir, &check, &line);
 	line("    (R1/R2 port checks took " + Num((int)(GetTickCount() - t0)) + " ms)");

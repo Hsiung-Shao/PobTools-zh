@@ -152,7 +152,8 @@ std::optional<AlgoEntry> NumEntry(const NumSpec& s, const RegexLabels& labels)
 	const bool percent = s.percent;
 	if (std::string(s.id) == "tier") {
 		// The tier is in the item NAME "（階級 N）", not on a property line (frag.ts mapTierFragment).
-		e.fragment = [digits](const AlgoValue& v, Lang lang) { return RegexFrag::MapTierFragment(v, digits, lang); };
+		const int top = s.hi;   // R10: >= N becomes N..top
+		e.fragment = [digits, top](const AlgoValue& v, Lang lang) { return RegexFrag::MapTierFragment(v, digits, lang, top); };
 		e.ownLine = [](const std::string& l) { return RegexFrag::IsTierNameLine(l); };
 	} else {
 		const std::string lz = *zh, le = *en;
@@ -682,6 +683,8 @@ void BuildPageCorpus(const RegexPageDef& page, Lang lang, RegexGen::Corpus& out)
 		e.texts = useWant ? want : fallback;
 		// Hidden text follows the language the entry actually ended up in.
 		e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+		// Other wordings of the same modifier (RegexGen::Entry::alts), same language rule.
+		e.alts = useWant ? (zh ? d.altZh : d.altEn) : (zh ? d.altEn : d.altZh);
 		es.push_back(std::move(e));
 	}
 	RegexGen::Ambient amb;
@@ -700,8 +703,62 @@ const char* ConflictKindId(ConflictKind k)
 	case ConflictKind::Fragment: return "fragment";
 	case ConflictKind::Exclude: return "exclude";
 	case ConflictKind::Invalid: return "invalid";
+	case ConflictKind::ConditionClash: return "conditionClash";
 	}
 	return "?";
+}
+
+// R10: one search string describes one kind of item; equipment pages (bases,
+// vendor conditions, modifier values, flasks / charms) describe the same items.
+std::string ItemGroupOf(const std::string& pageId)
+{
+	static const char* const kEquipment[] = {"vendor_bases",         "vendor_items", "vendor_items_poe2", "item_mod_values",
+	                                         "item_mod_values_poe2", "flask_mods",   "flask_charm_mods",
+	                                         "gem_names"};   // gems: with the vendor page's gem level / quality
+	const std::string host = NumericKeyOf(pageId);
+	for (const char* e : kEquipment)
+		if (host == e) return "equipment";
+	return host;
+}
+
+MergePlan PlanMerge(const std::string& currentId, const std::vector<std::string>& pickedIds)
+{
+	MergePlan p;
+	const std::string group = ItemGroupOf(currentId);
+	std::vector<std::string> skippedHosts;
+	for (const std::string& id : pickedIds) {
+		if (ItemGroupOf(id) == group) {
+			p.merged.push_back(id);
+			continue;
+		}
+		const std::string host = NumericKeyOf(id);   // host + its section = one page
+		if (std::find(skippedHosts.begin(), skippedHosts.end(), host) == skippedHosts.end()) skippedHosts.push_back(host);
+	}
+	p.skippedPages = (int)skippedHosts.size();
+	return p;
+}
+
+// class-term.ts (exile-appraiser 01ac96e): a page's fragments only promise not to
+// hit the page's OTHER modifiers, but a stash / shop search scans every item (a
+// jewel's 「範圍效果」 holds 「圍」). So a page whose items all carry a word in their
+// name gets that word as one more AND term. Only the tablet page so far: the eight
+// tablet bases all end in 「碑牌」 / "Tablet".
+// class-term.ts:10 CLASS_TERMS
+std::string ClassTermOf(const RegexPageDef& page, Lang lang)
+{
+	if (page.game == "poe2" && page.id == "tablet_mods") return lang == Lang::Zh ? u8"碑牌" : "tablet";
+	return std::string();
+}
+
+// class-term.ts:20 sharedClassTerm
+std::string SharedClassTerm(const std::vector<const RegexPageDef*>& pages, Lang lang)
+{
+	if (pages.empty()) return std::string();
+	const std::string first = ClassTermOf(*pages[0], lang);
+	if (first.empty()) return std::string();
+	for (const RegexPageDef* p : pages)
+		if (ClassTermOf(*p, lang) != first) return std::string();
+	return first;
 }
 
 std::string JsTrim(const std::string& t)
@@ -756,6 +813,7 @@ void EntryLines(const RegexEntryDef& d, Lang lang, RegexGen::Entry& e)
 	const bool useWant = !want.empty();
 	e.texts = useWant ? want : fallback;
 	e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+	e.alts = useWant ? (zh ? d.altZh : d.altEn) : (zh ? d.altEn : d.altZh);
 }
 
 // data.ts pageAmbient, appended (combine.ts:126-129).
@@ -821,11 +879,34 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 		const RegexPageDef* page;
 		const RegexGen::Corpus* corpus;
 		std::vector<int> picks, unresolved;
+		bool hasTokens;   // produced at least one token (the class term only counts these)
 	};
 	std::vector<CorpusPart> corpusSels;
 	// Corpora built here for a sel that came without one (stable addresses).
 	std::vector<std::unique_ptr<RegexGen::Corpus>> owned;
 	int limit = 250;
+	// R10: the rarity | corruption rows of every page taking part, merged into
+	// one choice after the loop; their terms go where the first one stood.
+	// The merged rarity term goes where the first row restricting rarity stood, the
+	// corruption term where the first row with a corruption answer stood (so a
+	// single row prints exactly where it always did).
+	struct CondRow {
+		const AlgoEntry* e;
+		std::string page;
+		RarityChoice choice;
+		std::string text;
+		size_t termPos;    // index into algoTerms
+		size_t perPage;    // index into res.perPage
+		size_t fragPos;    // index into that page's fragments
+	};
+	std::vector<CondRow> condRows;
+	// R10: every corpus page in `sels`, ticked or not (the host of a ticked
+	// section takes part with no picks): what the short condition terms are
+	// checked against.
+	std::vector<const RegexPageDef*> guardPages;
+	for (const CombineSel& sel : sels)
+		if (sel.page.corpus && std::find(guardPages.begin(), guardPages.end(), sel.page.corpus) == guardPages.end())
+			guardPages.push_back(sel.page.corpus);
 
 	for (const CombineSel& sel : sels) {
 		// combine.ts:163 dedupe, keep integers in range, sort
@@ -846,6 +927,19 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 			for (int i : picks) {
 				const AlgoEntry& e = p.entries[i];
 				const AlgoValue& v = sel.values ? ValueOf(*sel.values, e) : e.input.def;
+				if (e.condTerms) {
+					// R10: a rarity | corruption row that says nothing is invalid as
+					// before; one that does waits for the merge.
+					if (!e.terms || !e.terms(v, lang)) {
+						c.unresolved++;
+						const std::vector<std::string>& names = lang == Lang::Zh ? e.def.zh : e.def.en;
+						res.conflicts.push_back({ConflictKind::Invalid, p.id, e.def.id, names.empty() ? e.def.id : names[0]});
+						continue;
+					}
+					condRows.push_back({&e, p.id, ParseRarityChoice(v.choice), RarityConditionText(e, v, lang).value_or(std::string()),
+					                    algoTerms.size(), res.perPage.size(), c.fragments.size()});
+					continue;
+				}
 				// combine.ts:174-181 (step 40, B d5ccb47): a row may give
 				// several terms (rarity | corruption), each an AND term of its own
 				std::optional<std::vector<std::string>> ts;
@@ -860,6 +954,8 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 					continue;
 				}
 				for (const std::string& f : *ts) {
+					// R10: the same term twice (two pages asking the same) is said once
+					if (std::find(algoTerms.begin(), algoTerms.end(), QuoteIfNeeded(f)) != algoTerms.end()) continue;
 					c.fragments.push_back(f);
 					algoTerms.push_back(QuoteIfNeeded(f));
 					algoFrags.push_back({p.id, e.def.id, f, e.ownLine});
@@ -892,10 +988,129 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 		for (const std::string& t : r.tokens)
 			c.length += RegexGen::CharCount(mode == Mode::All ? QuoteIfNeeded(t) : t) + 1;
 		res.perPage.push_back(std::move(c));
-		corpusSels.push_back({&p, corpus, picks, r.unresolved});
+		corpusSels.push_back({&p, corpus, picks, r.unresolved, !r.tokens.empty()});
 		if (!res.hasCorpus) {
 			res.corpusResult = std::move(r);
 			res.hasCorpus = true;
+		}
+	}
+
+	// R10: the condition rows merged. Rarity: the sets intersected (a row with
+	// none or all four does not restrict); corruption: one answer. A clash is a
+	// conflict and no string is made.
+	bool condClash = false;
+	if (!condRows.empty()) {
+		const size_t nRarity = condRows[0].e->input.options.size();
+		RarityChoice merged;
+		bool restricted = false;
+		const CondRow* firstRestrict = nullptr;
+		const CondRow* firstCorrupt = nullptr;
+		for (const CondRow& r : condRows) {
+			const RarityChoice& ch = r.choice;
+			if (!ch.rarity.empty() && ch.rarity.size() < nRarity) {
+				if (!restricted) {
+					merged.rarity = ch.rarity;
+					restricted = true;
+					firstRestrict = &r;
+				} else {
+					std::vector<std::string> keep;
+					for (const std::string& id : merged.rarity)
+						if (std::find(ch.rarity.begin(), ch.rarity.end(), id) != ch.rarity.end()) keep.push_back(id);
+					if (keep.empty() && !condClash) {
+						condClash = true;
+						res.conflicts.push_back({ConflictKind::ConditionClash, r.page, r.e->def.id, firstRestrict->text + u8" ↔ " + r.text});
+					}
+					merged.rarity = std::move(keep);
+				}
+			}
+			if (ch.corruption != Corruption::None) {
+				if (merged.corruption == Corruption::None) {
+					merged.corruption = ch.corruption;
+					firstCorrupt = &r;
+				} else if (merged.corruption != ch.corruption && !condClash) {
+					condClash = true;
+					res.conflicts.push_back({ConflictKind::ConditionClash, r.page, r.e->def.id, firstCorrupt->text + u8" ↔ " + r.text});
+				}
+			}
+		}
+		if (!condClash) {
+			// The guard: a candidate hits a line of the corpus pages (the row's own
+			// "已汙染" line aside), '#' tried with the usual sample numbers.
+			std::vector<std::pair<std::u32string, std::string>> glines;   // instantiated, raw
+			bool itemText = false;
+			for (const RegexPageDef* gp : guardPages) {
+				itemText |= gp->kind == RegexPageKind::Mods;
+				std::vector<std::string> raw;
+				for (const RegexEntryDef& d : gp->entries) {
+					RegexGen::Entry e;
+					EntryLines(d, lang, e);
+					raw.insert(raw.end(), e.texts.begin(), e.texts.end());
+					raw.insert(raw.end(), e.hidden.begin(), e.hidden.end());
+					raw.insert(raw.end(), e.alts.begin(), e.alts.end());   // the other wordings print on items too
+				}
+				RegexGen::Ambient amb;
+				AppendAmbient(*gp, lang, amb);
+				raw.insert(raw.end(), amb.lines.begin(), amb.lines.end());
+				raw.insert(raw.end(), amb.nameLeft.begin(), amb.nameLeft.end());
+				raw.insert(raw.end(), amb.nameRight.begin(), amb.nameRight.end());
+				static const char* const kSamples[] = {"1", "5", "10", "16", "20", "30", "50", "80", "100", "150", "300"};
+				for (const std::string& l : raw) {
+					if (l.find('#') == std::string::npos) {
+						glines.emplace_back(std::u32string(), l);
+						RxDecodeUtf8(l, glines.back().first);
+						continue;
+					}
+					for (const char* smp : kSamples) {
+						std::string t;
+						for (char ch : l) {
+							if (ch == '#') t += smp;
+							else t += ch;
+						}
+						glines.emplace_back(std::u32string(), l);
+						RxDecodeUtf8(t, glines.back().first);
+					}
+				}
+			}
+			const AlgoEntry* ce = condRows[0].e;
+			CondGuard guard;
+			guard.itemText = itemText;
+			guard.hits = [&glines, ce](const std::string& frag) {
+				const std::optional<Rx> rx = RxCompile(frag, nullptr);
+				if (!rx) return true;   // not a usable fragment: take the long form
+				for (const auto& gl : glines) {
+					if (ce->ownLine && ce->ownLine(gl.second)) continue;
+					if (RxSearchCps(*rx, gl.first) == RxStatus::Match) return true;
+				}
+				return false;
+			};
+			if (const std::optional<std::vector<std::string>> ts = ce->condTerms(merged, lang, guardPages.empty() ? nullptr : &guard)) {
+				// condTerms answers [rarity?, corruption?]
+				const bool hasRarity = restricted && !merged.rarity.empty();
+				struct Put { std::string f; const CondRow* at; bool rarity; };
+				std::vector<Put> puts;
+				for (size_t k = 0; k < ts->size(); k++) {
+					const bool isRarity = hasRarity && k == 0;
+					const CondRow* at = isRarity ? firstRestrict : firstCorrupt;
+					puts.push_back({(*ts)[k], at ? at : &condRows[0], isRarity});
+				}
+				// later positions first, so the earlier indices stay valid; on a tie the
+				// later row goes in first (ends up after), and within one row the
+				// corruption term goes in first (ends up after the rarity term)
+				std::sort(puts.begin(), puts.end(), [](const Put& a, const Put& b) {
+					if (a.at->termPos != b.at->termPos) return a.at->termPos > b.at->termPos;
+					if (a.at != b.at) return a.at > b.at;
+					return !a.rarity && b.rarity;
+				});
+				for (const Put& u : puts) {
+					const std::string q = QuoteIfNeeded(u.f);
+					if (std::find(algoTerms.begin(), algoTerms.end(), q) != algoTerms.end()) continue;
+					algoTerms.insert(algoTerms.begin() + (std::ptrdiff_t)std::min(u.at->termPos, algoTerms.size()), q);
+					PageContribution& c = res.perPage[u.at->perPage];
+					c.fragments.insert(c.fragments.begin() + (std::ptrdiff_t)std::min(u.at->fragPos, c.fragments.size()), u.f);
+					c.length += RegexGen::CharCount(q) + 1;
+					algoFrags.push_back({u.at->page, u.at->e->def.id, u.f, ce->ownLine});
+				}
+			}
 		}
 	}
 
@@ -912,7 +1127,17 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	}
 	for (const ExcludeToken& x : res.excludes) noneTokens.push_back(x.token);
 
-	// combine.ts:207-211 order: any, all, algorithmic, custom, none
+	// combine.ts:223-224 the ticked corpus pages' shared item-class term, quoted
+	{
+		std::vector<const RegexPageDef*> classPages;
+		// only pages that produced a token: a page whose picks all went unresolved
+		// must not leave a bare "碑牌" that lights every tablet
+		for (const CorpusPart& s : corpusSels)
+			if (s.hasTokens) classPages.push_back(s.page);
+		const std::string shared = SharedClassTerm(classPages, lang);
+		if (!shared.empty()) res.classTerm = "\"" + shared + "\"";
+	}
+	// combine.ts:225-231 order: any, all, algorithmic, class, custom, none
 	std::vector<std::string> terms;
 	if (!anyTokens.empty()) {
 		std::string t = "\"";
@@ -921,6 +1146,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	}
 	terms.insert(terms.end(), allTerms.begin(), allTerms.end());
 	terms.insert(terms.end(), algoTerms.begin(), algoTerms.end());
+	if (!res.classTerm.empty()) terms.push_back(res.classTerm);
 	for (const CustomTerm& c : res.custom) terms.push_back(QuoteIfNeeded(c.term));
 	if (!noneTokens.empty()) {
 		std::string t = "\"!";
@@ -1051,6 +1277,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	// combine.ts:268-282
 	for (const CustomTerm& c : res.custom) res.customLength += RegexGen::CharCount(QuoteIfNeeded(c.term)) + 1;
 	for (const ExcludeToken& x : res.excludes) res.excludesLength += RegexGen::CharCount(x.token) + 1;
+	if (condClash) res.query.clear();   // R10: conditions that cannot both hold: no string
 	res.length = RegexGen::CharCount(res.query);
 	res.limit = limit;
 	res.ok = res.conflicts.empty() && res.check.missing.empty();
@@ -1164,32 +1391,124 @@ std::optional<ConditionLabels> ConditionLabelsOf(const RegexLabels* labels)
 	return out;
 }
 
-// rarity.ts:94 conditionTerms: the rarity term, the corruption term; neither = nullopt
-std::optional<std::vector<std::string>> ConditionTerms(const ConditionLabels& l, const AlgoValue& v, Lang lang)
+void AppendCp(std::string& out, char32_t c)
 {
-	const RarityChoice c = ParseRarityChoice(v.choice);
+	if (c < 0x80) {
+		out += (char)c;
+	} else if (c < 0x800) {
+		out += (char)(0xC0 | (c >> 6));
+		out += (char)(0x80 | (c & 0x3F));
+	} else if (c < 0x10000) {
+		out += (char)(0xE0 | (c >> 12));
+		out += (char)(0x80 | ((c >> 6) & 0x3F));
+		out += (char)(0x80 | (c & 0x3F));
+	} else {
+		out += (char)(0xF0 | (c >> 18));
+		out += (char)(0x80 | ((c >> 12) & 0x3F));
+		out += (char)(0x80 | ((c >> 6) & 0x3F));
+		out += (char)(0x80 | (c & 0x3F));
+	}
+}
+
+char32_t LowerCp(char32_t c) { return (c >= U'A' && c <= U'Z') ? c + 32 : c; }
+
+// A code point that is itself in a fragment (no regex syntax, no space).
+bool PlainCp(char32_t c)
+{
+	static const std::u32string kSyntax = U"\\^$.|?*+()[]{}-! \"";
+	return c > 0x20 && kSyntax.find(c) == std::u32string::npos;
+}
+
+// R10 short rarity term: "<last char of the label>: <first char of the value>"
+// ("度: 稀", "y: r"), several values as a class in the fixed order ("度: [魔稀]").
+// The game prints "稀有度: 稀有" / "Rarity: Rare" in both games. nullopt when the
+// four values do not start with four different plain characters.
+std::optional<std::string> ShortRarity(const ConditionLabels& l, const std::string& label, const RarityChoice& c, Lang lang)
+{
+	std::u32string base;
+	RxDecodeUtf8(RegexFrag::LabelBase(label), base);
+	if (base.empty() || !PlainCp(base.back())) return std::nullopt;
+	std::u32string firsts, picked;
+	for (const AlgoOption& o : l.rarity) {
+		std::u32string v;
+		RxDecodeUtf8(JsTrim(lang == Lang::Zh ? o.zh : o.en), v);
+		if (v.empty() || !PlainCp(v[0])) return std::nullopt;
+		const char32_t f = LowerCp(v[0]);
+		if (firsts.find(f) != std::u32string::npos) return std::nullopt;
+		firsts += f;
+		if (std::find(c.rarity.begin(), c.rarity.end(), o.id) != c.rarity.end()) picked += f;
+	}
+	if (picked.empty()) return std::nullopt;
+	std::string out;
+	AppendCp(out, LowerCp(base.back()));
+	out += ": ";
+	if (picked.size() > 1) out += '[';
+	for (char32_t f : picked) AppendCp(out, f);
+	if (picked.size() > 1) out += ']';
+	return out;
+}
+
+// R10 short corruption term: the shortest prefix of "已汙染" / "Corrupted" (at
+// least 2 CJK / 4 Latin characters: a shorter one is in too much other item text)
+// that hits no other line of the corpus ("已汙", "corr"); nullopt = none is safe.
+std::optional<std::string> ShortCorrupted(const std::string& label, const CondGuard& g)
+{
+	std::u32string base;
+	RxDecodeUtf8(RegexFrag::LabelBase(label), base);
+	bool ascii = true;
+	for (char32_t ch : base) ascii &= ch < 0x80;
+	const size_t minLen = ascii ? 4 : 2;
+	std::string cand;
+	for (size_t k = 0; k + 1 < base.size(); k++) {
+		if (!PlainCp(base[k])) return std::nullopt;
+		AppendCp(cand, LowerCp(base[k]));
+		if (k + 1 < minLen) continue;
+		if (!g.hits || !g.hits(cand)) return cand;
+	}
+	return std::nullopt;
+}
+
+// rarity.ts:94 conditionTerms: the rarity term, the corruption term; neither = nullopt.
+// R10: shortened to what the game prints, unless the guard says the short form
+// hits a corpus line ("退回完整寫法"); the corruption prefix only against a
+// modifier corpus (the item's own lines), else the whole line "^已汙染$".
+std::optional<std::vector<std::string>> ConditionTermsFor(const ConditionLabels& l, const RarityChoice& c, Lang lang, const CondGuard* g)
+{
 	std::vector<std::string> out;
 	std::vector<std::string> vals;
 	for (const AlgoOption& o : l.rarity)
 		if (std::find(c.rarity.begin(), c.rarity.end(), o.id) != c.rarity.end()) vals.push_back(lang == Lang::Zh ? o.zh : o.en);
 	if (!vals.empty() && vals.size() < l.rarity.size()) {
 		const std::string& label = lang == Lang::Zh ? l.label.zh : l.label.en;
-		std::optional<std::string> f;
-		if (vals.size() == 1) {
-			f = RegexFrag::RarityFragment(label, vals[0]);
-		} else {
-			std::string alt;
-			for (size_t i = 0; i < vals.size(); i++) alt += (i ? "|" : "") + JsTrim(vals[i]);
-			f = RegexFrag::LabelBase(label) + u8"[:：] *(" + alt + ")";
+		std::optional<std::string> f = ShortRarity(l, label, c, lang);
+		if (f && g && g->hits && g->hits(*f)) f.reset();
+		if (!f) {
+			if (vals.size() == 1) {
+				f = RegexFrag::RarityFragment(label, vals[0]);
+			} else {
+				std::string alt;
+				for (size_t i = 0; i < vals.size(); i++) alt += (i ? "|" : "") + JsTrim(vals[i]);
+				f = RegexFrag::LabelBase(label) + u8"[:：] *(" + alt + ")";
+			}
 		}
 		if (f) out.push_back(*f);
 	}
 	if (c.corruption != Corruption::None) {
-		if (const std::optional<std::string> line = RegexFrag::WholeLine({lang == Lang::Zh ? l.corrupted.zh : l.corrupted.en}))
-			out.push_back(c.corruption == Corruption::Uncorrupted ? "!" + *line : *line);
+		const std::string& label = lang == Lang::Zh ? l.corrupted.zh : l.corrupted.en;
+		std::optional<std::string> f;
+		if (g && g->itemText) f = ShortCorrupted(label, *g);
+		if (!f) f = RegexFrag::WholeLine({label});
+		if (f) out.push_back(c.corruption == Corruption::Uncorrupted ? "!" + *f : *f);
 	}
 	if (out.empty()) return std::nullopt;
 	return out;
+}
+
+// The step-40 terms of one row on its own, no corpus: rarity short, corruption
+// as the whole line. Used for the row display and the "does it say anything" test.
+std::optional<std::vector<std::string>> ConditionTerms(const ConditionLabels& l, const AlgoValue& v, Lang lang)
+{
+	return ConditionTermsFor(l, ParseRarityChoice(v.choice), lang, nullptr);
 }
 
 } // namespace
@@ -1216,6 +1535,7 @@ std::optional<AlgoEntry> RarityConditionEntry(const RegexLabels* labels, const s
 	e.input.def.choice = def;
 	e.input.def.hasChoice = true;
 	e.terms = [l](const AlgoValue& v, Lang lang) { return ConditionTerms(l, v, lang); };
+	e.condTerms = [l](const RarityChoice& c, Lang lang, const CondGuard* g) { return ConditionTermsFor(l, c, lang, g); };
 	e.fragment = [l](const AlgoValue& v, Lang lang) -> std::optional<std::string> {
 		const std::optional<std::vector<std::string>> ts = ConditionTerms(l, v, lang);
 		if (!ts) return std::nullopt;

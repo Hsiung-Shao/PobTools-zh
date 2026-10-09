@@ -482,20 +482,22 @@ void CompositionTests(const RegexDataset& ds, const std::map<std::string, Game>&
 	AlgoValue t14;
 	t14.min = 14;
 	t14.max = 14;
-	check(F(P1, "map_numeric", "tier", mn(16), Lang::Zh) == u8"階級 *(1[6-9]|[2-9][0-9])）" &&
-	      F(P1, "map_numeric", "tier", mn(16), Lang::En) == "Tier (1[6-9]|[2-9][0-9])\\)" &&
-	      F(P1, "map_numeric", "quantity", mn(80), Lang::Zh) == u8"物品數量[:：] *\\+?([89][0-9]|[1-9][0-9]{2,}) *%" &&
-	      F(P1, "map_numeric", "quantity", mn(80), Lang::En) == u8"Item Quantity[:：] *\\+?([89][0-9]|[1-9][0-9]{2,}) *%" &&
-	      F(P1, "map_numeric", kRarityEntryId, ch("rare"), Lang::Zh) == u8"稀有度[:：] *稀有" &&
-	      F(P1, "map_numeric", kRarityEntryId, ch("normal"), Lang::Zh) == u8"稀有度[:：] *普通" &&
-	      F(P1, "map_numeric", kRarityEntryId, ch("unique"), Lang::En) == u8"Rarity[:：] *Unique",
-	      "PoE1 tier >=16 / quantity >=80 / rarity: the step-35 strict strings");
-	check(F(P2, "waystone_numeric", "pack", mn(20), Lang::Zh) == u8"怪群大小[:：] *\\+?([2-9][0-9]|[1-9][0-9]{2,}) *%" &&
-	      F(P2, "waystone_numeric", "waystone_drop", mn(50), Lang::Zh) == u8"換界石掉落機率[:：] *\\+?([5-9][0-9]|[1-9][0-9]{2,}) *%" &&
-	      F(P2, "waystone_numeric", "monster_rarity", mn(5), Lang::Zh) == u8"怪物稀有度[:：] *\\+?([5-9]|[1-9][0-9]{1,}) *%" &&
-	      F(P2, "waystone_numeric", "rarity", mn(10), Lang::Zh) == u8"物品稀有度[:：] *\\+?[1-9][0-9]{1,} *%" &&
-	      F(P2, "waystone_numeric", kRarityEntryId, ch("rare"), Lang::Zh) == u8"稀有度[:：] *稀有" &&
-	      F(P2, "waystone_numeric", kRarityEntryId, ch("normal"), Lang::Zh) == u8"稀有度[:：] *中" &&
+	// R10: tier >= N runs up to the top tier (PoE1 17); percent lines "label: \+?N%";
+	// the rarity row on its own (no corpus) is the short "度: 稀" form.
+	check(F(P1, "map_numeric", "tier", mn(16), Lang::Zh) == u8"階級 *1[67]）" &&
+	      F(P1, "map_numeric", "tier", mn(16), Lang::En) == "Tier 1[67]\\)" &&
+	      F(P1, "map_numeric", "quantity", mn(80), Lang::Zh) == u8"物品數量: \\+?([89][0-9]|[1-9][0-9]{2,})%" &&
+	      F(P1, "map_numeric", "quantity", mn(80), Lang::En) == u8"Item Quantity: \\+?([89][0-9]|[1-9][0-9]{2,})%" &&
+	      F(P1, "map_numeric", kRarityEntryId, ch("rare"), Lang::Zh) == u8"度: 稀" &&
+	      F(P1, "map_numeric", kRarityEntryId, ch("normal"), Lang::Zh) == u8"度: 普" &&
+	      F(P1, "map_numeric", kRarityEntryId, ch("unique"), Lang::En) == u8"y: u",
+	      "PoE1 tier >=16 / quantity >=80 / rarity: the R10 game-format strings");
+	check(F(P2, "waystone_numeric", "pack", mn(20), Lang::Zh) == u8"怪群大小: \\+?([2-9][0-9]|[1-9][0-9]{2,})%" &&
+	      F(P2, "waystone_numeric", "waystone_drop", mn(50), Lang::Zh) == u8"換界石掉落機率: \\+?([5-9][0-9]|[1-9][0-9]{2,})%" &&
+	      F(P2, "waystone_numeric", "monster_rarity", mn(5), Lang::Zh) == u8"怪物稀有度: \\+?([5-9]|[1-9][0-9]{1,})%" &&
+	      F(P2, "waystone_numeric", "rarity", mn(10), Lang::Zh) == u8"物品稀有度: \\+?[1-9][0-9]{1,}%" &&
+	      F(P2, "waystone_numeric", kRarityEntryId, ch("rare"), Lang::Zh) == u8"度: 稀" &&
+	      F(P2, "waystone_numeric", kRarityEntryId, ch("normal"), Lang::Zh) == u8"度: 中" &&
 	      F(P2, "waystone_numeric", "tier", t14, Lang::Zh) == u8"階級 *14）",
 	      "PoE2 pack / waystone drop / monster rarity / rarity / tier: same shape as the community strings");
 
@@ -678,8 +680,9 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 				const Rx r = comp(ts->front());
 				for (const AlgoOption& opt : e->input.options)
 					for (const char* sep : {": ", u8"：", ":", u8"： "})
+						// R10: the short term follows the game's "稀有度: 稀有" -- only ": " hits
 						if (RxSearch(r, label + sep + (lang == Lang::Zh ? opt.zh : opt.en)) !=
-						    (std::find(pick.begin(), pick.end(), opt.id) != pick.end())) wrong++;
+						    (std::string(sep) == ": " && std::find(pick.begin(), pick.end(), opt.id) != pick.end())) wrong++;
 				for (int n = 0; n <= 999; n++)
 					for (const std::string& lab : {itemR, monR})
 						for (const std::string& l : {lab + ": +" + Num(n) + "%", lab + u8"：+" + Num(n) + "%", lab + ": " + Num(n) + "% (augmented)"})
@@ -691,7 +694,7 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 			}
 		}
 		check(wrong == 0 && falseHits == 0, std::string(g) + ": each of the 14 rarity subsets hits exactly its options' lines in four "
-		      "separator forms; item / monster rarity 0-999 never");
+		      "separator forms (only the game's \": \" hits); item / monster rarity 0-999 never");
 		check(corpusHits == 0, std::string(g) + ": no rarity subset hits any corpus line of either game (" + Num((long long)lines.size()) +
 		      " lines)" + (corpusHits ? " -- " + first : std::string()));
 		// the corrupted term hits the "已汙染" line itself and nothing else in the corpus
@@ -712,14 +715,17 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 		const AlgoEntry& e = *games.at("poe1").Entry("map_numeric", kRarityEntryId);
 		const AlgoEntry& e2 = *games.at("poe2").Entry("waystone_numeric", kRarityEntryId);
 		auto v = [](const std::string& c) { AlgoValue x; x.choice = c; x.hasChoice = true; return x; };
-		check(*e.fragment(v("rare"), Lang::Zh) == *RegexFrag::RarityFragment(u8"稀有度", u8"稀有") &&
-		      *e.fragment(v("rare"), Lang::Zh) == u8"稀有度[:：] *稀有" && *e.fragment(v("normal"), Lang::Zh) == u8"稀有度[:：] *普通" &&
-		      *e.fragment(v("unique"), Lang::En) == u8"Rarity[:：] *Unique" &&
-		      e.terms(v("mr|u"), Lang::Zh) == std::vector<std::string>{u8"稀有度[:：] *(魔法|稀有)", u8"!^已汙染$"} &&
-		      e.terms(v("nru|c"), Lang::En) == std::vector<std::string>{u8"Rarity[:：] *(Normal|Rare|Unique)", "^Corrupted$"} &&
-		      e2.terms(v("nm"), Lang::Zh) == std::vector<std::string>{u8"稀有度[:：] *(中|魔法)"} &&
-		      *e.fragment(v("m|c"), Lang::Zh) == u8"稀有度[:：] *魔法 ^已汙染$",
-		      "rarity row: single = step-35 fragment verbatim; several in fixed order; corruption its own term");
+		// R10: the row on its own (no corpus to shorten against): rarity in the short
+		// "度: 稀" / "度: [魔稀]" form, corruption the whole line; the step-35
+		// rarityFragment stays as the fall-back form.
+		check(*RegexFrag::RarityFragment(u8"稀有度", u8"稀有") == u8"稀有度[:：] *稀有" &&
+		      *e.fragment(v("rare"), Lang::Zh) == u8"度: 稀" && *e.fragment(v("normal"), Lang::Zh) == u8"度: 普" &&
+		      *e.fragment(v("unique"), Lang::En) == u8"y: u" &&
+		      e.terms(v("mr|u"), Lang::Zh) == std::vector<std::string>{u8"度: [魔稀]", u8"!^已汙染$"} &&
+		      e.terms(v("nru|c"), Lang::En) == std::vector<std::string>{u8"y: [nru]", "^Corrupted$"} &&
+		      e2.terms(v("nm"), Lang::Zh) == std::vector<std::string>{u8"度: [中魔]"} &&
+		      *e.fragment(v("m|c"), Lang::Zh) == u8"度: 魔 ^已汙染$",
+		      "rarity row: single = short game-format term; several as a class in fixed order; corruption its own term");
 		auto P = [](const std::string& c) {
 			const RarityChoice r = ParseRarityChoice(c);
 			std::string o;
@@ -762,7 +768,9 @@ void StrictTests(const RegexDataset& ds, const std::map<std::string, Game>& game
 		const Rx zh = comp(*tier.fragment(v, Lang::Zh));
 		const Rx en = comp(*tier.fragment(v, Lang::En));
 		for (int n = 0; n <= 99; n++) {
-			const bool ok = (!c.mn || n >= *c.mn) && (!c.mx || n <= *c.mx);
+			// R10: a >= condition stops at the top tier (PoE1 17) unless it starts above it
+			const bool capped = c.mn && !c.mx && *c.mn <= tier.input.hi;
+			const bool ok = (!c.mn || n >= *c.mn) && (!c.mx || n <= *c.mx) && (!capped || n <= tier.input.hi);
 			const std::string N = Num(n);
 			for (const std::string& t : {u8"地圖（階級 " + N + u8"）", u8"凋落的 地圖（階級 " + N + u8"）", u8"換界石（階級 " + N + u8"）", u8"堅定的地圖（階級" + N + u8"）"})
 				if (RxSearch(zh, t) != ok) { if (!wrong++) first = t; }
@@ -962,7 +970,7 @@ void CombineTests(const std::map<std::string, Game>& games)
 		b.picks = {0, 1};
 		b.values = &vals;
 		const CombineResult r = CombineSingle(Lang::Zh, Mode::Any, {a, b});
-		const std::string want = a.corpus->Build(picks, Mode::Any).query + u8" \"階級 *(1[6-9]|[2-9][0-9])）\" \"物品數量[:：] *\\+?([89][0-9]|[1-9][0-9]{2,}) *%\"";
+		const std::string want = a.corpus->Build(picks, Mode::Any).query + u8" \"階級 *1[67]）\" \"物品數量: \\+?([89][0-9]|[1-9][0-9]{2,})%\"";   // R10 format
 		int sum = 0;
 		for (const PageContribution& c : r.perPage) sum += c.length;
 		check(picks.size() == 3 && r.query == want && r.ok && r.check.ok && r.perPage.size() == 2 &&

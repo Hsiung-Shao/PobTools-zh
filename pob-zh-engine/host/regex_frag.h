@@ -48,8 +48,9 @@ std::string LabelBase(const std::string& label);
 std::optional<std::string> PropertyFragment(const std::string& label, const AlgoValue& v,
                                             int digits, bool percent, bool anchorStart = false);
 
-// frag.ts:47 strictPropertyFragment: "label[:：] *\+?<n> *%" (map / waystone
-// numeric section).
+// frag.ts:47 strictPropertyFragment (map / waystone numeric section). R10: the
+// percent form is "label: \+?<n>%", the way the game prints the line
+// ("怪群大小: +13% (augmented)"); the non-percent form is unchanged.
 std::optional<std::string> StrictPropertyFragment(const std::string& label, const AlgoValue& v,
                                                   int digits, bool percent);
 
@@ -60,8 +61,9 @@ enum class Lang { Zh, En };
 bool IsTierNameLine(const std::string& line);
 
 // frag.ts:82 mapTierFragment: the tier sits at the end of the item NAME
-// ("地圖（階級 16）", "Map (Tier 16)"), not on a property line.
-std::optional<std::string> MapTierFragment(const AlgoValue& v, int digits, Lang lang);
+// ("地圖（階級 16）", "Map (Tier 16)"), not on a property line. R10: `hi` > 0 =
+// the highest tier there is; a >= condition then becomes the range min..hi.
+std::optional<std::string> MapTierFragment(const AlgoValue& v, int digits, Lang lang, int hi = 0);
 
 // frag.ts:92 rarityFragment: "稀有度[:：] *稀有"
 std::optional<std::string> RarityFragment(const std::string& label, const std::string& value);

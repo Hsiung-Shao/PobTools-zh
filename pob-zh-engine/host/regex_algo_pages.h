@@ -65,6 +65,25 @@ struct AlgoInput {
 	AlgoValue def;
 };
 
+// rarity.ts:30 Corruption / :32 RarityChoice
+enum class Corruption { None, Uncorrupted, Corrupted };
+struct RarityChoice {
+	std::vector<std::string> rarity;   // option ids in the fixed order normal, magic, rare, unique
+	Corruption corruption = Corruption::None;
+};
+
+// R10: what the rarity | corruption terms may be shortened against. `hits` tells
+// whether a candidate fragment matches some line of the corpus pages taking part
+// (entries, hidden text, ambient; the "已汙染" line itself excluded); `itemText`
+// = one of them is a modifier list (Mods), i.e. the corpus stands for the lines
+// of the item being searched. Null guard = no corpus at all.
+struct CondGuard {
+	std::function<bool(const std::string&)> hits;
+	bool itemText = false;
+};
+// R10: the rarity | corruption terms for an already merged choice; nullopt = no term.
+using CondTermsFn = std::function<std::optional<std::vector<std::string>>(const RarityChoice&, Lang, const CondGuard*)>;
+
 using FragmentFn = std::function<std::optional<std::string>(const AlgoValue&, Lang)>;
 using OwnLineFn = std::function<bool(const std::string&)>;
 // pages/types.ts AlgoEntry.terms (step 40): one row -> several AND terms; nullopt = invalid.
@@ -80,6 +99,10 @@ struct AlgoEntry {
 	// Set on the rarity | corruption row: Combine adds each term on its own and
 	// `fragment` is only the display (terms joined by a space).
 	TermsFn terms;
+	// R10, set on the rarity | corruption row: Combine merges every such row of the
+	// pages taking part into one choice (rarity sets intersected, corruption
+	// agreed) and asks this for the terms, with the corpus guard.
+	CondTermsFn condTerms;
 	// The corpus line (with '#') is itself what this entry matches (the tier
 	// fragment and map names): skipped by the fragment conflict check.
 	OwnLineFn ownLine;
@@ -116,12 +139,6 @@ extern const char* const kRarityEntryId;   // numeric-pages.ts:50 RARITY_ENTRY_I
 // rarity.ts:28 RARITY_LABEL_KEYS: label, the four rarities, ItemPopupCorrupted.
 const std::vector<std::string>& RarityLabelKeys();
 
-// rarity.ts:30 Corruption / :32 RarityChoice
-enum class Corruption { None, Uncorrupted, Corrupted };
-struct RarityChoice {
-	std::vector<std::string> rarity;   // option ids in the fixed order normal, magic, rare, unique
-	Corruption corruption = Corruption::None;
-};
 // rarity.ts:39 parseRarityChoice: legacy single words read as that one; any
 // other malformed value = nothing picked.
 RarityChoice ParseRarityChoice(const std::string& choice);
@@ -151,6 +168,25 @@ std::string SectionHostOf(const std::string& pageId);
 std::string SectionIdOf(const std::string& hostId);
 // sections.ts:33 numericKeyOf: values of a section live under the host page id.
 std::string NumericKeyOf(const std::string& pageId);
+
+// ---- item groups (R10): merging only within one kind of item -----------------
+
+// The item group a page belongs to. vendor_bases, vendor_items, vendor_items_poe2,
+// item_mod_values, item_mod_values_poe2, flask_mods, flask_charm_mods, gem_names ->
+// "equipment"; a section (*_numeric, *_cond) -> its host's group (SectionHostOf);
+// any other page -> a group of its own, named by the page id.
+std::string ItemGroupOf(const std::string& pageId);
+
+// Which ticked pages the merged output takes when the panel shows `currentId`.
+// `pickedIds`: the ids of the pages (sections included) that have ticks, in
+// combine order. `merged`: those in the current page's item group, order kept.
+// `skippedPages`: how many pages were left out, a section counted together with
+// its host (host + section left out = 1).
+struct MergePlan {
+	std::vector<std::string> merged;
+	int skippedPages = 0;
+};
+MergePlan PlanMerge(const std::string& currentId, const std::vector<std::string>& pickedIds);
 
 // ---- page list (pages/index.ts) ---------------------------------------------
 
@@ -250,7 +286,10 @@ struct PageContribution {
 };
 
 // combine.ts:46 ConflictKind
-enum class ConflictKind { Extra, Missing, Ambient, Fragment, Exclude, Invalid };
+// ConditionClash (R10): two merged pages ask for rarity / corruption conditions
+// that cannot both hold (rarity sets with an empty intersection, uncorrupted vs
+// corrupted); the result is not ok.
+enum class ConflictKind { Extra, Missing, Ambient, Fragment, Exclude, Invalid, ConditionClash };
 const char* ConflictKindId(ConflictKind k);   // "extra" ... as in combine.ts:46
 
 // combine.ts:48 Conflict. `page` / `entry` empty when the TS leaves them undefined.
@@ -285,7 +324,17 @@ struct CombineResult {
 	// panel's single-page details; empty when no corpus page had picks.
 	RegexGen::Result corpusResult;
 	bool hasCorpus = false;
+	// combine.ts classTerm: the item-class term, quoted ("\"碑牌\""); empty = none
+	// (TS null). Counted in `length`.
+	std::string classTerm;
 };
+
+// class-term.ts:15 classTermOf: the text every item of this page's class prints in
+// its name ("碑牌" / "tablet" for poe2 tablet_mods); "" = none.
+std::string ClassTermOf(const RegexPageDef& page, Lang lang);
+// class-term.ts:20 sharedClassTerm: the ticked corpus pages' common class term,
+// only when ALL of them have the same one; "" otherwise.
+std::string SharedClassTerm(const std::vector<const RegexPageDef*>& pages, Lang lang);
 
 // JS String.prototype.trim: WhiteSpace + LineTerminator code points off both ends
 // (store.ts addCustom trims the typed text with it; escapeTerm trims again).

@@ -806,7 +806,7 @@ void RarityTests(std::map<std::string, Game>& G)
 			ok = ok && q.query == u8"^已汙染$";
 			const CombineResult q2 = CombineOnly(g, {{vid, {ci}}}, {{vid, {{"corrupted", Ch({"rare"}, Corruption::Uncorrupted)}}}}, vid,
 			                                     Lang::En, Mode::Any);
-			ok = ok && q2.query == u8"\"Rarity[:：] *Rare\" \"!^Corrupted$\"";
+			ok = ok && q2.query == u8"\"y: r\" \"!^Corrupted$\"";   // R10: short rarity term
 		}
 		check(ok, u8"商店頁：原「已汙染」列換成條件列，id 仍是 corrupted、預設只有已汙染 → 舊勾選輸出逐字相同（^已汙染$）");
 	}
@@ -821,7 +821,7 @@ void RarityTests(std::map<std::string, Game>& G)
 			const CombineResult r = CombineOnly(g, {{"vendor_bases", {0}}, {sec->id, {0}}},
 			                                    {{"vendor_bases", {{kRarityEntryId, Ch({"normal", "magic"}, Corruption::Uncorrupted)}}}},
 			                                    "vendor_bases", Lang::Zh, mode);
-			const std::string want = u8"\"稀有度[:：] *(中|魔法)\" \"!^已汙染$\"";
+			const std::string want = u8"\"度: [中魔]\" \"!^已汙染$\"";   // R10: short rarity term; base names are no item text -> whole 已汙染 line
 			bool m = r.query.find(want) != std::string::npos;
 			const std::string tail = u8" \"!^已汙染$\"";
 			if (mode != Mode::None)
@@ -829,7 +829,7 @@ void RarityTests(std::map<std::string, Game>& G)
 			const PageContribution* pc = nullptr;
 			for (const PageContribution& c : r.perPage)
 				if (c.id == sec->id) pc = &c;
-			m = m && pc && pc->fragments == std::vector<std::string>{u8"稀有度[:：] *(中|魔法)", u8"!^已汙染$"} &&
+			m = m && pc && pc->fragments == std::vector<std::string>{u8"度: [中魔]", u8"!^已汙染$"} &&
 			    pc->length == RegexGen::CharCount(want + " ") && r.conflicts.empty();
 			if (!m) { ok = false; why = r.query; }
 		}
@@ -869,7 +869,7 @@ void RarityTests(std::map<std::string, Game>& G)
 		PageRef sr;
 		sr.algo = sec;
 		const CombineResult q = CombineOnly(g, {{sec->id, {EntryIdx(sr, kRarityEntryId)}}}, vm, "waystone_mods", Lang::Zh, Mode::Any);
-		check(parsed && q.query == u8"\"稀有度[:：] *魔法\"", u8"schema 5 state 的 item_rarity_class 舊單字照讀，輸出與第 35 步相同：" + q.query);
+		check(parsed && q.query == u8"\"度: 魔\"", u8"schema 5 state 的 item_rarity_class 舊單字照讀（R10 短片段）：" + q.query);
 	}
 	// 書籤: vendor_bases + its condition section round trip
 	{
@@ -881,7 +881,7 @@ void RarityTests(std::map<std::string, Game>& G)
 		const std::optional<RegexBookmark> body = RegexEmbed::BookmarkBodyOf(g.pages, *host, picks, values, "poe1", "any", "zh");
 		const std::string want = CombineOnly(g, picks, values, "vendor_bases", Lang::Zh, Mode::Any).query;
 		bool ok = body && body->num == std::vector<std::string>{kRarityEntryId} && body->numeric.size() == 1 &&
-		          body->numeric[0].second.choice == "n|u" && want.find(u8"\"稀有度[:：] *普通\" \"!^已汙染$\"") != std::string::npos;
+		          body->numeric[0].second.choice == "n|u" && want.find(u8"\"度: 普\" \"!^已汙染$\"") != std::string::npos;
 		if (ok) {
 			const std::optional<RegexEmbed::BookmarkApply> a = RegexEmbed::BookmarkApplyOf(g.pages, *body);
 			RegexEmbed::PicksMap bp;
@@ -913,7 +913,7 @@ void RarityTests(std::map<std::string, Game>& G)
 			const RegexEmbed::PicksMap picks{{pid, {0}}, {sec->id, {0}}};
 			const RegexEmbed::ValuesMap values{{pid, {{e0, seven}, {kRarityEntryId, Ch({"rare"}, Corruption::Uncorrupted)}}}};
 			const std::string want = CombineOnly(g, picks, values, pid, Lang::En, Mode::Any).query;
-			const std::string tail = u8" \"Rarity[:：] *Rare\" \"!^Corrupted$\"";
+			const std::string tail = u8" \"y: r\" \"!^Corrupted$\"";   // R10: short rarity term
 			if (want.size() < tail.size() || want.compare(want.size() - tail.size(), tail.size(), tail) != 0) { why = want; continue; }
 			// bookmark
 			const std::optional<RegexBookmark> body = RegexEmbed::BookmarkBodyOf(g.pages, *page, picks, values, gid, "any", "en");

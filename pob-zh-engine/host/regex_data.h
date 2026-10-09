@@ -27,6 +27,10 @@ struct RegexEntryDef {
 	// Optional in the file; an older catalogue simply has none.
 	std::vector<std::string> hiddenZh;
 	std::vector<std::string> hiddenEn;
+	// Other wordings the same modifier prints at another roll (「一個」 at 1,
+	// 「#個」 at 2) -- RegexGen::Entry::alts. Optional, like the hidden text.
+	std::vector<std::string> altZh;
+	std::vector<std::string> altEn;
 };
 
 // Page kind (schema 2 `kind`, exile-appraiser regex/src/data.ts:27): mods /

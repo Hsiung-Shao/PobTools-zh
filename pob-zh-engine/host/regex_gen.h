@@ -81,6 +81,13 @@ struct Entry {
 	// consulted for "would this token also hit something else". '#' works here
 	// exactly as it does in `texts`.
 	std::vector<std::string> hidden;
+	// Other wordings the same modifier prints in place of `texts` at another
+	// roll: 「地圖內含有額外的一個保險箱」 at 1, 「…額外的#個保險箱」 at 2;
+	// "an additional Strongbox" / "# additional Strongboxes". A token finds the
+	// entry only if it also certainly matches every one of these -- otherwise
+	// the search misses the items that rolled the other value. Like hidden text
+	// they never propose a token, and they veto one for everyone else.
+	std::vector<std::string> alts;
 };
 
 // Text present on EVERY item of the page, so any token that hits it hits
