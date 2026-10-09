@@ -338,6 +338,76 @@ std::optional<std::string> GenericOf(const IM::ModAnchor& a)
 	return IM::Fragment(a, any);
 }
 
+// ---- multi-form alternation: every form, rebuilt from the anchor -------------------------
+// The anchor's alt (B 00bb297) says which UTF-16 run [at, at+len) of p or s the group replaces;
+// form k = that side with opts[k] in place of the run, joined around '#' (an alternated anchor
+// is always caret + dollar, so p / s are the whole line's two halves). Local UTF-8 <-> UTF-16
+// so this does not lean on the implementation's own helpers.
+std::u16string U16Of(const std::string& s)
+{
+	std::u16string out;
+	for (size_t i = 0; i < s.size();) {
+		const unsigned char c = (unsigned char)s[i];
+		char32_t cp;
+		size_t n;
+		if (c < 0x80) { cp = c; n = 1; }
+		else if ((c >> 5) == 6 && i + 1 < s.size()) { cp = ((c & 0x1F) << 6) | (s[i + 1] & 0x3F); n = 2; }
+		else if ((c >> 4) == 14 && i + 2 < s.size()) { cp = ((c & 0x0F) << 12) | ((s[i + 1] & 0x3F) << 6) | (s[i + 2] & 0x3F); n = 3; }
+		else if ((c >> 3) == 30 && i + 3 < s.size()) {
+			cp = ((c & 0x07) << 18) | ((s[i + 1] & 0x3F) << 12) | ((s[i + 2] & 0x3F) << 6) | (s[i + 3] & 0x3F);
+			n = 4;
+		} else { cp = 0xFFFD; n = 1; }
+		if (cp >= 0x10000) {
+			cp -= 0x10000;
+			out += (char16_t)(0xD800 + (cp >> 10));
+			out += (char16_t)(0xDC00 + (cp & 0x3FF));
+		} else {
+			out += (char16_t)cp;
+		}
+		i += n;
+	}
+	return out;
+}
+std::string U8Of(const std::u16string& s)
+{
+	std::string out;
+	for (size_t i = 0; i < s.size(); i++) {
+		char32_t cp = s[i];
+		if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < s.size() && s[i + 1] >= 0xDC00 && s[i + 1] <= 0xDFFF) {
+			cp = 0x10000 + ((cp - 0xD800) << 10) + (s[i + 1] - 0xDC00);
+			i++;
+		}
+		if (cp < 0x80) out += (char)cp;
+		else if (cp < 0x800) { out += (char)(0xC0 | (cp >> 6)); out += (char)(0x80 | (cp & 0x3F)); }
+		else if (cp < 0x10000) {
+			out += (char)(0xE0 | (cp >> 12));
+			out += (char)(0x80 | ((cp >> 6) & 0x3F));
+			out += (char)(0x80 | (cp & 0x3F));
+		} else {
+			out += (char)(0xF0 | (cp >> 18));
+			out += (char)(0x80 | ((cp >> 12) & 0x3F));
+			out += (char)(0x80 | ((cp >> 6) & 0x3F));
+			out += (char)(0x80 | (cp & 0x3F));
+		}
+	}
+	return out;
+}
+// Every form of an alternated anchor, in opts order (empty = no alt, or a malformed one: at /
+// len outside the side, or the anchor not caret + dollar -- the caller reports that).
+std::vector<std::string> AltForms(const IM::ModAnchor& a)
+{
+	std::vector<std::string> out;
+	if (!a.alt || !a.caret || !a.dollar) return out;
+	const IM::AltSeg& alt = *a.alt;
+	const std::u16string side = U16Of(alt.side == 'p' ? a.p : a.s);
+	if (alt.at < 0 || alt.len < 0 || (size_t)alt.at + (size_t)alt.len > side.size()) return out;
+	for (const std::string& o : alt.opts) {
+		const std::string t = U8Of(side.substr(0, (size_t)alt.at)) + o + U8Of(side.substr((size_t)alt.at + (size_t)alt.len));
+		out.push_back(alt.side == 'p' ? t + "#" + a.s : a.p + "#" + t);
+	}
+	return out;
+}
+
 // filterKey: the longest digit-free stretch of p \u0001 s, lower-cased.
 std::string FilterKey(const IM::ModAnchor& a)
 {
@@ -357,6 +427,7 @@ std::string FilterKey(const IM::ModAnchor& a)
 
 void UniquenessTests(GameData& g, const std::string& game)
 {
+	long long gameAlt = 0, gameAltForms = 0;
 	for (Lang l : {Lang::Zh, Lang::En}) {
 		const DWORD t0 = GetTickCount();
 		const std::vector<IM::StatLite>& st = l == Lang::Zh ? g.zh : g.en;
@@ -379,6 +450,7 @@ void UniquenessTests(GameData& g, const std::string& game)
 				for (const std::string& part : SplitNl(str)) cur.insert(SameKey(part, l));
 		}
 		long long checkedLines = 0, checkedStrings = 0, aborted = 0;
+		long long altEntries = 0, altForms = 0, selfChecks = 0;
 		std::vector<std::string> bad;
 		std::vector<std::string> inst;
 		RxFlags fl;
@@ -428,15 +500,43 @@ void UniquenessTests(GameData& g, const std::string& game)
 			if (p != std::string::npos) self.replace(p, 1, "12");
 			if (!RxSearch(*re, self)) bad.push_back(u8"自己不中：" + e.ref + " | " + *gen);
 			if (!RxSearch(*re, self + kMarker)) bad.push_back(u8"自己加標記不中：" + e.ref + " | " + *gen);
+			selfChecks += 2;
+			// a multi-form alternation: every further form too, plain and with '+', each also with the marker
+			if (a.alt) {
+				const std::vector<std::string> forms = AltForms(a);
+				altEntries++;
+				if (forms.size() < 2 || forms[0] != StripPlusTrim(l == Lang::Zh ? e.zh : e.en)) {
+					bad.push_back(u8"交替寫法還原失敗：" + e.ref + " | " + (forms.empty() ? std::string("-") : forms[0]));
+					continue;
+				}
+				altForms += (long long)forms.size();
+				for (size_t k = 1; k < forms.size(); k++)
+					for (const char* v : {"12", "+12"})
+						for (int mk = 0; mk < 2; mk++) {
+							std::string f = forms[k];
+							f.replace(f.find('#'), 1, v);
+							if (mk) f += kMarker;
+							selfChecks++;
+							if (!RxSearch(*re, f))
+								bad.push_back(u8"第 " + Num((long long)k + 1) + (mk ? u8" 種寫法加標記不中：" : u8" 種寫法不中：") + e.ref +
+								              " | " + f + " | " + *gen);
+						}
+			}
 		}
 		std::string first;
 		for (size_t i = 0; i < bad.size() && i < 5; i++) first += "\n      " + bad[i];
+		gameAlt += altEntries;
+		gameAltForms += altForms;
 		check(bad.empty() && aborted == 0 && checkedLines > 0,
 		      u8"R7 唯一性（全量）" + game + (l == Lang::Zh ? " zh" : " en") + u8"：" + Num((long long)g.data.entries.size()) +
 		          u8" 條 × 候選行 " + Num(checkedLines) + u8" 行 / " + Num(checkedStrings) + u8" 個實例，" +
 		          Num((long long)bad.size()) + u8" 命中" + (aborted ? u8"，" + Num(aborted) + u8" 次比對器中止" : std::string()) +
-		          u8"（" + Num((long long)(GetTickCount() - t0)) + " ms）" + first);
+		          u8"；自己命中 " + Num(selfChecks) + u8" 次（交替條目 " + Num(altEntries) + u8" 條 / 寫法 " + Num(altForms) +
+		          u8" 種，每種都測）（" + Num((long long)(GetTickCount() - t0)) + " ms）" + first);
 	}
+	// not hollow: the game's data must carry at least one multi-form alternation (either language)
+	check(gameAlt > 0, u8"R7 唯一性 " + game + u8"：交替寫法自身命中確有受測（兩語合計交替條目 " + Num(gameAlt) + u8" 條 / 寫法 " +
+	                       Num(gameAltForms) + u8" 種）");
 }
 
 // ---- item-mods.test.ts (2): own template, value by value -----------------------------
@@ -457,6 +557,7 @@ void ValueTests(GameData& g, const std::string& game)
 	for (long long v : {1000LL, 1001LL, 1234LL, 2000LL, 9999LL, 12345LL}) allValues.push_back(v);
 	std::vector<std::string> bad;
 	long long full = 0, edges = 0, tests = 0;
+	long long altEntries[2] = {0, 0}, altForms[2] = {0, 0}, altTests = 0;
 	RxFlags fl;
 	fl.icase = false;   // new RegExp(f) without flags in the TS
 	for (size_t idx = 0; idx < g.data.entries.size(); idx++) {
@@ -473,7 +574,19 @@ void ValueTests(GameData& g, const std::string& game)
 		conds[2].v.min = (double)m; conds[2].v.max = (double)top; conds[2].lo = m; conds[2].hi = top;
 		for (Lang l : {Lang::Zh, Lang::En}) {
 			const int rot = (int)(idx % 3);
-			const std::string& tmpl = l == Lang::Zh ? e.zh : e.en;
+			// the template, then (multi-form alternation) every further form rebuilt from the anchor
+			std::vector<std::string> tmpls{l == Lang::Zh ? e.zh : e.en};
+			const IM::ModAnchor& la = e.Anchor(l);
+			if (la.alt) {
+				const std::vector<std::string> forms = AltForms(la);
+				altEntries[l == Lang::Zh ? 0 : 1]++;
+				if (forms.size() < 2 || forms[0] != StripPlusTrim(tmpls[0])) {
+					bad.push_back(u8"交替寫法還原失敗：" + e.ref + " | " + (forms.empty() ? std::string("-") : forms[0]));
+					continue;
+				}
+				altForms[l == Lang::Zh ? 0 : 1] += (long long)forms.size();
+				tmpls.insert(tmpls.end(), forms.begin() + 1, forms.end());
+			}
 			for (int ci = 0; ci < 3; ci++) {
 				const Cond& c = conds[ci];
 				std::vector<long long> values;
@@ -497,28 +610,37 @@ void ValueTests(GameData& g, const std::string& game)
 					bad.push_back("compile " + *f);
 					continue;
 				}
-				for (long long n : values) {
-					for (bool plus : {false, true}) {
-						const bool want = n >= c.lo && n <= c.hi;
-						// the full 0..999 sweep plain; the edges also with the line-end marker (same verdict)
-						for (int mk = 0; mk < (ci == rot ? 1 : 2); mk++) {
-							tests++;
-							const std::string text = Shown(tmpl, n, plus) + (mk ? kMarker : "");
-							if (RxSearch(*re, text) != want) {
-								bad.push_back(e.ref + (l == Lang::Zh ? " [zh] " : " [en] ") + *f + u8" 對「" + text + u8"」判斷錯");
-								goto next;
+				for (size_t k = 0; k < tmpls.size(); k++) {
+					const std::string& tmpl = tmpls[k];
+					for (long long n : values) {
+						for (bool plus : {false, true}) {
+							const bool want = n >= c.lo && n <= c.hi;
+							// the full 0..999 sweep plain; the edges also with the line-end marker (same verdict)
+							for (int mk = 0; mk < (ci == rot ? 1 : 2); mk++) {
+								tests++;
+								if (k) altTests++;
+								const std::string text = Shown(tmpl, n, plus) + (mk ? kMarker : "");
+								if (RxSearch(*re, text) != want) {
+									bad.push_back(e.ref + (l == Lang::Zh ? " [zh] " : " [en] ") +
+									              (k ? u8"第 " + Num((long long)k + 1) + u8" 種寫法 " : std::string()) + *f + u8" 對「" +
+									              text + u8"」判斷錯");
+									goto next;
+								}
 							}
 						}
 					}
+				next:;
 				}
-			next:;
 			}
 		}
 	}
 	std::string first;
 	for (size_t i = 0; i < bad.size() && i < 5; i++) first += "\n      " + bad[i];
-	check(bad.empty(), u8"R7 自身模板逐值 " + game + u8"：" + Num(full) + u8" 組（詞綴 × 語言）0–999 逐值 + " + Num(edges) +
-	                       u8" 組邊界，共 " + Num(tests) + u8" 次比對（" + Num((long long)(GetTickCount() - t0)) + " ms）" + first);
+	check(bad.empty() && altEntries[0] + altEntries[1] > 0 && altTests > 0,
+	      u8"R7 自身模板逐值 " + game + u8"：" + Num(full) + u8" 組（詞綴 × 語言）0–999 逐值 + " + Num(edges) + u8" 組邊界，共 " +
+	          Num(tests) + u8" 次比對；交替條目 繁中 " + Num(altEntries[0]) + u8" 條 / 寫法 " + Num(altForms[0]) + u8" 種、英文 " +
+	          Num(altEntries[1]) + u8" 條 / 寫法 " + Num(altForms[1]) + u8" 種，第 2 種以後的寫法逐值 " + Num(altTests) + u8" 次（" +
+	          Num((long long)(GetTickCount() - t0)) + " ms）" + first);
 }
 
 // ---- spelled-out checks -----------------------------------------------------------------
