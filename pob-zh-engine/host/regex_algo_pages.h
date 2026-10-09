@@ -172,7 +172,7 @@ std::string NumericKeyOf(const std::string& pageId);
 // ---- item groups (R10): merging only within one kind of item -----------------
 
 // The item group a page belongs to. vendor_bases, vendor_items, vendor_items_poe2,
-// item_mod_values, item_mod_values_poe2, flask_mods, flask_charm_mods ->
+// item_mod_values, item_mod_values_poe2, flask_mods, flask_charm_mods, gem_names ->
 // "equipment"; a section (*_numeric, *_cond) -> its host's group (SectionHostOf);
 // any other page -> a group of its own, named by the page id.
 std::string ItemGroupOf(const std::string& pageId);

@@ -314,7 +314,7 @@ void GroupTests(const std::map<std::string, Game>& games)
 	// G3
 	{
 		const std::set<std::string> equip = {"vendor_bases", "vendor_items", "vendor_items_poe2", "item_mod_values",
-		                                     "item_mod_values_poe2", "flask_mods", "flask_charm_mods"};
+		                                     "item_mod_values_poe2", "flask_mods", "flask_charm_mods", "gem_names"};
 		int missing = 0, wrongEquip = 0, wrongSection = 0, wrongOwn = 0;
 		std::string first;
 		for (const auto& kv : games) {
@@ -337,6 +337,7 @@ void GroupTests(const std::map<std::string, Game>& games)
 		}
 		check(missing == 0, u8"G3 物品組對照完整：兩遊戲每頁都有組（缺 " + Num(missing) + u8"）" + (first.empty() ? "" : u8"，首例 " + first));
 		check(wrongEquip == 0 && ItemGroupOf("vendor_bases") == "equipment" && ItemGroupOf("flask_charm_mods") == "equipment" &&
+		      ItemGroupOf("gem_names") == "equipment" &&
 		      ItemGroupOf("item_mod_values_poe2") == "equipment" && ItemGroupOf("vendor_items") == "equipment",
 		      u8"G3 物品組對照完整：裝備組成員（商店基底 / 商店物品 / 物品詞綴數值 / 藥劑 / 護符）都是 equipment");
 		check(wrongSection == 0 && ItemGroupOf("waystone_numeric") == ItemGroupOf("waystone_mods") &&
@@ -407,6 +408,35 @@ void GroupTests(const std::map<std::string, Game>& games)
 		const MergePlan q = PlanMerge("item_mod_values_poe2", {"vendor_bases", "item_mod_values_poe2", "tablet_mods"});
 		check(q.merged == std::vector<std::string>{"vendor_bases", "item_mod_values_poe2"} && q.skippedPages == 1,
 		      u8"G2 裝備組可合併：從物品詞綴數值頁看，商店基底併入、碑牌不併入（1 頁）");
+	}
+
+	// G5 (2026-10-09, user-approved spec change): gem names + the vendor page's gem level merge.
+	for (const auto& kv : games) {
+		const Game& G = kv.second;
+		const std::string vid = kv.first == "poe2" ? "vendor_items_poe2" : "vendor_items";
+		const RegexPageDef* gems = G.Corpus("gem_names");
+		const AlgoPage* vendor = G.Algo(vid);
+		const int gl = vendor ? IdxOf(*vendor, "gem_level") : -1;
+		if (!gems || gems->entries.empty() || gl < 0) {
+			check(false, u8"G5 前提（" + kv.first + u8"）：gem_names 有寶石、" + vid + u8" 有寶石等級列");
+			continue;
+		}
+		const MergePlan p = PlanMerge("gem_names", {"gem_names", vid});
+		ValueMap vv;
+		vv["gem_level"] = Min(3);
+		std::vector<CombineSel> sels;
+		for (const CombineSel& s : {CorpusSel(gems, {0}, Lang::Zh), AlgoSel(vendor, {gl}, &vv)}) {
+			const std::string id = s.page.Id();
+			if (Has(p.merged, id)) sels.push_back(s);
+		}
+		const CombineResult r = Combine(Lang::Zh, Mode::Any, sels);
+		int contributed = 0;
+		for (const PageContribution& c : r.perPage) contributed += c.picked > 0;
+		check(p.merged == std::vector<std::string>{"gem_names", vid} && p.skippedPages == 0 && contributed == 2,
+		      u8"G5 寶石名稱與商店物品條件可合併（" + kv.first + u8"）：以 gem_names 為目前頁，寶石 + 寶石等級 ≥3 兩頁都併入 -- " + r.query);
+		const MergePlan q = PlanMerge("tablet_mods", {"gem_names", "tablet_mods"});
+		check(q.merged == std::vector<std::string>{"tablet_mods"} && q.skippedPages == 1,
+		      u8"G5 寶石名稱與商店物品條件可合併（" + kv.first + u8"）：反向，以碑牌為目前頁時 gem_names 不併入（1 頁）");
 	}
 }
 

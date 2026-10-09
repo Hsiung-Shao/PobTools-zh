@@ -711,7 +711,8 @@ const char* ConflictKindId(ConflictKind k)
 std::string ItemGroupOf(const std::string& pageId)
 {
 	static const char* const kEquipment[] = {"vendor_bases",         "vendor_items", "vendor_items_poe2", "item_mod_values",
-	                                         "item_mod_values_poe2", "flask_mods",   "flask_charm_mods"};
+	                                         "item_mod_values_poe2", "flask_mods",   "flask_charm_mods",
+	                                         "gem_names"};   // gems: with the vendor page's gem level / quality
 	const std::string host = NumericKeyOf(pageId);
 	for (const char* e : kEquipment)
 		if (host == e) return "equipment";
