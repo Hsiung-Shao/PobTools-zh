@@ -31,6 +31,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace RegexItemMods {
@@ -84,12 +85,40 @@ bool LoadStats(const std::wstring& exeDir, const std::string& game, std::vector<
 // such as "base_maximum_life" -- anything not shaped like a trade id (see .cpp).
 bool IsLegacyKey(const std::string& key);
 
-// item-mods.ts:401 ModAnchor (p / s in UTF-8; cost in UTF-16 units)
+// item-mods.ts ModAnchor.alt (B 00bb297): the multi-form arbitration's
+// alternation. `side` ('p' or 's') names the part whose UTF-16 units [at, at+len)
+// (= the first form's differing run, opts[0]) are replaced by the group
+// `(opts...)` / `(X)?`. Absent = a single form (the output before 00bb297).
+struct AltSeg {
+	char side = 'p';
+	int at = 0, len = 0;                 // UTF-16 units into p / s
+	std::vector<std::string> opts;       // UTF-8, the forms' differing runs in order
+};
+
+// item-mods.ts ModAnchor (p / s in UTF-8; cost in UTF-16 units, the alternation
+// group included when `alt` is set)
 struct ModAnchor {
 	std::string p, s;
 	bool caret = false, dollar = false, plus = false;
 	int cost = 0;
+	std::optional<AltSeg> alt;
 };
+
+// item-mods.ts LINE_END (B 189988e): what a fragment's line-end anchor prints --
+// the end of the line, or the " (" a fractured / marked line goes on with.
+extern const char* const kLineEnd;   // "($| \()"
+
+// item-mods.ts ItemModForms / parseItemModForms (B 00bb297): the arbitration file
+// data/regex/item-mod-forms.json for one game, key "<statId>|<ref>" -> the forms
+// the site lists (stats.ndjson matcher strings, in order). nullopt = not schema 1
+// / not JSON / no such game (the caller then builds without arbitration).
+struct ItemModForms {
+	std::unordered_map<std::string, std::vector<std::string>> zh, en;
+};
+std::optional<ItemModForms> ParseItemModForms(const std::string& text, const std::string& game);
+// Data\regex_stats\item-mod-forms.json.gz, inflated and parsed (node.ts
+// loadItemModData: present -> parsed, missing / broken -> nullopt).
+std::optional<ItemModForms> LoadForms(const std::wstring& exeDir, const std::string& game);
 
 // item-mods.ts:394 escapeFragText
 std::string EscapeFragText(const std::string& s);
@@ -133,9 +162,11 @@ struct Data {
 };
 
 // item-mods.ts:497 buildItemModData
-Data BuildData(const std::string& game, const std::vector<StatLite>& zh, const std::vector<StatLite>& en);
+// `forms` null = no arbitration (B's 4th parameter omitted / null).
+Data BuildData(const std::string& game, const std::vector<StatLite>& zh, const std::vector<StatLite>& en,
+               const ItemModForms* forms = nullptr);
 
-// LoadStats + BuildData (node.ts:56 loadItemModData). False with *err on a
+// LoadStats + LoadForms + BuildData (node.ts loadItemModData). False with *err on a
 // missing / broken file.
 bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, std::string* err);
 

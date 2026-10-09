@@ -640,6 +640,8 @@ if (WIN32)
     # Item-mod values page: exile-appraiser's stats.ndjson (trade stat ids, so share
     # codes interoperate), gzip-compressed (6.8 MB -> 0.9 MB); loaded the first time the
     # page is opened. Source commit and hashes: host/data/regex_stats/MANIFEST.json.
+    # Also item-mod-forms.json.gz (exile-appraiser data/regex/item-mod-forms.json, the
+    # multi-form arbitration; covered by the same *.gz pattern).
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_stats/" DESTINATION "Data/regex_stats"
             FILES_MATCHING PATTERN "*.gz")
     # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim

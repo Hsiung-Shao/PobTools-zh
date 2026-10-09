@@ -1,7 +1,7 @@
 {
  "schema": 1,
- "source": "exile-appraiser data/<game>/<lang>/stats.ndjson (APT / EE2 stat table, verbatim); gzip -9, no name, mtime 0",
- "commit": "87121ad4929fd8e40d2cace1a7b2e6c728d49667",
+ "source": "exile-appraiser data/<game>/<lang>/stats.ndjson (APT / EE2 stat table, verbatim) + data/regex/item-mod-forms.json (multi-form arbitration, verbatim); gzip -9, no name, mtime 0",
+ "commit": "00bb2973546c73467ccedb9186af2e89787cfca4",
  "files": {
   "poe1/cmn-Hant/stats.ndjson.gz": {
    "source": "data/poe1/cmn-Hant/stats.ndjson",
@@ -30,6 +30,13 @@
    "sha256": "fc2b48dbbc3529cec97a6a8c4b72117ded1c258980e191b0aeeb308c44c1e9ac",
    "gzBytes": 124349,
    "gzSha256": "c594ec4811f9744fa883fd76d2590e8dec96ae91347db5f6837e8ea4c40c8d20"
+  },
+  "item-mod-forms.json.gz": {
+   "source": "data/regex/item-mod-forms.json",
+   "bytes": 46664,
+   "sha256": "02d0e06205c5caf844cb74c7c3dd687360cc63d459089c181cc6a77a9bb4c75d",
+   "gzBytes": 9655,
+   "gzSha256": "fa48296d4d664ea4762249f590b0080a873794ccfebf6c42b99e97fac239f007"
   }
  }
 }

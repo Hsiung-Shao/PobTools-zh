@@ -1,6 +1,6 @@
 // --regex-selftest, parity part: the literal vectors exile-appraiser's OWN tests
 // spell out (regex/test/{numeric,pages,strict-fragments,rarity,combine,item-mods,
-// share}.test.ts), replayed from regex_parity_golden.inc. The generator
+// item-mods-marker,item-mod-forms,share}.test.ts), replayed from regex_parity_golden.inc. The generator
 // (tools/regex_port/gen-parity.mts, local only) re-ran each through exile-
 // appraiser's code over the very Data files shipped here and refused to write a
 // vector whose literal that code no longer produces -- so every record is both
@@ -14,6 +14,7 @@
 #include "regex_data.h"
 #include "regex_frag.h"
 #include "regex_itemmods.h"
+#include "regex_match.h"
 #include "regex_numeric.h"
 #include "regex_share.h"
 
@@ -72,12 +73,37 @@ RegexNumeric::NumRange RangeFrom(const json& j)
 json Opt(const std::optional<std::string>& s) { return s ? json(*s) : json(nullptr); }
 json Opt(const std::optional<std::vector<std::string>>& s) { return s ? json(*s) : json(nullptr); }
 
+// ItemModForms -> the JSON parseItemModForms gives ({zh: {key: forms}, en: {...}}; key order is irrelevant to ==).
+json FormsJson(const IM::ItemModForms& f)
+{
+	json zh = json::object(), en = json::object();
+	for (const auto& kv : f.zh) zh[kv.first] = kv.second;
+	for (const auto& kv : f.en) en[kv.first] = kv.second;
+	return json{{"zh", zh}, {"en", en}};
+}
+
+// item-mod-forms.test.ts entryOf: keyOfEntry(e) === key, or id = the key's statId and ref = the rest.
+const IM::Entry* EntryByKey(const IM::Data& d, const std::string& key)
+{
+	const size_t bar = key.find('|');
+	const std::string id0 = key.substr(0, bar);
+	const std::string rest = bar == std::string::npos ? key : key.substr(bar + 1);   // JS slice(indexOf + 1) when no '|': the whole key
+	for (const IM::Entry& e : d.entries) {
+		const std::string k = e.id.find('|') != std::string::npos ? e.id : e.id + "|" + e.ref;
+		if (k == key || (e.id == id0 && e.ref == rest)) return &e;
+	}
+	return nullptr;
+}
+
 const char* const kCatIds[IM::kCategoryCount] = {"life", "mana", "es", "resist", "attr", "speed", "damage", "move", "other"};
 
 struct Game {
 	std::vector<AlgoPage> algo;
 	std::vector<PageRef> pages;
 	std::optional<IM::Data> items;   // loaded on first use
+	std::optional<IM::Data> itemsNoForms;   // BuildData without arbitration (item-mod-forms.test.ts T10)
+	bool formsTried = false;
+	std::optional<IM::ItemModForms> forms;   // LoadForms, on first use
 	std::optional<AlgoPage> itemPage;
 	const AlgoPage* Algo(const std::string& id) const
 	{
@@ -137,6 +163,28 @@ void RegexParityTests(const std::wstring& exeDir, void (*checkFn)(bool, const st
 		return &*G.items;
 	};
 
+	auto itemsNoForms = [&](const std::string& g) -> const IM::Data* {
+		Game& G = games[g];
+		if (!G.itemsNoForms) {
+			std::vector<IM::StatLite> zh, en;
+			std::string e;
+			if (!IM::LoadStats(exeDir, g, zh, en, &e)) {
+				check(false, "parity: load stats " + g + ": " + e);
+				G.itemsNoForms = IM::Data();
+			} else {
+				G.itemsNoForms = IM::BuildData(g, zh, en, nullptr);
+			}
+		}
+		return &*G.itemsNoForms;
+	};
+	auto forms = [&](const std::string& g) -> const IM::ItemModForms* {
+		Game& G = games[g];
+		if (!G.formsTried) {
+			G.formsTried = true;
+			G.forms = IM::LoadForms(exeDir, g);
+		}
+		return G.forms ? &*G.forms : nullptr;
+	};
 	std::map<std::string, int> total, bad;
 	std::map<std::string, std::string> firstBad;
 	int parseErr = 0;
@@ -232,8 +280,9 @@ void RegexParityTests(const std::wstring& exeDir, void (*checkFn)(bool, const st
 						per = {{"id", c.id}, {"fragments", c.fragments}, {"length", c.length}};
 			}
 			expect(json{{"query", res.query}, {"perPage", per}, {"conflicts", conflicts}}, want, r[2].get<std::string>());
-		} else if (kind == "itemSummary") {
-			const IM::Data* d = items(r[1].get<std::string>());
+		} else if (kind == "itemSummary" || kind == "itemSummaryNoForms") {
+			// itemSummary = LoadFile (stats + the shipped arbitration); itemSummaryNoForms = BuildData(.., nullptr)
+			const IM::Data* d = kind == "itemSummary" ? items(r[1].get<std::string>()) : itemsNoForms(r[1].get<std::string>());
 			json ex = json::object();
 			for (int i = 0; i < IM::kReasonCount; i++) ex[IM::ReasonId(i)] = d->excluded[i];
 			expect(json{{"itemStats", d->itemStats}, {"entries", d->entries.size()}, {"merged", d->merged}, {"excluded", ex}}, r[2],
@@ -265,6 +314,82 @@ void RegexParityTests(const std::wstring& exeDir, void (*checkFn)(bool, const st
 				continue;
 			}
 			expect(Opt(IM::Fragment(e->Anchor(LangOf(r[4].get<std::string>())), ValueFrom(r[3]))), r[5], r[3].dump());
+		} else if (kind == "itemText") {
+			// [itemText, game, key, lang, template]
+			const IM::Entry* e = EntryByKey(*items(r[1].get<std::string>()), r[2].get<std::string>());
+			if (!e) {
+				fail(kind, "no entry " + r[2].dump());
+				continue;
+			}
+			expect(LangOf(r[3].get<std::string>()) == Lang::Zh ? e->zh : e->en, r[4], r[2].get<std::string>());
+		} else if (kind == "itemRx" || kind == "itemNotContains") {
+			// [itemRx, game, key, lang, value, line, expected]: new RegExp(fragment, en ? 'i' : '').test(line)
+			// [itemNotContains, game, key, lang, value, text]: the fragment exists and does not contain text
+			const IM::Entry* e = EntryByKey(*items(r[1].get<std::string>()), r[2].get<std::string>());
+			if (!e) {
+				fail(kind, "no entry " + r[2].dump());
+				continue;
+			}
+			const Lang lang = LangOf(r[3].get<std::string>());
+			const std::optional<std::string> f = IM::Fragment(e->Anchor(lang), ValueFrom(r[4]));
+			const std::string what = r[2].get<std::string>() + " " + r[3].get<std::string>() + " " + r[4].dump();
+			if (!f) {
+				fail(kind, what + ": fragment is nullopt");
+				continue;
+			}
+			if (kind == "itemNotContains") {
+				if (f->find(r[5].get<std::string>()) != std::string::npos) fail(kind, what + ": " + *f + " contains " + r[5].dump());
+				continue;
+			}
+			RxFlags fl;
+			fl.icase = lang == Lang::En;
+			std::string err;
+			const std::optional<Rx> re = RxCompile(*f, &err, fl);
+			if (!re) {
+				fail(kind, what + ": compile " + *f + ": " + err);
+				continue;
+			}
+			const RxStatus st = RxSearchEx(*re, r[5].get<std::string>());
+			if (st == RxStatus::Aborted) {
+				fail(kind, what + ": matcher aborted on " + r[5].dump());
+				continue;
+			}
+			const bool got = st == RxStatus::Match;
+			if (got != r[6].get<bool>()) fail(kind, what + " " + *f + u8" 對 " + r[5].dump() + ": got " + (got ? "true" : "false"));
+		} else if (kind == "itemAbsent") {
+			// [itemAbsent, game, key]: no entry under the key
+			const IM::Entry* e = EntryByKey(*items(r[1].get<std::string>()), r[2].get<std::string>());
+			if (e) fail(kind, r[2].get<std::string>() + " is included (id " + e->id + ")");
+		} else if (kind == "formsEntry") {
+			// [formsEntry, game, lang, key, forms | null]: LoadForms(game).<lang>[key]
+			const IM::ItemModForms* f = forms(r[1].get<std::string>());
+			if (!f) {
+				fail(kind, "LoadForms(" + r[1].get<std::string>() + ") is nullopt");
+				continue;
+			}
+			const auto& m = r[2].get<std::string>() == "en" ? f->en : f->zh;
+			auto it = m.find(r[3].get<std::string>());
+			expect(it == m.end() ? json(nullptr) : json(it->second), r[4], r[1].get<std::string>() + "." + r[2].get<std::string>() + " " + r[3].get<std::string>());
+		} else if (kind == "formsKeys") {
+			// [formsKeys, game, {zh, en} keys, {zh, en} keys whose entry is included]
+			const std::string g = r[1].get<std::string>();
+			const IM::ItemModForms* f = forms(g);
+			if (!f) {
+				fail(kind, "LoadForms(" + g + ") is nullopt");
+				continue;
+			}
+			const IM::Data* d = items(g);
+			auto included = [&](const std::unordered_map<std::string, std::vector<std::string>>& m) {
+				int n = 0;
+				for (const auto& kv : m) n += EntryByKey(*d, kv.first) ? 1 : 0;
+				return n;
+			};
+			expect(json::array({json{{"zh", f->zh.size()}, {"en", f->en.size()}}, json{{"zh", included(f->zh)}, {"en", included(f->en)}}}),
+			       json::array({r[2], r[3]}), g);
+		} else if (kind == "formsParse") {
+			// [formsParse, label, text, game, expected | null]
+			const std::optional<IM::ItemModForms> f = IM::ParseItemModForms(r[2].get<std::string>(), r[3].get<std::string>());
+			expect(f ? FormsJson(*f) : json(nullptr), r[4], r[1].get<std::string>());
 		} else if (kind == "shareResolve") {
 			// [shareResolve, game, code, {unknownPages, missed, picks:{page: n}, quantity}]
 			S::Normalized n;

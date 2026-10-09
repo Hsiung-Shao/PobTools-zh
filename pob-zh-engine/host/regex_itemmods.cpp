@@ -1,5 +1,5 @@
-// See regex_itemmods.h. Line references are exile-appraiser
-// regex/src/pages/item-mods.ts @41decda.
+// See regex_itemmods.h. Comments name the exile-appraiser
+// regex/src/pages/item-mods.ts @00bb297 function each piece mirrors.
 #include "regex_itemmods.h"
 
 #include "regex_numeric.h"
@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <map>
 #include <set>
 #include <unordered_map>
@@ -141,9 +142,9 @@ std::vector<U16> SplitNl(const U16& s)
 
 bool IsDigit(char16_t c) { return c >= u'0' && c <= u'9'; }
 
-const char16_t kSlot = 0;   // :140 SLOT, a '#' (a run of digits)
+const char16_t kSlot = 0;   // SLOT, a '#' (a run of digits)
 
-// :147 stripPlus: drop '+' right before '#'
+// stripPlus: drop '+' right before '#'
 U16 StripPlus(const U16& s)
 {
 	U16 out;
@@ -153,7 +154,7 @@ U16 StripPlus(const U16& s)
 	return out;
 }
 
-// :152 normLine
+// normLine
 U16 NormLine(const U16& s, bool fold)
 {
 	U16 t = Trim(StripPlus(s));
@@ -172,7 +173,7 @@ int CountHash(const U16& s)
 bool Contains(const U16& hay, const U16& needle) { return hay.find(needle) != U16::npos; }
 bool StartsWith(const U16& s, const U16& p) { return s.size() >= p.size() && s.compare(0, p.size(), p) == 0; }
 
-// :496 isWordBreak: /[\s,，、:：;；。.!！?？()（）「」『』[\]/·]/
+// isWordBreak: /[\s,，、:：;；。.!！?？()（）「」『』[\]/·]/
 bool IsWordBreak(char16_t c)
 {
 	if (IsJsSpace(c)) return true;
@@ -180,7 +181,7 @@ bool IsWordBreak(char16_t c)
 	return set.find(c) != U16::npos;
 }
 
-const U16 kMeta = u".^$*+?()[]{}|\\";   // :392 META
+const U16 kMeta = u".^$*+?()[]{}|\\";   // META
 
 U16 Escape16(const U16& s)
 {
@@ -214,7 +215,7 @@ size_t IndexRunCount(const ModIndex& idx) { return idx.byAfter.size(); }
 
 namespace {
 
-// :171 runsOf
+// runsOf
 void RunsOf(const U16& line, int idx, std::vector<Run>& out)
 {
 	size_t i = 0;
@@ -235,7 +236,7 @@ void RunsOf(const U16& line, int idx, std::vector<Run>& out)
 	}
 }
 
-// :215 lowerBound / :227 prefixRange (on `after`)
+// lowerBound / prefixRange (on `after`)
 size_t LowerBound(const std::vector<Run>& arr, const U16& key)
 {
 	size_t lo = 0, hi = arr.size();
@@ -259,7 +260,7 @@ std::pair<size_t, size_t> PrefixRange(const std::vector<Run>& arr, const U16& pr
 	return {a, lo};
 }
 
-// :266 afterMatches
+// afterMatches
 bool AfterMatches(const U16& other, const U16& s, bool exact)
 {
 	size_t i = 0, k = 0;
@@ -279,10 +280,10 @@ bool AfterMatches(const U16& other, const U16& s, bool exact)
 		i++;
 		k++;
 	}
-	return !exact || i == other.size();
+	return !exact || i == other.size() || other.compare(i, 2, u" (") == 0;
 }
 
-// :292 suffixMatch
+// suffixMatch
 struct SuffixM {
 	size_t n;
 	bool whole;
@@ -306,7 +307,7 @@ SuffixM SuffixMatch(const U16& b, const U16& other)
 	return {(size_t)((long)b.size() - 1 - i), i < 0 && o < 0};
 }
 
-// :313 plainHead
+// plainHead
 U16 PlainHead(const U16& s)
 {
 	for (size_t i = 0; i < s.size(); i++)
@@ -314,11 +315,11 @@ U16 PlainHead(const U16& s)
 	return s;
 }
 
-constexpr size_t kMaxScan = 1500;   // :263 MAX_SCAN
+constexpr size_t kMaxScan = 1500;   // MAX_SCAN
 
 } // namespace
 
-// :184 buildModIndex
+// buildModIndex
 ModIndexPtr BuildIndex(const std::vector<StatLite>& stats, Lang lang)
 {
 	ModIndexPtr idx(new ModIndex);
@@ -338,7 +339,7 @@ ModIndexPtr BuildIndex(const std::vector<StatLite>& stats, Lang lang)
 	return idx;
 }
 
-// :336 chooseAnchor
+// chooseAnchor
 std::optional<ModAnchor> ChooseAnchor(const ModIndex& idx, const std::string& tmpl, bool plusHint, int limit,
                                       const std::vector<std::string>& sameLines)
 {
@@ -414,9 +415,13 @@ std::optional<ModAnchor> ChooseAnchor(const ModIndex& idx, const std::string& tm
 		std::pair<size_t, size_t> r = PrefixRange(idx.byAfter, head);
 		size_t a = r.first, b = r.second;
 		if (exact && head == s) {
+			// the runs equal to s, plus "s (..." (the line-end marker kLineEnd also hits)
 			size_t e = a;
 			while (e < b && idx.byAfter[e].after == s) e++;
-			b = e;
+			for (size_t i = a; i < e; i++) out.push_back(&idx.byAfter[i]);
+			const std::pair<size_t, size_t> m = PrefixRange(idx.byAfter, s + u" (");
+			for (size_t i = m.first; i < m.second; i++) out.push_back(&idx.byAfter[i]);
+			return true;
 		} else if (b - a > kMaxScan && !exact) {
 			return false;
 		}
@@ -514,7 +519,7 @@ bool HasWord(const U16& r, const U16& w)
 
 } // namespace
 
-// :75 itemModCategory
+// itemModCategory
 Category CategoryOf(const std::string& ref)
 {
 	const U16 r = Lower(ToU16(ref));
@@ -534,7 +539,48 @@ std::string JsLower(const std::string& s) { return ToU8(Lower(ToU16(s))); }
 
 std::string EscapeFragText(const std::string& s) { return ToU8(Escape16(ToU16(s))); }
 
-// :418 itemModFragment
+// LINE_END: the line end, or the " (" a fractured / marked line goes on with.
+const char* const kLineEnd = "($| \\()";
+
+namespace {
+
+// JS s.slice(a, b) on UTF-16 units (0 <= a, b; clamped to the length).
+U16 Slice(const U16& s, size_t a, size_t b = U16::npos)
+{
+	a = std::min(a, s.size());
+	b = std::min(b, s.size());
+	return b > a ? s.substr(a, b - a) : U16();
+}
+
+// altGroup: one of two runs empty -> "(X)?", else "(A|B|...)"
+U16 AltGroup(const std::vector<U16>& opts)
+{
+	std::vector<const U16*> nonEmpty;
+	for (const U16& o : opts)
+		if (!o.empty()) nonEmpty.push_back(&o);
+	if (nonEmpty.size() == 1 && opts.size() == 2) return u"(" + Escape16(*nonEmpty[0]) + u")?";
+	U16 out = u"(";
+	for (size_t i = 0; i < opts.size(); i++) {
+		if (i) out += u'|';
+		out += Escape16(opts[i]);
+	}
+	return out + u")";
+}
+
+// sideText: the escaped p / s, the alternation group in place of alt's run
+U16 SideText(const ModAnchor& a, char side)
+{
+	const U16 t = ToU16(side == 'p' ? a.p : a.s);
+	if (!a.alt || a.alt->side != side) return Escape16(t);
+	std::vector<U16> opts;
+	for (const std::string& o : a.alt->opts) opts.push_back(ToU16(o));
+	const size_t at = (size_t)std::max(0, a.alt->at);
+	return Escape16(Slice(t, 0, at)) + AltGroup(opts) + Escape16(Slice(t, at + (size_t)std::max(0, a.alt->len)));
+}
+
+} // namespace
+
+// itemModFragment
 std::optional<std::string> Fragment(const ModAnchor& a, const AlgoValue& v)
 {
 	using RegexFrag::RangeOp;
@@ -549,10 +595,10 @@ std::optional<std::string> Fragment(const ModAnchor& a, const AlgoValue& v)
 	const bool bounded = op != RangeOp::Ge;
 	const std::string left = bounded && a.p.empty() && !a.caret ? "(^|[^0-9])" : "";
 	const std::string right = bounded && a.s.empty() && !a.dollar ? "([^0-9]|$)" : "";
-	std::string p = EscapeFragText(a.p);
+	std::string p = ToU8(SideText(a, 'p'));
 	if (!a.caret && !p.empty() && p[0] == '!') p = "\\" + p;
-	return std::string(a.caret ? "^" : "") + p + left + (a.plus ? "\\+?" : "") + num + EscapeFragText(a.s) + right +
-	       (a.dollar ? "$" : "");
+	return std::string(a.caret ? "^" : "") + p + left + (a.plus ? "\\+?" : "") + num + ToU8(SideText(a, 's')) + right +
+	       (a.dollar ? kLineEnd : "");
 }
 
 static const char* const kReasonIds[kReasonCount] = {"decimal", "multi_value", "multi_form", "multiline",
@@ -561,7 +607,7 @@ const char* ReasonId(int r) { return r >= 0 && r < kReasonCount ? kReasonIds[r] 
 
 // ---- data file -------------------------------------------------------------------
 
-// :90 liteOf: one stat object -> StatLite; false = TS null (no ref / no matchers).
+// liteOf: one stat object -> StatLite; false = TS null (no ref / no matchers).
 static bool LiteOf(const nlohmann::json& s, StatLite& out)
 {
 	using nlohmann::json;
@@ -586,7 +632,7 @@ static bool LiteOf(const nlohmann::json& s, StatLite& out)
 	if (tr != s.end() && tr->is_object()) {
 		const auto ids = tr->find("ids");
 		if (ids != tr->end() && ids->is_object()) {
-			for (const char* c : {"explicit", "implicit", "crafted", "fractured"}) {   // :52 ITEM_MOD_TRADE_CATS
+			for (const char* c : {"explicit", "implicit", "crafted", "fractured"}) {   // ITEM_MOD_TRADE_CATS
 				const auto v = ids->find(c);
 				if (v == ids->end() || !v->is_array() || v->empty() || !(*v)[0].is_string()) continue;
 				const std::string id = (*v)[0].get<std::string>();
@@ -602,7 +648,7 @@ static bool LiteOf(const nlohmann::json& s, StatLite& out)
 	return true;
 }
 
-// :129 parseStatsNdjson. Lines are trimmed of ASCII whitespace only (JS trim()
+// parseStatsNdjson. Lines are trimmed of ASCII whitespace only (JS trim()
 // also drops U+00A0 / U+3000 ..., which a JSON line never starts or ends with);
 // a line that is not JSON, or not an object, is skipped like the TS.
 std::vector<StatLite> ParseStatsNdjson(const std::string& text)
@@ -636,9 +682,113 @@ namespace {
 
 std::string KeyOf(const StatLite& s) { return s.hasId ? s.statId + "|" + s.ref : std::string(); }
 
-// :477 templateOf: the template text, or the reason there is none.
-bool TemplateOf(const StatLite& s, U16& t, Reason& why)
+// coreForm: a form every other form contains (nullptr = none)
+const U16* CoreForm(const std::vector<U16>& forms)
 {
+	for (const U16& f : forms) {
+		bool all = true;
+		for (const U16& o : forms)
+			if (!Contains(o, f)) { all = false; break; }
+		if (all) return &f;
+	}
+	return nullptr;
+}
+
+// splitForms: common prefix length cp / suffix length cs + each form's differing
+// run; false = a form is multi-line or a run holds '#'.
+struct SplitResult {
+	size_t cp = 0, cs = 0;
+	std::vector<U16> opts;
+};
+bool SplitForms(const std::vector<U16>& forms, SplitResult& out)
+{
+	for (const U16& f : forms)
+		if (f.find(u'\n') != U16::npos) return false;
+	size_t minLen = forms.empty() ? 0 : forms[0].size();
+	for (const U16& f : forms) minLen = std::min(minLen, f.size());
+	size_t cp = 0;
+	for (;;) {
+		if (cp >= minLen) break;
+		bool all = true;
+		for (const U16& f : forms)
+			if (f[cp] != forms[0][cp]) { all = false; break; }
+		if (!all) break;
+		cp++;
+	}
+	size_t cs = 0;
+	for (;;) {
+		if (cs >= minLen - cp) break;
+		bool all = true;
+		for (const U16& f : forms)
+			if (f[f.size() - 1 - cs] != forms[0][forms[0].size() - 1 - cs]) { all = false; break; }
+		if (!all) break;
+		cs++;
+	}
+	out.cp = cp;
+	out.cs = cs;
+	out.opts.clear();
+	for (const U16& f : forms) out.opts.push_back(Slice(f, cp, f.size() - cs));
+	for (const U16& o : out.opts)
+		if (o.find(u'#') != U16::npos) return false;
+	return true;
+}
+
+// forms.map(f => stripPlus(f).trim())
+std::vector<U16> ShownForms(const std::vector<U16>& forms)
+{
+	std::vector<U16> out;
+	for (const U16& f : forms) out.push_back(Trim(StripPlus(f)));
+	return out;
+}
+
+// altAnchor: every form must pass chooseAnchor as the whole line (caret + dollar,
+// not shortened); the combined fragment's cost (UTF-16, alternation included) <= limit.
+std::optional<ModAnchor> AltAnchor(const ModIndex& idx, const std::vector<U16>& forms, bool plusHint, int limit,
+                                   const std::vector<std::string>& same)
+{
+	const std::vector<U16> shown = ShownForms(forms);
+	SplitResult sp;
+	if (!SplitForms(shown, sp)) return std::nullopt;
+	for (const U16& f : shown) {
+		// TS limit Number.MAX_SAFE_INTEGER: no cap
+		const std::optional<ModAnchor> a = ChooseAnchor(idx, ToU8(f), plusHint, std::numeric_limits<int>::max(), same);
+		if (!a) return std::nullopt;
+		const size_t at = f.find(u'#');   // ChooseAnchor succeeded -> exactly one '#'
+		if (!a->caret || !a->dollar || a->p != ToU8(Slice(f, 0, at)) || a->s != ToU8(Slice(f, at + 1)))
+			return std::nullopt;
+	}
+	const U16& f0 = shown[0];
+	const size_t hash = f0.find(u'#');
+	ModAnchor a;
+	a.p = ToU8(Slice(f0, 0, hash));
+	a.s = ToU8(Slice(f0, hash + 1));
+	a.caret = a.dollar = a.plus = true;
+	AltSeg alt;
+	if (hash < sp.cp) {
+		alt.side = 's';
+		alt.at = (int)(sp.cp - hash - 1);
+	} else {
+		alt.side = 'p';
+		alt.at = (int)sp.cp;
+	}
+	alt.len = (int)sp.opts[0].size();
+	for (const U16& o : sp.opts) alt.opts.push_back(ToU8(o));
+	a.alt = std::move(alt);
+	a.cost = (int)(SideText(a, 'p').size() + SideText(a, 's').size() + 2);
+	if (a.cost > limit) return std::nullopt;
+	return a;
+}
+
+// templateOf: the template text t (+ the arbitrated forms `alts` when they are
+// alternated), or the reason there is none. `arb` = item-mod-forms.json's forms
+// for this key (nullptr = undefined).
+struct Template {
+	U16 t;
+	std::optional<std::vector<U16>> alts;
+};
+bool TemplateOf(const StatLite& s, const std::vector<std::string>* arb, Template& tpl, Reason& why)
+{
+	tpl = Template();
 	if (s.dp) { why = Reason::Decimal; return false; }
 	std::vector<U16> single;
 	for (const std::string& m : s.plain) {
@@ -646,38 +796,97 @@ bool TemplateOf(const StatLite& s, U16& t, Reason& why)
 		if (CountHash(u) == 1) single.push_back(std::move(u));
 	}
 	if (single.empty()) { why = Reason::MultiValue; return false; }
-	t = Trim(single[0]);
+	tpl.t = Trim(single[0]);
 	if (single.size() > 1) {
 		std::vector<U16> forms;
 		for (const U16& m : single) forms.push_back(Trim(m));
-		const U16* core = nullptr;
-		for (const U16& f : forms) {
-			bool all = true;
-			for (const U16& o : forms)
-				if (!Contains(o, f)) { all = false; break; }
-			if (all) { core = &f; break; }
+		if (const U16* core = CoreForm(forms)) {
+			tpl.t = *core;
+		} else {
+			std::vector<U16> picked;
+			if (arb)
+				for (const std::string& f : *arb) {
+					const U16 u = ToU16(f);
+					if (CountHash(u) == 1) picked.push_back(Trim(u));
+				}
+			if (picked.empty()) { why = Reason::MultiForm; return false; }
+			if (picked.size() == 1) {
+				tpl.t = picked[0];
+			} else {
+				// arbitrated forms are always alternated (one containing another included: "(X)?")
+				SplitResult sp;
+				if (!SplitForms(ShownForms(picked), sp)) { why = Reason::MultiForm; return false; }
+				tpl.t = picked[0];
+				tpl.alts = std::move(picked);
+			}
 		}
-		if (!core) { why = Reason::MultiForm; return false; }
-		t = *core;
 	}
-	if (t.find(u'\n') != U16::npos) { why = Reason::Multiline; return false; }
+	if (tpl.t.find(u'\n') != U16::npos) { why = Reason::Multiline; return false; }
 	return true;
 }
 
 bool HasPlusHash(const std::string& s) { return s.find("+#") != std::string::npos; }
+bool HasPlusHash(const U16& s) { return s.find(u"+#") != U16::npos; }
 
-// :549 longOnly
-bool LongOnly(const ModIndex& idx, const std::string& tmpl, const std::optional<ModAnchor>& found,
+// anchorOf: a single form -> chooseAnchor; alternated forms -> altAnchor
+std::optional<ModAnchor> AnchorOf(const ModIndex& idx, const Template& tpl, bool plusHint, int limit,
+                                  const std::vector<std::string>& same)
+{
+	if (tpl.alts) {
+		bool plus = plusHint;
+		for (const U16& f : *tpl.alts) plus = plus || HasPlusHash(f);
+		return AltAnchor(idx, *tpl.alts, plus, limit, same);
+	}
+	return ChooseAnchor(idx, ToU8(tpl.t), plusHint || HasPlusHash(tpl.t), limit, same);
+}
+
+// longOnly
+bool LongOnly(const ModIndex& idx, const Template& tpl, const std::optional<ModAnchor>& found, bool plusHint,
               const std::vector<std::string>& same)
 {
 	if (found) return false;
-	return ChooseAnchor(idx, tmpl, false, 400, same).has_value();
+	if (tpl.alts) return AnchorOf(idx, tpl, plusHint, 400, same).has_value();
+	return ChooseAnchor(idx, ToU8(tpl.t), false, 400, same).has_value();
 }
 
 } // namespace
 
-// :497 buildItemModData
-Data BuildData(const std::string& game, const std::vector<StatLite>& zhStats, const std::vector<StatLite>& enStats)
+// parseItemModForms
+std::optional<ItemModForms> ParseItemModForms(const std::string& text, const std::string& game)
+{
+	using nlohmann::json;
+	const json j = json::parse(text, nullptr, false);
+	if (j.is_discarded() || !j.is_object()) return std::nullopt;
+	const auto sc = j.find("schema");
+	if (sc == j.end() || !sc->is_number() || sc->get<double>() != 1.0) return std::nullopt;
+	const auto g = j.find(game);
+	if (g == j.end() || !g->is_object()) return std::nullopt;
+	auto lang = [&](const char* name) {
+		std::unordered_map<std::string, std::vector<std::string>> out;
+		const auto v = g->find(name);
+		if (v == g->end() || !v->is_object()) return out;
+		for (auto it = v->begin(); it != v->end(); ++it) {
+			const json& xs = it.value();
+			if (!xs.is_array() || xs.empty()) continue;
+			std::vector<std::string> forms;
+			bool ok = true;
+			for (const json& x : xs) {
+				if (!x.is_string()) { ok = false; break; }
+				forms.push_back(x.get<std::string>());
+			}
+			if (ok) out[it.key()] = std::move(forms);
+		}
+		return out;
+	};
+	ItemModForms f;
+	f.zh = lang("zh");
+	f.en = lang("en");
+	return f;
+}
+
+// buildItemModData
+Data BuildData(const std::string& game, const std::vector<StatLite>& zhStats, const std::vector<StatLite>& enStats,
+               const ItemModForms* forms)
 {
 	Data d;
 	d.game = game;
@@ -692,6 +901,13 @@ Data BuildData(const std::string& game, const std::vector<StatLite>& zhStats, co
 		d.excluded[(int)r]++;
 		if (d.samples[(int)r].size() < 8) d.samples[(int)r].push_back(ref);
 	};
+	// forms?.<lang>[key] (nullptr = undefined)
+	using FormMap = std::unordered_map<std::string, std::vector<std::string>>;
+	auto arbOf = [&](const FormMap* m, const std::string& key) -> const std::vector<std::string>* {
+		if (!m) return nullptr;
+		const auto it = m->find(key);
+		return it == m->end() ? nullptr : &it->second;
+	};
 	std::unordered_set<std::string> seenKey, usedId;
 	std::unordered_set<U16> seenText;
 	for (const StatLite& zs : zhStats) {
@@ -702,18 +918,19 @@ Data BuildData(const std::string& game, const std::vector<StatLite>& zhStats, co
 		auto eit = enByKey.find(key);
 		if (eit == enByKey.end()) { exclude(Reason::MissingLang, zs.ref); continue; }
 		const StatLite& es = *eit->second;
-		U16 zt, et;
+		Template zt, et;
 		Reason why;
-		if (!TemplateOf(zs, zt, why)) { exclude(why, zs.ref); continue; }
-		if (!TemplateOf(es, et, why)) { exclude(why, zs.ref); continue; }
-		const U16 textKey = StripPlus(zt) + u'\x01' + Lower(StripPlus(et));
+		if (!TemplateOf(zs, arbOf(forms ? &forms->zh : nullptr, key), zt, why)) { exclude(why, zs.ref); continue; }
+		if (!TemplateOf(es, arbOf(forms ? &forms->en : nullptr, key), et, why)) { exclude(why, zs.ref); continue; }
+		// textKey from t (the first form), like the TS
+		const U16 textKey = StripPlus(zt.t) + u'\x01' + Lower(StripPlus(et.t));
 		if (seenText.count(textKey)) { d.merged++; continue; }
-		const std::string zt8 = ToU8(zt), et8 = ToU8(et);
+		const std::string zt8 = ToU8(zt.t), et8 = ToU8(et.t);
 		const bool plusHint = HasPlusHash(zs.ref);
-		const std::optional<ModAnchor> za = ChooseAnchor(*zhIdx, zt8, plusHint || HasPlusHash(zt8), kMaxAnchorZh, zs.same);
-		const std::optional<ModAnchor> ea = ChooseAnchor(*enIdx, et8, plusHint || HasPlusHash(et8), kMaxAnchorEn, es.same);
+		const std::optional<ModAnchor> za = AnchorOf(*zhIdx, zt, plusHint, kMaxAnchorZh, zs.same);
+		const std::optional<ModAnchor> ea = AnchorOf(*enIdx, et, plusHint, kMaxAnchorEn, es.same);
 		if (!za || !ea) {
-			const bool tooLong = LongOnly(*zhIdx, zt8, za, zs.same) || LongOnly(*enIdx, et8, ea, es.same);
+			const bool tooLong = LongOnly(*zhIdx, zt, za, plusHint, zs.same) || LongOnly(*enIdx, et, ea, plusHint, es.same);
 			exclude(tooLong ? Reason::TooLong : Reason::NoUnique, zs.ref);
 			continue;
 		}
@@ -772,6 +989,15 @@ bool LoadStatsText(const std::wstring& exeDir, const std::string& game, Lang lan
 	return true;
 }
 
+// node.ts loadItemModData's arbitration read: missing / broken -> nullopt
+std::optional<ItemModForms> LoadForms(const std::wstring& exeDir, const std::string& game)
+{
+	std::string gz, text;
+	if (!ReadWhole(exeDir + L"Data\\regex_stats\\item-mod-forms.json.gz", gz)) return std::nullopt;
+	if (!RegexShare::Gunzip(gz, text, kMaxStatsBytes, nullptr)) return std::nullopt;
+	return ParseItemModForms(text, game);
+}
+
 bool LoadStats(const std::wstring& exeDir, const std::string& game, std::vector<StatLite>& zh, std::vector<StatLite>& en,
                std::string* err)
 {
@@ -789,11 +1015,12 @@ bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, st
 {
 	std::vector<StatLite> zh, en;
 	if (!LoadStats(exeDir, game, zh, en, err)) return false;
-	out = BuildData(game, zh, en);
+	const std::optional<ItemModForms> forms = LoadForms(exeDir, game);
+	out = BuildData(game, zh, en, forms ? &*forms : nullptr);
 	return true;
 }
 
-// :555 itemModPage
+// itemModPage
 RegexAlgo::AlgoPage MakePage(const std::string& game, const Data* data)
 {
 	using namespace RegexAlgo;
@@ -836,7 +1063,7 @@ RegexAlgo::AlgoPage MakePage(const std::string& game, const Data* data)
 	return page;
 }
 
-// :601 filterItemMods
+// filterItemMods
 Filtered FilterRows(const RegexAlgo::AlgoPage& page, const std::vector<int>& picked, const Filter& f, int cap)
 {
 	std::vector<U16> words;
@@ -884,7 +1111,7 @@ Filtered FilterRows(const RegexAlgo::AlgoPage& page, const std::vector<int>& pic
 	return out;
 }
 
-// :624 itemModGroupCounts
+// itemModGroupCounts
 std::vector<int> GroupCounts(const RegexAlgo::AlgoPage& page)
 {
 	std::vector<int> n(kCategoryCount, 0);

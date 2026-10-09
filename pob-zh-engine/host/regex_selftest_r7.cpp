@@ -6,11 +6,13 @@
 //     (hashed + verbatim samples), every fragment over 16 conditions, chooseAnchor with
 //     other limits, categories, filterItemMods, and merges with the map pages;
 //   * item-mods.test.ts (1) uniqueness, FULL: every selectable entry x language, its
-//     fragment with the number as [0-9]+, against every line of that language's corpus
-//     (each '#' replaced by 16 values, with / without '+') with the R1 matcher: it may hit
+//     fragment for "any value" ({min: 0}, as item-mods-marker.test.ts T4), against every
+//     line of that language's corpus (each '#' replaced by 16 values, with / without '+',
+//     each also with the line-end marker " (fractured)") with the R1 matcher: it may hit
 //     only its own text / its own stat's non-negated lines;
 //   * item-mods.test.ts (2) own template value by value: every entry x language, one
-//     condition 0..999 (+ 1000..12345) each, the other two at the edges;
+//     condition 0..999 (+ 1000..12345) each, the other two at the edges (the edges also
+//     with " (fractured)" appended: item-mods-marker.test.ts T4, same verdict);
 //   * the PoE1 common ten (item-mods.test.ts:263) spelled out, page shape, bookmark round trip.
 #include "regex_algo_pages.h"
 #include "regex_data.h"
@@ -66,7 +68,13 @@ const char* CatId(IM::Category c)
 	static const char* const ids[] = {"life", "mana", "es", "resist", "attr", "speed", "damage", "move", "other"};
 	return ids[(int)c];
 }
-json AJ(const IM::ModAnchor& a) { return json::array({a.p, a.s, a.caret, a.dollar, a.plus, a.cost}); }
+// gen-golden-r7.ts aj(): 6 elements, plus [side, at, len, opts] only when the anchor carries `alt` (B 00bb297).
+json AJ(const IM::ModAnchor& a)
+{
+	json j = json::array({a.p, a.s, a.caret, a.dollar, a.plus, a.cost});
+	if (a.alt) j.push_back(json::array({std::string(1, a.alt->side), a.alt->at, a.alt->len, a.alt->opts}));
+	return j;
+}
 json EJ(const IM::Entry& e)
 {
 	return json::array({e.id, e.ref, e.zh, e.en, CatId(e.cat), e.percent, AJ(e.anchors[0]), AJ(e.anchors[1])});
@@ -295,31 +303,39 @@ std::string ReplaceAll(const std::string& s, const std::string& from, const std:
 }
 
 const char* const kVals[] = {"0", "1", "2", "5", "7", "9", "10", "12", "25", "50", "99", "100", "200", "999", "1000", "12345"};
+// item-mods-marker.test.ts MARKERS: a fractured / fixed / rune line goes on with " (" + a tag after its text
+// (B 189988e). Every marker starts with " (", which is all the fragment's line end ($| \() looks at.
+const char* const kMarker = " (fractured)";
 
-// instances(): every '#' -> v; and /\+?#/g -> '+v'
+// instances(): every '#' -> v; and /\+?#/g -> '+v'; each also + kMarker (item-mods-marker.test.ts instancesWithMarkers)
 void Instances(const std::string& l, std::vector<std::string>& out)
 {
 	out.clear();
 	if (l.find('#') == std::string::npos) {
 		out.push_back(l);
-		return;
-	}
-	for (const char* v : kVals) {
-		out.push_back(ReplaceAll(l, "#", v));
-		std::string t;
-		for (size_t i = 0; i < l.size(); i++) {
-			if (l[i] == '+' && i + 1 < l.size() && l[i + 1] == '#') continue;
-			if (l[i] == '#') t += std::string("+") + v;
-			else t += l[i];
+	} else {
+		for (const char* v : kVals) {
+			out.push_back(ReplaceAll(l, "#", v));
+			std::string t;
+			for (size_t i = 0; i < l.size(); i++) {
+				if (l[i] == '+' && i + 1 < l.size() && l[i + 1] == '#') continue;
+				if (l[i] == '#') t += std::string("+") + v;
+				else t += l[i];
+			}
+			out.push_back(t);
 		}
-		out.push_back(t);
 	}
+	const size_t n = out.size();
+	for (size_t i = 0; i < n; i++) out.push_back(out[i] + kMarker);
 }
 
-std::string GenericOf(const IM::ModAnchor& a)
+// The entry's fragment for any value ({min: 0} = 0 up, no upper bound; item-mods-marker.test.ts T4). Built by
+// IM::Fragment itself, so the line end ($| \() and a multi-form alternation are what is checked.
+std::optional<std::string> GenericOf(const IM::ModAnchor& a)
 {
-	return std::string(a.caret ? "^" : "") + IM::EscapeFragText(a.p) + (a.plus ? "\\+?" : "") + "[0-9]+" +
-	       IM::EscapeFragText(a.s) + (a.dollar ? "$" : "");
+	AlgoValue any;
+	any.min = 0;
+	return IM::Fragment(a, any);
 }
 
 // filterKey: the longest digit-free stretch of p \u0001 s, lower-cased.
@@ -370,17 +386,23 @@ void UniquenessTests(GameData& g, const std::string& game)
 		const std::unordered_set<std::string> empty;
 		for (const IM::Entry& e : g.data.entries) {
 			const IM::ModAnchor& a = e.Anchor(l);
+			const std::optional<std::string> gen = GenericOf(a);
+			if (!gen) {
+				bad.push_back(u8"沒有片段（{min: 0}）：" + e.ref);
+				continue;
+			}
 			std::string err;
-			const std::optional<Rx> re = RxCompile(GenericOf(a), &err, fl);
+			const std::optional<Rx> re = RxCompile(*gen, &err, fl);
 			if (!re) {
-				bad.push_back("compile " + GenericOf(a) + " " + err);
+				bad.push_back("compile " + *gen + " " + err);
 				continue;
 			}
 			// The key is the longest digit-free piece by UTF-16 length in the TS; any
 			// digit-free piece is a valid filter (a line without it cannot match), and
 			// the count of lines checked is reported, so the byte-length choice here
 			// only changes how much work is skipped, never what is found.
-			const std::string key = FilterKey(a);
+			// With a multi-form alternation p / s hold the first form only: no filter (every line is checked).
+			const std::string key = a.alt ? std::string() : FilterKey(a);
 			const std::string own = SameKey(l == Lang::Zh ? e.zh : e.en, l);
 			const std::string k = e.id.find('|') != std::string::npos ? e.id : e.id + "|" + e.ref;
 			auto it = same.find(k);
@@ -396,7 +418,7 @@ void UniquenessTests(GameData& g, const std::string& game)
 					const RxStatus st2 = RxSearchEx(*re, s);
 					if (st2 == RxStatus::Aborted) aborted++;
 					if (st2 != RxStatus::NoMatch) {
-						bad.push_back(e.ref + " | " + GenericOf(a) + " | " + s);
+						bad.push_back(e.ref + " | " + *gen + " | " + s);
 						break;
 					}
 				}
@@ -404,7 +426,8 @@ void UniquenessTests(GameData& g, const std::string& game)
 			std::string self = l == Lang::Zh ? e.zh : e.en;
 			const size_t p = self.find('#');
 			if (p != std::string::npos) self.replace(p, 1, "12");
-			if (!RxSearch(*re, self)) bad.push_back(u8"自己不中：" + e.ref + " | " + GenericOf(a));
+			if (!RxSearch(*re, self)) bad.push_back(u8"自己不中：" + e.ref + " | " + *gen);
+			if (!RxSearch(*re, self + kMarker)) bad.push_back(u8"自己加標記不中：" + e.ref + " | " + *gen);
 		}
 		std::string first;
 		for (size_t i = 0; i < bad.size() && i < 5; i++) first += "\n      " + bad[i];
@@ -476,11 +499,15 @@ void ValueTests(GameData& g, const std::string& game)
 				}
 				for (long long n : values) {
 					for (bool plus : {false, true}) {
-						tests++;
 						const bool want = n >= c.lo && n <= c.hi;
-						if (RxSearch(*re, Shown(tmpl, n, plus)) != want) {
-							bad.push_back(e.ref + (l == Lang::Zh ? " [zh] " : " [en] ") + *f + u8" 對「" + Shown(tmpl, n, plus) + u8"」判斷錯");
-							goto next;
+						// the full 0..999 sweep plain; the edges also with the line-end marker (same verdict)
+						for (int mk = 0; mk < (ci == rot ? 1 : 2); mk++) {
+							tests++;
+							const std::string text = Shown(tmpl, n, plus) + (mk ? kMarker : "");
+							if (RxSearch(*re, text) != want) {
+								bad.push_back(e.ref + (l == Lang::Zh ? " [zh] " : " [en] ") + *f + u8" 對「" + text + u8"」判斷錯");
+								goto next;
+							}
 						}
 					}
 				}
@@ -498,7 +525,7 @@ void ValueTests(GameData& g, const std::string& game)
 
 void FixedTests(std::map<std::string, GameData>& G, const std::vector<RegexAlgo::PageRef>& poe1Pages)
 {
-	// item-mods.test.ts:263 COMMON (PoE1, >= m): the GGPK templates must give the same strings.
+	// item-mods.test.ts:260 COMMON (PoE1, >= m; line end ($| \() since B 189988e): the same strings.
 	struct Common {
 		const char* ref;
 		int m;
@@ -506,16 +533,16 @@ void FixedTests(std::map<std::string, GameData>& G, const std::vector<RegexAlgo:
 		const char* en;
 	};
 	static const Common kCommon[] = {
-		{"+# to maximum Life", 80, u8"^\\+?([89][0-9]|[1-9][0-9]{2,}) 最大生命$", "^\\+?([89][0-9]|[1-9][0-9]{2,}) to maximum Life$"},
-		{"+#% to Fire Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 火焰抗性$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Fire Resistance$"},
-		{"+#% to Cold Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 冰冷抗性$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Cold Resistance$"},
-		{"+#% to Lightning Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 閃電抗性$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Lightning Resistance$"},
-		{"+#% to Chaos Resistance", 20, u8"^\\+?([2-9][0-9]|[1-9][0-9]{2,})% 混沌抗性$", "^\\+?([2-9][0-9]|[1-9][0-9]{2,})% to Chaos Resistance$"},
-		{"+#% to all Elemental Resistances", 10, u8"^\\+?[1-9][0-9]{1,}% 全部元素抗性$", "^\\+?[1-9][0-9]{1,}% to all Elemental Resistances$"},
-		{"+# to Strength", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 力量$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Strength$"},
-		{"+# to Dexterity", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 敏捷$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Dexterity$"},
-		{"+# to Intelligence", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 智慧$", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Intelligence$"},
-		{"#% increased Movement Speed", 25, u8"^增加 \\+?(2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})% 移動速度$", "^\\+?(2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})% increased Movement Speed$"},
+		{"+# to maximum Life", 80, u8"^\\+?([89][0-9]|[1-9][0-9]{2,}) 最大生命($| \\()", "^\\+?([89][0-9]|[1-9][0-9]{2,}) to maximum Life($| \\()"},
+		{"+#% to Fire Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 火焰抗性($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Fire Resistance($| \\()"},
+		{"+#% to Cold Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 冰冷抗性($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Cold Resistance($| \\()"},
+		{"+#% to Lightning Resistance", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,})% 閃電抗性($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,})% to Lightning Resistance($| \\()"},
+		{"+#% to Chaos Resistance", 20, u8"^\\+?([2-9][0-9]|[1-9][0-9]{2,})% 混沌抗性($| \\()", "^\\+?([2-9][0-9]|[1-9][0-9]{2,})% to Chaos Resistance($| \\()"},
+		{"+#% to all Elemental Resistances", 10, u8"^\\+?[1-9][0-9]{1,}% 全部元素抗性($| \\()", "^\\+?[1-9][0-9]{1,}% to all Elemental Resistances($| \\()"},
+		{"+# to Strength", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 力量($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Strength($| \\()"},
+		{"+# to Dexterity", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 敏捷($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Dexterity($| \\()"},
+		{"+# to Intelligence", 30, u8"^\\+?([3-9][0-9]|[1-9][0-9]{2,}) 智慧($| \\()", "^\\+?([3-9][0-9]|[1-9][0-9]{2,}) to Intelligence($| \\()"},
+		{"#% increased Movement Speed", 25, u8"^增加 \\+?(2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})% 移動速度($| \\()", "^\\+?(2[5-9]|[3-9][0-9]|[1-9][0-9]{2,})% increased Movement Speed($| \\()"},
 	};
 	GameData& p1 = G["poe1"];
 	int found = 0, same = 0;
