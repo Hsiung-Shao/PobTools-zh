@@ -3,6 +3,7 @@
 #include "regex_itemmods.h"
 
 #include "regex_numeric.h"
+#include "error_log.h"     // PobLog
 #include "regex_share.h"   // Gunzip
 
 #define WIN32_LEAN_AND_MEAN
@@ -754,11 +755,13 @@ std::optional<ModAnchor> AltAnchor(const ModIndex& idx, const std::vector<U16>& 
 		const std::optional<ModAnchor> a = ChooseAnchor(idx, ToU8(f), plusHint, std::numeric_limits<int>::max(), same);
 		if (!a) return std::nullopt;
 		const size_t at = f.find(u'#');   // ChooseAnchor succeeded -> exactly one '#'
+		if (at == U16::npos) return std::nullopt;
 		if (!a->caret || !a->dollar || a->p != ToU8(Slice(f, 0, at)) || a->s != ToU8(Slice(f, at + 1)))
 			return std::nullopt;
 	}
 	const U16& f0 = shown[0];
 	const size_t hash = f0.find(u'#');
+	if (hash == U16::npos) return std::nullopt;   // defensive: the caller guarantees one '#'
 	ModAnchor a;
 	a.p = ToU8(Slice(f0, 0, hash));
 	a.s = ToU8(Slice(f0, hash + 1));
@@ -990,12 +993,32 @@ bool LoadStatsText(const std::wstring& exeDir, const std::string& game, Lang lan
 }
 
 // node.ts loadItemModData's arbitration read: missing / broken -> nullopt
-std::optional<ItemModForms> LoadForms(const std::wstring& exeDir, const std::string& game)
+namespace {
+
+// LoadForms, with *why saying which step failed (missing / broken gzip / not
+// schema 1, not JSON or no such game).
+std::optional<ItemModForms> LoadFormsWhy(const std::wstring& exeDir, const std::string& game, std::string* why)
 {
 	std::string gz, text;
-	if (!ReadWhole(exeDir + L"Data\\regex_stats\\item-mod-forms.json.gz", gz)) return std::nullopt;
-	if (!RegexShare::Gunzip(gz, text, kMaxStatsBytes, nullptr)) return std::nullopt;
-	return ParseItemModForms(text, game);
+	if (!ReadWhole(exeDir + L"Data\\regex_stats\\item-mod-forms.json.gz", gz)) {
+		if (why) *why = u8"找不到檔案";
+		return std::nullopt;
+	}
+	std::string gzErr;
+	if (!RegexShare::Gunzip(gz, text, kMaxStatsBytes, &gzErr)) {
+		if (why) *why = u8"解壓失敗：" + gzErr;
+		return std::nullopt;
+	}
+	std::optional<ItemModForms> f = ParseItemModForms(text, game);
+	if (!f && why) *why = u8"格式不符（非 JSON / schema 不是 1 / 沒有 " + game + u8"）";
+	return f;
+}
+
+} // namespace
+
+std::optional<ItemModForms> LoadForms(const std::wstring& exeDir, const std::string& game)
+{
+	return LoadFormsWhy(exeDir, game, nullptr);
 }
 
 bool LoadStats(const std::wstring& exeDir, const std::string& game, std::vector<StatLite>& zh, std::vector<StatLite>& en,
@@ -1015,7 +1038,12 @@ bool LoadFile(const std::wstring& exeDir, const std::string& game, Data& out, st
 {
 	std::vector<StatLite> zh, en;
 	if (!LoadStats(exeDir, game, zh, en, err)) return false;
-	const std::optional<ItemModForms> forms = LoadForms(exeDir, game);
+	std::string why;
+	const std::optional<ItemModForms> forms = LoadFormsWhy(exeDir, game, &why);
+	// store.ts console.warn: the page still builds, without arbitration (fewer entries)
+	if (!forms)
+		PobLog::Error("data", "regex_stats\\item-mod-forms.json.gz (" + game + "): " + why +
+		                          u8"，退回沒有仲裁（多種寫法的詞綴不收）");
 	out = BuildData(game, zh, en, forms ? &*forms : nullptr);
 	return true;
 }
