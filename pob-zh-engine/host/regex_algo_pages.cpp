@@ -879,6 +879,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 		const RegexPageDef* page;
 		const RegexGen::Corpus* corpus;
 		std::vector<int> picks, unresolved;
+		bool hasTokens;   // produced at least one token (the class term only counts these)
 	};
 	std::vector<CorpusPart> corpusSels;
 	// Corpora built here for a sel that came without one (stable addresses).
@@ -987,7 +988,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 		for (const std::string& t : r.tokens)
 			c.length += RegexGen::CharCount(mode == Mode::All ? QuoteIfNeeded(t) : t) + 1;
 		res.perPage.push_back(std::move(c));
-		corpusSels.push_back({&p, corpus, picks, r.unresolved});
+		corpusSels.push_back({&p, corpus, picks, r.unresolved, !r.tokens.empty()});
 		if (!res.hasCorpus) {
 			res.corpusResult = std::move(r);
 			res.hasCorpus = true;
@@ -1129,7 +1130,10 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	// combine.ts:223-224 the ticked corpus pages' shared item-class term, quoted
 	{
 		std::vector<const RegexPageDef*> classPages;
-		for (const CorpusPart& s : corpusSels) classPages.push_back(s.page);
+		// only pages that produced a token: a page whose picks all went unresolved
+		// must not leave a bare "碑牌" that lights every tablet
+		for (const CorpusPart& s : corpusSels)
+			if (s.hasTokens) classPages.push_back(s.page);
 		const std::string shared = SharedClassTerm(classPages, lang);
 		if (!shared.empty()) res.classTerm = "\"" + shared + "\"";
 	}

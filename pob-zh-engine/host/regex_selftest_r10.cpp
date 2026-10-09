@@ -882,6 +882,22 @@ void TabletTests(const std::map<std::string, Game>& games, const std::wstring& e
 		                                          (others ? " -- " + firstOther : std::string()));
 	}
 
+	// C3: a page counts for the class term only when it produced a token -- a pick
+	// nothing can single out must not leave a bare "tablet" that lights every tablet
+	{
+		const int stuck = IdxOf(*tablet, "TowerMapBossAdditionalSpirit");
+		if (stuck < 0) {
+			check(false, u8"C3 前提：碑牌頁有 TowerMapBossAdditionalSpirit");
+		} else {
+			const CombineResult a = Combine(Lang::En, Mode::Any, {CorpusSel(tablet, {stuck}, Lang::En)});
+			check(a.query.find("tablet") == std::string::npos && a.classTerm.empty() && a.query.empty(),
+			      u8"C3 en 只勾無法單獨指定的 TowerMapBossAdditionalSpirit -> 不加 \"tablet\"、字串為空 -- 得 [" + a.query + "]");
+			const CombineResult b = Combine(Lang::En, Mode::Any, {CorpusSel(tablet, {stuck, iExp}, Lang::En)});
+			check(b.classTerm == "\"tablet\"" && b.query.find("\"tablet\"") != std::string::npos,
+			      u8"C3 en 卡住一條 + 正常一條 -> 仍有 \"tablet\" -- 得 " + b.query);
+		}
+	}
+
 	// M1: the merged (union) corpus carries the alts
 	{
 		UnionCorpusCache cache;
