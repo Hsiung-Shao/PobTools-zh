@@ -1396,7 +1396,18 @@ private:
 		}
 		// What the search reads besides the line: it explains why a token is
 		// longer than the line alone would need.
-		const std::vector<std::string>& hidden = (lang_ == Lang::Zh) ? e.hiddenZh : e.hiddenEn;
+		// The other wordings of the same modifier (alts: 「一個」 at 1, 「#個」 at 2)
+		// are the line itself at another roll, not extra text: listed on their own.
+		// The data also carries them in the hidden text, so they are left out there.
+		const std::vector<std::string>& alts = (lang_ == Lang::Zh) ? e.altZh : e.altEn;
+		if (!alts.empty()) {
+			ImGui::Separator();
+			SmallText(u8"同一詞綴的其他寫法：");
+			for (const std::string& a : alts) SmallText((u8"· " + a).c_str());
+		}
+		std::vector<std::string> hidden;
+		for (const std::string& h : (lang_ == Lang::Zh) ? e.hiddenZh : e.hiddenEn)
+			if (std::find(alts.begin(), alts.end(), h) == alts.end()) hidden.push_back(h);
 		if (!hidden.empty()) {
 			ImGui::Separator();
 			SmallText(u8"遊戲搜尋也會比對：");
@@ -1509,6 +1520,13 @@ private:
 			}
 		}
 
+		// combine.ts classTerm (RegexPanel.vue ppz.regex.class_term; en: "{term} was
+		// added automatically: only Tablets light up, so other items (e.g. a jewel's
+		// \"Area of Effect\") are not matched.")
+		if (!out.classTerm.empty()) {
+			ImGui::Dummy(ImVec2(0, Dp(4.0f)));
+			SmallText((u8"已自動加上 " + out.classTerm + u8":只會亮碑牌,避免誤中其他物品(例:珠寶的「範圍效果」)。").c_str(), Tok::TextMuted, inner);
+		}
 		if (scopeCombined_) {
 			// the merge details live in the merged view; here how many, and a way there
 			std::string body;

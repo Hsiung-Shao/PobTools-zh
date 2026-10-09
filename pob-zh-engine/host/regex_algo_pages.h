@@ -324,7 +324,17 @@ struct CombineResult {
 	// panel's single-page details; empty when no corpus page had picks.
 	RegexGen::Result corpusResult;
 	bool hasCorpus = false;
+	// combine.ts classTerm: the item-class term, quoted ("\"碑牌\""); empty = none
+	// (TS null). Counted in `length`.
+	std::string classTerm;
 };
+
+// class-term.ts:15 classTermOf: the text every item of this page's class prints in
+// its name ("碑牌" / "tablet" for poe2 tablet_mods); "" = none.
+std::string ClassTermOf(const RegexPageDef& page, Lang lang);
+// class-term.ts:20 sharedClassTerm: the ticked corpus pages' common class term,
+// only when ALL of them have the same one; "" otherwise.
+std::string SharedClassTerm(const std::vector<const RegexPageDef*>& pages, Lang lang);
 
 // JS String.prototype.trim: WhiteSpace + LineTerminator code points off both ends
 // (store.ts addCustom trims the typed text with it; escapeTerm trims again).

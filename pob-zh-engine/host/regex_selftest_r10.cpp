@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <set>
@@ -397,8 +398,9 @@ void GroupTests(const std::map<std::string, Game>& games)
 	check(plan.skippedPages == 1, u8"G1 碑牌頁合併不含換界石條件：回報 1 頁未併入（得 " + Num(plan.skippedPages) + "）");
 
 	// E1
-	check(terms == std::vector<std::string>{u8"%維", u8"度: 稀"},
-	      u8"E1 截圖案例端到端：以碑牌為目前頁合併 = \"%維\" \"度: 稀\" -- 得 " + r.query);
+	// (2026-10-09 class-term: the tablet page alone adds "碑牌" after the algorithmic terms)
+	check(terms == std::vector<std::string>{u8"%維", u8"度: 稀", u8"碑牌"},
+	      u8"E1 截圖案例端到端：以碑牌為目前頁合併 = \"%維\" \"度: 稀\" \"碑牌\" -- 得 " + r.query);
 
 	// G2
 	{
@@ -715,6 +717,304 @@ void FragmentTests(const std::map<std::string, Game>& games, const std::wstring&
 	}
 }
 
+// ---- TV / C / M / S4: tablet alts and the item-class term (exile-appraiser
+// regex/test/tablet-variants.test.ts, combine.ts classTerm, R10 M4) ----------------
+
+std::string Inst(const std::string& line, int n)
+{
+	std::string s;
+	for (char ch : line) {
+		if (ch == '#') s += std::to_string(n);
+		else s += ch;
+	}
+	return s;
+}
+bool TokensHit(const std::vector<std::string>& tokens, const std::string& line)
+{
+	for (const std::string& t : tokens)
+		if (Hits(t, line)) return true;
+	return false;
+}
+
+void TabletTests(const std::map<std::string, Game>& games, const std::wstring& exeDir)
+{
+	line(u8"[R10-TV] 依 roll 值換寫法的詞綴（alts）與碑牌頁物品類型條件");
+	const Game& P2 = games.at("poe2");
+	const RegexPageDef* tablet = P2.Corpus("tablet_mods");
+	const RegexPageDef* waystone = P2.Corpus("waystone_mods");
+	if (!tablet || !waystone) {
+		check(false, u8"TV 前提：poe2 tablet_mods / waystone_mods 都在");
+		return;
+	}
+
+	// TV1
+	{
+		std::vector<std::string> ids;
+		const RegexEntryDef* sentinels = nullptr;
+		for (const RegexEntryDef& e : tablet->entries)
+			if (!e.altZh.empty() || !e.altEn.empty()) {
+				ids.push_back(e.id);
+				if (e.id == "TowerExpeditionAdditionalSentinels") sentinels = &e;
+			}
+		std::sort(ids.begin(), ids.end());
+		check(ids == std::vector<std::string>{"TowerAdditionalEssence1", "TowerAdditionalShrine1", "TowerAdditionalStrongbox1",
+		                                      "TowerBreachAdditionalRares", "TowerExpeditionAdditionalSentinels",
+		                                      "TowerExpeditionBuriedStrongboxes", "TowerExpeditionFrozenBosses",
+		                                      "TowerExpeditionUnearthedRares", "TowerExpeditionVaalRemnants", "TowerMapAdditionalModifier",
+		                                      "TowerMapBossAdditionalSpirit", "TowerRitualAdditionalReroll"} &&
+		          sentinels && sentinels->zh == std::vector<std::string>{u8"地圖中的探險含有1個額外維里西姆守望"} &&
+		          sentinels->altZh == std::vector<std::string>{u8"地圖中的探險含有#個額外維里西姆守望"},
+		      u8"TV1 碑牌頁確實有 12 條 alts 列（守門不是空轉），守望列主寫法 / altZh 正確 -- 得 " + Num((long long)ids.size()) + u8" 條");
+		int n = 0, bad = 0, stuckOk = 0, stuckN = 0;
+		std::string first;
+		for (const PageRef& pr : P2.pages) {
+			if (!pr.corpus) continue;
+			const RegexPageDef& p = *pr.corpus;
+			for (int idx = 0; idx < (int)p.entries.size(); idx++) {
+				const RegexEntryDef& e = p.entries[idx];
+				for (Lang lang : {Lang::Zh, Lang::En}) {
+					const std::vector<std::string>& alts = lang == Lang::Zh ? e.altZh : e.altEn;
+					if (alts.empty()) continue;
+					RegexGen::Corpus c;
+					BuildPageCorpus(p, lang, c);
+					for (Mode mode : {Mode::Any, Mode::All}) {
+						const RegexGen::Result r = c.Build({idx}, mode);
+						const std::string tag = p.id + " " + e.id + (lang == Lang::Zh ? " zh" : " en") + (mode == Mode::Any ? " any" : " all");
+						if (p.id == "tablet_mods" && e.id == "TowerMapBossAdditionalSpirit" && lang == Lang::En) {
+							stuckN++;
+							stuckOk += r.unresolved == std::vector<int>{idx} && c.Verify({idx}, r.query).extra.empty();
+							continue;
+						}
+						n++;
+						bool ok = r.unresolved.empty() && c.Verify({idx}, r.query).ok;
+						std::string why = ok ? std::string() : u8"沒有單獨指定或驗證不過";
+						const std::vector<std::string>& main = lang == Lang::Zh ? e.zh : e.en;
+						for (const std::string& l : main)
+							for (int roll : {1, 2, 10})
+								if (ok && !TokensHit(r.tokens, Inst(l, roll))) { ok = false; why = Inst(l, roll); }
+						for (const std::string& l : alts)   // the other wordings print at a roll >= 2
+							for (int roll : {2, 10})
+								if (ok && !TokensHit(r.tokens, Inst(l, roll))) { ok = false; why = Inst(l, roll); }
+						if (!ok && !bad++) first = tag + " " + r.query + u8" 未中「" + why + u8"」";
+					}
+				}
+			}
+		}
+		check(n > 0 && bad == 0, u8"TV1 有 alts 的列單選字串命中主寫法（代 1/2/10）與每個 alt（代 2/10）：" + Num(n - bad) + " / " + Num(n) +
+		                             (bad ? " -- " + first : std::string()));
+		check(stuckN == 2 && stuckOk == 2, u8"TV1 已知卡住：英文 TowerMapBossAdditionalSpirit 據實回報無法單獨指定、不誤中別條（any / all）");
+	}
+	// TV2
+	{
+		std::map<std::string, int> count;
+		bool explosion = false, vaal = false;
+		for (const RegexEntryDef& e : tablet->entries) {
+			count[e.group >= 0 && e.group < (int)tablet->groups.size() ? tablet->groups[e.group] : std::string("?")]++;
+			explosion |= e.id == "TowerExpeditionExplosionRadius";
+			vaal |= e.id == "TowerExpeditionVaalRemnants";
+		}
+		const std::map<std::string, int> want = {{u8"通用（輻照）", 24}, {u8"裂痕", 7}, {u8"探險", 13}, {u8"譫妄", 9},
+		                                         {u8"祭祀", 9},          {u8"深淵", 9}, {u8"總督", 5},  {u8"神廟", 7}};
+		std::string got;
+		for (const auto& kv : count) got += kv.first + "=" + Num(kv.second) + " ";
+		check(count == want && tablet->entries.size() == 83 && explosion && vaal,
+		      u8"TV2 碑牌頁各組條數（通用 24 / 裂痕 7 / 探險 13 / 譫妄 9 / 祭祀 9 / 深淵 9 / 總督 5 / 神廟 7）總 83，含炸藥範圍、瓦爾遺物 -- 得 " +
+		          got + u8"共 " + Num((long long)tablet->entries.size()));
+		auto groupOf = [&](const std::string& zh) -> std::string {
+			for (const RegexEntryDef& e : tablet->entries)
+				if (!e.zh.empty() && e.zh[0] == zh) return e.group >= 0 && e.group < (int)tablet->groups.size() ? tablet->groups[e.group] : "?";
+			return "(none)";
+		};
+		check(groupOf(u8"地圖內含有額外的一個保險箱") == u8"通用（輻照）" && groupOf(u8"地圖內含有額外的一個神殿") == u8"通用（輻照）" &&
+		          groupOf(u8"地圖內含有額外的一個精髓") == u8"通用（輻照）" && groupOf(u8"地圖內含有額外的一個阿茲莫里魂靈") == u8"總督",
+		      u8"TV2 每種碑牌都會出的詞綴歸「通用」，額外的一個阿茲莫里魂靈歸「總督」");
+	}
+
+	// C1 / C2: the item-class term
+	const int iExp = IdxOf(*tablet, "TowerExpeditionExplosionRadius"), iVaal = IdxOf(*tablet, "TowerExpeditionVaalRemnants");
+	if (iExp < 0 || iVaal < 0) {
+		check(false, u8"C 前提：碑牌頁有 TowerExpeditionExplosionRadius / TowerExpeditionVaalRemnants");
+		return;
+	}
+	const std::vector<int> picks = {iExp, iVaal};
+	{
+		int bad = 0;
+		std::string first;
+		for (Lang lang : {Lang::Zh, Lang::En}) {
+			const std::string term = lang == Lang::Zh ? std::string(u8"\"碑牌\"") : std::string("\"tablet\"");
+			for (Mode mode : {Mode::Any, Mode::All, Mode::None}) {
+				RegexGen::Corpus c;
+				BuildPageCorpus(*tablet, lang, c);
+				const std::string want = c.Build(picks, mode).query;
+				const CombineResult r = Combine(lang, mode, {CorpusSel(tablet, picks, lang)});
+				const std::string expect = mode == Mode::None ? term + " " + want : want + " " + term;
+				if (r.classTerm != term || r.query != expect || r.length != RegexGen::CharCount(r.query))
+					if (!bad++) first = r.query + " / classTerm " + r.classTerm;
+			}
+		}
+		check(bad == 0, u8"C1 碑牌頁單頁 = build 的字串 + \"碑牌\" / \"tablet\"（none 的 ! term 照舊在最後；zh/en × any/all/none）" +
+		                    (bad ? " -- " + first : std::string()));
+		const CombineResult r = Combine(Lang::Zh, Mode::Any, {CorpusSel(tablet, picks, Lang::Zh)});
+		const std::vector<std::string> jewel = {u8"稀有度: 稀有", u8"增加 12% 範圍效果", u8"藍寶石"};
+		const std::vector<std::string> tablets = {u8"稀有度: 稀有", u8"探險碑牌", u8"地圖中的探險含有2個瓦爾遺物"};
+		auto lit = [&](const std::vector<std::string>& item) {
+			for (const std::string& t : Terms(r.query))
+				if (!HoldsFor(t, item)) return false;
+			return true;
+		};
+		check(r.query == u8"\"圍|個瓦\" \"碑牌\"" && !lit(jewel) && lit(tablets),
+		      u8"C1 使用者回報的組合：\"圍|個瓦\" \"碑牌\"，珠寶（範圍效果）不亮、探險碑牌亮 -- 得 " + r.query);
+	}
+	{
+		bool ok = true;
+		for (Lang lang : {Lang::Zh, Lang::En}) {
+			const CombineResult r = Combine(lang, Mode::Any, {CorpusSel(tablet, picks, lang), CorpusSel(waystone, {0}, lang)});
+			ok = ok && r.classTerm.empty() && r.query.find(lang == Lang::Zh ? u8"碑牌" : "tablet") == std::string::npos;
+		}
+		int others = 0;
+		std::string firstOther;
+		for (const auto& kv : games)
+			for (const PageRef& pr : kv.second.pages)
+				if (pr.corpus && !(pr.corpus->game == "poe2" && pr.corpus->id == "tablet_mods") && !ClassTermOf(*pr.corpus, Lang::Zh).empty())
+					if (!others++) firstOther = pr.corpus->game + "/" + pr.corpus->id;
+		const bool tabletHas = ClassTermOf(*tablet, Lang::Zh) == u8"碑牌" && ClassTermOf(*tablet, Lang::En) == "tablet";
+		check(ok && others == 0 && tabletHas, u8"C2 碑牌頁 + 換界石頁一起勾不加條件（否則擋掉換界石）；其他頁沒有物品類型條件" +
+		                                          (others ? " -- " + firstOther : std::string()));
+	}
+
+	// M1: the merged (union) corpus carries the alts
+	{
+		UnionCorpusCache cache;
+		const UnionCorpusCache::Union& u = cache.Get({tablet, waystone}, Lang::Zh);
+		int withAlts = 0, same = 0;
+		for (size_t i = 0; i < tablet->entries.size(); i++) {
+			const RegexEntryDef& d = tablet->entries[i];
+			if (d.altZh.empty()) continue;
+			withAlts++;
+			same += u.corpus.At((size_t)u.offsets[0] + i).alts == d.altZh;
+		}
+		const int iBox = IdxOf(*tablet, "TowerAdditionalStrongbox1");
+		const CombineResult r = Combine(Lang::Zh, Mode::Any, {CorpusSel(tablet, {iBox}, Lang::Zh), CorpusSel(waystone, {0}, Lang::Zh)});
+		bool hitsAlt = false;
+		for (const PageContribution& c : r.perPage)
+			if (c.id == "tablet_mods") hitsAlt = TokensHit(c.fragments, Inst(u8"地圖內含有額外的#個保險箱", 2)) &&
+			                                      TokensHit(c.fragments, u8"地圖內含有額外的一個保險箱");
+		check(withAlts > 0 && same == withAlts && iBox >= 0 && r.check.missing.empty() && hitsAlt,
+		      u8"M1 合併聯集語料含 alts（" + Num(same) + " / " + Num(withAlts) + u8" 列），碑牌 + 換界石合併時保險箱列的片段兩種寫法都中 -- " + r.query);
+	}
+	// M4 (TS R10 M4): an alts line alone must make the short condition terms fall back
+	{
+		const AlgoPage* wn = P2.Algo("waystone_numeric");
+		const int wR = wn ? IdxOf(*wn, kRarityEntryId) : -1;
+		if (!wn || wR < 0) {
+			check(false, u8"M4 前提：waystone_numeric 有稀有度列");
+		} else {
+			RegexPageDef fake = *waystone;
+			RegexEntryDef e;
+			e.id = "r10_fake_alts_only";
+			e.zh = {u8"測試用詞綴 #"};
+			e.en = {"Test modifier #"};
+			e.altZh = {u8"測試強度: 稀少的#", u8"已汙染的地圖 #%"};
+			e.altEn = {"Test Intensity: rx #", "Corrupted Maps #%"};
+			fake.entries.push_back(e);
+			const std::vector<std::string> zh = SectionTerms(&fake, wn, wR, Choice({"rare"}, Corruption::Corrupted), Lang::Zh);
+			const std::vector<std::string> en = SectionTerms(&fake, wn, wR, Choice({"rare"}, Corruption::Corrupted), Lang::En);
+			check(zh.size() == 2 && zh[0].find(u8"稀有度") != std::string::npos && zh[1] == u8"^已汙染$" && en.size() == 2 &&
+			          en[0].find("Rarity") != std::string::npos && en[1] == "^Corrupted$",
+			      u8"M4 防誤中語料含 alts：只在 altZh / altEn 出現的「…度: 稀…」「已汙染的…」也讓稀有度與汙染退回完整寫法 -- 得 " +
+			          JoinTerms(zh) + " / " + JoinTerms(en));
+		}
+	}
+
+	// A1: the tablet page's ambient carries the implicit lines every tablet prints
+	{
+		auto has = [](const std::vector<std::string>& v, const std::string& s) { return std::find(v.begin(), v.end(), s) != v.end(); };
+		const bool zh = has(tablet->ambientZh, u8"剩餘#次使用次數") && has(tablet->ambientZh, u8"剩餘#次使用") &&
+		                has(tablet->ambientZh, u8"強化帶有頭目的地圖剩餘#次使用") && has(tablet->ambientZh, u8"在地圖內加入一個卡爾葛墓地");
+		const bool en = has(tablet->ambientEn, "# uses remaining") && has(tablet->ambientEn, "# use remaining");
+		check(zh && en, u8"A1 碑牌 ambient 含固有詞綴：剩餘#次使用次數 / 剩餘#次使用 / 強化帶有頭目的地圖剩餘#次使用 / 在地圖內加入一個卡爾葛墓地；"
+		                u8"# uses remaining / # use remaining -- zh " + std::string(zh ? "ok" : "X") + " en " + (en ? "ok" : "X"));
+	}
+
+	// S4: the user's real tablet (second item of poe2_items_zh.txt)
+	{
+		std::string t;
+		if (!ReadSample(exeDir, L"poe2_items_zh.txt", t, nullptr)) {
+			check(false, u8"S4 樣本檔讀得到");
+			return;
+		}
+		const auto items = SplitItems(t);
+		if (items.size() < 2) {
+			check(false, u8"S4 樣本檔有碑牌（第 2 件）");
+			return;
+		}
+		// The copy carries the advanced form "27(25-35)%" and "{ 前綴 … }" headers;
+		// the search sees "27%" and no headers.
+		std::vector<std::string> item;
+		for (const std::string& l : items[1]) {
+			if (!l.empty() && l[0] == '{') continue;
+			std::string s;
+			for (size_t i = 0; i < l.size(); i++) {
+				if (l[i] == '(' && i > 0 && std::isdigit((unsigned char)l[i - 1])) {
+					const size_t e = l.find(')', i);
+					if (e != std::string::npos && l.find_first_not_of("0123456789.-", i + 1) == e) { i = e; continue; }
+				}
+				s += l[i];
+			}
+			item.push_back(s);
+		}
+		// The page's rows that print one of the item's lines ('#' = a number)
+		std::vector<int> rows;
+		for (int i = 0; i < (int)tablet->entries.size(); i++) {
+			bool found = false;
+			for (const std::string& pl : tablet->entries[i].zh) {
+				std::string re = "^";
+				for (char ch : pl) re += ch == '#' ? std::string("[0-9]+") : (std::strchr("\\^$.|?*+()[]{}", ch) ? std::string("\\") + ch : std::string(1, ch));
+				re += "$";
+				for (const std::string& l : item) found |= Hits(re, l);
+			}
+			if (found) rows.push_back(i);
+		}
+		int ok = 0;
+		std::string first;
+		for (int i : rows) {
+			const CombineResult r = Combine(Lang::Zh, Mode::Any, {CorpusSel(tablet, {i}, Lang::Zh)});
+			bool all = !r.query.empty();
+			for (const std::string& term : Terms(r.query)) all = all && HoldsFor(term, item);
+			if (all) ok++;
+			else if (first.empty()) first = tablet->entries[i].id + " " + r.query;
+		}
+		check(rows.size() == 4 && ok == 4, u8"S4 樣本碑牌四條詞綴單選各自命中（含 \"碑牌\"）：" + Num(ok) + " / " + Num((long long)rows.size()) +
+		                                       (first.empty() ? std::string() : " -- " + first));
+
+		// A2: the ritual reroll row (not on this tablet) must not get a token that
+		// hits every tablet -- 「剩餘8次使用次數」 is the implicit line all of them print.
+		int reroll = IdxOf(*tablet, "TowerRitualAdditionalReroll");
+		for (int i = 0; reroll < 0 && i < (int)tablet->entries.size(); i++)
+			if (tablet->entries[i].id.find("Ritual") != std::string::npos && tablet->entries[i].id.find("Reroll") != std::string::npos) reroll = i;
+		if (reroll < 0) {
+			check(false, u8"A2 前提：碑牌頁有祭祀重骰詞綴（id 含 Ritual + Reroll）");
+		} else {
+			std::vector<std::string> enItem = {"8 uses remaining", "1 use remaining", "Adds a Kalguuran Cemetery to the Map"};
+			std::string why;
+			for (Lang lang : {Lang::Zh, Lang::En}) {
+				RegexGen::Corpus c;
+				BuildPageCorpus(*tablet, lang, c);
+				const RegexGen::Result r = c.Build({reroll}, Mode::Any);
+				for (const std::string& tok : r.tokens) {
+					for (const std::string& l : item)
+						if (Hits(tok, l) && why.empty()) why = std::string(lang == Lang::Zh ? "zh " : "en ") + r.query + u8" 中「" + l + u8"」";
+					if (lang == Lang::En)
+						for (const std::string& l : enItem)
+							if (Hits(tok, l) && why.empty()) why = "en " + r.query + u8" 中「" + l + u8"」";
+				}
+			}
+			check(why.empty(), u8"A2 重骰詞綴（" + tablet->entries[reroll].id + u8"）單選的片段不中樣本碑牌任何一行（特別是「剩餘8次使用次數」）" +
+			                       (why.empty() ? std::string() : " -- " + why));
+		}
+	}
+}
+
 } // namespace
 
 void RegexR10Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -746,5 +1046,7 @@ void RegexR10Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::
 	g_rarityLabels = nullptr;
 	line("");
 	FragmentTests(games, exeDir);
+	line("");
+	TabletTests(games, exeDir);
 	line("    (R10 checks took " + Num((long long)(GetTickCount() - t0)) + " ms)");
 }

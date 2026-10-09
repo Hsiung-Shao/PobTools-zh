@@ -738,6 +738,29 @@ MergePlan PlanMerge(const std::string& currentId, const std::vector<std::string>
 	return p;
 }
 
+// class-term.ts (exile-appraiser 01ac96e): a page's fragments only promise not to
+// hit the page's OTHER modifiers, but a stash / shop search scans every item (a
+// jewel's 「範圍效果」 holds 「圍」). So a page whose items all carry a word in their
+// name gets that word as one more AND term. Only the tablet page so far: the eight
+// tablet bases all end in 「碑牌」 / "Tablet".
+// class-term.ts:10 CLASS_TERMS
+std::string ClassTermOf(const RegexPageDef& page, Lang lang)
+{
+	if (page.game == "poe2" && page.id == "tablet_mods") return lang == Lang::Zh ? u8"碑牌" : "tablet";
+	return std::string();
+}
+
+// class-term.ts:20 sharedClassTerm
+std::string SharedClassTerm(const std::vector<const RegexPageDef*>& pages, Lang lang)
+{
+	if (pages.empty()) return std::string();
+	const std::string first = ClassTermOf(*pages[0], lang);
+	if (first.empty()) return std::string();
+	for (const RegexPageDef* p : pages)
+		if (ClassTermOf(*p, lang) != first) return std::string();
+	return first;
+}
+
 std::string JsTrim(const std::string& t)
 {
 	// JS WhiteSpace + LineTerminator, on code points.
@@ -1103,7 +1126,14 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	}
 	for (const ExcludeToken& x : res.excludes) noneTokens.push_back(x.token);
 
-	// combine.ts:207-211 order: any, all, algorithmic, custom, none
+	// combine.ts:223-224 the ticked corpus pages' shared item-class term, quoted
+	{
+		std::vector<const RegexPageDef*> classPages;
+		for (const CorpusPart& s : corpusSels) classPages.push_back(s.page);
+		const std::string shared = SharedClassTerm(classPages, lang);
+		if (!shared.empty()) res.classTerm = "\"" + shared + "\"";
+	}
+	// combine.ts:225-231 order: any, all, algorithmic, class, custom, none
 	std::vector<std::string> terms;
 	if (!anyTokens.empty()) {
 		std::string t = "\"";
@@ -1112,6 +1142,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 	}
 	terms.insert(terms.end(), allTerms.begin(), allTerms.end());
 	terms.insert(terms.end(), algoTerms.begin(), algoTerms.end());
+	if (!res.classTerm.empty()) terms.push_back(res.classTerm);
 	for (const CustomTerm& c : res.custom) terms.push_back(QuoteIfNeeded(c.term));
 	if (!noneTokens.empty()) {
 		std::string t = "\"!";
