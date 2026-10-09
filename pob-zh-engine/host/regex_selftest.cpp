@@ -350,6 +350,46 @@ void SyntheticTests()
 		RegexGen::Check v = d.Verify({0}, "\"^abc\"");
 		check(!v.ok && v.extra.size() == 1, "and Verify sees the anchored hidden hit");
 	}
+
+	line("[T17] a modifier's other wordings must be found too");
+	{
+		// The Overseer tablet's 1..2 roll: "an additional Strongbox" at 1,
+		// "# additional Strongboxes" at 2. "ox$" finds the first and misses the
+		// second; the chance line next to it shares "strongboxes".
+		Entry a;
+		a.id = "box";
+		a.texts = {"Map contains an additional Strongbox"};
+		a.alts = {"Map contains # additional Strongboxes"};
+		Entry b;
+		b.id = "chance";
+		b.texts = {"Map has #% increased chance to contain Strongboxes"};
+		Corpus c = MakeEx({a, b});
+		for (Mode mode : {Mode::Any, Mode::All}) {
+			RegexGen::Result r = c.Build({0}, mode);
+			check(r.exact && c.Verify({0}, r.query).ok,
+			      "the token covers both wordings: " + r.query);
+			check(r.query.find("ox$") == std::string::npos, "and is not the singular-only \"ox$\"");
+		}
+		RegexGen::Check v = c.Verify({0}, "\"ox$\"");
+		check(!v.ok && v.missing.size() == 1, "a term that misses the other wording is a miss");
+		RegexGen::Result r2 = c.Build({1}, Mode::Any);
+		check(r2.exact && c.Verify({1}, r2.query).ok,
+		      "the other wording vetoes like hidden text for everyone else: " + r2.query);
+		// Where only the singular can be told apart, the honest answer is "cannot
+		// be singled out" -- and without alts the old singular-only answer.
+		Entry x;
+		x.id = "box";
+		x.texts = {"box"};
+		x.alts = {"# boxes"};
+		Entry y;
+		y.id = "found";
+		y.texts = {"boxes found"};
+		Corpus d = MakeEx({x, y});
+		check(!d.Build({0}, Mode::Any).exact, "a wording no token can cover leaves the pick unresolved");
+		x.alts.clear();
+		Corpus e = MakeEx({x, y});
+		check(e.Build({0}, Mode::Any).query == "\"x$\"", "an entry without alts behaves as before");
+	}
 }
 
 
@@ -623,6 +663,10 @@ void DataTests(const std::wstring& exeDir)
 				if (full)
 					e.hidden = useWant ? (useZh ? d.hiddenZh : d.hiddenEn)
 					                   : (useZh ? d.hiddenEn : d.hiddenZh);
+				// Printed text, not hidden: kept even when the hidden text is
+				// left out, so "stuck by hidden text" stays about hidden text.
+				e.alts = useWant ? (useZh ? d.altZh : d.altEn)
+				                 : (useZh ? d.altEn : d.altZh);
 				es.push_back(std::move(e));
 			}
 			RegexGen::Ambient amb;

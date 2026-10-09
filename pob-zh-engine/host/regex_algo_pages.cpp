@@ -683,6 +683,8 @@ void BuildPageCorpus(const RegexPageDef& page, Lang lang, RegexGen::Corpus& out)
 		e.texts = useWant ? want : fallback;
 		// Hidden text follows the language the entry actually ended up in.
 		e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+		// Other wordings of the same modifier (RegexGen::Entry::alts), same language rule.
+		e.alts = useWant ? (zh ? d.altZh : d.altEn) : (zh ? d.altEn : d.altZh);
 		es.push_back(std::move(e));
 	}
 	RegexGen::Ambient amb;
@@ -788,6 +790,7 @@ void EntryLines(const RegexEntryDef& d, Lang lang, RegexGen::Entry& e)
 	const bool useWant = !want.empty();
 	e.texts = useWant ? want : fallback;
 	e.hidden = useWant ? (zh ? d.hiddenZh : d.hiddenEn) : (zh ? d.hiddenEn : d.hiddenZh);
+	e.alts = useWant ? (zh ? d.altZh : d.altEn) : (zh ? d.altEn : d.altZh);
 }
 
 // data.ts pageAmbient, appended (combine.ts:126-129).
@@ -1019,6 +1022,7 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 					EntryLines(d, lang, e);
 					raw.insert(raw.end(), e.texts.begin(), e.texts.end());
 					raw.insert(raw.end(), e.hidden.begin(), e.hidden.end());
+					raw.insert(raw.end(), e.alts.begin(), e.alts.end());   // the other wordings print on items too
 				}
 				RegexGen::Ambient amb;
 				AppendAmbient(*gp, lang, amb);

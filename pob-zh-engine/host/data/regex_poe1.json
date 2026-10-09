@@ -27,7 +27,12 @@
    "ItemPopupWarlordItem": "總督軍物品",
    "ItemPopupSearingExarchItem": "卓烙總督物品",
    "ItemPopupEaterofWorldsItem": "吞噬天地物品",
-   "HeistRequiresText": "需要"
+   "HeistRequiresText": "需要",
+   "ItemDisplayStringRarity": "稀有度",
+   "ItemDisplayStringNormal": "普通",
+   "ItemDisplayStringMagic": "魔法",
+   "ItemDisplayStringRare": "稀有",
+   "ItemDisplayStringUnique": "傳奇"
   },
   "en": {
    "ItemDisplayMapTier": "Map Tier",
@@ -53,7 +58,12 @@
    "ItemPopupWarlordItem": "Warlord Item",
    "ItemPopupSearingExarchItem": "Searing Exarch Item",
    "ItemPopupEaterofWorldsItem": "Eater of Worlds Item",
-   "HeistRequiresText": "Requires"
+   "HeistRequiresText": "Requires",
+   "ItemDisplayStringRarity": "Rarity",
+   "ItemDisplayStringNormal": "Normal",
+   "ItemDisplayStringMagic": "Magic",
+   "ItemDisplayStringRare": "Rare",
+   "ItemDisplayStringUnique": "Unique"
   }
  },
  "pages": [

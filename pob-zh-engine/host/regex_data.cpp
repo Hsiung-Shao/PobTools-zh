@@ -250,6 +250,8 @@ bool RegexDataset::LoadOne(const std::wstring& exeDir, const std::wstring& game,
 				d.en = StringArray(e, "en");
 				d.hiddenZh = StringArray(e, "hiddenZh");
 				d.hiddenEn = StringArray(e, "hiddenEn");
+				d.altZh = StringArray(e, "altZh");
+				d.altEn = StringArray(e, "altEn");
 				// An entry with no printed text has nothing to search for, and
 				// keeping it would put a row in the list that can never be
 				// resolved into a token.
