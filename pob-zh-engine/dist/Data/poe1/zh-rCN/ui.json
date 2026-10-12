@@ -1089,6 +1089,7 @@
     "Minimum": "最小值",
     "Maximum": "最大值",
     "Burst": "瞬时",
+    "Burst Damage": "爆发伤害",
     "Controls how the base damage for applying Ailments is calculated:": "控制如何计算异常状态的基础伤害:",
     "\tAverage: damage is based on the average application, including both crits and non-crits": "\t平均：伤害基于平均应用，包括暴击和非暴击",
     "\tCrits Only: damage is based solely on Ailments inflicted with crits": "\t仅暴击：伤害计算只基于暴击产生的异常状态",
