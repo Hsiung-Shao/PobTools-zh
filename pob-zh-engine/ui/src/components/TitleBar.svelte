@@ -123,18 +123,6 @@
     color: var(--gold);
     border-color: var(--gold);
   }
-  @media (max-width: 1099px) {
-    .top {
-      gap: 10px;
-      padding: 0 10px;
-    }
-    .bname {
-      max-width: 18vw;
-    }
-    .bcls {
-      display: none;
-    }
-  }
   .tab {
     appearance: none;
     border: 0;
@@ -194,5 +182,17 @@
     padding: 1px 6px;
     border: 1px solid var(--warn);
     border-radius: 9px;
+  }
+  @media (max-width: 1099px) {
+    .top {
+      gap: 10px;
+      padding: 0 10px;
+    }
+    .bname {
+      max-width: 18vw;
+    }
+    .bcls {
+      display: none;
+    }
   }
 </style>

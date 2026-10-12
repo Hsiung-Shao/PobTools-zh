@@ -8,6 +8,8 @@ export interface SelOption {
   disabled?: boolean;
   title?: string;
   color?: string;
+  /** Extra text the search box also matches (e.g. the English name). */
+  search?: string;
 }
 
 /** Strip POB colour codes (`^xRRGGBB`, `^0`-`^9`) from a label. */
@@ -70,9 +72,9 @@ export function typeahead(o: SelOption[], from: number, q: string): number {
   return from;
 }
 
-/** Options whose label (colour codes removed) contains `q`, ignoring case. */
+/** Options whose label or `search` alias (colour codes removed) contains `q`, ignoring case. */
 export function filterOptions(o: SelOption[], q: string): SelOption[] {
   const needle = q.trim().toLowerCase();
   if (!needle) return o.slice();
-  return o.filter((x) => plainLabel(x.label).toLowerCase().includes(needle));
+  return o.filter((x) => plainLabel(x.label).toLowerCase().includes(needle) || (x.search !== undefined && plainLabel(x.search).toLowerCase().includes(needle)));
 }

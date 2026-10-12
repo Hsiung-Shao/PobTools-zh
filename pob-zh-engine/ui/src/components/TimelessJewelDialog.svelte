@@ -66,7 +66,7 @@
 
   const set = (p: Parameters<typeof api.tjSet>[0]) => run(() => api.tjSet(p));
   // POB's list controls are 1-based: an option's position is its value
-  const opts1 = (l: { label: string; labelZh?: string }[] | undefined) => (l ?? []).map((o, i) => ({ value: i + 1, label: o.labelZh || o.label }));
+  const opts1 = (l: { label: string; labelZh?: string }[] | undefined) => (l ?? []).map((o, i) => ({ value: i + 1, label: o.labelZh || o.label, search: o.label }));
   const pct = (v?: number) => Math.round((v ?? 0) * 100);
 
   async function copyJewel(index: number) {

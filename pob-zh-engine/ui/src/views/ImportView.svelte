@@ -343,9 +343,9 @@
         <span class="ok">{t("import.authorized")}</span>
         <button class="btn ghost sm" disabled={app.busy > 0} onclick={logout}>{t("import.logout")}</button>
         <span class="vsep"></span>
-        <label class="inline"><span class="k">{t("import.realm")}</span>
-          <Select class="select sm" value={oRealm} options={st.realms.map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (oRealm = String(v))} />
-        </label>
+        <div class="inline"><span class="k">{t("import.realm")}</span>
+          <Select class="select sm" ariaLabel={t("import.realm")} value={oRealm} options={st.realms.map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (oRealm = String(v))} />
+        </div>
         <button class="btn sm" disabled={app.busy > 0 || busyOauth || rateWait > 0} onclick={fetchOauth}>{oChars.length ? t("import.fetched") : t("import.fetch")}</button>
         {#if busyOauth}<span class="dim">{t("import.working")}</span>{/if}
         {#if rateWait > 0}<span class="bad">{t("import.rateLimited", { s: rateWait })}</span>{/if}
@@ -353,12 +353,12 @@
       {#if st.oauth.errCode}<div class="bad">{st.oauth.errCode}</div>{/if}
       {#if oChars.length}
         <div class="actions">
-          <label class="inline"><span class="k">{t("import.league")}</span>
-            <Select class="select sm" value={oLeague} options={leagueOpts(oLeagues)} onchange={(v) => (oLeague = String(v))} />
-          </label>
-          <label class="inline grow"><span class="k">{t("import.character")}</span>
-            <Select class="select sm wide" value={oChar} options={oFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (oChar = String(v))} />
-          </label>
+          <div class="inline"><span class="k">{t("import.league")}</span>
+            <Select class="select sm" ariaLabel={t("import.league")} value={oLeague} options={leagueOpts(oLeagues)} onchange={(v) => (oLeague = String(v))} />
+          </div>
+          <div class="inline grow"><span class="k">{t("import.character")}</span>
+            <Select class="select sm wide" ariaLabel={t("import.character")} value={oChar} options={oFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (oChar = String(v))} />
+          </div>
         </div>
         <div class="opts">
           <button class="btn sm" disabled={app.busy > 0 || busyOauth || !oChar} onclick={() => importOauth("tree")}>{t("import.importTree")}</button>
@@ -379,9 +379,9 @@
     <h2>{t("import.siteTitle")}</h2>
     <p class="dim">{t("import.siteHint")}</p>
     <div class="actions">
-      <label class="inline"><span class="k">{t("import.realm")}</span>
-        <Select class="select sm" value={sRealm} disabled={siteReady} options={(st?.realms ?? []).map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (sRealm = String(v))} />
-      </label>
+      <div class="inline"><span class="k">{t("import.realm")}</span>
+        <Select class="select sm" ariaLabel={t("import.realm")} value={sRealm} disabled={siteReady} options={(st?.realms ?? []).map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (sRealm = String(v))} />
+      </div>
       <label class="inline grow"><span class="k">{t("import.accountName")}</span>
         <input class="input sm wide" bind:value={sAccount} list="acct-history" placeholder="Name#1234" disabled={siteReady} onkeydown={(e) => e.key === "Enter" && accountOk && startSite()} />
         <datalist id="acct-history">
@@ -404,12 +404,12 @@
     {/if}
     {#if siteReady && sChars.length}
       <div class="actions">
-        <label class="inline"><span class="k">{t("import.league")}</span>
-          <Select class="select sm" value={sLeague} options={leagueOpts(sLeagues)} onchange={(v) => (sLeague = String(v))} />
-        </label>
-        <label class="inline grow"><span class="k">{t("import.character")}</span>
-          <Select class="select sm wide" value={sChar} options={sFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (sChar = String(v))} />
-        </label>
+        <div class="inline"><span class="k">{t("import.league")}</span>
+          <Select class="select sm" ariaLabel={t("import.league")} value={sLeague} options={leagueOpts(sLeagues)} onchange={(v) => (sLeague = String(v))} />
+        </div>
+        <div class="inline grow"><span class="k">{t("import.character")}</span>
+          <Select class="select sm wide" ariaLabel={t("import.character")} value={sChar} options={sFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (sChar = String(v))} />
+        </div>
       </div>
       <div class="opts">
         <button class="btn sm" disabled={app.busy > 0 || busySite || !sChar} onclick={() => importSite("tree")}>{t("import.importTree")}</button>

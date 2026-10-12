@@ -194,19 +194,19 @@
     </label>
 
     {#if pick && h.classes}
-      <label class="field">
+      <div class="field">
         <span class="k">{t("bar.class")}</span>
         <Select class="{selectClass} cls" ariaLabel={t("bar.class")} disabled={app.busy > 0} value={pick.classId} options={h.classes.map((c) => ({ value: c.id, label: c.nameZh || c.name }))} onchange={(v) => void changeClass(Number(v))} />
         {#if currentClass}
-          <Select class="{selectClass} cls" disabled={app.busy > 0} value={pick.ascendClassId} options={currentClass.ascendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setAscendancy(Number(v))} />
+          <Select class="{selectClass} cls" ariaLabel={t("bar.class")} disabled={app.busy > 0} value={pick.ascendClassId} options={currentClass.ascendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setAscendancy(Number(v))} />
         {/if}
         {#if h.secondaryAscendancies && h.secondaryAscendancies.length > 1}
-          <Select class="{selectClass} cls" disabled={app.busy > 0} title={t("bar.ascend2")} value={pick.secondaryAscendClassId} options={h.secondaryAscendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setSecondary(Number(v))} />
+          <Select class="{selectClass} cls" ariaLabel={t("bar.ascend2")} disabled={app.busy > 0} title={t("bar.ascend2")} value={pick.secondaryAscendClassId} options={h.secondaryAscendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setSecondary(Number(v))} />
         {/if}
-      </label>
+      </div>
     {/if}
 
-    <label class="field grow">
+    <div class="field grow">
       <span class="k">{t("bar.mainSkill")}</span>
       <Select class={selectClass} ariaLabel={t("bar.mainSkill")} value={h.mainSocketGroup.index} options={dd(h.mainSocketGroup.list)} onchange={(v) => setField("mainSocketGroup", Number(v))} />
       {#if loadouts && loadouts.entries.length > 1}
@@ -244,7 +244,7 @@
       {#if h.mainSkillMinionSkill}
         <Select class={selectClass} value={h.mainSkillMinionSkill.index} options={dd(h.mainSkillMinionSkill.list)} onchange={(v) => setField("mainSkillMinionSkill", Number(v))} />
       {/if}
-    </label>
+    </div>
 
     <span class="actions">
       {#if app.savedAt}<span class="dim savedat">{t("bar.savedAt", { time: app.savedAt })}</span>{/if}

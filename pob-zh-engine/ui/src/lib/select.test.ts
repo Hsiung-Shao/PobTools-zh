@@ -56,4 +56,13 @@ describe("filterOptions 搜尋過濾", () => {
     expect(labels("x88")).toEqual([]);
     expect(labels("")).toEqual(o.map((x) => x.label));
   });
+  it('搜尋可比對選項的英文別名', () => {
+    const o: SelOption[] = [
+      { value: 1, label: "增加 10% 生命", search: "10% increased Life" },
+      { value: 2, label: "增加 10% 魔力", search: "^x8888FF10% increased Mana" },
+    ];
+    expect(filterOptions(o, "increased life").map((x) => x.value)).toEqual([1]);
+    expect(filterOptions(o, "INCREASED MANA").map((x) => x.value)).toEqual([2]);
+    expect(filterOptions(o, "x8888").map((x) => x.value)).toEqual([]);
+  });
 });

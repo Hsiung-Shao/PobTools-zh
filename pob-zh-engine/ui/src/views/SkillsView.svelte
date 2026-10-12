@@ -516,15 +516,16 @@
             <span class="k">{t("skills.label")}</span>
             <input class="input sm" placeholder={t("skills.labelPlaceholder")} bind:value={labelDraft} onblur={() => labelDraft !== group!.label && patchGroup({ label: labelDraft })} onkeydown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()} />
           </label>
-          <label class="f">
+          <div class="f">
             <span class="k">{t("skills.slot")}</span>
             <Select
               class="select sm"
+              ariaLabel={t("skills.slot")}
               value={group.slot ?? ""}
               options={[{ value: "", label: t("skills.slotNone") }, ...data.slotOptions.map((s) => ({ value: s.name, label: s.labelZh || s.label }))]}
               onchange={(v) => patchGroup({ slot: String(v) })}
             />
-          </label>
+          </div>
           <label class="chk"><input type="checkbox" checked={group.enabled} onchange={(e) => patchGroup({ enabled: e.currentTarget.checked })} /> {t("skills.enabled")}</label>
           <label class="chk"><input type="checkbox" checked={group.includeInFullDPS} onchange={(e) => patchGroup({ includeInFullDPS: e.currentTarget.checked })} /> {t("skills.fullDps")}</label>
           {#if group.isMain}
@@ -535,10 +536,10 @@
         </div>
         {#if group.skills.length > 1}
           <div class="frow">
-            <label class="f">
+            <div class="f">
               <span class="k">{t("skills.mainSkill")}</span>
-              <Select class="select sm" value={group.mainActiveSkill} options={group.skills.map((s) => ({ value: s.index, label: s.nameZh || s.name || "" }))} onchange={(v) => patchGroup({ mainActiveSkill: Number(v) })} />
-            </label>
+              <Select class="select sm" ariaLabel={t("skills.mainSkill")} value={group.mainActiveSkill} options={group.skills.map((s) => ({ value: s.index, label: s.nameZh || s.name || "" }))} onchange={(v) => patchGroup({ mainActiveSkill: Number(v) })} />
+            </div>
           </div>
         {/if}
         {#if extras && (extras.countShown || extras.imbued?.shown || extras.optimiseSockets?.shown)}

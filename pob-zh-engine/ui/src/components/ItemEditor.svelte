@@ -155,7 +155,7 @@
   const isCloseButton = (name: string) => name === "close" || name === "cancel";
   const popupButtons = $derived(popup ? popup.controls.filter((c: ItemEditPopupControl) => c.kind === "button") : []);
   const popupFields = $derived(popup ? popup.controls.filter((c: ItemEditPopupControl) => c.kind !== "button") : []);
-  const optsOf = (opts: { label: string; labelZh?: string }[]) => opts.map((o, i) => ({ value: i + 1, label: o.labelZh || o.label }));
+  const optsOf = (opts: { label: string; labelZh?: string }[]) => opts.map((o, i) => ({ value: i + 1, label: o.labelZh || o.label, search: o.label }));
   const filterOpts = <T extends { label: string; labelZh: string }>(opts: T[], q: string) => {
     const f = q.trim().toLowerCase();
     return opts.map((o, i) => ({ o, i })).filter(({ o }) => !f || o.label.toLowerCase().includes(f) || o.labelZh.toLowerCase().includes(f));
@@ -279,12 +279,12 @@
             </label>
           {/if}
           {#if item.catalyst.shown}
-            <label class="fld"><span class="k">{t("edit.catalyst")}</span>
+            <div class="fld"><span class="k">{t("edit.catalyst")}</span>
               <Select class="sm" ariaLabel={t("edit.catalyst")} value={item.catalyst.sel} options={optsOf(item.catalyst.options)} onchange={(v) => set({ catalyst: Number(v) })} />
               {#if item.catalyst.qualityShown}
                 <input class="input sm num" type="number" min="0" max="30" aria-label={t("edit.catalyst")} value={item.catalyst.quality ?? 0} onchange={(e) => set({ catalystQuality: Number(e.currentTarget.value) })} />
               {/if}
-            </label>
+            </div>
           {/if}
           {#if item.influence.shown}
             <span class="fld"><span class="k">{t("edit.influence")}</span>
@@ -319,10 +319,10 @@
           <span class="k">{t("edit.runes")}</span>
           <div class="runes">
             {#each item.runeSlots as r (r.index)}
-              <label class="rune">
+              <div class="rune">
                 <span class="rn">{r.index}</span>
-                <Select class="sm wide" value={r.sel} options={r.options.map((o, i) => ({ value: i + 1, label: i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）` }))} onchange={(v) => set({ rune: { index: r.index, sel: Number(v) } })} />
-              </label>
+                <Select class="sm wide" ariaLabel={t("edit.runeSockets")} value={r.sel} options={r.options.map((o, i) => ({ value: i + 1, label: i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）`, search: `${o.label} ${o.name}` }))} onchange={(v) => set({ rune: { index: r.index, sel: Number(v) } })} />
+              </div>
             {/each}
           </div>
         </section>
@@ -358,15 +358,15 @@
           <div class="shead">
             <span class="k">{t("edit.affixes")}</span>
             {#if item.affixSort}
-              <label class="fld sort"><span class="k">{t("edit.affixSort")}</span>
-                <Select class="sm" value={item.affixSort.sel} options={optsOf(item.affixSort.options)} onchange={(v) => set({ affixSort: Number(v) })} />
-              </label>
+              <div class="fld sort"><span class="k">{t("edit.affixSort")}</span>
+                <Select class="sm" ariaLabel={t("edit.affixSort")} value={item.affixSort.sel} options={optsOf(item.affixSort.options)} onchange={(v) => set({ affixSort: Number(v) })} />
+              </div>
             {/if}
           </div>
           {#each item.affixes as a (a.index)}
             <div class="arow">
               <span class="ak"><PobText text={a.kindZh || a.kind} muted="var(--ink-2)" /></span>
-              <Select class="sm wide" value={a.sel} options={a.options.map((o, i) => ({ value: i + 1, label: `${(o.labelZh || o.label).replace(/\^x[0-9a-fA-F]{6}|\^\d/g, "")}${o.tiers && o.tiers > 1 ? ` (${o.tiers})` : ""}` }))} onchange={(v) => affix(a.index, { sel: Number(v) })} />
+              <Select class="sm wide" value={a.sel} options={a.options.map((o, i) => ({ value: i + 1, label: `${(o.labelZh || o.label).replace(/\^x[0-9a-fA-F]{6}|\^\d/g, "")}${o.tiers && o.tiers > 1 ? ` (${o.tiers})` : ""}`, search: o.label }))} onchange={(v) => affix(a.index, { sel: Number(v) })} />
               <span class="roll">
                 {#if a.rollShown}
                   <input class="slider" type="range" min="0" max="1" step="0.01" value={a.roll ?? 0.5} title={t("edit.roll")} aria-label={t("edit.roll")} onchange={(e) => affix(a.index, { roll: Number(e.currentTarget.value) })} />
