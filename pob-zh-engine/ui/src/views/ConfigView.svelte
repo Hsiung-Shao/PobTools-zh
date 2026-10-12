@@ -317,14 +317,16 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 36px;
-    padding: 0 12px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
   .bar .input {
     width: 220px;
+    max-width: 100%;
   }
   .grow {
     flex: 1;
@@ -359,8 +361,11 @@
     align-items: flex-start;
     gap: 10px;
   }
+  /* the column count follows the width (see `columns`); one column narrower
+     than its pitch shrinks with the page instead of scrolling sideways */
   .col {
-    width: 360px;
+    width: min(360px, 100%);
+    min-width: 0;
     flex: none;
     display: flex;
     flex-direction: column;

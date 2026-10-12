@@ -1281,7 +1281,7 @@
     background: var(--surface-1);
   }
   .search {
-    width: 240px;
+    width: min(240px, 30cqw);
   }
   .count {
     color: var(--warn);
@@ -1372,10 +1372,11 @@
     background: var(--edge-1);
     margin: 0 4px;
   }
+  /* floating panels: never wider than the main area (100cqw of App's `view`) */
   .menu {
     position: absolute;
-    min-width: 260px;
-    max-width: 380px;
+    min-width: min(260px, 100cqw - 24px);
+    max-width: min(380px, 100cqw - 24px);
     padding: 6px;
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
@@ -1423,7 +1424,7 @@
   }
   .tip {
     position: absolute;
-    width: 320px;
+    width: min(320px, 100cqw - 24px);
     pointer-events: none;
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
@@ -1498,7 +1499,8 @@
     vertical-align: middle;
   }
   .menu.tattoo {
-    width: 420px;
+    width: min(420px, 100cqw - 24px);
+    max-width: none;
   }
   .tattoo-list {
     max-height: 260px;
@@ -1511,7 +1513,7 @@
     position: absolute;
     left: 12px;
     bottom: 12px;
-    width: 520px;
+    width: min(520px, 100cqw - 24px);
     max-height: 46%;
     display: flex;
     flex-direction: column;

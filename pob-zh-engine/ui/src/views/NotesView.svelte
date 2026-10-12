@@ -187,6 +187,17 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+  /* a narrow main area: editor over preview */
+  @container view (max-width: 759px) {
+    .two {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr);
+    }
+    .two .preview {
+      border-left: 0;
+      border-top: 1px solid var(--edge-0);
+    }
+  }
   /* the rule between the halves as a border, not a solid fill behind a gap (it hid
      the background image) */
   .preview {

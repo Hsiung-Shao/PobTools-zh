@@ -14,6 +14,8 @@ const EN: Record<string, string> = {
   "title.end": "End",
   "title.endHint": "End PobTools (closing the tab alone keeps it running for a short while)",
   "title.endUnsaved": "The build has unsaved changes. End anyway?",
+  "title.sideShow": "Show the sidebar (build summary and stats)",
+  "title.sideHide": "Hide the sidebar to give the page more room",
   "app.linkClosed": "PobTools has ended.",
   "app.linkClosedHint": "You can close this tab. Start it again from the launcher.",
   "app.linkLost": "Lost the connection to PobTools.",

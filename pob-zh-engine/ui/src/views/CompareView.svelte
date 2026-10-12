@@ -215,7 +215,7 @@
     flex-wrap: wrap;
   }
   .code {
-    width: 260px;
+    width: min(260px, 100%);
   }
   .scroll {
     flex: 1;
@@ -259,7 +259,7 @@
   }
   .cols {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
     gap: 12px;
     padding: 12px;
   }

@@ -311,12 +311,14 @@
 {/if}
 
 <style>
+  /* wraps onto more lines in a narrow window instead of running past it */
   .bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 14px;
-    height: 34px;
-    padding: 0 16px;
+    gap: 4px 14px;
+    min-height: 34px;
+    padding: 4px 16px;
     background: var(--surface-0);
     border-bottom: 1px solid var(--edge-0);
     font-size: var(--fs-sm);
@@ -328,7 +330,9 @@
     min-width: 0;
   }
   .field.grow {
-    flex: 1;
+    flex: 1 1 320px;
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
   .k {
     font-size: var(--fs-2xs);

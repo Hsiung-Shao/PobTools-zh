@@ -6,6 +6,8 @@
   "title.end": "結束",
   "title.endHint": "結束 PobTools(只關分頁的話程式會再等一下才結束)",
   "title.endUnsaved": "建置有未儲存的變更,仍要結束嗎?",
+  "title.sideShow": "顯示側欄(建置摘要與數值)",
+  "title.sideHide": "收起側欄,讓頁面更寬",
   "app.linkClosed": "PobTools 已結束。",
   "app.linkClosedHint": "可以關閉這個分頁了;要再用請從啟動器開啟。",
   "app.linkLost": "與 PobTools 的連線中斷。",

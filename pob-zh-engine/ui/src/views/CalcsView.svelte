@@ -284,12 +284,12 @@
   .bar {
     display: flex;
     align-items: center;
-    gap: 8px;
-    height: 36px;
-    padding: 0 12px;
+    gap: 4px 8px;
+    min-height: 36px;
+    padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
   }
   .k {
     font-size: var(--fs-2xs);
@@ -344,13 +344,22 @@
     gap: 8px;
     min-width: 0;
   }
-  @media (max-width: 1360px) {
+  /* RWD on the main area's width (App's `view` container, the sidebar already
+     taken off; this was a window-width @media 1360px that forgot the sidebar).
+     Medium: groups 2 and 3 move under group 1 and spread into columns. Narrow:
+     group 1's three bands stack too. */
+  @container view (max-width: 1099px) {
     .wall {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .gcol {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    }
+  }
+  @container view (max-width: 759px) {
+    .band {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
   .card {

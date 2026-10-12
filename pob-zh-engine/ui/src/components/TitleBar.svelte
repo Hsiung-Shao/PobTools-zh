@@ -3,6 +3,7 @@
   import { api, bridge, hostInfo } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app, type ViewId } from "$lib/state.svelte";
+  import { layout } from "$lib/layout.svelte";
 
   const tabs: { id: ViewId; key: string }[] = [
     { id: "builds", key: "title.builds" },
@@ -37,6 +38,9 @@
 </script>
 
 <header class="top">
+  {#if layout.narrow}
+    <button class="sidetoggle" class:on={!layout.collapsed} title={t(layout.collapsed ? "title.sideShow" : "title.sideHide")} aria-label={t(layout.collapsed ? "title.sideShow" : "title.sideHide")} aria-pressed={!layout.collapsed} onclick={() => layout.toggleSide()}>☰</button>
+  {/if}
   <span class="brand"><i class="mark"></i>PobTools</span>
   <nav>
     {#each tabs as tb}
@@ -82,9 +86,54 @@
     transform: rotate(45deg);
     border-radius: 2px;
   }
+  /* a narrow window: the tabs scroll sideways inside the bar instead of
+     pushing the page wider than the window */
   nav {
     display: flex;
     gap: 4px;
+    min-width: 0;
+    height: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  nav::-webkit-scrollbar {
+    display: none;
+  }
+  .tab {
+    flex: none;
+    white-space: nowrap;
+  }
+  .brand {
+    flex: none;
+  }
+  .sidetoggle {
+    flex: none;
+    appearance: none;
+    width: 28px;
+    height: 26px;
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s);
+    background: none;
+    color: var(--ink-2);
+    font-size: var(--fs-md);
+    line-height: 1;
+  }
+  .sidetoggle:hover,
+  .sidetoggle.on {
+    color: var(--gold);
+    border-color: var(--gold);
+  }
+  @media (max-width: 1099px) {
+    .top {
+      gap: 10px;
+      padding: 0 10px;
+    }
+    .bname {
+      max-width: 18vw;
+    }
+    .bcls {
+      display: none;
+    }
   }
   .tab {
     appearance: none;

@@ -660,6 +660,44 @@
     grid-template-columns: 340px minmax(260px, 1fr) minmax(360px, 1.2fr);
     min-height: 0;
   }
+  /* RWD on the main area's width (App's `view` container, sidebar excluded).
+     Medium: equipment over the item list on the left, the add / edit / craft
+     column keeps the full height on the right. Narrow: one column, each part
+     with a usable height, the page scrolling as a whole. */
+  @container view (max-width: 1099px) {
+    .page {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+      grid-template-rows: minmax(200px, 1fr) minmax(200px, 1fr);
+      overflow-y: auto;
+    }
+    .slots {
+      grid-area: 1 / 1;
+    }
+    .list {
+      grid-area: 2 / 1;
+      border-left: 0;
+      border-top: 1px solid var(--edge-0);
+    }
+    .right {
+      grid-area: 1 / 2 / 3 / 3;
+    }
+  }
+  @container view (max-width: 759px) {
+    .page {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 360px 360px 600px;
+    }
+    .slots,
+    .list,
+    .right {
+      grid-area: auto;
+      border-left: 0;
+    }
+    .list,
+    .right {
+      border-top: 1px solid var(--edge-0);
+    }
+  }
   /* column rules as borders, not a solid fill behind a 1px gap: the fill hid the
      background image, and a second surface here stacked on the one .view paints */
   .col {

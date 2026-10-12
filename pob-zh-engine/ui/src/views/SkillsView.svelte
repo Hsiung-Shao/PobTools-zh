@@ -733,8 +733,22 @@
   .page {
     height: 100%;
     display: grid;
-    grid-template-columns: 360px 1fr;
+    grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
     min-height: 0;
+  }
+  /* RWD on the main area's width: below 1100px the group list sits above the
+     gem table (which needs ~540px of its own), each with a usable height,
+     and the page scrolls as a whole when they do not both fit */
+  @container view (max-width: 1099px) {
+    .page {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(180px, 32%) minmax(380px, 1fr);
+      overflow-y: auto;
+    }
+    .col + .col {
+      border-left: 0;
+      border-top: 1px solid var(--edge-0);
+    }
   }
   /* column rules as borders, not a solid fill behind a 1px gap: the fill hid the
      background image, and a second surface here stacked on the one .view paints */

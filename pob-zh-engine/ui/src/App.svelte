@@ -5,6 +5,7 @@
   import { loadLocale, t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { prefs } from "$lib/prefs.svelte";
+  import { layout } from "$lib/layout.svelte";
   import TitleBar from "./components/TitleBar.svelte";
   import StatusBar from "./components/StatusBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
@@ -156,7 +157,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKey} onwheel={onWheel} onmouseup={onMouseUp} onmousedown={blockSideButton} onauxclick={blockSideButton} />
+<svelte:window bind:innerWidth={layout.winW} onkeydown={onKey} onwheel={onWheel} onmouseup={onMouseUp} onmousedown={blockSideButton} onauxclick={blockSideButton} />
 
 {#if app.linkAsk}
   <!-- an "Open in PoB" link arrived with an unsaved build open (classic POB asks the same on close) -->
@@ -204,7 +205,7 @@
     <TitleBar />
     {#if app.loaded && app.view !== "builds" && app.view !== "settings"}<BuildBar />{/if}
     <div class="body">
-      <Sidebar />
+      {#if !layout.sideHidden}<Sidebar />{/if}
       <main class="view">
         {#if app.engine === "gone"}
           <div class="center">
@@ -318,11 +319,14 @@
     display: flex;
     min-height: 0;
   }
+  /* the pages' breakpoints measure this box (the sidebar already taken off),
+     not the window: @container view (max-width: …) */
   .view {
     flex: 1;
     min-width: 0;
     min-height: 0;
     position: relative;
+    container: view / inline-size;
   }
   .center {
     height: 100%;
