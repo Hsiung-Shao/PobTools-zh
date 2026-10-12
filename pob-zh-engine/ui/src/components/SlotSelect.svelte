@@ -1,6 +1,6 @@
 <!-- An item slot's drop-down that shows each candidate's tooltip while the list is
      open (ItemSlotControl: hovering an entry previews it against what is equipped).
-     A native <select> cannot: its options get no mouse events. -->
+     A native select element cannot: its options get no mouse events. -->
 <script lang="ts">
   import { t } from "$lib/i18n";
 

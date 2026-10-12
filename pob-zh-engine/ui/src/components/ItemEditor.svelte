@@ -7,7 +7,9 @@
   import { t } from "$lib/i18n";
   import { rarityColor } from "$lib/items";
   import { app } from "$lib/state.svelte";
+  import { clampPreview } from "$lib/previewClamp";
   import PobText from "./PobText.svelte";
+  import Select from "./Select.svelte";
 
   let {
     item,
@@ -38,21 +40,34 @@
   // length) never moves the controls under the pointer. The divider between
   // them drags; the height is kept per viewer.
   const PV_KEY = "pobtools.editorPreviewH";
+  // `previewH` is the viewer's preference; `pvH` is what is applied: also capped
+  // to the editor's height minus room for the controls (a short window must not
+  // squeeze the controls to nothing), re-capped whenever that height changes.
   let previewH = $state(260);
   try {
-    const v = Number(localStorage.getItem(PV_KEY));
-    if (v >= 120 && v <= 900) previewH = v;
+    const raw = localStorage.getItem(PV_KEY);
+    const v = Number(raw);
+    if (raw != null && Number.isFinite(v) && v > 0) previewH = clampPreview(v, 0);
   } catch {
     /* private mode */
   }
   let workEl = $state<HTMLDivElement | null>(null);
+  let workH = $state(0);
+  const pvH = $derived(clampPreview(previewH, workH));
+  $effect(() => {
+    if (!workEl) return;
+    const el = workEl;
+    const ro = new ResizeObserver(() => (workH = el.clientHeight));
+    ro.observe(el);
+    workH = el.clientHeight;
+    return () => ro.disconnect();
+  });
   function dragSplit(e: PointerEvent) {
     const handle = e.currentTarget as HTMLElement;
     handle.setPointerCapture(e.pointerId);
     const y0 = e.clientY;
-    const h0 = previewH;
-    const max = Math.max(160, (workEl?.clientHeight ?? 600) - 140);
-    const move = (ev: PointerEvent) => (previewH = Math.round(Math.min(max, Math.max(120, h0 + ev.clientY - y0))));
+    const h0 = pvH;
+    const move = (ev: PointerEvent) => (previewH = clampPreview(h0 + ev.clientY - y0, workH));
     const up = () => {
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", up);
@@ -68,7 +83,7 @@
   function nudgeSplit(e: KeyboardEvent) {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
     e.preventDefault();
-    previewH = Math.min(900, Math.max(120, previewH + (e.key === "ArrowDown" ? 24 : -24)));
+    previewH = clampPreview(pvH + (e.key === "ArrowDown" ? 24 : -24), workH);
     try {
       localStorage.setItem(PV_KEY, String(previewH));
     } catch {
@@ -140,6 +155,7 @@
   const isCloseButton = (name: string) => name === "close" || name === "cancel";
   const popupButtons = $derived(popup ? popup.controls.filter((c: ItemEditPopupControl) => c.kind === "button") : []);
   const popupFields = $derived(popup ? popup.controls.filter((c: ItemEditPopupControl) => c.kind !== "button") : []);
+  const optsOf = (opts: { label: string; labelZh?: string }[]) => opts.map((o, i) => ({ value: i + 1, label: o.labelZh || o.label }));
   const filterOpts = <T extends { label: string; labelZh: string }>(opts: T[], q: string) => {
     const f = q.trim().toLowerCase();
     return opts.map((o, i) => ({ o, i })).filter(({ o }) => !f || o.label.toLowerCase().includes(f) || o.labelZh.toLowerCase().includes(f));
@@ -186,7 +202,7 @@
     </details>
   {/if}
 
-  <div class="ework" bind:this={workEl} style:--pv-h={`${previewH}px`}>
+  <div class="ework" bind:this={workEl} style:--pv-h={`${pvH}px`}>
     <!-- 即時 tooltip:固定大小、自己捲動,改詞綴時不會把下方控制項推開 -->
     <div class="preview">
       <div class="tip pob-dark" style:border-top-color={item.tooltip.color ? undefined : "var(--edge-1)"}>
@@ -195,7 +211,7 @@
     </div>
     <!-- a focusable window splitter (ARIA separator with a value); Svelte does not know that pattern -->
     <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-    <div class="split" role="separator" aria-orientation="horizontal" aria-label={t("edit.resizePreview")} aria-valuenow={previewH} aria-valuemin={120} aria-valuemax={900} tabindex="0" onpointerdown={dragSplit} onkeydown={nudgeSplit}></div>
+    <div class="split" role="separator" aria-orientation="horizontal" aria-label={t("edit.resizePreview")} aria-valuenow={pvH} aria-valuemin={120} aria-valuemax={900} tabindex="0" onpointerdown={dragSplit} onkeydown={nudgeSplit}></div>
   <div class="ebody">
 
     {#if popup}
@@ -206,14 +222,7 @@
           <div class="prow">
             <span class="k">{t(`edit.ctl.${c.name}`) === `edit.ctl.${c.name}` ? c.name : t(`edit.ctl.${c.name}`)}</span>
             {#if c.kind === "dropdown" && c.options}
-              {#if c.options.length > 25}
-                <input class="input sm" placeholder={t("edit.search")} bind:value={popupSearch} />
-              {/if}
-              <select class="select sm wide" disabled={!c.enabled} value={c.sel ?? 1} onchange={(e) => pick(c.name, { sel: Number(e.currentTarget.value) })}>
-                {#each filterOpts(c.options, c.options.length > 25 ? popupSearch : "") as { o, i }}
-                  <option value={i + 1}>{o.labelZh || o.label}</option>
-                {/each}
-              </select>
+              <Select class="sm wide" disabled={!c.enabled} value={c.sel ?? 1} options={optsOf(c.options)} onchange={(v) => pick(c.name, { sel: Number(v) })} />
             {:else if c.kind === "edit"}
               <input class="input sm wide" value={c.text ?? ""} onchange={(e) => pick(c.name, { text: e.currentTarget.value })} />
             {:else if c.kind === "check"}
@@ -271,9 +280,7 @@
           {/if}
           {#if item.catalyst.shown}
             <label class="fld"><span class="k">{t("edit.catalyst")}</span>
-              <select class="select sm" value={item.catalyst.sel} onchange={(e) => set({ catalyst: Number(e.currentTarget.value) })}>
-                {#each item.catalyst.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
+              <Select class="sm" ariaLabel={t("edit.catalyst")} value={item.catalyst.sel} options={optsOf(item.catalyst.options)} onchange={(v) => set({ catalyst: Number(v) })} />
               {#if item.catalyst.qualityShown}
                 <input class="input sm num" type="number" min="0" max="30" aria-label={t("edit.catalyst")} value={item.catalyst.quality ?? 0} onchange={(e) => set({ catalystQuality: Number(e.currentTarget.value) })} />
               {/if}
@@ -281,12 +288,8 @@
           {/if}
           {#if item.influence.shown}
             <span class="fld"><span class="k">{t("edit.influence")}</span>
-              <select class="select sm" aria-label={t("edit.influence")} value={item.influence.sel[0]} onchange={(e) => set({ influence: [Number(e.currentTarget.value), item.influence.sel[1]] })}>
-                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
-              <select class="select sm" aria-label={t("edit.influence")} value={item.influence.sel[1]} onchange={(e) => set({ influence: [item.influence.sel[0], Number(e.currentTarget.value)] })}>
-                {#each item.influence.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-              </select>
+              <Select class="sm" ariaLabel={t("edit.influence")} value={item.influence.sel[0]} options={optsOf(item.influence.options)} onchange={(v) => set({ influence: [Number(v), item.influence.sel[1]] })} />
+              <Select class="sm" ariaLabel={t("edit.influence")} value={item.influence.sel[1]} options={optsOf(item.influence.options)} onchange={(v) => set({ influence: [item.influence.sel[0], Number(v)] })} />
             </span>
           {/if}
         </section>
@@ -299,9 +302,7 @@
           <div class="sockets">
             {#each item.sockets as s, i}
               {#if item.socketShown[i]}
-                <select class="select sm sock" style:color={socketColorName[s.color] ?? undefined} value={s.color} onchange={(e) => set({ socket: { index: i + 1, color: e.currentTarget.value } })}>
-                  {#each item.socketColors as col}<option value={col}>{col}</option>{/each}
-                </select>
+                <Select class="sm sock" color={socketColorName[s.color] ?? undefined} ariaLabel={t("edit.sockets")} value={s.color} options={item.socketColors.map((col) => ({ value: col, label: col }))} onchange={(v) => set({ socket: { index: i + 1, color: String(v) } })} />
                 {#if item.links[i]?.shown}
                   <label class="link" title={t("edit.link")}><input type="checkbox" checked={item.links[i].on} onchange={(e) => set({ link: { index: i + 1, on: e.currentTarget.checked } })} /></label>
                 {/if}
@@ -320,9 +321,7 @@
             {#each item.runeSlots as r (r.index)}
               <label class="rune">
                 <span class="rn">{r.index}</span>
-                <select class="select sm wide" value={r.sel} onchange={(e) => set({ rune: { index: r.index, sel: Number(e.currentTarget.value) } })}>
-                  {#each r.options as o, i}<option value={i + 1}>{i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）`}</option>{/each}
-                </select>
+                <Select class="sm wide" value={r.sel} options={r.options.map((o, i) => ({ value: i + 1, label: i === 0 ? t("edit.runeNone") : `${o.labelZh || o.label}（${o.nameZh || o.name}）` }))} onchange={(v) => set({ rune: { index: r.index, sel: Number(v) } })} />
               </label>
             {/each}
           </div>
@@ -334,15 +333,11 @@
         <section class="sec grid2">
           {#if item.versions}
             <span class="k">{t("edit.version")}</span>
-            <select class="select sm wide" value={item.versions.sel} onchange={(e) => set({ version: Number(e.currentTarget.value) })}>
-              {#each item.versions.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-            </select>
+            <Select class="sm wide" ariaLabel={t("edit.version")} value={item.versions.sel} options={optsOf(item.versions.options)} onchange={(v) => set({ version: Number(v) })} />
           {/if}
           {#each item.variants as v (v.control)}
             <span class="k">{t("edit.variant")}</span>
-            <select class="select sm wide" disabled={!v.enabled} value={v.sel} onchange={(e) => set({ variant: { control: v.control, sel: Number(e.currentTarget.value) } })}>
-              {#each v.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-            </select>
+            <Select class="sm wide" ariaLabel={t("edit.variant")} disabled={!v.enabled} value={v.sel} options={optsOf(v.options)} onchange={(x) => set({ variant: { control: v.control, sel: Number(x) } })} />
           {/each}
         </section>
       {/if}
@@ -351,9 +346,7 @@
       {#if item.cluster}
         <section class="sec grid2">
           <span class="k">{t("edit.cluster")}</span>
-          <select class="select sm wide" value={item.cluster.sel} onchange={(e) => set({ cluster: { sel: Number(e.currentTarget.value) } })}>
-            {#each item.cluster.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-          </select>
+          <Select class="sm wide" ariaLabel={t("edit.cluster")} value={item.cluster.sel} options={optsOf(item.cluster.options)} onchange={(v) => set({ cluster: { sel: Number(v) } })} />
           <span class="k">{t("edit.nodes")}</span>
           <input class="input sm num" type="number" min={item.cluster.minNodes ?? 0} max={item.cluster.maxNodes ?? 12} value={item.cluster.nodeCount ?? 0} onchange={(e) => set({ cluster: { nodeCount: Number(e.currentTarget.value) } })} />
         </section>
@@ -366,18 +359,14 @@
             <span class="k">{t("edit.affixes")}</span>
             {#if item.affixSort}
               <label class="fld sort"><span class="k">{t("edit.affixSort")}</span>
-                <select class="select sm" value={item.affixSort.sel} onchange={(e) => set({ affixSort: Number(e.currentTarget.value) })}>
-                  {#each item.affixSort.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-                </select>
+                <Select class="sm" value={item.affixSort.sel} options={optsOf(item.affixSort.options)} onchange={(v) => set({ affixSort: Number(v) })} />
               </label>
             {/if}
           </div>
           {#each item.affixes as a (a.index)}
             <div class="arow">
               <span class="ak"><PobText text={a.kindZh || a.kind} muted="var(--ink-2)" /></span>
-              <select class="select sm wide" value={a.sel} onchange={(e) => affix(a.index, { sel: Number(e.currentTarget.value) })}>
-                {#each a.options as o, i}<option value={i + 1}>{(o.labelZh || o.label).replace(/\^x[0-9a-fA-F]{6}|\^\d/g, "")}{o.tiers && o.tiers > 1 ? ` (${o.tiers})` : ""}</option>{/each}
-              </select>
+              <Select class="sm wide" value={a.sel} options={a.options.map((o, i) => ({ value: i + 1, label: `${(o.labelZh || o.label).replace(/\^x[0-9a-fA-F]{6}|\^\d/g, "")}${o.tiers && o.tiers > 1 ? ` (${o.tiers})` : ""}` }))} onchange={(v) => affix(a.index, { sel: Number(v) })} />
               <span class="roll">
                 {#if a.rollShown}
                   <input class="slider" type="range" min="0" max="1" step="0.01" value={a.roll ?? 0.5} title={t("edit.roll")} aria-label={t("edit.roll")} onchange={(e) => affix(a.index, { roll: Number(e.currentTarget.value) })} />
@@ -457,7 +446,10 @@
 </div>
 
 <style>
+  /* the container the wide layout below measures (.ework itself cannot be: a
+     container query never restyles the container's own grid) */
   .editor {
+    container: editor / inline-size;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -489,7 +481,6 @@
     min-height: 0;
     display: grid;
     grid-template-rows: var(--pv-h, 260px) 6px minmax(0, 1fr);
-    container-type: inline-size;
   }
   .preview {
     min-height: 0;
@@ -526,7 +517,7 @@
     flex-direction: column;
     gap: 8px;
   }
-  @container (min-width: 860px) {
+  @container editor (min-width: 860px) {
     .ework {
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
@@ -535,9 +526,11 @@
       display: none;
     }
     .preview {
+      grid-area: 1 / 1;
       padding: 8px 0 12px 10px;
     }
     .ebody {
+      grid-area: 1 / 2;
       padding-top: 8px;
     }
   }
@@ -627,12 +620,12 @@
     letter-spacing: 0.1em;
     color: var(--ink-3);
   }
-  .select.sm,
+  .editor :global(.select.sm),
   .input.sm {
     height: 24px;
     font-size: var(--fs-xs);
   }
-  .select.wide,
+  .editor :global(.select.wide),
   .input.wide {
     width: 100%;
     min-width: 0;
@@ -646,7 +639,7 @@
     gap: 4px;
     flex-wrap: wrap;
   }
-  .sock {
+  .sockets :global(.sock) {
     width: 46px;
     font-weight: 600;
   }

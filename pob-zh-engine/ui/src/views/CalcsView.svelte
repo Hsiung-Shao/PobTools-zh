@@ -14,6 +14,7 @@
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
   import MinionLibrary from "../components/MinionLibrary.svelte";
   import PobText from "../components/PobText.svelte";
+  import Select from "../components/Select.svelte";
 
   let data = $state<CalcsData | null>(null);
   let loadedRev = -1;
@@ -190,9 +191,7 @@
                 {@const w = c.widget!}
                 <span class="cell ctl" style:grid-column={ncol > 1 ? "2 / -1" : undefined}>
                   {#if w.kind === "dropdown"}
-                    <select class="select sm" value={String(w.index ?? 1)} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, Number(e.currentTarget.value))}>
-                      {#each w.list ?? [] as o, i (i)}<option value={String(i + 1)}>{o.labelZh || o.label}</option>{/each}
-                    </select>
+                    <Select class="select sm" value={String(w.index ?? 1)} disabled={!w.enabled || app.busy > 0} options={(w.list ?? []).map((o, i) => ({ value: String(i + 1), label: o.labelZh || o.label }))} onchange={(v) => setControl(c.control!, Number(v))} />
                   {:else if w.kind === "edit"}
                     <input class="input sm num" value={String(w.value ?? "")} disabled={!w.enabled || app.busy > 0} onchange={(e) => setControl(c.control!, e.currentTarget.value)} />
                   {:else if w.kind === "check"}
@@ -230,9 +229,7 @@
   <div class="bar">
     {#if data}
       <span class="k">{t("calcs.mode")}</span>
-      <select class="select sm" value={data.input.misc_buffMode} onchange={(e) => setInput("misc_buffMode", e.currentTarget.value)}>
-        {#each ["EFFECTIVE", "COMBAT", "BUFFED", "UNBUFFED"] as m}<option value={m}>{t(`calcs.mode.${m}`)}</option>{/each}
-      </select>
+      <Select class="select sm" ariaLabel={t("calcs.mode")} value={data.input.misc_buffMode} options={["EFFECTIVE", "COMBAT", "BUFFED", "UNBUFFED"].map((m) => ({ value: m, label: t(`calcs.mode.${m}`) }))} onchange={(v) => setInput("misc_buffMode", String(v))} />
       {#if data.hasMinion}
         <label class="chk"><input type="checkbox" checked={data.input.showMinion} onchange={(e) => setInput("showMinion", e.currentTarget.checked)} /> {t("calcs.showMinion")}</label>
       {/if}
@@ -300,7 +297,7 @@
     color: var(--ink-3);
     white-space: nowrap;
   }
-  .select.sm,
+  .page :global(.select.sm),
   .input.sm {
     height: 24px;
     font-size: var(--fs-xs);
@@ -448,7 +445,7 @@
     font-family: inherit;
     border-left: 0;
   }
-  .cell.ctl .select {
+  .cell.ctl :global(.select) {
     max-width: 100%;
   }
   .cell.ctl .input {

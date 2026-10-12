@@ -8,6 +8,7 @@
   import { t } from "$lib/i18n";
   import { rarityColor } from "$lib/items";
   import { app } from "$lib/state.svelte";
+  import Select from "./Select.svelte";
 
   let {
     onadd,
@@ -26,6 +27,8 @@
   let sel = $state({ slot: 1, type: 1, league: 1, requirement: 1, obtainable: 1, searchMode: 1 });
   let query = $state("");
   let sortMode = $state("");
+  // POB's list controls are 1-based: an option's position is its value
+  const opts1 = (l: { label: string; labelZh?: string }[]) => l.map((x, i) => ({ value: i + 1, label: x.labelZh || x.label }));
   let page = $state(1);
   let db = $state<ItemDbPage | null>(null);
   let timer = 0;
@@ -71,39 +74,32 @@
     </span>
     <input class="input sm grow" placeholder={t("items.dbSearch")} bind:value={query} oninput={() => search()} />
     {#if o}
-      <select class="select sm" bind:value={sel.searchMode} onchange={() => search()}>
-        {#each o.searchMode as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-      </select>
+      <Select class="select sm" value={sel.searchMode} options={opts1(o.searchMode)} onchange={(v) => { sel.searchMode = Number(v); search(); }} />
     {/if}
   </div>
   {#if o}
     <div class="bar wrap">
-      <select class="select sm" bind:value={sel.slot} onchange={() => search()}>
-        {#each o.slot as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-      </select>
-      <select class="select sm" bind:value={sel.type} onchange={() => search()}>
-        {#each o.type as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-      </select>
+      <Select class="select sm" value={sel.slot} options={opts1(o.slot)} onchange={(v) => { sel.slot = Number(v); search(); }} />
+      <Select class="select sm" value={sel.type} options={opts1(o.type)} onchange={(v) => { sel.type = Number(v); search(); }} />
       {#if o.league}
-        <select class="select sm" bind:value={sel.league} onchange={() => search()}>
-          {#each o.league as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={sel.league} options={opts1(o.league)} onchange={(v) => { sel.league = Number(v); search(); }} />
       {/if}
       {#if o.requirement}
-        <select class="select sm" bind:value={sel.requirement} onchange={() => search()}>
-          {#each o.requirement as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={sel.requirement} options={opts1(o.requirement)} onchange={(v) => { sel.requirement = Number(v); search(); }} />
       {/if}
       {#if o.obtainable}
-        <select class="select sm" bind:value={sel.obtainable} onchange={() => search()}>
-          {#each o.obtainable as x, i}<option value={i + 1}>{x.labelZh || x.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={sel.obtainable} options={opts1(o.obtainable)} onchange={(v) => { sel.obtainable = Number(v); search(); }} />
       {/if}
       {#if o.sort}
-        <select class="select sm" bind:value={sortMode} onchange={() => search()}>
-          <option value="">{o.sort[0]?.labelZh || o.sort[0]?.label}</option>
-          {#each o.sort.slice(1) as x}<option value={x.sortMode}>{x.labelZh || x.label}</option>{/each}
-        </select>
+        <Select
+          class="select sm"
+          value={sortMode}
+          options={[{ value: "", label: o.sort[0]?.labelZh || o.sort[0]?.label || "" }, ...o.sort.slice(1).map((x) => ({ value: x.sortMode, label: x.labelZh || x.label }))]}
+          onchange={(v) => {
+            sortMode = String(v);
+            search();
+          }}
+        />
       {/if}
     </div>
   {/if}
@@ -151,7 +147,7 @@
   .bar.wrap {
     flex-wrap: wrap;
   }
-  .bar.wrap .select {
+  .bar.wrap :global(.select) {
     flex: 1 1 120px;
     min-width: 0;
   }
@@ -174,7 +170,7 @@
     background: var(--gold-soft);
     color: var(--gold);
   }
-  .select.sm,
+  .pane :global(.select.sm),
   .input.sm {
     height: 24px;
     font-size: var(--fs-xs);

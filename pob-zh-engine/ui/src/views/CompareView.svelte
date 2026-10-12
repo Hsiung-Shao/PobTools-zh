@@ -5,6 +5,7 @@
   import { api, type CompareState, type CompareItemsRows, type CompareSkills, type CompareConfigRows, type CompareTree, type BuildEntry } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import Select from "../components/Select.svelte";
 
   type SubView = "summary" | "tree" | "items" | "skills" | "config";
 
@@ -87,9 +88,7 @@
   <div class="bar">
     <span class="label">{t("compare.title")}</span>
     {#if st?.builds?.length}
-      <select class="select sm" value={String(st.activeIndex)} disabled={busy} onchange={(e) => run(() => api.compareSelect(Number(e.currentTarget.value)))}>
-        {#each st.builds as b (b.index)}<option value={String(b.index)}>{b.label || b.buildName}</option>{/each}
-      </select>
+      <Select class="select sm" value={String(st.activeIndex)} disabled={busy} options={st.builds.map((b) => ({ value: String(b.index), label: b.label || b.buildName || "" }))} onchange={(v) => run(() => api.compareSelect(Number(v)))} />
       <button class="btn ghost sm" disabled={busy} onclick={() => run(() => api.compareRemove(st!.activeIndex))}>{t("compare.remove")}</button>
     {/if}
     <span class="grow"></span>

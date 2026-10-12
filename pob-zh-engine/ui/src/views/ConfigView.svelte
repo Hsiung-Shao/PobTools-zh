@@ -8,6 +8,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
+  import Select from "../components/Select.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
 
   let data = $state<ConfigList | null>(null);
@@ -193,9 +194,7 @@
     <span class="grow"></span>
     {#if data}
       <span class="k">{t("config.configSet")}</span>
-      <select class="select sm" value={String(data.activeConfigSetId)} onchange={(e) => setChange(e.currentTarget.value)}>
-        {#each data.configSets as s}<option value={String(s.id)}>{setTitle(s)}</option>{/each}
-      </select>
+      <Select class="select sm" ariaLabel={t("config.configSet")} value={String(data.activeConfigSetId)} options={data.configSets.map((s) => ({ value: String(s.id), label: setTitle(s) }))} onchange={(v) => setChange(String(v))} />
       <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("config.newSetName"), copy: true })}>+</button>
       <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.configSets.find((s) => s.id === data!.activeConfigSetId)?.title ?? "", copy: false })}>✎</button>
       <button class="btn ghost sm" disabled={data.configSets.length <= 1} onclick={deleteSet}>×</button>
@@ -221,11 +220,7 @@
                         {@const sel = selectedLabel(it)}
                         <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
                         <span class="ctl">
-                          <select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} onchange={(e) => { const v = e.currentTarget.value; const o = (it.list ?? []).find((x) => String(x.val ?? "") === v); void set(it, o ? o.val : null); }}>
-                            {#each it.list ?? [] as o}
-                              <option value={String(o.val ?? "")}>{o.labelZh || o.label}</option>
-                            {/each}
-                          </select>
+                          <Select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} options={(it.list ?? []).map((o) => ({ value: String(o.val ?? ""), label: o.labelZh || o.label }))} onchange={(v) => { const o = (it.list ?? []).find((x) => String(x.val ?? "") === String(v)); void set(it, o ? o.val : null); }} />
                         </span>
                       {:else if it.type === "text"}
                         <span class="lbl wide"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
@@ -348,7 +343,7 @@
   .small {
     font-size: var(--fs-2xs);
   }
-  .select.sm,
+  .page :global(.select.sm),
   .input.sm {
     height: 24px;
     font-size: var(--fs-xs);
@@ -435,7 +430,7 @@
   .ctl input[type="checkbox"] {
     margin: 0;
   }
-  .ctl .select.sm,
+  .ctl :global(.select.sm),
   .ctl .input.sm {
     height: 20px;
     font-size: var(--fs-xs);
@@ -445,10 +440,9 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
-  .list {
+  .ctl :global(.select.list) {
     width: 128px;
     min-width: 0;
-    text-overflow: ellipsis;
   }
   .rst {
     appearance: none;

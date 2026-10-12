@@ -16,6 +16,7 @@
   import SlotSelect from "../components/SlotSelect.svelte";
   import ItemEditor from "../components/ItemEditor.svelte";
   import ItemDb from "../components/ItemDb.svelte";
+  import Select from "../components/Select.svelte";
 
   let data = $state<ItemsList | null>(null);
   let selectedId = $state<number | null>(null);
@@ -435,11 +436,7 @@
     <div class="head">
       <span class="label">{t("items.equipped")}</span>
       {#if data}
-        <select class="select sm" value={String(data.activeItemSetId)} onchange={(e) => setChange(e.currentTarget.value)} title={t("items.itemSet")}>
-          {#each data.itemSets as s}
-            <option value={String(s.id)}>{setTitle(s)}</option>
-          {/each}
-        </select>
+        <Select class="select sm iv" value={String(data.activeItemSetId)} options={data.itemSets.map((s) => ({ value: String(s.id), label: setTitle(s) }))} onchange={(v) => setChange(String(v))} title={t("items.itemSet")} />
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("items.newSetName"), copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.itemSets.find((s) => s.id === data!.activeItemSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.itemSets.length <= 1} onclick={deleteSet}>×</button>
@@ -499,12 +496,17 @@
     </div>
     <div class="tools">
       {#if data}
-        <select class="select sm" bind:value={loadout}>
-          <option value="any">{t("items.loadoutAny")}</option>
-          <option value="current">{t("items.loadoutCurrent")}</option>
-          <option value="unused">{t("items.loadoutUnused")}</option>
-          {#each data.itemSets as s}<option value={String(s.id)}>{setTitle(s)}</option>{/each}
-        </select>
+        <Select
+          class="select sm iv"
+          value={loadout}
+          options={[
+            { value: "any", label: t("items.loadoutAny") },
+            { value: "current", label: t("items.loadoutCurrent") },
+            { value: "unused", label: t("items.loadoutUnused") },
+            ...data.itemSets.map((s) => ({ value: String(s.id), label: setTitle(s) })),
+          ]}
+          onchange={(v) => (loadout = String(v))}
+        />
       {/if}
       <button class="btn ghost sm" disabled={!data || app.busy > 0} onclick={sortItems}>{t("items.sort")}</button>
       <button class="btn ghost sm" disabled={!data?.items.some((i) => !i.usedIn) || app.busy > 0} onclick={deleteUnused}>{t("items.delUnused")}</button>
@@ -548,12 +550,8 @@
     {#if selected && data}
       <div class="actions">
         <button class="btn sm primary" onclick={() => openEdit({ id: selected!.id! })}>{t("items.edit")}</button>
-        <select class="select sm" value="" onchange={(e) => { const v = e.currentTarget.value; e.currentTarget.value = ""; if (v) void equipTo(selected!.id!, v); }}>
-          <option value="">{t("items.equipTo")}</option>
-          {#each slotsFor(data.slots, selected.id!) as s}
-            <option value={s.name}>{s.labelZh || s.label}</option>
-          {/each}
-        </select>
+        <!-- a menu: picking a slot equips, the control goes back to its prompt -->
+        <Select class="select sm iv" action placeholder={t("items.equipTo")} options={slotsFor(data.slots, selected.id!).map((s) => ({ value: s.name, label: s.labelZh || s.label }))} onchange={(v) => void equipTo(selected!.id!, String(v))} />
         <button class="btn sm" disabled={!equippedIn(data.slots, selected.id!).length} onclick={() => unequipAll(selected!.id!)}>{t("items.unequip")}</button>
         <button class="btn sm" class:ok={copyState === "ok"} class:danger={copyState === "fail"} onclick={() => copyItem(selected!.id!)}>
           {copyState === "ok" ? t("items.copied") : copyState === "fail" ? t("items.copyFailed") : t("items.copy")}
@@ -597,9 +595,7 @@
         {#if craft}
           <div class="crow">
             <span class="k">{t("items.craftRarity")}</span>
-            <select class="select" bind:value={craft.rarity}>
-              {#each craft.opts.rarities as r, i}<option value={i + 1}>{r.labelZh || r.label}</option>{/each}
-            </select>
+            <Select class="select" ariaLabel={t("items.craftRarity")} value={craft.rarity} options={craft.opts.rarities.map((r, i) => ({ value: i + 1, label: r.labelZh || r.label }))} onchange={(v) => (craft!.rarity = Number(v))} />
           </div>
           {#if craft.rarity >= 3}
             <div class="crow">
@@ -609,15 +605,11 @@
           {/if}
           <div class="crow">
             <span class="k">{t("items.craftType")}</span>
-            <select class="select" bind:value={craft.type} onchange={() => (craft!.base = 1)}>
-              {#each craft.opts.types as ty, i}<option value={i + 1}>{ty.typeZh || ty.type}</option>{/each}
-            </select>
+            <Select class="select" ariaLabel={t("items.craftType")} value={craft.type} options={craft.opts.types.map((ty, i) => ({ value: i + 1, label: ty.typeZh || ty.type }))} onchange={(v) => { craft!.type = Number(v); craft!.base = 1; }} />
           </div>
           <div class="crow">
             <span class="k">{t("items.craftBase")}</span>
-            <select class="select" bind:value={craft.base}>
-              {#each craft.opts.types[craft.type - 1]?.bases ?? [] as b, i}<option value={i + 1}>{b.labelZh || b.label}</option>{/each}
-            </select>
+            <Select class="select" ariaLabel={t("items.craftBase")} value={craft.base} options={(craft.opts.types[craft.type - 1]?.bases ?? []).map((b, i) => ({ value: i + 1, label: b.labelZh || b.label }))} onchange={(v) => (craft!.base = Number(v))} />
           </div>
           <div class="btns">
             <button class="btn primary" disabled={app.busy > 0} onclick={craftCreate}>{t("items.craftCreate")}</button>
@@ -693,7 +685,7 @@
   .head .label {
     white-space: nowrap;
   }
-  .head .select {
+  .head :global(.select.iv) {
     min-width: 0;
     max-width: 100%;
   }
@@ -705,7 +697,7 @@
     border-bottom: 1px solid var(--edge-0);
     flex-wrap: wrap;
   }
-  .tools .select {
+  .tools :global(.select.iv) {
     max-width: 130px;
   }
   .grow {
@@ -792,7 +784,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .select.sm {
+  .page :global(.select.sm.iv) {
     height: 24px;
     font-size: var(--fs-xs);
   }

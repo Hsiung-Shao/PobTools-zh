@@ -29,6 +29,7 @@
   const openBgFolder = () => bridge.call("host.open_folder", { which: "backgrounds" }).catch(() => {});
   const lookIsDefault = $derived(prefs.theme === DEFAULTS.theme && prefs.accent === DEFAULTS.accent && prefs.font === DEFAULTS.font);
   import { app } from "$lib/state.svelte";
+  import Select from "../components/Select.svelte";
 
   // POB's Options dialog: read from its controls, edited as a draft, saved
   // through the dialog's own Save (only the changed values are sent).
@@ -89,9 +90,7 @@
 
 {#snippet control(o: PobOption)}
   {#if o.kind === "dropdown"}
-    <select class="select sm" value={value(o)} onchange={(e) => change(o, Number(e.currentTarget.value))}>
-      {#each o.options ?? [] as opt, i}<option value={i + 1}>{clean(opt.labelZh || opt.label)}</option>{/each}
-    </select>
+    <Select class="select sm" ariaLabel={labelOf(o)} value={String(value(o))} options={(o.options ?? []).map((opt, i) => ({ value: i + 1, label: clean(opt.labelZh || opt.label) }))} onchange={(v) => change(o, Number(v))} />
   {:else if o.kind === "check"}
     <input type="checkbox" checked={!!value(o)} onchange={(e) => change(o, e.currentTarget.checked)} />
   {:else if o.kind === "slider"}
@@ -174,10 +173,13 @@
     <div class="lrow">
       <span class="k">{t("look.font")}</span>
       <div class="fontctl">
-        <select class="select sm" value={prefs.font} onchange={(e) => prefs.set({ font: e.currentTarget.value })}>
-          <option value="">{t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" })}</option>
-          {#each prefs.fonts as f (f)}<option value={f}>{fontName(f)}</option>{/each}
-        </select>
+        <Select
+          class="select sm"
+          ariaLabel={t("look.font")}
+          value={prefs.font}
+          options={[{ value: "", label: t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" }) }, ...prefs.fonts.map((f) => ({ value: f, label: fontName(f) }))]}
+          onchange={(v) => prefs.set({ font: String(v) })}
+        />
         <span class="sample">天賦樹 詞綴 Passive Tree 패시브 트리 1,234.5%</span>
       </div>
     </div>
@@ -196,11 +198,17 @@
     <div class="lrow">
       <span class="k">{t("bg.image")}</span>
       <div class="fontctl">
-        <select class="select sm" value={bg.background} onchange={(e) => prefs.setLook({ background: e.currentTarget.value })}>
-          <option value="">{t("bg.none")}</option>
-          {#each prefs.backgrounds as f (f)}<option value={f}>{f}</option>{/each}
-          {#if bg.background && !prefs.backgrounds.includes(bg.background)}<option value={bg.background}>{bg.background}</option>{/if}
-        </select>
+        <Select
+          class="select sm"
+          ariaLabel={t("bg.image")}
+          value={bg.background}
+          options={[
+            { value: "", label: t("bg.none") },
+            ...prefs.backgrounds.map((f) => ({ value: f, label: f })),
+            ...(bg.background && !prefs.backgrounds.includes(bg.background) ? [{ value: bg.background, label: bg.background }] : []),
+          ]}
+          onchange={(v) => prefs.setLook({ background: String(v) })}
+        />
         {#if isHosted}
           <button class="btn ghost sm" onclick={openBgFolder}>{t("bg.openFolder")}</button>
           <button class="btn ghost sm" onclick={() => prefs.refreshBackgrounds()}>{t("bg.refresh")}</button>
@@ -209,10 +217,16 @@
     </div>
     <div class="lrow">
       <span class="k">{t("bg.scope")}</span>
-      <select class="select sm" value={String(bg.bgScope ?? 0)} onchange={(e) => prefs.setLook({ bgScope: Number(e.currentTarget.value) })}>
-        <option value="0">{t("bg.scopeWindow")}</option>
-        <option value="1">{t("bg.scopeTree")}</option>
-      </select>
+      <Select
+        class="select sm"
+        ariaLabel={t("bg.scope")}
+        value={String(bg.bgScope ?? 0)}
+        options={[
+          { value: "0", label: t("bg.scopeWindow") },
+          { value: "1", label: t("bg.scopeTree") },
+        ]}
+        onchange={(v) => prefs.setLook({ bgScope: Number(v) })}
+      />
     </div>
     {#each BG_SLIDERS as [key, label] (key)}
       <!-- "only behind the tree" keeps the panels solid: their opacity does not apply;
@@ -323,7 +337,7 @@
   .octl .input.sm {
     width: 150px;
   }
-  .octl .select.sm,
+  .octl :global(.select.sm),
   .octl .input.sm {
     height: 24px;
     font-size: var(--fs-xs);
@@ -495,7 +509,7 @@
     opacity: 0;
     cursor: pointer;
   }
-  .fontctl .select.sm {
+  .fontctl :global(.select.sm) {
     max-width: 280px;
   }
   .sample {

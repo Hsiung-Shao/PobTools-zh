@@ -8,6 +8,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import PobText from "../components/PobText.svelte";
+  import Select from "../components/Select.svelte";
   import { copyText } from "$lib/clipboard";
 
   // --- account import ------------------------------------------------------
@@ -33,6 +34,7 @@
   let seeded = false;
 
   const oChars = $derived((st && st.characters[realmCode(oRealm)]) ?? []);
+  const leagueOpts = (l: string[]) => [{ value: "", label: t("import.anyLeague") }, ...l.map((x) => ({ value: x, label: x }))];
   const oLeagues = $derived([...new Set(oChars.map((c) => c.league).filter((x): x is string => !!x))].sort());
   const oFiltered = $derived(oChars.filter((c) => !oLeague || c.league === oLeague));
   const sChars = $derived(st?.site.characters ?? []);
@@ -342,9 +344,7 @@
         <button class="btn ghost sm" disabled={app.busy > 0} onclick={logout}>{t("import.logout")}</button>
         <span class="vsep"></span>
         <label class="inline"><span class="k">{t("import.realm")}</span>
-          <select class="select sm" bind:value={oRealm}>
-            {#each st.realms as r (r.id)}<option value={r.id}>{r.label}</option>{/each}
-          </select>
+          <Select class="select sm" value={oRealm} options={st.realms.map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (oRealm = String(v))} />
         </label>
         <button class="btn sm" disabled={app.busy > 0 || busyOauth || rateWait > 0} onclick={fetchOauth}>{oChars.length ? t("import.fetched") : t("import.fetch")}</button>
         {#if busyOauth}<span class="dim">{t("import.working")}</span>{/if}
@@ -354,15 +354,10 @@
       {#if oChars.length}
         <div class="actions">
           <label class="inline"><span class="k">{t("import.league")}</span>
-            <select class="select sm" bind:value={oLeague}>
-              <option value="">{t("import.anyLeague")}</option>
-              {#each oLeagues as l (l)}<option value={l}>{l}</option>{/each}
-            </select>
+            <Select class="select sm" value={oLeague} options={leagueOpts(oLeagues)} onchange={(v) => (oLeague = String(v))} />
           </label>
           <label class="inline grow"><span class="k">{t("import.character")}</span>
-            <select class="select sm wide" bind:value={oChar}>
-              {#each oFiltered as c (c.name)}<option value={c.name}>{charLabel(c)}</option>{/each}
-            </select>
+            <Select class="select sm wide" value={oChar} options={oFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (oChar = String(v))} />
           </label>
         </div>
         <div class="opts">
@@ -385,9 +380,7 @@
     <p class="dim">{t("import.siteHint")}</p>
     <div class="actions">
       <label class="inline"><span class="k">{t("import.realm")}</span>
-        <select class="select sm" bind:value={sRealm} disabled={siteReady}>
-          {#each st?.realms ?? [] as r (r.id)}<option value={r.id}>{r.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={sRealm} disabled={siteReady} options={(st?.realms ?? []).map((r) => ({ value: r.id, label: r.label }))} onchange={(v) => (sRealm = String(v))} />
       </label>
       <label class="inline grow"><span class="k">{t("import.accountName")}</span>
         <input class="input sm wide" bind:value={sAccount} list="acct-history" placeholder="Name#1234" disabled={siteReady} onkeydown={(e) => e.key === "Enter" && accountOk && startSite()} />
@@ -412,15 +405,10 @@
     {#if siteReady && sChars.length}
       <div class="actions">
         <label class="inline"><span class="k">{t("import.league")}</span>
-          <select class="select sm" bind:value={sLeague}>
-            <option value="">{t("import.anyLeague")}</option>
-            {#each sLeagues as l (l)}<option value={l}>{l}</option>{/each}
-          </select>
+          <Select class="select sm" value={sLeague} options={leagueOpts(sLeagues)} onchange={(v) => (sLeague = String(v))} />
         </label>
         <label class="inline grow"><span class="k">{t("import.character")}</span>
-          <select class="select sm wide" bind:value={sChar}>
-            {#each sFiltered as c (c.name)}<option value={c.name}>{charLabel(c)}</option>{/each}
-          </select>
+          <Select class="select sm wide" value={sChar} options={sFiltered.map((c) => ({ value: c.name, label: charLabel(c) }))} onchange={(v) => (sChar = String(v))} />
         </label>
       </div>
       <div class="opts">
@@ -484,9 +472,7 @@
       {/if}
       {#if sites.some((s) => s.canShare)}
         <span class="vsep"></span>
-        <select class="select sm" bind:value={shareSite}>
-          {#each sites.filter((s) => s.canShare) as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={shareSite} options={sites.filter((s) => s.canShare).map((s) => ({ value: s.id, label: s.label }))} onchange={(v) => (shareSite = String(v))} />
         <button class="btn" disabled={!shareSite || linkBusy || app.busy > 0 || !app.loaded} onclick={share}>{t("import.share")}</button>
       {/if}
     </div>
@@ -612,13 +598,14 @@
   .inline.grow {
     flex: 1;
   }
-  .wide {
+  .page :global(.select.wide),
+  .input.wide {
     flex: 1;
     min-width: 200px;
     max-width: 520px;
   }
   .input.sm,
-  .select.sm {
+  .page :global(.select.sm) {
     height: 24px;
     font-size: var(--fs-xs);
   }

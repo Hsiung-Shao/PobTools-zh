@@ -8,6 +8,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
+  import Select from "../components/Select.svelte";
 
   let data = $state<SkillsList | null>(null);
   let sel = $state<number>(1);
@@ -439,11 +440,7 @@
       <div class="setctl">
       <span class="label">{t("skills.groups")}</span>
       {#if data}
-        <select class="select sm" value={String(data.activeSkillSetId)} onchange={(e) => setChange(e.currentTarget.value)} title={t("skills.skillSet")}>
-          {#each data.skillSets as s}
-            <option value={String(s.id)}>{setTitle(s)}</option>
-          {/each}
-        </select>
+        <Select class="select sm" value={String(data.activeSkillSetId)} options={data.skillSets.map((s) => ({ value: String(s.id), label: setTitle(s) }))} onchange={(v) => setChange(String(v))} title={t("skills.skillSet")} />
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("skills.newSetName"), copy: false })}>+</button>
         <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.skillSets.find((s) => s.id === data!.activeSkillSetId)?.title ?? "", copy: false })}>✎</button>
         <button class="btn ghost sm" disabled={data.skillSets.length <= 1} onclick={deleteSet}>×</button>
@@ -491,21 +488,20 @@
       {#if gemOptsOpen && gemOpts}
         <div class="optgrid">
           <label class="chk"><input type="checkbox" checked={gemOpts.sortGemsByDPS} onchange={(e) => patchGemOpts({ sortGemsByDPS: e.currentTarget.checked })} /> {t("skills.sortByDps")}</label>
-          <select class="select sm" value={gemOpts.sortGemsByDPSField} disabled={!gemOpts.sortGemsByDPS} onchange={(e) => patchGemOpts({ sortGemsByDPSField: e.currentTarget.value })}>
-            {#each gemOpts.sortFields as c}<option value={c.value}>{choiceLabel(c)}</option>{/each}
-          </select>
+          <Select class="select sm" value={gemOpts.sortGemsByDPSField} disabled={!gemOpts.sortGemsByDPS} options={gemOpts.sortFields.map((c) => ({ value: c.value, label: choiceLabel(c) }))} onchange={(v) => patchGemOpts({ sortGemsByDPSField: String(v) })} />
           <span class="k">{t("skills.defaultLevel")}</span>
-          <select class="select sm" value={gemOpts.defaultGemLevel} onchange={(e) => patchGemOpts({ defaultGemLevel: e.currentTarget.value })}
-            title={gemOpts.defaultGemLevels.find((c) => c.value === gemOpts!.defaultGemLevel)?.description ?? ""}>
-            {#each gemOpts.defaultGemLevels as c}<option value={c.value} title={c.description ?? ""}>{choiceLabel(c)}</option>{/each}
-          </select>
+          <Select
+            class="select sm"
+            value={gemOpts.defaultGemLevel}
+            options={gemOpts.defaultGemLevels.map((c) => ({ value: c.value, label: choiceLabel(c), title: c.description || undefined }))}
+            onchange={(v) => patchGemOpts({ defaultGemLevel: String(v) })}
+            title={gemOpts.defaultGemLevels.find((c) => c.value === gemOpts!.defaultGemLevel)?.description ?? ""}
+          />
           <span class="k">{t("skills.defaultQuality")}</span>
           <input class="input sm num" type="number" min="0" max="23" bind:value={qualityDraft}
             onchange={() => patchGemOpts({ defaultGemQuality: Math.max(0, Math.min(23, Math.floor(Number(qualityDraft) || 0))) })} />
           <span class="k">{t("skills.showSupports")}</span>
-          <select class="select sm" value={gemOpts.showSupportGemTypes} onchange={(e) => patchGemOpts({ showSupportGemTypes: e.currentTarget.value })}>
-            {#each gemOpts.supportGemTypes as c}<option value={c.value}>{choiceLabel(c)}</option>{/each}
-          </select>
+          <Select class="select sm" value={gemOpts.showSupportGemTypes} options={gemOpts.supportGemTypes.map((c) => ({ value: c.value, label: choiceLabel(c) }))} onchange={(v) => patchGemOpts({ showSupportGemTypes: String(v) })} />
           <label class="chk"><input type="checkbox" checked={gemOpts.showLegacyGems} onchange={(e) => patchGemOpts({ showLegacyGems: e.currentTarget.checked })} /> {t("skills.showLegacy")}</label>
         </div>
       {/if}
@@ -522,12 +518,12 @@
           </label>
           <label class="f">
             <span class="k">{t("skills.slot")}</span>
-            <select class="select sm" value={group.slot ?? ""} onchange={(e) => patchGroup({ slot: e.currentTarget.value })}>
-              <option value="">{t("skills.slotNone")}</option>
-              {#each data.slotOptions as s}
-                <option value={s.name}>{s.labelZh || s.label}</option>
-              {/each}
-            </select>
+            <Select
+              class="select sm"
+              value={group.slot ?? ""}
+              options={[{ value: "", label: t("skills.slotNone") }, ...data.slotOptions.map((s) => ({ value: s.name, label: s.labelZh || s.label }))]}
+              onchange={(v) => patchGroup({ slot: String(v) })}
+            />
           </label>
           <label class="chk"><input type="checkbox" checked={group.enabled} onchange={(e) => patchGroup({ enabled: e.currentTarget.checked })} /> {t("skills.enabled")}</label>
           <label class="chk"><input type="checkbox" checked={group.includeInFullDPS} onchange={(e) => patchGroup({ includeInFullDPS: e.currentTarget.checked })} /> {t("skills.fullDps")}</label>
@@ -541,11 +537,7 @@
           <div class="frow">
             <label class="f">
               <span class="k">{t("skills.mainSkill")}</span>
-              <select class="select sm" value={group.mainActiveSkill} onchange={(e) => patchGroup({ mainActiveSkill: Number(e.currentTarget.value) })}>
-                {#each group.skills as s}
-                  <option value={s.index}>{s.nameZh || s.name}</option>
-                {/each}
-              </select>
+              <Select class="select sm" value={group.mainActiveSkill} options={group.skills.map((s) => ({ value: s.index, label: s.nameZh || s.name || "" }))} onchange={(v) => patchGroup({ mainActiveSkill: Number(v) })} />
             </label>
           </div>
         {/if}
@@ -777,17 +769,16 @@
     align-items: center;
     gap: 4px;
   }
-  .head .setctl .select {
+  .head .setctl :global(.select) {
     flex: 0 1 auto;
     min-width: 44px;
-    text-overflow: ellipsis;
   }
   .head .grpctl {
     flex: none;
     display: flex;
     gap: 4px;
   }
-  .head .select {
+  .head :global(.select) {
     min-width: 0;
     max-width: 100%;
   }
@@ -882,7 +873,7 @@
     font-size: var(--fs-xs);
     height: 24px;
   }
-  .select.sm,
+  .page :global(.select.sm),
   .input.sm {
     height: 24px;
     font-size: var(--fs-xs);

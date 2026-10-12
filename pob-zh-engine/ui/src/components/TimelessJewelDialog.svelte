@@ -7,6 +7,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import type { TreeModel } from "$lib/tree/model";
+  import Select from "./Select.svelte";
   import SocketPreview from "./SocketPreview.svelte";
 
   let {
@@ -24,7 +25,7 @@
   let minWeight = $state("");
 
   // Socket picker: POB's own drop-down shows a zoomed tree of the socket under
-  // the mouse, so a plain <select> (no hover) lost where each socket is. Rows
+  // the mouse, so a plain select element (no hover) lost where each socket is. Rows
   // preview on hover; with the list closed the chosen socket stays on the map.
   let socketOpen = $state(false);
   let socketHover = $state<number | null>(null);
@@ -64,6 +65,8 @@
   });
 
   const set = (p: Parameters<typeof api.tjSet>[0]) => run(() => api.tjSet(p));
+  // POB's list controls are 1-based: an option's position is its value
+  const opts1 = (l: { label: string; labelZh?: string }[] | undefined) => (l ?? []).map((o, i) => ({ value: i + 1, label: o.labelZh || o.label }));
   const pct = (v?: number) => Math.round((v ?? 0) * 100);
 
   async function copyJewel(index: number) {
@@ -94,13 +97,9 @@
       <div class="head">
       <div class="grid">
         <span class="k">{t("tj.jewel")}</span>
-        <select class="select sm" value={st.jewel?.sel} disabled={busy} onchange={(e) => set({ jewel: Number(e.currentTarget.value) })}>
-          {#each st.jewel?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" ariaLabel={t("tj.jewel")} value={st.jewel?.sel} disabled={busy} options={opts1(st.jewel?.options)} onchange={(v) => set({ jewel: Number(v) })} />
         <span class="k">{t("tj.conqueror")}</span>
-        <select class="select sm" value={st.conqueror?.sel} disabled={busy} onchange={(e) => set({ conqueror: Number(e.currentTarget.value) })}>
-          {#each st.conqueror?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.conqueror?.sel} disabled={busy} options={opts1(st.conqueror?.options)} onchange={(v) => set({ conqueror: Number(v) })} />
         <span class="k">{t("tj.socket")}</span>
         <div class="spick" bind:this={spickEl}>
           <button class="select sm sbtn" disabled={busy} aria-haspopup="listbox" aria-expanded={socketOpen} onclick={() => (socketOpen = !socketOpen)}>
@@ -118,24 +117,16 @@
         {#if st.devotion1?.shown}
           <span class="k">{t("tj.devotion")}</span>
           <span class="two">
-            <select class="select sm" value={st.devotion1.sel} disabled={busy} onchange={(e) => set({ devotion1: Number(e.currentTarget.value) })}>
-              {#each st.devotion1.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-            </select>
-            <select class="select sm" value={st.devotion2?.sel} disabled={busy} onchange={(e) => set({ devotion2: Number(e.currentTarget.value) })}>
-              {#each st.devotion2?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-            </select>
+            <Select class="select sm" value={st.devotion1.sel} disabled={busy} options={opts1(st.devotion1.options)} onchange={(v) => set({ devotion1: Number(v) })} />
+            <Select class="select sm" value={st.devotion2?.sel} disabled={busy} options={opts1(st.devotion2?.options)} onchange={(v) => set({ devotion2: Number(v) })} />
           </span>
         {/if}
         {#if st.abyssAscendancy?.shown}
           <span class="k">{t("tj.abyssAsc")}</span>
-          <select class="select sm" value={st.abyssAscendancy.sel} disabled={busy} onchange={(e) => set({ abyssAscendancy: Number(e.currentTarget.value) })}>
-            {#each st.abyssAscendancy.options as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-          </select>
+          <Select class="select sm" value={st.abyssAscendancy.sel} disabled={busy} options={opts1(st.abyssAscendancy.options)} onchange={(v) => set({ abyssAscendancy: Number(v) })} />
         {/if}
         <span class="k">{t("tj.node")}</span>
-        <select class="select sm" value={st.node?.sel} disabled={busy} onchange={(e) => set({ node: Number(e.currentTarget.value) })}>
-          {#each st.node?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.node?.sel} disabled={busy} options={opts1(st.node?.options)} onchange={(v) => set({ node: Number(v) })} />
         <span class="k">{t("tj.weights")}</span>
         <span class="sliders">
           <label class="sl">{t("tj.primary")}<input type="range" min="0" max="1" step="0.01" value={st.weights?.primary ?? 1} disabled={busy} onchange={(e) => set({ primary: Number(e.currentTarget.value) })} /><span class="num">{st.weights?.primaryLabel ?? `${pct(st.weights?.primary)}%`}</span></label>
@@ -154,9 +145,7 @@
         <span class="k">{t("tj.minTotal")}</span>
         <span class="two">
           <input class="input sm num" bind:value={minWeight} onchange={() => set({ totalMinimumWeight: minWeight })} />
-          <select class="select sm" value={st.fallbackWeights?.sel} disabled={busy} onchange={(e) => set({ fallbackWeights: Number(e.currentTarget.value) })}>
-            {#each st.fallbackWeights?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-          </select>
+          <Select class="select sm" value={st.fallbackWeights?.sel} disabled={busy} options={opts1(st.fallbackWeights?.options)} onchange={(v) => set({ fallbackWeights: Number(v) })} />
           <button class="btn sm" disabled={busy} onclick={() => set({ generateFallback: true })}>{t("tj.generate")}</button>
         </span>
         <span class="k">{t("tj.searchList")}</span>

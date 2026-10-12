@@ -6,6 +6,7 @@
   import PobText from "../components/PobText.svelte";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import Select from "../components/Select.svelte";
 
   type FieldKey = keyof PartyData["fields"];
   const keys: FieldKey[] = ["partyMemberStats", "aura", "curse", "warcry", "link", "enemyCond", "enemyMods"];
@@ -107,9 +108,7 @@
   {#if imp}
     <div class="bar imp">
       <input class="input sm code" placeholder={t("party.importHint")} bind:value={code} onkeydown={(e) => e.key === "Enter" && code.trim() && doImport()} />
-      <select class="select sm" bind:value={dest} title={t("party.destination")}>
-        {#each imp.destinations as d (d.index)}<option value={d.index}>{d.labelZh || d.label}</option>{/each}
-      </select>
+      <Select class="select sm" value={dest} title={t("party.destination")} options={imp.destinations.map((d) => ({ value: d.index, label: d.labelZh || d.label }))} onchange={(v) => (dest = Number(v))} />
       <label class="chk" title={t("party.appendHint")}><input type="checkbox" bind:checked={append} /> {t("party.append")}</label>
       <button class="btn primary sm" disabled={!code.trim() || app.busy > 0} onclick={doImport}>{t("party.import")}</button>
       {#if impMsg}<span class="small"><PobText text={impMsg} /></span>{/if}

@@ -2,10 +2,12 @@
      頂列控制項回呼(get_build_header / set_build_field / save_build*)。 -->
 <script lang="ts">
   import { untrack } from "svelte";
-  import { api, type BuildHeader } from "$lib/bridge";
+  import { api, type BuildHeader, type DdEntry } from "$lib/bridge";
   import { t } from "$lib/i18n";
+  import type { SelOption } from "$lib/select";
   import { app } from "$lib/state.svelte";
   import ClassChangeDialog from "./ClassChangeDialog.svelte";
+  import Select from "./Select.svelte";
   import MinionLibrary from "./MinionLibrary.svelte";
 
   const h = $derived(app.header);
@@ -88,21 +90,13 @@
   // class / ascendancy (Build.lua's classDrop / ascendDrop / secondaryAscendDrop)
   const pick = $derived(h?.classPick ?? null);
   const currentClass = $derived(h?.classes?.find((c) => c.id === pick?.classId) ?? null);
-  let classSel = $state<HTMLSelectElement | null>(null);
-  let ascSel = $state<HTMLSelectElement | null>(null);
-  let asc2Sel = $state<HTMLSelectElement | null>(null);
   let classConfirm = $state<{ classId: number; className: string; connectFailed: boolean } | null>(null);
 
   $effect(() => {
     if (h) levelDraft = String(h.level);
   });
-  // native selects keep whatever the user picked; put POB's answer back after every header refresh
-  $effect(() => {
-    if (!pick) return;
-    if (classSel) classSel.value = String(pick.classId);
-    if (ascSel) ascSel.value = String(pick.ascendClassId);
-    if (asc2Sel) asc2Sel.value = String(pick.secondaryAscendClassId);
-  });
+  // the drop-downs are controlled: they show POB's answer (pick.*), not what was clicked
+  const dd = (l: DdEntry[], byIndex = false): SelOption[] => l.map((o, i) => ({ value: byIndex ? i + 1 : (o.val ?? i + 1), label: o.labelZh || o.label }));
 
   async function setField(field: string, value: unknown) {
     const r = await app.run(() => api.setBuildField(field, value));
@@ -202,55 +196,27 @@
     {#if pick && h.classes}
       <label class="field">
         <span class="k">{t("bar.class")}</span>
-        <select class="{selectClass} cls" bind:this={classSel} disabled={app.busy > 0} onchange={(e) => void changeClass(Number(e.currentTarget.value))}>
-          {#each h.classes as c (c.id)}
-            <option value={c.id} selected={c.id === pick.classId}>{c.nameZh || c.name}</option>
-          {/each}
-        </select>
+        <Select class="{selectClass} cls" ariaLabel={t("bar.class")} disabled={app.busy > 0} value={pick.classId} options={h.classes.map((c) => ({ value: c.id, label: c.nameZh || c.name }))} onchange={(v) => void changeClass(Number(v))} />
         {#if currentClass}
-          <select class="{selectClass} cls" bind:this={ascSel} disabled={app.busy > 0} onchange={(e) => void setAscendancy(Number(e.currentTarget.value))}>
-            {#each currentClass.ascendancies as a (a.id)}
-              <option value={a.id} selected={a.id === pick.ascendClassId}>{a.nameZh || a.name}</option>
-            {/each}
-          </select>
+          <Select class="{selectClass} cls" disabled={app.busy > 0} value={pick.ascendClassId} options={currentClass.ascendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setAscendancy(Number(v))} />
         {/if}
         {#if h.secondaryAscendancies && h.secondaryAscendancies.length > 1}
-          <select class="{selectClass} cls" bind:this={asc2Sel} disabled={app.busy > 0} title={t("bar.ascend2")} onchange={(e) => void setSecondary(Number(e.currentTarget.value))}>
-            {#each h.secondaryAscendancies as a (a.id)}
-              <option value={a.id} selected={a.id === pick.secondaryAscendClassId}>{a.nameZh || a.name}</option>
-            {/each}
-          </select>
+          <Select class="{selectClass} cls" disabled={app.busy > 0} title={t("bar.ascend2")} value={pick.secondaryAscendClassId} options={h.secondaryAscendancies.map((a) => ({ value: a.id, label: a.nameZh || a.name }))} onchange={(v) => void setSecondary(Number(v))} />
         {/if}
       </label>
     {/if}
 
     <label class="field grow">
       <span class="k">{t("bar.mainSkill")}</span>
-      <select class={selectClass} value={h.mainSocketGroup.index} onchange={(e) => setField("mainSocketGroup", Number(e.currentTarget.value))}>
-        {#each h.mainSocketGroup.list as o}
-          <option value={o.val}>{o.labelZh || o.label}</option>
-        {/each}
-      </select>
+      <Select class={selectClass} ariaLabel={t("bar.mainSkill")} value={h.mainSocketGroup.index} options={dd(h.mainSocketGroup.list)} onchange={(v) => setField("mainSocketGroup", Number(v))} />
       {#if loadouts && loadouts.entries.length > 1}
-        <select class={selectClass} value={String(loadouts.selIndex)} title={t("bar.loadout")} onchange={(e) => pickLoadout(e.currentTarget.value)}>
-          {#each loadouts.entries as e (e.index)}
-            <option value={String(e.index)} disabled={e.kind === "header"}>{e.kind === "loadout" ? e.label : e.labelZh || e.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={String(loadouts.selIndex)} title={t("bar.loadout")} options={loadouts.entries.map((e) => ({ value: String(e.index), label: e.kind === "loadout" ? e.label : e.labelZh || e.label, disabled: e.kind === "header" }))} onchange={(v) => pickLoadout(String(v))} />
       {/if}
       {#if h.mainSkill}
-        <select class={selectClass} value={h.mainSkill.index} disabled={h.mainSkill.enabled === false} onchange={(e) => setField("mainSkill", Number(e.currentTarget.value))}>
-          {#each h.mainSkill.list as o}
-            <option value={o.val}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.mainSkill.index} disabled={h.mainSkill.enabled === false} options={dd(h.mainSkill.list)} onchange={(v) => setField("mainSkill", Number(v))} />
       {/if}
       {#if h.mainSkillPart}
-        <select class={selectClass} value={h.mainSkillPart.index} onchange={(e) => setField("mainSkillPart", Number(e.currentTarget.value))}>
-          {#each h.mainSkillPart.list as o}
-            <option value={o.val}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.mainSkillPart.index} options={dd(h.mainSkillPart.list)} onchange={(v) => setField("mainSkillPart", Number(v))} />
       {/if}
       {#if h.mainSkillStageCount != null}
         <span class="k">{t("bar.stages")}</span>
@@ -261,18 +227,10 @@
         <input class="input num cnt" type="number" min="0" value={h.mainSkillMineCount} onchange={(e) => setField("mainSkillMineCount", Number(e.currentTarget.value))} />
       {/if}
       {#if h.mainSkillMinion}
-        <select class={selectClass} value={h.mainSkillMinion.index} disabled={h.mainSkillMinion.enabled === false} onchange={(e) => setField("mainSkillMinion", Number(e.currentTarget.value))}>
-          {#each h.mainSkillMinion.list as o, i}
-            <option value={i + 1}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.mainSkillMinion.index} disabled={h.mainSkillMinion.enabled === false} options={dd(h.mainSkillMinion.list, true)} onchange={(v) => setField("mainSkillMinion", Number(v))} />
       {/if}
       {#if h.statSet}
-        <select class={selectClass} value={h.statSet.index} disabled={h.statSet.enabled === false} onchange={(e) => setField("statSet", Number(e.currentTarget.value))} title={t("bar.statSet")}>
-          {#each h.statSet.list as o}
-            <option value={o.val}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.statSet.index} disabled={h.statSet.enabled === false} options={dd(h.statSet.list)} onchange={(v) => setField("statSet", Number(v))} title={t("bar.statSet")} />
       {/if}
       {#if h.minionLibrary}
         <button class="btn ghost sm" onclick={() => (library = "spectre")}>{t("bar.spectres")}</button>
@@ -281,18 +239,10 @@
         <button class="btn ghost sm" onclick={() => (library = "beast")}>{t("bar.beasts")}</button>
       {/if}
       {#if h.minionStatSet}
-        <select class={selectClass} value={h.minionStatSet.index} onchange={(e) => setField("minionStatSet", Number(e.currentTarget.value))} title={t("bar.statSet")}>
-          {#each h.minionStatSet.list as o}
-            <option value={o.val}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.minionStatSet.index} options={dd(h.minionStatSet.list)} onchange={(v) => setField("minionStatSet", Number(v))} title={t("bar.statSet")} />
       {/if}
       {#if h.mainSkillMinionSkill}
-        <select class={selectClass} value={h.mainSkillMinionSkill.index} onchange={(e) => setField("mainSkillMinionSkill", Number(e.currentTarget.value))}>
-          {#each h.mainSkillMinionSkill.list as o}
-            <option value={o.val}>{o.labelZh || o.label}</option>
-          {/each}
-        </select>
+        <Select class={selectClass} value={h.mainSkillMinionSkill.index} options={dd(h.mainSkillMinionSkill.list)} onchange={(v) => setField("mainSkillMinionSkill", Number(v))} />
       {/if}
     </label>
 
@@ -394,12 +344,11 @@
     width: 56px;
     height: 24px;
   }
-  .select.sm {
+  .bar :global(.select.sm) {
     height: 24px;
     max-width: 260px;
-    text-overflow: ellipsis;
   }
-  .select.cls {
+  .bar :global(.select.cls) {
     max-width: 130px;
   }
   .btn.on {

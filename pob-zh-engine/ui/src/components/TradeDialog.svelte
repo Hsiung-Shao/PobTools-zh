@@ -8,6 +8,7 @@
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import Select from "./Select.svelte";
   import TooltipCard from "./TooltipCard.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -200,7 +201,7 @@
   }
 
   // the results of a row as a list of our own, so hovering one can show POB's
-  // tooltip for it (a native <select> gives no hover of its options)
+  // tooltip for it (a native select element gives no hover of its options)
   let openRow = $state<number | null>(null);
   function toggleRow(row: number) {
     openRow = openRow === row ? null : row;
@@ -212,6 +213,8 @@
     tipCache.clear();
     await run(() => api.tradePick(row, index), row);
   }
+  // POB's list controls are 1-based: an option's position is its value
+  const opts1 = (l: { label: string; labelZh?: string }[] | undefined) => (l ?? []).map((o, i) => ({ value: i + 1, label: o.labelZh || o.label }));
   function resultLabel(r: NonNullable<TradeState["rows"]>[number]): string {
     const hit = r.results.find((x) => x.index === r.selected) ?? r.results[0];
     return hit ? hit.labelZh || hit.label : "";
@@ -239,21 +242,13 @@
       <p class="dim small">{t("trade.hint")}</p>
       <div class="bar">
         <span class="k">{t("trade.realm")}</span>
-        <select class="select sm" value={st.realm?.sel} disabled={busy !== null} onchange={(e) => set({ realm: Number(e.currentTarget.value) })}>
-          {#each st.realm?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.realm?.sel} disabled={busy !== null} options={opts1(st.realm?.options)} onchange={(v) => set({ realm: Number(v) })} />
         <span class="k">{t("trade.league")}</span>
-        <select class="select sm" value={st.league?.sel} disabled={busy !== null} onchange={(e) => set({ league: Number(e.currentTarget.value) })}>
-          {#each st.league?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.league?.sel} disabled={busy !== null} options={opts1(st.league?.options)} onchange={(v) => set({ league: Number(v) })} />
         <span class="k">{t("trade.tradeType")}</span>
-        <select class="select sm" value={st.tradeType?.sel} disabled={busy !== null} onchange={(e) => set({ tradeType: Number(e.currentTarget.value) })}>
-          {#each st.tradeType?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.tradeType?.sel} disabled={busy !== null} options={opts1(st.tradeType?.options)} onchange={(v) => set({ tradeType: Number(v) })} />
         <span class="k">{t("trade.sort")}</span>
-        <select class="select sm" value={st.sort?.sel} disabled={busy !== null} onchange={(e) => set({ sort: Number(e.currentTarget.value) })}>
-          {#each st.sort?.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-        </select>
+        <Select class="select sm" value={st.sort?.sel} disabled={busy !== null} options={opts1(st.sort?.options)} onchange={(v) => set({ sort: Number(v) })} />
         <button class="btn sm" disabled={busy !== null} onclick={openWeights}>{t("trade.weights")}</button>
         <span class="k">{t("trade.pages")}</span>
         <input class="input sm num pages" value={st.fetchPages ?? ""} disabled={busy !== null} onchange={(e) => set({ fetchPages: Number(e.currentTarget.value) })} />
@@ -345,9 +340,7 @@
           {#if c.kind === "check"}
             <input type="checkbox" checked={c.state} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: e.currentTarget.checked } })} />
           {:else if c.kind === "dropdown"}
-            <select class="select sm" value={c.sel} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: Number(e.currentTarget.value) } })}>
-              {#each c.options ?? [] as o, i}<option value={i + 1}>{o.labelZh || o.label}</option>{/each}
-            </select>
+            <Select class="select sm" value={c.sel} disabled={!c.enabled} options={opts1(c.options)} onchange={(v) => optSet({ values: { [c.name]: Number(v) } })} />
           {:else if c.kind === "edit"}
             <input class="input sm" value={c.text ?? ""} disabled={!c.enabled} onchange={(e) => optSet({ values: { [c.name]: e.currentTarget.value } })} />
           {:else if c.kind === "label"}

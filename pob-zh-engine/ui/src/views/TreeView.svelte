@@ -23,6 +23,7 @@
   import { buildModel, isLocked, UNSEEN_PATH_NODE, type TreeData, type TreeModel, type TreeNode } from "$lib/tree/model";
   import { Sprites, ART_SCALE } from "$lib/tree/assets";
   import PobText from "../components/PobText.svelte";
+  import Select from "../components/Select.svelte";
   import ClassChangeDialog from "../components/ClassChangeDialog.svelte";
 
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -1106,16 +1107,8 @@
       {t("tree.power")}
     </label>
     {#if power}
-      <select class="select sm" value={powerStat} disabled={powerBusy} onchange={(e) => { powerStat = e.currentTarget.value; togglePower(true); }}>
-        {#each power.stats as s (s.index)}<option value={s.stat ?? ""}>{s.labelZh || s.label}</option>{/each}
-      </select>
-      <select class="select sm" value={powerDepth} disabled={powerBusy} onchange={(e) => { powerDepth = e.currentTarget.value; togglePower(true); }} title={t("tree.powerDepth")}>
-        <option value="all">{t("tree.powerDepthAll")}</option>
-        <option value="3">3</option>
-        <option value="5">5</option>
-        <option value="10">10</option>
-        <option value="15">15</option>
-      </select>
+      <Select class="select sm" ariaLabel={t("tree.power")} value={powerStat} disabled={powerBusy} options={power.stats.map((s) => ({ value: s.stat ?? "", label: s.labelZh || s.label }))} onchange={(v) => { powerStat = String(v); togglePower(true); }} />
+      <Select class="select sm" value={powerDepth} disabled={powerBusy} options={[{ value: "all", label: t("tree.powerDepthAll") }, ...["3", "5", "10", "15"].map((n) => ({ value: n, label: n }))]} onchange={(v) => { powerDepth = String(v); togglePower(true); }} title={t("tree.powerDepth")} />
       <button class="btn ghost sm" disabled={!power.report?.length} onclick={() => (reportOpen = !reportOpen)}>{t(reportOpen ? "tree.powerHide" : "tree.powerShow")}</button>
     {/if}
     {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>{/if}

@@ -10,6 +10,7 @@
   import { t } from "$lib/i18n";
   import { folderCrumbs, parentFolder } from "$lib/nav";
   import { app } from "$lib/state.svelte";
+  import Select from "./Select.svelte";
 
   let entries = $state<BuildEntry[]>([]);
   let buildPath = $state("");
@@ -178,9 +179,7 @@
     </nav>
     <span class="grow"></span>
     <input class="input search" type="search" placeholder={t("builds.searchHint")} bind:value={filter} oninput={onSearch} />
-    <select class="input sort" value={sortMode} onchange={(e) => refresh(subPath, { sortMode: e.currentTarget.value })} title={t("builds.sort")}>
-      {#each sortModes as s}<option value={s.sortMode}>{t(`builds.sort.${s.sortMode}`) === `builds.sort.${s.sortMode}` ? s.label : t(`builds.sort.${s.sortMode}`)}</option>{/each}
-    </select>
+    <Select class="input sort" value={sortMode} onchange={(v) => refresh(subPath, { sortMode: String(v) })} title={t("builds.sort")} options={sortModes.map((s) => ({ value: s.sortMode, label: t(`builds.sort.${s.sortMode}`) === `builds.sort.${s.sortMode}` ? s.label : t(`builds.sort.${s.sortMode}`) }))} />
     {#if clip}
       <button class="btn sm" disabled={app.busy > 0 || !canMoveTo(clip.entry, subPath) && !(clip.copy && clip.entry.subPath === subPath)} onclick={paste}
         title={t(clip.copy ? "builds.pasteCopyHint" : "builds.pasteMoveHint", { name: nameOf(clip.entry) })}>{t("builds.paste")}</button>
@@ -287,7 +286,7 @@
   .search {
     width: 220px;
   }
-  .sort {
+  .bar :global(.sort) {
     width: auto;
   }
   .row.cut {

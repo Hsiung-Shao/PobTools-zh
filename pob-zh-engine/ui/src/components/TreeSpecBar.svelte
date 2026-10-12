@@ -6,6 +6,7 @@
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import Select from "./Select.svelte";
 
   let { compact = false }: { compact?: boolean } = $props();
 
@@ -109,21 +110,14 @@
 </script>
 
 {#if specs}
-  <select class="select sm spec" value={String(specs.activeSpec)} title={t("tree.specSelect")} onchange={(e) => pick(e.currentTarget.value)} disabled={app.busy > 0}>
-    {#each specs.specs as s (s.index)}<option value={String(s.index)}>{specLabel(s)}</option>{/each}
-  </select>
+  <Select class="select sm tsb-spec" value={String(specs.activeSpec)} title={t("tree.specSelect")} options={specs.specs.map((s) => ({ value: String(s.index), label: specLabel(s) }))} onchange={(v) => pick(String(v))} disabled={app.busy > 0} />
   {#if !compact}
     <button class="btn ghost sm" onclick={() => { manage = true; manageSel = specs!.activeSpec; }}>{t("tree.specManage")}</button>
-    <select class="select sm ver" value={specs.treeVersion} title={t("tree.version")} onchange={(e) => { const v = e.currentTarget.value; e.currentTarget.value = specs!.treeVersion; if (v !== specs!.treeVersion) convert = v; }} disabled={app.busy > 0}>
-      {#each specs.versions as v (v.value)}<option value={v.value}>{v.label}</option>{/each}
-    </select>
-    <select class="select sm cmp" value={String(compare ?? "")} title={t(specs.specs.length < 2 ? "tree.compareNeedTwo" : "tree.compareHint")}
-      onchange={(e) => setCompare(e.currentTarget.value)} disabled={app.busy > 0 || (specs.specs.length < 2 && compare == null)}>
-      <option value="">{t("tree.compare")}: {t("tree.compareOff")}</option>
-      {#each specs.specs as s (s.index)}
-        {#if s.index !== specs.activeSpec}<option value={String(s.index)}>{t("tree.compare")}: {s.title || t("tree.specDefault")}</option>{/if}
-      {/each}
-    </select>
+    <!-- controlled: picking a version only asks (the convert dialog); the drop-down keeps showing the tree's version -->
+    <Select class="select sm tsb-ver" value={specs.treeVersion} title={t("tree.version")} options={specs.versions.map((v) => ({ value: v.value, label: v.label }))} onchange={(v) => { if (String(v) !== specs!.treeVersion) convert = String(v); }} disabled={app.busy > 0} />
+    <Select class="select sm tsb-cmp" value={String(compare ?? "")} title={t(specs.specs.length < 2 ? "tree.compareNeedTwo" : "tree.compareHint")}
+      options={[{ value: "", label: `${t("tree.compare")}: ${t("tree.compareOff")}` }, ...specs.specs.filter((s) => s.index !== specs!.activeSpec).map((s) => ({ value: String(s.index), label: `${t("tree.compare")}: ${s.title || t("tree.specDefault")}` }))]}
+      onchange={(v) => setCompare(String(v))} disabled={app.busy > 0 || (specs.specs.length < 2 && compare == null)} />
     <button class="btn ghost sm" onclick={() => (reset = true)} disabled={app.busy > 0}>{t(specs.tattoos ? "tree.resetTattoos" : "tree.reset")}</button>
   {/if}
 {/if}
@@ -227,10 +221,10 @@
 {/if}
 
 <style>
-  .spec {
+  :global(.select.tsb-spec) {
     max-width: 280px;
   }
-  .ver {
+  :global(.select.tsb-ver) {
     width: auto;
   }
   .modal {
@@ -287,7 +281,7 @@
   .grow {
     flex: 1;
   }
-  .cmp {
+  :global(.select.tsb-cmp) {
     max-width: 200px;
   }
 </style>
