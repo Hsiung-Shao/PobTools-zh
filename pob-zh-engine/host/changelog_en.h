@@ -19,6 +19,16 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.1 (2026-10-13)\n"
+	u8"Fixed\n"
+	u8"　·Calcs page: Burst Damage was shown with a wrong Chinese name (e.g. Hexblast of Contradiction).\n"
+	u8"　·New UI item editor: on wide screens the modifier area was squeezed into a thin strip.\n"
+	u8"　·New UI drop-downs: the list could run past the window and cover the taskbar.\n"
+	u8"　·New UI: in a narrow window the Items, Skills, Calcs and Config pages were cut off (they now stack).\n"
+	u8"Added\n"
+	u8"　·New UI sidebar: can be collapsed in a narrow window with the button at the top left.\n"
+	u8"　·New UI drop-downs: long lists can be searched by typing, in English or Chinese.\n"
+	u8"\n"
 	u8"v1.8.0 (2026-10-10)\n"
 	u8"Fixed\n"
 	u8"　·Poe Regex item mod values: fractured mods could not be found (lines ending in the fractured marker now match).\n"
