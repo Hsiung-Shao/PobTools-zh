@@ -25,6 +25,7 @@
 
 #include <cstdio>
 #include <map>
+#include <unordered_set>
 #include <string>
 #include <vector>
 
@@ -186,7 +187,8 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	// (a) must come from a file the global lookup reads: a key that only lives
 	// in affixes.json (source_only) or a *_by_id.json is invisible to
 	// translation_lookup(), so T5/T7/T8 would fail for the wrong reason.
-	const std::vector<std::string> sourceOnly = meta_list(model, "source_only");
+	std::vector<std::string> sourceOnly = meta_list(model, "source_only");
+	for (const std::string& f : meta_list(model, "source_dicts")) sourceOnly.push_back(f);
 
 	const EditorEntry* single = nullptr;
 	const EditorEntry* shadowLoser = nullptr;
@@ -195,6 +197,7 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 		if (e.structured) continue;
 		const std::string& owner = model.files[(size_t)e.fileIdx].name;
 		if (!single && occurrences[e.key] == 1 && e.key.size() > 6 && e.value.size() > 2 &&
+		    model.files[(size_t)e.fileIdx].order >= 0 &&
 		    !not_in_global_table(sourceOnly, owner))
 			single = &e;
 		if (occurrences[e.key] > 1 && e.key.size() > 4) {
@@ -664,17 +667,99 @@ int RunEditorSelftest(const std::string& games)
 		const char* kStatTmpl = "{0}% increased TestStatXyz";
 		const char* kStatExact = "15% increased TestStatXyz";
 
-		// S1 snapshot: taken BEFORE anything is planted.
 		translation_set_source(nullptr);
 		translation_reload();
-		const char* kSample[] = {
-			"Volatility",                         // gem/passive collision
-			"15% increased Abyssal Cry Damage",   // stat/affix line (pattern)
-			"Acrobatics",                         // passive name
-		};
-		std::vector<std::string> snapshot;
-		for (const char* k : kSample) snapshot.push_back(say(k));
 		const std::string robustBefore = say(kRobust);
+
+		// S17: the shipped meta.json keeps source-only / id files OUT of
+		// load_order. An older engine (v1.8.1) reads load_order only and merges
+		// everything in it: the affix names would reach the global table and the
+		// id files' numeric keys would be taken as English.
+		{
+			std::string body;
+			bool ok = readBytes(dictDir + L"meta.json", body);
+			std::string why;
+			try {
+				auto meta = nlohmann::ordered_json::parse(body);
+				auto inArr = [&](const char* field, const char* f) {
+					if (!meta.contains(field) || !meta[field].is_array()) return false;
+					for (const auto& x : meta[field])
+						if (x.is_string() && x.get<std::string>() == f) return true;
+					return false;
+				};
+				for (const char* f : {"affixes.json", "passives_by_id.json",
+				                      "affixes_by_id.json", "ascendancy.json"})
+					if (inArr("load_order", f)) { ok = false; why += std::string(" load_order:") + f; }
+				for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"})
+					if (!inArr("source_dicts", f)) { ok = false; why += std::string(" !source_dicts:") + f; }
+				if (!(meta.contains("source_lookup") && meta["source_lookup"] == true)) {
+					ok = false; why += " !source_lookup";
+				}
+			} catch (...) { ok = false; why += " parse"; }
+			check(ok, "S17 meta.json 的 load_order 不含只當來源與 id 的檔(舊引擎看不到)");
+			if (!ok) printf("    %s\n", why.c_str());
+		}
+
+		// S20: the editor reads load_order for its file ranks, so those files
+		// show up as "not in load_order" (rank -1): never offered as a target for
+		// new keys and never treated as winning the merge.
+		{
+			bool ok = true;
+			for (const EditorFile& f : model.files) {
+				if ((f.name == "affixes.json" || f.name == "passives_by_id.json" ||
+				     f.name == "affixes_by_id.json" || f.name == "ascendancy.json") && f.order >= 0) {
+					ok = false;
+					printf("    %s order=%d\n", f.name.c_str(), f.order);
+				}
+			}
+			check(ok, "S20 編輯器把只當來源與 id 的檔列為未載入(不當新增目標)");
+		}
+
+		// S1: every key of every dictionary, looked up unmarked under two
+		// meta.json variants -- the shipped one, and one stripped of
+		// source_dicts / source_lookup / source_only (what an engine that knows
+		// none of these fields makes of the same data). Same data, so the
+		// unmarked answers must be identical key for key.
+		{
+			std::string metaBody;
+			bool ok = readBytes(dictDir + L"meta.json", metaBody);
+			std::vector<std::string> keys;
+			{
+				std::unordered_set<std::string> seen;
+				for (const EditorEntry& e : model.entries)
+					if (seen.insert(e.key).second) keys.push_back(e.key);
+			}
+			std::string stripped;
+			try {
+				auto meta = nlohmann::ordered_json::parse(metaBody);
+				meta.erase("source_dicts");
+				meta.erase("source_lookup");
+				meta.erase("source_only");
+				stripped = meta.dump(2);
+			} catch (...) { ok = false; }
+			auto sayAll = [&](std::vector<std::string>& out) {
+				translation_set_source(nullptr);
+				translation_reload();
+				out.clear();
+				out.reserve(keys.size());
+				for (const std::string& k : keys) out.push_back(say(k.c_str()));
+			};
+			std::vector<std::string> plain, full;
+			const DWORD t0 = GetTickCount();
+			if (ok && writeBytes(dictDir + L"meta.json", stripped)) sayAll(plain); else ok = false;
+			if (!writeBytes(dictDir + L"meta.json", metaBody)) ok = false;
+			if (ok) sayAll(full);
+			size_t diffs = 0;
+			for (size_t i = 0; ok && i < keys.size(); i++) {
+				if (plain[i] == full[i]) continue;
+				if (++diffs <= 10)
+					printf("    %s: stripped=%s full=%s\n", keys[i].c_str(), plain[i].c_str(), full[i].c_str());
+			}
+			printf("  (S1: %zu keys, %zu differ, %lu ms)\n", keys.size(), diffs,
+			       (unsigned long)(GetTickCount() - t0));
+			check(ok && keys.size() > 10000 && diffs == 0,
+			      "S1 全字典未標記查找：完整 meta 與去掉來源欄位的 meta 結果相同");
+		}
 
 		// Back up every file this block touches, byte for byte.
 		struct Backup { std::wstring path; std::string bytes; bool existed; };
@@ -715,7 +800,14 @@ int RunEditorSelftest(const std::string& games)
 		// affixes.json is source-only (meta.json "source_only"): TestOnlyAffixXyz
 		// exists nowhere else, so any unmarked hit means it leaked into the merge.
 		plant(L"affixes.json", {{kRobust, u8"健壯的"}, {"TestOnlyAffixXyz", u8"測試詞綴名"}});
-		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"}});
+		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"},
+		                      // S18: a purpose-built single line, then a joined entry
+		                      // whose split derives the same line ...
+		                      {"TestSplitOneXyz", u8"專用一"},
+		                      {"TestSplitOneXyz\nTestSplitTwoXyz", u8"衍生一\n衍生二"},
+		                      // ... and the reverse order.
+		                      {"TestSplitThreeXyz\nTestSplitFourXyz", u8"衍生三\n衍生四"},
+		                      {"TestSplitThreeXyz", u8"專用三"}});
 		// uniques.json loads after stats.json: its pattern would win the merge.
 		plant(L"uniques.json", {{kStatTmpl, u8"錯誤乙 {0}%"}});
 		// ui.json carries the EXACT line -- exact beats pattern in the merge.
@@ -743,20 +835,24 @@ int RunEditorSelftest(const std::string& games)
 			if (readBytes(dictDir + L"meta.json", body)) {
 				try {
 					auto meta = nlohmann::ordered_json::parse(body);
+					// Source-only and id files live in "source_dicts" and NOT in
+					// load_order (an older engine reads load_order only).
 					auto& lo = meta["load_order"];
-					auto& so = meta["source_only"];
-					if (!so.is_array()) so = nlohmann::ordered_json::array();
-					auto listIn = [](nlohmann::ordered_json& arr, const char* f, bool front) {
-						for (const auto& x : arr) if (x.is_string() && x.get<std::string>() == f) return;
-						if (front) arr.insert(arr.begin(), f); else arr.push_back(f);
-					};
-					listIn(lo, "affixes.json", true);
-					listIn(so, "affixes.json", false);
-					// by_id files: listed in load_order AND source_only (spec).
-					listIn(lo, "passives_by_id.json", false);
-					listIn(lo, "affixes_by_id.json", false);
-					listIn(so, "passives_by_id.json", false);
-					listIn(so, "affixes_by_id.json", false);
+					for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"}) {
+						for (auto it = lo.begin(); it != lo.end();) {
+							if (it->is_string() && it->get<std::string>() == f) it = lo.erase(it);
+							else ++it;
+						}
+					}
+					meta.erase("source_only");
+					auto& sd = meta["source_dicts"];
+					if (!sd.is_array()) sd = nlohmann::ordered_json::array();
+					for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"}) {
+						bool have = false;
+						for (const auto& x : sd) if (x.is_string() && x.get<std::string>() == f) have = true;
+						if (!have) sd.push_back(f);
+					}
+					meta["source_lookup"] = true;
 					if (!writeBytes(dictDir + L"meta.json", meta.dump(2))) planted = false;
 				} catch (...) { planted = false; }
 			} else {
@@ -769,19 +865,6 @@ int RunEditorSelftest(const std::string& games)
 
 		const std::string bareRobust = say(kRobust);
 		printf("  (unmarked Robust after planting = %s)\n", bareRobust.c_str());
-
-		// S1
-		{
-			bool same = true;
-			for (size_t i = 0; i < snapshot.size(); i++) {
-				const std::string now = say(kSample[i]);
-				if (now != snapshot[i]) {
-					same = false;
-					printf("    %s: before=%s now=%s\n", kSample[i], snapshot[i].c_str(), now.c_str());
-				}
-			}
-			check(same, "S1 未標記查找不受新來源影響");
-		}
 
 		// S2 / S3
 		translation_set_source("passives");
@@ -887,6 +970,28 @@ int RunEditorSelftest(const std::string& games)
 			if (!(bareKept && sourcedKept && !a.empty()))
 				printf("    bare=%s sourced=%s loaded=%d\n", bare ? bare : "(null)",
 				       sourced ? sourced : "(null)", !a.empty());
+
+			// S15: F2 (translation off) applies to id lookups too.
+			translation_set_enabled(false);
+			const char* off = translation_lookup_by_id("passives", "90001");
+			translation_set_enabled(true);
+			const std::string on = byId("passives", "90001");
+			check(off == nullptr && on == u8"戰神", "S15 翻譯關閉時依 id 查詢一律回傳空值");
+			if (!(off == nullptr && on == u8"戰神"))
+				printf("    off=%s on=%s\n", off ? off : "(null)", on.c_str());
+		}
+
+		// S18: inside the source copy a derived (split) line never replaces a
+		// purpose-built entry, whichever comes first in the file.
+		{
+			translation_set_source("stats");
+			const std::string one = say("TestSplitOneXyz");
+			const std::string two = say("TestSplitTwoXyz");
+			const std::string three = say("TestSplitThreeXyz");
+			translation_set_source(nullptr);
+			const bool ok = one == u8"專用一" && three == u8"專用三" && two == u8"衍生二";
+			check(ok, "S18 來源字典裡拆行衍生條目不覆蓋專用條目");
+			if (!ok) printf("    one=%s two=%s three=%s\n", one.c_str(), two.c_str(), three.c_str());
 		}
 
 		// S8
@@ -908,6 +1013,60 @@ int RunEditorSelftest(const std::string& games)
 			translation_set_source(nullptr);
 		}
 
+		// S16: a locale whose meta.json lacks "source_lookup" keeps the old
+		// behaviour: every source added by this work answers exactly like the
+		// unmarked lookup, and id lookups find nothing. "gems" (shipped before
+		// the flag existed) still works as it always did.
+		{
+			std::string flagged;
+			bool ok = readBytes(dictDir + L"meta.json", flagged);
+			try {
+				auto meta = nlohmann::ordered_json::parse(flagged);
+				meta.erase("source_lookup");
+				ok = ok && writeBytes(dictDir + L"meta.json", meta.dump(2));
+			} catch (...) { ok = false; }
+			translation_set_source(nullptr);
+			translation_reload();
+			std::vector<std::string> keys = {kRobust, kStatExact, "23% increased TestStatXyz",
+			                                 "TestOnlyAffixXyz", "TestSplitOneXyz", "Volatility"};
+			for (const char* f : {"passives.json", "affixes.json", "stats.json", "uniques.json", "items.json"}) {
+				int n = 0;
+				for (const EditorEntry& e : model.entries)
+					if (model.files[(size_t)e.fileIdx].name == f && n++ < 500) keys.push_back(e.key);
+			}
+			std::vector<std::string> bare, bareTitle;
+			for (const std::string& k : keys) {
+				bare.push_back(say(k.c_str()));
+				bareTitle.push_back(sayTitle(k.c_str()));
+			}
+			size_t diffs = 0;
+			bool noneActive = true;
+			for (const char* src : {"passives", "affixes", "stats", "uniques", "items", "ascendancy"}) {
+				translation_set_source(src);
+				if (translation_get_source() != nullptr) noneActive = false;
+				for (size_t i = 0; i < keys.size(); i++) {
+					const std::string got = say(keys[i].c_str());
+					const std::string gotTitle = sayTitle(keys[i].c_str());
+					if ((got != bare[i] || gotTitle != bareTitle[i]) && ++diffs <= 10)
+						printf("    [%s] %s: sourced=%s bare=%s\n", src, keys[i].c_str(),
+						       got.c_str(), bare[i].c_str());
+				}
+				translation_set_source(nullptr);
+			}
+			const bool idNull = translation_lookup_by_id("passives", "90001") == nullptr &&
+			                    translation_lookup_by_id("affixes", "TestModIdXyz1") == nullptr;
+			translation_set_source("gems");
+			const std::string gemVol = say("Volatility");
+			translation_set_source(nullptr);
+			printf("  (S16: %zu keys x 6 sources, %zu differ)\n", keys.size(), diffs);
+			check(ok && diffs == 0 && noneActive,
+			      "S16 無 source_lookup 旗標：設來源後的查找等於未標記");
+			check(ok && idNull, "S16b 無 source_lookup 旗標：依 id 查詢回傳空值");
+			check(ok && gemVol == u8"易變輔助", "S16c 無 source_lookup 旗標：gems 來源照舊有效");
+			writeBytes(dictDir + L"meta.json", flagged);
+			translation_reload();
+		}
+
 		// Restore every file exactly, delete what we created.
 		bool restored = true;
 		for (const Backup& b : backups) {
@@ -922,6 +1081,45 @@ int RunEditorSelftest(const std::string& games)
 		}
 		translation_reload();
 		check(restored && say(kRobust) == robustBefore, "SR 測試結束後字典完整還原");
+	}
+
+	// --- S16p: the shipped poe2 dictionaries carry no "source_lookup" --------
+	// Real data, nothing planted: under every source added by this work the
+	// answer must equal the unmarked one, as it did before sources existed.
+	printf("\n=== source dictionaries: poe2 without source_lookup ===\n");
+	{
+		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
+		translation_set_source(nullptr);
+		translation_reload();
+		EditorModel m2 = LoadModel(poe2Root, "zh-rTW");
+		auto say = [](const std::string& key) {
+			const char* r = translation_lookup(key.c_str());
+			return r ? std::string(r) : std::string();
+		};
+		std::vector<std::string> keys;
+		for (const char* f : {"passives.json", "stats.json", "items.json", "uniques.json"}) {
+			int n = 0;
+			for (const EditorEntry& e : m2.entries)
+				if (m2.files[(size_t)e.fileIdx].name == f && n++ < 500) keys.push_back(e.key);
+		}
+		std::vector<std::string> bare;
+		for (const std::string& k : keys) bare.push_back(say(k));
+		size_t diffs = 0;
+		for (const char* src : {"passives", "affixes", "stats", "uniques", "items"}) {
+			translation_set_source(src);
+			for (size_t i = 0; i < keys.size(); i++) {
+				const std::string got = say(keys[i]);
+				if (got != bare[i] && ++diffs <= 10)
+					printf("    [%s] %s: sourced=%s bare=%s\n", src, keys[i].c_str(),
+					       got.c_str(), bare[i].c_str());
+			}
+			translation_set_source(nullptr);
+		}
+		printf("  (S16p: %zu keys x 5 sources, %zu differ)\n", keys.size(), diffs);
+		check(keys.size() > 1000 && diffs == 0,
+		      "S16p poe2 無旗標：設來源後的查找等於未標記");
+		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		translation_reload();
 	}
 
 	// --- external dictionary root (POB_ZH_DATADIR) --------------------------

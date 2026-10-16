@@ -53,6 +53,8 @@ const char* translation_lookup_item_title(const char *english);
 ** own value patterns are consulted before the merged ones. Pass
 ** nullptr or "" to clear. Returns the previous selection (nullptr if none) so
 ** callers can restore it; an unknown name clears instead of failing.
+** Without meta.json "source_lookup" only "gems" (exact entries) can be
+** selected -- the behaviour from before the other sources existed.
 **
 ** Why: the merged map is last-wins, so a bare word like "Volatility" resolves
 ** to whichever file defined it last (passives.json) even when POB is drawing a
@@ -64,9 +66,11 @@ const char* translation_get_source(void);
 
 /* Look up a translation by stable id ("passives" -> GraphId, "affixes" -> mod
 ** Id) in passives_by_id.json / affixes_by_id.json. nullptr when the id or the
-** source is unknown. These files are listed in meta.json load_order and
-** source_only, but their keys are ids: they never reach the merged map or the
-** English source dictionaries, so translation_lookup cannot find them. */
+** source is unknown, when translation is off (F2), or when the locale's
+** meta.json lacks "source_lookup". The files are listed in meta.json
+** "source_dicts" (NOT load_order, so an older engine never sees them); their
+** keys are ids, so they never reach the merged map or the English source
+** dictionaries and translation_lookup cannot find them. */
 const char* translation_lookup_by_id(const char *source, const char *id);
 
 /* ===== Reverse-translation trace =====

@@ -164,6 +164,8 @@ class Harness(object):
         self.source_seen = set()    # every source active during a lookup
         self.lookups = []           # (text, source) of every lookup, in order
         self.id_lookups = []        # (source, id, en) of every PobToolsTranslateId
+        self.title_lookups = []     # (text, source) of every PobToolsItemTitle
+        self.enabled = True         # F2: off = every engine lookup answers nil
         # Tooltip lines arrive as "^xRRGGBBText"; the engine answers those by
         # colour segment. Off by default so the older tests keep exact-key lookup.
         self.loose_keys = False
@@ -198,7 +200,7 @@ class Harness(object):
         g = self.rt.globals()
 
         def translate(text):
-            if text is None:
+            if text is None or not self.enabled:
                 return None
             table = DICT.get(self.source) or {}
             self.source_seen.add(self.source)
@@ -229,6 +231,8 @@ class Harness(object):
                 id_ = int(id_)
             key = None if id_ is None else str(id_)
             self.id_lookups.append((source, key, en))
+            if not self.enabled:
+                return None         # engine: by-id and fallback both obey F2
             hit = (ID_DICT.get(source) or {}).get(key)
             if hit is not None:
                 return hit
@@ -244,7 +248,12 @@ class Harness(object):
         g["__py_translate_id"] = translate_id
         g["__py_translate_display"] = translate_display
         g["__py_set_source"] = set_source
-        g["__py_item_title"] = translate
+        def item_title(text):
+            self.title_lookups.append((text, self.source))
+            return translate(text)
+
+        g["__py_item_title"] = item_title
+        g["__py_enabled"] = lambda: self.enabled
         # Every failure the inject reports, in order. This is the engine-side
         # failure log seen from Lua; the test below is the only thing that proves
         # a broken patch actually reaches it.
@@ -260,7 +269,7 @@ function PobToolsTranslate(s) return __py_translate(s) end
 function PobToolsTranslateDisplay(s) return __py_translate_display(s) end
 function PobToolsSetSource(n) return __py_set_source(n) end
 function PobToolsTranslateId(s, id, en) return __py_translate_id(s, id, en) end
-function PobToolsGetTranslate() return true end
+function PobToolsGetTranslate() return __py_enabled() end
 function PobToolsItemTitle(s) return __py_item_title(s) end
 function PobToolsLogError(f, m) return __py_log_error(f, m) end
 """)
@@ -781,13 +790,16 @@ def src_of(h, text):
     return NOT_LOOKED_UP
 
 
-def tooltip_harness(fork, with_inject):
+def tooltip_harness(fork, with_inject, itemstab=None):
     h = Harness(fork, with_inject=False)
     h.loose_keys = True
     h.run(COLOUR_SETUP)
     h.run('LoadModule("Classes/Tooltip")')
     h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
-    h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    if itemstab is None:
+        h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    else:
+        h.run(itemstab)
     h.define("ItemDBControl", ITEMDB_P1 + ROWVALUE, ITEMDB_P2 + ROWVALUE)
     if with_inject:
         h.apply_inject()
@@ -812,8 +824,8 @@ def run_node_name(fork, with_inject, explode=False):
     return h, ok, err
 
 
-def run_item_tooltip(fork, with_inject, item_src, explode=False):
-    h = tooltip_harness(fork, with_inject)
+def run_item_tooltip(fork, with_inject, item_src, explode=False, itemstab=None):
+    h = tooltip_harness(fork, with_inject, itemstab)
     tab = make(h, "ItemsTab")
     tip = make(h, "Tooltip")
     item = h.eval("function() return %s end" % item_src)()
@@ -886,6 +898,37 @@ def test_src_unique_title(fork):
           lines[:2] == ["岡姆的壯志", "榮耀鎧甲"], repr(lines))
     check("%s L3 AddItemTooltip 結束後來源還原為 nil" % fork,
           h.source is None, "source=%r" % h.source)
+
+
+def patched_itemstab(fork):
+    """The synthetic ItemsTab after the engine's real source patches for
+    itemstab.lua (ui_api.cpp) -- the title line then reads
+    item.title:gsub("^.+$", PobToolsItemTitle or "%0")."""
+    src = ITEMSTAB_P1 if fork == "PoE1" else ITEMSTAB_P2
+    out, applied = apply_source_patches(
+        src, "itemstab.lua", parse_source_patches(read_text(UI_API)))
+    return out, applied
+
+
+def test_src_unique_title_patched(fork):
+    """L3b -- the shipping path: the title is translated by PobToolsItemTitle
+    inside the source-patched expression, before AddLine sees it."""
+    src, applied = patched_itemstab(fork)
+    check("%s L3b 引擎 source patch 改寫了合成 ItemsTab 的標題式" % fork,
+          applied >= 1 and 'gsub("^.+$", PobToolsItemTitle' in src, "applied=%d" % applied)
+    h, tip, ok, err = run_item_tooltip(fork, False, UNIQUE_ITEM, itemstab=src)
+    srcs = [s for t, s in h.title_lookups if t == "Kaom's Heart"]
+    check("%s L3b 未注入時重現 bug:PobToolsItemTitle 不在 uniques 來源" % fork,
+          srcs and srcs[0] != "uniques", repr(h.title_lookups))
+    h, tip, ok, err = run_item_tooltip(fork, True, UNIQUE_ITEM, itemstab=src)
+    check("%s L3b AddItemTooltip 本身不出錯" % fork, ok, repr(err))
+    srcs = [s for t, s in h.title_lookups if t == "Kaom's Heart"]
+    check("%s L3b 傳奇標題經 PobToolsItemTitle 在 uniques 來源下查詢" % fork,
+          srcs == ["uniques"], repr(h.title_lookups))
+    lines = [_norm(t) for t in tooltip_lines(h, tip)]
+    check("%s L3b tooltip 第一行是傳奇名譯文" % fork,
+          lines[:1] == ["岡姆的壯志"], repr(lines))
+    check("%s L3b 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
 def test_src_affix_title(fork):
@@ -976,6 +1019,15 @@ def test_id_passive_name(fork):
           ("passives", "90001", "Elemental Overload") in called, repr(h.id_lookups))
     check("%s L7 依 id 查完後來源還原為 nil" % fork,
           h.id_lookups and h.source is None, "source=%r" % h.source)
+
+
+def test_id_obeys_f2(fork):
+    """L9 -- F2 off: the by-id lookup answers nil like every other lookup."""
+    h = tooltip_harness(fork, with_inject=True)
+    h.enabled = False
+    got = node_name_line(h, 90001, "Elemental Overload")
+    check("%s L9 翻譯關閉時天賦名稱行維持英文(依 id 查詢也不翻)" % fork,
+          got == "Elemental Overload", "got=%r id_lookups=%r" % (got, h.id_lookups))
 
 
 def magic_item(prefix_mod, suffix_mod):
@@ -1416,11 +1468,13 @@ def main():
         test_src_passive_name(fork)
         test_src_mod_line(fork)
         test_src_unique_title(fork)
+        test_src_unique_title_patched(fork)
         test_src_affix_title(fork)
         test_src_list_row(fork)
         test_src_restored_on_error(fork)
         test_id_passive_name(fork)
         test_id_affix_title(fork)
+        test_id_obeys_f2(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
