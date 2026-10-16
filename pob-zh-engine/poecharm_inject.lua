@@ -103,6 +103,117 @@ local function wrapDrawWithSource(class, name)
 	return true
 end
 
+-- Wrap class[method] so everything it looks up runs under source `name`.
+-- Returns false (and changes nothing) when the method is absent.
+local function wrapMethodWithSource(class, method, name)
+	local orig = class[method]
+	if type(orig) ~= "function" then return false end
+	class[method] = function(self, ...)
+		return withSource(name, orig, self, ...)
+	end
+	return true
+end
+
+-- ===== tooltip line sources =====
+-- Tooltips are TRANSLATED when they are built (Tooltip:AddLine below), so the
+-- source has to be set around the functions that build them, not around Draw:
+-- PassiveTreeView:AddNodeName/AddNodeTooltip -> passives, and
+-- ItemsTab:AddItemTooltip -> items. Inside an item tooltip the lines are told
+-- apart further: the title of a unique is uniques.json, the base line is
+-- items.json, a PoE1 mod line (AddLine's 4th arg is the modLine table) is
+-- stats.json, and a magic item's one-line "prefix base suffix" name is split
+-- into affixes / items / affixes.
+--
+-- The item being drawn, set by the AddItemTooltip wrap (nil outside it).
+-- { item = item, titleDone = bool }: titleDone keeps a unique whose title IS a
+-- base name (Kingsguard) from having its base line read as the title again --
+-- the title line always comes first.
+local itemCtx = nil
+local UNIQUE_RARITY = { UNIQUE = true, RELIC = true }
+
+local function trim(s)
+	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Leading POB colour commands ("^7", "^xRRGGBB") split off the line.
+local function splitLeadColour(text)
+	local i = 1
+	while true do
+		local e = text:match("^%^x%x%x%x%x%x%x()", i) or text:match("^%^%d()", i)
+		if not e then break end
+		i = e
+	end
+	return text:sub(1, i - 1), text:sub(i)
+end
+
+-- POB draws the base line as item.baseName:gsub(" %(.+%)","").
+local function cleanBaseName(item)
+	return type(item.baseName) == "string" and (item.baseName:gsub(" %(.+%)", "")) or nil
+end
+
+-- Source for one AddLine call: "stats" / "uniques" / "items" / "split" / nil
+-- (nil = leave the caller's scope alone). Also returns the leading colour run.
+local function tooltipLineSource(text, a4)
+	if type(a4) == "table" and type(a4.line) == "string" then
+		-- PoE1 AddLine(size, text, font, modLine, background). PoE2's 4th
+		-- parameter is a background (string or image handle), never such a table.
+		return "stats"
+	end
+	local ctx = itemCtx
+	if not ctx then return nil end
+	local item = ctx.item
+	local lead, rest = splitLeadColour(text)
+	local core = trim(rest)
+	if core == "" then return nil end
+	local base = cleanBaseName(item)
+	if type(item.title) == "string" then
+		if not ctx.titleDone and core == item.title then
+			ctx.titleDone = true
+			if UNIQUE_RARITY[item.rarity] then return "uniques", lead end
+			return nil, lead
+		end
+		if base and core == base then
+			ctx.titleDone = true
+			return "items", lead
+		end
+		return nil, lead
+	end
+	if base and core == base then return "items", lead end
+	local pre, suf = item.namePrefix, item.nameSuffix
+	if base and type(pre) == "string" and type(suf) == "string"
+	   and (trim(pre) ~= "" or trim(suf) ~= "")
+	   and core == trim(pre .. base .. suf) then
+		return "split", lead
+	end
+	return nil, lead
+end
+
+-- One name segment under `source`; nil when the dictionary has nothing.
+local function zhSegment(source, seg)
+	if seg == "" then return "" end
+	local zh = withSource(source, PobToolsTranslateDisplay, seg)
+	if zh and zh ~= seg then return zh end
+	return nil
+end
+
+-- A magic item's title "Heavy Glorious Plate of the Whale" is no dictionary
+-- key. Translate prefix (affixes), base (items) and suffix (affixes) on their
+-- own and keep POB's spacing. All-or-nothing, like the engine's comma path: a
+-- half-translated name is worse than an English one, so nil means "use the
+-- plain line path instead".
+local function translateSplitTitle(lead, item)
+	local base = cleanBaseName(item)
+	local preRaw, sufRaw = item.namePrefix, item.nameSuffix
+	local pre, suf = trim(preRaw), trim(sufRaw)
+	local zp = zhSegment("affixes", pre)
+	local zb = zp and zhSegment("items", base)
+	local zs = zb and zhSegment("affixes", suf)
+	if not (zp and zb and zs) then return nil end
+	local preGap = pre ~= "" and preRaw:match("(%s*)$") or ""
+	local sufGap = suf ~= "" and sufRaw:match("^(%s*)") or ""
+	return lead .. zp .. preGap .. zb .. sufGap .. zs
+end
+
 -- ===== constructor wrapping =====
 -- The two POB forks store a class's constructor in DIFFERENT places, and there
 -- is nothing at the call site to tell them apart:
@@ -224,6 +335,15 @@ end
 -- stat lines. `node` is the LAST arg in both PoE1 (self, node) and
 -- PoE2 (self, build, node).
 PATCHES["PassiveTreeView"] = function(class)
+	-- Node tooltips: the name and stat lines are passives.json text. Same
+	-- method names in both forks; only the argument lists differ ((tooltip,
+	-- node, build) here either way), and withSource forwards them untouched.
+	-- Not fatal: without it the tooltip still translates, just unmarked.
+	for _, m in ipairs({ "AddNodeName", "AddNodeTooltip" }) do
+		if not wrapMethodWithSource(class, m, "passives") then
+			log("PassiveTreeView: no " .. m .. ", node tooltips stay unmarked")
+		end
+	end
 	local orig = class.DoesNodeMatchSearchParams
 	if orig then
 		class.DoesNodeMatchSearchParams = function(self, ...)
@@ -477,6 +597,35 @@ PATCHES["ItemDBControl"] = function(class)
 		end
 		return false
 	end
+
+	-- List rows: GetRowValue draws colorCodes[rarity] .. item.name, and a
+	-- unique's name is "<title>, <base>". Translate the halves under their own
+	-- sources (uniques / items) and keep the ", ". All-or-nothing: when either
+	-- half is unknown the row is returned untouched, i.e. exactly what the draw
+	-- path used to translate on its own. Non-unique rows keep the unmarked
+	-- source for the first half. Not fatal when absent.
+	local origRow = class.GetRowValue
+	if type(origRow) == "function" then
+		class.GetRowValue = function(self, column, index, item, ...)
+			local v = origRow(self, column, index, item, ...)
+			if type(v) ~= "string" or type(item) ~= "table" or hasCJK(v) then return v end
+			local lead, rest = splitLeadColour(v)
+			local first, second = rest:match("^(.-), (.+)$")
+			if not first or first == "" or second:find(", ", 1, true) then return v end
+			local zf
+			if UNIQUE_RARITY[item.rarity] then
+				zf = zhSegment("uniques", first)
+			else
+				zf = PobToolsTranslateDisplay(first)
+				if zf == first then zf = nil end
+			end
+			local zs = zf and zhSegment("items", second)
+			if not zs then return v end
+			return lead .. zf .. ", " .. zs
+		end
+	else
+		log("ItemDBControl: no GetRowValue, list rows stay unmarked")
+	end
 end
 
 -- Minion list search (spectres, and the minion pickers): match the CJK query
@@ -698,6 +847,40 @@ end
 -- English too; their dev branch added exactly this call. Harmless once POB
 -- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
 PATCHES["ItemsTab"] = function(class)
+	-- Item tooltips: outer source items, and the item kept in itemCtx so
+	-- Tooltip:AddLine can tell the title / base / name lines apart. Both are
+	-- restored even when the original throws. Not fatal when absent.
+	local origTip = class.AddItemTooltip
+	if type(origTip) == "function" then
+		class.AddItemTooltip = function(self, tooltip, item, ...)
+			local prevCtx = itemCtx
+			itemCtx = type(item) == "table" and { item = item } or nil
+			local ok, a, b, c = pcall(withSource, "items", origTip, self, tooltip, item, ...)
+			itemCtx = prevCtx
+			if not ok then error(a, 0) end
+			return a, b, c
+		end
+		-- The title line reaches AddLine already translated: an engine source
+		-- patch on ItemsTab.lua ("物品提示的標題維持英文") runs item.title through
+		-- PobToolsItemTitle first. Give that call the uniques source too, only
+		-- while this item's tooltip is being built; everywhere else it is the
+		-- original function.
+		if type(PobToolsItemTitle) == "function" then
+			local origTitle = PobToolsItemTitle
+			PobToolsItemTitle = function(s, ...)
+				local ctx = itemCtx
+				if ctx and not ctx.titleDone and s == ctx.item.title then
+					ctx.titleDone = true
+					if UNIQUE_RARITY[ctx.item.rarity] then
+						return withSource("uniques", origTitle, s, ...)
+					end
+				end
+				return origTitle(s, ...)
+			end
+		end
+	else
+		log("ItemsTab: no AddItemTooltip, item tooltips stay unmarked")
+	end
 	local ok = wrapConstructor(class, "ItemsTab", function(self)
 		for i = 1, 6 do
 			local drop = self.controls and self.controls["displayItemRune" .. i]
@@ -721,30 +904,46 @@ PATCHES["Tooltip"] = function(class)
 	if type(PobToolsTranslateDisplay) ~= "function" then
 		error("PobToolsTranslateDisplay unavailable (engine too old)")
 	end
-	class.AddLine = function(self, size, text, ...)
+	-- whole blob first: GGG ships some stat lines WITH their own "\n" and the
+	-- dictionary stores those joined, so the multi-line form is a real key.
+	-- Falling back per line covers everything else. Runs under whatever source
+	-- is active; returns nil when nothing translated.
+	local function translateLine(text)
+		local whole = PobToolsTranslateDisplay(text)
+		if whole then return whole end
+		if text:find("\n", 1, true) then
+			local parts, changed = {}, false
+			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+				local zh = line ~= "" and PobToolsTranslateDisplay(line) or nil
+				if zh then changed = true end
+				t_insert(parts, zh or line)
+			end
+			if changed then return table.concat(parts, "\n") end
+		end
+		return nil
+	end
+	class.AddLine = function(self, size, text, font, a4, ...)
 		-- Tooltip.lua:96 starts a new BLOCK when a line begins with "Equipping"
 		-- or "Removing", so translating those would silently change the
 		-- tooltip's block structure. Left alone on purpose.
 		local structural = type(text) == "string" and
 			(text:find("Equipping", 1, true) or text:find("Removing", 1, true))
 		if type(text) == "string" and text ~= "" and not structural and not hasCJK(text) then
-			-- whole blob first: GGG ships some stat lines WITH their own "\n"
-			-- and the dictionary stores those joined, so the multi-line form is
-			-- a real key. Falling back per line covers everything else.
-			local whole = PobToolsTranslateDisplay(text)
-			if whole then
-				text = whole
-			elseif text:find("\n", 1, true) then
-				local parts, changed = {}, false
-				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-					local zh = line ~= "" and PobToolsTranslateDisplay(line) or nil
-					if zh then changed = true end
-					t_insert(parts, zh or line)
-				end
-				if changed then text = table.concat(parts, "\n") end
+			-- Which data file this line came from (see "tooltip line sources"
+			-- above). nil = whatever the caller's scope already set.
+			local src, lead = tooltipLineSource(text, a4)
+			local zh
+			if src == "split" then
+				zh = translateSplitTitle(lead, itemCtx.item)
+				if not zh then zh = translateLine(text) end
+			elseif src then
+				zh = withSource(src, translateLine, text)
+			else
+				zh = translateLine(text)
 			end
+			if zh then text = zh end
 		end
-		return orig(self, size, text, ...)
+		return orig(self, size, text, font, a4, ...)
 	end
 
 	-- F2 has to reach tooltips that are ALREADY on screen.
