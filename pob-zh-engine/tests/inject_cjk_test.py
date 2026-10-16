@@ -1136,6 +1136,129 @@ def test_id_affix_title(fork):
           "title=%r id_lookups=%r" % (sfx, hs.id_lookups))
 
 
+# ---- stat 查詢(ST-L1 ~ ST-L3b) ---------------------------------------------
+#
+# 引擎提供 PobToolsTranslateStat(line, ctx),ctx = "item" / "passive",命中回中文、
+# 否則 nil。詞綴行與天賦說明行先問它,未命中才走現行路徑;名稱行不問。
+# 假函式以去色碼後的文字為鍵;收到帶色碼的行時連同色碼回傳(模擬引擎保留色碼),
+# 所以注入層「去色碼再補回」或「整行交給引擎」兩種做法都會通過 ST-L3b。
+
+STAT_DICT = {
+    "+30 to Dexterity": "STAT中文",
+    "10% increased Attack Speed": "STAT天賦",
+}
+
+
+def stat_harness(fork, stat_dict, define=True):
+    """tooltip_harness 加上假 PobToolsTranslateStat(注入前定義);h.stat_calls 記 (line, ctx)。"""
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.stat_calls = []
+
+    def translate_stat(line, ctx=None):
+        h.stat_calls.append((line, ctx))
+        if line is None:
+            return None
+        m = re.match(r"^((?:\^x[0-9A-Fa-f]{6}|\^\d)*)(.*)$", line, re.S)
+        hit = (stat_dict or {}).get(m.group(2).strip())
+        if hit is None:
+            return None
+        return m.group(1) + hit
+
+    if define:
+        h.rt.globals()["__py_translate_stat"] = translate_stat
+        h.run(b"function PobToolsTranslateStat(l, c) return __py_translate_stat(l, c) end")
+    h.run(COLOUR_SETUP)
+    h.run('LoadModule("Classes/Tooltip")')
+    h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
+    h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    h.define("ItemDBControl", ITEMDB_P1 + ROWVALUE, ITEMDB_P2 + ROWVALUE)
+    h.apply_inject()
+    h.lookups = []
+    return h
+
+
+def stat_mod_line(fork, text, stat_dict, define=True):
+    """PoE1 AddLine(16, "^x8888FF"..text, font, { line = text });回 (h, ok, err, 原始行)。"""
+    h = stat_harness(fork, stat_dict, define)
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(t, s) local ok, e = pcall(function() '
+                     't:AddLine(16, "^x8888FF" .. s, "FONTIN SC", { line = s }) end) '
+                     'return ok, e end')(
+        tip, text)
+    lines = tooltip_lines(h, tip)
+    return h, ok, err, (lines[0] if lines else "")
+
+
+def stat_node_tooltip(fork, stat_dict, define=True):
+    """AddNodeTooltip:名稱行 Elemental Overload + 說明行 10% increased Attack Speed。"""
+    h = stat_harness(fork, stat_dict, define)
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(v, t) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Elemental Overload", id = 1, sd = { "10% increased Attack Speed" } }, '
+                     '{}) end) return ok, e end')(view, tip)
+    return h, ok, err, [_norm(l) for l in tooltip_lines(h, tip)]
+
+
+def test_stat_mod_line(fork):
+    """ST-L1 / ST-L2 / ST-L2c / ST-L3b -- 只有 PoE1 的 AddLine 有 modLine 第 4 參數。"""
+    if fork != "PoE1":
+        print("  N/A   %s ST-L1/L2/L2c/L3b:此分支 AddLine 第 4 參數不是 modLine" % fork)
+        return
+    # ST-L1:命中就直接用,ctx 為 item
+    h, ok, err, raw = stat_mod_line(fork, "+30 to Dexterity", STAT_DICT)
+    check("%s ST-L1 詞綴行先走 stat 查詢:AddLine 寫入 stat 的譯文" % fork,
+          ok and _norm(raw) == "STAT中文",
+          "raw=%r calls=%r err=%r" % (raw, h.stat_calls, err))
+    check("%s ST-L1 詞綴行呼叫 PobToolsTranslateStat 時 ctx 為 item" % fork,
+          any(_norm(l) == "+30 to Dexterity" and c == "item" for l, c in h.stat_calls),
+          repr(h.stat_calls))
+    check("%s ST-L1 stat 命中後不再走字典查找" % fork,
+          not srcs_of(h, "+30 to Dexterity"), "lookups=%r" % h.lookups)
+    # ST-L3b:色碼前綴保留,且不重複
+    check("%s ST-L3b 帶色碼的詞綴行命中 stat 後保留色碼前綴" % fork,
+          raw == "^x8888FFSTAT中文", "raw=%r calls=%r" % (raw, h.stat_calls))
+
+    # ST-L2:假函式回 nil -> 與 L2a/L2b 期望值相同,且與未定義時一致
+    for text, want in (("+30 to Dexterity", "+30 敏捷"),
+                       ("Adds 1 to 2 Fire Damage to Attacks", "攻擊附加 1 - 2 火焰傷害")):
+        h, ok, err, raw = stat_mod_line(fork, text, {})
+        h0, ok0, err0, raw0 = stat_mod_line(fork, text, None, define=False)
+        check("%s ST-L2 stat 未命中退回現行順序:%s -> %s" % (fork, text, want),
+              ok and _norm(raw) == want and raw == raw0,
+              "raw=%r 未定義時=%r err=%r" % (raw, raw0, err))
+        check("%s ST-L2 stat 未命中時仍有以 item 呼叫過 PobToolsTranslateStat:%s" % (fork, text),
+              any(_norm(l) == text and c == "item" for l, c in h.stat_calls),
+              repr(h.stat_calls))
+        check("%s ST-L2c 舊引擎無 PobToolsTranslateStat 不報錯:%s" % (fork, text),
+              ok0 and _norm(raw0) == want, "raw=%r err=%r" % (raw0, err0))
+
+
+def test_stat_passive(fork):
+    """ST-L3 / ST-L2c(天賦)-- 說明行帶 passive 情境,名稱行不呼叫。"""
+    h, ok, err, lines = stat_node_tooltip(fork, STAT_DICT)
+    check("%s ST-L3 AddNodeTooltip 本身不出錯" % fork, ok, repr(err))
+    check("%s ST-L3 天賦說明行呼叫 PobToolsTranslateStat 時 ctx 為 passive" % fork,
+          any(_norm(l) == "10% increased Attack Speed" and c == "passive"
+              for l, c in h.stat_calls), repr(h.stat_calls))
+    check("%s ST-L3 天賦名稱行不呼叫 PobToolsTranslateStat" % fork,
+          not any(_norm(l) == "Elemental Overload" for l, c in h.stat_calls),
+          repr(h.stat_calls))
+    check("%s ST-L3 天賦說明行命中 stat 後顯示 stat 的譯文" % fork,
+          lines[1:2] == ["STAT天賦"], "lines=%r calls=%r" % (lines, h.stat_calls))
+    check("%s ST-L3 天賦提示中不以 item 情境呼叫" % fork,
+          not any(c == "item" for l, c in h.stat_calls), repr(h.stat_calls))
+    # 未命中 / 未定義:名稱行與說明行照現行路徑
+    want = ["元素超載", "增加 10% 攻擊速度"]
+    h, ok, err, lines = stat_node_tooltip(fork, {})
+    check("%s ST-L2 天賦說明行 stat 未命中時照現行路徑" % fork,
+          ok and lines == want, "lines=%r err=%r" % (lines, err))
+    h, ok, err, lines = stat_node_tooltip(fork, None, define=False)
+    check("%s ST-L2c 舊引擎無 PobToolsTranslateStat 時天賦提示不報錯且照現行路徑" % fork,
+          ok and lines == want, "lines=%r err=%r" % (lines, err))
+
+
 # ---- upstream shape checks (catch a rename before a user does) -------------
 
 # ---- 包裝後參數數不變(新介面相容性閘門) -------------------------------------
@@ -1537,6 +1660,8 @@ def main():
         test_id_passive_name(fork)
         test_id_affix_title(fork)
         test_id_obeys_f2(fork)
+        test_stat_mod_line(fork)
+        test_stat_passive(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

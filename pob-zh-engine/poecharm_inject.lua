@@ -187,6 +187,18 @@ local nodeCtx = nil
 -- The affix a crafting drop-down / range slider tooltip is describing (nil
 -- outside it): { id = modId, mod = mod table }.
 local affixTipCtx = nil
+-- True while PassiveTreeView:AddNodeTooltip runs: its non-name lines are the
+-- passive's stat lines, asked of PobToolsTranslateStat under "passive".
+local nodeTipActive = false
+
+-- Engine stat lookup (PobToolsTranslateStat(line, ctx), ctx "item" /
+-- "passive"); nil when the engine lacks it, missed, or gave the line back.
+local function zhByStat(text, ctx)
+	if type(PobToolsTranslateStat) ~= "function" then return nil end
+	local ok, zh = pcall(PobToolsTranslateStat, text, ctx)
+	if ok and type(zh) == "string" and zh ~= "" and zh ~= text then return zh end
+	return nil
+end
 
 local function hasTranslateId()
 	return type(PobToolsTranslateId) == "function"
@@ -459,9 +471,22 @@ end
 -- PoE2 (self, build, node).
 PATCHES["PassiveTreeView"] = function(class)
 	-- Node tooltips: only the NAME line is passives text (by node.id first,
-	-- then the passives source); stat lines stay on the unmarked lookup, so
-	-- AddNodeTooltip is not wrapped. nodeCtx tells Tooltip:AddLine which node
-	-- is being named. Restored even on error. Not fatal when absent.
+	-- then the passives source). Stat lines ask PobToolsTranslateStat under
+	-- "passive" first (nodeTipActive, set while AddNodeTooltip runs), then the
+	-- unmarked lookup. nodeCtx tells Tooltip:AddLine which node is being
+	-- named. Both restored even on error. Not fatal when absent.
+	local origTip = class.AddNodeTooltip
+	if type(origTip) == "function" then
+		-- Only marks the span (nodeTipActive) for the stat lookup; same arity.
+		class.AddNodeTooltip = keepArity(origTip, function(self, ...)
+			local prev = nodeTipActive
+			nodeTipActive = true
+			local ok, a, b, c = pcall(origTip, self, ...)
+			nodeTipActive = prev
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
 	local origName = class.AddNodeName
 	if type(origName) ~= "function" then
 		log("PassiveTreeView: no AddNodeName, node names stay unmarked")
@@ -1103,8 +1128,21 @@ PATCHES["Tooltip"] = function(class)
 			local src, lead = tooltipLineSource(text, a4)
 			local zh, isNodeName = translateNodeNameLine(text)
 			zh = zh or translateAffixLine(text)
+			-- Stat lines ask the engine's stat lookup first (item mod lines
+			-- as "item", passive tooltip description lines as "passive");
+			-- name lines never. A miss falls through to the path below.
+			local statZh
+			if not zh and not isNodeName then
+				if src == "modline" then
+					statZh = zhByStat(text, "item")
+				elseif src == nil and nodeTipActive then
+					statZh = zhByStat(text, "passive")
+				end
+			end
 			if zh then
 				-- decided by id (see "lookups by stable id")
+			elseif statZh then
+				zh = statZh
 			elseif isNodeName then
 				zh = withSource("passives", translateLine, text)
 			elseif src == "modline" then
