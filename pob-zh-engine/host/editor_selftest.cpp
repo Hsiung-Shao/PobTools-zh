@@ -801,13 +801,17 @@ int RunEditorSelftest(const std::string& games)
 		// exists nowhere else, so any unmarked hit means it leaked into the merge.
 		plant(L"affixes.json", {{kRobust, u8"健壯的"}, {"TestOnlyAffixXyz", u8"測試詞綴名"}});
 		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"},
-		                      // S18: a purpose-built single line, then a joined entry
-		                      // whose split derives the same line ...
+		                      // S18: the engine walks entries in KEY order (nlohmann::json
+		                      // is a std::map), not file order. Case 1: the dedicated
+		                      // key sorts first ("...OneXyz" < "...OneXyz\n..."), so it
+		                      // is written before the joined entry derives it.
 		                      {"TestSplitOneXyz", u8"專用一"},
 		                      {"TestSplitOneXyz\nTestSplitTwoXyz", u8"衍生一\n衍生二"},
-		                      // ... and the reverse order.
-		                      {"TestSplitThreeXyz\nTestSplitFourXyz", u8"衍生三\n衍生四"},
-		                      {"TestSplitThreeXyz", u8"專用三"}});
+		                      // Case 2: the dedicated key is the joined entry's SECOND
+		                      // line and sorts after it ("...Aaa..." < "...Zzz..."), so
+		                      // the derived line is written first, the dedicated one after.
+		                      {"TestSplitAaaXyz\nTestSplitZzzXyz", u8"衍生甲\n衍生乙"},
+		                      {"TestSplitZzzXyz", u8"專用乙"}});
 		// uniques.json loads after stats.json: its pattern would win the merge.
 		plant(L"uniques.json", {{kStatTmpl, u8"錯誤乙 {0}%"}});
 		// ui.json carries the EXACT line -- exact beats pattern in the merge.
@@ -982,16 +986,21 @@ int RunEditorSelftest(const std::string& games)
 		}
 
 		// S18: inside the source copy a derived (split) line never replaces a
-		// purpose-built entry, whichever comes first in the file.
+		// purpose-built entry, whichever is written first.
 		{
 			translation_set_source("stats");
 			const std::string one = say("TestSplitOneXyz");
 			const std::string two = say("TestSplitTwoXyz");
-			const std::string three = say("TestSplitThreeXyz");
+			const std::string aaa = say("TestSplitAaaXyz");
+			const std::string zzz = say("TestSplitZzzXyz");
 			translation_set_source(nullptr);
-			const bool ok = one == u8"專用一" && three == u8"專用三" && two == u8"衍生二";
-			check(ok, "S18 來源字典裡拆行衍生條目不覆蓋專用條目");
-			if (!ok) printf("    one=%s two=%s three=%s\n", one.c_str(), two.c_str(), three.c_str());
+			const bool first = one == u8"專用一" && two == u8"衍生二";
+			const bool later = zzz == u8"專用乙" && aaa == u8"衍生甲";
+			check(first, "S18 專用條目先寫：拆行衍生條目不覆蓋它");
+			check(later, "S18b 衍生條目先寫：後寫的專用條目蓋過它");
+			if (!(first && later))
+				printf("    one=%s two=%s aaa=%s zzz=%s\n", one.c_str(), two.c_str(),
+				       aaa.c_str(), zzz.c_str());
 		}
 
 		// S8
