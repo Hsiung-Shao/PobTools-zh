@@ -76,13 +76,14 @@ std::map<std::string, std::string> merge_winner(const EditorModel& model,
 	return winner;
 }
 
-std::vector<std::string> load_order(const EditorModel& model)
+// One string array out of meta.json ("load_order", "source_only").
+std::vector<std::string> meta_list(const EditorModel& model, const char* field)
 {
 	std::vector<std::string> order;
 	for (const EditorFile& f : model.files) {
 		if (f.name != "meta.json") continue;
-		if (f.doc.contains("load_order") && f.doc["load_order"].is_array()) {
-			for (const auto& x : f.doc["load_order"])
+		if (f.doc.contains(field) && f.doc[field].is_array()) {
+			for (const auto& x : f.doc[field])
 				if (x.is_string()) order.push_back(x.get<std::string>());
 		}
 	}
@@ -100,13 +101,32 @@ std::vector<std::string> load_order(const EditorModel& model)
 			CloseHandle(h);
 			try {
 				auto doc = nlohmann::ordered_json::parse(buf);
-				if (doc.contains("load_order"))
-					for (const auto& x : doc["load_order"])
+				if (doc.contains(field) && doc[field].is_array())
+					for (const auto& x : doc[field])
 						if (x.is_string()) order.push_back(x.get<std::string>());
 			} catch (...) {}
 		}
 	}
 	return order;
+}
+
+std::vector<std::string> load_order(const EditorModel& model)
+{
+	return meta_list(model, "load_order");
+}
+
+// A file the global lookup never reads: listed in meta.json "source_only", or an
+// id-keyed *_by_id.json. Its keys answer only per-source / per-id lookups, so
+// translation_lookup() cannot see an edit made there.
+bool not_in_global_table(const std::vector<std::string>& sourceOnly, const std::string& fname)
+{
+	static const std::string byId = "_by_id.json";
+	if (fname.size() >= byId.size() &&
+	    fname.compare(fname.size() - byId.size(), byId.size(), byId) == 0)
+		return true;
+	for (const std::string& s : sourceOnly)
+		if (s == fname) return true;
+	return false;
 }
 
 // What the engine returns for `key` after a fresh load of the dictionaries.
@@ -163,6 +183,10 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	//     not take effect, editing the winner must
 	std::map<std::string, int> occurrences;
 	for (const EditorEntry& e : model.entries) occurrences[e.key]++;
+	// (a) must come from a file the global lookup reads: a key that only lives
+	// in affixes.json (source_only) or a *_by_id.json is invisible to
+	// translation_lookup(), so T5/T7/T8 would fail for the wrong reason.
+	const std::vector<std::string> sourceOnly = meta_list(model, "source_only");
 
 	const EditorEntry* single = nullptr;
 	const EditorEntry* shadowLoser = nullptr;
@@ -170,7 +194,8 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	for (const EditorEntry& e : model.entries) {
 		if (e.structured) continue;
 		const std::string& owner = model.files[(size_t)e.fileIdx].name;
-		if (!single && occurrences[e.key] == 1 && e.key.size() > 6 && e.value.size() > 2)
+		if (!single && occurrences[e.key] == 1 && e.key.size() > 6 && e.value.size() > 2 &&
+		    !not_in_global_table(sourceOnly, owner))
 			single = &e;
 		if (occurrences[e.key] > 1 && e.key.size() > 4) {
 			auto w = winner.find(e.key);

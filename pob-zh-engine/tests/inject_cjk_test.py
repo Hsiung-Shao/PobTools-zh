@@ -156,10 +156,10 @@ class Fail(Exception):
 class Harness(object):
     """One Lua 5.1 state running a real fork's Common.lua."""
 
-    def __init__(self, fork, with_inject=True):
+    def __init__(self, fork, with_inject=True, lua_mod=None):
         self.fork = fork
         self.dir = FORKS[fork]
-        self.rt = lua51.LuaRuntime(unpack_returned_tuples=True)
+        self.rt = (lua_mod or lua51).LuaRuntime(unpack_returned_tuples=True)
         self.source = None          # current PobToolsSetSource() name
         self.source_seen = set()    # every source active during a lookup
         self.lookups = []           # (text, source) of every lookup, in order
@@ -1027,6 +1027,148 @@ def test_id_affix_title(fork):
 
 # ---- upstream shape checks (catch a rename before a user does) -------------
 
+# ---- 包裝後參數數不變(新介面相容性閘門) -------------------------------------
+#
+# bridge.lua 的 probe 以 debug.getinfo(fn,"u").nparams 驗 POB 上游形狀(例:
+# AddNodeTooltip 要 4 或 5、BUILD.Init 要 6)。inject 的包裝若寫成
+# function(self, ...),nparams 變 1,閘門 ok=false,新介面退回經典視窗。
+# Lua 5.1 沒有 nparams,所以這組測試跑在 LuaJIT(與 POB 相同)。
+
+ARITY_CLASSES = ("EditControl", "Tooltip", "SearchHost", "SkillListControl",
+                 "GemSelectControl", "PassiveTreeView", "NotableDBControl",
+                 "ItemDBControl", "MinionSearchListControl", "CalcsTab",
+                 "ItemsTab", "Item")
+
+# 上游頂層會碰到 itemLib / data;這裡只要檔案載得完、方法定義得出來。
+ARITY_STUBS = rb"""
+local function deep()
+	return setmetatable({}, { __index = function(t, k) local v = deep() rawset(t, k, v) return v end,
+	                          __call = function() return deep() end })
+end
+itemLib = itemLib or deep()
+data = data or deep()
+main.DrawBackground = function(self, viewPort) end
+main.modes = {
+	BUILD = { Init = function(self, a, b, c, d, e) end, OnFrame = function(self, inputEvents) end },
+	LIST = { OnFrame = function(self, inputEvents) end },
+}
+function PobToolsBackground() return "", 50, 0, 100 end
+function PobToolsPerfEnabled() return true end
+function PobToolsPerfNow() return 0 end
+function PobToolsPerfMark() end
+function PobToolsPerfEvent() end
+"""
+
+# 記下每個函式(類別方法、main 與 modes 的方法、PobToolsItemTitle)的原物件與形狀。
+ARITY_SNAPSHOT = """
+return function()
+	local snap = {}
+	local function rec(key, fn)
+		if type(fn) ~= "function" then return end
+		local i = debug.getinfo(fn, "u")
+		snap[key] = { fn = fn, np = i.nparams, va = i.isvararg and true or false }
+	end
+	for cname, cls in pairs(common.classes) do
+		for k, v in pairs(cls) do rec(cname .. "." .. tostring(k), v) end
+	end
+	rec("main.DrawBackground", main.DrawBackground)
+	for mode, m in pairs(main.modes) do
+		for k, v in pairs(m) do rec("main.modes." .. mode .. "." .. tostring(k), v) end
+	end
+	rec("PobToolsItemTitle", PobToolsItemTitle)
+	return snap
+end
+"""
+
+# 依快照比對:被換掉的函式 -> {key: (原 np, 原 va, 新 np, 新 va)}
+ARITY_DIFF = """
+return function(snap)
+	local out = {}
+	local function cur(key)
+		local cname, k = key:match("^([^.]+)%.(.+)$")
+		if key == "PobToolsItemTitle" then return PobToolsItemTitle end
+		if key == "main.DrawBackground" then return main.DrawBackground end
+		local mode, mk = key:match("^main%.modes%.([^.]+)%.(.+)$")
+		if mode then return main.modes[mode][mk] end
+		return common.classes[cname][k]
+	end
+	for key, s in pairs(snap) do
+		local fn = cur(key)
+		if fn ~= s.fn and type(fn) == "function" then
+			local i = debug.getinfo(fn, "u")
+			out[key] = { s.np, s.va, i.nparams, i.isvararg and true or false }
+		end
+	end
+	return out
+end
+"""
+
+# 至少這些必須被包裝且形狀不變(bridge probe 實際檢查的 + 任務點名的)。
+ARITY_MUST = ("PassiveTreeView.AddNodeTooltip", "PassiveTreeView.AddNodeName",
+              "ItemsTab.AddItemTooltip", "ItemDBControl.GetRowValue",
+              "Tooltip.AddLine", "main.modes.BUILD.Init")
+
+
+def test_wrapped_arity(fork):
+    import lupa.luajit21 as luajit21
+    h = Harness(fork, with_inject=False, lua_mod=luajit21)
+    h.run(ARITY_STUBS)
+    for c in ARITY_CLASSES:
+        h.run('LoadModule("Classes/%s")' % c)
+    snap = h.run(ARITY_SNAPSHOT)()
+    h.apply_inject()
+    diff = h.run(ARITY_DIFF)(snap)
+    got = {k: tuple(v[i] for i in range(1, 5)) for k, v in diff.items()}
+    for must in ARITY_MUST:
+        check("%s 參數數:%s 有被包裝" % (fork, must), must in got, repr(sorted(got)))
+    for key in sorted(got):
+        np0, va0, np1, va1 = got[key]
+        check("%s 參數數:%s 包裝後 nparams/isvararg 不變" % (fork, key),
+              (np0, va0) == (np1, va1),
+              "原 %s%s → 包裝後 %s%s" % (np0, "+..." if va0 else "", np1, "+..." if va1 else ""))
+
+
+# 建構子裡才包的 tooltipFunc / selFunc(實例欄位):用合成 ItemsTab。
+ITEMSTAB_CTOR_BODY = """
+	self.controls = {
+		displayItemAffix1 = { tooltipFunc = function(tooltip, mode, index, value) end },
+		displayItemAffixRange1 = { tooltipFunc = function(tooltip, val) end },
+		displayItemRune1 = { selFunc = function(index, value) end },
+	}
+	self._orig = {
+		affix = self.controls.displayItemAffix1.tooltipFunc,
+		range = self.controls.displayItemAffixRange1.tooltipFunc,
+		rune = self.controls.displayItemRune1.selFunc,
+	}
+"""
+ITEMSTAB_CTOR_P1 = ('local C = newClass("ItemsTab")\nfunction C:ItemsTab()\n'
+                    + ITEMSTAB_CTOR_BODY + '\treturn self\nend\n')
+ITEMSTAB_CTOR_P2 = ('local C = newClass("ItemsTab", function(self)\n'
+                    + ITEMSTAB_CTOR_BODY + 'end)\n')
+
+
+def test_wrapped_arity_instance(fork):
+    import lupa.luajit21 as luajit21
+    h = Harness(fork, with_inject=False, lua_mod=luajit21)
+    h.define("ItemsTab", ITEMSTAB_CTOR_P1, ITEMSTAB_CTOR_P2)
+    h.apply_inject()
+    tab = make(h, "ItemsTab")
+    rows = h.eval("""function(t)
+		local function sh(fn) local i = debug.getinfo(fn, "u") return i.nparams .. (i.isvararg and "+" or "") end
+		local c = t.controls
+		return {
+			{ "displayItemAffix1.tooltipFunc", c.displayItemAffix1.tooltipFunc ~= t._orig.affix, sh(t._orig.affix), sh(c.displayItemAffix1.tooltipFunc) },
+			{ "displayItemAffixRange1.tooltipFunc", c.displayItemAffixRange1.tooltipFunc ~= t._orig.range, sh(t._orig.range), sh(c.displayItemAffixRange1.tooltipFunc) },
+			{ "displayItemRune1.selFunc", c.displayItemRune1.selFunc ~= t._orig.rune, sh(t._orig.rune), sh(c.displayItemRune1.selFunc) },
+		}
+	end""")(tab)
+    for i in range(1, 4):
+        name, wrapped, before, after = (rows[i][j] for j in range(1, 5))
+        check("%s 參數數:ItemsTab %s 有被包裝" % (fork, name), wrapped)
+        check("%s 參數數:ItemsTab %s 包裝後 nparams/isvararg 不變" % (fork, name),
+              before == after, "原 %s → 包裝後 %s" % (before, after))
+
+
 def read_text(path):
     with open(path, "rb") as f:
         return f.read().decode("utf-8", "replace")
@@ -1279,6 +1421,8 @@ def main():
         test_src_restored_on_error(fork)
         test_id_passive_name(fork)
         test_id_affix_title(fork)
+        test_wrapped_arity(fork)
+        test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
     print("== C++ source patches ==")
     test_source_patch_anchors()
