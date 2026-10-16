@@ -685,7 +685,9 @@ int RunEditorSelftest(const std::string& games)
 			if (!writeBytes(dictDir + name, doc.dump(2))) planted = false;
 		};
 		plant(L"passives.json", {{kRobust, u8"堅固"}});
-		plant(L"affixes.json", {{kRobust, u8"健壯的"}});
+		// affixes.json is source-only (meta.json "source_only"): TestOnlyAffixXyz
+		// exists nowhere else, so any unmarked hit means it leaked into the merge.
+		plant(L"affixes.json", {{kRobust, u8"健壯的"}, {"TestOnlyAffixXyz", u8"測試詞綴名"}});
 		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"}});
 		// uniques.json loads after stats.json: its pattern would win the merge.
 		plant(L"uniques.json", {{kStatTmpl, u8"錯誤乙 {0}%"}});
@@ -702,6 +704,11 @@ int RunEditorSelftest(const std::string& games)
 					bool has = false;
 					for (const auto& x : lo) if (x.is_string() && x.get<std::string>() == "affixes.json") has = true;
 					if (!has) lo.insert(lo.begin(), "affixes.json");
+					auto& so = meta["source_only"];
+					if (!so.is_array()) so = nlohmann::ordered_json::array();
+					bool hasSo = false;
+					for (const auto& x : so) if (x.is_string() && x.get<std::string>() == "affixes.json") hasSo = true;
+					if (!hasSo) so.push_back("affixes.json");
 					if (!writeBytes(dictDir + L"meta.json", meta.dump(2))) planted = false;
 				} catch (...) { planted = false; }
 			} else {
@@ -781,6 +788,18 @@ int RunEditorSelftest(const std::string& games)
 			translation_set_source(nullptr);
 			check(sourcedTitle == u8"健壯的", "S7 affixes 來源下物品標題查找也走來源字典");
 			check(sayTitle(kRobust) == bareTitle, "S7b 切走來源後物品標題回到未標記值");
+		}
+
+		// S10 / S11: a source-only file feeds its source dictionary and nothing else.
+		{
+			const char* kOnly = "TestOnlyAffixXyz";
+			translation_set_source(nullptr);
+			const char* r = translation_lookup(kOnly);
+			check(r == nullptr || std::string(r) == kOnly, "S10 只當來源的檔不進全域表");
+			if (r && std::string(r) != kOnly) printf("    unmarked %s = %s\n", kOnly, r);
+			translation_set_source("affixes");
+			check(say(kOnly) == u8"測試詞綴名", "S11 只當來源的檔在 affixes 來源下仍可查");
+			translation_set_source(nullptr);
 		}
 
 		// S8

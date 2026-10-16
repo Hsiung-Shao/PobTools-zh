@@ -1075,7 +1075,13 @@ static std::string determine_locale() {
 
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
-                                  std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr) {
+                                  std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
+                                  bool source_only = false) {
+    /* source_only (meta.json "source_only"): the file feeds ONLY its source
+    ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
+    ** map, the forward patterns, any reverse map or (via s_translations) the
+    ** glossary, so unmarked lookups and paste never see it. */
+    const bool merge = !source_only;
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1212,7 +1218,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
         /* Insert-or-overwrite (last wins, as always) in ONE hash lookup; the
         ** duplicate diagnostic reads the old value before it is replaced. */
-        {
+        if (merge) {
             auto [it, inserted] = s_translations.try_emplace(full_key, full_value);
             if (!inserted) {
                 if (it->second != full_value) {
@@ -1225,14 +1231,16 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             }
         }
         if (sink) (*sink)[full_key] = full_value;
-        s_reverse[full_value] = full_key;
-        s_reverse_origin[full_value] = origin;
-        if (clean_value != full_value) {
-            s_reverse[clean_value] = clean_key;
-            s_reverse_origin[clean_value] = origin;
+        if (merge) {
+            s_reverse[full_value] = full_key;
+            s_reverse_origin[full_value] = origin;
+            if (clean_value != full_value) {
+                s_reverse[clean_value] = clean_key;
+                s_reverse_origin[clean_value] = origin;
+            }
         }
 
-        if (is_base_items) {
+        if (merge && is_base_items) {
             s_reverse_bases[clean_value] = clean_key;
             /* Item.lua strips any " (...)" from the base name before appending it
             ** to the title, so the form that reaches us is always the clean one;
@@ -1272,17 +1280,21 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             reverse_plan = build_fill_plan_slots(slots_value, slots_key, norm_key);
         };
         if (norm_value != clean_value || norm_key != clean_key) {
-            ensure_reverse_plan();
-            s_reverse_pattern[norm_value] = reverse_plan;
-            s_reverse_pattern_origin[norm_value] = origin;
-            register_compact_pattern(norm_value, reverse_plan, origin);
+            if (merge) {
+                ensure_reverse_plan();
+                s_reverse_pattern[norm_value] = reverse_plan;
+                s_reverse_pattern_origin[norm_value] = origin;
+                register_compact_pattern(norm_value, reverse_plan, origin);
+            } else {
+                ensure_slots();
+            }
             std::string fwd_key = to_ascii_lower(norm_key);
             FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
             /* Source copy follows the merged map's rule here: overwrite. */
             if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
-            s_forward_pattern[fwd_key] = std::move(fwd_plan);
+            if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
         }
-        std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
+        std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
         if (fuzzy_value != norm_value) {
             /* 同一份計畫:模糊化只改查表用的鍵,不動槽位順序(synonyms.json 的規則
             ** 都不會刪掉 '#',所以模糊鍵命中時輸入的格數仍與樣板一致)。 */
@@ -1303,27 +1315,27 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             if (aligned) {
                 for (size_t i = 0; i < klines.size(); i++) {
                     const std::string &k = klines[i], &v = vlines[i];
-                    if (!s_translations.count(k)) {
+                    if (merge && !s_translations.count(k)) {
                         s_translations[k] = v;
                     }
                     /* The source copy takes the line unconditionally: an earlier
                     ** file already owning it in the merged map says nothing about
                     ** what THIS file means by it. Only the source layer sees this. */
                     if (sink) (*sink)[k] = v;
-                    if (!s_reverse.count(v)) {
+                    if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
                     }
                     std::string nv = normalize_whitespace(digits_to_hash(normalize_placeholders(v)));
                     std::string nk = normalize_whitespace(digits_to_hash(normalize_placeholders(k)));
                     if (nv != v || nk != k) {
-                        if (!s_reverse_pattern.count(nv)) {
+                        if (merge && !s_reverse_pattern.count(nv)) {
                             s_reverse_pattern[nv] = build_fill_plan(v, k, nk);
                             s_reverse_pattern_origin[nv] = origin;
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
                         /* Source copy keeps this spot's rule too: first one wins. */
                         if (pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
@@ -1340,7 +1352,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 }
 
 static bool load_json_meta(const std::string &filepath,
-                           std::vector<std::string> &load_order) {
+                           std::vector<std::string> &load_order,
+                           std::vector<std::string> &source_only) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return false;
 
@@ -1362,6 +1375,15 @@ static bool load_json_meta(const std::string &filepath,
         for (auto &item : doc["load_order"]) {
             if (item.is_string())
                 load_order.push_back(item.get<std::string>());
+        }
+    }
+
+    /* Optional: files that load in load_order but feed only their source
+    ** dictionary (see load_json_translations). Absent = every file merges. */
+    if (doc.contains("source_only") && doc["source_only"].is_array()) {
+        for (auto &item : doc["source_only"]) {
+            if (item.is_string())
+                source_only.push_back(item.get<std::string>());
         }
     }
 
@@ -1656,7 +1678,8 @@ static bool try_load_json(const std::string &base_dir) {
 
     /* Load meta.json */
     std::vector<std::string> load_order;
-    if (!load_json_meta(meta_path, load_order)) {
+    std::vector<std::string> source_only;
+    if (!load_json_meta(meta_path, load_order, source_only)) {
         OutputDebugStringA("[pob-proxy] Failed to parse meta.json\n");
         return false;
     }
@@ -1686,7 +1709,9 @@ static bool try_load_json(const std::string &base_dir) {
                 break;
             }
         }
-        int count = load_json_translations(filepath, false, sink, pattern_sink);
+        const bool only_source =
+            std::find(source_only.begin(), source_only.end(), filename) != source_only.end();
+        int count = load_json_translations(filepath, false, sink, pattern_sink, only_source);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
