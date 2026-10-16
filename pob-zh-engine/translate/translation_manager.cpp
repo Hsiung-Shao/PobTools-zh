@@ -143,12 +143,19 @@ static std::unordered_map<std::string, std::unordered_map<std::string, std::stri
 ** sharing the affix name "Robust"). Keys are ids, never English, so these
 ** files feed ONLY this table -- not the merged map, not the source exact or
 ** pattern maps -- and are reachable only through translation_lookup_by_id.
-** Loaded from load_order like kSourceDicts, keyed by the same source names. */
+** Listed in meta.json "source_dicts" (load_order also works, for older data),
+** keyed by the same source names. */
 static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
+/* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
+** be selected, exact entries only, and id lookups answer nothing -- so a locale
+** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
+** did before the per-source dictionaries existed. */
+static bool s_source_lookup = false;
+static const char *const kLegacySource = "gems";
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
 /* Each source's own forward patterns (same key/plan shape as s_forward_pattern),
@@ -1359,10 +1366,13 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     if (merge && !s_translations.count(k)) {
                         s_translations[k] = v;
                     }
-                    /* The source copy takes the line unconditionally: an earlier
-                    ** file already owning it in the merged map says nothing about
-                    ** what THIS file means by it. Only the source layer sees this. */
-                    if (sink) (*sink)[k] = v;
+                    /* The source copy ignores the merged map (an earlier file
+                    ** owning the line says nothing about what THIS file means by
+                    ** it) but keeps the merged rule inside the file: a derived
+                    ** line never replaces an entry already there, and a later
+                    ** purpose-built entry overwrites it (the main-entry write
+                    ** above is unconditional). Same as the pattern sink below. */
+                    if (sink && !sink->count(k)) (*sink)[k] = v;
                     if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
@@ -1394,7 +1404,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
 static bool load_json_meta(const std::string &filepath,
                            std::vector<std::string> &load_order,
-                           std::vector<std::string> &source_only) {
+                           std::vector<std::string> &source_only,
+                           std::vector<std::string> &source_dicts,
+                           bool &source_lookup) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return false;
 
@@ -1420,13 +1432,33 @@ static bool load_json_meta(const std::string &filepath,
     }
 
     /* Optional: files that load in load_order but feed only their source
-    ** dictionary (see load_json_translations). Absent = every file merges. */
+    ** dictionary (see load_json_translations). Absent = every file merges.
+    ** Kept for compatibility; shipped data uses source_dicts instead. */
     if (doc.contains("source_only") && doc["source_only"].is_array()) {
         for (auto &item : doc["source_only"]) {
             if (item.is_string())
                 source_only.push_back(item.get<std::string>());
         }
     }
+
+    /* Optional: files that are NOT in load_order at all and feed only their
+    ** source dictionary (English keys) or the id table (*_by_id). Keeping them
+    ** out of load_order is the point: an older engine reads load_order only,
+    ** so it never merges an affix-name file or takes an id file's numeric keys
+    ** for English. */
+    if (doc.contains("source_dicts") && doc["source_dicts"].is_array()) {
+        for (auto &item : doc["source_dicts"]) {
+            if (item.is_string())
+                source_dicts.push_back(item.get<std::string>());
+        }
+    }
+
+    /* Optional: true = this locale's data is organised for per-source lookup
+    ** (passives/affixes/stats/uniques/items + id files). Absent = the
+    ** behaviour from before those sources existed: only "gems" (exact entries)
+    ** can be selected, everything else answers as unmarked. */
+    source_lookup = doc.contains("source_lookup") && doc["source_lookup"].is_boolean() &&
+                    doc["source_lookup"].get<bool>();
 
     if (doc.contains("incomplete_translation_whitelist") &&
         doc["incomplete_translation_whitelist"].is_array()) {
@@ -1720,7 +1752,9 @@ static bool try_load_json(const std::string &base_dir) {
     /* Load meta.json */
     std::vector<std::string> load_order;
     std::vector<std::string> source_only;
-    if (!load_json_meta(meta_path, load_order, source_only)) {
+    std::vector<std::string> source_dicts;
+    bool source_lookup = false;
+    if (!load_json_meta(meta_path, load_order, source_only, source_dicts, source_lookup)) {
         OutputDebugStringA("[pob-proxy] Failed to parse meta.json\n");
         return false;
     }
@@ -1778,6 +1812,38 @@ static bool try_load_json(const std::string &base_dir) {
             fileCount++;
         }
     }
+
+    /* source_dicts: never merged. Files also listed in load_order were handled
+    ** above (the id-table check there runs first, and source_only covers the
+    ** rest), so only the ones outside load_order load here. */
+    for (auto &filename : source_dicts) {
+        if (std::find(load_order.begin(), load_order.end(), filename) != load_order.end())
+            continue;
+        std::string filepath = json_dir + filename;
+        const SourceDict *idd = nullptr;
+        for (const SourceDict &sd : kIdDicts)
+            if (filename == sd.file) { idd = &sd; break; }
+        int count = 0;
+        if (idd) {
+            count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
+        } else {
+            const SourceDict *src = nullptr;
+            for (const SourceDict &sd : kSourceDicts)
+                if (filename == sd.file) { src = &sd; break; }
+            if (!src) continue;   /* no source owns it: nothing could ever read it */
+            s_source_cache[src->name];
+            s_item_title_source_cache[src->name];
+            count = load_json_translations(filepath, false, &s_sources[src->name],
+                                           &s_source_patterns[src->name], /*source_only=*/true);
+        }
+        if (count > 0) {
+            snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d source-only entries from %s\n",
+                     count, filename.c_str());
+            OutputDebugStringA(msg);
+            fileCount++;
+        }
+    }
+    s_source_lookup = source_lookup;
 
     if (totalEntries == 0) {
         OutputDebugStringA("[pob-proxy] No JSON entries loaded\n");
@@ -1997,6 +2063,7 @@ void translation_shutdown(void) {
     s_source_cache.clear();
     s_item_title_source_cache.clear();
     s_id_dicts.clear();
+    s_source_lookup = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -2795,13 +2862,18 @@ const char* translation_set_source(const char *name) {
     s_lookup_cache_active = &s_lookup_cache;
     s_item_title_cache_active = &s_item_title_cache;
 
-    if (!want.empty()) {
+    /* Without meta.json "source_lookup" only the legacy gems source exists,
+    ** and only its exact entries -- the behaviour before per-source patterns
+    ** and the other sources were added. Anything else is "no source". */
+    const bool allowed = s_source_lookup || want == kLegacySource;
+    if (!want.empty() && allowed) {
         auto it = s_sources.find(want);
         if (it != s_sources.end()) {
             s_active_source = &it->second;
             s_active_source_name = want;
             auto pit = s_source_patterns.find(s_active_source_name);
-            if (pit != s_source_patterns.end()) s_active_source_patterns = &pit->second;
+            if (s_source_lookup && pit != s_source_patterns.end())
+                s_active_source_patterns = &pit->second;
             auto cit = s_source_cache.find(s_active_source_name);
             if (cit != s_source_cache.end()) s_lookup_cache_active = &cit->second;
             auto tit = s_item_title_source_cache.find(s_active_source_name);
@@ -2820,6 +2892,9 @@ const char* translation_get_source(void) {
 ** the same lifetime contract translation_lookup's results already have. */
 const char* translation_lookup_by_id(const char *source, const char *id) {
     translation_wait_ready();
+    /* F2 off answers nothing, like every other lookup; a locale without
+    ** "source_lookup" has no id lookups at all (see s_source_lookup). */
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
     if (!source || !*source || !id || !*id) return nullptr;
     auto sit = s_id_dicts.find(source);
     if (sit == s_id_dicts.end()) return nullptr;

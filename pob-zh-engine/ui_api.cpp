@@ -2916,9 +2916,13 @@ static int l_PobToolsTranslateId(lua_State* L)
 	// the NEXT call overwrites, so keep a copy to restore from.
 	const char* prevRaw = translation_set_source(source);
 	const std::string prev = prevRaw ? prevRaw : "";
-	const char* zh = translation_lookup(en);
-	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
+	// The result points into the active source's cache; copy it before the
+	// restore below switches caches, so the pushed string never depends on it.
+	const char* zhRaw = translation_lookup(en);
+	const bool hit = zhRaw != nullptr;
+	const std::string zh = hit ? zhRaw : "";
 	translation_set_source(prev.empty() ? nullptr : prev.c_str());
+	if (hit) lua_pushlstring(L, zh.data(), zh.size()); else lua_pushnil(L);
 	return 1;
 }
 

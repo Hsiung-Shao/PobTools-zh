@@ -4,8 +4,6 @@
   "display_name": "繁體中文",
   "source": "poe1",
   "load_order": [
-    "affixes.json",
-    "ascendancy.json",
     "tags.json",
     "items.json",
     "gems.json",
@@ -13,15 +11,14 @@
     "stats.json",
     "passives.json",
     "uniques.json",
-    "monsters.json",
-    "passives_by_id.json",
-    "affixes_by_id.json"
+    "monsters.json"
   ],
-  "source_only": [
+  "source_dicts": [
     "affixes.json",
     "passives_by_id.json",
     "affixes_by_id.json"
   ],
+  "source_lookup": true,
   "incomplete_translation_whitelist": [
     "DPS",
     "PoB",
