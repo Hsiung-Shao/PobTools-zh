@@ -22664,6 +22664,9 @@
     "[Intangibility|Intangibility]": "[Intangibility|無形性]",
     "{0}/{1} <default>{{Variants Tested}} ": "{0}/{1} <default>{{已測試變體}} ",
     "Added Small Passive Skills grant: Sword Attacks deal 12% increased Damage with Hits and Ailments": "附加的小型天賦給予：劍攻擊增加 12% 擊中和異常狀態傷害",
-    "prismatic": "三相"
+    "prismatic": "三相",
+    "Exclusive to: Betrayal": "限定: 反叛",
+    "Exclusive to: Tempest": "限定: 暴風",
+    "Source: Labyrinth": "來源: 帝王迷宮機率"
   }
 }
