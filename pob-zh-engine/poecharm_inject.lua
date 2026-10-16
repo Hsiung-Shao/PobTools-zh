@@ -73,6 +73,38 @@ local function zhRaw(text)
 	return visible(PobToolsTranslate(text))
 end
 
+-- ===== wrappers keep the original's parameter count =====
+-- The new UI's bridge (host/data/bridge/bridge.lua) checks POB's upstream shape
+-- with debug.getinfo(fn, "u").nparams -- PassiveTreeView.AddNodeTooltip must
+-- take 4 or 5, BUILD.Init 6 -- and falls back to the classic window when a
+-- probe fails. A wrapper written as function(self, ...) reports nparams 1, so
+-- every wrapper here goes through keepArity: impl does the work, the function
+-- installed has exactly orig's named parameters (plus "..." when orig is
+-- vararg) and hands them on to impl unchanged. Without nparams (stock Lua
+-- 5.1) or loadstring there is nothing to keep, and impl is installed as is.
+local arityMakers = {}
+local function keepArity(orig, impl)
+	if type(debug) ~= "table" or type(debug.getinfo) ~= "function" or type(loadstring) ~= "function" then
+		return impl
+	end
+	local ok, info = pcall(debug.getinfo, orig, "u")
+	local n = ok and type(info) == "table" and info.nparams
+	if type(n) ~= "number" then return impl end
+	local key = n .. (info.isvararg and "+" or "")
+	local maker = arityMakers[key]
+	if not maker then
+		local names = {}
+		for i = 1, n do names[i] = "a" .. i end
+		if info.isvararg then names[#names + 1] = "..." end
+		local list = table.concat(names, ", ")
+		maker = loadstring("local impl = ... return function(" .. list .. ") return impl(" .. list .. ") end",
+			"=PobTools keepArity")
+		if not maker then return impl end
+		arityMakers[key] = maker
+	end
+	return maker(impl)
+end
+
 -- ===== source marking =====
 -- The dictionary is one flat merged map, so a bare word resolves to whichever
 -- file defined it LAST. POB stores support gems under their short name
@@ -97,9 +129,9 @@ end
 local function wrapDrawWithSource(class, name)
 	local orig = class.Draw
 	if not orig then return false end
-	class.Draw = function(self, ...)
+	class.Draw = keepArity(orig, function(self, ...)
 		return withSource(name, orig, self, ...)
-	end
+	end)
 	return true
 end
 
@@ -108,9 +140,9 @@ end
 local function wrapMethodWithSource(class, method, name)
 	local orig = class[method]
 	if type(orig) ~= "function" then return false end
-	class[method] = function(self, ...)
+	class[method] = keepArity(orig, function(self, ...)
 		return withSource(name, orig, self, ...)
-	end
+	end)
 	return true
 end
 
@@ -336,11 +368,11 @@ local function wrapConstructor(class, className, after)
 		or (rawget(class, className) and className)
 	if not key then return false end
 	local orig = class[key]
-	class[key] = function(self, ...)
+	class[key] = keepArity(orig, function(self, ...)
 		local ret = orig(self, ...)
 		after(self)
 		return ret
-	end
+	end)
 	return true
 end
 
@@ -420,11 +452,11 @@ PATCHES["GemSelectControl"] = function(class)
 				self.noMatches = true
 			end
 		end
-		class.BuildList = function(self, buf)
+		class.BuildList = keepArity(origBuild, function(self, buf)
 			origBuild(self, buf)
 			if not hasCJK(buf) then return end
 			withSource("gems", appendCJKMatches, self, buf)
-		end
+		end)
 	end
 end
 
@@ -445,18 +477,18 @@ PATCHES["PassiveTreeView"] = function(class)
 	-- Tooltip:AddLine which node is being named. Restored even on error.
 	local origName = class.AddNodeName
 	if type(origName) == "function" then
-		class.AddNodeName = function(self, tooltip, node, ...)
+		class.AddNodeName = keepArity(origName, function(self, tooltip, node, ...)
 			local prevCtx = nodeCtx
 			nodeCtx = type(node) == "table" and { node = node } or nil
 			local ok, a, b, c = pcall(origName, self, tooltip, node, ...)
 			nodeCtx = prevCtx
 			if not ok then error(a, 0) end
 			return a, b, c
-		end
+		end)
 	end
 	local orig = class.DoesNodeMatchSearchParams
 	if orig then
-		class.DoesNodeMatchSearchParams = function(self, ...)
+		class.DoesNodeMatchSearchParams = keepArity(orig, function(self, ...)
 			local n = select("#", ...)
 			local node = n > 0 and select(n, ...) or nil
 			local s = self.searchStr
@@ -475,7 +507,7 @@ PATCHES["PassiveTreeView"] = function(class)
 				return false
 			end
 			return orig(self, ...)
-		end
+		end)
 	end
 
 	-- Window opacity (PobTools launcher slider, Windows): below 100% the engine
@@ -543,7 +575,7 @@ PATCHES["PassiveTreeView"] = function(class)
 			end
 			SetDrawColor(1, 1, 1)
 		end
-		class.Draw = function(self, build, viewPort, inputEvents)
+		class.Draw = keepArity(origDraw, function(self, build, viewPort, inputEvents)
 			local bgPath, _, _, treeBg = "", 50, 0, 100
 			if type(PobToolsBackground) == "function" then bgPath, _, _, treeBg = PobToolsBackground() end
 			bgPath = bgPath or ""
@@ -602,8 +634,8 @@ PATCHES["PassiveTreeView"] = function(class)
 			self.zoomY = self.zoomY - dy
 			self.zoom = 1.2 ^ self.zoomLevel
 			if not ok then error(err, 0) end
-		end
-		class.Zoom = function(self, level, viewPort)
+		end)
+		class.Zoom = keepArity(origZoom, function(self, level, viewPort)
 			local k = self._ptExpandK
 			if not k then return origZoom(self, level, viewPort) end
 			-- upstream Zoom() (PassiveTreeView.lua:1307) with the scale factor
@@ -617,7 +649,7 @@ PATCHES["PassiveTreeView"] = function(class)
 			local relY = cursorY - viewPort.y - viewPort.height / 2
 			self.zoomX = relX + (self.zoomX - relX) * factor
 			self.zoomY = relY + (self.zoomY - relY) * factor
-		end
+		end)
 	end
 end
 
@@ -628,7 +660,7 @@ end
 PATCHES["NotableDBControl"] = function(class)
 	local orig = class.DoesNotableMatchFilters
 	if orig then
-		class.DoesNotableMatchFilters = function(self, node)
+		class.DoesNotableMatchFilters = keepArity(orig, function(self, node)
 			local search = self.controls and self.controls.search
 			local buf = search and search.buf
 			if not hasCJK(buf) then
@@ -651,7 +683,7 @@ PATCHES["NotableDBControl"] = function(class)
 				end
 			end
 			return false
-		end
+		end)
 	end
 end
 
@@ -674,7 +706,7 @@ PATCHES["ItemDBControl"] = function(class)
 	-- Every mod-line table the two forks keep. PoE2 added runeModLines and PoE1
 	-- has no such field, so a name that is absent is skipped rather than assumed.
 	local MOD_LINE_FIELDS = { "enchantModLines", "runeModLines", "implicitModLines", "explicitModLines" }
-	class.DoesItemMatchFilters = function(self, item)
+	class.DoesItemMatchFilters = keepArity(orig, function(self, item)
 		local search = self.controls and self.controls.search
 		local buf = search and search.buf
 		if not hasCJK(buf) then
@@ -706,7 +738,7 @@ PATCHES["ItemDBControl"] = function(class)
 			end
 		end
 		return false
-	end
+	end)
 
 	-- List rows: GetRowValue draws colorCodes[rarity] .. item.name, and a
 	-- unique's name is "<title>, <base>". Translate the halves under their own
@@ -716,7 +748,7 @@ PATCHES["ItemDBControl"] = function(class)
 	-- source for the first half. Not fatal when absent.
 	local origRow = class.GetRowValue
 	if type(origRow) == "function" then
-		class.GetRowValue = function(self, column, index, item, ...)
+		class.GetRowValue = keepArity(origRow, function(self, column, index, item, ...)
 			local v = origRow(self, column, index, item, ...)
 			if type(v) ~= "string" or type(item) ~= "table" or hasCJK(v) then return v end
 			local lead, rest = splitLeadColour(v)
@@ -732,7 +764,7 @@ PATCHES["ItemDBControl"] = function(class)
 			local zs = zf and zhSegment("items", second)
 			if not zs then return v end
 			return lead .. zf .. ", " .. zs
-		end
+		end)
 	else
 		log("ItemDBControl: no GetRowValue, list rows stay unmarked")
 	end
@@ -749,7 +781,7 @@ PATCHES["MinionSearchListControl"] = function(class)
 	end
 	local orig = class.DoesEntryMatchFilters
 	if not orig then error("MinionSearchListControl has no DoesEntryMatchFilters to wrap") end
-	class.DoesEntryMatchFilters = function(self, searchStr, minionId, filterMode)
+	class.DoesEntryMatchFilters = keepArity(orig, function(self, searchStr, minionId, filterMode)
 		if orig(self, searchStr, minionId, filterMode) then return true end
 		local search = self.controls and self.controls.searchText
 		local buf = search and search.buf
@@ -770,7 +802,7 @@ PATCHES["MinionSearchListControl"] = function(class)
 			end
 		end
 		return false
-	end
+	end)
 end
 
 -- Calcs tab search box: it highlights sections and rows whose label matches, so
@@ -782,7 +814,7 @@ PATCHES["CalcsTab"] = function(class)
 	end
 	local orig = class.SearchMatch
 	if not orig then error("CalcsTab has no SearchMatch to wrap") end
-	class.SearchMatch = function(self, txt)
+	class.SearchMatch = keepArity(orig, function(self, txt)
 		local search = self.controls and self.controls.search
 		local buf = search and search.buf
 		if type(txt) == "string" and hasCJK(buf) then
@@ -790,7 +822,7 @@ PATCHES["CalcsTab"] = function(class)
 			if zh and zh:lower():find(buf:lower(), 1, true) then return true end
 		end
 		return orig(self, txt)
-	end
+	end)
 end
 
 -- Dropdown typed search (SearchHost mixin; e.g. the enchant popup lists):
@@ -800,7 +832,7 @@ end
 PATCHES["SearchHost"] = function(class)
 	local orig = class.UpdateSearch
 	if orig then
-		class.UpdateSearch = function(self)
+		class.UpdateSearch = keepArity(orig, function(self)
 			orig(self)
 			if not hasCJK(self.searchTerm) then return end
 			local list = self.searchListAccessor and self.searchListAccessor()
@@ -820,7 +852,7 @@ PATCHES["SearchHost"] = function(class)
 				end
 			end
 			if changed then self:UpdateMatchCount() end
-		end
+		end)
 	end
 end
 
@@ -840,7 +872,7 @@ end
 PATCHES["EditControl"] = function(class)
 	local orig = class.OnKeyDown
 	if not orig then error("EditControl has no OnKeyDown to wrap") end
-	class.OnKeyDown = function(self, key, doubleClick)
+	class.OnKeyDown = keepArity(orig, function(self, key, doubleClick)
 		-- same condition as upstream; disableRightClickPaste exists in PoE2 only
 		-- (nil in PoE1, so the extra test is harmless there)
 		local paste = (key == "v" and IsKeyDown("CTRL"))
@@ -877,7 +909,7 @@ PATCHES["EditControl"] = function(class)
 			end
 		end
 		return self
-	end
+	end)
 	-- Subclasses (ResizableEditControl, GemSelectControl) inherit through a
 	-- CACHING __index (Common.lua newClass): the first lookup copies the parent
 	-- method into the subclass table, so a subclass that already resolved
@@ -929,7 +961,7 @@ local ATTR_REQ = { Str = true, Strength = true, Dex = true, Dexterity = true,
 PATCHES["Item"] = function(class)
 	local orig = class.ParseRaw
 	if not orig then error("Item has no ParseRaw to wrap") end
-	class.ParseRaw = function(self, raw, ...)
+	class.ParseRaw = keepArity(orig, function(self, raw, ...)
 		if type(raw) == "string" and raw:find("Requirements:", 1, true) then
 			local out, seenBlock = {}, false
 			for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
@@ -946,7 +978,7 @@ PATCHES["Item"] = function(class)
 			raw = table.concat(out, "\n")
 		end
 		return orig(self, raw, ...)
-	end
+	end)
 end
 
 -- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
@@ -962,14 +994,14 @@ PATCHES["ItemsTab"] = function(class)
 	-- restored even when the original throws. Not fatal when absent.
 	local origTip = class.AddItemTooltip
 	if type(origTip) == "function" then
-		class.AddItemTooltip = function(self, tooltip, item, ...)
+		class.AddItemTooltip = keepArity(origTip, function(self, tooltip, item, ...)
 			local prevCtx = itemCtx
 			itemCtx = type(item) == "table" and { item = item } or nil
 			local ok, a, b, c = pcall(withSource, "items", origTip, self, tooltip, item, ...)
 			itemCtx = prevCtx
 			if not ok then error(a, 0) end
 			return a, b, c
-		end
+		end)
 		-- The title line reaches AddLine already translated: an engine source
 		-- patch on ItemsTab.lua ("物品提示的標題維持英文") runs item.title through
 		-- PobToolsItemTitle first. Give that call the uniques source too, only
@@ -977,7 +1009,7 @@ PATCHES["ItemsTab"] = function(class)
 		-- original function.
 		if type(PobToolsItemTitle) == "function" then
 			local origTitle = PobToolsItemTitle
-			PobToolsItemTitle = function(s, ...)
+			PobToolsItemTitle = keepArity(origTitle, function(s, ...)
 				local ctx = itemCtx
 				if ctx and not ctx.titleDone and s == ctx.item.title then
 					ctx.titleDone = true
@@ -986,7 +1018,7 @@ PATCHES["ItemsTab"] = function(class)
 					end
 				end
 				return origTitle(s, ...)
-			end
+			end)
 		end
 	else
 		log("ItemsTab: no AddItemTooltip, item tooltips stay unmarked")
@@ -999,7 +1031,7 @@ PATCHES["ItemsTab"] = function(class)
 		local function wrapAffixTip(ctl, idOf)
 			local orig = type(ctl) == "table" and ctl.tooltipFunc or nil
 			if type(orig) ~= "function" then return end
-			ctl.tooltipFunc = function(tooltip, ...)
+			ctl.tooltipFunc = keepArity(orig, function(tooltip, ...)
 				local prev = affixTipCtx
 				local okId, id = pcall(idOf, ...)
 				local item = self.displayItem
@@ -1010,7 +1042,7 @@ PATCHES["ItemsTab"] = function(class)
 				affixTipCtx = prev
 				if not ok2 then error(a, 0) end
 				return a, b, c
-			end
+			end)
 		end
 		if hasTranslateId() and type(self.controls) == "table" then
 			local i = 1
@@ -1033,12 +1065,12 @@ PATCHES["ItemsTab"] = function(class)
 			local drop = self.controls and self.controls["displayItemRune" .. i]
 			if drop and type(drop.selFunc) == "function" then
 				local orig = drop.selFunc
-				drop.selFunc = function(...)
+				drop.selFunc = keepArity(orig, function(...)
 					orig(...)
 					if self.displayItem and self.displayItem.crafted and self.UpdateAffixControls then
 						self:UpdateAffixControls()
 					end
-				end
+				end)
 			end
 		end
 	end)
@@ -1069,7 +1101,7 @@ PATCHES["Tooltip"] = function(class)
 		end
 		return nil
 	end
-	class.AddLine = function(self, size, text, font, a4, ...)
+	class.AddLine = keepArity(orig, function(self, size, text, font, a4, ...)
 		-- Tooltip.lua:96 starts a new BLOCK when a line begins with "Equipping"
 		-- or "Removing", so translating those would silently change the
 		-- tooltip's block structure. Left alone on purpose.
@@ -1093,7 +1125,7 @@ PATCHES["Tooltip"] = function(class)
 			if zh then text = zh end
 		end
 		return orig(self, size, text, font, a4, ...)
-	end
+	end)
 
 	-- F2 has to reach tooltips that are ALREADY on screen.
 	--
@@ -1112,7 +1144,7 @@ PATCHES["Tooltip"] = function(class)
 	-- an emptied tooltip must rebuild anyway.
 	local origCheck = class.CheckForUpdate
 	if origCheck and type(PobToolsGetTranslate) == "function" then
-		class.CheckForUpdate = function(self, ...)
+		class.CheckForUpdate = keepArity(origCheck, function(self, ...)
 			-- Always call through first: CheckForUpdate is what RECORDS the
 			-- params, so short-circuiting it would make the next real change
 			-- go unnoticed. It also creates updateParams.
@@ -1127,7 +1159,7 @@ PATCHES["Tooltip"] = function(class)
 				end
 			end
 			return doUpdate
-		end
+		end)
 	else
 		-- Not fatal: the tooltips still translate, F2 just will not refresh one
 		-- that is already open. Worth a line in the log rather than killing the
@@ -1251,12 +1283,12 @@ local function patchMainBackground()
 	--    whole-window pass below already covers the viewport, so this becomes
 	--    a no-op; without one it is upstream's striped backdrop as before.
 	local orig = main.DrawBackground
-	main.DrawBackground = function(self, viewPort)
+	main.DrawBackground = keepArity(orig, function(self, viewPort)
 		local path = PobToolsBackground()
 		if path and path ~= "" and bgState.handle and bgState.path == path then return end
 		if path and path ~= "" and drawBackgroundImage(viewPort) then return end
 		return orig(self, viewPort)
-	end
+	end)
 	-- 2. The whole-window pass. Upstream only paints its backdrop per tab
 	--    viewport (and never on the tree tab, which has its own), so nothing
 	--    would show under the side bar / top bar / tree otherwise: paint the
@@ -1264,13 +1296,13 @@ local function patchMainBackground()
 	local bm = main.modes and main.modes.BUILD
 	if bm and type(bm.OnFrame) == "function" then
 		local origOnFrame = bm.OnFrame
-		bm.OnFrame = function(self, ...)
+		bm.OnFrame = keepArity(origOnFrame, function(self, ...)
 			local screenW, screenH = GetScreenSize()
 			if screenW and screenW > 0 then
 				pcall(drawBackgroundImage, { x = 0, y = 0, width = screenW, height = screenH })
 			end
 			return origOnFrame(self, ...)
-		end
+		end)
 		log("patched main.DrawBackground + BUILD.OnFrame (custom background image)")
 	else
 		log("patched main.DrawBackground (custom background image; BUILD mode not found, no whole-window pass)")
@@ -1293,14 +1325,14 @@ local PERF_DRAW = {
 local function perfWrap(owner, method, label, onDone)
 	local orig = owner[method]
 	if type(orig) ~= "function" then return false end
-	owner[method] = function(...)
+	owner[method] = keepArity(orig, function(...)
 		local t0 = PobToolsPerfNow()
 		local r = { orig(...) }
 		local ms = PobToolsPerfNow() - t0
 		PobToolsPerfMark(label, ms)
 		if onDone then onDone(ms) end
 		return unpack(r, 1, table.maxn(r))
-	end
+	end)
 	return true
 end
 local function perfApplyAll()
@@ -1354,7 +1386,7 @@ tryApplyAll() -- classes already loaded at injection time
 if type(LoadModule) == "function" then
 	local origLoadModule = LoadModule
 	local depth = 0
-	LoadModule = function(...)
+	LoadModule = keepArity(origLoadModule, function(...)
 		depth = depth + 1
 		-- class files return at most a couple of values; preserve them.
 		-- pcall so an error inside a module cannot leave depth stuck above zero
@@ -1364,7 +1396,7 @@ if type(LoadModule) == "function" then
 		if not ok then error(a, 0) end
 		if depth == 0 then tryApplyAll() end
 		return a, b, c, d
-	end
+	end)
 end
 
 log("CJK inject ready")
