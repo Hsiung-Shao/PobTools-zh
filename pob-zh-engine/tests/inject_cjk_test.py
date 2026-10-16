@@ -76,6 +76,7 @@ DICT = {
         # rendered text, not the "^xRRGGBB" runs that paint it
         "Is the enemy Shocked?": "^xFFFFFF敵人是否被^xADAA47【感電】^7?",
         "10% increased Attack Speed": "增加 10% 攻擊速度",
+        "+30 to Dexterity": "+30 敏捷",
     },
     "gems": {
         "Volatility": "易變輔助",
@@ -84,7 +85,11 @@ DICT = {
     # Source-only entries for the tooltip tests: none of these exist under the
     # unmarked source, so a lookup under the wrong source comes back untranslated.
     "passives": {"Elemental Overload": "元素超載"},
-    "stats": {"+500 to maximum Mana": "+500 最大魔力"},
+    "stats": {"+500 to maximum Mana": "+500 最大魔力",
+              # L2a:未標記與 stats 都有、譯文刻意不同,才分得出走了哪一邊
+              "+30 to Dexterity": "+30 點敏捷(stats)",
+              # L2b:只有 stats 有,未標記查不到
+              "Adds 1 to 2 Fire Damage to Attacks": "攻擊附加 1 - 2 火焰傷害"},
     "uniques": {"Kaom's Heart": "岡姆的壯志"},
     "items": {"Glorious Plate": "榮耀鎧甲"},
     "affixes": {"Heavy": "厚重的", "of the Whale": "鯨之"},
@@ -711,7 +716,8 @@ PASSIVETREE_P2 = """
 local C = newClass("PassiveTreeView", function(self) end)
 """ + PASSIVE_METHODS
 
-# Upstream AddItemTooltip's name block verbatim, plus the PoE1 mod-line call
+# Upstream AddItemTooltip's name block verbatim, then `item.otherLines` (L3c:
+# requirement / quality style lines, neither name nor base), plus the PoE1 mod-line call
 # (4th arg = modLine table). PoE2's 4th AddLine arg is a background, so the
 # mod line goes in with nil there.
 ITEMTIP_METHODS = """
@@ -726,6 +732,9 @@ function C:AddItemTooltip(tooltip, item, slot, dbMode, maxWidth)
 		tooltip:AddLine(20, rarityCode..item.namePrefix..item.baseName:gsub(" %(.+%)","")..item.nameSuffix, "FONTIN SC")
 	end
 	tooltip.center = false
+	for _, l in ipairs(item.otherLines or {}) do
+		tooltip:AddLine(16, l)
+	end
 	for _, modLine in ipairs(item.explicitModLines or {}) do
 		tooltip:AddLine(16, colorCodes.MAGIC..modLine.line, "FONTIN SC", MODLINE_ARG)
 	end
@@ -835,51 +844,79 @@ def run_item_tooltip(fork, with_inject, item_src, explode=False, itemstab=None):
     return h, tip, ok, err
 
 
+def name_by_passives(h, dn, node_id):
+    """名稱行在 passives 來源下查,或以 PobToolsTranslateId("passives", id, dn) 查。"""
+    return (src_of(h, dn) == "passives"
+            or ("passives", str(node_id), dn) in h.id_lookups)
+
+
 def test_src_passive_name(fork):
-    """L1"""
+    """L1 -- only the NAME line is passives (source or by id)."""
     h, ok, err = run_node_name(fork, with_inject=False)
-    check("%s L1 未注入時重現 bug:天賦名稱行不在 passives 來源" % fork,
-          src_of(h, "Elemental Overload") != "passives", repr(h.lookups))
+    check("%s L1 未注入時重現 bug:天賦名稱行不在 passives 來源也沒依 id 查" % fork,
+          not name_by_passives(h, "Elemental Overload", 1),
+          "lookups=%r id_lookups=%r" % (h.lookups, h.id_lookups))
     h, ok, err = run_node_name(fork, with_inject=True)
     check("%s L1 AddNodeName 本身不出錯" % fork, ok, repr(err))
-    check("%s L1 天賦 tooltip 名稱行在 passives 來源下查詢" % fork,
-          src_of(h, "Elemental Overload") == "passives", repr(h.lookups))
+    check("%s L1 天賦名稱行在 passives 來源或依 id 查詢" % fork,
+          name_by_passives(h, "Elemental Overload", 1),
+          "lookups=%r id_lookups=%r" % (h.lookups, h.id_lookups))
     check("%s L1 AddNodeName 結束後來源還原為 nil" % fork,
           h.source is None, "source=%r" % h.source)
 
-    # AddNodeTooltip is wrapped too: its stat lines are passive text as well.
+
+def test_src_passive_stat_line(fork):
+    """L1b -- AddNodeTooltip's stat lines: the shipping unmarked lookup."""
     h = tooltip_harness(fork, with_inject=True)
     view = make(h, "PassiveTreeView")
     tip = make(h, "Tooltip")
     h.eval('function(v, t) v:AddNodeTooltip(t, { dn = "Elemental Overload", id = 1, '
            'sd = { "10% increased Attack Speed" } }, {}) end')(view, tip)
-    check("%s L1 AddNodeTooltip 的屬性行也在 passives 來源下查詢" % fork,
-          src_of(h, "10% increased Attack Speed") == "passives", repr(h.lookups))
+    check("%s L1b 天賦屬性行走未標記查找(來源 nil)" % fork,
+          src_of(h, "10% increased Attack Speed") is None, repr(h.lookups))
+
+
+def mod_line_harness(fork, text):
+    """PoE1 AddLine with a modLine 4th arg, outside any item tooltip."""
+    h = tooltip_harness(fork, True)
+    tip = make(h, "Tooltip")
+    h.eval('function(t, s) t:AddLine(16, "^x8888FF" .. s, "FONTIN SC", { line = s }) end')(
+        tip, text)
+    lines = tooltip_lines(h, tip)
+    return h, (_norm(lines[0]) if lines else "")
+
+
+def srcs_of(h, text):
+    """Every source active at a lookup of `text`, in order."""
+    return [s for t, s in h.lookups if _norm(t) == text]
 
 
 def test_src_mod_line(fork):
-    """L2 -- only PoE1's AddLine has a modLine 4th parameter."""
+    """L2a/L2b -- only PoE1's AddLine has a modLine 4th parameter."""
     if fork != "PoE1":
         print("  N/A   %s L2:此分支 Tooltip:AddLine 第 4 參數是 background,沒有 modLine" % fork)
         return
-    for with_inject in (False, True):
-        h = tooltip_harness(fork, with_inject)
-        tip = make(h, "Tooltip")
-        h.eval('function(t) t:AddLine(16, "^x8888FF+500 to maximum Mana", "FONTIN SC", '
-               '{ line = "+500 to maximum Mana" }) end')(tip)
-        src = src_of(h, "+500 to maximum Mana")
-        if with_inject:
-            check("%s L2 AddLine 帶 modLine 時該行在 stats 來源下查詢" % fork,
-                  src == "stats", repr(h.lookups))
-            check("%s L2 AddLine 結束後來源還原為 nil" % fork,
-                  h.source is None, "source=%r" % h.source)
-        else:
-            check("%s L2 未注入時重現 bug:詞綴行不在 stats 來源" % fork,
-                  src != "stats", repr(h.lookups))
-    # inside AddItemTooltip (outer source items) the mod line still wins
+    # L2a: unmarked has it -> unmarked answer, never stats
+    h, out = mod_line_harness(fork, "+30 to Dexterity")
+    check("%s L2a 詞綴行先走未標記查找:來源 nil、結果是未標記的值" % fork,
+          src_of(h, "+30 to Dexterity") is None and out == "+30 敏捷",
+          "out=%r lookups=%r" % (out, h.lookups))
+    check("%s L2a AddLine 結束後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    # L2b: unmarked misses -> retried under stats
+    h, out = mod_line_harness(fork, "Adds 1 to 2 Fire Damage to Attacks")
+    srcs = srcs_of(h, "Adds 1 to 2 Fire Damage to Attacks")
+    check("%s L2b 詞綴行查不到才用 stats:先試過未標記查找" % fork,
+          None in srcs and srcs.index(None) < len(srcs) - 1, repr(h.lookups))
+    check("%s L2b 詞綴行查不到才用 stats:最後一次在 stats 下、結果是 stats 的值" % fork,
+          srcs and srcs[-1] == "stats" and out == "攻擊附加 1 - 2 火焰傷害",
+          "out=%r lookups=%r" % (out, h.lookups))
+    check("%s L2b AddLine 結束後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    # inside AddItemTooltip the mod line is unmarked too (no outer items scope)
     h, tip, ok, err = run_item_tooltip(fork, True, UNIQUE_ITEM)
-    check("%s L2 AddItemTooltip 內的詞綴行仍走 stats 來源" % fork,
-          src_of(h, "+500 to maximum Mana") == "stats", repr(h.lookups))
+    check("%s L2a AddItemTooltip 內的詞綴行也先走未標記查找" % fork,
+          src_of(h, "+500 to maximum Mana") is None, repr(h.lookups))
 
 
 def test_src_unique_title(fork):
@@ -931,6 +968,20 @@ def test_src_unique_title_patched(fork):
     check("%s L3b 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
+OTHER_LINES_ITEM = UNIQUE_ITEM.replace(
+    "\tbase = {},",
+    '\tbase = {},\n\totherLines = { "^x7F7F7FRequires Level 68", "^x7F7F7FQuality: +20%" },')
+
+
+def test_src_item_other_lines(fork):
+    """L3c -- AddItemTooltip lines other than name / base: unmarked lookup."""
+    h, tip, ok, err = run_item_tooltip(fork, True, OTHER_LINES_ITEM)
+    check("%s L3c AddItemTooltip 本身不出錯" % fork, ok, repr(err))
+    srcs = [src_of(h, t) for t in ("Requires Level 68", "Quality: +20%")]
+    check("%s L3c 物品需求行、品質行走未標記查找(來源 nil)" % fork,
+          srcs == [None, None], "srcs=%r lookups=%r" % (srcs, h.lookups))
+
+
 def test_src_affix_title(fork):
     """L4 -- no item.title: namePrefix .. baseName .. nameSuffix in one line."""
     h, tip, ok, err = run_item_tooltip(fork, False, MAGIC_ITEM)
@@ -980,8 +1031,9 @@ def test_src_restored_on_error(fork):
     check("%s L6 AddNodeName 拋錯時錯誤照樣往外拋" % fork,
           not ok and "synthetic AddNodeName failure" in str(err), repr((ok, err)))
     # without this the nil check below passes even when nothing was wrapped
-    check("%s L6 AddNodeName 拋錯前確實在 passives 來源下" % fork,
-          src_of(h, "Elemental Overload") == "passives", repr(h.lookups))
+    check("%s L6 AddNodeName 拋錯前名稱行確實在 passives 來源或依 id 查" % fork,
+          name_by_passives(h, "Elemental Overload", 1),
+          "lookups=%r id_lookups=%r" % (h.lookups, h.id_lookups))
     check("%s L6 AddNodeName 拋錯後來源還原為 nil" % fork,
           h.source is None, "source=%r" % h.source)
 
@@ -992,6 +1044,13 @@ def test_src_restored_on_error(fork):
           src_of(h, "Glorious Plate") == "items", repr(h.lookups))
     check("%s L6 AddItemTooltip 拋錯後來源還原為 nil" % fork,
           h.source is None, "source=%r" % h.source)
+    # The base line is items because of itemCtx (the wrap point), not an outer
+    # scope: after the throw a bare base-name line must not still read as one.
+    h.lookups = []
+    tip2 = make(h, "Tooltip")
+    h.eval('function(t) t:AddLine(20, "Glorious Plate") end')(tip2)
+    check("%s L6 AddItemTooltip 拋錯後物品 context 不殘留(基底名不再走 items)" % fork,
+          src_of(h, "Glorious Plate") is None, repr(h.lookups))
 
 
 # ---- id-keyed lookups (L7-L8) -----------------------------------------------
@@ -1156,7 +1215,8 @@ end
 """
 
 # 至少這些必須被包裝且形狀不變(bridge probe 實際檢查的 + 任務點名的)。
-ARITY_MUST = ("PassiveTreeView.AddNodeTooltip", "PassiveTreeView.AddNodeName",
+# AddNodeTooltip 不列:外層不再套 passives 來源,可以不包;有包的話下方迴圈照樣驗形狀。
+ARITY_MUST = ("PassiveTreeView.AddNodeName",
               "ItemsTab.AddItemTooltip", "ItemDBControl.GetRowValue",
               "Tooltip.AddLine", "main.modes.BUILD.Init")
 
@@ -1466,9 +1526,11 @@ def main():
         test_no_patch_failed(fork)
         test_patch_failure_is_logged(fork)
         test_src_passive_name(fork)
+        test_src_passive_stat_line(fork)
         test_src_mod_line(fork)
         test_src_unique_title(fork)
         test_src_unique_title_patched(fork)
+        test_src_item_other_lines(fork)
         test_src_affix_title(fork)
         test_src_list_row(fork)
         test_src_restored_on_error(fork)
