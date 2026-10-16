@@ -90,6 +90,15 @@ DICT = {
     "affixes": {"Heavy": "厚重的", "of the Whale": "鯨之"},
 }
 
+# Id-keyed dictionaries (passives_by_id.json / affixes_by_id.json) behind
+# PobToolsTranslateId. Same English, different id, different wording -- so a
+# lookup that ignores the id cannot produce both.
+ID_DICT = {
+    "passives": {"90001": "戰神", "90002": "勇士"},
+    "affixes": {"TestModHeavyA": "厚重的甲", "TestModHeavyB": "厚重的乙",
+                "TestModWhaleA": "鯨之甲"},
+}
+
 # Stubs every harness gets. Only what the loaded POB code touches at load time
 # or inside the code paths under test -- deliberately not a POB emulator.
 PRELUDE = rb"""
@@ -154,6 +163,7 @@ class Harness(object):
         self.source = None          # current PobToolsSetSource() name
         self.source_seen = set()    # every source active during a lookup
         self.lookups = []           # (text, source) of every lookup, in order
+        self.id_lookups = []        # (source, id, en) of every PobToolsTranslateId
         # Tooltip lines arrive as "^xRRGGBBText"; the engine answers those by
         # colour segment. Off by default so the older tests keep exact-key lookup.
         self.loose_keys = False
@@ -213,7 +223,25 @@ class Harness(object):
             self.source = name
             return prev
 
+        def translate_id(source, id_, en=None):
+            # Lua integers may arrive as float; keys are id strings.
+            if isinstance(id_, float) and id_.is_integer():
+                id_ = int(id_)
+            key = None if id_ is None else str(id_)
+            self.id_lookups.append((source, key, en))
+            hit = (ID_DICT.get(source) or {}).get(key)
+            if hit is not None:
+                return hit
+            # miss: ordinary lookup of `en` under that source
+            prev = self.source
+            self.source = source
+            try:
+                return translate(en)
+            finally:
+                self.source = prev
+
         g["__py_translate"] = translate
+        g["__py_translate_id"] = translate_id
         g["__py_translate_display"] = translate_display
         g["__py_set_source"] = set_source
         g["__py_item_title"] = translate
@@ -231,6 +259,7 @@ class Harness(object):
 function PobToolsTranslate(s) return __py_translate(s) end
 function PobToolsTranslateDisplay(s) return __py_translate_display(s) end
 function PobToolsSetSource(n) return __py_set_source(n) end
+function PobToolsTranslateId(s, id, en) return __py_translate_id(s, id, en) end
 function PobToolsGetTranslate() return true end
 function PobToolsItemTitle(s) return __py_item_title(s) end
 function PobToolsLogError(f, m) return __py_log_error(f, m) end
@@ -922,6 +951,80 @@ def test_src_restored_on_error(fork):
           h.source is None, "source=%r" % h.source)
 
 
+# ---- id-keyed lookups (L7-L8) -----------------------------------------------
+#
+# Same English, different id (GraphId / mod Id), different wording: the
+# translation is decided by the id. A miss falls back to the English lookup.
+
+def node_name_line(h, node_id, dn):
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    h.eval('function(v, t, id, dn) v:AddNodeName(t, { dn = dn, id = id }, {}) end')(
+        view, tip, node_id, dn)
+    lines = tooltip_lines(h, tip)
+    return _norm(lines[0]) if lines else ""
+
+
+def test_id_passive_name(fork):
+    """L7"""
+    h = tooltip_harness(fork, with_inject=True)
+    got = [node_name_line(h, i, "Elemental Overload") for i in (90001, 90002, 99999)]
+    check("%s L7 天賦名稱行依節點 id 取譯名:同名不同 id 各取己譯,id 未命中退回英文查找" % fork,
+          got == ["戰神", "勇士", "元素超載"], "got=%r id_lookups=%r" % (got, h.id_lookups))
+    called = [(s, i, en) for s, i, en in h.id_lookups if s == "passives"]
+    check("%s L7 名稱行以 PobToolsTranslateId(\"passives\", node.id, node.dn) 查詢" % fork,
+          ("passives", "90001", "Elemental Overload") in called, repr(h.id_lookups))
+    check("%s L7 依 id 查完後來源還原為 nil" % fork,
+          h.id_lookups and h.source is None, "source=%r" % h.source)
+
+
+def magic_item(prefix_mod, suffix_mod):
+    def mods(m):
+        return "{ { modId = %r } }" % m if m else "nil"
+    return """
+{
+	rarity = "MAGIC",
+	namePrefix = "Heavy ",
+	baseName = "Glorious Plate",
+	nameSuffix = " of the Whale",
+	base = {},
+	name = "Heavy Glorious Plate of the Whale",
+	prefixes = %s,
+	suffixes = %s,
+	explicitModLines = {},
+}
+""" % (mods(prefix_mod), mods(suffix_mod))
+
+
+def magic_title(fork, prefix_mod, suffix_mod):
+    h, tip, ok, err = run_item_tooltip(fork, True, magic_item(prefix_mod, suffix_mod))
+    lines = tooltip_lines(h, tip)
+    return h, ok, err, (_norm(lines[0]) if lines else "")
+
+
+def test_id_affix_title(fork):
+    """L8"""
+    ha, oka, erra, a = magic_title(fork, "TestModHeavyA", None)
+    hb, okb, errb, b = magic_title(fork, "TestModHeavyB", None)
+    hc, okc, errc, c = magic_title(fork, None, None)
+    check("%s L8 前綴英文相同、modId 不同的兩件物品各取自己 id 的譯名" % fork,
+          a.startswith("厚重的甲") and b.startswith("厚重的乙"),
+          "a=%r b=%r id_lookups=%r" % (a, b, ha.id_lookups))
+    check("%s L8 前綴以 PobToolsTranslateId(\"affixes\", modId, ...) 查詢" % fork,
+          any(s == "affixes" and i == "TestModHeavyA" for s, i, _ in ha.id_lookups),
+          repr(ha.id_lookups))
+    check("%s L8 沒有 modId 時前綴退回英文查找" % fork,
+          okc and c.startswith("厚重的") and not c.startswith("厚重的甲")
+          and not c.startswith("厚重的乙") and "榮耀鎧甲" in c
+          and not any(s == "affixes" and i == "TestModHeavyA" for s, i, _ in hc.id_lookups)
+          and (a.startswith("厚重的甲")),
+          "c=%r a=%r" % (c, a))
+    hs, oks, errs, sfx = magic_title(fork, None, "TestModWhaleA")
+    check("%s L8 後綴帶 modId 時同樣依 id 取譯名" % fork,
+          sfx.endswith("鯨之甲") and sfx.startswith("厚重的"),
+          "title=%r id_lookups=%r" % (sfx, hs.id_lookups))
+
+
 # ---- upstream shape checks (catch a rename before a user does) -------------
 
 def read_text(path):
@@ -1174,6 +1277,8 @@ def main():
         test_src_affix_title(fork)
         test_src_list_row(fork)
         test_src_restored_on_error(fork)
+        test_id_passive_name(fork)
+        test_id_affix_title(fork)
         test_upstream_shape(fork)
     print("== C++ source patches ==")
     test_source_patch_anchors()

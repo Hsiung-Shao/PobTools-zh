@@ -666,6 +666,8 @@ int RunEditorSelftest(const std::string& games)
 		backup(L"ui.json");
 		backup(L"uniques.json");
 		backup(L"monsters.json");
+		backup(L"passives_by_id.json");
+		backup(L"affixes_by_id.json");
 
 		// Add entries to a dictionary file (creating it when absent).
 		bool planted = true;
@@ -695,20 +697,41 @@ int RunEditorSelftest(const std::string& games)
 		plant(L"ui.json", {{kStatExact, u8"錯誤丙"}});
 		// monsters.json loads last: the unmarked "Robust" becomes this.
 		plant(L"monsters.json", {{kRobust, u8"錯誤丁"}});
+		// S12-S14: id-keyed dictionaries. Two passives share one English name
+		// but different GraphIds; each id has its own wording. Written whole
+		// (not via plant) to match the spec's file shape.
+		auto plantById = [&](const wchar_t* name, const char* srcFile,
+		                     std::initializer_list<std::pair<const char*, const char*>> kv) {
+			nlohmann::ordered_json doc = nlohmann::ordered_json::object();
+			doc["source_files"] = nlohmann::ordered_json::array({srcFile});
+			doc["is_base_items"] = false;
+			doc["entries"] = nlohmann::ordered_json::object();
+			for (const auto& p : kv) doc["entries"][p.first] = p.second;
+			if (!writeBytes(dictDir + name, doc.dump(2))) planted = false;
+		};
+		plantById(L"passives_by_id.json", "passiveTree.csv",
+		          {{"90001", u8"戰神"}, {"90002", u8"勇士"}});
+		plantById(L"affixes_by_id.json", "Mods.dat",
+		          {{"TestModIdXyz1", u8"測試詞綴甲"}, {"TestModIdXyz2", u8"測試詞綴乙"}});
 		{
 			std::string body;
 			if (readBytes(dictDir + L"meta.json", body)) {
 				try {
 					auto meta = nlohmann::ordered_json::parse(body);
 					auto& lo = meta["load_order"];
-					bool has = false;
-					for (const auto& x : lo) if (x.is_string() && x.get<std::string>() == "affixes.json") has = true;
-					if (!has) lo.insert(lo.begin(), "affixes.json");
 					auto& so = meta["source_only"];
 					if (!so.is_array()) so = nlohmann::ordered_json::array();
-					bool hasSo = false;
-					for (const auto& x : so) if (x.is_string() && x.get<std::string>() == "affixes.json") hasSo = true;
-					if (!hasSo) so.push_back("affixes.json");
+					auto listIn = [](nlohmann::ordered_json& arr, const char* f, bool front) {
+						for (const auto& x : arr) if (x.is_string() && x.get<std::string>() == f) return;
+						if (front) arr.insert(arr.begin(), f); else arr.push_back(f);
+					};
+					listIn(lo, "affixes.json", true);
+					listIn(so, "affixes.json", false);
+					// by_id files: listed in load_order AND source_only (spec).
+					listIn(lo, "passives_by_id.json", false);
+					listIn(lo, "affixes_by_id.json", false);
+					listIn(so, "passives_by_id.json", false);
+					listIn(so, "affixes_by_id.json", false);
 					if (!writeBytes(dictDir + L"meta.json", meta.dump(2))) planted = false;
 				} catch (...) { planted = false; }
 			} else {
@@ -800,6 +823,45 @@ int RunEditorSelftest(const std::string& games)
 			translation_set_source("affixes");
 			check(say(kOnly) == u8"測試詞綴名", "S11 只當來源的檔在 affixes 來源下仍可查");
 			translation_set_source(nullptr);
+		}
+
+		// S12-S14: lookups by stable id (GraphId / mod Id), not by English text.
+		{
+			auto byId = [](const char* src, const char* id) {
+				const char* r = translation_lookup_by_id(src, id);
+				return r ? std::string(r) : std::string();
+			};
+			translation_set_source(nullptr);
+			const std::string a = byId("passives", "90001");
+			const std::string b = byId("passives", "90002");
+			check(a == u8"戰神" && b == u8"勇士", "S12 同名天賦依 GraphId 取不同譯名");
+			if (a != u8"戰神" || b != u8"勇士")
+				printf("    90001=%s 90002=%s\n", a.c_str(), b.c_str());
+
+			// S13: a miss is nullptr -- guarded by hits in the same files, so an
+			// always-nullptr implementation cannot pass.
+			const bool missNull = translation_lookup_by_id("passives", "99999") == nullptr;
+			const bool affixHit = byId("affixes", "TestModIdXyz1") == u8"測試詞綴甲";
+			const bool crossNull = translation_lookup_by_id("affixes", "90001") == nullptr;
+			const bool unknownNull = translation_lookup_by_id("no-such", "90001") == nullptr;
+			check(missNull && !a.empty() && affixHit && crossNull && unknownNull,
+			      "S13 查不到的 id 回傳空值(同檔有命中為前提)");
+			if (!(missNull && !a.empty() && affixHit && crossNull && unknownNull))
+				printf("    miss=%d passivesHit=%d affixHit=%d cross=%d unknown=%d\n",
+				       missNull, !a.empty(), affixHit, crossNull, unknownNull);
+
+			// S14: the id file is loaded (S12 hit) yet its keys reach neither the
+			// merged table nor the English "passives" source dictionary.
+			const char* bare = translation_lookup("90001");
+			const bool bareKept = bare == nullptr || std::string(bare) == "90001";
+			translation_set_source("passives");
+			const char* sourced = translation_lookup("90001");
+			const bool sourcedKept = sourced == nullptr || std::string(sourced) == "90001";
+			translation_set_source(nullptr);
+			check(bareKept && sourcedKept && !a.empty(), "S14 by_id 檔不進全域表");
+			if (!(bareKept && sourcedKept && !a.empty()))
+				printf("    bare=%s sourced=%s loaded=%d\n", bare ? bare : "(null)",
+				       sourced ? sourced : "(null)", !a.empty());
 		}
 
 		// S8

@@ -2896,6 +2896,32 @@ static int l_PobToolsSetSource(lua_State* L)
 	return 1;
 }
 
+// PobToolsTranslateId(source, id, en) -> chinese, or nil. Looks the string up
+// by its stable id first ("passives" -> node GraphId, "affixes" -> mod Id), so
+// two things sharing one English name keep their own wording. On an id miss it
+// answers exactly like PobToolsTranslate(en) would with `source` selected, and
+// the previous source is restored afterwards. A numeric id (node.id) is fine:
+// lua_tostring turns it into its decimal string.
+static int l_PobToolsTranslateId(lua_State* L)
+{
+	const char* source = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
+	const char* id = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
+	const char* en = lua_isnoneornil(L, 3) ? nullptr : lua_tostring(L, 3);
+	if (source && id) {
+		const char* hit = translation_lookup_by_id(source, id);
+		if (hit) { lua_pushstring(L, hit); return 1; }
+	}
+	if (!en) { lua_pushnil(L); return 1; }
+	// translation_set_source returns a pointer to its own static buffer that
+	// the NEXT call overwrites, so keep a copy to restore from.
+	const char* prevRaw = translation_set_source(source);
+	const std::string prev = prevRaw ? prevRaw : "";
+	const char* zh = translation_lookup(en);
+	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
+	translation_set_source(prev.empty() ? nullptr : prev.c_str());
+	return 1;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3117,6 +3143,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsSetTranslate);
 	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);
+	ADDFUNC(PobToolsTranslateId);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

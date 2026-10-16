@@ -137,6 +137,18 @@ static const SourceDict kSourceDicts[] = {
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
+
+/* Id-keyed dictionaries: same English, different id, different wording (two
+** passives both named "Elemental Overload" with their own GraphIds; two mods
+** sharing the affix name "Robust"). Keys are ids, never English, so these
+** files feed ONLY this table -- not the merged map, not the source exact or
+** pattern maps -- and are reachable only through translation_lookup_by_id.
+** Loaded from load_order like kSourceDicts, keyed by the same source names. */
+static const SourceDict kIdDicts[] = {
+    { "passives", "passives_by_id.json" },   /* GraphId -> name */
+    { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
+};
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
 /* Each source's own forward patterns (same key/plan shape as s_forward_pattern),
@@ -1073,6 +1085,35 @@ static std::string determine_locale() {
 
 /* ========== JSON Loading Functions ========== */
 
+/* passives_by_id.json / affixes_by_id.json: { "entries": { "<id>": "<zh>" } }.
+** Deliberately NOT load_json_translations -- that one derives patterns,
+** reverse keys and glossary terms from English keys, and these keys are ids. */
+static int load_json_id_dict(const std::string &filepath,
+                             std::unordered_map<std::string, std::string> &sink) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object()) return 0;
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        std::string zh = it.value().get<std::string>();
+        if (it.key().empty() || zh.empty()) continue;
+        sink[it.key()] = std::move(zh);   /* last-wins within the file */
+        ++count;
+    }
+    return count;
+}
+
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
                                   std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
@@ -1695,6 +1736,23 @@ static bool try_load_json(const std::string &base_dir) {
     int fileCount = 0;
     for (auto &filename : load_order) {
         std::string filepath = json_dir + filename;
+        /* Id-keyed files go to their own table and nowhere else. */
+        {
+            const SourceDict *idd = nullptr;
+            for (const SourceDict &sd : kIdDicts)
+                if (filename == sd.file) { idd = &sd; break; }
+            if (idd) {
+                int count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
+                if (count > 0) {
+                    snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d id entries from %s\n",
+                             count, filename.c_str());
+                    OutputDebugStringA(msg);
+                    totalEntries += count;
+                    fileCount++;
+                }
+                continue;
+            }
+        }
         /* Files backing a source dictionary get a second copy of their own
          * entries, untouched by whatever later files redefine. */
         std::unordered_map<std::string, std::string> *sink = nullptr;
@@ -1938,6 +1996,7 @@ void translation_shutdown(void) {
     s_source_patterns.clear();
     s_source_cache.clear();
     s_item_title_source_cache.clear();
+    s_id_dicts.clear();
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -2755,6 +2814,18 @@ const char* translation_set_source(const char *name) {
 const char* translation_get_source(void) {
     translation_wait_ready();
     return s_active_source_name.empty() ? nullptr : s_active_source_name.c_str();
+}
+
+/* Pointer into s_id_dicts: stable until the next reload (translation_shutdown),
+** the same lifetime contract translation_lookup's results already have. */
+const char* translation_lookup_by_id(const char *source, const char *id) {
+    translation_wait_ready();
+    if (!source || !*source || !id || !*id) return nullptr;
+    auto sit = s_id_dicts.find(source);
+    if (sit == s_id_dicts.end()) return nullptr;
+    auto it = sit->second.find(id);
+    if (it == sit->second.end()) return nullptr;
+    return it->second.c_str();
 }
 
 const char* translation_get_locale(void) {
