@@ -2926,6 +2926,27 @@ static int l_PobToolsTranslateId(lua_State* L)
 	return 1;
 }
 
+// PobToolsTranslateStat(line, ctx) -> chinese, or nil. One stat line through
+// stats_by_id.json (see translation_lookup_stat); ctx is "item" or "passive".
+// A leading colour escape ("^xRRGGBB" / "^N") is stripped for the lookup and
+// put back in front of the answer, once, like PobToolsTranslateDisplay does.
+static int l_PobToolsTranslateStat(lua_State* L)
+{
+	size_t len = 0;
+	const char* text = lua_isnoneornil(L, 1) ? nullptr : lua_tolstring(L, 1, &len);
+	const char* ctx = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
+	if (!text || len == 0) { lua_pushnil(L); return 1; }
+	std::vector<char> stripped(len + 1);
+	char leading[16];
+	tr_strip_color_codes(text, (int)len, stripped.data(), (int)stripped.size(), leading, sizeof(leading));
+	const char* zh = translation_lookup_stat(stripped.data(), ctx);
+	if (!zh) { lua_pushnil(L); return 1; }
+	std::string out(leading);
+	out += zh;
+	lua_pushlstring(L, out.data(), out.size());
+	return 1;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3148,6 +3169,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsGetTranslate);
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNC(PobToolsTranslateId);
+	ADDFUNC(PobToolsTranslateStat);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

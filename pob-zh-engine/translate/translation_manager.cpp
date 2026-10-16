@@ -150,6 +150,30 @@ static const SourceDict kIdDicts[] = {
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
+
+/* stats_by_id.json: GGG stat descriptions keyed "stat_ids|cond|src_file|dup_ix",
+** Chinese templates in "entries", English templates in "templates". Like the
+** id files above it feeds ONLY its own index (s_stat_index) -- never the merged
+** map, any reverse/pattern table or s_id_dicts -- and is reachable only through
+** translation_lookup_stat. Built only when meta.json has "source_lookup".
+** Only the two description files a ctx can select are indexed. */
+static const char *const kStatDictFile = "stats_by_id.json";
+static const char *const kStatFileItem = "stat_descriptions.txt";
+static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
+struct StatCand {
+    bool        passive;   /* src_file: passive_skill_stat_descriptions.txt */
+    int         nstats;    /* stat_ids count (space separated) */
+    FillPlan    plan;      /* English {N} -> Chinese {N}; text has real newlines */
+    /* Numbers the English template writes out ("per 10 Devotion"): slot index
+    ** in the line's values -> literal. A line with another number there is a
+    ** different stat that happens to hash the same. */
+    std::vector<std::pair<int, std::string>> lits;
+};
+/* normalised English template -> candidates */
+static std::unordered_map<std::string, std::vector<StatCand>> s_stat_index;
+/* ctx + '\x1f' + line -> answer ("" = no answer). Node-stable: pointers into it
+** stay valid until translation_shutdown, like translation_lookup's results. */
+static std::unordered_map<std::string, std::string> s_stat_cache;
 /* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
 ** be selected, exact entries only, and id lookups answer nothing -- so a locale
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
@@ -1121,6 +1145,126 @@ static int load_json_id_dict(const std::string &filepath,
     return count;
 }
 
+/* ---- stats_by_id.json ---- */
+
+/* GGG writes a multi-line description as one string with a literal "\n"
+** (backslash, n); the line POB hands us has a real newline there. */
+static std::string stat_unescape_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == 'n') { r += '\n'; i++; continue; }
+        if (s[i] == '\r') continue;
+        r += s[i];
+    }
+    return r;
+}
+
+/* "{}" / "{:+d}" are GGG's auto-numbered placeholders (the first is {0}, the
+** next {1}, ...). normalize_placeholders only knows the numbered form, so give
+** them their numbers here -- otherwise "{:+d} to maximum Life if ..." keeps a
+** literal "{:+d}" and can never match a real line. */
+static std::string stat_number_bare_placeholders(const std::string &s) {
+    std::string r;
+    r.reserve(s.size() + 4);
+    int next = 0;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '{' && i + 1 < s.size() && (s[i + 1] == '}' || s[i + 1] == ':')) {
+            r += '{';
+            r += std::to_string(next++);
+            continue;
+        }
+        r += s[i];
+    }
+    return r;
+}
+
+/* Whitespace touching a line break is layout, not content. */
+static std::string stat_trim_around_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == ' ' && ((i + 1 < s.size() && s[i + 1] == '\n') || (!r.empty() && r.back() == '\n')))
+            continue;
+        r += s[i];
+    }
+    return r;
+}
+
+/* The index key: same hashing every forward pattern uses (placeholders and
+** numbers -> '#', signs and ranges folded in), case-folded, spaces collapsed.
+** `s` must already be markup-stripped and newline-unescaped. */
+static std::string stat_index_key(const std::string &s) {
+    return to_ascii_lower(stat_trim_around_newlines(
+        normalize_whitespace(digits_to_hash(normalize_placeholders(s)))));
+}
+
+static int load_json_stat_dict(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object() ||
+        !doc.contains("templates") || !doc["templates"].is_object()) return 0;
+    const njson &templates = doc["templates"];
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        const std::string &key = it.key();
+        /* "stat_ids|cond...|src_file|dup_ix": cond may itself hold '|', so the
+        ** file is the second field from the END. */
+        const size_t p_dup = key.rfind('|');
+        if (p_dup == std::string::npos || p_dup == 0) continue;
+        const size_t p_file = key.rfind('|', p_dup - 1);
+        if (p_file == std::string::npos) continue;
+        const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
+        const bool passive = src_file == kStatFilePassive;
+        if (!passive && src_file != kStatFileItem) continue;
+        auto tit = templates.find(key);
+        if (tit == templates.end() || !tit->is_string()) continue;
+
+        const std::string en = stat_number_bare_placeholders(
+            stat_unescape_newlines(strip_brackets(tit->get<std::string>())));
+        const std::string zh = stat_number_bare_placeholders(
+            stat_unescape_newlines(strip_brackets(it.value().get<std::string>())));
+        if (en.empty() || zh.empty()) continue;
+
+        int nstats = 0;
+        {
+            const size_t p_ids = key.find('|');
+            bool in_tok = false;
+            for (size_t i = 0; i < p_ids; i++) {
+                if (key[i] == ' ') in_tok = false;
+                else if (!in_tok) { in_tok = true; nstats++; }
+            }
+        }
+
+        StatCand c;
+        c.passive = passive;
+        c.nstats = nstats;
+        const std::string zh_text = normalize_whitespace(digits_to_hash(normalize_placeholders(zh)));
+        const std::vector<TmplSlot> en_slots = template_slots(en);
+        for (size_t i = 0; i < en_slots.size(); i++) {
+            const TmplSlot &t = en_slots[i];
+            /* "+#" is a signed placeholder ("+{0}"), not a written-out number */
+            if (t.ph < 0 && !t.lit.empty() && t.lit.back() != '#')
+                c.lits.emplace_back((int)i, t.lit);
+        }
+        c.plan = build_fill_plan_slots(en_slots, template_slots(zh), zh_text);
+        s_stat_index[stat_index_key(en)].push_back(std::move(c));
+        ++count;
+    }
+    return count;
+}
+
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
                                   std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
@@ -1770,6 +1914,17 @@ static bool try_load_json(const std::string &base_dir) {
     int fileCount = 0;
     for (auto &filename : load_order) {
         std::string filepath = json_dir + filename;
+        /* The stat file never merges (its keys are stat ids): index it only
+        ** when something could ask, i.e. with source_lookup. */
+        if (filename == kStatDictFile) {
+            if (!source_lookup) continue;
+            int count = load_json_stat_dict(filepath);
+            if (count > 0) {
+                totalEntries += count;
+                fileCount++;
+            }
+            continue;
+        }
         /* Id-keyed files go to their own table and nowhere else. */
         {
             const SourceDict *idd = nullptr;
@@ -1845,7 +2000,9 @@ static bool try_load_json(const std::string &base_dir) {
         for (const SourceDict &sd : kIdDicts)
             if (filename == sd.file) { idd = &sd; break; }
         int count = 0;
-        if (idd) {
+        if (filename == kStatDictFile) {
+            count = load_json_stat_dict(filepath);
+        } else if (idd) {
             count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
         } else {
             const SourceDict *src = nullptr;
@@ -2084,6 +2241,8 @@ void translation_shutdown(void) {
     s_source_cache.clear();
     s_item_title_source_cache.clear();
     s_id_dicts.clear();
+    s_stat_index.clear();
+    s_stat_cache.clear();
     s_source_lookup = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
@@ -2922,6 +3081,81 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
     auto it = sit->second.find(id);
     if (it == sit->second.end()) return nullptr;
     return it->second.c_str();
+}
+
+/* One stat line through stats_by_id.json (see translation_manager.h).
+**
+** 1. The line hashes like an English template (markup stripped, numbers -> '#')
+**    and that key names the candidate stat entries.
+** 2. ctx picks the description file: item -> stat_descriptions.txt; passive ->
+**    passive_skill_stat_descriptions.txt, falling back to stat_descriptions.txt
+**    only when the passive file has no candidate. A candidate whose English
+**    writes out a number the line does not carry is a different stat.
+** 3. Every remaining candidate is filled with the line's values (by {N} index).
+**    All the same -> that answer.
+** 4. Tie-break: keep only candidates whose stat count equals the number of
+**    values on the line (Thread of Hope's two-stat "{1:+d}% to all Elemental
+**    Resistances" loses to the one-stat line). All the same -> that answer;
+**    otherwise ambiguous -> nullptr.
+** The pointer is into s_stat_cache: valid until the next reload. */
+static std::string stat_lookup_uncached(const std::string &line, bool passive) {
+    std::string in = strip_brackets(line);
+    in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
+    auto it = s_stat_index.find(stat_index_key(in));
+    if (it == s_stat_index.end()) return std::string();
+
+    const std::vector<std::string> vals = hash_slot_values(in, /*normalize_ph=*/true);
+    auto lits_ok = [&](const StatCand &c) {
+        for (const auto &l : c.lits) {
+            if ((size_t)l.first >= vals.size()) return false;
+            if (!same_literal_value(vals[l.first], l.second)) return false;
+        }
+        return true;
+    };
+    std::vector<const StatCand *> cands;
+    auto collect = [&](bool want_passive) {
+        for (const StatCand &c : it->second)
+            if (c.passive == want_passive && lits_ok(c)) cands.push_back(&c);
+    };
+    if (passive) collect(true);
+    if (cands.empty()) collect(false);
+    if (cands.empty()) return std::string();
+
+    std::vector<std::string> outs;
+    outs.reserve(cands.size());
+    for (const StatCand *c : cands) outs.push_back(fill_plan(c->plan, vals));
+    auto all_same = [](const std::vector<std::string> &v) {
+        for (size_t i = 1; i < v.size(); i++) if (v[i] != v[0]) return false;
+        return !v.empty();
+    };
+    if (all_same(outs)) return outs[0];
+
+    int nvals = 0;
+    for (const std::string &v : vals)
+        if (!v.empty() && v.back() != '#') nvals++;   /* a written '#' is no value */
+    std::vector<std::string> kept;
+    for (size_t i = 0; i < cands.size(); i++)
+        if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
+    if (all_same(kept)) return kept[0];
+    return std::string();
+}
+
+const char* translation_lookup_stat(const char *line, const char *ctx) {
+    translation_wait_ready();
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
+    if (!line || !*line || s_stat_index.empty()) return nullptr;
+    bool passive;
+    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) passive = false;
+    else if (strcmp(ctx, "passive") == 0) passive = true;
+    else return nullptr;
+
+    std::string ck(passive ? "p" : "i");
+    ck += '\x1f';
+    ck += line;
+    auto cit = s_stat_cache.find(ck);
+    if (cit == s_stat_cache.end())
+        cit = s_stat_cache.emplace(std::move(ck), stat_lookup_uncached(line, passive)).first;
+    return cit->second.empty() ? nullptr : cit->second.c_str();
 }
 
 const char* translation_debug_sources(void) {

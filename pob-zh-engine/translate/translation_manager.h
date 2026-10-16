@@ -73,6 +73,17 @@ const char* translation_get_source(void);
 ** dictionaries and translation_lookup cannot find them. */
 const char* translation_lookup_by_id(const char *source, const char *id);
 
+/* Translate one stat line through stats_by_id.json (keys
+** "stat_ids|cond|src_file|dup_ix", English templates in "templates").
+** ctx = "item" (stat_descriptions.txt) or "passive"
+** (passive_skill_stat_descriptions.txt first, then stat_descriptions.txt).
+** The line's numbers (ranges "(10-15)", signs included) are filled into the
+** Chinese template by {N} index. nullptr when nothing matches, when the
+** filtered candidates disagree (ambiguous), when translation is off (F2), or
+** when the locale's meta.json lacks "source_lookup". Contract tested by
+** --stat-selftest (host/stat_selftest.cpp). */
+const char* translation_lookup_stat(const char *line, const char *ctx);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
