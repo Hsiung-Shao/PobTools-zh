@@ -115,21 +115,36 @@ static void do_init(void);
 **
 ** Load order cannot fix it: whichever file wins, the other context is wrong.
 ** So POB tells us WHERE it read the string from (PobToolsSetSource, wrapped
-** around the controls that draw gem names) and that file's own dictionary is
-** consulted first. Nothing is marked by default, so unmarked call sites — the
-** passive tree included — behave exactly as before.
+** around the controls that draw the string) and that file's own dictionary is
+** consulted first — its exact entries, then its own value patterns, both ahead
+** of the merged exact map. Nothing is marked by default, so unmarked call sites
+** behave exactly as before.
+**
+** ascendancy is not registered yet: which file carries those names is still
+** undecided on the data side.
 */
 struct SourceDict {
     const char *name;   /* what Lua passes to PobToolsSetSource */
     const char *file;   /* the dictionary file backing it */
 };
 static const SourceDict kSourceDicts[] = {
-    { "gems", "gems.json" },
+    { "gems",     "gems.json" },
+    { "passives", "passives.json" },
+    { "affixes",  "affixes.json" },
+    { "stats",    "stats.json" },
+    { "uniques",  "uniques.json" },
+    { "items",    "items.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
+/* Each source's own forward patterns (same key/plan shape as s_forward_pattern),
+** so a sourced value line ("23% increased X") resolves through ITS file's
+** template rather than whichever later file redefined the pattern or the exact
+** line. Created at load time next to s_sources; the pointer follows it. */
+static std::unordered_map<std::string, std::unordered_map<std::string, FillPlan>> s_source_patterns;
+static const std::unordered_map<std::string, FillPlan> *s_active_source_patterns = nullptr;
 
 /* Results computed while a source is active may embed a source-specific
 ** translation (the pattern / comma-list / suffix paths all recurse), so they
@@ -139,6 +154,10 @@ static std::string s_active_source_name;
 ** references to existing elements valid, so these pointers stay good. */
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_source_cache;
 static std::unordered_map<std::string, std::string> *s_lookup_cache_active = &s_lookup_cache;
+/* Same isolation for translation_lookup_item_title: its cached answer came
+** through the active source too, so each source keeps its own title cache. */
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_item_title_source_cache;
+static std::unordered_map<std::string, std::string> *s_item_title_cache_active = &s_item_title_cache;
 /* ========== Dynamic structures for externalized data ========== */
 
 struct HeaderMapping_Dyn {
@@ -1055,7 +1074,8 @@ static std::string determine_locale() {
 /* ========== JSON Loading Functions ========== */
 
 static int load_json_translations(const std::string &filepath, bool is_base_items,
-                                  std::unordered_map<std::string, std::string> *sink = nullptr) {
+                                  std::unordered_map<std::string, std::string> *sink = nullptr,
+                                  std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1256,7 +1276,11 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             s_reverse_pattern[norm_value] = reverse_plan;
             s_reverse_pattern_origin[norm_value] = origin;
             register_compact_pattern(norm_value, reverse_plan, origin);
-            s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan_slots(slots_key, slots_value, norm_value);
+            std::string fwd_key = to_ascii_lower(norm_key);
+            FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
+            /* Source copy follows the merged map's rule here: overwrite. */
+            if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
+            s_forward_pattern[fwd_key] = std::move(fwd_plan);
         }
         std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
         if (fuzzy_value != norm_value) {
@@ -1281,8 +1305,11 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     const std::string &k = klines[i], &v = vlines[i];
                     if (!s_translations.count(k)) {
                         s_translations[k] = v;
-                        if (sink) (*sink)[k] = v;
                     }
+                    /* The source copy takes the line unconditionally: an earlier
+                    ** file already owning it in the merged map says nothing about
+                    ** what THIS file means by it. Only the source layer sees this. */
+                    if (sink) (*sink)[k] = v;
                     if (!s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
@@ -1297,6 +1324,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                         }
                         std::string lk = to_ascii_lower(nk);
                         if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        /* Source copy keeps this spot's rule too: first one wins. */
+                        if (pattern_sink && !pattern_sink->count(lk))
+                            (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
                     }
                 }
             }
@@ -1645,14 +1675,18 @@ static bool try_load_json(const std::string &base_dir) {
         /* Files backing a source dictionary get a second copy of their own
          * entries, untouched by whatever later files redefine. */
         std::unordered_map<std::string, std::string> *sink = nullptr;
+        std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr;
         for (const SourceDict &sd : kSourceDicts) {
             if (filename == sd.file) {
                 sink = &s_sources[sd.name];
-                s_source_cache[sd.name];   /* create now: never rehash later */
+                pattern_sink = &s_source_patterns[sd.name];
+                /* create now: never rehash later */
+                s_source_cache[sd.name];
+                s_item_title_source_cache[sd.name];
                 break;
             }
         }
-        int count = load_json_translations(filepath, false, sink);
+        int count = load_json_translations(filepath, false, sink, pattern_sink);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -1871,10 +1905,14 @@ void translation_shutdown(void) {
     /* Drop the source dictionaries too, and point the active handles back at
      * the defaults — a reload must not leave them dangling into freed maps. */
     s_active_source = nullptr;
+    s_active_source_patterns = nullptr;
     s_active_source_name.clear();
     s_lookup_cache_active = &s_lookup_cache;
+    s_item_title_cache_active = &s_item_title_cache;
     s_sources.clear();
+    s_source_patterns.clear();
     s_source_cache.clear();
+    s_item_title_source_cache.clear();
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -2141,6 +2179,31 @@ const char* translation_lookup(const char *english) {
         auto sit = s_active_source->find(english);
         if (sit != s_active_source->end()) {
             return sit->second.c_str();
+        }
+    }
+
+    /* 0.5 Source pattern: the marked file's own value template beats the merged
+     *     exact map too — another file carrying the literal line ("15% increased
+     *     X") must not override what the sourced file means by it. Same entry
+     *     condition and fill plan as step 3. Only reachable while a source is
+     *     active, so unmarked lookups never get here. Results go to the source's
+     *     own cache (s_lookup_cache_active), which is consulted first: that cache
+     *     only ever holds strings that missed the exact layers, so answering from
+     *     it here is what the full pipeline would answer anyway. */
+    if (s_active_source_patterns && !s_active_source_patterns->empty()) {
+        std::string sinput(english);
+        std::string spattern = to_ascii_lower(digits_to_hash(normalize_placeholders(sinput)));
+        if (spattern != to_ascii_lower(sinput) || sinput.find('#') != std::string::npos) {
+            auto cit = s_lookup_cache_active->find(sinput);
+            if (cit != s_lookup_cache_active->end()) {
+                return cit->second.empty() ? nullptr : cit->second.c_str();
+            }
+            auto pit = s_active_source_patterns->find(spattern);
+            if (pit != s_active_source_patterns->end()) {
+                std::string result = fill_plan(pit->second, hash_slot_values(sinput, /*normalize_ph=*/true));
+                auto [iter, _] = s_lookup_cache_active->emplace(std::move(sinput), std::move(result));
+                return iter->second.c_str();
+            }
         }
     }
 
@@ -2605,8 +2668,11 @@ const char* translation_lookup_item_title(const char *english) {
     ** shared cache would hand that answer to every later caller, including prose,
     ** which is the very leak the separate entry point exists to prevent. */
     std::string input(english);
-    auto cit = s_item_title_cache.find(input);
-    if (cit != s_item_title_cache.end()) {
+    /* Per-source like s_lookup_cache: the answer below goes through the active
+    ** source, so it must not be served to an unmarked caller (or another source). */
+    std::unordered_map<std::string, std::string> *title_cache = s_item_title_cache_active;
+    auto cit = title_cache->find(input);
+    if (cit != title_cache->end()) {
         return cit->second.empty() ? nullptr : cit->second.c_str();
     }
 
@@ -2618,7 +2684,7 @@ const char* translation_lookup_item_title(const char *english) {
     } else if (!translate_title_words(input, result)) {
         result.clear();
     }
-    auto [iter, _] = s_item_title_cache.emplace(std::move(input), std::move(result));
+    auto [iter, _] = title_cache->emplace(std::move(input), std::move(result));
     return iter->second.empty() ? nullptr : iter->second.c_str();
 }
 
@@ -2640,16 +2706,22 @@ const char* translation_set_source(const char *name) {
     prev_holder = s_active_source_name;
 
     s_active_source = nullptr;
+    s_active_source_patterns = nullptr;
     s_active_source_name.clear();
     s_lookup_cache_active = &s_lookup_cache;
+    s_item_title_cache_active = &s_item_title_cache;
 
     if (!want.empty()) {
         auto it = s_sources.find(want);
         if (it != s_sources.end()) {
             s_active_source = &it->second;
             s_active_source_name = want;
+            auto pit = s_source_patterns.find(s_active_source_name);
+            if (pit != s_source_patterns.end()) s_active_source_patterns = &pit->second;
             auto cit = s_source_cache.find(s_active_source_name);
             if (cit != s_source_cache.end()) s_lookup_cache_active = &cit->second;
+            auto tit = s_item_title_source_cache.find(s_active_source_name);
+            if (tit != s_item_title_source_cache.end()) s_item_title_cache_active = &tit->second;
         }
     }
     return prev_holder.empty() ? nullptr : prev_holder.c_str();
@@ -3960,6 +4032,7 @@ void translation_set_enabled(bool enabled) {
     s_translation_enabled = enabled;
     s_lookup_cache.clear();
     for (auto &kv : s_source_cache) kv.second.clear();
+    for (auto &kv : s_item_title_source_cache) kv.second.clear();
     OutputDebugStringA(enabled
         ? "[pob-proxy] Translation ON (F2)\n"
         : "[pob-proxy] Translation OFF (F2)\n");

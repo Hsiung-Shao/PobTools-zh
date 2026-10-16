@@ -48,7 +48,9 @@ const char* translation_lookup(const char *english);
 const char* translation_lookup_item_title(const char *english);
 
 /* Select the dictionary file consulted BEFORE the merged map, naming the POB
-** data file the string being drawn came from (currently only "gems"). Pass
+** data file the string being drawn came from ("gems", "passives", "affixes",
+** "stats", "uniques" or "items" -- see kSourceDicts). Its exact entries AND its
+** own value patterns are consulted before the merged ones. Pass
 ** nullptr or "" to clear. Returns the previous selection (nullptr if none) so
 ** callers can restore it; an unknown name clears instead of failing.
 **
