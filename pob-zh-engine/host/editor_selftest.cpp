@@ -596,6 +596,228 @@ int RunEditorSelftest(const std::string& games)
 		translation_set_source(nullptr);
 	}
 
+	// --- more source dictionaries (S1-S9) -----------------------------------
+	// passives / affixes / stats / uniques / items / ascendancy. The data is
+	// planted here (and fully restored afterwards) so the assertions do not hang
+	// on whatever the shipped dictionaries happen to contain. Every planted
+	// competitor sits in a file that loads LATER than the source file, so the
+	// merged (unmarked) answer differs from the sourced one -- otherwise a
+	// source that silently degrades to "none" would still pass.
+	printf("\n=== source dictionaries: passives/affixes/stats/... (poe1 only) ===\n");
+	{
+		auto say = [](const char* key) {
+			const char* r = translation_lookup(key);
+			return r ? std::string(r) : std::string();
+		};
+		auto sayTitle = [](const char* key) {
+			const char* r = translation_lookup_item_title(key);
+			return r ? std::string(r) : std::string();
+		};
+		auto readBytes = [](const std::wstring& p, std::string& out) -> bool {
+			HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+			                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return false;
+			out.clear();
+			char tmp[65536];
+			DWORD got = 0;
+			while (ReadFile(h, tmp, sizeof(tmp), &got, nullptr) && got) out.append(tmp, got);
+			CloseHandle(h);
+			return true;
+		};
+		auto writeBytes = [](const std::wstring& p, const std::string& body) -> bool {
+			HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+			                       FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return false;
+			DWORD w = 0;
+			const BOOL ok = WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr);
+			CloseHandle(h);
+			return ok && w == (DWORD)body.size();
+		};
+
+		const std::wstring dictDir = model.dataDir;
+		const char* kRobust = "Robust";
+		const char* kStatTmpl = "{0}% increased TestStatXyz";
+		const char* kStatExact = "15% increased TestStatXyz";
+
+		// S1 snapshot: taken BEFORE anything is planted.
+		translation_set_source(nullptr);
+		translation_reload();
+		const char* kSample[] = {
+			"Volatility",                         // gem/passive collision
+			"15% increased Abyssal Cry Damage",   // stat/affix line (pattern)
+			"Acrobatics",                         // passive name
+		};
+		std::vector<std::string> snapshot;
+		for (const char* k : kSample) snapshot.push_back(say(k));
+		const std::string robustBefore = say(kRobust);
+
+		// Back up every file this block touches, byte for byte.
+		struct Backup { std::wstring path; std::string bytes; bool existed; };
+		std::vector<Backup> backups;
+		auto backup = [&](const wchar_t* name) {
+			Backup b{dictDir + name, {}, false};
+			b.existed = readBytes(b.path, b.bytes);
+			backups.push_back(b);
+		};
+		backup(L"meta.json");
+		backup(L"passives.json");
+		backup(L"affixes.json");
+		backup(L"stats.json");
+		backup(L"ui.json");
+		backup(L"uniques.json");
+		backup(L"monsters.json");
+
+		// Add entries to a dictionary file (creating it when absent).
+		bool planted = true;
+		auto plant = [&](const wchar_t* name,
+		                 std::initializer_list<std::pair<const char*, const char*>> kv) {
+			std::string body;
+			nlohmann::ordered_json doc;
+			if (readBytes(dictDir + name, body)) {
+				try { doc = nlohmann::ordered_json::parse(body); }
+				catch (...) { planted = false; return; }
+			} else {
+				doc = nlohmann::ordered_json::object();
+			}
+			if (!doc.contains("entries") || !doc["entries"].is_object())
+				doc["entries"] = nlohmann::ordered_json::object();
+			for (const auto& p : kv) doc["entries"][p.first] = p.second;
+			if (!writeBytes(dictDir + name, doc.dump(2))) planted = false;
+		};
+		plant(L"passives.json", {{kRobust, u8"堅固"}});
+		plant(L"affixes.json", {{kRobust, u8"健壯的"}});
+		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"}});
+		// uniques.json loads after stats.json: its pattern would win the merge.
+		plant(L"uniques.json", {{kStatTmpl, u8"錯誤乙 {0}%"}});
+		// ui.json carries the EXACT line -- exact beats pattern in the merge.
+		plant(L"ui.json", {{kStatExact, u8"錯誤丙"}});
+		// monsters.json loads last: the unmarked "Robust" becomes this.
+		plant(L"monsters.json", {{kRobust, u8"錯誤丁"}});
+		{
+			std::string body;
+			if (readBytes(dictDir + L"meta.json", body)) {
+				try {
+					auto meta = nlohmann::ordered_json::parse(body);
+					auto& lo = meta["load_order"];
+					bool has = false;
+					for (const auto& x : lo) if (x.is_string() && x.get<std::string>() == "affixes.json") has = true;
+					if (!has) lo.insert(lo.begin(), "affixes.json");
+					if (!writeBytes(dictDir + L"meta.json", meta.dump(2))) planted = false;
+				} catch (...) { planted = false; }
+			} else {
+				planted = false;
+			}
+		}
+		check(planted, "S0 測試用暫時條目已寫入字典");
+		translation_set_source(nullptr);
+		translation_reload();
+
+		const std::string bareRobust = say(kRobust);
+		printf("  (unmarked Robust after planting = %s)\n", bareRobust.c_str());
+
+		// S1
+		{
+			bool same = true;
+			for (size_t i = 0; i < snapshot.size(); i++) {
+				const std::string now = say(kSample[i]);
+				if (now != snapshot[i]) {
+					same = false;
+					printf("    %s: before=%s now=%s\n", kSample[i], snapshot[i].c_str(), now.c_str());
+				}
+			}
+			check(same, "S1 未標記查找不受新來源影響");
+		}
+
+		// S2 / S3
+		translation_set_source("passives");
+		check(say(kRobust) == u8"堅固", "S2 passives 來源下 Robust 譯為堅固");
+		translation_set_source(nullptr);
+		translation_set_source("affixes");
+		check(say(kRobust) == u8"健壯的", "S3 affixes 來源下 Robust 譯為健壯的");
+		translation_set_source(nullptr);
+
+		// S4: no exact key for 23%, so only patterns compete.
+		translation_set_source("stats");
+		check(say("23% increased TestStatXyz") == u8"增加 23% 測試詞綴甲",
+		      "S4 stats 來源的 pattern 贏過他檔 pattern");
+		translation_set_source(nullptr);
+
+		// S5
+		translation_set_source("stats");
+		const std::string s5Sourced = say(kStatExact);
+		translation_set_source(nullptr);
+		const std::string s5Bare = say(kStatExact);
+		check(s5Sourced == u8"增加 15% 測試詞綴甲", "S5 stats 來源的 pattern 贏過他檔 exact");
+		check(s5Bare == u8"錯誤丙", "S5b 未標記時仍是他檔 exact");
+
+		// S6a: bare first, sourced, bare again (cache must not keep the sourced one).
+		{
+			const char* combo = "15% increased TestStatXyz, Robust";
+			const std::string bareCombo = say(combo);
+			translation_set_source("stats");
+			const std::string sourcedCombo = say(combo);
+			translation_set_source(nullptr);
+			check(sourcedCombo.find(u8"增加 15% 測試詞綴甲") != std::string::npos,
+			      "S6 stats 來源下組合字串的數值段走來源字典");
+			check(say(combo) == bareCombo, "S6a 切走來源後組合字串回到未標記值");
+		}
+		// S6b: sourced FIRST on a never-seen string, then compare with a fresh load.
+		{
+			const char* combo = "23% increased TestStatXyz, Robust";
+			translation_set_source("stats");
+			(void)say(combo);
+			translation_set_source(nullptr);
+			const std::string afterSourced = say(combo);
+			translation_reload();
+			const std::string fresh = say(combo);
+			check(afterSourced == fresh, "S6b 先查來源再查未標記不會吃到來源快取");
+		}
+
+		// S7: translation_lookup_item_title is public, so the title path is tested too.
+		{
+			const std::string bareTitle = sayTitle(kRobust);
+			translation_set_source("affixes");
+			const std::string sourcedTitle = sayTitle(kRobust);
+			translation_set_source(nullptr);
+			check(sourcedTitle == u8"健壯的", "S7 affixes 來源下物品標題查找也走來源字典");
+			check(sayTitle(kRobust) == bareTitle, "S7b 切走來源後物品標題回到未標記值");
+		}
+
+		// S8
+		translation_set_source("no-such");
+		check(translation_get_source() == nullptr && say(kRobust) == bareRobust,
+		      "S8 未知來源退回無來源");
+		translation_set_source(nullptr);
+
+		// S9
+		{
+			const char* outer = translation_set_source("passives");
+			const char* inner = translation_set_source("stats");
+			const bool innerOk = inner && std::string(inner) == "passives";
+			translation_set_source(inner);
+			const bool backToPassives = say(kRobust) == u8"堅固";
+			translation_set_source(outer);
+			check(innerOk && backToPassives && translation_get_source() == nullptr,
+			      "S9 巢狀設定逐層還原：先回 passives 再回無來源");
+			translation_set_source(nullptr);
+		}
+
+		// Restore every file exactly, delete what we created.
+		bool restored = true;
+		for (const Backup& b : backups) {
+			if (b.existed) {
+				if (!writeBytes(b.path, b.bytes)) restored = false;
+			} else {
+				DeleteFileW(b.path.c_str());
+			}
+			std::string now;
+			const bool exists = readBytes(b.path, now);
+			if (exists != b.existed || (exists && now != b.bytes)) restored = false;
+		}
+		translation_reload();
+		check(restored && say(kRobust) == robustBefore, "SR 測試結束後字典完整還原");
+	}
+
 	// --- external dictionary root (POB_ZH_DATADIR) --------------------------
 	//
 	// Asks the REAL loader, not a re-implementation: build a throwaway dictionary
