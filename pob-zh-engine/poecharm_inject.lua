@@ -135,26 +135,17 @@ local function wrapDrawWithSource(class, name)
 	return true
 end
 
--- Wrap class[method] so everything it looks up runs under source `name`.
--- Returns false (and changes nothing) when the method is absent.
-local function wrapMethodWithSource(class, method, name)
-	local orig = class[method]
-	if type(orig) ~= "function" then return false end
-	class[method] = keepArity(orig, function(self, ...)
-		return withSource(name, orig, self, ...)
-	end)
-	return true
-end
-
 -- ===== tooltip line sources =====
--- Tooltips are TRANSLATED when they are built (Tooltip:AddLine below), so the
--- source has to be set around the functions that build them, not around Draw:
--- PassiveTreeView:AddNodeName/AddNodeTooltip -> passives, and
--- ItemsTab:AddItemTooltip -> items. Inside an item tooltip the lines are told
--- apart further: the title of a unique is uniques.json, the base line is
--- items.json, a PoE1 mod line (AddLine's 4th arg is the modLine table) is
--- stats.json, and a magic item's one-line "prefix base suffix" name is split
--- into affixes / items / affixes.
+-- Tooltips are TRANSLATED when they are built (Tooltip:AddLine below). Only
+-- NAME lines get a source dictionary; every other line (passive stat lines,
+-- requirements, quality, ...) keeps the shipping unmarked lookup. The wraps on
+-- PassiveTreeView:AddNodeName and ItemsTab:AddItemTooltip only record WHAT is
+-- being drawn (nodeCtx / itemCtx); AddLine then picks per line: the passive's
+-- name line -> by node.id, else passives; a unique's title -> uniques.json; the
+-- base line -> items.json; a magic item's one-line "prefix base suffix" name is
+-- split into affixes / items / affixes. A PoE1 mod line (AddLine's 4th arg is
+-- the modLine table) is looked up unmarked first, and under stats.json only
+-- when that left it English.
 --
 -- The item being drawn, set by the AddItemTooltip wrap (nil outside it).
 -- { item = item, titleDone = bool }: titleDone keeps a unique whose title IS a
@@ -210,14 +201,15 @@ local function zhById(source, id, en)
 end
 
 -- AddNodeName's name line: [colour lead] node.dn [" [" .. node.id .. "]"]
--- (the suffix only in dev mode, PassiveTreeView.lua). nil = not that line, or
--- nothing came back -- the ordinary line path then runs.
+-- (the suffix only in dev mode, PassiveTreeView.lua). Returns the id hit (or
+-- nil) and whether this IS the name line: a name line the id lookup missed is
+-- looked up under passives by AddLine; every other line stays unmarked.
 local function translateNodeNameLine(text)
 	local ctx = nodeCtx
-	if not ctx or ctx.nameDone then return nil end
+	if not ctx or ctx.nameDone then return nil, false end
 	local node = ctx.node
 	local dn = node.dn
-	if type(dn) ~= "string" or dn == "" or node.id == nil then return nil end
+	if type(dn) ~= "string" or dn == "" then return nil, false end
 	local lead, rest = splitLeadColour(text)
 	local tail
 	if rest == dn then
@@ -225,12 +217,12 @@ local function translateNodeNameLine(text)
 	elseif rest:sub(1, #dn) == dn and rest:sub(#dn + 1) == " [" .. tostring(node.id) .. "]" then
 		tail = rest:sub(#dn + 1)
 	else
-		return nil
+		return nil, false
 	end
 	ctx.nameDone = true
-	local zh = zhById("passives", node.id, dn)
-	if not zh then return nil end
-	return lead .. zh .. tail
+	local zh = node.id ~= nil and zhById("passives", node.id, dn) or nil
+	if not zh then return nil, true end
+	return lead .. zh .. tail, true
 end
 
 -- The crafting tooltip's "^7Affix: <mod.affix>" line (ItemsTab.lua). Only that
@@ -277,13 +269,15 @@ local function affixModId(item, listKey, seg)
 	return found
 end
 
--- Source for one AddLine call: "stats" / "uniques" / "items" / "split" / nil
--- (nil = leave the caller's scope alone). Also returns the leading colour run.
+-- Source for one AddLine call: "modline" / "uniques" / "items" / "split" /
+-- nil (nil = leave the caller's scope alone, i.e. the shipping unmarked
+-- lookup). Only NAME lines get a source; "modline" = unmarked first, stats
+-- only when that left the line English. Also returns the leading colour run.
 local function tooltipLineSource(text, a4)
 	if type(a4) == "table" and type(a4.line) == "string" then
 		-- PoE1 AddLine(size, text, font, modLine, background). PoE2's 4th
 		-- parameter is a background (string or image handle), never such a table.
-		return "stats"
+		return "modline"
 	end
 	local ctx = itemCtx
 	if not ctx then return nil end
@@ -464,19 +458,14 @@ end
 -- stat lines. `node` is the LAST arg in both PoE1 (self, node) and
 -- PoE2 (self, build, node).
 PATCHES["PassiveTreeView"] = function(class)
-	-- Node tooltips: the name and stat lines are passives.json text. Same
-	-- method names in both forks; only the argument lists differ ((tooltip,
-	-- node, build) here either way), and withSource forwards them untouched.
-	-- Not fatal: without it the tooltip still translates, just unmarked.
-	for _, m in ipairs({ "AddNodeName", "AddNodeTooltip" }) do
-		if not wrapMethodWithSource(class, m, "passives") then
-			log("PassiveTreeView: no " .. m .. ", node tooltips stay unmarked")
-		end
-	end
-	-- The name line is looked up by node.id (GraphId) first: nodeCtx tells
-	-- Tooltip:AddLine which node is being named. Restored even on error.
+	-- Node tooltips: only the NAME line is passives text (by node.id first,
+	-- then the passives source); stat lines stay on the unmarked lookup, so
+	-- AddNodeTooltip is not wrapped. nodeCtx tells Tooltip:AddLine which node
+	-- is being named. Restored even on error. Not fatal when absent.
 	local origName = class.AddNodeName
-	if type(origName) == "function" then
+	if type(origName) ~= "function" then
+		log("PassiveTreeView: no AddNodeName, node names stay unmarked")
+	else
 		class.AddNodeName = keepArity(origName, function(self, tooltip, node, ...)
 			local prevCtx = nodeCtx
 			nodeCtx = type(node) == "table" and { node = node } or nil
@@ -989,15 +978,16 @@ end
 -- English too; their dev branch added exactly this call. Harmless once POB
 -- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
 PATCHES["ItemsTab"] = function(class)
-	-- Item tooltips: outer source items, and the item kept in itemCtx so
-	-- Tooltip:AddLine can tell the title / base / name lines apart. Both are
-	-- restored even when the original throws. Not fatal when absent.
+	-- Item tooltips: no outer source (non-name lines keep the unmarked
+	-- lookup); the item is kept in itemCtx so Tooltip:AddLine can tell the
+	-- title / base / name lines apart. Restored even when the original
+	-- throws. Not fatal when absent.
 	local origTip = class.AddItemTooltip
 	if type(origTip) == "function" then
 		class.AddItemTooltip = keepArity(origTip, function(self, tooltip, item, ...)
 			local prevCtx = itemCtx
 			itemCtx = type(item) == "table" and { item = item } or nil
-			local ok, a, b, c = pcall(withSource, "items", origTip, self, tooltip, item, ...)
+			local ok, a, b, c = pcall(origTip, self, tooltip, item, ...)
 			itemCtx = prevCtx
 			if not ok then error(a, 0) end
 			return a, b, c
@@ -1111,9 +1101,18 @@ PATCHES["Tooltip"] = function(class)
 			-- Which data file this line came from (see "tooltip line sources"
 			-- above). nil = whatever the caller's scope already set.
 			local src, lead = tooltipLineSource(text, a4)
-			local zh = translateNodeNameLine(text) or translateAffixLine(text)
+			local zh, isNodeName = translateNodeNameLine(text)
+			zh = zh or translateAffixLine(text)
 			if zh then
 				-- decided by id (see "lookups by stable id")
+			elseif isNodeName then
+				zh = withSource("passives", translateLine, text)
+			elseif src == "modline" then
+				-- unmarked first; stats only when that left the line English
+				zh = translateLine(text)
+				if not zh or not hasCJK(zh) then
+					zh = withSource("stats", translateLine, text) or zh
+				end
 			elseif src == "split" then
 				zh = translateSplitTitle(lead, itemCtx.item)
 				if not zh then zh = translateLine(text) end
