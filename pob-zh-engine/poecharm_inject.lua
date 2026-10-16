@@ -151,6 +151,100 @@ local function cleanBaseName(item)
 	return type(item.baseName) == "string" and (item.baseName:gsub(" %(.+%)", "")) or nil
 end
 
+-- ===== lookups by stable id =====
+-- Same English, different id, different wording: two passives both called
+-- "Elemental Overload" (GraphId) or two mods sharing the affix name "Robust"
+-- (mod Id). Where the id is at hand it decides the translation
+-- (PobToolsTranslateId); without one, or when nothing comes back, the English
+-- path runs exactly as before.
+--
+-- The node whose name PassiveTreeView:AddNodeName is drawing (nil outside it).
+-- { node = node, nameDone = bool }: only its first name line is taken.
+local nodeCtx = nil
+-- The affix a crafting drop-down / range slider tooltip is describing (nil
+-- outside it): { id = modId, mod = mod table }.
+local affixTipCtx = nil
+
+local function hasTranslateId()
+	return type(PobToolsTranslateId) == "function"
+end
+
+-- id lookup of one string; nil unless it produced something different.
+local function zhById(source, id, en)
+	if not hasTranslateId() or id == nil or type(en) ~= "string" or en == "" then return nil end
+	local zh = PobToolsTranslateId(source, id, en)
+	if zh and zh ~= en then return zh end
+	return nil
+end
+
+-- AddNodeName's name line: [colour lead] node.dn [" [" .. node.id .. "]"]
+-- (the suffix only in dev mode, PassiveTreeView.lua). nil = not that line, or
+-- nothing came back -- the ordinary line path then runs.
+local function translateNodeNameLine(text)
+	local ctx = nodeCtx
+	if not ctx or ctx.nameDone then return nil end
+	local node = ctx.node
+	local dn = node.dn
+	if type(dn) ~= "string" or dn == "" or node.id == nil then return nil end
+	local lead, rest = splitLeadColour(text)
+	local tail
+	if rest == dn then
+		tail = ""
+	elseif rest:sub(1, #dn) == dn and rest:sub(#dn + 1) == " [" .. tostring(node.id) .. "]" then
+		tail = rest:sub(#dn + 1)
+	else
+		return nil
+	end
+	ctx.nameDone = true
+	local zh = zhById("passives", node.id, dn)
+	if not zh then return nil end
+	return lead .. zh .. tail
+end
+
+-- The crafting tooltip's "^7Affix: <mod.affix>" line (ItemsTab.lua). Only that
+-- plain form: the "Affix: Tier N (<affix>)" form and everything else keep the
+-- ordinary line path. The label goes through the dictionary on its own
+-- ("Affix:" is a ui.json key); a full-width colon needs no space after it.
+local FULLWIDTH_COLON = "\239\188\154"
+local function translateAffixLine(text)
+	local ctx = affixTipCtx
+	if not ctx then return nil end
+	local affix = ctx.mod.affix
+	if type(affix) ~= "string" or affix == "" then return nil end
+	local lead, rest = splitLeadColour(text)
+	if rest ~= "Affix: " .. affix then return nil end
+	-- id hit only (no English argument, so no fallback): this line stays
+	-- English today, and an unsourced fallback could pick a wrong-context word.
+	if not hasTranslateId() then return nil end
+	local zh = PobToolsTranslateId("affixes", ctx.id)
+	if not zh or zh == affix then return nil end
+	local label = PobToolsTranslateDisplay("Affix:") or "Affix:"
+	local gap = label:sub(-#FULLWIDTH_COLON) == FULLWIDTH_COLON and "" or " "
+	return lead .. label .. gap .. zh
+end
+
+-- The single modId behind a magic item's name prefix / suffix, or nil when
+-- there is none (pasted items often carry no ids) or more than one. When the
+-- item also knows the mod, its affix name must be the segment being translated.
+local function affixModId(item, listKey, seg)
+	local list = item[listKey]
+	if type(list) ~= "table" then return nil end
+	local found
+	for _, a in ipairs(list) do
+		local id = type(a) == "table" and a.modId or nil
+		if type(id) == "string" and id ~= "" and id ~= "None" then
+			if found and found ~= id then return nil end
+			found = id
+		end
+	end
+	if not found then return nil end
+	local mod = type(item.affixes) == "table" and item.affixes[found] or nil
+	if type(mod) == "table" and type(mod.affix) == "string" and trim(mod.affix) ~= seg then
+		return nil
+	end
+	return found
+end
+
 -- Source for one AddLine call: "stats" / "uniques" / "items" / "split" / nil
 -- (nil = leave the caller's scope alone). Also returns the leading colour run.
 local function tooltipLineSource(text, a4)
@@ -205,9 +299,12 @@ local function translateSplitTitle(lead, item)
 	local base = cleanBaseName(item)
 	local preRaw, sufRaw = item.namePrefix, item.nameSuffix
 	local pre, suf = trim(preRaw), trim(sufRaw)
-	local zp = zhSegment("affixes", pre)
+	-- prefix / suffix by modId when the item has one (see "lookups by stable id")
+	local zp = (pre ~= "" and zhById("affixes", affixModId(item, "prefixes", pre), pre))
+		or zhSegment("affixes", pre)
 	local zb = zp and zhSegment("items", base)
-	local zs = zb and zhSegment("affixes", suf)
+	local zs = zb and ((suf ~= "" and zhById("affixes", affixModId(item, "suffixes", suf), suf))
+		or zhSegment("affixes", suf))
 	if not (zp and zb and zs) then return nil end
 	local preGap = pre ~= "" and preRaw:match("(%s*)$") or ""
 	local sufGap = suf ~= "" and sufRaw:match("^(%s*)") or ""
@@ -342,6 +439,19 @@ PATCHES["PassiveTreeView"] = function(class)
 	for _, m in ipairs({ "AddNodeName", "AddNodeTooltip" }) do
 		if not wrapMethodWithSource(class, m, "passives") then
 			log("PassiveTreeView: no " .. m .. ", node tooltips stay unmarked")
+		end
+	end
+	-- The name line is looked up by node.id (GraphId) first: nodeCtx tells
+	-- Tooltip:AddLine which node is being named. Restored even on error.
+	local origName = class.AddNodeName
+	if type(origName) == "function" then
+		class.AddNodeName = function(self, tooltip, node, ...)
+			local prevCtx = nodeCtx
+			nodeCtx = type(node) == "table" and { node = node } or nil
+			local ok, a, b, c = pcall(origName, self, tooltip, node, ...)
+			nodeCtx = prevCtx
+			if not ok then error(a, 0) end
+			return a, b, c
 		end
 	end
 	local orig = class.DoesNodeMatchSearchParams
@@ -882,6 +992,43 @@ PATCHES["ItemsTab"] = function(class)
 		log("ItemsTab: no AddItemTooltip, item tooltips stay unmarked")
 	end
 	local ok = wrapConstructor(class, "ItemsTab", function(self)
+		-- Crafting affix drop-down / range slider tooltips: tell AddLine which
+		-- mod the "Affix: <name>" line belongs to, so it is looked up by mod Id.
+		-- Mirrors the id choice in ItemsTab.lua's tooltipFuncs; anything unclear
+		-- (no item, no mod, several tiers) leaves affixTipCtx nil.
+		local function wrapAffixTip(ctl, idOf)
+			local orig = type(ctl) == "table" and ctl.tooltipFunc or nil
+			if type(orig) ~= "function" then return end
+			ctl.tooltipFunc = function(tooltip, ...)
+				local prev = affixTipCtx
+				local okId, id = pcall(idOf, ...)
+				local item = self.displayItem
+				local mods = okId and id and type(item) == "table" and item.affixes or nil
+				local mod = type(mods) == "table" and mods[id] or nil
+				affixTipCtx = type(mod) == "table" and { id = id, mod = mod } or nil
+				local ok2, a, b, c = pcall(orig, tooltip, ...)
+				affixTipCtx = prev
+				if not ok2 then error(a, 0) end
+				return a, b, c
+			end
+		end
+		if hasTranslateId() and type(self.controls) == "table" then
+			local i = 1
+			while self.controls["displayItemAffix" .. i] do
+				local drop = self.controls["displayItemAffix" .. i]
+				wrapAffixTip(drop, function(mode, index, value)
+					local modList = type(value) == "table" and value.modList
+					if type(modList) ~= "table" then return nil end
+					return value.modId or (#modList == 1 and modList[1]) or nil
+				end)
+				wrapAffixTip(self.controls["displayItemAffixRange" .. i], function()
+					local sel = drop.list and drop.list[drop.selIndex]
+					local modList = type(sel) == "table" and sel.modList
+					return type(modList) == "table" and #modList == 1 and modList[1] or nil
+				end)
+				i = i + 1
+			end
+		end
 		for i = 1, 6 do
 			local drop = self.controls and self.controls["displayItemRune" .. i]
 			if drop and type(drop.selFunc) == "function" then
@@ -932,8 +1079,10 @@ PATCHES["Tooltip"] = function(class)
 			-- Which data file this line came from (see "tooltip line sources"
 			-- above). nil = whatever the caller's scope already set.
 			local src, lead = tooltipLineSource(text, a4)
-			local zh
-			if src == "split" then
+			local zh = translateNodeNameLine(text) or translateAffixLine(text)
+			if zh then
+				-- decided by id (see "lookups by stable id")
+			elseif src == "split" then
 				zh = translateSplitTitle(lead, itemCtx.item)
 				if not zh then zh = translateLine(text) end
 			elseif src then

@@ -62,6 +62,13 @@ const char* translation_set_source(const char *name);
 /* Currently selected source dictionary, or nullptr. */
 const char* translation_get_source(void);
 
+/* Look up a translation by stable id ("passives" -> GraphId, "affixes" -> mod
+** Id) in passives_by_id.json / affixes_by_id.json. nullptr when the id or the
+** source is unknown. These files are listed in meta.json load_order and
+** source_only, but their keys are ids: they never reach the merged map or the
+** English source dictionaries, so translation_lookup cannot find them. */
+const char* translation_lookup_by_id(const char *source, const char *id);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
