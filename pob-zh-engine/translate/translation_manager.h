@@ -126,6 +126,12 @@ int translation_debug_slot_mismatch(const char *text);
 ** translation_debug_fill 則是每次呼叫都看現值。回傳先前的設定。 */
 int translation_debug_set_legacy_fill(int on);
 
+/* 只給 --editor-selftest 用:目前建了哪些來源表,格式
+** "exact=gems,passives;pattern=passives;id=passives"(各段名稱依字母排序)。
+** 用來驗證沒有 source_lookup 的語系只替 gems 建 exact 副本,其餘不建。
+** 回傳靜態緩衝區,下次呼叫即失效。 */
+const char* translation_debug_sources(void);
+
 /* Get current locale string (e.g. "zh-rTW") */
 const char* translation_get_locale(void);
 

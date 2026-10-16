@@ -1776,6 +1776,9 @@ static bool try_load_json(const std::string &base_dir) {
             for (const SourceDict &sd : kIdDicts)
                 if (filename == sd.file) { idd = &sd; break; }
             if (idd) {
+                /* Without source_lookup nothing can ever ask for an id: skip
+                ** the file (it never merges either way). */
+                if (!source_lookup) continue;
                 int count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
                 if (count > 0) {
                     snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d id entries from %s\n",
@@ -1788,21 +1791,37 @@ static bool try_load_json(const std::string &base_dir) {
             }
         }
         /* Files backing a source dictionary get a second copy of their own
-         * entries, untouched by whatever later files redefine. */
+         * entries, untouched by whatever later files redefine. Without
+         * source_lookup only gems can be selected, and only its exact entries
+         * (see translation_set_source), so no other copy is built at all. */
         std::unordered_map<std::string, std::string> *sink = nullptr;
         std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr;
         for (const SourceDict &sd : kSourceDicts) {
             if (filename == sd.file) {
+                if (!source_lookup && filename != std::string(kLegacySource) + ".json") break;
                 sink = &s_sources[sd.name];
-                pattern_sink = &s_source_patterns[sd.name];
+                if (source_lookup) pattern_sink = &s_source_patterns[sd.name];
                 /* create now: never rehash later */
                 s_source_cache[sd.name];
                 s_item_title_source_cache[sd.name];
                 break;
             }
         }
-        const bool only_source =
+        /* A file in source_dicts never merges, even when load_order lists it
+        ** too: source_dicts says what the file IS, load_order only when to load. */
+        const bool in_source_dicts =
+            std::find(source_dicts.begin(), source_dicts.end(), filename) != source_dicts.end();
+        if (in_source_dicts) {
+            snprintf(msg, sizeof(msg), "[pob-proxy] %s is in both load_order and source_dicts; "
+                     "loaded as source-only\n", filename.c_str());
+            OutputDebugStringA(msg);
+            PobLog::Diag("i18n", std::string(filename) + " is listed in both load_order and "
+                                 "source_dicts; loaded as source-only (not merged)");
+        }
+        const bool only_source = in_source_dicts ||
             std::find(source_only.begin(), source_only.end(), filename) != source_only.end();
+        /* source-only with nowhere to go (no flag, not gems): nothing to load */
+        if (only_source && !sink) continue;
         int count = load_json_translations(filepath, false, sink, pattern_sink, only_source);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
@@ -1814,9 +1833,11 @@ static bool try_load_json(const std::string &base_dir) {
     }
 
     /* source_dicts: never merged. Files also listed in load_order were handled
-    ** above (the id-table check there runs first, and source_only covers the
-    ** rest), so only the ones outside load_order load here. */
+    ** above (treated as source-only there), so only the ones outside load_order
+    ** load here. Without source_lookup none of them could ever be read (the
+    ** legacy gems source has its own file in load_order), so none is loaded. */
     for (auto &filename : source_dicts) {
+        if (!source_lookup) break;
         if (std::find(load_order.begin(), load_order.end(), filename) != load_order.end())
             continue;
         std::string filepath = json_dir + filename;
@@ -2901,6 +2922,22 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
     auto it = sit->second.find(id);
     if (it == sit->second.end()) return nullptr;
     return it->second.c_str();
+}
+
+const char* translation_debug_sources(void) {
+    translation_wait_ready();
+    static std::string buf;
+    auto names = [](const auto &m) {
+        std::vector<std::string> v;
+        for (const auto &kv : m) v.push_back(kv.first);
+        std::sort(v.begin(), v.end());
+        std::string out;
+        for (const std::string &n : v) { if (!out.empty()) out += ","; out += n; }
+        return out;
+    };
+    buf = "exact=" + names(s_sources) + ";pattern=" + names(s_source_patterns) +
+          ";id=" + names(s_id_dicts);
+    return buf.c_str();
 }
 
 const char* translation_get_locale(void) {
