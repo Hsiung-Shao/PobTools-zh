@@ -1072,6 +1072,44 @@ int RunEditorSelftest(const std::string& games)
 			      "S16 無 source_lookup 旗標：設來源後的查找等於未標記");
 			check(ok && idNull, "S16b 無 source_lookup 旗標：依 id 查詢回傳空值");
 			check(ok && gemVol == u8"易變輔助", "S16c 無 source_lookup 旗標：gems 來源照舊有效");
+			// S22: and nothing is built that could never be read.
+			const std::string built = translation_debug_sources();
+			check(ok && built == "exact=gems;pattern=;id=",
+			      "S22 無 source_lookup 旗標：只替 gems 建來源 exact 表，其餘不建");
+			if (built != "exact=gems;pattern=;id=") printf("    %s\n", built.c_str());
+			writeBytes(dictDir + L"meta.json", flagged);
+			translation_reload();
+			// S22a: guard -- with the flag every source is built, so S22 is not
+			// passing on an observer that always reports "gems".
+			const std::string full = translation_debug_sources();
+			check(full == "exact=affixes,gems,items,passives,stats,uniques;"
+			              "pattern=affixes,gems,items,passives,stats,uniques;id=affixes,passives",
+			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
+			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
+			else printf("    (flagged: %s)\n", full.c_str());
+		}
+
+		// S21: a file listed in load_order AND source_dicts is still never merged.
+		{
+			std::string flagged;
+			bool ok = readBytes(dictDir + L"meta.json", flagged);
+			try {
+				auto meta = nlohmann::ordered_json::parse(flagged);
+				meta["load_order"].insert(meta["load_order"].begin(), "affixes.json");
+				ok = ok && writeBytes(dictDir + L"meta.json", meta.dump(2));
+			} catch (...) { ok = false; }
+			translation_set_source(nullptr);
+			translation_reload();
+			const char* kOnly = "TestOnlyAffixXyz";
+			const char* r = translation_lookup(kOnly);
+			const bool bareKept = r == nullptr || std::string(r) == kOnly;
+			translation_set_source("affixes");
+			const std::string sourced = say(kOnly);
+			translation_set_source(nullptr);
+			check(ok && bareKept && sourced == u8"測試詞綴名",
+			      "S21 同時列在 load_order 與 source_dicts 的檔不併入全域表");
+			if (!(bareKept && sourced == u8"測試詞綴名"))
+				printf("    unmarked=%s sourced=%s\n", r ? r : "(null)", sourced.c_str());
 			writeBytes(dictDir + L"meta.json", flagged);
 			translation_reload();
 		}
@@ -1127,6 +1165,10 @@ int RunEditorSelftest(const std::string& games)
 		printf("  (S16p: %zu keys x 5 sources, %zu differ)\n", keys.size(), diffs);
 		check(keys.size() > 1000 && diffs == 0,
 		      "S16p poe2 無旗標：設來源後的查找等於未標記");
+		const std::string built = translation_debug_sources();
+		check(built == "exact=gems;pattern=;id=",
+		      "S22p poe2 無旗標：只替 gems 建來源 exact 表，其餘不建");
+		if (built != "exact=gems;pattern=;id=") printf("    %s\n", built.c_str());
 		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 		translation_reload();
 	}
