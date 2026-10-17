@@ -34,6 +34,8 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <cstring>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -184,6 +186,29 @@ bool in_array(const nlohmann::ordered_json& meta, const char* field, const char*
 	for (const auto& x : meta[field])
 		if (x.is_string() && x.get<std::string>() == f) return true;
 	return false;
+}
+
+// 在字典複本的 ui.json 加條目(D 系列用):extra 個無關的虛構鍵(迫使雜湊表
+// rehash、改變迭代順序)+ 指定的鍵值。
+bool plant_ui(const std::wstring& localeDir, int extra,
+              const std::vector<std::pair<std::string, std::string>>& kv)
+{
+	std::string body;
+	if (!read_bytes(localeDir + L"ui.json", body)) return false;
+	try {
+		auto doc = nlohmann::ordered_json::parse(body);
+		auto& e = doc["entries"];
+		for (int i = 0; i < extra; i++) {
+			char k[64], v[64];
+			snprintf(k, sizeof(k), "Qqxfiller Unrelated Key %05d", i);
+			snprintf(v, sizeof(v), "\xe5\xa1\xab\xe5\x85\x85 %05d", i); // 填充 NNNNN
+			e[k] = v;
+		}
+		for (const auto& p : kv) e[p.first] = p.second;
+		return write_bytes(localeDir + L"ui.json", doc.dump(2));
+	} catch (...) {
+		return false;
+	}
 }
 
 } // namespace
@@ -394,6 +419,89 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			}
 		}
 		check(ok && e2Hit, "F4c 無色碼輸入時與 translation_lookup_stat 結果相同");
+	}
+
+	// ---- D:詞彙表(glossary)選擇規則(使用者裁定)----------------------------
+	// 同一 term(小寫、去結尾冒號)只留一筆：優先原鍵不帶冒號者;都帶冒號取原鍵
+	// 字典序最小;全形「：」與半形「:」結尾都去除;排序 = 長度降冪、再 term 字典序。
+	// 例:ui.json "Breach:" → "裂痕：" 與 passives.json "Breach" → "裂痕" 去冒號後
+	// 同為 "breach",舊做法只依長度 std::sort,平手先後隨雜湊排列翻轉。
+	printf("\n=== D 詞彙表選擇規則 ===\n");
+	{
+		auto say = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::vector<std::pair<std::string, std::string>> kZzq = {
+		    {"Zzqtestterm:", u8"測試詞："}};   // 只有帶全形冒號的版本
+		const char* kSentences[] = {
+		    "Exclusive to: Breach", "Exclusive to: Harvest", "Exclusive to: Heist",
+		    "Exclusive to: Legion", "Exclusive to: Delirium", "Exclusive to: Zzqtestterm",
+		    "Evasion Rating: 120", "Source: Labyrinth"};
+		// 每種虛構鍵數量各一份複本;0 = 只加 Zzqtestterm 的基準。
+		const int kExtras[] = {0, 100, 500, 2000, 5000};
+		std::vector<std::vector<std::string>> outs;
+		bool setup = true;
+		for (int n : kExtras) {
+			const std::wstring vroot = root + L"g" + std::to_wstring(n) + L"\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w;
+			if (!build_dict_copy(shippedLocale, vroot + L"zh-rTW\\", statsJson, true, w) ||
+			    !plant_ui(vroot + L"zh-rTW\\", n, kZzq)) {
+				setup = false;
+				printf("           setup g%d failed %s\n", n, w.c_str());
+				outs.emplace_back();
+				continue;
+			}
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_set_source(nullptr);
+			translation_reload();
+			std::vector<std::string> o;
+			for (const char* s : kSentences) o.push_back(say(s));
+			outs.push_back(std::move(o));
+			remove_tree(vroot);
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+
+		const std::vector<std::string>& base = outs[0];
+		// D1/D2/D4 在每一種虛構鍵數量下都要成立(只看基準會被雜湊排列碰巧蓋過)。
+		auto expectD = [&](const char* s, const std::string& want, const char* name) {
+			size_t idx = 0;
+			while (idx < std::size(kSentences) && strcmp(kSentences[idx], s)) idx++;
+			bool ok = setup;
+			for (size_t v = 0; v < outs.size(); v++) {
+				const std::string got = idx < outs[v].size() ? outs[v][idx] : "(missing)";
+				if (got != want) {
+					ok = false;
+					printf("           +%d keys: %s got '%s' want '%s'\n", kExtras[v], s,
+					       got.c_str(), want.c_str());
+				}
+			}
+			check(ok, name);
+		};
+		expectD("Exclusive to: Breach", u8"限定: 裂痕", "D1a Exclusive to: Breach → 限定: 裂痕(取不帶冒號鍵)");
+		expectD("Exclusive to: Harvest", u8"限定: 豐收", "D1b Exclusive to: Harvest → 限定: 豐收(不取 Harvest: 的豐收忌劫)");
+		expectD("Exclusive to: Zzqtestterm", u8"限定: 測試詞", "D2 只有帶冒號版本時去掉全形「：」");
+		expectD("Evasion Rating: 120", u8"閃避值: 120", "D4 Evasion Rating: 120 → 閃避值: 120(採 GGPK)");
+
+		// D3:每種數量的輸出都要與基準逐句相同。
+		bool same = setup;
+		for (size_t v = 1; v < outs.size(); v++) {
+			for (size_t i = 0; i < std::size(kSentences); i++) {
+				const std::string a = i < base.size() ? base[i] : "(missing)";
+				const std::string b = i < outs[v].size() ? outs[v][i] : "(missing)";
+				if (a != b) {
+					same = false;
+					printf("           +%d keys: %s: base='%s' now='%s'\n", kExtras[v],
+					       kSentences[i], a.c_str(), b.c_str());
+				}
+			}
+		}
+		check(same, "D3 加入 100/500/2000/5000 筆無關鍵後詞彙表結果不變(與雜湊排列無關)");
+		printf("           (基準輸出:");
+		for (size_t i = 0; i < base.size(); i++) printf(" [%s]", base[i].c_str());
+		printf(")\n");
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");

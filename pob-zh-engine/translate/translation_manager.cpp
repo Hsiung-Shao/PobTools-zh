@@ -2179,34 +2179,59 @@ static void do_init(void) {
     OutputDebugStringA("[pob-proxy] Using JSON translation mode\n");
     /* Build term glossary for substring replacement (sorted longest-first).
      * Store the LOWERCASE version of each term's key for case-insensitive matching,
-     * but keep the original value (Chinese translation) as-is. */
-    for (auto &kv : s_translations) {
-        if (is_glossary_candidate(kv.first)) {
+     * but keep the original value (Chinese translation) as-is.
+     *
+     * Several keys can collapse onto one term ("Breach:" in ui.json and
+     * "Breach" in passives.json, or two spellings differing only in case).
+     * s_translations is an unordered_map, so "whichever came first" would be
+     * the hash order -- adding unrelated keys could flip the winner. The pick is
+     * therefore a rule on the keys themselves:
+     *   1. a key without a trailing colon beats one with it ("Breach" -> 裂痕,
+     *      not "Breach:" -> 裂痕：);
+     *   2. otherwise the lexicographically smallest original key.
+     * A trailing colon is ':' or the full-width '：' (EF BC 9A), on the key and,
+     * when the key had one, on its translation too. */
+    {
+        auto strip_colon = [](std::string &s) -> bool {
+            if (!s.empty() && s.back() == ':') { s.pop_back(); return true; }
+            if (s.size() >= 3 && (unsigned char)s[s.size()-3] == 0xEF &&
+                (unsigned char)s[s.size()-2] == 0xBC && (unsigned char)s[s.size()-1] == 0x9A) {
+                s.erase(s.size() - 3);
+                return true;
+            }
+            return false;
+        };
+        struct Pick { const std::string *key; bool colon; std::string trans; };
+        std::unordered_map<std::string, Pick> picks;
+        for (auto &kv : s_translations) {
+            if (!is_glossary_candidate(kv.first)) continue;
             /* Strip trailing colon for glossary matching (e.g., "Total Mana:" → "Total Mana") */
             std::string term = kv.first;
             std::string trans = kv.second;
-            if (!term.empty() && term.back() == ':') {
-                term.pop_back();
-                if (!trans.empty() && (trans.back() == ':' || trans.back() == '\xef')) {
-                    /* Strip Chinese colon (：= EF BC 9A) or ASCII colon */
-                    if (trans.size() >= 3 && trans[trans.size()-3] == '\xef'
-                        && trans[trans.size()-2] == '\xbc' && trans[trans.size()-1] == '\x9a') {
-                        trans.erase(trans.size()-3);
-                    } else if (trans.back() == ':') {
-                        trans.pop_back();
-                    }
-                }
+            const bool colon = strip_colon(term);
+            if (colon) strip_colon(trans);
+            if (term.size() < 4) continue;
+            std::string term_lower = to_ascii_lower(term);
+            auto it = picks.find(term_lower);
+            if (it == picks.end()) {
+                picks.emplace(std::move(term_lower), Pick{ &kv.first, colon, std::move(trans) });
+                continue;
             }
-            if (term.size() >= 4) {
-                /* Store lowercase key for case-insensitive matching */
-                std::string term_lower = to_ascii_lower(term);
-                s_term_glossary.emplace_back(std::move(term_lower), std::move(trans));
-            }
+            Pick &cur = it->second;
+            const bool better = (cur.colon != colon) ? !colon : (kv.first < *cur.key);
+            if (better) cur = Pick{ &kv.first, colon, std::move(trans) };
         }
+        s_term_glossary.reserve(picks.size());
+        for (auto &kv : picks) s_term_glossary.emplace_back(kv.first, std::move(kv.second.trans));
     }
-    /* Sort by length descending so longest terms match first */
+    /* Longest terms match first; equal lengths by term so the order (and with
+     * it every overlapping replacement) never depends on hash order. Terms are
+     * unique after the pick above, so this is a total order. */
     std::sort(s_term_glossary.begin(), s_term_glossary.end(),
-        [](const auto &a, const auto &b) { return a.first.size() > b.first.size(); });
+        [](const auto &a, const auto &b) {
+            if (a.first.size() != b.first.size()) return a.first.size() > b.first.size();
+            return a.first < b.first;
+        });
 
     s_init_stats.total_ms = tr_ms_since(t_init);
     snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d translations (JSON mode, %d pattern, %d glossary, %d base types) in %.0f ms (parse %.0f, build %.0f, %d files)\n",
