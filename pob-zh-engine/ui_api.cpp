@@ -2186,9 +2186,11 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	// substring find -- can match Chinese; the other two branches split on %w+,
 	// which never matches a CJK byte. That is enough: rank 1 is the exact
 	// "type what you see" case. PoE2 has no such popup, so the anchor simply
-	// finds nothing there.
+	// finds nothing there. Upstream moved fuzzyScore out of ConfigTab.lua into
+	// Modules/ConfigModBrowser.lua, loaded with require() -- which is why
+	// pobtools_require_searcher exists.
 	{ u8"自訂修飾符的「新增修飾符」搜尋打不進中文",
-	  "configtab.lua",
+	  "configmodbrowser.lua",
 	  "local modLower = modText:lower()",
 	  " if PobToolsTranslateDisplay and searchStr:find(\"[\\128-\\255]\") then "
 	  "local _ptzh = PobToolsTranslateDisplay(modText) "
@@ -2337,6 +2339,32 @@ static int pobtools_loadfile_patched(lua_State* L, const char* path)
 	std::string chunkName = "@";
 	chunkName += path;
 	return luaL_loadbuffer(L, src.data(), src.size(), chunkName.c_str());
+}
+
+// require() does not go through LoadModule: Lua's own file searcher calls
+// luaL_loadfile directly, so a patched file that POB pulls in with
+// require("Modules.X") would load unpatched however well its anchor matched.
+// Upstream does this more and more (ConfigModBrowser.lua, which holds the
+// "Add modifier" search, is one). This searcher sits in front of the stock one
+// and resolves the name the same way, so the only thing that changes is that
+// the file goes through pobtools_loadfile_patched -- which loads a file with no
+// patch for it exactly as luaL_loadfile would.
+static int pobtools_require_searcher(lua_State* L)
+{
+	const char* name = luaL_checkstring(L, 1);
+	lua_getglobal(L, "package");
+	lua_getfield(L, -1, "searchpath");
+	if (!lua_isfunction(L, -1)) { lua_pop(L, 2); lua_pushliteral(L, ""); return 1; }
+	lua_pushstring(L, name);
+	lua_getfield(L, -3, "path");
+	lua_call(L, 2, 1);
+	if (!lua_isstring(L, -1)) { lua_pop(L, 2); lua_pushliteral(L, ""); return 1; } // let the stock searchers report it
+	std::string path = lua_tostring(L, -1);
+	lua_pop(L, 2);
+	if (pobtools_loadfile_patched(L, path.c_str()) != 0)
+		return luaL_error(L, "error loading module '%s' from file '%s':\n\t%s",
+		                  name, path.c_str(), lua_tostring(L, -1));
+	return 1;
 }
 
 SG_LUA_CPP_FUN_BEGIN(LoadModule)
@@ -2984,6 +3012,19 @@ int ui_main_c::InitAPI(lua_State* L)
 			lua_pushstring(L, cpath.c_str());
 			lua_setfield(L, -2, "cpath");
 		}
+
+		// Slot 2, right after preload and before the stock Lua file searcher
+		// (see pobtools_require_searcher).
+		lua_getfield(L, -1, "loaders");
+		if (lua_istable(L, -1)) {
+			for (int i = (int)lua_objlen(L, -1); i >= 2; i--) {
+				lua_rawgeti(L, -1, i);
+				lua_rawseti(L, -2, i + 1);
+			}
+			lua_pushcfunction(L, pobtools_require_searcher);
+			lua_rawseti(L, -2, 2);
+		}
+		lua_pop(L, 1);
 		lua_pop(L, 1);
 	}
 
