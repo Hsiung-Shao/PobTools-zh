@@ -1676,6 +1676,32 @@ def test_source_patch_compiles():
                 check("%s %s: patched source compiles" % (fork, leaf), ok, str(err))
 
 
+def test_source_patch_reaches_required_modules():
+    """require() 載入的被 patch 檔也要經過 patch 載入器。
+
+    LoadModule 走 pobtools_loadfile_patched,但 Lua 原生 require 不走:上游把
+    fuzzyScore 搬進 require("Modules.ConfigModBrowser") 後,錨點就算對得上也
+    永遠不會套用。被 require 的檔必須有 ui_api.cpp 註冊的 searcher 接手。
+    """
+    cpp = read_text(UI_API)
+    has_searcher = re.search(r"pobtools_require_searcher", cpp) is not None \
+        and re.search(r'"loaders"', cpp) is not None
+    leaves = sorted(set(p[1] for p in parse_source_patches(cpp)))
+    for leaf in leaves:
+        stem = os.path.splitext(leaf)[0]
+        req = re.compile(r"require\s*\(?\s*[\"'](?:[\w.]+\.)?%s[\"']" % re.escape(stem),
+                         re.IGNORECASE)
+        users = []
+        for fork, base in FORKS.items():
+            for root, _dirs, files in os.walk(base):
+                for f in files:
+                    if f.lower().endswith(".lua") and req.search(read_text(os.path.join(root, f))):
+                        users.append("%s/%s" % (fork, f))
+        if users:
+            check("require 載入的 %s 也套得到 source patch" % leaf, has_searcher,
+                  "被 %s require,但 ui_api.cpp 沒有 require searcher" % ", ".join(users[:3]))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -1712,6 +1738,7 @@ def main():
     print("== C++ source patches ==")
     test_source_patch_anchors()
     test_source_patch_compiles()
+    test_source_patch_reaches_required_modules()
 
     bad = [r for r in RESULTS if not r[1]]
     print("\n%d checks, %d failed" % (len(RESULTS), len(bad)))
