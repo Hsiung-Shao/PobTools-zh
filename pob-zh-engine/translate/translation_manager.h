@@ -84,6 +84,16 @@ const char* translation_lookup_by_id(const char *source, const char *id);
 ** --stat-selftest (host/stat_selftest.cpp). */
 const char* translation_lookup_stat(const char *line, const char *ctx);
 
+/* translation_lookup_stat with the line's colour kept: a leading "^xRRGGBB"
+** or "^N" escape is stripped for the lookup and, on a hit, written in front of
+** the answer AND after every '
+' in it (a GGPK template's "
+" turns one
+** English line into several Chinese lines; each must keep the colour). No
+** leading colour -> same as translation_lookup_stat. nullptr when no hit.
+** Pointer valid until the next reload. Tested by --stat-selftest F4b/F4c. */
+const char* translation_lookup_stat_colored(const char *line, const char *ctx);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a

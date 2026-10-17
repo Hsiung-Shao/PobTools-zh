@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 #include <string>
 #include <algorithm>
 #include <unordered_map>
@@ -174,6 +175,8 @@ static std::unordered_map<std::string, std::vector<StatCand>> s_stat_index;
 /* ctx + '\x1f' + line -> answer ("" = no answer). Node-stable: pointers into it
 ** stay valid until translation_shutdown, like translation_lookup's results. */
 static std::unordered_map<std::string, std::string> s_stat_cache;
+/* Same, for translation_lookup_stat_colored (answers carry the colour). */
+static std::unordered_map<std::string, std::string> s_stat_colored_cache;
 /* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
 ** be selected, exact entries only, and id lookups answer nothing -- so a locale
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
@@ -1247,20 +1250,53 @@ static int load_json_stat_dict(const std::string &filepath) {
             }
         }
 
-        StatCand c;
-        c.passive = passive;
-        c.nstats = nstats;
-        const std::string zh_text = normalize_whitespace(digits_to_hash(normalize_placeholders(zh)));
-        const std::vector<TmplSlot> en_slots = template_slots(en);
-        for (size_t i = 0; i < en_slots.size(); i++) {
-            const TmplSlot &t = en_slots[i];
-            /* "+#" is a signed placeholder ("+{0}"), not a written-out number */
-            if (t.ph < 0 && !t.lit.empty() && t.lit.back() != '#')
-                c.lits.emplace_back((int)i, t.lit);
-        }
-        c.plan = build_fill_plan_slots(en_slots, template_slots(zh), zh_text);
-        s_stat_index[stat_index_key(en)].push_back(std::move(c));
+        auto add_cand = [&](const std::string &en_t, const std::string &zh_t) {
+            StatCand c;
+            c.passive = passive;
+            c.nstats = nstats;
+            /* The plan keeps the Chinese template's own spacing (GGG writes
+            ** "錘和權杖增加  {0}%" with two spaces and the game shows both);
+            ** only the index KEY is whitespace-normalised. */
+            const std::string zh_text = digits_to_hash(normalize_placeholders(zh_t));
+            const std::vector<TmplSlot> en_slots = template_slots(en_t);
+            for (size_t i = 0; i < en_slots.size(); i++) {
+                const TmplSlot &t = en_slots[i];
+                /* "+#" is a signed placeholder ("+{0}"), not a written-out number */
+                if (t.ph < 0 && !t.lit.empty() && t.lit.back() != '#')
+                    c.lits.emplace_back((int)i, t.lit);
+            }
+            c.plan = build_fill_plan_slots(en_slots, template_slots(zh_t), zh_text);
+            s_stat_index[stat_index_key(en_t)].push_back(std::move(c));
+        };
+        add_cand(en, zh);
         ++count;
+
+        /* A keystone's description is one multi-line template in the passive
+        ** file, but POB draws each line on its own ("Cannot Evade enemy
+        ** Attacks"). When both sides have the same number of lines, line i of
+        ** the English is line i of the Chinese, so each line is a candidate
+        ** too. Passive file only: the item file's lines are ordinary stats. */
+        if (passive && en.find('\n') != std::string::npos) {
+            auto split = [](const std::string &s) {
+                std::vector<std::string> v;
+                size_t b0 = 0;
+                for (;;) {
+                    size_t e = s.find('\n', b0);
+                    v.push_back(s.substr(b0, e == std::string::npos ? std::string::npos : e - b0));
+                    if (e == std::string::npos) break;
+                    b0 = e + 1;
+                }
+                return v;
+            };
+            const std::vector<std::string> en_lines = split(en), zh_lines = split(zh);
+            if (en_lines.size() == zh_lines.size()) {
+                for (size_t i = 0; i < en_lines.size(); i++) {
+                    if (normalize_whitespace(en_lines[i]).empty() ||
+                        normalize_whitespace(zh_lines[i]).empty()) continue;
+                    add_cand(en_lines[i], zh_lines[i]);
+                }
+            }
+        }
     }
     return count;
 }
@@ -2243,6 +2279,7 @@ void translation_shutdown(void) {
     s_id_dicts.clear();
     s_stat_index.clear();
     s_stat_cache.clear();
+    s_stat_colored_cache.clear();
     s_source_lookup = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
@@ -3156,6 +3193,40 @@ const char* translation_lookup_stat(const char *line, const char *ctx) {
     if (cit == s_stat_cache.end())
         cit = s_stat_cache.emplace(std::move(ck), stat_lookup_uncached(line, passive)).first;
     return cit->second.empty() ? nullptr : cit->second.c_str();
+}
+
+/* TODO(impl): see translation_manager.h -- empty shell for the TDD red phase
+** (--stat-selftest F4b/F4c). */
+/* Length of the colour escape at the start of s ("^xRRGGBB" = 8, "^N" = 2),
+** 0 when it does not start with one. Same two forms POB's DrawString knows. */
+static size_t stat_leading_colour_len(const char *s) {
+    if (!s || s[0] != '^') return 0;
+    if (s[1] >= '0' && s[1] <= '9') return 2;
+    if (s[1] == 'x') {
+        for (int i = 2; i < 8; i++)
+            if (!isxdigit((unsigned char)s[i])) return 0;   /* also stops at '\0' */
+        return 8;
+    }
+    return 0;
+}
+
+const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
+    const size_t cl = stat_leading_colour_len(line);
+    if (cl == 0) return translation_lookup_stat(line, ctx);
+    const char *zh = translation_lookup_stat(line + cl, ctx);
+    if (!zh) return nullptr;
+    const std::string colour(line, cl);
+    std::string out = colour;
+    for (const char *p = zh; *p; ++p) {
+        out += *p;
+        if (*p == '\n') out += colour;
+    }
+    std::string ck(ctx ? ctx : "");
+    ck += '\x1f';
+    ck += line;
+    auto &slot = s_stat_colored_cache[ck];
+    slot = std::move(out);
+    return slot.c_str();
 }
 
 const char* translation_debug_sources(void) {
