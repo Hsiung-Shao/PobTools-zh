@@ -86,9 +86,7 @@ const char* translation_lookup_stat(const char *line, const char *ctx);
 
 /* translation_lookup_stat with the line's colour kept: a leading "^xRRGGBB"
 ** or "^N" escape is stripped for the lookup and, on a hit, written in front of
-** the answer AND after every '
-' in it (a GGPK template's "
-" turns one
+** the answer AND after every '\n' in it (a GGPK template's "\n" turns one
 ** English line into several Chinese lines; each must keep the colour). No
 ** leading colour -> same as translation_lookup_stat. nullptr when no hit.
 ** Pointer valid until the next reload. Tested by --stat-selftest F4b/F4c. */

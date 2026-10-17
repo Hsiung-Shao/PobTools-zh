@@ -387,8 +387,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	       "F3b 同英文時取 stat_descriptions 譯法(非 skill_stat 的「20% 更少暴擊率」)");
 
 	// F4:GGPK 模板的 "\n" 讓單行英文得到兩行中文(Guardian / Bastion of Hope)。
-	// C 層只回文字;每行補色碼目前在 ui_api.cpp 的 Lua 綁定(只補開頭一次),host
-	// 測不到 —— 這裡只釘住 C 層輸出是真換行兩行,色碼見回報的建議。
+	// translation_lookup_stat 只回文字(F4a);逐行補色碼由 translation_lookup_stat_colored
+	// 負責(F4b/F4c),ui_api.cpp 的 Lua 綁定 PobToolsTranslateStat 只是轉呼叫它。
 	expect("If you've Attacked Recently, you and nearby Allies have +10% Chance to Block Attack Damage",
 	       "passive", u8"若你近期有攻擊，你和\n附近友方 +10% 攻擊傷害格擋率",
 	       "F4a 單行英文對到含 \\n 的模板時 C 層回真換行兩行");
@@ -420,6 +420,40 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 		check(ok && e2Hit, "F4c 無色碼輸入時與 translation_lookup_stat 結果相同");
 	}
+
+	// ---- R:code review 確認的實作問題 ----------------------------------------
+	printf("\n=== R code review 重現 ===\n");
+	// R1:colored 的回傳指標要和 translation_lookup_stat 一樣活到下次 reload。
+	// 結果遠超過 SSO 長度,快取格若每次被新字串 move 覆寫,第一次的指標就懸空。
+	{
+		const char* kLine =
+		    "^x8888FFIf you've Attacked Recently, you and nearby Allies have +10% Chance to Block Attack Damage";
+		const char* p1 = translation_lookup_stat_colored(kLine, "passive");
+		const std::string copy = p1 ? p1 : "";
+		const char* p2 = translation_lookup_stat_colored(kLine, "passive");
+		const bool samePtr = p1 && p1 == p2;
+		// 照指示讀第一次的指標;若已懸空,這是讀已釋放的堆積(Windows 堆積上不會崩,
+		// 但值不可靠),所以同時以 samePtr 判定。
+		const bool sameText = p1 && copy.size() > 32 && strcmp(p1, copy.c_str()) == 0;
+		check(samePtr && sameText, "R1 colored 連查兩次:指標相同且第一次指標內容不變");
+		if (!(samePtr && sameText))
+			printf("           p1=%p p2=%p len=%zu samePtr=%d sameText=%d\n", (const void*)p1,
+			       (const void*)p2, copy.size(), samePtr, sameText);
+	}
+	// R2:平手時比 stat 數,行內數值只算對到英文 {N} 的值;模板寫死的數字(4 seconds)
+	// 不算。候選(item):
+	//   chance_to_gain_onslaught_on_kill_% onslaught_time_granted_on_kill_ms|1|# 0   2 stat
+	//       "{0}% chance to gain Onslaught for 4 seconds on Kill" → 擊殺時 {0}% 機率獲得 4 秒猛攻
+	//   chance_to_gain_onslaught_on_kill_% onslaught_time_granted_on_kill_ms|1|# 1|#  2 stat
+	//       "{0}% chance ... for {1} seconds on Kill" → 擊殺時 {0}% 機率獲得 {1} 秒猛攻
+	//   chance_to_gain_onslaught_on_kill_for_4_seconds_%|1|99                       1 stat
+	//       → 擊殺時有 {0}% 機率獲得 4 秒猛攻效果
+	// 只有 10 對到所有候選的 {N}(4 在兩個候選是寫死數字),值數 = 1 → 取 1-stat 那筆。
+	expect("10% chance to gain Onslaught for 4 seconds on Kill", "item",
+	       u8"擊殺時有 10% 機率獲得 4 秒猛攻效果", "R2 平手時寫死數字不算值(4 秒猛攻取 1-stat 譯法)");
+	// R2b:同型的 10 秒版(chance_to_gain_onslaught_on_kill_for_10_seconds_%|1|99)。
+	expect("13% chance to gain Onslaught for 10 seconds on Kill", "item",
+	       u8"擊殺時有 13% 機率獲得猛攻 10 秒", "R2b 平手時寫死數字不算值(10 秒猛攻取 1-stat 譯法)");
 
 	// ---- D:詞彙表(glossary)選擇規則(使用者裁定)----------------------------
 	// 同一 term(小寫、去結尾冒號)只留一筆：優先原鍵不帶冒號者;都帶冒號取原鍵
