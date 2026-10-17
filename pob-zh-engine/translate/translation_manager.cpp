@@ -3192,9 +3192,20 @@ static std::string stat_lookup_uncached(const std::string &line, bool passive) {
     };
     if (all_same(outs)) return outs[0];
 
+    /* Values that fill a {N} in EVERY candidate. A number some candidate writes
+    ** out in its English ("for 4 seconds") is wording there, not a stat value,
+    ** so it does not count toward the line's stat count. */
+    std::vector<char> literal_somewhere(vals.size(), 0);
+    for (const StatCand *c : cands)
+        for (const auto &l : c->lits)
+            if ((size_t)l.first < vals.size()) literal_somewhere[l.first] = 1;
     int nvals = 0;
-    for (const std::string &v : vals)
-        if (!v.empty() && v.back() != '#') nvals++;   /* a written '#' is no value */
+    for (size_t i = 0; i < vals.size(); i++) {
+        const std::string &v = vals[i];
+        if (v.empty() || v.back() == '#') continue;   /* a written '#' is no value */
+        if (literal_somewhere[i]) continue;
+        nvals++;
+    }
     std::vector<std::string> kept;
     for (size_t i = 0; i < cands.size(); i++)
         if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
@@ -3220,8 +3231,6 @@ const char* translation_lookup_stat(const char *line, const char *ctx) {
     return cit->second.empty() ? nullptr : cit->second.c_str();
 }
 
-/* TODO(impl): see translation_manager.h -- empty shell for the TDD red phase
-** (--stat-selftest F4b/F4c). */
 /* Length of the colour escape at the start of s ("^xRRGGBB" = 8, "^N" = 2),
 ** 0 when it does not start with one. Same two forms POB's DrawString knows. */
 static size_t stat_leading_colour_len(const char *s) {
@@ -3249,9 +3258,12 @@ const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     std::string ck(ctx ? ctx : "");
     ck += '\x1f';
     ck += line;
-    auto &slot = s_stat_colored_cache[ck];
-    slot = std::move(out);
-    return slot.c_str();
+    /* Keep the first answer: rewriting the slot would free the buffer a
+    ** caller of the previous call may still hold (same lifetime contract as
+    ** translation_lookup_stat). The answer for a given line never changes
+    ** before the next reload, which clears this cache. */
+    auto ins = s_stat_colored_cache.try_emplace(std::move(ck), std::move(out));
+    return ins.first->second.c_str();
 }
 
 const char* translation_debug_sources(void) {
