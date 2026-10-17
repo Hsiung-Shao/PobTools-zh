@@ -704,6 +704,10 @@ function C:AddNodeTooltip(tooltip, node, build)
 	for _, line in ipairs(node.sd or {}) do
 		tooltip:AddLine(16, "^7"..line)
 	end
+	-- ST-L4:珠寶插槽,上游在 AddNodeTooltip 內呼叫 itemsTab:AddItemTooltip
+	if node.jewel and build and build.itemsTab then
+		build.itemsTab:AddItemTooltip(tooltip, node.jewel, { nodeId = node.id })
+	end
 end
 """
 
@@ -1259,6 +1263,45 @@ def test_stat_passive(fork):
           ok and lines == want, "lines=%r err=%r" % (lines, err))
 
 
+JEWEL_ITEM = """
+{
+	rarity = "UNIQUE",
+	title = "Kaom's Heart",
+	baseName = "Glorious Plate",
+	base = {},
+	name = "Kaom's Heart, Glorious Plate",
+	otherLines = { "^x7F7F7FLimited to: 1", "^x7F7F7FRadius: Large", "^x7F7F7F+12 Life (+1.2%)" },
+	explicitModLines = { { line = "+30 to Dexterity" } },
+}
+"""
+
+
+def test_stat_jewel_in_node(fork):
+    """ST-L4 -- 天賦提示內嵌珠寶物品提示:非詞綴行不以 passive 查;PoE1 詞綴行仍以 item 查。"""
+    h = stat_harness(fork, STAT_DICT)
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    tab = make(h, "ItemsTab")
+    jewel = h.eval("function() return %s end" % JEWEL_ITEM)()
+    ok, err = h.eval('function(v, t, tab, j) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Elemental Overload", id = 1, sd = { "10% increased Attack Speed" }, '
+                     'jewel = j }, { itemsTab = tab }) end) return ok, e end')(view, tip, tab, jewel)
+    check("%s ST-L4 天賦提示內嵌物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-L4 前提:天賦說明行仍以 passive 呼叫" % fork,
+          any(_norm(l) == "10% increased Attack Speed" and c == "passive"
+              for l, c in h.stat_calls), repr(h.stat_calls))
+    item_lines = ("Kaom's Heart", "Glorious Plate", "Limited to: 1", "Radius: Large",
+                  "+12 Life (+1.2%)", "+30 to Dexterity")
+    bad = [(l, c) for l, c in h.stat_calls if _norm(l) in item_lines and c == "passive"]
+    check("%s ST-L4 內嵌物品提示的行不以 passive 呼叫 PobToolsTranslateStat" % fork,
+          not bad, "bad=%r calls=%r" % (bad, h.stat_calls))
+    if fork == "PoE1":
+        check("%s ST-L4 內嵌物品提示的詞綴行仍以 item 呼叫" % fork,
+              any(_norm(l) == "+30 to Dexterity" and c == "item" for l, c in h.stat_calls),
+              repr(h.stat_calls))
+    check("%s ST-L4 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
 # ---- upstream shape checks (catch a rename before a user does) -------------
 
 # ---- 包裝後參數數不變(新介面相容性閘門) -------------------------------------
@@ -1662,6 +1705,7 @@ def main():
         test_id_obeys_f2(fork)
         test_stat_mod_line(fork)
         test_stat_passive(fork)
+        test_stat_jewel_in_node(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
