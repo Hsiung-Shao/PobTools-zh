@@ -1135,7 +1135,9 @@ PATCHES["Tooltip"] = function(class)
 			if not zh and not isNodeName then
 				if src == "modline" then
 					statZh = zhByStat(text, "item")
-				elseif src == nil and nodeTipActive then
+				elseif src == nil and nodeTipActive and not itemCtx then
+					-- not inside an item tooltip nested in the node tooltip
+					-- (jewel socket): those lines are item text, not the passive's
 					statZh = zhByStat(text, "passive")
 				end
 			end
