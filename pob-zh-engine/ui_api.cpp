@@ -2928,22 +2928,14 @@ static int l_PobToolsTranslateId(lua_State* L)
 
 // PobToolsTranslateStat(line, ctx) -> chinese, or nil. One stat line through
 // stats_by_id.json (see translation_lookup_stat); ctx is "item" or "passive".
-// A leading colour escape ("^xRRGGBB" / "^N") is stripped for the lookup and
-// put back in front of the answer, once, like PobToolsTranslateDisplay does.
+// A leading colour escape ("^xRRGGBB" / "^N") is kept on every line of the
+// answer -- see translation_lookup_stat_colored, which owns that rule.
 static int l_PobToolsTranslateStat(lua_State* L)
 {
-	size_t len = 0;
-	const char* text = lua_isnoneornil(L, 1) ? nullptr : lua_tolstring(L, 1, &len);
+	const char* text = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
 	const char* ctx = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
-	if (!text || len == 0) { lua_pushnil(L); return 1; }
-	std::vector<char> stripped(len + 1);
-	char leading[16];
-	tr_strip_color_codes(text, (int)len, stripped.data(), (int)stripped.size(), leading, sizeof(leading));
-	const char* zh = translation_lookup_stat(stripped.data(), ctx);
-	if (!zh) { lua_pushnil(L); return 1; }
-	std::string out(leading);
-	out += zh;
-	lua_pushlstring(L, out.data(), out.size());
+	const char* zh = (text && *text) ? translation_lookup_stat_colored(text, ctx) : nullptr;
+	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
 	return 1;
 }
 

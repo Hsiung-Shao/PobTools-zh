@@ -328,6 +328,74 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!(kept && e2Hit)) printf("           global='%s' guardE2=%d\n", r ? r : "(null)", e2Hit);
 	}
 
+	// ---- 稽核 r4(tools/ggpk_zh/audit_prod/report_r4)的重現 -----------------
+	printf("\n=== 稽核 r4 重現 ===\n");
+	// F1:天賦核心(keystone)的說明是 passive_skill_stat_descriptions.txt 多行模板的
+	// 其中一行;同英文在 stat_descriptions.txt 另有別的 stat(base_cannot_evade 等)。
+	// passive 情境應取 keystone 模板對應那一行的中文(misjoin_r4.tsv 第 1~7 列)。
+	expect("Cannot Evade enemy Attacks", "passive", u8"不能閃避敵人攻擊",
+	       "F1a keystone 行取天賦描述檔(不能閃避敵人攻擊,非 base_cannot_evade)");
+	expect("Removes all mana", "passive", u8"移除全部魔力",
+	       "F1b keystone 行取天賦描述檔(移除全部魔力,非 base_no_mana)");
+	expect("20% less Effect of your Curses", "passive", u8"20% 更少你的詛咒效果",
+	       "F1c keystone 行取天賦描述檔(咒術大師,非 curse_pillar)");
+	expect("You take 65% of Damage from Blocked Hits", "passive", u8"你承受 65% 已格擋擊中的傷害",
+	       "F1d keystone 行取天賦描述檔(側身之擊,非 base_block_%_damage_taken)");
+
+	// F2:模板本身的連續空白照抄(regress_r4.tsv:mace_elemental_damage_+%、
+	// display_trigger_arcane_wake_after_spending_200_mana_%_chance)。
+	expect("12% increased Elemental Damage with Maces or Sceptres", "passive",
+	       u8"錘和權杖增加  12% 元素傷害", "F2a 填值保留模板的兩個連續空白(錘和權杖)");
+	expect("Trigger Level 20 Arcane Wake after Spending a total of 200 Mana", "item",
+	       u8"消耗總計 200 魔力時觸發等級  20 的秘能喚醒", "F2b 填值保留模板的兩個連續空白(秘能喚醒)");
+
+	// F3:引擎只收 stat_descriptions.txt 與 passive_skill_stat_descriptions.txt。
+	// 只存在於 skill_stat_descriptions.txt 的句子查不到;兩檔同英文不同譯時用物品檔。
+	{
+		const Said a = ask("30% chance to gain a Frenzy Charge when a Mine is Detonated targeting an Enemy", "item");
+		const Said b = ask("30% chance to gain a Frenzy Charge when a Mine is Detonated targeting an Enemy", "passive");
+		check(a.null && b.null && e2Hit, "F3a 只在 skill_stat_descriptions 的句子不採用");
+		if (!(a.null && b.null && e2Hit))
+			printf("           item='%s' passive='%s' guardE2=%d\n", shown(a), shown(b), e2Hit);
+	}
+	expect("20% less Critical Strike Chance", "item", u8"更少 20% 暴擊率",
+	       "F3b 同英文時取 stat_descriptions 譯法(非 skill_stat 的「20% 更少暴擊率」)");
+
+	// F4:GGPK 模板的 "\n" 讓單行英文得到兩行中文(Guardian / Bastion of Hope)。
+	// C 層只回文字;每行補色碼目前在 ui_api.cpp 的 Lua 綁定(只補開頭一次),host
+	// 測不到 —— 這裡只釘住 C 層輸出是真換行兩行,色碼見回報的建議。
+	expect("If you've Attacked Recently, you and nearby Allies have +10% Chance to Block Attack Damage",
+	       "passive", u8"若你近期有攻擊，你和\n附近友方 +10% 攻擊傷害格擋率",
+	       "F4a 單行英文對到含 \\n 的模板時 C 層回真換行兩行");
+	// F4b / F4c:translation_lookup_stat_colored(Lua 綁定改呼叫它)。
+	{
+		const char* r = translation_lookup_stat_colored(
+		    "^x8888FFIf you've Attacked Recently, you and nearby Allies have +10% Chance to Block Attack Damage",
+		    "passive");
+		const std::string want = u8"^x8888FF若你近期有攻擊，你和\n^x8888FF附近友方 +10% 攻擊傷害格擋率";
+		const bool ok = r && want == r;
+		check(ok, "F4b 帶色碼的行命中多行模板時每行都補同一色碼");
+		if (!ok) printf("           got  '%s'\n           want '%s'\n", r ? r : "(null)", want.c_str());
+	}
+	{
+		// 無色碼:命中、多行命中、查不到三種都要與 translation_lookup_stat 相同。
+		const char* lines[][2] = {
+		    {"If you've Attacked Recently, you and nearby Allies have +10% Chance to Block Attack Damage", "passive"},
+		    {"+20 to maximum Life", "item"},
+		    {"(Not supported in PoB yet)", "item"}};
+		bool ok = true;
+		for (auto& l : lines) {
+			const Said plain = ask(l[0], l[1]);
+			const char* c = translation_lookup_stat_colored(l[0], l[1]);
+			const bool same = plain.null ? c == nullptr : (c && plain.s == c);
+			if (!same) {
+				ok = false;
+				printf("           %s: plain='%s' colored='%s'\n", l[0], shown(plain), c ? c : "(null)");
+			}
+		}
+		check(ok && e2Hit, "F4c 無色碼輸入時與 translation_lookup_stat 結果相同");
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。
