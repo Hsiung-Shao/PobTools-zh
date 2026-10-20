@@ -1348,6 +1348,75 @@ def test_stat_jewel_in_node(fork):
     check("%s ST-L4 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
+# ---- 多行 stat 模板被折成兩個 sd 元素(ST-P2b) --------------------------------
+#
+# node 51108:GGPK 一個兩行模板,POB 拆成 sd 兩個元素逐行 AddLine。
+# 假引擎只認 "\n" 合併句、回兩行中文;單行一律 nil。
+
+SD_A = "10% increased Effect of Arcane Surge on you per"
+SD_B = "200 Mana spent Recently, up to 50%"
+P2B_STAT_DICT = {SD_A + "\n" + SD_B: "近期每消耗 200 魔力,\n秘術增強對你的效果增加 10%,最多 50%"}
+P2B_ZH = ["近期每消耗 200 魔力,", "秘術增強對你的效果增加 10%,最多 50%"]
+
+
+def p2b_tooltips(fork, stat_dict, nodes, define=True):
+    """依序對多個節點各建一個天賦提示;回 (h, ok, err, [[原始行...] 每節點])。"""
+    h = stat_harness(fork, stat_dict, define)
+    view = make(h, "PassiveTreeView")
+    out = []
+    ok, err = True, None
+    for i, sd in enumerate(nodes):
+        tip = make(h, "Tooltip")
+        sd_lua = h.eval("function(...) return {...} end")(*sd)
+        o, e = h.eval('function(v, t, id, sd) local ok, e = pcall(function() '
+                      'v:AddNodeTooltip(t, { dn = "Elemental Overload", id = id, sd = sd }, {}) '
+                      'end) return ok, e end')(view, tip, 51108 + i, sd_lua)
+        ok, err = ok and o, err or e
+        out.append([l for l in tooltip_lines(h, tip) if l is not None])
+    return h, ok, err, out
+
+
+def test_stat_multiline_sd(fork):
+    """ST-P2b -- 相鄰兩個 sd 行以 "\\n" 合併查 stat,命中兩行中文則各取一行。"""
+    # (1)(2)(5)
+    h, ok, err, tips = p2b_tooltips(fork, P2B_STAT_DICT, [[SD_A, SD_B]])
+    lines = tips[0]
+    check("%s ST-P2b 天賦提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-P2b 合併句命中時兩行各顯示對應的中文行" % fork,
+          [_norm(l) for l in lines[1:3]] == P2B_ZH,
+          "lines=%r calls=%r" % (lines, h.stat_calls))
+    check("%s ST-P2b 以 \"\\n\" 合併句且 ctx passive 呼叫 PobToolsTranslateStat" % fork,
+          (SD_A + "\n" + SD_B, "passive") in [(_norm_ml(l), c) for l, c in h.stat_calls],
+          repr(h.stat_calls))
+    check("%s ST-P2b 帶色碼的說明行對上後補回原色碼前綴" % fork,
+          lines[1:3] == ["^7" + z for z in P2B_ZH], "lines=%r" % (lines,))
+    # (1b) 前一組配對失敗會往下滑:X+A 不中、A+B 中;X 照現行
+    h, ok, err, tips = p2b_tooltips(
+        fork, P2B_STAT_DICT, [["10% increased Attack Speed", SD_A, SD_B]])
+    got = [_norm(l) for l in tips[0][1:4]]
+    check("%s ST-P2b 三行中後兩行配對成功、第一行照現行" % fork,
+          got == ["增加 10% 攻擊速度"] + P2B_ZH, "got=%r calls=%r" % (got, h.stat_calls))
+    # (3) 合併查不到:兩行照現行逐行路徑(與未定義函式時相同)
+    h, ok, err, tips = p2b_tooltips(fork, {}, [[SD_A, SD_B]])
+    h0, ok0, err0, tips0 = p2b_tooltips(fork, None, [[SD_A, SD_B]], define=False)
+    check("%s ST-P2b 合併句未命中時兩行照現行逐行路徑" % fork,
+          ok and tips[0] == tips0[0] and [_norm(l) for l in tips[0][1:3]] == [SD_A, SD_B],
+          "lines=%r 未定義時=%r" % (tips[0], tips0[0]))
+    # (4) 對照只屬該節點:下一個節點的同一行不沿用
+    h, ok, err, tips = p2b_tooltips(fork, P2B_STAT_DICT,
+                                    [[SD_A, SD_B], [SD_A, "10% increased Attack Speed"]])
+    got1 = [_norm(l) for l in tips[0][1:3]]
+    got2 = [_norm(l) for l in tips[1][1:3]]
+    check("%s ST-P2b 第一個節點配對成功(前提)" % fork, got1 == P2B_ZH, "got=%r" % got1)
+    check("%s ST-P2b 天賦提示結束後對照清空,下一個節點同一行不沿用" % fork,
+          got2 == [SD_A, "增加 10% 攻擊速度"], "got2=%r calls=%r" % (got2, h.stat_calls))
+
+
+def _norm_ml(s):
+    """去每行色碼後以 \\n 接回(合併句比對用)。"""
+    return "\n".join(_norm(p) for p in (s or "").split("\n"))
+
+
 # ---- 寶石提示(ST-P1) ---------------------------------------------------------
 #
 # 上游 Classes/GemTooltip.lua 不是 newClass 類別,是模組表:
@@ -2180,6 +2249,7 @@ def main():
         test_stat_mod_line(fork)
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)
+        test_stat_multiline_sd(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_wrapped_arity(fork)
