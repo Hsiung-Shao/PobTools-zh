@@ -1643,6 +1643,72 @@ def test_src_anoint_legion_tattoo(fork):
           h.source is None, "source=%r" % h.source)
 
 
+# ---- 與引擎 source patch 並存(ST-FB) -----------------------------------------
+#
+# ui_api.cpp「刺青與軍團珠寶下拉的名稱維持英文」把 treetab.lua 的
+#   label = node.dn .. "
+# 換成
+#   label = ((PobToolsTranslateDisplay and PobToolsTranslateDisplay(node.dn)) or node.dn) .. "
+# 建清單時(來源 nil)就寫入全域譯名,注入層之後拿到的 dn 段已是中文,
+# legion / tattoo 來源查不到。這組測試在合成 TreeTab 上套真的 source patch。
+
+DICT[None].update({
+    "Bleed Avoidance": "流血迴避(全域)",
+    "Tattoo of the Ramako Scout": "拉瑪克斥候紋身(全域)",
+})
+DICT["legion"]["Bleed Avoidance"] = "流血避免"
+
+
+def fb_harness(fork):
+    """p3_harness,但 TreeTab 用套過引擎 treetab.lua source patch 的版本。"""
+    src = TREETAB_P1 if fork == "PoE1" else TREETAB_P2
+    patched, applied = apply_source_patches(
+        src, "treetab.lua", parse_source_patches(read_text(UI_API)))
+    h = p3_harness(fork, with_inject=False)
+    h.run(patched)
+    h.apply_inject()
+    h.lookups = []
+    return h, patched, applied
+
+
+def fb_build(h):
+    tab = p3_tree_tab(h)
+    tab.build.spec.tree.legion.nodes[4] = h.eval(
+        'function() return { id = "glorious_vanity_notable_3", dn = "Bleed Avoidance", '
+        '["not"] = true, sd = { "Avoid bleed" } } end')()
+    return tab
+
+
+def test_src_legion_tattoo_with_source_patch(fork):
+    """ST-FB -- 套用引擎 source patch 後,下拉 label 的 dn 段仍是 legion / tattoo 來源譯名。"""
+    h, patched, applied = fb_harness(fork)
+    check("%s ST-FB 前提:引擎 source patch 確實改寫了合成 TreeTab 的 label 式" % fork,
+          applied >= 1 and "PobToolsTranslateDisplay(node.dn)" in patched,
+          "applied=%d" % applied)
+    tab = fb_build(h)
+    h.eval('function(t) t:FindTimelessJewel() end')(tab)
+    labels = p3_popup_labels(h, "nodeSelect")
+    want = ("流血避免" + LABEL_PAD + "Avoid bleed").strip()
+    check("%s ST-FB 軍團下拉 label 的 dn 段是 legion 來源譯名而非全域譯名" % fork,
+          want in labels, "labels=%r lookups=%r" % (labels, h.lookups))
+    check("%s ST-FB 軍團下拉 label 不殘留全域譯名" % fork,
+          not any(l.startswith("流血迴避(全域)") for l in labels), "labels=%r" % labels)
+    check("%s ST-FB 軍團下拉繪製後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    if fork != "PoE1":
+        print("  N/A   %s ST-FB 刺青:此分支 TreeTab 沒有 ModifyNodePopup" % fork)
+        return
+    h, patched, applied = fb_harness(fork)
+    tab = fb_build(h)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    labels = p3_popup_labels(h, "modSelect")
+    check("%s ST-FB 刺青下拉 label 的 dn 段是 tattoo 來源譯名而非全域譯名" % fork,
+          any(l.startswith("拉瑪克斥候刺青(刺青)" + LABEL_PAD) for l in labels),
+          "labels=%r lookups=%r" % (labels, h.lookups))
+    check("%s ST-FB 刺青下拉 label 不殘留全域譯名" % fork,
+          not any(l.startswith("拉瑪克斥候紋身(全域)") for l in labels), "labels=%r" % labels)
+
+
 # ---- 多行 stat 模板被折成兩個 sd 元素(ST-P2b) --------------------------------
 #
 # node 51108:GGPK 一個兩行模板,POB 拆成 sd 兩個元素逐行 AddLine。
@@ -2546,6 +2612,7 @@ def main():
         test_stat_jewel_in_node(fork)
         test_stat_multiline_sd(fork)
         test_src_anoint_legion_tattoo(fork)
+        test_src_legion_tattoo_with_source_patch(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_wrapped_arity(fork)

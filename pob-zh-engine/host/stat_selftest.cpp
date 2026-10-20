@@ -722,6 +722,67 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("+3 to Level of all Pact of Beidat Gems", "item",
 	       u8"全部 貝達特誓約 寶石等級 +3", "P5-3 寶石等級：技能名稱槽填入繁中名");
 
+	// ---- FC:passive 情境含 passive_skill_aura_stat_descriptions.txt ----------------
+	// coverage_r3 cat_08(天賦 40059 / 47630):光環型天賦行只在天賦光環描述檔。
+	printf("\n=== FC passive 光環描述檔 ===\n");
+	{
+		// inquisitor_aura_elemental_damage_+%_final|#|-1|passive_skill_aura_stat_descriptions.txt|0
+		//   "Nearby Enemies deal {0}% less Elemental Damage" → "附近敵人造成 {0}% 更少元素傷害"
+		// hit_damage_+%_while_chilled|#|-1|passive_skill_aura_stat_descriptions.txt|0
+		//   "Nearby Chilled Enemies deal {0}% reduced Damage with Hits" → "附近被冰緩的敵人減少 {0}% 擊中傷害"
+		const Said a = ask("Nearby Enemies deal 8% less Elemental Damage", "passive");
+		const Said b = ask("Nearby Chilled Enemies deal 10% reduced Damage with Hits", "passive");
+		const bool ok = !a.null && a.s == u8"附近敵人造成 8% 更少元素傷害" &&
+		                !b.null && b.s == u8"附近被冰緩的敵人減少 10% 擊中傷害";
+		check(ok, "FC-1 passive 情境取天賦光環描述檔模板");
+		if (!ok) printf("           a='%s' b='%s'\n", shown(a), shown(b));
+	}
+
+	// ---- FA:名稱槽寶石名先查 gem_names 來源 ------------------------------------
+	// coverage_r3 cat_10 Pearl of Tsoatha:「…等級 20 的附加混沌傷害輔助輔助」—— 名稱槽
+	// 填了 gems 來源的「…輔助」,模板本身又帶「輔助」。gem_names.json(扁平，鍵 = GGPK
+	// 寶石顯示名英文，值 = 不含「輔助」的繁中)應先於 gems 來源 / 全域。
+	// 模板:local_pearl_random_support_gem_1_slot_index …_index …_level|3 # #(Boots)/|2 # #(Gloves)
+	//   "Skills Socketed in your Boots are Supported by level {2} {1}" → "鑲嵌於你的鞋子中的技能會受到等級 {2} 的{1}輔助"
+	//   handler display_indexable_non_active_support 於 {1}
+	// 名稱繁中:GGPK indexablenonactivesupportgems.Name「Added Chaos Damage」→附加混沌傷害、
+	//   「Added Cold Damage」→附加冰冷傷害(baseitemtypes 是「…輔助」)。
+	printf("\n=== FA 名稱槽寶石名 ===\n");
+	{
+		const std::wstring gnRoot = root + L"fag\\";
+		CreateDirectoryW(gnRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, gnRoot + L"zh-rTW\\", statsJson, true, w);
+		if (setup) {
+			nlohmann::ordered_json d = nlohmann::ordered_json::object();
+			d["source_files"] = nlohmann::ordered_json::array({"ggpk:indexable support gem names"});
+			d["is_base_items"] = false;
+			d["entries"] = {{"Added Chaos Damage", u8"附加混沌傷害"}, {"Added Cold Damage", u8"附加冰冷傷害"}};
+			setup = write_bytes(gnRoot + L"zh-rTW\\gem_names.json", d.dump(2));
+			std::string mb;
+			try {
+				setup = setup && read_bytes(gnRoot + L"zh-rTW\\meta.json", mb);
+				auto meta = nlohmann::ordered_json::parse(mb);
+				if (!in_array(meta, "source_dicts", "gem_names.json")) meta["source_dicts"].push_back("gem_names.json");
+				setup = setup && write_bytes(gnRoot + L"zh-rTW\\meta.json", meta.dump(2));
+			} catch (...) { setup = false; }
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", gnRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const Said a = ask("Skills Socketed in your Boots are Supported by level 20 Added Chaos Damage", "item");
+		const Said b = ask("Skills Socketed in your Gloves are Supported by level 20 Added Cold Damage", "item");
+		const bool noDouble = a.s.find(u8"輔助輔助") == std::string::npos && b.s.find(u8"輔助輔助") == std::string::npos;
+		const bool ok = setup && noDouble &&
+		                !a.null && a.s == u8"鑲嵌於你的鞋子中的技能會受到等級 20 的附加混沌傷害輔助" &&
+		                !b.null && b.s == u8"鑲嵌於你的手套中的技能會受到等級 20 的附加冰冷傷害輔助";
+		check(ok, "FA-1 寶石名稱槽先查 gem_names:不出現「輔助輔助」");
+		if (!ok) printf("           setup=%d boots='%s' gloves='%s' %s\n", setup, shown(a), shown(b), w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(gnRoot);
+	}
+
 	// ---- P3:anoint / legion / tattoo 來源字典 ------------------------------------
 	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在
 	// source_lookup 下當來源表;絕不併入全域。三檔由測試在暫存複本放小樣本。

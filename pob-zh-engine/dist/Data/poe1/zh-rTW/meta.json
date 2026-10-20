@@ -22,7 +22,8 @@
     "anoint.json",
     "legion.json",
     "tattoo.json",
-    "stat_wrappers.json"
+    "stat_wrappers.json",
+    "gem_names.json"
   ],
   "source_lookup": true,
   "incomplete_translation_whitelist": [
