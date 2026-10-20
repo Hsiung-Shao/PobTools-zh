@@ -575,6 +575,121 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(lRoot);
 	}
 
+	// ---- P1:寶石情境(ctx "gem")與寶石說明 id 字典(gems_desc)--------------------
+	// POB 寶石提示用的描述檔(Data/Skills/*.lua 的 statDescriptionScope + 各檔 parent 鏈):
+	//   skill / gem / active_skill_gem / minion_skill / minion_spell / minion_spell_damage /
+	//   single_minion_spell / minion_attack / aura / banner_aura / buff / secondary_debuff /
+	//   debuff / curse / brand / beam / offering / variable_duration _stat_descriptions,
+	//   最終 parent 為 stat_descriptions。全部都在 stats_by_id.json 的 src_file 裡。
+	printf("\n=== P1 寶石情境 ===\n");
+	{
+		// P1-3a:同英文 "Fires 1 Projectile" 在 gem 情境有三個候選(中文都不同):
+		//   base_number_of_projectiles|1|active_skill_gem_stat_descriptions.txt|1 "Fires 1 Projectile" → 發射1個投射物
+		//   base_number_of_projectiles|1|active_skill_gem_stat_descriptions.txt|0 "Fires {0:+d} Projectile"(gem_quality)→ 發射+1個投射物
+		//   power_siphon_fire_at_all_targets ...|0 1 0 # ...|skill_stat_descriptions.txt|0 "Fires 1 Projectile" → 發射 1 投射物
+		// 純文字分不出 —— 由 POB describeStats 的 lineMap 給的 stat id 縮小。
+		{
+			const char* r = translation_lookup_stat_ids("Fires 1 Projectile", "gem", "base_number_of_projectiles");
+			const bool ok = r && std::string(r) == u8"發射1個投射物";
+			check(ok, "P1-3a gem + stat id:Fires 1 Projectile 取 base_number_of_projectiles 的非品質句");
+			if (!ok) printf("           got '%s' want '發射1個投射物'\n", r ? r : "(null)");
+		}
+		{
+			// 不帶 ids:可回空或三者之一，但不得含佔位符。
+			const Said g = ask("Fires 1 Projectile", "gem");
+			const bool ok = g.null || g.s == u8"發射1個投射物" || g.s == u8"發射+1個投射物" || g.s == u8"發射 1 投射物";
+			check(ok, "P1-3a' 不帶 stat id 時回空或三候選之一(不含佔位符)");
+			if (!ok) printf("           got '%s'\n", shown(g));
+		}
+		// P1-3e:POB StatDescriber 對 base_number_of_projectiles 的四個變體(active_skill_gem 第 125 塊):
+		//   [1] gem_quality limit 1|1  "Fires {0:+d} Projectile"   [2] gem_quality limit 2|#  "Fires {0:+d} Projectiles"
+		//   [3]             limit 1|1  "Fires 1 Projectile"         [4]             limit 2|#  "Fires {0} Projectiles"
+		// stats_by_id:...|2|#|active_skill_gem_stat_descriptions.txt|0 → 發射{0:+d}個投射物(品質句)
+		//              ...|2|#|active_skill_gem_stat_descriptions.txt|1 → 發射{0}個投射物
+		{
+			const char* ids = "base_number_of_projectiles";
+			const char* plain = translation_lookup_stat_ids("Fires 2 Projectiles", "gem", ids);
+			const char* qual = translation_lookup_stat_ids("Fires +2 Projectiles", "gem", ids);
+			const bool ok = plain && std::string(plain) == u8"發射2個投射物" &&
+			                qual && std::string(qual) == u8"發射+2個投射物";
+			check(ok, "P1-3e gem + stat id:複數句依正號選一般句 / 品質句(+d)");
+			if (!ok) printf("           'Fires 2 Projectiles'='%s' 'Fires +2 Projectiles'='%s'\n",
+			                plain ? plain : "(null)", qual ? qual : "(null)");
+		}
+		{
+			// stat_ids 為空或 nullptr 時等同 translation_lookup_stat(用已綠的 E2 句當前提)。
+			const char* a = translation_lookup_stat_ids("+20 to maximum Life", "item", nullptr);
+			const char* b = translation_lookup_stat_ids("+20 to maximum Life", "item", "");
+			const Said c = ask("+20 to maximum Life", "item");
+			const bool ok = !c.null && a && b && c.s == a && c.s == b;
+			check(ok, "P1-3f stat_ids 為空時等同 translation_lookup_stat");
+			if (!ok) printf("           null='%s' empty='%s' plain='%s'\n", a ? a : "(null)", b ? b : "(null)", shown(c));
+		}
+		// P1-3b:critical_strike_multiplier_+_per_power_charge|#|skill_stat_descriptions.txt|0
+		//   "每顆暴擊球 {0:+d}% 暴擊加成"(stat_descriptions 版是「每個暴擊球」;寶石檔優先)。
+		expect("+20% to Critical Strike Multiplier per Power Charge", "gem", u8"每顆暴擊球 +20% 暴擊加成",
+		       "P1-3b gem 情境：正號與數值正確，寶石描述檔優先於 stat_descriptions");
+		// P1-3c:%_chance_to_gain_frenzy_charge_on_mine_detonated_targeting_an_enemy|#|gem_stat_descriptions.txt|0
+		expect("20% chance to gain a Frenzy Charge when a Mine from Supported\nSkills is Detonated targeting an Enemy",
+		       "gem", u8"當透過輔助技能製造的地雷對敵人引爆時，\n有 20% 機率獲得 1 顆狂怒球",
+		       "P1-3c gem 情境：狂怒球地雷多行句得狂怒球版");
+		// P1-3d:item / passive 的篩選不變由 E1~E11、F1~F3 持續涵蓋;這裡再釘一句
+		//   只在 skill_stat 的句子,item 情境仍不採用(與 F3a 同義,索引擴大後最易破)。
+		{
+			const Said a = ask("30% chance to gain a Frenzy Charge when a Mine is Detonated targeting an Enemy", "item");
+			const Said g = ask("30% chance to gain a Frenzy Charge when a Mine is Detonated targeting an Enemy", "gem");
+			const bool ok = a.null && !g.null && g.s == u8"當地雷對敵人引爆時，有 30% 機率獲得 1 顆狂怒球";
+			check(ok, "P1-3d 寶石檔只在 gem 情境採用,item 情境不受索引擴大影響");
+			if (!ok) printf("           item='%s' gem='%s'\n", shown(a), shown(g));
+		}
+	}
+	{
+		// P1-1:gems_desc_by_id.json(by_id 格式含 templates),鍵 = POB grantedEffect id(Data/Skills/act_int.lua 的
+		// skills["Fireball"] / skills["FrostBolt"]);值 = GGPK activeskills.Description(經
+		// grantedeffects.ActiveSkill;ggpk_zh.sqlite cell version 1 的 fireball / frost_bolt)。
+		const std::wstring gRoot = root + L"p1g\\";
+		CreateDirectoryW(gRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, gRoot + L"zh-rTW\\", statsJson, true, w);
+		const char* kFireEn = "Unleashes a ball of fire towards a target which explodes, damaging nearby foes.";
+		const char* kFrostEn = "Fires a slow-moving projectile that pierces through enemies, dealing cold damage.";
+		const std::string kFireZh = u8"釋放一顆球型火焰向前飛射，接觸到怪物時會爆炸並對周圍敵人造成傷害";
+		const std::string kFrostZh = u8"發射出一個緩慢移動，會穿透敵人的投射物，造成冰冷傷害。";
+		if (setup) {
+			nlohmann::ordered_json doc = nlohmann::ordered_json::object();
+			doc["source_files"] = nlohmann::ordered_json::array({"ggpk:activeskills.Description by grantedEffect id"});
+			doc["is_base_items"] = false;
+			doc["entries"] = {{"Fireball", kFireZh}, {"FrostBolt", kFrostZh}};
+			doc["templates"] = {{"Fireball", kFireEn}, {"FrostBolt", kFrostEn}};
+			setup = write_bytes(gRoot + L"zh-rTW\\gems_desc_by_id.json", doc.dump(2));
+			std::string mb;
+			try {
+				setup = setup && read_bytes(gRoot + L"zh-rTW\\meta.json", mb);
+				auto meta = nlohmann::ordered_json::parse(mb);
+				if (!in_array(meta, "source_dicts", "gems_desc_by_id.json"))
+					meta["source_dicts"].push_back("gems_desc_by_id.json");
+				setup = setup && write_bytes(gRoot + L"zh-rTW\\meta.json", meta.dump(2));
+			} catch (...) { setup = false; }
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", gRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		auto en = [](const char* id, const char* e) {
+			const char* r = translation_lookup_by_id_en("gems_desc", id, e);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::string a = en("Fireball", kFireEn);
+		const std::string b = en("FrostBolt", kFrostEn);
+		const std::string c = en("Fireball", kFrostEn);   // 英文不符
+		const bool ok = setup && a == kFireZh && b == kFrostZh && c == "(null)";
+		check(ok, "P1-1 gems_desc:id 加正確英文回繁中，英文不符回空");
+		if (!ok) printf("           setup=%d Fireball='%s' FrostBolt='%s' mismatch='%s' %s\n", setup,
+		                a.c_str(), b.c_str(), c.c_str(), w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(gRoot);
+	}
+
 	// ---- P2:不得輸出未填的佔位符 ------------------------------------------------
 	// coverage_r2(tools/ggpk_zh/audit_prod/coverage_r2/out/cat_*.tsv 的 leak 欄)40 列:
 	// POB 把多行 stat 拆成半句 / 逐行送來,半句被當成整條模板或 pattern 翻,模板裡

@@ -149,6 +149,7 @@ static std::unordered_map<std::string, std::unordered_map<std::string, std::stri
 static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
+    { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
 /* source -> (id -> whitespace-normalised GGPK English), from the id file's
@@ -166,8 +167,39 @@ static std::unordered_map<std::string, std::unordered_map<std::string, std::stri
 static const char *const kStatDictFile = "stats_by_id.json";
 static const char *const kStatFileItem = "stat_descriptions.txt";
 static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
+/* Which description files a ctx reads (see stat_file_tier):
+**   item    -> stat_descriptions.txt
+**   passive -> passive_skill_stat_descriptions.txt, then stat_descriptions.txt
+**   gem     -> the skill/gem description files POB's gem tooltips use
+**              (Data/Skills statDescriptionScope + their parent chain), then
+**              stat_descriptions.txt, the chain's final parent. */
+enum StatTier { kTierItem = 0, kTierPassive = 1, kTierGem = 2 };
+static const char *const kStatFilesGem[] = {
+    "skill_stat_descriptions.txt",
+    "gem_stat_descriptions.txt",
+    "active_skill_gem_stat_descriptions.txt",
+    "minion_skill_stat_descriptions.txt",
+    "minion_spell_skill_stat_descriptions.txt",
+    "minion_spell_damage_skill_stat_descriptions.txt",
+    "single_minion_spell_skill_stat_descriptions.txt",
+    "minion_attack_skill_stat_descriptions.txt",
+    "aura_skill_stat_descriptions.txt",
+    "banner_aura_skill_stat_descriptions.txt",
+    "buff_skill_stat_descriptions.txt",
+    "secondary_debuff_skill_stat_descriptions.txt",
+    "debuff_skill_stat_descriptions.txt",
+    "curse_skill_stat_descriptions.txt",
+    "brand_skill_stat_descriptions.txt",
+    "beam_skill_stat_descriptions.txt",
+    "offering_skill_stat_descriptions.txt",
+    "variable_duration_skill_stat_descriptions.txt",
+};
 struct StatCand {
-    bool        passive;   /* src_file: passive_skill_stat_descriptions.txt */
+    int         tier;      /* StatTier of the candidate's src_file */
+    std::vector<std::string> ids;  /* the key's stat_ids */
+    /* Per English slot (same index as the line's values): 1 = a "{N:+d}"
+    ** placeholder, i.e. the game prints that value with its sign. */
+    std::vector<char> plus_slot;
     int         nstats;    /* stat_ids count (space separated) */
     FillPlan    plan;      /* English {N} -> Chinese {N}; text has real newlines */
     /* Numbers the English template writes out ("per 10 Devotion"): slot index
@@ -1262,8 +1294,25 @@ static int load_json_stat_dict(const std::string &filepath) {
         const size_t p_file = key.rfind('|', p_dup - 1);
         if (p_file == std::string::npos) continue;
         const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
-        const bool passive = src_file == kStatFilePassive;
-        if (!passive && src_file != kStatFileItem) continue;
+        int tier = -1;
+        if (src_file == kStatFileItem) tier = kTierItem;
+        else if (src_file == kStatFilePassive) tier = kTierPassive;
+        else {
+            for (const char *g : kStatFilesGem)
+                if (src_file == g) { tier = kTierGem; break; }
+        }
+        if (tier < 0) continue;
+        std::vector<std::string> ids;
+        {
+            const size_t p_ids = key.find('|');
+            size_t b0 = 0;
+            while (b0 < p_ids) {
+                size_t sp = key.find(' ', b0);
+                if (sp == std::string::npos || sp > p_ids) sp = p_ids;
+                if (sp > b0) ids.push_back(key.substr(b0, sp - b0));
+                b0 = sp + 1;
+            }
+        }
         auto tit = templates.find(key);
         if (tit == templates.end() || !tit->is_string()) continue;
 
@@ -1285,8 +1334,17 @@ static int load_json_stat_dict(const std::string &filepath) {
 
         auto add_cand = [&](const std::string &en_t, const std::string &zh_t) {
             StatCand c;
-            c.passive = passive;
+            c.tier = tier;
+            c.ids = ids;
             c.nstats = nstats;
+            /* {N} numbers written with a sign format ("{0:+d}") */
+            std::vector<int> plus_ph;
+            for (size_t p = en_t.find('{'); p != std::string::npos; p = en_t.find('{', p + 1)) {
+                size_t q = p + 1;
+                while (q < en_t.size() && en_t[q] >= '0' && en_t[q] <= '9') q++;
+                if (q > p + 1 && q + 1 < en_t.size() && en_t[q] == ':' && en_t[q + 1] == '+')
+                    plus_ph.push_back(atoi(en_t.c_str() + p + 1));
+            }
             /* The plan keeps the Chinese template's own spacing (GGG writes
             ** "錘和權杖增加  {0}%" with two spaces and the game shows both);
             ** only the index KEY is whitespace-normalised. */
@@ -1298,6 +1356,11 @@ static int load_json_stat_dict(const std::string &filepath) {
                 if (t.ph < 0 && !t.lit.empty() && t.lit.back() != '#')
                     c.lits.emplace_back((int)i, t.lit);
             }
+            c.plus_slot.assign(en_slots.size(), 0);
+            for (size_t i = 0; i < en_slots.size(); i++)
+                if (en_slots[i].ph >= 0 &&
+                    std::find(plus_ph.begin(), plus_ph.end(), en_slots[i].ph) != plus_ph.end())
+                    c.plus_slot[i] = 1;
             c.plan = build_fill_plan_slots(en_slots, template_slots(zh_t), zh_text);
             s_stat_index[stat_index_key(en_t)].push_back(std::move(c));
         };
@@ -3306,18 +3369,27 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 **
 ** 1. The line hashes like an English template (markup stripped, numbers -> '#')
 **    and that key names the candidate stat entries.
-** 2. ctx picks the description file: item -> stat_descriptions.txt; passive ->
-**    passive_skill_stat_descriptions.txt, falling back to stat_descriptions.txt
-**    only when the passive file has no candidate. A candidate whose English
-**    writes out a number the line does not carry is a different stat.
+** 2. ctx picks the description files (StatTier): item -> stat_descriptions.txt;
+**    passive -> passive_skill_stat_descriptions.txt; gem -> the skill/gem
+**    files. passive and gem fall back to stat_descriptions.txt only when their
+**    own files have no candidate. A candidate whose English writes out a
+**    number the line does not carry is a different stat.
+** 2b. With stat id hints (translation_lookup_stat_ids) only candidates sharing
+**    a stat id stay, and the sign format decides between a "{N:+d}" and a
+**    "{N}" template: a value printed without a sign cannot come from "+d";
+**    a value printed with '+' prefers the "+d" candidates.
 ** 3. Every remaining candidate is filled with the line's values (by {N} index).
-**    All the same -> that answer.
+**    Answers still showing a placeholder are dropped. All the same -> that
+**    answer.
 ** 4. Tie-break: keep only candidates whose stat count equals the number of
 **    values on the line (Thread of Hope's two-stat "{1:+d}% to all Elemental
-**    Resistances" loses to the one-stat line). All the same -> that answer;
-**    otherwise ambiguous -> nullptr.
+**    Resistances" loses to the one-stat line). All the same -> that answer.
+** 4b. With stat id hints: candidates whose written-out numbers equal the
+**    line's values exactly (string for string) win. All the same -> that
+**    answer; otherwise ambiguous -> nullptr.
 ** The pointer is into s_stat_cache: valid until the next reload. */
-static std::string stat_lookup_uncached(const std::string &line, bool passive) {
+static std::string stat_lookup_uncached(const std::string &line, int tier,
+                                        const std::vector<std::string> *hint) {
     std::string in = strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto it = s_stat_index.find(stat_index_key(in));
@@ -3331,14 +3403,48 @@ static std::string stat_lookup_uncached(const std::string &line, bool passive) {
         }
         return true;
     };
-    std::vector<const StatCand *> cands;
-    auto collect = [&](bool want_passive) {
-        for (const StatCand &c : it->second)
-            if (c.passive == want_passive && lits_ok(c)) cands.push_back(&c);
+    auto ids_ok = [&](const StatCand &c) {
+        if (!hint) return true;
+        for (const std::string &id : c.ids)
+            if (std::find(hint->begin(), hint->end(), id) != hint->end()) return true;
+        return false;
     };
-    if (passive) collect(true);
-    if (cands.empty()) collect(false);
+    /* A slot printed by "{N:+d}" always carries a sign; a bare value there
+    ** means the line came from a plain "{N}" template. */
+    auto sign_ok = [&](const StatCand &c) {
+        if (!hint) return true;
+        for (size_t i = 0; i < c.plus_slot.size() && i < vals.size(); i++) {
+            if (!c.plus_slot[i] || vals[i].empty()) continue;
+            const char s0 = vals[i][0];
+            if (s0 != '+' && s0 != '-') return false;
+        }
+        return true;
+    };
+    std::vector<const StatCand *> cands;
+    auto collect = [&](int want_tier) {
+        for (const StatCand &c : it->second)
+            if (c.tier == want_tier && lits_ok(c) && ids_ok(c) && sign_ok(c)) cands.push_back(&c);
+    };
+    if (tier != kTierItem) collect(tier);
+    if (cands.empty()) collect(kTierItem);
     if (cands.empty()) return std::string();
+
+    /* A value printed with '+' prefers the candidates that print it with "+d". */
+    if (hint && cands.size() > 1) {
+        auto plus_score = [&](const StatCand *c) {
+            int n = 0;
+            for (size_t i = 0; i < c->plus_slot.size() && i < vals.size(); i++)
+                if (c->plus_slot[i] && !vals[i].empty() && vals[i][0] == '+') n++;
+            return n;
+        };
+        int best = 0;
+        for (const StatCand *c : cands) { const int s = plus_score(c); if (s > best) best = s; }
+        if (best > 0) {
+            std::vector<const StatCand *> keep;
+            for (const StatCand *c : cands) if (plus_score(c) == best) keep.push_back(c);
+            cands.swap(keep);
+        }
+    }
 
     std::vector<std::string> outs;
     outs.reserve(cands.size());
@@ -3383,25 +3489,74 @@ static std::string stat_lookup_uncached(const std::string &line, bool passive) {
     for (size_t i = 0; i < cands.size(); i++)
         if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
     if (all_same(kept)) return kept[0];
+
+    /* 4b (stat id hints only): written-out numbers equal to the line's values,
+    ** character for character ("Fires 1 Projectile" written as such beats
+    ** "Fires {0:+d} Projectile" fed a 1). */
+    if (hint) {
+        std::vector<std::string> exact;
+        for (size_t i = 0; i < cands.size(); i++) {
+            const StatCand *c = cands[i];
+            if (c->lits.empty()) continue;
+            bool same = true;
+            for (const auto &l : c->lits)
+                if ((size_t)l.first >= vals.size() || vals[l.first] != l.second) { same = false; break; }
+            if (same) exact.push_back(outs[i]);
+        }
+        if (all_same(exact)) return exact[0];
+    }
     return std::string();
 }
 
-const char* translation_lookup_stat(const char *line, const char *ctx) {
+/* ctx -> StatTier; -1 = unknown ctx. nullptr / "" mean item. */
+static int stat_ctx_tier(const char *ctx) {
+    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) return kTierItem;
+    if (strcmp(ctx, "passive") == 0) return kTierPassive;
+    if (strcmp(ctx, "gem") == 0) return kTierGem;
+    return -1;
+}
+
+/* Space-separated stat ids -> list; empty when none. */
+static std::vector<std::string> stat_split_ids(const char *stat_ids) {
+    std::vector<std::string> v;
+    if (!stat_ids) return v;
+    const char *p = stat_ids;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        const char *b = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (p > b) v.emplace_back(b, p);
+    }
+    return v;
+}
+
+/* Shared by translation_lookup_stat and translation_lookup_stat_ids. */
+static const char *stat_lookup_cached(const char *line, const char *ctx, const char *stat_ids) {
     translation_wait_ready();
     if (!s_translation_enabled || !s_source_lookup) return nullptr;
     if (!line || !*line || s_stat_index.empty()) return nullptr;
-    bool passive;
-    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) passive = false;
-    else if (strcmp(ctx, "passive") == 0) passive = true;
-    else return nullptr;
+    const int tier = stat_ctx_tier(ctx);
+    if (tier < 0) return nullptr;
+    const std::vector<std::string> ids = stat_split_ids(stat_ids);
 
-    std::string ck(passive ? "p" : "i");
+    std::string ck(1, (char)('0' + tier));
+    ck += '\x1f';
+    for (const std::string &id : ids) { ck += id; ck += ' '; }
     ck += '\x1f';
     ck += line;
     auto cit = s_stat_cache.find(ck);
     if (cit == s_stat_cache.end())
-        cit = s_stat_cache.emplace(std::move(ck), stat_lookup_uncached(line, passive)).first;
+        cit = s_stat_cache.emplace(std::move(ck),
+                                   stat_lookup_uncached(line, tier, ids.empty() ? nullptr : &ids)).first;
     return cit->second.empty() ? nullptr : cit->second.c_str();
+}
+
+const char* translation_lookup_stat_ids(const char *line, const char *ctx, const char *stat_ids) {
+    return stat_lookup_cached(line, ctx, stat_ids);
+}
+
+const char* translation_lookup_stat(const char *line, const char *ctx) {
+    return stat_lookup_cached(line, ctx, nullptr);
 }
 
 /* Length of the colour escape at the start of s ("^xRRGGBB" = 8, "^N" = 2),
@@ -3417,10 +3572,10 @@ static size_t stat_leading_colour_len(const char *s) {
     return 0;
 }
 
-const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
+const char* translation_lookup_stat_ids_colored(const char *line, const char *ctx, const char *stat_ids) {
     const size_t cl = stat_leading_colour_len(line);
-    if (cl == 0) return translation_lookup_stat(line, ctx);
-    const char *zh = translation_lookup_stat(line + cl, ctx);
+    if (cl == 0) return stat_lookup_cached(line, ctx, stat_ids);
+    const char *zh = stat_lookup_cached(line + cl, ctx, stat_ids);
     if (!zh) return nullptr;
     const std::string colour(line, cl);
     std::string out = colour;
@@ -3430,6 +3585,8 @@ const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     }
     std::string ck(ctx ? ctx : "");
     ck += '\x1f';
+    for (const std::string &id : stat_split_ids(stat_ids)) { ck += id; ck += ' '; }
+    ck += '\x1f';
     ck += line;
     /* Keep the first answer: rewriting the slot would free the buffer a
     ** caller of the previous call may still hold (same lifetime contract as
@@ -3437,6 +3594,10 @@ const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     ** before the next reload, which clears this cache. */
     auto ins = s_stat_colored_cache.try_emplace(std::move(ck), std::move(out));
     return ins.first->second.c_str();
+}
+
+const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
+    return translation_lookup_stat_ids_colored(line, ctx, nullptr);
 }
 
 const char* translation_debug_sources(void) {

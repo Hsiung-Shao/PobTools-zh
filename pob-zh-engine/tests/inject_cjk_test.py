@@ -1348,6 +1348,407 @@ def test_stat_jewel_in_node(fork):
     check("%s ST-L4 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
+# ---- 寶石提示(ST-P1) ---------------------------------------------------------
+#
+# 上游 Classes/GemTooltip.lua 不是 newClass 類別,是模組表:
+#   GemTooltip.AddGemTooltip(tooltip, build, gemInstance, options)(點呼叫、4 參數),
+#   PoE1 以 require("Classes.GemTooltip") 取得(package.loaded 快取同一張表),
+#   PoE2 以 LoadModule("Classes/GemTooltip") 取得(每個呼叫端各跑一次、各一張表)。
+#   GemSelectControl:AddGemTooltip(gemInstance) 再轉呼叫它;一個提示可含多個
+#   grantedEffect(PoE1 secondaryGrantedEffect、PoE2 additionalGrantedEffects),各有說明行。
+# 合成模組照各分支的取得方式註冊,且在注入「之後」才延遲載入(同 POB)。
+
+GEM_COLOUR_SETUP = b"""
+colorCodes.GEM = "^x1AA29B"
+colorCodes.GEMDESCRIPTION = "^x7F7F7F"
+colorCodes.GEMINFO = "^x7F7F7F"
+"""
+
+GEMTOOLTIP_SYN_P1 = """
+local GemTooltip = { }
+-- 上游 addQualityRangeInfo:describeStats 的行再 gsub 成 (0-N),改過的行不在 lineMap 裡
+local function addQualityRange(tooltip, build, grantedEffect)
+	if not grantedEffect.qualityStats then return end
+	local descriptions = build.data.describeStats(grantedEffect.qualityStats,
+		grantedEffect.statDescriptionScope, true)
+	for _, line in ipairs(descriptions) do
+		line = line:gsub("([%+%-]?%d+%.?%d*)", function(v) return "(0-" .. v .. ")" end, 1)
+		tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC")
+	end
+end
+local function addCommonGemInfo(tooltip, build, gemInstance, grantedEffect)
+	if grantedEffect.description then
+		tooltip:AddLine(16, colorCodes.GEM .. grantedEffect.description, "FONTIN SC")
+	end
+	if build.data.describeStats then
+		local descriptions, lineMap = build.data.describeStats(grantedEffect.stats or { },
+			grantedEffect.statDescriptionScope)
+		for _, line in ipairs(descriptions) do
+			tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC")
+		end
+		addQualityRange(tooltip, build, grantedEffect)
+	end
+end
+function GemTooltip.AddGemTooltip(tooltip, build, gemInstance, options)
+	options = options or { }
+	tooltip.center = true
+	tooltip.color = colorCodes.GEM
+	local primary = gemInstance.gemData.grantedEffect
+	local secondary = gemInstance.gemData.secondaryGrantedEffect
+	tooltip:AddLine(20, colorCodes.GEM .. primary.name, "FONTIN SC")
+	addCommonGemInfo(tooltip, build, gemInstance, primary)
+	if secondary and (not secondary.support or gemInstance.gemData.secondaryEffectName) then
+		tooltip:AddLine(20, colorCodes.GEM .. secondary.name, "FONTIN SC")
+		addCommonGemInfo(tooltip, build, gemInstance, secondary)
+	end
+end
+return GemTooltip
+"""
+
+GEMTOOLTIP_SYN_P2 = """
+local GemTooltip = { }
+-- 上游 addQualityRangeInfo:describeStats 的行再 gsub 成 (0-N),改過的行不在 lineMap 裡
+local function addQualityRange(tooltip, build, grantedEffect)
+	if not grantedEffect.qualityStats then return end
+	local descriptions = build.data.describeStats(grantedEffect.qualityStats,
+		grantedEffect.statDescriptionScope, true)
+	for _, line in ipairs(descriptions) do
+		line = line:gsub("([%+%-]?%d+%.?%d*)", function(v) return "(0-" .. v .. ")" end, 1)
+		tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC")
+	end
+end
+local function addDescriptionLine(tooltip, line, index)
+	local bg = (index % 2 == 0) and "GemHoverModBg" or nil
+	tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC", bg)
+end
+local function addGrantedEffectInfo(tooltip, build, gemInstance, grantedEffect)
+	tooltip.center = true
+	if grantedEffect.description then
+		tooltip:AddLine(16, colorCodes.GEMDESCRIPTION .. grantedEffect.description, "FONTIN ITALIC")
+	end
+end
+local function addEffectStats(tooltip, build, gemInstance, grantedEffect)
+	local descriptions, lineMap = build.data.describeStats(grantedEffect.stats or { },
+		grantedEffect.statDescriptionScope)
+	for i, line in ipairs(descriptions) do
+		addDescriptionLine(tooltip, line, i)
+	end
+	addQualityRange(tooltip, build, grantedEffect)
+end
+function GemTooltip.AddGemTooltip(tooltip, build, gemInstance, options)
+	options = options or { }
+	tooltip.center = false
+	tooltip.color = colorCodes.GEM
+	local grantedEffect = gemInstance.gemData.grantedEffect
+	tooltip:AddLine(20, colorCodes.GEM .. gemInstance.gemData.name, "FONTIN SC")
+	addGrantedEffectInfo(tooltip, build, gemInstance, grantedEffect)
+	addEffectStats(tooltip, build, gemInstance, grantedEffect)
+	for _, additional in ipairs(gemInstance.gemData.additionalGrantedEffects or { }) do
+		tooltip:AddLine(20, colorCodes.GEM .. additional.name, "FONTIN SC")
+		addGrantedEffectInfo(tooltip, build, gemInstance, additional)
+		addEffectStats(tooltip, build, gemInstance, additional)
+	end
+end
+return GemTooltip
+"""
+
+# 上游 GemSelectControl 檔頂取得 gemTooltip、AddGemTooltip 轉呼叫;Draw 只留建提示那段。
+GEMSELECT_TIP_BODY = """
+function C:AddGemTooltip(gemInstance)
+	gemTooltip.AddGemTooltip(self.tooltip, self.skillsTab.build, gemInstance)
+end
+function C:Draw(viewPort, noTooltip)
+	if self.tipGem then self:AddGemTooltip(self.tipGem) end
+end
+"""
+
+GEMSELECT_TIP_P1 = ('local gemTooltip = require("Classes.GemTooltip")\n'
+                    + GEMSELECT_P1.replace("function C:Draw() end\n", "")
+                    + GEMSELECT_TIP_BODY)
+GEMSELECT_TIP_P2 = ('local gemTooltip = LoadModule("Classes/GemTooltip")\n'
+                    + GEMSELECT_P2.replace("function C:Draw() end\n", "")
+                    + GEMSELECT_TIP_BODY)
+
+# 照真 Lua require:先 package.loaded,再依序問 package.loaders(含 preload);
+# 只有找不到的名稱才退回 PRELUDE 的假模組。
+FAITHFUL_REQUIRE = b"""
+do
+	local dummy = require
+	require = function(name)
+		if package.loaded[name] ~= nil then return package.loaded[name] end
+		for _, loader in ipairs(package.loaders) do
+			local f = loader(name)
+			if type(f) == "function" then
+				local m = f(name)
+				if m == nil then m = true end
+				package.loaded[name] = m
+				return m
+			end
+		end
+		return dummy(name)
+	end
+end
+"""
+
+GEM_STAT_DICT = {"Deals 10 to 20 Fire Damage": "STAT寶石"}
+GEM_DESC_ID = {
+    ("gems_desc", "Fireball"): ("Unleashes a ball of fire.", "釋放一顆火球。"),
+    ("gems_desc", "FireballSecondary"): ("Secondary blast.", "次要爆炸。"),
+}
+# 現行路徑(Draw 包在 gems 來源)會查到的值:說明行與 stat 行在 gems 來源的譯文
+DICT["gems"].update({
+    "Unleashes a ball of fire.": "火球說明(gems)",
+    "Deals 10 to 20 Fire Damage": "造成 10-20 火焰傷害(gems)",
+})
+GEM_EXPECT_EXISTING = ["火球", "火球說明(gems)", "造成 10-20 火焰傷害(gems)",
+                       "(0-20)% increased Area of Effect"]
+
+# StatDescriber 的替身,回傳形狀照上游 Modules/StatDescriber.lua:
+#   return out, lineMap  -- out = 行陣列;lineMap[行] = 單一 stat id 字串
+#   (該描述 stats 清單裡「最後一個有值」的 stat;不是全部 id)
+SYN_DESCRIBER = b"""
+local SYN_DESC = {
+	{ stats = { "spell_minimum_base_fire_damage", "spell_maximum_base_fire_damage" },
+	  fmt = function(v) return string.format("Deals %d to %d Fire Damage", v[1], v[2]) end },
+	{ stats = { "base_skill_area_of_effect_+%" },
+	  fmt = function(v) return string.format("%d%% increased Area of Effect", v[1]) end },
+}
+SynDescribeStats = function(stats, scopeName, quality)
+	local out, lineMap = { }, { }
+	for _, d in ipairs(SYN_DESC) do
+		local v, stat = { }, nil
+		for i, s in ipairs(d.stats) do
+			v[i] = stats[s] or 0
+			if stats[s] then stat = s end
+		end
+		if stat then
+			local line = d.fmt(v)
+			table.insert(out, line)
+			lineMap[line] = stat
+		end
+	end
+	return out, lineMap
+end
+data = data or { }
+data.describeStats = SynDescribeStats
+"""
+
+
+# 現在的 data.describeStats 與原替身同輸入比對:回傳個數、out 每行、lineMap 每對
+DESCRIBE_SAME = """function()
+	local stats = { spell_minimum_base_fire_damage = 3, spell_maximum_base_fire_damage = 7,
+		["base_skill_area_of_effect_+%"] = 5 }
+	local function pack(...)
+		local t = { n = select("#", ...) }
+		for i = 1, t.n do t[i] = select(i, ...) end
+		return t
+	end
+	local a = pack(data.describeStats(stats, "gem_stat_descriptions", true))
+	local b = pack(SynDescribeStats(stats, "gem_stat_descriptions", true))
+	if a.n ~= b.n then return "n " .. a.n .. "~=" .. b.n end
+	if #a[1] ~= #b[1] then return "out len" end
+	for i = 1, #b[1] do if a[1][i] ~= b[1][i] then return "out " .. i end end
+	for k, v in pairs(b[2]) do if a[2][k] ~= v then return "lineMap " .. k end end
+	for k, v in pairs(a[2]) do if b[2][k] ~= v then return "lineMap extra " .. k end end
+	return "same"
+end"""
+
+
+def gem_instance_src(fork, with_secondary=False):
+    sec = ('{ id = "FireballSecondary", name = "Fire Burst", '
+           'description = "Secondary blast.", stats = { } }')
+    extra = ""
+    if with_secondary:
+        extra = ("secondaryGrantedEffect = %s," % sec if fork == "PoE1"
+                 else "additionalGrantedEffects = { %s }," % sec)
+    return """
+{
+	level = 1,
+	gemData = {
+		name = "Fireball",
+		grantedEffect = { id = "Fireball", name = "Fireball",
+			description = "Unleashes a ball of fire.",
+			stats = { spell_minimum_base_fire_damage = 10, spell_maximum_base_fire_damage = 20 },
+			qualityStats = { ["base_skill_area_of_effect_+%%"] = 20 },
+			statDescriptionScope = "gem_stat_descriptions" },
+		%s
+	},
+}
+""" % extra
+
+
+def gem_harness(fork, stat_dict, define_stat=True, id_dict=None):
+    """寶石提示 harness:假 PobToolsTranslateStat + 嚴格依 (id, en) 的 PobToolsTranslateId。"""
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.stat_calls = []
+    h.stat_ids = []          # (line, ctx, 第 3 參數 stat ids)
+
+    def translate_stat(line, ctx=None, ids=None):
+        h.stat_calls.append((line, ctx))
+        h.stat_ids.append((line, ctx, ids))
+        if line is None:
+            return None
+        m = re.match(r"^((?:\^x[0-9A-Fa-f]{6}|\^\d)*)(.*)$", line, re.S)
+        hit = (stat_dict or {}).get(m.group(2).strip())
+        return None if hit is None else m.group(1) + hit
+
+    def translate_id(source, id_, en=None):
+        if isinstance(id_, float) and id_.is_integer():
+            id_ = int(id_)
+        key = None if id_ is None else str(id_)
+        h.id_lookups.append((source, key, en))
+        if not h.enabled:
+            return None
+        hit = (GEM_DESC_ID if id_dict is None else id_dict).get((source, key))
+        return hit[1] if hit and hit[0] == en else None
+
+    g = h.rt.globals()
+    g["__py_translate_id"] = translate_id
+    if define_stat:
+        g["__py_translate_stat"] = translate_stat
+        h.run(b"function PobToolsTranslateStat(l, c, i) return __py_translate_stat(l, c, i) end")
+    h.run(COLOUR_SETUP)
+    h.run(GEM_COLOUR_SETUP)
+    h.run(SYN_DESCRIBER)
+    h.run('LoadModule("Classes/Tooltip")')
+    h.run('LoadModule("Classes/EditControl")')
+    h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
+    h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    # 合成檔:GemTooltip 與 GemSelectControl 經 LoadModule / require 供應
+    syn = {"Classes/GemTooltip": GEMTOOLTIP_SYN_P1 if fork == "PoE1" else GEMTOOLTIP_SYN_P2,
+           "Classes/GemSelectControl": GEMSELECT_TIP_P1 if fork == "PoE1" else GEMSELECT_TIP_P2}
+    real_lm = h._load_module
+
+    def load_module(name, *args):
+        key = name[:-4] if name.endswith(".lua") else name
+        if key in syn:
+            return h._chunk(syn[key].encode("utf-8"), "@" + key)(*args)
+        return real_lm(name, *args)
+
+    # 包成真 Lua 函式:注入層只在 type(LoadModule) == "function" 時才掛延遲載入的 patch
+    g["__py_load_module"] = load_module
+    h.run(b"function LoadModule(...) return __py_load_module(...) end "
+          b"PLoadModule = LoadModule")
+    h.run(FAITHFUL_REQUIRE)
+    g["__py_gemtooltip_chunk"] = lambda: h._chunk(GEMTOOLTIP_SYN_P1.encode("utf-8"),
+                                                  "@Classes/GemTooltip")
+    h.run(b'package.preload["Classes.GemTooltip"] = function(...) '
+          b'return __py_gemtooltip_chunk()(...) end')
+    h.apply_inject()
+    h.run('LoadModule("Classes/GemSelectControl")')   # 注入後才延遲載入
+    h.lookups = []
+    return h
+
+
+def gem_tooltip_lines(fork, stat_dict, define_stat=True, id_dict=None,
+                      with_secondary=False, h=None):
+    """GemSelectControl:Draw 建寶石提示;回 (h, ok, err, 去色碼行)。"""
+    h = h or gem_harness(fork, stat_dict, define_stat, id_dict)
+    obj = make(h, "GemSelectControl")
+    tip = make(h, "Tooltip")
+    gem = h.eval("function() return %s end" % gem_instance_src(fork, with_secondary))()
+    ok, err = h.eval('function(o, t, g) o.tooltip = t o.skillsTab = { build = { data = data } } '
+                     'o.tipGem = g local ok, e = pcall(function() o:Draw({}, false) end) '
+                     'return ok, e end')(obj, tip, gem)
+    lines = [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+    return h, ok, err, lines
+
+
+def test_stat_gem_tooltip(fork):
+    """ST-P1 -- 寶石提示:說明行依 gems_desc + 效果 id,stat 行以 gem 情境查 stat。"""
+    # (1)(2) 命中
+    h, ok, err, lines = gem_tooltip_lines(fork, GEM_STAT_DICT)
+    check("%s ST-P1 寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-P1 說明行以 PobToolsTranslateId(\"gems_desc\", 效果 id, 英文) 查詢" % fork,
+          ("gems_desc", "Fireball", "Unleashes a ball of fire.") in h.id_lookups,
+          repr(h.id_lookups))
+    check("%s ST-P1 說明行採用依 id 查到的譯文" % fork,
+          "釋放一顆火球。" in lines, "lines=%r id_lookups=%r" % (lines, h.id_lookups))
+    check("%s ST-P1 stat 行以 ctx gem 呼叫 PobToolsTranslateStat" % fork,
+          any(_norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem"
+              for l, c in h.stat_calls), repr(h.stat_calls))
+    check("%s ST-P1 stat 行採用 stat 查到的譯文" % fork,
+          "STAT寶石" in lines, "lines=%r calls=%r" % (lines, h.stat_calls))
+    check("%s ST-P1 寶石提示結束後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    # (6) stat 行第 3 參數帶該行 lineMap 的 stat id(空白分隔清單須含它)
+    fire = [ids for l, c, ids in h.stat_ids
+            if _norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem"]
+    check("%s ST-P1 寶石 stat 行第 3 參數含該行 lineMap 的 stat id" % fork,
+          fire and all(isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split()
+                       for i in fire), "ids=%r stat_ids=%r" % (fire, h.stat_ids))
+    # (7) 改寫過、不在 lineMap 的行:以 gem 呼叫、第 3 參數 nil
+    q = [(c, ids) for l, c, ids in h.stat_ids
+         if _norm(l) == "(0-20)% increased Area of Effect"]
+    check("%s ST-P1 無 lineMap 對照的寶石行以 gem 呼叫且第 3 參數為 nil" % fork,
+          q and all(c == "gem" and ids is None for c, ids in q), "q=%r" % q)
+    # (8) describeStats 包裝後回傳值完全不變(個數、行、lineMap)
+    same = h.eval(DESCRIBE_SAME)()
+    check("%s ST-P1 data.describeStats 包裝後回傳值完全不變" % fork,
+          same == "same", repr(same))
+    # (1e) 次要/附加效果的說明行用它自己的 id
+    h, ok, err, lines = gem_tooltip_lines(fork, GEM_STAT_DICT, with_secondary=True)
+    check("%s ST-P1 次要效果說明行以自己的效果 id 查詢並採用" % fork,
+          ok and ("gems_desc", "FireballSecondary", "Secondary blast.") in h.id_lookups
+          and "次要爆炸。" in lines,
+          "lines=%r id_lookups=%r err=%r" % (lines, h.id_lookups, err))
+    # (3) 未命中:與現行完全相同
+    h, ok, err, lines = gem_tooltip_lines(fork, {}, id_dict={})
+    h0, ok0, err0, lines0 = gem_tooltip_lines(fork, None, define_stat=False, id_dict={})
+    check("%s ST-P1 stat 與 id 都未命中時結果同現行(gems 來源)" % fork,
+          ok and lines == GEM_EXPECT_EXISTING and lines == lines0,
+          "lines=%r 未定義 stat 時=%r err=%r" % (lines, lines0, err))
+    check("%s ST-P1 舊引擎無 PobToolsTranslateStat 寶石提示不報錯且同現行" % fork,
+          ok0 and lines0 == GEM_EXPECT_EXISTING, "lines=%r err=%r" % (lines0, err0))
+    # (5) 寶石情境不外漏:之後的天賦/物品提示不以 gem 呼叫
+    h, ok, err, lines = gem_tooltip_lines(fork, GEM_STAT_DICT)
+    n = len(h.stat_calls)
+    view = make(h, "PassiveTreeView")
+    tab = make(h, "ItemsTab")
+    t1 = make(h, "Tooltip")
+    t2 = make(h, "Tooltip")
+    h.eval('function(v, t) v:AddNodeTooltip(t, { dn = "Elemental Overload", id = 1, '
+           'sd = { "10% increased Attack Speed" } }, {}) end')(view, t1)
+    item = h.eval("function() return %s end" % JEWEL_ITEM)()
+    h.eval('function(tab, t, item) tab:AddItemTooltip(t, item) end')(tab, t2, item)
+    later = h.stat_calls[n:]
+    check("%s ST-P1 寶石提示後天賦/物品提示的行不以 gem 情境呼叫" % fork,
+          later and not any(c == "gem" for l, c in later), repr(later))
+
+
+def test_wrapped_arity_gem(fork):
+    """ST-P1(4) -- GemTooltip.AddGemTooltip 包裝後 nparams 與上游相同(4、非 vararg)。"""
+    import lupa.luajit21 as luajit21
+    h = Harness(fork, with_inject=False, lua_mod=luajit21)
+    h.run(ARITY_STUBS)
+    h.run(FAITHFUL_REQUIRE)
+    path = os.path.join(h.dir, "Classes", "GemTooltip.lua")
+    h.rt.globals()["__py_gemtooltip_chunk"] = lambda: h._chunk(h._read(path), "@" + path)
+    h.run(b'package.preload["Classes.GemTooltip"] = function(...) '
+          b'return __py_gemtooltip_chunk()(...) end')
+    h.run('data.describeStats = LoadModule("Modules/StatDescriber")')   # 同 Data.lua
+    dshape = h.run('return function() local i = debug.getinfo(data.describeStats, "u") '
+                   'return i.nparams, i.isvararg and true or false end')
+    dbefore = dshape()
+    get = ('return function() return require("Classes.GemTooltip") end' if fork == "PoE1"
+           else 'return function() return LoadModule("Classes/GemTooltip") end')
+    shape = h.run('return function(m) local i = debug.getinfo(m.AddGemTooltip, "u") '
+                  'return i.nparams, i.isvararg and true or false end')
+    before = shape(h.run(get)())
+    h.apply_inject()
+    h.run('LoadModule("Classes/GemSelectControl")')
+    after = shape(h.run(get)())
+    dafter = dshape()
+    check("%s ST-P1 注入後 data.describeStats 參數數不變(上游 3 參數非 vararg)" % fork,
+          tuple(dbefore) == (3, False) and tuple(dafter) == tuple(dbefore),
+          "before=%r after=%r" % (dbefore, dafter))
+    check("%s ST-P1 上游 GemTooltip.AddGemTooltip 形狀為 4 參數非 vararg" % fork,
+          tuple(before) == (4, False), "before=%r" % (before,))
+    check("%s ST-P1 注入後 GemTooltip.AddGemTooltip 參數數不變" % fork,
+          tuple(after) == tuple(before), "before=%r after=%r" % (before, after))
+
+
 # ---- upstream shape checks (catch a rename before a user does) -------------
 
 # ---- 包裝後參數數不變(新介面相容性閘門) -------------------------------------
@@ -1779,6 +2180,8 @@ def main():
         test_stat_mod_line(fork)
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)
+        test_stat_gem_tooltip(fork)
+        test_wrapped_arity_gem(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

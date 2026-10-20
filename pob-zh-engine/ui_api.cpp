@@ -2957,15 +2957,19 @@ static int l_PobToolsTranslateId(lua_State* L)
 	return 1;
 }
 
-// PobToolsTranslateStat(line, ctx) -> chinese, or nil. One stat line through
-// stats_by_id.json (see translation_lookup_stat); ctx is "item" or "passive".
-// A leading colour escape ("^xRRGGBB" / "^N") is kept on every line of the
-// answer -- see translation_lookup_stat_colored, which owns that rule.
+// PobToolsTranslateStat(line, ctx[, statIds]) -> chinese, or nil. One stat line
+// through stats_by_id.json (see translation_lookup_stat); ctx is "item",
+// "passive" or "gem". statIds (optional, space separated) are the GGPK stat ids
+// behind the line, e.g. from POB's describeStats lineMap; they narrow the
+// candidates (translation_lookup_stat_ids). A leading colour escape
+// ("^xRRGGBB" / "^N") is kept on every line of the answer -- see
+// translation_lookup_stat_ids_colored, which owns that rule.
 static int l_PobToolsTranslateStat(lua_State* L)
 {
 	const char* text = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
 	const char* ctx = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
-	const char* zh = (text && *text) ? translation_lookup_stat_colored(text, ctx) : nullptr;
+	const char* ids = lua_isnoneornil(L, 3) ? nullptr : lua_tostring(L, 3);
+	const char* zh = (text && *text) ? translation_lookup_stat_ids_colored(text, ctx, ids) : nullptr;
 	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
 	return 1;
 }
