@@ -2065,7 +2065,7 @@ def gem_instance_src(fork, with_secondary=False):
 """ % extra
 
 
-def gem_harness(fork, stat_dict, define_stat=True, id_dict=None):
+def gem_harness(fork, stat_dict, define_stat=True, id_dict=None, gem_tree=False):
     """寶石提示 harness:假 PobToolsTranslateStat + 嚴格依 (id, en) 的 PobToolsTranslateId。"""
     h = Harness(fork, with_inject=False)
     h.loose_keys = True
@@ -2101,11 +2101,13 @@ def gem_harness(fork, stat_dict, define_stat=True, id_dict=None):
     h.run(SYN_DESCRIBER)
     h.run('LoadModule("Classes/Tooltip")')
     h.run('LoadModule("Classes/EditControl")')
-    h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
+    if not gem_tree:
+        h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
     h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
     # 合成檔:GemTooltip 與 GemSelectControl 經 LoadModule / require 供應
     syn = {"Classes/GemTooltip": GEMTOOLTIP_SYN_P1 if fork == "PoE1" else GEMTOOLTIP_SYN_P2,
-           "Classes/GemSelectControl": GEMSELECT_TIP_P1 if fork == "PoE1" else GEMSELECT_TIP_P2}
+           "Classes/GemSelectControl": GEMSELECT_TIP_P1 if fork == "PoE1" else GEMSELECT_TIP_P2,
+           "Classes/PassiveTreeView": GEM_TREE_P1 if fork == "PoE1" else GEM_TREE_P2}
     real_lm = h._load_module
 
     def load_module(name, *args):
@@ -2125,6 +2127,8 @@ def gem_harness(fork, stat_dict, define_stat=True, id_dict=None):
           b'return __py_gemtooltip_chunk()(...) end')
     h.apply_inject()
     h.run('LoadModule("Classes/GemSelectControl")')   # 注入後才延遲載入
+    if gem_tree:
+        h.run('LoadModule("Classes/PassiveTreeView")')
     h.lookups = []
     return h
 
@@ -2203,6 +2207,81 @@ def test_stat_gem_tooltip(fork):
     later = h.stat_calls[n:]
     check("%s ST-P1 寶石提示後天賦/物品提示的行不以 gem 情境呼叫" % fork,
           later and not any(c == "gem" for l, c in later), repr(later))
+
+
+# ---- ST-RV2:天賦提示內嵌寶石提示 ----------------------------------------------
+#
+# 上游 PassiveTreeView(PoE1 L1643、PoE2 L1836)在 AddNodeTooltip 期間對會給予技能
+# 的節點呼叫 gemTooltip.AddGemTooltip(self.skillTooltip, build, gemInst, options)。
+# 合成版:檔頂照分支取得 gemTooltip,說明行後內嵌寶石提示(另一個 tooltip),再接 sdAfter。
+
+GEM_TREE_BODY = """
+function C:AddNodeName(tooltip, node, build)
+	tooltip:AddLine(24, node.dn, "FONTIN")
+end
+function C:AddNodeTooltip(tooltip, node, build)
+	self:AddNodeName(tooltip, node, build)
+	for _, line in ipairs(node.sd or {}) do
+		tooltip:AddLine(16, "^7"..line)
+	end
+	if node.gemInst then
+		gemTooltip.AddGemTooltip(node.gemTip, build, node.gemInst, { })
+	end
+	for _, line in ipairs(node.sdAfter or {}) do
+		tooltip:AddLine(16, "^7"..line)
+	end
+end
+"""
+GEM_TREE_P1 = ('local gemTooltip = require("Classes.GemTooltip")\n'
+               'local C = newClass("PassiveTreeView")\n'
+               'function C:PassiveTreeView() return self end\n' + GEM_TREE_BODY)
+GEM_TREE_P2 = ('local gemTooltip = LoadModule("Classes/GemTooltip")\n'
+               'local C = newClass("PassiveTreeView", function(self) end)\n' + GEM_TREE_BODY)
+
+RV2_PAIR_B = "while you are Channelling"
+RV2_STAT_DICT = dict(GEM_STAT_DICT)
+# 天賦 sd 的兩行配對:第一行刻意與寶石 stat 行同字,配對表會收進同一個鍵
+RV2_STAT_DICT["Deals 10 to 20 Fire Damage\n" + RV2_PAIR_B] = "配對第一行\n配對第二行"
+
+
+def test_stat_gem_in_node(fork):
+    """ST-RV2 -- 天賦提示內嵌寶石提示:寶石行一律走寶石分支,之後的天賦行仍走 passive。"""
+    h = gem_harness(fork, RV2_STAT_DICT, gem_tree=True)
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    gtip = make(h, "Tooltip")
+    gem = h.eval("function() return %s end" % gem_instance_src(fork))()
+    ok, err = h.eval('function(v, t, gt, g, b) local ok, e = pcall(function() '
+                     'v:AddNodeTooltip(t, { dn = "Elemental Overload", id = 1, '
+                     'sd = { "Deals 10 to 20 Fire Damage", b }, '
+                     'sdAfter = { "10% increased Attack Speed" }, gemInst = g, gemTip = gt }, '
+                     '{ data = data }) end) return ok, e end')(view, tip, gtip, gem, RV2_PAIR_B)
+    node_lines = [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+    gem_lines = [_norm(l) for l in tooltip_lines(h, gtip) if l is not None]
+    check("%s ST-RV2 天賦提示內嵌寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-RV2 前提:天賦 sd 兩行配對成功" % fork,
+          node_lines[1:3] == ["配對第一行", "配對第二行"], "node=%r" % node_lines)
+    check("%s ST-RV2 內嵌寶石說明行以 gems_desc + 效果 id + 英文查詢並採用" % fork,
+          ("gems_desc", "Fireball", "Unleashes a ball of fire.") in h.id_lookups
+          and "釋放一顆火球。" in gem_lines,
+          "gem=%r id_lookups=%r" % (gem_lines, h.id_lookups))
+    fire = [(c, ids) for l, c, ids in h.stat_ids
+            if _norm(l) == "Deals 10 to 20 Fire Damage" and c is not None]
+    check("%s ST-RV2 內嵌寶石 stat 行以 ctx gem 與 lineMap stat id 呼叫" % fork,
+          any(c == "gem" and isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split()
+              for c, i in fire), "calls=%r" % fire)
+    check("%s ST-RV2 內嵌寶石 stat 行不被天賦配對表取代" % fork,
+          "STAT寶石" in gem_lines and "配對第一行" not in gem_lines, "gem=%r" % gem_lines)
+    check("%s ST-RV2 內嵌寶石行不以 passive 情境呼叫" % fork,
+          not any(c == "passive" and _norm(l) in ("Unleashes a ball of fire.",
+                                                  "(0-20)% increased Area of Effect")
+                  for l, c, _ in h.stat_ids), repr(h.stat_ids))
+    check("%s ST-RV2 寶石提示結束後天賦說明行仍以 passive 呼叫" % fork,
+          any(_norm(l) == "10% increased Attack Speed" and c == "passive"
+              for l, c, _ in h.stat_ids)
+          and node_lines[3:4] == ["增加 10% 攻擊速度"],
+          "node=%r calls=%r" % (node_lines, h.stat_ids))
+    check("%s ST-RV2 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
 def test_wrapped_arity_gem(fork):
@@ -2674,6 +2753,7 @@ def main():
         test_src_legion_tattoo_with_source_patch(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
+        test_stat_gem_in_node(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

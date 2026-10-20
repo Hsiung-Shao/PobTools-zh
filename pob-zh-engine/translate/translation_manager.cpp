@@ -2806,11 +2806,15 @@ static bool translate_title_words(const std::string &title, std::string &out) {
 ** treats such a result as a miss and moves on. An English that itself has a
 ** '{' (stats.json keys like "{0} (action speed modifier)") is exempt: there the
 ** placeholder is the input's own. */
-static bool leaks_placeholder(const std::string &out, const std::string &in) {
+static bool leaks_placeholder(const std::string &out, const std::string &in, bool check_hash = true) {
     /* A '#' is fill_plan's "no value for this slot" (and POB's own crafting
     ** rows write the value as '#'): a stray one the English did not have is an
-    ** incompletely filled answer, the same failure as a raw {0}. */
-    if (in.find('#') == std::string::npos && out.find('#') != std::string::npos) return true;
+    ** incompletely filled answer, the same failure as a raw {0}. Only a FILLED
+    ** answer can be incompletely filled, so callers handing over a dictionary
+    ** entry as written (exact steps, and composites built from such entries)
+    ** pass check_hash = false: a translator's own '#' ("暴擊時 #% 充能:") is
+    ** text, not a missing value. */
+    if (check_hash && in.find('#') == std::string::npos && out.find('#') != std::string::npos) return true;
     if (in.find('{') != std::string::npos) return false;
     for (size_t i = 0; i + 1 < out.size(); i++)
         if (out[i] == '{' && (out[i + 1] == '}' || (out[i + 1] >= '0' && out[i + 1] <= '9')))
@@ -2869,7 +2873,7 @@ const char* translation_lookup(const char *english) {
     if (s_active_source) {
         auto sit = s_active_source->find(english);
         if (sit != s_active_source->end()) {
-            if (!leaks_placeholder(sit->second, english)) return sit->second.c_str();
+            if (!leaks_placeholder(sit->second, english, /*check_hash=*/false)) return sit->second.c_str();
             exact_blocked = true;
         }
     }
@@ -2904,7 +2908,7 @@ const char* translation_lookup(const char *english) {
     /* 1. Exact match (fast path, no cache needed — already O(1)) */
     auto it = s_translations.find(english);
     if (it != s_translations.end()) {
-        if (!leaks_placeholder(it->second, english)) return it->second.c_str();
+        if (!leaks_placeholder(it->second, english, /*check_hash=*/false)) return it->second.c_str();
         exact_blocked = true;
     }
 
@@ -2921,8 +2925,11 @@ const char* translation_lookup(const char *english) {
     /* Every step below that produces an answer goes through here: a leaking
     ** answer (see leaks_placeholder) is a miss for that step -- nothing is
     ** cached for it and the next step gets its turn. */
-    auto accept = [&input](std::string &&result) -> const char * {
-        if (leaks_placeholder(result, input)) return nullptr;
+    /* check_hash: true for an answer produced by filling a pattern (a stray '#'
+    ** is a slot left unfilled); false for an exact entry as written and for
+    ** composites of answers that were already checked by their own lookup. */
+    auto accept = [&input](std::string &&result, bool check_hash) -> const char * {
+        if (leaks_placeholder(result, input, check_hash)) return nullptr;
         auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
         return iter->second.c_str();
     };
@@ -2950,7 +2957,7 @@ const char* translation_lookup(const char *english) {
                 OutputDebugStringA(msg);
                 s_hit_count++;
             }
-            if (const char *r = accept(std::move(result))) return r;
+            if (const char *r = accept(std::move(result), /*check_hash=*/true)) return r;
         } else {
             /* Diagnostic: log pattern misses (first 50 only) */
             static int s_miss_count = 0;
@@ -2975,7 +2982,7 @@ const char* translation_lookup(const char *english) {
         const std::string esc = newlines_to_literal(input);
         auto eit = s_translations.find(esc);
         if (eit != s_translations.end()) {
-            if (const char *r = accept(literal_to_newlines(eit->second))) return r;
+            if (const char *r = accept(literal_to_newlines(eit->second), /*check_hash=*/false)) return r;
             exact_blocked = true;
         }
         const std::string epat = to_ascii_lower(digits_to_hash(normalize_placeholders(esc)));
@@ -2983,7 +2990,7 @@ const char* translation_lookup(const char *english) {
             auto pit = s_forward_pattern.find(epat);
             if (pit != s_forward_pattern.end()) {
                 std::string result = fill_plan(pit->second, hash_slot_values(esc, /*normalize_ph=*/true));
-                if (const char *r = accept(literal_to_newlines(result))) return r;
+                if (const char *r = accept(literal_to_newlines(result), /*check_hash=*/true)) return r;
             }
         }
     }
@@ -3050,7 +3057,7 @@ const char* translation_lookup(const char *english) {
         /* No line translated: fall through untouched, so the whole-block
         ** behaviour for colour/glossary inputs is exactly what it was. */
         if (translated_any) {
-            if (const char *r_ = accept(std::move(joined))) return r_;
+            if (const char *r_ = accept(std::move(joined), /*check_hash=*/false)) return r_;
         }
     }
 
@@ -3121,7 +3128,7 @@ const char* translation_lookup(const char *english) {
             if (b != std::string::npos) rebuilt.append(seg.text, e + 1, std::string::npos);
         }
         if (translated_any && all_covered) {
-            if (const char *r_ = accept(std::move(rebuilt))) return r_;
+            if (const char *r_ = accept(std::move(rebuilt), /*check_hash=*/false)) return r_;
         }
 
         /* Segment translation did not cover the line. Fall back to the old
@@ -3140,7 +3147,7 @@ const char* translation_lookup(const char *english) {
         if (stripped_has_alpha && stripped != input && !stripped.empty()) {
             if (const char *r = translation_lookup(stripped.c_str())) {
                 std::string copy(r); /* copy before emplace can rehash the cache */
-                if (const char *r_ = accept(std::move(copy))) return r_;
+                if (const char *r_ = accept(std::move(copy), /*check_hash=*/false)) return r_;
             }
             /* clean text also missed: fall through with the original input */
         }
@@ -3174,7 +3181,7 @@ const char* translation_lookup(const char *english) {
                 if (body != body_zh) {
                     std::string combined = input.substr(0, p);
                     combined += body_zh;
-                    if (const char *r_ = accept(std::move(combined))) return r_;
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                 }
             }
         }
@@ -3207,14 +3214,14 @@ const char* translation_lookup(const char *english) {
                         if (bracketed != whole_zh) {
                             combined += " ";
                             combined += whole_zh;
-                            if (const char *r_ = accept(std::move(combined))) return r_;
+                            if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                         }
                     }
                     const char *suffix_zh = translation_lookup(suffix.c_str());
                     combined += " (";
                     combined += suffix_zh ? suffix_zh : suffix.c_str();
                     combined += ")";
-                    if (const char *r_ = accept(std::move(combined))) return r_;
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                 }
             }
         }
@@ -3256,7 +3263,7 @@ const char* translation_lookup(const char *english) {
             joined += seg;
         }
         if (all_ok) {
-            if (const char *r_ = accept(std::move(joined))) return r_;
+            if (const char *r_ = accept(std::move(joined), /*check_hash=*/false)) return r_;
         }
     }
 
@@ -3363,7 +3370,7 @@ const char* translation_lookup(const char *english) {
                     cur = s.pos + s.len;
                 }
                 result.append(input, cur, std::string::npos);
-                if (const char *r_ = accept(std::move(result))) return r_;
+                if (const char *r_ = accept(std::move(result), /*check_hash=*/false)) return r_;
             }
         }
     }
