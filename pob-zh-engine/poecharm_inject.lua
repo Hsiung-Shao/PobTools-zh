@@ -190,6 +190,10 @@ local affixTipCtx = nil
 -- True while PassiveTreeView:AddNodeTooltip runs: its non-name lines are the
 -- passive's stat lines, asked of PobToolsTranslateStat under "passive".
 local nodeTipActive = false
+-- Pairs of adjacent node.sd lines that are ONE two-line GGPK stat template
+-- (POB splits it into two sd entries): { [stripped English line] = Chinese
+-- line }, built when AddNodeTooltip starts, nil outside it.
+local nodeSdPairs = nil
 
 -- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
 -- { desc = { [description] = effect id }, names = { [name] = true },
@@ -284,6 +288,38 @@ local function translateGemLine(text)
 		return zh and lead .. zh or nil
 	end
 	return zhByStat(text, "gem", ctx.statIds[core])
+end
+
+-- node.sd -> nodeSdPairs. Each adjacent pair (colour codes stripped) is asked
+-- as "a\nb" under "passive"; only an answer of exactly two lines counts, then
+-- a/b map to its first/second line and both are skipped; a miss slides down by
+-- one line. nil when the engine has no stat lookup or nothing paired.
+local function buildSdPairs(node)
+	if type(PobToolsTranslateStat) ~= "function" then return nil end
+	local sd = type(node) == "table" and node.sd or nil
+	if type(sd) ~= "table" then return nil end
+	local map, found = {}, false
+	local i = 1
+	while sd[i + 1] ~= nil do
+		local a, b = sd[i], sd[i + 1]
+		local hit = false
+		if type(a) == "string" and type(b) == "string" then
+			local _, ra = splitLeadColour(a)
+			local _, rb = splitLeadColour(b)
+			ra, rb = trim(ra), trim(rb)
+			if ra ~= "" and rb ~= "" and not ra:find("\n", 1, true) and not rb:find("\n", 1, true) then
+				local zh = zhByStat(ra .. "\n" .. rb, "passive")
+				local z1, z2
+				if zh then z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$") end
+				if z1 and z1 ~= "" and z2 ~= "" then
+					map[ra], map[rb] = z1, z2
+					found, hit = true, true
+				end
+			end
+		end
+		i = i + (hit and 2 or 1)
+	end
+	return found and map or nil
 end
 
 -- The single modId behind a magic item's name prefix / suffix, or nil when
@@ -505,11 +541,15 @@ PATCHES["PassiveTreeView"] = function(class)
 	local origTip = class.AddNodeTooltip
 	if type(origTip) == "function" then
 		-- Only marks the span (nodeTipActive) for the stat lookup; same arity.
+		-- Also pairs two-line stat templates split over node.sd (nodeSdPairs).
 		class.AddNodeTooltip = keepArity(origTip, function(self, ...)
-			local prev = nodeTipActive
+			local prev, prevPairs = nodeTipActive, nodeSdPairs
+			local _, node = ...
+			local pok, pairsMap = pcall(buildSdPairs, node)
 			nodeTipActive = true
+			nodeSdPairs = pok and pairsMap or nil
 			local ok, a, b, c = pcall(origTip, self, ...)
-			nodeTipActive = prev
+			nodeTipActive, nodeSdPairs = prev, prevPairs
 			if not ok then error(a, 0) end
 			return a, b, c
 		end)
@@ -1167,7 +1207,13 @@ PATCHES["Tooltip"] = function(class)
 				elseif src == nil and nodeTipActive and not itemCtx then
 					-- not inside an item tooltip nested in the node tooltip
 					-- (jewel socket): those lines are item text, not the passive's
-					statZh = zhByStat(text, "passive")
+					local pairZh
+					if nodeSdPairs then
+						local plead, prest = splitLeadColour(text)
+						pairZh = nodeSdPairs[trim(prest)]
+						pairZh = pairZh and plead .. pairZh
+					end
+					statZh = pairZh or zhByStat(text, "passive")
 				end
 			end
 			if zh then
