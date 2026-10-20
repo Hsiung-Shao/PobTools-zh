@@ -783,6 +783,27 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(gnRoot);
 	}
 
+	// ---- FR:audit r9(report_r9/regress_r9.tsv)--------------------------------
+	printf("\n=== FR audit r9 ===\n");
+	// FR-1:插槽輔助有專屬 stat(英文寫死寶石名),不得讓名稱槽通用模板
+	//   local_random_support_gem_level local_random_support_gem_index "…Level {0} {1}" →「插槽中的寶石被等級 {0} 的 {1} 輔助」
+	// 勝出。專屬模板(stat_descriptions.txt):
+	//   …supported_by_level_x_intensify / …_x_spell_focus / …_x_intensify_level → 插槽中寶石被等級 {0} 的強化輔助
+	//   …supported_by_x_controlled_destruction → 插槽中寶石被等級 {0} 精準破壞輔助
+	//   …supported_by_level_x_greater_spell_echo → 插槽中寶石被等級 {0} 的高階施放迴響輔助
+	expect("Socketed Gems are Supported by Level 10 Intensify", "item",
+	       u8"插槽中寶石被等級 10 的強化輔助", "FR-1a 插槽輔助專屬模板優先於名稱槽(Intensify)");
+	expect("Socketed Gems are Supported by Level 10 Controlled Destruction", "item",
+	       u8"插槽中寶石被等級 10 精準破壞輔助", "FR-1b 插槽輔助專屬模板優先於名稱槽(Controlled Destruction)");
+	expect("Socketed Gems are Supported by Level 1 Greater Spell Echo", "item",
+	       u8"插槽中寶石被等級 1 的高階施放迴響輔助", "FR-1c 插槽輔助專屬模板優先於名稱槽(Greater Spell Echo)");
+	// FR-2:passive 優先序 passive_skill → stat_descriptions → passive_skill_aura。
+	//   life_mastery_nearby_enemy_life_regeneration_rate_+%|#|-1|passive_skill_stat_descriptions.txt|0
+	//     → 附近敵人減少 {0}% 生命恢復率
+	//   (光環檔 life_regeneration_rate_+%|#|-1|passive_skill_aura… 是「附近敵人減少 {0}% 生命回復」,不得採用)
+	expect("Nearby Enemies have 50% reduced Life Regeneration Rate", "passive",
+	       u8"附近敵人減少 50% 生命恢復率", "FR-2 專精行取天賦描述檔，光環檔排在最後");
+
 	// ---- P3:anoint / legion / tattoo 來源字典 ------------------------------------
 	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在
 	// source_lookup 下當來源表;絕不併入全域。三檔由測試在暫存複本放小樣本。
