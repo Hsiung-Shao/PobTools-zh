@@ -191,11 +191,18 @@ local affixTipCtx = nil
 -- passive's stat lines, asked of PobToolsTranslateStat under "passive".
 local nodeTipActive = false
 
--- Engine stat lookup (PobToolsTranslateStat(line, ctx), ctx "item" /
--- "passive"); nil when the engine lacks it, missed, or gave the line back.
-local function zhByStat(text, ctx)
+-- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
+-- { desc = { [description] = effect id }, names = { [name] = true },
+--   statIds = { [describeStats line] = stat id } }. statIds is filled by the
+-- data.describeStats wrap while the tooltip is being built.
+local gemCtx = nil
+
+-- Engine stat lookup (PobToolsTranslateStat(line, ctx[, ids]), ctx "item" /
+-- "passive" / "gem"; ids = the line's stat id(s) when known); nil when the
+-- engine lacks it, missed, or gave the line back.
+local function zhByStat(text, ctx, ids)
 	if type(PobToolsTranslateStat) ~= "function" then return nil end
-	local ok, zh = pcall(PobToolsTranslateStat, text, ctx)
+	local ok, zh = pcall(PobToolsTranslateStat, text, ctx, ids)
 	if ok and type(zh) == "string" and zh ~= "" and zh ~= text then return zh end
 	return nil
 end
@@ -257,6 +264,26 @@ local function translateAffixLine(text)
 	local label = PobToolsTranslateDisplay("Affix:") or "Affix:"
 	local gap = label:sub(-#FULLWIDTH_COLON) == FULLWIDTH_COLON and "" or " "
 	return lead .. label .. gap .. zh
+end
+
+-- One line of a gem tooltip (gemCtx set). A grantedEffect's description is
+-- looked up by that effect's own id under gems_desc; every other non-name line
+-- asks the engine's stat lookup under "gem", with the stat id describeStats
+-- reported for that exact line (nil for lines POB rewrote afterwards, e.g. the
+-- quality "(0-N)" lines). Name lines and misses return nil: the existing path
+-- (the caller's "gems" source) runs as before.
+local function translateGemLine(text)
+	local ctx = gemCtx
+	if not ctx then return nil end
+	local lead, rest = splitLeadColour(text)
+	local core = trim(rest)
+	if core == "" or ctx.names[core] then return nil end
+	local id = ctx.desc[core]
+	if id ~= nil then
+		local zh = zhById("gems_desc", id, core)
+		return zh and lead .. zh or nil
+	end
+	return zhByStat(text, "gem", ctx.statIds[core])
 end
 
 -- The single modId behind a magic item's name prefix / suffix, or nil when
@@ -1133,7 +1160,9 @@ PATCHES["Tooltip"] = function(class)
 			-- name lines never. A miss falls through to the path below.
 			local statZh
 			if not zh and not isNodeName then
-				if src == "modline" then
+				if gemCtx and not itemCtx and not nodeTipActive then
+					statZh = translateGemLine(text)
+				elseif src == "modline" then
 					statZh = zhByStat(text, "item")
 				elseif src == nil and nodeTipActive and not itemCtx then
 					-- not inside an item tooltip nested in the node tooltip
@@ -1406,6 +1435,92 @@ local function perfApplyAll()
 	end
 end
 
+-- ===== gem tooltips (Classes/GemTooltip) =====
+-- GemTooltip is a module table, not a newClass class, so PATCHES never sees
+-- it: PoE1 gets it with require("Classes.GemTooltip") (one cached table),
+-- PoE2 with LoadModule("Classes/GemTooltip") (a fresh table per caller). Both
+-- are patched where they come back (require / LoadModule wraps below).
+-- AddGemTooltip(tooltip, build, gemInstance, options) sets gemCtx for the
+-- whole build of the tooltip: every grantedEffect's description -> its own id
+-- (PoE1 secondaryGrantedEffect, PoE2 additionalGrantedEffects), and the lines
+-- data.describeStats hands back -> their stat id (lineMap). Restored even on
+-- error. Without the engine's lookups the lines take the existing path.
+local patchedGemMods = setmetatable({}, { __mode = "k" })
+local describeWraps = setmetatable({}, { __mode = "k" })
+
+-- data.describeStats(stats, scopeName, quality) -> out, lineMap. Every return
+-- value goes back untouched (count included); while gemCtx is set the lineMap
+-- (line -> stat id) is recorded for AddLine.
+local function pack(...)
+	return { n = select("#", ...), ... }
+end
+
+local function wrapDescribeStats(dataTbl)
+	if type(dataTbl) ~= "table" then return end
+	local orig = rawget(dataTbl, "describeStats")
+	if type(orig) ~= "function" or describeWraps[orig] then return end
+	local wrapped = keepArity(orig, function(...)
+		local r = pack(orig(...))
+		local ctx = gemCtx
+		if ctx and type(r[2]) == "table" then
+			for line, id in pairs(r[2]) do
+				if type(line) == "string" and type(id) == "string" then
+					ctx.statIds[trim(line)] = id
+				end
+			end
+		end
+		return unpack(r, 1, r.n)
+	end)
+	describeWraps[wrapped] = true
+	dataTbl.describeStats = wrapped
+end
+
+local function gemContext(gemInstance)
+	local ctx = { desc = {}, names = {}, statIds = {} }
+	local gemData = type(gemInstance) == "table" and gemInstance.gemData or nil
+	if type(gemData) ~= "table" then return ctx end
+	if type(gemData.name) == "string" then ctx.names[trim(gemData.name)] = true end
+	local function add(effect)
+		if type(effect) ~= "table" then return end
+		if type(effect.name) == "string" then ctx.names[trim(effect.name)] = true end
+		local d = effect.description
+		if type(d) == "string" and d ~= "" and effect.id ~= nil and ctx.desc[trim(d)] == nil then
+			ctx.desc[trim(d)] = effect.id
+		end
+	end
+	add(gemData.grantedEffect)
+	add(gemData.secondaryGrantedEffect)
+	if type(gemData.additionalGrantedEffects) == "table" then
+		for _, e in ipairs(gemData.additionalGrantedEffects) do add(e) end
+	end
+	return ctx
+end
+
+local function patchGemTooltipModule(mod)
+	if type(mod) ~= "table" or patchedGemMods[mod] then return end
+	local orig = rawget(mod, "AddGemTooltip")
+	if type(orig) ~= "function" then return end
+	patchedGemMods[mod] = true
+	mod.AddGemTooltip = keepArity(orig, function(tooltip, build, gemInstance, ...)
+		if type(build) == "table" then wrapDescribeStats(build.data) end
+		wrapDescribeStats(data)
+		local prev = gemCtx
+		gemCtx = gemContext(gemInstance)
+		local ok, a, b, c = pcall(orig, tooltip, build, gemInstance, ...)
+		gemCtx = prev
+		if not ok then error(a, 0) end
+		return a, b, c
+	end)
+	log("patched GemTooltip.AddGemTooltip")
+end
+
+local function isGemTooltipName(name)
+	if type(name) ~= "string" then return false end
+	-- "Classes.GemTooltip" (require) / "Classes/GemTooltip[.lua]" (LoadModule)
+	local n = name:gsub("%.lua$", ""):gsub("[\\%.]", "/")
+	return n == "Classes/GemTooltip" or n:sub(-#"/Classes/GemTooltip") == "/Classes/GemTooltip"
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
@@ -1422,6 +1537,22 @@ end
 
 tryApplyAll() -- classes already loaded at injection time
 
+-- Gem tooltip module: already required before injection, or required later.
+if type(package) == "table" and type(package.loaded) == "table" then
+	patchGemTooltipModule(package.loaded["Classes.GemTooltip"])
+end
+if type(require) == "function" then
+	local origRequire = require
+	require = keepArity(origRequire, function(name, ...)
+		local m = origRequire(name, ...)
+		if isGemTooltipName(name) then
+			local pok, perr = pcall(patchGemTooltipModule, m)
+			if not pok then log("patch FAILED GemTooltip: " .. tostring(perr)) end
+		end
+		return m
+	end)
+end
+
 if type(LoadModule) == "function" then
 	local origLoadModule = LoadModule
 	local depth = 0
@@ -1433,6 +1564,10 @@ if type(LoadModule) == "function" then
 		local ok, a, b, c, d = pcall(origLoadModule, ...)
 		depth = depth - 1
 		if not ok then error(a, 0) end
+		if isGemTooltipName((...)) then
+			local pok, perr = pcall(patchGemTooltipModule, a)
+			if not pok then log("patch FAILED GemTooltip: " .. tostring(perr)) end
+		end
 		if depth == 0 then tryApplyAll() end
 		return a, b, c, d
 	end)

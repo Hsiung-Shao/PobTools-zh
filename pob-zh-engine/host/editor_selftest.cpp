@@ -1083,7 +1083,7 @@ int RunEditorSelftest(const std::string& games)
 			// passing on an observer that always reports "gems".
 			const std::string full = translation_debug_sources();
 			check(full == "exact=affixes,gems,items,passives,stats,uniques;"
-			              "pattern=affixes,gems,items,passives,stats,uniques;id=affixes,passives",
+			              "pattern=affixes,gems,items,passives,stats,uniques;id=affixes,gems_desc,passives",
 			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
 			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
 			else printf("    (flagged: %s)\n", full.c_str());

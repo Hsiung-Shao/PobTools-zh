@@ -85,14 +85,24 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 
 /* Translate one stat line through stats_by_id.json (keys
 ** "stat_ids|cond|src_file|dup_ix", English templates in "templates").
-** ctx = "item" (stat_descriptions.txt) or "passive"
-** (passive_skill_stat_descriptions.txt first, then stat_descriptions.txt).
+** ctx = "item" (stat_descriptions.txt), "passive"
+** (passive_skill_stat_descriptions.txt first, then stat_descriptions.txt) or
+** "gem" (the skill/gem description files POB's gem tooltips use first, then
+** stat_descriptions.txt).
 ** The line's numbers (ranges "(10-15)", signs included) are filled into the
 ** Chinese template by {N} index. nullptr when nothing matches, when the
 ** filtered candidates disagree (ambiguous), when translation is off (F2), or
 ** when the locale's meta.json lacks "source_lookup". Contract tested by
 ** --stat-selftest (host/stat_selftest.cpp). */
 const char* translation_lookup_stat(const char *line, const char *ctx);
+
+/* translation_lookup_stat narrowed by the GGPK stat ids behind the line
+** (space separated; POB's describeStats lineMap gives one per line). After the
+** ctx filter only candidates whose stat_ids intersect `stat_ids` stay; the
+** rest is translation_lookup_stat's rules, and on a tie a candidate whose
+** written-out numbers equal the line's values exactly wins. nullptr or ""
+** stat_ids: same as translation_lookup_stat. Tested by --stat-selftest P1-3a/e. */
+const char* translation_lookup_stat_ids(const char *line, const char *ctx, const char *stat_ids);
 
 /* translation_lookup_stat with the line's colour kept: a leading "^xRRGGBB"
 ** or "^N" escape is stripped for the lookup and, on a hit, written in front of
@@ -101,6 +111,11 @@ const char* translation_lookup_stat(const char *line, const char *ctx);
 ** leading colour -> same as translation_lookup_stat. nullptr when no hit.
 ** Pointer valid until the next reload. Tested by --stat-selftest F4b/F4c. */
 const char* translation_lookup_stat_colored(const char *line, const char *ctx);
+
+/* translation_lookup_stat_colored narrowed by stat ids, as
+** translation_lookup_stat_ids narrows translation_lookup_stat. nullptr or ""
+** stat_ids: same as translation_lookup_stat_colored. */
+const char* translation_lookup_stat_ids_colored(const char *line, const char *ctx, const char *stat_ids);
 
 /* ===== Reverse-translation trace =====
 **

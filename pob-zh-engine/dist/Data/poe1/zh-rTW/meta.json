@@ -17,7 +17,8 @@
     "affixes.json",
     "passives_by_id.json",
     "affixes_by_id.json",
-    "stats_by_id.json"
+    "stats_by_id.json",
+    "gems_desc_by_id.json"
   ],
   "source_lookup": true,
   "incomplete_translation_whitelist": [
