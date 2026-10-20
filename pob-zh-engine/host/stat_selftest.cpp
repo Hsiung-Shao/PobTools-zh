@@ -211,6 +211,28 @@ bool plant_ui(const std::wstring& localeDir, int extra,
 	}
 }
 
+// 改字典複本裡的 *_by_id.json(P0 用):templates 非空 → 寫入/合併 "templates";
+// strip = true → 先移除原有 "templates"(templates 空 = 舊格式;非空 = 只留這幾筆,
+// 不受 exe 旁 Data 是否已帶完整 templates 影響)。
+bool patch_by_id(const std::wstring& path,
+                 const std::vector<std::pair<std::string, std::string>>& templates, bool strip)
+{
+	std::string body;
+	if (!read_bytes(path, body)) return false;
+	try {
+		auto doc = nlohmann::ordered_json::parse(body);
+		if (strip) doc.erase("templates");
+		if (!templates.empty()) {
+			auto& t = doc["templates"];
+			if (!t.is_object()) t = nlohmann::ordered_json::object();
+			for (const auto& p : templates) t[p.first] = p.second;
+		}
+		return write_bytes(path, doc.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
 } // namespace
 
 int RunStatSelftest(const std::wstring& statsJsonArg)
@@ -454,6 +476,104 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	// R2b:同型的 10 秒版(chance_to_gain_onslaught_on_kill_for_10_seconds_%|1|99)。
 	expect("13% chance to gain Onslaught for 10 seconds on Kill", "item",
 	       u8"擊殺時有 13% 機率獲得猛攻 10 秒", "R2b 平手時寫死數字不算值(10 秒猛攻取 1-stat 譯法)");
+
+	// ---- P0:依 id 查譯名時比對英文(軍團珠寶/刺青換名不換 id)-------------------
+	// 英文取自 GGPK(ggpk_zh.sqlite cell passiveskills.Name / mods.Name,與 POB 3_29
+	// tree.lua 的 name 相同):94 Evasion→閃避;33287 Juggernaut→戰神(天賦);
+	// 17765 Juggernaut→勇士(昇華);AbyssAccuracyRatingJewel1 "of Calm"→平靜之。
+	printf("\n=== P0 依 id 查譯名需英文相符 ===\n");
+	{
+		const std::wstring tRoot = root + L"p0t\\";   // by_id 檔帶 templates
+		const std::wstring lRoot = root + L"p0l\\";   // 舊格式：無 templates
+		CreateDirectoryW(tRoot.c_str(), nullptr);
+		CreateDirectoryW(lRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, tRoot + L"zh-rTW\\", statsJson, true, w) &&
+		             build_dict_copy(shippedLocale, lRoot + L"zh-rTW\\", statsJson, true, w);
+		setup = setup &&
+		        patch_by_id(tRoot + L"zh-rTW\\passives_by_id.json",
+		                    {{"6", "Twin Terrors"}, {"94", "Evasion"},
+		                     {"33287", "Juggernaut"}, {"17765", "Juggernaut"}}, true) &&
+		        patch_by_id(tRoot + L"zh-rTW\\affixes_by_id.json",
+		                    {{"AbyssAccuracyRatingJewel1", "of Calm"},
+		                     {"AbyssAccuracyRatingJewel2", "of Steadiness"}}, true) &&
+		        patch_by_id(lRoot + L"zh-rTW\\passives_by_id.json", {}, true) &&
+		        patch_by_id(lRoot + L"zh-rTW\\affixes_by_id.json", {}, true);
+		check(setup, "P0-0 測試用 by_id 複本(含/不含 templates)已建立");
+		if (!setup) printf("           %s\n", w.c_str());
+
+		auto en = [](const char* src, const char* id, const char* e) {
+			const char* r = translation_lookup_by_id_en(src, id, e);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto byId = [](const char* src, const char* id) {
+			const char* r = translation_lookup_by_id(src, id);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto expectEq = [](const std::string& got, const std::string& want, const char* what) {
+			if (got != want) printf("           %s got '%s' want '%s'\n", what, got.c_str(), want.c_str());
+			return got == want;
+		};
+
+		// --- 帶 templates 的複本(templates 只含上面幾筆;id 33 刻意沒有)---
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", tRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		{
+			const bool miss = expectEq(en("passives", "94", "Accuracy"), "(null)", "94/Accuracy");
+			const bool guard = expectEq(en("passives", "94", "Evasion"), u8"閃避", "94/Evasion");
+			check(setup && miss && guard, "P0-1 英文與 id 不符(換名節點)時不回原節點譯名");
+		}
+		{
+			const bool a = expectEq(en("passives", "94", "Evasion"), u8"閃避", "94/Evasion");
+			const bool b = expectEq(en("passives", "33287", "Juggernaut"), u8"戰神", "33287/Juggernaut");
+			const bool c = expectEq(en("passives", "17765", "Juggernaut"), u8"勇士", "17765/Juggernaut");
+			check(setup && a && b && c, "P0-2 英文相符時回 id 譯名，同名不同 id 各回各的");
+		}
+		{
+			const bool hit = expectEq(en("affixes", "AbyssAccuracyRatingJewel1", "of Calm"), u8"平靜之",
+			                          "Jewel1/of Calm");
+			const bool miss = expectEq(en("affixes", "AbyssAccuracyRatingJewel1", "of Steadiness"), "(null)",
+			                           "Jewel1/of Steadiness");
+			check(setup && hit && miss, "P0-2b affixes 同理：英文相符才回譯名");
+		}
+		{
+			// 契約：去頭尾空白、內部空白正規化、大小寫敏感;templates 沒有的 id 不回。
+			const bool ws = expectEq(en("passives", "6", "  Twin   Terrors "), u8"雙重懼刃", "6/'  Twin   Terrors '");
+			const bool caseMiss = expectEq(en("passives", "94", "evasion"), "(null)", "94/evasion");
+			const bool noTmpl = expectEq(en("passives", "33", "Lord of Drought"), "(null)", "33(無 template)");
+			check(setup && ws && caseMiss && noTmpl,
+			      "P0-3 英文比對去空白、大小寫敏感;templates 無此 id 時回空");
+		}
+		{
+			bool ok = setup;
+			for (auto& q : std::vector<std::pair<const char*, const char*>>{
+			         {"passives", "94"}, {"passives", "33287"}, {"passives", "33"},
+			         {"passives", "99999999"}, {"affixes", "AbyssAccuracyRatingJewel1"}, {"affixes", "NoSuchModXyz"}}) {
+				const std::string a = en(q.first, q.second, nullptr);
+				const std::string b = byId(q.first, q.second);
+				if (!expectEq(a, b, q.second)) ok = false;
+			}
+			ok = ok && byId("passives", "94") == u8"閃避";   // 前提:id 查詢本身有命中
+			check(ok, "P0-5 en 為 nullptr 時等同 translation_lookup_by_id");
+		}
+
+		// --- 舊格式(無 templates)的複本 ---
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", lRoot.c_str());
+		translation_reload();
+		{
+			const bool a = expectEq(en("passives", "94", "Accuracy"), u8"閃避", "legacy 94/Accuracy");
+			const bool b = expectEq(en("affixes", "AbyssAccuracyRatingJewel1", "anything"), u8"平靜之",
+			                        "legacy Jewel1/anything");
+			const bool c = expectEq(en("passives", "94", nullptr), byId("passives", "94"), "legacy 94/nullptr");
+			check(setup && a && b && c, "P0-4 舊格式無 templates 時沿用 id 譯名(相容舊資料包)");
+		}
+
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(tRoot);
+		remove_tree(lRoot);
+	}
 
 	// ---- D:詞彙表(glossary)選擇規則(使用者裁定)----------------------------
 	// 同一 term(小寫、去結尾冒號)只留一筆：優先原鍵不帶冒號者;都帶冒號取原鍵

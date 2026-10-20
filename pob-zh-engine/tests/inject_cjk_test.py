@@ -84,7 +84,9 @@ DICT = {
     },
     # Source-only entries for the tooltip tests: none of these exist under the
     # unmarked source, so a lookup under the wrong source comes back untranslated.
-    "passives": {"Elemental Overload": "元素超載"},
+    "passives": {"Elemental Overload": "元素超載",
+                 # ST-P0:軍團替換後的新名稱,只在 passives 來源
+                 "Lord of the Dead": "亡者之主"},
     "stats": {"+500 to maximum Mana": "+500 最大魔力",
               # L2a:未標記與 stats 都有、譯文刻意不同,才分得出走了哪一邊
               "+30 to Dexterity": "+30 點敏捷(stats)",
@@ -1093,6 +1095,50 @@ def test_id_obeys_f2(fork):
           got == "Elemental Overload", "got=%r id_lookups=%r" % (got, h.id_lookups))
 
 
+# ST-P0:新引擎契約 -- 依 id 查時 (id, en) 都相符才回譯文,英文不符回 nil。
+STRICT_ID_DICT = {("passives", "90001"): ("Elemental Overload", "戰神")}
+
+
+def strict_id_harness(fork):
+    """天賦提示 harness,PobToolsTranslateId 換成 (id, en) 皆符才命中的假引擎。"""
+    h = tooltip_harness(fork, with_inject=True)
+
+    def translate_id(source, id_, en=None):
+        if isinstance(id_, float) and id_.is_integer():
+            id_ = int(id_)
+        key = None if id_ is None else str(id_)
+        h.id_lookups.append((source, key, en))
+        hit = STRICT_ID_DICT.get((source, key))
+        return hit[1] if hit and hit[0] == en else None
+
+    h.rt.globals()["__py_translate_id"] = translate_id
+    return h
+
+
+def test_id_replaced_node(fork):
+    """ST-P0 -- 軍團/刺青替換節點保留原 id、只換 dn:名稱行不得沿用原節點譯名。"""
+    h = tooltip_harness(fork, with_inject=True)   # 舊引擎:依 id 命中不比英文
+    got = node_name_line(h, 90001, "Lord of the Dead")
+    check("%s ST-P0 舊引擎(不比英文)重現 bug:替換節點顯示原節點譯名" % fork,
+          got == "戰神", "got=%r id_lookups=%r" % (got, h.id_lookups))
+    h = strict_id_harness(fork)
+    got = node_name_line(h, 90001, "Lord of the Dead")
+    check("%s ST-P0 替換節點(原 id、新 dn)名稱行不顯示原節點譯名" % fork,
+          got != "戰神", "got=%r id_lookups=%r" % (got, h.id_lookups))
+    check("%s ST-P0 替換節點名稱行改由 passives 來源查到新名稱譯文" % fork,
+          got == "亡者之主" and src_of(h, "Lord of the Dead") == "passives",
+          "got=%r lookups=%r" % (got, h.lookups))
+    check("%s ST-P0 呼叫 PobToolsTranslateId 第 3 參數是替換後的 dn" % fork,
+          ("passives", "90001", "Lord of the Dead") in h.id_lookups, repr(h.id_lookups))
+    h = strict_id_harness(fork)
+    got = node_name_line(h, 90001, "Elemental Overload")
+    check("%s ST-P0 一般節點(id 與 dn 相符)仍用 id 譯文" % fork,
+          got == "戰神", "got=%r id_lookups=%r" % (got, h.id_lookups))
+    check("%s ST-P0 一般節點呼叫 PobToolsTranslateId 第 3 參數是 dn" % fork,
+          ("passives", "90001", "Elemental Overload") in h.id_lookups, repr(h.id_lookups))
+    check("%s ST-P0 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
 def magic_item(prefix_mod, suffix_mod):
     def mods(m):
         return "{ { modId = %r } }" % m if m else "nil"
@@ -1729,6 +1775,7 @@ def main():
         test_id_passive_name(fork)
         test_id_affix_title(fork)
         test_id_obeys_f2(fork)
+        test_id_replaced_node(fork)
         test_stat_mod_line(fork)
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)

@@ -2936,7 +2936,10 @@ static int l_PobToolsTranslateId(lua_State* L)
 	const char* id = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
 	const char* en = lua_isnoneornil(L, 3) ? nullptr : lua_tostring(L, 3);
 	if (source && id) {
-		const char* hit = translation_lookup_by_id(source, id);
+		// With en, the id answer must also match that English (a Timeless
+		// jewel / tattoo renames a node but keeps its id); a mismatch falls
+		// through to the source lookup of en below.
+		const char* hit = translation_lookup_by_id_en(source, id, en);
 		if (hit) { lua_pushstring(L, hit); return 1; }
 	}
 	if (!en) { lua_pushnil(L); return 1; }

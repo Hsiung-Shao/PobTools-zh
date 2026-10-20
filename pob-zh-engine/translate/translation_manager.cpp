@@ -151,6 +151,11 @@ static const SourceDict kIdDicts[] = {
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
+/* source -> (id -> whitespace-normalised GGPK English), from the id file's
+** optional "templates". A source present here (even with an empty map) had a
+** templates field: its id answers are English-checked. Kept out of s_id_dicts
+** so translation_debug_sources is unchanged. */
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_templates;
 
 /* stats_by_id.json: GGG stat descriptions keyed "stat_ids|cond|src_file|dup_ix",
 ** Chinese templates in "entries", English templates in "templates". Like the
@@ -1123,7 +1128,8 @@ static std::string determine_locale() {
 ** Deliberately NOT load_json_translations -- that one derives patterns,
 ** reverse keys and glossary terms from English keys, and these keys are ids. */
 static int load_json_id_dict(const std::string &filepath,
-                             std::unordered_map<std::string, std::string> &sink) {
+                             std::unordered_map<std::string, std::string> &sink,
+                             const std::string &source) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -1144,6 +1150,16 @@ static int load_json_id_dict(const std::string &filepath,
         if (it.key().empty() || zh.empty()) continue;
         sink[it.key()] = std::move(zh);   /* last-wins within the file */
         ++count;
+    }
+    /* Optional "templates": id -> the GGPK English of that id. Its presence
+    ** marks the file as English-checked (see translation_lookup_by_id_en); an
+    ** older pack without it keeps the plain id behaviour. */
+    if (doc.contains("templates") && doc["templates"].is_object()) {
+        auto &tsink = s_id_templates[source];   /* exists (maybe empty) = checked */
+        for (auto it = doc["templates"].begin(); it != doc["templates"].end(); ++it) {
+            if (!it.value().is_string() || it.key().empty()) continue;
+            tsink[it.key()] = normalize_whitespace(it.value().get<std::string>());
+        }
     }
     return count;
 }
@@ -1970,7 +1986,7 @@ static bool try_load_json(const std::string &base_dir) {
                 /* Without source_lookup nothing can ever ask for an id: skip
                 ** the file (it never merges either way). */
                 if (!source_lookup) continue;
-                int count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
+                int count = load_json_id_dict(filepath, s_id_dicts[idd->name], idd->name);
                 if (count > 0) {
                     snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d id entries from %s\n",
                              count, filename.c_str());
@@ -2039,7 +2055,7 @@ static bool try_load_json(const std::string &base_dir) {
         if (filename == kStatDictFile) {
             count = load_json_stat_dict(filepath);
         } else if (idd) {
-            count = load_json_id_dict(filepath, s_id_dicts[idd->name]);
+            count = load_json_id_dict(filepath, s_id_dicts[idd->name], idd->name);
         } else {
             const SourceDict *src = nullptr;
             for (const SourceDict &sd : kSourceDicts)
@@ -2302,6 +2318,7 @@ void translation_shutdown(void) {
     s_source_cache.clear();
     s_item_title_source_cache.clear();
     s_id_dicts.clear();
+    s_id_templates.clear();
     s_stat_index.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
@@ -3143,6 +3160,20 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
     auto it = sit->second.find(id);
     if (it == sit->second.end()) return nullptr;
     return it->second.c_str();
+}
+
+/* translation_lookup_by_id plus an English check (see translation_manager.h):
+** a Timeless jewel / tattoo renames a node but keeps its id, so when the id
+** file carries "templates" the id answer counts only if its GGPK English is
+** the English being shown. Same F2 / source_lookup gates via the plain call. */
+const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en) {
+    const char *zh = translation_lookup_by_id(source, id);
+    if (!zh || !en) return zh;
+    auto tit = s_id_templates.find(source);
+    if (tit == s_id_templates.end()) return zh;   /* older pack: no English to check */
+    auto eit = tit->second.find(id);
+    if (eit == tit->second.end()) return nullptr;
+    return eit->second == normalize_whitespace(en) ? zh : nullptr;
 }
 
 /* One stat line through stats_by_id.json (see translation_manager.h).
