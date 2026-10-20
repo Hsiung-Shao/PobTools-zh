@@ -1164,6 +1164,23 @@ static int load_json_id_dict(const std::string &filepath,
     return count;
 }
 
+/* The distinct {N} numbers a template line uses. Splitting a multi-line entry
+** into per-line entries is only safe when line i of the English and line i of
+** the Chinese carry the SAME set: when the value moved to the other line, the
+** half that lost it would translate to a line that silently drops the number,
+** and the half that gained it would show a raw {0} (or swallow a written-out
+** number of the English as its value). Shared by the dictionary loader's
+** per-line registration and the stat index's per-line candidates. */
+static std::vector<int> placeholder_index_set(const std::string &s) {
+    std::vector<int> ix;
+    normalize_placeholders(s, &ix);
+    std::vector<int> v;
+    for (int n : ix) if (n >= 0) v.push_back(n);
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+    return v;
+}
+
 /* ---- stats_by_id.json ---- */
 
 /* GGG writes a multi-line description as one string with a literal "\n"
@@ -1291,8 +1308,17 @@ static int load_json_stat_dict(const std::string &filepath) {
         ** file, but POB draws each line on its own ("Cannot Evade enemy
         ** Attacks"). When both sides have the same number of lines, line i of
         ** the English is line i of the Chinese, so each line is a candidate
-        ** too. Passive file only: the item file's lines are ordinary stats. */
-        if (passive && en.find('\n') != std::string::npos) {
+        ** too. Every indexed file does this (the item file has multi-line
+        ** templates POB also sends line by line).
+        **
+        ** A line pair is only a candidate when both lines use the same {N}
+        ** set. Chinese often moves the value to the other line ("{0}% chance
+        ** ... when any\nof your Traps ..." -> "當你的陷阱被敵人觸發時，\n有 {0}%
+        ** ..."): the Chinese line with {0} would leak a placeholder (the guard
+        ** catches that), and the English line with {0} would translate to a
+        ** Chinese line that silently DROPS the value -- nothing catches that,
+        ** so such pairs are never indexed. */
+        if (en.find('\n') != std::string::npos) {
             auto split = [](const std::string &s) {
                 std::vector<std::string> v;
                 size_t b0 = 0;
@@ -1309,6 +1335,7 @@ static int load_json_stat_dict(const std::string &filepath) {
                 for (size_t i = 0; i < en_lines.size(); i++) {
                     if (normalize_whitespace(en_lines[i]).empty() ||
                         normalize_whitespace(zh_lines[i]).empty()) continue;
+                    if (placeholder_index_set(en_lines[i]) != placeholder_index_set(zh_lines[i])) continue;
                     add_cand(en_lines[i], zh_lines[i]);
                 }
             }
@@ -1532,11 +1559,35 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             } else {
                 ensure_slots();
             }
-            std::string fwd_key = to_ascii_lower(norm_key);
-            FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
-            /* Source copy follows the merged map's rule here: overwrite. */
-            if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
-            if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+            /* A forward pattern fills the Chinese {N} from the line's values. When
+            ** the Chinese uses a {N} the English key does not have ("Shield per
+            ** 1% Chaos Resistance they have" -> "將他們 {0}% 的最大生命..."), the
+            ** only thing left to feed it is a number the English wrote out as
+            ** wording -- an unverifiable guess, so no forward pattern is made
+            ** from such an entry (its exact entry is still blocked by the
+            ** placeholder guard at lookup time).
+            **
+            ** The test is a COUNT, not the numbering: only when the English has
+            ** fewer placeholder occurrences than the Chinese has distinct {N}
+            ** must a value come from written-out wording. Enough placeholders
+            ** numbered differently (key {0} / value {1}, key {0}{0} / value
+            ** {0}{1} -- data renumbering slips) keep the pattern and its
+            ** in-order fallback, which reads them correctly. */
+            bool fwd_ok = true;
+            {
+                std::vector<int> key_ix;
+                normalize_placeholders(clean_key, &key_ix);
+                size_t key_ph = 0;
+                for (int n : key_ix) if (n >= 0) key_ph++;
+                if (key_ph < placeholder_index_set(clean_value).size()) fwd_ok = false;
+            }
+            if (fwd_ok) {
+                std::string fwd_key = to_ascii_lower(norm_key);
+                FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
+                /* Source copy follows the merged map's rule here: overwrite. */
+                if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
+                if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+            }
         }
         std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
         if (fuzzy_value != norm_value) {
@@ -1555,6 +1606,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             for (size_t i = 0; aligned && i < klines.size(); i++) {
                 if (klines[i].empty() || vlines[i].empty()) aligned = false;
                 else if (slot_count(klines[i]) != slot_count(vlines[i])) aligned = false;
+                else if (placeholder_index_set(klines[i]) != placeholder_index_set(vlines[i])) aligned = false;
             }
             if (aligned) {
                 for (size_t i = 0; i < klines.size(); i++) {
@@ -2564,6 +2616,47 @@ static bool translate_title_words(const std::string &title, std::string &out) {
     return true;
 }
 
+/* Unfilled-placeholder guard. A result carrying "{N}" / "{}" / "{N:fmt}" that
+** the English never had is a template whose value was never filled: POB sent
+** half of a multi-line stat, or a dictionary value kept GGG's {0} while its key
+** was written with a real number ("Fires 1 Projectile" -> "發射 {0} 個投射物").
+** Showing "獲得 {0} 充能" is worse than showing the English, so every step
+** treats such a result as a miss and moves on. An English that itself has a
+** '{' (stats.json keys like "{0} (action speed modifier)") is exempt: there the
+** placeholder is the input's own. */
+static bool leaks_placeholder(const std::string &out, const std::string &in) {
+    /* A '#' is fill_plan's "no value for this slot" (and POB's own crafting
+    ** rows write the value as '#'): a stray one the English did not have is an
+    ** incompletely filled answer, the same failure as a raw {0}. */
+    if (in.find('#') == std::string::npos && out.find('#') != std::string::npos) return true;
+    if (in.find('{') != std::string::npos) return false;
+    for (size_t i = 0; i + 1 < out.size(); i++)
+        if (out[i] == '{' && (out[i + 1] == '}' || (out[i + 1] >= '0' && out[i + 1] <= '9')))
+            return true;
+    return false;
+}
+
+/* Real newline <-> the literal "\n" GGG multi-line keys are stored with. */
+static std::string newlines_to_literal(const std::string &s) {
+    std::string r;
+    r.reserve(s.size() + 8);
+    for (char c : s) {
+        if (c == '\r') continue;
+        if (c == '\n') r += "\\n";
+        else r += c;
+    }
+    return r;
+}
+static std::string literal_to_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == 'n') { r += '\n'; i++; continue; }
+        r += s[i];
+    }
+    return r;
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
     translation_wait_ready();
@@ -2585,10 +2678,17 @@ const char* translation_lookup(const char *english) {
     /* 0. Source dictionary: POB told us which of its own data files this
      *    string came from, so that file's entries win over the merged map.
      *    A miss here just falls through to the normal path. */
+    /* An exact entry exists for this very sentence but needs a value it was
+    ** not given (the guard below blocked it): the sentence is KNOWN, so the
+    ** word-by-word glossary (step 4) must not stitch it together from halves
+    ** ("Increases and Reductions to Armour also apply to Energy Shield").
+    ** Pattern and the other structural steps still run. */
+    bool exact_blocked = false;
     if (s_active_source) {
         auto sit = s_active_source->find(english);
         if (sit != s_active_source->end()) {
-            return sit->second.c_str();
+            if (!leaks_placeholder(sit->second, english)) return sit->second.c_str();
+            exact_blocked = true;
         }
     }
 
@@ -2611,8 +2711,10 @@ const char* translation_lookup(const char *english) {
             auto pit = s_active_source_patterns->find(spattern);
             if (pit != s_active_source_patterns->end()) {
                 std::string result = fill_plan(pit->second, hash_slot_values(sinput, /*normalize_ph=*/true));
-                auto [iter, _] = s_lookup_cache_active->emplace(std::move(sinput), std::move(result));
-                return iter->second.c_str();
+                if (!leaks_placeholder(result, sinput)) {
+                    auto [iter, _] = s_lookup_cache_active->emplace(std::move(sinput), std::move(result));
+                    return iter->second.c_str();
+                }
             }
         }
     }
@@ -2620,7 +2722,8 @@ const char* translation_lookup(const char *english) {
     /* 1. Exact match (fast path, no cache needed — already O(1)) */
     auto it = s_translations.find(english);
     if (it != s_translations.end()) {
-        return it->second.c_str();
+        if (!leaks_placeholder(it->second, english)) return it->second.c_str();
+        exact_blocked = true;
     }
 
     /* 2. Check lookup cache (avoids repeated pattern/glossary scans) */
@@ -2633,6 +2736,14 @@ const char* translation_lookup(const char *english) {
 
     /* 3. Pattern match: normalize digits and placeholders, then lookup (case-insensitive) */
     std::string input(english);
+    /* Every step below that produces an answer goes through here: a leaking
+    ** answer (see leaks_placeholder) is a miss for that step -- nothing is
+    ** cached for it and the next step gets its turn. */
+    auto accept = [&input](std::string &&result) -> const char * {
+        if (leaks_placeholder(result, input)) return nullptr;
+        auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
+        return iter->second.c_str();
+    };
     std::string pattern = to_ascii_lower(digits_to_hash(normalize_placeholders(input)));
     /* The second clause is not redundant. POB's own crafting UI writes a mod's
     ** rollable value as a literal '#' ("#% increased Armour during Effect" in
@@ -2657,8 +2768,7 @@ const char* translation_lookup(const char *english) {
                 OutputDebugStringA(msg);
                 s_hit_count++;
             }
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
-            return iter->second.c_str();
+            if (const char *r = accept(std::move(result))) return r;
         } else {
             /* Diagnostic: log pattern misses (first 50 only) */
             static int s_miss_count = 0;
@@ -2669,6 +2779,29 @@ const char* translation_lookup(const char *english) {
                     (int)pattern.size(), english, pattern.c_str());
                 OutputDebugStringA(msg);
                 s_miss_count++;
+            }
+        }
+    }
+
+    /* 3.3 Whole multi-line stat: GGG stores a two-line description as ONE key
+     *     with a literal "\n" ("...Mine from Supported\nSkills is Detonated
+     *     ..."), and POB may send the whole thing with a real newline. Try that
+     *     key (exact, then pattern) before 3.35 splits the block into lines --
+     *     a half line can match some other, shorter template. The answer's
+     *     literal "\n" comes back as a real newline. */
+    if (input.find('\n') != std::string::npos) {
+        const std::string esc = newlines_to_literal(input);
+        auto eit = s_translations.find(esc);
+        if (eit != s_translations.end()) {
+            if (const char *r = accept(literal_to_newlines(eit->second))) return r;
+            exact_blocked = true;
+        }
+        const std::string epat = to_ascii_lower(digits_to_hash(normalize_placeholders(esc)));
+        if (epat != to_ascii_lower(esc) || esc.find('#') != std::string::npos) {
+            auto pit = s_forward_pattern.find(epat);
+            if (pit != s_forward_pattern.end()) {
+                std::string result = fill_plan(pit->second, hash_slot_values(esc, /*normalize_ph=*/true));
+                if (const char *r = accept(literal_to_newlines(result))) return r;
             }
         }
     }
@@ -2735,8 +2868,7 @@ const char* translation_lookup(const char *english) {
         /* No line translated: fall through untouched, so the whole-block
         ** behaviour for colour/glossary inputs is exactly what it was. */
         if (translated_any) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(joined))) return r_;
         }
     }
 
@@ -2807,8 +2939,7 @@ const char* translation_lookup(const char *english) {
             if (b != std::string::npos) rebuilt.append(seg.text, e + 1, std::string::npos);
         }
         if (translated_any && all_covered) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(rebuilt));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(rebuilt))) return r_;
         }
 
         /* Segment translation did not cover the line. Fall back to the old
@@ -2827,8 +2958,7 @@ const char* translation_lookup(const char *english) {
         if (stripped_has_alpha && stripped != input && !stripped.empty()) {
             if (const char *r = translation_lookup(stripped.c_str())) {
                 std::string copy(r); /* copy before emplace can rehash the cache */
-                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(copy));
-                return iter->second.c_str();
+                if (const char *r_ = accept(std::move(copy))) return r_;
             }
             /* clean text also missed: fall through with the original input */
         }
@@ -2862,8 +2992,7 @@ const char* translation_lookup(const char *english) {
                 if (body != body_zh) {
                     std::string combined = input.substr(0, p);
                     combined += body_zh;
-                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                    return iter->second.c_str();
+                    if (const char *r_ = accept(std::move(combined))) return r_;
                 }
             }
         }
@@ -2896,16 +3025,14 @@ const char* translation_lookup(const char *english) {
                         if (bracketed != whole_zh) {
                             combined += " ";
                             combined += whole_zh;
-                            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                            return iter->second.c_str();
+                            if (const char *r_ = accept(std::move(combined))) return r_;
                         }
                     }
                     const char *suffix_zh = translation_lookup(suffix.c_str());
                     combined += " (";
                     combined += suffix_zh ? suffix_zh : suffix.c_str();
                     combined += ")";
-                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                    return iter->second.c_str();
+                    if (const char *r_ = accept(std::move(combined))) return r_;
                 }
             }
         }
@@ -2947,8 +3074,7 @@ const char* translation_lookup(const char *english) {
             joined += seg;
         }
         if (all_ok) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(joined))) return r_;
         }
     }
 
@@ -2959,7 +3085,8 @@ const char* translation_lookup(const char *english) {
      *    of the input. Partially covered sentences — flavour text, unknown
      *    mods — are left fully in English: a mixed-language line is worse
      *    than an untranslated one. */
-    if (input.size() >= 4 && !s_term_glossary.empty() && input.find("Community Fork") == std::string::npos) {
+    if (!exact_blocked && input.size() >= 4 && !s_term_glossary.empty() &&
+        input.find("Community Fork") == std::string::npos) {
         struct Span { size_t pos, len; const std::string *to; };
         std::vector<Span> spans;     /* glossary hits, to be replaced */
         std::vector<Span> allowed;   /* whitelist hits, kept as-is */
@@ -3054,8 +3181,7 @@ const char* translation_lookup(const char *english) {
                     cur = s.pos + s.len;
                 }
                 result.append(input, cur, std::string::npos);
-                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
-                return iter->second.c_str();
+                if (const char *r_ = accept(std::move(result))) return r_;
             }
         }
     }
@@ -3217,6 +3343,22 @@ static std::string stat_lookup_uncached(const std::string &line, bool passive) {
     std::vector<std::string> outs;
     outs.reserve(cands.size());
     for (const StatCand *c : cands) outs.push_back(fill_plan(c->plan, vals));
+    /* A candidate whose filled answer still shows a placeholder the line did
+    ** not have is no answer at all (leaks_placeholder): drop it. */
+    {
+        size_t k = 0;
+        for (size_t i = 0; i < cands.size(); i++) {
+            if (leaks_placeholder(outs[i], in)) continue;
+            if (k != i) {
+                cands[k] = cands[i];
+                outs[k] = std::move(outs[i]);
+            }
+            k++;
+        }
+        cands.resize(k);
+        outs.resize(k);
+        if (cands.empty()) return std::string();
+    }
     auto all_same = [](const std::vector<std::string> &v) {
         for (size_t i = 1; i < v.size(); i++) if (v[i] != v[0]) return false;
         return !v.empty();
