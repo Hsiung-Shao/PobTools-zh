@@ -1348,6 +1348,301 @@ def test_stat_jewel_in_node(fork):
     check("%s ST-L4 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
+# ---- 塗油 / 軍團 / 刺青的來源(ST-P3) -----------------------------------------
+#
+# 上游(PoE1 / PoE2 Classes/):
+#   ItemsTab:anointItem -> enchantModLines { line = "Allocates " .. node.dn },之後經
+#     AddItemTooltip 的 modline AddLine 顯示(PoE1 第 4 參數是 modLine;PoE2 是 background)。
+#   NotableDBControl:GetRowValue(column, index, node) -> 色碼 .. node.dn(PoE1 CRAFTED、
+#     PoE2 ENCHANTED;排序依 power 時為 ^xRR8080 / ^x808080)。
+#   TreeTab:ModifyNodePopup(selectedNode)(只有 PoE1;刺青):區域 buildMods 建 modGroups,
+#     label = node.dn .. 48 空白 .. table.concat(node.sd, ","),交給
+#     controls.modSelect = DropDownControl,再 main:OpenPopup(...)。
+#   TreeTab:FindTimelessJewel()(兩分支;軍團):區域 buildMods 建 modData,
+#     label = node.dn .. 48 空白 .. node.sd[1];controls.nodeSelect = DropDownControl(modData);
+#     換珠寶類型時 controls.jewelSelect 的 selFunc 會 wipeTable(modData) 後重建。
+# 兩個下拉清單都是函式區域變數、在 popup 開著時才繪製(而且可能重建),所以合成版保留
+# 這些形狀;測試只看「popup 開出來、畫過之後」清單項的 label 與查找來源。
+
+LABEL_PAD = " " * 48
+
+DICT["anoint"] = {"Whispers of Doom": "末日低語(塗油)"}
+DICT["tattoo"] = {"Tattoo of the Ramako Scout": "拉瑪克斥候刺青(刺青)"}
+DICT["legion"] = {"Ritual of Immolation": "獻祭儀式(軍團)",
+                  "Hit and Run": "打帶跑(軍團)"}
+DICT[None].update({
+    "Allocates": "配置",
+    # 現行整行查找的值(來源表沒有該名稱時要維持這個結果)
+    "Allocates Heart of Oak": "配置 橡樹之心",
+})
+
+DROPDOWN_BODY = """
+function C:Draw(viewPort)
+	for _, v in ipairs(self.list or { }) do
+		DrawString(0, 0, "LEFT", 16, "VAR", type(v) == "table" and v.label or v)
+	end
+end
+"""
+DROPDOWN_P1 = """
+local C = newClass("DropDownControl")
+function C:DropDownControl(anchor, rect, list, selFunc)
+	self.list = list self.selFunc = selFunc self.selIndex = 1
+	return self
+end
+""" + DROPDOWN_BODY
+DROPDOWN_P2 = """
+local C = newClass("DropDownControl", function(self, anchor, rect, list, selFunc)
+	self.list = list self.selFunc = selFunc self.selIndex = 1
+end)
+""" + DROPDOWN_BODY
+
+POPUP_SETUP = b"""
+function main:OpenPopup(width, height, title, controls)
+	local popup = { width = width, height = height, title = title, controls = controls }
+	table.insert(self.popups, 1, popup)
+	return popup
+end
+function main:ClosePopup() table.remove(self.popups, 1) end
+"""
+
+TREETAB_METHODS = """
+function C:ModifyNodePopup(selectedNode)
+	local controls = { }
+	local modGroups = { }
+	local treeNodes = self.build.spec.tree.nodes
+	local nodeName = treeNodes[selectedNode.id].dn
+	local function buildMods(selectedNode)
+		wipeTable(modGroups)
+		for id, node in pairs(self.build.spec.tree.tattoo.nodes) do
+			if nodeName:match(node.targetType:gsub("^Small ", "")) then
+				table.insert(modGroups, {
+				label = node.dn .. "%(pad)s" .. table.concat(node.sd, ","),
+				descriptions = copyTable(node.sd),
+				id = id,
+				})
+			end
+		end
+		table.sort(modGroups, function(a, b) return a.label < b.label end)
+	end
+	buildMods(selectedNode)
+	controls.modSelect = NEW_DROPDOWN(nil, {175, 25, 250, 18}, modGroups, function(idx) end)
+	main:OpenPopup(600, 100, "Modify Node", controls, "save")
+end
+function C:FindTimelessJewel()
+	local treeData = self.build.spec.tree
+	local legionNodes = treeData.legion.nodes
+	local timelessData = self.build.timelessData
+	local controls = { }
+	local modData = { }
+	local jewelTypes = self.jewelTypes
+	local function buildMods()
+		wipeTable(modData)
+		for _, node in pairs(legionNodes) do
+			if node.id:match("^" .. timelessData.jewelType.name .. "_.+") and node["not"] then
+				table.insert(modData, {
+					label = node.dn .. "%(pad)s" .. node.sd[1],
+					descriptions = copyTable(node.sd),
+					type = timelessData.jewelType.name,
+					id = node.id
+				})
+			end
+		end
+		table.sort(modData, function(a, b) return a.label < b.label end)
+	end
+	controls.jewelSelect = NEW_DROPDOWN(nil, {520, 25, 200, 18}, jewelTypes, function(index, value)
+		timelessData.jewelType = value
+		buildMods()
+	end)
+	buildMods()
+	controls.nodeSelect = NEW_DROPDOWN(nil, {0, 7, 200, 18}, modData, function(index, value) end)
+	main:OpenPopup(910, 517, "Find a Timeless Jewel", controls, nil, nil, "close")
+end
+""" % {"pad": LABEL_PAD}
+
+TREETAB_P1 = """
+local C = newClass("TreeTab")
+function C:TreeTab(build) self.build = build return self end
+""" + TREETAB_METHODS.replace(
+    "NEW_DROPDOWN(", 'new("DropDownControl"):DropDownControl(')
+TREETAB_P2 = """
+local C = newClass("TreeTab", function(self, build) self.build = build end)
+""" + TREETAB_METHODS.replace("NEW_DROPDOWN(", 'new("DropDownControl", ')
+
+# NotableDBControl:GetRowValue 照上游(PoE1 CRAFTED、PoE2 ENCHANTED)
+NOTABLE_ROW = """
+function C:GetRowValue(column, index, node)
+	if column == 1 then
+		if self.sortDetail and self.sortDetail.stat then
+			return "^x808080"..node.dn
+		else
+			return colorCodes.ROWCODE..node.dn
+		end
+	end
+end
+"""
+NOTABLE_P1 = """
+local C = newClass("NotableDBControl")
+function C:NotableDBControl() self.controls = { search = { buf = "" } } return self end
+""" + NOTABLE_ROW.replace("ROWCODE", "CRAFTED")
+NOTABLE_P2 = """
+local C = newClass("NotableDBControl", function(self) self.controls = { search = { buf = "" } } end)
+""" + NOTABLE_ROW.replace("ROWCODE", "ENCHANTED")
+
+P3_BUILD = """
+{
+	spec = { tree = {
+		nodes = { [100] = { dn = "Strength", sd = { "+10 to Strength" } } },
+		tattoo = { nodes = {
+			ramako = { dn = "Tattoo of the Ramako Scout", targetType = "Small Strength",
+				targetValue = "", sd = { "+2 to Strength" } },
+			unknown = { dn = "Tattoo of the Unknown", targetType = "Small Strength",
+				targetValue = "", sd = { "+1 to Strength" } },
+		} },
+		legion = { nodes = {
+			{ id = "glorious_vanity_notable_1", dn = "Ritual of Immolation", ["not"] = true,
+				sd = { "Burn things" } },
+			{ id = "glorious_vanity_notable_2", dn = "Unknown Vaal Notable", ["not"] = true,
+				sd = { "Something" } },
+			{ id = "lethal_pride_notable_1", dn = "Hit and Run", ["not"] = true,
+				sd = { "Run things" } },
+		} },
+	} },
+	timelessData = { },
+}
+"""
+
+
+def p3_harness(fork, with_inject=True):
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.run(COLOUR_SETUP)
+    h.run(b'colorCodes.CRAFTED = "^xB8DAF1" colorCodes.ENCHANTED = "^xB8DAF1"')
+    h.run(POPUP_SETUP)
+    h.run('LoadModule("Classes/Tooltip")')
+    h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    h.define("DropDownControl", DROPDOWN_P1, DROPDOWN_P2)
+    h.define("TreeTab", TREETAB_P1, TREETAB_P2)
+    h.define("NotableDBControl", NOTABLE_P1, NOTABLE_P2)
+    if with_inject:
+        h.apply_inject()
+    h.lookups = []
+    return h
+
+
+def p3_tree_tab(h):
+    build = h.eval("function() return %s end" % P3_BUILD)()
+    if h.fork == "PoE1":
+        tab = h.eval('function(b) return new("TreeTab"):TreeTab(b) end')(build)
+    else:
+        tab = h.eval('function(b) return new("TreeTab", b) end')(build)
+    tab.jewelTypes = h.eval('function() return { { id = 1, name = "glorious_vanity" }, '
+                            '{ id = 2, name = "lethal_pride" } } end')()
+    build.timelessData.jewelType = tab.jewelTypes[1]
+    return tab
+
+
+def p3_popup_labels(h, control):
+    """畫一次 popup 的指定下拉後回傳各項 label(去色碼)。"""
+    return [_norm(x) for x in h.eval(
+        'function(name) local c = main.popups[1].controls[name] c:Draw({}) '
+        'local o = {} for i, v in ipairs(c.list) do o[i] = v.label end return o end')(
+        control).values()]
+
+
+def allocates_line(fork, name, with_inject=True):
+    h = p3_harness(fork, with_inject)
+    tab = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    item = h.eval('function(n) return { rarity = "RARE", title = "Doom Loop", '
+                  'baseName = "Amber Amulet", base = {}, name = "Doom Loop, Amber Amulet", '
+                  'explicitModLines = { { crafted = true, line = "Allocates " .. n } } } end')(name)
+    h.lookups = []
+    ok, err = h.eval('function(tab, t, item) local ok, e = pcall(function() '
+                     'tab:AddItemTooltip(t, item) end) return ok, e end')(tab, tip, item)
+    lines = [l for l in tooltip_lines(h, tip) if l is not None]
+    return h, ok, err, (_norm(lines[-1]) if lines else "")
+
+
+def test_src_anoint_legion_tattoo(fork):
+    """ST-P3 -- 塗油名稱走 anoint、軍團下拉走 legion、刺青下拉走 tattoo。"""
+    # (1) Allocates 行
+    h, ok, err, line = allocates_line(fork, "Whispers of Doom")
+    check("%s ST-P3 Allocates 行本身不出錯" % fork, ok, repr(err))
+    check("%s ST-P3 Allocates 行的名稱在 anoint 來源下查詢" % fork,
+          "anoint" in srcs_of(h, "Whispers of Doom"), "lookups=%r" % h.lookups)
+    check("%s ST-P3 Allocates 行顯示前綴譯文與 anoint 名稱譯文" % fork,
+          "配置" in line and "末日低語(塗油)" in line and not re.search(r"[A-Za-z]", line),
+          "line=%r" % line)
+    check("%s ST-P3 Allocates 行結束後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    # (5) 名稱不在 anoint 表:整行照現行
+    h, ok, err, line = allocates_line(fork, "Heart of Oak")
+    h0, ok0, err0, line0 = allocates_line(fork, "Heart of Oak", with_inject=False)
+    check("%s ST-P3 anoint 表沒有該名稱時 Allocates 行照現行" % fork,
+          ok and line == "配置 橡樹之心", "line=%r 未注入時=%r" % (line, line0))
+
+    # (2) NotableDBControl 列表
+    for with_inject in (True, False):
+        h = p3_harness(fork, with_inject)
+        db = make(h, "NotableDBControl")
+        row = h.eval('function(o, dn) return o:GetRowValue(1, 1, { dn = dn }) end')
+        if with_inject:
+            v = row(db, "Whispers of Doom")
+            check("%s ST-P3 塗油列表項在 anoint 來源下查詢" % fork,
+                  "anoint" in srcs_of(h, "Whispers of Doom"), "lookups=%r" % h.lookups)
+            check("%s ST-P3 塗油列表項顯示 anoint 譯文且保留色碼" % fork,
+                  v == "^xB8DAF1末日低語(塗油)", "v=%r" % v)
+            check("%s ST-P3 塗油列表查詢後來源還原為 nil" % fork,
+                  h.source is None, "source=%r" % h.source)
+            miss = row(db, "Heart of Oak")
+        else:
+            miss0 = row(db, "Heart of Oak")
+    check("%s ST-P3 anoint 表沒有該名稱時列表項同現行" % fork,
+          miss == miss0, "v=%r 未注入時=%r" % (miss, miss0))
+
+    # (3) 軍團下拉(兩分支)
+    h = p3_harness(fork)
+    tab = p3_tree_tab(h)
+    h.eval('function(t) t:FindTimelessJewel() end')(tab)
+    labels = p3_popup_labels(h, "nodeSelect")
+    check("%s ST-P3 軍團下拉的 dn 在 legion 來源下查詢" % fork,
+          "legion" in srcs_of(h, "Ritual of Immolation"), "lookups=%r" % h.lookups)
+    check("%s ST-P3 軍團下拉 label 的 dn 段換成 legion 譯文、後段 sd 不變" % fork,
+          ("獻祭儀式(軍團)" + LABEL_PAD + "Burn things").strip() in labels,
+          "labels=%r" % labels)
+    check("%s ST-P3 legion 表沒有的 dn 維持英文 label" % fork,
+          ("Unknown Vaal Notable" + LABEL_PAD + "Something").strip() in labels,
+          "labels=%r" % labels)
+    check("%s ST-P3 軍團下拉繪製後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    # 換珠寶類型 -> buildMods 重建 modData,新項目同樣要翻
+    h.eval('function() local c = main.popups[1].controls.jewelSelect '
+           'c.selFunc(2, c.list[2]) end')()
+    labels = p3_popup_labels(h, "nodeSelect")
+    check("%s ST-P3 換珠寶類型重建清單後新項目也以 legion 譯文顯示" % fork,
+          ("打帶跑(軍團)" + LABEL_PAD + "Run things").strip() in labels,
+          "labels=%r" % labels)
+
+    # (3) 刺青下拉(只有 PoE1 有 ModifyNodePopup)
+    if fork != "PoE1":
+        print("  N/A   %s ST-P3 刺青:此分支 TreeTab 沒有 ModifyNodePopup" % fork)
+        return
+    h = p3_harness(fork)
+    tab = p3_tree_tab(h)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    labels = p3_popup_labels(h, "modSelect")
+    check("%s ST-P3 刺青下拉的 dn 在 tattoo 來源下查詢" % fork,
+          "tattoo" in srcs_of(h, "Tattoo of the Ramako Scout"), "lookups=%r" % h.lookups)
+    check("%s ST-P3 刺青下拉 label 的 dn 段換成 tattoo 譯文、後段 sd 不變" % fork,
+          ("拉瑪克斥候刺青(刺青)" + LABEL_PAD + "+2 to Strength") in labels,
+          "labels=%r" % labels)
+    check("%s ST-P3 tattoo 表沒有的 dn 維持英文 label" % fork,
+          ("Tattoo of the Unknown" + LABEL_PAD + "+1 to Strength") in labels,
+          "labels=%r" % labels)
+    check("%s ST-P3 刺青下拉繪製後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+
+
 # ---- 多行 stat 模板被折成兩個 sd 元素(ST-P2b) --------------------------------
 #
 # node 51108:GGPK 一個兩行模板,POB 拆成 sd 兩個元素逐行 AddLine。
@@ -1830,7 +2125,7 @@ def test_wrapped_arity_gem(fork):
 ARITY_CLASSES = ("EditControl", "Tooltip", "SearchHost", "SkillListControl",
                  "GemSelectControl", "PassiveTreeView", "NotableDBControl",
                  "ItemDBControl", "MinionSearchListControl", "CalcsTab",
-                 "ItemsTab", "Item")
+                 "ItemsTab", "Item", "TreeTab")
 
 # 上游頂層會碰到 itemLib / data;這裡只要檔案載得完、方法定義得出來。
 ARITY_STUBS = rb"""
@@ -2250,6 +2545,7 @@ def main():
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)
         test_stat_multiline_sd(fork)
+        test_src_anoint_legion_tattoo(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_wrapped_arity(fork)

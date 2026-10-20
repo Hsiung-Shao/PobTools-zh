@@ -135,6 +135,13 @@ static const SourceDict kSourceDicts[] = {
     { "stats",    "stats.json" },
     { "uniques",  "uniques.json" },
     { "items",    "items.json" },
+    /* Listed only in meta.json "source_dicts": loaded (with source_lookup)
+    ** as source tables, never merged -- their wording differs from the merged
+    ** map on purpose (an anoint's "Juggernaut" is the notable, not the
+    ** ascendancy class). */
+    { "anoint",   "anoint.json" },
+    { "legion",   "legion.json" },
+    { "tattoo",   "tattoo.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;

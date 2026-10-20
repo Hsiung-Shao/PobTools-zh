@@ -690,6 +690,114 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(gRoot);
 	}
 
+	// ---- P3:anoint / legion / tattoo 來源字典 ------------------------------------
+	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在
+	// source_lookup 下當來源表;絕不併入全域。三檔由測試在暫存複本放小樣本。
+	// 全域現值(出貨字典):Juggernaut→勇士、Bleed Avoidance→避免流血、
+	// Tattoo of the Kitava Makanga→奇塔弗馬坎加的紋身 —— 都和來源譯法不同。
+	printf("\n=== P3 anoint / legion / tattoo 來源 ===\n");
+	{
+		const char* kOnlyAnoint = "Zzqanointonly Probe Key";
+		auto plantP3 = [&](const std::wstring& r, bool flag, std::string& why) {
+			CreateDirectoryW(r.c_str(), nullptr);
+			if (!build_dict_copy(shippedLocale, r + L"zh-rTW\\", statsJson, flag, why)) return false;
+			auto put = [&](const wchar_t* name, const char* src,
+			               std::initializer_list<std::pair<const char*, std::string>> kv) {
+				nlohmann::ordered_json d = nlohmann::ordered_json::object();
+				d["source_files"] = nlohmann::ordered_json::array({src});
+				d["is_base_items"] = false;
+				d["entries"] = nlohmann::ordered_json::object();
+				for (const auto& p : kv) d["entries"][p.first] = p.second;
+				return write_bytes(r + L"zh-rTW\\" + name, d.dump(2));
+			};
+			bool ok = put(L"anoint.json", "test", {{"Juggernaut", u8"戰神"}, {kOnlyAnoint, u8"塗油專用"}}) &&
+			          put(L"legion.json", "test", {{"Bleed Avoidance", u8"流血避免"}}) &&
+			          put(L"tattoo.json", "test", {{"Tattoo of the Kitava Makanga", u8"奇塔弗鑄造的紋身"}});
+			std::string mb;
+			try {
+				ok = ok && read_bytes(r + L"zh-rTW\\meta.json", mb);
+				auto meta = nlohmann::ordered_json::parse(mb);
+				for (const char* f : {"anoint.json", "legion.json", "tattoo.json"})
+					if (!in_array(meta, "source_dicts", f)) meta["source_dicts"].push_back(f);
+				ok = ok && write_bytes(r + L"zh-rTW\\meta.json", meta.dump(2));
+			} catch (...) { ok = false; }
+			return ok;
+		};
+		auto say = [](const char* k) {
+			const char* r = translation_lookup(k);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto sourced = [&](const char* src, const char* k) {
+			translation_set_source(src);
+			const std::string r = say(k);
+			translation_set_source(nullptr);
+			return r;
+		};
+
+		// 基準：同一份出貨字典、沒有三個新檔時的全域值。
+		translation_set_source(nullptr);
+		const std::string bareJugg = say("Juggernaut");
+
+		const std::wstring fRoot = root + L"p3f\\";
+		const std::wstring nRoot = root + L"p3n\\";
+		std::string w;
+		const bool setup = plantP3(fRoot, true, w) && plantP3(nRoot, false, w);
+		check(setup, "P3-0 三個來源檔已放入暫存複本並列入 source_dicts");
+		if (!setup) printf("           %s\n", w.c_str());
+
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", fRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		{
+			const std::string a = sourced("anoint", "Juggernaut");
+			const std::string bare = say("Juggernaut");
+			const bool ok = setup && a == u8"戰神" && bare == bareJugg && bare != a;
+			check(ok, "P3-1 anoint 來源下 Juggernaut 得戰神，無來源仍為全域值");
+			if (!ok) printf("           anoint='%s' bare='%s' baseline='%s'\n", a.c_str(), bare.c_str(), bareJugg.c_str());
+		}
+		{
+			const std::string l = sourced("legion", "Bleed Avoidance");
+			check(setup && l == u8"流血避免", "P3-2 legion 來源下 Bleed Avoidance 得流血避免");
+			if (l != u8"流血避免") printf("           legion='%s'\n", l.c_str());
+		}
+		{
+			const std::string t = sourced("tattoo", "Tattoo of the Kitava Makanga");
+			check(setup && t == u8"奇塔弗鑄造的紋身", "P3-3 tattoo 來源下得奇塔弗鑄造的紋身");
+			if (t != u8"奇塔弗鑄造的紋身") printf("           tattoo='%s'\n", t.c_str());
+		}
+		{
+			const char* g = translation_lookup(kOnlyAnoint);
+			const bool globalKept = g == nullptr || std::string(g) == kOnlyAnoint;
+			const std::string viaSrc = sourced("anoint", kOnlyAnoint);
+			const bool ok = setup && globalKept && viaSrc == u8"塗油專用";
+			check(ok, "P3-4 只在 anoint 檔的鍵不進全域(來源下可查為前提)");
+			if (!ok) printf("           global='%s' anoint='%s'\n", g ? g : "(null)", viaSrc.c_str());
+		}
+		{
+			const std::string flagged = translation_debug_sources();
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", nRoot.c_str());
+			translation_reload();
+			const std::string noflag = translation_debug_sources();
+			auto hasAll = [](const std::string& s) {
+				return s.find("anoint") != std::string::npos && s.find("legion") != std::string::npos &&
+				       s.find("tattoo") != std::string::npos;
+			};
+			auto hasAny = [](const std::string& s) {
+				return s.find("anoint") != std::string::npos || s.find("legion") != std::string::npos ||
+				       s.find("tattoo") != std::string::npos;
+			};
+			const bool ok = setup && hasAll(flagged) && !hasAny(noflag);
+			check(ok, "P3-5 無 source_lookup 旗標時不建三個來源表(有旗標時三表齊全)");
+			if (!ok) printf("           flagged='%s'\n           noflag='%s'\n", flagged.c_str(), noflag.c_str());
+		}
+
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		remove_tree(fRoot);
+		remove_tree(nRoot);
+	}
+
 	// ---- P2:不得輸出未填的佔位符 ------------------------------------------------
 	// coverage_r2(tools/ggpk_zh/audit_prod/coverage_r2/out/cat_*.tsv 的 leak 欄)40 列:
 	// POB 把多行 stat 拆成半句 / 逐行送來,半句被當成整條模板或 pattern 翻,模板裡
