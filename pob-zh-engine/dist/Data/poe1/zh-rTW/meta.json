@@ -21,7 +21,8 @@
     "gems_desc_by_id.json",
     "anoint.json",
     "legion.json",
-    "tattoo.json"
+    "tattoo.json",
+    "stat_wrappers.json"
   ],
   "source_lookup": true,
   "incomplete_translation_whitelist": [

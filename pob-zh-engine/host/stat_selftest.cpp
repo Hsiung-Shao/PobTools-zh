@@ -690,6 +690,38 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(gRoot);
 	}
 
+	// ---- P4:星團附魔「Added Small Passive Skills grant: X」 -------------------------
+	// GGPK 沒有含此前綴的 stat 模板(stats_by_id 只有 "...also grant: ..." 的
+	// local_affliction_jewel_small_nodes_grant_* 與 "...grant Nothing");前綴來自
+	// clientstrings StatDescripotionTreeExpansionJewelGrantedSmallStat:
+	//   "Added Small Passive Skills grant: {0}" → "附加的小型天賦給予：{0}",
+	// {0} 是小天賦的 stat 行(POB Data/ClusterJewels.lua 的 enchant 字面值)。
+	// 期望 = 前綴譯文 + 內層 stat 行依 stats_by_id 的譯文。
+	printf("\n=== P4 星團附魔前綴 ===\n");
+	// P4-1(現況半形冒號「附加的小型天賦給予: 」,37 列):內層 area_damage_+%|1|#|stat_descriptions.txt|0
+	expect("Added Small Passive Skills grant: 10% increased Area Damage", "item",
+	       u8"附加的小型天賦給予：增加 10% 範圍傷害", "P4-1 星團附魔前綴用全形冒號(原半形冒號類)");
+	// P4-2(現況缺「型」「附加的小天賦給予：」,8 列):內層 additional_dexterity / base_dexterity → {0:+d} 敏捷
+	expect("Added Small Passive Skills grant: +10 to Dexterity", "item",
+	       u8"附加的小型天賦給予：+10 敏捷", "P4-2 星團附魔前綴為「附加的小型天賦給予」(原缺「型」類)");
+	// P4-3(現況英文,14 列):內層 burn_damage_+%|1|#|stat_descriptions.txt|0
+	expect("Added Small Passive Skills grant: 12% increased Burning Damage", "item",
+	       u8"附加的小型天賦給予：增加 12% 燃燒傷害", "P4-3 星團附魔(原英文類)以前綴 + 內層 stat 翻譯");
+
+	// ---- P5:名稱槽(passive_hash / display_indexable_skill)-------------------------
+	// 模板的 {N} 是查表型 handler,值為名稱：以 passives / gems 來源把名稱翻成中文。
+	printf("\n=== P5 名稱槽 ===\n");
+	// P5-2:unique_jewel_grants_notable_hash_part_1|#|stat_descriptions.txt|0(handler passive_hash)
+	//   "Allocates {0} if you have the matching modifier on Forbidden Flesh" → "若禁忌血肉上有符合的詞綴，配置 {0}"
+	//   Ancestral Fury = passiveskills AscendancyBerserker10 → 先祖之怒
+	expect("Allocates Ancestral Fury if you have the matching modifier on Forbidden Flesh", "item",
+	       u8"若禁忌血肉上有符合的詞綴，配置 先祖之怒", "P5-2 禁忌血肉：天賦名稱槽填入繁中名");
+	// P5-3:random_skill_gem_level_+_level random_skill_gem_level_+_index|1|# #|stat_descriptions.txt|0
+	//   (handler display_indexable_skill 於 {1})"+{0} to Level of all {1} Gems" → "全部 {1} 寶石等級 +{0}"
+	//   Pact of Beidat = activeskills pact_of_beidat DisplayedName → 貝達特誓約
+	expect("+3 to Level of all Pact of Beidat Gems", "item",
+	       u8"全部 貝達特誓約 寶石等級 +3", "P5-3 寶石等級：技能名稱槽填入繁中名");
+
 	// ---- P3:anoint / legion / tattoo 來源字典 ------------------------------------
 	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在
 	// source_lookup 下當來源表;絕不併入全域。三檔由測試在暫存複本放小樣本。
