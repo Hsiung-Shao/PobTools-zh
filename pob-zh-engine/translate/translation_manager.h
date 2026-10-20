@@ -73,6 +73,16 @@ const char* translation_get_source(void);
 ** dictionaries and translation_lookup cannot find them. */
 const char* translation_lookup_by_id(const char *source, const char *id);
 
+/* translation_lookup_by_id that also checks the English the caller is showing.
+** A Timeless jewel / tattoo replaces a node's name but POB keeps its node.id,
+** so an id hit alone can hand the replaced node the ORIGINAL node's name.
+** en == nullptr: same as translation_lookup_by_id. en non-null: the id's
+** translation only when the file's "templates" has the id and its GGPK
+** English equals en (trimmed, inner whitespace collapsed, case-sensitive);
+** otherwise nullptr. A file WITHOUT "templates" (older data pack) keeps the
+** plain id behaviour. Tested by --stat-selftest P0-*. */
+const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en);
+
 /* Translate one stat line through stats_by_id.json (keys
 ** "stat_ids|cond|src_file|dup_ix", English templates in "templates").
 ** ctx = "item" (stat_descriptions.txt) or "passive"
