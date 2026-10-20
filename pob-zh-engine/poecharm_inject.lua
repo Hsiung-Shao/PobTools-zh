@@ -815,23 +815,48 @@ end
 -- when the jewel type changes -- so the control's own Draw is wrapped once the
 -- popup is open, and every Draw renames the items it has not seen yet (dn part
 -- only, under tattoo / legion; the stat part stays as is).
+--
+-- The English dn comes from the item's id (tree.tattoo.nodes[id] /
+-- tree.legion.nodes by .id), not from the label: the engine's treetab.lua
+-- source patch already writes the GLOBAL translation into the label's dn part
+-- when the list is built, and that Chinese text is no key under tattoo /
+-- legion. Without an id match the label's own dn part is used.
 local LABEL_PAD = string.rep(" ", 48)
 local renamedItems = setmetatable({}, { __mode = "k" })
 
-local function renameListLabels(list, source)
+-- id -> English dn for the popup's source, from build.spec.tree.
+local function popupDnById(tree, source)
+	local map = {}
+	local group = type(tree) == "table" and tree[source] or nil
+	local nodes = type(group) == "table" and group.nodes or nil
+	if type(nodes) ~= "table" then return map end
+	for key, node in pairs(nodes) do
+		if type(node) == "table" and type(node.dn) == "string" then
+			if source == "tattoo" then
+				map[key] = node.dn
+			elseif node.id ~= nil then
+				map[node.id] = node.dn
+			end
+		end
+	end
+	return map
+end
+
+local function renameListLabels(list, source, dnById)
 	if type(list) ~= "table" then return end
 	for _, v in ipairs(list) do
 		if type(v) == "table" and not renamedItems[v] and type(v.label) == "string" then
 			renamedItems[v] = true
 			local s = v.label:find(LABEL_PAD, 1, true)
-			local dn = s and v.label:sub(1, s - 1) or v.label
+			local dn = (v.id ~= nil and dnById and dnById[v.id])
+				or (s and v.label:sub(1, s - 1) or v.label)
 			local zh = zhInSource(source, dn)
 			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
 		end
 	end
 end
 
-local function wrapPopupList(controlName, source)
+local function wrapPopupList(controlName, source, tree)
 	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
 	local ctl = type(popup) == "table" and type(popup.controls) == "table"
 		and popup.controls[controlName] or nil
@@ -839,8 +864,9 @@ local function wrapPopupList(controlName, source)
 	local origDraw = ctl.Draw
 	if type(origDraw) ~= "function" then return end
 	ctl._ptRenameDraw = true
+	local dnById = popupDnById(tree, source)
 	ctl.Draw = keepArity(origDraw, function(self, ...)
-		local ok, err = pcall(renameListLabels, self.list, source)
+		local ok, err = pcall(renameListLabels, self.list, source, dnById)
 		if not ok then log("popup list rename failed: " .. tostring(err)) end
 		return origDraw(self, ...)
 	end)
@@ -855,9 +881,12 @@ PATCHES["TreeTab"] = function(class)
 		local orig = class[method]
 		if type(orig) == "function" then
 			found = true
-			class[method] = keepArity(orig, function(...)
-				local a, b, c = orig(...)
-				local ok, err = pcall(wrapPopupList, spec[1], spec[2])
+			class[method] = keepArity(orig, function(self, ...)
+				local a, b, c = orig(self, ...)
+				local build = type(self) == "table" and self.build or nil
+				local tree = type(build) == "table" and type(build.spec) == "table"
+					and build.spec.tree or nil
+				local ok, err = pcall(wrapPopupList, spec[1], spec[2], tree)
 				if not ok then log("TreeTab." .. method .. " list wrap failed: " .. tostring(err)) end
 				return a, b, c
 			end)

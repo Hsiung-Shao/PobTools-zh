@@ -142,6 +142,9 @@ static const SourceDict kSourceDicts[] = {
     { "anoint",   "anoint.json" },
     { "legion",   "legion.json" },
     { "tattoo",   "tattoo.json" },
+    /* GGPK gem display names without the "Support" suffix -- what a stat's
+    ** gem NAME slot needs ("...Supported by level {2} {1}" already says 輔助). */
+    { "gem_names", "gem_names.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
@@ -174,6 +177,8 @@ static std::unordered_map<std::string, std::unordered_map<std::string, std::stri
 static const char *const kStatDictFile = "stats_by_id.json";
 static const char *const kStatFileItem = "stat_descriptions.txt";
 static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
+/* Aura-type passives (nearby enemies...) live only here; same tier as above. */
+static const char *const kStatFilePassiveAura = "passive_skill_aura_stat_descriptions.txt";
 /* Which description files a ctx reads (see stat_file_tier):
 **   item    -> stat_descriptions.txt
 **   passive -> passive_skill_stat_descriptions.txt, then stat_descriptions.txt
@@ -1328,7 +1333,7 @@ static int load_json_stat_dict(const std::string &filepath) {
         const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
         int tier = -1;
         if (src_file == kStatFileItem) tier = kTierItem;
-        else if (src_file == kStatFilePassive) tier = kTierPassive;
+        else if (src_file == kStatFilePassive || src_file == kStatFilePassiveAura) tier = kTierPassive;
         else {
             for (const char *g : kStatFilesGem)
                 if (src_file == g) { tier = kTierGem; break; }
@@ -3642,6 +3647,15 @@ static bool stat_match_named(const StatNamedCand &c, const std::string &in, size
 ** (passives.json / gems.json, the file the name comes from), then the merged
 ** map. Empty when neither has it. */
 static std::string stat_translate_name(const std::string &src, const std::string &en) {
+    /* A gem name slot takes gem_names first: gems.json carries the full item
+    ** name ("…輔助") and the template around the slot often says 輔助 itself. */
+    if (src == "gems") {
+        auto git = s_sources.find("gem_names");
+        if (git != s_sources.end()) {
+            auto it = git->second.find(en);
+            if (it != git->second.end() && !it->second.empty()) return it->second;
+        }
+    }
     auto sit = s_sources.find(src);
     if (sit != s_sources.end()) {
         auto it = sit->second.find(en);
