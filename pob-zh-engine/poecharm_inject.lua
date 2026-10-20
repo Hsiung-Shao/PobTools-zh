@@ -294,6 +294,17 @@ end
 -- as "a\nb" under "passive"; only an answer of exactly two lines counts, then
 -- a/b map to its first/second line and both are skipped; a miss slides down by
 -- one line. nil when the engine has no stat lookup or nothing paired.
+-- POB's "not supported" note (main.notSupportedTooltipText, e.g.
+-- " ^8(Not supported in PoB yet)") appended to an unsupported stat line when
+-- it is drawn. Plain suffix compare, no pattern. Returns body, note-or-"".
+local function splitNoteTail(s)
+	local note = type(main) == "table" and main.notSupportedTooltipText or nil
+	if type(note) == "string" and note ~= "" and #s > #note and s:sub(-#note) == note then
+		return s:sub(1, #s - #note), note
+	end
+	return s, ""
+end
+
 local function buildSdPairs(node)
 	if type(PobToolsTranslateStat) ~= "function" then return nil end
 	local sd = type(node) == "table" and node.sd or nil
@@ -306,7 +317,7 @@ local function buildSdPairs(node)
 		if type(a) == "string" and type(b) == "string" then
 			local _, ra = splitLeadColour(a)
 			local _, rb = splitLeadColour(b)
-			ra, rb = trim(ra), trim(rb)
+			ra, rb = trim((splitNoteTail(ra))), trim((splitNoteTail(rb)))
 			if ra ~= "" and rb ~= "" and not ra:find("\n", 1, true) and not rb:find("\n", 1, true) then
 				local zh = zhByStat(ra .. "\n" .. rb, "passive")
 				local z1, z2
@@ -1338,8 +1349,10 @@ PATCHES["Tooltip"] = function(class)
 					local pairZh
 					if nodeSdPairs then
 						local plead, prest = splitLeadColour(text)
-						pairZh = nodeSdPairs[trim(prest)]
-						pairZh = pairZh and plead .. pairZh
+						-- the unsupported note is not part of the stat: keep it as tail
+						local body, tail = splitNoteTail(prest)
+						pairZh = nodeSdPairs[trim(body)]
+						pairZh = pairZh and plead .. pairZh .. tail
 					end
 					statZh = pairZh or zhByStat(text, "passive")
 				end

@@ -185,7 +185,20 @@ static const char *const kStatFilePassiveAura = "passive_skill_aura_stat_descrip
 **   gem     -> the skill/gem description files POB's gem tooltips use
 **              (Data/Skills statDescriptionScope + their parent chain), then
 **              stat_descriptions.txt, the chain's final parent. */
-enum StatTier { kTierItem = 0, kTierPassive = 1, kTierGem = 2 };
+/* kTierPassiveAura: passive_skill_aura_stat_descriptions.txt, read by the
+** passive ctx only AFTER stat_descriptions.txt (see stat_tier_order). */
+enum StatTier { kTierItem = 0, kTierPassive = 1, kTierGem = 2, kTierPassiveAura = 3 };
+
+/* The description-file tiers a ctx reads, in priority order: the first tier
+** with a candidate decides.
+**   item    -> stat_descriptions
+**   passive -> passive_skill -> stat_descriptions -> passive_skill_aura
+**   gem     -> skill/gem files -> stat_descriptions */
+static std::vector<int> stat_tier_order(int tier) {
+    if (tier == kTierPassive) return { kTierPassive, kTierItem, kTierPassiveAura };
+    if (tier == kTierGem) return { kTierGem, kTierItem };
+    return { kTierItem };
+}
 static const char *const kStatFilesGem[] = {
     "skill_stat_descriptions.txt",
     "gem_stat_descriptions.txt",
@@ -1333,7 +1346,8 @@ static int load_json_stat_dict(const std::string &filepath) {
         const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
         int tier = -1;
         if (src_file == kStatFileItem) tier = kTierItem;
-        else if (src_file == kStatFilePassive || src_file == kStatFilePassiveAura) tier = kTierPassive;
+        else if (src_file == kStatFilePassive) tier = kTierPassive;
+        else if (src_file == kStatFilePassiveAura) tier = kTierPassiveAura;
         else {
             for (const char *g : kStatFilesGem)
                 if (src_file == g) { tier = kTierGem; break; }
@@ -3494,7 +3508,9 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 **    answer; otherwise ambiguous -> nullptr.
 ** The pointer is into s_stat_cache: valid until the next reload. */
 static std::string stat_lookup_uncached(const std::string &line, int tier,
-                                        const std::vector<std::string> *hint) {
+                                        const std::vector<std::string> *hint,
+                                        bool *had_cands = nullptr) {
+    if (had_cands) *had_cands = false;
     std::string in = strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto it = s_stat_index.find(stat_index_key(in));
@@ -3530,8 +3546,10 @@ static std::string stat_lookup_uncached(const std::string &line, int tier,
         for (const StatCand &c : it->second)
             if (c.tier == want_tier && lits_ok(c) && ids_ok(c) && sign_ok(c)) cands.push_back(&c);
     };
-    if (tier != kTierItem) collect(tier);
-    if (cands.empty()) collect(kTierItem);
+    for (int t : stat_tier_order(tier)) {
+        collect(t);
+        if (!cands.empty()) break;
+    }
     if (cands.empty()) return std::string();
 
     /* A value printed with '+' prefers the candidates that print it with "+d". */
@@ -3570,6 +3588,9 @@ static std::string stat_lookup_uncached(const std::string &line, int tier,
         outs.resize(k);
         if (cands.empty()) return std::string();
     }
+    /* The line IS one of these stats, even if they disagree below: a
+    ** name-slot template must not answer for it (stat_lookup_full). */
+    if (had_cands) *had_cands = true;
     auto all_same = [](const std::vector<std::string> &v) {
         for (size_t i = 1; i < v.size(); i++) if (v[i] != v[0]) return false;
         return !v.empty();
@@ -3594,6 +3615,27 @@ static std::string stat_lookup_uncached(const std::string &line, int tier,
     for (size_t i = 0; i < cands.size(); i++)
         if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
     if (all_same(kept)) return kept[0];
+
+    /* 4a. Nobody matched that count. It happens when ONE candidate writes the
+    ** line's only number out ("...by Level 10 Intensify", a fixed-level
+    ** variant) while the others take it as {0}: the value then counts for no
+    ** one. Count per candidate instead -- the values that fill one of ITS {N}
+    ** -- and keep the candidates whose stat count equals their own. */
+    if (kept.empty()) {
+        for (size_t i = 0; i < cands.size(); i++) {
+            std::vector<char> lit(vals.size(), 0);
+            for (const auto &l : cands[i]->lits)
+                if ((size_t)l.first < vals.size()) lit[l.first] = 1;
+            int own = 0;
+            for (size_t j = 0; j < vals.size(); j++) {
+                const std::string &v = vals[j];
+                if (v.empty() || v.back() == '#' || lit[j]) continue;
+                own++;
+            }
+            if (cands[i]->nstats == own) kept.push_back(outs[i]);
+        }
+        if (all_same(kept)) return kept[0];
+    }
 
     /* 4b (stat id hints only): written-out numbers equal to the line's values,
     ** character for character ("Fires 1 Projectile" written as such beats
@@ -3718,8 +3760,10 @@ static std::string stat_lookup_named(const std::string &line, int tier,
         return outs;
     };
     std::vector<std::string> outs;
-    if (tier != kTierItem) outs = run(tier);
-    if (outs.empty()) outs = run(kTierItem);
+    for (int t : stat_tier_order(tier)) {
+        outs = run(t);
+        if (!outs.empty()) break;
+    }
     if (outs.empty()) return std::string();
     for (size_t i = 1; i < outs.size(); i++) if (outs[i] != outs[0]) return std::string();
     return outs[0];
@@ -3730,8 +3774,13 @@ static std::string stat_lookup_named(const std::string &line, int tier,
 ** is looked up as a stat in the same ctx and put into the Chinese wrapper). */
 static std::string stat_lookup_full(const std::string &line, int tier,
                                     const std::vector<std::string> *hint, int depth = 0) {
-    std::string r = stat_lookup_uncached(line, tier, hint);
+    bool had_cands = false;
+    std::string r = stat_lookup_uncached(line, tier, hint, &had_cands);
     if (!r.empty()) return r;
+    /* The hash index knows this exact sentence (it had usable candidates, they
+    ** just disagreed): a generic name-slot template or a wrapper must not
+    ** answer for it instead. */
+    if (had_cands) return std::string();
     r = stat_lookup_named(line, tier, hint);
     if (!r.empty()) return r;
     if (depth > 0) return std::string();   /* one wrapper level */

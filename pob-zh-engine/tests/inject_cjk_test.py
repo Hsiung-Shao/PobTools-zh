@@ -704,7 +704,14 @@ end
 function C:AddNodeTooltip(tooltip, node, build)
 	self:AddNodeName(tooltip, node, build)
 	for _, line in ipairs(node.sd or {}) do
-		tooltip:AddLine(16, "^7"..line)
+		if node.unsupported then
+			-- 上游 addModInfoToTooltip:不支援的詞綴在 AddLine 時才接上註記
+			local l = colorCodes.UNSUPPORTED..line
+			l = main.notSupportedModTooltips and (l .. main.notSupportedTooltipText) or l
+			tooltip:AddLine(16, l, "FONTIN")
+		else
+			tooltip:AddLine(16, "^7"..line)
+		end
 	end
 	-- ST-L4:珠寶插槽,上游在 AddNodeTooltip 內呼叫 itemsTab:AddItemTooltip
 	if node.jewel and build and build.itemsTab then
@@ -1773,6 +1780,57 @@ def test_stat_multiline_sd(fork):
           got2 == [SD_A, "增加 10% 攻擊速度"], "got2=%r calls=%r" % (got2, h.stat_calls))
 
 
+# ---- ST-FR3:不支援詞綴的註記 --------------------------------------------------
+#
+# 註記不在 node.sd 裡:PassiveTreeView addModInfoToTooltip(PoE1 L1558-1561、PoE2 L1719-1722)
+# 在 AddLine 當下才組 colorCodes.UNSUPPORTED .. sd .. main.notSupportedTooltipText,
+# 後者 = " ^8(Not supported in PoB yet)"(Main.lua),受 main.notSupportedModTooltips 開關。
+# 例:node 2275 Nature's Concoction 兩行 sd,單一多行模板。
+
+FR3_A = "Flasks adjacent to Active Tinctures gain 1 Charge"
+FR3_B = "when you Hit an Enemy with a Weapon"
+FR3_ZH = ["與作用中酊劑相鄰的藥劑", "在你以武器擊中敵人時獲得 1 充能"]
+FR3_STAT_DICT = {FR3_A + "\n" + FR3_B: "\n".join(FR3_ZH)}
+FR3_UNSUP = "^xF05050"
+FR3_NOTE = " ^8(Not supported in PoB yet)"
+
+
+def fr3_tooltip(fork, stat_dict, note_on=True, define=True):
+    h = stat_harness(fork, stat_dict, define)
+    h.run(('colorCodes.UNSUPPORTED = "%s" main.notSupportedModTooltips = %s '
+           'main.notSupportedTooltipText = "%s"') % (FR3_UNSUP, "true" if note_on else "false",
+                                                   FR3_NOTE))
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(v, t, a, b) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Nature\'s Concoction", id = 2275, unsupported = true, sd = { a, b } }, {}) '
+                     'end) return ok, e end')(view, tip, FR3_A, FR3_B)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_stat_multiline_sd_unsupported(fork):
+    """ST-FR3 -- 不支援註記的兩行 sd:合併查詢不含註記,命中後註記補回各行尾。"""
+    h, ok, err, lines = fr3_tooltip(fork, FR3_STAT_DICT)
+    check("%s ST-FR3 天賦提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-FR3 合併查詢用不含註記的兩行 sd" % fork,
+          (FR3_A + "\n" + FR3_B, "passive") in [(_norm_ml(l), c) for l, c in h.stat_calls]
+          and not any("Not supported" in (l or "") and "\n" in (l or "")
+                      for l, c in h.stat_calls), repr(h.stat_calls))
+    check("%s ST-FR3 命中後兩行顯示中文且行尾補回註記與原色碼" % fork,
+          lines[1:3] == [FR3_UNSUP + z + FR3_NOTE for z in FR3_ZH],
+          "lines=%r calls=%r" % (lines, h.stat_calls))
+    # 註記開關關閉:同一配對,行尾沒有註記
+    h, ok, err, lines = fr3_tooltip(fork, FR3_STAT_DICT, note_on=False)
+    check("%s ST-FR3 註記關閉時兩行顯示中文且無註記" % fork,
+          lines[1:3] == [FR3_UNSUP + z for z in FR3_ZH], "lines=%r" % (lines,))
+    # 合併未命中:與未定義函式時相同(英文 + 註記)
+    h, ok, err, lines = fr3_tooltip(fork, {})
+    h0, ok0, err0, lines0 = fr3_tooltip(fork, None, define=False)
+    check("%s ST-FR3 合併未命中時兩行照現行(保留英文與註記)" % fork,
+          ok and lines == lines0 and lines[1:3] == [FR3_UNSUP + s + FR3_NOTE for s in (FR3_A, FR3_B)],
+          "lines=%r 未定義時=%r" % (lines, lines0))
+
+
 def _norm_ml(s):
     """去每行色碼後以 \\n 接回(合併句比對用)。"""
     return "\n".join(_norm(p) for p in (s or "").split("\n"))
@@ -2611,6 +2669,7 @@ def main():
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)
         test_stat_multiline_sd(fork)
+        test_stat_multiline_sd_unsupported(fork)
         test_src_anoint_legion_tattoo(fork)
         test_src_legion_tattoo_with_source_patch(fork)
         test_stat_gem_tooltip(fork)
