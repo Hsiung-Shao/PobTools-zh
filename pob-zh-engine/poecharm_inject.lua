@@ -322,6 +322,29 @@ local function buildSdPairs(node)
 	return found and map or nil
 end
 
+-- One name under a named source (anoint / tattoo / legion): nil unless that
+-- lookup produced something different. The source is restored by withSource.
+local function zhInSource(source, name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local zh = withSource(source, PobToolsTranslateDisplay, name)
+	if type(zh) == "string" and zh ~= "" and zh ~= name then return zh end
+	return nil
+end
+
+-- An anointed amulet's "Allocates <notable>" enchant line (ItemsTab
+-- anointItem). The notable name is looked up under anoint and the label on its
+-- own; a name the anoint lookup misses leaves the line to the existing path
+-- (the whole-line lookup).
+local function translateAllocatesLine(text)
+	local lead, rest = splitLeadColour(text)
+	local name = rest:match("^Allocates (.+)$")
+	if not name then return nil end
+	local zh = zhInSource("anoint", trim(name))
+	if not zh then return nil end
+	local label = PobToolsTranslateDisplay("Allocates") or "Allocates"
+	return lead .. label .. " " .. zh
+end
+
 -- The single modId behind a magic item's name prefix / suffix, or nil when
 -- there is none (pasted items often carry no ids) or more than one. When the
 -- item also knows the mod, its affix name must be the segment being translated.
@@ -766,6 +789,81 @@ PATCHES["NotableDBControl"] = function(class)
 			return false
 		end)
 	end
+	-- Anoint list rows: colour .. node.dn. The dn is looked up under anoint
+	-- (the notable's name as an anoint), the colour kept; a miss is returned
+	-- untouched.
+	local origRow = class.GetRowValue
+	if type(origRow) == "function" then
+		class.GetRowValue = keepArity(origRow, function(self, column, index, node, ...)
+			local v = origRow(self, column, index, node, ...)
+			if type(v) == "string" and type(node) == "table" and type(node.dn) == "string" then
+				local lead, rest = splitLeadColour(v)
+				if rest == node.dn then
+					local zh = zhInSource("anoint", rest)
+					if zh then return lead .. zh end
+				end
+			end
+			return v
+		end)
+	end
+end
+
+-- Tree tab popups whose drop-downs list node names: the tattoo picker
+-- (ModifyNodePopup, PoE1 only) and the Timeless jewel finder's node list
+-- (FindTimelessJewel). Both lists are locals of the popup function, labelled
+-- node.dn .. 48 spaces .. stat text, and the legion one is rebuilt in place
+-- when the jewel type changes -- so the control's own Draw is wrapped once the
+-- popup is open, and every Draw renames the items it has not seen yet (dn part
+-- only, under tattoo / legion; the stat part stays as is).
+local LABEL_PAD = string.rep(" ", 48)
+local renamedItems = setmetatable({}, { __mode = "k" })
+
+local function renameListLabels(list, source)
+	if type(list) ~= "table" then return end
+	for _, v in ipairs(list) do
+		if type(v) == "table" and not renamedItems[v] and type(v.label) == "string" then
+			renamedItems[v] = true
+			local s = v.label:find(LABEL_PAD, 1, true)
+			local dn = s and v.label:sub(1, s - 1) or v.label
+			local zh = zhInSource(source, dn)
+			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
+		end
+	end
+end
+
+local function wrapPopupList(controlName, source)
+	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
+	local ctl = type(popup) == "table" and type(popup.controls) == "table"
+		and popup.controls[controlName] or nil
+	if type(ctl) ~= "table" or rawget(ctl, "_ptRenameDraw") then return end
+	local origDraw = ctl.Draw
+	if type(origDraw) ~= "function" then return end
+	ctl._ptRenameDraw = true
+	ctl.Draw = keepArity(origDraw, function(self, ...)
+		local ok, err = pcall(renameListLabels, self.list, source)
+		if not ok then log("popup list rename failed: " .. tostring(err)) end
+		return origDraw(self, ...)
+	end)
+end
+
+PATCHES["TreeTab"] = function(class)
+	local found = false
+	for method, spec in pairs({
+		ModifyNodePopup = { "modSelect", "tattoo" },
+		FindTimelessJewel = { "nodeSelect", "legion" },
+	}) do
+		local orig = class[method]
+		if type(orig) == "function" then
+			found = true
+			class[method] = keepArity(orig, function(...)
+				local a, b, c = orig(...)
+				local ok, err = pcall(wrapPopupList, spec[1], spec[2])
+				if not ok then log("TreeTab." .. method .. " list wrap failed: " .. tostring(err)) end
+				return a, b, c
+			end)
+		end
+	end
+	if not found then error("TreeTab has neither ModifyNodePopup nor FindTimelessJewel") end
 end
 
 -- Item database (Uniques / Rare templates): match the CJK query against the
@@ -1195,6 +1293,7 @@ PATCHES["Tooltip"] = function(class)
 			local src, lead = tooltipLineSource(text, a4)
 			local zh, isNodeName = translateNodeNameLine(text)
 			zh = zh or translateAffixLine(text)
+			if not zh and not isNodeName then zh = translateAllocatesLine(text) end
 			-- Stat lines ask the engine's stat lookup first (item mod lines
 			-- as "item", passive tooltip description lines as "passive");
 			-- name lines never. A miss falls through to the path below.
@@ -1315,6 +1414,7 @@ local PATCH_SYMPTOM = {
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
+	TreeTab                 = "刺青／軍團珠寶下拉清單的節點名稱維持英文",
 }
 
 local function applyPatch(name, class)
