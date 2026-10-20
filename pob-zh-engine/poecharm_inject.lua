@@ -1339,7 +1339,9 @@ PATCHES["Tooltip"] = function(class)
 			-- name lines never. A miss falls through to the path below.
 			local statZh
 			if not zh and not isNodeName then
-				if gemCtx and not itemCtx and not nodeTipActive then
+				if gemCtx and not itemCtx then
+					-- a gem tooltip wins over an enclosing node tooltip (its
+					-- lines are gem text); an item tooltip nested in it does not
 					statZh = translateGemLine(text)
 				elseif src == "modline" then
 					statZh = zhByStat(text, "item")

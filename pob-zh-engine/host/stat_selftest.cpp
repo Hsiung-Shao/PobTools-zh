@@ -784,6 +784,42 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	}
 
 	// ---- FR:audit r9(report_r9/regress_r9.tsv)--------------------------------
+	// ---- RV-1:精確條目值裡的 '#' 是資料，不是未填格 ------------------------------
+	// 出貨字典 "Charge on crit %:" → "暴擊時 #% 充能:"(poe1 ui.json L15320 / passives.json
+	// L9769;poe2 passives.json L7396,load_order 最後,蓋過 ui.json 的「暴擊充能機率:」)。
+	// 精確條目只檢查未填 {N}/{};'#' 規則只套在填值產出的結果(P2-5)。
+	printf("\n=== RV-1 精確條目的 # ===\n");
+	{
+		translation_set_source(nullptr);
+		const char* a = translation_lookup("Charge on crit %:");
+		const bool ok = a && std::string(a) == u8"暴擊時 #% 充能:";
+		check(ok, "RV-1a poe1 精確條目值含 # 照常輸出");
+		if (!ok) printf("           got '%s'\n", a ? a : "(null)");
+	}
+	{
+		// RV-1b:PoE2 出貨字典(無 source_lookup)。
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr);
+		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
+		translation_set_source(nullptr);
+		translation_reload();
+		const char* b = translation_lookup("Charge on crit %:");
+		const std::string bs = b ? b : "(null)";
+		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		check(bs == u8"暴擊時 #% 充能:", "RV-1b poe2 精確條目值含 # 照常輸出");
+		if (bs != u8"暴擊時 #% 充能:") printf("           got '%s'\n", bs.c_str());
+	}
+	{
+		// RV-1c:填值產出的殘留 '#' 仍擋(同 P2-5 那句)。
+		translation_set_source(nullptr);
+		const char* kEn = "1% Blood in the Blood Crucible while you are able to Shift into Nightmare";
+		const char* r = translation_lookup(kEn);
+		const bool ok = !r || std::string(r).find('#') == std::string::npos;
+		check(ok, "RV-1c 填值結果殘留 # 仍視為未命中");
+		if (!ok) printf("           got '%s'\n", r);
+	}
+
 	printf("\n=== FR audit r9 ===\n");
 	// FR-1:插槽輔助有專屬 stat(英文寫死寶石名),不得讓名稱槽通用模板
 	//   local_random_support_gem_level local_random_support_gem_index "…Level {0} {1}" →「插槽中的寶石被等級 {0} 的 {1} 輔助」
