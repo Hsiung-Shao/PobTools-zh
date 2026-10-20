@@ -216,6 +216,31 @@ struct StatCand {
 };
 /* normalised English template -> candidates */
 static std::unordered_map<std::string, std::vector<StatCand>> s_stat_index;
+
+/* Stat entries with NAME slots (stats_by_id.json "name_slots": {key: {"N":
+** "passives"|"gems"}}): a {N} filled by a passive / skill NAME, not a number
+** ("Allocates {0}", "+{0} to Level of all {1} Gems"). They cannot live in the
+** hash index (a name is not a '#'), so they are matched token by token
+** (stat_match_named) and kept here instead. */
+struct StatNamedTok {
+    std::string lit;   /* literal text, or empty for a placeholder */
+    int         ph;    /* placeholder number, -1 for a literal */
+};
+struct StatNamedCand {
+    int         tier;
+    std::vector<std::string> ids;
+    std::vector<StatNamedTok> toks;            /* the English template */
+    std::string zh;                            /* Chinese template, real newlines */
+    std::unordered_map<int, std::string> name_src;  /* {N} -> "passives" / "gems" */
+};
+static std::vector<StatNamedCand> s_stat_named;
+
+/* stat_wrappers.json: English wrapper template with one {0} -> Chinese
+** ("Added Small Passive Skills grant: {0}"). A stat line that misses is
+** retried with its inside ({0}) looked up as a stat and wrapped. */
+static const char *const kStatWrapperFile = "stat_wrappers.json";
+struct StatWrapper { std::string prefix, suffix, zh; };
+static std::vector<StatWrapper> s_stat_wrappers;
 /* ctx + '\x1f' + line -> answer ("" = no answer). Node-stable: pointers into it
 ** stay valid until translation_shutdown, like translation_lookup's results. */
 static std::unordered_map<std::string, std::string> s_stat_cache;
@@ -1329,6 +1354,39 @@ static int load_json_stat_dict(const std::string &filepath) {
             stat_unescape_newlines(strip_brackets(it.value().get<std::string>())));
         if (en.empty() || zh.empty()) continue;
 
+        /* Name-slot entries go to s_stat_named only (see StatNamedCand). */
+        if (doc.contains("name_slots") && doc["name_slots"].is_object()) {
+            auto nit = doc["name_slots"].find(key);
+            if (nit != doc["name_slots"].end() && nit->is_object()) {
+                StatNamedCand nc;
+                nc.tier = tier;
+                nc.ids = ids;
+                nc.zh = zh;
+                for (auto sit = nit->begin(); sit != nit->end(); ++sit)
+                    if (sit->is_string()) nc.name_src[atoi(sit.key().c_str())] = sit->get<std::string>();
+                /* tokenise the English: literals and {N} / {N:fmt} */
+                std::string lit;
+                for (size_t i = 0; i < en.size(); i++) {
+                    if (en[i] == '{') {
+                        size_t j = i + 1;
+                        while (j < en.size() && en[j] >= '0' && en[j] <= '9') j++;
+                        size_t close = en.find('}', j);
+                        if (j > i + 1 && close != std::string::npos && (en[j] == '}' || en[j] == ':')) {
+                            if (!lit.empty()) { nc.toks.push_back({ lit, -1 }); lit.clear(); }
+                            nc.toks.push_back({ std::string(), atoi(en.c_str() + i + 1) });
+                            i = close;
+                            continue;
+                        }
+                    }
+                    lit += en[i];
+                }
+                if (!lit.empty()) nc.toks.push_back({ lit, -1 });
+                s_stat_named.push_back(std::move(nc));
+                ++count;
+                continue;
+            }
+        }
+
         int nstats = 0;
         {
             const size_t p_ids = key.find('|');
@@ -1410,6 +1468,36 @@ static int load_json_stat_dict(const std::string &filepath) {
                 }
             }
         }
+    }
+    return count;
+}
+
+/* stat_wrappers.json: { "entries": { "<English with one {0}>": "<Chinese>" } }.
+** Never merged; feeds s_stat_wrappers only. */
+static int load_json_stat_wrappers(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object()) return 0;
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        const std::string en = stat_unescape_newlines(it.key());
+        const std::string zh = stat_unescape_newlines(it.value().get<std::string>());
+        const size_t p = en.find("{0}");
+        if (p == std::string::npos || en.find("{0}", p + 3) != std::string::npos) continue;
+        if (zh.find("{0}") == std::string::npos) continue;
+        s_stat_wrappers.push_back({ en.substr(0, p), en.substr(p + 3), zh });
+        ++count;
     }
     return count;
 }
@@ -2090,9 +2178,10 @@ static bool try_load_json(const std::string &base_dir) {
         std::string filepath = json_dir + filename;
         /* The stat file never merges (its keys are stat ids): index it only
         ** when something could ask, i.e. with source_lookup. */
-        if (filename == kStatDictFile) {
+        if (filename == kStatDictFile || filename == kStatWrapperFile) {
             if (!source_lookup) continue;
-            int count = load_json_stat_dict(filepath);
+            int count = filename == kStatDictFile ? load_json_stat_dict(filepath)
+                                                  : load_json_stat_wrappers(filepath);
             if (count > 0) {
                 totalEntries += count;
                 fileCount++;
@@ -2176,6 +2265,8 @@ static bool try_load_json(const std::string &base_dir) {
         int count = 0;
         if (filename == kStatDictFile) {
             count = load_json_stat_dict(filepath);
+        } else if (filename == kStatWrapperFile) {
+            count = load_json_stat_wrappers(filepath);
         } else if (idd) {
             count = load_json_id_dict(filepath, s_id_dicts[idd->name], idd->name);
         } else {
@@ -2442,6 +2533,8 @@ void translation_shutdown(void) {
     s_id_dicts.clear();
     s_id_templates.clear();
     s_stat_index.clear();
+    s_stat_named.clear();
+    s_stat_wrappers.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
     s_source_lookup = false;
@@ -3515,6 +3608,134 @@ static std::string stat_lookup_uncached(const std::string &line, int tier,
     return std::string();
 }
 
+/* Match `in` against a name-slot template, token by token. A number slot must
+** capture exactly one number (sign / range included: it hashes to a single
+** '#'); a name slot captures any non-empty text without surrounding spaces.
+** Backtracks over where each slot ends. caps[N] = the text of {N}. */
+static bool stat_match_named(const StatNamedCand &c, const std::string &in, size_t ti, size_t pos,
+                             std::unordered_map<int, std::string> &caps) {
+    if (ti == c.toks.size()) return pos == in.size();
+    const StatNamedTok &t = c.toks[ti];
+    if (t.ph < 0) {
+        if (in.compare(pos, t.lit.size(), t.lit) != 0) return false;
+        return stat_match_named(c, in, ti + 1, pos + t.lit.size(), caps);
+    }
+    const bool is_name = c.name_src.count(t.ph) > 0;
+    for (size_t end = pos + 1; end <= in.size(); end++) {
+        const std::string cap = in.substr(pos, end - pos);
+        if (is_name) {
+            if (cap.front() == ' ' || cap.back() == ' ') continue;
+        } else if (digits_to_hash(cap) != "#") {
+            continue;
+        }
+        auto prev = caps.find(t.ph);
+        if (prev != caps.end() && prev->second != cap) continue;   /* {N} used twice */
+        const bool had = prev != caps.end();
+        caps[t.ph] = cap;
+        if (stat_match_named(c, in, ti + 1, end, caps)) return true;
+        if (!had) caps.erase(t.ph);
+    }
+    return false;
+}
+
+/* A passive / skill name in Chinese: that source's own exact entry first
+** (passives.json / gems.json, the file the name comes from), then the merged
+** map. Empty when neither has it. */
+static std::string stat_translate_name(const std::string &src, const std::string &en) {
+    auto sit = s_sources.find(src);
+    if (sit != s_sources.end()) {
+        auto it = sit->second.find(en);
+        if (it != sit->second.end() && !it->second.empty()) return it->second;
+    }
+    auto it = s_translations.find(en);
+    if (it != s_translations.end() && !it->second.empty() && !leaks_placeholder(it->second, en))
+        return it->second;
+    return std::string();
+}
+
+/* Name-slot candidates (s_stat_named) for a line the hash index missed. Same
+** ctx tiers, same stat id narrowing; a name that has no Chinese drops the
+** candidate (no half-English answer); disagreeing answers -> no answer. */
+static std::string stat_lookup_named(const std::string &line, int tier,
+                                     const std::vector<std::string> *hint) {
+    if (s_stat_named.empty()) return std::string();
+    std::string in = strip_brackets(line);
+    in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
+    auto run = [&](int want_tier) {
+        std::vector<std::string> outs;
+        for (const StatNamedCand &c : s_stat_named) {
+            if (c.tier != want_tier) continue;
+            if (hint) {
+                bool shared = false;
+                for (const std::string &id : c.ids)
+                    if (std::find(hint->begin(), hint->end(), id) != hint->end()) { shared = true; break; }
+                if (!shared) continue;
+            }
+            std::unordered_map<int, std::string> caps;
+            if (!stat_match_named(c, in, 0, 0, caps)) continue;
+            /* fill the Chinese template */
+            std::string out;
+            bool ok = true;
+            for (size_t i = 0; i < c.zh.size() && ok; i++) {
+                if (c.zh[i] == '{') {
+                    size_t j = i + 1;
+                    while (j < c.zh.size() && c.zh[j] >= '0' && c.zh[j] <= '9') j++;
+                    size_t close = c.zh.find('}', j);
+                    if (j > i + 1 && close != std::string::npos && (c.zh[j] == '}' || c.zh[j] == ':')) {
+                        const int n = atoi(c.zh.c_str() + i + 1);
+                        auto cap = caps.find(n);
+                        if (cap == caps.end()) { ok = false; break; }
+                        auto src = c.name_src.find(n);
+                        if (src != c.name_src.end()) {
+                            const std::string zh_name = stat_translate_name(src->second, cap->second);
+                            if (zh_name.empty()) { ok = false; break; }
+                            out += zh_name;
+                        } else {
+                            out += cap->second;
+                        }
+                        i = close;
+                        continue;
+                    }
+                }
+                out += c.zh[i];
+            }
+            if (ok && !leaks_placeholder(out, in)) outs.push_back(std::move(out));
+        }
+        return outs;
+    };
+    std::vector<std::string> outs;
+    if (tier != kTierItem) outs = run(tier);
+    if (outs.empty()) outs = run(kTierItem);
+    if (outs.empty()) return std::string();
+    for (size_t i = 1; i < outs.size(); i++) if (outs[i] != outs[0]) return std::string();
+    return outs[0];
+}
+
+/* The whole stat lookup: hash index, then name-slot templates, then wrappers
+** (stat_wrappers.json: "Added Small Passive Skills grant: {0}" -- the inside
+** is looked up as a stat in the same ctx and put into the Chinese wrapper). */
+static std::string stat_lookup_full(const std::string &line, int tier,
+                                    const std::vector<std::string> *hint, int depth = 0) {
+    std::string r = stat_lookup_uncached(line, tier, hint);
+    if (!r.empty()) return r;
+    r = stat_lookup_named(line, tier, hint);
+    if (!r.empty()) return r;
+    if (depth > 0) return std::string();   /* one wrapper level */
+    for (const StatWrapper &w : s_stat_wrappers) {
+        if (line.size() <= w.prefix.size() + w.suffix.size()) continue;
+        if (line.compare(0, w.prefix.size(), w.prefix) != 0) continue;
+        if (line.compare(line.size() - w.suffix.size(), w.suffix.size(), w.suffix) != 0) continue;
+        const std::string inner = line.substr(w.prefix.size(), line.size() - w.prefix.size() - w.suffix.size());
+        const std::string zi = stat_lookup_full(inner, tier, hint, depth + 1);
+        if (zi.empty()) continue;
+        std::string out = w.zh;
+        const size_t p = out.find("{0}");
+        out.replace(p, 3, zi);
+        return out;
+    }
+    return std::string();
+}
+
 /* ctx -> StatTier; -1 = unknown ctx. nullptr / "" mean item. */
 static int stat_ctx_tier(const char *ctx) {
     if (!ctx || !*ctx || strcmp(ctx, "item") == 0) return kTierItem;
@@ -3554,7 +3775,7 @@ static const char *stat_lookup_cached(const char *line, const char *ctx, const c
     auto cit = s_stat_cache.find(ck);
     if (cit == s_stat_cache.end())
         cit = s_stat_cache.emplace(std::move(ck),
-                                   stat_lookup_uncached(line, tier, ids.empty() ? nullptr : &ids)).first;
+                                   stat_lookup_full(line, tier, ids.empty() ? nullptr : &ids)).first;
     return cit->second.empty() ? nullptr : cit->second.c_str();
 }
 

@@ -26558,6 +26558,71 @@
     "zombie_slam_cooldown_speed_+%|#|stat_descriptions.txt|0": "復甦的殭屍重擊攻擊增加 {0}% 冷卻時間恢復率",
     "zombie_slam_damage_+%|#|stat_descriptions.txt|0": "復甦的殭屍重擊攻擊增加 {0}% 傷害"
   },
+  "name_slots": {
+    "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|2 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|3 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|4 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|1 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|2 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|3 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|4 # #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_random_support_gem_level local_random_support_gem_index|# #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_random_support_gem_level_1 local_random_support_gem_index_1|# #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "local_unique_jewel_disconnected_passives_can_be_allocated_around_keystone_hash|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "local_weapon_passive_tree_granted_passive_hash|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "mod_granted_passive_hash_2|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "mod_granted_passive_hash_3|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "mod_granted_passive_hash_4|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "mod_granted_passive_hash_5|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "mod_granted_passive_hash|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "random_skill_gem_level_+_level random_skill_gem_level_+_index|#|-1 #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "random_skill_gem_level_+_level random_skill_gem_level_+_index|1|# #|stat_descriptions.txt|0": {
+      "1": "gems"
+    },
+    "unique_jewel_grants_notable_hash_part_1|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    },
+    "unique_jewel_grants_notable_hash_part_2|#|stat_descriptions.txt|0": {
+      "0": "passives"
+    }
+  },
   "source_files": [
     "ggpk:stat descriptions by stat_ids|cond|src_file|dup_ix"
   ],

@@ -1,0 +1,8 @@
+{
+  "source_files": [
+    "ggpk:clientstrings.Text by Id (StatDescripotionTreeExpansionJewelGrantedSmallStat)"
+  ],
+  "entries": {
+    "Added Small Passive Skills grant: {0}": "附加的小型天賦給予：{0}"
+  }
+}
