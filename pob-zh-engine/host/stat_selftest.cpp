@@ -575,6 +575,133 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(lRoot);
 	}
 
+	// ---- P2:不得輸出未填的佔位符 ------------------------------------------------
+	// coverage_r2(tools/ggpk_zh/audit_prod/coverage_r2/out/cat_*.tsv 的 leak 欄)40 列:
+	// POB 把多行 stat 拆成半句 / 逐行送來,半句被當成整條模板或 pattern 翻,模板裡
+	// 找不到值的 {N} 原樣輸出(例「獲得 {0} 充能，每秒不超過 1 次」)。
+	printf("\n=== P2 未填佔位符守門 ===\n");
+	{
+		// 含 "{數字" 或 "{}" 即算洩漏。
+		auto leaks = [](const char* s) {
+			if (!s) return false;
+			for (const char* p = s; *p; ++p)
+				if (*p == '{' && (p[1] == '}' || (p[1] >= '0' && p[1] <= '9'))) return true;
+			return false;
+		};
+		// {英文(POB 實際送來的半句), stat ctx, 出處類別}
+		struct Q { const char* en; const char* ctx; const char* cat; };
+		const Q qs[] = {
+		    {"Area is inhabited by an additional Invasion Boss", "item", "cat01 mod"},
+		    {"Enemy with a Melee Weapon, no more than once every second", "passive", "cat08 pas 2275"},
+		    {"used a Ruby Flask Recently", "passive", "cat08 pas 54928"},
+		    {"each Unique item they have equipped", "passive", "cat08 pas 25944 ({})"},
+		    {"a Unique Enemy is in your Presence", "passive", "cat09 Tukohama6"},
+		    {"of your Traps are Triggered by an Enemy", "item", "cat10 Slavedriver's Hand"},
+		    {"Fires 1 Projectile", "item", "cat13 FreezingPulse"},
+		    {"Enemies in range are Hindered", "item", "cat13 Tornado"},
+		    {"20% chance to gain a Frenzy Charge when a Mine from Supported", "item", "cat13 ChargedMines 第 1 行"},
+		    {"Skills is Detonated targeting an Enemy", "item", "cat13 ChargedMines 第 2 行"},
+		    {"20% chance to gain a Frenzy Charge when a Mine from Supported\nSkills is Detonated targeting an Enemy",
+		     "item", "cat13 ChargedMines 整段(真換行)"},
+		};
+		bool ok = true;
+		for (const Q& q : qs) {
+			translation_set_source(nullptr);
+			const char* g = translation_lookup(q.en);
+			const bool gl = leaks(g);
+			const std::string gs = g ? g : "(null)";
+			const char* s = translation_lookup_stat(q.en, q.ctx);
+			const bool sl = leaks(s);
+			const std::string ss = s ? s : "(null)";
+			if (gl || sl) {
+				ok = false;
+				printf("           [%s] %s\n             lookup='%s'%s\n             stat[%s]='%s'%s\n", q.cat, q.en,
+				       gs.c_str(), gl ? "  <- 洩漏" : "", q.ctx, ss.c_str(), sl ? "  <- 洩漏" : "");
+			}
+		}
+		check(ok, "P2-1 半句英文的查詢結果不含未填佔位符(可以是空或正確中文)");
+	}
+	{
+		// P2-2:SupportChargedMines 的「狂怒球」多行模板只在 gem_stat_descriptions.txt
+		//   %_chance_to_gain_frenzy_charge_on_mine_detonated_targeting_an_enemy|#|gem_stat_descriptions.txt|0
+		//   EN "{0}% chance to gain a Frenzy Charge when a Mine from Supported\nSkills is Detonated targeting an Enemy"
+		//   ZH "當透過輔助技能製造的地雷對敵人引爆時，\n有 {0}% 機率獲得 1 顆狂怒球"
+		// 英繁兩行但語序互換(英文第 1 行的值在中文第 2 行),逐行對位不成立,所以以
+		// 整段(真換行)查。新規則(b)把多行逐行候選擴大到所有已載入描述檔;此檔
+		// 不屬 item 或 passive 情境,引擎目前也不載入 —— 這裡以 item 情境查整段,
+		// 斷言:有答案時必須是狂怒球那句;不得是 coverage_r2 看到的「暴擊球」。
+		const char* kWhole =
+		    "20% chance to gain a Frenzy Charge when a Mine from Supported\nSkills is Detonated targeting an Enemy";
+		const char* g = translation_lookup(kWhole);
+		const char* s = translation_lookup_stat(kWhole, "item");
+		const std::string want = u8"當透過輔助技能製造的地雷對敵人引爆時，\n有 20% 機率獲得 1 顆狂怒球";
+		const std::string gs = g ? g : "(null)", ss = s ? s : "(null)";
+		const bool noPower = gs.find(u8"暴擊球") == std::string::npos && ss.find(u8"暴擊球") == std::string::npos;
+		const bool hit = (gs == want) || (ss == want);
+		check(noPower && hit, "P2-2 狂怒球地雷多行句得狂怒球譯文(不得錯成暴擊球)");
+		if (!(noPower && hit))
+			printf("           lookup='%s'\n           stat[item]='%s'\n           want '%s'\n",
+			       gs.c_str(), ss.c_str(), want.c_str());
+	}
+	{
+		// P2-3:輸入本身就帶 {0} 的字典鍵(stats.json)不受守門影響。
+		translation_set_source(nullptr);
+		const char* a = translation_lookup("{0} (action speed modifier)");
+		const char* b = translation_lookup("{0} - {1} (portion of damage from non-crits)");
+		const bool ok = a && std::string(a) == u8"{0} (動作速度詞綴)" &&
+		                b && std::string(b) == u8"{0} - {1} (來自非暴擊傷害百分比)";
+		check(ok, "P2-3 輸入本身含 {0} 的鍵照常翻譯(守門只擋輸入沒有的佔位符)");
+		if (!ok) printf("           a='%s' b='%s'\n", a ? a : "(null)", b ? b : "(null)");
+	}
+
+	{
+		// P2-4:多行條目拆行衍生時，英繁該行的 {N} 集合不同就不得建(否則半句會被
+		// 行內寫死數字當值套進錯的那半句)。來源(stats.json 字面 \n 鍵):
+		//   "Minions Convert {0}% of their Maximum Life to Maximum Energy\nShield per 1% Chaos Resistance they have"
+		//   "Attacks with this Weapon deal {0} to {1} added Chaos Damage against\nEnemies affected by at least 5 Poisons"
+		//   "{0}% reduced Effect of Arcane Surge on you per\n200 Mana spent Recently"
+		//   "Increases and Reductions to Armour also apply to Energy Shield\n..."(衍生「護甲值增減也以相當於其數值的 {0}%」)
+		translation_set_source(nullptr);
+		const char* bad[] = {"Shield per 1% Chaos Resistance they have",
+		                     "Enemies affected by at least 5 Poisons",
+		                     "Increases and Reductions to Armour also apply to Energy Shield",
+		                     "200 Mana spent Recently"};
+		bool ok = true;
+		for (const char* e : bad) {
+			const char* r = translation_lookup(e);
+			if (r && std::string(r) != e) {
+				ok = false;
+				printf("           %s -> '%s'(應為空)\n", e, r);
+			}
+		}
+		// 防過度收緊：英繁每行 {N} 集合相同的多行條目(stats.json 字面 \n 鍵,單行本身不是
+		// 任何字典的鍵),拆行衍生的單行仍查得到:
+		//   "{0:+d} to maximum number of Sacred Wisps\n{0:+d} to number of Sacred Wisps Summoned"
+		//   "{0} to {1} added Fire Damage\nPlayers and their Minions have {0} to {1} added Fire Damage"
+		const std::pair<const char*, std::string> goods[] = {
+		    {"+2 to number of Sacred Wisps Summoned", u8"+2 召喚聖潔妖精數量"},
+		    {"Players and their Minions have 5 to 10 added Fire Damage", u8"玩家和他們的召喚物附加 5 至 10 火焰傷害"}};
+		bool goodOk = true;
+		for (const auto& gd : goods) {
+			const char* g = translation_lookup(gd.first);
+			if (!(g && gd.second == g)) {
+				goodOk = false;
+				printf("           %s -> '%s' want '%s'\n", gd.first, g ? g : "(null)", gd.second.c_str());
+			}
+		}
+		check(ok && goodOk, "P2-4 拆行衍生須英繁每行 {N} 相同：錯配半句回空，相同者單行仍可查");
+	}
+	{
+		// P2-5:結果含 '#' 而英文沒有 —— 填值不完整的殘留，視為未命中。
+		// 出處:p2_guard_placeholder_dump_changed.tsv(stats.json)。
+		translation_set_source(nullptr);
+		const char* kEn = "1% Blood in the Blood Crucible while you are able to Shift into Nightmare";
+		const char* r = translation_lookup(kEn);
+		const bool ok = !r || std::string(r).find('#') == std::string::npos;
+		check(ok, "P2-5 英文無 # 時結果不得殘留 #");
+		if (!ok) printf("           %s -> '%s'\n", kEn, r);
+	}
+
 	// ---- D:詞彙表(glossary)選擇規則(使用者裁定)----------------------------
 	// 同一 term(小寫、去結尾冒號)只留一筆：優先原鍵不帶冒號者;都帶冒號取原鍵
 	// 字典序最小;全形「：」與半形「:」結尾都去除;排序 = 長度降冪、再 term 字典序。
