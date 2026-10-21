@@ -62,6 +62,20 @@ std::wstring exe_dir()
 	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
 }
 
+// Whole file as bytes (P8); false when it cannot be opened.
+bool read_file_bytes(const std::wstring& p, std::string& out)
+{
+	HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+	                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	out.clear();
+	char tmp[65536];
+	DWORD got = 0;
+	while (ReadFile(h, tmp, sizeof(tmp), &got, nullptr) && got) out.append(tmp, got);
+	CloseHandle(h);
+	return true;
+}
+
 // The engine's own merge rule, replayed here so the test can say which file's
 // copy of a key is the one that actually takes effect.
 std::map<std::string, std::string> merge_winner(const EditorModel& model,
@@ -1083,7 +1097,7 @@ int RunEditorSelftest(const std::string& games)
 			// passing on an observer that always reports "gems".
 			const std::string full = translation_debug_sources();
 			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
-			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,passives",
+			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,legion,passives",
 			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
 			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
 			else printf("    (flagged: %s)\n", full.c_str());
@@ -1287,6 +1301,109 @@ int RunEditorSelftest(const std::string& games)
 		check(!unsignedHash.empty() && unsignedHash != "#% increased Fire Damage" && unsignedHash.find('#') != std::string::npos &&
 		          unsignedHash.find("increased") == std::string::npos,
 		      "T45 an unsigned '#' that already translated keeps doing so");
+	}
+
+	// P8 (使用者裁定 2026-10-21):id 字典檔(*_by_id.json)照列但唯讀;說明不再寫
+	// 「不會被讀取」(source_dicts 的檔不在 load_order 卻會被引擎讀)。
+	// 在 %TEMP% 的複本上做:SaveFile 被拒前若誤寫，也只寫到複本。
+	printf("\n=== P8 id 字典唯讀 ===\n");
+	{
+		wchar_t tmp[MAX_PATH];
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring root8 = std::wstring(tmp) + L"pobtools_p8_editor\\";
+		const std::wstring leaf8 = root8 + L"zh-rTW\\";
+		CreateDirectoryW(root8.c_str(), nullptr);
+		CreateDirectoryW(leaf8.c_str(), nullptr);
+		const std::wstring src8 = poe1Root + L"zh-rTW\\";
+		const wchar_t* idFiles[] = {L"passives_by_id.json", L"affixes_by_id.json",
+		                            L"gems_desc_by_id.json", L"stats_by_id.json", L"legion_by_id.json"};
+		bool setup = CopyFileW((src8 + L"meta.json").c_str(), (leaf8 + L"meta.json").c_str(), FALSE) &&
+		             CopyFileW((src8 + L"ui.json").c_str(), (leaf8 + L"ui.json").c_str(), FALSE);
+		std::vector<std::string> present;   // 出貨資料裡實際存在的 id 檔
+		for (const wchar_t* f : idFiles) {
+			if (GetFileAttributesW((src8 + f).c_str()) == INVALID_FILE_ATTRIBUTES) continue;  // legion_by_id 可能不存在
+			if (!CopyFileW((src8 + f).c_str(), (leaf8 + f).c_str(), FALSE)) setup = false;
+			present.push_back(narrow(f));
+		}
+		check(setup && present.size() >= 4, "P8-0 id 字典檔複本已建立(至少 4 個)");
+
+		EditorModel m8 = LoadModel(root8, "zh-rTW");
+		// P8-1:照列、標唯讀;一般字典(ui.json)不唯讀
+		{
+			bool listed = true, ro = true;
+			for (const std::string& f : present) {
+				const int fi = FindFileIdx(m8, f);
+				if (fi < 0) { listed = false; printf("    not listed: %s\n", f.c_str()); continue; }
+				if (!m8.files[(size_t)fi].readOnly) { ro = false; printf("    not readOnly: %s\n", f.c_str()); }
+			}
+			const int ui = FindFileIdx(m8, "ui.json");
+			check(listed, "P8-1a id 字典檔仍列在編輯器檔案清單");
+			check(ro, "P8-1b id 字典檔標為唯讀");
+			check(ui >= 0 && !m8.files[(size_t)ui].readOnly, "P8-1c 一般字典(ui.json)不是唯讀");
+		}
+		// P8-2:編輯被拒(SetEntry 回 SIZE_MAX、值與 dirty 不變)
+		{
+			const int fi = FindFileIdx(m8, "passives_by_id.json");
+			bool ok = fi >= 0;
+			long long at = -1;
+			std::string before;
+			if (ok) {
+				for (size_t i = 0; i < m8.entries.size(); i++)
+					if (m8.entries[i].fileIdx == fi) { at = (long long)i; break; }
+				ok = at >= 0;
+			}
+			if (ok) {
+				before = m8.entries[(size_t)at].value;
+				const std::string key = m8.entries[(size_t)at].key;
+				const size_t r = SetEntry(m8, fi, key, before + "X");
+				const size_t r2 = SetEntry(m8, fi, "P8NewKeyXyz", u8"新條目");
+				ok = r == (size_t)-1 && r2 == (size_t)-1 && m8.entries[(size_t)at].value == before &&
+				     FindEntry(m8, fi, "P8NewKeyXyz") < 0 && !m8.files[(size_t)fi].dirty;
+				if (!ok) printf("    r=%lld r2=%lld value=%s dirty=%d\n", (long long)r, (long long)r2,
+				                m8.entries[(size_t)at].value.c_str(), (int)m8.files[(size_t)fi].dirty);
+			}
+			check(ok, "P8-2 唯讀檔的編輯與新增被拒(值不變、不變 dirty)");
+		}
+		// P8-3:存檔被拒(SaveFile 回 false,檔案位元組不變)
+		{
+			const int fi = FindFileIdx(m8, "affixes_by_id.json");
+			bool ok = fi >= 0;
+			if (ok) {
+				std::string beforeBytes, afterBytes;
+				read_file_bytes(m8.files[(size_t)fi].path, beforeBytes);
+				m8.files[(size_t)fi].doc["entries"]["P8ForcedKeyXyz"] = "x";   // 繞過 SetEntry 直接改 doc
+				m8.files[(size_t)fi].dirty = true;
+				std::string err;
+				const bool saved = SaveFile(m8.files[(size_t)fi], &err);
+				read_file_bytes(m8.files[(size_t)fi].path, afterBytes);
+				ok = !saved && !err.empty() && afterBytes == beforeBytes;
+				if (!ok) printf("    saved=%d err=%s same=%d\n", (int)saved, err.c_str(), (int)(afterBytes == beforeBytes));
+			}
+			check(ok, "P8-3 唯讀檔的存檔被拒且檔案不變");
+		}
+		// P8-4:說明文字不再寫「不會被讀取」;唯讀檔的說明提到唯讀
+		{
+			bool noNever = true, saysRo = true;
+			for (size_t fi = 0; fi < m8.files.size(); fi++) {
+				const std::string note = FileStatusNote(m8, (int)fi);
+				if (note.find(u8"不會被讀取") != std::string::npos) {
+					noNever = false;
+					printf("    %s: %s\n", m8.files[fi].name.c_str(), note.c_str());
+				}
+				if (m8.files[fi].name.find("_by_id.json") != std::string::npos &&
+				    note.find(u8"唯讀") == std::string::npos) saysRo = false;
+			}
+			check(noNever, "P8-4a 檔案說明不再出現「不會被讀取」");
+			check(saysRo, "P8-4b id 字典檔的說明標示唯讀");
+		}
+		for (const wchar_t* f : idFiles) {
+			DeleteFileW((leaf8 + f).c_str());
+			DeleteFileW((leaf8 + f + std::wstring(L".bak")).c_str());
+		}
+		DeleteFileW((leaf8 + L"meta.json").c_str());
+		DeleteFileW((leaf8 + L"ui.json").c_str());
+		RemoveDirectoryW(leaf8.c_str());
+		RemoveDirectoryW(root8.c_str());
 	}
 
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);

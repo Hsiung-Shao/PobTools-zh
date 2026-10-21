@@ -406,7 +406,8 @@ local function statPair(a, b, ctx)
 	local zh = zhByStat(a .. "\n" .. b, ctx)
 	if not zh then return nil end
 	local z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$")
-	if z1 and z1 ~= "" and z2 ~= "" then return z1, z2 end
+	-- an empty second line is a valid answer (the whole sentence is on line 1)
+	if z1 and z1 ~= "" then return z1, z2 end
 	return nil
 end
 
@@ -478,7 +479,7 @@ local function buildSdPairs(node)
 				local zh = zhByStat(ra .. "\n" .. rb, "passive")
 				local z1, z2
 				if zh then z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$") end
-				if z1 and z1 ~= "" and z2 ~= "" then
+				if z1 and z1 ~= "" then -- z2 may be "": whole sentence on line 1
 					map[ra], map[rb] = z1, z2
 					found, hit = true, true
 				end
@@ -1009,7 +1010,13 @@ local function renameListLabels(list, source, dnById)
 			local s = v.label:find(LABEL_PAD, 1, true)
 			local dn = (v.id ~= nil and dnById and dnById[v.id])
 				or (s and v.label:sub(1, s - 1) or v.label)
-			local zh = zhInSource(source, dn)
+			-- legion: by the item's id first (the engine answers legion ids
+			-- without an English check), then by the English name
+			local zh
+			if source == "legion" and v.id ~= nil and hasTranslateId() then
+				zh = zhById("legion", v.id, dn)
+			end
+			zh = zh or zhInSource(source, dn)
 			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
 		end
 	end

@@ -41,6 +41,11 @@ struct EditorFile {
 	// A key was taken out of `doc` (RemoveAddedEntry after a failed save had
 	// written it there); the file needs saving even with no edited entry.
 	bool docChanged = false;
+	// Id-keyed dictionaries (*_by_id.json: keys are GraphIds / mod Ids / stat
+	// ids, not English): listed so they can be read, but never edited or saved.
+	// SetEntry refuses (returns SIZE_MAX), SaveFile refuses (false + err).
+	// Set by LoadModel from the file name.
+	bool readOnly = false;
 };
 
 // Everything loaded for one game+locale.
@@ -54,6 +59,9 @@ struct EditorModel {
 	// the editor is useless without it: poe1 and poe2 order the SAME files
 	// differently, so "which copy wins" cannot be guessed from the file name.
 	std::vector<std::string> loadOrder;
+	// meta.json's source_dicts, verbatim: files the engine reads as source / id
+	// tables (never merged) although they are not in load_order.
+	std::vector<std::string> sourceDicts;
 };
 
 // One untranslated string scanned from translate_misses.log (already filtered
@@ -84,6 +92,12 @@ struct MissEntry {
 // appears to do nothing. localeExists is false (model otherwise empty) when the
 // directory is absent.
 EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale);
+
+// The note the file picker / file badge shows for a file ("" = none). A file
+// outside load_order is still read by the engine when it is a source / id
+// dictionary, so the note must not claim it is never read; a readOnly file says
+// so (--editor-selftest P8).
+std::string FileStatusNote(const EditorModel& model, int fileIdx);
 
 // Find a file index by name (e.g. "ui.json"); -1 if absent.
 int FindFileIdx(const EditorModel& model, const std::string& name);

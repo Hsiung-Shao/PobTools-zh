@@ -80,7 +80,9 @@ const char* translation_lookup_by_id(const char *source, const char *id);
 ** translation only when the file's "templates" has the id and its GGPK
 ** English equals en (trimmed, inner whitespace collapsed, case-sensitive);
 ** otherwise nullptr. A file WITHOUT "templates" (older data pack) keeps the
-** plain id behaviour. Tested by --stat-selftest P0-*. */
+** plain id behaviour. Exception: source "legion" never checks the English
+** (POB's LegionPassives has old names and swapped Faith notables; the id is
+** GGPK's key). Tested by --stat-selftest P0-* and S8-*. */
 const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en);
 
 /* Translate one stat line through stats_by_id.json (keys
