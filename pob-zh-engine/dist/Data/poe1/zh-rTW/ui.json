@@ -22670,6 +22670,12 @@
     "Source: Labyrinth": "來源: 帝王迷宮",
     "Exclusive to: Ultimatum": "限定: 通牒",
     "Exclusive to: Harbinger": "限定: 神諭",
-    "Requires Class": "需要 職業："
+    "Requires Class": "需要 職業：",
+    "LevelReq: {0}": "需求等級: {0}",
+    "Limited to 1 Ancestral Tattoo": "限制 1 個祖靈紋身",
+    "Limited to 1 Ascendancy Tattoo": "限制 1 個昇華紋身",
+    "Limited to 1 Attribute Notable Tattoo": "限制 1 個能力核心紋身",
+    "Limited to 1 Keystone Tattoo": "限制 1 個關鍵紋身",
+    "Limited to 1 Loyalty Tattoo": "限制 1 個忠誠紋身"
   }
 }
