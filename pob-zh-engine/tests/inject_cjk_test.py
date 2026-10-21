@@ -3250,24 +3250,20 @@ def test_e7_pair_empty_second_line(fork):
           not any(E7_B in _norm(l) for l in tips[0]), "lines=%r" % (tips[0],))
 
 
-# ---- S8:TreeTab 軍團下拉依 id 查 legion(不比對英文)--------------------------
-# 上游 TreeTab:FindTimelessJewel 的 buildMods(PoE1 L1363 起)清單項帶 id = node.id
-# (LegionPassives 的 alternatepassiveskills Id)。使用者裁定：有 id 就先以
-# PobToolsTranslateId("legion", id, dn) 取譯名，不比對英文(legion 名在 POB 與 GGPK
-# 間有對調/舊名)。資料(dist legion_by_id.json):
-#   templar_notable_minimum_power_charge → 狂怒信念(POB dn Powerful Faith)
-#   templar_notable_minimum_frenzy_charge → 暴擊信念(POB dn Frenzied Faith)
-#   vaal_small_attack_dodge → 避免元素異常狀態(POB 舊名 Attack Dodge)
+# ---- S8(使用者重新裁定，撤回依 id):軍團下拉依英文名查 legion -------------
+# 查證:POB / poedb / GGPK Name 欄都是 Powerful Faith=暴擊信念、Frenzied Faith=狂怒信念;
+# 只有 GGPK 內部 Id 字串對調(templar_notable_minimum_power_charge 的 Name 是
+# Frenzied Faith)。裁定撤回依 id 取名：下拉不得呼叫 PobToolsTranslateId("legion", …),
+# 依清單項的英文名在 legion 來源查。
+# mock:ID_DICT["legion"] 照舊放「依 id 會得到」的對調值，若注入層仍依 id 查就會露餡。
 S8_ID = {
     "templar_notable_minimum_power_charge": "狂怒信念",
     "templar_notable_minimum_frenzy_charge": "暴擊信念",
-    "vaal_small_attack_dodge": "避免元素異常狀態",
 }
 S8_TREE = """
 {
 	{ id = "templar_notable_minimum_power_charge", dn = "Powerful Faith", ["not"] = true, sd = { "PF stat" } },
 	{ id = "templar_notable_minimum_frenzy_charge", dn = "Frenzied Faith", ["not"] = true, sd = { "FF stat" } },
-	{ id = "vaal_small_attack_dodge", dn = "Attack Dodge", ["not"] = true, sd = { "AD stat" } },
 }
 """
 
@@ -3283,35 +3279,113 @@ def s8_labels(fork, jewel_name):
 
 
 def test_s8_legion_dropdown_by_id(fork):
-    """S8 -- 軍團下拉清單項有 id 時，先依 id 查 legion(不比對英文)。"""
+    """S8 -- 軍團下拉依英文名查 legion 來源，不依 id(使用者重新裁定)。"""
     saved = ID_DICT.get("legion")
     ID_DICT["legion"] = dict(S8_ID)
-    adds = [("legion", "Powerful Faith", "強力信念(依英文)"), ("legion", "Frenzied Faith", "狂怒信念(依英文)"),
-            ("legion", "Attack Dodge", "攻擊閃避(依英文)")]
+    # 依英文的期望值(使用者裁定的 Name 欄譯名)。注意：目前 dist legion.json 沒有這兩個鍵。
+    adds = [("legion", "Powerful Faith", "暴擊信念"), ("legion", "Frenzied Faith", "狂怒信念")]
     try:
         h, labels = _with_dict(adds, lambda: s8_labels(fork, "templar"))
-        hv, labels_v = _with_dict(adds, lambda: s8_labels(fork, "vaal"))
     finally:
         if saved is None:
             del ID_DICT["legion"]
         else:
             ID_DICT["legion"] = saved
+
     def first(ls, stat):
         for l in ls:
             if l.endswith(stat):
                 return l[:l.find(LABEL_PAD)] if LABEL_PAD in l else l
         return None
-    pf, ff, ad = first(labels, "PF stat"), first(labels, "FF stat"), first(labels_v, "AD stat")
-    check("%s S8 軍團下拉以 PobToolsTranslateId(\"legion\", id, …) 查詢" % fork,
-          any(s == "legion" and i == "templar_notable_minimum_power_charge" for s, i, _ in h.id_lookups),
-          "id_lookups=%r" % h.id_lookups)
-    check("%s S8 Powerful Faith(id power_charge)顯示 id 譯名「狂怒信念」" % fork,
-          pf == "狂怒信念", "label=%r labels=%r" % (pf, labels))
-    check("%s S8 Frenzied Faith(id frenzy_charge)顯示 id 譯名「暴擊信念」" % fork,
-          ff == "暴擊信念", "label=%r labels=%r" % (ff, labels))
-    check("%s S8 vaal 小天賦舊名 Attack Dodge 顯示 id 譯名「避免元素異常狀態」" % fork,
-          ad == "避免元素異常狀態", "label=%r labels=%r" % (ad, labels_v))
+    pf, ff = first(labels, "PF stat"), first(labels, "FF stat")
+    check("%s S8 軍團下拉不呼叫 PobToolsTranslateId(\"legion\", …)" % fork,
+          not any(s == "legion" for s, _i, _e in h.id_lookups), "id_lookups=%r" % h.id_lookups)
+    check("%s S8 Powerful Faith 依英文名得「暴擊信念」" % fork,
+          pf == "暴擊信念", "label=%r labels=%r" % (pf, labels))
+    check("%s S8 Frenzied Faith 依英文名得「狂怒信念」" % fork,
+          ff == "狂怒信念", "label=%r labels=%r" % (ff, labels))
+    check("%s S8 下拉以 legion 來源查英文名" % fork,
+          "legion" in srcs_of(h, "Powerful Faith"), "lookups=%r" % h.lookups)
     check("%s S8 下拉繪製後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
+# ---- N2:物品單行 stat 查詢先剝「Not supported」註記 --------------------------
+# AddLine 的單行 zhByStat(text, "item") 直接送含註記的整行 → 查不到。期望：剝掉
+# main.notSupportedTooltipText 後查，命中就把註記原樣接回(配對路徑已這樣做)。
+# GGPK random_curse_when_hit_%_ignoring_curse_limit|100|#(條件固定 100)。
+N2_EN = "Curse Enemies which Hit you with a random Hex, ignoring Curse Limit"
+N2_ZH = "100% 機率使用 1 個隨機咒術詛咒擊中你的敵人，無視詛咒上限"
+
+
+def test_n2_item_single_line_note(fork):
+    """N2 -- 物品單行帶不支援註記：剝註記查 stat,命中後中文行尾補回註記與原色碼。"""
+    if fork != "PoE1":
+        # PoE2 上游 AddItemTooltip 的 AddLine 第 4 參數是背景(bg),不是 modLine,注入層
+        # 認不出詞綴行，單行本來就不走 zhByStat(text, "item")(現況如此，非本缺口)。
+        print("  N/A   %s N2 此分支物品詞綴單行不走 stat 查詢(AddLine 第 4 參數非 modLine)" % fork)
+        return
+    note = " ^8(Not supported in PoB yet)"
+    h, ok, err, tips = e1_tooltips(fork, {N2_EN: N2_ZH}, [e1_item([N2_EN], extra=True)])
+    line = tips[0][0] if tips and tips[0] else None
+    check("%s N2 物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s N2 單行以剝掉註記的英文、ctx item 查 stat" % fork,
+          (N2_EN, "item") in [(_norm(l), c) for l, c in h.stat_calls
+                              if "Not supported" not in (l or "")],
+          "calls=%r" % h.stat_calls)
+    check("%s N2 命中後顯示中文並原樣補回註記與色碼" % fork,
+          line == "^xF05050" + N2_ZH + note, "line=%r calls=%r" % (line, h.stat_calls))
+
+
+# ---- N3:配對查詢得到「一行」答案 ---------------------------------------------
+# GGPK 英文兩行、中文一行(引擎對 "a\nb" 命中多行模板，回一行中文)。期望：第一行
+# 整句中文、第二行留白(與「第二行留空」一致)。
+# 判準：一行答案只在「合併句 a\nb 的 stat 查詢本身命中」時採用 —— 引擎的 stat 查詢
+# 只會用一個多行模板去對整段，兩條獨立詞綴不會被合成一行;兩條各自獨立的行，合併
+# 查詢查不到(nil)時仍各走各的單行路徑，不得留白。
+# 資料(dist stats_by_id.json):
+#   Tanu Ahi(gloves.lua L682):chance_to_gain_adrenaline_for_2_seconds_on_leech_removed_by_filling_unreserved_life_%
+#     "{0}% chance to gain Adrenaline for 2 Seconds when Leech is\nremoved by Filling Unreserved Life"
+#     → 當偷取被填滿未保留生命移除時，有 {0}% 機率獲得腎上腺素 2 秒
+#   天賦 37358:unattached_sigil_attachment_range_+%_per_second|1|#
+#     "Unattached Brands gain {0}% increased Brand Attachment Range per\nsecond, up to a maximum of 100%"
+#     → 未附著的烙印每秒增加 {0}% 烙印附著距離
+N3_IA = "10% chance to gain Adrenaline for 2 Seconds when Leech is"
+N3_IB = "removed by Filling Unreserved Life"
+N3_IZ = "當偷取被填滿未保留生命移除時，有 10% 機率獲得腎上腺素 2 秒"
+N3_NA = "Unattached Brands gain 20% increased Brand Attachment Range per"
+N3_NB = "second, up to a maximum of 100%"
+N3_NZ = "未附著的烙印每秒增加 20% 烙印附著距離"
+# 反例：兩條獨立詞綴，單行各自命中，合併句沒有模板
+N3_X1 = "+30 to Dexterity"
+N3_X2 = "10% increased Attack Speed"
+N3_STAT = {N3_IA + "\n" + N3_IB: N3_IZ, N3_NA + "\n" + N3_NB: N3_NZ,
+           N3_X1: "+30 敏捷(stat)", N3_X2: "增加 10% 攻擊速度(stat)"}
+
+
+def test_n3_pair_one_line_answer(fork):
+    """N3 -- 配對答案只有一行：第一行整句中文、第二行留白;獨立的兩行不被合併。"""
+    # 天賦說明
+    h, ok, err, tips = p2b_tooltips(fork, N3_STAT, [[N3_NA, N3_NB, N3_X2]])
+    got = [_norm(l) for l in tips[0][1:4]]
+    check("%s N3 天賦提示本身不出錯" % fork, ok, repr(err))
+    check("%s N3 天賦說明一行答案：第一行整句中文、第二行留白" % fork,
+          got[:2] == [N3_NZ, ""], "got=%r calls=%r" % (got, h.stat_calls))
+    check("%s N3 天賦說明第二行不顯示英文半句" % fork,
+          not any(N3_NB in _norm(l) for l in tips[0]), "lines=%r" % (tips[0],))
+    # 物品詞綴
+    h, ok, err, tips = e1_tooltips(fork, N3_STAT, [e1_item([N3_IA, N3_IB])])
+    got = [_norm(l) for l in tips[0][:2]]
+    check("%s N3 物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s N3 物品詞綴一行答案：第一行整句中文、第二行留白" % fork,
+          got == [N3_IZ, ""], "got=%r calls=%r" % (got, h.stat_calls))
+    # 反例：兩條獨立詞綴(合併句查不到)各自翻譯，不留白 —— 與各自單獨成行時的結果相同
+    h, ok, err, tips = e1_tooltips(fork, N3_STAT, [e1_item([N3_X1, N3_X2])])
+    got = [_norm(l) for l in tips[0][:2]]
+    _h, _o, _e, alone = e1_tooltips(fork, N3_STAT, [e1_item([N3_X1]), e1_item([N3_X2])])
+    want = [_norm(alone[0][0]), _norm(alone[1][0])]
+    check("%s N3 反例：兩條獨立詞綴不合併、各自翻譯不留白" % fork,
+          got == want and all(g and g not in (N3_X1, N3_X2) for g in got),
+          "got=%r 各自單獨=%r calls=%r" % (got, want, h.stat_calls))
 
 
 def main():
@@ -3362,6 +3436,8 @@ def main():
         test_ri3_variant_hidden_line_pairs(fork)
         test_e7_pair_empty_second_line(fork)
         test_s8_legion_dropdown_by_id(fork)
+        test_n2_item_single_line_note(fork)
+        test_n3_pair_one_line_answer(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

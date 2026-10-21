@@ -73,6 +73,10 @@ EntryState StateOf(const EditorModel& model, int fileIdx, const std::string& key
 
 bool ApplyState(EditorModel& model, int fileIdx, const std::string& key, const EntryState& s)
 {
+	// Read-only (id-keyed) dictionaries are never changed, not even through
+	// undo/redo or a direct state write: value, edited and dirty stay as they are.
+	if (fileIdx < 0 || fileIdx >= (int)model.files.size() || model.files[(size_t)fileIdx].readOnly)
+		return false;
 	const long long at = FindEntry(model, fileIdx, key);
 	if (s.exists) {
 		if (at >= 0) {
@@ -115,6 +119,9 @@ bool UndoStack::Undo(EditorModel& model, std::vector<char>* missFilled, bool* re
 
 bool SetWithUndo(EditorModel& model, UndoStack& undo, int fileIdx, const std::string& key, const std::string& value)
 {
+	// A refused edit must not leave an undo step behind either.
+	if (fileIdx < 0 || fileIdx >= (int)model.files.size() || model.files[(size_t)fileIdx].readOnly)
+		return false;
 	EntryChange c;
 	c.fileIdx = fileIdx;
 	c.key = key;

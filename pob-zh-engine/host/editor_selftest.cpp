@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "editor_data.h"
+#include "trans_editor_logic.h"   // P8-5:SetWithUndo / ApplyState
 #include "launcher_config.h"   // ResolveDataDir
 #include "../translate/translation_manager.h"
 
@@ -1097,7 +1098,7 @@ int RunEditorSelftest(const std::string& games)
 			// passing on an observer that always reports "gems".
 			const std::string full = translation_debug_sources();
 			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
-			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,legion,passives",
+			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,passives",
 			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
 			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
 			else printf("    (flagged: %s)\n", full.c_str());
@@ -1395,6 +1396,33 @@ int RunEditorSelftest(const std::string& games)
 			}
 			check(noNever, "P8-4a 檔案說明不再出現「不會被讀取」");
 			check(saysRo, "P8-4b id 字典檔的說明標示唯讀");
+		}
+		// P8-5(review I1):模型層繞過 —— trans_editor_logic 的 SetWithUndo / ApplyState
+		// 對已存在條目直接改值，沒看 readOnly。對 *_by_id.json 既有條目走這兩條路，
+		// 值、edited、dirty 都不得改變，也不得記一筆 undo。
+		{
+			const int fi = FindFileIdx(m8, "gems_desc_by_id.json");
+			long long at = -1;
+			for (size_t i = 0; fi >= 0 && i < m8.entries.size(); i++)
+				if (m8.entries[i].fileIdx == fi) { at = (long long)i; break; }
+			bool ok = fi >= 0 && at >= 0;
+			if (ok) {
+				const std::string key = m8.entries[(size_t)at].key;
+				const std::string before = m8.entries[(size_t)at].value;
+				TransEd::UndoStack undo;
+				TransEd::SetWithUndo(m8, undo, fi, key, before + "X");
+				const bool viaUndo = m8.entries[(size_t)at].value == before && !m8.entries[(size_t)at].edited &&
+				                     !m8.files[(size_t)fi].dirty && undo.Size() == 0;
+				TransEd::EntryState st;
+				st.exists = true;
+				st.value = before + "Y";
+				TransEd::ApplyState(m8, fi, key, st);
+				const bool viaApply = m8.entries[(size_t)at].value == before && !m8.files[(size_t)fi].dirty;
+				ok = viaUndo && viaApply;
+				if (!ok) printf("    viaUndo=%d viaApply=%d value=%s dirty=%d undo=%zu\n", (int)viaUndo, (int)viaApply,
+				                m8.entries[(size_t)at].value.c_str(), (int)m8.files[(size_t)fi].dirty, undo.Size());
+			}
+			check(ok, "P8-5 SetWithUndo / ApplyState 不得改唯讀檔的既有條目");
 		}
 		for (const wchar_t* f : idFiles) {
 			DeleteFileW((leaf8 + f).c_str());

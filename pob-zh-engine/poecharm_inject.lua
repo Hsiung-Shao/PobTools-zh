@@ -399,14 +399,16 @@ local function pairLookup(map, text)
 	return zh and lead .. zh .. tail or nil
 end
 
--- Asks a\nb under ctx; returns the two Chinese lines when the answer is
--- exactly two lines.
+-- Asks a\nb under ctx; only a hit of that joined query counts. A two-line
+-- answer gives one Chinese line per English line; a one-line answer (or an
+-- empty second line) puts the whole sentence on the first line and leaves the
+-- second blank. The first line must not be empty; more than two lines: nil.
 local function statPair(a, b, ctx)
 	if a == "" or b == "" or a:find("\n", 1, true) or b:find("\n", 1, true) then return nil end
 	local zh = zhByStat(a .. "\n" .. b, ctx)
 	if not zh then return nil end
+	if not zh:find("\n", 1, true) then return zh, "" end
 	local z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$")
-	-- an empty second line is a valid answer (the whole sentence is on line 1)
 	if z1 and z1 ~= "" then return z1, z2 end
 	return nil
 end
@@ -475,14 +477,10 @@ local function buildSdPairs(node)
 			local _, ra = splitLeadColour(a)
 			local _, rb = splitLeadColour(b)
 			ra, rb = trim((splitNoteTail(ra))), trim((splitNoteTail(rb)))
-			if ra ~= "" and rb ~= "" and not ra:find("\n", 1, true) and not rb:find("\n", 1, true) then
-				local zh = zhByStat(ra .. "\n" .. rb, "passive")
-				local z1, z2
-				if zh then z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$") end
-				if z1 and z1 ~= "" then -- z2 may be "": whole sentence on line 1
-					map[ra], map[rb] = z1, z2
-					found, hit = true, true
-				end
+			local z1, z2 = statPair(ra, rb, "passive")
+			if z1 then
+				map[ra], map[rb] = z1, z2
+				found, hit = true, true
 			end
 		end
 		i = i + (hit and 2 or 1)
@@ -1010,13 +1008,7 @@ local function renameListLabels(list, source, dnById)
 			local s = v.label:find(LABEL_PAD, 1, true)
 			local dn = (v.id ~= nil and dnById and dnById[v.id])
 				or (s and v.label:sub(1, s - 1) or v.label)
-			-- legion: by the item's id first (the engine answers legion ids
-			-- without an English check), then by the English name
-			local zh
-			if source == "legion" and v.id ~= nil and hasTranslateId() then
-				zh = zhById("legion", v.id, dn)
-			end
-			zh = zh or zhInSource(source, dn)
+			local zh = zhInSource(source, dn)
 			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
 		end
 	end
@@ -1511,7 +1503,12 @@ PATCHES["Tooltip"] = function(class)
 					-- lines are gem text); an item tooltip nested in it does not
 					statZh = translateGemLine(text)
 				elseif src == "modline" then
-					statZh = zhByStat(text, "item")
+					-- the unsupported note is not part of the stat: asked
+					-- without it, put back after the Chinese
+					local lead, rest = splitLeadColour(text)
+					local body, tail = splitNoteTail(rest)
+					statZh = zhByStat(lead .. body, "item")
+					statZh = statZh and statZh .. tail
 				elseif src == nil and nodeTipActive and not itemCtx then
 					-- not inside an item tooltip nested in the node tooltip
 					-- (jewel socket): those lines are item text, not the passive's
