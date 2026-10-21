@@ -820,6 +820,150 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!ok) printf("           got '%s'\n", r);
 	}
 
+	// ---- coverage_r4「一之一」可修(引擎)項 ----------------------------------------
+	printf("\n=== coverage_r4 E2/E4/E5/N1 ===\n");
+	// E2-1:兩個候選只差大小寫且中文不同 → 現行大小寫不敏感判成歧義:
+	//   local_display_socketed_gems_get_chance_to_bleed_level "…supported by Level {0} Chance to Bleed" → 插槽中的寶石被等級 {0} 的機率流血輔助
+	//   local_display_socketed_gems_supported_by_level_x_chance_to_bleed "…Supported by Level {0} Chance To Bleed" → 插槽中寶石被等級 {0} 的機率流血輔助
+	// 規則：英文字面大小寫完全相同者優先。
+	expect("Socketed Gems are Supported by Level 16 Chance To Bleed", "item",
+	       u8"插槽中寶石被等級 16 的機率流血輔助", "E2-1 大小寫完全相同的候選優先(Chance To Bleed)");
+	// E2-2:elemental_damage_taken_+%_while_stationary(小寫 taken)→ 站立時，減少 {0}% 承受元素傷害
+	//      essence_display_elemental_damage_taken_while_not_moving_+%(大寫 Taken)→ 站立時受到的元素傷害減少 {0}%
+	expect("5% reduced Elemental Damage Taken while stationary", "item",
+	       u8"站立時受到的元素傷害減少 5%", "E2-2 大小寫完全相同的候選優先(Taken while stationary)");
+	// E2-3:minion_maximum_life_%_to_convert_to_maximum_energy_shield_per_1%_chaos_resistance|1|#
+	//   英文模板兩行(…Maximum Energy\nShield per 1%…),POB 給單行(兩行以空白相接)。
+	expect("Minions Convert 2% of their Maximum Life to Maximum Energy Shield per 1% Chaos Resistance they have", "item",
+	       u8"召喚物每 1% 混沌抗性，\n將他們 2% 的最大生命轉化為最大能量護盾", "E2-3 單行英文對到兩行模板(以空白相接)");
+	// E4-1:光環檔小寫 rate 的 life_regeneration_rate_+%|#|-1|passive_skill_aura… → 附近敵人減少 {0}% 生命回復
+	//   (天賦檔大寫 Rate 的 life_mastery_… 是另一個 stat;FR-2 釘住大寫那句)
+	expect("Nearby Enemies have 100% reduced Life Regeneration rate", "passive",
+	       u8"附近敵人減少 100% 生命回復", "E4-1 小寫 rate 取光環檔模板(大小寫完全相同優先)");
+	expect("Nearby Enemies have 50% reduced Life Regeneration Rate", "passive",
+	       u8"附近敵人減少 50% 生命恢復率", "E4-2 大寫 Rate 仍取天賦檔專精模板(同 FR-2)");
+	// E5:寶石 stat 行在 gem tier 有 skill_stat 與 active_skill_gem / gem_stat 兩份不同中文 → 歧義回空。
+	// POB scopeList:skill_stat → active_skill_gem → gem_stat → stat(越具體越先),主動技能取 skill_stat。
+	{
+		struct G { const char* en; const char* ids; const char* want; const char* name; };
+		const G gs[] = {
+		    {"1 maximum Beam Target", "static_strike_number_of_beam_targets", u8"最大光束目標數為1",
+		     "E5-1 光束目標數取 skill_stat 模板(非 active_skill_gem)"},
+		    {"During initial Duration, can be hit by your Projectiles up to 20 times", "tornado_maximum_number_of_hits",
+		     u8"在初始持續時間內，最多可以被你的投射物擊中 20 次", "E5-2 龍捲風擊中次數取 skill_stat 模板"},
+		    {"This Skill's Arrows deal 108% more Damage with Hits per Stage", "snipe_triggered_skill_hit_damage_+%_final_per_stage",
+		     u8"此技能的箭矢，每層造成 108% 更多擊中傷害", "E5-3 狙擊每層傷害取 skill_stat 模板(非 gem_stat)"},
+		};
+		for (const G& g : gs) {
+			const char* r = translation_lookup_stat_ids(g.en, "gem", g.ids);
+			const bool ok = r && std::string(r) == g.want;
+			check(ok, g.name);
+			if (!ok) printf("           %s\n           got  '%s'\n           want '%s'\n", g.en, r ? r : "(null)", g.want);
+		}
+	}
+	// E5-4:Kinetic Shell。GGPK kinetic_shell_hit_damage_absorbed_% …|100|# 1|#|skill_stat_descriptions.txt
+	//   英文第 1 行無數字(條件 100 固定),中文帶 {0}% —— 產生器以 placeholder_mismatch 隔離，
+	//   stats_by_id 沒有。依 N1 規則(條件單值 N 填 {0})+ 資料補入後應得兩行中文。
+	{
+		const char* en = "Damage from Hits is taken from Shell before target's Life or Energy Shield\n"
+		                 "Shell can take 168 Damage before exploding";
+		const char* r = translation_lookup_stat_ids(en, "gem",
+		                                            "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits");
+		const std::string want = u8"100%擊中傷害由壁壘先於目標的生命或能量護盾承受\n壁壘可以在爆炸前承受168傷害";
+		const bool ok = r && want == r;
+		check(ok, "E5-4 Kinetic Shell 兩行：條件固定值 100 填入 {0}(需資料補入)");
+		if (!ok) printf("           got  '%s'\n           want '%s'\n", r ? r : "(null)", want.c_str());
+	}
+	// E5-5:ctx "gem:<scope>" 依 POB parent 鏈決定描述檔優先序。Gluttony 是輔助寶石
+	// (scope gem_stat_descriptions,鏈 gem_stat → stat_descriptions):
+	//   on_reaching_x_wildshard_stacks_gain_disgorge …|# # #|gem_stat_descriptions.txt
+	//     "On reaching {0} Gluttony, lose all Gluttony and gain Disgorge for {1} seconds"
+	//     → 在達到{0}層暴食後，失去所有的暴食並獲得持續{1}秒的噴吐
+	//   同 stat|# # #|skill_stat_descriptions.txt "…for {2} seconds" → 在達到{0}層暴食時，失去所有暴食並獲得持續{2}秒的噴吐
+	{
+		const char* en = "On reaching 10 Gluttony, lose all Gluttony and gain Disgorge for 4 seconds";
+		const char* g = translation_lookup_stat(en, "gem:gem_stat_descriptions");
+		const char* s = translation_lookup_stat(en, "gem:skill_stat_descriptions");
+		const std::string wantG = u8"在達到10層暴食後，失去所有的暴食並獲得持續4秒的噴吐";
+		const std::string wantS = u8"在達到10層暴食時，失去所有暴食並獲得持續4秒的噴吐";
+		const bool ok = g && wantG == g && s && wantS == s;
+		check(ok, "E5-5 gem:<scope> 依 parent 鏈選檔(Gluttony:gem_stat 版 / skill_stat 版)");
+		if (!ok) printf("           gem_stat   got '%s' want '%s'\n           skill_stat got '%s' want '%s'\n",
+		                g ? g : "(null)", wantG.c_str(), s ? s : "(null)", wantS.c_str());
+	}
+	// N1-1(使用者裁定):map_num_extra_invasion_bosses|1|stat_descriptions.txt
+	//   EN "Area is inhabited by an additional Invasion Boss" / ZH "地圖中含有 {0} 隻額外侵略聯盟的頭目"
+	//   條件單值 1 → 填入 {0}。此條同樣被產生器隔離(placeholder_mismatch),需資料補入。
+	expect("Area is inhabited by an additional Invasion Boss", "item",
+	       u8"地圖中含有 1 隻額外侵略聯盟的頭目", "N1-1 英文無數字、條件單值 1 時以 1 填 {0}(需資料補入)");
+
+	// ---- E6:名稱槽的來源名與「 Support」結尾 ----------------------------------------
+	printf("\n=== E6 名稱槽來源 ===\n");
+	{
+		// E6-1:name_slots 指向 stats_by_id 以外的新來源(gem_names_nonactive)時，
+		// 名稱從那個來源字典取。暫存複本:Pearl 頭盔兩把鍵(…|1 # #)的 name_slots
+		// 改為 {"1":"gem_names_nonactive"},新來源只放 Bloodthirst→渴血,並列入 source_dicts。
+		// gem_names.json 沒有 Bloodthirst,gems.json 是「渴血輔助」→ 退回 gems 就會「輔助輔助」。
+		//   模板 local_pearl_random_support_gem_{1,2}_…|1 # #|stat_descriptions.txt|0
+		//   "Skills Socketed in your Helmet are Supported by level {2} {1}" → 鑲嵌於你的頭盔中的技能會受到等級 {2} 的{1}輔助
+		const std::wstring nRoot = root + L"e6n\\";
+		CreateDirectoryW(nRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, nRoot + L"zh-rTW\\", statsJson, true, w);
+		int patched = 0;
+		if (setup) {
+			std::string body;
+			try {
+				setup = read_bytes(nRoot + L"zh-rTW\\stats_by_id.json", body);
+				auto doc = nlohmann::ordered_json::parse(body);
+				auto& ns = doc["name_slots"];
+				if (!ns.is_object()) ns = nlohmann::ordered_json::object();
+				for (const char* k : {
+				         "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index "
+				         "local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0",
+				         "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index "
+				         "local_pearl_random_support_gem_2_level|1 # #|stat_descriptions.txt|0"}) {
+					if (doc["entries"].contains(k)) {
+						ns[k] = {{"1", "gem_names_nonactive"}};
+						patched++;
+					}
+				}
+				setup = setup && patched == 2 && write_bytes(nRoot + L"zh-rTW\\stats_by_id.json", doc.dump(2));
+				nlohmann::ordered_json g = nlohmann::ordered_json::object();
+				g["source_files"] = nlohmann::ordered_json::array({"test"});
+				g["is_base_items"] = false;
+				g["entries"] = {{"Bloodthirst", u8"渴血"}};
+				setup = setup && write_bytes(nRoot + L"zh-rTW\\gem_names_nonactive.json", g.dump(2));
+				std::string mb;
+				setup = setup && read_bytes(nRoot + L"zh-rTW\\meta.json", mb);
+				auto meta = nlohmann::ordered_json::parse(mb);
+				if (!in_array(meta, "source_dicts", "gem_names_nonactive.json"))
+					meta["source_dicts"].push_back("gem_names_nonactive.json");
+				setup = setup && write_bytes(nRoot + L"zh-rTW\\meta.json", meta.dump(2));
+			} catch (...) { setup = false; }
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const Said a = ask("Skills Socketed in your Helmet are Supported by level 20 Bloodthirst", "item");
+		const std::string want = u8"鑲嵌於你的頭盔中的技能會受到等級 20 的渴血輔助";
+		const bool ok = setup && !a.null && a.s == want && a.s.find(u8"輔助輔助") == std::string::npos;
+		check(ok, "E6-1 name_slots 指向新來源 gem_names_nonactive 時從該來源取名");
+		if (!ok) printf("           setup=%d patched=%d got '%s' want '%s' %s\n", setup, patched,
+		                shown(a), want.c_str(), w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(nRoot);
+	}
+	// E6-2:Forbidden Shako「Socketed Gems are Supported by Level (1-10) Barrage Support」。
+	// 實際 stat 是 local_random_support_gem_level local_random_support_gem_index(名稱槽 {1}:gems)
+	//   "Socketed Gems are Supported by Level {0} {1}" → 插槽中的寶石被等級 {0} 的 {1} 輔助
+	// 名稱 "Barrage Support" 去掉結尾 " Support" 後查 gem_names(Barrage→彈幕)。
+	// (另有專屬 local_display_socketed_gems_supported_by_level_x_barrage →「插槽中寶石被等級 {0} 的彈幕輔助」,
+	//  英文是 "…Level {0} Barrage" 不帶 Support,不是這件物品的 stat。)
+	expect("Socketed Gems are Supported by Level 5 Barrage Support", "item",
+	       u8"插槽中的寶石被等級 5 的 彈幕 輔助", "E6-2 名稱槽寶石名結尾「 Support」先去掉再查");
+
 	printf("\n=== FR audit r9 ===\n");
 	// FR-1:插槽輔助有專屬 stat(英文寫死寶石名),不得讓名稱槽通用模板
 	//   local_random_support_gem_level local_random_support_gem_index "…Level {0} {1}" →「插槽中的寶石被等級 {0} 的 {1} 輔助」

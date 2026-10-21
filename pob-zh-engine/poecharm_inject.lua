@@ -197,8 +197,10 @@ local nodeSdPairs = nil
 
 -- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
 -- { desc = { [description] = effect id }, names = { [name] = true },
---   statIds = { [describeStats line] = stat id } }. statIds is filled by the
--- data.describeStats wrap while the tooltip is being built.
+--   statIds = { [describeStats line] = stat id },
+--   statScopes = { [describeStats line] = its scope (2nd argument) } }.
+-- statIds / statScopes are filled by the data.describeStats wrap while the
+-- tooltip is being built.
 local gemCtx = nil
 
 -- Engine stat lookup (PobToolsTranslateStat(line, ctx[, ids]), ctx "item" /
@@ -223,6 +225,15 @@ local function zhById(source, id, en)
 	return nil
 end
 
+-- One name under a named source (anoint / tattoo / legion): nil unless that
+-- lookup produced something different. The source is restored by withSource.
+local function zhInSource(source, name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local zh = withSource(source, PobToolsTranslateDisplay, name)
+	if type(zh) == "string" and zh ~= "" and zh ~= name then return zh end
+	return nil
+end
+
 -- AddNodeName's name line: [colour lead] node.dn [" [" .. node.id .. "]"]
 -- (the suffix only in dev mode, PassiveTreeView.lua). Returns the id hit (or
 -- nil) and whether this IS the name line: a name line the id lookup missed is
@@ -244,6 +255,19 @@ local function translateNodeNameLine(text)
 	end
 	ctx.nameDone = true
 	local zh = node.id ~= nil and zhById("passives", node.id, dn) or nil
+	-- A Timeless jewel (conqueredBy) / tattoo (isTattoo) keeps the node's id
+	-- and renames it, so the id's English no longer matches dn. Then the name
+	-- belongs to legion / tattoo. "No match" is either no id answer (engines
+	-- that refuse a mismatch) or the answer the passives lookup of dn gives
+	-- (engines that fall back to it); an id answer differing from both is the
+	-- unrenamed node's own name and wins.
+	local replSource = (node.conqueredBy and "legion") or (node.isTattoo and "tattoo") or nil
+	if replSource then
+		local alt = zhInSource(replSource, dn)
+		if alt and (not zh or zh == zhInSource("passives", dn)) then
+			zh = alt
+		end
+	end
 	if not zh then return nil, true end
 	return lead .. zh .. tail, true
 end
@@ -285,9 +309,19 @@ local function translateGemLine(text)
 	local id = ctx.desc[core]
 	if id ~= nil then
 		local zh = zhById("gems_desc", id, core)
-		return zh and lead .. zh or nil
+		if zh then return lead .. zh end
+		-- id miss (or its English differs): the description is gems.json
+		-- text, looked up under that source even where no caller set one
+		-- (a gem tooltip inside a node tooltip). A miss keeps the English.
+		return withSource("gems", PobToolsTranslateDisplay, text) or text
 	end
-	return zhByStat(text, "gem", ctx.statIds[core])
+	-- the skill's own stat description file (describeStats' scope argument;
+	-- PoE2 keeps it in statSets, so grantedEffect is not read): "gem:<scope>",
+	-- or "gem" (the engine's default chain) when it is unknown. A support gem's
+	-- gem_stat_descriptions is passed too: the default chain reads skill_stat
+	-- first and would pick the active skill's wording.
+	local scope = ctx.statScopes[core]
+	return zhByStat(text, scope and ("gem:" .. scope) or "gem", ctx.statIds[core])
 end
 
 -- node.sd -> nodeSdPairs. Each adjacent pair (colour codes stripped) is asked
@@ -303,6 +337,70 @@ local function splitNoteTail(s)
 		return s:sub(1, #s - #note), note
 	end
 	return s, ""
+end
+
+-- Paired-line lookup shared by node sd / item mod pairs: colour lead and the
+-- unsupported note are split off, the rest looked up, both put back on a hit.
+local function pairLookup(map, text)
+	if not map then return nil end
+	local lead, rest = splitLeadColour(text)
+	local body, tail = splitNoteTail(rest)
+	local zh = map[trim(body)]
+	return zh and lead .. zh .. tail or nil
+end
+
+-- Asks a\nb under ctx; returns the two Chinese lines when the answer is
+-- exactly two lines.
+local function statPair(a, b, ctx)
+	if a == "" or b == "" or a:find("\n", 1, true) or b:find("\n", 1, true) then return nil end
+	local zh = zhByStat(a .. "\n" .. b, ctx)
+	if not zh then return nil end
+	local z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$")
+	if z1 and z1 ~= "" and z2 ~= "" then return z1, z2 end
+	return nil
+end
+
+-- Item mod lists in POB's AddItemTooltip order (PoE1 enchant / scourge /
+-- implicit / explicit / crucible, PoE2 enchant / rune / implicit / explicit).
+local ITEM_MOD_LISTS = { "enchantModLines", "scourgeModLines", "runeModLines",
+	"implicitModLines", "explicitModLines", "crucibleModLines" }
+
+-- One stat template POB split over two adjacent mod lines of the same list.
+-- Each list's lines are taken as AddItemTooltip draws them
+-- (itemLib.formatModLine(modLine, dbMode); nil = not drawn), colour and note
+-- stripped; adjacent pairs are asked "a\nb" under "item" and an exactly
+-- two-line answer maps a/b to its lines (a miss slides down by one). nil when
+-- the engine has no stat lookup or nothing paired.
+local function buildItemModPairs(item, dbMode)
+	if type(PobToolsTranslateStat) ~= "function" or type(item) ~= "table" then return nil end
+	local fmt = type(itemLib) == "table" and itemLib.formatModLine or nil
+	if type(fmt) ~= "function" then return nil end
+	local map, found = {}, false
+	for _, key in ipairs(ITEM_MOD_LISTS) do
+		local list = item[key]
+		if type(list) == "table" then
+			local shown = {}
+			for _, modLine in ipairs(list) do
+				local f = fmt(modLine, dbMode)
+				if type(f) == "string" then
+					local _, rest = splitLeadColour(f)
+					shown[#shown + 1] = trim((splitNoteTail(rest)))
+				end
+			end
+			local i = 1
+			while shown[i + 1] do
+				local z1, z2 = statPair(shown[i], shown[i + 1], "item")
+				if z1 then
+					map[shown[i]], map[shown[i + 1]] = z1, z2
+					found = true
+					i = i + 2
+				else
+					i = i + 1
+				end
+			end
+		end
+	end
+	return found and map or nil
 end
 
 local function buildSdPairs(node)
@@ -331,15 +429,6 @@ local function buildSdPairs(node)
 		i = i + (hit and 2 or 1)
 	end
 	return found and map or nil
-end
-
--- One name under a named source (anoint / tattoo / legion): nil unless that
--- lookup produced something different. The source is restored by withSource.
-local function zhInSource(source, name)
-	if type(name) ~= "string" or name == "" then return nil end
-	local zh = withSource(source, PobToolsTranslateDisplay, name)
-	if type(zh) == "string" and zh ~= "" and zh ~= name then return zh end
-	return nil
 end
 
 -- An anointed amulet's "Allocates <notable>" enchant line (ItemsTab
@@ -1217,6 +1306,12 @@ PATCHES["ItemsTab"] = function(class)
 		class.AddItemTooltip = keepArity(origTip, function(self, tooltip, item, ...)
 			local prevCtx = itemCtx
 			itemCtx = type(item) == "table" and { item = item } or nil
+			if itemCtx then
+				-- AddItemTooltip(tooltip, item, slot, dbMode, ...)
+				local _, dbMode = ...
+				local pok, modPairs = pcall(buildItemModPairs, item, dbMode)
+				itemCtx.modPairs = pok and modPairs or nil
+			end
 			local ok, a, b, c = pcall(origTip, self, tooltip, item, ...)
 			itemCtx = prevCtx
 			if not ok then error(a, 0) end
@@ -1339,7 +1434,13 @@ PATCHES["Tooltip"] = function(class)
 			-- name lines never. A miss falls through to the path below.
 			local statZh
 			if not zh and not isNodeName then
-				if gemCtx and not itemCtx then
+				-- an item mod line paired with its neighbour (buildItemModPairs)
+				if itemCtx and itemCtx.modPairs then
+					statZh = pairLookup(itemCtx.modPairs, text)
+				end
+				if statZh then
+					-- decided by the pair
+				elseif gemCtx and not itemCtx then
 					-- a gem tooltip wins over an enclosing node tooltip (its
 					-- lines are gem text); an item tooltip nested in it does not
 					statZh = translateGemLine(text)
@@ -1348,15 +1449,8 @@ PATCHES["Tooltip"] = function(class)
 				elseif src == nil and nodeTipActive and not itemCtx then
 					-- not inside an item tooltip nested in the node tooltip
 					-- (jewel socket): those lines are item text, not the passive's
-					local pairZh
-					if nodeSdPairs then
-						local plead, prest = splitLeadColour(text)
-						-- the unsupported note is not part of the stat: keep it as tail
-						local body, tail = splitNoteTail(prest)
-						pairZh = nodeSdPairs[trim(body)]
-						pairZh = pairZh and plead .. pairZh .. tail
-					end
-					statZh = pairZh or zhByStat(text, "passive")
+					-- the unsupported note is not part of the stat: kept as tail
+					statZh = pairLookup(nodeSdPairs, text) or zhByStat(text, "passive")
 				end
 			end
 			if zh then
@@ -1659,6 +1753,12 @@ local function wrapDescribeStats(dataTbl)
 				end
 			end
 		end
+		local _, scope = ...
+		if ctx and type(scope) == "string" and scope ~= "" and type(r[1]) == "table" then
+			for _, line in ipairs(r[1]) do
+				if type(line) == "string" then ctx.statScopes[trim(line)] = scope end
+			end
+		end
 		return unpack(r, 1, r.n)
 	end)
 	describeWraps[wrapped] = true
@@ -1666,7 +1766,7 @@ local function wrapDescribeStats(dataTbl)
 end
 
 local function gemContext(gemInstance)
-	local ctx = { desc = {}, names = {}, statIds = {} }
+	local ctx = { desc = {}, names = {}, statIds = {}, statScopes = {} }
 	local gemData = type(gemInstance) == "table" and gemInstance.gemData or nil
 	if type(gemData) ~= "table" then return ctx end
 	if type(gemData.name) == "string" then ctx.names[trim(gemData.name)] = true end

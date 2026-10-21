@@ -1146,6 +1146,178 @@ def test_id_replaced_node(fork):
     check("%s ST-P0 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
 
 
+# ---- ST-E3:被征服 / 刺青節點的天賦提示名 --------------------------------------
+#
+# POB 欄位(PassiveSpec.lua):
+#   node.conqueredBy = item.jewelData.conqueredBy({ id = 種子, conqueror = { type, id } }),
+#     BuildAllDependsAndPaths 對軍團珠寶範圍內「所有」節點設定(PoE1 L1187、PoE2 L1464),
+#     名稱沒換的小節點也有;換名的節點 dn 改成 legion 節點的 dn、id 不變。
+#   node.isTattoo:ReplaceNode(PoE1 L1994 起)從刺青節點複製;id 不變、dn 換成刺青名。
+# 規則:id 英文不符時,conqueredBy -> legion、isTattoo -> tattoo,查不到再退 passives。
+
+DICT.setdefault("tattoo", {})["Tattoo of the Kitava Makanga"] = "奇塔弗鑄造的紋身"
+DICT.setdefault("legion", {})["Bleed Avoidance"] = "流血避免"
+DICT[None].setdefault("Bleed Avoidance", "流血迴避(全域)")
+DICT[None]["Tattoo of the Kitava Makanga"] = "奇塔瓦紋身(全域)"
+
+
+def e3_name(h, fields):
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    node = h.eval("function() return { %s } end" % fields)()
+    h.eval('function(v, t, n) v:AddNodeName(t, n, {}) end')(view, tip, node)
+    lines = tooltip_lines(h, tip)
+    return _norm(lines[0]) if lines else ""
+
+
+def test_id_conquered_tattoo_name(fork):
+    """ST-E3 -- 名稱行 id 英文不符時,被征服節點查 legion、刺青節點查 tattoo,再退 passives。"""
+    conq = 'conqueredBy = { id = 1234, conqueror = { type = "vaal", id = 1 } }'
+    h = strict_id_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Bleed Avoidance", ' + conq)
+    check("%s ST-E3 被征服節點(英文不符)名稱行用 legion 來源譯名" % fork,
+          got == "流血避免" and "legion" in srcs_of(h, "Bleed Avoidance"),
+          "got=%r lookups=%r" % (got, h.lookups))
+    check("%s ST-E3 被征服節點名稱查詢後來源還原為 nil" % fork,
+          h.source is None, "source=%r" % h.source)
+    h = strict_id_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Tattoo of the Kitava Makanga", isTattoo = true')
+    check("%s ST-E3 刺青節點(英文不符)名稱行用 tattoo 來源譯名" % fork,
+          got == "奇塔弗鑄造的紋身" and "tattoo" in srcs_of(h, "Tattoo of the Kitava Makanga"),
+          "got=%r lookups=%r" % (got, h.lookups))
+    h = strict_id_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Lord of the Dead", ' + conq)
+    check("%s ST-E3 legion 表沒有的名稱退回 passives 來源" % fork,
+          got == "亡者之主", "got=%r lookups=%r" % (got, h.lookups))
+    h = strict_id_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Elemental Overload", ' + conq)
+    check("%s ST-E3 被征服但名稱沒換(id 英文相符)仍用 id 譯文" % fork,
+          got == "戰神", "got=%r id_lookups=%r" % (got, h.id_lookups))
+    h = strict_id_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Bleed Avoidance"')
+    check("%s ST-E3 沒有 conqueredBy / isTattoo 時照 P0 退回 passives(不查 legion)" % fork,
+          "legion" not in srcs_of(h, "Bleed Avoidance") and got == "流血迴避(全域)",
+          "got=%r lookups=%r" % (got, h.lookups))
+
+
+# ---- ST-E1:物品詞綴被折成相鄰兩行 ---------------------------------------------
+#
+# POB AddItemTooltip(PoE1 ItemsTab.lua L4471-4486、PoE2 約 L4530 起):依序走
+#   enchant / scourge(PoE1) / rune(PoE2) / implicit / explicit / crucible(PoE1) 各清單,
+#   每條 modLine 以 itemLib.formatModLine(modLine, dbMode) 取得顯示字(套 range、
+#   extra 時 UNSUPPORTED 色碼並接 main.notSupportedTooltipText),AddLine 第 4 參數
+#   PoE1 是 modLine、PoE2 是 background;每個清單後 AddSeparator。
+# 顯示字 != modLine.line(range、註記),所以配對要以 formatModLine 的結果為準。
+
+E1_A = "Recover 5% of Life when Leech is"
+E1_B = "removed by Filling Unreserved Life"
+E1_ZH = ["當汲取因填滿未保留生命而移除時", "回復 5% 生命"]
+E1_STAT_DICT = {E1_A + "\n" + E1_B: "\n".join(E1_ZH)}
+
+E1_PRE = b"""
+itemLib = itemLib or { }
+function itemLib.formatModLine(modLine, dbMode)
+	local line = modLine.line
+	if modLine.extra then
+		line = main.notSupportedModTooltips and (line .. main.notSupportedTooltipText) or line
+		return colorCodes.UNSUPPORTED .. line
+	end
+	return colorCodes.MAGIC .. line
+end
+colorCodes.UNSUPPORTED = "^xF05050"
+main.notSupportedModTooltips = true
+main.notSupportedTooltipText = " ^8(Not supported in PoB yet)"
+"""
+
+E1_ITEMTIP = """
+function C:AddItemTooltip(tooltip, item, slot, dbMode, maxWidth)
+	tooltip:AddLine(20, colorCodes[item.rarity]..item.title, "FONTIN SC")
+	for _, modList in ipairs{item.enchantModLines, item.implicitModLines, item.explicitModLines} do
+		if modList[1] then
+			for _, modLine in ipairs(modList) do
+				local formattedModLine = itemLib.formatModLine(modLine, dbMode)
+				if formattedModLine then
+					tooltip:AddLine(16, formattedModLine, "FONTIN SC", MODLINE_ARG)
+				end
+			end
+			tooltip:AddSeparator(10)
+		end
+	end
+end
+"""
+E1_ITEMSTAB = (
+    'local C = newClass("ItemsTab")\nfunction C:ItemsTab() return self end\n'
+    + E1_ITEMTIP.replace("MODLINE_ARG", "modLine"),
+    'local C = newClass("ItemsTab", function(self) end)\n'
+    + E1_ITEMTIP.replace("MODLINE_ARG", "nil"))
+
+
+def e1_tooltips(fork, stat_dict, items, define=True):
+    """依序對多件物品各建一個物品提示;回 (h, ok, err, [[原始詞綴行...] 每件])。"""
+    h = stat_harness(fork, stat_dict, define, itemstab=E1_ITEMSTAB, pre=E1_PRE)
+    tab = make(h, "ItemsTab")
+    out, ok, err = [], True, None
+    for src in items:
+        tip = make(h, "Tooltip")
+        item = h.eval("function() return %s end" % src)()
+        o, e = h.eval('function(tab, t, item) local ok, e = pcall(function() '
+                      'tab:AddItemTooltip(t, item) end) return ok, e end')(tab, tip, item)
+        ok, err = ok and o, err or e
+        out.append([l for l in tooltip_lines(h, tip) if l is not None][1:])
+    return h, ok, err, out
+
+
+def e1_item(explicit, implicit="", extra=False):
+    def mods(lines):
+        return ", ".join('{ line = %r%s }' % (l, ", extra = 'x'" if extra else "")
+                         for l in lines)
+    return ('{ rarity = "RARE", title = "Doom Loop", base = {}, enchantModLines = { }, '
+            'implicitModLines = { %s }, explicitModLines = { %s } }'
+            % (mods(implicit.split("|")) if implicit else "", mods(explicit)))
+
+
+def test_stat_multiline_item_mods(fork):
+    """ST-E1 -- 物品詞綴相鄰兩行以 "\\n" 合併查 stat(item),恰回兩行則各取一行。"""
+    MAGIC = "^x8888FF"
+    h, ok, err, tips = e1_tooltips(
+        fork, E1_STAT_DICT, [e1_item([E1_A, E1_B, "+30 to Dexterity"])])
+    lines = tips[0]
+    check("%s ST-E1 物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s ST-E1 以 \"\\n\" 合併句且 ctx item 呼叫 PobToolsTranslateStat" % fork,
+          (E1_A + "\n" + E1_B, "item") in [(_norm_ml(l), c) for l, c in h.stat_calls],
+          repr(h.stat_calls))
+    check("%s ST-E1 合併命中時兩行各顯示對應中文行並保留色碼" % fork,
+          lines[:2] == [MAGIC + z for z in E1_ZH], "lines=%r calls=%r" % (lines, h.stat_calls))
+    check("%s ST-E1 未配對的詞綴行照現行" % fork,
+          _norm(lines[2]) == "+30 敏捷" if len(lines) > 2 else False, "lines=%r" % (lines,))
+    # 不支援註記:合併查詢不含註記,命中後補回行尾
+    h, ok, err, tips = e1_tooltips(fork, E1_STAT_DICT, [e1_item([E1_A, E1_B], extra=True)])
+    note = " ^8(Not supported in PoB yet)"
+    check("%s ST-E1 不支援詞綴命中後中文行尾補回註記與原色碼" % fork,
+          tips[0][:2] == ["^xF05050" + z + note for z in E1_ZH],
+          "lines=%r calls=%r" % (tips[0], h.stat_calls))
+    # 未命中:與未定義函式時相同
+    h, ok, err, tips = e1_tooltips(fork, {}, [e1_item([E1_A, E1_B])])
+    h0, ok0, err0, tips0 = e1_tooltips(fork, None, [e1_item([E1_A, E1_B])], define=False)
+    check("%s ST-E1 合併未命中時兩行照現行" % fork,
+          ok and tips[0] == tips0[0] and [_norm(l) for l in tips[0][:2]] == [E1_A, E1_B],
+          "lines=%r 未定義時=%r" % (tips[0], tips0[0]))
+    # 不跨清單配對(implicit 最後一行 + explicit 第一行)
+    h, ok, err, tips = e1_tooltips(fork, E1_STAT_DICT, [e1_item([E1_B], implicit=E1_A)])
+    check("%s ST-E1 不同詞綴清單的相鄰行不配對" % fork,
+          [_norm(l) for l in tips[0][:2]] == [E1_A, E1_B]
+          and (E1_A + "\n" + E1_B) not in [_norm_ml(l) for l, c in h.stat_calls],
+          "lines=%r calls=%r" % (tips[0], h.stat_calls))
+    # 對照只屬該物品:下一件物品的同一行不沿用
+    h, ok, err, tips = e1_tooltips(fork, E1_STAT_DICT,
+                                   [e1_item([E1_A, E1_B]), e1_item([E1_A, "+30 to Dexterity"])])
+    check("%s ST-E1 前提:第一件物品配對成功" % fork,
+          tips[0][:2] == [MAGIC + z for z in E1_ZH], "lines=%r" % (tips[0],))
+    check("%s ST-E1 物品提示結束後對照清空,下一件同一行不沿用" % fork,
+          _norm(tips[1][0]) == E1_A if tips[1] else False, "lines=%r" % (tips[1],))
+    check("%s ST-E1 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
 def magic_item(prefix_mod, suffix_mod):
     def mods(m):
         return "{ { modId = %r } }" % m if m else "nil"
@@ -1206,7 +1378,7 @@ STAT_DICT = {
 }
 
 
-def stat_harness(fork, stat_dict, define=True):
+def stat_harness(fork, stat_dict, define=True, itemstab=None, pre=None):
     """tooltip_harness 加上假 PobToolsTranslateStat(注入前定義);h.stat_calls 記 (line, ctx)。"""
     h = Harness(fork, with_inject=False)
     h.loose_keys = True
@@ -1226,9 +1398,14 @@ def stat_harness(fork, stat_dict, define=True):
         h.rt.globals()["__py_translate_stat"] = translate_stat
         h.run(b"function PobToolsTranslateStat(l, c) return __py_translate_stat(l, c) end")
     h.run(COLOUR_SETUP)
+    if pre:
+        h.run(pre)
     h.run('LoadModule("Classes/Tooltip")')
     h.define("PassiveTreeView", PASSIVETREE_P1, PASSIVETREE_P2)
-    h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
+    if itemstab:
+        h.define("ItemsTab", itemstab[0], itemstab[1])
+    else:
+        h.define("ItemsTab", ITEMSTAB_P1, ITEMSTAB_P2)
     h.define("ItemDBControl", ITEMDB_P1 + ROWVALUE, ITEMDB_P2 + ROWVALUE)
     h.apply_inject()
     h.lookups = []
@@ -1374,9 +1551,9 @@ def test_stat_jewel_in_node(fork):
 LABEL_PAD = " " * 48
 
 DICT["anoint"] = {"Whispers of Doom": "末日低語(塗油)"}
-DICT["tattoo"] = {"Tattoo of the Ramako Scout": "拉瑪克斥候刺青(刺青)"}
-DICT["legion"] = {"Ritual of Immolation": "獻祭儀式(軍團)",
-                  "Hit and Run": "打帶跑(軍團)"}
+DICT["tattoo"].update({"Tattoo of the Ramako Scout": "拉瑪克斥候刺青(刺青)"})
+DICT["legion"].update({"Ritual of Immolation": "獻祭儀式(軍團)",
+                       "Hit and Run": "打帶跑(軍團)"})
 DICT[None].update({
     "Allocates": "配置",
     # 現行整行查找的值(來源表沒有該名稱時要維持這個結果)
@@ -2157,8 +2334,10 @@ def test_stat_gem_tooltip(fork):
           repr(h.id_lookups))
     check("%s ST-P1 說明行採用依 id 查到的譯文" % fork,
           "釋放一顆火球。" in lines, "lines=%r id_lookups=%r" % (lines, h.id_lookups))
-    check("%s ST-P1 stat 行以 ctx gem 呼叫 PobToolsTranslateStat" % fork,
-          any(_norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem"
+    # 合成寶石的 scope 是 gem_stat_descriptions → ctx "gem:gem_stat_descriptions"
+    # (引擎 "gem" 預設鏈先 skill_stat,輔助寶石會選錯檔，見 stat_selftest E5-5)
+    check("%s ST-P1 stat 行以 ctx gem:gem_stat_descriptions 呼叫 PobToolsTranslateStat" % fork,
+          any(_norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem:gem_stat_descriptions"
               for l, c in h.stat_calls), repr(h.stat_calls))
     check("%s ST-P1 stat 行採用 stat 查到的譯文" % fork,
           "STAT寶石" in lines, "lines=%r calls=%r" % (lines, h.stat_calls))
@@ -2166,7 +2345,7 @@ def test_stat_gem_tooltip(fork):
           h.source is None, "source=%r" % h.source)
     # (6) stat 行第 3 參數帶該行 lineMap 的 stat id(空白分隔清單須含它)
     fire = [ids for l, c, ids in h.stat_ids
-            if _norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem"]
+            if _norm(l) == "Deals 10 to 20 Fire Damage" and c == "gem:gem_stat_descriptions"]
     check("%s ST-P1 寶石 stat 行第 3 參數含該行 lineMap 的 stat id" % fork,
           fire and all(isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split()
                        for i in fire), "ids=%r stat_ids=%r" % (fire, h.stat_ids))
@@ -2206,7 +2385,8 @@ def test_stat_gem_tooltip(fork):
     h.eval('function(tab, t, item) tab:AddItemTooltip(t, item) end')(tab, t2, item)
     later = h.stat_calls[n:]
     check("%s ST-P1 寶石提示後天賦/物品提示的行不以 gem 情境呼叫" % fork,
-          later and not any(c == "gem" for l, c in later), repr(later))
+          later and not any(isinstance(c, str) and c.startswith("gem") for l, c in later),
+          repr(later))
 
 
 # ---- ST-RV2:天賦提示內嵌寶石提示 ----------------------------------------------
@@ -2267,8 +2447,8 @@ def test_stat_gem_in_node(fork):
           "gem=%r id_lookups=%r" % (gem_lines, h.id_lookups))
     fire = [(c, ids) for l, c, ids in h.stat_ids
             if _norm(l) == "Deals 10 to 20 Fire Damage" and c is not None]
-    check("%s ST-RV2 內嵌寶石 stat 行以 ctx gem 與 lineMap stat id 呼叫" % fork,
-          any(c == "gem" and isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split()
+    check("%s ST-RV2 內嵌寶石 stat 行以 ctx gem:gem_stat_descriptions 與 lineMap stat id 呼叫" % fork,
+          any(c == "gem:gem_stat_descriptions" and isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split()
               for c, i in fire), "calls=%r" % fire)
     check("%s ST-RV2 內嵌寶石 stat 行不被天賦配對表取代" % fork,
           "STAT寶石" in gem_lines and "配對第一行" not in gem_lines, "gem=%r" % gem_lines)
@@ -2716,6 +2896,111 @@ def test_source_patch_reaches_required_modules():
                   "被 %s require,但 ui_api.cpp 沒有 require searcher" % ", ".join(users[:3]))
 
 
+# ---- V2:寶石說明行 id 有命中但英文不符時，退回 gems 來源 ---------------------
+def test_gem_desc_id_mismatch_falls_back_to_gems(fork):
+    """V2 -- 說明行 id 查不到(英文不符)時，退回查詢須在 gems 來源，不得落到全域表。"""
+    desc = "Unleashes a ball of fire."
+    # id 在 gems_desc 有條目，但英文與畫面不同:引擎拒答(嚴格 translate_id 回空)
+    mismatch = {("gems_desc", "Fireball"): ("A different English description.", "不該採用")}
+    DICT[None][desc] = "火球說明(全域)"     # 全域合併表與 gems 來源給不同結果
+    try:
+        h = gem_harness(fork, RV2_STAT_DICT, gem_tree=True, id_dict=mismatch)
+        view = make(h, "PassiveTreeView")
+        tip = make(h, "Tooltip")
+        gtip = make(h, "Tooltip")
+        gem = h.eval("function() return %s end" % gem_instance_src(fork))()
+        ok, err = h.eval('function(v, t, gt, g) local ok, e = pcall(function() '
+                         'v:AddNodeTooltip(t, { dn = "Elemental Overload", id = 1, sd = { }, '
+                         'gemInst = g, gemTip = gt }, { data = data }) end) return ok, e end'
+                         )(view, tip, gtip, gem)
+        gem_lines = [_norm(l) for l in tooltip_lines(h, gtip) if l is not None]
+        srcs = [src for t, src in h.lookups if _norm(t) == desc]
+    finally:
+        del DICT[None][desc]
+    check("%s V2 天賦內嵌寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s V2 前提：說明行先以 gems_desc + 效果 id + 英文查詢" % fork,
+          ("gems_desc", "Fireball", desc) in h.id_lookups, repr(h.id_lookups))
+    check("%s V2 id 英文不符時退回查詢帶 source=\"gems\"" % fork,
+          bool(srcs) and all(s == "gems" for s in srcs), "lookups(src)=%r" % srcs)
+    check("%s V2 id 英文不符時採用 gems 來源譯文，不用全域表" % fork,
+          "火球說明(gems)" in gem_lines and "火球說明(全域)" not in gem_lines,
+          "gem=%r" % gem_lines)
+    check("%s V2 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
+# ---- ST-E5:寶石 stat 行的 ctx 帶該技能的 statDescriptionScope ------------------
+# 上游取 scope 的位置(都當 describeStats 第 2 參數傳入):
+#   PoE1 Classes/GemTooltip.lua:180  describeStats(stats, grantedEffect.statDescriptionScope)
+#   PoE2 Classes/GemTooltip.lua:240  describeStats(stats, statSet.statDescriptionScope)
+#        (PoE2 的 scope 在 grantedEffect.statSets[i],grantedEffect 本身沒有)
+# 引擎 ctx "gem" 只走預設四檔鏈;光環/召喚物等要 "gem:<scope>"。
+GEMTOOLTIP_SYN_P2_STATSET = GEMTOOLTIP_SYN_P2.replace(
+    """local function addEffectStats(tooltip, build, gemInstance, grantedEffect)
+	local descriptions, lineMap = build.data.describeStats(grantedEffect.stats or { },
+		grantedEffect.statDescriptionScope)""",
+    """local function addEffectStats(tooltip, build, gemInstance, grantedEffect)
+	local statSet = (grantedEffect.statSets or { })[1] or { }
+	local descriptions, lineMap = build.data.describeStats(grantedEffect.stats or { },
+		statSet.statDescriptionScope)""")
+
+
+def e5_gem_src(fork, scope):
+    sc = "nil" if scope is None else '"%s"' % scope
+    if fork == "PoE1":
+        where = "statDescriptionScope = %s" % sc
+    else:
+        where = "statSets = { { statDescriptionScope = %s } }" % sc
+    return """
+{
+	level = 1,
+	gemData = {
+		name = "Fireball",
+		grantedEffect = { id = "Fireball", name = "Fireball",
+			description = "Unleashes a ball of fire.",
+			stats = { spell_minimum_base_fire_damage = 10, spell_maximum_base_fire_damage = 20 },
+			%s },
+	},
+}
+""" % where
+
+
+def test_stat_gem_scope_ctx(fork):
+    """ST-E5 -- 寶石 stat 行以 "gem:" .. statDescriptionScope 查 stat;拿不到 scope 時用 "gem"。"""
+    global GEMTOOLTIP_SYN_P2
+    saved = GEMTOOLTIP_SYN_P2
+    assert GEMTOOLTIP_SYN_P2_STATSET != saved, "PoE2 statSet 版替身沒有替換成功"
+    GEMTOOLTIP_SYN_P2 = GEMTOOLTIP_SYN_P2_STATSET
+    try:
+        res = {}
+        for label, scope in (("aura", "aura_skill_stat_descriptions"),
+                             ("gemstat", "gem_stat_descriptions"), ("none", None)):
+            h = gem_harness(fork, GEM_STAT_DICT)
+            obj = make(h, "GemSelectControl")
+            tip = make(h, "Tooltip")
+            gem = h.eval("function() return %s end" % e5_gem_src(fork, scope))()
+            ok, err = h.eval('function(o, t, g) o.tooltip = t o.skillsTab = { build = { data = data } } '
+                             'o.tipGem = g local ok, e = pcall(function() o:Draw({}, false) end) '
+                             'return ok, e end')(obj, tip, gem)
+            ctxs = [c for l, c, _ in h.stat_ids if _norm(l) == "Deals 10 to 20 Fire Damage"]
+            res[label] = (ok, err, ctxs)
+    finally:
+        GEMTOOLTIP_SYN_P2 = saved
+    ok, err, ctxs = res["aura"]
+    check("%s ST-E5 寶石提示本身不出錯(有 scope)" % fork, ok, repr(err))
+    check("%s ST-E5 stat 行 ctx 為 \"gem:aura_skill_stat_descriptions\"" % fork,
+          bool(ctxs) and all(c == "gem:aura_skill_stat_descriptions" for c in ctxs),
+          "ctx=%r" % ctxs)
+    ok, err, ctxs = res["gemstat"]
+    check("%s ST-E5 寶石提示本身不出錯(gem_stat scope)" % fork, ok, repr(err))
+    check("%s ST-E5 scope 為 gem_stat_descriptions 時 ctx 為 \"gem:gem_stat_descriptions\"" % fork,
+          bool(ctxs) and all(c == "gem:gem_stat_descriptions" for c in ctxs),
+          "ctx=%r" % ctxs)
+    ok, err, ctxs = res["none"]
+    check("%s ST-E5 寶石提示本身不出錯(無 scope)" % fork, ok, repr(err))
+    check("%s ST-E5 拿不到 scope 時 ctx 為 \"gem\"" % fork,
+          bool(ctxs) and all(c == "gem" for c in ctxs), "ctx=%r" % ctxs)
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -2744,6 +3029,8 @@ def main():
         test_id_affix_title(fork)
         test_id_obeys_f2(fork)
         test_id_replaced_node(fork)
+        test_id_conquered_tattoo_name(fork)
+        test_stat_multiline_item_mods(fork)
         test_stat_mod_line(fork)
         test_stat_passive(fork)
         test_stat_jewel_in_node(fork)
@@ -2754,6 +3041,8 @@ def main():
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_stat_gem_in_node(fork)
+        test_gem_desc_id_mismatch_falls_back_to_gems(fork)
+        test_stat_gem_scope_ctx(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

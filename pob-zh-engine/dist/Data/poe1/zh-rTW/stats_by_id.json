@@ -11684,6 +11684,7 @@
     "kinetic_fusillade_maximum_floating_projectiles|2|#|skill_stat_descriptions.txt|0": "最大{0}個懸停的投射物",
     "kinetic_instability_maximum_number_of_instability_orbs_allowed|1|skill_stat_descriptions.txt|0": "最大{0}異常數量",
     "kinetic_instability_maximum_number_of_instability_orbs_allowed|2|#|skill_stat_descriptions.txt|0": "最大{0}異常數量",
+    "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|100|# 1|#|skill_stat_descriptions.txt|0": "{0}%擊中傷害由壁壘先於目標的生命或能量護盾承受\\n壁壘可以在爆炸前承受{1}傷害",
     "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|1|99 1|#|skill_stat_descriptions.txt|0": "{0}%擊中傷害由壁壘先於目標的生命或能量護盾承受\\n壁壘可以在爆炸前承受{1}傷害",
     "kinetic_shell_immunity_after_explosion_ms|#|skill_stat_descriptions.txt|0": "壁壘無法在爆炸後{0}秒內被施加在同一目標上",
     "kinetic_shell_number_of_active_buffs_allowed|1|skill_stat_descriptions.txt|0": "最大{0}心靈壁壘數量",
@@ -15743,6 +15744,7 @@
     "map_contains_X_additional_atlas_packs|#|map_stat_descriptions.txt|0": "區域內含有額外 {0} 群\\n困難和會賦予獎勵的怪物群，它們會掉落額外 300% 的地圖",
     "map_contains_X_additional_div_card_packs|#|map_stat_descriptions.txt|0": "區域含有額外 {0} 群德瑞的信徒",
     "map_contains_X_additional_incursion_packs|#|map_stat_descriptions.txt|0": "區域含有額外 {0} 群穿越怪物",
+    "map_contains_X_additional_strongboxes_essences_shrines_or_rogue_exiles|1|atlas_stat_descriptions.txt|0": "你的地圖包含{0}個額外保險箱、被囚禁的怪物、神殿、或盜賊流亡者",
     "map_contains_X_additional_strongboxes_essences_shrines_or_rogue_exiles|2|#|atlas_stat_descriptions.txt|0": "你的地圖含有{0}個額外保險箱、被囚禁的怪物、神殿、或盜賊流亡者",
     "map_contains_X_additional_tricksters|#|stat_descriptions.txt|0": "區域含有 {0} 個額外會製造冰牆和脫逃的稀有怪物",
     "map_contains_X_additional_uber_harbingers|1|stat_descriptions.txt|0": "區域含有 1 個額外富豪神諭",
@@ -17442,6 +17444,7 @@
     "map_num_extra_harbingers|2|#|stat_descriptions.txt|0": "此區域含 {0} 個額外神諭",
     "map_num_extra_invasion_bosses|1|atlas_stat_descriptions.txt|0": "你的地圖含有額外 1 位侵略頭目",
     "map_num_extra_invasion_bosses|1|leaguestone_stat_descriptions.txt|0": "下個區域有 1 個額外侵略頭目",
+    "map_num_extra_invasion_bosses|1|stat_descriptions.txt|0": "地圖中含有 {0} 隻額外侵略聯盟的頭目",
     "map_num_extra_invasion_bosses|2|#|atlas_stat_descriptions.txt|0": "你的地圖含有額外 {0} 位侵略頭目",
     "map_num_extra_invasion_bosses|2|#|leaguestone_stat_descriptions.txt|0": "下個區域有 {0} 個額外侵略頭目",
     "map_num_extra_invasion_bosses|2|#|stat_descriptions.txt|0": "地圖中含有 {0} 隻額外侵略聯盟的頭目",
@@ -17915,6 +17918,7 @@
     "map_ritual_number_of_free_rerolls|#|stat_descriptions.txt|0": "祭祀神壇重骰恩賜之物前 {0} 次免費",
     "map_ritual_number_of_free_rerolls|1|atlas_stat_descriptions.txt|0": "你地圖中在祭祀神壇重骰恩賜之物，前 {0} 次免費",
     "map_ritual_number_of_free_rerolls|1|map_stat_descriptions.txt|0": "祭祀神壇重骰恩賜之物前 {0} 次免費",
+    "map_ritual_number_of_free_rerolls|1|stat_descriptions.txt|0": "祭祀神壇重骰恩賜之物前 {0} 次免費",
     "map_ritual_offered_rewards_from_rerolls_have_permyriad_chance_to_cost_no_tribute|1|#|atlas_stat_descriptions.txt|0": "你地圖中在祭祀神壇重骰恩賜之物，有 {0}% 機率不消耗貢禮",
     "map_ritual_offered_rewards_have_additional_variable_cost|#|atlas_stat_descriptions.txt|0": "你地圖中祭祀神壇的恩賜之物花費，隨機 90% 更少至 80% 更多",
     "map_ritual_offered_ritual_splinter_reward_stack_size_+%|1|#|atlas_stat_descriptions.txt|0": "你地圖中祭祀神壇給予的祭祀碎片，增加 {0}% 堆疊大小",
@@ -18099,6 +18103,8 @@
     "map_spawn_cadiro_%_chance|1|99|leaguestone_stat_descriptions.txt|0": "下個區域有 {0}% 機率含有卡迪羅普蘭德斯",
     "map_spawn_cadiro_%_chance|1|99|stat_descriptions.txt|0": "此區域有 {0}% 機率包含卡迪羅普蘭德斯",
     "map_spawn_exile_per_area_%|#|stat_descriptions.txt|0": "地圖有盜賊流亡者",
+    "map_spawn_extra_exiles|1|atlas_stat_descriptions.txt|0": "你的地圖含有額外 {0} 個盜賊流亡者",
+    "map_spawn_extra_exiles|1|stat_descriptions.txt|0": "地圖含有額外 {0} 個盜賊流亡者",
     "map_spawn_extra_exiles|2|#|atlas_stat_descriptions.txt|0": "你的地圖含有額外{0}位盜賊流亡者",
     "map_spawn_extra_exiles|2|#|stat_descriptions.txt|0": "區域含有額外{0}位盜賊流亡者",
     "map_spawn_extra_perandus_chests|1|atlas_stat_descriptions.txt|0": "你地圖中含有 1 個額外普蘭德斯保險箱",
@@ -21790,6 +21796,7 @@
     "random_curse_on_hit_%_against_uncursed_enemies|1|#|stat_descriptions.txt|0": "擊中時有 {0}% 機率使用 1 個隨機咒術詛咒未被詛咒的敵人",
     "random_curse_on_hit_%|#|stat_descriptions.txt|0": "擊中時有 {0}% 機率使用隨機咒術詛咒敵人",
     "random_curse_on_tinctured_weapon_hit_%|#|tincture_stat_descriptions.txt|0": "近戰武器擊中時有 {0}% 機率使用隨機咒術詛咒敵人",
+    "random_curse_when_hit_%_ignoring_curse_limit|100|#|stat_descriptions.txt|0": "{0}% 機率使用 1 個隨機咒術詛咒擊中你的敵人，無視詛咒上限",
     "random_curse_when_hit_%_ignoring_curse_limit|1|99|stat_descriptions.txt|0": "{0}% 機率使用 1 個隨機咒術詛咒擊中你的敵人，無視詛咒上限",
     "random_nearby_minion_gain_a_soul_eater_soul_on_X_life_spent|#|gem_stat_descriptions.txt|0": "在被輔助法術的前期消耗每消耗{0}生命時\\n賦予周遭的一名召喚物一層靈魂",
     "random_nearby_minion_gain_a_soul_eater_soul_on_X_life_spent|#|skill_stat_descriptions.txt|0": "在此法術的前期消耗每消耗{0}生命時\\n賦予周遭的一名召喚物一層靈魂",
@@ -25636,7 +25643,7 @@
     "unarmed_melee_physical_damage_+%|#|-1|stat_descriptions.txt|0": "空手攻擊時減少 {0}% 近物理傷害",
     "unarmed_melee_physical_damage_+%|1|#|stat_descriptions.txt|0": "空手攻擊時增加 {0}% 近物理傷害",
     "unattached_sigil_attachment_range_+%_per_second|#|-1|stat_descriptions.txt|0": "未附著的烙印每秒減少{0}%烙印附著範圍",
-    "unattached_sigil_attachment_range_+%_per_second|1|#|stat_descriptions.txt|0": "未附著的烙印每秒減少 {0}% 烙印附著距離",
+    "unattached_sigil_attachment_range_+%_per_second|1|#|stat_descriptions.txt|0": "未附著的烙印每秒增加 {0}% 烙印附著距離",
     "unearth_additional_corpse_level|#|stat_descriptions.txt|0": "屍術矢產生 {0:+d} 等級的屍體",
     "unearth_base_corpse_level|1|#|active_skill_gem_stat_descriptions.txt|0": "生成的屍體為等級 {0}",
     "unearth_corpse_level|#|skill_stat_descriptions.txt|0": "產生等級 {0} 的屍體",
@@ -26558,36 +26565,59 @@
     "zombie_slam_cooldown_speed_+%|#|stat_descriptions.txt|0": "復甦的殭屍重擊攻擊增加 {0}% 冷卻時間恢復率",
     "zombie_slam_damage_+%|#|stat_descriptions.txt|0": "復甦的殭屍重擊攻擊增加 {0}% 傷害"
   },
+  "fixed_slots": {
+    "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|100|# 1|#|skill_stat_descriptions.txt|0": {
+      "0": 100
+    },
+    "map_contains_X_additional_strongboxes_essences_shrines_or_rogue_exiles|1|atlas_stat_descriptions.txt|0": {
+      "0": 1
+    },
+    "map_num_extra_invasion_bosses|1|stat_descriptions.txt|0": {
+      "0": 1
+    },
+    "map_ritual_number_of_free_rerolls|1|stat_descriptions.txt|0": {
+      "0": 1
+    },
+    "map_spawn_extra_exiles|1|atlas_stat_descriptions.txt|0": {
+      "0": 1
+    },
+    "map_spawn_extra_exiles|1|stat_descriptions.txt|0": {
+      "0": 1
+    },
+    "random_curse_when_hit_%_ignoring_curse_limit|100|#|stat_descriptions.txt|0": {
+      "0": 100
+    }
+  },
   "name_slots": {
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|2 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|3 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|4 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|1 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|2 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|3 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_pearl_random_support_gem_2_slot_index local_pearl_random_support_gem_2_index local_pearl_random_support_gem_2_level|4 # #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_nonactive"
     },
     "local_random_support_gem_level local_random_support_gem_index|# #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_support"
     },
     "local_random_support_gem_level_1 local_random_support_gem_index_1|# #|stat_descriptions.txt|0": {
-      "1": "gems"
+      "1": "gem_names_support"
     },
     "local_unique_jewel_disconnected_passives_can_be_allocated_around_keystone_hash|#|stat_descriptions.txt|0": {
       "0": "passives"
@@ -26626,6 +26656,47 @@
   "source_files": [
     "ggpk:stat descriptions by stat_ids|cond|src_file|dup_ix"
   ],
+  "stat_desc_parents": {
+    "active_skill_gem_stat_descriptions.txt": "gem_stat_descriptions.txt",
+    "advanced_mod_stat_descriptions.txt": "stat_descriptions.txt",
+    "atlas_relic_stat_descriptions.txt": "atlas_stat_descriptions.txt",
+    "atlas_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "aura_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "banner_aura_skill_stat_descriptions.txt": "aura_skill_stat_descriptions.txt",
+    "beam_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "brand_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "buff_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "chest_stat_descriptions.txt": "stat_descriptions.txt",
+    "curse_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "debuff_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "deepwater_applied_adjacent_stat_descriptions.txt": "deepwater_explicit_stat_descriptions.txt",
+    "deepwater_explicit_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "deepwater_implicit_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "deepwater_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "gem_stat_descriptions.txt": "stat_descriptions.txt",
+    "graft_stat_descriptions.txt": "stat_descriptions.txt",
+    "leaguestone_stat_descriptions.txt": "stat_descriptions.txt",
+    "map_stat_descriptions.txt": "stat_descriptions.txt",
+    "mercenary_support_stat_descriptions.txt": "gem_stat_descriptions.txt",
+    "minion_attack_skill_stat_descriptions.txt": "minion_skill_stat_descriptions.txt",
+    "minion_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "minion_spell_damage_skill_stat_descriptions.txt": "minion_spell_skill_stat_descriptions.txt",
+    "minion_spell_skill_stat_descriptions.txt": "minion_skill_stat_descriptions.txt",
+    "mirage_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "offering_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "passive_skill_aura_stat_descriptions.txt": "passive_skill_stat_descriptions.txt",
+    "passive_skill_stat_descriptions.txt": "stat_descriptions.txt",
+    "primordial_altar_stat_descriptions.txt": "stat_descriptions.txt",
+    "sanctum_relic_stat_descriptions.txt": "stat_descriptions.txt",
+    "secondary_debuff_skill_stat_descriptions.txt": "buff_skill_stat_descriptions.txt",
+    "sentinel_stat_descriptions.txt": "stat_descriptions.txt",
+    "single_minion_spell_skill_stat_descriptions.txt": "minion_spell_skill_stat_descriptions.txt",
+    "skill_stat_descriptions.txt": "active_skill_gem_stat_descriptions.txt",
+    "tincture_stat_descriptions.txt": "stat_descriptions.txt",
+    "vaal_side_area_stat_descriptions.txt": "map_stat_descriptions.txt",
+    "variable_duration_skill_stat_descriptions.txt": "skill_stat_descriptions.txt",
+    "village_stat_descriptions.txt": "stat_descriptions.txt"
+  },
   "templates": {
     "%_chance_to_blind_on_critical_strike_while_you_have_cats_stealth|1|#|stat_descriptions.txt|0": "Critical Strikes have {0}% chance to Blind Enemies while you have Cat's Stealth",
     "%_chance_to_cause_bleeding_enemies_to_flee_on_hit|1|#|stat_descriptions.txt|0": "{0}% Chance to cause Bleeding Enemies to Flee on hit",
@@ -38311,6 +38382,7 @@
     "kinetic_fusillade_maximum_floating_projectiles|2|#|skill_stat_descriptions.txt|0": "Maximum {0} hovering Projectiles",
     "kinetic_instability_maximum_number_of_instability_orbs_allowed|1|skill_stat_descriptions.txt|0": "Maximum {0} Anomaly",
     "kinetic_instability_maximum_number_of_instability_orbs_allowed|2|#|skill_stat_descriptions.txt|0": "Maximum {0} Anomalies",
+    "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|100|# 1|#|skill_stat_descriptions.txt|0": "Damage from Hits is taken from Shell before target's Life or Energy Shield\\nShell can take {1} Damage before exploding",
     "kinetic_shell_hit_damage_absorbed_% kinetic_shell_maximum_damage_absorbed_from_hits|1|99 1|#|skill_stat_descriptions.txt|0": "{0}% of Damage from Hits is taken from the Shell before the target's Life or Energy Shield\\nShell can take {1} Damage before exploding",
     "kinetic_shell_immunity_after_explosion_ms|#|skill_stat_descriptions.txt|0": "Shell cannot be reapplied to same target for {0} seconds after explosion",
     "kinetic_shell_number_of_active_buffs_allowed|1|skill_stat_descriptions.txt|0": "Maximum {0} Somatic Shell",
@@ -42370,6 +42442,7 @@
     "map_contains_X_additional_atlas_packs|#|map_stat_descriptions.txt|0": "Area contains {0} additional packs\\nof Difficult and Rewarding Monsters which drop 300% increased Maps",
     "map_contains_X_additional_div_card_packs|#|map_stat_descriptions.txt|0": "Area contains {0} additional packs of Doedre's Devoted",
     "map_contains_X_additional_incursion_packs|#|map_stat_descriptions.txt|0": "Area contains {0} additional packs of Incursion Monsters",
+    "map_contains_X_additional_strongboxes_essences_shrines_or_rogue_exiles|1|atlas_stat_descriptions.txt|0": "Your Maps contain an additional Strongbox, Imprisoned Monster, Shrine or Rogue Exile",
     "map_contains_X_additional_strongboxes_essences_shrines_or_rogue_exiles|2|#|atlas_stat_descriptions.txt|0": "Your Maps contain {0} additional Strongboxes, Imprisoned Monsters, Shrines or Rogue Exiles",
     "map_contains_X_additional_tricksters|#|stat_descriptions.txt|0": "Area contains {0} additional Rare Monsters that create Frost Walls and Flee",
     "map_contains_X_additional_uber_harbingers|1|stat_descriptions.txt|0": "Area contains an additional Regal Harbinger",
@@ -44069,6 +44142,7 @@
     "map_num_extra_harbingers|2|#|stat_descriptions.txt|0": "Area contains {0} additional Harbingers",
     "map_num_extra_invasion_bosses|1|atlas_stat_descriptions.txt|0": "Your Maps are inhabited by an additional Invasion Boss",
     "map_num_extra_invasion_bosses|1|leaguestone_stat_descriptions.txt|0": "Next Area will be inhabited by an additional Invasion Boss",
+    "map_num_extra_invasion_bosses|1|stat_descriptions.txt|0": "Area is inhabited by an additional Invasion Boss",
     "map_num_extra_invasion_bosses|2|#|atlas_stat_descriptions.txt|0": "Your Maps are inhabited by {0} additional Invasion Bosses",
     "map_num_extra_invasion_bosses|2|#|leaguestone_stat_descriptions.txt|0": "Next Area will be inhabited by {0} additional Invasion Bosses",
     "map_num_extra_invasion_bosses|2|#|stat_descriptions.txt|0": "Area is inhabited by {0} additional Invasion Bosses",
@@ -44542,6 +44616,7 @@
     "map_ritual_number_of_free_rerolls|#|stat_descriptions.txt|0": "Rerolling Favours at Ritual Altars has no Cost the first {0} times",
     "map_ritual_number_of_free_rerolls|1|atlas_stat_descriptions.txt|0": "Rerolling Favours at Ritual Altars in your Maps has no Cost the first {0} time",
     "map_ritual_number_of_free_rerolls|1|map_stat_descriptions.txt|0": "Rerolling Favours at Ritual Altars has no Cost the first {0} time",
+    "map_ritual_number_of_free_rerolls|1|stat_descriptions.txt|0": "Rerolling Favours at Ritual Altars has no Cost the first time",
     "map_ritual_offered_rewards_from_rerolls_have_permyriad_chance_to_cost_no_tribute|1|#|atlas_stat_descriptions.txt|0": "Favours Rerolled at Ritual Altars in your Maps have {0}% chance to cost no Tribute",
     "map_ritual_offered_rewards_have_additional_variable_cost|#|atlas_stat_descriptions.txt|0": "Favours at Ritual Altars in your Maps randomly cost between 90% less and 80% more",
     "map_ritual_offered_ritual_splinter_reward_stack_size_+%|1|#|atlas_stat_descriptions.txt|0": "Ritual Splinters offered at Ritual Altars in your Maps have {0}% increased Stack Size",
@@ -44726,6 +44801,8 @@
     "map_spawn_cadiro_%_chance|1|99|leaguestone_stat_descriptions.txt|0": "Next Area will have a {0}% chance to contain Cadiro Perandus",
     "map_spawn_cadiro_%_chance|1|99|stat_descriptions.txt|0": "Area has a {0}% chance to contain Cadiro Perandus",
     "map_spawn_exile_per_area_%|#|stat_descriptions.txt|0": "Rogue Exiles roam Wraeclast",
+    "map_spawn_extra_exiles|1|atlas_stat_descriptions.txt|0": "Your Maps are inhabited by an additional Rogue Exile",
+    "map_spawn_extra_exiles|1|stat_descriptions.txt|0": "Area is inhabited by an additional Rogue Exile",
     "map_spawn_extra_exiles|2|#|atlas_stat_descriptions.txt|0": "Your Maps are inhabited by {0} additional Rogue Exiles",
     "map_spawn_extra_exiles|2|#|stat_descriptions.txt|0": "Area is inhabited by {0} additional Rogue Exiles",
     "map_spawn_extra_perandus_chests|1|atlas_stat_descriptions.txt|0": "Your Maps contain an additional Perandus Chest",
@@ -48417,6 +48494,7 @@
     "random_curse_on_hit_%_against_uncursed_enemies|1|#|stat_descriptions.txt|0": "{0}% chance to Curse non-Cursed Enemies with a random Hex on Hit",
     "random_curse_on_hit_%|#|stat_descriptions.txt|0": "{0}% chance to Curse Enemies with a random Hex on Hit",
     "random_curse_on_tinctured_weapon_hit_%|#|tincture_stat_descriptions.txt|0": "{0}% chance to Curse Enemies with a random Hex on Melee Weapon Hit",
+    "random_curse_when_hit_%_ignoring_curse_limit|100|#|stat_descriptions.txt|0": "Curse Enemies which Hit you with a random Hex, ignoring Curse Limit",
     "random_curse_when_hit_%_ignoring_curse_limit|1|99|stat_descriptions.txt|0": "{0}% chance to Curse Enemies which Hit you with a random Hex, ignoring Curse Limit",
     "random_nearby_minion_gain_a_soul_eater_soul_on_X_life_spent|#|gem_stat_descriptions.txt|0": "A nearby Minion gains a Soul for every {0} Life you spend on Upfront\\nCosts with Supported Spells",
     "random_nearby_minion_gain_a_soul_eater_soul_on_X_life_spent|#|skill_stat_descriptions.txt|0": "A nearby Minion gains a Soul for every {0} Life spent on Upfront Costs with this Spell",

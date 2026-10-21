@@ -145,6 +145,10 @@ static const SourceDict kSourceDicts[] = {
     /* GGPK gem display names without the "Support" suffix -- what a stat's
     ** gem NAME slot needs ("...Supported by level {2} {1}" already says 輔助). */
     { "gem_names", "gem_names.json" },
+    /* Same, split by gem kind; stats_by_id.json "name_slots" may name these
+    ** directly (a non-active support's name, an indexable support's name). */
+    { "gem_names_nonactive", "gem_names_nonactive.json" },
+    { "gem_names_support",   "gem_names_support.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
@@ -177,50 +181,44 @@ static std::unordered_map<std::string, std::unordered_map<std::string, std::stri
 static const char *const kStatDictFile = "stats_by_id.json";
 static const char *const kStatFileItem = "stat_descriptions.txt";
 static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
-/* Aura-type passives (nearby enemies...) live only here; same tier as above. */
+/* Aura-type passives (nearby enemies...) live only here. */
 static const char *const kStatFilePassiveAura = "passive_skill_aura_stat_descriptions.txt";
-/* Which description files a ctx reads (see stat_file_tier):
-**   item    -> stat_descriptions.txt
-**   passive -> passive_skill_stat_descriptions.txt, then stat_descriptions.txt
-**   gem     -> the skill/gem description files POB's gem tooltips use
-**              (Data/Skills statDescriptionScope + their parent chain), then
-**              stat_descriptions.txt, the chain's final parent. */
-/* kTierPassiveAura: passive_skill_aura_stat_descriptions.txt, read by the
-** passive ctx only AFTER stat_descriptions.txt (see stat_tier_order). */
-enum StatTier { kTierItem = 0, kTierPassive = 1, kTierGem = 2, kTierPassiveAura = 3 };
 
-/* The description-file tiers a ctx reads, in priority order: the first tier
-** with a candidate decides.
-**   item    -> stat_descriptions
-**   passive -> passive_skill -> stat_descriptions -> passive_skill_aura
-**   gem     -> skill/gem files -> stat_descriptions */
-static std::vector<int> stat_tier_order(int tier) {
-    if (tier == kTierPassive) return { kTierPassive, kTierItem, kTierPassiveAura };
-    if (tier == kTierGem) return { kTierGem, kTierItem };
-    return { kTierItem };
+/* Every description file in stats_by_id.json gets an id; a ctx turns into a
+** CHAIN of file ids, most specific first (stat_ctx_chain):
+**   item          -> stat_descriptions
+**   passive       -> passive_skill -> stat_descriptions -> passive_skill_aura
+**   gem           -> skill_stat -> active_skill_gem -> gem_stat -> stat_descriptions
+**                    (POB scopeList order for an active skill)
+**   gem:<scope>   -> <scope>.txt and its parents from stats_by_id.json
+**                    "stat_desc_parents" (POB's statDescriptionScope + parent
+**                    chain); the gem default when the scope is not in that
+**                    table or the data pack predates it.
+** Lookups walk the chain; the first file with a candidate decides (a file
+** whose candidate matches the line's case exactly is preferred over all). */
+static std::vector<std::string> s_stat_files;                  /* id -> basename */
+static std::unordered_map<std::string, int> s_stat_file_ids;   /* basename -> id */
+static std::unordered_map<std::string, std::string> s_stat_parents;  /* child -> parent */
+static int stat_file_id(const std::string &name) {
+    auto it = s_stat_file_ids.find(name);
+    if (it != s_stat_file_ids.end()) return it->second;
+    const int id = (int)s_stat_files.size();
+    s_stat_files.push_back(name);
+    s_stat_file_ids.emplace(name, id);
+    return id;
 }
-static const char *const kStatFilesGem[] = {
+static const char *const kStatGemDefaultChain[] = {
     "skill_stat_descriptions.txt",
-    "gem_stat_descriptions.txt",
     "active_skill_gem_stat_descriptions.txt",
-    "minion_skill_stat_descriptions.txt",
-    "minion_spell_skill_stat_descriptions.txt",
-    "minion_spell_damage_skill_stat_descriptions.txt",
-    "single_minion_spell_skill_stat_descriptions.txt",
-    "minion_attack_skill_stat_descriptions.txt",
-    "aura_skill_stat_descriptions.txt",
-    "banner_aura_skill_stat_descriptions.txt",
-    "buff_skill_stat_descriptions.txt",
-    "secondary_debuff_skill_stat_descriptions.txt",
-    "debuff_skill_stat_descriptions.txt",
-    "curse_skill_stat_descriptions.txt",
-    "brand_skill_stat_descriptions.txt",
-    "beam_skill_stat_descriptions.txt",
-    "offering_skill_stat_descriptions.txt",
-    "variable_duration_skill_stat_descriptions.txt",
+    "gem_stat_descriptions.txt",
+    "stat_descriptions.txt",
 };
 struct StatCand {
-    int         tier;      /* StatTier of the candidate's src_file */
+    int         file;      /* description file id (s_stat_files) */
+    /* The index key WITHOUT case folding: a candidate whose English matches
+    ** the line's case exactly beats one that only matches case-insensitively
+    ** ("Chance To Bleed" vs "Chance to Bleed", "Taken" vs "taken"). */
+    std::string ckey;
     std::vector<std::string> ids;  /* the key's stat_ids */
     /* Per English slot (same index as the line's values): 1 = a "{N:+d}"
     ** placeholder, i.e. the game prints that value with its sign. */
@@ -245,7 +243,7 @@ struct StatNamedTok {
     int         ph;    /* placeholder number, -1 for a literal */
 };
 struct StatNamedCand {
-    int         tier;
+    int         file;      /* description file id (s_stat_files) */
     std::vector<std::string> ids;
     std::vector<StatNamedTok> toks;            /* the English template */
     std::string zh;                            /* Chinese template, real newlines */
@@ -1312,9 +1310,18 @@ static std::string stat_trim_around_newlines(const std::string &s) {
 /* The index key: same hashing every forward pattern uses (placeholders and
 ** numbers -> '#', signs and ranges folded in), case-folded, spaces collapsed.
 ** `s` must already be markup-stripped and newline-unescaped. */
+static std::string stat_case_key(const std::string &s) {
+    return stat_trim_around_newlines(normalize_whitespace(digits_to_hash(normalize_placeholders(s))));
+}
 static std::string stat_index_key(const std::string &s) {
-    return to_ascii_lower(stat_trim_around_newlines(
-        normalize_whitespace(digits_to_hash(normalize_placeholders(s)))));
+    return to_ascii_lower(stat_case_key(s));
+}
+
+/* ".txt" added when missing: stat_desc_parents and gem:<scope> may name a
+** file either way. */
+static std::string stat_file_basename(std::string s) {
+    if (s.size() < 4 || s.compare(s.size() - 4, 4, ".txt") != 0) s += ".txt";
+    return s;
 }
 
 static int load_json_stat_dict(const std::string &filepath) {
@@ -1333,6 +1340,15 @@ static int load_json_stat_dict(const std::string &filepath) {
     if (!doc.contains("entries") || !doc["entries"].is_object() ||
         !doc.contains("templates") || !doc["templates"].is_object()) return 0;
     const njson &templates = doc["templates"];
+    /* Optional (newer data packs): the description files' parent chain and
+    ** fixed Chinese slots. Absent = the gem default chain / nothing fixed. */
+    if (doc.contains("stat_desc_parents") && doc["stat_desc_parents"].is_object()) {
+        for (auto pit = doc["stat_desc_parents"].begin(); pit != doc["stat_desc_parents"].end(); ++pit)
+            if (pit->is_string())
+                s_stat_parents[stat_file_basename(pit.key())] = stat_file_basename(pit->get<std::string>());
+    }
+    const njson *fixed_slots = nullptr;
+    if (doc.contains("fixed_slots") && doc["fixed_slots"].is_object()) fixed_slots = &doc["fixed_slots"];
     int count = 0;
     for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
         if (!it.value().is_string()) continue;
@@ -1344,15 +1360,7 @@ static int load_json_stat_dict(const std::string &filepath) {
         const size_t p_file = key.rfind('|', p_dup - 1);
         if (p_file == std::string::npos) continue;
         const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
-        int tier = -1;
-        if (src_file == kStatFileItem) tier = kTierItem;
-        else if (src_file == kStatFilePassive) tier = kTierPassive;
-        else if (src_file == kStatFilePassiveAura) tier = kTierPassiveAura;
-        else {
-            for (const char *g : kStatFilesGem)
-                if (src_file == g) { tier = kTierGem; break; }
-        }
-        if (tier < 0) continue;
+        const int file = stat_file_id(src_file);
         std::vector<std::string> ids;
         {
             const size_t p_ids = key.find('|');
@@ -1369,16 +1377,47 @@ static int load_json_stat_dict(const std::string &filepath) {
 
         const std::string en = stat_number_bare_placeholders(
             stat_unescape_newlines(strip_brackets(tit->get<std::string>())));
-        const std::string zh = stat_number_bare_placeholders(
+        std::string zh = stat_number_bare_placeholders(
             stat_unescape_newlines(strip_brackets(it.value().get<std::string>())));
         if (en.empty() || zh.empty()) continue;
+
+        /* "fixed_slots": {key: {"k": N}}. The Chinese {k} has no English
+        ** counterpart -- the value is fixed by the description's condition
+        ** (map_num_extra_invasion_bosses|1: "an additional Invasion Boss" ->
+        ** "{0} 隻額外...", always 1). Write N into the Chinese before anything
+        ** else sees it. */
+        if (fixed_slots) {
+            auto fit = fixed_slots->find(key);
+            if (fit != fixed_slots->end() && fit->is_object()) {
+                for (auto kv = fit->begin(); kv != fit->end(); ++kv) {
+                    std::string val;
+                    if (kv->is_number_integer()) val = std::to_string(kv->get<long long>());
+                    else if (kv->is_number()) {
+                        char b[64];
+                        snprintf(b, sizeof(b), "%g", kv->get<double>());
+                        val = b;
+                    } else if (kv->is_string()) val = kv->get<std::string>();
+                    else continue;
+                    const std::string open = "{" + kv.key();
+                    for (size_t p = zh.find(open); p != std::string::npos; p = zh.find(open, p)) {
+                        const size_t after = p + open.size();
+                        size_t close = std::string::npos;
+                        if (after < zh.size() && zh[after] == '}') close = after;
+                        else if (after < zh.size() && zh[after] == ':') close = zh.find('}', after);
+                        if (close == std::string::npos) { p = after; continue; }
+                        zh.replace(p, close - p + 1, val);
+                        p += val.size();
+                    }
+                }
+            }
+        }
 
         /* Name-slot entries go to s_stat_named only (see StatNamedCand). */
         if (doc.contains("name_slots") && doc["name_slots"].is_object()) {
             auto nit = doc["name_slots"].find(key);
             if (nit != doc["name_slots"].end() && nit->is_object()) {
                 StatNamedCand nc;
-                nc.tier = tier;
+                nc.file = file;
                 nc.ids = ids;
                 nc.zh = zh;
                 for (auto sit = nit->begin(); sit != nit->end(); ++sit)
@@ -1418,7 +1457,8 @@ static int load_json_stat_dict(const std::string &filepath) {
 
         auto add_cand = [&](const std::string &en_t, const std::string &zh_t) {
             StatCand c;
-            c.tier = tier;
+            c.file = file;
+            c.ckey = stat_case_key(en_t);
             c.ids = ids;
             c.nstats = nstats;
             /* {N} numbers written with a sign format ("{0:+d}") */
@@ -1450,6 +1490,14 @@ static int load_json_stat_dict(const std::string &filepath) {
         };
         add_cand(en, zh);
         ++count;
+        /* POB may draw a two-line description as ONE line, the lines joined by
+        ** a space ("...Maximum Energy Shield per 1% ..."): index that form too.
+        ** The answer keeps the Chinese line break. */
+        if (en.find('\n') != std::string::npos) {
+            std::string joined = en;
+            for (char &ch : joined) if (ch == '\n') ch = ' ';
+            add_cand(joined, zh);
+        }
 
         /* A keystone's description is one multi-line template in the passive
         ** file, but POB draws each line on its own ("Cannot Evade enemy
@@ -2553,6 +2601,9 @@ void translation_shutdown(void) {
     s_id_templates.clear();
     s_stat_index.clear();
     s_stat_named.clear();
+    s_stat_files.clear();
+    s_stat_file_ids.clear();
+    s_stat_parents.clear();
     s_stat_wrappers.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
@@ -3514,7 +3565,7 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 **    line's values exactly (string for string) win. All the same -> that
 **    answer; otherwise ambiguous -> nullptr.
 ** The pointer is into s_stat_cache: valid until the next reload. */
-static std::string stat_lookup_uncached(const std::string &line, int tier,
+static std::string stat_lookup_uncached(const std::string &line, const std::vector<int> &chain,
                                         const std::vector<std::string> *hint,
                                         bool *had_cands = nullptr) {
     if (had_cands) *had_cands = false;
@@ -3549,13 +3600,20 @@ static std::string stat_lookup_uncached(const std::string &line, int tier,
         return true;
     };
     std::vector<const StatCand *> cands;
-    auto collect = [&](int want_tier) {
+    const std::string in_ckey = stat_case_key(in);
+    auto collect = [&](int want_file, bool exact_case) {
         for (const StatCand &c : it->second)
-            if (c.tier == want_tier && lits_ok(c) && ids_ok(c) && sign_ok(c)) cands.push_back(&c);
+            if (c.file == want_file && (!exact_case || c.ckey == in_ckey) &&
+                lits_ok(c) && ids_ok(c) && sign_ok(c))
+                cands.push_back(&c);
     };
-    for (int t : stat_tier_order(tier)) {
-        collect(t);
-        if (!cands.empty()) break;
+    /* Walk the chain twice: first only candidates whose English has the
+    ** line's exact case (anywhere in the chain), then any case. */
+    for (int pass = 0; pass < 2 && cands.empty(); pass++) {
+        for (int f : chain) {
+            collect(f, pass == 0);
+            if (!cands.empty()) break;
+        }
     }
     if (cands.empty()) return std::string();
 
@@ -3692,23 +3750,38 @@ static bool stat_match_named(const StatNamedCand &c, const std::string &in, size
     return false;
 }
 
-/* A passive / skill name in Chinese: that source's own exact entry first
-** (passives.json / gems.json, the file the name comes from), then the merged
-** map. Empty when neither has it. */
-static std::string stat_translate_name(const std::string &src, const std::string &en) {
-    /* A gem name slot takes gem_names first: gems.json carries the full item
-    ** name ("…輔助") and the template around the slot often says 輔助 itself. */
-    if (src == "gems") {
-        auto git = s_sources.find("gem_names");
-        if (git != s_sources.end()) {
-            auto it = git->second.find(en);
-            if (it != git->second.end() && !it->second.empty()) return it->second;
-        }
-    }
-    auto sit = s_sources.find(src);
-    if (sit != s_sources.end()) {
-        auto it = sit->second.find(en);
-        if (it != sit->second.end() && !it->second.empty()) return it->second;
+/* A passive / skill name in Chinese, for a name slot whose source is `src`
+** (stats_by_id.json "name_slots"):
+**   passives            -> passives source exact, then the merged map
+**   gems                -> gem_names, gems, then the merged map
+**   gem_names*          -> that source, gem_names, then the merged map (never
+**                          gems.json: its "…輔助" names double the template's 輔助)
+** A gem name ending in " Support" ("Barrage Support", as Forbidden Shako
+** writes it) is looked up without it: the template around the slot already
+** says 輔助. Only the NAME is stripped -- the line is never re-hashed with it
+** (that would hit a dedicated fixed-gem stat instead). Empty when nothing has
+** the name. */
+static std::string stat_translate_name(const std::string &src, const std::string &en_in) {
+    auto exact = [](const char *source, const std::string &key) -> std::string {
+        auto sit = s_sources.find(source);
+        if (sit == s_sources.end()) return std::string();
+        auto it = sit->second.find(key);
+        return (it != sit->second.end()) ? it->second : std::string();
+    };
+    const bool gem_kind = src == "gems" || src.compare(0, 9, "gem_names") == 0;
+    std::string en = en_in;
+    static const std::string kSupport = " Support";
+    if (gem_kind && en.size() > kSupport.size() &&
+        en.compare(en.size() - kSupport.size(), kSupport.size(), kSupport) == 0)
+        en.erase(en.size() - kSupport.size());
+    if (gem_kind) {
+        std::string r;
+        if (src != "gems" && !(r = exact(src.c_str(), en)).empty()) return r;
+        if (!(r = exact("gem_names", en)).empty()) return r;
+        if (src == "gems" && !(r = exact("gems", en)).empty()) return r;
+    } else {
+        const std::string r = exact(src.c_str(), en);
+        if (!r.empty()) return r;
     }
     auto it = s_translations.find(en);
     if (it != s_translations.end() && !it->second.empty() && !leaks_placeholder(it->second, en))
@@ -3719,15 +3792,15 @@ static std::string stat_translate_name(const std::string &src, const std::string
 /* Name-slot candidates (s_stat_named) for a line the hash index missed. Same
 ** ctx tiers, same stat id narrowing; a name that has no Chinese drops the
 ** candidate (no half-English answer); disagreeing answers -> no answer. */
-static std::string stat_lookup_named(const std::string &line, int tier,
+static std::string stat_lookup_named(const std::string &line, const std::vector<int> &chain,
                                      const std::vector<std::string> *hint) {
     if (s_stat_named.empty()) return std::string();
     std::string in = strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
-    auto run = [&](int want_tier) {
+    auto run = [&](int want_file) {
         std::vector<std::string> outs;
         for (const StatNamedCand &c : s_stat_named) {
-            if (c.tier != want_tier) continue;
+            if (c.file != want_file) continue;
             if (hint) {
                 bool shared = false;
                 for (const std::string &id : c.ids)
@@ -3767,8 +3840,8 @@ static std::string stat_lookup_named(const std::string &line, int tier,
         return outs;
     };
     std::vector<std::string> outs;
-    for (int t : stat_tier_order(tier)) {
-        outs = run(t);
+    for (int f : chain) {
+        outs = run(f);
         if (!outs.empty()) break;
     }
     if (outs.empty()) return std::string();
@@ -3779,16 +3852,16 @@ static std::string stat_lookup_named(const std::string &line, int tier,
 /* The whole stat lookup: hash index, then name-slot templates, then wrappers
 ** (stat_wrappers.json: "Added Small Passive Skills grant: {0}" -- the inside
 ** is looked up as a stat in the same ctx and put into the Chinese wrapper). */
-static std::string stat_lookup_full(const std::string &line, int tier,
+static std::string stat_lookup_full(const std::string &line, const std::vector<int> &chain,
                                     const std::vector<std::string> *hint, int depth = 0) {
     bool had_cands = false;
-    std::string r = stat_lookup_uncached(line, tier, hint, &had_cands);
+    std::string r = stat_lookup_uncached(line, chain, hint, &had_cands);
     if (!r.empty()) return r;
     /* The hash index knows this exact sentence (it had usable candidates, they
     ** just disagreed): a generic name-slot template or a wrapper must not
     ** answer for it instead. */
     if (had_cands) return std::string();
-    r = stat_lookup_named(line, tier, hint);
+    r = stat_lookup_named(line, chain, hint);
     if (!r.empty()) return r;
     if (depth > 0) return std::string();   /* one wrapper level */
     for (const StatWrapper &w : s_stat_wrappers) {
@@ -3796,7 +3869,7 @@ static std::string stat_lookup_full(const std::string &line, int tier,
         if (line.compare(0, w.prefix.size(), w.prefix) != 0) continue;
         if (line.compare(line.size() - w.suffix.size(), w.suffix.size(), w.suffix) != 0) continue;
         const std::string inner = line.substr(w.prefix.size(), line.size() - w.prefix.size() - w.suffix.size());
-        const std::string zi = stat_lookup_full(inner, tier, hint, depth + 1);
+        const std::string zi = stat_lookup_full(inner, chain, hint, depth + 1);
         if (zi.empty()) continue;
         std::string out = w.zh;
         const size_t p = out.find("{0}");
@@ -3806,12 +3879,41 @@ static std::string stat_lookup_full(const std::string &line, int tier,
     return std::string();
 }
 
-/* ctx -> StatTier; -1 = unknown ctx. nullptr / "" mean item. */
-static int stat_ctx_tier(const char *ctx) {
-    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) return kTierItem;
-    if (strcmp(ctx, "passive") == 0) return kTierPassive;
-    if (strcmp(ctx, "gem") == 0) return kTierGem;
-    return -1;
+/* ctx -> chain of description file ids (see s_stat_files). false = unknown
+** ctx. nullptr / "" mean item. Files with no entries are left out. */
+static bool stat_ctx_chain(const char *ctx, std::vector<int> &chain) {
+    chain.clear();
+    auto add = [&](const std::string &name) {
+        auto it = s_stat_file_ids.find(name);
+        if (it != s_stat_file_ids.end() &&
+            std::find(chain.begin(), chain.end(), it->second) == chain.end())
+            chain.push_back(it->second);
+    };
+    auto gem_default = [&]() { for (const char *f : kStatGemDefaultChain) add(f); };
+    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) {
+        add(kStatFileItem);
+    } else if (strcmp(ctx, "passive") == 0) {
+        add(kStatFilePassive);
+        add(kStatFileItem);
+        add(kStatFilePassiveAura);
+    } else if (strcmp(ctx, "gem") == 0) {
+        gem_default();
+    } else if (strncmp(ctx, "gem:", 4) == 0) {
+        std::string f = stat_file_basename(ctx + 4);
+        if (ctx[4] == '\0' || s_stat_parents.find(f) == s_stat_parents.end()) {
+            gem_default();
+        } else {
+            for (int guard = 0; guard < 32; guard++) {
+                add(f);
+                auto pit = s_stat_parents.find(f);
+                if (pit == s_stat_parents.end()) break;
+                f = pit->second;
+            }
+        }
+    } else {
+        return false;
+    }
+    return true;
 }
 
 /* Space-separated stat ids -> list; empty when none. */
@@ -3833,11 +3935,12 @@ static const char *stat_lookup_cached(const char *line, const char *ctx, const c
     translation_wait_ready();
     if (!s_translation_enabled || !s_source_lookup) return nullptr;
     if (!line || !*line || s_stat_index.empty()) return nullptr;
-    const int tier = stat_ctx_tier(ctx);
-    if (tier < 0) return nullptr;
+    std::vector<int> chain;
+    if (!stat_ctx_chain(ctx, chain)) return nullptr;
     const std::vector<std::string> ids = stat_split_ids(stat_ids);
 
-    std::string ck(1, (char)('0' + tier));
+    std::string ck;
+    for (int f : chain) { ck += std::to_string(f); ck += ','; }
     ck += '\x1f';
     for (const std::string &id : ids) { ck += id; ck += ' '; }
     ck += '\x1f';
@@ -3845,7 +3948,7 @@ static const char *stat_lookup_cached(const char *line, const char *ctx, const c
     auto cit = s_stat_cache.find(ck);
     if (cit == s_stat_cache.end())
         cit = s_stat_cache.emplace(std::move(ck),
-                                   stat_lookup_full(line, tier, ids.empty() ? nullptr : &ids)).first;
+                                   stat_lookup_full(line, chain, ids.empty() ? nullptr : &ids)).first;
     return cit->second.empty() ? nullptr : cit->second.c_str();
 }
 
