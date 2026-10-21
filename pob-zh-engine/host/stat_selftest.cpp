@@ -1073,20 +1073,31 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Enemies in range are Hindered", "gem:skill_stat_descriptions",
 	       u8"範圍內敵人被阻礙減少 -1% 移動速度", "E7-7 龍捲風阻礙(gem:skill_stat_descriptions)");
 
-	// ---- S8:legion 依 id 取譯名(使用者裁定：不比對英文)-------------------------
-	// legion_by_id.json(alternatepassiveskills Id → 繁中,含 templates),列在 source_dicts。
-	// 出貨資料(exe 旁)可能還沒有此檔：從 stats_by_id.json 同資料夾取來放進暫存複本。
-	//   templar_notable_minimum_power_charge → 狂怒信念(templates 英文 Frenzied Faith;
-	//   POB LegionPassives 的 dn 是 Powerful Faith —— 兩名對調)
-	printf("\n=== S8 legion 依 id ===\n");
+	// ---- S8(使用者重新裁定，撤回依 id):legion 不載入 id 字典 -------------------
+	// 查證:POB / poedb / GGPK Name 欄都是 Powerful Faith=暴擊信念、Frenzied Faith=
+	// 狂怒信念，只有 GGPK 內部 Id 字串對調。裁定撤回「legion 依 id 取名」,改回依
+	// 英文名查 legion 來源。即使 legion_by_id.json 列在 source_dicts,引擎也不得載入
+	// (kIdDicts 沒有 legion),translation_lookup_by_id_en 也沒有 legion 例外。
+	printf("\n=== S8 legion 不依 id ===\n");
 	{
 		const std::wstring lRoot = root + L"s8\\";
 		CreateDirectoryW(lRoot.c_str(), nullptr);
 		std::string w;
 		bool setup = build_dict_copy(shippedLocale, lRoot + L"zh-rTW\\", statsJson, true, w);
 		const std::wstring srcDir = statsJson.substr(0, statsJson.find_last_of(L"\\/") + 1);
-		setup = setup && CopyFileW((srcDir + L"legion_by_id.json").c_str(),
-		                           (lRoot + L"zh-rTW\\legion_by_id.json").c_str(), FALSE);
+		// dist 若已不出貨 legion_by_id.json,就在複本裡自己放一份(by_id 格式含 templates):
+		// 要驗的是「即使列在 source_dicts 也不載入」。
+		if (setup && !CopyFileW((srcDir + L"legion_by_id.json").c_str(),
+		                        (lRoot + L"zh-rTW\\legion_by_id.json").c_str(), FALSE)) {
+			nlohmann::ordered_json d = nlohmann::ordered_json::object();
+			d["source_files"] = nlohmann::ordered_json::array({"test"});
+			d["is_base_items"] = false;
+			d["entries"] = {{"templar_notable_minimum_power_charge", u8"狂怒信念"},
+			                {"vaal_small_attack_dodge", u8"避免元素異常狀態"}};
+			d["templates"] = {{"templar_notable_minimum_power_charge", "Frenzied Faith"},
+			                  {"vaal_small_attack_dodge", "Avoid Elemental Ailments"}};
+			setup = write_bytes(lRoot + L"zh-rTW\\legion_by_id.json", d.dump(2));
+		}
 		if (setup) {
 			std::string mb;
 			try {
@@ -1101,16 +1112,21 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		translation_reload();
 		const char* id = "templar_notable_minimum_power_charge";
 		const char* a = translation_lookup_by_id("legion", id);
-		const char* b = translation_lookup_by_id_en("legion", id, "Powerful Faith");    // POB dn,與 templates 不符
-		const char* c = translation_lookup_by_id_en("legion", "vaal_small_attack_dodge", "Attack Dodge");  // POB 舊名
-		const bool okA = setup && a && std::string(a) == u8"狂怒信念";
-		const bool okB = setup && b && std::string(b) == u8"狂怒信念";
-		const bool okC = setup && c && std::string(c) == u8"避免元素異常狀態";
-		check(okA, "S8-1 legion 依 id 取譯名(templar_notable_minimum_power_charge→狂怒信念)");
-		check(okB && okC, "S8-2 legion 依 id 查時英文不符也回 id 譯名(不比對英文)");
-		if (!(okA && okB && okC))
-			printf("           setup=%d a='%s' b='%s' c='%s' %s\n", setup, a ? a : "(null)", b ? b : "(null)",
-			       c ? c : "(null)", w.c_str());
+		const char* b = translation_lookup_by_id_en("legion", id, "Powerful Faith");
+		const char* c = translation_lookup_by_id_en("legion", "vaal_small_attack_dodge", "Attack Dodge");
+		const std::string built = translation_debug_sources();
+		const size_t ip = built.find(";id=");
+		const std::string ids = ip == std::string::npos ? built : built.substr(ip + 4);
+		const bool noIdDict = ids.find("legion") == std::string::npos;
+		// 前提:legion 的英文來源表照常建(依英文名查的路徑還在)
+		const bool srcBuilt = built.find("exact=") != std::string::npos &&
+		                      built.substr(0, ip).find("legion") != std::string::npos;
+		check(setup && srcBuilt && noIdDict && a == nullptr,
+		      "S8-1 legion_by_id 列在 source_dicts 也不載入:依 id 查 legion 回空");
+		check(setup && b == nullptr && c == nullptr, "S8-2 translation_lookup_by_id_en 沒有 legion 例外(回空)");
+		if (!(setup && srcBuilt && noIdDict && a == nullptr && b == nullptr && c == nullptr))
+			printf("           setup=%d built='%s' a='%s' b='%s' c='%s' %s\n", setup, built.c_str(),
+			       a ? a : "(null)", b ? b : "(null)", c ? c : "(null)", w.c_str());
 		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
 		translation_reload();
 		remove_tree(lRoot);

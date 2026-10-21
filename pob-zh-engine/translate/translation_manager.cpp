@@ -164,7 +164,11 @@ static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
     { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
-    { "legion",   "legion_by_id.json" },     /* legion passive id -> name (see by_id_en) */
+    /* No "legion" id table (user ruling S8, reversed): POB, poedb and GGPK
+    ** agree on the legion passives' Name column; only GGPK's Id STRINGS have
+    ** the two Faith notables swapped (templar_notable_minimum_power_charge is
+    ** "Frenzied Faith"), so naming by id would be the one that is wrong.
+    ** Legion names go through the English "legion" source table instead. */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
 /* source -> (id -> whitespace-normalised GGPK English), from the id file's
@@ -3558,14 +3562,6 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
 const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en) {
     const char *zh = translation_lookup_by_id(source, id);
     if (!zh || !en) return zh;
-    /* legion: the id decides, the English is NOT checked (user ruling S8).
-    ** POB's LegionPassives data still carries old names for some nodes
-    ** ("Attack Dodge" for vaal_small_attack_dodge), and its Powerful Faith /
-    ** Frenzied Faith are swapped against GGPK -- comparing English would turn
-    ** away exactly the right answer. The id is GGPK's own key, so its name is
-    ** the one to show. passives / affixes / gems_desc keep the English check
-    ** (a Timeless jewel or tattoo renames a node but keeps its id). */
-    if (strcmp(source, "legion") == 0) return zh;
     auto tit = s_id_templates.find(source);
     if (tit == s_id_templates.end()) return zh;   /* older pack: no English to check */
     auto eit = tit->second.find(id);
