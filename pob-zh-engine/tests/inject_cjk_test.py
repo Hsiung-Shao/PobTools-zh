@@ -3001,6 +3001,218 @@ def test_stat_gem_scope_ctx(fork):
           bool(ctxs) and all(c == "gem" for c in ctxs), "ctx=%r" % ctxs)
 
 
+# ---- code review 806975a:RB1 / RI1 / RI2 / RI3 ------------------------------
+#
+# 假引擎照真引擎:PobToolsTranslateId(source, id, en) 英文相符回 id 譯文;不符時
+# 退回該來源依 en 查(passives 依 dn)。
+RB_ID = {
+    ("passives", "36949"): ("Devotion", "奉獻"),
+    ("passives", "59423"): ("Escalation", "進階"),
+    ("passives", "90001"): ("Elemental Overload", "戰神"),
+}
+
+
+def rb_harness(fork):
+    h = tooltip_harness(fork, with_inject=True)
+    g = h.rt.globals()
+    plain = g["__py_translate"]
+
+    def translate_id(source, id_, en=None):
+        if isinstance(id_, float) and id_.is_integer():
+            id_ = int(id_)
+        key = None if id_ is None else str(id_)
+        h.id_lookups.append((source, key, en))
+        if not h.enabled:
+            return None
+        hit = RB_ID.get((source, key))
+        if hit and hit[0] == en:
+            return hit[1]
+        if en is None:
+            return None
+        prev = h.source
+        h.source = source
+        try:
+            return plain(en)
+        finally:
+            h.source = prev
+
+    g["__py_translate_id"] = translate_id
+    return h
+
+
+def _with_dict(adds, fn):
+    """暫時加入 DICT 條目，結束時移除(不影響其他測試)。"""
+    undo = []
+    for src, k, v in adds:
+        t = DICT.setdefault(src, {})
+        undo.append((t, k, t.get(k, None), k in t))
+        t[k] = v
+    try:
+        return fn()
+    finally:
+        for t, k, old, had in reversed(undo):
+            if had:
+                t[k] = old
+            else:
+                del t[k]
+
+
+RB_ADDS = [
+    ("passives", "Devotion", "奉獻"), ("legion", "Devotion", "還願"),
+    ("passives", "Escalation", "進階"), (None, "Escalation", "惡化"),
+]
+
+
+def test_rb1_conquered_unrenamed(fork):
+    """RB1 -- 被征服(conqueredBy)但沒改名的節點，名稱仍用 id 譯名;改名的才用 legion。"""
+    conq = 'conqueredBy = { id = 1234, conqueror = { type = "karui", id = 1 } }'
+
+    def run():
+        out = {}
+        for label, fields in (
+                ("devotion", 'id = 36949, dn = "Devotion", ' + conq),
+                ("escalation", 'id = 59423, dn = "Escalation", ' + conq),
+                ("renamed", 'id = 36949, dn = "Bleed Avoidance", ' + conq)):
+            h = rb_harness(fork)
+            out[label] = (e3_name(h, fields), h)
+        return out
+
+    out = _with_dict(RB_ADDS, run)
+    got, h = out["devotion"]
+    check("%s RB1 被征服未改名(Lethal Pride 範圍內 Devotion)顯示 id 譯名「奉獻」" % fork,
+          got == "奉獻", "got=%r lookups=%r id=%r" % (got, h.lookups, h.id_lookups))
+    got, h = out["escalation"]
+    check("%s RB1 被征服未改名且 legion 無此名(Escalation)顯示「進階」不落全域" % fork,
+          got == "進階", "got=%r lookups=%r" % (got, h.lookups))
+    got, h = out["renamed"]
+    check("%s RB1 對照：被 ReplaceNode 改名(dn 換成 legion 名)顯示 legion 譯名" % fork,
+          got == "流血避免", "got=%r lookups=%r" % (got, h.lookups))
+    check("%s RB1 結束後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
+def test_ri1_tattoo_and_conquered(fork):
+    """RI1 -- 同時 isTattoo 與 conqueredBy:ReplaceNode 會覆寫 isTattoo,名稱來自刺青 → 查 tattoo。"""
+    conq = 'conqueredBy = { id = 1234, conqueror = { type = "vaal", id = 1 } }'
+    h = rb_harness(fork)
+    got = e3_name(h, 'id = 90001, dn = "Tattoo of the Kitava Makanga", isTattoo = true, ' + conq)
+    check("%s RI1 刺青且被征服的節點名稱查 tattoo 來源" % fork,
+          got == "奇塔弗鑄造的紋身" and "tattoo" in srcs_of(h, "Tattoo of the Kitava Makanga"),
+          "got=%r lookups=%r" % (got, h.lookups))
+
+
+RI2_DESC = "Summons a ballista totem that fires arrows.\nRequires a Bow."
+
+
+def ri2_gem_src():
+    return """
+{
+	level = 1,
+	gemData = {
+		name = "Fireball",
+		grantedEffect = { id = "Fireball", name = "Fireball",
+			description = %s,
+			stats = { spell_minimum_base_fire_damage = 10, spell_maximum_base_fire_damage = 20 },
+			statDescriptionScope = "gem_stat_descriptions" },
+	},
+}
+""" % ('"' + RI2_DESC.replace("\n", "\\n") + '"')
+
+
+def test_ri2_gem_desc_per_line(fork):
+    """RI2 -- 說明行 id 未命中、gems 整句也查不到時，逐行在 gems 來源查;不落全域。"""
+    mismatch = {("gems_desc", "Fireball"): ("A different English description.", "不該採用")}
+    # 整句在 gems 與全域都查不到(真引擎的來源查詢查不到時會再退全域合併表,所以
+    # 整句若在全域有值，回全域值是正當的 —— 這裡讓整句兩邊都沒有，才是 L316 的情境)。
+    # 單行 "Requires a Bow." 在 gems 與全域譯法不同：逐行須在 gems 來源查(同 V2)。
+    adds = [("gems", "Requires a Bow.", "需要弓。"), (None, "Requires a Bow.", "需要弓(全域)")]
+
+    def run():
+        h = gem_harness(fork, GEM_STAT_DICT, gem_tree=True, id_dict=mismatch)
+        view = make(h, "PassiveTreeView")
+        tip = make(h, "Tooltip")
+        gtip = make(h, "Tooltip")
+        gem = h.eval("function() return %s end" % ri2_gem_src())()
+        ok, err = h.eval('function(v, t, gt, g) local ok, e = pcall(function() '
+                         'v:AddNodeTooltip(t, { dn = "Elemental Overload", id = 1, sd = { }, '
+                         'gemInst = g, gemTip = gt }, { data = data }) end) return ok, e end'
+                         )(view, tip, gtip, gem)
+        lines = [l for l in tooltip_lines(h, gtip) if l is not None]
+        return h, ok, err, lines
+
+    h, ok, err, lines = _with_dict(adds, run)
+    # Tooltip 會把含 "\n" 的一行拆成多行：先接回整段再逐行看
+    desc = [_norm_ml(l) for l in lines if "ballista" in l or "Bow" in l or "需要弓" in l]
+    whole = "\n".join(desc)
+    parts = whole.split("\n") if desc else []
+    check("%s RI2 天賦內嵌寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s RI2 說明行不是整句原樣英文(逐行退路有執行)" % fork,
+          bool(desc) and whole != RI2_DESC, "desc=%r lines=%r" % (desc, lines))
+    check("%s RI2 說明第二行逐行在 gems 來源查得「需要弓。」(不是全域的「需要弓(全域)」)" % fork,
+          len(parts) == 2 and parts[1] == "需要弓。",
+          "parts=%r lookups=%r" % (parts, h.lookups))
+    srcs = [src for t, src in h.lookups if _norm(t) == "Requires a Bow."]
+    check("%s RI2 逐行查詢帶 source=\"gems\"(同 V2)" % fork,
+          bool(srcs) and all(x == "gems" for x in srcs), "srcs=%r" % srcs)
+
+
+# RI3:上游 AddItemTooltip(PoE1 ItemsTab.lua L4472-4483、PoE2 L3637-3640 起)只畫
+# item:GetModLineVariantCount(modLine) > 0 的行;未選中 variant 的行不畫，配對也不得算它。
+RI3_ITEMTIP = """
+function C:AddItemTooltip(tooltip, item, slot, dbMode, maxWidth)
+	tooltip:AddLine(20, colorCodes[item.rarity]..item.title, "FONTIN SC")
+	for _, modList in ipairs{item.enchantModLines, item.implicitModLines, item.explicitModLines} do
+		if modList[1] then
+			for _, modLine in ipairs(modList) do
+				local variantCount = item:GetModLineVariantCount(modLine)
+				if variantCount > 0 then
+					local formattedModLine = itemLib.formatModLine(modLine, dbMode)
+					if formattedModLine then
+						for _ = 1, variantCount do
+							tooltip:AddLine(16, formattedModLine, "FONTIN SC", MODLINE_ARG)
+						end
+					end
+				end
+			end
+			tooltip:AddSeparator(10)
+		end
+	end
+end
+"""
+RI3_ITEMSTAB = (
+    'local C = newClass("ItemsTab")\nfunction C:ItemsTab() return self end\n'
+    + RI3_ITEMTIP.replace("MODLINE_ARG", "modLine"),
+    'local C = newClass("ItemsTab", function(self) end)\n'
+    + RI3_ITEMTIP.replace("MODLINE_ARG", "nil"))
+RI3_HIDDEN = "Hidden Variant Line Xyz"
+# 上游 CheckModLineVariant:無 variantList 或含目前 variant 才畫(GetModLineVariantCount 單一 variant 分支)
+RI3_ITEM = ('{ rarity = "UNIQUE", title = "Variant Ring", base = {}, variant = 1, '
+            'GetModLineVariantCount = function(self, ml) '
+            'return (ml.variantList == nil or ml.variantList[self.variant]) and 1 or 0 end, '
+            'enchantModLines = { }, implicitModLines = { }, explicitModLines = { '
+            '{ line = %r }, { line = %r, variantList = { [2] = true } }, { line = %r } } }'
+            % (E1_A, RI3_HIDDEN, E1_B))
+
+
+def test_ri3_variant_hidden_line_pairs(fork):
+    """RI3 -- 未選中 variant 的行夾在兩條可見行之間：可見的兩行仍配對，隱藏行不參與。"""
+    MAGIC = "^x8888FF"
+    h = stat_harness(fork, E1_STAT_DICT, True, itemstab=RI3_ITEMSTAB, pre=E1_PRE)
+    tab = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    item = h.eval("function() return %s end" % RI3_ITEM)()
+    ok, err = h.eval('function(tab, t, item) local ok, e = pcall(function() '
+                     'tab:AddItemTooltip(t, item) end) return ok, e end')(tab, tip, item)
+    lines = [l for l in tooltip_lines(h, tip) if l is not None][1:]
+    check("%s RI3 物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s RI3 前提：隱藏 variant 行沒有畫出" % fork,
+          not any(RI3_HIDDEN in _norm(l) for l in lines), "lines=%r" % lines)
+    check("%s RI3 可見的相鄰兩行(中間夾隱藏行)仍配對成兩行中文" % fork,
+          lines[:2] == [MAGIC + z for z in E1_ZH], "lines=%r calls=%r" % (lines, h.stat_calls))
+    check("%s RI3 隱藏 variant 行不參與配對查詢" % fork,
+          not any(RI3_HIDDEN in _norm_ml(l) for l, c in h.stat_calls if c == "item"),
+          "calls=%r" % h.stat_calls)
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -3043,6 +3255,10 @@ def main():
         test_stat_gem_in_node(fork)
         test_gem_desc_id_mismatch_falls_back_to_gems(fork)
         test_stat_gem_scope_ctx(fork)
+        test_rb1_conquered_unrenamed(fork)
+        test_ri1_tattoo_and_conquered(fork)
+        test_ri2_gem_desc_per_line(fork)
+        test_ri3_variant_hidden_line_pairs(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
