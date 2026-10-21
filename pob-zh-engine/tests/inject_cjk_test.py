@@ -3213,6 +3213,107 @@ def test_ri3_variant_hidden_line_pairs(fork):
           "calls=%r" % h.stat_calls)
 
 
+# ---- E7:配對答案第二行為空 ----------------------------------------------------
+# 引擎約定(stat_selftest E7-5/E7-6):中文模板第二行為空時，整段答案為「第一行\n」,
+# 依 "\n" 切成兩段、第二段是空字串。注入層的配對(statPair / buildSdPairs)以
+# zh:match("^([^\n]*)\n([^\n]*)$") 切兩行，但又要求 z2 ~= "",所以這種答案配對不成立,
+# 第二行就落回英文半句。期望：第一行顯示整句中文、第二行顯示空字串。
+E7_A = "Grants maximum Energy Shield equal to 10% of your Reserved Mana to"
+E7_B = "you and nearby Allies"
+E7_Z1 = "賦予你和附近友方等同你 10% 魔力保留的額外能量護盾"
+E7_STAT_DICT = {E7_A + "\n" + E7_B: E7_Z1 + "\n"}
+
+
+def test_e7_pair_empty_second_line(fork):
+    """E7 -- 配對答案第二行為空：第一行整句中文、第二行空字串(天賦 sd 與物品詞綴)。"""
+    # 天賦說明(nodeSdPairs)
+    h, ok, err, tips = p2b_tooltips(fork, E7_STAT_DICT, [[E7_A, E7_B, "10% increased Attack Speed"]])
+    lines = tips[0]
+    got = [_norm(l) for l in lines[1:4]]
+    check("%s E7 天賦提示本身不出錯" % fork, ok, repr(err))
+    check("%s E7 前提：以 \"\\n\" 合併句、ctx passive 查詢" % fork,
+          (E7_A + "\n" + E7_B, "passive") in [(_norm_ml(l), c) for l, c in h.stat_calls],
+          repr(h.stat_calls))
+    check("%s E7 天賦說明第二行空：第一行整句中文、第二行空字串" % fork,
+          got[:2] == [E7_Z1, ""], "got=%r calls=%r" % (got, h.stat_calls))
+    check("%s E7 天賦說明第二行不顯示英文半句" % fork,
+          not any(E7_B in _norm(l) for l in lines), "lines=%r" % (lines,))
+    check("%s E7 天賦說明之後的行照常" % fork,
+          got[2:3] == ["增加 10% 攻擊速度"], "got=%r" % got)
+    # 物品詞綴(modPairs)
+    h, ok, err, tips = e1_tooltips(fork, E7_STAT_DICT, [e1_item([E7_A, E7_B, "+30 to Dexterity"])])
+    got = [_norm(l) for l in tips[0][:3]]
+    check("%s E7 物品提示本身不出錯" % fork, ok, repr(err))
+    check("%s E7 物品詞綴第二行空：第一行整句中文、第二行空字串" % fork,
+          got[:2] == [E7_Z1, ""], "got=%r calls=%r" % (got, h.stat_calls))
+    check("%s E7 物品詞綴第二行不顯示英文半句" % fork,
+          not any(E7_B in _norm(l) for l in tips[0]), "lines=%r" % (tips[0],))
+
+
+# ---- S8:TreeTab 軍團下拉依 id 查 legion(不比對英文)--------------------------
+# 上游 TreeTab:FindTimelessJewel 的 buildMods(PoE1 L1363 起)清單項帶 id = node.id
+# (LegionPassives 的 alternatepassiveskills Id)。使用者裁定：有 id 就先以
+# PobToolsTranslateId("legion", id, dn) 取譯名，不比對英文(legion 名在 POB 與 GGPK
+# 間有對調/舊名)。資料(dist legion_by_id.json):
+#   templar_notable_minimum_power_charge → 狂怒信念(POB dn Powerful Faith)
+#   templar_notable_minimum_frenzy_charge → 暴擊信念(POB dn Frenzied Faith)
+#   vaal_small_attack_dodge → 避免元素異常狀態(POB 舊名 Attack Dodge)
+S8_ID = {
+    "templar_notable_minimum_power_charge": "狂怒信念",
+    "templar_notable_minimum_frenzy_charge": "暴擊信念",
+    "vaal_small_attack_dodge": "避免元素異常狀態",
+}
+S8_TREE = """
+{
+	{ id = "templar_notable_minimum_power_charge", dn = "Powerful Faith", ["not"] = true, sd = { "PF stat" } },
+	{ id = "templar_notable_minimum_frenzy_charge", dn = "Frenzied Faith", ["not"] = true, sd = { "FF stat" } },
+	{ id = "vaal_small_attack_dodge", dn = "Attack Dodge", ["not"] = true, sd = { "AD stat" } },
+}
+"""
+
+
+def s8_labels(fork, jewel_name):
+    h = p3_harness(fork)
+    tab = p3_tree_tab(h)
+    tab.build.spec.tree.legion.nodes = h.eval("function() return %s end" % S8_TREE)()
+    tab.build.timelessData.jewelType = h.eval(
+        'function(n) return { id = 9, name = n } end')(jewel_name)
+    h.eval('function(t) t:FindTimelessJewel() end')(tab)
+    return h, p3_popup_labels(h, "nodeSelect")
+
+
+def test_s8_legion_dropdown_by_id(fork):
+    """S8 -- 軍團下拉清單項有 id 時，先依 id 查 legion(不比對英文)。"""
+    saved = ID_DICT.get("legion")
+    ID_DICT["legion"] = dict(S8_ID)
+    adds = [("legion", "Powerful Faith", "強力信念(依英文)"), ("legion", "Frenzied Faith", "狂怒信念(依英文)"),
+            ("legion", "Attack Dodge", "攻擊閃避(依英文)")]
+    try:
+        h, labels = _with_dict(adds, lambda: s8_labels(fork, "templar"))
+        hv, labels_v = _with_dict(adds, lambda: s8_labels(fork, "vaal"))
+    finally:
+        if saved is None:
+            del ID_DICT["legion"]
+        else:
+            ID_DICT["legion"] = saved
+    def first(ls, stat):
+        for l in ls:
+            if l.endswith(stat):
+                return l[:l.find(LABEL_PAD)] if LABEL_PAD in l else l
+        return None
+    pf, ff, ad = first(labels, "PF stat"), first(labels, "FF stat"), first(labels_v, "AD stat")
+    check("%s S8 軍團下拉以 PobToolsTranslateId(\"legion\", id, …) 查詢" % fork,
+          any(s == "legion" and i == "templar_notable_minimum_power_charge" for s, i, _ in h.id_lookups),
+          "id_lookups=%r" % h.id_lookups)
+    check("%s S8 Powerful Faith(id power_charge)顯示 id 譯名「狂怒信念」" % fork,
+          pf == "狂怒信念", "label=%r labels=%r" % (pf, labels))
+    check("%s S8 Frenzied Faith(id frenzy_charge)顯示 id 譯名「暴擊信念」" % fork,
+          ff == "暴擊信念", "label=%r labels=%r" % (ff, labels))
+    check("%s S8 vaal 小天賦舊名 Attack Dodge 顯示 id 譯名「避免元素異常狀態」" % fork,
+          ad == "避免元素異常狀態", "label=%r labels=%r" % (ad, labels_v))
+    check("%s S8 下拉繪製後來源還原為 nil" % fork, h.source is None, "source=%r" % h.source)
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -3259,6 +3360,8 @@ def main():
         test_ri1_tattoo_and_conquered(fork)
         test_ri2_gem_desc_per_line(fork)
         test_ri3_variant_hidden_line_pairs(fork)
+        test_e7_pair_empty_second_line(fork)
+        test_s8_legion_dropdown_by_id(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

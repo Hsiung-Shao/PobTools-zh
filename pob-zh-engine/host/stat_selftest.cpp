@@ -964,6 +964,158 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Socketed Gems are Supported by Level 5 Barrage Support", "item",
 	       u8"插槽中的寶石被等級 5 的 彈幕 輔助", "E6-2 名稱槽寶石名結尾「 Support」先去掉再查");
 
+	// ---- S5 / V5(使用者裁定 2026-10-21)--------------------------------------------
+	printf("\n=== S5 / V5 名稱槽 ===\n");
+	// S5-1:Impossible Escape。local_unique_jewel_disconnected_passives_can_be_allocated_around_keystone_hash
+	//   EN 三行 "Passive Skills in Radius of {} can be Allocated\nwithout being connected to your tree\nPassage"
+	//   ZH 兩行 "天賦樹中在範圍{0}內未連結的天賦仍然可以配置\n通途";name_slots {"0":"passives"}
+	// POB 給單行、小寫 radius/allocated;裁定：取中文第一行填名稱，不加「通途」。
+	// 名稱(passives.json):Acrobatics→移形換影、Blood Magic→祭血術、Mind Over Matter→心靈昇華
+	{
+		struct K { const char* name; const char* zh; };
+		const K ks[] = {{"Acrobatics", u8"移形換影"}, {"Blood Magic", u8"祭血術"}, {"Mind Over Matter", u8"心靈昇華"}};
+		bool ok = true;
+		for (const K& k : ks) {
+			const std::string en = std::string("Passive Skills in radius of ") + k.name +
+			                       " can be allocated without being connected to your tree";
+			const std::string want = std::string(u8"天賦樹中在範圍") + k.zh + u8"內未連結的天賦仍然可以配置";
+			const Said s = ask(en.c_str(), "item");
+			const bool hit = !s.null && s.s == want && s.s.find(u8"通途") == std::string::npos &&
+			                 s.s.find('{') == std::string::npos;
+			if (!hit) {
+				ok = false;
+				printf("           %s\n           got  '%s'\n           want '%s'\n", en.c_str(), shown(s), want.c_str());
+			}
+		}
+		check(ok, "S5-1 Impossible Escape 單行取中文第一行填天賦名(不加通途、無 {)");
+	}
+	// V5-1:名稱槽的 # 規則與精確條目一致 —— 名稱譯文裡的 '#' 是資料;'{0}' 仍擋。
+	//   模板 unique_jewel_grants_notable_hash_part_1(name_slots {"0":"passives"})
+	//   "Allocates {0} if you have the matching modifier on Forbidden Flesh" → 若禁忌血肉上有符合的詞綴，配置 {0}
+	// 暫存複本的 passives.json 加兩個假名稱:Zzq Hash Notable→甲#乙、Zzq Brace Notable→甲{0}乙。
+	{
+		const std::wstring vRoot = root + L"v5\\";
+		CreateDirectoryW(vRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, vRoot + L"zh-rTW\\", statsJson, true, w);
+		if (setup) {
+			std::string body;
+			try {
+				setup = read_bytes(vRoot + L"zh-rTW\\passives.json", body);
+				auto doc = nlohmann::ordered_json::parse(body);
+				doc["entries"]["Zzq Hash Notable"] = u8"甲#乙";
+				doc["entries"]["Zzq Brace Notable"] = u8"甲{0}乙";
+				setup = setup && write_bytes(vRoot + L"zh-rTW\\passives.json", doc.dump(2));
+			} catch (...) { setup = false; }
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const Said h = ask("Allocates Zzq Hash Notable if you have the matching modifier on Forbidden Flesh", "item");
+		const Said b = ask("Allocates Zzq Brace Notable if you have the matching modifier on Forbidden Flesh", "item");
+		const std::string wantH = u8"若禁忌血肉上有符合的詞綴，配置 甲#乙";
+		const bool hashOk = setup && !h.null && h.s == wantH;
+		const bool braceOk = setup && (b.null || b.s.find("{0}") == std::string::npos);
+		check(hashOk, "V5-1a 名稱譯文含 # 時名稱槽照填(# 是資料)");
+		if (!hashOk) printf("           setup=%d got '%s' want '%s' %s\n", setup, shown(h), wantH.c_str(), w.c_str());
+		check(braceOk, "V5-1b 名稱譯文含 {0} 時仍被擋(不輸出未填佔位符)");
+		if (!braceOk) printf("           got '%s'\n", shown(b));
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vRoot);
+	}
+
+	// ---- E7:產生器把中文拆成與英文同行數(使用者核准)---------------------------
+	// 期望值取自 dist stats_by_id.json(本輪新版)。行數約定：中文模板第二行為空
+	// 字串時，整段結果保留結尾 "\n"(「第一行\n」,依 '\n' 切為兩段、第二段空字串),
+	// 與英文行數一致 —— 注入層配對才能把第二行對上空字串而不是英文半句。
+	printf("\n=== E7 中英同行數 ===\n");
+	{
+		// valueMoves:數值在英文第 1 行、中文第 2 行(語序互換)—— 依 P2-4「英繁每行 {N}
+		// 集合相同才建逐行候選」,第 1 行單獨查不得套出中文第 1 行，只要求不洩漏。
+		struct M { const char* en1; const char* en2; const char* ctx; const char* zh1; const char* zh2; const char* name; bool valueMoves; };
+		const M ms[] = {
+		    // gain_defiance_when_lose_life_to_hit_once_per_x_ms|1|#|stat_descriptions.txt|0
+		    {"Gain Defiance for 10 seconds on losing Life to an Enemy Hit, no", "more than once every 0.3 seconds",
+		     "passive", u8"敵人擊中而失去生命時獲得反抗 10 秒，", u8"每 0.3 秒不會超過一次", "E7-1 Defy Pain 兩行", false},
+		    // poison_duration_+%_per_poison_applied_recently|1|#|stat_descriptions.txt|0
+		    {"5% increased Poison Duration for each Poison you have inflicted Recently, up", "to a maximum of 100%",
+		     "item", u8"近期每個你造成的中毒增加 5% 中毒持續時間，", u8"最多 100%", "E7-2 中毒持續時間兩行", false},
+		    // flasks_adjacent_to_active_tinctures_have_effect_+%_if_hit_with_weapon_recently|1|#
+		    {"Flasks adjacent to applied Tincture have 10% increased Effect when",
+		     "used if you've Hit an enemy with a Weapon Recently", "item",
+		     u8"若你近期有使用武器擊中敵人，", u8"當使用時相鄰套用萃取物的藥劑增加 10% 效果", "E7-3 萃取物藥劑兩行", true},
+		    // life_mana_es_recovery_rate_+%_per_different_tribe_tattoos_allocated|1|#
+		    {"5% increased Recovery Rate of Life, Mana and Energy Shield",
+		     "per Tribe for which you have an allocated Tattoo", "passive",
+		     u8"每個你配置紋身的部落，", u8"增加 5% 生命、魔力和能量護盾恢復率", "E7-4 部落紋身恢復率兩行", true},
+		    // guardian_reserved_mana_%_given_to_you_and_nearby_allies_as_base_maximum_energy_shield|#(第二行空)
+		    {"Grants maximum Energy Shield equal to 10% of your Reserved Mana to", "you and nearby Allies",
+		     "item", u8"賦予你和附近友方等同你 10% 魔力保留的額外能量護盾", "", "E7-5 守護者保留魔力(第二行空)", false},
+		    // gain_%_of_two_hand_weapon_physical_damage_as_added_spell_damage|#(runegraft_33,第二行空)
+		    {"Spells have Added Spell Damage equal to 20% of Physical Damage of", "your Equipped Two handed Weapon",
+		     "item", u8"法術擁有等同於你已裝備雙手武器20%物理傷害的附加法術傷害", "", "E7-6 雙手武器附加法術傷害(第二行空)", false},
+		};
+		for (const M& m : ms) {
+			const std::string whole = std::string(m.en1) + "\n" + m.en2;
+			const std::string want = std::string(m.zh1) + "\n" + m.zh2;
+			const Said w = ask(whole.c_str(), m.ctx);
+			const Said l1 = ask(m.en1, m.ctx);
+			const bool okW = !w.null && w.s == want;
+			const bool okL = m.valueMoves ? (l1.null || l1.s.find('{') == std::string::npos)
+			                              : (!l1.null && l1.s == m.zh1);
+			check(okW && okL, m.name);
+			if (!okW) printf("           whole got '%s'\n           want      '%s'\n", shown(w), want.c_str());
+			if (!okL) printf("           line1 got '%s' want '%s'\n", shown(l1), m.zh1);
+		}
+	}
+	// E7-7:tornado_hinder|#|skill_stat_descriptions.txt|0(中文模板寫死 -1%)
+	expect("Enemies in range are Hindered", "gem:skill_stat_descriptions",
+	       u8"範圍內敵人被阻礙減少 -1% 移動速度", "E7-7 龍捲風阻礙(gem:skill_stat_descriptions)");
+
+	// ---- S8:legion 依 id 取譯名(使用者裁定：不比對英文)-------------------------
+	// legion_by_id.json(alternatepassiveskills Id → 繁中,含 templates),列在 source_dicts。
+	// 出貨資料(exe 旁)可能還沒有此檔：從 stats_by_id.json 同資料夾取來放進暫存複本。
+	//   templar_notable_minimum_power_charge → 狂怒信念(templates 英文 Frenzied Faith;
+	//   POB LegionPassives 的 dn 是 Powerful Faith —— 兩名對調)
+	printf("\n=== S8 legion 依 id ===\n");
+	{
+		const std::wstring lRoot = root + L"s8\\";
+		CreateDirectoryW(lRoot.c_str(), nullptr);
+		std::string w;
+		bool setup = build_dict_copy(shippedLocale, lRoot + L"zh-rTW\\", statsJson, true, w);
+		const std::wstring srcDir = statsJson.substr(0, statsJson.find_last_of(L"\\/") + 1);
+		setup = setup && CopyFileW((srcDir + L"legion_by_id.json").c_str(),
+		                           (lRoot + L"zh-rTW\\legion_by_id.json").c_str(), FALSE);
+		if (setup) {
+			std::string mb;
+			try {
+				setup = read_bytes(lRoot + L"zh-rTW\\meta.json", mb);
+				auto meta = nlohmann::ordered_json::parse(mb);
+				if (!in_array(meta, "source_dicts", "legion_by_id.json")) meta["source_dicts"].push_back("legion_by_id.json");
+				setup = setup && write_bytes(lRoot + L"zh-rTW\\meta.json", meta.dump(2));
+			} catch (...) { setup = false; }
+		}
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", lRoot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const char* id = "templar_notable_minimum_power_charge";
+		const char* a = translation_lookup_by_id("legion", id);
+		const char* b = translation_lookup_by_id_en("legion", id, "Powerful Faith");    // POB dn,與 templates 不符
+		const char* c = translation_lookup_by_id_en("legion", "vaal_small_attack_dodge", "Attack Dodge");  // POB 舊名
+		const bool okA = setup && a && std::string(a) == u8"狂怒信念";
+		const bool okB = setup && b && std::string(b) == u8"狂怒信念";
+		const bool okC = setup && c && std::string(c) == u8"避免元素異常狀態";
+		check(okA, "S8-1 legion 依 id 取譯名(templar_notable_minimum_power_charge→狂怒信念)");
+		check(okB && okC, "S8-2 legion 依 id 查時英文不符也回 id 譯名(不比對英文)");
+		if (!(okA && okB && okC))
+			printf("           setup=%d a='%s' b='%s' c='%s' %s\n", setup, a ? a : "(null)", b ? b : "(null)",
+			       c ? c : "(null)", w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(lRoot);
+	}
+
 	printf("\n=== FR audit r9 ===\n");
 	// FR-1:插槽輔助有專屬 stat(英文寫死寶石名),不得讓名稱槽通用模板
 	//   local_random_support_gem_level local_random_support_gem_index "…Level {0} {1}" →「插槽中的寶石被等級 {0} 的 {1} 輔助」

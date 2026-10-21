@@ -164,6 +164,7 @@ static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
     { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
+    { "legion",   "legion_by_id.json" },     /* legion passive id -> name (see by_id_en) */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
 /* source -> (id -> whitespace-normalised GGPK English), from the id file's
@@ -1416,30 +1417,52 @@ static int load_json_stat_dict(const std::string &filepath) {
         if (doc.contains("name_slots") && doc["name_slots"].is_object()) {
             auto nit = doc["name_slots"].find(key);
             if (nit != doc["name_slots"].end() && nit->is_object()) {
-                StatNamedCand nc;
-                nc.file = file;
-                nc.ids = ids;
-                nc.zh = zh;
+                std::unordered_map<int, std::string> name_src;
                 for (auto sit = nit->begin(); sit != nit->end(); ++sit)
-                    if (sit->is_string()) nc.name_src[atoi(sit.key().c_str())] = sit->get<std::string>();
-                /* tokenise the English: literals and {N} / {N:fmt} */
-                std::string lit;
-                for (size_t i = 0; i < en.size(); i++) {
-                    if (en[i] == '{') {
-                        size_t j = i + 1;
-                        while (j < en.size() && en[j] >= '0' && en[j] <= '9') j++;
-                        size_t close = en.find('}', j);
-                        if (j > i + 1 && close != std::string::npos && (en[j] == '}' || en[j] == ':')) {
-                            if (!lit.empty()) { nc.toks.push_back({ lit, -1 }); lit.clear(); }
-                            nc.toks.push_back({ std::string(), atoi(en.c_str() + i + 1) });
-                            i = close;
-                            continue;
+                    if (sit->is_string()) name_src[atoi(sit.key().c_str())] = sit->get<std::string>();
+                auto add_named = [&](const std::string &en_t, const std::string &zh_t) {
+                    StatNamedCand nc;
+                    nc.file = file;
+                    nc.ids = ids;
+                    nc.zh = zh_t;
+                    nc.name_src = name_src;
+                    /* tokenise the English: literals and {N} / {N:fmt} */
+                    std::string lit;
+                    for (size_t i = 0; i < en_t.size(); i++) {
+                        if (en_t[i] == '{') {
+                            size_t j = i + 1;
+                            while (j < en_t.size() && en_t[j] >= '0' && en_t[j] <= '9') j++;
+                            size_t close = en_t.find('}', j);
+                            if (j > i + 1 && close != std::string::npos && (en_t[j] == '}' || en_t[j] == ':')) {
+                                if (!lit.empty()) { nc.toks.push_back({ lit, -1 }); lit.clear(); }
+                                nc.toks.push_back({ std::string(), atoi(en_t.c_str() + i + 1) });
+                                i = close;
+                                continue;
+                            }
                         }
+                        lit += en_t[i];
                     }
-                    lit += en[i];
+                    if (!lit.empty()) nc.toks.push_back({ lit, -1 });
+                    s_stat_named.push_back(std::move(nc));
+                };
+                add_named(en, zh);
+                /* A multi-line name template whose LAST line is a fixed tag on
+                ** both sides (Impossible Escape: "...\nPassage" / "...\n通途")
+                ** is drawn by POB as the lines before it, joined into one line.
+                ** Register that form too: English lines 1..n-1 joined by a
+                ** space -> Chinese lines 1..m-1. Only when both last lines
+                ** carry no placeholder and the rest keeps the same {N} set. */
+                if (en.find('\n') != std::string::npos && zh.find('\n') != std::string::npos) {
+                    const size_t el = en.rfind('\n'), zl = zh.rfind('\n');
+                    const std::string en_last = en.substr(el + 1), zh_last = zh.substr(zl + 1);
+                    std::string en_head = en.substr(0, el);
+                    const std::string zh_head = zh.substr(0, zl);
+                    if (en_last.find('{') == std::string::npos && zh_last.find('{') == std::string::npos &&
+                        placeholder_index_set(en_head) == placeholder_index_set(zh_head)) {
+                        for (char &ch : en_head) if (ch == '\n') ch = ' ';
+                        add_named(en_head, zh_head);
+                    }
                 }
-                if (!lit.empty()) nc.toks.push_back({ lit, -1 });
-                s_stat_named.push_back(std::move(nc));
                 ++count;
                 continue;
             }
@@ -3535,6 +3558,14 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
 const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en) {
     const char *zh = translation_lookup_by_id(source, id);
     if (!zh || !en) return zh;
+    /* legion: the id decides, the English is NOT checked (user ruling S8).
+    ** POB's LegionPassives data still carries old names for some nodes
+    ** ("Attack Dodge" for vaal_small_attack_dodge), and its Powerful Faith /
+    ** Frenzied Faith are swapped against GGPK -- comparing English would turn
+    ** away exactly the right answer. The id is GGPK's own key, so its name is
+    ** the one to show. passives / affixes / gems_desc keep the English check
+    ** (a Timeless jewel or tattoo renames a node but keeps its id). */
+    if (strcmp(source, "legion") == 0) return zh;
     auto tit = s_id_templates.find(source);
     if (tit == s_id_templates.end()) return zh;   /* older pack: no English to check */
     auto eit = tit->second.find(id);
@@ -3729,7 +3760,15 @@ static bool stat_match_named(const StatNamedCand &c, const std::string &in, size
     if (ti == c.toks.size()) return pos == in.size();
     const StatNamedTok &t = c.toks[ti];
     if (t.ph < 0) {
-        if (in.compare(pos, t.lit.size(), t.lit) != 0) return false;
+        /* Case-insensitive: POB lower-cases some words of these lines
+        ** ("Passive Skills in radius of X can be allocated ..."). */
+        if (pos + t.lit.size() > in.size()) return false;
+        for (size_t k = 0; k < t.lit.size(); k++) {
+            char a = in[pos + k], b = t.lit[k];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (a != b) return false;
+        }
         return stat_match_named(c, in, ti + 1, pos + t.lit.size(), caps);
     }
     const bool is_name = c.name_src.count(t.ph) > 0;
@@ -3784,7 +3823,9 @@ static std::string stat_translate_name(const std::string &src, const std::string
         if (!r.empty()) return r;
     }
     auto it = s_translations.find(en);
-    if (it != s_translations.end() && !it->second.empty() && !leaks_placeholder(it->second, en))
+    /* An exact entry as written: a '#' in it is text, only {N} blocks. */
+    if (it != s_translations.end() && !it->second.empty() &&
+        !leaks_placeholder(it->second, en, /*check_hash=*/false))
         return it->second;
     return std::string();
 }
@@ -3835,7 +3876,10 @@ static std::string stat_lookup_named(const std::string &line, const std::vector<
                 }
                 out += c.zh[i];
             }
-            if (ok && !leaks_placeholder(out, in)) outs.push_back(std::move(out));
+            /* Number slots copy the line's own text, names are dictionary
+            ** entries as written: a '#' here is data, only {N} blocks (same
+            ** rule as exact entries). */
+            if (ok && !leaks_placeholder(out, in, /*check_hash=*/false)) outs.push_back(std::move(out));
         }
         return outs;
     };

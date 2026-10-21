@@ -25,7 +25,8 @@
     "stat_wrappers.json",
     "gem_names.json",
     "gem_names_nonactive.json",
-    "gem_names_support.json"
+    "gem_names_support.json",
+    "legion_by_id.json"
   ],
   "source_lookup": true,
   "incomplete_translation_whitelist": [

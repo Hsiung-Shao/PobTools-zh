@@ -107,15 +107,15 @@ static std::wstring locale_dir(const std::wstring& slotRoot, const std::string& 
 // meta.json's load_order. It is deliberately NOT part of the model's file list
 // (it has no "entries" object), but the engine merges dictionaries in this order
 // and the last file to define a key wins, so the editor has to read it anyway.
-static std::vector<std::string> read_load_order(const std::wstring& dataDir)
+static std::vector<std::string> read_load_order(const std::wstring& dataDir, const char* field = "load_order")
 {
 	std::vector<std::string> order;
 	std::string content;
 	if (!read_file_utf8(dataDir + L"meta.json", content)) return order;
 	try {
 		ordered_json meta = ordered_json::parse(content);
-		if (meta.contains("load_order") && meta["load_order"].is_array()) {
-			for (const auto& v : meta["load_order"])
+		if (meta.contains(field) && meta[field].is_array()) {
+			for (const auto& v : meta[field])
 				if (v.is_string()) order.push_back(v.get<std::string>());
 		}
 	} catch (...) {
@@ -197,10 +197,16 @@ EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 	}
 
 	model.loadOrder = read_load_order(model.dataDir);
+	model.sourceDicts = read_load_order(model.dataDir, "source_dicts");
+	static const std::string kIdSuffix = "_by_id.json";
 	for (EditorFile& f : model.files) {
 		f.order = -1;
 		for (size_t i = 0; i < model.loadOrder.size(); i++)
 			if (model.loadOrder[i] == f.name) { f.order = (int)i; break; }
+		// Id-keyed dictionaries: keys are GraphIds / mod Ids / stat ids that the
+		// engine matches by id, not English a translator could type.
+		f.readOnly = f.name.size() > kIdSuffix.size() &&
+		             f.name.compare(f.name.size() - kIdSuffix.size(), kIdSuffix.size(), kIdSuffix) == 0;
 	}
 	return model;
 }
@@ -289,6 +295,19 @@ int WinnerFileIdx(const EditorModel& model, const std::string& key)
 	return best;
 }
 
+// A file outside load_order is not necessarily unread: source_dicts files are
+// read as source / id tables. Only a file in neither list is left alone.
+std::string FileStatusNote(const EditorModel& model, int fileIdx)
+{
+	if (fileIdx < 0 || fileIdx >= (int)model.files.size()) return std::string();
+	const EditorFile& f = model.files[(size_t)fileIdx];
+	if (f.readOnly) return u8"依 id 對接的字典，唯讀";
+	if (f.order >= 0) return std::string();
+	if (std::find(model.sourceDicts.begin(), model.sourceDicts.end(), f.name) != model.sourceDicts.end())
+		return u8"來源字典：依情境查詢，不併入全域";
+	return u8"未列入載入順序與來源字典，引擎不載入";
+}
+
 int FindFileIdx(const EditorModel& model, const std::string& name)
 {
 	for (size_t i = 0; i < model.files.size(); i++)
@@ -326,6 +345,8 @@ void RefreshEdited(EditorModel& model, size_t entryIdx)
 
 size_t SetEntry(EditorModel& model, int fileIdx, const std::string& key, const std::string& value)
 {
+	if (fileIdx < 0 || fileIdx >= (int)model.files.size() || model.files[(size_t)fileIdx].readOnly)
+		return (size_t)-1;
 	const long long at = FindEntry(model, fileIdx, key);
 	if (at >= 0) {
 		model.entries[(size_t)at].value = value;
@@ -363,6 +384,10 @@ bool RemoveAddedEntry(EditorModel& model, size_t entryIdx)
 
 bool SaveFile(EditorFile& file, std::string* err)
 {
+	if (file.readOnly) {
+		if (err) *err = file.name + u8": 依 id 對接的字典是唯讀的，不能存檔";
+		return false;
+	}
 	if (!file.doc.contains("entries") || !file.doc["entries"].is_object()) {
 		if (err) *err = file.name + ": no entries object";
 		return false;
