@@ -234,6 +234,44 @@ local function zhInSource(source, name)
 	return nil
 end
 
+-- The sourceless (global merged map) answer for one string, or nil.
+local function zhGlobal(s)
+	local zh = withSource(nil, PobToolsTranslateDisplay, s)
+	if type(zh) == "string" and zh ~= "" and zh ~= s then return zh end
+	return nil
+end
+
+-- The node's name in the unmodified tree, or nil when it cannot be seen:
+-- build.spec.tree.nodes[id] (the tree data; ReplaceNode edits the spec's
+-- node, not this), else the table the spec node inherits from.
+local function originalNodeName(node, build)
+	local spec = type(build) == "table" and build.spec or nil
+	local tree = type(spec) == "table" and spec.tree or nil
+	local nodes = type(tree) == "table" and tree.nodes or nil
+	local orig = type(nodes) == "table" and node.id ~= nil and nodes[node.id] or nil
+	if type(orig) == "table" and orig ~= node and type(orig.dn) == "string" then
+		return orig.dn
+	end
+	local mt = getmetatable(node)
+	local base = type(mt) == "table" and rawget(mt, "__index") or nil
+	if type(base) == "table" and base ~= node and type(rawget(base, "dn")) == "string" then
+		return rawget(base, "dn")
+	end
+	return nil
+end
+
+-- Whether a node kept its id under a new name. With the original tree name at
+-- hand that decides it. Without it (no tree reached AddNodeName) the id answer
+-- is read: none (an engine that refuses a mismatch), or exactly the global
+-- merged map's answer for dn (an engine that falls back to the passives
+-- lookup of dn, which a legion / tattoo name only reaches through the global
+-- map), means renamed; an id answer of its own means the node's own name.
+local function nodeRenamed(node, dn, build, idZh)
+	local orig = originalNodeName(node, build)
+	if orig then return orig ~= dn end
+	return idZh == nil or idZh == zhGlobal(dn)
+end
+
 -- AddNodeName's name line: [colour lead] node.dn [" [" .. node.id .. "]"]
 -- (the suffix only in dev mode, PassiveTreeView.lua). Returns the id hit (or
 -- nil) and whether this IS the name line: a name line the id lookup missed is
@@ -255,18 +293,17 @@ local function translateNodeNameLine(text)
 	end
 	ctx.nameDone = true
 	local zh = node.id ~= nil and zhById("passives", node.id, dn) or nil
-	-- A Timeless jewel (conqueredBy) / tattoo (isTattoo) keeps the node's id
-	-- and renames it, so the id's English no longer matches dn. Then the name
-	-- belongs to legion / tattoo. "No match" is either no id answer (engines
-	-- that refuse a mismatch) or the answer the passives lookup of dn gives
-	-- (engines that fall back to it); an id answer differing from both is the
-	-- unrenamed node's own name and wins.
-	local replSource = (node.conqueredBy and "legion") or (node.isTattoo and "tattoo") or nil
-	if replSource then
+	-- A tattoo (isTattoo) / Timeless jewel (conqueredBy) node may keep its id
+	-- under a new dn; only a RENAMED node takes its name from tattoo / legion.
+	-- isTattoo first: ReplaceNode overwrites it, so when both are set the name
+	-- is the tattoo's. Conquered nodes are often not renamed at all (Lethal
+	-- Pride: conqueredBy on every node in range), and those keep the id name.
+	local replSource = (node.isTattoo and "tattoo") or (node.conqueredBy and "legion") or nil
+	if replSource and nodeRenamed(node, dn, ctx.build, zh) then
+		-- the replacement source must really have the name: an answer that is
+		-- just the global merged map's (the engine's fallback) does not count
 		local alt = zhInSource(replSource, dn)
-		if alt and (not zh or zh == zhInSource("passives", dn)) then
-			zh = alt
-		end
+		if alt and alt ~= zhGlobal(dn) then zh = alt end
 	end
 	if not zh then return nil, true end
 	return lead .. zh .. tail, true
@@ -313,7 +350,20 @@ local function translateGemLine(text)
 		-- id miss (or its English differs): the description is gems.json
 		-- text, looked up under that source even where no caller set one
 		-- (a gem tooltip inside a node tooltip). A miss keeps the English.
-		return withSource("gems", PobToolsTranslateDisplay, text) or text
+		local whole = withSource("gems", PobToolsTranslateDisplay, text)
+		if whole then return whole end
+		-- a multi-line description the whole lookup missed: line by line,
+		-- still under gems; lines that miss stay English
+		if text:find("\n", 1, true) then
+			local parts, changed = {}, false
+			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+				local z = line ~= "" and withSource("gems", PobToolsTranslateDisplay, line) or nil
+				if z then changed = true end
+				parts[#parts + 1] = z or line
+			end
+			if changed then return table.concat(parts, "\n") end
+		end
+		return text
 	end
 	-- the skill's own stat description file (describeStats' scope argument;
 	-- PoE2 keeps it in statSets, so grantedEffect is not read): "gem:<scope>",
@@ -381,10 +431,18 @@ local function buildItemModPairs(item, dbMode)
 		if type(list) == "table" then
 			local shown = {}
 			for _, modLine in ipairs(list) do
-				local f = fmt(modLine, dbMode)
+				-- same filter as AddItemTooltip: a line of a variant that is
+				-- not selected is not drawn, and is drawn count times if > 1
+				local count = 1
+				if type(item.GetModLineVariantCount) == "function" then
+					local ok, n = pcall(item.GetModLineVariantCount, item, modLine)
+					count = ok and type(n) == "number" and n or 0
+				end
+				local f = count > 0 and fmt(modLine, dbMode) or nil
 				if type(f) == "string" then
 					local _, rest = splitLeadColour(f)
-					shown[#shown + 1] = trim((splitNoteTail(rest)))
+					local shownLine = trim((splitNoteTail(rest)))
+					for _ = 1, count do shown[#shown + 1] = shownLine end
 				end
 			end
 			local i = 1
@@ -683,7 +741,8 @@ PATCHES["PassiveTreeView"] = function(class)
 	else
 		class.AddNodeName = keepArity(origName, function(self, tooltip, node, ...)
 			local prevCtx = nodeCtx
-			nodeCtx = type(node) == "table" and { node = node } or nil
+			local build = ...
+			nodeCtx = type(node) == "table" and { node = node, build = build } or nil
 			local ok, a, b, c = pcall(origName, self, tooltip, node, ...)
 			nodeCtx = prevCtx
 			if not ok then error(a, 0) end
