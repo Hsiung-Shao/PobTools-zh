@@ -43522,7 +43522,7 @@
     "You are Unaffected by Ignite if you've cast Flammability in the past 10 seconds": "若你過去 10 秒有施放過易燃，你不會被點燃影響",
     "You are Unaffected by Shock if you've cast Conductivity in the past 10 seconds": "若你過去 10 秒有施放過導電，你不會被感電影響",
     "{0:+d}% to Critical Strike Multiplier with Unarmed Melee Attacks": "空手近戰攻擊 {0:+d}% 暴擊加成",
-    "Unattached Brands gain {0}% increased Brand Attachment Range per\\nsecond, up to a maximum of 100%": "未附著的烙印每秒增加 {0}% 烙印附著距離",
+    "Unattached Brands gain {0}% increased Brand Attachment Range per\\nsecond, up to a maximum of 100%": "未附著的烙印每秒減少 {0}% 烙印附著距離，最高可達 100%",
     "Unearth Spawns corpses with {0:+d} Level": "屍術矢產生 {0:+d} 等級的屍體",
     "While your Passive Skill Tree connects to the Marauder's starting location, you gain:\\nMelee Skills have {0}% increased Area of Effect": "當你天賦樹和野蠻人起始點相連，你獲得:\\n近戰技能增加 {0}% 範圍效果",
     "While your Passive Skill Tree connects to the Duelist's starting location, you gain:\\n{1}% of Attack Damage Leeched as Life": "當你天賦樹和決鬥者起始點相連，你獲得:\\n{1}% 攻擊傷害偷取生命",

@@ -25645,7 +25645,7 @@
     "unarmed_melee_physical_damage_+%|#|-1|stat_descriptions.txt|0": "空手攻擊時減少 {0}% 近物理傷害",
     "unarmed_melee_physical_damage_+%|1|#|stat_descriptions.txt|0": "空手攻擊時增加 {0}% 近物理傷害",
     "unattached_sigil_attachment_range_+%_per_second|#|-1|stat_descriptions.txt|0": "未附著的烙印每秒減少{0}%烙印附著範圍",
-    "unattached_sigil_attachment_range_+%_per_second|1|#|stat_descriptions.txt|0": "未附著的烙印每秒增加 {0}% 烙印附著距離",
+    "unattached_sigil_attachment_range_+%_per_second|1|#|stat_descriptions.txt|0": "未附著的烙印每秒減少 {0}% 烙印附著距離，\\n最高可達 100%",
     "unearth_additional_corpse_level|#|stat_descriptions.txt|0": "屍術矢產生 {0:+d} 等級的屍體",
     "unearth_base_corpse_level|1|#|active_skill_gem_stat_descriptions.txt|0": "生成的屍體為等級 {0}",
     "unearth_corpse_level|#|skill_stat_descriptions.txt|0": "產生等級 {0} 的屍體",
