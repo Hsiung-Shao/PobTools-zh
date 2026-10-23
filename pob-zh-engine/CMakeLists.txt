@@ -418,6 +418,8 @@ if (WIN32)
         host/paste_trace.cpp
         # 多佔位符詞條的填位回歸 + 全量 A/B 快照工具
         host/placeholder_selftest.cpp
+        # stats_by_id.json 單行 stat 查詢的契約(translation_lookup_stat)
+        host/stat_selftest.cpp
         host/pob_launch.cpp
         host/bridge_gate.cpp
         # pob:// / pob2:// "Open in PoB" links (HKCU registration + URI whitelist)

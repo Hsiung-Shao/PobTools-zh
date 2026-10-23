@@ -25,10 +25,12 @@
 
 #include <cstdio>
 #include <map>
+#include <unordered_set>
 #include <string>
 #include <vector>
 
 #include "editor_data.h"
+#include "trans_editor_logic.h"   // P8-5:SetWithUndo / ApplyState
 #include "launcher_config.h"   // ResolveDataDir
 #include "../translate/translation_manager.h"
 
@@ -61,6 +63,20 @@ std::wstring exe_dir()
 	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
 }
 
+// Whole file as bytes (P8); false when it cannot be opened.
+bool read_file_bytes(const std::wstring& p, std::string& out)
+{
+	HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+	                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	out.clear();
+	char tmp[65536];
+	DWORD got = 0;
+	while (ReadFile(h, tmp, sizeof(tmp), &got, nullptr) && got) out.append(tmp, got);
+	CloseHandle(h);
+	return true;
+}
+
 // The engine's own merge rule, replayed here so the test can say which file's
 // copy of a key is the one that actually takes effect.
 std::map<std::string, std::string> merge_winner(const EditorModel& model,
@@ -76,13 +92,14 @@ std::map<std::string, std::string> merge_winner(const EditorModel& model,
 	return winner;
 }
 
-std::vector<std::string> load_order(const EditorModel& model)
+// One string array out of meta.json ("load_order", "source_only").
+std::vector<std::string> meta_list(const EditorModel& model, const char* field)
 {
 	std::vector<std::string> order;
 	for (const EditorFile& f : model.files) {
 		if (f.name != "meta.json") continue;
-		if (f.doc.contains("load_order") && f.doc["load_order"].is_array()) {
-			for (const auto& x : f.doc["load_order"])
+		if (f.doc.contains(field) && f.doc[field].is_array()) {
+			for (const auto& x : f.doc[field])
 				if (x.is_string()) order.push_back(x.get<std::string>());
 		}
 	}
@@ -100,13 +117,32 @@ std::vector<std::string> load_order(const EditorModel& model)
 			CloseHandle(h);
 			try {
 				auto doc = nlohmann::ordered_json::parse(buf);
-				if (doc.contains("load_order"))
-					for (const auto& x : doc["load_order"])
+				if (doc.contains(field) && doc[field].is_array())
+					for (const auto& x : doc[field])
 						if (x.is_string()) order.push_back(x.get<std::string>());
 			} catch (...) {}
 		}
 	}
 	return order;
+}
+
+std::vector<std::string> load_order(const EditorModel& model)
+{
+	return meta_list(model, "load_order");
+}
+
+// A file the global lookup never reads: listed in meta.json "source_only", or an
+// id-keyed *_by_id.json. Its keys answer only per-source / per-id lookups, so
+// translation_lookup() cannot see an edit made there.
+bool not_in_global_table(const std::vector<std::string>& sourceOnly, const std::string& fname)
+{
+	static const std::string byId = "_by_id.json";
+	if (fname.size() >= byId.size() &&
+	    fname.compare(fname.size() - byId.size(), byId.size(), byId) == 0)
+		return true;
+	for (const std::string& s : sourceOnly)
+		if (s == fname) return true;
+	return false;
 }
 
 // What the engine returns for `key` after a fresh load of the dictionaries.
@@ -163,6 +199,11 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	//     not take effect, editing the winner must
 	std::map<std::string, int> occurrences;
 	for (const EditorEntry& e : model.entries) occurrences[e.key]++;
+	// (a) must come from a file the global lookup reads: a key that only lives
+	// in affixes.json (source_only) or a *_by_id.json is invisible to
+	// translation_lookup(), so T5/T7/T8 would fail for the wrong reason.
+	std::vector<std::string> sourceOnly = meta_list(model, "source_only");
+	for (const std::string& f : meta_list(model, "source_dicts")) sourceOnly.push_back(f);
 
 	const EditorEntry* single = nullptr;
 	const EditorEntry* shadowLoser = nullptr;
@@ -170,7 +211,9 @@ static int run_for_game(const std::wstring& exeDir, const std::wstring& slotRoot
 	for (const EditorEntry& e : model.entries) {
 		if (e.structured) continue;
 		const std::string& owner = model.files[(size_t)e.fileIdx].name;
-		if (!single && occurrences[e.key] == 1 && e.key.size() > 6 && e.value.size() > 2)
+		if (!single && occurrences[e.key] == 1 && e.key.size() > 6 && e.value.size() > 2 &&
+		    model.files[(size_t)e.fileIdx].order >= 0 &&
+		    !not_in_global_table(sourceOnly, owner))
 			single = &e;
 		if (occurrences[e.key] > 1 && e.key.size() > 4) {
 			auto w = winner.find(e.key);
@@ -596,6 +639,555 @@ int RunEditorSelftest(const std::string& games)
 		translation_set_source(nullptr);
 	}
 
+	// --- more source dictionaries (S1-S9) -----------------------------------
+	// passives / affixes / stats / uniques / items / ascendancy. The data is
+	// planted here (and fully restored afterwards) so the assertions do not hang
+	// on whatever the shipped dictionaries happen to contain. Every planted
+	// competitor sits in a file that loads LATER than the source file, so the
+	// merged (unmarked) answer differs from the sourced one -- otherwise a
+	// source that silently degrades to "none" would still pass.
+	printf("\n=== source dictionaries: passives/affixes/stats/... (poe1 only) ===\n");
+	{
+		auto say = [](const char* key) {
+			const char* r = translation_lookup(key);
+			return r ? std::string(r) : std::string();
+		};
+		auto sayTitle = [](const char* key) {
+			const char* r = translation_lookup_item_title(key);
+			return r ? std::string(r) : std::string();
+		};
+		auto readBytes = [](const std::wstring& p, std::string& out) -> bool {
+			HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+			                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return false;
+			out.clear();
+			char tmp[65536];
+			DWORD got = 0;
+			while (ReadFile(h, tmp, sizeof(tmp), &got, nullptr) && got) out.append(tmp, got);
+			CloseHandle(h);
+			return true;
+		};
+		auto writeBytes = [](const std::wstring& p, const std::string& body) -> bool {
+			HANDLE h = CreateFileW(p.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+			                       FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (h == INVALID_HANDLE_VALUE) return false;
+			DWORD w = 0;
+			const BOOL ok = WriteFile(h, body.data(), (DWORD)body.size(), &w, nullptr);
+			CloseHandle(h);
+			return ok && w == (DWORD)body.size();
+		};
+
+		const std::wstring dictDir = model.dataDir;
+		const char* kRobust = "Robust";
+		const char* kStatTmpl = "{0}% increased TestStatXyz";
+		const char* kStatExact = "15% increased TestStatXyz";
+
+		translation_set_source(nullptr);
+		translation_reload();
+		const std::string robustBefore = say(kRobust);
+
+		// S17: the shipped meta.json keeps source-only / id files OUT of
+		// load_order. An older engine (v1.8.1) reads load_order only and merges
+		// everything in it: the affix names would reach the global table and the
+		// id files' numeric keys would be taken as English.
+		{
+			std::string body;
+			bool ok = readBytes(dictDir + L"meta.json", body);
+			std::string why;
+			try {
+				auto meta = nlohmann::ordered_json::parse(body);
+				auto inArr = [&](const char* field, const char* f) {
+					if (!meta.contains(field) || !meta[field].is_array()) return false;
+					for (const auto& x : meta[field])
+						if (x.is_string() && x.get<std::string>() == f) return true;
+					return false;
+				};
+				for (const char* f : {"affixes.json", "passives_by_id.json",
+				                      "affixes_by_id.json", "ascendancy.json"})
+					if (inArr("load_order", f)) { ok = false; why += std::string(" load_order:") + f; }
+				for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"})
+					if (!inArr("source_dicts", f)) { ok = false; why += std::string(" !source_dicts:") + f; }
+				if (!(meta.contains("source_lookup") && meta["source_lookup"] == true)) {
+					ok = false; why += " !source_lookup";
+				}
+			} catch (...) { ok = false; why += " parse"; }
+			check(ok, "S17 meta.json 的 load_order 不含只當來源與 id 的檔(舊引擎看不到)");
+			if (!ok) printf("    %s\n", why.c_str());
+		}
+
+		// S20: the editor reads load_order for its file ranks, so those files
+		// show up as "not in load_order" (rank -1): never offered as a target for
+		// new keys and never treated as winning the merge.
+		{
+			bool ok = true;
+			for (const EditorFile& f : model.files) {
+				if ((f.name == "affixes.json" || f.name == "passives_by_id.json" ||
+				     f.name == "affixes_by_id.json" || f.name == "ascendancy.json") && f.order >= 0) {
+					ok = false;
+					printf("    %s order=%d\n", f.name.c_str(), f.order);
+				}
+			}
+			check(ok, "S20 編輯器把只當來源與 id 的檔列為未載入(不當新增目標)");
+		}
+
+		// S1: every key of every dictionary, looked up unmarked under two
+		// meta.json variants -- the shipped one, and one stripped of
+		// source_dicts / source_lookup / source_only (what an engine that knows
+		// none of these fields makes of the same data). Same data, so the
+		// unmarked answers must be identical key for key.
+		{
+			std::string metaBody;
+			bool ok = readBytes(dictDir + L"meta.json", metaBody);
+			std::vector<std::string> keys;
+			{
+				std::unordered_set<std::string> seen;
+				for (const EditorEntry& e : model.entries)
+					if (seen.insert(e.key).second) keys.push_back(e.key);
+			}
+			std::string stripped;
+			try {
+				auto meta = nlohmann::ordered_json::parse(metaBody);
+				meta.erase("source_dicts");
+				meta.erase("source_lookup");
+				meta.erase("source_only");
+				stripped = meta.dump(2);
+			} catch (...) { ok = false; }
+			auto sayAll = [&](std::vector<std::string>& out) {
+				translation_set_source(nullptr);
+				translation_reload();
+				out.clear();
+				out.reserve(keys.size());
+				for (const std::string& k : keys) out.push_back(say(k.c_str()));
+			};
+			std::vector<std::string> plain, full;
+			const DWORD t0 = GetTickCount();
+			if (ok && writeBytes(dictDir + L"meta.json", stripped)) sayAll(plain); else ok = false;
+			if (!writeBytes(dictDir + L"meta.json", metaBody)) ok = false;
+			if (ok) sayAll(full);
+			size_t diffs = 0;
+			for (size_t i = 0; ok && i < keys.size(); i++) {
+				if (plain[i] == full[i]) continue;
+				if (++diffs <= 10)
+					printf("    %s: stripped=%s full=%s\n", keys[i].c_str(), plain[i].c_str(), full[i].c_str());
+			}
+			printf("  (S1: %zu keys, %zu differ, %lu ms)\n", keys.size(), diffs,
+			       (unsigned long)(GetTickCount() - t0));
+			check(ok && keys.size() > 10000 && diffs == 0,
+			      "S1 全字典未標記查找：完整 meta 與去掉來源欄位的 meta 結果相同");
+		}
+
+		// Back up every file this block touches, byte for byte.
+		struct Backup { std::wstring path; std::string bytes; bool existed; };
+		std::vector<Backup> backups;
+		auto backup = [&](const wchar_t* name) {
+			Backup b{dictDir + name, {}, false};
+			b.existed = readBytes(b.path, b.bytes);
+			backups.push_back(b);
+		};
+		backup(L"meta.json");
+		backup(L"passives.json");
+		backup(L"affixes.json");
+		backup(L"stats.json");
+		backup(L"ui.json");
+		backup(L"uniques.json");
+		backup(L"monsters.json");
+		backup(L"passives_by_id.json");
+		backup(L"affixes_by_id.json");
+
+		// Add entries to a dictionary file (creating it when absent).
+		bool planted = true;
+		auto plant = [&](const wchar_t* name,
+		                 std::initializer_list<std::pair<const char*, const char*>> kv) {
+			std::string body;
+			nlohmann::ordered_json doc;
+			if (readBytes(dictDir + name, body)) {
+				try { doc = nlohmann::ordered_json::parse(body); }
+				catch (...) { planted = false; return; }
+			} else {
+				doc = nlohmann::ordered_json::object();
+			}
+			if (!doc.contains("entries") || !doc["entries"].is_object())
+				doc["entries"] = nlohmann::ordered_json::object();
+			for (const auto& p : kv) doc["entries"][p.first] = p.second;
+			if (!writeBytes(dictDir + name, doc.dump(2))) planted = false;
+		};
+		plant(L"passives.json", {{kRobust, u8"堅固"}});
+		// affixes.json is source-only (meta.json "source_only"): TestOnlyAffixXyz
+		// exists nowhere else, so any unmarked hit means it leaked into the merge.
+		plant(L"affixes.json", {{kRobust, u8"健壯的"}, {"TestOnlyAffixXyz", u8"測試詞綴名"}});
+		plant(L"stats.json", {{kStatTmpl, u8"增加 {0}% 測試詞綴甲"},
+		                      // S18: the engine walks entries in KEY order (nlohmann::json
+		                      // is a std::map), not file order. Case 1: the dedicated
+		                      // key sorts first ("...OneXyz" < "...OneXyz\n..."), so it
+		                      // is written before the joined entry derives it.
+		                      {"TestSplitOneXyz", u8"專用一"},
+		                      {"TestSplitOneXyz\nTestSplitTwoXyz", u8"衍生一\n衍生二"},
+		                      // Case 2: the dedicated key is the joined entry's SECOND
+		                      // line and sorts after it ("...Aaa..." < "...Zzz..."), so
+		                      // the derived line is written first, the dedicated one after.
+		                      {"TestSplitAaaXyz\nTestSplitZzzXyz", u8"衍生甲\n衍生乙"},
+		                      {"TestSplitZzzXyz", u8"專用乙"}});
+		// uniques.json loads after stats.json: its pattern would win the merge.
+		plant(L"uniques.json", {{kStatTmpl, u8"錯誤乙 {0}%"}});
+		// ui.json carries the EXACT line -- exact beats pattern in the merge.
+		plant(L"ui.json", {{kStatExact, u8"錯誤丙"}});
+		// monsters.json loads last: the unmarked "Robust" becomes this.
+		plant(L"monsters.json", {{kRobust, u8"錯誤丁"}});
+		// S12-S14: id-keyed dictionaries. Two passives share one English name
+		// but different GraphIds; each id has its own wording. Written whole
+		// (not via plant) to match the spec's file shape.
+		auto plantById = [&](const wchar_t* name, const char* srcFile,
+		                     std::initializer_list<std::pair<const char*, const char*>> kv) {
+			nlohmann::ordered_json doc = nlohmann::ordered_json::object();
+			doc["source_files"] = nlohmann::ordered_json::array({srcFile});
+			doc["is_base_items"] = false;
+			doc["entries"] = nlohmann::ordered_json::object();
+			for (const auto& p : kv) doc["entries"][p.first] = p.second;
+			if (!writeBytes(dictDir + name, doc.dump(2))) planted = false;
+		};
+		plantById(L"passives_by_id.json", "passiveTree.csv",
+		          {{"90001", u8"戰神"}, {"90002", u8"勇士"}});
+		plantById(L"affixes_by_id.json", "Mods.dat",
+		          {{"TestModIdXyz1", u8"測試詞綴甲"}, {"TestModIdXyz2", u8"測試詞綴乙"}});
+		{
+			std::string body;
+			if (readBytes(dictDir + L"meta.json", body)) {
+				try {
+					auto meta = nlohmann::ordered_json::parse(body);
+					// Source-only and id files live in "source_dicts" and NOT in
+					// load_order (an older engine reads load_order only).
+					auto& lo = meta["load_order"];
+					for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"}) {
+						for (auto it = lo.begin(); it != lo.end();) {
+							if (it->is_string() && it->get<std::string>() == f) it = lo.erase(it);
+							else ++it;
+						}
+					}
+					meta.erase("source_only");
+					auto& sd = meta["source_dicts"];
+					if (!sd.is_array()) sd = nlohmann::ordered_json::array();
+					for (const char* f : {"affixes.json", "passives_by_id.json", "affixes_by_id.json"}) {
+						bool have = false;
+						for (const auto& x : sd) if (x.is_string() && x.get<std::string>() == f) have = true;
+						if (!have) sd.push_back(f);
+					}
+					meta["source_lookup"] = true;
+					if (!writeBytes(dictDir + L"meta.json", meta.dump(2))) planted = false;
+				} catch (...) { planted = false; }
+			} else {
+				planted = false;
+			}
+		}
+		check(planted, "S0 測試用暫時條目已寫入字典");
+		translation_set_source(nullptr);
+		translation_reload();
+
+		const std::string bareRobust = say(kRobust);
+		printf("  (unmarked Robust after planting = %s)\n", bareRobust.c_str());
+
+		// S2 / S3
+		translation_set_source("passives");
+		check(say(kRobust) == u8"堅固", "S2 passives 來源下 Robust 譯為堅固");
+		translation_set_source(nullptr);
+		translation_set_source("affixes");
+		check(say(kRobust) == u8"健壯的", "S3 affixes 來源下 Robust 譯為健壯的");
+		translation_set_source(nullptr);
+
+		// S4: no exact key for 23%, so only patterns compete.
+		translation_set_source("stats");
+		check(say("23% increased TestStatXyz") == u8"增加 23% 測試詞綴甲",
+		      "S4 stats 來源的 pattern 贏過他檔 pattern");
+		translation_set_source(nullptr);
+
+		// S5
+		translation_set_source("stats");
+		const std::string s5Sourced = say(kStatExact);
+		translation_set_source(nullptr);
+		const std::string s5Bare = say(kStatExact);
+		check(s5Sourced == u8"增加 15% 測試詞綴甲", "S5 stats 來源的 pattern 贏過他檔 exact");
+		check(s5Bare == u8"錯誤丙", "S5b 未標記時仍是他檔 exact");
+
+		// S6a: bare first, sourced, bare again (cache must not keep the sourced one).
+		{
+			const char* combo = "15% increased TestStatXyz, Robust";
+			const std::string bareCombo = say(combo);
+			translation_set_source("stats");
+			const std::string sourcedCombo = say(combo);
+			translation_set_source(nullptr);
+			check(sourcedCombo.find(u8"增加 15% 測試詞綴甲") != std::string::npos,
+			      "S6 stats 來源下組合字串的數值段走來源字典");
+			check(say(combo) == bareCombo, "S6a 切走來源後組合字串回到未標記值");
+		}
+		// S6b: sourced FIRST on a never-seen string, then compare with a fresh load.
+		{
+			const char* combo = "23% increased TestStatXyz, Robust";
+			translation_set_source("stats");
+			(void)say(combo);
+			translation_set_source(nullptr);
+			const std::string afterSourced = say(combo);
+			translation_reload();
+			const std::string fresh = say(combo);
+			check(afterSourced == fresh, "S6b 先查來源再查未標記不會吃到來源快取");
+		}
+
+		// S7: translation_lookup_item_title is public, so the title path is tested too.
+		{
+			const std::string bareTitle = sayTitle(kRobust);
+			translation_set_source("affixes");
+			const std::string sourcedTitle = sayTitle(kRobust);
+			translation_set_source(nullptr);
+			check(sourcedTitle == u8"健壯的", "S7 affixes 來源下物品標題查找也走來源字典");
+			check(sayTitle(kRobust) == bareTitle, "S7b 切走來源後物品標題回到未標記值");
+		}
+
+		// S10 / S11: a source-only file feeds its source dictionary and nothing else.
+		{
+			const char* kOnly = "TestOnlyAffixXyz";
+			translation_set_source(nullptr);
+			const char* r = translation_lookup(kOnly);
+			check(r == nullptr || std::string(r) == kOnly, "S10 只當來源的檔不進全域表");
+			if (r && std::string(r) != kOnly) printf("    unmarked %s = %s\n", kOnly, r);
+			translation_set_source("affixes");
+			check(say(kOnly) == u8"測試詞綴名", "S11 只當來源的檔在 affixes 來源下仍可查");
+			translation_set_source(nullptr);
+		}
+
+		// S12-S14: lookups by stable id (GraphId / mod Id), not by English text.
+		{
+			auto byId = [](const char* src, const char* id) {
+				const char* r = translation_lookup_by_id(src, id);
+				return r ? std::string(r) : std::string();
+			};
+			translation_set_source(nullptr);
+			const std::string a = byId("passives", "90001");
+			const std::string b = byId("passives", "90002");
+			check(a == u8"戰神" && b == u8"勇士", "S12 同名天賦依 GraphId 取不同譯名");
+			if (a != u8"戰神" || b != u8"勇士")
+				printf("    90001=%s 90002=%s\n", a.c_str(), b.c_str());
+
+			// S13: a miss is nullptr -- guarded by hits in the same files, so an
+			// always-nullptr implementation cannot pass.
+			const bool missNull = translation_lookup_by_id("passives", "99999") == nullptr;
+			const bool affixHit = byId("affixes", "TestModIdXyz1") == u8"測試詞綴甲";
+			const bool crossNull = translation_lookup_by_id("affixes", "90001") == nullptr;
+			const bool unknownNull = translation_lookup_by_id("no-such", "90001") == nullptr;
+			check(missNull && !a.empty() && affixHit && crossNull && unknownNull,
+			      "S13 查不到的 id 回傳空值(同檔有命中為前提)");
+			if (!(missNull && !a.empty() && affixHit && crossNull && unknownNull))
+				printf("    miss=%d passivesHit=%d affixHit=%d cross=%d unknown=%d\n",
+				       missNull, !a.empty(), affixHit, crossNull, unknownNull);
+
+			// S14: the id file is loaded (S12 hit) yet its keys reach neither the
+			// merged table nor the English "passives" source dictionary.
+			const char* bare = translation_lookup("90001");
+			const bool bareKept = bare == nullptr || std::string(bare) == "90001";
+			translation_set_source("passives");
+			const char* sourced = translation_lookup("90001");
+			const bool sourcedKept = sourced == nullptr || std::string(sourced) == "90001";
+			translation_set_source(nullptr);
+			check(bareKept && sourcedKept && !a.empty(), "S14 by_id 檔不進全域表");
+			if (!(bareKept && sourcedKept && !a.empty()))
+				printf("    bare=%s sourced=%s loaded=%d\n", bare ? bare : "(null)",
+				       sourced ? sourced : "(null)", !a.empty());
+
+			// S15: F2 (translation off) applies to id lookups too.
+			translation_set_enabled(false);
+			const char* off = translation_lookup_by_id("passives", "90001");
+			translation_set_enabled(true);
+			const std::string on = byId("passives", "90001");
+			check(off == nullptr && on == u8"戰神", "S15 翻譯關閉時依 id 查詢一律回傳空值");
+			if (!(off == nullptr && on == u8"戰神"))
+				printf("    off=%s on=%s\n", off ? off : "(null)", on.c_str());
+		}
+
+		// S18: inside the source copy a derived (split) line never replaces a
+		// purpose-built entry, whichever is written first.
+		{
+			translation_set_source("stats");
+			const std::string one = say("TestSplitOneXyz");
+			const std::string two = say("TestSplitTwoXyz");
+			const std::string aaa = say("TestSplitAaaXyz");
+			const std::string zzz = say("TestSplitZzzXyz");
+			translation_set_source(nullptr);
+			const bool first = one == u8"專用一" && two == u8"衍生二";
+			const bool later = zzz == u8"專用乙" && aaa == u8"衍生甲";
+			check(first, "S18 專用條目先寫：拆行衍生條目不覆蓋它");
+			check(later, "S18b 衍生條目先寫：後寫的專用條目蓋過它");
+			if (!(first && later))
+				printf("    one=%s two=%s aaa=%s zzz=%s\n", one.c_str(), two.c_str(),
+				       aaa.c_str(), zzz.c_str());
+		}
+
+		// S8
+		translation_set_source("no-such");
+		check(translation_get_source() == nullptr && say(kRobust) == bareRobust,
+		      "S8 未知來源退回無來源");
+		translation_set_source(nullptr);
+
+		// S9
+		{
+			const char* outer = translation_set_source("passives");
+			const char* inner = translation_set_source("stats");
+			const bool innerOk = inner && std::string(inner) == "passives";
+			translation_set_source(inner);
+			const bool backToPassives = say(kRobust) == u8"堅固";
+			translation_set_source(outer);
+			check(innerOk && backToPassives && translation_get_source() == nullptr,
+			      "S9 巢狀設定逐層還原：先回 passives 再回無來源");
+			translation_set_source(nullptr);
+		}
+
+		// S16: a locale whose meta.json lacks "source_lookup" keeps the old
+		// behaviour: every source added by this work answers exactly like the
+		// unmarked lookup, and id lookups find nothing. "gems" (shipped before
+		// the flag existed) still works as it always did.
+		{
+			std::string flagged;
+			bool ok = readBytes(dictDir + L"meta.json", flagged);
+			try {
+				auto meta = nlohmann::ordered_json::parse(flagged);
+				meta.erase("source_lookup");
+				ok = ok && writeBytes(dictDir + L"meta.json", meta.dump(2));
+			} catch (...) { ok = false; }
+			translation_set_source(nullptr);
+			translation_reload();
+			std::vector<std::string> keys = {kRobust, kStatExact, "23% increased TestStatXyz",
+			                                 "TestOnlyAffixXyz", "TestSplitOneXyz", "Volatility"};
+			for (const char* f : {"passives.json", "affixes.json", "stats.json", "uniques.json", "items.json"}) {
+				int n = 0;
+				for (const EditorEntry& e : model.entries)
+					if (model.files[(size_t)e.fileIdx].name == f && n++ < 500) keys.push_back(e.key);
+			}
+			std::vector<std::string> bare, bareTitle;
+			for (const std::string& k : keys) {
+				bare.push_back(say(k.c_str()));
+				bareTitle.push_back(sayTitle(k.c_str()));
+			}
+			size_t diffs = 0;
+			bool noneActive = true;
+			for (const char* src : {"passives", "affixes", "stats", "uniques", "items", "ascendancy"}) {
+				translation_set_source(src);
+				if (translation_get_source() != nullptr) noneActive = false;
+				for (size_t i = 0; i < keys.size(); i++) {
+					const std::string got = say(keys[i].c_str());
+					const std::string gotTitle = sayTitle(keys[i].c_str());
+					if ((got != bare[i] || gotTitle != bareTitle[i]) && ++diffs <= 10)
+						printf("    [%s] %s: sourced=%s bare=%s\n", src, keys[i].c_str(),
+						       got.c_str(), bare[i].c_str());
+				}
+				translation_set_source(nullptr);
+			}
+			const bool idNull = translation_lookup_by_id("passives", "90001") == nullptr &&
+			                    translation_lookup_by_id("affixes", "TestModIdXyz1") == nullptr;
+			translation_set_source("gems");
+			const std::string gemVol = say("Volatility");
+			translation_set_source(nullptr);
+			printf("  (S16: %zu keys x 6 sources, %zu differ)\n", keys.size(), diffs);
+			check(ok && diffs == 0 && noneActive,
+			      "S16 無 source_lookup 旗標：設來源後的查找等於未標記");
+			check(ok && idNull, "S16b 無 source_lookup 旗標：依 id 查詢回傳空值");
+			check(ok && gemVol == u8"易變輔助", "S16c 無 source_lookup 旗標：gems 來源照舊有效");
+			// S22: and nothing is built that could never be read.
+			const std::string built = translation_debug_sources();
+			check(ok && built == "exact=gems;pattern=;id=",
+			      "S22 無 source_lookup 旗標：只替 gems 建來源 exact 表，其餘不建");
+			if (built != "exact=gems;pattern=;id=") printf("    %s\n", built.c_str());
+			writeBytes(dictDir + L"meta.json", flagged);
+			translation_reload();
+			// S22a: guard -- with the flag every source is built, so S22 is not
+			// passing on an observer that always reports "gems".
+			const std::string full = translation_debug_sources();
+			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
+			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,passives",
+			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
+			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
+			else printf("    (flagged: %s)\n", full.c_str());
+		}
+
+		// S21: a file listed in load_order AND source_dicts is still never merged.
+		{
+			std::string flagged;
+			bool ok = readBytes(dictDir + L"meta.json", flagged);
+			try {
+				auto meta = nlohmann::ordered_json::parse(flagged);
+				meta["load_order"].insert(meta["load_order"].begin(), "affixes.json");
+				ok = ok && writeBytes(dictDir + L"meta.json", meta.dump(2));
+			} catch (...) { ok = false; }
+			translation_set_source(nullptr);
+			translation_reload();
+			const char* kOnly = "TestOnlyAffixXyz";
+			const char* r = translation_lookup(kOnly);
+			const bool bareKept = r == nullptr || std::string(r) == kOnly;
+			translation_set_source("affixes");
+			const std::string sourced = say(kOnly);
+			translation_set_source(nullptr);
+			check(ok && bareKept && sourced == u8"測試詞綴名",
+			      "S21 同時列在 load_order 與 source_dicts 的檔不併入全域表");
+			if (!(bareKept && sourced == u8"測試詞綴名"))
+				printf("    unmarked=%s sourced=%s\n", r ? r : "(null)", sourced.c_str());
+			writeBytes(dictDir + L"meta.json", flagged);
+			translation_reload();
+		}
+
+		// Restore every file exactly, delete what we created.
+		bool restored = true;
+		for (const Backup& b : backups) {
+			if (b.existed) {
+				if (!writeBytes(b.path, b.bytes)) restored = false;
+			} else {
+				DeleteFileW(b.path.c_str());
+			}
+			std::string now;
+			const bool exists = readBytes(b.path, now);
+			if (exists != b.existed || (exists && now != b.bytes)) restored = false;
+		}
+		translation_reload();
+		check(restored && say(kRobust) == robustBefore, "SR 測試結束後字典完整還原");
+	}
+
+	// --- S16p: the shipped poe2 dictionaries carry no "source_lookup" --------
+	// Real data, nothing planted: under every source added by this work the
+	// answer must equal the unmarked one, as it did before sources existed.
+	printf("\n=== source dictionaries: poe2 without source_lookup ===\n");
+	{
+		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
+		translation_set_source(nullptr);
+		translation_reload();
+		EditorModel m2 = LoadModel(poe2Root, "zh-rTW");
+		auto say = [](const std::string& key) {
+			const char* r = translation_lookup(key.c_str());
+			return r ? std::string(r) : std::string();
+		};
+		std::vector<std::string> keys;
+		for (const char* f : {"passives.json", "stats.json", "items.json", "uniques.json"}) {
+			int n = 0;
+			for (const EditorEntry& e : m2.entries)
+				if (m2.files[(size_t)e.fileIdx].name == f && n++ < 500) keys.push_back(e.key);
+		}
+		std::vector<std::string> bare;
+		for (const std::string& k : keys) bare.push_back(say(k));
+		size_t diffs = 0;
+		for (const char* src : {"passives", "affixes", "stats", "uniques", "items"}) {
+			translation_set_source(src);
+			for (size_t i = 0; i < keys.size(); i++) {
+				const std::string got = say(keys[i]);
+				if (got != bare[i] && ++diffs <= 10)
+					printf("    [%s] %s: sourced=%s bare=%s\n", src, keys[i].c_str(),
+					       got.c_str(), bare[i].c_str());
+			}
+			translation_set_source(nullptr);
+		}
+		printf("  (S16p: %zu keys x 5 sources, %zu differ)\n", keys.size(), diffs);
+		check(keys.size() > 1000 && diffs == 0,
+		      "S16p poe2 無旗標：設來源後的查找等於未標記");
+		const std::string built = translation_debug_sources();
+		check(built == "exact=gems;pattern=;id=",
+		      "S22p poe2 無旗標：只替 gems 建來源 exact 表，其餘不建");
+		if (built != "exact=gems;pattern=;id=") printf("    %s\n", built.c_str());
+		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		translation_reload();
+	}
+
 	// --- external dictionary root (POB_ZH_DATADIR) --------------------------
 	//
 	// Asks the REAL loader, not a re-implementation: build a throwaway dictionary
@@ -710,6 +1302,136 @@ int RunEditorSelftest(const std::string& games)
 		check(!unsignedHash.empty() && unsignedHash != "#% increased Fire Damage" && unsignedHash.find('#') != std::string::npos &&
 		          unsignedHash.find("increased") == std::string::npos,
 		      "T45 an unsigned '#' that already translated keeps doing so");
+	}
+
+	// P8 (使用者裁定 2026-10-21):id 字典檔(*_by_id.json)照列但唯讀;說明不再寫
+	// 「不會被讀取」(source_dicts 的檔不在 load_order 卻會被引擎讀)。
+	// 在 %TEMP% 的複本上做:SaveFile 被拒前若誤寫，也只寫到複本。
+	printf("\n=== P8 id 字典唯讀 ===\n");
+	{
+		wchar_t tmp[MAX_PATH];
+		GetTempPathW(MAX_PATH, tmp);
+		const std::wstring root8 = std::wstring(tmp) + L"pobtools_p8_editor\\";
+		const std::wstring leaf8 = root8 + L"zh-rTW\\";
+		CreateDirectoryW(root8.c_str(), nullptr);
+		CreateDirectoryW(leaf8.c_str(), nullptr);
+		const std::wstring src8 = poe1Root + L"zh-rTW\\";
+		const wchar_t* idFiles[] = {L"passives_by_id.json", L"affixes_by_id.json",
+		                            L"gems_desc_by_id.json", L"stats_by_id.json", L"legion_by_id.json"};
+		bool setup = CopyFileW((src8 + L"meta.json").c_str(), (leaf8 + L"meta.json").c_str(), FALSE) &&
+		             CopyFileW((src8 + L"ui.json").c_str(), (leaf8 + L"ui.json").c_str(), FALSE);
+		std::vector<std::string> present;   // 出貨資料裡實際存在的 id 檔
+		for (const wchar_t* f : idFiles) {
+			if (GetFileAttributesW((src8 + f).c_str()) == INVALID_FILE_ATTRIBUTES) continue;  // legion_by_id 可能不存在
+			if (!CopyFileW((src8 + f).c_str(), (leaf8 + f).c_str(), FALSE)) setup = false;
+			present.push_back(narrow(f));
+		}
+		check(setup && present.size() >= 4, "P8-0 id 字典檔複本已建立(至少 4 個)");
+
+		EditorModel m8 = LoadModel(root8, "zh-rTW");
+		// P8-1:照列、標唯讀;一般字典(ui.json)不唯讀
+		{
+			bool listed = true, ro = true;
+			for (const std::string& f : present) {
+				const int fi = FindFileIdx(m8, f);
+				if (fi < 0) { listed = false; printf("    not listed: %s\n", f.c_str()); continue; }
+				if (!m8.files[(size_t)fi].readOnly) { ro = false; printf("    not readOnly: %s\n", f.c_str()); }
+			}
+			const int ui = FindFileIdx(m8, "ui.json");
+			check(listed, "P8-1a id 字典檔仍列在編輯器檔案清單");
+			check(ro, "P8-1b id 字典檔標為唯讀");
+			check(ui >= 0 && !m8.files[(size_t)ui].readOnly, "P8-1c 一般字典(ui.json)不是唯讀");
+		}
+		// P8-2:編輯被拒(SetEntry 回 SIZE_MAX、值與 dirty 不變)
+		{
+			const int fi = FindFileIdx(m8, "passives_by_id.json");
+			bool ok = fi >= 0;
+			long long at = -1;
+			std::string before;
+			if (ok) {
+				for (size_t i = 0; i < m8.entries.size(); i++)
+					if (m8.entries[i].fileIdx == fi) { at = (long long)i; break; }
+				ok = at >= 0;
+			}
+			if (ok) {
+				before = m8.entries[(size_t)at].value;
+				const std::string key = m8.entries[(size_t)at].key;
+				const size_t r = SetEntry(m8, fi, key, before + "X");
+				const size_t r2 = SetEntry(m8, fi, "P8NewKeyXyz", u8"新條目");
+				ok = r == (size_t)-1 && r2 == (size_t)-1 && m8.entries[(size_t)at].value == before &&
+				     FindEntry(m8, fi, "P8NewKeyXyz") < 0 && !m8.files[(size_t)fi].dirty;
+				if (!ok) printf("    r=%lld r2=%lld value=%s dirty=%d\n", (long long)r, (long long)r2,
+				                m8.entries[(size_t)at].value.c_str(), (int)m8.files[(size_t)fi].dirty);
+			}
+			check(ok, "P8-2 唯讀檔的編輯與新增被拒(值不變、不變 dirty)");
+		}
+		// P8-3:存檔被拒(SaveFile 回 false,檔案位元組不變)
+		{
+			const int fi = FindFileIdx(m8, "affixes_by_id.json");
+			bool ok = fi >= 0;
+			if (ok) {
+				std::string beforeBytes, afterBytes;
+				read_file_bytes(m8.files[(size_t)fi].path, beforeBytes);
+				m8.files[(size_t)fi].doc["entries"]["P8ForcedKeyXyz"] = "x";   // 繞過 SetEntry 直接改 doc
+				m8.files[(size_t)fi].dirty = true;
+				std::string err;
+				const bool saved = SaveFile(m8.files[(size_t)fi], &err);
+				read_file_bytes(m8.files[(size_t)fi].path, afterBytes);
+				ok = !saved && !err.empty() && afterBytes == beforeBytes;
+				if (!ok) printf("    saved=%d err=%s same=%d\n", (int)saved, err.c_str(), (int)(afterBytes == beforeBytes));
+			}
+			check(ok, "P8-3 唯讀檔的存檔被拒且檔案不變");
+		}
+		// P8-4:說明文字不再寫「不會被讀取」;唯讀檔的說明提到唯讀
+		{
+			bool noNever = true, saysRo = true;
+			for (size_t fi = 0; fi < m8.files.size(); fi++) {
+				const std::string note = FileStatusNote(m8, (int)fi);
+				if (note.find(u8"不會被讀取") != std::string::npos) {
+					noNever = false;
+					printf("    %s: %s\n", m8.files[fi].name.c_str(), note.c_str());
+				}
+				if (m8.files[fi].name.find("_by_id.json") != std::string::npos &&
+				    note.find(u8"唯讀") == std::string::npos) saysRo = false;
+			}
+			check(noNever, "P8-4a 檔案說明不再出現「不會被讀取」");
+			check(saysRo, "P8-4b id 字典檔的說明標示唯讀");
+		}
+		// P8-5(review I1):模型層繞過 —— trans_editor_logic 的 SetWithUndo / ApplyState
+		// 對已存在條目直接改值，沒看 readOnly。對 *_by_id.json 既有條目走這兩條路，
+		// 值、edited、dirty 都不得改變，也不得記一筆 undo。
+		{
+			const int fi = FindFileIdx(m8, "gems_desc_by_id.json");
+			long long at = -1;
+			for (size_t i = 0; fi >= 0 && i < m8.entries.size(); i++)
+				if (m8.entries[i].fileIdx == fi) { at = (long long)i; break; }
+			bool ok = fi >= 0 && at >= 0;
+			if (ok) {
+				const std::string key = m8.entries[(size_t)at].key;
+				const std::string before = m8.entries[(size_t)at].value;
+				TransEd::UndoStack undo;
+				TransEd::SetWithUndo(m8, undo, fi, key, before + "X");
+				const bool viaUndo = m8.entries[(size_t)at].value == before && !m8.entries[(size_t)at].edited &&
+				                     !m8.files[(size_t)fi].dirty && undo.Size() == 0;
+				TransEd::EntryState st;
+				st.exists = true;
+				st.value = before + "Y";
+				TransEd::ApplyState(m8, fi, key, st);
+				const bool viaApply = m8.entries[(size_t)at].value == before && !m8.files[(size_t)fi].dirty;
+				ok = viaUndo && viaApply;
+				if (!ok) printf("    viaUndo=%d viaApply=%d value=%s dirty=%d undo=%zu\n", (int)viaUndo, (int)viaApply,
+				                m8.entries[(size_t)at].value.c_str(), (int)m8.files[(size_t)fi].dirty, undo.Size());
+			}
+			check(ok, "P8-5 SetWithUndo / ApplyState 不得改唯讀檔的既有條目");
+		}
+		for (const wchar_t* f : idFiles) {
+			DeleteFileW((leaf8 + f).c_str());
+			DeleteFileW((leaf8 + f + std::wstring(L".bak")).c_str());
+		}
+		DeleteFileW((leaf8 + L"meta.json").c_str());
+		DeleteFileW((leaf8 + L"ui.json").c_str());
+		RemoveDirectoryW(leaf8.c_str());
+		RemoveDirectoryW(root8.c_str());
 	}
 
 	printf("\neditor selftest: %d passed, %d failed\n", g_pass, g_fail);

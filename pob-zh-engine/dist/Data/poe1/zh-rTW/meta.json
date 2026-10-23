@@ -13,6 +13,21 @@
     "uniques.json",
     "monsters.json"
   ],
+  "source_dicts": [
+    "affixes.json",
+    "passives_by_id.json",
+    "affixes_by_id.json",
+    "stats_by_id.json",
+    "gems_desc_by_id.json",
+    "anoint.json",
+    "legion.json",
+    "tattoo.json",
+    "stat_wrappers.json",
+    "gem_names.json",
+    "gem_names_nonactive.json",
+    "gem_names_support.json"
+  ],
+  "source_lookup": true,
   "incomplete_translation_whitelist": [
     "DPS",
     "PoB",

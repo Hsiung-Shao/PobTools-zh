@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <cstdio>
 #include <cstring>
+#include <cctype>
 #include <string>
 #include <algorithm>
 #include <unordered_map>
@@ -115,21 +116,171 @@ static void do_init(void);
 **
 ** Load order cannot fix it: whichever file wins, the other context is wrong.
 ** So POB tells us WHERE it read the string from (PobToolsSetSource, wrapped
-** around the controls that draw gem names) and that file's own dictionary is
-** consulted first. Nothing is marked by default, so unmarked call sites — the
-** passive tree included — behave exactly as before.
+** around the controls that draw the string) and that file's own dictionary is
+** consulted first — its exact entries, then its own value patterns, both ahead
+** of the merged exact map. Nothing is marked by default, so unmarked call sites
+** behave exactly as before.
+**
+** ascendancy is not registered yet: which file carries those names is still
+** undecided on the data side.
 */
 struct SourceDict {
     const char *name;   /* what Lua passes to PobToolsSetSource */
     const char *file;   /* the dictionary file backing it */
 };
 static const SourceDict kSourceDicts[] = {
-    { "gems", "gems.json" },
+    { "gems",     "gems.json" },
+    { "passives", "passives.json" },
+    { "affixes",  "affixes.json" },
+    { "stats",    "stats.json" },
+    { "uniques",  "uniques.json" },
+    { "items",    "items.json" },
+    /* Listed only in meta.json "source_dicts": loaded (with source_lookup)
+    ** as source tables, never merged -- their wording differs from the merged
+    ** map on purpose (an anoint's "Juggernaut" is the notable, not the
+    ** ascendancy class). */
+    { "anoint",   "anoint.json" },
+    { "legion",   "legion.json" },
+    { "tattoo",   "tattoo.json" },
+    /* GGPK gem display names without the "Support" suffix -- what a stat's
+    ** gem NAME slot needs ("...Supported by level {2} {1}" already says 輔助). */
+    { "gem_names", "gem_names.json" },
+    /* Same, split by gem kind; stats_by_id.json "name_slots" may name these
+    ** directly (a non-active support's name, an indexable support's name). */
+    { "gem_names_nonactive", "gem_names_nonactive.json" },
+    { "gem_names_support",   "gem_names_support.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
+
+/* Id-keyed dictionaries: same English, different id, different wording (two
+** passives both named "Elemental Overload" with their own GraphIds; two mods
+** sharing the affix name "Robust"). Keys are ids, never English, so these
+** files feed ONLY this table -- not the merged map, not the source exact or
+** pattern maps -- and are reachable only through translation_lookup_by_id.
+** Listed in meta.json "source_dicts" (load_order also works, for older data),
+** keyed by the same source names. */
+static const SourceDict kIdDicts[] = {
+    { "passives", "passives_by_id.json" },   /* GraphId -> name */
+    { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
+    { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
+    /* No "legion" id table (user ruling S8, reversed): POB, poedb and GGPK
+    ** agree on the legion passives' Name column; only GGPK's Id STRINGS have
+    ** the two Faith notables swapped (templar_notable_minimum_power_charge is
+    ** "Frenzied Faith"), so naming by id would be the one that is wrong.
+    ** Legion names go through the English "legion" source table instead. */
+};
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
+/* source -> (id -> whitespace-normalised GGPK English), from the id file's
+** optional "templates". A source present here (even with an empty map) had a
+** templates field: its id answers are English-checked. Kept out of s_id_dicts
+** so translation_debug_sources is unchanged. */
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_templates;
+
+/* stats_by_id.json: GGG stat descriptions keyed "stat_ids|cond|src_file|dup_ix",
+** Chinese templates in "entries", English templates in "templates". Like the
+** id files above it feeds ONLY its own index (s_stat_index) -- never the merged
+** map, any reverse/pattern table or s_id_dicts -- and is reachable only through
+** translation_lookup_stat. Built only when meta.json has "source_lookup".
+** Only the two description files a ctx can select are indexed. */
+static const char *const kStatDictFile = "stats_by_id.json";
+static const char *const kStatFileItem = "stat_descriptions.txt";
+static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
+/* Aura-type passives (nearby enemies...) live only here. */
+static const char *const kStatFilePassiveAura = "passive_skill_aura_stat_descriptions.txt";
+
+/* Every description file in stats_by_id.json gets an id; a ctx turns into a
+** CHAIN of file ids, most specific first (stat_ctx_chain):
+**   item          -> stat_descriptions
+**   passive       -> passive_skill -> stat_descriptions -> passive_skill_aura
+**   gem           -> skill_stat -> active_skill_gem -> gem_stat -> stat_descriptions
+**                    (POB scopeList order for an active skill)
+**   gem:<scope>   -> <scope>.txt and its parents from stats_by_id.json
+**                    "stat_desc_parents" (POB's statDescriptionScope + parent
+**                    chain); the gem default when the scope is not in that
+**                    table or the data pack predates it.
+** Lookups walk the chain; the first file with a candidate decides (a file
+** whose candidate matches the line's case exactly is preferred over all). */
+static std::vector<std::string> s_stat_files;                  /* id -> basename */
+static std::unordered_map<std::string, int> s_stat_file_ids;   /* basename -> id */
+static std::unordered_map<std::string, std::string> s_stat_parents;  /* child -> parent */
+static int stat_file_id(const std::string &name) {
+    auto it = s_stat_file_ids.find(name);
+    if (it != s_stat_file_ids.end()) return it->second;
+    const int id = (int)s_stat_files.size();
+    s_stat_files.push_back(name);
+    s_stat_file_ids.emplace(name, id);
+    return id;
+}
+static const char *const kStatGemDefaultChain[] = {
+    "skill_stat_descriptions.txt",
+    "active_skill_gem_stat_descriptions.txt",
+    "gem_stat_descriptions.txt",
+    "stat_descriptions.txt",
+};
+struct StatCand {
+    int         file;      /* description file id (s_stat_files) */
+    /* The index key WITHOUT case folding: a candidate whose English matches
+    ** the line's case exactly beats one that only matches case-insensitively
+    ** ("Chance To Bleed" vs "Chance to Bleed", "Taken" vs "taken"). */
+    std::string ckey;
+    std::vector<std::string> ids;  /* the key's stat_ids */
+    /* Per English slot (same index as the line's values): 1 = a "{N:+d}"
+    ** placeholder, i.e. the game prints that value with its sign. */
+    std::vector<char> plus_slot;
+    int         nstats;    /* stat_ids count (space separated) */
+    FillPlan    plan;      /* English {N} -> Chinese {N}; text has real newlines */
+    /* Numbers the English template writes out ("per 10 Devotion"): slot index
+    ** in the line's values -> literal. A line with another number there is a
+    ** different stat that happens to hash the same. */
+    std::vector<std::pair<int, std::string>> lits;
+};
+/* normalised English template -> candidates */
+static std::unordered_map<std::string, std::vector<StatCand>> s_stat_index;
+
+/* Stat entries with NAME slots (stats_by_id.json "name_slots": {key: {"N":
+** "passives"|"gems"}}): a {N} filled by a passive / skill NAME, not a number
+** ("Allocates {0}", "+{0} to Level of all {1} Gems"). They cannot live in the
+** hash index (a name is not a '#'), so they are matched token by token
+** (stat_match_named) and kept here instead. */
+struct StatNamedTok {
+    std::string lit;   /* literal text, or empty for a placeholder */
+    int         ph;    /* placeholder number, -1 for a literal */
+};
+struct StatNamedCand {
+    int         file;      /* description file id (s_stat_files) */
+    std::vector<std::string> ids;
+    std::vector<StatNamedTok> toks;            /* the English template */
+    std::string zh;                            /* Chinese template, real newlines */
+    std::unordered_map<int, std::string> name_src;  /* {N} -> "passives" / "gems" */
+};
+static std::vector<StatNamedCand> s_stat_named;
+
+/* stat_wrappers.json: English wrapper template with one {0} -> Chinese
+** ("Added Small Passive Skills grant: {0}"). A stat line that misses is
+** retried with its inside ({0}) looked up as a stat and wrapped. */
+static const char *const kStatWrapperFile = "stat_wrappers.json";
+struct StatWrapper { std::string prefix, suffix, zh; };
+static std::vector<StatWrapper> s_stat_wrappers;
+/* ctx + '\x1f' + line -> answer ("" = no answer). Node-stable: pointers into it
+** stay valid until translation_shutdown, like translation_lookup's results. */
+static std::unordered_map<std::string, std::string> s_stat_cache;
+/* Same, for translation_lookup_stat_colored (answers carry the colour). */
+static std::unordered_map<std::string, std::string> s_stat_colored_cache;
+/* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
+** be selected, exact entries only, and id lookups answer nothing -- so a locale
+** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
+** did before the per-source dictionaries existed. */
+static bool s_source_lookup = false;
+static const char *const kLegacySource = "gems";
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
+/* Each source's own forward patterns (same key/plan shape as s_forward_pattern),
+** so a sourced value line ("23% increased X") resolves through ITS file's
+** template rather than whichever later file redefined the pattern or the exact
+** line. Created at load time next to s_sources; the pointer follows it. */
+static std::unordered_map<std::string, std::unordered_map<std::string, FillPlan>> s_source_patterns;
+static const std::unordered_map<std::string, FillPlan> *s_active_source_patterns = nullptr;
 
 /* Results computed while a source is active may embed a source-specific
 ** translation (the pattern / comma-list / suffix paths all recurse), so they
@@ -139,6 +290,10 @@ static std::string s_active_source_name;
 ** references to existing elements valid, so these pointers stay good. */
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_source_cache;
 static std::unordered_map<std::string, std::string> *s_lookup_cache_active = &s_lookup_cache;
+/* Same isolation for translation_lookup_item_title: its cached answer came
+** through the active source too, so each source keeps its own title cache. */
+static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_item_title_source_cache;
+static std::unordered_map<std::string, std::string> *s_item_title_cache_active = &s_item_title_cache;
 /* ========== Dynamic structures for externalized data ========== */
 
 struct HeaderMapping_Dyn {
@@ -1054,8 +1209,402 @@ static std::string determine_locale() {
 
 /* ========== JSON Loading Functions ========== */
 
+/* passives_by_id.json / affixes_by_id.json: { "entries": { "<id>": "<zh>" } }.
+** Deliberately NOT load_json_translations -- that one derives patterns,
+** reverse keys and glossary terms from English keys, and these keys are ids. */
+static int load_json_id_dict(const std::string &filepath,
+                             std::unordered_map<std::string, std::string> &sink,
+                             const std::string &source) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object()) return 0;
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        std::string zh = it.value().get<std::string>();
+        if (it.key().empty() || zh.empty()) continue;
+        sink[it.key()] = std::move(zh);   /* last-wins within the file */
+        ++count;
+    }
+    /* Optional "templates": id -> the GGPK English of that id. Its presence
+    ** marks the file as English-checked (see translation_lookup_by_id_en); an
+    ** older pack without it keeps the plain id behaviour. */
+    if (doc.contains("templates") && doc["templates"].is_object()) {
+        auto &tsink = s_id_templates[source];   /* exists (maybe empty) = checked */
+        for (auto it = doc["templates"].begin(); it != doc["templates"].end(); ++it) {
+            if (!it.value().is_string() || it.key().empty()) continue;
+            tsink[it.key()] = normalize_whitespace(it.value().get<std::string>());
+        }
+    }
+    return count;
+}
+
+/* The distinct {N} numbers a template line uses. Splitting a multi-line entry
+** into per-line entries is only safe when line i of the English and line i of
+** the Chinese carry the SAME set: when the value moved to the other line, the
+** half that lost it would translate to a line that silently drops the number,
+** and the half that gained it would show a raw {0} (or swallow a written-out
+** number of the English as its value). Shared by the dictionary loader's
+** per-line registration and the stat index's per-line candidates. */
+static std::vector<int> placeholder_index_set(const std::string &s) {
+    std::vector<int> ix;
+    normalize_placeholders(s, &ix);
+    std::vector<int> v;
+    for (int n : ix) if (n >= 0) v.push_back(n);
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+    return v;
+}
+
+/* ---- stats_by_id.json ---- */
+
+/* GGG writes a multi-line description as one string with a literal "\n"
+** (backslash, n); the line POB hands us has a real newline there. */
+static std::string stat_unescape_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == 'n') { r += '\n'; i++; continue; }
+        if (s[i] == '\r') continue;
+        r += s[i];
+    }
+    return r;
+}
+
+/* "{}" / "{:+d}" are GGG's auto-numbered placeholders (the first is {0}, the
+** next {1}, ...). normalize_placeholders only knows the numbered form, so give
+** them their numbers here -- otherwise "{:+d} to maximum Life if ..." keeps a
+** literal "{:+d}" and can never match a real line. */
+static std::string stat_number_bare_placeholders(const std::string &s) {
+    std::string r;
+    r.reserve(s.size() + 4);
+    int next = 0;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '{' && i + 1 < s.size() && (s[i + 1] == '}' || s[i + 1] == ':')) {
+            r += '{';
+            r += std::to_string(next++);
+            continue;
+        }
+        r += s[i];
+    }
+    return r;
+}
+
+/* Whitespace touching a line break is layout, not content. */
+static std::string stat_trim_around_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == ' ' && ((i + 1 < s.size() && s[i + 1] == '\n') || (!r.empty() && r.back() == '\n')))
+            continue;
+        r += s[i];
+    }
+    return r;
+}
+
+/* The index key: same hashing every forward pattern uses (placeholders and
+** numbers -> '#', signs and ranges folded in), case-folded, spaces collapsed.
+** `s` must already be markup-stripped and newline-unescaped. */
+static std::string stat_case_key(const std::string &s) {
+    return stat_trim_around_newlines(normalize_whitespace(digits_to_hash(normalize_placeholders(s))));
+}
+static std::string stat_index_key(const std::string &s) {
+    return to_ascii_lower(stat_case_key(s));
+}
+
+/* ".txt" added when missing: stat_desc_parents and gem:<scope> may name a
+** file either way. */
+static std::string stat_file_basename(std::string s) {
+    if (s.size() < 4 || s.compare(s.size() - 4, 4, ".txt") != 0) s += ".txt";
+    return s;
+}
+
+static int load_json_stat_dict(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object() ||
+        !doc.contains("templates") || !doc["templates"].is_object()) return 0;
+    const njson &templates = doc["templates"];
+    /* Optional (newer data packs): the description files' parent chain and
+    ** fixed Chinese slots. Absent = the gem default chain / nothing fixed. */
+    if (doc.contains("stat_desc_parents") && doc["stat_desc_parents"].is_object()) {
+        for (auto pit = doc["stat_desc_parents"].begin(); pit != doc["stat_desc_parents"].end(); ++pit)
+            if (pit->is_string())
+                s_stat_parents[stat_file_basename(pit.key())] = stat_file_basename(pit->get<std::string>());
+    }
+    const njson *fixed_slots = nullptr;
+    if (doc.contains("fixed_slots") && doc["fixed_slots"].is_object()) fixed_slots = &doc["fixed_slots"];
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        const std::string &key = it.key();
+        /* "stat_ids|cond...|src_file|dup_ix": cond may itself hold '|', so the
+        ** file is the second field from the END. */
+        const size_t p_dup = key.rfind('|');
+        if (p_dup == std::string::npos || p_dup == 0) continue;
+        const size_t p_file = key.rfind('|', p_dup - 1);
+        if (p_file == std::string::npos) continue;
+        const std::string src_file = key.substr(p_file + 1, p_dup - p_file - 1);
+        const int file = stat_file_id(src_file);
+        std::vector<std::string> ids;
+        {
+            const size_t p_ids = key.find('|');
+            size_t b0 = 0;
+            while (b0 < p_ids) {
+                size_t sp = key.find(' ', b0);
+                if (sp == std::string::npos || sp > p_ids) sp = p_ids;
+                if (sp > b0) ids.push_back(key.substr(b0, sp - b0));
+                b0 = sp + 1;
+            }
+        }
+        auto tit = templates.find(key);
+        if (tit == templates.end() || !tit->is_string()) continue;
+
+        const std::string en = stat_number_bare_placeholders(
+            stat_unescape_newlines(strip_brackets(tit->get<std::string>())));
+        std::string zh = stat_number_bare_placeholders(
+            stat_unescape_newlines(strip_brackets(it.value().get<std::string>())));
+        if (en.empty() || zh.empty()) continue;
+
+        /* "fixed_slots": {key: {"k": N}}. The Chinese {k} has no English
+        ** counterpart -- the value is fixed by the description's condition
+        ** (map_num_extra_invasion_bosses|1: "an additional Invasion Boss" ->
+        ** "{0} 隻額外...", always 1). Write N into the Chinese before anything
+        ** else sees it. */
+        if (fixed_slots) {
+            auto fit = fixed_slots->find(key);
+            if (fit != fixed_slots->end() && fit->is_object()) {
+                for (auto kv = fit->begin(); kv != fit->end(); ++kv) {
+                    std::string val;
+                    if (kv->is_number_integer()) val = std::to_string(kv->get<long long>());
+                    else if (kv->is_number()) {
+                        char b[64];
+                        snprintf(b, sizeof(b), "%g", kv->get<double>());
+                        val = b;
+                    } else if (kv->is_string()) val = kv->get<std::string>();
+                    else continue;
+                    const std::string open = "{" + kv.key();
+                    for (size_t p = zh.find(open); p != std::string::npos; p = zh.find(open, p)) {
+                        const size_t after = p + open.size();
+                        size_t close = std::string::npos;
+                        if (after < zh.size() && zh[after] == '}') close = after;
+                        else if (after < zh.size() && zh[after] == ':') close = zh.find('}', after);
+                        if (close == std::string::npos) { p = after; continue; }
+                        zh.replace(p, close - p + 1, val);
+                        p += val.size();
+                    }
+                }
+            }
+        }
+
+        /* Name-slot entries go to s_stat_named only (see StatNamedCand). */
+        if (doc.contains("name_slots") && doc["name_slots"].is_object()) {
+            auto nit = doc["name_slots"].find(key);
+            if (nit != doc["name_slots"].end() && nit->is_object()) {
+                std::unordered_map<int, std::string> name_src;
+                for (auto sit = nit->begin(); sit != nit->end(); ++sit)
+                    if (sit->is_string()) name_src[atoi(sit.key().c_str())] = sit->get<std::string>();
+                auto add_named = [&](const std::string &en_t, const std::string &zh_t) {
+                    StatNamedCand nc;
+                    nc.file = file;
+                    nc.ids = ids;
+                    nc.zh = zh_t;
+                    nc.name_src = name_src;
+                    /* tokenise the English: literals and {N} / {N:fmt} */
+                    std::string lit;
+                    for (size_t i = 0; i < en_t.size(); i++) {
+                        if (en_t[i] == '{') {
+                            size_t j = i + 1;
+                            while (j < en_t.size() && en_t[j] >= '0' && en_t[j] <= '9') j++;
+                            size_t close = en_t.find('}', j);
+                            if (j > i + 1 && close != std::string::npos && (en_t[j] == '}' || en_t[j] == ':')) {
+                                if (!lit.empty()) { nc.toks.push_back({ lit, -1 }); lit.clear(); }
+                                nc.toks.push_back({ std::string(), atoi(en_t.c_str() + i + 1) });
+                                i = close;
+                                continue;
+                            }
+                        }
+                        lit += en_t[i];
+                    }
+                    if (!lit.empty()) nc.toks.push_back({ lit, -1 });
+                    s_stat_named.push_back(std::move(nc));
+                };
+                add_named(en, zh);
+                /* A multi-line name template whose LAST line is a fixed tag on
+                ** both sides (Impossible Escape: "...\nPassage" / "...\n通途")
+                ** is drawn by POB as the lines before it, joined into one line.
+                ** Register that form too: English lines 1..n-1 joined by a
+                ** space -> Chinese lines 1..m-1. Only when both last lines
+                ** carry no placeholder and the rest keeps the same {N} set. */
+                if (en.find('\n') != std::string::npos && zh.find('\n') != std::string::npos) {
+                    const size_t el = en.rfind('\n'), zl = zh.rfind('\n');
+                    const std::string en_last = en.substr(el + 1), zh_last = zh.substr(zl + 1);
+                    std::string en_head = en.substr(0, el);
+                    const std::string zh_head = zh.substr(0, zl);
+                    if (en_last.find('{') == std::string::npos && zh_last.find('{') == std::string::npos &&
+                        placeholder_index_set(en_head) == placeholder_index_set(zh_head)) {
+                        for (char &ch : en_head) if (ch == '\n') ch = ' ';
+                        add_named(en_head, zh_head);
+                    }
+                }
+                ++count;
+                continue;
+            }
+        }
+
+        int nstats = 0;
+        {
+            const size_t p_ids = key.find('|');
+            bool in_tok = false;
+            for (size_t i = 0; i < p_ids; i++) {
+                if (key[i] == ' ') in_tok = false;
+                else if (!in_tok) { in_tok = true; nstats++; }
+            }
+        }
+
+        auto add_cand = [&](const std::string &en_t, const std::string &zh_t) {
+            StatCand c;
+            c.file = file;
+            c.ckey = stat_case_key(en_t);
+            c.ids = ids;
+            c.nstats = nstats;
+            /* {N} numbers written with a sign format ("{0:+d}") */
+            std::vector<int> plus_ph;
+            for (size_t p = en_t.find('{'); p != std::string::npos; p = en_t.find('{', p + 1)) {
+                size_t q = p + 1;
+                while (q < en_t.size() && en_t[q] >= '0' && en_t[q] <= '9') q++;
+                if (q > p + 1 && q + 1 < en_t.size() && en_t[q] == ':' && en_t[q + 1] == '+')
+                    plus_ph.push_back(atoi(en_t.c_str() + p + 1));
+            }
+            /* The plan keeps the Chinese template's own spacing (GGG writes
+            ** "錘和權杖增加  {0}%" with two spaces and the game shows both);
+            ** only the index KEY is whitespace-normalised. */
+            const std::string zh_text = digits_to_hash(normalize_placeholders(zh_t));
+            const std::vector<TmplSlot> en_slots = template_slots(en_t);
+            for (size_t i = 0; i < en_slots.size(); i++) {
+                const TmplSlot &t = en_slots[i];
+                /* "+#" is a signed placeholder ("+{0}"), not a written-out number */
+                if (t.ph < 0 && !t.lit.empty() && t.lit.back() != '#')
+                    c.lits.emplace_back((int)i, t.lit);
+            }
+            c.plus_slot.assign(en_slots.size(), 0);
+            for (size_t i = 0; i < en_slots.size(); i++)
+                if (en_slots[i].ph >= 0 &&
+                    std::find(plus_ph.begin(), plus_ph.end(), en_slots[i].ph) != plus_ph.end())
+                    c.plus_slot[i] = 1;
+            c.plan = build_fill_plan_slots(en_slots, template_slots(zh_t), zh_text);
+            s_stat_index[stat_index_key(en_t)].push_back(std::move(c));
+        };
+        add_cand(en, zh);
+        ++count;
+        /* POB may draw a two-line description as ONE line, the lines joined by
+        ** a space ("...Maximum Energy Shield per 1% ..."): index that form too.
+        ** The answer keeps the Chinese line break. */
+        if (en.find('\n') != std::string::npos) {
+            std::string joined = en;
+            for (char &ch : joined) if (ch == '\n') ch = ' ';
+            add_cand(joined, zh);
+        }
+
+        /* A keystone's description is one multi-line template in the passive
+        ** file, but POB draws each line on its own ("Cannot Evade enemy
+        ** Attacks"). When both sides have the same number of lines, line i of
+        ** the English is line i of the Chinese, so each line is a candidate
+        ** too. Every indexed file does this (the item file has multi-line
+        ** templates POB also sends line by line).
+        **
+        ** A line pair is only a candidate when both lines use the same {N}
+        ** set. Chinese often moves the value to the other line ("{0}% chance
+        ** ... when any\nof your Traps ..." -> "當你的陷阱被敵人觸發時，\n有 {0}%
+        ** ..."): the Chinese line with {0} would leak a placeholder (the guard
+        ** catches that), and the English line with {0} would translate to a
+        ** Chinese line that silently DROPS the value -- nothing catches that,
+        ** so such pairs are never indexed. */
+        if (en.find('\n') != std::string::npos) {
+            auto split = [](const std::string &s) {
+                std::vector<std::string> v;
+                size_t b0 = 0;
+                for (;;) {
+                    size_t e = s.find('\n', b0);
+                    v.push_back(s.substr(b0, e == std::string::npos ? std::string::npos : e - b0));
+                    if (e == std::string::npos) break;
+                    b0 = e + 1;
+                }
+                return v;
+            };
+            const std::vector<std::string> en_lines = split(en), zh_lines = split(zh);
+            if (en_lines.size() == zh_lines.size()) {
+                for (size_t i = 0; i < en_lines.size(); i++) {
+                    if (normalize_whitespace(en_lines[i]).empty() ||
+                        normalize_whitespace(zh_lines[i]).empty()) continue;
+                    if (placeholder_index_set(en_lines[i]) != placeholder_index_set(zh_lines[i])) continue;
+                    add_cand(en_lines[i], zh_lines[i]);
+                }
+            }
+        }
+    }
+    return count;
+}
+
+/* stat_wrappers.json: { "entries": { "<English with one {0}>": "<Chinese>" } }.
+** Never merged; feeds s_stat_wrappers only. */
+static int load_json_stat_wrappers(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.contains("entries") || !doc["entries"].is_object()) return 0;
+    int count = 0;
+    for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
+        if (!it.value().is_string()) continue;
+        const std::string en = stat_unescape_newlines(it.key());
+        const std::string zh = stat_unescape_newlines(it.value().get<std::string>());
+        const size_t p = en.find("{0}");
+        if (p == std::string::npos || en.find("{0}", p + 3) != std::string::npos) continue;
+        if (zh.find("{0}") == std::string::npos) continue;
+        s_stat_wrappers.push_back({ en.substr(0, p), en.substr(p + 3), zh });
+        ++count;
+    }
+    return count;
+}
+
 static int load_json_translations(const std::string &filepath, bool is_base_items,
-                                  std::unordered_map<std::string, std::string> *sink = nullptr) {
+                                  std::unordered_map<std::string, std::string> *sink = nullptr,
+                                  std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
+                                  bool source_only = false) {
+    /* source_only (meta.json "source_only"): the file feeds ONLY its source
+    ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
+    ** map, the forward patterns, any reverse map or (via s_translations) the
+    ** glossary, so unmarked lookups and paste never see it. */
+    const bool merge = !source_only;
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1192,7 +1741,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
         /* Insert-or-overwrite (last wins, as always) in ONE hash lookup; the
         ** duplicate diagnostic reads the old value before it is replaced. */
-        {
+        if (merge) {
             auto [it, inserted] = s_translations.try_emplace(full_key, full_value);
             if (!inserted) {
                 if (it->second != full_value) {
@@ -1205,14 +1754,16 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             }
         }
         if (sink) (*sink)[full_key] = full_value;
-        s_reverse[full_value] = full_key;
-        s_reverse_origin[full_value] = origin;
-        if (clean_value != full_value) {
-            s_reverse[clean_value] = clean_key;
-            s_reverse_origin[clean_value] = origin;
+        if (merge) {
+            s_reverse[full_value] = full_key;
+            s_reverse_origin[full_value] = origin;
+            if (clean_value != full_value) {
+                s_reverse[clean_value] = clean_key;
+                s_reverse_origin[clean_value] = origin;
+            }
         }
 
-        if (is_base_items) {
+        if (merge && is_base_items) {
             s_reverse_bases[clean_value] = clean_key;
             /* Item.lua strips any " (...)" from the base name before appending it
             ** to the title, so the form that reaches us is always the clean one;
@@ -1252,13 +1803,45 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             reverse_plan = build_fill_plan_slots(slots_value, slots_key, norm_key);
         };
         if (norm_value != clean_value || norm_key != clean_key) {
-            ensure_reverse_plan();
-            s_reverse_pattern[norm_value] = reverse_plan;
-            s_reverse_pattern_origin[norm_value] = origin;
-            register_compact_pattern(norm_value, reverse_plan, origin);
-            s_forward_pattern[to_ascii_lower(norm_key)] = build_fill_plan_slots(slots_key, slots_value, norm_value);
+            if (merge) {
+                ensure_reverse_plan();
+                s_reverse_pattern[norm_value] = reverse_plan;
+                s_reverse_pattern_origin[norm_value] = origin;
+                register_compact_pattern(norm_value, reverse_plan, origin);
+            } else {
+                ensure_slots();
+            }
+            /* A forward pattern fills the Chinese {N} from the line's values. When
+            ** the Chinese uses a {N} the English key does not have ("Shield per
+            ** 1% Chaos Resistance they have" -> "將他們 {0}% 的最大生命..."), the
+            ** only thing left to feed it is a number the English wrote out as
+            ** wording -- an unverifiable guess, so no forward pattern is made
+            ** from such an entry (its exact entry is still blocked by the
+            ** placeholder guard at lookup time).
+            **
+            ** The test is a COUNT, not the numbering: only when the English has
+            ** fewer placeholder occurrences than the Chinese has distinct {N}
+            ** must a value come from written-out wording. Enough placeholders
+            ** numbered differently (key {0} / value {1}, key {0}{0} / value
+            ** {0}{1} -- data renumbering slips) keep the pattern and its
+            ** in-order fallback, which reads them correctly. */
+            bool fwd_ok = true;
+            {
+                std::vector<int> key_ix;
+                normalize_placeholders(clean_key, &key_ix);
+                size_t key_ph = 0;
+                for (int n : key_ix) if (n >= 0) key_ph++;
+                if (key_ph < placeholder_index_set(clean_value).size()) fwd_ok = false;
+            }
+            if (fwd_ok) {
+                std::string fwd_key = to_ascii_lower(norm_key);
+                FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
+                /* Source copy follows the merged map's rule here: overwrite. */
+                if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
+                if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+            }
         }
-        std::string fuzzy_value = normalize_chinese_synonyms(norm_value);
+        std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
         if (fuzzy_value != norm_value) {
             /* 同一份計畫:模糊化只改查表用的鍵,不動槽位順序(synonyms.json 的規則
             ** 都不會刪掉 '#',所以模糊鍵命中時輸入的格數仍與樣板一致)。 */
@@ -1275,28 +1858,38 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             for (size_t i = 0; aligned && i < klines.size(); i++) {
                 if (klines[i].empty() || vlines[i].empty()) aligned = false;
                 else if (slot_count(klines[i]) != slot_count(vlines[i])) aligned = false;
+                else if (placeholder_index_set(klines[i]) != placeholder_index_set(vlines[i])) aligned = false;
             }
             if (aligned) {
                 for (size_t i = 0; i < klines.size(); i++) {
                     const std::string &k = klines[i], &v = vlines[i];
-                    if (!s_translations.count(k)) {
+                    if (merge && !s_translations.count(k)) {
                         s_translations[k] = v;
-                        if (sink) (*sink)[k] = v;
                     }
-                    if (!s_reverse.count(v)) {
+                    /* The source copy ignores the merged map (an earlier file
+                    ** owning the line says nothing about what THIS file means by
+                    ** it) but keeps the merged rule inside the file: a derived
+                    ** line never replaces an entry already there, and a later
+                    ** purpose-built entry overwrites it (the main-entry write
+                    ** above is unconditional). Same as the pattern sink below. */
+                    if (sink && !sink->count(k)) (*sink)[k] = v;
+                    if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
                     }
                     std::string nv = normalize_whitespace(digits_to_hash(normalize_placeholders(v)));
                     std::string nk = normalize_whitespace(digits_to_hash(normalize_placeholders(k)));
                     if (nv != v || nk != k) {
-                        if (!s_reverse_pattern.count(nv)) {
+                        if (merge && !s_reverse_pattern.count(nv)) {
                             s_reverse_pattern[nv] = build_fill_plan(v, k, nk);
                             s_reverse_pattern_origin[nv] = origin;
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (!s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        /* Source copy keeps this spot's rule too: first one wins. */
+                        if (pattern_sink && !pattern_sink->count(lk))
+                            (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
                     }
                 }
             }
@@ -1310,7 +1903,10 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 }
 
 static bool load_json_meta(const std::string &filepath,
-                           std::vector<std::string> &load_order) {
+                           std::vector<std::string> &load_order,
+                           std::vector<std::string> &source_only,
+                           std::vector<std::string> &source_dicts,
+                           bool &source_lookup) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return false;
 
@@ -1334,6 +1930,35 @@ static bool load_json_meta(const std::string &filepath,
                 load_order.push_back(item.get<std::string>());
         }
     }
+
+    /* Optional: files that load in load_order but feed only their source
+    ** dictionary (see load_json_translations). Absent = every file merges.
+    ** Kept for compatibility; shipped data uses source_dicts instead. */
+    if (doc.contains("source_only") && doc["source_only"].is_array()) {
+        for (auto &item : doc["source_only"]) {
+            if (item.is_string())
+                source_only.push_back(item.get<std::string>());
+        }
+    }
+
+    /* Optional: files that are NOT in load_order at all and feed only their
+    ** source dictionary (English keys) or the id table (*_by_id). Keeping them
+    ** out of load_order is the point: an older engine reads load_order only,
+    ** so it never merges an affix-name file or takes an id file's numeric keys
+    ** for English. */
+    if (doc.contains("source_dicts") && doc["source_dicts"].is_array()) {
+        for (auto &item : doc["source_dicts"]) {
+            if (item.is_string())
+                source_dicts.push_back(item.get<std::string>());
+        }
+    }
+
+    /* Optional: true = this locale's data is organised for per-source lookup
+    ** (passives/affixes/stats/uniques/items + id files). Absent = the
+    ** behaviour from before those sources existed: only "gems" (exact entries)
+    ** can be selected, everything else answers as unmarked. */
+    source_lookup = doc.contains("source_lookup") && doc["source_lookup"].is_boolean() &&
+                    doc["source_lookup"].get<bool>();
 
     if (doc.contains("incomplete_translation_whitelist") &&
         doc["incomplete_translation_whitelist"].is_array()) {
@@ -1626,7 +2251,10 @@ static bool try_load_json(const std::string &base_dir) {
 
     /* Load meta.json */
     std::vector<std::string> load_order;
-    if (!load_json_meta(meta_path, load_order)) {
+    std::vector<std::string> source_only;
+    std::vector<std::string> source_dicts;
+    bool source_lookup = false;
+    if (!load_json_meta(meta_path, load_order, source_only, source_dicts, source_lookup)) {
         OutputDebugStringA("[pob-proxy] Failed to parse meta.json\n");
         return false;
     }
@@ -1642,17 +2270,71 @@ static bool try_load_json(const std::string &base_dir) {
     int fileCount = 0;
     for (auto &filename : load_order) {
         std::string filepath = json_dir + filename;
+        /* The stat file never merges (its keys are stat ids): index it only
+        ** when something could ask, i.e. with source_lookup. */
+        if (filename == kStatDictFile || filename == kStatWrapperFile) {
+            if (!source_lookup) continue;
+            int count = filename == kStatDictFile ? load_json_stat_dict(filepath)
+                                                  : load_json_stat_wrappers(filepath);
+            if (count > 0) {
+                totalEntries += count;
+                fileCount++;
+            }
+            continue;
+        }
+        /* Id-keyed files go to their own table and nowhere else. */
+        {
+            const SourceDict *idd = nullptr;
+            for (const SourceDict &sd : kIdDicts)
+                if (filename == sd.file) { idd = &sd; break; }
+            if (idd) {
+                /* Without source_lookup nothing can ever ask for an id: skip
+                ** the file (it never merges either way). */
+                if (!source_lookup) continue;
+                int count = load_json_id_dict(filepath, s_id_dicts[idd->name], idd->name);
+                if (count > 0) {
+                    snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d id entries from %s\n",
+                             count, filename.c_str());
+                    OutputDebugStringA(msg);
+                    totalEntries += count;
+                    fileCount++;
+                }
+                continue;
+            }
+        }
         /* Files backing a source dictionary get a second copy of their own
-         * entries, untouched by whatever later files redefine. */
+         * entries, untouched by whatever later files redefine. Without
+         * source_lookup only gems can be selected, and only its exact entries
+         * (see translation_set_source), so no other copy is built at all. */
         std::unordered_map<std::string, std::string> *sink = nullptr;
+        std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr;
         for (const SourceDict &sd : kSourceDicts) {
             if (filename == sd.file) {
+                if (!source_lookup && filename != std::string(kLegacySource) + ".json") break;
                 sink = &s_sources[sd.name];
-                s_source_cache[sd.name];   /* create now: never rehash later */
+                if (source_lookup) pattern_sink = &s_source_patterns[sd.name];
+                /* create now: never rehash later */
+                s_source_cache[sd.name];
+                s_item_title_source_cache[sd.name];
                 break;
             }
         }
-        int count = load_json_translations(filepath, false, sink);
+        /* A file in source_dicts never merges, even when load_order lists it
+        ** too: source_dicts says what the file IS, load_order only when to load. */
+        const bool in_source_dicts =
+            std::find(source_dicts.begin(), source_dicts.end(), filename) != source_dicts.end();
+        if (in_source_dicts) {
+            snprintf(msg, sizeof(msg), "[pob-proxy] %s is in both load_order and source_dicts; "
+                     "loaded as source-only\n", filename.c_str());
+            OutputDebugStringA(msg);
+            PobLog::Diag("i18n", std::string(filename) + " is listed in both load_order and "
+                                 "source_dicts; loaded as source-only (not merged)");
+        }
+        const bool only_source = in_source_dicts ||
+            std::find(source_only.begin(), source_only.end(), filename) != source_only.end();
+        /* source-only with nowhere to go (no flag, not gems): nothing to load */
+        if (only_source && !sink) continue;
+        int count = load_json_translations(filepath, false, sink, pattern_sink, only_source);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -1661,6 +2343,44 @@ static bool try_load_json(const std::string &base_dir) {
             fileCount++;
         }
     }
+
+    /* source_dicts: never merged. Files also listed in load_order were handled
+    ** above (treated as source-only there), so only the ones outside load_order
+    ** load here. Without source_lookup none of them could ever be read (the
+    ** legacy gems source has its own file in load_order), so none is loaded. */
+    for (auto &filename : source_dicts) {
+        if (!source_lookup) break;
+        if (std::find(load_order.begin(), load_order.end(), filename) != load_order.end())
+            continue;
+        std::string filepath = json_dir + filename;
+        const SourceDict *idd = nullptr;
+        for (const SourceDict &sd : kIdDicts)
+            if (filename == sd.file) { idd = &sd; break; }
+        int count = 0;
+        if (filename == kStatDictFile) {
+            count = load_json_stat_dict(filepath);
+        } else if (filename == kStatWrapperFile) {
+            count = load_json_stat_wrappers(filepath);
+        } else if (idd) {
+            count = load_json_id_dict(filepath, s_id_dicts[idd->name], idd->name);
+        } else {
+            const SourceDict *src = nullptr;
+            for (const SourceDict &sd : kSourceDicts)
+                if (filename == sd.file) { src = &sd; break; }
+            if (!src) continue;   /* no source owns it: nothing could ever read it */
+            s_source_cache[src->name];
+            s_item_title_source_cache[src->name];
+            count = load_json_translations(filepath, false, &s_sources[src->name],
+                                           &s_source_patterns[src->name], /*source_only=*/true);
+        }
+        if (count > 0) {
+            snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d source-only entries from %s\n",
+                     count, filename.c_str());
+            OutputDebugStringA(msg);
+            fileCount++;
+        }
+    }
+    s_source_lookup = source_lookup;
 
     if (totalEntries == 0) {
         OutputDebugStringA("[pob-proxy] No JSON entries loaded\n");
@@ -1782,34 +2502,59 @@ static void do_init(void) {
     OutputDebugStringA("[pob-proxy] Using JSON translation mode\n");
     /* Build term glossary for substring replacement (sorted longest-first).
      * Store the LOWERCASE version of each term's key for case-insensitive matching,
-     * but keep the original value (Chinese translation) as-is. */
-    for (auto &kv : s_translations) {
-        if (is_glossary_candidate(kv.first)) {
+     * but keep the original value (Chinese translation) as-is.
+     *
+     * Several keys can collapse onto one term ("Breach:" in ui.json and
+     * "Breach" in passives.json, or two spellings differing only in case).
+     * s_translations is an unordered_map, so "whichever came first" would be
+     * the hash order -- adding unrelated keys could flip the winner. The pick is
+     * therefore a rule on the keys themselves:
+     *   1. a key without a trailing colon beats one with it ("Breach" -> 裂痕,
+     *      not "Breach:" -> 裂痕：);
+     *   2. otherwise the lexicographically smallest original key.
+     * A trailing colon is ':' or the full-width '：' (EF BC 9A), on the key and,
+     * when the key had one, on its translation too. */
+    {
+        auto strip_colon = [](std::string &s) -> bool {
+            if (!s.empty() && s.back() == ':') { s.pop_back(); return true; }
+            if (s.size() >= 3 && (unsigned char)s[s.size()-3] == 0xEF &&
+                (unsigned char)s[s.size()-2] == 0xBC && (unsigned char)s[s.size()-1] == 0x9A) {
+                s.erase(s.size() - 3);
+                return true;
+            }
+            return false;
+        };
+        struct Pick { const std::string *key; bool colon; std::string trans; };
+        std::unordered_map<std::string, Pick> picks;
+        for (auto &kv : s_translations) {
+            if (!is_glossary_candidate(kv.first)) continue;
             /* Strip trailing colon for glossary matching (e.g., "Total Mana:" → "Total Mana") */
             std::string term = kv.first;
             std::string trans = kv.second;
-            if (!term.empty() && term.back() == ':') {
-                term.pop_back();
-                if (!trans.empty() && (trans.back() == ':' || trans.back() == '\xef')) {
-                    /* Strip Chinese colon (：= EF BC 9A) or ASCII colon */
-                    if (trans.size() >= 3 && trans[trans.size()-3] == '\xef'
-                        && trans[trans.size()-2] == '\xbc' && trans[trans.size()-1] == '\x9a') {
-                        trans.erase(trans.size()-3);
-                    } else if (trans.back() == ':') {
-                        trans.pop_back();
-                    }
-                }
+            const bool colon = strip_colon(term);
+            if (colon) strip_colon(trans);
+            if (term.size() < 4) continue;
+            std::string term_lower = to_ascii_lower(term);
+            auto it = picks.find(term_lower);
+            if (it == picks.end()) {
+                picks.emplace(std::move(term_lower), Pick{ &kv.first, colon, std::move(trans) });
+                continue;
             }
-            if (term.size() >= 4) {
-                /* Store lowercase key for case-insensitive matching */
-                std::string term_lower = to_ascii_lower(term);
-                s_term_glossary.emplace_back(std::move(term_lower), std::move(trans));
-            }
+            Pick &cur = it->second;
+            const bool better = (cur.colon != colon) ? !colon : (kv.first < *cur.key);
+            if (better) cur = Pick{ &kv.first, colon, std::move(trans) };
         }
+        s_term_glossary.reserve(picks.size());
+        for (auto &kv : picks) s_term_glossary.emplace_back(kv.first, std::move(kv.second.trans));
     }
-    /* Sort by length descending so longest terms match first */
+    /* Longest terms match first; equal lengths by term so the order (and with
+     * it every overlapping replacement) never depends on hash order. Terms are
+     * unique after the pick above, so this is a total order. */
     std::sort(s_term_glossary.begin(), s_term_glossary.end(),
-        [](const auto &a, const auto &b) { return a.first.size() > b.first.size(); });
+        [](const auto &a, const auto &b) {
+            if (a.first.size() != b.first.size()) return a.first.size() > b.first.size();
+            return a.first < b.first;
+        });
 
     s_init_stats.total_ms = tr_ms_since(t_init);
     snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d translations (JSON mode, %d pattern, %d glossary, %d base types) in %.0f ms (parse %.0f, build %.0f, %d files)\n",
@@ -1871,10 +2616,25 @@ void translation_shutdown(void) {
     /* Drop the source dictionaries too, and point the active handles back at
      * the defaults — a reload must not leave them dangling into freed maps. */
     s_active_source = nullptr;
+    s_active_source_patterns = nullptr;
     s_active_source_name.clear();
     s_lookup_cache_active = &s_lookup_cache;
+    s_item_title_cache_active = &s_item_title_cache;
     s_sources.clear();
+    s_source_patterns.clear();
     s_source_cache.clear();
+    s_item_title_source_cache.clear();
+    s_id_dicts.clear();
+    s_id_templates.clear();
+    s_stat_index.clear();
+    s_stat_named.clear();
+    s_stat_files.clear();
+    s_stat_file_ids.clear();
+    s_stat_parents.clear();
+    s_stat_wrappers.clear();
+    s_stat_cache.clear();
+    s_stat_colored_cache.clear();
+    s_source_lookup = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -2116,6 +2876,51 @@ static bool translate_title_words(const std::string &title, std::string &out) {
     return true;
 }
 
+/* Unfilled-placeholder guard. A result carrying "{N}" / "{}" / "{N:fmt}" that
+** the English never had is a template whose value was never filled: POB sent
+** half of a multi-line stat, or a dictionary value kept GGG's {0} while its key
+** was written with a real number ("Fires 1 Projectile" -> "發射 {0} 個投射物").
+** Showing "獲得 {0} 充能" is worse than showing the English, so every step
+** treats such a result as a miss and moves on. An English that itself has a
+** '{' (stats.json keys like "{0} (action speed modifier)") is exempt: there the
+** placeholder is the input's own. */
+static bool leaks_placeholder(const std::string &out, const std::string &in, bool check_hash = true) {
+    /* A '#' is fill_plan's "no value for this slot" (and POB's own crafting
+    ** rows write the value as '#'): a stray one the English did not have is an
+    ** incompletely filled answer, the same failure as a raw {0}. Only a FILLED
+    ** answer can be incompletely filled, so callers handing over a dictionary
+    ** entry as written (exact steps, and composites built from such entries)
+    ** pass check_hash = false: a translator's own '#' ("暴擊時 #% 充能:") is
+    ** text, not a missing value. */
+    if (check_hash && in.find('#') == std::string::npos && out.find('#') != std::string::npos) return true;
+    if (in.find('{') != std::string::npos) return false;
+    for (size_t i = 0; i + 1 < out.size(); i++)
+        if (out[i] == '{' && (out[i + 1] == '}' || (out[i + 1] >= '0' && out[i + 1] <= '9')))
+            return true;
+    return false;
+}
+
+/* Real newline <-> the literal "\n" GGG multi-line keys are stored with. */
+static std::string newlines_to_literal(const std::string &s) {
+    std::string r;
+    r.reserve(s.size() + 8);
+    for (char c : s) {
+        if (c == '\r') continue;
+        if (c == '\n') r += "\\n";
+        else r += c;
+    }
+    return r;
+}
+static std::string literal_to_newlines(const std::string &s) {
+    std::string r;
+    r.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] == '\\' && i + 1 < s.size() && s[i + 1] == 'n') { r += '\n'; i++; continue; }
+        r += s[i];
+    }
+    return r;
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
     translation_wait_ready();
@@ -2137,17 +2942,52 @@ const char* translation_lookup(const char *english) {
     /* 0. Source dictionary: POB told us which of its own data files this
      *    string came from, so that file's entries win over the merged map.
      *    A miss here just falls through to the normal path. */
+    /* An exact entry exists for this very sentence but needs a value it was
+    ** not given (the guard below blocked it): the sentence is KNOWN, so the
+    ** word-by-word glossary (step 4) must not stitch it together from halves
+    ** ("Increases and Reductions to Armour also apply to Energy Shield").
+    ** Pattern and the other structural steps still run. */
+    bool exact_blocked = false;
     if (s_active_source) {
         auto sit = s_active_source->find(english);
         if (sit != s_active_source->end()) {
-            return sit->second.c_str();
+            if (!leaks_placeholder(sit->second, english, /*check_hash=*/false)) return sit->second.c_str();
+            exact_blocked = true;
+        }
+    }
+
+    /* 0.5 Source pattern: the marked file's own value template beats the merged
+     *     exact map too — another file carrying the literal line ("15% increased
+     *     X") must not override what the sourced file means by it. Same entry
+     *     condition and fill plan as step 3. Only reachable while a source is
+     *     active, so unmarked lookups never get here. Results go to the source's
+     *     own cache (s_lookup_cache_active), which is consulted first: that cache
+     *     only ever holds strings that missed the exact layers, so answering from
+     *     it here is what the full pipeline would answer anyway. */
+    if (s_active_source_patterns && !s_active_source_patterns->empty()) {
+        std::string sinput(english);
+        std::string spattern = to_ascii_lower(digits_to_hash(normalize_placeholders(sinput)));
+        if (spattern != to_ascii_lower(sinput) || sinput.find('#') != std::string::npos) {
+            auto cit = s_lookup_cache_active->find(sinput);
+            if (cit != s_lookup_cache_active->end()) {
+                return cit->second.empty() ? nullptr : cit->second.c_str();
+            }
+            auto pit = s_active_source_patterns->find(spattern);
+            if (pit != s_active_source_patterns->end()) {
+                std::string result = fill_plan(pit->second, hash_slot_values(sinput, /*normalize_ph=*/true));
+                if (!leaks_placeholder(result, sinput)) {
+                    auto [iter, _] = s_lookup_cache_active->emplace(std::move(sinput), std::move(result));
+                    return iter->second.c_str();
+                }
+            }
         }
     }
 
     /* 1. Exact match (fast path, no cache needed — already O(1)) */
     auto it = s_translations.find(english);
     if (it != s_translations.end()) {
-        return it->second.c_str();
+        if (!leaks_placeholder(it->second, english, /*check_hash=*/false)) return it->second.c_str();
+        exact_blocked = true;
     }
 
     /* 2. Check lookup cache (avoids repeated pattern/glossary scans) */
@@ -2160,6 +3000,17 @@ const char* translation_lookup(const char *english) {
 
     /* 3. Pattern match: normalize digits and placeholders, then lookup (case-insensitive) */
     std::string input(english);
+    /* Every step below that produces an answer goes through here: a leaking
+    ** answer (see leaks_placeholder) is a miss for that step -- nothing is
+    ** cached for it and the next step gets its turn. */
+    /* check_hash: true for an answer produced by filling a pattern (a stray '#'
+    ** is a slot left unfilled); false for an exact entry as written and for
+    ** composites of answers that were already checked by their own lookup. */
+    auto accept = [&input](std::string &&result, bool check_hash) -> const char * {
+        if (leaks_placeholder(result, input, check_hash)) return nullptr;
+        auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
+        return iter->second.c_str();
+    };
     std::string pattern = to_ascii_lower(digits_to_hash(normalize_placeholders(input)));
     /* The second clause is not redundant. POB's own crafting UI writes a mod's
     ** rollable value as a literal '#' ("#% increased Armour during Effect" in
@@ -2184,8 +3035,7 @@ const char* translation_lookup(const char *english) {
                 OutputDebugStringA(msg);
                 s_hit_count++;
             }
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
-            return iter->second.c_str();
+            if (const char *r = accept(std::move(result), /*check_hash=*/true)) return r;
         } else {
             /* Diagnostic: log pattern misses (first 50 only) */
             static int s_miss_count = 0;
@@ -2196,6 +3046,29 @@ const char* translation_lookup(const char *english) {
                     (int)pattern.size(), english, pattern.c_str());
                 OutputDebugStringA(msg);
                 s_miss_count++;
+            }
+        }
+    }
+
+    /* 3.3 Whole multi-line stat: GGG stores a two-line description as ONE key
+     *     with a literal "\n" ("...Mine from Supported\nSkills is Detonated
+     *     ..."), and POB may send the whole thing with a real newline. Try that
+     *     key (exact, then pattern) before 3.35 splits the block into lines --
+     *     a half line can match some other, shorter template. The answer's
+     *     literal "\n" comes back as a real newline. */
+    if (input.find('\n') != std::string::npos) {
+        const std::string esc = newlines_to_literal(input);
+        auto eit = s_translations.find(esc);
+        if (eit != s_translations.end()) {
+            if (const char *r = accept(literal_to_newlines(eit->second), /*check_hash=*/false)) return r;
+            exact_blocked = true;
+        }
+        const std::string epat = to_ascii_lower(digits_to_hash(normalize_placeholders(esc)));
+        if (epat != to_ascii_lower(esc) || esc.find('#') != std::string::npos) {
+            auto pit = s_forward_pattern.find(epat);
+            if (pit != s_forward_pattern.end()) {
+                std::string result = fill_plan(pit->second, hash_slot_values(esc, /*normalize_ph=*/true));
+                if (const char *r = accept(literal_to_newlines(result), /*check_hash=*/true)) return r;
             }
         }
     }
@@ -2262,8 +3135,7 @@ const char* translation_lookup(const char *english) {
         /* No line translated: fall through untouched, so the whole-block
         ** behaviour for colour/glossary inputs is exactly what it was. */
         if (translated_any) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(joined), /*check_hash=*/false)) return r_;
         }
     }
 
@@ -2334,8 +3206,7 @@ const char* translation_lookup(const char *english) {
             if (b != std::string::npos) rebuilt.append(seg.text, e + 1, std::string::npos);
         }
         if (translated_any && all_covered) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(rebuilt));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(rebuilt), /*check_hash=*/false)) return r_;
         }
 
         /* Segment translation did not cover the line. Fall back to the old
@@ -2354,8 +3225,7 @@ const char* translation_lookup(const char *english) {
         if (stripped_has_alpha && stripped != input && !stripped.empty()) {
             if (const char *r = translation_lookup(stripped.c_str())) {
                 std::string copy(r); /* copy before emplace can rehash the cache */
-                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(copy));
-                return iter->second.c_str();
+                if (const char *r_ = accept(std::move(copy), /*check_hash=*/false)) return r_;
             }
             /* clean text also missed: fall through with the original input */
         }
@@ -2389,8 +3259,7 @@ const char* translation_lookup(const char *english) {
                 if (body != body_zh) {
                     std::string combined = input.substr(0, p);
                     combined += body_zh;
-                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                    return iter->second.c_str();
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                 }
             }
         }
@@ -2423,16 +3292,14 @@ const char* translation_lookup(const char *english) {
                         if (bracketed != whole_zh) {
                             combined += " ";
                             combined += whole_zh;
-                            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                            return iter->second.c_str();
+                            if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                         }
                     }
                     const char *suffix_zh = translation_lookup(suffix.c_str());
                     combined += " (";
                     combined += suffix_zh ? suffix_zh : suffix.c_str();
                     combined += ")";
-                    auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(combined));
-                    return iter->second.c_str();
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
                 }
             }
         }
@@ -2474,8 +3341,7 @@ const char* translation_lookup(const char *english) {
             joined += seg;
         }
         if (all_ok) {
-            auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(joined));
-            return iter->second.c_str();
+            if (const char *r_ = accept(std::move(joined), /*check_hash=*/false)) return r_;
         }
     }
 
@@ -2486,7 +3352,8 @@ const char* translation_lookup(const char *english) {
      *    of the input. Partially covered sentences — flavour text, unknown
      *    mods — are left fully in English: a mixed-language line is worse
      *    than an untranslated one. */
-    if (input.size() >= 4 && !s_term_glossary.empty() && input.find("Community Fork") == std::string::npos) {
+    if (!exact_blocked && input.size() >= 4 && !s_term_glossary.empty() &&
+        input.find("Community Fork") == std::string::npos) {
         struct Span { size_t pos, len; const std::string *to; };
         std::vector<Span> spans;     /* glossary hits, to be replaced */
         std::vector<Span> allowed;   /* whitelist hits, kept as-is */
@@ -2581,8 +3448,7 @@ const char* translation_lookup(const char *english) {
                     cur = s.pos + s.len;
                 }
                 result.append(input, cur, std::string::npos);
-                auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
-                return iter->second.c_str();
+                if (const char *r_ = accept(std::move(result), /*check_hash=*/false)) return r_;
             }
         }
     }
@@ -2605,8 +3471,11 @@ const char* translation_lookup_item_title(const char *english) {
     ** shared cache would hand that answer to every later caller, including prose,
     ** which is the very leak the separate entry point exists to prevent. */
     std::string input(english);
-    auto cit = s_item_title_cache.find(input);
-    if (cit != s_item_title_cache.end()) {
+    /* Per-source like s_lookup_cache: the answer below goes through the active
+    ** source, so it must not be served to an unmarked caller (or another source). */
+    std::unordered_map<std::string, std::string> *title_cache = s_item_title_cache_active;
+    auto cit = title_cache->find(input);
+    if (cit != title_cache->end()) {
         return cit->second.empty() ? nullptr : cit->second.c_str();
     }
 
@@ -2618,7 +3487,7 @@ const char* translation_lookup_item_title(const char *english) {
     } else if (!translate_title_words(input, result)) {
         result.clear();
     }
-    auto [iter, _] = s_item_title_cache.emplace(std::move(input), std::move(result));
+    auto [iter, _] = title_cache->emplace(std::move(input), std::move(result));
     return iter->second.empty() ? nullptr : iter->second.c_str();
 }
 
@@ -2640,16 +3509,27 @@ const char* translation_set_source(const char *name) {
     prev_holder = s_active_source_name;
 
     s_active_source = nullptr;
+    s_active_source_patterns = nullptr;
     s_active_source_name.clear();
     s_lookup_cache_active = &s_lookup_cache;
+    s_item_title_cache_active = &s_item_title_cache;
 
-    if (!want.empty()) {
+    /* Without meta.json "source_lookup" only the legacy gems source exists,
+    ** and only its exact entries -- the behaviour before per-source patterns
+    ** and the other sources were added. Anything else is "no source". */
+    const bool allowed = s_source_lookup || want == kLegacySource;
+    if (!want.empty() && allowed) {
         auto it = s_sources.find(want);
         if (it != s_sources.end()) {
             s_active_source = &it->second;
             s_active_source_name = want;
+            auto pit = s_source_patterns.find(s_active_source_name);
+            if (s_source_lookup && pit != s_source_patterns.end())
+                s_active_source_patterns = &pit->second;
             auto cit = s_source_cache.find(s_active_source_name);
             if (cit != s_source_cache.end()) s_lookup_cache_active = &cit->second;
+            auto tit = s_item_title_source_cache.find(s_active_source_name);
+            if (tit != s_item_title_source_cache.end()) s_item_title_cache_active = &tit->second;
         }
     }
     return prev_holder.empty() ? nullptr : prev_holder.c_str();
@@ -2658,6 +3538,523 @@ const char* translation_set_source(const char *name) {
 const char* translation_get_source(void) {
     translation_wait_ready();
     return s_active_source_name.empty() ? nullptr : s_active_source_name.c_str();
+}
+
+/* Pointer into s_id_dicts: stable until the next reload (translation_shutdown),
+** the same lifetime contract translation_lookup's results already have. */
+const char* translation_lookup_by_id(const char *source, const char *id) {
+    translation_wait_ready();
+    /* F2 off answers nothing, like every other lookup; a locale without
+    ** "source_lookup" has no id lookups at all (see s_source_lookup). */
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
+    if (!source || !*source || !id || !*id) return nullptr;
+    auto sit = s_id_dicts.find(source);
+    if (sit == s_id_dicts.end()) return nullptr;
+    auto it = sit->second.find(id);
+    if (it == sit->second.end()) return nullptr;
+    return it->second.c_str();
+}
+
+/* translation_lookup_by_id plus an English check (see translation_manager.h):
+** a Timeless jewel / tattoo renames a node but keeps its id, so when the id
+** file carries "templates" the id answer counts only if its GGPK English is
+** the English being shown. Same F2 / source_lookup gates via the plain call. */
+const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en) {
+    const char *zh = translation_lookup_by_id(source, id);
+    if (!zh || !en) return zh;
+    auto tit = s_id_templates.find(source);
+    if (tit == s_id_templates.end()) return zh;   /* older pack: no English to check */
+    auto eit = tit->second.find(id);
+    if (eit == tit->second.end()) return nullptr;
+    return eit->second == normalize_whitespace(en) ? zh : nullptr;
+}
+
+/* One stat line through stats_by_id.json (see translation_manager.h).
+**
+** 1. The line hashes like an English template (markup stripped, numbers -> '#')
+**    and that key names the candidate stat entries.
+** 2. ctx picks the description files (StatTier): item -> stat_descriptions.txt;
+**    passive -> passive_skill_stat_descriptions.txt; gem -> the skill/gem
+**    files. passive and gem fall back to stat_descriptions.txt only when their
+**    own files have no candidate. A candidate whose English writes out a
+**    number the line does not carry is a different stat.
+** 2b. With stat id hints (translation_lookup_stat_ids) only candidates sharing
+**    a stat id stay, and the sign format decides between a "{N:+d}" and a
+**    "{N}" template: a value printed without a sign cannot come from "+d";
+**    a value printed with '+' prefers the "+d" candidates.
+** 3. Every remaining candidate is filled with the line's values (by {N} index).
+**    Answers still showing a placeholder are dropped. All the same -> that
+**    answer.
+** 4. Tie-break: keep only candidates whose stat count equals the number of
+**    values on the line (Thread of Hope's two-stat "{1:+d}% to all Elemental
+**    Resistances" loses to the one-stat line). All the same -> that answer.
+** 4b. With stat id hints: candidates whose written-out numbers equal the
+**    line's values exactly (string for string) win. All the same -> that
+**    answer; otherwise ambiguous -> nullptr.
+** The pointer is into s_stat_cache: valid until the next reload. */
+static std::string stat_lookup_uncached(const std::string &line, const std::vector<int> &chain,
+                                        const std::vector<std::string> *hint,
+                                        bool *had_cands = nullptr) {
+    if (had_cands) *had_cands = false;
+    std::string in = strip_brackets(line);
+    in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
+    auto it = s_stat_index.find(stat_index_key(in));
+    if (it == s_stat_index.end()) return std::string();
+
+    const std::vector<std::string> vals = hash_slot_values(in, /*normalize_ph=*/true);
+    auto lits_ok = [&](const StatCand &c) {
+        for (const auto &l : c.lits) {
+            if ((size_t)l.first >= vals.size()) return false;
+            if (!same_literal_value(vals[l.first], l.second)) return false;
+        }
+        return true;
+    };
+    auto ids_ok = [&](const StatCand &c) {
+        if (!hint) return true;
+        for (const std::string &id : c.ids)
+            if (std::find(hint->begin(), hint->end(), id) != hint->end()) return true;
+        return false;
+    };
+    /* A slot printed by "{N:+d}" always carries a sign; a bare value there
+    ** means the line came from a plain "{N}" template. */
+    auto sign_ok = [&](const StatCand &c) {
+        if (!hint) return true;
+        for (size_t i = 0; i < c.plus_slot.size() && i < vals.size(); i++) {
+            if (!c.plus_slot[i] || vals[i].empty()) continue;
+            const char s0 = vals[i][0];
+            if (s0 != '+' && s0 != '-') return false;
+        }
+        return true;
+    };
+    std::vector<const StatCand *> cands;
+    const std::string in_ckey = stat_case_key(in);
+    auto collect = [&](int want_file, bool exact_case) {
+        for (const StatCand &c : it->second)
+            if (c.file == want_file && (!exact_case || c.ckey == in_ckey) &&
+                lits_ok(c) && ids_ok(c) && sign_ok(c))
+                cands.push_back(&c);
+    };
+    /* Walk the chain twice: first only candidates whose English has the
+    ** line's exact case (anywhere in the chain), then any case. */
+    for (int pass = 0; pass < 2 && cands.empty(); pass++) {
+        for (int f : chain) {
+            collect(f, pass == 0);
+            if (!cands.empty()) break;
+        }
+    }
+    if (cands.empty()) return std::string();
+
+    /* A value printed with '+' prefers the candidates that print it with "+d". */
+    if (hint && cands.size() > 1) {
+        auto plus_score = [&](const StatCand *c) {
+            int n = 0;
+            for (size_t i = 0; i < c->plus_slot.size() && i < vals.size(); i++)
+                if (c->plus_slot[i] && !vals[i].empty() && vals[i][0] == '+') n++;
+            return n;
+        };
+        int best = 0;
+        for (const StatCand *c : cands) { const int s = plus_score(c); if (s > best) best = s; }
+        if (best > 0) {
+            std::vector<const StatCand *> keep;
+            for (const StatCand *c : cands) if (plus_score(c) == best) keep.push_back(c);
+            cands.swap(keep);
+        }
+    }
+
+    std::vector<std::string> outs;
+    outs.reserve(cands.size());
+    for (const StatCand *c : cands) outs.push_back(fill_plan(c->plan, vals));
+    /* A candidate whose filled answer still shows a placeholder the line did
+    ** not have is no answer at all (leaks_placeholder): drop it. */
+    {
+        size_t k = 0;
+        for (size_t i = 0; i < cands.size(); i++) {
+            if (leaks_placeholder(outs[i], in)) continue;
+            if (k != i) {
+                cands[k] = cands[i];
+                outs[k] = std::move(outs[i]);
+            }
+            k++;
+        }
+        cands.resize(k);
+        outs.resize(k);
+        if (cands.empty()) return std::string();
+    }
+    /* The line IS one of these stats, even if they disagree below: a
+    ** name-slot template must not answer for it (stat_lookup_full). */
+    if (had_cands) *had_cands = true;
+    auto all_same = [](const std::vector<std::string> &v) {
+        for (size_t i = 1; i < v.size(); i++) if (v[i] != v[0]) return false;
+        return !v.empty();
+    };
+    if (all_same(outs)) return outs[0];
+
+    /* Values that fill a {N} in EVERY candidate. A number some candidate writes
+    ** out in its English ("for 4 seconds") is wording there, not a stat value,
+    ** so it does not count toward the line's stat count. */
+    std::vector<char> literal_somewhere(vals.size(), 0);
+    for (const StatCand *c : cands)
+        for (const auto &l : c->lits)
+            if ((size_t)l.first < vals.size()) literal_somewhere[l.first] = 1;
+    int nvals = 0;
+    for (size_t i = 0; i < vals.size(); i++) {
+        const std::string &v = vals[i];
+        if (v.empty() || v.back() == '#') continue;   /* a written '#' is no value */
+        if (literal_somewhere[i]) continue;
+        nvals++;
+    }
+    std::vector<std::string> kept;
+    for (size_t i = 0; i < cands.size(); i++)
+        if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
+    if (all_same(kept)) return kept[0];
+
+    /* 4a. Nobody matched that count. It happens when ONE candidate writes the
+    ** line's only number out ("...by Level 10 Intensify", a fixed-level
+    ** variant) while the others take it as {0}: the value then counts for no
+    ** one. Count per candidate instead -- the values that fill one of ITS {N}
+    ** -- and keep the candidates whose stat count equals their own. */
+    if (kept.empty()) {
+        for (size_t i = 0; i < cands.size(); i++) {
+            std::vector<char> lit(vals.size(), 0);
+            for (const auto &l : cands[i]->lits)
+                if ((size_t)l.first < vals.size()) lit[l.first] = 1;
+            int own = 0;
+            for (size_t j = 0; j < vals.size(); j++) {
+                const std::string &v = vals[j];
+                if (v.empty() || v.back() == '#' || lit[j]) continue;
+                own++;
+            }
+            if (cands[i]->nstats == own) kept.push_back(outs[i]);
+        }
+        if (all_same(kept)) return kept[0];
+    }
+
+    /* 4b (stat id hints only): written-out numbers equal to the line's values,
+    ** character for character ("Fires 1 Projectile" written as such beats
+    ** "Fires {0:+d} Projectile" fed a 1). */
+    if (hint) {
+        std::vector<std::string> exact;
+        for (size_t i = 0; i < cands.size(); i++) {
+            const StatCand *c = cands[i];
+            if (c->lits.empty()) continue;
+            bool same = true;
+            for (const auto &l : c->lits)
+                if ((size_t)l.first >= vals.size() || vals[l.first] != l.second) { same = false; break; }
+            if (same) exact.push_back(outs[i]);
+        }
+        if (all_same(exact)) return exact[0];
+    }
+    return std::string();
+}
+
+/* Match `in` against a name-slot template, token by token. A number slot must
+** capture exactly one number (sign / range included: it hashes to a single
+** '#'); a name slot captures any non-empty text without surrounding spaces.
+** Backtracks over where each slot ends. caps[N] = the text of {N}. */
+static bool stat_match_named(const StatNamedCand &c, const std::string &in, size_t ti, size_t pos,
+                             std::unordered_map<int, std::string> &caps) {
+    if (ti == c.toks.size()) return pos == in.size();
+    const StatNamedTok &t = c.toks[ti];
+    if (t.ph < 0) {
+        /* Case-insensitive: POB lower-cases some words of these lines
+        ** ("Passive Skills in radius of X can be allocated ..."). */
+        if (pos + t.lit.size() > in.size()) return false;
+        for (size_t k = 0; k < t.lit.size(); k++) {
+            char a = in[pos + k], b = t.lit[k];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (a != b) return false;
+        }
+        return stat_match_named(c, in, ti + 1, pos + t.lit.size(), caps);
+    }
+    const bool is_name = c.name_src.count(t.ph) > 0;
+    for (size_t end = pos + 1; end <= in.size(); end++) {
+        const std::string cap = in.substr(pos, end - pos);
+        if (is_name) {
+            if (cap.front() == ' ' || cap.back() == ' ') continue;
+        } else if (digits_to_hash(cap) != "#") {
+            continue;
+        }
+        auto prev = caps.find(t.ph);
+        if (prev != caps.end() && prev->second != cap) continue;   /* {N} used twice */
+        const bool had = prev != caps.end();
+        caps[t.ph] = cap;
+        if (stat_match_named(c, in, ti + 1, end, caps)) return true;
+        if (!had) caps.erase(t.ph);
+    }
+    return false;
+}
+
+/* A passive / skill name in Chinese, for a name slot whose source is `src`
+** (stats_by_id.json "name_slots"):
+**   passives            -> passives source exact, then the merged map
+**   gems                -> gem_names, gems, then the merged map
+**   gem_names*          -> that source, gem_names, then the merged map (never
+**                          gems.json: its "…輔助" names double the template's 輔助)
+** A gem name ending in " Support" ("Barrage Support", as Forbidden Shako
+** writes it) is looked up without it: the template around the slot already
+** says 輔助. Only the NAME is stripped -- the line is never re-hashed with it
+** (that would hit a dedicated fixed-gem stat instead). Empty when nothing has
+** the name. */
+static std::string stat_translate_name(const std::string &src, const std::string &en_in) {
+    auto exact = [](const char *source, const std::string &key) -> std::string {
+        auto sit = s_sources.find(source);
+        if (sit == s_sources.end()) return std::string();
+        auto it = sit->second.find(key);
+        return (it != sit->second.end()) ? it->second : std::string();
+    };
+    const bool gem_kind = src == "gems" || src.compare(0, 9, "gem_names") == 0;
+    std::string en = en_in;
+    static const std::string kSupport = " Support";
+    if (gem_kind && en.size() > kSupport.size() &&
+        en.compare(en.size() - kSupport.size(), kSupport.size(), kSupport) == 0)
+        en.erase(en.size() - kSupport.size());
+    if (gem_kind) {
+        std::string r;
+        if (src != "gems" && !(r = exact(src.c_str(), en)).empty()) return r;
+        if (!(r = exact("gem_names", en)).empty()) return r;
+        if (src == "gems" && !(r = exact("gems", en)).empty()) return r;
+    } else {
+        const std::string r = exact(src.c_str(), en);
+        if (!r.empty()) return r;
+    }
+    auto it = s_translations.find(en);
+    /* An exact entry as written: a '#' in it is text, only {N} blocks. */
+    if (it != s_translations.end() && !it->second.empty() &&
+        !leaks_placeholder(it->second, en, /*check_hash=*/false))
+        return it->second;
+    return std::string();
+}
+
+/* Name-slot candidates (s_stat_named) for a line the hash index missed. Same
+** ctx tiers, same stat id narrowing; a name that has no Chinese drops the
+** candidate (no half-English answer); disagreeing answers -> no answer. */
+static std::string stat_lookup_named(const std::string &line, const std::vector<int> &chain,
+                                     const std::vector<std::string> *hint) {
+    if (s_stat_named.empty()) return std::string();
+    std::string in = strip_brackets(line);
+    in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
+    auto run = [&](int want_file) {
+        std::vector<std::string> outs;
+        for (const StatNamedCand &c : s_stat_named) {
+            if (c.file != want_file) continue;
+            if (hint) {
+                bool shared = false;
+                for (const std::string &id : c.ids)
+                    if (std::find(hint->begin(), hint->end(), id) != hint->end()) { shared = true; break; }
+                if (!shared) continue;
+            }
+            std::unordered_map<int, std::string> caps;
+            if (!stat_match_named(c, in, 0, 0, caps)) continue;
+            /* fill the Chinese template */
+            std::string out;
+            bool ok = true;
+            for (size_t i = 0; i < c.zh.size() && ok; i++) {
+                if (c.zh[i] == '{') {
+                    size_t j = i + 1;
+                    while (j < c.zh.size() && c.zh[j] >= '0' && c.zh[j] <= '9') j++;
+                    size_t close = c.zh.find('}', j);
+                    if (j > i + 1 && close != std::string::npos && (c.zh[j] == '}' || c.zh[j] == ':')) {
+                        const int n = atoi(c.zh.c_str() + i + 1);
+                        auto cap = caps.find(n);
+                        if (cap == caps.end()) { ok = false; break; }
+                        auto src = c.name_src.find(n);
+                        if (src != c.name_src.end()) {
+                            const std::string zh_name = stat_translate_name(src->second, cap->second);
+                            if (zh_name.empty()) { ok = false; break; }
+                            out += zh_name;
+                        } else {
+                            out += cap->second;
+                        }
+                        i = close;
+                        continue;
+                    }
+                }
+                out += c.zh[i];
+            }
+            /* Number slots copy the line's own text, names are dictionary
+            ** entries as written: a '#' here is data, only {N} blocks (same
+            ** rule as exact entries). */
+            if (ok && !leaks_placeholder(out, in, /*check_hash=*/false)) outs.push_back(std::move(out));
+        }
+        return outs;
+    };
+    std::vector<std::string> outs;
+    for (int f : chain) {
+        outs = run(f);
+        if (!outs.empty()) break;
+    }
+    if (outs.empty()) return std::string();
+    for (size_t i = 1; i < outs.size(); i++) if (outs[i] != outs[0]) return std::string();
+    return outs[0];
+}
+
+/* The whole stat lookup: hash index, then name-slot templates, then wrappers
+** (stat_wrappers.json: "Added Small Passive Skills grant: {0}" -- the inside
+** is looked up as a stat in the same ctx and put into the Chinese wrapper). */
+static std::string stat_lookup_full(const std::string &line, const std::vector<int> &chain,
+                                    const std::vector<std::string> *hint, int depth = 0) {
+    bool had_cands = false;
+    std::string r = stat_lookup_uncached(line, chain, hint, &had_cands);
+    if (!r.empty()) return r;
+    /* The hash index knows this exact sentence (it had usable candidates, they
+    ** just disagreed): a generic name-slot template or a wrapper must not
+    ** answer for it instead. */
+    if (had_cands) return std::string();
+    r = stat_lookup_named(line, chain, hint);
+    if (!r.empty()) return r;
+    if (depth > 0) return std::string();   /* one wrapper level */
+    for (const StatWrapper &w : s_stat_wrappers) {
+        if (line.size() <= w.prefix.size() + w.suffix.size()) continue;
+        if (line.compare(0, w.prefix.size(), w.prefix) != 0) continue;
+        if (line.compare(line.size() - w.suffix.size(), w.suffix.size(), w.suffix) != 0) continue;
+        const std::string inner = line.substr(w.prefix.size(), line.size() - w.prefix.size() - w.suffix.size());
+        const std::string zi = stat_lookup_full(inner, chain, hint, depth + 1);
+        if (zi.empty()) continue;
+        std::string out = w.zh;
+        const size_t p = out.find("{0}");
+        out.replace(p, 3, zi);
+        return out;
+    }
+    return std::string();
+}
+
+/* ctx -> chain of description file ids (see s_stat_files). false = unknown
+** ctx. nullptr / "" mean item. Files with no entries are left out. */
+static bool stat_ctx_chain(const char *ctx, std::vector<int> &chain) {
+    chain.clear();
+    auto add = [&](const std::string &name) {
+        auto it = s_stat_file_ids.find(name);
+        if (it != s_stat_file_ids.end() &&
+            std::find(chain.begin(), chain.end(), it->second) == chain.end())
+            chain.push_back(it->second);
+    };
+    auto gem_default = [&]() { for (const char *f : kStatGemDefaultChain) add(f); };
+    if (!ctx || !*ctx || strcmp(ctx, "item") == 0) {
+        add(kStatFileItem);
+    } else if (strcmp(ctx, "passive") == 0) {
+        add(kStatFilePassive);
+        add(kStatFileItem);
+        add(kStatFilePassiveAura);
+    } else if (strcmp(ctx, "gem") == 0) {
+        gem_default();
+    } else if (strncmp(ctx, "gem:", 4) == 0) {
+        std::string f = stat_file_basename(ctx + 4);
+        if (ctx[4] == '\0' || s_stat_parents.find(f) == s_stat_parents.end()) {
+            gem_default();
+        } else {
+            for (int guard = 0; guard < 32; guard++) {
+                add(f);
+                auto pit = s_stat_parents.find(f);
+                if (pit == s_stat_parents.end()) break;
+                f = pit->second;
+            }
+        }
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* Space-separated stat ids -> list; empty when none. */
+static std::vector<std::string> stat_split_ids(const char *stat_ids) {
+    std::vector<std::string> v;
+    if (!stat_ids) return v;
+    const char *p = stat_ids;
+    while (*p) {
+        while (*p == ' ' || *p == '\t') p++;
+        const char *b = p;
+        while (*p && *p != ' ' && *p != '\t') p++;
+        if (p > b) v.emplace_back(b, p);
+    }
+    return v;
+}
+
+/* Shared by translation_lookup_stat and translation_lookup_stat_ids. */
+static const char *stat_lookup_cached(const char *line, const char *ctx, const char *stat_ids) {
+    translation_wait_ready();
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
+    if (!line || !*line || s_stat_index.empty()) return nullptr;
+    std::vector<int> chain;
+    if (!stat_ctx_chain(ctx, chain)) return nullptr;
+    const std::vector<std::string> ids = stat_split_ids(stat_ids);
+
+    std::string ck;
+    for (int f : chain) { ck += std::to_string(f); ck += ','; }
+    ck += '\x1f';
+    for (const std::string &id : ids) { ck += id; ck += ' '; }
+    ck += '\x1f';
+    ck += line;
+    auto cit = s_stat_cache.find(ck);
+    if (cit == s_stat_cache.end())
+        cit = s_stat_cache.emplace(std::move(ck),
+                                   stat_lookup_full(line, chain, ids.empty() ? nullptr : &ids)).first;
+    return cit->second.empty() ? nullptr : cit->second.c_str();
+}
+
+const char* translation_lookup_stat_ids(const char *line, const char *ctx, const char *stat_ids) {
+    return stat_lookup_cached(line, ctx, stat_ids);
+}
+
+const char* translation_lookup_stat(const char *line, const char *ctx) {
+    return stat_lookup_cached(line, ctx, nullptr);
+}
+
+/* Length of the colour escape at the start of s ("^xRRGGBB" = 8, "^N" = 2),
+** 0 when it does not start with one. Same two forms POB's DrawString knows. */
+static size_t stat_leading_colour_len(const char *s) {
+    if (!s || s[0] != '^') return 0;
+    if (s[1] >= '0' && s[1] <= '9') return 2;
+    if (s[1] == 'x') {
+        for (int i = 2; i < 8; i++)
+            if (!isxdigit((unsigned char)s[i])) return 0;   /* also stops at '\0' */
+        return 8;
+    }
+    return 0;
+}
+
+const char* translation_lookup_stat_ids_colored(const char *line, const char *ctx, const char *stat_ids) {
+    const size_t cl = stat_leading_colour_len(line);
+    if (cl == 0) return stat_lookup_cached(line, ctx, stat_ids);
+    const char *zh = stat_lookup_cached(line + cl, ctx, stat_ids);
+    if (!zh) return nullptr;
+    const std::string colour(line, cl);
+    std::string out = colour;
+    for (const char *p = zh; *p; ++p) {
+        out += *p;
+        if (*p == '\n') out += colour;
+    }
+    std::string ck(ctx ? ctx : "");
+    ck += '\x1f';
+    for (const std::string &id : stat_split_ids(stat_ids)) { ck += id; ck += ' '; }
+    ck += '\x1f';
+    ck += line;
+    /* Keep the first answer: rewriting the slot would free the buffer a
+    ** caller of the previous call may still hold (same lifetime contract as
+    ** translation_lookup_stat). The answer for a given line never changes
+    ** before the next reload, which clears this cache. */
+    auto ins = s_stat_colored_cache.try_emplace(std::move(ck), std::move(out));
+    return ins.first->second.c_str();
+}
+
+const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
+    return translation_lookup_stat_ids_colored(line, ctx, nullptr);
+}
+
+const char* translation_debug_sources(void) {
+    translation_wait_ready();
+    static std::string buf;
+    auto names = [](const auto &m) {
+        std::vector<std::string> v;
+        for (const auto &kv : m) v.push_back(kv.first);
+        std::sort(v.begin(), v.end());
+        std::string out;
+        for (const std::string &n : v) { if (!out.empty()) out += ","; out += n; }
+        return out;
+    };
+    buf = "exact=" + names(s_sources) + ";pattern=" + names(s_source_patterns) +
+          ";id=" + names(s_id_dicts);
+    return buf.c_str();
 }
 
 const char* translation_get_locale(void) {
@@ -3960,6 +5357,7 @@ void translation_set_enabled(bool enabled) {
     s_translation_enabled = enabled;
     s_lookup_cache.clear();
     for (auto &kv : s_source_cache) kv.second.clear();
+    for (auto &kv : s_item_title_source_cache) kv.second.clear();
     OutputDebugStringA(enabled
         ? "[pob-proxy] Translation ON (F2)\n"
         : "[pob-proxy] Translation OFF (F2)\n");

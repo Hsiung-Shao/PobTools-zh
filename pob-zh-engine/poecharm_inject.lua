@@ -73,6 +73,38 @@ local function zhRaw(text)
 	return visible(PobToolsTranslate(text))
 end
 
+-- ===== wrappers keep the original's parameter count =====
+-- The new UI's bridge (host/data/bridge/bridge.lua) checks POB's upstream shape
+-- with debug.getinfo(fn, "u").nparams -- PassiveTreeView.AddNodeTooltip must
+-- take 4 or 5, BUILD.Init 6 -- and falls back to the classic window when a
+-- probe fails. A wrapper written as function(self, ...) reports nparams 1, so
+-- every wrapper here goes through keepArity: impl does the work, the function
+-- installed has exactly orig's named parameters (plus "..." when orig is
+-- vararg) and hands them on to impl unchanged. Without nparams (stock Lua
+-- 5.1) or loadstring there is nothing to keep, and impl is installed as is.
+local arityMakers = {}
+local function keepArity(orig, impl)
+	if type(debug) ~= "table" or type(debug.getinfo) ~= "function" or type(loadstring) ~= "function" then
+		return impl
+	end
+	local ok, info = pcall(debug.getinfo, orig, "u")
+	local n = ok and type(info) == "table" and info.nparams
+	if type(n) ~= "number" then return impl end
+	local key = n .. (info.isvararg and "+" or "")
+	local maker = arityMakers[key]
+	if not maker then
+		local names = {}
+		for i = 1, n do names[i] = "a" .. i end
+		if info.isvararg then names[#names + 1] = "..." end
+		local list = table.concat(names, ", ")
+		maker = loadstring("local impl = ... return function(" .. list .. ") return impl(" .. list .. ") end",
+			"=PobTools keepArity")
+		if not maker then return impl end
+		arityMakers[key] = maker
+	end
+	return maker(impl)
+end
+
 -- ===== source marking =====
 -- The dictionary is one flat merged map, so a bare word resolves to whichever
 -- file defined it LAST. POB stores support gems under their short name
@@ -97,10 +129,467 @@ end
 local function wrapDrawWithSource(class, name)
 	local orig = class.Draw
 	if not orig then return false end
-	class.Draw = function(self, ...)
+	class.Draw = keepArity(orig, function(self, ...)
 		return withSource(name, orig, self, ...)
-	end
+	end)
 	return true
+end
+
+-- ===== tooltip line sources =====
+-- Tooltips are TRANSLATED when they are built (Tooltip:AddLine below). Only
+-- NAME lines get a source dictionary; every other line (passive stat lines,
+-- requirements, quality, ...) keeps the shipping unmarked lookup. The wraps on
+-- PassiveTreeView:AddNodeName and ItemsTab:AddItemTooltip only record WHAT is
+-- being drawn (nodeCtx / itemCtx); AddLine then picks per line: the passive's
+-- name line -> by node.id, else passives; a unique's title -> uniques.json; the
+-- base line -> items.json; a magic item's one-line "prefix base suffix" name is
+-- split into affixes / items / affixes. A PoE1 mod line (AddLine's 4th arg is
+-- the modLine table) is looked up unmarked first, and under stats.json only
+-- when that left it English.
+--
+-- The item being drawn, set by the AddItemTooltip wrap (nil outside it).
+-- { item = item, titleDone = bool }: titleDone keeps a unique whose title IS a
+-- base name (Kingsguard) from having its base line read as the title again --
+-- the title line always comes first.
+local itemCtx = nil
+local UNIQUE_RARITY = { UNIQUE = true, RELIC = true }
+
+local function trim(s)
+	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+-- Leading POB colour commands ("^7", "^xRRGGBB") split off the line.
+local function splitLeadColour(text)
+	local i = 1
+	while true do
+		local e = text:match("^%^x%x%x%x%x%x%x()", i) or text:match("^%^%d()", i)
+		if not e then break end
+		i = e
+	end
+	return text:sub(1, i - 1), text:sub(i)
+end
+
+-- POB draws the base line as item.baseName:gsub(" %(.+%)","").
+local function cleanBaseName(item)
+	return type(item.baseName) == "string" and (item.baseName:gsub(" %(.+%)", "")) or nil
+end
+
+-- ===== lookups by stable id =====
+-- Same English, different id, different wording: two passives both called
+-- "Elemental Overload" (GraphId) or two mods sharing the affix name "Robust"
+-- (mod Id). Where the id is at hand it decides the translation
+-- (PobToolsTranslateId); without one, or when nothing comes back, the English
+-- path runs exactly as before.
+--
+-- The node whose name PassiveTreeView:AddNodeName is drawing (nil outside it).
+-- { node = node, nameDone = bool }: only its first name line is taken.
+local nodeCtx = nil
+-- The affix a crafting drop-down / range slider tooltip is describing (nil
+-- outside it): { id = modId, mod = mod table }.
+local affixTipCtx = nil
+-- True while PassiveTreeView:AddNodeTooltip runs: its non-name lines are the
+-- passive's stat lines, asked of PobToolsTranslateStat under "passive".
+local nodeTipActive = false
+-- Pairs of adjacent node.sd lines that are ONE two-line GGPK stat template
+-- (POB splits it into two sd entries): { [stripped English line] = Chinese
+-- line }, built when AddNodeTooltip starts, nil outside it.
+local nodeSdPairs = nil
+
+-- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
+-- { desc = { [description] = effect id }, names = { [name] = true },
+--   statIds = { [describeStats line] = stat id },
+--   statScopes = { [describeStats line] = its scope (2nd argument) } }.
+-- statIds / statScopes are filled by the data.describeStats wrap while the
+-- tooltip is being built.
+local gemCtx = nil
+
+-- Engine stat lookup (PobToolsTranslateStat(line, ctx[, ids]), ctx "item" /
+-- "passive" / "gem"; ids = the line's stat id(s) when known); nil when the
+-- engine lacks it, missed, or gave the line back.
+local function zhByStat(text, ctx, ids)
+	if type(PobToolsTranslateStat) ~= "function" then return nil end
+	local ok, zh = pcall(PobToolsTranslateStat, text, ctx, ids)
+	if ok and type(zh) == "string" and zh ~= "" and zh ~= text then return zh end
+	return nil
+end
+
+local function hasTranslateId()
+	return type(PobToolsTranslateId) == "function"
+end
+
+-- id lookup of one string; nil unless it produced something different.
+local function zhById(source, id, en)
+	if not hasTranslateId() or id == nil or type(en) ~= "string" or en == "" then return nil end
+	local zh = PobToolsTranslateId(source, id, en)
+	if zh and zh ~= en then return zh end
+	return nil
+end
+
+-- One name under a named source (anoint / tattoo / legion): nil unless that
+-- lookup produced something different. The source is restored by withSource.
+local function zhInSource(source, name)
+	if type(name) ~= "string" or name == "" then return nil end
+	local zh = withSource(source, PobToolsTranslateDisplay, name)
+	if type(zh) == "string" and zh ~= "" and zh ~= name then return zh end
+	return nil
+end
+
+-- The sourceless (global merged map) answer for one string, or nil.
+local function zhGlobal(s)
+	local zh = withSource(nil, PobToolsTranslateDisplay, s)
+	if type(zh) == "string" and zh ~= "" and zh ~= s then return zh end
+	return nil
+end
+
+-- The node's name in the unmodified tree, or nil when it cannot be seen:
+-- build.spec.tree.nodes[id] (the tree data; ReplaceNode edits the spec's
+-- node, not this), else the table the spec node inherits from.
+local function originalNodeName(node, build)
+	local spec = type(build) == "table" and build.spec or nil
+	local tree = type(spec) == "table" and spec.tree or nil
+	local nodes = type(tree) == "table" and tree.nodes or nil
+	local orig = type(nodes) == "table" and node.id ~= nil and nodes[node.id] or nil
+	if type(orig) == "table" and orig ~= node and type(orig.dn) == "string" then
+		return orig.dn
+	end
+	local mt = getmetatable(node)
+	local base = type(mt) == "table" and rawget(mt, "__index") or nil
+	if type(base) == "table" and base ~= node and type(rawget(base, "dn")) == "string" then
+		return rawget(base, "dn")
+	end
+	return nil
+end
+
+-- Whether a node kept its id under a new name. With the original tree name at
+-- hand that decides it. Without it (no tree reached AddNodeName) the id answer
+-- is read: none (an engine that refuses a mismatch), or exactly the global
+-- merged map's answer for dn (an engine that falls back to the passives
+-- lookup of dn, which a legion / tattoo name only reaches through the global
+-- map), means renamed; an id answer of its own means the node's own name.
+local function nodeRenamed(node, dn, build, idZh)
+	local orig = originalNodeName(node, build)
+	if orig then return orig ~= dn end
+	return idZh == nil or idZh == zhGlobal(dn)
+end
+
+-- AddNodeName's name line: [colour lead] node.dn [" [" .. node.id .. "]"]
+-- (the suffix only in dev mode, PassiveTreeView.lua). Returns the id hit (or
+-- nil) and whether this IS the name line: a name line the id lookup missed is
+-- looked up under passives by AddLine; every other line stays unmarked.
+local function translateNodeNameLine(text)
+	local ctx = nodeCtx
+	if not ctx or ctx.nameDone then return nil, false end
+	local node = ctx.node
+	local dn = node.dn
+	if type(dn) ~= "string" or dn == "" then return nil, false end
+	local lead, rest = splitLeadColour(text)
+	local tail
+	if rest == dn then
+		tail = ""
+	elseif rest:sub(1, #dn) == dn and rest:sub(#dn + 1) == " [" .. tostring(node.id) .. "]" then
+		tail = rest:sub(#dn + 1)
+	else
+		return nil, false
+	end
+	ctx.nameDone = true
+	local zh = node.id ~= nil and zhById("passives", node.id, dn) or nil
+	-- A tattoo (isTattoo) / Timeless jewel (conqueredBy) node may keep its id
+	-- under a new dn; only a RENAMED node takes its name from tattoo / legion.
+	-- isTattoo first: ReplaceNode overwrites it, so when both are set the name
+	-- is the tattoo's. Conquered nodes are often not renamed at all (Lethal
+	-- Pride: conqueredBy on every node in range), and those keep the id name.
+	local replSource = (node.isTattoo and "tattoo") or (node.conqueredBy and "legion") or nil
+	if replSource and nodeRenamed(node, dn, ctx.build, zh) then
+		-- the replacement source must really have the name: an answer that is
+		-- just the global merged map's (the engine's fallback) does not count
+		local alt = zhInSource(replSource, dn)
+		if alt and alt ~= zhGlobal(dn) then zh = alt end
+	end
+	if not zh then return nil, true end
+	return lead .. zh .. tail, true
+end
+
+-- The crafting tooltip's "^7Affix: <mod.affix>" line (ItemsTab.lua). Only that
+-- plain form: the "Affix: Tier N (<affix>)" form and everything else keep the
+-- ordinary line path. The label goes through the dictionary on its own
+-- ("Affix:" is a ui.json key); a full-width colon needs no space after it.
+local FULLWIDTH_COLON = "\239\188\154"
+local function translateAffixLine(text)
+	local ctx = affixTipCtx
+	if not ctx then return nil end
+	local affix = ctx.mod.affix
+	if type(affix) ~= "string" or affix == "" then return nil end
+	local lead, rest = splitLeadColour(text)
+	if rest ~= "Affix: " .. affix then return nil end
+	-- id hit only (no English argument, so no fallback): this line stays
+	-- English today, and an unsourced fallback could pick a wrong-context word.
+	if not hasTranslateId() then return nil end
+	local zh = PobToolsTranslateId("affixes", ctx.id)
+	if not zh or zh == affix then return nil end
+	local label = PobToolsTranslateDisplay("Affix:") or "Affix:"
+	local gap = label:sub(-#FULLWIDTH_COLON) == FULLWIDTH_COLON and "" or " "
+	return lead .. label .. gap .. zh
+end
+
+-- One line of a gem tooltip (gemCtx set). A grantedEffect's description is
+-- looked up by that effect's own id under gems_desc; every other non-name line
+-- asks the engine's stat lookup under "gem", with the stat id describeStats
+-- reported for that exact line (nil for lines POB rewrote afterwards, e.g. the
+-- quality "(0-N)" lines). Name lines and misses return nil: the existing path
+-- (the caller's "gems" source) runs as before.
+local function translateGemLine(text)
+	local ctx = gemCtx
+	if not ctx then return nil end
+	local lead, rest = splitLeadColour(text)
+	local core = trim(rest)
+	if core == "" or ctx.names[core] then return nil end
+	local id = ctx.desc[core]
+	if id ~= nil then
+		local zh = zhById("gems_desc", id, core)
+		if zh then return lead .. zh end
+		-- id miss (or its English differs): the description is gems.json
+		-- text, looked up under that source even where no caller set one
+		-- (a gem tooltip inside a node tooltip). A miss keeps the English.
+		local whole = withSource("gems", PobToolsTranslateDisplay, text)
+		if whole then return whole end
+		-- a multi-line description the whole lookup missed: line by line,
+		-- still under gems; lines that miss stay English
+		if text:find("\n", 1, true) then
+			local parts, changed = {}, false
+			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+				local z = line ~= "" and withSource("gems", PobToolsTranslateDisplay, line) or nil
+				if z then changed = true end
+				parts[#parts + 1] = z or line
+			end
+			if changed then return table.concat(parts, "\n") end
+		end
+		return text
+	end
+	-- the skill's own stat description file (describeStats' scope argument;
+	-- PoE2 keeps it in statSets, so grantedEffect is not read): "gem:<scope>",
+	-- or "gem" (the engine's default chain) when it is unknown. A support gem's
+	-- gem_stat_descriptions is passed too: the default chain reads skill_stat
+	-- first and would pick the active skill's wording.
+	local scope = ctx.statScopes[core]
+	return zhByStat(text, scope and ("gem:" .. scope) or "gem", ctx.statIds[core])
+end
+
+-- node.sd -> nodeSdPairs. Each adjacent pair (colour codes stripped) is asked
+-- as "a\nb" under "passive"; only an answer of exactly two lines counts, then
+-- a/b map to its first/second line and both are skipped; a miss slides down by
+-- one line. nil when the engine has no stat lookup or nothing paired.
+-- POB's "not supported" note (main.notSupportedTooltipText, e.g.
+-- " ^8(Not supported in PoB yet)") appended to an unsupported stat line when
+-- it is drawn. Plain suffix compare, no pattern. Returns body, note-or-"".
+local function splitNoteTail(s)
+	local note = type(main) == "table" and main.notSupportedTooltipText or nil
+	if type(note) == "string" and note ~= "" and #s > #note and s:sub(-#note) == note then
+		return s:sub(1, #s - #note), note
+	end
+	return s, ""
+end
+
+-- Paired-line lookup shared by node sd / item mod pairs: colour lead and the
+-- unsupported note are split off, the rest looked up, both put back on a hit.
+local function pairLookup(map, text)
+	if not map then return nil end
+	local lead, rest = splitLeadColour(text)
+	local body, tail = splitNoteTail(rest)
+	local zh = map[trim(body)]
+	return zh and lead .. zh .. tail or nil
+end
+
+-- Asks a\nb under ctx; only a hit of that joined query counts. A two-line
+-- answer gives one Chinese line per English line; a one-line answer (or an
+-- empty second line) puts the whole sentence on the first line and leaves the
+-- second blank. The first line must not be empty; more than two lines: nil.
+local function statPair(a, b, ctx)
+	if a == "" or b == "" or a:find("\n", 1, true) or b:find("\n", 1, true) then return nil end
+	local zh = zhByStat(a .. "\n" .. b, ctx)
+	if not zh then return nil end
+	if not zh:find("\n", 1, true) then return zh, "" end
+	local z1, z2 = zh:match("^([^\n]*)\n([^\n]*)$")
+	if z1 and z1 ~= "" then return z1, z2 end
+	return nil
+end
+
+-- Item mod lists in POB's AddItemTooltip order (PoE1 enchant / scourge /
+-- implicit / explicit / crucible, PoE2 enchant / rune / implicit / explicit).
+local ITEM_MOD_LISTS = { "enchantModLines", "scourgeModLines", "runeModLines",
+	"implicitModLines", "explicitModLines", "crucibleModLines" }
+
+-- One stat template POB split over two adjacent mod lines of the same list.
+-- Each list's lines are taken as AddItemTooltip draws them
+-- (itemLib.formatModLine(modLine, dbMode); nil = not drawn), colour and note
+-- stripped; adjacent pairs are asked "a\nb" under "item" and an exactly
+-- two-line answer maps a/b to its lines (a miss slides down by one). nil when
+-- the engine has no stat lookup or nothing paired.
+local function buildItemModPairs(item, dbMode)
+	if type(PobToolsTranslateStat) ~= "function" or type(item) ~= "table" then return nil end
+	local fmt = type(itemLib) == "table" and itemLib.formatModLine or nil
+	if type(fmt) ~= "function" then return nil end
+	local map, found = {}, false
+	for _, key in ipairs(ITEM_MOD_LISTS) do
+		local list = item[key]
+		if type(list) == "table" then
+			local shown = {}
+			for _, modLine in ipairs(list) do
+				-- same filter as AddItemTooltip: a line of a variant that is
+				-- not selected is not drawn, and is drawn count times if > 1
+				local count = 1
+				if type(item.GetModLineVariantCount) == "function" then
+					local ok, n = pcall(item.GetModLineVariantCount, item, modLine)
+					count = ok and type(n) == "number" and n or 0
+				end
+				local f = count > 0 and fmt(modLine, dbMode) or nil
+				if type(f) == "string" then
+					local _, rest = splitLeadColour(f)
+					local shownLine = trim((splitNoteTail(rest)))
+					for _ = 1, count do shown[#shown + 1] = shownLine end
+				end
+			end
+			local i = 1
+			while shown[i + 1] do
+				local z1, z2 = statPair(shown[i], shown[i + 1], "item")
+				if z1 then
+					map[shown[i]], map[shown[i + 1]] = z1, z2
+					found = true
+					i = i + 2
+				else
+					i = i + 1
+				end
+			end
+		end
+	end
+	return found and map or nil
+end
+
+local function buildSdPairs(node)
+	if type(PobToolsTranslateStat) ~= "function" then return nil end
+	local sd = type(node) == "table" and node.sd or nil
+	if type(sd) ~= "table" then return nil end
+	local map, found = {}, false
+	local i = 1
+	while sd[i + 1] ~= nil do
+		local a, b = sd[i], sd[i + 1]
+		local hit = false
+		if type(a) == "string" and type(b) == "string" then
+			local _, ra = splitLeadColour(a)
+			local _, rb = splitLeadColour(b)
+			ra, rb = trim((splitNoteTail(ra))), trim((splitNoteTail(rb)))
+			local z1, z2 = statPair(ra, rb, "passive")
+			if z1 then
+				map[ra], map[rb] = z1, z2
+				found, hit = true, true
+			end
+		end
+		i = i + (hit and 2 or 1)
+	end
+	return found and map or nil
+end
+
+-- An anointed amulet's "Allocates <notable>" enchant line (ItemsTab
+-- anointItem). The notable name is looked up under anoint and the label on its
+-- own; a name the anoint lookup misses leaves the line to the existing path
+-- (the whole-line lookup).
+local function translateAllocatesLine(text)
+	local lead, rest = splitLeadColour(text)
+	local name = rest:match("^Allocates (.+)$")
+	if not name then return nil end
+	local zh = zhInSource("anoint", trim(name))
+	if not zh then return nil end
+	local label = PobToolsTranslateDisplay("Allocates") or "Allocates"
+	return lead .. label .. " " .. zh
+end
+
+-- The single modId behind a magic item's name prefix / suffix, or nil when
+-- there is none (pasted items often carry no ids) or more than one. When the
+-- item also knows the mod, its affix name must be the segment being translated.
+local function affixModId(item, listKey, seg)
+	local list = item[listKey]
+	if type(list) ~= "table" then return nil end
+	local found
+	for _, a in ipairs(list) do
+		local id = type(a) == "table" and a.modId or nil
+		if type(id) == "string" and id ~= "" and id ~= "None" then
+			if found and found ~= id then return nil end
+			found = id
+		end
+	end
+	if not found then return nil end
+	local mod = type(item.affixes) == "table" and item.affixes[found] or nil
+	if type(mod) == "table" and type(mod.affix) == "string" and trim(mod.affix) ~= seg then
+		return nil
+	end
+	return found
+end
+
+-- Source for one AddLine call: "modline" / "uniques" / "items" / "split" /
+-- nil (nil = leave the caller's scope alone, i.e. the shipping unmarked
+-- lookup). Only NAME lines get a source; "modline" = unmarked first, stats
+-- only when that left the line English. Also returns the leading colour run.
+local function tooltipLineSource(text, a4)
+	if type(a4) == "table" and type(a4.line) == "string" then
+		-- PoE1 AddLine(size, text, font, modLine, background). PoE2's 4th
+		-- parameter is a background (string or image handle), never such a table.
+		return "modline"
+	end
+	local ctx = itemCtx
+	if not ctx then return nil end
+	local item = ctx.item
+	local lead, rest = splitLeadColour(text)
+	local core = trim(rest)
+	if core == "" then return nil end
+	local base = cleanBaseName(item)
+	if type(item.title) == "string" then
+		if not ctx.titleDone and core == item.title then
+			ctx.titleDone = true
+			if UNIQUE_RARITY[item.rarity] then return "uniques", lead end
+			return nil, lead
+		end
+		if base and core == base then
+			ctx.titleDone = true
+			return "items", lead
+		end
+		return nil, lead
+	end
+	if base and core == base then return "items", lead end
+	local pre, suf = item.namePrefix, item.nameSuffix
+	if base and type(pre) == "string" and type(suf) == "string"
+	   and (trim(pre) ~= "" or trim(suf) ~= "")
+	   and core == trim(pre .. base .. suf) then
+		return "split", lead
+	end
+	return nil, lead
+end
+
+-- One name segment under `source`; nil when the dictionary has nothing.
+local function zhSegment(source, seg)
+	if seg == "" then return "" end
+	local zh = withSource(source, PobToolsTranslateDisplay, seg)
+	if zh and zh ~= seg then return zh end
+	return nil
+end
+
+-- A magic item's title "Heavy Glorious Plate of the Whale" is no dictionary
+-- key. Translate prefix (affixes), base (items) and suffix (affixes) on their
+-- own and keep POB's spacing. All-or-nothing, like the engine's comma path: a
+-- half-translated name is worse than an English one, so nil means "use the
+-- plain line path instead".
+local function translateSplitTitle(lead, item)
+	local base = cleanBaseName(item)
+	local preRaw, sufRaw = item.namePrefix, item.nameSuffix
+	local pre, suf = trim(preRaw), trim(sufRaw)
+	-- prefix / suffix by modId when the item has one (see "lookups by stable id")
+	local zp = (pre ~= "" and zhById("affixes", affixModId(item, "prefixes", pre), pre))
+		or zhSegment("affixes", pre)
+	local zb = zp and zhSegment("items", base)
+	local zs = zb and ((suf ~= "" and zhById("affixes", affixModId(item, "suffixes", suf), suf))
+		or zhSegment("affixes", suf))
+	if not (zp and zb and zs) then return nil end
+	local preGap = pre ~= "" and preRaw:match("(%s*)$") or ""
+	local sufGap = suf ~= "" and sufRaw:match("^(%s*)") or ""
+	return lead .. zp .. preGap .. zb .. sufGap .. zs
 end
 
 -- ===== constructor wrapping =====
@@ -128,11 +617,11 @@ local function wrapConstructor(class, className, after)
 		or (rawget(class, className) and className)
 	if not key then return false end
 	local orig = class[key]
-	class[key] = function(self, ...)
+	class[key] = keepArity(orig, function(self, ...)
 		local ret = orig(self, ...)
 		after(self)
 		return ret
-	end
+	end)
 	return true
 end
 
@@ -212,11 +701,11 @@ PATCHES["GemSelectControl"] = function(class)
 				self.noMatches = true
 			end
 		end
-		class.BuildList = function(self, buf)
+		class.BuildList = keepArity(origBuild, function(self, buf)
 			origBuild(self, buf)
 			if not hasCJK(buf) then return end
 			withSource("gems", appendCJKMatches, self, buf)
-		end
+		end)
 	end
 end
 
@@ -224,9 +713,44 @@ end
 -- stat lines. `node` is the LAST arg in both PoE1 (self, node) and
 -- PoE2 (self, build, node).
 PATCHES["PassiveTreeView"] = function(class)
+	-- Node tooltips: only the NAME line is passives text (by node.id first,
+	-- then the passives source). Stat lines ask PobToolsTranslateStat under
+	-- "passive" first (nodeTipActive, set while AddNodeTooltip runs), then the
+	-- unmarked lookup. nodeCtx tells Tooltip:AddLine which node is being
+	-- named. Both restored even on error. Not fatal when absent.
+	local origTip = class.AddNodeTooltip
+	if type(origTip) == "function" then
+		-- Only marks the span (nodeTipActive) for the stat lookup; same arity.
+		-- Also pairs two-line stat templates split over node.sd (nodeSdPairs).
+		class.AddNodeTooltip = keepArity(origTip, function(self, ...)
+			local prev, prevPairs = nodeTipActive, nodeSdPairs
+			local _, node = ...
+			local pok, pairsMap = pcall(buildSdPairs, node)
+			nodeTipActive = true
+			nodeSdPairs = pok and pairsMap or nil
+			local ok, a, b, c = pcall(origTip, self, ...)
+			nodeTipActive, nodeSdPairs = prev, prevPairs
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
+	local origName = class.AddNodeName
+	if type(origName) ~= "function" then
+		log("PassiveTreeView: no AddNodeName, node names stay unmarked")
+	else
+		class.AddNodeName = keepArity(origName, function(self, tooltip, node, ...)
+			local prevCtx = nodeCtx
+			local build = ...
+			nodeCtx = type(node) == "table" and { node = node, build = build } or nil
+			local ok, a, b, c = pcall(origName, self, tooltip, node, ...)
+			nodeCtx = prevCtx
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
 	local orig = class.DoesNodeMatchSearchParams
 	if orig then
-		class.DoesNodeMatchSearchParams = function(self, ...)
+		class.DoesNodeMatchSearchParams = keepArity(orig, function(self, ...)
 			local n = select("#", ...)
 			local node = n > 0 and select(n, ...) or nil
 			local s = self.searchStr
@@ -245,7 +769,7 @@ PATCHES["PassiveTreeView"] = function(class)
 				return false
 			end
 			return orig(self, ...)
-		end
+		end)
 	end
 
 	-- Window opacity (PobTools launcher slider, Windows): below 100% the engine
@@ -313,7 +837,7 @@ PATCHES["PassiveTreeView"] = function(class)
 			end
 			SetDrawColor(1, 1, 1)
 		end
-		class.Draw = function(self, build, viewPort, inputEvents)
+		class.Draw = keepArity(origDraw, function(self, build, viewPort, inputEvents)
 			local bgPath, _, _, treeBg = "", 50, 0, 100
 			if type(PobToolsBackground) == "function" then bgPath, _, _, treeBg = PobToolsBackground() end
 			bgPath = bgPath or ""
@@ -372,8 +896,8 @@ PATCHES["PassiveTreeView"] = function(class)
 			self.zoomY = self.zoomY - dy
 			self.zoom = 1.2 ^ self.zoomLevel
 			if not ok then error(err, 0) end
-		end
-		class.Zoom = function(self, level, viewPort)
+		end)
+		class.Zoom = keepArity(origZoom, function(self, level, viewPort)
 			local k = self._ptExpandK
 			if not k then return origZoom(self, level, viewPort) end
 			-- upstream Zoom() (PassiveTreeView.lua:1307) with the scale factor
@@ -387,7 +911,7 @@ PATCHES["PassiveTreeView"] = function(class)
 			local relY = cursorY - viewPort.y - viewPort.height / 2
 			self.zoomX = relX + (self.zoomX - relX) * factor
 			self.zoomY = relY + (self.zoomY - relY) * factor
-		end
+		end)
 	end
 end
 
@@ -398,7 +922,7 @@ end
 PATCHES["NotableDBControl"] = function(class)
 	local orig = class.DoesNotableMatchFilters
 	if orig then
-		class.DoesNotableMatchFilters = function(self, node)
+		class.DoesNotableMatchFilters = keepArity(orig, function(self, node)
 			local search = self.controls and self.controls.search
 			local buf = search and search.buf
 			if not hasCJK(buf) then
@@ -421,8 +945,112 @@ PATCHES["NotableDBControl"] = function(class)
 				end
 			end
 			return false
+		end)
+	end
+	-- Anoint list rows: colour .. node.dn. The dn is looked up under anoint
+	-- (the notable's name as an anoint), the colour kept; a miss is returned
+	-- untouched.
+	local origRow = class.GetRowValue
+	if type(origRow) == "function" then
+		class.GetRowValue = keepArity(origRow, function(self, column, index, node, ...)
+			local v = origRow(self, column, index, node, ...)
+			if type(v) == "string" and type(node) == "table" and type(node.dn) == "string" then
+				local lead, rest = splitLeadColour(v)
+				if rest == node.dn then
+					local zh = zhInSource("anoint", rest)
+					if zh then return lead .. zh end
+				end
+			end
+			return v
+		end)
+	end
+end
+
+-- Tree tab popups whose drop-downs list node names: the tattoo picker
+-- (ModifyNodePopup, PoE1 only) and the Timeless jewel finder's node list
+-- (FindTimelessJewel). Both lists are locals of the popup function, labelled
+-- node.dn .. 48 spaces .. stat text, and the legion one is rebuilt in place
+-- when the jewel type changes -- so the control's own Draw is wrapped once the
+-- popup is open, and every Draw renames the items it has not seen yet (dn part
+-- only, under tattoo / legion; the stat part stays as is).
+--
+-- The English dn comes from the item's id (tree.tattoo.nodes[id] /
+-- tree.legion.nodes by .id), not from the label: the engine's treetab.lua
+-- source patch already writes the GLOBAL translation into the label's dn part
+-- when the list is built, and that Chinese text is no key under tattoo /
+-- legion. Without an id match the label's own dn part is used.
+local LABEL_PAD = string.rep(" ", 48)
+local renamedItems = setmetatable({}, { __mode = "k" })
+
+-- id -> English dn for the popup's source, from build.spec.tree.
+local function popupDnById(tree, source)
+	local map = {}
+	local group = type(tree) == "table" and tree[source] or nil
+	local nodes = type(group) == "table" and group.nodes or nil
+	if type(nodes) ~= "table" then return map end
+	for key, node in pairs(nodes) do
+		if type(node) == "table" and type(node.dn) == "string" then
+			if source == "tattoo" then
+				map[key] = node.dn
+			elseif node.id ~= nil then
+				map[node.id] = node.dn
+			end
 		end
 	end
+	return map
+end
+
+local function renameListLabels(list, source, dnById)
+	if type(list) ~= "table" then return end
+	for _, v in ipairs(list) do
+		if type(v) == "table" and not renamedItems[v] and type(v.label) == "string" then
+			renamedItems[v] = true
+			local s = v.label:find(LABEL_PAD, 1, true)
+			local dn = (v.id ~= nil and dnById and dnById[v.id])
+				or (s and v.label:sub(1, s - 1) or v.label)
+			local zh = zhInSource(source, dn)
+			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
+		end
+	end
+end
+
+local function wrapPopupList(controlName, source, tree)
+	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
+	local ctl = type(popup) == "table" and type(popup.controls) == "table"
+		and popup.controls[controlName] or nil
+	if type(ctl) ~= "table" or rawget(ctl, "_ptRenameDraw") then return end
+	local origDraw = ctl.Draw
+	if type(origDraw) ~= "function" then return end
+	ctl._ptRenameDraw = true
+	local dnById = popupDnById(tree, source)
+	ctl.Draw = keepArity(origDraw, function(self, ...)
+		local ok, err = pcall(renameListLabels, self.list, source, dnById)
+		if not ok then log("popup list rename failed: " .. tostring(err)) end
+		return origDraw(self, ...)
+	end)
+end
+
+PATCHES["TreeTab"] = function(class)
+	local found = false
+	for method, spec in pairs({
+		ModifyNodePopup = { "modSelect", "tattoo" },
+		FindTimelessJewel = { "nodeSelect", "legion" },
+	}) do
+		local orig = class[method]
+		if type(orig) == "function" then
+			found = true
+			class[method] = keepArity(orig, function(self, ...)
+				local a, b, c = orig(self, ...)
+				local build = type(self) == "table" and self.build or nil
+				local tree = type(build) == "table" and type(build.spec) == "table"
+					and build.spec.tree or nil
+				local ok, err = pcall(wrapPopupList, spec[1], spec[2], tree)
+				if not ok then log("TreeTab." .. method .. " list wrap failed: " .. tostring(err)) end
+				return a, b, c
+			end)
+		end
+	end
+	if not found then error("TreeTab has neither ModifyNodePopup nor FindTimelessJewel") end
 end
 
 -- Item database (Uniques / Rare templates): match the CJK query against the
@@ -444,7 +1072,7 @@ PATCHES["ItemDBControl"] = function(class)
 	-- Every mod-line table the two forks keep. PoE2 added runeModLines and PoE1
 	-- has no such field, so a name that is absent is skipped rather than assumed.
 	local MOD_LINE_FIELDS = { "enchantModLines", "runeModLines", "implicitModLines", "explicitModLines" }
-	class.DoesItemMatchFilters = function(self, item)
+	class.DoesItemMatchFilters = keepArity(orig, function(self, item)
 		local search = self.controls and self.controls.search
 		local buf = search and search.buf
 		if not hasCJK(buf) then
@@ -476,6 +1104,35 @@ PATCHES["ItemDBControl"] = function(class)
 			end
 		end
 		return false
+	end)
+
+	-- List rows: GetRowValue draws colorCodes[rarity] .. item.name, and a
+	-- unique's name is "<title>, <base>". Translate the halves under their own
+	-- sources (uniques / items) and keep the ", ". All-or-nothing: when either
+	-- half is unknown the row is returned untouched, i.e. exactly what the draw
+	-- path used to translate on its own. Non-unique rows keep the unmarked
+	-- source for the first half. Not fatal when absent.
+	local origRow = class.GetRowValue
+	if type(origRow) == "function" then
+		class.GetRowValue = keepArity(origRow, function(self, column, index, item, ...)
+			local v = origRow(self, column, index, item, ...)
+			if type(v) ~= "string" or type(item) ~= "table" or hasCJK(v) then return v end
+			local lead, rest = splitLeadColour(v)
+			local first, second = rest:match("^(.-), (.+)$")
+			if not first or first == "" or second:find(", ", 1, true) then return v end
+			local zf
+			if UNIQUE_RARITY[item.rarity] then
+				zf = zhSegment("uniques", first)
+			else
+				zf = PobToolsTranslateDisplay(first)
+				if zf == first then zf = nil end
+			end
+			local zs = zf and zhSegment("items", second)
+			if not zs then return v end
+			return lead .. zf .. ", " .. zs
+		end)
+	else
+		log("ItemDBControl: no GetRowValue, list rows stay unmarked")
 	end
 end
 
@@ -490,7 +1147,7 @@ PATCHES["MinionSearchListControl"] = function(class)
 	end
 	local orig = class.DoesEntryMatchFilters
 	if not orig then error("MinionSearchListControl has no DoesEntryMatchFilters to wrap") end
-	class.DoesEntryMatchFilters = function(self, searchStr, minionId, filterMode)
+	class.DoesEntryMatchFilters = keepArity(orig, function(self, searchStr, minionId, filterMode)
 		if orig(self, searchStr, minionId, filterMode) then return true end
 		local search = self.controls and self.controls.searchText
 		local buf = search and search.buf
@@ -511,7 +1168,7 @@ PATCHES["MinionSearchListControl"] = function(class)
 			end
 		end
 		return false
-	end
+	end)
 end
 
 -- Calcs tab search box: it highlights sections and rows whose label matches, so
@@ -523,7 +1180,7 @@ PATCHES["CalcsTab"] = function(class)
 	end
 	local orig = class.SearchMatch
 	if not orig then error("CalcsTab has no SearchMatch to wrap") end
-	class.SearchMatch = function(self, txt)
+	class.SearchMatch = keepArity(orig, function(self, txt)
 		local search = self.controls and self.controls.search
 		local buf = search and search.buf
 		if type(txt) == "string" and hasCJK(buf) then
@@ -531,7 +1188,7 @@ PATCHES["CalcsTab"] = function(class)
 			if zh and zh:lower():find(buf:lower(), 1, true) then return true end
 		end
 		return orig(self, txt)
-	end
+	end)
 end
 
 -- Dropdown typed search (SearchHost mixin; e.g. the enchant popup lists):
@@ -541,7 +1198,7 @@ end
 PATCHES["SearchHost"] = function(class)
 	local orig = class.UpdateSearch
 	if orig then
-		class.UpdateSearch = function(self)
+		class.UpdateSearch = keepArity(orig, function(self)
 			orig(self)
 			if not hasCJK(self.searchTerm) then return end
 			local list = self.searchListAccessor and self.searchListAccessor()
@@ -561,7 +1218,7 @@ PATCHES["SearchHost"] = function(class)
 				end
 			end
 			if changed then self:UpdateMatchCount() end
-		end
+		end)
 	end
 end
 
@@ -581,7 +1238,7 @@ end
 PATCHES["EditControl"] = function(class)
 	local orig = class.OnKeyDown
 	if not orig then error("EditControl has no OnKeyDown to wrap") end
-	class.OnKeyDown = function(self, key, doubleClick)
+	class.OnKeyDown = keepArity(orig, function(self, key, doubleClick)
 		-- same condition as upstream; disableRightClickPaste exists in PoE2 only
 		-- (nil in PoE1, so the extra test is harmless there)
 		local paste = (key == "v" and IsKeyDown("CTRL"))
@@ -618,7 +1275,7 @@ PATCHES["EditControl"] = function(class)
 			end
 		end
 		return self
-	end
+	end)
 	-- Subclasses (ResizableEditControl, GemSelectControl) inherit through a
 	-- CACHING __index (Common.lua newClass): the first lookup copies the parent
 	-- method into the subclass table, so a subclass that already resolved
@@ -670,7 +1327,7 @@ local ATTR_REQ = { Str = true, Strength = true, Dex = true, Dexterity = true,
 PATCHES["Item"] = function(class)
 	local orig = class.ParseRaw
 	if not orig then error("Item has no ParseRaw to wrap") end
-	class.ParseRaw = function(self, raw, ...)
+	class.ParseRaw = keepArity(orig, function(self, raw, ...)
 		if type(raw) == "string" and raw:find("Requirements:", 1, true) then
 			local out, seenBlock = {}, false
 			for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
@@ -687,7 +1344,7 @@ PATCHES["Item"] = function(class)
 			raw = table.concat(out, "\n")
 		end
 		return orig(self, raw, ...)
-	end
+	end)
 end
 
 -- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
@@ -698,17 +1355,95 @@ end
 -- English too; their dev branch added exactly this call. Harmless once POB
 -- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
 PATCHES["ItemsTab"] = function(class)
+	-- Item tooltips: no outer source (non-name lines keep the unmarked
+	-- lookup); the item is kept in itemCtx so Tooltip:AddLine can tell the
+	-- title / base / name lines apart. Restored even when the original
+	-- throws. Not fatal when absent.
+	local origTip = class.AddItemTooltip
+	if type(origTip) == "function" then
+		class.AddItemTooltip = keepArity(origTip, function(self, tooltip, item, ...)
+			local prevCtx = itemCtx
+			itemCtx = type(item) == "table" and { item = item } or nil
+			if itemCtx then
+				-- AddItemTooltip(tooltip, item, slot, dbMode, ...)
+				local _, dbMode = ...
+				local pok, modPairs = pcall(buildItemModPairs, item, dbMode)
+				itemCtx.modPairs = pok and modPairs or nil
+			end
+			local ok, a, b, c = pcall(origTip, self, tooltip, item, ...)
+			itemCtx = prevCtx
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+		-- The title line reaches AddLine already translated: an engine source
+		-- patch on ItemsTab.lua ("物品提示的標題維持英文") runs item.title through
+		-- PobToolsItemTitle first. Give that call the uniques source too, only
+		-- while this item's tooltip is being built; everywhere else it is the
+		-- original function.
+		if type(PobToolsItemTitle) == "function" then
+			local origTitle = PobToolsItemTitle
+			PobToolsItemTitle = keepArity(origTitle, function(s, ...)
+				local ctx = itemCtx
+				if ctx and not ctx.titleDone and s == ctx.item.title then
+					ctx.titleDone = true
+					if UNIQUE_RARITY[ctx.item.rarity] then
+						return withSource("uniques", origTitle, s, ...)
+					end
+				end
+				return origTitle(s, ...)
+			end)
+		end
+	else
+		log("ItemsTab: no AddItemTooltip, item tooltips stay unmarked")
+	end
 	local ok = wrapConstructor(class, "ItemsTab", function(self)
+		-- Crafting affix drop-down / range slider tooltips: tell AddLine which
+		-- mod the "Affix: <name>" line belongs to, so it is looked up by mod Id.
+		-- Mirrors the id choice in ItemsTab.lua's tooltipFuncs; anything unclear
+		-- (no item, no mod, several tiers) leaves affixTipCtx nil.
+		local function wrapAffixTip(ctl, idOf)
+			local orig = type(ctl) == "table" and ctl.tooltipFunc or nil
+			if type(orig) ~= "function" then return end
+			ctl.tooltipFunc = keepArity(orig, function(tooltip, ...)
+				local prev = affixTipCtx
+				local okId, id = pcall(idOf, ...)
+				local item = self.displayItem
+				local mods = okId and id and type(item) == "table" and item.affixes or nil
+				local mod = type(mods) == "table" and mods[id] or nil
+				affixTipCtx = type(mod) == "table" and { id = id, mod = mod } or nil
+				local ok2, a, b, c = pcall(orig, tooltip, ...)
+				affixTipCtx = prev
+				if not ok2 then error(a, 0) end
+				return a, b, c
+			end)
+		end
+		if hasTranslateId() and type(self.controls) == "table" then
+			local i = 1
+			while self.controls["displayItemAffix" .. i] do
+				local drop = self.controls["displayItemAffix" .. i]
+				wrapAffixTip(drop, function(mode, index, value)
+					local modList = type(value) == "table" and value.modList
+					if type(modList) ~= "table" then return nil end
+					return value.modId or (#modList == 1 and modList[1]) or nil
+				end)
+				wrapAffixTip(self.controls["displayItemAffixRange" .. i], function()
+					local sel = drop.list and drop.list[drop.selIndex]
+					local modList = type(sel) == "table" and sel.modList
+					return type(modList) == "table" and #modList == 1 and modList[1] or nil
+				end)
+				i = i + 1
+			end
+		end
 		for i = 1, 6 do
 			local drop = self.controls and self.controls["displayItemRune" .. i]
 			if drop and type(drop.selFunc) == "function" then
 				local orig = drop.selFunc
-				drop.selFunc = function(...)
+				drop.selFunc = keepArity(orig, function(...)
 					orig(...)
 					if self.displayItem and self.displayItem.crafted and self.UpdateAffixControls then
 						self:UpdateAffixControls()
 					end
-				end
+				end)
 			end
 		end
 	end)
@@ -721,31 +1456,90 @@ PATCHES["Tooltip"] = function(class)
 	if type(PobToolsTranslateDisplay) ~= "function" then
 		error("PobToolsTranslateDisplay unavailable (engine too old)")
 	end
-	class.AddLine = function(self, size, text, ...)
+	-- whole blob first: GGG ships some stat lines WITH their own "\n" and the
+	-- dictionary stores those joined, so the multi-line form is a real key.
+	-- Falling back per line covers everything else. Runs under whatever source
+	-- is active; returns nil when nothing translated.
+	local function translateLine(text)
+		local whole = PobToolsTranslateDisplay(text)
+		if whole then return whole end
+		if text:find("\n", 1, true) then
+			local parts, changed = {}, false
+			for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+				local zh = line ~= "" and PobToolsTranslateDisplay(line) or nil
+				if zh then changed = true end
+				t_insert(parts, zh or line)
+			end
+			if changed then return table.concat(parts, "\n") end
+		end
+		return nil
+	end
+	class.AddLine = keepArity(orig, function(self, size, text, font, a4, ...)
 		-- Tooltip.lua:96 starts a new BLOCK when a line begins with "Equipping"
 		-- or "Removing", so translating those would silently change the
 		-- tooltip's block structure. Left alone on purpose.
 		local structural = type(text) == "string" and
 			(text:find("Equipping", 1, true) or text:find("Removing", 1, true))
 		if type(text) == "string" and text ~= "" and not structural and not hasCJK(text) then
-			-- whole blob first: GGG ships some stat lines WITH their own "\n"
-			-- and the dictionary stores those joined, so the multi-line form is
-			-- a real key. Falling back per line covers everything else.
-			local whole = PobToolsTranslateDisplay(text)
-			if whole then
-				text = whole
-			elseif text:find("\n", 1, true) then
-				local parts, changed = {}, false
-				for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-					local zh = line ~= "" and PobToolsTranslateDisplay(line) or nil
-					if zh then changed = true end
-					t_insert(parts, zh or line)
+			-- Which data file this line came from (see "tooltip line sources"
+			-- above). nil = whatever the caller's scope already set.
+			local src, lead = tooltipLineSource(text, a4)
+			local zh, isNodeName = translateNodeNameLine(text)
+			zh = zh or translateAffixLine(text)
+			if not zh and not isNodeName then zh = translateAllocatesLine(text) end
+			-- Stat lines ask the engine's stat lookup first (item mod lines
+			-- as "item", passive tooltip description lines as "passive");
+			-- name lines never. A miss falls through to the path below.
+			local statZh
+			if not zh and not isNodeName then
+				-- an item mod line paired with its neighbour (buildItemModPairs)
+				if itemCtx and itemCtx.modPairs then
+					statZh = pairLookup(itemCtx.modPairs, text)
 				end
-				if changed then text = table.concat(parts, "\n") end
+				if statZh then
+					-- decided by the pair
+				elseif gemCtx and not itemCtx then
+					-- a gem tooltip wins over an enclosing node tooltip (its
+					-- lines are gem text); an item tooltip nested in it does not
+					statZh = translateGemLine(text)
+				elseif src == "modline" then
+					-- the unsupported note is not part of the stat: asked
+					-- without it, put back after the Chinese
+					local lead, rest = splitLeadColour(text)
+					local body, tail = splitNoteTail(rest)
+					statZh = zhByStat(lead .. body, "item")
+					statZh = statZh and statZh .. tail
+				elseif src == nil and nodeTipActive and not itemCtx then
+					-- not inside an item tooltip nested in the node tooltip
+					-- (jewel socket): those lines are item text, not the passive's
+					-- the unsupported note is not part of the stat: kept as tail
+					statZh = pairLookup(nodeSdPairs, text) or zhByStat(text, "passive")
+				end
 			end
+			if zh then
+				-- decided by id (see "lookups by stable id")
+			elseif statZh then
+				zh = statZh
+			elseif isNodeName then
+				zh = withSource("passives", translateLine, text)
+			elseif src == "modline" then
+				-- unmarked first; stats only when that left the line English
+				zh = translateLine(text)
+				if not zh or not hasCJK(zh) then
+					zh = withSource("stats", translateLine, text) or zh
+				end
+			elseif src == "split" then
+				zh = translateSplitTitle(lead, itemCtx.item)
+				if not zh then zh = translateLine(text) end
+			elseif src then
+				zh = withSource(src, translateLine, text)
+			else
+				zh = translateLine(text)
+			end
+			if zh then text = zh end
 		end
-		return orig(self, size, text, ...)
-	end
+		return orig(self, size, text, font, a4, ...)
+	end)
 
 	-- F2 has to reach tooltips that are ALREADY on screen.
 	--
@@ -764,7 +1558,7 @@ PATCHES["Tooltip"] = function(class)
 	-- an emptied tooltip must rebuild anyway.
 	local origCheck = class.CheckForUpdate
 	if origCheck and type(PobToolsGetTranslate) == "function" then
-		class.CheckForUpdate = function(self, ...)
+		class.CheckForUpdate = keepArity(origCheck, function(self, ...)
 			-- Always call through first: CheckForUpdate is what RECORDS the
 			-- params, so short-circuiting it would make the next real change
 			-- go unnoticed. It also creates updateParams.
@@ -779,7 +1573,7 @@ PATCHES["Tooltip"] = function(class)
 				end
 			end
 			return doUpdate
-		end
+		end)
 	else
 		-- Not fatal: the tooltips still translate, F2 just will not refresh one
 		-- that is already open. Worth a line in the log rather than killing the
@@ -821,6 +1615,7 @@ local PATCH_SYMPTOM = {
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
+	TreeTab                 = "刺青／軍團珠寶下拉清單的節點名稱維持英文",
 }
 
 local function applyPatch(name, class)
@@ -903,12 +1698,12 @@ local function patchMainBackground()
 	--    whole-window pass below already covers the viewport, so this becomes
 	--    a no-op; without one it is upstream's striped backdrop as before.
 	local orig = main.DrawBackground
-	main.DrawBackground = function(self, viewPort)
+	main.DrawBackground = keepArity(orig, function(self, viewPort)
 		local path = PobToolsBackground()
 		if path and path ~= "" and bgState.handle and bgState.path == path then return end
 		if path and path ~= "" and drawBackgroundImage(viewPort) then return end
 		return orig(self, viewPort)
-	end
+	end)
 	-- 2. The whole-window pass. Upstream only paints its backdrop per tab
 	--    viewport (and never on the tree tab, which has its own), so nothing
 	--    would show under the side bar / top bar / tree otherwise: paint the
@@ -916,13 +1711,13 @@ local function patchMainBackground()
 	local bm = main.modes and main.modes.BUILD
 	if bm and type(bm.OnFrame) == "function" then
 		local origOnFrame = bm.OnFrame
-		bm.OnFrame = function(self, ...)
+		bm.OnFrame = keepArity(origOnFrame, function(self, ...)
 			local screenW, screenH = GetScreenSize()
 			if screenW and screenW > 0 then
 				pcall(drawBackgroundImage, { x = 0, y = 0, width = screenW, height = screenH })
 			end
 			return origOnFrame(self, ...)
-		end
+		end)
 		log("patched main.DrawBackground + BUILD.OnFrame (custom background image)")
 	else
 		log("patched main.DrawBackground (custom background image; BUILD mode not found, no whole-window pass)")
@@ -945,14 +1740,14 @@ local PERF_DRAW = {
 local function perfWrap(owner, method, label, onDone)
 	local orig = owner[method]
 	if type(orig) ~= "function" then return false end
-	owner[method] = function(...)
+	owner[method] = keepArity(orig, function(...)
 		local t0 = PobToolsPerfNow()
 		local r = { orig(...) }
 		local ms = PobToolsPerfNow() - t0
 		PobToolsPerfMark(label, ms)
 		if onDone then onDone(ms) end
 		return unpack(r, 1, table.maxn(r))
-	end
+	end)
 	return true
 end
 local function perfApplyAll()
@@ -987,6 +1782,98 @@ local function perfApplyAll()
 	end
 end
 
+-- ===== gem tooltips (Classes/GemTooltip) =====
+-- GemTooltip is a module table, not a newClass class, so PATCHES never sees
+-- it: PoE1 gets it with require("Classes.GemTooltip") (one cached table),
+-- PoE2 with LoadModule("Classes/GemTooltip") (a fresh table per caller). Both
+-- are patched where they come back (require / LoadModule wraps below).
+-- AddGemTooltip(tooltip, build, gemInstance, options) sets gemCtx for the
+-- whole build of the tooltip: every grantedEffect's description -> its own id
+-- (PoE1 secondaryGrantedEffect, PoE2 additionalGrantedEffects), and the lines
+-- data.describeStats hands back -> their stat id (lineMap). Restored even on
+-- error. Without the engine's lookups the lines take the existing path.
+local patchedGemMods = setmetatable({}, { __mode = "k" })
+local describeWraps = setmetatable({}, { __mode = "k" })
+
+-- data.describeStats(stats, scopeName, quality) -> out, lineMap. Every return
+-- value goes back untouched (count included); while gemCtx is set the lineMap
+-- (line -> stat id) is recorded for AddLine.
+local function pack(...)
+	return { n = select("#", ...), ... }
+end
+
+local function wrapDescribeStats(dataTbl)
+	if type(dataTbl) ~= "table" then return end
+	local orig = rawget(dataTbl, "describeStats")
+	if type(orig) ~= "function" or describeWraps[orig] then return end
+	local wrapped = keepArity(orig, function(...)
+		local r = pack(orig(...))
+		local ctx = gemCtx
+		if ctx and type(r[2]) == "table" then
+			for line, id in pairs(r[2]) do
+				if type(line) == "string" and type(id) == "string" then
+					ctx.statIds[trim(line)] = id
+				end
+			end
+		end
+		local _, scope = ...
+		if ctx and type(scope) == "string" and scope ~= "" and type(r[1]) == "table" then
+			for _, line in ipairs(r[1]) do
+				if type(line) == "string" then ctx.statScopes[trim(line)] = scope end
+			end
+		end
+		return unpack(r, 1, r.n)
+	end)
+	describeWraps[wrapped] = true
+	dataTbl.describeStats = wrapped
+end
+
+local function gemContext(gemInstance)
+	local ctx = { desc = {}, names = {}, statIds = {}, statScopes = {} }
+	local gemData = type(gemInstance) == "table" and gemInstance.gemData or nil
+	if type(gemData) ~= "table" then return ctx end
+	if type(gemData.name) == "string" then ctx.names[trim(gemData.name)] = true end
+	local function add(effect)
+		if type(effect) ~= "table" then return end
+		if type(effect.name) == "string" then ctx.names[trim(effect.name)] = true end
+		local d = effect.description
+		if type(d) == "string" and d ~= "" and effect.id ~= nil and ctx.desc[trim(d)] == nil then
+			ctx.desc[trim(d)] = effect.id
+		end
+	end
+	add(gemData.grantedEffect)
+	add(gemData.secondaryGrantedEffect)
+	if type(gemData.additionalGrantedEffects) == "table" then
+		for _, e in ipairs(gemData.additionalGrantedEffects) do add(e) end
+	end
+	return ctx
+end
+
+local function patchGemTooltipModule(mod)
+	if type(mod) ~= "table" or patchedGemMods[mod] then return end
+	local orig = rawget(mod, "AddGemTooltip")
+	if type(orig) ~= "function" then return end
+	patchedGemMods[mod] = true
+	mod.AddGemTooltip = keepArity(orig, function(tooltip, build, gemInstance, ...)
+		if type(build) == "table" then wrapDescribeStats(build.data) end
+		wrapDescribeStats(data)
+		local prev = gemCtx
+		gemCtx = gemContext(gemInstance)
+		local ok, a, b, c = pcall(orig, tooltip, build, gemInstance, ...)
+		gemCtx = prev
+		if not ok then error(a, 0) end
+		return a, b, c
+	end)
+	log("patched GemTooltip.AddGemTooltip")
+end
+
+local function isGemTooltipName(name)
+	if type(name) ~= "string" then return false end
+	-- "Classes.GemTooltip" (require) / "Classes/GemTooltip[.lua]" (LoadModule)
+	local n = name:gsub("%.lua$", ""):gsub("[\\%.]", "/")
+	return n == "Classes/GemTooltip" or n:sub(-#"/Classes/GemTooltip") == "/Classes/GemTooltip"
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
@@ -1003,10 +1890,26 @@ end
 
 tryApplyAll() -- classes already loaded at injection time
 
+-- Gem tooltip module: already required before injection, or required later.
+if type(package) == "table" and type(package.loaded) == "table" then
+	patchGemTooltipModule(package.loaded["Classes.GemTooltip"])
+end
+if type(require) == "function" then
+	local origRequire = require
+	require = keepArity(origRequire, function(name, ...)
+		local m = origRequire(name, ...)
+		if isGemTooltipName(name) then
+			local pok, perr = pcall(patchGemTooltipModule, m)
+			if not pok then log("patch FAILED GemTooltip: " .. tostring(perr)) end
+		end
+		return m
+	end)
+end
+
 if type(LoadModule) == "function" then
 	local origLoadModule = LoadModule
 	local depth = 0
-	LoadModule = function(...)
+	LoadModule = keepArity(origLoadModule, function(...)
 		depth = depth + 1
 		-- class files return at most a couple of values; preserve them.
 		-- pcall so an error inside a module cannot leave depth stuck above zero
@@ -1014,9 +1917,13 @@ if type(LoadModule) == "function" then
 		local ok, a, b, c, d = pcall(origLoadModule, ...)
 		depth = depth - 1
 		if not ok then error(a, 0) end
+		if isGemTooltipName((...)) then
+			local pok, perr = pcall(patchGemTooltipModule, a)
+			if not pok then log("patch FAILED GemTooltip: " .. tostring(perr)) end
+		end
 		if depth == 0 then tryApplyAll() end
 		return a, b, c, d
-	end
+	end)
 end
 
 log("CJK inject ready")

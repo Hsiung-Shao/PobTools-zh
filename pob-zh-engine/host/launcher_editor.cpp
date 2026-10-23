@@ -332,10 +332,11 @@ static bool FileSelect(const char* id, const EditorModel& model, int* target, fl
 	for (int fi : order) {
 		Row r;
 		r.fi = fi;
-		r.enabled = model.files[fi].order >= 0;
+		// A write target must be a merged, writable dictionary.
+		r.enabled = model.files[fi].order >= 0 && !model.files[fi].readOnly;
 		r.label = model.files[fi].order < 0 ? model.files[fi].name
 		                                    : std::to_string(model.files[fi].order + 1) + ". " + model.files[fi].name;
-		if (!r.enabled) r.note = u8"未列入載入順序，不會被讀取";
+		if (!r.enabled) r.note = FileStatusNote(model, fi);
 		else if (owners && std::find(owners->begin(), owners->end(), fi) != owners->end())
 			r.note = fi == lastListed ? u8"已有這個 key · 最後載入" : u8"已有這個 key";
 		else if (fi == lastListed) r.note = u8"最後載入";
@@ -1277,8 +1278,10 @@ private:
 			ImGui::Dummy(ImVec2(PillW(fname.c_str()), rowInner));
 			if (ImGui::IsItemHovered()) {
 				const EditorFile& f = model.files[(size_t)e.fileIdx];
-				PobUi::Tooltip(f.order >= 0 ? (u8"載入順序第 " + std::to_string(f.order + 1) + u8" 個").c_str()
-				                            : u8"未列入載入順序，不會被讀取");
+				std::string tip = f.order >= 0 ? u8"載入順序第 " + std::to_string(f.order + 1) + u8" 個" : std::string();
+				const std::string note = FileStatusNote(model, e.fileIdx);
+				if (!note.empty()) tip += (tip.empty() ? "" : u8" · ") + note;
+				PobUi::Tooltip(tip.c_str());
 			}
 		}
 
@@ -1313,6 +1316,10 @@ private:
 		ImGui::TableSetColumnIndex(2);
 		const bool multi = e.value.find('\n') != std::string::npos;
 		bool openHere = false;
+		// Id-keyed dictionaries are read-only: the value box and the multi-line
+		// editor button are disabled (SetEntry would refuse anyway).
+		const bool readOnly = model.files[(size_t)e.fileIdx].readOnly;
+		if (readOnly) ImGui::BeginDisabled();
 		if (multi) {
 			// A one-line box cannot show a line break at all: the cell shows the
 			// first line and opens the multi-line editor.
@@ -1355,6 +1362,10 @@ private:
 			if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"多行編輯：色碼、換行與預覽");
 		} else {
 			ImGui::Dummy(ImVec2(rowInner, rowInner));
+		}
+		if (readOnly) {
+			ImGui::EndDisabled();
+			openHere = false;
 		}
 		if (openHere) openBigEditor(ei);
 	}

@@ -39,6 +39,7 @@
 #include "item_name_selftest.h"
 #include "paste_trace.h"
 #include "placeholder_selftest.h"
+#include "stat_selftest.h"
 #include "pob_launch.h"
 #include "pob_protocol.h"   // pob:// / pob2:// "Open in PoB" links
 #include "headless_proc.h" // --engine-headless / --headless-selftest
@@ -821,6 +822,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			shell.assign(arg3.begin(), arg3.end());  // ASCII keywords only
 		}
 		return RunPasteCensus(arg2.empty() ? (dir + L"paste_census.tsv") : arg2, shell);
+	}
+	if (arg1 == L"--stat-selftest") {
+		// headless: translation_lookup_stat(stats_by_id.json 單行 stat 查詢)。
+		// arg2 = stats_by_id.json 路徑(省略 = Data\poe1\zh-rTW\ 那份);
+		// 字典複本建在 %TEMP%,出貨字典不動。
+		return RunStatSelftest(arg2);
 	}
 	if (arg1 == L"--placeholder-selftest") {
 		// headless: 多佔位符詞條的數值填位。中文常把 {1} 排到 {0} 前面,

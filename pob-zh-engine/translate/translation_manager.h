@@ -48,9 +48,13 @@ const char* translation_lookup(const char *english);
 const char* translation_lookup_item_title(const char *english);
 
 /* Select the dictionary file consulted BEFORE the merged map, naming the POB
-** data file the string being drawn came from (currently only "gems"). Pass
+** data file the string being drawn came from ("gems", "passives", "affixes",
+** "stats", "uniques" or "items" -- see kSourceDicts). Its exact entries AND its
+** own value patterns are consulted before the merged ones. Pass
 ** nullptr or "" to clear. Returns the previous selection (nullptr if none) so
 ** callers can restore it; an unknown name clears instead of failing.
+** Without meta.json "source_lookup" only "gems" (exact entries) can be
+** selected -- the behaviour from before the other sources existed.
 **
 ** Why: the merged map is last-wins, so a bare word like "Volatility" resolves
 ** to whichever file defined it last (passives.json) even when POB is drawing a
@@ -59,6 +63,62 @@ const char* translation_set_source(const char *name);
 
 /* Currently selected source dictionary, or nullptr. */
 const char* translation_get_source(void);
+
+/* Look up a translation by stable id ("passives" -> GraphId, "affixes" -> mod
+** Id) in passives_by_id.json / affixes_by_id.json. nullptr when the id or the
+** source is unknown, when translation is off (F2), or when the locale's
+** meta.json lacks "source_lookup". The files are listed in meta.json
+** "source_dicts" (NOT load_order, so an older engine never sees them); their
+** keys are ids, so they never reach the merged map or the English source
+** dictionaries and translation_lookup cannot find them. */
+const char* translation_lookup_by_id(const char *source, const char *id);
+
+/* translation_lookup_by_id that also checks the English the caller is showing.
+** A Timeless jewel / tattoo replaces a node's name but POB keeps its node.id,
+** so an id hit alone can hand the replaced node the ORIGINAL node's name.
+** en == nullptr: same as translation_lookup_by_id. en non-null: the id's
+** translation only when the file's "templates" has the id and its GGPK
+** English equals en (trimmed, inner whitespace collapsed, case-sensitive);
+** otherwise nullptr. A file WITHOUT "templates" (older data pack) keeps the
+** plain id behaviour. No source is exempt from the check. There is no
+** "legion" id source at all: POB, poedb and GGPK agree on the legion Names,
+** only GGPK's Id strings swap the two Faith notables, so an id lookup would
+** be the wrong one. Tested by --stat-selftest P0-* and S8-*. */
+const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en);
+
+/* Translate one stat line through stats_by_id.json (keys
+** "stat_ids|cond|src_file|dup_ix", English templates in "templates").
+** ctx = "item" (stat_descriptions.txt), "passive"
+** (passive_skill_stat_descriptions.txt first, then stat_descriptions.txt) or
+** "gem" (the skill/gem description files POB's gem tooltips use first, then
+** stat_descriptions.txt).
+** The line's numbers (ranges "(10-15)", signs included) are filled into the
+** Chinese template by {N} index. nullptr when nothing matches, when the
+** filtered candidates disagree (ambiguous), when translation is off (F2), or
+** when the locale's meta.json lacks "source_lookup". Contract tested by
+** --stat-selftest (host/stat_selftest.cpp). */
+const char* translation_lookup_stat(const char *line, const char *ctx);
+
+/* translation_lookup_stat narrowed by the GGPK stat ids behind the line
+** (space separated; POB's describeStats lineMap gives one per line). After the
+** ctx filter only candidates whose stat_ids intersect `stat_ids` stay; the
+** rest is translation_lookup_stat's rules, and on a tie a candidate whose
+** written-out numbers equal the line's values exactly wins. nullptr or ""
+** stat_ids: same as translation_lookup_stat. Tested by --stat-selftest P1-3a/e. */
+const char* translation_lookup_stat_ids(const char *line, const char *ctx, const char *stat_ids);
+
+/* translation_lookup_stat with the line's colour kept: a leading "^xRRGGBB"
+** or "^N" escape is stripped for the lookup and, on a hit, written in front of
+** the answer AND after every '\n' in it (a GGPK template's "\n" turns one
+** English line into several Chinese lines; each must keep the colour). No
+** leading colour -> same as translation_lookup_stat. nullptr when no hit.
+** Pointer valid until the next reload. Tested by --stat-selftest F4b/F4c. */
+const char* translation_lookup_stat_colored(const char *line, const char *ctx);
+
+/* translation_lookup_stat_colored narrowed by stat ids, as
+** translation_lookup_stat_ids narrows translation_lookup_stat. nullptr or ""
+** stat_ids: same as translation_lookup_stat_colored. */
+const char* translation_lookup_stat_ids_colored(const char *line, const char *ctx, const char *stat_ids);
 
 /* ===== Reverse-translation trace =====
 **
@@ -112,6 +172,12 @@ int translation_debug_slot_mismatch(const char *text);
 ** 必須在 translation_init() 之前設定才會影響字典裡的對照表(計畫是載入時算的);
 ** translation_debug_fill 則是每次呼叫都看現值。回傳先前的設定。 */
 int translation_debug_set_legacy_fill(int on);
+
+/* 只給 --editor-selftest 用:目前建了哪些來源表,格式
+** "exact=gems,passives;pattern=passives;id=passives"(各段名稱依字母排序)。
+** 用來驗證沒有 source_lookup 的語系只替 gems 建 exact 副本,其餘不建。
+** 回傳靜態緩衝區,下次呼叫即失效。 */
+const char* translation_debug_sources(void);
 
 /* Get current locale string (e.g. "zh-rTW") */
 const char* translation_get_locale(void);
