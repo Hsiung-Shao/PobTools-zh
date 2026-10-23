@@ -284,7 +284,7 @@
     "Black Strider": "漆黑疾行者",
     "Ashen Arachnid": "灰覆蜘蛛",
     "Vault Lurker": "寶庫潛伏者",
-    "Sabre Spider": "灰燼之蛛",
+    "Sabre Spider": "灰燼蜘蛛",
     "Adorned Beetle": "華麗甲蟲",
     "Tarnished Beetle": "玷污甲蟲",
     "Adorned Scarab": "華麗聖甲蟲",
@@ -699,7 +699,7 @@
     "Forgotten Brutaliser": "被遺忘的虐待者",
     "Forgotten Stag": "被遺忘的靈鹿",
     "Rabid Dog": "瘋犬",
-    "Vargir the Feral Mutt": "瘋犬．瓦吉爾",
+    "Vargir the Feral Mutt": "野性雜種犬．瓦吉爾",
     "Mercenary Companion": "傭兵盟友",
     "Offering Spike": "奉獻棘刺",
     "Volatile Boar": "易爆野豬",
@@ -1007,6 +1007,7 @@
     "Verisium Comet-Spawn": "維里西姆彗星子民",
     "Bitter Core": "苦澀之核",
     "Verisium Manifestation": "維里西姆顯化",
-    "Wardbound Caster": "戰縛術士"
+    "Wardbound Caster": "戰縛術士",
+    "Black Scythe Arbalest": "黑鐮弩兵"
   }
 }
