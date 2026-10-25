@@ -190,9 +190,10 @@ local affixTipCtx = nil
 -- True while PassiveTreeView:AddNodeTooltip runs: its non-name lines are the
 -- passive's stat lines, asked of PobToolsTranslateStat under "passive".
 local nodeTipActive = false
--- Pairs of adjacent node.sd lines that are ONE two-line GGPK stat template
--- (POB splits it into two sd entries): { [stripped English line] = Chinese
--- line }, built when AddNodeTooltip starts, nil outside it.
+-- Consecutive node.sd / reminder / flavour lines that are ONE multi-line GGPK
+-- description (POB splits it into several entries): { [stripped English line]
+-- = Chinese line, "" for a line left blank } (buildSdPairs), built when
+-- AddNodeTooltip / the anoint popup's AddValueTooltip starts, nil outside it.
 local nodeSdPairs = nil
 -- Group map (see addGroups) for a tooltip whose tooltipFunc knows the lines
 -- it is about to add (crafting affix drop-down, tattoo drop-down); consulted
@@ -1500,13 +1501,6 @@ PATCHES["Item"] = function(class)
 	end)
 end
 
--- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
--- the newly shown affix drop-down empty -- the rune's selFunc rebuilt the item
--- but never called UpdateAffixControls, so the new row's list was stale/empty
--- and merely hovering it crashed POB (ItemsTab.lua tooltipFunc: attempt to
--- index local 'value' (a nil value)). Upstream master 0.23.1 has the bug in
--- English too; their dev branch added exactly this call. Harmless once POB
--- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
 -- The lines the crafting affix drop-down's tooltip draws for a tier range
 -- (ItemsTab.lua drop.tooltipFunc, "N Tiers" branch): each line of the lowest
 -- and highest tier merged, "(min-max)" where the numbers differ. Only used to
@@ -1548,6 +1542,13 @@ local function affixDropGroups(item, mode, index, value)
 	return buildGroupMap("item", tierLines(affixes[modList[1]], affixes[modList[#modList]]))
 end
 
+-- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
+-- the newly shown affix drop-down empty -- the rune's selFunc rebuilt the item
+-- but never called UpdateAffixControls, so the new row's list was stale/empty
+-- and merely hovering it crashed POB (ItemsTab.lua tooltipFunc: attempt to
+-- index local 'value' (a nil value)). Upstream master 0.23.1 has the bug in
+-- English too; their dev branch added exactly this call. Harmless once POB
+-- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
 PATCHES["ItemsTab"] = function(class)
 	-- Item tooltips: no outer source (non-name lines keep the unmarked
 	-- lookup); the item is kept in itemCtx so Tooltip:AddLine can tell the
