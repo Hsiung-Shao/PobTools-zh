@@ -1712,22 +1712,30 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		    {"Zzqexcl Word", u8"排除詞"}, {"Zzqctrl Word", u8"控制詞"},
 		    {"Zzqexcl gain 5 things", u8"排除獲得 5 件"}, {"Zzqctrl gain 5 things", u8"控制獲得 5 件"},
 		    {"Zzqexcl line one\nZzqexcl line two", u8"排除一\n排除二"},
-		    {"Zzqctrl line one\nZzqctrl line two", u8"控制一\n控制二"}};
+		    {"Zzqctrl line one\nZzqctrl line two", u8"控制一\n控制二"},
+		    // X12:被排除的單行鍵,同檔另有一筆沒列的多行鍵,第 1 行就是它(V10B「You can't deal Damage…」的形狀)
+		    {"Zzqexcl dual one", u8"舊一"}, {"Zzqexcl dual one\nZzqexcl dual two", u8"舊一\n舊二"},
+		    // X13:被排除的鍵,同檔另有一筆帶 GGG [X|Y] 標記、去標記後同句的鍵(V10B「Cursed Enemies…」的形狀)
+		    {"Zzqexcl brk 5 things", u8"舊括號 5 件"}, {"[Zzqbrk|Zzqexcl] brk 5 things", u8"舊括號 5 件"}};
 		const std::vector<std::pair<std::string, std::string>> kPas = {
 		    {"Zzqexcl Source Word", u8"排除來源"}, {"Zzqctrl Source Word", u8"控制來源"},
-		    {"Zzqexcl src 5 things", u8"排除來源 5 件"}, {"Zzqexcl src one\nZzqexcl src two", u8"來源一\n來源二"}};
+		    {"Zzqexcl src 5 things", u8"排除來源 5 件"}, {"Zzqexcl src one\nZzqexcl src two", u8"來源一\n來源二"},
+		    {"Zzqexcl dual one\nZzqexcl dual three", u8"新一\n新三"}};
 		// 基底名:items.json(is_base_items)的鍵被排除,同一句的譯文改由 ggpk_full.json 提供(出貨資料的實際形狀)。
 		const std::vector<std::pair<std::string, std::string>> kItems = {{"Zzqexcl Base", u8"排除基底"}};
-		const std::vector<std::pair<std::string, std::string>> kFull = {{"Zzqexcl Base", u8"排除基底"}};
+		// ggpk_full.json(最後載入、不列排除)提供同句的 GGPK 值:被排除的鍵改回落到這裡。
+		const std::vector<std::pair<std::string, std::string>> kFull = {
+		    {"Zzqexcl Base", u8"排除基底"}, {"Zzqexcl Source Word", u8"全量來源"},
+		    {"Zzqexcl src 5 things", u8"全量來源 5 件"}, {"Zzqexcl src one", u8"全量一"}};
 		// 鍵逐檔:stats.json 列的 Zzqctrl Word 不在 stats.json,不影響 ui.json 的同名鍵。
 		const std::string kExclude =
-		    R"({"version":1,"entries":{"ui.json":["Zzqexcl Word","Zzqexcl gain 5 things",)"
+		    R"({"version":1,"entries":{"ui.json":["Zzqexcl Word","Zzqexcl gain 5 things","Zzqexcl dual one","Zzqexcl brk 5 things",)"
 		    R"("Zzqexcl line one\nZzqexcl line two"],"passives.json":["Zzqexcl Source Word",)"
 		    R"("Zzqexcl src 5 things","Zzqexcl src one\nZzqexcl src two"],"items.json":["Zzqexcl Base"],)"
 		    R"("stats.json":["Zzqctrl Word"]}})";
 		struct XR {
 			std::string word, ctrl, pat, ctrlPat, line, ctrlLine, gl, ctrlGl, src, ctrlSrc, rWord, rPat, rLine;
-			std::string srcMerged, srcPat, srcPatMerged, srcLine, srcLineMerged, title;
+			std::string srcMerged, srcPat, srcPatMerged, srcLine, srcLineMerged, title, dual, brk;
 		};
 		auto lk = [](const char* s) {
 			const char* r = translation_lookup(s);
@@ -1771,6 +1779,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			o.srcPatMerged = lk("Zzqexcl src 8 things");
 			o.srcLineMerged = lk("Zzqexcl src one");
 			o.title = lk("Loath Joy, Zzqexcl Base");
+			o.dual = lk("Zzqexcl dual one");
+			o.brk = lk("Zzqexcl brk 7 things");
 			translation_set_source("passives");
 			o.src = lk("Zzqexcl Source Word");
 			o.ctrlSrc = lk("Zzqctrl Source Word");
@@ -1790,16 +1800,18 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			       "                  gl='%s' ctrlGl='%s' src='%s' ctrlSrc='%s'\n"
 			       "                  rWord='%s' rPat='%s' rLine='%s'\n"
 			       "                  srcMerged='%s' srcPat='%s' srcPatMerged='%s' srcLine='%s' srcLineMerged='%s'\n"
-			       "                  title='%s'\n",
+			       "                  title='%s' dual='%s' brk='%s'\n",
 			       tag, r.word.c_str(), r.ctrl.c_str(), r.pat.c_str(), r.ctrlPat.c_str(), r.line.c_str(),
 			       r.ctrlLine.c_str(), r.gl.c_str(), r.ctrlGl.c_str(), r.src.c_str(), r.ctrlSrc.c_str(),
 			       r.rWord.c_str(), r.rPat.c_str(), r.rLine.c_str(), r.srcMerged.c_str(), r.srcPat.c_str(),
-			       r.srcPatMerged.c_str(), r.srcLine.c_str(), r.srcLineMerged.c_str(), r.title.c_str());
+			       r.srcPatMerged.c_str(), r.srcLine.c_str(), r.srcLineMerged.c_str(), r.title.c_str(),
+			       r.dual.c_str(), r.brk.c_str());
 		};
 		const std::string kTitle = u8"惡行 歡愉, 排除基底";
 		const bool x1 = setup && off.word == u8"排除詞" && off.pat == u8"排除獲得 7 件" && off.line == u8"排除一" &&
-		                off.gl == u8"限定: 排除詞" && off.src == u8"排除來源" && off.srcMerged == u8"排除來源" &&
-		                off.title == kTitle;
+		                off.gl == u8"限定: 排除詞" && off.src == u8"排除來源" && off.srcPat == u8"排除來源 8 件" &&
+		                off.srcLine == u8"來源一" && off.srcMerged == u8"全量來源" && off.title == kTitle &&
+		                off.dual == u8"舊一" && off.brk == u8"舊括號 7 件";
 		check(x1, "X1 沒有 display_exclude.json 時行為不變(精確/樣板/逐行/詞彙表/來源都查得到)");
 		const bool x2 = setup && on.word == "(null)" && on.ctrl == u8"控制詞";
 		check(x2, "X2 排除鍵正向精確查不到,同檔未列的鍵照常");
@@ -1809,12 +1821,17 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(x4, "X4 排除鍵不進逐行衍生");
 		const bool x5 = setup && on.gl.find(u8"排除詞") == std::string::npos && on.ctrlGl == u8"限定: 控制詞";
 		check(x5, "X5 排除鍵不進詞彙表(句中替換不出現該詞)");
-		// 審查第 6 輪:排除只作用於合併後的正向表與詞彙表,來源字典副本(來源標記查表)照舊。
-		const bool x6 = setup && on.src == u8"排除來源" && on.ctrlSrc == u8"控制來源" && on.srcMerged == "(null)";
-		check(x6, "X6 來源標記查表仍回該檔的值(passives 精確),不標來源的合併表查不到");
-		const bool x6b = setup && on.srcPat == u8"排除來源 8 件" && on.srcLine == u8"來源一" &&
-		                 on.srcPatMerged == "(null)" && on.srcLineMerged == "(null)";
-		check(x6b, "X6b 來源字典的樣板與逐行衍生也照舊,合併表的同兩種仍排除");
+		// 使用者裁定 2026-10-25「全部改 GGPK」:標了來源的位置也不用被排除鍵的舊值,改回落到合併表(GGPK 值)。
+		const bool x6 = setup && on.src == u8"全量來源" && on.ctrlSrc == u8"控制來源" && on.srcMerged == u8"全量來源";
+		check(x6, "X6 標了來源也不回被排除鍵的舊值,改回落合併表的 GGPK 值");
+		const bool x6b = setup && on.srcPat == u8"全量來源 8 件" && on.srcLine == u8"全量一" &&
+		                 on.srcPatMerged == u8"全量來源 8 件" && on.srcLineMerged == u8"全量一";
+		check(x6b, "X6b 來源字典的樣板與逐行衍生同樣排除,改回落合併表");
+		// V10B 根因:被排除的鍵經由同檔其他條目回到正向表 —— 沒列的多行鍵的衍生行、帶 [X|Y] 標記的同句鍵。
+		const bool x12 = setup && on.dual == u8"新一";
+		check(x12, "X12 同檔沒列的多行鍵,衍生出被排除的那一行時也不進(改由後面的檔提供)");
+		const bool x13 = setup && on.brk == "(null)";
+		check(x13, "X13 同檔帶 [X|Y] 標記、去標記後就是被排除鍵的條目也不進(樣板不回舊值)");
 		const bool x9 = setup && on.title == kTitle;
 		check(x9, "X9 被排除的基底名仍認得是基底:「<稀有名>, <基底>」照常逐字翻前段");
 		const bool x7 = setup && on.rWord == "Zzqexcl Word" && on.rPat == "Zzqexcl gain 7 things" &&
@@ -1823,23 +1840,23 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const bool x8 = setup && on.ctrl == off.ctrl && on.ctrlPat == off.ctrlPat && on.ctrlLine == off.ctrlLine &&
 		                on.ctrlGl == off.ctrlGl && on.ctrlSrc == off.ctrlSrc;
 		check(x8, "X8 清單逐檔生效:別檔列的同名鍵與未列鍵結果與沒清單時相同");
-		if (!(x1 && x2 && x3 && x4 && x5 && x6 && x6b && x7 && x8 && x9)) {
+		if (!(x1 && x2 && x3 && x4 && x5 && x6 && x6b && x7 && x8 && x9 && x12 && x13)) {
 			show("無清單", off);
 			show("有清單", on);
 		}
-		// X10/X11:出貨資料(含出貨的 display_exclude.json)。gems.json 被排除的 8 個寶石名在 gems 來源仍回
-		// gems.json 的值;「<稀有名>, <被排除的基底>」照常翻。
+		// X10/X11:出貨資料(含出貨的 display_exclude.json)。gems.json 被排除的 8 個寶石名在 gems 來源也回
+		// ggpk_full.json 的值(使用者裁定:猛攻輔助→猛攻也接受);「<稀有名>, <被排除的基底>」照常翻。
 		{
 			std::string body;
 			bool haveFile = GetFileAttributesW((flagRoot + L"zh-rTW\\display_exclude.json").c_str()) != INVALID_FILE_ATTRIBUTES;
 			const char* kGems[] = {"Onslaught", "Bow", "Bone Armour", "Capacitor", "Fan the Flames", "Fire Attunement",
 			                       "Ghost Dance", "Rend"};
-			bool ok10 = haveFile && read_bytes(flagRoot + L"zh-rTW\\gems.json", body);
+			bool ok10 = haveFile && read_bytes(flagRoot + L"zh-rTW\\ggpk_full.json", body);
 			try {
-				const auto gems = nlohmann::json::parse(body)["entries"];
+				const auto full = nlohmann::json::parse(body)["entries"];
 				translation_set_source("gems");
 				for (const char* g : kGems) {
-					const std::string want = gems.contains(g) && gems[g].is_string() ? gems[g].get<std::string>() : "";
+					const std::string want = full.contains(g) && full[g].is_string() ? full[g].get<std::string>() : "";
 					const char* r = translation_lookup(g);
 					const std::string got = r ? r : "(null)";
 					if (want.empty() || got != want) {
@@ -1852,7 +1869,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 				translation_set_source(nullptr);
 				ok10 = false;
 			}
-			check(ok10, "X10 出貨資料:被排除的 8 個寶石名在 gems 來源仍回 gems.json 的值(猛攻輔助、弓箭…)");
+			check(ok10, "X10 出貨資料:被排除的 8 個寶石名在 gems 來源回 ggpk_full 的 GGPK 值(猛攻、弓…)");
 			const char* t = translation_lookup("Loath Joy, Vaal Regalia");
 			const std::string want11 = u8"惡行 歡愉, 瓦爾法衣";
 			check(haveFile && t && want11 == t, "X11 出貨資料:「Loath Joy, Vaal Regalia」(基底在排除清單)照常翻成整串");
