@@ -1704,6 +1704,12 @@ static int load_json_group_catalog(const std::string &filepath) {
         }
     }
     if (doc.contains("texts") && doc["texts"].is_object()) {
+        /* Every text by its English first (all of them, whatever their line
+        ** count): the same English with two different GGPK Chinese texts
+        ** (SupportGemMinionPact / SupportGemHarrowingThrong) is ambiguous and
+        ** never grouped -- which one POB is drawing cannot be told from here. */
+        std::unordered_map<std::string, std::vector<GroupText>> by_en;
+        std::vector<std::string> order;
         for (auto it = doc["texts"].begin(); it != doc["texts"].end(); ++it) {
             if (!it->is_object() || !en_lines(*it, en)) continue;
             if (!it->contains("zh") || !(*it)["zh"].is_string()) continue;
@@ -1711,14 +1717,26 @@ static int load_json_group_catalog(const std::string &filepath) {
             g.zh = (*it)["zh"].get<std::string>();
             g.zh.erase(std::remove(g.zh.begin(), g.zh.end(), '\r'), g.zh.end());
             if (normalize_whitespace(g.zh).empty()) continue;
-            /* same line count: the per-line dictionaries own it (see above) */
-            if (group_split_lines(g.zh).size() == en.size()) continue;
-            for (const std::string &l : en) g.lines.push_back(normalize_whitespace(l));
+            std::string joined;
+            for (const std::string &l : en) {
+                g.lines.push_back(normalize_whitespace(l));
+                joined += g.lines.back();
+                joined += '\n';
+            }
             if (g.lines[0].empty()) continue;
-            auto &v = s_group_text_heads[g.lines[0]];
-            bool dup = false;
-            for (const GroupText &o : v) if (o.lines == g.lines) { dup = true; break; }
-            if (!dup) { v.push_back(std::move(g)); ++count; }
+            auto &v = by_en[joined];
+            if (v.empty()) order.push_back(joined);
+            v.push_back(std::move(g));
+        }
+        for (const std::string &joined : order) {
+            const std::vector<GroupText> &v = by_en[joined];
+            bool same = true;
+            for (const GroupText &g : v) same = same && g.zh == v[0].zh;
+            if (!same) continue;
+            /* same line count: the per-line dictionaries own it (see above) */
+            if (group_split_lines(v[0].zh).size() == v[0].lines.size()) continue;
+            s_group_text_heads[v[0].lines[0]].push_back(v[0]);
+            ++count;
         }
     }
     /* longest first: a 3-line description beats the 2-line one it starts with */
@@ -3087,12 +3105,23 @@ static const char *slash_group_lookup(const std::string &input) {
     auto cit = s_slash_group_cache.find(input);
     if (cit != s_slash_group_cache.end()) return cit->second.empty() ? nullptr : cit->second.c_str();
     std::string result;
+    /* pieces trimmed; the separator as written around the first '/' ("/" in
+    ** the crafting rows, " / " in the mastery popup) joins the Chinese lines */
     std::vector<std::string> parts;
+    std::string sep_text;
     size_t start = 0;
     while (true) {
         size_t sep = input.find('/', start);
-        if (sep == std::string::npos) { parts.push_back(input.substr(start)); break; }
-        parts.push_back(input.substr(start, sep - start));
+        std::string piece = input.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+        const size_t b = piece.find_first_not_of(' '), e = piece.find_last_not_of(' ');
+        parts.push_back(b == std::string::npos ? std::string() : piece.substr(b, e - b + 1));
+        if (sep == std::string::npos) break;
+        if (sep_text.empty()) {
+            size_t l = sep, r = sep + 1;
+            while (l > start && input[l - 1] == ' ') l--;
+            while (r < input.size() && input[r] == ' ') r++;
+            sep_text = input.substr(l, r - l);
+        }
         start = sep + 1;
     }
     std::vector<std::string> gout;
@@ -3103,10 +3132,10 @@ static const char *slash_group_lookup(const std::string &input) {
         if (all) {
             for (const std::string &z : gout) {
                 if (z.empty()) continue;
-                std::string zz = z;
-                for (char &c : zz) if (c == '\n') c = '/';
-                if (!result.empty()) result += '/';
-                result += zz;
+                for (const std::string &zl : group_split_lines(z)) {
+                    if (!result.empty()) result += sep_text;
+                    result += zl;
+                }
             }
             if (leaks_placeholder(result, input)) result.clear();
         }
