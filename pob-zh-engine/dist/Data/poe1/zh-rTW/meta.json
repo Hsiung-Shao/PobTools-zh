@@ -4,6 +4,7 @@
   "display_name": "繁體中文",
   "source": "poe1",
   "load_order": [
+    "ggpk_display.json",
     "tags.json",
     "items.json",
     "gems.json",
