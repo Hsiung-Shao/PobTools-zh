@@ -26596,6 +26596,9 @@
       "0": 100
     }
   },
+  "keep_literals": {
+    "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0": true
+  },
   "name_slots": {
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0": {
       "1": "gem_names_nonactive"

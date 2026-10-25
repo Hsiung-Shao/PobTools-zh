@@ -256,6 +256,33 @@ struct StatNamedCand {
 };
 static std::vector<StatNamedCand> s_stat_named;
 
+/* ggpk_groups.json (generator pob_export/gen_ggpk_groups.py): every GGPK
+** description whose English has more than one line -- stat descriptions
+** ("stats", same keys as stats_by_id.json) and texts such as flavour text
+** ("texts"). POB draws such a description as one tooltip line / label per
+** English line, so a per-line lookup can only ever translate fragments. The
+** catalog says which consecutive lines are ONE description; the whole is then
+** translated at once (translation_group_lines) and laid out the way GGPK's
+** Chinese is: its lines in order, the whole sentence on the first line when
+** the Chinese has fewer lines, the rest blank.
+**   stats -> the joined lines go through the stat lookup (stats_by_id.json is
+**            the only source of the wording; the catalog only says where a
+**            description starts and how many lines it spans)
+**   texts -> the catalog's Chinese, only where its line count differs from
+**            the English (same count: the per-line dictionaries already have
+**            each line, and their rulings stay in charge)
+** Never merged; loaded by name when meta.json has "source_lookup". */
+static const char *const kGroupFile = "ggpk_groups.json";
+struct GroupStat { std::vector<std::string> keys; };   /* stat_index_key per English line */
+struct GroupText { std::vector<std::string> lines; std::string zh; };   /* normalised English lines */
+/* first line's key -> candidates (longest first) */
+static std::unordered_map<std::string, std::vector<GroupStat>> s_group_stat_heads;
+static std::unordered_map<std::string, std::vector<GroupText>> s_group_text_heads;
+/* slash_group_lookup's answers by input ("" = no answer) */
+static std::unordered_map<std::string, std::string> s_slash_group_cache;
+static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
+                            std::vector<std::string> &out, std::vector<char> &hit);
+
 /* stat_wrappers.json: English wrapper template with one {0} -> Chinese
 ** ("Added Small Passive Skills grant: {0}"). A stat line that misses is
 ** retried with its inside ({0}) looked up as a stat and wrapped. */
@@ -906,9 +933,13 @@ int translation_debug_set_legacy_fill(int on) {
 **   2. 字面數字對同值的字面數字 —— 「per 200 命中值」那種寫死的變體
 **   3. 剩下的照剩下的順序配 —— 兩邊都沒有可對的鍵時,維持舊行為不亂改
 **   4. 還是配不到的字面數字就照抄樣板;配不到的 {N} 留 '#'(寧可空著,也不要
-**      安靜地填一個錯的數字進去) */
+**      安靜地填一個錯的數字進去)
+** keep_dst_literals(stats_by_id.json "keep_literals" 逐鍵裁定):第 3 步不把來源
+** 剩下的數字配給目標自己寫死的數字 —— 中文樣板的字面數字照 GGPK 原樣顯示(「每 10
+** 秒…5 秒」不因英文寫 4 秒就變成 4 秒)。只給裁定過的鍵用:同一條規則套到全部鍵,
+** 會把「每 5 點敏捷」這類英文才對的數字也改掉。 */
 static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
-                                      const std::string &dst_text);
+                                      const std::string &dst_text, bool keep_dst_literals = false);
 
 static FillPlan build_fill_plan(const std::string &src_tmpl, const std::string &dst_tmpl,
                                 const std::string &dst_text) {
@@ -918,7 +949,7 @@ static FillPlan build_fill_plan(const std::string &src_tmpl, const std::string &
 /* 載入時每筆詞條要建三份計畫,而 template_slots 是其中最貴的一步(兩次正規化掃描);
 ** 把它抽出來讓呼叫端對同一個樣板只算一次。 */
 static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
-                                      const std::string &dst_text) {
+                                      const std::string &dst_text, bool keep_dst_literals) {
     FillPlan plan;
     size_t nhash = 0;
     for (char c : dst_text) if (c == '#') nhash++;
@@ -959,6 +990,8 @@ static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const st
         size_t s = 0;
         for (size_t d = 0; d < dst.size(); d++) {
             if (from[d] >= 0) continue;
+            /* 裁定鍵:目標寫死的數字留給第 4 步照抄,不吃來源的數值 */
+            if (keep_dst_literals && dst[d].ph < 0 && !dst[d].lit.empty()) continue;
             while (s < src.size() && taken[s]) s++;
             if (s >= src.size()) break;
             from[d] = (int)s;
@@ -1354,6 +1387,11 @@ static int load_json_stat_dict(const std::string &filepath) {
     }
     const njson *fixed_slots = nullptr;
     if (doc.contains("fixed_slots") && doc["fixed_slots"].is_object()) fixed_slots = &doc["fixed_slots"];
+    /* Optional "keep_literals": {key: true} -- user rulings (generator table
+    ** STATS_KEEP_LITERALS): the Chinese template's written-out numbers are shown
+    ** as GGPK wrote them (build_fill_plan_slots keep_dst_literals). */
+    const njson *keep_literals = nullptr;
+    if (doc.contains("keep_literals") && doc["keep_literals"].is_object()) keep_literals = &doc["keep_literals"];
     int count = 0;
     for (auto it = doc["entries"].begin(); it != doc["entries"].end(); ++it) {
         if (!it.value().is_string()) continue;
@@ -1472,6 +1510,12 @@ static int load_json_stat_dict(const std::string &filepath) {
             }
         }
 
+        bool keep = false;
+        if (keep_literals) {
+            auto kit = keep_literals->find(key);
+            keep = kit != keep_literals->end() && kit->is_boolean() && kit->get<bool>();
+        }
+
         int nstats = 0;
         {
             const size_t p_ids = key.find('|');
@@ -1512,7 +1556,9 @@ static int load_json_stat_dict(const std::string &filepath) {
                 if (en_slots[i].ph >= 0 &&
                     std::find(plus_ph.begin(), plus_ph.end(), en_slots[i].ph) != plus_ph.end())
                     c.plus_slot[i] = 1;
-            c.plan = build_fill_plan_slots(en_slots, template_slots(zh_t), zh_text);
+            /* all three candidate forms below (whole, space-joined, per line)
+            ** carry the key's ruling */
+            c.plan = build_fill_plan_slots(en_slots, template_slots(zh_t), zh_text, keep);
             s_stat_index[stat_index_key(en_t)].push_back(std::move(c));
         };
         add_cand(en, zh);
@@ -1593,6 +1639,95 @@ static int load_json_stat_wrappers(const std::string &filepath) {
         s_stat_wrappers.push_back({ en.substr(0, p), en.substr(p + 3), zh });
         ++count;
     }
+    return count;
+}
+
+/* ---- ggpk_groups.json ---- */
+
+/* The key a POB line / a catalog template line is compared by: the stat
+** index's own (markup stripped, numbers and {N} -> '#', case folded). */
+static std::string group_line_key(const std::string &s, bool is_template) {
+    std::string in = strip_brackets(s);
+    in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
+    if (is_template) in = stat_number_bare_placeholders(in);
+    return stat_index_key(in);
+}
+
+static std::vector<std::string> group_split_lines(const std::string &s) {
+    std::vector<std::string> v;
+    size_t b0 = 0;
+    for (;;) {
+        size_t e = s.find('\n', b0);
+        std::string part = s.substr(b0, e == std::string::npos ? std::string::npos : e - b0);
+        part.erase(std::remove(part.begin(), part.end(), '\r'), part.end());
+        v.push_back(std::move(part));
+        if (e == std::string::npos) break;
+        b0 = e + 1;
+    }
+    return v;
+}
+
+static int load_json_group_catalog(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    std::string raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+    njson doc;
+    try {
+        doc = njson::parse(raw);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
+                              "missing: " + filepath + " - " + e.what());
+        return 0;
+    }
+    int count = 0;
+    auto en_lines = [](const njson &v, std::vector<std::string> &out) {
+        out.clear();
+        if (!v.contains("en") || !v["en"].is_array()) return false;
+        for (const auto &x : v["en"]) {
+            if (!x.is_string()) return false;
+            out.push_back(x.get<std::string>());
+        }
+        return out.size() >= 2;
+    };
+    std::vector<std::string> en;
+    if (doc.contains("stats") && doc["stats"].is_object()) {
+        for (auto it = doc["stats"].begin(); it != doc["stats"].end(); ++it) {
+            if (!it->is_object() || !en_lines(*it, en)) continue;
+            GroupStat g;
+            for (const std::string &l : en) g.keys.push_back(group_line_key(l, /*is_template=*/true));
+            if (g.keys[0].empty()) continue;
+            auto &v = s_group_stat_heads[g.keys[0]];
+            bool dup = false;
+            for (const GroupStat &o : v) if (o.keys == g.keys) { dup = true; break; }
+            if (!dup) { v.push_back(std::move(g)); ++count; }
+        }
+    }
+    if (doc.contains("texts") && doc["texts"].is_object()) {
+        for (auto it = doc["texts"].begin(); it != doc["texts"].end(); ++it) {
+            if (!it->is_object() || !en_lines(*it, en)) continue;
+            if (!it->contains("zh") || !(*it)["zh"].is_string()) continue;
+            GroupText g;
+            g.zh = (*it)["zh"].get<std::string>();
+            g.zh.erase(std::remove(g.zh.begin(), g.zh.end(), '\r'), g.zh.end());
+            if (normalize_whitespace(g.zh).empty()) continue;
+            /* same line count: the per-line dictionaries own it (see above) */
+            if (group_split_lines(g.zh).size() == en.size()) continue;
+            for (const std::string &l : en) g.lines.push_back(normalize_whitespace(l));
+            if (g.lines[0].empty()) continue;
+            auto &v = s_group_text_heads[g.lines[0]];
+            bool dup = false;
+            for (const GroupText &o : v) if (o.lines == g.lines) { dup = true; break; }
+            if (!dup) { v.push_back(std::move(g)); ++count; }
+        }
+    }
+    /* longest first: a 3-line description beats the 2-line one it starts with */
+    for (auto &kv : s_group_stat_heads)
+        std::stable_sort(kv.second.begin(), kv.second.end(),
+                         [](const GroupStat &a, const GroupStat &b) { return a.keys.size() > b.keys.size(); });
+    for (auto &kv : s_group_text_heads)
+        std::stable_sort(kv.second.begin(), kv.second.end(),
+                         [](const GroupText &a, const GroupText &b) { return a.lines.size() > b.lines.size(); });
     return count;
 }
 
@@ -2380,6 +2515,16 @@ static bool try_load_json(const std::string &base_dir) {
             fileCount++;
         }
     }
+    /* The line-group catalog: loaded by name (like synonyms.json), only when
+    ** something could ask for it -- every lookup it serves needs source_lookup. */
+    if (source_lookup) {
+        const int gc = load_json_group_catalog(json_dir + kGroupFile);
+        if (gc > 0) {
+            snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d line groups from %s\n", gc, kGroupFile);
+            OutputDebugStringA(msg);
+            fileCount++;
+        }
+    }
     s_source_lookup = source_lookup;
 
     if (totalEntries == 0) {
@@ -2634,6 +2779,9 @@ void translation_shutdown(void) {
     s_stat_wrappers.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
+    s_group_stat_heads.clear();
+    s_group_text_heads.clear();
+    s_slash_group_cache.clear();
     s_source_lookup = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
@@ -2921,6 +3069,52 @@ static std::string literal_to_newlines(const std::string &s) {
     return r;
 }
 
+/* "/"-joined multi-line description: POB's crafting drop-downs label a mod as
+** its lines joined by "/" (ItemsTab.lua table.concat(mod, "/")), so a two-line
+** GGPK description arrives as "<line 1>/<line 2>". Translated piece by piece --
+** or through a dictionary key built from GGPK's per-line rows -- it comes out
+** as "<whole sentence>/" with the other side empty. When the pieces are exactly
+** ONE description of the line-group catalog (ggpk_groups.json), translate it
+** whole through the stat lookup (item mods: ctx "item") and give back GGPK's
+** Chinese lines joined by "/" again -- one line when the Chinese is one
+** sentence. Runs before the exact map (see translation_lookup); its own cache
+** ("" = not such a string), because exact hits are never cached and DrawString
+** asks every frame. nullptr = not a catalog description (or no answer). */
+static const char *slash_group_lookup(const std::string &input) {
+    if (!s_source_lookup || s_group_stat_heads.empty() || input.find('/') == std::string::npos ||
+        input.find('\n') != std::string::npos)
+        return nullptr;
+    auto cit = s_slash_group_cache.find(input);
+    if (cit != s_slash_group_cache.end()) return cit->second.empty() ? nullptr : cit->second.c_str();
+    std::string result;
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (true) {
+        size_t sep = input.find('/', start);
+        if (sep == std::string::npos) { parts.push_back(input.substr(start)); break; }
+        parts.push_back(input.substr(start, sep - start));
+        start = sep + 1;
+    }
+    std::vector<std::string> gout;
+    std::vector<char> ghit;
+    if (parts.size() >= 2 && group_lines_core(parts, "item", gout, ghit) == 1) {
+        bool all = true;
+        for (char h : ghit) all = all && h;
+        if (all) {
+            for (const std::string &z : gout) {
+                if (z.empty()) continue;
+                std::string zz = z;
+                for (char &c : zz) if (c == '\n') c = '/';
+                if (!result.empty()) result += '/';
+                result += zz;
+            }
+            if (leaks_placeholder(result, input)) result.clear();
+        }
+    }
+    auto ins = s_slash_group_cache.emplace(input, std::move(result)).first;
+    return ins->second.empty() ? nullptr : ins->second.c_str();
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
     translation_wait_ready();
@@ -2982,6 +3176,10 @@ const char* translation_lookup(const char *english) {
             }
         }
     }
+
+    /* 0.7 A "/"-joined multi-line description is translated whole, ahead of
+     *     the exact map (see slash_group_lookup). */
+    if (const char *sg = slash_group_lookup(english)) return sg;
 
     /* 1. Exact match (fast path, no cache needed — already O(1)) */
     auto it = s_translations.find(english);
@@ -4039,6 +4237,100 @@ const char* translation_lookup_stat_ids_colored(const char *line, const char *ct
 
 const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     return translation_lookup_stat_ids_colored(line, ctx, nullptr);
+}
+
+/* ---- line groups (ggpk_groups.json) ----
+**
+** in: the lines as POB draws them, one per tooltip line / label (colour lead
+** and POB's "not supported" note already removed by the caller). Walks them in
+** order; at each line the catalog's candidates starting there (longest first)
+** are tried:
+**   text -> every line equals the catalog's English line (whitespace
+**           normalised): the catalog's Chinese
+**   stat -> every line has the catalog line's key: the lines joined with "\n"
+**           through the stat lookup (ctx as translation_lookup_stat); a miss
+**           is no group
+** A group of k English lines and m Chinese lines: line j gets Chinese line j,
+** lines past m get "" (the whole sentence on the first line when m == 1); when
+** m > k the last English line carries the remaining Chinese lines joined by
+** "\n". A Chinese answer whose first line is empty is no group. Lines in no
+** group keep hit[i] == 0. Returns the number of groups. */
+static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
+                            std::vector<std::string> &out, std::vector<char> &hit) {
+    const size_t n = in.size();
+    out.assign(n, std::string());
+    hit.assign(n, 0);
+    if (n < 2 || !s_translation_enabled || !s_source_lookup) return 0;
+    if (s_group_stat_heads.empty() && s_group_text_heads.empty()) return 0;
+    std::vector<std::string> keys(n), norms(n);
+    for (size_t i = 0; i < n; i++) {
+        keys[i] = group_line_key(in[i], /*is_template=*/false);
+        norms[i] = normalize_whitespace(in[i]);
+    }
+    int groups = 0;
+    size_t i = 0;
+    while (i < n) {
+        size_t best = 0;
+        std::vector<std::string> zl;
+        auto tit = s_group_text_heads.find(norms[i]);
+        if (tit != s_group_text_heads.end()) {
+            for (const GroupText &g : tit->second) {
+                const size_t k = g.lines.size();
+                if (k < 2 || i + k > n) continue;
+                bool ok = true;
+                for (size_t j = 1; j < k && ok; j++) ok = norms[i + j] == g.lines[j];
+                if (!ok) continue;
+                zl = group_split_lines(g.zh);
+                best = k;
+                break;
+            }
+        }
+        auto sit = s_group_stat_heads.find(keys[i]);
+        if (sit != s_group_stat_heads.end()) {
+            for (const GroupStat &g : sit->second) {
+                const size_t k = g.keys.size();
+                if (k <= best || i + k > n) continue;
+                bool ok = true;
+                for (size_t j = 1; j < k && ok; j++) ok = keys[i + j] == g.keys[j];
+                if (!ok) continue;
+                std::string joined = in[i];
+                for (size_t j = 1; j < k; j++) { joined += '\n'; joined += in[i + j]; }
+                const char *zh = stat_lookup_cached(joined.c_str(), ctx, nullptr);
+                if (!zh) continue;
+                zl = group_split_lines(zh);
+                best = k;
+                break;
+            }
+        }
+        if (best < 2 || zl.empty() || normalize_whitespace(zl[0]).empty()) { i++; continue; }
+        for (size_t j = 0; j < best; j++) {
+            hit[i + j] = 1;
+            if (j + 1 == best && zl.size() > best) {
+                std::string rest = zl[j];
+                for (size_t r = j + 1; r < zl.size(); r++) { rest += '\n'; rest += zl[r]; }
+                out[i + j] = std::move(rest);
+            } else {
+                out[i + j] = j < zl.size() ? zl[j] : std::string();
+            }
+        }
+        groups++;
+        i += best;
+    }
+    return groups;
+}
+
+int translation_group_lines(const char *const *lines, int n, const char *ctx, const char **out) {
+    translation_wait_ready();
+    static std::vector<std::string> s_out;
+    static std::vector<char> s_hit;
+    if (!lines || !out || n <= 0) return 0;
+    std::vector<std::string> in;
+    in.reserve((size_t)n);
+    for (int i = 0; i < n; i++) { out[i] = nullptr; in.emplace_back(lines[i] ? lines[i] : ""); }
+    const int groups = group_lines_core(in, ctx, s_out, s_hit);
+    for (int i = 0; i < n && groups > 0; i++)
+        if (s_hit[(size_t)i]) out[i] = s_out[(size_t)i].c_str();
+    return groups;
 }
 
 const char* translation_debug_sources(void) {
