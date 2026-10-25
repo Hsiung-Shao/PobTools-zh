@@ -1619,7 +1619,22 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			const char* c2 = translation_lookup("Life");
 			check(!(c && std::string(c).find(u8"生命") != std::string::npos && std::string(c).find('/') == std::string::npos) && c2,
 			      "H11c 不是目錄描述的「/」字串不走整句重組");
+			// H11d/e:專精彈窗列以 " / " 串接(POB 原樣):一句的整句一行;兩行的照 GGPK 分行、分隔照原字串
+			const char* d = translation_lookup("Increases and Reductions to Armour also apply to Energy / Shield Recharge Rate at 20% of their value");
+			const std::string wd = u8"增加和減少護甲同時以 20% 它們的值套用至能量護盾充能率";
+			check(d && wd == d, "H11d 「 / 」串接、GGPK 一句:整句一行");
+			if (!(d && wd == d)) printf("           got '%s'\n", d ? d : "(null)");
+			const char* e = translation_lookup("Enemies you Kill that are affected by Elemental Ailments / grant 100% increased Flask Charges");
+			const std::string we = u8"擊殺受元素異常狀態影響的敵人 / 增加 100% 藥劑充能";
+			check(e && we == e, "H11e 「 / 」串接、GGPK 兩行:各行照 GGPK 分行,分隔維持原字串的「 / 」");
+			if (!(e && we == e)) printf("           got '%s'\n", e ? e : "(null)");
 		}
+		// H12:同一段英文在目錄裡有兩個不同的 GGPK 繁中(SupportGemMinionPact 三行 / SupportGemHarrowingThrong
+		// 一段)= 歧義,不整段取任一個:不成組,留給逐行字典。
+		expectG({"Catarina envisioned a Wraeclast of disparate societies united.",
+		         "That diversity would empower the Syndicate - and the increased",
+		         "number of dispensible bodies was a convenient coincidence."}, "gem", {N, N, N},
+		        "H12 同英文多個 GGPK 繁中的風味文字不成組(歧義)");
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
