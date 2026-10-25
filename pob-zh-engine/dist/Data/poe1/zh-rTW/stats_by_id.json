@@ -25185,7 +25185,7 @@
     "tornado_damage_frequency_+%|1|#|stat_descriptions.txt|0": "龍捲風增加 {0}% 造成傷害頻率",
     "tornado_damage_interval_ms|#|skill_stat_descriptions.txt|0": "每 {0} 秒造成傷害",
     "tornado_damage_interval_ms|1000|skill_stat_descriptions.txt|0": "每 {0} 秒造成傷害",
-    "tornado_hinder|#|skill_stat_descriptions.txt|0": "範圍內敵人被阻礙減少 -1% 移動速度",
+    "tornado_hinder|#|skill_stat_descriptions.txt|0": "範圍內敵人被阻礙減少 1% 移動速度",
     "tornado_maximum_number_of_hits|#|active_skill_gem_stat_descriptions.txt|0": "初始持續時間內，最多可以被你的投射物擊中 {0} 次",
     "tornado_maximum_number_of_hits|#|skill_stat_descriptions.txt|0": "在初始持續時間內，最多可以被你的投射物擊中 {0} 次",
     "tornado_movement_speed_+%|#|-1|skill_stat_descriptions.txt|0": "龍捲風減少 {0}% 移動速度",
