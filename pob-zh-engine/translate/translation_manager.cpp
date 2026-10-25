@@ -278,10 +278,30 @@ struct GroupText { std::vector<std::string> lines; std::string zh; };   /* norma
 /* first line's key -> candidates (longest first) */
 static std::unordered_map<std::string, std::vector<GroupStat>> s_group_stat_heads;
 static std::unordered_map<std::string, std::vector<GroupText>> s_group_text_heads;
-/* slash_group_lookup's answers by input ("" = no answer) */
+/* slash_group_lookup's answers by ctx + '\x1f' + input ("" = no answer).
+** Capped at kSlashCacheMax entries: past that it is emptied before the next
+** insert (a '/' string with a live number per frame must not grow it without
+** end). An answer pointer therefore lives until the next translation_lookup,
+** which is what every caller already assumes (they copy before looking up
+** again). */
 static std::unordered_map<std::string, std::string> s_slash_group_cache;
+static const size_t kSlashCacheMax = 4096;
+/* translation_set_slash_context: the ctx the "/" lookup asks the stat lookup
+** under ("" = "item", the crafting rows). */
+static std::string s_slash_ctx;
 static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
                             std::vector<std::string> &out, std::vector<char> &hit);
+
+/* display_exclude.json (使用者裁定 2026-10-25 方案 a):
+**   {"version":1,"entries":{"stats.json":["<原字典鍵>",...],"ui.json":[...]}}
+** A listed key of THAT file never reaches a forward table -- the merged exact
+** map, the forward patterns, the per-line derived entries, its source copy --
+** nor (through s_translations) the glossary; it neither adds nor overrides
+** there. Its reverse entries (paste Chinese -> English) are built as before.
+** Keys are the raw dictionary keys (before any 色碼標籤 prefix). Loaded by
+** name like synonyms.json; absent file = nothing excluded. */
+static const char *const kDisplayExcludeFile = "display_exclude.json";
+static std::unordered_map<std::string, std::unordered_set<std::string>> s_display_exclude;
 
 /* stat_wrappers.json: English wrapper template with one {0} -> Chinese
 ** ("Added Small Passive Skills grant: {0}"). A stat line that misses is
@@ -1752,12 +1772,16 @@ static int load_json_group_catalog(const std::string &filepath) {
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
                                   std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
-                                  bool source_only = false) {
+                                  bool source_only = false,
+                                  const std::unordered_set<std::string> *exclude = nullptr) {
     /* source_only (meta.json "source_only"): the file feeds ONLY its source
     ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
     ** map, the forward patterns, any reverse map or (via s_translations) the
-    ** glossary, so unmarked lookups and paste never see it. */
+    ** glossary, so unmarked lookups and paste never see it.
+    ** exclude (display_exclude.json, this file's list): those keys skip every
+    ** forward table and the sinks, but keep their reverse entries. */
     const bool merge = !source_only;
+    int excluded = 0;
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1883,6 +1907,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             continue;
         }
         if (key.empty() || value.empty()) continue;
+        const bool fwd = !(exclude && exclude->count(key));
+        if (!fwd) excluded++;
 
         /* Apply color prefix: prepend to both key and value for lookup matching.
          * POB sends "^x7F7F7FArmour:" and expects "^x7F7F7F護甲:" back. */
@@ -1894,7 +1920,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
         /* Insert-or-overwrite (last wins, as always) in ONE hash lookup; the
         ** duplicate diagnostic reads the old value before it is replaced. */
-        if (merge) {
+        if (merge && fwd) {
             auto [it, inserted] = s_translations.try_emplace(full_key, full_value);
             if (!inserted) {
                 if (it->second != full_value) {
@@ -1906,7 +1932,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 it->second = full_value;
             }
         }
-        if (sink) (*sink)[full_key] = full_value;
+        if (sink && fwd) (*sink)[full_key] = full_value;
         if (merge) {
             s_reverse[full_value] = full_key;
             s_reverse_origin[full_value] = origin;
@@ -1922,8 +1948,10 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             ** to the title, so the form that reaches us is always the clean one;
             ** the full key is recorded too because it costs nothing and a future
             ** dictionary may carry markup we have not seen. */
-            s_base_items_en.insert(clean_key);
-            s_base_items_en.insert(full_key);
+            if (fwd) {
+                s_base_items_en.insert(clean_key);
+                s_base_items_en.insert(full_key);
+            }
             if (clean_value != full_value) {
                 s_reverse_bases[full_value] = full_key;
             }
@@ -1986,7 +2014,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 for (int n : key_ix) if (n >= 0) key_ph++;
                 if (key_ph < placeholder_index_set(clean_value).size()) fwd_ok = false;
             }
-            if (fwd_ok) {
+            if (fwd_ok && fwd) {
                 std::string fwd_key = to_ascii_lower(norm_key);
                 FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
                 /* Source copy follows the merged map's rule here: overwrite. */
@@ -2016,7 +2044,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             if (aligned) {
                 for (size_t i = 0; i < klines.size(); i++) {
                     const std::string &k = klines[i], &v = vlines[i];
-                    if (merge && !s_translations.count(k)) {
+                    if (fwd && merge && !s_translations.count(k)) {
                         s_translations[k] = v;
                     }
                     /* The source copy ignores the merged map (an earlier file
@@ -2025,7 +2053,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     ** line never replaces an entry already there, and a later
                     ** purpose-built entry overwrites it (the main-entry write
                     ** above is unconditional). Same as the pattern sink below. */
-                    if (sink && !sink->count(k)) (*sink)[k] = v;
+                    if (fwd && sink && !sink->count(k)) (*sink)[k] = v;
                     if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
@@ -2039,9 +2067,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
                         /* Source copy keeps this spot's rule too: first one wins. */
-                        if (pattern_sink && !pattern_sink->count(lk))
+                        if (fwd && pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
                     }
                 }
@@ -2052,6 +2080,15 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
     s_init_stats.build_ms += tr_ms_since(t_build);
     s_init_stats.files++;
+    if (exclude) {
+        char msg[320];
+        snprintf(msg, sizeof(msg), "[pob-proxy] display_exclude: %d of %d listed keys of %s kept out of forward tables\n",
+                 excluded, (int)exclude->size(), origin.c_str());
+        OutputDebugStringA(msg);
+        if (excluded != (int)exclude->size())
+            PobLog::Diag("i18n", "display_exclude.json lists " + std::to_string(exclude->size()) + " keys for " +
+                                 origin + ", only " + std::to_string(excluded) + " of them are in that file");
+    }
     return count;
 }
 
@@ -2320,6 +2357,38 @@ static bool load_json_synonyms(const std::string &filepath) {
     return true;
 }
 
+/* display_exclude.json -> s_display_exclude. Absent file: nothing excluded.
+** A file that does not parse, or a version this engine does not know, is
+** ignored as a whole (logged): half a list is not a list. */
+static int load_json_display_exclude(const std::string &filepath) {
+    std::ifstream file(filepath, std::ios::binary);
+    if (!file.is_open()) return 0;
+    njson doc;
+    try {
+        doc = njson::parse(file);
+    } catch (const njson::parse_error &e) {
+        PobLog::Error("i18n", "display_exclude.json did not parse, nothing is excluded: " + filepath + " - " + e.what());
+        return 0;
+    }
+    if (!doc.is_object() || !doc.contains("version") || !doc["version"].is_number_integer() ||
+        doc["version"].get<int>() != 1 || !doc.contains("entries") || !doc["entries"].is_object()) {
+        PobLog::Error("i18n", "display_exclude.json is not version 1 {\"entries\":{file:[keys]}}, nothing is excluded: " + filepath);
+        return 0;
+    }
+    int n = 0;
+    for (auto &[fname, keys] : doc["entries"].items()) {
+        if (!keys.is_array()) continue;
+        auto &set = s_display_exclude[fname];
+        for (auto &k : keys)
+            if (k.is_string() && set.insert(k.get<std::string>()).second) n++;
+    }
+    return n;
+}
+static const std::unordered_set<std::string> *display_exclude_for(const std::string &filename) {
+    auto it = s_display_exclude.find(filename);
+    return it == s_display_exclude.end() || it->second.empty() ? nullptr : &it->second;
+}
+
 /* Try to load JSON translation files. Returns true if JSON mode activated. */
 static bool try_load_json(const std::string &base_dir) {
     /* Build locale-aware JSON directory path.
@@ -2418,6 +2487,12 @@ static bool try_load_json(const std::string &base_dir) {
     /* Load item_metadata.json */
     load_json_item_metadata(json_dir + "item_metadata.json");
 
+    /* Load display_exclude.json (before any flat dictionary: it gates them) */
+    if (const int xn = load_json_display_exclude(json_dir + kDisplayExcludeFile)) {
+        snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d display-exclude keys from %s\n", xn, kDisplayExcludeFile);
+        OutputDebugStringA(msg);
+    }
+
     /* Load translation files in order */
     int totalEntries = 0;
     int fileCount = 0;
@@ -2487,7 +2562,8 @@ static bool try_load_json(const std::string &base_dir) {
             std::find(source_only.begin(), source_only.end(), filename) != source_only.end();
         /* source-only with nowhere to go (no flag, not gems): nothing to load */
         if (only_source && !sink) continue;
-        int count = load_json_translations(filepath, false, sink, pattern_sink, only_source);
+        int count = load_json_translations(filepath, false, sink, pattern_sink, only_source,
+                                           display_exclude_for(filename));
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -2524,7 +2600,8 @@ static bool try_load_json(const std::string &base_dir) {
             s_source_cache[src->name];
             s_item_title_source_cache[src->name];
             count = load_json_translations(filepath, false, &s_sources[src->name],
-                                           &s_source_patterns[src->name], /*source_only=*/true);
+                                           &s_source_patterns[src->name], /*source_only=*/true,
+                                           display_exclude_for(filename));
         }
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d source-only entries from %s\n",
@@ -2829,6 +2906,7 @@ void translation_shutdown(void) {
     s_strip_measure_words.clear();
     s_whitelist_terms.clear();
     s_glossary_blacklist.clear();
+    s_display_exclude.clear();
     s_initialized = false;
     OutputDebugStringA("[pob-proxy] Translation manager shutdown\n");
 }
@@ -3092,17 +3170,26 @@ static std::string literal_to_newlines(const std::string &s) {
 ** GGPK description arrives as "<line 1>/<line 2>". Translated piece by piece --
 ** or through a dictionary key built from GGPK's per-line rows -- it comes out
 ** as "<whole sentence>/" with the other side empty. When the pieces are exactly
-** ONE description of the line-group catalog (ggpk_groups.json), translate it
-** whole through the stat lookup (item mods: ctx "item") and give back GGPK's
-** Chinese lines joined by "/" again -- one line when the Chinese is one
-** sentence. Runs before the exact map (see translation_lookup); its own cache
-** ("" = not such a string), because exact hits are never cached and DrawString
-** asks every frame. nullptr = not a catalog description (or no answer). */
+** descriptions of the line-group catalog (ggpk_groups.json), translate each
+** whole through the stat lookup (ctx from translation_set_slash_context:
+** "item" for the crafting rows, "passive" for the mastery popup) and give back
+** GGPK's Chinese lines joined by the row's separator again -- one line when
+** the Chinese is one sentence. A row may hold several groups and pieces in no
+** group (a one-line mod next to a two-line one): those are looked up whole on
+** their own, and the row is answered only when every piece has a translation
+** (no half-English row) and at least one group was found. Runs before the
+** exact map (see translation_lookup); its own cache ("" = not such a string),
+** because exact hits are never cached and DrawString asks every frame.
+** nullptr = not a catalog description (or no answer). */
 static const char *slash_group_lookup(const std::string &input) {
     if (!s_source_lookup || s_group_stat_heads.empty() || input.find('/') == std::string::npos ||
         input.find('\n') != std::string::npos)
         return nullptr;
-    auto cit = s_slash_group_cache.find(input);
+    const std::string ctx = s_slash_ctx.empty() ? std::string("item") : s_slash_ctx;
+    std::string ck = ctx;
+    ck += '\x1f';
+    ck += input;
+    auto cit = s_slash_group_cache.find(ck);
     if (cit != s_slash_group_cache.end()) return cit->second.empty() ? nullptr : cit->second.c_str();
     std::string result;
     /* pieces trimmed; the separator as written around the first '/' ("/" in
@@ -3126,21 +3213,33 @@ static const char *slash_group_lookup(const std::string &input) {
     }
     std::vector<std::string> gout;
     std::vector<char> ghit;
-    if (parts.size() >= 2 && group_lines_core(parts, "item", gout, ghit) == 1) {
+    if (parts.size() >= 2 && group_lines_core(parts, ctx.c_str(), gout, ghit) >= 1) {
+        std::vector<std::string> zh_lines;
         bool all = true;
-        for (char h : ghit) all = all && h;
+        for (size_t i = 0; i < parts.size() && all; i++) {
+            std::string z;
+            if (ghit[i]) {
+                z = gout[i];
+            } else {
+                /* a piece in no group: its own whole lookup (it has no '/', so
+                ** this never comes back here); copied before the next lookup */
+                const char *r = parts[i].empty() ? nullptr : translation_lookup(parts[i].c_str());
+                if (!r || parts[i] == r) { all = false; break; }
+                z = r;
+            }
+            if (z.empty()) continue;   /* a line whose text went into the line before */
+            for (std::string &zl : group_split_lines(z)) zh_lines.push_back(std::move(zl));
+        }
         if (all) {
-            for (const std::string &z : gout) {
-                if (z.empty()) continue;
-                for (const std::string &zl : group_split_lines(z)) {
-                    if (!result.empty()) result += sep_text;
-                    result += zl;
-                }
+            for (const std::string &zl : zh_lines) {
+                if (!result.empty()) result += sep_text;
+                result += zl;
             }
             if (leaks_placeholder(result, input)) result.clear();
         }
     }
-    auto ins = s_slash_group_cache.emplace(input, std::move(result)).first;
+    if (s_slash_group_cache.size() >= kSlashCacheMax) s_slash_group_cache.clear();
+    auto ins = s_slash_group_cache.emplace(std::move(ck), std::move(result)).first;
     return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
@@ -3821,7 +3920,7 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 ** The pointer is into s_stat_cache: valid until the next reload. */
 static std::string stat_lookup_uncached(const std::string &line, const std::vector<int> &chain,
                                         const std::vector<std::string> *hint,
-                                        bool *had_cands = nullptr) {
+                                        bool *had_cands = nullptr, bool hash_lits = false) {
     if (had_cands) *had_cands = false;
     std::string in = strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
@@ -3829,9 +3928,16 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     if (it == s_stat_index.end()) return std::string();
 
     const std::vector<std::string> vals = hash_slot_values(in, /*normalize_ph=*/true);
+    /* hash_lits (group / "/" lookups, 使用者裁定 2026-10-25): POB's crafting
+    ** rows write EVERY number as '#', the ones the English template writes out
+    ** too ("up to a maximum of 100%" -> "#%"). There a written '#' matches the
+    ** template's number, and the answer shows that number (GGPK's "最多 100%"),
+    ** not '#'. */
+    auto is_hash = [](const std::string &v) { return v.empty() || v.back() == '#'; };
     auto lits_ok = [&](const StatCand &c) {
         for (const auto &l : c.lits) {
             if ((size_t)l.first >= vals.size()) return false;
+            if (hash_lits && is_hash(vals[l.first])) continue;
             if (!same_literal_value(vals[l.first], l.second)) return false;
         }
         return true;
@@ -3890,7 +3996,13 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
 
     std::vector<std::string> outs;
     outs.reserve(cands.size());
-    for (const StatCand *c : cands) outs.push_back(fill_plan(c->plan, vals));
+    for (const StatCand *c : cands) {
+        if (!hash_lits) { outs.push_back(fill_plan(c->plan, vals)); continue; }
+        std::vector<std::string> cv = vals;
+        for (const auto &l : c->lits)
+            if ((size_t)l.first < cv.size() && is_hash(cv[l.first])) cv[l.first] = l.second;
+        outs.push_back(fill_plan(c->plan, cv));
+    }
     /* A candidate whose filled answer still shows a placeholder the line did
     ** not have is no answer at all (leaks_placeholder): drop it. */
     {
@@ -4120,9 +4232,10 @@ static std::string stat_lookup_named(const std::string &line, const std::vector<
 ** (stat_wrappers.json: "Added Small Passive Skills grant: {0}" -- the inside
 ** is looked up as a stat in the same ctx and put into the Chinese wrapper). */
 static std::string stat_lookup_full(const std::string &line, const std::vector<int> &chain,
-                                    const std::vector<std::string> *hint, int depth = 0) {
+                                    const std::vector<std::string> *hint, int depth = 0,
+                                    bool hash_lits = false) {
     bool had_cands = false;
-    std::string r = stat_lookup_uncached(line, chain, hint, &had_cands);
+    std::string r = stat_lookup_uncached(line, chain, hint, &had_cands, hash_lits);
     if (!r.empty()) return r;
     /* The hash index knows this exact sentence (it had usable candidates, they
     ** just disagreed): a generic name-slot template or a wrapper must not
@@ -4136,7 +4249,7 @@ static std::string stat_lookup_full(const std::string &line, const std::vector<i
         if (line.compare(0, w.prefix.size(), w.prefix) != 0) continue;
         if (line.compare(line.size() - w.suffix.size(), w.suffix.size(), w.suffix) != 0) continue;
         const std::string inner = line.substr(w.prefix.size(), line.size() - w.prefix.size() - w.suffix.size());
-        const std::string zi = stat_lookup_full(inner, chain, hint, depth + 1);
+        const std::string zi = stat_lookup_full(inner, chain, hint, depth + 1, hash_lits);
         if (zi.empty()) continue;
         std::string out = w.zh;
         const size_t p = out.find("{0}");
@@ -4197,8 +4310,10 @@ static std::vector<std::string> stat_split_ids(const char *stat_ids) {
     return v;
 }
 
-/* Shared by translation_lookup_stat and translation_lookup_stat_ids. */
-static const char *stat_lookup_cached(const char *line, const char *ctx, const char *stat_ids) {
+/* Shared by translation_lookup_stat and translation_lookup_stat_ids; hash_lits
+** (see stat_lookup_uncached) only from the line-group lookups. */
+static const char *stat_lookup_cached(const char *line, const char *ctx, const char *stat_ids,
+                                      bool hash_lits = false) {
     translation_wait_ready();
     if (!s_translation_enabled || !s_source_lookup) return nullptr;
     if (!line || !*line || s_stat_index.empty()) return nullptr;
@@ -4206,7 +4321,7 @@ static const char *stat_lookup_cached(const char *line, const char *ctx, const c
     if (!stat_ctx_chain(ctx, chain)) return nullptr;
     const std::vector<std::string> ids = stat_split_ids(stat_ids);
 
-    std::string ck;
+    std::string ck = hash_lits ? "H\x1f" : "";
     for (int f : chain) { ck += std::to_string(f); ck += ','; }
     ck += '\x1f';
     for (const std::string &id : ids) { ck += id; ck += ' '; }
@@ -4215,7 +4330,8 @@ static const char *stat_lookup_cached(const char *line, const char *ctx, const c
     auto cit = s_stat_cache.find(ck);
     if (cit == s_stat_cache.end())
         cit = s_stat_cache.emplace(std::move(ck),
-                                   stat_lookup_full(line, chain, ids.empty() ? nullptr : &ids)).first;
+                                   stat_lookup_full(line, chain, ids.empty() ? nullptr : &ids, 0,
+                                                    hash_lits)).first;
     return cit->second.empty() ? nullptr : cit->second.c_str();
 }
 
@@ -4324,7 +4440,7 @@ static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
                 if (!ok) continue;
                 std::string joined = in[i];
                 for (size_t j = 1; j < k; j++) { joined += '\n'; joined += in[i + j]; }
-                const char *zh = stat_lookup_cached(joined.c_str(), ctx, nullptr);
+                const char *zh = stat_lookup_cached(joined.c_str(), ctx, nullptr, /*hash_lits=*/true);
                 if (!zh) continue;
                 zl = group_split_lines(zh);
                 best = k;
@@ -4360,6 +4476,17 @@ int translation_group_lines(const char *const *lines, int n, const char *ctx, co
     for (int i = 0; i < n && groups > 0; i++)
         if (s_hit[(size_t)i]) out[i] = s_out[(size_t)i].c_str();
     return groups;
+}
+
+const char* translation_set_slash_context(const char *ctx) {
+    static std::string prev_holder;
+    /* copy the argument first: restoring passes back the pointer this
+    ** returned last time, which aliases prev_holder (as translation_set_source) */
+    std::string want = (ctx && *ctx) ? std::string(ctx) : std::string();
+    if (want == "item") want.clear();
+    prev_holder = s_slash_ctx;
+    s_slash_ctx = std::move(want);
+    return prev_holder.empty() ? nullptr : prev_holder.c_str();
 }
 
 const char* translation_debug_sources(void) {

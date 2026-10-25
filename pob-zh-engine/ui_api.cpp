@@ -3005,6 +3005,18 @@ static int l_PobToolsTranslateLines(lua_State* L)
 	return 1;
 }
 
+// PobToolsSetSlashContext(ctx) -> previous ctx (or nil). The stat ctx ("item",
+// "passive", "gem[:file]") the engine's "/"-joined description lookup uses for
+// strings drawn from now on (translation_set_slash_context); nil = "item". The
+// inject wraps the mastery popup with "passive" and restores the returned value.
+static int l_PobToolsSetSlashContext(lua_State* L)
+{
+	const char* ctx = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
+	const char* prev = translation_set_slash_context(ctx);
+	if (prev) lua_pushstring(L, prev); else lua_pushnil(L);
+	return 1;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3242,6 +3254,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsTranslateId);
 	ADDFUNC(PobToolsTranslateStat);
 	ADDFUNC(PobToolsTranslateLines);
+	ADDFUNC(PobToolsSetSlashContext);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

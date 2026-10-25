@@ -134,6 +134,14 @@ const char* translation_lookup_stat_ids_colored(const char *line, const char *ct
 ** until the next call. Tested by --stat-selftest H*. */
 int translation_group_lines(const char *const *lines, int n, const char *ctx, const char **out);
 
+/* ctx ("item" / "passive" / "gem[:file]", as translation_lookup_stat) the
+** "/"-joined line lookup inside translation_lookup uses (POB's crafting rows
+** and mastery popup join a description's lines with "/" or " / "). nullptr /
+** "" = "item", the default. The caller sets it around what it draws (the
+** mastery popup: "passive") and puts back what this returns: the previous
+** ctx, nullptr for the default (static storage, overwritten by the next call). */
+const char* translation_set_slash_context(const char *ctx);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a

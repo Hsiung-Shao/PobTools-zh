@@ -211,6 +211,22 @@ bool plant_ui(const std::wstring& localeDir, int extra,
 	}
 }
 
+// 在字典複本的任一扁平字典檔(entries 物件)加條目(X 系列用)。
+bool plant_file(const std::wstring& path, const std::vector<std::pair<std::string, std::string>>& kv)
+{
+	std::string body;
+	if (!read_bytes(path, body)) return false;
+	try {
+		auto doc = nlohmann::ordered_json::parse(body);
+		auto& e = doc["entries"];
+		if (!e.is_object()) return false;
+		for (const auto& p : kv) e[p.first] = p.second;
+		return write_bytes(path, doc.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
 // 改字典複本裡的 *_by_id.json(P0 用):templates 非空 → 寫入/合併 "templates";
 // strip = true → 先移除原有 "templates"(templates 空 = 舊格式;非空 = 只留這幾筆,
 // 不受 exe 旁 Data 是否已帶完整 templates 影響)。
@@ -1635,6 +1651,157 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		         "That diversity would empower the Syndicate - and the increased",
 		         "number of dispensible bodies was a convenient coincidence."}, "gem", {N, N, N},
 		        "H12 同英文多個 GGPK 繁中的風味文字不成組(歧義)");
+		// H13(C1,使用者裁定 2026-10-25):POB 製作列把模板寫死的 100 也寫成 #;群組 / 「/」查表時 # 視為吻合
+		// 寫死的數字,並顯示 GGPK 寫死的 100。
+		{
+			const char* kP1 = "#% increased Poison Duration for each Poison you have inflicted Recently, up";
+			const char* kP2 = "to a maximum of #%";
+			const Said plain = ask((std::string(kP1) + "\n" + kP2).c_str(), "item");   // 先查:快取不得串到下面
+			const std::string row = std::string(kP1) + "/" + kP2;
+			const char* a = translation_lookup(row.c_str());
+			const std::string wa = u8"近期每個你造成的中毒增加 #% 中毒持續時間，/最多 100%";
+			check(a && wa == a, "H13a 「/」整句查表:# 吻合寫死的 100,顯示 GGPK 的「最多 100%」");
+			if (!(a && wa == a)) printf("           got '%s'\n", a ? a : "(null)");
+			expectG({kP1, kP2}, "item", {u8"近期每個你造成的中毒增加 #% 中毒持續時間，", u8"最多 100%"},
+			        "H13b 群組查表同規則(兩行各自照 GGPK)");
+			check(plain.null, "H13c 一般 stat 查表不套用(# 不吻合寫死的數字,與群組結果互不串快取)");
+			if (!plain.null) printf("           plain='%s'\n", shown(plain));
+			expectG({"3% increased Poison Duration for each Poison you have inflicted Recently, up", "to a maximum of 100%"},
+			        "item", {u8"近期每個你造成的中毒增加 3% 中毒持續時間，", u8"最多 100%"},
+			        "H13d 實際數值時照舊(寫死的數字要相同)");
+			expectG({"3% increased Poison Duration for each Poison you have inflicted Recently, up", "to a maximum of 90%"},
+			        "item", {N, N}, "H13e 寫死的數字不同仍不成組");
+		}
+		// H14(C2):一列含單行詞綴 + 一句兩行描述(製作下拉 3 段暴擊球):組外的段各自完整查表,全部有譯文才採用。
+		{
+			const char* a = translation_lookup("+1 to Maximum Power Charges/10% chance that if you would gain Power Charges, "
+			                                   "you instead gain up to/your maximum number of Power Charges");
+			const std::string wa = u8"+1 最大暴擊球數量/若你獲得暴擊球，有 10% 機率獲得最大上限暴擊球";
+			check(a && wa == a, "H14a 一列多段:組外單行各自查表、組內照 GGPK,以原分隔接回");
+			if (!(a && wa == a)) printf("           got '%s'\n", a ? a : "(null)");
+			const char* b = translation_lookup("Zzqnope Untranslatable Words/10% chance that if you would gain Power Charges, "
+			                                   "you instead gain up to/your maximum number of Power Charges");
+			const bool bok = !b || std::string(b).find(u8"若你獲得暴擊球") == std::string::npos;
+			check(bok, "H14b 組外有一段查不到:整列不採用(不出現半中半英)");
+			if (!bok) printf("           got '%s'\n", b);
+		}
+		// H15(審查第 5 輪):「/」查表語境由呼叫端設定(專精彈窗 passive);快取依語境分開。
+		// 這句兩行描述只在 passive_skill_stat_descriptions,item 語境查不到(--tr 實測 no match)。
+		{
+			const char* kRow = "20% less maximum Life / Increases and reductions to Maximum Life also apply to Maximum Rage at 20% Value";
+			const std::string want = u8"20%更少最大生命 / 增加和減少生命同時以他們數值的20%套用至最大盛怒";
+			auto look = [&]() { const char* r = translation_lookup(kRow); return r ? std::string(r) : std::string("(null)"); };
+			const std::string item0 = look();
+			const char* prev = translation_set_slash_context("passive");
+			const std::string pas = look();
+			const char* back = translation_set_slash_context(prev);
+			const std::string item1 = look();
+			check(pas == want, "H15a 語境設為 passive:天賦描述檔才有的兩行描述整句重組");
+			check(item0 != want && item1 == item0, "H15b 預設(item)語境不採用,切回後結果與切換前相同(快取依語境)");
+			check(prev == nullptr && back && std::string(back) == "passive", "H15c 設定函式回傳前一個語境(預設 nullptr)");
+			if (pas != want || item0 == want || item1 != item0)
+				printf("           item0='%s' passive='%s' item1='%s'\n", item0.c_str(), pas.c_str(), item1.c_str());
+		}
+	}
+
+	// ---- X:顯示排除清單(使用者裁定 2026-10-25 方案 a)-------------------------------
+	printf("\n=== X 顯示排除清單(display_exclude.json) ===\n");
+	{
+		const std::vector<std::pair<std::string, std::string>> kUi = {
+		    {"Zzqexcl Word", u8"排除詞"}, {"Zzqctrl Word", u8"控制詞"},
+		    {"Zzqexcl gain 5 things", u8"排除獲得 5 件"}, {"Zzqctrl gain 5 things", u8"控制獲得 5 件"},
+		    {"Zzqexcl line one\nZzqexcl line two", u8"排除一\n排除二"},
+		    {"Zzqctrl line one\nZzqctrl line two", u8"控制一\n控制二"}};
+		const std::vector<std::pair<std::string, std::string>> kPas = {
+		    {"Zzqexcl Source Word", u8"排除來源"}, {"Zzqctrl Source Word", u8"控制來源"}};
+		// 鍵逐檔:stats.json 列的 Zzqctrl Word 不在 stats.json,不影響 ui.json 的同名鍵。
+		const std::string kExclude =
+		    R"({"version":1,"entries":{"ui.json":["Zzqexcl Word","Zzqexcl gain 5 things",)"
+		    R"("Zzqexcl line one\nZzqexcl line two"],"passives.json":["Zzqexcl Source Word"],)"
+		    R"("stats.json":["Zzqctrl Word"]}})";
+		struct XR {
+			std::string word, ctrl, pat, ctrlPat, line, ctrlLine, gl, ctrlGl, src, ctrlSrc, rWord, rPat, rLine;
+		};
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto rv = [](const char* s) {
+			const char* r = translation_reverse_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto rvt = [](const char* s) {
+			char* r = translation_reverse_text(s);
+			std::string o = r ? std::string(r) : std::string("(null)");
+			if (r) translation_free(r);
+			return o;
+		};
+		auto run = [&](const wchar_t* name, bool withFile, XR& o) {
+			const std::wstring vroot = root + name + L"\\";
+			const std::wstring loc = vroot + L"zh-rTW\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w;
+			bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) &&
+			          plant_file(loc + L"ui.json", kUi) && plant_file(loc + L"passives.json", kPas);
+			DeleteFileW((loc + L"display_exclude.json").c_str());   // 出貨資料若已帶,先拿掉
+			if (withFile) ok = ok && write_bytes(loc + L"display_exclude.json", kExclude);
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_set_source(nullptr);
+			translation_reload();
+			o.word = lk("Zzqexcl Word");
+			o.ctrl = lk("Zzqctrl Word");
+			o.pat = lk("Zzqexcl gain 7 things");
+			o.ctrlPat = lk("Zzqctrl gain 7 things");
+			o.line = lk("Zzqexcl line one");
+			o.ctrlLine = lk("Zzqctrl line one");
+			o.gl = lk("Exclusive to: Zzqexcl Word");
+			o.ctrlGl = lk("Exclusive to: Zzqctrl Word");
+			o.rWord = rv(u8"排除詞");
+			o.rPat = rvt(u8"排除獲得 7 件");
+			o.rLine = rv(u8"排除一");
+			translation_set_source("passives");
+			o.src = lk("Zzqexcl Source Word");
+			o.ctrlSrc = lk("Zzqctrl Source Word");
+			translation_set_source(nullptr);
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			if (!ok) printf("           setup %ls failed %s\n", name, w.c_str());
+			return ok;
+		};
+		XR off, on;
+		const bool setup = run(L"x_nofile", false, off) && run(L"x_file", true, on);
+		auto show = [](const char* tag, const XR& r) {
+			printf("           [%s] word='%s' ctrl='%s' pat='%s' ctrlPat='%s' line='%s' ctrlLine='%s'\n"
+			       "                  gl='%s' ctrlGl='%s' src='%s' ctrlSrc='%s'\n"
+			       "                  rWord='%s' rPat='%s' rLine='%s'\n",
+			       tag, r.word.c_str(), r.ctrl.c_str(), r.pat.c_str(), r.ctrlPat.c_str(), r.line.c_str(),
+			       r.ctrlLine.c_str(), r.gl.c_str(), r.ctrlGl.c_str(), r.src.c_str(), r.ctrlSrc.c_str(),
+			       r.rWord.c_str(), r.rPat.c_str(), r.rLine.c_str());
+		};
+		const bool x1 = setup && off.word == u8"排除詞" && off.pat == u8"排除獲得 7 件" && off.line == u8"排除一" &&
+		                off.gl == u8"限定: 排除詞" && off.src == u8"排除來源";
+		check(x1, "X1 沒有 display_exclude.json 時行為不變(精確/樣板/逐行/詞彙表/來源都查得到)");
+		const bool x2 = setup && on.word == "(null)" && on.ctrl == u8"控制詞";
+		check(x2, "X2 排除鍵正向精確查不到,同檔未列的鍵照常");
+		const bool x3 = setup && on.pat == "(null)" && on.ctrlPat == u8"控制獲得 7 件";
+		check(x3, "X3 排除鍵不進正向樣板(換數字也查不到)");
+		const bool x4 = setup && on.line == "(null)" && on.ctrlLine == u8"控制一";
+		check(x4, "X4 排除鍵不進逐行衍生");
+		const bool x5 = setup && on.gl.find(u8"排除詞") == std::string::npos && on.ctrlGl == u8"限定: 控制詞";
+		check(x5, "X5 排除鍵不進詞彙表(句中替換不出現該詞)");
+		const bool x6 = setup && on.src == "(null)" && on.ctrlSrc == u8"控制來源";
+		check(x6, "X6 排除鍵也不進來源字典(passives 來源查不到)");
+		const bool x7 = setup && on.rWord == "Zzqexcl Word" && on.rPat == "Zzqexcl gain 7 things" &&
+		                on.rLine == "Zzqexcl line one";
+		check(x7, "X7 排除鍵仍進反向表(貼上中文→英文:精確/樣板/逐行)");
+		const bool x8 = setup && on.ctrl == off.ctrl && on.ctrlPat == off.ctrlPat && on.ctrlLine == off.ctrlLine &&
+		                on.ctrlGl == off.ctrlGl && on.ctrlSrc == off.ctrlSrc;
+		check(x8, "X8 清單逐檔生效:別檔列的同名鍵與未列鍵結果與沒清單時相同");
+		if (!(x1 && x2 && x3 && x4 && x5 && x6 && x7 && x8)) {
+			show("無清單", off);
+			show("有清單", on);
+		}
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
