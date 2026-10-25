@@ -377,7 +377,10 @@ local function translateGemLine(text)
 	local ctx = gemCtx
 	if not ctx then return nil end
 	local lead, rest = splitLeadColour(text)
-	local core = trim(rest)
+	-- an unsupported stat line carries POB's note (main.notSupportedTooltipText):
+	-- looked up without it, put back after the answer (as the item mod lines do)
+	local body, noteTail = splitNoteTail(rest)
+	local core = trim(body)
 	if core == "" or ctx.names[core] then return nil end
 	-- flavour text POB splits over several lines (GemTooltip: one AddLine per
 	-- flavourText line), drawn as GGPK's whole paragraph (gemContext groups)
@@ -411,7 +414,8 @@ local function translateGemLine(text)
 	-- gem_stat_descriptions is passed too: the default chain reads skill_stat
 	-- first and would pick the active skill's wording.
 	local scope = ctx.statScopes[core]
-	return zhByStat(text, scope and ("gem:" .. scope) or "gem", ctx.statIds[core])
+	local zh = zhByStat(lead .. body, scope and ("gem:" .. scope) or "gem", ctx.statIds[core])
+	return zh and (zh .. noteTail) or nil
 end
 
 -- Asks a\nb under ctx; only a hit of that joined query counts. A two-line
@@ -440,7 +444,7 @@ end
 -- drawn ungrouped across every list of one map. Returns whether a group was
 -- found.
 local function addGroups(map, plain, shown, ctx)
-	local found = false
+	local found, answers = false, nil
 	local grouped = {}
 	local function put(k, z)
 		local cur = map[k]
@@ -451,6 +455,7 @@ local function addGroups(map, plain, shown, ctx)
 	if type(PobToolsTranslateLines) == "function" then
 		local ok, res = pcall(PobToolsTranslateLines, shown, ctx)
 		if ok and type(res) == "table" then
+			answers = res
 			for i = 1, #shown do
 				if type(res[i]) == "string" then put(shown[i], res[i]) end
 			end
@@ -474,7 +479,7 @@ local function addGroups(map, plain, shown, ctx)
 	for k in pairs(plain) do
 		if map[k] then map[k] = false end
 	end
-	return found
+	return found, answers
 end
 
 -- A list of raw lines (colour lead / note allowed) -> stripped, trimmed copy;
@@ -1121,6 +1126,14 @@ end
 -- tooltipFunc runs. Nothing is written into POB's tables: the descriptions
 -- stay English and only what is drawn changes.
 local tattooGroupCache = setmetatable({}, { __mode = "k" })
+-- Per group map: { [previous line .. "\1" .. line] = Chinese line or "" } --
+-- one English continuation line shared by several tattoos ("a Unique Enemy is
+-- in your Presence", three Loyalty Tattoos) has a different GGPK line in each,
+-- so the line-only map holds false there; the line before it tells them apart.
+-- false = that pair has two answers too. labelPrev: the previous label line
+-- WrapString saw while labelGroups is set (nil = none yet).
+local labelSeq = setmetatable({}, { __mode = "k" })
+local labelPrev = nil
 local function tattooGroups(tree)
 	local nodes = type(tree) == "table" and type(tree.tattoo) == "table" and tree.tattoo.nodes or nil
 	if type(nodes) ~= "table" then return nil end
@@ -1129,21 +1142,34 @@ local function tattooGroups(tree)
 	local hit = tattooGroupCache[nodes]
 	if hit ~= nil then return hit or nil end
 	local map, plain, found = {}, {}, false
+	local seq = {}
 	for _, node in pairs(nodes) do
 		local shown = type(node) == "table" and shownLines(node.sd) or nil
-		if shown and #shown >= 2 and addGroups(map, plain, shown, "passive") then found = true end
+		local grouped, res = false, nil
+		if shown and #shown >= 2 then grouped, res = addGroups(map, plain, shown, "passive") end
+		if grouped then found = true end
+		if res then
+			for i = 1, #shown do
+				if type(res[i]) == "string" then
+					local k = (shown[i - 1] or "") .. "\1" .. shown[i]
+					if seq[k] == nil then seq[k] = res[i] elseif seq[k] ~= res[i] then seq[k] = false end
+				end
+			end
+		end
 	end
+	if found then labelSeq[map] = seq end
 	tattooGroupCache[nodes] = found and map or false
 	return found and map or nil
 end
 
 -- Runs fn(...) with labelGroups set for the tattoo popup's labels.
 local function withLabelGroups(tree, fn, ...)
-	local prev = labelGroups
+	local prev, prevLine = labelGroups, labelPrev
 	local okG, g = pcall(tattooGroups, tree)
 	labelGroups = okG and g or nil
+	labelPrev = nil
 	local ok, a, b, c = pcall(fn, ...)
-	labelGroups = prev
+	labelGroups, labelPrev = prev, prevLine
 	if not ok then error(a, 0) end
 	return a, b, c
 end
@@ -1175,7 +1201,39 @@ local function wrapTattooPopup(tree)
 	end
 end
 
+-- Runs fn(...) with the engine's "/"-joined description lookup asking under
+-- ctx (PobToolsSetSlashContext; an older engine has none: fn runs as is), the
+-- previous ctx put back afterwards, also on error.
+local function withSlashCtx(ctx, fn, ...)
+	if type(PobToolsSetSlashContext) ~= "function" then return fn(...) end
+	local prev = PobToolsSetSlashContext(ctx)
+	local ok, a, b, c = pcall(fn, ...)
+	PobToolsSetSlashContext(prev)
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+-- Mastery popup: each effect is one list row, its stat lines joined by " / "
+-- (OpenMasteryPopup: t_concat(effect.stats, " / ")), so a GGPK description POB
+-- split over two lines reaches the engine's "/" lookup as one string. Those are
+-- passive stats: the lookup asks under "passive" (not the crafting rows'
+-- "item") while the popup is built -- the control measures its rows there --
+-- and while PassiveMasteryControl draws them.
+PATCHES["PassiveMasteryControl"] = function(class)
+	local orig = class.Draw
+	if type(orig) ~= "function" then error("PassiveMasteryControl has no Draw to wrap") end
+	class.Draw = keepArity(orig, function(self, ...)
+		return withSlashCtx("passive", orig, self, ...)
+	end)
+end
+
 PATCHES["TreeTab"] = function(class)
+	local origMastery = class.OpenMasteryPopup
+	if type(origMastery) == "function" then
+		class.OpenMasteryPopup = keepArity(origMastery, function(self, ...)
+			return withSlashCtx("passive", origMastery, self, ...)
+		end)
+	end
 	local found = false
 	for method, spec in pairs({
 		ModifyNodePopup = { "modSelect", "tattoo" },
@@ -1820,6 +1878,7 @@ local PATCH_SYMPTOM = {
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
 	TreeTab                 = "刺青／軍團珠寶下拉清單的節點名稱維持英文",
+	PassiveMasteryControl   = "天賦專精選單裡兩行的描述各半句(未整句翻譯)",
 }
 
 local function applyPatch(name, class)
@@ -2095,7 +2154,18 @@ local function patchMainWrapString()
 	local orig = main.WrapString
 	main.WrapString = keepArity(orig, function(self, str, ...)
 		if labelGroups and type(str) == "string" then
-			local z = pairLookup(labelGroups, str)
+			-- the previous line + this one first (labelSeq), then this line alone
+			local lead, rest = splitLeadColour(str)
+			local body, tail = splitNoteTail(rest)
+			local line = trim(body)
+			local seq = labelSeq[labelGroups]
+			local z = seq and seq[(labelPrev or "") .. "\1" .. line]
+			if z then
+				if z ~= "" then z = lead .. (z:gsub("\n", "\n" .. lead)) .. tail end
+			else
+				z = pairLookup(labelGroups, str)
+			end
+			labelPrev = line
 			if z then str = z end
 		end
 		return orig(self, str, ...)

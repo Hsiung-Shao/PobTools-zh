@@ -2508,7 +2508,7 @@ def test_wrapped_arity_gem(fork):
 ARITY_CLASSES = ("EditControl", "Tooltip", "SearchHost", "SkillListControl",
                  "GemSelectControl", "PassiveTreeView", "NotableDBControl",
                  "ItemDBControl", "MinionSearchListControl", "CalcsTab",
-                 "ItemsTab", "Item", "TreeTab")
+                 "ItemsTab", "Item", "TreeTab", "PassiveMasteryControl")
 
 # 上游頂層會碰到 itemLib / data;這裡只要檔案載得完、方法定義得出來。
 ARITY_STUBS = rb"""
@@ -2675,6 +2675,14 @@ UPSTREAM_SHAPE = {
     ],
     "Classes/NotableDBControl.lua": [
         (r"function NotableDBClass:DoesNotableMatchFilters", "DoesNotableMatchFilters"),
+    ],
+    # 專精彈窗:選項文字是 stat 行以 " / " 串接(引擎「/」查表的 passive 語境靠這兩個方法包住)
+    "Classes/TreeTab.lua": [
+        (r"function TreeTabClass:OpenMasteryPopup\(", "OpenMasteryPopup"),
+        (r't_concat\(effect\.stats, " / "\)', 'mastery row label = stats joined by " / "'),
+    ],
+    "Classes/PassiveMasteryControl.lua": [
+        (r"function PassiveMasteryControlClass:Draw\(", "Draw"),
     ],
     "Classes/EditControl.lua": [
         (r"function EditClass:OnKeyDown", "OnKeyDown"),
@@ -3752,6 +3760,195 @@ def test_groups_old_engine(fork):
           ok and [_norm(l) for l in lines[2:4]] == GR_MAGMA, "lines=%r err=%r" % (lines, err))
 
 
+# ---- R1:寶石浮窗不支援的 stat 行(使用者裁定 2026-10-25)----------------------
+# 上游 GemTooltip(PoE1 L199-201):lineMap 對不到 statMap 的行畫成
+#   colorCodes.UNSUPPORTED .. line [.. main.notSupportedTooltipText]
+# 期望:剝掉註記再查 stat(含 lineMap 的 stat id),譯文後接回原註記。
+GEMTOOLTIP_SYN_P1_UNSUP = GEMTOOLTIP_SYN_P1.replace(
+    """		for _, line in ipairs(descriptions) do
+			tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC")
+		end
+		addQualityRange(tooltip, build, grantedEffect)""",
+    """		for _, line in ipairs(descriptions) do
+			local l = colorCodes.UNSUPPORTED .. line
+			l = main.notSupportedModTooltips and (l .. main.notSupportedTooltipText) or l
+			tooltip:AddLine(16, l, "FONTIN SC")
+		end
+		addQualityRange(tooltip, build, grantedEffect)""")
+GEMTOOLTIP_SYN_P2_UNSUP = GEMTOOLTIP_SYN_P2.replace(
+    """	tooltip:AddLine(16, colorCodes.MAGIC .. line, "FONTIN SC", bg)""",
+    """	local l = colorCodes.UNSUPPORTED .. line
+	l = main.notSupportedModTooltips and (l .. main.notSupportedTooltipText) or l
+	tooltip:AddLine(16, l, "FONTIN SC", bg)""")
+
+
+def r1_lines(fork, stat_dict, note_on=True, define_stat=True):
+    """回 (h, ok, err, 原樣行):GemSelectControl:Draw 建出的寶石提示,不去色碼。"""
+    global GEMTOOLTIP_SYN_P1, GEMTOOLTIP_SYN_P2
+    saved = (GEMTOOLTIP_SYN_P1, GEMTOOLTIP_SYN_P2)
+    assert GEMTOOLTIP_SYN_P1_UNSUP != saved[0] and GEMTOOLTIP_SYN_P2_UNSUP != saved[1], "不支援行替身沒有替換成功"
+    GEMTOOLTIP_SYN_P1, GEMTOOLTIP_SYN_P2 = GEMTOOLTIP_SYN_P1_UNSUP, GEMTOOLTIP_SYN_P2_UNSUP
+    try:
+        h = gem_harness(fork, stat_dict, define_stat)
+        h.run(('colorCodes.UNSUPPORTED = "%s" main.notSupportedModTooltips = %s '
+               'main.notSupportedTooltipText = "%s"') % (GR_UNSUP, "true" if note_on else "false", GR_NOTE))
+        obj = make(h, "GemSelectControl")
+        tip = make(h, "Tooltip")
+        gem = h.eval("function() return %s end" % gem_instance_src(fork))()
+        ok, err = h.eval('function(o, t, g) o.tooltip = t o.skillsTab = { build = { data = data } } '
+                         'o.tipGem = g local ok, e = pcall(function() o:Draw({}, false) end) '
+                         'return ok, e end')(obj, tip, gem)
+        lines = [l for l in tooltip_lines(h, tip) if l is not None]
+    finally:
+        GEMTOOLTIP_SYN_P1, GEMTOOLTIP_SYN_P2 = saved
+    return h, ok, err, lines
+
+
+def test_r1_gem_unsupported_note(fork):
+    """R1 -- 寶石不支援的 stat 行:剝註記查 stat,中文後接回原註記與色碼。"""
+    en = "Deals 10 to 20 Fire Damage"
+    h, ok, err, lines = r1_lines(fork, GEM_STAT_DICT)
+    check("%s R1 寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s R1 以剝掉註記的英文查 stat(ctx gem:gem_stat_descriptions)" % fork,
+          (en, "gem:gem_stat_descriptions") in [(_norm(l), c) for l, c in h.stat_calls]
+          and not any("Not supported" in (l or "") for l, c in h.stat_calls if c and c.startswith("gem")),
+          repr(h.stat_calls))
+    ids = [i for l, c, i in h.stat_ids if _norm(l) == en and c == "gem:gem_stat_descriptions"]
+    check("%s R1 剝註記後仍帶該行 lineMap 的 stat id" % fork,
+          ids and all(isinstance(i, str) and "spell_maximum_base_fire_damage" in i.split() for i in ids),
+          "ids=%r" % ids)
+    check("%s R1 命中後中文行尾接回註記、保留不支援色碼" % fork,
+          GR_UNSUP + "STAT寶石" + GR_NOTE in lines, "lines=%r calls=%r" % (lines, h.stat_calls))
+    hn, okn, errn, linesn = r1_lines(fork, GEM_STAT_DICT, note_on=False)
+    check("%s R1 註記開關關閉時中文行沒有註記" % fork,
+          okn and GR_UNSUP + "STAT寶石" in linesn, "lines=%r" % linesn)
+    hm, okm, errm, linesm = r1_lines(fork, {})
+    h0, ok0, err0, lines0 = r1_lines(fork, None, define_stat=False)
+    check("%s R1 未命中時與舊引擎相同(英文 + 註記)" % fork,
+          okm and linesm == lines0 and GR_UNSUP + en + GR_NOTE in linesm,
+          "lines=%r 舊引擎=%r" % (linesm, lines0))
+
+
+# ---- R2:紋身彈窗說明標籤「前一行 + 本行」(使用者裁定 2026-10-25)--------------
+# 三個忠誠紋身共用續行「a Unique Enemy is in your Presence」,各自的 GGPK 中文不同:
+# 只看本行的表在那一行衝突(false),說明標籤第 2 行掉回英文。
+GR_KAOM = ["Trigger level 1 Summon Spirit of Kaom Skill when a Totem dies while",
+           "a Unique Enemy is in your Presence"]
+GR_KAOM_ZH = ["有傳奇敵人在你的存在範圍內且有圖騰死亡時，", "觸發等級 1 的召喚岡姆之靈技能"]
+GR_AKOYA = ["Trigger level 1 Summon Spirit of Akoya Skill when you reach Maximum Rage while",
+            "a Unique Enemy is in your Presence"]
+GR_AKOYA_ZH = ["有傳奇敵人在你的存在範圍內且你達到最大怒火時，", "觸發等級 1 的召喚阿寇亞之靈技能"]
+GR_LIMIT = "Limited to 1 Loyalty Tattoo"
+GR_GROUPS += [(GR_KAOM, GR_KAOM_ZH), (GR_AKOYA, GR_AKOYA_ZH)]
+
+
+def r2_labels(fork, enabled=True):
+    h = group_harness(fork)
+    h.enabled = enabled
+    tab = make(h, "TreeTab")
+    tree = h.eval('function(a, b) return { tattoo = { nodes = { '
+                  '["Loyalty Tattoo of Kaom"] = { dn = "Loyalty Tattoo of Kaom", sd = a }, '
+                  '["Loyalty Tattoo of Akoya"] = { dn = "Loyalty Tattoo of Akoya", sd = b } } }, nodes = {} } end')(
+        _lua_list(h, GR_KAOM + [GR_LIMIT]), _lua_list(h, GR_AKOYA + [GR_LIMIT]))
+    ok, err = h.eval('function(tab, tree) tab.build = { spec = { tree = tree } } '
+                     'local ok, e = pcall(function() tab:ModifyNodePopup({ id = 1 }) end) return ok, e end')(tab, tree)
+    read = 'function() local c = main.popups[1].controls local o = {} local i = 1 ' \
+           'while c[i] do o[i] = c[i].label i = i + 1 end return o end'
+    first = h.eval(read)()     # modGroups 依名稱排序:1 = Akoya、2 = Kaom
+    ok2, err2 = h.eval('function() local ok, e = pcall(function() main.popups[1].controls.modSelect.selFunc(2) end) '
+                       'return ok, e end')()
+    second = h.eval(read)()
+    as_list = lambda t: [t[i] for i in range(1, len(t) + 1)]
+    after = h.eval('function(s) return main:WrapString(s, 16, 375)[1] end')(GR_KAOM[1])
+    return h, ok and ok2, (err, err2), as_list(first), as_list(second), after
+
+
+def test_r2_tattoo_label_prev_line(fork):
+    """R2 -- 紋身說明標籤:同一英文續行在不同紋身各取自己的 GGPK 中文(看前一行)。"""
+    h, ok, err, akoya, kaom, after = r2_labels(fork)
+    check("%s R2 紋身彈窗本身不出錯" % fork, ok, repr(err))
+    check("%s R2 Akoya 說明標籤兩行都是自己的 GGPK 中文" % fork,
+          akoya == ["^7" + z for z in GR_AKOYA_ZH] + ["^7" + GR_LIMIT], "labels=%r" % akoya)
+    check("%s R2 換選 Kaom 後共用續行改用 Kaom 的中文" % fork,
+          kaom == ["^7" + z for z in GR_KAOM_ZH] + ["^7" + GR_LIMIT], "labels=%r" % kaom)
+    check("%s R2 彈窗建完後 WrapString 不再套用分組" % fork, after == GR_KAOM[1], repr(after))
+    hf, okf, errf, akf, kaf, _ = r2_labels(fork, enabled=False)
+    check("%s R2 F2 關閉時說明標籤照英文" % fork,
+          okf and kaf == ["^7" + s for s in GR_KAOM + [GR_LIMIT]], "labels=%r" % kaf)
+
+
+# ---- SC:專精彈窗的「/」查表語境(審查第 5 輪)------------------------------------
+# 上游 TreeTab:OpenMasteryPopup 以 t_concat(effect.stats, " / ") 當選項文字、建 PassiveMasteryControl
+# 時量寬;PassiveMasteryControl:Draw 畫選項。兩者執行期間引擎的「/」查表要用 passive 語境,結束(含出錯)還原。
+SC_TREETAB_METHODS = """
+function C:ModifyNodePopup(selectedNode) end
+function C:OpenMasteryPopup(node, viewPort)
+	__seen[#__seen + 1] = "open:" .. tostring(__slash_ctx)
+	if node and node.explode then error("boom open") end
+end
+"""
+SC_MASTERY_METHODS = """
+function C:Draw(viewPort)
+	__seen[#__seen + 1] = "draw:" .. tostring(__slash_ctx)
+	if viewPort and viewPort.explode then error("boom draw") end
+end
+"""
+
+
+def sc_harness(fork, define_api=True):
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.run(b"__seen = {} __slash_ctx = nil")
+    if define_api:
+        h.run(b"function PobToolsSetSlashContext(c) local p = __slash_ctx __slash_ctx = c return p end")
+    h.run(COLOUR_SETUP)
+    h.define("TreeTab", 'local C = newClass("TreeTab")\nfunction C:TreeTab() return self end\n' + SC_TREETAB_METHODS,
+             'local C = newClass("TreeTab", function(self) end)\n' + SC_TREETAB_METHODS)
+    h.define("PassiveMasteryControl",
+             'local C = newClass("PassiveMasteryControl")\nfunction C:PassiveMasteryControl() return self end\n'
+             + SC_MASTERY_METHODS,
+             'local C = newClass("PassiveMasteryControl", function(self) end)\n' + SC_MASTERY_METHODS)
+    h.apply_inject()
+    return h
+
+
+SC_RUN = """function(tab, ctl)
+	local o = {}
+	__slash_ctx = "gem"
+	tab:OpenMasteryPopup({}, {})
+	o[1] = tostring(__slash_ctx)
+	ctl:Draw({})
+	o[2] = tostring(__slash_ctx)
+	local ok1 = pcall(function() tab:OpenMasteryPopup({ explode = true }, {}) end)
+	local ok2 = pcall(function() ctl:Draw({ explode = true }) end)
+	o[3] = tostring(__slash_ctx)
+	o[4] = tostring(ok1)
+	o[5] = tostring(ok2)
+	for i, s in ipairs(__seen) do o[5 + i] = s end
+	return o
+end"""
+
+
+def test_slash_ctx_mastery(fork):
+    """SC -- 專精彈窗建立與繪製期間「/」查表用 passive 語境,結束後(含出錯)還原原語境。"""
+    h = sc_harness(fork)
+    tab = make(h, "TreeTab")
+    ctl = make(h, "PassiveMasteryControl")
+    r = h.eval(SC_RUN)(tab, ctl)
+    r = [r[i] for i in range(1, len(r) + 1)]
+    check("%s SC 建彈窗(量寬)與繪製選項時語境為 passive" % fork,
+          r[5:7] == ["open:passive", "draw:passive"], repr(r))
+    check("%s SC 結束後還原呼叫前的語境" % fork, r[0:2] == ["gem", "gem"], repr(r))
+    check("%s SC 出錯時照樣拋出且語境還原" % fork, r[2:5] == ["gem", "false", "false"], repr(r))
+    h0 = sc_harness(fork, define_api=False)
+    tab0 = make(h0, "TreeTab")
+    ctl0 = make(h0, "PassiveMasteryControl")
+    ok0, r0 = h0.eval('function(f, a, b) local ok, r = pcall(f, a, b) return ok, r end')(h0.eval(SC_RUN), tab0, ctl0)
+    r0 = [r0[i] for i in range(1, len(r0) + 1)] if ok0 else r0
+    check("%s SC 舊引擎(無 PobToolsSetSlashContext)照常執行、不報錯" % fork,
+          ok0 and r0[5:7] == ["open:gem", "draw:gem"], repr(r0))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -3808,6 +4005,9 @@ def main():
         test_groups_tattoo_popup(fork)
         test_groups_craft_affix_tip(fork)
         test_groups_old_engine(fork)
+        test_r1_gem_unsupported_note(fork)
+        test_r2_tattoo_label_prev_line(fork)
+        test_slash_ctx_mastery(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
