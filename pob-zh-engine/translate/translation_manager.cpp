@@ -294,12 +294,16 @@ static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
 
 /* display_exclude.json (使用者裁定 2026-10-25 方案 a):
 **   {"version":1,"entries":{"stats.json":["<原字典鍵>",...],"ui.json":[...]}}
-** A listed key of THAT file never reaches a forward table -- the merged exact
-** map, the forward patterns, the per-line derived entries, its source copy --
-** nor (through s_translations) the glossary; it neither adds nor overrides
-** there. Its reverse entries (paste Chinese -> English) are built as before.
-** Keys are the raw dictionary keys (before any 色碼標籤 prefix). Loaded by
-** name like synonyms.json; absent file = nothing excluded. */
+** A listed key of THAT file never reaches the MERGED forward tables -- the
+** merged exact map, the merged forward patterns, the per-line entries derived
+** into them -- nor (through s_translations) the glossary; it neither adds nor
+** overrides there. Everything else is built as before (審查第 6 輪): its
+** reverse entries (paste Chinese -> English), its file's source copy (a
+** source-marked lookup still means what THAT file says: gems "Onslaught" is
+** 猛攻輔助), and s_base_items_en (a list recognising base types, not a
+** translation: "<rare name>, <base>" titles depend on it). Keys are the raw
+** dictionary keys (before any 色碼標籤 prefix). Loaded by name like
+** synonyms.json; absent file = nothing excluded. */
 static const char *const kDisplayExcludeFile = "display_exclude.json";
 static std::unordered_map<std::string, std::unordered_set<std::string>> s_display_exclude;
 
@@ -1778,8 +1782,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
     ** map, the forward patterns, any reverse map or (via s_translations) the
     ** glossary, so unmarked lookups and paste never see it.
-    ** exclude (display_exclude.json, this file's list): those keys skip every
-    ** forward table and the sinks, but keep their reverse entries. */
+    ** exclude (display_exclude.json, this file's list): those keys skip the
+    ** merged forward tables only; sinks, reverse entries and the base-type
+    ** list are built as before. */
     const bool merge = !source_only;
     int excluded = 0;
     std::ifstream file(filepath, std::ios::binary);
@@ -1932,7 +1937,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 it->second = full_value;
             }
         }
-        if (sink && fwd) (*sink)[full_key] = full_value;
+        if (sink) (*sink)[full_key] = full_value;
         if (merge) {
             s_reverse[full_value] = full_key;
             s_reverse_origin[full_value] = origin;
@@ -1948,10 +1953,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             ** to the title, so the form that reaches us is always the clean one;
             ** the full key is recorded too because it costs nothing and a future
             ** dictionary may carry markup we have not seen. */
-            if (fwd) {
-                s_base_items_en.insert(clean_key);
-                s_base_items_en.insert(full_key);
-            }
+            s_base_items_en.insert(clean_key);
+            s_base_items_en.insert(full_key);
             if (clean_value != full_value) {
                 s_reverse_bases[full_value] = full_key;
             }
@@ -2014,12 +2017,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 for (int n : key_ix) if (n >= 0) key_ph++;
                 if (key_ph < placeholder_index_set(clean_value).size()) fwd_ok = false;
             }
-            if (fwd_ok && fwd) {
+            if (fwd_ok) {
                 std::string fwd_key = to_ascii_lower(norm_key);
                 FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
                 /* Source copy follows the merged map's rule here: overwrite. */
                 if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
-                if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+                if (merge && fwd) s_forward_pattern[fwd_key] = std::move(fwd_plan);
             }
         }
         std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
@@ -2053,7 +2056,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     ** line never replaces an entry already there, and a later
                     ** purpose-built entry overwrites it (the main-entry write
                     ** above is unconditional). Same as the pattern sink below. */
-                    if (fwd && sink && !sink->count(k)) (*sink)[k] = v;
+                    if (sink && !sink->count(k)) (*sink)[k] = v;
                     if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
@@ -2069,7 +2072,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                         std::string lk = to_ascii_lower(nk);
                         if (fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
                         /* Source copy keeps this spot's rule too: first one wins. */
-                        if (fwd && pattern_sink && !pattern_sink->count(lk))
+                        if (pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
                     }
                 }
@@ -2082,7 +2085,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     s_init_stats.files++;
     if (exclude) {
         char msg[320];
-        snprintf(msg, sizeof(msg), "[pob-proxy] display_exclude: %d of %d listed keys of %s kept out of forward tables\n",
+        snprintf(msg, sizeof(msg), "[pob-proxy] display_exclude: %d of %d listed keys of %s kept out of the merged forward tables\n",
                  excluded, (int)exclude->size(), origin.c_str());
         OutputDebugStringA(msg);
         if (excluded != (int)exclude->size())
