@@ -295,11 +295,19 @@ static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
 /* display_exclude.json (使用者裁定 2026-10-25 方案 a):
 **   {"version":1,"entries":{"stats.json":["<原字典鍵>",...],"ui.json":[...]}}
 ** A listed key of THAT file never reaches a forward table -- the merged exact
-** map, the forward patterns, the per-line derived entries, its source copy --
-** nor (through s_translations) the glossary; it neither adds nor overrides
-** there. Its reverse entries (paste Chinese -> English) are built as before.
-** Keys are the raw dictionary keys (before any 色碼標籤 prefix). Loaded by
-** name like synonyms.json; absent file = nothing excluded. */
+** map, the merged forward patterns, the per-line entries derived into them,
+** and that file's source copy (使用者裁定 2026-10-25「全部改 GGPK」: a
+** source-marked lookup of an excluded key falls back to the merged table,
+** i.e. GGPK's wording -- gems "Onslaught" is 猛攻, not 猛攻輔助) -- nor
+** (through s_translations) the glossary; it neither adds nor overrides there.
+** The same file cannot bring it back another way either (V10B): an entry
+** whose [X|Y]-stripped key is a listed key, or a line derived from an
+** unlisted multi-line key that is itself a listed key, is kept out the same.
+** Built as before: its reverse entries (paste Chinese -> English) and
+** s_base_items_en (a list recognising base types, not a translation:
+** "<rare name>, <base>" titles depend on it; 審查第 6 輪). Keys are the raw
+** dictionary keys (before any 色碼標籤 prefix). Loaded by name like
+** synonyms.json; absent file = nothing excluded. */
 static const char *const kDisplayExcludeFile = "display_exclude.json";
 static std::unordered_map<std::string, std::unordered_set<std::string>> s_display_exclude;
 
@@ -1779,9 +1787,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     ** map, the forward patterns, any reverse map or (via s_translations) the
     ** glossary, so unmarked lookups and paste never see it.
     ** exclude (display_exclude.json, this file's list): those keys skip every
-    ** forward table and the sinks, but keep their reverse entries. */
+    ** forward table, merged and source copy alike (also as an [X|Y] twin or a
+    ** derived line, see s_display_exclude); reverse entries and the base-type
+    ** list are built as before. */
     const bool merge = !source_only;
-    int excluded = 0;
+    std::unordered_set<std::string> listed_hit;   /* listed keys that are keys of this file */
+    int twin_skipped = 0, line_skipped = 0;
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1907,8 +1918,19 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             continue;
         }
         if (key.empty() || value.empty()) continue;
-        const bool fwd = !(exclude && exclude->count(key));
-        if (!fwd) excluded++;
+        bool fwd = true;
+        if (exclude) {
+            if (exclude->count(key)) {
+                listed_hit.insert(key);
+                fwd = false;
+            } else if (key.find('[') != std::string::npos) {
+                /* "[Curse|Cursed] Enemies have a {0}%..." is the listed
+                ** "Cursed Enemies have a {0}%..." again: its forward pattern is
+                ** built from the stripped key */
+                const std::string bare = strip_brackets(key);
+                if (bare != key && exclude->count(bare)) { twin_skipped++; fwd = false; }
+            }
+        }
 
         /* Apply color prefix: prepend to both key and value for lookup matching.
          * POB sends "^x7F7F7FArmour:" and expects "^x7F7F7F護甲:" back. */
@@ -1948,10 +1970,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             ** to the title, so the form that reaches us is always the clean one;
             ** the full key is recorded too because it costs nothing and a future
             ** dictionary may carry markup we have not seen. */
-            if (fwd) {
-                s_base_items_en.insert(clean_key);
-                s_base_items_en.insert(full_key);
-            }
+            s_base_items_en.insert(clean_key);
+            s_base_items_en.insert(full_key);
             if (clean_value != full_value) {
                 s_reverse_bases[full_value] = full_key;
             }
@@ -2014,12 +2034,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 for (int n : key_ix) if (n >= 0) key_ph++;
                 if (key_ph < placeholder_index_set(clean_value).size()) fwd_ok = false;
             }
-            if (fwd_ok && fwd) {
+            if (fwd_ok) {
                 std::string fwd_key = to_ascii_lower(norm_key);
                 FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
                 /* Source copy follows the merged map's rule here: overwrite. */
-                if (pattern_sink) (*pattern_sink)[fwd_key] = fwd_plan;
-                if (merge) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+                if (pattern_sink && fwd) (*pattern_sink)[fwd_key] = fwd_plan;
+                if (merge && fwd) s_forward_pattern[fwd_key] = std::move(fwd_plan);
             }
         }
         std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
@@ -2044,7 +2064,11 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             if (aligned) {
                 for (size_t i = 0; i < klines.size(); i++) {
                     const std::string &k = klines[i], &v = vlines[i];
-                    if (fwd && merge && !s_translations.count(k)) {
+                    /* a line that is itself a listed key of this file stays out
+                    ** (an unlisted multi-line key must not bring it back) */
+                    const bool line_fwd = fwd && !(exclude && exclude->count(k));
+                    if (fwd && !line_fwd) line_skipped++;
+                    if (line_fwd && merge && !s_translations.count(k)) {
                         s_translations[k] = v;
                     }
                     /* The source copy ignores the merged map (an earlier file
@@ -2053,7 +2077,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     ** line never replaces an entry already there, and a later
                     ** purpose-built entry overwrites it (the main-entry write
                     ** above is unconditional). Same as the pattern sink below. */
-                    if (fwd && sink && !sink->count(k)) (*sink)[k] = v;
+                    if (line_fwd && sink && !sink->count(k)) (*sink)[k] = v;
                     if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
                         s_reverse_origin[v] = origin;
@@ -2067,9 +2091,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (line_fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
                         /* Source copy keeps this spot's rule too: first one wins. */
-                        if (fwd && pattern_sink && !pattern_sink->count(lk))
+                        if (line_fwd && pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
                     }
                 }
@@ -2081,13 +2105,22 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     s_init_stats.build_ms += tr_ms_since(t_build);
     s_init_stats.files++;
     if (exclude) {
-        char msg[320];
-        snprintf(msg, sizeof(msg), "[pob-proxy] display_exclude: %d of %d listed keys of %s kept out of forward tables\n",
-                 excluded, (int)exclude->size(), origin.c_str());
+        /* what the list actually touched in THIS file: a source-only file
+        ** (meta.json "source_only" / source_dicts) never merges, so there only
+        ** its source copy loses the keys; a merged file without a source
+        ** dictionary has no source copy at all */
+        const char *where = !merge ? "its source copy (source-only file, never merged)"
+                          : sink   ? "the merged forward tables and its source copy"
+                                   : "the merged forward tables";
+        char msg[480];
+        snprintf(msg, sizeof(msg), "[pob-proxy] display_exclude %s: %d of %d listed keys are keys of this file, "
+                 "kept out of %s (+%d [X|Y]-markup twins, +%d derived lines)\n", origin.c_str(),
+                 (int)listed_hit.size(), (int)exclude->size(), where, twin_skipped, line_skipped);
         OutputDebugStringA(msg);
-        if (excluded != (int)exclude->size())
+        if (listed_hit.size() != exclude->size())
             PobLog::Diag("i18n", "display_exclude.json lists " + std::to_string(exclude->size()) + " keys for " +
-                                 origin + ", only " + std::to_string(excluded) + " of them are in that file");
+                                 origin + "; " + std::to_string(listed_hit.size()) + " of them are keys of that file " +
+                                 "(the rest match nothing, or only lines derived from its multi-line keys)");
     }
     return count;
 }
