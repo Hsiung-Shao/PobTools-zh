@@ -29,7 +29,10 @@ void translation_reload(void);
 
 /* Look up translation for a given English string.
 ** Returns translated string if found, or nullptr if no translation.
-** Returned pointer is valid until translation_shutdown(). */
+** Returned pointer is valid until translation_shutdown(), except the answer of
+** a "/"-joined description (its cache is capped and emptied when full): that
+** one only until the next lookup. Callers copy the result before looking up
+** again, which covers both. */
 const char* translation_lookup(const char *english);
 
 /* Look up a string the caller has already established is a generated ITEM TITLE
