@@ -1470,6 +1470,158 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		printf(")\n");
 	}
 
+	// ---- G:keep_literals(使用者裁定 2026-10-25:岩漿之擊照 GGPK「…5 秒」)----------
+	printf("\n=== G 照抄中文數字(keep_literals)只作用於標記鍵 ===\n");
+	{
+		const char* kKeepKey = "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0";
+		const char* kDexKey = "minion_damage_+%_per_5_dex|1|#|stat_descriptions.txt|0";
+		const char* kMagma2 = "Every 10 seconds, gain 30% of Physical Damage\nas Extra Fire Damage for 4 seconds";
+		const char* kMagma1 = "Every 10 seconds, gain 30% of Physical Damage as Extra Fire Damage for 4 seconds";
+		const std::string kMagmaWant = u8"每 10 秒，獲得 30% 物理傷害的額外火焰傷害 5 秒";
+		// G1:出貨資料的旗標(產生器 STATS_KEEP_LITERALS)。兩行原樣與單行合併兩種候選都照抄。
+		expect(kMagma2, "item", kMagmaWant, "G1a 標記鍵(兩行原樣)照 GGPK 顯示 5 秒");
+		expect(kMagma2, "passive", kMagmaWant, "G1b 標記鍵在天賦情境(塗油/天賦樹浮窗)也是 5 秒");
+		expect(kMagma1, "item", kMagmaWant, "G1c 標記鍵的單行合併候選也帶旗標");
+		// 受影響但未標記的鍵:使用者裁定維持英文數字(現行規則)
+		const char* kUnflagged[] = {
+		    "15% chance to Trigger Level 10 Summon Raging Spirit on Kill",
+		    "Trigger Level 10 Summon Raging Spirit on Kill",
+		    "Minions deal 12% increased Damage per 5 Dexterity",
+		    "Minions deal 12% reduced Damage per 5 Dexterity",
+		    "Gain Adrenaline when Stunned, for 2 seconds per 100ms of Stun Duration",
+		};
+		expect(kUnflagged[1], "item", u8"擊殺時觸發等級 10 的召喚憤怒狂靈", "G2a 未標記鍵(憤怒狂靈)維持英文的等級 10");
+		expect(kUnflagged[2], "item", u8"每 5 點敏捷增加 12% 召喚物所造成的傷害", "G2b 未標記鍵(每 5 點敏捷)維持英文的 5");
+		// G3:同一份資料拿掉全部旗標(= 舊行為),未標記鍵逐句不變、標記鍵才變。
+		std::vector<std::string> withFlag, noFlag, planted;
+		for (const char* s : kUnflagged) { const Said r = ask(s, "item"); withFlag.push_back(shown(r)); }
+		const Said magWith = ask(kMagma2, "item");
+		std::string body, why2;
+		bool setup = read_bytes(flagRoot + L"zh-rTW\\stats_by_id.json", body);
+		auto variant = [&](const wchar_t* name, const char* plantKey, std::vector<std::string>& outs,
+		                   Said& mag) {
+			const std::wstring vroot = root + name + L"\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			bool ok = build_dict_copy(shippedLocale, vroot + L"zh-rTW\\", statsJson, true, why2);
+			try {
+				auto doc = nlohmann::ordered_json::parse(body);
+				doc.erase("keep_literals");
+				if (plantKey) doc["keep_literals"][plantKey] = true;
+				ok = ok && write_bytes(vroot + L"zh-rTW\\stats_by_id.json", doc.dump(2));
+			} catch (...) { ok = false; }
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_reload();
+			for (const char* s : kUnflagged) { const Said r = ask(s, "item"); outs.push_back(shown(r)); }
+			mag = ask(kMagma2, "item");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			return ok;
+		};
+		Said magNo{true, {}}, magPlant{true, {}};
+		setup = setup && variant(L"keep_none", nullptr, noFlag, magNo);
+		setup = setup && variant(L"keep_dex", kDexKey, planted, magPlant);
+		check(setup && withFlag == noFlag, "G3a 拿掉全部旗標時,未標記的受影響鍵逐句不變");
+		if (!(setup && withFlag == noFlag))
+			for (size_t i = 0; i < withFlag.size() && i < noFlag.size(); i++)
+				printf("           %s: with='%s' none='%s'\n", kUnflagged[i], withFlag[i].c_str(), noFlag[i].c_str());
+		check(setup && !magNo.null && magNo.s != kMagmaWant && !magWith.null && magWith.s == kMagmaWant,
+		      "G3b 旗標只在標記鍵上起作用(拿掉後同一行回到英文的 4 秒)");
+		if (!setup || magNo.null || magNo.s == kMagmaWant)
+			printf("           none='%s' with='%s' (%s)\n", shown(magNo), shown(magWith), why2.c_str());
+		// G4:植入另一鍵的旗標(只改複本):那一鍵照抄中文的 10、其餘照舊,證明機制逐鍵。
+		check(setup && planted.size() == noFlag.size() && planted[2] == u8"每 10 點敏捷增加 12% 召喚物所造成的傷害" &&
+		      planted[0] == noFlag[0] && planted[1] == noFlag[1] && planted[4] == noFlag[4],
+		      "G4 植入旗標的鍵照抄中文數字,同一份資料的其他鍵不受影響");
+		if (planted.size() == noFlag.size())
+			for (size_t i = 0; i < planted.size(); i++)
+				if (planted[i] != noFlag[i]) printf("           planted %s: '%s'(none '%s')\n", kUnflagged[i], planted[i].c_str(), noFlag[i].c_str());
+		(void)kKeepKey;
+	}
+
+	// ---- H:多行描述的整句重組(ggpk_groups.json) ------------------------------------
+	printf("\n=== H 多行描述整句重組(translation_group_lines) ===\n");
+	{
+		struct G { int n; std::vector<std::string> out; };
+		auto group = [](const std::vector<std::string>& lines, const char* ctx) {
+			std::vector<const char*> in, out(lines.size(), nullptr);
+			for (const auto& l : lines) in.push_back(l.c_str());
+			G g;
+			g.n = translation_group_lines(in.data(), (int)in.size(), ctx, out.data());
+			for (const char* o : out) g.out.push_back(o ? std::string(o) : std::string("(null)"));
+			return g;
+		};
+		auto expectG = [&](const std::vector<std::string>& lines, const char* ctx,
+		                   const std::vector<std::string>& want, const char* name) {
+			const G g = group(lines, ctx);
+			const bool ok = g.out == want;
+			check(ok, name);
+			if (!ok) {
+				printf("           [%s] groups=%d\n", ctx, g.n);
+				for (size_t i = 0; i < lines.size(); i++)
+					printf("           %s\n             got  '%s'\n             want '%s'\n", lines[i].c_str(),
+					       i < g.out.size() ? g.out[i].c_str() : "-", i < want.size() ? want[i].c_str() : "-");
+			}
+		};
+		const std::string N = "(null)";
+		const std::string kNat1 = "Flasks adjacent to active Tinctures gain 2 charges when you Hit an";
+		const std::string kNat2 = "Enemy with a Melee Weapon, no more than once every second";
+		const std::vector<std::string> kNatZh = {u8"當你使用近戰武器擊中敵人時，與啟用萃取物相鄰的藥劑",
+		                                         u8"獲得 2 充能，每秒不超過 1 次"};
+		expectG({kNat1, kNat2}, "passive", kNatZh, "H1 兩行 stat、GGPK 中文兩行:各行照 GGPK 分行(自然調劑)");
+		expectG({"Every 10 seconds, gain 30% of Physical Damage", "as Extra Fire Damage for 4 seconds"}, "passive",
+		        {u8"每 10 秒，獲得 30% 物理傷害的額外火焰傷害 5 秒", ""},
+		        "H2 GGPK 中文一句:整句在第 1 行、第 2 行留白,且照抄標記鍵的 5 秒(岩漿之擊)");
+		expectG({"The Black Sekhema was a formidable fighter", "alongside her dekhara, but she was unstoppable",
+		         "when she fought atop her trusted mount, Shiyo."}, "gem",
+		        {u8"漆黑絲克瑪與她的部下並肩作戰時 已是一名令人敬畏的戰士，但當她騎乘 在忠誠的坐騎熙優背上戰鬥時，更是勢不可擋。", "", ""},
+		        "H3 風味文字三行、GGPK 一段:整段在第 1 行、其餘留白(Companionship)");
+		expectG({"My ancestral pact was sealed. Forevermore, I would gain sustenance", "only from the ravaged flesh of my enemies."},
+		        "passive", {u8"在與先祖定下冥約之後...從此我將只能從蹂躪敵人的肉體中得到心靈的寄託，直到永遠。", ""},
+		        "H3b 天賦風味文字兩行、GGPK 一段(Vaal Pact)");
+		expectG({"10% increased Attack Speed", kNat1, kNat2, "+30 to Dexterity"}, "passive",
+		        {N, kNatZh[0], kNatZh[1], N}, "H4 前後的單行 stat 不入組(維持逐行路徑)");
+		expectG({kNat1, "+30 to Dexterity"}, "passive", {N, N}, "H5 只有第 1 行(後面不是續行)不成組");
+		expectG({"Wield the gifts of Beidat, luminary of the pale unseeing,",
+		         "whose honeyed words bore tunnels through pliant minds."}, "gem", {N, N},
+		        "H6 風味文字英繁行數相同不入組(逐行字典負責)");
+		expectG({"10% chance to gain Adrenaline for 2 Seconds when Leech is", "removed by Filling Unreserved Life",
+		         "10% chance to gain Onslaught for 4 Seconds when Leech is", "removed by Filling Unreserved Life"},
+		        "item", {u8"當偷取被填滿未保留生命移除時，有 10% 機率獲得腎上腺素 2 秒", "",
+		                 u8"當偷取被填滿未保留生命移除時，有 10% 機率獲得猛攻 4 秒", ""},
+		        "H7 兩組共用同一續行文字各自成組(Tanu Ahi)");
+		expectG({"Spells have Added Spell Damage equal to 30% of Physical Damage of", "your Equipped Two handed Weapon"},
+		        "passive", {u8"法術擁有等同於你已裝備雙手武器30%物理傷害的附加法術傷害", ""},
+		        "H8 stat 譯文取 stats_by_id(含裁定:GGPK {0] 筆誤已修)(魔縛符文之結)");
+		expectG({"Trigger level 1 Summon Spirit of Ikiaho Skill when you use a Travel",
+		         "Skill while a Unique Enemy is in your Presence"}, "passive",
+		        {u8"有傳奇敵人在你的存在範圍內且你使用快行技能時，", u8"觸發等級 1 的召喚伊基亞呼之靈技能"},
+		        "H9 紋身兩行 stat 依 GGPK 中文分行(伊基亞呼)");
+		{
+			translation_set_enabled(false);
+			const G off = group({kNat1, kNat2}, "passive");
+			translation_set_enabled(true);
+			const G on = group({kNat1, kNat2}, "passive");
+			check(off.n == 0 && off.out == std::vector<std::string>({N, N}) && on.n == 1,
+			      "H10 翻譯關閉(F2)時不成組,開回後照常");
+		}
+		// H11:製作下拉「/」串接列(ItemsTab table.concat(mod, "/"))整句一行。
+		{
+			const char* a = translation_lookup("Bleeding Enemies you Kill Explode, dealing #% of/their Maximum Life as Physical Damage");
+			const char* b = translation_lookup("Bleeding Enemies you Kill Explode, dealing (2-3)% of/their Maximum Life as Physical Damage");
+			const std::string wa = u8"擊殺流血的敵人時產生爆炸，造成等同其 #% 最大生命的物理傷害";
+			const std::string wb = u8"擊殺流血的敵人時產生爆炸，造成等同其 (2-3)% 最大生命的物理傷害";
+			check(a && wa == a, "H11a 「/」串接的兩行描述整句一行(# 值)");
+			if (!(a && wa == a)) printf("           got '%s'\n", a ? a : "(null)");
+			check(b && wb == b, "H11b 「/」串接的兩行描述整句一行(範圍值)");
+			if (!(b && wb == b)) printf("           got '%s'\n", b ? b : "(null)");
+			const char* c = translation_lookup("Life/Mana");
+			const char* c2 = translation_lookup("Life");
+			check(!(c && std::string(c).find(u8"生命") != std::string::npos && std::string(c).find('/') == std::string::npos) && c2,
+			      "H11c 不是目錄描述的「/」字串不走整句重組");
+		}
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。

@@ -2974,6 +2974,37 @@ static int l_PobToolsTranslateStat(lua_State* L)
 	return 1;
 }
 
+// PobToolsTranslateLines(lines, ctx) -> { [i] = chinese } or nil. lines is an
+// array of the lines POB is about to draw one by one (colour lead and the
+// "not supported" note already removed); consecutive lines that are one GGPK
+// description (ggpk_groups.json) come back translated as a whole and laid out
+// like GGPK's Chinese -- "" for a line to leave blank. Lines in no group have
+// no entry; nil when nothing grouped. See translation_group_lines.
+static int l_PobToolsTranslateLines(lua_State* L)
+{
+	if (!lua_istable(L, 1)) { lua_pushnil(L); return 1; }
+	const char* ctx = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
+	const int n = (int)lua_objlen(L, 1);
+	if (n < 2) { lua_pushnil(L); return 1; }
+	std::vector<std::string> lines((size_t)n);
+	for (int i = 0; i < n; i++) {
+		lua_rawgeti(L, 1, i + 1);
+		if (lua_type(L, -1) == LUA_TSTRING) lines[(size_t)i] = lua_tostring(L, -1);
+		lua_pop(L, 1);
+	}
+	std::vector<const char*> in((size_t)n), out((size_t)n, nullptr);
+	for (int i = 0; i < n; i++) in[(size_t)i] = lines[(size_t)i].c_str();
+	const int groups = translation_group_lines(in.data(), n, ctx, out.data());
+	if (groups <= 0) { lua_pushnil(L); return 1; }
+	lua_createtable(L, n, 0);
+	for (int i = 0; i < n; i++) {
+		if (!out[(size_t)i]) continue;
+		lua_pushstring(L, out[(size_t)i]);
+		lua_rawseti(L, -2, i + 1);
+	}
+	return 1;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3210,6 +3241,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNC(PobToolsTranslateId);
 	ADDFUNC(PobToolsTranslateStat);
+	ADDFUNC(PobToolsTranslateLines);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

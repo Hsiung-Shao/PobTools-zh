@@ -3388,6 +3388,370 @@ def test_n3_pair_one_line_answer(fork):
           "got=%r 各自單獨=%r calls=%r" % (got, want, h.stat_calls))
 
 
+# ---- 多行 GGPK 描述的整句重組(GR1 ~ GR7) ---------------------------------------
+#
+# 引擎 PobToolsTranslateLines(lines, ctx)(ggpk_groups.json):連續幾行是同一句 GGPK 描述時,
+# 回每行該畫的中文("" = 留白,整句在第 1 行)。假函式依 GR_GROUPS 逐段比對(長的先),
+# 只認「整組英文行都在」;F2 關閉回 nil。每個位置都另跑一次「沒有注入」證明英文半句的
+# 問題會重現,以及「F2 關」證明不會在關翻譯時留白。
+
+GR_MAGMA = ["Every 10 seconds, gain 30% of Physical Damage", "as Extra Fire Damage for 4 seconds"]
+GR_MAGMA_ZH = ["每 10 秒，獲得 30% 物理傷害的額外火焰傷害 5 秒", ""]
+GR_FLAV = ["My ancestral pact was sealed. Forevermore, I would gain sustenance",
+           "only from the ravaged flesh of my enemies."]
+GR_FLAV_ZH = ["在與先祖定下冥約之後...從此我將只能從蹂躪敵人的肉體中得到心靈的寄託，直到永遠。", ""]
+GR_GEMFLAV = ["The Black Sekhema was a formidable fighter", "alongside her dekhara, but she was unstoppable",
+              "when she fought atop her trusted mount, Shiyo."]
+GR_GEMFLAV_ZH = ["漆黑絲克瑪與她的部下並肩作戰時 已是一名令人敬畏的戰士", "", ""]
+GR_TATTOO = ["Trigger level 1 Summon Spirit of Ikiaho Skill when you use a Travel",
+             "Skill while a Unique Enemy is in your Presence"]
+GR_TATTOO_ZH = ["有傳奇敵人在你的存在範圍內且你使用快行技能時，", "觸發等級 1 的召喚伊基亞呼之靈技能"]
+GR_TIER = ["Bleeding Enemies you Kill Explode, dealing (2-5)% of", "their Maximum Life as Physical Damage"]
+GR_TIER_ZH = ["擊殺流血的敵人時產生爆炸，造成等同其 (2-5)% 最大生命的物理傷害", ""]
+GR_ONE = ["Bleeding Enemies you Kill Explode, dealing (2-3)% of", "their Maximum Life as Physical Damage"]
+GR_ONE_ZH = ["擊殺流血的敵人時產生爆炸，造成等同其 (2-3)% 最大生命的物理傷害", ""]
+GR_GROUPS = [(GR_GEMFLAV, GR_GEMFLAV_ZH), (GR_MAGMA, GR_MAGMA_ZH), (GR_FLAV, GR_FLAV_ZH),
+             (GR_TATTOO, GR_TATTOO_ZH), (GR_TIER, GR_TIER_ZH), (GR_ONE, GR_ONE_ZH)]
+GR_UNSUP = "^xF05050"
+GR_NOTE = " ^8(Not supported in PoB yet)"
+
+GR_TREE_METHODS = """
+function C:AddNodeName(tooltip, node, build)
+	tooltip:AddLine(24, node.dn, "FONTIN")
+end
+function C:AddNodeTooltip(tooltip, node, build)
+	self:AddNodeName(tooltip, node, build)
+	for _, line in ipairs(node.sd or {}) do tooltip:AddLine(16, "^7"..line) end
+	-- 上游 PassiveTreeView.lua「Flavour text」段
+	if node.flavourText and main.showFlavourText then
+		for _, line in ipairs(node.flavourText) do
+			tooltip:AddLine(16, colorCodes.UNIQUE..line, "FONTIN ITALIC")
+		end
+	end
+end
+"""
+GR_NOTABLE_METHODS = """
+-- 上游 NotableDBControl:AddValueTooltip 的節點說明段(名稱行簡化)
+function C:AddValueTooltip(tooltip, index, node)
+	tooltip:AddLine(24, node.dn, "FONTIN")
+	if node.sd[1] then
+		tooltip:AddLine(16, "")
+		for i, line in ipairs(node.sd) do
+			if node.unsupported then
+				local l = colorCodes.UNSUPPORTED..line
+				l = main.notSupportedModTooltips and (l .. main.notSupportedTooltipText) or l
+				tooltip:AddLine(16, l)
+			else
+				tooltip:AddLine(16, colorCodes.MAGIC..line)
+			end
+		end
+	end
+end
+"""
+# 上游 TreeTab:ModifyNodePopup 的說明標籤(constructUI)與下拉提示,只留畫字相關的部分
+GR_TREETAB_METHODS = """
+function C:ModifyNodePopup(selectedNode)
+	local controls = { }
+	local modGroups = { }
+	for id, node in pairs(self.build.spec.tree.tattoo.nodes) do
+		table.insert(modGroups, { label = node.dn, descriptions = copyTable(node.sd), id = id })
+	end
+	table.sort(modGroups, function(a, b) return a.label < b.label end)
+	local function constructUI(modGroup)
+		local i = 1
+		while controls[i] do controls[i] = nil i = i + 1 end
+		local wrapTable = {}
+		for _, desc in ipairs(modGroup.descriptions) do
+			for _, w in ipairs(main:WrapString(desc, 16, 375)) do table.insert(wrapTable, w) end
+		end
+		for idx, desc in ipairs(wrapTable) do controls[idx] = { label = "^7"..desc } end
+	end
+	controls.modSelect = { list = modGroups, selIndex = 1, Draw = function() end,
+		selFunc = function(idx) constructUI(modGroups[idx]) end }
+	controls.modSelect.tooltipFunc = function(tooltip, mode, index, value)
+		tooltip:Clear()
+		if mode ~= "OUT" and value then
+			for _, line in ipairs(value.descriptions) do tooltip:AddLine(16, "^7"..line) end
+		end
+	end
+	main.popups[1] = { controls = controls }
+	constructUI(modGroups[1])
+end
+"""
+# 上游 ItemsTab 製作區詞綴下拉的 tooltipFunc(單一詞綴 / 多階合併兩支)
+GR_ITEMSTAB_CTOR = """
+	self.controls = { }
+	local drop = { list = { }, selIndex = 1 }
+	drop.tooltipFunc = function(tooltip, mode, index, value)
+		local modList = value.modList
+		tooltip:Clear()
+		if value.modId or #modList == 1 then
+			local mod = self.displayItem.affixes[value.modId or modList[1]]
+			tooltip:AddLine(16, "^7Affix: "..mod.affix)
+			for _, line in ipairs(mod) do tooltip:AddLine(14, "^7"..line) end
+		else
+			tooltip:AddLine(16, "^7"..#modList.." Tiers")
+			local minMod = self.displayItem.affixes[modList[1]]
+			local maxMod = self.displayItem.affixes[modList[#modList]]
+			for l, line in ipairs(minMod) do
+				local minLine = line:gsub("%((%d[%d%.]*)%-(%d[%d%.]*)%)", "%1")
+				local maxLine = maxMod[l]:gsub("%((%d[%d%.]*)%-(%d[%d%.]*)%)", "%2")
+				if maxLine == maxMod[l] then
+					tooltip:AddLine(14, maxLine)
+				else
+					local start = 1
+					tooltip:AddLine(14, (minLine:gsub("%d[%d%.]*", function(min)
+						local s, e, max = maxLine:find("(%d[%d%.]*)", start)
+						start = e + 1
+						if min == max then return min else return "("..min.."-"..max..")" end
+					end)))
+				end
+			end
+		end
+	end
+	self.controls.displayItemAffix1 = drop
+	self.displayItem = { affixes = {
+		Bleed1 = { type = "Prefix", affix = "Gladiator's", "Bleeding Enemies you Kill Explode, dealing (2-3)% of",
+		           "their Maximum Life as Physical Damage" },
+		Bleed2 = { type = "Prefix", affix = "Gladiator's", "Bleeding Enemies you Kill Explode, dealing (4-5)% of",
+		           "their Maximum Life as Physical Damage" } } }
+"""
+
+
+def group_harness(fork, with_inject=True, define_lines=True):
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.line_calls = []
+
+    def translate_lines(tbl, ctx=None):
+        lines = [tbl[i] for i in range(1, len(tbl) + 1)]
+        h.line_calls.append((lines, ctx))
+        if not h.enabled:
+            return None
+        out, i = {}, 0
+        while i < len(lines):
+            hit = next(((en, zh) for en, zh in GR_GROUPS if lines[i:i + len(en)] == en), None)
+            if hit:
+                for j, z in enumerate(hit[1]):
+                    out[i + j + 1] = z
+                i += len(hit[0])
+            else:
+                i += 1
+        return h.rt.table_from(out) if out else None
+
+    g = h.rt.globals()
+    g["__py_lines"] = translate_lines
+    h.run(b"function PobToolsTranslateStat(l, c, i) return nil end")
+    if define_lines:
+        h.run(b"function PobToolsTranslateLines(t, c) return __py_lines(t, c) end")
+    h.run(COLOUR_SETUP)
+    h.run(('colorCodes.UNSUPPORTED = "%s" main.notSupportedModTooltips = true '
+           'main.notSupportedTooltipText = "%s" main.showFlavourText = true '
+           'function main:WrapString(str, height, width) return { str } end') % (GR_UNSUP, GR_NOTE))
+    h.run('LoadModule("Classes/Tooltip")')
+    h.define("PassiveTreeView", 'local C = newClass("PassiveTreeView")\nfunction C:PassiveTreeView() return self end\n'
+             + GR_TREE_METHODS, 'local C = newClass("PassiveTreeView", function(self) end)\n' + GR_TREE_METHODS)
+    h.define("NotableDBControl", 'local C = newClass("NotableDBControl")\nfunction C:NotableDBControl() return self end\n'
+             + GR_NOTABLE_METHODS, 'local C = newClass("NotableDBControl", function(self) end)\n' + GR_NOTABLE_METHODS)
+    h.define("TreeTab", 'local C = newClass("TreeTab")\nfunction C:TreeTab() return self end\n' + GR_TREETAB_METHODS,
+             'local C = newClass("TreeTab", function(self) end)\n' + GR_TREETAB_METHODS)
+    h.define("ItemsTab", 'local C = newClass("ItemsTab")\nfunction C:ItemsTab()\n' + GR_ITEMSTAB_CTOR
+             + '\treturn self\nend\n' + ITEMTIP_METHODS.replace("MODLINE_ARG", "modLine"),
+             'local C = newClass("ItemsTab", function(self)\n' + GR_ITEMSTAB_CTOR + 'end)\n'
+             + ITEMTIP_METHODS.replace("MODLINE_ARG", "nil"))
+    if with_inject:
+        h.apply_inject()
+    return h
+
+
+def _lua_list(h, xs):
+    return h.eval("function(...) return {...} end")(*xs)
+
+
+def gr_anoint(fork, sd, with_inject=True, enabled=True, unsupported=False, define_lines=True):
+    h = group_harness(fork, with_inject, define_lines)
+    h.enabled = enabled
+    ctl = make(h, "NotableDBControl")
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(c, t, sd, u) local ok, e = pcall(function() '
+                     'c:AddValueTooltip(t, 1, { dn = "Magmatic Strikes", id = 5430, sd = sd, unsupported = u }) '
+                     'end) return ok, e end')(ctl, tip, _lua_list(h, sd), unsupported)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_groups_anoint_popup(fork):
+    """GR1 -- 塗油彈窗節點浮窗:兩個 sd 行是同一句時整句在第 1 行、第 2 行留白。"""
+    h, ok, err, lines = gr_anoint(fork, GR_MAGMA)
+    check("%s GR1 塗油彈窗浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s GR1 塗油彈窗兩行合併為整句、第 2 行留白" % fork,
+          [_norm(l) for l in lines[2:4]] == GR_MAGMA_ZH, "lines=%r calls=%r" % (lines, h.line_calls))
+    check("%s GR1 以 passive 情境整組詢問引擎" % fork,
+          (GR_MAGMA, "passive") in h.line_calls, repr(h.line_calls))
+    check("%s GR1 第 1 行保留原色碼" % fork, lines[2:3] == ["^x8888FF" + GR_MAGMA_ZH[0]], repr(lines))
+    h0, ok0, err0, lines0 = gr_anoint(fork, GR_MAGMA, with_inject=False)
+    check("%s GR1 前提:沒有注入時兩行都是英文半句" % fork,
+          [_norm(l) for l in lines0[2:4]] == GR_MAGMA, repr(lines0))
+    hf, okf, errf, linesf = gr_anoint(fork, GR_MAGMA, enabled=False)
+    check("%s GR1 F2 關閉時不合併、兩行照英文" % fork,
+          okf and [_norm(l) for l in linesf[2:4]] == GR_MAGMA, repr(linesf))
+    # 不支援註記:整句那行保留註記,留白那行不再只剩註記
+    hu, oku, erru, linesu = gr_anoint(fork, GR_MAGMA, unsupported=True)
+    check("%s GR1 註記在整句行行尾、留白行完全空白" % fork,
+          linesu[2:4] == [GR_UNSUP + GR_MAGMA_ZH[0] + GR_NOTE, ""], repr(linesu))
+
+
+def test_groups_node_flavour(fork):
+    """GR2 -- 天賦樹浮窗風味文字:GGPK 一段、POB 兩行 → 整段在第 1 行、其餘留白。"""
+    def run(with_inject=True, enabled=True):
+        h = group_harness(fork, with_inject)
+        h.enabled = enabled
+        view = make(h, "PassiveTreeView")
+        tip = make(h, "Tooltip")
+        ok, err = h.eval('function(v, t, f) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                         '{ dn = "Vaal Pact", id = 10808, sd = { "10% increased Attack Speed" }, flavourText = f }, {}) '
+                         'end) return ok, e end')(view, tip, _lua_list(h, GR_FLAV))
+        return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+    h, ok, err, lines = run()
+    check("%s GR2 天賦浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s GR2 風味文字整段在第 1 行、第 2 行留白" % fork,
+          [_norm(l) for l in lines[-2:]] == GR_FLAV_ZH, "lines=%r calls=%r" % (lines, h.line_calls))
+    check("%s GR2 說明行仍逐行(單行不入組)" % fork, _norm(lines[1]) == "增加 10% 攻擊速度", repr(lines))
+    h0, ok0, err0, lines0 = run(with_inject=False)
+    check("%s GR2 前提:沒有注入時風味文字兩行英文" % fork, [_norm(l) for l in lines0[-2:]] == GR_FLAV, repr(lines0))
+    hf, okf, errf, linesf = run(enabled=False)
+    check("%s GR2 F2 關閉時風味文字照英文" % fork, [_norm(l) for l in linesf[-2:]] == GR_FLAV, repr(linesf))
+
+
+# 上游 GemTooltip.lua 末段的風味文字(每行一個 AddLine,寶石提示期間)補進兩個合成模組;
+# 既有測試的寶石沒有 flavourText,不受影響
+GR_GEM_FLAVOUR_BLOCK = """
+	local fe = gemInstance.gemData.grantedEffect
+	if fe.flavourText and main.showFlavourText then
+		for _, line in ipairs(fe.flavourText) do
+			tooltip:AddLine(16, colorCodes.UNIQUE .. line, "FONTIN SC ITALIC")
+		end
+	end
+end
+return GemTooltip
+"""
+for _name in ("GEMTOOLTIP_SYN_P1", "GEMTOOLTIP_SYN_P2"):
+    _src = globals()[_name]
+    assert _src.count("\nend\nreturn GemTooltip\n") == 1, _name
+    globals()[_name] = _src.replace("\nend\nreturn GemTooltip\n", GR_GEM_FLAVOUR_BLOCK)
+
+
+def gr_gem(fork, enabled=True, define_lines=True):
+    h = gem_harness(fork, {})
+    h.enabled = enabled
+    calls = []
+
+    def translate_lines(tbl, ctx=None):
+        lines = [tbl[i] for i in range(1, len(tbl) + 1)]
+        calls.append((lines, ctx))
+        if lines == GR_GEMFLAV and h.enabled:
+            return h.rt.table_from({1: GR_GEMFLAV_ZH[0], 2: "", 3: ""})
+        return None
+    h.rt.globals()["__py_lines"] = translate_lines
+    if define_lines:
+        h.run(b"function PobToolsTranslateLines(t, c) return __py_lines(t, c) end")
+    h.run(b"main.showFlavourText = true colorCodes.UNIQUE = \"^xAF6025\"")
+    obj = make(h, "GemSelectControl")
+    tip = make(h, "Tooltip")
+    gem = h.eval("function() return %s end" % gem_instance_src(fork))()
+    h.eval('function(g, f) g.gemData.grantedEffect.flavourText = f end')(gem, _lua_list(h, GR_GEMFLAV))
+    ok, err = h.eval('function(o, t, g) o.tooltip = t o.skillsTab = { build = { data = data } } '
+                     'o.tipGem = g local ok, e = pcall(function() o:Draw({}, false) end) '
+                     'return ok, e end')(obj, tip, gem)
+    lines = [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+    return h, ok, err, lines, calls
+
+
+def test_groups_gem_flavour(fork):
+    """GR3 -- 寶石浮窗風味文字三行、GGPK 一段 → 整段在第 1 行、其餘兩行留白。"""
+    h, ok, err, lines, calls = gr_gem(fork)
+    check("%s GR3 寶石提示本身不出錯" % fork, ok, repr(err))
+    check("%s GR3 風味文字整段在第 1 行、其餘兩行留白" % fork,
+          lines[-3:] == GR_GEMFLAV_ZH, "lines=%r calls=%r" % (lines, calls))
+    check("%s GR3 以 gem 情境整組詢問引擎" % fork, (GR_GEMFLAV, "gem") in calls, repr(calls))
+    hf, okf, errf, linesf, callsf = gr_gem(fork, enabled=False)
+    check("%s GR3 F2 關閉時風味文字照英文" % fork, okf and linesf[-3:] == GR_GEMFLAV, repr(linesf))
+    h0, ok0, err0, lines0, calls0 = gr_gem(fork, define_lines=False)
+    check("%s GR3 舊引擎(無 PobToolsTranslateLines)風味文字照英文、不報錯" % fork,
+          ok0 and lines0[-3:] == GR_GEMFLAV, "lines=%r err=%r" % (lines0, err0))
+
+
+def gr_tattoo(fork, with_inject=True, enabled=True):
+    h = group_harness(fork, with_inject)
+    h.enabled = enabled
+    tab = make(h, "TreeTab")
+    tree = h.eval('function(sd) return { tattoo = { nodes = { ["Loyalty Tattoo of Ikiaho"] = '
+                  '{ dn = "Loyalty Tattoo of Ikiaho", sd = sd } } }, nodes = {} } end')(_lua_list(h, GR_TATTOO))
+    ok, err = h.eval('function(tab, tree) tab.build = { spec = { tree = tree } } '
+                     'local ok, e = pcall(function() tab:ModifyNodePopup({ id = 1 }) end) return ok, e end')(tab, tree)
+    labels = h.eval('function() local c = main.popups[1].controls local o = {} '
+                    'local i = 1 while c[i] do o[i] = c[i].label i = i + 1 end return o end')()
+    labels = [labels[i] for i in range(1, len(labels) + 1)]
+    return h, ok, err, labels
+
+
+def test_groups_tattoo_popup(fork):
+    """GR4 -- 紋身彈窗說明標籤與下拉提示:兩個 sd 行依 GGPK 中文分行,不再半句中文半句英文。"""
+    h, ok, err, labels = gr_tattoo(fork)
+    check("%s GR4 紋身彈窗本身不出錯" % fork, ok, repr(err))
+    check("%s GR4 說明標籤依 GGPK 中文分行" % fork,
+          labels == ["^7" + z for z in GR_TATTOO_ZH], "labels=%r calls=%r" % (labels, h.line_calls))
+    # 下拉 selFunc 重畫(驅動器 / 使用者換選取時)也是同一結果
+    ok2, err2 = h.eval('function() local ok, e = pcall(function() main.popups[1].controls.modSelect.selFunc(1) end) return ok, e end')()
+    labels2 = h.eval('function() local c = main.popups[1].controls local o = {} '
+                     'local i = 1 while c[i] do o[i] = c[i].label i = i + 1 end return o end')()
+    labels2 = [labels2[i] for i in range(1, len(labels2) + 1)]
+    check("%s GR4 selFunc 重畫說明標籤仍整句重組" % fork, ok2 and labels2 == labels, "labels=%r %r" % (labels2, err2))
+    # 下拉提示(tooltipFunc,每行一個 AddLine)
+    tip = make(h, "Tooltip")
+    ok3, err3 = h.eval('function(t) local dd = main.popups[1].controls.modSelect '
+                       'local ok, e = pcall(function() dd.tooltipFunc(t, "HOVER", 1, dd.list[1]) end) return ok, e end')(tip)
+    tl = [l for l in tooltip_lines(h, tip) if l is not None]
+    check("%s GR4 下拉提示依 GGPK 中文分行" % fork, ok3 and [_norm(l) for l in tl] == GR_TATTOO_ZH,
+          "tip=%r %r" % (tl, err3))
+    # 說明標籤之外 WrapString 不受影響
+    after = h.eval('function(s) return main:WrapString(s, 16, 375)[1] end')(GR_TATTOO[1])
+    check("%s GR4 彈窗建完後 WrapString 不再套用分組" % fork, after == GR_TATTOO[1], repr(after))
+    h0, ok0, err0, labels0 = gr_tattoo(fork, with_inject=False)
+    check("%s GR4 前提:沒有注入時說明標籤是英文兩行" % fork, labels0 == ["^7" + s for s in GR_TATTOO], repr(labels0))
+    hf, okf, errf, labelsf = gr_tattoo(fork, enabled=False)
+    check("%s GR4 F2 關閉時說明標籤照英文" % fork, labelsf == ["^7" + s for s in GR_TATTOO], repr(labelsf))
+
+
+def gr_craft(fork, value_src, with_inject=True):
+    h = group_harness(fork, with_inject)
+    tab = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(tab, t) local ok, e = pcall(function() '
+                     'tab.controls.displayItemAffix1.tooltipFunc(t, "HOVER", 1, %s) end) return ok, e end' % value_src)(tab, tip)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_groups_craft_affix_tip(fork):
+    """GR5 -- 製作詞綴下拉浮窗:單一詞綴與多階合併的兩行都整句一行、第 2 行留白。"""
+    h, ok, err, lines = gr_craft(fork, '{ modList = { "Bleed1", "Bleed2" } }')
+    check("%s GR5 多階浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s GR5 多階合併的兩行整句一行、第 2 行留白" % fork,
+          [_norm(l) for l in lines[1:3]] == GR_TIER_ZH, "lines=%r calls=%r" % (lines, h.line_calls))
+    check("%s GR5 以 item 情境詢問" % fork, any(c == "item" for _, c in h.line_calls), repr(h.line_calls))
+    h1, ok1, err1, lines1 = gr_craft(fork, '{ modList = { "Bleed1" } }')
+    check("%s GR5 單一詞綴兩行整句一行、第 2 行留白" % fork,
+          ok1 and [_norm(l) for l in lines1[1:3]] == GR_ONE_ZH, "lines=%r %r" % (lines1, err1))
+    h0, ok0, err0, lines0 = gr_craft(fork, '{ modList = { "Bleed1", "Bleed2" } }', with_inject=False)
+    check("%s GR5 前提:沒有注入時兩行英文" % fork, [_norm(l) for l in lines0[1:3]] == GR_TIER, repr(lines0))
+
+
+def test_groups_old_engine(fork):
+    """GR6 -- 沒有 PobToolsTranslateLines 的引擎:不報錯,照舊(兩行英文、無假合併)。"""
+    h, ok, err, lines = gr_anoint(fork, GR_MAGMA, define_lines=False)
+    check("%s GR6 舊引擎塗油彈窗不報錯且照舊逐行" % fork,
+          ok and [_norm(l) for l in lines[2:4]] == GR_MAGMA, "lines=%r err=%r" % (lines, err))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -3438,6 +3802,12 @@ def main():
         test_s8_legion_dropdown_by_id(fork)
         test_n2_item_single_line_note(fork)
         test_n3_pair_one_line_answer(fork)
+        test_groups_anoint_popup(fork)
+        test_groups_node_flavour(fork)
+        test_groups_gem_flavour(fork)
+        test_groups_tattoo_popup(fork)
+        test_groups_craft_affix_tip(fork)
+        test_groups_old_engine(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

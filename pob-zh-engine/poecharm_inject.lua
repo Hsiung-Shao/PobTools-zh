@@ -194,6 +194,13 @@ local nodeTipActive = false
 -- (POB splits it into two sd entries): { [stripped English line] = Chinese
 -- line }, built when AddNodeTooltip starts, nil outside it.
 local nodeSdPairs = nil
+-- Group map (see addGroups) for a tooltip whose tooltipFunc knows the lines
+-- it is about to add (crafting affix drop-down, tattoo drop-down); consulted
+-- by Tooltip:AddLine before every other stat path. nil outside such a call.
+local lineGroups = nil
+-- Group map consulted by main:WrapString (the tattoo popup's description
+-- labels), set only while that popup builds its labels.
+local labelGroups = nil
 
 -- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
 -- { desc = { [description] = effect id }, names = { [name] = true },
@@ -331,6 +338,34 @@ local function translateAffixLine(text)
 	return lead .. label .. gap .. zh
 end
 
+-- POB's "not supported" note (main.notSupportedTooltipText, e.g.
+-- " ^8(Not supported in PoB yet)") appended to an unsupported stat line when
+-- it is drawn. Plain suffix compare, no pattern. Returns body, note-or-"".
+local function splitNoteTail(s)
+	local note = type(main) == "table" and main.notSupportedTooltipText or nil
+	if type(note) == "string" and note ~= "" and #s > #note and s:sub(-#note) == note then
+		return s:sub(1, #s - #note), note
+	end
+	return s, ""
+end
+
+-- Grouped-line lookup shared by every group map (node sd / flavour, item mod
+-- lines, gem flavour, crafting and tattoo descriptions; see addGroups): colour
+-- lead and the unsupported note are split off, the rest looked up, both put
+-- back on a hit (the colour also after every "\n" of a multi-line answer). An
+-- answer of "" is a line whose text went into the line before it: it is drawn
+-- blank, note included -- the sentence it belongs to carries the note already.
+-- false (an English line with two different answers) is no answer.
+local function pairLookup(map, text)
+	if not map then return nil end
+	local lead, rest = splitLeadColour(text)
+	local body, tail = splitNoteTail(rest)
+	local zh = map[trim(body)]
+	if not zh then return nil end
+	if zh == "" then return "" end
+	return lead .. (zh:gsub("\n", "\n" .. lead)) .. tail
+end
+
 -- One line of a gem tooltip (gemCtx set). A grantedEffect's description is
 -- looked up by that effect's own id under gems_desc; every other non-name line
 -- asks the engine's stat lookup under "gem", with the stat id describeStats
@@ -343,6 +378,10 @@ local function translateGemLine(text)
 	local lead, rest = splitLeadColour(text)
 	local core = trim(rest)
 	if core == "" or ctx.names[core] then return nil end
+	-- flavour text POB splits over several lines (GemTooltip: one AddLine per
+	-- flavourText line), drawn as GGPK's whole paragraph (gemContext groups)
+	local grouped = pairLookup(ctx.groups, text)
+	if grouped then return grouped end
 	local id = ctx.desc[core]
 	if id ~= nil then
 		local zh = zhById("gems_desc", id, core)
@@ -374,31 +413,6 @@ local function translateGemLine(text)
 	return zhByStat(text, scope and ("gem:" .. scope) or "gem", ctx.statIds[core])
 end
 
--- node.sd -> nodeSdPairs. Each adjacent pair (colour codes stripped) is asked
--- as "a\nb" under "passive"; only an answer of exactly two lines counts, then
--- a/b map to its first/second line and both are skipped; a miss slides down by
--- one line. nil when the engine has no stat lookup or nothing paired.
--- POB's "not supported" note (main.notSupportedTooltipText, e.g.
--- " ^8(Not supported in PoB yet)") appended to an unsupported stat line when
--- it is drawn. Plain suffix compare, no pattern. Returns body, note-or-"".
-local function splitNoteTail(s)
-	local note = type(main) == "table" and main.notSupportedTooltipText or nil
-	if type(note) == "string" and note ~= "" and #s > #note and s:sub(-#note) == note then
-		return s:sub(1, #s - #note), note
-	end
-	return s, ""
-end
-
--- Paired-line lookup shared by node sd / item mod pairs: colour lead and the
--- unsupported note are split off, the rest looked up, both put back on a hit.
-local function pairLookup(map, text)
-	if not map then return nil end
-	local lead, rest = splitLeadColour(text)
-	local body, tail = splitNoteTail(rest)
-	local zh = map[trim(body)]
-	return zh and lead .. zh .. tail or nil
-end
-
 -- Asks a\nb under ctx; only a hit of that joined query counts. A two-line
 -- answer gives one Chinese line per English line; a one-line answer (or an
 -- empty second line) puts the whole sentence on the first line and leaves the
@@ -413,22 +427,94 @@ local function statPair(a, b, ctx)
 	return nil
 end
 
+-- One list of consecutive lines as POB will draw them (colour lead and note
+-- already stripped, trimmed) -> map entries for the lines that are ONE
+-- multi-line GGPK description. The engine's line groups
+-- (PobToolsTranslateLines, ggpk_groups.json) recognise the run and lay the
+-- whole translation out like GGPK's Chinese: its lines in order, "" for a line
+-- to leave blank (the whole sentence sits on the first). An engine without it
+-- falls back to adjacent pairs asked as "a\nb" (statPair). An English line
+-- that gets two different answers, or is also drawn outside any group, maps to
+-- false (no answer: it keeps the per-line path). `plain` collects the lines
+-- drawn ungrouped across every list of one map. Returns whether a group was
+-- found.
+local function addGroups(map, plain, shown, ctx)
+	local found = false
+	local grouped = {}
+	local function put(k, z)
+		local cur = map[k]
+		if cur == nil then map[k] = z elseif cur ~= z then map[k] = false end
+		grouped[k] = true
+		found = true
+	end
+	if type(PobToolsTranslateLines) == "function" then
+		local ok, res = pcall(PobToolsTranslateLines, shown, ctx)
+		if ok and type(res) == "table" then
+			for i = 1, #shown do
+				if type(res[i]) == "string" then put(shown[i], res[i]) end
+			end
+		end
+	else
+		local i = 1
+		while shown[i + 1] do
+			local z1, z2 = statPair(shown[i], shown[i + 1], ctx)
+			if z1 then
+				put(shown[i], z1)
+				put(shown[i + 1], z2)
+				i = i + 2
+			else
+				i = i + 1
+			end
+		end
+	end
+	for _, k in ipairs(shown) do
+		if not grouped[k] and k ~= "" then plain[k] = true end
+	end
+	for k in pairs(plain) do
+		if map[k] then map[k] = false end
+	end
+	return found
+end
+
+-- A list of raw lines (colour lead / note allowed) -> stripped, trimmed copy;
+-- nil when an entry is not a string.
+local function shownLines(list)
+	if type(list) ~= "table" then return nil end
+	local shown = {}
+	for _, s in ipairs(list) do
+		if type(s) ~= "string" then return nil end
+		local _, r = splitLeadColour(s)
+		shown[#shown + 1] = trim((splitNoteTail(r)))
+	end
+	return shown
+end
+
+-- Group map over several independent lists (no group spans two lists; a list
+-- may be nil), or nil when nothing grouped.
+local function buildGroupMap(ctx, ...)
+	local map, plain, found = {}, {}, false
+	for i = 1, select("#", ...) do
+		local shown = shownLines((select(i, ...)))
+		if shown and #shown >= 2 and addGroups(map, plain, shown, ctx) then found = true end
+	end
+	return found and map or nil
+end
+
 -- Item mod lists in POB's AddItemTooltip order (PoE1 enchant / scourge /
 -- implicit / explicit / crucible, PoE2 enchant / rune / implicit / explicit).
 local ITEM_MOD_LISTS = { "enchantModLines", "scourgeModLines", "runeModLines",
 	"implicitModLines", "explicitModLines", "crucibleModLines" }
 
--- One stat template POB split over two adjacent mod lines of the same list.
--- Each list's lines are taken as AddItemTooltip draws them
+-- One stat template POB split over adjacent mod lines of the same list. Each
+-- list's lines are taken as AddItemTooltip draws them
 -- (itemLib.formatModLine(modLine, dbMode); nil = not drawn), colour and note
--- stripped; adjacent pairs are asked "a\nb" under "item" and an exactly
--- two-line answer maps a/b to its lines (a miss slides down by one). nil when
--- the engine has no stat lookup or nothing paired.
+-- stripped, and grouped under "item" (addGroups). nil when the engine has no
+-- stat lookup or nothing grouped.
 local function buildItemModPairs(item, dbMode)
 	if type(PobToolsTranslateStat) ~= "function" or type(item) ~= "table" then return nil end
 	local fmt = type(itemLib) == "table" and itemLib.formatModLine or nil
 	if type(fmt) ~= "function" then return nil end
-	local map, found = {}, false
+	local map, plain, found = {}, {}, false
 	for _, key in ipairs(ITEM_MOD_LISTS) do
 		local list = item[key]
 		if type(list) == "table" then
@@ -448,44 +534,19 @@ local function buildItemModPairs(item, dbMode)
 					for _ = 1, count do shown[#shown + 1] = shownLine end
 				end
 			end
-			local i = 1
-			while shown[i + 1] do
-				local z1, z2 = statPair(shown[i], shown[i + 1], "item")
-				if z1 then
-					map[shown[i]], map[shown[i + 1]] = z1, z2
-					found = true
-					i = i + 2
-				else
-					i = i + 1
-				end
-			end
+			if #shown >= 2 and addGroups(map, plain, shown, "item") then found = true end
 		end
 	end
 	return found and map or nil
 end
 
+-- A passive node's tooltip lines: its stat lines (node.sd), reminder text and
+-- flavour text, each list grouped on its own under "passive" (flavour text
+-- groups come from the catalog's texts, which ignore ctx). Used by the tree's
+-- node tooltip and the anoint popup's.
 local function buildSdPairs(node)
-	if type(PobToolsTranslateStat) ~= "function" then return nil end
-	local sd = type(node) == "table" and node.sd or nil
-	if type(sd) ~= "table" then return nil end
-	local map, found = {}, false
-	local i = 1
-	while sd[i + 1] ~= nil do
-		local a, b = sd[i], sd[i + 1]
-		local hit = false
-		if type(a) == "string" and type(b) == "string" then
-			local _, ra = splitLeadColour(a)
-			local _, rb = splitLeadColour(b)
-			ra, rb = trim((splitNoteTail(ra))), trim((splitNoteTail(rb)))
-			local z1, z2 = statPair(ra, rb, "passive")
-			if z1 then
-				map[ra], map[rb] = z1, z2
-				found, hit = true, true
-			end
-		end
-		i = i + (hit and 2 or 1)
-	end
-	return found and map or nil
+	if type(node) ~= "table" then return nil end
+	return buildGroupMap("passive", node.sd, node.reminderText, node.flavourText)
 end
 
 -- An anointed amulet's "Allocates <notable>" enchant line (ItemsTab
@@ -964,6 +1025,24 @@ PATCHES["NotableDBControl"] = function(class)
 			return v
 		end)
 	end
+	-- Anoint popup node tooltip (AddValueTooltip: name via AddNodeName, then a
+	-- line per node.sd / reminder line): marked like PassiveTreeView's
+	-- AddNodeTooltip, so its stat lines ask the passive stat lookup and a GGPK
+	-- description POB split over several sd lines is drawn whole (nodeSdPairs).
+	-- Restored even on error.
+	local origValueTip = class.AddValueTooltip
+	if type(origValueTip) == "function" then
+		class.AddValueTooltip = keepArity(origValueTip, function(self, tooltip, index, node, ...)
+			local prev, prevPairs = nodeTipActive, nodeSdPairs
+			local pok, pairsMap = pcall(buildSdPairs, node)
+			nodeTipActive = true
+			nodeSdPairs = pok and pairsMap or nil
+			local ok, a, b, c = pcall(origValueTip, self, tooltip, index, node, ...)
+			nodeTipActive, nodeSdPairs = prev, prevPairs
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
 end
 
 -- Tree tab popups whose drop-downs list node names: the tattoo picker
@@ -1030,6 +1109,71 @@ local function wrapPopupList(controlName, source, tree)
 	end)
 end
 
+-- Tattoo / runegraft popup (ModifyNodePopup): the description under the
+-- drop-down is one LabelControl per WrapString piece of each description
+-- line (constructUI: main:WrapString(desc) per node.sd line), and the
+-- drop-down's tooltip one AddLine per line, so a GGPK description POB split
+-- over two sd lines showed as two halves. labelGroups (every tattoo node's sd
+-- grouped once per tree, see tattooGroups) is consulted by the WrapString wrap
+-- while constructUI runs -- inside ModifyNodePopup and inside the drop-down's
+-- selFunc -- and the tooltip's lines go through lineGroups while its
+-- tooltipFunc runs. Nothing is written into POB's tables: the descriptions
+-- stay English and only what is drawn changes.
+local tattooGroupCache = setmetatable({}, { __mode = "k" })
+local function tattooGroups(tree)
+	local nodes = type(tree) == "table" and type(tree.tattoo) == "table" and tree.tattoo.nodes or nil
+	if type(nodes) ~= "table" then return nil end
+	-- F2 off: no map (and nothing cached: the answers are translations)
+	if type(PobToolsGetTranslate) == "function" and not PobToolsGetTranslate() then return nil end
+	local hit = tattooGroupCache[nodes]
+	if hit ~= nil then return hit or nil end
+	local map, plain, found = {}, {}, false
+	for _, node in pairs(nodes) do
+		local shown = type(node) == "table" and shownLines(node.sd) or nil
+		if shown and #shown >= 2 and addGroups(map, plain, shown, "passive") then found = true end
+	end
+	tattooGroupCache[nodes] = found and map or false
+	return found and map or nil
+end
+
+-- Runs fn(...) with labelGroups set for the tattoo popup's labels.
+local function withLabelGroups(tree, fn, ...)
+	local prev = labelGroups
+	local okG, g = pcall(tattooGroups, tree)
+	labelGroups = okG and g or nil
+	local ok, a, b, c = pcall(fn, ...)
+	labelGroups = prev
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+local function wrapTattooPopup(tree)
+	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
+	local ctl = type(popup) == "table" and type(popup.controls) == "table" and popup.controls.modSelect or nil
+	if type(ctl) ~= "table" or rawget(ctl, "_ptGroupWrap") then return end
+	ctl._ptGroupWrap = true
+	local origSel = ctl.selFunc
+	if type(origSel) == "function" then
+		ctl.selFunc = keepArity(origSel, function(...)
+			return withLabelGroups(tree, origSel, ...)
+		end)
+	end
+	local origTip = ctl.tooltipFunc
+	if type(origTip) == "function" then
+		ctl.tooltipFunc = keepArity(origTip, function(tooltip, mode, index, value, ...)
+			local prev = lineGroups
+			local okG, g = pcall(function()
+				return type(value) == "table" and buildGroupMap("passive", value.descriptions) or nil
+			end)
+			lineGroups = okG and g or nil
+			local ok, a, b, c = pcall(origTip, tooltip, mode, index, value, ...)
+			lineGroups = prev
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
+end
+
 PATCHES["TreeTab"] = function(class)
 	local found = false
 	for method, spec in pairs({
@@ -1040,12 +1184,21 @@ PATCHES["TreeTab"] = function(class)
 		if type(orig) == "function" then
 			found = true
 			class[method] = keepArity(orig, function(self, ...)
-				local a, b, c = orig(self, ...)
 				local build = type(self) == "table" and self.build or nil
 				local tree = type(build) == "table" and type(build.spec) == "table"
 					and build.spec.tree or nil
+				local a, b, c
+				if method == "ModifyNodePopup" then
+					a, b, c = withLabelGroups(tree, orig, self, ...)
+				else
+					a, b, c = orig(self, ...)
+				end
 				local ok, err = pcall(wrapPopupList, spec[1], spec[2], tree)
 				if not ok then log("TreeTab." .. method .. " list wrap failed: " .. tostring(err)) end
+				if method == "ModifyNodePopup" then
+					local okT, errT = pcall(wrapTattooPopup, tree)
+					if not okT then log("TreeTab.ModifyNodePopup description wrap failed: " .. tostring(errT)) end
+				end
 				return a, b, c
 			end)
 		end
@@ -1354,6 +1507,47 @@ end
 -- index local 'value' (a nil value)). Upstream master 0.23.1 has the bug in
 -- English too; their dev branch added exactly this call. Harmless once POB
 -- ships the fix (the list is just rebuilt twice). PoE1 has no rune rows.
+-- The lines the crafting affix drop-down's tooltip draws for a tier range
+-- (ItemsTab.lua drop.tooltipFunc, "N Tiers" branch): each line of the lowest
+-- and highest tier merged, "(min-max)" where the numbers differ. Only used to
+-- recognise those lines for grouping: a POB that draws them differently
+-- simply matches nothing and keeps the per-line path.
+local function tierLines(minMod, maxMod)
+	if type(minMod) ~= "table" or type(maxMod) ~= "table" then return nil end
+	local out = {}
+	for l, line in ipairs(minMod) do
+		local maxRaw = maxMod[l]
+		if type(line) ~= "string" or type(maxRaw) ~= "string" then return nil end
+		local minLine = line:gsub("%((%d[%d%.]*)%-(%d[%d%.]*)%)", "%1")
+		local maxLine = maxRaw:gsub("%((%d[%d%.]*)%-(%d[%d%.]*)%)", "%2")
+		if maxLine == maxRaw then
+			out[#out + 1] = maxLine
+		else
+			local start = 1
+			out[#out + 1] = (minLine:gsub("%d[%d%.]*", function(min)
+				local s, e, max = maxLine:find("(%d[%d%.]*)", start)
+				if not s then return min end
+				start = e + 1
+				if min == max then return min end
+				return "(" .. min .. "-" .. max .. ")"
+			end))
+		end
+	end
+	return out
+end
+
+-- Group map for the crafting affix drop-down's tooltip(tooltip, mode, index,
+-- value): one mod's lines, or the merged lines of a tier range.
+local function affixDropGroups(item, mode, index, value)
+	local modList = type(value) == "table" and value.modList or nil
+	local affixes = type(item) == "table" and item.affixes or nil
+	if type(modList) ~= "table" or type(affixes) ~= "table" then return nil end
+	if value.modId or #modList == 1 then
+		return buildGroupMap("item", affixes[value.modId or modList[1]])
+	end
+	return buildGroupMap("item", tierLines(affixes[modList[1]], affixes[modList[#modList]]))
+end
+
 PATCHES["ItemsTab"] = function(class)
 	-- Item tooltips: no outer source (non-name lines keep the unmarked
 	-- lookup); the item is kept in itemCtx so Tooltip:AddLine can tell the
@@ -1401,18 +1595,24 @@ PATCHES["ItemsTab"] = function(class)
 		-- mod the "Affix: <name>" line belongs to, so it is looked up by mod Id.
 		-- Mirrors the id choice in ItemsTab.lua's tooltipFuncs; anything unclear
 		-- (no item, no mod, several tiers) leaves affixTipCtx nil.
-		local function wrapAffixTip(ctl, idOf)
+		-- groupsOf(item, ...) -> group map for the mod lines the tooltip draws
+		-- (lineGroups), or nil.
+		local function wrapAffixTip(ctl, idOf, groupsOf)
 			local orig = type(ctl) == "table" and ctl.tooltipFunc or nil
 			if type(orig) ~= "function" then return end
 			ctl.tooltipFunc = keepArity(orig, function(tooltip, ...)
-				local prev = affixTipCtx
+				local prev, prevGroups = affixTipCtx, lineGroups
 				local okId, id = pcall(idOf, ...)
 				local item = self.displayItem
 				local mods = okId and id and type(item) == "table" and item.affixes or nil
 				local mod = type(mods) == "table" and mods[id] or nil
 				affixTipCtx = type(mod) == "table" and { id = id, mod = mod } or nil
+				if groupsOf then
+					local okG, g = pcall(groupsOf, item, ...)
+					lineGroups = okG and g or nil
+				end
 				local ok2, a, b, c = pcall(orig, tooltip, ...)
-				affixTipCtx = prev
+				affixTipCtx, lineGroups = prev, prevGroups
 				if not ok2 then error(a, 0) end
 				return a, b, c
 			end)
@@ -1425,7 +1625,7 @@ PATCHES["ItemsTab"] = function(class)
 					local modList = type(value) == "table" and value.modList
 					if type(modList) ~= "table" then return nil end
 					return value.modId or (#modList == 1 and modList[1]) or nil
-				end)
+				end, affixDropGroups)
 				wrapAffixTip(self.controls["displayItemAffixRange" .. i], function()
 					local sel = drop.list and drop.list[drop.selIndex]
 					local modList = type(sel) == "table" and sel.modList
@@ -1492,8 +1692,11 @@ PATCHES["Tooltip"] = function(class)
 			-- name lines never. A miss falls through to the path below.
 			local statZh
 			if not zh and not isNodeName then
-				-- an item mod line paired with its neighbour (buildItemModPairs)
-				if itemCtx and itemCtx.modPairs then
+				-- a line of a multi-line description the tooltipFunc's own
+				-- source lines grouped (lineGroups), then an item mod line
+				-- grouped with its neighbours (buildItemModPairs)
+				if lineGroups then statZh = pairLookup(lineGroups, text) end
+				if not statZh and itemCtx and itemCtx.modPairs then
 					statZh = pairLookup(itemCtx.modPairs, text)
 				end
 				if statZh then
@@ -1846,6 +2049,12 @@ local function gemContext(gemInstance)
 	if type(gemData.additionalGrantedEffects) == "table" then
 		for _, e in ipairs(gemData.additionalGrantedEffects) do add(e) end
 	end
+	-- GemTooltip draws the primary effect's flavour text, one line each
+	local primary = gemData.grantedEffect
+	if type(primary) == "table" and type(primary.flavourText) == "table" then
+		local ok, groups = pcall(buildGroupMap, "gem", primary.flavourText)
+		ctx.groups = ok and groups or nil
+	end
 	return ctx
 end
 
@@ -1874,6 +2083,24 @@ local function isGemTooltipName(name)
 	return n == "Classes/GemTooltip" or n:sub(-#"/Classes/GemTooltip") == "/Classes/GemTooltip"
 end
 
+-- main:WrapString: while labelGroups is set (the tattoo popup building its
+-- description labels), a line that belongs to a grouped GGPK description is
+-- wrapped as its share of the whole translation ("" = a blank label). Outside
+-- that span it is the original function; the engine's own WrapString source
+-- patch (translate before wrapping) still runs inside it.
+local function patchMainWrapString()
+	if applied.__wrapString or type(main) ~= "table" or type(main.WrapString) ~= "function" then return end
+	applied.__wrapString = true
+	local orig = main.WrapString
+	main.WrapString = keepArity(orig, function(self, str, ...)
+		if labelGroups and type(str) == "string" then
+			local z = pairLookup(labelGroups, str)
+			if z then str = z end
+		end
+		return orig(self, str, ...)
+	end)
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
@@ -1882,6 +2109,8 @@ local function tryApplyAll()
 	end
 	local ok, err = pcall(patchMainBackground)
 	if not ok then log("patch FAILED main.DrawBackground: " .. tostring(err)) end
+	local okW, errW = pcall(patchMainWrapString)
+	if not okW then log("patch FAILED main.WrapString: " .. tostring(errW)) end
 	if perfOn then
 		local pok, perr = pcall(perfApplyAll)
 		if not pok then log("perf wrap FAILED: " .. tostring(perr)) end

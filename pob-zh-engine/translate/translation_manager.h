@@ -120,6 +120,20 @@ const char* translation_lookup_stat_colored(const char *line, const char *ctx);
 ** stat_ids: same as translation_lookup_stat_colored. */
 const char* translation_lookup_stat_ids_colored(const char *line, const char *ctx, const char *stat_ids);
 
+/* Consecutive lines that are ONE GGPK description (ggpk_groups.json): POB
+** draws a multi-line description one tooltip line / label per English line,
+** so each line alone is only a fragment. lines[0..n) are the drawn lines with
+** the colour lead and POB's "not supported" note removed; ctx as
+** translation_lookup_stat. out[i] = the Chinese to draw on line i for every
+** line inside a recognised group ("" = leave the line blank: GGPK's Chinese
+** has fewer lines), nullptr for lines in no group. Stat descriptions are
+** worded by stats_by_id.json (the joined lines through the stat lookup), texts
+** (flavour text) by the catalog itself, and only where GGPK's Chinese has a
+** different line count. Returns the number of groups; 0 when translation is
+** off (F2), without "source_lookup", or without the catalog. Pointers valid
+** until the next call. Tested by --stat-selftest H*. */
+int translation_group_lines(const char *const *lines, int n, const char *ctx, const char **out);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
