@@ -202,6 +202,11 @@ local lineGroups = nil
 -- Group map consulted by main:WrapString (the tattoo popup's description
 -- labels), set only while that popup builds its labels.
 local labelGroups = nil
+-- Stat ids for lines drawn where POB's tree data knows them (statIdSpan):
+-- popupStatIds while the Timeless jewel finder's / tattoo popup's drop-down
+-- tooltipFunc runs, labelStatIds while the tattoo popup builds its description
+-- labels, nodeStatIds while a conquered node's tooltip is built. nil outside.
+local popupStatIds, labelStatIds, nodeStatIds = nil, nil, nil
 
 -- The gem GemTooltip.AddGemTooltip is describing (nil outside it):
 -- { desc = { [description] = effect id }, names = { [name] = true },
@@ -365,6 +370,100 @@ local function pairLookup(map, text)
 	if not zh then return nil end
 	if zh == "" then return "" end
 	return lead .. (zh:gsub("\n", "\n" .. lead)) .. tail
+end
+
+-- POB's tree data carries the stat ids of every Timeless jewel and tattoo /
+-- runegraft node (tree.legion.nodes / .additions, tree.tattoo.nodes:
+-- stats[statId]); the engine's stat lookup narrows its candidates to them
+-- (使用者裁定 2026-10-26「先做有 stat id 的位置」). Built once per data table
+-- (weak cache):
+--   byId[legion node.id / tattoo key] = that node's stat ids, sorted, " "-joined
+--   byLine[statLineKey(sd line)] = the ids of every node that has that line
+-- A line is matched as a whole (its template), never by its position.
+local statIdCache = setmetatable({}, { __mode = "k" })
+-- An sd line with its numbers and "(a-b)" ranges written as "#": a conquered
+-- node's rolled value ("+7") finds the data's template ("+(6-8)").
+local function statLineKey(s)
+	s = trim(s):gsub("%(%-?[%d%.]+%-%-?[%d%.]+%)", "#")
+	return (s:gsub("%d+%.%d+", "#"):gsub("%d+", "#"))
+end
+
+local function statIdIndex(tree, which)
+	local group = type(tree) == "table" and tree[which] or nil
+	if type(group) ~= "table" then return nil end
+	local hit = statIdCache[group]
+	if hit ~= nil then return hit or nil end
+	local byId, sets = {}, {}
+	local function addNode(key, node)
+		if key == nil or type(node) ~= "table" or type(node.stats) ~= "table" then return end
+		local ids = {}
+		for id in pairs(node.stats) do
+			if type(id) == "string" then ids[#ids + 1] = id end
+		end
+		if #ids == 0 then return end
+		table.sort(ids)
+		byId[key] = table.concat(ids, " ")
+		local lines = {}
+		for _, line in ipairs(type(node.sd) == "table" and node.sd or {}) do
+			if type(line) == "string" and line ~= "" then lines[#lines + 1] = line end
+		end
+		-- the tattoo popup may show all of a node's lines joined by " " (its "combine")
+		if #lines > 1 then lines[#lines + 1] = table.concat(lines, " ") end
+		for _, line in ipairs(lines) do
+			local k = statLineKey(line)
+			local set = sets[k]
+			if not set then
+				set = {}
+				sets[k] = set
+			end
+			for _, id in ipairs(ids) do set[id] = true end
+		end
+	end
+	if which == "legion" then
+		for _, name in ipairs({ "nodes", "additions" }) do
+			if type(group[name]) == "table" then
+				for _, node in pairs(group[name]) do
+					if type(node) == "table" then addNode(node.id, node) end
+				end
+			end
+		end
+	elseif type(group.nodes) == "table" then
+		for key, node in pairs(group.nodes) do addNode(key, node) end
+	end
+	local byLine, any = {}, false
+	for k, set in pairs(sets) do
+		local t = {}
+		for id in pairs(set) do t[#t + 1] = id end
+		table.sort(t)
+		byLine[k] = table.concat(t, " ")
+		any = true
+	end
+	local idx = any and { byId = byId, byLine = byLine } or false
+	statIdCache[group] = idx
+	return idx or nil
+end
+
+-- { byLine, ids } for one span (ids = the described node's own, when its key
+-- is known), or nil when the tree has no such data.
+local function statIdSpan(tree, which, key)
+	local ok, idx = pcall(statIdIndex, tree, which)
+	if not ok or not idx then return nil end
+	return { byLine = idx.byLine, ids = key ~= nil and idx.byId[key] or nil }
+end
+
+-- One drawn line asked of the stat lookup under "passive" with the stat ids
+-- `span` has for it: the described node's ids when known, else those of every
+-- node with that line. A line the data does not have (a header, a reminder, a
+-- hand-written description) is not asked. Colour lead and POB's unsupported
+-- note are split off and put back. nil = no answer (the caller's path runs).
+local function zhByStatIds(text, span)
+	if not span then return nil end
+	local lead, rest = splitLeadColour(text)
+	local body, tail = splitNoteTail(rest)
+	local lineIds = span.byLine[statLineKey(body)]
+	if not lineIds then return nil end
+	local zh = zhByStat(lead .. body, "passive", span.ids or lineIds)
+	return zh and zh .. tail or nil
 end
 
 -- One line of a gem tooltip (gemCtx set). A grantedEffect's description is
@@ -790,13 +889,17 @@ PATCHES["PassiveTreeView"] = function(class)
 		-- Only marks the span (nodeTipActive) for the stat lookup; same arity.
 		-- Also pairs two-line stat templates split over node.sd (nodeSdPairs).
 		class.AddNodeTooltip = keepArity(origTip, function(self, ...)
-			local prev, prevPairs = nodeTipActive, nodeSdPairs
-			local _, node = ...
+			local prev, prevPairs, prevIds = nodeTipActive, nodeSdPairs, nodeStatIds
+			local _, node, build = ...
 			local pok, pairsMap = pcall(buildSdPairs, node)
 			nodeTipActive = true
 			nodeSdPairs = pok and pairsMap or nil
+			-- a node a Timeless jewel conquered: its lines are tree.legion's (stat ids there)
+			local spec = type(build) == "table" and build.spec or nil
+			nodeStatIds = type(node) == "table" and node.conqueredBy and type(spec) == "table"
+				and statIdSpan(spec.tree, "legion") or nil
 			local ok, a, b, c = pcall(origTip, self, ...)
-			nodeTipActive, nodeSdPairs = prev, prevPairs
+			nodeTipActive, nodeSdPairs, nodeStatIds = prev, prevPairs, prevIds
 			if not ok then error(a, 0) end
 			return a, b, c
 		end)
@@ -1162,14 +1265,16 @@ local function tattooGroups(tree)
 	return found and map or nil
 end
 
--- Runs fn(...) with labelGroups set for the tattoo popup's labels.
-local function withLabelGroups(tree, fn, ...)
-	local prev, prevLine = labelGroups, labelPrev
+-- Runs fn(...) with labelGroups (and labelStatIds: the tattoo data's stat ids,
+-- the node's own when its key is known) set for the tattoo popup's labels.
+local function withLabelGroups(tree, key, fn, ...)
+	local prev, prevLine, prevIds = labelGroups, labelPrev, labelStatIds
 	local okG, g = pcall(tattooGroups, tree)
 	labelGroups = okG and g or nil
+	labelStatIds = statIdSpan(tree, "tattoo", key)
 	labelPrev = nil
 	local ok, a, b, c = pcall(fn, ...)
-	labelGroups, labelPrev = prev, prevLine
+	labelGroups, labelPrev, labelStatIds = prev, prevLine, prevIds
 	if not ok then error(a, 0) end
 	return a, b, c
 end
@@ -1182,7 +1287,9 @@ local function wrapTattooPopup(tree)
 	local origSel = ctl.selFunc
 	if type(origSel) == "function" then
 		ctl.selFunc = keepArity(origSel, function(...)
-			return withLabelGroups(tree, origSel, ...)
+			-- DropDownControl calls selFunc(index, list[index]); value.id = the tattoo key
+			local _, value = ...
+			return withLabelGroups(tree, type(value) == "table" and value.id or nil, origSel, ...)
 		end)
 	end
 	local origTip = ctl.tooltipFunc
@@ -1199,6 +1306,27 @@ local function wrapTattooPopup(tree)
 			return a, b, c
 		end)
 	end
+end
+
+-- The Timeless jewel finder's / tattoo popup's drop-down tooltip: one AddLine
+-- per line of the hovered item's descriptions (value.id = the legion node id /
+-- tattoo key). popupStatIds is set while it runs, also restored on error.
+local function wrapStatIdTip(controlName, which, tree)
+	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
+	local ctl = type(popup) == "table" and type(popup.controls) == "table"
+		and popup.controls[controlName] or nil
+	if type(ctl) ~= "table" or rawget(ctl, "_ptStatIdTip") then return end
+	local origTip = ctl.tooltipFunc
+	if type(origTip) ~= "function" then return end
+	ctl._ptStatIdTip = true
+	ctl.tooltipFunc = keepArity(origTip, function(tooltip, mode, index, value, ...)
+		local prev = popupStatIds
+		popupStatIds = statIdSpan(tree, which, type(value) == "table" and value.id or nil)
+		local ok, a, b, c = pcall(origTip, tooltip, mode, index, value, ...)
+		popupStatIds = prev
+		if not ok then error(a, 0) end
+		return a, b, c
+	end)
 end
 
 -- Runs fn(...) with the engine's "/"-joined description lookup asking under
@@ -1248,12 +1376,15 @@ PATCHES["TreeTab"] = function(class)
 					and build.spec.tree or nil
 				local a, b, c
 				if method == "ModifyNodePopup" then
-					a, b, c = withLabelGroups(tree, orig, self, ...)
+					a, b, c = withLabelGroups(tree, nil, orig, self, ...)
 				else
 					a, b, c = orig(self, ...)
 				end
 				local ok, err = pcall(wrapPopupList, spec[1], spec[2], tree)
 				if not ok then log("TreeTab." .. method .. " list wrap failed: " .. tostring(err)) end
+				-- the source name is also the tree data's key (tree.tattoo / tree.legion)
+				local okS, errS = pcall(wrapStatIdTip, spec[1], spec[2], tree)
+				if not okS then log("TreeTab." .. method .. " stat id wrap failed: " .. tostring(errS)) end
 				if method == "ModifyNodePopup" then
 					local okT, errT = pcall(wrapTattooPopup, tree)
 					if not okT then log("TreeTab.ModifyNodePopup description wrap failed: " .. tostring(errT)) end
@@ -1758,6 +1889,10 @@ PATCHES["Tooltip"] = function(class)
 				if not statZh and itemCtx and itemCtx.modPairs then
 					statZh = pairLookup(itemCtx.modPairs, text)
 				end
+				-- a Timeless jewel / tattoo drop-down tooltip line: passive + the node's stat ids
+				if not statZh and popupStatIds and src == nil and not itemCtx and not gemCtx then
+					statZh = zhByStatIds(text, popupStatIds)
+				end
 				if statZh then
 					-- decided by the pair
 				elseif gemCtx and not itemCtx then
@@ -1778,6 +1913,8 @@ PATCHES["Tooltip"] = function(class)
 					-- part of the stat: asked without it, put back after the
 					-- Chinese as written (使用者裁定 2026-10-26: stays English)
 					statZh = pairLookup(nodeSdPairs, text)
+					-- a conquered node's line the Timeless jewel data knows: with its stat ids
+					if not statZh then statZh = zhByStatIds(text, nodeStatIds) end
 					if not statZh then
 						local lead, rest = splitLeadColour(text)
 						local body, tail = splitNoteTail(rest)
@@ -2161,18 +2298,20 @@ local function patchMainWrapString()
 	applied.__wrapString = true
 	local orig = main.WrapString
 	main.WrapString = keepArity(orig, function(self, str, ...)
-		if labelGroups and type(str) == "string" then
-			-- the previous line + this one first (labelSeq), then this line alone
+		if (labelGroups or labelStatIds) and type(str) == "string" then
+			-- the previous line + this one first (labelSeq), then this line alone,
+			-- then a line the tattoo data knows by its stat ids
 			local lead, rest = splitLeadColour(str)
 			local body, tail = splitNoteTail(rest)
 			local line = trim(body)
-			local seq = labelSeq[labelGroups]
+			local seq = labelGroups and labelSeq[labelGroups]
 			local z = seq and seq[(labelPrev or "") .. "\1" .. line]
 			if z then
 				if z ~= "" then z = lead .. (z:gsub("\n", "\n" .. lead)) .. tail end
 			else
 				z = pairLookup(labelGroups, str)
 			end
+			if not z then z = zhByStatIds(str, labelStatIds) end
 			labelPrev = line
 			if z then str = z end
 		end

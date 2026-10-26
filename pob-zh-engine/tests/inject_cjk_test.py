@@ -3986,6 +3986,216 @@ def test_n4_node_single_line_note(fork):
           okm and linesm == lines0, "lines=%r 舊引擎=%r" % (linesm, lines0))
 
 
+# ---- SID:有 stat id 的位置帶語境+stat id 查 stat(使用者裁定 2026-10-26「先做有 stat id 的位置」)----------
+# POB 樹資料 tree.legion(nodes / additions)與 tree.tattoo.nodes 每個節點帶 stats[statId];
+# 永恆珠寶清單提示、征服節點浮窗、紋身/符文下拉提示與說明標籤這幾處,說明行以 passive + 該節點的
+# stat id 查 stat。假 PobToolsTranslateStat 依 (英文, ctx, ids) 回答;ids 對不到時走原本的路。
+SID_DEXINT = "+(6-8) to Dexterity and Intelligence"
+SID_DEXINT_ROLLED = "+7 to Dexterity and Intelligence"
+SID_TATTOO = "+2 to Dexterity"
+SID_HYBRID = "This is a hybrid node containing all additions to Strength"
+SID_STAT = {
+    (SID_DEXINT, "passive", "sid_dex_int"): "SID +(6-8) 敏捷和智慧",
+    (SID_DEXINT, "passive", None): "P 增加 +(6-8) 敏捷與智慧",
+    (SID_DEXINT_ROLLED, "passive", "sid_dex_int"): "SID +7 敏捷和智慧",
+    (SID_DEXINT_ROLLED, "passive", None): "P 增加 +7 敏捷與智慧",
+    (SID_TATTOO, "passive", "sid_tattoo_dex"): "SID +2 敏捷",
+}
+SID_TREETAB_METHODS = """
+function C:ModifyNodePopup(selectedNode)
+	local controls = { }
+	local modGroups = { }
+	for id, node in pairs(self.build.spec.tree.tattoo.nodes) do
+		table.insert(modGroups, { label = node.dn, descriptions = copyTable(node.sd), id = id })
+	end
+	table.sort(modGroups, function(a, b) return a.label < b.label end)
+	local function constructUI(modGroup)
+		local i = 1
+		while controls[i] do controls[i] = nil i = i + 1 end
+		local wrapTable = {}
+		for _, desc in ipairs(modGroup.descriptions) do
+			for _, w in ipairs(main:WrapString(desc, 16, 375)) do table.insert(wrapTable, w) end
+		end
+		for idx, desc in ipairs(wrapTable) do controls[idx] = { label = "^7"..desc } end
+	end
+	controls.modSelect = { list = modGroups, selIndex = 1, Draw = function() end,
+		selFunc = function(idx) constructUI(modGroups[idx]) end }
+	controls.modSelect.tooltipFunc = function(tooltip, mode, index, value)
+		tooltip:Clear()
+		if mode ~= "OUT" and value then
+			for _, line in ipairs(value.descriptions) do tooltip:AddLine(16, "^7"..line) end
+		end
+	end
+	main.popups[1] = { controls = controls }
+	constructUI(modGroups[1])
+end
+function C:FindTimelessJewel()
+	local controls = { }
+	local modData = { }
+	local tree = self.build.spec.tree
+	for _, node in pairs(tree.legion.nodes) do
+		table.insert(modData, { label = node.dn, descriptions = copyTable(node.sd), id = node.id })
+	end
+	for _, addition in pairs(tree.legion.additions) do
+		table.insert(modData, { label = addition.dn, descriptions = copyTable(addition.sd), id = addition.id })
+	end
+	table.sort(modData, function(a, b) return a.label < b.label end)
+	table.insert(modData, 1, { label = "Total Strength", descriptions = { "%(hybrid)s" }, id = "total_strength" })
+	controls.nodeSelect = { list = modData, selIndex = 1, Draw = function() end }
+	controls.nodeSelect.tooltipFunc = function(tooltip, mode, index, value)
+		tooltip:Clear()
+		if mode ~= "OUT" and value.descriptions then
+			for _, line in ipairs(value.descriptions) do
+				tooltip:AddLine(16, "^7" .. line)
+			end
+		end
+	end
+	main.popups[1] = { controls = controls }
+end
+""" % {"hybrid": SID_HYBRID}
+SID_TREE = """{
+	nodes = {},
+	legion = {
+		nodes = { { id = "lethal_pride_notable_dexint", dn = "Hit and Run", ["not"] = true,
+			sd = { "%(dexint)s" }, stats = { sid_dex_int = { min = 6, max = 8, index = 1 } } } },
+		additions = { { id = "lethal_pride_add_other", dn = "Other", sd = { "Zzsid other line" },
+			stats = { sid_other = { min = 1, max = 1, index = 1 } } } },
+	},
+	tattoo = { nodes = { ["Tattoo of the Sid"] = { dn = "Tattoo of the Sid", sd = { "%(tattoo)s" },
+		stats = { sid_tattoo_dex = { min = 2, max = 2 } } } } },
+}""" % {"dexint": SID_DEXINT, "tattoo": SID_TATTOO}
+
+
+def sid_harness(fork, stat_answers, define=True, with_inject=True):
+    """有 stat id 的彈窗/浮窗。h.stat_calls 記 (英文, ctx, ids);stat_answers 鍵 (英文本文, ctx, ids 或 None)。"""
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.stat_calls = []
+
+    def translate_stat(line, ctx=None, ids=None):
+        h.stat_calls.append((line, ctx, ids))
+        if line is None:
+            return None
+        m = re.match(r"^((?:\^x[0-9A-Fa-f]{6}|\^\d)*)(.*)$", line, re.S)
+        hit = (stat_answers or {}).get((m.group(2).strip(), ctx, ids))
+        return None if hit is None else m.group(1) + hit
+
+    if define:
+        h.rt.globals()["__py_sid_stat"] = translate_stat
+        h.run(b"function PobToolsTranslateStat(l, c, i) return __py_sid_stat(l, c, i) end")
+    h.run(COLOUR_SETUP)
+    h.run(('main.notSupportedModTooltips = true main.notSupportedTooltipText = "%s" '
+           'function main:WrapString(str, height, width) return { str } end') % GR_NOTE)
+    h.run('LoadModule("Classes/Tooltip")')
+    h.define("PassiveTreeView", 'local C = newClass("PassiveTreeView")\nfunction C:PassiveTreeView() return self end\n'
+             + GR_TREE_METHODS, 'local C = newClass("PassiveTreeView", function(self) end)\n' + GR_TREE_METHODS)
+    h.define("TreeTab", 'local C = newClass("TreeTab")\nfunction C:TreeTab() return self end\n' + SID_TREETAB_METHODS,
+             'local C = newClass("TreeTab", function(self) end)\n' + SID_TREETAB_METHODS)
+    if with_inject:
+        h.apply_inject()
+    return h
+
+
+def sid_tree_tab(h):
+    tab = make(h, "TreeTab")
+    tree = h.eval("function() return %s end" % SID_TREE)()
+    h.eval("function(tab, tree) tab.build = { spec = { tree = tree } } end")(tab, tree)
+    return tab, tree
+
+
+def sid_popup_tip(fork, method, control, stat_answers, define=True, with_inject=True):
+    """開彈窗後對下拉每一項跑 tooltipFunc;回 (h, ok, err, [[各項的提示行]])。"""
+    h = sid_harness(fork, stat_answers, define, with_inject)
+    tab, _ = sid_tree_tab(h)
+    ok, err = h.eval('function(tab, m) local ok, e = pcall(function() tab[m](tab, { id = 1 }) end) '
+                     'return ok, e end')(tab, method)
+    tips = []
+    n = h.eval('function(c) return #main.popups[1].controls[c].list end')(control) if ok else 0
+    for i in range(1, n + 1):
+        tip = make(h, "Tooltip")
+        okT, errT = h.eval('function(t, c, i) local dd = main.popups[1].controls[c] local ok, e = pcall(function() '
+                           'dd.tooltipFunc(t, "HOVER", i, dd.list[i]) end) return ok, e end')(tip, control, i)
+        ok, err = ok and okT, err or errT
+        tips.append([l for l in tooltip_lines(h, tip) if l is not None])
+    return h, ok, err, tips
+
+
+def sid_labels(h):
+    labels = h.eval('function() local c = main.popups[1].controls local o = {} '
+                    'local i = 1 while c[i] do o[i] = c[i].label i = i + 1 end return o end')()
+    return [labels[i] for i in range(1, len(labels) + 1)]
+
+
+def sid_node_tip(fork, sd_line, conquered, stat_answers, define=True):
+    h = sid_harness(fork, stat_answers, define)
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    _, tree = sid_tree_tab(h)
+    ok, err = h.eval('function(v, t, tree, s, c) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Some Notable", id = 4242, sd = { s }, conqueredBy = c and { id = 1, conqueror = '
+                     '{ type = "karui", id = 1 } } or nil }, { spec = { tree = tree } }) end) return ok, e end')(
+        view, tip, tree, sd_line, conquered)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_sid_stat_id_positions(fork):
+    """SID1 ~ SID6 -- 永恆珠寶清單提示 / 征服節點浮窗 / 紋身下拉提示與說明標籤:passive + 節點 stat id 查 stat。"""
+    # SID1 永恆珠寶清單提示:每項以該 legion 節點(或附加)的 stat id 查
+    h, ok, err, tips = sid_popup_tip(fork, "FindTimelessJewel", "nodeSelect", SID_STAT)
+    flat = [_norm(l) for t in tips for l in t]
+    check("%s SID1 永恆珠寶清單提示本身不出錯" % fork, ok, repr(err))
+    check("%s SID1 清單提示說明行帶 passive 與該節點的 stat id 查 stat" % fork,
+          (SID_DEXINT, "passive", "sid_dex_int") in [(_norm(l), c, i) for l, c, i in h.stat_calls],
+          "calls=%r" % h.stat_calls)
+    check("%s SID1 清單提示顯示帶 id 的答案(不是不帶 id 的)" % fork,
+          "SID +(6-8) 敏捷和智慧" in flat and not any(x.startswith("P ") for x in flat), "tips=%r" % tips)
+    check("%s SID1 不是樹資料 stat 行的說明(合成節點說明)不帶 id 查 stat" % fork,
+          not any(_norm(l) == SID_HYBRID and i for l, c, i in h.stat_calls), "calls=%r" % h.stat_calls)
+    # SID5 帶 id 查不到:與沒有 PobToolsTranslateStat 的舊引擎畫面相同(照原本的路)
+    hm, okm, errm, tipsm = sid_popup_tip(fork, "FindTimelessJewel", "nodeSelect", {})
+    h0, ok0, err0, tips0 = sid_popup_tip(fork, "FindTimelessJewel", "nodeSelect", None, define=False)
+    check("%s SID5 清單提示帶 id 查不到時照原本的路(與舊引擎相同)" % fork,
+          okm and ok0 and tipsm == tips0, "tips=%r 舊引擎=%r" % (tipsm, tips0))
+    # SID2 征服節點浮窗:sd 行(值已擲出)依樹資料樣板找到 stat id
+    h, ok, err, lines = sid_node_tip(fork, SID_DEXINT_ROLLED, True, SID_STAT)
+    check("%s SID2 征服節點浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s SID2 征服節點說明行以 passive + 樹資料的 stat id 查(擲出的值也對得到樣板)" % fork,
+          (SID_DEXINT_ROLLED, "passive", "sid_dex_int") in [(_norm(l), c, i) for l, c, i in h.stat_calls],
+          "calls=%r" % h.stat_calls)
+    check("%s SID2 征服節點顯示帶 id 的答案" % fork, "SID +7 敏捷和智慧" in [_norm(l) for l in lines], "lines=%r" % lines)
+    hn, okn, errn, linesn = sid_node_tip(fork, SID_DEXINT_ROLLED, False, SID_STAT)
+    check("%s SID2 沒被征服的節點不帶 id(照 N4 的 passive 查表)" % fork,
+          okn and "P 增加 +7 敏捷與智慧" in [_norm(l) for l in linesn]
+          and not any(i for l, c, i in hn.stat_calls), "lines=%r calls=%r" % (linesn, hn.stat_calls))
+    hx, okx, errx, linesx = sid_node_tip(fork, SID_DEXINT_ROLLED, True,
+                                         {k: v for k, v in SID_STAT.items() if k[2] is None})
+    check("%s SID5 征服節點帶 id 查不到時退回不帶 id 的 passive 查表(現行答案)" % fork,
+          okx and "P 增加 +7 敏捷與智慧" in [_norm(l) for l in linesx], "lines=%r calls=%r" % (linesx, hx.stat_calls))
+    # SID3 紋身下拉提示 / SID4 說明標籤:以該紋身節點的 stat id 查
+    h, ok, err, tips = sid_popup_tip(fork, "ModifyNodePopup", "modSelect", SID_STAT)
+    check("%s SID3 紋身彈窗本身不出錯" % fork, ok, repr(err))
+    check("%s SID3 紋身下拉提示帶 passive 與紋身的 stat id 查 stat" % fork,
+          ok and [_norm(l) for l in tips[0]] == ["SID +2 敏捷"]
+          and (SID_TATTOO, "passive", "sid_tattoo_dex") in [(_norm(l), c, i) for l, c, i in h.stat_calls],
+          "tips=%r calls=%r" % (tips, h.stat_calls))
+    check("%s SID4 紋身說明標籤帶 stat id 查 stat" % fork, sid_labels(h) == ["^7SID +2 敏捷"], repr(sid_labels(h)))
+    okS, errS = h.eval('function() local ok, e = pcall(function() local dd = main.popups[1].controls.modSelect '
+                       'dd.selFunc(1, dd.list[1]) end) return ok, e end')()
+    check("%s SID4 換選取(selFunc)重建說明標籤仍帶 stat id" % fork,
+          okS and sid_labels(h) == ["^7SID +2 敏捷"], "labels=%r %r" % (sid_labels(h), errS))
+    after = h.eval('function(s) return main:WrapString(s, 16, 375)[1] end')(SID_TATTOO)
+    check("%s SID4 彈窗建完後 WrapString 不再帶 stat id 查" % fork, after == SID_TATTOO, repr(after))
+    # SID6 沒有樹資料(tree 不帶 legion/tattoo)時不報錯、不帶 id
+    hz = sid_harness(fork, SID_STAT)
+    view = make(hz, "PassiveTreeView")
+    tip = make(hz, "Tooltip")
+    okz, errz = hz.eval('function(v, t, s) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                        '{ dn = "N", id = 1, sd = { s }, conqueredBy = { id = 1 } }, {}) end) return ok, e end')(
+        view, tip, SID_DEXINT_ROLLED)
+    check("%s SID6 征服節點但拿不到樹資料:不報錯、不帶 id" % fork,
+          okz and not any(i for l, c, i in hz.stat_calls), "err=%r calls=%r" % (errz, hz.stat_calls))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -4037,6 +4247,7 @@ def main():
         test_n2_item_single_line_note(fork)
         test_n3_pair_one_line_answer(fork)
         test_n4_node_single_line_note(fork)
+        test_sid_stat_id_positions(fork)
         test_groups_anoint_popup(fork)
         test_groups_node_flavour(fork)
         test_groups_gem_flavour(fork)
