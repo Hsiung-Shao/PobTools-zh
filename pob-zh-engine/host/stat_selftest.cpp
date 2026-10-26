@@ -1877,6 +1877,66 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
+	// ---- T:POB 尾端裝飾(使用者裁定 2026-10-26)-----------------------------------------------
+	// 製作/自訂詞綴下拉的「 (Prefix)」「 ^8(Suffix)」與不支援詞綴的「 ^8(Not supported in PoB yet)」:剝掉後
+	// 本文照常查表(GGPK 優先),再接回 —— 前/後綴用字典的「Prefix/Suffix」譯法,註記維持英文且原樣保留。
+	// 剝除後的本文查表優先於整串舊鍵;本文查不到時才走原本的整串路徑(不會變英文)。
+	printf("\n=== T 尾端裝飾(Prefix/Suffix/Not supported) ===\n");
+	{
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto expectT = [&](const char* in, const std::string& want, const char* name) {
+			const std::string got = lk(in);
+			check(got == want, name);
+			if (got != want) printf("           %s\n           got  '%s'\n           want '%s'\n", in, got.c_str(), want.c_str());
+		};
+		// 出貨資料:本文以 stat 查表(GGPK),合併表的舊樣板「增加 #%火焰傷害」不再勝出
+		expectT("(7-12)% increased Fire Damage (Suffix)", u8"增加 (7-12)% 火焰傷害 (後綴)",
+		        "T1 自訂詞綴下拉「 (Suffix)」:本文照 GGPK、接回 (後綴)");
+		expectT("(7-12)% increased Fire Damage ^8(Prefix)", u8"增加 (7-12)% 火焰傷害 ^8(前綴)",
+		        "T2 工藝詞綴下拉「 ^8(Prefix)」:色碼原樣保留、接回 (前綴)");
+		// 註記:引擎不知道這行的語境(物品/寶石/天賦由 inject 依 stat id 先查),本文取「同一行不帶註記」的答案
+		{
+			const std::string bare = lk("^xF05050(7-12)% increased Fire Damage");
+			const std::string got = lk("^xF05050(7-12)% increased Fire Damage ^8(Not supported in PoB yet)");
+			const bool ok3 = bare != "(null)" && got == bare + " ^8(Not supported in PoB yet)";
+			check(ok3, "T3 不支援註記:本文與不帶註記的同一行相同,註記英文原樣(含 ^8)接回");
+			if (!ok3) printf("           bare='%s' got='%s'\n", bare.c_str(), got.c_str());
+		}
+		expectT("Bleeding Enemies you Kill Explode, dealing (2-3)% of/their Maximum Life as Physical Damage (Prefix)",
+		        u8"擊殺流血的敵人時產生爆炸，造成等同其 (2-3)% 最大生命的物理傷害 (前綴)",
+		        "T4 「/」串接的兩行描述帶 (Prefix):整句重組後接回 (前綴)");
+		// 植入的複本:整串舊鍵與本文新鍵並存
+		const std::wstring vroot = root + L"t_deco\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		const std::vector<std::pair<std::string, std::string>> kUiT = {
+		    {"Zzqdeco gain 5 power (Suffix)", u8"舊整串 5 威力 (後綴)"},
+		    {"Zzqdeco gain 5 power (Not supported in PoB yet)", u8"舊註記整串 5 威力 (Not supported in PoB yet)"},
+		    {"Zzqonly whole 5 (Suffix)", u8"整串才有 5 (後綴)"}};
+		const std::vector<std::pair<std::string, std::string>> kFullT = {{"Zzqdeco gain 5 power", u8"新本文 5 威力"}};
+		bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) && plant_file(loc + L"ui.json", kUiT) &&
+		          plant_file(loc + L"ggpk_full.json", kFullT);
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_reload();
+		const std::string t5 = lk("Zzqdeco gain 7 power (Suffix)");
+		const std::string t6 = lk("^xF05050Zzqdeco gain 7 power ^8(Not supported in PoB yet)");
+		const std::string t7 = lk("Zzqonly whole 9 (Suffix)");
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vroot);
+		if (!ok) printf("           setup t_deco failed %s\n", w.c_str());
+		check(ok && t5 == u8"新本文 7 威力 (後綴)", "T5 剝除後的本文查表優先於整串舊鍵");
+		if (t5 != u8"新本文 7 威力 (後綴)") printf("           got '%s'\n", t5.c_str());
+		check(ok && t6 == u8"^xF05050新本文 7 威力 ^8(Not supported in PoB yet)", "T6 註記同規則:本文新鍵優先、註記原樣接回");
+		if (t6 != u8"^xF05050新本文 7 威力 ^8(Not supported in PoB yet)") printf("           got '%s'\n", t6.c_str());
+		check(ok && t7 == u8"整串才有 9 (後綴)", "T7 本文查不到時退回整串路徑(不會變英文)");
+		if (t7 != u8"整串才有 9 (後綴)") printf("           got '%s'\n", t7.c_str());
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。

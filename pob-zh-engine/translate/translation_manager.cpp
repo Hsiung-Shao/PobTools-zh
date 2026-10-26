@@ -3276,10 +3276,99 @@ static const char *slash_group_lookup(const std::string &input) {
     return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
+/* POB's own trailing decorations on a mod line (使用者裁定 2026-10-26):
+**   " (Prefix)" / " (Suffix)"            crafting / custom-modifier rows (ItemsTab)
+**   " ^8(Prefix)" / " ^8(Suffix)"        bench-crafted rows
+**   " ^8(Not supported in PoB yet)"      main.notSupportedTooltipText, any unsupported line
+** True when `s` ends in one of them, preceded by its separator (spaces and/or
+** one colour escape -- a bare "Word(Prefix)" is not POB's). body_end is where
+** the separator starts; word is what stands inside the parentheses. */
+static bool split_pob_tail(const std::string &s, size_t &body_end, std::string &word) {
+    static const char *const kWords[] = { "Prefix", "Suffix", "Not supported in PoB yet" };
+    if (s.size() < 4 || s.back() != ')') return false;
+    const size_t lp = s.rfind('(');
+    if (lp == std::string::npos || lp == 0) return false;
+    const std::string inner = s.substr(lp + 1, s.size() - lp - 2);
+    bool known = false;
+    for (const char *w : kWords) known = known || inner == w;
+    if (!known) return false;
+    size_t st = lp;
+    if (st >= 2 && s[st - 2] == '^' && s[st - 1] >= '0' && s[st - 1] <= '9') {
+        st -= 2;
+    } else if (st >= 8 && s[st - 8] == '^' && s[st - 7] == 'x') {
+        bool hex = true;
+        for (size_t i = st - 6; i < st; i++) hex = hex && isxdigit((unsigned char)s[i]);
+        if (hex) st -= 8;
+    }
+    while (st > 0 && s[st - 1] == ' ') st--;
+    if (st == 0 || st == lp) return false;
+    body_end = st;
+    word = inner;
+    return true;
+}
+
+/* Step -1 of translation_lookup: a line carrying one of POB's trailing
+** decorations is the mod line + the decoration, never a sentence of its own.
+** Priority (the GGPK wording first, 使用者裁定 2026-10-26「直接用 GGPK 繁中」):
+**   1. (Prefix) / (Suffix) only: the body through the stat lookup
+**      (stats_by_id.json = GGPK's templates, ctx "item" -- only the crafting
+**      and custom-modifier rows of an item carry these; leading colour kept)
+**   2. the body through the whole pipeline below (source, "/" groups, merged
+**      exact / patterns...) -- the same answer the undecorated line gets.
+**      The note goes straight here: it ends lines of every context (item,
+**      gem, passive), and the inject already asks the stat lookup with the
+**      right ctx and stat ids where it knows them (item mod / gem / node
+**      lines); what reaches the engine with a note is a line whose context
+**      is not known here, so it gets what the bare line gets
+**   3. only when the body has no translation at all: nullptr, and the caller
+**      goes on with the WHOLE string (old flat keys that carry the decoration,
+**      the trailing-note step...), so nothing turns English that was not
+** A hit for the body always wins over any whole-string key. The decoration
+** goes back as written -- spaces and colour escape included: "Prefix" /
+** "Suffix" as the dictionary words them (前綴 / 後綴), POB's "Not supported
+** in PoB yet" stays English (使用者裁定). Answers live in the lookup cache. */
+static const char *decorated_tail_lookup(const char *english) {
+    const std::string in(english);
+    size_t body_end = 0;
+    std::string word;
+    if (!split_pob_tail(in, body_end, word)) return nullptr;
+    auto cit = s_lookup_cache_active->find(in);
+    if (cit != s_lookup_cache_active->end()) return cit->second.empty() ? nullptr : cit->second.c_str();
+    const std::string body = in.substr(0, body_end);
+    std::string tail = in.substr(body_end);
+    std::string zb;
+    const bool affix_tag = word == "Prefix" || word == "Suffix";
+    if (affix_tag) {
+        if (const char *z = translation_lookup_stat_ids_colored(body.c_str(), "item", nullptr)) zb = z;
+    }
+    if (zb.empty()) {
+        const char *z = translation_lookup(body.c_str());
+        if (z && body != z) zb = z;   /* copied now: the next lookup may rehash the caches */
+    }
+    if (zb.empty()) return nullptr;
+    if (affix_tag) {
+        const std::string *zw = nullptr;
+        if (s_active_source) {
+            auto sit = s_active_source->find(word);
+            if (sit != s_active_source->end() && !sit->second.empty()) zw = &sit->second;
+        }
+        if (!zw) {
+            auto it = s_translations.find(word);
+            if (it != s_translations.end() && !it->second.empty()) zw = &it->second;
+        }
+        if (zw) tail.replace(tail.size() - 1 - word.size(), word.size(), *zw);
+    }
+    auto ins = s_lookup_cache_active->emplace(in, zb + tail).first;
+    return ins->second.c_str();
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
     translation_wait_ready();
     if (s_translations.empty()) return nullptr;
+
+    /* -1. POB's trailing decoration: the body first (see decorated_tail_lookup) */
+    if (const char *dz = decorated_tail_lookup(english)) return dz;
 
     /* One-time deferred diagnostic: check lua-utf8.dll load status.
      * This runs on the first lookup (by which time Lua is fully initialized). */

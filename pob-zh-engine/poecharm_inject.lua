@@ -1773,9 +1773,17 @@ PATCHES["Tooltip"] = function(class)
 					statZh = statZh and statZh .. tail
 				elseif src == nil and nodeTipActive and not itemCtx then
 					-- not inside an item tooltip nested in the node tooltip
-					-- (jewel socket): those lines are item text, not the passive's
-					-- the unsupported note is not part of the stat: kept as tail
-					statZh = pairLookup(nodeSdPairs, text) or zhByStat(text, "passive")
+					-- (jewel socket): those lines are item text, not the passive's.
+					-- The unsupported note (main.notSupportedTooltipText) is not
+					-- part of the stat: asked without it, put back after the
+					-- Chinese as written (使用者裁定 2026-10-26: stays English)
+					statZh = pairLookup(nodeSdPairs, text)
+					if not statZh then
+						local lead, rest = splitLeadColour(text)
+						local body, tail = splitNoteTail(rest)
+						statZh = zhByStat(lead .. body, "passive")
+						statZh = statZh and statZh .. tail
+					end
 				end
 			end
 			if zh then

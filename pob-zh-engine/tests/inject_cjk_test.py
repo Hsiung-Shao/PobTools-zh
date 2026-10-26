@@ -3949,6 +3949,43 @@ def test_slash_ctx_mastery(fork):
           ok0 and r0[5:7] == ["open:gem", "draw:gem"], repr(r0))
 
 
+# ---- N4:天賦浮窗單行帶不支援註記(使用者裁定 2026-10-26:註記維持英文、留在該行;本文照翻)----------
+# 上游 PassiveTreeView(PoE1 L1558-1561)/NotableDBControl:不支援的 sd 行畫成
+#   colorCodes.UNSUPPORTED .. line [.. main.notSupportedTooltipText]
+# 永恆珠寶征服後的節點(timeless_node_stat)走同一條。期望:剝註記以 passive 查 stat,中文後接回原註記。
+N4_EN = "10% increased Attack Speed"
+N4_ZH = "增加 10% 攻擊速度(stat)"
+
+
+def n4_tooltip(fork, stat_dict, note_on=True, define=True):
+    h = stat_harness(fork, stat_dict, define)
+    h.run(('colorCodes.UNSUPPORTED = "%s" main.notSupportedModTooltips = %s '
+           'main.notSupportedTooltipText = "%s"') % (FR3_UNSUP, "true" if note_on else "false", FR3_NOTE))
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    ok, err = h.eval('function(v, t, a) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Vaal Potency", id = 9001, unsupported = true, sd = { a } }, {}) '
+                     'end) return ok, e end')(view, tip, N4_EN)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_n4_node_single_line_note(fork):
+    """N4 -- 天賦浮窗單行不支援註記:剝註記以 passive 查 stat,中文後接回原註記與色碼。"""
+    h, ok, err, lines = n4_tooltip(fork, {N4_EN: N4_ZH})
+    check("%s N4 天賦浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s N4 以剝掉註記的英文、ctx passive 查 stat" % fork,
+          (N4_EN, "passive") in [(_norm(l), c) for l, c in h.stat_calls if "Not supported" not in (l or "")],
+          "calls=%r" % h.stat_calls)
+    check("%s N4 命中後中文行尾接回英文註記、保留不支援色碼" % fork,
+          FR3_UNSUP + N4_ZH + FR3_NOTE in lines, "lines=%r calls=%r" % (lines, h.stat_calls))
+    hn, okn, errn, linesn = n4_tooltip(fork, {N4_EN: N4_ZH}, note_on=False)
+    check("%s N4 註記關閉時中文行沒有註記" % fork, okn and FR3_UNSUP + N4_ZH in linesn, "lines=%r" % linesn)
+    hm, okm, errm, linesm = n4_tooltip(fork, {})
+    h0, ok0, err0, lines0 = n4_tooltip(fork, None, define=False)
+    check("%s N4 stat 未命中時與舊引擎相同(其餘路徑照舊)" % fork,
+          okm and linesm == lines0, "lines=%r 舊引擎=%r" % (linesm, lines0))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -3999,6 +4036,7 @@ def main():
         test_s8_legion_dropdown_by_id(fork)
         test_n2_item_single_line_note(fork)
         test_n3_pair_one_line_answer(fork)
+        test_n4_node_single_line_note(fork)
         test_groups_anoint_popup(fork)
         test_groups_node_flavour(fork)
         test_groups_gem_flavour(fork)
