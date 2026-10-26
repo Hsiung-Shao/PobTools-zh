@@ -5506,6 +5506,7 @@
             "Strength's Damage bonus also applies to Reeling Speed at {0}% of its value",
             "Strength's Damage bonus applies to Projectile Attack Damage as well as Melee Damage",
             "Strength's Damage bonus applies to all Spell Damage as well",
+            "Strike Skills also target the previous location they were Used",
             "Strike Skills also target the previous location they were used",
             "Strike Skills which target additional Enemies can do so from {0}% further away",
             "Strikes an Enemy every {0} seconds",
