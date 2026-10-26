@@ -3713,12 +3713,19 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.5 Trailing parenthetical note: POB appends notes such as
-     *     " (Not Supported in PoB yet)" to otherwise-translatable lines,
-     *     which defeats the exact and pattern matches above. Split the note
+    /* 3.5 Trailing parenthetical note: a line ending in " (<note>)" ("(Unused)",
+     *     ...) defeats the exact and pattern matches above. Split the note
      *     off, translate the body recursively, translate the note when the
-     *     dictionary has it, and stitch the two back together. */
-    if (input.size() > 4 && input.back() == ')') {
+     *     dictionary has it, and stitch the two back together.
+     *     POB's own decorations -- (Prefix) / (Suffix) / (Not supported in PoB
+     *     yet) -- are not notes for this step: decorated_tail_lookup (step -1)
+     *     owns them, and when it found no translation for the body there is
+     *     none to give. Left to this step they were split at whatever " (" came
+     *     last, often one INSIDE the body ("Life (5-6) gained ^8(Not supported
+     *     in PoB yet)" -> "生命 (5-6) gained ..."). */
+    size_t pob_tail_end = 0;
+    std::string pob_tail_word;
+    if (input.size() > 4 && input.back() == ')' && !split_pob_tail(input, pob_tail_end, pob_tail_word)) {
         size_t open = input.rfind(" (");
         if (open != std::string::npos && open > 0) {
             std::string suffix = input.substr(open + 2, input.size() - open - 3);

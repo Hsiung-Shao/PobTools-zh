@@ -47,6 +47,14 @@ namespace {
 
 int g_pass = 0;
 int g_fail = 0;
+// 等資料進來才會生效的斷言(跨分支依賴):不算通過也不算失敗,但在結果行列出,不會被看漏
+int g_wait = 0;
+
+void wait_for_data(const char* what, const std::string& now, const std::string& want)
+{
+	g_wait++;
+	printf("  [WAIT]  %s\n           (出貨資料尚未帶這筆;目前 '%s',資料進來後要是 '%s')\n", what, now.c_str(), want.c_str());
+}
 
 void check(bool ok, const char* what)
 {
@@ -253,7 +261,7 @@ bool patch_by_id(const std::wstring& path,
 
 int RunStatSelftest(const std::wstring& statsJsonArg)
 {
-	g_pass = g_fail = 0;
+	g_pass = g_fail = g_wait = 0;
 	const std::wstring dir = exe_dir();
 	const std::wstring shippedLocale = dir + L"Data\\poe1\\zh-rTW\\";
 	const std::wstring statsJson = statsJsonArg.empty() ? shippedLocale + L"stats_by_id.json" : statsJsonArg;
@@ -1515,6 +1523,15 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const Said magWith = ask(kMagma2, "item");
 		std::string body, why2;
 		bool setup = read_bytes(flagRoot + L"zh-rTW\\stats_by_id.json", body);
+		// 腎上腺素那條(kUnflagged[4])由使用者裁定 2026-10-26 改照 GGPK(資料端 keep_literals,另一分支):
+		// 出貨資料帶上旗標後,它就不再是「未標記」,G3a 不拿它比。
+		const char* kAdrKey = "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0";
+		bool adrFlagged = false;
+		try {
+			const auto shippedDoc = nlohmann::json::parse(body);
+			adrFlagged = shippedDoc.contains("keep_literals") && shippedDoc["keep_literals"].is_object() &&
+			             shippedDoc["keep_literals"].contains(kAdrKey);
+		} catch (...) {}
 		auto variant = [&](const wchar_t* name, const char* plantKey, std::vector<std::string>& outs,
 		                   Said& mag) {
 			const std::wstring vroot = root + name + L"\\";
@@ -1538,8 +1555,11 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		Said magNo{true, {}}, magPlant{true, {}};
 		setup = setup && variant(L"keep_none", nullptr, noFlag, magNo);
 		setup = setup && variant(L"keep_dex", kDexKey, planted, magPlant);
-		check(setup && withFlag == noFlag, "G3a 拿掉全部旗標時,未標記的受影響鍵逐句不變");
-		if (!(setup && withFlag == noFlag))
+		bool same3a = setup && withFlag.size() == noFlag.size();
+		for (size_t i = 0; same3a && i < withFlag.size(); i++)
+			if (!(i == 4 && adrFlagged) && withFlag[i] != noFlag[i]) same3a = false;
+		check(same3a, "G3a 拿掉全部旗標時,未標記的受影響鍵逐句不變");
+		if (!same3a)
 			for (size_t i = 0; i < withFlag.size() && i < noFlag.size(); i++)
 				printf("           %s: with='%s' none='%s'\n", kUnflagged[i], withFlag[i].c_str(), noFlag[i].c_str());
 		check(setup && !magNo.null && magNo.s != kMagmaWant && !magWith.null && magWith.s == kMagmaWant,
@@ -1554,6 +1574,37 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			for (size_t i = 0; i < planted.size(); i++)
 				if (planted[i] != noFlag[i]) printf("           planted %s: '%s'(none '%s')\n", kUnflagged[i], planted[i].c_str(), noFlag[i].c_str());
 		(void)kKeepKey;
+		// G5:專精「Gain Adrenaline…per 100ms」英文寫死 100(毫秒)、GGPK 中文寫死 0.1(秒),字面數字不同。
+		// 使用者裁定 2026-10-26 照 GGPK「每 0.1 秒」,修在資料端(keep_literals,wip/round9-data)。
+		// G5a 先用測試字典植入旗標驗機制(現在就該綠);G5b 看出貨資料,資料帶上旗標才生效(之前列 WAIT)。
+		const char* kAdr = kUnflagged[4];
+		const std::string kAdrWant = u8"當暈眩時，每 0.1 秒暈眩持續時間，獲得腎上腺素 2 秒";
+		{
+			const std::wstring vroot = root + L"keep_adr\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			bool ok = build_dict_copy(shippedLocale, vroot + L"zh-rTW\\", statsJson, true, why2);
+			try {
+				auto doc = nlohmann::ordered_json::parse(body);
+				doc["keep_literals"][kAdrKey] = true;
+				ok = ok && write_bytes(vroot + L"zh-rTW\\stats_by_id.json", doc.dump(2));
+			} catch (...) { ok = false; }
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_reload();
+			const Said pas = ask(kAdr, "passive");
+			const Said itm = ask(kAdr, "item");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			check(ok && !pas.null && pas.s == kAdrWant, "G5a 植入旗標:專精行(passive)照 GGPK 顯示「每 0.1 秒」");
+			if (!(ok && !pas.null && pas.s == kAdrWant)) printf("           passive='%s'\n", shown(pas));
+			check(ok && !itm.null && itm.s == kAdrWant, "G5a' 植入旗標:同一行在物品情境也是「每 0.1 秒」");
+			if (!(ok && !itm.null && itm.s == kAdrWant)) printf("           item='%s'\n", shown(itm));
+		}
+		{
+			const Said now = ask(kAdr, "passive");
+			if (adrFlagged) expect(kAdr, "passive", kAdrWant, "G5b 出貨資料:專精行(passive)照 GGPK 顯示「每 0.1 秒」");
+			else wait_for_data("G5b 出貨資料:專精行(passive)照 GGPK 顯示「每 0.1 秒」", shown(now), kAdrWant);
+		}
 	}
 
 	// ---- H:多行描述的整句重組(ggpk_groups.json) ------------------------------------
@@ -1935,6 +1986,12 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (t6 != u8"^xF05050新本文 7 威力 ^8(Not supported in PoB yet)") printf("           got '%s'\n", t6.c_str());
 		check(ok && t7 == u8"整串才有 9 (後綴)", "T7 本文查不到時退回整串路徑(不會變英文)");
 		if (t7 != u8"整串才有 9 (後綴)") printf("           got '%s'\n", t7.c_str());
+		// T8:POB 裝飾只由 decorated_tail_lookup 處理;本文查不到時,「括號註記」步驟(3.5)不再拿本文裡更前面的
+		// 「 (」亂切(舊行為:「生命 (5-6) gained ^8(Not supported in PoB yet)」半中半英)。
+		expectT("Life (5-6) gained ^8(Not supported in PoB yet)", "(null)", "T8 註記行本文查不到:整行維持英文,不從本文中間切出半句中文");
+		expectT("Mana (5-6) gained ^8(Suffix)", "(null)", "T8b 前/後綴行本文查不到:同上");
+		// T9:不是 POB 裝飾的括號註記照舊由 3.5 處理
+		expectT("Chaos Orb (Unused)", u8"混沌石 ^9(未使用)", "T9 一般括號註記(Unused)照舊");
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
@@ -1967,6 +2024,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	const bool cleaned = GetFileAttributesW(root.c_str()) == INVALID_FILE_ATTRIBUTES;
 	check(cleaned, "ER 測試字典複本已刪除");
 
-	printf("\nstat selftest: %d passed, %d failed\n", g_pass, g_fail);
+	if (g_wait) printf("\nstat selftest: %d passed, %d failed, %d waiting for data\n", g_pass, g_fail, g_wait);
+	else printf("\nstat selftest: %d passed, %d failed\n", g_pass, g_fail);
 	return g_fail == 0 ? 0 : 3;
 }
