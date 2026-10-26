@@ -26597,8 +26597,11 @@
     }
   },
   "keep_literals": {
+    "display_link_stuff link_grace_period_8_second_override|!0 !0|buff_skill_stat_descriptions.txt|0": true,
     "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0": true,
-    "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0": true
+    "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0": true,
+    "is_blighted_map|#|stat_descriptions.txt|0": true,
+    "is_blighted_map|1|stat_descriptions.txt|0": true
   },
   "name_slots": {
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0": {
