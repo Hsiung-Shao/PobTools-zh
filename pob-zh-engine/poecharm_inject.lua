@@ -380,6 +380,9 @@ end
 --   byId[legion node.id / tattoo key] = that node's stat ids, sorted, " "-joined
 --   byLine[statLineKey(sd line)] = the ids of every node that has that line
 -- A line is matched as a whole (its template), never by its position.
+-- legion.nodes and legion.additions share some ids (38 vaal_small_* today,
+-- with the same stats on both sides): a shared id gets the union of both, so
+-- neither entry's stats are narrowed away.
 local statIdCache = setmetatable({}, { __mode = "k" })
 -- An sd line with its numbers and "(a-b)" ranges written as "#": a conquered
 -- node's rolled value ("+7") finds the data's template ("+(6-8)").
@@ -393,7 +396,7 @@ local function statIdIndex(tree, which)
 	if type(group) ~= "table" then return nil end
 	local hit = statIdCache[group]
 	if hit ~= nil then return hit or nil end
-	local byId, sets = {}, {}
+	local idSets, sets = {}, {}
 	local function addNode(key, node)
 		if key == nil or type(node) ~= "table" or type(node.stats) ~= "table" then return end
 		local ids = {}
@@ -401,8 +404,12 @@ local function statIdIndex(tree, which)
 			if type(id) == "string" then ids[#ids + 1] = id end
 		end
 		if #ids == 0 then return end
-		table.sort(ids)
-		byId[key] = table.concat(ids, " ")
+		local own = idSets[key]
+		if not own then
+			own = {}
+			idSets[key] = own
+		end
+		for _, id in ipairs(ids) do own[id] = true end
 		local lines = {}
 		for _, line in ipairs(type(node.sd) == "table" and node.sd or {}) do
 			if type(line) == "string" and line ~= "" then lines[#lines + 1] = line end
@@ -430,12 +437,16 @@ local function statIdIndex(tree, which)
 	elseif type(group.nodes) == "table" then
 		for key, node in pairs(group.nodes) do addNode(key, node) end
 	end
-	local byLine, any = {}, false
-	for k, set in pairs(sets) do
+	local function joined(set)
 		local t = {}
 		for id in pairs(set) do t[#t + 1] = id end
 		table.sort(t)
-		byLine[k] = table.concat(t, " ")
+		return table.concat(t, " ")
+	end
+	local byId, byLine, any = {}, {}, false
+	for key, set in pairs(idSets) do byId[key] = joined(set) end
+	for k, set in pairs(sets) do
+		byLine[k] = joined(set)
 		any = true
 	end
 	local idx = any and { byId = byId, byLine = byLine } or false
@@ -451,15 +462,37 @@ local function statIdSpan(tree, which, key)
 	return { byLine = idx.byLine, ids = key ~= nil and idx.byId[key] or nil }
 end
 
+-- The trimmed sd lines node.id has in the unmodified tree data, as a set:
+-- build.spec.tree.nodes[id] (ReplaceNode edits the spec's node, not this),
+-- else the table the spec node inherits from. nil when neither can be seen.
+local function originalSdLines(node, tree)
+	local nodes = type(tree) == "table" and tree.nodes or nil
+	local orig = type(nodes) == "table" and node.id ~= nil and nodes[node.id] or nil
+	if type(orig) ~= "table" or orig == node then
+		local mt = getmetatable(node)
+		local base = type(mt) == "table" and rawget(mt, "__index") or nil
+		orig = type(base) == "table" and base ~= node and base or nil
+	end
+	local sd = orig and rawget(orig, "sd")
+	if type(sd) ~= "table" then return nil end
+	local set = {}
+	for _, line in ipairs(sd) do
+		if type(line) == "string" then set[trim(line)] = true end
+	end
+	return set
+end
+
 -- One drawn line asked of the stat lookup under "passive" with the stat ids
 -- `span` has for it: the described node's ids when known, else those of every
 -- node with that line. A line the data does not have (a header, a reminder, a
--- hand-written description) is not asked. Colour lead and POB's unsupported
--- note are split off and put back. nil = no answer (the caller's path runs).
+-- hand-written description), or one span.skip lists (a conquered node's own
+-- lines), is not asked. Colour lead and POB's unsupported note are split off
+-- and put back. nil = no answer (the caller's path runs).
 local function zhByStatIds(text, span)
 	if not span then return nil end
 	local lead, rest = splitLeadColour(text)
 	local body, tail = splitNoteTail(rest)
+	if span.skip and span.skip[trim(body)] then return nil end
 	local lineIds = span.byLine[statLineKey(body)]
 	if not lineIds then return nil end
 	local zh = zhByStat(lead .. body, "passive", span.ids or lineIds)
@@ -894,10 +927,20 @@ PATCHES["PassiveTreeView"] = function(class)
 			local pok, pairsMap = pcall(buildSdPairs, node)
 			nodeTipActive = true
 			nodeSdPairs = pok and pairsMap or nil
-			-- a node a Timeless jewel conquered: its lines are tree.legion's (stat ids there)
+			-- a node a Timeless jewel conquered: the lines the jewel replaced or
+			-- added are tree.legion's (stat ids there); the node's own lines (its
+			-- sd in the unmodified tree) keep the plain passive lookup, so the same
+			-- line reads the same with or without the jewel. Original not visible:
+			-- no ids at all.
 			local spec = type(build) == "table" and build.spec or nil
-			nodeStatIds = type(node) == "table" and node.conqueredBy and type(spec) == "table"
+			local span = type(node) == "table" and node.conqueredBy and type(spec) == "table"
 				and statIdSpan(spec.tree, "legion") or nil
+			if span then
+				local okO, orig = pcall(originalSdLines, node, spec.tree)
+				span.skip = okO and orig or nil
+				if not span.skip then span = nil end
+			end
+			nodeStatIds = span
 			local ok, a, b, c = pcall(origTip, self, ...)
 			nodeTipActive, nodeSdPairs, nodeStatIds = prev, prevPairs, prevIds
 			if not ok then error(a, 0) end

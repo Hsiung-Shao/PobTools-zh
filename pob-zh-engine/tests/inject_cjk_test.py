@@ -4054,7 +4054,7 @@ function C:FindTimelessJewel()
 end
 """ % {"hybrid": SID_HYBRID}
 SID_TREE = """{
-	nodes = {},
+	nodes = { [4242] = { dn = "Some Notable", sd = { "Zzsid original line" } } },
 	legion = {
 		nodes = { { id = "lethal_pride_notable_dexint", dn = "Hit and Run", ["not"] = true,
 			sd = { "%(dexint)s" }, stats = { sid_dex_int = { min = 6, max = 8, index = 1 } } } },
@@ -4196,6 +4196,48 @@ def test_sid_stat_id_positions(fork):
           okz and not any(i for l, c, i in hz.stat_calls), "err=%r calls=%r" % (errz, hz.stat_calls))
 
 
+# SID7(審查第 10 輪):被征服節點「原本就有」的說明行不帶 legion 的 stat id。
+# 情境 = Divine Fervour(樹節點 30693,原有「+10 to Strength and Intelligence」)被征服、附加一行同樣板的 legion 行:
+# 原行照 passive 查表(不帶 id),只有附加/取代進來的行帶 legion id。
+SID7_ORIG = "+10 to Strength and Intelligence"
+SID7_ADD = "+3 to Strength and Intelligence"
+SID7_STAT = {
+    (SID7_ORIG, "passive", None): "增加 +10 力量與智慧",
+    (SID7_ORIG, "passive", "sid_add_strint"): "+10 力量和智慧(legion id)",
+    (SID7_ADD, "passive", None): "增加 +3 力量與智慧",
+    (SID7_ADD, "passive", "sid_add_strint"): "SID +3 力量和智慧",
+}
+SID7_TREE = """{
+	nodes = { [30693] = { dn = "Divine Fervour", sd = { "%(orig)s" } } },
+	legion = {
+		nodes = {},
+		additions = { { id = "karui_add_strint", dn = "Strength and Intelligence",
+			sd = { "+(2-4) to Strength and Intelligence" }, stats = { sid_add_strint = { min = 2, max = 4, index = 1 } } } },
+	},
+	tattoo = { nodes = {} },
+}""" % {"orig": SID7_ORIG}
+
+
+def test_sid_conquered_original_lines(fork):
+    """SID7 -- 被征服節點原有的說明行照 passive 查表(不帶 legion id),附加的 legion 行才帶 id。"""
+    h = sid_harness(fork, SID7_STAT)
+    view = make(h, "PassiveTreeView")
+    tip = make(h, "Tooltip")
+    tree = h.eval("function() return %s end" % SID7_TREE)()
+    ok, err = h.eval('function(v, t, tree, a, b) local ok, e = pcall(function() v:AddNodeTooltip(t, '
+                     '{ dn = "Divine Fervour", id = 30693, sd = { a, b }, conqueredBy = { id = 1, conqueror = '
+                     '{ type = "karui", id = 1 } } }, { spec = { tree = tree } }) end) return ok, e end')(
+        view, tip, tree, SID7_ORIG, SID7_ADD)
+    lines = [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+    calls = [(_norm(l), c, i) for l, c, i in h.stat_calls]
+    check("%s SID7 征服節點浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s SID7 節點原有的行不帶 legion id、照 passive 查表(與沒插珠寶同字)" % fork,
+          "增加 +10 力量與智慧" in lines and (SID7_ORIG, "passive", "sid_add_strint") not in calls,
+          "lines=%r calls=%r" % (lines, calls))
+    check("%s SID7 附加進來的 legion 行帶 legion id" % fork,
+          "SID +3 力量和智慧" in lines, "lines=%r calls=%r" % (lines, calls))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -4248,6 +4290,7 @@ def main():
         test_n3_pair_one_line_answer(fork)
         test_n4_node_single_line_note(fork)
         test_sid_stat_id_positions(fork)
+        test_sid_conquered_original_lines(fork)
         test_groups_anoint_popup(fork)
         test_groups_node_flavour(fork)
         test_groups_gem_flavour(fork)
