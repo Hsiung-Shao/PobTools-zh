@@ -28,6 +28,7 @@
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include "translation_manager.h"
 #include "../host/error_log.h"
@@ -60,6 +61,17 @@ static std::unordered_map<std::string, FillPlan>    s_reverse_pattern;   /* Chin
 static std::unordered_map<std::string, std::string> s_reverse_origin;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_origin;
 static std::unordered_map<std::string, FillPlan>    s_forward_pattern;   /* English pattern → Chinese fill plan */
+/* s_forward_pattern is keyed lower-case (POB and the dictionaries disagree on
+** case: "on hit" / "on Hit"), so two keys that differ ONLY in case share one
+** slot and the later file's wording answered both: stats.json's GGPK line
+** "Auras from your Skills have {0}% increased Effect on you for" (每個影響你的捷光環,)
+** lost to an older "...increased effect on you for" (你每受一個捷光環影響,).
+** For such collisions only, each case form also keeps its own plan here, keyed
+** by its case-preserved pattern; an input whose case-preserved pattern is one of
+** them takes that plan (find_forward_pattern). Anything else is unchanged.
+** s_forward_pattern_case_of: lower-case key -> case form of its current plan. */
+static std::unordered_map<std::string, FillPlan>    s_forward_pattern_cased;
+static std::unordered_map<std::string, std::string> s_forward_pattern_case_of;
 static std::unordered_map<std::string, std::string> s_reverse_bases;    /* Chinese base type → English (from items.json base entries) */
 /* Forward twin of s_reverse_bases: the English base type names. Only used to
 ** recognise POB's generated "<title>, <base type>" item names — see the
@@ -1797,6 +1809,47 @@ static int load_json_group_catalog(const std::string &filepath) {
     return count;
 }
 
+/* One forward pattern in, under its case-preserved key `cased` (normalised,
+** not lower-cased). overwrite = the merged map's rule for this entry (a
+** purpose-built entry overwrites; a line derived from a multi-line key only
+** fills an empty slot). The lower-case map behaves exactly as before; a second
+** case form of a key starts keeping every form's own plan (see
+** s_forward_pattern_cased). */
+static void put_forward_pattern(const std::string &cased, FillPlan &&plan, bool overwrite) {
+    const std::string lk = to_ascii_lower(cased);
+    auto it = s_forward_pattern.find(lk);
+    if (it == s_forward_pattern.end()) {
+        s_forward_pattern.emplace(lk, std::move(plan));
+        s_forward_pattern_case_of[lk] = cased;
+        return;
+    }
+    std::string &owner = s_forward_pattern_case_of[lk];
+    if (owner != cased) {
+        s_forward_pattern_cased.emplace(owner, it->second);   /* the current form keeps its plan */
+        if (overwrite) s_forward_pattern_cased[cased] = plan;
+        else s_forward_pattern_cased.emplace(cased, plan);
+    } else if (overwrite) {
+        auto c = s_forward_pattern_cased.find(cased);
+        if (c != s_forward_pattern_cased.end()) c->second = plan;
+    }
+    if (overwrite) {
+        it->second = std::move(plan);
+        owner = cased;
+    }
+}
+
+/* The forward plan for an input's pattern: its exact case form when two forms
+** collided (s_forward_pattern_cased), else the lower-case map. `cased` is the
+** input after normalize_placeholders + digits_to_hash, NOT lower-cased. */
+static const FillPlan *find_forward_pattern(const std::string &cased) {
+    if (!s_forward_pattern_cased.empty()) {
+        auto c = s_forward_pattern_cased.find(cased);
+        if (c != s_forward_pattern_cased.end()) return &c->second;
+    }
+    auto it = s_forward_pattern.find(to_ascii_lower(cased));
+    return it == s_forward_pattern.end() ? nullptr : &it->second;
+}
+
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
                                   std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
@@ -2083,7 +2136,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
                 /* Source copy follows the merged map's rule here: overwrite. */
                 if (pattern_sink && fwd) (*pattern_sink)[fwd_key] = fwd_plan;
-                if (merge && fwd) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+                if (merge && fwd) put_forward_pattern(norm_key, std::move(fwd_plan), /*overwrite=*/true);
             }
         }
         std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
@@ -2135,7 +2188,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (line_fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (line_fwd && merge) put_forward_pattern(nk, build_fill_plan(k, v, nv), /*overwrite=*/false);
                         /* Source copy keeps this spot's rule too: first one wins. */
                         if (line_fwd && pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
@@ -2950,6 +3003,8 @@ void translation_shutdown(void) {
     s_reverse_bases.clear();
     s_base_items_en.clear();
     s_forward_pattern.clear();
+    s_forward_pattern_cased.clear();
+    s_forward_pattern_case_of.clear();
     s_term_glossary.clear();
     s_lookup_cache.clear();
     s_item_title_cache.clear();
@@ -3431,8 +3486,31 @@ static const char *decorated_tail_lookup(const char *english) {
     return ins->second.c_str();
 }
 
+/* translation_keep_english (see the header). Registered from the Lua thread,
+** read by every lookup; the count lets a lookup skip the lock while nothing is
+** registered. Not cleared by translation_shutdown / reload on purpose. */
+static std::unordered_set<std::string> s_keep_english;
+static std::mutex s_keep_english_mu;
+static std::atomic<size_t> s_keep_english_n{0};
+static const size_t kKeepEnglishCap = 50000;
+
+void translation_keep_english(const char *s) {
+    if (!s || !*s) return;
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    if (s_keep_english.size() >= kKeepEnglishCap) return;
+    if (s_keep_english.insert(s).second) s_keep_english_n.store(s_keep_english.size());
+}
+
+static bool is_keep_english(const char *s) {
+    if (s_keep_english_n.load() == 0) return false;
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    return s_keep_english.count(s) > 0;
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
+    /* a display string registered to stay English (a unique's flavour text) */
+    if (is_keep_english(english)) return nullptr;
     translation_wait_ready();
     if (s_translations.empty()) return nullptr;
 
@@ -3537,11 +3615,11 @@ const char* translation_lookup(const char *english) {
     ** the tooltip, where it carries a real number. */
     if ((pattern != to_ascii_lower(input) || input.find('#') != std::string::npos)
         && !s_forward_pattern.empty()) {
-        auto pit = s_forward_pattern.find(pattern);
-        if (pit != s_forward_pattern.end()) {
+        const FillPlan *plan = find_forward_pattern(digits_to_hash(normalize_placeholders(input)));
+        if (plan) {
             /* 輸入的第 i 個 '#' 一定對得上樣板的第 i 個 '#' —— 兩者雜湊後是同一
             ** 個字串,這正是它命中的原因。計畫就是照這個索引寫的。 */
-            std::string result = fill_plan(pit->second, hash_slot_values(input, /*normalize_ph=*/true));
+            std::string result = fill_plan(*plan, hash_slot_values(input, /*normalize_ph=*/true));
             /* Diagnostic: log pattern hits (first 20 only) */
             static int s_hit_count = 0;
             if (s_hit_count < 20) {
@@ -3582,9 +3660,8 @@ const char* translation_lookup(const char *english) {
         }
         const std::string epat = to_ascii_lower(digits_to_hash(normalize_placeholders(esc)));
         if (epat != to_ascii_lower(esc) || esc.find('#') != std::string::npos) {
-            auto pit = s_forward_pattern.find(epat);
-            if (pit != s_forward_pattern.end()) {
-                std::string result = fill_plan(pit->second, hash_slot_values(esc, /*normalize_ph=*/true));
+            if (const FillPlan *plan = find_forward_pattern(digits_to_hash(normalize_placeholders(esc)))) {
+                std::string result = fill_plan(*plan, hash_slot_values(esc, /*normalize_ph=*/true));
                 if (const char *r = accept(literal_to_newlines(result), /*check_hash=*/true)) return r;
             }
         }
@@ -3782,6 +3859,28 @@ const char* translation_lookup(const char *english) {
         }
     }
 
+    /* 3.46 A wholly bracketed run "[...]" with no '|' inside (not POB's
+     *      "[Tag|Shown]" markup) and no other bracket: the custom-modifier list
+     *      draws an essence's mod as "<name>   ^8[32% increased Movement Speed]
+     *      (Prefix)", and that run reaches here on its own (3.4). The inside is
+     *      a whole stat line: translated through the full pipeline, put back
+     *      between the brackets. Left to the glossary, a term matched INSIDE
+     *      "32%" (「[3增加 2% 移動速度]」, 使用者裁定 2026-10-27). The inside holds
+     *      no bracket, so this cannot recurse. */
+    if (input.size() > 2 && input.front() == '[' && input.back() == ']') {
+        const std::string inner = input.substr(1, input.size() - 2);
+        if (inner.find_first_of("[]|") == std::string::npos) {
+            if (const char *inner_zh = translation_lookup(inner.c_str())) {
+                if (inner != inner_zh) {
+                    std::string combined = "[";
+                    combined += inner_zh;
+                    combined += "]";
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
+                }
+            }
+        }
+    }
+
     /* 3.5 Trailing parenthetical note: a line ending in " (<note>)" ("(Unused)",
      *     ...) defeats the exact and pattern matches above. Split the note
      *     off, translate the body recursively, translate the note when the
@@ -3888,10 +3987,20 @@ const char* translation_lookup(const char *english) {
             }
             return false;
         };
-        auto boundary_ok = [&input](size_t pos, size_t len) {
+        /* A term is a whole word AND a whole number: one that begins with a
+        ** digit cannot start inside a number ("2% increased Movement Speed"
+        ** inside "32% ..." left a stray "3": 「[3增加 2% 移動速度]」), nor can
+        ** one that ends with a digit stop inside one. */
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        auto boundary_ok = [&input, &is_digit](size_t pos, size_t len) {
             if (pos > 0 && is_ascii_alpha(input[pos - 1])) return false;
             size_t end = pos + len;
             if (end < input.size() && is_ascii_alpha(input[end])) return false;
+            if (len > 0 && pos > 0 && is_digit(input[pos]) && (is_digit(input[pos - 1]) || input[pos - 1] == '.'))
+                return false;
+            if (len > 0 && end < input.size() && is_digit(input[end - 1]) &&
+                (is_digit(input[end]) || (input[end] == '.' && end + 1 < input.size() && is_digit(input[end + 1]))))
+                return false;
             return true;
         };
 
@@ -3973,6 +4082,53 @@ const char* translation_lookup(const char *english) {
                 }
                 result.append(input, cur, std::string::npos);
                 if (const char *r_ = accept(std::move(result), /*check_hash=*/false)) return r_;
+            }
+        }
+    }
+
+    /* 4.5 Column runs, last resort: POB lays a drop-down row out as
+     *     "<name><48 spaces><stat line>" (the Timeless jewel / tattoo pickers,
+     *     TreeTab.lua). Nothing above covered the whole row, so each column --
+     *     the runs between 3+ spaces -- is translated on its own through the
+     *     full pipeline and the row is put back with its spacing as it was.
+     *     Every column or nothing, as everywhere; a column without letters
+     *     (already Chinese) or one the whitelist keeps English counts as done.
+     *     Last on purpose: a row the glossary covers is unchanged. Before the
+     *     glossary learnt number boundaries (step 4) it "covered"
+     *     "15% increased Attack Speed" by matching "5% increased Attack Speed"
+     *     inside "15%" (「1增加 5% 攻擊速度」). A column holds no 3-space run,
+     *     so this cannot recurse. */
+    if (!exact_blocked && input.find("   ") != std::string::npos) {
+        struct Col { std::string text, gap; };
+        std::vector<Col> cols;
+        size_t p = 0;
+        while (p < input.size()) {
+            size_t g = input.find("   ", p);
+            if (g == std::string::npos) { cols.push_back({input.substr(p), std::string()}); break; }
+            size_t ge = input.find_first_not_of(' ', g);
+            if (ge == std::string::npos) ge = input.size();
+            cols.push_back({input.substr(p, g - p), input.substr(g, ge - g)});
+            p = ge;
+        }
+        if (cols.size() >= 2) {
+            bool all_ok = true, translated_any = false;
+            std::string rebuilt;
+            rebuilt.reserve(input.size() + 32);
+            for (const Col &c : cols) {
+                bool has_alpha = false;
+                for (char ch : c.text) if (is_ascii_alpha(ch)) { has_alpha = true; break; }
+                if (!has_alpha || covered_by_whitelist(c.text)) {
+                    rebuilt += c.text;
+                } else {
+                    const char *zh = translation_lookup(c.text.c_str());
+                    if (!zh || c.text == zh) { all_ok = false; break; }
+                    rebuilt += zh;
+                    translated_any = true;
+                }
+                rebuilt += c.gap;
+            }
+            if (all_ok && translated_any) {
+                if (const char *r_ = accept(std::move(rebuilt), /*check_hash=*/false)) return r_;
             }
         }
     }

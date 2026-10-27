@@ -145,6 +145,15 @@ int translation_group_lines(const char *const *lines, int n, const char *ctx, co
 ** ctx, nullptr for the default (static storage, overwritten by the next call). */
 const char* translation_set_slash_context(const char *ctx);
 
+/* A display string that must be drawn in English exactly as given (使用者裁定
+** 2026-10-27: a unique's flavour text stays English). From now on
+** translation_lookup answers nullptr for that exact string -- before its exact
+** map, caches, patterns and glossary -- so neither the tooltip that registered it
+** nor the draw-time lookup translates it. Exact bytes, colour codes included;
+** kept across translation_reload (the tooltip holding the line is not rebuilt);
+** bounded (registrations past the cap are ignored). nullptr / "" is ignored. */
+void translation_keep_english(const char *s);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a

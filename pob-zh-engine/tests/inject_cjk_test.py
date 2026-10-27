@@ -751,6 +751,10 @@ function C:AddItemTooltip(tooltip, item, slot, dbMode, maxWidth)
 	for _, modLine in ipairs(item.explicitModLines or {}) do
 		tooltip:AddLine(16, colorCodes.MAGIC..modLine.line, "FONTIN SC", MODLINE_ARG)
 	end
+	-- 上游「Show flavour text」段(兩分支相同):每行 colorCodes.UNIQUE .. line、FONTIN SC ITALIC
+	for _, line in ipairs(item.flavourLines or {}) do
+		tooltip:AddLine(20, colorCodes.UNIQUE .. line, "FONTIN SC ITALIC")
+	end
 	if item.explode then error("synthetic AddItemTooltip failure") end
 end
 """
@@ -4238,6 +4242,52 @@ def test_sid_conquered_original_lines(fork):
           "SID +3 力量和智慧" in lines, "lines=%r calls=%r" % (lines, calls))
 
 
+# ---- FL:傳奇風味文字維持英文(使用者裁定 2026-10-24「傳奇風味文字不要」、2026-10-27 現在修)----------
+# 上游 ItemsTab:AddItemTooltip 的風味文字段:每行 AddLine(size, colorCodes.UNIQUE .. line, "FONTIN SC ITALIC")
+# (物品浮窗裡唯一的斜體行)。期望:傳奇/遺物物品的這些行不翻,並向引擎登記整串維持英文(繪製時也不翻)。
+FL_LINE = "A lightless world"
+DICT[None]["A lightless world"] = "A 無光芒 世界地圖"
+
+
+def fl_tooltip(fork, rarity, define_keep=True, other=False):
+    """回 (h, ok, err, 物品浮窗各行, 登記維持英文的字串)。other=True 時同一句改當一般行(非斜體)畫。"""
+    h = stat_harness(fork, {})
+    kept = []
+    if define_keep:
+        h.rt.globals()["__py_keep"] = lambda s: kept.append(s)
+        h.run(b"function PobToolsKeepEnglish(s) __py_keep(s) end")
+    tab = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    item = h.eval('function(r, l, o) local it = { rarity = r, title = "Crown of the Pale King", '
+                  'baseName = "Regicide Mask", base = {}, name = "Crown of the Pale King, Regicide Mask" } '
+                  'if o then it.otherLines = { colorCodes.UNIQUE .. l } else it.flavourLines = { l } end '
+                  'return it end')(rarity, FL_LINE, other)
+    ok, err = h.eval('function(tab, t, item) local ok, e = pcall(function() '
+                     'tab:AddItemTooltip(t, item) end) return ok, e end')(tab, tip, item)
+    return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None], kept
+
+
+def test_fl_unique_flavour_stays_english(fork):
+    """FL1 ~ FL4 -- 傳奇物品浮窗的風味文字行維持英文並登記;非傳奇物品、非風味行照舊翻。"""
+    want_en = "^xAF6025" + FL_LINE
+    h, ok, err, lines, kept = fl_tooltip(fork, "UNIQUE")
+    check("%s FL1 傳奇物品浮窗本身不出錯" % fork, ok, repr(err))
+    check("%s FL1 傳奇風味文字行維持英文" % fork, want_en in lines, "lines=%r" % lines)
+    check("%s FL1 該行整串向引擎登記維持英文(繪製時也不翻)" % fork, kept == [want_en], "kept=%r" % kept)
+    hr, okr, errr, linesr, keptr = fl_tooltip(fork, "RELIC")
+    check("%s FL1 遺物物品同樣維持英文" % fork, okr and want_en in linesr and keptr == [want_en],
+          "lines=%r kept=%r" % (linesr, keptr))
+    h2, ok2, err2, lines2, kept2 = fl_tooltip(fork, "RARE")
+    check("%s FL2 非傳奇物品的斜體行照舊翻譯(不登記)" % fork,
+          ok2 and "^xAF6025A 無光芒 世界地圖" in lines2 and not kept2, "lines=%r kept=%r" % (lines2, kept2))
+    h3, ok3, err3, lines3, kept3 = fl_tooltip(fork, "UNIQUE", other=True)
+    check("%s FL3 傳奇物品的一般行(非斜體)照舊翻譯" % fork,
+          ok3 and "^xAF6025A 無光芒 世界地圖" in lines3 and not kept3, "lines=%r kept=%r" % (lines3, kept3))
+    h4, ok4, err4, lines4, kept4 = fl_tooltip(fork, "UNIQUE", define_keep=False)
+    check("%s FL4 舊引擎(無 PobToolsKeepEnglish)風味行仍不翻、不報錯" % fork,
+          ok4 and want_en in lines4, "lines=%r err=%r" % (lines4, err4))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -4291,6 +4341,7 @@ def main():
         test_n4_node_single_line_note(fork)
         test_sid_stat_id_positions(fork)
         test_sid_conquered_original_lines(fork)
+        test_fl_unique_flavour_stays_english(fork)
         test_groups_anoint_popup(fork)
         test_groups_node_flavour(fork)
         test_groups_gem_flavour(fork)

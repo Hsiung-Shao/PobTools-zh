@@ -1907,7 +1907,36 @@ PATCHES["Tooltip"] = function(class)
 		end
 		return nil
 	end
+	-- A unique's flavour text stays English (使用者裁定 2026-10-24「傳奇風味文字不要」,
+	-- 2026-10-27): ItemsTab:AddItemTooltip draws it as colorCodes.UNIQUE .. line in
+	-- "FONTIN SC ITALIC" -- the only italic line an item tooltip has (both forks).
+	-- Not translated here, and every string it is stored as (WrapString may cut a
+	-- long line) is registered with the engine so the draw-time lookup leaves it
+	-- too (PobToolsKeepEnglish; an older engine has none and may still translate
+	-- it when drawn). Non-unique items (a base's own flavour text) are unchanged.
+	local function isUniqueFlavour(text, font)
+		if font ~= "FONTIN SC ITALIC" or type(text) ~= "string" or text == "" then return false end
+		local item = itemCtx and itemCtx.item
+		return type(item) == "table" and UNIQUE_RARITY[item.rarity] == true
+	end
+	local function keepEnglish(s)
+		if type(PobToolsKeepEnglish) == "function" and type(s) == "string" and s ~= "" then
+			pcall(PobToolsKeepEnglish, s)
+		end
+	end
 	class.AddLine = keepArity(orig, function(self, size, text, font, a4, ...)
+		if isUniqueFlavour(text, font) then
+			keepEnglish(text)
+			local before = type(self.lines) == "table" and #self.lines or nil
+			local r1, r2, r3 = orig(self, size, text, font, a4, ...)
+			if before and type(self.lines) == "table" then
+				for i = before + 1, #self.lines do
+					local l = self.lines[i]
+					if type(l) == "table" and l.text ~= text then keepEnglish(l.text) end
+				end
+			end
+			return r1, r2, r3
+		end
 		-- Tooltip.lua:96 starts a new BLOCK when a line begins with "Equipping"
 		-- or "Removing", so translating those would silently change the
 		-- tooltip's block structure. Left alone on purpose.

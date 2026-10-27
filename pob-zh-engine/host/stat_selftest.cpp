@@ -2099,6 +2099,67 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
+	// ---- R12(使用者裁定 2026-10-27:舊字典既有錯譯現在修)------------------------------------------
+	// GL 詞彙表詞條不從數字中間開始比;BR 整段方括號 "[...]" 把裡面整句查;CS 只差大小寫的兩個樣板
+	// 輸入大小寫完全相同的那個優先;KE 登記為「維持英文」的整串顯示字不翻(傳奇風味)。
+	printf("\n=== R12 詞彙表數字邊界 / 整段方括號 / 大小寫不同的樣板 / 維持英文 ===\n");
+	{
+		const std::vector<std::pair<std::string, std::string>> kUiR = {
+		    {"Zzqgb Alpha", u8"甲"}, {"2% zzqgb power", u8"增加 2% 威力G"},
+		    {"{0}% zzqbr power", u8"增加 {0}% 威力B"}, {"Zzqbr Essence", u8"精髓B"},
+		    {"Zzqcs aura {0}% Effect on you for", u8"大寫 {0}%"}, {"Zzqcs aura {0}% effect on you for", u8"小寫 {0}%"},
+		    {"Zzqke flavour line", u8"風味句"}, {"Zzqcol Name", u8"名稱C"}, {"{0}% zzqcol speed", u8"增加 {0}% 速度C"}};
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::wstring vroot = root + L"r12\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		const bool setup = build_dict_copy(shippedLocale, loc, statsJson, true, w) && plant_file(loc + L"ui.json", kUiR);
+		if (!setup) printf("           setup r12 failed %s\n", w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const std::string g1 = lk("Zzqgb Alpha 32% zzqgb power"), g2 = lk("Zzqgb Alpha 2% zzqgb power");
+		const std::string b1 = lk("[32% zzqbr power]"), b2 = lk("Zzqbr Essence   ^8[32% zzqbr power] (Prefix)");
+		const std::string c1 = lk("Zzqcs aura 8% Effect on you for"), c2 = lk("Zzqcs aura 8% effect on you for"),
+		                  c3 = lk("ZZQCS AURA 8% EFFECT ON YOU FOR");
+		const std::string pad(48, ' ');
+		const std::string t1 = lk(("Zzqcol Name" + pad + "15% zzqcol speed").c_str());
+		const std::string t2 = lk(("Zzqcol Name" + pad + "Zzqcol unknown words").c_str());
+		const char* kKe = "^xAF6025Zzqke flavour line";
+		const std::string k0 = lk(kKe);
+		translation_keep_english(kKe);
+		const std::string k1 = lk(kKe), k2 = lk("Zzqke flavour line");
+		translation_reload();
+		const std::string k3 = lk(kKe);
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vroot);
+		printf("           g1='%s' g2='%s'\n           b1='%s' b2='%s'\n           c1='%s' c2='%s' c3='%s'\n"
+		       "           k0='%s' k1='%s' k2='%s' k3='%s'\n",
+		       g1.c_str(), g2.c_str(), b1.c_str(), b2.c_str(), c1.c_str(), c2.c_str(), c3.c_str(), k0.c_str(), k1.c_str(),
+		       k2.c_str(), k3.c_str());
+		check(setup && g1.find(u8"3增加") == std::string::npos,
+		      "GL1 詞彙表詞條不從數字中間開始比(「32%」不會被拆成「3」+「增加 2%」)");
+		check(setup && g2 == u8"甲 增加 2% 威力G", "GL2 詞條前面是空白時照常替換(對照組)");
+		check(setup && b1 == u8"[增加 32% 威力B]", "BR1 整段方括號 [..] 把裡面整句查表、括號接回");
+		check(setup && b2 == u8"精髓B   ^8[增加 32% 威力B] (前綴)",
+		      "BR2 精髓列「名稱   ^8[詞綴] (Prefix)」:方括號內整句翻、數字不拆");
+		check(setup && c1 == u8"大寫 8%", "CS1 只差大小寫的兩個樣板:輸入大小寫完全相同的那個優先");
+		check(setup && c2 == u8"小寫 8%", "CS2 另一個大小寫的輸入取另一個樣板");
+		check(setup && c3 == u8"小寫 8%", "CS3 大小寫都對不上時照舊(後載入的勝)");
+		check(setup && k0 == u8"^xAF6025風味句" && k1 == "(null)" && k2 == u8"風味句",
+		      "KE1 登記維持英文的整串顯示字不翻;沒登記的(不帶色碼)照翻");
+		check(setup && k3 == "(null)", "KE2 維持英文的登記不因重新載入字典而消失");
+		check(setup && t1 == u8"名稱C" + pad + u8"增加 15% 速度C",
+		      "TL1 下拉列「名稱<48 空白>詞綴」整列沒被蓋到時逐欄翻、空白原樣接回");
+		check(setup && t2 == "(null)", "TL2 有一欄翻不出來時整列不翻(全有或全無)");
+		if (t1 != u8"名稱C" + pad + u8"增加 15% 速度C") printf("           t1='%s' t2='%s'\n", t1.c_str(), t2.c_str());
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。

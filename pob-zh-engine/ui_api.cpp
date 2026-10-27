@@ -3017,6 +3017,16 @@ static int l_PobToolsSetSlashContext(lua_State* L)
 	return 1;
 }
 
+// PobToolsKeepEnglish(text). That exact display string stays English from now on
+// -- the draw-time lookup included (translation_keep_english). The inject
+// registers a unique's flavour lines as it adds them to a tooltip (使用者裁定
+// 2026-10-27). Non-string / empty: ignored.
+static int l_PobToolsKeepEnglish(lua_State* L)
+{
+	if (lua_type(L, 1) == LUA_TSTRING) translation_keep_english(lua_tostring(L, 1));
+	return 0;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3255,6 +3265,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsTranslateStat);
 	ADDFUNC(PobToolsTranslateLines);
 	ADDFUNC(PobToolsSetSlashContext);
+	ADDFUNC(PobToolsKeepEnglish);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);
