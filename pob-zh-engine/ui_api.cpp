@@ -2230,15 +2230,23 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	  "label = node.dn .. \"",
 	  nullptr,
 	  "label = ((PobToolsTranslateDisplay and PobToolsTranslateDisplay(node.dn)) or node.dn) .. \"" },
-	// The stats half of the tattoo label. Each comma-free run is translated on its
-	// own, which is right here because they are separate modifiers rather than one
-	// sentence. A stat containing its own comma splits into runs that match
-	// nothing, so it is simply left in English -- never mangled.
+	// The stats half of the tattoo label: the inject's PobToolsTattooLabelSd
+	// (node.sd line by line, a sentence GGPK spreads over several sd lines taken
+	// whole from the line groups); without it each node.sd line is translated
+	// on its own. Either way the lines are then joined with "," as POB joins them. It used to
+	// split the JOINED text at every comma, which also cut a sentence that holds
+	// its own comma ("Share Endurance, Frenzy and Power Charges with nearby party
+	// members") into runs that match nothing, leaving the row half Chinese, half
+	// English (15 rows; 使用者裁定 2026-10-28). A line with no translation keeps
+	// its English.
 	{ u8"刺青下拉的詞綴文字維持英文",
 	  "treetab.lua",
 	  "table.concat(node.sd, \",\")",
-	  ":gsub(\"[^,]+\", PobToolsTranslateDisplay)",
-	  nullptr, /*oneForkOnly=*/true },
+	  nullptr,
+	  "table.concat((PobToolsTattooLabelSd and PobToolsTattooLabelSd(node)) or "
+	  "(function(sd) local o = {} for i, s in ipairs(sd) do "
+	  "o[i] = (PobToolsTranslateDisplay and PobToolsTranslateDisplay(s)) or s end return o end)(node.sd), \",\")",
+	  /*oneForkOnly=*/true },
 
 	// Translate BEFORE POB wraps. main:WrapString splits a line into
 	// width-limited fragments and each fragment is drawn separately, so by the

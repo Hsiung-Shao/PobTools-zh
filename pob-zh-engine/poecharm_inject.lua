@@ -1231,7 +1231,40 @@ local function popupDnById(tree, source)
 	return map
 end
 
-local function renameListLabels(list, source, dnById)
+-- Typed search over these lists (DropDownControl/SearchHost) matches
+-- item.searchFilter when it is set, else item.label. 使用者裁定 2026-10-28
+-- (方案 C):the label stays as it is drawn, and searchFilter carries
+--   the drawn label (first, so POB's byte ranges -- computed on searchFilter,
+--   drawn over the label -- still land on the right characters), the English
+--   name, every English description line, and each line's Chinese (the stat
+--   lookup with the node's own stat ids, else the plain lookup),
+-- so an English or a Chinese name or modifier all find the row. A match past
+-- the label is found but not highlighted (its range lies beyond the label).
+local function setSearchFilter(v, source, dnById, tree)
+	local parts = { v.label }
+	local s = v.label:find(LABEL_PAD, 1, true)
+	local dnEn = v.id ~= nil and dnById and dnById[v.id] or nil
+	if not dnEn then
+		local namePart = s and v.label:sub(1, s - 1) or v.label
+		if not hasCJK(namePart) then dnEn = namePart end
+	end
+	if dnEn then parts[#parts + 1] = dnEn end
+	if type(v.descriptions) == "table" then
+		local span = statIdSpan(tree, source == "legion" and "legion" or "tattoo", v.id)
+		local zhs = {}
+		for _, line in ipairs(v.descriptions) do
+			if type(line) == "string" and line ~= "" then
+				parts[#parts + 1] = line
+				local zh = zhByStatIds(line, span) or zhGlobal(line)
+				if zh then zhs[#zhs + 1] = zh end
+			end
+		end
+		for _, z in ipairs(zhs) do parts[#parts + 1] = z end
+	end
+	v.searchFilter = (table.concat(parts, " "):gsub("\n", " "))
+end
+
+local function renameListLabels(list, source, dnById, tree)
 	if type(list) ~= "table" then return end
 	for _, v in ipairs(list) do
 		if type(v) == "table" and not renamedItems[v] and type(v.label) == "string" then
@@ -1241,8 +1274,57 @@ local function renameListLabels(list, source, dnById)
 				or (s and v.label:sub(1, s - 1) or v.label)
 			local zh = zhInSource(source, dn)
 			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
+			local okF, errF = pcall(setSearchFilter, v, source, dnById, tree)
+			if not okF then log("popup list searchFilter failed: " .. tostring(errF)) end
 		end
 	end
+end
+
+-- The stats half of a tattoo drop-down label, called by the engine's TreeTab
+-- source patch (ui_api.cpp「刺青下拉的詞綴文字」) while ModifyNodePopup builds
+-- the list: node.sd line by line, never cut at a comma inside a sentence. A
+-- description GGPK writes as one sentence over several sd lines (Ancestral
+-- Tattoo of Bloodlines: "2% increased Recovery Rate of Life, Mana and Energy
+-- Shield" / "per Tribe for which you have an allocated Tattoo") is taken as the
+-- engine's line group lays it out (PobToolsTranslateLines, "passive"; "" = a
+-- line whose words went into the one before); any other line asks the plain
+-- lookup, then the stat lookup with the node's own stat ids, else stays
+-- English. The pieces are joined with "," as POB joins the lines, except after
+-- a piece that already ends in Chinese punctuation. Returns { joined } for the
+-- patch's table.concat, or nil (the patch then translates line by line).
+local CJK_SEP_END = { ["\239\188\140"] = true, ["\227\128\129"] = true, ["\239\188\154"] = true, ["\239\188\155"] = true }
+function PobToolsTattooLabelSd(node)
+	local ok, joined = pcall(function()
+		local sd = type(node) == "table" and node.sd or nil
+		if type(sd) ~= "table" then return nil end
+		local lines = {}
+		for i, s in ipairs(sd) do lines[i] = type(s) == "string" and s or "" end
+		local groups = nil
+		if #lines >= 2 and type(PobToolsTranslateLines) == "function" then
+			local okG, g = pcall(PobToolsTranslateLines, lines, "passive")
+			if okG and type(g) == "table" then groups = g end
+		end
+		local ids = {}
+		for id in pairs(type(node.stats) == "table" and node.stats or {}) do
+			if type(id) == "string" then ids[#ids + 1] = id end
+		end
+		table.sort(ids)
+		local idStr = #ids > 0 and table.concat(ids, " ") or nil
+		local out = ""
+		for i, line in ipairs(lines) do
+			local zh = groups and groups[i]
+			if zh == nil then
+				zh = zhGlobal(line) or (idStr and zhByStat(line, "passive", idStr)) or line
+			end
+			if zh ~= "" then
+				if out ~= "" and not CJK_SEP_END[out:sub(-3)] then out = out .. "," end
+				out = out .. zh
+			end
+		end
+		return out
+	end)
+	if ok and type(joined) == "string" then return { joined } end
+	return nil
 end
 
 local function wrapPopupList(controlName, source, tree)
@@ -1254,8 +1336,11 @@ local function wrapPopupList(controlName, source, tree)
 	if type(origDraw) ~= "function" then return end
 	ctl._ptRenameDraw = true
 	local dnById = popupDnById(tree, source)
+	-- also run before a typed search (PATCHES["SearchHost"]), so the names and
+	-- searchFilter are in place even for items the list has not drawn yet
+	ctl._ptPrepareList = function(list) renameListLabels(list, source, dnById, tree) end
 	ctl.Draw = keepArity(origDraw, function(self, ...)
-		local ok, err = pcall(renameListLabels, self.list, source, dnById)
+		local ok, err = pcall(renameListLabels, self.list, source, dnById, tree)
 		if not ok then log("popup list rename failed: " .. tostring(err)) end
 		return origDraw(self, ...)
 	end)
@@ -1585,6 +1670,12 @@ PATCHES["SearchHost"] = function(class)
 	local orig = class.UpdateSearch
 	if orig then
 		class.UpdateSearch = keepArity(orig, function(self)
+			-- a Timeless jewel / tattoo popup list: names and searchFilter first
+			local prep = rawget(self, "_ptPrepareList")
+			if prep then
+				local okP, errP = pcall(prep, self.searchListAccessor and self.searchListAccessor())
+				if not okP then log("popup list search prepare failed: " .. tostring(errP)) end
+			end
 			orig(self)
 			if not hasCJK(self.searchTerm) then return end
 			local list = self.searchListAccessor and self.searchListAccessor()

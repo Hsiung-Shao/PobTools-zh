@@ -1897,6 +1897,94 @@ def test_src_legion_tattoo_with_source_patch(fork):
           not any(l.startswith("拉瑪克斥候紋身(全域)") for l in labels), "labels=%r" % labels)
 
 
+# ---- SF / TC:三種下拉「名稱 + 48 空白 + 隱藏搜尋字」(使用者裁定 2026-10-28 方案 C)----------
+# SF:inject 替清單每一項設 searchFilter = 畫面 label + 英文名稱 + 英文詞綴 + 中文詞綴(中英名稱、詞綴都搜得到),
+#     以畫面 label 開頭,反白位置(POB 依 searchFilter 的位元組位置畫在 label 上)才對得上。
+# TC:引擎 treetab.lua 補丁改成逐 sd 行翻譯再以逗號接(句子內含逗號時不再切成半中半英)。
+DICT[None].update({"Burn things": "燃燒事物", "+2 to Strength": "+2 力量",
+                   "Zzc first, second part": "第一句，含逗號", "Zzc third": "第三句"})
+
+
+def _sf_item(h, control, prefix):
+    return h.eval('function(c, p) local dd = main.popups[1].controls[c] dd:Draw({}) '
+                  'for _, v in ipairs(dd.list) do if type(v.label) == "string" and v.label:sub(1, #p) == p then '
+                  'return v.label, v.searchFilter end end end')(control, prefix)
+
+
+def test_sf_dropdown_search_filter(fork):
+    """SF1 ~ SF2 -- 下拉清單項的 searchFilter 含英文名稱、英文詞綴、中文名稱、中文詞綴,且以畫面 label 開頭。"""
+    h, patched, applied = fb_harness(fork)
+    tab = fb_build(h)
+    h.eval('function(t) t:FindTimelessJewel() end')(tab)
+    label, sf = _sf_item(h, "nodeSelect", "獻祭儀式(軍團)")
+    want = ["Ritual of Immolation", "Burn things", "獻祭儀式(軍團)", "燃燒事物"]
+    check("%s SF1 永恆珠寶清單項 searchFilter 含英文名稱/英文詞綴/中文名稱/中文詞綴" % fork,
+          sf is not None and all(w in sf for w in want), "label=%r sf=%r" % (label, sf))
+    check("%s SF1 searchFilter 以畫面 label 開頭(反白位置對得上)" % fork,
+          sf is not None and label is not None and sf.startswith(label), "label=%r sf=%r" % (label, sf))
+    if fork != "PoE1":
+        print("  N/A   %s SF2/TC1:此分支 TreeTab 沒有 ModifyNodePopup" % fork)
+        return
+    h, patched, applied = fb_harness(fork)
+    tab = fb_build(h)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    label, sf = _sf_item(h, "modSelect", "拉瑪克斥候刺青(刺青)")
+    want = ["Tattoo of the Ramako Scout", "+2 to Strength", "拉瑪克斥候刺青(刺青)", "+2 力量"]
+    check("%s SF2 紋身清單項 searchFilter 含英文名稱/英文詞綴/中文名稱/中文詞綴" % fork,
+          sf is not None and all(w in sf for w in want), "label=%r sf=%r" % (label, sf))
+    check("%s SF2 searchFilter 以畫面 label 開頭" % fork,
+          sf is not None and label is not None and sf.startswith(label), "label=%r sf=%r" % (label, sf))
+
+
+def test_tc_tattoo_label_per_line(fork):
+    """TC1 -- 紋身下拉 label 的詞綴段逐 sd 行翻譯再以逗號接,句內逗號不再切開。"""
+    if fork != "PoE1":
+        return
+    h, patched, applied = fb_harness(fork)
+    tab = fb_build(h)
+    h.eval('function(t) t.build.spec.tree.tattoo.nodes.comma = { dn = "Tattoo of the Comma", '
+           'targetType = "Small Strength", targetValue = "", sd = { "Zzc first, second part", "Zzc third" } } end')(tab)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    labels = h.eval('function() local dd = main.popups[1].controls.modSelect local o = {} '
+                    'for i, v in ipairs(dd.list) do o[i] = v.label end return o end')()
+    labels = [labels[i] for i in range(1, len(labels) + 1)]
+    hit = [l for l in labels if l.startswith("Tattoo of the Comma")]
+    check("%s TC1 句內含逗號的 sd 行整行翻(不再半中半英)" % fork,
+          hit and hit[0].endswith(LABEL_PAD + "第一句，含逗號,第三句"), "labels=%r" % hit)
+
+
+TC2_SD = ["Zzb Recovery Rate of Life, Mana and Energy Shield", "zzb per Tribe for which you have a Tattoo",
+          "Limited to 1 Zzb Tattoo"]
+DICT[None]["Limited to 1 Zzb Tattoo"] = "限制 1 個 Zzb 紋身"
+
+
+def test_tc_tattoo_label_grouped(fork):
+    """TC2 -- 紋身下拉 label:GGPK 一句跨兩個 sd 行(Ancestral Tattoo of Bloodlines 型)照成組查表整句接起來。"""
+    if fork != "PoE1":
+        return
+    h, patched, applied = fb_harness(fork)
+    calls = []
+
+    def lines(tbl, ctx=None):
+        got = [tbl[i] for i in range(1, len(tbl) + 1)]
+        calls.append((got, ctx))
+        if got[:2] == TC2_SD[:2]:
+            return h.rt.table_from({1: "每個你配置紋身的部落，", 2: "增加 2% 生命、魔力和能量護盾恢復率"})
+        return None
+    h.rt.globals()["__py_tc2_lines"] = lines
+    h.run(b"function PobToolsTranslateLines(t, c) return __py_tc2_lines(t, c) end")
+    tab = fb_build(h)
+    h.eval('function(t, a, b, c) t.build.spec.tree.tattoo.nodes.blood = { dn = "Tattoo of the Zzb", '
+           'targetType = "Small Strength", targetValue = "", sd = { a, b, c } } end')(tab, *TC2_SD)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    labels = h.eval('function() local dd = main.popups[1].controls.modSelect local o = {} '
+                    'for i, v in ipairs(dd.list) do o[i] = v.label end return o end')()
+    hit = [labels[i] for i in range(1, len(labels) + 1) if labels[i].startswith("Tattoo of the Zzb")]
+    check("%s TC2 跨兩行的一句照 GGPK 整句、接上限制行,沒有英文段也沒有多餘逗號" % fork,
+          hit and hit[0].endswith(LABEL_PAD + "每個你配置紋身的部落，增加 2% 生命、魔力和能量護盾恢復率,限制 1 個 Zzb 紋身"),
+          "labels=%r calls=%r" % (hit, calls))
+
+
 # ---- 多行 stat 模板被折成兩個 sd 元素(ST-P2b) --------------------------------
 #
 # node 51108:GGPK 一個兩行模板,POB 拆成 sd 兩個元素逐行 AddLine。
@@ -4374,6 +4462,9 @@ def main():
         test_stat_multiline_sd_unsupported(fork)
         test_src_anoint_legion_tattoo(fork)
         test_src_legion_tattoo_with_source_patch(fork)
+        test_sf_dropdown_search_filter(fork)
+        test_tc_tattoo_label_per_line(fork)
+        test_tc_tattoo_label_grouped(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_stat_gem_in_node(fork)
