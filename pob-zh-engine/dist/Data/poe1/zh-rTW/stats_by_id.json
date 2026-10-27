@@ -21722,6 +21722,8 @@
     "rage_grants_spell_damage_instead|#|stat_descriptions.txt|0": "盛怒賦予法術傷害，而非攻擊傷害",
     "rage_loss_delay_ms|#|stat_descriptions.txt|0": "開始失去固有盛怒的時間延後 {0} 秒",
     "rage_loss_delay_ms|1000|stat_descriptions.txt|0": "失去固有盛怒的時間延緩 1 秒",
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|#|-1 #|skill_stat_descriptions.txt|0": "每 {1} 犧牲的盛怒，使盛怒風暴造成 5% 更少傷害",
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|1|# #|skill_stat_descriptions.txt|0": "每 {1} 犧牲的盛怒，使盛怒風暴造成 5% 更多傷害",
     "rage_slash_maximum_vortices|#|skill_stat_descriptions.txt|0": "最多 {0} 盛怒風暴",
     "rage_slash_maximum_vortices|1|skill_stat_descriptions.txt|0": "最多 {0} 盛怒風暴",
     "rage_slash_radius_+_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_radius_bonus|# #|skill_stat_descriptions.txt|0": "每 {1} 獻祭的盛怒，使盛怒風暴 {0:+d} 米範圍",
@@ -26601,7 +26603,9 @@
     "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0": true,
     "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0": true,
     "is_blighted_map|#|stat_descriptions.txt|0": true,
-    "is_blighted_map|1|stat_descriptions.txt|0": true
+    "is_blighted_map|1|stat_descriptions.txt|0": true,
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|#|-1 #|skill_stat_descriptions.txt|0": true,
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|1|# #|skill_stat_descriptions.txt|0": true
   },
   "name_slots": {
     "local_pearl_random_support_gem_1_slot_index local_pearl_random_support_gem_1_index local_pearl_random_support_gem_1_level|1 # #|stat_descriptions.txt|0": {
@@ -48435,6 +48439,8 @@
     "rage_grants_spell_damage_instead|#|stat_descriptions.txt|0": "Rage grants Spell Damage instead of Attack Damage",
     "rage_loss_delay_ms|#|stat_descriptions.txt|0": "Inherent Rage Loss starts {0} seconds later",
     "rage_loss_delay_ms|1000|stat_descriptions.txt|0": "Inherent Rage Loss starts 1 second later",
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|#|-1 #|skill_stat_descriptions.txt|0": "Ragestorm deals {0}% less Damage per {1} Rage Sacrificed",
+    "rage_slash_damage_+%_final_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_damage_bonus|1|# #|skill_stat_descriptions.txt|0": "Ragestorm deals {0}% more Damage per {1} Rage Sacrificed",
     "rage_slash_maximum_vortices|#|skill_stat_descriptions.txt|0": "Maximum {0} Ragestorms",
     "rage_slash_maximum_vortices|1|skill_stat_descriptions.txt|0": "Maximum {0} Ragestorm",
     "rage_slash_radius_+_per_amount_of_rage_sacrificed rage_slash_rage_sacrifice_per_radius_bonus|# #|skill_stat_descriptions.txt|0": "Ragestorm has {0:+d} metres to radius per {1} Rage sacrificed",
