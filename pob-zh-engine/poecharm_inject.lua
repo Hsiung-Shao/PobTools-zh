@@ -1910,29 +1910,45 @@ PATCHES["Tooltip"] = function(class)
 	-- A unique's flavour text stays English (使用者裁定 2026-10-24「傳奇風味文字不要」,
 	-- 2026-10-27): ItemsTab:AddItemTooltip draws it as colorCodes.UNIQUE .. line in
 	-- "FONTIN SC ITALIC" -- the only italic line an item tooltip has (both forks).
-	-- Not translated here, and every string it is stored as (WrapString may cut a
-	-- long line) is registered with the engine so the draw-time lookup leaves it
-	-- too (PobToolsKeepEnglish; an older engine has none and may still translate
-	-- it when drawn). Non-unique items (a base's own flavour text) are unchanged.
+	-- Not translated here, and the draw-time lookup must leave it too:
+	--   * a string that starts with its colour code (the whole line, the first
+	--     piece WrapString cut from it) is registered for good
+	--     (PobToolsKeepEnglish) -- colour + exact flavour words, nothing else
+	--     draws that;
+	--   * a later piece carries no colour code ("only from the ravaged flesh of my
+	--     enemies."): the same words drawn anywhere else must still translate, so
+	--     it stays English only while THIS tooltip is drawn (tooltipKeep, set as
+	--     the engine's scope around Draw; dropped by Clear).
+	-- An older engine has neither call and may still translate it when drawn.
+	-- Non-unique items (a base's own flavour text) are unchanged.
+	local tooltipKeep = setmetatable({}, { __mode = "k" })
 	local function isUniqueFlavour(text, font)
 		if font ~= "FONTIN SC ITALIC" or type(text) ~= "string" or text == "" then return false end
 		local item = itemCtx and itemCtx.item
 		return type(item) == "table" and UNIQUE_RARITY[item.rarity] == true
 	end
-	local function keepEnglish(s)
-		if type(PobToolsKeepEnglish) == "function" and type(s) == "string" and s ~= "" then
-			pcall(PobToolsKeepEnglish, s)
+	local function keepEnglish(tip, s)
+		if type(s) ~= "string" or s == "" then return end
+		if splitLeadColour(s) ~= "" then
+			if type(PobToolsKeepEnglish) == "function" then pcall(PobToolsKeepEnglish, s) end
+		else
+			local list = tooltipKeep[tip]
+			if not list then
+				list = {}
+				tooltipKeep[tip] = list
+			end
+			list[#list + 1] = s
 		end
 	end
 	class.AddLine = keepArity(orig, function(self, size, text, font, a4, ...)
 		if isUniqueFlavour(text, font) then
-			keepEnglish(text)
+			keepEnglish(self, text)
 			local before = type(self.lines) == "table" and #self.lines or nil
 			local r1, r2, r3 = orig(self, size, text, font, a4, ...)
 			if before and type(self.lines) == "table" then
 				for i = before + 1, #self.lines do
 					local l = self.lines[i]
-					if type(l) == "table" and l.text ~= text then keepEnglish(l.text) end
+					if type(l) == "table" and l.text ~= text then keepEnglish(self, l.text) end
 				end
 			end
 			return r1, r2, r3
@@ -2035,6 +2051,35 @@ PATCHES["Tooltip"] = function(class)
 	-- our switch, kept in the same place and the same shape. The state is stored
 	-- in updateParams so that Clear(true) wipes it along with everything else --
 	-- an emptied tooltip must rebuild anyway.
+	-- The flavour pieces kept English while this tooltip is drawn (tooltipKeep
+	-- above): the engine's scope is this tooltip's list during Draw, and the
+	-- previous one again afterwards (also on error). Clear drops the list.
+	local activeKeep = nil
+	local function setKeepScope(list)
+		if type(PobToolsSetKeepEnglishScope) == "function" then pcall(PobToolsSetKeepEnglishScope, list) end
+	end
+	local origDraw = class.Draw
+	if type(origDraw) == "function" then
+		class.Draw = keepArity(origDraw, function(self, ...)
+			local list = tooltipKeep[self]
+			if not list then return origDraw(self, ...) end
+			local prev = activeKeep
+			activeKeep = list
+			setKeepScope(list)
+			local ok, a, b, c = pcall(origDraw, self, ...)
+			activeKeep = prev
+			setKeepScope(prev)
+			if not ok then error(a, 0) end
+			return a, b, c
+		end)
+	end
+	local origClear = class.Clear
+	if type(origClear) == "function" then
+		class.Clear = keepArity(origClear, function(self, ...)
+			tooltipKeep[self] = nil
+			return origClear(self, ...)
+		end)
+	end
 	local origCheck = class.CheckForUpdate
 	if origCheck and type(PobToolsGetTranslate) == "function" then
 		class.CheckForUpdate = keepArity(origCheck, function(self, ...)

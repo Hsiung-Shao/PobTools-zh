@@ -4267,6 +4267,55 @@ def fl_tooltip(fork, rarity, define_keep=True, other=False):
     return h, ok, err, [l for l in tooltip_lines(h, tip) if l is not None], kept
 
 
+FL_WRAPPED = "Line one of zzqfl / line two of zzqfl"
+DICT[None]["line two of zzqfl"] = "第二段"
+
+
+def fl_wrapped(fork):
+    """長風味行被 WrapString 切成兩段:回 (h, ok, err, 全域登記, 繪製時每段的 (文字, 當下範圍), 繪製後範圍, Clear 後繪製的範圍)。"""
+    h = stat_harness(fork, {})
+    kept, scope_log = [], []
+    state = {"scope": []}
+
+    def set_scope(tbl=None):
+        state["scope"] = [tbl[i] for i in range(1, len(tbl) + 1)] if tbl is not None else []
+    h.rt.globals()["__py_keep"] = lambda s: kept.append(s)
+    h.rt.globals()["__py_scope"] = set_scope
+    h.rt.globals()["__py_draw"] = lambda t: scope_log.append((t, list(state["scope"])))
+    h.run(b"function PobToolsKeepEnglish(s) __py_keep(s) end "
+          b"function PobToolsSetKeepEnglishScope(t) __py_scope(t) end "
+          b"function DrawString(x, y, a, h, f, t) __py_draw(t) end "
+          b"function main:WrapString(str) local o = {} for piece in (str .. ' / '):gmatch('(.-) / ') do o[#o + 1] = piece end return o end")
+    tab = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    item = h.eval('function(l) return { rarity = "UNIQUE", title = "Crown of the Pale King", baseName = "Regicide Mask", '
+                  'base = {}, name = "Crown of the Pale King, Regicide Mask", flavourLines = { l } } end')(FL_WRAPPED)
+    ok, err = h.eval('function(tab, t, item) t.maxWidth = 500 local ok, e = pcall(function() '
+                     'tab:AddItemTooltip(t, item) t:Draw(0, 0, nil, nil, { x = 0, y = 0, width = 1920, height = 1080 }) '
+                     'end) return ok, e end')(tab, tip, item)
+    drawn = list(scope_log)
+    after = list(state["scope"])
+    del scope_log[:]
+    ok2, err2 = h.eval('function(t) local ok, e = pcall(function() t:Clear() t:AddLine(16, "^7plain") '
+                       't:Draw(0, 0, nil, nil, { x = 0, y = 0, width = 1920, height = 1080 }) end) return ok, e end')(tip)
+    return h, ok and ok2, err or err2, kept, drawn, after, list(scope_log)
+
+
+def test_fl_wrapped_scope(fork):
+    """FL5 ~ FL6 -- 風味行斷行後:帶色碼的整行/首段全域登記;無色碼的後續段只在該浮窗繪製期間維持英文。"""
+    h, ok, err, kept, drawn, after, cleared = fl_wrapped(fork)
+    check("%s FL5 斷行的風味浮窗本身不出錯(含繪製)" % fork, ok, repr(err))
+    check("%s FL5 全域登記只有帶色碼的整行與首段,不含無色碼的後續段" % fork,
+          ok and "^xAF6025" + FL_WRAPPED in kept and "^xAF6025Line one of zzqfl" in kept
+          and all(k.startswith("^x") for k in kept), "kept=%r" % kept)
+    piece = [sc for t, sc in drawn if t == "line two of zzqfl"]
+    check("%s FL6 後續段在該浮窗繪製時位於維持英文範圍內" % fork,
+          ok and piece and "line two of zzqfl" in piece[0], "drawn=%r" % drawn)
+    check("%s FL6 繪製結束後範圍清空(不影響別處同字串)" % fork, ok and after == [], "after=%r" % after)
+    check("%s FL6 浮窗 Clear 重建後不再帶舊範圍" % fork,
+          ok and all("line two of zzqfl" not in sc for t, sc in cleared), "cleared=%r" % cleared)
+
+
 def test_fl_unique_flavour_stays_english(fork):
     """FL1 ~ FL4 -- 傳奇物品浮窗的風味文字行維持英文並登記;非傳奇物品、非風味行照舊翻。"""
     want_en = "^xAF6025" + FL_LINE
@@ -4342,6 +4391,7 @@ def main():
         test_sid_stat_id_positions(fork)
         test_sid_conquered_original_lines(fork)
         test_fl_unique_flavour_stays_english(fork)
+        test_fl_wrapped_scope(fork)
         test_groups_anoint_popup(fork)
         test_groups_node_flavour(fork)
         test_groups_gem_flavour(fork)

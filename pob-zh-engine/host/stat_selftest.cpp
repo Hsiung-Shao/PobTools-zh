@@ -2108,7 +2108,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		    {"Zzqgb Alpha", u8"甲"}, {"2% zzqgb power", u8"增加 2% 威力G"},
 		    {"{0}% zzqbr power", u8"增加 {0}% 威力B"}, {"Zzqbr Essence", u8"精髓B"},
 		    {"Zzqcs aura {0}% Effect on you for", u8"大寫 {0}%"}, {"Zzqcs aura {0}% effect on you for", u8"小寫 {0}%"},
-		    {"Zzqke flavour line", u8"風味句"}, {"Zzqcol Name", u8"名稱C"}, {"{0}% zzqcol speed", u8"增加 {0}% 速度C"}};
+		    {"Zzqke flavour line", u8"風味句"}, {"Zzqcol Name", u8"名稱C"}, {"{0}% zzqcol speed", u8"增加 {0}% 速度C"},
+		    {"ZZQUP", u8"佔位Z"}, {"234 zzqgb gold", u8"二三四金"}, {"Zzqke piece", u8"片段句"}};
 		auto lk = [](const char* s) {
 			const char* r = translation_lookup(s);
 			return r ? std::string(r) : std::string("(null)");
@@ -2129,6 +2130,15 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const std::string pad(48, ' ');
 		const std::string t1 = lk(("Zzqcol Name" + pad + "15% zzqcol speed").c_str());
 		const std::string t2 = lk(("Zzqcol Name" + pad + "Zzqcol unknown words").c_str());
+		const std::string t3 = lk("Zzqcol Name   15% zzqcol speed");
+		const std::string b3 = lk("[ZZQUP]"), b4 = lk("[UNUSED]"), b4bare = lk("UNUSED");
+		const std::string g3 = lk("Zzqgb Alpha 1,234 zzqgb gold");
+		const std::string k4 = lk("Zzqke piece");
+		const char* kScope[] = {"Zzqke piece"};
+		translation_set_keep_english_scope(kScope, 1);
+		const std::string k5 = lk("Zzqke piece");
+		translation_set_keep_english_scope(nullptr, 0);
+		const std::string k6 = lk("Zzqke piece");
 		const char* kKe = "^xAF6025Zzqke flavour line";
 		const std::string k0 = lk(kKe);
 		translation_keep_english(kKe);
@@ -2154,10 +2164,21 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && k0 == u8"^xAF6025風味句" && k1 == "(null)" && k2 == u8"風味句",
 		      "KE1 登記維持英文的整串顯示字不翻;沒登記的(不帶色碼)照翻");
 		check(setup && k3 == "(null)", "KE2 維持英文的登記不因重新載入字典而消失");
-		check(setup && t1 == u8"名稱C" + pad + u8"增加 15% 速度C",
-		      "TL1 下拉列「名稱<48 空白>詞綴」整列沒被蓋到時逐欄翻、空白原樣接回");
-		check(setup && t2 == "(null)", "TL2 有一欄翻不出來時整列不翻(全有或全無)");
-		if (t1 != u8"名稱C" + pad + u8"增加 15% 速度C") printf("           t1='%s' t2='%s'\n", t1.c_str(), t2.c_str());
+		// 使用者裁定 2026-10-23/24:下拉列名稱後 48 空白的英文詞綴是隱藏搜尋字,維持英文
+		check(setup && t1 == u8"名稱C" + pad + "15% zzqcol speed",
+		      "TL1 下拉列「名稱<48 空白>隱藏搜尋字」只翻名稱欄,48 空白後的英文原樣保留");
+		check(setup && t2 == u8"名稱C" + pad + "Zzqcol unknown words", "TL2 隱藏搜尋字翻不翻得出來都不影響(只看名稱欄)");
+		check(setup && t3 == "(null)", "TL3 不是下拉列(只有 3 空白)不逐欄翻");
+		check(setup && b3 != u8"[佔位Z]", "BR3 方括號內是全大寫佔位字([UNUSED] 類)不走方括號整句翻");
+		check(setup && (b4bare == "(null)" || b4 != "[" + b4bare + "]"),
+		      "BR4 方括號內是詞彙表黑名單鍵(UNUSED)不走方括號整句翻(使用者裁定 2026-10-23 維持英文)");
+		check(setup && g3.find(u8"1,二三四") == std::string::npos, "GL3 千分位逗號後的數字也算同一個數,不從中間比");
+		check(setup && k4 == u8"片段句" && k5 == "(null)" && k6 == u8"片段句",
+		      "KE3 範圍內(浮窗繪製期間)的字串不翻,範圍清掉後照翻");
+		printf("           t1='%s'\n           t2='%s' t3='%s'\n           b3='%s' b4='%s' b4bare='%s' g3='%s'\n"
+		       "           k4='%s' k5='%s' k6='%s'\n",
+		       t1.c_str(), t2.c_str(), t3.c_str(), b3.c_str(), b4.c_str(), b4bare.c_str(), g3.c_str(), k4.c_str(),
+		       k5.c_str(), k6.c_str());
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");

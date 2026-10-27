@@ -3027,6 +3027,28 @@ static int l_PobToolsKeepEnglish(lua_State* L)
 	return 0;
 }
 
+// PobToolsSetKeepEnglishScope(list or nil). The strings that stay English only
+// while one tooltip is drawn (translation_set_keep_english_scope): the inject
+// sets that tooltip's wrapped flavour pieces around its Draw and puts the
+// previous list back afterwards. nil / {} clears; non-string items are skipped.
+static int l_PobToolsSetKeepEnglishScope(lua_State* L)
+{
+	std::vector<std::string> items;
+	if (lua_istable(L, 1)) {
+		const int n = (int)lua_objlen(L, 1);
+		for (int i = 1; i <= n; i++) {
+			lua_rawgeti(L, 1, i);
+			if (lua_type(L, -1) == LUA_TSTRING) items.emplace_back(lua_tostring(L, -1));
+			lua_pop(L, 1);
+		}
+	}
+	std::vector<const char*> ptrs;
+	ptrs.reserve(items.size());
+	for (const std::string& s : items) ptrs.push_back(s.c_str());
+	translation_set_keep_english_scope(ptrs.empty() ? nullptr : ptrs.data(), (int)ptrs.size());
+	return 0;
+}
+
 // ==============================
 // Library and API Initialisation
 // ==============================
@@ -3266,6 +3288,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsTranslateLines);
 	ADDFUNC(PobToolsSetSlashContext);
 	ADDFUNC(PobToolsKeepEnglish);
+	ADDFUNC(PobToolsSetKeepEnglishScope);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

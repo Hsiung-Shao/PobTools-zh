@@ -3501,10 +3501,22 @@ void translation_keep_english(const char *s) {
     if (s_keep_english.insert(s).second) s_keep_english_n.store(s_keep_english.size());
 }
 
-static bool is_keep_english(const char *s) {
-    if (s_keep_english_n.load() == 0) return false;
+/* translation_set_keep_english_scope (see the header): the tooltip being drawn. */
+static std::unordered_set<std::string> s_keep_scope;
+static std::atomic<size_t> s_keep_scope_n{0};
+
+void translation_set_keep_english_scope(const char *const *s, int n) {
     std::lock_guard<std::mutex> lock(s_keep_english_mu);
-    return s_keep_english.count(s) > 0;
+    s_keep_scope.clear();
+    for (int i = 0; s && i < n; i++)
+        if (s[i] && *s[i]) s_keep_scope.insert(s[i]);
+    s_keep_scope_n.store(s_keep_scope.size());
+}
+
+static bool is_keep_english(const char *s) {
+    if (s_keep_english_n.load() == 0 && s_keep_scope_n.load() == 0) return false;
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    return s_keep_english.count(s) > 0 || s_keep_scope.count(s) > 0;
 }
 
 const char* translation_lookup(const char *english) {
@@ -3870,6 +3882,22 @@ const char* translation_lookup(const char *english) {
     if (input.size() > 2 && input.front() == '[' && input.back() == ']') {
         const std::string inner = input.substr(1, input.size() - 2);
         if (inner.find_first_of("[]|") == std::string::npos) {
+            /* A placeholder in brackets is not a stat line: GGG's all-capitals
+            ** tags ("[UNUSED]", "[DNT]") and the glossary blacklist's keys stay
+            ** English as they are (使用者裁定 2026-10-23: [UNUSED] 維持英文) --
+            ** before this step they were never translated whole. */
+            bool letters = false, lower = false;
+            for (char ch : inner) {
+                if (ch >= 'a' && ch <= 'z') lower = true;
+                if (is_ascii_alpha(ch)) letters = true;
+            }
+            bool placeholder = letters && !lower;
+            for (const std::string &bad : s_glossary_blacklist)
+                if (!placeholder && inner == bad) placeholder = true;
+            if (placeholder) {
+                s_lookup_cache_active->emplace(input, std::string());
+                return nullptr;
+            }
             if (const char *inner_zh = translation_lookup(inner.c_str())) {
                 if (inner != inner_zh) {
                     std::string combined = "[";
@@ -3996,10 +4024,14 @@ const char* translation_lookup(const char *english) {
             if (pos > 0 && is_ascii_alpha(input[pos - 1])) return false;
             size_t end = pos + len;
             if (end < input.size() && is_ascii_alpha(input[end])) return false;
-            if (len > 0 && pos > 0 && is_digit(input[pos]) && (is_digit(input[pos - 1]) || input[pos - 1] == '.'))
+            /* "1,234": a thousands comma between digits is part of the number */
+            if (len > 0 && pos > 0 && is_digit(input[pos]) &&
+                (is_digit(input[pos - 1]) || input[pos - 1] == '.' ||
+                 (input[pos - 1] == ',' && pos > 1 && is_digit(input[pos - 2]))))
                 return false;
             if (len > 0 && end < input.size() && is_digit(input[end - 1]) &&
-                (is_digit(input[end]) || (input[end] == '.' && end + 1 < input.size() && is_digit(input[end + 1]))))
+                (is_digit(input[end]) ||
+                 ((input[end] == '.' || input[end] == ',') && end + 1 < input.size() && is_digit(input[end + 1]))))
                 return false;
             return true;
         };
@@ -4086,49 +4118,29 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 4.5 Column runs, last resort: POB lays a drop-down row out as
-     *     "<name><48 spaces><stat line>" (the Timeless jewel / tattoo pickers,
-     *     TreeTab.lua). Nothing above covered the whole row, so each column --
-     *     the runs between 3+ spaces -- is translated on its own through the
-     *     full pipeline and the row is put back with its spacing as it was.
-     *     Every column or nothing, as everywhere; a column without letters
-     *     (already Chinese) or one the whitelist keeps English counts as done.
-     *     Last on purpose: a row the glossary covers is unchanged. Before the
-     *     glossary learnt number boundaries (step 4) it "covered"
-     *     "15% increased Attack Speed" by matching "5% increased Attack Speed"
-     *     inside "15%" (「1增加 5% 攻擊速度」). A column holds no 3-space run,
-     *     so this cannot recurse. */
-    if (!exact_blocked && input.find("   ") != std::string::npos) {
-        struct Col { std::string text, gap; };
-        std::vector<Col> cols;
-        size_t p = 0;
-        while (p < input.size()) {
-            size_t g = input.find("   ", p);
-            if (g == std::string::npos) { cols.push_back({input.substr(p), std::string()}); break; }
-            size_t ge = input.find_first_not_of(' ', g);
-            if (ge == std::string::npos) ge = input.size();
-            cols.push_back({input.substr(p, g - p), input.substr(g, ge - g)});
-            p = ge;
-        }
-        if (cols.size() >= 2) {
-            bool all_ok = true, translated_any = false;
-            std::string rebuilt;
-            rebuilt.reserve(input.size() + 32);
-            for (const Col &c : cols) {
-                bool has_alpha = false;
-                for (char ch : c.text) if (is_ascii_alpha(ch)) { has_alpha = true; break; }
-                if (!has_alpha || covered_by_whitelist(c.text)) {
-                    rebuilt += c.text;
-                } else {
-                    const char *zh = translation_lookup(c.text.c_str());
-                    if (!zh || c.text == zh) { all_ok = false; break; }
-                    rebuilt += zh;
-                    translated_any = true;
+    /* 4.5 Drop-down rows, last resort: POB lays the Timeless jewel / tattoo /
+     *     runegraft pickers out as "<name><48 spaces><stat text>" (TreeTab.lua).
+     *     The part after the spaces is cut off on screen -- it is there for the
+     *     list's search box (使用者裁定 2026-10-23/24: 隱藏搜尋字維持英文, 不匯出)
+     *     -- so when nothing above covered the row, only the NAME is translated
+     *     (full pipeline) and everything from the spaces on is kept as it came.
+     *     Only for that shape (a run of 48+ spaces); other strings are not
+     *     touched. Last on purpose: a row an earlier step answers is unchanged.
+     *     The name holds no such run, so this cannot recurse. */
+    if (!exact_blocked) {
+        const size_t gap = input.find(std::string(48, ' '));
+        if (gap != std::string::npos && gap > 0) {
+            const std::string name = input.substr(0, gap);
+            bool has_alpha = false;
+            for (char ch : name) if (is_ascii_alpha(ch)) { has_alpha = true; break; }
+            if (has_alpha && !covered_by_whitelist(name)) {
+                if (const char *zh = translation_lookup(name.c_str())) {
+                    if (name != zh) {
+                        std::string row(zh);
+                        row.append(input, gap, std::string::npos);
+                        if (const char *r_ = accept(std::move(row), /*check_hash=*/false)) return r_;
+                    }
                 }
-                rebuilt += c.gap;
-            }
-            if (all_ok && translated_any) {
-                if (const char *r_ = accept(std::move(rebuilt), /*check_hash=*/false)) return r_;
             }
         }
     }

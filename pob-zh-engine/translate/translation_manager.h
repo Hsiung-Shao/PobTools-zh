@@ -154,6 +154,14 @@ const char* translation_set_slash_context(const char *ctx);
 ** bounded (registrations past the cap are ignored). nullptr / "" is ignored. */
 void translation_keep_english(const char *s);
 
+/* The strings that stay English only for now -- the tooltip being drawn: its
+** flavour lines' wrapped pieces carry no colour code, so they are not
+** registered for good (translation_keep_english), where the same words drawn
+** anywhere else would stay English too. Replaces the whole scope; n == 0 (or
+** s == nullptr) clears it. The caller sets it around one tooltip's Draw and
+** puts back what was there before (it keeps the lists). */
+void translation_set_keep_english_scope(const char *const *s, int n);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
