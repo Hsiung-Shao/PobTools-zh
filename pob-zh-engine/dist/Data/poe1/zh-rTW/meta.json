@@ -13,7 +13,8 @@
     "passives.json",
     "uniques.json",
     "monsters.json",
-    "ggpk_full.json"
+    "ggpk_full.json",
+    "ggpk_reverse.json"
   ],
   "source_dicts": [
     "affixes.json",
