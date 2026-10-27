@@ -1953,6 +1953,78 @@ def test_tc_tattoo_label_per_line(fork):
           hit and hit[0].endswith(LABEL_PAD + "第一句，含逗號,第三句"), "labels=%r" % hit)
 
 
+DICT[None].update({"Zzp first": "第一句。", "Zzp second": "第二句"})
+
+
+def test_tc_tattoo_label_period(fork):
+    """TC3 -- 紋身下拉 label:前一段以「。」結尾時不再補逗號(不出現「。,」)。"""
+    if fork != "PoE1":
+        return
+    h, patched, applied = fb_harness(fork)
+    tab = fb_build(h)
+    h.eval('function(t) t.build.spec.tree.tattoo.nodes.period = { dn = "Tattoo of the Period", '
+           'targetType = "Small Strength", targetValue = "", sd = { "Zzp first", "Zzp second" } } end')(tab)
+    h.eval('function(t) t:ModifyNodePopup({ id = 100 }) end')(tab)
+    labels = h.eval('function() local dd = main.popups[1].controls.modSelect local o = {} '
+                    'for i, v in ipairs(dd.list) do o[i] = v.label end return o end')()
+    hit = [labels[i] for i in range(1, len(labels) + 1) if labels[i].startswith("Tattoo of the Period")]
+    check("%s TC3 「。」結尾的段後不補逗號" % fork,
+          hit and hit[0].endswith(LABEL_PAD + "第一句。第二句"), "labels=%r" % hit)
+
+
+AD_TREE = """{
+	nodes = {},
+	legion = {
+		nodes = {},
+		additions = { { id = "karui_add_armour", dn = "Zzadd Armour", sd = { "+100 to Zzqx Defence" },
+			stats = { sid_add_armour = { min = 100, max = 100, index = 1 } } } },
+	},
+	tattoo = { nodes = {} },
+}"""
+DICT["legion"]["Zzadd Armour"] = "增加護甲Z"
+
+
+def test_sf_addition_english_name(fork):
+    """AD1 -- 永恆珠寶清單由 legion.additions 來的列(名稱已改成中文)searchFilter 仍含英文名稱。"""
+    h = sid_harness(fork, {})
+    tab = make(h, "TreeTab")
+    tree = h.eval("function() return %s end" % AD_TREE)()
+    h.eval("function(tab, tree) tab.build = { spec = { tree = tree } } end")(tab, tree)
+    ok, err = h.eval('function(tab) local ok, e = pcall(function() tab:FindTimelessJewel() '
+                     'main.popups[1].controls.nodeSelect:Draw({}) end) return ok, e end')(tab)
+    item = h.eval('function() for _, v in ipairs(main.popups[1].controls.nodeSelect.list) do '
+                  'if v.id == "karui_add_armour" then return v.label, v.searchFilter end end end')()
+    label, sf = item if isinstance(item, tuple) else (None, None)
+    check("%s AD1 附加項名稱已改成中文(重現條件)" % fork, ok and label == "增加護甲Z", "label=%r err=%r" % (label, err))
+    check("%s AD1 附加項 searchFilter 含英文名稱與英文詞綴" % fork,
+          sf is not None and "Zzadd Armour" in sf and "+100 to Zzqx Defence" in sf, "sf=%r" % sf)
+
+
+def test_sh_skip_zhraw_with_search_filter(fork):
+    """SH1 -- 中文搜尋補比對:已有 searchFilter 的項目不再整串查表;沒有的照舊用整列翻譯比對。"""
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    h.run('LoadModule("Classes/SearchHost")')
+    h.apply_inject()
+    DICT[None]["Zzsh plain row"] = "乙詞列"
+    h.lookups = []
+    res = h.eval('''function()
+		local SH = common.classes.SearchHost
+		local list = { { label = "甲名", searchFilter = "甲名 Zzsh Alpha Zzsh stat" }, { label = "Zzsh plain row" } }
+		local o = { searchTerm = "乙詞", searchInfos = {}, ignoreOrder = false, UpdateMatchCount = SH.UpdateMatchCount,
+			searchListAccessor = function() return list end,
+			valueAccessor = function(v) return v.searchFilter or v.label end }
+		SH.UpdateSearch(o)
+		return o.searchInfos[1] and o.searchInfos[1].matches or false, o.searchInfos[2] and o.searchInfos[2].matches or false
+	end''')()
+    m1, m2 = res if isinstance(res, tuple) else (None, None)
+    looked = [t for t, s in h.lookups]
+    check("%s SH1 有 searchFilter 的項目不再拿整串去查表" % fork,
+          "甲名 Zzsh Alpha Zzsh stat" not in looked, "lookups=%r" % looked)
+    check("%s SH1 沒有 searchFilter 的項目照舊以整列翻譯比對中文" % fork,
+          m2 is True and m1 is False and "Zzsh plain row" in looked, "m1=%r m2=%r lookups=%r" % (m1, m2, looked))
+
+
 TC2_SD = ["Zzb Recovery Rate of Life, Mana and Energy Shield", "zzb per Tribe for which you have a Tattoo",
           "Limited to 1 Zzb Tattoo"]
 DICT[None]["Limited to 1 Zzb Tattoo"] = "限制 1 個 Zzb 紋身"
@@ -4465,6 +4537,9 @@ def main():
         test_sf_dropdown_search_filter(fork)
         test_tc_tattoo_label_per_line(fork)
         test_tc_tattoo_label_grouped(fork)
+        test_tc_tattoo_label_period(fork)
+        test_sf_addition_english_name(fork)
+        test_sh_skip_zhraw_with_search_filter(fork)
         test_stat_gem_tooltip(fork)
         test_wrapped_arity_gem(fork)
         test_stat_gem_in_node(fork)

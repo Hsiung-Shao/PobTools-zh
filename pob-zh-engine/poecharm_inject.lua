@@ -1228,6 +1228,17 @@ local function popupDnById(tree, source)
 			end
 		end
 	end
+	-- the Timeless jewel list also carries legion.additions rows (Lethal Pride /
+	-- Brutal Restraint named additions, the abyss "Notable N" ones), item.id =
+	-- addition.id; a node with the same id keeps its entry
+	local additions = source == "legion" and group.additions or nil
+	if type(additions) == "table" then
+		for _, add in pairs(additions) do
+			if type(add) == "table" and add.id ~= nil and type(add.dn) == "string" and map[add.id] == nil then
+				map[add.id] = add.dn
+			end
+		end
+	end
 	return map
 end
 
@@ -1240,10 +1251,12 @@ end
 --   lookup with the node's own stat ids, else the plain lookup),
 -- so an English or a Chinese name or modifier all find the row. A match past
 -- the label is found but not highlighted (its range lies beyond the label).
-local function setSearchFilter(v, source, dnById, tree)
+local function setSearchFilter(v, source, dnById, tree, dnBefore)
 	local parts = { v.label }
 	local s = v.label:find(LABEL_PAD, 1, true)
-	local dnEn = v.id ~= nil and dnById and dnById[v.id] or nil
+	-- the English name: what the rename started from, else the tree data's
+	local dnEn = type(dnBefore) == "string" and dnBefore ~= "" and not hasCJK(dnBefore) and dnBefore or nil
+	dnEn = dnEn or (v.id ~= nil and dnById and dnById[v.id] or nil)
 	if not dnEn then
 		local namePart = s and v.label:sub(1, s - 1) or v.label
 		if not hasCJK(namePart) then dnEn = namePart end
@@ -1274,7 +1287,7 @@ local function renameListLabels(list, source, dnById, tree)
 				or (s and v.label:sub(1, s - 1) or v.label)
 			local zh = zhInSource(source, dn)
 			if zh then v.label = zh .. (s and v.label:sub(s) or "") end
-			local okF, errF = pcall(setSearchFilter, v, source, dnById, tree)
+			local okF, errF = pcall(setSearchFilter, v, source, dnById, tree, dn)
 			if not okF then log("popup list searchFilter failed: " .. tostring(errF)) end
 		end
 	end
@@ -1290,9 +1303,10 @@ end
 -- line whose words went into the one before); any other line asks the plain
 -- lookup, then the stat lookup with the node's own stat ids, else stays
 -- English. The pieces are joined with "," as POB joins the lines, except after
--- a piece that already ends in Chinese punctuation. Returns { joined } for the
+-- a piece that already ends in Chinese punctuation (，、。：；). Returns { joined } for the
 -- patch's table.concat, or nil (the patch then translates line by line).
-local CJK_SEP_END = { ["\239\188\140"] = true, ["\227\128\129"] = true, ["\239\188\154"] = true, ["\239\188\155"] = true }
+local CJK_SEP_END = { ["\239\188\140"] = true, ["\227\128\129"] = true, ["\227\128\130"] = true,
+	["\239\188\154"] = true, ["\239\188\155"] = true }
 function PobToolsTattooLabelSd(node)
 	local ok, joined = pcall(function()
 		local sd = type(node) == "table" and node.sd or nil
@@ -1684,7 +1698,10 @@ PATCHES["SearchHost"] = function(class)
 			local changed = false
 			for idx, entry in ipairs(list) do
 				local info = self.searchInfos[idx]
-				if info and not info.matches then
+				-- an entry with searchFilter (the drop-down lists above) already
+				-- carries its Chinese there and POB has matched against it:
+				-- looking the whole string up again would only fill the cache
+				if info and not info.matches and not (type(entry) == "table" and entry.searchFilter) then
 					local value = self.valueAccessor and self.valueAccessor(entry) or entry
 					local zh = type(value) == "string" and zhRaw(value) or nil
 					if zh and zh:lower():find(q, 1, true) then
