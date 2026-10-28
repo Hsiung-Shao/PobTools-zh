@@ -1,0 +1,52 @@
+{
+  "source_files": [
+    "ggpk:ascendancy.Name by Ascendancy.Id"
+  ],
+  "is_base_items": false,
+  "entries": {
+    "Ascendant": "昇華使徒",
+    "Assassin": "刺客",
+    "Berserker": "暴徒",
+    "Champion": "冠軍",
+    "Chieftain": "酋長",
+    "Deadeye": "銳眼",
+    "Elementalist": "元素使",
+    "Gladiator": "衛士",
+    "Guardian": "守護者",
+    "Hierophant": "聖宗",
+    "Inquisitor": "判官",
+    "Juggernaut": "勇士",
+    "Luminary": "輝耀使徒",
+    "Necromancer": "死靈師",
+    "Occultist": "秘術家",
+    "Pathfinder": "追獵者",
+    "Raider": "守林人",
+    "Reliquarian": "遺守使徒",
+    "Saboteur": "破壞者",
+    "Slayer": "處刑者",
+    "Trickster": "詐欺師"
+  },
+  "templates": {
+    "Ascendant": "Ascendant",
+    "Assassin": "Assassin",
+    "Berserker": "Berserker",
+    "Champion": "Champion",
+    "Chieftain": "Chieftain",
+    "Deadeye": "Deadeye",
+    "Elementalist": "Elementalist",
+    "Gladiator": "Gladiator",
+    "Guardian": "Guardian",
+    "Hierophant": "Hierophant",
+    "Inquisitor": "Inquisitor",
+    "Juggernaut": "Juggernaut",
+    "Luminary": "Luminary",
+    "Necromancer": "Necromancer",
+    "Occultist": "Occultist",
+    "Pathfinder": "Pathfinder",
+    "Raider": "Warden",
+    "Reliquarian": "Reliquarian",
+    "Saboteur": "Saboteur",
+    "Slayer": "Slayer",
+    "Trickster": "Trickster"
+  }
+}
