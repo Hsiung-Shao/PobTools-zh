@@ -28,7 +28,11 @@
     "stat_wrappers.json",
     "gem_names.json",
     "gem_names_nonactive.json",
-    "gem_names_support.json"
+    "gem_names_support.json",
+    "mod_stats_by_id.json",
+    "passive_stats_by_id.json",
+    "gem_names_by_id.json",
+    "ascendancy_by_id.json"
   ],
   "source_lookup": true,
   "incomplete_translation_whitelist": [
