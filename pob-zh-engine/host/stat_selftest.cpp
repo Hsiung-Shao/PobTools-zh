@@ -2310,6 +2310,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const char* oVals[] = {u8"覆寫列"};
 		translation_set_draw_override(oKeys, oVals, 1);
 		const std::string d1 = lk("Zzqdo row"), d1b = lk(kPow);
+		// 技能清單列「A, B」(兩個寶石名以逗號接):逐段查,每段都先看覆寫表
+		const std::string d3 = lk("Zzqdo row, Chaos Orb");
 		translation_set_draw_override(nullptr, nullptr, 0);
 		const std::string d2 = lk("Zzqdo row");
 		// ID5:測試自帶「沒有這 4 個 id 表」的字典(從出貨字典複製後刪檔、移出 meta),不看出貨字典
@@ -2370,6 +2372,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && d0 == u8"一般列" && d1 == u8"覆寫列" && d2 == u8"一般列",
 		      "DO1 繪製覆寫表期間該字畫成覆寫中文,清掉後照舊(含已快取的字)");
 		check(setup && d1b == f1, "DO2 覆寫表沒列的字不受影響");
+		check(setup && d3 == u8"覆寫列, 混沌石", "DO3 逗號接起來的列逐段翻時,覆寫表對每一段都生效(技能清單「A, B」)");
+		if (d3 != u8"覆寫列, 混沌石") printf("           d3='%s'\n", d3.c_str());
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");

@@ -4904,6 +4904,157 @@ def test_r15_search_row_override(fork):
           "with=%r without=%r" % (m1, m0))
 
 
+# ---- R15b(審查修正,使用者核准 2026-10-28「兩個實作問題都改」)-----------------------------------
+# SH3/SH4:同英文的兩列(一列有 id 譯文、一列沒有)= 衝突 → 繪製與搜尋都退回一般翻譯;收合框也依整份清單判斷。
+# GN6:遙控地雷在寶石清單列、寶石輸入框、技能清單三處同名。AS3:守林人在昇華下拉與(新介面側欄用的)id 名稱同名。
+R15_ROWS[("Zzq conflict row", "item", "max_power_charges")] = "依編號列"
+DICT[None]["Zzq conflict row"] = "畫面列"
+DICT["gems"] = dict(DICT.get("gems") or {}, **{"Detonate Mines": "引爆地雷"})
+
+R15B_GEMSEL_P1 = """
+local C = newClass("GemSelectControl")
+function C:GemSelectControl(buf) self.buf = buf or "" self.gems = {} self.list = {} return self end
+function C:Draw() DrawString(0, 0, "LEFT", 16, "VAR", self.buf) end
+"""
+R15B_GEMSEL_P2 = """
+local C = newClass("GemSelectControl", function(self, buf) self.buf = buf or "" self.gems = {} self.list = {} end)
+function C:Draw() DrawString(0, 0, "LEFT", 16, "VAR", self.buf) end
+"""
+R15B_SKILLLIST_P1 = """
+local C = newClass("SkillListControl")
+function C:SkillListControl(list) self.list = list return self end
+function C:Draw() for _, g in ipairs(self.list) do DrawString(0, 0, "LEFT", 16, "VAR", g.displayLabel) end end
+"""
+R15B_SKILLLIST_P2 = """
+local C = newClass("SkillListControl", function(self, list) self.list = list end)
+function C:Draw() for _, g in ipairs(self.list) do DrawString(0, 0, "LEFT", 16, "VAR", g.displayLabel) end end
+"""
+R15B_GEMS = """
+data.gems = {
+	["Metadata/Items/Gems/SkillGemGemDetonateMines"] = { name = "Detonate Mines", grantedEffectId = "GemDetonateMines",
+		grantedEffect = { id = "GemDetonateMines", name = "Detonate Mines" } },
+}
+r15DetGem = data.gems["Metadata/Items/Gems/SkillGemGemDetonateMines"]
+"""
+
+
+def r15b_harness(fork, with_search=False):
+    h = r15_harness(fork, with_inject=False)
+    h.run(R15B_GEMS)
+    if with_search:
+        h.run('LoadModule("Classes/SearchHost")')
+    h.define("GemSelectControl", R15B_GEMSEL_P1, R15B_GEMSEL_P2)
+    h.define("SkillListControl", R15B_SKILLLIST_P1, R15B_SKILLLIST_P2)
+    h.apply_inject()
+    return h
+
+
+def test_r15b_conflict_search_and_closed(fork):
+    """SH3 ~ SH4 -- 同英文衝突列:繪製(含收合框)與中文搜尋都用一般翻譯;依 id 的譯文搜不到。"""
+    h = r15b_harness(fork, with_search=True)
+    res = h.eval('''function()
+		local SH = common.classes.SearchHost
+		local list = { { label = "Zzq conflict row", mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted },
+			{ label = "Zzq conflict row", mod = data.itemMods.Corrupted.ZzqNoStats } }
+		package.loaded["Modules.AddImplicitPopup"].AddImplicitToDisplayItem({}, {})
+		local dd = main.popups[1].controls.modSelect
+		dd.list = list
+		local function search(term)
+			local o = { searchTerm = term, searchInfos = {}, ignoreOrder = false, UpdateMatchCount = SH.UpdateMatchCount,
+				searchListAccessor = function() return list end,
+				valueAccessor = function(v) return v.searchFilter or v.label end,
+				_ptRowZh = rawget(dd, "_ptRowZh"), list = list }
+			SH.UpdateSearch(o)
+			return (o.searchInfos[1] and o.searchInfos[1].matches or false), (o.searchInfos[2] and o.searchInfos[2].matches or false)
+		end
+		local a1, a2 = search("畫面")
+		local b1, b2 = search("編號")
+		return a1, a2, b1, b2
+	end''')()
+    a1, a2, b1, b2 = res if isinstance(res, tuple) else (None,) * 4
+    check("%s SH3 衝突列以畫面上的字(一般翻譯)搜得到" % fork, a1 is True and a2 is True, "a=%r,%r" % (a1, a2))
+    check("%s SH3 衝突列以 id 譯文搜不到(和畫面一致)" % fork, b1 is False and b2 is False, "b=%r,%r" % (b1, b2))
+    ok, err, drawn, _ = r15_draw(h, "(function() local d = main.popups[1].controls.modSelect d.selIndex = 1 return d end)()", False)
+    check("%s SH4 收合框也依整份清單判斷衝突(選中列不另用 id 譯文)" % fork,
+          ok and drawn[:1] == [("Zzq conflict row", False)], "drawn=%r err=%r" % (drawn, err))
+
+
+def test_r15b_gem_same_name(fork):
+    """GN6 -- 遙控地雷在寶石清單列、寶石輸入框、技能清單三處同名(都依 GrantedEffects id)。"""
+    h = r15b_harness(fork)
+    row = h.eval("function() return PobToolsGemListName(r15DetGem) end")()
+    if fork == "PoE1":
+        box = h.eval('new("GemSelectControl"):GemSelectControl("Detonate Mines")')
+        sl = h.eval('function() return new("SkillListControl"):SkillListControl({ { displayLabel = "Detonate Mines", '
+                    'gemList = { { gemData = r15DetGem, enabled = true } } } }) end')()
+    else:
+        box = h.eval('new("GemSelectControl", "Detonate Mines")')
+        sl = h.eval('function() return new("SkillListControl", { { displayLabel = "Detonate Mines", '
+                    'gemList = { { gemData = r15DetGem, enabled = true } } } }) end')()
+    del h.r15["drawn"][:]
+    h.eval("function(c) c:Draw({}) end")(box)
+    boxDrawn = [t for t, o in h.r15["drawn"]]
+    del h.r15["drawn"][:]
+    h.eval("function(c) c:Draw({}) end")(sl)
+    slDrawn = [t for t, o in h.r15["drawn"]]
+    check("%s GN6 清單列、輸入框、技能清單三處都是遙控地雷" % fork,
+          row == "遙控地雷" and boxDrawn == ["遙控地雷"] and slDrawn == ["遙控地雷"],
+          "row=%r box=%r skilllist=%r" % (row, boxDrawn, slDrawn))
+    check("%s GN6 畫完覆寫表清掉" % fork, h.r15["override"] is None, "override=%r" % h.r15["override"])
+
+
+def test_r15b_ascendancy_same_name(fork):
+    """AS3 -- 守林人:昇華下拉與 id 名稱函式(新介面側欄、標題、天賦樹頁用)同名。"""
+    h = r15b_harness(fork)
+    h.eval('function() main.modes.BUILD:Init() end')()
+    okD, errD, drawn, _ = r15_draw(h, "main.modes.BUILD.controls.ascendDrop", True)
+    side = h.eval('function() return PobToolsAscendancyNameZh and PobToolsAscendancyNameZh("Raider", "Warden") end')()
+    miss = h.eval('function() return PobToolsAscendancyNameZh and PobToolsAscendancyNameZh("Raider", "Wardenz") end')()
+    rows = [t for t, o in drawn[1:]]
+    check("%s AS3 昇華下拉與 id 名稱同為守林人" % fork, okD and "守林人" in rows and side == "守林人", "rows=%r side=%r" % (rows, side))
+    check("%s AS3 英文對不上不給(呼叫端退回原路徑)" % fork, miss is None, "miss=%r" % miss)
+
+
+def gt_lines(fork, gem_src, id_dict):
+    h = gem_harness(fork, GEM_STAT_DICT, id_dict=id_dict)
+
+    # 照引擎語意:帶英文時英文要對得上;不帶英文時回 id 表本身的值(zhByIdOnly 靠兩者比對)
+    def translate_id(source, id_, en=None):
+        key = None if id_ is None else str(id_)
+        hit = id_dict.get((source, key))
+        if not hit:
+            return None
+        return hit[1] if (en is None or hit[0] == en) else None
+    h.rt.globals()["__py_translate_id"] = translate_id
+    obj = make(h, "GemSelectControl")
+    tip = make(h, "Tooltip")
+    gem = h.eval("function() return %s end" % gem_src)()
+    ok, err = h.eval('function(o, t, g) o.tooltip = t o.skillsTab = { build = { data = data } } '
+                     'o.tipGem = g local ok, e = pcall(function() o:Draw({}, false) end) '
+                     'return ok, e end')(obj, tip, gem)
+    return ok, err, [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+
+
+def test_r15b_gem_tooltip_title(fork):
+    """GT1 ~ GT2 -- 寶石浮窗標題(gem_name)依該效果的 id 取名;同名兩個效果 id 不同時不猜,照舊。"""
+    ids = dict(GEM_DESC_ID)
+    ids[("gem_names", "Fireball")] = ("Fireball", "火球ID")
+    ids[("gem_names", "FireballSecondary")] = ("Fireball", "火球副ID")
+    ok, err, lines = gt_lines(fork, gem_instance_src(fork), ids)
+    check("%s GT1 寶石浮窗標題依 GrantedEffects id 取名" % fork, ok and lines[:1] == ["火球ID"], "lines=%r err=%r" % (lines[:3], err))
+    if fork != "PoE1":
+        return
+    same = gem_instance_src(fork).replace(
+        '\t\t%s\n', '').replace(
+        'statDescriptionScope = "gem_stat_descriptions" },',
+        'statDescriptionScope = "gem_stat_descriptions" },\n\t\tsecondaryGrantedEffect = { id = "FireballSecondary", '
+        'name = "Fireball", description = "Secondary blast.", stats = { } },')
+    ok2, err2, lines2 = gt_lines(fork, same, ids)
+    titles = [l for l in lines2 if l in ("火球ID", "火球副ID", "火球", "Fireball")]
+    check("%s GT2 同名的主副效果 id 不同:標題不依 id(照舊)" % fork,
+          ok2 and titles and all(t not in ("火球ID", "火球副ID") for t in titles), "titles=%r err=%r" % (titles, err2))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -4981,6 +5132,10 @@ def main():
         test_r15_cluster_tip_notable(fork)
         test_r15_tattoo_label_stat_first(fork)
         test_r15_search_row_override(fork)
+        test_r15b_conflict_search_and_closed(fork)
+        test_r15b_gem_same_name(fork)
+        test_r15b_ascendancy_same_name(fork)
+        test_r15b_gem_tooltip_title(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

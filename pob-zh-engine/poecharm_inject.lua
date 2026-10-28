@@ -513,7 +513,15 @@ local function translateGemLine(text)
 	-- looked up without it, put back after the answer (as the item mod lines do)
 	local body, noteTail = splitNoteTail(rest)
 	local core = trim(body)
-	if core == "" or ctx.names[core] then return nil end
+	if core == "" then return nil end
+	if ctx.names[core] then
+		-- the gem / skill name (the title): by its GrantedEffects id, the same
+		-- words the picker and the skill list show; no id answer keeps the
+		-- caller's "gems" source path
+		local nid = ctx.names[core]
+		local zh = nid ~= true and type(PobToolsGemNameZh) == "function" and PobToolsGemNameZh(nid, core) or nil
+		return zh and (lead .. zh .. noteTail) or nil
+	end
 	-- flavour text POB splits over several lines (GemTooltip: one AddLine per
 	-- flavourText line), drawn as GGPK's whole paragraph (gemContext groups)
 	local grouped = pairLookup(ctx.groups, text)
@@ -921,29 +929,44 @@ local function rowZhOf(ctl, v)
 	return hit or nil
 end
 
--- { [label] = Chinese } for the rows this call shows (the selected one, or the
--- whole list when full). The override goes by the label's text, so a label
--- two rows of the list answer differently -- or one answers and one does not
--- (the same English from two different mods) -- is left out: both rows keep
--- their own path. nil when no row is left.
+-- { [label] = Chinese } for a whole list: the override goes by the label's
+-- text, so a label two rows of the list answer differently -- or one answers
+-- and one does not (the same English from two different mods) -- is left out:
+-- those rows keep their own path. The one map serves the drawing (closed box
+-- and open list alike) and the typed search, so all three show and match the
+-- same words. Kept per control while the list is the same (same table, length,
+-- first and last row).
 local ROW_CONFLICT = {}
-local function rowOverrideFor(ctl, full)
-	local list = type(ctl.list) == "table" and ctl.list or nil
-	if not list then return nil end
+local function rowMapOf(ctl, list)
+	if type(list) ~= "table" then return {} end
+	local c = rawget(ctl, "_ptRowMap")
+	local n = #list
+	if c and c.list == list and c.n == n and c.first == list[1] and c.last == list[n] then return c.map end
 	local map = {}
-	local function add(v)
-		if type(v) ~= "table" or type(v.label) ~= "string" then return end
-		local zh = rowZhOf(ctl, v) or false
-		local had = map[v.label]
-		if had == nil then map[v.label] = zh elseif had ~= zh then map[v.label] = ROW_CONFLICT end
-	end
-	if full then
-		for _, v in ipairs(list) do add(v) end
-	else
-		add(list[ctl.selIndex])
+	for _, v in ipairs(list) do
+		if type(v) == "table" and type(v.label) == "string" then
+			local zh = rowZhOf(ctl, v) or false
+			local had = map[v.label]
+			if had == nil then map[v.label] = zh elseif had ~= zh then map[v.label] = ROW_CONFLICT end
+		end
 	end
 	for k, z in pairs(map) do
 		if type(z) ~= "string" then map[k] = nil end
+	end
+	rawset(ctl, "_ptRowMap", { list = list, n = n, first = list[1], last = list[n], map = map })
+	return map
+end
+
+-- The rows this call shows: the whole list's map (full), or just the selected
+-- row's entry of it -- conflicts judged on the whole list either way. nil when
+-- nothing is left.
+local function rowOverrideFor(ctl, full)
+	local map = rowMapOf(ctl, ctl.list)
+	if not full then
+		local sel = type(ctl.list) == "table" and ctl.list[ctl.selIndex] or nil
+		local label = type(sel) == "table" and sel.label or nil
+		local zh = type(label) == "string" and map[label] or nil
+		map = zh and { [label] = zh } or {}
 	end
 	return next(map) ~= nil and map or nil
 end
@@ -988,13 +1011,138 @@ end
 -- this for the local it draws): the gem's GGPK name by its GrantedEffects id
 -- (gem_names_by_id.json) when the English matches, else nil (gemData.name is
 -- drawn and translated as before). F2 off: nil.
+local function translateOn()
+	return not (type(PobToolsGetTranslate) == "function" and not PobToolsGetTranslate())
+end
+
+-- A gem / skill name by its GrantedEffects id (gem_names_by_id.json) when the
+-- id table's English is en; nil otherwise. Also used by the new UI's bridge.
+function PobToolsGemNameZh(id, en)
+	if not translateOn() then return nil end
+	return zhByIdOnly("gem_names", id, en)
+end
+
+-- An ascendancy's name by its Ascendancy id (ascendancy_by_id.json, e.g.
+-- "Raider" for Warden) when the id table's English is en; nil otherwise.
+-- Used by the build's ascendancy drop-down here and by the bridge (the new
+-- UI's sidebar, title bar, tree spec bar, class lists).
+function PobToolsAscendancyNameZh(id, en)
+	if not translateOn() then return nil end
+	return zhByIdOnly("ascendancy", id, en)
+end
+
+-- The Ascendancy id of an ascendancy named `name` in this tree (its classes'
+-- classes[1..n]), or nil -- for places that only carry the English name (a
+-- build file's header, a share code).
+function PobToolsAscendancyIdOf(tree, name)
+	local classes = type(tree) == "table" and tree.classes or nil
+	if type(classes) ~= "table" or type(name) ~= "string" then return nil end
+	for _, class in pairs(classes) do
+		local ascs = type(class) == "table" and class.classes or nil
+		if type(ascs) == "table" then
+			for i, a in pairs(ascs) do
+				if i ~= 0 and type(a) == "table" and a.name == name and a.id ~= nil then return a.id end
+			end
+		end
+	end
+	return nil
+end
+
 function PobToolsGemListName(gemData)
 	if type(gemData) ~= "table" or type(gemData.name) ~= "string" then return nil end
-	if type(PobToolsGetTranslate) == "function" and not PobToolsGetTranslate() then return nil end
 	local ge = gemData.grantedEffect
 	local id = gemData.grantedEffectId or (type(ge) == "table" and ge.id) or nil
-	return zhByIdOnly("gem_names", id, gemData.name)
+	return PobToolsGemNameZh(id, gemData.name)
 end
+
+-- English gem name -> its id name, through every gem in data.gems with that
+-- name: their ids must all give the same answer (a name two gems share with
+-- different GGPK names stays on its old path). The name -> gems index is
+-- built once per data.gems; answers only while translation is on.
+local gemByName = setmetatable({}, { __mode = "k" })
+local function gemNameZh(name)
+	local gems = type(data) == "table" and data.gems or nil
+	if type(name) ~= "string" or name == "" or type(gems) ~= "table" or not translateOn() then return nil end
+	local idx = gemByName[gems]
+	if not idx then
+		idx = { names = {}, zh = {} }
+		for _, gd in pairs(gems) do
+			if type(gd) == "table" and type(gd.name) == "string" then
+				local l = idx.names[gd.name]
+				if not l then
+					l = {}
+					idx.names[gd.name] = l
+				end
+				l[#l + 1] = gd
+			end
+		end
+		gemByName[gems] = idx
+	end
+	local hit = idx.zh[name]
+	if hit == nil then
+		local first, mixed = nil, false
+		for _, gd in ipairs(idx.names[name] or {}) do
+			local zh = PobToolsGemListName(gd) or false
+			if first == nil then first = zh elseif zh ~= first then mixed = true break end
+		end
+		hit = (not mixed and first) or false
+		idx.zh[name] = hit
+	end
+	return hit or nil
+end
+
+-- Runs fn(...) with these display strings overridden for the engine (see
+-- withRowOverride; same single active map), the previous map put back after.
+-- An empty map, F2 off or an older engine: fn(...) as is.
+local function withDrawMap(map, fn, ...)
+	if type(PobToolsSetDrawOverride) ~= "function" or type(map) ~= "table" or next(map) == nil or not translateOn() then
+		return fn(...)
+	end
+	local prev = activeRowOverride
+	setRowOverride(map)
+	local ok, a, b, c = pcall(fn, ...)
+	setRowOverride(prev)
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+-- The gem names a skill list (SkillListControl, the skills tab's socket
+-- groups) draws -- each gem's own name and its granted effects' names, by
+-- their ids -- as { [English] = id name }; a name with two answers is left out.
+-- per gemData / grantedEffect table (weak): its id name, false = none; kept
+-- only while translation is on (the skill list asks every frame)
+local effectZhCache = setmetatable({}, { __mode = "k" })
+local function effectZh(tbl, id, en)
+	local hit = effectZhCache[tbl]
+	if hit == nil then
+		hit = PobToolsGemNameZh(id, en) or false
+		effectZhCache[tbl] = hit
+	end
+	return hit or nil
+end
+
+local function socketGroupNameMap(groups)
+	if not translateOn() then return nil end
+	local map, bad = {}, {}
+	local function add(en, zh)
+		if type(en) ~= "string" or not zh or bad[en] then return end
+		if map[en] == nil then map[en] = zh elseif map[en] ~= zh then map[en] = nil bad[en] = true end
+	end
+	for _, g in ipairs(type(groups) == "table" and groups or {}) do
+		for _, gem in ipairs(type(g) == "table" and type(g.gemList) == "table" and g.gemList or {}) do
+			local gd = type(gem) == "table" and gem.gemData or nil
+			local ge = type(gem) == "table" and (gem.grantedEffect or (type(gd) == "table" and gd.grantedEffect)) or nil
+			if type(gd) == "table" and type(gd.name) == "string" then
+				local id = gd.grantedEffectId or (type(ge) == "table" and ge.id) or nil
+				add(gd.name, effectZh(gd, id, gd.name))
+			end
+			if type(ge) == "table" and ge.id ~= nil and type(ge.name) == "string" then add(ge.name, effectZh(ge, ge.id, ge.name)) end
+		end
+	end
+	return map
+end
+-- the new UI's bridge composes the same socket group labels (skills page)
+PobToolsSocketGroupNameMap = socketGroupNameMap
 
 -- ===== constructor wrapping =====
 -- The two POB forks store a class's constructor in DIFFERENT places, and there
@@ -1038,6 +1186,15 @@ PATCHES["SkillListControl"] = function(class)
 	if not wrapDrawWithSource(class, "gems") then
 		error("SkillListControl has no Draw to wrap")
 	end
+	-- 使用者核准 2026-10-28:the rows' gem / skill names by their GrantedEffects
+	-- ids, the same words the gem picker shows ("Detonate Mines" = 遙控地雷 in
+	-- both); a row "A, B" is translated piece by piece by the engine, each piece
+	-- meeting the map. Names without an id answer keep the "gems" source path.
+	local orig = class.Draw
+	class.Draw = keepArity(orig, function(self, ...)
+		local ok, map = pcall(socketGroupNameMap, type(self) == "table" and self.list or nil)
+		return withDrawMap(ok and map or nil, orig, self, ...)
+	end)
 end
 
 -- Skill gem dropdown: allow CJK input + match gems by their translated name.
@@ -1048,6 +1205,15 @@ PATCHES["GemSelectControl"] = function(class)
 	if not wrapDrawWithSource(class, "gems") then
 		error("GemSelectControl has no Draw to wrap")
 	end
+	-- (0b) the edit box's gem name by its id (使用者核准 2026-10-28), the same
+	--      words the list rows show (engine source patch, PobToolsGemListName).
+	--      Only what is drawn: self.buf itself stays English (search, BuildList).
+	local origDraw = class.Draw
+	class.Draw = keepArity(origDraw, function(self, ...)
+		local buf = type(self) == "table" and self.buf or nil
+		local okZ, zh = pcall(gemNameZh, buf)
+		return withDrawMap((okZ and zh) and { [buf] = zh } or nil, origDraw, self, ...)
+	end)
 	-- (a) input: the gem box hardcodes an ASCII-only filter ("^ %a':-") and
 	--     EditControl:Insert runs text:gsub(filterPattern,"") on every typed
 	--     character, so each CJK byte was deleted on the way in -- the box could
@@ -1931,8 +2097,14 @@ PATCHES["SearchHost"] = function(class)
 				-- looking the whole string up again would only fill the cache
 				if info and not info.matches and not (type(entry) == "table" and entry.searchFilter) then
 					local value = self.valueAccessor and self.valueAccessor(entry) or entry
-					-- a drop-down that draws this row by id: match what it draws
-					local idZh = type(entry) == "table" and rowZhOf(self, entry) or nil
+					-- a drop-down that draws this row by id: match what it draws --
+					-- the same conflict-free map its Draw uses (a row whose English
+					-- another row shares with a different answer is drawn, and so
+					-- matched, the ordinary way)
+					local idZh = nil
+					if type(entry) == "table" and type(entry.label) == "string" and rawget(self, "_ptRowZh") then
+						idZh = rowMapOf(self, list)[entry.label]
+					end
 					local zh = idZh and visible(idZh) or (type(value) == "string" and zhRaw(value) or nil)
 					if zh and zh:lower():find(q, 1, true) then
 						info.matches = true
@@ -2756,10 +2928,23 @@ local function gemContext(gemInstance)
 	local ctx = { desc = {}, names = {}, statIds = {}, statScopes = {} }
 	local gemData = type(gemInstance) == "table" and gemInstance.gemData or nil
 	if type(gemData) ~= "table" then return ctx end
-	if type(gemData.name) == "string" then ctx.names[trim(gemData.name)] = true end
+	-- names[line] = the GrantedEffects id that names it, true when no single id
+	-- does: the title line is drawn by that id (gem_names_by_id.json), as the
+	-- picker does. A name two effects share with different ids (a support whose
+	-- granted skill has the support's name: Fissure / triggered Fissure) is
+	-- ambiguous -- the line could be either -- and keeps its old path.
+	local function name(k, id)
+		k = trim(k)
+		local had = ctx.names[k]
+		if had == nil then ctx.names[k] = id or true elseif had ~= (id or true) then ctx.names[k] = true end
+	end
+	local primaryGe = gemData.grantedEffect
+	if type(gemData.name) == "string" then
+		name(gemData.name, gemData.grantedEffectId or (type(primaryGe) == "table" and primaryGe.id) or nil)
+	end
 	local function add(effect)
 		if type(effect) ~= "table" then return end
-		if type(effect.name) == "string" then ctx.names[trim(effect.name)] = true end
+		if type(effect.name) == "string" then name(effect.name, effect.id) end
 		local d = effect.description
 		if type(d) == "string" and d ~= "" and effect.id ~= nil and ctx.desc[trim(d)] == nil then
 			ctx.desc[trim(d)] = effect.id
@@ -2871,7 +3056,7 @@ local function ascRowZhFor(build)
 		local cls = type(classes) == "table" and classes[spec.curClassId] or nil
 		local asc = type(cls) == "table" and type(cls.classes) == "table" and cls.classes[v.ascendClassId] or nil
 		if type(asc) ~= "table" or asc.id == nil then return nil end
-		return zhByIdOnly("ascendancy", asc.id, v.label)
+		return PobToolsAscendancyNameZh(asc.id, v.label)
 	end
 end
 

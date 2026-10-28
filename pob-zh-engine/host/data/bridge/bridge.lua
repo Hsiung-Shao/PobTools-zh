@@ -43,6 +43,36 @@ local function tr(s)
 	return zh or s
 end
 
+-- Names by language-independent id (使用者核准 2026-10-28): a gem / skill by its
+-- GrantedEffects id, an ascendancy by its Ascendancy id ("Raider" = Warden),
+-- through the inject's PobToolsGemNameZh / PobToolsAscendancyNameZh -- the
+-- same words the classic window draws. They answer only when the id table's
+-- English is the name shown; otherwise (or with an older inject) tr() as before.
+local function gem_tr(id, name)
+	local zh = id ~= nil and type(PobToolsGemNameZh) == "function" and PobToolsGemNameZh(id, name) or nil
+	return zh or tr(name)
+end
+local function asc_tr(id, name)
+	local zh = id ~= nil and type(PobToolsAscendancyNameZh) == "function" and PobToolsAscendancyNameZh(id, name) or nil
+	return zh or tr(name)
+end
+-- tr() of a label POB composed from gem names ("A, B"): the engine translates
+-- it piece by piece, each piece meeting these id names (PobToolsSetDrawOverride
+-- for the span of the call).
+local function tr_with(map, s)
+	if type(s) ~= "string" or type(map) ~= "table" or next(map) == nil or type(PobToolsSetDrawOverride) ~= "function" then
+		return tr(s)
+	end
+	PobToolsSetDrawOverride(map)
+	local ok, z = pcall(tr, s)
+	PobToolsSetDrawOverride(nil)
+	if not ok then error(z, 0) end
+	return z
+end
+local function group_name_map(groups)
+	return type(PobToolsSocketGroupNameMap) == "function" and PobToolsSocketGroupNameMap(groups) or nil
+end
+
 -- Which game this POB is for. The host names it (POB_GAME, the same variable
 -- that picks the translation dictionaries); PoE2's POB also numbers its tree
 -- versions from 0_1, which settles it when the variable is absent.
@@ -569,7 +599,7 @@ function M.get_build_info()
 		classNameZh = spec and tr(spec.curClassName),
 		ascendClassId = spec and spec.curAscendClassId,
 		ascendClassName = spec and spec.curAscendClassName,
-		ascendClassNameZh = spec and tr(spec.curAscendClassName),
+		ascendClassNameZh = spec and asc_tr(type(spec.curAscendClass) == "table" and spec.curAscendClass.id or nil, spec.curAscendClassName),
 		treeVersion = spec and spec.treeVersion,
 		points = {
 			used = used, ascUsed = ascUsed, secondaryAscUsed = secondaryAscUsed, sockets = sockets,
@@ -808,7 +838,7 @@ function M.tree_data(p)
 		if type(cid) == "number" and type(class) == "table" then
 			local ascs = {}
 			for i, a in ipairs(class.ascendancies or {}) do
-				ascs[#ascs + 1] = { id = i, key = a.id, name = a.name, nameZh = tr(a.name) }
+				ascs[#ascs + 1] = { id = i, key = a.id, name = a.name, nameZh = asc_tr(a.id, a.name) }
 			end
 			local bg
 			if GAME == "poe2" and type(class.background) == "table" then
@@ -1652,7 +1682,7 @@ local function class_lists(b)
 			local ascs = {}
 			for i = 0, #(class.classes or {}) do
 				local a = class.classes[i]
-				if a then ascs[#ascs + 1] = { id = i, name = a.name, nameZh = tr(a.name) } end
+				if a then ascs[#ascs + 1] = { id = i, key = a.id, name = a.name, nameZh = asc_tr(a.id, a.name) } end
 			end
 			classes[#classes + 1] = { id = cid, name = class.name, nameZh = tr(class.name), ascendancies = ascs }
 		end
@@ -2065,7 +2095,10 @@ function M.decode_code(p)
 				info.className = a.className
 				info.classNameZh = tr(a.className)
 				info.ascendClassName = a.ascendClassName
-				info.ascendClassNameZh = tr(a.ascendClassName)
+				-- the file carries only the English name: its Ascendancy id from the current tree
+				local tree = type(launch) == "table" and launch.main and launch.main.tree and launch.main.tree[latestTreeVersion] or nil
+				info.ascendClassNameZh = asc_tr(type(PobToolsAscendancyIdOf) == "function" and PobToolsAscendancyIdOf(tree, a.ascendClassName) or nil,
+					a.ascendClassName)
 				info.level = tonumber(a.level)
 				info.targetVersion = a.targetVersion
 			elseif node.elem == "Items" then
@@ -3283,7 +3316,8 @@ function M.list_specs()
 			className = s.curClassName,
 			classNameZh = tr(s.curClassName),
 			ascendClassName = s.curAscendClassName ~= "None" and s.curAscendClassName or nil,
-			ascendClassNameZh = s.curAscendClassName ~= "None" and tr(s.curAscendClassName) or nil,
+			ascendClassNameZh = s.curAscendClassName ~= "None" and
+				asc_tr(type(s.curAscendClass) == "table" and s.curAscendClass.id or nil, s.curAscendClassName) or nil,
 			points = used,
 			active = i == tab.activeSpec,
 		}
@@ -4169,9 +4203,11 @@ function M.compare_skills()
 			local gems = {}
 			for j, gem in ipairs(g.gemList or {}) do
 				local name = (gem.gemData and gem.gemData.name) or gem.nameSpec
-				gems[j] = { name = name, nameZh = tr(name), level = gem.level, quality = gem.quality, enabled = gem.enabled and true or false }
+				local gd = gem.gemData
+				local gid = gd and (gd.grantedEffectId or (gd.grantedEffect and gd.grantedEffect.id)) or nil
+				gems[j] = { name = name, nameZh = gem_tr(gid, name), level = gem.level, quality = gem.quality, enabled = gem.enabled and true or false }
 			end
-			out[i] = { index = i, label = g.displayLabel or g.label, labelZh = tr(g.displayLabel or g.label or ""), slot = g.slot,
+			out[i] = { index = i, label = g.displayLabel or g.label, labelZh = tr_with(group_name_map({ g }), g.displayLabel or g.label or ""), slot = g.slot,
 			           enabled = g.enabled and true or false, isMain = build and build.mainSocketGroup == i or false, gems = gems }
 		end
 		return out
@@ -6203,7 +6239,7 @@ local function gem_summary(g, i)
 		index = i,
 		nameSpec = g.nameSpec,
 		name = name,
-		nameZh = tr(name),
+		nameZh = gem_tr((ge and ge.name == name and ge.id) or (gd and gd.name == name and gd.grantedEffectId) or nil, name),
 		gemId = g.gemId or (gd and gd.id) or nil,
 		skillId = g.skillId,
 		level = g.level,
@@ -6230,14 +6266,14 @@ local function group_summary(g, i, b)
 	local skills = {}
 	for j, as in ipairs(g.displaySkillList or {}) do
 		local ge = as.activeEffect and as.activeEffect.grantedEffect
-		skills[j] = { index = j, name = ge and ge.name, nameZh = ge and tr(ge.name) }
+		skills[j] = { index = j, name = ge and ge.name, nameZh = ge and gem_tr(ge.id, ge.name) }
 	end
 	return {
 		index = i,
 		label = g.label or "",
 		displayLabel = g.displayLabel,
 		-- a user-typed label is shown verbatim; only POB's generated one is translated
-		displayLabelZh = (g.label and g.label ~= "") and g.displayLabel or tr(g.displayLabel),
+		displayLabelZh = (g.label and g.label ~= "") and g.displayLabel or tr_with(group_name_map({ g }), g.displayLabel),
 		enabled = g.enabled and true or false,
 		includeInFullDPS = g.includeInFullDPS and true or false,
 		slot = g.slot,
@@ -6812,7 +6848,7 @@ local function gem_search_by_dps(b, p)
 			local dps = cache.dps and cache.dps[gemId] or nil
 			local delta = (type(dps) == "number" and type(baseDps) == "number") and dps - baseDps or nil
 			all[#all + 1] = {
-				gemId = plain, name = gem.name, nameZh = tr(gem.name),
+				gemId = plain, name = gem.name, nameZh = gem_tr(gem.grantedEffectId or (ge and ge.id) or nil, gem.name),
 				support = support,
 				color = gem.color,
 				naturalMaxLevel = gem.naturalMaxLevel,
