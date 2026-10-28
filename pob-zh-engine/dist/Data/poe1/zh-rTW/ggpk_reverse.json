@@ -4,8 +4,6 @@
     ],
     "is_base_items": false,
     "entries": {
-        "+15% to Fire Resistance": "+15% 火焰抗性",
-        "+4% to all Elemental Resistances": "+4% 全部元素抗性",
         "+6% to Critical Hit Chance of Herald Skills": "+6% 捷技能的暴擊率",
         "+{0} to Maximum Charges": "+{0} 最大充能",
         "+{0}% to Damage over Time Multiplier": "+{0}% 持續傷害加成",

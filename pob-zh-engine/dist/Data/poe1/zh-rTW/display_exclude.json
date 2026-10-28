@@ -772,8 +772,6 @@
             "Zealotry"
         ],
         "ggpk_reverse.json": [
-            "+15% to Fire Resistance",
-            "+4% to all Elemental Resistances",
             "+6% to Critical Hit Chance of Herald Skills",
             "+{0} to Maximum Charges",
             "+{0}% to Damage over Time Multiplier",
@@ -15748,8 +15746,10 @@
             "{0}% reduced Elemental Ailment Duration on you per {1} Devotion",
             "{0}% reduced Elemental Ailment Duration on you while holding a Shield",
             "{0}% reduced Elemental Damage",
+            "{0}% reduced Elemental Damage Taken while stationary",
             "{0}% reduced Elemental Damage taken",
             "{0}% reduced Elemental Damage taken from Hits per Endurance Charge",
+            "{0}% reduced Elemental Damage taken while stationary",
             "{0}% reduced Elemental Resistances",
             "{0}% reduced Endurance Charge Duration",
             "{0}% reduced Endurance, Frenzy and Power Charge Duration",
