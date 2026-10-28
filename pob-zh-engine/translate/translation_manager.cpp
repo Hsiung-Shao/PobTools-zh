@@ -176,6 +176,14 @@ static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
     { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
+    /* 使用者裁定 2026-10-28「更改」: drop-down rows by language-independent id.
+    ** The two *_stats files hold no Chinese: their value is the GGPK stat ids
+    ** (space separated) the inject hands to translation_lookup_stat_row /
+    ** PobToolsTranslateStat for that mod's / passive's lines. */
+    { "mod_stats", "mod_stats_by_id.json" },         /* Mods.Id -> stat ids */
+    { "passive_stats", "passive_stats_by_id.json" }, /* PassiveSkillGraphId -> stat ids */
+    { "gem_names", "gem_names_by_id.json" },         /* GrantedEffects.Id -> gem name */
+    { "ascendancy", "ascendancy_by_id.json" },       /* Ascendancy.Id -> ascendancy name */
     /* No "legion" id table (user ruling S8, reversed): POB, poedb and GGPK
     ** agree on the legion passives' Name column; only GGPK's Id STRINGS have
     ** the two Faith notables swapped (templar_notable_minimum_power_charge is
@@ -354,6 +362,9 @@ static std::vector<StatWrapper> s_stat_wrappers;
 static std::unordered_map<std::string, std::string> s_stat_cache;
 /* Same, for translation_lookup_stat_colored (answers carry the colour). */
 static std::unordered_map<std::string, std::string> s_stat_colored_cache;
+/* translation_lookup_stat_row: ctx '\x1f' ids '\x1f' row -> answer ("" = none);
+** node-stable until the next reload. */
+static std::unordered_map<std::string, std::string> s_stat_row_cache;
 /* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
 ** be selected, exact entries only, and id lookups answer nothing -- so a locale
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
@@ -3029,6 +3040,7 @@ void translation_shutdown(void) {
     s_stat_wrappers.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
+    s_stat_row_cache.clear();
     s_group_stat_heads.clear();
     s_group_text_heads.clear();
     s_slash_group_cache.clear();
@@ -3451,6 +3463,22 @@ static bool split_pob_tail(const std::string &s, size_t &body_end, std::string &
 ** goes back as written -- spaces and colour escape included: "Prefix" /
 ** "Suffix" as the dictionary words them (前綴 / 後綴), POB's "Not supported
 ** in PoB yet" stays English (使用者裁定). Answers live in the lookup cache. */
+/* tail = " (Prefix)" / " ^8(Suffix)" as split_pob_tail cut it, word = what
+** stands inside: the word replaced by the dictionary's (the active source's
+** first, then the merged map's); left as written when neither has it. */
+static void translate_affix_tail(std::string &tail, const std::string &word) {
+    const std::string *zw = nullptr;
+    if (s_active_source) {
+        auto sit = s_active_source->find(word);
+        if (sit != s_active_source->end() && !sit->second.empty()) zw = &sit->second;
+    }
+    if (!zw) {
+        auto it = s_translations.find(word);
+        if (it != s_translations.end() && !it->second.empty()) zw = &it->second;
+    }
+    if (zw) tail.replace(tail.size() - 1 - word.size(), word.size(), *zw);
+}
+
 static const char *decorated_tail_lookup(const char *english) {
     const std::string in(english);
     size_t body_end = 0;
@@ -3470,18 +3498,7 @@ static const char *decorated_tail_lookup(const char *english) {
         if (z && body != z) zb = z;   /* copied now: the next lookup may rehash the caches */
     }
     if (zb.empty()) return nullptr;
-    if (affix_tag) {
-        const std::string *zw = nullptr;
-        if (s_active_source) {
-            auto sit = s_active_source->find(word);
-            if (sit != s_active_source->end() && !sit->second.empty()) zw = &sit->second;
-        }
-        if (!zw) {
-            auto it = s_translations.find(word);
-            if (it != s_translations.end() && !it->second.empty()) zw = &it->second;
-        }
-        if (zw) tail.replace(tail.size() - 1 - word.size(), word.size(), *zw);
-    }
+    if (affix_tag) translate_affix_tail(tail, word);
     auto ins = s_lookup_cache_active->emplace(in, zb + tail).first;
     return ins->second.c_str();
 }
@@ -3519,10 +3536,47 @@ static bool is_keep_english(const char *s) {
     return s_keep_english.count(s) > 0 || s_keep_scope.count(s) > 0;
 }
 
+/* translation_set_draw_override (see the header). The Chinese values are
+** interned in s_draw_override_pool (node-based: an element's address never
+** moves) and never freed, so a pointer translation_lookup handed out stays
+** valid after the next set replaced the map; the pool is bounded (a value past
+** the cap is not taken -- that row keeps the ordinary lookup). Not touched by
+** translation_reload: the values are already the answer, no dictionary needed. */
+static std::unordered_map<std::string, const std::string *> s_draw_override;
+static std::unordered_set<std::string> s_draw_override_pool;
+static std::mutex s_draw_override_mu;
+static std::atomic<size_t> s_draw_override_n{0};
+static const size_t kDrawOverridePoolCap = 200000;
+
+void translation_set_draw_override(const char *const *keys, const char *const *vals, int n) {
+    std::lock_guard<std::mutex> lock(s_draw_override_mu);
+    s_draw_override.clear();
+    for (int i = 0; keys && vals && i < n; i++) {
+        if (!keys[i] || !*keys[i] || !vals[i] || !*vals[i]) continue;
+        auto pit = s_draw_override_pool.find(vals[i]);
+        if (pit == s_draw_override_pool.end()) {
+            if (s_draw_override_pool.size() >= kDrawOverridePoolCap) continue;
+            pit = s_draw_override_pool.emplace(vals[i]).first;
+        }
+        s_draw_override[keys[i]] = &*pit;
+    }
+    s_draw_override_n.store(s_draw_override.size());
+}
+
+static const char *draw_override_find(const char *s) {
+    if (s_draw_override_n.load() == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(s_draw_override_mu);
+    auto it = s_draw_override.find(s);
+    return it == s_draw_override.end() ? nullptr : it->second->c_str();
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
     /* a display string registered to stay English (a unique's flavour text) */
     if (is_keep_english(english)) return nullptr;
+    /* a row the control being drawn translated by id (its stat ids, a gem's /
+    ** an ascendancy's id): ahead of every map and cache below */
+    if (const char *ov = draw_override_find(english)) return ov;
     translation_wait_ready();
     if (s_translations.empty()) return nullptr;
 
@@ -4748,6 +4802,96 @@ const char* translation_lookup_stat_ids_colored(const char *line, const char *ct
 
 const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     return translation_lookup_stat_ids_colored(line, ctx, nullptr);
+}
+
+/* The row without its (Prefix) / (Suffix) tail and leading colour: one line
+** through the stat lookup with the ids, else -- a row holding '/' -- its
+** "/"-joined lines (slash_group_lookup's split): the pieces a GGPK multi-line
+** description covers taken whole from the line groups, every other piece
+** through the stat lookup with the ids. "" unless every piece has an answer. */
+static std::string stat_row_body(const std::string &body, const char *ctx, const char *stat_ids) {
+    if (body.empty()) return std::string();
+    if (const char *z = stat_lookup_cached(body.c_str(), ctx, stat_ids)) return z;
+    if (body.find('/') == std::string::npos || body.find('\n') != std::string::npos) return std::string();
+    std::vector<std::string> parts;
+    std::string sep_text;
+    size_t start = 0;
+    while (true) {
+        size_t sep = body.find('/', start);
+        std::string piece = body.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+        const size_t b = piece.find_first_not_of(' '), e = piece.find_last_not_of(' ');
+        parts.push_back(b == std::string::npos ? std::string() : piece.substr(b, e - b + 1));
+        if (sep == std::string::npos) break;
+        if (sep_text.empty()) {
+            size_t l = sep, r = sep + 1;
+            while (l > start && body[l - 1] == ' ') l--;
+            while (r < body.size() && body[r] == ' ') r++;
+            sep_text = body.substr(l, r - l);
+        }
+        start = sep + 1;
+    }
+    std::vector<std::string> gout;
+    std::vector<char> ghit;
+    group_lines_core(parts, ctx, gout, ghit);   /* fills gout / ghit even with no group */
+    std::vector<std::string> zh_lines;
+    for (size_t i = 0; i < parts.size(); i++) {
+        std::string z;
+        if (i < ghit.size() && ghit[i]) {
+            z = gout[i];
+        } else {
+            const char *r = parts[i].empty() ? nullptr : stat_lookup_cached(parts[i].c_str(), ctx, stat_ids);
+            if (!r) return std::string();
+            z = r;
+        }
+        if (z.empty()) continue;   /* a line whose text went into the line before */
+        for (std::string &zl : group_split_lines(z)) zh_lines.push_back(std::move(zl));
+    }
+    std::string result;
+    for (const std::string &zl : zh_lines) {
+        if (!result.empty()) result += sep_text;
+        result += zl;
+    }
+    if (leaks_placeholder(result, body)) result.clear();
+    return result;
+}
+
+const char* translation_lookup_stat_row(const char *row, const char *ctx, const char *stat_ids) {
+    if (!row || !*row || !stat_ids || stat_split_ids(stat_ids).empty()) return nullptr;
+    translation_wait_ready();
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
+    std::string ck(ctx ? ctx : "");
+    ck += '\x1f';
+    for (const std::string &id : stat_split_ids(stat_ids)) { ck += id; ck += ' '; }
+    ck += '\x1f';
+    ck += row;
+    auto cit = s_stat_row_cache.find(ck);
+    if (cit != s_stat_row_cache.end()) return cit->second.empty() ? nullptr : cit->second.c_str();
+
+    std::string in(row), tail, word;
+    size_t body_end = 0;
+    if (split_pob_tail(in, body_end, word) && (word == "Prefix" || word == "Suffix")) {
+        tail = in.substr(body_end);
+        in.resize(body_end);
+    } else {
+        word.clear();
+    }
+    const size_t cl = stat_leading_colour_len(in.c_str());
+    const std::string colour = in.substr(0, cl);
+    std::string zb = stat_row_body(in.substr(cl), ctx, stat_ids);
+    std::string out;
+    if (!zb.empty()) {
+        out = colour;
+        for (char c : zb) {
+            out += c;
+            if (c == '\n') out += colour;
+        }
+        if (!word.empty()) {
+            translate_affix_tail(tail, word);
+            out += tail;
+        }
+    }
+    auto ins = s_stat_row_cache.emplace(std::move(ck), std::move(out)).first;
+    return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
 /* ---- line groups (ggpk_groups.json) ----

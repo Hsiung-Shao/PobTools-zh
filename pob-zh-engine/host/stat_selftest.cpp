@@ -257,6 +257,27 @@ bool patch_by_id(const std::wstring& path,
 	}
 }
 
+// 在字典複本放一份 id 檔(R15 用):寫入 file,並列進 meta.json 的 source_dicts。
+bool add_source_dict(const std::wstring& localeDir, const char* file, const nlohmann::ordered_json& doc)
+{
+	const std::wstring wfile(file, file + strlen(file));
+	if (!write_bytes(localeDir + wfile, doc.dump(2))) return false;
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		auto& sd = meta["source_dicts"];
+		if (!sd.is_array()) sd = nlohmann::ordered_json::array();
+		bool have = false;
+		for (const auto& x : sd)
+			if (x.is_string() && x.get<std::string>() == file) have = true;
+		if (!have) sd.push_back(file);
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
 } // namespace
 
 int RunStatSelftest(const std::wstring& statsJsonArg)
@@ -2179,6 +2200,117 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		       "           k4='%s' k5='%s' k6='%s'\n",
 		       t1.c_str(), t2.c_str(), t3.c_str(), b3.c_str(), b4.c_str(), b4bare.c_str(), g3.c_str(), k4.c_str(),
 		       k5.c_str(), k6.c_str());
+	}
+
+	// ---- R15(使用者裁定 2026-10-28「更改」:下拉列改用語言無關 id)-----------------------------------
+	// ID 新的 id 表(詞綴→stat id、寶石名、昇華名、天賦→stat id)由 meta.json source_dicts 載入;
+	// SR 一列詞綴以該詞綴的 stat id 走 stats_by_id(單行 / 「/」接的多行 / 尾綴 (Prefix)(Suffix));
+	// DO 繪製期間的覆寫表(某控制項正在畫的字 → 依 id 翻好的中文),清掉後照舊。
+	// 植入的 id 值抄自 GGPK(pos_affix/out/_cache 的 rel_mod_stat / passiveskills / ascendancy /
+	// activeskills,2026-10-28 讀),不是虛構;出貨字典目前沒有這幾個檔(待 pob_export 補)。
+	printf("\n=== R15 id 表 / 一列詞綴走 stat id / 繪製覆寫 ===\n");
+	{
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto row = [](const char* s, const char* ids) {
+			const char* r = translation_lookup_stat_row(s, "item", ids);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto byId = [](const char* src, const char* id, const char* en) {
+			const char* r = translation_lookup_by_id_en(src, id, en);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::wstring vroot = root + L"r15\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		nlohmann::ordered_json modStats, passiveStats, gemNames, ascNames;
+		modStats["source_files"] = {"ggpk:rel_mod_stat by Mods.Id"};
+		modStats["entries"] = {{"DelveWeaponChanceToGainOnslaughtOnKill2h1", "chance_to_gain_onslaught_on_kill_%"},
+		                       {"MaximumPowerChargeInfluenceMaven",
+		                        "max_power_charges gain_maximum_power_charges_on_power_charge_gained_%_chance"}};
+		passiveStats["source_files"] = {"ggpk:passiveskills.Stats by PassiveSkillGraphId"};
+		passiveStats["entries"] = {{"42687", "base_dexterity_and_intelligence two_handed_melee_accuracy_rating_+% "
+		                                     "two_handed_melee_attack_speed_+% two_handed_melee_critical_strike_chance_+%"}};
+		gemNames["source_files"] = {"ggpk:activeskills.DisplayedName by GrantedEffects.Id"};
+		gemNames["entries"] = {{"GemDetonateMines", u8"遙控地雷"}};
+		gemNames["templates"] = {{"GemDetonateMines", "Detonate Mines"}};
+		ascNames["source_files"] = {"ggpk:ascendancy.Name by Ascendancy.Id"};
+		ascNames["entries"] = {{"Raider", u8"守林人"}};
+		ascNames["templates"] = {{"Raider", "Warden"}};
+		const bool setup = build_dict_copy(shippedLocale, loc, statsJson, true, w) &&
+		                   plant_file(loc + L"ui.json", {{"Zzqdo row", u8"一般列"}}) &&
+		                   add_source_dict(loc, "mod_stats_by_id.json", modStats) &&
+		                   add_source_dict(loc, "passive_stats_by_id.json", passiveStats) &&
+		                   add_source_dict(loc, "gem_names_by_id.json", gemNames) &&
+		                   add_source_dict(loc, "ascendancy_by_id.json", ascNames);
+		if (!setup) printf("           setup r15 failed %s\n", w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const std::string i1 = byId("mod_stats", "DelveWeaponChanceToGainOnslaughtOnKill2h1", nullptr);
+		const std::string i2 = byId("passive_stats", "42687", nullptr);
+		const std::string i3 = byId("gem_names", "GemDetonateMines", "Detonate Mines");
+		const std::string i3b = byId("gem_names", "GemDetonateMines", "Detonate Minez");
+		const std::string i4 = byId("ascendancy", "Raider", "Warden");
+		const char* kPow = "+1 to Maximum Power Charges";
+		const char* kOns = "20% chance to gain Onslaught for 4 seconds on Kill (Suffix)";
+		const char* kSlash = "+1 to Maximum Power Charges/10% chance that if you would gain Power Charges, "
+		                     "you instead gain up to/your maximum number of Power Charges";
+		const std::string f1 = lk(kPow), f2 = lk(kOns);
+		const std::string s1 = row(kPow, "max_power_charges");
+		const std::string s2 = row("+1 to Level of Socketed Gems", "local_socketed_gem_level_+");
+		const std::string s3 = row("#% chance to gain Onslaught for # seconds on Kill", "chance_to_gain_onslaught_on_kill_%");
+		const std::string s4 = row(kOns, "chance_to_gain_onslaught_on_kill_%");
+		const std::string s5 = row(kSlash, "max_power_charges gain_maximum_power_charges_on_power_charge_gained_%_chance");
+		const std::string s6 = row("Drops Scorched Ground while moving, lasting 4 seconds",
+		                           "boots_implicit_ground_scorched_duration_ms");
+		const std::string s7a = row(kPow, nullptr), s7b = row(kPow, "");
+		const std::string s8 = row("+1 to Maximum Power Charges/Zzq no such line", "max_power_charges");
+		const std::string s9 = row("^8+1 to Maximum Power Charges", "max_power_charges");
+		const std::string s10 = row(kPow, "zzq_no_such_stat");
+		const std::string d0 = lk("Zzqdo row");
+		const char* oKeys[] = {"Zzqdo row"};
+		const char* oVals[] = {u8"覆寫列"};
+		translation_set_draw_override(oKeys, oVals, 1);
+		const std::string d1 = lk("Zzqdo row"), d1b = lk(kPow);
+		translation_set_draw_override(nullptr, nullptr, 0);
+		const std::string d2 = lk("Zzqdo row");
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		const std::string i5 = byId("mod_stats", "DelveWeaponChanceToGainOnslaughtOnKill2h1", nullptr);
+		remove_tree(vroot);
+		printf("           i1='%s' i2='%s'\n           i3='%s' i3b='%s' i4='%s' i5='%s'\n", i1.c_str(), i2.c_str(),
+		       i3.c_str(), i3b.c_str(), i4.c_str(), i5.c_str());
+		printf("           f1='%s' f2='%s'\n           s1='%s' s2='%s'\n           s3='%s' s4='%s'\n"
+		       "           s5='%s'\n           s6='%s' s7a='%s' s7b='%s' s8='%s' s9='%s' s10='%s'\n"
+		       "           d0='%s' d1='%s' d1b='%s' d2='%s'\n",
+		       f1.c_str(), f2.c_str(), s1.c_str(), s2.c_str(), s3.c_str(), s4.c_str(), s5.c_str(), s6.c_str(),
+		       s7a.c_str(), s7b.c_str(), s8.c_str(), s9.c_str(), s10.c_str(), d0.c_str(), d1.c_str(), d1b.c_str(),
+		       d2.c_str());
+		check(setup && i1 == "chance_to_gain_onslaught_on_kill_%", "ID1 詞綴→stat id 表(mod_stats_by_id.json)由 source_dicts 載入");
+		check(setup && i2.rfind("base_dexterity_and_intelligence ", 0) == 0, "ID2 天賦→stat id 表(passive_stats_by_id.json)載入");
+		check(setup && i3 == u8"遙控地雷" && i3b == "(null)", "ID3 寶石名以 GrantedEffects id 查(英文對不上不給)");
+		check(setup && i4 == u8"守林人", "ID4 昇華名以 Ascendancy id 查");
+		check(setup && i5 == "(null)", "ID5 出貨字典沒有這些檔時查不到(不出錯)");
+		check(setup && f1 == u8"+1 最大暴擊球數量" && s1 == u8"+1 最大暴擊球",
+		      "SR1 一列詞綴以 stat id 走物品描述檔(對照:扁平查表是天賦描述的「數量」)");
+		check(setup && s2 == u8"此物品插槽中寶石等級 +1", "SR2 插槽寶石等級以 stat id 得物品描述檔譯文");
+		check(setup && s3 == u8"擊殺時 #% 機率獲得 # 秒猛攻", "SR3 多階合併列(數字皆 #)以 stat id 選對描述");
+		check(setup && f2 == u8"擊殺時有 20% 機率獲得 4 秒猛攻效果 (後綴)" && s4 == u8"擊殺時 20% 機率獲得 4 秒猛攻 (後綴)",
+		      "SR4 帶 (Suffix) 的列以 stat id 選對同英文的兩個 stat(對照:沒有 id 時選錯),尾綴照字典");
+		check(setup && s5 == u8"+1 最大暴擊球/若你獲得暴擊球，有 10% 機率獲得最大上限暴擊球",
+		      "SR5 「/」接的多行列:兩行一句整句翻、其餘行以 stat id 翻");
+		check(setup && s6 == u8"移動時留下焦灼地面，持續 4 秒", "SR6 同英文兩個 stat(焦灼地面)以 stat id 選對");
+		check(setup && s7a == "(null)" && s7b == "(null)", "SR7 沒有 stat id 不回答(呼叫端照舊)");
+		check(setup && s8 == "(null)", "SR8 有一段翻不出來整列不回答(不出現半中半英)");
+		check(setup && s9 == u8"^8+1 最大暴擊球", "SR9 開頭色碼保留");
+		check(setup && s10 == "(null)", "SR10 stat id 對不上任何描述不回答");
+		check(setup && d0 == u8"一般列" && d1 == u8"覆寫列" && d2 == u8"一般列",
+		      "DO1 繪製覆寫表期間該字畫成覆寫中文,清掉後照舊(含已快取的字)");
+		check(setup && d1b == f1, "DO2 覆寫表沒列的字不受影響");
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");

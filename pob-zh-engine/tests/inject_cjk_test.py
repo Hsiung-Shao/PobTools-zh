@@ -4497,6 +4497,395 @@ def test_fl_unique_flavour_stays_english(fork):
           ok4 and want_en in lines4, "lines=%r err=%r" % (lines4, err4))
 
 
+# ---- R15:下拉列改用語言無關 id(使用者裁定 2026-10-28「更改」)----------------------------------
+# DO:有 _ptRowZh 的下拉在自己繪製期間把「該列英文 → 依 id 翻的中文」交給引擎覆寫表;浮窗不帶。
+# CR/PM:製作詞綴下拉(modList)、腐化 / 自訂 / 異能彈窗(mod 表 → Mods.Id)以詞綴的 stat id 翻整列。
+# GN:寶石清單列名以 GrantedEffects id 取;AS:昇華下拉以 Ascendancy id 取;
+# CT:星團詞綴浮窗的大天賦說明行以該天賦 stat id 走 passive;TA:紋身隱藏段先走 stat id。
+R15_IDS = {
+    "mod_stats": {"V2MaxPowerChargesCorrupted": "max_power_charges",
+                  "OnslaughtOnKillInfluence1": "chance_to_gain_onslaught_on_kill_%",
+                  "OnslaughtOnKillInfluence2_": "chance_to_gain_onslaught_on_kill_%",
+                  "DelveWeaponChanceToGainOnslaughtOnKill2h1": "chance_to_gain_onslaught_on_kill_%",
+                  "ScorchedGroundWhileMovingEldritchImplicit3": "boots_implicit_ground_scorched_duration_ms"},
+    "passive_stats": {"42687": "base_dexterity_and_intelligence two_handed_melee_attack_speed_+%"},
+    "gem_names": {"GemDetonateMines": "遙控地雷"},
+    "ascendancy": {"Raider": "守林人"},
+}
+R15_TPL = {"gem_names": {"GemDetonateMines": "Detonate Mines"}, "ascendancy": {"Raider": "Warden"}}
+R15_ONS = "#% chance to gain Onslaught for # seconds on Kill"
+R15_DELVE = "20% chance to gain Onslaught for 4 seconds on Kill (Suffix)"
+R15_SCORCH = "Drops Scorched Ground while moving, lasting 4 seconds"
+R15_ROWS = {
+    ("+1 to Maximum Power Charges", "item", "max_power_charges"): "+1 最大暴擊球",
+    (R15_ONS, "item", "chance_to_gain_onslaught_on_kill_%"): "擊殺時 #% 機率獲得 # 秒猛攻",
+    (R15_DELVE, "item", "chance_to_gain_onslaught_on_kill_%"): "擊殺時 20% 機率獲得 4 秒猛攻 (後綴)",
+    (R15_SCORCH, "item", "boots_implicit_ground_scorched_duration_ms"): "移動時留下焦灼地面，持續 4 秒",
+}
+R15_STAT = {
+    ("+15 to Dexterity and Intelligence", "passive", "base_dexterity_and_intelligence two_handed_melee_attack_speed_+%"):
+        "增加 +15 敏捷與智慧",
+    ("Skills fire an additional Projectile", "passive", "number_of_additional_projectiles"): "技能有額外一個投射物",
+}
+DICT[None].update({"+1 to Maximum Power Charges": "+1 最大暴擊球數量", R15_SCORCH: "移動時掉落焦灼地面，持續 4 秒",
+                   "+15 to Dexterity and Intelligence": "+15 點敏捷與智慧",
+                   "Skills fire an additional Projectile": "技能發射 1 個額外投射物",
+                   "Warden": "守護者", "Detonate Mines": "引爆地雷"})
+
+R15_DD_BODY = """
+function C:Draw(viewPort)
+	local sel = self.list[self.selIndex]
+	DrawString(0, 0, "LEFT", 16, "VAR", type(sel) == "table" and sel.label or sel or "")
+	self:DrawTooltip()
+	if self.dropped then
+		for _, v in ipairs(self.list) do DrawString(0, 0, "LEFT", 16, "VAR", type(v) == "table" and v.label or v) end
+	end
+end
+function C:DrawTooltip()
+	local sel = self.list[self.selIndex]
+	if type(sel) == "table" then DrawString(0, 0, "LEFT", 16, "VAR", sel.label) end
+end
+function C:CheckDroppedWidth()
+	local w = 0
+	for _, v in ipairs(self.list) do w = math.max(w, DrawStringWidth(16, "VAR", type(v) == "table" and v.label or v)) end
+	self.droppedWidth = w
+end
+"""
+R15_DD_P1 = """
+local C = newClass("DropDownControl")
+function C:DropDownControl(anchor, rect, list, selFunc)
+	self.list = list self.selFunc = selFunc self.selIndex = 1
+	return self
+end
+""" + R15_DD_BODY
+R15_DD_P2 = """
+local C = newClass("DropDownControl", function(self, anchor, rect, list, selFunc)
+	self.list = list self.selFunc = selFunc self.selIndex = 1
+end)
+""" + R15_DD_BODY
+
+R15_SETUP = """
+function r15NewDD(list)
+	if R15_FORK == "PoE1" then return new("DropDownControl"):DropDownControl(nil, nil, list) end
+	return new("DropDownControl", nil, nil, list)
+end
+data = { itemMods = {
+	Corrupted = { V2MaxPowerChargesCorrupted = { "+1 to Maximum Power Charges", type = "Corrupted" },
+		ZzqNoStats = { "+1 to Zzq Things", type = "Corrupted" } },
+	Delve = { DelveWeaponChanceToGainOnslaughtOnKill2h1 = { "20% chance to gain Onslaught for 4 seconds on Kill", type = "Suffix" } },
+	Eldritch = { ScorchedGroundWhileMovingEldritchImplicit3 = { "Drops Scorched Ground while moving, lasting 4 seconds", type = "Exarch" } },
+	JewelCluster = { AfflictionNotableGracefulExecution_ = { "1 Added Passive Skill is Graceful Execution", type = "Prefix" } },
+} }
+r15Affixes = {
+	OnslaughtOnKillInfluence1 = { "(5-7)% chance to gain Onslaught for 4 seconds on Kill" },
+	OnslaughtOnKillInfluence2_ = { "(8-10)% chance to gain Onslaught for 4 seconds on Kill" },
+	Life1 = { "+20 to maximum Life" },
+	AfflictionNotableGracefulExecution_ = data.itemMods.JewelCluster.AfflictionNotableGracefulExecution_,
+}
+r15Build = { spec = { tree = { clusterNodeMap = { ["Graceful Execution"] = { id = 42687, dn = "Graceful Execution",
+	sd = { "+15 to Dexterity and Intelligence" } } } } } }
+package.loaded["Modules.AddImplicitPopup"] = { AddImplicitToDisplayItem = function(itemsTab, item)
+	local controls = { modSelect = r15NewDD({ { label = "Drops Scorched Ground while moving, lasting 4 seconds",
+		mod = data.itemMods.Eldritch.ScorchedGroundWhileMovingEldritchImplicit3 } }) }
+	main:OpenPopup(100, 100, "Add Implicit", controls)
+end }
+main.modes = { BUILD = {} }
+function main.modes.BUILD:Init()
+	self.spec = { curClassId = 2, tree = { classes = { [2] = { name = "Ranger", classes = {
+		[0] = { name = "None" }, [1] = { id = "Raider", name = "Warden" }, [2] = { id = "Deadeye", name = "Deadeye" } } } } } }
+	self.controls = { ascendDrop = r15NewDD({ { label = "None", ascendClassId = 0 }, { label = "Warden", ascendClassId = 1 },
+		{ label = "Deadeye", ascendClassId = 2 } }) }
+end
+"""
+R15_ITEMSTAB_METHODS = """
+function C:R15Init()
+	self.build = r15Build
+	self.displayItem = { affixes = r15Affixes }
+	self.controls = {}
+	local drop = r15NewDD({ "None",
+		{ label = "#% chance to gain Onslaught for # seconds on Kill", modList = { "OnslaughtOnKillInfluence1", "OnslaughtOnKillInfluence2_" } },
+		{ label = "+20 to maximum Life", modList = { "Life1" } },
+		{ label = "1 Added Passive Skill is Graceful Execution", modList = { "AfflictionNotableGracefulExecution_" } } })
+	drop.tooltipFunc = function(tooltip, mode, index, value)
+		local mod = self.displayItem.affixes[value.modId or value.modList[1]]
+		for _, line in ipairs(mod) do tooltip:AddLine(14, "^7" .. line) end
+		local notableName = mod[1] and mod[1]:match("1 Added Passive Skill is (.*)")
+		local node = notableName and self.build.spec.tree.clusterNodeMap[notableName]
+		if node then
+			for _, line in ipairs(node.sd) do tooltip:AddLine(16, colorCodes.MAGIC .. line) end
+		end
+	end
+	self.controls.displayItemAffix1 = drop
+end
+function C:CorruptDisplayItem()
+	local controls = {
+		implicit1 = r15NewDD({ { label = "None" },
+			{ label = "+1 to Maximum Power Charges", mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted },
+			{ label = "+1 to Zzq Things", mod = data.itemMods.Corrupted.ZzqNoStats } }),
+		implicit2 = r15NewDD({ { label = "None" },
+			{ label = "+1 to Maximum Power Charges", mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted } }),
+	}
+	main:OpenPopup(100, 100, "Corrupt Item", controls)
+end
+function C:AddCustomModifierToDisplayItem()
+	local controls = { modSelect = r15NewDD({ { label = "20% chance to gain Onslaught for 4 seconds on Kill (Suffix)",
+		mod = data.itemMods.Delve.DelveWeaponChanceToGainOnslaughtOnKill2h1 } }) }
+	main:OpenPopup(100, 100, "Add Modifier", controls)
+end
+"""
+R15_ITEMSTAB_P1 = """
+local C = newClass("ItemsTab")
+function C:ItemsTab() self:R15Init() return self end
+""" + R15_ITEMSTAB_METHODS
+R15_ITEMSTAB_P2 = """
+local C = newClass("ItemsTab", function(self) self:R15Init() end)
+""" + R15_ITEMSTAB_METHODS
+
+
+def r15_harness(fork, define_api=True, with_inject=True, ids=None):
+    """R15 下拉 / 彈窗 / 昇華 / 星團浮窗。h.r15 記覆寫表、畫出的字、量寬、stat 查詢。"""
+    h = Harness(fork, with_inject=False)
+    h.loose_keys = True
+    st = {"override": None, "drawn": [], "widths": [], "sets": 0, "rows": [], "stats": []}
+    h.r15 = st
+    id_tables = R15_IDS if ids is None else ids
+
+    def set_override(t=None):
+        st["sets"] += 1
+        st["override"] = dict(t.items()) if t is not None else None
+
+    def shown(t):
+        ov = st["override"] or {}
+        return ov.get(t, t)
+
+    def draw(t):
+        st["drawn"].append((shown(t), st["override"] is not None))
+
+    def width(t):
+        s = shown(t)
+        st["widths"].append(s)
+        return len(s)
+
+    def stat_row(row, ctx=None, ids_=None):
+        st["rows"].append((row, ctx, ids_))
+        return R15_ROWS.get((row, ctx, ids_))
+
+    def translate_stat(line, ctx=None, ids_=None):
+        st["stats"].append((line, ctx, ids_))
+        m = re.match(r"^((?:\^x[0-9A-Fa-f]{6}|\^\d)*)(.*)$", line or "", re.S)
+        hit = R15_STAT.get((m.group(2).strip(), ctx, ids_))
+        return None if hit is None else m.group(1) + hit
+
+    def translate_id(source, id_, en=None):
+        if isinstance(id_, float) and id_.is_integer():
+            id_ = int(id_)
+        key = None if id_ is None else str(id_)
+        if not h.enabled:
+            return None
+        hit = (id_tables.get(source) or {}).get(key)
+        tpl = (R15_TPL.get(source) or {}).get(key)
+        if hit is not None and (en is None or tpl is None or tpl == en):
+            return hit
+        if en is None:
+            return None
+        prev = h.source
+        h.source = source
+        try:
+            return DICT.get(source, {}).get(en) or DICT[None].get(en)
+        finally:
+            h.source = prev
+    g = h.rt.globals()
+    g["__py_r15_draw"] = draw
+    g["__py_r15_width"] = width
+    g["__py_r15_set"] = set_override
+    g["__py_r15_row"] = stat_row
+    g["__py_r15_stat"] = translate_stat
+    g["__py_r15_id"] = translate_id
+    g["R15_FORK"] = fork
+    h.run(b"function DrawString(x, y, a, hh, f, t) __py_r15_draw(t) end "
+          b"function DrawStringWidth(hh, f, t) return __py_r15_width(t) end "
+          b"function PobToolsTranslateId(s, id, en) return __py_r15_id(s, id, en) end "
+          b"function PobToolsTranslateStat(l, c, i) return __py_r15_stat(l, c, i) end")
+    if define_api:
+        h.run(b"function PobToolsSetDrawOverride(t) __py_r15_set(t) end "
+              b"function PobToolsTranslateStatRow(r, c, i) return __py_r15_row(r, c, i) end")
+    h.run(COLOUR_SETUP)
+    h.run(POPUP_SETUP)
+    h.run(R15_SETUP)
+    h.run('LoadModule("Classes/Tooltip")')
+    h.define("DropDownControl", R15_DD_P1, R15_DD_P2)
+    h.define("ItemsTab", R15_ITEMSTAB_P1, R15_ITEMSTAB_P2)
+    if with_inject:
+        h.apply_inject()
+    return h
+
+
+def r15_draw(h, expr, dropped):
+    """畫一次下拉;回 (ok, err, [(畫出的字, 當下有無覆寫)], 畫完後覆寫表)。"""
+    del h.r15["drawn"][:]
+    ok, err = h.eval('function(d) local dd = %s local ok, e = pcall(function() dd.dropped = d dd:Draw({}) end) '
+                     'return ok, e end' % expr)(dropped)
+    return ok, err, list(h.r15["drawn"]), h.r15["override"]
+
+
+def test_r15_dropdown_override(fork):
+    """DO1 ~ DO6 -- 有 _ptRowZh 的下拉繪製期間依 id 翻好的列畫中文;浮窗、其他下拉、F2 關閉都照舊。"""
+    h = r15_harness(fork)
+    tab = make(h, "ItemsTab")
+    h.eval('function(t) t:CorruptDisplayItem() end')(tab)
+    h.eval('function() main.popups[1].controls.implicit1.selIndex = 2 end')()
+    ok, err, drawn, after = r15_draw(h, "main.popups[1].controls.implicit1", False)
+    check("%s DO1 關閉的下拉:選中列畫成依 stat id 翻的中文" % fork,
+          ok and drawn[:1] == [("+1 最大暴擊球", True)], "drawn=%r err=%r" % (drawn, err))
+    check("%s DO2 下拉畫的浮窗不帶覆寫表(浮窗行有自己的翻譯路徑)" % fork,
+          ok and len(drawn) > 1 and drawn[1] == ("+1 to Maximum Power Charges", False), "drawn=%r" % drawn)
+    check("%s DO3 畫完覆寫表清掉" % fork, ok and after is None, "after=%r" % after)
+    ok, err, drawn, after = r15_draw(h, "main.popups[1].controls.implicit1", True)
+    rows = [t for t, o in drawn[2:]]
+    check("%s DO4 展開清單:有 stat id 的列中文、沒有的列照舊英文" % fork,
+          ok and rows == ["None", "+1 最大暴擊球", "+1 to Zzq Things"], "rows=%r err=%r" % (rows, err))
+    del h.r15["widths"][:]
+    h.eval('function() main.popups[1].controls.implicit1:CheckDroppedWidth() end')()
+    check("%s DO5 量清單寬度時也照覆寫後的字量" % fork, "+1 最大暴擊球" in h.r15["widths"], "widths=%r" % h.r15["widths"])
+    sets = h.r15["sets"]
+    ok, err, drawn, after = r15_draw(h, "r15NewDD({ { label = '+1 to Maximum Power Charges', mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted } })", True)
+    check("%s DO6 沒設 _ptRowZh 的下拉不碰覆寫表" % fork,
+          ok and h.r15["sets"] == sets and all(t == "+1 to Maximum Power Charges" for t, o in drawn), "drawn=%r" % drawn)
+    h.enabled = False
+    sets = h.r15["sets"]
+    ok, err, drawn, after = r15_draw(h, "main.popups[1].controls.implicit1", False)
+    check("%s DO7 F2 關閉時不設覆寫表(畫英文)" % fork,
+          ok and h.r15["sets"] == sets and drawn[:1] == [("+1 to Maximum Power Charges", False)], "drawn=%r" % drawn)
+    h0 = r15_harness(fork, define_api=False)
+    tab0 = make(h0, "ItemsTab")
+    h0.eval('function(t) t:CorruptDisplayItem() main.popups[1].controls.implicit1.selIndex = 2 end')(tab0)
+    ok0, err0, drawn0, _ = r15_draw(h0, "main.popups[1].controls.implicit1", True)
+    check("%s DO8 舊引擎(無覆寫 API)照舊畫、不報錯" % fork, ok0 and drawn0[:1] == [("+1 to Maximum Power Charges", False)],
+          "drawn=%r err=%r" % (drawn0, err0))
+
+
+def test_r15_popup_rows(fork):
+    """CR1 ~ PM3 -- 製作詞綴下拉、腐化 / 自訂 / 異能彈窗的列以詞綴 stat id 走整列查詢。"""
+    h = r15_harness(fork)
+    tab = make(h, "ItemsTab")
+    h.eval('function(t) t.controls.displayItemAffix1.selIndex = 2 end')(tab)
+    del h.r15["drawn"][:]
+    okA, errA = h.eval('function(t) local ok, e = pcall(function() local d = t.controls.displayItemAffix1 '
+                       'd.dropped = true d:Draw({}) end) return ok, e end')(tab)
+    rows = [t for t, o in h.r15["drawn"][2:]]
+    check("%s CR1 製作詞綴下拉:多階合併列以各階 stat id(去重)翻" % fork,
+          okA and rows[:2] == ["None", "擊殺時 #% 機率獲得 # 秒猛攻"], "rows=%r err=%r" % (rows, errA))
+    check("%s CR1 以 item 情境、合併後的 stat id 詢問" % fork,
+          (R15_ONS, "item", "chance_to_gain_onslaught_on_kill_%") in h.r15["rows"], "rows=%r" % h.r15["rows"])
+    check("%s CR2 沒有 stat id 的詞綴列不問整列查詢、照舊英文" % fork,
+          okA and "+20 to maximum Life" in rows and not any(r[0] == "+20 to maximum Life" for r in h.r15["rows"]),
+          "rows=%r calls=%r" % (rows, h.r15["rows"]))
+    h.eval('function(t) t:AddCustomModifierToDisplayItem() end')(tab)
+    ok, err, drawn, _ = r15_draw(h, "main.popups[1].controls.modSelect", False)
+    check("%s PM1 自訂詞綴彈窗(帶 (Suffix))以 mod 表找回 Mods.Id 再以 stat id 翻" % fork,
+          ok and drawn[:1] == [("擊殺時 20% 機率獲得 4 秒猛攻 (後綴)", True)], "drawn=%r err=%r" % (drawn, err))
+    okI, errI = h.eval('function(t) local ok, e = pcall(function() package.loaded["Modules.AddImplicitPopup"].AddImplicitToDisplayItem(t, t.displayItem) end) '
+                       'return ok, e end')(tab)
+    ok, err, drawn, _ = r15_draw(h, "main.popups[1].controls.modSelect", False)
+    check("%s PM2 異能固定詞綴彈窗的列以 stat id 選對同英文的兩個 stat" % fork,
+          okI and ok and drawn[:1] == [("移動時留下焦灼地面，持續 4 秒", True)], "drawn=%r err=%r %r" % (drawn, errI, err))
+    h.eval('function(t) t:CorruptDisplayItem() main.popups[1].controls.implicit2.selIndex = 2 end')(tab)
+    ok, err, drawn, _ = r15_draw(h, "main.popups[1].controls.implicit2", False)
+    check("%s PM3 腐化彈窗第二個下拉同樣以 stat id 翻" % fork,
+          ok and drawn[:1] == [("+1 最大暴擊球", True)], "drawn=%r err=%r" % (drawn, err))
+    hn = r15_harness(fork, ids={})
+    tabn = make(hn, "ItemsTab")
+    hn.eval('function(t) t:CorruptDisplayItem() main.popups[1].controls.implicit1.selIndex = 2 end')(tabn)
+    okn, errn, drawnn, _ = r15_draw(hn, "main.popups[1].controls.implicit1", True)
+    check("%s PM4 出貨資料沒有詞綴 stat id 時整個下拉照舊(不設覆寫、不問整列查詢)" % fork,
+          okn and all(o is False for t, o in drawnn) and not hn.r15["rows"], "drawn=%r rows=%r" % (drawnn, hn.r15["rows"]))
+
+
+def test_r15_gem_list_name(fork):
+    """GN1 ~ GN5 -- 寶石選擇清單列名以 GrantedEffects id 取 GGPK 名稱;英文對不上、沒資料、F2 關閉都不給。"""
+    h = r15_harness(fork)
+    f = h.eval("function(g) return PobToolsGemListName and PobToolsGemListName(g) end")
+    mk = h.eval("function(n, id) return { name = n, grantedEffectId = id, grantedEffect = { id = id } } end")
+    check("%s GN1 id 命中且英文相同:給 GGPK 名稱" % fork, f(mk("Detonate Mines", "GemDetonateMines")) == "遙控地雷",
+          repr(f(mk("Detonate Mines", "GemDetonateMines"))))
+    check("%s GN2 英文對不上不給(不退回一般查表)" % fork, f(mk("Detonate Minez", "GemDetonateMines")) is None)
+    check("%s GN3 沒有 id 資料不給" % fork, f(mk("Fireball", "Fireball")) is None)
+    h.enabled = False
+    check("%s GN4 F2 關閉不給" % fork, f(mk("Detonate Mines", "GemDetonateMines")) is None)
+    patches = parse_source_patches(read_text(UI_API))
+    path = os.path.join(FORKS[fork], "Classes", "GemSelectControl.lua")
+    patched, applied = apply_source_patches(read_text(path), "gemselectcontrol.lua", patches)
+    check("%s GN5 引擎 source patch 讓清單列名(gemText)經 PobToolsGemListName" % fork,
+          applied >= 1 and "PobToolsGemListName(gemData)" in patched, "applied=%d" % applied)
+
+
+def test_r15_ascendancy_drop(fork):
+    """AS1 ~ AS2 -- 昇華下拉的列以 Ascendancy id 取 GGPK 名稱;沒有 id 的列照舊。"""
+    h = r15_harness(fork)
+    ok, err = h.eval('function() local ok, e = pcall(function() main.modes.BUILD:Init() end) return ok, e end')()
+    okD, errD, drawn, _ = r15_draw(h, "main.modes.BUILD.controls.ascendDrop", True)
+    rows = [t for t, o in drawn[1:]]
+    check("%s AS1 昇華下拉:Warden 以 Ascendancy id(Raider)取 GGPK 名稱" % fork,
+          ok and okD and "守林人" in rows, "rows=%r err=%r %r" % (rows, err, errD))
+    check("%s AS2 沒有 id 資料 / 沒有 id 的列照舊" % fork, okD and "None" in rows and "Deadeye" in rows, "rows=%r" % rows)
+
+
+def test_r15_cluster_tip_notable(fork):
+    """CT1 ~ CT2 -- 星團詞綴浮窗的大天賦說明行以該天賦的 stat id 走 passive;沒資料照舊。"""
+    def run(ids):
+        h = r15_harness(fork, ids=ids)
+        tab = make(h, "ItemsTab")
+        tip = make(h, "Tooltip")
+        ok, err = h.eval('function(t, tip) local ok, e = pcall(function() local d = t.controls.displayItemAffix1 '
+                         'd.tooltipFunc(tip, "HOVER", 4, d.list[4]) end) return ok, e end')(tab, tip)
+        return h, ok, err, [_norm(l) for l in tooltip_lines(h, tip) if l is not None]
+    h, ok, err, lines = run(None)
+    check("%s CT1 大天賦說明行以天賦 stat id 走 passive" % fork, ok and "增加 +15 敏捷與智慧" in lines,
+          "lines=%r err=%r stats=%r" % (lines, err, h.r15["stats"]))
+    h0, ok0, err0, lines0 = run({k: v for k, v in R15_IDS.items() if k != "passive_stats"})
+    check("%s CT2 沒有天賦 stat id 資料時照舊" % fork, ok0 and "+15 點敏捷與智慧" in lines0,
+          "lines=%r err=%r" % (lines0, err0))
+
+
+def test_r15_tattoo_label_stat_first(fork):
+    """TA1 -- 紋身下拉隱藏段:先以節點 stat id 走 passive,查不到才退回一般查表。"""
+    h = r15_harness(fork)
+    f = h.eval("function(n) local r = PobToolsTattooLabelSd(n) return r and r[1] end")
+    node = h.eval('function() return { sd = { "Skills fire an additional Projectile" }, '
+                  'stats = { number_of_additional_projectiles = { min = 1, max = 1 } } } end')()
+    plain = h.eval('function() return { sd = { "Skills fire an additional Projectile" } } end')()
+    check("%s TA1 有 stat id 的紋身行先走 stat id(GGPK 字面)" % fork, f(node) == "技能有額外一個投射物", repr(f(node)))
+    check("%s TA1 沒有 stat id 的紋身行照舊一般查表" % fork, f(plain) == "技能發射 1 個額外投射物", repr(f(plain)))
+
+
+def test_r15_search_row_override(fork):
+    """SH2 -- 中文搜尋補比對:有 _ptRowZh 的下拉以依 id 翻的列比對(與畫面一致)。"""
+    h = r15_harness(fork, with_inject=False)
+    h.run('LoadModule("Classes/SearchHost")')
+    h.apply_inject()
+    res = h.eval('''function()
+		local SH = common.classes.SearchHost
+		local list = { { label = "Drops Scorched Ground while moving, lasting 4 seconds",
+			mod = data.itemMods.Eldritch.ScorchedGroundWhileMovingEldritchImplicit3 } }
+		local o = { searchTerm = "留下焦灼", searchInfos = {}, ignoreOrder = false, UpdateMatchCount = SH.UpdateMatchCount,
+			searchListAccessor = function() return list end,
+			valueAccessor = function(v) return v.searchFilter or v.label end }
+		local plain = { searchTerm = "留下焦灼", searchInfos = {}, ignoreOrder = false, UpdateMatchCount = SH.UpdateMatchCount,
+			searchListAccessor = function() return list end,
+			valueAccessor = function(v) return v.searchFilter or v.label end }
+		local dd = r15NewDD(list)
+		o._ptRowZh = rawget(dd, "_ptRowZh")
+		package.loaded["Modules.AddImplicitPopup"].AddImplicitToDisplayItem({}, {})
+		o._ptRowZh = rawget(main.popups[1].controls.modSelect, "_ptRowZh")
+		SH.UpdateSearch(o)
+		SH.UpdateSearch(plain)
+		return o.searchInfos[1] and o.searchInfos[1].matches or false, plain.searchInfos[1] and plain.searchInfos[1].matches or false
+	end''')()
+    m1, m0 = res if isinstance(res, tuple) else (None, None)
+    check("%s SH2 依 id 翻的列文字搜得到(對照:一般整列翻譯搜不到)" % fork, m1 is True and m0 is False,
+          "with=%r without=%r" % (m1, m0))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -4567,6 +4956,13 @@ def main():
         test_r1_gem_unsupported_note(fork)
         test_r2_tattoo_label_prev_line(fork)
         test_slash_ctx_mastery(fork)
+        test_r15_dropdown_override(fork)
+        test_r15_popup_rows(fork)
+        test_r15_gem_list_name(fork)
+        test_r15_ascendancy_drop(fork)
+        test_r15_cluster_tip_notable(fork)
+        test_r15_tattoo_label_stat_first(fork)
+        test_r15_search_row_override(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

@@ -791,6 +791,198 @@ local function translateSplitTitle(lead, item)
 	return lead .. zp .. preGap .. zb .. sufGap .. zs
 end
 
+-- ===== drop-down rows by language-independent id =====
+-- 使用者裁定 2026-10-28「更改」: a row whose English is shared by things with
+-- different GGPK wording is translated by what it IS, not by its text --
+--   a mod's row (crafting / corrupt / custom / Eldritch drop-downs): that mod's
+--     GGPK stat ids (mod_stats_by_id.json) through the engine's row lookup
+--     (PobToolsTranslateStatRow, ctx "item")
+--   an ascendancy's row: its Ascendancy id (ascendancy_by_id.json)
+-- Without that data (or with an older engine) nothing below answers and every
+-- row keeps the path it had.
+
+-- The GGPK stat ids (space separated) behind one mod ("mod", Mods.Id) or one
+-- passive ("passive", GraphId): the id tables hold no Chinese, so
+-- PobToolsTranslateId hands the value back as it is. nil without data.
+local function statIdsOf(kind, id)
+	if not hasTranslateId() or id == nil then return nil end
+	local ok, v = pcall(PobToolsTranslateId, kind == "mod" and "mod_stats" or "passive_stats", id)
+	if ok and type(v) == "string" and v ~= "" then return v end
+	return nil
+end
+
+-- A name by its id ONLY: the id table's answer when the English it was written
+-- for is en, else nil -- never the ordinary lookup of en. PobToolsTranslateId
+-- (source, id, en) falls back to that lookup on an id miss or an English
+-- mismatch, and asked without en gives the id table's own value: the two agree
+-- only when the id answer stood.
+local function zhByIdOnly(source, id, en)
+	if not hasTranslateId() or id == nil or type(en) ~= "string" or en == "" then return nil end
+	local okA, a = pcall(PobToolsTranslateId, source, id, en)
+	local okB, b = pcall(PobToolsTranslateId, source, id)
+	if okA and okB and type(a) == "string" and a ~= "" and a == b and a ~= en then return a end
+	return nil
+end
+
+-- One drop-down row through the engine's row lookup with these stat ids; nil
+-- when the engine lacks it or any piece of the row has no translation.
+local function zhStatRow(row, ctx, ids)
+	if type(PobToolsTranslateStatRow) ~= "function" or type(row) ~= "string" or row == "" or not ids then
+		return nil
+	end
+	local ok, zh = pcall(PobToolsTranslateStatRow, row, ctx, ids)
+	if ok and type(zh) == "string" and zh ~= "" and zh ~= row then return zh end
+	return nil
+end
+
+-- mod table -> its key in data.itemMods (POB keys mods by GGPK Mods.Id): the
+-- popup lists carry the table, not the id. Built once per data.itemMods.
+local modIdCache = setmetatable({}, { __mode = "k" })
+local function modIdOf(mod)
+	local mods = type(data) == "table" and data.itemMods or nil
+	if type(mod) ~= "table" or type(mods) ~= "table" then return nil end
+	local idx = modIdCache[mods]
+	if not idx then
+		idx = setmetatable({}, { __mode = "k" })
+		for _, t in pairs(mods) do
+			if type(t) == "table" then
+				for k, m in pairs(t) do
+					if type(k) == "string" and type(m) == "table" and idx[m] == nil then idx[m] = k end
+				end
+			end
+		end
+		modIdCache[mods] = idx
+	end
+	return idx[mod]
+end
+
+-- The stat ids of these mod ids together (a merged tier row: every tier has
+-- the same stats), sorted, " "-joined; nil when none has any.
+local function statIdsOfMods(modIds)
+	local seen, out = {}, {}
+	for _, id in ipairs(modIds) do
+		local ids = statIdsOf("mod", id)
+		for s in (ids or ""):gmatch("%S+") do
+			if not seen[s] then
+				seen[s] = true
+				out[#out + 1] = s
+			end
+		end
+	end
+	if #out == 0 then return nil end
+	table.sort(out)
+	return table.concat(out, " ")
+end
+
+-- _ptRowZh for the crafting affix drop-downs (value.modList = the tiers' mod ids).
+local function affixRowZh(v)
+	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.modList) ~= "table" then return nil end
+	return zhStatRow(v.label, "item", statIdsOfMods(v.modList))
+end
+
+-- _ptRowZh for the corrupt / custom-modifier / Eldritch popups (value.mod = the mod).
+local function modRowZh(v)
+	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.mod) ~= "table" then return nil end
+	local id = modIdOf(v.mod)
+	return id and zhStatRow(v.label, "item", statIdsOf("mod", id)) or nil
+end
+
+-- A drop-down instance with _ptRowZh = function(listValue) -> Chinese or nil
+-- has those rows drawn in Chinese while it draws itself (the closed box's
+-- selected row, the open list) and while it measures them: the engine's draw
+-- override (PobToolsSetDrawOverride) maps that exact label to the Chinese for
+-- the span of the call. The labels stay as POB built them -- search, selection
+-- and everything else reading them see the English -- and the tooltip it draws
+-- meanwhile goes without the override (its lines have their own paths). A row
+-- the function leaves nil, and every control without _ptRowZh, is drawn
+-- exactly as before. Answers are kept per list value (weak).
+local rowZhCache = setmetatable({}, { __mode = "k" })
+local function rowZhOf(ctl, v)
+	local f = rawget(ctl, "_ptRowZh")
+	if type(f) ~= "function" or type(v) ~= "table" then return nil end
+	local hit = rowZhCache[v]
+	if hit == nil then
+		local ok, zh = pcall(f, v)
+		hit = ok and type(zh) == "string" and zh ~= "" and zh or false
+		rowZhCache[v] = hit
+	end
+	return hit or nil
+end
+
+-- { [label] = Chinese } for the rows this call shows (the selected one, or the
+-- whole list when full); a label two rows translate differently is left out.
+-- nil when no row has an answer.
+local function rowOverrideFor(ctl, full)
+	local list = type(ctl.list) == "table" and ctl.list or nil
+	if not list then return nil end
+	local map, any = {}, false
+	local function add(v)
+		local zh = rowZhOf(ctl, v)
+		if not zh or type(v.label) ~= "string" then return end
+		local had = map[v.label]
+		if had == nil then map[v.label] = zh elseif had ~= zh then map[v.label] = false end
+		any = true
+	end
+	if full then
+		for _, v in ipairs(list) do add(v) end
+	else
+		add(list[ctl.selIndex])
+	end
+	if not any then return nil end
+	for k, z in pairs(map) do
+		if z == false then map[k] = nil end
+	end
+	return next(map) ~= nil and map or nil
+end
+
+local activeRowOverride = nil
+local function setRowOverride(map)
+	activeRowOverride = map
+	pcall(PobToolsSetDrawOverride, map)
+end
+
+-- Runs orig(self, ...) with this drop-down's rows overridden (full = every
+-- row, else the selected one); its DrawTooltip, if called, runs without.
+local function withRowOverride(self, full, orig, ...)
+	if type(PobToolsSetDrawOverride) ~= "function" or type(rawget(self, "_ptRowZh")) ~= "function"
+		or (type(PobToolsGetTranslate) == "function" and not PobToolsGetTranslate()) then
+		return orig(self, ...)
+	end
+	local okM, map = pcall(rowOverrideFor, self, full)
+	if not okM or not map then return orig(self, ...) end
+	local prev = activeRowOverride
+	local ownTip = rawget(self, "DrawTooltip")
+	local tipFn = self.DrawTooltip
+	if type(tipFn) == "function" then
+		rawset(self, "DrawTooltip", function(...)
+			local cur = activeRowOverride
+			setRowOverride(nil)
+			local okT, a, b, c = pcall(tipFn, ...)
+			setRowOverride(cur)
+			if not okT then error(a, 0) end
+			return a, b, c
+		end)
+	end
+	setRowOverride(map)
+	local ok, a, b, c = pcall(orig, self, ...)
+	setRowOverride(prev)
+	rawset(self, "DrawTooltip", ownTip)
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+-- The gem picker's row name (the engine's GemSelectControl source patch calls
+-- this for the local it draws): the gem's GGPK name by its GrantedEffects id
+-- (gem_names_by_id.json) when the English matches, else nil (gemData.name is
+-- drawn and translated as before). F2 off: nil.
+function PobToolsGemListName(gemData)
+	if type(gemData) ~= "table" or type(gemData.name) ~= "string" then return nil end
+	if type(PobToolsGetTranslate) == "function" and not PobToolsGetTranslate() then return nil end
+	local ge = gemData.grantedEffect
+	local id = gemData.grantedEffectId or (type(ge) == "table" and ge.id) or nil
+	return zhByIdOnly("gem_names", id, gemData.name)
+end
+
 -- ===== constructor wrapping =====
 -- The two POB forks store a class's constructor in DIFFERENT places, and there
 -- is nothing at the call site to tell them apart:
@@ -904,6 +1096,26 @@ PATCHES["GemSelectControl"] = function(class)
 			origBuild(self, buf)
 			if not hasCJK(buf) then return end
 			withSource("gems", appendCJKMatches, self, buf)
+		end)
+	end
+end
+
+-- Drop-downs whose rows are translated by id (see "drop-down rows by
+-- language-independent id"): Draw shows the selected row, or every row while
+-- the list is open; CheckDroppedWidth measures every row. Controls without
+-- _ptRowZh go straight to the original.
+PATCHES["DropDownControl"] = function(class)
+	local orig = class.Draw
+	if type(orig) ~= "function" then error("DropDownControl has no Draw to wrap") end
+	class.Draw = keepArity(orig, function(self, ...)
+		if type(self) ~= "table" or rawget(self, "_ptRowZh") == nil then return orig(self, ...) end
+		return withRowOverride(self, self.dropped and true or false, orig, ...)
+	end)
+	local origW = class.CheckDroppedWidth
+	if type(origW) == "function" then
+		class.CheckDroppedWidth = keepArity(origW, function(self, ...)
+			if type(self) ~= "table" or rawget(self, "_ptRowZh") == nil then return origW(self, ...) end
+			return withRowOverride(self, true, origW, ...)
 		end)
 	end
 end
@@ -1300,9 +1512,11 @@ end
 -- Tattoo of Bloodlines: "2% increased Recovery Rate of Life, Mana and Energy
 -- Shield" / "per Tribe for which you have an allocated Tattoo") is taken as the
 -- engine's line group lays it out (PobToolsTranslateLines, "passive"; "" = a
--- line whose words went into the one before); any other line asks the plain
--- lookup, then the stat lookup with the node's own stat ids, else stays
--- English. The pieces are joined with "," as POB joins the lines, except after
+-- line whose words went into the one before); any other line asks the stat
+-- lookup with the node's own stat ids, then the plain lookup, else stays
+-- English (使用者裁定 2026-10-28「更改」: the ids first, so a line reads as GGPK
+-- writes that stat; the plain lookup only when they give nothing).
+-- The pieces are joined with "," as POB joins the lines, except after
 -- a piece that already ends in Chinese punctuation (，、。：；). Returns { joined } for the
 -- patch's table.concat, or nil (the patch then translates line by line).
 local CJK_SEP_END = { ["\239\188\140"] = true, ["\227\128\129"] = true, ["\227\128\130"] = true,
@@ -1328,7 +1542,7 @@ function PobToolsTattooLabelSd(node)
 		for i, line in ipairs(lines) do
 			local zh = groups and groups[i]
 			if zh == nil then
-				zh = zhGlobal(line) or (idStr and zhByStat(line, "passive", idStr)) or line
+				zh = (idStr and zhByStat(line, "passive", idStr)) or zhGlobal(line) or line
 			end
 			if zh ~= "" then
 				if out ~= "" and not CJK_SEP_END[out:sub(-3)] then out = out .. "," end
@@ -1703,7 +1917,9 @@ PATCHES["SearchHost"] = function(class)
 				-- looking the whole string up again would only fill the cache
 				if info and not info.matches and not (type(entry) == "table" and entry.searchFilter) then
 					local value = self.valueAccessor and self.valueAccessor(entry) or entry
-					local zh = type(value) == "string" and zhRaw(value) or nil
+					-- a drop-down that draws this row by id: match what it draws
+					local idZh = type(entry) == "table" and rowZhOf(self, entry) or nil
+					local zh = idZh and visible(idZh) or (type(value) == "string" and zhRaw(value) or nil)
 					if zh and zh:lower():find(q, 1, true) then
 						info.matches = true
 						info.ranges = {}
@@ -1882,6 +2098,46 @@ local function affixDropGroups(item, mode, index, value)
 	return buildGroupMap("item", tierLines(affixes[modList[1]], affixes[modList[#modList]]))
 end
 
+-- The crafting affix tooltip of a cluster jewel's notable mod ("1 Added Passive
+-- Skill is <name>") also lists that notable's description (node.sd, ItemsTab
+-- tooltipFunc): those are the passive's own stat lines, asked under "passive"
+-- with its GGPK stat ids (passive_stats_by_id.json, by GraphId) as popupStatIds
+-- (see Tooltip:AddLine). nil without the data or for any other mod.
+local function notableTipSpan(build, item, mode, index, value)
+	local modList = type(value) == "table" and value.modList or nil
+	local affixes = type(item) == "table" and item.affixes or nil
+	if type(modList) ~= "table" or type(affixes) ~= "table" then return nil end
+	local mod = affixes[value.modId or modList[1]]
+	local first = type(mod) == "table" and mod[1] or nil
+	local name = type(first) == "string" and first:match("1 Added Passive Skill is (.*)") or nil
+	local spec = name and type(build) == "table" and build.spec or nil
+	local map = type(spec) == "table" and type(spec.tree) == "table" and spec.tree.clusterNodeMap or nil
+	local node = type(map) == "table" and map[name] or nil
+	local ids = type(node) == "table" and statIdsOf("passive", node.id) or nil
+	if not ids or type(node.sd) ~= "table" then return nil end
+	local byLine = {}
+	for _, line in ipairs(node.sd) do
+		if type(line) == "string" and line ~= "" then byLine[statLineKey(line)] = ids end
+	end
+	return { byLine = byLine, ids = ids }
+end
+
+-- The popup ItemsTab / AddImplicitPopup just opened (main.popups[1]): its
+-- drop-downs that list mods (value.mod) -- the corrupt popup's implicitN, the
+-- custom-modifier and Eldritch popups' modSelect -- get their rows by the
+-- mods' stat ids.
+local function markModPopupRows()
+	local popup = type(main) == "table" and type(main.popups) == "table" and main.popups[1] or nil
+	local controls = type(popup) == "table" and popup.controls or nil
+	if type(controls) ~= "table" then return end
+	local names = { "modSelect" }
+	for i = 1, 10 do names[#names + 1] = "implicit" .. i end
+	for _, n in ipairs(names) do
+		local c = controls[n]
+		if type(c) == "table" then rawset(c, "_ptRowZh", modRowZh) end
+	end
+end
+
 -- PoE2: picking a rune that changes the affix limit ("Allow Suffix +1") left
 -- the newly shown affix drop-down empty -- the rune's selFunc rebuilt the item
 -- but never called UpdateAffixControls, so the new row's list was stale/empty
@@ -1931,6 +2187,18 @@ PATCHES["ItemsTab"] = function(class)
 	else
 		log("ItemsTab: no AddItemTooltip, item tooltips stay unmarked")
 	end
+	-- The corrupt and custom-modifier popups: their mod drop-downs' rows by id.
+	for _, method in ipairs({ "CorruptDisplayItem", "AddCustomModifierToDisplayItem" }) do
+		local origM = class[method]
+		if type(origM) == "function" then
+			class[method] = keepArity(origM, function(self, ...)
+				local a, b, c = origM(self, ...)
+				local okR, errR = pcall(markModPopupRows)
+				if not okR then log("ItemsTab." .. method .. " row ids failed: " .. tostring(errR)) end
+				return a, b, c
+			end)
+		end
+	end
 	local ok = wrapConstructor(class, "ItemsTab", function(self)
 		-- Crafting affix drop-down / range slider tooltips: tell AddLine which
 		-- mod the "Affix: <name>" line belongs to, so it is looked up by mod Id.
@@ -1938,11 +2206,13 @@ PATCHES["ItemsTab"] = function(class)
 		-- (no item, no mod, several tiers) leaves affixTipCtx nil.
 		-- groupsOf(item, ...) -> group map for the mod lines the tooltip draws
 		-- (lineGroups), or nil.
-		local function wrapAffixTip(ctl, idOf, groupsOf)
+		-- spanOf(item, ...) -> popupStatIds for lines that are a passive's
+		-- (a cluster notable's description), or nil.
+		local function wrapAffixTip(ctl, idOf, groupsOf, spanOf)
 			local orig = type(ctl) == "table" and ctl.tooltipFunc or nil
 			if type(orig) ~= "function" then return end
 			ctl.tooltipFunc = keepArity(orig, function(tooltip, ...)
-				local prev, prevGroups = affixTipCtx, lineGroups
+				local prev, prevGroups, prevIds = affixTipCtx, lineGroups, popupStatIds
 				local okId, id = pcall(idOf, ...)
 				local item = self.displayItem
 				local mods = okId and id and type(item) == "table" and item.affixes or nil
@@ -1952,8 +2222,12 @@ PATCHES["ItemsTab"] = function(class)
 					local okG, g = pcall(groupsOf, item, ...)
 					lineGroups = okG and g or nil
 				end
+				if spanOf then
+					local okS, span = pcall(spanOf, item, ...)
+					if okS and span then popupStatIds = span end
+				end
 				local ok2, a, b, c = pcall(orig, tooltip, ...)
-				affixTipCtx, lineGroups = prev, prevGroups
+				affixTipCtx, lineGroups, popupStatIds = prev, prevGroups, prevIds
 				if not ok2 then error(a, 0) end
 				return a, b, c
 			end)
@@ -1962,11 +2236,13 @@ PATCHES["ItemsTab"] = function(class)
 			local i = 1
 			while self.controls["displayItemAffix" .. i] do
 				local drop = self.controls["displayItemAffix" .. i]
+				-- the rows themselves: by the tiers' stat ids
+				if type(drop) == "table" then rawset(drop, "_ptRowZh", affixRowZh) end
 				wrapAffixTip(drop, function(mode, index, value)
 					local modList = type(value) == "table" and value.modList
 					if type(modList) ~= "table" then return nil end
 					return value.modId or (#modList == 1 and modList[1]) or nil
-				end, affixDropGroups)
+				end, affixDropGroups, function(item, ...) return notableTipSpan(self.build, item, ...) end)
 				wrapAffixTip(self.controls["displayItemAffixRange" .. i], function()
 					local sel = drop.list and drop.list[drop.selIndex]
 					local modList = type(sel) == "table" and sel.modList
@@ -2249,6 +2525,7 @@ local PATCH_SYMPTOM = {
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
 	TreeTab                 = "刺青／軍團珠寶下拉清單的節點名稱維持英文",
 	PassiveMasteryControl   = "天賦專精選單裡兩行的描述各半句(未整句翻譯)",
+	DropDownControl         = "製作／腐化／自訂／異能詞綴與昇華下拉未依 id 顯示 GGPK 譯文",
 }
 
 local function applyPatch(name, class)
@@ -2544,6 +2821,66 @@ local function patchMainWrapString()
 	end)
 end
 
+-- The Eldritch implicit popup (Modules/AddImplicitPopup, a module table that
+-- ItemsTab gets with require): its modSelect rows by the mods' stat ids.
+local patchedImplicitMods = setmetatable({}, { __mode = "k" })
+local function patchAddImplicitModule(mod)
+	if type(mod) ~= "table" or patchedImplicitMods[mod] then return end
+	local orig = rawget(mod, "AddImplicitToDisplayItem")
+	if type(orig) ~= "function" then return end
+	patchedImplicitMods[mod] = true
+	mod.AddImplicitToDisplayItem = keepArity(orig, function(...)
+		local a, b, c = orig(...)
+		local okR, errR = pcall(markModPopupRows)
+		if not okR then log("AddImplicitPopup row ids failed: " .. tostring(errR)) end
+		return a, b, c
+	end)
+	log("patched AddImplicitPopup.AddImplicitToDisplayItem")
+end
+
+local function isAddImplicitName(name)
+	if type(name) ~= "string" then return false end
+	local n = name:gsub("%.lua$", ""):gsub("[\\%.]", "/")
+	return n == "Modules/AddImplicitPopup" or n:sub(-#"/Modules/AddImplicitPopup") == "/Modules/AddImplicitPopup"
+end
+
+-- The build's ascendancy drop-down (Build.lua controls.ascendDrop, its list
+-- the selected class's ascendancies, { label = name, ascendClassId = index }):
+-- rows by Ascendancy id (tree.classes[class].classes[index].id). Marked after
+-- every BUILD:Init; a build already open when this patch arrives too.
+local function ascRowZhFor(build)
+	return function(v)
+		if type(v) ~= "table" or v.ascendClassId == nil or type(v.label) ~= "string" then return nil end
+		local spec = type(build) == "table" and build.spec or nil
+		local tree = type(spec) == "table" and spec.tree or nil
+		local classes = type(tree) == "table" and tree.classes or nil
+		local cls = type(classes) == "table" and classes[spec.curClassId] or nil
+		local asc = type(cls) == "table" and type(cls.classes) == "table" and cls.classes[v.ascendClassId] or nil
+		if type(asc) ~= "table" or asc.id == nil then return nil end
+		return zhByIdOnly("ascendancy", asc.id, v.label)
+	end
+end
+
+local function patchBuildAscendDrop()
+	if applied.__ascendDrop or type(main) ~= "table" or type(main.modes) ~= "table" then return end
+	local build = main.modes.BUILD
+	if type(build) ~= "table" or type(build.Init) ~= "function" then return end
+	applied.__ascendDrop = true
+	local function mark(self)
+		local c = type(self) == "table" and type(self.controls) == "table" and self.controls.ascendDrop or nil
+		if type(c) == "table" then rawset(c, "_ptRowZh", ascRowZhFor(self)) end
+	end
+	local orig = build.Init
+	build.Init = keepArity(orig, function(self, ...)
+		local a, b, c = orig(self, ...)
+		local ok, err = pcall(mark, self)
+		if not ok then log("BUILD.Init ascendancy rows failed: " .. tostring(err)) end
+		return a, b, c
+	end)
+	pcall(mark, build)
+	log("patched BUILD.Init (ascendancy drop-down by id)")
+end
+
 local function tryApplyAll()
 	for name in pairs(PATCHES) do
 		if not applied[name] and common.classes[name] then
@@ -2554,6 +2891,8 @@ local function tryApplyAll()
 	if not ok then log("patch FAILED main.DrawBackground: " .. tostring(err)) end
 	local okW, errW = pcall(patchMainWrapString)
 	if not okW then log("patch FAILED main.WrapString: " .. tostring(errW)) end
+	local okA, errA = pcall(patchBuildAscendDrop)
+	if not okA then log("patch FAILED BUILD.Init: " .. tostring(errA)) end
 	if perfOn then
 		local pok, perr = pcall(perfApplyAll)
 		if not pok then log("perf wrap FAILED: " .. tostring(perr)) end
@@ -2565,6 +2904,8 @@ tryApplyAll() -- classes already loaded at injection time
 -- Gem tooltip module: already required before injection, or required later.
 if type(package) == "table" and type(package.loaded) == "table" then
 	patchGemTooltipModule(package.loaded["Classes.GemTooltip"])
+	local pokI, perrI = pcall(patchAddImplicitModule, package.loaded["Modules.AddImplicitPopup"])
+	if not pokI then log("patch FAILED AddImplicitPopup: " .. tostring(perrI)) end
 end
 if type(require) == "function" then
 	local origRequire = require
@@ -2573,6 +2914,10 @@ if type(require) == "function" then
 		if isGemTooltipName(name) then
 			local pok, perr = pcall(patchGemTooltipModule, m)
 			if not pok then log("patch FAILED GemTooltip: " .. tostring(perr)) end
+		end
+		if isAddImplicitName(name) then
+			local pok, perr = pcall(patchAddImplicitModule, m)
+			if not pok then log("patch FAILED AddImplicitPopup: " .. tostring(perr)) end
 		end
 		return m
 	end)
