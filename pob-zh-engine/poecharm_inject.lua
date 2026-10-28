@@ -934,16 +934,24 @@ end
 -- and one does not (the same English from two different mods) -- is left out:
 -- those rows keep their own path. The one map serves the drawing (closed box
 -- and open list alike) and the typed search, so all three show and match the
--- same words. Kept per control while the list is the same (same table, length,
--- first and last row).
+-- same words. Kept per control while the list holds the same rows: a copy of
+-- the rows is checked one by one (row identity, as rowZhOf keys its answers),
+-- so a list POB empties and refills in place (wipeTable + t_insert) is mapped
+-- again even when only a middle row changed.
 local ROW_CONFLICT = {}
 local function rowMapOf(ctl, list)
 	if type(list) ~= "table" then return {} end
 	local c = rawget(ctl, "_ptRowMap")
 	local n = #list
-	if c and c.list == list and c.n == n and c.first == list[1] and c.last == list[n] then return c.map end
-	local map = {}
-	for _, v in ipairs(list) do
+	if c and c.list == list and c.n == n then
+		local rows, i = c.rows, 1
+		while i <= n and rows[i] == list[i] do i = i + 1 end
+		if i > n then return c.map end
+	end
+	local map, rows = {}, {}
+	for i = 1, n do
+		local v = list[i]
+		rows[i] = v
 		if type(v) == "table" and type(v.label) == "string" then
 			local zh = rowZhOf(ctl, v) or false
 			local had = map[v.label]
@@ -953,7 +961,7 @@ local function rowMapOf(ctl, list)
 	for k, z in pairs(map) do
 		if type(z) ~= "string" then map[k] = nil end
 	end
-	rawset(ctl, "_ptRowMap", { list = list, n = n, first = list[1], last = list[n], map = map })
+	rawset(ctl, "_ptRowMap", { list = list, n = n, rows = rows, map = map })
 	return map
 end
 

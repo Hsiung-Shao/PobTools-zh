@@ -5055,6 +5055,41 @@ def test_r15b_gem_tooltip_title(fork):
           ok2 and titles and all(t not in ("火球ID", "火球副ID") for t in titles), "titles=%r err=%r" % (titles, err2))
 
 
+# R15c:清單原地重建(如 ItemsTab 腐化彈窗 wipeTable 後 t_insert),長度與首尾列不變、只換中段列。
+R15C_SWAP = """function(midLabel, midMod)
+	local d = main.popups[1].controls.implicit1
+	local l = d.list
+	local first, last = l[1], l[#l]
+	wipeTable(l)
+	table.insert(l, first)
+	table.insert(l, { label = midLabel, mod = midMod })
+	table.insert(l, last)
+	d.selIndex = 1
+end"""
+
+
+def test_r15c_row_map_rebuilt_in_place(fork):
+    """RC1 ~ RC2 -- 同一個清單原地換掉中段列(長度、首尾不變):覆寫表重算,不沿用舊列的譯文。"""
+    h = r15_harness(fork)
+    tab = make(h, "ItemsTab")
+    h.eval('function(t) t:CorruptDisplayItem() end')(tab)
+    ok0, err0, drawn0, _ = r15_draw(h, "main.popups[1].controls.implicit1", True)
+    swap = h.eval(R15C_SWAP)
+    swap(R15_SCORCH, h.eval('function() return data.itemMods.Eldritch.ScorchedGroundWhileMovingEldritchImplicit3 end')())
+    ok, err, drawn, _ = r15_draw(h, "main.popups[1].controls.implicit1", True)
+    rows = [t for t, o in drawn[2:]]
+    check("%s RC1 中段換成新列:新列畫自己的 id 譯文" % fork,
+          ok0 and ok and rows == ["None", "移動時留下焦灼地面，持續 4 秒", "+1 to Zzq Things"],
+          "rows=%r err=%r/%r" % (rows, err0, err))
+    swap("+1 to Maximum Power Charges", h.eval('function() return data.itemMods.Corrupted.V2MaxPowerChargesCorrupted end')())
+    r15_draw(h, "main.popups[1].controls.implicit1", True)
+    swap("+1 to Maximum Power Charges", h.eval('function() return data.itemMods.Corrupted.ZzqNoStats end')())
+    ok2, err2, drawn2, _ = r15_draw(h, "main.popups[1].controls.implicit1", True)
+    rows2 = [t for t, o in drawn2[2:]]
+    check("%s RC2 中段換成同英文、沒有 id 譯文的列:照舊英文,不借舊列譯文" % fork,
+          ok2 and rows2 == ["None", "+1 to Maximum Power Charges", "+1 to Zzq Things"], "rows=%r err=%r" % (rows2, err2))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -5136,6 +5171,7 @@ def main():
         test_r15b_gem_same_name(fork)
         test_r15b_ascendancy_same_name(fork)
         test_r15b_gem_tooltip_title(fork)
+        test_r15c_row_map_rebuilt_in_place(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
