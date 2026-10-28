@@ -887,6 +887,17 @@ local function modRowZh(v)
 	return id and zhStatRow(v.label, "item", statIdsOf("mod", id)) or nil
 end
 
+-- A GGPK answer over several lines, as one line: a drop-down row (or label)
+-- is drawn by one DrawString, which would put the text after a "\n" on the
+-- NEXT row, over the list's next item. Chinese joins with nothing, a line
+-- break next to ASCII (a number, "%") with a space -- as GGPK spaces numbers off.
+local function joinLines(s)
+	return (s:gsub("([^\n]?)\n+([^\n]?)", function(a, b)
+		if a:match("[%w%%%+%-]") or b:match("[%w%%%+%-]") then return a .. " " .. b end
+		return a .. b
+	end))
+end
+
 -- A drop-down instance with _ptRowZh = function(listValue) -> Chinese or nil
 -- has those rows drawn in Chinese while it draws itself (the closed box's
 -- selected row, the open list) and while it measures them: the engine's draw
@@ -895,7 +906,7 @@ end
 -- and everything else reading them see the English -- and the tooltip it draws
 -- meanwhile goes without the override (its lines have their own paths). A row
 -- the function leaves nil, and every control without _ptRowZh, is drawn
--- exactly as before. Answers are kept per list value (weak).
+-- exactly as before. Answers are kept per list value (weak), on one line.
 local rowZhCache = setmetatable({}, { __mode = "k" })
 local function rowZhOf(ctl, v)
 	local f = rawget(ctl, "_ptRowZh")
@@ -904,33 +915,35 @@ local function rowZhOf(ctl, v)
 	if hit == nil then
 		local ok, zh = pcall(f, v)
 		hit = ok and type(zh) == "string" and zh ~= "" and zh or false
+		if hit and hit:find("\n", 1, true) then hit = joinLines(hit) end
 		rowZhCache[v] = hit
 	end
 	return hit or nil
 end
 
 -- { [label] = Chinese } for the rows this call shows (the selected one, or the
--- whole list when full); a label two rows translate differently is left out.
--- nil when no row has an answer.
+-- whole list when full). The override goes by the label's text, so a label
+-- two rows of the list answer differently -- or one answers and one does not
+-- (the same English from two different mods) -- is left out: both rows keep
+-- their own path. nil when no row is left.
+local ROW_CONFLICT = {}
 local function rowOverrideFor(ctl, full)
 	local list = type(ctl.list) == "table" and ctl.list or nil
 	if not list then return nil end
-	local map, any = {}, false
+	local map = {}
 	local function add(v)
-		local zh = rowZhOf(ctl, v)
-		if not zh or type(v.label) ~= "string" then return end
+		if type(v) ~= "table" or type(v.label) ~= "string" then return end
+		local zh = rowZhOf(ctl, v) or false
 		local had = map[v.label]
-		if had == nil then map[v.label] = zh elseif had ~= zh then map[v.label] = false end
-		any = true
+		if had == nil then map[v.label] = zh elseif had ~= zh then map[v.label] = ROW_CONFLICT end
 	end
 	if full then
 		for _, v in ipairs(list) do add(v) end
 	else
 		add(list[ctl.selIndex])
 	end
-	if not any then return nil end
 	for k, z in pairs(map) do
-		if z == false then map[k] = nil end
+		if type(z) ~= "string" then map[k] = nil end
 	end
 	return next(map) ~= nil and map or nil
 end
@@ -1544,6 +1557,7 @@ function PobToolsTattooLabelSd(node)
 			if zh == nil then
 				zh = (idStr and zhByStat(line, "passive", idStr)) or zhGlobal(line) or line
 			end
+			if zh:find("\n", 1, true) then zh = joinLines(zh) end
 			if zh ~= "" then
 				if out ~= "" and not CJK_SEP_END[out:sub(-3)] then out = out .. "," end
 				out = out .. zh

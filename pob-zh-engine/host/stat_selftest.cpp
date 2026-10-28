@@ -2271,6 +2271,10 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const std::string s8 = row("+1 to Maximum Power Charges/Zzq no such line", "max_power_charges");
 		const std::string s9 = row("^8+1 to Maximum Power Charges", "max_power_charges");
 		const std::string s10 = row(kPow, "zzq_no_such_stat");
+		// 多階合併列的 '#' 吃掉了負號(POB 把 "-9" 換成 "#");GGPK 模板 {0:+d} 照同值代入寫回 "+#"
+		const std::string s11 = row("Nearby Enemies have #% to Fire Resistance",
+		                            "base_fire_damage_resistance_% local_display_nearby_enemy_fire_damage_resistance_%");
+		const std::string s11b = lk("Nearby Enemies have #% to Fire Resistance");
 		const std::string d0 = lk("Zzqdo row");
 		const char* oKeys[] = {"Zzqdo row"};
 		const char* oVals[] = {u8"覆寫列"};
@@ -2308,6 +2312,9 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && s8 == "(null)", "SR8 有一段翻不出來整列不回答(不出現半中半英)");
 		check(setup && s9 == u8"^8+1 最大暴擊球", "SR9 開頭色碼保留");
 		check(setup && s10 == "(null)", "SR10 stat id 對不上任何描述不回答");
+		check(setup && s11 == u8"附近敵人 +#% 火焰抗性" && s11b == s11,
+		      "SR11 合併列無正負號的 # 落在 {0:+d}:照 GGPK 模板寫 +#(與扁平查表、參考同)");
+		if (!(s11 == u8"附近敵人 +#% 火焰抗性" && s11b == s11)) printf("           s11='%s' s11b='%s'\n", s11.c_str(), s11b.c_str());
 		check(setup && d0 == u8"一般列" && d1 == u8"覆寫列" && d2 == u8"一般列",
 		      "DO1 繪製覆寫表期間該字畫成覆寫中文,清掉後照舊(含已快取的字)");
 		check(setup && d1b == f1, "DO2 覆寫表沒列的字不受影響");

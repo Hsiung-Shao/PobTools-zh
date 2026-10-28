@@ -4521,12 +4521,15 @@ R15_ROWS = {
     (R15_ONS, "item", "chance_to_gain_onslaught_on_kill_%"): "擊殺時 #% 機率獲得 # 秒猛攻",
     (R15_DELVE, "item", "chance_to_gain_onslaught_on_kill_%"): "擊殺時 20% 機率獲得 4 秒猛攻 (後綴)",
     (R15_SCORCH, "item", "boots_implicit_ground_scorched_duration_ms"): "移動時留下焦灼地面，持續 4 秒",
+    ("Zzq two line row", "item", "max_power_charges"): "若你近期有攻擊，你和\n附近友方 +#% 格擋率",
 }
 R15_STAT = {
     ("+15 to Dexterity and Intelligence", "passive", "base_dexterity_and_intelligence two_handed_melee_attack_speed_+%"):
         "增加 +15 敏捷與智慧",
     ("Skills fire an additional Projectile", "passive", "number_of_additional_projectiles"): "技能有額外一個投射物",
+    ("Zzq trigger line", "passive", "zzq_trigger"): "有傳奇敵人時，\n觸發 10%\n技能",
 }
+DICT[None]["Limited to 1 Zzq Tattoo"] = "限制 1 個 Zzq 紋身"
 DICT[None].update({"+1 to Maximum Power Charges": "+1 最大暴擊球數量", R15_SCORCH: "移動時掉落焦灼地面，持續 4 秒",
                    "+15 to Dexterity and Intelligence": "+15 點敏捷與智慧",
                    "Skills fire an additional Projectile": "技能發射 1 個額外投射物",
@@ -4756,6 +4759,16 @@ def test_r15_dropdown_override(fork):
     ok, err, drawn, after = r15_draw(h, "main.popups[1].controls.implicit1", False)
     check("%s DO7 F2 關閉時不設覆寫表(畫英文)" % fork,
           ok and h.r15["sets"] == sets and drawn[:1] == [("+1 to Maximum Power Charges", False)], "drawn=%r" % drawn)
+    h.enabled = True
+    ok, err, drawn, _ = r15_draw(h, "(function() local d = main.popups[1].controls.implicit1 d.list = { "
+                         "{ label = '+1 to Maximum Power Charges', mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted }, "
+                         "{ label = '+1 to Maximum Power Charges', mod = data.itemMods.Corrupted.ZzqNoStats } } d.selIndex = 1 return d end)()", True)
+    check("%s DO9 同英文的兩列一列有 id 譯文、一列沒有:兩列都照舊(不讓別列借用)" % fork,
+          ok and [t for t, o in drawn[2:]] == ["+1 to Maximum Power Charges"] * 2, "drawn=%r err=%r" % (drawn, err))
+    ok, err, drawn, _ = r15_draw(h, "(function() local d = main.popups[1].controls.implicit1 d.list = { "
+                         "{ label = 'Zzq two line row', mod = data.itemMods.Corrupted.V2MaxPowerChargesCorrupted } } d.selIndex = 1 return d end)()", True)
+    check("%s DO10 GGPK 兩行的譯文在單行下拉列接成一行" % fork,
+          ok and [t for t, o in drawn[2:]] == ["若你近期有攻擊，你和附近友方 +#% 格擋率"], "drawn=%r err=%r" % (drawn, err))
     h0 = r15_harness(fork, define_api=False)
     tab0 = make(h0, "ItemsTab")
     h0.eval('function(t) t:CorruptDisplayItem() main.popups[1].controls.implicit1.selIndex = 2 end')(tab0)
@@ -4856,6 +4869,11 @@ def test_r15_tattoo_label_stat_first(fork):
     plain = h.eval('function() return { sd = { "Skills fire an additional Projectile" } } end')()
     check("%s TA1 有 stat id 的紋身行先走 stat id(GGPK 字面)" % fork, f(node) == "技能有額外一個投射物", repr(f(node)))
     check("%s TA1 沒有 stat id 的紋身行照舊一般查表" % fork, f(plain) == "技能發射 1 個額外投射物", repr(f(plain)))
+    two = h.eval('function() return { sd = { "Zzq trigger line", "Limited to 1 Zzq Tattoo" }, '
+                 'stats = { zzq_trigger = { min = 1, max = 1 } } } end')()
+    got = f(two)
+    check("%s TA2 GGPK 兩行的譯文在單行下拉列裡接成一行(不畫到下一列)" % fork,
+          got == "有傳奇敵人時，觸發 10% 技能,限制 1 個 Zzq 紋身", repr(got))
 
 
 def test_r15_search_row_override(fork):

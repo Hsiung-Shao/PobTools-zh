@@ -4417,10 +4417,17 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     std::vector<std::string> outs;
     outs.reserve(cands.size());
     for (const StatCand *c : cands) {
-        if (!hash_lits) { outs.push_back(fill_plan(c->plan, vals)); continue; }
         std::vector<std::string> cv = vals;
-        for (const auto &l : c->lits)
-            if ((size_t)l.first < cv.size() && is_hash(cv[l.first])) cv[l.first] = l.second;
+        /* With stat ids (a crafting row asked by its mod): a written '#' in a
+        ** "{N:+d}" slot -- POB's tier merge turned "-9" into "#" and lost the
+        ** sign -- is written as that template writes a value, "+#" (what the
+        ** same-value reading of GGPK's template gives). */
+        if (hint)
+            for (size_t i = 0; i < c->plus_slot.size() && i < cv.size(); i++)
+                if (c->plus_slot[i] && cv[i].empty()) cv[i] = "+#";
+        if (hash_lits)
+            for (const auto &l : c->lits)
+                if ((size_t)l.first < cv.size() && is_hash(cv[l.first])) cv[l.first] = l.second;
         outs.push_back(fill_plan(c->plan, cv));
     }
     /* A candidate whose filled answer still shows a placeholder the line did
