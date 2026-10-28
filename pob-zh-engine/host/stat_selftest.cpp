@@ -33,6 +33,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -272,6 +273,35 @@ bool add_source_dict(const std::wstring& localeDir, const char* file, const nloh
 		for (const auto& x : sd)
 			if (x.is_string() && x.get<std::string>() == file) have = true;
 		if (!have) sd.push_back(file);
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
+// 從字典複本拿掉幾個檔(R15 ID5 用):刪檔,並從 meta.json 的 source_dicts / load_order 移除,
+// 造出「沒有這些 id 表」的字典,不管出貨字典有沒有它們。
+bool drop_dict_files(const std::wstring& localeDir, const std::vector<std::string>& files)
+{
+	for (const std::string& f : files) {
+		const std::wstring wf(f.begin(), f.end());
+		DeleteFileW((localeDir + wf).c_str());
+		if (GetFileAttributesW((localeDir + wf).c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+	}
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		for (const char* field : {"source_dicts", "load_order"}) {
+			if (!meta.contains(field) || !meta[field].is_array()) continue;
+			auto& arr = meta[field];
+			for (auto it = arr.begin(); it != arr.end();) {
+				const bool drop = it->is_string() &&
+				                  std::find(files.begin(), files.end(), it->get<std::string>()) != files.end();
+				if (drop) it = arr.erase(it);
+				else ++it;
+			}
+		}
 		return write_bytes(localeDir + L"meta.json", meta.dump(2));
 	} catch (...) {
 		return false;
@@ -2282,10 +2312,28 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const std::string d1 = lk("Zzqdo row"), d1b = lk(kPow);
 		translation_set_draw_override(nullptr, nullptr, 0);
 		const std::string d2 = lk("Zzqdo row");
-		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		// ID5:測試自帶「沒有這 4 個 id 表」的字典(從出貨字典複製後刪檔、移出 meta),不看出貨字典
+		// 有沒有它們 —— 出貨字典補上 id 表後(資料線 f00e05c)舊寫法就失準。
+		const std::wstring nroot = root + L"r15none\\";
+		const std::wstring nloc = nroot + L"zh-rTW\\";
+		CreateDirectoryW(nroot.c_str(), nullptr);
+		const std::vector<std::string> kIdFiles = {"mod_stats_by_id.json", "passive_stats_by_id.json",
+		                                           "gem_names_by_id.json", "ascendancy_by_id.json"};
+		std::string wn;
+		const bool setupNone = build_dict_copy(shippedLocale, nloc, statsJson, true, wn) && drop_dict_files(nloc, kIdFiles);
+		if (!setupNone) printf("           setup r15none failed %s\n", wn.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nroot.c_str());
 		translation_reload();
 		const std::string i5 = byId("mod_stats", "DelveWeaponChanceToGainOnslaughtOnKill2h1", nullptr);
+		const std::string i5b = byId("passive_stats", "42687", nullptr);
+		const std::string i5c = byId("gem_names", "GemDetonateMines", "Detonate Mines");
+		const std::string i5d = byId("ascendancy", "Raider", "Warden");
+		const std::string i5e = lk("Chaos Orb");   // 前提:字典本身照常載入
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
 		remove_tree(vroot);
+		remove_tree(nroot);
+		printf("           i5b='%s' i5c='%s' i5d='%s' i5e='%s'\n", i5b.c_str(), i5c.c_str(), i5d.c_str(), i5e.c_str());
 		printf("           i1='%s' i2='%s'\n           i3='%s' i3b='%s' i4='%s' i5='%s'\n", i1.c_str(), i2.c_str(),
 		       i3.c_str(), i3b.c_str(), i4.c_str(), i5.c_str());
 		printf("           f1='%s' f2='%s'\n           s1='%s' s2='%s'\n           s3='%s' s4='%s'\n"
@@ -2298,7 +2346,11 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && i2.rfind("base_dexterity_and_intelligence ", 0) == 0, "ID2 天賦→stat id 表(passive_stats_by_id.json)載入");
 		check(setup && i3 == u8"遙控地雷" && i3b == "(null)", "ID3 寶石名以 GrantedEffects id 查(英文對不上不給)");
 		check(setup && i4 == u8"守林人", "ID4 昇華名以 Ascendancy id 查");
-		check(setup && i5 == "(null)", "ID5 出貨字典沒有這些檔時查不到(不出錯)");
+		check(setupNone && i5 == "(null)" && i5b == "(null)" && i5c == "(null)" && i5d == "(null)" &&
+		          i5e != "(null)" && i5e != "Chaos Orb",
+		      "ID5 字典沒有這 4 個 id 表時(測試自帶的字典)查不到、不出錯,其餘照常翻");
+		check(setup && setupNone && i1 != "(null)" && i2 != "(null)" && i3 != "(null)" && i4 != "(null)",
+		      "ID6 有 id 表時四種都查得到(同一批 id;對照 ID5 沒表時查不到)");
 		check(setup && f1 == u8"+1 最大暴擊球數量" && s1 == u8"+1 最大暴擊球",
 		      "SR1 一列詞綴以 stat id 走物品描述檔(對照:扁平查表是天賦描述的「數量」)");
 		check(setup && s2 == u8"此物品插槽中寶石等級 +1", "SR2 插槽寶石等級以 stat id 得物品描述檔譯文");
