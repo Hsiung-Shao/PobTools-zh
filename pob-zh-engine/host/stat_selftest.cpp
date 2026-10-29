@@ -2432,16 +2432,31 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		translation_reload();
 		const Said noflag = ask(kE2, "item");
 		const std::string built = translation_debug_sources();
-		// E8b:真的 PoE2 出貨字典(無旗標)。
+		// E8b:真的 PoE2 出貨字典 —— 預期依它自己的 meta.json(有 source_lookup 且列有 stats_by_id.json 才翻)。
 		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr);
 		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
 		translation_reload();
 		const Said poe2 = ask(kE2, "item");
 		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		bool poe2Flag = false, poe2Listed = false, poe2MetaOk = false;
+		{
+			std::string pm;
+			if (read_bytes(dir + L"Data\\poe2\\zh-rTW\\meta.json", pm)) {
+				try {
+					const auto m = nlohmann::ordered_json::parse(pm);
+					poe2Flag = m.contains("source_lookup") && m["source_lookup"].is_boolean() && m["source_lookup"].get<bool>();
+					poe2Listed = in_array(m, "source_dicts", "stats_by_id.json");
+					poe2MetaOk = true;
+				} catch (...) {}
+			}
+		}
+		const bool poe2Wants = poe2Flag && poe2Listed;   // 出貨 meta 要求依 stats_by_id 翻
 		check(noflag.null && e2Hit, "E8 無 source_lookup 旗標:不走 stat 查詢(同資料有旗標時有命中)");
 		if (!(noflag.null && e2Hit)) printf("           noflag='%s' guardE2=%d\n", shown(noflag), e2Hit);
-		check(poe2.null, "E8b PoE2 出貨字典(無旗標)查同句回空");
-		if (!poe2.null) printf("           poe2='%s'\n", shown(poe2));
+		const bool poe2Ok = poe2MetaOk && (poe2Wants ? (!poe2.null && !poe2.s.empty()) : poe2.null);
+		check(poe2Ok, "E8b PoE2 出貨字典:有 source_lookup 時依 stats_by_id 翻、沒有時回空(與出貨 meta 一致)");
+		if (!poe2Ok) printf("           meta 讀到=%d source_lookup=%d 列有 stats_by_id.json=%d poe2='%s'\n",
+		                    poe2MetaOk, poe2Flag, poe2Listed, shown(poe2));
 		// 「不建索引」唯一看得到的觀察點:無旗標時來源表只有 gems。
 		check(built == "exact=gems;pattern=;id=", "E8c 無旗標時不額外建來源/id 表");
 		if (built != "exact=gems;pattern=;id=") printf("           %s\n", built.c_str());
