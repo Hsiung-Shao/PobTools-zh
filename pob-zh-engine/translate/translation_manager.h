@@ -145,6 +145,47 @@ int translation_group_lines(const char *const *lines, int n, const char *ctx, co
 ** ctx, nullptr for the default (static storage, overwritten by the next call). */
 const char* translation_set_slash_context(const char *ctx);
 
+/* A display string that must be drawn in English exactly as given (使用者裁定
+** 2026-10-27: a unique's flavour text stays English). From now on
+** translation_lookup answers nullptr for that exact string -- before its exact
+** map, caches, patterns and glossary -- so neither the tooltip that registered it
+** nor the draw-time lookup translates it. Exact bytes, colour codes included;
+** kept across translation_reload (the tooltip holding the line is not rebuilt);
+** bounded (registrations past the cap are ignored). nullptr / "" is ignored. */
+void translation_keep_english(const char *s);
+
+/* The strings that stay English only for now -- the tooltip being drawn: its
+** flavour lines' wrapped pieces carry no colour code, so they are not
+** registered for good (translation_keep_english), where the same words drawn
+** anywhere else would stay English too. Replaces the whole scope; n == 0 (or
+** s == nullptr) clears it. The caller sets it around one tooltip's Draw and
+** puts back what was there before (it keeps the lists). */
+void translation_set_keep_english_scope(const char *const *s, int n);
+
+/* One crafting / popup drop-down row of a mod, through stats_by_id.json with
+** that mod's GGPK stat ids (使用者裁定 2026-10-28: language-independent ids, no
+** flat text keys). The row as POB labels it:
+**   "<line>"                       one mod line ("#" where tiers were merged)
+**   "<line>/<line>..."             a mod's lines joined by "/"; a GGPK
+**                                  description POB split over two lines is
+**                                  taken whole (ggpk_groups.json), every other
+**                                  piece through the stat lookup with the ids
+**   "<row> (Prefix)" / " (Suffix)" (also "^8(...)"): the row, then the word as
+**                                  the dictionary words it (前綴 / 後綴)
+** A leading colour escape is kept. nullptr unless every piece has a
+** translation (no half-English row) -- the caller then keeps its own path.
+** stat_ids nullptr / "": no answer at all (the row is only ever asked by id).
+** The pointer is into a cache that lives until the next reload. */
+const char* translation_lookup_stat_row(const char *row, const char *ctx, const char *stat_ids);
+
+/* The display strings one control is drawing right now, each with the Chinese
+** to draw instead (keys[i] -> vals[i], exact bytes): the inject sets it around
+** a drop-down's own drawing (rows translated by id: a mod's stat ids, a gem's
+** or an ascendancy's id) and clears it afterwards -- its tooltip is drawn
+** without it. Consulted by translation_lookup before everything else except
+** translation_keep_english. Replaces the whole set; n == 0 clears it. */
+void translation_set_draw_override(const char *const *keys, const char *const *vals, int n);
+
 /* ===== Reverse-translation trace =====
 **
 ** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a

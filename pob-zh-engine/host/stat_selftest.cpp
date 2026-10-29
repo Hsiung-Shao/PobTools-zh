@@ -33,6 +33,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iterator>
@@ -47,6 +48,14 @@ namespace {
 
 int g_pass = 0;
 int g_fail = 0;
+// 等資料進來才會生效的斷言(跨分支依賴):不算通過也不算失敗,但在結果行列出,不會被看漏
+int g_wait = 0;
+
+void wait_for_data(const char* what, const std::string& now, const std::string& want)
+{
+	g_wait++;
+	printf("  [WAIT]  %s\n           (出貨資料尚未帶這筆;目前 '%s',資料進來後要是 '%s')\n", what, now.c_str(), want.c_str());
+}
 
 void check(bool ok, const char* what)
 {
@@ -249,11 +258,61 @@ bool patch_by_id(const std::wstring& path,
 	}
 }
 
+// 在字典複本放一份 id 檔(R15 用):寫入 file,並列進 meta.json 的 source_dicts。
+bool add_source_dict(const std::wstring& localeDir, const char* file, const nlohmann::ordered_json& doc)
+{
+	const std::wstring wfile(file, file + strlen(file));
+	if (!write_bytes(localeDir + wfile, doc.dump(2))) return false;
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		auto& sd = meta["source_dicts"];
+		if (!sd.is_array()) sd = nlohmann::ordered_json::array();
+		bool have = false;
+		for (const auto& x : sd)
+			if (x.is_string() && x.get<std::string>() == file) have = true;
+		if (!have) sd.push_back(file);
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
+// 從字典複本拿掉幾個檔(R15 ID5 用):刪檔,並從 meta.json 的 source_dicts / load_order 移除,
+// 造出「沒有這些 id 表」的字典,不管出貨字典有沒有它們。
+bool drop_dict_files(const std::wstring& localeDir, const std::vector<std::string>& files)
+{
+	for (const std::string& f : files) {
+		const std::wstring wf(f.begin(), f.end());
+		DeleteFileW((localeDir + wf).c_str());
+		if (GetFileAttributesW((localeDir + wf).c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+	}
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		for (const char* field : {"source_dicts", "load_order"}) {
+			if (!meta.contains(field) || !meta[field].is_array()) continue;
+			auto& arr = meta[field];
+			for (auto it = arr.begin(); it != arr.end();) {
+				const bool drop = it->is_string() &&
+				                  std::find(files.begin(), files.end(), it->get<std::string>()) != files.end();
+				if (drop) it = arr.erase(it);
+				else ++it;
+			}
+		}
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
 } // namespace
 
 int RunStatSelftest(const std::wstring& statsJsonArg)
 {
-	g_pass = g_fail = 0;
+	g_pass = g_fail = g_wait = 0;
 	const std::wstring dir = exe_dir();
 	const std::wstring shippedLocale = dir + L"Data\\poe1\\zh-rTW\\";
 	const std::wstring statsJson = statsJsonArg.empty() ? shippedLocale + L"stats_by_id.json" : statsJsonArg;
@@ -1507,6 +1566,15 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		    "Minions deal 12% reduced Damage per 5 Dexterity",
 		    "Gain Adrenaline when Stunned, for 2 seconds per 100ms of Stun Duration",
 		};
+		// 各行的 stats_by_id 鍵(G3a / G4 依鍵比,不靠位置:出貨資料把哪一鍵標成 keep_literals,那一鍵就不再是「未標記」)
+		const char* kUnflaggedKeys[] = {
+		    "local_display_summon_raging_spirit_on_kill_%|#|99|stat_descriptions.txt|0",
+		    "local_display_summon_raging_spirit_on_kill_%|100|stat_descriptions.txt|0",
+		    "minion_damage_+%_per_5_dex|1|#|stat_descriptions.txt|0",
+		    "minion_damage_+%_per_5_dex|#|-1|stat_descriptions.txt|0",
+		    "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0",
+		};
+		static_assert(sizeof(kUnflagged) == sizeof(kUnflaggedKeys), "kUnflagged / kUnflaggedKeys 要一一對應");
 		expect(kUnflagged[1], "item", u8"擊殺時觸發等級 10 的召喚憤怒狂靈", "G2a 未標記鍵(憤怒狂靈)維持英文的等級 10");
 		expect(kUnflagged[2], "item", u8"每 5 點敏捷增加 12% 召喚物所造成的傷害", "G2b 未標記鍵(每 5 點敏捷)維持英文的 5");
 		// G3:同一份資料拿掉全部旗標(= 舊行為),未標記鍵逐句不變、標記鍵才變。
@@ -1515,6 +1583,19 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const Said magWith = ask(kMagma2, "item");
 		std::string body, why2;
 		bool setup = read_bytes(flagRoot + L"zh-rTW\\stats_by_id.json", body);
+		// 腎上腺素那條(kUnflagged[4])由使用者裁定 2026-10-26 改照 GGPK(資料端 keep_literals,另一分支):
+		// 出貨資料帶上旗標後,它就不再是「未標記」,G3a 不拿它比。
+		const char* kAdrKey = "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0";
+		std::vector<char> shippedFlag(std::size(kUnflaggedKeys), 0);
+		try {
+			const auto shippedDoc = nlohmann::json::parse(body);
+			if (shippedDoc.contains("keep_literals") && shippedDoc["keep_literals"].is_object())
+				for (size_t i = 0; i < std::size(kUnflaggedKeys); i++)
+					shippedFlag[i] = shippedDoc["keep_literals"].contains(kUnflaggedKeys[i]) ? 1 : 0;
+		} catch (...) {}
+		bool adrFlagged = false;
+		for (size_t i = 0; i < std::size(kUnflaggedKeys); i++)
+			if (!strcmp(kUnflaggedKeys[i], kAdrKey)) adrFlagged = shippedFlag[i] != 0;
 		auto variant = [&](const wchar_t* name, const char* plantKey, std::vector<std::string>& outs,
 		                   Said& mag) {
 			const std::wstring vroot = root + name + L"\\";
@@ -1538,8 +1619,11 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		Said magNo{true, {}}, magPlant{true, {}};
 		setup = setup && variant(L"keep_none", nullptr, noFlag, magNo);
 		setup = setup && variant(L"keep_dex", kDexKey, planted, magPlant);
-		check(setup && withFlag == noFlag, "G3a 拿掉全部旗標時,未標記的受影響鍵逐句不變");
-		if (!(setup && withFlag == noFlag))
+		bool same3a = setup && withFlag.size() == noFlag.size();
+		for (size_t i = 0; same3a && i < withFlag.size(); i++)
+			if (!shippedFlag[i] && withFlag[i] != noFlag[i]) same3a = false;
+		check(same3a, "G3a 拿掉全部旗標時,未標記的受影響鍵逐句不變");
+		if (!same3a)
 			for (size_t i = 0; i < withFlag.size() && i < noFlag.size(); i++)
 				printf("           %s: with='%s' none='%s'\n", kUnflagged[i], withFlag[i].c_str(), noFlag[i].c_str());
 		check(setup && !magNo.null && magNo.s != kMagmaWant && !magWith.null && magWith.s == kMagmaWant,
@@ -1547,13 +1631,49 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!setup || magNo.null || magNo.s == kMagmaWant)
 			printf("           none='%s' with='%s' (%s)\n", shown(magNo), shown(magWith), why2.c_str());
 		// G4:植入另一鍵的旗標(只改複本):那一鍵照抄中文的 10、其餘照舊,證明機制逐鍵。
-		check(setup && planted.size() == noFlag.size() && planted[2] == u8"每 10 點敏捷增加 12% 召喚物所造成的傷害" &&
-		      planted[0] == noFlag[0] && planted[1] == noFlag[1] && planted[4] == noFlag[4],
+		bool others4 = setup && planted.size() == noFlag.size();
+		size_t dexIdx = 0;
+		for (size_t i = 0; others4 && i < planted.size(); i++) {
+			if (!strcmp(kUnflaggedKeys[i], kDexKey)) { dexIdx = i; continue; }
+			if (planted[i] != noFlag[i]) others4 = false;
+		}
+		check(others4 && planted[dexIdx] == u8"每 10 點敏捷增加 12% 召喚物所造成的傷害",
 		      "G4 植入旗標的鍵照抄中文數字,同一份資料的其他鍵不受影響");
 		if (planted.size() == noFlag.size())
 			for (size_t i = 0; i < planted.size(); i++)
 				if (planted[i] != noFlag[i]) printf("           planted %s: '%s'(none '%s')\n", kUnflagged[i], planted[i].c_str(), noFlag[i].c_str());
 		(void)kKeepKey;
+		// G5:專精「Gain Adrenaline…per 100ms」英文寫死 100(毫秒)、GGPK 中文寫死 0.1(秒),字面數字不同。
+		// 使用者裁定 2026-10-26 照 GGPK「每 0.1 秒」,修在資料端(keep_literals,wip/round9-data)。
+		// G5a 先用測試字典植入旗標驗機制(現在就該綠);G5b 看出貨資料,資料帶上旗標才生效(之前列 WAIT)。
+		const char* kAdr = kUnflagged[4];
+		const std::string kAdrWant = u8"當暈眩時，每 0.1 秒暈眩持續時間，獲得腎上腺素 2 秒";
+		{
+			const std::wstring vroot = root + L"keep_adr\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			bool ok = build_dict_copy(shippedLocale, vroot + L"zh-rTW\\", statsJson, true, why2);
+			try {
+				auto doc = nlohmann::ordered_json::parse(body);
+				doc["keep_literals"][kAdrKey] = true;
+				ok = ok && write_bytes(vroot + L"zh-rTW\\stats_by_id.json", doc.dump(2));
+			} catch (...) { ok = false; }
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_reload();
+			const Said pas = ask(kAdr, "passive");
+			const Said itm = ask(kAdr, "item");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			check(ok && !pas.null && pas.s == kAdrWant, "G5a 植入旗標:專精行(passive)照 GGPK 顯示「每 0.1 秒」");
+			if (!(ok && !pas.null && pas.s == kAdrWant)) printf("           passive='%s'\n", shown(pas));
+			check(ok && !itm.null && itm.s == kAdrWant, "G5a' 植入旗標:同一行在物品情境也是「每 0.1 秒」");
+			if (!(ok && !itm.null && itm.s == kAdrWant)) printf("           item='%s'\n", shown(itm));
+		}
+		{
+			const Said now = ask(kAdr, "passive");
+			if (adrFlagged) expect(kAdr, "passive", kAdrWant, "G5b 出貨資料:專精行(passive)照 GGPK 顯示「每 0.1 秒」");
+			else wait_for_data("G5b 出貨資料:專精行(passive)照 GGPK 顯示「每 0.1 秒」", shown(now), kAdrWant);
+		}
 	}
 
 	// ---- H:多行描述的整句重組(ggpk_groups.json) ------------------------------------
@@ -1877,6 +1997,385 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
+	// ---- T:POB 尾端裝飾(使用者裁定 2026-10-26)-----------------------------------------------
+	// 製作/自訂詞綴下拉的「 (Prefix)」「 ^8(Suffix)」與不支援詞綴的「 ^8(Not supported in PoB yet)」:剝掉後
+	// 本文照常查表(GGPK 優先),再接回 —— 前/後綴用字典的「Prefix/Suffix」譯法,註記維持英文且原樣保留。
+	// 剝除後的本文查表優先於整串舊鍵;本文查不到時才走原本的整串路徑(不會變英文)。
+	printf("\n=== T 尾端裝飾(Prefix/Suffix/Not supported) ===\n");
+	{
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto expectT = [&](const char* in, const std::string& want, const char* name) {
+			const std::string got = lk(in);
+			check(got == want, name);
+			if (got != want) printf("           %s\n           got  '%s'\n           want '%s'\n", in, got.c_str(), want.c_str());
+		};
+		// 出貨資料:本文以 stat 查表(GGPK),合併表的舊樣板「增加 #%火焰傷害」不再勝出
+		expectT("(7-12)% increased Fire Damage (Suffix)", u8"增加 (7-12)% 火焰傷害 (後綴)",
+		        "T1 自訂詞綴下拉「 (Suffix)」:本文照 GGPK、接回 (後綴)");
+		expectT("(7-12)% increased Fire Damage ^8(Prefix)", u8"增加 (7-12)% 火焰傷害 ^8(前綴)",
+		        "T2 工藝詞綴下拉「 ^8(Prefix)」:色碼原樣保留、接回 (前綴)");
+		// 註記:引擎不知道這行的語境(物品/寶石/天賦由 inject 依 stat id 先查),本文取「同一行不帶註記」的答案
+		{
+			const std::string bare = lk("^xF05050(7-12)% increased Fire Damage");
+			const std::string got = lk("^xF05050(7-12)% increased Fire Damage ^8(Not supported in PoB yet)");
+			const bool ok3 = bare != "(null)" && got == bare + " ^8(Not supported in PoB yet)";
+			check(ok3, "T3 不支援註記:本文與不帶註記的同一行相同,註記英文原樣(含 ^8)接回");
+			if (!ok3) printf("           bare='%s' got='%s'\n", bare.c_str(), got.c_str());
+		}
+		expectT("Bleeding Enemies you Kill Explode, dealing (2-3)% of/their Maximum Life as Physical Damage (Prefix)",
+		        u8"擊殺流血的敵人時產生爆炸，造成等同其 (2-3)% 最大生命的物理傷害 (前綴)",
+		        "T4 「/」串接的兩行描述帶 (Prefix):整句重組後接回 (前綴)");
+		// 植入的複本:整串舊鍵與本文新鍵並存
+		const std::wstring vroot = root + L"t_deco\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		const std::vector<std::pair<std::string, std::string>> kUiT = {
+		    {"Zzqdeco gain 5 power (Suffix)", u8"舊整串 5 威力 (後綴)"},
+		    {"Zzqdeco gain 5 power (Not supported in PoB yet)", u8"舊註記整串 5 威力 (Not supported in PoB yet)"},
+		    {"Zzqonly whole 5 (Suffix)", u8"整串才有 5 (後綴)"}};
+		const std::vector<std::pair<std::string, std::string>> kFullT = {{"Zzqdeco gain 5 power", u8"新本文 5 威力"}};
+		bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) && plant_file(loc + L"ui.json", kUiT) &&
+		          plant_file(loc + L"ggpk_full.json", kFullT);
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_reload();
+		const std::string t5 = lk("Zzqdeco gain 7 power (Suffix)");
+		const std::string t6 = lk("^xF05050Zzqdeco gain 7 power ^8(Not supported in PoB yet)");
+		const std::string t7 = lk("Zzqonly whole 9 (Suffix)");
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vroot);
+		if (!ok) printf("           setup t_deco failed %s\n", w.c_str());
+		check(ok && t5 == u8"新本文 7 威力 (後綴)", "T5 剝除後的本文查表優先於整串舊鍵");
+		if (t5 != u8"新本文 7 威力 (後綴)") printf("           got '%s'\n", t5.c_str());
+		check(ok && t6 == u8"^xF05050新本文 7 威力 ^8(Not supported in PoB yet)", "T6 註記同規則:本文新鍵優先、註記原樣接回");
+		if (t6 != u8"^xF05050新本文 7 威力 ^8(Not supported in PoB yet)") printf("           got '%s'\n", t6.c_str());
+		check(ok && t7 == u8"整串才有 9 (後綴)", "T7 本文查不到時退回整串路徑(不會變英文)");
+		if (t7 != u8"整串才有 9 (後綴)") printf("           got '%s'\n", t7.c_str());
+		// T8:POB 裝飾只由 decorated_tail_lookup 處理;本文查不到時,「括號註記」步驟(3.5)不再拿本文裡更前面的
+		// 「 (」亂切(舊行為:「生命 (5-6) gained ^8(Not supported in PoB yet)」半中半英)。
+		expectT("Life (5-6) gained ^8(Not supported in PoB yet)", "(null)", "T8 註記行本文查不到:整行維持英文,不從本文中間切出半句中文");
+		expectT("Mana (5-6) gained ^8(Suffix)", "(null)", "T8b 前/後綴行本文查不到:同上");
+		// T9:不是 POB 裝飾的括號註記照舊由 3.5 處理
+		expectT("Chaos Orb (Unused)", u8"混沌石 ^9(未使用)", "T9 一般括號註記(Unused)照舊");
+		// T10:兩種疊在一起 —— POB 裝飾在最後、一般括號註記在本文裡:剝裝飾後本文交給 3.5,兩段都接回
+		expectT("Chaos Orb (Unused) ^8(Suffix)", u8"混沌石 ^9(未使用) ^8(後綴)",
+		        "T10 「X (Unused) ^8(Suffix)」:本文的 (Unused) 照 3.5 譯、尾端 (Suffix) 接回 (後綴)");
+		expectT("Chaos Orb (Unused) ^8(Not supported in PoB yet)", u8"混沌石 ^9(未使用) ^8(Not supported in PoB yet)",
+		        "T10b 「X (Unused) ^8(Not supported in PoB yet)」:註記維持英文接回");
+	}
+
+	// ---- EO:「只比整句」的鍵(exact_only.json,使用者裁定 2026-10-26)--------------------------------
+	// 被列的鍵只進精確表(正向、來源副本、反向精確);不建正向/反向樣板、不做逐行衍生、不進詞彙表;排除清單優先。
+	printf("\n=== EO 只比整句的鍵(exact_only.json) ===\n");
+	{
+		const std::vector<std::pair<std::string, std::string>> kFullE = {
+		    {"Zzqeo gain 5 power", u8"GGPK 5 威力"}, {"Zzqeo Phrase", u8"整句詞"},
+		    {"Zzqeo line one\nZzqeo line two", u8"整一\n整二"}, {"Zzqeo both 5", u8"雙列 5"},
+		    {"Limited to 1 Runegraft of Bellows", u8"限制 1 個轟鳴符文之結"}};
+		const std::vector<std::pair<std::string, std::string>> kUiE = {{"Zzqeo gain 3 power", u8"樣板 3 威力"}};
+		const std::string kExactOnly =
+		    R"({"version":1,"entries":{"ggpk_full.json":["Zzqeo gain 5 power","Zzqeo Phrase",)"
+		    R"("Zzqeo line one\nZzqeo line two","Zzqeo both 5","Limited to 1 Runegraft of Bellows"]}})";
+		struct ER { std::string exact, other, glossWord, gloss, rExact, rPat, line, both, rg, rgNote; };
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto run = [&](const wchar_t* name, bool withFile, ER& o) {
+			const std::wstring vroot = root + name + L"\\";
+			const std::wstring loc = vroot + L"zh-rTW\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w, ex;
+			bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) && plant_file(loc + L"ggpk_full.json", kFullE) &&
+			          plant_file(loc + L"ui.json", kUiE);
+			// 排除清單優先:把 Zzqeo both 5 加進出貨的 display_exclude.json(複本)
+			try {
+				nlohmann::ordered_json doc = nlohmann::ordered_json::object();
+				if (read_bytes(loc + L"display_exclude.json", ex)) doc = nlohmann::ordered_json::parse(ex);
+				else doc["version"] = 1;
+				doc["entries"]["ggpk_full.json"].push_back("Zzqeo both 5");
+				ok = ok && write_bytes(loc + L"display_exclude.json", doc.dump(1));
+			} catch (...) { ok = false; }
+			DeleteFileW((loc + L"exact_only.json").c_str());
+			if (withFile) ok = ok && write_bytes(loc + L"exact_only.json", kExactOnly);
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_set_source(nullptr);
+			translation_reload();
+			o.exact = lk("Zzqeo gain 5 power");
+			o.other = lk("Zzqeo gain 7 power");
+			o.glossWord = lk("Zzqeo Phrase");
+			o.gloss = lk("Exclusive to: Zzqeo Phrase");
+			{ const char* r = translation_reverse_lookup(u8"GGPK 5 威力"); o.rExact = r ? r : "(null)"; }
+			{ char* r = translation_reverse_text(u8"GGPK 9 威力"); o.rPat = r ? r : "(null)"; if (r) translation_free(r); }
+			o.line = lk("Zzqeo line one");
+			o.both = lk("Zzqeo both 5");
+			o.rg = lk("Limited to 1 Runegraft of Bellows");
+			o.rgNote = lk("^xF05050Limited to 1 Runegraft of Bellows ^8(Not supported in PoB yet)");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			if (!ok) printf("           setup %ls failed %s\n", name, w.c_str());
+			return ok;
+		};
+		ER off, on;
+		const bool setup = run(L"eo_off", false, off) && run(L"eo_on", true, on);
+		auto show = [](const char* tag, const ER& r) {
+			printf("           [%s] exact='%s' other='%s' glossWord='%s' gloss='%s'\n"
+			       "                  rExact='%s' rPat='%s' line='%s' both='%s'\n                  rg='%s' rgNote='%s'\n",
+			       tag, r.exact.c_str(), r.other.c_str(), r.glossWord.c_str(), r.gloss.c_str(), r.rExact.c_str(),
+			       r.rPat.c_str(), r.line.c_str(), r.both.c_str(), r.rg.c_str(), r.rgNote.c_str());
+		};
+		// 沒有清單 = 現行:ggpk_full 的帶數字鍵被做成樣板,外溢到別的數字(EO 對照組)
+		const bool e0 = setup && off.other == u8"GGPK 7 威力" && off.gloss == u8"限定: 整句詞" && off.line == u8"整一" &&
+		                off.rPat == "Zzqeo gain 9 power";
+		check(e0, "EO0 沒有 exact_only.json 時行為不變(帶數字鍵照舊做成樣板、進詞彙表、有逐行衍生)");
+		check(setup && on.exact == u8"GGPK 5 威力", "EO1 被列的鍵整句精確命中");
+		check(setup && on.other == u8"樣板 7 威力", "EO2 被列的鍵不建樣板:同樣板別的數字仍走原本的樣板(不外溢)");
+		check(setup && on.glossWord == u8"整句詞" && on.gloss.find(u8"整句詞") == std::string::npos,
+		      "EO3 被列的鍵不進詞彙表(句中替換不出現)");
+		check(setup && on.rExact == "Zzqeo gain 5 power" && on.rPat != "Zzqeo gain 9 power",
+		      "EO4 反查只留精確,不建反向樣板");
+		check(setup && on.line == "(null)", "EO5 被列的多行鍵不做逐行衍生");
+		check(setup && on.both == "(null)", "EO6 同時在排除清單:排除優先(正向查不到)");
+		check(setup && on.rg == u8"限制 1 個轟鳴符文之結" &&
+		      on.rgNote == u8"^xF05050限制 1 個轟鳴符文之結 ^8(Not supported in PoB yet)",
+		      "EO7 符文「Limited to 1 Runegraft of …」整句鍵:浮窗帶註記的那行也接得住");
+		if (!(e0 && on.other == u8"樣板 7 威力" && on.line == "(null)")) {
+			show("無清單", off);
+			show("有清單", on);
+		}
+	}
+
+	// ---- R12(使用者裁定 2026-10-27:舊字典既有錯譯現在修)------------------------------------------
+	// GL 詞彙表詞條不從數字中間開始比;BR 整段方括號 "[...]" 把裡面整句查;CS 只差大小寫的兩個樣板
+	// 輸入大小寫完全相同的那個優先;KE 登記為「維持英文」的整串顯示字不翻(傳奇風味)。
+	printf("\n=== R12 詞彙表數字邊界 / 整段方括號 / 大小寫不同的樣板 / 維持英文 ===\n");
+	{
+		const std::vector<std::pair<std::string, std::string>> kUiR = {
+		    {"Zzqgb Alpha", u8"甲"}, {"2% zzqgb power", u8"增加 2% 威力G"},
+		    {"{0}% zzqbr power", u8"增加 {0}% 威力B"}, {"Zzqbr Essence", u8"精髓B"},
+		    {"Zzqcs aura {0}% Effect on you for", u8"大寫 {0}%"}, {"Zzqcs aura {0}% effect on you for", u8"小寫 {0}%"},
+		    {"Zzqke flavour line", u8"風味句"}, {"Zzqcol Name", u8"名稱C"}, {"{0}% zzqcol speed", u8"增加 {0}% 速度C"},
+		    {"ZZQUP", u8"佔位Z"}, {"234 zzqgb gold", u8"二三四金"}, {"Zzqke piece", u8"片段句"}};
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::wstring vroot = root + L"r12\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		const bool setup = build_dict_copy(shippedLocale, loc, statsJson, true, w) && plant_file(loc + L"ui.json", kUiR);
+		if (!setup) printf("           setup r12 failed %s\n", w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const std::string g1 = lk("Zzqgb Alpha 32% zzqgb power"), g2 = lk("Zzqgb Alpha 2% zzqgb power");
+		const std::string b1 = lk("[32% zzqbr power]"), b2 = lk("Zzqbr Essence   ^8[32% zzqbr power] (Prefix)");
+		const std::string c1 = lk("Zzqcs aura 8% Effect on you for"), c2 = lk("Zzqcs aura 8% effect on you for"),
+		                  c3 = lk("ZZQCS AURA 8% EFFECT ON YOU FOR");
+		const std::string pad(48, ' ');
+		const std::string t1 = lk(("Zzqcol Name" + pad + "15% zzqcol speed").c_str());
+		const std::string t2 = lk(("Zzqcol Name" + pad + "Zzqcol unknown words").c_str());
+		const std::string t3 = lk("Zzqcol Name   15% zzqcol speed");
+		const std::string b3 = lk("[ZZQUP]"), b4 = lk("[UNUSED]"), b4bare = lk("UNUSED");
+		const std::string g3 = lk("Zzqgb Alpha 1,234 zzqgb gold");
+		const std::string k4 = lk("Zzqke piece");
+		const char* kScope[] = {"Zzqke piece"};
+		translation_set_keep_english_scope(kScope, 1);
+		const std::string k5 = lk("Zzqke piece");
+		translation_set_keep_english_scope(nullptr, 0);
+		const std::string k6 = lk("Zzqke piece");
+		const char* kKe = "^xAF6025Zzqke flavour line";
+		const std::string k0 = lk(kKe);
+		translation_keep_english(kKe);
+		const std::string k1 = lk(kKe), k2 = lk("Zzqke flavour line");
+		translation_reload();
+		const std::string k3 = lk(kKe);
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vroot);
+		printf("           g1='%s' g2='%s'\n           b1='%s' b2='%s'\n           c1='%s' c2='%s' c3='%s'\n"
+		       "           k0='%s' k1='%s' k2='%s' k3='%s'\n",
+		       g1.c_str(), g2.c_str(), b1.c_str(), b2.c_str(), c1.c_str(), c2.c_str(), c3.c_str(), k0.c_str(), k1.c_str(),
+		       k2.c_str(), k3.c_str());
+		check(setup && g1.find(u8"3增加") == std::string::npos,
+		      "GL1 詞彙表詞條不從數字中間開始比(「32%」不會被拆成「3」+「增加 2%」)");
+		check(setup && g2 == u8"甲 增加 2% 威力G", "GL2 詞條前面是空白時照常替換(對照組)");
+		check(setup && b1 == u8"[增加 32% 威力B]", "BR1 整段方括號 [..] 把裡面整句查表、括號接回");
+		check(setup && b2 == u8"精髓B   ^8[增加 32% 威力B] (前綴)",
+		      "BR2 精髓列「名稱   ^8[詞綴] (Prefix)」:方括號內整句翻、數字不拆");
+		check(setup && c1 == u8"大寫 8%", "CS1 只差大小寫的兩個樣板:輸入大小寫完全相同的那個優先");
+		check(setup && c2 == u8"小寫 8%", "CS2 另一個大小寫的輸入取另一個樣板");
+		check(setup && c3 == u8"小寫 8%", "CS3 大小寫都對不上時照舊(後載入的勝)");
+		check(setup && k0 == u8"^xAF6025風味句" && k1 == "(null)" && k2 == u8"風味句",
+		      "KE1 登記維持英文的整串顯示字不翻;沒登記的(不帶色碼)照翻");
+		check(setup && k3 == "(null)", "KE2 維持英文的登記不因重新載入字典而消失");
+		// 使用者裁定 2026-10-23/24:下拉列名稱後 48 空白的英文詞綴是隱藏搜尋字,維持英文
+		check(setup && t1 == u8"名稱C" + pad + "15% zzqcol speed",
+		      "TL1 下拉列「名稱<48 空白>隱藏搜尋字」只翻名稱欄,48 空白後的英文原樣保留");
+		check(setup && t2 == u8"名稱C" + pad + "Zzqcol unknown words", "TL2 隱藏搜尋字翻不翻得出來都不影響(只看名稱欄)");
+		check(setup && t3 == "(null)", "TL3 不是下拉列(只有 3 空白)不逐欄翻");
+		check(setup && b3 != u8"[佔位Z]", "BR3 方括號內是全大寫佔位字([UNUSED] 類)不走方括號整句翻");
+		check(setup && (b4bare == "(null)" || b4 != "[" + b4bare + "]"),
+		      "BR4 方括號內是詞彙表黑名單鍵(UNUSED)不走方括號整句翻(使用者裁定 2026-10-23 維持英文)");
+		check(setup && g3.find(u8"1,二三四") == std::string::npos, "GL3 千分位逗號後的數字也算同一個數,不從中間比");
+		check(setup && k4 == u8"片段句" && k5 == "(null)" && k6 == u8"片段句",
+		      "KE3 範圍內(浮窗繪製期間)的字串不翻,範圍清掉後照翻");
+		printf("           t1='%s'\n           t2='%s' t3='%s'\n           b3='%s' b4='%s' b4bare='%s' g3='%s'\n"
+		       "           k4='%s' k5='%s' k6='%s'\n",
+		       t1.c_str(), t2.c_str(), t3.c_str(), b3.c_str(), b4.c_str(), b4bare.c_str(), g3.c_str(), k4.c_str(),
+		       k5.c_str(), k6.c_str());
+	}
+
+	// ---- R15(使用者裁定 2026-10-28「更改」:下拉列改用語言無關 id)-----------------------------------
+	// ID 新的 id 表(詞綴→stat id、寶石名、昇華名、天賦→stat id)由 meta.json source_dicts 載入;
+	// SR 一列詞綴以該詞綴的 stat id 走 stats_by_id(單行 / 「/」接的多行 / 尾綴 (Prefix)(Suffix));
+	// DO 繪製期間的覆寫表(某控制項正在畫的字 → 依 id 翻好的中文),清掉後照舊。
+	// 植入的 id 值抄自 GGPK(pos_affix/out/_cache 的 rel_mod_stat / passiveskills / ascendancy /
+	// activeskills,2026-10-28 讀),不是虛構;出貨字典目前沒有這幾個檔(待 pob_export 補)。
+	printf("\n=== R15 id 表 / 一列詞綴走 stat id / 繪製覆寫 ===\n");
+	{
+		auto lk = [](const char* s) {
+			const char* r = translation_lookup(s);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto row = [](const char* s, const char* ids) {
+			const char* r = translation_lookup_stat_row(s, "item", ids);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		auto byId = [](const char* src, const char* id, const char* en) {
+			const char* r = translation_lookup_by_id_en(src, id, en);
+			return r ? std::string(r) : std::string("(null)");
+		};
+		const std::wstring vroot = root + L"r15\\";
+		const std::wstring loc = vroot + L"zh-rTW\\";
+		CreateDirectoryW(vroot.c_str(), nullptr);
+		std::string w;
+		nlohmann::ordered_json modStats, passiveStats, gemNames, ascNames;
+		modStats["source_files"] = {"ggpk:rel_mod_stat by Mods.Id"};
+		modStats["entries"] = {{"DelveWeaponChanceToGainOnslaughtOnKill2h1", "chance_to_gain_onslaught_on_kill_%"},
+		                       {"MaximumPowerChargeInfluenceMaven",
+		                        "max_power_charges gain_maximum_power_charges_on_power_charge_gained_%_chance"}};
+		passiveStats["source_files"] = {"ggpk:passiveskills.Stats by PassiveSkillGraphId"};
+		passiveStats["entries"] = {{"42687", "base_dexterity_and_intelligence two_handed_melee_accuracy_rating_+% "
+		                                     "two_handed_melee_attack_speed_+% two_handed_melee_critical_strike_chance_+%"}};
+		gemNames["source_files"] = {"ggpk:activeskills.DisplayedName by GrantedEffects.Id"};
+		gemNames["entries"] = {{"GemDetonateMines", u8"遙控地雷"}};
+		gemNames["templates"] = {{"GemDetonateMines", "Detonate Mines"}};
+		ascNames["source_files"] = {"ggpk:ascendancy.Name by Ascendancy.Id"};
+		ascNames["entries"] = {{"Raider", u8"守林人"}};
+		ascNames["templates"] = {{"Raider", "Warden"}};
+		const bool setup = build_dict_copy(shippedLocale, loc, statsJson, true, w) &&
+		                   plant_file(loc + L"ui.json", {{"Zzqdo row", u8"一般列"}}) &&
+		                   add_source_dict(loc, "mod_stats_by_id.json", modStats) &&
+		                   add_source_dict(loc, "passive_stats_by_id.json", passiveStats) &&
+		                   add_source_dict(loc, "gem_names_by_id.json", gemNames) &&
+		                   add_source_dict(loc, "ascendancy_by_id.json", ascNames);
+		if (!setup) printf("           setup r15 failed %s\n", w.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+		translation_set_source(nullptr);
+		translation_reload();
+		const std::string i1 = byId("mod_stats", "DelveWeaponChanceToGainOnslaughtOnKill2h1", nullptr);
+		const std::string i2 = byId("passive_stats", "42687", nullptr);
+		const std::string i3 = byId("gem_names", "GemDetonateMines", "Detonate Mines");
+		const std::string i3b = byId("gem_names", "GemDetonateMines", "Detonate Minez");
+		const std::string i4 = byId("ascendancy", "Raider", "Warden");
+		const char* kPow = "+1 to Maximum Power Charges";
+		const char* kOns = "20% chance to gain Onslaught for 4 seconds on Kill (Suffix)";
+		const char* kSlash = "+1 to Maximum Power Charges/10% chance that if you would gain Power Charges, "
+		                     "you instead gain up to/your maximum number of Power Charges";
+		const std::string f1 = lk(kPow), f2 = lk(kOns);
+		const std::string s1 = row(kPow, "max_power_charges");
+		const std::string s2 = row("+1 to Level of Socketed Gems", "local_socketed_gem_level_+");
+		const std::string s3 = row("#% chance to gain Onslaught for # seconds on Kill", "chance_to_gain_onslaught_on_kill_%");
+		const std::string s4 = row(kOns, "chance_to_gain_onslaught_on_kill_%");
+		const std::string s5 = row(kSlash, "max_power_charges gain_maximum_power_charges_on_power_charge_gained_%_chance");
+		const std::string s6 = row("Drops Scorched Ground while moving, lasting 4 seconds",
+		                           "boots_implicit_ground_scorched_duration_ms");
+		const std::string s7a = row(kPow, nullptr), s7b = row(kPow, "");
+		const std::string s8 = row("+1 to Maximum Power Charges/Zzq no such line", "max_power_charges");
+		const std::string s9 = row("^8+1 to Maximum Power Charges", "max_power_charges");
+		const std::string s10 = row(kPow, "zzq_no_such_stat");
+		// 多階合併列的 '#' 吃掉了負號(POB 把 "-9" 換成 "#");GGPK 模板 {0:+d} 照同值代入寫回 "+#"
+		const std::string s11 = row("Nearby Enemies have #% to Fire Resistance",
+		                            "base_fire_damage_resistance_% local_display_nearby_enemy_fire_damage_resistance_%");
+		const std::string s11b = lk("Nearby Enemies have #% to Fire Resistance");
+		const std::string d0 = lk("Zzqdo row");
+		const char* oKeys[] = {"Zzqdo row"};
+		const char* oVals[] = {u8"覆寫列"};
+		translation_set_draw_override(oKeys, oVals, 1);
+		const std::string d1 = lk("Zzqdo row"), d1b = lk(kPow);
+		// 技能清單列「A, B」(兩個寶石名以逗號接):逐段查,每段都先看覆寫表
+		const std::string d3 = lk("Zzqdo row, Chaos Orb");
+		translation_set_draw_override(nullptr, nullptr, 0);
+		const std::string d2 = lk("Zzqdo row");
+		// ID5:測試自帶「沒有這 4 個 id 表」的字典(從出貨字典複製後刪檔、移出 meta),不看出貨字典
+		// 有沒有它們 —— 出貨字典補上 id 表後(資料線 f00e05c)舊寫法就失準。
+		const std::wstring nroot = root + L"r15none\\";
+		const std::wstring nloc = nroot + L"zh-rTW\\";
+		CreateDirectoryW(nroot.c_str(), nullptr);
+		const std::vector<std::string> kIdFiles = {"mod_stats_by_id.json", "passive_stats_by_id.json",
+		                                           "gem_names_by_id.json", "ascendancy_by_id.json"};
+		std::string wn;
+		const bool setupNone = build_dict_copy(shippedLocale, nloc, statsJson, true, wn) && drop_dict_files(nloc, kIdFiles);
+		if (!setupNone) printf("           setup r15none failed %s\n", wn.c_str());
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nroot.c_str());
+		translation_reload();
+		const std::string i5 = byId("mod_stats", "DelveWeaponChanceToGainOnslaughtOnKill2h1", nullptr);
+		const std::string i5b = byId("passive_stats", "42687", nullptr);
+		const std::string i5c = byId("gem_names", "GemDetonateMines", "Detonate Mines");
+		const std::string i5d = byId("ascendancy", "Raider", "Warden");
+		const std::string i5e = lk("Chaos Orb");   // 前提:字典本身照常載入
+		SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+		translation_reload();
+		remove_tree(vroot);
+		remove_tree(nroot);
+		printf("           i5b='%s' i5c='%s' i5d='%s' i5e='%s'\n", i5b.c_str(), i5c.c_str(), i5d.c_str(), i5e.c_str());
+		printf("           i1='%s' i2='%s'\n           i3='%s' i3b='%s' i4='%s' i5='%s'\n", i1.c_str(), i2.c_str(),
+		       i3.c_str(), i3b.c_str(), i4.c_str(), i5.c_str());
+		printf("           f1='%s' f2='%s'\n           s1='%s' s2='%s'\n           s3='%s' s4='%s'\n"
+		       "           s5='%s'\n           s6='%s' s7a='%s' s7b='%s' s8='%s' s9='%s' s10='%s'\n"
+		       "           d0='%s' d1='%s' d1b='%s' d2='%s'\n",
+		       f1.c_str(), f2.c_str(), s1.c_str(), s2.c_str(), s3.c_str(), s4.c_str(), s5.c_str(), s6.c_str(),
+		       s7a.c_str(), s7b.c_str(), s8.c_str(), s9.c_str(), s10.c_str(), d0.c_str(), d1.c_str(), d1b.c_str(),
+		       d2.c_str());
+		check(setup && i1 == "chance_to_gain_onslaught_on_kill_%", "ID1 詞綴→stat id 表(mod_stats_by_id.json)由 source_dicts 載入");
+		check(setup && i2.rfind("base_dexterity_and_intelligence ", 0) == 0, "ID2 天賦→stat id 表(passive_stats_by_id.json)載入");
+		check(setup && i3 == u8"遙控地雷" && i3b == "(null)", "ID3 寶石名以 GrantedEffects id 查(英文對不上不給)");
+		check(setup && i4 == u8"守林人", "ID4 昇華名以 Ascendancy id 查");
+		check(setupNone && i5 == "(null)" && i5b == "(null)" && i5c == "(null)" && i5d == "(null)" &&
+		          i5e != "(null)" && i5e != "Chaos Orb",
+		      "ID5 字典沒有這 4 個 id 表時(測試自帶的字典)查不到、不出錯,其餘照常翻");
+		check(setup && setupNone && i1 != "(null)" && i2 != "(null)" && i3 != "(null)" && i4 != "(null)",
+		      "ID6 有 id 表時四種都查得到(同一批 id;對照 ID5 沒表時查不到)");
+		check(setup && f1 == u8"+1 最大暴擊球數量" && s1 == u8"+1 最大暴擊球",
+		      "SR1 一列詞綴以 stat id 走物品描述檔(對照:扁平查表是天賦描述的「數量」)");
+		check(setup && s2 == u8"此物品插槽中寶石等級 +1", "SR2 插槽寶石等級以 stat id 得物品描述檔譯文");
+		check(setup && s3 == u8"擊殺時 #% 機率獲得 # 秒猛攻", "SR3 多階合併列(數字皆 #)以 stat id 選對描述");
+		check(setup && f2 == u8"擊殺時有 20% 機率獲得 4 秒猛攻效果 (後綴)" && s4 == u8"擊殺時 20% 機率獲得 4 秒猛攻 (後綴)",
+		      "SR4 帶 (Suffix) 的列以 stat id 選對同英文的兩個 stat(對照:沒有 id 時選錯),尾綴照字典");
+		check(setup && s5 == u8"+1 最大暴擊球/若你獲得暴擊球，有 10% 機率獲得最大上限暴擊球",
+		      "SR5 「/」接的多行列:兩行一句整句翻、其餘行以 stat id 翻");
+		check(setup && s6 == u8"移動時留下焦灼地面，持續 4 秒", "SR6 同英文兩個 stat(焦灼地面)以 stat id 選對");
+		check(setup && s7a == "(null)" && s7b == "(null)", "SR7 沒有 stat id 不回答(呼叫端照舊)");
+		check(setup && s8 == "(null)", "SR8 有一段翻不出來整列不回答(不出現半中半英)");
+		check(setup && s9 == u8"^8+1 最大暴擊球", "SR9 開頭色碼保留");
+		check(setup && s10 == "(null)", "SR10 stat id 對不上任何描述不回答");
+		check(setup && s11 == u8"附近敵人 +#% 火焰抗性" && s11b == s11,
+		      "SR11 合併列無正負號的 # 落在 {0:+d}:照 GGPK 模板寫 +#(與扁平查表、參考同)");
+		if (!(s11 == u8"附近敵人 +#% 火焰抗性" && s11b == s11)) printf("           s11='%s' s11b='%s'\n", s11.c_str(), s11b.c_str());
+		check(setup && d0 == u8"一般列" && d1 == u8"覆寫列" && d2 == u8"一般列",
+		      "DO1 繪製覆寫表期間該字畫成覆寫中文,清掉後照舊(含已快取的字)");
+		check(setup && d1b == f1, "DO2 覆寫表沒列的字不受影響");
+		check(setup && d3 == u8"覆寫列, 混沌石", "DO3 逗號接起來的列逐段翻時,覆寫表對每一段都生效(技能清單「A, B」)");
+		if (d3 != u8"覆寫列, 混沌石") printf("           d3='%s'\n", d3.c_str());
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。
@@ -1907,6 +2406,12 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	const bool cleaned = GetFileAttributesW(root.c_str()) == INVALID_FILE_ATTRIBUTES;
 	check(cleaned, "ER 測試字典複本已刪除");
 
-	printf("\nstat selftest: %d passed, %d failed\n", g_pass, g_fail);
-	return g_fail == 0 ? 0 : 3;
+	// 結果碼:0 = 全過;3 = 有失敗;4 = 沒有失敗但有 WAIT(等另一分支的資料,斷言還沒生效,不能當全綠)
+	if (g_wait) {
+		printf("\nstat selftest: %d passed, %d failed, %d waiting for data\n", g_pass, g_fail, g_wait);
+		printf("!!! WAITING FOR DATA: %d 筆斷言等資料進來才生效(結果碼 %d),不是全綠 !!!\n", g_wait, g_fail ? 3 : 4);
+	} else {
+		printf("\nstat selftest: %d passed, %d failed\n", g_pass, g_fail);
+	}
+	return g_fail ? 3 : (g_wait ? 4 : 0);
 }

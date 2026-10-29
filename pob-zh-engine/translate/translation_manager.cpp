@@ -28,6 +28,7 @@
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include "translation_manager.h"
 #include "../host/error_log.h"
@@ -60,6 +61,17 @@ static std::unordered_map<std::string, FillPlan>    s_reverse_pattern;   /* Chin
 static std::unordered_map<std::string, std::string> s_reverse_origin;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_origin;
 static std::unordered_map<std::string, FillPlan>    s_forward_pattern;   /* English pattern → Chinese fill plan */
+/* s_forward_pattern is keyed lower-case (POB and the dictionaries disagree on
+** case: "on hit" / "on Hit"), so two keys that differ ONLY in case share one
+** slot and the later file's wording answered both: stats.json's GGPK line
+** "Auras from your Skills have {0}% increased Effect on you for" (每個影響你的捷光環,)
+** lost to an older "...increased effect on you for" (你每受一個捷光環影響,).
+** For such collisions only, each case form also keeps its own plan here, keyed
+** by its case-preserved pattern; an input whose case-preserved pattern is one of
+** them takes that plan (find_forward_pattern). Anything else is unchanged.
+** s_forward_pattern_case_of: lower-case key -> case form of its current plan. */
+static std::unordered_map<std::string, FillPlan>    s_forward_pattern_cased;
+static std::unordered_map<std::string, std::string> s_forward_pattern_case_of;
 static std::unordered_map<std::string, std::string> s_reverse_bases;    /* Chinese base type → English (from items.json base entries) */
 /* Forward twin of s_reverse_bases: the English base type names. Only used to
 ** recognise POB's generated "<title>, <base type>" item names — see the
@@ -164,6 +176,14 @@ static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
     { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
+    /* 使用者裁定 2026-10-28「更改」: drop-down rows by language-independent id.
+    ** The two *_stats files hold no Chinese: their value is the GGPK stat ids
+    ** (space separated) the inject hands to translation_lookup_stat_row /
+    ** PobToolsTranslateStat for that mod's / passive's lines. */
+    { "mod_stats", "mod_stats_by_id.json" },         /* Mods.Id -> stat ids */
+    { "passive_stats", "passive_stats_by_id.json" }, /* PassiveSkillGraphId -> stat ids */
+    { "gem_names", "gem_names_by_id.json" },         /* GrantedEffects.Id -> gem name */
+    { "ascendancy", "ascendancy_by_id.json" },       /* Ascendancy.Id -> ascendancy name */
     /* No "legion" id table (user ruling S8, reversed): POB, poedb and GGPK
     ** agree on the legion passives' Name column; only GGPK's Id STRINGS have
     ** the two Faith notables swapped (templar_notable_minimum_power_charge is
@@ -311,6 +331,26 @@ static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
 static const char *const kDisplayExcludeFile = "display_exclude.json";
 static std::unordered_map<std::string, std::unordered_set<std::string>> s_display_exclude;
 
+/* exact_only.json (使用者裁定 2026-10-26「只比整句」):
+**   {"version":1,"entries":{"ggpk_full.json":["<原字典鍵>",...]}}
+** A listed key of THAT file is matched as the whole sentence only. It enters
+** the exact tables as usual (the merged exact map, that file's source copy,
+** the reverse exact map), but nothing is generalised from it: no forward
+** pattern (merged or source copy), no reverse / compact / fuzzy reverse
+** pattern, no per-line entries derived from a multi-line key, and the glossary
+** skips it. So its number never spills onto another value of the same
+** template (whatever template another file built keeps answering those) and
+** its wording is never substituted inside another sentence. display_exclude
+** wins: a key on both lists stays out of every forward table, and still gets
+** no reverse pattern. Keys are the raw dictionary keys (before any 色碼標籤
+** prefix); an [X|Y] key also matches by its stripped form. Loaded by name like
+** display_exclude.json; absent file = nothing restricted. */
+static const char *const kExactOnlyFile = "exact_only.json";
+static std::unordered_map<std::string, std::unordered_set<std::string>> s_exact_only;
+/* Merged-map keys (色碼 prefix included) whose current value came from an
+** exact-only entry: the glossary skips them. Last writer decides, like the map. */
+static std::unordered_set<std::string> s_exact_only_keys;
+
 /* stat_wrappers.json: English wrapper template with one {0} -> Chinese
 ** ("Added Small Passive Skills grant: {0}"). A stat line that misses is
 ** retried with its inside ({0}) looked up as a stat and wrapped. */
@@ -322,6 +362,9 @@ static std::vector<StatWrapper> s_stat_wrappers;
 static std::unordered_map<std::string, std::string> s_stat_cache;
 /* Same, for translation_lookup_stat_colored (answers carry the colour). */
 static std::unordered_map<std::string, std::string> s_stat_colored_cache;
+/* translation_lookup_stat_row: ctx '\x1f' ids '\x1f' row -> answer ("" = none);
+** node-stable until the next reload. */
+static std::unordered_map<std::string, std::string> s_stat_row_cache;
 /* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
 ** be selected, exact entries only, and id lookups answer nothing -- so a locale
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
@@ -1777,11 +1820,53 @@ static int load_json_group_catalog(const std::string &filepath) {
     return count;
 }
 
+/* One forward pattern in, under its case-preserved key `cased` (normalised,
+** not lower-cased). overwrite = the merged map's rule for this entry (a
+** purpose-built entry overwrites; a line derived from a multi-line key only
+** fills an empty slot). The lower-case map behaves exactly as before; a second
+** case form of a key starts keeping every form's own plan (see
+** s_forward_pattern_cased). */
+static void put_forward_pattern(const std::string &cased, FillPlan &&plan, bool overwrite) {
+    const std::string lk = to_ascii_lower(cased);
+    auto it = s_forward_pattern.find(lk);
+    if (it == s_forward_pattern.end()) {
+        s_forward_pattern.emplace(lk, std::move(plan));
+        s_forward_pattern_case_of[lk] = cased;
+        return;
+    }
+    std::string &owner = s_forward_pattern_case_of[lk];
+    if (owner != cased) {
+        s_forward_pattern_cased.emplace(owner, it->second);   /* the current form keeps its plan */
+        if (overwrite) s_forward_pattern_cased[cased] = plan;
+        else s_forward_pattern_cased.emplace(cased, plan);
+    } else if (overwrite) {
+        auto c = s_forward_pattern_cased.find(cased);
+        if (c != s_forward_pattern_cased.end()) c->second = plan;
+    }
+    if (overwrite) {
+        it->second = std::move(plan);
+        owner = cased;
+    }
+}
+
+/* The forward plan for an input's pattern: its exact case form when two forms
+** collided (s_forward_pattern_cased), else the lower-case map. `cased` is the
+** input after normalize_placeholders + digits_to_hash, NOT lower-cased. */
+static const FillPlan *find_forward_pattern(const std::string &cased) {
+    if (!s_forward_pattern_cased.empty()) {
+        auto c = s_forward_pattern_cased.find(cased);
+        if (c != s_forward_pattern_cased.end()) return &c->second;
+    }
+    auto it = s_forward_pattern.find(to_ascii_lower(cased));
+    return it == s_forward_pattern.end() ? nullptr : &it->second;
+}
+
 static int load_json_translations(const std::string &filepath, bool is_base_items,
                                   std::unordered_map<std::string, std::string> *sink = nullptr,
                                   std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr,
                                   bool source_only = false,
-                                  const std::unordered_set<std::string> *exclude = nullptr) {
+                                  const std::unordered_set<std::string> *exclude = nullptr,
+                                  const std::unordered_set<std::string> *exact_only = nullptr) {
     /* source_only (meta.json "source_only"): the file feeds ONLY its source
     ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
     ** map, the forward patterns, any reverse map or (via s_translations) the
@@ -1789,10 +1874,15 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     ** exclude (display_exclude.json, this file's list): those keys skip every
     ** forward table, merged and source copy alike (also as an [X|Y] twin or a
     ** derived line, see s_display_exclude); reverse entries and the base-type
-    ** list are built as before. */
+    ** list are built as before.
+    ** exact_only (exact_only.json, this file's list): those keys go into the
+    ** exact tables only -- no pattern of any kind, no derived line, no glossary
+    ** (see s_exact_only). */
     const bool merge = !source_only;
     std::unordered_set<std::string> listed_hit;   /* listed keys that are keys of this file */
     int twin_skipped = 0, line_skipped = 0;
+    std::unordered_set<std::string> eo_hit;       /* exact_only keys that are keys of this file */
+    int eo_twins = 0;
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     /* 整檔讀進記憶體再解析:nlohmann 走 istream 是逐字元取,7 MB 的 stats.json
@@ -1931,6 +2021,16 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 if (bare != key && exclude->count(bare)) { twin_skipped++; fwd = false; }
             }
         }
+        bool eo = false;
+        if (exact_only) {
+            if (exact_only->count(key)) {
+                eo_hit.insert(key);
+                eo = true;
+            } else if (key.find('[') != std::string::npos) {
+                const std::string bare = strip_brackets(key);
+                if (bare != key && exact_only->count(bare)) { eo_twins++; eo = true; }
+            }
+        }
 
         /* Apply color prefix: prepend to both key and value for lookup matching.
          * POB sends "^x7F7F7FArmour:" and expects "^x7F7F7F護甲:" back. */
@@ -1953,6 +2053,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 }
                 it->second = full_value;
             }
+            if (eo) s_exact_only_keys.insert(full_key);
+            else s_exact_only_keys.erase(full_key);
         }
         if (sink && fwd) (*sink)[full_key] = full_value;
         if (merge) {
@@ -1980,6 +2082,12 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             if (variant != clean_value) {
                 s_reverse_bases[variant] = clean_key;
             }
+        }
+
+        /* exact-only: the exact tables above are all it gets */
+        if (eo) {
+            count++;
+            continue;
         }
 
         /* Build pattern maps (use clean keys without color prefix for pattern matching) */
@@ -2039,7 +2147,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 FillPlan fwd_plan = build_fill_plan_slots(slots_key, slots_value, norm_value);
                 /* Source copy follows the merged map's rule here: overwrite. */
                 if (pattern_sink && fwd) (*pattern_sink)[fwd_key] = fwd_plan;
-                if (merge && fwd) s_forward_pattern[fwd_key] = std::move(fwd_plan);
+                if (merge && fwd) put_forward_pattern(norm_key, std::move(fwd_plan), /*overwrite=*/true);
             }
         }
         std::string fuzzy_value = merge ? normalize_chinese_synonyms(norm_value) : norm_value;
@@ -2091,7 +2199,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                             register_compact_pattern(nv, s_reverse_pattern[nv], origin);
                         }
                         std::string lk = to_ascii_lower(nk);
-                        if (line_fwd && merge && !s_forward_pattern.count(lk)) s_forward_pattern[lk] = build_fill_plan(k, v, nv);
+                        if (line_fwd && merge) put_forward_pattern(nk, build_fill_plan(k, v, nv), /*overwrite=*/false);
                         /* Source copy keeps this spot's rule too: first one wins. */
                         if (line_fwd && pattern_sink && !pattern_sink->count(lk))
                             (*pattern_sink)[lk] = build_fill_plan(k, v, nv);
@@ -2121,6 +2229,16 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             PobLog::Diag("i18n", "display_exclude.json lists " + std::to_string(exclude->size()) + " keys for " +
                                  origin + "; " + std::to_string(listed_hit.size()) + " of them are keys of that file " +
                                  "(the rest match nothing, or only lines derived from its multi-line keys)");
+    }
+    if (exact_only) {
+        char msg[400];
+        snprintf(msg, sizeof(msg), "[pob-proxy] exact_only %s: %d of %d listed keys are keys of this file, "
+                 "matched whole-sentence only (+%d [X|Y]-markup twins)\n", origin.c_str(),
+                 (int)eo_hit.size(), (int)exact_only->size(), eo_twins);
+        OutputDebugStringA(msg);
+        if (eo_hit.size() != exact_only->size())
+            PobLog::Diag("i18n", "exact_only.json lists " + std::to_string(exact_only->size()) + " keys for " +
+                                 origin + "; " + std::to_string(eo_hit.size()) + " of them are keys of that file");
     }
     return count;
 }
@@ -2390,36 +2508,39 @@ static bool load_json_synonyms(const std::string &filepath) {
     return true;
 }
 
-/* display_exclude.json -> s_display_exclude. Absent file: nothing excluded.
+/* A per-file key list ({"version":1,"entries":{file:[keys]}}: display_exclude.json
+** -> s_display_exclude, exact_only.json -> s_exact_only). Absent file: empty list.
 ** A file that does not parse, or a version this engine does not know, is
 ** ignored as a whole (logged): half a list is not a list. */
-static int load_json_display_exclude(const std::string &filepath) {
+using KeyLists = std::unordered_map<std::string, std::unordered_set<std::string>>;
+static int load_json_key_lists(const std::string &filepath, const char *name, const char *ignored,
+                               KeyLists &out) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) return 0;
     njson doc;
     try {
         doc = njson::parse(file);
     } catch (const njson::parse_error &e) {
-        PobLog::Error("i18n", "display_exclude.json did not parse, nothing is excluded: " + filepath + " - " + e.what());
+        PobLog::Error("i18n", std::string(name) + " did not parse, " + ignored + ": " + filepath + " - " + e.what());
         return 0;
     }
     if (!doc.is_object() || !doc.contains("version") || !doc["version"].is_number_integer() ||
         doc["version"].get<int>() != 1 || !doc.contains("entries") || !doc["entries"].is_object()) {
-        PobLog::Error("i18n", "display_exclude.json is not version 1 {\"entries\":{file:[keys]}}, nothing is excluded: " + filepath);
+        PobLog::Error("i18n", std::string(name) + " is not version 1 {\"entries\":{file:[keys]}}, " + ignored + ": " + filepath);
         return 0;
     }
     int n = 0;
     for (auto &[fname, keys] : doc["entries"].items()) {
         if (!keys.is_array()) continue;
-        auto &set = s_display_exclude[fname];
+        auto &set = out[fname];
         for (auto &k : keys)
             if (k.is_string() && set.insert(k.get<std::string>()).second) n++;
     }
     return n;
 }
-static const std::unordered_set<std::string> *display_exclude_for(const std::string &filename) {
-    auto it = s_display_exclude.find(filename);
-    return it == s_display_exclude.end() || it->second.empty() ? nullptr : &it->second;
+static const std::unordered_set<std::string> *key_list_for(const KeyLists &lists, const std::string &filename) {
+    auto it = lists.find(filename);
+    return it == lists.end() || it->second.empty() ? nullptr : &it->second;
 }
 
 /* Try to load JSON translation files. Returns true if JSON mode activated. */
@@ -2521,8 +2642,15 @@ static bool try_load_json(const std::string &base_dir) {
     load_json_item_metadata(json_dir + "item_metadata.json");
 
     /* Load display_exclude.json (before any flat dictionary: it gates them) */
-    if (const int xn = load_json_display_exclude(json_dir + kDisplayExcludeFile)) {
+    if (const int xn = load_json_key_lists(json_dir + kDisplayExcludeFile, kDisplayExcludeFile,
+                                           "nothing is excluded", s_display_exclude)) {
         snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d display-exclude keys from %s\n", xn, kDisplayExcludeFile);
+        OutputDebugStringA(msg);
+    }
+    /* exact_only.json: same shape, same timing (it gates the same files) */
+    if (const int en = load_json_key_lists(json_dir + kExactOnlyFile, kExactOnlyFile,
+                                           "nothing is restricted", s_exact_only)) {
+        snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d exact-only keys from %s\n", en, kExactOnlyFile);
         OutputDebugStringA(msg);
     }
 
@@ -2596,7 +2724,8 @@ static bool try_load_json(const std::string &base_dir) {
         /* source-only with nowhere to go (no flag, not gems): nothing to load */
         if (only_source && !sink) continue;
         int count = load_json_translations(filepath, false, sink, pattern_sink, only_source,
-                                           display_exclude_for(filename));
+                                           key_list_for(s_display_exclude, filename),
+                                           key_list_for(s_exact_only, filename));
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -2634,7 +2763,8 @@ static bool try_load_json(const std::string &base_dir) {
             s_item_title_source_cache[src->name];
             count = load_json_translations(filepath, false, &s_sources[src->name],
                                            &s_source_patterns[src->name], /*source_only=*/true,
-                                           display_exclude_for(filename));
+                                           key_list_for(s_display_exclude, filename),
+                                           key_list_for(s_exact_only, filename));
         }
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d source-only entries from %s\n",
@@ -2801,6 +2931,7 @@ static void do_init(void) {
         std::unordered_map<std::string, Pick> picks;
         for (auto &kv : s_translations) {
             if (!is_glossary_candidate(kv.first)) continue;
+            if (s_exact_only_keys.count(kv.first)) continue;   /* exact_only.json: whole sentence only */
             /* Strip trailing colon for glossary matching (e.g., "Total Mana:" → "Total Mana") */
             std::string term = kv.first;
             std::string trans = kv.second;
@@ -2883,6 +3014,8 @@ void translation_shutdown(void) {
     s_reverse_bases.clear();
     s_base_items_en.clear();
     s_forward_pattern.clear();
+    s_forward_pattern_cased.clear();
+    s_forward_pattern_case_of.clear();
     s_term_glossary.clear();
     s_lookup_cache.clear();
     s_item_title_cache.clear();
@@ -2907,6 +3040,7 @@ void translation_shutdown(void) {
     s_stat_wrappers.clear();
     s_stat_cache.clear();
     s_stat_colored_cache.clear();
+    s_stat_row_cache.clear();
     s_group_stat_heads.clear();
     s_group_text_heads.clear();
     s_slash_group_cache.clear();
@@ -2940,6 +3074,8 @@ void translation_shutdown(void) {
     s_whitelist_terms.clear();
     s_glossary_blacklist.clear();
     s_display_exclude.clear();
+    s_exact_only.clear();
+    s_exact_only_keys.clear();
     s_initialized = false;
     OutputDebugStringA("[pob-proxy] Translation manager shutdown\n");
 }
@@ -3276,10 +3412,176 @@ static const char *slash_group_lookup(const std::string &input) {
     return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
+/* POB's own trailing decorations on a mod line (使用者裁定 2026-10-26):
+**   " (Prefix)" / " (Suffix)"            crafting / custom-modifier rows (ItemsTab)
+**   " ^8(Prefix)" / " ^8(Suffix)"        bench-crafted rows
+**   " ^8(Not supported in PoB yet)"      main.notSupportedTooltipText, any unsupported line
+** True when `s` ends in one of them, preceded by its separator (spaces and/or
+** one colour escape -- a bare "Word(Prefix)" is not POB's). body_end is where
+** the separator starts; word is what stands inside the parentheses. */
+static bool split_pob_tail(const std::string &s, size_t &body_end, std::string &word) {
+    static const char *const kWords[] = { "Prefix", "Suffix", "Not supported in PoB yet" };
+    if (s.size() < 4 || s.back() != ')') return false;
+    const size_t lp = s.rfind('(');
+    if (lp == std::string::npos || lp == 0) return false;
+    const std::string inner = s.substr(lp + 1, s.size() - lp - 2);
+    bool known = false;
+    for (const char *w : kWords) known = known || inner == w;
+    if (!known) return false;
+    size_t st = lp;
+    if (st >= 2 && s[st - 2] == '^' && s[st - 1] >= '0' && s[st - 1] <= '9') {
+        st -= 2;
+    } else if (st >= 8 && s[st - 8] == '^' && s[st - 7] == 'x') {
+        bool hex = true;
+        for (size_t i = st - 6; i < st; i++) hex = hex && isxdigit((unsigned char)s[i]);
+        if (hex) st -= 8;
+    }
+    while (st > 0 && s[st - 1] == ' ') st--;
+    if (st == 0 || st == lp) return false;
+    body_end = st;
+    word = inner;
+    return true;
+}
+
+/* Step -1 of translation_lookup: a line carrying one of POB's trailing
+** decorations is the mod line + the decoration, never a sentence of its own.
+** Priority (the GGPK wording first, 使用者裁定 2026-10-26「直接用 GGPK 繁中」):
+**   1. (Prefix) / (Suffix) only: the body through the stat lookup
+**      (stats_by_id.json = GGPK's templates, ctx "item" -- only the crafting
+**      and custom-modifier rows of an item carry these; leading colour kept)
+**   2. the body through the whole pipeline below (source, "/" groups, merged
+**      exact / patterns...) -- the same answer the undecorated line gets.
+**      The note goes straight here: it ends lines of every context (item,
+**      gem, passive), and the inject already asks the stat lookup with the
+**      right ctx and stat ids where it knows them (item mod / gem / node
+**      lines); what reaches the engine with a note is a line whose context
+**      is not known here, so it gets what the bare line gets
+**   3. only when the body has no translation at all: nullptr, and the caller
+**      goes on with the WHOLE string (old flat keys that carry the decoration,
+**      the trailing-note step...), so nothing turns English that was not
+** A hit for the body always wins over any whole-string key. The decoration
+** goes back as written -- spaces and colour escape included: "Prefix" /
+** "Suffix" as the dictionary words them (前綴 / 後綴), POB's "Not supported
+** in PoB yet" stays English (使用者裁定). Answers live in the lookup cache. */
+/* tail = " (Prefix)" / " ^8(Suffix)" as split_pob_tail cut it, word = what
+** stands inside: the word replaced by the dictionary's (the active source's
+** first, then the merged map's); left as written when neither has it. */
+static void translate_affix_tail(std::string &tail, const std::string &word) {
+    const std::string *zw = nullptr;
+    if (s_active_source) {
+        auto sit = s_active_source->find(word);
+        if (sit != s_active_source->end() && !sit->second.empty()) zw = &sit->second;
+    }
+    if (!zw) {
+        auto it = s_translations.find(word);
+        if (it != s_translations.end() && !it->second.empty()) zw = &it->second;
+    }
+    if (zw) tail.replace(tail.size() - 1 - word.size(), word.size(), *zw);
+}
+
+static const char *decorated_tail_lookup(const char *english) {
+    const std::string in(english);
+    size_t body_end = 0;
+    std::string word;
+    if (!split_pob_tail(in, body_end, word)) return nullptr;
+    auto cit = s_lookup_cache_active->find(in);
+    if (cit != s_lookup_cache_active->end()) return cit->second.empty() ? nullptr : cit->second.c_str();
+    const std::string body = in.substr(0, body_end);
+    std::string tail = in.substr(body_end);
+    std::string zb;
+    const bool affix_tag = word == "Prefix" || word == "Suffix";
+    if (affix_tag) {
+        if (const char *z = translation_lookup_stat_ids_colored(body.c_str(), "item", nullptr)) zb = z;
+    }
+    if (zb.empty()) {
+        const char *z = translation_lookup(body.c_str());
+        if (z && body != z) zb = z;   /* copied now: the next lookup may rehash the caches */
+    }
+    if (zb.empty()) return nullptr;
+    if (affix_tag) translate_affix_tail(tail, word);
+    auto ins = s_lookup_cache_active->emplace(in, zb + tail).first;
+    return ins->second.c_str();
+}
+
+/* translation_keep_english (see the header). Registered from the Lua thread,
+** read by every lookup; the count lets a lookup skip the lock while nothing is
+** registered. Not cleared by translation_shutdown / reload on purpose. */
+static std::unordered_set<std::string> s_keep_english;
+static std::mutex s_keep_english_mu;
+static std::atomic<size_t> s_keep_english_n{0};
+static const size_t kKeepEnglishCap = 50000;
+
+void translation_keep_english(const char *s) {
+    if (!s || !*s) return;
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    if (s_keep_english.size() >= kKeepEnglishCap) return;
+    if (s_keep_english.insert(s).second) s_keep_english_n.store(s_keep_english.size());
+}
+
+/* translation_set_keep_english_scope (see the header): the tooltip being drawn. */
+static std::unordered_set<std::string> s_keep_scope;
+static std::atomic<size_t> s_keep_scope_n{0};
+
+void translation_set_keep_english_scope(const char *const *s, int n) {
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    s_keep_scope.clear();
+    for (int i = 0; s && i < n; i++)
+        if (s[i] && *s[i]) s_keep_scope.insert(s[i]);
+    s_keep_scope_n.store(s_keep_scope.size());
+}
+
+static bool is_keep_english(const char *s) {
+    if (s_keep_english_n.load() == 0 && s_keep_scope_n.load() == 0) return false;
+    std::lock_guard<std::mutex> lock(s_keep_english_mu);
+    return s_keep_english.count(s) > 0 || s_keep_scope.count(s) > 0;
+}
+
+/* translation_set_draw_override (see the header). The Chinese values are
+** interned in s_draw_override_pool (node-based: an element's address never
+** moves) and never freed, so a pointer translation_lookup handed out stays
+** valid after the next set replaced the map; the pool is bounded (a value past
+** the cap is not taken -- that row keeps the ordinary lookup). Not touched by
+** translation_reload: the values are already the answer, no dictionary needed. */
+static std::unordered_map<std::string, const std::string *> s_draw_override;
+static std::unordered_set<std::string> s_draw_override_pool;
+static std::mutex s_draw_override_mu;
+static std::atomic<size_t> s_draw_override_n{0};
+static const size_t kDrawOverridePoolCap = 200000;
+
+void translation_set_draw_override(const char *const *keys, const char *const *vals, int n) {
+    std::lock_guard<std::mutex> lock(s_draw_override_mu);
+    s_draw_override.clear();
+    for (int i = 0; keys && vals && i < n; i++) {
+        if (!keys[i] || !*keys[i] || !vals[i] || !*vals[i]) continue;
+        auto pit = s_draw_override_pool.find(vals[i]);
+        if (pit == s_draw_override_pool.end()) {
+            if (s_draw_override_pool.size() >= kDrawOverridePoolCap) continue;
+            pit = s_draw_override_pool.emplace(vals[i]).first;
+        }
+        s_draw_override[keys[i]] = &*pit;
+    }
+    s_draw_override_n.store(s_draw_override.size());
+}
+
+static const char *draw_override_find(const char *s) {
+    if (s_draw_override_n.load() == 0) return nullptr;
+    std::lock_guard<std::mutex> lock(s_draw_override_mu);
+    auto it = s_draw_override.find(s);
+    return it == s_draw_override.end() ? nullptr : it->second->c_str();
+}
+
 const char* translation_lookup(const char *english) {
     if (!english || !s_translation_enabled) return nullptr;
+    /* a display string registered to stay English (a unique's flavour text) */
+    if (is_keep_english(english)) return nullptr;
+    /* a row the control being drawn translated by id (its stat ids, a gem's /
+    ** an ascendancy's id): ahead of every map and cache below */
+    if (const char *ov = draw_override_find(english)) return ov;
     translation_wait_ready();
     if (s_translations.empty()) return nullptr;
+
+    /* -1. POB's trailing decoration: the body first (see decorated_tail_lookup) */
+    if (const char *dz = decorated_tail_lookup(english)) return dz;
 
     /* One-time deferred diagnostic: check lua-utf8.dll load status.
      * This runs on the first lookup (by which time Lua is fully initialized). */
@@ -3379,11 +3681,11 @@ const char* translation_lookup(const char *english) {
     ** the tooltip, where it carries a real number. */
     if ((pattern != to_ascii_lower(input) || input.find('#') != std::string::npos)
         && !s_forward_pattern.empty()) {
-        auto pit = s_forward_pattern.find(pattern);
-        if (pit != s_forward_pattern.end()) {
+        const FillPlan *plan = find_forward_pattern(digits_to_hash(normalize_placeholders(input)));
+        if (plan) {
             /* 輸入的第 i 個 '#' 一定對得上樣板的第 i 個 '#' —— 兩者雜湊後是同一
             ** 個字串,這正是它命中的原因。計畫就是照這個索引寫的。 */
-            std::string result = fill_plan(pit->second, hash_slot_values(input, /*normalize_ph=*/true));
+            std::string result = fill_plan(*plan, hash_slot_values(input, /*normalize_ph=*/true));
             /* Diagnostic: log pattern hits (first 20 only) */
             static int s_hit_count = 0;
             if (s_hit_count < 20) {
@@ -3424,9 +3726,8 @@ const char* translation_lookup(const char *english) {
         }
         const std::string epat = to_ascii_lower(digits_to_hash(normalize_placeholders(esc)));
         if (epat != to_ascii_lower(esc) || esc.find('#') != std::string::npos) {
-            auto pit = s_forward_pattern.find(epat);
-            if (pit != s_forward_pattern.end()) {
-                std::string result = fill_plan(pit->second, hash_slot_values(esc, /*normalize_ph=*/true));
+            if (const FillPlan *plan = find_forward_pattern(digits_to_hash(normalize_placeholders(esc)))) {
+                std::string result = fill_plan(*plan, hash_slot_values(esc, /*normalize_ph=*/true));
                 if (const char *r = accept(literal_to_newlines(result), /*check_hash=*/true)) return r;
             }
         }
@@ -3624,12 +3925,57 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.5 Trailing parenthetical note: POB appends notes such as
-     *     " (Not Supported in PoB yet)" to otherwise-translatable lines,
-     *     which defeats the exact and pattern matches above. Split the note
+    /* 3.46 A wholly bracketed run "[...]" with no '|' inside (not POB's
+     *      "[Tag|Shown]" markup) and no other bracket: the custom-modifier list
+     *      draws an essence's mod as "<name>   ^8[32% increased Movement Speed]
+     *      (Prefix)", and that run reaches here on its own (3.4). The inside is
+     *      a whole stat line: translated through the full pipeline, put back
+     *      between the brackets. Left to the glossary, a term matched INSIDE
+     *      "32%" (「[3增加 2% 移動速度]」, 使用者裁定 2026-10-27). The inside holds
+     *      no bracket, so this cannot recurse. */
+    if (input.size() > 2 && input.front() == '[' && input.back() == ']') {
+        const std::string inner = input.substr(1, input.size() - 2);
+        if (inner.find_first_of("[]|") == std::string::npos) {
+            /* A placeholder in brackets is not a stat line: GGG's all-capitals
+            ** tags ("[UNUSED]", "[DNT]") and the glossary blacklist's keys stay
+            ** English as they are (使用者裁定 2026-10-23: [UNUSED] 維持英文) --
+            ** before this step they were never translated whole. */
+            bool letters = false, lower = false;
+            for (char ch : inner) {
+                if (ch >= 'a' && ch <= 'z') lower = true;
+                if (is_ascii_alpha(ch)) letters = true;
+            }
+            bool placeholder = letters && !lower;
+            for (const std::string &bad : s_glossary_blacklist)
+                if (!placeholder && inner == bad) placeholder = true;
+            if (placeholder) {
+                s_lookup_cache_active->emplace(input, std::string());
+                return nullptr;
+            }
+            if (const char *inner_zh = translation_lookup(inner.c_str())) {
+                if (inner != inner_zh) {
+                    std::string combined = "[";
+                    combined += inner_zh;
+                    combined += "]";
+                    if (const char *r_ = accept(std::move(combined), /*check_hash=*/false)) return r_;
+                }
+            }
+        }
+    }
+
+    /* 3.5 Trailing parenthetical note: a line ending in " (<note>)" ("(Unused)",
+     *     ...) defeats the exact and pattern matches above. Split the note
      *     off, translate the body recursively, translate the note when the
-     *     dictionary has it, and stitch the two back together. */
-    if (input.size() > 4 && input.back() == ')') {
+     *     dictionary has it, and stitch the two back together.
+     *     POB's own decorations -- (Prefix) / (Suffix) / (Not supported in PoB
+     *     yet) -- are not notes for this step: decorated_tail_lookup (step -1)
+     *     owns them, and when it found no translation for the body there is
+     *     none to give. Left to this step they were split at whatever " (" came
+     *     last, often one INSIDE the body ("Life (5-6) gained ^8(Not supported
+     *     in PoB yet)" -> "生命 (5-6) gained ..."). */
+    size_t pob_tail_end = 0;
+    std::string pob_tail_word;
+    if (input.size() > 4 && input.back() == ')' && !split_pob_tail(input, pob_tail_end, pob_tail_word)) {
         size_t open = input.rfind(" (");
         if (open != std::string::npos && open > 0) {
             std::string suffix = input.substr(open + 2, input.size() - open - 3);
@@ -3723,10 +4069,24 @@ const char* translation_lookup(const char *english) {
             }
             return false;
         };
-        auto boundary_ok = [&input](size_t pos, size_t len) {
+        /* A term is a whole word AND a whole number: one that begins with a
+        ** digit cannot start inside a number ("2% increased Movement Speed"
+        ** inside "32% ..." left a stray "3": 「[3增加 2% 移動速度]」), nor can
+        ** one that ends with a digit stop inside one. */
+        auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+        auto boundary_ok = [&input, &is_digit](size_t pos, size_t len) {
             if (pos > 0 && is_ascii_alpha(input[pos - 1])) return false;
             size_t end = pos + len;
             if (end < input.size() && is_ascii_alpha(input[end])) return false;
+            /* "1,234": a thousands comma between digits is part of the number */
+            if (len > 0 && pos > 0 && is_digit(input[pos]) &&
+                (is_digit(input[pos - 1]) || input[pos - 1] == '.' ||
+                 (input[pos - 1] == ',' && pos > 1 && is_digit(input[pos - 2]))))
+                return false;
+            if (len > 0 && end < input.size() && is_digit(input[end - 1]) &&
+                (is_digit(input[end]) ||
+                 ((input[end] == '.' || input[end] == ',') && end + 1 < input.size() && is_digit(input[end + 1]))))
+                return false;
             return true;
         };
 
@@ -3808,6 +4168,33 @@ const char* translation_lookup(const char *english) {
                 }
                 result.append(input, cur, std::string::npos);
                 if (const char *r_ = accept(std::move(result), /*check_hash=*/false)) return r_;
+            }
+        }
+    }
+
+    /* 4.5 Drop-down rows, last resort: POB lays the Timeless jewel / tattoo /
+     *     runegraft pickers out as "<name><48 spaces><stat text>" (TreeTab.lua).
+     *     The part after the spaces is cut off on screen -- it is there for the
+     *     list's search box (使用者裁定 2026-10-23/24: 隱藏搜尋字維持英文, 不匯出)
+     *     -- so when nothing above covered the row, only the NAME is translated
+     *     (full pipeline) and everything from the spaces on is kept as it came.
+     *     Only for that shape (a run of 48+ spaces); other strings are not
+     *     touched. Last on purpose: a row an earlier step answers is unchanged.
+     *     The name holds no such run, so this cannot recurse. */
+    if (!exact_blocked) {
+        const size_t gap = input.find(std::string(48, ' '));
+        if (gap != std::string::npos && gap > 0) {
+            const std::string name = input.substr(0, gap);
+            bool has_alpha = false;
+            for (char ch : name) if (is_ascii_alpha(ch)) { has_alpha = true; break; }
+            if (has_alpha && !covered_by_whitelist(name)) {
+                if (const char *zh = translation_lookup(name.c_str())) {
+                    if (name != zh) {
+                        std::string row(zh);
+                        row.append(input, gap, std::string::npos);
+                        if (const char *r_ = accept(std::move(row), /*check_hash=*/false)) return r_;
+                    }
+                }
             }
         }
     }
@@ -4030,10 +4417,17 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     std::vector<std::string> outs;
     outs.reserve(cands.size());
     for (const StatCand *c : cands) {
-        if (!hash_lits) { outs.push_back(fill_plan(c->plan, vals)); continue; }
         std::vector<std::string> cv = vals;
-        for (const auto &l : c->lits)
-            if ((size_t)l.first < cv.size() && is_hash(cv[l.first])) cv[l.first] = l.second;
+        /* With stat ids (a crafting row asked by its mod): a written '#' in a
+        ** "{N:+d}" slot -- POB's tier merge turned "-9" into "#" and lost the
+        ** sign -- is written as that template writes a value, "+#" (what the
+        ** same-value reading of GGPK's template gives). */
+        if (hint)
+            for (size_t i = 0; i < c->plus_slot.size() && i < cv.size(); i++)
+                if (c->plus_slot[i] && cv[i].empty()) cv[i] = "+#";
+        if (hash_lits)
+            for (const auto &l : c->lits)
+                if ((size_t)l.first < cv.size() && is_hash(cv[l.first])) cv[l.first] = l.second;
         outs.push_back(fill_plan(c->plan, cv));
     }
     /* A candidate whose filled answer still shows a placeholder the line did
@@ -4415,6 +4809,96 @@ const char* translation_lookup_stat_ids_colored(const char *line, const char *ct
 
 const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     return translation_lookup_stat_ids_colored(line, ctx, nullptr);
+}
+
+/* The row without its (Prefix) / (Suffix) tail and leading colour: one line
+** through the stat lookup with the ids, else -- a row holding '/' -- its
+** "/"-joined lines (slash_group_lookup's split): the pieces a GGPK multi-line
+** description covers taken whole from the line groups, every other piece
+** through the stat lookup with the ids. "" unless every piece has an answer. */
+static std::string stat_row_body(const std::string &body, const char *ctx, const char *stat_ids) {
+    if (body.empty()) return std::string();
+    if (const char *z = stat_lookup_cached(body.c_str(), ctx, stat_ids)) return z;
+    if (body.find('/') == std::string::npos || body.find('\n') != std::string::npos) return std::string();
+    std::vector<std::string> parts;
+    std::string sep_text;
+    size_t start = 0;
+    while (true) {
+        size_t sep = body.find('/', start);
+        std::string piece = body.substr(start, sep == std::string::npos ? std::string::npos : sep - start);
+        const size_t b = piece.find_first_not_of(' '), e = piece.find_last_not_of(' ');
+        parts.push_back(b == std::string::npos ? std::string() : piece.substr(b, e - b + 1));
+        if (sep == std::string::npos) break;
+        if (sep_text.empty()) {
+            size_t l = sep, r = sep + 1;
+            while (l > start && body[l - 1] == ' ') l--;
+            while (r < body.size() && body[r] == ' ') r++;
+            sep_text = body.substr(l, r - l);
+        }
+        start = sep + 1;
+    }
+    std::vector<std::string> gout;
+    std::vector<char> ghit;
+    group_lines_core(parts, ctx, gout, ghit);   /* fills gout / ghit even with no group */
+    std::vector<std::string> zh_lines;
+    for (size_t i = 0; i < parts.size(); i++) {
+        std::string z;
+        if (i < ghit.size() && ghit[i]) {
+            z = gout[i];
+        } else {
+            const char *r = parts[i].empty() ? nullptr : stat_lookup_cached(parts[i].c_str(), ctx, stat_ids);
+            if (!r) return std::string();
+            z = r;
+        }
+        if (z.empty()) continue;   /* a line whose text went into the line before */
+        for (std::string &zl : group_split_lines(z)) zh_lines.push_back(std::move(zl));
+    }
+    std::string result;
+    for (const std::string &zl : zh_lines) {
+        if (!result.empty()) result += sep_text;
+        result += zl;
+    }
+    if (leaks_placeholder(result, body)) result.clear();
+    return result;
+}
+
+const char* translation_lookup_stat_row(const char *row, const char *ctx, const char *stat_ids) {
+    if (!row || !*row || !stat_ids || stat_split_ids(stat_ids).empty()) return nullptr;
+    translation_wait_ready();
+    if (!s_translation_enabled || !s_source_lookup) return nullptr;
+    std::string ck(ctx ? ctx : "");
+    ck += '\x1f';
+    for (const std::string &id : stat_split_ids(stat_ids)) { ck += id; ck += ' '; }
+    ck += '\x1f';
+    ck += row;
+    auto cit = s_stat_row_cache.find(ck);
+    if (cit != s_stat_row_cache.end()) return cit->second.empty() ? nullptr : cit->second.c_str();
+
+    std::string in(row), tail, word;
+    size_t body_end = 0;
+    if (split_pob_tail(in, body_end, word) && (word == "Prefix" || word == "Suffix")) {
+        tail = in.substr(body_end);
+        in.resize(body_end);
+    } else {
+        word.clear();
+    }
+    const size_t cl = stat_leading_colour_len(in.c_str());
+    const std::string colour = in.substr(0, cl);
+    std::string zb = stat_row_body(in.substr(cl), ctx, stat_ids);
+    std::string out;
+    if (!zb.empty()) {
+        out = colour;
+        for (char c : zb) {
+            out += c;
+            if (c == '\n') out += colour;
+        }
+        if (!word.empty()) {
+            translate_affix_tail(tail, word);
+            out += tail;
+        }
+    }
+    auto ins = s_stat_row_cache.emplace(std::move(ck), std::move(out)).first;
+    return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
 /* ---- line groups (ggpk_groups.json) ----

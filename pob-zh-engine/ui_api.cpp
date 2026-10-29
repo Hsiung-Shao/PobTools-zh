@@ -2230,15 +2230,36 @@ static const PobToolsSourcePatch kPobToolsSourcePatches[] = {
 	  "label = node.dn .. \"",
 	  nullptr,
 	  "label = ((PobToolsTranslateDisplay and PobToolsTranslateDisplay(node.dn)) or node.dn) .. \"" },
-	// The stats half of the tattoo label. Each comma-free run is translated on its
-	// own, which is right here because they are separate modifiers rather than one
-	// sentence. A stat containing its own comma splits into runs that match
-	// nothing, so it is simply left in English -- never mangled.
+	// The stats half of the tattoo label: the inject's PobToolsTattooLabelSd
+	// (node.sd line by line, a sentence GGPK spreads over several sd lines taken
+	// whole from the line groups); without it each node.sd line is translated
+	// on its own. Either way the lines are then joined with "," as POB joins them. It used to
+	// split the JOINED text at every comma, which also cut a sentence that holds
+	// its own comma ("Share Endurance, Frenzy and Power Charges with nearby party
+	// members") into runs that match nothing, leaving the row half Chinese, half
+	// English (15 rows; 使用者裁定 2026-10-28). A line with no translation keeps
+	// its English.
 	{ u8"刺青下拉的詞綴文字維持英文",
 	  "treetab.lua",
 	  "table.concat(node.sd, \",\")",
-	  ":gsub(\"[^,]+\", PobToolsTranslateDisplay)",
-	  nullptr, /*oneForkOnly=*/true },
+	  nullptr,
+	  "table.concat((PobToolsTattooLabelSd and PobToolsTattooLabelSd(node)) or "
+	  "(function(sd) local o = {} for i, s in ipairs(sd) do "
+	  "o[i] = (PobToolsTranslateDisplay and PobToolsTranslateDisplay(s)) or s end return o end)(node.sd), \",\")",
+	  /*oneForkOnly=*/true },
+
+	// Gem picker rows (GemSelectControl:Draw): the row's name by the gem's own
+	// id (使用者裁定 2026-10-28「更改」, gem_names_by_id.json): two GGPK skills
+	// share the English "Detonate Mines" (遙控地雷 / 引爆地雷), so no English key
+	// can say which one this row is. PobToolsGemListName (inject) answers only
+	// on an id hit whose English matches; nil keeps gemData.name, which the
+	// control's "gems" source then translates as before. Only this local is
+	// drawn -- gemData.name itself (search, sorting, the edit box) is untouched.
+	{ u8"寶石選擇清單的寶石名未依 id 取 GGPK 名稱",
+	  "gemselectcontrol.lua",
+	  "local gemText = gemData and gemData.name or \"<No matches>\"",
+	  nullptr,
+	  "local gemText = gemData and ((PobToolsGemListName and PobToolsGemListName(gemData)) or gemData.name) or \"<No matches>\"" },
 
 	// Translate BEFORE POB wraps. main:WrapString splits a line into
 	// width-limited fragments and each fragment is drawn separately, so by the
@@ -2974,6 +2995,51 @@ static int l_PobToolsTranslateStat(lua_State* L)
 	return 1;
 }
 
+// PobToolsTranslateStatRow(row, ctx, statIds) -> chinese, or nil. One drop-down
+// row of a mod (its lines joined by "/", maybe " (Prefix)" / " (Suffix)" after
+// them) through stats_by_id.json with that mod's GGPK stat ids -- see
+// translation_lookup_stat_row. nil without ids, or when any piece of the row
+// has no translation.
+static int l_PobToolsTranslateStatRow(lua_State* L)
+{
+	const char* row = lua_isnoneornil(L, 1) ? nullptr : lua_tostring(L, 1);
+	const char* ctx = lua_isnoneornil(L, 2) ? nullptr : lua_tostring(L, 2);
+	const char* ids = lua_isnoneornil(L, 3) ? nullptr : lua_tostring(L, 3);
+	const char* zh = (row && *row) ? translation_lookup_stat_row(row, ctx, ids) : nullptr;
+	if (zh) lua_pushstring(L, zh); else lua_pushnil(L);
+	return 1;
+}
+
+// PobToolsSetDrawOverride(map or nil). { [display string] = chinese } for the
+// control being drawn right now (translation_set_draw_override): the inject
+// sets one drop-down's id-translated rows around its own drawing and clears it
+// afterwards. nil / {} clears; non-string keys or values are skipped.
+static int l_PobToolsSetDrawOverride(lua_State* L)
+{
+	std::vector<std::string> keys, vals;
+	if (lua_istable(L, 1)) {
+		lua_pushnil(L);
+		while (lua_next(L, 1) != 0) {
+			// lua_type, not lua_isstring: lua_tostring on a number key would
+			// convert it in place and break lua_next
+			if (lua_type(L, -2) == LUA_TSTRING && lua_type(L, -1) == LUA_TSTRING) {
+				keys.emplace_back(lua_tostring(L, -2));
+				vals.emplace_back(lua_tostring(L, -1));
+			}
+			lua_pop(L, 1);
+		}
+	}
+	std::vector<const char*> kp, vp;
+	kp.reserve(keys.size());
+	vp.reserve(vals.size());
+	for (size_t i = 0; i < keys.size(); i++) {
+		kp.push_back(keys[i].c_str());
+		vp.push_back(vals[i].c_str());
+	}
+	translation_set_draw_override(kp.empty() ? nullptr : kp.data(), vp.empty() ? nullptr : vp.data(), (int)kp.size());
+	return 0;
+}
+
 // PobToolsTranslateLines(lines, ctx) -> { [i] = chinese } or nil. lines is an
 // array of the lines POB is about to draw one by one (colour lead and the
 // "not supported" note already removed); consecutive lines that are one GGPK
@@ -3015,6 +3081,38 @@ static int l_PobToolsSetSlashContext(lua_State* L)
 	const char* prev = translation_set_slash_context(ctx);
 	if (prev) lua_pushstring(L, prev); else lua_pushnil(L);
 	return 1;
+}
+
+// PobToolsKeepEnglish(text). That exact display string stays English from now on
+// -- the draw-time lookup included (translation_keep_english). The inject
+// registers a unique's flavour lines as it adds them to a tooltip (使用者裁定
+// 2026-10-27). Non-string / empty: ignored.
+static int l_PobToolsKeepEnglish(lua_State* L)
+{
+	if (lua_type(L, 1) == LUA_TSTRING) translation_keep_english(lua_tostring(L, 1));
+	return 0;
+}
+
+// PobToolsSetKeepEnglishScope(list or nil). The strings that stay English only
+// while one tooltip is drawn (translation_set_keep_english_scope): the inject
+// sets that tooltip's wrapped flavour pieces around its Draw and puts the
+// previous list back afterwards. nil / {} clears; non-string items are skipped.
+static int l_PobToolsSetKeepEnglishScope(lua_State* L)
+{
+	std::vector<std::string> items;
+	if (lua_istable(L, 1)) {
+		const int n = (int)lua_objlen(L, 1);
+		for (int i = 1; i <= n; i++) {
+			lua_rawgeti(L, 1, i);
+			if (lua_type(L, -1) == LUA_TSTRING) items.emplace_back(lua_tostring(L, -1));
+			lua_pop(L, 1);
+		}
+	}
+	std::vector<const char*> ptrs;
+	ptrs.reserve(items.size());
+	for (const std::string& s : items) ptrs.push_back(s.c_str());
+	translation_set_keep_english_scope(ptrs.empty() ? nullptr : ptrs.data(), (int)ptrs.size());
+	return 0;
 }
 
 // ==============================
@@ -3253,8 +3351,12 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNC(PobToolsTranslateId);
 	ADDFUNC(PobToolsTranslateStat);
+	ADDFUNC(PobToolsTranslateStatRow);
+	ADDFUNC(PobToolsSetDrawOverride);
 	ADDFUNC(PobToolsTranslateLines);
 	ADDFUNC(PobToolsSetSlashContext);
+	ADDFUNC(PobToolsKeepEnglish);
+	ADDFUNC(PobToolsSetKeepEnglishScope);
 	ADDFUNC(PobToolsLogError);
 	ADDFUNC(PobToolsPerfEnabled);
 	ADDFUNC(PobToolsPerfNow);

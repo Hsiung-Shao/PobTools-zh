@@ -834,6 +834,53 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				      okCl && cl["classes"].size() == 7 && cl["classes"][0]["ascendancies"].size() >= 2 &&
 				          cl["classes"][0]["ascendancies"][0]["id"].is_number() && !cl["current"].value("className", "").empty(),
 				      okCl ? cl["current"].dump() : cl.dump().substr(0, 300));
+				// 第 15 輪(使用者核准 2026-10-28):昇華名依 Ascendancy id。出貨字典有
+				// ascendancy_by_id.json 時,清單裡每個 key 對得上(英文也相同)的昇華都要是表上的名稱;
+				// 沒有表時只驗「側欄與下拉同名」(下面 get_build_info 那條)。
+				{
+					json idTbl;
+					{
+						const std::wstring p = exeDir + L"Data\\poe1\\zh-rTW\\ascendancy_by_id.json";
+						HANDLE h = CreateFileW(p.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+						if (h != INVALID_HANDLE_VALUE) {
+							std::string body;
+							char buf[65536];
+							DWORD got = 0;
+							while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got) body.append(buf, got);
+							CloseHandle(h);
+							try { idTbl = json::parse(body); } catch (...) { idTbl = json(); }
+						}
+					}
+					const bool haveTbl = idTbl.is_object() && idTbl.contains("entries") && idTbl["entries"].is_object();
+					int checked = 0;
+					std::string bad;
+					if (okCl && haveTbl) {
+						for (auto& c : cl["classes"]) {
+							for (auto& a : c["ascendancies"]) {
+								const std::string key = a.value("key", "");
+								if (key.empty() || !idTbl["entries"].contains(key)) continue;
+								const json& tpl = idTbl.contains("templates") ? idTbl["templates"] : json();
+								if (tpl.is_object() && tpl.contains(key) && tpl[key].get<std::string>() != a.value("name", "")) continue;
+								checked++;
+								if (a.value("nameZh", "") != idTbl["entries"][key].get<std::string>())
+									bad += a.value("name", "") + "=" + a.value("nameZh", "") + "/" + idTbl["entries"][key].get<std::string>() + " ";
+							}
+						}
+					}
+					check("list_classes: ascendancy names by Ascendancy id (ascendancy_by_id.json) when the table is shipped",
+					      okCl && (!haveTbl || (checked > 0 && bad.empty())),
+					      haveTbl ? "checked=" + std::to_string(checked) + (bad.empty() ? "" : " bad: " + bad) : "no id table shipped: names stay on tr()");
+					json bic;
+					bool okBic = okCl && child.Call("get_build_info", json::object(), bic, 30000);
+					std::string listZh;
+					for (auto& c : cl["classes"]) {
+						if (c.value("id", -1LL) != curClass) continue;
+						for (auto& a : c["ascendancies"]) if (a.value("id", -1LL) == curAsc) listZh = a.value("nameZh", "");
+					}
+					check("sidebar (get_build_info) shows the ascendancy in the same words as the class list",
+					      okBic && curAsc > 0 ? bic.value("ascendClassNameZh", "") == listZh : okBic,
+					      "sidebar=" + bic.value("ascendClassNameZh", "") + " list=" + listZh);
+				}
 				long long other = -1;
 				if (okCl) for (auto& c : cl["classes"]) { long long id = c.value("id", -1LL); if (id != curClass) { other = id; break; } }
 				json q;
@@ -866,6 +913,18 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				bool okAs = otherAsc > 0 && child.Call("set_ascendancy", json{{"ascendClassId", otherAsc}}, as, 60000);
 				json stA;
 				child.Call("get_stats", json::object(), stA, 30000);
+				{
+					json bia;
+					bool okBia = okAs && child.Call("get_build_info", json::object(), bia, 30000);
+					std::string listZh;
+					for (auto& c : cl["classes"]) {
+						if (c.value("id", -1LL) != curClass) continue;
+						for (auto& a : c["ascendancies"]) if (a.value("id", -1LL) == otherAsc) listZh = a.value("nameZh", "");
+					}
+					check("after set_ascendancy the sidebar names the new ascendancy as the class list does",
+					      okBia && !listZh.empty() && bia.value("ascendClassNameZh", "") == listZh,
+					      "sidebar=" + bia.value("ascendClassNameZh", "") + " list=" + listZh);
+				}
 				json ub;
 				bool okUb = okAs && child.Call("tree_undo", json::object(), ub, 60000);
 				json stB;
