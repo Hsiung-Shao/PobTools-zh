@@ -5090,6 +5090,263 @@ def test_r15c_row_map_rebuilt_in_place(fork):
           ok2 and rows2 == ["None", "+1 to Maximum Power Charges", "+1 to Zzq Things"], "rows=%r err=%r" % (rows2, err2))
 
 
+# ---- R16:下拉列「詞綴名 ^8[行/行]」形狀依 Id 組出中文(PoE2 第 4 步第 4 輪,使用者核准 2026-10-29)--------
+# (v5.1:僅 PoE2 生效,PoE1 維持現行)L1:帶詞綴名的列 = 詞綴名(依 Mods.Id 取)+ 原空白色碼 + [行中文(依 stat id 整列翻)]。
+# L2:尾巴 (Suffix) (Desecrated) 逐字走一般字典;精髓 / 情感列的詞綴名走一般字典。
+# L3:任一段沒答案整列不覆寫。L4:同英文不同 Id 兩列都不覆寫。L5:兩個 fork 都套用。L6:製作詞綴下拉(modList)。
+R15_IDS["mod_stats"].update({
+    "R16HeavyCharge": "max_power_charges",
+    "R16TwoLine": "r16_stat_a r16_stat_b",
+    "R16Ess": "max_power_charges",
+    "R16Emo": "max_power_charges",
+    "R16NoAffix": "max_power_charges",
+    "R16Dup1": "max_power_charges",
+    "R16Dup2": "max_power_charges",
+    "R16HalfOk": "max_power_charges",
+})
+R15_IDS["affixes"] = {
+    "R16HeavyCharge": "厚重壞", "R16TwoLine": "雙行詞",
+    "R16Ess": "不該用", "R16Emo": "不該用2",
+    "R16NoStats": "無統計詞", "R16Dup1": "重甲", "R16Dup2": "重乙", "R16HalfOk": "半詞",
+}
+R15_TPL["affixes"] = {
+    "R16HeavyCharge": "Zzq Heavy", "R16TwoLine": "Zzq Twin",
+    "R16Ess": "Zzq Ess Head", "R16Emo": "Zzq Emo Head",
+    "R16NoStats": "Zzq NoStats", "R16Dup1": "Zzq Dup", "R16Dup2": "Zzq Dup", "R16HalfOk": "Zzq Half",
+}
+R15_ROWS[("Line A/Line B", "item", "r16_stat_a r16_stat_b")] = "甲行/乙行"
+DICT[None].update({"Suffix": "後綴", "Desecrated": "瀆靈", "Zzq Ess Head": "精髓頭", "Zzq Emo Head": "情感頭",
+                   "Zzq Unknown Affix": "不該出現"})
+
+R16_SETUP = """
+data.itemMods.R16 = {
+	R16HeavyCharge = { "+1 to Maximum Power Charges", affix = "Zzq Heavy", type = "Prefix" },
+	R16TwoLine = { "Line A", "Line B", affix = "Zzq Twin", type = "Prefix" },
+	R16Ess = { "+1 to Maximum Power Charges", affix = "Zzq Ess Head", type = "Prefix" },
+	R16Emo = { "+1 to Maximum Power Charges", affix = "Zzq Emo Head", type = "Prefix" },
+	R16NoAffix = { "+1 to Maximum Power Charges", affix = "Zzq Unknown Affix", type = "Prefix" },
+	R16NoStats = { "+1 to Maximum Power Charges", affix = "Zzq NoStats", type = "Prefix" },
+	R16Dup1 = { "+1 to Maximum Power Charges", affix = "Zzq Dup", type = "Prefix" },
+	R16Dup2 = { "+1 to Maximum Power Charges", affix = "Zzq Dup", type = "Prefix" },
+	R16HalfOk = { "+1 to Maximum Power Charges", affix = "Zzq Half", type = "Prefix" },
+}
+R16_LIST = function() return {} end
+local C = common.classes["ItemsTab"]
+function C:R15Init()
+	self.build = r15Build
+	self.displayItem = { affixes = r15Affixes }
+	self.controls = {}
+	self.controls.displayItemAffix1 = r15NewDD(R16_LIST())
+end
+function C:AddCustomModifierToDisplayItem()
+	main:OpenPopup(100, 100, "Add Modifier", { modSelect = r15NewDD(R16_LIST()) })
+end
+package.loaded["Modules.AddImplicitPopup"].AddImplicitToDisplayItem = function(itemsTab, item)
+	main:OpenPopup(100, 100, "Add Implicit", { modSelect = r15NewDD(R16_LIST()) })
+end
+"""
+
+
+def r16_harness(fork, ids=None):
+    h = r15_harness(fork, with_inject=False, ids=ids)
+    h.run(R16_SETUP)
+    h.apply_inject()
+    return h
+
+
+def r16_rows_lua(rows):
+    """rows:[(label, 其餘欄位的 Lua 片段)] -> Lua 清單內容;M 是 data.itemMods.R16。"""
+    return ", ".join('{ label = "%s", %s }' % (label, rest) for label, rest in rows)
+
+
+def r16_set_list(h, rows):
+    h.run("R16_LIST = function() local M = data.itemMods.R16 return { %s } end" % r16_rows_lua(rows))
+
+
+def r16_popup(h, rows, dropped=True, via="custom"):
+    """畫一次 modSelect 彈窗(via=custom 走新增詞綴、implicit 走異能彈窗);回 (ok, err, 畫出的字清單, 列文字)。"""
+    r16_set_list(h, rows)
+    tab = make(h, "ItemsTab")
+    if via == "implicit":
+        h.eval('function(t) package.loaded["Modules.AddImplicitPopup"].AddImplicitToDisplayItem(t, t.displayItem) end')(tab)
+    else:
+        h.eval("function(t) t:AddCustomModifierToDisplayItem() end")(tab)
+    ok, err, drawn, _ = r15_draw(h, "main.popups[1].controls.modSelect", dropped)
+    return ok, err, drawn, [t for t, o in drawn[2:]]
+
+
+R16_HEAVY = "Zzq Heavy   ^8[+1 to Maximum Power Charges]"
+R16_HEAVY_ZH = "厚重壞   ^8[+1 最大暴擊球]"
+
+
+def want(fork, zh, orig):
+    """形狀 H 新規則只在 PoE2 生效(v5.1);PoE1 維持現行(整個 label 交給整列查詢,這些替身列查無 → 原英文)。"""
+    return zh if fork == "PoE2" else orig
+
+
+def test_r16_affix_name_row(fork):
+    """L1 -- 新增詞綴彈窗帶詞綴名的列:PoE2 依 Id 組出中文(空白色碼保留),PoE1 維持原樣。"""
+    h = r16_harness(fork)
+    labels = [R16_HEAVY, "Zzq Twin   ^8[Line A/Line B]", "Zzq Heavy   [+1 to Maximum Power Charges]",
+              "Zzq Heavy  ^7[+1 to Maximum Power Charges]"]
+    zhs = [R16_HEAVY_ZH, "雙行詞   ^8[甲行/乙行]", "厚重壞   [+1 最大暴擊球]", "厚重壞  ^7[+1 最大暴擊球]"]
+    mods = ["R16HeavyCharge", "R16TwoLine", "R16HeavyCharge", "R16HeavyCharge"]
+    rows = [(lb, "mod = M.%s" % m) for lb, m in zip(labels, mods)]
+    ok, err, drawn, got = r16_popup(h, rows)
+    check("%s L1 詞綴名列展開:%s" % (fork, "詞綴名取 Id 譯名、行取 stat id 譯文、三個空白與 ^8 保留" if fork == "PoE2" else "PoE1 維持原樣(原英文)"),
+          ok and got[:1] == [want(fork, zhs[0], labels[0])], "rows=%r err=%r" % (got, err))
+    check("%s L1 兩行詞綴:%s" % (fork, "整段 body 以 / 相接交給整列查詢,結果放回方括號" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[1:2] == [want(fork, zhs[1], labels[1])], "rows=%r" % got)
+    check("%s L1 沒有色碼的列:%s" % (fork, "空白保留、不補色碼" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[2:3] == [want(fork, zhs[2], labels[2])], "rows=%r" % got)
+    check("%s L1 兩個空白加 ^7:%s" % (fork, "原樣保留" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[3:4] == [want(fork, zhs[3], labels[3])], "rows=%r" % got)
+    asked = h.r15["rows"]
+    if fork == "PoE2":
+        check("%s L1 整列查詢只問方括號內的行文字(不把詞綴名帶進去)" % fork,
+              ("+1 to Maximum Power Charges", "item", "max_power_charges") in asked
+              and ("Line A/Line B", "item", "r16_stat_a r16_stat_b") in asked
+              and not any(r[0].startswith("Zzq ") for r in asked), "asked=%r" % asked)
+    else:
+        check("%s L1 PoE1 整列查詢問的仍是整個 label(行為同現行)" % fork,
+              (R16_HEAVY, "item", "max_power_charges") in asked
+              and not any(r[0] == "+1 to Maximum Power Charges" for r in asked), "asked=%r" % asked)
+    okc, errc, drawnc, _ = r16_popup(r16_harness(fork), rows, dropped=False)
+    check("%s L1 收合框的選中列:%s" % (fork, "畫成依 Id 組出的中文" if fork == "PoE2" else "PoE1 維持原英文"),
+          okc and drawnc[:1] == [(R16_HEAVY_ZH, True)] if fork == "PoE2" else okc and drawnc[:1] == [(R16_HEAVY, False)],
+          "drawn=%r err=%r" % (drawnc, errc))
+
+
+def test_r16_desecrated_essence_tail(fork):
+    """L2 -- 瀆靈 / 後綴尾巴逐字翻、順序不變;精髓與情感列的詞綴名走一般字典(僅 PoE2;PoE1 維持原樣)。"""
+    h = r16_harness(fork)
+    spec = [(R16_HEAVY + " (Suffix) (Desecrated)", "mod = M.R16HeavyCharge", "厚重壞   ^8[+1 最大暴擊球] (後綴) (瀆靈)", "尾巴逐字翻、順序不變"),
+            ("Zzq Twin   ^8[Line A/Line B] (Desecrated) (Suffix)", "mod = M.R16TwoLine", "雙行詞   ^8[甲行/乙行] (瀆靈) (後綴)", "尾巴順序反過來也照原順序"),
+            (R16_HEAVY + " ()", "mod = M.R16HeavyCharge", "厚重壞   ^8[+1 最大暴擊球] ()", "空字串尾巴保持 ()"),
+            ("Zzq Ess Head   ^8[+1 to Maximum Power Charges] (Suffix)", "mod = M.R16Ess, essence = {}", "精髓頭   ^8[+1 最大暴擊球] (後綴)", "精髓列(essence 為表):詞綴名走一般字典、不用 Id 表的譯名"),
+            ("Zzq Emo Head   ^8[+1 to Maximum Power Charges]", "mod = M.R16Emo, emotion = {}", "情感頭   ^8[+1 最大暴擊球]", "情感列(emotion 為表):詞綴名同樣走一般字典")]
+    ok, err, drawn, got = r16_popup(h, [(lb, m) for lb, m, _, _ in spec])
+    for i, (lb, _, zh, title) in enumerate(spec):
+        check("%s L2 %s%s" % (fork, title, "" if fork == "PoE2" else "(PoE1 維持原樣)"),
+              ok and got[i:i + 1] == [want(fork, zh, lb)], "rows=%r err=%r" % (got, err))
+
+
+def test_r16_missing_piece_keeps_english(fork):
+    """L3 -- 任一段沒答案,整列畫原英文(不出現半中半英);對照列 PoE2 翻成中文、PoE1 維持原樣。"""
+    h = r16_harness(fork)
+    rows = [("Zzq Unknown Affix   ^8[+1 to Maximum Power Charges]", "mod = M.R16NoAffix"),
+            (R16_HEAVY + " (Suffix) (Zzqnoword)", "mod = M.R16HeavyCharge"),
+            ("Zzq Heavy   ^8[Zzq no row text]", "mod = M.R16HeavyCharge"),
+            ("Zzq NoStats   ^8[+1 to Maximum Power Charges]", "mod = M.R16NoStats"),
+            ("Zzq Heavy2   ^8[+1 to Maximum Power Charges] (Suffix)", 'mod = { "x" }'),
+            ("Zzq Ess Nodict   ^8[+1 to Maximum Power Charges]", "mod = M.R16Ess, essence = {}"),
+            ("Zzq Twin   ^8[Line A/Line B]", "mod = M.R16TwoLine")]
+    ok, err, drawn, got = r16_popup(h, rows)
+    check("%s L3 對照列:%s" % (fork, "照常翻成中文(同一個清單裡有答案的列不受影響)" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[6:7] == [want(fork, "雙行詞   ^8[甲行/乙行]", rows[6][0])], "rows=%r err=%r" % (got, err))
+    check("%s L3 詞綴名查無(Id 表沒有,即使一般字典有該英文也不退回):整列英文" % fork,
+          ok and got[0:1] == [rows[0][0]], "rows=%r" % got)
+    check("%s L3 某個尾巴字查無:整列英文,不只翻一半" % fork,
+          ok and got[1:2] == [rows[1][0]], "rows=%r" % got)
+    check("%s L3 行文字查無:整列英文" % fork, ok and got[2:3] == [rows[2][0]], "rows=%r" % got)
+    check("%s L3 該詞綴沒有 stat id:整列英文" % fork, ok and got[3:4] == [rows[3][0]], "rows=%r" % got)
+    check("%s L3 mod 不在 data.itemMods(找不到詞綴 Id):整列英文" % fork, ok and got[4:5] == [rows[4][0]], "rows=%r" % got)
+    check("%s L3 精髓列的詞綴名一般字典查無:整列英文" % fork, ok and got[5:6] == [rows[5][0]], "rows=%r" % got)
+    hn = r16_harness(fork, ids={})
+    okn, errn, drawnn, gotn = r16_popup(hn, rows[-1:] + [(R16_HEAVY, "mod = M.R16HeavyCharge")])
+    check("%s L3 出貨資料沒有 id 表時整個下拉照舊(不設覆寫、不問整列查詢)" % fork,
+          okn and all(o is False for t, o in drawnn) and not hn.r15["rows"], "drawn=%r rows=%r" % (drawnn, hn.r15["rows"]))
+
+
+def test_r16_same_label_conflict(fork):
+    """L4 -- 同英文不同 Id 且答案不同(含一有一無)的兩列都不覆寫;其他列 PoE2 照常翻、PoE1 維持原樣。"""
+    h = r16_harness(fork)
+    dup = "Zzq Dup   ^8[+1 to Maximum Power Charges]"
+    rows = [(dup, "mod = M.R16Dup1"), (dup, "mod = M.R16Dup2"), (R16_HEAVY, "mod = M.R16HeavyCharge")]
+    ok, err, drawn, got = r16_popup(h, rows)
+    check("%s L4 對照列:%s" % (fork, "照常翻成中文" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[2:3] == [want(fork, R16_HEAVY_ZH, R16_HEAVY)], "rows=%r err=%r" % (got, err))
+    check("%s L4 同英文、詞綴名 Id 譯名不同:兩列都畫原英文" % fork,
+          ok and got[:2] == [dup, dup], "rows=%r" % got)
+    okc, errc, drawnc, _ = r16_popup(r16_harness(fork), rows, dropped=False)
+    check("%s L4 收合框選中衝突列也畫原英文" % fork,
+          okc and drawnc[:1] == [(dup, False)], "drawn=%r err=%r" % (drawnc, errc))
+    half = "Zzq Half   ^8[+1 to Maximum Power Charges]"
+    h2 = r16_harness(fork)
+    rows2 = [(half, "mod = M.R16NoStats"), (half, "mod = M.R16HalfOk"), (R16_HEAVY, "mod = M.R16HeavyCharge")]
+    ok2, err2, drawn2, got2 = r16_popup(h2, rows2)
+    check("%s L4 同英文一列有答案一列沒有:兩列都畫原英文(不讓別列借用);對照列%s" % (fork, "翻中文" if fork == "PoE2" else "維持原樣"),
+          ok2 and got2[:2] == [half, half] and got2[2:3] == [want(fork, R16_HEAVY_ZH, R16_HEAVY)],
+          "rows=%r err=%r" % (got2, err2))
+
+
+def test_r16_implicit_popup(fork):
+    """L5 -- 異能彈窗(AddImplicitPopup)入口:PoE1 維持原樣、PoE2 依 Id 組出(兩邊各有斷言)。"""
+    h = r16_harness(fork)
+    labels = [R16_HEAVY, "Zzq Twin   ^8[Line A/Line B] (Desecrated)"]
+    rows = [(labels[0], "mod = M.R16HeavyCharge"), (labels[1], "mod = M.R16TwoLine")]
+    ok, err, drawn, got = r16_popup(h, rows, via="implicit")
+    if fork == "PoE2":
+        check("%s L5 異能彈窗:PoE2 詞綴名列依 Id 組出中文" % fork,
+              ok and got == [R16_HEAVY_ZH, "雙行詞   ^8[甲行/乙行] (瀆靈)"], "rows=%r err=%r" % (got, err))
+    else:
+        check("%s L5 異能彈窗:PoE1 維持原樣(原英文)" % fork, ok and got == labels, "rows=%r err=%r" % (got, err))
+        check("%s L5 異能彈窗:PoE1 整列查詢問整個 label(同現行)" % fork,
+              (labels[0], "item", "max_power_charges") in h.r15["rows"], "asked=%r" % h.r15["rows"])
+
+
+def test_r16_affix_drop_modlist(fork):
+    """L6 -- 物品編輯詞綴下拉(value.modList):PoE2 單一 Id 取該 Id、有 modId 取 modId、多階無 modId 不覆寫;PoE1 維持原樣;非詞綴名形狀兩邊照舊。"""
+    h = r16_harness(fork)
+    labels = [R16_HEAVY, "Zzq Twin   ^8[Line A/Line B] (Suffix)", "Zzq Dup   ^8[+1 to Maximum Power Charges]",
+              "Zzq Multi   ^8[+1 to Maximum Power Charges]"]
+    r16_set_list(h, [
+        (labels[0], 'modList = { "R16HeavyCharge" }'),
+        (labels[1], 'modList = { "R16TwoLine" }'),
+        (labels[2], 'modList = { "R16Dup1", "R16Dup2" }, modId = "R16Dup1"'),
+        (labels[3], 'modList = { "R16HeavyCharge", "R16Dup1" }'),
+        (R15_ONS, 'modList = { "OnslaughtOnKillInfluence1", "OnslaughtOnKillInfluence2_" }')])
+    tab = make(h, "ItemsTab")
+    h.eval("function(t) R16_TAB = t end")(tab)
+    ok, err, drawn, _ = r15_draw(h, "R16_TAB.controls.displayItemAffix1", True)
+    got = [t for t, o in drawn[2:]]
+    check("%s L6 單一階 modList:%s" % (fork, "詞綴名取 modList[1]、行取其 stat id" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[:1] == [want(fork, R16_HEAVY_ZH, labels[0])], "rows=%r err=%r" % (got, err))
+    check("%s L6 單一階帶尾巴:%s" % (fork, "尾巴逐字翻" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[1:2] == [want(fork, "雙行詞   ^8[甲行/乙行] (後綴)", labels[1])], "rows=%r" % got)
+    check("%s L6 多階但有 modId:%s" % (fork, "詞綴名取 modId 的 Id 譯名" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[2:3] == [want(fork, "重甲   ^8[+1 最大暴擊球]", labels[2])], "rows=%r" % got)
+    check("%s L6 多階且沒有 modId:不猜,整列畫原英文" % fork, ok and got[3:4] == [labels[3]], "rows=%r" % got)
+    check("%s L6 不是詞綴名形狀的多階合併列:兩邊都維持依合併 stat id 整列翻" % fork,
+          ok and got[4:5] == ["擊殺時 #% 機率獲得 # 秒猛攻"], "rows=%r" % got)
+
+
+def test_r16_empty_head(fork):
+    """L7 -- head 是空字串的列(只有空白加色碼加 [行]):PoE2 不查詢詞綴名、空白色碼保留;PoE1 維持原樣。"""
+    h = r16_harness(fork)
+    labels = ["   ^8[+1 to Maximum Power Charges] (Suffix) (Desecrated)",
+              "   ^8[Line A/Line B]",
+              "  [+1 to Maximum Power Charges]"]
+    zhs = ["   ^8[+1 最大暴擊球] (後綴) (瀆靈)", "   ^8[甲行/乙行]", "  [+1 最大暴擊球]"]
+    # R16NoAffix 沒有詞綴名 Id 譯名:head 空時不該去查,所以仍要翻出中文
+    mods = ["R16NoAffix", "R16TwoLine", "R16HeavyCharge"]
+    ok, err, drawn, got = r16_popup(h, [(lb, "mod = M.%s" % m) for lb, m in zip(labels, mods)])
+    check("%s L7 head 空 + 尾巴:%s" % (fork, "空白色碼保留、行與尾巴翻中文、不查詢詞綴名" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[0:1] == [want(fork, zhs[0], labels[0])], "rows=%r err=%r" % (got, err))
+    check("%s L7 head 空 + 兩行 body:%s" % (fork, "空白色碼保留" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[1:2] == [want(fork, zhs[1], labels[1])], "rows=%r" % got)
+    check("%s L7 head 空 + 無色碼:%s" % (fork, "兩個空白保留、不補色碼" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok and got[2:3] == [want(fork, zhs[2], labels[2])], "rows=%r" % got)
+    h2 = r16_harness(fork)
+    r16_set_list(h2, [(labels[0], 'modList = { "R16NoAffix" }')])
+    tab = make(h2, "ItemsTab")
+    h2.eval("function(t) R16_TAB = t end")(tab)
+    ok2, err2, drawn2, _ = r15_draw(h2, "R16_TAB.controls.displayItemAffix1", True)
+    got2 = [t for t, o in drawn2[2:]]
+    check("%s L7 製作詞綴下拉(modList)的 head 空列:%s" % (fork, "同樣依 stat id 組出" if fork == "PoE2" else "PoE1 維持原樣"),
+          ok2 and got2 == [want(fork, zhs[0], labels[0])], "rows=%r err=%r" % (got2, err2))
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -5172,6 +5429,13 @@ def main():
         test_r15b_ascendancy_same_name(fork)
         test_r15b_gem_tooltip_title(fork)
         test_r15c_row_map_rebuilt_in_place(fork)
+        test_r16_affix_name_row(fork)
+        test_r16_desecrated_essence_tail(fork)
+        test_r16_missing_piece_keeps_english(fork)
+        test_r16_same_label_conflict(fork)
+        test_r16_implicit_popup(fork)
+        test_r16_affix_drop_modlist(fork)
+        test_r16_empty_head(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)

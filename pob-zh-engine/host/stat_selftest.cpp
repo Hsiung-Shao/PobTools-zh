@@ -308,6 +308,20 @@ bool drop_dict_files(const std::wstring& localeDir, const std::vector<std::strin
 	}
 }
 
+// 改字典複本 meta.json 的 "source"(C1 用):poe1 / poe2。
+bool set_meta_source(const std::wstring& localeDir, const char* source)
+{
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		meta["source"] = source;
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
 } // namespace
 
 int RunStatSelftest(const std::wstring& statsJsonArg)
@@ -2374,6 +2388,41 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && d1b == f1, "DO2 覆寫表沒列的字不受影響");
 		check(setup && d3 == u8"覆寫列, 混沌石", "DO3 逗號接起來的列逐段翻時,覆寫表對每一段都生效(技能清單「A, B」)");
 		if (d3 != u8"覆寫列, 混沌石") printf("           d3='%s'\n", d3.c_str());
+	}
+
+	// ---- C1(使用者裁定 2026-10-29「PoE1 / PoE2 依遊戲走各自規則」)-------------------------------
+	// 屬性查詢(translation_lookup_stat)對輸入行的方括號處理依字典 meta.json 的 "source":
+	// poe2 的畫面字串不帶 GGPK 標記,不去方括號(POB 的 [整句] 外框要原樣當成查不到);
+	// poe1(含沒寫)照舊去掉。樣板端不變。
+	printf("\n=== C1 屬性查詢的方括號處理依 meta source ===\n");
+	{
+		const std::string bracketed = std::string("[") + kE2 + "]";
+		auto run = [&](const wchar_t* sub, const char* source, Said& bare, Said& br) {
+			const std::wstring vroot = root + sub + L"\\";
+			const std::wstring loc = vroot + L"zh-rTW\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w;
+			const bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) && set_meta_source(loc, source);
+			if (!ok) printf("           setup c1 %s failed %s\n", source, w.c_str());
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			translation_set_source(nullptr);
+			translation_reload();
+			bare = ask(kE2, "item");
+			br = ask(bracketed.c_str(), "item");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			return ok;
+		};
+		Said bare2{true, {}}, br2{true, {}}, bare1{true, {}}, br1{true, {}};
+		const bool ok2 = run(L"c1poe2", "poe2", bare2, br2);
+		const bool ok1 = run(L"c1poe1", "poe1", bare1, br1);
+		printf("           poe2 bare='%s' bracketed='%s'\n           poe1 bare='%s' bracketed='%s'\n",
+		       shown(bare2), shown(br2), shown(bare1), shown(br1));
+		check(ok2 && !bare2.null && bare2.s == kE2Want, "C1a meta source=poe2:不帶方括號的已知單行 stat 照常翻");
+		check(ok2 && br2.null && !bare2.null, "C1b meta source=poe2:帶方括號的同一句不去方括號、回空(對照 C1a 同環境有命中)");
+		check(ok1 && !br1.null && br1.s.find(kE2Want) != std::string::npos,
+		      "C1c meta source=poe1:帶方括號的同一句照舊去方括號、翻成中文(現行行為)");
 	}
 
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");

@@ -882,9 +882,69 @@ local function statIdsOfMods(modIds)
 	return table.concat(out, " ")
 end
 
+-- PoE2 第 4 步第 4 輪(契約 v5/v5.1,使用者裁定 2026-10-29):PoE2 的「詞綴名   ^8[行]尾巴」列逐段以 id 翻。
+-- PoE1 不走這條(兩邊依遊戲走各自規則,PoE1 行為不變)。
+-- The PoE2 fork keeps a class's constructor in class._constructor (see
+-- wrapConstructor); the PoE1 community fork never has one.
+local function isPoe2Fork()
+	local c = type(common) == "table" and type(common.classes) == "table" and common.classes["DropDownControl"] or nil
+	return type(c) == "table" and rawget(c, "_constructor") ~= nil
+end
+
+-- "<head><spaces>[^N][<body>]( (<word>))*" -> parts, nil for any other shape.
+-- head may be empty (the desecrated rows without an affix name).
+local function splitHeadedRow(label)
+	local head, gap, colour, body, tail = label:match("^([^%[]-)( +)(%^%d)%[(.*)%](.*)$")
+	if not head then
+		head, gap, body, tail = label:match("^([^%[]-)( +)%[(.*)%](.*)$")
+		colour = ""
+	end
+	if not head or body == "" or head:find("%s$") then return nil end
+	local words, rest = {}, tail
+	while rest ~= "" do
+		local w, r = rest:match("^ %(([^()]*)%)(.*)$")
+		if not w then return nil end
+		words[#words + 1] = w
+		rest = r
+	end
+	return { head = head, gap = gap, colour = colour, body = body, words = words }
+end
+
+-- One headed row in Chinese, or nil when any piece has no answer (no half-English row).
+local function headedRowZh(p, v, modId)
+	local ids = modId and statIdsOf("mod", modId) or nil
+	if not ids then return nil end
+	local hz = ""
+	if p.head ~= "" then
+		if type(v.essence) == "table" or type(v.emotion) == "table" then
+			hz = zhRaw(p.head)
+		else
+			hz = zhByIdOnly("affixes", modId, p.head)
+		end
+		if type(hz) ~= "string" or hz == "" or hz == p.head then return nil end
+	end
+	local bz = zhStatRow(p.body, "item", ids)
+	if not bz then return nil end
+	local out = { hz, p.gap, p.colour, "[", bz, "]" }
+	for _, w in ipairs(p.words) do
+		local wz = w
+		if w ~= "" then
+			wz = zhRaw(w)
+			if type(wz) ~= "string" or wz == "" or wz == w then return nil end
+		end
+		out[#out + 1] = " (" .. wz .. ")"
+	end
+	return table.concat(out)
+end
+
 -- _ptRowZh for the crafting affix drop-downs (value.modList = the tiers' mod ids).
 local function affixRowZh(v)
 	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.modList) ~= "table" then return nil end
+	local p = isPoe2Fork() and splitHeadedRow(v.label) or nil
+	if p then
+		local id = v.modId or (#v.modList == 1 and v.modList[1]) or nil
+		return id and headedRowZh(p, v, id) or nil
+	end
 	return zhStatRow(v.label, "item", statIdsOfMods(v.modList))
 end
 
@@ -892,7 +952,10 @@ end
 local function modRowZh(v)
 	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.mod) ~= "table" then return nil end
 	local id = modIdOf(v.mod)
-	return id and zhStatRow(v.label, "item", statIdsOf("mod", id)) or nil
+	if not id then return nil end
+	local p = isPoe2Fork() and splitHeadedRow(v.label) or nil
+	if p then return headedRowZh(p, v, id) end
+	return zhStatRow(v.label, "item", statIdsOf("mod", id))
 end
 
 -- A GGPK answer over several lines, as one line: a drop-down row (or label)

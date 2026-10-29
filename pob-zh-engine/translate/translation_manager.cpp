@@ -370,6 +370,11 @@ static std::unordered_map<std::string, std::string> s_stat_row_cache;
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
 ** did before the per-source dictionaries existed. */
 static bool s_source_lookup = false;
+/* meta.json "source" == "poe2" (使用者裁定 2026-10-29: PoE1 / PoE2 follow their
+** own rules). POB2's drawn strings never carry GGPK markup, so the stat lookup
+** keeps a line's square brackets as they are -- stripping them would eat POB's
+** own "[...]" around a crafting row's lines. PoE1 keeps the old stripping. */
+static bool s_stat_keep_input_brackets = false;
 static const char *const kLegacySource = "gems";
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
@@ -2300,6 +2305,8 @@ static bool load_json_meta(const std::string &filepath,
     ** can be selected, everything else answers as unmarked. */
     source_lookup = doc.contains("source_lookup") && doc["source_lookup"].is_boolean() &&
                     doc["source_lookup"].get<bool>();
+    s_stat_keep_input_brackets = doc.contains("source") && doc["source"].is_string() &&
+                                 doc["source"].get<std::string>() == "poe2";
 
     if (doc.contains("incomplete_translation_whitelist") &&
         doc["incomplete_translation_whitelist"].is_array()) {
@@ -3045,6 +3052,7 @@ void translation_shutdown(void) {
     s_group_text_heads.clear();
     s_slash_group_cache.clear();
     s_source_lookup = false;
+    s_stat_keep_input_brackets = false;
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -4342,7 +4350,7 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
                                         const std::vector<std::string> *hint,
                                         bool *had_cands = nullptr, bool hash_lits = false) {
     if (had_cands) *had_cands = false;
-    std::string in = strip_brackets(line);
+    std::string in = s_stat_keep_input_brackets ? line : strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto it = s_stat_index.find(stat_index_key(in));
     if (it == s_stat_index.end()) return std::string();
@@ -4598,7 +4606,7 @@ static std::string stat_translate_name(const std::string &src, const std::string
 static std::string stat_lookup_named(const std::string &line, const std::vector<int> &chain,
                                      const std::vector<std::string> *hint) {
     if (s_stat_named.empty()) return std::string();
-    std::string in = strip_brackets(line);
+    std::string in = s_stat_keep_input_brackets ? line : strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto run = [&](int want_file) {
         std::vector<std::string> outs;
