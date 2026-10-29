@@ -882,68 +882,57 @@ local function statIdsOfMods(modIds)
 	return table.concat(out, " ")
 end
 
--- PoE2 第 4 步第 4 輪(契約 v5/v5.1,使用者裁定 2026-10-29):PoE2 的「詞綴名   ^8[行]尾巴」列逐段以 id 翻。
--- PoE1 不走這條(兩邊依遊戲走各自規則,PoE1 行為不變)。
--- The PoE2 fork keeps a class's constructor in class._constructor (see
--- wrapConstructor); the PoE1 community fork never has one.
-local function isPoe2Fork()
-	local c = type(common) == "table" and type(common.classes) == "table" and common.classes["DropDownControl"] or nil
-	return type(c) == "table" and rawget(c, "_constructor") ~= nil
+-- ===== which game: PoE1 / PoE2 each run their own rules file =====
+-- 使用者裁定 2026-10-29/30:兩個遊戲依遊戲走各自的規則(PoE1 行為不變)。The engine
+-- names the game (PobToolsGame: POB_GAME, else the dictionaries' meta "source");
+-- without it (an older engine) the host's POB_GAME, then POB2 numbering its tree
+-- versions from 0_1. The game's own rules live in inject_<game>.lua beside this
+-- file, and only that one file is loaded.
+local function detectGame()
+	if type(PobToolsGame) == "function" then
+		local g = PobToolsGame()
+		if g == "poe1" or g == "poe2" then return g end
+	end
+	local env = os and os.getenv and os.getenv("POB_GAME")
+	if env and env ~= "" then return env == "poe2" and "poe2" or "poe1" end
+	if type(latestTreeVersion) == "string" and latestTreeVersion:sub(1, 2) == "0_" then return "poe2" end
+	return "poe1"
 end
+local GAME = detectGame()
 
--- "<head><spaces>[^N][<body>]( (<word>))*" -> parts, nil for any other shape.
--- head may be empty (the desecrated rows without an affix name).
-local function splitHeadedRow(label)
-	local head, gap, colour, body, tail = label:match("^([^%[]-)( +)(%^%d)%[(.*)%](.*)$")
-	if not head then
-		head, gap, body, tail = label:match("^([^%[]-)( +)%[(.*)%](.*)$")
-		colour = ""
+-- The game's rules (see inject_poe2.lua for the fields). A missing or broken
+-- file leaves {}: every shared patch still applies, the game-only rows stay in
+-- English -- and the failure is logged, since otherwise it reads as a gap.
+local gameRules = {}
+do
+	local src = debug and debug.getinfo and debug.getinfo(1, "S").source or ""
+	local file = "inject_" .. GAME .. ".lua"
+	local chunk, err = loadfile((src:match("^@(.*[/\\])") or "") .. file)
+	local ok, rules = false, nil
+	if chunk then
+		ok, rules = pcall(chunk, { statIdsOf = statIdsOf, zhByIdOnly = zhByIdOnly, zhRaw = zhRaw, zhStatRow = zhStatRow })
+		if not ok then err = rules end
 	end
-	if not head or body == "" or head:find("%s$") then return nil end
-	local words, rest = {}, tail
-	while rest ~= "" do
-		local w, r = rest:match("^ %(([^()]*)%)(.*)$")
-		if not w then return nil end
-		words[#words + 1] = w
-		rest = r
-	end
-	return { head = head, gap = gap, colour = colour, body = body, words = words }
-end
-
--- One headed row in Chinese, or nil when any piece has no answer (no half-English row).
-local function headedRowZh(p, v, modId)
-	local ids = modId and statIdsOf("mod", modId) or nil
-	if not ids then return nil end
-	local hz = ""
-	if p.head ~= "" then
-		if type(v.essence) == "table" or type(v.emotion) == "table" then
-			hz = zhRaw(p.head)
-		else
-			hz = zhByIdOnly("affixes", modId, p.head)
+	if ok and (rules == nil or type(rules) == "table") then
+		gameRules = rules or {}
+		log("game " .. GAME .. ": " .. file)
+	else
+		err = tostring(err or "did not return a table")
+		log("game file FAILED " .. file .. ": " .. err)
+		if type(PobToolsLogError) == "function" then
+			PobToolsLogError("inject", file .. " 沒有載入,依遊戲的規則(" .. GAME ..
+				" 下拉列逐段翻譯、天賦樹背景)沒有套用 — " .. err)
 		end
-		if type(hz) ~= "string" or hz == "" or hz == p.head then return nil end
 	end
-	local bz = zhStatRow(p.body, "item", ids)
-	if not bz then return nil end
-	local out = { hz, p.gap, p.colour, "[", bz, "]" }
-	for _, w in ipairs(p.words) do
-		local wz = w
-		if w ~= "" then
-			wz = zhRaw(w)
-			if type(wz) ~= "string" or wz == "" or wz == w then return nil end
-		end
-		out[#out + 1] = " (" .. wz .. ")"
-	end
-	return table.concat(out)
 end
 
 -- _ptRowZh for the crafting affix drop-downs (value.modList = the tiers' mod ids).
 local function affixRowZh(v)
 	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.modList) ~= "table" then return nil end
-	local p = isPoe2Fork() and splitHeadedRow(v.label) or nil
+	local p = gameRules.headedRow and gameRules.headedRow(v.label) or nil
 	if p then
 		local id = v.modId or (#v.modList == 1 and v.modList[1]) or nil
-		return id and headedRowZh(p, v, id) or nil
+		return id and gameRules.headedRowZh(p, v, id) or nil
 	end
 	return zhStatRow(v.label, "item", statIdsOfMods(v.modList))
 end
@@ -953,8 +942,8 @@ local function modRowZh(v)
 	if type(v) ~= "table" or type(v.label) ~= "string" or type(v.mod) ~= "table" then return nil end
 	local id = modIdOf(v.mod)
 	if not id then return nil end
-	local p = isPoe2Fork() and splitHeadedRow(v.label) or nil
-	if p then return headedRowZh(p, v, id) end
+	local p = gameRules.headedRow and gameRules.headedRow(v.label) or nil
+	if p then return gameRules.headedRowZh(p, v, id) end
 	return zhStatRow(v.label, "item", statIdsOf("mod", id))
 end
 
@@ -1466,12 +1455,12 @@ PATCHES["PassiveTreeView"] = function(class)
 		-- and put back to 0 when neither an image nor a reduced opacity is in
 		-- play. Same formula as PassiveTreeView.lua:547-555, using the
 		-- viewport and zoom the original will see.
-		-- The two forks keep the backdrop differently: PoE1 in tree.assets and
-		-- pans it with the tree (PassiveTreeView.lua:547-555); PoE2 through
-		-- tree:GetAssetByName("Background2") as a static tile (same file, ~576).
-		-- Both use the `width == 0` measure / `width > 0` draw checks.
-		local isPoe2Fork = type(class.DrawQuadAndRotate) == "function"
-		local zoomLevelMax = isPoe2Fork and 20 or 12 -- upstream Zoom() clamp per fork
+		-- The two games keep the backdrop differently: PoE1 in tree.assets and
+		-- pans it with the tree; PoE2 through tree:GetAssetByName("Background2")
+		-- as a static tile. Both use the `width == 0` measure / `width > 0` draw
+		-- checks; how each draws it (and its Zoom() clamp) is in inject_<game>.lua.
+		local backdrop = gameRules.treeBackdrop or {}
+		local zoomLevelMax = backdrop.zoomLevelMax or 12 -- upstream Zoom() clamp per game
 		local function treeBackdropAssets(tree)
 			if not tree then return {} end
 			if type(tree.GetAssetByName) == "function" then
@@ -1488,7 +1477,7 @@ PATCHES["PassiveTreeView"] = function(class)
 		local function drawTreeBackdrop(self, build, vp, alpha)
 			local tree = build and build.spec and build.spec.tree
 			local bg = treeBackdropAssets(tree)[1]
-			if not bg or not bg.handle or alpha <= 0 then return end
+			if not bg or not bg.handle or alpha <= 0 or not backdrop.draw then return end
 			local m = bgMeasured[bg]
 			if not m then
 				local w, h = bg.handle:ImageSize()
@@ -1498,18 +1487,10 @@ PATCHES["PassiveTreeView"] = function(class)
 			if m.w <= 0 then return end
 			if not m.logged then
 				m.logged = true
-				log(string.format("tree backdrop: own draw, image %dx%d alpha=%.2f poe2=%s", m.w, m.h, alpha, tostring(isPoe2Fork)))
+				log(string.format("tree backdrop: own draw, image %dx%d alpha=%.2f game=%s", m.w, m.h, alpha, GAME))
 			end
 			SetDrawColor(1, 1, 1, alpha)
-			if isPoe2Fork then
-				DrawImage(bg.handle, vp.x, vp.y, vp.width, vp.height, 0, 0, vp.width / 100, vp.height / 100)
-			else
-				local scale = math.min(vp.width, vp.height) / tree.size * self.zoom
-				local bgSize = m.w * scale * 1.33 * 2.5
-				DrawImage(bg.handle, vp.x, vp.y, vp.width, vp.height,
-					(self.zoomX + vp.width / 2) / -bgSize, (self.zoomY + vp.height / 2) / -bgSize,
-					(vp.width / 2 - self.zoomX) / bgSize, (vp.height / 2 - self.zoomY) / bgSize)
-			end
+			backdrop.draw(self, tree, bg, m, vp)
 			SetDrawColor(1, 1, 1)
 		end
 		class.Draw = keepArity(origDraw, function(self, build, viewPort, inputEvents)

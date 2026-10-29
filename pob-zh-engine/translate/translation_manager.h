@@ -27,6 +27,14 @@ void translation_shutdown(void);
 /* Reload: shutdown + re-init (used by F3 hotkey) */
 void translation_reload(void);
 
+/* Which game's rules the engine runs (使用者裁定 2026-10-29: PoE1 / PoE2 follow
+** their own rules): "poe1" or "poe2", decided at the last load. POB_GAME wins
+** when set; unset falls back to meta.json "source" (the behaviour before this
+** existed). A set POB_GAME that disagrees with the source is logged. */
+const char *translation_game(void);
+/* meta.json "source" as read at the last load ("" when absent). */
+const char *translation_meta_source(void);
+
 /* Look up translation for a given English string.
 ** Returns translated string if found, or nullptr if no translation.
 ** Returned pointer is valid until translation_shutdown(), except the answer of

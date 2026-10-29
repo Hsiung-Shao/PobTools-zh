@@ -2933,6 +2933,15 @@ static int l_PobToolsGetTranslate(lua_State* L)
 	return 1;
 }
 
+// PobToolsGame() -> "poe1" / "poe2": the game whose rules the engine runs
+// (translation_game). The one answer the inject and the bridge ask, so the
+// three never guess the game three different ways (使用者裁定 2026-10-30).
+static int l_PobToolsGame(lua_State* L)
+{
+	lua_pushstring(L, translation_game());
+	return 1;
+}
+
 // PobToolsSetSource(name) -> previous name (or nil). Names the POB data file
 // the strings about to be drawn came from, so that file's dictionary wins over
 // the merged map. Pass nil to clear. Wrap it around a control's Draw and
@@ -3348,6 +3357,7 @@ int ui_main_c::InitAPI(lua_State* L)
 	ADDFUNC(PobToolsBackground);
 	ADDFUNC(PobToolsSetTranslate);
 	ADDFUNC(PobToolsGetTranslate);
+	ADDFUNC(PobToolsGame);
 	ADDFUNC(PobToolsSetSource);
 	ADDFUNC(PobToolsTranslateId);
 	ADDFUNC(PobToolsTranslateStat);

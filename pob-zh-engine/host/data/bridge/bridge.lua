@@ -73,12 +73,16 @@ local function group_name_map(groups)
 	return type(PobToolsSocketGroupNameMap) == "function" and PobToolsSocketGroupNameMap(groups) or nil
 end
 
--- Which game this POB is for. The host names it (POB_GAME, the same variable
--- that picks the translation dictionaries); PoE2's POB also numbers its tree
--- versions from 0_1, which settles it when the variable is absent.
-local GAME = os.getenv("POB_GAME") == "poe2" and "poe2"
-	or (type(latestTreeVersion) == "string" and latestTreeVersion:match("^0_") and "poe2")
-	or "poe1"
+-- Which game this POB is for. The engine names it (PobToolsGame: the game whose
+-- rules the translation and the inject run, 使用者裁定 2026-10-30); an engine
+-- older than this data pack has no PobToolsGame, so then the host's POB_GAME,
+-- and PoE2's POB numbering its tree versions from 0_1 settles the rest.
+local GAME = type(PobToolsGame) == "function" and PobToolsGame()
+if GAME ~= "poe1" and GAME ~= "poe2" then
+	GAME = os.getenv("POB_GAME") == "poe2" and "poe2"
+		or (type(latestTreeVersion) == "string" and latestTreeVersion:match("^0_") and "poe2")
+		or "poe1"
+end
 
 local function log_error(msg)
 	if PobToolsLogError then PobToolsLogError("bridge", msg) end

@@ -163,8 +163,12 @@ class Fail(Exception):
 class Harness(object):
     """One Lua 5.1 state running a real fork's Common.lua."""
 
-    def __init__(self, fork, with_inject=True, lua_mod=None):
+    def __init__(self, fork, with_inject=True, lua_mod=None, game=None, define_game=True):
         self.fork = fork
+        # PobToolsGame() 的回傳值(引擎的 translation_game()):預設跟 fork 一致;
+        # define_game=False 模擬舊引擎 / 沒給 API,全域 PobToolsGame 不存在。
+        self.game = game or ("poe1" if fork == "PoE1" else "poe2")
+        self.define_game = define_game
         self.dir = FORKS[fork]
         self.rt = (lua_mod or lua51).LuaRuntime(unpack_returned_tuples=True)
         self.source = None          # current PobToolsSetSource() name
@@ -261,6 +265,7 @@ class Harness(object):
 
         g["__py_item_title"] = item_title
         g["__py_enabled"] = lambda: self.enabled
+        g["__py_game"] = lambda: self.game
         # Every failure the inject reports, in order. This is the engine-side
         # failure log seen from Lua; the test below is the only thing that proves
         # a broken patch actually reaches it.
@@ -280,6 +285,8 @@ function PobToolsGetTranslate() return __py_enabled() end
 function PobToolsItemTitle(s) return __py_item_title(s) end
 function PobToolsLogError(f, m) return __py_log_error(f, m) end
 """)
+        if self.define_game:
+            self._load(b"function PobToolsGame() return __py_game() end")
 
     def apply_inject(self):
         self._load(self._read(INJECT), "@" + INJECT)
@@ -4645,9 +4652,9 @@ local C = newClass("ItemsTab", function(self) self:R15Init() end)
 """ + R15_ITEMSTAB_METHODS
 
 
-def r15_harness(fork, define_api=True, with_inject=True, ids=None):
+def r15_harness(fork, define_api=True, with_inject=True, ids=None, game=None):
     """R15 下拉 / 彈窗 / 昇華 / 星團浮窗。h.r15 記覆寫表、畫出的字、量寬、stat 查詢。"""
-    h = Harness(fork, with_inject=False)
+    h = Harness(fork, with_inject=False, game=game)
     h.loose_keys = True
     st = {"override": None, "drawn": [], "widths": [], "sets": 0, "rows": [], "stats": []}
     h.r15 = st
@@ -5147,8 +5154,8 @@ end
 """
 
 
-def r16_harness(fork, ids=None):
-    h = r15_harness(fork, with_inject=False, ids=ids)
+def r16_harness(fork, ids=None, game=None):
+    h = r15_harness(fork, with_inject=False, ids=ids, game=game)
     h.run(R16_SETUP)
     h.apply_inject()
     return h
@@ -5347,6 +5354,201 @@ def test_r16_empty_head(fork):
           ok2 and got2 == [want(fork, zhs[0], labels[0])], "rows=%r err=%r" % (got2, err2))
 
 
+# ---- GS:引擎拆分第 1 期 -- 遊戲判斷(PobToolsGame / POB_GAME / latestTreeVersion)與入口分流 ----------
+# 契約:inject 入口先看 PobToolsGame() 回 "poe1"/"poe2",否則看 os.getenv("POB_GAME"),再否則看
+# latestTreeVersion 是否以 "0_" 開頭(→ poe2),都不符合是 poe1。判定後以全域 loadfile 載入同資料夾的
+# inject_<game>.lua(每次只載一個)。遊戲檔缺漏 / 載入出錯 → PobToolsLogError("inject", 含檔名),共用補丁照套。
+# 舊的 fork 偵測(DropDownControl._constructor 等)拿掉,PoE2 下拉逐段翻譯改依遊戲判斷。
+
+# 在 Lua 端包裝全域 loadfile 與 ConPrintf:記錄被載入的路徑 / 輸出的訊息。
+#   GS_STUB_GAME_FILES = true:inject_poe*.lua 不真的執行(只記錄,回一個空函式),
+#       讓「載了誰」與「遊戲檔裡做什麼」分開驗。
+#   GS_FAIL_MATCH = "inject_poe2.lua":路徑含這串就回 nil, "cannot open"(模擬遊戲檔缺漏)。
+GS_SPY = rb"""
+GS_LOADED = {}
+GS_CONP = {}
+GS_STUB_GAME_FILES = true
+GS_FAIL_MATCH = nil
+local real_loadfile = loadfile
+function loadfile(path, ...)
+	GS_LOADED[#GS_LOADED + 1] = tostring(path)
+	if GS_FAIL_MATCH and type(path) == "string" and path:find(GS_FAIL_MATCH, 1, true) then
+		return nil, "cannot open"
+	end
+	if GS_STUB_GAME_FILES and type(path) == "string" and path:find("inject_poe", 1, true) then
+		return function() end
+	end
+	return real_loadfile(path, ...)
+end
+function ConPrintf(fmt, ...)
+	local ok, s = pcall(string.format, fmt, ...)
+	GS_CONP[#GS_CONP + 1] = ok and s or tostring(fmt)
+end
+"""
+
+# 契約列的 15 個 PATCHES class(SkillListControl … DropDownControl 共 15 個);集合不變。
+GS_PATCH_CLASSES = sorted([
+    "CalcsTab", "DropDownControl", "EditControl", "GemSelectControl", "Item", "ItemDBControl",
+    "ItemsTab", "MinionSearchListControl", "NotableDBControl", "PassiveMasteryControl",
+    "PassiveTreeView", "SearchHost", "SkillListControl", "Tooltip", "TreeTab"])
+# 這 13 個用 fork 的真檔載入;Item / ItemsTab 載不起來(依賴太多),用最小替身只為了讓補丁「被嘗試」。
+GS_REAL_CLASSES = [c for c in GS_PATCH_CLASSES if c not in ("Item", "ItemsTab")]
+GS_STUB_ITEMSTAB_P1 = """
+local C = newClass("ItemsTab")
+function C:ItemsTab() return self end
+"""
+GS_STUB_ITEMSTAB_P2 = """
+local C = newClass("ItemsTab", function(self) end)
+"""
+GS_STUB_ITEM_P1 = """
+local C = newClass("Item")
+function C:Item(raw) return self end
+function C:ParseRaw() end
+"""
+GS_STUB_ITEM_P2 = """
+local C = newClass("Item", function(self, raw) end)
+function C:ParseRaw() end
+"""
+
+
+def gs_harness(fork, game=None, define_game=True, tree_version=None, stub_game_files=True,
+               fail_match=None, load_classes=False):
+    """入口還沒載入的 harness;包好 loadfile / ConPrintf 再套 inject。load_classes:先載 15 個補丁 class。"""
+    h = Harness(fork, with_inject=False, game=game, define_game=define_game)
+    h.run(GS_SPY)
+    h.run("GS_STUB_GAME_FILES = %s" % ("true" if stub_game_files else "false"))
+    if fail_match:
+        h.run('GS_FAIL_MATCH = "%s"' % fail_match)
+    if tree_version is not None:
+        h.run('latestTreeVersion = "%s"' % tree_version)
+    h.gs_load_errors = []
+    if load_classes:
+        for name in GS_REAL_CLASSES:
+            try:
+                h.run('LoadModule("Classes/%s")' % name)
+            except Exception as e:      # 載不起來要看得到,不能默默少一個 class
+                h.gs_load_errors.append((name, str(e)[:120]))
+        h.define("ItemsTab", GS_STUB_ITEMSTAB_P1, GS_STUB_ITEMSTAB_P2)
+        h.define("Item", GS_STUB_ITEM_P1, GS_STUB_ITEM_P2)
+    h.apply_inject()
+    return h
+
+
+def gs_loaded_game_files(h):
+    """被 loadfile 載入的遊戲檔檔名(依載入順序)。"""
+    raw = h.eval("function() return table.concat(GS_LOADED, '\\n') end")()
+    paths = [p for p in (raw or "").split("\n") if p]
+    return [p.replace("\\", "/") for p in paths if re.search(r"inject_poe\d\.lua$", p.replace("\\", "/"))]
+
+
+def gs_conprintf(h):
+    raw = h.eval("function() return table.concat(GS_CONP, '\\n') end")()
+    return [m for m in (raw or "").split("\n") if m]
+
+
+def gs_patch_names(h):
+    """(成功的 class 集合, 被嘗試但失敗的 class 集合),取自 inject 印出的 patched / patch FAILED 行。"""
+    ok, bad = set(), set()
+    for m in gs_conprintf(h):
+        m = m.split("] ", 1)[1] if m.startswith("[PobTools] ") else m
+        if m.startswith("patched "):
+            ok.add(m.split(" ", 1)[1].strip())
+        elif m.startswith("patch FAILED "):
+            bad.add(m.split(" ")[2].rstrip(":"))
+    return ok, bad
+
+
+def test_gs5_inject_dispatch_by_game(fork):
+    """GS5 -- inject 入口依 PobToolsGame() 只載入對應的遊戲檔(inject_poe1.lua / inject_poe2.lua),且在引擎資料夾。"""
+    for game in ("poe1", "poe2"):
+        h = gs_harness(fork, game=game)
+        files = gs_loaded_game_files(h)
+        want_name = "inject_%s.lua" % game
+        check("%s GS5 PobToolsGame 回 %s:只載入 %s" % (fork, game, want_name),
+              [os.path.basename(p) for p in files] == [want_name], "loaded=%r" % files)
+        if files:
+            same_dir = os.path.normcase(os.path.normpath(os.path.dirname(files[0]))) == os.path.normcase(os.path.normpath(ROOT))
+            check("%s GS5 遊戲檔取自 poecharm_inject.lua 所在資料夾(%s)" % (fork, game), same_dir,
+                  "path=%r root=%r" % (files[0], ROOT))
+        else:
+            check("%s GS5 遊戲檔取自 poecharm_inject.lua 所在資料夾(%s)" % (fork, game), False, "沒有載入任何遊戲檔")
+
+
+def test_gs5b_fallback_without_pobtoolsgame(fork):
+    """GS5b -- 引擎沒有 PobToolsGame 時退路:latestTreeVersion 以 0_ 開頭選 poe2,3_26 選 poe1(不看 fork)。"""
+    saved = os.environ.pop("POB_GAME", None)       # 第二順位是 os.getenv("POB_GAME"),先清掉以免干擾
+    try:
+        for tree, game in (("0_3", "poe2"), ("3_26", "poe1")):
+            h = gs_harness(fork, define_game=False, tree_version=tree)
+            has_api = h.eval('type(PobToolsGame)')
+            files = [os.path.basename(p) for p in gs_loaded_game_files(h)]
+            check("%s GS5b 沒有 PobToolsGame、latestTreeVersion=%s:只載入 inject_%s.lua" % (fork, tree, game),
+                  has_api == "nil" and files == ["inject_%s.lua" % game], "api=%s loaded=%r" % (has_api, files))
+    finally:
+        if saved is not None:
+            os.environ["POB_GAME"] = saved
+
+
+def test_gs6_missing_game_file_is_logged(fork):
+    """GS6 -- 遊戲檔缺漏(loadfile 回 nil, 錯誤)要寫失敗記錄(含檔名),共用補丁照常套用。"""
+    h = gs_harness(fork, game="poe2", fail_match="inject_poe2.lua", load_classes=True)
+    hits = [(f, m) for (f, m) in h.logged_errors if f == "inject" and "inject_poe2.lua" in m]
+    check("%s GS6 inject_poe2.lua 載不到:PobToolsLogError(inject, 含 inject_poe2.lua)" % fork,
+          len(hits) >= 1, "logged=%r" % h.logged_errors)
+    ok, bad = gs_patch_names(h)
+    shared = {"GemSelectControl", "EditControl", "Tooltip", "CalcsTab"}
+    check("%s GS6 遊戲檔缺漏時共用補丁照常套用(GemSelectControl / EditControl / Tooltip / CalcsTab)" % fork,
+          shared <= ok, "patched=%r bad=%r" % (sorted(ok), sorted(bad)))
+    hc = gs_harness(fork, game="poe2", load_classes=True)
+    check("%s GS6 對照:遊戲檔載得到時不寫缺漏記錄" % fork,
+          not [1 for (f, m) in hc.logged_errors if f == "inject" and "inject_poe2.lua" in m],
+          "logged=%r" % hc.logged_errors)
+    check("%s GS6 對照:載得到的遊戲檔確實是被詢問過的那一個" % fork,
+          [os.path.basename(p) for p in gs_loaded_game_files(hc)] == ["inject_poe2.lua"],
+          "loaded=%r" % gs_loaded_game_files(hc))
+
+
+def test_gs7_patch_set_unchanged(fork):
+    """GS7 -- 拆檔後補丁清單不變:契約列的 15 個 class 都被套用或至少被嘗試;兩個遊戲都一樣。"""
+    for game in ("poe1", "poe2"):
+        h = gs_harness(fork, game=game, load_classes=True)
+        ok, bad = gs_patch_names(h)
+        attempted = ok | bad
+        check("%s GS7 fork 真檔載得起來的 13 個 class 沒有載入失敗(game=%s)" % (fork, game),
+              not h.gs_load_errors, "errors=%r" % h.gs_load_errors)
+        check("%s GS7 被嘗試的補丁 class 集合 = 契約 15 個(game=%s)" % (fork, game),
+              attempted == set(GS_PATCH_CLASSES),
+              "少=%r 多=%r" % (sorted(set(GS_PATCH_CLASSES) - attempted), sorted(attempted - set(GS_PATCH_CLASSES))))
+        check("%s GS7 13 個真 class 的補丁都成功、沒有 FAILED(game=%s)" % (fork, game),
+              set(GS_REAL_CLASSES) <= ok and not (bad & set(GS_REAL_CLASSES)),
+              "patched=%r failed=%r" % (sorted(ok), sorted(bad)))
+
+
+def test_gs2p_poe2_segment_translation_follows_game(fork):
+    """GS2' -- PoE2 下拉「詞綴名 + 空白 + [行] + 尾巴」逐段翻譯由遊戲判斷決定:PoE2 fork 但遊戲是 poe1 時走整列查詢。"""
+    rows = [(R16_HEAVY, "mod = M.R16HeavyCharge")]
+    en = R16_HEAVY
+    zh = R16_HEAVY_ZH
+    # 對照:遊戲 poe2 → 逐段翻譯(詞綴名取 Id 譯名、行取 stat id、尾巴逐字翻)
+    h2 = r16_harness(fork, game="poe2")
+    ok2, err2, _, got2 = r16_popup(h2, rows)
+    asked2 = h2.r15["rows"]
+    if fork == "PoE2":
+        check("%s GS2' 遊戲 poe2(對照):逐段翻譯,整列查詢只問方括號內的行文字" % fork,
+              ok2 and got2[:1] == [zh] and ("+1 to Maximum Power Charges", "item", "max_power_charges") in asked2,
+              "rows=%r asked=%r err=%r" % (got2, asked2, err2))
+    # 遊戲 poe1 → 不走逐段翻譯:整列原英文,整列查詢問的是整個 label
+    h1 = r16_harness(fork, game="poe1")
+    ok1, err1, _, got1 = r16_popup(h1, rows)
+    asked1 = h1.r15["rows"]
+    check("%s GS2' 遊戲 poe1:不做逐段翻譯,列畫原英文(跟 PoE1 一樣)" % fork,
+          ok1 and got1[:1] == [en], "rows=%r err=%r" % (got1, err1))
+    check("%s GS2' 遊戲 poe1:整列查詢問整個 label、不拆方括號(跟 PoE1 一樣)" % fork,
+          ok1 and (R16_HEAVY, "item", "max_power_charges") in asked1
+          and not any(r[0] == "+1 to Maximum Power Charges" for r in asked1),
+          "asked=%r" % asked1)
+
+
 def main():
     missing = [f for f, d in FORKS.items() if not os.path.isdir(d)]
     if missing:
@@ -5436,6 +5638,11 @@ def main():
         test_r16_implicit_popup(fork)
         test_r16_affix_drop_modlist(fork)
         test_r16_empty_head(fork)
+        test_gs5_inject_dispatch_by_game(fork)
+        test_gs5b_fallback_without_pobtoolsgame(fork)
+        test_gs6_missing_game_file_is_logged(fork)
+        test_gs7_patch_set_unchanged(fork)
+        test_gs2p_poe2_segment_translation_follows_game(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
