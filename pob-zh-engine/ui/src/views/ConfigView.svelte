@@ -455,13 +455,14 @@
     background: none;
     /* only drawn when the value is not POB's default: always shown, so a
        changed setting can be spotted without hovering every row */
-    color: var(--gold-dim);
+    color: var(--gold);
+    opacity: 0.7;
     padding: 0;
     font-size: var(--fs-2xs);
     cursor: pointer;
   }
   .rst:hover {
-    color: var(--gold);
+    opacity: 1;
   }
   .area {
     height: auto;
