@@ -2378,6 +2378,22 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		}
 
 		// --- graceful shutdown --------------------------------------------------
+		// POB's own start-up update check (Launch.lua OnInit, a subscript) is
+		// still running when upstream has a release pending -- it fetches every
+		// changed file -- and the engine's shutdown waits for that subscript
+		// (ui_subscript_c::Stop), so closing stdin then took longer than the
+		// 10 s below and the child was killed (exit 9). Let it finish first:
+		// this test is about stdin, not about how big POB's next update is.
+		{
+			ULONGLONG waitStart = GetTickCount64();
+			json us;
+			while (child.Call("get_update_status", json::object(), us, 30000) && us.value("checking", false) &&
+			       GetTickCount64() - waitStart < 300000)
+				Sleep(2000);
+			line("INFO waited " + std::to_string((GetTickCount64() - waitStart) / 1000) +
+			     " s for POB's start-up update check before closing stdin (checking=" +
+			     std::to_string(us.value("checking", false)) + ")");
+		}
 		child.Stop(10000);
 		bool exited = child.WaitExit(0);
 		check("child exits when the host closes stdin", exited && child.ExitCode() == 0,
