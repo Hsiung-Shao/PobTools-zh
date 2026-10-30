@@ -2,7 +2,7 @@
   "source_files": [
     "manual:pob_export_poe2/manual_poe2.json",
     "approved=2026-10-29、2026-10-30(使用者核准,非 GGPK)",
-    "dev=e8a9f0080a97b433cae3787c8e1f7c4f98dd997b(去掉 poe2 匯出產物當基準)"
+    "dev=a03aa4f5d17bad99d8c08790b9759dc34b52a49c"
   ],
   "entries": {
     "\"1\" or \"I\" for Intelligence, ": "\"1\" 或 \"I\" 為智慧，",
@@ -12,6 +12,7 @@
     "+1 to Gem Level": "+1 寶石等級",
     "-1 to Gem Level": "-1 寶石等級",
     "-10.032s Skill Cooldown": "-10.032秒 技能冷卻",
+    "100 Passive Skill Points become Weapon Set Skill Points": "100 點天賦點數成為武器套裝天賦點數",
     "290 Gold required to unallocate this node": "取消分配此天賦點需要 290 金幣",
     "47 Mana": "47 魔力",
     "5,510 Gold required to unallocate these nodes": "取消分配這些天賦點需要 5,510 金幣",
@@ -81,6 +82,7 @@
     "Skittering (Speed)": "飛掠 (速度)",
     "Socket #1:": "插槽 #1:",
     "Sort by Rarity of Items found": "依物品稀有度排序",
+    "The next Attack you use within 4 seconds after Heavy Stunning a Rare or Unique Enemy is Ancestrally Boosted": "你在沉重暈眩一名稀有或傳奇敵人的4秒內所使用的下一次攻擊會受到先祖強化",
     "The tree has been converted to 0_5.": "天賦樹已轉換為 0_5。",
     "This can be avoided by connecting one of the Druid starting nodes to your tree.": "將任一個德魯伊起始天賦點連接到你的天賦樹即可避免。",
     "This can be avoided by connecting one of the Huntress starting nodes to your tree.": "將任一個女獵人起始天賦點連接到你的天賦樹即可避免。",
