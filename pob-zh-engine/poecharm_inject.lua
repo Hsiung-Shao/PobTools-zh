@@ -667,6 +667,27 @@ end
 -- the line is exactly what PoE1 ends up showing.
 local ATTR_REQ = { Str = true, Strength = true, Dex = true, Dexterity = true,
                    Int = true, Intelligence = true }
+-- "Title\0Base" -> the "Radius:" label of that unique in data.uniques; false
+-- when its text names two different radii. Built on first use.
+local uniqueRadius
+local function uniqueJewelRadiusLabel(title, base)
+	if not uniqueRadius then
+		uniqueRadius = {}
+		for _, list in pairs(data and data.uniques or {}) do
+			for _, raw in pairs(list) do
+				if type(raw) == "string" then
+					local t, b = raw:match("^%s*([^\r\n]-)%s*\r?\n%s*([^\r\n]-)%s*\r?\n")
+					local label
+					for l in (raw .. "\n"):gmatch("\nRadius: ([%a ]-)%s*\r?\n") do
+						label = (label == nil or label == l) and l or false
+					end
+					if t and b and label ~= nil then uniqueRadius[t .. "\0" .. b] = label end
+				end
+			end
+		end
+	end
+	return uniqueRadius[title .. "\0" .. base]
+end
 PATCHES["Item"] = function(class)
 	local orig = class.ParseRaw
 	if not orig then error("Item has no ParseRaw to wrap") end
@@ -686,7 +707,27 @@ PATCHES["Item"] = function(class)
 			end
 			raw = table.concat(out, "\n")
 		end
-		return orig(self, raw, ...)
+		local r1, r2, r3 = orig(self, raw, ...)
+		-- A unique jewel written without its "Radius:" line (poe.ninja's PoE2
+		-- export drops it) keeps jewelRadiusIndex nil; socketing From Nothing then
+		-- crashed PassiveSpec:NodesInIntuitiveLeapLikeRadius (pairs on
+		-- nodesInRadius[nil]; upstream master and dev). Take the radius from the
+		-- unique's own data text (main.uniqueDB fills in a coroutine, too late for a
+		-- build reopened at start-up), unless it is "Variable" there.
+		if self.type == "Jewel" and not self.jewelRadiusIndex and self.rarity == "UNIQUE"
+			and self.title and self.baseName then
+			local label = uniqueJewelRadiusLabel(self.title, self.baseName)
+			if label and label ~= "Variable" then
+				for index, info in ipairs(data.jewelRadius or {}) do
+					if info.label == label then
+						self.jewelRadiusIndex = index
+						self.jewelRadiusLabel = label
+						break
+					end
+				end
+			end
+		end
+		return r1, r2, r3
 	end
 end
 
@@ -820,7 +861,7 @@ local PATCH_SYMPTOM = {
 	EditControl             = "輸入框貼上中文會變成問號",
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
-	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
+	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴;缺半徑的傳奇珠寶(從無到有)放進插槽會讓 POB 報錯",
 }
 
 local function applyPatch(name, class)

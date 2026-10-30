@@ -3171,6 +3171,37 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		      okPump && pumped.value("frames", 0) > 0 && pumped.value("seconds", 0) == 1,
 		      pumped.dump().substr(0, 120));
 
+		// --- From Nothing without its "Radius:" line --------------------------------
+		// A poe.ninja PoE2 export (field report, poe.ninja/poe2/pob/2b496) writes the
+		// jewel without "Radius: Small", so POB leaves jewelRadiusIndex nil and
+		// socketing it crashed BuildAllDependsAndPaths (PassiveSpec.lua:1381, upstream
+		// master and dev alike). The radius now comes from the unique database.
+		{
+			static const char* kFromNothingXml =
+			    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PathOfBuilding2>\n"
+			    "<Build targetVersion=\"0_1\" level=\"94\" className=\"Monk\" ascendClassName=\"Martial Artist\"></Build>\n"
+			    "<Tree activeSpec=\"1\">\n<Spec title=\"Default\" treeVersion=\"0_5\" classId=\"10\" ascendClassId=\"1\" masteryEffects=\"\" nodes=\""
+			    "722,1420,2113,2582,2936,3170,3251,3640,4157,5314,6006,7054,10131,10364,11598,11604,11825,12249,12761,13407,"
+			    "14262,14267,14446,14539,15343,15625,15775,17088,17101,17356,17367,17724,18314,19156,19370,20024,20437,20677,"
+			    "21336,21945,21984,22811,23040,24287,24786,25055,25362,25971,26034,26556,26572,27705,29009,30657,30808,31433,"
+			    "31765,32763,34015,34081,34168,34324,36576,37250,37691,38105,38342,38463,38493,38537,38728,39369,39552,39595,"
+			    "41580,42078,42750,42794,42805,42857,44223,44299,44516,44776,45885,46554,47009,47168,47514,47976,48116,48773,"
+			    "49220,49356,50635,51707,51741,52295,54521,54984,55088,55621,56045,56453,56838,57449,57821,58593,59362,59538,"
+			    "59657,59694,60138,60239,60735,61196,61403,61419,61601,61718,61834,62677,62841,62984,65161\">\n</Spec>\n</Tree>\n"
+			    "<Items activeItemSet=\"1\">\n<Item id=\"1\">\nRarity: UNIQUE\nFrom Nothing\nDiamond\nImplicits: 0\n"
+			    "Passives in Radius of Resonance can be Allocated\nwithout being connected to your tree\n</Item>\n"
+			    "<ItemSet id=\"1\" title=\"Default\"/>\n</Items>\n</PathOfBuilding2>\n";
+			const std::wstring fnPath = sandbox + L"\\Builds\\from_nothing_no_radius.xml";
+			json fl, fe, fr;
+			bool okFl = WriteFileA(fnPath, kFromNothingXml) &&
+			            child.Call("load_build_file", json{{"path", narrow(fnPath)}}, fl, 120000);
+			bool okFe = okFl && child.Call("equip_item", json{{"id", 1}, {"slotName", "Jewel 61419"}}, fe, 60000);
+			bool okFr = okFl && child.Call("item_raw", json{{"id", 1}}, fr, 30000);
+			check("PoE2: From Nothing imported without a Radius line sockets without a crash and gets its Small radius",
+			      okFe && okFr && fr.value("raw", "").find("Radius: Small") != std::string::npos,
+			      (okFe ? std::string() : "equip=" + fe.dump().substr(0, 200) + " ") + "raw=" + fr.value("raw", "").substr(0, 200));
+		}
+
 		child.Stop(5000);
 
 		// --- the system-browser fallback (what Wine / CrossOver get) -------------
