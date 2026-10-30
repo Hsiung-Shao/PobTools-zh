@@ -856,7 +856,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* where the item is used: one right-hand column, so the eye can run down it */
+  /* 用在哪裡:固定成右側一欄,方便往下掃 */
   .where {
     flex: none;
     width: 30%;

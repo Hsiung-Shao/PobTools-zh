@@ -66,12 +66,12 @@
 
   /** PoE1's "Find a Timeless Jewel" dialog. */
   let tjOpen = $state(false);
-  // the mouse/key hint line at the canvas' corner; closing it is remembered per viewer
+  // 畫布角落的滑鼠 / 按鍵提示;關掉後記在本機
   const HINT_KEY = "pobtools.tree.keyHintOff";
   let keyHint = $state((() => { try { return localStorage.getItem(HINT_KEY) !== "1"; } catch { return true; } })());
   function closeKeyHint() {
     keyHint = false;
-    try { localStorage.setItem(HINT_KEY, "1"); } catch { /* not remembered */ }
+    try { localStorage.setItem(HINT_KEY, "1"); } catch { /* 存不了就不記 */ }
   }
 
   /** Show Node Power (TreeTab's heat map + Power Report). */
@@ -1134,7 +1134,7 @@
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
     {#if artMissing && model}<div class="note" class:above={keyHint}>{t("tree.artMissing")}</div>{/if}
     {#if model && keyHint}
-      <!-- what the mouse and keys do here: right-click, Shift and Ctrl+D were only in the settings page's list -->
+      <!-- 這裡滑鼠與按鍵能做什麼:右鍵、Shift、Ctrl+D 原本只列在設定頁 -->
       <div class="keyhint">
         <span class="hint-text">{t(model.poe2 ? "tree.keyHintPoe2" : "tree.keyHint")}</span>
         <button class="hint-x" title={t("tree.keyHintOff")} aria-label={t("tree.keyHintOff")} onclick={closeKeyHint}>×</button>
@@ -1333,7 +1333,7 @@
     border: 1px solid var(--edge-0);
     border-radius: var(--radius-s);
   }
-  /* the text lets drags and hovers through to the canvas; only the × takes clicks */
+  /* 文字不吃滑鼠,拖曳與 hover 穿到畫布;只有 × 可點 */
   .keyhint {
     pointer-events: none;
     max-width: calc(100% - 24px);

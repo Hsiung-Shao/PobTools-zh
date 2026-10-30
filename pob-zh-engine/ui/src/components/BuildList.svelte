@@ -366,8 +366,7 @@
   .folder .name {
     color: var(--gold);
   }
-  /* always there, faint until the row is pointed at or selected: the actions
-     used to appear only on hover, so nobody knew the row had them */
+  /* 常駐但淡色,滑過或選取才變亮:以前只在 hover 出現,沒人知道列上有這些動作 */
   .acts {
     display: inline-flex;
     gap: 2px;

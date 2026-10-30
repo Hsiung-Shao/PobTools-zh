@@ -75,13 +75,13 @@
 
   const overCap = (used: number, max?: number | null) => max != null && used > max;
 
-  // groups the viewer folded; everything starts open
+  // 使用者收合的分組;預設全部展開
   let folded = $state(loadCollapsed());
   function toggleGroup(key: string, rows: number[]) {
     const next = new Set(folded);
     if (!next.delete(key)) {
       next.add(key);
-      // a breakdown pinned on a row that is folding away would have nothing left to unpin it
+      // 釘住的細項若在要收合的組裡,收合後就沒地方點掉,先關掉
       if (bd && rows.includes(bd.row)) bd = null;
     }
     folded = next;
@@ -293,7 +293,7 @@
     background: var(--gold);
     border-radius: 1px;
   }
-  /* the heading is a button that folds the group; folded, it shows the group's first values */
+  /* 分組標題是收合鈕;收合時顯示該組前幾個數值 */
   .sec-btn,
   .sec-row {
     all: unset;

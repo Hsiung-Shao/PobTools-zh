@@ -1,5 +1,4 @@
-// What a folded Calcs subsection shows next to its title when POB gives it no
-// `extra` of its own: the first plain value in it.
+// 計算頁收合的子區在 POB 沒給 `extra` 時,標題旁顯示的摘要:子區裡第一個純數值格。
 import type { CalcSubsection } from "./bridge";
 import { pobPlain } from "./pobtext";
 

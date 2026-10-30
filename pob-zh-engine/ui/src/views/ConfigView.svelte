@@ -453,8 +453,7 @@
     appearance: none;
     border: 0;
     background: none;
-    /* only drawn when the value is not POB's default: always shown, so a
-       changed setting can be spotted without hovering every row */
+    /* 只有非預設值才畫;常駐顯示,不用逐列 hover 就看得出改過哪些 */
     color: var(--gold);
     opacity: 0.7;
     padding: 0;

@@ -475,7 +475,7 @@
   .cell.live {
     cursor: default;
     border-left-color: var(--edge-2);
-    /* a dotted underline marks the numbers that open a breakdown */
+    /* 虛線底:這個數字點得開細項 */
     text-decoration: underline dotted var(--ink-3);
     text-underline-offset: 3px;
   }

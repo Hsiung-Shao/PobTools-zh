@@ -854,18 +854,18 @@
     border-top: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
-  /* the right-click / Ctrl clicks on a group row were only in the hover title */
+  /* 插槽組列的右鍵 / Ctrl 操作原本只寫在 hover 提示裡 */
   .mousehint {
     margin: 0;
     padding: 0 10px 6px;
     background: var(--surface-1);
   }
-  /* numbers right-aligned so levels and qualities line up down the table */
+  /* 數字右對齊,等級與品質上下對齊 */
   td.n input {
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  /* move / delete stay visible but quiet until the row is pointed at */
+  /* 移動 / 刪除鈕常駐淡色,滑過該列才變亮 */
   td.w2 .btn:not(:disabled) {
     opacity: 0.4;
   }

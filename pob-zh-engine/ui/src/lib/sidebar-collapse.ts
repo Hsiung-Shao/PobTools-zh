@@ -1,12 +1,11 @@
-// Folding the sidebar's stat groups: which groups the viewer folded (kept per
-// viewer in localStorage) and the one-line summary a folded group shows in its
-// heading, so the important numbers stay visible.
+// 側欄分組收合:記住使用者收了哪些組(存在本機 localStorage),
+// 以及收合後標題列顯示的一行摘要,讓重要數字仍看得到。
 import { pobPlain } from "./pobtext";
 import type { SidebarItem } from "./sidebar-groups";
 
 const KEY = "pobtools.sidebar.collapsedGroups";
 
-/** The first `max` values of the group's "label: value" rows, joined. */
+/** 取該組「標籤:值」列的前 `max` 個值,以「 · 」連接。 */
 export function sidebarSummary(items: SidebarItem[], max = 3): string {
   const out: string[] = [];
   for (const { row } of items) {
@@ -31,6 +30,6 @@ export function saveCollapsed(keys: Set<string>): void {
   try {
     localStorage.setItem(KEY, JSON.stringify([...keys]));
   } catch {
-    /* storage off: folding just isn't remembered */
+    /* 存不了就不記,不影響收合本身 */
   }
 }
