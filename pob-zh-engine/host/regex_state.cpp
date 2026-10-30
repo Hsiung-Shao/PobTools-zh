@@ -2,6 +2,7 @@
 #include "regex_state_json.h"
 
 #include "regex_algo_pages.h"   // RegexAlgo::SectionHostOf (sections.ts)
+#include "regex_data.h"         // RegexNormalizeLabel
 #include "regex_folders.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -602,6 +603,14 @@ int RegexResolveKeys(const std::vector<std::string>& keys,
 		if (!keys[k].empty())
 			for (size_t i = 0; i < entryKeys.size() && hit < 0; i++)
 				if (entryKeys[i] == keys[k]) hit = (int)i;
+		// Data generated before 2026-10-30 kept [Key|Display] links in a few
+		// English lines ("Rare Monsters have [ElementalThorns|Elemental Thorns]
+		// ..."); share codes and templates saved from it still carry them.
+		if (hit < 0 && keys[k].find('[') != std::string::npos) {
+			const std::string bare = RegexNormalizeLabel(keys[k]);
+			for (size_t i = 0; i < entryKeys.size() && hit < 0; i++)
+				if (entryKeys[i] == bare) hit = (int)i;
+		}
 		// Chinese second, for the rarer case where GGG reworded the English and
 		// left the translation alone.
 		if (hit < 0 && k < alt.size() && !alt[k].empty())

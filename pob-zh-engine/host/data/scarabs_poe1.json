@@ -1,7 +1,7 @@
 {
  "format": "pobtools-scarabs",
  "game": "poe1",
- "source": "GGPK 3.29.0.4.2",
+ "source": "GGPK 3.29.3.3",
  "scarabs": [
   {
    "id": "Metadata/Items/Scarabs/ScarabAbyssNew1",
@@ -30,10 +30,10 @@
    "limit": 2,
    "art": "Art/2DItems/Currency/Scarabs/NormalScarabAbyss",
    "descEn": [
-    "[ContainsAbyss|Abyss] Chasms in Area spawn 100% increased Monsters per fed soul"
+    "[ContainsAbyss|Abyss] Chasms in Area spawn 100% increased Monsters per fed [AbyssFedSoul|Soul]"
    ],
    "descZh": [
-    "區域內的[ContainsAbyss|深淵]裂隙每餵養 1 個靈魂，增加 100% 生成的怪物數量"
+    "區域內的[ContainsAbyss|深淵]裂隙每餵養 1 個[AbyssFedSoul|靈魂]，增加 100% 生成的怪物數量"
    ],
    "stash": true
   },
@@ -47,10 +47,10 @@
    "limit": 1,
    "art": "Art/2DItems/Currency/Scarabs/GreaterScarabAbyss",
    "descEn": [
-    "[ContainsAbyss|Abyss] Pits in Area that do not contain a reward instead create an [AbyssalCrystal|Abyssal Crystal]"
+    "Non-final [ContainsAbyss|Abyss] Pits in Area create an [AbyssalCrystal|Abyssal Crystal] on closing"
    ],
    "descZh": [
-    "區域內不含獎勵的[ContainsAbyss|深淵]坑洞會改為創造一個[AbyssalCrystal|深淵水晶]"
+    "區域內不為最終的[ContainsAbyss|深淵]坑洞會於關閉時創造一個[AbyssalCrystal|深淵水晶]"
    ],
    "stash": true
   },
@@ -64,10 +64,10 @@
    "limit": 1,
    "art": "Art/2DItems/Currency/Scarabs/Tier4ScarabAbyss",
    "descEn": [
-    "Area contains an Abyssal Depths"
+    "Area contains an [AbyssalDepths|Abyssal Depths]"
    ],
    "descZh": [
-    "區域內包含 1 個無盡深淵"
+    "區域內包含 1 個[AbyssalDepths|無盡深淵]"
    ],
    "stash": true
   },

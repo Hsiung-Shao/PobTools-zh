@@ -1507,7 +1507,7 @@
       "稀有怪物擁有會反射 # 元素傷害的元素荊棘"
      ],
      "en": [
-      "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
+      "Rare Monsters have Elemental Thorns reflecting # Elemental Damage"
      ],
      "g": 0,
      "affixZh": "反射的、懲戒的、已複製",
@@ -1540,7 +1540,7 @@
       "稀有怪物擁有會反射 # 物理傷害的物理荊棘"
      ],
      "en": [
-      "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
+      "Rare Monsters have Physical Thorns reflecting # Physical Damage"
      ],
      "g": 0,
      "affixZh": "懲罰的、懲戒的",
@@ -2865,160 +2865,6 @@
      "hiddenEn": [
       "Suffix Modifier \"of Bloodlines\" (Tier: #)",
       "Map (Tier #) of Bloodlines"
-     ]
-    },
-    {
-     "id": "MapUberModEnduranceCharges",
-     "zh": [
-      "區域內掉落的地圖增加 #%"
-     ],
-     "en": [
-      "#% more Maps found in Area"
-     ],
-     "g": 2,
-     "affixZh": "權利之、狂怒之、耐久之、緩衝的",
-     "t17": true,
-     "hiddenZh": [
-      "後綴 \"權利之\"(階層：#)",
-      "權利之地圖（階級#）",
-      "後綴 \"狂怒之\"(階層：#)",
-      "狂怒之地圖（階級#）",
-      "後綴 \"耐久之\"(階層：#)",
-      "耐久之地圖（階級#）",
-      "前綴 \"緩衝的\"(階層：#)",
-      "緩衝的地圖（階級#）",
-      "前綴 \"壓抑的\"(階層：#)",
-      "（ 阻止40% 來自被壓抑的擊中，並避免它們所施加異常狀態傷害 ）",
-      "壓抑的地圖（階級#）",
-      "後綴 \"支配之\"(階層：#)",
-      "支配之地圖（階級#）",
-      "前綴 \"抓緊的\"(階層：#)",
-      "（ 至多 10 條藤蔓可以抓住你，每個藤蔓造成 8% 更少移動速度。移動時掙脫 ）",
-      "抓緊的地圖（階級#）",
-      "前綴 \"受保護的\"(階層：#)",
-      "受保護的地圖（階級#）"
-     ],
-     "hiddenEn": [
-      "Suffix Modifier \"of Power\" (Tier: #)",
-      "Map (Tier #) of Power",
-      "Suffix Modifier \"of Frenzy\" (Tier: #)",
-      "Map (Tier #) of Frenzy",
-      "Suffix Modifier \"of Endurance\" (Tier: #)",
-      "Map (Tier #) of Endurance",
-      "Prefix Modifier \"Buffered\" (Tier: #)",
-      "Buffered Map (Tier #)",
-      "Prefix Modifier \"Oppressive\" (Tier: #)",
-      "(40% of Damage from Suppressed Hits and Ailments they inflict is prevented)",
-      "Oppressive Map (Tier #)",
-      "Suffix Modifier \"of Domination\" (Tier: #)",
-      "Map (Tier #) of Domination",
-      "Prefix Modifier \"Grasping\" (Tier: #)",
-      "(Up to 10 Vines can grasp you, inflicting 8% less Movement Speed per Vine. Broken by moving)",
-      "Grasping Map (Tier #)",
-      "Prefix Modifier \"Protected\" (Tier: #)",
-      "Protected Map (Tier #)"
-     ]
-    },
-    {
-     "id": "MapUberModBuffExpiry",
-     "zh": [
-      "區域內掉落的聖甲蟲增加 #%"
-     ],
-     "en": [
-      "#% more Scarabs found in Area"
-     ],
-     "g": 2,
-     "affixZh": "詛咒之、易爆之、傾斜之、折磨的",
-     "t17": true,
-     "hiddenZh": [
-      "後綴 \"詛咒之\"(階層：#)",
-      "（脆弱為咒術，增加 15% 承受物理傷害，使擊中對目標 +25% 流血機率。脆弱持續 8 秒）",
-      "（時空鎖鏈為咒術，減少 15% 行動速度或 9% 對稀有或傳奇目標，並且使目標上的效果比平常慢 40% 失效。對玩家有 50% 更少效果並持續 5 秒）",
-      "（元素要害為咒術，減少 15% 全部元素抗性。持續 8 秒）",
-      "詛咒之地圖（階級#）",
-      "前綴 \"易爆之\"(階層：#)",
-      "易爆之地圖（階級#）",
-      "後綴 \"傾斜之\"(階層：#)",
-      "（護甲、閃避和能量護盾是標準防禦）",
-      "傾斜之地圖（階級#）",
-      "前綴 \"折磨的\"(階層：#)",
-      "（點燃根據技能的基礎火焰傷害，造成持續火焰傷害，持續4秒）",
-      "（冰凍使敵人行動速度降至 0，使他們無法行動。根據擊中的冰冷傷害決定持續時間）",
-      "（感電根據擊中的閃電傷害總量，增加至多50%承受傷害，持續2秒）",
-      "折磨的地圖（階級#）",
-      "後綴 \"轉瞬之\"(階層：#)",
-      "轉瞬之地圖（階級#）",
-      "後綴 \"印記之\"(階層：#)",
-      "印記之地圖（階級#）"
-     ],
-     "hiddenEn": [
-      "Suffix Modifier \"of Curses\" (Tier: #)",
-      "(Vulnerability is a Hex which increases Physical Damage taken by 15% and causes Hits to have +25% chance to inflict Bleeding on the target. It lasts 8 seconds)",
-      "(Temporal Chains is a Hex which reduces Action Speed by 15%, or 9% on Rare or Unique targets, and makes other effects on the target expire 40% slower. It has 50% less effect on Players and lasts 5 seconds)",
-      "(Elemental Weakness is a Hex which inficts -15% to all Elemental Resistances. It lasts 8 seconds)",
-      "Map (Tier #) of Curses",
-      "Prefix Modifier \"Volatile\" (Tier: #)",
-      "Volatile Map (Tier #)",
-      "Suffix Modifier \"of Miring\" (Tier: #)",
-      "(Armour, Evasion Rating and Energy Shield are the standard Defences)",
-      "Map (Tier #) of Miring",
-      "Prefix Modifier \"Afflicting\" (Tier: #)",
-      "(Ignite deals Fire Damage over time, based on the base Fire Damage of the Skill, for 4 seconds)",
-      "(Freeze lowers Enemy Action Speed to zero, preventing them from acting. Duration is based on the Cold Damage of the Hit)",
-      "(Shock increases Damage taken by up to 50%, depending on the amount of Lightning Damage in the hit, for 2 seconds)",
-      "Afflicting Map (Tier #)",
-      "Suffix Modifier \"of Transience\" (Tier: #)",
-      "Map (Tier #) of Transience",
-      "Suffix Modifier \"of Marking\" (Tier: #)",
-      "Map (Tier #) of Marking"
-     ]
-    },
-    {
-     "id": "MapUberModFlaskMeteor",
-     "zh": [
-      "區域內掉落的通貨增加 #%"
-     ],
-     "en": [
-      "#% more Currency found in Area"
-     ],
-     "g": 2,
-     "affixZh": "堅定的、懲戒的、豐饒的、終極的",
-     "t17": true,
-     "hiddenZh": [
-      "前綴 \"堅定的\"(階層：#)",
-      "堅定的地圖（階級#）",
-      "前綴 \"懲戒的\"(階層：#)",
-      "懲戒的地圖（階級#）",
-      "前綴 \"豐饒的\"(階層：#)",
-      "豐饒的地圖（階級#）",
-      "前綴 \"終極的\"(階層：#)",
-      "終極的地圖（階級#）",
-      "後綴 \"勇士之\"(階層：#)",
-      "勇士之地圖（階級#）",
-      "後綴 \"飲用之\"(階層：#)",
-      "飲用之地圖（階級#）",
-      "後綴 \"反抗之\"(階層：#)",
-      "反抗之地圖（階級#）",
-      "前綴 \"稀釋的\"(階層：#)",
-      "稀釋的地圖（階級#）"
-     ],
-     "hiddenEn": [
-      "Prefix Modifier \"Stalwart\" (Tier: #)",
-      "Stalwart Map (Tier #)",
-      "Prefix Modifier \"Punishing\" (Tier: #)",
-      "Punishing Map (Tier #)",
-      "Prefix Modifier \"Fecund\" (Tier: #)",
-      "Fecund Map (Tier #)",
-      "Prefix Modifier \"Ultimate\" (Tier: #)",
-      "Ultimate Map (Tier #)",
-      "Suffix Modifier \"of the Juggernaut\" (Tier: #)",
-      "Map (Tier #) of the Juggernaut",
-      "Suffix Modifier \"of Imbibing\" (Tier: #)",
-      "Map (Tier #) of Imbibing",
-      "Suffix Modifier \"of Defiance\" (Tier: #)",
-      "Map (Tier #) of Defiance",
-      "Prefix Modifier \"Diluted\" (Tier: #)",
-      "Diluted Map (Tier #)"
      ]
     },
     {
@@ -4757,7 +4603,7 @@
       "稀有怪物擁有會反射 # 元素傷害的元素荊棘"
      ],
      "en": [
-      "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
+      "Rare Monsters have Elemental Thorns reflecting # Elemental Damage"
      ],
      "g": 0,
      "affixZh": "反射的",
@@ -4784,7 +4630,7 @@
       "稀有怪物擁有會反射 # 物理傷害的物理荊棘"
      ],
      "en": [
-      "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
+      "Rare Monsters have Physical Thorns reflecting # Physical Damage"
      ],
      "g": 0,
      "affixZh": "懲罰的",
@@ -6074,11 +5920,11 @@
      "id": "Metadata/Items/Scarabs/ScarabAbyssNew4",
      "zh": [
       "聖甲蟲：晶石深淵",
-      "區域內不含獎勵的深淵坑洞會改為創造一個深淵水晶"
+      "區域內不為最終的深淵坑洞會於關閉時創造一個深淵水晶"
      ],
      "en": [
       "Abyss Scarab of Crystals",
-      "Abyss Pits in Area that do not contain a reward instead create an Abyssal Crystal"
+      "Non-final Abyss Pits in Area create an Abyssal Crystal on closing"
      ],
      "g": 0
     },
@@ -6102,7 +5948,7 @@
      ],
      "en": [
       "Abyss Scarab of Multitudes",
-      "Abyss Chasms in Area spawn 100% increased Monsters per fed soul"
+      "Abyss Chasms in Area spawn 100% increased Monsters per fed Soul"
      ],
      "g": 0
     },
@@ -20915,24 +20761,6 @@
    ],
    "entries": [
     {
-     "id": "Metadata/Items/Gems/SkillGemComboStrike",
-     "zh": [
-      "..."
-     ],
-     "en": [
-      "..."
-     ],
-     "g": 0,
-     "hiddenZh": [
-      "攻擊, 近戰, 打擊",
-      "攻擊,近戰,打擊"
-     ],
-     "hiddenEn": [
-      "Attack, Melee, Strike",
-      "Attack,Melee,Strike"
-     ]
-    },
-    {
      "id": "Metadata/Items/Gems/SkillGemImmortalCall",
      "zh": [
       "不朽怒嚎"
@@ -21802,7 +21630,7 @@
      "hiddenZh": [
       "法術, 持續時間",
       "法術,持續時間",
-      "創造一道友軍和敵人皆可穿越的力量之牆。能夠與敵方碰撞的友方投射物將會與此牆發生碰撞，並從牆上連鎖至附近目標。每一投射物只能與力量之牆碰撞一次。"
+      "創造一道友方和敵人皆可穿越的力量之牆。能夠與敵方碰撞的友方投射物將會與此牆發生碰撞，並從牆上連鎖至附近目標。每一投射物只能與力量之牆碰撞一次。"
      ],
      "hiddenEn": [
       "Spell, Duration",
@@ -22388,7 +22216,7 @@
      "hiddenZh": [
       "戰吼, 範圍效果, 持續時間",
       "戰吼,範圍效果,持續時間",
-      "使用戰吼嘲諷周圍所有敵人，強迫他們攻擊自己，並為使用者與鄰近友軍賦予一個增益效果。使用者和附近友方還會獲得耐力球。"
+      "使用戰吼嘲諷周圍所有敵人，強迫他們攻擊自己，並為使用者與鄰近友方賦予一個增益效果。使用者和附近友方還會獲得耐力球。"
      ],
      "hiddenEn": [
       "Warcry, AoE, Duration",
@@ -25615,7 +25443,7 @@
      "hiddenZh": [
       "攻擊, 近戰, 範圍效果, 閃電, 物理, 復仇",
       "攻擊,近戰,範圍效果,閃電,物理,復仇",
-      "格擋攻擊後，以盾牌橫掃來進行復仇反擊，在你前方扇形範圍內釋放出一道聖光。若首個擊中的目標範圍內有友軍，將會產生額外一道光波朝該目標發射。"
+      "格擋攻擊後，以盾牌橫掃來進行復仇反擊，在你前方扇形範圍內釋放出一道聖光。若首個擊中的目標範圍內有友方，將會產生額外一道光波朝該目標發射。"
      ],
      "hiddenEn": [
       "Attack, Melee, AoE, Lightning, Physical, Retaliation",
@@ -32729,14 +32557,14 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "卓越, 輔助",
-      "卓越,輔助",
-      "輔助可擊中敵人的技能。"
+      "卓越, 冰冷, 閃電, 輔助",
+      "卓越,冰冷,閃電,輔助",
+      "輔助任何可擊中敵人的技能。"
      ],
      "hiddenEn": [
-      "Exceptional, Support",
-      "Exceptional,Support",
-      "Supports skills that hit enemies."
+      "Exceptional, Cold, Lightning, Support",
+      "Exceptional,Cold,Lightning,Support",
+      "Supports any skill that hits enemies."
      ]
     },
     {
@@ -37594,7 +37422,7 @@
      "hiddenZh": [
       "光環, 法術, 範圍效果, 持續時間, 瓦爾, 冰冷",
       "光環,法術,範圍效果,持續時間,瓦爾,冰冷",
-      "施放一個光環使你和附近的隊友減少承受冰冷傷害和免疫冰凍、冰緩，並擊中附近的敵人時無視他們的冰冷抗性。"
+      "施放一個光環使你和附近的友方減少承受冰冷傷害和免疫冰凍、冰緩，並擊中附近的敵人時無視他們的冰冷抗性。"
      ],
      "hiddenEn": [
       "Aura, Spell, AoE, Duration, Vaal, Cold",
@@ -37614,7 +37442,7 @@
      "hiddenZh": [
       "光環, 法術, 範圍效果, 持續時間, 瓦爾, 火焰",
       "光環,法術,範圍效果,持續時間,瓦爾,火焰",
-      "施放一個光環使你和附近的隊友減少承受火焰傷害和免疫點燃，並擊中附近的敵人時無視他們的火焰抗性。"
+      "施放一個光環使你和附近的友方減少承受火焰傷害和免疫點燃，並擊中附近的敵人時無視他們的火焰抗性。"
      ],
      "hiddenEn": [
       "Aura, Spell, AoE, Duration, Vaal, Fire",
@@ -37634,7 +37462,7 @@
      "hiddenZh": [
       "光環, 法術, 範圍效果, 持續時間, 瓦爾, 閃電",
       "光環,法術,範圍效果,持續時間,瓦爾,閃電",
-      "施放一個光環使你和附近的隊友減少承受閃電傷害和免疫感電，並擊中附近的敵人時無視他們的閃電抗性。"
+      "施放一個光環使你和附近的友方減少承受閃電傷害和免疫感電，並擊中附近的敵人時無視他們的閃電抗性。"
      ],
      "hiddenEn": [
       "Aura, Spell, AoE, Duration, Vaal, Lightning",
@@ -46724,7 +46552,7 @@
       "稀有怪物擁有會反射 # 元素傷害的元素荊棘"
      ],
      "en": [
-      "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"
+      "Rare Monsters have Elemental Thorns reflecting # Elemental Damage"
      ],
      "g": 0,
      "affixZh": "反射的",
@@ -46743,7 +46571,7 @@
       "稀有怪物擁有會反射 # 物理傷害的物理荊棘"
      ],
      "en": [
-      "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"
+      "Rare Monsters have Physical Thorns reflecting # Physical Damage"
      ],
      "g": 0,
      "affixZh": "懲戒的",

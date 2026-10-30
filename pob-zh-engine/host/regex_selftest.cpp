@@ -455,6 +455,27 @@ void StateTests()
 		                          enNow, zhNow, picked);
 		check(missed == 1 && picked[0] == 1 && picked[2] == 1 && picked[1] == 0,
 		      "a mixed selection keeps what it can and counts what it cannot");
+
+		// Keys saved by an older build still carry the game's "[Key|Display]" link
+		// marker, which the catalogue no longer prints. With no Chinese key to fall
+		// back on, the English one must still land on the stripped line.
+		const std::vector<std::string> enLink = {"Area is haunted",
+		                                         "Rare Monsters have Elemental Thorns reflecting # Elemental Damage"};
+		const std::vector<std::string> zhLink = {u8"區域鬧鬼", u8"稀有怪物有元素荊棘反射#點元素傷害"};
+
+		missed = RegexResolveKeys({"Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"},
+		                          {""}, enLink, zhLink, picked);
+		check(missed == 0 && picked.size() == 2 && picked[1] == 1 && picked[0] == 0,
+		      "an old key with a [Key|Display] link marker resolves to the stripped English line");
+
+		// Same shape, different wording: stripping the marker must not turn the
+		// match fuzzy.
+		missed = RegexResolveKeys({"Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"},
+		                          {""}, enLink, zhLink, picked);
+		bool noneLink = true;
+		for (char c : picked) if (c) noneLink = false;
+		check(missed == 1 && noneLink,
+		      "a link-marker key for a different modifier stays unresolved and ticks nothing");
 	}
 
 	line("[T12] the state file survives a round trip");
@@ -606,8 +627,114 @@ bool RoundTrip(const Corpus& c, const std::vector<int>& sel, Mode mode,
 	return true;
 }
 
+// True when `s` still holds a "[Key|Display]" link marker -- the form the game's
+// own strings use and the generator is supposed to have reduced to "Display".
+bool HasLinkMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		const size_t close = s.find(']', i + 1);
+		if (close == std::string::npos) return false;
+		const size_t bar = s.find('|', i + 1);
+		if (bar != std::string::npos && bar < close) return true;
+	}
+	return false;
+}
+
+// A name that is only punctuation ("...") can never be searched for, so it must
+// carry at least one ASCII letter/digit or a non-ASCII byte (UTF-8 multi-byte).
+bool HasTextChar(const std::string& s)
+{
+	for (unsigned char c : s)
+		if (c >= 0x80 || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+			return true;
+	return false;
+}
+
+// Content checks on the shipped PoE1 catalogue: what the entries print, not how
+// the generator searches them. PoE2 is deliberately out of scope here.
+void CatalogueContentTests(const std::wstring& exeDir)
+{
+	line("[data-content] PoE1 catalogue text");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "content: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+
+	// T1 + T3 walk every PoE1 entry once.
+	int linkHits = 0, nameHits = 0, entries = 0;
+	std::string firstLink, firstName;
+	for (const RegexPageDef& p : ds.Pages()) {
+		if (p.game != "poe1") continue;
+		for (const RegexEntryDef& e : p.entries) {
+			entries++;
+			for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn})
+				for (const std::string& s : *v)
+					if (HasLinkMarker(s)) {
+						if (!linkHits) firstLink = p.id + "/" + e.id + ": " + s;
+						linkHits++;
+					}
+			const std::string nz = e.zh.empty() ? std::string() : e.zh[0];
+			const std::string ne = e.en.empty() ? std::string() : e.en[0];
+			if (!HasTextChar(nz) || !HasTextChar(ne)) {
+				if (!nameHits) firstName = "page " + p.id + ", entry " + e.id + ": zh=\"" + nz + "\" en=\"" + ne + "\"";
+				nameHits++;
+			}
+		}
+	}
+	check(entries > 0, "poe1 content: entries found (" + std::to_string(entries) + ")");
+	check(linkHits == 0, "poe1 entry text holds no [Key|Display] link marker (" + std::to_string(linkHits) +
+	      " lines)" + (linkHits ? " -- first: " + firstLink : std::string()));
+	check(nameHits == 0, "poe1 entry first lines (zh and en) all contain a letter, digit or CJK char (" +
+	      std::to_string(nameHits) + " bad)" + (nameHits ? " -- first: " + firstName : std::string()));
+
+	// T2 + T5 read the map-modifier page.
+	const RegexPageDef* mm = findPage("map_mods");
+	check(mm != nullptr, "poe1 page map_mods exists");
+	if (mm) {
+		auto hasEn = [&](const std::string& want) {
+			for (const RegexEntryDef& e : mm->entries)
+				for (const std::string& s : e.en)
+					if (s == want) return true;
+			return false;
+		};
+		for (const char* gone : {"#% more Maps found in Area", "#% more Scarabs found in Area",
+		                         "#% more Currency found in Area"})
+			check(!hasEn(gone), std::string("map_mods lists no T17 drop-bonus total line \"") + gone + "\"");
+		check(hasEn("Rare Monsters have Elemental Thorns reflecting # Elemental Damage"),
+		      "map_mods keeps the display text after stripping the link: \"Rare Monsters have Elemental Thorns reflecting # Elemental Damage\"");
+	}
+
+	// T4: the Abyss scarab text of the current patch (3.29.3.3).
+	const RegexPageDef* sc = findPage("scarabs");
+	check(sc != nullptr, "poe1 page scarabs exists");
+	if (sc) {
+		const RegexEntryDef* ab = nullptr;
+		for (const RegexEntryDef& e : sc->entries)
+			if (e.id == "Metadata/Items/Scarabs/ScarabAbyssNew4") { ab = &e; break; }
+		check(ab != nullptr, "scarabs entry Metadata/Items/Scarabs/ScarabAbyssNew4 exists");
+		if (ab) {
+			bool nonFinal = false, oldWording = false;
+			for (const std::string& s : ab->en) {
+				if (s.find("Non-final") != std::string::npos) nonFinal = true;
+				if (s.find("do not contain a reward") != std::string::npos) oldWording = true;
+			}
+			check(nonFinal, "ScarabAbyssNew4 en has a \"Non-final\" line (3.29.3.3 wording)");
+			check(!oldWording, "ScarabAbyssNew4 en has no \"do not contain a reward\" line (pre-3.29.3.3 wording)");
+		}
+	}
+}
+
 void DataTests(const std::wstring& exeDir)
 {
+	CatalogueContentTests(exeDir);
+	line("");
 	RegexDataset ds;
 	std::string err;
 	// Load() takes every catalogue it finds, so the loop below already covers
