@@ -5508,6 +5508,38 @@ def test_gs6_missing_game_file_is_logged(fork):
           "loaded=%r" % gs_loaded_game_files(hc))
 
 
+def test_gs8_missing_game_file_keeps_upstream_backdrop(fork):
+    """GS8 -- 遊戲檔缺漏又設了自訂背景時,不可壓掉上游的天賦樹底圖(我們沒得畫,上游要照畫)。"""
+    game = "poe1" if fork == "PoE1" else "poe2"
+    for missing in (True, False):
+        h = Harness(fork, with_inject=False, game=game)
+        h.run(GS_SPY)
+        h.run("GS_STUB_GAME_FILES = false")
+        if missing:
+            h.run('GS_FAIL_MATCH = "inject_%s.lua"' % game)
+        h.run('LoadModule("Classes/PassiveTreeView")')
+        h.run('''
+common.classes["PassiveTreeView"].Draw = function(self, build, viewPort, inputEvents) end
+function PobToolsBackground() return "bg.png", 50, 0, 100 end
+function DrawImage() end
+function SetDrawColor() end
+GS8_ASSET = { width = 0, handle = { ImageSize = function() return 0, 0 end } }
+GS8_BUILD = { viewMode = "TREE", spec = { tree = { size = 1000, assets = { Background2 = GS8_ASSET } } } }
+''')
+        h.apply_inject()
+        h.run('''
+local view = setmetatable({ zoom = 1, zoomX = 0, zoomY = 0 }, { __index = common.classes["PassiveTreeView"] })
+common.classes["PassiveTreeView"].Draw(view, GS8_BUILD, { x = 0, y = 0, width = 800, height = 600 }, {})
+''')
+        width = h.eval("GS8_ASSET.width")
+        if missing:
+            check("%s GS8 inject_%s.lua 缺漏+自訂背景:上游底圖不被壓掉(width 不是 -1)" % (fork, game),
+                  width != -1, "width=%r" % width)
+        else:
+            check("%s GS8 對照:遊戲檔在時自訂背景照常接手底圖(width = -1)" % fork,
+                  width == -1, "width=%r" % width)
+
+
 def test_gs7_patch_set_unchanged(fork):
     """GS7 -- 拆檔後補丁清單不變:契約列的 15 個 class 都被套用或至少被嘗試;兩個遊戲都一樣。"""
     for game in ("poe1", "poe2"):
@@ -5642,6 +5674,7 @@ def main():
         test_gs5b_fallback_without_pobtoolsgame(fork)
         test_gs6_missing_game_file_is_logged(fork)
         test_gs7_patch_set_unchanged(fork)
+        test_gs8_missing_game_file_keeps_upstream_backdrop(fork)
         test_gs2p_poe2_segment_translation_follows_game(fork)
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)

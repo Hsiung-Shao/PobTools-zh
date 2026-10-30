@@ -902,7 +902,8 @@ local GAME = detectGame()
 
 -- The game's rules (see inject_poe2.lua for the fields). A missing or broken
 -- file leaves {}: every shared patch still applies, the game-only rows stay in
--- English -- and the failure is logged, since otherwise it reads as a gap.
+-- English, the tree backdrop is left to upstream (custom background off) --
+-- and the failure is logged, since otherwise it reads as a gap.
 local gameRules = {}
 do
 	local src = debug and debug.getinfo and debug.getinfo(1, "S").source or ""
@@ -1498,7 +1499,8 @@ PATCHES["PassiveTreeView"] = function(class)
 			if type(PobToolsBackground) == "function" then bgPath, _, _, treeBg = PobToolsBackground() end
 			bgPath = bgPath or ""
 			treeBg = tonumber(treeBg) or 100
-			local ownBackdrop = (bgPath ~= "") or (treeBg < 100)
+			-- No game rules file = nothing of ours to draw it with: leave upstream's.
+			local ownBackdrop = backdrop.draw ~= nil and ((bgPath ~= "") or (treeBg < 100))
 			local tree = build and build.spec and build.spec.tree
 			for _, a in ipairs(treeBackdropAssets(tree)) do
 				if ownBackdrop then a.width = -1
