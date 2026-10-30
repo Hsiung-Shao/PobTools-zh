@@ -3199,7 +3199,8 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			bool okFr = okFl && child.Call("item_raw", json{{"id", 1}}, fr, 30000);
 			check("PoE2: From Nothing imported without a Radius line sockets without a crash and gets its Small radius",
 			      okFe && okFr && fr.value("raw", "").find("Radius: Small") != std::string::npos,
-			      (okFe ? std::string() : "equip=" + fe.dump().substr(0, 200) + " ") + "raw=" + fr.value("raw", "").substr(0, 200));
+			      (okFe ? std::string() : "equip=" + fe.dump().substr(0, 200) + " ") +
+			          "raw=" + (okFr ? fr.value("raw", "") : fr.dump()).substr(0, 200));
 		}
 
 		child.Stop(5000);
