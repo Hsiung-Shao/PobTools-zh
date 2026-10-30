@@ -2,7 +2,7 @@
   "source_files": [
     "manual:pob_export_poe2/manual_poe2.json",
     "approved=2026-10-29、2026-10-30(使用者核准,非 GGPK)",
-    "dev=a03aa4f5d17bad99d8c08790b9759dc34b52a49c"
+    "dev=e8a9f0080a97b433cae3787c8e1f7c4f98dd997b(去掉 poe2 匯出產物當基準)"
   ],
   "entries": {
     "\"1\" or \"I\" for Intelligence, ": "\"1\" 或 \"I\" 為智慧，",
