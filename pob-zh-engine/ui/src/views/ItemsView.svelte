@@ -539,8 +539,8 @@
           >
             <span class="nm" style:color={rarityColor(it.rarity)}>{it.nameZh || it.name}</span>
             {#if badge?.kind === "unused"}<span class="where unused">{t("items.unused")}</span>
-            {:else if badge?.kind === "elsewhere"}<span class="where">{t("items.usedIn", { where: badge.where })}</span>
-            {:else if where.length}<span class="where">{where.map((s) => s.labelZh || s.label).join(", ")}</span>{/if}
+            {:else if badge?.kind === "elsewhere"}<span class="where" title={t("items.usedIn", { where: badge.where })}>{t("items.usedIn", { where: badge.where })}</span>
+            {:else if where.length}{@const ws = where.map((s) => s.labelZh || s.label).join(", ")}<span class="where" title={ws}>{ws}</span>{/if}
             {#if it.unsupported}<span class="bad small">!</span>{/if}
           </div>
         {/each}

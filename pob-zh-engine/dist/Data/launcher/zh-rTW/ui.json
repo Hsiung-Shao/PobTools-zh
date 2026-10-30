@@ -707,6 +707,7 @@
   "notes.saved": "已自動儲存",
   "notes.saving": "儲存中…",
   "tree.powerOffHint": "開啟後標出哪些未配點的天賦提升最多",
-  "tree.keyHint": "右鍵:珠寶 / 專精 / 紋身 · Shift:只看路徑 · Ctrl+D:差異 · H:回職業起點 · F:全覽",
+  "tree.keyHint": "右鍵:珠寶插槽 / 專精 / 紋身 · Shift:自訂配點路徑 · Ctrl+D:差異 · H:回職業起點 · F:全覽",
+  "tree.keyHintPoe2": "右鍵:珠寶插槽 / 選屬性 · Shift:自訂配點路徑 · Ctrl+D:差異 · H:回職業起點 · F:全覽",
   "tree.keyHintOff": "隱藏這行提示"
 }

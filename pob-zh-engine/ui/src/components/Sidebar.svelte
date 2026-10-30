@@ -77,9 +77,13 @@
 
   // groups the viewer folded; everything starts open
   let folded = $state(loadCollapsed());
-  function toggleGroup(key: string) {
+  function toggleGroup(key: string, rows: number[]) {
     const next = new Set(folded);
-    if (!next.delete(key)) next.add(key);
+    if (!next.delete(key)) {
+      next.add(key);
+      // a breakdown pinned on a row that is folding away would have nothing left to unpin it
+      if (bd && rows.includes(bd.row)) bd = null;
+    }
     folded = next;
     saveCollapsed(next);
   }
@@ -130,7 +134,7 @@
           {@const closed = !!sec.label && folded.has(sec.key)}
           {#if sec.label}
             <h3 class="sec">
-              <button class="sec-btn" aria-expanded={!closed} onclick={() => toggleGroup(sec.key)}>
+              <button class="sec-btn" aria-expanded={!closed} onclick={() => toggleGroup(sec.key, sec.items.map((it) => it.index))}>
                 <span>{sec.label}</span>
                 {#if closed}<span class="sum num">{sidebarSummary(sec.items)}</span>{/if}
                 <span class="chev" aria-hidden="true">{closed ? "▸" : "▾"}</span>

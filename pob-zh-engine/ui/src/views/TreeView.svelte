@@ -1126,17 +1126,17 @@
         <span class="dim">{t("sidebar.points")}</span>
         <b class="num" class:over={tree.points.usedMax != null && tree.points.used > tree.points.usedMax}>{tree.points.used}</b><span class="dim num">/{tree.points.usedMax ?? "?"}</span>
         <span class="dim"> · {t("sidebar.asc")}</span>
-        <b class="num">{tree.points.ascUsed}</b><span class="dim num">/{tree.points.ascMax ?? "?"}</span>
+        <b class="num" class:over={tree.points.ascMax != null && tree.points.ascUsed > tree.points.ascMax}>{tree.points.ascUsed}</b><span class="dim num">/{tree.points.ascMax ?? "?"}</span>
       </span>
     {/if}
   </div>
   <div class="stage pob-dark" bind:this={wrap}>
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
-    {#if artMissing && model}<div class="note">{t("tree.artMissing")}</div>{/if}
+    {#if artMissing && model}<div class="note" class:above={keyHint}>{t("tree.artMissing")}</div>{/if}
     {#if model && keyHint}
       <!-- what the mouse and keys do here: right-click, Shift and Ctrl+D were only in the settings page's list -->
       <div class="keyhint">
-        <span>{t("tree.keyHint")}</span>
+        <span class="hint-text">{t(model.poe2 ? "tree.keyHintPoe2" : "tree.keyHint")}</span>
         <button class="hint-x" title={t("tree.keyHintOff")} aria-label={t("tree.keyHintOff")} onclick={closeKeyHint}>×</button>
       </div>
     {/if}
@@ -1333,7 +1333,16 @@
     border: 1px solid var(--edge-0);
     border-radius: var(--radius-s);
   }
+  /* the text lets drags and hovers through to the canvas; only the × takes clicks */
+  .keyhint {
+    pointer-events: none;
+    max-width: calc(100% - 24px);
+  }
+  .note.above {
+    bottom: 48px;
+  }
   .hint-x {
+    pointer-events: auto;
     border: 0;
     background: none;
     color: var(--ink-3);
@@ -1362,7 +1371,7 @@
   .note {
     position: absolute;
     left: 12px;
-    bottom: 46px;
+    bottom: 12px;
     padding: 6px 10px;
     font-size: var(--fs-xs);
     color: var(--warn);

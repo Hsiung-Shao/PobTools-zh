@@ -866,10 +866,10 @@
     font-variant-numeric: tabular-nums;
   }
   /* move / delete stay visible but quiet until the row is pointed at */
-  td.w2 .btn {
+  td.w2 .btn:not(:disabled) {
     opacity: 0.4;
   }
-  tr:hover td.w2 .btn,
+  tr:hover td.w2 .btn:not(:disabled),
   td.w2 .btn:focus-visible {
     opacity: 1;
   }
