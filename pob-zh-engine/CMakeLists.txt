@@ -96,6 +96,9 @@ set(SIMPLEGRAPHIC_SOURCES
     "ui_subscript.h"
     "translate/translation_manager.cpp"
     "translate/translation_manager.h"
+    "translate/game_rules.h"
+    "translate/rules_poe1.cpp"
+    "translate/rules_poe2.cpp"
     "translate/startup_trace.cpp"
     "translate/startup_trace.h"
 )
@@ -290,7 +293,11 @@ install(TARGETS SimpleGraphic RUNTIME DESTINATION "engine")
 
 # PoeCharm: engine-owned runtime CJK patch script, loaded by the engine into
 # POB's Lua state after OnInit. Ships in engine/ (never the POB folder).
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua" DESTINATION "engine")
+# The entry script loads exactly one of the per-game rule files beside it
+# (使用者裁定 2026-10-30: PoE1 / PoE2 run their own rules).
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/inject_poe1.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/inject_poe2.lua" DESTINATION "engine")
 
 # Headless bridge: the Lua side of the new UI, loaded after the inject script
 # when POB_ZH_HEADLESS=1. Under Data\ (not engine\) so the signed translation-
@@ -430,6 +437,8 @@ if (WIN32)
         # return; without this it could only re-implement the merge and
         # would be testing its own copy of the rule instead of the engine
         translate/translation_manager.cpp
+        translate/rules_poe1.cpp
+        translate/rules_poe2.cpp
         translate/startup_trace.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp

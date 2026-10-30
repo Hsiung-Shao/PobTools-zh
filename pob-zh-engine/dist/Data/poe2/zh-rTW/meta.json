@@ -4,6 +4,8 @@
   "display_name": "繁體中文",
   "source": "poe2",
   "load_order": [
+    "ggpk_display.json",
+    "pob_manual.json",
     "tags.json",
     "ui.json",
     "stats.json",
@@ -29,6 +31,14 @@
     "A"
   ],
   "glossary_blacklist": [
-    "UNUSED"
+    "UNUSED",
+    "Builds",
+    "Cost:"
+  ],
+  "source_lookup": true,
+  "source_dicts": [
+    "mod_stats_by_id.json",
+    "stats_by_id.json",
+    "affixes_by_id.json"
   ]
 }

@@ -43,6 +43,7 @@
 #include <json.hpp>
 
 #include "../translate/translation_manager.h"
+#include "error_log.h"
 
 namespace {
 
@@ -306,6 +307,59 @@ bool drop_dict_files(const std::wstring& localeDir, const std::vector<std::strin
 	} catch (...) {
 		return false;
 	}
+}
+
+// 改字典複本 meta.json 的 "source"(C1 用):poe1 / poe2。
+bool set_meta_source(const std::wstring& localeDir, const char* source)
+{
+	std::string body;
+	if (!read_bytes(localeDir + L"meta.json", body)) return false;
+	try {
+		auto meta = nlohmann::ordered_json::parse(body);
+		meta["source"] = source;
+		return write_bytes(localeDir + L"meta.json", meta.dump(2));
+	} catch (...) {
+		return false;
+	}
+}
+
+// 刪掉 dir 底下所有 error-*.log、並把它們串成一個字串讀回(G 系列讀錯誤記錄用)。
+void clear_error_logs(const std::wstring& dir)
+{
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW((dir + L"error-*.log").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return;
+	do { DeleteFileW((dir + fd.cFileName).c_str()); } while (FindNextFileW(h, &fd));
+	FindClose(h);
+}
+
+std::string read_error_logs(const std::wstring& dir)
+{
+	std::string all;
+	WIN32_FIND_DATAW fd;
+	HANDLE h = FindFirstFileW((dir + L"error-*.log").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return all;
+	do {
+		std::string body;
+		if (read_bytes(dir + fd.cFileName, body)) all += body;
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+	return all;
+}
+
+// 錯誤記錄裡有沒有「i18n 不一致」那一行:同一行要同時含 [i18n]、POB_GAME、source。
+bool has_i18n_mismatch_line(const std::string& log)
+{
+	size_t pos = 0;
+	while (pos <= log.size()) {
+		size_t end = log.find('\n', pos);
+		if (end == std::string::npos) end = log.size();
+		const std::string line = log.substr(pos, end - pos);
+		if (line.find("[i18n]") != std::string::npos && line.find("POB_GAME") != std::string::npos &&
+		    line.find("source") != std::string::npos) return true;
+		pos = end + 1;
+	}
+	return false;
 }
 
 } // namespace
@@ -2376,6 +2430,122 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (d3 != u8"覆寫列, 混沌石") printf("           d3='%s'\n", d3.c_str());
 	}
 
+	// ---- C1(使用者裁定 2026-10-29「PoE1 / PoE2 依遊戲走各自規則」)-------------------------------
+	// 屬性查詢(translation_lookup_stat)對輸入行的方括號處理依字典 meta.json 的 "source":
+	// poe2 的畫面字串不帶 GGPK 標記,不去方括號(POB 的 [整句] 外框要原樣當成查不到);
+	// poe1(含沒寫)照舊去掉。樣板端不變。
+	printf("\n=== C1 屬性查詢的方括號處理依 meta source ===\n");
+	{
+		const std::string bracketed = std::string("[") + kE2 + "]";
+		auto run = [&](const wchar_t* sub, const char* source, Said& bare, Said& br) {
+			const std::wstring vroot = root + sub + L"\\";
+			const std::wstring loc = vroot + L"zh-rTW\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w;
+			const bool ok = build_dict_copy(shippedLocale, loc, statsJson, true, w) && set_meta_source(loc, source);
+			if (!ok) printf("           setup c1 %s failed %s\n", source, w.c_str());
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			SetEnvironmentVariableW(L"POB_GAME", nullptr);   // 沒設 POB_GAME:由 meta source 決定(C1 要測的就是這條)
+			translation_set_source(nullptr);
+			translation_reload();
+			bare = ask(kE2, "item");
+			br = ask(bracketed.c_str(), "item");
+			SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			remove_tree(vroot);
+			return ok;
+		};
+		Said bare2{true, {}}, br2{true, {}}, bare1{true, {}}, br1{true, {}};
+		const bool ok2 = run(L"c1poe2", "poe2", bare2, br2);
+		const bool ok1 = run(L"c1poe1", "poe1", bare1, br1);
+		printf("           poe2 bare='%s' bracketed='%s'\n           poe1 bare='%s' bracketed='%s'\n",
+		       shown(bare2), shown(br2), shown(bare1), shown(br1));
+		check(ok2 && !bare2.null && bare2.s == kE2Want, "C1a meta source=poe2:不帶方括號的已知單行 stat 照常翻");
+		check(ok2 && br2.null && !bare2.null, "C1b meta source=poe2:帶方括號的同一句不去方括號、回空(對照 C1a 同環境有命中)");
+		check(ok1 && !br1.null && br1.s.find(kE2Want) != std::string::npos,
+		      "C1c meta source=poe1:帶方括號的同一句照舊去方括號、翻成中文(現行行為)");
+	}
+
+	// ---- G(引擎拆分第 1 期:遊戲由 POB_GAME 決定,沒設才看 meta source)----------------------------
+	// translation_game() / translation_meta_source() 在最近一次載入時定下;方括號規則改看 game。
+	// POB_GAME 有設、meta source 非空且兩者不同 → 寫一筆 i18n 錯誤記錄(含 POB_GAME 與 source)。
+	printf("\n=== G 遊戲判斷:POB_GAME 優先,沒設才看 meta source ===\n");
+	{
+		const std::wstring logDir = root + L"gamelog\\";
+		CreateDirectoryW(logDir.c_str(), nullptr);
+		const std::string bracketed = std::string("[") + kE2 + "]";
+		struct GameRun {
+			bool setup = false;
+			std::string game, metaSrc;
+			Said bare{true, {}}, br{true, {}};
+			bool mismatch = false;
+			std::string log;
+		};
+		// envGame == nullptr:POB_GAME 不設。跑完把環境還原成進來時的狀態(POB_GAME=poe1、POB_ZH_DATADIR=flagRoot)。
+		auto run = [&](const wchar_t* sub, const wchar_t* envGame, const char* metaSource) {
+			GameRun r;
+			const std::wstring vroot = root + sub + L"\\";
+			const std::wstring loc = vroot + L"zh-rTW\\";
+			CreateDirectoryW(vroot.c_str(), nullptr);
+			std::string w;
+			r.setup = build_dict_copy(shippedLocale, loc, statsJson, true, w) && set_meta_source(loc, metaSource);
+			if (!r.setup) printf("           setup g %s failed %s\n", narrow(sub).c_str(), w.c_str());
+			clear_error_logs(logDir);
+			PobLog::SetDirForTest(logDir);
+			PobLog::ResetCapsForTest();
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", vroot.c_str());
+			SetEnvironmentVariableW(L"POB_GAME", envGame);
+			translation_set_source(nullptr);
+			translation_reload();
+			const char* g = translation_game();
+			const char* m = translation_meta_source();
+			r.game = g ? g : "(null)";
+			r.metaSrc = m ? m : "(null)";
+			r.bare = ask(kE2, "item");
+			r.br = ask(bracketed.c_str(), "item");
+			r.log = read_error_logs(logDir);
+			r.mismatch = has_i18n_mismatch_line(r.log);
+			SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+			SetEnvironmentVariableW(L"POB_ZH_DATADIR", flagRoot.c_str());
+			translation_reload();
+			PobLog::SetDirForTest(L"");
+			remove_tree(vroot);
+			return r;
+		};
+		auto brHit = [&](const GameRun& r) { return !r.br.null && r.br.s.find(kE2Want) != std::string::npos; };
+		auto brKept = [&](const GameRun& r) { return r.br.null && !r.bare.null && r.bare.s == kE2Want; };
+
+		// T3:POB_GAME=poe2 壓過 meta source=poe1
+		const GameRun t3 = run(L"g1", L"poe2", "poe1");
+		printf("           G1 game='%s' meta='%s' mismatch=%d bare='%s' bracketed='%s'\n", t3.game.c_str(),
+		       t3.metaSrc.c_str(), (int)t3.mismatch, shown(t3.bare), shown(t3.br));
+		check(t3.setup && t3.game == "poe2" && t3.metaSrc == "poe1",
+		      "G1a POB_GAME=poe2、meta source=poe1:translation_game 回 poe2、translation_meta_source 回 poe1");
+		check(t3.setup && t3.mismatch,
+		      "G1b POB_GAME 與 meta source 不一致:錯誤記錄有一行 [i18n] 同時提到 POB_GAME 與 source");
+		if (!t3.mismatch) printf("           log='%s'\n", t3.log.c_str());
+		check(t3.setup && brKept(t3),
+		      "G1c POB_GAME=poe2 壓過 meta=poe1:帶 [整句] 外框的屬性行保留外框(查不到),對照不帶外框的同句有譯文");
+
+		// T4:POB_GAME 沒設 → 照 meta;不報不一致
+		const GameRun t4a = run(L"g2a", nullptr, "poe2");
+		const GameRun t4b = run(L"g2b", nullptr, "poe1");
+		printf("           G2 poe2: game='%s' meta='%s'  poe1: game='%s' meta='%s'\n", t4a.game.c_str(),
+		       t4a.metaSrc.c_str(), t4b.game.c_str(), t4b.metaSrc.c_str());
+		check(t4a.setup && t4a.game == "poe2" && t4a.metaSrc == "poe2" && brKept(t4a) && !t4a.mismatch,
+		      "G2a 沒設 POB_GAME、meta source=poe2:game 為 poe2、保留方括號外框、不寫不一致記錄");
+		check(t4b.setup && t4b.game == "poe1" && t4b.metaSrc == "poe1" && brHit(t4b) && !t4b.mismatch,
+		      "G2b 沒設 POB_GAME、meta source=poe1:game 為 poe1、去掉方括號照常翻、不寫不一致記錄");
+
+		// T4b:兩者一致 → 不誤報(附「不一致時確實會寫」的對照,空殼 logger 過不了)
+		const GameRun t4c = run(L"g3", L"poe1", "poe1");
+		check(t4c.setup && t4c.game == "poe1" && !t4c.mismatch && t3.mismatch && brHit(t4c),
+		      "G3 POB_GAME=poe1、meta source=poe1 一致:不寫不一致記錄(對照 G1b 不一致時有寫)");
+		if (t4c.mismatch) printf("           log='%s'\n", t4c.log.c_str());
+		remove_tree(logDir);
+	}
+
 	printf("\n=== 無 source_lookup 旗標的語系 ===\n");
 	{
 		// E8:同一份資料、同樣列在 source_dicts,只差 meta 沒有 source_lookup。
@@ -2383,16 +2553,31 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		translation_reload();
 		const Said noflag = ask(kE2, "item");
 		const std::string built = translation_debug_sources();
-		// E8b:真的 PoE2 出貨字典(無旗標)。
+		// E8b:真的 PoE2 出貨字典 —— 預期依它自己的 meta.json(有 source_lookup 且列有 stats_by_id.json 才翻)。
 		SetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr);
 		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
 		translation_reload();
 		const Said poe2 = ask(kE2, "item");
 		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
+		bool poe2Flag = false, poe2Listed = false, poe2MetaOk = false;
+		{
+			std::string pm;
+			if (read_bytes(dir + L"Data\\poe2\\zh-rTW\\meta.json", pm)) {
+				try {
+					const auto m = nlohmann::ordered_json::parse(pm);
+					poe2Flag = m.contains("source_lookup") && m["source_lookup"].is_boolean() && m["source_lookup"].get<bool>();
+					poe2Listed = in_array(m, "source_dicts", "stats_by_id.json");
+					poe2MetaOk = true;
+				} catch (...) {}
+			}
+		}
+		const bool poe2Wants = poe2Flag && poe2Listed;   // 出貨 meta 要求依 stats_by_id 翻
 		check(noflag.null && e2Hit, "E8 無 source_lookup 旗標:不走 stat 查詢(同資料有旗標時有命中)");
 		if (!(noflag.null && e2Hit)) printf("           noflag='%s' guardE2=%d\n", shown(noflag), e2Hit);
-		check(poe2.null, "E8b PoE2 出貨字典(無旗標)查同句回空");
-		if (!poe2.null) printf("           poe2='%s'\n", shown(poe2));
+		const bool poe2Ok = poe2MetaOk && (poe2Wants ? (!poe2.null && !poe2.s.empty()) : poe2.null);
+		check(poe2Ok, "E8b PoE2 出貨字典:有 source_lookup 時依 stats_by_id 翻、沒有時回空(與出貨 meta 一致)");
+		if (!poe2Ok) printf("           meta 讀到=%d source_lookup=%d 列有 stats_by_id.json=%d poe2='%s'\n",
+		                    poe2MetaOk, poe2Flag, poe2Listed, shown(poe2));
 		// 「不建索引」唯一看得到的觀察點:無旗標時來源表只有 gems。
 		check(built == "exact=gems;pattern=;id=", "E8c 無旗標時不額外建來源/id 表");
 		if (built != "exact=gems;pattern=;id=") printf("           %s\n", built.c_str());

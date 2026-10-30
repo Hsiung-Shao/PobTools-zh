@@ -31,6 +31,7 @@
 #include <mutex>
 #include <thread>
 #include "translation_manager.h"
+#include "game_rules.h"
 #include "../host/error_log.h"
 #include "../host/hang_watch.h"
 #include "startup_trace.h"
@@ -370,6 +371,12 @@ static std::unordered_map<std::string, std::string> s_stat_row_cache;
 ** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
 ** did before the per-source dictionaries existed. */
 static bool s_source_lookup = false;
+/* The game whose rules run (game_rules.h, translation_game()). Set at the start
+** of every load from POB_GAME; with POB_GAME unset, meta.json "source" decides
+** once it is read -- the behaviour from before the rules were split. */
+static const GameRules *s_rules = &kGameRulesPoe1;
+static bool s_game_from_env = false;
+static std::string s_meta_source; /* meta.json "source", "" when absent */
 static const char *const kLegacySource = "gems";
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
@@ -2300,6 +2307,8 @@ static bool load_json_meta(const std::string &filepath,
     ** can be selected, everything else answers as unmarked. */
     source_lookup = doc.contains("source_lookup") && doc["source_lookup"].is_boolean() &&
                     doc["source_lookup"].get<bool>();
+    s_meta_source = (doc.contains("source") && doc["source"].is_string()) ? doc["source"].get<std::string>()
+                                                                           : std::string();
 
     if (doc.contains("incomplete_translation_whitelist") &&
         doc["incomplete_translation_whitelist"].is_array()) {
@@ -2634,6 +2643,16 @@ static bool try_load_json(const std::string &base_dir) {
         OutputDebugStringA("[pob-proxy] Failed to parse meta.json\n");
         return false;
     }
+    if (!s_game_from_env) {
+        s_rules = s_meta_source == "poe2" ? &kGameRulesPoe2 : &kGameRulesPoe1;
+    } else if (!s_meta_source.empty() && s_meta_source != s_rules->game) {
+        /* The launcher picks the folder by the same POB_GAME, so this is a hand-set
+        ** POB_ZH_DATADIR (or a data pack) holding the other game's dictionaries:
+        ** the rules follow the game being run, the words come from that folder. */
+        PobLog::Error("i18n", std::string("POB_GAME=") + s_rules->game + " but meta.json source=" +
+                                  s_meta_source + " (" + meta_path + "); running " + s_rules->game +
+                                  "'s rules -- this dictionary folder is probably the other game's");
+    }
 
     /* Load synonyms.json */
     load_json_synonyms(json_dir + "synonyms.json");
@@ -2885,6 +2904,15 @@ static void do_init(void) {
     s_init_stats.async = async;
     const tr_clock::time_point t_init = tr_clock::now();
 
+    /* The game is known before any dictionary is, passthrough mode included:
+    ** POB_GAME, or (unset) meta.json "source" once try_load_json reads it. */
+    {
+        char gamebuf[64];
+        const char *game_env = win_env("POB_GAME", gamebuf, sizeof(gamebuf));
+        s_game_from_env = game_env && *game_env;
+        s_rules = (s_game_from_env && strcmp(game_env, "poe2") == 0) ? &kGameRulesPoe2 : &kGameRulesPoe1;
+    }
+
     s_locale = determine_locale();
     if (s_locale.empty()) {
         OutputDebugStringA("[pob-proxy] No translation locale configured, passthrough mode\n");
@@ -3045,6 +3073,9 @@ void translation_shutdown(void) {
     s_group_text_heads.clear();
     s_slash_group_cache.clear();
     s_source_lookup = false;
+    s_rules = &kGameRulesPoe1;
+    s_game_from_env = false;
+    s_meta_source.clear();
     s_locale.clear();
     /* Clear JSON-mode dynamic data */
     s_item_headers_vec.clear();
@@ -3084,6 +3115,16 @@ void translation_reload(void) {
     translation_shutdown();
     translation_init();
     OutputDebugStringA("[pob-proxy] Translation reloaded (F3)\n");
+}
+
+const char *translation_game(void) {
+    translation_wait_ready();
+    return s_rules->game;
+}
+
+const char *translation_meta_source(void) {
+    translation_wait_ready();
+    return s_meta_source.c_str();
 }
 
 /* ========== Dev helper: log untranslated strings ==========
@@ -4342,7 +4383,7 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
                                         const std::vector<std::string> *hint,
                                         bool *had_cands = nullptr, bool hash_lits = false) {
     if (had_cands) *had_cands = false;
-    std::string in = strip_brackets(line);
+    std::string in = s_rules->stat_keep_input_brackets ? line : strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto it = s_stat_index.find(stat_index_key(in));
     if (it == s_stat_index.end()) return std::string();
@@ -4598,7 +4639,7 @@ static std::string stat_translate_name(const std::string &src, const std::string
 static std::string stat_lookup_named(const std::string &line, const std::vector<int> &chain,
                                      const std::vector<std::string> *hint) {
     if (s_stat_named.empty()) return std::string();
-    std::string in = strip_brackets(line);
+    std::string in = s_rules->stat_keep_input_brackets ? line : strip_brackets(line);
     in.erase(std::remove(in.begin(), in.end(), '\r'), in.end());
     auto run = [&](int want_file) {
         std::vector<std::string> outs;
