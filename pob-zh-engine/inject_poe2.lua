@@ -8,6 +8,7 @@
 --   headedRow(label)          -> parts of a "name   ^8[line] (word)" row, or nil
 --   headedRowZh(parts, v, id) -> that row in Chinese, or nil
 --   treeBackdrop              -> { zoomLevelMax, draw(self, tree, bg, size, vp) }
+--   itemParsed(item)          -> after Item:ParseRaw; fixes up what it left out
 
 local ctx = ...
 local statIdsOf, zhByIdOnly, zhRaw, zhStatRow = ctx.statIdsOf, ctx.zhByIdOnly, ctx.zhRaw, ctx.zhStatRow
@@ -59,6 +60,50 @@ function rules.headedRowZh(p, v, modId)
 		out[#out + 1] = " (" .. wz .. ")"
 	end
 	return table.concat(out)
+end
+
+-- "Title\0Base" -> the "Radius:" label of that unique in data.uniques; false
+-- when its text names two different radii. Built on first use.
+local uniqueRadius
+local function uniqueJewelRadiusLabel(title, base)
+	if not uniqueRadius then
+		uniqueRadius = {}
+		for _, list in pairs(data and data.uniques or {}) do
+			for _, raw in pairs(list) do
+				if type(raw) == "string" then
+					local t, b = raw:match("^%s*([^\r\n]-)%s*\r?\n%s*([^\r\n]-)%s*\r?\n")
+					local label
+					for l in (raw .. "\n"):gmatch("\nRadius: ([%a ]-)%s*\r?\n") do
+						label = (label == nil or label == l) and l or false
+					end
+					if t and b and label ~= nil then uniqueRadius[t .. "\0" .. b] = label end
+				end
+			end
+		end
+	end
+	return uniqueRadius[title .. "\0" .. base]
+end
+
+-- A unique jewel written without its "Radius:" line (poe.ninja's PoE2 export
+-- drops it) keeps jewelRadiusIndex nil; socketing From Nothing then crashed
+-- PassiveSpec:NodesInIntuitiveLeapLikeRadius (pairs on nodesInRadius[nil];
+-- upstream master and dev). Take the radius from the unique's own data text
+-- (main.uniqueDB fills in a coroutine, too late for a build reopened at
+-- start-up), unless it is "Variable" there.
+function rules.itemParsed(item)
+	if item.type ~= "Jewel" or item.jewelRadiusIndex or item.rarity ~= "UNIQUE"
+		or not item.title or not item.baseName then
+		return
+	end
+	local label = uniqueJewelRadiusLabel(item.title, item.baseName)
+	if not label or label == "Variable" then return end
+	for index, info in ipairs(data.jewelRadius or {}) do
+		if info.label == label then
+			item.jewelRadiusIndex = index
+			item.jewelRadiusLabel = label
+			return
+		end
+	end
 end
 
 -- The tree's backdrop: POB2 draws tree:GetAssetByName("Background2") as a

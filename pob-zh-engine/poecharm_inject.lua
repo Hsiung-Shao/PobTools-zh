@@ -2293,7 +2293,9 @@ PATCHES["Item"] = function(class)
 			end
 			raw = table.concat(out, "\n")
 		end
-		return orig(self, raw, ...)
+		local r1, r2, r3 = orig(self, raw, ...)
+		if gameRules.itemParsed then gameRules.itemParsed(self) end
+		return r1, r2, r3
 	end)
 end
 
@@ -2762,7 +2764,7 @@ local PATCH_SYMPTOM = {
 	EditControl             = "輸入框貼上中文會變成問號",
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
-	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴",
+	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴;缺半徑的傳奇珠寶(從無到有)放進插槽會讓 POB 報錯",
 	TreeTab                 = "刺青／軍團珠寶下拉清單的節點名稱維持英文",
 	PassiveMasteryControl   = "天賦專精選單裡兩行的描述各半句(未整句翻譯)",
 	DropDownControl         = "製作／腐化／自訂／異能詞綴與昇華下拉未依 id 顯示 GGPK 譯文",
