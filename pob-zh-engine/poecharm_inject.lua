@@ -713,8 +713,10 @@ PATCHES["Item"] = function(class)
 		-- crashed PassiveSpec:NodesInIntuitiveLeapLikeRadius (pairs on
 		-- nodesInRadius[nil]; upstream master and dev). Take the radius from the
 		-- unique's own data text (main.uniqueDB fills in a coroutine, too late for a
-		-- build reopened at start-up), unless it is "Variable" there.
-		if self.type == "Jewel" and not self.jewelRadiusIndex and self.rarity == "UNIQUE"
+		-- build reopened at start-up), unless it is "Variable" there. PoE2 only
+		-- (tree versions "0_x"): PoE1 keeps its own behaviour.
+		local poe2 = type(latestTreeVersion) == "string" and latestTreeVersion:match("^0_") ~= nil
+		if poe2 and self.type == "Jewel" and not self.jewelRadiusIndex and self.rarity == "UNIQUE"
 			and self.title and self.baseName then
 			local label = uniqueJewelRadiusLabel(self.title, self.baseName)
 			if label and label ~= "Variable" then
