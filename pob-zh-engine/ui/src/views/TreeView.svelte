@@ -66,6 +66,13 @@
 
   /** PoE1's "Find a Timeless Jewel" dialog. */
   let tjOpen = $state(false);
+  // the mouse/key hint line at the canvas' corner; closing it is remembered per viewer
+  const HINT_KEY = "pobtools.tree.keyHintOff";
+  let keyHint = $state((() => { try { return localStorage.getItem(HINT_KEY) !== "1"; } catch { return true; } })());
+  function closeKeyHint() {
+    keyHint = false;
+    try { localStorage.setItem(HINT_KEY, "1"); } catch { /* not remembered */ }
+  }
 
   /** Show Node Power (TreeTab's heat map + Power Report). */
   let power = $state<NodePower | null>(null);
@@ -1081,7 +1088,7 @@
     <TreeSpecBar />
     <span class="vsep"></span>
     <input class="input search" placeholder={t("tree.search")} bind:value={search} bind:this={searchEl} onkeydown={(e) => e.key === "Enter" && nextMatch()} />
-    {#if matches.size}<span class="count num">{matches.size}</span>{/if}
+    {#if matches.size}<span class="count pill num">{matches.size}</span>{/if}
     <button class="btn ghost sm" onclick={focusClass}>{t("sidebar.class")}</button>
     <button class="btn ghost sm" onclick={fitAll}>{t("tree.fit")}</button>
     <span class="vsep"></span>
@@ -1111,19 +1118,28 @@
       <Select class="select sm" value={powerDepth} disabled={powerBusy} options={[{ value: "all", label: t("tree.powerDepthAll") }, ...["3", "5", "10", "15"].map((n) => ({ value: n, label: n }))]} onchange={(v) => { powerDepth = String(v); togglePower(true); }} title={t("tree.powerDepth")} />
       <button class="btn ghost sm" disabled={!power.report?.length} onclick={() => (reportOpen = !reportOpen)}>{t(reportOpen ? "tree.powerHide" : "tree.powerShow")}</button>
     {/if}
-    {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>{/if}
+    {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>
+    {:else if !power}<span class="dim small">{t("tree.powerOffHint")}</span>{/if}
     <span class="spacer"></span>
     {#if tree}
-      <span class="points num">
-        <b>{tree.points.used}</b><span class="dim">/{tree.points.usedMax ?? "?"}</span>
-        <span class="dim"> · </span>
-        <b>{tree.points.ascUsed}</b><span class="dim">/{tree.points.ascMax ?? "?"}</span>
+      <span class="points">
+        <span class="dim">{t("sidebar.points")}</span>
+        <b class="num" class:over={tree.points.usedMax != null && tree.points.used > tree.points.usedMax}>{tree.points.used}</b><span class="dim num">/{tree.points.usedMax ?? "?"}</span>
+        <span class="dim"> · {t("sidebar.asc")}</span>
+        <b class="num">{tree.points.ascUsed}</b><span class="dim num">/{tree.points.ascMax ?? "?"}</span>
       </span>
     {/if}
   </div>
   <div class="stage pob-dark" bind:this={wrap}>
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
     {#if artMissing && model}<div class="note">{t("tree.artMissing")}</div>{/if}
+    {#if model && keyHint}
+      <!-- what the mouse and keys do here: right-click, Shift and Ctrl+D were only in the settings page's list -->
+      <div class="keyhint">
+        <span>{t("tree.keyHint")}</span>
+        <button class="hint-x" title={t("tree.keyHintOff")} aria-label={t("tree.keyHintOff")} onclick={closeKeyHint}>×</button>
+      </div>
+    {/if}
     {#if compareDiff && tree?.compare}
       <!-- what the Compare rings mean (the canvas draws them; see paint) -->
       <div class="cmp-legend">
@@ -1284,6 +1300,9 @@
     width: min(240px, 30cqw);
   }
   .count {
+    padding: 0 7px;
+    border: 1px solid var(--warn);
+    border-radius: 9px;
     color: var(--warn);
     font-size: var(--fs-xs);
   }
@@ -1291,7 +1310,39 @@
     flex: 1;
   }
   .points {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
     font-size: var(--fs-sm);
+    white-space: nowrap;
+  }
+  .points .over {
+    color: var(--bad);
+  }
+  .keyhint {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 10px;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+    border: 1px solid var(--edge-0);
+    border-radius: var(--radius-s);
+  }
+  .hint-x {
+    border: 0;
+    background: none;
+    color: var(--ink-3);
+    cursor: pointer;
+    padding: 0 4px;
+    font: inherit;
+  }
+  .hint-x:hover {
+    color: var(--ink-0);
   }
   .stage {
     position: relative;
@@ -1311,7 +1362,7 @@
   .note {
     position: absolute;
     left: 12px;
-    bottom: 12px;
+    bottom: 46px;
     padding: 6px 10px;
     font-size: var(--fs-xs);
     color: var(--warn);

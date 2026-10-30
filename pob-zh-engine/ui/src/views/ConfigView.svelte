@@ -453,14 +453,12 @@
     appearance: none;
     border: 0;
     background: none;
-    color: var(--ink-3);
+    /* only drawn when the value is not POB's default: always shown, so a
+       changed setting can be spotted without hovering every row */
+    color: var(--gold-dim);
     padding: 0;
     font-size: var(--fs-2xs);
     cursor: pointer;
-    opacity: 0;
-  }
-  .opt:hover .rst {
-    opacity: 1;
   }
   .rst:hover {
     color: var(--gold);

@@ -699,5 +699,14 @@
   "about.title": "關於",
   "about.changelog": "版本歷史",
   "about.help": "說明",
-  "party.apply": "套用"
+  "party.apply": "套用",
+  "builds.count": "{n} 個建置",
+  "builds.keysHint": "Enter 開啟 · Ctrl+N 新建置 · Ctrl+X/C/V 剪下/複製/貼上 · Ctrl+R 改名 · Del 刪除 · 拖到資料夾即可搬移",
+  "skills.inFullDps": "計入 DPS",
+  "skills.mouseHint": "右鍵 = 設為主技能 · Ctrl+右鍵 = 計入完整 DPS · Ctrl+左鍵 = 啟用",
+  "notes.saved": "已自動儲存",
+  "notes.saving": "儲存中…",
+  "tree.powerOffHint": "開啟後標出哪些未配點的天賦提升最多",
+  "tree.keyHint": "右鍵:珠寶 / 專精 / 紋身 · Shift:只看路徑 · Ctrl+D:差異 · H:回職業起點 · F:全覽",
+  "tree.keyHintOff": "隱藏這行提示"
 }

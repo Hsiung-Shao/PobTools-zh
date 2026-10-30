@@ -856,13 +856,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* where the item is used: one right-hand column, so the eye can run down it */
   .where {
+    flex: none;
+    width: 30%;
+    max-width: 140px;
+    text-align: right;
     font-size: var(--fs-2xs);
     color: var(--ink-3);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .where.unused {
-    opacity: 0.7;
+    color: var(--warn);
   }
   .small {
     font-size: var(--fs-2xs);

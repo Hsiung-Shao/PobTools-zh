@@ -14,6 +14,7 @@
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
   import MinionLibrary from "../components/MinionLibrary.svelte";
   import PobText from "../components/PobText.svelte";
+  import { subsectionSummary } from "$lib/calcs-summary";
   import Select from "../components/Select.svelte";
 
   let data = $state<CalcsData | null>(null);
@@ -162,7 +163,8 @@
         <button class="subhead" onclick={() => toggle(sec.si, sub.ui, sub.collapsed)} title={closed ? "+" : "−"}>
           <span class="caret" class:closed>▾</span>
           <span class="st">{sub.labelZh || sub.label || sec.id}</span>
-          {#if sub.extra}<span class="extra"><PobText text={sub.extra} muted="var(--ink-2)" /></span>{/if}
+          {#if sub.extra}<span class="extra"><PobText text={sub.extra} muted="var(--ink-2)" /></span>
+          {:else if closed}<span class="extra num">{subsectionSummary(sub)}</span>{/if}
         </button>
         {#if !closed}
           {#each rows as row (row.ri)}
@@ -473,6 +475,9 @@
   .cell.live {
     cursor: default;
     border-left-color: var(--edge-2);
+    /* a dotted underline marks the numbers that open a breakdown */
+    text-decoration: underline dotted var(--ink-3);
+    text-underline-offset: 3px;
   }
   .cell.live:hover,
   .cell.pinned,

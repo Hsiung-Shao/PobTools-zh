@@ -250,6 +250,10 @@
         </div>
       {/each}
     </div>
+    <div class="foot">
+      <span class="num">{t("builds.count", { n: entries.filter((e) => !e.isFolder).length })}</span>
+      <span>{t("builds.keysHint")}</span>
+    </div>
   {/if}
 
   {#if dialog}
@@ -362,14 +366,25 @@
   .folder .name {
     color: var(--gold);
   }
+  /* always there, faint until the row is pointed at or selected: the actions
+     used to appear only on hover, so nobody knew the row had them */
   .acts {
     display: inline-flex;
     gap: 2px;
-    opacity: 0;
+    opacity: 0.35;
   }
   .row:hover .acts,
-  .row.sel .acts {
+  .row.sel .acts,
+  .row:focus-within .acts {
     opacity: 1;
+  }
+  .foot {
+    display: flex;
+    gap: 14px;
+    padding: 6px 16px;
+    border-top: 1px solid var(--edge-0);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
   }
   .danger:hover {
     color: var(--bad);

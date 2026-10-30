@@ -122,6 +122,7 @@
 <div class="page">
   <div class="bar">
     <span class="dim small hint">{t("notes.hint")}</span>
+    <span class="small" class:dim={text === saved} class:pending={text !== saved}>{t(text === saved ? "notes.saved" : "notes.saving")}</span>
     <span class="grow"></span>
     <span class="k">{t("notes.colors")}</span>
     {#each colours as c}
@@ -157,6 +158,9 @@
     padding: 4px 12px;
     border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
+  }
+  .pending {
+    color: var(--warn);
   }
   .grow {
     flex: 1;
