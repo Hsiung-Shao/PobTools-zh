@@ -252,15 +252,28 @@ std::optional<std::string> WholeLine(const std::vector<std::string>& labels)
 	return s + ")$";
 }
 
+// Socket letters only: the old '.' also matched "x-y-z" text such as a damage
+// range (reported from the game 2026-10-31). \b on both ends keeps the letters
+// out of English words (the offline audit caught 2L in "Transfer-attuned").
 std::optional<std::string> LinkedSockets(int n)
 {
 	if (n < 2 || n > 6) return std::nullopt;
-	std::string s;
-	for (int i = 0; i < n; i++) {
-		if (i) s += '-';
-		s += '.';
-	}
-	return s;
+	return "\\b[rgbwa](-[rgbwa]){" + std::to_string(n - 1) + "}\\b";
+}
+
+std::optional<std::string> ColoredLinks(int n)
+{
+	if (n < 2 || n > 6) return std::nullopt;
+	return "\\b[rgb](-[rgb]){" + std::to_string(n - 1) + "}\\b";
+}
+
+// Tied to the socket line by its label: English item names (Bringer...) also
+// hold r, g and b in one word.
+std::optional<std::string> RgbGroup(const std::string& socketLabel)
+{
+	const std::string base = LabelBase(socketLabel);
+	if (base.empty()) return std::nullopt;
+	return base + ".*(?=\\S*r)(?=\\S*g)(?=\\S*b)";
 }
 
 std::optional<std::string> LinkColors(const std::string& choice)

@@ -1,5 +1,5 @@
 // GENERATED -- do not edit. Golden PARITY fixture: the literal vectors of exile-appraiser's own tests
-// (regex/test/{numeric,pages,strict-fragments,rarity,combine,item-mods,item-mods-marker,item-mod-forms,share}.test.ts) @ 00bb297, each re-run
+// (regex/test/{numeric,pages,strict-fragments,rarity,combine,item-mods,item-mods-marker,item-mod-forms,share}.test.ts) @ 8342051, each re-run
 // through exile-appraiser's code over PobTools' shipped Data files and checked against the literal before
 // it was written (178 literal checks). regex_selftest_parity.cpp requires identical output. 162 records.
 // Generator: pob-zh-engine/tools/regex_port/gen-parity.mts (local only).
@@ -63,8 +63,8 @@ R"G(["condText","poe1","map_numeric","item_rarity_class",{"choice":"unique"},"en
 R"G(["condText","poe1","map_numeric","item_rarity_class",{"choice":"mr|u"},"zh","魔法、稀有 · 未汙染"])G",
 R"G(["condText","poe1","map_numeric","item_rarity_class",{"choice":"|c"},"en","Corrupted"])G",
 R"G(["condText","poe1","map_numeric","item_rarity_class",{"choice":"nope"},"zh",null])G",
-R"G(["combine","poe1","vendor_items corrupted legacy","zh","any",[{"id":"vendor_items","picks":[6],"values":{}}],[],[],{"query":"^已汙染$","perPage":null,"conflicts":[]}])G",
-R"G(["combine","poe1","vendor_items corrupted rarity","en","any",[{"id":"vendor_items","picks":[6],"values":{"corrupted":{"choice":"r|u"}}}],[],[],{"query":"\"y: r\" \"!^Corrupted$\"","perPage":null,"conflicts":[]}])G",
+R"G(["combine","poe1","vendor_items corrupted legacy","zh","any",[{"id":"vendor_items","picks":[8],"values":{}}],[],[],{"query":"^已汙染$","perPage":null,"conflicts":[]}])G",
+R"G(["combine","poe1","vendor_items corrupted rarity","en","any",[{"id":"vendor_items","picks":[8],"values":{"corrupted":{"choice":"r|u"}}}],[],[],{"query":"\"y: r\" \"!^Corrupted$\"","perPage":null,"conflicts":[]}])G",
 R"G(["combine","poe2","vendor_items_poe2 corrupted legacy","zh","any",[{"id":"vendor_items_poe2","picks":[3],"values":{}}],[],[],{"query":"^已汙染$","perPage":null,"conflicts":[]}])G",
 R"G(["combine","poe2","vendor_items_poe2 corrupted rarity","en","any",[{"id":"vendor_items_poe2","picks":[3],"values":{"corrupted":{"choice":"r|u"}}}],[],[],{"query":"\"y: r\" \"!^Corrupted$\"","perPage":null,"conflicts":[]}])G",
 R"G(["combine","poe2","poe2 vendor_bases + cond any","zh","any",[{"id":"vendor_bases","picks":[0],"values":{"item_rarity_class":{"choice":"nm|u"}}},{"id":"vendor_bases_cond","picks":[0],"values":{"item_rarity_class":{"choice":"nm|u"}}}],[],[],{"query":"\"影項\" \"度: [中魔]\" \"!^已汙染$\"","perPage":{"id":"vendor_bases_cond","fragments":["度: [中魔]","!^已汙染$"],"length":19},"conflicts":[]}])G",

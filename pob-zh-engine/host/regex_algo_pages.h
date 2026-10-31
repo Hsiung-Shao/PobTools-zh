@@ -95,6 +95,9 @@ struct AlgoEntry {
 	RegexEntryDef def;
 	AlgoInput input;
 	bool untested = false;   // the client display is an assumption not yet seen in game
+	// types.ts anyGroup: picks of one page sharing it become ONE term "a|b" (any
+	// of them); empty = a term of its own. The vendor page's link / colour rows.
+	std::string anyGroup;
 	FragmentFn fragment;     // nullopt = the input does not describe anything
 	// Set on the rarity | corruption row: Combine adds each term on its own and
 	// `fragment` is only the display (terms joined by a space).

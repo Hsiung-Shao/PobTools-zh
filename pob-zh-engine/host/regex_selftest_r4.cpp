@@ -316,7 +316,7 @@ void CombineTests(const std::map<std::string, Game>& games)
 		const std::string tier = lang == Lang::Zh ? u8"\"階級 *1[67]）\"" : "\"Tier 1[67]\\)\"";
 		const std::string qty = lang == Lang::Zh ? u8"\"物品數量: \\+?([89][0-9]|[1-9][0-9]{2,})%\""
 		                                         : u8"\"Item Quantity: \\+?([89][0-9]|[1-9][0-9]{2,})%\"";
-		const std::string six = ".-.-.-.-.-.";
+		const std::string six = "\\b[rgbwa](-[rgbwa]){5}\\b";
 		check(r.query == single.query + " " + tier + " " + qty + " " + six, L + ": modifiers + tier + quantity + 6L in one string: " + r.query);
 		check(r.length == RegexGen::CharCount(r.query) && r.ok && r.conflicts.empty() && r.check.ok,
 		      L + ": length = code points, ok, no conflicts, Verify ok");

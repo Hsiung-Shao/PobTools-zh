@@ -1,7 +1,7 @@
 // GENERATED -- do not edit. Golden fixture for regex_numeric / regex_frag / regex_match
-// (PobTools Poe Regex R1+R2 port). Produced by running exile-appraiser @ 87121ad
+// (PobTools Poe Regex R1+R2 port). Produced by running exile-appraiser @ 8342051
 // (regex/src/numeric.ts, pages/frag.ts, data.ts normalizeLabel) and the JS RegExp engine
-// (node v24.12.0) over a fixed input set; one JSON array per line:
+// (node v24.22.1) over a fixed input set; one JSON array per line:
 //   [kind, ...inputs, expected]   null = JS undefined / null; "rx" = one 0/1 per rxTexts entry
 // regex_selftest.cpp GoldenTests() parses each line and requires byte-identical output.
 // 4797 records.
@@ -4241,11 +4241,11 @@ R"G(["whole",["a","b","a","c:"],"^(a|b|c)$"])G",
 R"G(["linked",-1,null])G",
 R"G(["linked",0,null])G",
 R"G(["linked",1,null])G",
-R"G(["linked",2,".-."])G",
-R"G(["linked",3,".-.-."])G",
-R"G(["linked",4,".-.-.-."])G",
-R"G(["linked",5,".-.-.-.-."])G",
-R"G(["linked",6,".-.-.-.-.-."])G",
+R"G(["linked",2,"\\b[rgbwa](-[rgbwa]){1}\\b"])G",
+R"G(["linked",3,"\\b[rgbwa](-[rgbwa]){2}\\b"])G",
+R"G(["linked",4,"\\b[rgbwa](-[rgbwa]){3}\\b"])G",
+R"G(["linked",5,"\\b[rgbwa](-[rgbwa]){4}\\b"])G",
+R"G(["linked",6,"\\b[rgbwa](-[rgbwa]){5}\\b"])G",
 R"G(["linked",7,null])G",
 R"G(["linked",8,null])G",
 R"G(["colors","",null])G",
