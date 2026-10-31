@@ -784,6 +784,105 @@ void FixedTests(std::map<std::string, GameData>& G, const std::vector<RegexAlgo:
 	}
 }
 
+// ---- fragment edge spaces ----------------------------------------------------------------
+// The game drops the whitespace at the start of a quoted string and what it does with
+// trailing whitespace is unproven. Fragment = [^] p value s [$]: without '^' p must not start
+// with whitespace, without '$' s must not end with it, and the fragment as a whole neither.
+// (item-mods.test.ts M1-M3.) "Whitespace" is JS /\s/.
+
+bool EdgeIsJsSpace(char16_t c)
+{
+	return c == 0x09 || c == 0x0A || c == 0x0B || c == 0x0C || c == 0x0D || c == 0x20 || c == 0xA0 || c == 0x1680 ||
+	       (c >= 0x2000 && c <= 0x200A) || c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000 ||
+	       c == 0xFEFF;
+}
+bool EdgeStartsWithSpace(const std::string& utf8)
+{
+	const std::u16string u = U16Of(utf8);
+	return !u.empty() && EdgeIsJsSpace(u.front());
+}
+bool EdgeEndsWithSpace(const std::string& utf8)
+{
+	const std::u16string u = U16Of(utf8);
+	return !u.empty() && EdgeIsJsSpace(u.back());
+}
+
+// What is wrong with this anchor / its {min:1} fragment; empty = fine.
+std::string EdgeViolation(const IM::ModAnchor& a)
+{
+	std::string out;
+	if (!a.caret && EdgeStartsWithSpace(a.p)) out += "p starts with a space [" + a.p + "]; ";
+	if (!a.dollar && EdgeEndsWithSpace(a.s)) out += "s ends with a space [" + a.s + "]; ";
+	AlgoValue v;
+	v.min = 1;
+	const std::optional<std::string> f = IM::Fragment(a, v);
+	if (f) {
+		if (EdgeStartsWithSpace(*f)) out += "fragment starts with a space [" + *f + "]; ";
+		if (EdgeEndsWithSpace(*f)) out += "fragment ends with a space [" + *f + "]; ";
+	}
+	return out;
+}
+
+void EdgeSpaceTests(std::map<std::string, GameData>& G)
+{
+	if (G["poe1"].ok) {
+		// M1: both "Every 4 seconds, Regenerate ..." mods (the long one has no '^').
+		int found = 0, bad = 0;
+		std::string first;
+		for (const IM::Entry& e : G["poe1"].data.entries) {
+			if (e.en.compare(0, 27, "Every 4 seconds, Regenerate") != 0) continue;
+			found++;
+			const IM::ModAnchor& a = e.Anchor(Lang::En);
+			AlgoValue v;
+			v.min = 1;
+			const std::optional<std::string> f = IM::Fragment(a, v);
+			const bool pBad = !a.caret && EdgeStartsWithSpace(a.p);
+			const bool fBad = !f || EdgeStartsWithSpace(*f);
+			if (pBad || fBad) {
+				if (!bad) first = e.en + " -> p=[" + a.p + "] fragment=[" + (f ? *f : std::string("(none)")) + "]";
+				bad++;
+			}
+		}
+		check(found > 0 && bad == 0,
+		      "M1 PoE1 en: every 'Every 4 seconds, Regenerate' mod has p and fragment without a leading space (" +
+		      Num(found) + " found, " + Num(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+
+		// M2: the Memory Tears (Tier 16+) mod.
+		const IM::Entry* mt = nullptr;
+		for (const IM::Entry& e : G["poe1"].data.entries)
+			if (e.en == "#% increased chance for your Maps to contain Memory Tears (Tier 16+)") { mt = &e; break; }
+		check(mt != nullptr, "M2 PoE1 en: the Memory Tears (Tier 16+) mod is selectable");
+		if (mt) {
+			const IM::ModAnchor& a = mt->Anchor(Lang::En);
+			AlgoValue v;
+			v.min = 1;
+			const std::optional<std::string> f = IM::Fragment(a, v);
+			const bool sBad = !a.dollar && EdgeEndsWithSpace(a.s);
+			const bool fBad = !f || EdgeEndsWithSpace(*f);
+			check(!sBad && !fBad, "M2 PoE1 en: Memory Tears (Tier 16+) has s and fragment without a trailing space -- s=[" + a.s +
+			      "] fragment=[" + (f ? *f : std::string("(none)")) + "]");
+		}
+	}
+
+	// M3: every anchor of every selectable mod, both games, both languages.
+	for (const char* game : {"poe1", "poe2"}) {
+		if (!G[game].ok) continue;
+		for (const Lang lang : {Lang::Zh, Lang::En}) {
+			int bad = 0;
+			std::string first;
+			for (const IM::Entry& e : G[game].data.entries) {
+				const std::string v = EdgeViolation(e.Anchor(lang));
+				if (v.empty()) continue;
+				if (!bad) first = std::string(game) + "/" + (lang == Lang::Zh ? "zh" : "en") + " template [" + e.en + "] -- " + v;
+				bad++;
+			}
+			check(bad == 0, std::string("M3 ") + game + (lang == Lang::Zh ? " zh" : " en") +
+			      ": no item-mod anchor or fragment starts or ends with a space (" + Num(bad) + " bad of " +
+			      Num((long long)G[game].data.entries.size()) + ")" + (bad ? " -- first: " + first : std::string()));
+		}
+	}
+}
+
 } // namespace
 
 void RegexR7Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -835,4 +934,5 @@ void RegexR7Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 		if (p.game == "poe1") poe1Pages.push_back({&p, nullptr});
 	for (const RegexAlgo::AlgoPage& p : algo) poe1Pages.push_back({nullptr, &p});
 	if (G["poe1"].ok) FixedTests(G, poe1Pages);
+	EdgeSpaceTests(G);
 }

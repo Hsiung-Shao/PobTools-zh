@@ -365,13 +365,16 @@ std::optional<ModAnchor> ChooseAnchor(const ModIndex& idx, const std::string& tm
 	const U16 A = ownNorm.substr(at + 1);
 	const U16 shownB = shown.substr(0, at);
 	const U16 shownA = shown.substr(at + 1);
+	// Never at a space either: the game drops a space at the start of a quoted
+	// term (tested in game 2026-10-30), so P may not start with one and S may
+	// not end with one. The cut next to it is always there too.
 	std::vector<size_t> pStarts{0};
 	for (size_t i = 1; i <= shownB.size(); i++)
-		if (IsWordBreak(shownB[i - 1])) pStarts.push_back(i);
+		if (IsWordBreak(shownB[i - 1]) && (i == shownB.size() || !IsJsSpace(shownB[i]))) pStarts.push_back(i);
 	if (std::find(pStarts.begin(), pStarts.end(), shownB.size()) == pStarts.end()) pStarts.push_back(shownB.size());
 	std::vector<size_t> sEnds;
 	for (size_t k = 0; k < shownA.size(); k++)
-		if (IsWordBreak(shownA[k])) sEnds.push_back(k);
+		if (IsWordBreak(shownA[k]) && (k == 0 || !IsJsSpace(shownA[k - 1]))) sEnds.push_back(k);
 	sEnds.push_back(shownA.size());
 
 	struct Best {
