@@ -1081,6 +1081,216 @@ void DataTests(const std::wstring& exeDir)
 	}
 }
 
+// ---- fragments must not start or end with a space -----------------------------
+//
+// The game drops the whitespace at the start of a quoted string, and what it does
+// with trailing whitespace is unproven, so a fragment (one "|" part of a quoted
+// term, or one term in All mode) may contain spaces inside but never at an edge.
+
+// Same split as the generator's own SplitTerms: quotes group, spaces outside quotes separate.
+std::vector<std::string> EdgeQueryTerms(const std::string& q)
+{
+	std::vector<std::string> out;
+	std::string cur;
+	bool inQuote = false;
+	for (char c : q) {
+		if (c == '"') { inQuote = !inQuote; continue; }
+		if (c == ' ' && !inQuote) {
+			if (!cur.empty()) out.push_back(cur);
+			cur.clear();
+			continue;
+		}
+		cur += c;
+	}
+	if (!cur.empty()) out.push_back(cur);
+	return out;
+}
+
+// Every term minus its leading '!', cut at '|', each part minus a leading '^' / trailing '$'.
+std::vector<std::string> EdgeQueryFragments(const std::string& q)
+{
+	std::vector<std::string> out;
+	for (std::string t : EdgeQueryTerms(q)) {
+		if (!t.empty() && t[0] == '!') t.erase(0, 1);
+		size_t start = 0;
+		while (start <= t.size()) {
+			size_t bar = t.find('|', start);
+			if (bar == std::string::npos) bar = t.size();
+			std::string f = t.substr(start, bar - start);
+			if (!f.empty() && f.front() == '^') f.erase(0, 1);
+			if (!f.empty() && f.back() == '$') f.pop_back();
+			if (!f.empty()) out.push_back(std::move(f));
+			start = bar + 1;
+		}
+	}
+	return out;
+}
+
+bool HasEdgeSpace(const std::string& f) { return !f.empty() && (f.front() == ' ' || f.back() == ' '); }
+
+// First fragment of `q` with a space at either edge, or empty when there is none.
+std::string FirstEdgeSpaceFragment(const std::string& q)
+{
+	for (const std::string& f : EdgeQueryFragments(q))
+		if (HasEdgeSpace(f)) return f;
+	return std::string();
+}
+
+std::string LowerAscii(std::string s)
+{
+	for (char& c : s) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+	return s;
+}
+
+void EdgeSpaceSyntheticTests()
+{
+	line("[S1] a fragment never starts with a space");
+	{
+		Corpus c = Make({"a mor", "x amor"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		bool lead = false;
+		for (const std::string& f : EdgeQueryFragments(r.query)) if (!f.empty() && f.front() == ' ') lead = true;
+		check(!lead, "S1 no fragment of the query starts with a space (any mode): " + r.query);
+		check(c.Verify({0}, r.query).ok, "S1 and the query selects only entry 0: " + r.query);
+	}
+
+	line("[S2] a fragment never ends with a space either");
+	{
+		Corpus c = Make({"ab c", "abc", "c b"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(FirstEdgeSpaceFragment(r.query).empty(),
+		      "S2 no fragment starts or ends with a space (any mode): " + r.query);
+		check(r.query == "\"b c\"", "S2 and the query is exactly \"b c\": " + r.query);
+	}
+
+	line("[S3] a space inside a fragment is still fine");
+	{
+		Corpus c = Make({"a b", "ab", "b a"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.query == "\"a b\"", "S3 an inner space is used as is, query is \"a b\": " + r.query);
+	}
+}
+
+// Same corpus the panel builds for a page (see DataTests' `build(true)`).
+Corpus EdgePageCorpus(const RegexPageDef& p, bool useZh)
+{
+	std::vector<Entry> es;
+	es.reserve(p.entries.size());
+	for (const RegexEntryDef& d : p.entries) {
+		Entry e;
+		e.id = d.id;
+		const std::vector<std::string>& want = useZh ? d.zh : d.en;
+		const std::vector<std::string>& other = useZh ? d.en : d.zh;
+		const bool useWant = !want.empty();
+		e.texts = useWant ? want : other;
+		e.hidden = useWant ? (useZh ? d.hiddenZh : d.hiddenEn) : (useZh ? d.hiddenEn : d.hiddenZh);
+		e.alts = useWant ? (useZh ? d.altZh : d.altEn) : (useZh ? d.altEn : d.altZh);
+		es.push_back(std::move(e));
+	}
+	RegexGen::Ambient amb;
+	amb.lines = useZh ? p.ambientZh : p.ambientEn;
+	amb.nameLeft = useZh ? p.namePrefixZh : p.namePrefixEn;
+	amb.nameRight = useZh ? p.nameSuffixZh : p.nameSuffixEn;
+	Corpus c;
+	c.Reset(std::move(es), std::move(amb));
+	return c;
+}
+
+void EdgeSpaceDataTests(const std::wstring& exeDir)
+{
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "S4/S5 load Data\\regex_*.json: " + err);
+		return;
+	}
+
+	line("[S4] PoE1 mods/names pages: no fragment starts or ends with a space");
+	{
+		const DWORD t0 = GetTickCount();
+		const DWORD kBudgetMs = 20000;
+		const Mode modes[3] = {Mode::Any, Mode::None, Mode::All};
+		const char* modeName[3] = {"any", "none", "all"};
+		int pages = 0, builds = 0, fragments = 0, bad = 0;
+		bool overBudget = false;
+		std::string first;
+		for (size_t pi = 0; pi < ds.Pages().size() && !overBudget; pi++) {
+			const RegexPageDef& p = ds.Pages()[pi];
+			if (p.game != "poe1") continue;
+			if (p.kind != RegexPageKind::Mods && p.kind != RegexPageKind::Names) continue;
+			if (p.entries.empty()) continue;
+			pages++;
+			for (int side = 0; side < 2 && !overBudget; side++) {
+				const bool useZh = (side == 0);
+				Corpus c = EdgePageCorpus(p, useZh);
+				Rng rng{0xE06E5ACEu + (unsigned)pi * 131u + (unsigned)side};
+				for (int group = 0; group < 5; group++) {
+					const int n = 1 + rng.below(6);
+					std::vector<int> sel;
+					for (int k = 0; k < n; k++) sel.push_back(rng.below((int)p.entries.size()));
+					for (int mi = 0; mi < 3; mi++) {
+						const RegexGen::Result r = c.Build(sel, modes[mi]);
+						builds++;
+						for (const std::string& f : EdgeQueryFragments(r.query)) {
+							fragments++;
+							if (HasEdgeSpace(f)) {
+								if (!bad)
+									first = "page " + p.id + " / " + (useZh ? "zh" : "en") + " / " + modeName[mi] +
+									        " / fragment [" + f + "] in " + r.query;
+								bad++;
+							}
+						}
+					}
+				}
+				if (GetTickCount() - t0 > kBudgetMs) overBudget = true;
+			}
+		}
+		const DWORD ms = GetTickCount() - t0;
+		line("        " + std::to_string(pages) + " pages, " + std::to_string(builds) + " builds, " +
+		     std::to_string(fragments) + " fragments, " + std::to_string((int)ms) + " ms");
+		check(pages > 0 && fragments > 0, "S4 checked something (" + std::to_string(pages) + " pages, " +
+		      std::to_string(fragments) + " fragments)");
+		check(bad == 0, "S4 0 fragments with a leading or trailing space (" + std::to_string(bad) + " bad)" +
+		      (bad ? " -- first: " + first : std::string()));
+		check(!overBudget, "S4 finished within the 20 s budget without dropping pages (" + std::to_string((int)ms) + " ms)");
+	}
+
+	line("[S5] template poe1_no_reflect_maxres in English does not spare older maps");
+	{
+		const RegexPageDef* mm = nullptr;
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == "map_mods") { mm = &p; break; }
+		check(mm != nullptr, "S5 poe1 page map_mods exists");
+		if (mm) {
+			const char* lines[3] = {"Rare Monsters have Elemental Thorns reflecting # Elemental Damage",
+			                        "Rare Monsters have Physical Thorns reflecting # Physical Damage",
+			                        "Players have #% to all maximum Resistances"};
+			std::vector<int> sel;
+			for (const char* want : lines)
+				for (int i = 0; i < (int)mm->entries.size(); i++)
+					if (!mm->entries[i].en.empty() && mm->entries[i].en[0] == want) { sel.push_back(i); break; }
+			check(sel.size() == 3, "S5 the template's three English lines are all on map_mods (" +
+			      std::to_string(sel.size()) + " / 3)");
+			if (!sel.empty()) {
+				Corpus c = EdgePageCorpus(*mm, false);
+				const RegexGen::Result r = c.Build(sel, Mode::None);
+				const std::string edge = FirstEdgeSpaceFragment(r.query);
+				check(edge.empty(), "S5 no fragment starts or ends with a space: " + r.query +
+				      (edge.empty() ? std::string() : " -- first: [" + edge + "]"));
+				std::string hit;
+				for (const std::string& f : EdgeQueryFragments(r.query)) {
+					const std::string lf = LowerAscii(f);
+					for (const char* oldMap : {"courthouse map", "lighthouse map"})
+						if (hit.empty() && std::string(oldMap).find(lf) != std::string::npos)
+							hit = "[" + f + "] is inside \"" + oldMap + "\"";
+				}
+				check(hit.empty(), "S5 no fragment occurs inside Courthouse Map / Lighthouse Map: " + r.query +
+				      (hit.empty() ? std::string() : " -- " + hit));
+			}
+		}
+	}
+}
+
 // ---- R1/R2: the exile-appraiser port (regex_match / regex_numeric / regex_frag)
 
 #include "regex_port_golden.inc"
@@ -1924,10 +2134,12 @@ int RunRegexSelfTest(const std::wstring& exeDir)
 	g_rep.clear();
 	line("=== regex generator self-test ===");
 	SyntheticTests();
+	EdgeSpaceSyntheticTests();
 	line("");
 	StateTests();
 	line("");
 	DataTests(exeDir);
+	EdgeSpaceDataTests(exeDir);
 	line("");
 	PortTests(exeDir);
 	line("");
