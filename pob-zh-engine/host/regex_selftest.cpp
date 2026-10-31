@@ -731,9 +731,127 @@ void CatalogueContentTests(const std::wstring& exeDir)
 	}
 }
 
+// Flavour text (GGPK FlavourText) and usage directions (CurrencyItems.Directions) are item text
+// the game's search reads too, so they belong in the data: an item's own text as hidden,
+// a page's shared text as ambient. A1/A2/A4 read the catalogue, A3 runs the generator on it.
+void FlavourTextTests(const std::wstring& exeDir)
+{
+	line("[data-flavour] PoE1 flavour text and usage directions");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "flavour: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto anyStarts = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.compare(0, want.size(), want) == 0) return true;
+		return false;
+	};
+	const RegexPageDef* sc = findPage("scarabs");
+	check(sc != nullptr, "flavour: poe1 page scarabs exists");
+
+	if (sc) {
+		// A1
+		const RegexEntryDef* tor = nullptr;
+		for (const RegexEntryDef& e : sc->entries)
+			if (e.id == "Metadata/Items/Scarabs/ScarabTormentNew1") { tor = &e; break; }
+		check(tor != nullptr, "A1 scarabs entry Metadata/Items/Scarabs/ScarabTormentNew1 exists");
+		if (tor) {
+			check(anyHas(tor->hiddenZh, u8"生前犯下的罪行將持續作祟到你死後。"),
+			      "A1 ScarabTormentNew1 hiddenZh holds its flavour text (" + std::to_string(tor->hiddenZh.size()) + " hidden lines)");
+			check(anyHas(tor->hiddenEn, "Their crimes in life haunt you in death."),
+			      "A1 ScarabTormentNew1 hiddenEn holds its flavour text (" + std::to_string(tor->hiddenEn.size()) + " hidden lines)");
+		}
+
+		// A2
+		check(anyHas(sc->ambientZh, u8"可於個人的地圖裝置中使用，增加地圖的詞綴。"),
+		      "A2 scarabs ambientZh holds the usage directions line");
+		check(anyHas(sc->ambientEn, "Can be used in a personal Map Device to add modifiers to a Map."),
+		      "A2 scarabs ambientEn holds the usage directions line");
+
+		// A3: built like DataTests' build(true) in Chinese; every single pick must verify.
+		{
+			std::vector<Entry> es;
+			es.reserve(sc->entries.size());
+			for (const RegexEntryDef& d : sc->entries) {
+				Entry e;
+				e.id = d.id;
+				const bool useWant = !d.zh.empty();
+				e.texts = useWant ? d.zh : d.en;
+				e.hidden = useWant ? d.hiddenZh : d.hiddenEn;
+				e.alts = useWant ? d.altZh : d.altEn;
+				es.push_back(std::move(e));
+			}
+			RegexGen::Ambient amb;
+			amb.lines = sc->ambientZh;
+			amb.nameLeft = sc->namePrefixZh;
+			amb.nameRight = sc->nameSuffixZh;
+			Corpus c;
+			c.Reset(std::move(es), std::move(amb));
+			int bad = 0;
+			std::string first;
+			for (int i = 0; i < (int)sc->entries.size(); i++) {
+				const RegexGen::Result r = c.Build({i}, Mode::Any);
+				const RegexGen::Check v = c.Verify({i}, r.query);
+				if (!v.ok) {
+					if (!bad) {
+						const std::vector<std::string>& z = sc->entries[i].zh;
+						first = (z.empty() ? sc->entries[i].id : z[0]) + " -> " + r.query;
+					}
+					bad++;
+				}
+			}
+			check(bad == 0, "A3 scarabs zh: every single-pick query verifies (" + std::to_string(bad) + " of " +
+			      std::to_string(sc->entries.size()) + " fail)" + (bad ? " -- first: " + first : std::string()));
+		}
+	}
+
+	// A4
+	const RegexPageDef* tt = findPage("tattoos");
+	check(tt != nullptr, "A4 poe1 page tattoos exists");
+	if (tt) {
+		// The page also lists runegrafts, whose directions differ, so the tattoo line is not
+		// on every item: each tattoo carries it in its own hidden text (or the page ambient).
+		// The forbidden (ascendancy) tattoos have no such directions in the GGPK.
+		const char* dir = u8"右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。";
+		const bool inAmbient = anyStarts(tt->ambientZh, dir);
+		int tattoos = 0, without = 0;
+		for (const RegexEntryDef& e : tt->entries) {
+			if (e.id.find("AncestralTattoo") == std::string::npos || e.id.find("SpecialUnique") != std::string::npos) continue;
+			tattoos++;
+			if (!inAmbient && !anyStarts(e.hiddenZh, dir)) without++;
+		}
+		check(tattoos > 0 && without == 0, "A4 every tattoo has the right-click directions in its hidden or the page ambient (" +
+		      std::to_string(without) + " of " + std::to_string(tattoos) + " without)");
+	}
+	const RegexPageDef* gn = findPage("gem_names");
+	check(gn != nullptr, "A4 poe1 page gem_names exists");
+	if (gn) {
+		const RegexEntryDef* gem = nullptr;
+		for (const RegexEntryDef& e : gn->entries)
+			if (!e.zh.empty() && e.zh[0] == u8"克塔什誓約") { gem = &e; break; }
+		check(gem != nullptr, "A4 gem_names has the entry whose first zh line is 克塔什誓約");
+		if (gem)
+			check(anyHas(gem->hiddenZh, u8"釋放克塔什的憤怒，牠是仇恨的化身。"),
+			      "A4 that gem's hiddenZh holds its flavour text (" + std::to_string(gem->hiddenZh.size()) + " hidden lines)");
+	}
+}
+
 void DataTests(const std::wstring& exeDir)
 {
 	CatalogueContentTests(exeDir);
+	FlavourTextTests(exeDir);
 	line("");
 	RegexDataset ds;
 	std::string err;

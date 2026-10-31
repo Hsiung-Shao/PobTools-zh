@@ -5914,7 +5914,13 @@
       "Abyss Scarab of the Consort",
       "An Abyss Pit in Area will spawn an Abyssal Consort"
      ],
-     "g": 0
+     "g": 0,
+     "hiddenZh": [
+      "他們遵從其君王的命令，守衛深處。"
+     ],
+     "hiddenEn": [
+      "They defend the depths at their Lords' command."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAbyssNew4",
@@ -5926,7 +5932,13 @@
       "Abyss Scarab of Crystals",
       "Non-final Abyss Pits in Area create an Abyssal Crystal on closing"
      ],
-     "g": 0
+     "g": 0,
+     "hiddenZh": [
+      "它們借來的力量，在駭人晶石中盤旋。"
+     ],
+     "hiddenEn": [
+      "Their borrowed power swirls within ghastly crystals."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAbyssNew1",
@@ -5938,7 +5950,13 @@
       "Abyss Scarab",
       "Area contains an additional Abyss"
      ],
-     "g": 0
+     "g": 0,
+     "hiddenZh": [
+      "他們無止盡地尋找更多靈魂，拖入黑暗中。"
+     ],
+     "hiddenEn": [
+      "They search forever for more souls to drag to the dark."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAbyssNew2",
@@ -5950,7 +5968,13 @@
       "Abyss Scarab of Multitudes",
       "Abyss Chasms in Area spawn 100% increased Monsters per fed Soul"
      ],
-     "g": 0
+     "g": 0,
+     "hiddenZh": [
+      "深井永不饜足，即便早已滿溢。"
+     ],
+     "hiddenEn": [
+      "The Well hungers ceaselessly, even as it overflows."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAbyssNew3",
@@ -5962,7 +5986,13 @@
       "Abyss Scarab of Descending",
       "Area contains an Abyssal Depths"
      ],
-     "g": 0
+     "g": 0,
+     "hiddenZh": [
+      "他們邀請你去見他們；去加入他們。"
+     ],
+     "hiddenEn": [
+      "They invite you to meet them; to join them."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAnarchy2",
@@ -5974,7 +6004,13 @@
       "Anarchy Scarab of Gigantification",
       "Wild Rogue Exiles in Area have a 30% chance to be replaced with a Rogue Giant"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "吞食硫酸可能導致生長異變。"
+     ],
+     "hiddenEn": [
+      "The consumption of sulphite can cause strange growth."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAnarchy1",
@@ -5986,7 +6022,13 @@
       "Anarchy Scarab",
       "Area contains 5 additional Rogue Exiles"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "在瓦爾克拉斯，不是殺人就是被殺。"
+     ],
+     "hiddenEn": [
+      "On Wraeclast, it's kill or be killed."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAnarchy3",
@@ -5998,7 +6040,13 @@
       "Anarchy Scarab of Partnership",
       "Wild Rogue Exiles in Area have a 50% chance to appear in pairs"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "對流亡者來說，戰友總是來來去去。"
+     ],
+     "hiddenEn": [
+      "Among exiles, alliances shift and change constantly."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabAnarchy4",
@@ -6010,7 +6058,13 @@
       "Anarchy Scarab of the Exceptional",
       "Area contains an additional Exceptional Rogue Exile"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "在眾多之中，有一位凌駕其上。"
+     ],
+     "hiddenEn": [
+      "Among many, one stands above the rest."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeastsNew3",
@@ -6022,7 +6076,13 @@
       "Bestiary Scarab of Duplicating",
       "Create a copy of Beasts captured in Area"
      ],
-     "g": 2
+     "g": 2,
+     "hiddenZh": [
+      "「還有什麼比捕獲野獸更美好呢，流亡者？」"
+     ],
+     "hiddenEn": [
+      "\"What's better than one captured beast, exile?\""
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeastsNew4",
@@ -6034,7 +6094,13 @@
       "Bestiary Scarab of the Shadowed Crow",
       "Area contains The Black Mórrigan if it contains Einhar"
      ],
-     "g": 2
+     "g": 2,
+     "hiddenZh": [
+      "無名者開始掙脫因其不被待見而帶來的束縛……"
+     ],
+     "hiddenEn": [
+      "The Nameless begin to slip their bonds of nonexistence..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeastsNew2",
@@ -6046,7 +6112,13 @@
       "Bestiary Scarab of the Herd",
       "Area contains 5 additional Red Beasts if it contains Einhar"
      ],
-     "g": 2
+     "g": 2,
+     "hiddenZh": [
+      "初始者在遠古森林裡自由地肆意奔跑。"
+     ],
+     "hiddenEn": [
+      "The First Ones ran rampant and free in the forests of old."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeastsNew1",
@@ -6058,7 +6130,13 @@
       "Bestiary Scarab",
       "Area contains Einhar"
      ],
-     "g": 2
+     "g": 2,
+     "hiddenZh": [
+      "馴獸大師回應了召喚。"
+     ],
+     "hiddenEn": [
+      "The Beastmaster answers the call."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBetrayal2",
@@ -6070,7 +6148,13 @@
       "Betrayal Scarab of the Allflame",
       "75% Increased number of Monster Packs Substituted by Allflame Embers in Area"
      ],
-     "g": 3
+     "g": 3,
+     "hiddenZh": [
+      "那些永遠不會死的人只害怕疼痛。"
+     ],
+     "hiddenEn": [
+      "Those that can never die fear only pain."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBetrayal4",
@@ -6084,7 +6168,13 @@
       "Interrogated Immortal Syndicate targets in Area have a 50% chance to",
       "not lose Rank upon completing Interrogation"
      ],
-     "g": 3
+     "g": 3,
+     "hiddenZh": [
+      "一次又一次的死亡，會培養出對痛苦的耐受。"
+     ],
+     "hiddenEn": [
+      "Dying over and over builds a tolerance to pain."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBetrayal1",
@@ -6096,7 +6186,13 @@
       "Betrayal Scarab",
       "Area contains Jun"
      ],
-     "g": 3
+     "g": 3,
+     "hiddenZh": [
+      "密教必須為他們所做的一切付出代價。"
+     ],
+     "hiddenEn": [
+      "The Syndicate must pay for what they have done."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBetrayal3",
@@ -6108,7 +6204,13 @@
       "Betrayal Scarab of Reinforcements",
       "Immortal Syndicate Members in Area have 50% increased chance to be accompanied by reinforcements"
      ],
-     "g": 3
+     "g": 3,
+     "hiddenZh": [
+      "手段與制衡手段。"
+     ],
+     "hiddenEn": [
+      "Move and countermove."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeyond5",
@@ -6120,7 +6222,13 @@
       "Beyond Scarab of the Invasion",
       "Rare and Unique Monsters slain in Area create 8 to 12 additional Beyond Portals"
      ],
-     "g": 4
+     "g": 4,
+     "hiddenZh": [
+      "命定之時即將來臨。"
+     ],
+     "hiddenEn": [
+      "The fated hour is almost nigh."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeyond4",
@@ -6136,7 +6244,13 @@
       "Beyond Bosses in Area drop 20% increased Tainted Currency",
       "Beyond Portals in Area have 30% increased chance to spawn a Unique Boss"
      ],
-     "g": 4
+     "g": 4,
+     "hiddenZh": [
+      "牠們飢餓不已。"
+     ],
+     "hiddenEn": [
+      "They hunger."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeyond2",
@@ -6148,7 +6262,13 @@
       "Beyond Scarab of Corruption",
       "Items dropped by Beyond Demons in Area are Corrupted"
      ],
-     "g": 4
+     "g": 4,
+     "hiddenZh": [
+      "牠們的肉體散發出腐化氣息。"
+     ],
+     "hiddenEn": [
+      "Their very flesh exudes Corruption."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeyond3",
@@ -6162,7 +6282,13 @@
       "Beyond Portals in Area have 50% increased Merging Radius",
       "Characters that Kill Beyond Rare Monsters in Area have a 30% chance to gain their Modifiers for 20 seconds"
      ],
-     "g": 4
+     "g": 4,
+     "hiddenZh": [
+      "現實開始淌血。"
+     ],
+     "hiddenEn": [
+      "Reality itself begins to bleed."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBeyond1",
@@ -6174,7 +6300,13 @@
       "Beyond Scarab",
       "Slaying enemies close together in Area can attract monsters from Beyond this realm"
      ],
-     "g": 4
+     "g": 4,
+     "hiddenZh": [
+      "靜默的牆和狂暴的風暴對抗無盡的蟲群。"
+     ],
+     "hiddenEn": [
+      "The silent wall and the raging storm oppose the endless swarm."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBlightNew1",
@@ -6186,7 +6318,13 @@
       "Blight Scarab",
       "Area contains a Blight Encounter"
      ],
-     "g": 5
+     "g": 5,
+     "hiddenZh": [
+      "捲鬚蔓延生長……"
+     ],
+     "hiddenEn": [
+      "The tendrils creep and grow..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBlightNew5",
@@ -6200,7 +6338,13 @@
       "Each Empowering Tower in Areas grants Blighted Monsters in",
       "range increased Difficulty and Reward"
      ],
-     "g": 5
+     "g": 5,
+     "hiddenZh": [
+      "反轉壓縮調節器的極性似乎會產生有趣的效果……"
+     ],
+     "hiddenEn": [
+      "Reversing the polarity of the compression modulator seems to have intriguing effects..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBlightNew3",
@@ -6218,7 +6362,13 @@
       "Blighted Chests in Area grow larger and more",
       "rewarding the more Blighted Enemies are slain"
      ],
-     "g": 5
+     "g": 5,
+     "hiddenZh": [
+      "核心在每次輪迴中越發茁壯，注定會滿溢而出……"
+     ],
+     "hiddenEn": [
+      "The core grows larger with each cycle, doomed to spill forth..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBlightNew2",
@@ -6230,7 +6380,13 @@
       "Blight Scarab of Bounty",
       "Blight Chests in Area have a 20% chance to be openable again"
      ],
-     "g": 5
+     "g": 5,
+     "hiddenZh": [
+      "可怕的果實，但甜度倍增。"
+     ],
+     "hiddenEn": [
+      "A ghastly fruit, but twice as sweet."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBlightNew4",
@@ -6246,7 +6402,13 @@
       "Unique enemies in Blight Encounters have 100% increased life",
       "Tier 14+ Blighted Maps found in Area drop as Blight-Ravaged Maps instead"
      ],
-     "g": 5
+     "g": 5,
+     "hiddenZh": [
+      "又逢百年，凋落再起……"
+     ],
+     "hiddenEn": [
+      "Once a century, the Blight spills forth..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew4",
@@ -6260,7 +6422,13 @@
       "Unstable Breaches in Area contain a Boss",
       "Breach Hives in Area lead to a Hive Fortress"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "經過設計且不可動搖的忠誠。"
+     ],
+     "hiddenEn": [
+      "Engineered and Unwavering Loyalty."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew6",
@@ -6276,7 +6444,13 @@
       "Monsters from Unstable Breaches in Areas have increased Difficulty and Reward for",
       "each Unstable Breach already opened"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "每個新傷痕都會讓現實更衰弱。"
+     ],
+     "hiddenEn": [
+      "Reality weakens with each new wound."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew3",
@@ -6288,7 +6462,13 @@
       "Breach Scarab of Instability",
       "Area contains 2 additional Unstable Breaches"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "現實扭曲且彎折。"
+     ],
+     "hiddenEn": [
+      "Reality warps and bends."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew5",
@@ -6302,7 +6482,13 @@
       "Ailith's skills in Area instead enrage the Hive, increasing the Difficulty",
       "and Reward of subsequent waves"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "他們的領域進一步擴張。"
+     ],
+     "hiddenEn": [
+      "Their Domain expands further still."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew1",
@@ -6314,7 +6500,13 @@
       "Breach Scarab of the Hive",
       "Area contains a Breach Hive"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "他們的王國始終渴求擴張。"
+     ],
+     "hiddenEn": [
+      "Their kingdoms always seek expansion."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabBreachNew2",
@@ -6326,7 +6518,13 @@
       "Breach Scarab of the Dreamer",
       "Breaches in Area will always belong to Chayula"
      ],
-     "g": 6
+     "g": 6,
+     "hiddenZh": [
+      "夢境很快都將化為惡夢。"
+     ],
+     "hiddenEn": [
+      "Dreams quickly sour into Nightmare."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDelirium3",
@@ -6338,7 +6536,13 @@
       "Delirium Scarab of Paranoia",
       "Delirium Encounters in Area generate 2 additional Reward types"
      ],
-     "g": 7
+     "g": 7,
+     "hiddenZh": [
+      "如果一切看似完美到令人難以置信……"
+     ],
+     "hiddenEn": [
+      "If it seems too good to be true..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDelirium5",
@@ -6350,7 +6554,14 @@
       "Delirium Scarab of Delusions",
       "Maps found in Area have layers of Delirium"
      ],
-     "g": 7
+     "g": 7,
+     "hiddenZh": [
+      "你在說什麼？輿圖一向如此。"
+     ],
+     "hiddenEn": [
+      "What are you talking about?",
+      "The Atlas was always like this."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDelirium2",
@@ -6364,7 +6575,14 @@
       "Delirium Reward Meters fill 100% faster in Area",
       "Delirium in Area increases 50% faster with distance from the mirror"
      ],
-     "g": 7
+     "g": 7,
+     "hiddenZh": [
+      "牠們好吵！牠們在吵什麼？！除了尖叫別無他法！"
+     ],
+     "hiddenEn": [
+      "They're so loud! Why are they so loud?!",
+      "All you can do is scream!"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDelirium4",
@@ -6380,7 +6598,13 @@
       "Delirium Reward Types in Area gain +1 to count on defeating a Unique Delirium Boss",
       "Can only be used with Tier 11+ Maps"
      ],
-     "g": 7
+     "g": 7,
+     "hiddenZh": [
+      "尖牙利齒在黑暗中閃閃發光。"
+     ],
+     "hiddenEn": [
+      "Toothy grins shine in the dark."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDelirium1",
@@ -6392,7 +6616,13 @@
       "Delirium Scarab",
       "Area contains a Mirror of Delirium"
      ],
-     "g": 7
+     "g": 7,
+     "hiddenZh": [
+      "一隻完全無害的聖甲蟲，牠什麼也不會做。"
+     ],
+     "hiddenEn": [
+      "A perfectly innocuous Scarab that does nothing at all."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSulphiteNew3",
@@ -6408,7 +6638,13 @@
       "Monsters affected by Enraging Fumes have 50% increased Item Quantity",
       "Sulphite in your maps is guarded by Monsters from the Azurite Mine"
      ],
-     "g": 8
+     "g": 8,
+     "hiddenZh": [
+      "大地本身生病時，甚至連土壤都會腐爛滲液。"
+     ],
+     "hiddenEn": [
+      "When the land itself is sick, even the very ground rots and spills forth."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSulphiteNew1",
@@ -6421,7 +6657,13 @@
       "Sulphite Scarab",
       "Area contains Niko"
      ],
-     "g": 8
+     "g": 8,
+     "hiddenZh": [
+      "探入黑暗，尋覓真相……"
+     ],
+     "hiddenEn": [
+      "Delve into darkness in search of the truth..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSulphiteNew2",
@@ -6433,7 +6675,13 @@
       "Sulphite Scarab of Greed",
       "Map owner gains 150% more Sulphite"
      ],
-     "g": 8
+     "g": 8,
+     "hiddenZh": [
+      "「足夠」並不存在。"
+     ],
+     "hiddenEn": [
+      "There is no such thing as 'enough'."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew2",
@@ -6447,7 +6695,13 @@
       "Area contains 6 to 10 additional Packs of Divination Touched Magic Monsters that",
       "have 1000% increased chance to drop Divination Cards"
      ],
-     "g": 9
+     "g": 9,
+     "hiddenZh": [
+      "我們的每一個動作都會創造千百種不同的未來。"
+     ],
+     "hiddenEn": [
+      "We create a thousand futures with every action."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew3",
@@ -6465,7 +6719,13 @@
       "increased Damage the more Divination Cards they have stolen",
       "That Final Map Boss duplicates all stolen Divination Cards when defeated"
      ],
-     "g": 9
+     "g": 9,
+     "hiddenZh": [
+      "你若不掌握自己的命運，就只能任他人宰割。"
+     ],
+     "hiddenEn": [
+      "If you do not seize your fate, someone else will."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDivinationCardsNew1",
@@ -6479,7 +6739,13 @@
       "Area contains 8 to 12 additional packs of Doedre's Devoted",
       "Doedre's Devoted have 1% additional chance to drop a Stacked Deck"
      ],
-     "g": 9
+     "g": 9,
+     "hiddenZh": [
+      "天底下沒有能被永遠控制住的疾病。"
+     ],
+     "hiddenEn": [
+      "No disease can be contained forever."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDomination4",
@@ -6493,7 +6759,13 @@
       "Shrines in Area are guarded by an Atlas Boss",
       "Modifiers to the Final Map Boss also apply to these Atlas Bosses"
      ],
-     "g": 10
+     "g": 10,
+     "hiddenZh": [
+      "無論被授予何等獎勵，都要為其奮鬥。"
+     ],
+     "hiddenEn": [
+      "Whatever the prize, fight for it."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDomination1",
@@ -6505,7 +6777,13 @@
       "Domination Scarab",
       "Area contains 3 additional Shrines"
      ],
-     "g": 10
+     "g": 10,
+     "hiddenZh": [
+      "淺顯易懂的代價，以鮮血獲取力量"
+     ],
+     "hiddenEn": [
+      "A simple exchange. Blood for power."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDomination2",
@@ -6517,7 +6795,13 @@
       "Domination Scarab of Apparitions",
       "Area contains 2 additional Apparition Shrines"
      ],
-     "g": 10
+     "g": 10,
+     "hiddenZh": [
+      "有些通往力量的道路，只會導致人們抓狂。"
+     ],
+     "hiddenEn": [
+      "Some paths to power lead only to madness."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabDomination3",
@@ -6529,7 +6813,13 @@
       "Domination Scarab of Evolution",
       "Area contains an additional Evolving Shrine"
      ],
-     "g": 10
+     "g": 10,
+     "hiddenZh": [
+      "輿圖和瓦爾克拉斯有一個共同的駭人秘密。"
+     ],
+     "hiddenEn": [
+      "The Atlas and Wraeclast share one terrifying secret."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabEssence2",
@@ -6541,7 +6831,13 @@
       "Essence Scarab of Ascent",
       "Essences found in Area are a tier higher"
      ],
-     "g": 11
+     "g": 11,
+     "hiddenZh": [
+      "這已是可實現的最完美面向。"
+     ],
+     "hiddenEn": [
+      "A more perfect facet cannot be achieved."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabEssence3",
@@ -6555,7 +6851,15 @@
       "Corrupting an Essence in Area can only result in",
       "upgrading or transforming Essences"
      ],
-     "g": 11
+     "g": 11,
+     "hiddenZh": [
+      "有了正確的工具和精準的雙手，",
+      "便可人為預測並操縱晶體。"
+     ],
+     "hiddenEn": [
+      "With the right tools and a precise hand, the manipulation of the crystals",
+      "can be made predictable."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabEssence1",
@@ -6567,7 +6871,13 @@
       "Essence Scarab",
       "Area contains 3 additional Imprisoned Monsters"
      ],
-     "g": 11
+     "g": 11,
+     "hiddenZh": [
+      "被困在裡面的生物沒機會存活，所以此地保證安全。"
+     ],
+     "hiddenEn": [
+      "It is perfectly safe, the creatures trapped inside couldn't possibly still be living."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabEssence5",
@@ -6583,7 +6893,13 @@
       "Imprisoned Monsters in Areas have increased Difficulty and Reward for",
       "each Essence Modifier"
      ],
-     "g": 11
+     "g": 11,
+     "hiddenZh": [
+      "結晶格向著與凡人心靈截然不同的方向擴展。"
+     ],
+     "hiddenEn": [
+      "The crystalline lattice expands in directions alien to the mortal mind."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabEssence4",
@@ -6595,7 +6911,13 @@
       "Essence Scarab of Calcification",
       "Rare monsters that are natural inhabitants of the Area are imprisoned by Essences"
      ],
-     "g": 11
+     "g": 11,
+     "hiddenZh": [
+      "那些結晶……有能力擴散嗎？"
+     ],
+     "hiddenEn": [
+      "The crystals... can spread?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabExpedition2",
@@ -6609,7 +6931,13 @@
       "Expedition Encounters in Area have 100% increased",
       "number of Runic Monster Markers"
      ],
-     "g": 12
+     "g": 12,
+     "hiddenZh": [
+      "來自群星的生物，渴望著歸返。"
+     ],
+     "hiddenEn": [
+      "That which came from the stars longs to return."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabExpedition1",
@@ -6621,7 +6949,13 @@
       "Expedition Scarab",
       "Area contains an Expedition Encounter"
      ],
-     "g": 12
+     "g": 12,
+     "hiddenZh": [
+      "他們從汪洋的彼岸而來，尋求古老的真理。"
+     ],
+     "hiddenEn": [
+      "They come from across the sea in search of ancient truth."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabExpedition4",
@@ -6635,7 +6969,13 @@
       "Logbooks found in Area always have 4 Implicits",
       "Expedition Monsters gain increased Difficulty and Reward for each Remnant detonated"
      ],
-     "g": 12
+     "g": 12,
+     "hiddenZh": [
+      "星光若長久沐浴，甚至能強化死者。"
+     ],
+     "hiddenEn": [
+      "Starlight empowers even the dead if bathed long enough."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabExpedition3",
@@ -6649,7 +6989,13 @@
       "Expedition Encounters in Area have 50% increased number of Explosives",
       "80% increased Explosive Radius"
      ],
-     "g": 12
+     "g": 12,
+     "hiddenZh": [
+      "恰當而精準的一個小動作便足夠翻轉一切。"
+     ],
+     "hiddenEn": [
+      "A properly refined pinch makes all the difference."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabExpedition5",
@@ -6661,7 +7007,13 @@
       "Expedition Scarab of Archaeology",
       "Remnants in Expedition Encounters in Area have 2 additional Suffixes and Prefixes"
      ],
-     "g": 12
+     "g": 12,
+     "hiddenZh": [
+      "好奇導向智慧，而智慧導向力量。"
+     ],
+     "hiddenEn": [
+      "Curiosity leads to wisdom. Wisdom leads to power."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarbingerNew4",
@@ -6673,7 +7025,13 @@
       "Harbinger Scarab of Warhoards",
       "Currency shards dropped by Harbingers in Area are duplicated"
      ],
-     "g": 13
+     "g": 13,
+     "hiddenZh": [
+      "對於那些具有利用戰爭手腕之人，戰爭既是死亡機器，也是利益的無限產出。"
+     ],
+     "hiddenEn": [
+      "For those who can leverage it, war can be as much a machine of profit as it is death."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarbingerNew3",
@@ -6685,7 +7043,13 @@
       "Harbinger Scarab of Regency",
       "Harbingers in Area have a 50% chance to be replaced by a powerful Harbinger Boss"
      ],
-     "g": 13
+     "g": 13,
+     "hiddenZh": [
+      "始自前線，真正的高貴戰役。"
+     ],
+     "hiddenEn": [
+      "The truly noble wage war from the front."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarbingerNew2",
@@ -6699,7 +7063,13 @@
       "Harbingers in Area spawn Empowered Obelisks",
       "Empowered Obelisks drop Currency Shards when defeated"
      ],
-     "g": 13
+     "g": 13,
+     "hiddenZh": [
+      "他們試圖建立一種未知的行為模式。"
+     ],
+     "hiddenEn": [
+      "They seek to establish an unknown pattern."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarbingerNew1",
@@ -6711,7 +7081,13 @@
       "Harbinger Scarab",
       "Area contains 3 additional Harbingers"
      ],
-     "g": 13
+     "g": 13,
+     "hiddenZh": [
+      "來自未知土地的無數成員組成了他們的軍隊。"
+     ],
+     "hiddenEn": [
+      "Their troops came in numbers uncountable and from lands unknown."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarvest2",
@@ -6725,7 +7101,13 @@
       "Lifeforce dropped by Harvest Monsters in Area is duplicated",
       "Harvest Monsters in Area have 100% more Life"
      ],
-     "g": 14
+     "g": 14,
+     "hiddenZh": [
+      "美好的季節帶來富饒。"
+     ],
+     "hiddenEn": [
+      "A good season brings bounty."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarvest3",
@@ -6737,7 +7119,13 @@
       "Harvest Scarab of Cornucopia",
       "If Area contains the Sacred Grove, it will contain up to 1 additional Tier 4 seed of each type, if possible"
      ],
-     "g": 14
+     "g": 14,
+     "hiddenZh": [
+      "樹越高，果越碩。"
+     ],
+     "hiddenEn": [
+      "The taller the tree, the better the fruit."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabHarvest1",
@@ -6749,7 +7137,13 @@
       "Harvest Scarab",
       "Area contains the Sacred Grove"
      ],
-     "g": 14
+     "g": 14,
+     "hiddenZh": [
+      "隱藏的路線通往光影交錯的山谷……"
+     ],
+     "hiddenEn": [
+      "Hidden routes lead to vales of shadow and light..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabIncursion2",
@@ -6761,7 +7155,13 @@
       "Incursion Scarab of Invasion",
       "Area contains 12 to 16 additional packs of Incursion Monsters"
      ],
-     "g": 15
+     "g": 15,
+     "hiddenZh": [
+      "大門一旦開啟，內外都能推動。"
+     ],
+     "hiddenEn": [
+      "A gate, once opened, may swing in either direction."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabIncursion4",
@@ -6775,7 +7175,13 @@
       "Final Architect slain in Area will drop an Itemised Temple",
       "Itemised Temples dropped in Area are generated based on current Temple layout, but with randomised room tiers"
      ],
-     "g": 15
+     "g": 15,
+     "hiddenZh": [
+      "俗話說，走得夠遠，就能真正看見自己……"
+     ],
+     "hiddenEn": [
+      "They say if you go far enough, you will meet yourself..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabIncursion1",
@@ -6787,7 +7193,13 @@
       "Incursion Scarab",
       "Area contains Alva"
      ],
-     "g": 15
+     "g": 15,
+     "hiddenZh": [
+      "一次次穿越，揭開瓦爾的祕密。"
+     ],
+     "hiddenEn": [
+      "Uncover the secrets of the Vaal one incursion at a time."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabIncursion3",
@@ -6801,7 +7213,13 @@
       "Incursions in Area have a 35% chance for all Monsters to be at least Magic",
       "Incursions in Area have 15% increased Pack Size"
      ],
-     "g": 15
+     "g": 15,
+     "hiddenZh": [
+      "只提供阿茲瓦特中最好的。"
+     ],
+     "hiddenEn": [
+      "Only the best served in Atzoatl."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabInfluenceNew1",
@@ -6813,7 +7231,13 @@
       "Influencing Scarab of the Shaper",
       "Adds Shaper Influence outcome to Area"
      ],
-     "g": 16
+     "g": 16,
+     "hiddenZh": [
+      "星海等待著勇於想像之人。"
+     ],
+     "hiddenEn": [
+      "A sea of stars awaits those who dare imagine."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabInfluenceNew2",
@@ -6825,7 +7249,13 @@
       "Influencing Scarab of the Elder",
       "Adds Elder Influence outcome to Area"
      ],
-     "g": 16
+     "g": 16,
+     "hiddenZh": [
+      "光芒之後僅剩虛無。"
+     ],
+     "hiddenEn": [
+      "Beyond the light lies only the void."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabInfluenceNew4",
@@ -6839,7 +7269,13 @@
       "A Map Boss is accompanied by a random Shaper Guardian, Elder Guardian, Conqueror or Synthesis Boss",
       "Can only be used with Tier 14+ Maps"
      ],
-     "g": 16
+     "g": 16,
+     "hiddenZh": [
+      "記憶在輿圖迴盪，永不停歇。"
+     ],
+     "hiddenEn": [
+      "Memories resound in the Atlas, echoing forever."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabInfluenceNew3",
@@ -6851,7 +7287,13 @@
       "Influencing Scarab of Hordes",
       "Influenced Monster Packs in Area have 40% increased Pack Size"
      ],
-     "g": 16
+     "g": 16,
+     "hiddenZh": [
+      "思想是無法抑制的。"
+     ],
+     "hiddenEn": [
+      "Ideas cannot be contained."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabLegionNew3",
@@ -6867,7 +7309,13 @@
       "to Legion Monsters they release from stasis when they are broken out",
       "Legion Monsters that have gained Rewards have increased Difficulty"
      ],
-     "g": 17
+     "g": 17,
+     "hiddenZh": [
+      "受到強大遺物灌注的遠古群集。"
+     ],
+     "hiddenEn": [
+      "Ancient Hoards imbued with powerful Artifacts."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabLegionNew2",
@@ -6879,7 +7327,13 @@
       "Legion Scarab of Officers",
       "Legion Factions in Area have 5 additional Sergeants"
      ],
-     "g": 17
+     "g": 17,
+     "hiddenZh": [
+      "即便在戰場上，也有所謂的中間管理層。"
+     ],
+     "hiddenEn": [
+      "Even a battlefield has middle management."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabLegionNew1",
@@ -6891,7 +7345,13 @@
       "Legion Scarab",
       "Area contains an additional Legion Encounter"
      ],
-     "g": 17
+     "g": 17,
+     "hiddenZh": [
+      "和平對戰士有何用？"
+     ],
+     "hiddenEn": [
+      "What good is peace to a warrior?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabLegionNew5",
@@ -6905,7 +7365,13 @@
       "Legion Monsters in Area can be broken out of Stasis multiple times",
       "Legion Monsters in Area gain increased Difficulty and Reward for each time they are broken out"
      ],
-     "g": 17
+     "g": 17,
+     "hiddenZh": [
+      "血染的永恆。輝煌永世。"
+     ],
+     "hiddenEn": [
+      "An eternity of blood. Glorious."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabLegionNew4",
@@ -6917,7 +7383,13 @@
       "Legion Scarab of The Sekhema",
       "Legion Encounters in Area always contain the Maraketh Faction"
      ],
-     "g": 17
+     "g": 17,
+     "hiddenZh": [
+      "血腥沙塵暴將淹沒馬拉克斯的敵人。"
+     ],
+     "hiddenEn": [
+      "Storms of blood-stained sand will drown the enemies of the Maraketh."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMapsNew5",
@@ -6931,7 +7403,13 @@
       "Area contains 8 to 12 additional packs of",
       "Difficult and Rewarding Monsters which drop 300% increased Maps"
      ],
-     "g": 18
+     "g": 18,
+     "hiddenZh": [
+      "沒有終點，也看不到地平線。"
+     ],
+     "hiddenEn": [
+      "There is no end, no horizon."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMapsNew1",
@@ -6943,7 +7421,13 @@
       "Cartography Scarab of Escalation",
       "10% increased Maps found in Area for each Map Modifier affecting Area"
      ],
-     "g": 18
+     "g": 18,
+     "hiddenZh": [
+      "越是險境更能絕處逢生。"
+     ],
+     "hiddenEn": [
+      "Opportunity thrives where dreams are most perilous."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMapsNew3",
@@ -6955,7 +7439,13 @@
       "Cartography Scarab of Singularity",
       "A Unique Map will drop from the Final Map Boss"
      ],
-     "g": 18
+     "g": 18,
+     "hiddenZh": [
+      "輿圖的某些區域永遠不會改變。"
+     ],
+     "hiddenEn": [
+      "Some regions of the Atlas never change."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMapsNew4",
@@ -6967,7 +7457,13 @@
       "Cartography Scarab of Corruption",
       "Non-Unique Maps found in Area are Corrupted with 8 Modifiers"
      ],
-     "g": 18
+     "g": 18,
+     "hiddenZh": [
+      "腐化滲透著不同的現實。"
+     ],
+     "hiddenEn": [
+      "Corruption bleeds between realities."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMapsNew2",
@@ -6979,7 +7475,13 @@
       "Cartography Scarab of Risk",
       "Area has 2 additional random Modifiers"
      ],
-     "g": 18
+     "g": 18,
+     "hiddenZh": [
+      "鏡子中所見的，只能是自己的倒影。"
+     ],
+     "hiddenEn": [
+      "What we see in the mirror can only be our own reflection."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMercenaries1",
@@ -6991,7 +7493,13 @@
       "Trarthan Scarab",
       "Area is inhabited by a Mercenary"
      ],
-     "g": 19
+     "g": 19,
+     "hiddenZh": [
+      "勝者獨得戰利品。"
+     ],
+     "hiddenEn": [
+      "To the victor go the spoils."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMercenaries4",
@@ -7005,7 +7513,13 @@
       "Wild Rogue Exiles in Area have 50% chance to be accompanied by a Wild Mercenary",
       "Wild Mercenaries have increased Difficulty for each Wild Mercenary in Area"
      ],
-     "g": 19
+     "g": 19,
+     "hiddenZh": [
+      "\"從技術與歷史角度來看……說真的，他們全都是流亡者。\""
+     ],
+     "hiddenEn": [
+      "\"Technically, historically... they're all exiles, really.\""
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMercenaries3",
@@ -7017,7 +7531,13 @@
       "Trarthan Scarab of Renown",
       "All Equipment Items on Mercenaries found in Area are Unique"
      ],
-     "g": 19
+     "g": 19,
+     "hiddenZh": [
+      "是誰在那裡，身披傳奇之姿？"
+     ],
+     "hiddenEn": [
+      "Who goes there, bedecked in legend?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMercenaries2",
@@ -7031,7 +7551,13 @@
       "Mercenaries found in Area are Infamous",
       "Mercenaries found in Area are accompanied by two Wild Mercenaries"
      ],
-     "g": 19
+     "g": 19,
+     "hiddenZh": [
+      "有些人註定得走自己的路。"
+     ],
+     "hiddenEn": [
+      "Some men must make their own way."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc11",
@@ -7043,7 +7569,13 @@
       "Scarab of Radiant Storms",
       "Area contains a Resplendent Tempest"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "生命盛大的喧鬧迎來了高潮。"
+     ],
+     "hiddenEn": [
+      "The great cacophony of life roars to a crescendo."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc10",
@@ -7057,7 +7589,13 @@
       "100% increased effect of Area Suffix Modifiers",
       "Area Prefix Modifiers have no effect"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "擲一枚硬幣，你希望反面在上嗎？"
+     ],
+     "hiddenEn": [
+      "Flip a coin, do you wish for Tails?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc8",
@@ -7069,7 +7607,13 @@
       "Scarab of Wisps",
       "Monsters in Area have a chance to be Empowered by 2000 Wildwood Wisps"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "魔幻連接著一切生命。"
+     ],
+     "hiddenEn": [
+      "The Draíocht connects everything that lives."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc9",
@@ -7083,7 +7627,13 @@
       "100% increased effect of Area Prefix Modifiers",
       "Area Suffix Modifiers have no effect"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "擲一枚硬幣，你希望正面在上嗎？"
+     ],
+     "hiddenEn": [
+      "Flip a coin, do you wish for Heads?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc6",
@@ -7095,7 +7645,13 @@
       "Scarab of the Commander",
       "Grants an additional Kirac Mission on Map Completion"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "「工作永遠都不會結束。」"
+     ],
+     "hiddenEn": [
+      "\"The job never ends.\""
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc2",
@@ -7107,7 +7663,13 @@
       "Scarab of Adversaries",
       "Area contains 4 additional Packs with Mirrored Rare Monsters"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "牠們帶著同樣的敵意與你抗衡。"
+     ],
+     "hiddenEn": [
+      "They stand against you with equal enmity."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc1",
@@ -7119,7 +7681,13 @@
       "Scarab of Monstrous Lineage",
       "40% increased Magic Pack Size"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "血統的進化速度快過淘汰速度。"
+     ],
+     "hiddenEn": [
+      "The bloodlines evolve faster than they can be culled."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc3",
@@ -7133,7 +7701,13 @@
       "Up to 3 additional Rare Monsters in Area will be Pantheon-Touched",
       "Apparitions spawned by Pantheon-Touched Monsters deal 100% increased damage"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "信仰轉變。"
+     ],
+     "hiddenEn": [
+      "Faith transforms."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc5",
@@ -7145,7 +7719,13 @@
       "Scarab of Stability",
       "Portals to Area have a 50% chance to not be consumed on use"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "令人驚嘆！一個能維持連接的辦法……"
+     ],
+     "hiddenEn": [
+      "Astonishing! A means to sustain the connection..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc4",
@@ -7157,7 +7737,13 @@
       "Scarab of Hunted Traitors",
       "Area contains Hunted Traitors"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "沒有什麼是不可原諒的。"
+     ],
+     "hiddenEn": [
+      "Nothing is as unforgiveable."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabMisc7",
@@ -7169,7 +7755,13 @@
       "Scarab of Evolution",
       "10 Monster Packs in Area are upgraded to Magic"
      ],
-     "g": 20
+     "g": 20,
+     "hiddenZh": [
+      "死亡的循環塑造了生命和環境。"
+     ],
+     "hiddenEn": [
+      "The cycle of death shapes life to its environment."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabRitual2",
@@ -7183,7 +7775,13 @@
       "Ritual Altars in Area spawn a Wildwood Wisp",
       "Wildwood Wisps grant 100% increased Tribute Gained to nearby Players"
      ],
-     "g": 21
+     "g": 21,
+     "hiddenZh": [
+      "相信魔幻，你將永不孤單。"
+     ],
+     "hiddenEn": [
+      "Trust in the Draíocht, and you shall never be alone."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabRitual1",
@@ -7197,7 +7795,13 @@
       "Rerolling Favours at Ritual Altars in Area has no cost the first 2 times",
       "Ritual Altars in Area allow rerolling Favours 2 additional times"
      ],
-     "g": 21
+     "g": 21,
+     "hiddenZh": [
+      "請挑選你喜歡的神聖信條……"
+     ],
+     "hiddenEn": [
+      "Pick and choose which sacred tenets you prefer..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabRitual3",
@@ -7209,7 +7813,13 @@
       "Ritual Scarab of Abundance",
       "Rituals in Area offer 100% increased Favours"
      ],
-     "g": 21
+     "g": 21,
+     "hiddenZh": [
+      "他靠得更近了……"
+     ],
+     "hiddenEn": [
+      "He draws ever closer..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabRitual4",
@@ -7221,7 +7831,13 @@
       "Ritual Scarab of Corpses",
       "Rituals in Area contain an additional Rare Itemised Corpse Monster"
      ],
-     "g": 21
+     "g": 21,
+     "hiddenZh": [
+      "被貶為一介戲偶；他們再次渴望生命。"
+     ],
+     "hiddenEn": [
+      "Reduced to mere Puppets; they yearn for life once more."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSettlers1",
@@ -7233,7 +7849,13 @@
       "Kalguuran Scarab",
       "Area contains 2 additional Ore Deposits"
      ],
-     "g": 22
+     "g": 22,
+     "hiddenZh": [
+      "優良的礦藏需要更深的探勘。"
+     ],
+     "hiddenEn": [
+      "Rich veins run deeper still."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSettlers2",
@@ -7245,7 +7867,13 @@
       "Kalguuran Scarab of Guarded Riches",
       "Monsters guarding Ore Deposits in Area are at least Magic"
      ],
-     "g": 22
+     "g": 22,
+     "hiddenZh": [
+      "挖掘才是簡單的部分。"
+     ],
+     "hiddenEn": [
+      "Digging's the easy part."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSettlers4",
@@ -7261,7 +7889,13 @@
       "Reward and Ore Deposits contain 15% increased Ore",
       "for each Ore Deposit completed in Area"
      ],
-     "g": 22
+     "g": 22,
+     "hiddenZh": [
+      "礦石活著並在呼吸；而且對你的作為並不滿意。"
+     ],
+     "hiddenEn": [
+      "The ore lives and breathes; and is not happy with your efforts."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabSettlers3",
@@ -7273,7 +7907,13 @@
       "Kalguuran Scarab of Refinement",
       "Ore Deposits in Area grant Smelted Bars instead of Marking Ore"
      ],
-     "g": 22
+     "g": 22,
+     "hiddenZh": [
+      "礦材真正的價值不在礦石本身，而是後來雕琢出的藝術。"
+     ],
+     "hiddenEn": [
+      "Ore's true worth lies not in stone, but in what it becomes."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabStrongboxNew1",
@@ -7285,7 +7925,13 @@
       "Ambush Scarab",
       "Area contains 4 additional Strongboxes"
      ],
-     "g": 23
+     "g": 23,
+     "hiddenZh": [
+      "如果你知情還算是伏擊嗎？"
+     ],
+     "hiddenEn": [
+      "Is it still an ambush if you're expecting it?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabStrongboxNew2",
@@ -7297,7 +7943,13 @@
       "Ambush Scarab of Hidden Compartments",
       "15% Chance for Strongboxes in Area to be openable again"
      ],
-     "g": 23
+     "g": 23,
+     "hiddenZh": [
+      "顯而易見的事物之下，隱藏著真正的寶藏……"
+     ],
+     "hiddenEn": [
+      "Beneath the obvious lies the real treasure..."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabStrongboxNew5",
@@ -7309,7 +7961,13 @@
       "Ambush Scarab of Discernment",
       "Strongboxes in Area are more likely to be rarer varieties"
      ],
-     "g": 23
+     "g": 23,
+     "hiddenZh": [
+      "慧眼識珍寶。"
+     ],
+     "hiddenEn": [
+      "A keen eye sorts the worthy from the chaff."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabStrongboxNew3",
@@ -7321,7 +7979,13 @@
       "Ambush Scarab of Potency",
       "75% Increased effect of Explicit Modifiers on Strongboxes in Area"
      ],
-     "g": 23
+     "g": 23,
+     "hiddenZh": [
+      "鎖匠夢想著打造出更好的盒子。"
+     ],
+     "hiddenEn": [
+      "The locksmith dreams of building a better box."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabStrongboxNew4",
@@ -7335,7 +7999,13 @@
       "Area contains many additional Strongboxes",
       "Area's inhabitants are lying in ambush"
      ],
-     "g": 23
+     "g": 23,
+     "hiddenZh": [
+      "寂靜掩飾了潛伏的厄運。"
+     ],
+     "hiddenEn": [
+      "The silence belies lurking doom."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabTormentNew2",
@@ -7347,7 +8017,13 @@
       "Torment Scarab of Peculiarity",
       "Tormented Spirits in Area are replaced with unusual variants"
      ],
-     "g": 24
+     "g": 24,
+     "hiddenZh": [
+      "如今，我聽見了至今最讓人毛骨悚然的哀號傳來！"
+     ],
+     "hiddenEn": [
+      "Now there's a blood-curdling wail I haven't heard before!"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabTormentNew1",
@@ -7365,7 +8041,13 @@
       "be set free when Possessed Monsters are slain",
       "and dig up a Possessed Monster"
      ],
-     "g": 24
+     "g": 24,
+     "hiddenZh": [
+      "生前犯下的罪行將持續作祟到你死後。"
+     ],
+     "hiddenEn": [
+      "Their crimes in life haunt you in death."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabTormentNew3",
@@ -7379,7 +8061,13 @@
       "Tormented Spirits in Area have a 25% chance to",
       "be set free when Possessed Monsters are slain"
      ],
-     "g": 24
+     "g": 24,
+     "hiddenZh": [
+      "若能夠被終止，那就不算真正的詛咒。"
+     ],
+     "hiddenEn": [
+      "If it could end, it wouldn't really be damnation."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabTormentNew4",
@@ -7391,7 +8079,13 @@
       "Torment Scarab of Possession",
       "Rare Monsters in Area have a quarter chance to be Possessed by up to 3 Tormented Spirits"
      ],
-     "g": 24
+     "g": 24,
+     "hiddenZh": [
+      "強者從來就不是真正孤獨的。"
+     ],
+     "hiddenEn": [
+      "The strong are never truly alone."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber5",
@@ -7405,7 +8099,13 @@
       "All Rare and Unique Monsters in Area have dropped items",
       "transformed by a Reward Modifier"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "榮耀屬於最強之人。"
+     ],
+     "hiddenEn": [
+      "To the strongest, prosperity be thine."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber3",
@@ -7417,7 +8117,13 @@
       "Horned Scarab of Preservation",
       "Other Scarabs are not consumed on use"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "絕不能忘懷先行者的足跡。"
+     ],
+     "hiddenEn": [
+      "We must not forget those who came before."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber2",
@@ -7429,7 +8135,13 @@
       "Horned Scarab of Nemeses",
       "Rare Monsters in Area have 2 additional Modifiers"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "榮耀與厄運的連結史無前例的貼近。"
+     ],
+     "hiddenEn": [
+      "Glory draws ever tighter its own doom."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber7",
@@ -7443,7 +8155,13 @@
       "Monster packs in Area have a 15% chance to be replaced by a random Atlas Boss",
       "Modifiers to the Final Map Boss also apply to these Atlas Bosses"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "坑坑巴巴的夢滲入腦海。"
+     ],
+     "hiddenEn": [
+      "Punctured dreams bleed into the mind."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber1",
@@ -7457,7 +8175,13 @@
       "Area has 150% increased Magic Monsters",
       "Magic Monsters in area have an additional Modifier"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "最堅強者方可倖存。倖存者方可永存。"
+     ],
+     "hiddenEn": [
+      "Only the hardiest survive. Only survivors perpetuate."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber4",
@@ -7469,7 +8193,13 @@
       "Horned Scarab of Awakening",
       "Tier 16+ Areas contain the Bosses from a random Maven Invitation"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "輿圖可以是你追求的任何事物……也可以是全部。"
+     ],
+     "hiddenEn": [
+      "The Atlas can be anything you want... and everything you want."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUber6",
@@ -7483,7 +8213,13 @@
       "Players in Area gain increased Item Rarity for each Monster",
       "slain, up to 400%, decaying over time"
      ],
-     "g": 25
+     "g": 25,
+     "hiddenZh": [
+      "財富會流向那些最是閃耀之人。"
+     ],
+     "hiddenEn": [
+      "Wealth flows to those that shine brightest."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUltimatum4",
@@ -7497,7 +8233,13 @@
       "Ultimatum Encounters in Area will only offer Catalysts",
       "as Rewards to the Map Owner"
      ],
-     "g": 26
+     "g": 26,
+     "hiddenZh": [
+      "得知粉末的製作方法令人後悔莫及。"
+     ],
+     "hiddenEn": [
+      "Most regret finding out how the powder is made."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUltimatum3",
@@ -7509,7 +8251,13 @@
       "Ultimatum Scarab of Dueling",
       "Ultimatum Encounters in Area will always lead to a Unique Boss if possible"
      ],
-     "g": 26
+     "g": 26,
+     "hiddenZh": [
+      "勝利毫無意義，失敗將被嘲笑。"
+     ],
+     "hiddenEn": [
+      "Victory is meaningless, failure will be mocked."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUltimatum2",
@@ -7523,7 +8271,13 @@
       "Ultimatum Monsters grant 150% increased Experience",
       "Ultimatum Encounters grant rewards as though you completed 2 additional Rounds"
      ],
-     "g": 26
+     "g": 26,
+     "hiddenZh": [
+      "審判的廉潔度取決於判官廉潔與否。"
+     ],
+     "hiddenEn": [
+      "A trial is only as incorruptible as its judge."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUltimatum1",
@@ -7535,7 +8289,13 @@
       "Ultimatum Scarab",
       "Area contains an Ultimatum Encounter"
      ],
-     "g": 26
+     "g": 26,
+     "hiddenZh": [
+      "挑戰可能隨時來臨。"
+     ],
+     "hiddenEn": [
+      "A challenge may be requested at any time."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUltimatum5",
@@ -7549,7 +8309,13 @@
       "Ultimatum Encounter rewards in Area offering Catalysts",
       "will offer Inscribed Ultimatums to the Map Owner instead"
      ],
-     "g": 26
+     "g": 26,
+     "hiddenZh": [
+      "賭注要多少有多少……前提是你負擔得起。"
+     ],
+     "hiddenEn": [
+      "There is always a wager to be made... if you can afford it."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUniquesNew3",
@@ -7561,7 +8327,13 @@
       "Titanic Scarab of Legend",
       "Unique Monsters in Area have 4 additional Monster Modifiers"
      ],
-     "g": 27
+     "g": 27,
+     "hiddenZh": [
+      "力量會逐漸提升。"
+     ],
+     "hiddenEn": [
+      "Power accumulates."
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUniquesNew1",
@@ -7573,7 +8345,13 @@
       "Titanic Scarab",
       "Unique Monsters have 1% increased Toughness, Damage, Rarity and Quantity of items dropped per 1% increased Pack Size of Area"
      ],
-     "g": 27
+     "g": 27,
+     "hiddenZh": [
+      "這名字裡蘊含著什麼樣的力量？"
+     ],
+     "hiddenEn": [
+      "What power lies in a name?"
+     ]
     },
     {
      "id": "Metadata/Items/Scarabs/ScarabUniquesNew2",
@@ -7587,7 +8365,13 @@
       "Unique Monsters in Area have an additional Reward",
       "Unique Monsters in Area have 30% increased Toughness"
      ],
-     "g": 27
+     "g": 27,
+     "hiddenZh": [
+      "貪婪是心靈上的陷阱。"
+     ],
+     "hiddenEn": [
+      "Greed is a trap of the mind."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_4",
@@ -7601,7 +8385,13 @@
       "Area contains a Vaal Side Area",
       "10% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "向罪惡之夜拜倒，我們將自取滅亡。"
+     ],
+     "hiddenEn": [
+      "When we prostrate ourselves to the night, we worship mortality."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_2",
@@ -7615,7 +8405,13 @@
       "Area contains a Vaal Side Area",
       "10% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "相信女王將引領我們在黑暗中行進！"
+     ],
+     "hiddenEn": [
+      "Look to our Queen, for she will lead us from the darkness."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_1",
@@ -7629,7 +8425,13 @@
       "Area contains a Vaal Side Area",
       "10% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "我們就像喪犬嗥吠，殘月卻冷眼旁聽。"
+     ],
+     "hiddenEn": [
+      "We are but dogs, howling at an uncaring moon."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment2_3",
@@ -7643,7 +8445,13 @@
       "Area contains a Vaal Side Area",
       "10% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "唯有盲者不會在黑暗中迷途。"
+     ],
+     "hiddenEn": [
+      "It is only the blind who can live in darkness."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_1",
@@ -7657,7 +8465,13 @@
       "Area contains a Vaal Side Area",
       "5% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "相信女王將賜給我們光明！"
+     ],
+     "hiddenEn": [
+      "Look to our Queen, for she will lead us into the light."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_3",
@@ -7671,7 +8485,13 @@
       "Area contains a Vaal Side Area",
       "5% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "至耀之光，微暮之芒。"
+     ],
+     "hiddenEn": [
+      "The light without pales in comparison to the light within."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_4",
@@ -7685,7 +8505,13 @@
       "Area contains a Vaal Side Area",
       "5% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "瓦爾族從未對日落感到恐懼。"
+     ],
+     "hiddenEn": [
+      "The Vaal shall never fear the setting of our sun."
+     ]
     },
     {
      "id": "Metadata/Items/MapFragments/CurrencyVaalFragment1_2",
@@ -7699,7 +8525,13 @@
       "Area contains a Vaal Side Area",
       "5% increased Quantity of Items found in Area"
      ],
-     "g": 28
+     "g": 28,
+     "hiddenZh": [
+      "殘存的希望是那迎向朝陽的野望。"
+     ],
+     "hiddenEn": [
+      "Only those who aspire can dare to hope."
+     ]
     }
    ],
    "ambientZh": [
@@ -7709,7 +8541,8 @@
     "已汙染",
     "已複製",
     "分化",
-    "通貨"
+    "通貨",
+    "可於個人的地圖裝置中使用，增加地圖的詞綴。"
    ],
    "ambientEn": [
     "Stack Size",
@@ -7718,7 +8551,8 @@
     "Corrupted",
     "Mirrored",
     "Split",
-    "Currency"
+    "Currency",
+    "Can be used in a personal Map Device to add modifiers to a Map."
    ],
    "nameWordsZh": {
     "prefix": [],
@@ -21090,12 +21924,16 @@
      "hiddenZh": [
       "卓越, 法術, 誓約",
       "卓越,法術,誓約",
-      "施放一項誓約，強化你造成傷害的瓦爾法術，但同時會使你背負一項苦難。被強化的瓦爾法術會造成更多傷害、停止獲得靈魂的持續時間更短，且使用時回復已消耗的靈魂。"
+      "施放一項誓約，強化你造成傷害的瓦爾法術，但同時會使你背負一項苦難。被強化的瓦爾法術會造成更多傷害、停止獲得靈魂的持續時間更短，且使用時回復已消耗的靈魂。",
+      "釋放克塔什的憤怒，牠是仇恨的化身。",
+      "無數軀殼在牠追尋的烈焰下燃燒殆盡。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Pact",
       "Exceptional,Spell,Pact",
-      "Cast a pact, Empowering your damaging Vaal spells but burdening you with an Affliction. Empowered Vaal spells deal more damage, have less soul gain prevention duration and regain consumed souls on use."
+      "Cast a pact, Empowering your damaging Vaal spells but burdening you with an Affliction. Empowered Vaal spells deal more damage, have less soul gain prevention duration and regain consumed souls on use.",
+      "Unleash the fury of K'Tash, incarnation of hate.",
+      "Endless bodies burn beneath the flames of his pursuit."
      ]
     },
     {
@@ -21510,12 +22348,16 @@
      "hiddenZh": [
       "卓越, 引導, 法術, 誓約, 閃電, 範圍效果, 觸發",
       "卓越,引導,法術,誓約,閃電,範圍效果,觸發",
-      "施放一項誓約，強化你下一個施放的引導法術，但同時會使你背負一項苦難。被強化的法術會造成更多傷害，且在引導期間持續觸發雷擊。"
+      "施放一項誓約，強化你下一個施放的引導法術，但同時會使你背負一項苦難。被強化的法術會造成更多傷害，且在引導期間持續觸發雷擊。",
+      "召喚災禍的媒介利希亞。",
+      "她出賣了自己的靈魂，換取了譴責白骨所言之謊的力量。"
      ],
      "hiddenEn": [
       "Exceptional, Channelling, Spell, Pact, Lightning, AoE, Trigger",
       "Exceptional,Channelling,Spell,Pact,Lightning,AoE,Trigger",
-      "Cast a pact, Empowering the next channelling spells you cast yourself but burdening you with an Affliction. Empowered spells deal more damage and periodically trigger lightning bolts while channelling."
+      "Cast a pact, Empowering the next channelling spells you cast yourself but burdening you with an Affliction. Empowered spells deal more damage and periodically trigger lightning bolts while channelling.",
+      "Call upon Lycia, conduit of the Scourge. She forfeit",
+      "her soul for the power to condemn lies told by bones."
      ]
     },
     {
@@ -22682,12 +23524,14 @@
      "hiddenZh": [
       "法術, 投射物",
       "法術,投射物",
-      "WIP"
+      "WIP",
+      "Work in progress"
      ],
      "hiddenEn": [
       "Spell, Projectile",
       "Spell,Projectile",
-      "WIP"
+      "WIP",
+      "Work in progress"
      ]
     },
     {
@@ -23002,12 +23846,16 @@
      "hiddenZh": [
       "卓越, 法術, 誓約, 範圍效果, 持續時間, 投射物, 物理, 觸發",
       "卓越,法術,誓約,範圍效果,持續時間,投射物,物理,觸發",
-      "施放一項誓約，強化你的持續傷害法術，但同時會使你背負一項苦難。此技能還會在一段持續時間內賦予戈沃之飢渴增益效果，進而週期性的觸發血肉撕扯。"
+      "施放一項誓約，強化你的持續傷害法術，但同時會使你背負一項苦難。此技能還會在一段持續時間內賦予戈沃之飢渴增益效果，進而週期性的觸發血肉撕扯。",
+      "將你自己奉獻給暴食者戈沃，",
+      "那座將靈魂困在吞噬循環中的血肉之牢。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Pact, AoE, Duration, Projectile, Physical, Trigger",
       "Exceptional,Spell,Pact,AoE,Duration,Projectile,Physical,Trigger",
-      "Cast a pact, Empowering your damage over time spells but burdening you with an Affliction. This skill also grants the Hunger of Ghorr buff for a duration causing Fleshrend to trigger periodically."
+      "Cast a pact, Empowering your damage over time spells but burdening you with an Affliction. This skill also grants the Hunger of Ghorr buff for a duration causing Fleshrend to trigger periodically.",
+      "Offer yourself to Ghorr, the gluttonous, the cage of",
+      "flesh trapping souls in the cycle of consumption."
      ]
     },
     {
@@ -24402,11 +25250,13 @@
      "hiddenZh": [
       "攻擊, 範圍效果, 近戰, 火焰",
       "攻擊,範圍效果,近戰,火焰",
-      "召喚一個超凡神諭。此神諭隨機對你施放以下一個或全部增益效果：2 個額外投射物、+2 連鎖、穿透 2 個額外目標和投射物分裂後再次分裂。"
+      "召喚一個超凡神諭。此神諭隨機對你施放以下一個或全部增益效果：2 個額外投射物、+2 連鎖、穿透 2 個額外目標和投射物分裂後再次分裂。",
+      "Work in progress"
      ],
      "hiddenEn": [
       "Attack, AoE, Melee, Fire",
-      "Attack,AoE,Melee,Fire"
+      "Attack,AoE,Melee,Fire",
+      "Work in progress"
      ]
     },
     {
@@ -26135,12 +26985,16 @@
      "hiddenZh": [
       "卓越, 投射物, 連鎖, 範圍效果, 法術, 誓約",
       "卓越,投射物,連鎖,範圍效果,法術,誓約",
-      "施放一項誓約，強化那些會發射投射物、對目標地點周圍區域施加效果，或發射連鎖光束的非引導法術，使其造成更多傷害並強化覆蓋範圍。然而，使用此技能也會使你背負一項苦難。"
+      "施放一項誓約，強化那些會發射投射物、對目標地點周圍區域施加效果，或發射連鎖光束的非引導法術，使其造成更多傷害並強化覆蓋範圍。然而，使用此技能也會使你背負一項苦難。",
+      "揮舞貝達特的恩賜吧，牠是蒼白盲目者",
+      "的引路星辰，其甜言蜜語在順從的心靈中鑿出了隧道。"
      ],
      "hiddenEn": [
       "Exceptional, Projectile, Chaining, AoE, Spell, Pact",
       "Exceptional,Projectile,Chaining,AoE,Spell,Pact",
-      "Cast a pact, Empowering non-channelling spells that either fire projectiles, apply an effect to an area around a targeted location or fire chaining beams, causing them to deal more damage and have enhanced coverage. However, using this skill also burdens you with an Affliction."
+      "Cast a pact, Empowering non-channelling spells that either fire projectiles, apply an effect to an area around a targeted location or fire chaining beams, causing them to deal more damage and have enhanced coverage. However, using this skill also burdens you with an Affliction.",
+      "Wield the gifts of Beidat, luminary of the pale unseeing,",
+      "whose honeyed words bore tunnels through pliant minds."
      ]
     },
     {
@@ -27161,11 +28015,13 @@
      "g": 0,
      "hiddenZh": [
       "法術, 投射物, 引導, 範圍效果",
-      "法術,投射物,引導,範圍效果"
+      "法術,投射物,引導,範圍效果",
+      "Work in progress"
      ],
      "hiddenEn": [
       "Spell, Projectile, Channelling, AoE",
-      "Spell,Projectile,Channelling,AoE"
+      "Spell,Projectile,Channelling,AoE",
+      "Work in progress"
      ]
     },
     {
@@ -27299,11 +28155,13 @@
      "g": 0,
      "hiddenZh": [
       "法術, 投射物, 範圍效果, 持續時間",
-      "法術,投射物,範圍效果,持續時間"
+      "法術,投射物,範圍效果,持續時間",
+      "Work in progress"
      ],
      "hiddenEn": [
       "Spell, Projectile, AoE, Duration",
-      "Spell,Projectile,AoE,Duration"
+      "Spell,Projectile,AoE,Duration",
+      "Work in progress"
      ]
     },
     {
@@ -27756,12 +28614,15 @@
      "hiddenZh": [
       "卓越, 物理, 混沌, 閃電, 輔助",
       "卓越,物理,混沌,閃電,輔助",
-      "輔助會擊中敵人的技能，使他們在你擁有閃電、物理、或混沌不潔共鳴時獲得額外效果，並在單次擊中時獲得非最高傷害類型的不潔共鳴。每一種傷害種類的不潔共鳴最高層數為50。無法輔助觸發、立即、球體、烙印、有保留需求的技能，或由圖騰、陷阱、地雷使用的技能。無法影響召喚物技能。"
+      "輔助會擊中敵人的技能，使他們在你擁有閃電、物理、或混沌不潔共鳴時獲得額外效果，並在單次擊中時獲得非最高傷害類型的不潔共鳴。每一種傷害種類的不潔共鳴最高層數為50。無法輔助觸發、立即、球體、烙印、有保留需求的技能，或由圖騰、陷阱、地雷使用的技能。無法影響召喚物技能。",
+      "對馬拉凱來說，確保他三名學徒的忠誠 是一項微妙的平衡之舉——他們每一個人都如其野心般墮落。"
      ],
      "hiddenEn": [
       "Exceptional, Physical, Chaos, Lightning, Support",
       "Exceptional,Physical,Chaos,Lightning,Support",
-      "Supports skills that hit enemies, causing them to gain bonuses while you have unholy resonance of lightning, physical and chaos, and to grant unholy resonance of damage types other than the highest one in a hit. There is a maximum of 50 unholy resonance for each damage type. Cannot support triggered skills, instant skills, orb skills, brands, skills with a reservation, or skills used by totems, traps, or mines. Cannot modify the skills of minions."
+      "Supports skills that hit enemies, causing them to gain bonuses while you have unholy resonance of lightning, physical and chaos, and to grant unholy resonance of damage types other than the highest one in a hit. There is a maximum of 50 unholy resonance for each damage type. Cannot support triggered skills, instant skills, orb skills, brands, skills with a reservation, or skills used by totems, traps, or mines. Cannot modify the skills of minions.",
+      "It was a delicate balancing act for Malachai to ensure the loyalty",
+      "of his three students - each as ambitious as they were depraved."
      ]
     },
     {
@@ -27794,10 +28655,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "輔助"
+      "輔助",
+      "教學用古靈寶石：力量將不斷消逝"
      ],
      "hiddenEn": [
-      "Support"
+      "Support",
+      "This gem is only temporary, and only for the tutorial."
      ]
     },
     {
@@ -27812,12 +28675,15 @@
      "hiddenZh": [
       "卓越, 輔助, 法術, 觸發",
       "卓越,輔助,法術,觸發",
-      "當你的保護破碎時會觸發每一個被輔助的法術技能。無法輔助由圖騰、陷阱、或地雷使用的技能。瓦爾技能、引導技能、和有保留需求的技能無法被觸發。"
+      "當你的保護破碎時會觸發每一個被輔助的法術技能。無法輔助由圖騰、陷阱、或地雷使用的技能。瓦爾技能、引導技能、和有保留需求的技能無法被觸發。",
+      "「證明你的能耐！你是宵小，還是騎士？ 我將從你揮擊的力量中見真章！」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Spell, Trigger",
       "Exceptional,Support,Spell,Trigger",
-      "Each supported spell skill will be triggered when your Ward breaks. Cannot support skills used by totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered."
+      "Each supported spell skill will be triggered when your Ward breaks. Cannot support skills used by totems, traps, or mines. Vaal skills, channelling skills, and skills with a reservation cannot be triggered.",
+      "\"Prove yourself! Are you a knave, or a knight?",
+      "I shall know by the strength of your blows!\""
      ]
     },
     {
@@ -27832,12 +28698,16 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "烏特雷作為叛徒被銘記，但正是他發掘了 唯一的出路。倖存者們發現自己身處於一座陌生的森林中。詭異的是，有三分之一的人不知所蹤，包含了烏特雷自己。"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "Uhtred was remembered as a traitor, but it was he that unearthed",
+      "the only way out. The survivors found themselves in an unfamiliar",
+      "forest.  Strangely, a third were not present, including Uhtred himself."
      ]
     },
     {
@@ -27988,12 +28858,18 @@
      "hiddenZh": [
       "卓越, 法術, 召喚物, 物理, 輔助",
       "卓越,法術,召喚物,物理,輔助",
-      "輔助會擊中敵人的法術。無法影響召喚物技能。"
+      "輔助會擊中敵人的法術。無法影響召喚物技能。",
+      "卡塔莉娜曾設想過一個將無數異質社會融合為一的瓦爾克拉斯。",
+      "這種多樣性將賦予永生密教強大的力量——而那些隨之增加、",
+      "可供隨意消耗的軀殼，不過是一個便利的巧合罷了。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Minion, Physical, Support",
       "Exceptional,Spell,Minion,Physical,Support",
-      "Supports spell skills that hit enemies. Cannot modify the skills of minions."
+      "Supports spell skills that hit enemies. Cannot modify the skills of minions.",
+      "Catarina envisioned a Wraeclast of disparate societies united.",
+      "That diversity would empower the Syndicate - and the increased",
+      "number of dispensible bodies was a convenient coincidence."
      ]
     },
     {
@@ -28068,12 +28944,18 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "輔助擁有冷卻時間的技能。"
+      "輔助擁有冷卻時間的技能。",
+      "「這門科學……往好聽說也只能稱作難以理解。我能判斷的是，秘能一旦完全充盈，",
+      "便會釋放出一陣憤怒的爆發；而當它被導向尊師時，將迫使其顯現出",
+      "在進入我們的維度之前所擁有的形態。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "Supports skills that have a cooldown. Cannot modify the skills of minions."
+      "Supports skills that have a cooldown. Cannot modify the skills of minions.",
+      "\"The science is... incomprehensible at best. Nearest I can tell, the Arcana exhibits",
+      "a blast of wrath once it has been fully charged, and when directed at the Elder",
+      "will force it to take on the form it held before it entered our dimension.\""
      ]
     },
     {
@@ -28306,12 +29188,16 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "輔助任何可以擊中敵人的技能。"
+      "輔助任何可以擊中敵人的技能。",
+      "「我的族人拒絕參與瓦爾克拉斯的種種罪惡。 他們被一些人稱為原始人，又被另一些人 視為懦夫……但那些人已然消亡，而我們依然長存。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "\"My people refused to take part in the ills of Wraeclast.",
+      "They were called primitives by some, and cowards by",
+      "others... but they are gone, and we still remain.\""
      ]
     },
     {
@@ -28326,12 +29212,18 @@
      "hiddenZh": [
       "卓越, 範圍效果, 持續時間, 輔助, 咒術, 法術, 混沌",
       "卓越,範圍效果,持續時間,輔助,咒術,法術,混沌",
-      "輔助非光環的咒術詛咒技能。"
+      "輔助非光環的咒術詛咒技能。",
+      "「像我這樣的術士都能明白，即使是最可憎的",
+      "瘟疫也是生死輪迴的一部分。從那毀滅之中，",
+      "新的生命將會誕生，而這生命又會帶來死亡，如此循環往復…”"
      ],
      "hiddenEn": [
       "Exceptional, AoE, Duration, Support, Hex, Spell, Chaos",
       "Exceptional,AoE,Duration,Support,Hex,Spell,Chaos",
-      "Supports non-aura hex curse skills."
+      "Supports non-aura hex curse skills.",
+      "\"A warlock like myself knows that even the most abominable",
+      "plagues are part of the cycle of life and death. From that ruination,",
+      "new life will emerge, and that life will kill, and so on...\""
      ]
     },
     {
@@ -28386,12 +29278,15 @@
      "hiddenZh": [
       "卓越, 輔助, 咒術",
       "卓越,輔助,咒術",
-      "輔助咒術詛咒技能。"
+      "輔助咒術詛咒技能。",
+      "「對於知曉你真名的人來說， 你的結界與護符皆毫無意義。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Hex",
       "Exceptional,Support,Hex",
-      "Supports hex curse skills."
+      "Supports hex curse skills.",
+      "\"Your wards and your charms are meaningless",
+      "to one who knows your true name.\""
      ]
     },
     {
@@ -28406,12 +29301,16 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "卡塔莉娜設想著一個各方社會團結一致的瓦爾克拉斯。 這種多樣性將使密教的力量更加壯大——而那與日俱增、 可供消耗的屍體數量，不過是個帶來便利的巧合罷了。"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "Catarina envisioned a Wraeclast of disparate societies united.",
+      "That diversity would empower the Syndicate - and the increased",
+      "number of dispensible bodies was a convenient coincidence."
      ]
     },
     {
@@ -28870,12 +29769,16 @@
      "hiddenZh": [
       "卓越, 召喚物, 冰冷, 輔助, 法術, 觸發",
       "卓越,召喚物,冰冷,輔助,法術,觸發",
-      "輔助由你自身使用的奉獻技能。"
+      "輔助由你自身使用的奉獻技能。",
+      "「我們傾瀉而出，血肉相連，",
+      "直至融為一體。 」"
      ],
      "hiddenEn": [
       "Exceptional, Minion, Cold, Support, Spell, Trigger",
       "Exceptional,Minion,Cold,Support,Spell,Trigger",
-      "Supports offering skills you use yourself."
+      "Supports offering skills you use yourself.",
+      "\"We spill forth, cleaving our flesh",
+      "to theirs, until we become one.\""
      ]
     },
     {
@@ -28930,12 +29833,16 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "輔助任何會擊中敵人的技能。若普通或魔法怪物在被已輔助技能擊中後低於一定百分比的最大血量，則擊殺他們。"
+      "輔助任何會擊中敵人的技能。若普通或魔法怪物在被已輔助技能擊中後低於一定百分比的最大血量，則擊殺他們。",
+      "「貝達特是三害之中較輕的。另外兩者只渴望 將我們吞噬，但在他麾下，還有一絲生存的機會…… 一絲侍奉的機會……只要你能證明自己的價值。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "Supports any skill that hits enemies. If normal or magic enemies are left below a percentage of maximum life after being hit by these skills, they will be killed."
+      "Supports any skill that hits enemies. If normal or magic enemies are left below a percentage of maximum life after being hit by these skills, they will be killed.",
+      "\"Beidat is the lesser of three evils. The other two desire only",
+      "to consume us, but under him, there is a chance to survive...",
+      "a chance to serve... if you can prove yourself useful.\""
      ]
     },
     {
@@ -29363,12 +30270,15 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "「你是我們之中最優秀的，賽勒斯。與你並肩作戰 讓我變得更強大。我會永遠想念你。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "\"You were the best of us, Sirus. Fighting alongside",
+      "you made me better. I will always miss you.\""
      ]
     },
     {
@@ -29465,12 +30375,16 @@
      "hiddenZh": [
       "卓越, 攻擊, 輔助, 重擊, 範圍效果, 近戰",
       "卓越,攻擊,輔助,重擊,範圍效果,近戰",
-      "輔助重擊技能。無法輔助觸發技能或不是由你自身使用的技能。"
+      "輔助重擊技能。無法輔助觸發技能或不是由你自身使用的技能。",
+      "由枯骨組成的古老魔像不斷向上攀爬。",
+      "它的軀體是一具引擎。它的雙眼則是燃料。"
      ],
      "hiddenEn": [
       "Exceptional, Attack, Support, Slam, AoE, Melee",
       "Exceptional,Attack,Support,Slam,AoE,Melee",
-      "Supports Slam skills. Cannot support triggered skills or skills used by things other than you."
+      "Supports Slam skills. Cannot support triggered skills or skills used by things other than you.",
+      "The ancient golem of bone climbs ever upward.",
+      "Its body is an engine. Its eyes are fuel."
      ]
     },
     {
@@ -29565,12 +30479,16 @@
      "hiddenZh": [
       "卓越, 輔助, 投射物, 法術, 持續時間",
       "卓越,輔助,投射物,法術,持續時間",
-      "輔助由你自身施放的投射物法術。無法輔助球體、觸發、烙印、瓦爾、引導、有保留需求、或由你以外的事物所使用的技能。"
+      "輔助由你自身施放的投射物法術。無法輔助球體、觸發、烙印、瓦爾、引導、有保留需求、或由你以外的事物所使用的技能。",
+      "吞噬天地的勇士們受到驅使，不斷為他們的 主人尋找養分；若他們稍有懈怠， 很快便會淪為被吞噬的下場。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Projectile, Spell, Duration",
       "Exceptional,Support,Projectile,Spell,Duration",
-      "Supports Projectile Spells you cast yourself. Cannot support orb skills, triggered skills, brand skills, Vaal skills, channelling skills, skills with a reservation, or skills used by things other than you."
+      "Supports Projectile Spells you cast yourself. Cannot support orb skills, triggered skills, brand skills, Vaal skills, channelling skills, skills with a reservation, or skills used by things other than you.",
+      "Champions of the Tangle are driven to seek",
+      "sustenance for their master; should they fall",
+      "behind, they would soon be consumed as well."
      ]
     },
     {
@@ -29586,13 +30504,18 @@
       "卓越, 輔助",
       "卓越,輔助",
       "輔助任何技能寶石。",
-      "無法輔助不是源於寶石的技能。"
+      "無法輔助不是源於寶石的技能。",
+      "「雖然我們是兩具身軀，卻共享意識與心臟，漂流於宇宙之間，尋找目的。",
+      "當我們的道路交會，那一刻既短暫又永恆，我們的雙眼便被開啟，看見自身的潛能。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
       "Supports any skill gem.",
-      "Cannot support skills that don't come from gems."
+      "Cannot support skills that don't come from gems.",
+      "\"Although we are two bodies, we are of one mind, one heart, drifting",
+      "through the cosmos, in search of purpose. The moment we cross paths,",
+      "both fleeting and eternal, our eyes are opened to our potential.\""
      ]
     },
     {
@@ -29947,12 +30870,17 @@
      "hiddenZh": [
       "卓越, 物理, 輔助, 持續時間",
       "卓越,物理,輔助,持續時間",
-      "輔助鬥旗技能。無法影響召喚物技能。"
+      "輔助鬥旗技能。無法影響召喚物技能。",
+      "「瓦爾克拉斯的歷史滿是血腥衝突：帝國的興起與覆滅。",
+      "人類之間互相屠殺，卻從未懷疑那潛伏於表面之下的瘋狂，或許並非天生。」"
      ],
      "hiddenEn": [
       "Exceptional, Physical, Support, Duration",
       "Exceptional,Physical,Support,Duration",
-      "Supports banner skills. Cannot modify the skills of minions."
+      "Supports banner skills. Cannot modify the skills of minions.",
+      "\"The history of Wraeclast is marked by bloody conflicts. The rise",
+      "and fall of empires. Man slaughtered man, never suspecting the",
+      "madness lurking under the surface might not have been innate.\""
      ]
     },
     {
@@ -30007,12 +30935,15 @@
      "hiddenZh": [
       "卓越, 範圍效果, 輔助",
       "卓越,範圍效果,輔助",
-      "輔助任何會擊中敵人的技能。"
+      "輔助任何會擊中敵人的技能。",
+      "那些被漫遊風暴所觸及的奧瑞亞公民，皆死於極度淒慘的境地。"
      ],
      "hiddenEn": [
       "Exceptional, AoE, Support",
       "Exceptional,AoE,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "Those citizens of Oriath touched by the",
+      "roving storms died most horrible deaths."
      ]
     },
     {
@@ -30067,12 +30998,15 @@
      "hiddenZh": [
       "卓越, 輔助, 近戰, 攻擊, 火焰, 範圍效果, 觸發",
       "卓越,輔助,近戰,攻擊,火焰,範圍效果,觸發",
-      "輔助近戰攻擊技能。無法輔助觸發攻擊、由不是你所使用的攻擊、和會創造召喚物的攻擊。"
+      "輔助近戰攻擊技能。無法輔助觸發攻擊、由不是你所使用的攻擊、和會創造召喚物的攻擊。",
+      "巨大的群手之柱擁抱著焦黑的天際。 其中燃燒著最純粹的炙熱光束。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Melee, Attack, Fire, AoE, Trigger",
       "Exceptional,Support,Melee,Attack,Fire,AoE,Trigger",
-      "Supports melee attack skills. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions."
+      "Supports melee attack skills. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions.",
+      "A vast pillar of hands embraces a charred sky.",
+      "Within burns a beam of purest heat."
      ]
     },
     {
@@ -30301,12 +31235,16 @@
      "hiddenZh": [
       "卓越, 法術, 輔助, 瓦爾",
       "卓越,法術,輔助,瓦爾",
-      "輔助瓦爾法術技能，以消耗自身生命和能量護盾為代價使技能重複。無法輔助圖騰、引導、觸發、立即、復仇、閃現、或有保留需求的技能。"
+      "輔助瓦爾法術技能，以消耗自身生命和能量護盾為代價使技能重複。無法輔助圖騰、引導、觸發、立即、復仇、閃現、或有保留需求的技能。",
+      "在阿茲里的統治之下，獻祭是一門殘酷而有效率的學問。",
+      "她的人民願意奉獻一切…而他們也確實做到了。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Support, Vaal",
       "Exceptional,Spell,Support,Vaal",
-      "Supports Vaal spell skills, making them repeat when cast at the cost of your life and energy shield. Cannot support totem skills, channelling skills, triggered skills, instant skills, retaliation skills, blink skills, or skills with a reservation."
+      "Supports Vaal spell skills, making them repeat when cast at the cost of your life and energy shield. Cannot support totem skills, channelling skills, triggered skills, instant skills, retaliation skills, blink skills, or skills with a reservation.",
+      "Under Atziri, sacrifice was a ruthless and efficient science.",
+      "Her people were willing to give everything... and they did."
      ]
     },
     {
@@ -30321,12 +31259,15 @@
      "hiddenZh": [
       "卓越, 輔助, 瓦爾",
       "卓越,輔助,瓦爾",
-      "輔助瓦爾技能。"
+      "輔助瓦爾技能。",
+      "「若混沌向你提出交易，挑戰者， 在接受前務必三思。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Vaal",
       "Exceptional,Support,Vaal",
-      "Supports Vaal skills."
+      "Supports Vaal skills.",
+      "\"If Chaos offers you a deal, challenger,",
+      "think deeply before you accept.\""
      ]
     },
     {
@@ -30375,12 +31316,15 @@
      "hiddenZh": [
       "卓越, 輔助, 咒術, 光環",
       "卓越,輔助,咒術,光環",
-      "輔助咒術詛咒技能，使他們變為光環並施加其效果至你周遭範圍內的所有敵人。"
+      "輔助咒術詛咒技能，使他們變為光環並施加其效果至你周遭範圍內的所有敵人。",
+      "即使被封印於石中，異界尊師的陰影依然 在他們心中徘徊，並纏繞著他們的夢境。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Hex, Aura",
       "Exceptional,Support,Hex,Aura",
-      "Supports hex curse skills, turning them into auras that will apply their effect to all enemies in an area around you."
+      "Supports hex curse skills, turning them into auras that will apply their effect to all enemies in an area around you.",
+      "Even trapped in stone, the Elder's shadow lingered",
+      "in their hearts and coiled around their dreams."
      ]
     },
     {
@@ -30415,12 +31359,15 @@
      "hiddenZh": [
       "卓越, 輔助, 陷阱, 地雷",
       "卓越,輔助,陷阱,地雷",
-      "輔助會投擲陷阱會地雷的技能。"
+      "輔助會投擲陷阱會地雷的技能。",
+      "「直接的手段失敗了。也罷。在我保護瓦爾克拉斯 的聖戰中，我必須把眼光……放得更長遠。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Trap, Mine",
       "Exceptional,Support,Trap,Mine",
-      "Supports skills which throw Traps or Mines."
+      "Supports skills which throw Traps or Mines.",
+      "\"The direct approach failed. So be it. In my crusade",
+      "to protect Wraeclast, I must take... a longer view.\""
      ]
     },
     {
@@ -30475,12 +31422,15 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "聖堂教團的統治留下了不可磨滅的印記。 此後，札娜在他們面前總是保持著戒備。"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "DNT Supports bla"
+      "DNT Supports bla",
+      "The dominance of the Templars left an indelible mark.",
+      "Zana would ever after stand guarded in their presence."
      ]
     },
     {
@@ -30773,12 +31723,16 @@
      "hiddenZh": [
       "卓越, 輔助, 召喚物",
       "卓越,輔助,召喚物",
-      "輔助會創造可被傷害的召喚物的技能。無法輔助觸發技能。"
+      "輔助會創造可被傷害的召喚物的技能。無法輔助觸發技能。",
+      "漆黑絲克瑪與她的部下並肩作戰時 已是一名令人敬畏的戰士，但當她騎乘 在忠誠的坐騎熙優背上戰鬥時，更是勢不可擋。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Minion",
       "Exceptional,Support,Minion",
-      "Supports skills that create minions which can be damaged. Cannot support triggered skills."
+      "Supports skills that create minions which can be damaged. Cannot support triggered skills.",
+      "The Black Sekhema was a formidable fighter",
+      "alongside her dekhara, but she was unstoppable",
+      "when she fought atop her trusted mount, Shiyo."
      ]
     },
     {
@@ -30833,12 +31787,15 @@
      "hiddenZh": [
       "卓越, 範圍效果, 輔助, 召喚物",
       "卓越,範圍效果,輔助,召喚物",
-      "輔助創造護衛召喚物的技能，使這些召喚物被創造時會帶有正面效果的聖堂光環。"
+      "輔助創造護衛召喚物的技能，使這些召喚物被創造時會帶有正面效果的聖堂光環。",
+      "「這個世界永遠不會知曉我們的犧牲，但 無論要付出多少時間，我們都會挺身奮戰到底！」"
      ],
      "hiddenEn": [
       "Exceptional, AoE, Support, Minion",
       "Exceptional,AoE,Support,Minion",
-      "Supports skills that create sentinel minions, causing those minions to be created with a beneficial templar aura."
+      "Supports skills that create sentinel minions, causing those minions to be created with a beneficial templar aura.",
+      "\"The world will never know our sacrifice, but",
+      "we will stand and fight for as long as it takes!\""
      ]
     },
     {
@@ -30853,12 +31810,15 @@
      "hiddenZh": [
       "卓越, 輔助, 召喚物",
       "卓越,輔助,召喚物",
-      "輔助會創造召喚物的技能。"
+      "輔助會創造召喚物的技能。",
+      "「我總做著同一個噩夢……我奔跑…… 我尖叫……但只有死者能聽見我的聲音……」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Minion",
       "Exceptional,Support,Minion",
-      "Supports skills which create Minions."
+      "Supports skills which create Minions.",
+      "\"I have a recurring nightmare... I run...",
+      "I scream... but only the dead hear me...\""
      ]
     },
     {
@@ -30931,12 +31891,15 @@
      "hiddenZh": [
       "卓越, 混沌, 輔助",
       "卓越,混沌,輔助",
-      "輔助任何會擊中敵人的技能。"
+      "輔助任何會擊中敵人的技能。",
+      "「他們將我擲入毒蛇坑中， 而那正是我尋得真實自我的地方。」"
      ],
      "hiddenEn": [
       "Exceptional, Chaos, Support",
       "Exceptional,Chaos,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "\"They cast me into a pit of vipers, and",
+      "that is where I found my true self.\""
      ]
     },
     {
@@ -31025,12 +31988,16 @@
      "hiddenZh": [
       "卓越, 輔助, 近戰, 攻擊, 範圍效果",
       "卓越,輔助,近戰,攻擊,範圍效果",
-      "輔助近戰攻擊技能。無法輔助觸發攻擊，由你以外來源的攻擊，和會創造召喚物的技能。"
+      "輔助近戰攻擊技能。無法輔助觸發攻擊，由你以外來源的攻擊，和會創造召喚物的技能。",
+      "尊師的影響力依然縈繞在",
+      "瓦爾克拉斯最黑暗的角落。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Melee, Attack, AoE",
       "Exceptional,Support,Melee,Attack,AoE",
-      "Supports melee attack skills. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions."
+      "Supports melee attack skills. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions.",
+      "The Elder's influence yet lingers",
+      "in the darkest corners of Wraeclast."
      ]
     },
     {
@@ -31045,12 +32012,18 @@
      "hiddenZh": [
       "卓越, 輔助, 攻擊, 範圍效果, 持續時間, 弓箭",
       "卓越,輔助,攻擊,範圍效果,持續時間,弓箭",
-      "輔助向上發射投射物的遠程攻擊技能。無法輔助觸發攻擊、由你以外來源的攻擊、和會創造召喚物的技能。"
+      "輔助向上發射投射物的遠程攻擊技能。無法輔助觸發攻擊、由你以外來源的攻擊、和會創造召喚物的技能。",
+      "「我甚至沒有停下回頭看一眼，便縱身躍入那扇閃爍的窗口……",
+      "一刻也不能浪費，我抓起手邊的工具，猛力插入那邪惡的裝置之中。",
+      "它嗡鳴作響，帶著不祥的氣息，牢牢嵌在我實驗室的地板裡。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Attack, AoE, Duration, Bow",
       "Exceptional,Support,Attack,AoE,Duration,Bow",
-      "Supports ranged attack skills that fire projectiles upwards. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions."
+      "Supports ranged attack skills that fire projectiles upwards. Cannot support triggered attacks, attacks used by things other than you, or skills which create minions.",
+      "\"Not even stopping to look behind, I dove through the shimmering window...",
+      "With not a minute to waste, I took a nearby tool and jammed it into the infernal",
+      "device, where it hummed, ominously entrenched in my laboratory floor.\""
      ]
     },
     {
@@ -31065,12 +32038,18 @@
      "hiddenZh": [
       "卓越, 輔助, 攻擊, 範圍效果, 近戰, 重擊, 火焰, 觸發",
       "卓越,輔助,攻擊,範圍效果,近戰,重擊,火焰,觸發",
-      "輔助由你自身使用的重擊技能，使他們在與地面碰撞時創造額外裂隙。"
+      "輔助由你自身使用的重擊技能，使他們在與地面碰撞時創造額外裂隙。",
+      "「噢是的，克塔什懂你。在牠龐大的群體之中，",
+      "藏著某種敏銳的蟲群心智。牠聽得見你的懇求，但",
+      "卻視而不見……因為牠對你懷著熾熱的狂怒。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Attack, AoE, Melee, Slam, Fire, Trigger",
       "Exceptional,Support,Attack,AoE,Melee,Slam,Fire,Trigger",
-      "Supports slam skills you use yourself, causing them to create fissures when impacting the ground."
+      "Supports slam skills you use yourself, causing them to create fissures when impacting the ground.",
+      "\"Oh yes, K'Tash understands you. It has a keen swarm-mind",
+      "somewhere within its multitudes. It hears your pleas, but",
+      "ignores them... because it hates you with a burning fury.\""
      ]
     },
     {
@@ -31085,12 +32064,20 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "輔助任何會擊中敵人的技能。"
+      "輔助任何會擊中敵人的技能。",
+      "「她逃離了她誕生的牢籠，受到那偉大寂靜的",
+      "破滅所牽引。在那一刻，宇宙發生了異變，",
+      "曾經堅不可摧的高牆變得脆弱不堪。",
+      "堡壘淪為空殼，唯有她獨自逃出生天。」"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "\"She fled from the prison of her birth, drawn by the breaking",
+      "of that great Silence. At that moment, the universe was changed,",
+      "and walls that were once impenetrable became brittle.",
+      "A fortress became a shell, and she alone escaped.\""
      ]
     },
     {
@@ -31899,12 +32886,15 @@
      "hiddenZh": [
       "卓越, 物理, 混沌, 輔助",
       "卓越,物理,混沌,輔助",
-      "輔助可以擊中敵人的技能。無法影響召喚物技能。"
+      "輔助可以擊中敵人的技能。無法影響召喚物技能。",
+      "「我的主人喜歡怪誕與出人意表的事物。 我相信你能想出一些法子來取悅祂。」"
      ],
      "hiddenEn": [
       "Exceptional, Physical, Chaos, Support",
       "Exceptional,Physical,Chaos,Support",
-      "Supports skills that hit enemies. Cannot modify the skills of minions."
+      "Supports skills that hit enemies. Cannot modify the skills of minions.",
+      "\"My master enjoys the strange, and the unexpected.",
+      "I'm sure you can think of a few ways to entertain them.\""
      ]
     },
     {
@@ -31999,12 +32989,14 @@
      "hiddenZh": [
       "卓越, 法術, 暴擊, 輔助",
       "卓越,法術,暴擊,輔助",
-      "輔助會賦予強化的法術技能。"
+      "輔助會賦予強化的法術技能。",
+      "「我的設計本來沒有要讓它超載……就當作是個美麗的小意外吧！」"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Critical, Support",
       "Exceptional,Spell,Critical,Support",
-      "Supports spells skills that gain Intensity."
+      "Supports spells skills that gain Intensity.",
+      "\"I didn't design it to overload... let's call it a happy little accident!\""
      ]
     },
     {
@@ -32019,12 +33011,16 @@
      "hiddenZh": [
       "卓越, 暴擊, 輔助, 捷光環",
       "卓越,暴擊,輔助,捷光環",
-      "輔助捷光環技能，使他們擁有更高的暴擊率但沒有增益效果。"
+      "輔助捷光環技能，使他們擁有更高的暴擊率但沒有增益效果。",
+      "她的苦澀使她對永生的真正代價視而不見。 讓瓦爾克拉斯燃燒殆盡、被吞噬吧，她告訴自己…… 且只有她自己，在無盡的數個世紀中獨語。"
      ],
      "hiddenEn": [
       "Exceptional, Critical, Support, Herald",
       "Exceptional,Critical,Support,Herald",
-      "Supports Herald skills causing them to have higher critical strike chance but no buff effect."
+      "Supports Herald skills causing them to have higher critical strike chance but no buff effect.",
+      "Her bitterness blinded her to the true price of immortality.",
+      "Let Wraeclast burn and be devoured, she told herself...",
+      "and only herself, for centuries without end."
      ]
     },
     {
@@ -32039,12 +33035,15 @@
      "hiddenZh": [
       "卓越, 法術, 召喚物, 輔助",
       "卓越,法術,召喚物,輔助",
-      "輔助非祝福的法術。"
+      "輔助非祝福的法術。",
+      "讓深藏於內的永恆尖嘯 從你悲泣的鮮血中流淌而出。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Minion, Support",
       "Exceptional,Spell,Minion,Support",
-      "Supports non-blessing spells."
+      "Supports non-blessing spells.",
+      "Let the eternal scream within",
+      "flow from your weeping blood."
      ]
     },
     {
@@ -32259,12 +33258,15 @@
      "hiddenZh": [
       "卓越, 輔助, 近戰, 攻擊",
       "卓越,輔助,近戰,攻擊",
-      "輔助由你自身使用的近戰攻擊技能。無法影響召喚物的技能。"
+      "輔助由你自身使用的近戰攻擊技能。無法影響召喚物的技能。",
+      "沒有任何高牆能抵擋牠的凝視。沒有堡壘、 沒有洞穴、也沒有高山。不如戰死沙場。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Melee, Attack",
       "Exceptional,Support,Melee,Attack",
-      "Supports melee attack skills you use yourself. Cannot modify the skills of minions."
+      "Supports melee attack skills you use yourself. Cannot modify the skills of minions.",
+      "No walls can stand against its gaze. No fortress,",
+      "no cave, no mountain. Better to die fighting."
      ]
     },
     {
@@ -32279,12 +33281,18 @@
      "hiddenZh": [
       "卓越, 烙印, 輔助, 範圍效果, 法術, 閃電, 觸發",
       "卓越,烙印,輔助,範圍效果,法術,閃電,觸發",
-      "輔助可以被召回的烙印技能。"
+      "輔助可以被召回的烙印技能。",
+      "「未經思考的言語驅使我們",
+      "在泥濘中掙扎，尋求僅能在痛苦",
+      "中找到的慰藉。 」"
      ],
      "hiddenEn": [
       "Exceptional, Brand, Support, AoE, Spell, Lightning, Trigger",
       "Exceptional,Brand,Support,AoE,Spell,Lightning,Trigger",
-      "Supports brand skills that can be recalled."
+      "Supports brand skills that can be recalled.",
+      "\"Words without thought drive us",
+      "to claw and scrabble in the dirt,",
+      "seeking respite found only in pain.\""
      ]
     },
     {
@@ -32559,12 +33567,18 @@
      "hiddenZh": [
       "卓越, 冰冷, 閃電, 輔助",
       "卓越,冰冷,閃電,輔助",
-      "輔助任何可擊中敵人的技能。"
+      "輔助任何可擊中敵人的技能。",
+      "維爾卡伸出手。僅僅一觸，她便",
+      "蜷身倒下，尖叫著，絕望地抓撓自己的背，",
+      "任由甲殼般的恩賜自她脊椎爆裂而出。"
      ],
      "hiddenEn": [
       "Exceptional, Cold, Lightning, Support",
       "Exceptional,Cold,Lightning,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "Velka reached out her hand. One touch and she",
+      "folded, screaming, clawing desperately at her back",
+      "as the crustaceous gift burst itself from her spine."
      ]
     },
     {
@@ -32619,12 +33633,17 @@
      "hiddenZh": [
       "卓越, 冰冷, 秘能, 輔助, 法術",
       "卓越,冰冷,秘能,輔助,法術",
-      "輔助會造成擊中傷害且沒有保留的法術技能。無法輔助秘能、烙印、球體、瓦爾技能，或由圖騰、陷阱、和地雷使用的技能。無法影響召喚物技能。"
+      "輔助會造成擊中傷害且沒有保留的法術技能。無法輔助秘能、烙印、球體、瓦爾技能，或由圖騰、陷阱、和地雷使用的技能。無法影響召喚物技能。",
+      "她對輿圖的理解並非與生俱來。",
+      "她越是投入去理解它，那份知識便越發沉重地壓在她身上。"
      ],
      "hiddenEn": [
       "Exceptional, Cold, Arcane, Support, Spell",
       "Exceptional,Cold,Arcane,Support,Spell",
-      "Supports spell skills that deal damage with hits and have no reservation. Cannot support arcane skills, Brand skills, Orb skills, Vaal skills, or skills used by totems, traps or mines. Cannot modify the skills of minions."
+      "Supports spell skills that deal damage with hits and have no reservation. Cannot support arcane skills, Brand skills, Orb skills, Vaal skills, or skills used by totems, traps or mines. Cannot modify the skills of minions.",
+      "Her understanding of the Atlas was not innate. The",
+      "more committed she became to understanding it,",
+      "the more the knowledge weighed on her."
      ]
     },
     {
@@ -32679,12 +33698,14 @@
      "hiddenZh": [
       "卓越, 戰吼, 輔助, 攻擊, 範圍效果, 物理, 觸發, 近戰",
       "卓越,戰吼,輔助,攻擊,範圍效果,物理,觸發,近戰",
-      "輔助由你自身使用的戰吼技能。"
+      "輔助由你自身使用的戰吼技能。",
+      "在其瘋狂之中，烈許極度渴望著交融。"
      ],
      "hiddenEn": [
       "Exceptional, Warcry, Support, Attack, AoE, Physical, Trigger, Melee",
       "Exceptional,Warcry,Support,Attack,AoE,Physical,Trigger,Melee",
-      "Supports warcry skills you use yourself."
+      "Supports warcry skills you use yourself.",
+      "In its madness, Xesht desperately seeks communion."
      ]
     },
     {
@@ -32719,12 +33740,16 @@
      "hiddenZh": [
       "卓越, 輔助, 近戰, 攻擊, 打擊",
       "卓越,輔助,近戰,攻擊,打擊",
-      "輔助近戰打擊技能，使他們偶爾也會同時打擊額外目標。額外目標需要位於使用者的最小範圍內。若輔助召喚物攻擊技能，該召喚物的技能並不會同時打擊額外目標。無法輔助瓦爾或觸發技能。"
+      "輔助近戰打擊技能，使他們偶爾也會同時打擊額外目標。額外目標需要位於使用者的最小範圍內。若輔助召喚物攻擊技能，該召喚物的技能並不會同時打擊額外目標。無法輔助瓦爾或觸發技能。",
+      "「我相信亡者之殿暗地裡是一座訓練場。總有一天，我們將被喚起 去挺身對抗那龐大的狂潮。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Melee, Attack, Strike",
       "Exceptional,Support,Melee,Attack,Strike",
-      "Supports melee strike skills, causing them to also strike at extra targets simultaneously. The extra targets must be a minimum distance from the user. If supporting a minion attack skill, the minion's skills will not also strike extra targets. Cannot support Vaal skills or triggered skills."
+      "Supports melee strike skills, causing them to also strike at extra targets simultaneously. The extra targets must be a minimum distance from the user. If supporting a minion attack skill, the minion's skills will not also strike extra targets. Cannot support Vaal skills or triggered skills.",
+      "\"I believe the Halls of the Dead are secretly a",
+      "training ground. One day, we will be called",
+      "forth to stand and fight against a great tide.\""
      ]
     },
     {
@@ -32739,12 +33764,15 @@
      "hiddenZh": [
       "卓越, 輔助, 投射物",
       "卓越,輔助,投射物",
-      "輔助投射物技能，使他們的投射物在最初擊中敵人的前兩次未穿透攻擊分裂成兩個。"
+      "輔助投射物技能，使他們的投射物在最初擊中敵人的前兩次未穿透攻擊分裂成兩個。",
+      "獅眼曾以一箭射殺三人之舉， 贏得了這個稱號。"
      ],
      "hiddenEn": [
       "Exceptional, Support, Projectile",
       "Exceptional,Support,Projectile",
-      "Supports projectile skills, making their projectiles fork into two projectiles the first two times they hit an enemy and don't pierce it."
+      "Supports projectile skills, making their projectiles fork into two projectiles the first two times they hit an enemy and don't pierce it.",
+      "Lioneye earned his moniker by killing",
+      "three men with a single arrow."
      ]
     },
     {
@@ -32759,12 +33787,16 @@
      "hiddenZh": [
       "卓越, 暴擊, 輔助, 範圍效果, 觸發, 攻擊, 持續時間",
       "卓越,暴擊,輔助,範圍效果,觸發,攻擊,持續時間",
-      "輔助法杖攻擊，使他們暴擊時有機率觸發力量紊亂。無法輔助觸發技能或是由你以外的來源使用的技能。無法影響召喚物技能。"
+      "輔助法杖攻擊，使他們暴擊時有機率觸發力量紊亂。無法輔助觸發技能或是由你以外的來源使用的技能。無法影響召喚物技能。",
+      "「指控滿天飛。罪人！異端！我只是個學徒，而我的庇護者敦促我 保持沉默。當一位聖宗取代另一位時，我們必須低下頭來。 這一切都關乎權力，我的庇護者低聲說道，而我們手無寸鐵……」"
      ],
      "hiddenEn": [
       "Exceptional, Critical, Support, AoE, Trigger, Attack, Duration",
       "Exceptional,Critical,Support,AoE,Trigger,Attack,Duration",
-      "Supports Wand Attacks, granting them a chance to trigger Kinetic Flux on critical strike. Cannot support triggered skills or skills used by things other than you. Cannot modify the skills of minions."
+      "Supports Wand Attacks, granting them a chance to trigger Kinetic Flux on critical strike. Cannot support triggered skills or skills used by things other than you. Cannot modify the skills of minions.",
+      "\"Accusations fly. Sinner! Heretic! I am but an initiate, and my patron urges",
+      "silence. We will keep our heads down while one High Templar supplants",
+      "another. It's all about power, my patron whispers, and we have none...\""
      ]
     },
     {
@@ -32779,12 +33811,15 @@
      "hiddenZh": [
       "卓越, 輔助",
       "卓越,輔助",
-      "輔助任何會擊中敵人的技能。"
+      "輔助任何會擊中敵人的技能。",
+      "聖宗的恐懼吞噬了她的一生， 因此她將生死置之度外，去行當行之事。"
      ],
      "hiddenEn": [
       "Exceptional, Support",
       "Exceptional,Support",
-      "Supports any skill that hits enemies."
+      "Supports any skill that hits enemies.",
+      "A High Templar's fear consumed her entire life,",
+      "so she cast aside her own, to do what must be done."
      ]
     },
     {
@@ -32799,12 +33834,16 @@
      "hiddenZh": [
       "卓越, 攻擊, 近戰, 輔助",
       "卓越,攻擊,近戰,輔助",
-      "輔助近戰攻擊技能，使他們在使用時重複三次，每一次都會以隨機敵人為目標。無法輔助瓦爾、引導、快行、復仇、或觸發技能。"
+      "輔助近戰攻擊技能，使他們在使用時重複三次，每一次都會以隨機敵人為目標。無法輔助瓦爾、引導、快行、復仇、或觸發技能。",
+      "札娜敬畏地看著父親發言。隨著每一句話， 他的身軀似乎變得更為龐大且駭人，從全神貫注的 聽眾中，引發了越來越狂熱的迴響。"
      ],
      "hiddenEn": [
       "Exceptional, Attack, Melee, Support",
       "Exceptional,Attack,Melee,Support",
-      "Supports melee attack skills, making them repeat three times when used, targeting a random enemy each time. Cannot support Vaal skills, channelling skills, travel skills, retaliation skills or triggered skills."
+      "Supports melee attack skills, making them repeat three times when used, targeting a random enemy each time. Cannot support Vaal skills, channelling skills, travel skills, retaliation skills or triggered skills.",
+      "Zana watched in awe as her father spoke. With each word,",
+      "he seemed to grow larger and more frightening, drawing",
+      "increasingly fervorous responses from his rapt audience."
      ]
     },
     {
@@ -32839,12 +33878,15 @@
      "hiddenZh": [
       "卓越, 法術, 範圍效果, 輔助",
       "卓越,法術,範圍效果,輔助",
-      "輔助法術技能，使他們在施放時重複。無法輔助瓦爾、圖騰、烙印、引導、觸發、立即、復仇、閃現、或有保留需求的技能。"
+      "輔助法術技能，使他們在施放時重複。無法輔助瓦爾、圖騰、烙印、引導、觸發、立即、復仇、閃現、或有保留需求的技能。",
+      "她凝視著鏡子…… 而鏡子也凝視著她。"
      ],
      "hiddenEn": [
       "Exceptional, Spell, AoE, Support",
       "Exceptional,Spell,AoE,Support",
-      "Supports spell skills, making them repeat when cast. Cannot support Vaal skills, totem skills, brand skills, channelling skills, triggered skills, instant skills, retaliation skills, blink skills, or skills with a reservation."
+      "Supports spell skills, making them repeat when cast. Cannot support Vaal skills, totem skills, brand skills, channelling skills, triggered skills, instant skills, retaliation skills, blink skills, or skills with a reservation.",
+      "She gazed into the mirror...",
+      "and the mirror gazed back."
      ]
     },
     {
@@ -32859,12 +33901,16 @@
      "hiddenZh": [
       "範圍效果, 法術, 卓越, 輔助",
       "範圍效果,法術,卓越,輔助",
-      "輔助任何會為目標地點施加範圍效果的法術技能。無法輔助瓦爾技能，或是由圖騰、陷阱、地雷使用的技能。無法影響召喚物技能。"
+      "輔助任何會為目標地點施加範圍效果的法術技能。無法輔助瓦爾技能，或是由圖騰、陷阱、地雷使用的技能。無法影響召喚物技能。",
+      "逝去親人的迴響縈繞著她，",
+      "近在咫尺卻又遙不可及，令人抓狂。"
      ],
      "hiddenEn": [
       "AoE, Spell, Exceptional, Support",
       "AoE,Spell,Exceptional,Support",
-      "Supports spell skills that apply an effect to an area around a targeted location. Cannot support Vaal skills or skills used by totems, traps, or mines. Cannot modify the skills of minions."
+      "Supports spell skills that apply an effect to an area around a targeted location. Cannot support Vaal skills or skills used by totems, traps, or mines. Cannot modify the skills of minions.",
+      "The echoes of lost loved ones surrounded her,",
+      "maddeningly close, but forever out of reach."
      ]
     },
     {
@@ -32879,12 +33925,16 @@
      "hiddenZh": [
       "卓越, 輔助, 連鎖, 投射物",
       "卓越,輔助,連鎖,投射物",
-      "輔助投射物技能，和其他會連鎖的技能。"
+      "輔助投射物技能，和其他會連鎖的技能。",
+      "「我們皆緊密相連。每個人心中都燃燒著相同的火焰。 希里女王深知這一點……但她仍選擇在悉妮蔻拉 視線之外的某處繼續戰鬥。這肯定有十分充分的理由。」"
      ],
      "hiddenEn": [
       "Exceptional, Support, Chaining, Projectile",
       "Exceptional,Support,Chaining,Projectile",
-      "Supports projectile skills, and any other skills that chain."
+      "Supports projectile skills, and any other skills that chain.",
+      "\"We are all connected. Each of us burns with the same fire.",
+      "Queen Hyrri knew that... she chooses to battle still, somewhere",
+      "beyond Hinekora's sight. There must be a very good reason.\""
      ]
     },
     {
@@ -32899,12 +33949,16 @@
      "hiddenZh": [
       "卓越, 法術, 輔助",
       "卓越,法術,輔助",
-      "輔助法術技能，使他們的效果在施放時重複。無法輔助有冷卻、觸發、烙印、瓦爾、引導、有保留需求的技能，或由圖騰、陷阱、和地雷使用的技能。無法影響召喚物技能。"
+      "輔助法術技能，使他們的效果在施放時重複。無法輔助有冷卻、觸發、烙印、瓦爾、引導、有保留需求的技能，或由圖騰、陷阱、和地雷使用的技能。無法影響召喚物技能。",
+      "「真正的力量伴隨著耐心成長。你必須培育它。 你得了解它的需求。給予供給。然後等待。唯有 如此，當它成熟之際，才會結出豐碩的果實。」"
      ],
      "hiddenEn": [
       "Exceptional, Spell, Support",
       "Exceptional,Spell,Support",
-      "Supports spell skills, making their effect reoccur when cast. Cannot support skills with cooldowns, triggered skills, Brand skills, Vaal skills, channelling skills, skills with a reservation, or skills used by totems, traps, or mines. Cannot modify the skills of minions."
+      "Supports spell skills, making their effect reoccur when cast. Cannot support skills with cooldowns, triggered skills, Brand skills, Vaal skills, channelling skills, skills with a reservation, or skills used by totems, traps, or mines. Cannot modify the skills of minions.",
+      "\"True power grows with patience. You must nurture it.",
+      "You learn what it needs. You provide. You wait. Only",
+      "then, when it is ripe, does it yield its fruits.\""
      ]
     },
     {
@@ -38121,11 +39175,13 @@
      "g": 3,
      "hiddenZh": [
       "法術, 持續時間, 召喚物, 瓦爾",
-      "法術,持續時間,召喚物,瓦爾"
+      "法術,持續時間,召喚物,瓦爾",
+      "Work in progress"
      ],
      "hiddenEn": [
       "Spell, Duration, Minion, Vaal",
-      "Spell,Duration,Minion,Vaal"
+      "Spell,Duration,Minion,Vaal",
+      "Work in progress"
      ]
     },
     {
@@ -38646,10 +39702,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38664,10 +39722,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38682,10 +39742,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38700,10 +39762,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38718,10 +39782,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38736,10 +39802,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38754,10 +39822,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38772,10 +39842,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38790,10 +39862,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38808,10 +39882,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38826,10 +39902,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38844,10 +39922,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38862,10 +39942,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38882,10 +39964,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38900,10 +39984,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38918,10 +40004,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38936,10 +40024,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38954,10 +40044,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38972,10 +40064,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -38990,10 +40084,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39008,10 +40104,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39026,10 +40124,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39046,10 +40146,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39064,10 +40166,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39082,10 +40186,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39100,10 +40206,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39118,10 +40226,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39136,10 +40246,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "取代一個 小型力量 天賦"
+      "取代一個 小型力量 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Strength Passive Skill"
+      "Replaces one Small Strength Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39154,10 +40266,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39170,10 +40284,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39188,10 +40304,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39206,10 +40324,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39224,10 +40344,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39242,10 +40364,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39260,10 +40384,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39278,10 +40404,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39296,10 +40424,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39314,10 +40444,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39332,10 +40464,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39350,10 +40484,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39368,10 +40504,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39388,10 +40526,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39406,10 +40546,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39424,10 +40566,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39442,10 +40586,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39460,10 +40606,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39478,10 +40626,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39496,10 +40646,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39514,10 +40666,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39532,10 +40686,12 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "取代一個 小型智慧 天賦"
+      "取代一個 小型智慧 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Intelligence Passive Skill"
+      "Replaces one Small Intelligence Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39552,10 +40708,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39570,10 +40728,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39588,10 +40748,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39606,10 +40768,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39624,10 +40788,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39642,10 +40808,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39660,10 +40828,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39678,10 +40848,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39698,10 +40870,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39716,10 +40890,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39734,10 +40910,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39752,10 +40930,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39770,10 +40950,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39790,10 +40972,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39808,10 +40992,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39826,10 +41012,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39844,10 +41032,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39862,10 +41052,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39880,10 +41072,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39898,10 +41092,12 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "取代一個 小型敏捷 天賦"
+      "取代一個 小型敏捷 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Dexterity Passive Skill"
+      "Replaces one Small Dexterity Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39916,10 +41112,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39934,10 +41132,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39952,10 +41152,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39970,10 +41172,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -39988,10 +41192,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40006,10 +41212,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40022,10 +41230,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40040,10 +41250,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40058,10 +41270,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40076,10 +41290,12 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "取代一個 小型能力 天賦"
+      "取代一個 小型能力 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Small Attribute Passive Skill"
+      "Replaces one Small Attribute Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40096,10 +41312,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40114,10 +41332,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40132,10 +41352,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40150,10 +41372,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40168,10 +41392,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40186,10 +41412,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40204,10 +41432,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40222,10 +41452,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40240,10 +41472,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40260,10 +41494,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40278,10 +41514,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40298,10 +41536,12 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "取代一個 核心天賦 天賦"
+      "取代一個 核心天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Notable Passive Skill"
+      "Replaces one Notable Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40316,10 +41556,12 @@
      ],
      "g": 5,
      "hiddenZh": [
-      "取代一個 關鍵天賦 天賦"
+      "取代一個 關鍵天賦 天賦",
+      "右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。最多能有 50 個紋身。"
      ],
      "hiddenEn": [
-      "Replaces one Keystone Passive Skill"
+      "Replaces one Keystone Passive Skill",
+      "Right click this item then left click an allocated Passive Skill. Maximum 50 Tattoos."
      ]
     },
     {
@@ -40460,10 +41702,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40480,10 +41730,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40500,10 +41758,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40518,10 +41784,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40536,10 +41810,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40554,10 +41836,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40574,10 +41864,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40592,10 +41890,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40612,10 +41918,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40630,10 +41944,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40648,10 +41970,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40668,10 +41998,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40690,10 +42028,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40708,10 +42054,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40726,10 +42080,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40744,10 +42106,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40762,10 +42132,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40780,10 +42158,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40798,10 +42184,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40818,10 +42212,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40836,10 +42238,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40856,10 +42266,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40876,10 +42294,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40894,10 +42320,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40914,10 +42348,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40932,10 +42374,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40950,10 +42400,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40968,10 +42426,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -40986,10 +42452,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -41004,10 +42478,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -41022,10 +42504,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     },
     {
@@ -41038,10 +42528,18 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "取代一個 專精 天賦"
+      "取代一個 專精 天賦",
+      "右鍵點擊此物品，再左鍵點擊",
+      "一個已分配的專精天賦。",
+      "同一時間只能使用任一",
+      "類型的符文之結。"
      ],
      "hiddenEn": [
-      "Replaces one Mastery Passive Skill"
+      "Replaces one Mastery Passive Skill",
+      "Right click this item then left click",
+      "an allocated Passive Mastery Skill.",
+      "Only one Runegraft of any given",
+      "type can be in use at a time."
      ]
     }
    ],
@@ -48745,10 +50243,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "獲得等同 #% 物理傷害的一個隨機元素傷害"
+      "獲得等同 #% 物理傷害的一個隨機元素傷害",
+      "\"藍色騎士隻身對抗著巢群，冰冷",
+      "且堅不可摧。他的身分無人知曉，",
+      "也從不摘下頭盔。人們偶爾只能",
+      "隱約看見那雙銳利的藍色眼睛。\""
      ],
      "hiddenEn": [
-      "Gain #% of Physical Damage as Extra Damage of a random Element"
+      "Gain #% of Physical Damage as Extra Damage of a random Element",
+      "\"The Blue Knight stood against the swarm,",
+      "icy and unassailable. His identity was not",
+      "known, and he never removed his helmet.",
+      "Glimpses were caught of piercing blue eyes.\""
      ]
     },
     {
@@ -48761,10 +50267,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 所有屬性"
+      "增加 #% 所有屬性",
+      "\"萊珊德菈女王出於惡意挑選王夫的決定，",
+      "最終只氣到了她自己。阿拉斯代爾與她",
+      "見過的任何男人都不同。沒過多久，",
+      "宣告皇家婚禮的號角便吹響了。\""
      ],
      "hiddenEn": [
-      "#% increased Attributes"
+      "#% increased Attributes",
+      "\"Queen Lysanda's spiteful choice of Consort",
+      "spited only herself. Alasdair was unlike any",
+      "man she had ever met. It was not long before",
+      "the trumpets sounded for the Royal Wedding.\""
      ]
     },
     {
@@ -48779,12 +50293,20 @@
      "hiddenZh": [
       "# 最大殭屍數量",
       "# 最大骷髏數量",
-      "# 最大幽魂數量"
+      "# 最大幽魂數量",
+      "\"事實證明，萊珊德菈成了極其優秀的前鋒—",
+      "一個身手輕盈、擅長閃躲的女孩，能負責",
+      "偵察並在前引路。人們開始將她視為他們的",
+      "嚮導、他們的希望，接著……成為他們的領袖。\""
      ],
      "hiddenEn": [
       "# to maximum number of Raised Zombies",
       "# to maximum number of Skeletons",
-      "# to maximum number of Spectres"
+      "# to maximum number of Spectres",
+      "\"It turned out, Lysanda made for an excellent",
+      "vanguard - a light, evasive girl who could scout",
+      "and lead the way. The people came to see her",
+      "as their guide, their hope, and then... their leader.\""
      ]
     },
     {
@@ -48797,10 +50319,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 混沌傷害"
+      "增加 #% 混沌傷害",
+      "\"在內遷的旅途中，米爾的萊珊德菈",
+      "還只是個女孩。艾茲麥甚至在建立之前",
+      "就差點迎來終結……但她對那魅惑的歌聲",
+      "置若罔聞。她徒手摘下了海妖的頭顱。\""
      ],
      "hiddenEn": [
-      "#% increased Chaos Damage"
+      "#% increased Chaos Damage",
+      "\"Lysanda of Myr was but a girl on that exodus.",
+      "Ezomyr almost met its end before it began...",
+      "but she could not hear that deadly lure. She",
+      "took the Siren's head with her bare hands.\""
      ]
     },
     {
@@ -48813,10 +50343,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#% 全域暴擊加成"
+      "#% 全域暴擊加成",
+      "\"面對凜冬詛咒，唯有符文鐵匠的鍛爐",
+      "得以抗衡。人們肩並肩地擠在一起，",
+      "而留守在內的人則緊貼著烈火，",
+      "在痛苦中痛苦哀號。\""
      ],
      "hiddenEn": [
-      "#% to Global Critical Strike Multiplier"
+      "#% to Global Critical Strike Multiplier",
+      "\"Against the Winter Curse, only the forges of",
+      "runesmiths could stand. The people huddled,",
+      "shoulder to shoulder, while those within were",
+      "pressed against the fires, screaming in agony.\""
      ]
     },
     {
@@ -48827,7 +50365,19 @@
      "en": [
       "Frost Hellion Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"而凜冬詛咒依舊穿透每扇窗戶",
+      "與每道門戶瘋狂肆虐。屋內為人",
+      "父母者任由自己凍成冰雕，",
+      "用他們的生命封死所有的縫隙。\""
+     ],
+     "hiddenEn": [
+      "\"And still the Winter Curse raged in through",
+      "every window and every door. The fathers",
+      "and mothers of those within let themselves",
+      "freeze solid, sealing the gaps with their lives.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanKiweth",
@@ -48837,7 +50387,19 @@
      "en": [
       "Retch Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"隨著米爾的艾茲麥人走向繁榮，",
+      "他們需要更多且更廣闊的土地。",
+      "萊珊德菈女王領導著持續進行的征討，",
+      "誓要屠盡最後一隻黑暗生物。\""
+     ],
+     "hiddenEn": [
+      "\"As the Ezomytes of Myr prospered, they",
+      "needed more and spreading lands. Queen",
+      "Lysanda led the ongoing campaign to",
+      "slaughter every last creature of darkness.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanDevourer",
@@ -48847,7 +50409,19 @@
      "en": [
       "Devourer Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"一隻巨大的無頭怪物，長著如牙齒般的手臂，",
+      "在他們希望定居的土地上遊蕩。其他武器",
+      "都無法對它造成傷害。於是他們用烈火",
+      "將其包圍，足足焚燒了數日之久。\""
+     ],
+     "hiddenEn": [
+      "\"A great headless monstrosity with arms like",
+      "teeth stalked the lands they hoped to settle.",
+      "No other weapon would find purchase. They",
+      "surrounded it with fire, burning it for days.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman2_5",
@@ -48859,10 +50433,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 全域防禦"
+      "增加 #% 全域防禦",
+      "\"黑夜拒絕結束，凜冬詛咒在狂風中咆哮。",
+      "人們哀慟哭求，而萊珊德菈盛怒無比。",
+      "就在那時，天空被撕裂開來，",
+      "在德魯伊的請求下，釋放出了救世主的憤怒。\""
      ],
      "hiddenEn": [
-      "#% increased Global Defences"
+      "#% increased Global Defences",
+      "\"The night refused to end, and the Winter Curse",
+      "howled. The people wailed, and Lysanda raged.",
+      "It was then that the sky tore open, unleashing",
+      "a saviour fury... at the behest of the Druids.\""
      ]
     },
     {
@@ -48873,7 +50455,19 @@
      "en": [
       "Sand Spitter Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"事實證明，萊珊德菈成了極其優秀的前鋒—",
+      "一個身手輕盈、擅長閃躲的女孩，能負責",
+      "偵察並在前引路。人們開始將她視為他們的",
+      "嚮導、他們的希望，接著……成為他們的領袖。\""
+     ],
+     "hiddenEn": [
+      "\"It turned out, Lysanda made for an excellent",
+      "vanguard - a light, evasive girl who could scout",
+      "and lead the way. The people came to see her",
+      "as their guide, their hope, and then... their leader.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanUrsa",
@@ -48883,7 +50477,19 @@
      "en": [
       "Ursa Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"隨著巫婆的女兒們讓氣候變得溫和，",
+      "一個富足與豐收的時代拉開了序幕。",
+      "萊桑達復興了法瑞爾的狩獵傳統，",
+      "好讓人民永遠不忘自己的根。\""
+     ],
+     "hiddenEn": [
+      "\"With the Hag's daughters easing the climate,",
+      "an age of plenty and bounty began. Lysanda",
+      "revived the Phaaryl tradition of the hunt,",
+      "so the people never forgot their roots.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet12",
@@ -48909,7 +50515,18 @@
      "en": [
       "Craicic Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"大海恢復了平靜，與斯科提群島",
+      "的聯繫也得以重啟。",
+      "據說，奎爾珊向人民賜予了祝福。\""
+     ],
+     "hiddenEn": [
+      "\"The sea calmed, and contact was",
+      "renewed with the Isles of Skothe.",
+      "It was said that Craiceann had",
+      "given a blessing to the people.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman1_4",
@@ -48921,10 +50538,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 閃電傷害"
+      "增加 #% 閃電傷害",
+      "\"一條巨大的裂痕在氏族之間、在家族",
+      "之間形成。那些留下來的人決心忍受",
+      "掙扎的歲月，只要這意味著我們能",
+      "保留自己的生活方式。\""
      ],
      "hiddenEn": [
-      "#% increased Lightning Damage"
+      "#% increased Lightning Damage",
+      "\"A great rift formed, between clans,",
+      "between families. Those that remained",
+      "resolved to endure times of struggle,",
+      "if it meant we could keep our ways.\""
      ]
     },
     {
@@ -48959,10 +50584,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "投射物穿透 # 個額外目標"
+      "投射物穿透 # 個額外目標",
+      "\"每一個新的山谷、每一片新的樹林，都潛藏著",
+      "新的危險。許多騎士為此付出了代價。萊珊德菈",
+      "從不以美貌聞名，但她每個季節都會",
+      "增添一道新的傷疤，且承受得心甘情願。\""
      ],
      "hiddenEn": [
-      "Projectiles Pierce # additional Targets"
+      "Projectiles Pierce # additional Targets",
+      "\"Each new valley, each new grove, held new",
+      "dangers. Many Knights paid the price. Lysanda",
+      "had never been known for her beauty, but she",
+      "bore a new scar each season, earned gladly.\""
      ]
     },
     {
@@ -48973,7 +50606,19 @@
      "en": [
       "Lynx Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"黑夜拒絕結束，凜冬詛咒在狂風中咆哮。",
+      "人們哀慟哭求，而萊珊德菈盛怒無比。",
+      "就在那時，天空被撕裂開來，",
+      "在德魯伊的請求下，釋放出了救世主的憤怒。\""
+     ],
+     "hiddenEn": [
+      "\"The night refused to end, and the Winter Curse",
+      "howled. The people wailed, and Lysanda raged.",
+      "It was then that the sky tore open, unleashing",
+      "a saviour fury... at the behest of the Druids.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanSpiker",
@@ -48983,7 +50628,19 @@
      "en": [
       "Goliath Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"這片土地向來嚴酷而殘暴，無時無刻",
+      "不在尋找殺戮與殘害我們的機會。為了",
+      "生存，我們必須成長與改變，但每個",
+      "氏族對於如何改變，都有各自的想法……\""
+     ],
+     "hiddenEn": [
+      "\"This land was always harsh and brutal,",
+      "ever seeking ways to kill and maim us.",
+      "We had to grow and change to survive,",
+      "but each clan had its own ideas how...\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanFrog",
@@ -48993,7 +50650,18 @@
      "en": [
       "Great Maw Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"在萊珊德菈統治數十年後，米爾艾茲麥人",
+      "的土地漸漸被稱為埃茲．德．米爾，",
+      "接著便簡稱為艾茲麥。事情就此定調。\""
+     ],
+     "hiddenEn": [
+      "\"Decades into Lysanda's reign, the",
+      "lands of the Ezomytes of Myr slowly",
+      "became known as Ezo De Myr, and",
+      "then simply Ezomyr. And so it was.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanGreatwolf",
@@ -49005,7 +50673,19 @@
       "Greatwolf Talisman",
       "Wolf Alpha Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "狼在滿月的月光下",
+      "像王表示了敬意",
+      "狼獻出了野性的力量",
+      "而王獻出了他的血"
+     ],
+     "hiddenEn": [
+      "The wolf greeted the king,",
+      "In the light of the harvest moon.",
+      "The wolf offered the strength of the wild,",
+      "And the king paid for it in blood."
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman1_10",
@@ -49017,10 +50697,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 攻擊與施放速度"
+      "增加 #% 攻擊與施放速度",
+      "\"萊珊德菈和她的騎士們帶著前來",
+      "定居的氏族來到了未來的艾茲麥……",
+      "但那裡存在著一隻巨獸，",
+      "一隻連他們也無法抗衡的巨獸。\""
      ],
      "hiddenEn": [
-      "#% increased Attack and Cast Speed"
+      "#% increased Attack and Cast Speed",
+      "\"Lysanda and her Knights brought the",
+      "settling clans to what would become",
+      "Ezomyr... but there was one beast against",
+      "which even they could not stand.\""
      ]
     },
     {
@@ -49049,10 +50737,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 全域暴擊率"
+      "增加 #% 全域暴擊率",
+      "\"各氏族團結一致地遷徙到了他們的新家園，",
+      "他們也確實愛戴萊珊德菈，但有些人註定",
+      "得走自己的路。那些勇闖內海的人，",
+      "最終在斯科提群島定居了下來。\""
      ],
      "hiddenEn": [
-      "#% increased Global Critical Strike Chance"
+      "#% increased Global Critical Strike Chance",
+      "\"The clans had travelled to their new home",
+      "united, and they did love Lysanda, but some",
+      "men must go their own way. Those that braved",
+      "the inland sea settled the Isles of Skothe.\""
      ]
     },
     {
@@ -49063,7 +50759,19 @@
      "en": [
       "Rhoa Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"一條巨大的裂痕在氏族之間、在家族",
+      "之間形成。那些留下來的人決心忍受",
+      "掙扎的歲月，只要這意味著我們能",
+      "保留自己的生活方式。\""
+     ],
+     "hiddenEn": [
+      "\"A great rift formed, between clans,",
+      "between families. Those that remained",
+      "resolved to endure times of struggle,",
+      "if it meant we could keep our ways.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanSandLeaper",
@@ -49073,7 +50781,19 @@
      "en": [
       "Scrabbler Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"萊珊德菈女王出於惡意挑選王夫的決定，",
+      "最終只氣到了她自己。阿拉斯代爾與她",
+      "見過的任何男人都不同。沒過多久，",
+      "宣告皇家婚禮的號角便吹響了。\""
+     ],
+     "hiddenEn": [
+      "\"Queen Lysanda's spiteful choice of Consort",
+      "spited only herself. Alasdair was unlike any",
+      "man she had ever met. It was not long before",
+      "the trumpets sounded for the Royal Wedding.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanBossBird",
@@ -49083,7 +50803,18 @@
      "en": [
       "Saqawine Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"天空晴朗蔚藍，卻能在需要時",
+      "降下甘霖。據說，人民已經向",
+      "斯卡沃及其羽族證明了自己。\""
+     ],
+     "hiddenEn": [
+      "\"The skies were clear and blue, yet",
+      "brought rains when needed. It was",
+      "said that the people had proven",
+      "themselves to Saqawal and his flocks.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman2_4",
@@ -49095,10 +50826,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#% 機率使敵人冰凍、感電與點燃"
+      "#% 機率使敵人冰凍、感電與點燃",
+      "\"而凜冬詛咒依舊穿透每扇窗戶",
+      "與每道門戶瘋狂肆虐。屋內為人",
+      "父母者任由自己凍成冰雕，",
+      "用他們的生命封死所有的縫隙。\""
      ],
      "hiddenEn": [
-      "#% chance to Freeze, Shock and Ignite"
+      "#% chance to Freeze, Shock and Ignite",
+      "\"And still the Winter Curse raged in through",
+      "every window and every door. The fathers",
+      "and mothers of those within let themselves",
+      "freeze solid, sealing the gaps with their lives.\""
      ]
     },
     {
@@ -49129,10 +50868,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 傷害"
+      "增加 #% 傷害",
+      "\"隨之而來的是一段充斥著恐懼",
+      "與烈火的時期。沒有人願意指控",
+      "自己的同胞，也沒有人願意說出",
+      "是誰毒殺了他。萊珊德菈的審判迅速且殘暴。\""
      ],
      "hiddenEn": [
-      "#% increased Damage"
+      "#% increased Damage",
+      "\"There followed a time of fear and fire.",
+      "None would speak against their fellows.",
+      "None would say who had poisoned him.",
+      "Lysanda's justice was swift and brutal.\""
      ]
     },
     {
@@ -49143,7 +50890,19 @@
      "en": [
       "Savage Crab Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"旅程已經結束，土地正逐步被掌控，",
+      "第一座城市的基石也已奠定。然而，",
+      "冬季卻以可怕的狂暴之姿席捲而來—",
+      "那並非源自大自然，而是來自一場詛咒。\""
+     ],
+     "hiddenEn": [
+      "\"The journey was over, the land was being",
+      "secured, and the foundations for the first city",
+      "had been laid. Winter hit them with horrible",
+      "fury, sent not by nature, but by a curse.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanScorpion",
@@ -49153,7 +50912,19 @@
      "en": [
       "Scorpion Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"但有些人依舊無法忘記凜冬詛咒",
+      "的恐怖，以及降下這場詛咒",
+      "的巫婆。阿拉斯代爾掉下了他的",
+      "酒杯，倒在地上，痛苦地窒息著。\""
+     ],
+     "hiddenEn": [
+      "\"But there were some who could not forget",
+      "the horrors of the Winter Curse, and of the",
+      "Hag that had sent it. Alasdair dropped his",
+      "wine goblet, and fell to the ground, choking.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet5",
@@ -49197,10 +50968,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 冰冷傷害"
+      "增加 #% 冰冷傷害",
+      "\"而那些離開的人，則去追尋了城市",
+      "與道路的道路。當他們出發去尋找",
+      "並建立新家園時，他們的旅途",
+      "將充滿危險與艱辛。\""
      ],
      "hiddenEn": [
-      "#% increased Cold Damage"
+      "#% increased Cold Damage",
+      "\"Those that departed sought the way of",
+      "cities and roads. Theirs would be a path",
+      "fraught with danger and hardship, as they",
+      "set out to find and build a new home.\""
      ]
     },
     {
@@ -49211,7 +50990,19 @@
      "en": [
       "Hybrid Arachnid Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"在萊珊德菈統治的第二十二年，",
+      "蜘蛛從黑暗中成群湧出。她的騎士",
+      "們對這種敵人缺乏應對手段，",
+      "人民紛紛成群逃竄，尋求避難所。\""
+     ],
+     "hiddenEn": [
+      "\"Twenty-two years into Lysanda's reign, the",
+      "Spiders swarmed from out of the dark. Her",
+      "Knights were ill-equipped for this foe, and",
+      "the people fled in droves, seeking safety.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman3_1",
@@ -49223,10 +51014,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#% 持續傷害加成"
+      "#% 持續傷害加成",
+      "\"萊珊德菈女王對浪漫情愛從未感過興趣，",
+      "但她的顧問們堅持需要繼承人。",
+      "為了氣他們，她娶了巫婆唯一的兒子",
+      "作為她的王夫——一個沉默、蒼白且古怪的男人。\""
      ],
      "hiddenEn": [
-      "#% to Damage over Time Multiplier"
+      "#% to Damage over Time Multiplier",
+      "\"Romance never interested Queen Lysanda,",
+      "but her advisors insisted heirs were needed.",
+      "To spite them, she took the Hag's only son as",
+      "her Consort - a quiet, pale, and strange man.\""
      ]
     },
     {
@@ -49239,10 +51038,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 火焰傷害"
+      "增加 #% 火焰傷害",
+      "\"這片土地向來嚴酷而殘暴，無時無刻",
+      "不在尋找殺戮與殘害我們的機會。為了",
+      "生存，我們必須成長與改變，但每個",
+      "氏族對於如何改變，都有各自的想法……\""
      ],
      "hiddenEn": [
-      "#% increased Fire Damage"
+      "#% increased Fire Damage",
+      "\"This land was always harsh and brutal,",
+      "ever seeking ways to kill and maim us.",
+      "We had to grow and change to survive,",
+      "but each clan had its own ideas how...\""
      ]
     },
     {
@@ -49253,7 +51060,19 @@
      "en": [
       "Flame Hellion Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"面對凜冬詛咒，唯有符文鐵匠的鍛爐",
+      "得以抗衡。人們肩並肩地擠在一起，",
+      "而留守在內的人則緊貼著烈火，",
+      "在痛苦中痛苦哀號。\""
+     ],
+     "hiddenEn": [
+      "\"Against the Winter Curse, only the forges of",
+      "runesmiths could stand. The people huddled,",
+      "shoulder to shoulder, while those within were",
+      "pressed against the fires, screaming in agony.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanSirenSpawn",
@@ -49263,7 +51082,19 @@
      "en": [
       "Squid Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"在內遷的旅途中，米爾的萊珊德菈",
+      "還只是個女孩。艾茲麥甚至在建立之前",
+      "就差點迎來終結……但她對那魅惑的歌聲",
+      "置若罔聞。她徒手摘下了海妖的頭顱。\""
+     ],
+     "hiddenEn": [
+      "\"Lysanda of Myr was but a girl on that exodus.",
+      "Ezomyr almost met its end before it began...",
+      "but she could not hear that deadly lure. She",
+      "took the Siren's head with her bare hands.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanHound",
@@ -49273,7 +51104,19 @@
      "en": [
       "Magma Hound Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"他們捆綁了降下凜冬詛咒的巫婆",
+      "並將她點燃，卻無濟於事。她的笑聲",
+      "充滿了幸災樂禍與邪惡。她狂妄地宣稱，",
+      "即便他們殺了她，她還有無數個女兒……\""
+     ],
+     "hiddenEn": [
+      "\"They bound the Hag of the Winter Curse",
+      "and set her alight, to no avail. Her cackle",
+      "was gleeful and wicked. Even if they slew",
+      "her, she boasted, she had many daughters...\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman1_12",
@@ -49285,10 +51128,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 攻擊傷害"
+      "增加 #% 攻擊傷害",
+      "\"隨著無頭巨獸被燒成灰燼，",
+      "定居者們歡欣鼓舞，並開始建造家園。",
+      "但他們很快就會發現，這片充滿敵意",
+      "的土地，有著更隱蔽的方法來排斥他們。\""
      ],
      "hiddenEn": [
-      "#% increased Attack Damage"
+      "#% increased Attack Damage",
+      "\"With the headless beast incinerated, the",
+      "settlers rejoiced, and began building homes.",
+      "They would soon find that this hostile land",
+      "had more insidious ways of rejecting them.\""
      ]
     },
     {
@@ -49299,7 +51150,19 @@
      "en": [
       "Tiger Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"隨之而來的是一段充斥著恐懼",
+      "與烈火的時期。沒有人願意指控",
+      "自己的同胞，也沒有人願意說出",
+      "是誰毒殺了他。萊珊德菈的審判迅速且殘暴。\""
+     ],
+     "hiddenEn": [
+      "\"There followed a time of fear and fire.",
+      "None would speak against their fellows.",
+      "None would say who had poisoned him.",
+      "Lysanda's justice was swift and brutal.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman3_6_1",
@@ -49313,12 +51176,20 @@
      "hiddenZh": [
       "擊殺時有 #% 機率獲得 1 顆暴擊球",
       "擊殺時有 #% 機率獲得 1 顆狂怒球",
-      "#% 機率擊殺時獲得 1 顆耐力球"
+      "#% 機率擊殺時獲得 1 顆耐力球",
+      "\"在隨後的幾年裡，萊珊德菈女王全心",
+      "投入於鞏固米爾艾茲麥人領土",
+      "這項漫長且殘酷的任務中。",
+      "每隻凶猛的巨獸、每種生物，都必須死。\""
      ],
      "hiddenEn": [
       "#% chance to gain a Power Charge on Kill",
       "#% chance to gain a Frenzy Charge on Kill",
-      "#% chance to gain an Endurance Charge on Kill"
+      "#% chance to gain an Endurance Charge on Kill",
+      "\"In the years that followed, Queen Lysanda",
+      "poured herself into the long and brutal task",
+      "of securing the lands of the Ezomytes of Myr.",
+      "Every fell beast, every creature, had to die.\""
      ]
     },
     {
@@ -49393,7 +51264,19 @@
      "en": [
       "Plagued Arachnid Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"隨著無頭巨獸被燒成灰燼，",
+      "定居者們歡欣鼓舞，並開始建造家園。",
+      "但他們很快就會發現，這片充滿敵意",
+      "的土地，有著更隱蔽的方法來排斥他們。\""
+     ],
+     "hiddenEn": [
+      "\"With the headless beast incinerated, the",
+      "settlers rejoiced, and began building homes.",
+      "They would soon find that this hostile land",
+      "had more insidious ways of rejecting them.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman2_2",
@@ -49405,10 +51288,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "每秒回復 #% 生命"
+      "每秒回復 #% 生命",
+      "\"旅程已經結束，土地正逐步被掌控，",
+      "第一座城市的基石也已奠定。然而，",
+      "冬季卻以可怕的狂暴之姿席捲而來—",
+      "那並非源自大自然，而是來自一場詛咒。\""
      ],
      "hiddenEn": [
-      "Regenerate #% of Life per second"
+      "Regenerate #% of Life per second",
+      "\"The journey was over, the land was being",
+      "secured, and the foundations for the first city",
+      "had been laid. Winter hit them with horrible",
+      "fury, sent not by nature, but by a curse.\""
      ]
     },
     {
@@ -49419,7 +51310,19 @@
      "en": [
       "Shield Crab Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"那些向萊珊德菈效忠、與她一同",
+      "前行開路的追隨者，後來被稱為",
+      "第一批騎士……他們身披盔甲、",
+      "飽受摧殘卻無所畏懼。\""
+     ],
+     "hiddenEn": [
+      "\"Those that swore loyalty to Lysanda, that",
+      "forged ahead with her to clear the way.",
+      "became known as the first Knights...",
+      "armoured, battered, and courageous.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanForestSnake",
@@ -49429,7 +51332,19 @@
      "en": [
       "Cobra Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"每一個新的山谷、每一片新的樹林，都潛藏著",
+      "新的危險。許多騎士為此付出了代價。萊珊德菈",
+      "從不以美貌聞名，但她每個季節都會",
+      "增添一道新的傷疤，且承受得心甘情願。\""
+     ],
+     "hiddenEn": [
+      "\"Each new valley, each new grove, held new",
+      "dangers. Many Knights paid the price. Lysanda",
+      "had never been known for her beauty, but she",
+      "bore a new scar each season, earned gladly.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman1_6",
@@ -49441,10 +51356,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 全域物理傷害"
+      "增加 #% 全域物理傷害",
+      "\"當他們出發尋找並建立艾茲麥時，",
+      "他們遭遇了各式各樣帶有致命意圖",
+      "的生物。許多人因此喪生，因為",
+      "當時還沒有人知道該如何反擊。\""
      ],
      "hiddenEn": [
-      "#% increased Global Physical Damage"
+      "#% increased Global Physical Damage",
+      "\"When they set out to find and build",
+      "Ezomyr, they encountered creatures of",
+      "deadly variety and intent. Many died,",
+      "for none yet knew how to fight back.\""
      ]
     },
     {
@@ -49455,7 +51378,19 @@
      "en": [
       "Vulture Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"在隨後的幾年裡，萊珊德菈女王全心",
+      "投入於鞏固米爾艾茲麥人領土",
+      "這項漫長且殘酷的任務中。",
+      "每隻凶猛的巨獸、每種生物，都必須死。\""
+     ],
+     "hiddenEn": [
+      "\"In the years that followed, Queen Lysanda",
+      "poured herself into the long and brutal task",
+      "of securing the lands of the Ezomytes of Myr.",
+      "Every fell beast, every creature, had to die.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanParasiticSquid",
@@ -49465,7 +51400,19 @@
      "en": [
       "Octopus Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"藍色騎士隻身對抗著巢群，冰冷",
+      "且堅不可摧。他的身分無人知曉，",
+      "也從不摘下頭盔。人們偶爾只能",
+      "隱約看見那雙銳利的藍色眼睛。\""
+     ],
+     "hiddenEn": [
+      "\"The Blue Knight stood against the swarm,",
+      "icy and unassailable. His identity was not",
+      "known, and he never removed his helmet.",
+      "Glimpses were caught of piercing blue eyes.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/AmuletE2",
@@ -49497,7 +51444,19 @@
      "en": [
       "Goatman Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"萊珊德菈和她的騎士們帶著前來",
+      "定居的氏族來到了未來的艾茲麥……",
+      "但那裡存在著一隻巨獸，",
+      "一隻連他們也無法抗衡的巨獸。\""
+     ],
+     "hiddenEn": [
+      "\"Lysanda and her Knights brought the",
+      "settling clans to what would become",
+      "Ezomyr... but there was one beast against",
+      "which even they could not stand.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet4",
@@ -49525,10 +51484,16 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 最大魔力"
+      "增加 #% 最大魔力",
+      "\"早在我們學會符文之前，我們就對初始者",
+      "抱持著信任。早在我們被指引城市",
+      "與道路的運作方式之前，便是如此。\""
      ],
      "hiddenEn": [
-      "#% increased maximum Mana"
+      "#% increased maximum Mana",
+      "\"We held our trust in the First Ones long",
+      "before we learned runes. Long before we",
+      "were shown the ways of cities and roads.\""
      ]
     },
     {
@@ -49541,10 +51506,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 魚咬靈敏度"
+      "增加 #% 魚咬靈敏度",
+      "\"那些向萊珊德菈效忠、與她一同",
+      "前行開路的追隨者，後來被稱為",
+      "第一批騎士……他們身披盔甲、",
+      "飽受摧殘卻無所畏懼。\""
      ],
      "hiddenEn": [
-      "#% increased Fish Bite Sensitivity"
+      "#% increased Fish Bite Sensitivity",
+      "\"Those that swore loyalty to Lysanda, that",
+      "forged ahead with her to clear the way.",
+      "became known as the first Knights...",
+      "armoured, battered, and courageous.\""
      ]
     },
     {
@@ -49555,7 +51528,18 @@
      "en": [
       "Fenumal Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"那些曾被藍色騎士擊退的蜘蛛，",
+      "如今開始尋求和平與合作。",
+      "據說，這是菲恩絲所下達的旨意。\""
+     ],
+     "hiddenEn": [
+      "\"The Spiders that had been driven",
+      "back by the Blue Knight now sought",
+      "peace and cooperation. It was said",
+      "that Fenumus had commanded it.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanCrab2",
@@ -49565,7 +51549,18 @@
      "en": [
       "Spider Crab Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"隨著致命且危險的生物被捕殺殆盡，",
+      "女王選擇留下那些溫馴或美麗的物種。",
+      "潮間帶也因此成為了令人驚嘆的奇景勝地。\""
+     ],
+     "hiddenEn": [
+      "\"As deadly and dangerous creatures were",
+      "culled, the Queen chose to leave those",
+      "that were docile or beauteous. Tide pools",
+      "became known as places of wonder.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman1_11",
@@ -49577,10 +51572,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 法術傷害"
+      "增加 #% 法術傷害",
+      "\"一隻巨大的無頭怪物，長著如牙齒般的手臂，",
+      "在他們希望定居的土地上遊蕩。其他武器",
+      "都無法對它造成傷害。於是他們用烈火",
+      "將其包圍，足足焚燒了數日之久。\""
      ],
      "hiddenEn": [
-      "#% increased Spell Damage"
+      "#% increased Spell Damage",
+      "\"A great headless monstrosity with arms like",
+      "teeth stalked the lands they hoped to settle.",
+      "No other weapon would find purchase. They",
+      "surrounded it with fire, burning it for days.\""
      ]
     },
     {
@@ -49607,7 +51610,19 @@
      "en": [
       "Blood Viper Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"而那些離開的人，則去追尋了城市",
+      "與道路的道路。當他們出發去尋找",
+      "並建立新家園時，他們的旅途",
+      "將充滿危險與艱辛。\""
+     ],
+     "hiddenEn": [
+      "\"Those that departed sought the way of",
+      "cities and roads. Theirs would be a path",
+      "fraught with danger and hardship, as they",
+      "set out to find and build a new home.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanSquid",
@@ -49617,7 +51632,19 @@
      "en": [
       "Watcher Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"各氏族團結一致地遷徙到了他們的新家園，",
+      "他們也確實愛戴萊珊德菈，但有些人註定",
+      "得走自己的路。那些勇闖內海的人，",
+      "最終在斯科提群島定居了下來。\""
+     ],
+     "hiddenEn": [
+      "\"The clans had travelled to their new home",
+      "united, and they did love Lysanda, but some",
+      "men must go their own way. Those that braved",
+      "the inland sea settled the Isles of Skothe.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanBossTiger",
@@ -49627,7 +51654,21 @@
      "en": [
       "Farric Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"在統治的第四十六年，萊珊德菈擊殺了",
+      "最後一隻致命生物。她微微一笑，帶上",
+      "一皮囊的酒，騎馬奔向森林深處。",
+      "據說，那是最後一次狩獵。費爾羅將",
+      "在她身旁隨行，不論在今生……還是來世。\""
+     ],
+     "hiddenEn": [
+      "\"Forty-six years into her reign, Lysanda",
+      "slew the last deadly creature. She smiled,",
+      "took a wineskin, and rode off into the forest.",
+      "One last hunt, it was said. Farrul would stalk",
+      "by her side, in this life... and the next.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanChieftain",
@@ -49637,7 +51678,19 @@
      "en": [
       "Chieftain Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"我知道我們對初始者的信仰源自何處。",
+      "每當我走在未受侵擾的森林與山丘間，",
+      "我都能看見它。那原始的世界",
+      "依然存在。與我們同在。\""
+     ],
+     "hiddenEn": [
+      "\"I know where we found our belief in",
+      "the First Ones. I see it every time I walk",
+      "the untouched forests and hills. The",
+      "primordial world is still here. With us.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanBull",
@@ -49647,7 +51700,19 @@
      "en": [
       "Taurus Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"第一座城市完工了，其他城市也如雨後春筍",
+      "般湧現。各氏族聚集在一起，宣布",
+      "米爾的萊珊德菈為女王。從此以後，",
+      "他們被稱為米爾的艾茲麥人，人口也隨之暴增。\""
+     ],
+     "hiddenEn": [
+      "\"The first city was completed, and others sprouted.",
+      "The clans came together to declare Lysanda of Myr",
+      "the Queen. Henceforth, they became known as the",
+      "Ezomytes of Myr, and their numbers swelled.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/Talisman3_4",
@@ -49659,10 +51724,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#% 額外物理傷害減免"
+      "#% 額外物理傷害減免",
+      "\"但有些人依舊無法忘記凜冬詛咒",
+      "的恐怖，以及降下這場詛咒",
+      "的巫婆。阿拉斯代爾掉下了他的",
+      "酒杯，倒在地上，痛苦地窒息著。\""
      ],
      "hiddenEn": [
-      "#% additional Physical Damage Reduction"
+      "#% additional Physical Damage Reduction",
+      "\"But there were some who could not forget",
+      "the horrors of the Winter Curse, and of the",
+      "Hag that had sent it. Alasdair dropped his",
+      "wine goblet, and fell to the ground, choking.\""
      ]
     },
     {
@@ -49680,7 +51753,11 @@
       "承受 #% 的擊中冰冷傷害視為火焰傷害",
       "承受 #% 的擊中冰冷傷害視為閃電傷害",
       "承受 #% 的擊中閃電傷害視為冰冷傷害",
-      "承受 #% 的擊中閃電傷害視為火焰傷害"
+      "承受 #% 的擊中閃電傷害視為火焰傷害",
+      "\"德魯伊從森林中現身，前來迎接並警告",
+      "新定居者。這是一片充滿未知謎團與危險",
+      "的古老土地。萊珊德菈派出了她最優秀",
+      "的人手，前去與他們一同研究並學習。\""
      ],
      "hiddenEn": [
       "#% of Fire Damage from Hits taken as Cold Damage",
@@ -49688,7 +51765,11 @@
       "#% of Cold Damage from Hits taken as Fire Damage",
       "#% of Cold Damage from Hits taken as Lightning Damage",
       "#% of Lightning Damage from Hits taken as Cold Damage",
-      "#% of Lightning Damage from Hits taken as Fire Damage"
+      "#% of Lightning Damage from Hits taken as Fire Damage",
+      "\"The Druids emerged from the forests to greet",
+      "and warn the new settlers. This was an ancient",
+      "land full of mysteries and dangers. Lysanda sent",
+      "her best men to study and learn with them.\""
      ]
     },
     {
@@ -49701,10 +51782,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 範圍效果"
+      "增加 #% 範圍效果",
+      "\"米爾的萊珊德菈的皇家婚禮足足持續",
+      "了一整個月。狩獵活動熱烈地進行著，",
+      "肉品與美酒對所有人無限供應。",
+      "到處都充滿了歡慶的氣氛。\""
      ],
      "hiddenEn": [
-      "#% increased Area of Effect"
+      "#% increased Area of Effect",
+      "\"The Royal Wedding of Lysanda of Myr",
+      "lasted for a full month. The hunts were",
+      "vigorous, and the meat and drink flowed",
+      "freely for all. There was much rejoicing.\""
      ]
     },
     {
@@ -49715,7 +51804,19 @@
      "en": [
       "Rhex Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"一場永恆的夏天就此展開，因為巫婆",
+      "的女兒們完美地掌握了那座古塔",
+      "的控制權。森林變得如同花園一般。",
+      "飢餓的人只需摘下果實便能享用。\""
+     ],
+     "hiddenEn": [
+      "\"There began an eternal summer, as the",
+      "daughters of the Hag perfected their mastery",
+      "of the Tower. The forests became as gardens.",
+      "The hungry had only to pick a fruit and eat.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanMonkey",
@@ -49725,7 +51826,19 @@
      "en": [
       "Ape Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"德魯伊從森林中現身，前來迎接並警告",
+      "新定居者。這是一片充滿未知謎團與危險",
+      "的古老土地。萊珊德菈派出了她最優秀",
+      "的人手，前去與他們一同研究並學習。\""
+     ],
+     "hiddenEn": [
+      "\"The Druids emerged from the forests to greet",
+      "and warn the new settlers. This was an ancient",
+      "land full of mysteries and dangers. Lysanda sent",
+      "her best men to study and learn with them.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet8",
@@ -49751,7 +51864,19 @@
      "en": [
       "Carrion Queen Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"萊珊德菈女王對浪漫情愛從未感過興趣，",
+      "但她的顧問們堅持需要繼承人。",
+      "為了氣他們，她娶了巫婆唯一的兒子",
+      "作為她的王夫——一個沉默、蒼白且古怪的男人。\""
+     ],
+     "hiddenEn": [
+      "\"Romance never interested Queen Lysanda,",
+      "but her advisors insisted heirs were needed.",
+      "To spite them, she took the Hag's only son as",
+      "her Consort - a quiet, pale, and strange man.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanPitbull",
@@ -49761,7 +51886,19 @@
      "en": [
       "Pitbull Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"萊珊德菈怒吼著，將巫婆斬首並將其",
+      "肢解，直到大功告成才停下手來。",
+      "然而，巫婆的女兒們卻得以倖免……",
+      "並被賦予了服侍與盡忠的職責。\""
+     ],
+     "hiddenEn": [
+      "\"Lysanda roared, and hacked the Hag apart",
+      "limb by limb, not stopping until the deed",
+      "was done. Her daughters, however, were",
+      "spared... and tasked with service and duty.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanGemFrog",
@@ -49771,7 +51908,19 @@
      "en": [
       "Croaker Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"艾茲麥建立在\"選擇\"的基石之上。",
+      "它的氣候是經過選擇的，它的動物",
+      "也是經過選擇的。瓦爾克拉斯",
+      "破天荒地不再嚴酷，而是展現出溫柔的一面。\""
+     ],
+     "hiddenEn": [
+      "\"Ezomyr grew on a foundation of",
+      "choice. Its climate was chosen. Its",
+      "animals were chosen. For once,",
+      "Wraeclast was not harsh, but kind.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet10",
@@ -49797,7 +51946,19 @@
      "en": [
       "Black Widow Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"米爾的萊珊德菈的皇家婚禮足足持續",
+      "了一整個月。狩獵活動熱烈地進行著，",
+      "肉品與美酒對所有人無限供應。",
+      "到處都充滿了歡慶的氣氛。\""
+     ],
+     "hiddenEn": [
+      "\"The Royal Wedding of Lysanda of Myr",
+      "lasted for a full month. The hunts were",
+      "vigorous, and the meat and drink flowed",
+      "freely for all. There was much rejoicing.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Amulet7",
@@ -49826,10 +51987,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "有 1 個插槽"
+      "有 1 個插槽",
+      "\"我知道我們對初始者的信仰源自何處。",
+      "每當我走在未受侵擾的森林與山丘間，",
+      "我都能看見它。那原始的世界",
+      "依然存在。與我們同在。\""
      ],
      "hiddenEn": [
-      "Has 1 Socket"
+      "Has 1 Socket",
+      "\"I know where we found our belief in",
+      "the First Ones. I see it every time I walk",
+      "the untouched forests and hills. The",
+      "primordial world is still here. With us.\""
      ]
     },
     {
@@ -49842,10 +52011,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加 #% 最大生命"
+      "增加 #% 最大生命",
+      "\"隨著米爾的艾茲麥人走向繁榮，",
+      "他們需要更多且更廣闊的土地。",
+      "萊珊德菈女王領導著持續進行的征討，",
+      "誓要屠盡最後一隻黑暗生物。\""
      ],
      "hiddenEn": [
-      "#% increased maximum Life"
+      "#% increased maximum Life",
+      "\"As the Ezomytes of Myr prospered, they",
+      "needed more and spreading lands. Queen",
+      "Lysanda led the ongoing campaign to",
+      "slaughter every last creature of darkness.\""
      ]
     },
     {
@@ -49856,7 +52033,19 @@
      "en": [
       "Chimeral Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"當他們出發尋找並建立艾茲麥時，",
+      "他們遭遇了各式各樣帶有致命意圖",
+      "的生物。許多人因此喪生，因為",
+      "當時還沒有人知道該如何反擊。\""
+     ],
+     "hiddenEn": [
+      "\"When they set out to find and build",
+      "Ezomyr, they encountered creatures of",
+      "deadly variety and intent. Many died,",
+      "for none yet knew how to fight back.\""
+     ]
     },
     {
      "id": "Metadata/Items/Amulets/Talismans/TalismanBeast",
@@ -49866,7 +52055,17 @@
      "en": [
       "Gargantuan Talisman"
      ],
-     "g": 1
+     "g": 1,
+     "hiddenZh": [
+      "\"早在我們學會符文之前，我們就對初始者",
+      "抱持著信任。早在我們被指引城市",
+      "與道路的運作方式之前，便是如此。\""
+     ],
+     "hiddenEn": [
+      "\"We held our trust in the First Ones long",
+      "before we learned runes. Long before we",
+      "were shown the ways of cities and roads.\""
+     ]
     },
     {
      "id": "Metadata/Items/Belts/BeltAtlas1",
@@ -51042,7 +53241,19 @@
      "en": [
       "Grasping Mail"
      ],
-     "g": 3
+     "g": 3,
+     "hiddenZh": [
+      "灰燼和雪崩，",
+      "在暴風雨中，",
+      "我們夢想團結。",
+      "時間到了…"
+     ],
+     "hiddenEn": [
+      "Of ash and avalanche,",
+      "in storm and flesh,",
+      "we dream of unity.",
+      "The time approaches..."
+     ]
     },
     {
      "id": "Metadata/Items/Armours/BodyArmours/BodyInt8",
@@ -57278,11 +59489,13 @@
      "g": 19,
      "hiddenZh": [
       "無法骰出非混沌傷害類型的詞綴",
-      "#% 最大混沌抗性"
+      "#% 最大混沌抗性",
+      "我們將奪回那失落的夢想。"
      ],
      "hiddenEn": [
       "Cannot roll Modifiers of Non-Chaos Damage Types",
-      "#% to maximum Chaos Resistance"
+      "#% to maximum Chaos Resistance",
+      "We will seize back our wayward Dream."
      ]
     },
     {
@@ -57296,11 +59509,13 @@
      "g": 19,
      "hiddenZh": [
       "無法骰出非冰冷傷害類型的詞綴",
-      "#% 最大冰冷抗性"
+      "#% 最大冰冷抗性",
+      "我們長眠不醒，雙眼圓睜，卻依舊靜止。"
      ],
      "hiddenEn": [
       "Cannot roll Modifiers of Non-Cold Damage Types",
-      "#% to maximum Cold Resistance"
+      "#% to maximum Cold Resistance",
+      "We lie eternal, eyes open, yet still."
      ]
     },
     {
@@ -57478,11 +59693,13 @@
      "g": 19,
      "hiddenZh": [
       "無法骰出非物理傷害類型的詞綴",
-      "#% 額外物理傷害減免"
+      "#% 額外物理傷害減免",
+      "我們的肉身渴望合而為一。"
      ],
      "hiddenEn": [
       "Cannot roll Modifiers of Non-Physical Damage Types",
-      "#% additional Physical Damage Reduction"
+      "#% additional Physical Damage Reduction",
+      "Our flesh longs to move as one."
      ]
     },
     {
@@ -57560,11 +59777,13 @@
      "g": 19,
      "hiddenZh": [
       "無法骰出非火焰傷害類型的詞綴",
-      "#% 最大火焰抗性"
+      "#% 最大火焰抗性",
+      "紅色烈焰的餘燼仍在微光閃爍。"
      ],
      "hiddenEn": [
       "Cannot roll Modifiers of Non-Fire Damage Types",
-      "#% to maximum Fire Resistance"
+      "#% to maximum Fire Resistance",
+      "The embers of the Red Pyre yet glow."
      ]
     },
     {
@@ -57644,11 +59863,13 @@
      "g": 19,
      "hiddenZh": [
       "無法骰出非閃電傷害類型的詞綴",
-      "#% 最大閃電抗性"
+      "#% 最大閃電抗性",
+      "金屬般的思緒在黑暗中低語。"
      ],
      "hiddenEn": [
       "Cannot roll Modifiers of Non-Lightning Damage Types",
-      "#% to maximum Lightning Resistance"
+      "#% to maximum Lightning Resistance",
+      "Metallic thoughts whisper in the dark."
      ]
     },
     {
@@ -61632,7 +63853,13 @@
      "en": [
       "Keyblade"
      ],
-     "g": 27
+     "g": 27,
+     "hiddenZh": [
+      "數千把無人領取的封測金鑰鍛造而成"
+     ],
+     "hiddenEn": [
+      "Forged from thousands of unclaimed Beta keys"
+     ]
     },
     {
      "id": "Metadata/Items/Weapons/TwoHandWeapons/TwoHandSwords/TwoHandSword7",
