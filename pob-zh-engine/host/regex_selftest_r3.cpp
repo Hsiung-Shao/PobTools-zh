@@ -9,6 +9,7 @@
 #include "regex_data.h"
 #include "regex_frag.h"
 #include "regex_gen.h"
+#include "regex_itemmods.h"
 #include "regex_match.h"
 #include "regex_share.h"
 
@@ -1265,6 +1266,89 @@ void VendorSocketTests(const std::map<std::string, Game>& games)
 	}
 }
 
+// V16: the 3+ link fragments carry no \b, so they must not hit any real PoE1 item text.
+// Corpus = every text field of every PoE1 page + every PoE1 stat line (both languages).
+// Fragments are all hyphen chains: a 3+ link / 3+ colour fragment needs at least two '-'
+// in the line, so only lines with two or more are searched (the control uses one).
+void VendorShortLinkGuardTests(const RegexDataset& ds, const std::wstring& exeDir)
+{
+	line("[R3-vendor-sockets] V16 3+ link fragments vs the PoE1 corpus");
+	std::set<std::string> uniq;
+	auto addAll = [&](const std::vector<std::string>& v) {
+		for (const std::string& s : v)
+			if (std::count(s.begin(), s.end(), '-') >= 1) uniq.insert(s);
+	};
+	for (const RegexPageDef& p : ds.Pages()) {
+		if (p.game != "poe1") continue;
+		for (const RegexEntryDef& e : p.entries)
+			for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn, &e.altZh, &e.altEn}) addAll(*v);
+		for (const auto* v : {&p.ambientZh, &p.ambientEn, &p.namePrefixZh, &p.nameSuffixZh, &p.namePrefixEn, &p.nameSuffixEn}) addAll(*v);
+	}
+	const size_t catalogueLines = uniq.size();
+	std::vector<RegexItemMods::StatLite> zh, en;
+	std::string err;
+	const bool statsOk = RegexItemMods::LoadStats(exeDir, "poe1", zh, en, &err);
+	check(statsOk, "V16 poe1 stats.ndjson (zh and en) loads" + (statsOk ? std::string() : " -- " + err));
+	for (const auto* st : {&zh, &en})
+		for (const RegexItemMods::StatLite& s : *st) {
+			addAll({s.ref});
+			addAll(s.strings);
+		}
+	check(catalogueLines > 0 && uniq.size() > catalogueLines,
+	      "V16 corpus has hyphenated lines from the catalogue and the stats (" + Num((long long)catalogueLines) + " + " +
+	      Num((long long)(uniq.size() - catalogueLines)) + ")");
+
+	// fragments: linkedSockets / coloredLinks 3..6, linkColors for every 3- and 4-colour sequence over r g b w
+	std::vector<std::pair<std::string, std::string>> frags;   // name, fragment
+	int missing = 0;
+	for (int n = 3; n <= 6; n++) {
+		const std::optional<std::string> a = RegexFrag::LinkedSockets(n);
+		const std::optional<std::string> b = RegexFrag::ColoredLinks(n);
+		if (a) frags.push_back({"LinkedSockets(" + Num(n) + ")", *a}); else missing++;
+		if (b) frags.push_back({"ColoredLinks(" + Num(n) + ")", *b}); else missing++;
+	}
+	check(missing == 0, "V16 LinkedSockets / ColoredLinks (n=3..6) all return a fragment (" + Num(missing) + " null)");
+	const char* letters = "rgbw";
+	for (int len = 3; len <= 4; len++) {
+		int total = 1;
+		for (int i = 0; i < len; i++) total *= 4;
+		for (int k = 0; k < total; k++) {
+			std::string colors;
+			for (int i = 0, x = k; i < len; i++, x /= 4) colors += letters[x % 4];
+			if (const std::optional<std::string> f = RegexFrag::LinkColors(colors)) frags.push_back({"LinkColors(" + colors + ")", *f});
+		}
+	}
+	check(frags.size() >= 100, "V16 built the 3+ link fragments (" + Num((long long)frags.size()) + " fragments)");
+
+	std::vector<std::string> deep;   // lines with at least two '-'
+	for (const std::string& l : uniq)
+		if (std::count(l.begin(), l.end(), '-') >= 2) deep.push_back(l);
+	int hits = 0, compileFail = 0;
+	std::string firsts;
+	for (const auto& nf : frags) {
+		std::string cerr;
+		const std::optional<Rx> rx = RxCompile(nf.second, &cerr);
+		if (!rx) { compileFail++; continue; }
+		for (const std::string& l : deep)
+			if (RxSearch(*rx, l) && hits++ < 5) firsts += "\n    " + nf.first + " " + nf.second + " <- " + l;
+	}
+	check(compileFail == 0, "V16 every 3+ link fragment compiles (" + Num(compileFail) + " fail)");
+	check(hits == 0, "V16 no 3+ link / colour fragment hits any PoE1 catalogue or stat line (" + Num(hits) + " hits over " +
+	      Num((long long)frags.size()) + " fragments x " + Num((long long)deep.size()) + " lines)" + firsts);
+
+	// control: the same corpus does hit the 2-link fragment once its \b is taken off, so the corpus really holds
+	// English hyphenated text and a zero above is not an empty-corpus accident.
+	{
+		std::string cerr;
+		const std::optional<Rx> rx = RxCompile("[rgbwa](-[rgbwa]){1}", &cerr);
+		int control = 0;
+		if (rx)
+			for (const std::string& l : uniq)
+				if (RxSearch(*rx, l)) control++;
+		check(rx.has_value() && control > 0, "V16 control: the 2-link fragment without \\b hits the same corpus (" + Num(control) + " lines)");
+	}
+}
+
 } // namespace
 
 void RegexR3Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -1298,5 +1382,6 @@ void RegexR3Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 	CombineTests(games);
 	line("");
 	VendorSocketTests(games);
+	VendorShortLinkGuardTests(ds, exeDir);
 	line("    (R3 checks took " + Num((long long)(GetTickCount() - t0)) + " ms)");
 }

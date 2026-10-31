@@ -731,6 +731,31 @@ void CatalogueContentTests(const std::wstring& exeDir)
 	}
 }
 
+// A5 helpers: the two link-marker forms the PoE2 GGPK strings carry, "[Key|Display]" and a bare
+// "[Key]". Neither may survive in the catalogue (the generator reduces them to the display text).
+bool HasPipeMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		size_t k = i + 1;
+		while (k < s.size() && s[k] != ']' && s[k] != '|') k++;
+		if (k == i + 1 || k >= s.size() || s[k] != '|') continue;
+		size_t m = k + 1;
+		while (m < s.size() && s[m] != ']') m++;
+		if (m < s.size() && m > k + 1) return true;
+	}
+	return false;
+}
+bool HasBareKeyMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		size_t j = i + 1;
+		if (j >= s.size() || !std::isalpha((unsigned char)s[j])) continue;
+		while (j < s.size() && std::isalnum((unsigned char)s[j])) j++;
+		if (j < s.size() && s[j] == ']') return true;
+	}
+	return false;
+}
+
 // Flavour text (GGPK FlavourText) and usage directions (CurrencyItems.Directions) are item text
 // the game's search reads too, so they belong in the data: an item's own text as hidden,
 // a page's shared text as ambient. A1/A2/A4 read the catalogue, A3 runs the generator on it.
@@ -846,6 +871,91 @@ void FlavourTextTests(const std::wstring& exeDir)
 		if (gem)
 			check(anyHas(gem->hiddenZh, u8"釋放克塔什的憤怒，牠是仇恨的化身。"),
 			      "A4 that gem's hiddenZh holds its flavour text (" + std::to_string(gem->hiddenZh.size()) + " hidden lines)");
+	}
+
+	// ---- PoE2 catalogue (A5-A7) ----
+	auto findPage2 = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe2" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto findEntry = [](const RegexPageDef* p, const char* id) -> const RegexEntryDef* {
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (e.id == id) return &e;
+		return nullptr;
+	};
+
+	// A5: no "[Key|Display]" / "[Key]" link marker left in any text of any PoE2 page
+	{
+		int pages = 0, hits = 0;
+		std::string firsts;
+		auto scan = [&](const RegexPageDef& p, const std::string& where, const std::string& s) {
+			if (!HasPipeMarker(s) && !HasBareKeyMarker(s)) return;
+			if (hits++ < 3) firsts += "\n    " + p.id + "/" + where + ": " + s;
+		};
+		for (const RegexPageDef& p : ds.Pages()) {
+			if (p.game != "poe2") continue;
+			pages++;
+			for (const std::string& s : {p.title, p.titleEn, p.note}) scan(p, "(page)", s);
+			for (const auto* v : {&p.groups, &p.groupsEn, &p.ambientZh, &p.ambientEn, &p.namePrefixZh, &p.nameSuffixZh,
+			                      &p.namePrefixEn, &p.nameSuffixEn})
+				for (const std::string& s : *v) scan(p, "(page)", s);
+			for (const RegexEntryDef& e : p.entries) {
+				scan(p, e.id, e.affixZh);
+				for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn, &e.altZh, &e.altEn})
+					for (const std::string& s : *v) scan(p, e.id, s);
+			}
+		}
+		check(pages > 0, "A5 poe2 pages found (" + std::to_string(pages) + ")");
+		check(hits == 0, "A5 poe2 catalogue holds no [Key|Display] or [Key] link marker (" + std::to_string(hits) + " strings)" + firsts);
+	}
+
+	// A6: the base-item flavour text is collected (entry hidden for the item's own, page ambient for shared)
+	{
+		const RegexPageDef* vb = findPage2("vendor_bases");
+		check(vb != nullptr, "A6 poe2 page vendor_bases exists");
+		if (vb) {
+			const RegexEntryDef* amu = findEntry(vb, "Metadata/Items/Amulets/FourAmuletB1a");
+			const RegexEntryDef* ring = findEntry(vb, "Metadata/Items/Rings/FourRingB1");
+			check(amu != nullptr, "A6 vendor_bases entry Metadata/Items/Amulets/FourAmuletB1a exists");
+			check(ring != nullptr, "A6 vendor_bases entry Metadata/Items/Rings/FourRingB1 exists");
+			// Each item's flavour text: its own hidden or the page ambient (either layer).
+			auto inEither = [&](const RegexEntryDef* e, bool zh, const std::string& want) {
+				return anyHas(zh ? e->hiddenZh : e->hiddenEn, want) || anyHas(zh ? vb->ambientZh : vb->ambientEn, want);
+			};
+			if (amu) {
+				check(inEither(amu, true, u8"我們尋覓那消逝的追憶……"),
+				      "A6 FourAmuletB1a hidden or page ambient (zh) holds its flavour text (" + std::to_string(amu->hiddenZh.size()) + " hidden, " +
+				      std::to_string(vb->ambientZh.size()) + " ambient lines)");
+				check(inEither(amu, false, "We search for the memories missing..."),
+				      "A6 FourAmuletB1a hidden or page ambient (en) holds its flavour text (" + std::to_string(amu->hiddenEn.size()) + " hidden, " +
+				      std::to_string(vb->ambientEn.size()) + " ambient lines)");
+			}
+			if (ring) {
+				check(inEither(ring, true, u8"保其精髓，使其得以演化。"),
+				      "A6 FourRingB1 hidden or page ambient (zh) holds its flavour text (" + std::to_string(ring->hiddenZh.size()) + " hidden, " +
+				      std::to_string(vb->ambientZh.size()) + " ambient lines)");
+				check(inEither(ring, false, "Preserve the essence, so that it may evolve."),
+				      "A6 FourRingB1 hidden or page ambient (en) holds its flavour text (" + std::to_string(ring->hiddenEn.size()) + " hidden, " +
+				      std::to_string(vb->ambientEn.size()) + " ambient lines)");
+			}
+		}
+	}
+
+	// A7: a base's implicit/affix line is stripped to its display text, not left as the stat key
+	{
+		const RegexPageDef* vb = findPage2("vendor_bases");
+		const RegexEntryDef* gold = findEntry(vb, "Metadata/Items/Amulets/FourAmulet10");
+		check(gold != nullptr, "A7 vendor_bases entry Metadata/Items/Amulets/FourAmulet10 exists");
+		if (gold) {
+			check(anyHas(gold->hiddenZh, u8"增加#%找到的物品稀有度"),
+			      "A7 FourAmulet10 hiddenZh holds 增加#%找到的物品稀有度 (" + std::to_string(gold->hiddenZh.size()) + " hidden lines)");
+			check(anyHas(gold->hiddenEn, "#% increased Rarity of Items found"),
+			      "A7 FourAmulet10 hiddenEn holds '#% increased Rarity of Items found' (" + std::to_string(gold->hiddenEn.size()) + " hidden lines)");
+			check(!anyHas(gold->hiddenZh, "ItemRarity") && !anyHas(gold->hiddenEn, "ItemRarity"),
+			      "A7 FourAmulet10 hidden lines (zh and en) hold no raw 'ItemRarity' key");
+		}
 	}
 }
 
