@@ -6,6 +6,7 @@
   import { api, type BreakdownSection, type SidebarRow } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { groupSidebar } from "$lib/sidebar-groups";
+  import { loadCollapsed, saveCollapsed, sidebarSummary } from "$lib/sidebar-collapse";
   import { app } from "$lib/state.svelte";
   import { fitFloat, type FloatAnchor } from "$lib/floatFit";
 
@@ -73,6 +74,19 @@
   }
 
   const overCap = (used: number, max?: number | null) => max != null && used > max;
+
+  // 使用者收合的分組;預設全部展開
+  let folded = $state(loadCollapsed());
+  function toggleGroup(key: string, rows: number[]) {
+    const next = new Set(folded);
+    if (!next.delete(key)) {
+      next.add(key);
+      // 釘住的細項若在要收合的組裡,收合後就沒地方點掉,先關掉
+      if (bd && rows.includes(bd.row)) bd = null;
+    }
+    folded = next;
+    saveCollapsed(next);
+  }
 </script>
 
 <aside class="side" bind:this={sideEl}>
@@ -117,10 +131,17 @@
     <div class="stats" class:busy={app.busy > 0}>
       {#if side}
         {#each sections as sec (sec.key)}
+          {@const closed = !!sec.label && folded.has(sec.key)}
           {#if sec.label}
-            <h3 class="sec">{sec.label}</h3>
+            <h3 class="sec">
+              <button class="sec-btn" aria-expanded={!closed} onclick={() => toggleGroup(sec.key, sec.items.map((it) => it.index))}>
+                <span>{sec.label}</span>
+                {#if closed}<span class="sum num">{sidebarSummary(sec.items)}</span>{/if}
+                <span class="chev" aria-hidden="true">{closed ? "▸" : "▾"}</span>
+              </button>
+            </h3>
           {/if}
-          {#each sec.items as { row: r, index: rowIndex } (rowIndex)}
+          {#each closed ? [] : sec.items as { row: r, index: rowIndex } (rowIndex)}
             {@const s = shape(r)}
             {#if s === "gap"}
               <div class="gap"></div>
@@ -150,7 +171,7 @@
           {/each}
         {/each}
         {#if side.warnings.length}
-          <h3 class="sec warn">{t("sidebar.warnings")}</h3>
+          <h3 class="sec warn"><span class="sec-row">{t("sidebar.warnings")}<span class="sum num">{side.warnings.length}</span></span></h3>
           {#each side.warnings as w}
             <div class="warning"><PobText text={w.text} /></div>
           {/each}
@@ -272,6 +293,52 @@
     background: var(--gold);
     border-radius: 1px;
   }
+  /* 分組標題是收合鈕;收合時顯示該組前幾個數值 */
+  .sec-btn,
+  .sec-row {
+    all: unset;
+    box-sizing: border-box;
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    cursor: pointer;
+  }
+  .sec-row {
+    cursor: default;
+  }
+  .sec-btn:focus-visible {
+    outline: 1px solid var(--focus);
+    outline-offset: 2px;
+  }
+  .sum {
+    margin-left: auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-xs);
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--ink-1);
+  }
+  .sec.warn .sum {
+    color: var(--warn);
+  }
+  .chev {
+    margin-left: auto;
+    width: 10px;
+    text-align: center;
+    color: var(--ink-3);
+    letter-spacing: 0;
+    font-weight: 400;
+  }
+  .sum + .chev {
+    margin-left: 0;
+  }
+  .sec-btn:hover .chev {
+    color: var(--ink-0);
+  }
   .sec.warn {
     color: var(--warn);
   }
@@ -319,6 +386,9 @@
   }
   .pair .v {
     white-space: nowrap;
+    min-width: 56px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
   .pair.live {
     cursor: default;

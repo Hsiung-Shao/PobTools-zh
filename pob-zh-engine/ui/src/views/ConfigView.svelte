@@ -453,17 +453,15 @@
     appearance: none;
     border: 0;
     background: none;
-    color: var(--ink-3);
+    /* 只有非預設值才畫;常駐顯示,不用逐列 hover 就看得出改過哪些 */
+    color: var(--gold);
+    opacity: 0.7;
     padding: 0;
     font-size: var(--fs-2xs);
     cursor: pointer;
-    opacity: 0;
-  }
-  .opt:hover .rst {
-    opacity: 1;
   }
   .rst:hover {
-    color: var(--gold);
+    opacity: 1;
   }
   .area {
     height: auto;

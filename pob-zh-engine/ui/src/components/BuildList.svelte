@@ -250,6 +250,10 @@
         </div>
       {/each}
     </div>
+    <div class="foot">
+      <span class="num">{t("builds.count", { n: entries.filter((e) => !e.isFolder).length })}</span>
+      <span>{t("builds.keysHint")}</span>
+    </div>
   {/if}
 
   {#if dialog}
@@ -362,14 +366,24 @@
   .folder .name {
     color: var(--gold);
   }
+  /* 常駐但淡色,滑過或選取才變亮:以前只在 hover 出現,沒人知道列上有這些動作 */
   .acts {
     display: inline-flex;
     gap: 2px;
-    opacity: 0;
+    opacity: 0.35;
   }
   .row:hover .acts,
-  .row.sel .acts {
+  .row.sel .acts,
+  .row:focus-within .acts {
     opacity: 1;
+  }
+  .foot {
+    display: flex;
+    gap: 14px;
+    padding: 6px 16px;
+    border-top: 1px solid var(--edge-0);
+    font-size: var(--fs-xs);
+    color: var(--ink-3);
   }
   .danger:hover {
     color: var(--bad);

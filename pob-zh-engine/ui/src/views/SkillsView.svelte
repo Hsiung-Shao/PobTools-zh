@@ -470,6 +470,7 @@
             <input type="checkbox" checked={g.enabled} onclick={(e) => e.stopPropagation()} onchange={(e) => app.run(() => api.setGroup(g.index, { enabled: e.currentTarget.checked })).then(changed)} />
             <span class="gname">{g.displayLabelZh || g.displayLabel || g.label || "—"}</span>
             {#if g.isMain}<span class="badge gold">{t("skills.main")}</span>{/if}
+            {#if g.includeInFullDPS}<span class="badge">{t("skills.inFullDps")}</span>{/if}
             {#if g.slot}<span class="badge">{data.slotOptions.find((s) => s.name === g.slot)?.labelZh ?? g.slot}</span>{/if}
             {#if g.source}<span class="badge dim">{g.sourceName ?? t("skills.fromItem")}</span>{/if}
           </div>
@@ -483,6 +484,7 @@
       <button class="btn ghost sm" disabled={!group} title={t("skills.copyGroupHint")} onclick={copyGroup}>{t("skills.copyGroup")}</button>
       <button class="btn ghost sm" onclick={openPaste}>{t("skills.pasteGroup")}</button>
     </div>
+    <p class="dim small mousehint">{t("skills.mouseHint")}</p>
     <div class="gemopts">
       <button class="btn ghost sm" onclick={toggleGemOpts}>{gemOptsOpen ? "▾" : "▸"} {t("skills.gemOptions")}</button>
       {#if gemOptsOpen && gemOpts}
@@ -851,6 +853,25 @@
     padding: 8px 10px;
     border-top: 1px solid var(--edge-0);
     background: var(--surface-1);
+  }
+  /* 插槽組列的右鍵 / Ctrl 操作原本只寫在 hover 提示裡 */
+  .mousehint {
+    margin: 0;
+    padding: 0 10px 6px;
+    background: var(--surface-1);
+  }
+  /* 數字右對齊,等級與品質上下對齊 */
+  td.n input {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  /* 移動 / 刪除鈕常駐淡色,滑過該列才變亮 */
+  td.w2 .btn:not(:disabled) {
+    opacity: 0.4;
+  }
+  tr:hover td.w2 .btn:not(:disabled),
+  td.w2 .btn:focus-visible {
+    opacity: 1;
   }
   .btn.danger:hover:not(:disabled) {
     color: var(--bad);
