@@ -71,10 +71,10 @@ std::optional<std::string> RarityFragment(const std::string& label, const std::s
 // frag.ts:100 wholeLine: ^label$ / ^(a|b)$ (de-duplicated, order kept)
 std::optional<std::string> WholeLine(const std::vector<std::string>& labels);
 
-// frag.ts:121 linkedSockets: n linked sockets "[rgbwa](-[rgbwa]){n-1}" (2..6)
+// frag.ts:121 linkedSockets: n linked sockets (2..6): "(-[rgbwa]){n-1}", 2L "\b[rgbwa](-[rgbwa]){1}\b"
 std::optional<std::string> LinkedSockets(int n);
 
-// frag.ts:127 coloredLinks: n linked sockets, all coloured (no white): "[rgb](-[rgb]){n-1}"
+// frag.ts:127 coloredLinks: n linked sockets, all coloured (no white): "[rgb](-[rgb]){n-1}", 2L wrapped in \b
 std::optional<std::string> ColoredLinks(int n);
 
 // frag.ts:137 rgbGroup: R, G and B in one linked group, not necessarily adjacent:
@@ -82,7 +82,7 @@ std::optional<std::string> ColoredLinks(int n);
 std::optional<std::string> RgbGroup(const std::string& socketLabel);
 
 // frag.ts:155 linkColors: linked sockets holding these colours in any order,
-// e.g. "rgb" -> "\b(b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b))\b".
+// e.g. "rgb" -> "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)"; two colours wrapped in \b.
 std::optional<std::string> LinkColors(const std::string& choice);
 
 // frag.ts socketColorCount: "^插槽[:：].*b.*b.*b"
