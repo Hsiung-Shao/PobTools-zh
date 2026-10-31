@@ -823,12 +823,13 @@ void FlavourTextTests(const std::wstring& exeDir)
 	if (tt) {
 		// The page also lists runegrafts, whose directions differ, so the tattoo line is not
 		// on every item: each tattoo carries it in its own hidden text (or the page ambient).
-		// The forbidden (ascendancy) tattoos have no such directions in the GGPK.
+		// The seven forbidden (ascendancy) tattoos, SpecialUnique7<class>, have no such
+		// directions in the GGPK; the other SpecialUnique tattoos do.
 		const char* dir = u8"右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。";
 		const bool inAmbient = anyStarts(tt->ambientZh, dir);
 		int tattoos = 0, without = 0;
 		for (const RegexEntryDef& e : tt->entries) {
-			if (e.id.find("AncestralTattoo") == std::string::npos || e.id.find("SpecialUnique") != std::string::npos) continue;
+			if (e.id.find("AncestralTattoo") == std::string::npos || e.id.find("SpecialUnique7") != std::string::npos) continue;
 			tattoos++;
 			if (!inAmbient && !anyStarts(e.hiddenZh, dir)) without++;
 		}
