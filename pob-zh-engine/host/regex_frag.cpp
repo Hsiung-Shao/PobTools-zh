@@ -253,18 +253,22 @@ std::optional<std::string> WholeLine(const std::vector<std::string>& labels)
 }
 
 // Socket letters only: the old '.' also matched "x-y-z" text such as a damage
-// range (reported from the game 2026-10-31). \b on both ends keeps the letters
-// out of English words (the offline audit caught 2L in "Transfer-attuned").
+// range (reported from the game 2026-10-31). Only 2-socket fragments need \b to
+// stay out of English words ("Transfer-attuned"); the offline audit found no hit
+// for 3+ without it, and on a socket line "-x-y" already means 3 linked.
 std::optional<std::string> LinkedSockets(int n)
 {
 	if (n < 2 || n > 6) return std::nullopt;
-	return "\\b[rgbwa](-[rgbwa]){" + std::to_string(n - 1) + "}\\b";
+	if (n == 2) return "\\b[rgbwa](-[rgbwa]){1}\\b";
+	return "(-[rgbwa]){" + std::to_string(n - 1) + "}";
 }
 
+// Keeps the leading class: "(-[rgb]){2}" would count "W-R-G" as 3 coloured.
 std::optional<std::string> ColoredLinks(int n)
 {
 	if (n < 2 || n > 6) return std::nullopt;
-	return "\\b[rgb](-[rgb]){" + std::to_string(n - 1) + "}\\b";
+	const std::string f = "[rgb](-[rgb]){" + std::to_string(n - 1) + "}";
+	return n == 2 ? "\\b" + f + "\\b" : f;
 }
 
 // Anchored to the socket line's start ("^插槽[:：]"): English item names
@@ -292,9 +296,11 @@ std::optional<std::string> LinkColors(const std::string& choice)
 			node = node->Child(p[i]);
 		}
 	}
-	// \b keeps the letters out of English words ("r-r" in "of Hair-Raising", caught
-	// by the offline audit); a top-level '|' needs parentheses so \b covers every branch.
+	// Two colours need \b to stay out of English words ("r-r" in "of Hair-Raising",
+	// caught by the offline audit); 3+ hit nothing without it. A top-level '|'
+	// needs parentheses so \b covers every branch.
 	const std::string t = RenderTrie(root, true);
+	if (letters.size() > 2) return t;
 	int depth = 0;
 	bool topBar = false;
 	for (char ch : t) {

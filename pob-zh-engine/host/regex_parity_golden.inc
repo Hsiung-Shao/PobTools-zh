@@ -1,5 +1,5 @@
 // GENERATED -- do not edit. Golden PARITY fixture: the literal vectors of exile-appraiser's own tests
-// (regex/test/{numeric,pages,strict-fragments,rarity,combine,item-mods,item-mods-marker,item-mod-forms,share}.test.ts) @ b8faef6, each re-run
+// (regex/test/{numeric,pages,strict-fragments,rarity,combine,item-mods,item-mods-marker,item-mod-forms,share}.test.ts) @ b6e462e, each re-run
 // through exile-appraiser's code over PobTools' shipped Data files and checked against the literal before
 // it was written (178 literal checks). regex_selftest_parity.cpp requires identical output. 162 records.
 // Generator: pob-zh-engine/tools/regex_port/gen-parity.mts (local only).
@@ -33,7 +33,7 @@ R"G(["frag","poe2","waystone_numeric","rarity",{"min":10},"zh","物品稀有度:
 R"G(["frag","poe2","waystone_numeric","item_rarity_class",{"choice":"rare"},"zh","度: 稀"])G",
 R"G(["frag","poe2","waystone_numeric","item_rarity_class",{"choice":"normal"},"zh","度: 中"])G",
 R"G(["frag","poe2","waystone_numeric","tier",{"min":14,"max":14},"zh","階級 *14）"])G",
-R"G(["linkColors","rgb","\\b(b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b))\\b"])G",
+R"G(["linkColors","rgb","b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)"])G",
 R"G(["wholeLine",["已汙染"],"^已汙染$"])G",
 R"G(["terms","poe1","map_numeric","item_rarity_class",{"choice":""},"zh",null])G",
 R"G(["terms","poe1","map_numeric","item_rarity_class",{"choice":"nmru"},"zh",null])G",

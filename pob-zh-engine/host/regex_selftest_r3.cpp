@@ -1133,6 +1133,54 @@ void VendorSocketTests(const std::map<std::string, Game>& games)
 		      "V11 SocketColorCount(插槽, b, 3) hits the half-width and full-width colon lines, got " + VendorHitsText(zh));
 	}
 
+	// V12: 3+ links carry no \b
+	{
+		int bad = 0;
+		std::string first;
+		for (int n = 3; n <= 6; n++) {
+			const std::string linked = "(-[rgbwa]){" + std::to_string(n - 1) + "}";
+			const std::string colored = "[rgb](-[rgb]){" + std::to_string(n - 1) + "}";
+			const std::optional<std::string> a = RegexFrag::LinkedSockets(n);
+			const std::optional<std::string> b = RegexFrag::ColoredLinks(n);
+			if (a.value_or("(null)") != linked && !bad++) first = "LinkedSockets(" + std::to_string(n) + ") = " + a.value_or("(null)");
+			if (b.value_or("(null)") != colored && !bad++) first = "ColoredLinks(" + std::to_string(n) + ") = " + b.value_or("(null)");
+		}
+		check(bad == 0, "V12 LinkedSockets / ColoredLinks (n=3..6) are exactly '(-[rgbwa]){n-1}' / '[rgb](-[rgb]){n-1}' without \\b (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::optional<std::string> rgb = RegexFrag::LinkColors("rgb");
+		check(rgb.value_or("(null)") == "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)", "V12 LinkColors(rgb) has no \\b, got " + rgb.value_or("(null)"));
+		const std::optional<std::string> rrg = RegexFrag::LinkColors("rrg");
+		const std::optional<std::string> rgbw = RegexFrag::LinkColors("rgbw");
+		check(rrg && rgbw && rrg->find("\\b") == std::string::npos && rgbw->find("\\b") == std::string::npos,
+		      "V12 LinkColors(rrg) and LinkColors(rgbw) contain no \\b, got " + rrg.value_or("(null)") + " / " + rgbw.value_or("(null)"));
+	}
+
+	// V13: 2 links / 2 colours keep \b
+	{
+		const std::optional<std::string> a = RegexFrag::LinkedSockets(2);
+		const std::optional<std::string> b = RegexFrag::ColoredLinks(2);
+		check(a.value_or("(null)") == "\\b[rgbwa](-[rgbwa]){1}\\b" && b.value_or("(null)") == "\\b[rgb](-[rgb]){1}\\b",
+		      "V13 LinkedSockets(2) / ColoredLinks(2) keep \\b, got " + a.value_or("(null)") + " / " + b.value_or("(null)"));
+		const std::optional<std::string> rg = RegexFrag::LinkColors("rg");
+		const std::optional<std::string> rr = RegexFrag::LinkColors("rr");
+		check(rg.value_or("(null)") == "\\b(g-r|r-g)\\b" && rr.value_or("(null)") == "\\br-r\\b",
+		      "V13 LinkColors(rg) / LinkColors(rr) keep \\b, got " + rg.value_or("(null)") + " / " + rr.value_or("(null)"));
+	}
+
+	// V14: the short n-link fragment hits only n or more links
+	{
+		const std::vector<std::string> lines = {u8"插槽: R-G-B-W", "Sockets: W-R-G-B-B", u8"插槽: R-G-B W", u8"插槽: R-G B-W", u8"插槽: R-G-B"};
+		const std::vector<int> got = VendorHits(RegexFrag::LinkedSockets(4), lines);
+		check(got == std::vector<int>({1, 1, 0, 0, 0}), "V14 LinkedSockets(4) hits 4L and 5L, not 3L or broken links, got " + VendorHitsText(got));
+	}
+
+	// V15: the all-colour 3-link fragment does not count a leading white socket
+	{
+		const std::vector<std::string> lines = {u8"插槽: W-R-G", u8"插槽: W-R-G-B"};
+		const std::vector<int> got = VendorHits(RegexFrag::ColoredLinks(3), lines);
+		check(got == std::vector<int>({0, 1}), "V15 ColoredLinks(3) misses W-R-G and hits W-R-G-B, got " + VendorHitsText(got));
+	}
+
 	const Game& G = games.at("poe1");
 	const AlgoPage* vendor = G.Algo("vendor_items");
 	if (!vendor) { check(false, "V6/V7 poe1 page vendor_items exists"); return; }

@@ -1931,7 +1931,7 @@ void FragmentTests(const std::wstring& exeDir)
 			}
 		}
 		check(bad == 0, "linkColors: 5 choices x every R/G/B link of length 2-6 (" + Num(n) + ")" + (bad ? " -- " + first : std::string()));
-		check(*LinkColors("rgb") == "\\b(b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b))\\b", "linkColors(rgb) = " + *LinkColors("rgb"));
+		check(*LinkColors("rgb") == "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)", "linkColors(rgb) = " + *LinkColors("rgb"));
 		check(RxRun(*LinkColors("rgb"), "Sockets: R-G B") == 0, "an unlinked socket breaks the chain");
 		const std::string six = *LinkedSockets(6), five = *LinkedSockets(5);
 		check(RxRun(six, u8"插槽: R-G-B-R-G-B") == 1 && RxRun(six, u8"插槽: R-G-B R-G-B") == 0 &&
