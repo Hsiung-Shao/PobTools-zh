@@ -1059,7 +1059,9 @@ void VendorSocketTests(const std::map<std::string, Game>& games)
 	// V5 (C++: shape only)
 	{
 		const std::optional<std::string> f = RegexFrag::RgbGroup(u8"插槽");
-		check(f.has_value() && f->compare(0, std::string(u8"插槽").size(), u8"插槽") == 0 && f->find("(?=") != std::string::npos,
+		// Anchored at the line start since review round 5 ("^插槽[:：]..."): skip the '^'.
+		const size_t at = (f && !f->empty() && (*f)[0] == '^') ? 1 : 0;
+		check(f.has_value() && f->compare(at, std::string(u8"插槽").size(), u8"插槽") == 0 && f->find("(?=") != std::string::npos,
 		      "V5 RgbGroup(插槽) starts with the label and uses a lookahead (?=" + (f ? " -- " + *f : std::string(" -- null")));
 	}
 
@@ -1083,6 +1085,52 @@ void VendorSocketTests(const std::map<std::string, Game>& games)
 		check(l2.size() == 4 && l2[2] == 1 && l2[3] == 1, "V9 LinkedSockets(2) still hits 'Sockets: R-G' and 'Sockets: W-R-G-B', got " + VendorHitsText(l2));
 		const std::vector<int> c3 = VendorHits(RegexFrag::ColoredLinks(3), lines);
 		check(c3.size() == 4 && c3[3] == 1, "V9 ColoredLinks(3) still hits 'Sockets: W-R-G-B', got " + VendorHitsText(c3));
+	}
+
+	// V10: chosen-colour fragments must not stick to English hyphenated words
+	{
+		const std::vector<std::string> lines = {"of Hair-Raising", "Lightning-Retaliation", "Strong-Willed", "Sockets: R-R", "Sockets: G-R-B"};
+		int bad = 0;
+		std::string first;
+		for (const char* c : {"rr", "rg", "gw", "rgb"}) {
+			const std::optional<std::string> f = RegexFrag::LinkColors(c);
+			const std::vector<int> h = VendorHits(f, lines);
+			if (h[0] != 0 || h[1] != 0 || h[2] != 0) {
+				if (!bad++) first = std::string("LinkColors(") + c + ") " + VendorHitsText(h) + " " + f.value_or("(null)");
+			}
+		}
+		check(bad == 0, "V10 LinkColors rr / rg / gw / rgb hit none of 'of Hair-Raising', 'Lightning-Retaliation', 'Strong-Willed' (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::vector<int> rr = VendorHits(RegexFrag::LinkColors("rr"), lines);
+		const std::vector<int> rg = VendorHits(RegexFrag::LinkColors("rg"), lines);
+		const std::vector<int> rgb = VendorHits(RegexFrag::LinkColors("rgb"), lines);
+		check(rr.size() == 5 && rr[3] == 1, "V10 LinkColors(rr) hits 'Sockets: R-R', got " + VendorHitsText(rr));
+		check(rgb.size() == 5 && rgb[4] == 1, "V10 LinkColors(rgb) hits 'Sockets: G-R-B', got " + VendorHitsText(rgb));
+		check(rg.size() == 5 && rg[4] == 1, "V10 LinkColors(rg) hits 'Sockets: G-R-B', got " + VendorHitsText(rg));
+	}
+
+	// V11: socket colour count / RGB group read the socket line only
+	{
+		const std::vector<std::string> lines = {"All Sockets are Blue", "All Sockets are Green", "All Sockets are White",
+		                                        "Sockets cannot be modified", "Sockets: R-G-B-W", u8"插槽: B-B-B", u8"插槽：B-B-B"};
+		int bad = 0;
+		std::string first;
+		for (const char* c : {"r", "g", "b", "w"}) {
+			const std::optional<std::string> f = RegexFrag::SocketColorCount("Sockets", c, 1);
+			const std::vector<int> h = VendorHits(f, lines);
+			if (h[0] != 0 || h[1] != 0 || h[2] != 0 || h[3] != 0 || h[4] != 1) {
+				if (!bad++) first = std::string("SocketColorCount(Sockets,") + c + ",1) " + VendorHitsText(h) + " " + f.value_or("(null)");
+			}
+		}
+		check(bad == 0, "V11 SocketColorCount(Sockets, r/g/b/w, 1) skips the four mod lines and hits 'Sockets: R-G-B-W' (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::optional<std::string> rg = RegexFrag::RgbGroup("Sockets");
+		const std::vector<int> g = VendorHits(rg, lines);
+		check(g.size() == 7 && g[0] == 0 && g[1] == 0 && g[2] == 0 && g[3] == 0 && g[4] == 1,
+		      "V11 RgbGroup(Sockets) skips the four mod lines and hits 'Sockets: R-G-B-W', got " + VendorHitsText(g) + " " + rg.value_or("(null)"));
+		const std::vector<int> zh = VendorHits(RegexFrag::SocketColorCount(u8"插槽", "b", 3), lines);
+		check(zh.size() == 7 && zh[5] == 1 && zh[6] == 1,
+		      "V11 SocketColorCount(插槽, b, 3) hits the half-width and full-width colon lines, got " + VendorHitsText(zh));
 	}
 
 	const Game& G = games.at("poe1");

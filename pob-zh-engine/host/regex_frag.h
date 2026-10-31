@@ -82,10 +82,10 @@ std::optional<std::string> ColoredLinks(int n);
 std::optional<std::string> RgbGroup(const std::string& socketLabel);
 
 // frag.ts:155 linkColors: linked sockets holding these colours in any order,
-// e.g. "rgb" -> "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)".
+// e.g. "rgb" -> "\b(b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b))\b".
 std::optional<std::string> LinkColors(const std::string& choice);
 
-// frag.ts:172 socketColorCount: "插槽.*b.*b.*b"
+// frag.ts socketColorCount: "^插槽[:：].*b.*b.*b"
 std::optional<std::string> SocketColorCount(const std::string& label, const std::string& color, int n);
 
 } // namespace RegexFrag

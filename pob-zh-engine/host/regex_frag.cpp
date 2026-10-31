@@ -267,13 +267,13 @@ std::optional<std::string> ColoredLinks(int n)
 	return "\\b[rgb](-[rgb]){" + std::to_string(n - 1) + "}\\b";
 }
 
-// Tied to the socket line by its label: English item names (Bringer...) also
-// hold r, g and b in one word.
+// Anchored to the socket line's start ("^插槽[:：]"): English item names
+// (Bringer...) hold r, g and b in one word, and mod lines say "All Sockets are ...".
 std::optional<std::string> RgbGroup(const std::string& socketLabel)
 {
 	const std::string base = LabelBase(socketLabel);
 	if (base.empty()) return std::nullopt;
-	return base + ".*(?=\\S*r)(?=\\S*g)(?=\\S*b)";
+	return "^" + base + u8"[:：].*(?=\\S*r)(?=\\S*g)(?=\\S*b)";
 }
 
 std::optional<std::string> LinkColors(const std::string& choice)
@@ -292,7 +292,17 @@ std::optional<std::string> LinkColors(const std::string& choice)
 			node = node->Child(p[i]);
 		}
 	}
-	return RenderTrie(root, true);
+	// \b keeps the letters out of English words ("r-r" in "of Hair-Raising", caught
+	// by the offline audit); a top-level '|' needs parentheses so \b covers every branch.
+	const std::string t = RenderTrie(root, true);
+	int depth = 0;
+	bool topBar = false;
+	for (char ch : t) {
+		if (ch == '(' || ch == '[') depth++;
+		else if (ch == ')' || ch == ']') depth--;
+		else if (ch == '|' && depth == 0) topBar = true;
+	}
+	return topBar ? "\\b(" + t + ")\\b" : "\\b" + t + "\\b";
 }
 
 std::optional<std::string> SocketColorCount(const std::string& label, const std::string& color, int n)
@@ -302,7 +312,8 @@ std::optional<std::string> SocketColorCount(const std::string& label, const std:
 	if (base.empty() || color.size() != 1 || !IsColor(LowerAscii(color[0])) || n < 1 || n > 6)
 		return std::nullopt;
 	const char c = LowerAscii(color[0]);
-	std::string s = base;
+	// Anchored to the socket line's start: English mod lines say "All Sockets are Blue".
+	std::string s = "^" + base + u8"[:：]";
 	for (int i = 0; i < n; i++) {
 		s += ".*";
 		s += c;
