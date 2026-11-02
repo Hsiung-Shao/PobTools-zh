@@ -53,7 +53,8 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   bool fontApplyAll = true, int windowOpacity = 100,
                   const std::wstring& bgPath = std::wstring(), int bgBright = 50,
                   int glassBlur = 0, int treeBg = 100, bool hangWatch = true,
-                  int fpsForeground = 60, int fpsBackground = 15, bool perfLog = false);
+                  int fpsForeground = 60, int fpsBackground = 15, bool perfLog = false,
+                  const std::wstring& dictSwitches = std::wstring());
 
 // Live counterparts for the background image (absolute path, "" = none), its
 // brightness and the liquid-glass blur; same delivery as ApplyPobWindowOpacity

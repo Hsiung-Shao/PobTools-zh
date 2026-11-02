@@ -229,6 +229,8 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	c.fontFile = fbuf;
 	if (c.fontFile.empty()) c.fontFile = kDefaultFontFile;
 	c.fontApplyAll = read_ini_int(iniPath, L"FontApplyAll", 1) != 0;
+	for (int i = 0; i < kOptionalDictCount; i++)
+		c.optionalDictOn[i] = read_ini_int(iniPath, kOptionalDicts[i].iniKey, 1) != 0 ? 1 : 0;
 	// Appearance, per game. The suffix-less keys are what the first test builds
 	// wrote (one shared set); they seed BOTH games when a per-game key is absent
 	// and are deleted on the next save.
@@ -306,6 +308,24 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 	return c;
 }
 
+// An entry missing from optionalDictOn (a config built before the row existed)
+// counts as on, the same as an absent ini key.
+static bool optional_dict_on(const LauncherConfig& cfg, int i)
+{
+	return i >= (int)cfg.optionalDictOn.size() || cfg.optionalDictOn[i] != 0;
+}
+
+std::wstring DictSwitchesEnv(const LauncherConfig& cfg)
+{
+	std::wstring out;
+	for (int i = 0; i < kOptionalDictCount; i++) {
+		if (!out.empty()) out += L';';
+		for (const char* p = kOptionalDicts[i].file; *p; p++) out += (wchar_t)(unsigned char)*p;
+		out += optional_dict_on(cfg, i) ? L"=1" : L"=0";
+	}
+	return out;
+}
+
 void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& cfg)
 {
 	const LauncherConfig disk = LoadLauncherConfig(iniPath);
@@ -366,6 +386,9 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg)
 	WritePrivateProfileStringW(kSection, L"Font", cfg.fontFile.c_str(), iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"FontApplyAll",
 		cfg.fontApplyAll ? L"1" : L"0", iniPath.c_str());
+	for (int i = 0; i < kOptionalDictCount; i++)
+		WritePrivateProfileStringW(kSection, kOptionalDicts[i].iniKey,
+			optional_dict_on(cfg, i) ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"HangWatch",
 		cfg.hangWatch ? L"1" : L"0", iniPath.c_str());
 	WritePrivateProfileStringW(kSection, L"PobFpsForeground",

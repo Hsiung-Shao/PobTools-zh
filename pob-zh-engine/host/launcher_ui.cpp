@@ -1366,7 +1366,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		                        cfg.fontApplyAll, look.windowOpacity,
 		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
 		                        look.treeBg, cfg.hangWatch,
-		                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
+		                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog,
+		                        DictSwitchesEnv(cfg));
 		const std::wstring lua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 		if (lua.empty()) {
 			// Nothing to launch and, until v0.28.0, nothing said about it: the
@@ -3290,6 +3291,25 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					ImGui::SetCursorScreenPos(ImVec2(x0 - D(20.0f), y0));
 					ImGui::Dummy(ImVec2(w + D(40.0f), bottom - y0));
 					ImGui::SetCursorScreenPos(ImVec2(x0 - D(20.0f), bottom));
+					ImGui::PopID();
+				}
+				// Optional dictionary files (kOptionalDicts), one switch each; the
+				// engine reads them when POB starts (POB_ZH_DICT_SWITCHES).
+				const char* optLabel[kOptionalDictCount] = { S.dictTooltipsChk };
+				const char* optTip[kOptionalDictCount] = { S.dictTooltipsTip };
+				for (int k = 0; k < kOptionalDictCount && k < (int)cfg.optionalDictOn.size(); k++) {
+					ImGui::PushID(100 + k);
+					const float x0 = PobUi::CardInnerX(), w = PobUi::CardInnerWidth();
+					const float y0 = ImGui::GetCursorScreenPos().y;
+					ImGui::GetWindowDrawList()->AddLine(ImVec2(x0 - D(20.0f) + 1.0f, y0), ImVec2(x0 + w + D(20.0f) - 1.0f, y0),
+					                                    Tok::BorderSubtle, 1.0f);
+					PobUi::RowBegin(optLabel[k], S.fontApplyAllHint, PobUi::SwitchWidth(), 0.0f, optTip[k]);
+					bool on = cfg.optionalDictOn[k] != 0;
+					if (PobUi::Switch("##optdict", &on)) {
+						cfg.optionalDictOn[k] = on ? 1 : 0;
+						saveNow();
+					}
+					PobUi::RowEnd();
 					ImGui::PopID();
 				}
 			}

@@ -245,8 +245,12 @@ void SetEngineEnv(const std::wstring& game, const std::wstring& locale,
                   const std::wstring& fontFile, const std::wstring& dataDir,
                   bool fontApplyAll, int windowOpacity,
                   const std::wstring& bgPath, int bgBright, int glassBlur, int treeBg,
-                  bool hangWatch, int fpsForeground, int fpsBackground, bool perfLog)
+                  bool hangWatch, int fpsForeground, int fpsBackground, bool perfLog,
+                  const std::wstring& dictSwitches)
 {
+	// DictSwitchesEnv's "file=0/1" list; the engine skips files switched off.
+	// Always written (empty included) for the long-lived-process reason below.
+	set_env_both(L"POB_ZH_DICT_SWITCHES", dictSwitches.c_str());
 	// "0" only when the user opted out in the ini; the engine's watchdog reads it
 	// before it starts its thread. Always written for the same long-lived-process
 	// reason as the variables below.
@@ -350,7 +354,7 @@ static std::vector<wchar_t> tool_environment_block()
 	static const wchar_t* const kStrip[] = {
 		L"POB_GAME=", L"POB_LOCALE=", L"POB_ZH_FONTFILE=", L"POB_ZH_DATADIR=", L"POB_ZH_FONT_ALL=",
 		L"POB_ZH_WINDOW_OPACITY=", L"POB_ZH_BG=", L"POB_ZH_BG_BRIGHT=", L"POB_ZH_GLASS_BLUR=",
-		L"POB_ZH_TREE_BG=",
+		L"POB_ZH_TREE_BG=", L"POB_ZH_DICT_SWITCHES=",
 	};
 	std::vector<wchar_t> block;
 	wchar_t* env = GetEnvironmentStringsW();

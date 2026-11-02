@@ -37,6 +37,19 @@ inline constexpr int kDictSlotCount = 3;
 // Folder name under Data\ ("poe1" / "poe2" / "launcher").
 const wchar_t* DictSlotFolder(DictSlot slot);
 
+// Dictionary files the settings page lets the user switch off. The engine still
+// follows meta.json's load_order; it only skips a file switched off here (env
+// POB_ZH_DICT_SWITCHES, see DictSwitchesEnv). To make another file switchable,
+// add a row here plus its label/tip in launcher_ui.cpp. On by default.
+struct OptionalDict {
+	const char*    file;     // as listed in meta.json load_order
+	const wchar_t* iniKey;   // [PobTools] key, "1" / "0"
+};
+inline constexpr OptionalDict kOptionalDicts[] = {
+	{ "ui_tooltips.json", L"DictUiTooltips" },
+};
+inline constexpr int kOptionalDictCount = (int)(sizeof(kOptionalDicts) / sizeof(kOptionalDicts[0]));
+
 // ---- launcher-only zoom and window size ------------------------------------
 //
 // "Font size" is the ONE user-facing knob for the launcher's own scale. Every
@@ -185,6 +198,8 @@ struct LauncherConfig {
 	// Also draw ASCII in the POB window from the selected font (engine env
 	// POB_ZH_FONT_ALL). Default on; the monospaced face is always exempt.
 	bool           fontApplyAll = true;
+	// Parallel to kOptionalDicts: 1 = the engine loads that file (default).
+	std::vector<char> optionalDictOn = std::vector<char>(kOptionalDictCount, 1);
 	// Launcher body font size in px at 100% DPI; drives the whole-UI zoom (see
 	// LauncherZoom above). POB is unaffected.
 	int            fontSize = kLauncherFontSizeDefault;
@@ -342,6 +357,9 @@ void SaveLauncherConfig(const std::wstring& iniPath, const LauncherConfig& cfg);
 // were when the launcher started ("the new interface forgets it stopped
 // following the launcher", 2026-09-25). This takes those keys from disk first.
 void SaveLauncherConfigKeepModern(const std::wstring& iniPath, LauncherConfig& cfg);
+// POB_ZH_DICT_SWITCHES for the engine: "file=1;file=0", one item per
+// kOptionalDicts row ("=0" = skip that file). SetEngineEnv always writes it.
+std::wstring DictSwitchesEnv(const LauncherConfig& cfg);
 InstallInfo DetectInstalls(const std::wstring& exeDir);
 
 // Detected PoE1 POB install dir with a trailing backslash; L"" when none.
