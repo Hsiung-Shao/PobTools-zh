@@ -959,10 +959,157 @@ void FlavourTextTests(const std::wstring& exeDir)
 	}
 }
 
+// B1-B3 the catchable-beasts page, M1/M2 the magic-affix-names page, M4 single picks on both.
+// Pages are looked up by id and every access is guarded, so a missing page is a failed check, not a crash.
+void BeastAffixTests(const std::wstring& exeDir)
+{
+	line("[data-beasts-affixes] PoE1 beasts and magic_affixes pages");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "beasts/affixes: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto idxByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> int {
+		if (p)
+			for (size_t i = 0; i < p->entries.size(); i++)
+				if (!p->entries[i].zh.empty() && p->entries[i].zh[0] == zh0) return (int)i;
+		return -1;
+	};
+	auto countByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> int {
+		int n = 0;
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (!e.zh.empty() && e.zh[0] == zh0) n++;
+		return n;
+	};
+	// Same corpus build as A3 (Chinese, hidden and ambient included); the page's real single-pick query must verify.
+	auto singlePick = [](const RegexPageDef& p, int pick, std::string& query) -> bool {
+		std::vector<Entry> es;
+		es.reserve(p.entries.size());
+		for (const RegexEntryDef& d : p.entries) {
+			Entry e;
+			e.id = d.id;
+			const bool useWant = !d.zh.empty();
+			e.texts = useWant ? d.zh : d.en;
+			e.hidden = useWant ? d.hiddenZh : d.hiddenEn;
+			e.alts = useWant ? d.altZh : d.altEn;
+			es.push_back(std::move(e));
+		}
+		RegexGen::Ambient amb;
+		amb.lines = p.ambientZh;
+		amb.nameLeft = p.namePrefixZh;
+		amb.nameRight = p.nameSuffixZh;
+		Corpus c;
+		c.Reset(std::move(es), std::move(amb));
+		const RegexGen::Result r = c.Build({pick}, Mode::Any);
+		query = r.query;
+		return c.Verify({pick}, r.query).ok;
+	};
+
+	// B1-B3
+	const RegexPageDef* beasts = findPage("beasts");
+	check(beasts != nullptr, "B1 poe1 page beasts exists");
+	int cave = -1;
+	if (beasts) {
+		const size_t n = beasts->entries.size();
+		check(n >= 200 && n <= 280, "B1 beasts has 200-280 entries (" + std::to_string(n) + ")");
+		cave = idxByZh0(beasts, u8"洞穴獸");
+		const int tiger = idxByZh0(beasts, u8"費爾羅猛虎幻獸");
+		check(cave >= 0, "B1 beasts has the entry whose first zh line is 洞穴獸");
+		check(cave >= 0 && anyHas(beasts->entries[cave].en, "Cave Beast"), "B1 洞穴獸 en holds 'Cave Beast'");
+		check(tiger >= 0, "B1 beasts has the entry whose first zh line is 費爾羅猛虎幻獸");
+		check(tiger >= 0 && anyHas(beasts->entries[tiger].en, "Farric Tiger Alpha"), "B1 費爾羅猛虎幻獸 en holds 'Farric Tiger Alpha'");
+
+		// B2
+		if (cave >= 0) {
+			const RegexEntryDef& e = beasts->entries[cave];
+			check(anyHas(e.hiddenZh, u8"巨人") && anyHas(e.hiddenZh, u8"熊類動物") && anyHas(e.hiddenZh, u8"獸性"),
+			      "B2 洞穴獸 hiddenZh holds 巨人 / 熊類動物 / 獸性 (" + std::to_string(e.hiddenZh.size()) + " hidden lines)");
+			check(anyHas(e.hiddenEn, "Gargantuans") && anyHas(e.hiddenEn, "Ursae") && anyHas(e.hiddenEn, "The Wilds"),
+			      "B2 洞穴獸 hiddenEn holds Gargantuans / Ursae / The Wilds (" + std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+
+		// B3: disabled beasts are not collected
+		int direZh = 0, direEn = 0;
+		for (const RegexEntryDef& e : beasts->entries) {
+			if (anyHas(e.zh, u8"恐懼之狼")) direZh++;
+			if (anyHas(e.en, "Dire Wolf")) direEn++;
+		}
+		check(direZh == 0 && direEn == 0, "B3 beasts holds no disabled 恐懼之狼 / Dire Wolf entry (zh " + std::to_string(direZh) +
+		      ", en " + std::to_string(direEn) + ")");
+	}
+
+	// M1 / M2
+	const RegexPageDef* aff = findPage("magic_affixes");
+	check(aff != nullptr, "M1 poe1 page magic_affixes exists");
+	int opt = -1;
+	if (aff) {
+		check(aff->groups.size() == 2 && aff->groups[0] == u8"前綴" && aff->groups[1] == u8"後綴",
+		      "M1 magic_affixes groups are exactly [前綴, 後綴] (" + std::to_string(aff->groups.size()) + " groups)");
+		opt = idxByZh0(aff, u8"樂觀的");
+		const int lynx = idxByZh0(aff, u8"山貓之");
+		check(opt >= 0, "M1 magic_affixes has the entry whose first zh line is 樂觀的");
+		check(opt >= 0 && anyHas(aff->entries[opt].en, "Sanguine") && aff->entries[opt].group == 0,
+		      "M1 樂觀的 en holds 'Sanguine' and sits in group 0 (前綴)");
+		check(lynx >= 0, "M1 magic_affixes has the entry whose first zh line is 山貓之");
+		check(lynx >= 0 && anyHas(aff->entries[lynx].en, "of the Lynx") && aff->entries[lynx].group == 1,
+		      "M1 山貓之 en holds 'of the Lynx' and sits in group 1 (後綴)");
+		const int frostN = countByZh0(aff, u8"冷凍的");
+		const int frost = idxByZh0(aff, u8"冷凍的");
+		check(frostN == 1, "M1 exactly one entry has first zh line 冷凍的 (" + std::to_string(frostN) + ")");
+		check(frost >= 0 && anyHas(aff->entries[frost].en, "Frosted") && anyHas(aff->entries[frost].en, "Chilled") &&
+		      anyHas(aff->entries[frost].en, "Freezing"),
+		      "M1 冷凍的 en holds Frosted, Chilled and Freezing");
+
+		// M2
+		if (opt >= 0) {
+			const RegexEntryDef& e = aff->entries[opt];
+			check(anyHas(e.hiddenZh, u8"# 最大生命") && anyHas(e.hiddenEn, "# to maximum Life"),
+			      "M2 樂觀的 hidden holds '# 最大生命' (zh) and '# to maximum Life' (en) (" + std::to_string(e.hiddenZh.size()) + " / " +
+			      std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+		if (lynx >= 0) {
+			const RegexEntryDef& e = aff->entries[lynx];
+			check(anyHas(e.hiddenZh, u8"# 敏捷") && anyHas(e.hiddenEn, "# to Dexterity"),
+			      "M2 山貓之 hidden holds '# 敏捷' (zh) and '# to Dexterity' (en) (" + std::to_string(e.hiddenZh.size()) + " / " +
+			      std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+	}
+
+	// M4: a single pick on each page produces a non-empty query that verifies
+	// (hits no other entry's full text and no ambient text of its page).
+	if (beasts && cave >= 0) {
+		std::string q;
+		const bool ok = singlePick(*beasts, cave, q);
+		check(!q.empty() && ok, "M4 beasts single pick 洞穴獸: query non-empty and verifies -- query: " + q);
+	} else {
+		check(false, "M4 beasts single pick 洞穴獸: page or entry missing");
+	}
+	if (aff && opt >= 0) {
+		std::string q;
+		const bool ok = singlePick(*aff, opt, q);
+		check(!q.empty() && ok, "M4 magic_affixes single pick 樂觀的: query non-empty and verifies -- query: " + q);
+	} else {
+		check(false, "M4 magic_affixes single pick 樂觀的: page or entry missing");
+	}
+}
+
 void DataTests(const std::wstring& exeDir)
 {
 	CatalogueContentTests(exeDir);
 	FlavourTextTests(exeDir);
+	BeastAffixTests(exeDir);
 	line("");
 	RegexDataset ds;
 	std::string err;
