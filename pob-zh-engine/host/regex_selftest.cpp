@@ -478,6 +478,25 @@ void StateTests()
 		      "a link-marker key for a different modifier stays unresolved and ticks nothing");
 	}
 
+	line("[R1] two rows with the same English key resolve through the Chinese name");
+	{
+		const std::vector<std::string> en = {"Humming", "Humming"};
+		const std::vector<std::string> zh = {u8"低鳴的", u8"雷電之"};
+		std::vector<char> picked;
+
+		int missed = RegexResolveKeys({"Humming"}, {u8"雷電之"}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 0 && picked[1] == 1,
+		      "R1 key Humming + zh 雷電之 ticks row 2 (index 1), missed 0");
+
+		missed = RegexResolveKeys({"Humming"}, {""}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 1 && picked[1] == 0,
+		      "R1 key Humming with an empty zh (English-only share code) ticks row 1");
+
+		missed = RegexResolveKeys({"Humming"}, {u8"低鳴的"}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 1 && picked[1] == 0,
+		      "R1 key Humming + zh 低鳴的 ticks row 1");
+	}
+
 	line("[T12] the state file survives a round trip");
 	{
 		const std::wstring dir = ScratchDir();
@@ -1105,11 +1124,158 @@ void BeastAffixTests(const std::wstring& exeDir)
 	}
 }
 
+// Round 2: same-English-name affixes split into two rows (M5), more item types (M6), the name-seam data (S1),
+// and every row that cannot be picked alone must be fully contained elsewhere (U1).
+void AffixRound2Tests(const std::wstring& exeDir)
+{
+	line("[data-affixes-r2] PoE1 magic_affixes round 2");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "affixes r2: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto hasExact = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s == want) return true;
+		return false;
+	};
+	auto entryByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> const RegexEntryDef* {
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (!e.zh.empty() && e.zh[0] == zh0) return &e;
+		return nullptr;
+	};
+	auto lower = [](std::string s) {
+		for (char& c : s)
+			if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		return s;
+	};
+
+	const RegexPageDef* aff = findPage("magic_affixes");
+	check(aff != nullptr, "M5 poe1 page magic_affixes exists");
+	if (aff) {
+		// M5
+		const RegexEntryDef* a = entryByZh0(aff, u8"低鳴的");
+		const RegexEntryDef* b = entryByZh0(aff, u8"雷電之");
+		check(a != nullptr, "M5 magic_affixes has the entry whose first zh line is 低鳴的");
+		check(b != nullptr, "M5 magic_affixes has the entry whose first zh line is 雷電之");
+		check(a && !a->en.empty() && a->en[0] == "Humming" && b && !b->en.empty() && b->en[0] == "Humming",
+		      "M5 both rows have en[0] == Humming");
+		check(a && b && a->altZh.empty() && b->altZh.empty(), "M5 neither 低鳴的 nor 雷電之 carries altZh");
+		int withAlt = 0;
+		std::string firstAlt;
+		for (const RegexEntryDef& e : aff->entries)
+			if (!e.altZh.empty()) {
+				if (!withAlt) firstAlt = e.id;
+				withAlt++;
+			}
+		check(withAlt == 0, "M5 no magic_affixes entry carries altZh (" + std::to_string(withAlt) + ")" +
+		      (withAlt ? " -- first: " + firstAlt : std::string()));
+
+		// M6
+		const RegexEntryDef* ibex = entryByZh0(aff, u8"山羊之");
+		const RegexEntryDef* herbal = entryByZh0(aff, u8"草藥的");
+		const RegexEntryDef* hale = entryByZh0(aff, u8"健壯之");
+		const RegexEntryDef* brutal = entryByZh0(aff, u8"魯莽的");
+		check(ibex && anyHas(ibex->en, "of the Ibex") && ibex->group == 1, "M6 山羊之 exists, en holds 'of the Ibex', group 1");
+		check(herbal && anyHas(herbal->en, "Herbal") && herbal->group == 0, "M6 草藥的 exists, en holds 'Herbal', group 0");
+		check(hale && anyHas(hale->en, "Hale") && hale->group == 0, "M6 健壯之 exists, en holds 'Hale', group 0");
+		check(brutal && anyHas(brutal->en, "Brutal"), "M6 魯莽的 exists, en holds 'Brutal'");
+
+		// S1
+		check(hasExact(aff->namePrefixZh, u8"樂觀的"), "S1 nameWordsZh.prefix holds 樂觀的 (" + std::to_string(aff->namePrefixZh.size()) + " words)");
+		check(hasExact(aff->nameSuffixZh, u8"山貓之"), "S1 nameWordsZh.suffix holds 山貓之 (" + std::to_string(aff->nameSuffixZh.size()) + " words)");
+		check(hasExact(aff->namePrefixEn, "Sanguine"), "S1 nameWordsEn.prefix holds Sanguine (" + std::to_string(aff->namePrefixEn.size()) + " words)");
+		check(hasExact(aff->nameSuffixEn, " of the Lynx"),
+		      "S1 nameWordsEn.suffix holds ' of the Lynx' with its leading space (" + std::to_string(aff->nameSuffixEn.size()) + " words)");
+	}
+
+	// U1: a row whose single pick comes back empty must have every name fully contained elsewhere
+	for (const char* pageId : {"beasts", "magic_affixes"}) {
+		const RegexPageDef* p = findPage(pageId);
+		check(p != nullptr, std::string("U1 poe1 page ") + pageId + " exists");
+		if (!p) continue;
+		for (const bool zhLang : {true, false}) {
+			// same corpus build as A3 / M4, in the chosen language
+			std::vector<Entry> es;
+			es.reserve(p->entries.size());
+			std::vector<std::vector<std::string>> hay;   // lower-cased names + hidden per row
+			for (const RegexEntryDef& d : p->entries) {
+				Entry e;
+				e.id = d.id;
+				// want = the chosen language; fall back to the other one when the entry has none (as the panel does)
+				const std::vector<std::string>& want = zhLang ? d.zh : d.en;
+				const std::vector<std::string>& other = zhLang ? d.en : d.zh;
+				const bool useWant = !want.empty();
+				const bool zhSide = (useWant == zhLang);
+				e.texts = useWant ? want : other;
+				e.hidden = zhSide ? d.hiddenZh : d.hiddenEn;
+				e.alts = zhSide ? d.altZh : d.altEn;
+				std::vector<std::string> h;
+				for (const std::string& s : e.texts) h.push_back(lower(s));
+				for (const std::string& s : e.hidden) h.push_back(lower(s));
+				hay.push_back(std::move(h));
+				es.push_back(std::move(e));
+			}
+			const std::vector<std::string>& ambSrc = zhLang ? p->ambientZh : p->ambientEn;
+			std::vector<std::string> amb;
+			for (const std::string& s : ambSrc) amb.push_back(lower(s));
+			std::vector<std::vector<std::string>> names;
+			for (const Entry& e : es) names.push_back(e.texts);
+			RegexGen::Ambient ga;
+			ga.lines = ambSrc;
+			ga.nameLeft = zhLang ? p->namePrefixZh : p->namePrefixEn;
+			ga.nameRight = zhLang ? p->nameSuffixZh : p->nameSuffixEn;
+			Corpus c;
+			c.Reset(std::move(es), std::move(ga));
+			int bad = 0, unresolved = 0;
+			std::string first;
+			for (int i = 0; i < (int)names.size(); i++) {
+				const RegexGen::Result r = c.Build({i}, Mode::Any);
+				if (!r.query.empty()) continue;
+				unresolved++;
+				bool allContained = true;
+				for (const std::string& n : names[i]) {
+					const std::string x = lower(n);
+					bool found = false;
+					for (const std::string& a : amb)
+						if (a.find(x) != std::string::npos) { found = true; break; }
+					for (int j = 0; j < (int)hay.size() && !found; j++) {
+						if (j == i) continue;
+						for (const std::string& s : hay[j])
+							if (s.find(x) != std::string::npos) { found = true; break; }
+					}
+					if (!found) { allContained = false; break; }
+				}
+				if (!allContained) {
+					if (bad < 10) first += "\n    " + p->entries[i].id + ": " + (names[i].empty() ? std::string() : names[i][0]);
+					bad++;
+				}
+			}
+			check(bad == 0, std::string("U1 ") + pageId + (zhLang ? " zh" : " en") +
+			      ": every row with an empty single-pick query has all its names contained elsewhere (" + std::to_string(bad) +
+			      " unjustified of " + std::to_string(unresolved) + " unresolved)" + first);
+		}
+	}
+}
+
 void DataTests(const std::wstring& exeDir)
 {
 	CatalogueContentTests(exeDir);
 	FlavourTextTests(exeDir);
 	BeastAffixTests(exeDir);
+	AffixRound2Tests(exeDir);
 	line("");
 	RegexDataset ds;
 	std::string err;
@@ -1270,7 +1436,11 @@ void DataTests(const std::wstring& exeDir)
 				else seen.push_back(k);
 			}
 		}
-		check(dup == 0, "no two entries print the same first line (" +
+		// Except English magic affix names: two mods share an English name but not a
+		// Chinese one (Humming = 低鳴的 / 雷電之) -- two rows, one per Chinese name
+		// (user ruling 2026-11-04); the Chinese side is still checked.
+		const bool sharedEn = !useZh && p.id == "magic_affixes";
+		check(dup == 0 || sharedEn, "no two entries print the same first line (" +
 		      std::to_string(dup) + " duplicates)");
 
 		// Randomised picks, every mode. Seeds are fixed so a failure can be
