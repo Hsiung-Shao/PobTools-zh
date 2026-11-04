@@ -1790,6 +1790,9 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 				try { v = ordered_json::parse(content2); } catch (...) { v = ordered_json(); }
 			}
 			v["appliedApp"] = tag;
+			// 新程式重啟後要立刻檢查一次:它可能正是解鎖某份資料包(minApp、或 1.8.2
+			// 的新檔名)的那一版。留著舊的檢查時間會被一日節流擋住,新引擎配舊字典跑一整天。
+			v.erase("lastCheckUtc");
 			// ⚠ 這裡以前會在 includeTranslations 時寫 appliedTranslations = <程式版號>。
 			// 拆兩線之後那是錯的:程式版號與 data-<n> 不同號,寫進去只會污染一個
 			// 現在純資訊性的欄位。翻譯資料的真值是 Data\translations_version.json,
