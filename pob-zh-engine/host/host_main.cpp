@@ -39,6 +39,7 @@
 #include "item_name_selftest.h"
 #include "paste_trace.h"
 #include "placeholder_selftest.h"
+#include "dict_switch_selftest.h"
 #include "stat_selftest.h"
 #include "pob_launch.h"
 #include "pob_protocol.h"   // pob:// / pob2:// "Open in PoB" links
@@ -205,10 +206,13 @@ static void apply_locale_env(const std::wstring& dir)
 	{
 		wchar_t g[64] = L"poe1";
 		GetEnvironmentVariableW(L"POB_GAME", g, 64); // set by `ensure` above
-		const AppearanceConfig& look = LoadLauncherConfig(ini).look[GameIndex(g)];
+		const LauncherConfig iniCfg = LoadLauncherConfig(ini);
+		const AppearanceConfig& look = iniCfg.look[GameIndex(g)];
 		auto ensureVal = [&](const wchar_t* var, const std::wstring& val) {
 			if (GetEnvironmentVariableW(var, nullptr, 0) == 0) set_env_both(var, val.c_str());
 		};
+		// Same gap as the font switch: the settings page's dictionary switches.
+		ensureVal(L"POB_ZH_DICT_SWITCHES", DictSwitchesEnv(iniCfg));
 		ensureVal(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(look.windowOpacity));
 		ensureVal(L"POB_ZH_BG_BRIGHT", std::to_wstring(look.bgBright));
 		ensureVal(L"POB_ZH_GLASS_BLUR", std::to_wstring(look.glassBlur));
@@ -323,7 +327,8 @@ static void apply_engine_env(const LauncherConfig& cfg, const std::wstring& dir,
 	                        cfg.fontApplyAll, look.windowOpacity,
 	                        ResolveBackgroundPath(dir, look.background), look.bgBright, look.glassBlur,
 	                        look.treeBg, cfg.hangWatch,
-	                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog);
+	                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog,
+	                        DictSwitchesEnv(cfg));
 }
 
 // An "Open in PoB" link (pob://<site>/<id> or pob2://...), started by the
@@ -703,6 +708,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// Includes the case that matters most -- a 1920-wide screen cannot tile two
 		// POB windows, because POB refuses to go below 1080px.
 		return WindowMgr::RunWindowLayoutSelfTest(dir);
+	}
+	if (arg1 == L"--dict-switch-selftest") {
+		// headless: settings-page dictionary switches, ini -> env -> engine loader
+		return RunDictSwitchSelfTest(dir);
 	}
 	if (arg1 == L"--launcher-config-selftest") {
 		// headless: ini parsing, legacy migration and clamping — no window needed

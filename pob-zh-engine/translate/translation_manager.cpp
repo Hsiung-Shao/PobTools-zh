@@ -569,6 +569,52 @@ static const char* win_env(const char *name, char *buf, unsigned size) {
     return translation_win_env(name, buf, size);
 }
 
+/* ========== Launcher dictionary switches (POB_ZH_DICT_SWITCHES) ==========
+**
+** "a.json=0;b.json=1" -- the settings page's per-file switches (launcher_config.h
+** kOptionalDicts). A file switched off is skipped although meta.json's load_order
+** names it; every other file loads exactly as before, and with no variable at all
+** (an older launcher, the CLI path) nothing is skipped. One diag line per switched
+** file says what happened, so "is my tooltip file in effect?" has an answer in
+** PobTools\logs\diag-<date>.log. Names compare case-insensitively, like the file
+** system they name. */
+struct DictSwitches {
+    std::vector<std::pair<std::string, bool>> items;   /* file, on */
+    std::vector<std::string> notes;                    /* one per switched file met */
+
+    void read() {
+        char buf[1024];
+        const char *v = win_env("POB_ZH_DICT_SWITCHES", buf, sizeof(buf));
+        if (!v) return;
+        const std::string s(v);
+        size_t pos = 0;
+        while (pos < s.size()) {
+            size_t end = s.find(';', pos);
+            if (end == std::string::npos) end = s.size();
+            const std::string item = s.substr(pos, end - pos);
+            const size_t eq = item.find('=');
+            if (eq != std::string::npos && eq > 0)
+                items.emplace_back(item.substr(0, eq), item.substr(eq + 1) != "0");
+            pos = end + 1;
+        }
+    }
+    const std::pair<std::string, bool> *find(const std::string &filename) const {
+        for (const auto &it : items)
+            if (_stricmp(it.first.c_str(), filename.c_str()) == 0) return &it;
+        return nullptr;
+    }
+    /* true = leave this load_order entry out */
+    bool skip(const std::string &filename) {
+        const auto *it = find(filename);
+        if (!it || it->second) return false;
+        notes.push_back(filename + " off: skipped");
+        return true;
+    }
+    void loaded(const std::string &filename, int count) {
+        if (find(filename)) notes.push_back(filename + " on: loaded " + std::to_string(count) + " entries");
+    }
+};
+
 /* ========== Helper: Check if char is an ASCII letter ========== */
 
 static inline bool is_ascii_alpha(char c) {
@@ -2676,7 +2722,10 @@ static bool try_load_json(const std::string &base_dir) {
     /* Load translation files in order */
     int totalEntries = 0;
     int fileCount = 0;
+    DictSwitches switches;
+    switches.read();
     for (auto &filename : load_order) {
+        if (switches.skip(filename)) continue;
         std::string filepath = json_dir + filename;
         /* The stat file never merges (its keys are stat ids): index it only
         ** when something could ask, i.e. with source_lookup. */
@@ -2745,6 +2794,7 @@ static bool try_load_json(const std::string &base_dir) {
         int count = load_json_translations(filepath, false, sink, pattern_sink, only_source,
                                            key_list_for(s_display_exclude, filename),
                                            key_list_for(s_exact_only, filename));
+        switches.loaded(filename, count);
         if (count > 0) {
             snprintf(msg, sizeof(msg), "[pob-proxy] Loaded %d entries from %s\n",
                      count, filename.c_str());
@@ -2812,6 +2862,15 @@ static bool try_load_json(const std::string &base_dir) {
     snprintf(msg, sizeof(msg), "[pob-proxy] JSON mode: loaded %d entries from %d files\n",
              totalEntries, fileCount);
     OutputDebugStringA(msg);
+    if (!switches.items.empty()) {
+        std::string line = "dictionary switches (" + json_dir + "): ";
+        for (size_t i = 0; i < switches.notes.size(); i++)
+            line += (i ? "; " : "") + switches.notes[i];
+        if (switches.notes.empty()) line += "no switched file is in load_order";
+        line += "; total " + std::to_string(totalEntries) + " entries from " +
+                std::to_string(fileCount) + " files, " + std::to_string(s_translations.size()) + " keys";
+        PobLog::Diag("i18n", line);
+    }
 
     return true;
 }

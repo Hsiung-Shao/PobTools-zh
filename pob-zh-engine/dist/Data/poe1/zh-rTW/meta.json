@@ -14,7 +14,8 @@
     "uniques.json",
     "monsters.json",
     "ggpk_full.json",
-    "ggpk_reverse.json"
+    "ggpk_reverse.json",
+    "ui_tooltips.json"
   ],
   "source_dicts": [
     "affixes.json",

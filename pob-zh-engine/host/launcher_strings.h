@@ -305,6 +305,11 @@
 	X(pobProtocolWine,   u8"Wine / CrossOver 下不適用：網站開在系統瀏覽器，連結不會回到這裡", \
 	                     u8"Not available under Wine / CrossOver: the sites open in the host browser, so links never reach here") \
 	X(transDataNote,     u8"留空使用內建資料；更新只會寫入內建資料夾", u8"Empty uses the built-in data; updates only write the built-in folder") \
+	/* settings page switch for an optional dictionary file (kOptionalDicts) */                      \
+	X(dictTooltipsChk,   u8"載入浮窗/說明文字翻譯(ui_tooltips.json)",                               \
+	                     u8"Load tooltip / help text translations (ui_tooltips.json)")              \
+	X(dictTooltipsTip,   u8"關閉後 POB 不讀取 ui_tooltips.json，浮窗與說明文字改用其他字典的譯文（沒有就顯示英文）。下次開啟 POB 生效。", \
+	                     u8"When off, POB skips ui_tooltips.json; tooltips and help text fall back to the other dictionaries (or English). Takes effect the next time POB opens.") \
 	X(dataPillBuiltin,   u8"內建",                         u8"Built-in")                              \
 	X(dataPillExternal,  u8"外部資料夾",                   u8"External folder")                       \
 	X(dataPillProblem,   u8"需要處理",                     u8"Needs attention")                       \
