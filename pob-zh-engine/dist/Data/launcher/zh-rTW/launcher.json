@@ -192,6 +192,8 @@
     "Points elsewhere": "指向其他程式",
     "Not available under Wine / CrossOver: the sites open in the host browser, so links never reach here": "Wine / CrossOver 下不適用：網站開在系統瀏覽器，連結不會回到這裡",
     "Empty uses the built-in data; updates only write the built-in folder": "留空使用內建資料；更新只會寫入內建資料夾",
+    "Load tooltip / help text translations (ui_tooltips.json)": "載入浮窗/說明文字翻譯(ui_tooltips.json)",
+    "When off, POB skips ui_tooltips.json; tooltips and help text fall back to the other dictionaries (or English). Takes effect the next time POB opens.": "關閉後 POB 不讀取 ui_tooltips.json，浮窗與說明文字改用其他字典的譯文（沒有就顯示英文）。下次開啟 POB 生效。",
     "Built-in": "內建",
     "External folder": "外部資料夾",
     "Needs attention": "需要處理",
