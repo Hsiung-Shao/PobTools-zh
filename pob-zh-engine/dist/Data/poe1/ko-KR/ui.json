@@ -19789,6 +19789,9 @@
     "Zorath, Vile Assembled": "끔찍한 조립물, 조라스",
     "[Enshroud|Enshrouded] items can be transformed within the Domain of Timeless Conflict.": "[Enshroud|휩싸인] 아이템은 끝없는 분쟁의 영토에서 변형할 수 있습니다.",
     "[Intangibility|Intangibility]": "[Intangibility|무형성]",
-    "{0}/{1} <default>{{Variants Tested}} ": "<default>{{시험한 변화형}} {0}/{1}개 "
+    "{0}/{1} <default>{{Variants Tested}} ": "<default>{{시험한 변화형}} {0}/{1}개 ",
+    "Notable positions (relative to entrance):": "특화 패시브 위치 (입구 기준):",
+    "Front:": "입구 쪽:",
+    "Back:": "안쪽:"
   }
 }

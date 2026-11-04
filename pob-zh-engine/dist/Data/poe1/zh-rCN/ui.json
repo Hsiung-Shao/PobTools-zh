@@ -3215,6 +3215,10 @@
     "Execute": "执行",
     "Requires an active Jewel Socket.": "需要一个激活的珠宝插槽。",
     "+ Add Required Stat": "+ 增加所需属性",
-    "Query Options": "查询选项"
+    "Query Options": "查询选项",
+    "Notable positions (relative to entrance):": "天赋位置(相对于入口):",
+    "Front:": "近入口:",
+    "Back:": "远入口:",
+    "Back": "返回"
   }
 }
