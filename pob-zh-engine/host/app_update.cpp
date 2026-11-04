@@ -599,6 +599,9 @@ void AppUpdater::loadState()
 			appliedApp_ = v.value("appliedApp", std::string());
 			latestSeen_ = v.value("latestSeen", std::string());
 			lastCheckUtc_ = v.value("lastCheckUtc", 0ll);
+			// 不是這一版寫的狀態 = 剛換過程式(更新是舊程序套用的,舊程式碼不會替新版
+			// 清檢查時間)。新版可能正是解鎖某份資料包的那一版,所以一啟動就要檢查。
+			if (v.value("stateApp", std::string()) != POBTOOLS_VERSION_STRING) lastCheckUtc_ = 0;
 		} catch (...) {
 			// corrupt record reads as "never checked": forces a fresh check
 			appliedTrans_.clear();
@@ -614,6 +617,7 @@ void AppUpdater::saveState()
 	CreateDirectoryW((exeDir_ + L"PobTools").c_str(), nullptr);
 	ordered_json v;
 	v["lastCheckUtc"] = (long long)lastCheckUtc_;
+	v["stateApp"] = POBTOOLS_VERSION_STRING;
 	v["latestSeen"] = latestSeen_;
 	v["appliedTranslations"] = appliedTrans_;
 	v["appliedApp"] = appliedApp_;
@@ -1790,9 +1794,6 @@ int ApplyStagedAppUpdateAndRelaunch(const std::wstring& exeDir, const std::wstri
 				try { v = ordered_json::parse(content2); } catch (...) { v = ordered_json(); }
 			}
 			v["appliedApp"] = tag;
-			// 新程式重啟後要立刻檢查一次:它可能正是解鎖某份資料包(minApp、或 1.8.2
-			// 的新檔名)的那一版。留著舊的檢查時間會被一日節流擋住,新引擎配舊字典跑一整天。
-			v.erase("lastCheckUtc");
 			// ⚠ 這裡以前會在 includeTranslations 時寫 appliedTranslations = <程式版號>。
 			// 拆兩線之後那是錯的:程式版號與 data-<n> 不同號,寫進去只會污染一個
 			// 現在純資訊性的欄位。翻譯資料的真值是 Data\translations_version.json,
@@ -2189,6 +2190,18 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		b.loadState();
 		ok = ok && b.appliedTrans_.empty() && b.lastCheckUtc_ == 0;
 		check(ok, "T5 update_state.json round-trip and corrupt fallback");
+
+		// T47: 程式更新是**舊程序**套用的,舊程式碼不會替新版清掉檢查時間;所以由
+		// 新程式自己判斷:狀態檔不是這一版寫的,就當作沒檢查過。
+		const std::string old181 = "{\"lastCheckUtc\":42,\"latestSeen\":\"1.8.2\",\"appliedApp\":\"1.8.2\"}";
+		write_file_bytes(stRoot + L"PobTools\\update_state.json", old181.data(), old181.size());
+		b.loadState();
+		const bool foreignReset = b.lastCheckUtc_ == 0 && b.appliedApp_ == "1.8.2";
+		a.saveState();
+		b.loadState();
+		const bool ownKept = b.lastCheckUtc_ == 42;
+		check(foreignReset && ownKept,
+		      "T47 別版(或舊版)寫的狀態檔不沿用檢查時間,同版寫的照舊節流");
 	}
 
 	// helpers for T6/T7: fake install root + staged replacement
