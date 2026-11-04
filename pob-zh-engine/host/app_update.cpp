@@ -62,7 +62,11 @@ static const wchar_t* kReleasesPath =
 // 資產名的前綴。改成前綴比對(而非 "PobTools-" + tag + ".zip" 字串拼接)是拆
 // 兩線的前提:資料包的檔名裡根本沒有程式版號,拼不出來。
 static const char* kAppAssetPrefix = "PobTools-update-";   // 主檔包(不含字典)
-static const char* kDataAssetPrefix = "PobTools-Data-";    // 翻譯資料包
+// 翻譯資料包。⚠ 1.8.2 起由 "PobTools-Data-" 改名:data-20 起的字典要新引擎才能用,
+// 而 1.8.1 以前的客戶端只認舊前綴,改名就是讓它們看不到新包、停在最後一個舊名的
+// data-<n>。之後新舊程式的相容界線改由簽章清單的 minApp 表達,不必再改名。
+static const char* kDataAssetPrefix = "PobTools-DataV2-";
+static const char* kDataAssetPrefixLegacy = "PobTools-Data-"; // 只給自檢證明舊客戶端會跳過
 // 經過簽章的資產清單。兩條線共用同一組命名,因為它們是兩個不同的 release,
 // 各自帶各自的 manifest。⚠ 這兩個後綴的關係是「一個是另一個加 .sig」,而
 // `.json.sig` 也符合 `.json` 前綴的檔名比對 —— 挑選器一律用完整後綴比對,
@@ -110,6 +114,7 @@ static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 	X(kMsgNoDataAsset,     u8"找不到對應的翻譯資料")                             \
 	X(kMsgNoDataRelease,   u8"尚無翻譯資料發佈")                                 \
 	X(kMsgDataPackBad,     u8"翻譯資料包內容驗證失敗")                           \
+	X(kMsgDataNeedsApp,    u8"新的翻譯資料需要較新的程式版本，請先更新程式")     \
 	/* 程式主體線 */                                                            \
 	X(kMsgAppDownloading,  u8"下載主體更新 v")                                   \
 	X(kMsgEllipsis,        u8"…")                                               \
@@ -841,8 +846,10 @@ static bool VerifySignedManifest(const std::vector<unsigned char>& body,
                                  const std::string& apiDigest,
                                  const char* const* keysHex, int keyCount,
                                  std::string* shaOut, unsigned long long* sizeOut,
-                                 std::string* err, std::string* detail)
+                                 std::string* err, std::string* detail,
+                                 std::string* minAppOut = nullptr)
 {
+	if (minAppOut) minAppOut->clear();
 	shaOut->clear();
 	*sizeOut = 0;
 	if (detail) detail->clear();
@@ -872,6 +879,17 @@ static bool VerifySignedManifest(const std::vector<unsigned char>& body,
 			                      m.value("tag", std::string()) + "', release is '" + expectTag + "'";
 			if (err) *err = kMsgManifestBad;
 			return false;
+		}
+		// minApp(選填):這份內容需要的最低程式版本。寫了卻解不出來 = 清單本身壞了,
+		// 當成沒寫就等於把舊程式放進一份它用不了的資料,所以整份拒絕。
+		if (m.contains("minApp")) {
+			const std::string minApp = m["minApp"].is_string() ? m["minApp"].get<std::string>() : "";
+			if (!parse_semver(minApp, nullptr)) {
+				if (detail) *detail = "manifest minApp is not a version for " + expectTag;
+				if (err) *err = kMsgManifestBad;
+				return false;
+			}
+			if (minAppOut) *minAppOut = minApp;
 		}
 		if (!m.contains("assets") || !m["assets"].is_array()) {
 			if (detail) *detail = "manifest has no assets array for " + expectTag;
@@ -924,10 +942,12 @@ static bool VerifySignedManifest(const std::vector<unsigned char>& body,
 
 bool AppUpdater::resolveSignedAsset(const SignedManifestRef& ref, const std::string& assetName,
                                     const std::string& apiDigest, std::string* shaOut,
-                                    unsigned long long* sizeOut, std::string* err)
+                                    unsigned long long* sizeOut, std::string* err,
+                                    std::string* minAppOut)
 {
 	shaOut->clear();
 	*sizeOut = 0;
+	if (minAppOut) minAppOut->clear();
 
 	if (!ref.has() || assetName.empty()) {
 		log_line(exeDir_, "release carries no signed manifest -- refusing to install");
@@ -966,7 +986,7 @@ bool AppUpdater::resolveSignedAsset(const SignedManifestRef& ref, const std::str
 	std::string detail;
 	const bool ok = VerifySignedManifest(body, sigHex, ref.tag, assetName, apiDigest,
 	                                     kUpdatePublicKeysHex, kUpdatePublicKeyCount,
-	                                     shaOut, sizeOut, err, &detail);
+	                                     shaOut, sizeOut, err, &detail, minAppOut);
 	if (!detail.empty()) log_line(exeDir_, detail);
 	return ok;
 }
@@ -980,6 +1000,20 @@ bool AppUpdater::resolveSignedAsset(const SignedManifestRef& ref, const std::str
 static bool IsTrustFailure(const std::string& msg)
 {
 	return msg == kMsgNoSignature || msg == kMsgSigBad || msg == kMsgManifestBad;
+}
+
+static bool CheckDataMinApp(const std::string& minApp, std::tuple<int, int, int> localApp,
+                            std::string* err)
+{
+	if (minApp.empty()) return true; // 舊格式清單:沒有界線
+	std::tuple<int, int, int> need;
+	if (!parse_semver(minApp, &need)) { // VerifySignedManifest 已擋過,這裡只是不信呼叫端
+		if (err) *err = kMsgManifestBad;
+		return false;
+	}
+	if (localApp >= need) return true;
+	if (err) *err = kMsgDataNeedsApp;
+	return false;
 }
 
 static bool ends_with(const std::string& s, const char* suffix)
@@ -1058,6 +1092,49 @@ static bool pick_manifest_pair(const ordered_json& release,
 	url->clear();
 	sigUrl->clear();
 	return false;
+}
+
+struct DataReleasePick {
+	long long seq = -1;
+	std::string tag, url, sha, name, manifestUrl, manifestSig;
+};
+
+// The data line out of /releases: the highest data-<n> above localSeq that carries
+// exactly one asset starting with `prefix`. Pulled out of fetchDataRelease so the
+// self-test can drive it without GitHub (T40, T41). The manifest pair is filled
+// when present; whether a release without one may be installed is decided later
+// by resolveSignedAsset (it refuses).
+static bool pick_data_release(const ordered_json& list, long long localSeq, const char* prefix,
+                              DataReleasePick* out, std::vector<std::string>* rejected = nullptr)
+{
+	*out = DataReleasePick{};
+	out->seq = localSeq;
+	bool found = false;
+	if (!list.is_array()) return false;
+	for (const auto& r : list) {
+		if (r.value("draft", false)) continue;
+		long long seq = 0;
+		const std::string tag = r.value("tag_name", std::string());
+		if (!ParseDataTagSeq(tag, &seq)) continue;
+		if (seq <= out->seq) continue; // 自己比大小,不信清單順序
+		std::string url, sha, name, why;
+		if (!pick_asset(r, prefix, &url, &sha, &name, &why)) {
+			// 一個沒有資產的 data release 不該讓比它舊的那一個也失效
+			if (!why.empty() && rejected) rejected->push_back(why);
+			continue;
+		}
+		out->seq = seq;
+		out->tag = tag;
+		out->url = url;
+		out->sha = sha;
+		out->name = name;
+		out->manifestUrl.clear();
+		out->manifestSig.clear();
+		pick_manifest_pair(r, &out->manifestUrl, &out->manifestSig);
+		found = true;
+	}
+	if (!found) *out = DataReleasePick{};
+	return found;
 }
 
 // What one release object says about the app line. A struct of its own rather
@@ -1213,32 +1290,24 @@ bool AppUpdater::fetchDataRelease(RemoteRelease* rel, std::string* err)
 			if (err) *err = kMsgBadReleaseList;
 			return false;
 		}
-		for (const auto& r : j) {
-			if (r.value("draft", false)) continue;
-			long long seq = 0;
-			const std::string tag = r.value("tag_name", std::string());
-			if (!ParseDataTagSeq(tag, &seq)) continue;
-			if (seq <= rel->dataSeq) continue; // 自己比大小,不信清單順序
-			std::string url, sha, name, why;
-			if (!pick_asset(r, kDataAssetPrefix, &url, &sha, &name, &why)) {
-				// 一個沒有資產的 data release 不該讓比它舊的那一個也失效
-				if (!why.empty()) log_line(exeDir_, "data asset rejected: " + why);
-				continue;
-			}
-			rel->dataSeq = seq;
-			rel->dataTag = tag;
-			rel->dataUrl = url;
-			rel->dataSha = sha;
-			rel->dataName = name;
+		DataReleasePick pick;
+		std::vector<std::string> rejected;
+		const bool found = pick_data_release(j, rel->dataSeq, kDataAssetPrefix, &pick, &rejected);
+		for (const std::string& why : rejected) log_line(exeDir_, "data asset rejected: " + why);
+		if (found) {
+			rel->dataSeq = pick.seq;
+			rel->dataTag = pick.tag;
+			rel->dataUrl = pick.url;
+			rel->dataSha = pick.sha;
+			rel->dataName = pick.name;
 			// data 線的 tag 本身就沒有 v 前綴("data-5"),直接用。
 			rel->dataManifest = SignedManifestRef{};
-			std::string mUrl, mSig;
-			if (pick_manifest_pair(r, &mUrl, &mSig)) {
-				rel->dataManifest.url = mUrl;
-				rel->dataManifest.sigUrl = mSig;
-				rel->dataManifest.tag = tag;
+			if (!pick.manifestUrl.empty()) {
+				rel->dataManifest.url = pick.manifestUrl;
+				rel->dataManifest.sigUrl = pick.manifestSig;
+				rel->dataManifest.tag = pick.tag;
 			} else {
-				log_line(exeDir_, "data release " + tag + " has no signed manifest");
+				log_line(exeDir_, "data release " + pick.tag + " has no signed manifest");
 			}
 			rel->hasData = true;
 		}
@@ -1314,7 +1383,13 @@ bool AppUpdater::doCheck(std::string* err)
 		dataOk = false;
 	} else if (plan.applyDataNow) {
 		std::string terr;
-		if (!doUpdateTranslations(&terr)) {
+		const bool applied = doUpdateTranslations(&terr);
+		if (!applied && terr == kMsgDataNeedsApp) {
+			// Not a failure: the pack is fine, this program is too old for it, and
+			// the app line below prompts for the update that unlocks it. Retrying on
+			// every start would change nothing, so the check time is recorded.
+			setPhase(AppUpdatePhase::Idle, "");
+		} else if (!applied) {
 			log_line(exeDir_, "translation update failed: " + terr);
 			// 網路壞掉會自己好,所以照舊靜默重試(舊字典完好,lastCheckUtc 沒落盤)。
 			// 但**信任失敗不會自己好** —— 沒簽章、簽章不符、清單對不上,重試一萬次
@@ -1363,11 +1438,19 @@ bool AppUpdater::doUpdateTranslations(std::string* err)
 
 	// 先把「這個檔應該長什麼樣」從簽過章的清單裡取出來,再下載。順序不能反 ——
 	// 反過來就變成「先把來路不明的位元組收下,再回頭找理由相信它」。
-	std::string wantSha;
+	std::string wantSha, minApp;
 	unsigned long long wantSize = 0;
 	if (!resolveSignedAsset(latest_.dataManifest, latest_.dataName, latest_.dataSha,
-	                        &wantSha, &wantSize, err))
+	                        &wantSha, &wantSize, err, &minApp))
 		return false;
+	// 下載之前就擋:這份字典要更新的程式才讀得懂,裝了只會換來半翻譯的畫面。
+	std::tuple<int, int, int> localApp;
+	parse_semver(POBTOOLS_VERSION_STRING, &localApp);
+	if (!CheckDataMinApp(minApp, localApp, err)) {
+		log_line(exeDir_, latest_.dataTag + " needs app " + minApp + ", this is " +
+		                  POBTOOLS_VERSION_STRING + " -- not applied");
+		return false;
+	}
 
 	std::vector<unsigned char> buf;
 	if (!downloadAsset(latest_.dataUrl, wantSha, wantSize, &buf, err, false)) return false;
@@ -3041,6 +3124,177 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		                                   false, -1, -1, true);
 		check(!back.promptApp && fwd.promptApp,
 		      "T24 turning the beta line off does not downgrade (older remote is never offered)");
+	}
+
+	// --- 資料包改名 PobTools-DataV2-<n>.zip + manifest 的 minApp ---------------
+	// 舊程式(1.8.1 以前)用 "PobTools-Data-" 前綴比對資產;新包改名後舊程式找不到
+	// 資產就會跳過,不會把不相容的新資料裝進舊程式。T40-T42 釘這條,T43-T46 釘
+	// manifest 的 minApp 閘門。
+	{
+		auto asset = [](const char* name) {
+			ordered_json a;
+			a["name"] = name;
+			a["browser_download_url"] = std::string("https://x/") + name;
+			a["digest"] = "sha256:" + std::string(64, 'a');
+			return a;
+		};
+		auto release = [&](const char* tag, std::vector<std::string> names) {
+			ordered_json r;
+			r["tag_name"] = tag;
+			r["prerelease"] = false;
+			r["draft"] = false;
+			ordered_json arr = ordered_json::array();
+			for (const auto& n : names) arr.push_back(asset(n.c_str()));
+			r["assets"] = arr;
+			return r;
+		};
+
+		// T40: 新檔名的資料包會被挑中(舊名的 data-19 不能搶贏、也不能被當成新包)
+		{
+			ordered_json list = ordered_json::array({
+				release("data-19", { "PobTools-Data-19.zip",
+				                     "PobTools-manifest-data-19.json",
+				                     "PobTools-manifest-data-19.json.sig" }),
+				release("data-20", { "PobTools-DataV2-20.zip",
+				                     "PobTools-manifest-data-20.json",
+				                     "PobTools-manifest-data-20.json.sig" }),
+			});
+			DataReleasePick pick;
+			const bool found = pick_data_release(list, 19, kDataAssetPrefix, &pick);
+			std::string bad;
+			if (!found) bad += " not-found";
+			if (found && pick.tag != "data-20") bad += " tag-" + pick.tag;
+			if (found && pick.name != "PobTools-DataV2-20.zip") bad += " name-" + pick.name;
+			if (found && pick.seq != 20) bad += " seq-" + std::to_string(pick.seq);
+			// 簽章資產對也要跟著帶出來,否則新包沒有 manifest 會被後面的閘門拒絕
+			if (found && (pick.manifestUrl.empty() || pick.manifestSig.empty()))
+				bad += " manifest-pair-missing";
+			check(bad.empty(), ("T40 新檔名 PobTools-DataV2-<n>.zip 的資料包會被挑中" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T41: 只有舊檔名時不挑(新程式不吃舊格式包)
+		{
+			ordered_json list = ordered_json::array({
+				release("data-20", { "PobTools-Data-20.zip",
+				                     "PobTools-manifest-data-20.json",
+				                     "PobTools-manifest-data-20.json.sig" }),
+			});
+			DataReleasePick pick;
+			const bool found = pick_data_release(list, 19, kDataAssetPrefix, &pick);
+			check(!found, "T41 只有舊檔名 PobTools-Data-<n>.zip 時新程式不挑資料包");
+		}
+
+		// T42: 舊程式的比對擋得住新檔名(用舊前綴去比對新包,必須不命中)
+		{
+			ordered_json r = release("data-20", { "PobTools-DataV2-20.zip",
+			                                      "PobTools-manifest-data-20.json",
+			                                      "PobTools-manifest-data-20.json.sig" });
+			std::string url, sha, name, why;
+			const bool hit = pick_asset_ex(r, kDataAssetPrefixLegacy, "", &url, &sha, &name, &why);
+			std::string bad;
+			if (hit) bad += " legacy-prefix-matched-new-name";
+			if (!url.empty() || !name.empty()) bad += " outputs-not-cleared";
+			check(bad.empty(), ("T42 舊前綴 PobTools-Data- 比不中新檔名,1.8.1 會跳過新包" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T43-T46: manifest 的 minApp。minApp 為 nullptr = 不寫該欄。
+		auto makeDataManifest = [](const char* tag, const char* assetName, const char* sha,
+		                           unsigned long long size, const char* minApp) {
+			ordered_json a;
+			a["name"] = assetName;
+			a["size"] = size;
+			a["sha256"] = sha;
+			ordered_json m;
+			m["schema"] = 1;
+			m["tag"] = tag;
+			if (minApp) m["minApp"] = minApp;
+			m["assets"] = ordered_json::array({ a });
+			const std::string s = m.dump();
+			return std::vector<unsigned char>(s.begin(), s.end());
+		};
+		const std::string kSha(64, 'e');
+		const char* kAsset = "PobTools-DataV2-20.zip";
+		const unsigned long long kSize = 4321;
+		const std::tuple<int, int, int> kLocal{ 1, 8, 2 };
+
+		// 簽 + 驗,回傳 Verify 結果;成功/失敗的各欄位由呼叫端判斷
+		struct Verified {
+			bool signedOk = false, accepted = false;
+			std::string sha, minApp, err;
+			unsigned long long size = 0;
+		};
+		auto signAndVerify = [&](const std::vector<unsigned char>& body) {
+			Verified v;
+			std::string pub, sig;
+			if (!SignWithEphemeralKeyForTest(body.data(), body.size(), &pub, &sig)) return v;
+			v.signedOk = true;
+			const char* keys[1] = { pub.c_str() };
+			std::string detail;
+			v.accepted = VerifySignedManifest(body, sig, "data-20", kAsset, "", keys, 1,
+			                                  &v.sha, &v.size, &v.err, &detail, &v.minApp);
+			return v;
+		};
+
+		// T43: 本機版本低於 minApp 被擋,且不算信任失敗(不該彈信任警告)
+		{
+			const Verified v = signAndVerify(
+				makeDataManifest("data-20", kAsset, kSha.c_str(), kSize, "1.8.3"));
+			std::string bad;
+			if (!v.signedOk) bad += " sign-failed";
+			if (!v.accepted) bad += " verify-rejected";
+			if (v.minApp != "1.8.3") bad += " minApp-" + v.minApp;
+			std::string e;
+			if (CheckDataMinApp(v.minApp, kLocal, &e)) bad += " old-app-allowed";
+			if (e != kMsgDataNeedsApp) bad += " wrong-error";
+			if (IsTrustFailure(e)) bad += " misclassified-as-trust-failure";
+			check(bad.empty(), ("T43 本機版本低於 minApp 被擋,錯誤是「需更新程式」而非信任失敗" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T44: 本機版本等於 minApp 放行(邊界不能誤擋)
+		{
+			const Verified v = signAndVerify(
+				makeDataManifest("data-20", kAsset, kSha.c_str(), kSize, "1.8.2"));
+			std::string bad;
+			if (!v.signedOk) bad += " sign-failed";
+			if (!v.accepted) bad += " verify-rejected";
+			if (v.sha != kSha || v.size != kSize) bad += " wrong-values";
+			if (v.minApp != "1.8.2") bad += " minApp-" + v.minApp;
+			std::string e;
+			if (!CheckDataMinApp(v.minApp, kLocal, &e)) bad += " equal-version-blocked";
+			check(bad.empty(), ("T44 本機版本等於 minApp 時放行" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T45: 沒有 minApp 欄照舊放行(相容舊 release 與舊 manifest)
+		{
+			const Verified v = signAndVerify(
+				makeDataManifest("data-20", kAsset, kSha.c_str(), kSize, nullptr));
+			std::string bad;
+			if (!v.signedOk) bad += " sign-failed";
+			if (!v.accepted) bad += " verify-rejected";
+			if (v.sha != kSha || v.size != kSize) bad += " wrong-values";
+			if (!v.minApp.empty()) bad += " minApp-not-empty:" + v.minApp;
+			std::string e;
+			if (!CheckDataMinApp("", kLocal, &e)) bad += " empty-minApp-blocked";
+			check(bad.empty(), ("T45 manifest 沒有 minApp 欄時照舊放行" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T46: minApp 格式錯整份拒絕(壞值不能當成沒寫而放行)
+		{
+			const Verified v = signAndVerify(
+				makeDataManifest("data-20", kAsset, kSha.c_str(), kSize, "abc"));
+			std::string bad;
+			if (!v.signedOk) bad += " sign-failed";
+			if (v.accepted) bad += " malformed-minApp-accepted";
+			if (v.err != kMsgManifestBad) bad += " wrong-error:" + v.err;
+			if (!v.sha.empty() || v.size != 0) bad += " outputs-not-cleared";
+			check(bad.empty(), ("T46 minApp 不是合法 semver 時整份 manifest 被拒絕" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
 	}
 
 	remove_dir_rec(root);

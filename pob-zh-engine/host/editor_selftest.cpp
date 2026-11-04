@@ -764,9 +764,14 @@ int RunEditorSelftest(const std::string& games)
 			if (ok && writeBytes(dictDir + L"meta.json", stripped)) sayAll(plain); else ok = false;
 			if (!writeBytes(dictDir + L"meta.json", metaBody)) ok = false;
 			if (ok) sayAll(full);
+			// A key that still holds a raw "{0}" is an unfilled template: POB never
+			// shows one, so no player reaches it, and with source_lookup on the
+			// "/"-joined variants resolve through stats_by_id (numbers copied from
+			// GGPK, keep_literals). Those may legitimately differ.
 			size_t diffs = 0;
 			for (size_t i = 0; ok && i < keys.size(); i++) {
 				if (plain[i] == full[i]) continue;
+				if (keys[i].find("{0}") != std::string::npos) continue;
 				if (++diffs <= 10)
 					printf("    %s: stripped=%s full=%s\n", keys[i].c_str(), plain[i].c_str(), full[i].c_str());
 			}
@@ -1098,7 +1103,8 @@ int RunEditorSelftest(const std::string& games)
 			// passing on an observer that always reports "gems".
 			const std::string full = translation_debug_sources();
 			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
-			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;id=affixes,gems_desc,passives",
+			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
+			              "id=affixes,ascendancy,gem_names,gems_desc,mod_stats,passive_stats,passives",
 			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
 			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
 			else printf("    (flagged: %s)\n", full.c_str());
@@ -1145,10 +1151,12 @@ int RunEditorSelftest(const std::string& games)
 		check(restored && say(kRobust) == robustBefore, "SR 測試結束後字典完整還原");
 	}
 
-	// --- S16p: the shipped poe2 dictionaries carry no "source_lookup" --------
-	// Real data, nothing planted: under every source added by this work the
-	// answer must equal the unmarked one, as it did before sources existed.
-	printf("\n=== source dictionaries: poe2 without source_lookup ===\n");
+	// --- S16p: the shipped poe2 dictionaries carry "source_lookup" ----------
+	// (poe2 round 3-4 turned it on.) Real data, nothing planted: a source may
+	// pick a different official wording than the unmarked lookup -- that is the
+	// point of sources -- but it must never lose a translation the unmarked
+	// lookup had.
+	printf("\n=== source dictionaries: poe2 with source_lookup ===\n");
 	{
 		SetEnvironmentVariableW(L"POB_GAME", L"poe2");
 		translation_set_source(nullptr);
@@ -1166,24 +1174,30 @@ int RunEditorSelftest(const std::string& games)
 		}
 		std::vector<std::string> bare;
 		for (const std::string& k : keys) bare.push_back(say(k));
-		size_t diffs = 0;
+		size_t lost = 0, differ = 0;
 		for (const char* src : {"passives", "affixes", "stats", "uniques", "items"}) {
 			translation_set_source(src);
 			for (size_t i = 0; i < keys.size(); i++) {
 				const std::string got = say(keys[i]);
-				if (got != bare[i] && ++diffs <= 10)
+				if (got == bare[i]) continue;
+				differ++;
+				const bool hadOne = !bare[i].empty() && bare[i] != keys[i];
+				const bool hasOne = !got.empty() && got != keys[i];
+				if (hadOne && !hasOne && ++lost <= 10)
 					printf("    [%s] %s: sourced=%s bare=%s\n", src, keys[i].c_str(),
 					       got.c_str(), bare[i].c_str());
 			}
 			translation_set_source(nullptr);
 		}
-		printf("  (S16p: %zu keys x 5 sources, %zu differ)\n", keys.size(), diffs);
-		check(keys.size() > 1000 && diffs == 0,
-		      "S16p poe2 無旗標：設來源後的查找等於未標記");
+		printf("  (S16p: %zu keys x 5 sources, %zu differ, %zu lost)\n", keys.size(), differ, lost);
+		check(keys.size() > 1000 && lost == 0,
+		      "S16p poe2 有旗標：設來源後原本翻得到的仍翻得到");
 		const std::string built = translation_debug_sources();
-		check(built == "exact=gems;pattern=;id=",
-		      "S22p poe2 無旗標：只替 gems 建來源 exact 表，其餘不建");
-		if (built != "exact=gems;pattern=;id=") printf("    %s\n", built.c_str());
+		const char* kPoe2Built = "exact=gems,items,passives,stats,uniques;"
+		                         "pattern=gems,items,passives,stats,uniques;id=affixes,mod_stats";
+		check(built == kPoe2Built,
+		      "S22p poe2 有旗標：依 meta 建齊來源表與 id 表");
+		if (built != kPoe2Built) printf("    %s\n", built.c_str());
 		SetEnvironmentVariableW(L"POB_GAME", L"poe1");
 		translation_reload();
 	}

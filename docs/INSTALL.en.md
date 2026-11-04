@@ -75,7 +75,7 @@ Double-click **`pob-zh.exe`**, pick the game version in the launcher and press
 Translation data is its own release line, versioned `data-1`, `data-2`, … independently of
 the program version. **The program normally updates it by itself**, so there is nothing to
 do. To update manually, find the release tagged `data-<n>` on the Releases page, download
-**`PobTools-Data-<n>.zip`**, extract it and **overwrite** the `Data` folder in your
+**`PobTools-DataV2-<n>.zip`**, extract it and **overwrite** the `Data` folder in your
 PobTools installation folder with the one inside.
 
 > If you do not want it overwritten automatically (for example because you edit the
@@ -86,7 +86,7 @@ PobTools installation folder with the one inside.
 > The three files on a release page: `PobTools-<version>.zip` is the full package for a
 > first install; `PobTools-update-<version>.zip` is what the program's auto-update uses
 > and **contains no translation data** — downloading it by hand gives you a POB with no
-> Chinese; `PobTools-Data-<n>.zip` contains only the translation data.
+> Chinese; `PobTools-DataV2-<n>.zip` contains only the translation data.
 
 > The atlas (atlas passive tree) can be updated online from the toolbar button inside the
 > program; manual file swapping is normally unnecessary.

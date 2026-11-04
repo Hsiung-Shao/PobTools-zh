@@ -367,8 +367,20 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 				probe.path = f.path + L".rt";
 				std::string err;
 				std::string after;
-				if (SaveFile(probe, &err)) readAll(probe.path, after);
 				files++;
+				if (f.readOnly) {
+					// id dictionaries are read-only: the save must be refused and
+					// write nothing, which is "comes back unchanged" for them
+					const bool refused = !SaveFile(probe, &err);
+					std::string now;
+					readAll(f.path, now);
+					if (refused && GetFileAttributesW(probe.path.c_str()) == INVALID_FILE_ATTRIBUTES &&
+					    now == before) same++;
+					else if (firstDiff.empty()) firstDiff = narrow(f.path) + " (read-only)";
+					DeleteFileW(probe.path.c_str());
+					continue;
+				}
+				if (SaveFile(probe, &err)) readAll(probe.path, after);
 				if (after == before) same++;
 				else if (firstDiff.empty()) firstDiff = narrow(f.path);
 				DeleteFileW(probe.path.c_str());
@@ -463,6 +475,7 @@ int RunTransEditorSelftest(const std::wstring& exeDir)
 		for (size_t i = 0; i < m.entries.size() && done < 3; i++) {
 			const EditorEntry& e = m.entries[i];
 			if (e.structured) continue;
+			if (m.files[(size_t)e.fileIdx].readOnly) continue;
 			if (done == 2 && std::find(files.begin(), files.end(), e.fileIdx) != files.end()) continue;
 			if (done < 2 && !files.empty() && files[0] != e.fileIdx) continue;
 			files.push_back(e.fileIdx);

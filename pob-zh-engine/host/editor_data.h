@@ -34,6 +34,10 @@ struct EditorFile {
 	// so without restoring this a single save rewrites the whole file — two poe1
 	// dictionaries were silently converted to LF this way before it was noticed.
 	bool crlf = false;
+	// Indent width the file had on disk. Hand-kept dictionaries use 2, the
+	// DB-generated ones (ggpk_full / ggpk_display / ggpk_reverse ...) use 4;
+	// dumping everything at 2 rewrote every line of those on the first save.
+	int indent = 2;
 	// Rank in meta.json's load_order; -1 = not listed, i.e. the engine never
 	// loads it. The dictionary is merged in that order and the LAST file to
 	// define a key wins, so an edit to a lower-ranked file has no effect.

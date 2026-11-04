@@ -2371,8 +2371,16 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			if (leagues) {
 				bestOk = child.Call("trade_find_best", json{{"row", 1}, {"timeout", 240}}, trBest, 300000);
 				if (bestOk) for (auto& r : trBest["rows"]) if (r.value("index", 0) == 1) bestUrl = r.value("url", "");
-				bestOk = bestOk && !trBest.value("timedOut", false)
-				         && bestUrl.find("/trade/search") != std::string::npos && bestUrl.find("?q=") != std::string::npos;
+				// The query rides either as ?q=<json> (old site) or, since GGG's gzip +
+				// base64url change, as the path segment after the league:
+				// /trade/search/<league>/<blob>.
+				const size_t at = bestUrl.find("/trade/search/");
+				bool hasQuery = bestUrl.find("?q=") != std::string::npos;
+				if (!hasQuery && at != std::string::npos) {
+					const size_t slash = bestUrl.find('/', at + 14);
+					hasQuery = slash != std::string::npos && slash > at + 14 && slash + 1 < bestUrl.size();
+				}
+				bestOk = bestOk && !trBest.value("timedOut", false) && at != std::string::npos && hasQuery;
 			}
 			check(leagues ? "trade_find_best builds POB's weighted search URL for a slot (no login needed)"
 			              : "trade_find_best needs a league list from the site; it was not reachable, so the row stays disabled",

@@ -170,6 +170,12 @@ EditorModel LoadModel(const std::wstring& slotRoot, const std::string& locale)
 		{
 			size_t nl = content.find('\n');
 			ef.crlf = (nl != std::string::npos && nl > 0 && content[nl - 1] == '\r');
+			// the second line is the first member of the top-level object
+			if (nl != std::string::npos) {
+				int n = 0;
+				for (size_t i = nl + 1; i < content.size() && content[i] == ' '; i++) n++;
+				if (n > 0 && n <= 8) ef.indent = n;
+			}
 		}
 		ef.doc = std::move(doc);
 		model.files.push_back(std::move(ef));
@@ -397,7 +403,7 @@ bool SaveFile(EditorFile& file, std::string* err)
 
 	std::string out;
 	try {
-		out = file.doc.dump(2, ' ', /*ensure_ascii=*/false);
+		out = file.doc.dump(file.indent, ' ', /*ensure_ascii=*/false);
 	} catch (const std::exception& e) {
 		if (err) *err = file.name + ": " + e.what();
 		return false;

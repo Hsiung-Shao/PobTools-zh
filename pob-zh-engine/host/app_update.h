@@ -21,7 +21,7 @@
 //       sequence. Those releases are ALWAYS marked prerelease, so they can
 //       never occupy releases/latest — an老客戶端 that fetched "data-7" would
 //       fail parse_semver and go permanently silent. The asset is
-//       PobTools-Data-<n>.zip, dictionaries only, applied to Data\ in place
+//       PobTools-DataV2-<n>.zip (PobTools-Data-<n>.zip before 1.8.2), dictionaries only, applied to Data\ in place
 //       (engine picks it up on next start / F3 reload). This line is allowed
 //       to fail: no translations update is not a reason to stop shipping
 //       program updates.
@@ -191,7 +191,8 @@ private:
 	// 這是刻意的,因為反過來(靜默不提示)會讓使用者以為自己已是最新版。
 	bool resolveSignedAsset(const SignedManifestRef& ref, const std::string& assetName,
 	                        const std::string& apiDigest, std::string* shaOut,
-	                        unsigned long long* sizeOut, std::string* err);
+	                        unsigned long long* sizeOut, std::string* err,
+	                        std::string* minAppOut = nullptr);
 
 	// sha256hex 為必填。以前它可以是空字串(代表 GitHub 沒給 digest 就不驗),
 	// 那條路已經移除 —— 「驗不了就照裝」不是降級,是把防護整個關掉。
@@ -269,7 +270,7 @@ bool ParseDataTagSeq(const std::string& tag, long long* seq);
 
 // Is `rel` -- a path relative to the install root, backslash separated -- part of
 // the translation data? This is THE boundary between the two release lines: what
-// this returns true for lives in PobTools-Data-<n>.zip and nowhere else, what it
+// this returns true for lives in PobTools-DataV2-<n>.zip and nowhere else, what it
 // returns false for lives in PobTools-update-<ver>.zip and nowhere else.
 //
 // ⚠ THE SAFETY DIRECTION FLIPPED IN v0.19.0. While the app zip still carried the

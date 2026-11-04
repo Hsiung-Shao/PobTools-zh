@@ -243,7 +243,7 @@ and the program checks and updates it itself. The current translation data versi
 at the bottom of the Settings page.
 
 To swap it manually, find the release tagged `data-<n>` on the Releases page, download
-`PobTools-Data-<n>.zip`, and overwrite the `Data` folder in the installation folder with
+`PobTools-DataV2-<n>.zip`, and overwrite the `Data` folder in the installation folder with
 the one inside — including `Data\translations_version.json`, the version stamp; without it
 the program thinks it has never updated.
 
