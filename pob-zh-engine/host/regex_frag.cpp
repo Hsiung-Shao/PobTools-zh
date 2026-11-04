@@ -252,15 +252,32 @@ std::optional<std::string> WholeLine(const std::vector<std::string>& labels)
 	return s + ")$";
 }
 
+// Socket letters only: the old '.' also matched "x-y-z" text such as a damage
+// range (reported from the game 2026-10-31). Only 2-socket fragments need \b to
+// stay out of English words ("Transfer-attuned"); the offline audit found no hit
+// for 3+ without it, and on a socket line "-x-y" already means 3 linked.
 std::optional<std::string> LinkedSockets(int n)
 {
 	if (n < 2 || n > 6) return std::nullopt;
-	std::string s;
-	for (int i = 0; i < n; i++) {
-		if (i) s += '-';
-		s += '.';
-	}
-	return s;
+	if (n == 2) return "\\b[rgbwa](-[rgbwa]){1}\\b";
+	return "(-[rgbwa]){" + std::to_string(n - 1) + "}";
+}
+
+// Keeps the leading class: "(-[rgb]){2}" would count "W-R-G" as 3 coloured.
+std::optional<std::string> ColoredLinks(int n)
+{
+	if (n < 2 || n > 6) return std::nullopt;
+	const std::string f = "[rgb](-[rgb]){" + std::to_string(n - 1) + "}";
+	return n == 2 ? "\\b" + f + "\\b" : f;
+}
+
+// Anchored to the socket line's start ("^插槽[:：]"): English item names
+// (Bringer...) hold r, g and b in one word, and mod lines say "All Sockets are ...".
+std::optional<std::string> RgbGroup(const std::string& socketLabel)
+{
+	const std::string base = LabelBase(socketLabel);
+	if (base.empty()) return std::nullopt;
+	return "^" + base + u8"[:：].*(?=\\S*r)(?=\\S*g)(?=\\S*b)";
 }
 
 std::optional<std::string> LinkColors(const std::string& choice)
@@ -279,7 +296,19 @@ std::optional<std::string> LinkColors(const std::string& choice)
 			node = node->Child(p[i]);
 		}
 	}
-	return RenderTrie(root, true);
+	// Two colours need \b to stay out of English words ("r-r" in "of Hair-Raising",
+	// caught by the offline audit); 3+ hit nothing without it. A top-level '|'
+	// needs parentheses so \b covers every branch.
+	const std::string t = RenderTrie(root, true);
+	if (letters.size() > 2) return t;
+	int depth = 0;
+	bool topBar = false;
+	for (char ch : t) {
+		if (ch == '(' || ch == '[') depth++;
+		else if (ch == ')' || ch == ']') depth--;
+		else if (ch == '|' && depth == 0) topBar = true;
+	}
+	return topBar ? "\\b(" + t + ")\\b" : "\\b" + t + "\\b";
 }
 
 std::optional<std::string> SocketColorCount(const std::string& label, const std::string& color, int n)
@@ -289,7 +318,8 @@ std::optional<std::string> SocketColorCount(const std::string& label, const std:
 	if (base.empty() || color.size() != 1 || !IsColor(LowerAscii(color[0])) || n < 1 || n > 6)
 		return std::nullopt;
 	const char c = LowerAscii(color[0]);
-	std::string s = base;
+	// Anchored to the socket line's start: English mod lines say "All Sockets are Blue".
+	std::string s = "^" + base + u8"[:：]";
 	for (int i = 0; i < n; i++) {
 		s += ".*";
 		s += c;

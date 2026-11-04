@@ -9,7 +9,9 @@
 #include "regex_data.h"
 #include "regex_frag.h"
 #include "regex_gen.h"
+#include "regex_itemmods.h"
 #include "regex_match.h"
+#include "regex_share.h"
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
@@ -979,6 +981,374 @@ void CombineTests(const std::map<std::string, Game>& games)
 	}
 }
 
+// ---- vendor page sockets / links (vendor-sockets.test.ts V1-V7) ----------------------------
+// Links / colour fragments use socket letters only (never '.'), link-type ticks are
+// "any of" (one term joined with '|', anyGroup "sockets"), property ticks stay one AND term each.
+
+// 1 = hit, 0 = miss, -1 = no fragment / does not compile
+std::vector<int> VendorHits(const std::optional<std::string>& frag, const std::vector<std::string>& lines)
+{
+	std::vector<int> out;
+	std::string err;
+	const std::optional<Rx> rx = frag ? RxCompile(*frag, &err) : std::nullopt;
+	for (const std::string& l : lines) out.push_back(rx ? (RxSearch(*rx, l) ? 1 : 0) : -1);
+	return out;
+}
+std::string VendorHitsText(const std::vector<int>& v)
+{
+	std::string s = "[";
+	for (size_t i = 0; i < v.size(); i++) s += (i ? "," : "") + std::to_string(v[i]);
+	return s + "]";
+}
+// The query split into terms (quotes group).
+std::vector<std::string> VendorTerms(const std::string& q)
+{
+	std::vector<std::string> out;
+	std::string cur;
+	bool inQuote = false;
+	for (char c : q) {
+		if (c == '"') { inQuote = !inQuote; continue; }
+		if (c == ' ' && !inQuote) { if (!cur.empty()) out.push_back(cur); cur.clear(); continue; }
+		cur += c;
+	}
+	if (!cur.empty()) out.push_back(cur);
+	return out;
+}
+int VendorEntryIndex(const AlgoPage& p, const std::string& id)
+{
+	for (int i = 0; i < (int)p.entries.size(); i++)
+		if (p.entries[i].def.id == id) return i;
+	return -1;
+}
+
+void VendorSocketTests(const std::map<std::string, Game>& games)
+{
+	line("[R3-vendor-sockets] vendor page links / colours (V1-V7)");
+	// V1
+	{
+		int dots = 0, nulls = 0;
+		std::string first;
+		for (int n = 2; n <= 6; n++) {
+			const std::optional<std::string> f = RegexFrag::LinkedSockets(n);
+			if (!f) { nulls++; continue; }
+			if (f->find('.') != std::string::npos && !dots++) first = "n=" + std::to_string(n) + " " + *f;
+		}
+		check(nulls == 0 && dots == 0, "V1 LinkedSockets(2..6) returns a fragment without '.'" +
+		      (dots ? " -- first: " + first : std::string()));
+		check(!RegexFrag::LinkedSockets(1) && !RegexFrag::LinkedSockets(7), "V1 LinkedSockets(1) and (7) are null");
+	}
+	// V2
+	{
+		const std::vector<std::string> lines = {u8"插槽: R-G-B", u8"插槽: R-G-B-W", u8"插槽: R-G B", u8"物理傷害: 10-20",
+		                                        u8"元素傷害: 5-10, 3-6", "x-y-z", "Sockets: R-G-B"};
+		const std::vector<int> got = VendorHits(RegexFrag::LinkedSockets(3), lines);
+		check(got == std::vector<int>({1, 1, 0, 0, 0, 0, 1}),
+		      "V2 LinkedSockets(3) hits R-G-B, R-G-B-W, Sockets: R-G-B only, got " + VendorHitsText(got));
+	}
+	// V3
+	{
+		const std::vector<std::string> lines = {u8"插槽: R-G-B", u8"插槽: R-W-B", u8"插槽: R-G-B-W"};
+		const std::vector<int> got = VendorHits(RegexFrag::ColoredLinks(3), lines);
+		check(got == std::vector<int>({1, 0, 1}), "V3 ColoredLinks(3) hits R-G-B and R-G-B-W, not R-W-B, got " + VendorHitsText(got));
+	}
+	// V4
+	{
+		const std::vector<std::string> lines = {u8"插槽: R-R-G", u8"插槽: R-G-R", u8"插槽: R-B-R-G"};
+		const std::vector<int> got = VendorHits(RegexFrag::LinkColors("rrg"), lines);
+		check(got == std::vector<int>({1, 1, 0}), "V4 LinkColors(rrg) keeps the adjacent behaviour, got " + VendorHitsText(got));
+	}
+	// V5 (C++: shape only)
+	{
+		const std::optional<std::string> f = RegexFrag::RgbGroup(u8"插槽");
+		// Anchored at the line start since review round 5 ("^插槽[:：]..."): skip the '^'.
+		const size_t at = (f && !f->empty() && (*f)[0] == '^') ? 1 : 0;
+		check(f.has_value() && f->compare(at, std::string(u8"插槽").size(), u8"插槽") == 0 && f->find("(?=") != std::string::npos,
+		      "V5 RgbGroup(插槽) starts with the label and uses a lookahead (?=" + (f ? " -- " + *f : std::string(" -- null")));
+	}
+
+	// V9: socket letters must not stick to an English hyphenated word
+	{
+		const std::vector<std::string> lines = {"Transfer-attuned Spirit Shield", "Two-Toned Boots", "Sockets: R-G", "Sockets: W-R-G-B"};
+		int itemHits = 0;
+		std::string first;
+		for (int n = 2; n <= 6; n++)
+			for (const bool colored : {false, true}) {
+				const std::optional<std::string> f = colored ? RegexFrag::ColoredLinks(n) : RegexFrag::LinkedSockets(n);
+				const std::vector<int> h = VendorHits(f, lines);
+				if (h[0] != 0 || h[1] != 0) {
+					if (!itemHits++) first = std::string(colored ? "ColoredLinks(" : "LinkedSockets(") + std::to_string(n) + ") " +
+					                         VendorHitsText(h) + " " + f.value_or("(null)");
+				}
+			}
+		check(itemHits == 0, "V9 no LinkedSockets / ColoredLinks (n=2..6) fragment hits 'Transfer-attuned Spirit Shield' or 'Two-Toned Boots' (" +
+		      std::to_string(itemHits) + " bad)" + (itemHits ? " -- first: " + first : std::string()));
+		const std::vector<int> l2 = VendorHits(RegexFrag::LinkedSockets(2), lines);
+		check(l2.size() == 4 && l2[2] == 1 && l2[3] == 1, "V9 LinkedSockets(2) still hits 'Sockets: R-G' and 'Sockets: W-R-G-B', got " + VendorHitsText(l2));
+		const std::vector<int> c3 = VendorHits(RegexFrag::ColoredLinks(3), lines);
+		check(c3.size() == 4 && c3[3] == 1, "V9 ColoredLinks(3) still hits 'Sockets: W-R-G-B', got " + VendorHitsText(c3));
+	}
+
+	// V10: chosen-colour fragments must not stick to English hyphenated words
+	{
+		const std::vector<std::string> lines = {"of Hair-Raising", "Lightning-Retaliation", "Strong-Willed", "Sockets: R-R", "Sockets: G-R-B"};
+		int bad = 0;
+		std::string first;
+		for (const char* c : {"rr", "rg", "gw", "rgb"}) {
+			const std::optional<std::string> f = RegexFrag::LinkColors(c);
+			const std::vector<int> h = VendorHits(f, lines);
+			if (h[0] != 0 || h[1] != 0 || h[2] != 0) {
+				if (!bad++) first = std::string("LinkColors(") + c + ") " + VendorHitsText(h) + " " + f.value_or("(null)");
+			}
+		}
+		check(bad == 0, "V10 LinkColors rr / rg / gw / rgb hit none of 'of Hair-Raising', 'Lightning-Retaliation', 'Strong-Willed' (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::vector<int> rr = VendorHits(RegexFrag::LinkColors("rr"), lines);
+		const std::vector<int> rg = VendorHits(RegexFrag::LinkColors("rg"), lines);
+		const std::vector<int> rgb = VendorHits(RegexFrag::LinkColors("rgb"), lines);
+		check(rr.size() == 5 && rr[3] == 1, "V10 LinkColors(rr) hits 'Sockets: R-R', got " + VendorHitsText(rr));
+		check(rgb.size() == 5 && rgb[4] == 1, "V10 LinkColors(rgb) hits 'Sockets: G-R-B', got " + VendorHitsText(rgb));
+		check(rg.size() == 5 && rg[4] == 1, "V10 LinkColors(rg) hits 'Sockets: G-R-B', got " + VendorHitsText(rg));
+	}
+
+	// V11: socket colour count / RGB group read the socket line only
+	{
+		const std::vector<std::string> lines = {"All Sockets are Blue", "All Sockets are Green", "All Sockets are White",
+		                                        "Sockets cannot be modified", "Sockets: R-G-B-W", u8"插槽: B-B-B", u8"插槽：B-B-B"};
+		int bad = 0;
+		std::string first;
+		for (const char* c : {"r", "g", "b", "w"}) {
+			const std::optional<std::string> f = RegexFrag::SocketColorCount("Sockets", c, 1);
+			const std::vector<int> h = VendorHits(f, lines);
+			if (h[0] != 0 || h[1] != 0 || h[2] != 0 || h[3] != 0 || h[4] != 1) {
+				if (!bad++) first = std::string("SocketColorCount(Sockets,") + c + ",1) " + VendorHitsText(h) + " " + f.value_or("(null)");
+			}
+		}
+		check(bad == 0, "V11 SocketColorCount(Sockets, r/g/b/w, 1) skips the four mod lines and hits 'Sockets: R-G-B-W' (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::optional<std::string> rg = RegexFrag::RgbGroup("Sockets");
+		const std::vector<int> g = VendorHits(rg, lines);
+		check(g.size() == 7 && g[0] == 0 && g[1] == 0 && g[2] == 0 && g[3] == 0 && g[4] == 1,
+		      "V11 RgbGroup(Sockets) skips the four mod lines and hits 'Sockets: R-G-B-W', got " + VendorHitsText(g) + " " + rg.value_or("(null)"));
+		const std::vector<int> zh = VendorHits(RegexFrag::SocketColorCount(u8"插槽", "b", 3), lines);
+		check(zh.size() == 7 && zh[5] == 1 && zh[6] == 1,
+		      "V11 SocketColorCount(插槽, b, 3) hits the half-width and full-width colon lines, got " + VendorHitsText(zh));
+	}
+
+	// V12: 3+ links carry no \b
+	{
+		int bad = 0;
+		std::string first;
+		for (int n = 3; n <= 6; n++) {
+			const std::string linked = "(-[rgbwa]){" + std::to_string(n - 1) + "}";
+			const std::string colored = "[rgb](-[rgb]){" + std::to_string(n - 1) + "}";
+			const std::optional<std::string> a = RegexFrag::LinkedSockets(n);
+			const std::optional<std::string> b = RegexFrag::ColoredLinks(n);
+			if (a.value_or("(null)") != linked && !bad++) first = "LinkedSockets(" + std::to_string(n) + ") = " + a.value_or("(null)");
+			if (b.value_or("(null)") != colored && !bad++) first = "ColoredLinks(" + std::to_string(n) + ") = " + b.value_or("(null)");
+		}
+		check(bad == 0, "V12 LinkedSockets / ColoredLinks (n=3..6) are exactly '(-[rgbwa]){n-1}' / '[rgb](-[rgb]){n-1}' without \\b (" +
+		      std::to_string(bad) + " bad)" + (bad ? " -- first: " + first : std::string()));
+		const std::optional<std::string> rgb = RegexFrag::LinkColors("rgb");
+		check(rgb.value_or("(null)") == "b-(g-r|r-g)|g-(b-r|r-b)|r-(b-g|g-b)", "V12 LinkColors(rgb) has no \\b, got " + rgb.value_or("(null)"));
+		const std::optional<std::string> rrg = RegexFrag::LinkColors("rrg");
+		const std::optional<std::string> rgbw = RegexFrag::LinkColors("rgbw");
+		check(rrg && rgbw && rrg->find("\\b") == std::string::npos && rgbw->find("\\b") == std::string::npos,
+		      "V12 LinkColors(rrg) and LinkColors(rgbw) contain no \\b, got " + rrg.value_or("(null)") + " / " + rgbw.value_or("(null)"));
+	}
+
+	// V13: 2 links / 2 colours keep \b
+	{
+		const std::optional<std::string> a = RegexFrag::LinkedSockets(2);
+		const std::optional<std::string> b = RegexFrag::ColoredLinks(2);
+		check(a.value_or("(null)") == "\\b[rgbwa](-[rgbwa]){1}\\b" && b.value_or("(null)") == "\\b[rgb](-[rgb]){1}\\b",
+		      "V13 LinkedSockets(2) / ColoredLinks(2) keep \\b, got " + a.value_or("(null)") + " / " + b.value_or("(null)"));
+		const std::optional<std::string> rg = RegexFrag::LinkColors("rg");
+		const std::optional<std::string> rr = RegexFrag::LinkColors("rr");
+		check(rg.value_or("(null)") == "\\b(g-r|r-g)\\b" && rr.value_or("(null)") == "\\br-r\\b",
+		      "V13 LinkColors(rg) / LinkColors(rr) keep \\b, got " + rg.value_or("(null)") + " / " + rr.value_or("(null)"));
+	}
+
+	// V14: the short n-link fragment hits only n or more links
+	{
+		const std::vector<std::string> lines = {u8"插槽: R-G-B-W", "Sockets: W-R-G-B-B", u8"插槽: R-G-B W", u8"插槽: R-G B-W", u8"插槽: R-G-B"};
+		const std::vector<int> got = VendorHits(RegexFrag::LinkedSockets(4), lines);
+		check(got == std::vector<int>({1, 1, 0, 0, 0}), "V14 LinkedSockets(4) hits 4L and 5L, not 3L or broken links, got " + VendorHitsText(got));
+	}
+
+	// V15: the all-colour 3-link fragment does not count a leading white socket
+	{
+		const std::vector<std::string> lines = {u8"插槽: W-R-G", u8"插槽: W-R-G-B"};
+		const std::vector<int> got = VendorHits(RegexFrag::ColoredLinks(3), lines);
+		check(got == std::vector<int>({0, 1}), "V15 ColoredLinks(3) misses W-R-G and hits W-R-G-B, got " + VendorHitsText(got));
+	}
+
+	const Game& G = games.at("poe1");
+	const AlgoPage* vendor = G.Algo("vendor_items");
+	if (!vendor) { check(false, "V6/V7 poe1 page vendor_items exists"); return; }
+
+	// V6
+	{
+		const int iLinks = VendorEntryIndex(*vendor, "links");
+		const int iCol = VendorEntryIndex(*vendor, "colored_links");
+		const int iQ = VendorEntryIndex(*vendor, "quality");
+		check(iLinks >= 0 && iCol >= 0 && iQ >= 0, "V6 vendor_items has links, colored_links and quality (" + std::to_string(iLinks) + "," +
+		      std::to_string(iCol) + "," + std::to_string(iQ) + ")");
+		if (iLinks >= 0 && iCol >= 0 && iQ >= 0) {
+			ValueMap vm;
+			AlgoValue three;
+			three.choice = "3";
+			three.hasChoice = true;
+			vm["links"] = three;
+			vm["colored_links"] = three;
+			AlgoValue q;
+			q.min = 20;
+			vm["quality"] = q;
+			CombineSel s;
+			s.page.algo = vendor;
+			s.picks = {iLinks, iCol, iQ};
+			s.values = &vm;
+			const CombineResult r = CombineSingle(Lang::Zh, Mode::Any, {s});
+			const std::string a = RegexFrag::LinkedSockets(3).value_or("(null)");
+			const std::string b = RegexFrag::ColoredLinks(3).value_or("(null)");
+			const std::vector<std::string> ts = VendorTerms(r.query);
+			int sockTerms = 0, otherTerms = 0;
+			bool joined = false, quality = false;
+			for (const std::string& t : ts) {
+				if (t.find(a) != std::string::npos && t.find(b) != std::string::npos) {
+					sockTerms++;
+					joined = (t == a + "|" + b) || (t == b + "|" + a);
+				} else {
+					otherTerms++;
+					quality = t.find(u8"品質") != std::string::npos;
+				}
+			}
+			check(sockTerms == 1 && joined && otherTerms == 1 && quality,
+			      "V6 links and colored_links share ONE term joined by '|', quality is its own term -- query: " + r.query);
+		}
+	}
+
+	// V7: an old share code / state with links=3 and link_colors=rgb still resolves
+	{
+		RegexShare::State st;
+		st.game = "poe1";
+		st.mode = "any";
+		st.pages.push_back({"vendor_items", {"links", "link_colors"}});
+		RegexValueList vals;
+		AlgoValue three;
+		three.choice = "3";
+		three.hasChoice = true;
+		AlgoValue rgb;
+		rgb.choice = "rgb";
+		rgb.hasChoice = true;
+		vals.push_back({"links", three});
+		vals.push_back({"link_colors", rgb});
+		st.numeric.push_back({"vendor_items", vals});
+		RegexShare::Normalized back;
+		std::string derr;
+		const bool decoded = RegexShare::Decode(RegexShare::Encode(st), back, &derr);
+		check(decoded, "V7 the share code round-trips" + (decoded ? std::string() : " -- " + derr));
+		if (decoded) {
+			const RegexShare::Resolved r = RegexShare::Resolve(back.state, G.pages);
+			const auto it = r.picks.find("vendor_items");
+			const bool both = it != r.picks.end() && it->second.size() == 2 &&
+			                  std::find(it->second.begin(), it->second.end(), VendorEntryIndex(*vendor, "links")) != it->second.end() &&
+			                  std::find(it->second.begin(), it->second.end(), VendorEntryIndex(*vendor, "link_colors")) != it->second.end();
+			std::string lk, lc;
+			for (const auto& kv : r.values)
+				if (kv.first == "vendor_items")
+					for (const auto& e : kv.second) {
+						if (e.first == "links") lk = e.second.choice;
+						if (e.first == "link_colors") lc = e.second.choice;
+					}
+			check(both && r.missed == 0 && lk == "3" && lc == "rgb",
+			      "V7 old links=3 / link_colors=rgb resolve: both ticked, values kept, missed " + std::to_string(r.missed));
+		}
+	}
+}
+
+// V16: the 3+ link fragments carry no \b, so they must not hit any real PoE1 item text.
+// Corpus = every text field of every PoE1 page + every PoE1 stat line (both languages).
+// Fragments are all hyphen chains: a 3+ link / 3+ colour fragment needs at least two '-'
+// in the line, so only lines with two or more are searched (the control uses one).
+void VendorShortLinkGuardTests(const RegexDataset& ds, const std::wstring& exeDir)
+{
+	line("[R3-vendor-sockets] V16 3+ link fragments vs the PoE1 corpus");
+	std::set<std::string> uniq;
+	auto addAll = [&](const std::vector<std::string>& v) {
+		for (const std::string& s : v)
+			if (std::count(s.begin(), s.end(), '-') >= 1) uniq.insert(s);
+	};
+	for (const RegexPageDef& p : ds.Pages()) {
+		if (p.game != "poe1") continue;
+		for (const RegexEntryDef& e : p.entries)
+			for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn, &e.altZh, &e.altEn}) addAll(*v);
+		for (const auto* v : {&p.ambientZh, &p.ambientEn, &p.namePrefixZh, &p.nameSuffixZh, &p.namePrefixEn, &p.nameSuffixEn}) addAll(*v);
+	}
+	const size_t catalogueLines = uniq.size();
+	std::vector<RegexItemMods::StatLite> zh, en;
+	std::string err;
+	const bool statsOk = RegexItemMods::LoadStats(exeDir, "poe1", zh, en, &err);
+	check(statsOk, "V16 poe1 stats.ndjson (zh and en) loads" + (statsOk ? std::string() : " -- " + err));
+	for (const auto* st : {&zh, &en})
+		for (const RegexItemMods::StatLite& s : *st) {
+			addAll({s.ref});
+			addAll(s.strings);
+		}
+	check(catalogueLines > 0 && uniq.size() > catalogueLines,
+	      "V16 corpus has hyphenated lines from the catalogue and the stats (" + Num((long long)catalogueLines) + " + " +
+	      Num((long long)(uniq.size() - catalogueLines)) + ")");
+
+	// fragments: linkedSockets / coloredLinks 3..6, linkColors for every 3- and 4-colour sequence over r g b w
+	std::vector<std::pair<std::string, std::string>> frags;   // name, fragment
+	int missing = 0;
+	for (int n = 3; n <= 6; n++) {
+		const std::optional<std::string> a = RegexFrag::LinkedSockets(n);
+		const std::optional<std::string> b = RegexFrag::ColoredLinks(n);
+		if (a) frags.push_back({"LinkedSockets(" + Num(n) + ")", *a}); else missing++;
+		if (b) frags.push_back({"ColoredLinks(" + Num(n) + ")", *b}); else missing++;
+	}
+	check(missing == 0, "V16 LinkedSockets / ColoredLinks (n=3..6) all return a fragment (" + Num(missing) + " null)");
+	const char* letters = "rgbw";
+	for (int len = 3; len <= 4; len++) {
+		int total = 1;
+		for (int i = 0; i < len; i++) total *= 4;
+		for (int k = 0; k < total; k++) {
+			std::string colors;
+			for (int i = 0, x = k; i < len; i++, x /= 4) colors += letters[x % 4];
+			if (const std::optional<std::string> f = RegexFrag::LinkColors(colors)) frags.push_back({"LinkColors(" + colors + ")", *f});
+		}
+	}
+	check(frags.size() >= 100, "V16 built the 3+ link fragments (" + Num((long long)frags.size()) + " fragments)");
+
+	std::vector<std::string> deep;   // lines with at least two '-'
+	for (const std::string& l : uniq)
+		if (std::count(l.begin(), l.end(), '-') >= 2) deep.push_back(l);
+	int hits = 0, compileFail = 0;
+	std::string firsts;
+	for (const auto& nf : frags) {
+		std::string cerr;
+		const std::optional<Rx> rx = RxCompile(nf.second, &cerr);
+		if (!rx) { compileFail++; continue; }
+		for (const std::string& l : deep)
+			if (RxSearch(*rx, l) && hits++ < 5) firsts += "\n    " + nf.first + " " + nf.second + " <- " + l;
+	}
+	check(compileFail == 0, "V16 every 3+ link fragment compiles (" + Num(compileFail) + " fail)");
+	check(hits == 0, "V16 no 3+ link / colour fragment hits any PoE1 catalogue or stat line (" + Num(hits) + " hits over " +
+	      Num((long long)frags.size()) + " fragments x " + Num((long long)deep.size()) + " lines)" + firsts);
+
+	// control: the same corpus does hit the 2-link fragment once its \b is taken off, so the corpus really holds
+	// English hyphenated text and a zero above is not an empty-corpus accident.
+	{
+		std::string cerr;
+		const std::optional<Rx> rx = RxCompile("[rgbwa](-[rgbwa]){1}", &cerr);
+		int control = 0;
+		if (rx)
+			for (const std::string& l : uniq)
+				if (RxSearch(*rx, l)) control++;
+		check(rx.has_value() && control > 0, "V16 control: the 2-link fragment without \\b hits the same corpus (" + Num(control) + " lines)");
+	}
+}
+
 } // namespace
 
 void RegexR3Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -1010,5 +1380,8 @@ void RegexR3Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 	StrictTests(ds, games);
 	line("");
 	CombineTests(games);
+	line("");
+	VendorSocketTests(games);
+	VendorShortLinkGuardTests(ds, exeDir);
 	line("    (R3 checks took " + Num((long long)(GetTickCount() - t0)) + " ms)");
 }

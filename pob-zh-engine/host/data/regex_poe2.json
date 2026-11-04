@@ -24087,12 +24087,18 @@
      "hiddenZh": [
       "輔助, 族裔, 閃電, 冰冷",
       "輔助,族裔,閃電,冰冷",
-      "輔助任何會擊中敵人的技能，使其冰凍或觸電的敵人被護甲破壞。"
+      "輔助任何會擊中敵人的技能，使其冰凍或觸電的敵人被護甲破壞。",
+      "我們的碎日……這絕非僅僅是個隱喻。",
+      "這是傲慢不和諧所帶來的後果。",
+      "目前它已被遏制，但時間並不站在我們這邊"
      ],
      "hiddenEn": [
       "Support, Lineage, Lightning, Cold",
       "Support,Lineage,Lightning,Cold",
-      "Supports any skill that Hits enemies, causing it to Break Armour of enemies it Freezes or Electrocutes."
+      "Supports any skill that Hits enemies, causing it to Break Armour of enemies it Freezes or Electrocutes.",
+      "Our Broken Sun... it is no mere allegory. It is",
+      "the consequence of insolent disharmony.",
+      "For now, it is contained, but time is against us."
      ]
     },
     {
@@ -29375,10 +29381,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "增加#%找到的[ItemRarity|物品稀有度]"
+      "增加#%找到的物品稀有度"
      ],
      "hiddenEn": [
-      "#% increased [ItemRarity|Rarity of Items] found"
+      "#% increased Rarity of Items found"
      ]
     },
     {
@@ -29391,10 +29397,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {
@@ -29425,10 +29431,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#點全部[Attributes|能力值]"
+      "#點全部能力值"
      ],
      "hiddenEn": [
-      "# to all [Attributes|Attributes]"
+      "# to all Attributes"
      ]
     },
     {
@@ -29442,11 +29448,13 @@
      "g": 0,
      "hiddenZh": [
       "允許前綴#",
-      "允許後綴#"
+      "允許後綴#",
+      "我們尋覓那消逝的追憶……"
      ],
      "hiddenEn": [
       "# Prefix Modifier allowed",
-      "# Suffix Modifier allowed"
+      "# Suffix Modifier allowed",
+      "We search for the memories missing..."
      ]
     },
     {
@@ -29460,11 +29468,13 @@
      "g": 0,
      "hiddenZh": [
       "允許前綴#",
-      "允許後綴#"
+      "允許後綴#",
+      "我們追索那背棄的諾言……"
      ],
      "hiddenEn": [
       "# Prefix Modifier allowed",
-      "# Suffix Modifier allowed"
+      "# Suffix Modifier allowed",
+      "We reach for the promises lost..."
      ]
     },
     {
@@ -29495,10 +29505,12 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "此物品會被視為頭盔，自插槽中的物品獲得加成"
+      "此物品會被視為頭盔，自插槽中的物品獲得加成",
+      "我們交出心靈以拯救肉體……"
      ],
      "hiddenEn": [
-      "This item gains bonuses from Socketed Items as though it was a Helmet"
+      "This item gains bonuses from Socketed Items as though it was a Helmet",
+      "We yield our mind to save the body..."
      ]
     },
     {
@@ -29511,10 +29523,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -29527,10 +29539,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#最大[EnergyShield|能量護盾]"
+      "#最大能量護盾"
      ],
      "hiddenEn": [
-      "# to maximum [EnergyShield|Energy Shield]"
+      "# to maximum Energy Shield"
      ]
     },
     {
@@ -29561,10 +29573,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#點[Intelligence|智慧]"
+      "#點智慧"
      ],
      "hiddenEn": [
-      "# to [Intelligence|Intelligence]"
+      "# to Intelligence"
      ]
     },
     {
@@ -29577,10 +29589,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#%全[ElementalDamage|元素][Resistances|抗性]"
+      "#%全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [ElementalDamage|Elemental] [Resistances]"
+      "#% to all Elemental Resistances"
      ]
     },
     {
@@ -29593,10 +29605,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#點[Strength|力量]"
+      "#點力量"
      ],
      "hiddenEn": [
-      "# to [Strength|Strength]"
+      "# to Strength"
      ]
     },
     {
@@ -29609,16 +29621,16 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#最大[Ward|符文保護]",
-      "#%[MaximumResistances|最大冰冷抗性]",
-      "全部[Cold|冰冷]技能等級#",
-      "增加#%最大[Ward|符文保護]"
+      "#最大符文保護",
+      "#%最大冰冷抗性",
+      "全部冰冷技能等級#",
+      "增加#%最大符文保護"
      ],
      "hiddenEn": [
-      "# to maximum [Ward|Runic Ward]",
-      "#% to [MaximumResistances|Maximum Cold Resistance]",
-      "# to Level of all [Cold] Skills",
-      "#% increased maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward",
+      "#% to Maximum Cold Resistance",
+      "# to Level of all Cold Skills",
+      "#% increased maximum Runic Ward"
      ]
     },
     {
@@ -29631,10 +29643,10 @@
      ],
      "g": 0,
      "hiddenZh": [
-      "#點[Dexterity|敏捷]"
+      "#點敏捷"
      ],
      "hiddenEn": [
-      "# to [Dexterity|Dexterity]"
+      "# to Dexterity"
      ]
     },
     {
@@ -29664,11 +29676,13 @@
      "g": 0,
      "hiddenZh": [
       "允許前綴#",
-      "允許後綴#"
+      "允許後綴#",
+      "我們緊握那永恆的未誕……"
      ],
      "hiddenEn": [
       "# Prefix Modifier allowed",
-      "# Suffix Modifier allowed"
+      "# Suffix Modifier allowed",
+      "We grasp the eternal unborn..."
      ]
     },
     {
@@ -29749,10 +29763,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#%的[Flask|藥劑]回復立即生效"
+      "#%的藥劑回復立即生效"
      ],
      "hiddenEn": [
-      "#% of [Flask|Flask] Recovery applied Instantly"
+      "#% of Flask Recovery applied Instantly"
      ]
     },
     {
@@ -29765,10 +29779,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[Flask|藥劑]充能獲取"
+      "增加#%藥劑充能獲取"
      ],
      "hiddenEn": [
-      "#% increased [Flask|Flask] Charges gained"
+      "#% increased Flask Charges gained"
      ]
     },
     {
@@ -29781,10 +29795,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "#[Armour|護甲值]"
+      "#護甲值"
      ],
      "hiddenEn": [
-      "# to [Armour]"
+      "# to Armour"
      ]
     },
     {
@@ -29797,12 +29811,14 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "有#個[Charm|護符]欄位",
-      "[Attack|攻擊]附加#至#[Lightning|閃電]傷害"
+      "有#個護符欄位",
+      "攻擊附加#至#閃電傷害",
+      "是我們的心靈在分裂。"
      ],
      "hiddenEn": [
-      "Has # [Charm] Slot",
-      "Adds # to # [Lightning] damage to [Attack|Attacks]"
+      "Has # Charm Slot",
+      "Adds # to # Lightning damage to Attacks",
+      "It is our mind that splits."
      ]
     },
     {
@@ -29815,12 +29831,14 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "有#個[Charm|護符]欄位",
-      "此物品會被視為長靴，自插槽中的物品獲得加成"
+      "有#個護符欄位",
+      "此物品會被視為長靴，自插槽中的物品獲得加成",
+      "是我們的腳步在擾動。"
      ],
      "hiddenEn": [
-      "Has # [Charm] Slot",
-      "This item gains bonuses from Socketed Items as though it was Boots"
+      "Has # Charm Slot",
+      "This item gains bonuses from Socketed Items as though it was Boots",
+      "It is our steps that stir."
      ]
     },
     {
@@ -29833,10 +29851,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[Flask|藥劑]的生命恢復"
+      "增加#%藥劑的生命恢復"
      ],
      "hiddenEn": [
-      "#% increased Life Recovery from [Flask|Flasks]"
+      "#% increased Life Recovery from Flasks"
      ]
     },
     {
@@ -29849,12 +29867,14 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "有#個[Charm|護符]欄位",
-      "增加#%施法速度"
+      "有#個護符欄位",
+      "增加#%施法速度",
+      "是我們的手在連結。"
      ],
      "hiddenEn": [
-      "Has # [Charm] Slot",
-      "#% increased Cast Speed"
+      "Has # Charm Slot",
+      "#% increased Cast Speed",
+      "It is our hands that join."
      ]
     },
     {
@@ -29867,18 +29887,18 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]",
-      "來自[Flask|藥劑]的#%生命回復會套用至[Ward|符文保護]",
-      "增加#%[Ward|符文保護]回復率",
-      "[Ward|符文保護]恢復可以[Overflow|溢出]最大[Ward|符文保護]",
-      "[Flask|藥劑]每秒獲得#充能"
+      "增加#%暈眩門檻",
+      "來自藥劑的#%生命回復會套用至符文保護",
+      "增加#%符文保護回復率",
+      "符文保護恢復可以溢出最大符文保護",
+      "藥劑每秒獲得#充能"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]",
-      "#% Life Recovery from [Flask|Flasks] also applies to [Ward|Runic Ward]",
-      "#% increased [Ward|Runic Ward] Regeneration Rate",
-      "[Ward|Runic Ward] recovery can [Overflow] maximum [Ward|Runic Ward]",
-      "[Flask|Flasks] gain # charges per Second"
+      "#% increased Stun Threshold",
+      "#% Life Recovery from Flasks also applies to Runic Ward",
+      "#% increased Runic Ward Regeneration Rate",
+      "Runic Ward recovery can Overflow maximum Runic Ward",
+      "Flasks gain # charges per Second"
      ]
     },
     {
@@ -29891,10 +29911,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "[Flask|藥劑]每秒獲得#充能"
+      "藥劑每秒獲得#充能"
      ],
      "hiddenEn": [
-      "[Flask|Flasks] gain # charges per Second"
+      "Flasks gain # charges per Second"
      ]
     },
     {
@@ -29907,10 +29927,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "減少#%[Charm|護符]充能使用"
+      "減少#%護符充能使用"
      ],
      "hiddenEn": [
-      "#% reduced [Charm] Charges used"
+      "#% reduced Charm Charges used"
      ]
     },
     {
@@ -29923,10 +29943,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]"
+      "增加#%暈眩門檻"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]"
+      "#% increased Stun Threshold"
      ]
     },
     {
@@ -29939,10 +29959,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%找到的[ItemRarity|物品稀有度]"
+      "增加#%找到的物品稀有度"
      ],
      "hiddenEn": [
-      "#% increased [ItemRarity|Rarity of Items] found"
+      "#% increased Rarity of Items found"
      ]
     },
     {
@@ -29955,10 +29975,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "減少#%[Flask|藥劑]充能使用"
+      "減少#%藥劑充能使用"
      ],
      "hiddenEn": [
-      "#% reduced [Flask|Flask] Charges used"
+      "#% reduced Flask Charges used"
      ]
     },
     {
@@ -29971,10 +29991,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[Charm|護符]效果持續時間"
+      "增加#%護符效果持續時間"
      ],
      "hiddenEn": [
-      "#% increased [Charm] Effect Duration"
+      "#% increased Charm Effect Duration"
      ]
     },
     {
@@ -29987,10 +30007,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[Charm|護符]充能獲取"
+      "增加#%護符充能獲取"
      ],
      "hiddenEn": [
-      "#% increased [Charm] Charges gained"
+      "#% increased Charm Charges gained"
      ]
     },
     {
@@ -30003,12 +30023,14 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "有#個[Charm|護符]欄位",
-      "#點[Strength|力量]"
+      "有#個護符欄位",
+      "#點力量",
+      "是我們的血肉在連結。"
      ],
      "hiddenEn": [
-      "Has # [Charm] Slot",
-      "# to [Strength|Strength]"
+      "Has # Charm Slot",
+      "# to Strength",
+      "It is our flesh that binds."
      ]
     },
     {
@@ -30021,10 +30043,10 @@
      ],
      "g": 1,
      "hiddenZh": [
-      "增加#%[Flask|藥劑]的魔力恢復"
+      "增加#%藥劑的魔力恢復"
      ],
      "hiddenEn": [
-      "#% increased Mana Recovery from [Flask|Flasks]"
+      "#% increased Mana Recovery from Flasks"
      ]
     },
     {
@@ -30315,10 +30337,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]"
+      "增加#%暈眩門檻"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]"
+      "#% increased Stun Threshold"
      ]
     },
     {
@@ -30331,10 +30353,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[ESRechargeRate|能量護盾充能率]"
+      "增加#%能量護盾充能率"
      ],
      "hiddenEn": [
-      "#% increased [ESRechargeRate|Energy Shield Recharge Rate]"
+      "#% increased Energy Shield Recharge Rate"
      ]
     },
     {
@@ -30357,10 +30379,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[MaximumResistances|最大全元素抗性]"
+      "#%最大全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [MaximumResistances|Maximum Elemental Resistances]"
+      "#% to all Maximum Elemental Resistances"
      ]
     },
     {
@@ -30393,10 +30415,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -30419,10 +30441,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]"
+      "增加#%暈眩門檻"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]"
+      "#% increased Stun Threshold"
      ]
     },
     {
@@ -30637,10 +30659,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[MaximumResistances|最大全元素抗性]"
+      "#%最大全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [MaximumResistances|Maximum Elemental Resistances]"
+      "#% to all Maximum Elemental Resistances"
      ]
     },
     {
@@ -30733,10 +30755,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "承受的#%傷害[Recoup|補償]為生命"
+      "承受的#%傷害補償為生命"
      ],
      "hiddenEn": [
-      "#% of Damage taken [Recoup|Recouped] as Life"
+      "#% of Damage taken Recouped as Life"
      ]
     },
     {
@@ -30791,10 +30813,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -30827,10 +30849,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -30883,10 +30905,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#全部[Corrupted|腐化]技能寶石"
+      "#全部腐化技能寶石"
      ],
      "hiddenEn": [
-      "# to Level of all [Corrupted] Skill Gems"
+      "# to Level of all Corrupted Skill Gems"
      ]
     },
     {
@@ -30999,14 +31021,14 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|火焰抗性]",
-      "#%[Resistances|冰冷抗性]",
-      "#%[Resistances|閃電抗性]"
+      "#%火焰抗性",
+      "#%冰冷抗性",
+      "#%閃電抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Fire Resistance]",
-      "#% to [Resistances|Cold Resistance]",
-      "#% to [Resistances|Lightning Resistance]"
+      "#% to Fire Resistance",
+      "#% to Cold Resistance",
+      "#% to Lightning Resistance"
      ]
     },
     {
@@ -31149,14 +31171,14 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[MaximumResistances|最大全元素抗性]",
-      "增加#%你身上的[ArcaneSurge|秘能波動][BuffEffect|效果]",
-      "增加#%[ESRechargeRate|能量護盾充能率]"
+      "#%最大全元素抗性",
+      "增加#%你身上的秘能波動效果",
+      "增加#%能量護盾充能率"
      ],
      "hiddenEn": [
-      "#% to all [MaximumResistances|Maximum Elemental Resistances]",
-      "#% increased [BuffEffect|effect] of [ArcaneSurge|Arcane Surge] on you",
-      "#% increased [ESRechargeRate|Energy Shield Recharge Rate]"
+      "#% to all Maximum Elemental Resistances",
+      "#% increased effect of Arcane Surge on you",
+      "#% increased Energy Shield Recharge Rate"
      ]
     },
     {
@@ -31299,10 +31321,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -31325,10 +31347,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#全部[Corrupted|腐化]技能寶石"
+      "#全部腐化技能寶石"
      ],
      "hiddenEn": [
-      "# to Level of all [Corrupted] Skill Gems"
+      "# to Level of all Corrupted Skill Gems"
      ]
     },
     {
@@ -31497,10 +31519,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[AilmentThreshold|元素異常狀態門檻]"
+      "增加#%元素異常狀態門檻"
      ],
      "hiddenEn": [
-      "#% increased [AilmentThreshold|Elemental Ailment Threshold]"
+      "#% increased Elemental Ailment Threshold"
      ]
     },
     {
@@ -31821,10 +31843,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {
@@ -31959,10 +31981,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[Ward|符文保護]回復率"
+      "增加#%符文保護回復率"
      ],
      "hiddenEn": [
-      "#% increased [Ward|Runic Ward] Regeneration Rate"
+      "#% increased Runic Ward Regeneration Rate"
      ]
     },
     {
@@ -31985,10 +32007,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]"
+      "增加#%暈眩門檻"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]"
+      "#% increased Stun Threshold"
      ]
     },
     {
@@ -32001,10 +32023,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[ESRechargeRate|能量護盾充能率]"
+      "增加#%能量護盾充能率"
      ],
      "hiddenEn": [
-      "#% increased [ESRechargeRate|Energy Shield Recharge Rate]"
+      "#% increased Energy Shield Recharge Rate"
      ]
     },
     {
@@ -32027,10 +32049,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[MaximumResistances|最大全元素抗性]"
+      "#%最大全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [MaximumResistances|Maximum Elemental Resistances]"
+      "#% to all Maximum Elemental Resistances"
      ]
     },
     {
@@ -32063,10 +32085,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -32089,10 +32111,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[StunThreshold|暈眩門檻]"
+      "增加#%暈眩門檻"
      ],
      "hiddenEn": [
-      "#% increased [StunThreshold|Stun Threshold]"
+      "#% increased Stun Threshold"
      ]
     },
     {
@@ -32287,10 +32309,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[MaximumResistances|最大全元素抗性]"
+      "#%最大全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [MaximumResistances|Maximum Elemental Resistances]"
+      "#% to all Maximum Elemental Resistances"
      ]
     },
     {
@@ -32373,10 +32395,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "承受的#%傷害[Recoup|補償]為生命"
+      "承受的#%傷害補償為生命"
      ],
      "hiddenEn": [
-      "#% of Damage taken [Recoup|Recouped] as Life"
+      "#% of Damage taken Recouped as Life"
      ]
     },
     {
@@ -32431,10 +32453,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -32457,10 +32479,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#[Spirit|精魂]"
+      "#精魂"
      ],
      "hiddenEn": [
-      "# to [Spirit|Spirit]"
+      "# to Spirit"
      ]
     },
     {
@@ -32493,16 +32515,16 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#全部[Corrupted|腐化]技能寶石",
-      "每一個[Equipped|已裝備]的已汙染物品，增加#%最大生命",
-      "每一個[Equipped|已裝備]的已汙染物品，#%所有抗性增加",
-      "每一個[Equipped|已裝備]的已汙染物品，增加#%混沌傷害"
+      "#全部腐化技能寶石",
+      "每一個已裝備的已汙染物品，增加#%最大生命",
+      "每一個已裝備的已汙染物品，#%所有抗性增加",
+      "每一個已裝備的已汙染物品，增加#%混沌傷害"
      ],
      "hiddenEn": [
-      "# to Level of all [Corrupted] Skill Gems",
-      "#% increased Maximum Life for each Corrupted Item [Equipped]",
-      "#% to all Resistances for each Corrupted Item [Equipped]",
-      "#% increased Chaos Damage for each Corrupted Item [Equipped]"
+      "# to Level of all Corrupted Skill Gems",
+      "#% increased Maximum Life for each Corrupted Item Equipped",
+      "#% to all Resistances for each Corrupted Item Equipped",
+      "#% increased Chaos Damage for each Corrupted Item Equipped"
      ]
     },
     {
@@ -32615,14 +32637,14 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|火焰抗性]",
-      "#%[Resistances|冰冷抗性]",
-      "#%[Resistances|閃電抗性]"
+      "#%火焰抗性",
+      "#%冰冷抗性",
+      "#%閃電抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Fire Resistance]",
-      "#% to [Resistances|Cold Resistance]",
-      "#% to [Resistances|Lightning Resistance]"
+      "#% to Fire Resistance",
+      "#% to Cold Resistance",
+      "#% to Lightning Resistance"
      ]
     },
     {
@@ -32665,10 +32687,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%的[Armour|護甲值]也會套用至[ElementalDamage|元素傷害]"
+      "#%的護甲值也會套用至元素傷害"
      ],
      "hiddenEn": [
-      "#% of [Armour|Armour] also applies to [ElementalDamage|Elemental Damage]"
+      "#% of Armour also applies to Elemental Damage"
      ]
     },
     {
@@ -32717,10 +32739,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[ESRechargeRate|能量護盾充能率]"
+      "增加#%能量護盾充能率"
      ],
      "hiddenEn": [
-      "#% increased [ESRechargeRate|Energy Shield Recharge Rate]"
+      "#% increased Energy Shield Recharge Rate"
      ]
     },
     {
@@ -32795,10 +32817,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -32851,10 +32873,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[AilmentThreshold|元素異常狀態門檻]"
+      "增加#%元素異常狀態門檻"
      ],
      "hiddenEn": [
-      "#% increased [AilmentThreshold|Elemental Ailment Threshold]"
+      "#% increased Elemental Ailment Threshold"
      ]
     },
     {
@@ -32921,10 +32943,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "減少#%你身上的[Debuff|減益效果][Slow|緩速]程度"
+      "減少#%你身上的減益效果緩速程度"
      ],
      "hiddenEn": [
-      "#% reduced [Slow|Slowing] Potency of [Debuff|Debuffs] on You"
+      "#% reduced Slowing Potency of Debuffs on You"
      ]
     },
     {
@@ -32967,14 +32989,14 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|火焰抗性]",
-      "#%[Resistances|冰冷抗性]",
-      "#%[Resistances|閃電抗性]"
+      "#%火焰抗性",
+      "#%冰冷抗性",
+      "#%閃電抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Fire Resistance]",
-      "#% to [Resistances|Cold Resistance]",
-      "#% to [Resistances|Lightning Resistance]"
+      "#% to Fire Resistance",
+      "#% to Cold Resistance",
+      "#% to Lightning Resistance"
      ]
     },
     {
@@ -33037,10 +33059,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "減少#%你身上的[Debuff|減益效果][Slow|緩速]程度"
+      "減少#%你身上的減益效果緩速程度"
      ],
      "hiddenEn": [
-      "#% reduced [Slow|Slowing] Potency of [Debuff|Debuffs] on You"
+      "#% reduced Slowing Potency of Debuffs on You"
      ]
     },
     {
@@ -33173,10 +33195,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "對你的擊中減少#%[CriticalDamageBonus|暴擊傷害加成]"
+      "對你的擊中減少#%暴擊傷害加成"
      ],
      "hiddenEn": [
-      "[Hit|Hits] against you have #% reduced [CriticalDamageBonus|Critical Damage Bonus]"
+      "Hits against you have #% reduced Critical Damage Bonus"
      ]
     },
     {
@@ -33239,10 +33261,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[AilmentThreshold|元素異常狀態門檻]"
+      "增加#%元素異常狀態門檻"
      ],
      "hiddenEn": [
-      "#% increased [AilmentThreshold|Elemental Ailment Threshold]"
+      "#% increased Elemental Ailment Threshold"
      ]
     },
     {
@@ -33285,10 +33307,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%的[Armour|護甲值]也會套用至[ElementalDamage|元素傷害]"
+      "#%的護甲值也會套用至元素傷害"
      ],
      "hiddenEn": [
-      "#% of [Armour|Armour] also applies to [ElementalDamage|Elemental Damage]"
+      "#% of Armour also applies to Elemental Damage"
      ]
     },
     {
@@ -33337,10 +33359,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[ESRechargeRate|能量護盾充能率]"
+      "增加#%能量護盾充能率"
      ],
      "hiddenEn": [
-      "#% increased [ESRechargeRate|Energy Shield Recharge Rate]"
+      "#% increased Energy Shield Recharge Rate"
      ]
     },
     {
@@ -33435,10 +33457,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -33491,10 +33513,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[AilmentThreshold|元素異常狀態門檻]"
+      "增加#%元素異常狀態門檻"
      ],
      "hiddenEn": [
-      "#% increased [AilmentThreshold|Elemental Ailment Threshold]"
+      "#% increased Elemental Ailment Threshold"
      ]
     },
     {
@@ -33571,10 +33593,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "減少#%你身上的[Debuff|減益效果][Slow|緩速]程度"
+      "減少#%你身上的減益效果緩速程度"
      ],
      "hiddenEn": [
-      "#% reduced [Slow|Slowing] Potency of [Debuff|Debuffs] on You"
+      "#% reduced Slowing Potency of Debuffs on You"
      ]
     },
     {
@@ -33627,14 +33649,14 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%[Resistances|火焰抗性]",
-      "#%[Resistances|冰冷抗性]",
-      "#%[Resistances|閃電抗性]"
+      "#%火焰抗性",
+      "#%冰冷抗性",
+      "#%閃電抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Fire Resistance]",
-      "#% to [Resistances|Cold Resistance]",
-      "#% to [Resistances|Lightning Resistance]"
+      "#% to Fire Resistance",
+      "#% to Cold Resistance",
+      "#% to Lightning Resistance"
      ]
     },
     {
@@ -33717,10 +33739,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "減少#%你身上的[Debuff|減益效果][Slow|緩速]程度"
+      "減少#%你身上的減益效果緩速程度"
      ],
      "hiddenEn": [
-      "#% reduced [Slow|Slowing] Potency of [Debuff|Debuffs] on You"
+      "#% reduced Slowing Potency of Debuffs on You"
      ]
     },
     {
@@ -33873,10 +33895,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "對你的擊中減少#%[CriticalDamageBonus|暴擊傷害加成]"
+      "對你的擊中減少#%暴擊傷害加成"
      ],
      "hiddenEn": [
-      "[Hit|Hits] against you have #% reduced [CriticalDamageBonus|Critical Damage Bonus]"
+      "Hits against you have #% reduced Critical Damage Bonus"
      ]
     },
     {
@@ -33959,10 +33981,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "#%全[ElementalDamage|元素][Resistances|抗性]"
+      "#%全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [ElementalDamage|Elemental] [Resistances]"
+      "#% to all Elemental Resistances"
      ]
     },
     {
@@ -33985,10 +34007,10 @@
      ],
      "g": 2,
      "hiddenZh": [
-      "增加#%[AilmentThreshold|元素異常狀態門檻]"
+      "增加#%元素異常狀態門檻"
      ],
      "hiddenEn": [
-      "#% increased [AilmentThreshold|Elemental Ailment Threshold]"
+      "#% increased Elemental Ailment Threshold"
      ]
     },
     {
@@ -35965,10 +35987,10 @@
      ],
      "g": 3,
      "hiddenZh": [
-      "#%全[ElementalDamage|元素][Resistances|抗性]"
+      "#%全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [ElementalDamage|Elemental] [Resistances]"
+      "#% to all Elemental Resistances"
      ]
     },
     {
@@ -36011,10 +36033,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "有#%機率額外[Chain|連鎖]一次"
+      "有#%機率額外連鎖一次"
      ],
      "hiddenEn": [
-      "#% chance to [Chain] an additional time"
+      "#% chance to Chain an additional time"
      ]
     },
     {
@@ -36067,10 +36089,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "有#%機率額外[Chain|連鎖]一次"
+      "有#%機率額外連鎖一次"
      ],
      "hiddenEn": [
-      "#% chance to [Chain] an additional time"
+      "#% chance to Chain an additional time"
      ]
     },
     {
@@ -36195,10 +36217,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "有#%機率額外[Chain|連鎖]一次"
+      "有#%機率額外連鎖一次"
      ],
      "hiddenEn": [
-      "#% chance to [Chain] an additional time"
+      "#% chance to Chain an additional time"
      ]
     },
     {
@@ -36221,10 +36243,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "投射物[Fork|分裂]時有#%機率發射1個額外投射物"
+      "投射物分裂時有#%機率發射1個額外投射物"
      ],
      "hiddenEn": [
-      "Projectiles have #% chance for an additional Projectile when [Fork|Forking]"
+      "Projectiles have #% chance for an additional Projectile when Forking"
      ]
     },
     {
@@ -36247,10 +36269,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "#%[SurpassChance|滿溢]機率發射額外一枚箭矢"
+      "#%滿溢機率發射額外一枚箭矢"
      ],
      "hiddenEn": [
-      "#% [SurpassChance|Surpassing] chance to fire an additional Arrow"
+      "#% Surpassing chance to fire an additional Arrow"
      ]
     },
     {
@@ -36323,10 +36345,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "有#%機率額外[Chain|連鎖]一次"
+      "有#%機率額外連鎖一次"
      ],
      "hiddenEn": [
-      "#% chance to [Chain] an additional time"
+      "#% chance to Chain an additional time"
      ]
     },
     {
@@ -36339,10 +36361,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "#%[SurpassChance|滿溢]機率發射額外一枚箭矢"
+      "#%滿溢機率發射額外一枚箭矢"
      ],
      "hiddenEn": [
-      "#% [SurpassChance|Surpassing] chance to fire an additional Arrow"
+      "#% Surpassing chance to fire an additional Arrow"
      ]
     },
     {
@@ -36355,10 +36377,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "#%[SurpassChance|滿溢]機率發射額外一枚箭矢"
+      "#%滿溢機率發射額外一枚箭矢"
      ],
      "hiddenEn": [
-      "#% [SurpassChance|Surpassing] chance to fire an additional Arrow"
+      "#% Surpassing chance to fire an additional Arrow"
      ]
     },
     {
@@ -36371,10 +36393,10 @@
      ],
      "g": 4,
      "hiddenZh": [
-      "#%[SurpassChance|滿溢]機率發射額外一枚箭矢"
+      "#%滿溢機率發射額外一枚箭矢"
      ],
      "hiddenEn": [
-      "#% [SurpassChance|Surpassing] chance to fire an additional Arrow"
+      "#% Surpassing chance to fire an additional Arrow"
      ]
     },
     {
@@ -36917,10 +36939,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Stun|暈眩]時使用"
+      "當你被暈眩時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Stun|Stunned]"
+      "Used when you become Stunned"
      ]
     },
     {
@@ -36933,10 +36955,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Shock|感電]時使用"
+      "當你被感電時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Shock|Shocked]"
+      "Used when you become Shocked"
      ]
     },
     {
@@ -36949,10 +36971,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你開始[Bleeding|流血]時使用"
+      "當你開始流血時使用"
      ],
      "hiddenEn": [
-      "Used when you start [Bleeding]"
+      "Used when you start Bleeding"
      ]
     },
     {
@@ -36965,10 +36987,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Curse|詛咒]時使用"
+      "當你被詛咒時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Curse|Cursed]"
+      "Used when you become Cursed"
      ]
     },
     {
@@ -36981,10 +37003,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Ignite|點燃]時使用"
+      "當你被點燃時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Ignite|Ignited]"
+      "Used when you become Ignited"
      ]
     },
     {
@@ -36997,10 +37019,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你受到[Slow|緩速]效果影響時使用"
+      "當你受到緩速效果影響時使用"
      ],
      "hiddenEn": [
-      "Used when you are affected by a [Slow]"
+      "Used when you are affected by a Slow"
      ]
     },
     {
@@ -37013,10 +37035,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Fire|火焰]傷害[Hit|擊中]時使用"
+      "當你被火焰傷害擊中時使用"
      ],
      "hiddenEn": [
-      "Used when you take [Fire] damage from a [Hit]"
+      "Used when you take Fire damage from a Hit"
      ]
     },
     {
@@ -37029,10 +37051,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Chaos|混沌]傷害[Hit|擊中]時使用"
+      "當你被混沌傷害擊中時使用"
      ],
      "hiddenEn": [
-      "Used when you take [Chaos] damage from a [Hit]"
+      "Used when you take Chaos damage from a Hit"
      ]
     },
     {
@@ -37045,10 +37067,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Cold|冰冷]傷害[Hit|擊中]時使用"
+      "當你被冰冷傷害擊中時使用"
      ],
      "hiddenEn": [
-      "Used when you take [Cold] damage from a [Hit]"
+      "Used when you take Cold damage from a Hit"
      ]
     },
     {
@@ -37061,10 +37083,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Frozen|冰凍]時使用"
+      "當你被冰凍時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Frozen]"
+      "Used when you become Frozen"
      ]
     },
     {
@@ -37077,10 +37099,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Poison|中毒]時使用"
+      "當你被中毒時使用"
      ],
      "hiddenEn": [
-      "Used when you become [Poison|Poisoned]"
+      "Used when you become Poisoned"
      ]
     },
     {
@@ -37093,10 +37115,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你被[Lightning|閃電]傷害[Hit|擊中]時使用"
+      "當你被閃電傷害擊中時使用"
      ],
      "hiddenEn": [
-      "Used when you take [Lightning] damage from a [Hit]"
+      "Used when you take Lightning damage from a Hit"
      ]
     },
     {
@@ -37109,10 +37131,10 @@
      ],
      "g": 6,
      "hiddenZh": [
-      "當你擊殺[Rarity|稀有]或[Rarity|傳奇]敵人時使用"
+      "當你擊殺稀有或傳奇敵人時使用"
      ],
      "hiddenEn": [
-      "Used when you kill a [Rarity|Rare] or [Rarity|Unique] enemy"
+      "Used when you kill a Rare or Unique enemy"
      ]
     },
     {
@@ -37155,10 +37177,10 @@
      ],
      "g": 7,
      "hiddenZh": [
-      "每[Hit|擊中]一名敵人，獲得#生命"
+      "每擊中一名敵人，獲得#生命"
      ],
      "hiddenEn": [
-      "Grants # Life per Enemy [Hit]"
+      "Grants # Life per Enemy Hit"
      ]
     },
     {
@@ -37277,10 +37299,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "有#%機率[Pierce|穿透]一個敵人"
+      "有#%機率穿透一個敵人"
      ],
      "hiddenEn": [
-      "#% chance to [Pierce|Pierce] an Enemy"
+      "#% chance to Pierce an Enemy"
      ]
     },
     {
@@ -37365,10 +37387,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "[Grenade|擲彈]技能發射額外一個[Projectile|投射物]"
+      "擲彈技能發射額外一個投射物"
      ],
      "hiddenEn": [
-      "[Grenade] Skills Fire an additional [Projectile|Projectile]"
+      "Grenade Skills Fire an additional Projectile"
      ]
     },
     {
@@ -37401,10 +37423,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "無法裝填或發射[Ammunition|彈藥]"
+      "無法裝填或發射彈藥"
      ],
      "hiddenEn": [
-      "Cannot load or fire [Ammunition]"
+      "Cannot load or fire Ammunition"
      ]
     },
     {
@@ -37417,10 +37439,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "[Grenade|擲彈]技能發射額外一個[Projectile|投射物]"
+      "擲彈技能發射額外一個投射物"
      ],
      "hiddenEn": [
-      "[Grenade] Skills Fire an additional [Projectile|Projectile]"
+      "Grenade Skills Fire an additional Projectile"
      ]
     },
     {
@@ -37443,10 +37465,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "有#%機率[Pierce|穿透]一個敵人"
+      "有#%機率穿透一個敵人"
      ],
      "hiddenEn": [
-      "#% chance to [Pierce|Pierce] an Enemy"
+      "#% chance to Pierce an Enemy"
      ]
     },
     {
@@ -37612,10 +37634,10 @@
      ],
      "g": 8,
      "hiddenZh": [
-      "[Grenade|擲彈]技能發射額外一個[Projectile|投射物]"
+      "擲彈技能發射額外一個投射物"
      ],
      "hiddenEn": [
-      "[Grenade] Skills Fire an additional [Projectile|Projectile]"
+      "Grenade Skills Fire an additional Projectile"
      ]
     },
     {
@@ -37680,10 +37702,10 @@
      ],
      "g": 9,
      "hiddenZh": [
-      "#%[Spell|法術]魔力消耗[StatConversion|轉換]為生命消耗"
+      "#%法術魔力消耗轉換為生命消耗"
      ],
      "hiddenEn": [
-      "#% of [Spell] Mana Cost [StatConversion|Converted] to Life Cost"
+      "#% of Spell Mana Cost Converted to Life Cost"
      ]
     },
     {
@@ -37716,10 +37738,10 @@
      ],
      "g": 9,
      "hiddenZh": [
-      "以#%[Physical|物理]傷害[ManaLeech|偷取]魔力"
+      "以#%物理傷害偷取魔力"
      ],
      "hiddenEn": [
-      "[ManaLeech|Leeches] #% of [Physical|Physical] Damage as Mana"
+      "Leeches #% of Physical Damage as Mana"
      ]
     },
     {
@@ -37802,10 +37824,10 @@
      ],
      "g": 9,
      "hiddenZh": [
-      "[Critical|暴擊]時破壞#點[Armour|護甲值]"
+      "暴擊時破壞#點護甲值"
      ],
      "hiddenEn": [
-      "Breaks # [Armour] on [Critical|Critical Hit]"
+      "Breaks # Armour on Critical Hit"
      ]
     },
     {
@@ -37964,10 +37986,10 @@
      ],
      "g": 11,
      "hiddenZh": [
-      "[ForksCrit|暴擊擊中會二分]"
+      "暴擊擊中會二分"
      ],
      "hiddenEn": [
-      "[ForksCrit|Bifurcates Critical Hits]"
+      "Bifurcates Critical Hits"
      ]
     },
     {
@@ -38960,12 +38982,12 @@
      ],
      "g": 13,
      "hiddenZh": [
-      "每一玩家等級#[Evasion|閃避]值",
-      "每一玩家等級#最大[EnergyShield|能量護盾]"
+      "每一玩家等級#閃避值",
+      "每一玩家等級#最大能量護盾"
      ],
      "hiddenEn": [
-      "Has # to [Evasion] Rating per player level",
-      "Has # to maximum [EnergyShield|Energy Shield] per player level"
+      "Has # to Evasion Rating per player level",
+      "Has # to maximum Energy Shield per player level"
      ]
     },
     {
@@ -39738,14 +39760,14 @@
      ],
      "g": 13,
      "hiddenZh": [
-      "每一玩家等級#[Evasion|閃避]值",
-      "每一玩家等級#最大[EnergyShield|能量護盾]",
-      "每一玩家等級擁有#最大[Ward|符文保護]"
+      "每一玩家等級#閃避值",
+      "每一玩家等級#最大能量護盾",
+      "每一玩家等級擁有#最大符文保護"
      ],
      "hiddenEn": [
-      "Has # to [Evasion] Rating per player level",
-      "Has # to maximum [EnergyShield|Energy Shield] per player level",
-      "Has # to maximum [Ward|Runic Ward] per player level"
+      "Has # to Evasion Rating per player level",
+      "Has # to maximum Energy Shield per player level",
+      "Has # to maximum Runic Ward per player level"
      ]
     },
     {
@@ -41705,17 +41727,17 @@
      "g": 14,
      "hiddenZh": [
       "有#個插槽",
-      "增加#%[Ward|符文保護]回復率",
-      "#點[Intelligence|智慧]需求",
-      "減少#%你身上的[Curse|詛咒]持續時間",
-      "每#秒獲得一個[VerisiumInfusion|維里西姆灌注]"
+      "增加#%符文保護回復率",
+      "#點智慧需求",
+      "減少#%你身上的詛咒持續時間",
+      "每#秒獲得一個維里西姆灌注"
      ],
      "hiddenEn": [
       "Has # Sockets",
-      "#% increased [Ward|Runic Ward] Regeneration Rate",
-      "# [Intelligence] Requirement",
-      "#% reduced Duration of [Curse|Curses] on you",
-      "Every # seconds, gain a [VerisiumInfusion|Verisium Infusion]"
+      "#% increased Runic Ward Regeneration Rate",
+      "# Intelligence Requirement",
+      "#% reduced Duration of Curses on you",
+      "Every # seconds, gain a Verisium Infusion"
      ]
     },
     {
@@ -42318,10 +42340,10 @@
      ],
      "g": 14,
      "hiddenZh": [
-      "增加#%[Ignite|點燃][BuffMagnitude|幅度]"
+      "增加#%點燃幅度"
      ],
      "hiddenEn": [
-      "#% increased [Ignite|Ignite] [BuffMagnitude|Magnitude]"
+      "#% increased Ignite Magnitude"
      ]
     },
     {
@@ -42944,10 +42966,10 @@
      ],
      "g": 14,
      "hiddenZh": [
-      "#點全部[Attributes|能力值]"
+      "#點全部能力值"
      ],
      "hiddenEn": [
-      "# to all [Attributes|Attributes]"
+      "# to all Attributes"
      ]
     },
     {
@@ -43110,10 +43132,10 @@
      ],
      "g": 14,
      "hiddenZh": [
-      "#%全[ElementalDamage|元素][Resistances|抗性]"
+      "#%全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [ElementalDamage|Elemental] [Resistances]"
+      "#% to all Elemental Resistances"
      ]
     },
     {
@@ -43406,10 +43428,10 @@
      ],
      "g": 18,
      "hiddenZh": [
-      "遠程無[Accuracy|命中]懲罰"
+      "遠程無命中懲罰"
      ],
      "hiddenEn": [
-      "Has no [Accuracy|Accuracy] Penalty from Range"
+      "Has no Accuracy Penalty from Range"
      ]
     },
     {
@@ -43524,10 +43546,10 @@
      ],
      "g": 18,
      "hiddenZh": [
-      "[Hit|擊中]時獲得#層[Rage|盛怒]"
+      "擊中時獲得#層盛怒"
      ],
      "hiddenEn": [
-      "Grants # [Rage|Rage] on [Hit]"
+      "Grants # Rage on Hit"
      ]
     },
     {
@@ -43596,10 +43618,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Daze|目眩]"
+      "擊中時有#%機率造成目眩"
      ],
      "hiddenEn": [
-      "#% chance to [Daze] on [Hit]"
+      "#% chance to Daze on Hit"
      ]
     },
     {
@@ -43612,10 +43634,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Daze|目眩]"
+      "擊中時有#%機率造成目眩"
      ],
      "hiddenEn": [
-      "#% chance to [Daze] on [Hit]"
+      "#% chance to Daze on Hit"
      ]
     },
     {
@@ -43628,10 +43650,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Daze|目眩]"
+      "擊中時有#%機率造成目眩"
      ],
      "hiddenEn": [
-      "#% chance to [Daze] on [Hit]"
+      "#% chance to Daze on Hit"
      ]
     },
     {
@@ -43654,10 +43676,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "#%的[CriticalDamageBonus|暴擊傷害加成]"
+      "#%的暴擊傷害加成"
      ],
      "hiddenEn": [
-      "#% to [CriticalDamageBonus|Critical Damage Bonus]"
+      "#% to Critical Damage Bonus"
      ]
     },
     {
@@ -43670,10 +43692,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "#%的[CriticalDamageBonus|暴擊傷害加成]"
+      "#%的暴擊傷害加成"
      ],
      "hiddenEn": [
-      "#% to [CriticalDamageBonus|Critical Damage Bonus]"
+      "#% to Critical Damage Bonus"
      ]
     },
     {
@@ -43726,10 +43748,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Accuracy|必定擊中]"
+      "必定擊中"
      ],
      "hiddenEn": [
-      "[Accuracy|Always Hits]"
+      "Always Hits"
      ]
     },
     {
@@ -43772,10 +43794,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Attack|攻擊]增加#%範圍效果"
+      "攻擊增加#%範圍效果"
      ],
      "hiddenEn": [
-      "#% increased Area of Effect for [Attack|Attacks]"
+      "#% increased Area of Effect for Attacks"
      ]
     },
     {
@@ -43788,18 +43810,18 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "將#%的[Lightning|閃電]傷害[Conversion|轉換]為[Cold|冰冷]傷害",
-      "技能每有50[Ward|符文保護]消耗，即[Gain|獲得]等同於#%傷害的額外[Lightning|閃電]傷害",
-      "[Melee|近戰][Strike|打擊]範圍#公尺",
-      "增加#%[Lightning|閃電]傷害",
-      "[Lightning|閃電]技能有#%機率額外[Chain|連鎖]一次"
+      "將#%的閃電傷害轉換為冰冷傷害",
+      "技能每有50符文保護消耗，即獲得等同於#%傷害的額外閃電傷害",
+      "近戰打擊範圍#公尺",
+      "增加#%閃電傷害",
+      "閃電技能有#%機率額外連鎖一次"
      ],
      "hiddenEn": [
-      "#% of [Lightning] Damage [Conversion|Converted] to [Cold] Damage",
-      "Skills [Gain] #% of damage as Extra [Lightning] damage per 50 [Ward|Runic Ward] Cost",
-      "# metres to [Melee] [Strike] Range",
-      "#% increased [Lightning] Damage",
-      "#% chance for [Lightning] Skills to [Chain] an additional time"
+      "#% of Lightning Damage Converted to Cold Damage",
+      "Skills Gain #% of damage as Extra Lightning damage per 50 Runic Ward Cost",
+      "# metres to Melee Strike Range",
+      "#% increased Lightning Damage",
+      "#% chance for Lightning Skills to Chain an additional time"
      ]
     },
     {
@@ -43813,11 +43835,11 @@
      "g": 19,
      "hiddenZh": [
       "有#個插槽",
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
       "Has # Sockets",
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {
@@ -43830,10 +43852,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "增加#%[ArmourBreak|完全破甲]的效果"
+      "增加#%完全破甲的效果"
      ],
      "hiddenEn": [
-      "#% increased effect of [ArmourBreak|Fully Broken Armour]"
+      "#% increased effect of Fully Broken Armour"
      ]
     },
     {
@@ -43856,10 +43878,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Attack|攻擊]增加#%範圍效果"
+      "攻擊增加#%範圍效果"
      ],
      "hiddenEn": [
-      "#% increased Area of Effect for [Attack|Attacks]"
+      "#% increased Area of Effect for Attacks"
      ]
     },
     {
@@ -43912,10 +43934,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "[Accuracy|必定擊中]"
+      "必定擊中"
      ],
      "hiddenEn": [
-      "[Accuracy|Always Hits]"
+      "Always Hits"
      ]
     },
     {
@@ -43998,10 +44020,10 @@
      ],
      "g": 19,
      "hiddenZh": [
-      "#%的[CriticalDamageBonus|暴擊傷害加成]"
+      "#%的暴擊傷害加成"
      ],
      "hiddenEn": [
-      "#% to [CriticalDamageBonus|Critical Damage Bonus]"
+      "#% to Critical Damage Bonus"
      ]
     },
     {
@@ -44094,10 +44116,10 @@
      ],
      "g": 20,
      "hiddenZh": [
-      "附加#至#[Lightning|閃電]傷害"
+      "附加#至#閃電傷害"
      ],
      "hiddenEn": [
-      "Adds # to # [Lightning|Lightning] Damage"
+      "Adds # to # Lightning Damage"
      ]
     },
     {
@@ -44190,10 +44212,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -44206,10 +44228,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Daze|目眩]"
+      "擊中時有#%機率造成目眩"
      ],
      "hiddenEn": [
-      "#% chance to [Daze] on [Hit]"
+      "#% chance to Daze on Hit"
      ]
     },
     {
@@ -44232,10 +44254,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -44248,10 +44270,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -44284,10 +44306,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {
@@ -44300,10 +44322,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -44316,10 +44338,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -44382,10 +44404,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Daze|目眩]"
+      "擊中時有#%機率造成目眩"
      ],
      "hiddenEn": [
-      "#% chance to [Daze] on [Hit]"
+      "#% chance to Daze on Hit"
      ]
     },
     {
@@ -44398,10 +44420,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -44414,10 +44436,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -44430,10 +44452,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {
@@ -44446,10 +44468,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "加快#%你造成的[Ignite|點燃]造成傷害的速度"
+      "加快#%你造成的點燃造成傷害的速度"
      ],
      "hiddenEn": [
-      "[Ignite|Ignites] you inflict deal Damage #% faster"
+      "Ignites you inflict deal Damage #% faster"
      ]
     },
     {
@@ -44462,10 +44484,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -44498,10 +44520,10 @@
      ],
      "g": 21,
      "hiddenZh": [
-      "增加#%你所施加之[Bleeding|流血]的[BuffMagnitude|幅度]"
+      "增加#%你所施加之流血的幅度"
      ],
      "hiddenEn": [
-      "#% increased [BuffMagnitude|Magnitude] of [Bleeding|Bleeding] you inflict"
+      "#% increased Magnitude of Bleeding you inflict"
      ]
     },
     {
@@ -44614,10 +44636,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "增加#%[Attack|攻擊][Critical|暴擊率]"
+      "增加#%攻擊暴擊率"
      ],
      "hiddenEn": [
-      "#% increased [Critical|Critical Hit Chance] for [Attack|Attacks]"
+      "#% increased Critical Hit Chance for Attacks"
      ]
     },
     {
@@ -44630,10 +44652,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "[Attack|攻擊]有#%機率在擊中時造成中毒"
+      "攻擊有#%機率在擊中時造成中毒"
      ],
      "hiddenEn": [
-      "#% chance to Poison on Hit with [Attack|Attacks]"
+      "#% chance to Poison on Hit with Attacks"
      ]
     },
     {
@@ -44646,10 +44668,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "[Attack|攻擊]附加#至#[Physical|物理]傷害"
+      "攻擊附加#至#物理傷害"
      ],
      "hiddenEn": [
-      "Adds # to # [Physical|Physical] Damage to [Attack|Attacks]"
+      "Adds # to # Physical Damage to Attacks"
      ]
     },
     {
@@ -44662,10 +44684,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "增加#%[Attack|攻擊]速度"
+      "增加#%攻擊速度"
      ],
      "hiddenEn": [
-      "#% increased [Attack] Speed"
+      "#% increased Attack Speed"
      ]
     },
     {
@@ -44678,10 +44700,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "[Attack|攻擊]附加#至#[Fire|火焰]傷害"
+      "攻擊附加#至#火焰傷害"
      ],
      "hiddenEn": [
-      "Adds # to # [Fire] damage to [Attack|Attacks]"
+      "Adds # to # Fire damage to Attacks"
      ]
     },
     {
@@ -44694,10 +44716,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "有#%機率[Pierce|穿透]一個敵人"
+      "有#%機率穿透一個敵人"
      ],
      "hiddenEn": [
-      "#% chance to [Pierce|Pierce] an Enemy"
+      "#% chance to Pierce an Enemy"
      ]
     },
     {
@@ -44710,10 +44732,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "[Attack|攻擊]每擊中一名敵人，獲得#生命"
+      "攻擊每擊中一名敵人，獲得#生命"
      ],
      "hiddenEn": [
-      "Gain # Life per Enemy Hit with [Attack|Attacks]"
+      "Gain # Life per Enemy Hit with Attacks"
      ]
     },
     {
@@ -44742,10 +44764,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "#% increased [Stun] Buildup"
+      "#% increased Stun Buildup"
      ]
     },
     {
@@ -44758,10 +44780,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "[Attack|攻擊]有#%機率造成[Bleeding|流血]"
+      "攻擊有#%機率造成流血"
      ],
      "hiddenEn": [
-      "[Attack|Attacks] have #% chance to cause [Bleeding|Bleeding]"
+      "Attacks have #% chance to cause Bleeding"
      ]
     },
     {
@@ -44774,10 +44796,10 @@
      ],
      "g": 22,
      "hiddenZh": [
-      "增加#%[Accuracy|命中]值"
+      "增加#%命中值"
      ],
      "hiddenEn": [
-      "#% increased [Accuracy] Rating"
+      "#% increased Accuracy Rating"
      ]
     },
     {
@@ -44790,10 +44812,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%全[ElementalDamage|元素][Resistances|抗性]"
+      "#%全元素抗性"
      ],
      "hiddenEn": [
-      "#% to all [ElementalDamage|Elemental] [Resistances]"
+      "#% to all Elemental Resistances"
      ]
     },
     {
@@ -44806,10 +44828,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "[Attack|攻擊]附加#至#[Physical|物理]傷害"
+      "攻擊附加#至#物理傷害",
+      "磨其利爪，使其得以撕裂。"
      ],
      "hiddenEn": [
-      "Adds # to # [Physical|Physical] Damage to [Attack|Attacks]"
+      "Adds # to # Physical Damage to Attacks",
+      "Sharpen the claw, so that it may rend."
      ]
     },
     {
@@ -44840,10 +44864,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "增加#%[Chaos|混沌]傷害"
+      "增加#%混沌傷害",
+      "吞噬夢境，因我們別無選擇。"
      ],
      "hiddenEn": [
-      "#% increased [Chaos] Damage"
+      "#% increased Chaos Damage",
+      "Devour the dream, because we must."
      ]
     },
     {
@@ -44874,10 +44900,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%最大全部抗性"
+      "#%最大全部抗性",
+      "保其精髓，使其得以演化。"
      ],
      "hiddenEn": [
-      "#% to all maximum Resistances"
+      "#% to all maximum Resistances",
+      "Preserve the essence, so that it may evolve."
      ]
     },
     {
@@ -44890,10 +44918,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "增加#%最大魔力"
+      "增加#%最大魔力",
+      "鑄其心智，為其我所用。"
      ],
      "hiddenEn": [
-      "#% increased maximum Mana"
+      "#% increased maximum Mana",
+      "Build the mind, so that it may serve."
      ]
     },
     {
@@ -44916,10 +44946,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "此物品會被視為手套，自插槽中的物品獲得加成"
+      "此物品會被視為手套，自插槽中的物品獲得加成",
+      "尋求萬物之所在，使其盡歸我等所有。"
      ],
      "hiddenEn": [
-      "This item gains bonuses from Socketed Items as though it was Gloves"
+      "This item gains bonuses from Socketed Items as though it was Gloves",
+      "Seek all that is, so it may become ours."
      ]
     },
     {
@@ -44932,10 +44964,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "[Hit|擊中]時造成[AbyssalWasting|深淵耗損]"
+      "擊中時造成深淵耗損"
      ],
      "hiddenEn": [
-      "Inflict [AbyssalWasting|Abyssal Wasting] on [Hit]"
+      "Inflict Abyssal Wasting on Hit"
      ]
     },
     {
@@ -44980,10 +45012,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%最大[Quality|品質]"
+      "#%最大品質"
      ],
      "hiddenEn": [
-      "#% to Maximum [Quality]"
+      "#% to Maximum Quality"
      ]
     },
     {
@@ -44996,10 +45028,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%[Resistances|火焰抗性]"
+      "#%火焰抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Fire Resistance]"
+      "#% to Fire Resistance"
      ]
     },
     {
@@ -45012,10 +45044,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -45028,10 +45060,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#[Accuracy|命中]值"
+      "#命中值"
      ],
      "hiddenEn": [
-      "# to [Accuracy|Accuracy] Rating"
+      "# to Accuracy Rating"
      ]
     },
     {
@@ -45044,10 +45076,12 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "增加#%最大生命"
+      "增加#%最大生命",
+      "生其血肉，使其堅忍耐受。"
      ],
      "hiddenEn": [
-      "#% increased maximum Life"
+      "#% increased maximum Life",
+      "Grow the flesh, so that it may endure."
      ]
     },
     {
@@ -45060,10 +45094,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%[Resistances|冰冷抗性]"
+      "#%冰冷抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Cold Resistance]"
+      "#% to Cold Resistance"
      ]
     },
     {
@@ -45076,10 +45110,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%最大[Quality|品質]"
+      "#%最大品質"
      ],
      "hiddenEn": [
-      "#% to Maximum [Quality]"
+      "#% to Maximum Quality"
      ]
     },
     {
@@ -45092,10 +45126,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "增加#%找到的[ItemRarity|物品稀有度]"
+      "增加#%找到的物品稀有度"
      ],
      "hiddenEn": [
-      "#% increased [ItemRarity|Rarity of Items] found"
+      "#% increased Rarity of Items found"
      ]
     },
     {
@@ -45108,10 +45142,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#點全部[Attributes|能力值]"
+      "#點全部能力值"
      ],
      "hiddenEn": [
-      "# to all [Attributes|Attributes]"
+      "# to all Attributes"
      ]
     },
     {
@@ -45124,10 +45158,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "[Attack|攻擊]附加#至#[Physical|物理]傷害"
+      "攻擊附加#至#物理傷害"
      ],
      "hiddenEn": [
-      "Adds # to # [Physical|Physical] Damage to [Attack|Attacks]"
+      "Adds # to # Physical Damage to Attacks"
      ]
     },
     {
@@ -45194,10 +45228,10 @@
      ],
      "g": 23,
      "hiddenZh": [
-      "#%[Resistances|閃電抗性]"
+      "#%閃電抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Lightning Resistance]"
+      "#% to Lightning Resistance"
      ]
     },
     {
@@ -45858,11 +45892,11 @@
      ],
      "g": 25,
      "hiddenZh": [
-      "你[Block|格擋]時恢復#點[Ward|符文保護]",
+      "你格擋時恢復#點符文保護",
       "生命值所受的#%傷害由魔力扣除"
      ],
      "hiddenEn": [
-      "Recover # [Ward|Runic Ward] when you [Block]",
+      "Recover # Runic Ward when you Block",
       "#% of Damage is taken from Mana before Life"
      ]
     },
@@ -46786,10 +46820,10 @@
      ],
      "g": 25,
      "hiddenZh": [
-      "#%[Resistances|混沌抗性]"
+      "#%混沌抗性"
      ],
      "hiddenEn": [
-      "#% to [Resistances|Chaos Resistance]"
+      "#% to Chaos Resistance"
      ]
     },
     {
@@ -46832,10 +46866,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "抵禦[Deflect|偏斜][Hit|擊中]的#%傷害"
+      "抵禦偏斜擊中的#%傷害"
      ],
      "hiddenEn": [
-      "Prevent #% of Damage from [Deflect|Deflected] [Hit|Hits]"
+      "Prevent #% of Damage from Deflected Hits"
      ]
     },
     {
@@ -46858,10 +46892,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -46920,10 +46954,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -46936,10 +46970,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "增加#%此武器的[Projectile|投射物]速度"
+      "增加#%此武器的投射物速度"
      ],
      "hiddenEn": [
-      "#% increased [Projectile|Projectile] Speed with this Weapon"
+      "#% increased Projectile Speed with this Weapon"
      ]
     },
     {
@@ -46962,10 +46996,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Maim|癱瘓]"
+      "擊中時有#%機率造成癱瘓"
      ],
      "hiddenEn": [
-      "#% chance to [Maim|Maim] on [Hit]"
+      "#% chance to Maim on Hit"
      ]
     },
     {
@@ -46978,10 +47012,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Maim|癱瘓]"
+      "擊中時有#%機率造成癱瘓"
      ],
      "hiddenEn": [
-      "#% chance to [Maim|Maim] on [Hit]"
+      "#% chance to Maim on Hit"
      ]
     },
     {
@@ -47034,10 +47068,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "增加#%此武器的[Projectile|投射物]速度"
+      "增加#%此武器的投射物速度"
      ],
      "hiddenEn": [
-      "#% increased [Projectile|Projectile] Speed with this Weapon"
+      "#% increased Projectile Speed with this Weapon"
      ]
     },
     {
@@ -47050,10 +47084,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Maim|癱瘓]"
+      "擊中時有#%機率造成癱瘓"
      ],
      "hiddenEn": [
-      "#% chance to [Maim|Maim] on [Hit]"
+      "#% chance to Maim on Hit"
      ]
     },
     {
@@ -47122,10 +47156,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "增加#%此武器的[Projectile|投射物]速度"
+      "增加#%此武器的投射物速度"
      ],
      "hiddenEn": [
-      "#% increased [Projectile|Projectile] Speed with this Weapon"
+      "#% increased Projectile Speed with this Weapon"
      ]
     },
     {
@@ -47158,10 +47192,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "抵禦[Deflect|偏斜][Hit|擊中]的#%傷害"
+      "抵禦偏斜擊中的#%傷害"
      ],
      "hiddenEn": [
-      "Prevent #% of Damage from [Deflect|Deflected] [Hit|Hits]"
+      "Prevent #% of Damage from Deflected Hits"
      ]
     },
     {
@@ -47174,10 +47208,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "增加#%此武器的[Projectile|投射物]速度"
+      "增加#%此武器的投射物速度"
      ],
      "hiddenEn": [
-      "#% increased [Projectile|Projectile] Speed with this Weapon"
+      "#% increased Projectile Speed with this Weapon"
      ]
     },
     {
@@ -47190,10 +47224,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Maim|癱瘓]"
+      "擊中時有#%機率造成癱瘓"
      ],
      "hiddenEn": [
-      "#% chance to [Maim|Maim] on [Hit]"
+      "#% chance to Maim on Hit"
      ]
     },
     {
@@ -47258,10 +47292,10 @@
      ],
      "g": 26,
      "hiddenZh": [
-      "此武器增加#%[Melee|近戰][Strike|打擊]範圍"
+      "此武器增加#%近戰打擊範圍"
      ],
      "hiddenEn": [
-      "#% increased [Melee] [Strike] Range with this weapon"
+      "#% increased Melee Strike Range with this weapon"
      ]
     },
     {
@@ -47444,10 +47478,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%你所施加之[Shock|感電]的[BuffMagnitude|幅度]"
+      "增加#%你所施加之感電的幅度"
      ],
      "hiddenEn": [
-      "#% increased [BuffMagnitude|Magnitude] of [Shock|Shock] you inflict"
+      "#% increased Magnitude of Shock you inflict"
      ]
     },
     {
@@ -47460,10 +47494,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -47476,10 +47510,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#層最大[Rage|盛怒]"
+      "#層最大盛怒"
      ],
      "hiddenEn": [
-      "# to Maximum [Rage]"
+      "# to Maximum Rage"
      ]
     },
     {
@@ -47492,10 +47526,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%你所施加之[Shock|感電]的[BuffMagnitude|幅度]"
+      "增加#%你所施加之感電的幅度"
      ],
      "hiddenEn": [
-      "#% increased [BuffMagnitude|Magnitude] of [Shock|Shock] you inflict"
+      "#% increased Magnitude of Shock you inflict"
      ]
     },
     {
@@ -47508,10 +47542,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Minion|召喚物]造成的傷害"
+      "增加#%召喚物造成的傷害"
      ],
      "hiddenEn": [
-      "[Minion|Minions] deal #% increased Damage"
+      "Minions deal #% increased Damage"
      ]
     },
     {
@@ -47534,10 +47568,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#層最大[Rage|盛怒]"
+      "#層最大盛怒"
      ],
      "hiddenEn": [
-      "# to Maximum [Rage]"
+      "# to Maximum Rage"
      ]
     },
     {
@@ -47580,10 +47614,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Flammability|易燃][BuffMagnitude|幅度]"
+      "增加#%易燃幅度"
      ],
      "hiddenEn": [
-      "#% increased [Flammability] [BuffMagnitude|Magnitude]"
+      "#% increased Flammability Magnitude"
      ]
     },
     {
@@ -47596,10 +47630,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Flammability|易燃][BuffMagnitude|幅度]"
+      "增加#%易燃幅度"
      ],
      "hiddenEn": [
-      "#% increased [Flammability] [BuffMagnitude|Magnitude]"
+      "#% increased Flammability Magnitude"
      ]
     },
     {
@@ -47622,10 +47656,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -47638,10 +47672,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#層最大[Rage|盛怒]"
+      "#層最大盛怒"
      ],
      "hiddenEn": [
-      "# to Maximum [Rage]"
+      "# to Maximum Rage"
      ]
     },
     {
@@ -47664,10 +47698,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Minion|召喚物]造成的傷害"
+      "增加#%召喚物造成的傷害"
      ],
      "hiddenEn": [
-      "[Minion|Minions] deal #% increased Damage"
+      "Minions deal #% increased Damage"
      ]
     },
     {
@@ -47690,10 +47724,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Minion|召喚物]造成的傷害"
+      "增加#%召喚物造成的傷害"
      ],
      "hiddenEn": [
-      "[Minion|Minions] deal #% increased Damage"
+      "Minions deal #% increased Damage"
      ]
     },
     {
@@ -47746,10 +47780,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#%至[Block|格擋]率"
+      "#%至格擋率"
      ],
      "hiddenEn": [
-      "#% to [Block] chance"
+      "#% to Block chance"
      ]
     },
     {
@@ -47772,10 +47806,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "#層最大[Rage|盛怒]"
+      "#層最大盛怒"
      ],
      "hiddenEn": [
-      "# to Maximum [Rage]"
+      "# to Maximum Rage"
      ]
     },
     {
@@ -47808,10 +47842,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%你的[Mark|印記]技能效果"
+      "增加#%你的印記技能效果"
      ],
      "hiddenEn": [
-      "#% increased Effect of your [Mark] Skills"
+      "#% increased Effect of your Mark Skills"
      ]
     },
     {
@@ -47834,10 +47868,10 @@
      ],
      "g": 28,
      "hiddenZh": [
-      "增加#%[Minion|召喚物]造成的傷害"
+      "增加#%召喚物造成的傷害"
      ],
      "hiddenEn": [
-      "[Minion|Minions] deal #% increased Damage"
+      "Minions deal #% increased Damage"
      ]
     },
     {
@@ -47960,10 +47994,10 @@
      ],
      "g": 29,
      "hiddenZh": [
-      "增加#%投擲[Trap|陷阱]的冷卻時間恢復率"
+      "增加#%投擲陷阱的冷卻時間恢復率"
      ],
      "hiddenEn": [
-      "#% increased Cooldown Recovery Rate for throwing [Trap|Traps]"
+      "#% increased Cooldown Recovery Rate for throwing Traps"
      ]
     },
     {
@@ -47986,10 +48020,10 @@
      ],
      "g": 30,
      "hiddenZh": [
-      "無法使用[Projectile|投射物][Attack|攻擊]"
+      "無法使用投射物攻擊"
      ],
      "hiddenEn": [
-      "Cannot use [Projectile] [Attack|Attacks]"
+      "Cannot use Projectile Attacks"
      ]
     },
     {
@@ -48052,10 +48086,10 @@
      ],
      "g": 30,
      "hiddenZh": [
-      "[CullingStrike|撲殺]"
+      "撲殺"
      ],
      "hiddenEn": [
-      "[CullingStrike|Culling Strike]"
+      "Culling Strike"
      ]
     },
     {
@@ -48114,10 +48148,10 @@
      ],
      "g": 30,
      "hiddenZh": [
-      "[Hit|擊中]時有#%機率造成[Bleeding|流血]"
+      "擊中時有#%機率造成流血"
      ],
      "hiddenEn": [
-      "#% chance to cause [Bleeding|Bleeding] on [Hit]"
+      "#% chance to cause Bleeding on Hit"
      ]
     },
     {
@@ -48140,10 +48174,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Warcry|戰吼][Empowered|強化]額外1次[Attack|攻擊]"
+      "戰吼強化額外1次攻擊"
      ],
      "hiddenEn": [
-      "[Warcry|Warcries] [Empowered|Empower] an additional [Attack]"
+      "Warcries Empower an additional Attack"
      ]
     },
     {
@@ -48156,10 +48190,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Warcry|戰吼][Empowered|強化]額外1次[Attack|攻擊]"
+      "戰吼強化額外1次攻擊"
      ],
      "hiddenEn": [
-      "[Warcry|Warcries] [Empowered|Empower] an additional [Attack]"
+      "Warcries Empower an additional Attack"
      ]
     },
     {
@@ -48192,10 +48226,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "透過[Critical|暴擊]擊殺敵人時使其爆炸，造成等同於其#%生命的[Physical|物理傷害]"
+      "透過暴擊擊殺敵人時使其爆炸，造成等同於其#%生命的物理傷害"
      ],
      "hiddenEn": [
-      "Causes Enemies to Explode on [Critical] kill, for #% of their Life as [Physical|Physical Damage]"
+      "Causes Enemies to Explode on Critical kill, for #% of their Life as Physical Damage"
      ]
     },
     {
@@ -48208,10 +48242,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "透過[Critical|暴擊]擊殺敵人時使其爆炸，造成等同於其#%生命的[Physical|物理傷害]"
+      "透過暴擊擊殺敵人時使其爆炸，造成等同於其#%生命的物理傷害"
      ],
      "hiddenEn": [
-      "Causes Enemies to Explode on [Critical] kill, for #% of their Life as [Physical|Physical Damage]"
+      "Causes Enemies to Explode on Critical kill, for #% of their Life as Physical Damage"
      ]
     },
     {
@@ -48264,10 +48298,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Strike|打擊]造成[MeleeSplash|擴散傷害]"
+      "打擊造成擴散傷害"
      ],
      "hiddenEn": [
-      "[Strike|Strikes] deal [MeleeSplash|Splash Damage]"
+      "Strikes deal Splash Damage"
      ]
     },
     {
@@ -48280,10 +48314,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "Causes #% increased [Stun|Stun] Buildup"
+      "Causes #% increased Stun Buildup"
      ]
     },
     {
@@ -48296,10 +48330,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "透過[Critical|暴擊]擊殺敵人時使其爆炸，造成等同於其#%生命的[Physical|物理傷害]"
+      "透過暴擊擊殺敵人時使其爆炸，造成等同於其#%生命的物理傷害"
      ],
      "hiddenEn": [
-      "Causes Enemies to Explode on [Critical] kill, for #% of their Life as [Physical|Physical Damage]"
+      "Causes Enemies to Explode on Critical kill, for #% of their Life as Physical Damage"
      ]
     },
     {
@@ -48312,10 +48346,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Strike|打擊]造成[MeleeSplash|擴散傷害]"
+      "打擊造成擴散傷害"
      ],
      "hiddenEn": [
-      "[Strike|Strikes] deal [MeleeSplash|Splash Damage]"
+      "Strikes deal Splash Damage"
      ]
     },
     {
@@ -48328,10 +48362,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Strike|打擊]造成[MeleeSplash|擴散傷害]"
+      "打擊造成擴散傷害"
      ],
      "hiddenEn": [
-      "[Strike|Strikes] deal [MeleeSplash|Splash Damage]"
+      "Strikes deal Splash Damage"
      ]
     },
     {
@@ -48375,11 +48409,11 @@
      "g": 31,
      "hiddenZh": [
       "創造裂縫的技能有#%機率創造額外一道裂縫",
-      "增加#%[Freeze|冰凍]累積"
+      "增加#%冰凍累積"
      ],
      "hiddenEn": [
       "Skills which create Fissures have a #% chance to create an additional Fissure",
-      "#% increased [Freeze|Freeze] Buildup"
+      "#% increased Freeze Buildup"
      ]
     },
     {
@@ -48392,10 +48426,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "Causes #% increased [Stun|Stun] Buildup"
+      "Causes #% increased Stun Buildup"
      ]
     },
     {
@@ -48428,10 +48462,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Strike|打擊]造成[MeleeSplash|擴散傷害]"
+      "打擊造成擴散傷害"
      ],
      "hiddenEn": [
-      "[Strike|Strikes] deal [MeleeSplash|Splash Damage]"
+      "Strikes deal Splash Damage"
      ]
     },
     {
@@ -48444,10 +48478,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "透過[Critical|暴擊]擊殺敵人時使其爆炸，造成等同於其#%生命的[Physical|物理傷害]"
+      "透過暴擊擊殺敵人時使其爆炸，造成等同於其#%生命的物理傷害"
      ],
      "hiddenEn": [
-      "Causes Enemies to Explode on [Critical] kill, for #% of their Life as [Physical|Physical Damage]"
+      "Causes Enemies to Explode on Critical kill, for #% of their Life as Physical Damage"
      ]
     },
     {
@@ -48460,11 +48494,11 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "[Strike|打擊]造成[MeleeSplash|擴散傷害]",
+      "打擊造成擴散傷害",
       "增加#%流血持續時間"
      ],
      "hiddenEn": [
-      "[Strike|Strikes] deal [MeleeSplash|Splash Damage]",
+      "Strikes deal Splash Damage",
       "#% increased Bleeding Duration"
      ]
     },
@@ -48478,10 +48512,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "Causes #% increased [Stun|Stun] Buildup"
+      "Causes #% increased Stun Buildup"
      ]
     },
     {
@@ -48504,10 +48538,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "擊中時[Crushed|壓碎]敵人"
+      "擊中時壓碎敵人"
      ],
      "hiddenEn": [
-      "[Crushed|Crushes] Enemies on Hit"
+      "Crushes Enemies on Hit"
      ]
     },
     {
@@ -48560,10 +48594,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "Causes #% increased [Stun|Stun] Buildup"
+      "Causes #% increased Stun Buildup"
      ]
     },
     {
@@ -48586,10 +48620,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "擊中時[Crushed|壓碎]敵人"
+      "擊中時壓碎敵人"
      ],
      "hiddenEn": [
-      "[Crushed|Crushes] Enemies on Hit"
+      "Crushes Enemies on Hit"
      ]
     },
     {
@@ -48602,10 +48636,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "擊中時[Crushed|壓碎]敵人"
+      "擊中時壓碎敵人"
      ],
      "hiddenEn": [
-      "[Crushed|Crushes] Enemies on Hit"
+      "Crushes Enemies on Hit"
      ]
     },
     {
@@ -48618,10 +48652,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "增加#%[Stun|暈眩]累積"
+      "增加#%暈眩累積"
      ],
      "hiddenEn": [
-      "Causes #% increased [Stun|Stun] Buildup"
+      "Causes #% increased Stun Buildup"
      ]
     },
     {
@@ -48634,10 +48668,10 @@
      ],
      "g": 31,
      "hiddenZh": [
-      "擊中時[Crushed|壓碎]敵人"
+      "擊中時壓碎敵人"
      ],
      "hiddenEn": [
-      "[Crushed|Crushes] Enemies on Hit"
+      "Crushes Enemies on Hit"
      ]
     },
     {
@@ -48678,7 +48712,13 @@
      "en": [
       "Keyblade"
      ],
-     "g": 32
+     "g": 32,
+     "hiddenZh": [
+      "數千把無人領取的封測金鑰鍛造而成"
+     ],
+     "hiddenEn": [
+      "Forged from thousands of unclaimed Beta keys"
+     ]
     },
     {
      "id": "Metadata/Items/Weapons/TwoHandWeapons/TwoHandSwords/FourTwoHandSword7",
@@ -48910,14 +48950,14 @@
      ],
      "g": 33,
      "hiddenZh": [
-      "[Spell|法術]技能有#%機率發射額外2個[Projectile|投射物]",
+      "法術技能有#%機率發射額外2個投射物",
       "增加#%魔力回復率",
-      "#最大[Ward|符文保護]"
+      "#最大符文保護"
      ],
      "hiddenEn": [
-      "#% chance for [Spell] Skills to fire 2 additional [Projectile|Projectiles]",
+      "#% chance for Spell Skills to fire 2 additional Projectiles",
       "#% increased Mana Regeneration Rate",
-      "# to maximum [Ward|Runic Ward]"
+      "# to maximum Runic Ward"
      ]
     },
     {

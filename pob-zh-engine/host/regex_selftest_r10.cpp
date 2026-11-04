@@ -315,7 +315,8 @@ void GroupTests(const std::map<std::string, Game>& games)
 	// G3
 	{
 		const std::set<std::string> equip = {"vendor_bases", "vendor_items", "vendor_items_poe2", "item_mod_values",
-		                                     "item_mod_values_poe2", "flask_mods", "flask_charm_mods", "gem_names"};
+		                                     "item_mod_values_poe2", "flask_mods", "flask_charm_mods", "gem_names",
+		                                     "magic_affixes"};
 		int missing = 0, wrongEquip = 0, wrongSection = 0, wrongOwn = 0;
 		std::string first;
 		for (const auto& kv : games) {
@@ -349,6 +350,12 @@ void GroupTests(const std::map<std::string, Game>& games)
 		      ItemGroupOf("tablet_mods") != ItemGroupOf("waystone_mods"),
 		      u8"G3 物品組對照完整：其餘頁自成一組（組名 = 頁 id），碑牌與換界石不同組");
 	}
+
+	// M3: the magic-affix-names page merges with the equipment pages; the beasts page stands alone
+	check(ItemGroupOf("magic_affixes") == "equipment",
+	      u8"M3 詞綴名頁和裝備頁同組：magic_affixes -> equipment（實得 " + ItemGroupOf("magic_affixes") + u8"）");
+	check(ItemGroupOf("beasts") == "beasts",
+	      u8"M3 野獸頁自成一組：beasts -> beasts（實得 " + ItemGroupOf("beasts") + u8"）");
 
 	// G1 / E1 share the screenshot setup.
 	const RegexPageDef* tablet = P2.Corpus("tablet_mods");

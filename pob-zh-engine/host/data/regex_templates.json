@@ -38,8 +38,8 @@
    "mode": "none",
    "pages": {
     "map_mods": [
-     "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage",
-     "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage",
+     "Rare Monsters have Elemental Thorns reflecting # Elemental Damage",
+     "Rare Monsters have Physical Thorns reflecting # Physical Damage",
      "Players have #% to all maximum Resistances"
     ]
    },
@@ -86,8 +86,8 @@
    "mode": "none",
    "pages": {
     "logbook_mods": [
-     "Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage",
-     "Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage",
+     "Rare Monsters have Elemental Thorns reflecting # Elemental Damage",
+     "Rare Monsters have Physical Thorns reflecting # Physical Damage",
      "Players cannot Regenerate Life, Mana or Energy Shield",
      "Players have #% to all maximum Resistances"
     ]

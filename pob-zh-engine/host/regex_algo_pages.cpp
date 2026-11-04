@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <set>
 
@@ -286,12 +287,17 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 
 	const std::optional<ZhEn> sockets = L(lab, "ItemDisplayStringSockets");
 	if (poe1) {
+		// The sockets & links group: any picked row may hold (anyGroup, one term);
+		// the other conditions still all have to.
+		const std::vector<AlgoOption> linkOptions = {
+			{"6", "6L", "6L"}, {"5", "5L", "5L"}, {"4", "4L", "4L"}, {"3", "3L", "3L"}, {"2", "2L", "2L"}};
 		{
 			AlgoEntry e;
 			e.def = BaseDef("links", 0, u8"連結數(≥)", u8"Linked sockets (≥)");
 			e.untested = true;
+			e.anyGroup = "sockets";
 			e.input.kind = InputKind::Select;
-			e.input.options = {{"6", "6L", "6L"}, {"5", "5L", "5L"}, {"4", "4L", "4L"}, {"3", "3L", "3L"}};
+			e.input.options = linkOptions;
 			e.input.def.choice = "6";
 			e.fragment = [](const AlgoValue& v, Lang) -> std::optional<std::string> {
 				const std::optional<int> n = AsInt(JsNumber(v.choice));
@@ -301,8 +307,23 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 		}
 		{
 			AlgoEntry e;
+			e.def = BaseDef("colored_links", 0, u8"全彩連結數(≥,不含白)", u8"Coloured links (≥, no white)");
+			e.untested = true;
+			e.anyGroup = "sockets";
+			e.input.kind = InputKind::Select;
+			e.input.options = linkOptions;
+			e.input.def.choice = "3";
+			e.fragment = [](const AlgoValue& v, Lang) -> std::optional<std::string> {
+				const std::optional<int> n = AsInt(JsNumber(v.choice));
+				return n ? RegexFrag::ColoredLinks(*n) : std::nullopt;
+			};
+			entries.push_back(std::move(e));
+		}
+		{
+			AlgoEntry e;
 			e.def = BaseDef("link_colors", 0, u8"鏈接顏色(任意順序、相鄰)", "Linked colours (any order, adjacent)");
 			e.untested = true;
+			e.anyGroup = "sockets";
 			e.input.kind = InputKind::Colors;
 			e.input.maxTotal = 6;
 			e.input.def.choice = "rgb";
@@ -311,8 +332,21 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 		}
 		if (sockets) {
 			AlgoEntry e;
+			e.def = BaseDef("rgb_group", 0, u8"紅綠藍同組(彩色石配方,不必相鄰)", "R, G and B in one linked group (chromatic recipe)");
+			e.untested = true;
+			e.anyGroup = "sockets";
+			e.input.kind = InputKind::Select;
+			e.input.options = {{"rgb", u8"紅綠藍", "R G B"}};
+			e.input.def.choice = "rgb";
+			const ZhEn s = *sockets;
+			e.fragment = [s](const AlgoValue&, Lang lang) { return RegexFrag::RgbGroup(lang == Lang::Zh ? s.zh : s.en); };
+			entries.push_back(std::move(e));
+		}
+		if (sockets) {
+			AlgoEntry e;
 			e.def = BaseDef("socket_colors", 0, u8"插槽顏色數(≥)", u8"Socket colour count (≥)");
 			e.untested = true;
+			e.anyGroup = "sockets";
 			e.input.kind = InputKind::Count;
 			e.input.options = ColorOptions();
 			e.input.lo = 1;
@@ -417,7 +451,7 @@ std::vector<AlgoPage> VendorPages(const std::string& game, const RegexLabels* la
 	p.title = u8"商店 / 物品條件";
 	p.titleEn = "Vendor & item conditions";
 	p.note = poe1
-		? u8"連結、插槽顏色、物品等級、品質、已汙染、勢力。每條各自一個 term(同時成立)。插槽相關假設繁中客戶端顯示 R-G-B 不翻譯,待實測。"
+		? u8"連結 / 插槽顏色:勾的項目任一成立就亮(併成一個 term);物品等級、品質、已汙染、勢力:每條各自一個 term(同時成立)。插槽相關假設繁中客戶端顯示 R-G-B 不翻譯;「紅綠藍同組」用前瞻寫法,待實測。"
 		: u8"物品等級、品質、已汙染、寶石等級。每條各自一個 term(同時成立)。";
 	p.limit = 250;
 	if (poe1) {
@@ -714,7 +748,8 @@ std::string ItemGroupOf(const std::string& pageId)
 {
 	static const char* const kEquipment[] = {"vendor_bases",         "vendor_items", "vendor_items_poe2", "item_mod_values",
 	                                         "item_mod_values_poe2", "flask_mods",   "flask_charm_mods",
-	                                         "gem_names"};   // gems: with the vendor page's gem level / quality
+	                                         "gem_names",    // gems: with the vendor page's gem level / quality
+	                                         "magic_affixes"};   // a magic item's name line, with its base / level
 	const std::string host = NumericKeyOf(pageId);
 	for (const char* e : kEquipment)
 		if (host == e) return "equipment";
@@ -924,6 +959,9 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 			c.id = p.id;
 			c.kind = p.kind;
 			c.picked = (int)picks.size();
+			// anyGroup -> where its term / fragment sit and what is in it
+			struct GroupAt { size_t term, frag; std::vector<std::string> parts; };
+			std::map<std::string, GroupAt> groups;
 			for (int i : picks) {
 				const AlgoEntry& e = p.entries[i];
 				const AlgoValue& v = sel.values ? ValueOf(*sel.values, e) : e.input.def;
@@ -951,6 +989,27 @@ CombineResult Combine(Lang lang, RegexGen::Mode mode, const std::vector<CombineS
 					c.unresolved++;
 					const std::vector<std::string>& names = lang == Lang::Zh ? e.def.zh : e.def.en;
 					res.conflicts.push_back({ConflictKind::Invalid, p.id, e.def.id, names.empty() ? e.def.id : names[0]});
+					continue;
+				}
+				if (!e.anyGroup.empty() && !e.terms) {
+					// combine.ts anyGroup: the page's picks of one group become one term
+					// "a|b" at the first one's place; the conflict check still sees each.
+					const std::string& f = (*ts)[0];
+					auto g = groups.find(e.anyGroup);
+					if (g == groups.end()) {
+						groups[e.anyGroup] = {algoTerms.size(), c.fragments.size(), {f}};
+						c.fragments.push_back(f);
+						algoTerms.push_back(QuoteIfNeeded(f));
+						c.length += RegexGen::CharCount(QuoteIfNeeded(f)) + 1;
+					} else if (std::find(g->second.parts.begin(), g->second.parts.end(), f) == g->second.parts.end()) {
+						g->second.parts.push_back(f);
+						std::string& joined = c.fragments[g->second.frag];
+						c.length -= RegexGen::CharCount(QuoteIfNeeded(joined));
+						joined += "|" + f;
+						c.length += RegexGen::CharCount(QuoteIfNeeded(joined));
+						algoTerms[g->second.term] = QuoteIfNeeded(joined);
+					}
+					algoFrags.push_back({p.id, e.def.id, f, e.ownLine});
 					continue;
 				}
 				for (const std::string& f : *ts) {

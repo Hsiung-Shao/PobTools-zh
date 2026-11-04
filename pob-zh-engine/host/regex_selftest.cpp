@@ -455,6 +455,46 @@ void StateTests()
 		                          enNow, zhNow, picked);
 		check(missed == 1 && picked[0] == 1 && picked[2] == 1 && picked[1] == 0,
 		      "a mixed selection keeps what it can and counts what it cannot");
+
+		// Keys saved by an older build still carry the game's "[Key|Display]" link
+		// marker, which the catalogue no longer prints. With no Chinese key to fall
+		// back on, the English one must still land on the stripped line.
+		const std::vector<std::string> enLink = {"Area is haunted",
+		                                         "Rare Monsters have Elemental Thorns reflecting # Elemental Damage"};
+		const std::vector<std::string> zhLink = {u8"區域鬧鬼", u8"稀有怪物有元素荊棘反射#點元素傷害"};
+
+		missed = RegexResolveKeys({"Rare Monsters have [ElementalThorns|Elemental Thorns] reflecting # Elemental Damage"},
+		                          {""}, enLink, zhLink, picked);
+		check(missed == 0 && picked.size() == 2 && picked[1] == 1 && picked[0] == 0,
+		      "an old key with a [Key|Display] link marker resolves to the stripped English line");
+
+		// Same shape, different wording: stripping the marker must not turn the
+		// match fuzzy.
+		missed = RegexResolveKeys({"Rare Monsters have [PhysicalThorns|Physical Thorns] reflecting # Physical Damage"},
+		                          {""}, enLink, zhLink, picked);
+		bool noneLink = true;
+		for (char c : picked) if (c) noneLink = false;
+		check(missed == 1 && noneLink,
+		      "a link-marker key for a different modifier stays unresolved and ticks nothing");
+	}
+
+	line("[R1] two rows with the same English key resolve through the Chinese name");
+	{
+		const std::vector<std::string> en = {"Humming", "Humming"};
+		const std::vector<std::string> zh = {u8"低鳴的", u8"雷電之"};
+		std::vector<char> picked;
+
+		int missed = RegexResolveKeys({"Humming"}, {u8"雷電之"}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 0 && picked[1] == 1,
+		      "R1 key Humming + zh 雷電之 ticks row 2 (index 1), missed 0");
+
+		missed = RegexResolveKeys({"Humming"}, {""}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 1 && picked[1] == 0,
+		      "R1 key Humming with an empty zh (English-only share code) ticks row 1");
+
+		missed = RegexResolveKeys({"Humming"}, {u8"低鳴的"}, en, zh, picked);
+		check(missed == 0 && picked.size() == 2 && picked[0] == 1 && picked[1] == 0,
+		      "R1 key Humming + zh 低鳴的 ticks row 1");
 	}
 
 	line("[T12] the state file survives a round trip");
@@ -606,8 +646,637 @@ bool RoundTrip(const Corpus& c, const std::vector<int>& sel, Mode mode,
 	return true;
 }
 
+// True when `s` still holds a "[Key|Display]" link marker -- the form the game's
+// own strings use and the generator is supposed to have reduced to "Display".
+bool HasLinkMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		const size_t close = s.find(']', i + 1);
+		if (close == std::string::npos) return false;
+		const size_t bar = s.find('|', i + 1);
+		if (bar != std::string::npos && bar < close) return true;
+	}
+	return false;
+}
+
+// A name that is only punctuation ("...") can never be searched for, so it must
+// carry at least one ASCII letter/digit or a non-ASCII byte (UTF-8 multi-byte).
+bool HasTextChar(const std::string& s)
+{
+	for (unsigned char c : s)
+		if (c >= 0x80 || (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+			return true;
+	return false;
+}
+
+// Content checks on the shipped PoE1 catalogue: what the entries print, not how
+// the generator searches them. PoE2 is deliberately out of scope here.
+void CatalogueContentTests(const std::wstring& exeDir)
+{
+	line("[data-content] PoE1 catalogue text");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "content: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+
+	// T1 + T3 walk every PoE1 entry once.
+	int linkHits = 0, nameHits = 0, entries = 0;
+	std::string firstLink, firstName;
+	for (const RegexPageDef& p : ds.Pages()) {
+		if (p.game != "poe1") continue;
+		for (const RegexEntryDef& e : p.entries) {
+			entries++;
+			for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn})
+				for (const std::string& s : *v)
+					if (HasLinkMarker(s)) {
+						if (!linkHits) firstLink = p.id + "/" + e.id + ": " + s;
+						linkHits++;
+					}
+			const std::string nz = e.zh.empty() ? std::string() : e.zh[0];
+			const std::string ne = e.en.empty() ? std::string() : e.en[0];
+			if (!HasTextChar(nz) || !HasTextChar(ne)) {
+				if (!nameHits) firstName = "page " + p.id + ", entry " + e.id + ": zh=\"" + nz + "\" en=\"" + ne + "\"";
+				nameHits++;
+			}
+		}
+	}
+	check(entries > 0, "poe1 content: entries found (" + std::to_string(entries) + ")");
+	check(linkHits == 0, "poe1 entry text holds no [Key|Display] link marker (" + std::to_string(linkHits) +
+	      " lines)" + (linkHits ? " -- first: " + firstLink : std::string()));
+	check(nameHits == 0, "poe1 entry first lines (zh and en) all contain a letter, digit or CJK char (" +
+	      std::to_string(nameHits) + " bad)" + (nameHits ? " -- first: " + firstName : std::string()));
+
+	// T2 + T5 read the map-modifier page.
+	const RegexPageDef* mm = findPage("map_mods");
+	check(mm != nullptr, "poe1 page map_mods exists");
+	if (mm) {
+		auto hasEn = [&](const std::string& want) {
+			for (const RegexEntryDef& e : mm->entries)
+				for (const std::string& s : e.en)
+					if (s == want) return true;
+			return false;
+		};
+		for (const char* gone : {"#% more Maps found in Area", "#% more Scarabs found in Area",
+		                         "#% more Currency found in Area"})
+			check(!hasEn(gone), std::string("map_mods lists no T17 drop-bonus total line \"") + gone + "\"");
+		check(hasEn("Rare Monsters have Elemental Thorns reflecting # Elemental Damage"),
+		      "map_mods keeps the display text after stripping the link: \"Rare Monsters have Elemental Thorns reflecting # Elemental Damage\"");
+	}
+
+	// T4: the Abyss scarab text of the current patch (3.29.3.3).
+	const RegexPageDef* sc = findPage("scarabs");
+	check(sc != nullptr, "poe1 page scarabs exists");
+	if (sc) {
+		const RegexEntryDef* ab = nullptr;
+		for (const RegexEntryDef& e : sc->entries)
+			if (e.id == "Metadata/Items/Scarabs/ScarabAbyssNew4") { ab = &e; break; }
+		check(ab != nullptr, "scarabs entry Metadata/Items/Scarabs/ScarabAbyssNew4 exists");
+		if (ab) {
+			bool nonFinal = false, oldWording = false;
+			for (const std::string& s : ab->en) {
+				if (s.find("Non-final") != std::string::npos) nonFinal = true;
+				if (s.find("do not contain a reward") != std::string::npos) oldWording = true;
+			}
+			check(nonFinal, "ScarabAbyssNew4 en has a \"Non-final\" line (3.29.3.3 wording)");
+			check(!oldWording, "ScarabAbyssNew4 en has no \"do not contain a reward\" line (pre-3.29.3.3 wording)");
+		}
+	}
+}
+
+// A5 helpers: the two link-marker forms the PoE2 GGPK strings carry, "[Key|Display]" and a bare
+// "[Key]". Neither may survive in the catalogue (the generator reduces them to the display text).
+bool HasPipeMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		size_t k = i + 1;
+		while (k < s.size() && s[k] != ']' && s[k] != '|') k++;
+		if (k == i + 1 || k >= s.size() || s[k] != '|') continue;
+		size_t m = k + 1;
+		while (m < s.size() && s[m] != ']') m++;
+		if (m < s.size() && m > k + 1) return true;
+	}
+	return false;
+}
+bool HasBareKeyMarker(const std::string& s)
+{
+	for (size_t i = s.find('['); i != std::string::npos; i = s.find('[', i + 1)) {
+		size_t j = i + 1;
+		if (j >= s.size() || !std::isalpha((unsigned char)s[j])) continue;
+		while (j < s.size() && std::isalnum((unsigned char)s[j])) j++;
+		if (j < s.size() && s[j] == ']') return true;
+	}
+	return false;
+}
+
+// Flavour text (GGPK FlavourText) and usage directions (CurrencyItems.Directions) are item text
+// the game's search reads too, so they belong in the data: an item's own text as hidden,
+// a page's shared text as ambient. A1/A2/A4 read the catalogue, A3 runs the generator on it.
+void FlavourTextTests(const std::wstring& exeDir)
+{
+	line("[data-flavour] PoE1 flavour text and usage directions");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "flavour: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto anyStarts = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.compare(0, want.size(), want) == 0) return true;
+		return false;
+	};
+	const RegexPageDef* sc = findPage("scarabs");
+	check(sc != nullptr, "flavour: poe1 page scarabs exists");
+
+	if (sc) {
+		// A1
+		const RegexEntryDef* tor = nullptr;
+		for (const RegexEntryDef& e : sc->entries)
+			if (e.id == "Metadata/Items/Scarabs/ScarabTormentNew1") { tor = &e; break; }
+		check(tor != nullptr, "A1 scarabs entry Metadata/Items/Scarabs/ScarabTormentNew1 exists");
+		if (tor) {
+			check(anyHas(tor->hiddenZh, u8"生前犯下的罪行將持續作祟到你死後。"),
+			      "A1 ScarabTormentNew1 hiddenZh holds its flavour text (" + std::to_string(tor->hiddenZh.size()) + " hidden lines)");
+			check(anyHas(tor->hiddenEn, "Their crimes in life haunt you in death."),
+			      "A1 ScarabTormentNew1 hiddenEn holds its flavour text (" + std::to_string(tor->hiddenEn.size()) + " hidden lines)");
+		}
+
+		// A2
+		check(anyHas(sc->ambientZh, u8"可於個人的地圖裝置中使用，增加地圖的詞綴。"),
+		      "A2 scarabs ambientZh holds the usage directions line");
+		check(anyHas(sc->ambientEn, "Can be used in a personal Map Device to add modifiers to a Map."),
+		      "A2 scarabs ambientEn holds the usage directions line");
+
+		// A3: built like DataTests' build(true) in Chinese; every single pick must verify.
+		{
+			std::vector<Entry> es;
+			es.reserve(sc->entries.size());
+			for (const RegexEntryDef& d : sc->entries) {
+				Entry e;
+				e.id = d.id;
+				const bool useWant = !d.zh.empty();
+				e.texts = useWant ? d.zh : d.en;
+				e.hidden = useWant ? d.hiddenZh : d.hiddenEn;
+				e.alts = useWant ? d.altZh : d.altEn;
+				es.push_back(std::move(e));
+			}
+			RegexGen::Ambient amb;
+			amb.lines = sc->ambientZh;
+			amb.nameLeft = sc->namePrefixZh;
+			amb.nameRight = sc->nameSuffixZh;
+			Corpus c;
+			c.Reset(std::move(es), std::move(amb));
+			int bad = 0;
+			std::string first;
+			for (int i = 0; i < (int)sc->entries.size(); i++) {
+				const RegexGen::Result r = c.Build({i}, Mode::Any);
+				const RegexGen::Check v = c.Verify({i}, r.query);
+				if (!v.ok) {
+					if (!bad) {
+						const std::vector<std::string>& z = sc->entries[i].zh;
+						first = (z.empty() ? sc->entries[i].id : z[0]) + " -> " + r.query;
+					}
+					bad++;
+				}
+			}
+			check(bad == 0, "A3 scarabs zh: every single-pick query verifies (" + std::to_string(bad) + " of " +
+			      std::to_string(sc->entries.size()) + " fail)" + (bad ? " -- first: " + first : std::string()));
+		}
+	}
+
+	// A4
+	const RegexPageDef* tt = findPage("tattoos");
+	check(tt != nullptr, "A4 poe1 page tattoos exists");
+	if (tt) {
+		// The page also lists runegrafts, whose directions differ, so the tattoo line is not
+		// on every item: each tattoo carries it in its own hidden text (or the page ambient).
+		// The seven forbidden (ascendancy) tattoos, SpecialUnique7<class>, have no such
+		// directions in the GGPK; the other SpecialUnique tattoos do.
+		const char* dir = u8"右鍵點擊這個物品，接著再左鍵點擊一個已分配的天賦。";
+		const bool inAmbient = anyStarts(tt->ambientZh, dir);
+		int tattoos = 0, without = 0;
+		for (const RegexEntryDef& e : tt->entries) {
+			if (e.id.find("AncestralTattoo") == std::string::npos || e.id.find("SpecialUnique7") != std::string::npos) continue;
+			tattoos++;
+			if (!inAmbient && !anyStarts(e.hiddenZh, dir)) without++;
+		}
+		check(tattoos > 0 && without == 0, "A4 every tattoo has the right-click directions in its hidden or the page ambient (" +
+		      std::to_string(without) + " of " + std::to_string(tattoos) + " without)");
+	}
+	const RegexPageDef* gn = findPage("gem_names");
+	check(gn != nullptr, "A4 poe1 page gem_names exists");
+	if (gn) {
+		const RegexEntryDef* gem = nullptr;
+		for (const RegexEntryDef& e : gn->entries)
+			if (!e.zh.empty() && e.zh[0] == u8"克塔什誓約") { gem = &e; break; }
+		check(gem != nullptr, "A4 gem_names has the entry whose first zh line is 克塔什誓約");
+		if (gem)
+			check(anyHas(gem->hiddenZh, u8"釋放克塔什的憤怒，牠是仇恨的化身。"),
+			      "A4 that gem's hiddenZh holds its flavour text (" + std::to_string(gem->hiddenZh.size()) + " hidden lines)");
+	}
+
+	// ---- PoE2 catalogue (A5-A7) ----
+	auto findPage2 = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe2" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto findEntry = [](const RegexPageDef* p, const char* id) -> const RegexEntryDef* {
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (e.id == id) return &e;
+		return nullptr;
+	};
+
+	// A5: no "[Key|Display]" / "[Key]" link marker left in any text of any PoE2 page
+	{
+		int pages = 0, hits = 0;
+		std::string firsts;
+		auto scan = [&](const RegexPageDef& p, const std::string& where, const std::string& s) {
+			if (!HasPipeMarker(s) && !HasBareKeyMarker(s)) return;
+			if (hits++ < 3) firsts += "\n    " + p.id + "/" + where + ": " + s;
+		};
+		for (const RegexPageDef& p : ds.Pages()) {
+			if (p.game != "poe2") continue;
+			pages++;
+			for (const std::string& s : {p.title, p.titleEn, p.note}) scan(p, "(page)", s);
+			for (const auto* v : {&p.groups, &p.groupsEn, &p.ambientZh, &p.ambientEn, &p.namePrefixZh, &p.nameSuffixZh,
+			                      &p.namePrefixEn, &p.nameSuffixEn})
+				for (const std::string& s : *v) scan(p, "(page)", s);
+			for (const RegexEntryDef& e : p.entries) {
+				scan(p, e.id, e.affixZh);
+				for (const auto* v : {&e.zh, &e.en, &e.hiddenZh, &e.hiddenEn, &e.altZh, &e.altEn})
+					for (const std::string& s : *v) scan(p, e.id, s);
+			}
+		}
+		check(pages > 0, "A5 poe2 pages found (" + std::to_string(pages) + ")");
+		check(hits == 0, "A5 poe2 catalogue holds no [Key|Display] or [Key] link marker (" + std::to_string(hits) + " strings)" + firsts);
+	}
+
+	// A6: the base-item flavour text is collected (entry hidden for the item's own, page ambient for shared)
+	{
+		const RegexPageDef* vb = findPage2("vendor_bases");
+		check(vb != nullptr, "A6 poe2 page vendor_bases exists");
+		if (vb) {
+			const RegexEntryDef* amu = findEntry(vb, "Metadata/Items/Amulets/FourAmuletB1a");
+			const RegexEntryDef* ring = findEntry(vb, "Metadata/Items/Rings/FourRingB1");
+			check(amu != nullptr, "A6 vendor_bases entry Metadata/Items/Amulets/FourAmuletB1a exists");
+			check(ring != nullptr, "A6 vendor_bases entry Metadata/Items/Rings/FourRingB1 exists");
+			// Each item's flavour text: its own hidden or the page ambient (either layer).
+			auto inEither = [&](const RegexEntryDef* e, bool zh, const std::string& want) {
+				return anyHas(zh ? e->hiddenZh : e->hiddenEn, want) || anyHas(zh ? vb->ambientZh : vb->ambientEn, want);
+			};
+			if (amu) {
+				check(inEither(amu, true, u8"我們尋覓那消逝的追憶……"),
+				      "A6 FourAmuletB1a hidden or page ambient (zh) holds its flavour text (" + std::to_string(amu->hiddenZh.size()) + " hidden, " +
+				      std::to_string(vb->ambientZh.size()) + " ambient lines)");
+				check(inEither(amu, false, "We search for the memories missing..."),
+				      "A6 FourAmuletB1a hidden or page ambient (en) holds its flavour text (" + std::to_string(amu->hiddenEn.size()) + " hidden, " +
+				      std::to_string(vb->ambientEn.size()) + " ambient lines)");
+			}
+			if (ring) {
+				check(inEither(ring, true, u8"保其精髓，使其得以演化。"),
+				      "A6 FourRingB1 hidden or page ambient (zh) holds its flavour text (" + std::to_string(ring->hiddenZh.size()) + " hidden, " +
+				      std::to_string(vb->ambientZh.size()) + " ambient lines)");
+				check(inEither(ring, false, "Preserve the essence, so that it may evolve."),
+				      "A6 FourRingB1 hidden or page ambient (en) holds its flavour text (" + std::to_string(ring->hiddenEn.size()) + " hidden, " +
+				      std::to_string(vb->ambientEn.size()) + " ambient lines)");
+			}
+		}
+	}
+
+	// A7: a base's implicit/affix line is stripped to its display text, not left as the stat key
+	{
+		const RegexPageDef* vb = findPage2("vendor_bases");
+		const RegexEntryDef* gold = findEntry(vb, "Metadata/Items/Amulets/FourAmulet10");
+		check(gold != nullptr, "A7 vendor_bases entry Metadata/Items/Amulets/FourAmulet10 exists");
+		if (gold) {
+			check(anyHas(gold->hiddenZh, u8"增加#%找到的物品稀有度"),
+			      "A7 FourAmulet10 hiddenZh holds 增加#%找到的物品稀有度 (" + std::to_string(gold->hiddenZh.size()) + " hidden lines)");
+			check(anyHas(gold->hiddenEn, "#% increased Rarity of Items found"),
+			      "A7 FourAmulet10 hiddenEn holds '#% increased Rarity of Items found' (" + std::to_string(gold->hiddenEn.size()) + " hidden lines)");
+			check(!anyHas(gold->hiddenZh, "ItemRarity") && !anyHas(gold->hiddenEn, "ItemRarity"),
+			      "A7 FourAmulet10 hidden lines (zh and en) hold no raw 'ItemRarity' key");
+		}
+	}
+}
+
+// B1-B3 the catchable-beasts page, M1/M2 the magic-affix-names page, M4 single picks on both.
+// Pages are looked up by id and every access is guarded, so a missing page is a failed check, not a crash.
+void BeastAffixTests(const std::wstring& exeDir)
+{
+	line("[data-beasts-affixes] PoE1 beasts and magic_affixes pages");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "beasts/affixes: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto idxByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> int {
+		if (p)
+			for (size_t i = 0; i < p->entries.size(); i++)
+				if (!p->entries[i].zh.empty() && p->entries[i].zh[0] == zh0) return (int)i;
+		return -1;
+	};
+	auto countByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> int {
+		int n = 0;
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (!e.zh.empty() && e.zh[0] == zh0) n++;
+		return n;
+	};
+	// Same corpus build as A3 (Chinese, hidden and ambient included); the page's real single-pick query must verify.
+	auto singlePick = [](const RegexPageDef& p, int pick, std::string& query) -> bool {
+		std::vector<Entry> es;
+		es.reserve(p.entries.size());
+		for (const RegexEntryDef& d : p.entries) {
+			Entry e;
+			e.id = d.id;
+			const bool useWant = !d.zh.empty();
+			e.texts = useWant ? d.zh : d.en;
+			e.hidden = useWant ? d.hiddenZh : d.hiddenEn;
+			e.alts = useWant ? d.altZh : d.altEn;
+			es.push_back(std::move(e));
+		}
+		RegexGen::Ambient amb;
+		amb.lines = p.ambientZh;
+		amb.nameLeft = p.namePrefixZh;
+		amb.nameRight = p.nameSuffixZh;
+		Corpus c;
+		c.Reset(std::move(es), std::move(amb));
+		const RegexGen::Result r = c.Build({pick}, Mode::Any);
+		query = r.query;
+		return c.Verify({pick}, r.query).ok;
+	};
+
+	// B1-B3
+	const RegexPageDef* beasts = findPage("beasts");
+	check(beasts != nullptr, "B1 poe1 page beasts exists");
+	int cave = -1;
+	if (beasts) {
+		const size_t n = beasts->entries.size();
+		check(n >= 200 && n <= 280, "B1 beasts has 200-280 entries (" + std::to_string(n) + ")");
+		cave = idxByZh0(beasts, u8"洞穴獸");
+		const int tiger = idxByZh0(beasts, u8"費爾羅猛虎幻獸");
+		check(cave >= 0, "B1 beasts has the entry whose first zh line is 洞穴獸");
+		check(cave >= 0 && anyHas(beasts->entries[cave].en, "Cave Beast"), "B1 洞穴獸 en holds 'Cave Beast'");
+		check(tiger >= 0, "B1 beasts has the entry whose first zh line is 費爾羅猛虎幻獸");
+		check(tiger >= 0 && anyHas(beasts->entries[tiger].en, "Farric Tiger Alpha"), "B1 費爾羅猛虎幻獸 en holds 'Farric Tiger Alpha'");
+
+		// B2
+		if (cave >= 0) {
+			const RegexEntryDef& e = beasts->entries[cave];
+			check(anyHas(e.hiddenZh, u8"巨人") && anyHas(e.hiddenZh, u8"熊類動物") && anyHas(e.hiddenZh, u8"獸性"),
+			      "B2 洞穴獸 hiddenZh holds 巨人 / 熊類動物 / 獸性 (" + std::to_string(e.hiddenZh.size()) + " hidden lines)");
+			check(anyHas(e.hiddenEn, "Gargantuans") && anyHas(e.hiddenEn, "Ursae") && anyHas(e.hiddenEn, "The Wilds"),
+			      "B2 洞穴獸 hiddenEn holds Gargantuans / Ursae / The Wilds (" + std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+
+		// B3: disabled beasts are not collected
+		int direZh = 0, direEn = 0;
+		for (const RegexEntryDef& e : beasts->entries) {
+			if (anyHas(e.zh, u8"恐懼之狼")) direZh++;
+			if (anyHas(e.en, "Dire Wolf")) direEn++;
+		}
+		check(direZh == 0 && direEn == 0, "B3 beasts holds no disabled 恐懼之狼 / Dire Wolf entry (zh " + std::to_string(direZh) +
+		      ", en " + std::to_string(direEn) + ")");
+	}
+
+	// M1 / M2
+	const RegexPageDef* aff = findPage("magic_affixes");
+	check(aff != nullptr, "M1 poe1 page magic_affixes exists");
+	int opt = -1;
+	if (aff) {
+		check(aff->groups.size() == 2 && aff->groups[0] == u8"前綴" && aff->groups[1] == u8"後綴",
+		      "M1 magic_affixes groups are exactly [前綴, 後綴] (" + std::to_string(aff->groups.size()) + " groups)");
+		opt = idxByZh0(aff, u8"樂觀的");
+		const int lynx = idxByZh0(aff, u8"山貓之");
+		check(opt >= 0, "M1 magic_affixes has the entry whose first zh line is 樂觀的");
+		check(opt >= 0 && anyHas(aff->entries[opt].en, "Sanguine") && aff->entries[opt].group == 0,
+		      "M1 樂觀的 en holds 'Sanguine' and sits in group 0 (前綴)");
+		check(lynx >= 0, "M1 magic_affixes has the entry whose first zh line is 山貓之");
+		check(lynx >= 0 && anyHas(aff->entries[lynx].en, "of the Lynx") && aff->entries[lynx].group == 1,
+		      "M1 山貓之 en holds 'of the Lynx' and sits in group 1 (後綴)");
+		const int frostN = countByZh0(aff, u8"冷凍的");
+		const int frost = idxByZh0(aff, u8"冷凍的");
+		check(frostN == 1, "M1 exactly one entry has first zh line 冷凍的 (" + std::to_string(frostN) + ")");
+		check(frost >= 0 && anyHas(aff->entries[frost].en, "Frosted") && anyHas(aff->entries[frost].en, "Chilled") &&
+		      anyHas(aff->entries[frost].en, "Freezing"),
+		      "M1 冷凍的 en holds Frosted, Chilled and Freezing");
+
+		// M2
+		if (opt >= 0) {
+			const RegexEntryDef& e = aff->entries[opt];
+			check(anyHas(e.hiddenZh, u8"# 最大生命") && anyHas(e.hiddenEn, "# to maximum Life"),
+			      "M2 樂觀的 hidden holds '# 最大生命' (zh) and '# to maximum Life' (en) (" + std::to_string(e.hiddenZh.size()) + " / " +
+			      std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+		if (lynx >= 0) {
+			const RegexEntryDef& e = aff->entries[lynx];
+			check(anyHas(e.hiddenZh, u8"# 敏捷") && anyHas(e.hiddenEn, "# to Dexterity"),
+			      "M2 山貓之 hidden holds '# 敏捷' (zh) and '# to Dexterity' (en) (" + std::to_string(e.hiddenZh.size()) + " / " +
+			      std::to_string(e.hiddenEn.size()) + " hidden lines)");
+		}
+	}
+
+	// M4: a single pick on each page produces a non-empty query that verifies
+	// (hits no other entry's full text and no ambient text of its page).
+	if (beasts && cave >= 0) {
+		std::string q;
+		const bool ok = singlePick(*beasts, cave, q);
+		check(!q.empty() && ok, "M4 beasts single pick 洞穴獸: query non-empty and verifies -- query: " + q);
+	} else {
+		check(false, "M4 beasts single pick 洞穴獸: page or entry missing");
+	}
+	if (aff && opt >= 0) {
+		std::string q;
+		const bool ok = singlePick(*aff, opt, q);
+		check(!q.empty() && ok, "M4 magic_affixes single pick 樂觀的: query non-empty and verifies -- query: " + q);
+	} else {
+		check(false, "M4 magic_affixes single pick 樂觀的: page or entry missing");
+	}
+}
+
+// Round 2: same-English-name affixes split into two rows (M5), more item types (M6), the name-seam data (S1),
+// and every row that cannot be picked alone must be fully contained elsewhere (U1).
+void AffixRound2Tests(const std::wstring& exeDir)
+{
+	line("[data-affixes-r2] PoE1 magic_affixes round 2");
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "affixes r2: load Data\\regex_poe1.json: " + err);
+		return;
+	}
+	auto findPage = [&](const char* id) -> const RegexPageDef* {
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == id) return &p;
+		return nullptr;
+	};
+	auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s.find(want) != std::string::npos) return true;
+		return false;
+	};
+	auto hasExact = [](const std::vector<std::string>& v, const std::string& want) {
+		for (const std::string& s : v)
+			if (s == want) return true;
+		return false;
+	};
+	auto entryByZh0 = [](const RegexPageDef* p, const std::string& zh0) -> const RegexEntryDef* {
+		if (p)
+			for (const RegexEntryDef& e : p->entries)
+				if (!e.zh.empty() && e.zh[0] == zh0) return &e;
+		return nullptr;
+	};
+	auto lower = [](std::string s) {
+		for (char& c : s)
+			if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		return s;
+	};
+
+	const RegexPageDef* aff = findPage("magic_affixes");
+	check(aff != nullptr, "M5 poe1 page magic_affixes exists");
+	if (aff) {
+		// M5
+		const RegexEntryDef* a = entryByZh0(aff, u8"低鳴的");
+		const RegexEntryDef* b = entryByZh0(aff, u8"雷電之");
+		check(a != nullptr, "M5 magic_affixes has the entry whose first zh line is 低鳴的");
+		check(b != nullptr, "M5 magic_affixes has the entry whose first zh line is 雷電之");
+		check(a && !a->en.empty() && a->en[0] == "Humming" && b && !b->en.empty() && b->en[0] == "Humming",
+		      "M5 both rows have en[0] == Humming");
+		check(a && b && a->altZh.empty() && b->altZh.empty(), "M5 neither 低鳴的 nor 雷電之 carries altZh");
+		int withAlt = 0;
+		std::string firstAlt;
+		for (const RegexEntryDef& e : aff->entries)
+			if (!e.altZh.empty()) {
+				if (!withAlt) firstAlt = e.id;
+				withAlt++;
+			}
+		check(withAlt == 0, "M5 no magic_affixes entry carries altZh (" + std::to_string(withAlt) + ")" +
+		      (withAlt ? " -- first: " + firstAlt : std::string()));
+
+		// M6
+		const RegexEntryDef* ibex = entryByZh0(aff, u8"山羊之");
+		const RegexEntryDef* herbal = entryByZh0(aff, u8"草藥的");
+		const RegexEntryDef* hale = entryByZh0(aff, u8"健壯之");
+		const RegexEntryDef* brutal = entryByZh0(aff, u8"魯莽的");
+		check(ibex && anyHas(ibex->en, "of the Ibex") && ibex->group == 1, "M6 山羊之 exists, en holds 'of the Ibex', group 1");
+		check(herbal && anyHas(herbal->en, "Herbal") && herbal->group == 0, "M6 草藥的 exists, en holds 'Herbal', group 0");
+		check(hale && anyHas(hale->en, "Hale") && hale->group == 0, "M6 健壯之 exists, en holds 'Hale', group 0");
+		check(brutal && anyHas(brutal->en, "Brutal"), "M6 魯莽的 exists, en holds 'Brutal'");
+
+		// S1
+		check(hasExact(aff->namePrefixZh, u8"樂觀的"), "S1 nameWordsZh.prefix holds 樂觀的 (" + std::to_string(aff->namePrefixZh.size()) + " words)");
+		check(hasExact(aff->nameSuffixZh, u8"山貓之"), "S1 nameWordsZh.suffix holds 山貓之 (" + std::to_string(aff->nameSuffixZh.size()) + " words)");
+		check(hasExact(aff->namePrefixEn, "Sanguine"), "S1 nameWordsEn.prefix holds Sanguine (" + std::to_string(aff->namePrefixEn.size()) + " words)");
+		check(hasExact(aff->nameSuffixEn, " of the Lynx"),
+		      "S1 nameWordsEn.suffix holds ' of the Lynx' with its leading space (" + std::to_string(aff->nameSuffixEn.size()) + " words)");
+	}
+
+	// U1: a row whose single pick comes back empty must have every name fully contained elsewhere
+	for (const char* pageId : {"beasts", "magic_affixes"}) {
+		const RegexPageDef* p = findPage(pageId);
+		check(p != nullptr, std::string("U1 poe1 page ") + pageId + " exists");
+		if (!p) continue;
+		for (const bool zhLang : {true, false}) {
+			// same corpus build as A3 / M4, in the chosen language
+			std::vector<Entry> es;
+			es.reserve(p->entries.size());
+			std::vector<std::vector<std::string>> hay;   // lower-cased names + hidden per row
+			for (const RegexEntryDef& d : p->entries) {
+				Entry e;
+				e.id = d.id;
+				// want = the chosen language; fall back to the other one when the entry has none (as the panel does)
+				const std::vector<std::string>& want = zhLang ? d.zh : d.en;
+				const std::vector<std::string>& other = zhLang ? d.en : d.zh;
+				const bool useWant = !want.empty();
+				const bool zhSide = (useWant == zhLang);
+				e.texts = useWant ? want : other;
+				e.hidden = zhSide ? d.hiddenZh : d.hiddenEn;
+				e.alts = zhSide ? d.altZh : d.altEn;
+				std::vector<std::string> h;
+				for (const std::string& s : e.texts) h.push_back(lower(s));
+				for (const std::string& s : e.hidden) h.push_back(lower(s));
+				hay.push_back(std::move(h));
+				es.push_back(std::move(e));
+			}
+			const std::vector<std::string>& ambSrc = zhLang ? p->ambientZh : p->ambientEn;
+			std::vector<std::string> amb;
+			for (const std::string& s : ambSrc) amb.push_back(lower(s));
+			std::vector<std::vector<std::string>> names;
+			for (const Entry& e : es) names.push_back(e.texts);
+			RegexGen::Ambient ga;
+			ga.lines = ambSrc;
+			ga.nameLeft = zhLang ? p->namePrefixZh : p->namePrefixEn;
+			ga.nameRight = zhLang ? p->nameSuffixZh : p->nameSuffixEn;
+			Corpus c;
+			c.Reset(std::move(es), std::move(ga));
+			int bad = 0, unresolved = 0;
+			std::string first;
+			for (int i = 0; i < (int)names.size(); i++) {
+				const RegexGen::Result r = c.Build({i}, Mode::Any);
+				if (!r.query.empty()) continue;
+				unresolved++;
+				bool allContained = true;
+				for (const std::string& n : names[i]) {
+					const std::string x = lower(n);
+					bool found = false;
+					for (const std::string& a : amb)
+						if (a.find(x) != std::string::npos) { found = true; break; }
+					for (int j = 0; j < (int)hay.size() && !found; j++) {
+						if (j == i) continue;
+						for (const std::string& s : hay[j])
+							if (s.find(x) != std::string::npos) { found = true; break; }
+					}
+					if (!found) { allContained = false; break; }
+				}
+				if (!allContained) {
+					if (bad < 10) first += "\n    " + p->entries[i].id + ": " + (names[i].empty() ? std::string() : names[i][0]);
+					bad++;
+				}
+			}
+			check(bad == 0, std::string("U1 ") + pageId + (zhLang ? " zh" : " en") +
+			      ": every row with an empty single-pick query has all its names contained elsewhere (" + std::to_string(bad) +
+			      " unjustified of " + std::to_string(unresolved) + " unresolved)" + first);
+		}
+	}
+}
+
 void DataTests(const std::wstring& exeDir)
 {
+	CatalogueContentTests(exeDir);
+	FlavourTextTests(exeDir);
+	BeastAffixTests(exeDir);
+	AffixRound2Tests(exeDir);
+	line("");
 	RegexDataset ds;
 	std::string err;
 	// Load() takes every catalogue it finds, so the loop below already covers
@@ -767,7 +1436,11 @@ void DataTests(const std::wstring& exeDir)
 				else seen.push_back(k);
 			}
 		}
-		check(dup == 0, "no two entries print the same first line (" +
+		// Except English magic affix names: two mods share an English name but not a
+		// Chinese one (Humming = 低鳴的 / 雷電之) -- two rows, one per Chinese name
+		// (user ruling 2026-11-04); the Chinese side is still checked.
+		const bool sharedEn = !useZh && p.id == "magic_affixes";
+		check(dup == 0 || sharedEn, "no two entries print the same first line (" +
 		      std::to_string(dup) + " duplicates)");
 
 		// Randomised picks, every mode. Seeds are fixed so a failure can be
@@ -951,6 +1624,216 @@ void DataTests(const std::wstring& exeDir)
 			}
 		}
 	}
+	}
+}
+
+// ---- fragments must not start or end with a space -----------------------------
+//
+// The game drops the whitespace at the start of a quoted string, and what it does
+// with trailing whitespace is unproven, so a fragment (one "|" part of a quoted
+// term, or one term in All mode) may contain spaces inside but never at an edge.
+
+// Same split as the generator's own SplitTerms: quotes group, spaces outside quotes separate.
+std::vector<std::string> EdgeQueryTerms(const std::string& q)
+{
+	std::vector<std::string> out;
+	std::string cur;
+	bool inQuote = false;
+	for (char c : q) {
+		if (c == '"') { inQuote = !inQuote; continue; }
+		if (c == ' ' && !inQuote) {
+			if (!cur.empty()) out.push_back(cur);
+			cur.clear();
+			continue;
+		}
+		cur += c;
+	}
+	if (!cur.empty()) out.push_back(cur);
+	return out;
+}
+
+// Every term minus its leading '!', cut at '|', each part minus a leading '^' / trailing '$'.
+std::vector<std::string> EdgeQueryFragments(const std::string& q)
+{
+	std::vector<std::string> out;
+	for (std::string t : EdgeQueryTerms(q)) {
+		if (!t.empty() && t[0] == '!') t.erase(0, 1);
+		size_t start = 0;
+		while (start <= t.size()) {
+			size_t bar = t.find('|', start);
+			if (bar == std::string::npos) bar = t.size();
+			std::string f = t.substr(start, bar - start);
+			if (!f.empty() && f.front() == '^') f.erase(0, 1);
+			if (!f.empty() && f.back() == '$') f.pop_back();
+			if (!f.empty()) out.push_back(std::move(f));
+			start = bar + 1;
+		}
+	}
+	return out;
+}
+
+bool HasEdgeSpace(const std::string& f) { return !f.empty() && (f.front() == ' ' || f.back() == ' '); }
+
+// First fragment of `q` with a space at either edge, or empty when there is none.
+std::string FirstEdgeSpaceFragment(const std::string& q)
+{
+	for (const std::string& f : EdgeQueryFragments(q))
+		if (HasEdgeSpace(f)) return f;
+	return std::string();
+}
+
+std::string LowerAscii(std::string s)
+{
+	for (char& c : s) if (c >= 'A' && c <= 'Z') c = char(c - 'A' + 'a');
+	return s;
+}
+
+void EdgeSpaceSyntheticTests()
+{
+	line("[S1] a fragment never starts with a space");
+	{
+		Corpus c = Make({"a mor", "x amor"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		bool lead = false;
+		for (const std::string& f : EdgeQueryFragments(r.query)) if (!f.empty() && f.front() == ' ') lead = true;
+		check(!lead, "S1 no fragment of the query starts with a space (any mode): " + r.query);
+		check(c.Verify({0}, r.query).ok, "S1 and the query selects only entry 0: " + r.query);
+	}
+
+	line("[S2] a fragment never ends with a space either");
+	{
+		Corpus c = Make({"ab c", "abc", "c b"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(FirstEdgeSpaceFragment(r.query).empty(),
+		      "S2 no fragment starts or ends with a space (any mode): " + r.query);
+		check(r.query == "\"b c\"", "S2 and the query is exactly \"b c\": " + r.query);
+	}
+
+	line("[S3] a space inside a fragment is still fine");
+	{
+		Corpus c = Make({"a b", "ab", "b a"});
+		RegexGen::Result r = c.Build({0}, Mode::Any);
+		check(r.query == "\"a b\"", "S3 an inner space is used as is, query is \"a b\": " + r.query);
+	}
+}
+
+// Same corpus the panel builds for a page (see DataTests' `build(true)`).
+Corpus EdgePageCorpus(const RegexPageDef& p, bool useZh)
+{
+	std::vector<Entry> es;
+	es.reserve(p.entries.size());
+	for (const RegexEntryDef& d : p.entries) {
+		Entry e;
+		e.id = d.id;
+		const std::vector<std::string>& want = useZh ? d.zh : d.en;
+		const std::vector<std::string>& other = useZh ? d.en : d.zh;
+		const bool useWant = !want.empty();
+		e.texts = useWant ? want : other;
+		e.hidden = useWant ? (useZh ? d.hiddenZh : d.hiddenEn) : (useZh ? d.hiddenEn : d.hiddenZh);
+		e.alts = useWant ? (useZh ? d.altZh : d.altEn) : (useZh ? d.altEn : d.altZh);
+		es.push_back(std::move(e));
+	}
+	RegexGen::Ambient amb;
+	amb.lines = useZh ? p.ambientZh : p.ambientEn;
+	amb.nameLeft = useZh ? p.namePrefixZh : p.namePrefixEn;
+	amb.nameRight = useZh ? p.nameSuffixZh : p.nameSuffixEn;
+	Corpus c;
+	c.Reset(std::move(es), std::move(amb));
+	return c;
+}
+
+void EdgeSpaceDataTests(const std::wstring& exeDir)
+{
+	RegexDataset ds;
+	std::string err;
+	if (!ds.Load(exeDir, L"poe1", &err)) {
+		check(false, "S4/S5 load Data\\regex_*.json: " + err);
+		return;
+	}
+
+	line("[S4] PoE1 mods/names pages: no fragment starts or ends with a space");
+	{
+		const DWORD t0 = GetTickCount();
+		const DWORD kBudgetMs = 20000;
+		const Mode modes[3] = {Mode::Any, Mode::None, Mode::All};
+		const char* modeName[3] = {"any", "none", "all"};
+		int pages = 0, builds = 0, fragments = 0, bad = 0;
+		bool overBudget = false;
+		std::string first;
+		for (size_t pi = 0; pi < ds.Pages().size() && !overBudget; pi++) {
+			const RegexPageDef& p = ds.Pages()[pi];
+			if (p.game != "poe1") continue;
+			if (p.kind != RegexPageKind::Mods && p.kind != RegexPageKind::Names) continue;
+			if (p.entries.empty()) continue;
+			pages++;
+			for (int side = 0; side < 2 && !overBudget; side++) {
+				const bool useZh = (side == 0);
+				Corpus c = EdgePageCorpus(p, useZh);
+				Rng rng{0xE06E5ACEu + (unsigned)pi * 131u + (unsigned)side};
+				for (int group = 0; group < 5; group++) {
+					const int n = 1 + rng.below(6);
+					std::vector<int> sel;
+					for (int k = 0; k < n; k++) sel.push_back(rng.below((int)p.entries.size()));
+					for (int mi = 0; mi < 3; mi++) {
+						const RegexGen::Result r = c.Build(sel, modes[mi]);
+						builds++;
+						for (const std::string& f : EdgeQueryFragments(r.query)) {
+							fragments++;
+							if (HasEdgeSpace(f)) {
+								if (!bad)
+									first = "page " + p.id + " / " + (useZh ? "zh" : "en") + " / " + modeName[mi] +
+									        " / fragment [" + f + "] in " + r.query;
+								bad++;
+							}
+						}
+					}
+				}
+				if (GetTickCount() - t0 > kBudgetMs) overBudget = true;
+			}
+		}
+		const DWORD ms = GetTickCount() - t0;
+		line("        " + std::to_string(pages) + " pages, " + std::to_string(builds) + " builds, " +
+		     std::to_string(fragments) + " fragments, " + std::to_string((int)ms) + " ms");
+		check(pages > 0 && fragments > 0, "S4 checked something (" + std::to_string(pages) + " pages, " +
+		      std::to_string(fragments) + " fragments)");
+		check(bad == 0, "S4 0 fragments with a leading or trailing space (" + std::to_string(bad) + " bad)" +
+		      (bad ? " -- first: " + first : std::string()));
+		check(!overBudget, "S4 finished within the 20 s budget without dropping pages (" + std::to_string((int)ms) + " ms)");
+	}
+
+	line("[S5] template poe1_no_reflect_maxres in English does not spare older maps");
+	{
+		const RegexPageDef* mm = nullptr;
+		for (const RegexPageDef& p : ds.Pages())
+			if (p.game == "poe1" && p.id == "map_mods") { mm = &p; break; }
+		check(mm != nullptr, "S5 poe1 page map_mods exists");
+		if (mm) {
+			const char* lines[3] = {"Rare Monsters have Elemental Thorns reflecting # Elemental Damage",
+			                        "Rare Monsters have Physical Thorns reflecting # Physical Damage",
+			                        "Players have #% to all maximum Resistances"};
+			std::vector<int> sel;
+			for (const char* want : lines)
+				for (int i = 0; i < (int)mm->entries.size(); i++)
+					if (!mm->entries[i].en.empty() && mm->entries[i].en[0] == want) { sel.push_back(i); break; }
+			check(sel.size() == 3, "S5 the template's three English lines are all on map_mods (" +
+			      std::to_string(sel.size()) + " / 3)");
+			if (!sel.empty()) {
+				Corpus c = EdgePageCorpus(*mm, false);
+				const RegexGen::Result r = c.Build(sel, Mode::None);
+				const std::string edge = FirstEdgeSpaceFragment(r.query);
+				check(edge.empty(), "S5 no fragment starts or ends with a space: " + r.query +
+				      (edge.empty() ? std::string() : " -- first: [" + edge + "]"));
+				std::string hit;
+				for (const std::string& f : EdgeQueryFragments(r.query)) {
+					const std::string lf = LowerAscii(f);
+					for (const char* oldMap : {"courthouse map", "lighthouse map"})
+						if (hit.empty() && std::string(oldMap).find(lf) != std::string::npos)
+							hit = "[" + f + "] is inside \"" + oldMap + "\"";
+				}
+				check(hit.empty(), "S5 no fragment occurs inside Courthouse Map / Lighthouse Map: " + r.query +
+				      (hit.empty() ? std::string() : " -- " + hit));
+			}
+		}
 	}
 }
 
@@ -1797,10 +2680,12 @@ int RunRegexSelfTest(const std::wstring& exeDir)
 	g_rep.clear();
 	line("=== regex generator self-test ===");
 	SyntheticTests();
+	EdgeSpaceSyntheticTests();
 	line("");
 	StateTests();
 	line("");
 	DataTests(exeDir);
+	EdgeSpaceDataTests(exeDir);
 	line("");
 	PortTests(exeDir);
 	line("");

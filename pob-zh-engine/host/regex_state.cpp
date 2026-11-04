@@ -2,6 +2,7 @@
 #include "regex_state_json.h"
 
 #include "regex_algo_pages.h"   // RegexAlgo::SectionHostOf (sections.ts)
+#include "regex_data.h"         // RegexNormalizeLabel
 #include "regex_folders.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -599,9 +600,25 @@ int RegexResolveKeys(const std::vector<std::string>& keys,
 		int hit = -1;
 		// English first: it is the language the data is keyed by, so it survives a
 		// revision of our own Chinese wording.
+		// Two rows can share the English key (magic affix names: Humming = 低鳴的 /
+		// 雷電之); the Chinese line then picks the row, else the first one wins.
 		if (!keys[k].empty())
+			for (size_t i = 0; i < entryKeys.size(); i++) {
+				if (entryKeys[i] != keys[k]) continue;
+				if (hit < 0) hit = (int)i;
+				if (k < alt.size() && !alt[k].empty() && i < entryAlt.size() && entryAlt[i] == alt[k]) {
+					hit = (int)i;
+					break;
+				}
+			}
+		// Data generated before 2026-10-30 kept [Key|Display] links in a few
+		// English lines ("Rare Monsters have [ElementalThorns|Elemental Thorns]
+		// ..."); share codes and templates saved from it still carry them.
+		if (hit < 0 && keys[k].find('[') != std::string::npos) {
+			const std::string bare = RegexNormalizeLabel(keys[k]);
 			for (size_t i = 0; i < entryKeys.size() && hit < 0; i++)
-				if (entryKeys[i] == keys[k]) hit = (int)i;
+				if (entryKeys[i] == bare) hit = (int)i;
+		}
 		// Chinese second, for the rarer case where GGG reworded the English and
 		// left the translation alone.
 		if (hit < 0 && k < alt.size() && !alt[k].empty())

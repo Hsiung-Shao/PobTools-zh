@@ -159,6 +159,7 @@ std::string OtherLine(const RegexEntryDef& e, Lang lang)
 const std::string& KeyOf(const RegexEntryDef& e)
 {
 	static const std::string empty;
+	if (!e.key.empty()) return e.key;
 	return e.en.empty() ? empty : e.en[0];
 }
 
@@ -3290,7 +3291,11 @@ private:
 		const float avail = ImGui::GetContentRegionAvail().x;
 		const float cw = PobUi::ButtonWidth(u8"清除", PobUi::BtnSize::Sm);
 		const float y = ImGui::GetCursorScreenPos().y;
-		SmallText(u8"每個勾選各自一個條件（同時成立）；改數值會自動勾選。", Tok::TextMuted, avail - cw - Dp(10.0f));
+		bool anyGroup = false;
+		for (const RegexAlgo::AlgoEntry& e : refs_[idx].algo->entries) anyGroup |= !e.anyGroup.empty();
+		SmallText(anyGroup ? u8"連結 / 插槽顏色：勾的任一成立；其餘每個勾選各自一個條件（同時成立）；改數值會自動勾選。"
+		                   : u8"每個勾選各自一個條件（同時成立）；改數值會自動勾選。",
+		          Tok::TextMuted, avail - cw - Dp(10.0f));
 		const float after = ImGui::GetCursorScreenPos().y;
 		ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x + avail - cw, y - Dp(4.0f)));
 		if (PobUi::Button(u8"清除", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, nullptr, 0.0f, s.algo.Count() > 0)) {

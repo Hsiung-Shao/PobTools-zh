@@ -238,10 +238,15 @@ void ForEachToken(const Prepped& p, int maxChars, bool anchors, F&& sink)
 			off.push_back(f.size());
 			const size_t nc = off.size() - 1;
 			for (size_t a = 0; a < nc; a++) {
+				// The game drops a space at the start of a quoted term (tested in
+				// game 2026-10-30: " 等級" matches, "! 等級" excludes), so a token
+				// may neither start nor end with one; an inner space is fine.
+				if (f[off[a]] == ' ') continue;
 				for (size_t b = a + 1; b <= nc && (int)(b - a) <= maxChars; b++) {
 					// Growing b only adds characters, so once the newest one is
 					// syntax every longer token from `a` contains it too.
 					if (IsMeta(f[off[b - 1]])) break;
+					if (f[off[b - 1]] == ' ') continue;
 					t.body.assign(f, off[a], off[b] - off[a]);
 					t.head = false;
 					t.tail = false;
