@@ -1486,20 +1486,20 @@
     position: absolute;
     width: min(320px, 100cqw - 24px);
     pointer-events: none;
-    background: var(--surface-1);
-    border: 1px solid var(--edge-1);
-    border-top: 2px solid var(--gold);
-    border-radius: var(--radius-m);
+    background: var(--surface-0-c);
+    border: 1px solid var(--ink-3);
+    border-radius: 3px;
     box-shadow: var(--shadow-float);
     font-size: var(--fs-sm);
   }
+  /* 照 POB 節點浮窗:名稱置中當標題;種類小字跟在名稱下 */
   .tip-title {
     display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
     padding: 8px 12px 6px;
-    border-bottom: 1px solid var(--edge-0);
+    border-bottom: 1px solid var(--edge-2);
   }
   .tip-title .name {
     font-weight: 600;
@@ -1529,13 +1529,14 @@
   .tip-body .line {
     line-height: 1.4;
     white-space: pre-wrap;
+    font-variant-numeric: tabular-nums;
   }
   .tip-body .line.center {
     text-align: center;
   }
   .tip-body hr {
     border: 0;
-    border-top: 1px solid var(--edge-0);
+    border-top: 1px solid var(--edge-2);
     margin: 5px 0;
   }
   .tip-foot {
