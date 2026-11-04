@@ -12,6 +12,7 @@ using RegexFrag::AlgoValue;
 const std::string& KeyOf(const RegexEntryDef& e)
 {
 	static const std::string empty;
+	if (!e.key.empty()) return e.key;   // en[0] shared with another row on the page
 	return e.en.empty() ? empty : e.en[0];
 }
 

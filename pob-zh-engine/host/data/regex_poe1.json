@@ -70913,7 +70913,8 @@
       "# to # Added Lightning Damage with Axe Attacks",
       "# to # Added Lightning Damage with Mace or Sceptre Attacks",
       "# to # Added Lightning Damage with Staff Attacks"
-     ]
+     ],
+     "key": "Humming#AbyssAddedLightningDamageWithAxesJewel1"
     },
     {
      "id": "LocalBaseEnergyShieldAndLife3_",
@@ -71417,7 +71418,8 @@
       "Gain # Life per Enemy Hit with Attacks",
       "Grants # Life per Enemy Hit",
       "#% increased Flask Life Recovery rate"
-     ]
+     ],
+     "key": "of Regrowth#BeltFlaskLifeRecoveryRate6"
     },
     {
      "id": "AddedFireDamage3",
@@ -72657,7 +72659,8 @@
      ],
      "hiddenEn": [
       "You and your Minions prevent #% of Reflected Elemental Damage"
-     ]
+     ],
+     "key": "The Shaper's#ElementalDamageCannotBeReflectedPercentRingUber1"
     },
     {
      "id": "AccuracyRatingPerFrenzyChargeUber1",
@@ -73038,7 +73041,8 @@
       "#% increased Lightning Damage",
       "Socketed Gems are Supported by Level # Lightning Penetration",
       "Gain #% of Elemental Damage as Extra Chaos Damage"
-     ]
+     ],
+     "key": "The Shaper's#AddedColdDamagePerDexterityTwoHandedUber1"
     },
     {
      "id": "IncreasedPhysicalDamageReductionRatingPercent1",
@@ -73810,7 +73814,8 @@
      ],
      "hiddenEn": [
       "Adds # to # Lightning Damage to Spells"
-     ]
+     ],
+     "key": "Shocking#SpellAddedLightningDamage7"
     },
     {
      "id": "FlaskIncreasedRecoveryOnLowLife4",
@@ -74329,7 +74334,8 @@
      "hiddenEn": [
       "# to Evasion Rating",
       "# to maximum Energy Shield"
-     ]
+     ],
+     "key": "Phantasm's#LocalBaseEvasionRatingAndEnergyShield8___"
     },
     {
      "id": "LocalIncreasedEvasionAndEnergyShield7",
@@ -74362,7 +74368,8 @@
      ],
      "hiddenEn": [
       "#% increased Evasion Rating"
-     ]
+     ],
+     "key": "Phantasm's#LocalIncreasedEvasionRatingPercent5"
     },
     {
      "id": "LocalBaseEvasionRatingAndLife2",
@@ -74842,7 +74849,8 @@
      "hiddenEn": [
       "Adds # to # Chaos Damage to Attacks",
       "Adds # to # Chaos Damage"
-     ]
+     ],
+     "key": "Malicious#AddedChaosDamageQuiver1"
     },
     {
      "id": "AbyssMinionAddedChaosDamageJewel6",
@@ -74864,7 +74872,8 @@
       "# to # Added Spell Chaos Damage while Dual Wielding",
       "# to # Added Spell Chaos Damage while wielding a Two Handed Weapon",
       "# to # Added Spell Chaos Damage while holding a Shield"
-     ]
+     ],
+     "key": "Malicious#AbyssMinionAddedChaosDamageJewel6"
     },
     {
      "id": "IncreasedEnergyShieldPercent2",
@@ -76163,7 +76172,8 @@
      ],
      "hiddenEn": [
       "#% increased Spell Damage"
-     ]
+     ],
+     "key": "Mage's#SpellDamage2"
     },
     {
      "id": "LocalIncreasedWard1",
@@ -76670,7 +76680,8 @@
       "# to # Added Fire Damage with Axe Attacks",
       "# to # Added Fire Damage with Mace or Sceptre Attacks",
       "# to # Added Fire Damage with Staff Attacks"
-     ]
+     ],
+     "key": "Flaming#AbyssAddedFireDamageWithAxesJewel2"
     },
     {
      "id": "LocalIncreaseSocketedFireGemLevel1",
@@ -76826,7 +76837,8 @@
      ],
      "hiddenEn": [
       "Adds # to # Fire Damage to Spells"
-     ]
+     ],
+     "key": "Flaming#SpellAddedFireDamage5"
     },
     {
      "id": "FireDamageJewel",
@@ -76842,7 +76854,8 @@
      ],
      "hiddenEn": [
       "#% increased Fire Damage"
-     ]
+     ],
+     "key": "Flaming#FireDamageJewel"
     },
     {
      "id": "AbyssFlatEvasionJewel4_",
@@ -78052,7 +78065,8 @@
      "hiddenEn": [
       "Adds # to # Physical Damage to Attacks",
       "Adds # to # Physical Damage"
-     ]
+     ],
+     "key": "Honed#AddedPhysicalDamage4"
     },
     {
      "id": "WeaponElementalDamage6_",
@@ -78134,7 +78148,8 @@
      ],
      "hiddenEn": [
       "#% increased Trap Throwing Speed"
-     ]
+     ],
+     "key": "Honed#TrapThrowSpeedJewel"
     },
     {
      "id": "GlobalChaosSpellGemsLevelTwoHand2",
@@ -79343,7 +79358,8 @@
      ],
      "hiddenEn": [
       "# to maximum Mana"
-     ]
+     ],
+     "key": "Zaffre#IncreasedMana12"
     },
     {
      "id": "TinctureEffect3",
@@ -81117,7 +81133,8 @@
      ],
      "hiddenEn": [
       "Adds # to # Lightning Damage to Spells"
-     ]
+     ],
+     "key": "Humming#SpellAddedLightningDamage1"
     },
     {
      "id": "LightningDamageJewel",
@@ -81133,7 +81150,8 @@
      ],
      "hiddenEn": [
       "#% increased Lightning Damage"
-     ]
+     ],
+     "key": "Humming#LightningDamageJewel"
     },
     {
      "id": "LightningCritChanceJewel",
@@ -81327,7 +81345,8 @@
       "# to # Added Lightning Damage with Axe Attacks",
       "# to # Added Lightning Damage with Mace or Sceptre Attacks",
       "# to # Added Lightning Damage with Staff Attacks"
-     ]
+     ],
+     "key": "Shocking#AbyssAddedLightningDamageWithAxesJewel4"
     },
     {
      "id": "GlobalColdSpellGemsLevel1_",
@@ -81375,7 +81394,8 @@
      ],
      "hiddenEn": [
       "# to maximum Mana"
-     ]
+     ],
+     "key": "Zaffre#IncreasedManaTwoHandWeapon12"
     },
     {
      "id": "LocalIncreasedWard2",
@@ -81819,7 +81839,8 @@
      "hiddenEn": [
       "#% increased Spell Damage",
       "# to maximum Mana"
-     ]
+     ],
+     "key": "Mage's#SpellDamageAndManaOnTwoHandWeapon5"
     },
     {
      "id": "MaceDamageJewel",
@@ -82442,7 +82463,8 @@
      ],
      "hiddenEn": [
       "#% chance to Avoid Bleeding"
-     ]
+     ],
+     "key": "of Stemming#AbyssAvoidBleedingJewel1"
     },
     {
      "id": "ReducedLocalAttributeRequirements1",
@@ -82494,7 +82516,8 @@
      "en": [
       "of Ferocity"
      ],
-     "g": 1
+     "g": 1,
+     "key": "of Ferocity#TinctureCriticalStrikeMultiplier5"
     },
     {
      "id": "StaffSpellBlockPercentage5",
@@ -82723,7 +82746,8 @@
      "hiddenEn": [
       "#% to Global Critical Strike Multiplier",
       "#% to Critical Strike Multiplier with Bows"
-     ]
+     ],
+     "key": "of Ferocity#CriticalMultiplier5"
     },
     {
      "id": "ChaosResist4",
@@ -82835,7 +82859,8 @@
      ],
      "hiddenEn": [
       "#% increased Critical Strike Chance during Effect"
-     ]
+     ],
+     "key": "of Incision#FlaskBuffCriticalChanceWhileHealing5"
     },
     {
      "id": "AbyssDamagePenetratesElementalResistancesIfNoEnemySlainRecentlyJewel1",
@@ -83183,7 +83208,8 @@
      ],
      "hiddenEn": [
       "Minions have #% increased Movement Speed"
-     ]
+     ],
+     "key": "of Orchestration#AbyssMinionMovementSpeedJewel1"
     },
     {
      "id": "Intelligence10",
@@ -83341,7 +83367,8 @@
      "en": [
       "of Siphoning"
      ],
-     "g": 1
+     "g": 1,
+     "key": "of Siphoning#TinctureManaGainPerTarget2"
     },
     {
      "id": "ManaGainedFromEnemyDeath1",
@@ -84002,7 +84029,8 @@
      ],
      "hiddenEn": [
       "#% to Critical Strike Multiplier for Spell Damage"
-     ]
+     ],
+     "key": "of Unmaking#SpellCritMultiplier"
     },
     {
      "id": "MinionLifeWeapon5",
@@ -84558,7 +84586,8 @@
       "#% chance to Shock",
       "#% increased Shock Duration on Enemies",
       "#% increased Effect of Lightning Ailments"
-     ]
+     ],
+     "key": "of Shocking#AbyssJewelShockEffect1"
     },
     {
      "id": "AbyssSpellDodgeAndDodgeChanceIfHitRecentlyJewel1",
@@ -84638,7 +84667,8 @@
      ],
      "hiddenEn": [
       "# to Dexterity"
-     ]
+     ],
+     "key": "of the Lynx#Dexterity2"
     },
     {
      "id": "AbyssAvoidStunJewel1",
@@ -85404,7 +85434,8 @@
      ],
      "hiddenEn": [
       "#% chance to Shock"
-     ]
+     ],
+     "key": "of Shocking#ChanceToShock1"
     },
     {
      "id": "LocalIncreasedAttackSpeed8",
@@ -85543,7 +85574,8 @@
       "#% increased Global Critical Strike Chance",
       "#% increased Critical Strike Chance with Bows",
       "#% increased Critical Strike Chance"
-     ]
+     ],
+     "key": "of Incision#CriticalStrikeChance6"
     },
     {
      "id": "StunThresholdReduction2",
@@ -85639,7 +85671,8 @@
      ],
      "hiddenEn": [
       "#% reduced Bleed Duration on you"
-     ]
+     ],
+     "key": "of Stemming#BleedDurationOnYouJewel"
     },
     {
      "id": "PhysicalDamageOverTimeMultiplier3__",
@@ -87872,7 +87905,8 @@
      ],
      "hiddenEn": [
       "# to Strength"
-     ]
+     ],
+     "key": "of the Bear#Strength3"
     },
     {
      "id": "FlaskBuffChillFreezeDuration5",
@@ -87890,7 +87924,8 @@
      "hiddenEn": [
       "#% reduced Effect of Chill on you during Effect",
       "#% reduced Freeze Duration on you during Effect"
-     ]
+     ],
+     "key": "of the Bear#FlaskBuffChillFreezeDuration5"
     },
     {
      "id": "MaximumFireResist2_",
@@ -88095,7 +88130,8 @@
      "hiddenEn": [
       "#% to Global Critical Strike Multiplier",
       "#% to Critical Strike Multiplier with Bows"
-     ]
+     ],
+     "key": "of Rage#CriticalMultiplier3"
     },
     {
      "id": "AbyssAttackSpeedJewel1_",
@@ -88226,7 +88262,8 @@
      ],
      "hiddenEn": [
       "# to Accuracy Rating"
-     ]
+     ],
+     "key": "of Precision#IncreasedAccuracyNew2"
     },
     {
      "id": "AdditionalCritWithAttacksInfluence1_",
@@ -88388,7 +88425,8 @@
      ],
      "hiddenEn": [
       "#% increased Movement Speed during Effect"
-     ]
+     ],
+     "key": "of the Lynx#FlaskBuffMovementSpeedWhileHealing2"
     },
     {
      "id": "Strength4",
@@ -88566,7 +88604,8 @@
      "en": [
       "of Regrowth"
      ],
-     "g": 1
+     "g": 1,
+     "key": "of Regrowth#TinctureLifeGainPerTarget3"
     },
     {
      "id": "ProjectileSpeed1",
@@ -88644,7 +88683,8 @@
      "en": [
       "of Rage"
      ],
-     "g": 1
+     "g": 1,
+     "key": "of Rage#TinctureCriticalStrikeMultiplier3"
     },
     {
      "id": "MinionLifeWeapon4__",
@@ -89008,7 +89048,8 @@
      ],
      "hiddenEn": [
       "# to Accuracy Rating"
-     ]
+     ],
+     "key": "of Steadiness#AbyssAccuracyRatingJewel2"
     },
     {
      "id": "FlaskBuffStunRecoveryWhileHealing5",
@@ -89336,7 +89377,8 @@
      ],
      "hiddenEn": [
       "# to Accuracy Rating"
-     ]
+     ],
+     "key": "of Steadiness#IncreasedAccuracyNew1_"
     },
     {
      "id": "PercentIncreasedAccuracyJewel",
@@ -89352,7 +89394,8 @@
      ],
      "hiddenEn": [
       "#% increased Global Accuracy Rating"
-     ]
+     ],
+     "key": "of Precision#PercentIncreasedAccuracyJewel"
     },
     {
      "id": "AbyssHinderedEnemiesLifeRegenerationRateJewel1",
@@ -89451,7 +89494,8 @@
      "hiddenEn": [
       "#% to Fire and Lightning Resistances",
       "#% chance to Avoid being Shocked"
-     ]
+     ],
+     "key": "of Insulation#AbyssAvoidShockJewel1"
     },
     {
      "id": "MinionMovementSpeed4",
@@ -89467,7 +89511,8 @@
      ],
      "hiddenEn": [
       "Minions have #% increased Movement Speed"
-     ]
+     ],
+     "key": "of Orchestration#MinionMovementSpeed4"
     },
     {
      "id": "EnergyShieldRechargeRate1",
@@ -90149,7 +90194,8 @@
      ],
      "hiddenEn": [
       "#% of Spell Damage Leeched as Energy Shield during Effect"
-     ]
+     ],
+     "key": "of Siphoning#FlaskBuffSpellEnergyShieldLeechWhileHealing4"
     },
     {
      "id": "FlaskBleedingAndCorruptedBloodImmunityDuringEffect_1",
@@ -90444,7 +90490,8 @@
      ],
      "hiddenEn": [
       "#% increased Spell Critical Strike Chance"
-     ]
+     ],
+     "key": "of Unmaking#SpellCriticalStrikeChance6_"
     },
     {
      "id": "FlaskPoisonImmunity4",
@@ -91115,7 +91162,8 @@
      ],
      "hiddenEn": [
       "Minions have #% to all Elemental Resistances"
-     ]
+     ],
+     "key": "of Acclimatisation#MinionResistancesWeapon2"
     },
     {
      "id": "LocalLifeFlaskHinderNearbyEnemies3_",
@@ -91650,7 +91698,8 @@
      ],
      "hiddenEn": [
       "Grants Immunity to Shock for # seconds if used while Shocked"
-     ]
+     ],
+     "key": "of Insulation#FlaskShockImmunity3"
     },
     {
      "id": "IncreasedCastSpeed4",
@@ -92124,7 +92173,8 @@
      ],
      "hiddenEn": [
       "Minions have #% to all Elemental Resistances"
-     ]
+     ],
+     "key": "of Acclimatisation#AbyssMinionElementalResistancesJewel1"
     },
     {
      "id": "ChaosResist3",
@@ -92553,6 +92603,7 @@
     "箭袋",
     "珠寶",
     "深淵珠寶",
+    "萃取物",
     "催眠之眼珠寶",
     "勘查之眼珠寶",
     "拼湊之眼珠寶",
@@ -93644,6 +93695,16 @@
     "魔喙細劍",
     "鯨骨細刃",
     "龍骨細劍",
+    "三相萃取物",
+    "孢子花萃取物",
+    "橡木枝萃取物",
+    "毒莓果萃取物",
+    "灰樹皮萃取物",
+    "玫瑰刺萃取物",
+    "針葉木萃取物",
+    "鐵木林萃取物",
+    "電熔岩萃取物",
+    "鮮血液萃取物",
     "匕斧",
     "卡魯巨斧",
     "原始砍斧",
@@ -93857,6 +93918,7 @@
     "Quivers",
     "Jewels",
     "Abyss Jewels",
+    "Tinctures",
     "Hypnotic Eye Jewel",
     "Searching Eye Jewel",
     "Assembled Eye Jewel",
@@ -94953,6 +95015,16 @@
     "Whalebone Rapier",
     "Wyrmbone Rapier",
     "Dragonbone Rapier",
+    "Prismatic Tincture",
+    "Sporebloom Tincture",
+    "Oakbranch Tincture",
+    "Poisonberry Tincture",
+    "Ashbark Tincture",
+    "Rosethorn Tincture",
+    "Borealwood Tincture",
+    "Ironwood Tincture",
+    "Fulgurite Tincture",
+    "Blood Sap Tincture",
     "Dagger Axe",
     "Karui Chopper",
     "Prime Cleaver",
@@ -97829,6 +97901,16 @@
      "魔喙細劍",
      "鯨骨細刃",
      "龍骨細劍",
+     "三相萃取物",
+     "孢子花萃取物",
+     "橡木枝萃取物",
+     "毒莓果萃取物",
+     "灰樹皮萃取物",
+     "玫瑰刺萃取物",
+     "針葉木萃取物",
+     "鐵木林萃取物",
+     "電熔岩萃取物",
+     "鮮血液萃取物",
      "匕斧",
      "卡魯巨斧",
      "原始砍斧",
@@ -99492,6 +99574,16 @@
      "Whalebone Rapier",
      "Wyrmbone Rapier",
      "Dragonbone Rapier",
+     "Prismatic Tincture",
+     "Sporebloom Tincture",
+     "Oakbranch Tincture",
+     "Poisonberry Tincture",
+     "Ashbark Tincture",
+     "Rosethorn Tincture",
+     "Borealwood Tincture",
+     "Ironwood Tincture",
+     "Fulgurite Tincture",
+     "Blood Sap Tincture",
      "Dagger Axe",
      "Karui Chopper",
      "Prime Cleaver",
@@ -101173,6 +101265,16 @@
      " Whalebone Rapier",
      " Wyrmbone Rapier",
      " Dragonbone Rapier",
+     " Prismatic Tincture",
+     " Sporebloom Tincture",
+     " Oakbranch Tincture",
+     " Poisonberry Tincture",
+     " Ashbark Tincture",
+     " Rosethorn Tincture",
+     " Borealwood Tincture",
+     " Ironwood Tincture",
+     " Fulgurite Tincture",
+     " Blood Sap Tincture",
      " Dagger Axe",
      " Karui Chopper",
      " Prime Cleaver",

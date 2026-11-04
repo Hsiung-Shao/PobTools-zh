@@ -1,5 +1,5 @@
 // GENERATED -- do not edit. Golden fixture for regex_share (PobTools Poe Regex R8 port: share codes + templates).
-// Produced by running exile-appraiser @ a35f81b regex/src/{share,embed,combine}.ts over PobTools host/data/
+// Produced by running exile-appraiser @ 51269aa regex/src/{share,embed,combine}.ts over PobTools host/data/
 // (regex_poe{1,2}.json, regex_stats/*/*/stats.ndjson.gz, regex_templates.json):
 // codes made by exile-appraiser (Node gzip) with their JSON, resolve and combine results on our data,
 // v1 legacy codes, normalizeShareState cases, damaged codes, templates.

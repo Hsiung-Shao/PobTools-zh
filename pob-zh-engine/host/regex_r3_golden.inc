@@ -1,5 +1,5 @@
 // GENERATED -- do not edit. Golden fixture for regex_algo_pages (PobTools Poe Regex R3 port).
-// Produced by running exile-appraiser @ a35f81b (regex/src/pages/{numeric,vendor}-pages.ts, index.ts,
+// Produced by running exile-appraiser @ 51269aa (regex/src/pages/{numeric,vendor}-pages.ts, index.ts,
 // view.ts condText / sectionSummary, combine.ts) over PobTools host/data/regex_poe{1,2}.json, plus
 // B-side clipboard fixtures (poe1/test/fixtures/*/map-*.txt, data/poe2/*/items.ndjson waystone names).
 // One JSON array per line: [kind, ...inputs, expected]; regex_selftest_r3.cpp requires identical output.

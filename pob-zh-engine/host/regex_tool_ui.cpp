@@ -159,6 +159,7 @@ std::string OtherLine(const RegexEntryDef& e, Lang lang)
 const std::string& KeyOf(const RegexEntryDef& e)
 {
 	static const std::string empty;
+	if (!e.key.empty()) return e.key;
 	return e.en.empty() ? empty : e.en[0];
 }
 

@@ -1,5 +1,5 @@
 // GENERATED -- do not edit. Golden fixture for regex_state / regex_folders / regex_embed (PobTools Poe Regex R5/R6 port).
-// Produced by running exile-appraiser @ a35f81b regex/src/{state,folders,embed}.ts over
+// Produced by running exile-appraiser @ 51269aa regex/src/{state,folders,embed}.ts over
 // PobTools host/data/regex_poe{1,2}.json: state files (schema 1-5, damaged, random) parsed and re-serialised,
 // recorded folder-operation sequences with every result, bookmark bodies / applies, saved picks.
 // One JSON array per line: [kind, ...inputs, expected]; regex_selftest_r5.cpp requires identical output.

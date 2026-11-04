@@ -31,6 +31,9 @@ struct RegexEntryDef {
 	// 「#個」 at 2) -- RegexGen::Entry::alts. Optional, like the hidden text.
 	std::vector<std::string> altZh;
 	std::vector<std::string> altEn;
+	// The saved-pick key when en[0] is not unique on the page (two magic affixes
+	// share an English name, Humming = 低鳴的 / 雷電之); empty = en[0] is the key.
+	std::string key;
 };
 
 // Page kind (schema 2 `kind`, exile-appraiser regex/src/data.ts:27): mods /

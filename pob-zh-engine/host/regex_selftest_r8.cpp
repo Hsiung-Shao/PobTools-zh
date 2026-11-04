@@ -32,6 +32,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <deque>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <set>
 #include <string>
@@ -979,6 +981,169 @@ void RarityTests(std::map<std::string, Game>& G)
 	}
 }
 
+// Round 3: rows whose English first line repeats carry a unique `key` (K1), the key function prefers it (K2),
+// a share code round-trips without picking the wrong row (K3), and the tincture bases are in the page (T1).
+void AffixKeyTests(const std::wstring& exeDir, const Game& g)
+{
+	line(u8"[R8-keys] magic_affixes 重複英文首行的唯一鍵、分享碼往返、藥酒基底");
+	const PageRef* ref = g.Find("magic_affixes");
+	const RegexPageDef* page = ref ? ref->corpus : nullptr;
+	check(page != nullptr, "K0 poe1 page magic_affixes exists");
+	auto idxByZh0 = [&](const std::string& zh0) -> int {
+		if (page)
+			for (int i = 0; i < (int)page->entries.size(); i++)
+				if (!page->entries[i].zh.empty() && page->entries[i].zh[0] == zh0) return i;
+		return -1;
+	};
+	auto startsWith = [](const std::string& s, const std::string& p) { return s.compare(0, p.size(), p) == 0; };
+
+	// K1: the raw JSON (RegexEntryDef may not carry `key`, so read the file itself)
+	{
+		json doc;
+		bool parsed = false;
+		{
+			std::ifstream in(exeDir + L"Data\\regex_poe1.json", std::ios::binary);
+			std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+			if (text.size() >= 3 && (unsigned char)text[0] == 0xEF && (unsigned char)text[1] == 0xBB && (unsigned char)text[2] == 0xBF)
+				text.erase(0, 3);
+			try {
+				doc = json::parse(text);
+				parsed = true;
+			} catch (...) {
+			}
+		}
+		check(parsed, "K1 Data\\regex_poe1.json parses as JSON");
+		const json* entries = nullptr;
+		if (parsed && doc.contains("pages") && doc["pages"].is_array())
+			for (const json& p : doc["pages"])
+				if (p.is_object() && p.value("id", std::string()) == "magic_affixes" && p.contains("entries") && p["entries"].is_array()) {
+					entries = &p["entries"];
+					break;
+				}
+		check(entries != nullptr, "K1 raw JSON has the magic_affixes page with entries");
+		if (entries) {
+			auto en0 = [](const json& e) -> std::string {
+				if (e.is_object() && e.contains("en") && e["en"].is_array() && !e["en"].empty() && e["en"][0].is_string())
+					return e["en"][0].get<std::string>();
+				return std::string();
+			};
+			auto keyOf = [](const json& e) -> std::string {
+				if (e.is_object() && e.contains("key") && e["key"].is_string()) return e["key"].get<std::string>();
+				return std::string();
+			};
+			auto zh0 = [](const json& e) -> std::string {
+				if (e.is_object() && e.contains("zh") && e["zh"].is_array() && !e["zh"].empty() && e["zh"][0].is_string())
+					return e["zh"][0].get<std::string>();
+				return std::string();
+			};
+			std::map<std::string, int> count;
+			for (const json& e : *entries) count[en0(e)]++;
+			int dupNoKey = 0;
+			std::string firstNoKey;
+			std::map<std::string, int> keyCount;
+			for (const json& e : *entries) {
+				const std::string k = keyOf(e);
+				if (!k.empty()) keyCount[k]++;
+				if (count[en0(e)] > 1 && k.empty()) {
+					if (!dupNoKey) firstNoKey = zh0(e) + " / " + en0(e);
+					dupNoKey++;
+				}
+			}
+			int dupKey = 0;
+			for (const auto& kv : keyCount)
+				if (kv.second > 1) dupKey++;
+			check(dupNoKey == 0, "K1 every row whose en[0] repeats on the page has a non-empty key (" + Num(dupNoKey) + " without)" +
+			      (dupNoKey ? " -- first: " + firstNoKey : std::string()));
+			check(dupKey == 0 && !keyCount.empty(), "K1 the keys on the page are all different (" + Num((long long)keyCount.size()) +
+			      " keys, " + Num(dupKey) + " repeated)");
+			std::string kLow, kThunder, kOpt;
+			bool hasOpt = false;
+			for (const json& e : *entries) {
+				if (zh0(e) == u8"低鳴的") kLow = keyOf(e);
+				if (zh0(e) == u8"雷電之") kThunder = keyOf(e);
+				if (zh0(e) == u8"樂觀的") { hasOpt = true; kOpt = e.contains("key") ? "(has key)" : ""; }
+			}
+			check(startsWith(kLow, "Humming#") && startsWith(kThunder, "Humming#") && kLow != kThunder,
+			      "K1 低鳴的 and 雷電之 keys both start with 'Humming#' and differ (" + kLow + " / " + kThunder + ")");
+			check(hasOpt && kOpt.empty(), "K1 樂觀的 row exists and has no key field");
+		}
+	}
+
+	// K2: the key function, through RegexEmbed::KeyOf (works whether or not RegexEntryDef has a `key` member)
+	const int thunder = idxByZh0(u8"雷電之");
+	const int low = idxByZh0(u8"低鳴的");
+	const int opt = idxByZh0(u8"樂觀的");
+	check(thunder >= 0, "K2 magic_affixes has the entry whose first zh line is 雷電之");
+	check(opt >= 0, "K2 magic_affixes has the entry whose first zh line is 樂觀的");
+	if (page && thunder >= 0) {
+		const std::string k = RegexEmbed::KeyOf(page->entries[thunder]);
+		const std::string en0 = page->entries[thunder].en.empty() ? std::string() : page->entries[thunder].en[0];
+		check(k != en0 && k.compare(0, 8, "Humming#") == 0, "K2 KeyOf(雷電之) is its unique key, not en[0] (got '" + k + "', en[0] '" + en0 + "')");
+	}
+	if (page && opt >= 0) {
+		const std::string k = RegexEmbed::KeyOf(page->entries[opt]);
+		check(k == "Sanguine", "K2 KeyOf(樂觀的) == Sanguine (got '" + k + "')");
+	}
+
+	// K3: PageKeysOf -> share Encode -> Decode -> Resolve
+	auto roundTrip = [&](const std::vector<int>& pick, std::vector<int>& got, int& missed) -> bool {
+		const RegexEmbed::Keys k = RegexEmbed::PageKeysOf(*ref, pick);
+		S::State st;
+		st.game = "poe1";
+		st.mode = "any";
+		st.pages.push_back({"magic_affixes", k.keys});
+		const std::string code = S::Encode(st);
+		S::Normalized n;
+		std::string e;
+		if (!S::Decode(code, n, &e)) return false;
+		const S::Resolved r = S::Resolve(n.state, g.pages);
+		missed = r.missed;
+		auto it = r.picks.find("magic_affixes");
+		got = it == r.picks.end() ? std::vector<int>() : it->second;
+		return true;
+	};
+	if (ref && page && thunder >= 0) {
+		std::vector<int> got;
+		int missed = -1;
+		const bool ok = roundTrip({thunder}, got, missed);
+		check(ok && missed == 0 && got == std::vector<int>{thunder},
+		      "K3 share round trip: only 雷電之 ticked comes back as 雷電之, missed 0 (picked " + Num((long long)got.size()) + " rows, missed " + Num(missed) + ")");
+	} else {
+		check(false, "K3 share round trip 雷電之: page or entry missing");
+	}
+	if (ref && page && thunder >= 0 && low >= 0) {
+		std::vector<int> got;
+		int missed = -1;
+		const bool ok = roundTrip({low, thunder}, got, missed);
+		std::vector<int> want = {std::min(low, thunder), std::max(low, thunder)};
+		check(ok && missed == 0 && got == want,
+		      "K3 share round trip: 低鳴的 and 雷電之 both ticked come back as both rows, missed 0 (picked " + Num((long long)got.size()) +
+		      " rows, missed " + Num(missed) + ")");
+	} else {
+		check(false, "K3 share round trip 低鳴的 + 雷電之: page or entry missing");
+	}
+
+	// T1: tincture bases in the page's ambient and name words
+	if (page) {
+		auto anyHas = [](const std::vector<std::string>& v, const std::string& want) {
+			for (const std::string& s : v)
+				if (s.find(want) != std::string::npos) return true;
+			return false;
+		};
+		auto hasExact = [](const std::vector<std::string>& v, const std::string& want) {
+			for (const std::string& s : v)
+				if (s == want) return true;
+			return false;
+		};
+		check(anyHas(page->ambientEn, "Ashbark Tincture"), "T1 magic_affixes ambientEn holds 'Ashbark Tincture'");
+		check(anyHas(page->ambientZh, u8"灰樹皮萃取物"), "T1 magic_affixes ambientZh holds 灰樹皮萃取物");
+		check(hasExact(page->namePrefixEn, "Ashbark Tincture"), "T1 nameWordsEn.prefix holds 'Ashbark Tincture'");
+		check(hasExact(page->nameSuffixZh, u8"灰樹皮萃取物"), "T1 nameWordsZh.suffix holds 灰樹皮萃取物");
+	} else {
+		check(false, "T1 magic_affixes page missing");
+	}
+}
+
 } // namespace
 
 void RegexR8Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::string&), void (*lineFn)(const std::string&))
@@ -1021,6 +1186,8 @@ void RegexR8Tests(const std::wstring& exeDir, void (*checkFn)(bool, const std::s
 	lap("share.test / templates");
 	RoundTrips(G);
 	lap("round trips");
+	AffixKeyTests(exeDir, G["poe1"]);
+	lap("affix keys");
 	GoldenR8(G);
 	lap("golden");
 	RarityTests(G);
