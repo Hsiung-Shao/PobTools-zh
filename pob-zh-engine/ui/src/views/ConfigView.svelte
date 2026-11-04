@@ -17,9 +17,15 @@
   // option's text and the "this option will give you" stat differences), on hover after
   // a short delay; a list option pointed at in the open drop-down gets its own.
   // Only when the bridge call fails does the plain tooltipText from list_config stand in.
-  let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
+  // Row and option tooltips keep separate timers: the open list is portalled to <body>, so
+  // moving into it fires the row's mouseleave, which must not cancel the option's tooltip.
+  type Box = { left: number; top: number; right: number; bottom: number };
+  let tip = $state<{ kind: "row" | "opt"; lines: TooltipLine[]; x: number; y: number; avoid: Box } | null>(null);
   let tipTimer = 0;
   let tipSeq = 0;
+  let optTimer = 0;
+  let optSeq = 0;
+  const box = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
   const tipCache = new Map<string, TooltipLine[]>();
   async function loadTip(it: ConfigItem, index?: number): Promise<TooltipLine[] | null> {
     const key = `${app.rev}|${it.var}|${index ?? ""}`;
@@ -44,24 +50,26 @@
       const lines = await loadTip(it);
       if (seq !== tipSeq || !lines) return;
       const r = el.getBoundingClientRect();
-      tip = { lines, x: Math.round(r.left + 24), y: Math.round(r.bottom + 4) };
+      tip = { kind: "row", lines, x: Math.round(r.left + 24), y: Math.round(r.bottom + 4), avoid: box(r) };
     }, 220);
   }
   function tipLeave() {
     clearTimeout(tipTimer);
     tipSeq++;
-    tip = null;
+    if (tip?.kind === "row") tip = null;
   }
   function optActive(it: ConfigItem, v: string | number | null, rect: DOMRect | null) {
-    clearTimeout(tipTimer);
-    const seq = ++tipSeq;
-    tip = null;
+    clearTimeout(optTimer);
+    const seq = ++optSeq;
+    if (tip?.kind === "opt") tip = null;
     const index = v == null ? 0 : (it.list ?? []).findIndex((o) => String(o.val ?? "") === String(v)) + 1;
     if (!rect || index <= 0) return;
-    tipTimer = window.setTimeout(async () => {
+    optTimer = window.setTimeout(async () => {
       const lines = await loadTip(it, index);
-      if (seq !== tipSeq || !lines) return;
-      tip = { lines, x: Math.round(rect.right + 8), y: Math.round(rect.top) };
+      if (seq !== optSeq || !lines) return;
+      clearTimeout(tipTimer);
+      tipSeq++;
+      tip = { kind: "opt", lines, x: Math.round(rect.right + 8), y: Math.round(rect.top), avoid: box(rect) };
     }, 120);
   }
   const selectedLabel = (it: ConfigItem) => (it.list ?? []).find((o) => String(o.val ?? "") === String(it.value ?? ""));
@@ -309,7 +317,7 @@
     {/if}
   </div>
 
-  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} centerHead={false} />{/if}
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} centerHead={false} avoid={tip.avoid} />{/if}
 
   {#if setDialog}
     <div class="modal">

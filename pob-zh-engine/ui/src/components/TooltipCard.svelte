@@ -11,6 +11,7 @@
     y = 0,
     width = 340,
     centerHead = true,
+    avoid = null,
   }: {
     lines: TooltipLine[];
     accent?: string | null;
@@ -19,6 +20,9 @@
     width?: number;
     /** item/gem tooltips: the first two lines are the centred name block; config tooltips have none */
     centerHead?: boolean;
+    /** the hovered control's box: a card placed beside it (x past its right edge) flips to its left,
+     *  one placed below it (y past its bottom) flips above, instead of being clamped over it (POB's Tooltip:Draw) */
+    avoid?: { left: number; top: number; right: number; bottom: number } | null;
   } = $props();
 
   function pobColor(code: string | null | undefined): string | null {
@@ -33,11 +37,15 @@
   let w = $state(0);
   const top = $derived.by(() => {
     const vh = typeof window !== "undefined" ? window.innerHeight : 0;
-    return Math.round(vh && h ? Math.max(8, Math.min(y, vh - h - 8)) : y);
+    let t = y;
+    if (vh && h && avoid && y >= avoid.bottom && y + h > vh - 8 && avoid.top - h - 4 >= 8) t = avoid.top - h - 4;
+    return Math.round(vh && h ? Math.max(8, Math.min(t, vh - h - 8)) : t);
   });
   const left = $derived.by(() => {
     const vw = typeof window !== "undefined" ? window.innerWidth : 0;
-    return Math.round(vw && w ? Math.max(8, Math.min(x, vw - w - 8)) : x);
+    let l = x;
+    if (vw && w && avoid && x >= avoid.right && x + w > vw - 8 && avoid.left - w - 8 >= 8) l = avoid.left - w - 8;
+    return Math.round(vw && w ? Math.max(8, Math.min(l, vw - w - 8)) : l);
   });
 </script>
 

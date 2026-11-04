@@ -7138,7 +7138,11 @@ function M.config_tooltip(p)
 	if not ctl then error("unknown config var " .. tostring(var), 0) end
 	local tt = make("Tooltip")
 	local index = tonumber(p and p.index)
-	without_wrap(function()
+	-- POB's preview (input -> BuildModList -> calcFunc -> restore) has no pcall of its own:
+	-- if it throws half way the previewed value would stay in input, so put it back here.
+	local inputs = config_set(tab).input
+	local savedValue, savedFlag = inputs[var], b.buildFlag
+	local ok, err = pcall(without_wrap, function()
 		if type(ctl.tooltipFunc) == "function" then
 			if ctl.list then
 				local i = index or ctl.selIndex
@@ -7154,6 +7158,14 @@ function M.config_tooltip(p)
 			if text and text ~= "" then tt:AddLine(14, text) end
 		end
 	end)
+	if not ok then
+		if inputs[var] ~= savedValue then
+			inputs[var] = savedValue
+			pcall(tab.BuildModList, tab)
+		end
+		b.buildFlag = savedFlag
+		error(err, 0)
+	end
 	return { var = var, index = index, lines = tooltip_lines(tt) }
 end
 
@@ -7618,7 +7630,7 @@ probe("ConfigTab.varControls[*].tooltipFunc (config_tooltip)", function()
 		if type(ctl.tooltipFunc) == "function" then return true end
 	end
 	return not any
-end)
+end, "configTooltip")
 probe("classes.CalcsTab.CheckFlag + sectionList + formatCalcStr", function()
 	local c = class_of("CalcsTab")
 	return type(c) == "table" and type(c.CheckFlag) == "function" and type(formatCalcStr) == "function"
