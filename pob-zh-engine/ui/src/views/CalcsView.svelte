@@ -420,8 +420,9 @@
   }
   /* one row = 16px: label column right-aligned, then POB's value columns on a
      shared grid so column N lines up down the whole subsection */
+  /* 標籤欄上限 196px(= .rl 的 190 + 內距):三欄寬的區段(技能詳情)不再用 46%,否則標籤靠右後與值之間空一大段 */
   .sub {
-    --label-w: minmax(0, 46%);
+    --label-w: minmax(0, min(46%, 196px));
   }
   .sub.multi {
     --label-w: 150px;
