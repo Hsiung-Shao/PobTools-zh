@@ -2196,7 +2196,11 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		const std::string old181 = "{\"lastCheckUtc\":42,\"latestSeen\":\"1.8.2\",\"appliedApp\":\"1.8.2\"}";
 		write_file_bytes(stRoot + L"PobTools\\update_state.json", old181.data(), old181.size());
 		b.loadState();
-		const bool foreignReset = b.lastCheckUtc_ == 0 && b.appliedApp_ == "1.8.2";
+		bool foreignReset = b.lastCheckUtc_ == 0 && b.appliedApp_ == "1.8.2";
+		const std::string otherVer = "{\"lastCheckUtc\":42,\"stateApp\":\"0.0.1\"}";
+		write_file_bytes(stRoot + L"PobTools\\update_state.json", otherVer.data(), otherVer.size());
+		b.loadState();
+		foreignReset = foreignReset && b.lastCheckUtc_ == 0;
 		a.saveState();
 		b.loadState();
 		const bool ownKept = b.lastCheckUtc_ == 42;
