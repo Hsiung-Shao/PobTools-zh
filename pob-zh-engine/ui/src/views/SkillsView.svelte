@@ -83,7 +83,7 @@
     if (lr === seenLang) return;
     seenLang = lr;
     untrack(() => {
-      if (gemOpts) void loadGemOpts();
+      if (gemOpts) void loadGemOpts(true); // the default-quality box may be mid-edit
       if (addOpen) addInput();
       if (imbuedOpen && imbuedQuery.trim()) searchImbued(imbuedQuery);
     });
@@ -146,11 +146,11 @@
   let gemOpts = $state<GemOptions | null>(null);
   let gemOptsOpen = $state(false);
   let qualityDraft = $state("");
-  async function loadGemOpts() {
+  async function loadGemOpts(keepDraft = false) {
     const r = await app.run(() => api.getGemOptions());
     if (r) {
       gemOpts = r;
-      qualityDraft = String(r.defaultGemQuality ?? 0);
+      if (!keepDraft) qualityDraft = String(r.defaultGemQuality ?? 0);
     }
   }
   async function toggleGemOpts() {
