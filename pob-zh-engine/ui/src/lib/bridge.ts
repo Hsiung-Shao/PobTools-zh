@@ -734,7 +734,7 @@ export interface NodeHover {
   cost?: number;
 }
 
-export type TooltipLine = { size: number; text: string; raw: string; center: boolean; font?: string } | { sep: number };
+export type TooltipLine = { size: number; text: string; raw: string; center: boolean; font?: string; indent?: number } | { sep: number };
 
 export interface NodeInfo {
   id: number;
@@ -1492,6 +1492,8 @@ export const api = {
   setConfig: (v: string, value: ConfigValue) => bridge.call<Committed>("set_config", { var: v, value }, 60000),
   setConfigPlaceholder: (v: string, value: number | string | null) => bridge.call<Committed>("set_config_placeholder", { var: v, value }, 60000),
   resetConfig: (v: string) => bridge.call<Committed>("reset_config", { var: v }, 60000),
+  /** POB's tooltip for a config control (index = a list option, 1-based; none = the current one), stat differences included. */
+  configTooltip: (v: string, index?: number) => bridge.call<{ var: string; index?: number; lines: TooltipLine[] }>("config_tooltip", index == null ? { var: v } : { var: v, index }, 60000),
   setCustomMods: (list: CustomModBlock[]) => bridge.call<Committed>("set_custom_mods", { list }, 60000),
   setConfigSet: (id: number) => bridge.call<Committed>("set_config_set", { id }, 60000),
   newConfigSet: (title: string, copyCurrent: boolean) => bridge.call<Committed & { id: number }>("new_config_set", { title, copyCurrent }, 60000),

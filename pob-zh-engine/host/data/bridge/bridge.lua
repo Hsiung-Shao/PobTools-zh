@@ -7122,6 +7122,53 @@ function M.list_config()
 	return { sections = sections, customMods = custom, configSets = sets, activeConfigSetId = tab.activeConfigSetId, rev = b.outputRevision }
 end
 
+-- config_tooltip{var, index?}: the tooltip POB draws for that option -- its control's
+-- tooltipFunc, which ConfigTab wraps (ConfigTab.lua "control.tooltipFunc = ...") to add
+-- each list option's own text, "Toggling/Selecting this option will give you:" stat
+-- differences, and the invalid-option warning. Called with the arguments the control
+-- itself passes: a drop-down ("HOVER", i, list[i]) for an option pointed at in the open
+-- list, ("BODY", selIndex, list[selIndex]) otherwise; a check box (state); others none.
+-- The wrapper previews the other value by changing input and restoring it (buildFlag too),
+-- so nothing is committed here.
+function M.config_tooltip(p)
+	local b = ensure_build()
+	local tab = b.configTab
+	local var = p and p.var
+	local ctl = var and tab.varControls and tab.varControls[var]
+	if not ctl then error("unknown config var " .. tostring(var), 0) end
+	local tt = make("Tooltip")
+	local index = tonumber(p and p.index)
+	-- POB's preview (input -> BuildModList -> calcFunc -> restore) has no pcall of its own:
+	-- if it throws half way the previewed value would stay in input, so put it back here.
+	local inputs = config_set(tab).input
+	local savedValue, savedFlag = inputs[var], b.buildFlag
+	local ok, err = pcall(without_wrap, function()
+		if type(ctl.tooltipFunc) == "function" then
+			if ctl.list then
+				local i = index or ctl.selIndex
+				if not ctl.list[i] then error("no such option " .. tostring(i), 0) end
+				ctl.tooltipFunc(tt, index and "HOVER" or "BODY", i, ctl.list[i])
+			elseif ctl.state ~= nil then
+				ctl.tooltipFunc(tt, ctl.state)
+			else
+				ctl.tooltipFunc(tt)
+			end
+		else
+			local text = control_prop(ctl, "tooltipText")
+			if text and text ~= "" then tt:AddLine(14, text) end
+		end
+	end)
+	if not ok then
+		if inputs[var] ~= savedValue then
+			inputs[var] = savedValue
+			pcall(tab.BuildModList, tab)
+		end
+		b.buildFlag = savedFlag
+		error(err, 0)
+	end
+	return { var = var, index = index, lines = tooltip_lines(tt) }
+end
+
 local function config_committed(b)
 	local tab = b.configTab
 	tab:AddUndoState()
@@ -7573,6 +7620,17 @@ probe("Modules.ConfigOptions is a list with sections and vars", function()
 	end
 	return sections >= 3 and vars >= 20
 end)
+-- config_tooltip calls each control's tooltipFunc, which ConfigTab installs on every option control
+probe("ConfigTab.varControls[*].tooltipFunc (config_tooltip)", function()
+	local b = build()
+	if not (b and b.configTab and b.configTab.varControls) then return true end
+	local any = false
+	for _, ctl in pairs(b.configTab.varControls) do
+		any = true
+		if type(ctl.tooltipFunc) == "function" then return true end
+	end
+	return not any
+end, "configTooltip")
 probe("classes.CalcsTab.CheckFlag + sectionList + formatCalcStr", function()
 	local c = class_of("CalcsTab")
 	return type(c) == "table" and type(c.CheckFlag) == "function" and type(formatCalcStr) == "function"

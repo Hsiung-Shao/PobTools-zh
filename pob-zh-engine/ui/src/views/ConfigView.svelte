@@ -10,27 +10,67 @@
   import PobText from "../components/PobText.svelte";
   import Select from "../components/Select.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
+  import { textToTooltipLines } from "$lib/tooltip-lines";
 
   let data = $state<ConfigList | null>(null);
-  // tooltip (POB's per-control tooltipText), on hover after a short delay
-  let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
+  // tooltip = POB's own config tooltip (config_tooltip: the option's text, each list
+  // option's text and the "this option will give you" stat differences), on hover after
+  // a short delay; a list option pointed at in the open drop-down gets its own.
+  // Only when the bridge call fails does the plain tooltipText from list_config stand in.
+  // Row and option tooltips keep separate timers: the open list is portalled to <body>, so
+  // moving into it fires the row's mouseleave, which must not cancel the option's tooltip.
+  type Box = { left: number; top: number; right: number; bottom: number };
+  let tip = $state<{ kind: "row" | "opt"; lines: TooltipLine[]; x: number; y: number; avoid: Box } | null>(null);
   let tipTimer = 0;
+  let tipSeq = 0;
+  let optTimer = 0;
+  let optSeq = 0;
+  const box = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+  const tipCache = new Map<string, TooltipLine[]>();
+  async function loadTip(it: ConfigItem, index?: number): Promise<TooltipLine[] | null> {
+    const key = `${app.rev}|${it.var}|${index ?? ""}`;
+    const hit = tipCache.get(key);
+    if (hit) return hit;
+    let lines: TooltipLine[];
+    try {
+      lines = (await api.configTooltip(it.var, index)).lines;
+    } catch {
+      const text = it.tooltipZh || it.tooltip;
+      lines = text ? textToTooltipLines(text) : [];
+    }
+    if (!lines.length) return null;
+    tipCache.set(key, lines);
+    return lines;
+  }
   function tipEnter(it: ConfigItem, e: MouseEvent) {
     clearTimeout(tipTimer);
-    const text = it.tooltipZh || it.tooltip;
-    if (!text) return;
+    const seq = ++tipSeq;
     const el = e.currentTarget as HTMLElement;
-    tipTimer = window.setTimeout(() => {
+    tipTimer = window.setTimeout(async () => {
+      const lines = await loadTip(it);
+      if (seq !== tipSeq || !lines) return;
       const r = el.getBoundingClientRect();
-      const lines: TooltipLine[] = text.split("\n").map((s) => ({ size: 14, text: s, raw: s, center: false }));
-      const x = Math.round(Math.min(r.left + 24, window.innerWidth - 380));
-      const y = Math.round(r.bottom + 4 + 260 > window.innerHeight ? Math.max(8, r.top - 8 - Math.min(260, 20 * lines.length + 24)) : r.bottom + 4);
-      tip = { lines, x, y };
+      tip = { kind: "row", lines, x: Math.round(r.left + 24), y: Math.round(r.bottom + 4), avoid: box(r) };
     }, 220);
   }
   function tipLeave() {
     clearTimeout(tipTimer);
-    tip = null;
+    tipSeq++;
+    if (tip?.kind === "row") tip = null;
+  }
+  function optActive(it: ConfigItem, v: string | number | null, rect: DOMRect | null) {
+    clearTimeout(optTimer);
+    const seq = ++optSeq;
+    if (tip?.kind === "opt") tip = null;
+    const index = v == null ? 0 : (it.list ?? []).findIndex((o) => String(o.val ?? "") === String(v)) + 1;
+    if (!rect || index <= 0) return;
+    optTimer = window.setTimeout(async () => {
+      const lines = await loadTip(it, index);
+      if (seq !== optSeq || !lines) return;
+      clearTimeout(tipTimer);
+      tipSeq++;
+      tip = { kind: "opt", lines, x: Math.round(rect.right + 8), y: Math.round(rect.top), avoid: box(rect) };
+    }, 120);
   }
   const selectedLabel = (it: ConfigItem) => (it.list ?? []).find((o) => String(o.val ?? "") === String(it.value ?? ""));
   let loadedRev = -1;
@@ -220,7 +260,7 @@
                         {@const sel = selectedLabel(it)}
                         <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
                         <span class="ctl">
-                          <Select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} options={(it.list ?? []).map((o) => ({ value: String(o.val ?? ""), label: o.labelZh || o.label }))} onchange={(v) => { const o = (it.list ?? []).find((x) => String(x.val ?? "") === String(v)); void set(it, o ? o.val : null); }} />
+                          <Select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} options={(it.list ?? []).map((o) => ({ value: String(o.val ?? ""), label: o.labelZh || o.label }))} onchange={(v) => { const o = (it.list ?? []).find((x) => String(x.val ?? "") === String(v)); void set(it, o ? o.val : null); }} onactive={(v, rect) => optActive(it, v, rect)} />
                         </span>
                       {:else if it.type === "text"}
                         <span class="lbl wide"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
@@ -277,7 +317,7 @@
     {/if}
   </div>
 
-  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} />{/if}
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} centerHead={false} avoid={tip.avoid} />{/if}
 
   {#if setDialog}
     <div class="modal">

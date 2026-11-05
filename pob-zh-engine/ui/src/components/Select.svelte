@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { t } from "$lib/i18n";
   import { filterOptions, moveIndex, placeList, plainLabel, typeahead, type SelOption } from "$lib/select";
 
@@ -29,6 +29,7 @@
     color,
     action = false,
     searchable,
+    onactive,
   }: {
     value?: V | null;
     options: SelOption[];
@@ -44,6 +45,8 @@
     action?: boolean;
     /** force the search box on / off (default: on above 25 options) */
     searchable?: boolean;
+    /** the option the mouse / arrow keys point at while the list is open (null when it closes), with its box */
+    onactive?: (v: V | null, rect: DOMRect | null) => void;
   } = $props();
 
   const SEARCH_AT = 25;
@@ -94,6 +97,27 @@
       maxH: Math.max(60, p.maxH),
     };
   }
+
+  // Tracks only open / active / shown: the caller's handler is usually a fresh arrow on
+  // every parent render, and re-running on it would re-notify forever. The box is read a
+  // frame later (openList places the list after two ticks); null is sent once, on close.
+  let activeSent = false;
+  $effect(() => {
+    const o = open && active >= 0 ? shown[active] : undefined;
+    const i = active;
+    if (!untrack(() => onactive)) return;
+    if (!o) {
+      if (activeSent) untrack(() => onactive)?.(null, null);
+      activeSent = false;
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      const el = optsEl?.querySelector<HTMLElement>(`[data-i="${i}"]`);
+      activeSent = true;
+      onactive?.(o.value, el ? el.getBoundingClientRect() : null);
+    });
+    return () => cancelAnimationFrame(raf);
+  });
 
   function scrollActive(center = false) {
     if (!optsEl || active < 0) return;

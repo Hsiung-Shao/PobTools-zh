@@ -72,6 +72,8 @@
   .line {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    line-height: 21px;
+    font-variant-numeric: tabular-nums;
   }
   .big .line {
     font-size: var(--fs-sm);
@@ -89,7 +91,7 @@
     padding: 0 0 3px;
     font-size: var(--fs-2xs);
     letter-spacing: 0.08em;
-    color: var(--ink-3);
+    color: var(--ink-2);
     border-bottom: 1px solid var(--edge-1);
     white-space: nowrap;
   }

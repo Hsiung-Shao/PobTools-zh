@@ -1885,6 +1885,84 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			bool okRc = okSc && child.Call("reset_config", json{{"var", "enemyIsBoss"}}, rc, 60000) && child.Call("get_stats", json::object(), st2, 30000);
 			check("reset_config restores the default and the numbers", okRc && st0["stats"].value("TotalDPS", 0.0) == st2["stats"].value("TotalDPS", 1.0) &&
 			                                                              st0["stats"].value("TotalEHP", 0.0) == st2["stats"].value("TotalEHP", 1.0));
+			// config_tooltip: POB's own per-option tooltip (the list-option "This option will give you..." text,
+			// the checkbox "Toggling this option..." difference), read-only -- must not touch the build
+			{
+				auto tipHas = [](const json& r, const std::string& needle) {
+					if (!r.contains("lines") || !r["lines"].is_array()) return false;
+					for (auto& ln : r["lines"])
+						if (ln.contains("raw") && ln["raw"].is_string() && ln["raw"].get<std::string>().find(needle) != std::string::npos) return true;
+					return false;
+				};
+				// the engine translates at Tooltip:AddLine, so raw is already zh-rTW when the dictionary has the line
+				auto tipHasAny = [&](const json& r, const std::string& en, const std::string& zh) { return tipHas(r, en) || tipHas(r, zh); };
+				auto findItem =[](const json& lc, const std::string& var) -> json {
+					if (lc.contains("sections")) for (auto& sec : lc["sections"]) for (auto& it : sec["items"])
+						if (it.value("var", "") == var) return it;
+					return json();
+				};
+
+				// H1: index 1 of bandit is None -> "Grants 1 Passive Skill Point"
+				json h1;
+				bool okH1 = okCf && child.Call("config_tooltip", json{{"var", "bandit"}, {"index", 1}}, h1, 60000);
+				check("config_tooltip{bandit,index=1} returns POB's None-bandit tooltip (Grants 1 Passive Skill Point)",
+				      okH1 && tipHasAny(h1, "Grants 1 Passive Skill Point", u8"賦予 1 天賦點數"), okH1 ? h1.dump().substr(0, 300) : h1.dump().substr(0, 200));
+
+				// H2: while bandit is None, ask about Alira's row -- the tooltip text POB builds for the hovered option
+				json lcA, setNone, h2, lcB, stA, stB;
+				child.Call("list_config", json::object(), lcA, 60000);
+				json banditA = findItem(lcA, "bandit");
+				if (!banditA.is_null() && banditA.value("value", json()) != json("None"))
+					child.Call("set_config", json{{"var", "bandit"}, {"value", "None"}}, setNone, 60000);
+				child.Call("list_config", json::object(), lcA, 60000);
+				child.Call("get_stats", json::object(), stA, 30000);
+				banditA = findItem(lcA, "bandit");
+				int aliraIdx = 0;
+				if (!banditA.is_null() && banditA.contains("list"))
+					for (size_t i = 0; i < banditA["list"].size(); i++)
+						if (banditA["list"][i].value("val", json()) == json("Alira")) { aliraIdx = (int)i + 1; break; }
+				bool okH2 = aliraIdx > 0 && child.Call("config_tooltip", json{{"var", "bandit"}, {"index", aliraIdx}}, h2, 60000);
+				check("config_tooltip{bandit,index=Alira} describes what choosing it would give (option will give you)",
+				      okH2 && tipHasAny(h2, "option will give you", u8"此選項會給你"),
+				      "aliraIdx=" + std::to_string(aliraIdx) + " " + (okH2 ? h2.dump().substr(0, 300) : h2.dump().substr(0, 200)));
+
+				// H3: the previous call is a pure preview -- stats and the bandit selection stay exactly as they were
+				bool okH3 = okH2 && child.Call("get_stats", json::object(), stB, 30000) && child.Call("list_config", json::object(), lcB, 60000);
+				json banditB = findItem(lcB, "bandit");
+				check("config_tooltip is read-only: get_stats identical and bandit value unchanged afterwards",
+				      okH3 && !banditA.is_null() && !banditB.is_null() && stA.dump() == stB.dump() &&
+				          banditA.value("value", json()) == banditB.value("value", json()),
+				      okH3 ? "bandit " + banditA.value("value", json()).dump() + " -> " + banditB.value("value", json()).dump() : "calls failed");
+
+				// H4: a visible checkbox (Onslaught if there, else the first visible ones; up to 5) -> "Toggling this option..."
+				std::vector<std::string> checks;
+				json onsl = findItem(lcA, "buffOnslaught");
+				if (!onsl.is_null() && onsl.value("type", "") == "check" && onsl.value("visible", false)) checks.push_back("buffOnslaught");
+				if (lcA.contains("sections")) for (auto& sec : lcA["sections"]) for (auto& it : sec["items"])
+					if (it.value("type", "") == "check" && it.value("visible", false) && it.value("var", "") != "buffOnslaught" && checks.size() < 5)
+						checks.push_back(it.value("var", ""));
+				if (checks.size() > 5) checks.resize(5);
+				bool foundToggle = false, anyLines = false;
+				std::string triedVars, lastDump;
+				for (auto& cv : checks) {
+					json h4;
+					bool okH4 = child.Call("config_tooltip", json{{"var", cv}}, h4, 60000);
+					triedVars += cv + " ";
+					lastDump = h4.dump().substr(0, 200);
+					if (okH4 && h4.contains("lines") && h4["lines"].is_array() && !h4["lines"].empty()) {
+						anyLines = true;
+						if (tipHasAny(h4, "Toggling this option", u8"切換此選項")) { foundToggle = true; break; }
+					}
+				}
+				check("config_tooltip on a visible checkbox returns non-empty lines with POB's 'Toggling this option' difference",
+				      !checks.empty() && anyLines && foundToggle, "tried=" + triedVars + " last=" + lastDump);
+
+				// H5: unknown var is an error, and the bridge keeps running
+				json h5;
+				bool okH5 = child.Call("config_tooltip", json{{"var", "nope_not_a_var"}}, h5, 60000);
+				check("config_tooltip with an unknown var fails cleanly and the bridge stays alive", !okH5 && child.Alive(), h5.dump().substr(0, 200));
+			}
+
 			json cm, st3, cm2, st4;
 			bool okCm = okCf && child.Call("set_custom_mods", json{{"list", json::array({json{{"title", "t"}, {"text", "100% increased Damage"}, {"enabled", true}}})}}, cm, 60000) &&
 			            child.Call("get_stats", json::object(), st3, 30000) &&

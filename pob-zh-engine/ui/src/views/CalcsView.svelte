@@ -268,7 +268,7 @@
 
   {#if bd}
     <div class="float" class:pinned={bd.pinned} use:fitFloat={pointAnchor(bd.x, bd.y)}>
-      <div class="fhead"><span class="label">{t("calcs.breakdown")}</span>{#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}</div>
+      {#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}
       <div class="fbody"><BreakdownPanel sections={bd.sections} /></div>
     </div>
   {/if}
@@ -420,8 +420,9 @@
   }
   /* one row = 16px: label column right-aligned, then POB's value columns on a
      shared grid so column N lines up down the whole subsection */
+  /* 標籤欄上限 196px(= .rl 的 190 + 內距):三欄寬的區段(技能詳情)不再用 46%,否則標籤靠右後與值之間空一大段 */
   .sub {
-    --label-w: minmax(0, 46%);
+    --label-w: minmax(0, min(46%, 196px));
   }
   .sub.multi {
     --label-w: 150px;
@@ -509,20 +510,17 @@
     max-height: calc(100vh - 20px);
     display: flex;
     flex-direction: column;
-    background: var(--surface-2);
-    border: 1px solid var(--edge-1);
-    border-left: 3px solid var(--gold);
-    border-radius: var(--radius-m);
+    background: var(--surface-1);
+    border: 1px solid var(--edge-2);
+    border-radius: 4px;
     box-shadow: var(--shadow-float);
     pointer-events: none;
   }
-  .fhead {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 14px 6px;
-    border-bottom: 1px solid var(--edge-0);
-  }
+  /* 內容照 POB 原生浮窗,不加標頭;釘住時只在右上角留一個小標記 */
   .pin {
+    position: absolute;
+    top: 3px;
+    right: 6px;
     font-size: var(--fs-2xs);
     color: var(--gold);
   }
@@ -530,7 +528,7 @@
      panel in that state takes the mouse so the wheel can reach it. */
   .fbody {
     min-height: 0;
-    padding: 10px 14px 12px;
+    padding: 10px 14px;
     overflow-y: auto;
   }
   .float.pinned:global([data-fit-tall]) {
