@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { equippedIn, filterByLoadout, groupSlots, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge } from "./items";
+import { equippedIn, filterByLoadout, groupSlots, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge, resumeEdit } from "./items";
 import type { ItemSummary } from "./bridge";
 import type { ItemSlot } from "./bridge";
 
@@ -159,5 +159,28 @@ describe("filterByLoadout / usedInBadge", () => {
     expect(usedInBadge(undefined)).toEqual({ kind: "unused" });
     expect(usedInBadge(items[3].usedIn)).toBeNull();
     expect(usedInBadge(items[4].usedIn)).toEqual({ kind: "elsewhere", where: "Boss" });
+  });
+});
+
+describe("resumeEdit", () => {
+  it("R1 讀取成功時回傳同一個狀態物件", async () => {
+    const state = { item: "x" };
+    expect(await resumeEdit(async () => state)).toBe(state);
+  });
+
+  it("R2 POB 沒有編輯中物品(bridge reject)時回傳 null 不丟錯", async () => {
+    const read = async () => { throw new Error("no item is being edited; call item_edit_begin first"); };
+    expect(await resumeEdit(read)).toBeNull();
+  });
+
+  it("R3 其他錯誤(例如逾時)也回傳 null 不丟錯", async () => {
+    const read = async () => { throw new Error("timeout"); };
+    expect(await resumeEdit(read)).toBeNull();
+  });
+
+  it("R4 read 只被呼叫一次", async () => {
+    let n = 0;
+    await resumeEdit(async () => { n++; return {}; });
+    expect(n).toBe(1);
   });
 });

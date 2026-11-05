@@ -9,7 +9,7 @@
   import TradeDialog from "../components/TradeDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
+  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, resumeEdit, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
   import { app } from "$lib/state.svelte";
   import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -101,6 +101,23 @@
     const rev = app.rev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
+  });
+
+  // F2 re-mounts the whole page ({#key app.langRev}) and so does leaving this tab,
+  // which used to drop an item being edited (a fresh craft, never added) on the
+  // floor. POB keeps its displayItem through both, so pick the edit back up from it.
+  let resumed = false;
+  $effect(() => {
+    if (!app.loaded || resumed) return;
+    resumed = true;
+    untrack(() =>
+      void resumeEdit(() => api.itemEditState()).then((s) => {
+        if (s && !edit) {
+          edit = s;
+          rightTab = "edit";
+        }
+      }),
+    );
   });
 
   /** A change went through POB: pull items now, then let the sidebar catch up. */
