@@ -148,6 +148,9 @@ return function(M, ctx)
 		if want == "" then argerr("class required (e.g. \"Witch\")") end
 		-- A wrong class / ascendancy name must not cost the user the loaded build.
 		local snap = has_build() and M.export_code().code or nil
+		-- The share code carries no file or build name; keep them to put back.
+		local old = snap and ensure_build()
+		local oldFile, oldName = old and old.dbFileName, old and old.buildName
 		local ok, err = pcall(function()
 			M.new_build({ name = "MCP build" })
 			local cl = M.list_classes()
@@ -176,7 +179,15 @@ return function(M, ctx)
 			end
 		end)
 		if not ok then
-			if snap then pcall(M.import_code, { code = snap, mode = "replace" }) end
+			if snap then
+				local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+				if not okRestore then
+					error(tostring(err) .. "; RESTORING THE BUILD FAILED (" .. tostring(restoreErr) .. "): load it again", 0)
+				end
+				local b = ensure_build()
+				b.dbFileName, b.buildName = oldFile, oldName
+				error(tostring(err) .. " -- the previous build was kept", 0)
+			end
 			error(err, 0)
 		end
 		return { ok = true, summary = summary() }

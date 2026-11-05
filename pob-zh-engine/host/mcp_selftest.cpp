@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[16] = {
+const char* const kTitles[17] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -57,6 +57,7 @@ const char* const kTitles[16] = {
 	"equip_item 會取代已有裝備的欄位",
 	"suggest_nodes 帶出路徑點數",
 	"點他昇華的節點會報錯且建置不變",
+	"new_build 職業打錯時保留原建置與名稱",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -998,6 +999,32 @@ void TestM15(Ctx& c)
 	Record(15, errOk && ascSame && bad.empty(), d);
 }
 
+// M16 new_build 職業打錯時保留原建置與名稱
+void TestM16(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(16, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes b0 = c.s->Call("build_summary", json::object());
+	if (!b0.Ok() || !b0.sc.contains("buildName") || !b0.sc.contains("ascendancy") || !b0.sc.contains("stats")) {
+		Record(16, false, "前: build_summary 失敗或缺 buildName/ascendancy/stats: " + b0.Why());
+		return;
+	}
+	ToolRes nb = c.s->Call("new_build", {{"class", "NoSuchClass"}}, kSlowMs);
+	const bool errOk = nb.transportOk && !nb.rpcError && nb.isError && NonEmptyStr(nb.sc, "error");
+	ToolRes b1 = c.s->Call("build_summary", json::object());
+	if (!b1.Ok() || !b1.sc.contains("stats")) { Record(16, false, "後: build_summary 失敗: " + b1.Why()); return; }
+	const json nul(nullptr);
+	const bool nameSame = b0.sc["buildName"] == (b1.sc.contains("buildName") ? b1.sc["buildName"] : nul);
+	const bool ascSame = b0.sc["ascendancy"] == (b1.sc.contains("ascendancy") ? b1.sc["ascendancy"] : nul);
+	auto bad = StatDiffKeys(b0.sc["stats"], b1.sc["stats"]);
+	std::string d = std::string("new_build ") +
+	                (errOk ? "報錯: \"" + Cut(ErrText(nb.sc), 60) + "\"" : "沒有報錯(" + (nb.Ok() ? std::string("isError=false") : nb.Why()) + ")") +
+	                ", buildName " + b0.sc["buildName"].dump() + (nameSame ? " 不變" : " 變了") +
+	                ", ascendancy " + (ascSame ? "不變" : "變了") +
+	                ", stats 不同 " + std::to_string(bad.size()) + " 個" + (bad.empty() ? "" : " (" + JoinFirst(bad, 5) + ")");
+	Record(16, errOk && nameSame && ascSame && bad.empty(), d);
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1108,7 +1135,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1118,7 +1145,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				}
 				Guard(1, [&] { TestM1(c); });
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7, 13, 14, 15})
+					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1129,6 +1156,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(13, [&] { TestM13(c); });
 					Guard(14, [&] { TestM14(c); });
 					Guard(15, [&] { TestM15(c); });
+					Guard(16, [&] { TestM16(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1148,7 +1176,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 15; n++) {
+	for (int n = 1; n <= 16; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";
