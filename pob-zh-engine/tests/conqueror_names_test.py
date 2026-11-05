@@ -44,19 +44,32 @@ for lst in tj["conquerors"].values():
         check(c["nameZh"] == GGPK.get(c["name"]), f"C1 timeless_jewels {c['name']}: {c['nameZh']} != {GGPK.get(c['name'])}")
 check(seen == set(GGPK), f"C1 征服者清單不符:{sorted(seen ^ set(GGPK))}")
 
-# C2 POB 查詢永恆珠寶下拉「征服者 (基石)」的名字段 = GGPK
+# POB Classes/TreeTab.lua conquerorTypes 的下拉標籤;基石名 = GGPK alternatepassiveskills.Name
+KEYSTONE = {
+    "Doryani (Corrupted Soul)": "腐化之魂", "Xibaqua (Divine Flesh)": "神聖血肉",
+    "Ahuana (Immortal Ambition)": "不朽野望", "Kaom (Strength of Blood)": "血之力量",
+    "Rakiata (Tempered by War)": "戰爭淬煉", "Akoya (Chainbreaker)": "除鏈師",
+    "Asenath (Dance with Death)": "與死共舞", "Nasima (Second Sight)": "先見之明",
+    "Balbala (The Traitor)": "叛徒", "Avarius (Power of Purpose)": "力量之意",
+    "Dominus (Inner Conviction)": "內觀信念", "Maxarius (Transcendence)": "超凡脫俗",
+    "Cadiro (Supreme Decadence)": "至高．頹廢", "Victario (Supreme Grandstanding)": "至高．譁眾",
+    "Caspiro (Supreme Ostentation)": "至高．炫耀", "Vorana (Black Scythe Training)": "黑鐮之訓",
+    "Uhtred (Celestial Mathematics)": "星界計算", "Medved (The Unbreaking Circle)": "不滅之環",
+    "Tecrod (Overwhelming Hate)": "壓倒性恨意", "Ulaman (Weighted Exchange)": "加重交換",
+    "Kurgal (Reconstructed Essence)": "重構精髓", "Amanamu (The Loyal Few)": "忠誠少數",
+}
+
+# C2 POB 查詢永恆珠寶下拉每一條都有譯文,且為「GGPK 征服者名: GGPK 基石名」
 ui = load("dist/Data/poe1/zh-rTW/ui.json")
 flat = {}
 for v in ui.values():
     if isinstance(v, dict):
         flat.update(v)
-n = 0
-for en, zh in flat.items():
-    m = re.fullmatch(r"([A-Z][a-z]+) \((.+)\)", en)
-    if m and m.group(1) in GGPK and isinstance(zh, str) and ": " in zh:
-        n += 1
-        check(zh.split(": ", 1)[0] == GGPK[m.group(1)], f"C2 ui.json {en}: {zh}")
-check(n >= 15, f"C2 只找到 {n} 條征服者下拉譯文")
+for en, ks in KEYSTONE.items():
+    want = GGPK[re.match(r"[A-Z][a-z]+", en).group(0)] + ": " + ks
+    check(flat.get(en) == want, f"C2 ui.json {en}: {flat.get(en)} != {want}")
+# Zorath 的下拉只有名字、沒有基石
+check(flat.get("Zorath") == GGPK["Zorath"], f"C2 ui.json Zorath: {flat.get('Zorath')}")
 
 print(f"{checks} checks, {fails} failed")
 sys.exit(1 if fails else 0)
