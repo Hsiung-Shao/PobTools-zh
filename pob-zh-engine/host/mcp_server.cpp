@@ -10,12 +10,14 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h>
 
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -83,17 +85,30 @@ bool ReadLine(std::string& carry, std::string& line)
 
 class Engine {
 public:
-	Engine(std::wstring exeDir, std::wstring pobDir) : exeDir_(std::move(exeDir)), pobDir_(std::move(pobDir)) {}
+	Engine(std::wstring exeDir, std::wstring pobDir) : exeDir_(std::move(exeDir)), pobDir_(std::move(pobDir))
+	{
+		// One sandbox per server process: Claude Desktop, Claude Code and Codex
+		// may each run one at the same time, and POB rewrites Settings.xml and
+		// Builds\ in its own folder.
+		root_ = exeDir_ + L"PobTools\\mcp_sandbox";
+		ownDir_ = root_ + L"\\" + std::to_wstring(GetCurrentProcessId());
+		sandbox_ = ownDir_ + L"\\PathOfBuildingCommunity";
+		wchar_t env[2048] = {};
+		if (GetEnvironmentVariableW(L"POB_ZH_BRIDGE", env, 2048)) bridgeOverride_ = env;
+	}
 	~Engine()
 	{
 		if (boot_.joinable()) boot_.join();
 		if (child_) child_->Stop(3000);
+		child_.reset();
+		PobSandbox::Rmtree(ownDir_);
 	}
 
 	// First boot runs in the background: clients expect `initialize` and
 	// `tools/list` answered at once, and POB takes up to a minute to start.
 	void StartAsync()
 	{
+		RemoveStaleSandboxes();
 		boot_ = std::thread([this] {
 			std::string err;
 			bool ok = Boot(true, err);
@@ -105,20 +120,27 @@ public:
 		});
 	}
 
-	// Waits for the first boot; then (re)starts the child if it died.
-	// `restarted` is set when this call had to restart it.
+	// Waits for the first boot; retries it if it failed (the user may have
+	// set the POB folder since), and restarts the child if it died.
+	// `restarted` is set when this call had to restart a child that was up.
 	bool Ensure(std::string& err, bool& restarted)
 	{
 		restarted = false;
+		bool ok;
 		{
 			std::unique_lock<std::mutex> lk(mu_);
 			cv_.wait(lk, [this] { return ready_; });
-			if (!bootOk_) { err = bootError_; return false; }
+			ok = bootOk_;
+		}
+		if (!ok) {
+			if (!Boot(true, err)) return false;
+			std::lock_guard<std::mutex> lk(mu_);
+			bootOk_ = true;
+			return true;
 		}
 		if (child_ && child_->Alive()) return true;
 		restarted = true;
-		if (!Boot(false, err)) return false;
-		return true;
+		return Boot(false, err);
 	}
 
 	HeadlessProc::Child* Child() { return child_.get(); }
@@ -129,6 +151,31 @@ public:
 	}
 
 private:
+	// Sandboxes of server processes that are gone (crashed, killed by the client).
+	void RemoveStaleSandboxes()
+	{
+		WIN32_FIND_DATAW fd{};
+		HANDLE h = FindFirstFileW((root_ + L"\\*").c_str(), &fd);
+		if (h == INVALID_HANDLE_VALUE) return;
+		std::vector<std::wstring> stale;
+		do {
+			const std::wstring n = fd.cFileName;
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || n == L"." || n == L"..") continue;
+			if (n.find_first_not_of(L"0123456789") != std::wstring::npos) {
+				stale.push_back(n); // the layout before per-process folders
+				continue;
+			}
+			const DWORD pid = (DWORD)_wtoi(n.c_str());
+			if (pid == GetCurrentProcessId()) continue;
+			HANDLE p = OpenProcess(SYNCHRONIZE, FALSE, pid);
+			const bool alive = p && WaitForSingleObject(p, 0) == WAIT_TIMEOUT;
+			if (p) CloseHandle(p);
+			if (!alive) stale.push_back(n);
+		} while (FindNextFileW(h, &fd));
+		FindClose(h);
+		for (const auto& n : stale) PobSandbox::Rmtree(root_ + L"\\" + n);
+	}
+
 	bool Boot(bool first, std::string& err)
 	{
 		using namespace PobSandbox;
@@ -136,13 +183,22 @@ private:
 			err = "No PoE1 Path of Building install found. Start PobTools once and set the PoE1 folder, or pass --pob <folder>.";
 			return false;
 		}
-		const std::wstring root = exeDir_ + L"PobTools\\mcp_sandbox";
-		const std::wstring sandbox = root + L"\\PathOfBuildingCommunity";
-		if (first || !IsDir(sandbox)) {
-			Rmtree(sandbox);
-			MkdirP(root);
+		if (first || !IsDir(sandbox_)) {
+			if (child_) { child_->Stop(1000); child_.reset(); }
+			Rmtree(sandbox_);
+			MkdirP(sandbox_);
 			CopyStats st;
-			CopyTree(pobDir_, sandbox, st, true);
+			CopyTree(pobDir_, sandbox_, st, true);
+			// An installed POB (installed.cfg, left out of the sandbox) keeps its
+			// builds under Documents\Path of Building\Builds: bring those along.
+			if (GetFileAttributesW((pobDir_ + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
+				PWSTR docs = nullptr;
+				if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs))) {
+					const std::wstring userBuilds = std::wstring(docs) + L"\\Path of Building\\Builds";
+					if (IsDir(userBuilds)) CopyTree(userBuilds, sandbox_ + L"\\Builds", st, true);
+				}
+				CoTaskMemFree(docs);
+			}
 			if (st.errors > 0 || st.files < 100) {
 				err = "Could not prepare the sandbox copy of Path of Building (" + std::to_string(st.errors) + " errors).";
 				return false;
@@ -152,11 +208,10 @@ private:
 		child_ = std::make_unique<HeadlessProc::Child>();
 		HeadlessProc::Options opt;
 		opt.exeDir = exeDir_;
-		opt.launchLua = sandbox + L"\\Launch.lua";
+		opt.launchLua = sandbox_ + L"\\Launch.lua";
 		opt.game = L"poe1";
 		opt.locale = L"zh-rTW";
-		wchar_t env[2048] = {};
-		if (GetEnvironmentVariableW(L"POB_ZH_BRIDGE", env, 2048)) opt.bridgeLua = env;
+		opt.bridgeLua = bridgeOverride_;
 		if (!child_->Start(opt, err)) return false;
 		json hello, gate;
 		if (!child_->WaitEvent("hello", hello, 180000)) {
@@ -175,7 +230,7 @@ private:
 		return true;
 	}
 
-	std::wstring exeDir_, pobDir_;
+	std::wstring exeDir_, pobDir_, root_, ownDir_, sandbox_, bridgeOverride_;
 	std::unique_ptr<HeadlessProc::Child> child_;
 	std::thread boot_;
 	std::mutex mu_;
@@ -259,6 +314,8 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 	// the client's pipes open (the client would wait on it for EOF).
 	SetHandleInformation(g_in, HANDLE_FLAG_INHERIT, 0);
 	SetHandleInformation(g_out, HANDLE_FLAG_INHERIT, 0);
+	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	if (err && err != INVALID_HANDLE_VALUE) SetHandleInformation(err, HANDLE_FLAG_INHERIT, 0);
 
 	std::wstring pobDir = pobDirOverride;
 	if (pobDir.empty()) pobDir = DetectInstalls(exeDir).poe1Dir;
@@ -290,33 +347,39 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 			continue;
 		}
 		const bool isRequest = msg.contains("id") && !msg["id"].is_null();
-		const std::string method = msg.value("method", "");
-		const json params = msg.value("params", json::object());
 		if (!isRequest) continue; // notifications (initialized, cancelled) need no answer
 		const json id = msg["id"];
+		// A field of the wrong type (params as an array, a numeric name...) makes
+		// nlohmann throw; answer "invalid params" instead of terminating.
+		try {
+			const std::string method = msg.value("method", "");
+			const json params = msg.value("params", json::object());
 
-		if (method == "initialize") {
-			std::string want = params.value("protocolVersion", "");
-			if (want != "2024-11-05" && want != "2025-03-26" && want != "2025-06-18") want = kDefaultProtocol;
-			WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {
-				{"protocolVersion", want},
-				{"capabilities", {{"tools", json::object()}}},
-				{"serverInfo", {{"name", "pobtools"}, {"version", POBTOOLS_VERSION_STRING}}},
-				{"instructions", toolsDoc.value("instructions", "")},
-			}}});
-		} else if (method == "ping") {
-			WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}});
-		} else if (method == "tools/list") {
-			WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", tools}}}});
-		} else if (method == "tools/call") {
-			const std::string name = params.value("name", "");
-			bool known = false;
-			for (const auto& t : tools) if (t.value("name", "") == name) known = true;
-			json result = known ? CallTool(eng, name, params.value("arguments", json::object()), debug)
-			                    : ToolError("unknown tool " + name);
-			WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}});
-		} else {
-			WriteMessage(RpcError(id, -32601, "method not found: " + method));
+			if (method == "initialize") {
+				std::string want = params.value("protocolVersion", "");
+				if (want != "2024-11-05" && want != "2025-03-26" && want != "2025-06-18") want = kDefaultProtocol;
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {
+					{"protocolVersion", want},
+					{"capabilities", {{"tools", json::object()}}},
+					{"serverInfo", {{"name", "pobtools"}, {"version", POBTOOLS_VERSION_STRING}}},
+					{"instructions", toolsDoc.value("instructions", "")},
+				}}});
+			} else if (method == "ping") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}});
+			} else if (method == "tools/list") {
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", tools}}}});
+			} else if (method == "tools/call") {
+				const std::string name = params.value("name", "");
+				bool known = false;
+				for (const auto& t : tools) if (t.value("name", "") == name) known = true;
+				json result = known ? CallTool(eng, name, params.value("arguments", json::object()), debug)
+				                    : ToolError("unknown tool " + name);
+				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", result}});
+			} else {
+				WriteMessage(RpcError(id, -32601, "method not found: " + method));
+			}
+		} catch (const std::exception& ex) {
+			WriteMessage(RpcError(id, -32602, std::string("invalid params: ") + ex.what()));
 		}
 	}
 	return 0;

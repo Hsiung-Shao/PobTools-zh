@@ -98,7 +98,13 @@ bool ShouldJunction(const std::wstring& rel)
 bool ShouldSkip(const std::wstring& rel, bool includeBuilds)
 {
 	// State the caller owns or that a previous POB run left behind.
+	// installed.cfg: POB then keeps settings and builds under Documents\Path of
+	// Building\ (Launch.lua installedMode) -- the sandbox would write the user's.
+	// PobTools: pob-zh.exe may sit inside the POB folder (DetectInstalls case 3),
+	// and the sandbox lives under <exeDir>PobTools -- never copy it into itself.
 	return (!includeBuilds && _wcsicmp(rel.c_str(), L"Builds") == 0) ||
+	       _wcsicmp(rel.c_str(), L"installed.cfg") == 0 ||
+	       _wcsicmp(rel.c_str(), L"PobTools") == 0 ||
 	       _wcsicmp(rel.c_str(), L"Update") == 0 ||
 	       _wcsicmp(rel.c_str(), L"Settings.xml") == 0 ||
 	       _wcsicmp(rel.c_str(), L"imgui.ini") == 0;

@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[13] = {
+const char* const kTitles[15] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -54,6 +54,8 @@ const char* const kTitles[13] = {
 	"子行程掛掉後自動重開",
 	"參數錯誤回傳可讀的錯誤",
 	"設定字串帶入正確路徑",
+	"equip_item 會取代已有裝備的欄位",
+	"suggest_nodes 帶出路徑點數",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -900,6 +902,74 @@ void TestM9(const Snap& before, const std::wstring& pobDir)
 	Record(9, ok, d);
 }
 
+// M13 equip_item 會取代已有裝備的欄位
+void TestM13(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(13, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes li = c.s->Call("list_items", json::object());
+	if (!li.Ok() || !li.sc.contains("slots") || !li.sc["slots"].is_array()) { Record(13, false, "list_items 失敗: " + li.Why()); return; }
+	std::vector<std::string> rings;
+	for (const auto& sl : li.sc["slots"]) {
+		if (!sl.is_object() || !NonEmptyStr(sl, "slot")) continue;
+		if (!sl.contains("item") || !sl["item"].is_object() || sl["item"].empty()) continue;
+		const std::string slot = sl["slot"].get<std::string>();
+		if (slot.rfind("Ring", 0) == 0) rings.push_back(slot);
+	}
+	if (rings.empty()) { Record(13, false, "範例建置沒有已裝備的 Ring 欄位"); return; }
+
+	const std::string text =
+		"Rarity: Rare\nTest Loop\nTwo-Stone Ring\n--------\n+40% to Fire Resistance\n+40% to Cold Resistance\n";
+	ToolRes eq = c.s->Call("equip_item", {{"text", text}});
+	std::string d;
+	bool ok = false;
+	if (!eq.Ok()) {
+		d = "equip_item 失敗: " + eq.Why();
+	} else if (!NonEmptyStr(eq.sc, "slot")) {
+		d = "equip_item 回傳的 slot 不是非空字串";
+	} else {
+		const std::string slot = eq.sc["slot"].get<std::string>();
+		ToolRes li2 = c.s->Call("list_items", json::object());
+		std::string name = "(找不到欄位)";
+		if (li2.Ok() && li2.sc.contains("slots") && li2.sc["slots"].is_array()) {
+			for (const auto& sl : li2.sc["slots"]) {
+				if (sl.is_object() && sl.value("slot", std::string()) == slot) {
+					name = sl.contains("item") && sl["item"].is_object() ? sl["item"].value("name", std::string("(無名稱)")) : std::string("(空)");
+				}
+			}
+		}
+		const bool wasEquipped = std::find(rings.begin(), rings.end(), slot) != rings.end();
+		ok = name.rfind("Test Loop", 0) == 0 && wasEquipped; // POB 稀有物品名為「名稱, 底材」
+		d = "原有 Ring 欄位 [" + JoinFirst(rings, 4) + "], 回傳 slot=" + slot + (wasEquipped ? "" : "(不是原有裝備的欄位)") +
+		    ", 之後該欄位 item.name=" + name;
+	}
+	ToolRes re;
+	if (!LoadSample(c, re)) { ok = false; d += "; 還原範例失敗: " + re.Why(); }
+	Record(13, ok, d);
+}
+
+// M14 suggest_nodes 帶出路徑點數
+void TestM14(Ctx& c)
+{
+	EnsureSuggest(c);
+	const ToolRes& r = c.suggest;
+	if (!r.Ok() || !r.sc.contains("nodes") || !r.sc["nodes"].is_array() || r.sc["nodes"].empty()) {
+		Record(14, false, "suggest_nodes 沒有可用結果: " + r.Why());
+		return;
+	}
+	std::vector<std::string> bad;
+	std::string vals;
+	const auto& nodes = r.sc["nodes"];
+	for (size_t i = 0; i < nodes.size(); i++) {
+		const auto& n = nodes[i];
+		const bool ok = n.is_object() && n.contains("pathDist") && n["pathDist"].is_number_integer() && n["pathDist"].get<long long>() >= 1;
+		vals += (i ? "," : "") + (n.is_object() && n.contains("pathDist") ? n["pathDist"].dump() : std::string("缺"));
+		if (!ok) bad.push_back("第" + std::to_string(i) + "筆");
+	}
+	Record(14, bad.empty(), "共 " + std::to_string(nodes.size()) + " 筆, pathDist=[" + vals + "]" +
+	                            (bad.empty() ? "" : ", 不合格: " + JoinFirst(bad, 5)));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1010,7 +1080,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1020,7 +1090,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				}
 				Guard(1, [&] { TestM1(c); });
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7})
+					for (int n : {3, 4, 5, 6, 7, 13, 14})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1028,6 +1098,8 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(5, [&] { TestM5(c); });
 					Guard(6, [&] { TestM6(c); });
 					Guard(7, [&] { TestM7(c); });
+					Guard(13, [&] { TestM13(c); });
+					Guard(14, [&] { TestM14(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1047,7 +1119,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 12; n++) {
+	for (int n = 1; n <= 14; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

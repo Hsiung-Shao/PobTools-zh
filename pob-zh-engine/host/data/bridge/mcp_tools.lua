@@ -33,6 +33,10 @@ return function(M, ctx)
 		return r
 	end
 
+	-- An empty Lua table goes out as [] (engine/headless_bridge.cpp IsArray);
+	-- these are JSON objects by contract.
+	local function obj(t) return setmetatable(t, { __object = true }) end
+
 	local function has_build()
 		return pcall(ensure_build)
 	end
@@ -56,7 +60,7 @@ return function(M, ctx)
 			local v = out[k]
 			if type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge then s[k] = v end
 		end
-		return s
+		return obj(s)
 	end
 
 	local function main_skill(b)
@@ -184,6 +188,12 @@ return function(M, ctx)
 		local b = ensure_build()
 		local stat = a and a.stat
 		if type(stat) ~= "string" or stat == "" then argerr("stat required (a key from build_summary.stats, e.g. \"Life\")") end
+		if type(b.GetSidebarBreakdown) ~= "function" then
+			-- POB master has no sidebar breakdown (only its beta does): give the
+			-- number and say why there are no lines.
+			return { stat = stat, value = b.calcsTab.mainOutput[stat], lines = {},
+				note = "This Path of Building version has no sidebar breakdown (it needs the POB beta branch)." }
+		end
 		local side = M.get_sidebar()
 		local idx
 		for i, row in ipairs(side.rows) do
@@ -354,16 +364,18 @@ return function(M, ctx)
 		if metric ~= "offence" and metric ~= "defence" then argerr("metric must be \"offence\" or \"defence\"") end
 		local top = math.max(1, math.min(50, tonumber(a and a.top) or 10))
 		local r = M.node_power({})
-		local dist = {}
-		for _, e in ipairs(r.report or {}) do dist[e.id] = e.pathDist end
 		local list = {}
 		for id, n in pairs(b.spec.nodes) do
 			local pw = (not n.alloc) and n.power and n.power[metric]
-			if type(pw) == "number" and pw > 0 and n.type ~= "Mastery" then
+			-- Only nodes this tree can reach (PassiveSpec:BuildAllDependsAndPaths sets
+			-- pathDist; 1000 = unreachable, e.g. another class's ascendancy).
+			local reachable = type(n.pathDist) == "number" and n.pathDist < 1000
+			if type(pw) == "number" and pw > 0 and n.type ~= "Mastery" and reachable then
 				local e = node_entry(n)
 				e.id = tonumber(id) or n.id
 				e.power = pw
-				e.pathDist = dist[n.id]
+				-- PassiveSpec:BuildPathFromNode keeps each node's distance from the allocated tree
+				e.pathDist = n.pathDist
 				list[#list + 1] = e
 			end
 		end
@@ -423,8 +435,18 @@ return function(M, ctx)
 					p.effect = effects[id]
 					if not p.effect then argerr("node %d is a mastery: pass masteries=[{id=%d, effect=<effect id>}]", id, id) end
 				end
+				local ascBefore = b.spec.curAscendClassId
 				local r = M.tree_click(p)
 				if type(r) == "table" and r.blocked then argerr("node %d cannot be changed: %s", id, tostring(r.blocked)) end
+				if type(r) == "table" and r.needsConfirm then
+					argerr("node %d belongs to another class's ascendancy (%s); use new_build to change class", id, tostring(r.needsConfirm))
+				end
+				if b.spec.curAscendClassId ~= ascBefore then
+					argerr("node %d is on a different ascendancy; allocating it would switch the ascendancy, which this tool does not do", id)
+				end
+				if (b.spec.nodes[id].alloc and true or false) ~= wantAlloc then
+					argerr("node %d could not be %s (Path of Building found no path or refused it)", id, wantAlloc and "allocated" or "deallocated")
+				end
 			end
 		end
 		local count = 0
@@ -588,8 +610,28 @@ return function(M, ctx)
 			argerr("unknown slot %q; one of: %s", slot, table.concat(names, ", "))
 		end
 		local r = M.add_item({ raw = text, slotName = (slot ~= "" and slot) or nil })
-		local it = b.itemsTab.items[r.item.id]
-		return { ok = true, slot = it and find_slot_of(b.itemsTab, it.id), item = { name = r.item.name, nameZh = r.item.nameZh }, summary = summary() }
+		local tab = b.itemsTab
+		local it = tab.items[r.item.id]
+		local where = it and find_slot_of(tab, it.id)
+		if it and not where then
+			-- POB's auto-equip only fills an EMPTY slot (ItemsTab:AddItem); the
+			-- tool promises "into the first slot it fits", so replace what is
+			-- there, preferring the item's own primary slot.
+			local want = r.item.primarySlot
+			if not (want and tab.slots[want] and tab:IsItemValidForSlot(it, want)) then
+				want = nil
+				for _, s in ipairs(tab.orderedSlots) do
+					if not s.nodeId and s:IsShown() and tab:IsItemValidForSlot(it, s.slotName) then want = s.slotName; break end
+				end
+			end
+			if not want then
+				tab:DeleteItem(it)
+				argerr("no slot can hold %s (base %s)", tostring(r.item.name), tostring(r.item.baseName))
+			end
+			M.equip_item({ id = it.id, slotName = want })
+			where = want
+		end
+		return { ok = true, slot = where, item = { name = r.item.name, nameZh = r.item.nameZh }, summary = summary() }
 	end
 
 	function T.unequip_item(a)
@@ -646,10 +688,18 @@ return function(M, ctx)
 			local ok, err = pcall(T[act.tool], act.arguments or {})
 			if not ok then failed = string.format("actions[%d] (%s): %s", i, act.tool, tostring(err)); break end
 		end
-		local after = failed and nil or key_stats(ensure_build())
-		M.import_code({ code = snap, mode = "replace" })
+		local after
+		if not failed then
+			local ok, s = pcall(function() return key_stats(ensure_build()) end)
+			if ok then after = s else failed = "reading the result: " .. tostring(s) end
+		end
+		local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+		if not okRestore then
+			error((failed and (failed .. "; ") or "") .. "RESTORING THE BUILD FAILED (" .. tostring(restoreErr) ..
+				"): load the build again before trusting any number", 0)
+		end
 		if failed then error(failed .. " -- the build was restored", 0) end
-		local diff = {}
+		local diff = obj({})
 		for k, v in pairs(after) do
 			local d = v - (before[k] or 0)
 			if d ~= 0 then diff[k] = d end
