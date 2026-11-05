@@ -197,7 +197,7 @@
     },
     {
       "name": "list_skills",
-      "description": "Socket groups with their gems, levels and qualities, and which group is the main skill.",
+      "description": "Socket groups with their gems, levels and qualities, which group is the main skill, and whether each group currently affects the build (`active`; `inactiveReason` says why not, e.g. weapon-swap slot or disabled).",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -229,7 +229,7 @@
     },
     {
       "name": "set_skill_group",
-      "description": "Replace the gems of socket group `index`, or add a new group when index is omitted. main=true makes it the main skill.",
+      "description": "Add a NEW socket group (omit index), or REPLACE all gems of group `index` (its old gems are lost). main=true makes it the main skill. A group socketed in an inactive slot (e.g. the weapon-swap set) does not affect the build; the result then carries a `warning`.",
       "inputSchema": {
         "type": "object",
         "properties": {

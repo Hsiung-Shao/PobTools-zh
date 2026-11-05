@@ -567,7 +567,22 @@ return function(M, ctx)
 
 	-- ---- skills ----------------------------------------------------------
 
+	-- Whether a socket group's gems count, by CalcSetup's own rule: the main
+	-- group always does; others when enabled and their slot belongs to the
+	-- weapon set in use (group.slotEnabled, set on every calculation).
+	local function group_active(b, index)
+		local g = b.skillsTab.socketGroupList[index]
+		if not g then return false, "no such group" end
+		if index == b.mainSocketGroup then return true end
+		if not g.enabled then return false, "the group is disabled" end
+		if g.slotEnabled == false then
+			return false, "socketed in " .. tostring(g.slot) .. ", which belongs to the weapon set not in use"
+		end
+		return true
+	end
+
 	function T.list_skills()
+		local b = ensure_build()
 		local r = M.list_skills()
 		local groups = {}
 		for i, g in ipairs(r.groups) do
@@ -575,7 +590,9 @@ return function(M, ctx)
 			for j, gem in ipairs(g.gems) do
 				gems[j] = { name = gem.name, nameZh = gem.nameZh, level = gem.level, quality = gem.quality, enabled = gem.enabled, support = gem.support, error = gem.errMsg }
 			end
-			groups[i] = { index = g.index, label = g.label ~= "" and g.label or nil, slot = g.slot, enabled = g.enabled, isMain = g.isMain, fromItem = g.source or nil, gems = gems }
+			local active, why = group_active(b, g.index)
+			groups[i] = { index = g.index, label = g.label ~= "" and g.label or nil, slot = g.slot, enabled = g.enabled, isMain = g.isMain,
+				active = active, inactiveReason = why, fromItem = g.source or nil, gems = gems }
 		end
 		return { groups = groups, mainGroup = r.mainSocketGroup }
 	end
@@ -636,7 +653,12 @@ return function(M, ctx)
 			b.mainSocketGroup = index
 			M.set_group({ index = index })
 		end
-		return { ok = true, index = index, summary = summary() }
+		local r = { ok = true, index = index, summary = summary() }
+		local active, why = group_active(b, index)
+		if not active then
+			r.warning = "These gems do not affect the build: " .. why .. ". Omit index to add a new group, or set slot to an active one."
+		end
+		return r
 	end
 
 	-- ---- items -----------------------------------------------------------

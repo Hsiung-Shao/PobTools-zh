@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[21] = {
+const char* const kTitles[22] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -62,6 +62,7 @@ const char* const kTitles[21] = {
 	"免疫混沌時不警告混沌抗性",
 	"build_guide 回傳判讀守則",
 	"build_summary 帶出迴避機率",
+	"寫進未啟用的技能組會警告",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -1108,6 +1109,53 @@ void TestM20(Ctx& c)
 	Record(20, bad.empty(), bad.empty() ? vals + (b.sc.contains("minionStats") ? ", 有 minionStats 物件" : ", 無 minionStats") : JoinFirst(bad, 5));
 }
 
+// M21 寫進未啟用的技能組會警告
+void TestM21(Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	const json steel = {{"name", "Steelskin"}, {"level", 20}, {"quality", 20}};
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(21, false, "讀入範例失敗: " + ld.Why()); return; }
+
+	// 1. list_skills:每組都有布林 active;Weapon 2 Swap 那組是 false 且有 inactiveReason
+	ToolRes ls = c.s->Call("list_skills", json::object());
+	if (!ls.Ok() || !ls.sc.contains("groups") || !ls.sc["groups"].is_array()) { Record(21, false, "list_skills 失敗: " + ls.Why()); return; }
+	int swapIdx = -1, noActive = 0;
+	for (const auto& g : ls.sc["groups"]) {
+		if (!g.is_object() || !g.contains("active") || !g["active"].is_boolean()) { noActive++; continue; }
+		if (g.value("slot", std::string()) == "Weapon 2 Swap" && swapIdx < 0 && g.contains("index") && g["index"].is_number_integer()) {
+			swapIdx = g["index"].get<int>();
+			if (g["active"].get<bool>()) bad.push_back("Weapon 2 Swap 組 active 不是 false");
+			if (!NonEmptyStr(g, "inactiveReason")) bad.push_back("Weapon 2 Swap 組缺 inactiveReason");
+		}
+	}
+	if (noActive > 0) bad.push_back(std::to_string(noActive) + " 組沒有布林 active");
+	if (swapIdx < 0) bad.push_back("找不到 slot==\"Weapon 2 Swap\" 的技能組");
+	d = "共 " + std::to_string(ls.sc["groups"].size()) + " 組, 交換武器組 index=" + std::to_string(swapIdx);
+
+	// 2. 寫進未啟用的組:要有非空 warning
+	if (swapIdx >= 0) {
+		ToolRes w = c.s->Call("set_skill_group", {{"index", swapIdx}, {"gems", json::array({steel})}});
+		if (!w.Ok()) bad.push_back("寫入未啟用組失敗: " + Cut(w.Why(), 80));
+		else if (!NonEmptyStr(w.sc, "warning")) bad.push_back("寫入未啟用組沒有 warning");
+		else d += ", warning=\"" + Cut(w.sc["warning"].get<std::string>(), 40) + "\"";
+	}
+
+	// 3. 還原後新增一組(不給 index):不可有 warning
+	ToolRes re1;
+	if (!LoadSample(c, re1)) bad.push_back("中途重新讀入範例失敗: " + Cut(re1.Why(), 80));
+	ToolRes n = c.s->Call("set_skill_group", {{"gems", json::array({steel})}});
+	if (!n.Ok()) bad.push_back("新增技能組失敗: " + Cut(n.Why(), 80));
+	else if (n.sc.contains("warning")) bad.push_back("新增技能組不該有 warning");
+	else d += ", 新增組無 warning";
+
+	// 4. 還原
+	ToolRes re2;
+	if (!LoadSample(c, re2)) bad.push_back("還原範例失敗: " + Cut(re2.Why(), 80));
+	Record(21, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1196,7 +1244,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 20; n++) Record(n, false, why);
+		for (int n = 13; n <= 21; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -1219,7 +1267,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19, 20}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1230,7 +1278,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				Guard(1, [&] { TestM1(c); });
 				Guard(19, [&] { TestM19(c); }); // 要在其他工具呼叫之前
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16, 17, 18, 20})
+					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16, 17, 18, 20, 21})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1245,6 +1293,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(17, [&] { TestM17(c); });
 					Guard(18, [&] { TestM18(c); });
 					Guard(20, [&] { TestM20(c); });
+					Guard(21, [&] { TestM21(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1264,7 +1313,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 20; n++) {
+	for (int n = 1; n <= 21; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";
