@@ -29,7 +29,7 @@
   const box = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
   const tipCache = new Map<string, TooltipLine[]>();
   async function loadTip(it: ConfigItem, index?: number): Promise<TooltipLine[] | null> {
-    const key = `${app.rev}|${it.var}|${index ?? ""}`;
+    const key = `${app.dataRev}|${it.var}|${index ?? ""}`;
     const hit = tipCache.get(key);
     if (hit) return hit;
     let lines: TooltipLine[];
