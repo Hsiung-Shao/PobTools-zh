@@ -52,7 +52,7 @@
       const x = await api.groupExtras(i);
       if (x.index !== sel) return;
       // a count being typed (not yet applied) survives a re-read (F2, a recalculation)
-      const typing = extras?.index === x.index && countDraft !== String(extras.count);
+      const typing = extras?.index === x.index && String(countDraft) !== String(extras.count);
       extras = x;
       if (!typing) countDraft = String(x.count);
     } catch {
@@ -67,11 +67,27 @@
     untrack(() => void loadExtras(i));
   });
   async function applyCount() {
-    if (!group || !extras || String(extras.count) === countDraft) return;
+    if (!group || !extras || String(extras.count) === String(countDraft)) return;
     const n = Math.max(1, Math.floor(Number(countDraft) || 1));
     const r = await app.run(() => api.setGroupCount(group.index, n));
-    if (r) await changed();
+    if (r) {
+      countDraft = String(n); // what POB got (0 / 2.7 are clamped), so the re-read below takes it
+      await changed();
+    }
   }
+  // F2: lists fetched once (gem options, the open search results) come
+  // translated -- read them again; the queries stay as typed
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    untrack(() => {
+      if (gemOpts) void loadGemOpts();
+      if (addOpen) addInput();
+      if (imbuedOpen && imbuedQuery.trim()) searchImbued(imbuedQuery);
+    });
+  });
   function searchImbued(q: string) {
     clearTimeout(imbuedTimer);
     if (!q.trim()) {

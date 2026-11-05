@@ -49,13 +49,20 @@
   let dest = $state(1);
   let append = $state(false);
   let impMsg = $state("");
+  // read on load, and again on F2 (its labels come translated; the choices made here stay)
+  let impLang = -1;
   $effect(() => {
+    const lr = app.langRev;
     if (!app.loaded) return;
+    const again = impLang !== -1;
+    impLang = lr;
     untrack(async () => {
       try {
         imp = await api.partyImportState();
-        dest = imp.destination || 1;
-        append = imp.append;
+        if (!again) {
+          dest = imp.destination || 1;
+          append = imp.append;
+        }
       } catch {
         imp = null;
       }

@@ -32,6 +32,15 @@
       loadedRev = dataKey(r.rev, app.langRev);
       bdCache.clear();
       if (bd && !bd.pinned) bd = null;
+      // a pinned breakdown stays open: read it again (new numbers, or F2's language)
+      if (bd?.pinned) {
+        const pinned = bd;
+        const [si, ui, ri, ci] = pinned.key.split(":").map(Number);
+        api
+          .calcsBreakdown(si, ui, ri, ci)
+          .then((b) => bd === pinned && (bd = { ...pinned, sections: b.sections }))
+          .catch(() => {});
+      }
     }
   }
   $effect(() => {

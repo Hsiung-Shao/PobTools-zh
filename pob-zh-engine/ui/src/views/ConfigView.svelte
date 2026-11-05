@@ -61,6 +61,14 @@
     }
     b.busy = false;
   }
+  // F2 with the mod browser open: its rows come translated -- search again, same query
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    if (untrack(() => modBrowser)) untrack(() => void searchMods());
+  });
   function queueModSearch() {
     clearTimeout(modTimer);
     modTimer = window.setTimeout(() => void searchMods(), 200);
