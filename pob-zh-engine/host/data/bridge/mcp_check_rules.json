@@ -1,0 +1,15 @@
+{
+  "resistMin": 75,
+  "chaosResistMin": 0,
+  "poolError": 3000,
+  "poolWarn": 4000,
+  "hitChanceMin": 90,
+  "defenceLayersMin": 2,
+  "layers": {
+    "BlockChance": 40,
+    "SpellBlockChance": 30,
+    "SpellSuppressionChance": 70,
+    "MeleeEvadeChance": 50,
+    "PhysicalDamageReduction": 30
+  }
+}

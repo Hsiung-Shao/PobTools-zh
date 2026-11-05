@@ -302,7 +302,10 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua"
 # Headless bridge: the Lua side of the new UI, loaded after the inject script
 # when POB_ZH_HEADLESS=1. Under Data\ (not engine\) so the signed translation-
 # data line can hotfix it between app releases.
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua" DESTINATION "Data/bridge")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.json"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_check_rules.json" DESTINATION "Data/bridge")
 
 # Fallback pure-Lua runtime modules. POB's built-in updater does not ship new
 # runtime lua files (e.g. sha2.lua, required by PoEAPI since POB 2.66), so a
@@ -504,6 +507,10 @@ if (WIN32)
         # headless POB child (stdio JSON) + its self-test against a sandbox install
         host/headless_proc.cpp
         host/headless_selftest.cpp
+        host/mcp_selftest.cpp
+        host/mcp_server.cpp
+        host/mcp_config.cpp
+        host/pob_sandbox.cpp
         # the new UI: a Win32 window hosting WebView2, forwarding lines between
         # the Svelte page (dist\ui) and the headless POB child
         host/modern_ui_window.cpp
