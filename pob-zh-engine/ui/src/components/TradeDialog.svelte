@@ -3,7 +3,7 @@
      「找最佳」會開 POB 自己的「查詢選項」對話框;結果清單 hover 時顯示 POB
      的物品 tooltip(含「裝上去會給你」的差異)。 -->
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { api, type TradeMods, type TradeOptionControl, type TradeOptions, type TradeResultTooltip, type TradeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
@@ -29,6 +29,23 @@
     }
     busy = null;
   }
+
+  // F2: everything this dialog shows comes translated -- read it again (state,
+  // query options, weights, the mod picker's rows; result tooltips re-fetch on
+  // hover). tradeRefresh(0): one frame, not the one-second pump.
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    untrack(() => {
+      tipCache.clear();
+      if (busy === null) api.tradeRefresh(0).then((s) => (st = s)).catch(() => {});
+      if (opts) api.tradeOptionsSet({}).then((o) => opts && (opts = o)).catch(() => {});
+      if (weights) api.tradeWeights().then((w) => weights && (weights = w)).catch(() => {});
+      if (modPicker) void loadMods();
+    });
+  });
 
   // the realm and league lists arrive from the site; keep asking while empty
   let poll: ReturnType<typeof setInterval> | undefined;

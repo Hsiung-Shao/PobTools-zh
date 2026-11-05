@@ -7,6 +7,7 @@
   import { api, type ConfigItem, type ConfigList, type ConfigSection, type CustomModBlock, type TooltipLine } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import PobText from "../components/PobText.svelte";
   import Select from "../components/Select.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
@@ -73,7 +74,7 @@
     }, 120);
   }
   const selectedLabel = (it: ConfigItem) => (it.list ?? []).find((o) => String(o.val ?? "") === String(it.value ?? ""));
-  let loadedRev = -1;
+  let loadedRev = "";
   let filter = $state("");
   let showAll = $state(false);
   let custom = $state<CustomModBlock[]>([]);
@@ -100,6 +101,14 @@
     }
     b.busy = false;
   }
+  // F2 with the mod browser open: its rows come translated -- search again, same query
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    if (untrack(() => modBrowser)) untrack(() => void searchMods());
+  });
   function queueModSearch() {
     clearTimeout(modTimer);
     modTimer = window.setTimeout(() => void searchMods(), 200);
@@ -121,12 +130,12 @@
     const r = await app.run(() => api.listConfig());
     if (r) {
       data = r;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
       if (!customDirty) custom = r.customMods.map((b) => ({ ...b }));
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });

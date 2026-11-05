@@ -874,7 +874,7 @@
     radiusTint = n?.kind === "socket" ? tintForSocket(n, socketMap.get(n.id)) : new Map();
     clearTimeout(hoverTimer);
     if (n) {
-      const key = `${n.id}:${app.rev}:${showDiff ? 1 : 0}`;
+      const key = `${n.id}:${app.dataRev}:${showDiff ? 1 : 0}`;
       const cached = infoCache.get(key) ?? null;
       hoverInfo = cached;
       const sk = n.kind === "socket" ? socketMap.get(n.id) : undefined;
@@ -1010,31 +1010,54 @@
   // state follows the build revision (skipped when a click already brought it),
   // and app.treeNonce: tree changes POB does not recalculate for (the Compare
   // drop-down) leave the revision alone
+  // ...and the display language: the state carries translated names too
+  // (cluster-jewel nodes, socketed jewels, tattoo / timeless overrides)
   let seenNonce = app.treeNonce;
+  let seenStateLang = app.langRev;
   $effect(() => {
     const rev = app.rev;
     const nonce = app.treeNonce;
+    const lr = app.langRev;
     if (!app.loaded) return;
-    if (tree && tree.rev === rev && nonce === seenNonce) return;
+    if (tree && tree.rev === rev && nonce === seenNonce && lr === seenStateLang) return;
+    const langChanged = lr !== seenStateLang;
     seenNonce = nonce;
+    seenStateLang = lr;
     api
       .getTreeState()
       .then((s) => {
         const switched = tree != null && tree.className !== s.className;
         tree = s;
         infoCache.clear();
+        if (langChanged) dynKey = ""; // same ids and places, new names: rebuild anyway
         rebuild();
         if (switched) focusClass(); // the build bar changed the class: go look at the new start
+        if (langChanged && power) void runPower({ enabled: true, stat: powerStat || undefined });
       })
       .catch((e) => (app.error = String(e?.message ?? e)));
   });
 
-  // the static tree follows the version
+  // the static tree follows the version, and the display language (its names
+  // and stats come translated; tree_data caches one copy per language)
+  // A language-only reload re-reads the names and leaves the camera where it is.
   let loadedVersion = "";
   $effect(() => {
     const v = tree?.treeVersion;
-    if (!v || v === loadedVersion) return;
-    loadedVersion = v;
+    const key = `${v}:${app.langRev}`;
+    if (!v || key === loadedVersion) return;
+    const newVersion = !loadedVersion.startsWith(`${v}:`);
+    loadedVersion = key;
+    if (!newVersion) {
+      api
+        .treeData(v)
+        .then((d) => {
+          data = d;
+          dynKey = "";
+          rebuild();
+        })
+        .catch((e) => (app.error = String(e?.message ?? e)));
+      return;
+    }
     (async () => {
       try {
         const [d, s] = await Promise.all([api.treeData(v), Sprites.load(v, repaint)]);

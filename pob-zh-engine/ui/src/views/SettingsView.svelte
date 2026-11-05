@@ -36,13 +36,13 @@
   let pob = $state<PobOptions | null>(null);
   let draft = $state<Record<string, string | number | boolean>>({});
   let pobErr = $state<string | null>(null);
-  async function loadPob() {
+  async function loadPob(keepDraft = false) {
     pobErr = null;
     try {
       const r = await app.run(() => api.pobOptions());
       if (r) {
         pob = r;
-        draft = {};
+        if (!keepDraft) draft = {};
       }
     } catch (e: any) {
       pobErr = String(e?.message ?? e);
@@ -50,6 +50,14 @@
   }
   $effect(() => {
     if (app.engine === "ready") untrack(() => void loadPob());
+  });
+  // F2: POB's option labels come translated -- read them again, keep the draft
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    if (app.engine === "ready") untrack(() => void loadPob(true));
   });
   const current = (o: PobOption): string | number | boolean =>
     o.kind === "dropdown" ? (o.sel ?? 1) : o.kind === "check" ? !!o.state : o.kind === "slider" ? (o.value ?? 0) : (o.text ?? "");

@@ -2817,6 +2817,131 @@ def read_text(path):
         return f.read().decode("utf-8", "replace")
 
 
+# 物品頁右側「編輯中的物品」預覽浮窗:displayItemTooltip 只在 UpdateDisplayItemTooltip
+# 被呼叫時重建,F2 切換不會觸發,所以預覽停留在舊語言。契約:ItemsTab:Draw 在呼叫原
+# Draw 之前,若 displayItem 存在且翻譯開關與上次 UpdateDisplayItemTooltip 時不同,先
+# 重建;開關沒變不得重建。
+PREVIEW_METHODS = """
+function C:UpdateDisplayItemTooltip()
+	self.updateCount = (self.updateCount or 0) + 1
+	self.displayItemTooltip:Clear()
+	self.displayItemTooltip:AddLine(14, "Effective Hit Pool")
+end
+function C:Draw(viewPort, inputEvents)
+	self.drawCount = (self.drawCount or 0) + 1
+end
+"""
+
+PREVIEW_ITEMSTAB_P1 = """
+local C = newClass("ItemsTab")
+function C:ItemsTab() return self end
+""" + PREVIEW_METHODS
+
+PREVIEW_ITEMSTAB_P2 = """
+local C = newClass("ItemsTab", function(self) end)
+""" + PREVIEW_METHODS
+
+PREVIEW_EN = "Effective Hit Pool"
+PREVIEW_ZH = "有效生命池"
+
+
+def preview_setup(fork, with_inject, has_item=True):
+    src = PREVIEW_ITEMSTAB_P1 if fork == "PoE1" else PREVIEW_ITEMSTAB_P2
+    h = tooltip_harness(fork, with_inject, itemstab=src)
+    obj = make(h, "ItemsTab")
+    tip = make(h, "Tooltip")
+    h.eval("function(o, t, has) o.displayItemTooltip = t "
+           "if has then o.displayItem = { title = 'x' } end end")(obj, tip, has_item)
+    return h, obj, tip
+
+
+def preview_text(h, tip):
+    return [_norm(t) for t in tooltip_lines(h, tip)]
+
+
+def preview_draw(h, obj):
+    return h.eval("function(o) local ok, e = pcall(function() o:Draw({}, {}) end) "
+                  "return ok, tostring(e) end")(obj)
+
+
+def preview_update_count(obj):
+    return obj.updateCount or 0
+
+
+def test_preview_refresh_on_toggle(fork):
+    """F1/F2/F3 -- F2 切換後,預覽浮窗在下一幀 Draw 跟著換語言。"""
+    # F2:沒有 Draw 重建就是 bug 本身 -- 預覽只在 Update 時翻譯一次,
+    # 單純關開關(不經 Draw)文字停在中文;未注入時 AddLine 根本沒鉤子,恆為英文
+    h, obj, tip = preview_setup(fork, False)
+    h.enabled = True
+    obj.UpdateDisplayItemTooltip(obj)
+    check("%s F2 未注入:AddLine 無鉤子,預覽恆為英文" % fork,
+          preview_text(h, tip) == [PREVIEW_EN], repr(preview_text(h, tip)))
+    h, obj, tip = preview_setup(fork, True)
+    h.enabled = True
+    obj.UpdateDisplayItemTooltip(obj)
+    h.enabled = False
+    check("%s F2 重現 bug:關翻譯但不經 Draw,預覽停在中文" % fork,
+          preview_text(h, tip) == [PREVIEW_ZH], repr(preview_text(h, tip)))
+
+    # F1:注入後關翻譯 -> 英文
+    h, obj, tip = preview_setup(fork, True)
+    h.enabled = True
+    obj.UpdateDisplayItemTooltip(obj)
+    check("%s F1 注入:Update 後預覽是中文" % fork,
+          preview_text(h, tip) == [PREVIEW_ZH], repr(preview_text(h, tip)))
+    h.enabled = False
+    ok, err = preview_draw(h, obj)
+    check("%s F1 關翻譯後 Draw 不出錯" % fork, ok, repr(err))
+    check("%s F1 關翻譯後 Draw:預覽變回英文" % fork,
+          preview_text(h, tip) == [PREVIEW_EN], repr(preview_text(h, tip)))
+
+    # F3:再開翻譯 -> 中文
+    mid = preview_text(h, tip)      # F1 之後應為英文;不是的話 F3 的「回到中文」沒有意義
+    h.enabled = True
+    ok, err = preview_draw(h, obj)
+    check("%s F3 重開翻譯後 Draw 不出錯" % fork, ok, repr(err))
+    check("%s F3 英文 -> 重開翻譯後 Draw:預覽回到中文" % fork,
+          mid == [PREVIEW_EN] and preview_text(h, tip) == [PREVIEW_ZH],
+          repr((mid, preview_text(h, tip))))
+
+
+def test_preview_no_rebuild_when_unchanged(fork):
+    """F4 -- 開關沒變連呼 Draw,不得每幀重建。"""
+    h, obj, tip = preview_setup(fork, True)
+    h.enabled = True
+    obj.UpdateDisplayItemTooltip(obj)
+    before = preview_update_count(obj)
+    for _ in range(3):
+        ok, err = preview_draw(h, obj)
+        if not ok:
+            break
+    check("%s F4 開關不變連呼 Draw 3 次不出錯" % fork, ok, repr(err))
+    check("%s F4 開關不變時 Draw 不重建預覽" % fork,
+          preview_update_count(obj) == before, "%s -> %s" % (before, preview_update_count(obj)))
+    check("%s F4 原 Draw 仍被呼叫 3 次" % fork, (obj.drawCount or 0) == 3, repr(obj.drawCount))
+
+
+def test_preview_no_item(fork):
+    """F5 -- 沒有編輯中的物品時,開關改變也不重建、不報錯。"""
+    h, obj, tip = preview_setup(fork, True, has_item=False)
+    h.enabled = True
+    h.enabled = False
+    ok, err = preview_draw(h, obj)
+    check("%s F5 無 displayItem 時 Draw 不出錯" % fork, ok, repr(err))
+    check("%s F5 無 displayItem 時不重建預覽" % fork,
+          preview_update_count(obj) == 0, repr(preview_update_count(obj)))
+
+
+def test_preview_upstream_shape(fork):
+    """F6 -- 兩個 fork 真的 ItemsTab.lua 仍有鉤子所依賴的結構。"""
+    src = read_text(os.path.join(FORKS[fork], "Classes", "ItemsTab.lua"))
+    for needle in ("function ItemsTabClass:UpdateDisplayItemTooltip(",
+                   "function ItemsTabClass:Draw(",
+                   "self.displayItemTooltip:Clear()"):
+        check("%s F6 上游 ItemsTab.lua 含 %s" % (fork, needle), needle in src)
+
+
 UPSTREAM_SHAPE = {
     "Classes/GemSelectControl.lua": [
         (r'"\^ %a\':-"', "gem box still ships an ASCII-only input filter"),
@@ -5679,6 +5804,10 @@ def main():
         test_wrapped_arity(fork)
         test_wrapped_arity_instance(fork)
         test_upstream_shape(fork)
+        test_preview_refresh_on_toggle(fork)
+        test_preview_no_rebuild_when_unchanged(fork)
+        test_preview_no_item(fork)
+        test_preview_upstream_shape(fork)
     print("== C++ source patches ==")
     test_source_patch_anchors()
     test_source_patch_compiles()

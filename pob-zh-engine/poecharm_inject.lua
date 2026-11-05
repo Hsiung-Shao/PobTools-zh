@@ -2441,6 +2441,29 @@ PATCHES["ItemsTab"] = function(class)
 			end)
 		end
 	end
+	-- F2 has to reach the item being edited too. Its preview (displayItemTooltip)
+	-- is not a hover tooltip: POB never runs CheckForUpdate on it, it rebuilds it
+	-- only from UpdateDisplayItemTooltip, i.e. when the item is edited. The lines
+	-- are translated when built (Tooltip.AddLine below), so after F2 the preview
+	-- kept the old language. Remember the switch at each rebuild and rebuild
+	-- again from Draw when it has changed -- once per toggle, not every frame.
+	local origUpdate, origDraw = class.UpdateDisplayItemTooltip, class.Draw
+	if type(origUpdate) == "function" and type(origDraw) == "function" and type(PobToolsGetTranslate) == "function" then
+		class.UpdateDisplayItemTooltip = keepArity(origUpdate, function(self, ...)
+			rawset(self, "_ptPreviewTranslate", PobToolsGetTranslate())
+			return origUpdate(self, ...)
+		end)
+		class.Draw = keepArity(origDraw, function(self, ...)
+			local built = rawget(self, "_ptPreviewTranslate")
+			if self.displayItem and built ~= nil and built ~= PobToolsGetTranslate() then
+				local okU, errU = pcall(self.UpdateDisplayItemTooltip, self)
+				if not okU then log("ItemsTab: F2 preview rebuild failed: " .. tostring(errU)) end
+			end
+			return origDraw(self, ...)
+		end)
+	else
+		log("ItemsTab: UpdateDisplayItemTooltip/Draw/PobToolsGetTranslate missing, F2 will not refresh the item preview")
+	end
 	local ok = wrapConstructor(class, "ItemsTab", function(self)
 		-- Crafting affix drop-down / range slider tooltips: tell AddLine which
 		-- mod the "Affix: <name>" line belongs to, so it is looked up by mod Id.

@@ -135,3 +135,16 @@ export function usedInBadge(u: ItemUsedIn | null | undefined): { kind: "unused" 
   if (u.kind === "abyss" || u.kind === "jewel") return u.otherSet ? { kind: "elsewhere", where: u.setTitle ?? u.specTitle ?? "" } : null;
   return u.otherSet && u.setTitle ? { kind: "elsewhere", where: u.setTitle } : null;
 }
+
+/**
+ * The item POB is editing right now, or null when there is none (the bridge
+ * rejects) or the read fails. The Items page asks on mount (POB's displayItem
+ * outlives leaving the tab) and again on F2 (the edit comes translated).
+ */
+export async function resumeEdit<T>(read: () => Promise<T>): Promise<T | null> {
+  try {
+    return await read();
+  } catch {
+    return null;
+  }
+}

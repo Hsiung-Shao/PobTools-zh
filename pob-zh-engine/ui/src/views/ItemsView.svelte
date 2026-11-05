@@ -9,8 +9,9 @@
   import TradeDialog from "../components/TradeDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
+  import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, resumeEdit, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import { copyText } from "$lib/clipboard";
   import TooltipCard from "../components/TooltipCard.svelte";
   import SlotSelect from "../components/SlotSelect.svelte";
@@ -20,7 +21,7 @@
 
   let data = $state<ItemsList | null>(null);
   let selectedId = $state<number | null>(null);
-  let loadedRev = -1;
+  let loadedRev = "";
 
   // hover tooltip (build items by id + slot; db entries by raw text); the
   // stat-difference block is POB's Ctrl+D toggle, remembered per viewer
@@ -89,7 +90,7 @@
     const r = await app.run(() => api.listItems());
     if (r) {
       data = r;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
       tipCache.clear();
       if (selectedId != null && !itemById(r.items, selectedId)) selectedId = null;
     }
@@ -98,9 +99,41 @@
   // Only `rev` / `loaded` are dependencies: reload() runs through app.run,
   // whose busy counter must not be tracked here (it would re-trigger forever).
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
+  });
+
+  // Leaving this tab un-mounts it, which used to drop an item being edited (a
+  // fresh craft, never added) on the floor. POB keeps its displayItem, so pick
+  // the edit back up from it when the page comes back.
+  let resumed = false;
+  $effect(() => {
+    if (!app.loaded || resumed) return;
+    resumed = true;
+    untrack(() =>
+      void resumeEdit(() => api.itemEditState()).then((s) => {
+        if (s && !edit) {
+          edit = s;
+          rightTab = "edit";
+        }
+      }),
+    );
+  });
+
+  // F2: the item being edited and the craft lists come translated -- read them
+  // again in the other language; the craft choices (indices) and the edit stay
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    untrack(() => {
+      if (edit) void resumeEdit(() => api.itemEditState()).then((s) => s && edit && (edit = s));
+      if (craft) {
+        void api.craftItemOptions().then((opts) => craft && (craft = { ...craft, opts })).catch(() => {});
+      }
+    });
   });
 
   /** A change went through POB: pull items now, then let the sidebar catch up. */

@@ -24,14 +24,27 @@
     ),
   );
 
-  onMount(async () => {
+  // Opened, and again on F2 (the names come translated). A re-read keeps the
+  // list being edited: same ids, names in the new language.
+  let loaded = false;
+  async function load() {
     try {
       const r = await api.minionLibrary(kind);
-      inBuild = r.inBuild;
+      const byId = new Map([...r.available, ...r.inBuild].map((m) => [m.id, m]));
+      inBuild = loaded ? inBuild.map((m) => byId.get(m.id) ?? m) : r.inBuild;
       available = r.available;
+      loaded = true;
     } catch (e: any) {
       err = String(e?.message ?? e);
     }
+  }
+  onMount(load);
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    void load();
   });
 
   function add(m: MinionEntry) {

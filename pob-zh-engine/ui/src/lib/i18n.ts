@@ -5,6 +5,7 @@
 // the same folder the launcher's own strings live in, so the signed
 // translation-data line can update them without an app release.
 import { hostInfo, hostUrl, isHosted } from "./bridge";
+import { lang } from "./lang.svelte";
 
 const EN: Record<string, string> = {
   "app.title": "PobTools",
@@ -727,12 +728,14 @@ let showEnglish = false;
 
 /**
  * F2's other half: the engine's switch turns POB's own strings back to English,
- * this turns ours. Pure data -- callers re-render (App keys the page on
- * app.langRev), because t() reads this table at call time and is not a rune.
+ * this turns ours. Bumping `lang.v` re-renders every template that called t(),
+ * the way the classic window's F2 only changes what is drawn: nothing is
+ * re-mounted, so text typed but not yet applied survives the switch.
  */
 export function setEnglish(on: boolean): void {
   showEnglish = on;
   table = on ? { ...EN } : { ...EN, ...locTable };
+  lang.v++;
 }
 
 export function isEnglish(): boolean {
@@ -753,7 +756,10 @@ export function loadLocale(): Promise<void> {
     .then((j) => {
       if (j && typeof j === "object") {
         locTable = j as Record<string, string>;
-        if (!showEnglish) table = { ...EN, ...locTable };
+        if (!showEnglish) {
+          table = { ...EN, ...locTable };
+          lang.v++;
+        }
       }
     })
     .catch(() => {});
@@ -761,6 +767,7 @@ export function loadLocale(): Promise<void> {
 }
 
 export function t(key: string, vars?: Record<string, string | number>): string {
+  void lang.v; // the dependency that makes F2 re-render the caller
   let s = table[key] ?? EN[key] ?? key;
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
   return s;

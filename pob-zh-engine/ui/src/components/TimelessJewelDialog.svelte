@@ -60,6 +60,15 @@
   }
 
   onMount(() => run(() => api.tjOpen()));
+  // F2: read the dialog again (its lists come translated); straight into `st`,
+  // not through run(), which would also reset the lists being typed above
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    api.tjSet({}).then((s) => (st = s)).catch(() => {});
+  });
   onDestroy(() => {
     void api.tjClose().catch(() => {});
   });

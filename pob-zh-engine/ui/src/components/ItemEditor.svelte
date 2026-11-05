@@ -3,6 +3,7 @@
      新增詞綴/Crucible/編輯文字這些 POB 用 popup 做的,在這裡以內嵌小面板呈現,
      選項與按鈕都是 popup 自己的控制項。任何修改都不重算,按「儲存/新增」才進建置。 -->
 <script lang="ts">
+  import { untrack } from "svelte";
   import { api, type ItemEditPopup, type ItemEditPopupControl, type ItemEditPopupKind, type ItemEditSetParams, type ItemEditState, type TooltipLine } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { rarityColor } from "$lib/items";
@@ -135,6 +136,21 @@
       onchange(r as ItemEditState);
     }
   }
+  // F2 with one of POB's dialogs open: read it again in the other language. A
+  // "pick" naming a control but giving no value changes nothing and answers the
+  // dialog's state (bridge item_edit_popup) -- what is chosen in it stays.
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    const name = untrack(() => popup?.controls.find((c: ItemEditPopupControl) => c.name)?.name);
+    if (!name) return;
+    api
+      .itemEditPopup({ action: "pick", name })
+      .then((r) => untrack(() => popup) && (popup = r as ItemEditPopup))
+      .catch(() => {});
+  });
   async function cancelPopup() {
     await run(() => api.itemEditPopup({ action: "cancel" }));
     popup = null;

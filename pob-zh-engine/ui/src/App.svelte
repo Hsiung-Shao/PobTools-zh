@@ -189,9 +189,6 @@
   </div>
 {/if}
 
-<!-- keyed on the language flip: t() reads a plain table, so nothing re-renders
-     by itself, and the views have to re-fetch because POB's outputRevision does
-     not move when only the display language changed. -->
 <!-- the background image (settings page "Background"; styled by the --bg-* vars lib/prefs sets) -->
 <svelte:document onvisibilitychange={syncVideo} />
 {#if prefs.bgVideo}
@@ -200,7 +197,6 @@
   <div class="bgimg" aria-hidden="true"></div>
 {/if}
 {#if i18nReady}
-  {#key app.langRev}
   <div class="app">
     <TitleBar />
     {#if app.loaded && app.view !== "builds" && app.view !== "settings"}<BuildBar />{/if}
@@ -258,7 +254,6 @@
       </div>
     </div>
   {/if}
-  {/key}
 {/if}
 
 <style>

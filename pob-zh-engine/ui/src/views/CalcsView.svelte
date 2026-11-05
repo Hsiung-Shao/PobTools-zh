@@ -10,6 +10,7 @@
   import { api, type BreakdownSection, type CalcCell, type CalcsData } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import { fitFloat, pointAnchor } from "$lib/floatFit";
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
   import MinionLibrary from "../components/MinionLibrary.svelte";
@@ -18,7 +19,7 @@
   import Select from "../components/Select.svelte";
 
   let data = $state<CalcsData | null>(null);
-  let loadedRev = -1;
+  let loadedRev = "";
   let search = $state("");
   let bd = $state<{ sections: BreakdownSection[]; x: number; y: number; pinned: boolean; key: string } | null>(null);
   let bdTimer = 0;
@@ -28,13 +29,22 @@
     const r = await app.run(() => api.getCalcs());
     if (r) {
       data = r;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
       bdCache.clear();
       if (bd && !bd.pinned) bd = null;
+      // a pinned breakdown stays open: read it again (new numbers, or F2's language)
+      if (bd?.pinned) {
+        const pinned = bd;
+        const [si, ui, ri, ci] = pinned.key.split(":").map(Number);
+        api
+          .calcsBreakdown(si, ui, ri, ci)
+          .then((b) => bd === pinned && (bd = { ...pinned, sections: b.sections }))
+          .catch(() => {});
+      }
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });

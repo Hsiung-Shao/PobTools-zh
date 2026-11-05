@@ -20,19 +20,19 @@
   let items = $state<CompareItemsRows | null>(null);
   let skills = $state<CompareSkills | null>(null);
   let config = $state<CompareConfigRows | null>(null);
-  let loadedRev = -1;
+  let loadedRev = "";
 
   async function reload() {
     try {
       st = await api.compareState();
-      loadedRev = app.rev;
+      loadedRev = app.dataRev;
       if (st.activeIndex) await loadView(view);
     } catch (e: any) {
       err = String(e?.message ?? e);
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });
