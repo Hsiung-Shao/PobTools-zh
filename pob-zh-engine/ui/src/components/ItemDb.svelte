@@ -59,6 +59,19 @@
   $effect(() => {
     untrack(() => void loadOptions(kind).then(() => search()));
   });
+  // F2: the option lists and the results come translated -- fetch them again in
+  // the other language, keeping the filters, the query and the page
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    untrack(() => {
+      delete opts.unique;
+      delete opts.rare;
+      void loadOptions(kind).then(() => search(false));
+    });
+  });
 
   const power = (v: number | undefined) => (v == null || !Number.isFinite(v) ? "" : Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : v.toFixed(2));
   function rowClick(e: MouseEvent, it: ItemSummary) {

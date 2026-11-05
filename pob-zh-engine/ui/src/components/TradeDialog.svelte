@@ -30,6 +30,15 @@
     busy = null;
   }
 
+  // F2: the dialog's labels come translated -- read its state again
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    if (busy === null) api.tradeRefresh(1).then((s) => (st = s)).catch(() => {});
+  });
+
   // the realm and league lists arrive from the site; keep asking while empty
   let poll: ReturnType<typeof setInterval> | undefined;
   onMount(async () => {

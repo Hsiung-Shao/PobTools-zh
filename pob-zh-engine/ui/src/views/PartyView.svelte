@@ -6,6 +6,7 @@
   import PobText from "../components/PobText.svelte";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import Select from "../components/Select.svelte";
 
   type FieldKey = keyof PartyData["fields"];
@@ -13,20 +14,23 @@
 
   let data = $state<PartyData | null>(null);
   let drafts = $state<Record<string, string>>({});
-  let loadedRev = -1;
+  let loadedRev = "";
 
   async function reload() {
     const r = await app.run(() => api.getParty());
     if (r) {
-      data = r;
-      loadedRev = r.rev;
+      // a field still being typed in (not yet applied) keeps its text; the rest
+      // take POB's value (a re-read after F2 or another change must not wipe it)
+      const prev = data?.fields;
       const d: Record<string, string> = {};
-      for (const k of keys) d[k] = r.fields[k] ?? "";
+      for (const k of keys) d[k] = prev && drafts[k] !== (prev[k] ?? "") ? drafts[k] : (r.fields[k] ?? "");
+      data = r;
+      loadedRev = dataKey(r.rev, app.langRev);
       drafts = d;
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });

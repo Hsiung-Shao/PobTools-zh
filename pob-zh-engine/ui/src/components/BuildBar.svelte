@@ -14,10 +14,10 @@
   let levelDraft = $state<string>("");
   // Build.lua's loadout drop-down: one pick switches tree, items, skills and config
   let loadouts = $state<import("$lib/bridge").LoadoutList | null>(null);
-  let loadoutRev = -1;
+  let loadoutRev = "";
   let newLoadout = $state<string | null>(null);
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev === loadoutRev) return;
     loadoutRev = rev;

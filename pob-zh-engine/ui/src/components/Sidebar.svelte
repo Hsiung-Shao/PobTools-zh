@@ -29,7 +29,7 @@
       x: { after: (r?.right ?? 0) + 10, before: (r?.left ?? 0) - 10 },
       y: { after: clientY - 36, before: clientY + 36 },
     };
-    const key = `${rowIndex}:${app.rev}`;
+    const key = `${rowIndex}:${app.dataRev}`;
     const show = (sections: BreakdownSection[]) => {
       bd = { sections, row: rowIndex, anchor, pinned: pin || (bd?.pinned && bd.row === rowIndex) || false };
     };
@@ -55,7 +55,7 @@
   }
 
   $effect(() => {
-    app.rev;
+    app.dataRev;
     bdCache.clear();
     bd = null;
   });

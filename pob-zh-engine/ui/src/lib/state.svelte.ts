@@ -2,6 +2,7 @@
 // Svelte 5 runes in a module so every component reads the same object.
 import { api, bridge, hostInfo, type BuildHeader, type BuildInfo, type GateResult, type Sidebar, type VersionInfo } from "./bridge";
 import { setEnglish, t } from "./i18n";
+import { dataKey } from "./lang.svelte";
 import { parentFolder, ViewHistory } from "./nav";
 
 export type ViewId = "builds" | "tree" | "items" | "skills" | "config" | "calcs" | "notes" | "party" | "import" | "compare" | "settings";
@@ -68,12 +69,13 @@ class AppState {
   /** F2: showing POB's original English instead of the translation. */
   english = $state(false);
   /**
-   * Bumped by the F2 toggle. App keys the whole page on it, which is what makes
-   * every t() call re-evaluate (t reads a plain table, not a rune) and every
-   * view re-fetch (POB's outputRevision does NOT move when only the display
-   * language changed, so `rev` alone would leave the old strings on screen).
+   * Bumped by the F2 toggle. POB's outputRevision does NOT move when only the
+   * display language changed, so `rev` alone would leave the old strings on
+   * screen: views re-fetch on `dataRev`, which carries both.
    */
   langRev = $state(0);
+  /** What every view re-fetches and keys its POB-text caches on: rev + display language. */
+  dataRev = $derived(dataKey(this.rev, this.langRev));
   loaded = $derived(this.info !== null);
   /** PoE2's Path of Building (bridge version.game; the host's game before the engine answers). */
   poe2 = $derived((this.version?.game ?? hostInfo.game) === "poe2");

@@ -874,7 +874,7 @@
     radiusTint = n?.kind === "socket" ? tintForSocket(n, socketMap.get(n.id)) : new Map();
     clearTimeout(hoverTimer);
     if (n) {
-      const key = `${n.id}:${app.rev}:${showDiff ? 1 : 0}`;
+      const key = `${n.id}:${app.dataRev}:${showDiff ? 1 : 0}`;
       const cached = infoCache.get(key) ?? null;
       hoverInfo = cached;
       const sk = n.kind === "socket" ? socketMap.get(n.id) : undefined;
@@ -1029,12 +1029,14 @@
       .catch((e) => (app.error = String(e?.message ?? e)));
   });
 
-  // the static tree follows the version
+  // the static tree follows the version, and the display language (its names
+  // and stats come translated; tree_data caches one copy per language)
   let loadedVersion = "";
   $effect(() => {
     const v = tree?.treeVersion;
-    if (!v || v === loadedVersion) return;
-    loadedVersion = v;
+    const key = `${v}:${app.langRev}`;
+    if (!v || key === loadedVersion) return;
+    loadedVersion = key;
     (async () => {
       try {
         const [d, s] = await Promise.all([api.treeData(v), Sprites.load(v, repaint)]);

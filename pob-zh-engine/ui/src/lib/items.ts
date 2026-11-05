@@ -138,8 +138,8 @@ export function usedInBadge(u: ItemUsedIn | null | undefined): { kind: "unused" 
 
 /**
  * The item POB is editing right now, or null when there is none (the bridge
- * rejects) or the read fails. The Items page asks on mount: F2 re-mounts the
- * whole page, and POB's displayItem outlives that.
+ * rejects) or the read fails. The Items page asks on mount (POB's displayItem
+ * outlives leaving the tab) and again on F2 (the edit comes translated).
  */
 export async function resumeEdit<T>(read: () => Promise<T>): Promise<T | null> {
   try {

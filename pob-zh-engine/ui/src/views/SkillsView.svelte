@@ -7,12 +7,13 @@
   import { dpsDeltaColor, dpsDeltaText, formatSignedNumber } from "$lib/gemDps";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import TooltipCard from "../components/TooltipCard.svelte";
   import Select from "../components/Select.svelte";
 
   let data = $state<SkillsList | null>(null);
   let sel = $state<number>(1);
-  let loadedRev = -1;
+  let loadedRev = "";
 
   type TipData = { lines: TooltipLine[] };
   let tip = $state<{ lines: TooltipLine[]; x: number; y: number } | null>(null);
@@ -50,15 +51,17 @@
     try {
       const x = await api.groupExtras(i);
       if (x.index !== sel) return;
+      // a count being typed (not yet applied) survives a re-read (F2, a recalculation)
+      const typing = extras?.index === x.index && countDraft !== String(extras.count);
       extras = x;
-      countDraft = String(x.count);
+      if (!typing) countDraft = String(x.count);
     } catch {
       extras = null;
     }
   }
   $effect(() => {
     const i = sel;
-    const rev = app.rev;
+    const rev = app.dataRev;
     void rev;
     if (!data || !data.groups.some((g) => g.index === i)) return;
     untrack(() => void loadExtras(i));
@@ -182,16 +185,19 @@
     // only when the panel was expanded, so POB's default (on) never applied.
     if (!gemOpts) void loadGemOpts();
     if (r) {
+      // the label being typed (not yet applied) survives a re-read (F2, a recalculation)
+      const prevLabel = data?.groups.find((g) => g.index === sel)?.label ?? "";
+      const typing = data !== null && labelDraft !== prevLabel;
       data = r;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
       tipCache.clear();
       supportableCache.clear();
       if (!r.groups.some((g) => g.index === sel)) sel = r.groups.length ? Math.min(sel, r.groups.length) : 1;
-      labelDraft = r.groups.find((g) => g.index === sel)?.label ?? "";
+      if (!typing) labelDraft = r.groups.find((g) => g.index === sel)?.label ?? "";
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });
@@ -243,7 +249,7 @@
     const row = (e.currentTarget as HTMLElement).getBoundingClientRect();
     // right of the list, or left of it when that would run off the window (never over it)
     const at = drop ? { x: drop.right + 376 <= window.innerWidth ? drop.right + 8 : Math.max(8, drop.left - 368), y: row.top } : undefined;
-    showTip(`cand:${app.rev}:${g}:${slot}:${h.gemId}`, () => api.gemCandidateTooltip(g, slot, h.gemId), e, 150, at);
+    showTip(`cand:${app.dataRev}:${g}:${slot}:${h.gemId}`, () => api.gemCandidateTooltip(g, slot, h.gemId), e, 150, at);
   }
 
   // --- groups -------------------------------------------------------------------
@@ -318,7 +324,7 @@
     addMode = "supportable";
     const g = group.index;
     const slot = group.gems.length + 1;
-    const key = `${app.rev}:${g}`;
+    const key = `${app.dataRev}:${g}`;
     const cached = supportableCache.get(key);
     if (cached) {
       addHits = cached;
@@ -632,7 +638,7 @@
                       tabindex="0"
                       title={g.errMsg ?? ""}
                       onclick={() => !g.fromItem && !g.fromNode && (editGem = { index: g.index, query: g.name ?? g.nameSpec, hits: [] })}
-                      onmouseenter={(e) => showTip(`gem${group!.index}:${g.index}:${app.rev}`, () => api.gemTooltip(group!.index, g.index), e)}
+                      onmouseenter={(e) => showTip(`gem${group!.index}:${g.index}:${app.dataRev}`, () => api.gemTooltip(group!.index, g.index), e)}
                       onmouseleave={hideTip}
                     >
                       {g.nameZh || g.name || g.nameSpec}

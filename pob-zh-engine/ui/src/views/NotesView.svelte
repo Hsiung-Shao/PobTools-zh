@@ -4,12 +4,13 @@
   import { api } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
+  import { dataKey } from "$lib/lang.svelte";
   import PobText from "../components/PobText.svelte";
   import { TextHistory } from "$lib/textHistory";
 
   let text = $state("");
   let saved = $state("");
-  let loadedRev = -1;
+  let loadedRev = "";
   let timer = 0;
   let ta = $state<HTMLTextAreaElement | null>(null);
   // Our own Ctrl+Z / Ctrl+Y: the colour buttons and the reload after a save set
@@ -35,17 +36,24 @@
   async function reload() {
     const r = await app.run(() => api.getNotes());
     if (r) {
+      // typed but not flushed yet (a re-read after F2 within the save delay):
+      // keep it, the pending flush still sends it
+      if (text !== saved && r.text === saved) {
+        if (r.colours?.length) colours = r.colours;
+        loadedRev = dataKey(r.rev, app.langRev);
+        return;
+      }
       // other notes (another build, a re-import): what came before is not theirs
       if (r.text !== text) history.reset();
       text = r.text;
       saved = r.text;
       last = { text, start: text.length, end: text.length };
       if (r.colours?.length) colours = r.colours;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });
@@ -56,7 +64,7 @@
     const r = await app.run(() => api.setNotes(text));
     if (r) {
       saved = text;
-      loadedRev = r.rev;
+      loadedRev = dataKey(r.rev, app.langRev);
       await app.refresh();
     }
   }

@@ -19,6 +19,14 @@
     }
   }
   onMount(reload);
+  // F2: the item names come translated
+  let seenLang = app.langRev;
+  $effect(() => {
+    const lr = app.langRev;
+    if (lr === seenLang) return;
+    seenLang = lr;
+    void reload();
+  });
 
   async function drop(kind: "item" | "set", index: number) {
     const r = await app.run(() => api.unshare(kind, index));

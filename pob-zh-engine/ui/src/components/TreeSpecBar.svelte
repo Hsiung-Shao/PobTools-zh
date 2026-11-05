@@ -11,7 +11,7 @@
   let { compact = false }: { compact?: boolean } = $props();
 
   let specs = $state<SpecList | null>(null);
-  let loadedRev = -1;
+  let loadedRev = "";
   let manage = $state(false);
   let manageSel = $state(0);
   let nameDialog = $state<{ op: "new" | "copy" | "rename"; index?: number; title: string } | null>(null);
@@ -23,13 +23,13 @@
   async function reload() {
     try {
       specs = await api.listSpecs();
-      loadedRev = app.rev;
+      loadedRev = app.dataRev;
     } catch {
       specs = null;
     }
   }
   $effect(() => {
-    const rev = app.rev;
+    const rev = app.dataRev;
     if (!app.loaded) return;
     if (rev !== loadedRev) untrack(() => void reload());
   });
@@ -38,7 +38,7 @@
     if (!r) return;
     specs = r;
     await app.afterTreeChange();
-    loadedRev = app.rev;
+    loadedRev = app.dataRev;
   }
   const specLabel = (s: SpecList["specs"][number]) =>
     `${s.latest ? "" : `[${s.versionLabel}] `}${s.title || t("tree.specDefault")} (${s.ascendClassNameZh || s.ascendClassName || s.classNameZh || s.className}, ${s.points})`;
