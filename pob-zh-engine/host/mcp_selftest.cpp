@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[17] = {
+const char* const kTitles[20] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -58,6 +58,9 @@ const char* const kTitles[17] = {
 	"suggest_nodes 帶出路徑點數",
 	"點他昇華的節點會報錯且建置不變",
 	"new_build 職業打錯時保留原建置與名稱",
+	"build_summary 帶出已點基石",
+	"免疫混沌時不警告混沌抗性",
+	"build_guide 回傳判讀守則",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -414,7 +417,7 @@ const char* const kContractTools[] = {
 	"load_build", "list_my_builds", "new_build", "export_code", "build_summary", "stat_breakdown",
 	"check_build", "tree_summary", "suggest_nodes", "search_nodes", "allocate_nodes", "deallocate_nodes",
 	"list_skills", "search_gems", "set_skill_group", "list_items", "search_uniques", "list_bases",
-	"equip_item", "unequip_item", "get_config", "set_config", "what_if",
+	"equip_item", "unequip_item", "get_config", "set_config", "what_if", "build_guide",
 };
 
 // ---------------------------------------------------------------- 範例建置
@@ -1025,6 +1028,65 @@ void TestM16(Ctx& c)
 	Record(16, errOk && nameSame && ascSame && bad.empty(), d);
 }
 
+// M17 build_summary 帶出已點基石
+void TestM17(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(17, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes b = c.s->Call("build_summary", json::object());
+	if (!b.Ok() || !b.sc.contains("keystones") || !b.sc["keystones"].is_array()) { Record(17, false, "build_summary 沒有 keystones 陣列: " + b.Why()); return; }
+	const auto& ks = b.sc["keystones"];
+	std::vector<std::string> bad;
+	bool hasCI = false;
+	if (ks.empty()) bad.push_back("keystones 是空的");
+	for (size_t i = 0; i < ks.size(); i++) {
+		const auto& k = ks[i];
+		const std::string tag = "第" + std::to_string(i) + "筆";
+		if (!k.is_object()) { bad.push_back(tag + "不是物件"); continue; }
+		if (!k.contains("id") || !k["id"].is_number_integer()) bad.push_back(tag + " id 不是整數");
+		if (!NonEmptyStr(k, "name")) bad.push_back(tag + "缺 name");
+		if (!NonEmptyStr(k, "nameZh")) bad.push_back(tag + "缺 nameZh");
+		bool statsOk = k.contains("stats") && k["stats"].is_array() && !k["stats"].empty();
+		if (statsOk) for (const auto& st : k["stats"]) if (!st.is_string()) statsOk = false;
+		if (!statsOk) bad.push_back(tag + " stats 不是非空字串陣列");
+		if (k.value("name", std::string()) == "Chaos Inoculation") hasCI = true;
+	}
+	if (!hasCI) bad.push_back("沒有 Chaos Inoculation");
+	Record(17, bad.empty(), "基石 " + std::to_string(ks.size()) + " 個" + (bad.empty() ? ", 欄位齊全, 含 Chaos Inoculation" : ": " + JoinFirst(bad, 5)));
+}
+
+// M18 免疫混沌時不警告混沌抗性
+void TestM18(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(18, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes b = c.s->Call("build_summary", json::object());
+	if (!b.Ok() || !b.sc.contains("immuneTo") || !b.sc["immuneTo"].is_array()) { Record(18, false, "build_summary 沒有 immuneTo 陣列: " + b.Why()); return; }
+	bool immune = false;
+	std::vector<std::string> list;
+	for (const auto& v : b.sc["immuneTo"]) {
+		if (!v.is_string()) continue;
+		list.push_back(v.get<std::string>());
+		if (v.get<std::string>() == "Chaos") immune = true;
+	}
+	ToolRes cb = c.s->Call("check_build", json::object());
+	if (!cb.Ok() || !cb.sc.contains("issues") || !cb.sc["issues"].is_array()) { Record(18, false, "check_build 失敗: " + cb.Why()); return; }
+	bool warned = false;
+	for (const auto& is : cb.sc["issues"]) if (is.is_object() && is.value("rule", std::string()) == "chaos_resist") warned = true;
+	Record(18, immune && !warned, "immuneTo=[" + JoinFirst(list, 6) + "], issues " + std::to_string(cb.sc["issues"].size()) + " 筆, " +
+	                                  (warned ? "仍有 chaos_resist 警告" : "沒有 chaos_resist 警告"));
+}
+
+// M19 build_guide 回傳判讀守則(M1 之後、其他工具呼叫之前)
+void TestM19(Ctx& c)
+{
+	ToolRes g = c.s->Call("build_guide", json::object());
+	if (!g.Ok()) { Record(19, false, "build_guide 失敗: " + g.Why()); return; }
+	const std::string text = g.sc.contains("text") && g.sc["text"].is_string() ? g.sc["text"].get<std::string>() : std::string();
+	const bool hasCI = text.find("Chaos Inoculation") != std::string::npos;
+	Record(19, text.size() > 500 && hasCI, "text 長 " + std::to_string(text.size()) + " 位元組, " + (hasCI ? "含" : "不含") + " Chaos Inoculation");
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1113,6 +1175,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
+		for (int n = 13; n <= 19; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -1135,7 +1198,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1144,8 +1207,9 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					c.sampleXml = sampleXml;
 				}
 				Guard(1, [&] { TestM1(c); });
+				Guard(19, [&] { TestM19(c); }); // 要在其他工具呼叫之前
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16})
+					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16, 17, 18})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1157,6 +1221,8 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(14, [&] { TestM14(c); });
 					Guard(15, [&] { TestM15(c); });
 					Guard(16, [&] { TestM16(c); });
+					Guard(17, [&] { TestM17(c); });
+					Guard(18, [&] { TestM18(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1176,7 +1242,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 16; n++) {
+	for (int n = 1; n <= 19; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

@@ -50,6 +50,7 @@ std::string ReadAll(const std::wstring& path)
 
 HANDLE g_in = INVALID_HANDLE_VALUE;
 HANDLE g_out = INVALID_HANDLE_VALUE;
+std::wstring g_exeDir;
 
 void WriteMessage(const json& msg)
 {
@@ -270,6 +271,13 @@ unsigned TimeoutFor(const std::string& tool)
 
 json CallTool(Engine& eng, const std::string& name, const json& args, bool debug)
 {
+	// Static reading guide: answered without waiting for the engine, so a model
+	// can read it while POB is still starting.
+	if (name == "build_guide") {
+		const std::string text = ReadAll(g_exeDir + L"Data\\bridge\\mcp_guide.md");
+		if (text.empty()) return ToolError("Data\\bridge\\mcp_guide.md is missing from this PobTools install.");
+		return ToolResult(json{{"text", text}}, false);
+	}
 	if (debug && name == "debug_kill_engine") {
 		eng.Kill();
 		return ToolResult(json{{"ok", true}}, false);
@@ -307,6 +315,7 @@ json RpcError(const json& id, int code, const std::string& message)
 
 int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 {
+	g_exeDir = exeDir;
 	g_in = GetStdHandle(STD_INPUT_HANDLE);
 	g_out = GetStdHandle(STD_OUTPUT_HANDLE);
 	if (g_in == INVALID_HANDLE_VALUE || g_in == nullptr || g_out == INVALID_HANDLE_VALUE || g_out == nullptr) return 2;

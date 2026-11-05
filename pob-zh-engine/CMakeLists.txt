@@ -305,6 +305,7 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua"
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua"
               "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.lua"
               "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.json"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_guide.md"
               "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_check_rules.json" DESTINATION "Data/bridge")
 
 # Fallback pure-Lua runtime modules. POB's built-in updater does not ship new

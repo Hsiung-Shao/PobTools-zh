@@ -72,10 +72,43 @@ return function(M, ctx)
 		return { group = b.mainSocketGroup, name = ge.name, nameZh = gem_tr(ge.id, ge.name) }
 	end
 
+	local function node_entry(n)
+		return { id = n.id, name = n.dn, nameZh = tr(n.dn), type = n.type }
+	end
+
+	-- Damage types POB itself rates as unhittable (its <Type>MaximumHitTaken is
+	-- inf: Chaos Inoculation, Divine Flesh-style immunities...). key_stats drops
+	-- inf, so without this the model never learns the build is immune.
+	local DAMAGE_TYPES = { "Physical", "Fire", "Cold", "Lightning", "Chaos" }
+	local function immune_to(b)
+		local out, list = b.calcsTab.mainOutput, {}
+		for _, t in ipairs(DAMAGE_TYPES) do
+			if out[t .. "MaximumHitTaken"] == math.huge then list[#list + 1] = t end
+		end
+		return list
+	end
+
+	-- Allocated keystones with POB's own stat lines: the build's intent (Life 1
+	-- under Chaos Inoculation is the plan, not a flaw).
+	local function keystones(b)
+		local list = {}
+		for _, n in pairs(b.spec.allocNodes) do
+			if n.type == "Keystone" then
+				local e = node_entry(n)
+				e.stats = n.sd or {}
+				list[#list + 1] = e
+			end
+		end
+		table.sort(list, function(x, y) return (x.name or "") < (y.name or "") end)
+		return list
+	end
+
 	local function summary()
 		local b = ensure_build()
 		local info = M.get_build_info()
 		return {
+			keystones = keystones(b),
+			immuneTo = immune_to(b),
 			buildName = info.buildName,
 			class = info.className, classZh = info.classNameZh,
 			ascendancy = info.ascendClassName, ascendancyZh = info.ascendClassNameZh,
@@ -84,10 +117,6 @@ return function(M, ctx)
 			mainSkill = main_skill(b),
 			stats = key_stats(b),
 		}
-	end
-
-	local function node_entry(n)
-		return { id = n.id, name = n.dn, nameZh = tr(n.dn), type = n.type }
 	end
 
 	local function find_slot_of(tab, itemId)
@@ -304,7 +333,8 @@ return function(M, ctx)
 				"元素抗性未達 " .. R.resistMin .. "%:" .. table.concat(low, "、"), nil, R.resistMin)
 		end
 		local chaos = num("ChaosResist")
-		if chaos and chaos < R.chaosResistMin then
+		local chaosImmune = o.ChaosMaximumHitTaken == math.huge
+		if chaos and chaos < R.chaosResistMin and not chaosImmune then
 			add("chaos_resist", "warning", string.format("Chaos resistance %d%% is below %d%%", chaos, R.chaosResistMin),
 				string.format("混沌抗性 %d%% 低於 %d%%", chaos, R.chaosResistMin), chaos, R.chaosResistMin)
 		end
