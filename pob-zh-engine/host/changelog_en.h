@@ -19,6 +19,18 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.3 (2026-11-05)\n"
+	u8"Fixed\n"
+	u8"　·Classic window item editor: pressing F2 to switch language did not update the item preview.\n"
+	u8"　·New UI: switching language with F2 cleared the item being crafted, unapplied input and open dialogs.\n"
+	u8"　·New UI Calcs page: labels such as Skill details sat far from their values.\n"
+	u8"　·Timeless jewels: conqueror names in the jewel search and the Timeless Jewel calculator differed from the item (now the official in-game names).\n"
+	u8"　·Timeless jewel search drop-down: Heroic Tragedy and Abyss jewel conquerors were shown in English.\n"
+	u8"Added\n"
+	u8"　·New UI Config page: hovering an option shows POB's help tooltip, including the change in values when toggled.\n"
+	u8"Changed\n"
+	u8"　·New UI tooltips: calculation details, passive nodes and items use a POB-style frame, line by line as in POB.\n"
+	u8"\n"
 	u8"v1.8.2 (2026-11-04)\n"
 	u8"Fixed\n"
 	u8"　·Poe Regex shop page: link conditions also matched text such as \"Physical Damage: 10-20\".\n"
