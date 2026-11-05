@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[15] = {
+const char* const kTitles[16] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -56,6 +56,7 @@ const char* const kTitles[15] = {
 	"設定字串帶入正確路徑",
 	"equip_item 會取代已有裝備的欄位",
 	"suggest_nodes 帶出路徑點數",
+	"點他昇華的節點會報錯且建置不變",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -970,6 +971,33 @@ void TestM14(Ctx& c)
 	                            (bad.empty() ? "" : ", 不合格: " + JoinFirst(bad, 5)));
 }
 
+// M15 點他昇華的節點會報錯且建置不變
+void TestM15(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(15, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes b0 = c.s->Call("build_summary", json::object());
+	if (!b0.Ok() || !b0.sc.contains("stats") || !b0.sc.contains("ascendancy")) { Record(15, false, "前: build_summary 失敗或缺欄位: " + b0.Why()); return; }
+	ToolRes sn = c.s->Call("search_nodes", {{"query", "Liege of the Primordial"}});
+	if (!sn.Ok() || !sn.sc.contains("nodes") || !sn.sc["nodes"].is_array() || sn.sc["nodes"].empty() ||
+	    !sn.sc["nodes"][0].is_object() || !sn.sc["nodes"][0].contains("id")) {
+		Record(15, false, "search_nodes 沒有結果: " + sn.Why());
+		return;
+	}
+	const json id = sn.sc["nodes"][0]["id"];
+	ToolRes al = c.s->Call("allocate_nodes", {{"ids", json::array({id})}});
+	const bool errOk = al.transportOk && !al.rpcError && al.isError && NonEmptyStr(al.sc, "error");
+	ToolRes b1 = c.s->Call("build_summary", json::object());
+	if (!b1.Ok() || !b1.sc.contains("stats")) { Record(15, false, "後: build_summary 失敗: " + b1.Why()); return; }
+	const bool ascSame = b0.sc["ascendancy"] == b1.sc.value("ascendancy", json(nullptr));
+	auto bad = StatDiffKeys(b0.sc["stats"], b1.sc["stats"]);
+	std::string d = "節點 " + id.dump() + ", allocate_nodes " +
+	                (errOk ? "報錯: \"" + Cut(ErrText(al.sc), 60) + "\"" : "沒有報錯(" + (al.Ok() ? std::string("isError=false") : al.Why()) + ")") +
+	                ", ascendancy " + b0.sc["ascendancy"].dump() + (ascSame ? " 不變" : "->" + b1.sc.value("ascendancy", json(nullptr)).dump()) +
+	                ", stats 不同 " + std::to_string(bad.size()) + " 個" + (bad.empty() ? "" : " (" + JoinFirst(bad, 5) + ")");
+	Record(15, errOk && ascSame && bad.empty(), d);
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1080,7 +1108,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1090,7 +1118,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				}
 				Guard(1, [&] { TestM1(c); });
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7, 13, 14})
+					for (int n : {3, 4, 5, 6, 7, 13, 14, 15})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1100,6 +1128,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(7, [&] { TestM7(c); });
 					Guard(13, [&] { TestM13(c); });
 					Guard(14, [&] { TestM14(c); });
+					Guard(15, [&] { TestM15(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1119,7 +1148,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 14; n++) {
+	for (int n = 1; n <= 15; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

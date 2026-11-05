@@ -146,30 +146,38 @@ return function(M, ctx)
 	function T.new_build(a)
 		local want = lower(a and a.class)
 		if want == "" then argerr("class required (e.g. \"Witch\")") end
-		M.new_build({ name = "MCP build" })
-		local cl = M.list_classes()
-		local class
-		for _, c in ipairs(cl.classes) do
-			if lower(c.name) == want or lower(c.nameZh) == want then class = c end
-		end
-		if not class then
-			local names = {}
-			for _, c in ipairs(cl.classes) do names[#names + 1] = c.name end
-			argerr("unknown class %q; one of: %s", a.class, table.concat(names, ", "))
-		end
-		M.set_class({ classId = class.id, confirm = "reset" })
-		local asc = lower(a.ascendancy)
-		if asc ~= "" then
-			local found
-			for _, x in ipairs(class.ascendancies) do
-				if x.id > 0 and (lower(x.name) == asc or lower(x.nameZh) == asc) then found = x end
+		-- A wrong class / ascendancy name must not cost the user the loaded build.
+		local snap = has_build() and M.export_code().code or nil
+		local ok, err = pcall(function()
+			M.new_build({ name = "MCP build" })
+			local cl = M.list_classes()
+			local class
+			for _, c in ipairs(cl.classes) do
+				if lower(c.name) == want or lower(c.nameZh) == want then class = c end
 			end
-			if not found then
+			if not class then
 				local names = {}
-				for _, x in ipairs(class.ascendancies) do if x.id > 0 then names[#names + 1] = x.name end end
-				argerr("unknown ascendancy %q for %s; one of: %s", a.ascendancy, class.name, table.concat(names, ", "))
+				for _, c in ipairs(cl.classes) do names[#names + 1] = c.name end
+				argerr("unknown class %q; one of: %s", a.class, table.concat(names, ", "))
 			end
-			M.set_ascendancy({ ascendClassId = found.id })
+			M.set_class({ classId = class.id, confirm = "reset" })
+			local asc = lower(a.ascendancy)
+			if asc ~= "" then
+				local found
+				for _, x in ipairs(class.ascendancies) do
+					if x.id > 0 and (lower(x.name) == asc or lower(x.nameZh) == asc) then found = x end
+				end
+				if not found then
+					local names = {}
+					for _, x in ipairs(class.ascendancies) do if x.id > 0 then names[#names + 1] = x.name end end
+					argerr("unknown ascendancy %q for %s; one of: %s", a.ascendancy, class.name, table.concat(names, ", "))
+				end
+				M.set_ascendancy({ ascendClassId = found.id })
+			end
+		end)
+		if not ok then
+			if snap then pcall(M.import_code, { code = snap, mode = "replace" }) end
+			error(err, 0)
 		end
 		return { ok = true, summary = summary() }
 	end
@@ -189,10 +197,10 @@ return function(M, ctx)
 		local stat = a and a.stat
 		if type(stat) ~= "string" or stat == "" then argerr("stat required (a key from build_summary.stats, e.g. \"Life\")") end
 		if type(b.GetSidebarBreakdown) ~= "function" then
-			-- POB master has no sidebar breakdown (only its beta does): give the
-			-- number and say why there are no lines.
+			-- A POB without Build:GetSidebarBreakdown: give the number and say
+			-- why there are no lines.
 			return { stat = stat, value = b.calcsTab.mainOutput[stat], lines = {},
-				note = "This Path of Building version has no sidebar breakdown (it needs the POB beta branch)." }
+				note = "This Path of Building version has no sidebar breakdown." }
 		end
 		local side = M.get_sidebar()
 		local idx
@@ -382,7 +390,7 @@ return function(M, ctx)
 		table.sort(list, function(x, y) if x.power ~= y.power then return x.power > y.power end return x.id < y.id end)
 		local out = {}
 		for i = 1, math.min(top, #list) do out[i] = list[i] end
-		return { stat = r.stat, metric = metric, nodes = out }
+		return { metric = metric, nodes = out }
 	end
 
 	function T.search_nodes(a)
@@ -425,35 +433,53 @@ return function(M, ctx)
 		if type(ids) ~= "table" or #ids == 0 then argerr("ids required: a list of node ids (from search_nodes / suggest_nodes)") end
 		local effects = {}
 		for _, m in ipairs((a and a.masteries) or {}) do effects[tonumber(m.id)] = tonumber(m.effect) end
-		for _, raw in ipairs(ids) do
-			local id = tonumber(raw)
-			local n = id and b.spec.nodes[id]
-			if not n then argerr("no passive node with id %s", tostring(raw)) end
-			if (n.alloc and true or false) ~= wantAlloc then
-				local p = { id = id }
-				if wantAlloc and n.type == "Mastery" then
-					p.effect = effects[id]
-					if not p.effect then argerr("node %d is a mastery: pass masteries=[{id=%d, effect=<effect id>}]", id, id) end
-				end
-				local ascBefore = b.spec.curAscendClassId
-				local r = M.tree_click(p)
-				if type(r) == "table" and r.blocked then argerr("node %d cannot be changed: %s", id, tostring(r.blocked)) end
-				if type(r) == "table" and r.needsConfirm then
-					argerr("node %d belongs to another class's ascendancy (%s); use new_build to change class", id, tostring(r.needsConfirm))
-				end
-				if b.spec.curAscendClassId ~= ascBefore then
-					argerr("node %d is on a different ascendancy; allocating it would switch the ascendancy, which this tool does not do", id)
-				end
-				if (b.spec.nodes[id].alloc and true or false) ~= wantAlloc then
-					argerr("node %d could not be %s (Path of Building found no path or refused it)", id, wantAlloc and "allocated" or "deallocated")
+		-- All or nothing: POB applies a click before the bridge can tell it was
+		-- unwanted (an ascendancy switch), and a later id may fail after earlier
+		-- ones landed -- so any error puts the whole build back first.
+		local snap = M.export_code().code
+		local ascStart = b.spec.curAscendClassId
+		local ok, err = pcall(function()
+			for _, raw in ipairs(ids) do
+				local id = tonumber(raw)
+				local n = id and b.spec.nodes[id]
+				if not n then argerr("no passive node with id %s", tostring(raw)) end
+				if (n.alloc and true or false) ~= wantAlloc then
+					local p = { id = id }
+					if wantAlloc and n.type == "Mastery" then
+						p.effect = effects[id]
+						if not p.effect then argerr("node %d is a mastery: pass masteries=[{id=%d, effect=<effect id>}]", id, id) end
+					end
+					local ascBefore = b.spec.curAscendClassId
+					local r = M.tree_click(p)
+					if type(r) == "table" and r.blocked then argerr("node %d cannot be changed: %s", id, tostring(r.blocked)) end
+					if type(r) == "table" and r.needsConfirm then
+						argerr("node %d belongs to another class's ascendancy; use new_build to change class", id)
+					end
+					-- From None, POB picks the node's ascendancy (allowed, reported);
+					-- from one ascendancy to another it would wipe the first one's points.
+					if ascBefore ~= 0 and b.spec.curAscendClassId ~= ascBefore then
+						argerr("node %d is on a different ascendancy than the build's; it was not allocated", id)
+					end
+					if (b.spec.nodes[id].alloc and true or false) ~= wantAlloc then
+						argerr("node %d could not be %s (Path of Building found no path or refused it)", id, wantAlloc and "allocated" or "deallocated")
+					end
 				end
 			end
+		end)
+		if not ok then
+			local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+			if not okRestore then
+				error(tostring(err) .. "; RESTORING THE BUILD FAILED (" .. tostring(restoreErr) .. "): load it again", 0)
+			end
+			error(tostring(err) .. " -- no node was changed", 0)
 		end
 		local count = 0
 		for _, n in pairs(b.spec.allocNodes) do
 			if n.type ~= "ClassStart" and n.type ~= "AscendClassStart" then count = count + 1 end
 		end
-		return { ok = true, allocatedCount = count, summary = summary() }
+		local r = { ok = true, allocatedCount = count, summary = summary() }
+		if b.spec.curAscendClassId ~= ascStart then r.ascendancyChangedTo = b.spec.curAscendClassName end
+		return r
 	end
 
 	function T.allocate_nodes(a) return click_nodes(a, true) end
