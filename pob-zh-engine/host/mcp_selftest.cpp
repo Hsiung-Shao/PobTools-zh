@@ -40,7 +40,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[20] = {
+const char* const kTitles[21] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -61,6 +61,7 @@ const char* const kTitles[20] = {
 	"build_summary 帶出已點基石",
 	"免疫混沌時不警告混沌抗性",
 	"build_guide 回傳判讀守則",
+	"build_summary 帶出迴避機率",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -1087,6 +1088,26 @@ void TestM19(Ctx& c)
 	Record(19, text.size() > 500 && hasCI, "text 長 " + std::to_string(text.size()) + " 位元組, " + (hasCI ? "含" : "不含") + " Chaos Inoculation");
 }
 
+// M20 build_summary 帶出迴避機率
+void TestM20(Ctx& c)
+{
+	ToolRes ld;
+	if (!LoadSample(c, ld)) { Record(20, false, "讀入範例失敗: " + ld.Why()); return; }
+	ToolRes b = c.s->Call("build_summary", json::object());
+	if (!b.Ok() || !b.sc.contains("stats") || !b.sc["stats"].is_object()) { Record(20, false, "build_summary 沒有 stats 物件: " + b.Why()); return; }
+	const json& st = b.sc["stats"];
+	std::vector<std::string> bad;
+	std::string vals;
+	for (const char* key : {"StunAvoidChance", "FreezeAvoidChance", "ShockAvoidChance"}) {
+		if (!st.contains(key) || !st[key].is_number()) { bad.push_back(std::string(key) + " 缺少或不是數字"); continue; }
+		const double v = st[key].get<double>();
+		vals += std::string(vals.empty() ? "" : ", ") + key + "=" + Num(v);
+		if (!(v >= 0.0 && v <= 100.0)) bad.push_back(std::string(key) + "=" + Num(v) + " 不在 0-100");
+	}
+	if (b.sc.contains("minionStats") && !b.sc["minionStats"].is_object()) bad.push_back("minionStats 存在但不是物件");
+	Record(20, bad.empty(), bad.empty() ? vals + (b.sc.contains("minionStats") ? ", 有 minionStats 物件" : ", 無 minionStats") : JoinFirst(bad, 5));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1175,7 +1196,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 19; n++) Record(n, false, why);
+		for (int n = 13; n <= 20; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -1198,7 +1219,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19, 20}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
@@ -1209,7 +1230,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				Guard(1, [&] { TestM1(c); });
 				Guard(19, [&] { TestM19(c); }); // 要在其他工具呼叫之前
 				if (!haveSample) {
-					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16, 17, 18})
+					for (int n : {3, 4, 5, 6, 7, 13, 14, 15, 16, 17, 18, 20})
 						Record(n, false, "Builds 資料夾找不到含 <PlayerStat 的 .xml 範例建置");
 				} else {
 					Guard(3, [&] { TestM3(c); });
@@ -1223,6 +1244,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 					Guard(16, [&] { TestM16(c); });
 					Guard(17, [&] { TestM17(c); });
 					Guard(18, [&] { TestM18(c); });
+					Guard(20, [&] { TestM20(c); });
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
@@ -1242,7 +1264,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 19; n++) {
+	for (int n = 1; n <= 20; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

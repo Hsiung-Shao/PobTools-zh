@@ -44,14 +44,38 @@ return function(M, ctx)
 	local KEY_STATS = {
 		"Life", "EnergyShield", "Mana", "Ward", "TotalEHP", "PhysicalMaximumHitTaken",
 		"FireMaximumHitTaken", "ColdMaximumHitTaken", "LightningMaximumHitTaken", "ChaosMaximumHitTaken",
-		"CombinedDPS", "TotalDPS", "FullDPS", "TotalDot", "AverageHit", "Speed", "CritChance", "CritMultiplier", "HitChance",
+		"CombinedDPS", "TotalDPS", "FullDPS", "TotalDot", "TotalDotDPS", "IgniteDPS", "BleedDPS", "PoisonDPS", "ImpaleDPS", "CullingDPS",
+		"AverageHit", "Speed", "CritChance", "CritMultiplier", "HitChance",
 		"FireResist", "ColdResist", "LightningResist", "ChaosResist",
 		"Armour", "Evasion", "BlockChance", "SpellBlockChance", "SpellSuppressionChance",
 		"PhysicalDamageReduction", "MeleeEvadeChance", "ProjectileEvadeChance",
 		"LifeRegenRecovery", "EnergyShieldRegenRecovery", "ManaRegenRecovery",
 		"LifeUnreserved", "ManaUnreserved", "ManaCost", "LifeCost",
 		"Str", "Dex", "Int", "MovementSpeedMod",
+		"StunAvoidChance", "FreezeAvoidChance", "ShockAvoidChance", "IgniteAvoidChance", "ChillAvoidChance",
+		"BleedAvoidChance", "PoisonAvoidChance",
 	}
+	-- The minion's share of the same (mainOutput.Minion; keys as in POB's
+	-- BuildDisplayStats minionDisplayStats).
+	local MINION_STATS = {
+		"CombinedDPS", "TotalDPS", "TotalDot", "IgniteDPS", "BleedDPS", "PoisonDPS", "AverageDamage", "Speed",
+		"Life", "EnergyShield", "LifeRegenRecovery", "FireResist", "ColdResist", "LightningResist", "ChaosResist",
+	}
+
+	local function pick(out, keys)
+		local s = {}
+		for _, k in ipairs(keys) do
+			local v = out[k]
+			if type(v) == "number" and v == v and v ~= math.huge and v ~= -math.huge then s[k] = v end
+		end
+		return obj(s)
+	end
+
+	local function minion_stats(b)
+		local m = b.calcsTab.mainOutput.Minion
+		if type(m) ~= "table" then return nil end
+		return pick(m, MINION_STATS)
+	end
 
 	local function key_stats(b)
 		local out = b.calcsTab.mainOutput
@@ -91,11 +115,25 @@ return function(M, ctx)
 	-- Allocated keystones with POB's own stat lines: the build's intent (Life 1
 	-- under Chaos Inoculation is the plan, not a flaw).
 	local function keystones(b)
-		local list = {}
+		local list, seen = {}, {}
 		for _, n in pairs(b.spec.allocNodes) do
 			if n.type == "Keystone" then
 				local e = node_entry(n)
 				e.stats = n.sd or {}
+				list[#list + 1] = e
+				seen[n.dn] = true
+			end
+		end
+		-- Keystones granted by items / jewels (Cloak of Defiance, Skin of the
+		-- Lords...): CalcPerform merges them into env.keystonesAdded.
+		local env = b.calcsTab.mainEnv
+		local map = b.spec.tree.keystoneMap or {}
+		for name in pairs(env and env.keystonesAdded or {}) do
+			local n = map[name]
+			if n and not seen[name] then
+				local e = node_entry(n)
+				e.stats = n.sd or {}
+				e.fromItem = true
 				list[#list + 1] = e
 			end
 		end
@@ -116,6 +154,7 @@ return function(M, ctx)
 			points = { used = info.points.used, max = info.points.usedMax, ascUsed = info.points.ascUsed, ascMax = info.points.ascMax },
 			mainSkill = main_skill(b),
 			stats = key_stats(b),
+			minionStats = minion_stats(b),
 		}
 	end
 

@@ -1,53 +1,411 @@
 {
   "instructions": "Path of Building (PoE1) through PobTools. Call build_guide once first: it explains how to read a build (keystones such as Chaos Inoculation change what a \"bad\" number means). Every number comes from Path of Building's own calculation. The server works on ONE build in a private sandbox: load_build or new_build first, change it with the tools, read numbers with build_summary, and hand the result to the user with export_code (a share code they paste into Path of Building). Nothing is ever written to the user's own Path of Building folder. Use what_if to compare changes without keeping them. Names come in English (name) and Traditional Chinese (nameZh); arguments accept either. DPS depends heavily on the configuration (enemy type, charges, buffs): check get_config before trusting it. Rare items are calculated exactly as written, whether or not they could be crafted in game.",
   "tools": [
-    {"name": "build_guide", "description": "Read once before judging builds: how to interpret Path of Building numbers (build intent from keystones and immunities, defence layers, configuration-dependent DPS). Works before a build is loaded.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "load_build", "description": "Load a build into the sandbox from a Path of Building share code, a build URL (pobb.in, poe.ninja, pastebin...), or a file name returned by list_my_builds. Replaces the current build. Returns a summary.",
-     "inputSchema": {"type": "object", "properties": {"source": {"type": "string", "description": "Share code, URL, or Builds-relative .xml file name"}}, "required": ["source"]}},
-    {"name": "list_my_builds", "description": "List the builds saved in the user's Path of Building (read-only copy).",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "new_build", "description": "Start an empty level-1 build for a class and optional ascendancy. Replaces the current build.",
-     "inputSchema": {"type": "object", "properties": {"class": {"type": "string", "description": "e.g. Witch, Marauder"}, "ascendancy": {"type": "string", "description": "e.g. Necromancer"}}, "required": ["class"]}},
-    {"name": "export_code", "description": "Export the current build as a Path of Building share code for the user to import.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "build_summary", "description": "Class, ascendancy, level, passive points, allocated keystones (with their stat lines), damage types the build is immune to (immuneTo), main skill and about 40 key numbers (life, EHP, max hits, DPS, resistances, defences, mana) of the current build.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "stat_breakdown", "description": "Path of Building's breakdown of one number (where it comes from), as text lines. stat is a key from build_summary.stats.",
-     "inputSchema": {"type": "object", "properties": {"stat": {"type": "string"}}, "required": ["stat"]}},
-    {"name": "check_build", "description": "Rule-based health check of the current build (resistances, life pool, hit chance, mana sustain, defence layers, utility skills). Returns issues with severity error/warning/info.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "tree_summary", "description": "Allocated passive count, keystones, notables and jewel sockets (with the jewel in each).",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "suggest_nodes", "description": "Unallocated passives ranked by Path of Building's node power for offence or defence (slow on big builds: up to a minute). pathDist is the points needed to reach the node.",
-     "inputSchema": {"type": "object", "properties": {"metric": {"type": "string", "enum": ["offence", "defence"]}, "top": {"type": "integer", "minimum": 1, "maximum": 50}}}},
-    {"name": "search_nodes", "description": "Find passive nodes by name or stat text (English or Chinese). Returns ids for allocate_nodes.",
-     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, "required": ["query"]}},
-    {"name": "allocate_nodes", "description": "Allocate passive nodes by id; the shortest path to each is allocated too, as in Path of Building. A mastery needs its effect id in masteries.",
-     "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "integer"}}, "masteries": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "integer"}, "effect": {"type": "integer"}}, "required": ["id", "effect"]}}}, "required": ["ids"]}},
-    {"name": "deallocate_nodes", "description": "Deallocate passive nodes by id (nodes that depended on them are removed too, as in Path of Building).",
-     "inputSchema": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "integer"}}}, "required": ["ids"]}},
-    {"name": "list_skills", "description": "Socket groups with their gems, levels and qualities, and which group is the main skill.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "search_gems", "description": "Find skill or support gems by part of the name (English or Chinese).",
-     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "support": {"type": "boolean", "description": "true = supports only, false = actives only"}, "limit": {"type": "integer", "minimum": 1, "maximum": 100}}, "required": ["query"]}},
-    {"name": "set_skill_group", "description": "Replace the gems of socket group `index`, or add a new group when index is omitted. main=true makes it the main skill.",
-     "inputSchema": {"type": "object", "properties": {"index": {"type": "integer"}, "slot": {"type": "string", "description": "Item slot the gems are socketed in, e.g. Body Armour"}, "main": {"type": "boolean"}, "gems": {"type": "array", "items": {"type": "object", "properties": {"name": {"type": "string"}, "level": {"type": "integer"}, "quality": {"type": "integer"}}, "required": ["name"]}}}, "required": ["gems"]}},
-    {"name": "list_items", "description": "Equipped items per slot, with their full item text.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "search_uniques", "description": "Find unique items by name (English or Chinese), optionally filtered by item type (e.g. Ring, Body Armour). Returns item text usable with equip_item.",
-     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "slot": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 30}}, "required": ["query"]}},
-    {"name": "list_bases", "description": "Item bases (for writing rare items), filtered by name and/or type.",
-     "inputSchema": {"type": "object", "properties": {"query": {"type": "string"}, "type": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}}},
-    {"name": "equip_item", "description": "Create an item from text (Path of Building / game copy format: 'Rarity: Rare', name, base, mod lines) and equip it, into `slot` or the first slot it fits.",
-     "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}, "slot": {"type": "string"}}, "required": ["text"]}},
-    {"name": "unequip_item", "description": "Empty an item slot (slot name as in list_items).",
-     "inputSchema": {"type": "object", "properties": {"slot": {"type": "string"}}, "required": ["slot"]}},
-    {"name": "get_config", "description": "Configuration options that apply to this build (enemy, charges, buffs, conditions) with current values and choices.",
-     "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "set_config", "description": "Set one configuration option by key (from get_config). Booleans for checkboxes, numbers for counts, a choice value for lists.",
-     "inputSchema": {"type": "object", "properties": {"key": {"type": "string"}, "value": {}}, "required": ["key", "value"]}},
-    {"name": "what_if", "description": "Apply a list of changes, return key numbers before/after and the difference, then restore the build exactly. Allowed tools: allocate_nodes, deallocate_nodes, set_skill_group, equip_item, unequip_item, set_config.",
-     "inputSchema": {"type": "object", "properties": {"actions": {"type": "array", "items": {"type": "object", "properties": {"tool": {"type": "string"}, "arguments": {"type": "object"}}, "required": ["tool"]}}}, "required": ["actions"]}}
+    {
+      "name": "build_guide",
+      "description": "Read once before judging builds: how to interpret Path of Building numbers (build intent from keystones and immunities, defence layers, configuration-dependent DPS). Works before a build is loaded.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "load_build",
+      "description": "Load a build into the sandbox from a Path of Building share code, a build URL (pobb.in, poe.ninja, pastebin...), or a file name returned by list_my_builds. Replaces the current build. Returns a summary.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Share code, URL, or Builds-relative .xml file name"
+          }
+        },
+        "required": [
+          "source"
+        ]
+      }
+    },
+    {
+      "name": "list_my_builds",
+      "description": "List the builds saved in the user's Path of Building (read-only copy).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "new_build",
+      "description": "Start an empty level-1 build for a class and optional ascendancy. Replaces the current build.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string",
+            "description": "e.g. Witch, Marauder"
+          },
+          "ascendancy": {
+            "type": "string",
+            "description": "e.g. Necromancer"
+          }
+        },
+        "required": [
+          "class"
+        ]
+      }
+    },
+    {
+      "name": "export_code",
+      "description": "Export the current build as a Path of Building share code for the user to import.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "build_summary",
+      "description": "Class, ascendancy, level, passive points, allocated keystones (with their stat lines), damage types the build is immune to (immuneTo), main skill and about 40 key numbers (life, EHP, max hits, DPS, resistances, defences, mana) of the current build.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "stat_breakdown",
+      "description": "Path of Building's breakdown of one number (where it comes from), as text lines. stat is a key from build_summary.stats.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "stat": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stat"
+        ]
+      }
+    },
+    {
+      "name": "check_build",
+      "description": "Rule-based health check of the current build (resistances, life pool, hit chance, mana sustain, defence layers, utility skills). Returns issues with severity error/warning/info.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "tree_summary",
+      "description": "Allocated passive count, keystones, notables and jewel sockets (with the jewel in each).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "suggest_nodes",
+      "description": "Unallocated passives ranked by Path of Building's node power for offence or defence (slow on big builds: up to a minute). pathDist is the points needed to reach the node.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "offence",
+              "defence"
+            ]
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      }
+    },
+    {
+      "name": "search_nodes",
+      "description": "Find passive nodes by name or stat text (English or Chinese). Returns ids for allocate_nodes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "allocate_nodes",
+      "description": "Allocate passive nodes by id; the shortest path to each is allocated too, as in Path of Building. A mastery needs its effect id in masteries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "masteries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "effect": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "id",
+                "effect"
+              ]
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      }
+    },
+    {
+      "name": "deallocate_nodes",
+      "description": "Deallocate passive nodes by id (nodes that depended on them are removed too, as in Path of Building).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      }
+    },
+    {
+      "name": "list_skills",
+      "description": "Socket groups with their gems, levels and qualities, and which group is the main skill.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "search_gems",
+      "description": "Find skill or support gems by part of the name (English or Chinese).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "support": {
+            "type": "boolean",
+            "description": "true = supports only, false = actives only"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "set_skill_group",
+      "description": "Replace the gems of socket group `index`, or add a new group when index is omitted. main=true makes it the main skill.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "slot": {
+            "type": "string",
+            "description": "Item slot the gems are socketed in, e.g. Body Armour"
+          },
+          "main": {
+            "type": "boolean"
+          },
+          "gems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "integer"
+                },
+                "quality": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "gems"
+        ]
+      }
+    },
+    {
+      "name": "list_items",
+      "description": "Equipped items per slot, with their full item text.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "search_uniques",
+      "description": "Find unique items by name (English or Chinese), optionally filtered by item type (e.g. Ring, Body Armour). Returns item text usable with equip_item.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "slot": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "list_bases",
+      "description": "Item bases (for writing rare items), filtered by name and/or type.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        }
+      }
+    },
+    {
+      "name": "equip_item",
+      "description": "Create an item from text (Path of Building / game copy format: 'Rarity: Rare', name, base, mod lines) and equip it, into `slot` or the first slot it fits.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "slot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "unequip_item",
+      "description": "Empty an item slot (slot name as in list_items).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "slot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slot"
+        ]
+      }
+    },
+    {
+      "name": "get_config",
+      "description": "Configuration options that apply to this build (enemy, charges, buffs, conditions) with current values and choices.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "set_config",
+      "description": "Set one configuration option by key (from get_config). Booleans for checkboxes, numbers for counts, a choice value for lists.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {}
+        },
+        "required": [
+          "key",
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "what_if",
+      "description": "Apply a list of changes, return key numbers before/after and the difference, then restore the build exactly. Each action is {tool, arguments} with the SAME arguments that tool takes on its own: allocate_nodes / deallocate_nodes {ids:[node id integers from suggest_nodes or search_nodes]}, set_skill_group {gems:[{name, level?, quality?}], index?, slot?, main?}, equip_item {text, slot?}, unequip_item {slot}, set_config {key, value}.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tool": {
+                  "type": "string"
+                },
+                "arguments": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "tool"
+              ]
+            }
+          }
+        },
+        "required": [
+          "actions"
+        ]
+      }
+    }
   ]
 }
