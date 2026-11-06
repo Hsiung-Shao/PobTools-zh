@@ -25,10 +25,13 @@ bool MakeJunction(const std::wstring& link, const std::wstring& target);
 // false. Under Wine, which has no junctions, the big folders are copied.
 void CopyTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, bool includeBuilds = false);
 
-// The light sandbox for --mcp: POB only writes files at its top level,
-// Update\ and Builds\ (measured over a full tool run), so every other
-// top-level folder is junctioned to the user's install and only the top-level
-// files and Builds\ are copied (about 1 MB instead of a 70 MB copy).
+// The light sandbox for --mcp: over a full tool run POB wrote only files at
+// its top level, Update\ and Builds\, so every other top-level folder is
+// junctioned to the user's install and only the top-level files and Builds\
+// are copied (about 1 MB instead of a 70 MB copy). One known exception goes
+// through the Data junction: the timeless-jewel .bin cache, which the MCP
+// host turns off (mcp_tools.lua M.mcp_setup). The writes left in POB's code
+// are dev-only or UI-only (tree download, mod cache, trade query).
 void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st);
 
 } // namespace PobSandbox

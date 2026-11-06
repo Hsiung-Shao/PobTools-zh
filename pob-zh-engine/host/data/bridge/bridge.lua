@@ -7896,7 +7896,7 @@ do
 	local chunk = dir and loadfile(dir .. "mcp_tools.lua")
 	if chunk then
 		local ok, err = pcall(function()
-			chunk()(M, { tr = tr, gem_tr = gem_tr, ensure_build = ensure_build, main = main, dir = dir })
+			chunk()(M, { tr = tr, gem_tr = gem_tr, ensure_build = ensure_build, main = main, dir = dir, wait_db = wait_db })
 		end)
 		if not ok then log_error("mcp_tools.lua: " .. tostring(err)) end
 	end

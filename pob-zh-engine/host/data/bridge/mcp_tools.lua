@@ -692,7 +692,9 @@ return function(M, ctx)
 		if q == "" then argerr("query required (part of a unique's name, English or Chinese)") end
 		local limit = math.max(1, math.min(30, tonumber(a and a.limit) or 10))
 		local wantType = lower(a and a.slot)
-		local db = main().uniqueDB
+		-- POB fills the unique DB over many frames after boot (Main.lua
+		-- loadItemDBs, pairsYield): reading it early returns only part of it.
+		local db = ctx.wait_db and ctx.wait_db("unique") or main().uniqueDB
 		local out = {}
 		for _, it in pairs(db and db.list or {}) do
 			if type(it) == "table" and it.name then
@@ -845,6 +847,32 @@ return function(M, ctx)
 		local fn = type(name) == "string" and T[name]
 		if not fn then error("unknown tool " .. tostring(name), 0) end
 		return fn(p.arguments or {})
+	end
+
+	-- Called once by the MCP host after boot, never by the new UI (which runs
+	-- on the user's real install, where the cache is wanted).
+	-- The sandbox's Data\ is a junction to the user's POB, and POB caches each
+	-- decompressed timeless-jewel table as Data\TimelessJewelData\<name>.bin
+	-- (DataJewelFileLoader, cacheUncompressed defaults to true): that would
+	-- write up to 50 MB into the user's folder. Wrap the loader (call the
+	-- original, bridge rule 3) so the sandbox reads without caching.
+	function M.mcp_setup()
+		local readLUT = data and data.readLUT
+		local function upvalue(fn, want)
+			if type(fn) ~= "function" then return nil end
+			for i = 1, 64 do
+				local n, v = debug.getupvalue(fn, i)
+				if not n then return nil end
+				if n == want then return i, v end
+			end
+		end
+		local _, loadTimeless = upvalue(readLUT, "loadTimelessJewel")
+		local idx, loadJewelFile = upvalue(loadTimeless, "loadJewelFile")
+		if not idx or type(loadJewelFile) ~= "function" then
+			return { jewelCacheOff = false }
+		end
+		debug.setupvalue(loadTimeless, idx, function(name) return loadJewelFile(name, false) end)
+		return { jewelCacheOff = true }
 	end
 
 	function M.mcp_tool_names()

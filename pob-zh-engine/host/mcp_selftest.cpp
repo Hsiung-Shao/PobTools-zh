@@ -42,7 +42,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[26] = {
+const char* const kTitles[27] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -69,6 +69,7 @@ const char* const kTitles[26] = {
 	"跑完整輪工具後使用者 POB 內容不變",
 	"兩個 MCP 行程同時開互不干擾",
 	"結束只刪自己的沙盒、不碰 POB",
+	"載入含永恆珠寶的建置後使用者珠寶資料不變",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -1589,6 +1590,405 @@ void TestM25(const Ctx& c, const PobCounts& before)
 	Record(25, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
+// ---------------------------------------------------------------- M26:永恆珠寶不寫回使用者資料
+
+struct JewelDef { const wchar_t* stem; const char* unique; };
+
+// 檔名主幹 -> unique 珠寶名。經典永恆珠寶放前面(它們才會把解壓後的 .bin 寫回資料夾),深淵珠寶在後。
+const JewelDef kJewelDefs[] = {
+	{L"GloriousVanity", "Glorious Vanity"},
+	{L"LethalPride", "Lethal Pride"},
+	{L"BrutalRestraint", "Brutal Restraint"},
+	{L"MilitantFaith", "Militant Faith"},
+	{L"ElegantHubris", "Elegant Hubris"},
+	{L"HeroicTragedy", "Heroic Tragedy"},
+	{L"AbyssAmanamu", "Destructive Aspiration"},
+	{L"AbyssKurgal", "Baleful Dominion"},
+	{L"AbyssTecrod", "Festering Vengeance"},
+	{L"AbyssUlaman", "Extinguishing Grasp"},
+	{L"AbyssZorath", "Reclaimed Malevolence"},
+};
+
+struct FileStamp { ULONGLONG size = 0; ULONGLONG mtime = 0; };
+using DirSnap = std::map<std::wstring, FileStamp>;
+
+// 資料夾內所有檔案的大小與修改時間(不進 reparse point)。
+void SnapFlat(const std::wstring& dir, const std::wstring& rel, DirSnap& out)
+{
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return;
+	do {
+		const std::wstring n = fd.cFileName;
+		if (n == L"." || n == L"..") continue;
+		const std::wstring r = rel.empty() ? n : rel + L"\\" + n;
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) SnapFlat(dir + L"\\" + n, r, out);
+		} else {
+			ULARGE_INTEGER sz, t;
+			sz.LowPart = fd.nFileSizeLow;
+			sz.HighPart = fd.nFileSizeHigh;
+			t.LowPart = fd.ftLastWriteTime.dwLowDateTime;
+			t.HighPart = fd.ftLastWriteTime.dwHighDateTime;
+			out[r] = FileStamp{sz.QuadPart, t.QuadPart};
+		}
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+}
+
+std::wstring LowerW(std::wstring s)
+{
+	for (auto& ch : s) ch = (wchar_t)towlower(ch);
+	return s;
+}
+
+struct JewelTrial {
+	bool ran = false;       // 有走到 equip_item
+	bool equipOk = false;
+	bool summaryOk = false; // 裝上後 build_summary 成功
+	bool triggered = false; // equip_item 成功、回傳的 slot 就是 "Jewel <id>",且 build_summary 成功
+	std::string note;
+};
+
+// Templar 新建置 -> 點亮珠寶插槽(allocate_nodes 會自動補路徑)-> 把珠寶文字原樣放進 "Jewel <id>"。
+// 樹上的空插槽不會出現在 list_items,欄位名稱固定是 "Jewel <節點 id>"。
+JewelTrial TryJewelAtSocket(Ctx& c, const json& socketId, const std::string& jewelText)
+{
+	JewelTrial t;
+	McpProc& s = *c.s;
+	ToolRes nb = s.Call("new_build", {{"class", "Templar"}}, kSlowMs);
+	if (!nb.Ok()) { t.note = "new_build 失敗: " + Cut(nb.Why(), 60); return t; }
+	ToolRes al = s.Call("allocate_nodes", {{"ids", json::array({socketId})}}, kSlowMs);
+	if (!al.Ok()) { t.note = "點插槽 " + socketId.dump() + " 失敗: " + Cut(al.Why(), 100); return t; }
+
+	const std::string slot = "Jewel " + socketId.dump();
+	t.ran = true;
+	ToolRes eq = s.Call("equip_item", {{"text", jewelText}, {"slot", slot}}, kSlowMs);
+	t.equipOk = eq.Ok();
+	if (!t.equipOk) { t.note = "equip_item(" + slot + ") 失敗: " + Cut(eq.Why(), 300); return t; }
+	const std::string gotSlot = eq.sc.value("slot", std::string());
+	json stats;
+	std::string err;
+	t.summaryOk = GetStats(s, stats, err);
+	t.triggered = gotSlot == slot && t.summaryOk;
+	t.note = "插槽 " + socketId.dump() + ", 點亮 " + al.sc.value("allocatedCount", json(0)).dump() + " 點, equip 回傳 slot=" + gotSlot +
+	         ", build_summary " + (t.summaryOk ? "成功" : "失敗: " + Cut(err, 100));
+	return t;
+}
+
+// ---- M26 自建測試 POB(覆蓋層)的工具
+
+// NTFS junction(掛載點):建立 link 資料夾並指向 target。回傳 0 = 成功,否則是 Win32 錯誤碼。
+DWORD MakeJunctionTo(const std::wstring& link, const std::wstring& target)
+{
+	if (!CreateDirectoryW(link.c_str(), nullptr)) return GetLastError();
+	HANDLE h = CreateFileW(link.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+	                       FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	if (h == INVALID_HANDLE_VALUE) {
+		DWORD le = GetLastError();
+		RemoveDirectoryW(link.c_str());
+		return le ? le : 1;
+	}
+	std::wstring subst = L"\\??\\" + target;
+	while (subst.size() > 4 && subst.back() == L'\\') subst.pop_back();
+	std::wstring print = target;
+	while (!print.empty() && print.back() == L'\\') print.pop_back();
+	// REPARSE_DATA_BUFFER 的 MountPointReparseBuffer 手工排版(ntifs.h 在 user mode 不能 include)。
+	const size_t substBytes = subst.size() * sizeof(wchar_t);
+	const size_t printBytes = print.size() * sizeof(wchar_t);
+	const size_t pathBytes = substBytes + sizeof(wchar_t) + printBytes + sizeof(wchar_t);
+	std::vector<char> buf(8 + 8 + pathBytes, 0);
+	char* p = buf.data();
+	*(DWORD*)(p + 0) = IO_REPARSE_TAG_MOUNT_POINT;
+	*(WORD*)(p + 4) = (WORD)(8 + pathBytes);
+	*(WORD*)(p + 8) = 0;
+	*(WORD*)(p + 10) = (WORD)substBytes;
+	*(WORD*)(p + 12) = (WORD)(substBytes + sizeof(wchar_t));
+	*(WORD*)(p + 14) = (WORD)printBytes;
+	memcpy(p + 16, subst.data(), substBytes);
+	memcpy(p + 16 + substBytes + sizeof(wchar_t), print.data(), printBytes);
+	DWORD ret = 0;
+	BOOL ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, buf.data(), (DWORD)buf.size(), nullptr, 0, &ret, nullptr);
+	DWORD le = ok ? 0 : GetLastError();
+	CloseHandle(h);
+	if (!ok) RemoveDirectoryW(link.c_str());
+	return ok ? 0 : (le ? le : 1);
+}
+
+bool MkdirAll(const std::wstring& dir)
+{
+	// 每一層明確建立(CreateDirectoryW 不建父層)。
+	for (size_t i = 3; i < dir.size(); i++)
+		if (dir[i] == L'\\') CreateDirectoryW(dir.substr(0, i).c_str(), nullptr);
+	CreateDirectoryW(dir.c_str(), nullptr);
+	return IsDir(dir);
+}
+
+// 刪資料夾樹:junction 只用 RemoveDirectoryW 拿掉連結本身,絕不往下遞迴(否則會刪到使用者的資料);真資料夾才遞迴。
+void SafeRmtree(const std::wstring& dir)
+{
+	const DWORD a = GetFileAttributesW(dir.c_str());
+	if (a == INVALID_FILE_ATTRIBUTES) return;
+	if (!(a & FILE_ATTRIBUTE_DIRECTORY)) {
+		SetFileAttributesW(dir.c_str(), FILE_ATTRIBUTE_NORMAL);
+		DeleteFileW(dir.c_str());
+		return;
+	}
+	if (a & FILE_ATTRIBUTE_REPARSE_POINT) { RemoveDirectoryW(dir.c_str()); return; }
+	for (const auto& e : ListDir(dir)) {
+		const std::wstring p = dir + L"\\" + e.name;
+		if (IsDirAttr(e.attr)) {
+			if (IsReparseAttr(e.attr)) RemoveDirectoryW(p.c_str());
+			else SafeRmtree(p);
+		} else {
+			SetFileAttributesW(p.c_str(), FILE_ATTRIBUTE_NORMAL);
+			DeleteFileW(p.c_str());
+		}
+	}
+	RemoveDirectoryW(dir.c_str());
+}
+
+struct OverlayInfo {
+	int junctions = 0;
+	int copied = 0;
+	int copyErrors = 0;
+	std::wstring stem;  // 放進覆蓋層的經典珠寶
+	std::string err;
+};
+
+// 在 overlay 搭一個測試用 POB:
+//  - 使用者 POB 頂層每個資料夾除了 Data 都 junction 回原處,頂層檔案複製。
+//  - Data 是真資料夾:底下除了 TimelessJewelData 都 junction,檔案複製。
+//  - Data\TimelessJewelData 是真資料夾:只放 .lua 與一顆經典珠寶的壓縮檔,不放 .bin。
+bool BuildOverlay(const std::wstring& pob, const std::wstring& overlay, OverlayInfo& info)
+{
+	const std::wstring tjSrc = pob + L"\\Data\\TimelessJewelData";
+	if (!IsDir(tjSrc)) { info.err = "使用者 POB 沒有 Data\\TimelessJewelData"; return false; }
+	const auto tj = ListDir(tjSrc);
+	std::set<std::wstring> lowerNames;
+	for (const auto& e : tj) lowerNames.insert(LowerW(e.name));
+	for (const wchar_t* stem : {L"ElegantHubris", L"BrutalRestraint", L"LethalPride", L"MilitantFaith"}) {
+		const std::wstring ls = LowerW(stem);
+		if (lowerNames.count(ls + L".zip") || lowerNames.count(ls + L".zip.part0")) { info.stem = stem; break; }
+	}
+	if (info.stem.empty()) { info.err = "使用者 POB 沒有經典珠寶(ElegantHubris / BrutalRestraint / LethalPride / MilitantFaith)的壓縮檔"; return false; }
+	if (!MkdirAll(overlay)) { info.err = "建不起覆蓋層資料夾 " + narrow(overlay); return false; }
+
+	auto copyFile = [&](const std::wstring& src, const std::wstring& dst) {
+		if (CopyFileW(src.c_str(), dst.c_str(), FALSE)) info.copied++; else info.copyErrors++;
+	};
+	std::vector<std::pair<std::wstring, std::wstring>> links; // (覆蓋層裡的 junction, 它該指向的原處)
+	auto junction = [&](const std::wstring& dst, const std::wstring& src) {
+		const DWORD le = MakeJunctionTo(dst, src);
+		if (le != 0) {
+			info.err = "建 junction 失敗 " + narrow(dst) + " (Win32 " + std::to_string(le) + ")";
+			return false;
+		}
+		info.junctions++;
+		links.emplace_back(dst, src);
+		return true;
+	};
+
+	const std::wstring stemLower = LowerW(info.stem);
+	for (const auto& e : ListDir(pob)) {
+		const std::wstring src = pob + L"\\" + e.name, dst = overlay + L"\\" + e.name;
+		if (!IsDirAttr(e.attr)) { copyFile(src, dst); continue; }
+		if (_wcsicmp(e.name.c_str(), L"Data") != 0) {
+			if (!junction(dst, src)) return false;
+			continue;
+		}
+		if (!CreateDirectoryW(dst.c_str(), nullptr)) { info.err = "建不起 Data 資料夾"; return false; }
+		for (const auto& d : ListDir(src)) {
+			const std::wstring dsrc = src + L"\\" + d.name, ddst = dst + L"\\" + d.name;
+			if (!IsDirAttr(d.attr)) { copyFile(dsrc, ddst); continue; }
+			if (_wcsicmp(d.name.c_str(), L"TimelessJewelData") != 0) {
+				if (!junction(ddst, dsrc)) return false;
+				continue;
+			}
+			if (!CreateDirectoryW(ddst.c_str(), nullptr)) { info.err = "建不起 Data\\TimelessJewelData 資料夾"; return false; }
+			for (const auto& f : tj) {
+				if (IsDirAttr(f.attr)) continue;
+				const std::wstring lf = LowerW(f.name);
+				const bool isLua = lf.size() > 4 && lf.compare(lf.size() - 4, 4, L".lua") == 0;
+				const bool isJewelZip = lf == stemLower + L".zip" || lf.rfind(stemLower + L".zip.part", 0) == 0;
+				if (isLua || isJewelZip) copyFile(dsrc + L"\\" + f.name, ddst + L"\\" + f.name);
+			}
+		}
+	}
+	// 自我檢查:每個 junction 都要讀得到、指向原處、列得出和原處一樣多的項目;Data\Uniques 與 Modules\Main.lua 也要用得到。
+	for (const auto& [dst, src] : links) {
+		const std::string rel = narrow(dst.substr(overlay.size() + 1));
+		std::wstring target;
+		DWORD tag = 0;
+		if (!ReadReparseTarget(dst, target, tag) || tag != IO_REPARSE_TAG_MOUNT_POINT) {
+			info.err = "junction 壞了: " + rel + " 讀不到 junction 資料";
+			return false;
+		}
+		if (NormPath(target) != NormPath(src)) {
+			info.err = "junction 壞了: " + rel + " 指向 " + narrow(target) + ",應為 " + narrow(src);
+			return false;
+		}
+		const size_t got = ListDir(dst).size(), want = ListDir(src).size();
+		if (got != want) {
+			info.err = "junction 壞了: " + rel + " 列出 " + std::to_string(got) + " 項,原處有 " + std::to_string(want) + " 項";
+			return false;
+		}
+	}
+	const size_t uniWant = ListDir(pob + L"\\Data\\Uniques").size();
+	const size_t uniGot = ListDir(overlay + L"\\Data\\Uniques").size();
+	if (uniWant == 0 || uniGot != uniWant) {
+		info.err = "覆蓋層 Data\\Uniques 列出 " + std::to_string(uniGot) + " 個檔案,使用者 POB 有 " + std::to_string(uniWant) + " 個";
+		return false;
+	}
+	HANDLE mh = CreateFileW((overlay + L"\\Modules\\Main.lua").c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+	if (mh == INVALID_HANDLE_VALUE) {
+		info.err = "覆蓋層 Modules\\Main.lua 打不開(Win32 " + std::to_string(GetLastError()) + ")";
+		return false;
+	}
+	CloseHandle(mh);
+	return true;
+}
+
+struct OverlayCleanup {
+	std::wstring root;
+	~OverlayCleanup() { SafeRmtree(root); }
+};
+
+// M26 載入含永恆珠寶的建置後使用者珠寶資料不變
+// 在自建的測試 POB(覆蓋層,沒有 .bin)上跑,所以任何環境都能驗;跑完刪掉覆蓋層。
+void TestM26(const Ctx& c, const PobCounts& cntBefore)
+{
+	const std::wstring root = c.exeDir + L"PobTools\\mcp_selftest_pob";
+	const std::wstring overlay = root + L"\\PathOfBuildingCommunity";
+	SafeRmtree(root); // 先清掉上次殘留
+	OverlayCleanup cleanup{root};
+
+	OverlayInfo oi;
+	if (!BuildOverlay(c.pobDir, overlay, oi)) { Record(26, false, "覆蓋層搭不起來: " + oi.err); return; }
+
+	const std::wstring tjDir = overlay + L"\\Data\\TimelessJewelData";
+	DirSnap before;
+	SnapFlat(tjDir, L"", before);
+	const std::string stemA = narrow(oi.stem);
+	std::string jewelName;
+	for (const auto& dd : kJewelDefs) if (_wcsicmp(dd.stem, oi.stem.c_str()) == 0) jewelName = dd.unique;
+	if (jewelName.empty()) { Record(26, false, "覆蓋層用的珠寶 " + stemA + " 沒有對應的 unique 名稱"); return; }
+
+	std::vector<std::string> bad;
+	JewelTrial best;
+	std::vector<std::string> notes;
+	std::string head4;
+	int tried = 0;
+	bool sandboxBin = false;
+
+	McpProc q;
+	do {
+		std::string err;
+		if (!q.Start(c.exeDir, overlay, err)) { bad.push_back("覆蓋層上的 MCP 行程啟動失敗: " + err); break; }
+		if (!Handshake(q, err)) { bad.push_back("握手失敗: " + err); break; }
+		Ctx oc;
+		oc.s = &q;
+		oc.exeDir = c.exeDir;
+		oc.pobDir = overlay;
+
+		// 用珠寶名第一個字 + slot "Jewel" 搜尋;文字原樣交給 equip_item(含 Variant 行與範圍,POB 解析得了)。
+		const std::string firstWord = jewelName.substr(0, jewelName.find(' '));
+		ToolRes su = q.Call("search_uniques", {{"query", firstWord}, {"slot", "Jewel"}, {"limit", 50}});
+		std::string jewelText;
+		if (su.Ok() && su.sc.contains("items") && su.sc["items"].is_array()) {
+			for (const auto& it : su.sc["items"]) {
+				// name 的格式是「名稱, 底材」,用前綴比對(後面要是結尾或逗號)。
+				const std::string nm = it.is_object() ? it.value("name", std::string()) : std::string();
+				const bool nameOk = nm == jewelName || (nm.size() > jewelName.size() && nm.compare(0, jewelName.size(), jewelName) == 0 && nm[jewelName.size()] == ',');
+				if (nameOk && NonEmptyStr(it, "text")) {
+					const std::string rawText = it["text"].get<std::string>();
+					size_t p0 = 0;
+					for (int i = 0; i < 4 && p0 < rawText.size(); i++) {
+						size_t nl = rawText.find('\n', p0);
+						std::string ln = rawText.substr(p0, nl == std::string::npos ? std::string::npos : nl - p0);
+						if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+						head4 += (i ? " | " : "") + ln;
+						p0 = nl == std::string::npos ? rawText.size() : nl + 1;
+					}
+					jewelText = rawText;
+					break;
+				}
+			}
+		}
+		if (jewelText.empty()) { bad.push_back("search_uniques 找不到 " + jewelName + " 的物品文字: " + Cut(su.Why(), 80)); break; }
+
+		// 天賦樹上的珠寶插槽:name 含 "Jewel Socket"、排除 Medium / Small(星團專用);
+		// 優先序:節點 7960 > 正好 "Jewel Socket" > "Large Jewel Socket" > 其他。
+		ToolRes sn = q.Call("search_nodes", {{"query", "Jewel Socket"}, {"limit", 50}});
+		std::vector<std::pair<int, json>> ranked;
+		if (sn.Ok() && sn.sc.contains("nodes") && sn.sc["nodes"].is_array()) {
+			for (const auto& n : sn.sc["nodes"]) {
+				if (!n.is_object() || !n.contains("id") || !n["id"].is_number_integer()) continue;
+				const std::string nm = Lower(n.value("name", std::string()));
+				if (nm.find("jewel socket") == std::string::npos) continue;
+				if (nm.find("medium") != std::string::npos || nm.find("small") != std::string::npos) continue;
+				ranked.push_back({n["id"].get<long long>() == 7960 ? -1 : nm == "jewel socket" ? 0 : nm == "large jewel socket" ? 1 : 2, n["id"]});
+			}
+		}
+		std::stable_sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+		if (ranked.empty()) { bad.push_back("search_nodes 找不到 Jewel Socket 節點: " + Cut(sn.Why(), 80)); break; }
+
+		// 逐個試到「equip_item 成功且放進 Jewel <id>」為止(最多 6 個)。
+		for (const auto& r : ranked) {
+			if (tried >= 6) break;
+			tried++;
+			JewelTrial t = TryJewelAtSocket(oc, r.second, jewelText);
+			notes.push_back(t.note);
+			if (t.ran) best = t;
+			if (t.triggered) break;
+		}
+		// 覆蓋層的沙盒裡有沒有出現該 .bin(只印不判)。
+		sandboxBin = FileExists(SandboxDir(c.exeDir, q.Pid()) + L"\\Data\\TimelessJewelData\\" + oi.stem + L".bin");
+	} while (false);
+	q.Close();
+	{
+		auto ls = q.AllStdoutLines();
+		g_debugLines.insert(g_debugLines.end(), ls.begin(), ls.end());
+	}
+
+	// 比對覆蓋層的 TimelessJewelData:清單、大小、修改時間。
+	DirSnap after;
+	SnapFlat(tjDir, L"", after);
+	std::vector<std::string> added, removed, changed;
+	for (const auto& [k, v] : after) {
+		auto it = before.find(k);
+		if (it == before.end()) added.push_back(narrow(k));
+		else if (it->second.size != v.size || it->second.mtime != v.mtime) changed.push_back(narrow(k));
+	}
+	for (const auto& [k, v] : before) if (!after.count(k)) removed.push_back(narrow(k));
+	const bool folderSame = added.empty() && removed.empty() && changed.empty();
+
+	// 刪除覆蓋層,確認使用者 POB 沒被動到(頂層項目數、TreeData 檔數不變)。
+	SafeRmtree(root);
+	if (IsDir(root)) bad.push_back("覆蓋層沒刪乾淨: " + narrow(root));
+	const PobCounts cntAfter = CountPob(c.pobDir);
+	if (cntAfter.top != cntBefore.top) bad.push_back("使用者 POB 頂層項目數 " + std::to_string(cntBefore.top) + "->" + std::to_string(cntAfter.top));
+	if (cntAfter.tree != cntBefore.tree) bad.push_back("使用者 TreeData 檔數 " + std::to_string(cntBefore.tree) + "->" + std::to_string(cntAfter.tree));
+
+	std::string d = "覆蓋層 junction " + std::to_string(oi.junctions) + " 個、複製 " + std::to_string(oi.copied) + " 檔" +
+	                (oi.copyErrors ? "(" + std::to_string(oi.copyErrors) + " 檔複製失敗)" : "") +
+	                "; 珠寶 " + jewelName + "(" + stemA + "), 試了 " + std::to_string(tried) + " 個插槽, 裝備" +
+	                (best.equipOk ? "成功" : "失敗") + ", build_summary " + (best.summaryOk ? "成功" : "失敗") +
+	                ", 讀取" + (best.triggered ? "已觸發" : "無法確認已觸發讀取") +
+	                "; 資料夾 " + std::to_string(before.size()) + " 檔, 新增 " + std::to_string(added.size()) + " 刪除 " +
+	                std::to_string(removed.size()) + " 變更 " + std::to_string(changed.size());
+	if (!added.empty()) d += " (新增: " + JoinFirst(added, 3) + ")";
+	if (!removed.empty()) d += " (刪除: " + JoinFirst(removed, 3) + ")";
+	if (!changed.empty()) d += " (變更: " + JoinFirst(changed, 3) + ")";
+	d += "; 沙盒 " + stemA + ".bin " + (sandboxBin ? "有" : "無") + "(只印不判)";
+	if (!best.triggered || !best.equipOk) {
+		d += "; 各插槽: " + JoinFirst(notes, 6);
+		d += "; search_uniques text 前4行: " + Cut(head4, 300);
+	}
+	if (!bad.empty()) d += "; 問題: " + JoinFirst(bad, 6);
+	Record(26, folderSame && best.triggered && bad.empty(), d);
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1677,7 +2077,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 25; n++) Record(n, false, why);
+		for (int n = 13; n <= 26; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -1759,6 +2159,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			}
 			Guard(24, [&] { TestM24(c2); });
 			Guard(25, [&] { TestM25(c2, cntBefore); });
+			Guard(26, [&] { TestM26(c2, cntBefore); }); // 自建覆蓋層 POB + 自己的行程
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -1771,7 +2172,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 25; n++) {
+	for (int n = 1; n <= 26; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

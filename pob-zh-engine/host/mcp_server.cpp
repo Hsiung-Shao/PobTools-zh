@@ -239,6 +239,11 @@ private:
 		}
 		json r;
 		child_->Call("set_translate", json{{"enabled", true}}, r, 10000);
+		// Stop POB caching timeless-jewel tables through the Data junction into
+		// the user's folder (mcp_tools.lua M.mcp_setup).
+		json setup;
+		if (!child_->Call("mcp_setup", json::object(), setup, 10000) || !setup.value("jewelCacheOff", false))
+			PobLog::Error("mcp", "could not turn off POB's timeless jewel cache; it may write .bin files into the POB folder");
 		return true;
 	}
 
