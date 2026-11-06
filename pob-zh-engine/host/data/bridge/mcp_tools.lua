@@ -17,7 +17,10 @@ return function(M, ctx)
 
 	-- ---- helpers ----------------------------------------------------------
 
-	local function argerr(fmt, ...) error(string.format(fmt, ...), 0) end
+	-- argerr's messages carry an invisible mark so mcp_call can tell "the model
+	-- passed something wrong" from a PobTools failure; it is stripped there.
+	local ARG_MARK = "\2"
+	local function argerr(fmt, ...) error(ARG_MARK .. string.format(fmt, ...), 0) end
 
 	local function lower(s) return type(s) == "string" and s:lower() or "" end
 
@@ -843,20 +846,35 @@ return function(M, ctx)
 	-- ---- entry -----------------------------------------------------------
 
 	-- Test only: the host lists it only under POB_ZH_MCP_DEBUG=1.
-	function T.debug_lua_error()
+	function T.debug_lua_error(a)
+		if a and a.kind == "plain" then
+			error("this POB has no debug feature", 0) -- the bridge's own style: level 0
+		end
 		local missing = nil
 		return missing.field -- a genuine runtime error, with file:line
 	end
 
-	-- Errors are of two kinds. A wrong argument (argerr, or any error raised
-	-- with level 0 and no position) goes back to the model to fix and is not a
-	-- PobTools problem. Anything else -- a runtime error carrying "x.lua:N:",
-	-- or a build that could not be restored -- is a bug or a broken install:
-	-- write it to the failure log with its traceback, and tell the model how
-	-- the user can report it. Must stay in step with mcp_server.cpp kReportHint.
+	-- Errors are of two kinds. A wrong argument goes back to the model to fix
+	-- and is not a PobTools problem: argerr above, and the bridge's argument
+	-- messages ("no node 123", "unknown gem X", "params.text required"...).
+	-- Everything else -- a runtime error, "this POB has no ...", "the download
+	-- did not finish", a build that could not be restored -- is a bug or a
+	-- broken install: write it to the failure log with its traceback, and tell
+	-- the model how the user can report it. The bridge raises everything with
+	-- level 0, so the position alone cannot tell them apart.
+	-- Must stay in step with mcp_server.cpp kReportHint.
 	local REPORT_HINT = " (details were written to PobTools\\logs\\error-<date>.log; call report_problem to prepare a bug report for the user)"
-	local function is_internal(msg)
-		return msg:find("%.lua:%d+:") ~= nil or msg:find("RESTORING THE BUILD FAILED", 1, true) ~= nil
+	local ARG_PATTERNS = {
+		"^no ", "^unknown ", "required", "^item does not fit", "^already exists", "^value not in list",
+		"^path must be", "^bad ", "^character not in", "^fetch the character", "^cannot open ",
+	}
+	local function is_argument(msg)
+		if msg:find("RESTORING THE BUILD FAILED", 1, true) or msg:find("%.lua:%d+:") then return false end
+		if msg:find(ARG_MARK, 1, true) then return true end
+		for _, pat in ipairs(ARG_PATTERNS) do
+			if msg:find(pat) then return true end
+		end
+		return false
 	end
 
 	function M.mcp_call(p)
@@ -870,7 +888,7 @@ return function(M, ctx)
 		end) }
 		if res[1] then return res[2] end
 		local msg = tostring(res[2])
-		if not is_internal(msg) then error(msg, 0) end
+		if is_argument(msg) then error((msg:gsub(ARG_MARK, "")), 0) end
 		if PobToolsLogError then
 			local where = (trace or ""):gsub("^%s*stack traceback:%s*", ""):sub(1, 600)
 			PobToolsLogError("mcp", name .. ": " .. msg .. " | " .. where)

@@ -12,6 +12,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winioctl.h>
+#include <shlobj.h>
+#include <knownfolders.h>
 
 #include <json.hpp>
 
@@ -42,7 +44,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[33] = {
+const char* const kTitles[35] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -76,6 +78,8 @@ const char* const kTitles[33] = {
 	"背景 POB 掛掉重開會記錄",
 	"找不到 POB 時記錄並提示",
 	"report_problem 產生可貼的摘要",
+	"bridge 型的真錯誤也寫進記錄檔",
+	"回報摘要遮蔽各種使用者路徑寫法",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -2305,14 +2309,170 @@ void TestM32(const Ctx& c)
 			std::string slash = profile;
 			for (auto& ch : slash) if (ch == '\\') ch = '/';
 			auto leaks = [&](const std::string& s) { return ContainsI(s, profile) || ContainsI(s, slash); };
-			if (leaks(text)) bad.push_back("text 含 USERPROFILE 實際值");
-			for (const auto& l : recent) if (leaks(l)) { bad.push_back("recentErrors 含 USERPROFILE 實際值: " + Cut(l, 100)); break; }
+			// M34 注入的 selftest-redact 行含 "<USERPROFILE>xyz\boundary"(另一個人的路徑,本來就該保持原樣),
+			// 檢查前把那些行整行略過:recentErrors 直接跳過,text 先逐行剔除。
+			std::string textKept;
+			{
+				size_t pos = 0;
+				while (pos <= text.size()) {
+					size_t nl = text.find('\n', pos);
+					const std::string ln = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+					pos = nl == std::string::npos ? text.size() + 1 : nl + 1;
+					if (ln.find("selftest-redact") == std::string::npos) textKept += ln + "\n";
+				}
+			}
+			if (leaks(textKept)) bad.push_back("text 含 USERPROFILE 實際值");
+			for (const auto& l : recent) {
+				if (l.find("selftest-redact") != std::string::npos) continue;
+				if (leaks(l)) { bad.push_back("recentErrors 含 USERPROFILE 實際值: " + Cut(l, 100)); break; }
+			}
 		}
 		d += "version=" + ver + ", recentErrors " + std::to_string(recent.size()) + " 行, text " + std::to_string(text.size()) + " 位元組";
 	} while (false);
 	p.Close();
 	KeepLines(p);
 	Record(32, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// M33 bridge 型的真錯誤也寫進記錄檔(不帶程式碼位置、也不像參數錯誤)
+void TestM33(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, true, err)) { bad.push_back("DEBUG 行程啟動失敗: " + err); break; }
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 100)); break; }
+		const size_t before = ReadLogLines(log).size();
+		ToolRes r = p.Call("debug_lua_error", {{"kind", "plain"}}, kSlowMs);
+		if (!r.transportOk || r.rpcError) { bad.push_back("debug_lua_error 沒有正常回應: " + Cut(r.Why(), 120)); break; }
+		if (!r.isError) bad.push_back("debug_lua_error {kind:plain} 的 isError 不是 true");
+		const std::string txt = ToolErrorText(r);
+		if (!HasLogHint(txt)) bad.push_back("錯誤文字缺記錄檔位置或 report_problem: " + Cut(txt, 160));
+		std::string found;
+		if (!WaitNewLine(log, before, [](const std::string& l) { return IsMcpLine(l) && l.find("this POB has no debug feature") != std::string::npos; }, 3000, found))
+			bad.push_back("記錄檔沒有多出含 [mcp] 與 \"this POB has no debug feature\" 的行(原 " + std::to_string(before) + " 行,現 " + std::to_string(ReadLogLines(log).size()) + " 行)");
+		else
+			d = "記錄檔新增: " + Cut(found, 120);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(33, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// 把 s 裡所有(不分大小寫)的 pat 換成 rep。
+std::string ReplaceAllI(const std::string& s, const std::string& pat, const std::string& rep)
+{
+	if (pat.empty()) return s;
+	const std::string ls = Lower(s), lp = Lower(pat);
+	std::string out;
+	size_t pos = 0;
+	for (;;) {
+		size_t f = ls.find(lp, pos);
+		if (f == std::string::npos) { out += s.substr(pos); break; }
+		out += s.substr(pos, f - pos) + rep;
+		pos = f + pat.size();
+	}
+	return out;
+}
+
+// 附加一行(UTF-8)到記錄檔,原本不是以換行結尾就先補一個。
+bool AppendLogLine(const std::wstring& path, const std::string& line)
+{
+	const size_t slash = path.find_last_of(L'\\');
+	if (slash != std::wstring::npos) MkdirAll(path.substr(0, slash));
+	const std::string old = ReadFileA(path);
+	std::string data = (!old.empty() && old.back() != '\n') ? "\n" : "";
+	data += line + "\n";
+	HANDLE h = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	DWORD w = 0;
+	const BOOL ok = WriteFile(h, data.data(), (DWORD)data.size(), &w, nullptr);
+	CloseHandle(h);
+	return ok && w == data.size();
+}
+
+// M34 回報摘要遮蔽各種使用者路徑寫法
+void TestM34(const Ctx& c)
+{
+	// 蒐集 USERPROFILE 的各種寫法。
+	wchar_t up[2048] = {};
+	const DWORD n = GetEnvironmentVariableW(L"USERPROFILE", up, 2048);
+	if (n == 0 || n >= 2048) { Record(34, false, "沒有 USERPROFILE 環境變數,無法驗證"); return; }
+	std::wstring profileW = up;
+	while (!profileW.empty() && (profileW.back() == L'\\' || profileW.back() == L'/')) profileW.pop_back();
+	const std::string profile = narrow(profileW);
+	std::string slash = profile, dbl;
+	for (auto& ch : slash) if (ch == '\\') ch = '/';
+	for (char ch : profile) { dbl += ch; if (ch == '\\') dbl += '\\'; }
+	std::string shortP;
+	{
+		wchar_t sp[2048] = {};
+		const DWORD sn = GetShortPathNameW(profileW.c_str(), sp, 2048);
+		if (sn > 0 && sn < 2048) shortP = narrow(sp);
+	}
+	std::string docs;
+	{
+		PWSTR dp = nullptr;
+		if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &dp)) && dp) docs = narrow(dp);
+		if (dp) CoTaskMemFree(dp);
+		while (!docs.empty() && (docs.back() == '\\' || docs.back() == '/')) docs.pop_back();
+	}
+
+	// 先在當天記錄檔附加一行。
+	SYSTEMTIME st{};
+	GetLocalTime(&st);
+	char ts[40];
+	snprintf(ts, sizeof(ts), "%04d-%02d-%02d %02d:%02d:%02d", (int)st.wYear, (int)st.wMonth, (int)st.wDay, (int)st.wHour, (int)st.wMinute, (int)st.wSecond);
+	const std::string boundary = profile + "xyz";
+	const std::string line = std::string("[") + ts + "] v0 [mcp] selftest-redact " + profile + " | " + slash + " | " + dbl + " | " +
+	                         (shortP.empty() ? profile : shortP) + " | " + (docs.empty() ? profile : docs) + " | " + boundary + "\\boundary";
+	if (!AppendLogLine(ErrorLogPath(c.exeDir), line)) { Record(34, false, "無法附加測試行到記錄檔 " + narrow(ErrorLogPath(c.exeDir))); return; }
+
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		ToolRes r = p.Call("report_problem", json::object());
+		if (!r.Ok()) { bad.push_back("report_problem 失敗: " + Cut(r.Why(), 120)); break; }
+		if (!r.sc.contains("dataVersion") || !r.sc["dataVersion"].is_string()) bad.push_back("缺 dataVersion 字串欄位");
+		const std::string text = r.sc.contains("text") && r.sc["text"].is_string() ? r.sc["text"].get<std::string>() : std::string();
+
+		// 找出測試行在 recentErrors 裡的版本。
+		std::string redacted;
+		if (r.sc.contains("recentErrors") && r.sc["recentErrors"].is_array()) {
+			for (const auto& e : r.sc["recentErrors"])
+				if (e.is_string() && e.get<std::string>().find("selftest-redact") != std::string::npos) redacted = e.get<std::string>();
+		}
+		if (redacted.empty()) { bad.push_back("recentErrors 找不到含 selftest-redact 的那行"); break; }
+
+		// 不得出現的寫法。邊界那段 "<USERPROFILE>xyz" 本來就該保持原樣,檢查前先換掉。
+		std::vector<std::pair<std::string, std::string>> forms = {{"原樣", profile}, {"正斜線版", slash}, {"反斜線加倍版", dbl}};
+		if (!shortP.empty() && Lower(shortP) != Lower(profile)) forms.push_back({"短路徑版", shortP});
+		if (!docs.empty()) forms.push_back({"文件資料夾", docs});
+		auto leaks = [&](const std::string& s) {
+			const std::string t = ReplaceAllI(s, boundary, "@@BOUNDARY@@");
+			std::vector<std::string> hit;
+			for (const auto& f : forms) if (ContainsI(t, f.second)) hit.push_back(f.first);
+			return hit;
+		};
+		const auto hitLine = leaks(redacted), hitText = leaks(text);
+		if (!hitLine.empty()) bad.push_back("recentErrors 那行仍含: " + JoinFirst(hitLine, 6) + " -> " + Cut(redacted, 160));
+		if (!hitText.empty()) bad.push_back("text 仍含: " + JoinFirst(hitText, 6));
+
+		// 邊界:<USERPROFILE>xyz 不能被換成 %USERPROFILE%xyz。
+		if (redacted.find(boundary) == std::string::npos) bad.push_back("邊界那段 " + boundary + " 在 recentErrors 那行不是原樣");
+		if (ContainsI(redacted, "%USERPROFILE%xyz")) bad.push_back("邊界那段被換成 %USERPROFILE%xyz");
+		d = "遮蔽後那行: " + Cut(redacted, 200);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(34, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6));
 }
 
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
@@ -2403,7 +2563,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 32; n++) Record(n, false, why);
+		for (int n = 13; n <= 34; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2492,6 +2652,8 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(30, [&] { TestM30(c2); });
 			Guard(31, [&] { TestM31(c2); });
 			Guard(32, [&] { TestM32(c2); }); // 要在 M28 之後
+			Guard(33, [&] { TestM33(c2); });
+			Guard(34, [&] { TestM34(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2504,7 +2666,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 32; n++) {
+	for (int n = 1; n <= 34; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

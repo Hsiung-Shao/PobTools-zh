@@ -1,5 +1,6 @@
 #include "mcp_server.h"
 
+#include "app_update.h"
 #include "app_version.h"
 #include "error_log.h"
 #include "headless_proc.h"
@@ -12,6 +13,7 @@
 #include <windows.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -36,7 +38,9 @@ std::string Narrow(const std::wstring& w)
 
 std::string ReadAll(const std::wstring& path)
 {
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
+	// FILE_SHARE_WRITE: the failure log may be open for appending by another
+	// PobTools process at the same moment.
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
 	if (h == INVALID_HANDLE_VALUE) return {};
 	std::string out;
 	char buf[65536];
@@ -284,14 +288,26 @@ const char* kReportHint =
 	" (details were written to PobTools\\logs\\error-<date>.log; call report_problem to prepare a bug report for the user)";
 const char* kIssueUrl = "https://github.com/Hsiung-Shao/PobTools-zh/issues/new";
 
-// Ensure retries a failed boot on every call; the same reason is written once.
+// Ensure retries a failed boot on every call; the same reason is written once
+// until a boot succeeds again.
+std::string g_lastBootError;
 void LogOnce(const std::string& msg)
 {
-	static std::string last;
-	if (msg == last) return;
-	last = msg;
+	if (msg == g_lastBootError) return;
+	g_lastBootError = msg;
 	PobLog::Error("mcp", msg);
 }
+
+// Setup problems the user can fix themselves: say how, and keep the issue
+// tracker for what they cannot.
+bool IsSetupProblem(const std::string& err)
+{
+	return err.find("No PoE1 Path of Building install found") != std::string::npos ||
+	       err.find("update PobTools") != std::string::npos;
+}
+const char* kSetupHint =
+	" (this is a setup step the user can do; it was also written to PobTools\\logs\\error-<date>.log -- only if it "
+	"keeps failing after that, call report_problem to prepare a bug report)";
 
 json ToolError(const std::string& message, bool restarted = false)
 {
@@ -313,19 +329,72 @@ json g_clientInfo = json::object();
 
 // Replaces every spelling of the user's profile path, so a report pasted into
 // a public issue does not carry the Windows account name.
+// Each user-folder spelling that can reach the log: UTF-8 (C++ messages), the
+// ANSI code page (Lua chunk names and package.path are ANSI, so a Chinese
+// account name arrives in CP950 bytes), forward slashes, JSON-escaped doubled
+// backslashes, and the 8.3 short form. Plus the Documents folder, which can be
+// redirected outside the profile.
+std::vector<std::pair<std::string, std::string>> RedactNeedles()
+{
+	std::vector<std::pair<std::string, std::string>> out;
+	auto addAll = [&](const std::wstring& w, const char* label) {
+		if (w.empty()) return;
+		std::vector<std::string> forms;
+		forms.push_back(Narrow(w));
+		int n = WideCharToMultiByte(CP_ACP, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
+		if (n > 0) {
+			std::string acp(n, '\0');
+			WideCharToMultiByte(CP_ACP, 0, w.c_str(), (int)w.size(), acp.data(), n, nullptr, nullptr);
+			forms.push_back(acp);
+		}
+		const size_t base = forms.size();
+		for (size_t i = 0; i < base; i++) {
+			std::string fwd = forms[i], dbl;
+			for (char& c : fwd) if (c == '\\') c = '/';
+			for (char c : forms[i]) { dbl += c; if (c == '\\') dbl += '\\'; }
+			forms.push_back(fwd);
+			forms.push_back(dbl);
+		}
+		for (auto& f : forms) out.emplace_back(f, label);
+	};
+	wchar_t prof[MAX_PATH] = {};
+	if (GetEnvironmentVariableW(L"USERPROFILE", prof, MAX_PATH) && prof[0]) {
+		addAll(prof, "%USERPROFILE%");
+		wchar_t shortp[MAX_PATH] = {};
+		if (GetShortPathNameW(prof, shortp, MAX_PATH) && _wcsicmp(shortp, prof) != 0) addAll(shortp, "%USERPROFILE%");
+	}
+	PWSTR docs = nullptr;
+	if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Documents, 0, nullptr, &docs)) && docs) addAll(docs, "%DOCUMENTS%");
+	CoTaskMemFree(docs);
+	// Longest first, so "C:\Users\name\Documents" is not half-replaced as the profile.
+	std::sort(out.begin(), out.end(), [](const auto& x, const auto& y) { return x.first.size() > y.first.size(); });
+	return out;
+}
+
+// Replaces every spelling of the user's folders, so a report pasted into a
+// public issue does not carry the Windows account name. Only whole path
+// components match: a profile of C:\Users\a leaves C:\Users\abc alone.
 std::string Redact(std::string s)
 {
-	wchar_t prof[MAX_PATH] = {};
-	if (!GetEnvironmentVariableW(L"USERPROFILE", prof, MAX_PATH) || !prof[0]) return s;
-	std::string a = Narrow(prof), b = a;
-	for (char& c : b) if (c == '\\') c = '/';
-	for (const std::string& needle : {a, b}) {
+	static const auto needles = RedactNeedles();
+	for (const auto& nd : needles) {
+		const std::string& needle = nd.first;
+		if (needle.empty()) continue;
 		std::string lowS = s, lowN = needle;
 		for (char& c : lowS) c = (char)tolower((unsigned char)c);
 		for (char& c : lowN) c = (char)tolower((unsigned char)c);
-		for (size_t p = lowS.find(lowN); p != std::string::npos; p = lowS.find(lowN, p + 13)) {
-			s.replace(p, needle.size(), "%USERPROFILE%");
-			lowS.replace(p, needle.size(), "%userprofile%");
+		size_t p = lowS.find(lowN);
+		while (p != std::string::npos) {
+			const size_t end = p + needle.size();
+			const bool whole = end >= s.size() || s[end] == '\\' || s[end] == '/' || s[end] == '"' || s[end] == '\'' ||
+			                   s[end] == ' ' || s[end] == ';' || s[end] == '|' || s[end] == ')';
+			if (whole) {
+				s.replace(p, needle.size(), nd.second);
+				lowS.replace(p, needle.size(), nd.second);
+				p = lowS.find(lowN, p + nd.second.size());
+			} else {
+				p = lowS.find(lowN, end);
+			}
 		}
 	}
 	return s;
@@ -397,15 +466,21 @@ json ReportProblem(const Engine& eng)
 {
 	const std::string pobDir = eng.PobDir().empty() ? "(not found)" : Redact(Narrow(eng.PobDir()));
 	const std::string pobVer = eng.PobDir().empty() ? "unknown" : PobVersionOf(eng.PobDir());
-	const std::string client = g_clientInfo.value("name", "unknown") + " " + g_clientInfo.value("version", "");
+	auto str = [](const json& o, const char* k) {
+		return o.is_object() && o.contains(k) && o[k].is_string() ? o[k].get<std::string>() : std::string();
+	};
+	std::string client = str(g_clientInfo, "name") + " " + str(g_clientInfo, "version");
+	if (client == " ") client = "unknown";
+	const std::string dataVer = ReadLocalDataVersion(g_exeDir);
 	const std::vector<std::string> errs = RecentMcpErrors(20);
 	std::string text = "### PobTools MCP problem report\n\n";
 	text += "- PobTools: " + std::string(POBTOOLS_VERSION_STRING) + "\n";
+	text += "- Data pack: " + (dataVer.empty() ? std::string("(none)") : dataVer) + "\n";
 	text += "- Path of Building: " + pobVer + " at " + pobDir + "\n";
 	text += "- " + WindowsVersion() + "\n";
 	text += "- AI client: " + client + "\n\n";
 	text += "What I asked the AI to do / what went wrong:\n\n(describe it here)\n\n";
-	text += "Recent MCP errors (PobTools\\logs):\n\n```\n";
+	text += "Recent MCP errors (PobTools\\logs; lines written by the engine carry the engine DLL's own build version):\n\n```\n";
 	for (const auto& l : errs) text += l + "\n";
 	if (errs.empty()) text += "(none logged)\n";
 	text += "```\n\nOpen a new issue at " + std::string(kIssueUrl) + " and paste this.\n";
@@ -414,6 +489,7 @@ json ReportProblem(const Engine& eng)
 		{"issueUrl", kIssueUrl},
 		{"pobtoolsVersion", POBTOOLS_VERSION_STRING},
 		{"pobVersion", pobVer},
+		{"dataVersion", dataVer},
 		{"recentErrors", errs},
 		{"instructions", "Show the user `text`, ask them to fill in what went wrong, review it, and paste it into a new issue at issueUrl. Do not post it yourself."},
 	}, false);
@@ -439,8 +515,9 @@ json CallTool(Engine& eng, const std::string& name, const json& args, bool debug
 	if (restarted) PobLog::Error("mcp", "the engine had stopped; restarted it before " + name + " (the build was reset)");
 	if (!ready) {
 		LogOnce(err);
-		return ToolError(err + kReportHint, restarted);
+		return ToolError(err + (IsSetupProblem(err) ? kSetupHint : kReportHint), restarted);
 	}
+	g_lastBootError.clear();
 	json out;
 	bool ok = eng.Child()->Call("mcp_call", json{{"name", name}, {"arguments", args.is_object() ? args : json::object()}}, out, TimeoutFor(name));
 	if (!ok) {
