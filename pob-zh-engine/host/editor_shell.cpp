@@ -164,6 +164,7 @@ bool EditorShell::OpenByPath(const std::wstring& path, bool force)
 	doc.Attach(&model);              // bumps structureVersion -> row caches rebuild
 	doc.CaptureBaseline();           // "已修改" is measured against this
 	undo.Reset(model.lines);         // no undo across files
+	saveRequest = false;
 	watch.Reset(model.path);
 	selAnchor = BlockAnchor{};
 	batchMode = false;
@@ -215,6 +216,7 @@ bool EditorShell::Save()
 {
 	if (!loaded) return false;
 	std::string err;
+	undo.Capture(model.lines);       // an edit not captured yet (save clicked right after typing) is its own step
 	if (!SaveFilter(model, &err)) {
 		Notify(u8"儲存失敗：" + err, true);
 		return false;

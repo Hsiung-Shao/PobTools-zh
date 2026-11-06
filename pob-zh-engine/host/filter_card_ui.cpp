@@ -1227,7 +1227,11 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 		char cur[48];
 		std::snprintf(cur, sizeof(cur), "%d %d %d %d", rgba[0], rgba[1], rgba[2], rgba[3]);
 		const ImGuiID fid = ImGui::GetID("##rgba");
-		if (ImGui::GetActiveID() != fid) std::snprintf(u.rgbaBuf, sizeof(u.rgbaBuf), "%s", cur);
+		// resync from the value only when the field is neither being typed in nor
+		// was let go of this frame (Ctrl+S lets go of it from outside: the typed
+		// text must reach the write-back below, not be replaced by the old value)
+		if (ImGui::GetActiveID() != fid && ImGui::GetCurrentContext()->ActiveIdPreviousFrame != fid)
+			std::snprintf(u.rgbaBuf, sizeof(u.rgbaBuf), "%s", cur);
 		const unsigned char sw[4] = { (unsigned char)rgba[0], (unsigned char)rgba[1], (unsigned char)rgba[2], (unsigned char)rgba[3] };
 		ImGui::SetCursorScreenPos(ImGui::GetCursorScreenPos() + ImVec2(0, PobUi::D(4.0f)));
 		const ImVec2 p = ImGui::GetCursorScreenPos();
