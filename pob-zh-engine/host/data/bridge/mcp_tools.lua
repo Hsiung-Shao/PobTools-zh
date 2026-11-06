@@ -867,12 +867,16 @@ return function(M, ctx)
 	local ARG_PATTERNS = {
 		"^no ", "^unknown ", "required", "^item does not fit", "^already exists", "^value not in list",
 		"^path must be", "^bad ", "^character not in", "^fetch the character", "^cannot open ",
+		"^item base not recognised", "^item text too large", "^not a build%-site link",
+		"^empty code", "^not a Path of Building code", "^code is not a build file",
 	}
 	local function is_argument(msg)
 		if msg:find("RESTORING THE BUILD FAILED", 1, true) or msg:find("%.lua:%d+:") then return false end
 		if msg:find(ARG_MARK, 1, true) then return true end
+		-- what_if reports "actions[2] (set_config): <the bridge's message>".
+		local core = msg:gsub("^actions%[%d+%] %([%w_]+%): ", "")
 		for _, pat in ipairs(ARG_PATTERNS) do
-			if msg:find(pat) then return true end
+			if core:find(pat) then return true end
 		end
 		return false
 	end
@@ -887,8 +891,9 @@ return function(M, ctx)
 			return e
 		end) }
 		if res[1] then return res[2] end
-		local msg = tostring(res[2])
-		if is_argument(msg) then error((msg:gsub(ARG_MARK, "")), 0) end
+		local raw = tostring(res[2])
+		local msg = raw:gsub(ARG_MARK, "")
+		if is_argument(raw) then error(msg, 0) end
 		if PobToolsLogError then
 			local where = (trace or ""):gsub("^%s*stack traceback:%s*", ""):sub(1, 600)
 			PobToolsLogError("mcp", name .. ": " .. msg .. " | " .. where)

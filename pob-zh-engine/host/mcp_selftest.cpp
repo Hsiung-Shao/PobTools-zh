@@ -44,7 +44,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[35] = {
+const char* const kTitles[36] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -80,6 +80,7 @@ const char* const kTitles[35] = {
 	"report_problem 產生可貼的摘要",
 	"bridge 型的真錯誤也寫進記錄檔",
 	"回報摘要遮蔽各種使用者路徑寫法",
+	"常見的參數錯誤(含試算裡的)不寫記錄檔",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -2475,6 +2476,53 @@ void TestM34(const Ctx& c)
 	Record(34, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6));
 }
 
+// M35 常見的參數錯誤(含試算裡的)不寫記錄檔
+void TestM35(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 100)); break; }
+		const size_t before = ReadLogLines(log).size();
+
+		struct Case { const char* label; const char* tool; json args; unsigned timeoutMs; };
+		const std::vector<Case> cases = {
+			{"what_if 裡 set_config 亂填 key", "what_if",
+			 {{"actions", json::array({json{{"tool", "set_config"}, {"arguments", {{"key", "noSuchConfigKeyXYZ"}, {"value", true}}}}})}}, kSlowMs},
+			{"equip_item 底材不存在", "equip_item",
+			 {{"text", "Rarity: Rare\nTest Thing\nNoSuchBaseXYZ\n+10 to maximum Life"}}, 30000},
+			{"load_build 網址不是建置", "load_build", {{"source", "https://example.com/not-a-build"}}, 60000},
+			{"load_build 不是 POB 分享碼", "load_build", {{"source", "this is not a pob code"}}, 60000},
+		};
+		for (const auto& cs : cases) {
+			ToolRes r = p.Call(cs.tool, cs.args, cs.timeoutMs);
+			if (!r.transportOk || r.rpcError) { bad.push_back(std::string(cs.label) + ": 沒有正常回應 " + Cut(r.Why(), 80)); continue; }
+			if (!r.isError) { bad.push_back(std::string(cs.label) + ": isError 不是 true"); continue; }
+			const std::string txt = ToolErrorText(r);
+			if (txt.find("report_problem") != std::string::npos) bad.push_back(std::string(cs.label) + ": 參數錯誤的文字不該提到 report_problem: " + Cut(txt, 100));
+			// U+0002(UTF-8 就是 0x02;放在 JSON 文字裡會被跳脫成 \u0002)
+			std::string raw;
+			if (r.result.is_object() && r.result.contains("content") && r.result["content"].is_array() && !r.result["content"].empty() &&
+			    r.result["content"][0].is_object() && r.result["content"][0].contains("text") && r.result["content"][0]["text"].is_string())
+				raw = r.result["content"][0]["text"].get<std::string>();
+			if (txt.find('\x02') != std::string::npos || raw.find('\x02') != std::string::npos || raw.find("\\u0002") != std::string::npos)
+				bad.push_back(std::string(cs.label) + ": 錯誤文字含 U+0002");
+		}
+		Sleep(1000); // 給寫檔一點時間,再確認行數沒變
+		const size_t after = ReadLogLines(log).size();
+		if (after != before) bad.push_back("記錄檔行數 " + std::to_string(before) + "->" + std::to_string(after) + "(參數錯誤不該寫記錄檔)");
+		d = "4 個參數錯誤都 isError、不含 report_problem 與 U+0002,記錄檔 " + std::to_string(after) + " 行不變";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(35, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -2563,7 +2611,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 34; n++) Record(n, false, why);
+		for (int n = 13; n <= 35; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2654,6 +2702,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(32, [&] { TestM32(c2); }); // 要在 M28 之後
 			Guard(33, [&] { TestM33(c2); });
 			Guard(34, [&] { TestM34(c2); });
+			Guard(35, [&] { TestM35(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2666,7 +2715,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 34; n++) {
+	for (int n = 1; n <= 35; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

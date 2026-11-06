@@ -386,8 +386,10 @@ std::string Redact(std::string s)
 		size_t p = lowS.find(lowN);
 		while (p != std::string::npos) {
 			const size_t end = p + needle.size();
-			const bool whole = end >= s.size() || s[end] == '\\' || s[end] == '/' || s[end] == '"' || s[end] == '\'' ||
-			                   s[end] == ' ' || s[end] == ';' || s[end] == '|' || s[end] == ')';
+			// The name goes on only if a name character follows (letters, digits,
+			// _ - or a multi-byte continuation); anything else ends the path.
+			const unsigned char nx = end < s.size() ? (unsigned char)s[end] : 0;
+			const bool whole = !(isalnum(nx) || nx == '_' || nx == '-' || nx >= 0x80);
 			if (whole) {
 				s.replace(p, needle.size(), nd.second);
 				lowS.replace(p, needle.size(), nd.second);
