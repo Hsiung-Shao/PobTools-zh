@@ -162,6 +162,7 @@ struct EditorShell {
 	EditJournal journal;             // this file's edits to NeverSink's rules
 	JournalReport journalPreview;    // what applying it would do (dry run at open / after an apply)
 	JournalChoices journalChoices;   // the dialog's 用我的 / 用新版 per conflict
+	std::set<std::string> journalCarried;   // rules an apply put on this file since it was opened
 	bool journalBanner = false;      // edits waiting to be put on this file
 	bool wantJournalDialog = false;
 	bool journalDialogOpen = false;

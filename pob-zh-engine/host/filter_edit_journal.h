@@ -14,6 +14,7 @@
 
 #include "filter_model.h"
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@ struct EditJournal {
 	std::string fromVersion;           // the NeverSink version the edits were made on
 	std::map<std::string, JournalRule> rules;
 	std::string customZone;            // the custom rules as a fragment ("" = none)
+	std::string subscription;          // the game subscription this local copy follows ("" = none)
 };
 
 // At a save: every NeverSink rule that differs from the baseline (the file as
@@ -47,7 +49,12 @@ struct EditJournal {
 // its "before" (a rule not carried over yet stays pending); an entry whose
 // "after" equals its "before" is dropped. The custom zone is
 // stored whole. Also sets filterType / fromVersion from `current`.
-void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current);
+// `carried`: rules an apply actually put on this file (JournalReport::carried) --
+// those take the baseline as their new "before" whatever was chosen or tweaked
+// since; without it, a rule counts as carried over only when it is what
+// applying with the default choices gives.
+void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current,
+                   const std::set<std::string>* carried = nullptr);
 
 struct JournalConflict {
 	std::string key;                   // rule identity
@@ -61,6 +68,7 @@ struct JournalReport {
 	std::vector<JournalConflict> conflicts;
 	std::vector<std::string> missing;  // keys the new file does not have
 	int customImported = 0;            // custom rules put back
+	std::set<std::string> carried;     // rules now carrying your edits (applied or already), for JournalRecord
 };
 
 // Choices for conflicts: "key|setting" -> true = take NeverSink's new version.

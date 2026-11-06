@@ -362,7 +362,8 @@ std::vector<std::string> FilterOwnLines(const FilterFile& f, const FilterBlock& 
 	return out;
 }
 
-void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current)
+void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current,
+                   const std::set<std::string>* carried)
 {
 	// The baseline is NeverSink's untouched new version when its version differs
 	// from the journal's: an entry carried onto it (the rule now differs from
@@ -385,11 +386,14 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 				// Carried onto this version only when the rule is what applying gives;
 				// untouched or edited by hand without applying, it stays pending (its
 				// old edit is still to come -- a hand edit here would otherwise erase it)
-				std::vector<JournalConflict> ignored;
-				Settings tIds;
-				std::vector<std::string> merged;
-				for (const Line& l : Merge(k, r, was, {}, &ignored, &tIds)) merged.push_back(l.text);
-				if (now != merged) continue;
+				const bool applied = carried && carried->count(k);
+				if (!applied) {
+					std::vector<JournalConflict> ignored;
+					Settings tIds;
+					std::vector<std::string> merged;
+					for (const Line& l : Merge(k, r, was, {}, &ignored, &tIds)) merged.push_back(l.text);
+					if (now != merged) continue;
+				}
 				r.before = was;             // the baseline is that version as NeverSink shipped it
 			}
 			r.version = baseVersion.empty() ? rv : baseVersion;
@@ -419,11 +423,12 @@ JournalReport JournalApply(const EditJournal& j, FilterDocumentEditor& doc, cons
 		const int bi = FindByKey(f, key);
 		if (bi < 0) { rep.missing.push_back(key); continue; }
 		const std::vector<std::string> theirs = FilterOwnLines(f, f.blocks[bi]);
-		if (theirs == rule.after) { rep.already++; continue; }
+		if (theirs == rule.after) { rep.already++; rep.carried.insert(key); continue; }
 		Settings tIds;
 		const Settings want = Merge(key, rule, theirs, choices, &rep.conflicts, &tIds);
 		std::vector<std::string> wantText;
 		for (const Line& l : want) wantText.push_back(l.text);
+		rep.carried.insert(key);
 		if (wantText == theirs) { rep.already++; continue; }
 		Rewrite(doc, key, tIds, want);
 		rep.applied++;
@@ -443,6 +448,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	doc["filterType"] = j.filterType;
 	doc["fromVersion"] = j.fromVersion;
 	doc["customZone"] = j.customZone;
+	doc["subscription"] = j.subscription;
 	ordered_json rules = ordered_json::object();
 	for (const auto& [k, r] : j.rules) rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version } };
 	doc["rules"] = rules;
@@ -487,6 +493,7 @@ bool JournalLoad(const std::wstring& path, EditJournal* j)
 		out.filterType = doc.value("filterType", std::string());
 		out.fromVersion = doc.value("fromVersion", std::string());
 		out.customZone = doc.value("customZone", std::string());
+		out.subscription = doc.value("subscription", std::string());
 		if (doc.contains("rules") && doc["rules"].is_object())
 			for (auto& [k, v] : doc["rules"].items()) {
 				JournalRule r;

@@ -87,6 +87,7 @@ void EdJournalOnOpen(EditorShell& s)
 	s.journal = EditJournal{};
 	s.journalPreview = JournalReport{};
 	s.journalChoices.clear();
+	s.journalCarried.clear();
 	s.journalBanner = false;
 	s.journalDialogOpen = false;
 	if (!s.loaded) return;
@@ -100,7 +101,8 @@ void EdJournalOnSave(EditorShell& s, const FilterFile& baseline)
 {
 	const bool had = !s.journal.rules.empty() || !s.journal.customZone.empty();
 	if (!had && !AnyNeverSinkRule(s.model)) return;   // not a NeverSink filter: nothing to keep
-	JournalRecord(s.journal, baseline, s.model);
+	JournalRecord(s.journal, baseline, s.model, &s.journalCarried);
+	s.journalCarried.clear();   // recorded against this version now
 	const std::wstring dir = JournalDir(s);
 	const std::wstring parent = dir.substr(0, dir.find_last_of(L'\\', dir.size() - 2) + 1);
 	CreateDirectoryW(parent.c_str(), nullptr);
@@ -205,6 +207,7 @@ void DrawJournalDialog(EditorShell& s)
 	const PobUi::DialogResult r = PobUi::DialogButtons(u8"取消", nullptr, nullptr, u8"套用", Pending(p));
 	if (r == PobUi::DialogResult::Primary) {
 		const JournalReport done = JournalApply(s.journal, s.doc, s.journalChoices, false);
+		s.journalCarried.insert(done.carried.begin(), done.carried.end());
 		s.journalPreview = done;
 		s.journalBanner = false;
 		std::string msg = u8"已套回 " + std::to_string(done.applied) + u8" 條規則的修改";

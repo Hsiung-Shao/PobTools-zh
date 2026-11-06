@@ -2492,6 +2492,24 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			JournalRecord(ja, mk3("2", "255 0 0", "46"), mk3("2", "255 0 0", "46"));
 			rep.check(ja.rules.empty(), "T38f an edit NeverSink adopted itself leaves the journal",
 			          "n=" + std::to_string(ja.rules.size()));
+			// applied choosing NeverSink's colour, then the size tweaked, then saved:
+			// the rule is carried onto v2 as it now is (not held back as pending)
+			EditJournal jc;
+			JournalRecord(jc, mk3("1", "255 0 0", "45"), mk3("1", "9 9 9", "45"));
+			FilterFile v2c = mk3("2", "1 2 3", "45");      // NeverSink changed the colour too
+			const FilterFile v2cPristine = v2c;
+			JournalReport rc;
+			{
+				FilterDocumentEditor d;
+				d.Attach(&v2c);
+				rc = JournalApply(jc, d, { { "$type->currency $tier->t1|SetTextColor", true } }, false);
+			}
+			FilterFile tweaked = mk3("2", "1 2 3", "30");  // kept NeverSink's colour, then changed the size
+			JournalRecord(jc, v2cPristine, tweaked, &rc.carried);
+			const auto ic = jc.rules.find("$type->currency $tier->t1");
+			rep.check(ic != jc.rules.end() && ic->second.before == FilterOwnLines(v2cPristine, v2cPristine.blocks[0]) &&
+			              ic->second.after == FilterOwnLines(tweaked, tweaked.blocks[0]),
+			          "T38f a rule applied with your choices (and tweaked after) is recorded against the new version");
 		}
 		// two rules pending on v1; on v2 only one is applied and saved, then saved again
 		{
