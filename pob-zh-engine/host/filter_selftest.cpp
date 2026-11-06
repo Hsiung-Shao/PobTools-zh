@@ -2514,6 +2514,52 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T38g applying leaves the custom copy alone and edits the NeverSink rule");
 	}
 
+	// ---- T38h: Show/Hide and NeverSink's header comment are separate settings;
+	//      repeated keywords are paired by content, not by position ------------
+	{
+		auto jr = [](const std::string& before, const std::string& after) {
+			EditJournal j;
+			JournalRecord(j, ParseFilter("# VERSION: 1\n" + before), ParseFilter("# VERSION: 1\n" + after));
+			return j;
+		};
+		auto apply = [](const EditJournal& j, const std::string& next, JournalReport* rep) {
+			FilterFile f = ParseFilter("# VERSION: 2\n" + next);
+			FilterDocumentEditor d;
+			d.Attach(&f);
+			*rep = JournalApply(j, d, {}, false);
+			return SerializeFilter(f);
+		};
+		JournalReport r;
+		// you hid the rule; NeverSink only changed its header comment
+		const EditJournal jh = jr("Show # $type->6l $tier->hightier\n\tSetFontSize 45\n",
+		                          "Hide # $type->6l $tier->hightier\n\tSetFontSize 45\n");
+		const std::string oh = apply(jh, "Show # $type->6l $tier->hightier !links_6lt1\n\tSetFontSize 45\n", &r);
+		rep.check(r.conflicts.empty() && oh.find("Hide # $type->6l $tier->hightier !links_6lt1") != std::string::npos,
+		          "T38h your Hide and NeverSink's new header comment are both kept, no conflict",
+		          "conflicts=" + std::to_string(r.conflicts.size()));
+		// you disabled the 2nd HasExplicitMod; NeverSink added one in front
+		const EditJournal jd = jr(
+			"Show # $type->rareid $tier->a\n\tHasExplicitMod \"A\"\n\tHasExplicitMod \"B\"\n\tHasExplicitMod \"C\"\n",
+			"Show # $type->rareid $tier->a\n\tHasExplicitMod \"A\"\n\t#! HasExplicitMod \"B\"\n\tHasExplicitMod \"C\"\n");
+		const std::string od = apply(jd,
+			"Show # $type->rareid $tier->a\n\tHasExplicitMod \"Z\"\n\tHasExplicitMod \"A\"\n\tHasExplicitMod \"B\"\n\tHasExplicitMod \"C\"\n", &r);
+		rep.check(r.conflicts.empty() && od.find("#! HasExplicitMod \"B\"") != std::string::npos &&
+		              od.find("\tHasExplicitMod \"B\"") == std::string::npos && od.find("HasExplicitMod \"Z\"") != std::string::npos,
+		          "T38h a disabled repeated line stays disabled when NeverSink adds another before it", od);
+		// you changed ItemLevel < 84 to < 86; NeverSink dropped the ItemLevel >= 75 line
+		const EditJournal ji = jr("Show # $type->x $tier->y\n\tItemLevel >= 75\n\tItemLevel < 84\n",
+		                          "Show # $type->x $tier->y\n\tItemLevel >= 75\n\tItemLevel < 86\n");
+		const std::string oi = apply(ji, "Show # $type->x $tier->y\n\tItemLevel < 84\n", &r);
+		rep.check(r.conflicts.empty() && oi.find("ItemLevel < 86") != std::string::npos && oi.find("ItemLevel < 84") == std::string::npos &&
+		              oi.find(">= 75") == std::string::npos,
+		          "T38h a changed repeated line follows its own line, not its position", oi);
+		// a line you added keeps its trailing comment
+		const EditJournal jc = jr("Show # $type->x $tier->y\n\tSetFontSize 45\n",
+		                          "Show # $type->x $tier->y\n\tSetFontSize 45\n\tPlayEffect Red # mine\n");
+		const std::string oc = apply(jc, "Show # $type->x $tier->y\n\tSetFontSize 40\n", &r);
+		rep.check(oc.find("\tPlayEffect Red # mine") != std::string::npos, "T38h an added line comes back exactly, comment included", oc);
+	}
+
 	// ---- T39i: a real version change (8.19.2a local -> the subscription's copy) ----
 	// Read-only use of the user's OnlineFilters\ (never written). Skipped when absent.
 	{
@@ -2562,6 +2608,34 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			         std::to_string(r.missing.size()));
 			rep.check((int)j.rules.size() == edited && r.applied + r.already + (int)r.missing.size() == (int)j.rules.size(),
 			          "T39i every recorded rule is accounted for on the real newer version");
+			// the most common edit, Show -> Hide, on the rules both versions have
+			{
+				FilterFile hid = base;
+				int n = 0;
+				for (FilterBlock& b : hid.blocks) {
+					if (n >= 40 || FilterRuleKey(hid, b).empty() || b.hide) continue;
+					FilterLine& h = hid.lines[b.headerLineIdx];
+					h.keyword = "Hide";
+					h.dirty = true;
+					n++;
+				}
+				EditJournal jh;
+				JournalRecord(jh, base, hid);
+				FilterFile next2 = ParseFilter(StripOnlineHeader(onlineText));
+				FilterDocumentEditor d2;
+				d2.Attach(&next2);
+				const JournalReport rh = JournalApply(jh, d2, {}, false);
+				int hiddenNow = 0;
+				for (const auto& [k, rr] : jh.rules) {
+					for (const FilterBlock& b : next2.blocks)
+						if (FilterRuleKey(next2, b) == k && b.hide) { hiddenNow++; break; }
+				}
+				rep.note("T39i Show->Hide on " + std::to_string(n) + " rules: applied " + std::to_string(rh.applied) +
+				         ", already " + std::to_string(rh.already) + ", conflicts " + std::to_string(rh.conflicts.size()) +
+				         ", missing " + std::to_string(rh.missing.size()) + ", hidden after apply " + std::to_string(hiddenNow));
+				rep.check(rh.conflicts.empty() && hiddenNow == rh.applied + rh.already,
+				          "T39i hiding rules survives the real update with no false conflict");
+			}
 		}
 	}
 

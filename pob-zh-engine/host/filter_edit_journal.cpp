@@ -51,25 +51,74 @@ std::string BaseSetting(const std::string& text)
 	return "#comment";
 }
 
-// A rule's lines as (setting, text), a repeated setting numbered ("BaseType#2").
-using Settings = std::vector<std::pair<std::string, std::string>>;
+// The line's content without indent and without a "#!" switch-off.
+std::string Canon(const std::string& text)
+{
+	std::string t = Trim(text);
+	if (t.compare(0, 2, "#!") == 0) t = Trim(t.substr(2));
+	return t;
+}
 
-Settings ToSettings(const std::vector<std::string>& lines)
+// The condition's operator ("" for actions), to pair "ItemLevel >= 75" with
+// "ItemLevel >= 70" rather than with "ItemLevel < 84".
+std::string OpOf(const std::string& text)
+{
+	return ParseFilterLine(Canon(text)).op;
+}
+
+// A rule's lines as (setting id, text). Ids are anchored to NeverSink's old
+// version B: a line in M or T takes the id of the B line it is (same text,
+// then same content switched on/off, then same keyword and operator, then the
+// same keyword in order); what is left is a new line. So a repeated keyword
+// (three HasExplicitMod) is followed by content, not by position.
+struct Line { std::string id, text; };
+using Settings = std::vector<Line>;
+
+Settings AnchorB(const std::vector<std::string>& lines)
 {
 	Settings out;
 	std::map<std::string, int> seen;
 	for (const std::string& t : lines) {
 		const std::string base = BaseSetting(t);
-		const int n = ++seen[base];
-		out.emplace_back(n == 1 ? base : base + "#" + std::to_string(n), t);
+		out.push_back({ base == "header" ? base : base + "#" + std::to_string(++seen[base]), t });
 	}
+	return out;
+}
+
+Settings AlignTo(const Settings& B, const std::vector<std::string>& lines, const char* newTag)
+{
+	Settings out(lines.size());
+	std::vector<bool> used(B.size(), false);
+	std::vector<std::string> base(lines.size());
+	for (size_t i = 0; i < lines.size(); i++) {
+		out[i].text = lines[i];
+		base[i] = BaseSetting(lines[i]);
+	}
+	auto pass = [&](auto same) {
+		for (size_t i = 0; i < lines.size(); i++) {
+			if (!out[i].id.empty()) continue;
+			for (size_t k = 0; k < B.size(); k++) {
+				if (used[k] || BaseSetting(B[k].text) != base[i] || !same(B[k].text, lines[i])) continue;
+				out[i].id = B[k].id;
+				used[k] = true;
+				break;
+			}
+		}
+	};
+	pass([](const std::string& b, const std::string& x) { return b == x; });
+	pass([](const std::string& b, const std::string& x) { return Canon(b) == Canon(x); });
+	pass([](const std::string& b, const std::string& x) { return OpOf(b) == OpOf(x); });
+	pass([](const std::string&, const std::string&) { return true; });
+	std::map<std::string, int> fresh;
+	for (size_t i = 0; i < lines.size(); i++)
+		if (out[i].id.empty()) out[i].id = base[i] + "#" + newTag + std::to_string(++fresh[base[i]]);
 	return out;
 }
 
 const std::string* Find(const Settings& s, const std::string& id)
 {
-	for (const auto& p : s)
-		if (p.first == id) return &p.second;
+	for (const Line& l : s)
+		if (l.id == id) return &l.text;
 	return nullptr;
 }
 
@@ -131,63 +180,102 @@ std::string CustomZoneText(const FilterFile& f)
 	return out;
 }
 
-// Your edits merged onto NeverSink's new version of one rule. Returns the new
-// lines; conflicts are reported (and resolved by `choices`, yours by default).
-std::vector<std::string> Merge(const std::string& key, const JournalRule& r, const std::vector<std::string>& theirs,
-                               const JournalChoices& choices, std::vector<JournalConflict>* conflicts)
+// Three-way on one value: yours if only you changed it, NeverSink's if only it
+// did, a conflict when both did differently (decided by `useNew`).
+const std::string* Pick3(const std::string* b, const std::string* m, const std::string* t, bool* conflict, bool useNew)
 {
-	const Settings B = ToSettings(r.before), M = ToSettings(r.after), T = ToSettings(theirs);
-	auto useNew = [&](const std::string& id) {
-		auto it = choices.find(key + "|" + SettingName(id));
+	auto eq = [](const std::string* x, const std::string* y) { return (!x && !y) || (x && y && *x == *y); };
+	*conflict = false;
+	if (eq(m, b)) return t;
+	if (eq(t, b)) return m;
+	if (eq(m, t)) return t;
+	*conflict = true;
+	return useNew ? t : m;
+}
+
+// A header "Show # $type->..." as its keyword and the rest (NeverSink's comment).
+void SplitHeader(const std::string& text, std::string* indent, std::string* kw, std::string* rest)
+{
+	const size_t a = text.find_first_not_of(" \t");
+	const size_t e = a == std::string::npos ? text.size() : text.find_first_of(" \t#", a);
+	*indent = text.substr(0, a == std::string::npos ? text.size() : a);
+	*kw = a == std::string::npos ? std::string() : text.substr(a, (e == std::string::npos ? text.size() : e) - a);
+	*rest = e == std::string::npos ? std::string() : text.substr(e);
+}
+
+// Your edits merged onto NeverSink's new version of one rule: the lines to have
+// (by setting id) and the ids of NeverSink's new lines, in their order.
+// Conflicts are reported (and resolved by `choices`, yours by default).
+Settings Merge(const std::string& key, const JournalRule& r, const std::vector<std::string>& theirs,
+               const JournalChoices& choices, std::vector<JournalConflict>* conflicts, Settings* tOut)
+{
+	const Settings B = AnchorB(r.before);
+	Settings M = AlignTo(B, r.after, "m");
+	Settings T = AlignTo(B, theirs, "t");
+	// a line both of you added, word for word, is the same line
+	for (Line& m : M) {
+		if (Find(B, m.id)) continue;
+		for (const Line& t : T)
+			if (!Find(B, t.id) && t.text == m.text) { m.id = t.id; break; }
+	}
+	*tOut = T;
+	auto useNew = [&](const std::string& setting) {
+		auto it = choices.find(key + "|" + setting);
 		return it != choices.end() && it->second;
 	};
-	std::vector<std::string> out;
-	for (const auto& [id, t] : T) {
-		const std::string* b = Find(B, id);
-		const std::string* m = Find(M, id);
-		const bool mineChanged = !(b && m && *b == *m) && !(!b && !m);
-		const bool theirsChanged = !(b && *b == t);
-		if (!mineChanged) { out.push_back(t); continue; }              // only NeverSink may have changed it
-		if (!theirsChanged) { if (m) out.push_back(*m); continue; }    // only you changed it (or removed it)
-		if (m && *m == t) { out.push_back(t); continue; }              // both made the same change
-		conflicts->push_back({ key, SettingName(id), m ? *m : std::string(), t });
-		if (useNew(id)) out.push_back(t);
-		else if (m) out.push_back(*m);
-	}
-	// lines you added, or that NeverSink dropped while you had changed them
-	for (const auto& [id, m] : M) {
-		if (Find(T, id)) continue;
-		const std::string* b = Find(B, id);
-		if (b && *b == m) continue;   // you did not touch it; NeverSink removed it
-		if (b) {
-			conflicts->push_back({ key, SettingName(id), m, std::string() });
-			if (useNew(id)) continue;
+	Settings out;
+	for (const Line& t : T) {
+		const std::string* b = Find(B, t.id);
+		const std::string* m = Find(M, t.id);
+		if (t.id == "header" && b && m) {
+			// Show/Hide is yours to change, the comment NeverSink's: one setting each
+			std::string bi, bk, br, mi, mk, mr, ti, tk, tr;
+			SplitHeader(*b, &bi, &bk, &br);
+			SplitHeader(*m, &mi, &mk, &mr);
+			SplitHeader(t.text, &ti, &tk, &tr);
+			bool c1 = false, c2 = false;
+			const std::string* kw = Pick3(&bk, &mk, &tk, &c1, useNew("Show/Hide"));
+			const std::string* rest = Pick3(&br, &mr, &tr, &c2, useNew("header"));
+			if (c1) conflicts->push_back({ key, "Show/Hide", mk, tk });
+			if (c2) conflicts->push_back({ key, "header", *m, t.text });
+			out.push_back({ t.id, ti + (kw ? *kw : tk) + (rest ? *rest : tr) });
+			continue;
 		}
-		out.push_back(m);
+		bool c = false;
+		const std::string* pick = Pick3(b, m, &t.text, &c, useNew(SettingName(t.id)));
+		if (c) conflicts->push_back({ key, SettingName(t.id), m ? *m : std::string(), t.text });
+		if (pick) out.push_back({ t.id, *pick });
+	}
+	// lines NeverSink's new version does not have: yours to add, or one you
+	// changed that NeverSink dropped (a conflict)
+	for (const Line& m : M) {
+		if (Find(T, m.id)) continue;
+		const std::string* b = Find(B, m.id);
+		bool c = false;
+		const std::string* pick = Pick3(b, &m.text, nullptr, &c, useNew(SettingName(m.id)));
+		// switched off by you, removed by NeverSink: both mean "not this line"
+		if (c && b && m.text.find("#!") != std::string::npos && Canon(m.text) == Canon(*b)) c = false, pick = nullptr;
+		if (c) conflicts->push_back({ key, SettingName(m.id), m.text, std::string() });
+		if (pick) out.push_back({ m.id, *pick });
 	}
 	return out;
 }
 
 // Make the rule's own lines `want`, keeping the uid of every line that stays
-// (so the baseline's markers and undo keep working).
-void Rewrite(FilterDocumentEditor& doc, const std::string& key, const std::vector<std::string>& want)
+// (so the baseline's markers and undo keep working). `tIds` are the setting ids
+// of the rule's current own lines, in order (from Merge).
+void Rewrite(FilterDocumentEditor& doc, const std::string& key, const Settings& tIds, const Settings& want)
 {
 	FilterFile& f = *doc.file();
 	int bi = FindByKey(f, key);
 	if (bi < 0) return;
-	const Settings W = ToSettings(want);
 	// 1. lines that stay: changed in place
 	{
 		const FilterBlock& b = f.blocks[bi];
 		const int end = OwnEnd(f, b);
-		std::map<std::string, int> seen;
-		for (int li = b.headerLineIdx; li <= end; li++) {
-			const std::string text = FilterSerializeLine(f.lines[li]);
-			const std::string base = BaseSetting(text);
-			const int n = ++seen[base];
-			const std::string id = n == 1 ? base : base + "#" + std::to_string(n);
-			const std::string* w = Find(W, id);
-			if (!w || *w == text) continue;
+		for (int li = b.headerLineIdx, i = 0; li <= end && i < (int)tIds.size(); li++, i++) {
+			const std::string* w = Find(want, tIds[i].id);
+			if (!w || *w == FilterSerializeLine(f.lines[li])) continue;
 			FilterLine nl = ParseFilterLine(*w);
 			nl.uid = f.lines[li].uid;
 			f.lines[li] = nl;
@@ -202,33 +290,25 @@ void Rewrite(FilterDocumentEditor& doc, const std::string& key, const std::vecto
 		const FilterBlock& b = f.blocks[bi];
 		const int end = OwnEnd(f, b);
 		std::vector<int> drop;
-		std::map<std::string, int> seen;
-		for (int li = b.headerLineIdx; li <= end; li++) {
-			const std::string base = BaseSetting(FilterSerializeLine(f.lines[li]));
-			const int n = ++seen[base];
-			if (!Find(W, n == 1 ? base : base + "#" + std::to_string(n)) && base != "#comment") drop.push_back(li);
-		}
+		for (int li = b.headerLineIdx, i = 0; li <= end && i < (int)tIds.size(); li++, i++)
+			if (!Find(want, tIds[i].id) && SettingName(tIds[i].id) != "#comment") drop.push_back(li);
 		for (auto it = drop.rbegin(); it != drop.rend(); ++it) doc.RemoveLine(*it);
 	}
-	// 3. lines that are new
-	{
+	// 3. lines that are new: inserted where the editor puts that kind of line,
+	//    then set to the exact text (indent, trailing comment, "#!")
+	for (const Line& w : want) {
+		if (Find(tIds, w.id)) continue;
+		FilterLine ln = ParseFilterLine(w.text);
+		if (IsDisabled(ln)) ln = ParseFilterLine(ln.raw.substr(ln.indent.size() + 2));
+		if (!IsSyntax(ln.kind) || ln.kind == FilterLineKind::BlockHeader) continue;
 		bi = FindByKey(f, key);
 		if (bi < 0) return;
-		const Settings now = ToSettings(FilterOwnLines(f, f.blocks[bi]));
-		for (const auto& [id, text] : W) {
-			if (Find(now, id)) continue;
-			FilterLine ln = ParseFilterLine(text);
-			bool disable = false;
-			if (IsDisabled(ln)) {
-				ln = ParseFilterLine(ln.raw.substr(ln.indent.size() + 2));
-				disable = true;
-			}
-			if (!IsSyntax(ln.kind) || ln.kind == FilterLineKind::BlockHeader) continue;
-			bi = FindByKey(f, key);
-			if (bi < 0) return;
-			const int li = doc.InsertLine(bi, ln.keyword, ln.op, ln.values);
-			if (disable && li >= 0) doc.CommentOutLine(li);
-		}
+		const int li = doc.InsertLine(bi, ln.keyword, ln.op, ln.values);
+		if (li < 0) continue;
+		FilterLine exact = ParseFilterLine(w.text);
+		exact.uid = f.lines[li].uid;
+		f.lines[li] = exact;
+		doc.RebuildBlocks();
 	}
 	f.dirty = true;
 	doc.RebuildBlocks();
@@ -333,9 +413,12 @@ JournalReport JournalApply(const EditJournal& j, FilterDocumentEditor& doc, cons
 		if (bi < 0) { rep.missing.push_back(key); continue; }
 		const std::vector<std::string> theirs = FilterOwnLines(f, f.blocks[bi]);
 		if (theirs == rule.after) { rep.already++; continue; }
-		const std::vector<std::string> want = Merge(key, rule, theirs, choices, &rep.conflicts);
-		if (want == theirs) { rep.already++; continue; }
-		Rewrite(doc, key, want);
+		Settings tIds;
+		const Settings want = Merge(key, rule, theirs, choices, &rep.conflicts, &tIds);
+		std::vector<std::string> wantText;
+		for (const Line& l : want) wantText.push_back(l.text);
+		if (wantText == theirs) { rep.already++; continue; }
+		Rewrite(doc, key, tIds, want);
 		rep.applied++;
 	}
 	if (!j.customZone.empty()) {
@@ -356,13 +439,25 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	ordered_json rules = ordered_json::object();
 	for (const auto& [k, r] : j.rules) rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version } };
 	doc["rules"] = rules;
-	const std::string text = doc.dump(1, '\t');
+	std::string text;
+	try {
+		// a line that is not UTF-8 (an old editor's Big5 comment) becomes U+FFFD, not a crash
+		text = doc.dump(1, '\t', false, ordered_json::error_handler_t::replace);
+	} catch (...) {
+		if (err) *err = "cannot encode the journal";
+		return false;
+	}
 	const std::wstring tmp = path + L".tmp";
 	{
 		std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
 		if (!o) { if (err) *err = "cannot write " + Narrow(tmp); return false; }
 		o.write(text.data(), (std::streamsize)text.size());
-		if (!o) { if (err) *err = "write failed"; return false; }
+		if (!o) {
+			o.close();
+			DeleteFileW(tmp.c_str());
+			if (err) *err = "write failed";
+			return false;
+		}
 	}
 	if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
 		DeleteFileW(tmp.c_str());
@@ -381,17 +476,21 @@ bool JournalLoad(const std::wstring& path, EditJournal* j)
 	try { doc = ordered_json::parse(text); } catch (...) { return false; }
 	if (!doc.is_object()) return false;
 	EditJournal out;
-	out.filterType = doc.value("filterType", std::string());
-	out.fromVersion = doc.value("fromVersion", std::string());
-	out.customZone = doc.value("customZone", std::string());
-	if (doc.contains("rules") && doc["rules"].is_object())
-		for (auto& [k, v] : doc["rules"].items()) {
-			JournalRule r;
-			if (v.contains("before") && v["before"].is_array()) r.before = v["before"].get<std::vector<std::string>>();
-			if (v.contains("after") && v["after"].is_array()) r.after = v["after"].get<std::vector<std::string>>();
-			if (v.contains("version") && v["version"].is_string()) r.version = v["version"].get<std::string>();
-			out.rules[k] = std::move(r);
-		}
+	try {
+		out.filterType = doc.value("filterType", std::string());
+		out.fromVersion = doc.value("fromVersion", std::string());
+		out.customZone = doc.value("customZone", std::string());
+		if (doc.contains("rules") && doc["rules"].is_object())
+			for (auto& [k, v] : doc["rules"].items()) {
+				JournalRule r;
+				if (v.contains("before") && v["before"].is_array()) r.before = v["before"].get<std::vector<std::string>>();
+				if (v.contains("after") && v["after"].is_array()) r.after = v["after"].get<std::vector<std::string>>();
+				if (v.contains("version") && v["version"].is_string()) r.version = v["version"].get<std::string>();
+				out.rules[k] = std::move(r);
+			}
+	} catch (...) {
+		return false;   // a hand-edited journal with a wrong type: unreadable, not a crash
+	}
 	*j = std::move(out);
 	return true;
 }
