@@ -189,7 +189,7 @@ private:
 			Rmtree(sandbox_);
 			MkdirP(sandbox_);
 			CopyStats st;
-			CopyTree(pobDir_, sandbox_, st, true);
+			LinkTree(pobDir_, sandbox_, st);
 			// An installed POB (installed.cfg, left out of the sandbox) keeps its
 			// builds under Documents\Path of Building\Builds: bring those along.
 			if (GetFileAttributesW((pobDir_ + L"\\installed.cfg").c_str()) != INVALID_FILE_ATTRIBUTES) {
@@ -200,9 +200,20 @@ private:
 				}
 				CoTaskMemFree(docs);
 			}
-			if (st.errors > 0 || st.files < 100) {
+			if (st.errors > 0 || (st.junctions == 0 && st.files < 100)) {
 				err = "Could not prepare the sandbox copy of Path of Building (" + std::to_string(st.errors) + " errors).";
 				return false;
+			}
+			// POB's background update check (Launch.lua runs UpdateCheck.lua from
+			// its folder at start and every 12 h) would download a whole POB
+			// update into the sandbox's Update\ on every session. The sandbox's
+			// copy answers "no update" instead; the user's own file is untouched.
+			HANDLE uc = CreateFileW((sandbox_ + L"\\UpdateCheck.lua").c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (uc != INVALID_HANDLE_VALUE) {
+				static const char stub[] = "return \"none\"\n";
+				DWORD w = 0;
+				WriteFile(uc, stub, sizeof(stub) - 1, &w, nullptr);
+				CloseHandle(uc);
 			}
 		}
 		if (child_) child_->Stop(1000);
@@ -325,6 +336,15 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 	SetHandleInformation(g_out, HANDLE_FLAG_INHERIT, 0);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	if (err && err != INVALID_HANDLE_VALUE) SetHandleInformation(err, HANDLE_FLAG_INHERIT, 0);
+	// A client that kills this process must take the engine child with it:
+	// an orphaned POB exits later and writes Settings.xml into a sandbox that
+	// has already been cleaned up. The job handle closes when this process dies.
+	if (HANDLE job = CreateJobObjectW(nullptr, nullptr)) {
+		JOBOBJECT_EXTENDED_LIMIT_INFORMATION li{};
+		li.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+		SetInformationJobObject(job, JobObjectExtendedLimitInformation, &li, sizeof(li));
+		AssignProcessToJobObject(job, GetCurrentProcess());
+	}
 
 	std::wstring pobDir = pobDirOverride;
 	if (pobDir.empty()) pobDir = DetectInstalls(exeDir).poe1Dir;

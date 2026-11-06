@@ -146,4 +146,37 @@ void CopyTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, b
 	CopyRel(src, dst, L"", st, includeBuilds);
 }
 
+void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st)
+{
+	MkdirP(dst);
+	st.dirs++;
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((src + L"\\*").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) { st.errors++; return; }
+	do {
+		const std::wstring n = fd.cFileName;
+		if (n == L"." || n == L"..") continue;
+		const std::wstring s = src + L"\\" + n, d = dst + L"\\" + n;
+		if (_wcsicmp(n.c_str(), L"Builds") == 0) {
+			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) CopyRel(s, d, n, st, true);
+			continue;
+		}
+		if (ShouldSkip(n, true)) continue;
+		// POB's own exe and DLLs: the headless engine loads PobTools' engine\
+		// copies (SetDllDirectoryW + cpath), and they are most of the bytes.
+		const size_t dot = n.rfind(L'.');
+		const std::wstring ext = dot == std::wstring::npos ? L"" : n.substr(dot);
+		if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+		    (_wcsicmp(ext.c_str(), L".dll") == 0 || _wcsicmp(ext.c_str(), L".exe") == 0)) continue;
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+			if (MakeJunction(d, s)) st.junctions++;
+			else if (PobLaunch::RunningUnderWine()) { RemoveDirectoryW(d.c_str()); CopyRel(s, d, n, st, true); }
+			else st.errors++;
+		} else {
+			if (CopyFileW(s.c_str(), d.c_str(), FALSE)) st.files++; else st.errors++;
+		}
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+}
+
 } // namespace PobSandbox

@@ -6,10 +6,12 @@
 #include "mcp_selftest.h"
 
 #include "launcher_config.h"
+#include "hash_sha256.h"
 #include "mcp_config.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <winioctl.h>
 
 #include <json.hpp>
 
@@ -40,7 +42,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[22] = {
+const char* const kTitles[26] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -63,6 +65,10 @@ const char* const kTitles[22] = {
 	"build_guide 回傳判讀守則",
 	"build_summary 帶出迴避機率",
 	"寫進未啟用的技能組會警告",
+	"沙盒不再複製 POB 程式",
+	"跑完整輪工具後使用者 POB 內容不變",
+	"兩個 MCP 行程同時開互不干擾",
+	"結束只刪自己的沙盒、不碰 POB",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -212,6 +218,7 @@ public:
 		}
 		CloseHandle(pi.hThread);
 		hProc_ = pi.hProcess;
+		pid_ = pi.dwProcessId;
 		hIn_ = inW;
 		hOut_ = outR;
 		hErr_ = errR;
@@ -221,6 +228,17 @@ public:
 	}
 
 	bool Alive() const { return hProc_ && WaitForSingleObject(hProc_, 0) == WAIT_TIMEOUT; }
+	DWORD Pid() const { return pid_; }
+
+	// 模擬崩潰:直接 TerminateProcess,不給它收尾的機會。
+	void Kill()
+	{
+		if (hProc_) {
+			TerminateProcess(hProc_, 1);
+			terminated_ = true;
+			WaitForSingleObject(hProc_, 3000);
+		}
+	}
 
 	// 先關 stdin,等 5 秒,還沒結束就 TerminateProcess。
 	void Close()
@@ -398,6 +416,7 @@ private:
 	}
 
 	HANDLE hProc_ = nullptr, hIn_ = nullptr, hOut_ = nullptr, hErr_ = nullptr;
+	DWORD pid_ = 0;
 	std::thread tOut_, tErr_;
 	std::atomic<bool> outDone_{false}, errDone_{false};
 	std::mutex mu_;
@@ -569,6 +588,8 @@ struct Ctx {
 	McpProc* s = nullptr;
 	std::string sample;     // 相對於 Builds 的檔名
 	std::string sampleXml;  // 範例檔全文
+	std::wstring exeDir;    // pob-zh.exe 所在資料夾(結尾有反斜線)
+	std::wstring pobDir;    // --pob 資料夾(結尾沒有反斜線)
 	bool haveSuggest = false;
 	ToolRes suggest;        // suggest_nodes offence top 5(M5、M6 共用)
 };
@@ -1156,6 +1177,418 @@ void TestM21(Ctx& c)
 	Record(21, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
+// ---------------------------------------------------------------- M22-M25:沙盒與資料夾工具
+
+struct DirEnt { std::wstring name; DWORD attr; ULONGLONG size; };
+
+std::vector<DirEnt> ListDir(const std::wstring& dir)
+{
+	std::vector<DirEnt> v;
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return v;
+	do {
+		const std::wstring n = fd.cFileName;
+		if (n == L"." || n == L"..") continue;
+		ULARGE_INTEGER sz;
+		sz.LowPart = fd.nFileSizeLow;
+		sz.HighPart = fd.nFileSizeHigh;
+		v.push_back({n, fd.dwFileAttributes, sz.QuadPart});
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+	return v;
+}
+
+bool IsDirAttr(DWORD a) { return (a & FILE_ATTRIBUTE_DIRECTORY) != 0; }
+bool IsReparseAttr(DWORD a) { return (a & FILE_ATTRIBUTE_REPARSE_POINT) != 0; }
+
+// 路徑比較用:去掉 \??\ 前綴、斜線統一、轉小寫、去尾端反斜線。
+std::wstring NormPath(std::wstring p)
+{
+	if (p.compare(0, 4, L"\\??\\") == 0 || p.compare(0, 4, L"\\\\?\\") == 0) p = p.substr(4);
+	for (auto& ch : p) {
+		if (ch == L'/') ch = L'\\';
+		ch = (wchar_t)towlower(ch);
+	}
+	while (!p.empty() && p.back() == L'\\') p.pop_back();
+	return p;
+}
+
+// 讀 reparse point 的目標。回傳 false = 讀不到;tag 是 reparse tag。
+bool ReadReparseTarget(const std::wstring& path, std::wstring& target, DWORD& tag)
+{
+	HANDLE h = CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+	                       nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	std::vector<char> buf(16 * 1024);
+	DWORD ret = 0;
+	BOOL ok = DeviceIoControl(h, FSCTL_GET_REPARSE_POINT, nullptr, 0, buf.data(), (DWORD)buf.size(), &ret, nullptr);
+	CloseHandle(h);
+	if (!ok || ret < 16) return false;
+	tag = *(DWORD*)buf.data();
+	target.clear();
+	size_t base = 0;
+	if (tag == IO_REPARSE_TAG_MOUNT_POINT) base = 16;      // junction
+	else if (tag == IO_REPARSE_TAG_SYMLINK) base = 20;     // 符號連結多一個 Flags 欄位
+	else return true;
+	const WORD subOff = *(WORD*)(buf.data() + 8);
+	const WORD subLen = *(WORD*)(buf.data() + 10);
+	if (base + subOff + subLen > buf.size()) return false;
+	target.assign((const wchar_t*)(buf.data() + base + subOff), subLen / sizeof(wchar_t));
+	return true;
+}
+
+std::wstring SandboxPidDir(const std::wstring& exeDir, DWORD pid)
+{
+	return exeDir + L"PobTools\\mcp_sandbox\\" + std::to_wstring(pid);
+}
+
+std::wstring SandboxDir(const std::wstring& exeDir, DWORD pid)
+{
+	return SandboxPidDir(exeDir, pid) + L"\\PathOfBuildingCommunity";
+}
+
+// 沙盒裡「真的檔案」:走訪時不進 junction,頂層的 Builds 不算。
+void CountRealFiles(const std::wstring& dir, bool top, ULONGLONG& bytes, int& files)
+{
+	for (const auto& e : ListDir(dir)) {
+		if (IsDirAttr(e.attr)) {
+			if (IsReparseAttr(e.attr)) continue;
+			if (top && _wcsicmp(e.name.c_str(), L"Builds") == 0) continue;
+			CountRealFiles(dir + L"\\" + e.name, false, bytes, files);
+		} else {
+			bytes += e.size;
+			files++;
+		}
+	}
+}
+
+bool Handshake(McpProc& p, std::string& err)
+{
+	json resp;
+	json params = {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
+	               {"clientInfo", {{"name", "pobtools-mcp-selftest"}, {"version", "1"}}}};
+	if (!p.Request("initialize", params, 30000, resp, err)) return false;
+	p.Notify("notifications/initialized");
+	return true;
+}
+
+// 字串欄位,或物件欄位裡的 name。
+std::string NameOf(const json& o, const char* key)
+{
+	if (!o.is_object() || !o.contains(key)) return {};
+	const json& v = o[key];
+	if (v.is_string()) return v.get<std::string>();
+	if (v.is_object() && v.contains("name") && v["name"].is_string()) return v["name"].get<std::string>();
+	return {};
+}
+
+std::string XmlAttr(const std::string& xml, const char* tagOpen, const char* attr)
+{
+	size_t p = xml.find(tagOpen);
+	if (p == std::string::npos) return {};
+	size_t end = xml.find('>', p);
+	const std::string key = std::string(attr) + "=\"";
+	size_t a = xml.find(key, p);
+	if (a == std::string::npos || (end != std::string::npos && a > end)) return {};
+	a += key.size();
+	size_t b = xml.find('"', a);
+	return b == std::string::npos ? std::string() : xml.substr(a, b - a);
+}
+
+// 起一個 --mcp 行程,並讓沙盒建好(第一個需要建置的工具呼叫有回應)。
+bool BootWithSandbox(McpProc& p, const Ctx& c, std::string& err)
+{
+	if (!p.Start(c.exeDir, c.pobDir, err)) return false;
+	if (!Handshake(p, err)) return false;
+	ToolRes r = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+	if (!r.Ok()) { err = "new_build 失敗: " + Cut(r.Why(), 100); return false; }
+	return true;
+}
+
+bool PollGone(const std::wstring& dir, unsigned ms)
+{
+	for (unsigned t = 0;; t += 200) {
+		if (!IsDir(dir)) return true;
+		if (t >= ms) return false;
+		Sleep(200);
+	}
+}
+
+// M23/M25 用:POB 資料夾的內容雜湊與檔案數。
+using HashSnap = std::map<std::wstring, std::string>;
+
+// 除 TreeData 與 Data\TimelessJewelData 以外所有檔案算 sha256(也記資料夾名);不進 reparse point。
+void HashTree(const std::wstring& dir, const std::wstring& rel, HashSnap& out)
+{
+	for (const auto& e : ListDir(dir)) {
+		const std::wstring r = rel.empty() ? e.name : rel + L"\\" + e.name;
+		if (IsDirAttr(e.attr)) {
+			if (IsReparseAttr(e.attr)) continue;
+			if (_wcsicmp(r.c_str(), L"TreeData") == 0 || _wcsicmp(r.c_str(), L"Data\\TimelessJewelData") == 0) continue;
+			out[r] = "<dir>";
+			HashTree(dir + L"\\" + e.name, r, out);
+		} else {
+			HANDLE h = CreateFileW((dir + L"\\" + e.name).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+			                       OPEN_EXISTING, 0, nullptr);
+			if (h == INVALID_HANDLE_VALUE) { out[r] = "<unreadable>"; continue; }
+			std::string data;
+			char buf[65536];
+			DWORD got = 0;
+			while (ReadFile(h, buf, sizeof(buf), &got, nullptr) && got > 0) data.append(buf, got);
+			CloseHandle(h);
+			std::string hex;
+			out[r] = Sha256Hex(data.data(), data.size(), &hex) ? hex : "<hash-failed>";
+		}
+	}
+}
+
+struct PobCounts { size_t top = 0; size_t tree = 0; };
+
+size_t CountFiles(const std::wstring& dir)
+{
+	size_t n = 0;
+	for (const auto& e : ListDir(dir)) {
+		if (IsDirAttr(e.attr)) { if (!IsReparseAttr(e.attr)) n += CountFiles(dir + L"\\" + e.name); }
+		else n++;
+	}
+	return n;
+}
+
+// 頂層項目數、TreeData 底下的檔案數。
+PobCounts CountPob(const std::wstring& pobDir)
+{
+	PobCounts c;
+	c.top = ListDir(pobDir).size();
+	c.tree = CountFiles(pobDir + L"\\TreeData");
+	return c;
+}
+
+// M22 沙盒不再複製 POB 程式(主行程還活著、已經做過建置呼叫之後)
+void TestM22(Ctx& c)
+{
+	// 先確保開機完成:第一個需要建置的工具呼叫有回應之後,沙盒才算建好。
+	c.s->Call("build_summary", json::object(), kSlowMs);
+	const std::wstring sb = SandboxDir(c.exeDir, c.s->Pid());
+	if (!IsDir(sb)) { Record(22, false, "沙盒資料夾不存在: " + narrow(sb)); return; }
+
+	std::vector<std::string> bad;
+	int junctions = 0;
+	bool haveBuilds = false;
+	for (const auto& e : ListDir(sb)) {
+		if (!IsDirAttr(e.attr)) continue;
+		const std::string name = narrow(e.name);
+		const bool isBuilds = _wcsicmp(e.name.c_str(), L"Builds") == 0;
+		const bool isUpdate = _wcsicmp(e.name.c_str(), L"Update") == 0;
+		if (isBuilds || isUpdate) {
+			if (IsReparseAttr(e.attr)) bad.push_back(name + " 應是真的資料夾,卻是 reparse point");
+			if (isBuilds) haveBuilds = true;
+			continue;
+		}
+		if (!IsReparseAttr(e.attr)) { bad.push_back(name + " 是真的資料夾(應為 junction)"); continue; }
+		std::wstring target;
+		DWORD tag = 0;
+		if (!ReadReparseTarget(sb + L"\\" + e.name, target, tag)) { bad.push_back(name + " 讀不到 reparse 目標"); continue; }
+		if (tag != IO_REPARSE_TAG_MOUNT_POINT) { bad.push_back(name + " 不是 junction(tag " + std::to_string(tag) + ")"); continue; }
+		if (NormPath(target) != NormPath(c.pobDir + L"\\" + e.name)) {
+			bad.push_back(name + " 指向 " + narrow(target) + "(應為 POB 的同名資料夾)");
+			continue;
+		}
+		junctions++;
+	}
+	if (!haveBuilds) bad.push_back("沙盒沒有 Builds 資料夾");
+	if (junctions == 0) bad.push_back("沒有任何 junction");
+	ULONGLONG bytes = 0;
+	int files = 0;
+	CountRealFiles(sb, true, bytes, files);
+	if (bytes >= 2ull * 1024 * 1024) bad.push_back("真的檔案 " + std::to_string(bytes / 1024) + " KB,超過 2 MB");
+	Record(22, bad.empty(), "junction " + std::to_string(junctions) + " 個, 真檔 " + std::to_string(files) + " 個共 " +
+	                            std::to_string(bytes / 1024) + " KB" + (bad.empty() ? "" : ": " + JoinFirst(bad, 5)));
+}
+
+// M23 跑完整輪工具後使用者 POB 內容不變(和 M9 同一個時點)
+void TestM23(const HashSnap& before, bool beforeOk, const std::wstring& pobDir)
+{
+	if (!beforeOk) { Record(23, false, "測試前的雜湊快照失敗"); return; }
+	HashSnap after;
+	HashTree(pobDir, L"", after);
+	std::vector<std::string> added, removed, changed;
+	for (const auto& [k, v] : after) {
+		auto it = before.find(k);
+		if (it == before.end()) added.push_back(narrow(k));
+		else if (it->second != v) changed.push_back(narrow(k));
+	}
+	for (const auto& [k, v] : before) if (!after.count(k)) removed.push_back(narrow(k));
+	const bool ok = !before.empty() && added.empty() && removed.empty() && changed.empty();
+	std::string d = "共 " + std::to_string(before.size()) + " 項, 新增 " + std::to_string(added.size()) + ", 刪除 " +
+	                std::to_string(removed.size()) + ", 內容變更 " + std::to_string(changed.size());
+	if (!added.empty()) d += "; 新增: " + JoinFirst(added, 3);
+	if (!removed.empty()) d += "; 刪除: " + JoinFirst(removed, 3);
+	if (!changed.empty()) d += "; 變更: " + JoinFirst(changed, 3);
+	if (before.empty()) d += " (快照為空)";
+	Record(23, ok, d);
+}
+
+// M24 兩個 MCP 行程同時開互不干擾
+struct SideRun { std::string err; std::string cls, asc; json stats; };
+
+void RunSide(McpProc& p, const char* tool, const json& args, SideRun& out)
+{
+	try {
+		ToolRes r = p.Call(tool, args, kSlowMs);
+		if (!r.Ok()) { out.err = std::string(tool) + " 失敗: " + Cut(r.Why(), 100); return; }
+		ToolRes b = p.Call("build_summary", json::object(), kSlowMs);
+		if (!b.Ok()) { out.err = "build_summary 失敗: " + Cut(b.Why(), 100); return; }
+		out.cls = NameOf(b.sc, "class");
+		out.asc = NameOf(b.sc, "ascendancy");
+		if (b.sc.contains("stats") && b.sc["stats"].is_object()) out.stats = b.sc["stats"];
+	} catch (const std::exception& e) {
+		out.err = std::string("例外: ") + e.what();
+	}
+}
+
+void TestM24(const Ctx& c)
+{
+	if (c.sample.empty()) { Record(24, false, "Builds 資料夾找不到範例建置"); return; }
+	McpProc a, b;
+	std::string err;
+	if (!a.Start(c.exeDir, c.pobDir, err)) { Record(24, false, "行程 A 啟動失敗: " + err); return; }
+	if (!b.Start(c.exeDir, c.pobDir, err)) { Record(24, false, "行程 B 啟動失敗: " + err); return; }
+	std::string ea, eb;
+	const bool ha = Handshake(a, ea), hb = Handshake(b, eb);
+	if (!ha || !hb) { Record(24, false, std::string("握手失敗: ") + (ha ? "" : "A " + ea) + (hb ? "" : " B " + eb)); return; }
+
+	// 兩邊同時動作:A 讀範例建置,B 新建 Witch / Necromancer。
+	SideRun ra, rb;
+	const json argsA = {{"source", c.sample}};
+	const json argsB = {{"class", "Witch"}, {"ascendancy", "Necromancer"}};
+	std::thread ta([&] { RunSide(a, "load_build", argsA, ra); });
+	std::thread tb([&] { RunSide(b, "new_build", argsB, rb); });
+	ta.join();
+	tb.join();
+
+	std::vector<std::string> bad;
+	if (!ra.err.empty()) bad.push_back("A: " + ra.err);
+	if (!rb.err.empty()) bad.push_back("B: " + rb.err);
+	std::string d;
+	if (ra.err.empty()) {
+		// A 的職業與數值要等於範例檔(B 若蓋掉 A,數值會變成空白建置)。
+		const std::string wantCls = XmlAttr(c.sampleXml, "<Build ", "className");
+		const std::string wantAsc = XmlAttr(c.sampleXml, "<Build ", "ascendClassName");
+		if (wantCls.empty()) bad.push_back("A: 範例檔讀不出 className");
+		else if (ra.cls != wantCls) bad.push_back("A 職業 " + ra.cls + " 不等於範例檔的 " + wantCls);
+		if (!wantAsc.empty() && ra.asc != wantAsc) bad.push_back("A 昇華 " + ra.asc + " 不等於範例檔的 " + wantAsc);
+		int compared = 0, off = 0;
+		for (const auto& [k, v] : ParsePlayerStats(c.sampleXml)) {
+			if (!ra.stats.contains(k) || !ra.stats[k].is_number()) continue;
+			char* endp = nullptr;
+			double x = strtod(v.c_str(), &endp);
+			if (v.empty() || !endp || *endp != '\0') continue;
+			double y = ra.stats[k].get<double>();
+			compared++;
+			if (std::fabs(x - y) > 0.005 * std::fmax(std::fabs(x), std::fabs(y)) && std::fabs(x - y) > 1e-9) off++;
+		}
+		if (compared == 0 || off > 0) bad.push_back("A 數值與存檔不符(比對 " + std::to_string(compared) + " 鍵, 超過 0.5% " + std::to_string(off) + " 個)");
+		d += "A=" + ra.cls + "/" + ra.asc + " ";
+	}
+	if (rb.err.empty()) {
+		if (rb.cls != "Witch") bad.push_back("B 職業 " + rb.cls + " 不是 Witch");
+		if (rb.asc != "Necromancer") bad.push_back("B 昇華 " + rb.asc + " 不是 Necromancer");
+		d += "B=" + rb.cls + "/" + rb.asc + " ";
+	}
+	if (ra.err.empty() && rb.err.empty() && StatDiffKeys(ra.stats, rb.stats).empty())
+		bad.push_back("A、B 的數值完全相同(其中一邊的建置被蓋掉了)");
+
+	// 兩個沙盒資料夾各自存在、且不同。
+	const DWORD pa = a.Pid(), pb = b.Pid();
+	if (pa == pb) bad.push_back("兩個行程 pid 相同");
+	if (!IsDir(SandboxDir(c.exeDir, pa))) bad.push_back("A 的沙盒不存在");
+	if (!IsDir(SandboxDir(c.exeDir, pb))) bad.push_back("B 的沙盒不存在");
+	d += "pid " + std::to_string(pa) + "/" + std::to_string(pb);
+
+	a.Close();
+	b.Close();
+	for (auto* p : {&a, &b}) {
+		auto ls = p->AllStdoutLines();
+		g_debugLines.insert(g_debugLines.end(), ls.begin(), ls.end());
+	}
+	Record(24, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + " (" + d + ")");
+}
+
+// M25 結束只刪自己的沙盒、不碰 POB
+void TestM25(const Ctx& c, const PobCounts& before)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	auto keepLines = [](McpProc& p) {
+		auto ls = p.AllStdoutLines();
+		g_debugLines.insert(g_debugLines.end(), ls.begin(), ls.end());
+	};
+
+	// (a) 正常結束:關 stdin 後行程退出,它的 pid 資料夾消失。
+	{
+		McpProc p;
+		std::string err;
+		if (!BootWithSandbox(p, c, err)) {
+			bad.push_back("(a) 開機失敗: " + err);
+		} else {
+			const std::wstring dir = SandboxPidDir(c.exeDir, p.Pid());
+			if (!IsDir(dir)) {
+				bad.push_back("(a) 開機後沙盒資料夾不存在");
+			} else {
+				p.Close();
+				if (p.Terminated()) bad.push_back("(a) 關 stdin 後 5 秒內沒有自己結束");
+				if (!PollGone(dir, 5000)) bad.push_back("(a) 正常結束後 pid 資料夾還在");
+				else d += "(a) 正常結束後已刪除 ";
+			}
+		}
+		p.Close();
+		keepLines(p);
+	}
+
+	// (b) 強制結束:殘留的 pid 資料夾,在下一個 --mcp 行程開機後被清掉。
+	{
+		std::wstring stale;
+		{
+			McpProc p;
+			std::string err;
+			if (!BootWithSandbox(p, c, err)) {
+				bad.push_back("(b) 開機失敗: " + err);
+			} else {
+				stale = SandboxPidDir(c.exeDir, p.Pid());
+				if (!IsDir(stale)) { bad.push_back("(b) 開機後沙盒資料夾不存在"); stale.clear(); }
+				else p.Kill();
+			}
+			p.Close();
+			keepLines(p);
+		}
+		if (!stale.empty()) {
+			if (!IsDir(stale)) {
+				d += "(b) 強制結束後資料夾已不在 ";
+			} else {
+				McpProc q;
+				std::string err;
+				if (!BootWithSandbox(q, c, err)) {
+					bad.push_back("(b) 下一個行程開機失敗: " + err);
+				} else if (!PollGone(stale, 8000)) {
+					bad.push_back("(b) 下一個行程開機後,殘留的 pid 資料夾還在");
+				} else {
+					d += "(b) 殘留資料夾已被下一個行程清掉 ";
+				}
+				q.Close();
+				keepLines(q);
+			}
+		}
+	}
+
+	// 兩種情況後,POB 資料夾頂層與 TreeData 的檔案數都不變。
+	const PobCounts after = CountPob(c.pobDir);
+	if (after.top != before.top) bad.push_back("POB 頂層項目數 " + std::to_string(before.top) + "->" + std::to_string(after.top));
+	if (after.tree != before.tree) bad.push_back("TreeData 檔案數 " + std::to_string(before.tree) + "->" + std::to_string(after.tree));
+	d += "POB 頂層 " + std::to_string(after.top) + " 項, TreeData " + std::to_string(after.tree) + " 檔";
+	Record(25, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + " (" + d + ")");
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -1244,12 +1677,15 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 21; n++) Record(n, false, why);
+		for (int n = 13; n <= 25; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
 	std::string sampleXml;
 	Snap snapBefore;
+	HashSnap hashBefore;
+	bool hashBeforeOk = true;
+	PobCounts cntBefore;
 
 	if (pobDir.empty() || !IsDir(pobDir)) {
 		failAll("找不到 PoE1 的 POB 資料夾: " + narrow(pobDir) + "(請把資料夾當第二個參數傳入)");
@@ -1257,6 +1693,12 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 		failAll("找不到 " + narrow(exeDir) + "pob-zh.exe");
 	} else {
 		Snapshot(pobDir, L"", snapBefore);
+		try {
+			HashTree(pobDir, L"", hashBefore);
+			cntBefore = CountPob(pobDir);
+		} catch (const std::exception&) {
+			hashBeforeOk = false;
+		}
 		const bool haveSample = FindSampleBuild(pobDir + L"\\Builds", sampleRel, sampleXml);
 
 		// 主行程不帶除錯變數,即使使用者環境裡已經設了。
@@ -1267,10 +1709,12 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			McpProc s;
 			std::string err;
 			if (!s.Start(exeDir, pobDir, err)) {
-				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21}) Record(n, false, "MCP 子行程啟動失敗: " + err);
+				for (int n : {1, 3, 4, 5, 6, 7, 8, 11, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22}) Record(n, false, "MCP 子行程啟動失敗: " + err);
 			} else {
 				Ctx c;
 				c.s = &s;
+				c.exeDir = exeDir;
+				c.pobDir = pobDir;
 				if (haveSample) {
 					c.sample = narrow(sampleRel);
 					c.sampleXml = sampleXml;
@@ -1297,6 +1741,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 				}
 				Guard(8, [&] { TestM8(c); });
 				Guard(11, [&] { TestM11(c); });
+				Guard(22, [&] { TestM22(c); }); // 主行程還活著時看沙盒
 				s.Close();
 				mainLines = s.AllStdoutLines();
 			}
@@ -1304,16 +1749,29 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 		Guard(10, [&] { TestM10(exeDir, pobDir); });
 
+		{
+			Ctx c2;
+			c2.exeDir = exeDir;
+			c2.pobDir = pobDir;
+			if (haveSample) {
+				c2.sample = narrow(sampleRel);
+				c2.sampleXml = sampleXml;
+			}
+			Guard(24, [&] { TestM24(c2); });
+			Guard(25, [&] { TestM25(c2, cntBefore); });
+		}
+
 		std::vector<std::string> all = mainLines;
 		all.insert(all.end(), g_debugLines.begin(), g_debugLines.end());
 		if (!g_res.count(2)) Guard(2, [&] { TestM2(all); });
 		Guard(9, [&] { TestM9(snapBefore, pobDir); });
+		Guard(23, [&] { TestM23(hashBefore, hashBeforeOk, pobDir); });
 	}
 
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 21; n++) {
+	for (int n = 1; n <= 25; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

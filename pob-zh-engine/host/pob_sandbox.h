@@ -25,4 +25,10 @@ bool MakeJunction(const std::wstring& link, const std::wstring& target);
 // false. Under Wine, which has no junctions, the big folders are copied.
 void CopyTree(const std::wstring& src, const std::wstring& dst, CopyStats& st, bool includeBuilds = false);
 
+// The light sandbox for --mcp: POB only writes files at its top level,
+// Update\ and Builds\ (measured over a full tool run), so every other
+// top-level folder is junctioned to the user's install and only the top-level
+// files and Builds\ are copied (about 1 MB instead of a 70 MB copy).
+void LinkTree(const std::wstring& src, const std::wstring& dst, CopyStats& st);
+
 } // namespace PobSandbox
