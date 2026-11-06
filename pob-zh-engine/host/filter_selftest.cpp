@@ -1207,6 +1207,23 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T25 \" (n)\" download suffix detected, plain names not");
 	}
 
+	// ---- T26: right-click copy of one rule -----------------------------------
+	{
+		const FilterFile f = ParseFilter(
+			"Show # $type->a\n\tClass \"Rings\"\n\t# note\n\tSetTextColor 255 0 0\n\tPlayAlertSound 3 300\n\n"
+			"#=== next section ===\n"
+			"Hide\n\tRarity Normal\n");
+		rep.check(f.blocks.size() == 2, "T26 fixture parses into two blocks");
+		if (f.blocks.size() == 2) {
+			rep.check(FilterBlockText(f, f.blocks[0], false) ==
+			              "Show # $type->a\r\n\tClass \"Rings\"\r\n\t# note\r\n\tSetTextColor 255 0 0\r\n\tPlayAlertSound 3 300",
+			          "T26 whole rule keeps inner comments, drops trailing blank + next banner");
+			rep.check(FilterBlockText(f, f.blocks[0], true) == "\tSetTextColor 255 0 0\r\n\tPlayAlertSound 3 300",
+			          "T26 look = action lines only");
+			rep.check(FilterBlockText(f, f.blocks[1], true).empty(), "T26 no action lines -> empty look");
+		}
+	}
+
 	rep.note("failures=" + std::to_string(rep.failures));
 	printf("%s", rep.text.c_str());
 

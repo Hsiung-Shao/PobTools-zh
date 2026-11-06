@@ -170,7 +170,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -224,6 +224,7 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "rules-ctx") shell_.ctxOpenTest = true;
 			if (st == "batch") {
 				int n = 0;
 				for (int bi : shell_.visRows) {

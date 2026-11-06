@@ -8,6 +8,7 @@
 #include "ui_theme.h"
 #include "ui_widgets.h"
 #include "ui_icons.h"
+#include "clipboard_util.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
@@ -566,6 +567,7 @@ bool DrawBlockList(EditorShell& s, float height)
 	ImGuiListClipper clip;
 	clip.Begin((int)s.visList.size(), rowH);
 	int toggleHide = -1;
+	int ctxOpen = -1;   // right-clicked row: the menu opens outside PushID
 	while (clip.Step()) {
 		for (int vi = clip.DisplayStart; vi < clip.DisplayEnd; vi++) {
 			const BlockListEntry& e = s.visList[vi];
@@ -614,6 +616,7 @@ bool DrawBlockList(EditorShell& s, float height)
 				else { s.selectedBlock = bi; s.selAnchor = s.doc.CaptureAnchor(bi); }
 			}
 			if (hov && !sel) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			if (hov && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ctxOpen = bi;
 
 			// swatch (background + border colour) at the right
 			const EdLabelStyle st = EdBlockStyle(s, bi);
@@ -658,6 +661,31 @@ bool DrawBlockList(EditorShell& s, float height)
 	}
 	clip.End();
 	if (s.visList.empty()) PobUi::Hint(u8"沒有符合的規則");
+	// right-click a rule: copy it (whole block, or only its look) as filter text
+	if (s.ctxOpenTest) {
+		s.ctxOpenTest = false;
+		ctxOpen = s.selectedBlock;
+		ImGui::SetNextWindowPos(ImGui::GetWindowPos() + ImVec2(PobUi::D(120.0f), PobUi::D(80.0f)));
+	}
+	if (ctxOpen >= 0) {
+		s.ctxBlock = ctxOpen;
+		ImGui::OpenPopup("##blockctx");
+	}
+	if (PobUi::BeginMenuPopup("##blockctx")) {
+		const bool ok = s.ctxBlock >= 0 && s.ctxBlock < (int)s.model.blocks.size();
+		int what = 0;
+		if (PobUi::MenuRow(PobIcon::Copy, u8"複製整條規則", nullptr, ok)) what = 1;
+		if (PobUi::MenuRow(PobIcon::Copy, u8"複製外觀（顏色、字級、音效、圖示）", nullptr, ok)) what = 2;
+		if (what && ok) {
+			const std::string t = FilterBlockText(s.model, s.model.blocks[s.ctxBlock], what == 2);
+			if (t.empty()) s.Notify(u8"這條規則沒有外觀設定可以複製", true);
+			else if (s.testMode || WriteClipboardUtf8(s.hostHwnd, t))
+				s.Notify(what == 1 ? u8"已複製整條規則，可貼到其他過濾器或文字編輯器"
+				                   : u8"已複製外觀，可貼進其他規則裡");
+			else s.Notify(u8"複製失敗", true);
+		}
+		PobUi::EndMenuPopup();
+	}
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
 

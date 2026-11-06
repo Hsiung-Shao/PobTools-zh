@@ -154,6 +154,8 @@ struct EditorShell {
 	bool soundsInit = false;
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
+	int ctxBlock = -1;               // block list row whose right-click menu is open
+	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
 	std::string search, searchLower;
 	RuleChip chip = RuleChip::All;
 	ChipCounts chipCounts;           // refreshed every frame (EdRefreshRowStates)
