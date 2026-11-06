@@ -157,7 +157,13 @@ bool SaveFilter(FilterFile& file, std::string* err)
 		if (err) *err = file.name + ": write failed";
 		return false;
 	}
-	for (FilterLine& ln : file.lines) ln.dirty = false;
+	// What was written becomes each edited line's raw bytes: a clean line is
+	// emitted from raw, so clearing the flag alone would put the old text back
+	// on the next save.
+	for (FilterLine& ln : file.lines) {
+		if (ln.dirty) ln.raw = FilterSerializeLine(ln);
+		ln.dirty = false;
+	}
 	file.dirty = false;
 	return true;
 }

@@ -97,13 +97,25 @@ public:
 		int req = shell_.undoRequest;
 		shell_.undoRequest = 0;
 		const bool modal = ImGui::GetTopMostPopupModal() != nullptr;
-		// a text field keeps its own Ctrl+Z
-		if (io.KeyCtrl && !io.WantTextInput && !modal && shell_.loaded) {
+		// a text field keeps its own Ctrl+Z; not while a popover / menu is open
+		// (it edits the selected rule, which undo would switch) or a drag is
+		// under way (the half-dragged value would become a step)
+		const bool popup = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+		if (io.KeyCtrl && !io.WantTextInput && !modal && !popup && !ImGui::IsAnyItemActive() && shell_.loaded) {
 			if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) req = io.KeyShift ? 1 : -1;
 			if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) req = 1;
 		}
 		if (io.KeyCtrl && !modal && shell_.loaded) {
-			if (ImGui::IsKeyPressed(ImGuiKey_S, false) && shell_.model.dirty) shell_.Save();
+			if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+				// a field being typed in writes its value when it is let go: let
+				// go of it now and save next frame, so the save has the new value
+				if (ImGui::GetActiveID() != 0) {
+					ImGui::ClearActiveID();
+					shell_.saveRequest = true;
+				} else if (shell_.model.dirty) {
+					shell_.Save();
+				}
+			}
 			if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
 				shell_.section = Section::FilterEdit;
 				shell_.focusSearch = true;
@@ -146,6 +158,11 @@ public:
 		// one undo step per finished edit: not while a field is being typed in or
 		// a colour dragged (that becomes one step when it is let go)
 		if (shell_.loaded && !ImGui::IsAnyItemActive()) shell_.undo.Capture(shell_.model.lines);
+		// Ctrl+S that let go of a field: the pages above have now written its value
+		if (shell_.saveRequest && ImGui::GetActiveID() == 0) {
+			shell_.saveRequest = false;
+			if (shell_.loaded && shell_.model.dirty) shell_.Save();
+		}
 		DrawStatusBar(shell_);
 
 		// The close guard: the same "save first?" dialog as switching files.

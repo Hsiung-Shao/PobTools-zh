@@ -158,7 +158,8 @@ struct EditorShell {
 	int ctxBlock = -1;               // block list row whose right-click menu is open
 	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
 	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
-	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
+	bool focusSearch = false;
+	bool saveRequest = false;        // Ctrl+S while a field was active: save once it has written its value        // Ctrl+F: focus the rule search box next frame
 	bool keepBatchSel = false;       // next RebuildRows keeps the ticks (a paste added no rules)
 	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
 	std::string search, searchLower;

@@ -443,6 +443,12 @@ void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
 void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard)
 {
+	// a whole filter on the clipboard is a mistake, not a rule to copy
+	constexpr size_t kMaxRules = 20;
+	if (fromClipboard && ParseFilter(ruleText).blocks.size() > kMaxRules) {
+		s.Notify(u8"剪貼簿裡超過 " + std::to_string(kMaxRules) + u8" 條規則，看起來是整份過濾器，沒有貼上", true);
+		return;
+	}
 	std::string err;
 	const int n = ImportCustomRules(s.doc, ruleText, &err);
 	if (n < 0) {   // no Show / Hide in the text (nothing is touched)

@@ -223,6 +223,7 @@ bool EditorShell::Save()
 	// outside change
 	if (doc.file() != &model) doc.Attach(&model);
 	doc.CaptureBaseline();
+	undo.Rebase(model.lines);        // saving is not an edit: no undo step for the cleared flags
 	watch.Reset(model.path);
 	Notify(u8"已儲存。到遊戲「選項 > 遊戲 > UI」重新選一次過濾器才會生效");
 	return true;
@@ -659,7 +660,10 @@ void EdUndoRedo(EditorShell& s, bool redo)
 		s.Notify(redo ? u8"沒有可以重做的修改" : u8"沒有可以復原的修改");
 		return;
 	}
+	const size_t nBefore = s.model.blocks.size();
 	s.doc.RebuildBlocks();
+	// the same rules (a look paste undone): the batch ticks still point at them
+	if (s.batchMode && s.model.blocks.size() == nBefore) s.keepBatchSel = true;
 	s.model.dirty = true;
 	s.doc.UnsavedBlockCount(true);   // every edit undone: clean again
 	// select the rule the step touched (or the next one after it)

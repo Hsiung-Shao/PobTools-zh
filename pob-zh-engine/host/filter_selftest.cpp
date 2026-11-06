@@ -1500,6 +1500,50 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(found == 2 && nine == 2, "T30 both SetTextColor lines get the pasted value", "found=" + std::to_string(found) + " nine=" + std::to_string(nine));
 	}
 
+	// ---- T32: saving twice keeps the first save's edits; a save is no undo step --
+	{
+		wchar_t tb[MAX_PATH];
+		GetTempPathW(MAX_PATH, tb);
+		const std::wstring path = std::wstring(tb) + L"pobtools_t32_" + std::to_wstring(GetCurrentProcessId()) + L".filter";
+		{
+			std::ofstream o(path, std::ios::binary);
+			o << "Show # a\r\n\tClass \"Rings\"\r\n\tSetFontSize 40\r\n\r\nShow # b\r\n\tClass \"Amulets\"\r\n\tSetFontSize 40\r\n";
+		}
+		bool ok = false;
+		FilterFile f = LoadFilter(path, &ok);
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		FilterUndoHistory h;
+		h.Reset(f.lines);
+		auto setSize = [&](int bi, const char* v) {
+			const int li = doc.FindLine(bi, "SetFontSize");
+			if (li < 0) return;
+			f.lines[li].values[0].text = v;
+			f.lines[li].dirty = true;
+			f.dirty = true;
+		};
+		std::string err;
+		setSize(0, "45");
+		h.Capture(f.lines);
+		const bool s1 = SaveFilter(f, &err);
+		h.Rebase(f.lines);
+		rep.check(ok && s1 && !h.Capture(f.lines) && h.UndoCount() == 1, "T32 a save adds no undo step (only the edit is one)",
+		          "steps=" + std::to_string(h.UndoCount()));
+		setSize(1, "33");
+		const bool s2 = SaveFilter(f, &err);
+		bool ok2 = false;
+		FilterFile back = LoadFilter(path, &ok2);
+		FilterDocumentEditor d2;
+		d2.Attach(&back);
+		const int a = d2.FindLine(0, "SetFontSize"), b = d2.FindLine(1, "SetFontSize");
+		const std::string av = a >= 0 ? FilterSerializeLine(back.lines[a]) : "", bv = b >= 0 ? FilterSerializeLine(back.lines[b]) : "";
+		rep.check(s2 && ok2 && av == "\tSetFontSize 45" && bv == "\tSetFontSize 33",
+		          "T32 the second save keeps the first save's edit on disk", "a=" + av + " b=" + bv);
+		rep.check(FilterBlockText(f, f.blocks[0], true) == "\tSetFontSize 45", "T32 after a save the copied look is the new value");
+		DeleteFileW(path.c_str());
+		DeleteFileW((path + L".bak").c_str());
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;

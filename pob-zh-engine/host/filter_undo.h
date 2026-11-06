@@ -34,6 +34,11 @@ public:
 	int Undo(std::vector<FilterLine>& lines);
 	int Redo(std::vector<FilterLine>& lines);
 
+	// After a save: the lines' text is unchanged but their dirty flags were
+	// cleared. Take them as the shadow without pushing a step (the line count
+	// is the same, so every stored range stays valid).
+	void Rebase(const std::vector<FilterLine>& lines) { shadow_ = lines; }
+
 	bool CanUndo() const { return pos_ > 0; }
 	bool CanRedo() const { return pos_ < steps_.size(); }
 	size_t UndoCount() const { return pos_; }
