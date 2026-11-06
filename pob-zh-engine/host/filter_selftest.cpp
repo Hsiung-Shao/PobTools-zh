@@ -2486,6 +2486,12 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			if (it2 != jm.rules.end())
 				for (const std::string& l : it2->second.after) keepsColour |= l.find("9 9 9") != std::string::npos;
 			rep.check(keepsColour, "T38f editing a still-pending rule by hand keeps the old edit in the journal");
+			// NeverSink's new version ships exactly your edit: nothing is left to keep
+			EditJournal ja;
+			JournalRecord(ja, mk3("1", "255 0 0", "45"), mk3("1", "255 0 0", "46"));
+			JournalRecord(ja, mk3("2", "255 0 0", "46"), mk3("2", "255 0 0", "46"));
+			rep.check(ja.rules.empty(), "T38f an edit NeverSink adopted itself leaves the journal",
+			          "n=" + std::to_string(ja.rules.size()));
 		}
 		// two rules pending on v1; on v2 only one is applied and saved, then saved again
 		{

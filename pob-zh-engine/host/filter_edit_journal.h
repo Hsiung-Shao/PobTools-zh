@@ -28,7 +28,7 @@ std::string FilterBannerValue(const FilterFile& f, const char* field);
 std::vector<std::string> FilterOwnLines(const FilterFile& f, const FilterBlock& b);
 
 struct JournalRule {
-	std::vector<std::string> before;   // NeverSink's version (the earliest one seen)
+	std::vector<std::string> before;   // NeverSink's version of the rule (the one `version` names)
 	std::vector<std::string> after;    // yours
 	std::string version;               // the NeverSink version "before" is from ("" = the journal's)
 };
@@ -42,8 +42,10 @@ struct EditJournal {
 
 // At a save: every NeverSink rule that differs from the baseline (the file as
 // loaded) is recorded -- a new entry takes the baseline as "before"; an
-// existing one keeps its earliest "before" and takes the current "after"; an
-// entry whose "after" is back to its "before" is dropped. The custom zone is
+// existing one takes the current "after", and when the baseline is a newer
+// NeverSink version and the rule is what applying gives, that version becomes
+// its "before" (a rule not carried over yet stays pending); an entry whose
+// "after" equals its "before" is dropped. The custom zone is
 // stored whole. Also sets filterType / fromVersion from `current`.
 void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current);
 
