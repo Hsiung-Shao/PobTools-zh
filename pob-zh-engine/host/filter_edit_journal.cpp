@@ -79,11 +79,32 @@ std::string SettingName(const std::string& id)
 	return h == std::string::npos ? id : id.substr(0, h);
 }
 
+// NeverSink's own rules by identity. A rule in the custom zone is the user's
+// (a 複製成新的自訂規則 copy keeps NeverSink's header) and never stands for the
+// NeverSink rule; an identity that occurs twice cannot be told apart and is
+// left out altogether.
+std::map<std::string, int> RuleIndex(const FilterFile& f)
+{
+	const CustomZone z = FindCustomZone(f);
+	std::map<std::string, int> idx;
+	std::map<std::string, int> count;
+	for (int bi = 0; bi < (int)f.blocks.size(); bi++) {
+		const int h = f.blocks[bi].headerLineIdx;
+		if (z.present() && h > z.beginLine && h < z.endLine) continue;
+		const std::string k = FilterRuleKey(f, f.blocks[bi]);
+		if (k.empty()) continue;
+		if (++count[k] == 1) idx[k] = bi;
+	}
+	for (const auto& [k, n] : count)
+		if (n > 1) idx.erase(k);
+	return idx;
+}
+
 int FindByKey(const FilterFile& f, const std::string& key)
 {
-	for (int bi = 0; bi < (int)f.blocks.size(); bi++)
-		if (FilterRuleKey(f, f.blocks[bi]) == key) return bi;
-	return -1;
+	const std::map<std::string, int> idx = RuleIndex(f);
+	const auto it = idx.find(key);
+	return it == idx.end() ? -1 : it->second;
 }
 
 // Index of the rule's own last line (header through its last syntax / "#!").
@@ -263,28 +284,36 @@ std::vector<std::string> FilterOwnLines(const FilterFile& f, const FilterBlock& 
 
 void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current)
 {
-	j.filterType = FilterBannerValue(current, "TYPE");
-	j.fromVersion = FilterBannerValue(current, "VERSION");
-	std::map<std::string, const FilterBlock*> base;
-	for (const FilterBlock& b : baseline.blocks) {
-		const std::string k = FilterRuleKey(baseline, b);
-		if (!k.empty()) base.emplace(k, &b);
-	}
-	for (const FilterBlock& b : current.blocks) {
-		const std::string k = FilterRuleKey(current, b);
-		if (k.empty()) continue;
-		auto bit = base.find(k);
+	// The baseline is NeverSink's untouched new version when its version differs
+	// from the journal's: an entry carried onto it (the rule now differs from
+	// the baseline) takes that version as its "before", so the next update
+	// compares against what NeverSink shipped last, not what it shipped years
+	// ago. An entry not carried onto it yet stays as it is (still pending).
+	const std::string baseVersion = FilterBannerValue(baseline, "VERSION");
+	const std::map<std::string, int> base = RuleIndex(baseline);
+	const std::map<std::string, int> cur = RuleIndex(current);
+	for (const auto& [k, ci] : cur) {
+		const auto bit = base.find(k);
 		if (bit == base.end()) continue;
-		const std::vector<std::string> now = FilterOwnLines(current, b);
+		const std::vector<std::string> now = FilterOwnLines(current, current.blocks[ci]);
+		const std::vector<std::string> was = FilterOwnLines(baseline, baseline.blocks[bit->second]);
 		auto it = j.rules.find(k);
 		if (it != j.rules.end()) {
-			it->second.after = now;
-			if (it->second.after == it->second.before) j.rules.erase(it);
+			JournalRule& r = it->second;
+			const std::string& rv = r.version.empty() ? j.fromVersion : r.version;
+			if (!baseVersion.empty() && !rv.empty() && rv != baseVersion) {
+				if (now == was) continue;   // not carried onto this version yet: keep it pending
+				r.before = was;             // the baseline is that version as NeverSink shipped it
+			}
+			r.version = baseVersion.empty() ? rv : baseVersion;
+			r.after = now;
+			if (r.after == r.before) j.rules.erase(it);
 			continue;
 		}
-		const std::vector<std::string> was = FilterOwnLines(baseline, *bit->second);
-		if (now != was) j.rules[k] = JournalRule{ was, now };
+		if (now != was) j.rules[k] = JournalRule{ was, now, baseVersion };
 	}
+	j.filterType = FilterBannerValue(current, "TYPE");
+	j.fromVersion = FilterBannerValue(current, "VERSION");
 	j.customZone = CustomZoneText(current);
 }
 
@@ -325,7 +354,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	doc["fromVersion"] = j.fromVersion;
 	doc["customZone"] = j.customZone;
 	ordered_json rules = ordered_json::object();
-	for (const auto& [k, r] : j.rules) rules[k] = { { "before", r.before }, { "after", r.after } };
+	for (const auto& [k, r] : j.rules) rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version } };
 	doc["rules"] = rules;
 	const std::string text = doc.dump(1, '\t');
 	const std::wstring tmp = path + L".tmp";
@@ -360,6 +389,7 @@ bool JournalLoad(const std::wstring& path, EditJournal* j)
 			JournalRule r;
 			if (v.contains("before") && v["before"].is_array()) r.before = v["before"].get<std::vector<std::string>>();
 			if (v.contains("after") && v["after"].is_array()) r.after = v["after"].get<std::vector<std::string>>();
+			if (v.contains("version") && v["version"].is_string()) r.version = v["version"].get<std::string>();
 			out.rules[k] = std::move(r);
 		}
 	*j = std::move(out);

@@ -30,6 +30,7 @@ std::vector<std::string> FilterOwnLines(const FilterFile& f, const FilterBlock& 
 struct JournalRule {
 	std::vector<std::string> before;   // NeverSink's version (the earliest one seen)
 	std::vector<std::string> after;    // yours
+	std::string version;               // the NeverSink version "before" is from ("" = the journal's)
 };
 
 struct EditJournal {

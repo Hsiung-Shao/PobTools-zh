@@ -2433,6 +2433,87 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
+	// ---- T38f/T38g: across versions, and a custom-zone copy with the same identity
+	{
+		auto mk = [](const char* ver, const char* colour, const char* bases) {
+			std::string s = std::string("# VERSION:  ") + ver + "\n# TYPE:     2-SEMI-STRICT\n\n"
+			                "Show # $type->currency $tier->t1\n\tBaseType == " + bases + "\n\tSetTextColor " + colour + "\n";
+			return s;
+		};
+		// v1 -> your colour; v2 (NeverSink changed the bases) applied and saved
+		const FilterFile v1 = ParseFilter(mk("1", "255 0 0", "\"Divine Orb\""));
+		FilterFile v1mine = ParseFilter(mk("1", "9 9 9", "\"Divine Orb\""));
+		EditJournal j;
+		JournalRecord(j, v1, v1mine);
+		FilterFile v2 = ParseFilter(mk("2", "255 0 0", "\"Divine Orb\" \"Mirror of Kalandra\""));
+		const FilterFile v2pristine = v2;
+		{
+			FilterDocumentEditor d;
+			d.Attach(&v2);
+			JournalApply(j, d, {}, false);
+		}
+		JournalRecord(j, v2pristine, v2);   // the save after applying on v2
+		const auto it = j.rules.find("$type->currency $tier->t1");
+		const bool rebased = it != j.rules.end() && it->second.before == FilterOwnLines(v2pristine, v2pristine.blocks[0]);
+		rep.check(rebased && j.fromVersion == "2", "T38f after saving on a new version, 'before' is that version's NeverSink rule");
+		// v3: NeverSink changes the bases again -> no conflict, both changes kept
+		FilterFile v3 = ParseFilter(mk("3", "255 0 0", "\"Exalted Orb\""));
+		FilterDocumentEditor d3;
+		d3.Attach(&v3);
+		const JournalReport r3 = JournalApply(j, d3, {}, false);
+		const std::string t3 = FilterBlockText(v3, v3.blocks[0], false);
+		rep.check(r3.conflicts.empty() && t3.find("Exalted Orb") != std::string::npos && t3.find("9 9 9") != std::string::npos,
+		          "T38f the next update keeps NeverSink's new bases and your colour, no false conflict",
+		          "conflicts=" + std::to_string(r3.conflicts.size()));
+		// a version opened but not applied: the pending edit is kept, not lost
+		EditJournal j2;
+		JournalRecord(j2, v1, v1mine);
+		const FilterFile v2b = ParseFilter(mk("2", "255 0 0", "\"Divine Orb\""));
+		JournalRecord(j2, v2b, v2b);   // saved v2 without applying
+		rep.check(j2.rules.size() == 1, "T38f saving a new version without applying keeps the pending edit");
+		// two rules pending on v1; on v2 only one is applied and saved, then saved again
+		{
+			auto mk2 = [](const char* ver, const char* c1, const char* c2) {
+				return ParseFilter(std::string("# VERSION:  ") + ver + "\n# TYPE:     2-SEMI-STRICT\n\n"
+				                   "Show # $type->currency $tier->t1\n\tBaseType == \"Divine Orb\"\n\tSetTextColor " + c1 + "\n\n"
+				                   "Show # $type->currency $tier->t2\n\tBaseType == \"Chaos Orb\"\n\tSetTextColor " + c2 + "\n");
+			};
+			EditJournal jj;
+			JournalRecord(jj, mk2("1", "255 0 0", "255 0 0"), mk2("1", "9 9 9", "8 8 8"));
+			const FilterFile p2 = mk2("2", "255 0 0", "255 0 0");
+			const FilterFile s1 = mk2("2", "9 9 9", "255 0 0");   // only t1 carried over
+			JournalRecord(jj, p2, s1);                           // first save on v2
+			const FilterFile s2 = mk2("2", "7 7 7", "255 0 0");   // t1 edited again on v2
+			JournalRecord(jj, s1, s2);                           // second save, baseline = the saved file
+			const auto a = jj.rules.find("$type->currency $tier->t1");
+			const auto b = jj.rules.find("$type->currency $tier->t2");
+			rep.check(jj.rules.size() == 2 && a != jj.rules.end() && b != jj.rules.end() &&
+			              a->second.before == FilterOwnLines(p2, p2.blocks[0]),
+			          "T38f a second save on the new version keeps both entries (the applied one still against v2)",
+			          "n=" + std::to_string(jj.rules.size()));
+		}
+
+		// T38g: a copy of the rule in the custom zone (same $type/$tier) is not the rule
+		const std::string zoneCopy =
+			"#pobtools-custom-begin v=1\nShow # $type->currency $tier->t1\n\tBaseType == \"Chaos Orb\"\n\tSetTextColor 7 7 7\n"
+			"#pobtools-custom-end\n\n";
+		const FilterFile b0 = ParseFilter(zoneCopy + mk("1", "255 0 0", "\"Divine Orb\""));
+		FilterFile c0 = ParseFilter(zoneCopy + mk("1", "9 9 9", "\"Divine Orb\""));
+		EditJournal jz;
+		JournalRecord(jz, b0, c0);
+		const auto jt = jz.rules.find("$type->currency $tier->t1");
+		const bool beforeIsRule = jt != jz.rules.end() && !jt->second.before.empty() &&
+		                          std::string(jt->second.before.back()).find("255 0 0") != std::string::npos;
+		rep.check(beforeIsRule, "T38g the journal records the NeverSink rule, not its custom-zone copy");
+		FilterFile n0 = ParseFilter(zoneCopy + mk("2", "255 0 0", "\"Divine Orb\""));
+		FilterDocumentEditor dz;
+		dz.Attach(&n0);
+		JournalApply(jz, dz, {}, false);
+		const std::string all = SerializeFilter(n0);
+		rep.check(all.find("SetTextColor 7 7 7") != std::string::npos && all.find("SetTextColor 9 9 9") != std::string::npos,
+		          "T38g applying leaves the custom copy alone and edits the NeverSink rule");
+	}
+
 	// ---- T39i: a real version change (8.19.2a local -> the subscription's copy) ----
 	// Read-only use of the user's OnlineFilters\ (never written). Skipped when absent.
 	{
