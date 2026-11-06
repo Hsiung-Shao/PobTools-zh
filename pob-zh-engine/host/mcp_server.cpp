@@ -361,6 +361,15 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 
 	std::wstring pobDir = pobDirOverride;
 	if (pobDir.empty()) pobDir = DetectInstalls(exeDir).poe1Dir;
+	// A hand-written client config often says --pob D:/... : the sandbox's
+	// junctions take this path verbatim, and an NT junction target with '/' in
+	// it resolves to nothing (POB then fails on require "xml"). Canonicalise.
+	for (wchar_t& ch : pobDir) if (ch == L'/') ch = L'\\';
+	if (!pobDir.empty()) {
+		wchar_t full[MAX_PATH * 2] = {};
+		const DWORD n = GetFullPathNameW(pobDir.c_str(), MAX_PATH * 2, full, nullptr);
+		if (n > 0 && n < MAX_PATH * 2) pobDir = full;
+	}
 	while (!pobDir.empty() && pobDir.back() == L'\\') pobDir.pop_back();
 
 	wchar_t dbg[8] = {};

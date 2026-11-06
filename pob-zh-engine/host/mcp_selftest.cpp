@@ -42,7 +42,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[27] = {
+const char* const kTitles[28] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -70,6 +70,7 @@ const char* const kTitles[27] = {
 	"兩個 MCP 行程同時開互不干擾",
 	"結束只刪自己的沙盒、不碰 POB",
 	"載入含永恆珠寶的建置後使用者珠寶資料不變",
+	"--pob 用正斜線路徑時照常可用",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -1989,6 +1990,70 @@ void TestM26(const Ctx& c, const PobCounts& cntBefore)
 	Record(26, folderSame && best.triggered && bad.empty(), d);
 }
 
+// M27 --pob 用正斜線路徑(結尾再多一個斜線)時照常可用
+void TestM27(const Ctx& c)
+{
+	std::wstring slashPob = c.pobDir;
+	for (auto& ch : slashPob) if (ch == L'\\') ch = L'/';
+	slashPob += L"/";
+
+	std::vector<std::string> bad;
+	std::string d = "--pob " + narrow(slashPob);
+	DWORD pid = 0;
+	McpProc p;
+	do {
+		std::string err;
+		if (!p.Start(c.exeDir, slashPob, err)) { bad.push_back("啟動失敗: " + err); break; }
+		pid = p.Pid();
+		if (!Handshake(p, err)) { bad.push_back("握手失敗: " + err); break; }
+
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 120)); break; }
+		ToolRes bs = p.Call("build_summary", json::object(), kSlowMs);
+		if (!bs.Ok()) { bad.push_back("build_summary 失敗: " + Cut(bs.Why(), 120)); break; }
+		const std::string cls = NameOf(bs.sc, "class");
+		if (cls != "Witch") bad.push_back("build_summary.class=" + cls + "(應為 Witch)");
+
+		// 沙盒頂層的 junction:目標都要列得出內容,項目數等於原處(目標字串若含 "/" 會失效)。
+		const std::wstring sb = SandboxDir(c.exeDir, pid);
+		if (!IsDir(sb)) { bad.push_back("沙盒不存在: " + narrow(sb)); break; }
+		int junctions = 0;
+		for (const auto& e : ListDir(sb)) {
+			if (!IsDirAttr(e.attr)) continue;
+			if (_wcsicmp(e.name.c_str(), L"Builds") == 0 || _wcsicmp(e.name.c_str(), L"Update") == 0) continue;
+			const std::string name = narrow(e.name);
+			if (!IsReparseAttr(e.attr)) { bad.push_back(name + " 是真的資料夾(應為 junction)"); continue; }
+			std::wstring target;
+			DWORD tag = 0;
+			if (!ReadReparseTarget(sb + L"\\" + e.name, target, tag) || tag != IO_REPARSE_TAG_MOUNT_POINT) {
+				bad.push_back(name + " 讀不到 junction 目標");
+				continue;
+			}
+			const size_t got = ListDir(sb + L"\\" + e.name).size();
+			const size_t want = ListDir(c.pobDir + L"\\" + e.name).size();
+			if (got == 0 || got != want) {
+				bad.push_back(name + " 目標 " + narrow(target) + " 列出 " + std::to_string(got) + " 項,原處 " + std::to_string(want) + " 項");
+				continue;
+			}
+			junctions++;
+		}
+		if (junctions == 0) bad.push_back("沒有任何可用的 junction");
+		d += ", junction " + std::to_string(junctions) + " 個可列出, class=" + cls;
+	} while (false);
+
+	p.Close();
+	{
+		auto ls = p.AllStdoutLines();
+		g_debugLines.insert(g_debugLines.end(), ls.begin(), ls.end());
+	}
+	// 結束後 pid 資料夾要被清掉。
+	if (pid != 0) {
+		if (p.Terminated()) bad.push_back("關 stdin 後 5 秒內沒有自己結束");
+		if (!PollGone(SandboxPidDir(c.exeDir, pid), 5000)) bad.push_back("結束後 pid 資料夾還在");
+	}
+	Record(27, bad.empty(), bad.empty() ? d + ", 結束後 pid 資料夾已清掉" : JoinFirst(bad, 6) + " (" + d + ")");
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -2077,7 +2142,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 26; n++) Record(n, false, why);
+		for (int n = 13; n <= 27; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2160,6 +2225,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(24, [&] { TestM24(c2); });
 			Guard(25, [&] { TestM25(c2, cntBefore); });
 			Guard(26, [&] { TestM26(c2, cntBefore); }); // 自建覆蓋層 POB + 自己的行程
+			Guard(27, [&] { TestM27(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2172,7 +2238,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 26; n++) {
+	for (int n = 1; n <= 27; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";
