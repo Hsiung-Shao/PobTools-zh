@@ -41,9 +41,11 @@ bool DrawCardPopovers(EditorShell& s);
 // whole 複製整條規則 copy; other lines are ignored) replaces the block's line with
 // the same keyword, or is inserted when the block has none. A sound replaces the
 // other sound kind (the schema's exclusive group, disabled with #!). Lines the
-// paste does not mention stay. Returns how many action lines were in `text`
-// (0 = nothing to paste, the block is untouched). Structural: indices go stale.
-int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text);
+// paste does not mention stay; a #! line of a pasted keyword is restored rather
+// than doubled. One line per card (the last wins). Returns how many cards the
+// text carried: 0 = no action lines, -1 = more than one rule (both leave the
+// block untouched). *changedOut: whether anything changed. Structural.
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text, bool* changedOut = nullptr);
 
 // ---- editors shared with the batch dialog ----------------------------------
 // Colour picker body: SV square + hue, RGBA field, recently used colours.

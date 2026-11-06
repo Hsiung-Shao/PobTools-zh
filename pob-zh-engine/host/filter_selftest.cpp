@@ -1248,6 +1248,21 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(n2 == 3 && SerializeFilter(f) == once, "T27 pasting the same look again changes nothing");
 		rep.check(CardPasteLook(doc, 0, "Show\n\tClass \"Rings\"") == 0 && SerializeFilter(f) == once,
 		          "T27 text without action lines pastes nothing");
+		bool ch = true;
+		rep.check(CardPasteLook(doc, 0, "Show\n\tSetFontSize 30\nShow\n\tSetFontSize 40", &ch) == -1 && !ch &&
+		              SerializeFilter(f) == once,
+		          "T27 more than one rule is refused untouched");
+		// back again: the #! CustomAlertSound comes back instead of a second line
+		CardPasteLook(doc, 0, "\tCustomAlertSound \"y.mp3\" 200", &ch);
+		int customLines = 0;
+		for (int li : f.blocks[0].lineIdx) customLines += FilterSerializeLine(f.lines[li]).find("CustomAlertSound") != std::string::npos;
+		const int cl = doc.FindLine(0, "CustomAlertSound");
+		rep.check(ch && customLines == 1 && cl >= 0 && FilterSerializeLine(f.lines[cl]) == "\tCustomAlertSound \"y.mp3\" 200" &&
+		              doc.FindLine(0, "PlayAlertSound") < 0,
+		          "T27 pasting a sound back restores its #! line (no doubled line)", "customLines=" + std::to_string(customLines));
+		rep.check(CardPasteLook(doc, 1, "\tSetTextColor 1 1 1\n\tSetTextColor 2 2 2") == 1 &&
+		              FilterSerializeLine(f.lines[doc.FindLine(1, "SetTextColor")]) == "\tSetTextColor 2 2 2",
+		          "T27 one line per card, the last one wins");
 	}
 
 	rep.note("failures=" + std::to_string(rep.failures));

@@ -702,13 +702,21 @@ bool DrawBlockList(EditorShell& s, float height)
 			} else {
 				targets.push_back(s.ctxBlock);
 			}
-			int n = 0;
-			for (int bi : targets) n = CardPasteLook(s.doc, bi, clip);
-			if (n == 0)
+			int n = 0, nChanged = 0;
+			for (int bi : targets) {
+				bool ch = false;
+				n = CardPasteLook(s.doc, bi, clip, &ch);
+				if (n <= 0) break;
+				if (ch) nChanged++;
+			}
+			if (n < 0)
+				s.Notify(u8"剪貼簿裡不只一條規則：請先在單一規則按右鍵「複製外觀」", true);
+			else if (n == 0)
 				s.Notify(u8"剪貼簿裡沒有外觀設定：先在另一條規則按右鍵「複製外觀」", true);
+			else if (nChanged == 0)
+				s.Notify(u8"外觀已經相同，沒有變更");
 			else
-				s.Notify(u8"已把外觀貼到 " + std::to_string(targets.size()) + u8" 條規則（" + std::to_string(n) +
-				         u8" 行）；沒提到的外觀設定保留原樣");
+				s.Notify(u8"已把外觀貼到 " + std::to_string(nChanged) + u8" 條規則；沒提到的外觀設定保留原樣");
 		}
 		PobUi::EndMenuPopup();
 	}

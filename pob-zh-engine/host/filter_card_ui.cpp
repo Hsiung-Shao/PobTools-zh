@@ -1556,11 +1556,13 @@ void CardTestInput(EditorShell& s, const char* text)
 	u.liveFor.clear();
 }
 
-int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text)
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text, bool* changedOut)
 {
+	if (changedOut) *changedOut = false;
 	FilterFile* f = doc.file();
 	if (!f || blockIdx < 0 || blockIdx >= (int)f->blocks.size()) return 0;
 	std::vector<FilterLine> look;
+	int headers = 0;
 	size_t pos = 0;
 	while (pos <= text.size()) {
 		size_t end = text.find((char)10, pos);
@@ -1568,7 +1570,18 @@ int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& te
 		std::string raw = text.substr(pos, end - pos);
 		if (!raw.empty() && raw.back() == (char)13) raw.pop_back();
 		FilterLine ln = ParseFilterLine(raw);
-		if (ln.kind == FilterLineKind::Action) look.push_back(std::move(ln));
+		if (ln.kind == FilterLineKind::BlockHeader && ++headers > 1) return -1;   // more than one rule
+		if (ln.kind == FilterLineKind::Action) {
+			// one line per card (an alias counts as the same card): the last one wins
+			const CardSchema* cs = FilterSchemaFind(ln.keyword);
+			const std::string key = cs ? cs->keyword : ln.keyword;
+			auto same = std::find_if(look.begin(), look.end(), [&](const FilterLine& o) {
+				const CardSchema* ocs = FilterSchemaFind(o.keyword);
+				return (ocs ? std::string(ocs->keyword) : o.keyword) == key;
+			});
+			if (same != look.end()) *same = std::move(ln);
+			else look.push_back(std::move(ln));
+		}
 		pos = end + 1;
 	}
 	if (look.empty()) return 0;
@@ -1590,7 +1603,19 @@ int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& te
 			const char* otherKw = p.keyword == cs->keyword ? cs->alias : cs->keyword;
 			for (int li; (li = doc.FindLine(blockIdx, otherKw)) >= 0;) { doc.CommentOutLine(li); changed = true; }
 		}
-		const int li = doc.FindLine(blockIdx, p.keyword);
+		int li = doc.FindLine(blockIdx, p.keyword);
+		if (li < 0) {
+			// a #! line of this keyword comes back (as adding the card does) instead of a second line
+			for (int dl : f->blocks[blockIdx].lineIdx) {
+				FilterLine parsed;
+				if (doc.IsDisabledLine(dl, &parsed) && parsed.keyword == p.keyword) {
+					doc.RestoreLine(dl);
+					changed = true;
+					li = doc.FindLine(blockIdx, p.keyword);
+					break;
+				}
+			}
+		}
 		if (li < 0) {
 			doc.InsertLine(blockIdx, p.keyword, p.op, p.values);
 			changed = true;
@@ -1610,5 +1635,6 @@ int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& te
 		f->dirty = true;
 		doc.RebuildBlocks();
 	}
+	if (changedOut) *changedOut = changed;
 	return (int)look.size();
 }
