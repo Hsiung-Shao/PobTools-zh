@@ -18,6 +18,7 @@
 
 #include <imgui.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -145,12 +146,22 @@ std::wstring EdJournalPath(const EditorShell& s)
 	return JournalPathFor(s, s.model.name);
 }
 
+// A rule already copied into the custom zone (not saved yet) is no longer asked about.
+static JournalReport WithoutKept(const EditorShell& s, JournalReport r)
+{
+	r.missing.erase(std::remove_if(r.missing.begin(), r.missing.end(),
+	                               [&](const std::string& k) { return s.journalDropOnSave.count(k) > 0; }),
+	                r.missing.end());
+	return r;
+}
+
 void EdJournalOnOpen(EditorShell& s)
 {
 	s.journal = EditJournal{};
 	s.journalPreview = JournalReport{};
 	s.journalChoices.clear();
 	s.journalCarried.clear();
+	s.journalDropOnSave.clear();
 	s.journalBanner = false;
 	s.journalDialogOpen = false;
 	if (!s.loaded) return;
@@ -165,13 +176,16 @@ void EdJournalOnSave(EditorShell& s, const FilterFile& baseline)
 {
 	const bool had = !s.journal.rules.empty() || !s.journal.customZone.empty();
 	if (!had && !AnyNeverSinkRule(s.model)) return;   // not a NeverSink filter: nothing to keep
+	// kept as custom rules, now saved in the file: out of the journal for good
+	for (const std::string& k : s.journalDropOnSave) s.journal.rules.erase(k);
+	s.journalDropOnSave.clear();
 	JournalRecord(s.journal, baseline, s.model, &s.journalCarried);
 	s.journalCarried.clear();   // recorded against this version now
 	EnsureJournalDir(s);
 	std::string err;
 	if (!JournalSave(EdJournalPath(s), s.journal, &err))
 		s.Notify(u8"已儲存，但修改紀錄沒有寫入（" + err + u8"）：之後 NeverSink 更新時可能沒辦法套回", true);
-	s.journalPreview = JournalApply(s.journal, s.doc, {}, true);
+	s.journalPreview = WithoutKept(s, JournalApply(s.journal, s.doc, {}, true));
 	s.journalBanner = s.journalBanner && Pending(s.journalPreview);
 }
 
@@ -289,7 +303,7 @@ void DrawJournalDialog(EditorShell& s)
 	if (s.wantJournalDialog) {
 		s.wantJournalDialog = false;
 		s.journalDialogOpen = true;
-		s.journalPreview = JournalApply(s.journal, s.doc, s.journalChoices, true);
+		s.journalPreview = WithoutKept(s, JournalApply(s.journal, s.doc, s.journalChoices, true));
 	}
 	const JournalReport& p = s.journalPreview;
 	const std::string body = u8"可以直接套回" + std::to_string(p.applied) +
@@ -345,10 +359,10 @@ void DrawJournalDialog(EditorShell& s)
 				if (it == s.journal.rules.end()) continue;
 				std::string err;
 				const int got = ImportCustomRules(s.doc, Join(it->second.after), &err);
-				if (got > 0) n += got;
+				if (got > 0) { n += got; s.journalDropOnSave.insert(k); }   // leaves the journal when the file is saved
 			}
-			s.Notify(u8"已把 " + std::to_string(n) + u8" 條新版沒有的規則放進自訂區（還沒儲存）");
-			dropMissing = true;
+			s.Notify(u8"已把 " + std::to_string(n) + u8" 條新版沒有的規則放進自訂區（還沒儲存；存檔後才從修改紀錄移除）");
+			s.journalPreview = WithoutKept(s, JournalApply(s.journal, s.doc, s.journalChoices, true));
 		}
 		if (ImGui::IsItemHovered())
 			PobUi::Tooltip(u8"用你改過的樣子放進檔案最上方的自訂區；自訂區優先，這些物品會照你的設定顯示");
@@ -356,14 +370,14 @@ void DrawJournalDialog(EditorShell& s)
 		if (PobUi::Button(u8"不保留", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) dropMissing = true;
 		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"從修改紀錄移除這些規則，之後不再提示");
 		if (dropMissing) {
-			// handled (kept as custom rules, or let go): out of the journal for good
+			// let go: out of the journal for good
 			for (const std::string& k : p.missing) s.journal.rules.erase(k);
 			if (!s.testMode) {
 				EnsureJournalDir(s);
 				std::string err;
 				JournalSave(EdJournalPath(s), s.journal, &err);
 			}
-			s.journalPreview = JournalApply(s.journal, s.doc, s.journalChoices, true);
+			s.journalPreview = WithoutKept(s, JournalApply(s.journal, s.doc, s.journalChoices, true));
 		}
 	}
 
@@ -372,7 +386,7 @@ void DrawJournalDialog(EditorShell& s)
 	if (r == PobUi::DialogResult::Primary) {
 		const JournalReport done = JournalApply(s.journal, s.doc, s.journalChoices, false);
 		s.journalCarried.insert(done.carried.begin(), done.carried.end());
-		s.journalPreview = done;
+		s.journalPreview = WithoutKept(s, done);
 		s.journalBanner = false;
 		std::string msg = u8"已套回 " + std::to_string(done.applied) + u8" 條規則的修改";
 		if (done.customImported > 0) msg += u8"、放回 " + std::to_string(done.customImported) + u8" 條自訂規則";

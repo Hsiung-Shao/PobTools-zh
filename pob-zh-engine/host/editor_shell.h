@@ -163,6 +163,7 @@ struct EditorShell {
 	JournalReport journalPreview;    // what applying it would do (dry run at open / after an apply)
 	JournalChoices journalChoices;   // the dialog's 用我的 / 用新版 per conflict
 	std::set<std::string> journalCarried;   // rules an apply put on this file since it was opened
+	std::set<std::string> journalDropOnSave;   // missing rules copied into the custom zone: leave the journal at the next save
 	bool journalBanner = false;      // edits waiting to be put on this file
 	bool wantJournalDialog = false;
 	bool journalDialogOpen = false;

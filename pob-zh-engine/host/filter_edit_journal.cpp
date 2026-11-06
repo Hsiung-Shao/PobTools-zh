@@ -245,6 +245,11 @@ Settings Merge(const std::string& key, const JournalRule& r, const std::vector<s
 		}
 		bool c = false;
 		const std::string* pick = Pick3(b, m, &t.text, &c, useNew(SettingName(t.id)));
+		// a conflict met when the entry was moved onto this version, not decided yet
+		if (!c && !newerWins && r.held.count(SettingName(t.id)) && m && *m != t.text) {
+			c = true;
+			pick = useNew(SettingName(t.id)) ? &t.text : m;
+		}
 		if (c) conflicts->push_back({ key, SettingName(t.id), m ? *m : std::string(), t.text });
 		if (pick) out.push_back({ t.id, *pick });
 	}
@@ -377,11 +382,12 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 	const std::string baseVersion = FilterBannerValue(baseline, "VERSION");
 	const std::map<std::string, int> base = RuleIndex(baseline);
 	const std::map<std::string, int> cur = RuleIndex(current);
-	auto mergeText = [](const std::string& k, const JournalRule& r, const std::vector<std::string>& onto, bool newerWins) {
+	auto mergeText = [](const std::string& k, const JournalRule& r, const std::vector<std::string>& onto, bool newerWins,
+	                    std::vector<JournalConflict>* conflicts = nullptr) {
 		std::vector<JournalConflict> ignored;
 		Settings tIds;
 		std::vector<std::string> out;
-		for (const Line& l : Merge(k, r, onto, {}, &ignored, &tIds, newerWins)) out.push_back(l.text);
+		for (const Line& l : Merge(k, r, onto, {}, conflicts ? conflicts : &ignored, &tIds, newerWins)) out.push_back(l.text);
 		return out;
 	};
 	for (const auto& [k, ci] : cur) {
@@ -397,16 +403,27 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 		JournalRule& r = it->second;
 		const std::string& rv = r.version.empty() ? j.fromVersion : r.version;
 		if (!baseVersion.empty() && !rv.empty() && rv != baseVersion) {
-			const std::vector<std::string> onNew = mergeText(k, r, was, false);
+			// a setting both you and NeverSink changed is held for the dialog to ask
+			// about (the merge put your value in for now)
+			std::vector<JournalConflict> met;
+			const std::vector<std::string> onNew = mergeText(k, r, was, false, &met);
+			for (const JournalConflict& c : met) r.held.insert(c.setting);
 			r.before = was;
 			r.after = onNew;
 			r.version = baseVersion;
 			r.pending = true;
 		}
+		if (!r.pending && was == r.before && now == r.before && r.after != r.before)
+			r.pending = true;   // the same version back as NeverSink shipped it (downloaded again): still to put back
 		if (r.pending) {
-			if (carried && carried->count(k)) { r.pending = false; r.after = now; }   // applied (with your choices)
-			else if (now == r.after) r.pending = false;                             // what applying gives
-			else if (now != r.before) r.after = mergeText(k, r, now, true);         // hand edit: both, yours newest
+			if (carried && carried->count(k)) { r.pending = false; r.after = now; r.held.clear(); }   // applied
+			else if (now == r.after && r.held.empty()) r.pending = false;                             // what applying gives
+			else if (now != r.before) {
+				// hand edit: both kept, yours newest; a held setting you edited yourself is decided
+				std::vector<JournalConflict> decided;
+				r.after = mergeText(k, r, now, true, &decided);
+				for (const JournalConflict& c : decided) r.held.erase(c.setting);
+			}
 		} else {
 			r.after = now;
 		}
@@ -460,7 +477,8 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	doc["subscription"] = j.subscription;
 	ordered_json rules = ordered_json::object();
 	for (const auto& [k, r] : j.rules)
-		rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version }, { "pending", r.pending } };
+		rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version }, { "pending", r.pending },
+		             { "held", std::vector<std::string>(r.held.begin(), r.held.end()) } };
 	doc["rules"] = rules;
 	std::string text;
 	try {
@@ -511,6 +529,8 @@ bool JournalLoad(const std::wstring& path, EditJournal* j)
 				if (v.contains("after") && v["after"].is_array()) r.after = v["after"].get<std::vector<std::string>>();
 				if (v.contains("version") && v["version"].is_string()) r.version = v["version"].get<std::string>();
 				if (v.contains("pending") && v["pending"].is_boolean()) r.pending = v["pending"].get<bool>();
+				if (v.contains("held") && v["held"].is_array())
+					for (const auto& h : v["held"]) if (h.is_string()) r.held.insert(h.get<std::string>());
 				out.rules[k] = std::move(r);
 			}
 	} catch (...) {

@@ -33,6 +33,7 @@ struct JournalRule {
 	std::vector<std::string> after;    // yours
 	std::string version;               // the NeverSink version "before" is from ("" = the journal's)
 	bool pending = false;              // re-expressed on a newer version, not applied to it yet
+	std::set<std::string> held;        // settings both changed, met while re-expressing: still to ask about
 };
 
 struct EditJournal {

@@ -2539,6 +2539,25 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 				if (iz != jz.rules.end())
 					for (const std::string& l : iz->second.after) newest |= l.find("SetTextColor 4 4 4") != std::string::npos;
 				rep.check(newest, "T38f your newest hand edit wins over the older pending edit of the same setting");
+				// both you (v1) and NeverSink (v2) changed the colour; saved on v2 without applying:
+				// the dialog still asks
+				EditJournal jq;
+				JournalRecord(jq, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				const FilterFile v2q = mk4("2", "5 5 5", "1 1 1", "45");
+				JournalRecord(jq, v2q, v2q);
+				FilterFile v2qa = v2q;
+				FilterDocumentEditor dq;
+				dq.Attach(&v2qa);
+				const JournalReport rq = JournalApply(jq, dq, {}, true);
+				rep.check(rq.conflicts.size() == 1 && rq.conflicts[0].setting == "SetTextColor",
+				          "T38f a conflict met while saving the new version unapplied is still asked about",
+				          "conflicts=" + std::to_string(rq.conflicts.size()));
+				// the same version downloaded again (your edit gone from the file), saved without applying
+				EditJournal js;
+				JournalRecord(js, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				const FilterFile again = mk4("1", "255 0 0", "1 1 1", "45");
+				JournalRecord(js, again, again);
+				rep.check(js.rules.size() == 1, "T38f re-downloading the same version and saving keeps the edit to put back");
 			}
 			// NeverSink's new version ships exactly your edit: nothing is left to keep
 			EditJournal ja;
