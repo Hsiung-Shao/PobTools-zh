@@ -222,7 +222,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -240,7 +240,7 @@ private:
 			shell_.OpenByPath(shell_.fileList.front().path, true);
 			if (!shell_.loaded) return;
 			seedEdits();
-			if (st == "preview" || st == "preview-import") shell_.section = Section::DropPreview;
+			if (st == "preview" || st == "preview-import" || st == "preview-estimate") shell_.section = Section::DropPreview;
 			if (st == "sounds" || st == "soundsplan") {
 				shell_.section = Section::Sounds;
 				// in memory only: a test run's sound service writes nothing
@@ -368,6 +368,7 @@ private:
 				BatchTestPreset(shell_);
 			}
 			if (st == "preview") PreviewTestDrops(shell_, 7u, 0);
+			if (st == "preview-estimate") PreviewTestEstimate(shell_);
 			if (st == "preview-import") PreviewTestImport(shell_, kFxBoots);
 			if (st == "soundsplan") SoundsTestOpenPlan(shell_);
 			if (st == "sounds") SoundsTestPlaying(shell_, L"2currency.mp3");

@@ -2001,6 +2001,116 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(CardEnterPick({}, "x").empty(), "T36 no candidates: nothing");
 	}
 
+	// ---- T37: the "preview may differ" note (PreviewEstimateNote) ---------------
+	{
+		auto has = [](const std::string& hay, const std::string& needle) { return hay.find(needle) != std::string::npos; };
+		FilterI18n emptyI18n;
+		PreviewItem divine;
+		divine.baseType = "Divine Orb";
+		divine.classId = "Stackable Currency";
+
+		// T37a: nothing unmodelled -> no note
+		{
+			const FilterFile f = ParseFilter("Show\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 40\n");
+			const PreviewResult r = EvaluatePreview(f, divine, emptyI18n);
+			rep.check(r.matched && r.unknownConds.empty() && PreviewEstimateNote(r).empty(), "T37a exact result has an empty note");
+		}
+
+		// T37b / T37c: an earlier rule uses a condition the preview cannot model
+		{
+			const FilterFile f = ParseFilter(
+				"Show\n\tHasExplicitMod \"Foo\"\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 20\n\n"
+				"Show\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 40\n");
+			const PreviewResult r = EvaluatePreview(f, divine, emptyI18n);
+			const std::string note = PreviewEstimateNote(r);
+			rep.check(r.matched && r.blockIdx == 1 && r.fontSize == 40 && !note.empty(),
+			          "T37b the second rule decides, and the note is not empty", "blockIdx=" + std::to_string(r.blockIdx));
+			const std::string zh = FilterSchemaKeywordZh("HasExplicitMod");
+			rep.check(!zh.empty() && has(note, zh) && (zh == "HasExplicitMod" || !has(note, "HasExplicitMod")),
+			          "T37c the note names the skipped condition in Chinese, not in English", note);
+		}
+
+		// T37d: five different unmodelled conditions, only four are named
+		{
+			const char* kws[5] = { "HasExplicitMod", "HasEnchantment", "ArchnemesisMod", "BaseDefencePercentile", "HasSearingExarchImplicit" };
+			const char* vals[5] = { " \"Foo\"", " \"Bar\"", " \"Baz\"", " >= 90", " >= 1" };
+			std::string src;
+			for (int i = 0; i < 5; i++)
+				src += std::string("Show\n\t") + kws[i] + vals[i] + "\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 20\n\n";
+			src += "Show\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 40\n";
+			const FilterFile f = ParseFilter(src);
+			const PreviewResult r = EvaluatePreview(f, divine, emptyI18n);
+			const std::string note = PreviewEstimateNote(r);
+			bool order = r.unknownConds.size() >= 5;
+			for (int i = 0; order && i < 5; i++) order = r.unknownConds[i] == kws[i];
+			rep.check(r.matched && r.blockIdx == 5 && order, "T37d fixture: five unmodelled conditions collected in rule order",
+			          "n=" + std::to_string(r.unknownConds.size()) + " blockIdx=" + std::to_string(r.blockIdx));
+			bool named4 = true;
+			for (int i = 0; i < 4; i++) {
+				const std::string zh = FilterSchemaKeywordZh(kws[i]);
+				named4 = named4 && !zh.empty() && has(note, zh);
+			}
+			const std::string fifth = FilterSchemaKeywordZh(kws[4]);
+			rep.check(named4, "T37d the note names the first four conditions", note);
+			rep.check(!fifth.empty() && !has(note, fifth) && !has(note, kws[4]), "T37d the fifth condition is left out (at most four)", note);
+		}
+
+		// T37e: the real NeverSink file, a rare ring
+		{
+			bool ok = false;
+			const FilterFile f = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
+			if (!ok) {
+				rep.note("T37e skipped: Filters\\default.filter not readable");
+			} else {
+				FilterI18n i18n;
+				i18n.Load(exeDir, "zh-rTW");
+				// Only a rule whose modelled conditions all hold makes an estimate,
+				// so try the first item of every rule that uses an unmodelled
+				// condition, as a rare ilvl 86 drop (the synthesizer skips such rules).
+				int tried = 0, estimates = 0;
+				std::string example;
+				for (const FilterBlock& b : f.blocks) {
+					std::string base;
+					bool unmodelled = false;
+					for (int li : b.lineIdx) {
+						const FilterLine& ln = f.lines[li];
+						if (ln.kind != FilterLineKind::Condition) continue;
+						if (ln.keyword == "BaseType" && !ln.values.empty() && base.empty()) base = ln.values[0].text;
+						if (ln.keyword.rfind("Has", 0) == 0 && ln.keyword != "HasInfluence") unmodelled = true;
+					}
+					if (!unmodelled || base.empty()) continue;
+					PreviewItem it;
+					it.baseType = base;
+					it.rarity = 2;
+					it.itemLevel = 86;
+					const PreviewResult r = EvaluatePreview(f, it, i18n);
+					tried++;
+					if (!r.unknownConds.empty()) {
+						estimates++;
+						if (example.empty()) example = base + ": " + PreviewEstimateNote(r);
+					}
+				}
+				rep.note("T37e " + std::to_string(estimates) + " of " + std::to_string(tried) + " items from unmodelled rules are estimates; e.g. " + example);
+				rep.check(estimates > 0 && !example.empty(), "T37e on the real filter some drops are estimates, with a note", "tried=" + std::to_string(tried));
+			}
+		}
+	}
+
+	// ---- T37f: a rule ruled out by a known condition does not make it an estimate
+	{
+		FilterFile f = ParseFilter(
+			"Show\n\tHasExplicitMod \"Foo\"\n\tBaseType == \"Exalted Orb\"\n\tSetFontSize 20\n"
+			"Show\n\tBaseType == \"Divine Orb\"\n\tSetFontSize 40\n");
+		FilterI18n none;
+		PreviewItem it;
+		it.baseType = "Divine Orb";
+		it.classId = "StackableCurrency";
+		const PreviewResult r = EvaluatePreview(f, it, none);
+		rep.check(r.blockIdx == 1 && r.unknownConds.empty() && PreviewEstimateNote(r).empty(),
+		          "T37f an unmodelled condition in a rule whose item name cannot match is no estimate",
+		          "n=" + std::to_string(r.unknownConds.size()));
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;
