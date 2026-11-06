@@ -83,6 +83,9 @@ using JournalChoices = std::map<std::string, bool>;
 JournalReport JournalApply(const EditJournal& j, FilterDocumentEditor& doc, const JournalChoices& choices,
                            bool dryRun = false);
 
+// A rule with this identity is in the file's custom zone.
+bool CustomZoneHasRule(const FilterFile& f, const std::string& key);
+
 // JSON file (write: temp file + rename). False + *err on failure.
 bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* err);
 bool JournalLoad(const std::wstring& path, EditJournal* j);

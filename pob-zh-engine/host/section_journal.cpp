@@ -177,7 +177,9 @@ void EdJournalOnSave(EditorShell& s, const FilterFile& baseline)
 	const bool had = !s.journal.rules.empty() || !s.journal.customZone.empty();
 	if (!had && !AnyNeverSinkRule(s.model)) return;   // not a NeverSink filter: nothing to keep
 	// kept as custom rules, now saved in the file: out of the journal for good
-	for (const std::string& k : s.journalDropOnSave) s.journal.rules.erase(k);
+	// (only those still there: an undo may have taken the copy out again)
+	for (const std::string& k : s.journalDropOnSave)
+		if (CustomZoneHasRule(s.model, k)) s.journal.rules.erase(k);
 	s.journalDropOnSave.clear();
 	JournalRecord(s.journal, baseline, s.model, &s.journalCarried);
 	s.journalCarried.clear();   // recorded against this version now

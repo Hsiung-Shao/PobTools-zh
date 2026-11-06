@@ -2558,6 +2558,38 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 				const FilterFile again = mk4("1", "255 0 0", "1 1 1", "45");
 				JournalRecord(js, again, again);
 				rep.check(js.rules.size() == 1, "T38f re-downloading the same version and saving keeps the edit to put back");
+				// the same version downloaded again, then a hand edit of another setting, saved unapplied
+				EditJournal jh;
+				JournalRecord(jh, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				JournalRecord(jh, again, mk4("1", "255 0 0", "1 1 1", "30"));
+				const auto ih = jh.rules.find("$type->currency $tier->t1");
+				bool hColour = false, hSize = false;
+				if (ih != jh.rules.end())
+					for (const std::string& l : ih->second.after) {
+						hColour |= l.find("SetTextColor 9 9 9") != std::string::npos;
+						hSize |= l.find("SetFontSize 30") != std::string::npos;
+					}
+				rep.check(hColour && hSize, "T38f re-downloading the same version then editing another setting keeps both edits");
+				// you changed the colour (v1), NeverSink dropped that line (v2); saved on v2 unapplied
+				EditJournal jd;
+				JournalRecord(jd, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				const FilterFile v2d = ParseFilter("# VERSION:  2\n# TYPE:     2-SEMI-STRICT\n\nShow # $type->currency $tier->t1\n\tBaseType == \"Divine Orb\"\n\tSetBorderColor 1 1 1\n\tSetFontSize 45\n");
+				JournalRecord(jd, v2d, v2d);
+				FilterFile v2da = v2d;
+				FilterDocumentEditor dd;
+				dd.Attach(&v2da);
+				const JournalReport rd = JournalApply(jd, dd, {}, true);
+				rep.check(rd.conflicts.size() == 1 && rd.conflicts[0].setting == "SetTextColor" && rd.conflicts[0].theirs.empty(),
+				          "T38f a line NeverSink dropped that you changed is still asked about after saving unapplied",
+				          "conflicts=" + std::to_string(rd.conflicts.size()));
+				// kept as a custom rule: found in the custom zone (a NeverSink rule outside it is not)
+				FilterFile kz = mk4("2", "255 0 0", "1 1 1", "45");
+				FilterDocumentEditor dk;
+				dk.Attach(&kz);
+				std::string kerr;
+				ImportCustomRules(dk, "Show # $type->exotic $tier->gone\n\tBaseType == \"Divine Orb\"\n\tSetTextColor 9 9 9\n", &kerr);
+				rep.check(CustomZoneHasRule(kz, "$type->exotic $tier->gone") && !CustomZoneHasRule(kz, "$type->currency $tier->t1"),
+				          "T38f a rule put in the custom zone is found there (a NeverSink rule outside it is not)");
 			}
 			// NeverSink's new version ships exactly your edit: nothing is left to keep
 			EditJournal ja;

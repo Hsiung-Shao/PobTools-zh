@@ -262,6 +262,11 @@ Settings Merge(const std::string& key, const JournalRule& r, const std::vector<s
 		const std::string* pick = Pick3(b, &m.text, nullptr, &c, useNew(SettingName(m.id)));
 		// switched off by you, removed by NeverSink: both mean "not this line"
 		if (c && b && m.text.find("#!") != std::string::npos && Canon(m.text) == Canon(*b)) c = false, pick = nullptr;
+		// one you changed that NeverSink dropped, met when moved onto this version, not decided yet
+		if (!c && !newerWins && r.held.count(SettingName(m.id))) {
+			c = true;
+			pick = useNew(SettingName(m.id)) ? nullptr : &m.text;
+		}
 		if (c) conflicts->push_back({ key, SettingName(m.id), m.text, std::string() });
 		if (pick) out.push_back({ m.id, *pick });
 	}
@@ -331,6 +336,15 @@ std::string Narrow(const std::wstring& w)
 }
 
 } // namespace
+
+bool CustomZoneHasRule(const FilterFile& f, const std::string& key)
+{
+	const CustomZone z = FindCustomZone(f);
+	if (!z.present()) return false;
+	for (const FilterBlock& b : f.blocks)
+		if (b.headerLineIdx > z.beginLine && b.headerLineIdx < z.endLine && FilterRuleKey(f, b) == key) return true;
+	return false;
+}
 
 std::string FilterRuleKey(const FilterFile&, const FilterBlock& b)
 {
@@ -413,8 +427,8 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 			r.version = baseVersion;
 			r.pending = true;
 		}
-		if (!r.pending && was == r.before && now == r.before && r.after != r.before)
-			r.pending = true;   // the same version back as NeverSink shipped it (downloaded again): still to put back
+		if (!r.pending && was == r.before && r.after != r.before)
+			r.pending = true;   // opened as NeverSink shipped it (downloaded again): your edit is still to put back
 		if (r.pending) {
 			if (carried && carried->count(k)) { r.pending = false; r.after = now; r.held.clear(); }   // applied
 			else if (now == r.after && r.held.empty()) r.pending = false;                             // what applying gives
