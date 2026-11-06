@@ -392,7 +392,20 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 					Settings tIds;
 					std::vector<std::string> merged;
 					for (const Line& l : Merge(k, r, was, {}, &ignored, &tIds)) merged.push_back(l.text);
-					if (now != merged) continue;
+					// what applying gives (or NeverSink shipped your edit itself): carried over
+					if (now != merged && now == was) continue;   // not touched on this version: still pending
+					if (now != merged) {
+						// edited by hand on this version without applying the old edit:
+						// keep both. It stays pending against its old version, with the
+						// old edit merged onto what you have now as its "after" (the
+						// settings NeverSink changed meanwhile match on both sides)
+						std::vector<JournalConflict> ignored2;
+						Settings tIds2;
+						std::vector<std::string> both;
+						for (const Line& l : Merge(k, r, now, {}, &ignored2, &tIds2)) both.push_back(l.text);
+						r.after = both;
+						continue;
+					}
 				}
 				r.before = was;             // the baseline is that version as NeverSink shipped it
 			}

@@ -390,6 +390,7 @@ void DrawMoreMenu(EditorShell& s, bool& openMore, ImVec2 anchor)
 	if (PobUi::MenuRow(PobIcon::FolderOpen, u8"開啟其他檔案…")) s.pendingDialog = EdDialog::OpenFilter;
 	if (PobUi::MenuRow(PobIcon::Save, u8"另存新檔…", nullptr, s.loaded)) s.pendingDialog = EdDialog::SaveFilterAs;
 	if (PobUi::MenuRow(PobIcon::Refresh, u8"重新整理清單")) EdRefreshFileList(s);
+	if (PobUi::MenuRow(PobIcon::Download, u8"從訂閱建立可編輯的本機檔…")) s.wantOnlineDialog = true;
 	if (PobUi::MenuRow(PobIcon::RotateCcw, u8"重新載入", nullptr, s.loaded && !s.model.path.empty()))
 		s.RequestReload();
 	PobUi::MenuSeparator();

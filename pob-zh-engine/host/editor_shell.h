@@ -166,6 +166,14 @@ struct EditorShell {
 	bool journalBanner = false;      // edits waiting to be put on this file
 	bool wantJournalDialog = false;
 	bool journalDialogOpen = false;
+	// game subscriptions: a local copy that follows one (section_journal.cpp)
+	std::vector<OnlineFilterEntry> onlineList;   // for the 從訂閱建立 dialog
+	int onlineSel = 0;
+	bool wantOnlineDialog = false;
+	bool onlineDialogOpen = false;
+	OnlineFilterEntry onlineUpdate;              // the subscription with a newer version than this file
+	bool onlineBanner = false;
+	bool onlineConfirmOpen = false;
 	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
 	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
 	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
@@ -246,7 +254,7 @@ std::wstring EdJournalPath(const EditorShell& s);        // PobTools/filter_edit
 void EdJournalOnOpen(EditorShell& s);                    // load it, dry-run it, raise the banner
 void EdJournalOnSave(EditorShell& s, const FilterFile& baseline);   // record the save, write it
 void DrawJournalBanner(EditorShell& s);
-void DrawJournalDialog(EditorShell& s);                  // top level of the window
+void DrawJournalDialog(EditorShell& s);                  // top level of the window (also the subscription dialogs)
 // A rule's name in the list (section_filteredit.cpp): 【類別】 + the NeverSink tier
 // when it is a known one (T1, 任意…), else up to two key conditions in Chinese,
 // then the first item (or the class). *tierCodeOut: the raw tier code when it

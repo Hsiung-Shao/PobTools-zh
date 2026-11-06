@@ -2486,6 +2486,10 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			if (it2 != jm.rules.end())
 				for (const std::string& l : it2->second.after) keepsColour |= l.find("9 9 9") != std::string::npos;
 			rep.check(keepsColour, "T38f editing a still-pending rule by hand keeps the old edit in the journal");
+			bool keepsSize = false;
+			if (it2 != jm.rules.end())
+				for (const std::string& l : it2->second.after) keepsSize |= l.find("SetFontSize 30") != std::string::npos;
+			rep.check(keepsSize, "T38f ...and the hand edit made on the new version is recorded too");
 			// NeverSink's new version ships exactly your edit: nothing is left to keep
 			EditJournal ja;
 			JournalRecord(ja, mk3("1", "255 0 0", "45"), mk3("1", "255 0 0", "46"));
@@ -2598,6 +2602,36 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		                          "Show # $type->x $tier->y\n\tSetFontSize 45\n\tPlayEffect Red # mine\n");
 		const std::string oc = apply(jc, "Show # $type->x $tier->y\n\tSetFontSize 40\n", &r);
 		rep.check(oc.find("\tPlayEffect Red # mine") != std::string::npos, "T38h an added line comes back exactly, comment included", oc);
+	}
+
+	// ---- T40c: listing subscriptions (a scratch folder; the real one read only) ----
+	{
+		wchar_t tb[MAX_PATH];
+		GetTempPathW(MAX_PATH, tb);
+		const std::wstring dir = std::wstring(tb) + L"pobtools_t40c_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+		CreateDirectoryW(dir.c_str(), nullptr);
+		{
+			std::ofstream o(dir + L"aBcD12", std::ios::binary);
+			o << "#Online Item Filter\r\n#name:NeverSink-2semistr-softcore\r\n#filterVersion:8.20.2.2026.309.7\r\n"
+			     "#===========\r\n# NeverSink's Indepth Loot Filter\r\n# VERSION:  8.20.2.2026.309.7\r\n# TYPE:     2-SEMI-STRICT\r\n"
+			     "Show\r\n\tSetFontSize 40\r\n";
+		}
+		{
+			std::ofstream o(dir + L"notone", std::ios::binary);
+			o << "Show\r\n";
+		}
+		const std::vector<OnlineFilterEntry> got = ListOnlineFiltersIn(dir);
+		rep.check(got.size() == 1 && got[0].name == "NeverSink-2semistr-softcore" &&
+		              got[0].filterVersion == "8.20.2.2026.309.7" && got[0].version == "8.20.2.2026.309.7",
+		          "T40c a subscription is listed with its name and versions; other files are not",
+		          "n=" + std::to_string(got.size()));
+		DeleteFileW((dir + L"aBcD12").c_str());
+		DeleteFileW((dir + L"notone").c_str());
+		RemoveDirectoryW(dir.c_str());
+		const std::vector<OnlineFilterEntry> real = ListOnlineFilters();
+		std::string names;
+		for (const OnlineFilterEntry& e : real) names += e.name + " " + e.version + "; ";
+		rep.note("T40c this machine's subscriptions: " + std::to_string(real.size()) + " " + names);
 	}
 
 	// ---- T39i: a real version change (8.19.2a local -> the subscription's copy) ----

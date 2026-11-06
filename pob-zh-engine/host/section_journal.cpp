@@ -61,7 +61,8 @@ bool AnyNeverSinkRule(const FilterFile& f)
 
 bool Pending(const JournalReport& r)
 {
-	return r.applied > 0 || !r.conflicts.empty() || r.customImported > 0;
+	// a rule the new version dropped counts too: it is the only way to keep that edit
+	return r.applied > 0 || !r.conflicts.empty() || r.customImported > 0 || !r.missing.empty();
 }
 
 std::string Join(const std::vector<std::string>& lines)
@@ -73,13 +74,75 @@ std::string Join(const std::vector<std::string>& lines)
 
 } // namespace
 
-std::wstring EdJournalPath(const EditorShell& s)
+namespace {
+
+std::wstring JournalPathFor(const EditorShell& s, const std::string& fileName)
 {
-	std::wstring name = EdWiden(s.model.name);
+	std::wstring name = EdWiden(fileName);
 	const size_t dot = name.find_last_of(L'.');
 	if (dot != std::wstring::npos && dot > 0) name = name.substr(0, dot);
 	if (name.empty()) name = L"filter";
 	return JournalDir(s) + name + L".json";
+}
+
+void EnsureJournalDir(const EditorShell& s)
+{
+	const std::wstring dir = JournalDir(s);
+	const std::wstring parent = dir.substr(0, dir.find_last_of(L'\\', dir.size() - 2) + 1);
+	CreateDirectoryW(parent.c_str(), nullptr);
+	CreateDirectoryW(dir.c_str(), nullptr);
+}
+
+bool ReadAll(const std::wstring& path, std::string* out)
+{
+	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+	                       FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	LARGE_INTEGER sz{};
+	GetFileSizeEx(h, &sz);
+	out->resize((size_t)sz.QuadPart);
+	DWORD got = 0;
+	const bool ok = sz.QuadPart == 0 || (ReadFile(h, &(*out)[0], (DWORD)sz.QuadPart, &got, nullptr) && got == (DWORD)sz.QuadPart);
+	CloseHandle(h);
+	return ok;
+}
+
+bool WriteAll(const std::wstring& path, const std::string& data)
+{
+	const std::wstring tmp = path + L".tmp";
+	HANDLE h = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (h == INVALID_HANDLE_VALUE) return false;
+	DWORD put = 0;
+	const bool ok = data.empty() || (WriteFile(h, data.data(), (DWORD)data.size(), &put, nullptr) && put == (DWORD)data.size());
+	CloseHandle(h);
+	if (!ok || !MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		DeleteFileW(tmp.c_str());
+		return false;
+	}
+	return true;
+}
+
+// The subscription this local copy follows, when it has a newer NeverSink version.
+void CheckSubscription(EditorShell& s)
+{
+	s.onlineBanner = false;
+	if (s.journal.subscription.empty() || s.testMode) return;
+	for (const OnlineFilterEntry& e : ListOnlineFilters()) {
+		if (e.name != s.journal.subscription) continue;
+		const std::string here = FilterBannerValue(s.model, "VERSION");
+		if (!e.version.empty() && e.version != here) {
+			s.onlineUpdate = e;
+			s.onlineBanner = true;
+		}
+		return;
+	}
+}
+
+} // namespace
+
+std::wstring EdJournalPath(const EditorShell& s)
+{
+	return JournalPathFor(s, s.model.name);
 }
 
 void EdJournalOnOpen(EditorShell& s)
@@ -92,6 +155,7 @@ void EdJournalOnOpen(EditorShell& s)
 	s.journalDialogOpen = false;
 	if (!s.loaded) return;
 	JournalLoad(EdJournalPath(s), &s.journal);
+	CheckSubscription(s);
 	if (s.journal.rules.empty() && s.journal.customZone.empty()) return;
 	s.journalPreview = JournalApply(s.journal, s.doc, {}, true);
 	s.journalBanner = Pending(s.journalPreview);
@@ -103,10 +167,7 @@ void EdJournalOnSave(EditorShell& s, const FilterFile& baseline)
 	if (!had && !AnyNeverSinkRule(s.model)) return;   // not a NeverSink filter: nothing to keep
 	JournalRecord(s.journal, baseline, s.model, &s.journalCarried);
 	s.journalCarried.clear();   // recorded against this version now
-	const std::wstring dir = JournalDir(s);
-	const std::wstring parent = dir.substr(0, dir.find_last_of(L'\\', dir.size() - 2) + 1);
-	CreateDirectoryW(parent.c_str(), nullptr);
-	CreateDirectoryW(dir.c_str(), nullptr);
+	EnsureJournalDir(s);
 	std::string err;
 	if (!JournalSave(EdJournalPath(s), s.journal, &err))
 		s.Notify(u8"已儲存，但修改紀錄沒有寫入（" + err + u8"）：之後 NeverSink 更新時可能沒辦法套回", true);
@@ -116,6 +177,19 @@ void EdJournalOnSave(EditorShell& s, const FilterFile& baseline)
 
 void DrawJournalBanner(EditorShell& s)
 {
+	if (s.onlineBanner && s.loaded) {
+		const std::string here = FilterBannerValue(s.model, "VERSION");
+		const std::string title = u8"訂閱的 NeverSink 有新版 " + s.onlineUpdate.version + u8"（這份是 " + here + u8"）";
+		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+		const PobUi::BannerResult r = PobUi::Banner("##feonline", PobUi::BannerTone::Info, PobIcon::Download, title.c_str(),
+			u8"用訂閱的新版重建這個本機檔，再把你的修改套回去（原檔會備份成 .bak）。", false, u8"更新並保留修改", true);
+		if (r == PobUi::BannerResult::Action) {
+			if (s.model.dirty) s.Notify(u8"先儲存或還原目前的修改，再從訂閱更新", true);
+			else s.onlineConfirmOpen = true;
+		} else if (r == PobUi::BannerResult::Close) {
+			s.onlineBanner = false;
+		}
+	}
 	if (!s.journalBanner || !s.loaded) return;
 	const JournalReport& p = s.journalPreview;
 	const std::string here = FilterBannerValue(s.model, "VERSION");
@@ -137,6 +211,80 @@ void DrawJournalBanner(EditorShell& s)
 
 void DrawJournalDialog(EditorShell& s)
 {
+	// ---- 從訂閱建立可編輯的本機檔 ----
+	if (s.wantOnlineDialog) {
+		s.wantOnlineDialog = false;
+		if (!s.testMode) s.onlineList = ListOnlineFilters();
+		s.onlineSel = 0;
+		s.onlineDialogOpen = true;
+	}
+	if (PobUi::BeginDialog(u8"##feonlinedlg", &s.onlineDialogOpen, u8"從訂閱建立可編輯的本機檔",
+	                       u8"遊戲會自己重新下載訂閱的過濾器、蓋掉修改，所以改在一份本機副本上。之後訂閱更新時，這裡會提醒你更新並把修改套回去。遊戲裡要改選這份本機檔。",
+	                       nullptr, 560.0f)) {
+		if (s.onlineList.empty()) {
+			PobUi::Hint(u8"找不到訂閱的過濾器（Documents\\My Games\\Path of Exile\\OnlineFilters）。先在遊戲裡訂閱並進一次遊戲。");
+		} else {
+			for (int i = 0; i < (int)s.onlineList.size(); i++) {
+				const OnlineFilterEntry& e = s.onlineList[i];
+				const std::string row = e.name + u8"    " + e.version;
+				if (ImGui::Selectable(row.c_str(), s.onlineSel == i)) s.onlineSel = i;
+			}
+			const std::string local = s.onlineList[s.onlineSel].name + " (PobTools).filter";
+			ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+			PobUi::Hint((u8"會建立：My Games\\Path of Exile\\" + local).c_str());
+		}
+		const PobUi::DialogResult r = PobUi::DialogButtons(u8"取消", nullptr, nullptr, u8"建立並開啟", !s.onlineList.empty());
+		if (r == PobUi::DialogResult::Primary && !s.onlineList.empty()) {
+			const OnlineFilterEntry e = s.onlineList[s.onlineSel];
+			const std::string localName = e.name + " (PobTools).filter";
+			const std::wstring base = Poe1FilterBaseDir();
+			std::string text;
+			if (s.testMode) {
+				s.Notify(u8"測試模式不建立檔案");
+			} else if (base.empty() || !ReadAll(e.path, &text)) {
+				s.Notify(u8"讀不到訂閱的過濾器", true);
+			} else {
+				const std::wstring local = base + EdWiden(localName);
+				if (GetFileAttributesW(local.c_str()) == INVALID_FILE_ATTRIBUTES && !WriteAll(local, StripOnlineHeader(text))) {
+					s.Notify(u8"沒辦法建立 " + localName, true);
+				} else {
+					// the journal knows which subscription this copy follows
+					EditJournal j;
+					JournalLoad(JournalPathFor(s, localName), &j);
+					j.subscription = e.name;
+					EnsureJournalDir(s);
+					std::string err;
+					JournalSave(JournalPathFor(s, localName), j, &err);
+					s.RequestOpen(local);
+					s.Notify(u8"已建立 " + localName + u8"：到遊戲「選項 > 遊戲 > UI」改選這份過濾器");
+				}
+			}
+		}
+		PobUi::EndDialog();
+	}
+	// ---- 更新並保留修改 ----
+	if (PobUi::BeginDialog(u8"##feonlineupd", &s.onlineConfirmOpen, u8"用訂閱的新版更新這個檔？",
+	                       u8"這份本機檔會換成訂閱的新版內容（原檔備份成 .bak），接著把你的修改套回去，可以逐處確認。",
+	                       nullptr, 480.0f)) {
+		const PobUi::DialogResult r = PobUi::DialogButtons(u8"取消", nullptr, nullptr, u8"更新");
+		if (r == PobUi::DialogResult::Primary) {
+			std::string text;
+			const std::wstring path = s.model.path;
+			if (s.testMode) {
+				s.Notify(u8"測試模式不寫檔");
+			} else if (!ReadAll(s.onlineUpdate.path, &text)) {
+				s.Notify(u8"讀不到訂閱的過濾器", true);
+			} else if (!CopyFileW(path.c_str(), (path + L".bak").c_str(), FALSE) || !WriteAll(path, StripOnlineHeader(text))) {
+				s.Notify(u8"更新失敗：檔案可能正被其他程式使用", true);
+			} else {
+				s.onlineBanner = false;
+				s.OpenByPath(path, true);   // the journal banner offers your edits on the new version
+				s.Notify(u8"已更新成 " + s.onlineUpdate.version + u8"：按上方「檢視並套用」把修改套回去");
+			}
+		}
+		PobUi::EndDialog();
+	}
+
 	if (s.wantJournalDialog) {
 		s.wantJournalDialog = false;
 		s.journalDialogOpen = true;

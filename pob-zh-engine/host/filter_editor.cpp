@@ -224,7 +224,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | journal-banner | journal-dialog | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | journal-banner | journal-dialog | online-create | online-update | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -277,6 +277,22 @@ private:
 			}
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
+			if (st == "online-create") {
+				OnlineFilterEntry e;
+				e.name = "NeverSink-5uberstr-softcore";
+				e.version = "8.20.2.2026.309.7";
+				shell_.onlineList = { e };
+				OnlineFilterEntry e2 = e;
+				e2.name = "NeverSink-2semistr-softcore";
+				shell_.onlineList.push_back(e2);
+				shell_.wantOnlineDialog = true;
+			}
+			if (st == "online-update") {
+				shell_.journal.subscription = "NeverSink-2semistr-softcore";
+				shell_.onlineUpdate.name = shell_.journal.subscription;
+				shell_.onlineUpdate.version = "8.20.2.2026.309.7";
+				shell_.onlineBanner = true;
+			}
 			if (st == "journal-banner" || st == "journal-dialog") {
 				// your edits: the seeded ones, recorded against the file as loaded;
 				// then the file goes back to that (a fresh NeverSink download) with

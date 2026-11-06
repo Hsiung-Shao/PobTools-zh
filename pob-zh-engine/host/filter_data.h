@@ -8,6 +8,22 @@
 #include <vector>
 
 // A .filter file discovered on disk (for the editor's "open" dropdown).
+// A game subscription (Documents\My Games\Path of Exile\OnlineFilters\<id>):
+// read only -- the game re-downloads and overwrites these.
+struct OnlineFilterEntry {
+	std::wstring path;
+	std::string name;              // "#name:" (NeverSink-5uberstr-softcore)
+	std::string filterVersion;     // "#filterVersion:"
+	std::string version;           // NeverSink's own "# VERSION:" in the body
+};
+// Subscriptions in `dir` (a folder path ending in a backslash); only the head
+// of each file is read.
+std::vector<OnlineFilterEntry> ListOnlineFiltersIn(const std::wstring& dir);
+// ListOnlineFiltersIn(<My Games>\Path of Exile\OnlineFilters\), empty when there is none.
+std::vector<OnlineFilterEntry> ListOnlineFilters();
+// <Documents>\My Games\Path of Exile\ (with the backslash), "" when missing.
+std::wstring Poe1FilterBaseDir();
+
 struct FilterListEntry {
 	std::wstring path;
 	std::string  name;             // file name only, for display
