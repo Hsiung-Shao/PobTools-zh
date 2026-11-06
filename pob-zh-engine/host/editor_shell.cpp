@@ -165,6 +165,7 @@ bool EditorShell::OpenByPath(const std::wstring& path, bool force)
 	doc.CaptureBaseline();           // "已修改" is measured against this
 	undo.Reset(model.lines);         // no undo across files
 	saveRequest = false;
+	EdJournalOnOpen(*this);          // edits made on an earlier NeverSink version, waiting to be put back
 	watch.Reset(model.path);
 	selAnchor = BlockAnchor{};
 	batchMode = false;
@@ -217,6 +218,7 @@ bool EditorShell::Save()
 	if (!loaded) return false;
 	std::string err;
 	undo.Capture(model.lines);       // an edit not captured yet (save clicked right after typing) is its own step
+	const FilterFile before = ParseFilter(doc.BaselineText());   // the journal compares the save with this
 	if (!SaveFilter(model, &err)) {
 		Notify(u8"儲存失敗：" + err, true);
 		return false;
@@ -228,6 +230,7 @@ bool EditorShell::Save()
 	undo.Rebase(model.lines);        // saving is not an edit: no undo step for the cleared flags
 	watch.Reset(model.path);
 	Notify(u8"已儲存。到遊戲「選項 > 遊戲 > UI」重新選一次過濾器才會生效");
+	EdJournalOnSave(*this, before);  // NeverSink-rule edits, for the next NeverSink update
 	return true;
 }
 
@@ -598,6 +601,7 @@ void DrawEditorBanners(EditorShell& s)
 			}
 		}
 	}
+	DrawJournalBanner(s);
 	if (!s.loadFailedPath.empty()) {
 		std::wstring p = s.loadFailedPath;
 		size_t slash = p.find_last_of(L"\\/");

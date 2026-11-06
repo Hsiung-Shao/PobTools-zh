@@ -382,7 +382,14 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
 			JournalRule& r = it->second;
 			const std::string& rv = r.version.empty() ? j.fromVersion : r.version;
 			if (!baseVersion.empty() && !rv.empty() && rv != baseVersion) {
-				if (now == was) continue;   // not carried onto this version yet: keep it pending
+				// Carried onto this version only when the rule is what applying gives;
+				// untouched or edited by hand without applying, it stays pending (its
+				// old edit is still to come -- a hand edit here would otherwise erase it)
+				std::vector<JournalConflict> ignored;
+				Settings tIds;
+				std::vector<std::string> merged;
+				for (const Line& l : Merge(k, r, was, {}, &ignored, &tIds)) merged.push_back(l.text);
+				if (now != merged) continue;
 				r.before = was;             // the baseline is that version as NeverSink shipped it
 			}
 			r.version = baseVersion.empty() ? rv : baseVersion;

@@ -2471,6 +2471,22 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		const FilterFile v2b = ParseFilter(mk("2", "255 0 0", "\"Divine Orb\""));
 		JournalRecord(j2, v2b, v2b);   // saved v2 without applying
 		rep.check(j2.rules.size() == 1, "T38f saving a new version without applying keeps the pending edit");
+		// a pending rule edited by hand on the new version: the old edit is not lost
+		{
+			auto mk3 = [](const char* ver, const char* colour, const char* size) {
+				return ParseFilter(std::string("# VERSION:  ") + ver + "\n# TYPE:     2-SEMI-STRICT\n\n"
+				                   "Show # $type->currency $tier->t1\n\tBaseType == \"Divine Orb\"\n\tSetTextColor " + colour +
+				                   "\n\tSetFontSize " + size + "\n");
+			};
+			EditJournal jm;
+			JournalRecord(jm, mk3("1", "255 0 0", "45"), mk3("1", "9 9 9", "45"));
+			JournalRecord(jm, mk3("2", "255 0 0", "45"), mk3("2", "255 0 0", "30"));   // size edited, colour not applied
+			const auto it2 = jm.rules.find("$type->currency $tier->t1");
+			bool keepsColour = false;
+			if (it2 != jm.rules.end())
+				for (const std::string& l : it2->second.after) keepsColour |= l.find("9 9 9") != std::string::npos;
+			rep.check(keepsColour, "T38f editing a still-pending rule by hand keeps the old edit in the journal");
+		}
 		// two rules pending on v1; on v2 only one is applied and saved, then saved again
 		{
 			auto mk2 = [](const char* ver, const char* c1, const char* c2) {

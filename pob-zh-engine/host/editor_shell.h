@@ -16,6 +16,7 @@
 #include "filter_doc_editor.h"
 #include "filter_file_watch.h"
 #include "filter_undo.h"
+#include "filter_edit_journal.h"
 #include "sound_library_service.h"
 #include "filter_i18n.h"
 #include "item_library.h"
@@ -157,6 +158,13 @@ struct EditorShell {
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
 	int ctxBlock = -1;               // block list row whose right-click menu is open
+	// NeverSink 更新後保留修改 (section_journal.cpp)
+	EditJournal journal;             // this file's edits to NeverSink's rules
+	JournalReport journalPreview;    // what applying it would do (dry run at open / after an apply)
+	JournalChoices journalChoices;   // the dialog's 用我的 / 用新版 per conflict
+	bool journalBanner = false;      // edits waiting to be put on this file
+	bool wantJournalDialog = false;
+	bool journalDialogOpen = false;
 	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
 	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
 	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
@@ -232,6 +240,12 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 規則 page.
 void EdRebuildRows(EditorShell& s);
+// section_journal.cpp: the journal of edits to NeverSink's rules.
+std::wstring EdJournalPath(const EditorShell& s);        // PobTools/filter_edits/<file>.json (a temp folder in test mode)
+void EdJournalOnOpen(EditorShell& s);                    // load it, dry-run it, raise the banner
+void EdJournalOnSave(EditorShell& s, const FilterFile& baseline);   // record the save, write it
+void DrawJournalBanner(EditorShell& s);
+void DrawJournalDialog(EditorShell& s);                  // top level of the window
 // A rule's name in the list (section_filteredit.cpp): 【類別】 + the NeverSink tier
 // when it is a known one (T1, 任意…), else up to two key conditions in Chinese,
 // then the first item (or the class). *tierCodeOut: the raw tier code when it

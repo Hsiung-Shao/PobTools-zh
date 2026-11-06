@@ -142,6 +142,8 @@ public:
 	int UnsavedBlockCount(bool settle);
 	// The whole file serializes to the baseline's bytes.
 	bool MatchesBaseline() const;
+	// The file as last loaded or saved (SerializeFilter at capture), "" without a baseline.
+	const std::string& BaselineText() const { return baseText_; }
 
 private:
 	// Index of the last line that belongs to the block itself.

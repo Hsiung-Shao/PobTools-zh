@@ -9,6 +9,7 @@
 #include "custom_rules_io.h"
 #include "paste_fixtures.h"
 #include "error_log.h"
+#include "filter_edit_journal.h"
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "ui_theme.h"
@@ -161,6 +162,7 @@ public:
 			case Section::Sounds:      DrawSoundsSection(shell_); break;
 		}
 		ImGui::EndChild();
+		DrawJournalDialog(shell_);   // top level: popups never open from inside a child
 		// one undo step per finished edit: not while a field is being typed in or
 		// a colour dragged (that becomes one step when it is let go)
 		if (shell_.loaded && !ImGui::IsAnyItemActive()) shell_.undo.Capture(shell_.model.lines);
@@ -222,7 +224,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | journal-banner | journal-dialog | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -275,6 +277,40 @@ private:
 			}
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
+			if (st == "journal-banner" || st == "journal-dialog") {
+				// your edits: the seeded ones, recorded against the file as loaded;
+				// then the file goes back to that (a fresh NeverSink download) with
+				// NeverSink having changed one of those rules too (a conflict)
+				const FilterFile disk = ParseFilter(shell_.doc.BaselineText());
+				FilterFile mine = shell_.model;
+				for (FilterBlock& b : mine.blocks) {
+					if (FilterRuleKey(mine, b).empty() || b.idxTextColor < 0) continue;
+					FilterLine& ln = mine.lines[b.idxTextColor];
+					if (ln.values.size() >= 3) { ln.values[0].text = "9"; ln.values[1].text = "9"; ln.values[2].text = "9"; ln.dirty = true; }
+					break;
+				}
+				EditJournal j;
+				JournalRecord(j, disk, mine);
+				FilterFile fresh = disk;
+				fresh.path = shell_.model.path;
+				fresh.name = shell_.model.name;
+				for (FilterBlock& b : fresh.blocks) {
+					if (!j.rules.count(FilterRuleKey(fresh, b)) || b.idxTextColor < 0) continue;
+					FilterLine& ln = fresh.lines[b.idxTextColor];
+					if (ln.values.size() >= 3) { ln.values[0].text = "1"; ln.values[1].text = "2"; ln.values[2].text = "3"; ln.dirty = true; }
+					break;
+				}
+				shell_.model = fresh;
+				shell_.model.dirty = false;
+				shell_.doc.Attach(&shell_.model);
+				shell_.doc.CaptureBaseline();
+				shell_.undo.Reset(shell_.model.lines);
+				shell_.journal = j;
+				shell_.journal.fromVersion = "8.18.0";   // as if recorded on an older NeverSink
+				shell_.journalPreview = JournalApply(shell_.journal, shell_.doc, {}, true);
+				shell_.journalBanner = true;
+				if (st == "journal-dialog") shell_.wantJournalDialog = true;
+			}
 			if (st == "detail-basetype-off") {
 				// a base item the catalog lacks, typed in Chinese: the 目錄外 fallback.
 				// A rule with a short item list, so the input (under the chips) is on screen.
