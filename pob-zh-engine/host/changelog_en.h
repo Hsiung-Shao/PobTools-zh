@@ -19,6 +19,12 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.4 (2026-11-06, beta)\n"
+	u8"Added\n"
+	u8"　·AI assistants (MCP): AI tools such as Claude and Codex can read, check and test PoE1 builds with Path of Building's own calculation. (Results come back as a share code; your saved builds are never changed)\n"
+	u8"　·Launcher links: new \"AI assistants (MCP)\" row that copies the setup for three AI tools in one click.\n"
+	u8"　·※ This is a beta for users who turned on beta testing; AI assistants (MCP) is still being tested, please report problems.\n"
+	u8"\n"
 	u8"v1.8.3 (2026-11-05)\n"
 	u8"Fixed\n"
 	u8"　·Classic window item editor: pressing F2 to switch language did not update the item preview.\n"
