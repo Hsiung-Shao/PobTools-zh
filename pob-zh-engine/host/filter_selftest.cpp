@@ -1906,6 +1906,80 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
+	// ---- T35: base items the catalog lacks (OffCatalogMatches) ------------------
+	{
+		wchar_t tb[MAX_PATH];
+		GetTempPathW(MAX_PATH, tb);
+		const std::wstring root = std::wstring(tb) + L"pobtools_t35_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+		const std::wstring dData = root + L"Data\\", dPoe1 = dData + L"poe1\\", dLoc = dPoe1 + L"zh-rTW\\";
+		CreateDirectoryW(root.c_str(), nullptr);
+		CreateDirectoryW(dData.c_str(), nullptr);
+		CreateDirectoryW(dPoe1.c_str(), nullptr);
+		CreateDirectoryW(dLoc.c_str(), nullptr);
+		auto put = [](const std::wstring& path, const std::string& body) {
+			std::ofstream o(path, std::ios::binary);
+			o << body;
+		};
+		std::string items = "{\"entries\":{\"Alpha Ring\":\"甲戒\",\"Bravo Belt\":\"乙腰帶\"";
+		for (int i = 30; i >= 1; i--) {   // written in reverse so sorting has to happen
+			char nm[32];
+			snprintf(nm, sizeof(nm), "Zed Item %02d", i);
+			items += std::string(",\"") + nm + "\":\"澤德" + std::to_string(i) + "\"";
+		}
+		items += "}}";
+		put(dData + L"filter_items_zh.json", "{\"Alpha Ring\":\"甲戒\"}");
+		put(dLoc + L"items.json", items);
+		put(dLoc + L"uniques.json", "{\"entries\":{\"Charlie Crown\":\"丙冠\"}}");
+
+		FilterI18n fi;
+		fi.Load(root, "zh-rTW");
+		auto hasPair = [](const std::vector<std::pair<std::string, std::string>>& v, const std::string& en, const std::string& zh) {
+			for (const auto& p : v) if (p.first == en && p.second == zh) return true;
+			return false;
+		};
+		auto hasEn = [](const std::vector<std::pair<std::string, std::string>>& v, const std::string& en) {
+			for (const auto& p : v) if (p.first == en) return true;
+			return false;
+		};
+
+		rep.check(fi.loaded(), "T35 fixture data loads from the scratch folder");
+		const auto a = fi.OffCatalogMatches("bravo", 20);
+		rep.check(a.size() == 1 && hasPair(a, "Bravo Belt", "乙腰帶"), "T35a English query (any case) finds an item the catalog lacks", "n=" + std::to_string(a.size()));
+		const auto b = fi.OffCatalogMatches("乙腰", 20);
+		rep.check(hasPair(b, "Bravo Belt", "乙腰帶"), "T35b Chinese substring finds it too");
+		const auto c = fi.OffCatalogMatches("alpha", 20);
+		rep.check(!hasEn(c, "Alpha Ring") && c.empty(), "T35c an item that is in the catalog is not offered");
+		const auto d = fi.OffCatalogMatches("zed", 5);
+		rep.check(d.size() == 5 && d[0].first == "Zed Item 01" && d[4].first == "Zed Item 05",
+		          "T35d limit 5 gives exactly 5, sorted by English", d.empty() ? "empty" : d[0].first + ".." + d.back().first);
+		const auto all = fi.OffCatalogMatches("zed", 100);
+		rep.check(all.size() == 30 && all[0].first == "Zed Item 01" && all[29].first == "Zed Item 30", "T35d a larger limit returns all 30 in order",
+		          "n=" + std::to_string(all.size()));
+		rep.check(fi.OffCatalogMatches("", 20).empty(), "T35e an empty query matches nothing");
+		rep.check(!hasEn(fi.OffCatalogMatches("charlie", 20), "Charlie Crown") && fi.OffCatalogMatches("丙冠", 20).empty(),
+		          "T35f uniques.json entries are never offered");
+
+		DeleteFileW((dData + L"filter_items_zh.json").c_str());
+		DeleteFileW((dLoc + L"items.json").c_str());
+		DeleteFileW((dLoc + L"uniques.json").c_str());
+		RemoveDirectoryW(dLoc.c_str());
+		RemoveDirectoryW(dPoe1.c_str());
+		RemoveDirectoryW(dData.c_str());
+		RemoveDirectoryW(root.c_str());
+		rep.check(GetFileAttributesW(root.c_str()) == INVALID_FILE_ATTRIBUTES, "T35 the scratch folder is gone");
+
+		// T35g: the real data
+		FilterI18n real;
+		real.Load(exeDir, "zh-rTW");
+		if (!real.loaded()) {
+			rep.note("T35g skipped: Data not readable next to the exe");
+		} else {
+			const auto r = real.OffCatalogMatches("a", 100000);
+			rep.note("T35g real data: " + std::to_string(r.size()) + " items off the catalog match \"a\"");
+			rep.check(!r.empty(), "T35g the real items.json has base items the catalog lacks", "n=" + std::to_string(r.size()));
+		}
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;

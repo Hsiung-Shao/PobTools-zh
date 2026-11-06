@@ -222,7 +222,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -275,6 +275,21 @@ private:
 			}
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
+			if (st == "detail-basetype-off") {
+				// a base item the catalog lacks, typed in Chinese: the 目錄外 fallback.
+				// A rule with a short item list, so the input (under the chips) is on screen.
+				for (int bi = 0; bi < (int)shell_.model.blocks.size(); bi++) {
+					const int li = shell_.doc.FindLine(bi, "BaseType");
+					if (li >= 0 && shell_.model.lines[li].values.size() <= 2) {
+						shell_.selectedBlock = bi;
+						shell_.selAnchor = shell_.doc.CaptureAnchor(bi);
+						shell_.scrollToSel = true;
+						break;
+					}
+				}
+				const auto m = shell_.i18n.OffCatalogMatches("Ring", 1);
+				CardTestInput(shell_, m.empty() ? "zzz" : m[0].second.c_str());
+			}
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
 			if (st == "move" && shell_.selectedBlock >= 0) {
 				// two rules copied into the custom zone, the second moved up, its menu open

@@ -579,6 +579,17 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 					if (u.live.size() >= 40) break;
 				}
 			}
+			// nothing in the catalog: the engine dictionary's base items (a new
+			// league's items before the catalog is regenerated), marked as such
+			if (u.live.empty()) {
+				for (const auto& [en, zh] : s.i18n.OffCatalogMatches(in, 20)) {
+					LibItem cand;
+					cand.en = en;
+					cand.zh = zh;
+					cand.offCatalog = true;
+					u.live.push_back(std::move(cand));
+				}
+			}
 		}
 	}
 
@@ -602,6 +613,10 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		const float rowH = std::floor(ImGui::GetTextLineHeight() + PobUi::D(8.0f));
 		const float listW = (std::min)(std::floor(PobUi::D(420.0f)), g_rowRight - ImGui::GetCursorScreenPos().x);
 		const float listH = (std::min)((float)u.live.size(), 6.5f) * rowH + PobUi::D(8.0f);
+		if (u.live.front().offCatalog) {
+			PobUi::Hint(u8"物品目錄沒有，以下來自翻譯字典，不一定是可用的物品名稱，加入後請在掉落預覽確認。", listW);
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetCursorScreenPos().y + PobUi::D(2.0f)));
+		}
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(Tok::SurfaceRaised));
 		ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Tok::Border));
 		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, PobUi::D(8.0f));
@@ -624,7 +639,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 			dl->AddText(ImVec2(x, ty), Tok::Text, zh.c_str());
 			x += ImGui::CalcTextSize(zh.c_str()).x + PobUi::D(8.0f);
 			// the class, so two items of one name tell apart
-			std::string cls = classCard ? std::string() : s.i18n.ClassNameZh(it.enClass);
+			std::string cls = classCard ? std::string() : (it.offCatalog ? std::string(u8"目錄外") : s.i18n.ClassNameZh(it.enClass));
 			if (i == 0 && cls.empty()) cls = u8"Enter 加入";
 			const float clsW = cls.empty() ? 0.0f : sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, cls.c_str()).x + PobUi::D(24.0f);
 			if (it.zh != it.en) {
@@ -648,7 +663,8 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		if (!picked.empty()) addToken(picked);
 	} else if (translateInput && !in.empty() && u.liveUid == ln.uid && u.live.empty()) {
 		ImGui::NewLine();
-		PobUi::Hint(u8"遊戲內沒有這個名稱。過濾器只認英文名稱，用原文加入會比對不到物品。", g_rowRight - ImGui::GetCursorScreenPos().x);
+		PobUi::Hint(u8"物品目錄和翻譯字典都沒有這個名稱（可能是新物品或打錯）。過濾器只認英文名稱，確定拼法正確再用原文加入。",
+		            g_rowRight - ImGui::GetCursorScreenPos().x);
 		if (PobUi::Button(u8"仍以原文加入", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) addToken(in);
 	}
 	return changed;

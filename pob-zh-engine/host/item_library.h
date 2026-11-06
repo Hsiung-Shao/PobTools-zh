@@ -17,6 +17,7 @@ struct LibItem {
 	std::string zh;                   // Chinese display name (== en if untranslated)
 	std::string enClass;              // repoe item class ("Bow", "StackableCurrency"...); "" if unknown
 	std::vector<std::string> tags;    // repoe tags (for sub-categorisation / detail)
+	bool offCatalog = false;          // from the engine dictionary, not the catalog (filter search fallback)
 };
 
 class ItemLibrary {
