@@ -18,6 +18,7 @@
 #include "frame_pacing.h"     // idle wait, minimised = no present, unchanged frame = no present
 #include "live_resize.h"      // drawing during a border drag
 #include "http_client.h"      // HttpSetManualProxy: the proxy setting acts immediately
+#include "github_token.h"
 #include "pob_launch.h"
 #include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
 #include "bridge_gate.h"
@@ -1399,6 +1400,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	std::string dirEdit[kDictSlotCount];
 	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = to_utf8(cfg.dataDir[i]);
 	std::string proxyEdit = to_utf8(cfg.proxy);
+	std::string githubTokenError;
+	std::string githubTokenEdit = GitHubToken::Load(exeDir, &githubTokenError);
+	bool githubTokenSaved = !githubTokenEdit.empty();
+	bool githubTokenVisible = false;
 	std::string fontMsg;       // result of the last "install a font" attempt
 	double savedUntil = 0.0;   // "saved" confirmation deadline
 	// "restart to apply" notice for the window-mode switch; a deadline rather than
@@ -3014,6 +3019,49 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			// 3. network and updates -----------------------------------------------
 			section(2);
 			PobUi::CardBegin("##s3", navIcons[2], navLabels[2], nullptr, false, cardW);
+			{
+				// Explicit Save: a half-pasted credential must not replace the working
+				// one. Persist first; only a successful write changes worker requests.
+				auto applyToken = [&](const std::string& value) {
+					if (!GitHubToken::Save(exeDir, value, &githubTokenError)) return;
+					GitHubToken::Set(value);
+					GitHubToken::Normalize(value, githubTokenEdit);
+					githubTokenSaved = !githubTokenEdit.empty();
+					githubTokenVisible = false;
+					PobUi::ShowToast(githubTokenSaved ? S.githubTokenSaved : S.githubTokenCleared);
+					if (appUpd) appUpd->RequestCheck(AppUpdater::CheckReason::UserAsked);
+				};
+				const char* visibility = githubTokenVisible ? S.githubTokenHide : S.githubTokenShow;
+				const float fw = std::floor(D(240.0f));
+				PobUi::RowBegin(S.githubTokenLabel, S.githubTokenHint,
+				                fw + gapRow + PobUi::ButtonWidth(visibility));
+				PobUi::PushControlFrame();
+				ImGui::SetNextItemWidth(fw);
+				const auto flags = ImGuiInputTextFlags_EnterReturnsTrue |
+				                   (githubTokenVisible ? ImGuiInputTextFlags_None : ImGuiInputTextFlags_Password);
+				const bool saveToken = ImGui::InputTextWithHint("##githubtoken", S.githubTokenEmpty,
+				                                                              &githubTokenEdit, flags);
+				PobUi::PopControlFrame();
+				ImGui::SameLine(0, gapRow);
+				if (PobUi::Button(visibility, PobUi::BtnKind::Ghost)) githubTokenVisible = !githubTokenVisible;
+				PobUi::RowEnd();
+				const float actionsW = PobUi::ButtonWidth(S.githubTokenAbout) +
+				                       PobUi::ButtonWidth(S.githubTokenSave) +
+				                       PobUi::ButtonWidth(S.githubTokenClear) + gapRow * 2;
+				PobUi::RowBegin(githubTokenSaved ? S.githubTokenSaved : S.githubTokenAnonymous,
+				                S.githubTokenStorage, actionsW);
+				if (PobUi::Button(S.githubTokenAbout, PobUi::BtnKind::Ghost))
+					ShellExecuteW(nullptr, L"open", L"https://github.com/settings/personal-access-tokens/new", nullptr, nullptr, SW_SHOWNORMAL);
+				ImGui::SameLine(0, gapRow);
+				if (PobUi::Button(S.githubTokenSave, PobUi::BtnKind::Primary) || saveToken) applyToken(githubTokenEdit);
+				ImGui::SameLine(0, gapRow);
+				if (PobUi::Button(S.githubTokenClear, PobUi::BtnKind::Ghost)) applyToken("");
+				PobUi::RowEnd();
+				if (!githubTokenError.empty()) {
+					PobUi::RowBegin(githubTokenError.c_str(), nullptr, 0);
+					PobUi::RowEnd();
+				}
+			}
 			{
 				// Reaches the HTTP layer immediately: the update worker opens a new
 				// session per operation, so the next check already uses it.

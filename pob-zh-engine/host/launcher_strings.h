@@ -137,6 +137,18 @@
 	/* v1.1.0:大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
 	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
 	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
+	X(githubTokenLabel,  u8"GitHub Token",                  u8"GitHub Token")                         \
+	X(githubTokenHint,   u8"選填；減少更新檢查限流，貼上後按「儲存」", u8"Optional; reduces update-check rate limits. Paste, then Save") \
+	X(githubTokenEmpty,  u8"貼上 Personal access token",    u8"Paste a personal access token")         \
+	X(githubTokenShow,   u8"顯示",                          u8"Show")                                 \
+	X(githubTokenHide,   u8"隱藏",                          u8"Hide")                                 \
+	X(githubTokenSave,   u8"儲存",                          u8"Save")                                 \
+	X(githubTokenClear,  u8"清除",                          u8"Clear")                                \
+	X(githubTokenAbout,  u8"關於 Token",                    u8"About tokens")                         \
+	X(githubTokenSaved,  u8"已儲存 GitHub Token",           u8"GitHub Token saved")                   \
+	X(githubTokenAnonymous, u8"尚未設定 GitHub Token",       u8"No GitHub Token configured")            \
+	X(githubTokenStorage, u8"以目前 Windows 使用者加密儲存；只用於 GitHub API", u8"Encrypted for this Windows user; sent only to the GitHub API") \
+	X(githubTokenCleared, u8"已清除 GitHub Token",          u8"GitHub Token cleared")                 \
 	X(useBuiltin,        u8"切回內建",                     u8"Use built-in")                          \
 	/* font installation + coverage (v0.16.0) */                                                     \
 	X(installFont,       u8"安裝字型…",                    u8"Install a font...")                     \

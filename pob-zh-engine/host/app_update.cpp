@@ -3,6 +3,7 @@
 #include "error_log.h"
 #include "app_version.h"
 #include "http_client.h"
+#include "github_token.h"
 #include "launcher_config.h" // LoadLauncherConfig (the CLI honours the same opt-out)
 #include "zip_extract.h"
 #include "hash_sha256.h"
@@ -169,7 +170,9 @@ static const char* const kExternalMsgSeed = PT_UPD_EXTERNAL_SEED;
 // Generated: the concatenation of every phrase above. Cannot drift from the
 // list, because it IS the list.
 #define PT_UPD_SEED(name, lit) lit
-const char* kAppUpdateGlyphSeed = PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED;
+static const std::string kAllUpdateGlyphs = std::string(PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED) +
+                                          GitHubToken::ErrorGlyphSeed;
+const char* kAppUpdateGlyphSeed = kAllUpdateGlyphs.c_str();
 #undef PT_UPD_SEED
 
 // 組合型訊息全部集中在這裡,而不是在 setPhase 現場拼字串。兩個好處:
@@ -508,26 +511,6 @@ std::string ReadLocalDataVersion(const std::wstring& exeDir)
 	}
 }
 
-// The message the button turns into when a check the user asked for fails.
-//
-// Only the failures whose cause is legible get rewritten; everything else is
-// passed through verbatim. A guessed translation of an unfamiliar error is worse
-// than the English, because it sends whoever reads the report to the wrong place
-// and there is no way back to what the machine actually said.
-//
-// 403/429 from the API host is the one worth naming: unauthenticated GitHub
-// allows 60 requests an hour per IP and one check spends two of them, so a user
-// who keeps pressing the button after a silent failure burns through the budget
-// and then every later check fails for a reason that has nothing to do with them.
-static std::string FriendlyCheckError(const std::string& err)
-{
-	const bool rateLimited = err.find("HTTP 403") != std::string::npos ||
-	                         err.find("HTTP 429") != std::string::npos;
-	if (rateLimited)
-		return u8"GitHub 暫時限制查詢次數，請過幾分鐘再試";
-	return err;
-}
-
 // ---- policy -----------------------------------------------------------------
 
 bool ParseDataTagSeq(const std::string& tag, long long* seq)
@@ -733,7 +716,7 @@ void AppUpdater::workerLoop()
 				log_line(exeDir_, "check failed: " + err);
 				PobLog::Error("app-update", "check failed: " + err);
 				if (cmd == Cmd::CheckLoud)
-					setPhase(AppUpdatePhase::Error, FriendlyCheckError(err));
+					setPhase(AppUpdatePhase::Error, err);
 				else
 					setPhase(AppUpdatePhase::Idle, "");
 			}
@@ -2580,6 +2563,10 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 
 		for (const char* frag : kUpdMsgFragments) expectCovered(frag);
 		expectCovered(kExternalMsgSeed);
+		expectCovered(GitHubToken::ErrorGlyphSeed);
+		expectCovered(GitHubToken::ApiError(401, "", "", ""));
+		expectCovered(GitHubToken::ApiError(403, "0", "", ""));
+		expectCovered(GitHubToken::ApiError(403, "10", "", ""));
 		// The composed messages, driven with stand-in版號/標籤 -- these are what a
 		// user actually sees, and the only place a stray literal could hide.
 		expectCovered(MsgUpToDate());

@@ -1,5 +1,6 @@
 #include "http_client.h"
 #include "error_log.h"
+#include "github_token.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -70,7 +71,7 @@ void* HttpOpenSession(const wchar_t* userAgent)
 	return s;
 }
 
-HttpsClient::HttpsClient(const std::wstring& host)
+HttpsClient::HttpsClient(const std::wstring& host) : host_(host)
 {
 	// GitHub's API rejects requests without a User-Agent; keep the product UA.
 	HINTERNET s = (HINTERNET)HttpOpenSession(L"PobTools/1.0");
@@ -92,6 +93,26 @@ HttpsClient::~HttpsClient()
 	if (hSession_) WinHttpCloseHandle((HINTERNET)hSession_);
 }
 
+// API requests must never forward a PAT to a redirect destination. Release
+// assets use separate, anonymous github.com/CDN clients and still follow redirects.
+static bool github_request(HINTERNET request, const std::wstring& host, std::wstring& headers)
+{
+	if (!GitHubToken::IsApiHost(host)) return true;
+	DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+	if (!WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy))) return false;
+	headers = GitHubToken::RequestHeaders(host);
+	return true;
+}
+
+static std::string response_header(HINTERNET request, const wchar_t* name)
+{
+	wchar_t value[128]{};
+	DWORD size = sizeof(value);
+	if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, name, value, &size, WINHTTP_NO_HEADER_INDEX))
+		return {};
+	return narrow(std::wstring(value, size / sizeof(wchar_t)));
+}
+
 bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
                       std::string* err, const std::atomic<bool>* cancel,
                       const ProgressFn& onProgress)
@@ -108,10 +129,16 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 		WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
 		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
 	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
+	std::wstring headers;
+	if (!github_request(hReq, host_, headers)) {
+		WinHttpCloseHandle(hReq);
+		return fail(u8"建立 HTTP 請求失敗");
+	}
 
 	bool ok = false;
 	std::string reason;
-	if (WinHttpSendRequest(hReq, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+	if (WinHttpSendRequest(hReq, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+		headers.empty() ? 0 : (DWORD)headers.size(), WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
 		WinHttpReceiveResponse(hReq, nullptr)) {
 		DWORD code = 0, len = sizeof(code);
 		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
@@ -145,7 +172,22 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 			} while (avail > 0);
 			if (ok && out.empty()) { ok = false; reason = u8"回應為空"; }
 		} else {
-			reason = "HTTP " + std::to_string(code) + ": " + narrow(path);
+			if (GitHubToken::IsApiHost(host_)) {
+				// Secondary limits may only be named in the body. Read at most 8 KiB
+				// for classification; never include a server body in a log or message.
+				std::string body;
+				if (code == 403) {
+					char chunk[1024];
+					DWORD read = 0;
+					while (body.size() < 8192 && !(cancel && cancel->load()) &&
+					       WinHttpReadData(hReq, chunk, sizeof(chunk), &read) && read)
+						body.append(chunk, read);
+				}
+				reason = GitHubToken::ApiError((int)code, response_header(hReq, L"X-RateLimit-Remaining"),
+				                               response_header(hReq, L"Retry-After"), body);
+			} else {
+				reason = "HTTP " + std::to_string(code) + ": " + narrow(path);
+			}
 		}
 	} else {
 		reason = u8"連線失敗（網路無法使用？）: " + narrow(path);
@@ -189,6 +231,10 @@ bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpRe
 	WinHttpSetOption(hReq, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
 
 	std::wstring joined;
+	if (!github_request(hReq, host_, joined)) {
+		WinHttpCloseHandle(hReq);
+		return fail(u8"建立 HTTP 請求失敗");
+	}
 	for (const std::wstring& h : extra.headers) {
 		joined += h;
 		joined += L"\r\n";

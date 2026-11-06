@@ -133,6 +133,16 @@ both follow whichever line the Settings page selects.
 > V2Ray works directly. Update checks, translation data and icon downloads all go through
 > that proxy.
 
+> **GitHub rate limits**: paste your own **GitHub Token** in Settings → Network & updates
+> and press **Save** to check for updates again immediately. **About tokens** opens GitHub's
+> personal access token creation page. Public repository read access is sufficient;
+> no write permissions are needed. The input is masked; use Show/Hide to reveal it.
+> **Clear** deletes the saved token and returns to anonymous requests.
+> The token is encrypted for the current Windows user in `PobTools\github_token.bin`,
+> never written to the ini or logs, and sent only to `api.github.com`. Save it again
+> after changing computers or Windows users. An expired or revoked token produces a
+> message asking you to replace or clear it. Authenticated requests still have rate limits.
+
 ### Chinese search inside POB
 
 Since v0.5.0, the unique / base item database search boxes on POB's Items tab accept

@@ -25,6 +25,7 @@
 
 #include "error_log.h"
 #include "http_client.h"
+#include "github_token.h"
 #include "hang_watch.h"
 #include "frame_pacing.h"   // --frame-pacing-selftest
 #include "pob_frame_cap.h"  // --perf-selftest
@@ -464,6 +465,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// processes re-enter here) must all see it, or GitHub stays unreachable for
 	// people who need a proxy. Empty follows the system proxy.
 	HttpSetManualProxy(LoadLauncherConfig(dir + L"pob-zh.ini").proxy);
+	GitHubToken::Set(GitHubToken::Load(dir));
 
 	// Startup timeline (PobTools\startup_launcher.txt) for the launcher only: the
 	// engine child writes its own from inside SimpleGraphic.dll, and the CLI
