@@ -15,6 +15,7 @@
 #include "clipboard_util.h"
 #include "editor_shell.h"
 #include "filter_file_watch.h"
+#include "filter_card_ui.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -1222,6 +1223,31 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			          "T26 look = action lines only");
 			rep.check(FilterBlockText(f, f.blocks[1], true).empty(), "T26 no action lines -> empty look");
 		}
+	}
+
+	// ---- T27: paste a copied look onto another rule ---------------------------
+	{
+		FilterFile f = ParseFilter(
+			"Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tCustomAlertSound \"x.mp3\" 300\n\n"
+			"Show # b\n\tClass \"Amulets\"\n\tSetTextColor 9 9 9\n\tMinimapIcon 0 Red Star\n");
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		const std::string bBefore = FilterBlockText(f, f.blocks[1], false);
+		const int n = CardPasteLook(doc, 0, "\tSetTextColor 9 9 9\r\n\tPlayAlertSound 6 300\r\n\tSetFontSize 45");
+		rep.check(n == 3, "T27 paste reports the three action lines", "n=" + std::to_string(n));
+		const int tc = doc.FindLine(0, "SetTextColor");
+		rep.check(tc >= 0 && FilterSerializeLine(f.lines[tc]) == "\tSetTextColor 9 9 9", "T27 same keyword is replaced");
+		rep.check(doc.FindLine(0, "PlayAlertSound") >= 0 && doc.FindLine(0, "SetFontSize") >= 0, "T27 missing keywords are inserted");
+		bool customDisabled = false;
+		for (int li : f.blocks[0].lineIdx) customDisabled |= doc.IsDisabledLine(li) && f.lines[li].raw.find("CustomAlertSound") != std::string::npos;
+		rep.check(doc.FindLine(0, "CustomAlertSound") < 0 && customDisabled, "T27 the other sound kind is disabled with #!");
+		rep.check(FilterBlockText(f, f.blocks[1], false) == bBefore, "T27 the other rule is untouched");
+		rep.check(f.dirty, "T27 the file is marked edited");
+		const std::string once = SerializeFilter(f);
+		const int n2 = CardPasteLook(doc, 0, "\tSetTextColor 9 9 9\r\n\tPlayAlertSound 6 300\r\n\tSetFontSize 45");
+		rep.check(n2 == 3 && SerializeFilter(f) == once, "T27 pasting the same look again changes nothing");
+		rep.check(CardPasteLook(doc, 0, "Show\n\tClass \"Rings\"") == 0 && SerializeFilter(f) == once,
+		          "T27 text without action lines pastes nothing");
 	}
 
 	rep.note("failures=" + std::to_string(rep.failures));

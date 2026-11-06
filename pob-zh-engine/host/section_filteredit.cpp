@@ -688,6 +688,28 @@ bool DrawBlockList(EditorShell& s, float height)
 				                   : u8"已複製外觀，可貼進其他規則裡");
 			else s.Notify(u8"複製失敗", true);
 		}
+		PobUi::MenuSeparator();
+		// paste a copied look: onto the ticked rules in batch mode, else onto this one
+		const bool toTicked = s.batchMode && nSel > 0;
+		const std::string pasteLbl = toTicked ? u8"貼上外觀到已勾選的 " + std::to_string(nSel) + u8" 條"
+		                                      : std::string(u8"貼上外觀到這條規則");
+		if (PobUi::MenuRow(PobIcon::Palette, pasteLbl.c_str(), nullptr, ok && !s.testMode)) {
+			const std::string clip = ReadClipboardUtf8(s.hostHwnd);
+			std::vector<int> targets;
+			if (toTicked) {
+				for (int i = 0; i < (int)s.batchSel.size() && i < (int)s.model.blocks.size(); i++)
+					if (s.batchSel[i]) targets.push_back(i);
+			} else {
+				targets.push_back(s.ctxBlock);
+			}
+			int n = 0;
+			for (int bi : targets) n = CardPasteLook(s.doc, bi, clip);
+			if (n == 0)
+				s.Notify(u8"剪貼簿裡沒有外觀設定：先在另一條規則按右鍵「複製外觀」", true);
+			else
+				s.Notify(u8"已把外觀貼到 " + std::to_string(targets.size()) + u8" 條規則（" + std::to_string(n) +
+				         u8" 行）；沒提到的外觀設定保留原樣");
+		}
 		PobUi::EndMenuPopup();
 	}
 	ImGui::EndChild();

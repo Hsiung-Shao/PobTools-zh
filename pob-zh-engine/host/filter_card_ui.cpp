@@ -1555,3 +1555,60 @@ void CardTestInput(EditorShell& s, const char* text)
 	u.inputs[s.model.lines[li].uid] = text;
 	u.liveFor.clear();
 }
+
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text)
+{
+	FilterFile* f = doc.file();
+	if (!f || blockIdx < 0 || blockIdx >= (int)f->blocks.size()) return 0;
+	std::vector<FilterLine> look;
+	size_t pos = 0;
+	while (pos <= text.size()) {
+		size_t end = text.find((char)10, pos);
+		if (end == std::string::npos) end = text.size();
+		std::string raw = text.substr(pos, end - pos);
+		if (!raw.empty() && raw.back() == (char)13) raw.pop_back();
+		FilterLine ln = ParseFilterLine(raw);
+		if (ln.kind == FilterLineKind::Action) look.push_back(std::move(ln));
+		pos = end + 1;
+	}
+	if (look.empty()) return 0;
+	bool changed = false;
+	for (const FilterLine& p : look) {
+		const CardSchema* cs = FilterSchemaFind(p.keyword);
+		// a sound replaces the other sound kind
+		if (cs && cs->exclusiveGroup > 0) {
+			for (const CardSchema& other : FilterSchemaAll()) {
+				if (&other == cs || other.exclusiveGroup != cs->exclusiveGroup) continue;
+				for (const char* kw : { other.keyword, other.alias }) {
+					if (!kw) continue;
+					for (int li; (li = doc.FindLine(blockIdx, kw)) >= 0;) { doc.CommentOutLine(li); changed = true; }
+				}
+			}
+		}
+		// the same card spelled the other way (PlayAlertSound / ...Positional)
+		if (cs && cs->alias) {
+			const char* otherKw = p.keyword == cs->keyword ? cs->alias : cs->keyword;
+			for (int li; (li = doc.FindLine(blockIdx, otherKw)) >= 0;) { doc.CommentOutLine(li); changed = true; }
+		}
+		const int li = doc.FindLine(blockIdx, p.keyword);
+		if (li < 0) {
+			doc.InsertLine(blockIdx, p.keyword, p.op, p.values);
+			changed = true;
+			continue;
+		}
+		FilterLine& t = f->lines[li];
+		FilterLine cand = t;
+		cand.op = p.op;
+		cand.values = p.values;
+		cand.dirty = true;
+		// same values: leave the line (and its original bytes) alone
+		if (FilterSerializeLine(cand) == FilterSerializeLine(t)) continue;
+		t = cand;
+		changed = true;
+	}
+	if (changed) {
+		f->dirty = true;
+		doc.RebuildBlocks();
+	}
+	return (int)look.size();
+}

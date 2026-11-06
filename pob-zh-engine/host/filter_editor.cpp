@@ -170,7 +170,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -224,6 +224,19 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "rules-paste") {
+				// as if 複製外觀 on the selected rule, then 貼上外觀 on the next visible one
+				const int src = shell_.selectedBlock;
+				int dst = -1;
+				for (size_t k = 0; k + 1 < shell_.visRows.size(); k++)
+					if (shell_.visRows[k] == src) { dst = shell_.visRows[k + 1]; break; }
+				if (src >= 0 && dst >= 0) {
+					const std::string look = FilterBlockText(shell_.model, shell_.model.blocks[src], true);
+					CardPasteLook(shell_.doc, dst, look);
+					shell_.selectedBlock = dst;
+					shell_.selAnchor = shell_.doc.CaptureAnchor(dst);
+				}
+			}
 			if (st == "rules-ctx") {
 				shell_.ctxOpenTest = true;
 				// POBTOOLS_FILTER_CTX_DUMP=<file>: what the two menu rows would copy, for a demo

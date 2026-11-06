@@ -37,6 +37,14 @@ bool DrawAddColumn(EditorShell& s, int blockIdx);
 // mutation.
 bool DrawCardPopovers(EditorShell& s);
 
+// Paste a copied look onto a block: every action line in `text` (a 複製外觀 or a
+// whole 複製整條規則 copy; other lines are ignored) replaces the block's line with
+// the same keyword, or is inserted when the block has none. A sound replaces the
+// other sound kind (the schema's exclusive group, disabled with #!). Lines the
+// paste does not mention stay. Returns how many action lines were in `text`
+// (0 = nothing to paste, the block is untouched). Structural: indices go stale.
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text);
+
 // ---- editors shared with the batch dialog ----------------------------------
 // Colour picker body: SV square + hue, RGBA field, recently used colours.
 // rgba is edited in place; true when it changed.
