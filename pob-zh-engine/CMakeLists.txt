@@ -443,6 +443,7 @@ if (WIN32)
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
         host/filter_undo.cpp
+        host/filter_edit_journal.cpp
         host/filter_file_watch.cpp
         host/filter_selftest.cpp
         host/filter_schema.cpp

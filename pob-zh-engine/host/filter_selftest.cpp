@@ -17,6 +17,7 @@
 #include "filter_file_watch.h"
 #include "filter_card_ui.h"
 #include "filter_undo.h"
+#include "filter_edit_journal.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -2109,6 +2110,378 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(r.blockIdx == 1 && r.unknownConds.empty() && PreviewEstimateNote(r).empty(),
 		          "T37f an unmodelled condition in a rule whose item name cannot match is no estimate",
 		          "n=" + std::to_string(r.unknownConds.size()));
+	}
+
+	// ---- T38/T39/T40: keep your edits across a NeverSink update (edit journal) --
+	{
+		auto has = [](const std::string& hay, const std::string& needle) { return hay.find(needle) != std::string::npos; };
+		struct Fx {
+			std::string ver = "8.19.2a";
+			std::string c1 = "255 0 0", s1 = "45", c2 = "0 255 0", c3 = "0 0 255";
+			bool gems = true;
+			std::string zoneCol;    // "" = no custom zone; else the custom rule's SetTextColor
+			std::string plainCol;   // "" = no rule without $type; else its SetTextColor
+		};
+		auto build = [](const Fx& x) {
+			std::string s = "# VERSION:  " + x.ver + "\n# TYPE:     2-SEMI-STRICT\n\n";
+			if (!x.zoneCol.empty())
+				s += "#pobtools-custom-begin v=1\nShow # my custom\n\tBaseType == \"Exalted Orb\"\n\tSetTextColor " + x.zoneCol +
+				     "\n#pobtools-custom-end\n\n";
+			s += "Show # %D9 $type->currency $tier->t1\n\tBaseType == \"Divine Orb\"\n\tSetTextColor " + x.c1 + "\n\tSetFontSize " + x.s1 + "\n\n";
+			s += "Show # %D8 $type->currency $tier->t2\n\tBaseType == \"Chaos Orb\"\n\tSetTextColor " + x.c2 + "\n\tSetFontSize 40\n\n";
+			if (x.gems) s += "Show # %D7 $type->gems $tier->t1\n\tBaseType == \"Vaal Grace\"\n\tSetTextColor " + x.c3 + "\n\tSetFontSize 38\n";
+			if (!x.plainCol.empty()) s += "\nShow # my rule\n\tBaseType == \"Scroll of Wisdom\"\n\tSetTextColor " + x.plainCol + "\n";
+			return s;
+		};
+		const std::string K1 = "$type->currency $tier->t1", K3 = "$type->gems $tier->t1";
+		auto blkOf = [](const FilterFile& f, const std::string& key) {
+			for (size_t i = 0; i < f.blocks.size(); i++)
+				if (FilterRuleKey(f, f.blocks[i]) == key) return (int)i;
+			return -1;
+		};
+		auto ownOf = [&](const FilterFile& f, const std::string& key) {
+			const int bi = blkOf(f, key);
+			return bi < 0 ? std::vector<std::string>() : FilterOwnLines(f, f.blocks[bi]);
+		};
+		auto joined = [](const std::vector<std::string>& v) {
+			std::string s;
+			for (const std::string& l : v) s += l + "\n";
+			return s;
+		};
+		struct Sess { FilterFile f; FilterDocumentEditor doc; };
+		auto openSess = [](Sess& s, const std::string& text) { s.f = ParseFilter(text); s.doc.Attach(&s.f); };
+		auto recordJ = [&](const Fx& base, const Fx& edited) {
+			EditJournal j;
+			JournalRecord(j, ParseFilter(build(base)), ParseFilter(build(edited)));
+			return j;
+		};
+
+		// ---- T38: recording ----
+		Fx edited;
+		edited.c1 = "9 9 9";
+		EditJournal j38;
+		{
+			const FilterFile base = ParseFilter(build(Fx()));
+			const FilterFile cur = ParseFilter(build(edited));
+			JournalRecord(j38, base, cur);
+			rep.check(j38.rules.size() == 1 && j38.rules.count(K1) == 1, "T38a only the edited NeverSink rule is recorded, under its identity",
+			          "n=" + std::to_string(j38.rules.size()));
+			if (j38.rules.count(K1)) {
+				rep.check(j38.rules[K1].before == ownOf(base, K1) && j38.rules[K1].after == ownOf(cur, K1) &&
+				              j38.rules[K1].before != j38.rules[K1].after,
+				          "T38a before = NeverSink's lines, after = the edited lines");
+			}
+			rep.check(j38.fromVersion == "8.19.2a" && j38.filterType == "2-SEMI-STRICT", "T38a version and type come from the banner",
+			          j38.fromVersion + " / " + j38.filterType);
+		}
+		{
+			// second save: the baseline is now the first save's file; one more edit on the same rule
+			Fx e2 = edited;
+			e2.s1 = "50";
+			const FilterFile base2 = ParseFilter(build(edited));
+			const FilterFile cur2 = ParseFilter(build(e2));
+			const std::vector<std::string> original = ownOf(ParseFilter(build(Fx())), K1);
+			JournalRecord(j38, base2, cur2);
+			rep.check(j38.rules.size() == 1 && j38.rules.count(K1) == 1 && j38.rules[K1].before == original,
+			          "T38b a second edit keeps NeverSink's earliest 'before'");
+			const std::string aft = j38.rules.count(K1) ? joined(j38.rules[K1].after) : "";
+			rep.check(has(aft, "SetTextColor 9 9 9") && has(aft, "SetFontSize 50"), "T38b 'after' carries both the colour and the size edit", aft);
+			// third save: back to the original content
+			const FilterFile base3 = ParseFilter(build(e2));
+			const FilterFile cur3 = ParseFilter(build(Fx()));
+			JournalRecord(j38, base3, cur3);
+			rep.check(j38.rules.empty(), "T38c editing the rule back to NeverSink's version drops the entry", "n=" + std::to_string(j38.rules.size()));
+		}
+
+		// T38d: rules without $type are not recorded; the custom zone is stored
+		{
+			Fx b, c;
+			b.zoneCol = "1 1 1"; b.plainCol = "5 5 5";
+			c.zoneCol = "2 2 2"; c.plainCol = "6 6 6";
+			const EditJournal j = recordJ(b, c);
+			rep.check(j.rules.empty() && j.rules.count("") == 0, "T38d a rule without $type is not recorded", "n=" + std::to_string(j.rules.size()));
+			rep.check(has(j.customZone, "my custom") && has(j.customZone, "SetTextColor 2 2 2") && !has(j.customZone, "SetTextColor 1 1 1"),
+			          "T38d the custom zone is stored from the current file", j.customZone);
+		}
+
+		// T38e: save + load round trip, no temp file left behind
+		{
+			wchar_t tb[MAX_PATH];
+			GetTempPathW(MAX_PATH, tb);
+			const std::wstring dir = std::wstring(tb) + L"pobtools_t38_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
+			CreateDirectoryW(dir.c_str(), nullptr);
+			const std::wstring path = dir + L"journal.json";
+			EditJournal a;
+			a.filterType = "2-SEMI-STRICT";
+			a.fromVersion = "8.19.2a";
+			a.rules["$type->currency $tier->t1"].before = { "Show # a \"quoted\" \\ back", "\tBaseType == \"Divine Orb\"", "\t#! 中文\t" };
+			a.rules["$type->currency $tier->t1"].after = { "Show # a", "\tSetTextColor 9 9 9" };
+			a.rules["$type->gems $tier->t1"].before = { "Show # g" };
+			a.rules["$type->gems $tier->t1"].after = {};
+			a.customZone = "Show # c\r\n\tx \"q\" \\\n中文";
+			std::string err;
+			const bool saved = JournalSave(path, a, &err);
+			EditJournal b;
+			const bool loaded = JournalLoad(path, &b);
+			bool same = saved && loaded && a.filterType == b.filterType && a.fromVersion == b.fromVersion && a.customZone == b.customZone &&
+			            a.rules.size() == b.rules.size();
+			for (const auto& kv : a.rules) {
+				const auto it = b.rules.find(kv.first);
+				same = same && it != b.rules.end() && it->second.before == kv.second.before && it->second.after == kv.second.after;
+			}
+			rep.check(same, "T38e save then load gives the same journal (quotes, backslashes, newlines, Chinese)", err);
+			int files = 0;
+			std::wstring only;
+			WIN32_FIND_DATAW fd;
+			HANDLE h = FindFirstFileW((dir + L"*").c_str(), &fd);
+			if (h != INVALID_HANDLE_VALUE) {
+				do {
+					if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+					files++;
+					only = fd.cFileName;
+				} while (FindNextFileW(h, &fd));
+				FindClose(h);
+			}
+			rep.check(files == 1 && only == L"journal.json", "T38e no temp file is left next to the journal", "files=" + std::to_string(files));
+			DeleteFileW(path.c_str());
+			RemoveDirectoryW(dir.c_str());
+			rep.check(GetFileAttributesW(dir.c_str()) == INVALID_FILE_ATTRIBUTES, "T38e the scratch folder is gone");
+		}
+
+		// ---- T39: applying to a newer file ----
+		const EditJournal jColor = recordJ(Fx(), edited);   // currency/t1 colour -> 9 9 9
+		{
+			Fx nv;   // NeverSink changed nothing in this rule
+			nv.ver = "8.20.2";
+			Sess s;
+			openSess(s, build(nv));
+			const JournalReport r = JournalApply(jColor, s.doc, {});
+			rep.check(has(joined(ownOf(s.f, K1)), "SetTextColor 9 9 9") && r.applied == 1 && r.conflicts.empty(),
+			          "T39a your colour edit is put on the new file", "applied=" + std::to_string(r.applied) + " conflicts=" + std::to_string(r.conflicts.size()));
+			rep.check(ownOf(s.f, "$type->currency $tier->t2") == ownOf(ParseFilter(build(nv)), "$type->currency $tier->t2"),
+			          "T39a other rules are left alone");
+		}
+		{
+			Fx nv;
+			nv.ver = "8.20.2";
+			nv.s1 = "60";   // NeverSink changed the size, not the colour
+			Sess s;
+			openSess(s, build(nv));
+			const JournalReport r = JournalApply(jColor, s.doc, {});
+			const std::string own = joined(ownOf(s.f, K1));
+			rep.check(has(own, "SetTextColor 9 9 9") && has(own, "SetFontSize 60") && r.conflicts.empty(),
+			          "T39b your colour and NeverSink's new size both survive, no conflict", own);
+		}
+		{
+			Fx nv;
+			nv.ver = "8.20.2";
+			nv.c1 = "1 1 1";   // NeverSink changed the same colour too
+			Sess s;
+			openSess(s, build(nv));
+			const JournalReport r = JournalApply(jColor, s.doc, {});
+			const bool one = r.conflicts.size() == 1;
+			rep.check(one && r.conflicts[0].key == K1 && r.conflicts[0].setting == "SetTextColor" && has(r.conflicts[0].mine, "9 9 9") &&
+			              has(r.conflicts[0].theirs, "1 1 1"),
+			          "T39c both changed the colour: one conflict with both versions", "n=" + std::to_string(r.conflicts.size()));
+			rep.check(has(joined(ownOf(s.f, K1)), "SetTextColor 9 9 9"), "T39c without a choice your version is kept");
+			Sess s2;
+			openSess(s2, build(nv));
+			JournalChoices ch;
+			ch[K1 + "|SetTextColor"] = true;
+			JournalApply(jColor, s2.doc, ch);
+			const std::string own2 = joined(ownOf(s2.f, K1));
+			rep.check(has(own2, "SetTextColor 1 1 1") && !has(own2, "SetTextColor 9 9 9"), "T39c choosing NeverSink's version takes the new colour", own2);
+		}
+		{
+			// T39d: the new file no longer has gems/t1
+			Fx g;
+			g.c3 = "7 7 7";
+			const EditJournal jg = recordJ(Fx(), g);
+			Fx nv;
+			nv.ver = "8.20.2";
+			nv.gems = false;
+			Sess s;
+			openSess(s, build(nv));
+			const std::string before = SerializeFilter(s.f);
+			const JournalReport r = JournalApply(jg, s.doc, {});
+			bool listed = false;
+			for (const std::string& m : r.missing) listed |= m == K3;
+			rep.check(jg.rules.count(K3) == 1 && listed && SerializeFilter(s.f) == before, "T39d a rule the new file lacks is reported as missing, nothing else changes");
+		}
+		{
+			// T39e: custom zone comes back, once
+			Fx c;
+			c.zoneCol = "7 7 7";
+			const EditJournal jz = recordJ(Fx(), c);
+			Fx nv;
+			nv.ver = "8.20.2";
+			Sess s;
+			openSess(s, build(nv));
+			rep.check(!FindCustomZone(s.f).present(), "T39e fixture: the new file has no custom zone");
+			const JournalReport r = JournalApply(jz, s.doc, {});
+			const CustomZone z = FindCustomZone(s.f);
+			bool inZone = false;
+			for (const FilterBlock& b : s.f.blocks)
+				if (z.present() && b.headerLineIdx > z.beginLine && b.headerLineIdx < z.endLine && has(FilterBlockText(s.f, b, false), "SetTextColor 7 7 7")) inZone = true;
+			rep.check(z.present() && inZone && r.customImported == 1, "T39e the custom zone and its rule are put back", "imported=" + std::to_string(r.customImported));
+			const std::string once = SerializeFilter(s.f);
+			const JournalReport r2 = JournalApply(jz, s.doc, {});
+			rep.check(r2.customImported == 0 && SerializeFilter(s.f) == once, "T39e applying again imports nothing and changes nothing");
+		}
+		{
+			// T39f: twice = once
+			Fx nv;
+			nv.ver = "8.20.2";
+			Sess s;
+			openSess(s, build(nv));
+			const JournalReport r1 = JournalApply(jColor, s.doc, {});
+			const std::string once = SerializeFilter(s.f);
+			const JournalReport r2 = JournalApply(jColor, s.doc, {});
+			rep.check(r1.applied == 1 && r2.already == 1 && r2.applied == 0 && SerializeFilter(s.f) == once,
+			          "T39f applying twice: the second time everything is 'already' and the file is the same",
+			          "applied2=" + std::to_string(r2.applied) + " already2=" + std::to_string(r2.already));
+		}
+		{
+			// T39g: dry run reports like the real thing but changes nothing
+			Fx nvA, nvB;
+			nvA.ver = nvB.ver = "8.20.2";
+			nvA.s1 = "60";     // merges cleanly
+			nvB.c1 = "1 1 1";  // conflicts
+			const std::string texts[2] = { build(nvA), build(nvB) };
+			for (int i = 0; i < 2; i++) {
+				Sess dry, real;
+				openSess(dry, texts[i]);
+				openSess(real, texts[i]);
+				const std::string before = SerializeFilter(dry.f);
+				const JournalReport rd = JournalApply(jColor, dry.doc, {}, true);
+				const JournalReport rr = JournalApply(jColor, real.doc, {}, false);
+				rep.check(SerializeFilter(dry.f) == before && SerializeFilter(real.f) != before, i == 0 ? "T39g dry run (clean merge) changes nothing, a real apply does"
+				                                                                                       : "T39g dry run (conflict) changes nothing, a real apply does");
+				rep.check(rd.applied == rr.applied && rd.already == rr.already && rd.conflicts.size() == rr.conflicts.size() &&
+				              rd.missing.size() == rr.missing.size() && rd.customImported == rr.customImported,
+				          i == 0 ? "T39g dry run report equals the real report (clean merge)" : "T39g dry run report equals the real report (conflict)",
+				          "applied " + std::to_string(rd.applied) + "/" + std::to_string(rr.applied) + " conflicts " + std::to_string(rd.conflicts.size()) + "/" + std::to_string(rr.conflicts.size()));
+			}
+		}
+
+		// T39h: the real NeverSink file, three rules edited, NeverSink unchanged
+		{
+			bool ok = false;
+			const FilterFile base = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
+			if (!ok) {
+				rep.note("T39h skipped: Filters\\default.filter not readable");
+			} else {
+				FilterFile cur = base;
+				std::map<std::string, int> keyCount;
+				for (const FilterBlock& b : base.blocks) {
+					const std::string k = FilterRuleKey(base, b);
+					if (!k.empty()) keyCount[k]++;
+				}
+				std::vector<std::string> picked;
+				for (size_t i = 0; i < cur.blocks.size() && picked.size() < 3; i++) {
+					const std::string k = FilterRuleKey(cur, cur.blocks[i]);
+					if (k.empty() || keyCount[k] != 1) continue;   // unique identity only
+					int tc = -1;
+					for (int li : cur.blocks[i].lineIdx)
+						if (cur.lines[li].kind == FilterLineKind::Action && cur.lines[li].keyword == "SetTextColor" && cur.lines[li].values.size() >= 3) { tc = li; break; }
+					if (tc < 0) continue;
+					cur.lines[tc].values[0].text = "1";
+					cur.lines[tc].values[1].text = "2";
+					cur.lines[tc].values[2].text = "3";
+					cur.lines[tc].dirty = true;
+					cur.dirty = true;
+					picked.push_back(k);
+				}
+				rep.check(picked.size() == 3, "T39h fixture: three rules with a unique identity and a text colour found", "n=" + std::to_string(picked.size()));
+				EditJournal j;
+				JournalRecord(j, base, cur);
+				rep.check(j.rules.size() == 3, "T39h three edited rules are recorded", "n=" + std::to_string(j.rules.size()));
+				Sess s;
+				bool ok2 = false;
+				s.f = LoadFilter(exeDir + L"Filters\\default.filter", &ok2);
+				s.doc.Attach(&s.f);
+				const JournalReport r = JournalApply(j, s.doc, {});
+				bool allSame = !picked.empty();
+				for (const std::string& k : picked) allSame = allSame && ownOf(s.f, k) == ownOf(cur, k);
+				rep.check(ok2 && r.applied == 3 && r.conflicts.empty() && r.missing.empty() && allSame,
+				          "T39h applying onto an unchanged NeverSink file reproduces the three edited rules",
+				          "applied=" + std::to_string(r.applied) + " conflicts=" + std::to_string(r.conflicts.size()) + " missing=" + std::to_string(r.missing.size()));
+			}
+		}
+
+		// ---- T40: game subscription header ----
+		{
+			const std::string body = "#=====\n# NeverSink's filter\nShow\n\tSetFontSize 40\n";
+			const std::string online =
+				"#Online Item Filter\n#name:NeverSink-5uberstr-softcore\n#version:3.29.3b\n#hash:abc\n#filterVersion:8.20.2.2026.309.7\n#lastUpdate:2026\n" + body;
+			const OnlineFilterHeader h = ParseOnlineHeader(online);
+			rep.check(h.online && h.name == "NeverSink-5uberstr-softcore" && h.filterVersion == "8.20.2.2026.309.7",
+			          "T40a a subscription header is recognised with its name and filter version", h.name + " / " + h.filterVersion);
+			const OnlineFilterHeader p = ParseOnlineHeader("#name:NeverSink-5uberstr-softcore\n" + body);
+			rep.check(!p.online, "T40a without the first line it is not a subscription");
+			const std::string out = StripOnlineHeader(online);
+			rep.check(out.compare(0, 6, "#=====") == 0 && !has(out, "#Online Item Filter") && !has(out, "#hash:") && !has(out, "#name:") &&
+			              !has(out, "#version:") && !has(out, "#filterVersion:") && !has(out, "#lastUpdate:"),
+			          "T40b the subscription's own header lines are removed", out);
+			rep.check(out == body, "T40b everything after the header is byte-for-byte the same");
+			std::string crlf;
+			for (char ch : online) { if (ch == '\n') crlf += '\r'; crlf += ch; }
+			std::string crlfBody;
+			for (char ch : body) { if (ch == '\n') crlfBody += '\r'; crlfBody += ch; }
+			rep.check(StripOnlineHeader(crlf) == crlfBody, "T40b the same holds with CRLF line endings");
+			rep.check(StripOnlineHeader(body) == body, "T40b text without a subscription header is returned unchanged");
+		}
+	}
+
+	// ---- T39i: a real version change (8.19.2a local -> the subscription's copy) ----
+	// Read-only use of the user's OnlineFilters\ (never written). Skipped when absent.
+	{
+		wchar_t docs[MAX_PATH] = {};
+		std::wstring onlineDir;
+		if (GetEnvironmentVariableW(L"USERPROFILE", docs, MAX_PATH))
+			onlineDir = std::wstring(docs) + L"\\Documents\\My Games\\Path of Exile\\OnlineFilters\\";
+		std::wstring onlinePath;
+		WIN32_FIND_DATAW fd;
+		HANDLE h = onlineDir.empty() ? INVALID_HANDLE_VALUE : FindFirstFileW((onlineDir + L"*").c_str(), &fd);
+		if (h != INVALID_HANDLE_VALUE) {
+			do { if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) { onlinePath = onlineDir + fd.cFileName; break; } } while (FindNextFileW(h, &fd));
+			FindClose(h);
+		}
+		bool ok = false;
+		const FilterFile base = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
+		std::string onlineText;
+		if (!onlinePath.empty()) {
+			std::ifstream in(onlinePath, std::ios::binary);
+			onlineText.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+		}
+		if (!ok || onlineText.empty() || !ParseOnlineHeader(onlineText).online) {
+			rep.note("T39i skipped: no local default.filter or no subscription file");
+		} else {
+			// edit the colour of the first 20 NeverSink rules that have one
+			FilterFile cur = base;
+			int edited = 0;
+			for (FilterBlock& b : cur.blocks) {
+				if (edited >= 20 || FilterRuleKey(cur, b).empty() || b.idxTextColor < 0) continue;
+				FilterLine& ln = cur.lines[b.idxTextColor];
+				if (ln.values.size() < 3) continue;
+				ln.values[0].text = "1"; ln.values[1].text = "2"; ln.values[2].text = "3";
+				ln.dirty = true;
+				edited++;
+			}
+			EditJournal j;
+			JournalRecord(j, base, cur);
+			FilterFile next = ParseFilter(StripOnlineHeader(onlineText));
+			FilterDocumentEditor doc;
+			doc.Attach(&next);
+			const JournalReport r = JournalApply(j, doc, {}, false);
+			rep.note("T39i " + FilterBannerValue(base, "VERSION") + " " + FilterBannerValue(base, "TYPE") + " -> " +
+			         FilterBannerValue(next, "VERSION") + " " + FilterBannerValue(next, "TYPE") + ": recorded " +
+			         std::to_string(j.rules.size()) + ", applied " + std::to_string(r.applied) + ", already " +
+			         std::to_string(r.already) + ", conflicts " + std::to_string(r.conflicts.size()) + ", missing " +
+			         std::to_string(r.missing.size()));
+			rep.check((int)j.rules.size() == edited && r.applied + r.already + (int)r.missing.size() == (int)j.rules.size(),
+			          "T39i every recorded rule is accounted for on the real newer version");
+		}
 	}
 
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
