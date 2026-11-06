@@ -88,6 +88,17 @@ public:
 	// Hard-delete all lines of a block (custom-zone management).
 	void RemoveBlock(int blockIdx);
 
+	// Move a block's own lines (header through its last syntax or "#!" line,
+	// the same range BodyEnd covers) to just before / after another block. The
+	// blank lines and comments between blocks stay where they are; uids are
+	// kept. Returns the moved block's new index, -1 when nothing moved (same
+	// block, out of range). Callers decide which moves are allowed.
+	int MoveBlockBefore(int blockIdx, int targetBlockIdx);
+	int MoveBlockAfter(int blockIdx, int targetBlockIdx);
+private:
+	int MoveBlock(int blockIdx, int targetBlockIdx, bool after);
+public:
+
 	// ---- selection anchoring ----
 	BlockAnchor CaptureAnchor(int blockIdx) const;
 	int ResolveAnchor(const BlockAnchor& a) const;  // -1 when not found

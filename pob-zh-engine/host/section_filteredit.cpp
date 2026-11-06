@@ -441,6 +441,19 @@ void EdRebuildVisRows(EditorShell& s)
 // page first.
 void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
+bool EdMoveRule(EditorShell& s, int blockIdx, int dir)
+{
+	const int target = CustomRuleMoveTarget(s.model, blockIdx, dir);
+	if (target < 0) return false;
+	const int nb = dir < 0 ? s.doc.MoveBlockBefore(blockIdx, target) : s.doc.MoveBlockAfter(blockIdx, target);
+	if (nb < 0) return false;
+	s.selectedBlock = nb;
+	s.selAnchor = s.doc.CaptureAnchor(nb);
+	s.scrollToSel = true;
+	s.Notify(u8"已移動，還沒儲存；越上面的規則越優先");
+	return true;
+}
+
 void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard)
 {
 	// a whole filter on the clipboard is a mistake, not a rule to copy
@@ -765,6 +778,16 @@ bool DrawBlockList(EditorShell& s, float height)
 		if (PobUi::MenuRow(PobIcon::CopyPlus, u8"貼上為新的自訂規則", nullptr, !s.testMode))
 			EdImportAsCustom(s, ReadClipboardUtf8(s.hostHwnd), true);
 		PobUi::MenuSeparator();
+		// order inside the custom zone (NeverSink's own order is its tier design: not offered)
+		if (ok && s.rows[s.ctxBlock].custom) {
+			struct { const char* lbl; const char* key; int dir; } mv[4] = {
+				{ u8"上移", "Alt+Up", -1 }, { u8"下移", "Alt+Down", 1 },
+				{ u8"移到自訂區最上面", nullptr, -2 }, { u8"移到自訂區最下面", nullptr, 2 } };
+			for (const auto& m : mv)
+				if (PobUi::MenuRow(nullptr, m.lbl, m.key, CustomRuleMoveTarget(s.model, s.ctxBlock, m.dir) >= 0))
+					EdMoveRule(s, s.ctxBlock, m.dir);
+			PobUi::MenuSeparator();
+		}
 		// paste a copied look: onto the ticked rules in batch mode, else onto this one
 		const bool toTicked = s.batchMode && nSel > 0;
 		const std::string pasteLbl = toTicked ? u8"貼上外觀到已勾選的 " + std::to_string(nSel) + u8" 條"

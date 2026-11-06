@@ -237,6 +237,9 @@ void EdUndoRedo(EditorShell& s, bool redo);
 // 貼上外觀 (section_filteredit.cpp): onto blockIdx, or onto every ticked rule when
 // blockIdx < 0 (the ticks are kept). Notifies the result.
 void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text);
+// 上移 / 下移 / 移到自訂區最上面 / 最下面 (dir -1 / +1 / -2 / +2) for a custom
+// rule: select it afterwards and notify. False when that move is not allowed.
+bool EdMoveRule(EditorShell& s, int blockIdx, int dir);
 // 複製成新的自訂規則 / 貼上為新的自訂規則: import the rule text into the custom
 // zone at the top of the file and select it. Notifies the result.
 void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard);

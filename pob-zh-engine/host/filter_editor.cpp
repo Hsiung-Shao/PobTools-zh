@@ -105,6 +105,12 @@ public:
 			if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) req = io.KeyShift ? 1 : -1;
 			if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) req = 1;
 		}
+		// Alt+Up / Alt+Down: move the selected custom rule (same guards as Ctrl+Z)
+		if (io.KeyAlt && !io.KeyCtrl && !io.WantTextInput && !modal && !popup && !ImGui::IsAnyItemActive() &&
+		    shell_.loaded && shell_.section == Section::FilterEdit && !shell_.batchMode) {
+			if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) EdMoveRule(shell_, shell_.selectedBlock, -1);
+			if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) EdMoveRule(shell_, shell_.selectedBlock, 1);
+		}
 		if (io.KeyCtrl && !modal && shell_.loaded) {
 			if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
 				// a field being typed in writes its value when it is let go: let
@@ -216,7 +222,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -270,6 +276,16 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "move" && shell_.selectedBlock >= 0) {
+				// two rules copied into the custom zone, the second moved up, its menu open
+				const int src = shell_.selectedBlock;
+				const std::string a = FilterBlockText(shell_.model, shell_.model.blocks[src], false);
+				EdImportAsCustom(shell_, a, false);
+				// the second: the file's last rule (indices of the row caches are stale here)
+				EdImportAsCustom(shell_, FilterBlockText(shell_.model, shell_.model.blocks.back(), false), false);
+				EdMoveRule(shell_, shell_.selectedBlock, -1);
+				shell_.ctxOpenTest = true;
+			}
 			if (st == "copy-custom" && shell_.selectedBlock >= 0)   // 複製成新的自訂規則 on the selected rule
 				EdImportAsCustom(shell_, FilterBlockText(shell_.model, shell_.model.blocks[shell_.selectedBlock], false), false);
 			if (st == "undo") {

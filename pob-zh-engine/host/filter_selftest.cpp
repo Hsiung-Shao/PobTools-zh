@@ -1544,6 +1544,214 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		DeleteFileW((path + L".bak").c_str());
 	}
 
+	// ---- T33: move a custom rule up / down inside the zone ----------------------
+	{
+		// Zone with three rules; c2 ends with a #! disabled line; a blank line sits
+		// between c1 and c2, a blank line + a plain note between c2 and c3; one
+		// NeverSink-style rule outside the zone.
+		const std::string fx =
+			"# banner\n"
+			"#pobtools-custom-begin v=1\n"
+			"Show # c1\n\tClass \"Rings\"\n\tSetTextColor 1 1 1\n\tSetFontSize 40\n"
+			"\n"
+			"Show # c2\n\tBaseType \"Chaos Orb\"\n\tSetTextColor 2 2 2\n\tSetBorderColor 5 5 5\n\t#! SetFontSize 30\n"
+			"\n"
+			"# my note\n"
+			"Show # c3\n\tClass \"Amulets\"\n\tSetTextColor 3 3 3\n"
+			"#pobtools-custom-end\n"
+			"\n"
+			"Show # %D3 $type->currency\n\tClass \"Currency\"\n\tSetTextColor 255 0 0\n\tSetFontSize 45\n";
+		auto zoneIdx = [](const FilterFile& file) {
+			std::vector<int> v;
+			const CustomZone z = FindCustomZone(file);
+			for (size_t i = 0; i < file.blocks.size(); i++)
+				if (z.present() && file.blocks[i].headerLineIdx > z.beginLine && file.blocks[i].headerLineIdx < z.endLine) v.push_back((int)i);
+			return v;
+		};
+		auto zoneTexts = [&](const FilterFile& file) {
+			std::vector<std::string> v;
+			for (int bi : zoneIdx(file)) v.push_back(FilterBlockText(file, file.blocks[bi], false));
+			return v;
+		};
+		auto countKind = [](const FilterFile& file, FilterLineKind k) {
+			int c = 0;
+			for (const FilterLine& l : file.lines) c += l.kind == k;
+			return c;
+		};
+		auto countRaw = [](const FilterFile& file, const char* needle) {
+			int c = 0;
+			for (const FilterLine& l : file.lines) c += l.raw.find(needle) != std::string::npos;
+			return c;
+		};
+		auto headerOf = [](const FilterFile& file, const char* label) {
+			for (size_t i = 0; i < file.blocks.size(); i++)
+				if (file.blocks[i].headerComment.find(label) != std::string::npos) return (int)i;
+			return -1;
+		};
+
+		// fixture sanity
+		{
+			FilterFile f = ParseFilter(fx);
+			const std::vector<int> z = zoneIdx(f);
+			rep.check(f.blocks.size() == 4 && z.size() == 3 && z[2] == 2 && FindCustomZone(f).present(),
+			          "T33 fixture: three rules in the zone, one outside", "blocks=" + std::to_string(f.blocks.size()) + " zone=" + std::to_string(z.size()));
+		}
+
+		// T33a: first rule down one
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const std::vector<std::string> o = zoneTexts(f);
+			const std::vector<int> z = zoneIdx(f);
+			if (o.size() == 3 && z.size() == 3) {
+				doc.MoveBlockAfter(z[0], z[1]);
+				const std::vector<std::string> n = zoneTexts(f);
+				rep.check(n.size() == 3 && n[0] == o[1] && n[1] == o[0] && n[2] == o[2],
+				          "T33a first rule moved after the second: order c2, c1, c3, contents unchanged");
+			}
+		}
+
+		// T33b: last rule up one
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const std::vector<std::string> o = zoneTexts(f);
+			const std::vector<int> z = zoneIdx(f);
+			if (o.size() == 3 && z.size() == 3) {
+				doc.MoveBlockBefore(z[2], z[1]);
+				const std::vector<std::string> n = zoneTexts(f);
+				rep.check(n.size() == 3 && n[0] == o[0] && n[1] == o[2] && n[2] == o[1],
+				          "T33b last rule moved before the second: order c1, c3, c2, contents unchanged");
+			}
+		}
+
+		// T33c: the #! line travels with its rule
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const std::vector<int> z = zoneIdx(f);
+			if (z.size() == 3) {
+				doc.MoveBlockAfter(z[1], z[2]);
+				const int c2 = headerOf(f, "c2"), c3 = headerOf(f, "c3");
+				bool inC2 = false, inC3 = false;
+				if (c2 >= 0) for (int li : f.blocks[c2].lineIdx) inC2 |= f.lines[li].raw.find("#! SetFontSize 30") != std::string::npos;
+				if (c3 >= 0) for (int li : f.blocks[c3].lineIdx) inC3 |= f.lines[li].raw.find("#! SetFontSize 30") != std::string::npos;
+				rep.check(inC2 && !inC3 && countRaw(f, "#! SetFontSize 30") == 1,
+				          "T33c the #! line moves with its rule, none left behind", "inC2=" + std::to_string(inC2) + " inC3=" + std::to_string(inC3));
+				// the zone still reads c1, c3, c2
+				const std::vector<int> zn = zoneIdx(f);
+				rep.check(zn.size() == 3 && zn[0] == headerOf(f, "c1") && zn[1] == c3 && zn[2] == c2, "T33c order is c1, c3, c2");
+			}
+		}
+
+		// T33d: gaps, sentinels and the outside rule stay put
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const std::vector<int> z = zoneIdx(f);
+			if (z.size() == 3) {
+				const CustomZone z0 = FindCustomZone(f);
+				const int blanks = countKind(f, FilterLineKind::Blank);
+				const int notes = countRaw(f, "# my note");
+				const std::string beginRaw = f.lines[z0.beginLine].raw, endRaw = f.lines[z0.endLine].raw;
+				const std::string outside = FilterBlockText(f, f.blocks[3], false);
+				doc.MoveBlockAfter(z[0], z[2]);
+				const CustomZone z1 = FindCustomZone(f);
+				rep.check(countKind(f, FilterLineKind::Blank) == blanks && countRaw(f, "# my note") == notes && notes == 1,
+				          "T33d blank lines and the plain note are neither lost nor duplicated");
+				rep.check(z1.present() && z1.beginLine == z0.beginLine && z1.endLine == z0.endLine &&
+				              f.lines[z1.beginLine].raw == beginRaw && f.lines[z1.endLine].raw == endRaw,
+				          "T33d zone sentinels stay on the same lines, unchanged");
+				rep.check(f.blocks.size() == 4 && FilterBlockText(f, f.blocks[3], false) == outside && headerOf(f, "%D3") == 3,
+				          "T33d the rule outside the zone is unchanged and still last");
+			}
+		}
+
+		// T33e: the return value points at the moved rule
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const std::vector<std::string> o = zoneTexts(f);
+			const std::vector<int> z = zoneIdx(f);
+			if (o.size() == 3 && z.size() == 3) {
+				const int r = doc.MoveBlockAfter(z[0], z[1]);
+				rep.check(r >= 0 && r < (int)f.blocks.size() && FilterBlockText(f, f.blocks[r], false) == o[0],
+				          "T33e MoveBlockAfter returns the new index of the moved rule", "r=" + std::to_string(r));
+				const int r2 = doc.MoveBlockBefore(r, z[0]);
+				rep.check(r2 >= 0 && r2 < (int)f.blocks.size() && FilterBlockText(f, f.blocks[r2], false) == o[0],
+				          "T33e MoveBlockBefore returns the new index of the moved rule", "r2=" + std::to_string(r2));
+				const std::string snap = SerializeFilter(f);
+				rep.check(doc.MoveBlockAfter(r2, r2) == -1 && SerializeFilter(f) == snap, "T33e moving a rule onto itself returns -1 and changes nothing");
+			}
+		}
+
+		// T33f: one moved rule counts as one unsaved change
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			doc.CaptureBaseline();
+			const std::vector<int> z = zoneIdx(f);
+			rep.check(!f.dirty && doc.UnsavedBlockCount(true) == 0, "T33f fresh baseline: nothing unsaved");
+			if (z.size() == 3) {
+				doc.MoveBlockAfter(z[0], z[1]);
+				const int u = doc.UnsavedBlockCount(true);
+				rep.check(u == 1 && f.dirty, "T33f one move = one unsaved rule and the file is dirty", "unsaved=" + std::to_string(u));
+			}
+		}
+
+		// T33g: undo / redo of a move
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			const std::string before = SerializeFilter(f);
+			const std::vector<int> z = zoneIdx(f);
+			if (z.size() == 3) {
+				doc.MoveBlockAfter(z[0], z[1]);
+				const std::string after = SerializeFilter(f);
+				rep.check(after != before && h.Capture(f.lines), "T33g a move changes the file and is captured as a step");
+				h.Undo(f.lines);
+				doc.RebuildBlocks();
+				rep.check(SerializeFilter(f) == before, "T33g undo puts the rule back");
+				h.Redo(f.lines);
+				doc.RebuildBlocks();
+				rep.check(SerializeFilter(f) == after, "T33g redo moves it again");
+			}
+		}
+
+		// T33h: which rule a move goes past
+		{
+			FilterFile f = ParseFilter(fx);
+			const std::vector<int> z = zoneIdx(f);
+			if (z.size() == 3 && f.blocks.size() == 4) {
+				const int out = 3;
+				rep.check(CustomRuleMoveTarget(f, out, -1) == -1 && CustomRuleMoveTarget(f, out, 1) == -1 &&
+				              CustomRuleMoveTarget(f, out, -2) == -1 && CustomRuleMoveTarget(f, out, 2) == -1,
+				          "T33h a rule outside the zone cannot move in any direction");
+				rep.check(CustomRuleMoveTarget(f, z[0], -1) == -1 && CustomRuleMoveTarget(f, z[0], -2) == -1,
+				          "T33h the first custom rule cannot go up or to the top");
+				rep.check(CustomRuleMoveTarget(f, z[2], 1) == -1 && CustomRuleMoveTarget(f, z[2], 2) == -1,
+				          "T33h the last custom rule cannot go down or to the bottom");
+				rep.check(CustomRuleMoveTarget(f, z[1], -1) == z[0] && CustomRuleMoveTarget(f, z[1], 1) == z[2],
+				          "T33h the middle rule goes past its neighbours");
+				rep.check(CustomRuleMoveTarget(f, z[1], -2) == z[0] && CustomRuleMoveTarget(f, z[1], 2) == z[2],
+				          "T33h the middle rule to top / bottom goes past the first / last");
+				rep.check(CustomRuleMoveTarget(f, z[0], 2) == z[2] && CustomRuleMoveTarget(f, z[0], 1) == z[1],
+				          "T33h the first rule down goes past the second, to the bottom past the last");
+				rep.check(CustomRuleMoveTarget(f, z[2], -2) == z[0] && CustomRuleMoveTarget(f, z[2], -1) == z[1],
+				          "T33h the last rule up goes past the second, to the top past the first");
+			}
+		}
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;

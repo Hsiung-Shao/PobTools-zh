@@ -427,3 +427,43 @@ int FilterDocumentEditor::UnsavedBlockCount(bool settle)
 	}
 	return n;
 }
+
+// The blocks from the moved one to the target are cut into their own lines
+// ("chunks") and the lines between them ("gaps"). The moved chunk changes place
+// among the chunks; the gaps are put back between them in their old order, so
+// blank lines and banner comments stay where they were.
+int FilterDocumentEditor::MoveBlock(int blockIdx, int targetBlockIdx, bool after)
+{
+	if (!f_) return -1;
+	const int nb = (int)f_->blocks.size();
+	if (blockIdx < 0 || blockIdx >= nb || targetBlockIdx < 0 || targetBlockIdx >= nb || blockIdx == targetBlockIdx) return -1;
+	const int lo = (std::min)(blockIdx, targetBlockIdx), hi = (std::max)(blockIdx, targetBlockIdx);
+	std::vector<std::vector<FilterLine>> chunks, gaps;
+	for (int k = lo; k <= hi; k++) {
+		const int h = f_->blocks[k].headerLineIdx, e = BodyEnd(k);
+		chunks.emplace_back(f_->lines.begin() + h, f_->lines.begin() + e + 1);
+		if (k < hi) gaps.emplace_back(f_->lines.begin() + e + 1, f_->lines.begin() + f_->blocks[k + 1].headerLineIdx);
+	}
+	std::vector<int> order;
+	for (int k = 0; k <= hi - lo; k++)
+		if (k != blockIdx - lo) order.push_back(k);
+	const int tpos = (int)(std::find(order.begin(), order.end(), targetBlockIdx - lo) - order.begin());
+	const int newPos = after ? tpos + 1 : tpos;
+	order.insert(order.begin() + newPos, blockIdx - lo);
+	if (newPos == blockIdx - lo) return -1;   // already there (after the rule just above it)
+
+	std::vector<FilterLine> seq;
+	for (size_t i = 0; i < order.size(); i++) {
+		seq.insert(seq.end(), chunks[order[i]].begin(), chunks[order[i]].end());
+		if (i < gaps.size()) seq.insert(seq.end(), gaps[i].begin(), gaps[i].end());
+	}
+	const int start = f_->blocks[lo].headerLineIdx, end = BodyEnd(hi);
+	f_->lines.erase(f_->lines.begin() + start, f_->lines.begin() + end + 1);
+	f_->lines.insert(f_->lines.begin() + start, seq.begin(), seq.end());
+	f_->dirty = true;
+	RebuildBlocks();
+	return lo + newPos;
+}
+
+int FilterDocumentEditor::MoveBlockBefore(int blockIdx, int targetBlockIdx) { return MoveBlock(blockIdx, targetBlockIdx, false); }
+int FilterDocumentEditor::MoveBlockAfter(int blockIdx, int targetBlockIdx) { return MoveBlock(blockIdx, targetBlockIdx, true); }
