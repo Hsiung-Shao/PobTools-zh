@@ -224,7 +224,23 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
-			if (st == "rules-ctx") shell_.ctxOpenTest = true;
+			if (st == "rules-ctx") {
+				shell_.ctxOpenTest = true;
+				// POBTOOLS_FILTER_CTX_DUMP=<file>: what the two menu rows would copy, for a demo
+				const std::wstring dump = EnvW(L"POBTOOLS_FILTER_CTX_DUMP");
+				const int bi = shell_.selectedBlock;
+				if (!dump.empty() && bi >= 0 && bi < (int)shell_.model.blocks.size()) {
+					FILE* fp = nullptr;
+					if (_wfopen_s(&fp, dump.c_str(), L"wb") == 0 && fp) {
+						const std::string all = FilterBlockText(shell_.model, shell_.model.blocks[bi], false);
+						const std::string look = FilterBlockText(shell_.model, shell_.model.blocks[bi], true);
+						const std::string sep = std::string(1, (char)13) + std::string(1, (char)10);
+						const std::string out = "[all]" + sep + all + sep + sep + "[look]" + sep + look + sep;
+						fwrite(out.data(), 1, out.size(), fp);
+						fclose(fp);
+					}
+				}
+			}
 			if (st == "batch") {
 				int n = 0;
 				for (int bi : shell_.visRows) {
