@@ -1520,7 +1520,8 @@ private:
 				ImGui::SetCursorScreenPos(ImVec2(x0 + inner - cw - Dp(8.0f) - xw, y));
 				if (PobUi::Button(xl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Md, PobIcon::X, 0.0f, !combineOrderIdx(true).empty()))
 					clearAllPicks();
-				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"清除這個遊戲所有清單的勾選（數值條件的數值保留）");
+				if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					PobUi::Tooltip(u8"取消這個遊戲所有清單（含數值條件）的勾選；自訂文字與排除詞保留");
 			}
 			ImGui::SetCursorScreenPos(ImVec2(x0 + inner - cw, y));
 			if (PobUi::Button(cl, PobUi::BtnKind::Primary, PobUi::BtnSize::Md, copied_ ? PobIcon::Check : PobIcon::Copy, Dp(88.0f),
@@ -3790,7 +3791,7 @@ private:
 		for (PageState& ps : pages_) ps.dirty = true;
 		combinedDirty_ = true;
 		copied_ = false;
-		notice_ = u8"已清除這個遊戲所有清單的勾選（數值條件的數值保留）。";
+		say(u8"已清除這個遊戲所有清單的勾選（數值條件的數值保留）。");
 	}
 
 	// store.ts addCustom / removeCustom: trimmed, no duplicates.

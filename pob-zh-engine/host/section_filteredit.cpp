@@ -616,7 +616,9 @@ bool DrawBlockList(EditorShell& s, float height)
 				else { s.selectedBlock = bi; s.selAnchor = s.doc.CaptureAnchor(bi); }
 			}
 			if (hov && !sel) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-			if (hov && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ctxOpen = bi;
+			// right-click also works while the menu is open on another row (one click, not two)
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+				ctxOpen = bi;
 
 			// swatch (background + border colour) at the right
 			const EdLabelStyle st = EdBlockStyle(s, bi);
@@ -665,10 +667,12 @@ bool DrawBlockList(EditorShell& s, float height)
 	if (s.ctxOpenTest) {
 		s.ctxOpenTest = false;
 		ctxOpen = s.selectedBlock;
-		ImGui::SetNextWindowPos(ImGui::GetWindowPos() + ImVec2(PobUi::D(120.0f), PobUi::D(80.0f)));
+		if (ctxOpen >= 0) ImGui::SetNextWindowPos(ImGui::GetWindowPos() + ImVec2(PobUi::D(120.0f), PobUi::D(80.0f)));
 	}
 	if (ctxOpen >= 0) {
 		s.ctxBlock = ctxOpen;
+		// the menu is for this row: select it so the user sees which one
+		if (!s.batchMode) { s.selectedBlock = ctxOpen; s.selAnchor = s.doc.CaptureAnchor(ctxOpen); }
 		ImGui::OpenPopup("##blockctx");
 	}
 	if (PobUi::BeginMenuPopup("##blockctx")) {
