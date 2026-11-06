@@ -86,3 +86,9 @@ private:
 // "%H2 $type->leveling->flasks->life $tier->t2" -> "%H2 【練等·藥劑·生命】T2"。
 // 未知節段保留英文；非 NeverSink 標題原樣返回。
 std::string NeverSinkHeaderZh(const std::string& header);
+
+// A NeverSink tier code ("t2", "any", "t1exalted", "armors1q1") as far as it can
+// be read without guessing: the whole code when it is a known word (T2, 任意),
+// just the "t<n>" lead of "t1exalted" (T1, *whole = false), else "" (author's
+// own abbreviation). *whole: the code was translated completely.
+std::string NeverSinkTierZhKnown(const std::string& code, bool* whole);

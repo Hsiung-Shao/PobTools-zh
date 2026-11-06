@@ -1767,6 +1767,145 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(nb == 0 && out == want, "T33i a note right above a rule moves with it; blank, banner and sentinels stay", out);
 	}
 
+	// ---- T34: a rule's name in the left list (EdRuleLabel) ----------------------
+	{
+		FilterI18n i18n;
+		i18n.Load(exeDir, "zh-rTW");
+		rep.check(i18n.loaded(), "T34 i18n loaded (run from dist\\ so Data\\ exists)");
+		auto has = [](const std::string& hay, const std::string& needle) { return hay.find(needle) != std::string::npos; };
+		// CardConditionZh of the nth condition line with this keyword in a block.
+		auto condZh = [&](const FilterFile& file, int bi, const char* kw, int nth = 0) {
+			for (int li : file.blocks[bi].lineIdx) {
+				const FilterLine& l = file.lines[li];
+				if (l.kind != FilterLineKind::Condition || l.keyword != kw) continue;
+				if (nth-- == 0) return CardConditionZh(l, i18n);
+			}
+			return std::string();
+		};
+		auto labelOf = [&](const FilterFile& file, int bi, std::string* code) {
+			return EdRuleLabel(file, file.blocks[bi], i18n, code);
+		};
+
+		// T34a: a known tier is shown as T2 and the code is not reported
+		{
+			const FilterFile f = ParseFilter(
+				"Show # $type->currency $tier->t2\n\tItemLevel >= 70\n\tBaseType == \"Chaos Orb\" \"Divine Orb\"\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code = "x";
+				const std::string n = labelOf(f, 0, &code);
+				rep.check(has(n, "T2") && !has(n, "t2") && code.empty(), "T34a known tier t2 -> T2, no tier code reported", n + " code=" + code);
+				const std::string z = condZh(f, 0, "ItemLevel");
+				rep.check(!z.empty() && !has(n, z), "T34a with a known tier no key condition is added", n);
+				const std::string first = i18n.DisplayName("Chaos Orb");
+				rep.check(has(n, first) && has(n, "等 2 種"), "T34a first item name plus the count of the others", n);
+				rep.check(has(n, "【") && has(n, "】"), "T34a the name starts with a 【category】", n);
+			} else {
+				rep.check(false, "T34a fixture parses into one rule");
+			}
+		}
+
+		// T34b: t1exalted -> T1 only, the raw code is reported
+		{
+			const FilterFile f = ParseFilter(
+				"Show # $type->currency $tier->t1exalted\n\tBaseType == \"Chaos Orb\" \"Divine Orb\" \"Exalted Orb\" \"Orb of Alchemy\" \"Orb of Fusing\"\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code;
+				const std::string n = labelOf(f, 0, &code);
+				rep.check(has(n, "T1") && !has(n, "exalted") && code == "t1exalted", "T34b t1exalted -> only T1, code goes to tierCodeOut", n + " code=" + code);
+				rep.check(has(n, "等 5 種"), "T34b item count shows the number of base types", n);
+			} else {
+				rep.check(false, "T34b fixture parses into one rule");
+			}
+		}
+
+		// T34c: unknown tier -> key conditions (skipping False flags / BaseType / Class) + items
+		{
+			const FilterFile f = ParseFilter(
+				"Show # %D9 $type->crafting->qualityperfection $tier->armors1q1\n\tMirrored False\n\tCorrupted False\n\tQuality >= 28\n"
+				"\tClass == \"Gloves\" \"Boots\"\n\tBaseType == \"Sorcerer Gloves\" \"Sorcerer Boots\" \"Gripped Gloves\"\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code;
+				const std::string n = labelOf(f, 0, &code);
+				const std::string q = condZh(f, 0, "Quality"), m = condZh(f, 0, "Mirrored"), c = condZh(f, 0, "Corrupted");
+				rep.check(!has(n, "armors1q1") && code == "armors1q1", "T34c unknown tier code is left out of the name and reported", n + " code=" + code);
+				rep.check(!q.empty() && has(n, q), "T34c the Quality condition is the key condition", n + " | want " + q);
+				rep.check(!m.empty() && !c.empty() && !has(n, m) && !has(n, c), "T34c False flags (Mirrored / Corrupted) are skipped", n);
+				rep.check(has(n, i18n.DisplayName("Sorcerer Gloves")) && has(n, "等 3 種"), "T34c first base type plus 等 3 種", n);
+			} else {
+				rep.check(false, "T34c fixture parses into one rule");
+			}
+		}
+
+		// T34d: unknown tier, Class only -> ItemLevel condition + the class in Chinese
+		{
+			const FilterFile f = ParseFilter(
+				"Show # $type->gems $tier->someunknown\n\tClass == \"Rings\"\n\tItemLevel >= 86\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code;
+				const std::string n = labelOf(f, 0, &code);
+				const std::string il = condZh(f, 0, "ItemLevel");
+				const std::string ringsZh = i18n.ClassNameZh("Rings");
+				rep.check(!il.empty() && has(n, il) && !has(n, "someunknown") && code == "someunknown",
+				          "T34d ItemLevel is the key condition, unknown code left out", n + " code=" + code);
+				rep.check(!has(n, "Rings") && (ringsZh == "Rings" || has(n, ringsZh)), "T34d the class shows in Chinese, not as the English word", n);
+			} else {
+				rep.check(false, "T34d fixture parses into one rule");
+			}
+		}
+
+		// T34e: at most two key conditions, in file order
+		{
+			const FilterFile f = ParseFilter(
+				"Show # $type->x $tier->zzz\n\tItemLevel >= 80\n\tQuality >= 10\n\tSockets >= 3\n\tLinkedSockets >= 4\n\tAreaLevel >= 68\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code;
+				const std::string n = labelOf(f, 0, &code);
+				const std::string c1 = condZh(f, 0, "ItemLevel"), c2 = condZh(f, 0, "Quality"), c3 = condZh(f, 0, "Sockets"),
+				                  c4 = condZh(f, 0, "LinkedSockets"), c5 = condZh(f, 0, "AreaLevel");
+				rep.check(!c1.empty() && !c2.empty() && has(n, c1) && has(n, c2), "T34e the first two conditions are in the name", n);
+				rep.check(!c3.empty() && !c4.empty() && !c5.empty() && !has(n, c3) && !has(n, c4) && !has(n, c5),
+				          "T34e conditions 3 to 5 are left out", n);
+			} else {
+				rep.check(false, "T34e fixture parses into one rule");
+			}
+		}
+
+		// T34f: not a NeverSink rule -> the rules above do not apply
+		{
+			const FilterFile f = ParseFilter("Show # my rule\n\tBaseType == \"Chaos Orb\"\n\tSetFontSize 40\n");
+			if (f.blocks.size() == 1) {
+				std::string code = "x";
+				const std::string n = labelOf(f, 0, &code);
+				rep.check(has(n, "my rule") && !has(n, "【"), "T34f a header without $type-> keeps its own text, no 【】", n);
+			} else {
+				rep.check(false, "T34f fixture parses into one rule");
+			}
+		}
+
+		// T34g: every rule of the real NeverSink file
+		{
+			bool ok = false;
+			FilterFile f = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
+			if (!ok) {
+				rep.note("T34g skipped: Filters\\default.filter not readable");
+			} else {
+				int withCode = 0, bad = 0, empty = 0;
+				std::string firstBad;
+				for (size_t i = 0; i < f.blocks.size(); i++) {
+					std::string code;
+					const std::string n = labelOf(f, (int)i, &code);
+					empty += n.empty();
+					if (code.empty()) continue;
+					withCode++;
+					if (has(n, code)) { bad++; if (firstBad.empty()) firstBad = code + " in " + n; }
+				}
+				rep.note("T34g rules with a left-out tier code: " + std::to_string(withCode) + " of " + std::to_string(f.blocks.size()));
+				rep.check(!f.blocks.empty() && bad == 0 && empty == 0, "T34g no name contains its own left-out tier code, none is empty",
+				          "bad=" + std::to_string(bad) + " empty=" + std::to_string(empty) + " " + firstBad);
+			}
+		}
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;

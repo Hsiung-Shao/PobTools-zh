@@ -38,6 +38,7 @@ enum class Section {
 struct BlockListRow {
 	std::string label;      // display text (NeverSink marker or summary)
 	std::string haystack;   // lower-cased label + English + Chinese summary, for search
+	std::string tierCode;   // NeverSink tier code left out of the label ("armors1q1"), for the tooltip
 	int group = 0;          // index into EditorShell::groupNames
 	bool custom = false;    // inside the PobTools custom zone
 	bool hide = false;      // refreshed every frame (EdRefreshRowStates)
@@ -231,6 +232,11 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 規則 page.
 void EdRebuildRows(EditorShell& s);
+// A rule's name in the list (section_filteredit.cpp): 【類別】 + the NeverSink tier
+// when it is a known one (T1, 任意…), else up to two key conditions in Chinese,
+// then the first item (or the class). *tierCodeOut: the raw tier code when it
+// was left out of the name ("armors1q1"), "" otherwise.
+std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI18n& i18n, std::string* tierCodeOut);
 // 復原 / 重做 one step (editor_shell.cpp): rebuild, settle the unsaved count,
 // select the rule the step touched, notify.
 void EdUndoRedo(EditorShell& s, bool redo);

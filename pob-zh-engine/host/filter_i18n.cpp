@@ -337,6 +337,24 @@ static std::string ns_tier_seg_zh(const std::string& seg)
 	return seg;
 }
 
+std::string NeverSinkTierZhKnown(const std::string& code, bool* whole)
+{
+	if (whole) *whole = false;
+	if (code.empty() || code.find("->") != std::string::npos) return std::string();
+	const std::string zh = ns_tier_seg_zh(code);
+	if (zh != code) {   // a known word or a plain "t<n>"
+		if (whole) *whole = true;
+		return zh;
+	}
+	// "t1exalted": the tier number is plain, the rest is the author's own word
+	size_t i = 1;
+	if (code.size() > 2 && code[0] == 't' && code[1] >= '0' && code[1] <= '9') {
+		while (i < code.size() && code[i] >= '0' && code[i] <= '9') i++;
+		if (i < code.size()) return "T" + code.substr(1, i - 1);
+	}
+	return std::string();
+}
+
 // "a->b->c" -> 各節段翻譯後以「·」相接;未知節段原樣保留。
 static std::string ns_join_path(const std::string& path, bool tierPath)
 {

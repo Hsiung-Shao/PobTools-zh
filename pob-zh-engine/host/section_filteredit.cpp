@@ -123,22 +123,10 @@ void RebuildRows(EditorShell& s)
 		BlockListRow& r = s.rows[i];
 		std::string rawLabel = ExtractBlockLabel(f, b);
 		r.custom = z.present() && b.headerLineIdx > z.beginLine && b.headerLineIdx < z.endLine;
-		std::string zh = NeverSinkHeaderZh(rawLabel);
-		const bool ns = rawLabel.find("$type->") != std::string::npos;
-		r.label = ns ? StripStyleMarkers(zh) : zh;
+		// NeverSink: 【類別】 + known tier / key conditions + first item (EdRuleLabel)
+		r.label = EdRuleLabel(f, b, s.i18n, &r.tierCode);
 		// A custom rule still carrying the placeholder name reads as what it matches.
 		if (r.custom && b.headerComment == "PobTools custom rule") r.label = CardBlockSummaryZh(f, b, s.i18n);
-		// A NeverSink label says which tier, not which item: name the first base.
-		if (ns) {
-			for (int li : b.lineIdx) {
-				const FilterLine& ln = f.lines[li];
-				if (ln.kind != FilterLineKind::Condition || ln.keyword != "BaseType" || ln.values.empty()) continue;
-				r.label += ' ';
-				r.label += s.i18n.DisplayName(ln.values[0].text);
-				if (ln.values.size() > 1) r.label += u8" 等 " + std::to_string(ln.values.size()) + u8" 種";
-				break;
-			}
-		}
 		if (r.custom) {
 			r.group = 0;
 		} else {
@@ -441,6 +429,63 @@ void EdRebuildVisRows(EditorShell& s)
 // page first.
 void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
+std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI18n& i18n, std::string* tierCodeOut)
+{
+	if (tierCodeOut) tierCodeOut->clear();
+	const std::string raw = ExtractBlockLabel(f, b);
+	if (raw.find("$type->") == std::string::npos) return NeverSinkHeaderZh(raw);
+
+	// 【類別】 from the header without its $tier-> token
+	std::string tierCode, rest;
+	{
+		size_t p = 0;
+		while (p < raw.size()) {
+			const size_t sp = raw.find_first_not_of(" 	", p);
+			if (sp == std::string::npos) break;
+			size_t e = raw.find_first_of(" 	", sp);
+			if (e == std::string::npos) e = raw.size();
+			const std::string tok = raw.substr(sp, e - sp);
+			if (tok.rfind("$tier->", 0) == 0) tierCode = tok.substr(7);
+			else rest += (rest.empty() ? "" : " ") + tok;
+			p = e;
+		}
+	}
+	std::string label = StripStyleMarkers(NeverSinkHeaderZh(rest));
+	bool whole = false;
+	const std::string tierZh = NeverSinkTierZhKnown(tierCode, &whole);
+	label += tierZh;   // 「【…】T2」: the tier sits right after the category
+	if (!whole && !tierCode.empty() && tierCodeOut) *tierCodeOut = tierCode;
+
+	// up to two key conditions, only when the tier did not say it all
+	std::vector<std::string> conds;
+	const FilterLine* baseType = nullptr;
+	const FilterLine* cls = nullptr;
+	for (int li : b.lineIdx) {
+		const FilterLine& ln = f.lines[li];
+		if (ln.kind != FilterLineKind::Condition) continue;
+		if (ln.keyword == "BaseType") { if (!baseType) baseType = &ln; continue; }
+		if (ln.keyword == "Class") { if (!cls) cls = &ln; continue; }
+		if (whole || conds.size() >= 2) continue;
+		if (ln.values.size() == 1 && ln.values[0].text == "False") continue;   // an exclusion, not what the rule is
+		if (ln.keyword == "StackSize" && ln.op == ">=" && ln.values.size() == 1 && ln.values[0].text == "1") continue;
+		const std::string zh = CardConditionZh(ln, i18n);
+		if (!zh.empty()) conds.push_back(zh);
+	}
+	std::string item;
+	if (baseType && !baseType->values.empty()) {
+		item = i18n.DisplayName(baseType->values[0].text);
+		if (baseType->values.size() > 1) item += u8" 等 " + std::to_string(baseType->values.size()) + u8" 種";
+	} else if (cls && !cls->values.empty()) {
+		item = i18n.ClassNameZh(cls->values[0].text);
+		if (cls->values.size() > 1) item += u8" 等 " + std::to_string(cls->values.size()) + u8" 類";
+	}
+	std::string tail;
+	for (const std::string& c : conds) tail += (tail.empty() ? "" : u8" · ") + c;
+	if (!item.empty()) tail += (tail.empty() ? "" : u8" · ") + item;
+	if (!tail.empty()) label += " " + tail;
+	return label;
+}
+
 bool EdMoveRule(EditorShell& s, int blockIdx, int dir)
 {
 	const int target = CustomRuleMoveTarget(s.model, blockIdx, dir);
@@ -735,7 +780,9 @@ bool DrawBlockList(EditorShell& s, float height)
 			}
 			if (hid)
 				dl->AddText(sf, sf->FontSize, ImVec2(mx, p.y + std::floor((rowH - sf->FontSize) * 0.5f)), Tok::TextFaint, hid);
-			if (hov && ls.x > labelMax) PobUi::Tooltip(row.label.c_str());
+			if (hov && (ls.x > labelMax || !row.tierCode.empty()))
+				PobUi::Tooltip(row.tierCode.empty() ? row.label.c_str()
+				                                    : (row.label + std::string(1, (char)10) + u8"NeverSink 代號：" + row.tierCode).c_str());
 
 			ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + rowH));
 			ImGui::Dummy(ImVec2(0, 0));
@@ -860,6 +907,7 @@ bool DrawMiddle(EditorShell& s, bool* wantDelete, bool* wantUndo)
 			where += u8" · 有 " + std::to_string((std::max)(1, nChanged)) + u8" 處修改";
 		}
 		where += u8" · 第 " + std::to_string(bi + 1) + u8" 條";
+		if (!row.tierCode.empty()) where += u8" · 代號 " + row.tierCode;
 		dl->AddText(sf, sf->FontSize, ImVec2(p.x, ty + hpx + PobUi::D(2.0f)), Tok::TextMuted, where.c_str(), nullptr, 0.0f, &clip);
 		if (ImGui::IsMouseHoveringRect(ImVec2(clip.x, clip.y), ImVec2(clip.z, clip.w)))
 			PobUi::Tooltip(row.label.c_str());
