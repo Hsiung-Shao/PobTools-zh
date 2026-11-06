@@ -240,10 +240,18 @@ private:
 		json r;
 		child_->Call("set_translate", json{{"enabled", true}}, r, 10000);
 		// Stop POB caching timeless-jewel tables through the Data junction into
-		// the user's folder (mcp_tools.lua M.mcp_setup).
+		// the user's folder (mcp_tools.lua M.mcp_setup). It reaches into POB's
+		// private locals, so a POB refactor can break it: refuse to run then,
+		// like a failed bridge gate, rather than silently writing into the
+		// user's install. mcp_tools.lua ships in the data pack, so the fix can.
 		json setup;
-		if (!child_->Call("mcp_setup", json::object(), setup, 10000) || !setup.value("jewelCacheOff", false))
-			PobLog::Error("mcp", "could not turn off POB's timeless jewel cache; it may write .bin files into the POB folder");
+		if (!child_->Call("mcp_setup", json::object(), setup, 10000) || !setup.value("jewelCacheOff", false)) {
+			err = "This Path of Building version is not supported by the installed PobTools data pack yet "
+			      "(timeless jewel loader changed); update PobTools.";
+			PobLog::Error("mcp", err);
+			child_->Stop(1000);
+			return false;
+		}
 		return true;
 	}
 
