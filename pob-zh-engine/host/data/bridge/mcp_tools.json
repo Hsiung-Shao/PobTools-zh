@@ -10,6 +10,14 @@
       }
     },
     {
+      "name": "report_problem",
+      "description": "When a tool error says it was written to PobTools\\logs (a PobTools bug or a broken install, not a wrong argument): build a bug report for the user with versions and the recent MCP errors, with their Windows user folder replaced by %USERPROFILE%. Show it to the user to review and paste into a GitHub issue; never post it yourself. Works even when Path of Building does not start.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "load_build",
       "description": "Load a build into the sandbox from a Path of Building share code, a build URL (pobb.in, poe.ninja, pastebin...), or a file name returned by list_my_builds. Replaces the current build. Returns a summary.",
       "inputSchema": {

@@ -42,7 +42,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[28] = {
+const char* const kTitles[33] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -71,6 +71,11 @@ const char* const kTitles[28] = {
 	"結束只刪自己的沙盒、不碰 POB",
 	"載入含永恆珠寶的建置後使用者珠寶資料不變",
 	"--pob 用正斜線路徑時照常可用",
+	"工具內部錯誤寫進記錄檔",
+	"參數錯誤不寫記錄檔",
+	"背景 POB 掛掉重開會記錄",
+	"找不到 POB 時記錄並提示",
+	"report_problem 產生可貼的摘要",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -2054,6 +2059,262 @@ void TestM27(const Ctx& c)
 	Record(27, bad.empty(), bad.empty() ? d + ", 結束後 pid 資料夾已清掉" : JoinFirst(bad, 6) + " (" + d + ")");
 }
 
+// ---------------------------------------------------------------- M28-M32:錯誤記錄檔與 report_problem
+
+// 當天(本機時間)的錯誤記錄檔 <exeDir>PobTools\logs\error-YYYY-MM-DD.log
+std::wstring ErrorLogPath(const std::wstring& exeDir)
+{
+	SYSTEMTIME st{};
+	GetLocalTime(&st);
+	wchar_t name[48];
+	swprintf(name, 48, L"error-%04d-%02d-%02d.log", (int)st.wYear, (int)st.wMonth, (int)st.wDay);
+	return exeDir + L"PobTools\\logs\\" + name;
+}
+
+// 記錄檔的非空行(檔案不存在就是空)。
+std::vector<std::string> ReadLogLines(const std::wstring& path)
+{
+	std::vector<std::string> out;
+	const std::string data = ReadFileA(path);
+	size_t pos = 0;
+	while (pos < data.size()) {
+		size_t nl = data.find('\n', pos);
+		std::string ln = data.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+		pos = nl == std::string::npos ? data.size() : nl + 1;
+		if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+		if (!ln.empty()) out.push_back(ln);
+	}
+	return out;
+}
+
+// 等記錄檔在 before 行之後出現符合條件的新行(最多 ms 毫秒)。
+bool WaitNewLine(const std::wstring& path, size_t before, const std::function<bool(const std::string&)>& pred, unsigned ms, std::string& found)
+{
+	for (unsigned t = 0;; t += 200) {
+		const auto ls = ReadLogLines(path);
+		for (size_t i = before; i < ls.size(); i++) {
+			if (pred(ls[i])) { found = ls[i]; return true; }
+		}
+		if (t >= ms) return false;
+		Sleep(200);
+	}
+}
+
+bool ContainsI(const std::string& hay, const std::string& needle)
+{
+	if (needle.empty()) return false;
+	return Lower(hay).find(Lower(needle)) != std::string::npos;
+}
+
+// 工具錯誤的文字:優先 structuredContent.error,否則 content[0].text。
+std::string ToolErrorText(const ToolRes& r)
+{
+	std::string s = ErrText(r.sc);
+	if (s.empty() && r.result.is_object() && r.result.contains("content") && r.result["content"].is_array() &&
+	    !r.result["content"].empty() && r.result["content"][0].is_object() && r.result["content"][0].contains("text") &&
+	    r.result["content"][0]["text"].is_string())
+		s = r.result["content"][0]["text"].get<std::string>();
+	if (s.empty()) s = r.Why();
+	return s;
+}
+
+// 「程式或環境錯誤」的回應要同時指出記錄檔位置(PobTools\logs)與 report_problem。
+bool HasLogHint(const std::string& t)
+{
+	const bool loc = t.find("PobTools\\logs") != std::string::npos || t.find("PobTools\\\\logs") != std::string::npos ||
+	                 t.find("PobTools/logs") != std::string::npos;
+	return loc && t.find("report_problem") != std::string::npos;
+}
+
+// 起一個 --mcp 行程(debug=true 時帶 POB_ZH_MCP_DEBUG=1,做法同 M10)並握手。
+bool StartMcpEx(McpProc& p, const std::wstring& exeDir, const std::wstring& pob, bool debug, std::string& err)
+{
+	if (debug) SetEnvironmentVariableW(L"POB_ZH_MCP_DEBUG", L"1");
+	const bool ok = p.Start(exeDir, pob, err);
+	SetEnvironmentVariableW(L"POB_ZH_MCP_DEBUG", nullptr);
+	if (!ok) return false;
+	return Handshake(p, err);
+}
+
+void KeepLines(McpProc& p)
+{
+	const auto ls = p.AllStdoutLines();
+	g_debugLines.insert(g_debugLines.end(), ls.begin(), ls.end());
+}
+
+bool IsMcpLine(const std::string& l) { return l.find("[mcp]") != std::string::npos; }
+
+// M28 工具內部錯誤寫進記錄檔
+void TestM28(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, true, err)) { bad.push_back("DEBUG 行程啟動失敗: " + err); break; }
+		p.Call("new_build", {{"class", "Witch"}}, kSlowMs); // 先讓背景引擎起來,結果不計
+		const size_t before = ReadLogLines(log).size();
+		ToolRes r = p.Call("debug_lua_error", json::object(), kSlowMs);
+		if (!r.transportOk || r.rpcError) { bad.push_back("debug_lua_error 沒有正常回應: " + Cut(r.Why(), 120)); break; }
+		if (!r.isError) bad.push_back("debug_lua_error 的 isError 不是 true");
+		const std::string txt = ToolErrorText(r);
+		if (!HasLogHint(txt)) bad.push_back("錯誤文字缺記錄檔位置或 report_problem: " + Cut(txt, 160));
+		std::string found;
+		if (!WaitNewLine(log, before, [](const std::string& l) { return IsMcpLine(l) && l.find("debug_lua_error") != std::string::npos; }, 3000, found))
+			bad.push_back("記錄檔沒有多出含 [mcp] 與 debug_lua_error 的行(原 " + std::to_string(before) + " 行,現 " + std::to_string(ReadLogLines(log).size()) + " 行)");
+		else
+			d = "記錄檔新增: " + Cut(found, 120);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(28, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// M29 參數錯誤不寫記錄檔
+void TestM29(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		p.Call("new_build", {{"class", "Witch"}}, kSlowMs); // 暖機,結果不計
+		const size_t before = ReadLogLines(log).size();
+		ToolRes a = p.Call("set_config", {{"key", "noSuchConfigKeyXYZ"}, {"value", true}}, kSlowMs);
+		if (!(a.transportOk && !a.rpcError && a.isError)) bad.push_back("set_config 亂填 key 沒有 isError=true: " + Cut(a.Why(), 100));
+		ToolRes b = p.Call("set_skill_group", {{"gems", json::array({json{{"name", "NoSuchGemXYZ"}}})}}, kSlowMs);
+		if (!(b.transportOk && !b.rpcError && b.isError)) bad.push_back("set_skill_group 亂填寶石沒有 isError=true: " + Cut(b.Why(), 100));
+		Sleep(1000); // 給寫檔一點時間,再確認行數沒變
+		const size_t after = ReadLogLines(log).size();
+		if (after != before) bad.push_back("記錄檔行數 " + std::to_string(before) + "->" + std::to_string(after) + "(參數錯誤不該寫記錄檔)");
+		d = "兩個參數錯誤都 isError,記錄檔 " + std::to_string(after) + " 行不變";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(29, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// M30 背景 POB 掛掉重開會記錄
+void TestM30(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, true, err)) { bad.push_back("DEBUG 行程啟動失敗: " + err); break; }
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 100)); break; }
+		const size_t before = ReadLogLines(log).size();
+		ToolRes kill = p.Call("debug_kill_engine", json::object(), kSlowMs);
+		if (!kill.transportOk || kill.rpcError) { bad.push_back("debug_kill_engine 沒有回應: " + kill.Why()); break; }
+		ToolRes after = p.Call("build_summary", json::object(), kSlowMs);
+		if (!after.transportOk) { bad.push_back("kill 之後 build_summary: " + after.transportErr); break; }
+		d = std::string("kill 後 build_summary isError=") + (after.isError ? "true" : "false") +
+		    ", engineRestarted=" + (after.sc.value("engineRestarted", false) ? "true" : "false");
+		std::string found;
+		if (!WaitNewLine(log, before, [](const std::string& l) { return IsMcpLine(l) && ContainsI(l, "restart"); }, 3000, found))
+			bad.push_back("記錄檔沒有多出含 [mcp] 與 restart 的行(原 " + std::to_string(before) + " 行,現 " + std::to_string(ReadLogLines(log).size()) + " 行)");
+		else
+			d += ", 記錄檔新增: " + Cut(found, 120);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(30, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// M31 找不到 POB 時記錄並提示
+void TestM31(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	const std::wstring noPob = c.exeDir + L"PobTools\\no_such_pob_dir";
+	if (IsDir(noPob)) { Record(31, false, "測試用的不存在資料夾竟然存在: " + narrow(noPob)); return; }
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, noPob, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		const size_t before = ReadLogLines(log).size();
+		for (int i = 1; i <= 2; i++) {
+			ToolRes r = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+			if (!r.transportOk || r.rpcError) { bad.push_back("第" + std::to_string(i) + "次 new_build 沒有正常回應: " + Cut(r.Why(), 100)); continue; }
+			if (!r.isError) { bad.push_back("第" + std::to_string(i) + "次 new_build 的 isError 不是 true"); continue; }
+			const std::string txt = ToolErrorText(r);
+			if (!HasLogHint(txt)) bad.push_back("第" + std::to_string(i) + "次錯誤文字缺記錄檔位置或 report_problem: " + Cut(txt, 160));
+		}
+		// 同一個開機錯誤連續發生只記一次:等第 1 行出現,再多等一下確認沒有第 2 行。
+		std::string found;
+		WaitNewLine(log, before, [](const std::string&) { return true; }, 3000, found);
+		Sleep(1000);
+		const auto ls = ReadLogLines(log);
+		const size_t added = ls.size() >= before ? ls.size() - before : 0;
+		if (added != 1) bad.push_back("記錄檔多了 " + std::to_string(added) + " 行(應為 1 行)");
+		else if (!IsMcpLine(ls[before])) bad.push_back("新增的那行沒有 [mcp]: " + Cut(ls[before], 100));
+		else d = "兩次都 isError,記錄檔只多 1 行: " + Cut(ls[before], 100);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(31, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
+// M32 report_problem 產生可貼的摘要(要在 M28 之後,記錄檔裡才有 debug_lua_error)
+void TestM32(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		ToolRes r = p.Call("report_problem", json::object());
+		if (!r.Ok()) { bad.push_back("report_problem 失敗: " + Cut(r.Why(), 120)); break; }
+		const std::string ver = r.sc.contains("pobtoolsVersion") && r.sc["pobtoolsVersion"].is_string() ? r.sc["pobtoolsVersion"].get<std::string>() : std::string();
+		const std::string url = r.sc.contains("issueUrl") && r.sc["issueUrl"].is_string() ? r.sc["issueUrl"].get<std::string>() : std::string();
+		const std::string text = r.sc.contains("text") && r.sc["text"].is_string() ? r.sc["text"].get<std::string>() : std::string();
+		if (ver.empty()) bad.push_back("pobtoolsVersion 是空的");
+		if (url != "https://github.com/Hsiung-Shao/PobTools-zh/issues/new") bad.push_back("issueUrl 不對: " + url);
+		if (text.empty()) bad.push_back("text 是空的");
+		if (!url.empty() && text.find(url) == std::string::npos) bad.push_back("text 不含 issueUrl");
+		if (!ver.empty() && text.find(ver) == std::string::npos) bad.push_back("text 不含 pobtoolsVersion");
+
+		std::vector<std::string> recent;
+		if (!r.sc.contains("recentErrors") || !r.sc["recentErrors"].is_array()) {
+			bad.push_back("recentErrors 不是陣列");
+		} else {
+			for (const auto& e : r.sc["recentErrors"]) if (e.is_string()) recent.push_back(e.get<std::string>());
+			if (recent.size() > 20) bad.push_back("recentErrors 有 " + std::to_string(recent.size()) + " 行(最多 20)");
+			bool hasDbg = false;
+			for (const auto& l : recent) if (l.find("debug_lua_error") != std::string::npos) hasDbg = true;
+			if (!hasDbg) bad.push_back("recentErrors 沒有含 debug_lua_error 的行(共 " + std::to_string(recent.size()) + " 行)");
+		}
+
+		// USERPROFILE 的實際值不能出現在 text 與 recentErrors(要被換成 %USERPROFILE%)。
+		wchar_t up[2048] = {};
+		const DWORD n = GetEnvironmentVariableW(L"USERPROFILE", up, 2048);
+		std::string profile = n > 0 && n < 2048 ? narrow(up) : std::string();
+		while (!profile.empty() && (profile.back() == '\\' || profile.back() == '/')) profile.pop_back();
+		if (profile.empty()) {
+			d += "(沒有 USERPROFILE,略過路徑檢查) ";
+		} else {
+			std::string slash = profile;
+			for (auto& ch : slash) if (ch == '\\') ch = '/';
+			auto leaks = [&](const std::string& s) { return ContainsI(s, profile) || ContainsI(s, slash); };
+			if (leaks(text)) bad.push_back("text 含 USERPROFILE 實際值");
+			for (const auto& l : recent) if (leaks(l)) { bad.push_back("recentErrors 含 USERPROFILE 實際值: " + Cut(l, 100)); break; }
+		}
+		d += "version=" + ver + ", recentErrors " + std::to_string(recent.size()) + " 行, text " + std::to_string(text.size()) + " 位元組";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(32, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6) + (d.empty() ? "" : " (" + d + ")"));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -2142,7 +2403,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 27; n++) Record(n, false, why);
+		for (int n = 13; n <= 32; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2226,6 +2487,11 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(25, [&] { TestM25(c2, cntBefore); });
 			Guard(26, [&] { TestM26(c2, cntBefore); }); // 自建覆蓋層 POB + 自己的行程
 			Guard(27, [&] { TestM27(c2); });
+			Guard(28, [&] { TestM28(c2); });
+			Guard(29, [&] { TestM29(c2); });
+			Guard(30, [&] { TestM30(c2); });
+			Guard(31, [&] { TestM31(c2); });
+			Guard(32, [&] { TestM32(c2); }); // 要在 M28 之後
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2238,7 +2504,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 27; n++) {
+	for (int n = 1; n <= 32; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

@@ -66,6 +66,13 @@ Many "bad looking" numbers are the plan, not a flaw:
   roll on that base or item level, and say when an item is hypothetical.
 - Hand the result to the user with `export_code`; nothing is saved to their files.
 
-## 5. Language
+## 5. When a tool fails
+- An error about your arguments (unknown gem, node, config key): fix the call.
+- An error that says it was written to `PobTools\logs`: that is a PobTools bug or
+  a broken install. Do not keep retrying; tell the user, and call
+  `report_problem` to give them a report they can review and paste into a
+  GitHub issue.
+
+## 6. Language
 Names come in English (`name`) and Traditional Chinese (`nameZh`). When answering
 in Chinese, use the `nameZh` the tools returned instead of translating names yourself.

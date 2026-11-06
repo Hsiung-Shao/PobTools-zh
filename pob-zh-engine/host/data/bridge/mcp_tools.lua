@@ -842,11 +842,40 @@ return function(M, ctx)
 
 	-- ---- entry -----------------------------------------------------------
 
+	-- Test only: the host lists it only under POB_ZH_MCP_DEBUG=1.
+	function T.debug_lua_error()
+		local missing = nil
+		return missing.field -- a genuine runtime error, with file:line
+	end
+
+	-- Errors are of two kinds. A wrong argument (argerr, or any error raised
+	-- with level 0 and no position) goes back to the model to fix and is not a
+	-- PobTools problem. Anything else -- a runtime error carrying "x.lua:N:",
+	-- or a build that could not be restored -- is a bug or a broken install:
+	-- write it to the failure log with its traceback, and tell the model how
+	-- the user can report it. Must stay in step with mcp_server.cpp kReportHint.
+	local REPORT_HINT = " (details were written to PobTools\\logs\\error-<date>.log; call report_problem to prepare a bug report for the user)"
+	local function is_internal(msg)
+		return msg:find("%.lua:%d+:") ~= nil or msg:find("RESTORING THE BUILD FAILED", 1, true) ~= nil
+	end
+
 	function M.mcp_call(p)
 		local name = p and p.name
 		local fn = type(name) == "string" and T[name]
 		if not fn then error("unknown tool " .. tostring(name), 0) end
-		return fn(p.arguments or {})
+		local trace
+		local res = { xpcall(function() return fn(p.arguments or {}) end, function(e)
+			trace = debug.traceback("", 2)
+			return e
+		end) }
+		if res[1] then return res[2] end
+		local msg = tostring(res[2])
+		if not is_internal(msg) then error(msg, 0) end
+		if PobToolsLogError then
+			local where = (trace or ""):gsub("^%s*stack traceback:%s*", ""):sub(1, 600)
+			PobToolsLogError("mcp", name .. ": " .. msg .. " | " .. where)
+		end
+		error(msg .. REPORT_HINT, 0)
 	end
 
 	-- Called once by the MCP host after boot, never by the new UI (which runs

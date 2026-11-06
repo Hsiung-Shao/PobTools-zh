@@ -145,6 +145,7 @@ public:
 	}
 
 	HeadlessProc::Child* Child() { return child_.get(); }
+	const std::wstring& PobDir() const { return pobDir_; }
 
 	void Kill()
 	{
@@ -277,6 +278,21 @@ json ToolResult(const json& structured, bool isError)
 	};
 }
 
+// Appended to every error that is PobTools' or the install's fault (not the
+// model's arguments). Same words as mcp_tools.lua REPORT_HINT.
+const char* kReportHint =
+	" (details were written to PobTools\\logs\\error-<date>.log; call report_problem to prepare a bug report for the user)";
+const char* kIssueUrl = "https://github.com/Hsiung-Shao/PobTools-zh/issues/new";
+
+// Ensure retries a failed boot on every call; the same reason is written once.
+void LogOnce(const std::string& msg)
+{
+	static std::string last;
+	if (msg == last) return;
+	last = msg;
+	PobLog::Error("mcp", msg);
+}
+
 json ToolError(const std::string& message, bool restarted = false)
 {
 	json sc{{"error", message}};
@@ -293,8 +309,119 @@ unsigned TimeoutFor(const std::string& tool)
 	return 60000;
 }
 
+json g_clientInfo = json::object();
+
+// Replaces every spelling of the user's profile path, so a report pasted into
+// a public issue does not carry the Windows account name.
+std::string Redact(std::string s)
+{
+	wchar_t prof[MAX_PATH] = {};
+	if (!GetEnvironmentVariableW(L"USERPROFILE", prof, MAX_PATH) || !prof[0]) return s;
+	std::string a = Narrow(prof), b = a;
+	for (char& c : b) if (c == '\\') c = '/';
+	for (const std::string& needle : {a, b}) {
+		std::string lowS = s, lowN = needle;
+		for (char& c : lowS) c = (char)tolower((unsigned char)c);
+		for (char& c : lowN) c = (char)tolower((unsigned char)c);
+		for (size_t p = lowS.find(lowN); p != std::string::npos; p = lowS.find(lowN, p + 13)) {
+			s.replace(p, needle.size(), "%USERPROFILE%");
+			lowS.replace(p, needle.size(), "%userprofile%");
+		}
+	}
+	return s;
+}
+
+std::string PobVersionOf(const std::wstring& pobDir)
+{
+	const std::string xml = ReadAll(pobDir + L"\\manifest.xml");
+	const size_t v = xml.find("<Version");
+	if (v == std::string::npos) return "unknown";
+	auto attr = [&](const char* key) -> std::string {
+		const std::string k = std::string(key) + "=\"";
+		const size_t p = xml.find(k, v);
+		if (p == std::string::npos || p > xml.find('>', v)) return {};
+		const size_t e = xml.find('"', p + k.size());
+		return e == std::string::npos ? std::string() : xml.substr(p + k.size(), e - p - k.size());
+	};
+	std::string ver = attr("number");
+	const std::string branch = attr("branch");
+	if (!branch.empty()) ver += " (" + branch + ")";
+	return ver.empty() ? "unknown" : ver;
+}
+
+std::string WindowsVersion()
+{
+	using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+	OSVERSIONINFOW vi{sizeof(vi)};
+	auto fn = (RtlGetVersionFn)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
+	if (!fn || fn(&vi) != 0) return "Windows (unknown)";
+	return "Windows " + std::to_string(vi.dwMajorVersion) + "." + std::to_string(vi.dwMinorVersion) + "." +
+	       std::to_string(vi.dwBuildNumber);
+}
+
+// Today's and yesterday's [mcp] lines from the failure log, newest last.
+std::vector<std::string> RecentMcpErrors(size_t max)
+{
+	std::vector<std::string> lines;
+	SYSTEMTIME now{};
+	GetLocalTime(&now);
+	FILETIME ft{};
+	SystemTimeToFileTime(&now, &ft);
+	ULARGE_INTEGER t{};
+	t.LowPart = ft.dwLowDateTime;
+	t.HighPart = ft.dwHighDateTime;
+	for (int back = 1; back >= 0; back--) {
+		ULARGE_INTEGER d = t;
+		d.QuadPart -= (ULONGLONG)back * 24ull * 3600ull * 10000000ull;
+		FILETIME f{d.LowPart, d.HighPart};
+		SYSTEMTIME st{};
+		FileTimeToSystemTime(&f, &st);
+		wchar_t name[32];
+		swprintf(name, 32, L"error-%04d-%02d-%02d.log", st.wYear, st.wMonth, st.wDay);
+		const std::string text = ReadAll(PobLog::LogDir() + name);
+		size_t pos = 0;
+		while (pos < text.size()) {
+			size_t e = text.find('\n', pos);
+			if (e == std::string::npos) e = text.size();
+			std::string ln = text.substr(pos, e - pos);
+			if (!ln.empty() && ln.back() == '\r') ln.pop_back();
+			if (ln.find("[mcp]") != std::string::npos) lines.push_back(Redact(ln));
+			pos = e + 1;
+		}
+	}
+	if (lines.size() > max) lines.erase(lines.begin(), lines.end() - (std::ptrdiff_t)max);
+	return lines;
+}
+
+json ReportProblem(const Engine& eng)
+{
+	const std::string pobDir = eng.PobDir().empty() ? "(not found)" : Redact(Narrow(eng.PobDir()));
+	const std::string pobVer = eng.PobDir().empty() ? "unknown" : PobVersionOf(eng.PobDir());
+	const std::string client = g_clientInfo.value("name", "unknown") + " " + g_clientInfo.value("version", "");
+	const std::vector<std::string> errs = RecentMcpErrors(20);
+	std::string text = "### PobTools MCP problem report\n\n";
+	text += "- PobTools: " + std::string(POBTOOLS_VERSION_STRING) + "\n";
+	text += "- Path of Building: " + pobVer + " at " + pobDir + "\n";
+	text += "- " + WindowsVersion() + "\n";
+	text += "- AI client: " + client + "\n\n";
+	text += "What I asked the AI to do / what went wrong:\n\n(describe it here)\n\n";
+	text += "Recent MCP errors (PobTools\\logs):\n\n```\n";
+	for (const auto& l : errs) text += l + "\n";
+	if (errs.empty()) text += "(none logged)\n";
+	text += "```\n\nOpen a new issue at " + std::string(kIssueUrl) + " and paste this.\n";
+	return ToolResult(json{
+		{"text", text},
+		{"issueUrl", kIssueUrl},
+		{"pobtoolsVersion", POBTOOLS_VERSION_STRING},
+		{"pobVersion", pobVer},
+		{"recentErrors", errs},
+		{"instructions", "Show the user `text`, ask them to fill in what went wrong, review it, and paste it into a new issue at issueUrl. Do not post it yourself."},
+	}, false);
+}
+
 json CallTool(Engine& eng, const std::string& name, const json& args, bool debug)
 {
+	if (name == "report_problem") return ReportProblem(eng);
 	// Static reading guide: answered without waiting for the engine, so a model
 	// can read it while POB is still starting.
 	if (name == "build_guide") {
@@ -308,15 +435,24 @@ json CallTool(Engine& eng, const std::string& name, const json& args, bool debug
 	}
 	std::string err;
 	bool restarted = false;
-	if (!eng.Ensure(err, restarted)) return ToolError(err, restarted);
+	const bool ready = eng.Ensure(err, restarted);
+	if (restarted) PobLog::Error("mcp", "the engine had stopped; restarted it before " + name + " (the build was reset)");
+	if (!ready) {
+		LogOnce(err);
+		return ToolError(err + kReportHint, restarted);
+	}
 	json out;
 	bool ok = eng.Child()->Call("mcp_call", json{{"name", name}, {"arguments", args.is_object() ? args : json::object()}}, out, TimeoutFor(name));
 	if (!ok) {
 		if (!eng.Child()->Alive()) {
-			return ToolError("The Path of Building engine stopped while running " + name + ".", true);
+			PobLog::Error("mcp", "the engine stopped while running " + name);
+			return ToolError("The Path of Building engine stopped while running " + name + "." + kReportHint, true);
 		}
 		std::string msg = out.is_object() ? out.value("message", out.dump()) : out.dump();
-		if (msg == "null" || msg.empty()) msg = name + " timed out";
+		if (msg == "null" || msg.empty() || (out.is_object() && out.value("code", "") == "timeout")) {
+			PobLog::Error("mcp", name + " timed out");
+			msg = name + " timed out" + kReportHint;
+		}
 		// The bridge appends a Lua traceback; the model only needs the reason.
 		const size_t tb = msg.find("\nstack traceback:");
 		if (tb != std::string::npos) msg.erase(tb);
@@ -384,6 +520,8 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 	if (debug) {
 		tools.push_back(json{{"name", "debug_kill_engine"}, {"description", "Test only: kill the headless engine."},
 		                     {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
+		tools.push_back(json{{"name", "debug_lua_error"}, {"description", "Test only: raise a Lua runtime error."},
+		                     {"inputSchema", {{"type", "object"}, {"properties", json::object()}}}});
 	}
 
 	Engine eng(exeDir, pobDir);
@@ -409,6 +547,7 @@ int RunMcpServer(const std::wstring& exeDir, const std::wstring& pobDirOverride)
 			if (method == "initialize") {
 				std::string want = params.value("protocolVersion", "");
 				if (want != "2024-11-05" && want != "2025-03-26" && want != "2025-06-18") want = kDefaultProtocol;
+				if (params.contains("clientInfo") && params["clientInfo"].is_object()) g_clientInfo = params["clientInfo"];
 				WriteMessage(json{{"jsonrpc", "2.0"}, {"id", id}, {"result", {
 					{"protocolVersion", want},
 					{"capabilities", {{"tools", json::object()}}},
