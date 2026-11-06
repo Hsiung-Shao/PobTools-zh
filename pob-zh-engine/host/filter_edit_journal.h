@@ -32,6 +32,7 @@ struct JournalRule {
 	std::vector<std::string> before;   // NeverSink's version of the rule (the one `version` names)
 	std::vector<std::string> after;    // yours
 	std::string version;               // the NeverSink version "before" is from ("" = the journal's)
+	bool pending = false;              // re-expressed on a newer version, not applied to it yet
 };
 
 struct EditJournal {
@@ -97,3 +98,7 @@ OnlineFilterHeader ParseOnlineHeader(const std::string& text);
 // Filter" line and the "#key:value" lines right after it); everything else
 // byte-for-byte.
 std::string StripOnlineHeader(const std::string& text);
+// A subscription's name made safe as a file name in one folder: path separators,
+// the characters Windows forbids and control characters become '_', a ".."
+// cannot remain, trailing dots and spaces go; "" becomes "subscription".
+std::string SafeFilterFileName(const std::string& name);

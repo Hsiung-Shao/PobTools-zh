@@ -229,14 +229,15 @@ void DrawJournalDialog(EditorShell& s)
 				const std::string row = e.name + u8"    " + e.version;
 				if (ImGui::Selectable(row.c_str(), s.onlineSel == i)) s.onlineSel = i;
 			}
-			const std::string local = s.onlineList[s.onlineSel].name + " (PobTools).filter";
+			const std::string local = SafeFilterFileName(s.onlineList[s.onlineSel].name) + " (PobTools).filter";
 			ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			PobUi::Hint((u8"會建立：My Games\\Path of Exile\\" + local).c_str());
 		}
 		const PobUi::DialogResult r = PobUi::DialogButtons(u8"取消", nullptr, nullptr, u8"建立並開啟", !s.onlineList.empty());
 		if (r == PobUi::DialogResult::Primary && !s.onlineList.empty()) {
 			const OnlineFilterEntry e = s.onlineList[s.onlineSel];
-			const std::string localName = e.name + " (PobTools).filter";
+			// the name comes from the game's download: never a path (T40d)
+			const std::string localName = SafeFilterFileName(e.name) + " (PobTools).filter";
 			const std::wstring base = Poe1FilterBaseDir();
 			std::string text;
 			if (s.testMode) {
@@ -330,6 +331,7 @@ void DrawJournalDialog(EditorShell& s)
 		ImGui::EndChild();
 	}
 
+	bool dropMissing = false;
 	if (!p.missing.empty()) {
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 		std::string names;
@@ -346,9 +348,23 @@ void DrawJournalDialog(EditorShell& s)
 				if (got > 0) n += got;
 			}
 			s.Notify(u8"已把 " + std::to_string(n) + u8" 條新版沒有的規則放進自訂區（還沒儲存）");
+			dropMissing = true;
 		}
 		if (ImGui::IsItemHovered())
 			PobUi::Tooltip(u8"用你改過的樣子放進檔案最上方的自訂區；自訂區優先，這些物品會照你的設定顯示");
+		ImGui::SameLine();
+		if (PobUi::Button(u8"不保留", PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) dropMissing = true;
+		if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"從修改紀錄移除這些規則，之後不再提示");
+		if (dropMissing) {
+			// handled (kept as custom rules, or let go): out of the journal for good
+			for (const std::string& k : p.missing) s.journal.rules.erase(k);
+			if (!s.testMode) {
+				EnsureJournalDir(s);
+				std::string err;
+				JournalSave(EdJournalPath(s), s.journal, &err);
+			}
+			s.journalPreview = JournalApply(s.journal, s.doc, s.journalChoices, true);
+		}
 	}
 
 	ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));

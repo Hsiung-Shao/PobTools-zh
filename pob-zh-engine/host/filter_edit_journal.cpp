@@ -207,7 +207,8 @@ void SplitHeader(const std::string& text, std::string* indent, std::string* kw, 
 // (by setting id) and the ids of NeverSink's new lines, in their order.
 // Conflicts are reported (and resolved by `choices`, yours by default).
 Settings Merge(const std::string& key, const JournalRule& r, const std::vector<std::string>& theirs,
-               const JournalChoices& choices, std::vector<JournalConflict>* conflicts, Settings* tOut)
+               const JournalChoices& choices, std::vector<JournalConflict>* conflicts, Settings* tOut,
+               bool newerWins = false)
 {
 	const Settings B = AnchorB(r.before);
 	Settings M = AlignTo(B, r.after, "m");
@@ -220,6 +221,7 @@ Settings Merge(const std::string& key, const JournalRule& r, const std::vector<s
 	}
 	*tOut = T;
 	auto useNew = [&](const std::string& setting) {
+		if (newerWins) return true;   // `theirs` is your own newer hand edit
 		auto it = choices.find(key + "|" + setting);
 		return it != choices.end() && it->second;
 	};
@@ -365,56 +367,50 @@ std::vector<std::string> FilterOwnLines(const FilterFile& f, const FilterBlock& 
 void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile& current,
                    const std::set<std::string>* carried)
 {
-	// The baseline is NeverSink's untouched new version when its version differs
-	// from the journal's: an entry carried onto it (the rule now differs from
-	// the baseline) takes that version as its "before", so the next update
-	// compares against what NeverSink shipped last, not what it shipped years
-	// ago. An entry not carried onto it yet stays as it is (still pending).
+	// An entry recorded on an older NeverSink version is re-expressed on this one
+	// the first time it is seen here: its edit merged onto this version's rule as
+	// NeverSink shipped it. The baseline's rule IS that the first time -- the old
+	// edit has not been put on this file yet, so the rule is still NeverSink's,
+	// and a hand edit made since is only in `current`. From then on the entry is
+	// "pending" until an apply carries it over: a hand edit meanwhile is merged
+	// into it (the newer edit wins), never written over it.
 	const std::string baseVersion = FilterBannerValue(baseline, "VERSION");
 	const std::map<std::string, int> base = RuleIndex(baseline);
 	const std::map<std::string, int> cur = RuleIndex(current);
+	auto mergeText = [](const std::string& k, const JournalRule& r, const std::vector<std::string>& onto, bool newerWins) {
+		std::vector<JournalConflict> ignored;
+		Settings tIds;
+		std::vector<std::string> out;
+		for (const Line& l : Merge(k, r, onto, {}, &ignored, &tIds, newerWins)) out.push_back(l.text);
+		return out;
+	};
 	for (const auto& [k, ci] : cur) {
 		const auto bit = base.find(k);
 		if (bit == base.end()) continue;
 		const std::vector<std::string> now = FilterOwnLines(current, current.blocks[ci]);
 		const std::vector<std::string> was = FilterOwnLines(baseline, baseline.blocks[bit->second]);
 		auto it = j.rules.find(k);
-		if (it != j.rules.end()) {
-			JournalRule& r = it->second;
-			const std::string& rv = r.version.empty() ? j.fromVersion : r.version;
-			if (!baseVersion.empty() && !rv.empty() && rv != baseVersion) {
-				// Carried onto this version only when the rule is what applying gives;
-				// untouched or edited by hand without applying, it stays pending (its
-				// old edit is still to come -- a hand edit here would otherwise erase it)
-				const bool applied = carried && carried->count(k);
-				if (!applied) {
-					std::vector<JournalConflict> ignored;
-					Settings tIds;
-					std::vector<std::string> merged;
-					for (const Line& l : Merge(k, r, was, {}, &ignored, &tIds)) merged.push_back(l.text);
-					// what applying gives (or NeverSink shipped your edit itself): carried over
-					if (now != merged && now == was) continue;   // not touched on this version: still pending
-					if (now != merged) {
-						// edited by hand on this version without applying the old edit:
-						// keep both. It stays pending against its old version, with the
-						// old edit merged onto what you have now as its "after" (the
-						// settings NeverSink changed meanwhile match on both sides)
-						std::vector<JournalConflict> ignored2;
-						Settings tIds2;
-						std::vector<std::string> both;
-						for (const Line& l : Merge(k, r, now, {}, &ignored2, &tIds2)) both.push_back(l.text);
-						r.after = both;
-						continue;
-					}
-				}
-				r.before = was;             // the baseline is that version as NeverSink shipped it
-			}
-			r.version = baseVersion.empty() ? rv : baseVersion;
-			r.after = now;
-			if (r.after == r.before) j.rules.erase(it);
+		if (it == j.rules.end()) {
+			if (now != was) j.rules[k] = JournalRule{ was, now, baseVersion, false };
 			continue;
 		}
-		if (now != was) j.rules[k] = JournalRule{ was, now, baseVersion };
+		JournalRule& r = it->second;
+		const std::string& rv = r.version.empty() ? j.fromVersion : r.version;
+		if (!baseVersion.empty() && !rv.empty() && rv != baseVersion) {
+			const std::vector<std::string> onNew = mergeText(k, r, was, false);
+			r.before = was;
+			r.after = onNew;
+			r.version = baseVersion;
+			r.pending = true;
+		}
+		if (r.pending) {
+			if (carried && carried->count(k)) { r.pending = false; r.after = now; }   // applied (with your choices)
+			else if (now == r.after) r.pending = false;                             // what applying gives
+			else if (now != r.before) r.after = mergeText(k, r, now, true);         // hand edit: both, yours newest
+		} else {
+			r.after = now;
+		}
+		if (r.after == r.before) j.rules.erase(it);
 	}
 	j.filterType = FilterBannerValue(current, "TYPE");
 	j.fromVersion = FilterBannerValue(current, "VERSION");
@@ -463,7 +459,8 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	doc["customZone"] = j.customZone;
 	doc["subscription"] = j.subscription;
 	ordered_json rules = ordered_json::object();
-	for (const auto& [k, r] : j.rules) rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version } };
+	for (const auto& [k, r] : j.rules)
+		rules[k] = { { "before", r.before }, { "after", r.after }, { "version", r.version }, { "pending", r.pending } };
 	doc["rules"] = rules;
 	std::string text;
 	try {
@@ -513,6 +510,7 @@ bool JournalLoad(const std::wstring& path, EditJournal* j)
 				if (v.contains("before") && v["before"].is_array()) r.before = v["before"].get<std::vector<std::string>>();
 				if (v.contains("after") && v["after"].is_array()) r.after = v["after"].get<std::vector<std::string>>();
 				if (v.contains("version") && v["version"].is_string()) r.version = v["version"].get<std::string>();
+				if (v.contains("pending") && v["pending"].is_boolean()) r.pending = v["pending"].get<bool>();
 				out.rules[k] = std::move(r);
 			}
 	} catch (...) {
@@ -569,4 +567,17 @@ std::string StripOnlineHeader(const std::string& text)
 		p = next;
 	}
 	return text.substr(p);
+}
+
+std::string SafeFilterFileName(const std::string& name)
+{
+	std::string out;
+	for (unsigned char c : name) {
+		const bool bad = c < 32 || c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' ||
+		                 c == '>' || c == '|';
+		out += bad ? '_' : (char)c;
+	}
+	for (size_t p; (p = out.find("..")) != std::string::npos;) out.replace(p, 2, "_");
+	while (!out.empty() && (out.back() == '.' || out.back() == ' ')) out.pop_back();
+	return out.empty() ? std::string("subscription") : out;
 }

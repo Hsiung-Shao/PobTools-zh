@@ -2490,6 +2490,56 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			if (it2 != jm.rules.end())
 				for (const std::string& l : it2->second.after) keepsSize |= l.find("SetFontSize 30") != std::string::npos;
 			rep.check(keepsSize, "T38f ...and the hand edit made on the new version is recorded too");
+			// v1 colour; v2 not applied, size edited by hand and saved; then applied and saved
+			// again: the hand edit stays yours (not folded into NeverSink's original)
+			{
+				auto mk4 = [](const char* ver, const char* colour, const char* border, const char* size) {
+					return ParseFilter(std::string("# VERSION:  ") + ver + "\n# TYPE:     2-SEMI-STRICT\n\n"
+					                   "Show # $type->currency $tier->t1\n\tBaseType == \"Divine Orb\"\n\tSetTextColor " + colour +
+					                   "\n\tSetBorderColor " + border + "\n\tSetFontSize " + size + "\n");
+				};
+				EditJournal jp;
+				JournalRecord(jp, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				const FilterFile v2p = mk4("2", "255 0 0", "2 2 2", "45");
+				const FilterFile v2f = mk4("2", "255 0 0", "2 2 2", "30");   // hand edit, not applied
+				JournalRecord(jp, v2p, v2f);
+				// never applied on v2; v3 arrives (NeverSink changed the border again)
+				{
+					FilterFile v3 = mk4("3", "255 0 0", "3 3 3", "45");
+					FilterDocumentEditor d3;
+					d3.Attach(&v3);
+					const JournalReport r3 = JournalApply(jp, d3, {}, false);
+					const std::string t3 = FilterBlockText(v3, v3.blocks[0], false);
+					rep.check(r3.conflicts.empty() && t3.find("9 9 9") != std::string::npos && t3.find("SetFontSize 30") != std::string::npos &&
+					              t3.find("SetBorderColor 3 3 3") != std::string::npos,
+					          "T38f skipping a version: your colour and hand edit kept, NeverSink's newer border taken, no conflict", t3);
+				}
+				// or: applied on v2 after that save, saved again; then v3
+				FilterFile v2a = v2f;
+				JournalReport ra;
+				{
+					FilterDocumentEditor d2;
+					d2.Attach(&v2a);
+					ra = JournalApply(jp, d2, {}, false);
+				}
+				JournalRecord(jp, v2f, v2a, &ra.carried);
+				FilterFile v3b = mk4("3", "255 0 0", "3 3 3", "45");
+				FilterDocumentEditor d3b;
+				d3b.Attach(&v3b);
+				JournalApply(jp, d3b, {}, false);
+				const std::string t3b = FilterBlockText(v3b, v3b.blocks[0], false);
+				rep.check(t3b.find("SetFontSize 30") != std::string::npos && t3b.find("9 9 9") != std::string::npos,
+				          "T38f a hand edit made before applying survives the next update", t3b);
+				// a hand edit of the same setting as the pending edit: the newer one wins
+				EditJournal jz;
+				JournalRecord(jz, mk4("1", "255 0 0", "1 1 1", "45"), mk4("1", "9 9 9", "1 1 1", "45"));
+				JournalRecord(jz, v2p, mk4("2", "4 4 4", "2 2 2", "45"));
+				const auto iz = jz.rules.find("$type->currency $tier->t1");
+				bool newest = false;
+				if (iz != jz.rules.end())
+					for (const std::string& l : iz->second.after) newest |= l.find("SetTextColor 4 4 4") != std::string::npos;
+				rep.check(newest, "T38f your newest hand edit wins over the older pending edit of the same setting");
+			}
 			// NeverSink's new version ships exactly your edit: nothing is left to keep
 			EditJournal ja;
 			JournalRecord(ja, mk3("1", "255 0 0", "45"), mk3("1", "255 0 0", "46"));
@@ -2632,6 +2682,20 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		std::string names;
 		for (const OnlineFilterEntry& e : real) names += e.name + " " + e.version + "; ";
 		rep.note("T40c this machine's subscriptions: " + std::to_string(real.size()) + " " + names);
+	}
+
+	// ---- T40d: a subscription name can never point outside the filter folder ----
+	{
+		const std::string a = SafeFilterFileName("NeverSink-5uberstr-softcore");
+		const std::string b = SafeFilterFileName("..\\..\\Windows\\evil");
+		const std::string c = SafeFilterFileName("a/b:c*d?e\"f<g>h|i");
+		const std::string d = SafeFilterFileName("name. ");
+		const std::string e = SafeFilterFileName("");
+		rep.check(a == "NeverSink-5uberstr-softcore", "T40d an ordinary name is kept", a);
+		rep.check(b.find("..") == std::string::npos && b.find('\\') == std::string::npos && b.find('/') == std::string::npos,
+		          "T40d '..' and path separators cannot remain", b);
+		rep.check(c.find_first_of("/:*?\"<>|") == std::string::npos && !c.empty(), "T40d characters Windows forbids are replaced", c);
+		rep.check(d == "name" && e == "subscription", "T40d trailing dots/spaces dropped, empty gets a name", d + "|" + e);
 	}
 
 	// ---- T39i: a real version change (8.19.2a local -> the subscription's copy) ----
