@@ -163,7 +163,10 @@ void RebuildRows(EditorShell& s)
 	if (s.selectedBlock < 0 || s.selectedBlock >= (int)f.blocks.size())
 		s.selectedBlock = f.blocks.empty() ? -1 : 0;
 	if (s.selectedBlock >= 0) s.selAnchor = s.doc.CaptureAnchor(s.selectedBlock);
-	s.batchSel.assign(f.blocks.size(), 0);
+	// a look paste only adds / disables action lines: same rules, same indices,
+	// so the ticks stay for the next paste
+	if (!(s.keepBatchSel && s.batchSel.size() == f.blocks.size())) s.batchSel.assign(f.blocks.size(), 0);
+	s.keepBatchSel = false;
 	s.rowsVersion = s.doc.structureVersion();
 	s.rowStateSig = RefreshStates(s);
 	EdRebuildVisRows(s);
@@ -438,6 +441,34 @@ void EdRebuildVisRows(EditorShell& s)
 // page first.
 void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
+void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text)
+{
+	std::vector<int> targets;
+	if (blockIdx < 0) {
+		for (int i = 0; i < (int)s.batchSel.size() && i < (int)s.model.blocks.size(); i++)
+			if (s.batchSel[i]) targets.push_back(i);
+	} else if (blockIdx < (int)s.model.blocks.size()) {
+		targets.push_back(blockIdx);
+	}
+	int n = 0, nChanged = 0;
+	for (int bi : targets) {
+		bool ch = false;
+		n = CardPasteLook(s.doc, bi, text, &ch);
+		if (n <= 0) break;
+		if (ch) nChanged++;
+	}
+	// the ticked rules stay ticked for the next paste
+	if (blockIdx < 0 && nChanged > 0) s.keepBatchSel = true;
+	if (n < 0)
+		s.Notify(u8"剪貼簿裡不只一條規則：請先在單一規則按右鍵「複製外觀」", true);
+	else if (n == 0)
+		s.Notify(u8"剪貼簿裡沒有外觀設定：先在另一條規則按右鍵「複製外觀」", true);
+	else if (nChanged == 0)
+		s.Notify(u8"外觀已經相同，沒有變更");
+	else
+		s.Notify(u8"已把外觀貼到 " + std::to_string(nChanged) + u8" 條規則；沒提到的外觀設定保留原樣");
+}
+
 namespace {
 
 // Left pane. Returns false when a structural mutation made every cached index
@@ -694,29 +725,7 @@ bool DrawBlockList(EditorShell& s, float height)
 		const std::string pasteLbl = toTicked ? u8"貼上外觀到已勾選的 " + std::to_string(nSel) + u8" 條"
 		                                      : std::string(u8"貼上外觀到這條規則");
 		if (PobUi::MenuRow(PobIcon::Palette, pasteLbl.c_str(), nullptr, ok && !s.testMode)) {
-			const std::string clip = ReadClipboardUtf8(s.hostHwnd);
-			std::vector<int> targets;
-			if (toTicked) {
-				for (int i = 0; i < (int)s.batchSel.size() && i < (int)s.model.blocks.size(); i++)
-					if (s.batchSel[i]) targets.push_back(i);
-			} else {
-				targets.push_back(s.ctxBlock);
-			}
-			int n = 0, nChanged = 0;
-			for (int bi : targets) {
-				bool ch = false;
-				n = CardPasteLook(s.doc, bi, clip, &ch);
-				if (n <= 0) break;
-				if (ch) nChanged++;
-			}
-			if (n < 0)
-				s.Notify(u8"剪貼簿裡不只一條規則：請先在單一規則按右鍵「複製外觀」", true);
-			else if (n == 0)
-				s.Notify(u8"剪貼簿裡沒有外觀設定：先在另一條規則按右鍵「複製外觀」", true);
-			else if (nChanged == 0)
-				s.Notify(u8"外觀已經相同，沒有變更");
-			else
-				s.Notify(u8"已把外觀貼到 " + std::to_string(nChanged) + u8" 條規則；沒提到的外觀設定保留原樣");
+			EdPasteLook(s, toTicked ? -1 : s.ctxBlock, ReadClipboardUtf8(s.hostHwnd));
 		}
 		PobUi::EndMenuPopup();
 	}

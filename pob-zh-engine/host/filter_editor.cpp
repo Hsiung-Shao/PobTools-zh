@@ -170,7 +170,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -224,6 +224,17 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "batch-paste") {
+				// as if 複製外觀 on the selected rule, then 貼上外觀到已勾選 on four others
+				shell_.batchMode = true;
+				const int src = shell_.selectedBlock;
+				int n = 0;
+				for (int bi : shell_.visRows) {
+					if (n >= 4) break;
+					if (bi != src && bi < (int)shell_.batchSel.size()) { shell_.batchSel[bi] = 1; n++; }
+				}
+				if (src >= 0) EdPasteLook(shell_, -1, FilterBlockText(shell_.model, shell_.model.blocks[src], true));
+			}
 			if (st == "rules-paste") {
 				// as if 複製外觀 on the selected rule, then 貼上外觀 on the next visible one
 				const int src = shell_.selectedBlock;

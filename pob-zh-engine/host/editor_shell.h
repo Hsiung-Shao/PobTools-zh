@@ -155,6 +155,7 @@ struct EditorShell {
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
 	int ctxBlock = -1;               // block list row whose right-click menu is open
+	bool keepBatchSel = false;       // next RebuildRows keeps the ticks (a paste added no rules)
 	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
 	std::string search, searchLower;
 	RuleChip chip = RuleChip::All;
@@ -225,6 +226,9 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 規則 page.
 void EdRebuildRows(EditorShell& s);
+// 貼上外觀 (section_filteredit.cpp): onto blockIdx, or onto every ticked rule when
+// blockIdx < 0 (the ticks are kept). Notifies the result.
+void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text);
 // Rebuild only the search-filtered list (search text / filter changed).
 void EdRebuildVisRows(EditorShell& s);
 // Per frame: each row's show/hide and baseline state, the chip counts, and the
