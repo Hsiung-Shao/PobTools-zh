@@ -72,13 +72,13 @@ struct PreviewResult {
 };
 
 // Evaluate `f` for `it` (see file header). Pure — no UI, unit-testable.
+PreviewResult EvaluatePreview(const FilterFile& f, const PreviewItem& it,
+                              const FilterI18n& i18n);
+
 // "" when the result is exact; else why it may differ in game: earlier rules
 // used conditions the preview does not model (Chinese names, at most four),
 // and the game may let one of them decide instead.
 std::string PreviewEstimateNote(const PreviewResult& r);
-
-PreviewResult EvaluatePreview(const FilterFile& f, const PreviewItem& it,
-                              const FilterI18n& i18n);
 
 struct LibItem;
 

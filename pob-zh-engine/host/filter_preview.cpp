@@ -1139,6 +1139,7 @@ void PreviewTestEstimate(EditorShell& s)
 	randomDrops(s, u);
 	PvDropEntry d;
 	d.item.baseType = "Ambush Boots";
+	d.item.classId = s.i18n.ItemClass("Ambush Boots");   // as the synthesizer resolves it
 	d.item.rarity = 2;
 	d.item.itemLevel = 86;
 	d.res = EvaluatePreview(s.model, d.item, s.i18n);
