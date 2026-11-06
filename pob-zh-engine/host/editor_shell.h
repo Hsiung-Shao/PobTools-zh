@@ -15,6 +15,7 @@
 #include "filter_data.h"
 #include "filter_doc_editor.h"
 #include "filter_file_watch.h"
+#include "filter_undo.h"
 #include "sound_library_service.h"
 #include "filter_i18n.h"
 #include "item_library.h"
@@ -155,6 +156,9 @@ struct EditorShell {
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
 	int ctxBlock = -1;               // block list row whose right-click menu is open
+	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
+	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
+	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
 	bool keepBatchSel = false;       // next RebuildRows keeps the ticks (a paste added no rules)
 	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
 	std::string search, searchLower;
@@ -226,9 +230,15 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 規則 page.
 void EdRebuildRows(EditorShell& s);
+// 復原 / 重做 one step (editor_shell.cpp): rebuild, settle the unsaved count,
+// select the rule the step touched, notify.
+void EdUndoRedo(EditorShell& s, bool redo);
 // 貼上外觀 (section_filteredit.cpp): onto blockIdx, or onto every ticked rule when
 // blockIdx < 0 (the ticks are kept). Notifies the result.
 void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text);
+// 複製成新的自訂規則 / 貼上為新的自訂規則: import the rule text into the custom
+// zone at the top of the file and select it. Notifies the result.
+void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard);
 // Rebuild only the search-filtered list (search text / filter changed).
 void EdRebuildVisRows(EditorShell& s);
 // Per frame: each row's show/hide and baseline state, the chip counts, and the

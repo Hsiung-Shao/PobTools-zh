@@ -441,6 +441,33 @@ void EdRebuildVisRows(EditorShell& s)
 // page first.
 void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
+void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard)
+{
+	std::string err;
+	const int n = ImportCustomRules(s.doc, ruleText, &err);
+	if (n < 0) {   // no Show / Hide in the text (nothing is touched)
+		s.Notify(fromClipboard ? u8"剪貼簿裡沒有規則：先在一條規則按右鍵「複製整條規則」" : u8"這條規則沒辦法複製", true);
+		return;
+	}
+	if (n == 0) {
+		s.Notify(u8"自訂區已經有一樣的規則", true);
+		return;
+	}
+	// select the last rule of the zone: the one just added
+	const CustomZone z = FindCustomZone(s.model);
+	int sel = -1;
+	for (int bi = 0; bi < (int)s.model.blocks.size(); bi++) {
+		const int h = s.model.blocks[bi].headerLineIdx;
+		if (z.present() && h > z.beginLine && h < z.endLine) sel = bi;
+	}
+	if (sel >= 0) {
+		s.selectedBlock = sel;
+		s.selAnchor = s.doc.CaptureAnchor(sel);
+		s.scrollToSel = true;
+	}
+	s.Notify(u8"已在自訂區新增 " + std::to_string(n) + u8" 條規則（還沒儲存）；自訂區優先，原本的規則對同樣的物品不會再生效");
+}
+
 void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text)
 {
 	std::vector<int> targets;
@@ -480,7 +507,11 @@ bool DrawBlockList(EditorShell& s, float height)
 	ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(padX, PobUi::D(10.0f)));
 	const float innerW = w - padX * 2.0f;
 	ImGui::BeginGroup();
-	if (PobUi::SearchField("##fesearch", s.searchBuf, (int)sizeof(s.searchBuf), u8"搜尋規則", innerW)) {
+	if (s.focusSearch) {
+		s.focusSearch = false;
+		ImGui::SetKeyboardFocusHere();
+	}
+	if (PobUi::SearchField("##fesearch", s.searchBuf, (int)sizeof(s.searchBuf), u8"搜尋規則（Ctrl+F）", innerW)) {
 		s.search = s.searchBuf;
 		s.searchLower = EdToLowerAscii(s.search);
 		EdRebuildVisRows(s);
@@ -719,6 +750,14 @@ bool DrawBlockList(EditorShell& s, float height)
 				                   : u8"已複製外觀，可貼進其他規則裡");
 			else s.Notify(u8"複製失敗", true);
 		}
+		PobUi::MenuSeparator();
+		// a rule of your own, starting from this one (or from a copied rule)
+		if (PobUi::MenuRow(PobIcon::CopyPlus, u8"複製成新的自訂規則", nullptr, ok))
+			EdImportAsCustom(s, FilterBlockText(s.model, s.model.blocks[s.ctxBlock], false), false);
+		if (ImGui::IsItemHovered())
+			PobUi::Tooltip(u8"在檔案最上方的自訂區放一份一樣的規則給你改；自訂區優先，同樣的物品會改用這份");
+		if (PobUi::MenuRow(PobIcon::CopyPlus, u8"貼上為新的自訂規則", nullptr, !s.testMode))
+			EdImportAsCustom(s, ReadClipboardUtf8(s.hostHwnd), true);
 		PobUi::MenuSeparator();
 		// paste a copied look: onto the ticked rules in batch mode, else onto this one
 		const bool toTicked = s.batchMode && nSel > 0;

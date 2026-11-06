@@ -24,7 +24,7 @@ namespace Tok = PobUi::Tok;
 
 namespace {
 
-const char* const kSaveHint = u8"存檔後要在遊戲「選項 > 遊戲 > UI」重新選一次過濾器才會生效";
+const char* const kSaveHint = u8"存檔後要在遊戲「選項 > 遊戲 > UI」重新選一次過濾器才會生效 · Ctrl+Z 復原 · Ctrl+S 儲存 · Ctrl+F 搜尋";
 
 // *.filter in one folder (the test folder), sorted by name.
 std::vector<FilterListEntry> ListFiltersIn(const std::wstring& dir)
@@ -163,6 +163,7 @@ bool EditorShell::OpenByPath(const std::wstring& path, bool force)
 	selectedBlock = model.blocks.empty() ? -1 : 0;
 	doc.Attach(&model);              // bumps structureVersion -> row caches rebuild
 	doc.CaptureBaseline();           // "已修改" is measured against this
+	undo.Reset(model.lines);         // no undo across files
 	watch.Reset(model.path);
 	selAnchor = BlockAnchor{};
 	batchMode = false;
@@ -500,7 +501,9 @@ void DrawEditorHeader(EditorShell& s)
 	x += PobUi::SegmentedWidth(pageLabels, 3) + gap;
 
 	// right side, laid out from the right edge
-	float rx = hp.x + avail - saveW - PobUi::D(8.0f) - moreW;
+	const float undoW = PobUi::ButtonWidth(u8"復原", PobUi::BtnSize::Sm, PobIcon::Undo) +
+	                    PobUi::ButtonWidth(u8"重做", PobUi::BtnSize::Sm) + PobUi::D(12.0f);
+	float rx = hp.x + avail - saveW - PobUi::D(8.0f) - moreW - undoW;
 	if (batchW > 0.0f) rx -= batchW + PobUi::D(8.0f);
 	if (rx < x) rx = x;
 	if (batchW > 0.0f) {
@@ -515,6 +518,19 @@ void DrawEditorHeader(EditorShell& s)
 			                           : u8"在左側勾選多條規則，一次改顏色、字級、音效或顯示 / 隱藏");
 		rx += batchW + PobUi::D(8.0f);
 	}
+	// 復原 / 重做 (run before the pages draw: s.undoRequest)
+	for (int k = 0; k < 2; k++) {
+		const bool redo = k == 1;
+		const char* lbl = redo ? u8"重做" : u8"復原";
+		const bool can = s.loaded && (redo ? s.undo.CanRedo() : s.undo.CanUndo() || s.model.dirty);
+		at(rx, smH);
+		if (PobUi::Button(lbl, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm, redo ? nullptr : PobIcon::Undo, 0.0f, can))
+			s.undoRequest = redo ? 1 : -1;
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+			PobUi::Tooltip(redo ? u8"重做（Ctrl+Y）" : u8"復原上一步（Ctrl+Z）");
+		rx += PobUi::ButtonWidth(lbl, PobUi::BtnSize::Sm, redo ? nullptr : PobIcon::Undo) + PobUi::D(4.0f);
+	}
+	rx += PobUi::D(4.0f);
 	at(rx, smH);
 	if (PobUi::Button("##more", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::MoreHorizontal, smH))
 		s.uiOpenMore = true;
@@ -633,4 +649,33 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide)
 	hdr.dirty = true;
 	b.hide = hide;
 	s.model.dirty = true;
+}
+
+void EdUndoRedo(EditorShell& s, bool redo)
+{
+	if (!s.loaded) return;
+	const int start = redo ? s.undo.Redo(s.model.lines) : s.undo.Undo(s.model.lines);
+	if (start < 0) {
+		s.Notify(redo ? u8"沒有可以重做的修改" : u8"沒有可以復原的修改");
+		return;
+	}
+	s.doc.RebuildBlocks();
+	s.model.dirty = true;
+	s.doc.UnsavedBlockCount(true);   // every edit undone: clean again
+	// select the rule the step touched (or the next one after it)
+	int at = -1;
+	for (int bi = 0; bi < (int)s.model.blocks.size(); bi++) {
+		const FilterBlock& b = s.model.blocks[bi];
+		if (b.lineIdx.empty()) continue;
+		if (b.lineIdx.back() >= start) { at = bi; break; }
+	}
+	if (at < 0 && !s.model.blocks.empty()) at = (int)s.model.blocks.size() - 1;
+	if (at >= 0) {
+		s.selectedBlock = at;
+		s.selAnchor = s.doc.CaptureAnchor(at);
+		s.scrollToSel = true;
+	}
+	std::string msg = redo ? u8"已重做" : u8"已復原";
+	if (at >= 0) msg += u8"第 " + std::to_string(at + 1) + u8" 條規則的修改";
+	s.Notify(msg);
 }

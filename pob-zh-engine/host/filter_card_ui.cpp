@@ -1621,15 +1621,19 @@ int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& te
 			changed = true;
 			continue;
 		}
-		FilterLine& t = f->lines[li];
-		FilterLine cand = t;
-		cand.op = p.op;
-		cand.values = p.values;
-		cand.dirty = true;
-		// same values: leave the line (and its original bytes) alone
-		if (FilterSerializeLine(cand) == FilterSerializeLine(t)) continue;
-		t = cand;
-		changed = true;
+		// every live line of this keyword (a rule can repeat one), not only the first
+		for (int tl : f->blocks[blockIdx].lineIdx) {
+			FilterLine& t = f->lines[tl];
+			if (t.kind != FilterLineKind::Action || t.keyword != p.keyword) continue;
+			FilterLine cand = t;
+			cand.op = p.op;
+			cand.values = p.values;
+			cand.dirty = true;
+			// same values: leave the line (and its original bytes) alone
+			if (FilterSerializeLine(cand) == FilterSerializeLine(t)) continue;
+			t = cand;
+			changed = true;
+		}
 	}
 	if (changed) {
 		f->dirty = true;

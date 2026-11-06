@@ -258,6 +258,8 @@ void DrawPlanDialog(EditorShell& s, SoundsUiState& u)
 		std::string msg = u8"改名 " + std::to_string(res.renamed) + u8" · 跳過 " + std::to_string(res.skipped) +
 		                  u8" · 互換 " + std::to_string(res.swapped) + u8" · 更新引用 " + std::to_string(res.refsUpdated) + u8" 行";
 		if (res.refsUpdated) msg += u8"（還沒儲存）";
+		// the files on disk were renamed: undoing the references would break them
+		if (res.renamed || res.swapped) { s.undo.Reset(s.model.lines); msg += u8"；改名無法復原，復原紀錄已清空"; }
 		if (!res.err.empty()) msg += u8" ※ " + res.err;
 		s.Notify(msg, !res.err.empty());
 		RefCounts(s, true);
@@ -311,6 +313,7 @@ void DrawRenameOne(EditorShell& s, SoundsUiState& u)
 		} else if (e.state == RenamePlanEntry::State::Rename) {
 			std::vector<RenamePlanEntry> plan{ e };
 			SoundLibraryService::ApplyResult res = s.sounds.ApplyRenamePlan(plan, (u.renameSync && s.loaded) ? &s.doc : nullptr);
+			if (res.err.empty()) s.undo.Reset(s.model.lines);   // a renamed file cannot be undone
 			if (res.err.empty())
 				s.Notify(u8"已改名為 " + u.renameNew +
 				         (res.refsUpdated ? (u8"，更新 " + std::to_string(res.refsUpdated) + u8" 行引用（還沒儲存）") : std::string()));

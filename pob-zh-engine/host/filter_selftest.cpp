@@ -16,6 +16,7 @@
 #include "editor_shell.h"
 #include "filter_file_watch.h"
 #include "filter_card_ui.h"
+#include "filter_undo.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -1263,6 +1264,279 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(CardPasteLook(doc, 1, "\tSetTextColor 1 1 1\n\tSetTextColor 2 2 2") == 1 &&
 		              FilterSerializeLine(f.lines[doc.FindLine(1, "SetTextColor")]) == "\tSetTextColor 2 2 2",
 		          "T27 one line per card, the last one wins");
+	}
+
+	// ---- T28: undo / redo history over the whole line list ---------------------
+	{
+		const std::string fx =
+			"Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tSetFontSize 40\n\n"
+			"Show # b\n\tBaseType \"Chaos Orb\"\n\tSetTextColor 4 5 6\n\tSetFontSize 30\n\n"
+			"Hide # c\n\tRarity Normal\n";
+		// Edit a card value the way the editor does: change the token, flag the line.
+		auto setVal = [](FilterFile& file, int blockIdx, FilterDocumentEditor& d, const char* kw, size_t vi, const std::string& v) {
+			const int li = d.FindLine(blockIdx, kw);
+			if (li < 0 || vi >= file.lines[li].values.size()) return false;
+			file.lines[li].values[vi].text = v;
+			file.lines[li].dirty = true;
+			file.dirty = true;
+			return true;
+		};
+
+		// T28a / T28b: one value edit, undo, redo
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			const std::string before = SerializeFilter(f);
+			const bool edited = setVal(f, 0, doc, "SetTextColor", 0, "200");
+			const std::string after = SerializeFilter(f);
+			rep.check(edited && after != before, "T28 fixture edit changes the file");
+			const bool pushed = h.Capture(f.lines);
+			rep.check(pushed && h.CanUndo() && !h.CanRedo(), "T28 capture after an edit pushes one step");
+			const int u = h.Undo(f.lines);
+			rep.check(u >= 0 && SerializeFilter(f) == before, "T28a undo restores the file before the edit", "u=" + std::to_string(u));
+			rep.check(h.CanRedo() && !h.CanUndo(), "T28a after undo: redo possible, nothing left to undo");
+			const int r = h.Redo(f.lines);
+			rep.check(r >= 0 && SerializeFilter(f) == after, "T28b redo brings back the edited file", "r=" + std::to_string(r));
+			rep.check(!h.Capture(f.lines), "T28b capture right after redo records nothing");
+		}
+
+		// T28c: inserting a line is undone, blocks come back too
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			const std::string before = SerializeFilter(f);
+			const size_t linesBefore = f.lines.size();
+			const size_t blocksBefore = f.blocks.size();
+			FilterToken t1, t2, t3;
+			t1.text = "7"; t2.text = "8"; t3.text = "9";
+			const int ins = doc.InsertLine(0, "SetBorderColor", "", { t1, t2, t3 });
+			rep.check(ins >= 0 && f.lines.size() == linesBefore + 1 && SerializeFilter(f) != before, "T28c line inserted");
+			rep.check(h.Capture(f.lines), "T28c capture sees the structural change");
+			h.Undo(f.lines);
+			doc.RebuildBlocks();
+			rep.check(SerializeFilter(f) == before && f.lines.size() == linesBefore, "T28c undo removes the inserted line");
+			rep.check(f.blocks.size() == blocksBefore && doc.FindLine(0, "SetBorderColor") < 0, "T28c blocks rebuilt to the old shape");
+		}
+
+		// T28d: a removed custom rule comes back with the same text
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			const FilterFile src = ParseFilter(fx);
+			std::string err;
+			const int n = ImportCustomRules(doc, ExportCustomRules(src, { 0 }, "t28"), &err);
+			rep.check(n == 1, "T28d fixture: one rule imported into the custom zone", err + " n=" + std::to_string(n));
+			auto zoneBlock = [&]() {
+				const CustomZone z = FindCustomZone(f);
+				for (size_t i = 0; i < f.blocks.size(); i++)
+					if (z.present() && f.blocks[i].headerLineIdx > z.beginLine && f.blocks[i].headerLineIdx < z.endLine) return (int)i;
+				return -1;
+			};
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			const std::string before = SerializeFilter(f);
+			const int zb = zoneBlock();
+			rep.check(zb >= 0, "T28d the imported rule sits inside the zone");
+			if (zb >= 0) {
+				const std::string text = FilterBlockText(f, f.blocks[zb], false);
+				doc.RemoveBlock(zb);
+				rep.check(zoneBlock() < 0, "T28d removed rule is gone from the zone");
+				rep.check(h.Capture(f.lines), "T28d capture sees the removed block");
+				h.Undo(f.lines);
+				doc.RebuildBlocks();
+				const int back = zoneBlock();
+				rep.check(back >= 0 && FilterBlockText(f, f.blocks[back], false) == text, "T28d undo brings the rule back with the same text");
+				rep.check(SerializeFilter(f) == before, "T28d whole file equals the pre-removal file");
+			}
+		}
+
+		// T28e: no change, no step
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			const bool c1 = h.Capture(f.lines);
+			const bool c2 = h.Capture(f.lines);
+			rep.check(!c1 && !c2 && !h.CanUndo() && h.UndoCount() == 0, "T28e capture without any edit records nothing");
+			setVal(f, 0, doc, "SetFontSize", 0, "50");
+			const bool c3 = h.Capture(f.lines);
+			const bool c4 = h.Capture(f.lines);
+			rep.check(c3 && !c4 && h.UndoCount() == 1, "T28e one edit is one step, a second capture adds none", "count=" + std::to_string(h.UndoCount()));
+		}
+
+		// T28f: a new edit after undo drops the redo side
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			setVal(f, 0, doc, "SetTextColor", 0, "100");
+			h.Capture(f.lines);
+			h.Undo(f.lines);
+			rep.check(h.CanRedo(), "T28f after undo redo is possible");
+			setVal(f, 1, doc, "SetFontSize", 0, "33");
+			const bool pushed = h.Capture(f.lines);
+			rep.check(pushed && !h.CanRedo() && h.Redo(f.lines) == -1, "T28f a fresh edit clears redo");
+		}
+
+		// T28g: the history is capped at kMaxSteps, oldest step dropped
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			std::string afterFirst;
+			bool allPushed = true;
+			for (int i = 1; i <= 101; i++) {
+				setVal(f, 0, doc, "SetFontSize", 0, std::to_string(100 + i));
+				allPushed &= h.Capture(f.lines);
+				if (i == 1) afterFirst = SerializeFilter(f);
+			}
+			rep.check(allPushed && h.UndoCount() == FilterUndoHistory::kMaxSteps && FilterUndoHistory::kMaxSteps == 100,
+			          "T28g 101 edits keep only 100 steps", "count=" + std::to_string(h.UndoCount()));
+			int ok = 0;
+			while (h.Undo(f.lines) >= 0 && ok < 200) ok++;
+			rep.check(ok == 100 && !h.CanUndo(), "T28g exactly 100 undos succeed, then -1", "ok=" + std::to_string(ok));
+			rep.check(SerializeFilter(f) == afterFirst, "T28g oldest reachable state is the one after the first edit");
+		}
+
+		// T28h: undoing a value edit puts the rule back to unchanged against the baseline
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			doc.CaptureBaseline();
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			setVal(f, 0, doc, "SetTextColor", 0, "222");
+			h.Capture(f.lines);
+			rep.check(doc.BlockState(0) == BlockChange::Modified, "T28h edited rule is Modified");
+			h.Undo(f.lines);
+			doc.RebuildBlocks();
+			rep.check(doc.BlockState(0) == BlockChange::Same && doc.BlockState(1) == BlockChange::Same,
+			          "T28h after undo the rule is Same as the baseline again");
+		}
+
+		// T28i: Reset forgets everything
+		{
+			FilterFile f = ParseFilter(fx);
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			setVal(f, 0, doc, "SetTextColor", 0, "11");
+			h.Capture(f.lines);
+			setVal(f, 0, doc, "SetTextColor", 0, "12");
+			h.Capture(f.lines);
+			h.Undo(f.lines);
+			rep.check(h.CanUndo() && h.CanRedo(), "T28i both directions open before reset");
+			h.Reset(f.lines);
+			rep.check(!h.CanUndo() && !h.CanRedo() && h.UndoCount() == 0, "T28i reset clears undo and redo");
+			rep.check(!h.Capture(f.lines), "T28i the current lines are the new shadow");
+		}
+	}
+
+	// ---- T29: copy a rule into the custom zone (right-click copy) --------------
+	{
+		FilterFile f = ParseFilter(
+			"Show # %D3 $type->currency\n\tClass \"Currency\"\n\tBaseType \"Chaos Orb\"\n\tSetTextColor 255 0 0\n\tSetFontSize 45\n\n"
+			"Hide # junk\n\tRarity Normal\n");
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		rep.check(f.blocks.size() == 2 && !FindCustomZone(f).present(), "T29 fixture: two rules, no custom zone yet");
+		if (f.blocks.size() == 2) {
+			const std::string orig = FilterBlockText(f, f.blocks[0], false);
+			const std::string origHeader = f.blocks[0].headerComment;
+			std::string err;
+			const int n = ImportCustomRules(doc, orig, &err);
+			rep.check(n == 1, "T29a copying one rule imports exactly one", err + " n=" + std::to_string(n));
+			const CustomZone z = FindCustomZone(f);
+			int inZone = 0, outside = -1;
+			std::string zoneText;
+			for (size_t i = 0; i < f.blocks.size(); i++) {
+				const int h = f.blocks[i].headerLineIdx;
+				if (z.present() && h > z.beginLine && h < z.endLine) { inZone++; zoneText = FilterBlockText(f, f.blocks[i], false); }
+				else if (f.blocks[i].headerComment == origHeader) outside = (int)i;
+			}
+			rep.check(z.present() && inZone == 1 && f.blocks.size() == 3, "T29a the zone now holds one rule", "inZone=" + std::to_string(inZone));
+			rep.check(zoneText == orig, "T29a the copy has the same text as the original");
+			rep.check(outside >= 0 && FilterBlockText(f, f.blocks[outside], false) == orig, "T29a the original rule is unchanged");
+
+			const int again = ImportCustomRules(doc, orig, &err);
+			rep.check(again == 0, "T29b copying the same rule again adds nothing", "again=" + std::to_string(again));
+
+			const std::string snap = SerializeFilter(f);
+			const int look = ImportCustomRules(doc, "\tSetTextColor 1 2 3\r\n\tSetFontSize 20", &err);
+			rep.check(look <= 0 && SerializeFilter(f) == snap, "T29c action lines without Show/Hide import nothing", "look=" + std::to_string(look));
+		}
+	}
+
+	// ---- T30: paste a look onto a rule that has the keyword twice ---------------
+	{
+		FilterFile f = ParseFilter("Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tSetTextColor 4 5 6\n\tSetFontSize 40\n");
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		const int n = CardPasteLook(doc, 0, "\tSetTextColor 9 9 9");
+		rep.check(n == 1, "T30 paste reports one action line", "n=" + std::to_string(n));
+		int found = 0, nine = 0;
+		if (!f.blocks.empty()) {
+			for (int li : f.blocks[0].lineIdx) {
+				if (f.lines[li].keyword != "SetTextColor") continue;
+				found++;
+				nine += FilterSerializeLine(f.lines[li]) == "\tSetTextColor 9 9 9";
+			}
+		}
+		rep.check(found == 2 && nine == 2, "T30 both SetTextColor lines get the pasted value", "found=" + std::to_string(found) + " nine=" + std::to_string(nine));
+	}
+
+	// ---- T31: undo capture cost on the real NeverSink file ----------------------
+	{
+		bool ok = false;
+		FilterFile f = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
+		if (!ok) {
+			rep.note("T31 skipped: no Filters\\default.filter next to the exe");
+		} else {
+			FilterDocumentEditor doc;
+			doc.Attach(&f);
+			FilterUndoHistory h;
+			h.Reset(f.lines);
+			LARGE_INTEGER fq, t0, t1;
+			QueryPerformanceFrequency(&fq);
+			const int reps = 50;
+			QueryPerformanceCounter(&t0);
+			bool any = false;
+			for (int i = 0; i < reps; i++) any |= h.Capture(f.lines);
+			QueryPerformanceCounter(&t1);
+			const double idleMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)fq.QuadPart / reps;
+			const std::string before = SerializeFilter(f);
+			int li = -1;
+			for (int bi = (int)f.blocks.size() / 2; bi < (int)f.blocks.size() && li < 0; bi++) li = doc.FindLine(bi, "SetFontSize");
+			if (li >= 0) {
+				f.lines[li].values[0].text = "41";
+				f.lines[li].dirty = true;
+			}
+			QueryPerformanceCounter(&t0);
+			const bool pushed = h.Capture(f.lines);
+			const int u = h.Undo(f.lines);
+			QueryPerformanceCounter(&t1);
+			const double editMs = (double)(t1.QuadPart - t0.QuadPart) * 1000.0 / (double)fq.QuadPart;
+			char buf[128];
+			snprintf(buf, sizeof(buf), "%zu lines, idle capture %.3f ms, capture+undo %.3f ms", f.lines.size(), idleMs, editMs);
+			rep.check(!any && idleMs < 1.0, "T31 idle capture on the real file stays under 1 ms per frame", buf);
+			rep.check(li >= 0 && pushed && u >= 0 && SerializeFilter(f) == before, "T31 one edit on the real file undoes byte-exact",
+			          "li=" + std::to_string(li) + " pushed=" + std::to_string(pushed) + " u=" + std::to_string(u));
+		}
 	}
 
 	rep.note("failures=" + std::to_string(rep.failures));

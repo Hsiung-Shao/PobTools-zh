@@ -19,6 +19,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
+#include <imgui_internal.h>   // GetTopMostPopupModal
 
 #include <algorithm>
 #include <cmath>
@@ -87,6 +88,30 @@ public:
 		return true;
 	}
 
+	// Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z / Ctrl+S / Ctrl+F, and the header's 復原 / 重做.
+	// Runs after the header and before the pages, so a structural change is seen
+	// by the pages' own rebuild this frame.
+	void handleShortcuts()
+	{
+		const ImGuiIO& io = ImGui::GetIO();
+		int req = shell_.undoRequest;
+		shell_.undoRequest = 0;
+		const bool modal = ImGui::GetTopMostPopupModal() != nullptr;
+		// a text field keeps its own Ctrl+Z
+		if (io.KeyCtrl && !io.WantTextInput && !modal && shell_.loaded) {
+			if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) req = io.KeyShift ? 1 : -1;
+			if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) req = 1;
+		}
+		if (io.KeyCtrl && !modal && shell_.loaded) {
+			if (ImGui::IsKeyPressed(ImGuiKey_S, false) && shell_.model.dirty) shell_.Save();
+			if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+				shell_.section = Section::FilterEdit;
+				shell_.focusSearch = true;
+			}
+		}
+		if (req != 0) EdUndoRedo(shell_, req > 0);
+	}
+
 	void Frame() override
 	{
 		// The host's font-size zoom can change while the panel is open (the
@@ -95,6 +120,7 @@ public:
 		if (!testState_.empty()) applyTestState();
 
 		DrawEditorHeader(shell_);
+		handleShortcuts();
 		if (!shell_.cjkOk) {
 			ImGui::TextColored(PobUi::TokV4(PobUi::Tok::Danger),
 				"[!] CJK font atlas not loaded (Fonts\\FZ_ZY.ttf). Chinese cannot display.");
@@ -117,6 +143,9 @@ public:
 			case Section::Sounds:      DrawSoundsSection(shell_); break;
 		}
 		ImGui::EndChild();
+		// one undo step per finished edit: not while a field is being typed in or
+		// a colour dragged (that becomes one step when it is let go)
+		if (shell_.loaded && !ImGui::IsAnyItemActive()) shell_.undo.Capture(shell_.model.lines);
 		DrawStatusBar(shell_);
 
 		// The close guard: the same "save first?" dialog as switching files.
@@ -170,7 +199,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | rules-ctx | rules-paste | batch-paste | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -224,6 +253,23 @@ private:
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "copy-custom" && shell_.selectedBlock >= 0)   // 複製成新的自訂規則 on the selected rule
+				EdImportAsCustom(shell_, FilterBlockText(shell_.model, shell_.model.blocks[shell_.selectedBlock], false), false);
+			if (st == "undo") {
+				// two edits, one undone: the header's 復原 / 重做 both live, the toast says which rule
+				const int bi = shell_.selectedBlock;
+				const int li = bi >= 0 ? shell_.doc.FindLine(bi, "SetFontSize") : -1;
+				if (li >= 0) {
+					shell_.undo.Capture(shell_.model.lines);
+					shell_.model.lines[li].values[0].text = "30";
+					shell_.model.lines[li].dirty = true;
+					shell_.model.dirty = true;
+					shell_.undo.Capture(shell_.model.lines);
+					shell_.model.lines[li].values[0].text = "20";
+					shell_.undo.Capture(shell_.model.lines);
+					EdUndoRedo(shell_, false);
+				}
+			}
 			if (st == "batch-paste") {
 				// as if 複製外觀 on the selected rule, then 貼上外觀到已勾選 on four others
 				shell_.batchMode = true;
