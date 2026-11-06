@@ -1752,6 +1752,21 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
+	// ---- T33i: the note right above a rule moves with it ------------------------
+	{
+		FilterFile f = ParseFilter(
+			"#pobtools-custom-begin v=1\n# note A\nShow\n\tClass \"Rings\"\n\n#=====\n# note B\nShow\n\tClass \"Amulets\"\n"
+			"#pobtools-custom-end\n\nShow # outside\n\tClass \"Belts\"\n");
+		FilterDocumentEditor doc;
+		doc.Attach(&f);
+		const int nb = doc.MoveBlockBefore(1, 0);
+		const std::string out = SerializeFilter(f);
+		const std::string want =
+			"#pobtools-custom-begin v=1\n# note B\nShow\n\tClass \"Amulets\"\n\n#=====\n# note A\nShow\n\tClass \"Rings\"\n"
+			"#pobtools-custom-end\n\nShow # outside\n\tClass \"Belts\"\n";
+		rep.check(nb == 0 && out == want, "T33i a note right above a rule moves with it; blank, banner and sentinels stay", out);
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;

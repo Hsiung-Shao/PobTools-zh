@@ -428,6 +428,32 @@ int FilterDocumentEditor::UnsavedBlockCount(bool settle)
 	return n;
 }
 
+namespace {
+
+// A comment written right above a rule describes it ("# my divine rule"):
+// moving the rule takes it along. Not a "#!" line (that belongs to the rule
+// above), not a zone sentinel, not a banner rule like "#=====".
+bool LeadComment(const FilterLine& ln)
+{
+	if (ln.kind != FilterLineKind::Comment) return false;
+	const std::string& r = ln.raw;
+	size_t i = r.find('#');
+	if (i == std::string::npos) return false;
+	if (r.compare(i, 2, "#!") == 0 || r.compare(i, 17, "#pobtools-custom-") == 0) return false;
+	i++;
+	while (i < r.size() && (r[i] == ' ' || r[i] == (char)9)) i++;
+	if (i >= r.size()) return false;
+	const char c = r[i];
+	if (c == '=' || c == '-' || c == '*' || c == '#') {
+		size_t j = i;
+		while (j < r.size() && (r[j] == c || r[j] == ' ')) j++;
+		if (j == r.size()) return false;   // nothing but a banner rule
+	}
+	return true;
+}
+
+} // namespace
+
 // The blocks from the moved one to the target are cut into their own lines
 // ("chunks") and the lines between them ("gaps"). The moved chunk changes place
 // among the chunks; the gaps are put back between them in their old order, so
@@ -438,11 +464,18 @@ int FilterDocumentEditor::MoveBlock(int blockIdx, int targetBlockIdx, bool after
 	const int nb = (int)f_->blocks.size();
 	if (blockIdx < 0 || blockIdx >= nb || targetBlockIdx < 0 || targetBlockIdx >= nb || blockIdx == targetBlockIdx) return -1;
 	const int lo = (std::min)(blockIdx, targetBlockIdx), hi = (std::max)(blockIdx, targetBlockIdx);
+	// each chunk starts at the comments right above its header
+	auto leadStart = [&](int k) {
+		const int floor = k > 0 ? BodyEnd(k - 1) : -1;
+		int i = f_->blocks[k].headerLineIdx - 1;
+		while (i > floor && LeadComment(f_->lines[i])) i--;
+		return i + 1;
+	};
 	std::vector<std::vector<FilterLine>> chunks, gaps;
 	for (int k = lo; k <= hi; k++) {
-		const int h = f_->blocks[k].headerLineIdx, e = BodyEnd(k);
-		chunks.emplace_back(f_->lines.begin() + h, f_->lines.begin() + e + 1);
-		if (k < hi) gaps.emplace_back(f_->lines.begin() + e + 1, f_->lines.begin() + f_->blocks[k + 1].headerLineIdx);
+		const int e = BodyEnd(k);
+		chunks.emplace_back(f_->lines.begin() + leadStart(k), f_->lines.begin() + e + 1);
+		if (k < hi) gaps.emplace_back(f_->lines.begin() + e + 1, f_->lines.begin() + leadStart(k + 1));
 	}
 	std::vector<int> order;
 	for (int k = 0; k <= hi - lo; k++)
@@ -457,7 +490,7 @@ int FilterDocumentEditor::MoveBlock(int blockIdx, int targetBlockIdx, bool after
 		seq.insert(seq.end(), chunks[order[i]].begin(), chunks[order[i]].end());
 		if (i < gaps.size()) seq.insert(seq.end(), gaps[i].begin(), gaps[i].end());
 	}
-	const int start = f_->blocks[lo].headerLineIdx, end = BodyEnd(hi);
+	const int start = leadStart(lo), end = BodyEnd(hi);
 	f_->lines.erase(f_->lines.begin() + start, f_->lines.begin() + end + 1);
 	f_->lines.insert(f_->lines.begin() + start, seq.begin(), seq.end());
 	f_->dirty = true;
