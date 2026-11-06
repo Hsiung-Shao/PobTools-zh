@@ -555,6 +555,7 @@ if (WIN32)
         dep/miniz/miniz.c
         engine/common/base64.c
         host/http_client.cpp
+        host/github_token.cpp
         ${IMGUI_SOURCES}
     )
     target_compile_definitions(pob-zh PRIVATE "UNICODE" "_UNICODE" "IMGUI_IMPL_OPENGL_ES2")
@@ -777,4 +778,15 @@ add_executable(font_fallback_selftest EXCLUDE_FROM_ALL tests/font_fallback_selft
 target_link_libraries(font_fallback_selftest PRIVATE Freetype::Freetype)
 if (MSVC)
     target_compile_options(font_fallback_selftest PRIVATE "/utf-8")
+endif ()
+
+# Offline PAT persistence/request tests. Fake WinHTTP transport, real DPAPI;
+# no installed POB or GUI runtime is needed to run this executable.
+if (WIN32)
+    add_executable(github_token_test EXCLUDE_FROM_ALL
+        tests/github_token_test.cpp host/github_token.cpp host/http_client.cpp)
+    target_compile_definitions(github_token_test PRIVATE _WINHTTP_INTERNAL_)
+    target_compile_options(github_token_test PRIVATE "/utf-8")
+    set_property(TARGET github_token_test PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif ()

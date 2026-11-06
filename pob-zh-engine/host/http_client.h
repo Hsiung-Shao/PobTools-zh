@@ -81,6 +81,7 @@ public:
 	           std::string* err, const std::atomic<bool>* cancel = nullptr);
 
 private:
+	std::wstring host_;       // credentials are restricted to api.github.com
 	void* hSession_ = nullptr; // HINTERNET
 	void* hConnect_ = nullptr; // HINTERNET
 };

@@ -381,7 +381,8 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir);
 // Status.message; the launcher feeds it to the glyph-range builder so
 // dynamic updater messages never render as tofu.
 //
-// GENERATED from the PT_UPD_MSGS list in app_update.cpp -- do not hand-edit, and
+// GENERATED from PT_UPD_MSGS in app_update.cpp plus GitHubToken::ErrorGlyphSeed;
+// do not hand-edit, and
 // do not add a message by typing a literal at the setPhase call site. Two checks
 // hold this up and BOTH are needed:
 //   --font-coverage-selftest  : can every shipped font draw what is in the seed?
