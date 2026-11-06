@@ -45,6 +45,12 @@ bool DrawCardPopovers(EditorShell& s);
 // than doubled. One line per card (the last wins). Returns how many cards the
 // text carried: 0 = no action lines, -1 = more than one rule (both leave the
 // block untouched). *changedOut: whether anything changed. Structural.
+// What Enter adds from the candidate list under an item-name input: an exact
+// English or Chinese match, else (catalog candidates only) the first row. A
+// 目錄外 list adds only on an exact match -- its first row is not necessarily
+// what was meant, nor a usable name. "" = add nothing.
+std::string CardEnterPick(const std::vector<LibItem>& live, const std::string& typed);
+
 int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text, bool* changedOut = nullptr);
 
 // ---- editors shared with the batch dialog ----------------------------------

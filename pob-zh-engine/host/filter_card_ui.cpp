@@ -596,10 +596,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 	if (enter && !in.empty()) {
 		std::string token;
 		if (translateInput) {
-			for (const LibItem& it : u.live)
-				if (it.en == in || it.zh == in) { token = it.en; break; }
-			if (token.empty() && u.live.size() == 1) token = u.live[0].en;
-			if (token.empty() && !u.live.empty()) token = u.live[0].en;   // the highlighted first row
+			token = CardEnterPick(u.live, in);
 		} else {
 			token = in;
 		}
@@ -614,7 +611,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		const float listW = (std::min)(std::floor(PobUi::D(420.0f)), g_rowRight - ImGui::GetCursorScreenPos().x);
 		const float listH = (std::min)((float)u.live.size(), 6.5f) * rowH + PobUi::D(8.0f);
 		if (u.live.front().offCatalog) {
-			PobUi::Hint(u8"物品目錄沒有，以下來自翻譯字典，不一定是可用的物品名稱，加入後請在掉落預覽確認。", listW);
+			PobUi::Hint(u8"物品目錄沒有，以下來自翻譯字典，不一定是可用的物品名稱，要點選才會加入（名稱完全相同時 Enter 也可以）；加入後請在掉落預覽確認。", listW);
 			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetCursorScreenPos().y + PobUi::D(2.0f)));
 		}
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(Tok::SurfaceRaised));
@@ -1563,6 +1560,14 @@ void CardTestOpenPop(EditorShell& s, int which)
 	u.colorChan = 0;
 	u.rgbaFor = -1;
 	u.anchor = ImVec2(PobUi::D(520.0f), PobUi::D(300.0f));
+}
+
+std::string CardEnterPick(const std::vector<LibItem>& live, const std::string& typed)
+{
+	for (const LibItem& it : live)
+		if (it.en == typed || it.zh == typed) return it.en;
+	if (live.empty() || live.front().offCatalog) return std::string();
+	return live.front().en;   // the highlighted first row
 }
 
 // Test aid (POBTOOLS_FILTER_STATE=detail-basetype): text typed into the

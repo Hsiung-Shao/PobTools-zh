@@ -1980,6 +1980,27 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
+	// ---- T36: what Enter adds from the candidate list -------------------------
+	{
+		auto item = [](const char* en, const char* zh, bool off) {
+			LibItem it;
+			it.en = en;
+			it.zh = zh;
+			it.offCatalog = off;
+			return it;
+		};
+		const std::vector<LibItem> cat = { item("Chaos Orb", "混沌石", false), item("Chaos Shard", "混沌碎片", false) };
+		rep.check(CardEnterPick(cat, "Chaos Shard") == "Chaos Shard", "T36 catalog: an exact English match wins over the first row");
+		rep.check(CardEnterPick(cat, "混沌碎片") == "Chaos Shard", "T36 catalog: an exact Chinese match wins");
+		rep.check(CardEnterPick(cat, "混沌") == "Chaos Orb", "T36 catalog: no exact match adds the first row (as before)");
+		const std::vector<LibItem> off = { item("Amber Ring", "琥珀戒", true), item("Bone Ring", "骨戒", true) };
+		rep.check(CardEnterPick(off, "戒").empty(), "T36 off-catalog: a partial match adds nothing");
+		rep.check(CardEnterPick(off, "骨戒") == "Bone Ring", "T36 off-catalog: an exact Chinese match is added");
+		rep.check(CardEnterPick(off, "bone ring").empty() && CardEnterPick(off, "Bone Ring") == "Bone Ring",
+		          "T36 off-catalog: English must match exactly");
+		rep.check(CardEnterPick({}, "x").empty(), "T36 no candidates: nothing");
+	}
+
 	// ---- T31: undo capture cost on the real NeverSink file ----------------------
 	{
 		bool ok = false;
