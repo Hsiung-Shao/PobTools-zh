@@ -251,22 +251,75 @@ int main()
 	Check(Last().redirectPolicy != WINHTTP_OPTION_REDIRECT_POLICY_NEVER &&
 	      !HasText(Last().sentHeaders, L"Authorization"), "未設 token 時 GetEx 照常轉址且不帶 Authorization");
 
-	// ---- API 錯誤分類 ----
-	Reset(401, "server body containing " + fake);
-	Check(!api.GetString(releases, body, &err) && err == ApiError(401, "", "", ""), "401 提示 token 失效");
+	// ---- API 錯誤分類(帶 token 的情境;每案先重設 token,避免被拒旗標影響) ----
+	const auto Authed = []() { Set("ghp_REPLACEMENT"); };
+	Authed(); Reset(401, "server body containing " + fake);
+	Check(!api.GetString(releases, body, &err) && err == ApiError(401, "", "", "", true), "401 提示 token 失效");
 	Check(err.find(fake) == std::string::npos, "伺服器回應內容不會洩漏進錯誤訊息");
-	Reset(403); cfg.remaining = L"0";
-	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", ""), "403 主要額度用盡視為限流");
-	Reset(403); cfg.retryAfter = L"60";
-	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", ""), "403 帶 Retry-After 視為次級限流");
-	Reset(403, "{\"message\":\"You have exceeded a secondary rate limit\"}");
-	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", ""), "403 僅內文提示次級限流仍視為限流");
-	Reset(403); cfg.remaining = L"100";
-	Check(!api.GetString(releases, body, &err) && err != ApiError(429, "", "", ""), "403 權限不足不視為限流");
-	Reset(429);
-	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", ""), "429 視為限流");
+	Authed(); Reset(403); cfg.remaining = L"0";
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "403 主要額度用盡視為限流");
+	Authed(); Reset(403); cfg.retryAfter = L"60";
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "403 帶 Retry-After 視為次級限流");
+	Authed(); Reset(403, "{\"message\":\"You have exceeded a secondary rate limit\"}");
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "403 僅內文提示次級限流仍視為限流");
+	Authed(); Reset(403); cfg.remaining = L"100";
+	Check(!api.GetString(releases, body, &err) && err != ApiError(429, "", "", "", true), "403 權限不足不視為限流");
+	Authed(); Reset(429);
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "429 視為限流");
+
+	// T9 帶 token 收到 401 時匿名重試
+	Authed(); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	body.clear();
+	Check(api.GetString(releases, body, &err) && body == "{}", "Get 收到 401 後匿名重試成功");
+	Check(reqs.size() == 2, "Get 收到 401 共送出 2 次請求");
+	Check(reqs.size() == 2 && HasText(reqs[0].sentHeaders, L"Bearer ghp_REPLACEMENT"), "Get 第 1 次請求帶 token");
+	Check(reqs.size() == 2 && !HasText(reqs[1].sentHeaders, L"Authorization") &&
+	      reqs[1].redirectPolicy != WINHTTP_OPTION_REDIRECT_POLICY_NEVER, "Get 401 重試不帶 Authorization 且允許轉址");
+	Check(Rejected(), "Get 收到 401 後標記 token 被拒");
+	Authed(); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	HttpResult after401;
+	Check(api.GetEx(releases, extra, after401, &err) && after401.status == 200 && after401.body == "{}", "GetEx 收到 401 後匿名重試成功");
+	Check(reqs.size() == 2, "GetEx 收到 401 共送出 2 次請求");
+	Check(reqs.size() == 2 && HasText(reqs[0].sentHeaders, L"Bearer ghp_REPLACEMENT"), "GetEx 第 1 次請求帶 token");
+	Check(reqs.size() == 2 && !HasText(reqs[1].sentHeaders, L"Authorization") &&
+	      reqs[1].redirectPolicy != WINHTTP_OPTION_REDIRECT_POLICY_NEVER, "GetEx 401 重試不帶 Authorization 且允許轉址");
+	Check(Rejected(), "GetEx 收到 401 後標記 token 被拒");
+
+	// T10 換 token 或清空後清除被拒旗標
+	Check(Rejected(), "換 token 前仍為被拒");
+	Set("ghp_ANOTHER_TOKEN");
+	Check(!Rejected(), "換 token 後清除被拒旗標");
+	Authed(); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	api.GetString(releases, body, &err);
+	Check(Rejected(), "再次收到 401 又標記被拒");
+	Set("");
+	Check(!Rejected(), "清空 token 後清除被拒旗標");
+
+	// T11 401 且匿名重試也失敗時回報 token 無效
+	Authed(); Reset(403); cfg.remaining = L"0";
+	cfg.script = {{401, ""}};
+	Check(!api.GetString(releases, body, &err) && err == ApiError(401, "", "", "", true), "401 後匿名重試也失敗時回報 token 無效");
+	Check(reqs.size() == 2, "401 後匿名重試也失敗共送出 2 次請求");
+
+	// T12 訊息依有無帶 token 分流
+	Check(!ApiError(401, "", "", "", true).empty(), "帶 token 的 401 有訊息");
+	Check(ApiError(401, "", "", "", false).empty(), "匿名的 401 沒有專屬訊息");
+	const std::string limitedWith = ApiError(429, "", "", "", true), limitedWithout = ApiError(429, "", "", "", false);
+	Check(!limitedWith.empty() && !limitedWithout.empty() && limitedWith != limitedWithout, "限流訊息依有無 token 不同");
+	Check(limitedWith.find(u8"儲存") == std::string::npos, "帶 token 的限流訊息不建議儲存 token");
+	Check(!ApiError(403, "100", "", "", false).empty() && ApiError(403, "100", "", "", false).find("Token") == std::string::npos,
+	      "匿名的 403 訊息不提 Token");
+	Check(!ApiError(403, "100", "", "", true).empty(), "帶 token 的 403 有訊息");
+	Set(""); Reset(429);
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", false), "匿名收到 429 回匿名版訊息");
+	Authed(); Reset(429);
+	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "帶 token 收到 429 回帶 token 版訊息");
+
 	// T6
-	Reset(404);
+	Set(""); Reset(404);
 	Check(!api.GetString(releases, body, &err) && err == "HTTP 404: /repos/test/project/releases", "未知狀態碼錯誤保留狀態與路徑");
 	Reset(403, std::string(20000, 'x'));
 	api.GetString(releases, body, &err);
@@ -323,6 +376,22 @@ int main()
 	}
 	writer.join();
 	Check(consistent, "並行更新不會讀到殘缺憑證");
+	// T13 另一程序改檔後下一次請求就用新 token(Init 狀態殘留,故放最後)
+	const std::string tokenA = "ghp_TOKEN_A_111", tokenB = "ghp_TOKEN_B_222";
+	CreateDirectoryW(root.c_str(), nullptr);
+	Check(Save(root, tokenA, &err), "T13 先存 token A");
+	Init(root);
+	Check(HasText(RequestHeaders(L"api.github.com"), L"ghp_TOKEN_A_111"), "Init 後請求帶 token A");
+	Sleep(50);
+	Check(Save(root, tokenB, &err), "T13 模擬另一程序存 token B");
+	const std::wstring afterB = RequestHeaders(L"api.github.com");
+	Check(HasText(afterB, L"ghp_TOKEN_B_222") && !HasText(afterB, L"ghp_TOKEN_A_111"), "檔案被改後下一次請求用 token B");
+	Sleep(50);
+	Check(Save(root, "", &err), "T13 模擬另一程序清除 token");
+	Check(RequestHeaders(L"api.github.com").empty(), "檔案被清除後下一次請求匿名");
+	RemoveDirectoryW((root + L"PobTools").c_str());
+	RemoveDirectoryW(root.c_str());
+
 	Set("");
 	std::printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

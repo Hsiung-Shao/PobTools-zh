@@ -465,7 +465,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// processes re-enter here) must all see it, or GitHub stays unreachable for
 	// people who need a proxy. Empty follows the system proxy.
 	HttpSetManualProxy(LoadLauncherConfig(dir + L"pob-zh.ini").proxy);
-	GitHubToken::Set(GitHubToken::Load(dir));
+	// Watched, not read once: a tool child keeps running while the launcher's
+	// settings page saves or clears the token, and must pick that up.
+	GitHubToken::Init(dir);
 
 	// Startup timeline (PobTools\startup_launcher.txt) for the launcher only: the
 	// engine child writes its own from inside SimpleGraphic.dll, and the CLI

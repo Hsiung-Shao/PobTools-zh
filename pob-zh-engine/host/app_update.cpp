@@ -2587,12 +2587,12 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		for (const char* frag : kUpdMsgFragments) expectCovered(frag);
 		expectCovered(kExternalMsgSeed);
 		expectCovered(GitHubToken::ErrorGlyphSeed);
-		expectCovered(GitHubToken::ApiError(401, "", "", ""));
-		expectCovered(GitHubToken::ApiError(403, "0", "", ""));
-		expectCovered(GitHubToken::ApiError(403, "10", "", ""));
+		expectCovered(GitHubToken::ApiError(401, "", "", "", true));
+		expectCovered(GitHubToken::ApiError(403, "0", "", "", true));
+		expectCovered(GitHubToken::ApiError(403, "10", "", "", true));
 		expectCovered(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip"));
 		{
-			const std::string limitedApi = GitHubToken::ApiError(429, "", "", "");
+			const std::string limitedApi = GitHubToken::ApiError(429, "", "", "", true);
 			check(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip") == PT_UPD_FRIENDLY_LIMIT &&
 			      FriendlyCheckError("HTTP 429: /x") == PT_UPD_FRIENDLY_LIMIT &&
 			      FriendlyCheckError(limitedApi) == limitedApi &&

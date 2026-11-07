@@ -141,8 +141,8 @@
 	X(githubTokenLabel,  u8"GitHub Token",                u8"GitHub Token")                          \
 	X(githubTokenHint,   u8"選填，減少更新檢查被限流；貼上後按「儲存」",                             \
 	                     u8"Optional; fewer update-check rate limits. Paste, then Save")             \
-	X(githubTokenEmpty,  u8"貼上 ghp_ 或 github_pat_ 開頭的 Token",                                  \
-	                     u8"Paste a ghp_ or github_pat_ token")                                      \
+	X(githubTokenEmpty,  u8"ghp_… 或 github_pat_…",       u8"ghp_… or github_pat_…")                 \
+	X(githubTokenPasteFirst, u8"請先貼上 Token",          u8"Paste a token first")                   \
 	X(githubTokenShow,   u8"顯示",                        u8"Show")                                  \
 	X(githubTokenHide,   u8"隱藏",                        u8"Hide")                                  \
 	X(githubTokenSave,   u8"儲存",                        u8"Save")                                  \
@@ -153,6 +153,8 @@
 	                     u8"No GitHub Token configured")                                             \
 	X(githubTokenUnreadable, u8"已儲存的 Token 無法讀取，請重新儲存",                                \
 	                     u8"Saved token unreadable; save it again")                                  \
+	X(githubTokenRejected, u8"Token 無效或已過期，請更換或清除；目前改用匿名查詢",                   \
+	                     u8"Token invalid or expired; replace or clear it (using anonymous requests)") \
 	X(githubTokenStorage, u8"以目前 Windows 使用者加密儲存，只送往 GitHub API",                      \
 	                     u8"Encrypted for this Windows user; sent only to the GitHub API")           \
 	X(githubTokenCleared, u8"已清除 GitHub Token",         u8"GitHub Token cleared")                 \

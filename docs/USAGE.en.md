@@ -143,8 +143,10 @@ both follow whichever line the Settings page selects.
 > **Clear** deletes the saved token and returns to anonymous requests.
 > The token is encrypted for the current Windows user in `PobTools\github_token.bin`,
 > never written to the ini or logs, and sent only to `api.github.com`. Save it again
-> after changing computers or Windows users. An expired or revoked token produces a
-> message asking you to replace or clear it. Authenticated requests still have rate limits.
+> after changing computers or Windows users. Tool windows that are already open (atlas
+> and the like) follow a saved or cleared token without restarting. An expired or revoked
+> token falls back to anonymous requests, and Settings shows "Token invalid or expired" so
+> you can replace or clear it. Authenticated requests still have rate limits.
 
 ### Chinese search inside POB
 

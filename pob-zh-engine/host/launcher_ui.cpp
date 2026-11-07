@@ -3038,7 +3038,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						const bool blank = GitHubToken::Normalize(githubTokenEdit, pasted) && pasted.empty();
 						GitHubToken::Wipe(pasted);
 						if (blank) {
-							PobUi::ShowToast(S.githubTokenEmpty, PobUi::Tone::Warn);
+							PobUi::ShowToast(S.githubTokenPasteFirst, PobUi::Tone::Warn);
 							return;
 						}
 					} else if (!githubTokenSaved && !githubTokenUnreadable) {
@@ -3075,7 +3075,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				const float actionsW = PobUi::ButtonWidth(S.githubTokenAbout) +
 				                       PobUi::ButtonWidth(S.githubTokenSave) +
 				                       PobUi::ButtonWidth(S.githubTokenClear) + gapRow * 2;
-				const char* status = githubTokenSaved      ? S.githubTokenSaved
+				// Rejected: GitHub answered 401 to the saved token; requests already
+				// fell back to anonymous, so this row is the only place it shows.
+				const char* status = githubTokenSaved && GitHubToken::Rejected() ? S.githubTokenRejected
+				                   : githubTokenSaved      ? S.githubTokenSaved
 				                   : githubTokenUnreadable ? S.githubTokenUnreadable
 				                                           : S.githubTokenAnonymous;
 				PobUi::RowBegin(status, S.githubTokenStorage, actionsW);

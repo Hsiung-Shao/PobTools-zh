@@ -117,6 +117,15 @@ static bool is_redirect(int code)
 	return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
 }
 
+// A 401 to an authenticated API request: remember it and return the message to
+// show if the anonymous retry fails as well.
+static std::string token_rejected(const std::wstring& path)
+{
+	GitHubToken::NoteRejected();
+	PobLog::Error("net", "HTTP 401 with GitHub token, retrying anonymously: " + narrow(path));
+	return GitHubToken::ApiError(401, "", "", "", true);
+}
+
 static std::string response_header(HINTERNET request, const wchar_t* name)
 {
 	wchar_t value[128]{};
@@ -133,10 +142,19 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 	bool usedToken = false;
 	int status = 0;
 	if (getOnce(path, out, err, cancel, onProgress, true, &usedToken, &status)) return true;
-	// The authenticated attempt was redirected (repository renamed or moved):
-	// ask again without the token and let WinHTTP follow it.
-	if (usedToken && is_redirect(status))
+	if (!usedToken) return false;
+	// Redirected (repository renamed or moved): ask again without the token and
+	// let WinHTTP follow it.
+	if (is_redirect(status))
 		return getOnce(path, out, err, cancel, onProgress, false, nullptr, nullptr);
+	// Token expired or revoked: the request itself is public, so a dead token
+	// must not stop update checks. Flag it for the settings page and go on
+	// anonymously; if that fails too, the token is the thing to fix.
+	if (status == 401) {
+		const std::string invalid = token_rejected(path);
+		if (getOnce(path, out, nullptr, cancel, onProgress, false, nullptr, nullptr)) return true;
+		if (err) *err = invalid;
+	}
 	return false;
 }
 
@@ -158,10 +176,12 @@ bool HttpsClient::getOnce(const std::wstring& path, std::vector<unsigned char>& 
 		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
 	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
 	std::wstring headers;
-	if (!github_request(hReq, host_, withToken, headers, usedToken)) {
+	bool tokenSent = false;
+	if (!github_request(hReq, host_, withToken, headers, &tokenSent)) {
 		WinHttpCloseHandle(hReq);
 		return fail(u8"建立 HTTP 請求失敗");
 	}
+	if (usedToken) *usedToken = tokenSent;
 
 	bool ok = false;
 	std::string reason;
@@ -215,7 +235,7 @@ bool HttpsClient::getOnce(const std::wstring& path, std::vector<unsigned char>& 
 				}
 				std::string friendly = GitHubToken::ApiError((int)code,
 					response_header(hReq, L"X-RateLimit-Remaining"),
-					response_header(hReq, L"Retry-After"), body);
+					response_header(hReq, L"Retry-After"), body, tokenSent);
 				if (!friendly.empty()) {
 					// The friendly wording drops the status and path; keep both in
 					// the error log so a report still says which request failed.
@@ -249,9 +269,12 @@ bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpRe
 {
 	bool usedToken = false;
 	if (!getExOnce(path, extra, out, err, cancel, true, &usedToken)) return false;
-	// Same as Get: a redirected authenticated request is retried anonymously.
-	if (usedToken && is_redirect(out.status))
+	// Same as Get: a redirected or rejected (401) authenticated request is
+	// retried anonymously; the caller reads the retry's status as usual.
+	if (usedToken && (is_redirect(out.status) || out.status == 401)) {
+		if (out.status == 401) token_rejected(path);
 		return getExOnce(path, extra, out, err, cancel, false, nullptr);
+	}
 	return true;
 }
 

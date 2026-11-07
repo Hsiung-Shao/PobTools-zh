@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <wincrypt.h>
 
+#include <atomic>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -14,7 +15,18 @@ namespace GitHubToken {
 namespace {
 
 std::mutex tokenMutex;
-std::string currentToken;
+std::string currentToken;          // guarded by tokenMutex
+std::atomic<bool> rejected{false};
+
+// Init's watch on the saved file; all guarded by tokenMutex.
+struct FileStamp {
+	bool exists = false;
+	unsigned long long size = 0, writeTime = 0;
+	bool operator==(const FileStamp& o) const
+	{ return exists == o.exists && size == o.size && writeTime == o.writeTime; }
+};
+std::wstring watchedDir;
+FileStamp watchedStamp;
 const wchar_t kEntropy[] = L"PobTools.GitHubToken";
 constexpr size_t kMaxTokenSize = 4096;
 constexpr DWORD kMaxFileSize = 65536;
@@ -32,6 +44,18 @@ bool Fail(std::string* err, const char* message)
 {
 	if (err) *err = message;
 	return false;
+}
+
+FileStamp Stamp(const std::wstring& path)
+{
+	FileStamp s;
+	WIN32_FILE_ATTRIBUTE_DATA a{};
+	if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a)) return s;
+	s.exists = true;
+	s.size = ((unsigned long long)a.nFileSizeHigh << 32) | a.nFileSizeLow;
+	s.writeTime = ((unsigned long long)a.ftLastWriteTime.dwHighDateTime << 32) |
+	              a.ftLastWriteTime.dwLowDateTime;
+	return s;
 }
 
 bool StartsWith(const char* s, size_t n, const char* prefix)
@@ -176,8 +200,23 @@ bool Set(const std::string& input)
 	std::lock_guard<std::mutex> lock(tokenMutex);
 	Wipe(currentToken);
 	currentToken.swap(token);
+	rejected = false;
 	return true;
 }
+
+void Init(const std::wstring& exeDir)
+{
+	std::string token = Load(exeDir);
+	std::lock_guard<std::mutex> lock(tokenMutex);
+	watchedDir = exeDir;
+	watchedStamp = Stamp(Path(exeDir));
+	Wipe(currentToken);
+	currentToken.swap(token);
+	rejected = false;
+}
+
+void NoteRejected() { rejected = true; }
+bool Rejected() { return rejected; }
 
 bool IsApiHost(const std::wstring& host)
 {
@@ -188,17 +227,29 @@ std::wstring RequestHeaders(const std::wstring& host)
 {
 	if (!IsApiHost(host)) return {};
 	std::lock_guard<std::mutex> lock(tokenMutex);
+	if (!watchedDir.empty()) {
+		// One attribute query per API request: cheap next to the request itself.
+		const FileStamp now = Stamp(Path(watchedDir));
+		if (!(now == watchedStamp)) {
+			watchedStamp = now;
+			std::string token = Load(watchedDir);
+			if (token != currentToken) rejected = false;
+			Wipe(currentToken);
+			currentToken.swap(token);
+			Wipe(token);
+		}
+	}
 	if (currentToken.empty()) return {};
 	return L"Authorization: Bearer " + std::wstring(currentToken.begin(), currentToken.end()) + L"\r\n";
 }
 
 std::string ApiError(int status, const std::string& remaining,
-                     const std::string& retryAfter, const std::string& body)
+                     const std::string& retryAfter, const std::string& body, bool usedToken)
 {
-	if (status == 401) return kInvalid;
+	if (status == 401) return usedToken ? kInvalid : std::string();
 	if (status == 429 || (status == 403 && (remaining == "0" || !retryAfter.empty() ||
-		body.find("rate limit") != std::string::npos))) return kLimited;
-	if (status == 403) return kForbidden;
+		body.find("rate limit") != std::string::npos))) return usedToken ? kLimitedToken : kLimited;
+	if (status == 403) return usedToken ? kForbidden : kForbiddenAnon;
 	return {};
 }
 
