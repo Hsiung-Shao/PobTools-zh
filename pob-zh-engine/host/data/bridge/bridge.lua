@@ -7889,6 +7889,19 @@ probe("classes.PartyTab.ParseBuffs/exportBuffs", function()
 	return type(c) == "table" and type(c.ParseBuffs) == "function" and type(c.exportBuffs) == "function"
 end)
 
+-- MCP tools (`pob-zh.exe --mcp`, host/mcp_server.cpp): mcp_tools.lua beside
+-- this file adds M.mcp_call. Optional: without it the new UI is unaffected.
+do
+	local dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])")
+	local chunk = dir and loadfile(dir .. "mcp_tools.lua")
+	if chunk then
+		local ok, err = pcall(function()
+			chunk()(M, { tr = tr, gem_tr = gem_tr, ensure_build = ensure_build, main = main, dir = dir, wait_db = wait_db })
+		end)
+		if not ok then log_error("mcp_tools.lua: " .. tostring(err)) end
+	end
+end
+
 -- ---------------------------------------------------------------------------
 -- Wire-up
 -- ---------------------------------------------------------------------------

@@ -19,6 +19,12 @@
 #pragma once
 
 inline constexpr const char* kChangelogText =
+	u8"v1.8.4（2026-11-06，搶先版）\n"
+	u8"新增\n"
+	u8"　·AI 串接(MCP)：Claude、Codex 等 AI 可以直接用 POB 的計算讀取、檢查與試算 PoE1 建置。（只交回分享碼，不改你的存檔）\n"
+	u8"　·啟動器網站連結：新增「AI 串接(MCP)」一列，可一鍵複製三種 AI 工具的設定。\n"
+	u8"　·※ 這是搶先版，發給有勾「參加 beta 測試」的使用者；AI 串接仍在測試，遇到問題請回報。\n"
+	u8"\n"
 	u8"v1.8.3（2026-11-05）\n"
 	u8"修正\n"
 	u8"　·經典視窗編輯物品：按 F2 切換中英時，物品預覽沒有跟著切換。\n"
