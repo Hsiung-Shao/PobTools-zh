@@ -93,15 +93,28 @@ HttpsClient::~HttpsClient()
 	if (hSession_) WinHttpCloseHandle((HINTERNET)hSession_);
 }
 
-// API requests must never forward a PAT to a redirect destination. Release
-// assets use separate, anonymous github.com/CDN clients and still follow redirects.
-static bool github_request(HINTERNET request, const std::wstring& host, std::wstring& headers)
+// A request carrying the token must never forward it to a redirect destination,
+// so only those requests stop following redirects. Anonymous ones (no token set,
+// or the retry below) keep WinHTTP's normal behaviour: a renamed repository's 301
+// still resolves. Release assets use separate github.com/CDN clients and never
+// see the token at all.
+static bool github_request(HINTERNET request, const std::wstring& host, bool withToken,
+                           std::wstring& headers, bool* usedToken)
 {
-	if (!GitHubToken::IsApiHost(host)) return true;
+	if (usedToken) *usedToken = false;
+	if (!withToken) return true;
+	std::wstring auth = GitHubToken::RequestHeaders(host);
+	if (auth.empty()) return true;
 	DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
 	if (!WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy))) return false;
-	headers = GitHubToken::RequestHeaders(host);
+	headers = std::move(auth);
+	if (usedToken) *usedToken = true;
 	return true;
+}
+
+static bool is_redirect(int code)
+{
+	return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
 }
 
 static std::string response_header(HINTERNET request, const wchar_t* name)
@@ -117,11 +130,26 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
                       std::string* err, const std::atomic<bool>* cancel,
                       const ProgressFn& onProgress)
 {
+	bool usedToken = false;
+	int status = 0;
+	if (getOnce(path, out, err, cancel, onProgress, true, &usedToken, &status)) return true;
+	// The authenticated attempt was redirected (repository renamed or moved):
+	// ask again without the token and let WinHTTP follow it.
+	if (usedToken && is_redirect(status))
+		return getOnce(path, out, err, cancel, onProgress, false, nullptr, nullptr);
+	return false;
+}
+
+bool HttpsClient::getOnce(const std::wstring& path, std::vector<unsigned char>& out,
+                          std::string* err, const std::atomic<bool>* cancel,
+                          const ProgressFn& onProgress, bool withToken, bool* usedToken, int* status)
+{
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
 		return false;
 	};
 	out.clear();
+	if (status) *status = 0;
 	if (!hConnect_) return fail(u8"HTTPS 連線初始化失敗");
 
 	// paths arrive pre-encoded (%20 etc.); disable WinHTTP's re-escaping
@@ -130,7 +158,7 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
 	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
 	std::wstring headers;
-	if (!github_request(hReq, host_, headers)) {
+	if (!github_request(hReq, host_, withToken, headers, usedToken)) {
 		WinHttpCloseHandle(hReq);
 		return fail(u8"建立 HTTP 請求失敗");
 	}
@@ -143,6 +171,7 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 		DWORD code = 0, len = sizeof(code);
 		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
+		if (status) *status = (int)code;
 		if (code == 200) {
 			ok = true;
 			unsigned long long total = 0;
@@ -172,6 +201,7 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 			} while (avail > 0);
 			if (ok && out.empty()) { ok = false; reason = u8"回應為空"; }
 		} else {
+			reason = "HTTP " + std::to_string(code) + ": " + narrow(path);
 			if (GitHubToken::IsApiHost(host_)) {
 				// Secondary limits may only be named in the body. Read at most 8 KiB
 				// for classification; never include a server body in a log or message.
@@ -183,10 +213,15 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 					       WinHttpReadData(hReq, chunk, sizeof(chunk), &read) && read)
 						body.append(chunk, read);
 				}
-				reason = GitHubToken::ApiError((int)code, response_header(hReq, L"X-RateLimit-Remaining"),
-				                               response_header(hReq, L"Retry-After"), body);
-			} else {
-				reason = "HTTP " + std::to_string(code) + ": " + narrow(path);
+				std::string friendly = GitHubToken::ApiError((int)code,
+					response_header(hReq, L"X-RateLimit-Remaining"),
+					response_header(hReq, L"Retry-After"), body);
+				if (!friendly.empty()) {
+					// The friendly wording drops the status and path; keep both in
+					// the error log so a report still says which request failed.
+					PobLog::Error("net", reason);
+					reason = std::move(friendly);
+				}
 			}
 		}
 	} else {
@@ -212,6 +247,18 @@ bool HttpsClient::GetString(const std::wstring& path, std::string& out, std::str
 bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
                         std::string* err, const std::atomic<bool>* cancel)
 {
+	bool usedToken = false;
+	if (!getExOnce(path, extra, out, err, cancel, true, &usedToken)) return false;
+	// Same as Get: a redirected authenticated request is retried anonymously.
+	if (usedToken && is_redirect(out.status))
+		return getExOnce(path, extra, out, err, cancel, false, nullptr);
+	return true;
+}
+
+bool HttpsClient::getExOnce(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
+                            std::string* err, const std::atomic<bool>* cancel, bool withToken,
+                            bool* usedToken)
+{
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
 		return false;
@@ -231,7 +278,7 @@ bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpRe
 	WinHttpSetOption(hReq, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
 
 	std::wstring joined;
-	if (!github_request(hReq, host_, joined)) {
+	if (!github_request(hReq, host_, withToken, joined, usedToken)) {
 		WinHttpCloseHandle(hReq);
 		return fail(u8"建立 HTTP 請求失敗");
 	}

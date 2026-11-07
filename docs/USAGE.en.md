@@ -133,10 +133,13 @@ both follow whichever line the Settings page selects.
 > V2Ray works directly. Update checks, translation data and icon downloads all go through
 > that proxy.
 
-> **GitHub rate limits**: paste your own **GitHub Token** in Settings → Network & updates
-> and press **Save** to check for updates again immediately. **About tokens** opens GitHub's
-> personal access token creation page. Public repository read access is sufficient;
-> no write permissions are needed. The input is masked; use Show/Hide to reveal it.
+> **GitHub rate limits** (60 anonymous requests an hour, easy to hit on a shared IP):
+> paste your own **GitHub Token** (starting with `ghp_` or `github_pat_`) in Settings →
+> Network & updates and press **Save** to check for updates again immediately.
+> **About tokens** opens GitHub's personal access token creation page. Public repository
+> read access is sufficient; no write permissions are needed. The input is masked; use
+> Show/Hide to reveal what you are typing. After saving, the box is cleared and the saved
+> token is never shown again; to replace it, paste a new one and save.
 > **Clear** deletes the saved token and returns to anonymous requests.
 > The token is encrypted for the current Windows user in `PobTools\github_token.bin`,
 > never written to the ini or logs, and sent only to `api.github.com`. Save it again

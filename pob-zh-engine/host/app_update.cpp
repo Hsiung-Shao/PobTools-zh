@@ -167,12 +167,16 @@ static const char* const kUpdMsgFragments[] = {
 	u8"無法建立解壓目錄格式無效條目資訊讀取路徑非法檔案寫入失敗回滾備份"
 static const char* const kExternalMsgSeed = PT_UPD_EXTERNAL_SEED;
 
-// Generated: the concatenation of every phrase above. Cannot drift from the
-// list, because it IS the list.
+// FriendlyCheckError's wording for a 403/429 that did not come from the API host
+// (the API host's own statuses are already worded by GitHubToken::ApiError).
+#define PT_UPD_FRIENDLY_LIMIT u8"GitHub 暫時限制查詢次數，請過幾分鐘再試"
+
+// Generated: the concatenation of every phrase above plus GitHubToken's
+// messages (PT_GITHUB_ERRORS, github_token.h). Cannot drift from either list,
+// because it IS those lists -- and stays one compile-time literal.
 #define PT_UPD_SEED(name, lit) lit
-static const std::string kAllUpdateGlyphs = std::string(PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED) +
-                                          GitHubToken::ErrorGlyphSeed;
-const char* kAppUpdateGlyphSeed = kAllUpdateGlyphs.c_str();
+const char* kAppUpdateGlyphSeed = PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED
+                                  PT_GITHUB_ERRORS(PT_UPD_SEED) PT_UPD_FRIENDLY_LIMIT;
 #undef PT_UPD_SEED
 
 // 組合型訊息全部集中在這裡,而不是在 setPhase 現場拼字串。兩個好處:
@@ -511,6 +515,25 @@ std::string ReadLocalDataVersion(const std::wstring& exeDir)
 	}
 }
 
+// The message the button turns into when a check the user asked for fails.
+//
+// Only the failures whose cause is legible get rewritten; everything else is
+// passed through verbatim. A guessed translation of an unfamiliar error is worse
+// than the English, because it sends whoever reads the report to the wrong place
+// and there is no way back to what the machine actually said.
+//
+// api.github.com's 401/403/429 arrive already worded by GitHubToken::ApiError
+// (they no longer contain "HTTP 403"). What is left here is a raw 403/429 from
+// any other host on the way -- release downloads on github.com and its CDN.
+static std::string FriendlyCheckError(const std::string& err)
+{
+	const bool rateLimited = err.find("HTTP 403") != std::string::npos ||
+	                         err.find("HTTP 429") != std::string::npos;
+	if (rateLimited)
+		return PT_UPD_FRIENDLY_LIMIT;
+	return err;
+}
+
 // ---- policy -----------------------------------------------------------------
 
 bool ParseDataTagSeq(const std::string& tag, long long* seq)
@@ -716,7 +739,7 @@ void AppUpdater::workerLoop()
 				log_line(exeDir_, "check failed: " + err);
 				PobLog::Error("app-update", "check failed: " + err);
 				if (cmd == Cmd::CheckLoud)
-					setPhase(AppUpdatePhase::Error, err);
+					setPhase(AppUpdatePhase::Error, FriendlyCheckError(err));
 				else
 					setPhase(AppUpdatePhase::Idle, "");
 			}
@@ -2567,6 +2590,15 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		expectCovered(GitHubToken::ApiError(401, "", "", ""));
 		expectCovered(GitHubToken::ApiError(403, "0", "", ""));
 		expectCovered(GitHubToken::ApiError(403, "10", "", ""));
+		expectCovered(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip"));
+		{
+			const std::string limitedApi = GitHubToken::ApiError(429, "", "", "");
+			check(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip") == PT_UPD_FRIENDLY_LIMIT &&
+			      FriendlyCheckError("HTTP 429: /x") == PT_UPD_FRIENDLY_LIMIT &&
+			      FriendlyCheckError(limitedApi) == limitedApi &&
+			      FriendlyCheckError("HTTP 404: /x") == "HTTP 404: /x",
+			      "T13b 非 API 主機的 403/429 給友善訊息,其他錯誤原樣保留");
+		}
 		// The composed messages, driven with stand-in版號/標籤 -- these are what a
 		// user actually sees, and the only place a stray literal could hide.
 		expectCovered(MsgUpToDate());
