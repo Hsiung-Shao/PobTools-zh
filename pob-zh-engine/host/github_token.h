@@ -40,7 +40,7 @@ void Wipe(std::string& value);
 bool Set(const std::string& input);
 bool IsApiHost(const std::wstring& host);
 // Empty unless host is api.github.com and a token is set.
-std::wstring RequestHeaders(const std::wstring& host);
+std::wstring RequestHeaders(const std::wstring& host, unsigned* generation = nullptr);
 
 // Only call for api.github.com. Returns the user-facing message for the statuses
 // worth naming (401, rate limits, 403), or "" when the caller should keep its own
@@ -53,7 +53,7 @@ std::string ApiError(int status, const std::string& remaining,
 // GitHub answered 401 to the current token (expired or revoked). Requests fall
 // back to anonymous; the settings page reads Rejected() to say so. Cleared
 // whenever the token changes.
-void NoteRejected();
+void NoteRejected(unsigned generation);
 bool Rejected();
 
 // Load <exeDir>PobTools\github_token.bin and keep watching it: RequestHeaders

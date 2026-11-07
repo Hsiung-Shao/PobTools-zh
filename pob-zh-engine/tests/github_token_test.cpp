@@ -46,6 +46,7 @@ struct Config {
 	std::deque<std::pair<DWORD, std::string>> script; // per-request status/body, in order
 } cfg;
 std::vector<Req> reqs;
+std::vector<std::pair<std::string, std::string>> logLines; // PobLog::Error (category, message)
 
 void Reset(DWORD status = 200, const std::string& body = "{}")
 {
@@ -82,7 +83,7 @@ std::string Read(const std::wstring& path)
 }
 } // namespace
 
-namespace PobLog { void Error(const char*, const std::string&) {} }
+namespace PobLog { void Error(const char* cat, const std::string& msg) { logLines.emplace_back(cat, msg); } }
 
 extern "C" {
 HINTERNET WINAPI WinHttpOpen(LPCWSTR, DWORD, LPCWSTR, LPCWSTR, DWORD) { return (HINTERNET)1; }
@@ -317,6 +318,69 @@ int main()
 	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", false), "匿名收到 429 回匿名版訊息");
 	Authed(); Reset(429);
 	Check(!api.GetString(releases, body, &err) && err == ApiError(429, "", "", "", true), "帶 token 收到 429 回帶 token 版訊息");
+
+	// T14 過時世代號不會誤標被拒
+	unsigned genA = 0, genB = 0;
+	Set("ghp_GEN_AAA_111");
+	Check(HasText(RequestHeaders(L"api.github.com", &genA), L"ghp_GEN_AAA_111") && genA != 0, "帶 token 時世代號非 0");
+	Set("ghp_GEN_BBB_222");
+	NoteRejected(genA);
+	Check(!Rejected(), "過時世代號被忽略不標被拒");
+	Check(HasText(RequestHeaders(L"api.github.com", &genB), L"ghp_GEN_BBB_222") && genB != 0, "過時世代號後仍送新 token");
+	Check(genA != genB, "換 token 後世代號改變");
+	NoteRejected(genB);
+	Check(Rejected(), "目前世代號可標被拒");
+	Check(RequestHeaders(L"api.github.com").empty(), "被拒後 RequestHeaders 回空字串");
+	unsigned genNone = 7;
+	Set("");
+	RequestHeaders(L"api.github.com", &genNone);
+	Check(genNone == 0, "沒帶 token 時世代號為 0");
+
+	// T15 被拒後不再送 token
+	const std::string rejectTok = "ghp_REJECT_TEST";
+	Set(rejectTok); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	Check(api.GetString(releases, body, &err) && reqs.size() == 2, "被拒前先以 401 匿名重試成功");
+	Reset();
+	Check(api.GetString(releases, body, &err) && body == "{}", "被拒後再次 Get 成功");
+	Check(reqs.size() == 1, "被拒後只送 1 次請求");
+	Check(reqs.size() == 1 && !HasText(reqs[0].sentHeaders, L"Authorization") &&
+	      reqs[0].redirectPolicy != WINHTTP_OPTION_REDIRECT_POLICY_NEVER, "被拒後不送 Authorization 且允許轉址");
+	Set(rejectTok); Reset();
+	Check(api.GetString(releases, body, &err) && reqs.size() == 1, "重設同一 token 後 Get 成功");
+	Check(reqs.size() == 1 && HasText(reqs[0].sentHeaders, L"Bearer ghp_REJECT_TEST") &&
+	      reqs[0].redirectPolicy == WINHTTP_OPTION_REDIRECT_POLICY_NEVER, "重設同一 token 後恢復送 Bearer");
+
+	// T16 匿名重試成功後錯誤字串清空
+	Set(rejectTok); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	err = "stale";
+	Check(api.GetString(releases, body, &err) && err.empty(), "401 重試成功後 Get 的 err 清空");
+	Set(rejectTok); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	err = "stale";
+	HttpResult cleared;
+	Check(api.GetEx(releases, extra, cleared, &err) && err.empty(), "401 重試成功後 GetEx 的 err 清空");
+	Set(rejectTok); Reset();
+	cfg.script = {{301, ""}, {200, "{}"}};
+	err = "stale";
+	Check(api.GetString(releases, body, &err) && err.empty(), "301 重試成功後 Get 的 err 清空");
+
+	// T17 同一個 401 只寫一行 net log
+	auto NetLines = []() {
+		int n = 0;
+		for (const auto& l : logLines) if (l.first == std::string("net")) ++n;
+		return n;
+	};
+	Set(rejectTok); Reset();
+	cfg.script = {{401, ""}, {200, "{}"}};
+	logLines.clear();
+	Check(api.GetString(releases, body, &err), "T17 401 重試成功");
+	Check(NetLines() == 1, "同一個 401 的 net log 正好 1 行");
+	bool leaked = false;
+	for (const auto& l : logLines)
+		if (l.second.find("ghp_") != std::string::npos || l.second.find(rejectTok) != std::string::npos) leaked = true;
+	Check(!leaked, "net log 不含 token");
 
 	// T6
 	Set(""); Reset(404);

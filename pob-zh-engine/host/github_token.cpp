@@ -17,6 +17,7 @@ namespace {
 std::mutex tokenMutex;
 std::string currentToken;          // guarded by tokenMutex
 std::atomic<bool> rejected{false};
+unsigned tokenGeneration = 0;      // guarded by tokenMutex; bumped on every replace
 
 // Init's watch on the saved file; all guarded by tokenMutex.
 struct FileStamp {
@@ -193,29 +194,46 @@ bool Save(const std::wstring& exeDir, const std::string& input, std::string* err
 	return true;
 }
 
+// Caller holds tokenMutex. A new generation means "a token the user set again":
+// whatever was rejected before is given another chance.
+static void ReplaceLocked(std::string& token)
+{
+	Wipe(currentToken);
+	currentToken.swap(token);
+	Wipe(token);
+	if (++tokenGeneration == 0) ++tokenGeneration; // 0 means "no token"
+	rejected = false;
+}
+
 bool Set(const std::string& input)
 {
 	std::string token;
 	if (!Normalize(input, token)) return false;
 	std::lock_guard<std::mutex> lock(tokenMutex);
-	Wipe(currentToken);
-	currentToken.swap(token);
-	rejected = false;
+	ReplaceLocked(token);
 	return true;
 }
 
 void Init(const std::wstring& exeDir)
 {
+	// Stamp before reading: if the file changes in between, the stamp is the
+	// old one and the next request notices and reads again.
+	const FileStamp stamp = Stamp(Path(exeDir));
 	std::string token = Load(exeDir);
 	std::lock_guard<std::mutex> lock(tokenMutex);
 	watchedDir = exeDir;
-	watchedStamp = Stamp(Path(exeDir));
-	Wipe(currentToken);
-	currentToken.swap(token);
-	rejected = false;
+	watchedStamp = stamp;
+	ReplaceLocked(token);
 }
 
-void NoteRejected() { rejected = true; }
+void NoteRejected(unsigned generation)
+{
+	// Only the token that was actually sent: a 401 arriving after the user saved
+	// a new token must not mark the new one.
+	std::lock_guard<std::mutex> lock(tokenMutex);
+	if (generation != 0 && generation == tokenGeneration) rejected = true;
+}
+
 bool Rejected() { return rejected; }
 
 bool IsApiHost(const std::wstring& host)
@@ -223,23 +241,40 @@ bool IsApiHost(const std::wstring& host)
 	return host.size() == 14 && _wcsicmp(host.c_str(), L"api.github.com") == 0;
 }
 
-std::wstring RequestHeaders(const std::wstring& host)
+std::wstring RequestHeaders(const std::wstring& host, unsigned* generation)
 {
+	if (generation) *generation = 0;
 	if (!IsApiHost(host)) return {};
-	std::lock_guard<std::mutex> lock(tokenMutex);
-	if (!watchedDir.empty()) {
-		// One attribute query per API request: cheap next to the request itself.
-		const FileStamp now = Stamp(Path(watchedDir));
-		if (!(now == watchedStamp)) {
-			watchedStamp = now;
-			std::string token = Load(watchedDir);
-			if (token != currentToken) rejected = false;
-			Wipe(currentToken);
-			currentToken.swap(token);
+
+	// Follow the saved file (Init). The file I/O and DPAPI run outside the lock,
+	// so a slow disk cannot freeze the settings page waiting in Set.
+	std::wstring dir;
+	FileStamp seen;
+	{
+		std::lock_guard<std::mutex> lock(tokenMutex);
+		dir = watchedDir;
+		seen = watchedStamp;
+	}
+	if (!dir.empty()) {
+		const FileStamp now = Stamp(Path(dir));
+		if (!(now == seen)) {
+			std::string token = Load(dir);
+			std::lock_guard<std::mutex> lock(tokenMutex);
+			if (watchedStamp == seen) { // nobody applied this change meanwhile
+				watchedStamp = now;
+				// Re-reading the same token keeps its rejection; a different one
+				// starts fresh.
+				if (token != currentToken) ReplaceLocked(token);
+			}
 			Wipe(token);
 		}
 	}
-	if (currentToken.empty()) return {};
+
+	std::lock_guard<std::mutex> lock(tokenMutex);
+	// A rejected token is not sent again: every request would otherwise pay a
+	// 401 round trip before the anonymous retry.
+	if (currentToken.empty() || rejected) return {};
+	if (generation) *generation = tokenGeneration;
 	return L"Authorization: Bearer " + std::wstring(currentToken.begin(), currentToken.end()) + L"\r\n";
 }
 
