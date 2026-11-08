@@ -643,7 +643,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T14 Thicket Bow inventory 2x3");
 		rep.check(i18n.DropLevelOf("Headhunter") == -1,
 		          "T14 unique without drop data -> -1 (caller keeps default)");
-		rep.check(!i18n.SizeOf("Abyss Scarab of Crystals", &w, &h),
+		rep.check(!i18n.SizeOf("Scrying Orb", &w, &h),
 		          "T14 GGPK-patched entry without size -> false (caller keeps default)");
 		rep.check(i18n.DropLevelOf("No Such Item") == -1 && !i18n.SizeOf("No Such Item", &w, &h),
 		          "T14 unknown item -> unknown metadata");

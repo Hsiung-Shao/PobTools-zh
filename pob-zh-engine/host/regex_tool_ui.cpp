@@ -4129,7 +4129,7 @@ private:
 			testBookmarks();
 		} else if (t == "combined") {
 			testSingle();
-			const int sc = indexInGame("poe1", "scarabs");
+			const int sc = indexInGame("poe1", "logbook_mods");
 			if (sc >= 0) testTicks(sc, {0, 3, 7, 12});
 			state_.excludes = {u8"反射"};
 			setView(View::Combined);

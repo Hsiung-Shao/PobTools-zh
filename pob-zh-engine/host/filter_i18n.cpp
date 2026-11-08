@@ -217,7 +217,7 @@ std::string FilterI18n::ClassNameZh(const std::string& enClass) const
 
 // ---------------------------------------------------------------------------
 // NeverSink 標記標題中文化（display only）。
-// 節段表對齊 Garena 台服譯名（精髓/培育器/聖甲蟲/魔符/魔偶/萃取物…），
+// 節段表對齊 Garena 台服譯名（精髓/培育器/魔符/魔偶/萃取物…），
 // 覆蓋 NeverSink 8.x $type-> 全部節段;未知節段保留英文。
 // $tier-> 細分規格（六百餘種裝備規格）只翻通用字,其餘保留英文。
 
@@ -269,7 +269,7 @@ static const char* ns_type_seg_zh(const std::string& seg)
 		{ "fossil", u8"化石" },
 		{ "foulborn", u8"穢生" },
 		{ "fractured", u8"破裂" },
-		{ "fragments", u8"碎片" }, { "scarabs", u8"聖甲蟲" },
+		{ "fragments", u8"碎片" },
 		{ "gear", u8"裝備" }, { "generalgear", u8"一般裝備" },
 		{ "gems", u8"寶石" }, { "generic", u8"一般" }, { "special", u8"特殊" },
 		{ "gold", u8"金幣" },

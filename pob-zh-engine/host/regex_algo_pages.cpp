@@ -102,7 +102,6 @@ const NumSpec kPoe1Map[] = {
 	{"quantity", "ItemDisplayMapQuantityIncrease", 3, true, 80},
 	{"rarity", "ItemDisplayMapRarityIncrease", 3, true, 80},
 	{"pack", "ItemDisplayMapPackSizeIncrease", 3, true, 30},
-	{"scarabs", "ItemDisplayMapScarabDropBonus", 3, true, 50},
 	{"currency", "ItemDisplayMapCurrencyDropBonus", 3, true, 50},
 	{"maps", "ItemDisplayMapMapDropBonus", 3, true, 50},
 	{"divination", "ItemDisplayMapDivinationCardDropBonus", 3, true, 50},

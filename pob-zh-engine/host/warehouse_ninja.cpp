@@ -22,7 +22,7 @@ struct TypePlan {
 
 // PoE1 exchange: stackables, plus divination cards (their item overview 404s).
 const TypePlan kPoe1Exchange[] = {
-	{ "Currency", "currency|" },  { "Fragment", "currency|" },    { "Scarab", "currency|" },
+	{ "Currency", "currency|" },  { "Fragment", "currency|" },
 	{ "Oil", "currency|" },       { "Essence", "currency|" },     { "Fossil", "currency|" },
 	{ "Resonator", "currency|" }, { "DeliriumOrb", "currency|" }, { "Tattoo", "currency|" },
 	{ "Omen", "currency|" },      { "Runegraft", "currency|" },   { "DivinationCard", "card|" },
