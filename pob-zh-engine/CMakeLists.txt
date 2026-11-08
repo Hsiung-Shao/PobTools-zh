@@ -479,6 +479,8 @@ if (WIN32)
         host/atlas_update.cpp
         host/atlas_stat_agg.cpp
         host/atlas_scarabs.cpp
+        host/atlas_threads.cpp
+        host/atlas_threads_selftest.cpp
         host/atlas_astrolabes.cpp
         host/atlas_maps.cpp
         # league-mechanic grouping behind "show me every 裂痕 cluster"; the map

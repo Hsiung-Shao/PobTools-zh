@@ -2,6 +2,7 @@
 #include "atlas_i18n.h"    // selftest T6: zh-mapping health check
 #include "atlas_persist.h" // multi-build schema + share codes (T7)
 #include "atlas_scarabs.h" // selftest T8: placement rules + notes/scarabs persistence
+#include "atlas_threads.h" // selftest: 3.30 thread slots
 #include "atlas_astrolabes.h" // selftest T9: quadrant rule + astrolabe persistence
 #include "atlas_maps.h"    // selftest T10: main-map catalogue
 #include "atlas_optimize.h" // selftest T11: contrast against the minimum-point model
@@ -898,6 +899,9 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// with the same backward-compatibility guarantees the scarabs established.
 	rep.failures += RunAstrolabeSelfTest(exeDir, rep.text);
 	rep.failures += RunAtlasMapSelfTest(exeDir, rep.text);
+
+	// 3.30 thread slots: placement rules and persistence (atlas_threads.cpp).
+	rep.failures += RunThreadSelfTest(exeDir, rep.text);
 
 	// T11: the manual map price behind the 收益 tab's cost card. It round-trips
 	// through the build file, an unset price serializes byte-identically to
