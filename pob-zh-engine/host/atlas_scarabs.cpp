@@ -311,6 +311,15 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          "Save/Load on disk preserves per-project notes + scarabs + targets + blocked");
 	}
 
+	{
+		// Always run: a missing data file must never erase a saved slot list.
+		ScarabDb none;
+		std::vector<std::string> keep = { "Metadata/Items/Scarabs/ScarabAbyssNew1", "y" };
+		std::string n;
+		rep.check(none.Sanitize(keep, &n) == keep && n.empty(),
+		          "without a catalogue Sanitize leaves the saved list untouched (unconditional)");
+	}
+
 	// --- rules: need the catalogue.
 	ScarabDb db;
 	std::string derr;
