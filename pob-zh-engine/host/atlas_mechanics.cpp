@@ -56,7 +56,6 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 		{ "Mercenary", "Mercenaries", u8"Mercenaries", u8"傭兵" },
 		{ "Ritual", "Ritual", u8"Ritual", u8"祭祀" },
 		{ "Anarchy", "Anarchy", u8"Rogue Exiles", u8"盜賊流亡者" },
-		{ "Scarab", "Scarab", u8"Scarabs", u8"聖甲蟲" },
 		{ "Kalguur", "Settlers", u8"Settlers of Kalguur", u8"卡爾葛拓荒者" },
 		{ "Domination", "Domination", u8"Shrines", u8"神殿" },
 		{ "Strongbox", "Strongbox", u8"Strongboxes", u8"保險箱" },
@@ -125,6 +124,9 @@ static std::string icon_stem(const std::string& path)
 // resolved by coin flip.
 static std::string mechanic_from_icon(const std::string& stem)
 {
+	// Scarabs were removed for 3.30; a scarab node's icon also names its league
+	// (ScarabLeaguesRitual) and must not be credited to that league instead.
+	if (stem.find("Scarab") != std::string::npos) return std::string();
 	std::string hit;
 	for (const AtlasMechanicDef& d : catalogue()) {
 		if (d.token.empty() || stem.find(d.token) == std::string::npos) continue;
@@ -453,7 +455,8 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 	check(badAlias == 0, "every icon alias resolves to a catalogue entry");
 	// Ambiguity guard: the whole point of returning "" on a two-mechanic match.
 	check(mechanic_from_icon("NewBreachNode") == "Breach", "icon rule finds Breach");
-	check(mechanic_from_icon("ScarabLeaguesRitual").empty(), "an icon naming two mechanics is left unassigned");
+	check(mechanic_from_icon("ScarabLeaguesRitual").empty(), "a scarab icon is left unassigned");
+	check(mechanic_from_icon("NewBreachAbyssNode").empty(), "an icon naming two mechanics is left unassigned");
 	check(mechanic_from_icon("ModifierTier").empty(), "a generic icon is left unassigned");
 	check(mechanic_from_icon("newbreachnode").empty(), "matching is case-sensitive (CamelCase boundary)");
 
@@ -511,7 +514,7 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 			// otherwise the canvas has clickable markers with no mechanic behind them.
 			int orphanMastery = 0;
 			for (const AtlasDeco& m : d.masteries)
-				if (!AtlasMechanicByEn(m.name)) orphanMastery++;
+				if (!AtlasMechanicByEn(m.name) && m.name != "Scarabs") orphanMastery++; // removed for 3.30
 			check(orphanMastery == 0, tag + ": every mastery icon maps to a known mechanic",
 			      std::to_string(orphanMastery) + " orphaned");
 		}
