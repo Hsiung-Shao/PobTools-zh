@@ -92,11 +92,7 @@ bool ScarabDb::Load(const std::wstring& exeDir, std::string* err)
 			d.en = s.value("en", std::string());
 			d.zh = s.value("zh", std::string());
 			if (d.id.empty() || d.en.empty()) continue;
-			d.type = s.value("type", std::string());
 			d.art = s.value("art", std::string());
-			d.tier = s.value("tier", 0);
-			d.family = s.value("family", 0);
-			d.kind = s.value("kind", std::string("scarab"));
 			d.limit = std::clamp(s.value("limit", 1), 1, kMaxScarabs);
 			d.stash = s.value("stash", true);
 			if (s.contains("descEn")) d.descEn = parse_lines(s["descEn"]);
@@ -140,21 +136,7 @@ ScarabAddResult ScarabDb::CanAdd(const std::vector<std::string>& cur, const std:
 	if (!def) { r.code = ScarabAdd::kUnknown; return r; }
 	if ((int)cur.size() >= kMaxScarabs) { r.code = ScarabAdd::kFull; return r; }
 
-	int same = 0;
-	for (const std::string& have : cur) {
-		if (have == id) { same++; continue; }
-		// A different scarab of the same family blocks the whole family; report
-		// the one already placed so the message can name it.
-		const ScarabDef* other = ById(have);
-		// A NEGATIVE family means "belongs to no exclusion group". The Vaal
-		// fragments all share family 149 in the raw data, but four Sacrifice
-		// pieces are meant to go in together, so the generator emits -1.
-		if (other && def->family >= 0 && other->family == def->family) {
-			r.code = ScarabAdd::kFamilyConflict;
-			r.conflict = other;
-			return r;
-		}
-	}
+	const int same = (int)std::count(cur.begin(), cur.end(), id);
 	if (same >= def->limit) {
 		r.code = ScarabAdd::kOverLimit;
 		r.limit = def->limit;
@@ -168,7 +150,7 @@ std::vector<std::string> ScarabDb::Sanitize(const std::vector<std::string>& ids,
 	if (note) note->clear();
 	// No catalogue -> no basis to judge. Passing the list through unchanged is
 	// deliberate: dropping it would let a missing data file silently erase the
-	// user's saved scarabs on the next save.
+	// user's saved slots on the next save.
 	if (!available()) return ids;
 
 	std::vector<std::string> out;
@@ -329,6 +311,15 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          "Save/Load on disk preserves per-project notes + scarabs + targets + blocked");
 	}
 
+	{
+		// Always run: a missing data file must never erase a saved slot list.
+		ScarabDb none;
+		std::vector<std::string> keep = { "Metadata/Items/Scarabs/ScarabAbyssNew1", "y" };
+		std::string n;
+		rep.check(none.Sanitize(keep, &n) == keep && n.empty(),
+		          "without a catalogue Sanitize leaves the saved list untouched (unconditional)");
+	}
+
 	// --- rules: need the catalogue.
 	ScarabDb db;
 	std::string derr;
@@ -342,68 +333,30 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		return rep.failures;
 	}
 
-	// Counted per kind: one combined total would let a lost scarab hide behind a
-	// gained fragment.
-	size_t nScarab = 0, nFragment = 0;
-	for (const ScarabDef& d : db.All()) (d.kind == "fragment" ? nFragment : nScarab)++;
-	rep.note("catalogue: " + std::to_string(nScarab) + " scarabs + " +
-	         std::to_string(nFragment) + " fragments, source " + db.Source());
-	rep.check(nScarab == 130, "catalogue holds 130 scarabs", std::to_string(nScarab));
-	rep.check(nFragment == 8, "catalogue holds 8 Vaal map fragments",
-	          std::to_string(nFragment));
-
-	// Find live fixtures instead of hard-coding ids, so the test keeps working
-	// after a season update changes the catalogue.
-	const ScarabDef* lim1 = nullptr;
-	const ScarabDef* limN = nullptr;
-	const ScarabDef* famA = nullptr;
-	const ScarabDef* famB = nullptr;
-	for (const ScarabDef& d : db.All()) {
-		if (!lim1 && d.limit == 1) lim1 = &d;
-		if (!limN && d.limit >= 2) limN = &d;
-	}
-	for (const ScarabDef& a : db.All()) {
-		if (famA) break;
-		if (a.family < 0) continue;   // fragments share -1 and are NOT exclusive
-		for (const ScarabDef& b : db.All())
-			if (&a != &b && b.family >= 0 && a.family == b.family) { famA = &a; famB = &b; break; }
-	}
-	rep.check(lim1 && limN, "found limit=1 and limit>1 fixtures");
-	rep.check(famA && famB, "found a mutually exclusive pair",
-	          famA && famB ? famA->en + " / " + famB->en : "none");
-
-	if (lim1) {
-		std::vector<std::string> cur;
-		rep.check(db.CanAdd(cur, lim1->id).ok(), "first copy allowed");
-		cur.push_back(lim1->id);
-		ScarabAddResult r = db.CanAdd(cur, lim1->id);
-		rep.check(r.code == ScarabAdd::kOverLimit && r.limit == 1,
-		          "second copy of a limit=1 scarab refused");
-	}
-	if (limN) {
-		std::vector<std::string> cur(limN->limit, limN->id);
-		ScarabAddResult r = db.CanAdd(cur, limN->id);
-		bool expectFull = (int)cur.size() >= kMaxScarabs;
-		rep.check(r.code == (expectFull ? ScarabAdd::kFull : ScarabAdd::kOverLimit),
-		          "copy limit+1 refused", "limit=" + std::to_string(limN->limit));
-		std::vector<std::string> below(limN->limit - 1, limN->id);
-		rep.check(db.CanAdd(below, limN->id).ok(), "copies up to the limit allowed");
-	}
-	if (famA && famB) {
-		std::vector<std::string> cur{ famA->id };
-		ScarabAddResult r = db.CanAdd(cur, famB->id);
-		rep.check(r.code == ScarabAdd::kFamilyConflict && r.conflict == famA,
-		          "same-family scarab refused and names the blocker");
+	// Scarabs left the catalogue ahead of 3.30; only the eight Vaal fragments stay.
+	size_t nScarab = 0;
+	for (const ScarabDef& d : db.All())
+		if (d.id.find("/Scarabs/") != std::string::npos) nScarab++;
+	rep.note("catalogue: " + std::to_string(db.All().size()) + " entries, source " + db.Source());
+	rep.check(nScarab == 0, "catalogue holds no scarabs", std::to_string(nScarab));
+	rep.check(db.All().size() == 8, "catalogue holds 8 Vaal map fragments",
+	          std::to_string(db.All().size()));
+	{
+		// An old build's scarab ids are dropped (user ruling 2026-11-08), its
+		// fragments kept, and the note says so.
+		const std::string frag = db.All().empty() ? std::string() : db.All()[0].id;
+		std::string note;
+		std::vector<std::string> clean = db.Sanitize(
+			{ "Metadata/Items/Scarabs/ScarabAbyssNew1", frag, "Metadata/Items/Scarabs/ScarabBreachNew1" }, &note);
+		rep.check(clean == std::vector<std::string>{ frag } && !note.empty(),
+		          "an old build's scarabs are dropped, its fragment kept", note);
 	}
 	{
-		// Map fragments: the four Sacrifice pieces are what opens a Vaal side
-		// area, so they MUST all fit together. In the raw table they share
-		// family 149 with 50 other rows, which under the exclusion rule would
-		// refuse the second one -- that is why the generator emits -1.
+		// The four Sacrifice pieces are what opens a Vaal side area, so they
+		// MUST all fit together; a second copy of one is refused by limit.
 		std::vector<const ScarabDef*> sac;
 		for (const ScarabDef& d : db.All())
-			if (d.kind == "fragment" && d.id.find("CurrencyVaalFragment1_") != std::string::npos)
-				sac.push_back(&d);
+			if (d.id.find("CurrencyVaalFragment1_") != std::string::npos) sac.push_back(&d);
 		rep.check(sac.size() == 4, "four Sacrifice fragments present",
 		          std::to_string(sac.size()));
 		if (sac.size() == 4) {
@@ -413,23 +366,21 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 				allOk = allOk && db.CanAdd(cur, d->id).ok();
 				cur.push_back(d->id);
 			}
-			rep.check(allOk && cur.size() == 4,
-			          "all four Sacrifice fragments fit together (family -1)");
+			rep.check(allOk && cur.size() == 4, "all four Sacrifice fragments fit together");
 			rep.check(db.Sanitize(cur, nullptr).size() == 4,
 			          "Sanitize keeps the whole Sacrifice set");
-			// A second copy of one is still refused: limit still applies.
-			rep.check(db.CanAdd(cur, sac[0]->id).code == ScarabAdd::kOverLimit,
-			          "a duplicate fragment is still refused by limit");
+			ScarabAddResult r = db.CanAdd(cur, sac[0]->id);
+			rep.check(r.code == ScarabAdd::kOverLimit && r.limit == 1,
+			          "a duplicate fragment is refused by limit");
 		}
 
-		// The picker is driven by ScarabMatchScore, so searching the way a user
-		// would has to surface them. Checked here rather than by clicking: this
-		// is the same function the popup filters with.
+		// The picker filters with ScarabMatchScore, so searching the way a user
+		// would has to surface them.
 		auto found = [&](const char* q) {
 			ScarabQuery sq = MakeScarabQuery(q);
 			int n = 0;
 			for (const ScarabDef& d : db.All())
-				if (d.kind == "fragment" && ScarabMatchScore(d, sq) > 0) n++;
+				if (ScarabMatchScore(d, sq) > 0) n++;
 			return n;
 		};
 		rep.check(found(u8"奉獻") == 4, "搜尋「奉獻」找到 4 個獻祭碎片",
@@ -440,104 +391,35 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 		          std::to_string(found("Sacrifice")));
 		rep.check(found(u8"黎明的奉獻") == 1, "全名查詢只命中一件",
 		          std::to_string(found(u8"黎明的奉獻")));
+		rep.check(found(u8"黎奉") == 1, "中文子序列查詢命中",
+		          std::to_string(found(u8"黎奉")));
+		rep.check(found(u8"瓦爾區域") == (int)db.All().size(), "效果文字可搜尋",
+		          std::to_string(found(u8"瓦爾區域")));
+		rep.check(found("") == (int)db.All().size(), "empty query matches everything");
+		rep.check(found("zzzzqqqq") == 0, "nonsense query matches nothing");
 	}
 	{
-		// Five distinct families fill the device; a sixth is refused.
+		// Five fill the device; a sixth is refused.
 		std::vector<std::string> cur;
 		for (const ScarabDef& d : db.All()) {
 			if ((int)cur.size() >= kMaxScarabs) break;
 			if (db.CanAdd(cur, d.id).ok()) cur.push_back(d.id);
 		}
-		rep.check((int)cur.size() == kMaxScarabs, "five scarabs fit");
+		rep.check((int)cur.size() == kMaxScarabs, "five entries fit");
 		bool refusedAll = true;
 		for (const ScarabDef& d : db.All())
 			refusedAll = refusedAll && db.CanAdd(cur, d.id).code == ScarabAdd::kFull;
-		rep.check(refusedAll, "a full device refuses every scarab");
-	}
-	{
-		// T-sanitize: unknown id + over-limit duplicate + too many entries.
-		std::vector<std::string> dirty;
-		dirty.push_back("Metadata/Items/Scarabs/DoesNotExist");
-		if (lim1) { dirty.push_back(lim1->id); dirty.push_back(lim1->id); }
-		for (const ScarabDef& d : db.All()) {
-			if ((int)dirty.size() >= 9) break;
-			if (db.CanAdd(std::vector<std::string>(), d.id).ok() &&
-			    std::find(dirty.begin(), dirty.end(), d.id) == dirty.end())
-				dirty.push_back(d.id);
-		}
-		std::string note;
+		rep.check(refusedAll, "a full device refuses every entry");
+
+		std::vector<std::string> dirty = { "Metadata/Items/MapFragments/DoesNotExist" };
+		for (const ScarabDef& d : db.All()) dirty.push_back(d.id);
+		std::string note, note2;
 		std::vector<std::string> clean = db.Sanitize(dirty, &note);
-		rep.check((int)clean.size() <= kMaxScarabs, "sanitize clamps to five",
+		rep.check((int)clean.size() == kMaxScarabs, "sanitize clamps to five",
 		          std::to_string(clean.size()));
-		rep.check(std::find(clean.begin(), clean.end(),
-		                    std::string("Metadata/Items/Scarabs/DoesNotExist")) == clean.end(),
-		          "sanitize drops unknown ids");
-		std::string note2;
 		rep.check(db.Sanitize(clean, &note2) == clean && note2.empty(),
 		          "sanitize is idempotent and silent on clean input");
 		rep.check(!note.empty(), "sanitize reports what it dropped", note);
-	}
-	{
-		// Every scarab must be placeable in an empty device, or the picker would
-		// show permanently dead entries.
-		int blocked = 0;
-		for (const ScarabDef& d : db.All())
-			if (!db.CanAdd(std::vector<std::string>(), d.id).ok()) blocked++;
-		rep.check(blocked == 0, "every scarab is placeable on its own",
-		          std::to_string(blocked) + " blocked");
-	}
-	{
-		// --- fuzzy search ---------------------------------------------------
-		// Fixtures by id so the checks survive a wording change in a future
-		// season; every lookup is asserted rather than assumed.
-		const ScarabDef* hive = db.ById("Metadata/Items/Scarabs/ScarabBreachNew1");
-		const ScarabDef* abyss = db.ById("Metadata/Items/Scarabs/ScarabAbyssNew1");
-		rep.check(hive && abyss, "search fixtures present");
-		if (hive && abyss) {
-			auto score = [&](const ScarabDef& d, const char* qs) {
-				return ScarabMatchScore(d, MakeScarabQuery(qs));
-			};
-			auto hitCount = [&](const char* qs) {
-				ScarabQuery q = MakeScarabQuery(qs);
-				int n = 0;
-				for (const ScarabDef& d : db.All()) if (ScarabMatchScore(d, q)) n++;
-				return n;
-			};
-
-			rep.check(score(*hive, u8"裂痕") > 0, "zh substring still matches");
-			rep.check(score(*hive, "hive") > 0, "en substring still matches");
-			// The two locales order the words oppositely; a user who knows one
-			// order must still find the scarab.
-			rep.check(score(*hive, "hive breach") > 0, "en tokens out of order match");
-			rep.check(score(*hive, u8"裂痕 窩巢") > 0, "zh tokens out of order match");
-			// 「聖甲蟲：窩巢裂痕」 typed without the fullwidth colon.
-			rep.check(score(*hive, u8"聖甲蟲窩巢") > 0, "punctuation-free query matches");
-			rep.check(score(*hive, u8"窩裂") > 0, "zh subsequence matches");
-			rep.check(score(*hive, "brchhv") > 0, "en subsequence matches");
-
-			// Effect text is searchable but must never outrank a name hit.
-			int byEffect = score(*hive, u8"裂痕巢穴");
-			rep.check(byEffect > 0, "effect text is searchable");
-			rep.check(score(*abyss, u8"深淵") > byEffect,
-			          "a name hit outranks an effect hit",
-			          std::to_string(score(*abyss, u8"深淵")) + " vs " + std::to_string(byEffect));
-
-			// An exact name beats a name that merely contains the query.
-			const ScarabDef* multi = db.ById("Metadata/Items/Scarabs/ScarabAbyssNew2");
-			rep.check(multi && score(*abyss, u8"聖甲蟲：深淵") > score(*multi, u8"聖甲蟲：深淵"),
-			          "exact name outranks a longer containing name");
-
-			rep.check(hitCount("") == (int)db.All().size(), "empty query matches everything");
-			rep.check(hitCount("zzzzqqqq") == 0, "nonsense query matches nothing",
-			          std::to_string(hitCount("zzzzqqqq")));
-			// A subsequence over whole code points must not pair half of one CJK
-			// character with half of another.
-			rep.check(hitCount(u8"深") >= 5 && hitCount(u8"深") < (int)db.All().size(),
-			          "single CJK char filters without matching everything",
-			          std::to_string(hitCount(u8"深")));
-			rep.check(hitCount("  breach  ") == hitCount("breach"),
-			          "surrounding whitespace is ignored");
-		}
 	}
 	{
 		int noArt = 0, noDesc = 0;
@@ -545,8 +427,8 @@ int RunScarabSelfTest(const std::wstring& exeDir, std::string& out)
 			if (d.art.empty()) noArt++;
 			if (d.descZh.empty()) noDesc++;
 		}
-		rep.check(noArt == 0, "every scarab has an art path", std::to_string(noArt));
-		rep.check(noDesc == 0, "every scarab has effect text", std::to_string(noDesc));
+		rep.check(noArt == 0, "every entry has an art path", std::to_string(noArt));
+		rep.check(noDesc == 0, "every entry has effect text", std::to_string(noDesc));
 	}
 
 	return rep.failures;

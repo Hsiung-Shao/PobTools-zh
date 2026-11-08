@@ -279,7 +279,7 @@
 	X(editorName,        u8"翻譯編輯器",                   u8"Translation editor")                    \
 	X(warehouseBadge,    u8"PoE1 國際服",                  u8"PoE1 international")                    \
 	X(tipFilter,         u8"編輯 .filter、預覽掉落外觀",   u8"Edit .filter files, preview how drops look") \
-	X(tipAtlas,          u8"配點、聖甲蟲、星盤與每張圖成本", u8"Passives, scarabs, astrolabes and the cost of each map") \
+	X(tipAtlas,          u8"配點、地圖格、星盤與每張圖成本", u8"Passives, map device, astrolabes and the cost of each map") \
 	X(tipTimeless,       u8"查種子對天賦的影響、找想要的種子", u8"See what a seed changes, find the seed you want") \
 	X(tipRegex,          u8"勾選詞綴，產生遊戲內搜尋字串", u8"Pick mods, get an in-game search string") \
 	X(tipWarehouse,      u8"快照倉庫，算刷圖收益",         u8"Snapshot your stash, see what a map earned") \

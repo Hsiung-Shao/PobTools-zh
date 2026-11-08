@@ -730,24 +730,8 @@ void CatalogueContentTests(const std::wstring& exeDir)
 		      "map_mods keeps the display text after stripping the link: \"Rare Monsters have Elemental Thorns reflecting # Elemental Damage\"");
 	}
 
-	// T4: the Abyss scarab text of the current patch (3.29.3.3).
-	const RegexPageDef* sc = findPage("scarabs");
-	check(sc != nullptr, "poe1 page scarabs exists");
-	if (sc) {
-		const RegexEntryDef* ab = nullptr;
-		for (const RegexEntryDef& e : sc->entries)
-			if (e.id == "Metadata/Items/Scarabs/ScarabAbyssNew4") { ab = &e; break; }
-		check(ab != nullptr, "scarabs entry Metadata/Items/Scarabs/ScarabAbyssNew4 exists");
-		if (ab) {
-			bool nonFinal = false, oldWording = false;
-			for (const std::string& s : ab->en) {
-				if (s.find("Non-final") != std::string::npos) nonFinal = true;
-				if (s.find("do not contain a reward") != std::string::npos) oldWording = true;
-			}
-			check(nonFinal, "ScarabAbyssNew4 en has a \"Non-final\" line (3.29.3.3 wording)");
-			check(!oldWording, "ScarabAbyssNew4 en has no \"do not contain a reward\" line (pre-3.29.3.3 wording)");
-		}
-	}
+	// T4: scarabs were removed ahead of 3.30 -- their page must stay gone.
+	check(findPage("scarabs") == nullptr, "poe1 page scarabs is removed");
 }
 
 // A5 helpers: the two link-marker forms the PoE2 GGPK strings carry, "[Key|Display]" and a bare
@@ -802,65 +786,6 @@ void FlavourTextTests(const std::wstring& exeDir)
 			if (s.compare(0, want.size(), want) == 0) return true;
 		return false;
 	};
-	const RegexPageDef* sc = findPage("scarabs");
-	check(sc != nullptr, "flavour: poe1 page scarabs exists");
-
-	if (sc) {
-		// A1
-		const RegexEntryDef* tor = nullptr;
-		for (const RegexEntryDef& e : sc->entries)
-			if (e.id == "Metadata/Items/Scarabs/ScarabTormentNew1") { tor = &e; break; }
-		check(tor != nullptr, "A1 scarabs entry Metadata/Items/Scarabs/ScarabTormentNew1 exists");
-		if (tor) {
-			check(anyHas(tor->hiddenZh, u8"生前犯下的罪行將持續作祟到你死後。"),
-			      "A1 ScarabTormentNew1 hiddenZh holds its flavour text (" + std::to_string(tor->hiddenZh.size()) + " hidden lines)");
-			check(anyHas(tor->hiddenEn, "Their crimes in life haunt you in death."),
-			      "A1 ScarabTormentNew1 hiddenEn holds its flavour text (" + std::to_string(tor->hiddenEn.size()) + " hidden lines)");
-		}
-
-		// A2
-		check(anyHas(sc->ambientZh, u8"可於個人的地圖裝置中使用，增加地圖的詞綴。"),
-		      "A2 scarabs ambientZh holds the usage directions line");
-		check(anyHas(sc->ambientEn, "Can be used in a personal Map Device to add modifiers to a Map."),
-		      "A2 scarabs ambientEn holds the usage directions line");
-
-		// A3: built like DataTests' build(true) in Chinese; every single pick must verify.
-		{
-			std::vector<Entry> es;
-			es.reserve(sc->entries.size());
-			for (const RegexEntryDef& d : sc->entries) {
-				Entry e;
-				e.id = d.id;
-				const bool useWant = !d.zh.empty();
-				e.texts = useWant ? d.zh : d.en;
-				e.hidden = useWant ? d.hiddenZh : d.hiddenEn;
-				e.alts = useWant ? d.altZh : d.altEn;
-				es.push_back(std::move(e));
-			}
-			RegexGen::Ambient amb;
-			amb.lines = sc->ambientZh;
-			amb.nameLeft = sc->namePrefixZh;
-			amb.nameRight = sc->nameSuffixZh;
-			Corpus c;
-			c.Reset(std::move(es), std::move(amb));
-			int bad = 0;
-			std::string first;
-			for (int i = 0; i < (int)sc->entries.size(); i++) {
-				const RegexGen::Result r = c.Build({i}, Mode::Any);
-				const RegexGen::Check v = c.Verify({i}, r.query);
-				if (!v.ok) {
-					if (!bad) {
-						const std::vector<std::string>& z = sc->entries[i].zh;
-						first = (z.empty() ? sc->entries[i].id : z[0]) + " -> " + r.query;
-					}
-					bad++;
-				}
-			}
-			check(bad == 0, "A3 scarabs zh: every single-pick query verifies (" + std::to_string(bad) + " of " +
-			      std::to_string(sc->entries.size()) + " fail)" + (bad ? " -- first: " + first : std::string()));
-		}
-	}
-
 	// A4
 	const RegexPageDef* tt = findPage("tattoos");
 	check(tt != nullptr, "A4 poe1 page tattoos exists");

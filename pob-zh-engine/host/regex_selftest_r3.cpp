@@ -457,18 +457,18 @@ void CompositionTests(const RegexDataset& ds, const std::map<std::string, Game>&
 		auto drop = [](std::vector<std::pair<std::string, std::string>>& v, const std::string& k) {
 			v.erase(std::remove_if(v.begin(), v.end(), [&](const auto& kv) { return kv.first == k; }), v.end());
 		};
-		for (const char* k : {"ItemDisplayStringRarity", "ItemDisplayMapScarabDropBonus"}) {
+		for (const char* k : {"ItemDisplayStringRarity", "ItemDisplayMapMapDropBonus"}) {
 			drop(partial.zh, k);
 			drop(partial.en, k);
 		}
 		const std::vector<AlgoPage> p = NumericPages("poe1", &partial);
-		bool hasRarity = false, hasScarabs = false;
+		bool hasRarity = false, hasMaps = false;
 		if (!p.empty())
 			for (const AlgoEntry& e : p[0].entries) {
 				hasRarity |= e.def.id == kRarityEntryId;
-				hasScarabs |= e.def.id == "scarabs";
+				hasMaps |= e.def.id == "maps";
 			}
-		check(p.size() == 1 && !hasRarity && !hasScarabs && p[0].entries.size() == 7, "a missing label drops only its row (never a guessed text)");
+		check(p.size() == 1 && !hasRarity && !hasMaps && p[0].entries.size() == 6, "a missing label drops only its row (never a guessed text)");
 	}
 
 	// pages.test.ts:154 / :166 -- the actual strings.

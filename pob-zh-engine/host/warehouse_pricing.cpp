@@ -56,7 +56,7 @@ std::string NinjaMapKey(const std::string& name, int tier)
 bool BuildPriceKey(const StashItemRaw& it, std::string* key, std::string* dispEn)
 {
 	switch (it.frameType) {
-	case 5: // currency-frame stackables: currency, fragments-with-frame, scarabs,
+	case 5: // currency-frame stackables: currency, fragments-with-frame,
 	        // oils, essences, fossils, tattoos, omens... exactly the exchange API's world
 		*key = NinjaExchangeKey(it.typeLine);
 		*dispEn = it.typeLine;

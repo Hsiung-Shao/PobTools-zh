@@ -1382,7 +1382,7 @@ private:
 		}
 
 		if (!scarabDb.available()) {
-			PobUi::Hint(u8"缺少聖甲蟲資料檔，無法估算");
+			PobUi::Hint(u8"缺少地圖格資料檔，無法估算");
 			return;
 		}
 		// Column widths from what they hold (header vs a sample value), not a
@@ -1427,7 +1427,7 @@ private:
 			if (cost.lines.empty()) {
 				ImGui::TableNextRow();
 				ImGui::TableNextColumn();
-				PobUi::Hint(u8"此方案的地圖格沒有放聖甲蟲或碎片");
+				PobUi::Hint(u8"此方案的地圖格沒有放碎片");
 			}
 			for (const MapCostLine& l : cost.lines) {
 				ImGui::TableNextRow();
@@ -2567,11 +2567,11 @@ private:
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 	}
 
-	// --- scarab section (map device) ---
+	// --- map device section (地圖格: Vaal fragments; scarabs removed for 3.30) ---
 	// Kept beside the atlas stats but never merged into them: these are map
 	// modifiers, not passive bonuses, and their numbers do not add up with the
 	// tree's. The picker filters on en+zh and only asks for the icons of the
-	// rows actually on screen, so opening it does not queue 130 downloads.
+	// rows actually on screen.
 	char scarabSearch[256] = "";
 	bool openScarabPicker = false;   // set inside the panel, acted on outside it
 	const std::vector<std::string>& scarabLines(const ScarabDef& d)
@@ -2591,8 +2591,6 @@ private:
 			return u8"地圖裝置只有 " + std::to_string(kMaxScarabs) + u8" 個地圖格";
 		case ScarabAdd::kOverLimit:
 			return u8"這個項目最多只能放 " + std::to_string(r.limit) + u8" 份";
-		case ScarabAdd::kFamilyConflict:
-			return u8"與「" + (r.conflict ? scarabName(*r.conflict) : std::string("?")) + u8"」不能同時使用";
 		default:
 			return u8"這個項目不在目前的資料中";
 		}
@@ -2613,7 +2611,7 @@ private:
 			return;
 		}
 		const std::string hdr = u8"地圖格  " + std::to_string(b.scarabs.size()) + " / " + std::to_string(kMaxScarabs);
-		if (!PobUi::CollapsingSection(hdr.c_str(), "###scarabhdr", PobIcon::Layers, u8"聖甲蟲與其他地圖裝置"))
+		if (!PobUi::CollapsingSection(hdr.c_str(), "###scarabhdr", PobIcon::Layers, u8"地圖裝置碎片"))
 			return;
 
 		ImGui::Dummy(ImVec2(0, PobUi::D(2.0f)));
@@ -2653,7 +2651,7 @@ private:
 					// Raised here, submitted outside the panel -- see renderScarabPicker.
 					openScarabPicker = true;
 				}
-				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"放一個聖甲蟲或地圖碎片");
+				if (ImGui::IsItemHovered()) PobUi::Tooltip(u8"放一個地圖碎片");
 			}
 			ImGui::PopID();
 		}
@@ -2710,7 +2708,7 @@ private:
 			ScarabQuery q = MakeScarabQuery(scarabSearch);
 
 			// Rank by match quality; an empty query scores everything 1 so
-			// the list keeps its natural family+tier order until you type.
+			// the list keeps its natural file order until you type.
 			std::vector<std::pair<int, const ScarabDef*>> hits;
 			for (const ScarabDef& d : scarabDb.All()) {
 				int s = ScarabMatchScore(d, q);
@@ -2722,7 +2720,7 @@ private:
 						if (a.first != b.first) return a.first > b.first;
 						return a.second->zh.size() < b.second->zh.size(); // tighter name first
 					});
-			PobUi::Hint((std::to_string(hits.size()) + u8" 隻 · " + scarabDb.Source()).c_str());
+			PobUi::Hint((std::to_string(hits.size()) + u8" 件 · " + scarabDb.Source()).c_str());
 
 			ImGui::BeginChild("##scarablist", ImVec2(420.0f * scale, 360.0f * scale));
 			ImGuiListClipper clip;
@@ -2732,9 +2730,8 @@ private:
 					const ScarabDef& d = *hits[k].second;
 					ScarabAddResult can = scarabDb.CanAdd(base, d.id);
 					ImGui::PushID(k);
-					// Only rows the clipper actually emits; scrolling the
-					// whole list does end up fetching all 130, but that
-					// happens once and then lives in the disk cache.
+					// Only rows the clipper actually emits; fetched once, then
+					// served from the disk cache.
 					icons.RequestPath(d.art);
 					unsigned tex = icons.TextureByPath(d.art);
 					float sz = ImGui::GetTextLineHeight() * 1.4f;

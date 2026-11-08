@@ -1,6 +1,8 @@
-// PobTools atlas planner: the scarab catalogue and the map-device placement
-// rules, as shipped in Data/scarabs_poe1.json (generated from the GGPK by
-// tools/ggpk_zh/gen_scarabs.py).
+// PobTools atlas planner: the map-device catalogue (地圖格) and its placement
+// rules, as shipped in Data/scarabs_poe1.json. Scarabs were removed ahead of
+// 3.30 (they leave the game); only the eight Vaal map fragments remain. The
+// file / type names keep "scarab" so saved builds and the data format stay
+// compatible.
 //
 // Pure data + rule logic, no ImGui / GL — same split as atlas_stat_agg.
 #pragma once
@@ -11,31 +13,20 @@
 #include <unordered_map>
 #include <vector>
 
-// A map device takes five items (scarabs and, since the slots were renamed
-// 地圖格, the Vaal map fragments). Each entry additionally caps how many copies
-// of itself may go in (ScarabDef::limit, 1..5), and entries sharing a
-// non-negative `family` are mutually exclusive. All three rules come from the
-// game's own data (MapFragmentMods), not from lore or guesswork.
+// A map device takes five items, and each entry caps how many copies of
+// itself may go in (ScarabDef::limit, 1..5). Both rules come from the game's
+// own data (MapFragmentMods), not from lore or guesswork.
 static const int kMaxScarabs = 5;
 
 struct ScarabDef {
-	std::string id;        // "Metadata/Items/Scarabs/..." — the language-neutral key
+	std::string id;        // "Metadata/Items/MapFragments/..." — the language-neutral key
 	std::string en, zh;    // official names, both locales
-	std::string type;      // ScarabTypes id; English in every locale, so never shown alone
 	std::string art;       // "Art/2DItems/..." without the extension
-	std::string kind;      // "scarab" (default) | "fragment" — display grouping only
-	int tier = 0;
-	// Mutual-exclusion group. NEGATIVE = in no group: the Vaal fragments share
-	// family 149 in the raw table with 50 other rows, yet four Sacrifice pieces
-	// are exactly what you socket together, so the generator emits -1 for them
-	// instead of the rule layer special-casing one magic number.
-	int family = 0;
 	int limit = 1;         // max copies of THIS entry in one map device
 	bool stash = true;     // false = absent from the fragment stash AND both trade realms
 
 	// Two INDEPENDENT lists: one Description cell holds embedded newlines and
-	// the locales do not always split into the same number of lines (Sulphite
-	// Scarab is 1 line in English, 2 in Chinese). Render one list or the other,
+	// the locales do not always split into the same number of lines. Render one list or the other,
 	// never a line from each — that pairing is the defect recorded in
 	// error_i18n_newline_split_positional.
 	std::vector<std::string> descEn, descZh;
@@ -59,29 +50,27 @@ inline ScarabQuery MakeScarabQuery(const std::string& raw) { return MakeFuzzyQue
 // FuzzyTextScore (30 / 20), so a name hit always outranks an effect hit.
 //
 // An empty query matches everything with score 1, which keeps the catalogue in
-// its natural family+tier order until the user actually types.
+// its natural file order until the user actually types.
 int ScarabMatchScore(const ScarabDef& d, const ScarabQuery& q);
 
 enum class ScarabAdd {
 	kOk,
-	kUnknown,         // no such scarab in this catalogue
+	kUnknown,         // no such entry in this catalogue
 	kFull,            // already holding kMaxScarabs
-	kOverLimit,       // this scarab is already in `limit` times
-	kFamilyConflict,  // another scarab of the same family is already in
+	kOverLimit,       // this entry is already in `limit` times
 };
 
 struct ScarabAddResult {
 	ScarabAdd code = ScarabAdd::kOk;
-	int limit = 0;                       // kOverLimit: the offending scarab's cap
-	const ScarabDef* conflict = nullptr; // kFamilyConflict: the scarab already placed
+	int limit = 0;                       // kOverLimit: the offending entry's cap
 	bool ok() const { return code == ScarabAdd::kOk; }
 };
 
 class ScarabDb {
 public:
 	// Reads exeDir\Data\scarabs_poe1.json. A missing or malformed file is not
-	// fatal: available() stays false, the planner hides the scarab UI, and
-	// Sanitize() becomes a no-op so an existing build's scarab list survives
+	// fatal: available() stays false, the planner hides the 地圖格 UI, and
+	// Sanitize() becomes a no-op so an existing build's slot list survives
 	// untouched instead of being silently emptied.
 	bool Load(const std::wstring& exeDir, std::string* err = nullptr);
 

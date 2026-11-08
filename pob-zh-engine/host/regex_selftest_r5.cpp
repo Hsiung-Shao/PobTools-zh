@@ -609,7 +609,7 @@ void SnapshotTests(const std::map<std::string, Game>& games)
 	int n = 0, bad = 0;
 	std::string firstBad;
 	for (const Case& c : {Case{"poe1", "map_mods"}, Case{"poe2", "waystone_mods"}, Case{"poe1", "vendor_items"},
-	                      Case{"poe2", "vendor_items_poe2"}, Case{"poe1", "scarabs"}, Case{"poe2", "tablet_mods"}}) {
+	                      Case{"poe2", "vendor_items_poe2"}, Case{"poe1", "logbook_mods"}, Case{"poe2", "tablet_mods"}}) {
 		const Game& G = games.at(c.game);
 		const PageRef* page = G.Find(c.page);
 		if (!page) {
@@ -713,7 +713,7 @@ void SnapshotTests(const std::map<std::string, Game>& games)
 		RegexUiState back;
 		back.Parse(s.Serialize());
 		const PageRef* mp = G.Find("map_mods");
-		const PageRef* sc = G.Find("scarabs");
+		const PageRef* sc = G.Find("logbook_mods");
 		std::vector<CombineSel> sels(2);
 		sels[0].page = *mp;
 		sels[0].picks = {1, 4};
