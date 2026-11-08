@@ -133,6 +133,8 @@ pob-zh-engine/tools/
 .env.*
 !.env.example
 secrets.json
+github_token.bin
+github_token.bin.tmp
 *_secret*
 *.credentials
 

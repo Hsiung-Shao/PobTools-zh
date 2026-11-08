@@ -1,5 +1,6 @@
 #include "http_client.h"
 #include "error_log.h"
+#include "github_token.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -70,7 +71,7 @@ void* HttpOpenSession(const wchar_t* userAgent)
 	return s;
 }
 
-HttpsClient::HttpsClient(const std::wstring& host)
+HttpsClient::HttpsClient(const std::wstring& host) : host_(host)
 {
 	// GitHub's API rejects requests without a User-Agent; keep the product UA.
 	HINTERNET s = (HINTERNET)HttpOpenSession(L"PobTools/1.0");
@@ -92,15 +93,92 @@ HttpsClient::~HttpsClient()
 	if (hSession_) WinHttpCloseHandle((HINTERNET)hSession_);
 }
 
+// A request carrying the token must never forward it to a redirect destination,
+// so only those requests stop following redirects. Anonymous ones (no token set,
+// or the retry below) keep WinHTTP's normal behaviour: a renamed repository's 301
+// still resolves. Release assets use separate github.com/CDN clients and never
+// see the token at all.
+static bool github_request(HINTERNET request, const std::wstring& host, bool withToken,
+                           std::wstring& headers, unsigned* tokenGen)
+{
+	*tokenGen = 0;
+	if (!withToken) return true;
+	unsigned gen = 0;
+	std::wstring auth = GitHubToken::RequestHeaders(host, &gen);
+	if (auth.empty()) return true;
+	DWORD policy = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+	if (!WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &policy, sizeof(policy))) return false;
+	headers = std::move(auth);
+	*tokenGen = gen;
+	return true;
+}
+
+static bool is_redirect(int code)
+{
+	return code == 301 || code == 302 || code == 303 || code == 307 || code == 308;
+}
+
+// A 401 to an authenticated API request: remember it and return the message to
+// show if the anonymous retry fails as well.
+static std::string token_rejected(const std::wstring& path, unsigned tokenGen)
+{
+	GitHubToken::NoteRejected(tokenGen);
+	PobLog::Error("net", "HTTP 401 with GitHub token, retrying anonymously: " + narrow(path));
+	return GitHubToken::ApiError(401, "", "", "", true);
+}
+
+static std::string response_header(HINTERNET request, const wchar_t* name)
+{
+	wchar_t value[128]{};
+	DWORD size = sizeof(value);
+	if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, name, value, &size, WINHTTP_NO_HEADER_INDEX))
+		return {};
+	return narrow(std::wstring(value, size / sizeof(wchar_t)));
+}
+
 bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
                       std::string* err, const std::atomic<bool>* cancel,
                       const ProgressFn& onProgress)
+{
+	// true always means "no error": a retry that succeeds must not leave the
+	// first attempt's message behind.
+	if (err) err->clear();
+	unsigned tokenGen = 0;
+	int status = 0;
+	if (getOnce(path, out, err, cancel, onProgress, true, &tokenGen, &status)) return true;
+	if (!tokenGen) return false;
+	// Redirected (repository renamed or moved): ask again without the token and
+	// let WinHTTP follow it.
+	if (is_redirect(status)) {
+		if (err) err->clear();
+		return getOnce(path, out, err, cancel, onProgress, false, nullptr, nullptr);
+	}
+	// Token expired or revoked: the request itself is public, so a dead token
+	// must not stop update checks. Flag it for the settings page and go on
+	// anonymously; if that fails too, the token is the thing to fix.
+	if (status == 401) {
+		const std::string invalid = token_rejected(path, tokenGen);
+		std::string retryErr;
+		if (getOnce(path, out, &retryErr, cancel, onProgress, false, nullptr, nullptr)) {
+			if (err) err->clear();
+			return true;
+		}
+		PobLog::Error("net", "anonymous retry failed too: " + retryErr);
+		if (err) *err = invalid;
+	}
+	return false;
+}
+
+bool HttpsClient::getOnce(const std::wstring& path, std::vector<unsigned char>& out,
+                          std::string* err, const std::atomic<bool>* cancel,
+                          const ProgressFn& onProgress, bool withToken, unsigned* tokenGen, int* status)
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
 		return false;
 	};
 	out.clear();
+	if (status) *status = 0;
 	if (!hConnect_) return fail(u8"HTTPS 連線初始化失敗");
 
 	// paths arrive pre-encoded (%20 etc.); disable WinHTTP's re-escaping
@@ -108,14 +186,24 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 		WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
 		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
 	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
+	std::wstring headers;
+	unsigned gen = 0;
+	if (!github_request(hReq, host_, withToken, headers, &gen)) {
+		WinHttpCloseHandle(hReq);
+		return fail(u8"建立 HTTP 請求失敗");
+	}
+	const bool tokenSent = gen != 0;
+	if (tokenGen) *tokenGen = gen;
 
 	bool ok = false;
 	std::string reason;
-	if (WinHttpSendRequest(hReq, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
+	if (WinHttpSendRequest(hReq, headers.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS : headers.c_str(),
+		headers.empty() ? 0 : (DWORD)headers.size(), WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
 		WinHttpReceiveResponse(hReq, nullptr)) {
 		DWORD code = 0, len = sizeof(code);
 		WinHttpQueryHeaders(hReq, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
 			WINHTTP_HEADER_NAME_BY_INDEX, &code, &len, WINHTTP_NO_HEADER_INDEX);
+		if (status) *status = (int)code;
 		if (code == 200) {
 			ok = true;
 			unsigned long long total = 0;
@@ -146,6 +234,28 @@ bool HttpsClient::Get(const std::wstring& path, std::vector<unsigned char>& out,
 			if (ok && out.empty()) { ok = false; reason = u8"回應為空"; }
 		} else {
 			reason = "HTTP " + std::to_string(code) + ": " + narrow(path);
+			if (GitHubToken::IsApiHost(host_)) {
+				// Secondary limits may only be named in the body. Read at most 8 KiB
+				// for classification; never include a server body in a log or message.
+				std::string body;
+				if (code == 403) {
+					char chunk[1024];
+					DWORD read = 0;
+					while (body.size() < 8192 && !(cancel && cancel->load()) &&
+					       WinHttpReadData(hReq, chunk, sizeof(chunk), &read) && read)
+						body.append(chunk, read);
+				}
+				std::string friendly = GitHubToken::ApiError((int)code,
+					response_header(hReq, L"X-RateLimit-Remaining"),
+					response_header(hReq, L"Retry-After"), body, tokenSent);
+				if (!friendly.empty()) {
+					// (A 401 that carried the token is logged once, by token_rejected.)
+					// The friendly wording drops the status and path; keep both in
+					// the error log so a report still says which request failed.
+					if (!(code == 401 && tokenSent)) PobLog::Error("net", reason);
+					reason = std::move(friendly);
+				}
+			}
 		}
 	} else {
 		reason = u8"連線失敗（網路無法使用？）: " + narrow(path);
@@ -170,6 +280,22 @@ bool HttpsClient::GetString(const std::wstring& path, std::string& out, std::str
 bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
                         std::string* err, const std::atomic<bool>* cancel)
 {
+	if (err) err->clear();
+	unsigned tokenGen = 0;
+	if (!getExOnce(path, extra, out, err, cancel, true, &tokenGen)) return false;
+	// Same as Get: a redirected or rejected (401) authenticated request is
+	// retried anonymously; the caller reads the retry's status as usual.
+	if (tokenGen && (is_redirect(out.status) || out.status == 401)) {
+		if (out.status == 401) token_rejected(path, tokenGen);
+		return getExOnce(path, extra, out, err, cancel, false, nullptr);
+	}
+	return true;
+}
+
+bool HttpsClient::getExOnce(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
+                            std::string* err, const std::atomic<bool>* cancel, bool withToken,
+                            unsigned* tokenGen)
+{
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
 		return false;
@@ -189,6 +315,12 @@ bool HttpsClient::GetEx(const std::wstring& path, const HttpExtra& extra, HttpRe
 	WinHttpSetOption(hReq, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
 
 	std::wstring joined;
+	unsigned gen = 0;
+	if (!github_request(hReq, host_, withToken, joined, &gen)) {
+		WinHttpCloseHandle(hReq);
+		return fail(u8"建立 HTTP 請求失敗");
+	}
+	if (tokenGen) *tokenGen = gen;
 	for (const std::wstring& h : extra.headers) {
 		joined += h;
 		joined += L"\r\n";

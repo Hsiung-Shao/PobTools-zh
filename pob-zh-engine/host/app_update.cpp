@@ -3,6 +3,7 @@
 #include "error_log.h"
 #include "app_version.h"
 #include "http_client.h"
+#include "github_token.h"
 #include "launcher_config.h" // LoadLauncherConfig (the CLI honours the same opt-out)
 #include "zip_extract.h"
 #include "hash_sha256.h"
@@ -166,10 +167,16 @@ static const char* const kUpdMsgFragments[] = {
 	u8"無法建立解壓目錄格式無效條目資訊讀取路徑非法檔案寫入失敗回滾備份"
 static const char* const kExternalMsgSeed = PT_UPD_EXTERNAL_SEED;
 
-// Generated: the concatenation of every phrase above. Cannot drift from the
-// list, because it IS the list.
+// FriendlyCheckError's wording for a 403/429 that did not come from the API host
+// (the API host's own statuses are already worded by GitHubToken::ApiError).
+#define PT_UPD_FRIENDLY_LIMIT u8"GitHub 暫時限制查詢次數，請過幾分鐘再試"
+
+// Generated: the concatenation of every phrase above plus GitHubToken's
+// messages (PT_GITHUB_ERRORS, github_token.h). Cannot drift from either list,
+// because it IS those lists -- and stays one compile-time literal.
 #define PT_UPD_SEED(name, lit) lit
-const char* kAppUpdateGlyphSeed = PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED;
+const char* kAppUpdateGlyphSeed = PT_UPD_MSGS(PT_UPD_SEED) PT_UPD_EXTERNAL_SEED
+                                  PT_GITHUB_ERRORS(PT_UPD_SEED) PT_UPD_FRIENDLY_LIMIT;
 #undef PT_UPD_SEED
 
 // 組合型訊息全部集中在這裡,而不是在 setPhase 現場拼字串。兩個好處:
@@ -515,16 +522,15 @@ std::string ReadLocalDataVersion(const std::wstring& exeDir)
 // than the English, because it sends whoever reads the report to the wrong place
 // and there is no way back to what the machine actually said.
 //
-// 403/429 from the API host is the one worth naming: unauthenticated GitHub
-// allows 60 requests an hour per IP and one check spends two of them, so a user
-// who keeps pressing the button after a silent failure burns through the budget
-// and then every later check fails for a reason that has nothing to do with them.
+// api.github.com's 401/403/429 arrive already worded by GitHubToken::ApiError
+// (they no longer contain "HTTP 403"). What is left here is a raw 403/429 from
+// any other host on the way -- release downloads on github.com and its CDN.
 static std::string FriendlyCheckError(const std::string& err)
 {
 	const bool rateLimited = err.find("HTTP 403") != std::string::npos ||
 	                         err.find("HTTP 429") != std::string::npos;
 	if (rateLimited)
-		return u8"GitHub 暫時限制查詢次數，請過幾分鐘再試";
+		return PT_UPD_FRIENDLY_LIMIT;
 	return err;
 }
 
@@ -2580,6 +2586,19 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 
 		for (const char* frag : kUpdMsgFragments) expectCovered(frag);
 		expectCovered(kExternalMsgSeed);
+		expectCovered(GitHubToken::ErrorGlyphSeed);
+		expectCovered(GitHubToken::ApiError(401, "", "", "", true));
+		expectCovered(GitHubToken::ApiError(403, "0", "", "", true));
+		expectCovered(GitHubToken::ApiError(403, "10", "", "", true));
+		expectCovered(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip"));
+		{
+			const std::string limitedApi = GitHubToken::ApiError(429, "", "", "", true);
+			check(FriendlyCheckError("HTTP 403: /x/releases/download/v1/a.zip") == PT_UPD_FRIENDLY_LIMIT &&
+			      FriendlyCheckError("HTTP 429: /x") == PT_UPD_FRIENDLY_LIMIT &&
+			      FriendlyCheckError(limitedApi) == limitedApi &&
+			      FriendlyCheckError("HTTP 404: /x") == "HTTP 404: /x",
+			      "T13b 非 API 主機的 403/429 給友善訊息,其他錯誤原樣保留");
+		}
 		// The composed messages, driven with stand-in版號/標籤 -- these are what a
 		// user actually sees, and the only place a stray literal could hide.
 		expectCovered(MsgUpToDate());

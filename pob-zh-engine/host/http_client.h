@@ -81,6 +81,16 @@ public:
 	           std::string* err, const std::atomic<bool>* cancel = nullptr);
 
 private:
+	// One request. withToken=false never attaches the GitHub token, so WinHTTP may
+	// follow redirects; *tokenGen is the generation of the token this attempt
+	// actually carried (GitHubToken::RequestHeaders), 0 when it went anonymous.
+	bool getOnce(const std::wstring& path, std::vector<unsigned char>& out,
+	             std::string* err, const std::atomic<bool>* cancel,
+	             const ProgressFn& onProgress, bool withToken, unsigned* tokenGen, int* status);
+	bool getExOnce(const std::wstring& path, const HttpExtra& extra, HttpResult& out,
+	               std::string* err, const std::atomic<bool>* cancel, bool withToken, unsigned* tokenGen);
+
+	std::wstring host_;       // credentials are restricted to api.github.com
 	void* hSession_ = nullptr; // HINTERNET
 	void* hConnect_ = nullptr; // HINTERNET
 };

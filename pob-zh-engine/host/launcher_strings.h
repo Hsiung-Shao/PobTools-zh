@@ -137,6 +137,27 @@
 	/* v1.1.0:大陸使用者連 GitHub 常需代理;空值＝自動跟隨系統代理 */                                \
 	X(proxyLabel,        u8"HTTP 代理",                    u8"HTTP proxy")                            \
 	X(proxyEmptyHint,    u8"留空＝自動跟隨系統代理",       u8"empty = follow the system proxy")       \
+	/* v1.8.4:選填 GitHub Token(PR #15),繞開未登入 API 每小時 60 次的限制 */                         \
+	X(githubTokenLabel,  u8"GitHub Token",                u8"GitHub Token")                          \
+	X(githubTokenHint,   u8"選填，減少更新檢查被限流；貼上後按「儲存」",                             \
+	                     u8"Optional; fewer update-check rate limits. Paste, then Save")             \
+	X(githubTokenEmpty,  u8"ghp_… 或 github_pat_…",       u8"ghp_… or github_pat_…")                 \
+	X(githubTokenPasteFirst, u8"請先貼上 Token",          u8"Paste a token first")                   \
+	X(githubTokenShow,   u8"顯示",                        u8"Show")                                  \
+	X(githubTokenHide,   u8"隱藏",                        u8"Hide")                                  \
+	X(githubTokenSave,   u8"儲存",                        u8"Save")                                  \
+	X(githubTokenClear,  u8"清除",                        u8"Clear")                                 \
+	X(githubTokenAbout,  u8"關於 Token",                  u8"About tokens")                          \
+	X(githubTokenSaved,  u8"已儲存 GitHub Token",         u8"GitHub Token saved")                    \
+	X(githubTokenAnonymous, u8"尚未設定 GitHub Token",                                               \
+	                     u8"No GitHub Token configured")                                             \
+	X(githubTokenUnreadable, u8"已儲存的 Token 無法讀取，請重新儲存",                                \
+	                     u8"Saved token unreadable; save it again")                                  \
+	X(githubTokenRejected, u8"Token 無效或已過期，請更換或清除；目前改用匿名查詢",                   \
+	                     u8"Token invalid or expired; replace or clear it (using anonymous requests)") \
+	X(githubTokenStorage, u8"以目前 Windows 使用者加密儲存，只送往 GitHub API",                      \
+	                     u8"Encrypted for this Windows user; sent only to the GitHub API")           \
+	X(githubTokenCleared, u8"已清除 GitHub Token",         u8"GitHub Token cleared")                 \
 	X(useBuiltin,        u8"切回內建",                     u8"Use built-in")                          \
 	/* font installation + coverage (v0.16.0) */                                                     \
 	X(installFont,       u8"安裝字型…",                    u8"Install a font...")                     \
