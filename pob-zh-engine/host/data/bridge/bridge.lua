@@ -5820,6 +5820,27 @@ function M.item_edit_popup(p)
 		end
 		error("no node " .. tostring(p.value), 0)
 	end
+	if action == "rank" then
+		-- The Anoint dialog's own "Sort by <stat>" (NotableDBControl:SetSortMode +
+		-- ListBuilder, which recalculates the build once per notable).
+		local ctl = ctls.notableDB
+		if not ctl or type(ctl.SetSortMode) ~= "function" then error("this dialog has no notable list", 0) end
+		local metric = p.metric or "CombinedDPS"
+		local known = false
+		for _, s in ipairs(data.powerStatList) do
+			if s.stat == metric and not s.ignoreForItems then known = true break end
+		end
+		if not known then error("unknown power stat " .. tostring(metric), 0) end
+		with_popup(function() ctl:SetSortMode(metric) run_list_builder(ctl) end)
+		ctl.listBuildFlag = false
+		local top = math.max(1, math.min(30, tonumber(p.top) or 10))
+		local out = {}
+		for i, node in ipairs(ctl.list or {}) do
+			if #out >= top then break end
+			out[#out + 1] = { id = node.id, name = node.dn, nameZh = tr(node.dn), power = node.measuredPower }
+		end
+		return { metric = metric, notables = out }
+	end
 	if action == "cancel" then
 		close_edit_popup()
 		return edit_state(p)
@@ -7204,8 +7225,12 @@ function M.set_config(p)
 	elseif vd.type == "text" then
 		v = v ~= nil and tostring(v) or nil
 	end
+	local before = set.input[vd.var]
 	set.input[vd.var] = v
-	return config_committed(b)
+	local r = config_committed(b)
+	-- read back, so a caller can tell an applied change from a silent no-op
+	if type(r) == "table" then r.var, r.before, r.after = vd.var, before, set.input[vd.var] end
+	return r
 end
 
 -- set_config_placeholder{var, value}: the grey "what the build implies" number.

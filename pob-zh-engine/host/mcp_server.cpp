@@ -321,7 +321,7 @@ json ToolError(const std::string& message, bool restarted = false)
 
 unsigned TimeoutFor(const std::string& tool)
 {
-	if (tool == "suggest_nodes" || tool == "what_if" || tool == "load_build") return 180000;
+	if (tool == "suggest_nodes" || tool == "what_if" || tool == "load_build" || tool == "rank_anoints" || tool == "rank_supports") return 180000;
 	return 60000;
 }
 

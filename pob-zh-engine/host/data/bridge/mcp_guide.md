@@ -3,6 +3,10 @@
 Mechanics principles only, not a league meta. Every number you report must come
 from the tools (Path of Building's own calculation); use this page to interpret them.
 
+Your own Path of Exile knowledge may come from an older league: skills, uniques and
+mechanics change every patch. When it disagrees with what the tools return (a gem's
+effect, a unique's mods, a node's stats), trust the tools and say that you did.
+
 ## 1. Find the build's intent before judging it
 Read `build_summary.keystones` (with their stat lines) and `immuneTo` first.
 Many "bad looking" numbers are the plan, not a flaw:
@@ -60,6 +64,18 @@ Many "bad looking" numbers are the plan, not a flaw:
 ## 4. Changing a build
 - Use `what_if` to measure a change before recommending it, and report the
   difference it returned.
+- Verify every change: read back the thing you changed (`list_skills` shows
+  whether a group is `active`, `set_config` returns `before`/`after`/`applied`,
+  `tree_summary`, `list_items`), then compare the same stats before and after.
+  An unchanged number does not prove the change failed, and a successful call
+  does not prove it took effect: a gem in an inactive group, a condition that is
+  off or a buff that is not enabled all leave the numbers as they were.
+- `rank_supports` and `rank_anoints` use Path of Building's own sorting
+  (estimated DPS per support gem, recalculated build per anoint); confirm the
+  pick you recommend with `what_if`. Read their `basis`: a support's gain is for
+  adding it as an extra gem (in a full group, test replacing each current
+  support), and an anoint's power is against no anoint at all (the current
+  anoint appears in the ranking too).
 - `suggest_nodes` ranks by power per node; `pathDist` is how many points it
   costs to reach. Compare against remaining points in `build_summary.points`.
 - Rare items are calculated exactly as written; do not invent mods that cannot

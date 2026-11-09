@@ -44,7 +44,7 @@ namespace {
 struct Res { bool ok = false; std::string detail; };
 std::map<int, Res> g_res;
 
-const char* const kTitles[36] = {
+const char* const kTitles[40] = {
 	"",
 	"握手回傳協定版本與工具清單",
 	"stdout 只出現 JSON-RPC",
@@ -81,6 +81,10 @@ const char* const kTitles[36] = {
 	"bridge 型的真錯誤也寫進記錄檔",
 	"回報摘要遮蔽各種使用者路徑寫法",
 	"常見的參數錯誤(含試算裡的)不寫記錄檔",
+	"set_config 回報改前改後",
+	"rank_supports 依 POB 估算排序",
+	"rank_anoints 依 POB 排序且不動建置",
+	"沒有護身符時回報參數錯誤",
 };
 
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
@@ -2523,6 +2527,209 @@ void TestM35(const Ctx& c)
 	Record(35, bad.empty(), bad.empty() ? d : JoinFirst(bad, 6));
 }
 
+// ---------------------------------------------------------------- M36-M39:set_config 回報、rank_supports、rank_anoints
+
+// 起一個行程並讀入範例建置;oc 是給 LoadSample 用的 Ctx。
+bool BootSampleProc(McpProc& p, Ctx& oc, const Ctx& c, std::string& err)
+{
+	if (c.sample.empty()) { err = "Builds 資料夾找不到範例建置"; return false; }
+	if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) return false;
+	oc.s = &p;
+	oc.exeDir = c.exeDir;
+	oc.pobDir = c.pobDir;
+	oc.sample = c.sample;
+	oc.sampleXml = c.sampleXml;
+	ToolRes r;
+	if (!LoadSample(oc, r)) { err = "load_build 失敗: " + Cut(r.Why(), 100); return false; }
+	return true;
+}
+
+std::string ExportCodeOf(McpProc& p, std::string& err)
+{
+	ToolRes r = p.Call("export_code", json::object(), kSlowMs);
+	if (!r.Ok() || !NonEmptyStr(r.sc, "code")) { err = "export_code 失敗: " + Cut(r.Why(), 100); return {}; }
+	return r.sc["code"].get<std::string>();
+}
+
+// arr 每筆的 key 都是數字且不遞增;不合格回傳說明,正常回傳空字串。
+std::string CheckNonIncreasing(const json& arr, const char* key)
+{
+	double prev = 0;
+	for (size_t i = 0; i < arr.size(); i++) {
+		if (!arr[i].is_object() || !arr[i].contains(key) || !arr[i][key].is_number()) return "第" + std::to_string(i) + "筆 " + key + " 不是數字";
+		const double v = arr[i][key].get<double>();
+		if (i > 0 && v > prev) return "第" + std::to_string(i) + "筆 " + key + " 比前一筆大";
+		prev = v;
+	}
+	return {};
+}
+
+// M36 set_config 回報改前改後
+void TestM36(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		ToolRes gc = p.Call("get_config", json::object());
+		if (!gc.Ok() || !gc.sc.contains("options") || !gc.sc["options"].is_array()) { bad.push_back("get_config 失敗: " + Cut(gc.Why(), 100)); break; }
+		std::string key;
+		for (const auto& o : gc.sc["options"]) {
+			if (!o.is_object() || !NonEmptyStr(o, "key") || !o.contains("type") || !o["type"].is_string()) continue;
+			const std::string ty = Lower(o["type"].get<std::string>());
+			if ((ty == "check" || ty == "boolean") && o.contains("value") && o["value"].is_boolean() && !o["value"].get<bool>()) {
+				key = o["key"].get<std::string>();
+				break;
+			}
+		}
+		if (key.empty()) { bad.push_back("get_config 找不到 type 為勾選且目前為 false 的設定"); break; }
+
+		ToolRes s1 = p.Call("set_config", {{"key", key}, {"value", true}}, kSlowMs);
+		if (!s1.Ok()) { bad.push_back("set_config(" + key + ", true) 失敗: " + Cut(s1.Why(), 100)); break; }
+		if (s1.sc.value("key", std::string()) != key) bad.push_back("回傳的 key 不是 " + key);
+		const bool beforeOk = s1.sc.contains("before") && (s1.sc["before"].is_null() || (s1.sc["before"].is_boolean() && !s1.sc["before"].get<bool>()));
+		const bool afterOk = s1.sc.contains("after") && s1.sc["after"].is_boolean() && s1.sc["after"].get<bool>();
+		const bool appliedOk = s1.sc.contains("applied") && s1.sc["applied"].is_boolean() && s1.sc["applied"].get<bool>();
+		if (!beforeOk) bad.push_back("before 不是 false 或 null: " + (s1.sc.contains("before") ? s1.sc["before"].dump() : std::string("缺")));
+		if (!afterOk) bad.push_back("after 不是 true: " + (s1.sc.contains("after") ? s1.sc["after"].dump() : std::string("缺")));
+		if (!appliedOk) bad.push_back("applied 不是 true: " + (s1.sc.contains("applied") ? s1.sc["applied"].dump() : std::string("缺")));
+		d = "key=" + key + ", before=" + (s1.sc.contains("before") ? s1.sc["before"].dump() : std::string("缺")) +
+		    ", after=" + (s1.sc.contains("after") ? s1.sc["after"].dump() : std::string("缺"));
+
+		ToolRes s2 = p.Call("set_config", {{"key", key}, {"value", false}}, kSlowMs); // 設回原值
+		if (!s2.Ok()) bad.push_back("設回原值失敗: " + Cut(s2.Why(), 100));
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(36, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// M37 rank_supports 依 POB 估算排序
+void TestM37(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		const std::string codeBefore = ExportCodeOf(p, err);
+		if (codeBefore.empty()) { bad.push_back("呼叫前 " + err); break; }
+		ToolRes r = p.Call("rank_supports", {{"top", 10}}, kSlowMs);
+		if (!r.Ok() || !r.sc.contains("supports") || !r.sc["supports"].is_array()) { bad.push_back("rank_supports 失敗: " + Cut(r.Why(), 120)); break; }
+		const auto& sup = r.sc["supports"];
+		if (sup.size() < 5) bad.push_back("supports 只有 " + std::to_string(sup.size()) + " 個(至少 5)");
+		for (size_t i = 0; i < sup.size(); i++) {
+			if (!NonEmptyStr(sup[i], "name") || !NonEmptyStr(sup[i], "nameZh")) { bad.push_back("第" + std::to_string(i) + "筆缺 name 或 nameZh"); break; }
+		}
+		const std::string ord = CheckNonIncreasing(sup, "dps");
+		if (!ord.empty()) bad.push_back("dps: " + ord);
+
+		// baseDps 與 build_summary.stats[dpsField] 誤差 ≤ 1%
+		const std::string field = r.sc.value("dpsField", std::string());
+		json stats;
+		if (!GetStats(p, stats, err)) bad.push_back(err);
+		else if (field.empty() || !stats.contains(field) || !stats[field].is_number()) d += "dpsField=" + field + " 不在 stats,略過 baseDps 比對; ";
+		else if (!r.sc.contains("baseDps") || !r.sc["baseDps"].is_number()) bad.push_back("baseDps 不是數字");
+		else {
+			const double a = r.sc["baseDps"].get<double>(), b = stats[field].get<double>();
+			if (std::fabs(a - b) > 0.01 * std::fmax(std::fabs(a), std::fabs(b)) && std::fabs(a - b) > 1e-9)
+				bad.push_back("baseDps " + Num(a) + " 與 stats[" + field + "] " + Num(b) + " 差超過 1%");
+			else d += "baseDps=" + Num(a) + " 與 stats[" + field + "] 相符; ";
+		}
+
+		const std::string codeAfter = ExportCodeOf(p, err);
+		if (codeAfter.empty()) bad.push_back("呼叫後 " + err);
+		else if (codeAfter != codeBefore) bad.push_back("rank_supports 後 export_code 不同(建置被動到)");
+		d += "supports " + std::to_string(sup.size()) + " 個";
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(37, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// M38 rank_anoints 依 POB 排序且不動建置
+void TestM38(const Ctx& c)
+{
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	Ctx oc;
+	do {
+		std::string err;
+		if (!BootSampleProc(p, oc, c, err)) { bad.push_back(err); break; }
+		// 沒有護身符就先裝一個。
+		ToolRes li = p.Call("list_items", json::object());
+		bool hasAmulet = false;
+		if (li.Ok() && li.sc.contains("slots") && li.sc["slots"].is_array())
+			for (const auto& sl : li.sc["slots"])
+				if (sl.is_object() && Lower(sl.value("slot", std::string())) == "amulet" && sl.contains("item") && sl["item"].is_object() && !sl["item"].empty()) hasAmulet = true;
+		if (!hasAmulet) {
+			ToolRes eq = p.Call("equip_item", {{"text", "Rarity: Normal\nOnyx Amulet"}, {"slot", "Amulet"}}, kSlowMs);
+			if (!eq.Ok()) { bad.push_back("裝護身符失敗: " + Cut(eq.Why(), 100)); break; }
+			d += "已補裝護身符; ";
+		}
+		const std::string codeBefore = ExportCodeOf(p, err);
+		if (codeBefore.empty()) { bad.push_back("呼叫前 " + err); break; }
+		for (const char* metric : {"CombinedDPS", "TotalEHP"}) {
+			ToolRes r = p.Call("rank_anoints", {{"metric", metric}, {"top", 10}}, kSlowMs);
+			if (!r.Ok() || !r.sc.contains("notables") || !r.sc["notables"].is_array()) { bad.push_back(std::string(metric) + " 失敗: " + Cut(r.Why(), 120)); continue; }
+			const auto& nt = r.sc["notables"];
+			std::vector<std::string> mb;
+			if (nt.size() < 5) mb.push_back("只有 " + std::to_string(nt.size()) + " 個(至少 5)");
+			for (size_t i = 0; i < nt.size(); i++) {
+				if (!nt[i].is_object() || !nt[i].contains("id") || !nt[i]["id"].is_number_integer() || !NonEmptyStr(nt[i], "name") || !NonEmptyStr(nt[i], "nameZh")) {
+					mb.push_back("第" + std::to_string(i) + "筆缺整數 id、name 或 nameZh");
+					break;
+				}
+			}
+			const std::string ord = CheckNonIncreasing(nt, "power");
+			if (!ord.empty()) mb.push_back(ord);
+			if (r.sc.contains("metric") && r.sc["metric"].is_string() && r.sc["metric"].get<std::string>() != metric) mb.push_back("回傳的 metric 是 " + r.sc["metric"].get<std::string>());
+			if (!mb.empty()) bad.push_back(std::string(metric) + ": " + JoinFirst(mb, 3));
+			else d += std::string(metric) + " " + std::to_string(nt.size()) + " 個; ";
+		}
+		const std::string codeAfter = ExportCodeOf(p, err);
+		if (codeAfter.empty()) bad.push_back("呼叫後 " + err);
+		else if (codeAfter != codeBefore) bad.push_back("rank_anoints 後 export_code 不同(建置被動到)");
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(38, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5) + (d.empty() ? "" : " (" + d + ")"));
+}
+
+// M39 沒有護身符時回報參數錯誤
+void TestM39(const Ctx& c)
+{
+	const std::wstring log = ErrorLogPath(c.exeDir);
+	std::vector<std::string> bad;
+	std::string d;
+	McpProc p;
+	do {
+		std::string err;
+		if (!StartMcpEx(p, c.exeDir, c.pobDir, false, err)) { bad.push_back("啟動失敗: " + err); break; }
+		ToolRes nb = p.Call("new_build", {{"class", "Witch"}}, kSlowMs);
+		if (!nb.Ok()) { bad.push_back("new_build 失敗: " + Cut(nb.Why(), 100)); break; }
+		const size_t before = ReadLogLines(log).size();
+		ToolRes r = p.Call("rank_anoints", json::object(), kSlowMs);
+		if (!r.transportOk || r.rpcError) { bad.push_back("rank_anoints 沒有正常回應: " + Cut(r.Why(), 100)); break; }
+		if (!r.isError) bad.push_back("沒有護身符時 isError 不是 true");
+		const std::string txt = ToolErrorText(r);
+		if (txt.find("report_problem") != std::string::npos) bad.push_back("參數錯誤的文字不該提到 report_problem: " + Cut(txt, 100));
+		Sleep(1000);
+		const size_t after = ReadLogLines(log).size();
+		if (after != before) bad.push_back("記錄檔行數 " + std::to_string(before) + "->" + std::to_string(after) + "(參數錯誤不該寫記錄檔)");
+		d = "isError、文字不含 report_problem、記錄檔 " + std::to_string(after) + " 行不變: " + Cut(txt, 80);
+	} while (false);
+	p.Close();
+	KeepLines(p);
+	Record(39, bad.empty(), bad.empty() ? d : JoinFirst(bad, 5));
+}
+
 // M12 設定字串帶入正確路徑(純函式,不啟動 MCP 行程)
 void TestM12()
 {
@@ -2611,7 +2818,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	auto failAll = [&](const std::string& why) {
 		for (int n = 1; n <= 11; n++) Record(n, false, why); // M12 是純函式,不受影響
-		for (int n = 13; n <= 35; n++) Record(n, false, why);
+		for (int n = 13; n <= 39; n++) Record(n, false, why);
 	};
 
 	std::wstring sampleRel;
@@ -2703,6 +2910,10 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 			Guard(33, [&] { TestM33(c2); });
 			Guard(34, [&] { TestM34(c2); });
 			Guard(35, [&] { TestM35(c2); });
+			Guard(36, [&] { TestM36(c2); });
+			Guard(37, [&] { TestM37(c2); });
+			Guard(38, [&] { TestM38(c2); });
+			Guard(39, [&] { TestM39(c2); });
 		}
 
 		std::vector<std::string> all = mainLines;
@@ -2715,7 +2926,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 	// --- 報告:每項一行,最後一行總計 ------------------------------------
 	std::string rep;
 	int pass = 0, fail = 0;
-	for (int n = 1; n <= 35; n++) {
+	for (int n = 1; n <= 39; n++) {
 		Res r = g_res.count(n) ? g_res[n] : Res{false, "沒有執行"};
 		if (r.ok) pass++; else fail++;
 		rep += std::string(r.ok ? "PASS" : "FAIL") + " M" + std::to_string(n) + " " + kTitles[n] + " — " + r.detail + "\r\n";

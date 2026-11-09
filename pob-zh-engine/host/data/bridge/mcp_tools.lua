@@ -781,7 +781,9 @@ return function(M, ctx)
 		for _, sec in ipairs(r.sections) do
 			for _, it in ipairs(sec.items) do
 				if it.visible then
-					local e = { key = it.var, section = sec.name, label = it.label, labelZh = it.labelZh, type = it.type, value = it.value }
+					local v = it.value
+					if it.type == "check" then v = v and true or false end -- unset is unchecked, not unknown
+					local e = { key = it.var, section = sec.name, label = it.label, labelZh = it.labelZh, type = it.type, value = v }
 					if it.list then
 						local ch = {}
 						for i, o in ipairs(it.list) do ch[i] = { value = o.val, label = o.label } end
@@ -797,8 +799,51 @@ return function(M, ctx)
 	function T.set_config(a)
 		local key = a and a.key
 		if type(key) ~= "string" or key == "" then argerr("key required (from get_config)") end
-		M.set_config({ var = key, value = a.value })
-		return { ok = true, summary = summary() }
+		local r = M.set_config({ var = key, value = a.value })
+		local after = type(r) == "table" and r.after or nil
+		-- applied: what POB stored is what was asked for (a list takes its own value type)
+		local applied = after == a.value or tostring(after) == tostring(a.value) or (a.value == false and after == nil)
+		local before = type(r) == "table" and r.before or nil
+		if type(a.value) == "boolean" then -- a checkbox: unset is unchecked (and a nil field would vanish from the JSON)
+			before, after = before and true or false, after and true or false
+		end
+		return { ok = true, key = key, before = before, after = after, applied = applied, summary = summary() }
+	end
+
+	function T.rank_supports(a)
+		local b = ensure_build()
+		local index = tonumber(a and a.index) or b.mainSocketGroup
+		if not b.skillsTab.socketGroupList[index or 0] then argerr("no socket group %s (see list_skills)", tostring(a and a.index)) end
+		local top = math.max(1, math.min(30, tonumber(a and a.top) or 10))
+		local r = M.gem_search({ byDps = true, group = index, supportableOnly = true, limit = 100 })
+		if not r.byDps then error("this Path of Building cannot sort gems by DPS", 0) end
+		local out = {}
+		for _, g in ipairs(r.gems or {}) do
+			if #out >= top then break end
+			if g.support and g.canSupport then
+				out[#out + 1] = { name = g.name, nameZh = g.nameZh, gemId = g.gemId, dps = g.dps, delta = g.delta, pct = g.pct }
+			end
+		end
+		return { group = index, dpsField = r.dpsField, baseDps = r.baseDps, supports = out,
+		         basis = "each gem ADDED to the group as an extra gem; in a full socket group it must replace a support, so measure that swap with what_if" }
+	end
+
+	function T.rank_anoints(a)
+		local b = ensure_build()
+		local slot = b.itemsTab.slots and b.itemsTab.slots["Amulet"]
+		local id = slot and slot.selItemId
+		if not id or id == 0 or not b.itemsTab.items[id] then
+			argerr("no amulet is equipped; equip one first (equip_item with slot Amulet)")
+		end
+		M.item_edit_begin({ id = id })
+		local ok, r = pcall(function()
+			M.item_edit_popup({ action = "open", kind = "anoint", slot = 1 })
+			return M.item_edit_popup({ action = "rank", metric = (a and a.metric) or "CombinedDPS", top = a and a.top })
+		end)
+		M.item_edit_cancel()
+		if not ok then error(r, 0) end
+		r.basis = "power is measured against the same amulet with NO anoint, so the anoint already on it is ranked too"
+		return r
 	end
 
 	-- ---- what if ---------------------------------------------------------

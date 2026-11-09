@@ -278,6 +278,40 @@
       }
     },
     {
+      "name": "rank_supports",
+      "description": "Support gems that can support a socket group, ranked by Path of Building's own DPS estimate for adding each one (the gem picker's 'sort by DPS'). Omit index for the main skill group. Use it to choose links, then verify the pick with what_if.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer"
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        }
+      }
+    },
+    {
+      "name": "rank_anoints",
+      "description": "Notables to anoint on the equipped amulet, ranked by Path of Building's Anoint dialog ('Sort by <stat>': the build recalculated with each anoint). metric is a power stat such as CombinedDPS, FullDPS, TotalEHP, Life, EnergyShield. Needs an amulet in the Amulet slot. Does not change the build.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string"
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30
+          }
+        }
+      }
+    },
+    {
       "name": "list_items",
       "description": "Equipped items per slot, with their full item text.",
       "inputSchema": {
@@ -371,7 +405,7 @@
     },
     {
       "name": "set_config",
-      "description": "Set one configuration option by key (from get_config). Booleans for checkboxes, numbers for counts, a choice value for lists.",
+      "description": "Set one configuration option by key (from get_config). Booleans for checkboxes, numbers for counts, a choice value for lists. Returns before/after (what Path of Building stored) and applied.",
       "inputSchema": {
         "type": "object",
         "properties": {
