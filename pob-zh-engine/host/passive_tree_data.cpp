@@ -182,6 +182,14 @@ static void ptlog(FILE* f, const char* fmt, ...)
 	if (f) { va_start(ap, fmt); vfprintf(f, fmt, ap); va_end(ap); }
 }
 
+std::vector<std::string> PtDisplayStats(const PtNode& n)
+{
+	std::vector<std::string> out = n.stats;
+	for (size_t i = 0; i < out.size() && i < n.statsZh.size(); i++)
+		if (n.statsZh[i].find_first_not_of(" \t\r\n") != std::string::npos) out[i] = n.statsZh[i];
+	return out;
+}
+
 int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 {
 	AllocConsole();
@@ -225,6 +233,20 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 	for (const PtNode& n : d.nodes)
 		if (n.kind != kPtSocket && (!n.on.valid || !n.off.valid)) missingIcon++;
 	check(missingIcon == 0, "non-socket icons present", "missing=" + std::to_string(missingIcon));
+
+	// PtDisplayStats: Chinese line by line, English wherever the Chinese is missing/blank
+	{
+		using V = std::vector<std::string>;
+		PtNode p1; p1.stats = { "A", "B", "C" }; p1.statsZh = { u8"甲", "", "   " };
+		check(PtDisplayStats(p1) == V({ u8"甲", "B", "C" }),
+		      "PtDisplayStats 空字串與全空白譯文改用英文", "");
+		PtNode p2; p2.stats = { "A", "B" };
+		check(PtDisplayStats(p2) == V({ "A", "B" }),
+		      "PtDisplayStats statsZh 為空陣列時全用英文", "");
+		PtNode p3; p3.stats = { "A", "B" }; p3.statsZh = { u8"甲" };
+		check(PtDisplayStats(p3) == V({ u8"甲", "B" }),
+		      "PtDisplayStats statsZh 比 stats 短時缺的行用英文", "");
+	}
 
 	// frames for the three interactive kinds
 	bool framesOk = d.frames[kPtNormal].off.valid && d.frames[kPtNotable].off.valid &&
