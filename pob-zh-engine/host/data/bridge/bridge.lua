@@ -7229,7 +7229,7 @@ function M.set_config(p)
 	set.input[vd.var] = v
 	local r = config_committed(b)
 	-- read back, so a caller can tell an applied change from a silent no-op
-	if type(r) == "table" then r.var, r.before, r.after = vd.var, before, set.input[vd.var] end
+	if type(r) == "table" then r.var, r.type, r.before, r.after = vd.var, vd.type, before, set.input[vd.var] end
 	return r
 end
 

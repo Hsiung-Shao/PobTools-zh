@@ -802,11 +802,14 @@ return function(M, ctx)
 		local r = M.set_config({ var = key, value = a.value })
 		local after = type(r) == "table" and r.after or nil
 		-- applied: what POB stored is what was asked for (a list takes its own value type)
-		local applied = after == a.value or tostring(after) == tostring(a.value) or (a.value == false and after == nil)
+		local isCheck = type(r) == "table" and r.type == "check"
+		local cleared = a.value == nil or a.value == "" -- back to the default / the build's own value
 		local before = type(r) == "table" and r.before or nil
-		if type(a.value) == "boolean" then -- a checkbox: unset is unchecked (and a nil field would vanish from the JSON)
+		if isCheck then -- a checkbox: unset is unchecked (and a nil field would vanish from the JSON)
 			before, after = before and true or false, after and true or false
 		end
+		local applied = after == a.value or tostring(after) == tostring(a.value) or (cleared and after == nil) or
+		                (isCheck and after == (a.value == true))
 		return { ok = true, key = key, before = before, after = after, applied = applied, summary = summary() }
 	end
 
@@ -815,7 +818,17 @@ return function(M, ctx)
 		local index = tonumber(a and a.index) or b.mainSocketGroup
 		if not b.skillsTab.socketGroupList[index or 0] then argerr("no socket group %s (see list_skills)", tostring(a and a.index)) end
 		local top = math.max(1, math.min(30, tonumber(a and a.top) or 10))
-		local r = M.gem_search({ byDps = true, group = index, supportableOnly = true, limit = 100 })
+		-- POB's estimate puts each candidate into the group, calculates, then takes
+		-- it out, with no pcall: an error mid-way would leave a gem in the build.
+		local snap = M.export_code().code
+		local okSearch, r = pcall(M.gem_search, { byDps = true, group = index, supportableOnly = true, limit = 100 })
+		if not okSearch then
+			local okRestore, restoreErr = pcall(M.import_code, { code = snap, mode = "replace" })
+			if not okRestore then
+				error(tostring(r) .. "; RESTORING THE BUILD FAILED (" .. tostring(restoreErr) .. "): load it again", 0)
+			end
+			error(tostring(r) .. " -- the build was restored", 0)
+		end
 		if not r.byDps then error("this Path of Building cannot sort gems by DPS", 0) end
 		local out = {}
 		for _, g in ipairs(r.gems or {}) do
@@ -835,8 +848,8 @@ return function(M, ctx)
 		if not id or id == 0 or not b.itemsTab.items[id] then
 			argerr("no amulet is equipped; equip one first (equip_item with slot Amulet)")
 		end
-		M.item_edit_begin({ id = id })
 		local ok, r = pcall(function()
+			M.item_edit_begin({ id = id })
 			M.item_edit_popup({ action = "open", kind = "anoint", slot = 1 })
 			return M.item_edit_popup({ action = "rank", metric = (a and a.metric) or "CombinedDPS", top = a and a.top })
 		end)
