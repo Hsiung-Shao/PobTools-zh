@@ -710,7 +710,7 @@ public:
 		// conqueror (affects keystones + trade export)
 		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 		const int conqN = conqs ? (int)conqs->size() : 0;
-		if (conquerorSel >= conqN) conquerorSel = 0;
+		if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
 		conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
 		tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
 
@@ -729,6 +729,10 @@ public:
 		ImGui::PushID("tjhdr");
 		drawHeader(ptUst, conqs, conqN);
 		ImGui::PopID();
+		// POBTOOLS_TJ_CONQ_SWITCH: after the first recompute, change the
+		// conqueror exactly where the header's picker would (after conquerorId_
+		// was derived this frame) — the path a real click takes.
+		if (testConqSwitch_ >= 0 && hiSig != -1) { conquerorSel = testConqSwitch_; testConqSwitch_ = -1; }
 
 		ImGui::PushID("tjbanners");
 		drawBanners(ptUst);
@@ -1862,6 +1866,15 @@ public:
 	// candidate node once and rebuild the stat groups the side list shows.
 	void recomputeHighlights(bool treeRadius)
 	{
+		// The header (drawn earlier this frame) may just have changed the jewel or
+		// the conqueror, after Frame() derived conquerorId_ from the old pick.
+		// Re-derive it here so this recompute uses the pick that triggered it.
+		{
+			const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
+			const int conqN = conqs ? (int)conqs->size() : 0;
+			if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
+			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+		}
 		ptHi.assign(ptData.nodes.size(), kPtHiNone);
 		ptTrans.clear();
 		statGroups.clear();
@@ -2889,7 +2902,8 @@ public:
 			templates = TJStatTemplates(*ds, jewelType);
 			templatesFor = jewelType;
 			wchar_t cq[8] = L"";
-			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ", cq, 8) > 0) conquerorSel = _wtoi(cq);
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ", cq, 8) > 0) conquerorSel = (std::max)(0, _wtoi(cq));
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ_SWITCH", cq, 8) > 0) testConqSwitch_ = (std::max)(0, _wtoi(cq));
 			for (int i = 0; i < (int)ptData.nodes.size(); i++)
 				if (ptData.nodes[i].name == "Bitter Frost") testHoverNode_ = i;
 			selSocket = -1;
@@ -3063,6 +3077,7 @@ private:
 	std::string testState_;
 	bool testMode_ = false;
 	int testHoverNode_ = -1;      // POBTOOLS_TJ_STATE=keystone: tooltip shown without a mouse
+	int testConqSwitch_ = -1;     // POBTOOLS_TJ_CONQ_SWITCH: conqueror picked after the first recompute
 	// Set once the user opens any trade search. The calculator's numbers come from
 	// our own transform of the game data; PoB is the independent second opinion, so
 	// nudge people to cross-check there before they spend currency.
