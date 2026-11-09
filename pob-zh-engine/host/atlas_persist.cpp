@@ -59,6 +59,19 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	if (obj.contains("scarabs") && obj["scarabs"].is_array())
 		for (const auto& s : obj["scarabs"])
 			if (s.is_string()) e.scarabs.push_back(s.get<std::string>());
+	// Threads: an element without a string id is dropped; a missing or
+	// non-integer "n" means one thread. The caller still runs ThreadDb::Sanitize.
+	e.threads.clear();
+	auto jth = obj.find("threads");
+	if (jth != obj.end() && jth->is_array())
+		for (const auto& t : *jth) {
+			if (!t.is_object()) continue;
+			auto ji = t.find("id");
+			if (ji == t.end() || !ji->is_string() || ji->get<std::string>().empty()) continue;
+			auto jn = t.find("n");
+			e.threads.push_back({ ji->get<std::string>(),
+			                      jn != t.end() && jn->is_number_integer() ? jn->get<int>() : 1 });
+		}
 	e.targets.clear();
 	if (obj.contains("targets") && obj["targets"].is_array())
 		e.targets = parse_alloc_array(obj["targets"]);
@@ -138,6 +151,11 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 {
 	if (!e.notes.empty()) obj["notes"] = e.notes;
 	if (!e.scarabs.empty()) obj["scarabs"] = e.scarabs;
+	if (!e.threads.empty()) {
+		ordered_json th = ordered_json::array();
+		for (const ThreadSlot& t : e.threads) th.push_back({ { "id", t.id }, { "n", t.count } });
+		obj["threads"] = std::move(th);
+	}
 	if (!e.targets.empty()) obj["targets"] = e.targets;
 	if (!e.blocked.empty()) obj["blocked"] = e.blocked;
 	if (!e.astrolabes.empty()) {

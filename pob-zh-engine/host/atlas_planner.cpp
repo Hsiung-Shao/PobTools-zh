@@ -3184,6 +3184,10 @@ private:
 		buildFile.builds[idx].scarabs = scarabDb.Sanitize(e.scarabs, &snote);
 		buildFile.builds[idx].astrolabes = astroDb.Sanitize(e.astrolabes, &anote);
 		snote += anote;
+		// 3.30 threads: no catalogue ships yet, so keep them as received (the
+		// same outcome as ThreadDb::Sanitize without data). The UI commit must
+		// route this through ThreadDb::Sanitize.
+		buildFile.builds[idx].threads = e.threads;
 		buildFile.builds[idx].mapId = mapDb.SanitizeOne(e.mapId);
 		if (!e.mapId.empty() && buildFile.builds[idx].mapId.empty())
 			snote += u8"，忽略 1 張未知地圖";

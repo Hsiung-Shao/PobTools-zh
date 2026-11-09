@@ -19,6 +19,14 @@ struct AstrolabePlacement {
 	std::string id;     // "Metadata/Items/Currency/Astrolabe..."
 };
 
+// One 3.30 thread slot of the map device: a thread type and how many are
+// socketed. Lives here for the same reason as AstrolabePlacement.
+struct ThreadSlot {
+	std::string id;
+	int count = 1;
+	bool operator==(const ThreadSlot& o) const { return id == o.id && count == o.count; }
+};
+
 // One line of a bound revenue record: an item the stretch produced, valued by
 // its count change (the market moving stock already held is not production).
 struct AtlasProfitItem {
@@ -56,6 +64,10 @@ struct AtlasBuildEntry {
 	std::vector<int> alloc;            // GGG skill ids, start node excluded
 	std::string notes;                 // free-form project note (may contain newlines)
 	std::vector<std::string> scarabs;  // scarab Metadata ids, in placement order (max 5)
+	// 3.30 thread slots, in slot order (max 3). JSON key "threads":
+	// [{"id": "...", "n": 6}, ...]; written only when non-empty, shared through
+	// the export json and the share code like scarabs.
+	std::vector<ThreadSlot> threads;
 	// At most one per quadrant (the game refuses a second Shaped Region on a
 	// quadrant); serialized as an OBJECT keyed by quadrant so the document stays
 	// sparse and independent of quadrant ordering.
