@@ -5493,6 +5493,32 @@ function M.craft_item_options()
 	return { rarities = rarities, types = types, defaults = { rarity = cap.controls.rarity.selIndex, type = cap.controls.type.selIndex, base = cap.controls.base.selIndex } }
 end
 
+-- Preview through the classic Craft Item dropdown's own callback. In particular,
+-- its makeItem normalises quality/rarity and adds base implicits (including
+-- tinctures). Calling Create here would replace the current displayItem.
+function M.craft_item_tooltip(p)
+	local tab = ensure_build().itemsTab
+	local cap = capture_popup(function() tab:CraftItem() end, false)
+	local ctl = cap.controls
+	if p and p.rarity then ctl.rarity:SelByValue(p.rarity, "rarity") end
+	if p and p.type then
+		local found = false
+		for i, value in ipairs(ctl.type.list) do
+			if value == p.type then ctl.type:SetSel(i) found = true break end
+		end
+		if not found then error("unknown craft item type", 0) end
+	end
+	if p and p.title and ctl.title then ctl.title:SetText(p.title) end
+	local index
+	for i, value in ipairs(ctl.base.list) do
+		if p and value.name == p.base then index = i break end
+	end
+	if not index then error("unknown craft item base", 0) end
+	local tt = make("Tooltip")
+	without_wrap(function() ctl.base.tooltipFunc(tt, "HOVER", index, ctl.base.list[index]) end)
+	return { header = tt.tooltipHeader, color = tt.color, lines = tooltip_lines(tt) }
+end
+
 -- item_edit_begin{id | raw | craft={rarity,type,base,title?}}: start editing
 -- a copy of a build item (the list's double-click), pasted text
 -- (CreateDisplayItemFromRaw), or a new item from the Craft Item dialog.
@@ -6000,6 +6026,12 @@ probe("classes.ItemsTab dialogs (CraftItem/EditDisplayItemText/AnointDisplayItem
 	local c = class_of("ItemsTab")
 	return type(c) == "table" and type(c.CraftItem) == "function" and type(c.EditDisplayItemText) == "function"
 		and type(c.AnointDisplayItem) == "function" and type(c.CorruptDisplayItem) == "function" and type(c.AddCustomModifierToDisplayItem) == "function"
+end)
+probe("ItemsTab.CraftItem base dropdown tooltipFunc", function()
+	local b = build()
+	if not b or not b.itemsTab then return true end
+	local cap = capture_popup(function() b.itemsTab:CraftItem() end, false)
+	return cap and cap.controls.base and type(cap.controls.base.tooltipFunc) == "function"
 end)
 probe("classes.ItemsTab.EnchantDisplayItem", function()
 	local c = class_of("ItemsTab")

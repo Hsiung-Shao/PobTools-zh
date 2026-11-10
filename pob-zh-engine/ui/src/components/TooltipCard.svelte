@@ -12,6 +12,7 @@
     width = 340,
     centerHead = true,
     avoid = null,
+    layer = 40,
   }: {
     lines: TooltipLine[];
     accent?: string | null;
@@ -23,6 +24,8 @@
     /** the hovered control's box: a card placed beside it (x past its right edge) flips to its left,
      *  one placed below it (y past its bottom) flips above, instead of being clamped over it (POB's Tooltip:Draw) */
     avoid?: { left: number; top: number; right: number; bottom: number } | null;
+    /** Dropdown previews sit above the portalled Select list (z-index 1100). */
+    layer?: number;
   } = $props();
 
   function pobColor(code: string | null | undefined): string | null {
@@ -49,7 +52,7 @@
   });
 </script>
 
-<div class="card pob-dark" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-color={border}>
+<div class="card pob-dark" bind:clientHeight={h} bind:clientWidth={w} style:left={`${left}px`} style:top={`${top}px`} style:width={`${width}px`} style:border-color={border} style:z-index={layer}>
   {#each lines as l, i}
     {#if "sep" in l}
       <div class="sep"></div>

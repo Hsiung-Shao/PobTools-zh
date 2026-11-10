@@ -18,6 +18,7 @@
   import ItemEditor from "../components/ItemEditor.svelte";
   import ItemDb from "../components/ItemDb.svelte";
   import Select from "../components/Select.svelte";
+  import CraftBaseSelect from "../components/CraftBaseSelect.svelte";
 
   let data = $state<ItemsList | null>(null);
   let selectedId = $state<number | null>(null);
@@ -642,7 +643,7 @@
           </div>
           <div class="crow">
             <span class="k">{t("items.craftBase")}</span>
-            <Select class="select" ariaLabel={t("items.craftBase")} value={craft.base} options={(craft.opts.types[craft.type - 1]?.bases ?? []).map((b, i) => ({ value: i + 1, label: b.labelZh || b.label }))} onchange={(v) => (craft!.base = Number(v))} />
+            <CraftBaseSelect value={craft.base} itemType={craft.opts.types[craft.type - 1]} rarity={craft.opts.rarities[craft.rarity - 1]?.rarity ?? "RARE"} title={craft.title} onchange={(v) => (craft!.base = Number(v))} />
           </div>
           <div class="btns">
             <button class="btn primary" disabled={app.busy > 0} onclick={craftCreate}>{t("items.craftCreate")}</button>

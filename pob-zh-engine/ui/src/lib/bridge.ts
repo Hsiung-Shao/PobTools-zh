@@ -1082,6 +1082,12 @@ export interface CraftOptions {
   types: { type: string; typeZh: string; bases: (DdOption & { name: string })[] }[];
   defaults: { rarity: number; type: number; base: number };
 }
+export interface CraftItemParams {
+  rarity: string;
+  type: string;
+  base: string;
+  title?: string;
+}
 export type ItemEditSetParams =
   | { quality: number }
   | { catalyst: number }
@@ -1444,7 +1450,8 @@ export const api = {
   deleteAllItems: () => bridge.call<Committed>("delete_all_items", {}, 60000),
   equipPrimary: (id: number, alt: boolean) => bridge.call<Committed & { slotName: string; equipped: boolean }>("equip_primary", { id, alt }, 60000),
   craftItemOptions: () => bridge.call<CraftOptions>("craft_item_options", {}, 60000),
-  itemEditBegin: (p: { id?: number; raw?: string; craft?: { rarity: string; type: string; base: string; title?: string } }) => bridge.call<ItemEditState>("item_edit_begin", p, 60000),
+  craftItemTooltip: (p: CraftItemParams) => bridge.call<Pick<ItemTooltip, "lines" | "color" | "header">>("craft_item_tooltip", p, 60000),
+  itemEditBegin: (p: { id?: number; raw?: string; craft?: CraftItemParams }) => bridge.call<ItemEditState>("item_edit_begin", p, 60000),
   itemEditState: () => bridge.call<ItemEditState>("item_edit_state", {}, 60000),
   itemEditSet: (p: ItemEditSetParams) => bridge.call<ItemEditState>("item_edit_set", p, 60000),
   itemEditAffix: (p: { index: number; sel?: number; roll?: number }) => bridge.call<ItemEditState>("item_edit_affix", p, 60000),
