@@ -169,7 +169,7 @@
     for (const sec of data.sections) {
       const items = sec.items.filter(matches);
       if (!items.length) continue;
-      const est = 34 + items.reduce((h, it) => h + (it.type === "text" ? 96 : 24), 0);
+      const est = 48 + items.reduce((h, it) => h + (it.type === "text" ? 96 : 31), 0);
       entries.push({ key: sec.name, sec, items, col: sec.col || 1, est });
     }
     entries.push({ key: CUSTOM, sec: null, items: [], col: 1, est: 90 + custom.length * 120 });
@@ -236,18 +236,22 @@
 </script>
 
 <div class="page">
-  <div class="bar">
-    <input class="input sm" placeholder={t("config.search")} bind:value={filter} />
-    <label class="chk"><input type="checkbox" bind:checked={showAll} /> {t("config.showAll")}</label>
-    {#if hiddenCount}<span class="dim small">{t("config.hidden", { n: hiddenCount })}</span>{/if}
-    <span class="grow"></span>
+  <div class="toolbar">
     {#if data}
       <span class="k">{t("config.configSet")}</span>
       <Select class="select sm" ariaLabel={t("config.configSet")} value={String(data.activeConfigSetId)} options={data.configSets.map((s) => ({ value: String(s.id), label: setTitle(s) }))} onchange={(v) => setChange(String(v))} />
       <button class="btn ghost sm" onclick={() => (setDialog = { mode: "new", title: t("config.newSetName"), copy: true })}>+</button>
       <button class="btn ghost sm" onclick={() => (setDialog = { mode: "rename", title: data!.configSets.find((s) => s.id === data!.activeConfigSetId)?.title ?? "", copy: false })}>✎</button>
       <button class="btn ghost sm" disabled={data.configSets.length <= 1} onclick={deleteSet}>×</button>
+      <span class="vsep"></span>
     {/if}
+    <span class="search">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <input class="input sm" placeholder={t("config.search")} bind:value={filter} />
+    </span>
+    <label class="chk"><input type="checkbox" class="sw" bind:checked={showAll} /> {t("config.showAll")}</label>
+    {#if hiddenCount}<span class="dim small">{t("config.hidden", { n: hiddenCount })}</span>{/if}
+    <span class="grow"></span>
   </div>
 
   <div class="scroll" bind:clientWidth={viewW} bind:clientHeight={viewH}>
@@ -258,24 +262,24 @@
             {#each col as entry (entry.key)}
               {#if entry.sec}
                 <section class="card" bind:clientHeight={heights[entry.key]}>
-                  <h3>{entry.sec.nameZh || entry.sec.name}</h3>
+                  <h3 class="card-title">{entry.sec.nameZh || entry.sec.name}</h3>
                   {#each entry.items as it (it.var)}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div class="opt" class:muted={!it.visible} class:text={it.type === "text"} onmouseenter={(e) => tipEnter(it, e)} onmouseleave={tipLeave}>
                       {#if it.type === "check"}
-                        <label class="lbl" for={"cfg-" + it.var}><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></label>
-                        <span class="ctl"><input id={"cfg-" + it.var} type="checkbox" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} /></span>
+                        <label class="lbl" for={"cfg-" + it.var}><PobText text={it.labelZh || it.label} muted={isDefault(it) ? "var(--ink-1)" : "var(--ink-0)"} /></label>
+                        <span class="ctl"><input id={"cfg-" + it.var} type="checkbox" class="sw" checked={!!it.value} onchange={(e) => set(it, e.currentTarget.checked)} /></span>
                       {:else if it.type === "list"}
                         {@const sel = selectedLabel(it)}
-                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted={isDefault(it) ? "var(--ink-1)" : "var(--ink-0)"} /></span>
                         <span class="ctl">
                           <Select class="select sm list" title={sel ? sel.labelZh || sel.label : ""} value={it.value == null ? "" : String(it.value)} options={(it.list ?? []).map((o) => ({ value: String(o.val ?? ""), label: o.labelZh || o.label }))} onchange={(v) => { const o = (it.list ?? []).find((x) => String(x.val ?? "") === String(v)); void set(it, o ? o.val : null); }} onactive={(v, rect) => optActive(it, v, rect)} />
                         </span>
                       {:else if it.type === "text"}
-                        <span class="lbl wide"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <span class="lbl wide"><PobText text={it.labelZh || it.label} muted={isDefault(it) ? "var(--ink-1)" : "var(--ink-0)"} /></span>
                         <textarea class="input area" rows="3" value={numVal(it.value)} onchange={(e) => set(it, e.currentTarget.value)}></textarea>
                       {:else}
-                        <span class="lbl"><PobText text={it.labelZh || it.label} muted="var(--ink-1)" /></span>
+                        <span class="lbl"><PobText text={it.labelZh || it.label} muted={isDefault(it) ? "var(--ink-1)" : "var(--ink-0)"} /></span>
                         <span class="ctl">
                           <input
                             class="input sm num"
@@ -298,12 +302,12 @@
                 </section>
               {:else}
                 <section class="card" bind:clientHeight={heights[entry.key]}>
-                  <h3>{t("config.custom")}</h3>
+                  <h3 class="card-title">{t("config.custom")}</h3>
                   <p class="dim small">{t("config.customHint")}</p>
                   {#each custom as blk, i}
                     <div class="block">
                       <div class="bhead">
-                        <input type="checkbox" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
+                        <input type="checkbox" class="sw" bind:checked={blk.enabled} onchange={() => (customDirty = true)} />
                         <input class="input sm" placeholder={t("config.customTitle")} bind:value={blk.title} oninput={() => (customDirty = true)} />
                         {#if app.has("configModBrowser")}
                           <button class="btn ghost sm" title={t("config.addModHint")} onclick={() => openModBrowser(i + 1)}>{t("config.addMod")}</button>
@@ -333,7 +337,7 @@
       <div class="dialog">
         <div class="label">{t("config.configSet")}</div>
         <input class="input" placeholder={t("items.setName")} bind:value={setDialog.title} onkeydown={(e) => e.key === "Enter" && setDialogOk()} />
-        {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
+        {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" class="sw" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
         <div class="btns right"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button></div>
       </div>
     </div>
@@ -363,19 +367,22 @@
     flex-direction: column;
     min-height: 0;
   }
-  .bar {
-    display: flex;
+  .search {
+    position: relative;
+    display: inline-flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    min-height: 36px;
-    padding: 4px 12px;
-    border-bottom: 1px solid var(--edge-0);
-    background: var(--surface-1);
-  }
-  .bar .input {
-    width: 220px;
+    width: 260px;
     max-width: 100%;
+  }
+  .search svg {
+    position: absolute;
+    left: 8px;
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+  .search .input {
+    width: 100%;
+    padding-left: 28px;
   }
   .grow {
     flex: 1;
@@ -388,7 +395,7 @@
   .chk {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     font-size: var(--fs-xs);
   }
   .small {
@@ -421,28 +428,13 @@
     gap: 10px;
   }
   .card {
-    padding: 4px 6px 6px;
-    background: var(--surface-1);
-    border: 1px solid var(--edge-0);
-    border-radius: var(--radius-s);
+    padding: 6px 14px 8px;
   }
   h3 {
-    margin: 0 0 4px;
-    padding-left: 8px;
-    position: relative;
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.12em;
-    font-weight: 600;
-    color: var(--ink-2);
-  }
-  h3::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 2px;
-    bottom: 2px;
-    width: 2px;
-    background: var(--hl);
+    margin: 0;
+    height: 34px;
+    display: flex;
+    align-items: center;
   }
   /* POB's row: the label ends against the control column, controls start at
      one x down the whole section; the last column holds the reset arrow */
@@ -451,10 +443,13 @@
     grid-template-columns: minmax(0, 1fr) 128px 16px;
     align-items: center;
     column-gap: 6px;
-    min-height: 22px;
-    padding: 1px 0 1px 4px;
+    min-height: 30px;
+    padding: 2px 0 2px 4px;
     border-radius: var(--radius-s);
     font-size: var(--fs-xs);
+  }
+  .opt + .opt {
+    border-top: 1px solid var(--edge-0);
   }
   .opt:hover {
     background: var(--surface-hover);
@@ -481,12 +476,9 @@
     align-items: center;
     min-width: 0;
   }
-  .ctl input[type="checkbox"] {
-    margin: 0;
-  }
   .ctl :global(.select.sm),
   .ctl .input.sm {
-    height: 20px;
+    height: 24px;
     font-size: var(--fs-xs);
   }
   .num {
@@ -552,39 +544,22 @@
   .modal {
     position: fixed;
     inset: 0;
+    z-index: 200;
     display: grid;
     place-items: center;
-    background: var(--backdrop);
-    z-index: 30;
+    background: color-mix(in srgb, var(--surface-0) 70%, transparent);
   }
   .dialog {
     width: 380px;
     padding: 16px 18px;
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
-    border-left: 3px solid var(--gold);
-    border-radius: var(--radius-m);
     display: flex;
     flex-direction: column;
     gap: 10px;
-  }
-  .modal {
-    position: fixed;
-    inset: 0;
-    z-index: 200;
-    display: grid;
-    place-items: center;
-    background: color-mix(in srgb, var(--surface-0) 70%, transparent);
   }
   .dialog.wide {
     width: min(760px, calc(100vw - 32px));
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 16px 18px;
-    background: var(--surface-1);
-    border: 1px solid var(--edge-1);
-    border-radius: 8px;
   }
   .modlist {
     max-height: 420px;

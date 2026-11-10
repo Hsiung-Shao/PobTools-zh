@@ -238,16 +238,23 @@
 {/snippet}
 
 <div class="page">
-  <div class="bar">
+  <div class="toolbar">
     {#if data}
       <span class="k">{t("calcs.mode")}</span>
-      <Select class="select sm" ariaLabel={t("calcs.mode")} value={data.input.misc_buffMode} options={["EFFECTIVE", "COMBAT", "BUFFED", "UNBUFFED"].map((m) => ({ value: m, label: t(`calcs.mode.${m}`) }))} onchange={(v) => setInput("misc_buffMode", String(v))} />
+      <div class="seg" role="group" aria-label={t("calcs.mode")}>
+        {#each ["EFFECTIVE", "COMBAT", "BUFFED", "UNBUFFED"] as m (m)}
+          <button aria-pressed={data.input.misc_buffMode === m} onclick={() => data!.input.misc_buffMode !== m && setInput("misc_buffMode", m)}>{t(`calcs.mode.${m}`)}</button>
+        {/each}
+      </div>
       {#if data.hasMinion}
-        <label class="chk"><input type="checkbox" checked={data.input.showMinion} onchange={(e) => setInput("showMinion", e.currentTarget.checked)} /> {t("calcs.showMinion")}</label>
+        <label class="chk"><input type="checkbox" class="sw" checked={data.input.showMinion} onchange={(e) => setInput("showMinion", e.currentTarget.checked)} /> {t("calcs.showMinion")}</label>
       {/if}
     {/if}
     <span class="grow"></span>
-    <input class="input sm" placeholder={t("calcs.search")} bind:value={search} />
+    <span class="search">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" /><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
+      <input class="input sm" placeholder={t("calcs.search")} bind:value={search} />
+    </span>
   </div>
 
   <div class="scroll">
@@ -278,7 +285,7 @@
 
   {#if bd}
     <div class="float" class:pinned={bd.pinned} use:fitFloat={pointAnchor(bd.x, bd.y)}>
-      {#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}
+      {#if bd.pinned}<span class="pin pill accent">{t("sidebar.pinned")}</span>{/if}
       <div class="fbody"><BreakdownPanel sections={bd.sections} /></div>
     </div>
   {/if}
@@ -293,15 +300,22 @@
     flex-direction: column;
     min-height: 0;
   }
-  .bar {
-    display: flex;
+  .search {
+    position: relative;
+    display: inline-flex;
     align-items: center;
-    gap: 4px 8px;
-    min-height: 36px;
-    padding: 4px 12px;
-    border-bottom: 1px solid var(--edge-0);
-    background: var(--surface-1);
-    flex-wrap: wrap;
+    width: 220px;
+    max-width: 100%;
+  }
+  .search svg {
+    position: absolute;
+    left: 8px;
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+  .search .input {
+    width: 100%;
+    padding-left: 28px;
   }
   .k {
     font-size: var(--fs-2xs);
@@ -318,7 +332,7 @@
   .chk {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 8px;
     font-size: var(--fs-xs);
     white-space: nowrap;
   }
@@ -360,7 +374,7 @@
      taken off; this was a window-width @media 1360px that forgot the sidebar).
      Medium: groups 2 and 3 move under group 1 and spread into columns. Narrow:
      group 1's three bands stack too. */
-  @container view (max-width: 1099px) {
+  @container view (max-width: 979px) {
     .wall {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -374,12 +388,10 @@
       grid-template-columns: minmax(0, 1fr);
     }
   }
+  /* 頂邊色條畫在圓角內(inset 陰影);多 1px 上內距補回原本 2px 頂邊,secHeight 估高不變 */
   .card {
-    background: var(--surface-1);
-    border: 1px solid var(--edge-0);
-    border-top: 2px solid var(--sec);
-    border-radius: var(--radius-s);
-    padding: 0 6px 3px;
+    box-shadow: inset 0 2px 0 var(--sec);
+    padding: 1px 6px 3px;
     min-width: 0;
   }
   .sub + .sub {
@@ -447,6 +459,9 @@
   }
   .row:hover {
     background: var(--surface-hover);
+  }
+  .row:has(.pinned) {
+    background: var(--gold-soft);
   }
   .rl {
     grid-column: 1;
@@ -520,9 +535,9 @@
     max-height: calc(100vh - 20px);
     display: flex;
     flex-direction: column;
-    background: var(--surface-1);
+    background: var(--surface-2-c);
     border: 1px solid var(--edge-2);
-    border-radius: 4px;
+    border-radius: var(--radius-m);
     box-shadow: var(--shadow-float);
     pointer-events: none;
   }
@@ -531,8 +546,6 @@
     position: absolute;
     top: 3px;
     right: 6px;
-    font-size: var(--fs-2xs);
-    color: var(--gold-text);
   }
   /* Last resort only: content taller than the whole window scrolls here. A pinned
      panel in that state takes the mouse so the wheel can reach it. */

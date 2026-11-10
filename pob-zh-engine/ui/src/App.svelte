@@ -1,7 +1,8 @@
 <script lang="ts">
   // 版面殼:頂列 / 側欄 + 主視圖 / 狀態列。Phase 1 的主視圖:建置清單與天賦樹。
   import { onMount } from "svelte";
-  import { api, bridge } from "$lib/bridge";
+  import { bridge } from "$lib/bridge";
+  import { navItems } from "$lib/nav";
   import { loadLocale, t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { prefs } from "$lib/prefs.svelte";
@@ -10,7 +11,7 @@
   import StatusBar from "./components/StatusBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import BuildList from "./components/BuildList.svelte";
-  import BuildBar from "./components/BuildBar.svelte";
+  import NavRail from "./components/NavRail.svelte";
   import TreeView from "./views/TreeView.svelte";
   import ImportView from "./views/ImportView.svelte";
   import ItemsView from "./views/ItemsView.svelte";
@@ -24,7 +25,7 @@
   import type { ViewId } from "$lib/state.svelte";
 
   // Tabs by number, save by Ctrl+S: the shortcuts POB's own top bar has.
-  const tabOrder: ViewId[] = ["builds", "tree", "items", "skills", "config", "calcs", "notes", "party", "import"];
+  const tabOrder: ViewId[] = navItems(true).slice(0, 9).map((i) => i.id);
   function onKey(e: KeyboardEvent) {
     // F2 first: it is the one shortcut that is not Ctrl-based, and it means the
     // same here as in the classic window -- show POB's original English.
@@ -47,16 +48,11 @@
       void app.saveOrAsk();
       return;
     }
-    // each tab has POB's own undo stack (UndoHandler); the tree view handles its own.
-    // Notes and Party are not on the list: POB has no undo for them (tab_undo
-    // errored) and they are text boxes, whose own Ctrl+Z is the undo that works.
-    if ((k === "z" || k === "y") && !e.shiftKey && app.loaded && app.view !== "tree") {
-      const tab = ({ items: "items", skills: "skills", config: "config", calcs: "calcs" } as Record<string, string>)[app.view];
-      if (tab) {
-        e.preventDefault();
-        void app.run(() => api.tabUndo(tab, k === "y")).then((r) => r && app.refresh());
-        return;
-      }
+    // each tab has POB's own undo stack (app.undo); the tree view handles its own keys.
+    if ((k === "z" || k === "y") && !e.shiftKey && app.view !== "tree" && app.canUndo) {
+      e.preventDefault();
+      void app.undo(k === "y");
+      return;
     }
     // Build.lua: Ctrl+I opens the import tab, Ctrl+W leaves the build for the list
     if (k === "i" && !e.shiftKey && app.loaded) {
@@ -199,8 +195,8 @@
 {#if i18nReady}
   <div class="app">
     <TitleBar />
-    {#if app.loaded && app.view !== "builds" && app.view !== "settings"}<BuildBar />{/if}
     <div class="body">
+      <NavRail />
       {#if !layout.sideHidden}<Sidebar />{/if}
       <main class="view">
         {#if app.engine === "gone"}

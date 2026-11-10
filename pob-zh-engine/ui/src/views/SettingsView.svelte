@@ -94,13 +94,23 @@
     ["Ctrl + R", "settings.keyRename"],
     [t("settings.comboBack"), "settings.keyBack"],
   ] as const;
+
+  // 左側分類(本地狀態,不存 prefs)
+  const NAV = [
+    ["look", "look.title"],
+    ["font", "settings.navFont"],
+    ["bg", "bg.title"],
+    ["pob", "settings.pob"],
+    ["keys", "settings.keys"],
+  ] as const;
+  let section = $state<(typeof NAV)[number][0]>("look");
 </script>
 
 {#snippet control(o: PobOption)}
   {#if o.kind === "dropdown"}
     <Select class="select sm" ariaLabel={labelOf(o)} value={String(value(o))} options={(o.options ?? []).map((opt, i) => ({ value: i + 1, label: clean(opt.labelZh || opt.label) }))} onchange={(v) => change(o, Number(v))} />
   {:else if o.kind === "check"}
-    <input type="checkbox" checked={!!value(o)} onchange={(e) => change(o, e.currentTarget.checked)} />
+    <input type="checkbox" class="sw" checked={!!value(o)} onchange={(e) => change(o, e.currentTarget.checked)} />
   {:else if o.kind === "slider"}
     <span class="ctl">
       <input class="slider" type="range" min="0" max="1" step="0.01" value={value(o)} oninput={(e) => change(o, Number(e.currentTarget.value))} />
@@ -122,173 +132,173 @@
 {/snippet}
 
 <div class="page">
-  <section class="card">
-    <h2>{t("prefs.title")}</h2>
-    <div class="row">
-      <span class="k">{t("prefs.zoom")}</span>
-      <input class="slider" type="range" min={ZOOM_MIN} max={ZOOM_MAX} step={ZOOM_STEP} value={prefs.zoom} oninput={(e) => prefs.set({ zoom: Number(e.currentTarget.value) })} />
-      <span class="ctl">
-        <button class="btn ghost sm" disabled={prefs.zoom <= ZOOM_MIN} onclick={() => prefs.zoomBy(-1)}>−</button>
-        <span class="num val">{prefs.zoom}%</span>
-        <button class="btn ghost sm" disabled={prefs.zoom >= ZOOM_MAX} onclick={() => prefs.zoomBy(1)}>+</button>
-      </span>
-    </div>
-    <div class="row">
-      <span class="k">{t("prefs.fontSize")}</span>
-      <input class="slider" type="range" min={FONT_MIN} max={FONT_MAX} step="1" value={prefs.fontSize} oninput={(e) => prefs.set({ fontSize: Number(e.currentTarget.value) })} />
-      <span class="ctl">
-        <button class="btn ghost sm" disabled={prefs.fontSize <= FONT_MIN} onclick={() => prefs.set({ fontSize: prefs.fontSize - 1 })}>−</button>
-        <span class="num val">{prefs.fontSize}px</span>
-        <button class="btn ghost sm" disabled={prefs.fontSize >= FONT_MAX} onclick={() => prefs.set({ fontSize: prefs.fontSize + 1 })}>+</button>
-      </span>
-    </div>
-    <div class="foot">
-      <span class="dim hint">{t("prefs.hint")}</span>
-      <button class="btn ghost sm" disabled={prefs.zoom === DEFAULTS.zoom && prefs.fontSize === DEFAULTS.fontSize} onclick={() => prefs.set({ zoom: DEFAULTS.zoom, fontSize: DEFAULTS.fontSize })}>{t("prefs.reset")}</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>{t("look.title")}</h2>
-    <div class="lrow">
-      <span class="k">{t("look.theme")}</span>
-      <div class="themes" role="radiogroup" aria-label={t("look.theme")}>
-        {#each THEMES as th (th)}
-          <button class="theme" class:on={prefs.theme === th} role="radio" aria-checked={prefs.theme === th} aria-label={t(`look.theme.${th}`)} onclick={() => prefs.set({ theme: th })}>
-            <span class="sw" style:background={SWATCH[th][0]}>
-              <span class="sw-panel" style:background={SWATCH[th][1]}>
-                <span class="sw-line" style:background={SWATCH[th][2]}></span>
-                <span class="sw-line short" style:background={SWATCH[th][3]}></span>
-              </span>
-            </span>
-            <span class="tname">{t(`look.theme.${th}`)}</span>
-          </button>
-        {/each}
-      </div>
-    </div>
-    <div class="lrow">
-      <span class="k">{t("look.accent")}</span>
-      <div class="accents">
-        <button class="dot auto" class:on={!prefs.accent} title={t("look.accentTheme")} aria-label={t("look.accentTheme")} onclick={() => prefs.set({ accent: "" })}>{t("look.accentAuto")}</button>
-        {#each ACCENTS as c (c)}
-          <button class="dot" class:on={prefs.accent === c} style:background={c} title={c} aria-label={c} onclick={() => prefs.set({ accent: c })}></button>
-        {/each}
-        <label class="dot custom" class:on={!!prefs.accent && !(ACCENTS as readonly string[]).includes(prefs.accent)} title={t("look.accentCustom")}>
-          <input type="color" value={prefs.accent || "#d8aa4b"} onchange={(e) => prefs.set({ accent: e.currentTarget.value })} aria-label={t("look.accentCustom")} />
-        </label>
-      </div>
-    </div>
-    <div class="lrow">
-      <span class="k">{t("look.font")}</span>
-      <div class="fontctl">
-        <Select
-          class="select sm"
-          ariaLabel={t("look.font")}
-          value={prefs.font}
-          options={[{ value: "", label: t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" }) }, ...prefs.fonts.map((f) => ({ value: f, label: fontName(f) }))]}
-          onchange={(v) => prefs.set({ font: String(v) })}
-        />
-        <span class="sample">天賦樹 詞綴 Passive Tree 패시브 트리 1,234.5%</span>
-      </div>
-    </div>
-    <div class="foot">
-      <span class="dim hint">{t("look.hint")}</span>
-      <button class="btn ghost sm" disabled={lookIsDefault} onclick={() => prefs.set({ theme: DEFAULTS.theme, accent: DEFAULTS.accent, font: DEFAULTS.font })}>{t("prefs.reset")}</button>
-    </div>
-  </section>
-
-  <section class="card">
-    <h2>{t("bg.title")}</h2>
-    <label class="follow">
-      <input type="checkbox" checked={prefs.look.follow} onchange={(e) => (e.currentTarget.checked ? prefs.followLauncher() : prefs.setLook({}))} />
-      <span>{t("bg.follow")}</span>
-    </label>
-    <div class="lrow">
-      <span class="k">{t("bg.image")}</span>
-      <div class="fontctl">
-        <Select
-          class="select sm"
-          ariaLabel={t("bg.image")}
-          value={bg.background}
-          options={[
-            { value: "", label: t("bg.none") },
-            ...prefs.backgrounds.map((f) => ({ value: f, label: f })),
-            ...(bg.background && !prefs.backgrounds.includes(bg.background) ? [{ value: bg.background, label: bg.background }] : []),
-          ]}
-          onchange={(v) => prefs.setLook({ background: String(v) })}
-        />
-        {#if isHosted}
-          <button class="btn ghost sm" onclick={openBgFolder}>{t("bg.openFolder")}</button>
-          <button class="btn ghost sm" onclick={() => prefs.refreshBackgrounds()}>{t("bg.refresh")}</button>
-        {/if}
-      </div>
-    </div>
-    <div class="lrow">
-      <span class="k">{t("bg.scope")}</span>
-      <Select
-        class="select sm"
-        ariaLabel={t("bg.scope")}
-        value={String(bg.bgScope ?? 0)}
-        options={[
-          { value: "0", label: t("bg.scopeWindow") },
-          { value: "1", label: t("bg.scopeTree") },
-        ]}
-        onchange={(v) => prefs.setLook({ bgScope: Number(v) })}
-      />
-    </div>
-    {#each BG_SLIDERS as [key, label] (key)}
-      <!-- "only behind the tree" keeps the panels solid: their opacity does not apply;
-           with no image there is nothing for the blur to blur -->
-      {@const off = (key === "glassBlur" && !bg.background) || (key === "panelOpacity" && bg.bgScope === 1)}
-      <div class="row">
-        <span class="k">{t(label)}</span>
-        <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={off} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />
-        <span class="num val" class:dim={off}>{bg[key]}%</span>
-      </div>
+  <nav class="nav" aria-label={t("settings.title")}>
+    {#each NAV as [id, key] (id)}
+      <button class:on={section === id} aria-current={section === id ? "true" : undefined} onclick={() => (section = id)}>{t(key)}</button>
     {/each}
-    <div class="foot">
-      <span class="dim hint">{t("bg.hint")}</span>
-      {#if isVideoFile(bg.background)}<span class="dim hint">{t("bg.videoHint")}</span>{/if}
-    </div>
-  </section>
+    {#if section !== "pob"}<span class="note dim">{t("settings.autosave")}</span>{/if}
+  </nav>
 
-  <section class="card wide">
-    <h2>{t("settings.pob")}</h2>
-    <p class="dim hint">{t("settings.pobHint")}</p>
-    {#if pobErr}<p class="bad">{pobErr}</p>{/if}
-    {#if pob}
-      <div class="pobcols">
-        {#each pob.sections as sec (sec.id)}
-          <div class="pobsec">
-            <h3>{clean(sec.titleZh || sec.title)}</h3>
-            {#each rowsOf(sec.id) as o (o.name)}
-              {@render optionRow(o)}
+  <div class="content">
+    <h1>{t(NAV.find(([id]) => id === section)![1])}</h1>
+
+    {#if section === "look"}
+      <section class="card">
+        <div class="srow">
+          <div class="txt"><span class="name">{t("look.theme")}</span></div>
+          <div class="seg" role="radiogroup" aria-label={t("look.theme")}>
+            {#each THEMES as th (th)}
+              <button role="radio" aria-checked={prefs.theme === th} aria-label={t(`look.theme.${th}`)} onclick={() => prefs.set({ theme: th })}>
+                <span class="chip" style:background={`linear-gradient(135deg, ${SWATCH[th][0]} 50%, ${SWATCH[th][3]} 50%)`}></span>
+                {t(`look.theme.${th}`)}
+              </button>
             {/each}
           </div>
+        </div>
+        <div class="srow">
+          <div class="txt"><span class="name">{t("look.accent")}</span></div>
+          <div class="accents">
+            <button class="dot auto" class:on={!prefs.accent} title={t("look.accentTheme")} aria-label={t("look.accentTheme")} onclick={() => prefs.set({ accent: "" })}>{t("look.accentAuto")}</button>
+            {#each ACCENTS as c (c)}
+              <button class="dot" class:on={prefs.accent === c} style:background={c} title={c} aria-label={c} onclick={() => prefs.set({ accent: c })}></button>
+            {/each}
+            <label class="dot custom" class:on={!!prefs.accent && !(ACCENTS as readonly string[]).includes(prefs.accent)} title={t("look.accentCustom")}>
+              <input type="color" value={prefs.accent || "#d8aa4b"} onchange={(e) => prefs.set({ accent: e.currentTarget.value })} aria-label={t("look.accentCustom")} />
+            </label>
+          </div>
+        </div>
+        <div class="srow">
+          <div class="txt"><span class="dim">{t("look.hint")}</span></div>
+          <button class="btn ghost sm" disabled={lookIsDefault} onclick={() => prefs.set({ theme: DEFAULTS.theme, accent: DEFAULTS.accent, font: DEFAULTS.font })}>{t("prefs.reset")}</button>
+        </div>
+      </section>
+    {:else if section === "font"}
+      <section class="card">
+        <div class="srow">
+          <div class="txt">
+            <span class="name">{t("look.font")}</span>
+            <span class="sample">天賦樹 詞綴 Passive Tree 패시브 트리 1,234.5%</span>
+          </div>
+          <div class="fontctl">
+            <Select
+              class="select sm"
+              ariaLabel={t("look.font")}
+              value={prefs.font}
+              options={[{ value: "", label: t("look.fontLauncher", { name: fontName(prefs.launcherFont) || "Noto Sans TC" }) }, ...prefs.fonts.map((f) => ({ value: f, label: fontName(f) }))]}
+              onchange={(v) => prefs.set({ font: String(v) })}
+            />
+          </div>
+        </div>
+        <div class="srow">
+          <div class="txt"><span class="name">{t("prefs.fontSize")}</span></div>
+          <span class="ctl">
+            <input class="slider" type="range" min={FONT_MIN} max={FONT_MAX} step="1" value={prefs.fontSize} oninput={(e) => prefs.set({ fontSize: Number(e.currentTarget.value) })} />
+            <button class="btn ghost sm" disabled={prefs.fontSize <= FONT_MIN} onclick={() => prefs.set({ fontSize: prefs.fontSize - 1 })}>−</button>
+            <span class="num val">{prefs.fontSize}px</span>
+            <button class="btn ghost sm" disabled={prefs.fontSize >= FONT_MAX} onclick={() => prefs.set({ fontSize: prefs.fontSize + 1 })}>+</button>
+          </span>
+        </div>
+        <div class="srow">
+          <div class="txt"><span class="name">{t("prefs.zoom")}</span><span class="dim">{t("prefs.hint")}</span></div>
+          <span class="ctl">
+            <input class="slider" type="range" min={ZOOM_MIN} max={ZOOM_MAX} step={ZOOM_STEP} value={prefs.zoom} oninput={(e) => prefs.set({ zoom: Number(e.currentTarget.value) })} />
+            <button class="btn ghost sm" disabled={prefs.zoom <= ZOOM_MIN} onclick={() => prefs.zoomBy(-1)}>−</button>
+            <span class="num val">{prefs.zoom}%</span>
+            <button class="btn ghost sm" disabled={prefs.zoom >= ZOOM_MAX} onclick={() => prefs.zoomBy(1)}>+</button>
+          </span>
+        </div>
+        <div class="srow">
+          <div class="txt"></div>
+          <button class="btn ghost sm" disabled={prefs.zoom === DEFAULTS.zoom && prefs.fontSize === DEFAULTS.fontSize} onclick={() => prefs.set({ zoom: DEFAULTS.zoom, fontSize: DEFAULTS.fontSize })}>{t("prefs.reset")}</button>
+        </div>
+      </section>
+    {:else if section === "bg"}
+      <section class="card">
+        <label class="srow">
+          <span class="txt"><span class="name">{t("bg.follow")}</span></span>
+          <input type="checkbox" class="sw" checked={prefs.look.follow} onchange={(e) => (e.currentTarget.checked ? prefs.followLauncher() : prefs.setLook({}))} />
+        </label>
+        <div class="srow">
+          <div class="txt"><span class="name">{t("bg.image")}</span></div>
+          <div class="fontctl">
+            <Select
+              class="select sm"
+              ariaLabel={t("bg.image")}
+              value={bg.background}
+              options={[
+                { value: "", label: t("bg.none") },
+                ...prefs.backgrounds.map((f) => ({ value: f, label: f })),
+                ...(bg.background && !prefs.backgrounds.includes(bg.background) ? [{ value: bg.background, label: bg.background }] : []),
+              ]}
+              onchange={(v) => prefs.setLook({ background: String(v) })}
+            />
+            {#if isHosted}
+              <button class="btn ghost sm" onclick={openBgFolder}>{t("bg.openFolder")}</button>
+              <button class="btn ghost sm" onclick={() => prefs.refreshBackgrounds()}>{t("bg.refresh")}</button>
+            {/if}
+          </div>
+        </div>
+        <div class="srow">
+          <div class="txt"><span class="name">{t("bg.scope")}</span></div>
+          <div class="seg" role="group" aria-label={t("bg.scope")}>
+            {#each [[0, "bg.scopeWindow"], [1, "bg.scopeTree"]] as const as [n, key] (n)}
+              <button aria-pressed={(bg.bgScope ?? 0) === n} onclick={() => (bg.bgScope ?? 0) !== n && prefs.setLook({ bgScope: n })}>{t(key)}</button>
+            {/each}
+          </div>
+        </div>
+        {#each BG_SLIDERS as [key, label] (key)}
+          <!-- "only behind the tree" keeps the panels solid: their opacity does not apply;
+               with no image there is nothing for the blur to blur -->
+          {@const off = (key === "glassBlur" && !bg.background) || (key === "panelOpacity" && bg.bgScope === 1)}
+          <div class="srow">
+            <div class="txt"><span class="name" class:dim={off}>{t(label)}</span></div>
+            <span class="ctl">
+              <input class="slider" type="range" min="0" max="100" step="1" value={bg[key]} disabled={off} onchange={(e) => prefs.setLook({ [key]: Number(e.currentTarget.value) })} />
+              <span class="num val" class:dim={off}>{bg[key]}%</span>
+            </span>
+          </div>
         {/each}
-      </div>
-      <div class="foot">
-        <span class="dim hint">{t("settings.pobVersion", { version: pob.version ?? "", branch: pob.branch ?? "" })}</span>
-        <button class="btn ghost sm" onclick={() => (aboutOpen = true)}>{t("about.open")}</button>
-        <span class="btns">
-          <button class="btn ghost sm" disabled={!dirty || app.busy > 0} onclick={() => (draft = {})}>{t("settings.pobRevert")}</button>
-          <button class="btn primary sm" disabled={!dirty || app.busy > 0} onclick={savePob}>{t("settings.pobSave")}</button>
-        </span>
-      </div>
-    {:else if app.engine === "ready"}
-      <p class="dim">{t("settings.pobLoading")}</p>
+      </section>
+      <p class="dim hint">{t("bg.hint")}</p>
+      {#if isVideoFile(bg.background)}<p class="dim hint">{t("bg.videoHint")}</p>{/if}
+    {:else if section === "pob"}
+      <p class="dim hint">{t("settings.pobHint")}</p>
+      {#if pobErr}<p class="bad">{pobErr}</p>{/if}
+      {#if pob}
+        <section class="card pobcard">
+          <div class="pobcols">
+            {#each pob.sections as sec (sec.id)}
+              <div class="pobsec">
+                <h3 class="card-title">{clean(sec.titleZh || sec.title)}</h3>
+                {#each rowsOf(sec.id) as o (o.name)}
+                  {@render optionRow(o)}
+                {/each}
+              </div>
+            {/each}
+          </div>
+        </section>
+        <div class="foot">
+          <span class="dim hint">{t("settings.pobVersion", { version: pob.version ?? "", branch: pob.branch ?? "" })}</span>
+          <button class="btn ghost sm" onclick={() => (aboutOpen = true)}>{t("about.open")}</button>
+          <span class="btns">
+            <button class="btn ghost sm" disabled={!dirty || app.busy > 0} onclick={() => (draft = {})}>{t("settings.pobRevert")}</button>
+            <button class="btn primary sm" disabled={!dirty || app.busy > 0} onclick={savePob}>{t("settings.pobSave")}</button>
+          </span>
+        </div>
+      {:else if app.engine === "ready"}
+        <p class="dim">{t("settings.pobLoading")}</p>
+      {/if}
+    {:else}
+      <section class="card pad">
+        <dl class="keys">
+          {#each keys as [combo, key]}
+            <dt><kbd>{combo}</kbd></dt>
+            <dd>{t(key)}</dd>
+          {/each}
+        </dl>
+      </section>
     {/if}
-  </section>
-
-  <section class="card">
-    <h2>{t("settings.keys")}</h2>
-    <dl class="keys">
-      {#each keys as [combo, key]}
-        <dt><kbd>{combo}</kbd></dt>
-        <dd>{t(key)}</dd>
-      {/each}
-    </dl>
-  </section>
+  </div>
 </div>
 
 {#if aboutOpen}<AboutDialog onclose={() => (aboutOpen = false)} />{/if}
@@ -296,15 +306,109 @@
 <style>
   .page {
     height: 100%;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    min-height: 0;
+  }
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 16px 10px;
+    border-right: 1px solid var(--edge-0);
+    min-height: 0;
     overflow-y: auto;
-    padding: 16px 20px 24px;
+  }
+  .nav button {
+    appearance: none;
+    flex: none;
+    height: 36px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--radius-s);
+    background: none;
+    color: var(--ink-1);
+    text-align: left;
+    white-space: nowrap;
+  }
+  .nav button:hover {
+    background: var(--surface-hover);
+    color: var(--ink-0);
+  }
+  .nav button.on {
+    background: var(--gold-soft);
+    color: var(--gold-text);
+  }
+  .note {
+    margin-top: auto;
+    padding: 8px 12px 0;
+    font-size: var(--fs-2xs);
+  }
+  .content {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 20px 24px 24px;
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+  .content > :global(*) {
     max-width: 1080px;
   }
-  .card.wide {
-    max-width: none;
+  /* 窄:左側導覽改成頂部一列,可橫向捲動 */
+  @container view (max-width: 759px) {
+    .page {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .nav {
+      flex-direction: row;
+      align-items: center;
+      padding: 6px 10px;
+      border-right: 0;
+      border-bottom: 1px solid var(--edge-0);
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+    .note {
+      margin: 0 0 0 auto;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+  }
+  h1 {
+    margin: 0;
+    font-size: calc(var(--fs-base) + 9px);
+    font-weight: 500;
+  }
+  .card {
+    padding: 0 20px;
+  }
+  .card.pad,
+  .card.pobcard {
+    padding: 12px 20px;
+  }
+  .name {
+    font-size: calc(var(--fs-base) + 1px);
+  }
+  .srow .dim {
+    font-size: var(--fs-xs);
+  }
+  label.srow {
+    cursor: pointer;
+  }
+  .seg button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .chip {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.4);
+    flex: none;
   }
   .pobcols {
     display: grid;
@@ -313,17 +417,13 @@
   }
   h3 {
     margin: 4px 0 6px;
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.12em;
-    color: var(--ink-2);
-    font-weight: 600;
   }
   .orow {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    min-height: 28px;
+    min-height: 32px;
     padding: 0 6px;
     border-radius: var(--radius-s);
     font-size: var(--fs-xs);
@@ -359,41 +459,41 @@
     font-size: var(--fs-xs);
   }
   p {
-    margin: 0 0 8px;
+    margin: 0;
   }
-  .card {
-    background: var(--surface-1);
-    border: 1px solid var(--edge-0);
-    border-left: 3px solid var(--gold);
-    border-radius: var(--radius-m);
-    padding: 12px 16px 14px;
-  }
-  h2 {
-    margin: 0 0 10px;
-    font-size: var(--fs-sm);
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
-  .row {
-    display: grid;
-    grid-template-columns: 96px minmax(120px, 1fr) auto;
-    align-items: center;
-    gap: 12px;
-    height: 32px;
-  }
-  .k {
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.1em;
-    color: var(--ink-3);
-  }
+  /* 軌道 4px;Chromium(WebView2)的 range 要自畫軌道與把手才改得了粗細 */
   .slider {
-    width: 100%;
+    appearance: none;
+    width: 200px;
+    max-width: 100%;
+    height: 16px;
+    background: transparent;
     accent-color: var(--gold);
+  }
+  .slider::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-3);
+  }
+  .slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+  .slider:disabled {
+    opacity: var(--dim-opacity);
+  }
+  .octl .slider {
+    width: 140px;
   }
   .ctl {
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    flex: none;
   }
   .val {
     min-width: 48px;
@@ -404,85 +504,17 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    margin-top: 6px;
   }
   .hint {
     font-size: var(--fs-2xs);
   }
-  .follow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 4px;
-    font-size: var(--fs-sm);
-    color: var(--ink-1);
-    cursor: pointer;
-  }
-  .lrow {
-    display: grid;
-    grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
-    align-items: center;
-    gap: 12px;
-    padding: 5px 0;
-  }
-  .themes,
   .accents,
   .fontctl {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: 8px;
-  }
-  .theme {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 5px;
-    border: 1px solid var(--edge-1);
-    border-radius: var(--radius-m);
-    background: var(--surface-2);
-    color: var(--ink-1);
-    cursor: pointer;
-  }
-  .theme:hover {
-    background: var(--surface-hover);
-  }
-  .theme.on {
-    border-color: var(--gold);
-    box-shadow: 0 0 0 1px var(--gold);
-    color: var(--ink-0);
-  }
-  .sw {
-    display: flex;
-    align-items: flex-end;
-    width: 64px;
-    height: 40px;
-    padding: 6px 0 0 8px;
-    border-radius: var(--radius-s);
-    box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.35);
-  }
-  .sw-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    width: 100%;
-    height: 100%;
-    padding: 6px;
-    border-radius: 3px 0 0 0;
-  }
-  .sw-line {
-    display: block;
-    height: 3px;
-    width: 80%;
-    border-radius: 2px;
-  }
-  .sw-line.short {
-    width: 45%;
-  }
-  .tname {
-    font-size: var(--fs-2xs);
-    white-space: nowrap;
   }
   .dot {
     width: 24px;
@@ -521,7 +553,7 @@
     max-width: 280px;
   }
   .sample {
-    color: var(--ink-1);
+    color: var(--ink-2);
     font-size: var(--fs-md);
     white-space: nowrap;
     overflow: hidden;
@@ -531,7 +563,7 @@
   .keys {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 6px 16px;
+    gap: 8px 16px;
     margin: 0;
     font-size: var(--fs-xs);
   }
