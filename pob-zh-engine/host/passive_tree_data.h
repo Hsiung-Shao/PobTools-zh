@@ -37,6 +37,13 @@ struct PtNode {
 	std::vector<int> adj;                // neighbour node indices
 };
 
+// The stat lines to SHOW for a node: statsZh line by line, falling back to the
+// English line wherever the Chinese one is missing or blank (a dictionary gap
+// must read as English, never as an empty row). statsZh is built 1:1 from
+// stats by the generator / importer, so index i of both is the same line.
+// Coverage counting must keep reading statsZh directly.
+std::vector<std::string> PtDisplayStats(const PtNode& n);
+
 struct PtEdge {
 	int a = 0, b = 0;
 	bool hasArc = false;                 // same group+orbit: draw on the orbit circle

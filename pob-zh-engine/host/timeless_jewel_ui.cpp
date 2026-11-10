@@ -710,7 +710,7 @@ public:
 		// conqueror (affects keystones + trade export)
 		const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
 		const int conqN = conqs ? (int)conqs->size() : 0;
-		if (conquerorSel >= conqN) conquerorSel = 0;
+		if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
 		conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
 		tradeStatId_ = conqN ? (*conqs)[conquerorSel].trade : std::string();
 
@@ -729,6 +729,10 @@ public:
 		ImGui::PushID("tjhdr");
 		drawHeader(ptUst, conqs, conqN);
 		ImGui::PopID();
+		// POBTOOLS_TJ_CONQ_SWITCH: after the first recompute, change the
+		// conqueror exactly where the header's picker would (after conquerorId_
+		// was derived this frame) — the path a real click takes.
+		if (testConqSwitch_ >= 0 && hiSig != -1) { conquerorSel = testConqSwitch_; testConqSwitch_ = -1; }
 
 		ImGui::PushID("tjbanners");
 		drawBanners(ptUst);
@@ -1771,6 +1775,7 @@ public:
 			selVersion++;
 		}
 		if (tout.hoveredNode >= 0) drawNodeTooltip(tout.hoveredNode);
+		else if (testHoverNode_ >= 0) drawNodeTooltip(testHoverNode_); // POBTOOLS_TJ_STATE=keystone
 	}
 
 	// Bottom-left of the canvas: what the gold ring and the socket mean.
@@ -1830,14 +1835,17 @@ public:
 			                       : !t.newName.empty() ? t.newName
 			                       : (n.nameZh.empty() ? n.name : n.nameZh);
 			ImGui::TextColored(PobUi::TokV4(Tok::TreeHit), "%s", nm.c_str());
-			PobUi::Hint(t.replaced ? u8"（節點被替換）" : u8"（保留原詞綴，珠寶額外加成）");
+			if (t.replaced) {
+				const std::string& was = n.nameZh.empty() ? n.name : n.nameZh;
+				PobUi::Hint((u8"（節點被替換，原本是「" + was + u8"」）").c_str());
+			} else {
+				PobUi::Hint(u8"（保留原詞綴，珠寶額外加成）");
+			}
 			ImGui::Separator();
 			// An addition leaves the node itself intact, so its own stats still
 			// apply and must be shown above what the jewel adds.
-			if (!t.replaced) {
-				const std::vector<std::string>& base = n.statsZh.empty() ? n.stats : n.statsZh;
-				for (const std::string& s : base) ImGui::TextColored(text, "%s", s.c_str());
-			}
+			if (!t.replaced)
+				for (const std::string& s : PtDisplayStats(n)) ImGui::TextColored(text, "%s", s.c_str());
 			for (size_t i = 0; i < t.lines.size(); i++) {
 				const std::string& zh = (i < t.linesZh.size() && !t.linesZh[i].empty()) ? t.linesZh[i] : t.lines[i];
 				ImGui::TextColored(PobUi::TokV4(Tok::Success), "%s", zh.c_str());
@@ -1845,7 +1853,7 @@ public:
 		} else {
 			const std::string& nm = n.nameZh.empty() ? n.name : n.nameZh;
 			ImGui::TextColored(PobUi::TokV4(PobUi::TreeKindColor(kindOf(n.kind))), "%s", nm.empty() ? "?" : nm.c_str());
-			const std::vector<std::string>& lines = n.statsZh.empty() ? n.stats : n.statsZh;
+			const std::vector<std::string> lines = PtDisplayStats(n);
 			if (!lines.empty()) ImGui::Separator();
 			for (const std::string& s : lines) ImGui::TextColored(text, "%s", s.c_str());
 		}
@@ -1858,6 +1866,15 @@ public:
 	// candidate node once and rebuild the stat groups the side list shows.
 	void recomputeHighlights(bool treeRadius)
 	{
+		// The header (drawn earlier this frame) may just have changed the jewel or
+		// the conqueror, after Frame() derived conquerorId_ from the old pick.
+		// Re-derive it here so this recompute uses the pick that triggered it.
+		{
+			const std::vector<TJConqueror>* conqs = conqListFor(jewelType);
+			const int conqN = conqs ? (int)conqs->size() : 0;
+			if (conquerorSel >= conqN || conquerorSel < 0) conquerorSel = 0;
+			conquerorId_ = conqN ? (*conqs)[conquerorSel].id : std::string("1");
+		}
 		ptHi.assign(ptData.nodes.size(), kPtHiNone);
 		ptTrans.clear();
 		statGroups.clear();
@@ -1915,6 +1932,19 @@ public:
 		for (int idx : cand) {
 			const PtNode& n = ptData.nodes[idx];
 			if (detailSeed < 0 || !haveBin) {
+				// A Legion keystone turns into the conqueror's keystone whatever
+				// the seed, and TJApply answers that without the lookup table —
+				// so preview it now and let the conqueror picker change it.
+				if (!abyssDetail && n.kind == kPtKeystone) {
+					static const std::string kNoBlob;
+					TJTransform t = TJApply(*ds, kNoBlob, jewelType, -1, n.id, "Keystone", n.stats,
+					                        ConquerorType(jewelType), conquerorId_, n.name);
+					if (t.ok && t.replaced) {
+						ptHi[idx] = kPtHiReplaced;
+						ptTrans[idx] = std::move(t);
+						continue;
+					}
+				}
 				ptHi[idx] = kPtHiAffected; // radius-only preview (no seed yet)
 				continue;
 			}
@@ -2797,6 +2827,8 @@ public:
 	//   seederr = the seed page's error banner (empty seed)
 //   resultsflat = results without grouping   jewelmenu = the jewel Select open
 //   pastenosock = paste with no socket picked; POBTOOLS_TJ_PASTE_FILE = text to paste
+//   keystone = Glorious Vanity, no seed, Bitter Frost's tooltip forced open
+//              (POBTOOLS_TJ_CONQ = conqueror index)
 	// Nothing is written: under a test aid the league fetch, the tree-update
 	// check and tj_ui.json are all off.
 	void applyTestState()
@@ -2863,6 +2895,24 @@ public:
 			}
 			if (testState_ == "pastenosock") selSocket = -1;
 			applyPaste(txt);
+		} else if (testState_ == "keystone") {
+			// Glorious Vanity, no seed, the socket that reaches Bitter Frost, its
+			// tooltip forced open. POBTOOLS_TJ_CONQ = conqueror index (default 0).
+			jewelType = 1;
+			templates = TJStatTemplates(*ds, jewelType);
+			templatesFor = jewelType;
+			wchar_t cq[8] = L"";
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ", cq, 8) > 0) conquerorSel = (std::max)(0, _wtoi(cq));
+			if (GetEnvironmentVariableW(L"POBTOOLS_TJ_CONQ_SWITCH", cq, 8) > 0) testConqSwitch_ = (std::max)(0, _wtoi(cq));
+			for (int i = 0; i < (int)ptData.nodes.size(); i++)
+				if (ptData.nodes[i].name == "Bitter Frost") testHoverNode_ = i;
+			selSocket = -1;
+			for (int s : ptData.sockets)
+				for (int idx : ptData.NodesInRadius(s, 1800.0f))
+					if (idx == testHoverNode_ && selSocket < 0) selSocket = s;
+			centerPending_ = true;
+			mode = 0;
+			wants.clear();
 		} else if (testState_ == "jewelmenu") {
 			PobUi::TestOpenSelect("##jewel");
 		} else if (testState_ == "seederr") {
@@ -3026,6 +3076,8 @@ private:
 	// POBTOOLS_TJ_STATE / POBTOOLS_TOOL_SHOT
 	std::string testState_;
 	bool testMode_ = false;
+	int testHoverNode_ = -1;      // POBTOOLS_TJ_STATE=keystone: tooltip shown without a mouse
+	int testConqSwitch_ = -1;     // POBTOOLS_TJ_CONQ_SWITCH: conqueror picked after the first recompute
 	// Set once the user opens any trade search. The calculator's numbers come from
 	// our own transform of the game data; PoB is the independent second opinion, so
 	// nudge people to cross-check there before they spend currency.

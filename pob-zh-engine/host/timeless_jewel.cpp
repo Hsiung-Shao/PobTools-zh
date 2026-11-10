@@ -1264,6 +1264,22 @@ int RunTimelessJewelSelfTest(const std::wstring& exeDir)
 	} else {
 		check(false, "load AbyssTecrod LUT", err);
 	}
+	// Keystone preview before any seed is chosen: empty blob + seed -1 must still
+	// resolve the keystone from the conqueror alone.
+	{
+		TJTransform k1 = TJApply(ds, "", 1, -1, 0, "Keystone", {}, "vaal", "2", "Bitter Frost");
+		check(k1.ok && k1.replaced && k1.newName == "Eternal Youth" && k1.newNameZh == u8"青春永駐",
+		      "無種子無 bin 時 Zerphi 鑰石預覽為青春永駐",
+		      k1.ok ? k1.newName + " / " + k1.newNameZh : k1.note);
+		TJTransform k2 = TJApply(ds, "", 1, -1, 0, "Keystone", {}, "vaal", "2_v2", "Bitter Frost");
+		check(k2.ok && k2.replaced && k2.newName == "Immortal Ambition" && k2.newNameZh == u8"不朽野望",
+		      "無種子無 bin 時 Ahuana 鑰石預覽為不朽野望",
+		      k2.ok ? k2.newName + " / " + k2.newNameZh : k2.note);
+		TJTransform k3 = TJApply(ds, "", 2, -1, 0, "Keystone", {}, "karui", "3_v2", "Bitter Frost");
+		check(k3.ok && k3.replaced && k3.newName == "Chainbreaker",
+		      "無種子無 bin 時 Akoya 鑰石預覽為 Chainbreaker",
+		      k3.ok ? k3.newName + " / " + k3.newNameZh : k3.note);
+	}
 	// paste parsing, against real item text (trade API explicitMods, 3.29 Allflame)
 	{
 		struct PCase { const char* txt; int type; int seed; const char* what; };
