@@ -356,7 +356,7 @@
     max-width: 130px;
   }
   .btn.on {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .actions {
     display: inline-flex;

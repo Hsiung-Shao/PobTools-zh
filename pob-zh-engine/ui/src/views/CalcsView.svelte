@@ -164,7 +164,7 @@
 </script>
 
 {#snippet section(sec: CalcsData["sections"][number])}
-  <section class="card" class:wide={sec.widthCols >= 3} style:--sec={pobColor(sec.colour) ?? "var(--gold)"}>
+  <section class="card" class:wide={sec.widthCols >= 3} style:--sec={pobColor(sec.colour) ?? "var(--hl)"}>
     {#each sec.subsections as sub (sub.ui)}
       {@const rows = sub.rows.filter((r) => rowMatch(r.label, r.labelZh))}
       {@const closed = isCollapsed(sec.si, sub.ui, sub.collapsed)}
@@ -532,7 +532,7 @@
     top: 3px;
     right: 6px;
     font-size: var(--fs-2xs);
-    color: var(--gold);
+    color: var(--gold-text);
   }
   /* Last resort only: content taller than the whole window scrolls here. A pinned
      panel in that state takes the mouse so the wheel can reach it. */

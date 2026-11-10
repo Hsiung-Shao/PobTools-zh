@@ -224,7 +224,7 @@
     font-size: var(--fs-sm);
   }
   .cls {
-    color: var(--gold);
+    color: var(--hl);
   }
   .base {
     font-size: var(--fs-xs);
@@ -287,7 +287,7 @@
     top: 3px;
     bottom: 3px;
     width: 2px;
-    background: var(--gold);
+    background: var(--hl);
     border-radius: 1px;
   }
   /* 分組標題是收合鈕;收合時顯示該組前幾個數值 */
@@ -433,7 +433,7 @@
     top: 3px;
     right: 6px;
     font-size: var(--fs-2xs);
-    color: var(--gold);
+    color: var(--gold-text);
     letter-spacing: 0.08em;
   }
   /* 最後手段:內容比整個視窗還高才在這裡捲動;釘住時讓浮層接滑鼠,滾輪才捲得到 */

@@ -539,7 +539,7 @@
     background: var(--surface-3, var(--surface-1));
   }
   .opt.on {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .pages {
     width: 70px;

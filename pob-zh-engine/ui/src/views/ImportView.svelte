@@ -522,7 +522,7 @@
     top: 3px;
     bottom: 3px;
     width: 2px;
-    background: var(--gold);
+    background: var(--hl);
     border-radius: 1px;
   }
   p {
@@ -549,7 +549,7 @@
     font-size: var(--fs-sm);
   }
   .gold {
-    color: var(--gold);
+    color: var(--hl);
     font-weight: 600;
   }
   .actions {

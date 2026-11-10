@@ -76,3 +76,10 @@ describe("appearance prefs", () => {
     expect(v["--tree-alpha"]).toBe("0.5");
   });
 });
+
+describe("ACCENTS", () => {
+  it("強調色預設值是新的靛藍", () => {
+    expect(ACCENTS[0]).toBe("#6366f1");
+    for (const c of ACCENTS) expect(c).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});

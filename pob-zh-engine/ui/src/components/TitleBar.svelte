@@ -82,7 +82,7 @@
   .mark {
     width: 10px;
     height: 10px;
-    background: var(--gold);
+    background: var(--hl);
     transform: rotate(45deg);
     border-radius: 2px;
   }
@@ -120,7 +120,7 @@
   }
   .sidetoggle:hover,
   .sidetoggle.on {
-    color: var(--gold);
+    color: var(--gold-text);
     border-color: var(--gold);
   }
   .tab {
@@ -160,7 +160,7 @@
     max-width: 40vw;
   }
   .bcls {
-    color: var(--gold);
+    color: var(--hl);
     font-size: var(--fs-sm);
   }
   .end {

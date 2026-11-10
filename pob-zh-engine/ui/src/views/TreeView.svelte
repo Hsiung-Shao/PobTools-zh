@@ -179,8 +179,8 @@
     pal.line = v("--tree-line", pal.line);
     pal.lineLit = v("--tree-line-lit", pal.lineLit);
     pal.path = v("--accent", pal.path);
-    pal.alloc = v("--gold", pal.alloc);
-    pal.allocEdge = v("--gold-dim", pal.allocEdge);
+    pal.alloc = v("--hl", pal.alloc);
+    pal.allocEdge = v("--hl-dim", pal.allocEdge);
     pal.dep = v("--bad", pal.dep);
     pal.search = v("--warn", pal.search);
   }
@@ -1529,7 +1529,7 @@
     color: var(--ink-0);
   }
   .line.jewel-name {
-    color: var(--gold);
+    color: var(--hl);
     font-weight: 600;
     margin-bottom: 2px;
   }
@@ -1537,7 +1537,7 @@
     color: var(--c-rare);
   }
   .tip-title .name.notable {
-    color: var(--gold);
+    color: var(--hl);
   }
   .tip-title .kind {
     font-size: var(--fs-2xs);
@@ -1648,6 +1648,6 @@
     cursor: default;
   }
   .rtable tr.alloc td:first-child {
-    color: var(--gold);
+    color: var(--hl);
   }
 </style>

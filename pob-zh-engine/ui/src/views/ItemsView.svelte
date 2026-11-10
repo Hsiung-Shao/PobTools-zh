@@ -808,7 +808,7 @@
     top: 2px;
     bottom: 2px;
     width: 2px;
-    background: var(--gold);
+    background: var(--hl);
   }
   .seg {
     display: inline-flex;
@@ -826,7 +826,7 @@
   }
   .seg button.on {
     background: var(--gold-soft);
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .slot {
     display: grid;

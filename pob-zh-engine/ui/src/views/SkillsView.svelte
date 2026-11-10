@@ -865,8 +865,8 @@
     white-space: nowrap;
   }
   .badge.gold {
-    color: var(--gold);
-    border-color: var(--gold-dim);
+    color: var(--hl);
+    border-color: var(--hl-dim);
   }
   .actions {
     display: flex;

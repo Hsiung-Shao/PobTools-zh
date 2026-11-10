@@ -312,7 +312,7 @@
     background: none;
     padding: 2px 4px;
     border-radius: var(--radius-s);
-    color: var(--gold);
+    color: var(--gold-text);
     font: inherit;
     cursor: pointer;
   }

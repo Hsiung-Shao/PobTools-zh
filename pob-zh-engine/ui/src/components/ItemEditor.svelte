@@ -763,7 +763,7 @@
     flex-wrap: wrap;
   }
   .btn.on {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .small {
     font-size: var(--fs-2xs);

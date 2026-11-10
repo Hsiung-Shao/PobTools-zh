@@ -442,7 +442,7 @@
     top: 2px;
     bottom: 2px;
     width: 2px;
-    background: var(--gold);
+    background: var(--hl);
   }
   /* POB's row: the label ends against the control column, controls start at
      one x down the whole section; the last column holds the reset arrow */
@@ -503,7 +503,7 @@
     border: 0;
     background: none;
     /* 只有非預設值才畫;常駐顯示,不用逐列 hover 就看得出改過哪些 */
-    color: var(--gold);
+    color: var(--gold-text);
     opacity: 0.7;
     padding: 0;
     font-size: var(--fs-2xs);

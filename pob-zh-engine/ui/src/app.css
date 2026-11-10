@@ -1,6 +1,7 @@
 /* PobTools 新介面 —— 設計 token 與基底樣式。
-   底色是帶一點藍的深石板,不是純黑;前景是偏暖的米白,呼應 PoE 的羊皮紙;
-   唯一的強調色是金(和天賦樹已配路徑同一種),互動用冷藍。
+   底色是帶一點青的深石板,不是純黑;前景是冷白。
+   兩種強調分開:--gold 是互動強調色(選取、主按鈕、分頁底線,預設靛藍,可由設定頁換);
+   --hl 是身分用的金(DPS 主數字、昇華名、已配置節點、品牌標記)。
    字型只用出貨的 Noto Sans TC/KR(host 以 fonts.pobtools 供應),
    數字一律等寬 tabular。 */
 
@@ -22,12 +23,12 @@
   color-scheme: dark;
 
   /* 面 */
-  --surface-0-c: #0e1116;
-  --surface-1-c: #131820;
-  --surface-2-c: #192029;
-  --surface-3-c: #202834;
-  --surface-hover-c: #242d3a;
-  --surface-active-c: #2a3442;
+  --surface-0-c: #0b1014;
+  --surface-1-c: #0f161b;
+  --surface-2-c: #141d23;
+  --surface-3-c: #1c282f;
+  --surface-hover-c: #1c282f;
+  --surface-active-c: #25323a;
   /* 面板實際用的色:實色 × 面板透明度(有背景圖時 lib/prefs 設 --panel-pct,否則 100%) */
   --surface-0: color-mix(in srgb, var(--surface-0-c) var(--panel-pct), transparent);
   --surface-1: color-mix(in srgb, var(--surface-1-c) var(--panel-pct), transparent);
@@ -37,28 +38,33 @@
   --surface-active: color-mix(in srgb, var(--surface-active-c) var(--panel-pct), transparent);
 
   /* 邊 */
-  --edge-0: #1d2430;
-  --edge-1: #29323f;
-  --edge-2: #3a4554;
+  --edge-0: #222e36;
+  --edge-1: #2b3942;
+  --edge-2: #3b4e58;
 
   /* 墨 */
-  --ink-0: #ece6d8;
-  --ink-1: #c3bfb4;
-  --ink-2: #8f8d86;
-  --ink-3: #6d6c66;
-  --ink-4: #45464a;
+  --ink-0: #edf3f5;
+  --ink-1: #b9c4ca;
+  --ink-2: #8899a2;
+  --ink-3: #66757e;
+  --ink-4: #3b4e58;
 
-  /* 強調:--accent-user 是設定頁選的強調色(lib/prefs 寫在 :root),沒選就用主題自己的 */
-  --gold: var(--accent-user, #d8aa4b);
+  /* 互動強調色(名稱沿用 gold):--accent-user 是設定頁選的強調色(lib/prefs 寫在 :root),沒選就用主題自己的 */
+  --gold: var(--accent-user, #6366f1);
   --gold-soft: color-mix(in srgb, var(--gold) 16%, transparent);
   --gold-dim: color-mix(in srgb, var(--gold) 55%, black);
-  --on-gold: var(--on-accent-user, #17120a);
-  --accent: #5b9dff;
-  --accent-soft: rgba(91, 157, 255, 0.18);
+  --gold-text: color-mix(in srgb, var(--gold) 55%, white);
+  --on-gold: var(--on-accent-user, #ffffff);
+  /* 身分用的金:DPS 主數字、昇華名、已配置節點 */
+  --hl: #f2cc66;
+  --hl-soft: color-mix(in srgb, var(--hl) 16%, transparent);
+  --hl-dim: color-mix(in srgb, var(--hl) 55%, black);
+  --accent: #6366f1;
+  --accent-soft: rgba(99, 102, 241, 0.2);
   --focus: var(--accent);
-  --ok: #6fcf97;
-  --warn: #e3b04b;
-  --bad: #ef6b6b;
+  --ok: #66d38f;
+  --warn: #e8b55b;
+  --bad: #ef696f;
 
   /* PoB 色碼 ^x 對應(依深底微調亮度) */
   --c-life: #f25c5c;
@@ -80,12 +86,12 @@
 
   --dim-opacity: 0.45;
   --backdrop: rgba(6, 8, 12, 0.6);
-  --shadow-float: 0 10px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.4);
 
   /* 天賦樹畫布 */
-  --tree-bg: #0b0e13;
-  --tree-line: #262e3a;
-  --tree-line-lit: #4a5566;
+  --tree-bg: #080a0c;
+  --tree-line: #2e333d;
+  --tree-line-lit: #5a5f6e;
 }
 
 :root {
@@ -102,10 +108,13 @@
   --fs-lg: calc(var(--fs-base) + 2px);
   --fs-xl: calc(var(--fs-base) + 7px);
 
-  --radius-s: 3px;
-  --radius-m: 6px;
+  --radius-s: 5px;
+  --radius-m: 8px;
+  --radius-l: 12px;
 
-  --titlebar-h: 40px;
+  --titlebar-h: 48px;
+  --rail-w: 72px;
+  --toolbar-h: 48px;
   --statusbar-h: 24px;
   --sidebar-w: 304px;
 }
@@ -129,7 +138,10 @@
   --ink-4: #a2a3a7;
   --gold: var(--accent-user, #946510);
   --gold-dim: color-mix(in srgb, var(--gold) 45%, white);
+  --gold-text: color-mix(in srgb, var(--gold) 80%, black);
   --on-gold: var(--on-accent-user, #ffffff);
+  --hl: #946510;
+  --hl-dim: color-mix(in srgb, var(--hl) 45%, white);
   --accent: #2f6fd6;
   --accent-soft: rgba(47, 111, 214, 0.14);
   --ok: #23784a;
@@ -176,6 +188,7 @@
   --ink-3: #b4b4b4;
   --ink-4: #858585;
   --gold: var(--accent-user, #ffc83d);
+  --hl: #ffc83d;
   --accent: #74b4ff;
   --accent-soft: rgba(116, 180, 255, 0.22);
   --ok: #5dff9a;
@@ -205,6 +218,7 @@
   --ink-3: #817359;
   --ink-4: #584e3b;
   --gold: var(--accent-user, #e0a94a);
+  --hl: #e0a94a;
   --accent: #7fb3d6;
   --accent-soft: rgba(127, 179, 214, 0.18);
   --backdrop: rgba(12, 8, 4, 0.62);
@@ -331,13 +345,13 @@ input:disabled {
   outline-offset: 1px;
 }
 
-/* 按鈕:平面、細邊,主按鈕用金 */
+/* 按鈕:平面、細邊,主按鈕用強調色 */
 .btn {
   appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 28px;
   padding: 0 11px;
   border: 1px solid var(--edge-1);
   border-radius: var(--radius-s);
@@ -366,9 +380,17 @@ input:disabled {
   font-weight: 600;
 }
 .btn.primary:hover:not(:disabled) {
-  background: #e6bb5f;
-  border-color: #e6bb5f;
+  background: color-mix(in srgb, var(--gold) 85%, black);
+  border-color: color-mix(in srgb, var(--gold) 85%, black);
   color: var(--on-gold);
+}
+/* 後備;BuildList/ItemsView/SkillsView 有自己 scoped 的 .danger 規則會蓋過 */
+.btn.danger {
+  color: var(--bad);
+}
+.btn.danger:hover:not(:disabled) {
+  color: var(--bad);
+  border-color: var(--bad);
 }
 .btn.ghost {
   background: transparent;
@@ -379,7 +401,7 @@ input:disabled {
   border-color: transparent;
 }
 .btn.sm {
-  height: 22px;
+  height: 24px;
   padding: 0 8px;
   font-size: var(--fs-xs);
 }
@@ -388,11 +410,11 @@ input:disabled {
 .input,
 .select {
   appearance: none;
-  height: 26px;
+  height: 28px;
   padding: 0 9px;
   border: 1px solid var(--edge-1);
   border-radius: var(--radius-s);
-  background: var(--surface-0);
+  background: var(--surface-2);
   color: var(--ink-0);
   font-size: var(--fs-sm);
   outline: none;
@@ -400,7 +422,7 @@ input:disabled {
 }
 .input:focus,
 .select:focus {
-  border-color: var(--accent);
+  border-color: var(--gold);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 .input::placeholder {
@@ -411,6 +433,166 @@ input:disabled {
 option {
   background-color: var(--surface-2-c);
   color: var(--ink-0);
+}
+
+/* 開關(checkbox 換外觀) */
+input[type="checkbox"].sw {
+  appearance: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  position: relative;
+  flex: none;
+  margin: 0;
+  cursor: pointer;
+  transition: background 120ms;
+}
+input[type="checkbox"].sw::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  transition: left 120ms, background 120ms;
+}
+input[type="checkbox"].sw:checked {
+  background: var(--gold);
+}
+input[type="checkbox"].sw:checked::after {
+  left: 16px;
+  background: var(--on-gold);
+}
+input[type="checkbox"].sw:disabled {
+  opacity: var(--dim-opacity);
+  cursor: default;
+}
+
+/* 以下是全域基底:各檔 scoped 的同名 class 特異度較高,會蓋過這裡。
+   子元素選擇器用 :where() 壓低特異度,不去蓋 .btn 之類的既有樣式。 */
+.card {
+  border: 1px solid var(--edge-1);
+  border-radius: var(--radius-m);
+  background: var(--surface-1);
+}
+.card-title {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+}
+
+/* 分段鈕 */
+.seg {
+  display: inline-flex;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid var(--edge-1);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+:where(.seg) > button {
+  appearance: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+:where(.seg) > button:is(.on, [aria-pressed="true"], [aria-checked="true"]) {
+  background: var(--gold-soft);
+  color: var(--gold-text);
+}
+
+.toolbar {
+  min-height: var(--toolbar-h);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--edge-0);
+}
+.vsep {
+  width: 1px;
+  height: 22px;
+  background: var(--edge-1);
+}
+
+/* 底線分頁 */
+.tabs {
+  display: flex;
+  gap: 18px;
+}
+:where(.tabs) > button {
+  appearance: none;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-2);
+}
+:where(.tabs) > button:is(.on, [aria-selected="true"]) {
+  color: var(--ink-0);
+  border-bottom-color: var(--gold);
+  font-weight: 500;
+}
+
+/* 狀態膠囊 */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--fs-2xs);
+}
+.pill.warn {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+.pill.ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 14%, transparent);
+}
+.pill.bad {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 14%, transparent);
+}
+.pill.accent {
+  color: var(--gold-text);
+  background: var(--gold-soft);
+}
+
+/* 設定列:左文字(標題 + .dim 說明)、右控制項 */
+.srow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--edge-0);
+}
+.srow:last-child {
+  border-bottom: 0;
+}
+.srow > .txt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dialog {
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-float);
 }
 
 /* 文字工具類 */

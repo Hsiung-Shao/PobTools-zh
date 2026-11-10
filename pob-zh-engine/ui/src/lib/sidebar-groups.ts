@@ -109,3 +109,14 @@ export function groupSidebar(rows: SidebarRow[]): SidebarSection[] {
   }
   return out;
 }
+
+const HEADLINE = ["FullDPS", "CombinedDPS", "TotalDPS", "TotalDotDPS", "TotalDot"];
+
+/** The one number the sidebar shows large: the player's best "whole build" damage row, or null. `index` is 1-based, like SidebarItem.index. */
+export function headlineStat(rows: SidebarRow[]): { index: number; lhs: string; rhs: string } | null {
+  for (const stat of HEADLINE) {
+    const i = rows.findIndex((r) => r.stat === stat && r.actor !== "minion" && !!r.rhs);
+    if (i >= 0) return { index: i + 1, lhs: rows[i].lhs ?? "", rhs: rows[i].rhs ?? "" };
+  }
+  return null;
+}

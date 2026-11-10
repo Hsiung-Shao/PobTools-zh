@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { folderCrumbs, NAV_LIMIT, parentFolder, ViewHistory } from "./nav";
+import { folderCrumbs, NAV_LIMIT, navItems, parentFolder, ViewHistory } from "./nav";
 
 describe("view history (mouse back / forward)", () => {
   const all = () => true;
@@ -49,5 +49,19 @@ describe("build list folders", () => {
       { name: "子資料夾", path: "測試/子資料夾/" },
     ]);
     expect(folderCrumbs("")).toEqual([]);
+  });
+});
+
+describe("navItems: 導覽列項目", () => {
+  it("未載入建置時只有建置與設定可點", () => {
+    const enabled = navItems(false).filter((i) => !i.disabled).map((i) => i.id);
+    expect(enabled).toEqual(["builds", "settings"]);
+  });
+
+  it("數字鍵順序與導覽列順序一致", () => {
+    const items = navItems(true);
+    expect(items).toHaveLength(11);
+    expect(items.slice(0, 9).map((i) => i.id)).toEqual(["builds", "tree", "items", "skills", "config", "calcs", "notes", "party", "import"]);
+    expect(items.every((i) => !i.disabled)).toBe(true);
   });
 });

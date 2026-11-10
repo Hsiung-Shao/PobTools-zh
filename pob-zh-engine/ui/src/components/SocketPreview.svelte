@@ -29,7 +29,7 @@
     const tok = (n: string, fb: string) => cs.getPropertyValue(n).trim() || fb;
     const bg = tok("--tree-bg", "#0b0e13");
     const line = tok("--tree-line", "#262e3a");
-    const gold = tok("--gold", "#d8aa4b");
+    const gold = tok("--hl", "#d8aa4b");
     const ink = tok("--ink-1", "#c3bfb4");
     const dim = tok("--ink-3", "#6d6c66");
     ctx.fillStyle = bg;

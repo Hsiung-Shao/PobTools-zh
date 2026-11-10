@@ -228,7 +228,7 @@
     top: 2px;
     bottom: 2px;
     width: 2px;
-    background: var(--gold);
+    background: var(--hl);
   }
   .area {
     height: auto;
