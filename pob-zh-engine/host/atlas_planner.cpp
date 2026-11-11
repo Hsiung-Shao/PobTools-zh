@@ -226,6 +226,10 @@ public:
 			// the menu and the dialogs, for a screenshot of each (nothing is written:
 			// a dialog only acts on a click, and the sandbox never saves)
 			else if (page == L"menu") openMoreMenu_ = true;
+			else if (page == L"provmap") { // main map = a patch-notes map (tier/region unknown)
+				for (const AtlasMapDef& d : mapDb.All())
+					if (d.provisional) { buildFile.Active().mapId = d.id; break; }
+			}
 			else if (page == L"delete") askDelete_ = true;
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
@@ -2401,6 +2405,7 @@ private:
 	}
 	std::string mapRegionLabel(const std::string& regionId)
 	{
+		if (regionId.empty()) return std::string(showZh ? u8"半區待 3.30 資料" : "quadrant pending 3.30 data");
 		const AtlasQuadrant* q = astroDb.RegionById(regionId);
 		return q ? quadrantLabel(*q) : regionId;
 	}
