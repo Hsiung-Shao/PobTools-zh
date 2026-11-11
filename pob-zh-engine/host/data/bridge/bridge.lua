@@ -5493,6 +5493,29 @@ function M.craft_item_options()
 	return { rarities = rarities, types = types, defaults = { rarity = cap.controls.rarity.selIndex, type = cap.controls.type.selIndex, base = cap.controls.base.selIndex } }
 end
 
+-- craft_base_tooltip{rarity, type, base}: the tooltip POB shows while pointing at a
+-- base in the Craft Item dialog's open list (controls.base.tooltipFunc "HOVER" ->
+-- AddItemTooltip(makeItem(base))). rarity/type/base are 1-based indices, as in
+-- craft_item_options. The dialog is discarded; nothing is added to the build.
+function M.craft_base_tooltip(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local cap = capture_popup(function() tab:CraftItem() end, false)
+	local ctl = cap.controls
+	local r, ty, bi = tonumber(p and p.rarity), tonumber(p and p.type), tonumber(p and p.base)
+	if r and ctl.rarity.list[r] then ctl.rarity.selIndex = r end
+	if ty then
+		if not ctl.type.list[ty] then error("no such type " .. tostring(ty), 0) end
+		ctl.type:SetSel(ty)
+	end
+	local value = bi and ctl.base.list[bi]
+	if not value then error("no such base " .. tostring(bi), 0) end
+	if type(ctl.base.tooltipFunc) ~= "function" then error("craft base tooltip unavailable", 0) end
+	local tt = make("Tooltip")
+	without_wrap(function() ctl.base.tooltipFunc(tt, "HOVER", bi, value) end)
+	return { lines = tooltip_lines(tt) }
+end
+
 -- item_edit_begin{id | raw | craft={rarity,type,base,title?}}: start editing
 -- a copy of a build item (the list's double-click), pasted text
 -- (CreateDisplayItemFromRaw), or a new item from the Craft Item dialog.
