@@ -176,10 +176,14 @@
   }
   // Craft: the base pointed at in the open list gets POB's own preview tooltip
   // (the Craft Item dialog's base.tooltipFunc), placed beside the option.
+  // The open list is portalled to <body>: entering it fires the page's mouseleave,
+  // which must not clear this tooltip (pageLeave); closing the list (null) does.
+  let craftListActive = false;
   function craftBaseActive(v: string | number | null, rect: DOMRect | null) {
+    craftListActive = !!(craft && v != null && rect);
     if (!craft || v == null || !rect) return hideTip();
-    const c = { rarity: craft.rarity, type: craft.type, base: Number(v) };
-    const key = `craft:${c.rarity}:${c.type}:${c.base}`;
+    const c = { rarity: craft.rarity, type: craft.type, base: Number(v), title: craft.title.trim() || undefined, compare };
+    const key = `craft:${c.rarity}:${c.type}:${c.base}:${c.compare}:${c.title ?? ""}`;
     clearTimeout(tipTimer);
     const gen = ++tipGen;
     const place = (r: ItemTooltip) => {
@@ -189,7 +193,7 @@
     if (hit) return place(hit);
     tipTimer = window.setTimeout(async () => {
       try {
-        const r = await api.craftBaseTooltip(c.rarity, c.type, c.base);
+        const r = (await api.craftBaseTooltip(c)) as ItemTooltip;
         tipCache.set(key, r);
         place(r);
       } catch {
@@ -486,7 +490,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- any click or scroll dismisses a hover card: the row under it may be about to go away or move -->
-<div class="page" onmouseleave={hideTip} onpointerdown={hideTip} onwheel={hideTip}>
+<div class="page" onmouseleave={() => craftListActive || hideTip()} onpointerdown={hideTip} onwheel={hideTip}>
   <!-- 左:裝備欄 -->
   <section class="col slots">
     <div class="head">
