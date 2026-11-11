@@ -25,7 +25,7 @@
 
   // hover tooltip (build items by id + slot; db entries by raw text); the
   // stat-difference block is POB's Ctrl+D toggle, remembered per viewer
-  let tip = $state<{ lines: ItemTooltip["lines"]; color?: string; x: number; y: number } | null>(null);
+  let tip = $state<{ lines: ItemTooltip["lines"]; color?: string; x: number; y: number; avoid?: { left: number; top: number; right: number; bottom: number } } | null>(null);
   let tipTimer = 0;
   const tipCache = new Map<string, ItemTooltip>();
   let compare = $state(true);
@@ -173,6 +173,33 @@
     clearTimeout(tipTimer);
     tipGen++;
     tip = null;
+  }
+  // Craft: the base pointed at in the open list gets POB's own preview tooltip
+  // (the Craft Item dialog's base.tooltipFunc), placed beside the option.
+  // The open list is portalled to <body>: entering it fires the page's mouseleave,
+  // which must not clear this tooltip (pageLeave); closing the list (null) does.
+  let craftListActive = false;
+  function craftBaseActive(v: string | number | null, rect: DOMRect | null) {
+    craftListActive = !!(craft && v != null && rect);
+    if (!craft || v == null || !rect) return hideTip();
+    const c = { rarity: craft.rarity, type: craft.type, base: Number(v), title: craft.title.trim() || undefined, compare };
+    const key = `craft:${c.rarity}:${c.type}:${c.base}:${c.compare}:${c.title ?? ""}`;
+    clearTimeout(tipTimer);
+    const gen = ++tipGen;
+    const place = (r: ItemTooltip) => {
+      if (gen === tipGen) tip = { lines: r.lines, color: r.color, x: Math.round(rect.right + 8), y: Math.round(rect.top), avoid: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom } };
+    };
+    const hit = tipCache.get(key);
+    if (hit) return place(hit);
+    tipTimer = window.setTimeout(async () => {
+      try {
+        const r = (await api.craftBaseTooltip(c)) as ItemTooltip;
+        tipCache.set(key, r);
+        place(r);
+      } catch {
+        if (gen === tipGen) tip = null;
+      }
+    }, 120);
   }
   const tipItem = (id: number, slotName: string | undefined, e: MouseEvent) =>
     showTip(`i${id}:${slotName ?? ""}:${compare}`, () => api.itemTooltip({ id, slotName, compare }), e);
@@ -463,7 +490,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- any click or scroll dismisses a hover card: the row under it may be about to go away or move -->
-<div class="page" onmouseleave={hideTip} onpointerdown={hideTip} onwheel={hideTip}>
+<div class="page" onmouseleave={() => craftListActive || hideTip()} onpointerdown={hideTip} onwheel={hideTip}>
   <!-- 左:裝備欄 -->
   <section class="col slots">
     <div class="head">
@@ -642,7 +669,7 @@
           </div>
           <div class="crow">
             <span class="k">{t("items.craftBase")}</span>
-            <Select class="select" ariaLabel={t("items.craftBase")} value={craft.base} options={(craft.opts.types[craft.type - 1]?.bases ?? []).map((b, i) => ({ value: i + 1, label: b.labelZh || b.label }))} onchange={(v) => (craft!.base = Number(v))} />
+            <Select class="select" ariaLabel={t("items.craftBase")} value={craft.base} options={(craft.opts.types[craft.type - 1]?.bases ?? []).map((b, i) => ({ value: i + 1, label: b.labelZh || b.label }))} onchange={(v) => (craft!.base = Number(v))} onactive={craftBaseActive} />
           </div>
           <div class="btns">
             <button class="btn primary" disabled={app.busy > 0} onclick={craftCreate}>{t("items.craftCreate")}</button>
@@ -657,7 +684,7 @@
   </section>
 
   {#if tip}
-    <TooltipCard lines={tip.lines} accent={tip.color} x={tip.x} y={tip.y} />
+    <TooltipCard lines={tip.lines} accent={tip.color} x={tip.x} y={tip.y} avoid={tip.avoid ?? null} />
   {/if}
 
   {#if setDialog}

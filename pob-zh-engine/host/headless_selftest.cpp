@@ -1531,6 +1531,36 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 			check("craft_item_options: the Craft Item dialog's rarities plus POB's base types and bases",
 			      okCo && co["rarities"].size() >= 4 && co["types"].size() >= 40 && !craftBase.empty(),
 			      okCo ? "types=" + std::to_string(co["types"].size()) + " first=" + craftType + "/" + craftBase : co.dump().substr(0, 300));
+			// pointing at a base in the open list: POB's own preview tooltip (base.tooltipFunc)
+			{
+				// not the dialog's defaults (type 1 / base 1), so ignoring the indices fails here
+				json bt, btNo, bad;
+				const bool hasPick = okCo && co["types"].size() > 1 && co["types"][1]["bases"].size() > 1;
+				const json pick = hasPick ? co["types"][1]["bases"][1] : json::object();
+				const json req = {{"rarity", 3}, {"type", 2}, {"base", 2}, {"title", "Selftest Craft"}, {"compare", true}};
+				json reqNo = req; reqNo["compare"] = false;
+				bool okBt = hasPick && child.Call("craft_base_tooltip", req, bt, 60000);
+				bool okNo = hasPick && child.Call("craft_base_tooltip", reqNo, btNo, 60000);
+				// tooltip text is already translated by the engine's AddLine, so take either language
+				auto has = [](const json& r, const std::string& en, const std::string& zh) {
+					for (auto& l : r["lines"]) {
+						const std::string raw = l.value("raw", "");
+						if ((!en.empty() && raw.find(en) != std::string::npos) || (!zh.empty() && raw.find(zh) != std::string::npos)) return true;
+					}
+					return false;
+				};
+				const std::string defZh = okCo && co["types"][0]["bases"].size() ? co["types"][0]["bases"][0].value("labelZh", "") : "";
+				bool named = okBt && has(bt, pick.value("name", ""), pick.value("labelZh", ""));
+				bool notDefault = okBt && !has(bt, craftBase, defZh);
+				bool titled = okBt && has(bt, "Selftest Craft", "");
+				bool diffOff = okBt && okNo && btNo["lines"].size() < bt["lines"].size();
+				bool rejected = okCo && !child.Call("craft_base_tooltip", json{{"rarity", 3}, {"type", 1}, {"base", 99999}}, bad, 60000);
+				check("craft_base_tooltip: previews the chosen (non-default) base with the typed name; compare=false drops the differences; an unknown base is refused",
+				      named && notDefault && titled && diffOff && rejected && bt.contains("color"),
+				      okBt ? "lines=" + std::to_string(bt["lines"].size()) + "/" + std::to_string(btNo["lines"].size()) + " named=" + (named ? "y" : "n") +
+				                 " notDefault=" + (notDefault ? "y" : "n") + " titled=" + (titled ? "y" : "n") + " rejected=" + (rejected ? "y" : "n")
+				           : bt.dump().substr(0, 300));
+			}
 			bool okEdC = okCo && child.Call("item_edit_begin", json{{"craft", json{{"rarity", "RARE"}, {"type", craftType}, {"base", craftBase}}}}, edC, 60000);
 			// the affix drop-downs read "+# to maximum Life" / "A/B" (hybrids): every
 			// option must come back translated. A literal '#' used to keep its sign out
