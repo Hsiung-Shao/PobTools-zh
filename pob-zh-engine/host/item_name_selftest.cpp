@@ -239,6 +239,9 @@ int RunItemNameSelftest()
 	expect("Cataclysm Keep, Titanium Spirit Shield", "災變 堅城, 巨人魔盾");
 	expect("Keep", "保留");
 	expect("Hide", "隱藏");
+	// "Pause" bare is the keyboard key in POB's help list; GGPK has no key name, so it stays English.
+	expect_title("Cataclysm Pause", "災變 歇息");
+	expect_untranslated("Pause", "bare Pause (help-list key name) was translated");
 
 	printf("\n-- isolation: the relaxed answer must not escape into the general path --\n");
 	// Called immediately AFTER the titles above, so a shared cache would have
