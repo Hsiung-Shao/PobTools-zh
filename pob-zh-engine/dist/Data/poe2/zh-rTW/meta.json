@@ -32,6 +32,12 @@
   ],
   "glossary_blacklist": [
     "UNUSED",
+    "League:",
+    "League",
+    "Branch",
+    "Drop",
+    "Pause",
+    "Quest",
     "Movement",
     "Defences",
     "Devour",
@@ -58,10 +64,6 @@
     "break",
     "slash",
     "back",
-    "Total Life",
-    "Total Life:",
-    "Total Mana",
-    "Total Mana:",
     "Builds",
     "Cost:"
   ],
