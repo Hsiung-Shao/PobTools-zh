@@ -232,6 +232,14 @@ int RunItemNameSelftest()
 	expect_title("Rapture Curio", "狂喜 逸品");    // above it, unchanged
 	expect_title("Megalomaniac", "妄想症");        // unique, via the exact table
 
+	printf("\n-- title words vs UI words: GGPK words table in titles, clientstrings elsewhere --\n");
+	// "Keep" is 堅城 in a rare name (words) but 保留 as a button (clientstrings).
+	expect_title("Cataclysm Keep", "災變 堅城");
+	expect_title("Cataclysm Hide", "災變 防身甲");
+	expect("Cataclysm Keep, Titanium Spirit Shield", "災變 堅城, 巨人魔盾");
+	expect("Keep", "保留");
+	expect("Hide", "隱藏");
+
 	printf("\n-- isolation: the relaxed answer must not escape into the general path --\n");
 	// Called immediately AFTER the titles above, so a shared cache would have
 	// been populated by now. This is the assertion that the separate cache in
