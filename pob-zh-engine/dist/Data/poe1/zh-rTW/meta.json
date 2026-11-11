@@ -18,6 +18,7 @@
     "ui_tooltips.json"
   ],
   "source_dicts": [
+    "title_words.json",
     "affixes.json",
     "passives_by_id.json",
     "affixes_by_id.json",

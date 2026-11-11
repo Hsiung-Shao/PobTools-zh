@@ -32,6 +32,8 @@
   ],
   "glossary_blacklist": [
     "UNUSED",
+    "Keep",
+    "Hide",
     "League:",
     "League",
     "Branch",
@@ -69,6 +71,7 @@
   ],
   "source_lookup": true,
   "source_dicts": [
+    "title_words.json",
     "mod_stats_by_id.json",
     "stats_by_id.json",
     "affixes_by_id.json"
