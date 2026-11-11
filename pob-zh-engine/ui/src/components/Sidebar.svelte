@@ -173,7 +173,7 @@
     <div class="float" class:pinned={bd.pinned} use:fitFloat={bd.anchor}>
       {#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}
       <div class="float-body">
-        <BreakdownPanel sections={bd.sections} />
+        <BreakdownPanel sections={bd.sections} tipFor={(ref) => api.sidebarBreakdownTip(bd!.row, ref)} />
       </div>
     </div>
   {/if}
@@ -411,7 +411,7 @@
     padding: 10px 14px;
     overflow-y: auto;
   }
-  .float.pinned:global([data-fit-tall]) {
+  .float.pinned {
     pointer-events: auto;
   }
 </style>

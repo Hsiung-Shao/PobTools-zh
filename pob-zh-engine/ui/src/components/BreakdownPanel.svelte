@@ -2,11 +2,46 @@
      浮層寬度跟著內容走、上限是視窗寬;放不下時表格的長文字欄換行,數值與短欄不換行,
      任何一段都不出現水平捲軸。 -->
 <script lang="ts">
-  import type { BreakdownSection } from "$lib/bridge";
+  import { api, type BreakdownSection, type BreakdownTip, type BreakdownTipRef, type TooltipLine } from "$lib/bridge";
+  import TooltipCard from "./TooltipCard.svelte";
   import { t } from "$lib/i18n";
   import PobText from "./PobText.svelte";
 
-  let { sections }: { sections: BreakdownSection[] } = $props();
+  // tipFor: asks POB for a source cell's own tooltip (the item, or the passive
+  // node) -- what the classic window shows when a breakdown row is pointed at.
+  let { sections, tipFor }: { sections: BreakdownSection[]; tipFor?: (ref: BreakdownTipRef) => Promise<BreakdownTip> } = $props();
+
+  type Box = { left: number; top: number; right: number; bottom: number };
+  let tip = $state<{ lines: TooltipLine[]; x: number; y: number; avoid: Box } | null>(null);
+  let tipSeq = 0;
+  const tipCache = new Map<string, TooltipLine[]>();
+  $effect(() => {
+    void sections;
+    tipCache.clear();
+    tip = null;
+  });
+  const refOf = (s: Table, ri: number, key: string) => (tipFor ? s.tips?.find((x) => x.r === ri + 1 && x.k === key) : undefined);
+  async function enterCell(e: MouseEvent, ref: BreakdownTipRef) {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const at = { x: Math.round(r.right + 8), y: Math.round(r.top), avoid: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } };
+    const key = `${ref.s}:${ref.r}:${ref.k}`;
+    const seq = ++tipSeq;
+    let lines = tipCache.get(key);
+    if (!lines) {
+      try {
+        const t = await tipFor!(ref);
+        lines = t.lines ?? (t.node != null ? (await api.nodeInfo(t.node)).lines : []);
+        tipCache.set(key, lines);
+      } catch {
+        return; // the build changed under the request
+      }
+    }
+    if (seq === tipSeq && lines.length) tip = { lines, ...at };
+  }
+  function leaveCell() {
+    tipSeq++;
+    tip = null;
+  }
 
   // Free-text columns of POB's breakdown tables (CalcBreakdownControl: the
   // modifier list's Stat / Skill types / Notes / Source Name, the reservation
@@ -44,9 +79,15 @@
           {#each s.cols as c, i}
             <div class="th" class:right={c.right} class:wrap={wrap[i]}>{c.label}</div>
           {/each}
-          {#each s.rows as row}
+          {#each s.rows as row, ri}
             {#each s.cols as c, i}
-              <div class="td num" class:right={c.right} class:wrap={wrap[i]}><PobText text={row[c.key] ?? ""} muted="var(--ink-1)" /></div>
+              {@const ref = refOf(s, ri, c.key)}
+              {#if ref}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="td num src" class:right={c.right} class:wrap={wrap[i]} onmouseenter={(e) => enterCell(e, ref)} onmouseleave={leaveCell}><PobText text={row[c.key] ?? ""} muted="var(--ink-1)" /></div>
+              {:else}
+                <div class="td num" class:right={c.right} class:wrap={wrap[i]}><PobText text={row[c.key] ?? ""} muted="var(--ink-1)" /></div>
+              {/if}
             {/each}
           {/each}
         </div>
@@ -56,6 +97,7 @@
       <div class="radius">{t("breakdown.radius", { radius: s.radius })}</div>
     {/if}
   {/each}
+  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} avoid={tip.avoid} />{/if}
   {#if sections.length === 0}
     <div class="radius">{t("breakdown.none")}</div>
   {/if}
@@ -100,6 +142,12 @@
     font-size: var(--fs-2xs);
     white-space: nowrap;
     border-bottom: 1px solid var(--edge-0);
+  }
+  /* a source POB has a tooltip for: dotted underline, as a hint it can be pointed at */
+  .td.src {
+    cursor: help;
+    text-decoration: underline dotted var(--ink-3);
+    text-underline-offset: 3px;
   }
   .th.wrap,
   .td.wrap {

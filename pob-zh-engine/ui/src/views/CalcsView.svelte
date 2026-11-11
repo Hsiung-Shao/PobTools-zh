@@ -21,7 +21,7 @@
   let data = $state<CalcsData | null>(null);
   let loadedRev = "";
   let search = $state("");
-  let bd = $state<{ sections: BreakdownSection[]; x: number; y: number; pinned: boolean; key: string } | null>(null);
+  let bd = $state<{ sections: BreakdownSection[]; x: number; y: number; pinned: boolean; key: string; ids?: [number, number, number, number] } | null>(null);
   let bdTimer = 0;
   const bdCache = new Map<string, BreakdownSection[]>();
 
@@ -92,14 +92,14 @@
     const y = e.clientY;
     const hit = bdCache.get(key);
     if (hit) {
-      bd = { sections: hit, x, y, pinned: pin, key };
+      bd = { sections: hit, x, y, pinned: pin, key, ids: [si, ui, ri, ci] };
       return;
     }
     bdTimer = window.setTimeout(async () => {
       try {
         const r = await api.calcsBreakdown(si, ui, ri, ci);
         bdCache.set(key, r.sections);
-        bd = { sections: r.sections, x, y, pinned: pin, key };
+        bd = { sections: r.sections, x, y, pinned: pin, key, ids: [si, ui, ri, ci] };
       } catch {
         bd = null;
       }
@@ -286,7 +286,7 @@
   {#if bd}
     <div class="float" class:pinned={bd.pinned} use:fitFloat={pointAnchor(bd.x, bd.y)}>
       {#if bd.pinned}<span class="pin pill accent">{t("sidebar.pinned")}</span>{/if}
-      <div class="fbody"><BreakdownPanel sections={bd.sections} /></div>
+      <div class="fbody"><BreakdownPanel sections={bd.sections} tipFor={bd.ids ? (ref) => api.calcsBreakdownTip(...bd!.ids!, ref) : undefined} /></div>
     </div>
   {/if}
 
@@ -554,7 +554,7 @@
     padding: 10px 14px;
     overflow-y: auto;
   }
-  .float.pinned:global([data-fit-tall]) {
+  .float.pinned {
     pointer-events: auto;
   }
 </style>
