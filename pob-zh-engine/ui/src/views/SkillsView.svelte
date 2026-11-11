@@ -780,7 +780,7 @@
       <div class="dialog">
         <div class="label">{setDialog.mode === "new" ? t("skills.skillSet") : t("skills.skillSet")}</div>
         <input class="input" placeholder={t("items.setName")} bind:value={setDialog.title} onkeydown={(e) => e.key === "Enter" && setDialogOk()} />
-        {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
+        {#if setDialog.mode === "new"}<label class="chk"><input type="checkbox" class="sw" bind:checked={setDialog.copy} /> {t("items.newSetCopy")}</label>{/if}
         <div class="btns"><button class="btn ghost" onclick={() => (setDialog = null)}>{t("tree.cancel")}</button><button class="btn primary" disabled={!setDialog.title.trim()} onclick={setDialogOk}>OK</button></div>
       </div>
     </div>

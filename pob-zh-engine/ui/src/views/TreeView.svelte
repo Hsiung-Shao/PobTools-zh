@@ -1126,7 +1126,7 @@
       <button class="btn ghost sm" disabled={!power.report?.length} onclick={() => (reportOpen = !reportOpen)}>{t(reportOpen ? "tree.powerHide" : "tree.powerShow")}</button>
     {/if}
     {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>
-    {:else if !power}<span class="dim small">{t("tree.powerOffHint")}</span>{/if}
+    {/if}
     <span class="spacer"></span>
     <!-- right side; TreeSpecBar's compare drop-down and reset are its own elements, `order` slots them in here -->
     {#if model?.poe2 && tree}

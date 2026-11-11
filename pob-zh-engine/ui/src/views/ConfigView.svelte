@@ -157,7 +157,7 @@
   // has room for it within the visible height, otherwise into the shortest
   // column. Heights are the cards' measured heights (a card's height does not
   // depend on its column), with a row-count estimate before the first measure.
-  const COL_PITCH = 370;
+  const COL_PITCH = 350;
   const CUSTOM = "__custom";
   let viewW = $state(0);
   let viewH = $state(0);
@@ -411,7 +411,7 @@
     overflow: auto;
     padding: 10px 10px 24px;
   }
-  /* POB: 360px sections on a 370px pitch */
+  /* POB: sections on a 350px pitch so three columns fit beside the rail and sidebar at 1440 */
   .cols {
     display: flex;
     align-items: flex-start;
@@ -420,7 +420,7 @@
   /* the column count follows the width (see `columns`); one column narrower
      than its pitch shrinks with the page instead of scrolling sideways */
   .col {
-    width: min(360px, 100%);
+    width: min(340px, 100%);
     min-width: 0;
     flex: none;
     display: flex;

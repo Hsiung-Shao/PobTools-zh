@@ -780,7 +780,6 @@
     gap: 6px;
     padding: 8px 10px 10px;
     border: 1px solid var(--edge-1);
-    border-left: 3px solid var(--gold);
     border-radius: var(--radius-m);
     background: var(--surface-1);
   }
