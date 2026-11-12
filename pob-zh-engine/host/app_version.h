@@ -23,7 +23,14 @@
 
 #define PT_VER_STR2(x) #x
 #define PT_VER_STR(x) PT_VER_STR2(x)
-#define POBTOOLS_VERSION_STRING \
+/* beta 建置:cmake -DPOBTOOLS_VERSION_SUFFIX=beta-<commit 短雜湊> → "1.8.6-beta-1ef80a6"。
+ * 版號本身不 bump,beta 跟著目前的正式版走(見 skill pobtools-release「Beta 線」)。 */
+#ifdef POBTOOLS_VERSION_SUFFIX
+#define POBTOOLS_VERSION_STRING POBTOOLS_VERSION_BASE "-" POBTOOLS_VERSION_SUFFIX
+#else
+#define POBTOOLS_VERSION_STRING POBTOOLS_VERSION_BASE
+#endif
+#define POBTOOLS_VERSION_BASE \
 	PT_VER_STR(POBTOOLS_VER_MAJOR) "." PT_VER_STR(POBTOOLS_VER_MINOR) "." PT_VER_STR(POBTOOLS_VER_PATCH)
 
 #endif

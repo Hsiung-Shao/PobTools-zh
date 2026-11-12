@@ -2627,7 +2627,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				clVisible.clear();
 				for (int i = 0; i < (int)changelog.size(); i++)
 					if (needle.empty() || changelog[i].search.find(needle) != std::string::npos) clVisible.push_back(i);
-				const std::string current = "v" POBTOOLS_VERSION_STRING;
+				const std::string current = "v" POBTOOLS_VERSION_BASE; // beta 建置也標它跟著的那一版
 				for (int vi = 0; vi < (int)clVisible.size(); vi++) {
 					const ChangelogRelease& r = changelog[clVisible[vi]];
 					ImGui::PushID(clVisible[vi]);

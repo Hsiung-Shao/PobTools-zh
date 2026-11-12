@@ -554,8 +554,7 @@ bool ParseDataTagSeq(const std::string& tag, long long* seq)
 	return true;
 }
 
-UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
-                       std::tuple<int, int, int> localApp,
+UpdatePlan PlanUpdates(bool hasAppAsset, AppVerKey remoteApp, AppVerKey localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
                        bool autoData, bool allowBack)
 {
@@ -1171,6 +1170,57 @@ static bool pick_data_release(const ordered_json& list, long long localSeq, cons
 	return found;
 }
 
+// "1.8.6" or "1.8.6-beta-<7..40 lowercase hex>" (the beta line's tag: the stable
+// version it follows plus the commit it was built from). Anything else -- data-<n>,
+// "-rc1", an empty or upper-case hash -- is refused, same as parse_semver did.
+static bool parse_app_version(const std::string& s, std::tuple<int, int, int>* base, bool* isBeta)
+{
+	static const std::string kBeta = "-beta-";
+	const size_t dash = s.find('-');
+	std::tuple<int, int, int> v;
+	if (!parse_semver(s.substr(0, dash), &v)) return false;
+	const bool beta = dash != std::string::npos;
+	if (beta) {
+		if (s.compare(dash, kBeta.size(), kBeta) != 0) return false;
+		const std::string hash = s.substr(dash + kBeta.size());
+		if (hash.size() < 7 || hash.size() > 40) return false;
+		for (char c : hash)
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+	}
+	if (base) *base = v;
+	if (isBeta) *isBeta = beta;
+	return true;
+}
+
+// The stable line reads releases/latest, which a beta never is -- unless someone
+// presses "Set as latest" on one. Refusing a beta tag there keeps that mistake from
+// offering a test build to everybody; the beta line takes either shape.
+static bool app_tag_ok_for_line(const std::string& ver, bool betaLine)
+{
+	bool isBeta = false;
+	return parse_app_version(ver, nullptr, &isBeta) && (betaLine || !isBeta);
+}
+
+// GitHub's published_at "2026-11-12T07:25:30Z" -> 20261112072530, 0 if malformed.
+// The hash in a beta tag cannot be ordered, so its release date is what does.
+static long long published_key(const std::string& iso)
+{
+	int Y = 0, M = 0, D = 0, h = 0, m = 0, sec = 0, used = 0;
+	if (sscanf_s(iso.c_str(), "%4d-%2d-%2dT%2d:%2d:%2dZ%n", &Y, &M, &D, &h, &m, &sec, &used) != 6 ||
+	    used != (int)iso.size())
+		return 0;
+	return ((((Y * 100LL + M) * 100 + D) * 100 + h) * 100 + m) * 100 + sec;
+}
+
+// AppVerKey's 4th field for one release object: 0 for a stable tag, its
+// published_key for a beta one (drafts carry published_at = null).
+static long long release_order(const ordered_json& r, bool isBeta)
+{
+	if (!isBeta) return 0;
+	const auto it = r.find("published_at");
+	return (it != r.end() && it->is_string()) ? published_key(it->get<std::string>()) : 0;
+}
+
 // What one release object says about the app line. A struct of its own rather
 // than AppUpdater::RemoteRelease (which is private, so a free function cannot
 // name it) -- and the reason for pulling this apart from the HTTP call is that
@@ -1183,6 +1233,7 @@ struct AppReleasePick {
 	std::string manifestUrl, manifestSig, manifestTag;
 	bool prerelease = false;
 	bool hasApp = false;
+	long long order = 0;             // AppVerKey's 4th field: 0 = stable, published_key = beta
 };
 
 // One release object -> AppReleasePick. `rejected` collects what the caller
@@ -1195,6 +1246,8 @@ static bool read_app_release_json(const ordered_json& j, AppReleasePick* out,
 	if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
 	out->ver = tag;
 	out->prerelease = j.value("prerelease", false);
+	bool isBeta = false;
+	out->order = parse_app_version(tag, nullptr, &isBeta) ? release_order(j, isBeta) : 0;
 	std::string why;
 	out->hasApp = pick_asset(j, kAppAssetPrefix, &out->url, &out->sha, &out->name, &why);
 	if (!why.empty() && rejected) *rejected = "app asset rejected: " + why;
@@ -1218,26 +1271,36 @@ static bool read_app_release_json(const ordered_json& j, AppReleasePick* out,
 // Skipped, and why:
 //   draft            — not published; nobody is supposed to see it yet.
 //   unparsable tag   — this is what keeps the data line out: "data-12" has no
-//                      leading v and parse_semver refuses it, so a data
+//                      leading v and parse_app_version refuses it, so a data
 //                      release can never be mistaken for a program version.
 //                      A future "v2.0.0-rc1" is likewise ignored rather than
 //                      half-understood.
+//   beta with no date — "X.Y.Z-beta-<hash>" is ordered by published_at; one
+//                      without it cannot be placed against its siblings.
 //   no update asset  — a release without PobTools-update-<ver>.zip is not an
 //                      app release (a data release carries only the data zip).
 // ⚠ Highest wins, computed here: the list comes back ordered by created_at, so
 // a beta cut from an older commit sorts after the stable release it supersedes.
 // Same trap fetchDataRelease documents for data-<n>.
 static bool pick_beta_app_release(const ordered_json& arr, AppReleasePick* out,
-                                  std::vector<std::string>* rejected)
+                                  std::vector<std::string>* rejected,
+                                  const std::string& localTag = std::string(),
+                                  long long* localOrder = nullptr)
 {
 	bool found = false;
-	std::tuple<int, int, int> best{ -1, -1, -1 };
+	AppVerKey best{ -1, -1, -1, -1 };
 	for (const auto& r : arr) {
 		if (r.value("draft", false)) continue;
-		std::string tag = r.value("tag_name", std::string());
+		const std::string rawTag = r.value("tag_name", std::string());
+		std::string tag = rawTag;
 		if (!tag.empty() && (tag[0] == 'v' || tag[0] == 'V')) tag.erase(0, 1);
-		std::tuple<int, int, int> v;
-		if (!parse_semver(tag, &v)) continue;
+		std::tuple<int, int, int> b;
+		bool isBeta = false;
+		if (!parse_app_version(tag, &b, &isBeta)) continue;
+		const long long order = release_order(r, isBeta);
+		if (isBeta && order == 0) continue; // a beta with no usable date cannot be placed
+		if (localOrder && !localTag.empty() && rawTag == localTag) *localOrder = order;
+		const AppVerKey v{ std::get<0>(b), std::get<1>(b), std::get<2>(b), order };
 		if (found && !(v > best)) continue;
 		AppReleasePick cand;
 		std::string why;
@@ -1273,7 +1336,8 @@ bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
 		if (beta) {
 			if (!j.is_array()) { if (err) *err = kMsgBadReleaseList; return false; }
 			std::vector<std::string> rejected;
-			const bool found = pick_beta_app_release(j, &pick, &rejected);
+			const bool found = pick_beta_app_release(j, &pick, &rejected,
+			                                         "v" POBTOOLS_VERSION_STRING, &rel->localOrder);
 			for (const auto& why : rejected) log_line(exeDir_, why);
 			if (!found) {
 				// Not one release on the whole list carries an app asset. Said out
@@ -1297,14 +1361,14 @@ bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
 	rel->appName = pick.name;
 	rel->hasApp = pick.hasApp;
 	rel->appPrerelease = pick.prerelease;
+	rel->appOrder = pick.order;
 	rel->appManifest.url = pick.manifestUrl;
 	rel->appManifest.sigUrl = pick.manifestSig;
 	rel->appManifest.tag = pick.manifestTag;
 	// ⚠ 這裡解析失敗就整個檢查失敗,是刻意的:releases/latest 回了一個不是
 	// semver 的 tag,代表有人把 data-<n> 發成了正式 release,那正是本次改版
 	// 最高風險的那一格 —— 沉默地繼續會讓使用者以為自己是最新版。
-	std::tuple<int, int, int> v;
-	if (!parse_semver(rel->appVer, &v)) {
+	if (!app_tag_ok_for_line(rel->appVer, beta)) {
 		if (err) *err = kMsgBadVersion + rel->appVer;
 		return false;
 	}
@@ -1386,9 +1450,15 @@ bool AppUpdater::doCheck(std::string* err, bool userAsked)
 			log_line(exeDir_, "data line unavailable (non-fatal): " + derr);
 	}
 
-	std::tuple<int, int, int> remoteApp, localApp;
-	parse_semver(rel.appVer, &remoteApp); // fetchAppRelease 已驗過
-	parse_semver(POBTOOLS_VERSION_STRING, &localApp);
+	std::tuple<int, int, int> r3{}, l3{};
+	bool localBeta = false;
+	parse_app_version(rel.appVer, &r3, nullptr); // fetchAppRelease 已驗過
+	parse_app_version(POBTOOLS_VERSION_STRING, &l3, &localBeta);
+	const AppVerKey remoteApp{ std::get<0>(r3), std::get<1>(r3), std::get<2>(r3), rel.appOrder };
+	// 本機 beta 在清單上找不到自己(穩定線不抓清單,或那版被刪)時當 1:
+	// 比同版號的正式版新、比任何已發布的同版號 beta 舊。
+	const long long localOrder = !localBeta ? 0 : (rel.localOrder > 0 ? rel.localOrder : 1);
+	const AppVerKey localApp{ std::get<0>(l3), std::get<1>(l3), std::get<2>(l3), localOrder };
 
 	const std::string localData = ReadLocalDataVersion(exeDir_);
 	long long localDataSeq = -1;
@@ -1493,7 +1563,7 @@ bool AppUpdater::doUpdateTranslations(std::string* err)
 		return false;
 	// 下載之前就擋:這份字典要更新的程式才讀得懂,裝了只會換來半翻譯的畫面。
 	std::tuple<int, int, int> localApp;
-	parse_semver(POBTOOLS_VERSION_STRING, &localApp);
+	parse_app_version(POBTOOLS_VERSION_STRING, &localApp, nullptr); // beta 以基底版號比
 	if (!CheckDataMinApp(minApp, localApp, err)) {
 		log_line(exeDir_, latest_.dataTag + " needs app " + minApp + ", this is " +
 		                  POBTOOLS_VERSION_STRING + " -- not applied");
@@ -2118,7 +2188,7 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 	// behaviour. The cases that matter most are the last two: both lines updating
 	// at once, which the old if/else-if silently collapsed into one.
 	{
-		auto v = [](int a, int b, int c) { return std::tuple<int, int, int>{a, b, c}; };
+		auto v = [](int a, int b, int c) { return AppVerKey{ a, b, c, 0 }; };
 		const auto v0190 = v(0, 19, 0);
 		UpdatePlan p;
 		bool ok = true;
@@ -3199,21 +3269,205 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 
 	// T24 -- 關掉 beta 線後,只有使用者自己觸發的檢查才提供回正式版;背景檢查絕不降版。
 	{
-		const UpdatePlan bg = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
+		const UpdatePlan bg = PlanUpdates(true, { 1, 5, 0, 0 }, { 1, 6, 0, 0 },
 		                                  false, -1, -1, true, false);
 		check(!bg.promptApp, "T24a 背景檢查不提供降版");
 
-		const UpdatePlan user = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
+		const UpdatePlan user = PlanUpdates(true, { 1, 5, 0, 0 }, { 1, 6, 0, 0 },
 		                                    false, -1, -1, true, true);
 		check(user.promptApp && user.appIsBack, "T24b 使用者觸發且 beta 關閉時提供回正式版");
 
-		const UpdatePlan same = PlanUpdates(true, { 1, 6, 0 }, { 1, 6, 0 },
+		const UpdatePlan same = PlanUpdates(true, { 1, 6, 0, 0 }, { 1, 6, 0, 0 },
 		                                    false, -1, -1, true, true);
 		check(!same.promptApp, "T24c 版本相同時不提示");
 
-		const UpdatePlan fwd = PlanUpdates(true, { 1, 7, 0 }, { 1, 6, 0 },
+		const UpdatePlan fwd = PlanUpdates(true, { 1, 7, 0, 0 }, { 1, 6, 0, 0 },
 		                                   false, -1, -1, true, true);
 		check(fwd.promptApp && !fwd.appIsBack, "T24d 有新版時照舊是升級");
+	}
+
+	// T60-T66 -- beta 版號帶 -beta-<hash> 後綴:解析、同版號 beta 依發布時間排序、更新提示。
+	{
+		auto asset = [](const std::string& name) {
+			ordered_json a;
+			a["name"] = name;
+			a["browser_download_url"] = "https://x/" + name;
+			a["digest"] = "sha256:" + std::string(64, 'a');
+			return a;
+		};
+		auto release = [&](const char* tag, bool pre, bool draft, const char* publishedAt,
+		                   std::vector<std::string> names) {
+			ordered_json r;
+			r["tag_name"] = tag;
+			r["prerelease"] = pre;
+			r["draft"] = draft;
+			r["published_at"] = publishedAt;
+			ordered_json arr = ordered_json::array();
+			for (const auto& n : names) arr.push_back(asset(n));
+			r["assets"] = arr;
+			return r;
+		};
+		auto appAssets = [](const std::string& v) {
+			return std::vector<std::string>{ "PobTools-update-" + v + ".zip",
+			                                 "PobTools-" + v + ".zip",
+			                                 "SHA256SUMS-" + v + ".txt",
+			                                 "PobTools-manifest-v" + v + ".json",
+			                                 "PobTools-manifest-v" + v + ".json.sig" };
+		};
+		// 順序故意打亂;最晚的 beta 是 draft,不可被選。
+		auto makeList61 = [&]() {
+			return ordered_json::array({
+				release("v1.8.6-beta-bbbbbbb", true, false, "2026-11-12T07:25:30Z",
+				        appAssets("1.8.6-beta-bbbbbbb")),
+				release("data-12", true, false, "2026-11-12T08:00:00Z",
+				        { "PobTools-DataV2-12.zip", "PobTools-manifest-data-12.json",
+				          "PobTools-manifest-data-12.json.sig" }),
+				release("v1.8.6", false, false, "2026-11-10T00:00:00Z", appAssets("1.8.6")),
+				release("v1.8.6-beta-ddddddd", true, true, "2026-11-13T09:00:00Z",
+				        appAssets("1.8.6-beta-ddddddd")),
+				release("v1.8.6-beta-aaaaaaa", true, false, "2026-11-11T01:00:00Z",
+				        appAssets("1.8.6-beta-aaaaaaa")),
+			});
+		};
+		const long long kKeyB = 20261112072530LL;  // "2026-11-12T07:25:30Z"
+		const long long kKeyA = 20261111010000LL;  // "2026-11-11T01:00:00Z"
+
+		// T60: 版號字串解析
+		{
+			std::string bad;
+			struct Ok { const char* s; bool beta; };
+			const Ok oks[] = { { "1.8.6", false }, { "1.8.6-beta-1ef80a6", true } };
+			for (const Ok& o : oks) {
+				std::tuple<int, int, int> base{ 0, 0, 0 };
+				bool isBeta = !o.beta;
+				if (!parse_app_version(o.s, &base, &isBeta)) { bad += std::string(" rejected:") + o.s; continue; }
+				if (base != std::tuple<int, int, int>{ 1, 8, 6 }) bad += std::string(" base-wrong:") + o.s;
+				if (isBeta != o.beta) bad += std::string(" isBeta-wrong:") + o.s;
+			}
+			const char* nos[] = { "data-12", "1.8.6-rc1", "1.8.6-beta-", "1.8.6-beta-XYZ1234",
+			                      "1.8.6-beta-ABCDEF1", "1.8.6-beta-abc", "v1.8.6" };
+			for (const char* s : nos) {
+				std::tuple<int, int, int> base{ 0, 0, 0 };
+				bool isBeta = false;
+				if (parse_app_version(s, &base, &isBeta)) bad += std::string(" accepted:") + s;
+			}
+			check(bad.empty(), ("T60 解析接受正式版與 beta 版號、拒絕其他格式" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T61: 同版號取最晚發布的 beta(不選 draft、data、較早 beta、同版號正式版)
+		{
+			const ordered_json list = makeList61();
+			AppReleasePick pick;
+			std::vector<std::string> rejected;
+			const bool found = pick_beta_app_release(list, &pick, &rejected);
+			std::string bad;
+			if (!found) bad += " not-found";
+			if (found && pick.ver != "1.8.6-beta-bbbbbbb") bad += " ver-" + pick.ver;
+			if (found && pick.manifestTag != "v1.8.6-beta-bbbbbbb") bad += " manifest-tag-" + pick.manifestTag;
+			if (found && pick.name != "PobTools-update-1.8.6-beta-bbbbbbb.zip") bad += " asset-" + pick.name;
+			if (found && !pick.prerelease) bad += " prerelease-flag-lost";
+			if (found && pick.order != kKeyB) bad += " order-" + std::to_string(pick.order);
+			check(bad.empty(), ("T61 beta 線同版號取最晚發布的 beta,跳過 draft 與 data 版" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T62: 新版號的正式版勝過舊版號但較晚發布的 beta
+		{
+			const ordered_json list = ordered_json::array({
+				release("v1.8.6-beta-ccccccc", true, false, "2026-11-12T10:00:00Z",
+				        appAssets("1.8.6-beta-ccccccc")),
+				release("v1.8.7", false, false, "2026-11-12T01:00:00Z", appAssets("1.8.7")),
+			});
+			AppReleasePick pick;
+			const bool found = pick_beta_app_release(list, &pick, nullptr);
+			std::string bad;
+			if (!found) bad += " not-found";
+			if (found && pick.ver != "1.8.7") bad += " ver-" + pick.ver;
+			if (found && pick.order != 0) bad += " order-" + std::to_string(pick.order);
+			check(bad.empty(), ("T62 新版號正式版勝過舊版號較晚發布的 beta" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T63: 本機 beta 遇到同版號更晚的 beta,背景檢查也提示升級
+		{
+			const UpdatePlan p = PlanUpdates(true, AppVerKey{ 1, 8, 6, 20261112072530LL },
+			                                 AppVerKey{ 1, 8, 6, 20261111010000LL },
+			                                 false, -1, -1, true, false);
+			check(p.promptApp && !p.appIsBack, "T63 本機 beta 遇更晚的同版號 beta 提示升級");
+		}
+
+		// T64: 本機就是最新 beta 不提示;本機是較早 beta 才提示;找不到本機 tag 不動 localOrder
+		{
+			const ordered_json list = makeList61();
+			AppReleasePick pick;
+			long long localOrder = -7;
+			const bool found = pick_beta_app_release(list, &pick, nullptr,
+			                                         "v1.8.6-beta-bbbbbbb", &localOrder);
+			std::string bad;
+			if (!found) bad += " not-found";
+			if (localOrder != kKeyB) bad += " localOrder-" + std::to_string(localOrder);
+			const UpdatePlan same = PlanUpdates(true, AppVerKey{ 1, 8, 6, pick.order },
+			                                    AppVerKey{ 1, 8, 6, localOrder },
+			                                    false, -1, -1, true, false);
+			if (same.promptApp) bad += " prompted-when-latest";
+
+			AppReleasePick pickA;
+			long long orderA = -7;
+			pick_beta_app_release(list, &pickA, nullptr, "v1.8.6-beta-aaaaaaa", &orderA);
+			if (orderA != kKeyA) bad += " orderA-" + std::to_string(orderA);
+			const UpdatePlan older = PlanUpdates(true, AppVerKey{ 1, 8, 6, pickA.order },
+			                                     AppVerKey{ 1, 8, 6, orderA },
+			                                     false, -1, -1, true, false);
+			if (!older.promptApp) bad += " no-prompt-when-older";
+
+			AppReleasePick pickZ;
+			long long orderZ = -7;
+			pick_beta_app_release(list, &pickZ, nullptr, "v1.8.6-beta-zzzzzzz", &orderZ);
+			if (orderZ != -7) bad += " localOrder-touched-when-tag-missing";
+			check(bad.empty(), ("T64 本機就是最新 beta 不提示、較早 beta 才提示" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T65: 關掉 beta 線(本機 order 1、遠端正式版 order 0):只有手動檢查才提供回 1.8.6
+		{
+			const UpdatePlan bg = PlanUpdates(true, AppVerKey{ 1, 8, 6, 0 }, AppVerKey{ 1, 8, 6, 1 },
+			                                  false, -1, -1, true, false);
+			const UpdatePlan user = PlanUpdates(true, AppVerKey{ 1, 8, 6, 0 }, AppVerKey{ 1, 8, 6, 1 },
+			                                    false, -1, -1, true, true);
+			std::string bad;
+			if (bg.promptApp) bad += " background-prompted";
+			if (!user.promptApp) bad += " manual-no-prompt";
+			if (!user.appIsBack) bad += " manual-not-back";
+			check(bad.empty(), ("T65 關掉 beta 只在手動檢查提供回正式版 1.8.6" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T66: 本機 beta 的 minApp 閘門以基底版號判斷
+		{
+			std::tuple<int, int, int> base{ 0, 0, 0 };
+			bool isBeta = false;
+			std::string bad;
+			if (!parse_app_version("1.8.6-beta-1ef80a6", &base, &isBeta)) bad += " parse-failed";
+			std::string err;
+			if (!CheckDataMinApp("1.8.6", base, &err)) bad += " minApp-1.8.6-blocked";
+			if (CheckDataMinApp("1.8.7", base, &err)) bad += " minApp-1.8.7-passed";
+			check(bad.empty(), ("T66 本機 beta 的 minApp 以基底版號判斷" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T67: 穩定線拒收 beta 版號(防 beta 被誤標成 latest),beta 線照收
+		{
+			std::string bad;
+			if (!app_tag_ok_for_line("1.8.7", false)) bad += " stable-rejected-1.8.7";
+			if (app_tag_ok_for_line("1.8.7-beta-1ef80a6", false)) bad += " stable-accepted-beta";
+			if (app_tag_ok_for_line("data-22", false)) bad += " stable-accepted-data";
+			if (!app_tag_ok_for_line("1.8.7", true)) bad += " beta-rejected-1.8.7";
+			if (!app_tag_ok_for_line("1.8.7-beta-1ef80a6", true)) bad += " beta-rejected-beta";
+			if (app_tag_ok_for_line("data-22", true)) bad += " beta-accepted-data";
+			check(bad.empty(), ("T67 穩定線拒收 beta 版號、beta 線照收" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
 	}
 
 	// --- 資料包改名 PobTools-DataV2-<n>.zip + manifest 的 minApp ---------------

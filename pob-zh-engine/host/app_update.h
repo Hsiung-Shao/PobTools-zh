@@ -168,6 +168,8 @@ private:
 		// Only the beta line can ever see one, and only so the prompt can say so:
 		// "new version available" for a test build is a half-truth.
 		bool appPrerelease = false;
+		long long appOrder = 0;            // AppVerKey's 4th field for appVer
+		long long localOrder = 0;          // beta line: this build's own tag's order, 0 = not on the list
 		// Data 線 (highest data-<n> among /releases)
 		std::string dataTag;               // "data-3" verbatim — NOT a semver
 		long long   dataSeq = -1;          // 3; -1 = none found
@@ -241,8 +243,11 @@ struct UpdatePlan {
 // allowBack: the user asked for this check with the beta line off. Only then is
 // an older stable release offered -- a background check never walks a build
 // backwards (a dev build is always "newer than stable").
-UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
-                       std::tuple<int, int, int> localApp,
+// (major, minor, patch, order): order is 0 for a stable release and the GitHub
+// published_at (yyyymmddhhmmss) for a "X.Y.Z-beta-<hash>" one, so a beta sorts
+// after the stable release it follows and before the next one.
+using AppVerKey = std::tuple<int, int, int, long long>;
+UpdatePlan PlanUpdates(bool hasAppAsset, AppVerKey remoteApp, AppVerKey localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
                        bool autoData, bool allowBack = false);
 
