@@ -271,6 +271,11 @@ struct AutoApplyInputs {
 // again forever -- the same loop Init's Status reset is there to prevent.
 bool ShouldAutoApplyApp(const AutoApplyInputs& in);
 
+// An apply request (the button, or "retry" on an error banner) must turn into a
+// fresh check when nothing is on offer, or when a back-to-stable offer is still
+// on screen after the beta line was switched on again.
+bool MustRecheckBeforeApply(bool appOffered, bool offerIsBack, bool betaOn);
+
 // "data-3" -> 3. False for anything else, including "v0.19.0" and "data-" — the
 // Data 線 must never mistake an app tag for a data tag.
 bool ParseDataTagSeq(const std::string& tag, long long* seq);

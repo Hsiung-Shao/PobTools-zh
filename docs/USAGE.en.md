@@ -120,8 +120,8 @@ while you are already working still waits for the button in the top right.
 **To try early builds**: tick "Join the beta (early builds)" in the "Program updates"
 section of the Settings page (off by default). Program updates then come from builds that
 have not been made official yet; those are test builds and may have problems that are not
-fixed yet. Turning it back off **does not downgrade** -- you keep the version you have
-until the stable line catches up. The translation data is the same either way.
+fixed yet. Turning it back off offers to **go back to the stable release**; nothing is
+downgraded without a click. The translation data is the same either way.
 
 Advanced: you can also run `pob-zh.exe --app-update-check` (check only) or
 `pob-zh.exe --app-update` (check and update, no automatic restart) from the command line;

@@ -577,6 +577,11 @@ UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
 	return p;
 }
 
+bool MustRecheckBeforeApply(bool appOffered, bool offerIsBack, bool betaOn)
+{
+	return !appOffered || (offerIsBack && betaOn);
+}
+
 bool ShouldAutoApplyApp(const AutoApplyInputs& in)
 {
 	if (!in.settingOn) return false;
@@ -651,6 +656,7 @@ void AppUpdater::Init(const std::wstring& exeDir)
 		// launcher's very first Poll would have asked to apply it again -- a
 		// MessageBox / launcher-frame loop with no way out but Task Manager.
 		st_ = Status{};
+		appOffered_ = false;
 		st_.localVer = POBTOOLS_VERSION_STRING;
 		st_.localDataVer = ReadLocalDataVersion(exeDir_);
 	}
@@ -741,7 +747,10 @@ void AppUpdater::workerLoop()
 		// nothing (it failed, or decided there was nothing to install), latest_ may
 		// still hold an older release -- installing it would downgrade without the
 		// offer ever being shown. Ask again instead.
-		if (cmd == Cmd::UpdateApp && !appOffered_) cmd = Cmd::CheckLoud;
+		// Same for a back-to-stable offer that outlived the beta switch being
+		// turned on again (the re-check was skipped because a POB was running).
+		if (cmd == Cmd::UpdateApp && MustRecheckBeforeApply(appOffered_, Poll().appIsBack, betaChannel_.load()))
+			cmd = Cmd::CheckLoud;
 		std::string err;
 		if (cmd == Cmd::Check || cmd == Cmd::CheckLoud) {
 			if (!doCheck(&err, cmd == Cmd::CheckLoud)) {
@@ -758,6 +767,7 @@ void AppUpdater::workerLoop()
 					setPhase(AppUpdatePhase::Idle, "");
 			}
 		} else if (cmd == Cmd::UpdateTranslations) {
+			appOffered_ = false; // a "retry" after this one failing must not install the app
 			// The one-off apply behind the TransAvailable notice and behind the
 			// "no dictionaries at all" banner. Deliberately not gated on
 			// transUpdates_: the user pressed this.
@@ -2186,6 +2196,11 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		{ AutoApplyInputs in = base(); in.pobBusy = true;           want("pob-running", in, false); }
 		{ AutoApplyInputs in = base(); in.anythingLaunched = true;  want("already-working", in, false); }
 		{ AutoApplyInputs in = base(); in.alreadyTried = true;      want("one-shot-latch", in, false); }
+		// 重試鈕:上次檢查沒提供版本、或回正式版的提示在 beta 重新打開後還留著 → 重新檢查
+		if (!MustRecheckBeforeApply(false, false, false)) { ok = false; bad += " T24f 未提供就重試要重新檢查"; }
+		if (!MustRecheckBeforeApply(true, true, true))   { ok = false; bad += " T24g beta 打開後舊的回正式版提示失效"; }
+		if (MustRecheckBeforeApply(true, false, true))   { ok = false; bad += " T24h 升級提示照常套用"; }
+		if (MustRecheckBeforeApply(true, true, false))   { ok = false; bad += " T24i 回正式版提示照常套用"; }
 		{ AutoApplyInputs in = base(); in.isBack = true;            want("T24e 降版永不自動套用", in, false); }
 
 		// Every phase that is not "waiting for a click". Firing in any of these
