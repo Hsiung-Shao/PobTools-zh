@@ -588,6 +588,17 @@ if (WIN32)
         message(STATUS "pob-zh: 更新來源改為 ${POBTOOLS_UPDATE_REPO}(測試建置,不可發布)")
         target_compile_definitions(pob-zh PRIVATE "POBTOOLS_UPDATE_REPO=\"${POBTOOLS_UPDATE_REPO}\"")
     endif()
+    # beta 建置的版號後綴(beta-<commit 短雜湊 7 碼>),不設就是正式版號。
+    #   cmake -B build -DPOBTOOLS_VERSION_SUFFIX=beta-1ef80a6
+    #   cmake -B build -UPOBTOOLS_VERSION_SUFFIX   # 發完立刻改回
+    # ⚠ cache 會留著:打包腳本 -Mode App 遇到帶後綴的 exe 會擋。
+    if(POBTOOLS_VERSION_SUFFIX)
+        if(NOT POBTOOLS_VERSION_SUFFIX MATCHES "^beta-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$")
+            message(FATAL_ERROR "POBTOOLS_VERSION_SUFFIX 必須是 beta-<7 碼小寫 hex>,收到 ${POBTOOLS_VERSION_SUFFIX}")
+        endif()
+        message(STATUS "pob-zh: beta 建置,版號後綴 ${POBTOOLS_VERSION_SUFFIX}")
+        target_compile_definitions(pob-zh PRIVATE "POBTOOLS_VERSION_SUFFIX=\"${POBTOOLS_VERSION_SUFFIX}\"")
+    endif()
     # host sources contain UTF-8 CJK string literals; force UTF-8 source parsing
     # so MSVC does not misread them under the system (Big5) code page.
     target_compile_options(pob-zh PRIVATE "/utf-8")
