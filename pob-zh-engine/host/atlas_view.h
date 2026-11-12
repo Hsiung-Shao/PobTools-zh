@@ -41,6 +41,9 @@ public:
 	// glide. No-op before the first Draw sized the view.
 	void CenterOn(const AtlasTreeData& d, int nodeIdx);
 
+	// Opens the option picker of an allocated multiple-choice node on the next Draw.
+	void OpenVariantPicker(int nodeIdx) { pickNode_ = nodeIdx; pickRequest_ = true; }
+
 	// One-line status for the toolbar (hovered node name, or a rejection note).
 	const std::string& StatusLine() const { return status_; }
 	// True while a refused click is still worth shouting about: the toolbar
@@ -92,6 +95,8 @@ private:
 	float focusTimer_ = 0.0f;        // seconds left on the highlight ring
 
 	int hover_ = -1;
+	int pickNode_ = -1;              // multiple-choice node whose option picker is up (-1 none)
+	bool pickRequest_ = false;       // open that picker on the next Draw
 	bool allocDirty_ = true;         // recompute hover previews after changes
 	int previewFor_ = -1;
 	float dwell_ = 0.0f;             // seconds the cursor has rested on hover_

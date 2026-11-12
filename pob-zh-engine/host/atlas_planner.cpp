@@ -167,6 +167,7 @@ namespace {
 struct AtlasUndo {
 	bool valid = false;
 	std::vector<int> alloc, targets, blocked;
+	std::map<int, int> variants;
 };
 struct PanelNode { int idx; std::string searchKey; };
 
@@ -207,7 +208,7 @@ public:
 		updater.Init(exeDir);
 		updater.RequestCheck(false);         // throttled to once per day
 		loadSeason(viewTag);
-		showZh = zhLoaded;                   // default Chinese when a mapping exists
+		showZh = zhLoaded || zhLag_;         // default Chinese when a mapping exists (see syncShowZh)
 		if (startupDropped > 0)
 			noticeMsg_ = u8"這個配置存於舊版輿圖樹，" + std::to_string(startupDropped) +
 			             u8" 個已不存在的節點已自動移除。";
@@ -230,6 +231,27 @@ public:
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
 			else if (page == L"planexit" && ready) { enterPlanning(); planningAskExit = true; }
+			// two multiple-choice nodes: one with an option picked, one with its picker up
+			else if ((page == L"variant" || page == L"variantzh") && ready) {
+				int seen = 0;
+				for (int i = 0; i < (int)tree.nodes.size() && seen < 2; i++) {
+					if (tree.nodes[i].variants.empty()) continue;
+					tree.Alloc(tree.FindPathTo(i));
+					if (seen++ == 0) {
+						tree.nodes[i].variant = 0;
+						// plus one whose options finish a base line, for the merged panel line
+						for (int j = 0; j < (int)tree.nodes.size(); j++)
+							if (!tree.nodes[j].variants.empty() && !tree.nodes[j].stats.empty()) {
+								tree.Alloc(tree.FindPathTo(j));
+								tree.nodes[j].variant = 0;
+								break;
+							}
+					}
+					else view.OpenVariantPicker(i);
+				}
+				panelDirty = true;
+				if (page == L"variantzh" && zhLag_) setLagZh(true);
+			}
 		}
 		return true;   // missing data is a screen with an import button, not a failure
 	}
@@ -252,10 +274,12 @@ public:
 			updater.AckReload();
 			ust = updater.Poll();
 		} else if (ust.zhRefreshed) {
-			bool zhWas = zhLoaded;
-			zhLoaded = i18n.Load(exeDir);
-			if (!zhLoaded) showZh = false;
-			else if (!zhWas) showZh = true;
+			bool zhWas = zhLoaded || zhLag_;
+			if (ready) {                 // not ready = `tree` is not viewTag's tree
+				applyZh(viewTag);        // the season on the canvas, with the lag rule
+				reloadMechanics();       // its labels depend on the lag too
+				syncShowZh(zhWas);
+			}
 			importMsg = ust.message;
 			importFailed = false;
 			panelDirty = true; // cached dispZh strings must pick up the new mapping
@@ -317,6 +341,7 @@ public:
 				tree.ApplyAllocIds(buildFile.Active().alloc);
 				tree.ApplyTargetIds(buildFile.Active().targets);
 				tree.ApplyBlockedIds(buildFile.Active().blocked);
+				tree.ApplyVariantIds(buildFile.Active().variants);
 				undo.valid = false;      // undo does not cross projects
 				saveActive();            // persist active index + pruned mapping
 				panelDirty = true;
@@ -573,7 +598,11 @@ public:
 				if (PobUi::MenuRow(PobIcon::Refresh, u8"匯入賽季資料…", nullptr, !updaterBusy))
 					askImportSeason_ = true;
 				if (PobUi::MenuRow(PobIcon::RotateCcw, u8"重置配點…", nullptr, true, true)) askReset_ = true;
-				if (zhLoaded) {
+				if (zhLag_) {               // lagging: the switch is the tree's (see applyZh)
+					PobUi::MenuSeparator();
+					if (PobUi::MenuRow(PobIcon::Languages, lagZh_ ? u8"節點改顯示英文" : u8"節點改顯示中文（部分）", "F2"))
+						setLagZh(!lagZh_);
+				} else if (zhLoaded) {
 					PobUi::MenuSeparator();
 					if (PobUi::MenuRow(PobIcon::Languages, showZh ? u8"節點改顯示英文" : u8"節點改顯示中文", "F2"))
 						showZh = !showZh;
@@ -581,7 +610,10 @@ public:
 				PobUi::EndMenuPopup();
 			}
 			// zh/en display toggle (only when a mapping is available)
-			if (zhLoaded && ImGui::IsKeyPressed(ImGuiKey_F2, false)) showZh = !showZh;
+			if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+				if (zhLag_) setLagZh(!lagZh_);
+				else if (zhLoaded) showZh = !showZh;
+			}
 
 			// --- dialogs: one look (Dialog), the destructive answer in danger ---
 			if (PobUi::BeginDialog(u8"##newproj", &askNew_, u8"新增專案", u8"新專案從空白配點開始。")) {
@@ -620,6 +652,7 @@ public:
 					tree.ApplyAllocIds(buildFile.Active().alloc);
 					tree.ApplyTargetIds(buildFile.Active().targets);
 					tree.ApplyBlockedIds(buildFile.Active().blocked);
+					tree.ApplyVariantIds(buildFile.Active().variants);
 					undo.valid = false;
 					saveActive();
 					panelDirty = true;
@@ -672,6 +705,13 @@ public:
 				if (PobUi::Banner("##apperr", PobUi::BannerTone::Bad, PobIcon::CircleX, u8"沒有完成",
 				                  errBanner_.c_str(), false, nullptr, true) == PobUi::BannerResult::Close)
 					errBanner_.clear();
+				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+			}
+			if (!zhLagMsg_.empty()) {
+				const PobUi::BannerResult br = PobUi::Banner("##apzhlag", PobUi::BannerTone::Info, PobIcon::Languages,
+					u8"譯文尚未齊全", zhLagMsg_.c_str(), false, lagZh_ ? u8"顯示英文" : u8"顯示中文", true);
+				if (br == PobUi::BannerResult::Action) setLagZh(!lagZh_);
+				else if (br == PobUi::BannerResult::Close) zhLagMsg_.clear();
 				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
 			if (!noticeMsg_.empty()) {
@@ -760,6 +800,7 @@ public:
 				tree.ApplyAllocIds(undo.alloc);
 				tree.ApplyTargetIds(undo.targets);
 				tree.ApplyBlockedIds(undo.blocked);
+				tree.ApplyVariantIds(undo.variants);
 				undo.valid = false;
 				saveActive();
 				panelDirty = true;
@@ -963,20 +1004,21 @@ public:
 						for (const PanelNode& p : nodeGroups[r]) {
 							if (!matches(p.searchKey)) continue;
 							const AtlasNode& n = tree.nodes[p.idx];
-							const std::string& nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
+							std::string nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
+							if (!n.variants.empty() && n.variant < 0) nm += u8"（未選選項）";
 							ImGui::PushID(p.idx); // duplicate display names exist
 							ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(kindCol));
 							if (ImGui::Selectable(nm.empty() ? u8"(未命名)" : nm.c_str(), false))
 								view.CenterOn(tree, p.idx);
 							ImGui::PopStyleColor();
 							if (ImGui::IsItemHovered()) {
-								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
+								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(PobUi::D(14.0f)), std::floor(PobUi::D(10.0f)))); // whole px, see AtlasView::drawTooltip
 								ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * scale, FLT_MAX));
 								ImGui::BeginTooltip();
 								ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());
 								// explicit wrap width so a short title cannot make the tooltip a narrow strip
 								ImGui::PushTextWrapPos(380.0f * scale);
-								for (const std::string& s : n.stats) {
+								for (const std::string& s : n.EffStats()) {
 									ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
 									ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
 									ImGui::PopStyleColor();
@@ -1158,6 +1200,7 @@ private:
 	ImVec2 moreAnchor_ = ImVec2(0, 0);   // bottom-right of the more button
 	std::string errBanner_;   // last failure, shown as a banner until closed
 	std::string noticeMsg_;   // startup notice (nodes dropped by a season change)
+	std::string zhLagMsg_;    // the season's translations are not out yet (set per loadSeason)
 
 	void copyShareCode()
 	{
@@ -1845,6 +1888,7 @@ private:
 			buildFile.Active().alloc = tree.AllocIds();
 			buildFile.Active().targets = tree.TargetIds();
 			buildFile.Active().blocked = tree.BlockedIds();
+			buildFile.Active().variants = tree.VariantIds();
 			buildFile.version = tree.Version();
 		}
 		buildFile.Save(exeDir);
@@ -1857,6 +1901,7 @@ private:
 		u.alloc = tree.AllocIds();
 		u.targets = tree.TargetIds();
 		u.blocked = tree.BlockedIds();
+		u.variants = tree.VariantIds();
 	}
 
 	// --- sandbox planning mode ---
@@ -1878,6 +1923,7 @@ private:
 		tree.ApplyAllocIds(planSnapshot.alloc);
 		tree.ApplyTargetIds(planSnapshot.targets);
 		tree.ApplyBlockedIds(planSnapshot.blocked);
+		tree.ApplyVariantIds(planSnapshot.variants);
 		planningMode = false;
 		planningAskExit = false;
 		undo.valid = false;            // undo does not straddle the sandbox
@@ -1887,6 +1933,10 @@ private:
 		planningMode = false;
 		planningAskExit = false;
 		undo = planSnapshot;           // one step back = "before I started planning"
+		// The sandbox began with Reset() and has no option picker: nodes that
+		// survived the planning keep the option they had (others drop out, since
+		// only allocated nodes are saved).
+		tree.ApplyVariantIds(planSnapshot.variants);
 		saveActive();
 	}
 
@@ -1987,7 +2037,9 @@ private:
 		for (int i = 0; i < (int)tree.masteries.size(); i++) {
 			const AtlasMechanicDef* d = AtlasMechanicByEn(tree.masteries[i].name);
 			if (!d) continue;
-			labels[i] = d->zh;
+			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
+			// Chinese for the new name yet: show the game's English, not the old name.
+			labels[i] = (tree.masteries[i].name == d->en && (!zhLag_ || lagZh_)) ? d->zh : tree.masteries[i].name;
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
@@ -2022,31 +2074,78 @@ private:
 			int mapped = tree.ApplyAllocIds(buildFile.Active().alloc);
 			tree.ApplyTargetIds(buildFile.Active().targets);   // must follow ApplyAllocIds
 			tree.ApplyBlockedIds(buildFile.Active().blocked);
+			tree.ApplyVariantIds(buildFile.Active().variants);
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
-			zhLoaded = i18n.LoadVersion(exeDir, tag);
-			std::string older = verIndex.OlderThan(tag);
-			if (zhLoaded && !older.empty()) {
-				AtlasTreeData ot;
-				AtlasI18n oi;
-				std::string e;
-				if (ot.LoadVersion(exeDir, older, &e) && oi.LoadVersion(exeDir, older)) {
-					// zh built from a repoe older than the season: whatever got
-					// paired to this season's NEW/CHANGED lines is a translation
-					// of the old wording -> drop those (fall back to English) and
-					// the stale names of renamed nodes. Unchanged lines keep zh.
-					bool zhLags = !i18n.RepoeVersion().empty() &&
-					              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
-					if (zhLags) {
-						PruneStaleTranslations(i18n, tree, ot);
-						DropRenamedNames(i18n, tree, ot);
-					}
-					BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
-				}
-			}
+			applyZh(tag);
 			ready = view.LoadTextures(exeDir, tree, &loadErr);
 			reloadMechanics();
 		}
+	}
+
+	// (Re)loads the translations of season `tag` for the tree already in `tree`.
+	// Shared by loadSeason and the updater's "mapping rebuilt" path so the two
+	// cannot disagree about what a lagging mapping means.
+	bool zhLag_ = false;      // the viewed season's translations are from an earlier league
+	void applyZh(const std::string& tag)
+	{
+		zhLoaded = i18n.LoadVersion(exeDir, tag);
+		// Translations from an earlier league. What can be shown in Chinese is
+		// only what is certain: lines unchanged since last league, plus lines the
+		// maintainer patched from official templates ("fresh"); everything else
+		// is English (the prune below). That is a half-and-half tree, so by the
+		// user's ruling (2026-11-12) it opens in English with a notice, and
+		// Chinese is one click away (lagZh_). zhLoaded gates every tree string.
+		zhAvail_ = zhLoaded;
+		zhLag_ = zhLoaded && i18n.LagsSeason(tag);
+		zhLagMsg_.clear();
+		if (zhLag_) {
+			KeepFreshOnly(i18n, tree);
+			zhLagMsg_ = i18n.Provisional()
+				? tag + u8" 的繁體中文是暫譯（非官方），用語可能與遊戲內不同；開季後會以官方譯文更新。"
+				: tag + u8" 的繁體中文尚未齊全：能確定的內容可顯示中文，其餘維持英文，開季後補齊。";
+			zhLoaded = lagZh_;
+			return;
+		}
+		std::string older = verIndex.OlderThan(tag);
+		if (zhLoaded && !older.empty()) {
+			AtlasTreeData ot;
+			AtlasI18n oi;
+			std::string e;
+			if (ot.LoadVersion(exeDir, older, &e) && oi.LoadVersion(exeDir, older)) {
+				// Same league, but the mapping predates this revision of it:
+				// whatever got paired to a NEW/CHANGED line is a translation of
+				// the old wording -> drop those (fall back to English) and the
+				// stale names of renamed nodes. Unchanged lines keep zh.
+				bool zhLags = !i18n.RepoeVersion().empty() &&
+				              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
+				if (zhLags) {
+					PruneStaleTranslations(i18n, tree, ot);
+					DropRenamedNames(i18n, tree, ot);
+				}
+				BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
+			}
+		}
+	}
+	// The tree's language while its translations lag (see applyZh). The mapping
+	// stays loaded and pruned in i18n either way; this only flips the gate.
+	bool zhAvail_ = false;    // a mapping for the viewed season is loaded
+	bool lagZh_ = false;      // user asked for Chinese on a lagging tree
+	void setLagZh(bool on)
+	{
+		lagZh_ = on;
+		zhLoaded = zhAvail_ && on;
+		if (on) showZh = true;
+		reloadMechanics();
+		panelDirty = true;
+	}
+	// showZh follows the mapping coming and going. A lagging mapping keeps it on:
+	// the tree is English by zhLoaded, while maps, astrolabes and the revenue tab
+	// have complete translations of their own and read showZh alone.
+	void syncShowZh(bool zhWas)
+	{
+		if (!zhLoaded && !zhLag_) showZh = false;
+		else if (!zhWas) showZh = true;
 	}
 
 	// initial load of the chosen season
@@ -2089,11 +2188,46 @@ private:
 			if (!n.alloc || n.kind == kAtlasStart) continue;
 			const std::string& zhName = zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
 			nodeGroups[rank(n.kind)].push_back({ i, ToLowerAscii(n.name + "\n" + zhName) });
-			for (const std::string& s : n.stats)
+			for (const std::string& s : n.AggStats())
 				AccumulateStatLine(s, statAgg, pos);
 		}
+		// A multiple-choice node's panel line is "<base>: <pick>[ / <pick>]" per
+		// text line (AtlasNode::AggStats), which no mapping has as a whole:
+		// translate the two sides separately.
 		std::function<std::string(const std::string&)> zhFn =
-			[&](const std::string& en) { return i18n.StatLine(en); };
+			[&](const std::string& en) -> std::string {
+				const std::string& whole = i18n.StatLine(en);
+				if (&whole != &en) return whole;
+				size_t sep = en.find(": ");
+				if (sep == std::string::npos) return en;
+				std::string base, pick, picks = en.substr(en.find(": ", en.rfind('\n') == std::string::npos ? 0 : en.rfind('\n')) + 2);
+				// every text line carries the same pick: rebuild the multi-line base
+				for (size_t at = 0; at <= en.size();) {
+					size_t e = en.find('\n', at);
+					std::string line = en.substr(at, e == std::string::npos ? e : e - at);
+					size_t c = line.rfind(": " + picks);
+					if (c == std::string::npos || c + 2 + picks.size() != line.size()) return en;
+					base += (base.empty() ? "" : "\n") + line.substr(0, c);
+					if (e == std::string::npos) break;
+					at = e + 1;
+				}
+				for (size_t at = 0; at <= picks.size();) {
+					size_t e = picks.find(" / ", at);
+					std::string one = picks.substr(at, e == std::string::npos ? e : e - at);
+					pick += (pick.empty() ? "" : " / ") + i18n.StatLine(one);
+					if (e == std::string::npos) break;
+					at = e + 3;
+				}
+				const std::string& zb = i18n.StatLine(base);
+				std::string out;
+				for (size_t at = 0; at <= zb.size();) {
+					size_t e = zb.find('\n', at);
+					out += (out.empty() ? "" : "\n") + zb.substr(at, e == std::string::npos ? e : e - at) + u8"：" + pick;
+					if (e == std::string::npos) break;
+					at = e + 1;
+				}
+				return out;
+			};
 		BuildStatAggDisplay(statAgg, zhLoaded ? &zhFn : nullptr);
 		statOrderEn.resize(statAgg.size());
 		std::iota(statOrderEn.begin(), statOrderEn.end(), 0);
@@ -2877,7 +3011,9 @@ private:
 		// same display rules as the canvas: when the zh snapshot predates the
 		// season, changed lines / renamed nodes fall back to English; unchanged
 		// lines keep (or backfill) their Chinese
-		if (hb && ht) {
+		if (hb && bz.LagsSeason(base)) KeepFreshOnly(bz, bt);
+		if (ht && tz.LagsSeason(targ)) KeepFreshOnly(tz, tt);
+		else if (hb && ht) {
 			bool zhLags = !tz.RepoeVersion().empty() &&
 			              AtlasVersionIndex::CompareSemver(tz.RepoeVersion(), targ) < 0;
 			if (zhLags) {
@@ -3121,11 +3257,10 @@ private:
 	void hotReload(const std::string& okMsg)
 	{
 		verIndex.Load(exeDir);              // a new season may have landed
-		bool zhWas = zhLoaded;              // the zh mapping may have changed too
+		bool zhWas = zhLoaded || zhLag_;    // the zh mapping may have changed too
 		loadSeason(verIndex.Active());      // follow to the (possibly new) active season
 		if (ready) saveActive();            // lock in the id-mapping after any pruning
-		if (!zhLoaded) showZh = false;
-		else if (!zhWas) showZh = true;     // translations appeared: switch on
+		syncShowZh(zhWas);                  // translations appeared: switch on
 		importMsg = ready ? okMsg : loadErr;
 		importFailed = !ready;
 		panelDirty = true;
@@ -3178,6 +3313,7 @@ private:
 		buildFile.builds[idx].notes = e.notes;
 		buildFile.builds[idx].targets = e.targets;
 		buildFile.builds[idx].blocked = e.blocked;
+		buildFile.builds[idx].variants = e.variants;
 		// Each Sanitize clears the note it is handed, so they get their own
 		// and are concatenated afterwards.
 		std::string snote, anote;
@@ -3195,6 +3331,7 @@ private:
 		int kept = tree.ApplyAllocIds(e.alloc);
 		tree.ApplyTargetIds(e.targets);
 		tree.ApplyBlockedIds(e.blocked);
+		tree.ApplyVariantIds(e.variants);
 		undo.valid = false;
 		saveActive();
 		panelDirty = true;

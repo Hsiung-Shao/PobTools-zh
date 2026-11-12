@@ -86,6 +86,9 @@ struct AtlasBuildEntry {
 	// Nodes the user ruled out; the solver routes around them. Kept so a
 	// planning session can be resumed instead of re-marked from scratch.
 	std::vector<int> blocked;
+	// Picked options of multiple-choice nodes (3.30+): node id -> effect id.
+	// Part of the build, so it travels through the export json and share code.
+	std::map<int, int> variants;
 	// What the player pays for one map of this project, in chaos (the 收益
 	// tab's cost card; poe.ninja no longer prices regular maps). 0 = unset.
 	// A market price, not part of the build: written to the build file only,

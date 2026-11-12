@@ -602,8 +602,10 @@ if (WIN32)
     set_property(TARGET pob-zh PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     find_package(unofficial-webview2 CONFIG REQUIRED)
-    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 unofficial::webview2::webview2 delayimp)
-    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll")
+    # webpdecoder: the 3.30+ atlas sprite sheets are webp. Its DLL already ships
+    # in engine/ for SimpleGraphic, hence delay-loaded like glfw3/libGLESv2.
+    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 unofficial::webview2::webview2 WebP::webpdecoder delayimp)
+    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll" "/DELAYLOAD:libwebpdecoder.dll")
     set_target_properties(pob-zh PROPERTIES OUTPUT_NAME "pob-zh")
     install(TARGETS pob-zh RUNTIME DESTINATION ".")
     # Bundled base-type -> item-class map (generated from POB Data/Bases) and

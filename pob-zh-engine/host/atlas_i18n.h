@@ -46,6 +46,11 @@ public:
 	// "3.28.0.16"); callers compare it against the season tag to decide whether
 	// the translations predate the season (see PruneStaleTranslations).
 	const std::string& RepoeVersion() const { return repoe_; }
+	// True when the mapping was built from an EARLIER LEAGUE than `tag` (major.
+	// minor only: repoe "3.29.3.6" lags "3.30.0", but "3.29.0.4.2" does not lag
+	// "3.29.1" -- that is the same league re-exported). While it lags, the whole
+	// tree is shown in English (see the planner's applyZh).
+	bool LagsSeason(const std::string& tag) const;
 
 	// True when the zh of `en` is season-official (mapping "fresh" list: lines
 	// patched from the season's own game files while repoe still lags). Such
@@ -53,6 +58,12 @@ public:
 	bool IsFreshStat(const std::string& en) const { return freshStats_.count(en) != 0; }
 	// Inject a fresh marker (self-tests / symmetric to AddStat).
 	void MarkFreshStat(const std::string& en) { freshStats_.insert(en); }
+	// Same for node names (mapping "freshNames": node ids).
+	bool IsFreshName(int id) const { return freshNames_.count(id) != 0; }
+	void MarkFreshName(int id) { freshNames_.insert(id); }
+	// The fresh entries are a maintainer's own translation made before the
+	// season's game files existed (mapping "provisional": true), not official text.
+	bool Provisional() const { return provisional_; }
 
 	// Drop a stat-line translation (see PruneStaleTranslations in atlas_diff.h:
 	// changed lines whose zh predates the season fall back to English).
@@ -69,6 +80,8 @@ private:
 	std::unordered_map<int, std::string> nameById_;
 	std::unordered_map<std::string, std::string> statByEn_;
 	std::unordered_set<std::string> freshStats_;
+	std::unordered_set<int> freshNames_;
+	bool provisional_ = false;
 	std::string note_;
 	std::string repoe_;
 	bool loaded_ = false;

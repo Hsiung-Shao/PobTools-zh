@@ -158,13 +158,13 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 			nd.id = nn.id; nd.nodeKind = nn.kind;
 			nd.name = nn.name; nd.nameZh = i18nNew ? i18nNew->NodeName(nn.id, nn.name) : nn.name;
 			nd.x = nn.x; nd.y = nn.y;
-			nd.statsNew = nn.stats;
+			nd.statsNew = nn.AllStats();
 			diff.added.push_back(std::move(nd));
 			continue;
 		}
 		const AtlasNode& on = oldTree.nodes[oit->second];
 		std::vector<AtlasStatDelta> deltas;
-		DiffStats(on.stats, nn.stats, i18nOld, i18nNew, deltas);
+		DiffStats(on.AllStats(), nn.AllStats(), i18nOld, i18nNew, deltas);
 		bool nameChanged = on.name != nn.name;
 		if (deltas.empty() && !nameChanged) continue; // unchanged node
 		AtlasNodeDiff nd;
@@ -178,8 +178,8 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 			nd.nameOldZh = i18nOld ? i18nOld->NodeName(on.id, on.name) : on.name;
 		}
 		nd.stats = std::move(deltas);
-		nd.statsOld = on.stats;
-		nd.statsNew = nn.stats;
+		nd.statsOld = on.AllStats();
+		nd.statsNew = nn.AllStats();
 		diff.modified.push_back(std::move(nd));
 	}
 
@@ -191,7 +191,7 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 		nd.id = on.id; nd.nodeKind = on.kind;
 		nd.name = on.name; nd.nameZh = i18nOld ? i18nOld->NodeName(on.id, on.name) : on.name;
 		nd.x = on.x; nd.y = on.y;
-		nd.statsOld = on.stats;
+		nd.statsOld = on.AllStats();
 		diff.removed.push_back(std::move(nd));
 	}
 
@@ -210,13 +210,13 @@ int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
 	// exact English line -> old zh (only lines that actually have a translation)
 	std::unordered_map<std::string, std::string> oldEnToZh;
 	for (const AtlasNode& n : oldTree.nodes)
-		for (const std::string& en : n.stats)
+		for (const std::string& en : n.AllStats())
 			if (oldI18n.HasStat(en))
 				oldEnToZh.emplace(en, oldI18n.StatLine(en));
 
 	int added = 0;
 	for (const AtlasNode& n : newTree.nodes)
-		for (const std::string& en : n.stats) {
+		for (const std::string& en : n.AllStats()) {
 			if (newI18n.HasStat(en)) continue;      // already translated this season
 			auto it = oldEnToZh.find(en);           // EXACT match only — no number/wording change
 			if (it == oldEnToZh.end()) continue;    // any change -> keep the new English
@@ -224,6 +224,16 @@ int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
 			added++;
 		}
 	return added;
+}
+
+int KeepFreshOnly(AtlasI18n& i18n, const AtlasTreeData& tree)
+{
+	int dropped = 0;
+	for (const std::string& en : i18n.TranslatedStatLines())
+		if (!i18n.IsFreshStat(en)) { i18n.DropStat(en); dropped++; }
+	for (const AtlasNode& n : tree.nodes)
+		if (!i18n.IsFreshName(n.id) && &i18n.NodeName(n.id, n.name) != &n.name) { i18n.DropName(n.id); dropped++; }
+	return dropped;
 }
 
 int DropRenamedNames(AtlasI18n& newI18n, const AtlasTreeData& newTree, const AtlasTreeData& oldTree)
@@ -243,11 +253,11 @@ int PruneStaleTranslations(AtlasI18n& newI18n, const AtlasTreeData& newTree, con
 	// every English stat line that already existed last season
 	std::unordered_set<std::string> oldLines;
 	for (const AtlasNode& on : oldTree.nodes)
-		for (const std::string& s : on.stats) oldLines.insert(s);
+		for (const std::string& s : on.AllStats()) oldLines.insert(s);
 	// lines the new tree actually uses (the zh file mirrors the tree, but be safe)
 	std::unordered_set<std::string> newLines;
 	for (const AtlasNode& nn : newTree.nodes)
-		for (const std::string& s : nn.stats) newLines.insert(s);
+		for (const std::string& s : nn.AllStats()) newLines.insert(s);
 
 	int dropped = 0;
 	for (const std::string& en : newI18n.TranslatedStatLines()) {
