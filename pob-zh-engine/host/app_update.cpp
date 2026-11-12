@@ -104,6 +104,7 @@ static const wchar_t* kDataStampRel = L"Data\\translations_version.json";
 	X(kMsgUpToDate,        u8"已是最新版 v")                                     \
 	X(kMsgAppFound,        u8"發現新版 v")                                       \
 	X(kMsgBetaTag,         u8"（beta）")                                         \
+	X(kMsgAppBack,         u8"可回到正式版 v")                                   \
 	X(kMsgAppCurrent,      u8"（目前 v")                                         \
 	X(kMsgCloseParen,      u8"）")                                               \
 	/* 翻譯資料線 */                                                            \
@@ -192,6 +193,10 @@ static std::string MsgAppAvailable(const std::string& ver, bool beta)
 {
 	return std::string(kMsgAppFound) + ver + (beta ? kMsgBetaTag : "") +
 	       kMsgAppCurrent + POBTOOLS_VERSION_STRING + kMsgCloseParen;
+}
+static std::string MsgAppBack(const std::string& ver)
+{
+	return std::string(kMsgAppBack) + ver + kMsgAppCurrent + POBTOOLS_VERSION_STRING + kMsgCloseParen;
 }
 static std::string MsgAppDownloading(const std::string& ver)
 {
@@ -552,7 +557,7 @@ bool ParseDataTagSeq(const std::string& tag, long long* seq)
 UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
                        std::tuple<int, int, int> localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
-                       bool autoData)
+                       bool autoData, bool allowBack)
 {
 	UpdatePlan p;
 	// EVERY app bump prompts now, patch included. The old rule ("patch = data
@@ -561,7 +566,8 @@ UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
 	// applying an app pack always means renaming pob-zh.exe + engine\* and
 	// restarting the process. Doing that without a click would close the program
 	// in front of the user.
-	p.promptApp = hasAppAsset && remoteApp > localApp;
+	p.appIsBack = remoteApp < localApp;
+	p.promptApp = hasAppAsset && (remoteApp > localApp || (allowBack && p.appIsBack));
 
 	// -1 (unstamped install) is smaller than every real sequence, so a v0.18.0
 	// install picks up the newest pack exactly once and is stamped from then on.
@@ -579,6 +585,9 @@ bool ShouldAutoApplyApp(const AutoApplyInputs& in)
 	// (downloading, staging, ready) is already this same update in flight, and
 	// starting it again would queue a second download of the same zip.
 	if (in.phase != AppUpdatePhase::AppAvailable) return false;
+	// Going back to stable replaces a newer build with an older one: never
+	// without a click, whatever the setting says.
+	if (in.isBack) return false;
 	// Swapping engine\*.dll under a running POB is what SetHold protects against;
 	// the click path is disabled for the same reason.
 	if (in.pobBusy) return false;
@@ -730,7 +739,7 @@ void AppUpdater::workerLoop()
 		}
 		std::string err;
 		if (cmd == Cmd::Check || cmd == Cmd::CheckLoud) {
-			if (!doCheck(&err)) {
+			if (!doCheck(&err, cmd == Cmd::CheckLoud)) {
 				// A background check stays quiet and is retried next launch
 				// (lastCheckUtc is only persisted on success). A check the user
 				// pressed a button for does NOT: putting the button back exactly
@@ -1335,7 +1344,7 @@ bool AppUpdater::fetchDataRelease(RemoteRelease* rel, std::string* err)
 	return true;
 }
 
-bool AppUpdater::doCheck(std::string* err)
+bool AppUpdater::doCheck(std::string* err, bool userAsked)
 {
 	// A POB is running: it holds engine\*.dll open, and this function goes on to
 	// overwrite Data\*.json with a fresh translation pack. Return without
@@ -1376,7 +1385,12 @@ bool AppUpdater::doCheck(std::string* err)
 
 	const UpdatePlan plan = PlanUpdates(rel.hasApp, remoteApp, localApp,
 	                                    rel.hasData, rel.dataSeq, localDataSeq,
-	                                    transUpdates_.load());
+	                                    transUpdates_.load(),
+	                                    userAsked && !betaChannel_.load());
+	{
+		std::lock_guard<std::mutex> lk(stMx_);
+		st_.appIsBack = plan.promptApp && plan.appIsBack;
+	}
 
 	// 翻譯線先跑(它會自己套用完),程式線接著**無條件**判斷。
 	// ⚠ 這兩段以前是 if / else-if。當時 patch 與 minor 互斥所以安全,拆線後
@@ -1425,7 +1439,10 @@ bool AppUpdater::doCheck(std::string* err)
 		         MsgDataAvailable(rel.dataTag));
 	}
 
-	if (plan.promptApp) {
+	if (plan.promptApp && plan.appIsBack) {
+		log_line(exeDir_, "beta line off: offering stable v" + rel.appVer + " over v" POBTOOLS_VERSION_STRING);
+		setPhase(AppUpdatePhase::AppAvailable, MsgAppBack(rel.appVer));
+	} else if (plan.promptApp) {
 		setPhase(AppUpdatePhase::AppAvailable,
 		         MsgAppAvailable(rel.appVer, rel.appPrerelease));
 	} else {
@@ -1841,7 +1858,7 @@ static void attach_parent_console()
 	}
 }
 
-int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
+int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly, bool allowBack)
 {
 	attach_parent_console();
 
@@ -1862,7 +1879,7 @@ int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly)
 	}
 
 	std::string err;
-	if (!u.doCheck(&err)) {
+	if (!u.doCheck(&err, allowBack)) {
 		printf("FAIL: %s\n", err.c_str());
 		log_line(exeDir, std::string("cli check failed: ") + err);
 		// The CLI calls doCheck DIRECTLY instead of queueing a command, so it never
@@ -2158,6 +2175,7 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		{ AutoApplyInputs in = base(); in.pobBusy = true;           want("pob-running", in, false); }
 		{ AutoApplyInputs in = base(); in.anythingLaunched = true;  want("already-working", in, false); }
 		{ AutoApplyInputs in = base(); in.alreadyTried = true;      want("one-shot-latch", in, false); }
+		{ AutoApplyInputs in = base(); in.isBack = true;            want("T24e 降版永不自動套用", in, false); }
 
 		// Every phase that is not "waiting for a click". Firing in any of these
 		// would start a second download of the update already being fetched.
@@ -2604,6 +2622,7 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		expectCovered(MsgUpToDate());
 		expectCovered(MsgAppAvailable("9.9.9", false));
 		expectCovered(MsgAppAvailable("9.9.9", true));
+		expectCovered(MsgAppBack("9.9.9"));
 		expectCovered(MsgAppDownloading("9.9.9"));
 		expectCovered(MsgDataAvailable("data-42"));
 		expectCovered(MsgDataDownloading("data-42"));
@@ -3152,17 +3171,23 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 		                     (bad2.empty() ? std::string() : (" --" + bad2))).c_str());
 	}
 
-	// T24 -- leaving the beta line never downgrades. The tester is on 1.6.0 while
-	// releases/latest is still 1.5.0; the honest answer is "up to date", and the
-	// wrong one (offering 1.5.0) would walk the install backwards over a config
-	// and a dictionary set the older build may not understand.
+	// T24 -- 關掉 beta 線後,只有使用者自己觸發的檢查才提供回正式版;背景檢查絕不降版。
 	{
-		const UpdatePlan back = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
-		                                    false, -1, -1, true);
+		const UpdatePlan bg = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
+		                                  false, -1, -1, true, false);
+		check(!bg.promptApp, "T24a 背景檢查不提供降版");
+
+		const UpdatePlan user = PlanUpdates(true, { 1, 5, 0 }, { 1, 6, 0 },
+		                                    false, -1, -1, true, true);
+		check(user.promptApp && user.appIsBack, "T24b 使用者觸發且 beta 關閉時提供回正式版");
+
+		const UpdatePlan same = PlanUpdates(true, { 1, 6, 0 }, { 1, 6, 0 },
+		                                    false, -1, -1, true, true);
+		check(!same.promptApp, "T24c 版本相同時不提示");
+
 		const UpdatePlan fwd = PlanUpdates(true, { 1, 7, 0 }, { 1, 6, 0 },
-		                                   false, -1, -1, true);
-		check(!back.promptApp && fwd.promptApp,
-		      "T24 turning the beta line off does not downgrade (older remote is never offered)");
+		                                   false, -1, -1, true, true);
+		check(fwd.promptApp && !fwd.appIsBack, "T24d 有新版時照舊是升級");
 	}
 
 	// --- 資料包改名 PobTools-DataV2-<n>.zip + manifest 的 minApp ---------------

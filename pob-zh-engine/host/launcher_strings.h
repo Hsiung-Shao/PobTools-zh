@@ -217,8 +217,8 @@
 	   walk the install backwards, and that the dictionaries are the same ones
 	   the stable line gets -- because nobody reads a hint twice. */            \
 	X(betaChannel,       u8"參加 beta 測試（搶先版）", u8"Join the beta (early builds)") \
-	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後不會退回舊版，會等正式版追上來。翻譯資料與正式版共用同一份。", \
-	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.") \
+	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後會問你要不要回到正式版，不會自動退回。翻譯資料與正式版共用同一份。", \
+	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off offers to go back to the stable release; nothing is downgraded without a click. The translation data is the same either way.") \
 	/* Link-board labels that are NOT proper nouns. The rest of kLinks stays
 	   hard-coded: site names (PoeDB, poe.ninja, FilterBlade...) read the same in
 	   every language, and the Chinese-community links keep their Chinese labels
@@ -309,8 +309,8 @@
 	                     u8"Update checks, translation data and icon downloads go through it, e.g. 127.0.0.1:7890") \
 	X(autoAppUpdateHintShort, u8"只在剛開啟、還沒開過 POB 或工具時才會安裝並重開", \
 	                     u8"Only right after start, before any POB or tool has been opened") \
-	X(betaHintShort,     u8"更新到還沒轉正式的搶先版；關掉後不會退回，會等正式版追上", \
-	                     u8"Get builds before they are released; turning it off never downgrades, you wait for the release instead") \
+	X(betaHintShort,     u8"更新到還沒轉正式的搶先版；關掉後可選擇回到正式版", \
+	                     u8"Get builds before they are released; turning it off offers to go back to the stable release") \
 	X(transUpdateHintShort, u8"自己在改翻譯的話請關掉，以免被新版蓋掉", \
 	                     u8"Turn it off if you edit translations yourself, so an update does not overwrite them") \
 	X(pobPerfNote,       u8"改了立即套用到開著的 POB",     u8"Applies to open POB windows right away") \

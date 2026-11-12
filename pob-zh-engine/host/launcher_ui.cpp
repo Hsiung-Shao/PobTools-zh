@@ -1962,6 +1962,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ai.pobBusy = pobBusy;
 				ai.anythingLaunched = anythingLaunched;
 				ai.alreadyTried = autoApplyTried;
+				ai.isBack = ust.appIsBack;
 				if (!live && ShouldAutoApplyApp(ai)) {
 					autoApplyTried = true;
 					appUpd->StartAppUpdate();
