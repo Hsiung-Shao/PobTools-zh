@@ -22,13 +22,13 @@
 #include "editor_data.h"
 #include "launcher_editor.h"
 #include "tool_panel.h"
-#include "win_util.h"
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <cstdio>
