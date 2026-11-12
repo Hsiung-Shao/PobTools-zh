@@ -23,7 +23,7 @@
 
 using nlohmann::ordered_json;
 
-// file helpers (same conventions as economy_service.cpp)
+// file helpers
 
 static bool read_file_utf8(const std::wstring& path, std::string& out)
 {
