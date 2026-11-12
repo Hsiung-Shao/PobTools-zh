@@ -46,6 +46,11 @@ public:
 	// "3.28.0.16"); callers compare it against the season tag to decide whether
 	// the translations predate the season (see PruneStaleTranslations).
 	const std::string& RepoeVersion() const { return repoe_; }
+	// True when the mapping was built from an EARLIER LEAGUE than `tag` (major.
+	// minor only: repoe "3.29.3.6" lags "3.30.0", but "3.29.0.4.2" does not lag
+	// "3.29.1" -- that is the same league re-exported). While it lags, the whole
+	// tree is shown in English (see the planner's applyZh).
+	bool LagsSeason(const std::string& tag) const;
 
 	// True when the zh of `en` is season-official (mapping "fresh" list: lines
 	// patched from the season's own game files while repoe still lags). Such

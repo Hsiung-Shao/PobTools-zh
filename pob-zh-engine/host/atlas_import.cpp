@@ -370,7 +370,8 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 			if (ka == K_WORMHOLE && kb == K_WORMHOLE) {
 				e["w"] = 1;
 			} else if (connStraight.count({ a, b })) {
-				// explicit straight link: overrides the same-orbit arc below
+				// explicit straight link: overrides the same-orbit arc below, and a
+				// centre given from the other end (checked next) loses to it too
 			} else if (nGroup[a] == nGroup[b] && nOrbit[a] == nOrbit[b] && nOrbit[a] > 0) {
 				const ordered_json& grp = groups.at(std::to_string(nGroup[a]));
 				double a0 = nAng[a] - kPi / 2.0, a1 = nAng[b] - kPi / 2.0;

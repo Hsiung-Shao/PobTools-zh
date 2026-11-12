@@ -208,7 +208,7 @@ public:
 		updater.Init(exeDir);
 		updater.RequestCheck(false);         // throttled to once per day
 		loadSeason(viewTag);
-		showZh = zhLoaded;                   // default Chinese when a mapping exists
+		showZh = zhLoaded || zhLag_;         // default Chinese when a mapping exists (see syncShowZh)
 		if (startupDropped > 0)
 			noticeMsg_ = u8"這個配置存於舊版輿圖樹，" + std::to_string(startupDropped) +
 			             u8" 個已不存在的節點已自動移除。";
@@ -264,10 +264,10 @@ public:
 			updater.AckReload();
 			ust = updater.Poll();
 		} else if (ust.zhRefreshed) {
-			bool zhWas = zhLoaded;
-			zhLoaded = i18n.Load(exeDir);
-			if (!zhLoaded) showZh = false;
-			else if (!zhWas) showZh = true;
+			bool zhWas = zhLoaded || zhLag_;
+			applyZh(viewTag);            // the season on the canvas, with the lag rule
+			reloadMechanics();           // its labels depend on the lag too
+			syncShowZh(zhWas);
 			importMsg = ust.message;
 			importFailed = false;
 			panelDirty = true; // cached dispZh strings must pick up the new mapping
@@ -2019,7 +2019,7 @@ private:
 			if (!d) continue;
 			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
 			// Chinese for the new name yet: show the game's English, not the old name.
-			labels[i] = (tree.masteries[i].name == d->en && zhLagMsg_.empty()) ? d->zh : tree.masteries[i].name;
+			labels[i] = (tree.masteries[i].name == d->en && !zhLag_) ? d->zh : tree.masteries[i].name;
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
@@ -2057,40 +2057,58 @@ private:
 			tree.ApplyVariantIds(buildFile.Active().variants);
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
-			zhLoaded = i18n.LoadVersion(exeDir, tag);
-			// The translations predate this season. Only the lines that did not
-			// change could keep their Chinese, which leaves a tree that is half
-			// and half; the user's ruling (2026-11-12) is the whole tree in
-			// English until the season's own translations exist -- and a notice,
-			// so it reads as temporary rather than broken.
-			zhLagMsg_.clear();
-			if (zhLoaded && !i18n.RepoeVersion().empty() &&
-			    AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0) {
-				zhLagMsg_ = tag + u8" 的節點內容先全部顯示英文，繁體中文會在開季後補上。";
-				zhLoaded = false;
-			}
-			std::string older = verIndex.OlderThan(tag);
-			if (zhLoaded && !older.empty()) {
-				AtlasTreeData ot;
-				AtlasI18n oi;
-				std::string e;
-				if (ot.LoadVersion(exeDir, older, &e) && oi.LoadVersion(exeDir, older)) {
-					// zh built from a repoe older than the season: whatever got
-					// paired to this season's NEW/CHANGED lines is a translation
-					// of the old wording -> drop those (fall back to English) and
-					// the stale names of renamed nodes. Unchanged lines keep zh.
-					bool zhLags = !i18n.RepoeVersion().empty() &&
-					              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
-					if (zhLags) {
-						PruneStaleTranslations(i18n, tree, ot);
-						DropRenamedNames(i18n, tree, ot);
-					}
-					BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
-				}
-			}
+			applyZh(tag);
 			ready = view.LoadTextures(exeDir, tree, &loadErr);
 			reloadMechanics();
 		}
+	}
+
+	// (Re)loads the translations of season `tag` for the tree already in `tree`.
+	// Shared by loadSeason and the updater's "mapping rebuilt" path so the two
+	// cannot disagree about what a lagging mapping means.
+	bool zhLag_ = false;      // the viewed season's translations are from an earlier league
+	void applyZh(const std::string& tag)
+	{
+		zhLoaded = i18n.LoadVersion(exeDir, tag);
+		// Translations from an earlier league: only the lines that did not change
+		// could keep their Chinese, which leaves a tree that is half and half.
+		// The user's ruling (2026-11-12) is the whole tree in English until the
+		// league's own translations exist -- and a notice, so it reads as
+		// temporary rather than broken. zhLoaded gates every tree string.
+		zhLag_ = zhLoaded && i18n.LagsSeason(tag);
+		zhLagMsg_.clear();
+		if (zhLag_) {
+			zhLagMsg_ = tag + u8" 的節點內容先全部顯示英文，繁體中文會在開季後補上。";
+			zhLoaded = false;
+			return;
+		}
+		std::string older = verIndex.OlderThan(tag);
+		if (zhLoaded && !older.empty()) {
+			AtlasTreeData ot;
+			AtlasI18n oi;
+			std::string e;
+			if (ot.LoadVersion(exeDir, older, &e) && oi.LoadVersion(exeDir, older)) {
+				// Same league, but the mapping predates this revision of it:
+				// whatever got paired to a NEW/CHANGED line is a translation of
+				// the old wording -> drop those (fall back to English) and the
+				// stale names of renamed nodes. Unchanged lines keep zh.
+				bool zhLags = !i18n.RepoeVersion().empty() &&
+				              AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0;
+				if (zhLags) {
+					PruneStaleTranslations(i18n, tree, ot);
+					DropRenamedNames(i18n, tree, ot);
+				}
+				BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
+			}
+		}
+	}
+	// showZh follows the mapping coming and going. A lagging mapping keeps it on:
+	// the tree is English by zhLoaded, while maps, astrolabes and the revenue tab
+	// have complete translations of their own and read showZh alone.
+	void syncShowZh(bool zhWas)
+	{
+		if (!zhLoaded && !zhLag_) showZh = false;
+		else if (!zhWas) showZh = true;
 	}
 
 	// initial load of the chosen season
@@ -2918,6 +2936,10 @@ private:
 		if (!tt.LoadVersion(exeDir, targ, &e)) { diffErr = u8"載入 " + targ + u8" 失敗：" + e; return; }
 		AtlasI18n bz, tz;
 		bool hb = bz.LoadVersion(exeDir, base), ht = tz.LoadVersion(exeDir, targ);
+		// a side whose translations are from an earlier league is all English,
+		// exactly as on the canvas (applyZh)
+		if (hb && bz.LagsSeason(base)) hb = false;
+		if (ht && tz.LagsSeason(targ)) ht = false;
 		// same display rules as the canvas: when the zh snapshot predates the
 		// season, changed lines / renamed nodes fall back to English; unchanged
 		// lines keep (or backfill) their Chinese
@@ -3165,11 +3187,10 @@ private:
 	void hotReload(const std::string& okMsg)
 	{
 		verIndex.Load(exeDir);              // a new season may have landed
-		bool zhWas = zhLoaded;              // the zh mapping may have changed too
+		bool zhWas = zhLoaded || zhLag_;    // the zh mapping may have changed too
 		loadSeason(verIndex.Active());      // follow to the (possibly new) active season
 		if (ready) saveActive();            // lock in the id-mapping after any pruning
-		if (!zhLoaded) showZh = false;
-		else if (!zhWas) showZh = true;     // translations appeared: switch on
+		syncShowZh(zhWas);                  // translations appeared: switch on
 		importMsg = ready ? okMsg : loadErr;
 		importFailed = !ready;
 		panelDirty = true;

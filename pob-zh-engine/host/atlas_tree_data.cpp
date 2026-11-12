@@ -797,7 +797,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			                        " (" + zh.VersionNote() + ")";
 			// 譯文早於本季(repoe 版本 < 賽季)時覆蓋率低是預期狀態:不確定的譯文
 			// 一律顯示英文(使用者 2026-11-12 裁定),開季後補上才恢復門檻。
-			if (!zh.RepoeVersion().empty() && AtlasVersionIndex::CompareSemver(zh.RepoeVersion(), d.Tag()) < 0)
+			if (zh.LagsSeason(d.Tag()))
 				rep.note(u8"提示:譯文早於本季,繁中覆蓋率 " + cov + u8",新內容先顯示英文(門檻檢查暫不適用)");
 			else
 				rep.check(translatable > 0 && covered * 2 >= translatable,
@@ -1362,6 +1362,17 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			          u8"[多選T5] 已選時每條基本行都帶所選選項,不單獨成行");
 			n.stats.clear();
 			rep.check(n.AggStats() == std::vector<std::string>({ "Y", "Z" }), u8"[多選T5] 沒有基本行時統計行就是選項的行");
+		}
+
+		// 審查後補:「譯文落後」只看賽季(主.次版號),同賽季重發不算。
+		{
+			AtlasI18n z;
+			rep.check(!z.LagsSeason("3.30.0"), u8"[譯文] 沒有版本資訊時不判定落後");
+			AtlasI18n z329;
+			if (z329.LoadVersion(exeDir, "3.29.1")) {
+				rep.check(!z329.LagsSeason("3.29.1"), u8"[譯文] 同賽季重發(3.29.1)不算落後", z329.RepoeVersion());
+				rep.check(z329.LagsSeason("3.30.0"), u8"[譯文] 3.29 的譯文對 3.30 算落後", z329.RepoeVersion());
+			}
 		}
 
 		d.Reset();

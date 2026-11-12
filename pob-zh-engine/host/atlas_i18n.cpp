@@ -90,6 +90,14 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 	}
 }
 
+bool AtlasI18n::LagsSeason(const std::string& tag) const
+{
+	int ra = 0, rb = 0, ta = 0, tb = 0;
+	if (sscanf_s(repoe_.c_str(), "%d.%d", &ra, &rb) != 2 || sscanf_s(tag.c_str(), "%d.%d", &ta, &tb) != 2)
+		return false;   // unknown on either side: no claim
+	return ra < ta || (ra == ta && rb < tb);
+}
+
 const std::string& AtlasI18n::NodeName(int id, const std::string& en) const
 {
 	auto it = nameById_.find(id);

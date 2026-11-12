@@ -29,7 +29,9 @@ using nlohmann::ordered_json;
 //
 // 3.30 (2026-11-12): nine mechanics below are `provisional` -- taken from the
 // 3.30.0 tree export before any 3.30 game files existed. Their id is the mastery
-// icon token and their zh is the English name. Redo them from GGPK.
+// icon token and their zh is the English name. Redo them from GGPK -- and
+// regenerate every season's atlas_mechanics.json in the same change: those files
+// store these ids, and a group whose id is no longer in the catalogue vanishes.
 //
 // ⚠ "Labyrinth" really is 帝王迷宮機率 in the game files -- GGG named that single
 // mastery row after the stat rather than the mechanic. Left verbatim: the game
