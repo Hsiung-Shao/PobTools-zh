@@ -1963,6 +1963,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ai.pobBusy = pobBusy;
 				ai.anythingLaunched = anythingLaunched;
 				ai.alreadyTried = autoApplyTried;
+				ai.isBack = ust.appIsBack;
 				if (!live && ShouldAutoApplyApp(ai)) {
 					autoApplyTried = true;
 					appUpd->StartAppUpdate();
@@ -2086,7 +2087,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : S.updateCheckTip);
 				} else if (ph == AppUpdatePhase::AppAvailable) {
 					char label[96];
-					snprintf(label, sizeof(label), S.updateTo, ust.latestAppVer.c_str());
+					snprintf(label, sizeof(label), ust.appIsBack ? S.updateBackTo : S.updateTo, ust.latestAppVer.c_str());
 					const float bw = PobUi::ButtonWidth(label, PobUi::BtnSize::Sm, PobIcon::Download);
 					placeAt(numericW(verLine) + gap + bw);
 					numericAt(verLine);
@@ -2094,7 +2095,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					if (PobUi::Button(label, PobUi::BtnKind::Update, PobUi::BtnSize::Sm, PobIcon::Download, 0.0f, !pobBusy))
 						appUpd->StartAppUpdate();
 					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : (std::string(S.updateAvailable) + ust.latestAppVer + S.updateNow).c_str());
+						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : ust.appIsBack ? ust.message.c_str() : (std::string(S.updateAvailable) + ust.latestAppVer + S.updateNow).c_str());
 				} else if (ph == AppUpdatePhase::AppDownloading || ph == AppUpdatePhase::AppStaging ||
 				           ph == AppUpdatePhase::AppReadyToApply || ph == AppUpdatePhase::TransUpdating) {
 					char what[96];

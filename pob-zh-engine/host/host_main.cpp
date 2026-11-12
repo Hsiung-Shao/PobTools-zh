@@ -490,10 +490,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// Headless app self-update: check releases, apply translations / stage+swap.
 	if (arg1 == L"--app-update") {
-		return RunAppUpdateCli(dir, /*checkOnly=*/false);
+		return RunAppUpdateCli(dir, /*checkOnly=*/false, arg2 == L"--allow-back");
 	}
 	if (arg1 == L"--app-update-check") {
-		return RunAppUpdateCli(dir, /*checkOnly=*/true);
+		return RunAppUpdateCli(dir, /*checkOnly=*/true, arg2 == L"--allow-back");
 	}
 	// Which repo does this binary take updates from? Packaging asserts it, so a
 	// test build (built with -DPOBTOOLS_UPDATE_REPO=...) can never be shipped.
