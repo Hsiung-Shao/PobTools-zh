@@ -583,13 +583,8 @@ if (WIN32)
     target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll" "/DELAYLOAD:libwebpdecoder.dll")
     set_target_properties(pob-zh PROPERTIES OUTPUT_NAME "pob-zh")
     install(TARGETS pob-zh RUNTIME DESTINATION ".")
-    # Bundled base-type -> item-class map (generated from POB Data/Bases) and
-    # item-name -> icon art-path map (generated from RePoE).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/base_classes.json" DESTINATION "Data")
+    # Bundled item-name -> icon art-path map (generated from RePoE).
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/icon_paths.json" DESTINATION "Data")
-    # Static economy prices + value->tier thresholds (offline fallback; live in 5b).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/economy_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/economy_tiers_poe1.json" DESTINATION "Data")
     # Complete Traditional-Chinese item dataset (repoe-fork: names + class + tags).
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/filter_items_zh.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/item_meta.json" DESTINATION "Data")

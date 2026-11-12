@@ -984,11 +984,4 @@ return function(M, ctx)
 		debug.setupvalue(loadTimeless, idx, function(name) return loadJewelFile(name, false) end)
 		return { jewelCacheOff = true }
 	end
-
-	function M.mcp_tool_names()
-		local names = {}
-		for k in pairs(T) do names[#names + 1] = k end
-		table.sort(names)
-		return { names = names }
-	end
 end

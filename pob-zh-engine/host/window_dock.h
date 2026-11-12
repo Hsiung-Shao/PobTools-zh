@@ -105,9 +105,6 @@ private:
 	int               loggedHostMin_ = -1;
 };
 
-// Feasibility run, opened with --dock-spike (smallest end-to-end exercise of the path).
-int RunDockSpike(const std::wstring& exeDir, bool spawnPob = true, bool verbose = false);
-
 // Adoption and restoration against a real window this process owns, opened with
 // --dock-style-selftest. Report at <exeDir>PobTools\, 0 = pass.
 //

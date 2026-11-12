@@ -38,7 +38,7 @@ inline constexpr std::uint32_t WarningSoft   = Rgb(0x2a, 0x23, 0x12);
 inline constexpr std::uint32_t Danger        = Rgb(0xef, 0x69, 0x6f);
 inline constexpr std::uint32_t DangerSoft    = Rgb(0x2c, 0x15, 0x17);
 inline constexpr std::uint32_t DangerFill    = Rgb(0x65, 0x2b, 0x2f);
-inline constexpr std::uint32_t DangerFillHover = Rgb(0x85, 0x33, 0x39);  // PushDangerButton's hover
+inline constexpr std::uint32_t DangerFillHover = Rgb(0x85, 0x33, 0x39);
 inline constexpr std::uint32_t OnDanger      = Rgb(0xff, 0xeb, 0xec);
 inline constexpr std::uint32_t Update        = Rgb(0x81, 0x8c, 0xf8);
 inline constexpr std::uint32_t Scrim         = Rgb(0x00, 0x00, 0x00, 0xa0);
@@ -116,10 +116,6 @@ void ApplyTheme(float scale, Density density = Density::Comfortable);
 //   * only while the style-var stack is empty (PushStyleVar records the OLD value; PopStyleVar would restore garbage).
 //   * only between widgets, never mid-window.
 void BuildStyle(::ImGuiStyle& out, float scale, Density density);
-
-void PushPrimaryButton();
-void PushDangerButton();
-void PopButtonStyle();
 
 // Glyph ranges every ImGui host adds to its body face on top of Default + ChineseFull (+ Korean): the Arrows and
 // Mathematical Operators blocks, which are not in ImGui's CJK table ("≥ ≤ ⇐ →" would come out as '?').

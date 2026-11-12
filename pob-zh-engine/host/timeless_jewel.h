@@ -58,7 +58,6 @@ struct TJDataset {
 
 	bool Load(const std::wstring& jsonPath, std::string* err);
 	int L2G(int jewelType, int localId) const;
-	bool HasNode(int nodeId) const { return nodeIndex.count(nodeId) != 0; }
 };
 
 // What a pasted jewel (game Ctrl+C text) resolved to; jewelType 0 = not found.

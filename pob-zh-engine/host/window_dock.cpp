@@ -1,7 +1,5 @@
 #include "window_dock.h"
 
-#include "launcher_config.h"
-#include "pob_launch.h"
 #include "window_manager.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -12,14 +10,9 @@
 #include <shobjidl.h>   // ITaskbarList, to drop the container's taskbar button
 #pragma comment(lib, "ole32.lib")
 
-#include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3native.h>
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 
 #include <atomic>
 #include <cstdarg>
@@ -34,26 +27,10 @@ namespace {
 // Flushed on every line, on purpose: a crash loses anything still in a buffer,
 // and the point of this log is to survive one.
 FILE* g_log = nullptr;
-bool  g_verbose = false;
 
 void dlog(const char* fmt, ...)
 {
 	if (!g_log) return;
-	SYSTEMTIME t{};
-	GetLocalTime(&t);
-	fprintf(g_log, "%02d:%02d:%02d.%03d  ", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
-	va_list ap;
-	va_start(ap, fmt);
-	vfprintf(g_log, fmt, ap);
-	va_end(ap);
-	fputc('\n', g_log);
-	fflush(g_log);
-}
-
-// Per-frame chatter; silent unless verbose is on (thousands of lines a second).
-void vlog(const char* fmt, ...)
-{
-	if (!g_log || !g_verbose) return;
 	SYSTEMTIME t{};
 	GetLocalTime(&t);
 	fprintf(g_log, "%02d:%02d:%02d.%03d  ", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
@@ -245,7 +222,6 @@ void Dock::Position(Tab& t, bool force)
 	// container mid-drag (S18/S19: 516ms vs 0ms against a window that is not pumping).
 	SetWindowPos(w, HWND_TOP, want.x, want.y, want.w, want.h,
 	             SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
-	vlog("dock: positioned %p to %d,%d %dx%d", (void*)w, want.x, want.y, want.w, want.h);
 }
 
 void Dock::FixZOrder(Tab& t)
@@ -765,140 +741,6 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 	}
 	printf("%s", report.c_str());
 	return failures ? 2 : 0;
-}
-
-// spike
-
-namespace {
-Dock* g_spikeDock = nullptr;
-}
-
-int RunDockSpike(const std::wstring& exeDir, bool spawnPob, bool verbose)
-{
-	g_verbose = verbose;
-	CreateDirectoryW((exeDir + L"PobTools").c_str(), nullptr);
-
-	LauncherConfig cfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
-	InstallInfo installs = DetectInstalls(exeDir);
-	const std::wstring lua = !installs.poe1Lua.empty() ? installs.poe1Lua : installs.poe2Lua;
-	if (lua.empty()) {
-		MessageBoxW(nullptr, L"找不到 POB 安裝，無法進行停靠驗證。", L"PobTools",
-		            MB_ICONERROR | MB_OK);
-		return 1;
-	}
-
-	if (!glfwInit()) return 1;
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-	glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-	GLFWwindow* win = glfwCreateWindow(1500, 950, "PobTools - dock spike", nullptr, nullptr);
-	if (!win) { glfwTerminate(); return 1; }
-	glfwMakeContextCurrent(win);
-	glfwSwapInterval(0);
-
-	Dock dock;
-	dock.Init(glfwGetWin32Window(win), exeDir + L"PobTools\\dock_log.txt");
-	g_spikeDock = &dock;
-	glfwSetWindowPosCallback(win, [](GLFWwindow*, int, int) {
-		if (g_spikeDock) g_spikeDock->OnHostMoved();
-	});
-	glfwSetWindowSizeCallback(win, [](GLFWwindow*, int, int) {
-		if (g_spikeDock) g_spikeDock->OnHostMoved();
-	});
-	glfwSetWindowFocusCallback(win, [](GLFWwindow*, int focused) {
-		if (focused && g_spikeDock) g_spikeDock->OnHostFocused();
-	});
-
-	IMGUI_CHECKVERSION();
-	ImGui::CreateContext();
-	ImGui::GetIO().IniFilename = nullptr;
-	ImGui::StyleColorsDark();
-	ImGui_ImplGlfw_InitForOpenGL(win, true);
-	ImGui_ImplOpenGL3_Init("#version 100");
-
-	auto spawn = [&](bool poe2) {
-		const std::wstring l = poe2 ? installs.poe2Lua : installs.poe1Lua;
-		if (l.empty()) return;
-		const std::wstring game = poe2 ? L"poe2" : L"poe1";
-		const AppearanceConfig& look = cfg.look[GameIndex(game)];
-		PobLaunch::SetEngineEnv(game, cfg.locale, cfg.fontFile, std::wstring(),
-		                        cfg.fontApplyAll, look.windowOpacity,
-		                        ResolveBackgroundPath(exeDir, look.background), look.bgBright, look.glassBlur,
-		                        look.treeBg, cfg.hangWatch,
-		                        cfg.pobFpsForeground, cfg.pobFpsBackground, cfg.perfLog,
-		                        DictSwitchesEnv(cfg));
-		unsigned long pid = 0;
-		if (PobLaunch::SpawnPobDetached(l, game, &pid))
-			dock.Track(pid, poe2 ? L"PoE2" : L"PoE1");
-	};
-	if (spawnPob) spawn(installs.poe1Lua.empty());
-
-	int active = 0;
-	bool closing = false;
-	while (!glfwWindowShouldClose(win) || !dock.Empty()) {
-		glfwPollEvents();
-
-		if (glfwWindowShouldClose(win) && !dock.Empty()) {
-			if (!closing) {
-				for (size_t i = 0; i < dock.Tabs().size(); i++) dock.RequestClose(i);
-				closing = true;
-			}
-			glfwSetWindowShouldClose(win, GLFW_FALSE);
-		}
-		if (closing && dock.Empty()) glfwSetWindowShouldClose(win, GLFW_TRUE);
-
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplGlfw_NewFrame();
-		ImGui::NewFrame();
-		ImGuiIO& io = ImGui::GetIO();
-		ImGui::SetNextWindowPos(ImVec2(0, 0));
-		ImGui::SetNextWindowSize(io.DisplaySize);
-		ImGui::Begin("##dockhost", nullptr,
-			ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-			ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus);
-		for (size_t i = 0; i < dock.Tabs().size(); i++) {
-			if (i) ImGui::SameLine();
-			ImGui::PushID((int)i);
-			char label[64];
-			snprintf(label, sizeof(label), "%s##t", i == 0 ? "Tab 1" : "Tab 2");
-			const bool sel = ((int)i == active);
-			if (sel) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.44f, 0.62f, 1.0f));
-			if (ImGui::Button(label)) active = (int)i;
-			if (sel) ImGui::PopStyleColor();
-			ImGui::PopID();
-		}
-		if (!dock.Empty()) ImGui::SameLine();
-		if (ImGui::Button("+ PoE1")) spawn(false);
-		if (!installs.poe2Lua.empty()) { ImGui::SameLine(); if (ImGui::Button("+ PoE2")) spawn(true); }
-		ImGui::SameLine();
-		if (ImGui::Button("Close tab") && active >= 0) dock.RequestClose((size_t)active);
-		ImGui::SameLine();
-		if (ImGui::Button("Undock all")) dock.RestoreAll();
-		const int stripH = (int)ImGui::GetCursorPosY();
-		ImGui::End();
-
-		if (active >= (int)dock.Tabs().size()) active = (int)dock.Tabs().size() - 1;
-		dock.Update(stripH, active);
-
-		ImGui::Render();
-		int fw = 0, fh = 0;
-		glfwGetFramebufferSize(win, &fw, &fh);
-		glViewport(0, 0, fw, fh);
-		glClearColor(0.10f, 0.11f, 0.13f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-		glfwSwapBuffers(win);
-	}
-
-	dock.RestoreAll();
-	g_spikeDock = nullptr;
-	ImGui_ImplOpenGL3_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
-	glfwDestroyWindow(win);
-	glfwTerminate();
-	return 0;
 }
 
 } // namespace WindowDock

@@ -17,7 +17,7 @@
 --      a control's private fields to reconstruct what its Draw would show.
 --   3. Intercept with a wrapper (call the original, observe, hand back its
 --      result), the same way poecharm_inject.lua does -- never a rewrite.
---   4. Every POB surface touched is registered in `probes`, and self_check runs
+--   4. Every POB surface touched is registered in `probes`, and run_probes runs
 --      them all. The host refuses to open the new UI on a failed gate and
 --      falls back to the classic window, so an upstream refactor is a banner,
 --      not a silent wrong number.
@@ -270,8 +270,6 @@ end
 
 local M = {}
 
-function M.ping() return { pong = true } end
-
 -- pump{seconds}: run POB's frame loop for a while and answer (its downloads finish on later
 -- frames). Capped: the host has its own timeout and a call that never returns is worse.
 function M.pump(p)
@@ -326,10 +324,6 @@ function M.version()
 		-- UI must not assume it starts empty.
 		buildLoaded = (build() and build().calcsTab and build().calcsTab.mainOutput) and true or false,
 	}
-end
-
-function M.self_check()
-	return run_probes()
 end
 
 -- load_build_file{path=...}: an absolute path under main.buildPath (POB
@@ -2006,14 +2000,6 @@ function M.save_build_as(p)
 	return { dbFileName = b.dbFileName, buildName = b.buildName, subPath = b.dbFileSubPath, unsaved = b.unsaved and true or false, rev = b.outputRevision }
 end
 
--- Reloads the file on disk, throwing away unsaved changes.
-function M.revert_build()
-	local b = ensure_build()
-	if not b.dbFileName then error("build has no file to revert to", 0) end
-	return M.load_build_file({ path = b.dbFileName })
-end
-
-
 -- ImportTab's "Generate" button, one line.
 function M.export_code()
 	local b = ensure_build()
@@ -2113,51 +2099,6 @@ function M.import_code(p)
 	end
 	b.viewMode = "TREE"
 	return after_reinit()
-end
-
--- import_character{items=<get-items JSON text>, passives=<get-passive-skills
--- JSON text>, importTree, importItems, deleteJewels, clearItems, clearSkills,
--- ignoreWeaponSwap}: the two site-import buttons, fed pasted responses
--- instead of a download. charData is assembled the way ImportTab's callbacks
--- assemble it (character block + passives + jewels / equipment + guardian).
-function M.import_character(p)
-	local b = ensure_build()
-	local dkjson = require("dkjson")
-	local itemsJson, passivesJson
-	if p.items and p.items ~= "" then
-		local v, _, err = dkjson.decode(p.items)
-		if not v then error("items JSON: " .. tostring(err), 0) end
-		itemsJson = v
-	end
-	if p.passives and p.passives ~= "" then
-		local v, _, err = dkjson.decode(p.passives)
-		if not v then error("passives JSON: " .. tostring(err), 0) end
-		passivesJson = v
-	end
-	local charData = copyTable((itemsJson and itemsJson.character) or (passivesJson and passivesJson.character) or {})
-	charData.class = charData.class or (b.spec and b.spec.curClassName)
-	charData.level = charData.level or b.characterLevel
-	charData.name = charData.name or b.buildName
-	charData.league = charData.league or ""
-	local did = {}
-	if p.importTree ~= false and passivesJson then
-		if not passivesJson.hashes then error("passives JSON has no hashes", 0) end
-		charData.passives = passivesJson
-		charData.jewels = passivesJson.items
-		b.importTab:ImportPassiveTreeAndJewels(charData, p.deleteJewels and true or false)
-		did[#did + 1] = "tree"
-	end
-	if p.importItems ~= false and itemsJson then
-		if not itemsJson.items then error("items JSON has no items", 0) end
-		charData.equipment = itemsJson.items
-		charData.guardian = itemsJson.guardian
-		b.importTab:ImportItemsAndSkills(charData, p.clearItems and true or false, p.clearSkills and true or false, p.ignoreWeaponSwap and true or false)
-		did[#did + 1] = "items"
-	end
-	if #did == 0 then error("nothing to import: give items and/or passives JSON", 0) end
-	local r = commit(b)
-	r.imported = did
-	return r
 end
 
 -- Account import (ImportTab.lua:24-471): the OAuth flow (PoEAPI + the
@@ -4079,22 +4020,6 @@ function M.compare_remove(p)
 	local i = tonumber(p and p.index)
 	if not i or not ct.compareEntries[i] then error("no comparison build " .. tostring(p and p.index), 0) end
 	ct:RemoveBuild(i)
-	return M.compare_state()
-end
-
--- compare_set{spec?, itemSet?, skillSet?, configSet?, mainSocketGroup?}: the
--- comparison build's own set selectors.
-function M.compare_set(p)
-	local b = ensure_build()
-	local ct, e = compare_entry(b)
-	p = p or {}
-	if p.spec ~= nil then e:SetActiveSpec(tonumber(p.spec) or 1) end
-	if p.itemSet ~= nil then e:SetActiveItemSet(tonumber(p.itemSet)) end
-	if p.skillSet ~= nil then e:SetActiveSkillSet(tonumber(p.skillSet)) end
-	if p.configSet ~= nil and e.configTab and e.configTab.SetActiveConfigSet then e.configTab:SetActiveConfigSet(tonumber(p.configSet)) end
-	if p.mainSocketGroup ~= nil then e:SetMainSocketGroup(tonumber(p.mainSocketGroup) or 1) end
-	e:Rebuild()
-	frame()
 	return M.compare_state()
 end
 
@@ -7188,15 +7113,6 @@ function M.set_config(p)
 	-- read back, so a caller can tell an applied change from a silent no-op
 	if type(r) == "table" then r.var, r.type, r.before, r.after = vd.var, vd.type, before, set.input[vd.var] end
 	return r
-end
-
--- set_config_placeholder{var, value}: the grey "what the build implies" number.
-function M.set_config_placeholder(p)
-	local b = ensure_build()
-	local set = config_set(b.configTab)
-	local vd = find_var(p and p.var)
-	set.placeholder[vd.var] = (p.value ~= nil and p.value ~= "") and tonumber(p.value) or nil
-	return config_committed(b)
 end
 
 -- reset_config{var}: back to what NewConfigSet would have put there.

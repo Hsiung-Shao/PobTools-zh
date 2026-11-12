@@ -818,11 +818,6 @@ export interface ClassPick {
   ascendClassName?: string;
   secondaryAscendClassId: number;
 }
-export interface ClassList {
-  classes: ClassEntry[];
-  secondary: AscEntry[];
-  current: ClassPick;
-}
 /** set_class: the new tree state, or POB's "Class Change" question. */
 export type SetClassResult =
   | (TreeState & { needsConfirm?: undefined })
@@ -850,16 +845,6 @@ export interface CodeInfo {
   skillCount?: number;
   hasTree?: boolean;
   xmlBytes: number;
-}
-export interface CharImportParams {
-  items?: string;
-  passives?: string;
-  importTree?: boolean;
-  importItems?: boolean;
-  deleteJewels?: boolean;
-  clearItems?: boolean;
-  clearSkills?: boolean;
-  ignoreWeaponSwap?: boolean;
 }
 
 // --- account import (ImportTab's OAuth and account-name flows) --------------
@@ -1335,7 +1320,6 @@ export const api = {
   compareLoad: (p: { code?: string; xml?: string; path?: string; label?: string }) => bridge.call<CompareState>("compare_load", p, 180000),
   compareSelect: (index: number) => bridge.call<CompareState>("compare_select", { index }, 60000),
   compareRemove: (index: number) => bridge.call<CompareState>("compare_remove", { index }, 60000),
-  compareSet: (p: Record<string, unknown>) => bridge.call<CompareState>("compare_set", p, 120000),
   compareTree: () => bridge.call<CompareTree>("compare_tree", {}, 60000),
   compareItems: () => bridge.call<CompareItemsRows>("compare_items", {}, 60000),
   compareSkills: () => bridge.call<CompareSkills>("compare_skills", {}, 60000),
@@ -1343,7 +1327,6 @@ export const api = {
   compareUse: (what: "tree" | "item" | "config", slot?: string) => bridge.call<Committed>("compare_use", { what, slot }, 120000),
   tradeOpen: () => bridge.call<TradeState>("trade_open", {}, 120000),
   tradeSet: (p: Record<string, unknown>) => bridge.call<TradeState>("trade_set", p, 60000),
-  tradeFindBest: (row: number) => bridge.call<TradeState>("trade_find_best", { row }, 300000),
   tradeOptionsOpen: (row: number) => bridge.call<TradeOptions>("trade_options_open", { row }, 120000),
   tradeOptionsMods: (p: { prefix?: string; query?: string; limit?: number }) => bridge.call<TradeMods>("trade_options_mods", p, 60000),
   tradeOptionsSet: (p: { values?: Record<string, boolean | number | string>; mod?: { prefix: string; row: number; sel?: number; min?: string } }) =>
@@ -1384,7 +1367,6 @@ export const api = {
   importFromUri: (uri: string) => bridge.call<{ site: string; label: string; code: string; url?: string }>("import_from_uri", { uri }, 120000),
   shareBuild: (site: string) => bridge.call<{ site: string; url: string }>("share_build", { site }, 120000),
   tabUndo: (tab: string, redo = false) => bridge.call<Committed & { canUndo: boolean; canRedo: boolean }>("tab_undo", { tab, redo }, 60000),
-  undoState: () => bridge.call<{ tabs: Record<string, { canUndo: boolean; canRedo: boolean }> }>("undo_state", {}, 60000),
   selectLoadout: (index: number, title?: string) => bridge.call<LoadoutList>("select_loadout", { index, title }, 120000),
   configModSearch: (block: number, query: string, limit = 100) => bridge.call<{ mods: { text: string; textZh?: string; sources: string[] }[]; total: number }>("config_mod_search", { block, query, limit }, 60000),
   configModAdd: (block: number, text: string) => bridge.call<ConfigList>("config_mod_add", { block, text }, 60000),
@@ -1396,7 +1378,6 @@ export const api = {
   importTreeUrl: (url: string, title: string) => bridge.call<SpecList>("import_tree_url", { url, title }, 120000),
   treeUndo: () => bridge.call<TreeState>("tree_undo", {}, 60000),
   treeRedo: () => bridge.call<TreeState>("tree_redo", {}, 60000),
-  listClasses: () => bridge.call<ClassList>("list_classes"),
   setClass: (classId: number, confirm?: "reset" | "connect") => bridge.call<SetClassResult>("set_class", { classId, confirm }, 60000),
   setAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_ascendancy", { ascendClassId }, 60000),
   setSecondaryAscendancy: (ascendClassId: number) => bridge.call<TreeState>("set_secondary_ascendancy", { ascendClassId }, 60000),
@@ -1410,7 +1391,6 @@ export const api = {
   calcsBreakdownTip: (si: number, ui: number, ri: number, ci: number, tip: BreakdownTipRef) => bridge.call<BreakdownTip>("calcs_breakdown", { si, ui, ri, ci, tip }, 60000),
   sidebarBreakdown: (rowIndex: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("sidebar_breakdown", { rowIndex }),
   getBuildInfo: () => bridge.call<BuildInfo>("get_build_info"),
-  selfCheck: () => bridge.call<GateResult>("self_check"),
   getUpdateStatus: () => bridge.call<UpdateStatus>("get_update_status"),
   checkUpdateAsync: () => bridge.call<{ started: boolean }>("check_update_async"),
   pobUpdateInfo: () => bridge.call<PobUpdateInfo>("pob_update_info", {}, 60000),
@@ -1422,11 +1402,9 @@ export const api = {
   saveBuild: () => bridge.call<SaveResult>("save_build", {}, 60000),
   /** `exists` comes back (nothing written) when another build already has that file; resend with `overwrite`. */
   saveBuildAs: (path: string, overwrite = false) => bridge.call<SaveResult & { exists?: boolean }>("save_build_as", overwrite ? { path, overwrite } : { path }, 60000),
-  revertBuild: () => bridge.call<LoadedBuild>("revert_build", {}, 120000),
   exportCode: () => bridge.call<{ code: string; bytes: number }>("export_code", {}, 60000),
   decodeCode: (code: string) => bridge.call<CodeInfo>("decode_code", { code }, 60000),
   importCode: (code: string, mode: "replace" | "new") => bridge.call<LoadedBuild>("import_code", { code, mode }, 180000),
-  importCharacter: (p: CharImportParams) => bridge.call<Committed & { imported: string[] }>("import_character", p, 180000),
   setTranslate: (p: { enabled: boolean }) => bridge.call<{ enabled: boolean }>("set_translate", p, 60000),
   importStatus: () => bridge.call<ImportStatus>("import_status", {}, 60000),
   oauthStart: () => bridge.call<{ started?: boolean; authorized?: boolean; url?: string }>("oauth_start", {}, 30000),
@@ -1502,7 +1480,6 @@ export const api = {
   deleteSkillSet: (id: number) => bridge.call<Committed>("delete_skill_set", { id }, 60000),
   listConfig: () => bridge.call<ConfigList>("list_config", {}, 60000),
   setConfig: (v: string, value: ConfigValue) => bridge.call<Committed>("set_config", { var: v, value }, 60000),
-  setConfigPlaceholder: (v: string, value: number | string | null) => bridge.call<Committed>("set_config_placeholder", { var: v, value }, 60000),
   resetConfig: (v: string) => bridge.call<Committed>("reset_config", { var: v }, 60000),
   /** POB's tooltip for a config control (index = a list option, 1-based; none = the current one), stat differences included. */
   configTooltip: (v: string, index?: number) => bridge.call<{ var: string; index?: number; lines: TooltipLine[] }>("config_tooltip", index == null ? { var: v } : { var: v, index }, 60000),
@@ -1526,7 +1503,6 @@ export const api = {
   removeAccountHistory: (name: string) => bridge.call<ImportStatus>("remove_account_history", { name }, 60000),
   setParty: (field: string, text: string) => bridge.call<Committed>("set_party", { field, text }, 60000),
   setPartyExport: (value: boolean) => bridge.call<Committed>("set_party", { field: "enableExportBuffs", value }, 60000),
-  hostInfo: () => bridge.call<HostInfo>("host.info"),
   setTitle: (text: string) => bridge.call<{ ok: boolean }>("host.set_title", { text }),
   getPrefs: () => bridge.call<UiPrefs>("host.get_prefs"),
   setPrefs: (p: Partial<UiPrefs>) => bridge.call<UiPrefs>("host.set_prefs", p),

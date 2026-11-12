@@ -52,12 +52,10 @@
   /* 互動強調色(名稱沿用 gold):--accent-user 是設定頁選的強調色(lib/prefs 寫在 :root),沒選就用主題自己的 */
   --gold: var(--accent-user, #6366f1);
   --gold-soft: color-mix(in srgb, var(--gold) 16%, transparent);
-  --gold-dim: color-mix(in srgb, var(--gold) 55%, black);
   --gold-text: color-mix(in srgb, var(--gold) 55%, white);
   --on-gold: var(--on-accent-user, #ffffff);
   /* 身分用的金:DPS 主數字、昇華名、已配置節點 */
   --hl: #f2cc66;
-  --hl-soft: color-mix(in srgb, var(--hl) 16%, transparent);
   --hl-dim: color-mix(in srgb, var(--hl) 55%, black);
   --accent: #6366f1;
   --accent-soft: rgba(99, 102, 241, 0.2);
@@ -70,18 +68,13 @@
   --c-life: #f25c5c;
   --c-mana: #6f9cff;
   --c-es: #5fd0e4;
-  --c-fire: #ff7c47;
-  --c-cold: #5fbfff;
-  --c-lightning: #ffd94f;
   --c-chaos: #c67cff;
-  --c-physical: #d9c8a8;
   --c-unique: #cf8a2e;
   --c-relic: #60c060;
   --c-rare: #e8d25f;
   --c-magic: #7f8dff;
   --c-normal: #d7d7dc;
   --c-gem: #47d7b4;
-  --c-spirit: #f0cf74;
   --c-currency: #cba64c;
 
   --dim-opacity: 0.45;
@@ -106,7 +99,6 @@
   --fs-sm: calc(var(--fs-base) - 1px);
   --fs-md: var(--fs-base);
   --fs-lg: calc(var(--fs-base) + 2px);
-  --fs-xl: calc(var(--fs-base) + 7px);
 
   --radius-s: 5px;
   --radius-m: 8px;
@@ -137,7 +129,6 @@
   --ink-3: #777981;
   --ink-4: #a2a3a7;
   --gold: var(--accent-user, #946510);
-  --gold-dim: color-mix(in srgb, var(--gold) 45%, white);
   --gold-text: color-mix(in srgb, var(--gold) 80%, black);
   --on-gold: var(--on-accent-user, #ffffff);
   --hl: #946510;
@@ -150,18 +141,13 @@
   --c-life: #c23434;
   --c-mana: #3355c6;
   --c-es: #0d7c92;
-  --c-fire: #c0501a;
-  --c-cold: #1d77c0;
-  --c-lightning: #856900;
   --c-chaos: #8a3cc2;
-  --c-physical: #75653f;
   --c-unique: #a05f0e;
   --c-relic: #2c862c;
   --c-rare: #7f6d00;
   --c-magic: #4652c8;
   --c-normal: #4a4b52;
   --c-gem: #0c8568;
-  --c-spirit: #8a6f14;
   --c-currency: #7a6022;
   --dim-opacity: 0.5;
   --backdrop: rgba(40, 34, 24, 0.35);

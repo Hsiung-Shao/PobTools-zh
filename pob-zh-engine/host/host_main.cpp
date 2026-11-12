@@ -596,12 +596,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// exercised with fake waitable handles instead of a real POB
 		return PobLaunch::RunPobLaunchSelfTest(dir);
 	}
-	if (arg1 == L"--dock-spike") {
-		// Feasibility run for docking POB against a container WITHOUT SetParent.
-		// Interactive by nature; writes PobTools\dock_trace.txt and dock_stage.txt.
-		// --dock-spike [nospawn|verbose]
-		return WindowDock::RunDockSpike(dir, arg2 != L"nospawn", arg2 == L"verbose");
-	}
 	if (arg1 == L"--panel-selftest") {
 		// Headless: an embedded tool panel, drawn inside a tab bar in a container
 		// that is smaller than the screen -- the case that exposes a panel which

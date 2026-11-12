@@ -183,10 +183,6 @@ struct EditorShell {
 	FilterI18n i18n;
 	ItemLibrary library;     // whole-game catalog (Chinese input -> English token)
 
-	// legacy 設定 kept in pob-zh.ini [PobTools] (no UI in the current design)
-	std::string league = "Mirage";
-	bool economyEnabled = false;
-
 	// page-local UI state (see the file header)
 	std::shared_ptr<PreviewUiState> previewUi;
 	std::shared_ptr<BatchUiState> batchUi;

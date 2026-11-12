@@ -96,7 +96,6 @@ bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& 
 	root = -1;
 	tag_ = tag;
 	dataDir_ = dataDir;
-	spriteDir_ = dataDir + L"atlas\\";
 
 	std::string content;
 	if (!read_file_utf8(dataDir + L"atlas_tree_poe1.json", content)) {

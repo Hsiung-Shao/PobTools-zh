@@ -17,7 +17,6 @@
 	X(title,             u8"Path of Building 啟動器",                                                 \
 	                     u8"Path of Building Launcher")                                              \
 	X(language,          u8"介面語言",                     u8"Interface language")                    \
-	X(gameVersion,       u8"遊戲版本",                     u8"Game version")                          \
 	X(poe1,              u8"Path of Exile 1",              u8"Path of Exile 1")                       \
 	X(poe2,              u8"Path of Exile 2",              u8"Path of Exile 2")                       \
 	/* card status: install found / missing */                                                       \
@@ -32,7 +31,6 @@
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
-	X(modernUiTip,       u8"以新版介面開啟建置(測試中)",   u8"Open a build in the new interface (preview)") \
 	X(uiModeLabel,       u8"預設介面",                     u8"Default interface")                     \
 	X(uiModeClassic,     u8"經典",                         u8"Classic")                               \
 	X(uiModeTheme1,      u8"主題 1 (Beta)",                u8"Theme 1 (Beta)")                        \
@@ -89,7 +87,6 @@
 	                     u8"Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.") \
 	/* translation-data settings */                                                        \
 	X(sectionTransData,  u8"翻譯資料",                     u8"Translation data")                     \
-	X(dataDirLabel,      u8"翻譯資料夾",                   u8"Data folder")                          \
 	X(slotLauncher,      u8"啟動器介面",                   u8"Launcher UI")                          \
 	X(browse,            u8"瀏覽…",                        u8"Browse...")                            \
 	/* the failure log, named "問題紀錄" rather than "log": it is looked at only
@@ -401,7 +398,7 @@ static_assert(sizeof(kLauncherStringNames) / sizeof(kLauncherStringNames[0]) ==
 // Only Traditional Chinese (zh-rTW) and English are offered. "en" (and any
 // other/unknown locale) uses the English UI; the engine then finds no matching
 // dictionary and passes POB text through untranslated.
-inline const LauncherStrings& StringsFor(const std::wstring& locale, bool /*koreanOk*/ = true)
+inline const LauncherStrings& StringsFor(const std::wstring& locale)
 {
 	if (locale == L"zh-rTW") return STR_ZHTW;
 	return STR_EN;

@@ -312,11 +312,6 @@ std::vector<std::uint32_t> DecodeRecentColors(const std::string& text)
 void LoadEditorSettings(EditorShell& s)
 {
 	std::wstring ini = s.exeDir + L"pob-zh.ini";
-	wchar_t buf[128] = L"";
-	GetPrivateProfileStringW(L"PobTools", L"League", L"Mirage", buf, 128, ini.c_str());
-	s.league = EdNarrow(buf);
-	if (s.league.empty()) s.league = "Mirage";
-	s.economyEnabled = GetPrivateProfileIntW(L"PobTools", L"EconomyEnabled", 0, ini.c_str()) != 0;
 	wchar_t rc[512] = L"";
 	GetPrivateProfileStringW(L"PobTools", L"FilterRecentColors", L"", rc, 512, ini.c_str());
 	s.recentColors = DecodeRecentColors(EdNarrow(rc));
@@ -326,8 +321,6 @@ void SaveEditorSettings(EditorShell& s)
 {
 	if (s.testMode) return;   // a test run writes nothing
 	std::wstring ini = s.exeDir + L"pob-zh.ini";
-	WritePrivateProfileStringW(L"PobTools", L"League", EdWiden(s.league).c_str(), ini.c_str());
-	WritePrivateProfileStringW(L"PobTools", L"EconomyEnabled", s.economyEnabled ? L"1" : L"0", ini.c_str());
 	WritePrivateProfileStringW(L"PobTools", L"FilterRecentColors", EdWiden(EncodeRecentColors(s.recentColors)).c_str(),
 	                           ini.c_str());
 }

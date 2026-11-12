@@ -26,10 +26,6 @@ public:
 	// an empty query matches nothing. Pairs are (English, Chinese).
 	std::vector<std::pair<std::string, std::string>> OffCatalogMatches(const std::string& query, size_t limit) const;
 
-	// English base type -> English item class ("Bow", "Body Armour", ...); "" if unknown.
-	// (Legacy gear-only map, used by the existing base-class sub-filter.)
-	std::string BaseClass(const std::string& en) const;
-
 	// English item name -> repoe item_class for ALL items ("StackableCurrency",
 	// "Bow", "Active Skill Gem", "Belt" for a unique, ...); "" if unknown.
 	std::string ItemClass(const std::string& en) const;
@@ -77,7 +73,6 @@ private:
 
 	std::unordered_map<std::string, std::string> names_;      // en name  -> zh name
 	std::vector<std::pair<std::string, std::string>> offCatalog_;   // (en, zh) base items the catalog lacks, sorted
-	std::unordered_map<std::string, std::string> baseClass_;  // en base  -> en class (legacy)
 	std::unordered_map<std::string, std::string> classZh_;    // en class -> zh class
 	std::unordered_map<std::string, std::string> classEn_;    // class id -> game class name
 	std::unordered_map<std::string, Meta>        meta_;       // en name  -> {class, tags, drop, w, h}

@@ -2,7 +2,6 @@
   "entries": {
     "Path of Building Launcher": "Path of Building 啟動器",
     "Interface language": "介面語言",
-    "Game version": "遊戲版本",
     "Path of Exile 1": "Path of Exile 1",
     "Path of Exile 2": "Path of Exile 2",
     "Detected": "已偵測到",
@@ -15,7 +14,6 @@
     "Timeless jewel": "軍團珠寶",
     "Stash tracker": "倉庫收益",
     "Modern UI (Beta)": "新介面(Beta)",
-    "Open a build in the new interface (preview)": "以新版介面開啟建置(測試中)",
     "Default interface": "預設介面",
     "Classic": "經典",
     "Theme 1 (Beta)": "主題 1 (Beta)",
@@ -57,7 +55,6 @@
     "Several windows of the same POB are open; they share its settings and build files, and the last one closed overwrites the others": "同一個 POB 開了多個視窗；它們共用設定與流派檔，最後關閉的那個會蓋掉其他的",
     "Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.": "POB 執行中無法更新：更新會替換 engine 資料夾裡的檔案，請先關閉所有 POB 視窗",
     "Translation data": "翻譯資料",
-    "Data folder": "翻譯資料夾",
     "Launcher UI": "啟動器介面",
     "Browse...": "瀏覽…",
     "Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.": "程式遇到問題時會把原因寫進這裡（每天一個檔）。回報問題時附上當天那一個檔最有幫助；一切正常時它會是空的。",

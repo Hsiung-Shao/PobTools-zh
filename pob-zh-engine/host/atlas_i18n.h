@@ -57,7 +57,6 @@ public:
 	void MarkFreshStat(const std::string& en) { freshStats_.insert(en); }
 	// Same for node names (mapping "freshNames": node ids).
 	bool IsFreshName(int id) const { return freshNames_.count(id) != 0; }
-	void MarkFreshName(int id) { freshNames_.insert(id); }
 	// The fresh entries are a maintainer's own translation made before the
 	// season's game files existed (mapping "provisional": true), not official text.
 	bool Provisional() const { return provisional_; }

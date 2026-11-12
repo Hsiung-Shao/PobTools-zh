@@ -32,7 +32,6 @@ struct AtlasMechanicDef {
 };
 
 // The catalogue, sorted by `en`. Compiled in, not shipped as data: the one place mechanic identity and translation live, and the updater never needs the game files.
-const std::vector<AtlasMechanicDef>& AtlasMechanicCatalogue();
 const AtlasMechanicDef* AtlasMechanicById(const std::string& id);
 const AtlasMechanicDef* AtlasMechanicByEn(const std::string& en);
 

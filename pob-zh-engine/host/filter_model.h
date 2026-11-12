@@ -58,8 +58,4 @@ struct FilterFile {
 	bool crlf = true;             // line ending: CRLF (true) vs LF (false)
 	bool finalNewline = true;     // source ended with a trailing newline
 	bool dirty = false;           // any line edited since load/save
-	int  game = 1;                // 1 = POE1 (POE2 reserved for a later stage)
 };
-
-// Count blocks/lines with unsaved edits (UI status + save-button enable).
-inline bool FilterFileDirty(const FilterFile& f) { return f.dirty; }

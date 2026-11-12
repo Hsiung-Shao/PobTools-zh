@@ -108,19 +108,6 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 		}
 	}
 
-	// 4. Legacy base type -> item class (gear; kept for the base-class sub-filter).
-	{
-		std::string content;
-		if (read_file_utf8(exeDir + L"Data\\base_classes.json", content)) {
-			try {
-				ordered_json doc = ordered_json::parse(content);
-				if (doc.is_object())
-					for (auto& [k, v] : doc.items())
-						if (v.is_string()) baseClass_.emplace(k, v.get<std::string>());
-			} catch (...) {}
-		}
-	}
-
 	// 5. Item-class Chinese labels: bundled repoe-fork map (complete) first, then
 	// the engine's item_metadata.json as a fallback.
 	load_flat(exeDir + L"Data\\item_classes_zh.json", classZh_);
@@ -160,19 +147,13 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 		zh_.itemClass.emplace(u8"深淵珠寶", "Abyss Jewels");   // itemclasses AbyssJewel .Name
 	}
 
-	loaded_ = !names_.empty() || !baseClass_.empty();
+	loaded_ = !names_.empty();
 }
 
 std::string FilterI18n::DisplayName(const std::string& en) const
 {
 	auto it = names_.find(en);
 	return it != names_.end() ? it->second : en;
-}
-
-std::string FilterI18n::BaseClass(const std::string& en) const
-{
-	auto it = baseClass_.find(en);
-	return it != baseClass_.end() ? it->second : std::string();
 }
 
 std::string FilterI18n::ItemClass(const std::string& en) const
@@ -207,7 +188,7 @@ std::string FilterI18n::ClassNameZh(const std::string& enClass) const
 {
 	// POB's Data/Bases uses singular class names ("Bow", "One Handed Sword") that
 	// differ from item_metadata.json ("Bows", "One Hand Swords"), so use a built-in
-	// table covering exactly the 26 classes that appear in base_classes.json.
+	// table covering the 26 gear classes.
 	static const std::unordered_map<std::string, std::string> kZh = {
 		{ "Amulet", u8"項鍊" }, { "Belt", u8"腰帶" }, { "Body Armour", u8"胸甲" },
 		{ "Boots", u8"鞋子" }, { "Bow", u8"弓" }, { "Claw", u8"爪" }, { "Dagger", u8"匕首" },

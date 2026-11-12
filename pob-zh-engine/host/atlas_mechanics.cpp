@@ -106,8 +106,6 @@ static const MechRename kRenames[] = {
 	{ "Sacred Flora", "Harvest" },
 };
 
-const std::vector<AtlasMechanicDef>& AtlasMechanicCatalogue() { return catalogue(); }
-
 const AtlasMechanicDef* AtlasMechanicById(const std::string& id)
 {
 	for (const AtlasMechanicDef& d : catalogue())

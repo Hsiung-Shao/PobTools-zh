@@ -99,10 +99,8 @@ public:
 	// used by the version-compare view and the --atlas-diff CLI.
 	bool LoadVersion(const std::wstring& exeDir, const std::string& tag, std::string* err);
 
-	// Resolved data directory (trailing backslash) and sprite directory of the
-	// last successful load; the renderer reads sprite sheets from SpriteDir().
+	// Resolved data directory (trailing backslash) of the last successful load.
 	const std::wstring& DataDir() const { return dataDir_; }
-	const std::wstring& SpriteDir() const { return spriteDir_; }
 	// Season tag this instance was loaded for ("" for a legacy flat load).
 	const std::string& Tag() const { return tag_; }
 
@@ -177,7 +175,6 @@ private:
 	std::string version_;
 	std::string tag_;
 	std::wstring dataDir_;
-	std::wstring spriteDir_;
 };
 
 // Headless logic check driven by "pob-zh.exe --atlas-selftest": loads the tree,

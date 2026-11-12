@@ -4,20 +4,11 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <cwchar>
-#include <cwctype>
 
 #pragma comment(lib, "winmm.lib")
 
 static bool g_mciOpen = false;
 static std::wstring g_curPath;   // the file last started ("" after StopAudio)
-
-static std::wstring ext_lower(const std::wstring& p)
-{
-	size_t dot = p.find_last_of(L'.');
-	std::wstring e = (dot == std::wstring::npos) ? std::wstring() : p.substr(dot);
-	for (wchar_t& c : e) c = (wchar_t)towlower(c);
-	return e;
-}
 
 void StopAudio()
 {
@@ -47,27 +38,6 @@ bool PlaySystemCue(int id)
 	                                   L"SystemQuestion", L"SystemHand" };
 	if (id < 1) id = 1;
 	return PlaySoundW(kCues[(id - 1) % 5], nullptr, SND_ALIAS | SND_ASYNC | SND_NODEFAULT) == TRUE;
-}
-
-bool PlayAudioFile(const std::wstring& path)
-{
-	StopAudio();
-	if (path.empty()) return false;
-
-	std::wstring e = ext_lower(path);
-	if (e == L".wav") {
-		const bool ok = PlaySoundW(path.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT) == TRUE;
-		if (ok) g_curPath = path;
-		return ok;
-	}
-
-	// Compressed formats via MCI (needs a system codec; mp3/wav always work).
-	std::wstring open = L"open \"" + path + L"\" alias pobsnd";
-	if (mciSendStringW(open.c_str(), nullptr, 0, nullptr) != 0) return false;
-	g_mciOpen = true;
-	if (mciSendStringW(L"play pobsnd", nullptr, 0, nullptr) != 0) { StopAudio(); return false; }
-	g_curPath = path;
-	return true;
 }
 
 bool PlayAudioFileVol(const std::wstring& path, int volumePct)

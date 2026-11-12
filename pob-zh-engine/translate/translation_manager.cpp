@@ -533,21 +533,6 @@ static std::string to_ascii_lower(const std::string &s) {
 }
 
 
-static size_t find_icase(const std::string &haystack, const std::string &needle_lower, size_t start = 0) {
-    if (needle_lower.size() > haystack.size()) return std::string::npos;
-    for (size_t i = start; i <= haystack.size() - needle_lower.size(); i++) {
-        bool match = true;
-        for (size_t j = 0; j < needle_lower.size(); j++) {
-            char hc = haystack[i + j];
-            if (hc >= 'A' && hc <= 'Z') hc += 32;
-            if (hc != needle_lower[j]) { match = false; break; }
-        }
-        if (match) return i;
-    }
-    return std::string::npos;
-}
-
-
 static bool is_glossary_candidate(const std::string &key) {
     if (key.size() < 4 || key.size() > 60) return false;
     bool has_letter = false;

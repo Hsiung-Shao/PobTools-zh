@@ -133,27 +133,6 @@ void BuildStyle(::ImGuiStyle& s, float scale, Density density)
 	s.ScaleAllSizes(scale);
 }
 
-void PushPrimaryButton()
-{
-	ImGui::PushStyleColor(ImGuiCol_Button, Rgba(55, 48, 137));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Rgba(79, 70, 229));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, Rgba(49, 46, 129));
-	ImGui::PushStyleColor(ImGuiCol_Text, Rgba(248, 252, 251));
-}
-
-void PushDangerButton()
-{
-	ImGui::PushStyleColor(ImGuiCol_Button, Rgba(101, 43, 47));
-	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Rgba(133, 51, 57));
-	ImGui::PushStyleColor(ImGuiCol_ButtonActive, Rgba(79, 34, 38));
-	ImGui::PushStyleColor(ImGuiCol_Text, Rgba(255, 235, 236));
-}
-
-void PopButtonStyle()
-{
-	ImGui::PopStyleColor(4);
-}
-
 std::uint32_t TreeKindColor(TreeKind kind)
 {
 	switch (kind) {

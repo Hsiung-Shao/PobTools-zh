@@ -10,15 +10,6 @@ struct ImFontConfig;
 
 namespace PobIcon {
 
-// Raw TTF bytes, NOT compressed: the launcher builds its atlas on two threads at
-// once, and ImGui's stb_decompress keeps its state in file-scope globals.
-// Read-only and static, so every atlas can point at it without a keep-alive.
-const unsigned char* FontData();
-unsigned FontSize();
-
-// The glyph range the icon font is merged over (kRangeFirst..kRangeLast, 0).
-const unsigned short* GlyphRanges();
-
 // The primary face's ascent as a fraction of its line height, read from 'hhea'
 // the way stb_truetype scales it (ascent / (ascent - descent)). 0.8 when the
 // table cannot be read.

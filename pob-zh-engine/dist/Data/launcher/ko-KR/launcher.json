@@ -2,7 +2,6 @@
   "entries": {
     "Path of Building Launcher": "Path of Building 런처",
     "Interface language": "인터페이스 언어",
-    "Game version": "게임 버전",
     "Path of Exile 1": "Path of Exile 1",
     "Path of Exile 2": "Path of Exile 2",
     "Detected": "감지됨",
@@ -15,7 +14,6 @@
     "Timeless jewel": "타임리스 주얼",
     "Stash tracker": "Stash tracker",
     "Modern UI (Beta)": "Modern UI (Beta)",
-    "Open a build in the new interface (preview)": "Open a build in the new interface (preview)",
     "Default interface": "Default interface",
     "Classic": "Classic",
     "Theme 1 (Beta)": "테마 1 (Beta)",
@@ -57,7 +55,6 @@
     "Several windows of the same POB are open; they share its settings and build files, and the last one closed overwrites the others": "같은 POB 창이 여러 개 열려 있습니다. 설정과 빌드 파일을 공유하므로 마지막에 닫는 창이 나머지를 덮어씁니다",
     "Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.": "POB 실행 중에는 업데이트할 수 없습니다. 업데이트는 engine 폴더의 파일을 교체하므로 먼저 모든 POB 창을 닫으세요.",
     "Translation data": "번역 데이터",
-    "Data folder": "데이터 폴더",
     "Launcher UI": "런처 UI",
     "Browse...": "찾아보기...",
     "Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.": "문제가 생기면 그 원인이 여기에 기록됩니다 (하루에 파일 하나). 버그를 신고할 때 오늘 파일을 첨부하는 것이 가장 도움이 됩니다. 문제가 없으면 비어 있습니다.",

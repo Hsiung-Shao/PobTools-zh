@@ -2,7 +2,6 @@
   "entries": {
     "Path of Building Launcher": "Path of Building 启动器",
     "Interface language": "界面语言",
-    "Game version": "游戏版本",
     "Path of Exile 1": "Path of Exile 1",
     "Path of Exile 2": "Path of Exile 2",
     "Detected": "已检测到",
@@ -15,7 +14,6 @@
     "Timeless jewel": "永恒珠宝",
     "Stash tracker": "仓库收益",
     "Modern UI (Beta)": "Modern UI (Beta)",
-    "Open a build in the new interface (preview)": "用新版界面打开构建（测试中）",
     "Default interface": "默认界面",
     "Classic": "经典",
     "Theme 1 (Beta)": "主题 1 (Beta)",
@@ -57,7 +55,6 @@
     "Several windows of the same POB are open; they share its settings and build files, and the last one closed overwrites the others": "同一个 POB 开了多个窗口；它们共用设置与构筑文件，最后关闭的那个会覆盖其他的",
     "Cannot update while POB is running: the update replaces files in the engine folder. Close every POB window first.": "POB 运行中无法更新：更新会替换 engine 文件夹里的文件，请先关闭所有 POB 窗口",
     "Translation data": "翻译数据",
-    "Data folder": "翻译数据文件夹",
     "Launcher UI": "启动器界面",
     "Browse...": "浏览…",
     "Whenever something fails, the reason is written here (one file per day). Attaching today's file to a bug report is the most useful thing you can do; when nothing is wrong it stays empty.": "程序遇到问题时会把原因写进这里（每天一个文件）。反馈问题时附上当天那个文件最有帮助；一切正常时它会是空的。",
