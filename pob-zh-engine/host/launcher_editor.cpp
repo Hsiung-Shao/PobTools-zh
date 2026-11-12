@@ -15,6 +15,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>   // ShellExecuteW: open the dictionary folder
+#include "win_util.h"
 
 #include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
@@ -35,15 +36,6 @@
 namespace Tok = PobUi::Tok;
 using PobUi::D;
 
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 // Case-insensitive (ASCII) substring test. needleLower must already be lower.
 static bool contains_ci(const std::string& hay, const std::string& needleLower)

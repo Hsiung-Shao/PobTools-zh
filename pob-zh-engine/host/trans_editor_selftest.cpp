@@ -22,6 +22,7 @@
 #include "editor_data.h"
 #include "launcher_editor.h"
 #include "tool_panel.h"
+#include "win_util.h"
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
@@ -48,15 +49,6 @@ struct Report {
 	}
 	void line(const std::string& s) { text += s + "\n"; }
 };
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 bool readAll(const std::wstring& p, std::string& out)
 {

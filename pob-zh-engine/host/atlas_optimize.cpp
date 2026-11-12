@@ -5,6 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <chrono>
@@ -32,19 +33,6 @@ const int kStarHubs = 24;
 // (measured: more than the single best cost time and bought no points).
 const int kImprovePasses = 2;
 const int kImproveCandidates = 1;
-
-// file helper (same convention as atlas_tree_data.cpp)
-
-bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD wrote = 0;
-	bool ok = content.empty() ||
-	          (WriteFile(h, content.data(), (DWORD)content.size(), &wrote, nullptr) && wrote == content.size());
-	CloseHandle(h);
-	return ok;
-}
 
 // small graph utilities
 

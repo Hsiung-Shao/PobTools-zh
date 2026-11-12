@@ -18,6 +18,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
+#include "win_util.h"
 
 #include <atomic>
 #include <cmath>
@@ -42,24 +43,6 @@ void check(const std::string& what, bool ok, const std::string& detail = "")
 {
 	if (ok) g_pass++; else g_fail++;
 	line(std::string(ok ? "PASS " : "FAIL ") + what + (detail.empty() ? "" : "  (" + detail + ")"));
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
 }
 
 using namespace PobSandbox;

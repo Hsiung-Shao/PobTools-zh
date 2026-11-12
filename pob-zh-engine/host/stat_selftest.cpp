@@ -29,6 +29,7 @@
 
 #include "../translate/translation_manager.h"
 #include "error_log.h"
+#include "win_util.h"
 
 namespace {
 
@@ -47,24 +48,6 @@ void check(bool ok, const char* what)
 {
 	(ok ? g_pass : g_fail)++;
 	printf("  %s  %s\n", ok ? "[PASS]" : "[FAIL]", what);
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring exe_dir()
-{
-	wchar_t path[MAX_PATH];
-	GetModuleFileNameW(nullptr, path, MAX_PATH);
-	std::wstring s(path);
-	size_t slash = s.find_last_of(L'\\');
-	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
 }
 
 bool read_bytes(const std::wstring& p, std::string& out)

@@ -14,6 +14,7 @@
 #include <winioctl.h>
 #include <shlobj.h>
 #include <knownfolders.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -90,15 +91,6 @@ const char* const kTitles[40] = {
 void Record(int n, bool ok, const std::string& detail) { g_res[n] = Res{ok, detail}; }
 
 // 小工具
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 bool IsDir(const std::wstring& p)
 {

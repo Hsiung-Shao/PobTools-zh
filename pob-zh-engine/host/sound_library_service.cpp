@@ -8,28 +8,11 @@
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 #include <algorithm>
 #include <fstream>
+#include "win_util.h"
 
 using nlohmann::ordered_json;
 
 namespace {
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 bool ieq(const std::wstring& a, const std::wstring& b)
 {

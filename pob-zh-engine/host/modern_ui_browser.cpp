@@ -14,6 +14,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -41,24 +42,6 @@ namespace {
 constexpr int kGoneSeconds = 20;
 constexpr int kFirstConnectSeconds = 180;
 
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
-
 // "Windows", or what Wine is pretending for and what it is really running on.
 // ntdll exports both under Wine/CrossOver and neither on real Windows, so this
 // is also how we tell a Mac bottle (Darwin) from a Linux one.
@@ -81,12 +64,6 @@ std::string HostDescription()
 	if (release && *release) { out += " "; out += release; }
 	if (sysname && std::string(sysname) == "Darwin") out += " (macOS -- CrossOver or similar)";
 	return out;
-}
-
-bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 bool read_file(const std::wstring& path, std::string& out)

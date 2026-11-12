@@ -15,6 +15,7 @@
 #include <shellapi.h>
 #include <wrl.h>
 #include <WebView2.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -38,30 +39,6 @@ constexpr wchar_t kHostFonts[] = L"fonts.pobtools";
 constexpr wchar_t kHostCache[] = L"cache.pobtools";
 // Background images (PobTools\Backgrounds\, shared with the launcher's Appearance tab).
 constexpr wchar_t kHostBg[] = L"bg.pobtools";
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
-
-bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
 
 // Per-monitor-v2 without a manifest: the launcher gets it from glfwInit, this
 // process never calls GLFW. Resolved at run time so Windows 8/early 10 still start.

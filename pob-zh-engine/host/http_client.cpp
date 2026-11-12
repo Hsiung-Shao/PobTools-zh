@@ -5,6 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winhttp.h>
+#include "win_util.h"
 
 #include <mutex>
 
@@ -14,15 +15,6 @@
 #ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
 #define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY 4
 #endif
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 // Manual proxy shared by every session this process opens. Guarded because the
 // settings page writes it on the UI thread while workers open sessions.

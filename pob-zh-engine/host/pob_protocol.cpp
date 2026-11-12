@@ -4,6 +4,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <cstdio>
 #include <cwchar>
@@ -21,15 +22,6 @@ namespace {
 // "%25XX", 5 chars): a 23-character Cyrillic name alone is ~230 characters.
 const size_t kMaxUri = 512;
 const wchar_t* const kSchemes[] = { L"pob", L"pob2" };
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
 
 bool id_char(wchar_t c)
 {

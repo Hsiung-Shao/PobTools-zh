@@ -8,6 +8,7 @@
 #include <cwchar>
 #include <cwctype>
 #include <initializer_list>
+#include "win_util.h"
 
 // Config section name after the PobCharm -> PobTools rename. Old pob-zh.ini files
 // store their keys under [PoeCharm]; we read that as a one-time migration fallback
@@ -27,18 +28,6 @@ const wchar_t* DictSlotFolder(DictSlot slot)
 {
 	const int i = (int)slot;
 	return (i >= 0 && i < kDictSlotCount) ? kDictSlotFolders[i] : kDictSlotFolders[0];
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 // path helpers

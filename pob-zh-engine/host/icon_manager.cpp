@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <winhttp.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json
 #include <cctype>
@@ -17,15 +18,6 @@
 using nlohmann::ordered_json;
 
 // helpers
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
 
 static bool read_file_bytes(const std::wstring& path, std::vector<unsigned char>& out)
 {

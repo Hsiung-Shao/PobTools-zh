@@ -22,26 +22,9 @@
 
 #include "editor_data.h"
 #include "../translate/translation_manager.h"
+#include "win_util.h"
 
 namespace {
-
-std::wstring exe_dir()
-{
-	wchar_t path[MAX_PATH];
-	GetModuleFileNameW(nullptr, path, MAX_PATH);
-	std::wstring s(path);
-	size_t slash = s.find_last_of(L'\\');
-	return slash == std::wstring::npos ? L"" : s.substr(0, slash + 1);
-}
-
-std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 std::string tsv_safe(const std::string& s)
 {

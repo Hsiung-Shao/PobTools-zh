@@ -3,6 +3,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -12,50 +13,6 @@ using nlohmann::ordered_json;
 // Structured-entry translation key "翻譯" (UTF-8 E7 BF BB E8 AD AF), spelled as
 // bytes so it matches regardless of how this file's encoding is interpreted.
 static const char* kTransKey = "\xe7\xbf\xbb\xe8\xad\xaf";
-
-// small Win32 / encoding helpers
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-// Read a whole file into a UTF-8 string using a wide path (the exe may live in
-// a non-ASCII directory). Returns false if the file cannot be opened.
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
 
 // Atomic write: write a temp file next to the target, then rename over it.
 static bool write_file_atomic(const std::wstring& path, const std::string& data)
