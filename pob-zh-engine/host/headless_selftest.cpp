@@ -3227,6 +3227,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			const std::wstring urlFile = exeDir + L"PobTools\\modern_ui_url_poe2.txt";
 			DeleteFileW(urlFile.c_str());
 			LauncherConfig bcfg = LoadLauncherConfig(exeDir + L"pob-zh.ini");
+			bcfg.uiMode = 2; // 固定啟動主題為 2,不看開發機的 ini,才能驗「ini 為 0 時維持啟動主題」
 			std::atomic<int> brc{ -1000 };
 			std::thread server([&]() { brc = ShowModernUiInBrowser(exeDir, L"poe2", L"zh-rTW", bcfg, L"", sandbox); });
 			std::string url;
@@ -3281,18 +3282,25 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			      std::to_string(page));
 			// 工作階段開著時使用者改主題再按啟動會重用同一個工作階段,首頁必須依請求當下 ini 的 UiMode 回對應主題
 			const std::wstring uiIni = exeDir + L"pob-zh.ini";
-			const UINT uiModeOrig = GetPrivateProfileIntW(L"PobTools", L"UiMode", 0, uiIni.c_str());
+			wchar_t uiModeOrig[16];
+			GetPrivateProfileStringW(L"PobTools", L"UiMode", L"\x01", uiModeOrig, 16, uiIni.c_str());
+			const bool uiModeHadKey = wcscmp(uiModeOrig, L"\x01") != 0;
 			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"1", uiIni.c_str());
-			std::string bodyT1, bodyT2;
+			std::string bodyT1, bodyT2, bodyT0;
 			const int pageT1 = port ? http("GET", prefix, host, "", bodyT1) : -1;
 			const bool t1Ok = bodyT1.find("./assets/index-") != std::string::npos && bodyT1.find("./assets/theme2-") == std::string::npos;
 			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"2", uiIni.c_str());
 			const int pageT2 = port ? http("GET", prefix, host, "", bodyT2) : -1;
 			const bool t2Ok = bodyT2.find("./assets/theme2-") != std::string::npos;
-			WritePrivateProfileStringW(L"PobTools", L"UiMode", std::to_wstring(uiModeOrig).c_str(), uiIni.c_str());
-			check("browser mode: the page follows the ini's UiMode at request time (a relaunch reuses the live session)",
-			      pageT1 == 200 && pageT2 == 200 && t1Ok && t2Ok,
-			      "t1=" + std::to_string(pageT1) + " t1Ok=" + std::to_string(t1Ok) + " t2=" + std::to_string(pageT2) + " t2Ok=" + std::to_string(t2Ok));
+			// 經典(0)不該把還活著的工作階段掉回主題 1,要維持啟動主題(上面固定為 2)
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"0", uiIni.c_str());
+			const int pageT0 = port ? http("GET", prefix, host, "", bodyT0) : -1;
+			const bool t0Ok = bodyT0.find("./assets/theme2-") != std::string::npos;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", uiModeHadKey ? uiModeOrig : nullptr, uiIni.c_str());
+			check("browser mode: the page follows the ini's UiMode at request time; classic (0) keeps the session's launch theme",
+			      pageT1 == 200 && pageT2 == 200 && pageT0 == 200 && t1Ok && t2Ok && t0Ok,
+			      "t1=" + std::to_string(pageT1) + " t1Ok=" + std::to_string(t1Ok) + " t2=" + std::to_string(pageT2) + " t2Ok=" + std::to_string(t2Ok) +
+			          " t0=" + std::to_string(pageT0) + " t0Ok=" + std::to_string(t0Ok));
 			int font = port ? http("GET", prefix + "~fonts/NotoSansTC-Regular.ttf", host, "", body) : -1;
 			int badTok = port ? http("GET", "/t/00000000000000000000000000000000/", host, "", body) : -1;
 			int climb = port ? http("GET", prefix + "~pob/../../pob-zh.ini", host, "", body) : -1;

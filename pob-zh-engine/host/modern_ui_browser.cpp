@@ -478,8 +478,11 @@ struct Server {
 			if (sub.compare(0, n, r.name) == 0) { root = r.dir; sub = sub.substr(n); isApp = false; break; }
 		}
 		// the session's address is the folder. Re-read the theme per request: Launch reuses a live session, and the
-		// user may have picked the other theme since it started
-		if (isApp && (sub.empty() || sub.back() == '/')) sub += narrow(ModernUiPage(LoadLauncherConfig(exeDir + L"pob-zh.ini").uiMode));
+		// user may have picked the other theme since it started. Classic (0) names no page: keep the launch theme
+		if (isApp && (sub.empty() || sub.back() == '/')) {
+			int mode = LoadLauncherConfig(exeDir + L"pob-zh.ini").uiMode;
+			sub += narrow(ModernUiPage(mode ? mode : cfg.uiMode));
+		}
 		// no climbing, no drive letters, no backslashes smuggled in
 		if (sub.find("..") != std::string::npos || sub.find(':') != std::string::npos || sub.find('\\') != std::string::npos) return false;
 		std::wstring w = widen(sub);
