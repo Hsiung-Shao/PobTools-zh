@@ -737,6 +737,11 @@ void AppUpdater::workerLoop()
 			cmd = cmdQ_.front();
 			cmdQ_.pop_front();
 		}
+		// "Retry" on an error banner also lands here. If the last check offered
+		// nothing (it failed, or decided there was nothing to install), latest_ may
+		// still hold an older release -- installing it would downgrade without the
+		// offer ever being shown. Ask again instead.
+		if (cmd == Cmd::UpdateApp && !appOffered_) cmd = Cmd::CheckLoud;
 		std::string err;
 		if (cmd == Cmd::Check || cmd == Cmd::CheckLoud) {
 			if (!doCheck(&err, cmd == Cmd::CheckLoud)) {
@@ -1352,6 +1357,11 @@ bool AppUpdater::doCheck(std::string* err, bool userAsked)
 	if (hold_.load()) return true;
 
 	setPhase(AppUpdatePhase::Checking, kMsgChecking);
+	appOffered_ = false; // until this check decides otherwise
+	{
+		std::lock_guard<std::mutex> lk(stMx_);
+		st_.appIsBack = false;
+	}
 
 	// --- App 線(致命):失敗就整個檢查失敗,沿用舊行為 ---------------------
 	RemoteRelease rel;
@@ -1391,6 +1401,7 @@ bool AppUpdater::doCheck(std::string* err, bool userAsked)
 		std::lock_guard<std::mutex> lk(stMx_);
 		st_.appIsBack = plan.promptApp && plan.appIsBack;
 	}
+	appOffered_ = plan.promptApp;
 
 	// 翻譯線先跑(它會自己套用完),程式線接著**無條件**判斷。
 	// ⚠ 這兩段以前是 if / else-if。當時 patch 與 minor 互斥所以安全,拆線後

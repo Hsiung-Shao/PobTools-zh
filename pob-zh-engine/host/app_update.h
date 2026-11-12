@@ -212,6 +212,7 @@ private:
 	std::atomic<bool> hold_{ false };           // see SetHold
 	std::atomic<bool> transUpdates_{ true };    // see SetTranslationUpdates
 	std::atomic<bool> betaChannel_{ false };    // see SetBetaChannel
+	bool appOffered_ = false;                   // worker only: the last check put an app release on offer
 
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;

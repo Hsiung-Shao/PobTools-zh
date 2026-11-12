@@ -252,6 +252,7 @@
 	   settings side navigation, appearance thumbnails, about card. */          \
 	X(appSubtitle,       u8"Path of Building 繁體中文化", u8"Path of Building in Traditional Chinese") \
 	X(updateTo,          u8"更新到 v%s",                   u8"Update to v%s")                         \
+	X(updateBackTo,      u8"回到正式版 v%s",               u8"Back to stable v%s")                    \
 	X(updateDownloadingVer, u8"下載 v%s",                  u8"Downloading v%s")                       \
 	X(transUpdatingHdr,  u8"更新翻譯資料",                 u8"Updating translation data")             \
 	X(updateFailedPill,  u8"更新失敗",                     u8"Update failed")                         \
