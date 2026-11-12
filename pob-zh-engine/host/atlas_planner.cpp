@@ -961,10 +961,22 @@ public:
 					ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());
 					// explicit wrap width so a short title cannot make the tooltip a narrow strip
 					ImGui::PushTextWrapPos(380.0f * scale);
-					// allocated: what it grants now; a search hit not allocated yet: every option
-					for (const std::string& s : n.alloc ? n.EffStats() : n.AllStats()) {
+					auto statText = [&](const std::string& s) {
+						return StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s);
+					};
+					// allocated: what it grants now. A search hit not allocated yet has
+					// no pick, so its options are listed apart, as the canvas tooltip does.
+					for (const std::string& s : n.alloc ? n.EffStats() : n.stats) {
 						ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
-						ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
+						ImGui::TextUnformatted(statText(s).c_str());
+						ImGui::PopStyleColor();
+					}
+					if (!n.alloc && !n.variants.empty()) {
+						ImGui::TextDisabled(u8"選項（擇一）");
+						ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::TextMuted));
+						for (const AtlasVariant& v : n.variants)
+							for (const std::string& s : v.stats)
+								ImGui::TextUnformatted(("   " + statText(s)).c_str());
 						ImGui::PopStyleColor();
 					}
 					ImGui::PopTextWrapPos();
@@ -2242,8 +2254,9 @@ private:
 		for (auto& g : nodeGroups) g.clear();
 		// Rebuilt here, not only on a season load: every path that swaps the tree
 		// or the zh mapping already sets panelDirty.
-		// zhAvail_, not zhLoaded: a lagging season opens in English, but typing
-		// Chinese must still find the node (search matches, it does not display).
+		// zhAvail_, not zhLoaded: a lagging season opens in English, but the Chinese
+		// it does have (what applyZh kept) is still searchable -- search matches,
+		// it does not display.
 		nodeKeys = AtlasNodeSearchKeys(tree, zhAvail_ ? &i18n : nullptr);
 		searchStale = true;
 		std::unordered_map<std::string, size_t> pos;
