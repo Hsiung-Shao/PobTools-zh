@@ -318,12 +318,14 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 		// wherever repoe now supplies its own zh, repoe wins and the marker is
 		// dropped (once repoe catches the season up, markers become inert).
 		std::set<std::string> freshOut, freshNamesOut;
+		bool prevProvisional = false;
 		{
 			// phase 1 (may throw): parse the previous mapping's fresh markers
 			std::map<std::string, std::string> freshZh, freshName;
 			std::string prevRaw;
 			if (read_file_utf8(destDir + L"atlas_tree_zh.json", prevRaw)) try {
 				ordered_json prev = ordered_json::parse(prevRaw);
+				prevProvisional = prev.value("provisional", false);
 				std::set<std::string> freshSet, freshNameSet;
 				if (prev.contains("fresh") && prev["fresh"].is_array())
 					for (const auto& f : prev["fresh"])
@@ -391,6 +393,8 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 			out["fresh"] = ordered_json(freshOut);
 		if (!freshNamesOut.empty())
 			out["freshNames"] = ordered_json(freshNamesOut);
+		if (prevProvisional && (!freshOut.empty() || !freshNamesOut.empty()))
+			out["provisional"] = true;
 		out["nodes"] = std::move(outNodes);
 
 		SHCreateDirectoryExW(nullptr, destDir.c_str(), nullptr);

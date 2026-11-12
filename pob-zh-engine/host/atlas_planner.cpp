@@ -237,7 +237,16 @@ public:
 				for (int i = 0; i < (int)tree.nodes.size() && seen < 2; i++) {
 					if (tree.nodes[i].variants.empty()) continue;
 					tree.Alloc(tree.FindPathTo(i));
-					if (seen++ == 0) tree.nodes[i].variant = 0;
+					if (seen++ == 0) {
+						tree.nodes[i].variant = 0;
+						// plus one whose options finish a base line, for the merged panel line
+						for (int j = 0; j < (int)tree.nodes.size(); j++)
+							if (!tree.nodes[j].variants.empty() && !tree.nodes[j].stats.empty()) {
+								tree.Alloc(tree.FindPathTo(j));
+								tree.nodes[j].variant = 0;
+								break;
+							}
+					}
 					else view.OpenVariantPicker(i);
 				}
 				panelDirty = true;
@@ -2090,8 +2099,14 @@ private:
 		zhAvail_ = zhLoaded;
 		zhLag_ = zhLoaded && i18n.LagsSeason(tag);
 		zhLagMsg_.clear();
-		if (zhLag_)
-			zhLagMsg_ = tag + u8" 的繁體中文尚未齊全：能確定的內容可顯示中文，其餘維持英文，開季後補齊。";
+		if (zhLag_) {
+			KeepFreshOnly(i18n, tree);
+			zhLagMsg_ = i18n.Provisional()
+				? tag + u8" 的繁體中文是暫譯（非官方），用語可能與遊戲內不同；開季後會以官方譯文更新。"
+				: tag + u8" 的繁體中文尚未齊全：能確定的內容可顯示中文，其餘維持英文，開季後補齊。";
+			zhLoaded = lagZh_;
+			return;
+		}
 		std::string older = verIndex.OlderThan(tag);
 		if (zhLoaded && !older.empty()) {
 			AtlasTreeData ot;
@@ -2111,7 +2126,6 @@ private:
 				BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
 			}
 		}
-		if (zhLag_) zhLoaded = lagZh_;
 	}
 	// The tree's language while its translations lag (see applyZh). The mapping
 	// stays loaded and pruned in i18n either way; this only flips the gate.
@@ -2177,8 +2191,43 @@ private:
 			for (const std::string& s : n.AggStats())
 				AccumulateStatLine(s, statAgg, pos);
 		}
+		// A multiple-choice node's panel line is "<base>: <pick>[ / <pick>]" per
+		// text line (AtlasNode::AggStats), which no mapping has as a whole:
+		// translate the two sides separately.
 		std::function<std::string(const std::string&)> zhFn =
-			[&](const std::string& en) { return i18n.StatLine(en); };
+			[&](const std::string& en) -> std::string {
+				const std::string& whole = i18n.StatLine(en);
+				if (&whole != &en) return whole;
+				size_t sep = en.find(": ");
+				if (sep == std::string::npos) return en;
+				std::string base, pick, picks = en.substr(en.find(": ", en.rfind('\n') == std::string::npos ? 0 : en.rfind('\n')) + 2);
+				// every text line carries the same pick: rebuild the multi-line base
+				for (size_t at = 0; at <= en.size();) {
+					size_t e = en.find('\n', at);
+					std::string line = en.substr(at, e == std::string::npos ? e : e - at);
+					size_t c = line.rfind(": " + picks);
+					if (c == std::string::npos || c + 2 + picks.size() != line.size()) return en;
+					base += (base.empty() ? "" : "\n") + line.substr(0, c);
+					if (e == std::string::npos) break;
+					at = e + 1;
+				}
+				for (size_t at = 0; at <= picks.size();) {
+					size_t e = picks.find(" / ", at);
+					std::string one = picks.substr(at, e == std::string::npos ? e : e - at);
+					pick += (pick.empty() ? "" : " / ") + i18n.StatLine(one);
+					if (e == std::string::npos) break;
+					at = e + 3;
+				}
+				const std::string& zb = i18n.StatLine(base);
+				std::string out;
+				for (size_t at = 0; at <= zb.size();) {
+					size_t e = zb.find('\n', at);
+					out += (out.empty() ? "" : "\n") + zb.substr(at, e == std::string::npos ? e : e - at) + u8"：" + pick;
+					if (e == std::string::npos) break;
+					at = e + 1;
+				}
+				return out;
+			};
 		BuildStatAggDisplay(statAgg, zhLoaded ? &zhFn : nullptr);
 		statOrderEn.resize(statAgg.size());
 		std::iota(statOrderEn.begin(), statOrderEn.end(), 0);
@@ -2962,7 +3011,9 @@ private:
 		// same display rules as the canvas: when the zh snapshot predates the
 		// season, changed lines / renamed nodes fall back to English; unchanged
 		// lines keep (or backfill) their Chinese
-		if (hb && ht) {
+		if (hb && bz.LagsSeason(base)) KeepFreshOnly(bz, bt);
+		if (ht && tz.LagsSeason(targ)) KeepFreshOnly(tz, tt);
+		else if (hb && ht) {
 			bool zhLags = !tz.RepoeVersion().empty() &&
 			              AtlasVersionIndex::CompareSemver(tz.RepoeVersion(), targ) < 0;
 			if (zhLags) {

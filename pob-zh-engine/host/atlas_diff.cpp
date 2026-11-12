@@ -226,6 +226,16 @@ int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
 	return added;
 }
 
+int KeepFreshOnly(AtlasI18n& i18n, const AtlasTreeData& tree)
+{
+	int dropped = 0;
+	for (const std::string& en : i18n.TranslatedStatLines())
+		if (!i18n.IsFreshStat(en)) { i18n.DropStat(en); dropped++; }
+	for (const AtlasNode& n : tree.nodes)
+		if (!i18n.IsFreshName(n.id) && &i18n.NodeName(n.id, n.name) != &n.name) { i18n.DropName(n.id); dropped++; }
+	return dropped;
+}
+
 int DropRenamedNames(AtlasI18n& newI18n, const AtlasTreeData& newTree, const AtlasTreeData& oldTree)
 {
 	std::unordered_map<int, std::string> oldName;
