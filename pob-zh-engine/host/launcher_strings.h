@@ -43,7 +43,8 @@
 	X(modernUiTip,       u8"以新版介面開啟建置(測試中)",   u8"Open a build in the new interface (preview)") \
 	X(uiModeLabel,       u8"預設介面",                     u8"Default interface")                     \
 	X(uiModeClassic,     u8"經典",                         u8"Classic")                               \
-	X(uiModeModern,      u8"新介面(Beta)",                 u8"New interface (Beta)")                  \
+	X(uiModeTheme1,      u8"主題 1 (Beta)",                u8"Theme 1 (Beta)")                        \
+	X(uiModeTheme2,      u8"主題 2 (Beta)",                u8"Theme 2 (Beta)")                        \
 	X(uiModeUnavailable, u8"找不到新介面的頁面檔(ui\\index.html),「啟動」一律開經典視窗。", \
 	                     u8"The new interface's page (ui\\index.html) is missing; Launch always opens the classic window.") \
 	X(uiModeBrowser,     u8"按「啟動」時開哪一種視窗(PoE1 與 PoE2 都適用)。這台電腦沒有 WebView2(例如 macOS / Linux 的 CrossOver、Wine),新介面會在系統瀏覽器開啟;按頁面右上角「結束」或在這裡結束,只關分頁的話約 20 秒後結束。", \
@@ -273,7 +274,8 @@
 	X(noDictDesc,        u8"主程式更新包不含字典，需要另外下載一次。", u8"The program update pack carries no dictionaries; they are downloaded separately.") \
 	X(moreBanners,       u8"還有 %d 則",                   u8"%d more")                               \
 	X(uiModeShortClassic, u8"經典介面",                    u8"Classic interface")                     \
-	X(uiModeShortModern, u8"新介面",                       u8"New interface")                         \
+	X(uiModeShortTheme1, u8"主題 1",                       u8"Theme 1")                               \
+	X(uiModeShortTheme2, u8"主題 2",                       u8"Theme 2")                               \
 	X(pobRunningPill,    u8"執行中 ×%d",                   u8"Running ×%d")                           \
 	X(notFoundPoe1Card,  u8"把裡面有 Launch.lua 的 POB 資料夾放在 pob-zh.exe 旁，回到這裡就會偵測到。", \
 	                     u8"Put a POB folder with Launch.lua in it next to pob-zh.exe; it is detected when you come back here.") \

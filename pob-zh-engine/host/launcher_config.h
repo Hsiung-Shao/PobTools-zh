@@ -189,7 +189,8 @@ struct LauncherConfig {
 	std::wstring   modernTheme = L"slate";
 	std::wstring   modernAccent;            // "#rrggbb"; empty = the theme's own
 	std::wstring   modernFont;              // Fonts\ file name; empty = the launcher's
-	// 0 = classic POB window, 1 = the new interface: what the launcher's
+	// 0 = classic POB window, 1 = new interface theme 1 (ui\index.html),
+	// 2 = new interface theme 2 (ui\theme2.html): what the launcher's
 	// "Launch" button opens, for either game (settings page, "Default
 	// interface"). A machine without WebView2 and a POB the bridge gate refused
 	// open the classic window regardless (ModernUiUsableFor).
@@ -257,6 +258,9 @@ struct LauncherConfig {
 	// takes the links over from an official POB install.
 	bool           pobProtocol = false;
 };
+
+// uiMode -> the page file under ui\ that the new interface opens.
+const wchar_t* ModernUiPage(int uiMode);
 
 // ---- external dictionary folders -------------------------------------------
 

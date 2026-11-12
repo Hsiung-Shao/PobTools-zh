@@ -2312,7 +2312,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			}
 			// The new interface fell back to classic on this POB version; gone once
 			// POB updates (the verdict is bound to the version it was taken against).
-			if (modernUiOk && cfg.uiMode == 1 && modernGateBlocked()) {
+			if (modernUiOk && cfg.uiMode != 0 && modernGateBlocked()) {
 				BannerSpec b{ PobUi::BannerTone::Warn, PobIcon::TriangleAlert };
 				char t[512];
 				snprintf(t, sizeof(t), S.modernGateBanner, modernGate.pobVersion.c_str());
@@ -2391,13 +2391,13 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			const bool poe2 = g == 1;
 			const bool ok = poe2 ? !installs.poe2Lua.empty() : !installs.poe1Lua.empty();
 			const int running = PobLaunch::PobRunningCountFor(poe2 ? L"poe2" : L"poe1");
-			const bool modernFor = cfg.uiMode == 1 && modernUiOk && !modernGateBlockedFor(poe2);
+			const bool modernFor = cfg.uiMode != 0 && modernUiOk && !modernGateBlockedFor(poe2);
 			GameCardSpec spec;
 			spec.badge = poe2 ? "P2" : "P1";
 			spec.name = poe2 ? S.poe2 : S.poe1;
 			const std::string& ver = poe2 ? installs.poe2Version : installs.poe1Version;
 			spec.meta = (ver.empty() ? std::string("POB") : "POB v" + ver) + " \xc2\xb7 " +
-			            (modernFor ? S.uiModeShortModern : S.uiModeShortClassic);
+			            (!modernFor ? S.uiModeShortClassic : cfg.uiMode == 2 ? S.uiModeShortTheme2 : S.uiModeShortTheme1);
 			if (!ok) {
 				spec.missing = poe2 ? S.notFoundPoe2Card : S.notFoundPoe1Card;
 				spec.pillTone = PobUi::Tone::Bad;
@@ -2811,12 +2811,12 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			{
 				// What "Launch" opens. Offered only where the new interface can run;
 				// elsewhere the row says why and the saved choice is left alone.
-				const char* opts[2] = { S.uiModeClassic, S.uiModeModern };
+				const char* opts[3] = { S.uiModeClassic, S.uiModeTheme1, S.uiModeTheme2 };
 				PobUi::RowBegin(S.uiModeLabel, modernUiOk ? S.uiModeHintShort : S.uiModeUnavailable,
-				                PobUi::SegmentedWidth(opts, 2), 0.0f, modernInBrowser ? S.uiModeBrowser : nullptr,
+				                PobUi::SegmentedWidth(opts, 3), 0.0f, modernInBrowser ? S.uiModeBrowser : nullptr,
 				                !modernUiOk);
-				int um = cfg.uiMode == 1 ? 1 : 0;
-				if (PobUi::Segmented("##uimode", &um, opts, 2, modernUiOk) && modernUiOk) {
+				int um = cfg.uiMode;
+				if (PobUi::Segmented("##uimode", &um, opts, 3, modernUiOk) && modernUiOk) {
 					cfg.uiMode = um;
 					saveNow();
 				}

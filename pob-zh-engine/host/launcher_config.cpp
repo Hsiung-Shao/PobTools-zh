@@ -162,6 +162,8 @@ static std::wstring utf8_of_hex(const std::wstring& hex)
 	return widen_utf8(bytes);
 }
 
+const wchar_t* ModernUiPage(int uiMode) { return uiMode == 2 ? L"theme2.html" : L"index.html"; }
+
 LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 {
 	LauncherConfig c;
@@ -220,8 +222,9 @@ LauncherConfig LoadLauncherConfig(const std::wstring& iniPath)
 		c.modernTheme = NormalizeModernTheme(read_ini_path(iniPath, L"ModernTheme"));
 		c.modernAccent = NormalizeModernAccent(read_ini_path(iniPath, L"ModernAccent"));
 		c.modernFont = NormalizeModernFont(read_ini_path(iniPath, L"ModernFont"));
-		// Same rule as WindowMode: anything but the one known value is the default.
-		c.uiMode = (read_ini_int(iniPath, L"UiMode", 0) == 1) ? 1 : 0;
+		// Same rule as WindowMode: anything but the known values is the default.
+		const int um = read_ini_int(iniPath, L"UiMode", 0);
+		c.uiMode = (um == 1 || um == 2) ? um : 0;
 	}
 
 	wchar_t fbuf[128];
@@ -1237,6 +1240,23 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 	check("T8f UiMode=1 selects the new interface", um() == 1, std::to_string(um()));
 	write(L"PobTools", { { L"UiMode", L"modern" } });
 	check("T8g an unknown UiMode falls back to classic", um() == 0, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"2" } });
+	check("T8h UiMode=2 selects theme 2", um() == 2, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"3" } });
+	check("T8i UiMode=3 falls back to classic", um() == 0, std::to_string(um()));
+	write(L"PobTools", { { L"UiMode", L"-1" } });
+	check("T8i2 UiMode=-1 falls back to classic", um() == 0, std::to_string(um()));
+	for (int m = 0; m <= 2; m++) {
+		DeleteFileW(ini.c_str());
+		LauncherConfig c;
+		c.uiMode = m;
+		SaveLauncherConfig(ini, c);
+		check(("T8j UiMode round-trips " + std::to_string(m)).c_str(), um() == m, std::to_string(um()));
+	}
+	check("T8k ModernUiPage(1) is index.html", std::wstring(ModernUiPage(1)) == L"index.html");
+	check("T8k2 ModernUiPage(2) is theme2.html", std::wstring(ModernUiPage(2)) == L"theme2.html");
+	check("T8k3 ModernUiPage(0) falls back to index.html", std::wstring(ModernUiPage(0)) == L"index.html");
+	check("T8k4 ModernUiPage(7) falls back to index.html", std::wstring(ModernUiPage(7)) == L"index.html");
 
 	// round trip, including the mirrored legacy key
 	for (int m = 0; m <= 2; m++) {

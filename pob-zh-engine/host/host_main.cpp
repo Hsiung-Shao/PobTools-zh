@@ -376,7 +376,7 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 	}
 	PobLog::Diag("protocol", "opening link " + to_utf8(uri) + " for " + to_utf8(game));
 	apply_engine_env(cfg, dir, game);
-	const bool openModern = cfg.uiMode == 1 && (poe2
+	const bool openModern = cfg.uiMode != 0 && (poe2
 		? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
 		: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 	const std::wstring self = exe_path();
@@ -1134,7 +1134,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			// POB_PATH still works as an override source when the sibling folder is absent.
 			if (launchLua.empty()) launchLua = resolve_launch_lua_legacy(dir);
 			if (launchLua.empty()) continue; // UI should have prevented this; just re-show
-			openModern = cfg.uiMode == 1 && (cfg.game == L"poe2"
+			openModern = cfg.uiMode != 0 && (cfg.game == L"poe2"
 				? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
 				: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 		}

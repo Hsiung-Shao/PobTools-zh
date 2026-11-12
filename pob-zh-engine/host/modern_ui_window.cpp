@@ -496,7 +496,7 @@ struct Window {
 		GetClientRect(hwnd, &rc);
 		controller->put_Bounds(rc);
 		ApplyZoom(); // before the first paint, so the remembered scale never flashes
-		webview->Navigate((std::wstring(L"https://") + kHostApp + L"/index.html").c_str());
+		webview->Navigate((std::wstring(L"https://") + kHostApp + L"/" + ModernUiPage(cfg.uiMode)).c_str());
 		return S_OK;
 	}
 
@@ -621,7 +621,8 @@ bool ModernUiAvailable(const std::wstring& exeDir, std::wstring* why)
 	auto no = [&](const wchar_t* reason) { if (why) *why = reason; return false; };
 	if (PobLaunch::RunningUnderWine()) return no(L"WebView2 does not run under Wine");
 	if (!file_exists(exeDir + L"engine\\WebView2Loader.dll")) return no(L"engine\\WebView2Loader.dll is missing");
-	if (!file_exists(exeDir + L"ui\\index.html")) return no(L"ui\\index.html is missing (run `npm run build` in ui/)");
+	if (!file_exists(exeDir + L"ui\\index.html") || !file_exists(exeDir + L"ui\\theme2.html"))
+		return no(L"ui\\index.html or ui\\theme2.html is missing (run `npm run build` in ui/)");
 	// Loader present: the delay-load below resolves from engine\ (SetDllDirectoryW
 	// in wWinMain). The function answers whether an Evergreen Runtime is installed.
 	LPWSTR ver = nullptr;

@@ -482,7 +482,8 @@ struct Server {
 			size_t n = strlen(r.name);
 			if (sub.compare(0, n, r.name) == 0) { root = r.dir; sub = sub.substr(n); isApp = false; break; }
 		}
-		if (isApp && (sub.empty() || sub.back() == '/')) sub += "index.html";
+		// the session's address is the folder: it serves the theme this run was launched with
+		if (isApp && (sub.empty() || sub.back() == '/')) sub += narrow(ModernUiPage(cfg.uiMode));
 		// no climbing, no drive letters, no backslashes smuggled in
 		if (sub.find("..") != std::string::npos || sub.find(':') != std::string::npos || sub.find('\\') != std::string::npos) return false;
 		std::wstring w = widen(sub);
@@ -808,7 +809,7 @@ bool ModernUiBrowserStop(const std::wstring& exeDir, const std::wstring& game)
 
 bool ModernUiBrowserAvailable(const std::wstring& exeDir)
 {
-	return file_exists(exeDir + L"ui\\index.html");
+	return file_exists(exeDir + L"ui\\index.html") && file_exists(exeDir + L"ui\\theme2.html");
 }
 
 int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
