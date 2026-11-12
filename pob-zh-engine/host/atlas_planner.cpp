@@ -261,8 +261,10 @@ public:
 		{
 			wchar_t q[128] = L"";
 			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_ATLAS_SEARCH", q, 128);
-			if (n > 0 && n < 128)
-				WideCharToMultiByte(CP_UTF8, 0, q, -1, panelSearch, (int)sizeof(panelSearch), nullptr, nullptr);
+			// on failure (too long for the box) the buffer is undefined: leave it empty
+			if (n > 0 && n < 128 &&
+			    !WideCharToMultiByte(CP_UTF8, 0, q, -1, panelSearch, (int)sizeof(panelSearch), nullptr, nullptr))
+				panelSearch[0] = '\0';
 		}
 		return true;   // missing data is a screen with an import button, not a failure
 	}
