@@ -65,6 +65,7 @@ bool AtlasMapDb::Load(const std::wstring& exeDir, std::string* err)
 			d.region = m.value("region", std::string());
 			d.art = m.value("art", std::string());
 			d.tier = m.value("tier", 0);
+			d.provisional = m.contains("provisional") && m["provisional"].is_boolean() && m["provisional"].get<bool>();
 			std::string kind = m.value("kind", std::string("normal"));
 			d.kind = kind == "unique" ? AtlasMapDef::kUnique
 			       : kind == "offatlas" ? AtlasMapDef::kOffAtlas
@@ -170,7 +171,7 @@ int RunAtlasMapSelfTest(const std::wstring& exeDir, std::string& out)
 			case AtlasMapDef::kOffAtlas: off++;    break;
 			case AtlasMapDef::kUnique:   uniq++;   break;
 			}
-			if (d.region.empty()) noRegion++;
+			if (d.region.empty() && !d.provisional) noRegion++;
 			if (d.art.empty()) noArt++;
 			if (d.zhArea == d.enArea) untranslated++;
 		}
@@ -184,8 +185,22 @@ int RunAtlasMapSelfTest(const std::wstring& exeDir, std::string& out)
 		// Regular maps must carry a usable tier; unique maps legitimately do not.
 		int badTier = 0;
 		for (const AtlasMapDef& d : db.All())
-			if (d.kind != AtlasMapDef::kUnique && (d.tier < 1 || d.tier > 17)) badTier++;
+			if (d.kind != AtlasMapDef::kUnique && !d.provisional && (d.tier < 1 || d.tier > 17)) badTier++;
 		rep.check(badTier == 0, "every regular map has a tier in [1,17]", std::to_string(badTier));
+
+		// Provisional (patch-notes) maps: regular, named, with art, and tier/region
+		// left unknown rather than guessed.
+		int prov = 0, provBad = 0;
+		for (const AtlasMapDef& d : db.All())
+			if (d.provisional) {
+				prov++;
+				if (d.kind != AtlasMapDef::kNormal || d.tier != 0 || !d.region.empty() ||
+				    d.zhArea.empty() || d.enItem.empty())
+					provBad++;
+			}
+		rep.note("provisional maps: " + std::to_string(prov));
+		rep.check(provBad == 0, "provisional maps are regular, named, with tier/region unknown",
+		          std::to_string(provBad));
 
 		// The picker's tier filter is built from this list.
 		const std::vector<int>& tiers = db.TiersPresent();
@@ -202,7 +217,7 @@ int RunAtlasMapSelfTest(const std::wstring& exeDir, std::string& out)
 		// would hide maps that have no way of being reached.
 		int unreachable = 0;
 		for (const AtlasMapDef& d : db.All())
-			if (d.kind != AtlasMapDef::kUnique &&
+			if (d.kind != AtlasMapDef::kUnique && !d.provisional &&
 			    std::find(tiers.begin(), tiers.end(), d.tier) == tiers.end())
 				unreachable++;
 		rep.check(unreachable == 0, "every regular map is reachable through a tier filter",
