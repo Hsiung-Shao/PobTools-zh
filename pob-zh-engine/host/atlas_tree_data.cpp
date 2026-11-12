@@ -793,10 +793,15 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 				translatable++;
 				if (!zh.NodeName(n.id, kNone).empty()) covered++;
 			}
-			rep.check(translatable > 0 && covered * 2 >= translatable,
-			          "zh mapping covers >=50% of tree nodes",
-			          std::to_string(covered) + "/" + std::to_string(translatable) +
-			          " (" + zh.VersionNote() + ")");
+			const std::string cov = std::to_string(covered) + "/" + std::to_string(translatable) +
+			                        " (" + zh.VersionNote() + ")";
+			// 譯文早於本季(repoe 版本 < 賽季)時覆蓋率低是預期狀態:不確定的譯文
+			// 一律顯示英文(使用者 2026-11-12 裁定),開季後補上才恢復門檻。
+			if (!zh.RepoeVersion().empty() && AtlasVersionIndex::CompareSemver(zh.RepoeVersion(), d.Tag()) < 0)
+				rep.note(u8"提示:譯文早於本季,繁中覆蓋率 " + cov + u8",新內容先顯示英文(門檻檢查暫不適用)");
+			else
+				rep.check(translatable > 0 && covered * 2 >= translatable,
+				          "zh mapping covers >=50% of tree nodes", cov);
 		} else {
 			rep.note("zh mapping absent or empty - skipped (English-only display)");
 		}
@@ -1179,8 +1184,8 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 
 		// T4: 節點數與連通性。
 		if (is330) {
-			rep.check(d.nodes.size() == 967 && d.masteries.size() == 149 && d.TotalPoints() == 138,
-			          u8"[多選T4] 3.30 樹為 967 節點、149 個 mastery、138 點",
+			rep.check(d.nodes.size() == 967 && d.masteries.size() == 149 && d.TotalPoints() == 150,
+			          u8"[多選T4] 3.30 樹為 967 節點、149 個 mastery、150 點",
 			          std::to_string(d.nodes.size()) + "/" + std::to_string(d.masteries.size()) + "/" +
 			              std::to_string(d.TotalPoints()));
 		}

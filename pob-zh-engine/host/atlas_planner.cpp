@@ -688,6 +688,12 @@ public:
 					errBanner_.clear();
 				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
+			if (!zhLagMsg_.empty() && showZh) {
+				if (PobUi::Banner("##apzhlag", PobUi::BannerTone::Info, PobIcon::Languages, u8"譯文尚未齊全",
+				                  zhLagMsg_.c_str(), false, nullptr, true) == PobUi::BannerResult::Close)
+					zhLagMsg_.clear();
+				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
+			}
 			if (!noticeMsg_.empty()) {
 				if (PobUi::Banner("##apnotice", PobUi::BannerTone::Warn, PobIcon::TriangleAlert, u8"配置已依新賽季調整",
 				                  noticeMsg_.c_str(), false, nullptr, true) == PobUi::BannerResult::Close)
@@ -1174,6 +1180,7 @@ private:
 	ImVec2 moreAnchor_ = ImVec2(0, 0);   // bottom-right of the more button
 	std::string errBanner_;   // last failure, shown as a banner until closed
 	std::string noticeMsg_;   // startup notice (nodes dropped by a season change)
+	std::string zhLagMsg_;    // the season's translations are not out yet (set per loadSeason)
 
 	void copyShareCode()
 	{
@@ -2049,6 +2056,13 @@ private:
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
 			zhLoaded = i18n.LoadVersion(exeDir, tag);
+			// The translations predate this season: new and changed text stays
+			// English on purpose (an unsure translation is never shown), so say
+			// that it is temporary rather than leave it looking broken.
+			zhLagMsg_.clear();
+			if (zhLoaded && !i18n.RepoeVersion().empty() &&
+			    AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0)
+				zhLagMsg_ = tag + u8" 新增與改動的內容先顯示英文，繁體中文會在開季後補上。";
 			std::string older = verIndex.OlderThan(tag);
 			if (zhLoaded && !older.empty()) {
 				AtlasTreeData ot;
