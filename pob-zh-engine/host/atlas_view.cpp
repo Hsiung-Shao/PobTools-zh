@@ -28,6 +28,7 @@ static const ImU32 kColTargetRing = WithA(Tok::TreeNotable, 150); // deliberatel
 static const ImU32 kColWantRing = Tok::TreeAdd;                   // planning mode: "want"
 static const ImU32 kColAvoidRing = WithA(Tok::TreeRemove, 245);   // ruled out by the user
 static const ImU32 kColMechRing = WithA(Tok::TreeHit, 235);       // mechanic highlight
+static const ImU32 kColSearchRing = WithA(Tok::AccentText, 245);  // side-panel search hit
 
 // How long the cursor must rest on a node before its minimum-point plan is
 // solved. Without this, sweeping the tree would run one solve per node passed.
@@ -335,6 +336,13 @@ void AtlasView::drawNodes(const AtlasTreeData& d, ImDrawList* dl)
 			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
 			              std::max((std::max(n.on.w, n.on.h) * 0.5f + 14.0f) * zoom_, 7.0f),
 			              kColMechRing, 0, 3.0f);
+
+		// search overlay: outside the mechanic ring so both read when both are on;
+		// same zoomed-out floor, for the same "where is it" reason
+		if (!searchNodes_.empty() && searchNodes_.count(i))
+			dl->AddCircle(worldToScreen(ImVec2(n.x, n.y)),
+			              std::max((std::max(n.on.w, n.on.h) * 0.5f + 20.0f) * zoom_, 9.0f),
+			              kColSearchRing, 0, 3.0f);
 
 		// Deliberately picked nodes, so wiring is distinguishable from what the
 		// user actually asked for. In planning mode that distinction IS the mode

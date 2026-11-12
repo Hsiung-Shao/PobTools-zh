@@ -1,4 +1,6 @@
 #include "atlas_i18n.h"
+#include "atlas_stat_agg.h"      // ToLowerAscii / StripStatMarkup for the search keys
+#include "atlas_tree_data.h"
 #include "atlas_version_index.h" // season resolution (versioned data layout)
 
 #define WIN32_LEAN_AND_MEAN
@@ -100,4 +102,134 @@ const std::string& AtlasI18n::StatLine(const std::string& en) const
 {
 	auto it = statByEn_.find(en);
 	return it != statByEn_.end() ? it->second : en;
+}
+
+// ---- whole-tree node search ---------------------------------------------------
+
+std::vector<std::string> AtlasNodeSearchKeys(const AtlasTreeData& d, const AtlasI18n* zh)
+{
+	std::vector<std::string> keys(d.nodes.size());
+	for (size_t i = 0; i < d.nodes.size(); i++) {
+		const AtlasNode& n = d.nodes[i];
+		if (n.kind == kAtlasStart) continue;
+		std::string k = n.name;
+		if (zh) k += "\n" + zh->NodeName(n.id, n.name);
+		for (const std::string& s : n.stats) {
+			k += "\n" + StripStatMarkup(s);
+			if (zh) k += "\n" + StripStatMarkup(zh->StatLine(s));
+		}
+		keys[i] = ToLowerAscii(k);
+	}
+	return keys;
+}
+
+std::vector<int> AtlasSearchNodes(const std::vector<std::string>& keys, const std::string& query)
+{
+	std::vector<int> hits;
+	const size_t a = query.find_first_not_of(" \t"), b = query.find_last_not_of(" \t");
+	if (a == std::string::npos) return hits;
+	const std::string needle = ToLowerAscii(query.substr(a, b - a + 1));
+	for (size_t i = 0; i < keys.size(); i++)
+		if (keys[i].find(needle) != std::string::npos) hits.push_back((int)i);
+	return hits;
+}
+
+// ---- self-test (folded into --atlas-selftest) --------------------------------
+
+namespace {
+
+struct SearchReport {
+	std::string& text;
+	int failures = 0;
+
+	void check(bool ok, const char* what, const std::string& detail = std::string())
+	{
+		text += ok ? "PASS  " : "FAIL  ";
+		text += what;
+		if (!detail.empty()) { text += "  ("; text += detail; text += ")"; }
+		text += "\n";
+		if (!ok) failures++;
+	}
+	void note(const std::string& s) { text += "      " + s + "\n"; }
+};
+
+// First line of a stat with markup removed (stats may span several lines).
+std::string FirstStatLine(const std::string& stat)
+{
+	std::string s = StripStatMarkup(stat);
+	return s.substr(0, s.find('\n'));
+}
+
+bool HasIdx(const std::vector<int>& v, int idx)
+{
+	for (int i : v) if (i == idx) return true;
+	return false;
+}
+
+} // namespace
+
+int RunAtlasSearchSelfTest(const std::wstring& exeDir, std::string& out)
+{
+	SearchReport rep{ out };
+	out += "\n-- atlas node search --\n";
+
+	AtlasTreeData d;
+	std::string err;
+	if (!d.Load(exeDir, &err)) {
+		rep.check(false, u8"載入輿圖天賦樹資料失敗,搜尋檢查無法進行", err);
+		return rep.failures;
+	}
+	AtlasI18n zh;
+	if (!zh.Load(exeDir)) {
+		rep.check(false, u8"載入輿圖中文對照表失敗,搜尋檢查無法進行");
+		return rep.failures;
+	}
+
+	// Pick a non-start, unallocated node whose zh name and at least one stat differ from English.
+	int pick = -1;
+	std::string enName, zhName, enFrag, zhFrag;
+	for (int i = 0; i < (int)d.nodes.size() && pick < 0; i++) {
+		const AtlasNode& n = d.nodes[i];
+		if (n.kind == kAtlasStart || n.alloc || n.name.empty()) continue;
+		const std::string& zn = zh.NodeName(n.id, n.name);
+		if (zn == n.name) continue;
+		for (const std::string& st : n.stats) {
+			const std::string& zs = zh.StatLine(st);
+			if (zs == st) continue;
+			std::string ef = FirstStatLine(st), zf = FirstStatLine(zs);
+			if (ef.empty() || zf.empty() || ef == zf) continue;
+			pick = i; enName = n.name; zhName = zn; enFrag = ef; zhFrag = zf;
+			break;
+		}
+	}
+	if (pick < 0) {
+		rep.check(false, u8"資料中找不到中英文名稱與詞條都不同的未配置節點,無法測試搜尋");
+		return rep.failures;
+	}
+	rep.note("picked node id " + std::to_string(d.nodes[pick].id) + " \"" + enName + "\" / \"" + zhName + "\"");
+	rep.note("en fragment \"" + enFrag + "\" / zh fragment \"" + zhFrag + "\"");
+
+	const std::vector<std::string> keys = AtlasNodeSearchKeys(d, &zh);
+	rep.check(keys.size() == d.nodes.size(), u8"搜尋鍵數量與節點數一致",
+	          std::to_string(keys.size()) + " vs " + std::to_string(d.nodes.size()));
+
+	rep.check(HasIdx(AtlasSearchNodes(keys, enName), pick), u8"S1 英文名稱找到未配置節點");
+	rep.check(HasIdx(AtlasSearchNodes(keys, zhName), pick), u8"S2 中文名稱找到同一節點");
+	rep.check(HasIdx(AtlasSearchNodes(keys, enFrag), pick), u8"S3 英文詞條內文可搜");
+	rep.check(HasIdx(AtlasSearchNodes(keys, zhFrag), pick), u8"S4 中文詞條內文可搜");
+
+	{
+		std::string up = enName, lo = enName;
+		for (char& c : up) if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+		for (char& c : lo) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		std::vector<int> ru = AtlasSearchNodes(keys, up), rl = AtlasSearchNodes(keys, lo);
+		rep.check(!ru.empty() && ru == rl && HasIdx(ru, pick), u8"S5 大小寫不影響結果",
+		          std::to_string(ru.size()) + " vs " + std::to_string(rl.size()));
+	}
+
+	rep.check(AtlasSearchNodes(keys, "").empty() && AtlasSearchNodes(keys, "   ").empty(),
+	          u8"S6 空字串不標示任何節點");
+	rep.check(AtlasSearchNodes(keys, "zzqqxx_no_such_node").empty(), u8"S7 查無時回傳 0 筆");
+
+	return rep.failures;
 }

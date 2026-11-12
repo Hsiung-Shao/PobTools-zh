@@ -59,6 +59,14 @@ public:
 	void ClearMechanicHighlight() { mechNodes_.clear(); mechMasteries_.clear(); }
 	bool HasMechanicHighlight() const { return !mechNodes_.empty() || !mechMasteries_.empty(); }
 
+	// Search overlay: a ring on every node the side-panel search matched,
+	// allocated or not. Purely visual; pass an empty list to clear.
+	void SetSearchHighlight(const std::vector<int>& nodeIdx)
+	{
+		searchNodes_.clear();
+		searchNodes_.insert(nodeIdx.begin(), nodeIdx.end());
+	}
+
 	// Index into AtlasTreeData::masteries clicked this frame (-1 = none). A
 	// mastery click is consumed by the view, so it can never also allocate.
 	int ClickedMastery() const { return clickedMastery_; }
@@ -126,6 +134,7 @@ private:
 
 	// mechanic overlay + mastery-icon hit testing
 	std::unordered_set<int> mechNodes_, mechMasteries_;
+	std::unordered_set<int> searchNodes_; // side-panel search hits
 	std::vector<std::string> masteryLabel_;
 	int hoverMastery_ = -1;          // mastery under the cursor (-1 none)
 	int clickedMastery_ = -1;        // reset at the top of every Draw

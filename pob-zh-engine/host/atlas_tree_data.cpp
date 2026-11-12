@@ -898,6 +898,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// with the same backward-compatibility guarantees the scarabs established.
 	rep.failures += RunAstrolabeSelfTest(exeDir, rep.text);
 	rep.failures += RunAtlasMapSelfTest(exeDir, rep.text);
+	rep.failures += RunAtlasSearchSelfTest(exeDir, rep.text);
 
 	// T11: the manual map price behind the 收益 tab's cost card. It round-trips
 	// through the build file, an unset price serializes byte-identically to

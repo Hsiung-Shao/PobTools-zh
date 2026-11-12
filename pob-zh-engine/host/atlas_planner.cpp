@@ -168,7 +168,11 @@ struct AtlasUndo {
 	bool valid = false;
 	std::vector<int> alloc, targets, blocked;
 };
-struct PanelNode { int idx; std::string searchKey; };
+struct PanelNode { int idx; };
+int PanelRank(int kind)
+{
+	return kind == kAtlasKeystone ? 0 : kind == kAtlasWormhole ? 1 : kind == kAtlasNotable ? 2 : 3;
+}
 
 // Which blocking dialog Frame() asked for. A Win32 common dialog runs its own
 // modal message loop, so opening one mid-frame stops the host's loop -- and in
@@ -230,6 +234,13 @@ public:
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
 			else if (page == L"planexit" && ready) { enterPlanning(); planningAskExit = true; }
+		}
+		// Test aid (POBTOOLS_ATLAS_SEARCH): open with the search box filled in.
+		{
+			wchar_t q[128] = L"";
+			const DWORD n = GetEnvironmentVariableW(L"POBTOOLS_ATLAS_SEARCH", q, 128);
+			if (n > 0 && n < 128)
+				WideCharToMultiByte(CP_UTF8, 0, q, -1, panelSearch, (int)sizeof(panelSearch), nullptr, nullptr);
 		}
 		return true;   // missing data is a screen with an import button, not a failure
 	}
@@ -832,6 +843,7 @@ public:
 			ImGui::BeginChild("##sidepanel", ImVec2(0, 0), true);
 
 			if (compareMode) {
+			syncSearch("");   // the compare view has its own search and its own rings
 			renderComparePanel();
 			} else {
 
@@ -877,11 +889,45 @@ public:
 			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 
 			// --- search (pinned; filters stats AND the node list, en + zh) ---
-			PobUi::SearchField("##panelsearch", panelSearch, (int)sizeof(panelSearch), u8"搜尋加成或節點…",
+			PobUi::SearchField("##panelsearch", panelSearch, (int)sizeof(panelSearch), u8"搜尋節點或加成（中英）…",
 			                   ImGui::GetContentRegionAvail().x);
+			syncSearch(panelSearch);   // rings every hit on the canvas, allocated or not
 			std::string needle = ToLowerAscii(panelSearch);
+			needle.erase(0, needle.find_first_not_of(" \t"));   // same trim as AtlasSearchNodes
+			needle.erase(needle.find_last_not_of(" \t") + 1);
 			auto matches = [&](const std::string& key) {
 				return needle.empty() || key.find(needle) != std::string::npos;
+			};
+			auto nodeHit = [&](int idx) {
+				return needle.empty() || std::binary_search(searchHits.begin(), searchHits.end(), idx);
+			};
+			// One row of a node list: click glides the canvas there, hover shows the stats.
+			auto nodeRow = [&](int idx, std::uint32_t kindCol) {
+				const AtlasNode& n = tree.nodes[idx];
+				const std::string& nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
+				ImGui::PushID(idx); // duplicate display names exist
+				ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(kindCol));
+				if (ImGui::Selectable(nm.empty() ? u8"(未命名)" : nm.c_str(), false))
+					view.CenterOn(tree, idx);
+				ImGui::PopStyleColor();
+				if (ImGui::IsItemHovered()) {
+					ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
+					ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * scale, FLT_MAX));
+					ImGui::BeginTooltip();
+					ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());
+					// explicit wrap width so a short title cannot make the tooltip a narrow strip
+					ImGui::PushTextWrapPos(380.0f * scale);
+					for (const std::string& s : n.stats) {
+						ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
+						ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
+						ImGui::PopStyleColor();
+					}
+					ImGui::PopTextWrapPos();
+					PobUi::Hint(u8"點擊清單以在輿圖中定位");
+					ImGui::EndTooltip();
+					ImGui::PopStyleVar();
+				}
+				ImGui::PopID();
 			};
 			ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 
@@ -901,6 +947,23 @@ public:
 			// single child window they hash to the SAME ImGuiID. ImGui requires
 			// ids to be unique per window; when they are not, the first widget
 			// submitted keeps the interaction and the later one goes dead.
+			// Search hits that are not allocated yet, right under the box: the
+			// node list further down only ever holds allocated nodes.
+			if (!needle.empty()) {
+				ImGui::PushID("searchhits");
+				int nFree = 0;
+				for (int idx : searchOrder) nFree += tree.nodes[idx].alloc ? 0 : 1;
+				char note[48];
+				snprintf(note, sizeof(note), u8"%d 個 · 點一下定位", nFree);
+				if (PobUi::CollapsingSection(u8"尚未配置的符合節點", "###searchhdr", PobIcon::Search, note)) {
+					if (nFree == 0) PobUi::Hint(u8"沒有符合的未配置節點");
+					for (int idx : searchOrder)
+						if (!tree.nodes[idx].alloc)
+							nodeRow(idx, PobUi::TreeKindColor(kRankKind[PanelRank(tree.nodes[idx].kind)]));
+					ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
+				}
+				ImGui::PopID();
+			}
 			ImGui::PushID("astrolabes"); renderAstrolabePanel(); ImGui::PopID();
 			ImGui::PushID("mainmap");    renderMapPanel();       ImGui::PopID();
 			ImGui::PushID("mapslots");   renderScarabPanel();    ImGui::PopID();
@@ -944,7 +1007,7 @@ public:
 						if (nodeGroups[r].empty()) continue;
 						int m = 0;
 						for (const PanelNode& p : nodeGroups[r])
-							if (matches(p.searchKey)) m++;
+							if (nodeHit(p.idx)) m++;
 						if (m == 0 && !needle.empty()) continue;
 						const std::uint32_t kindCol = PobUi::TreeKindColor(kRankKind[r]);
 						// group header: 4px colour bar + name + count
@@ -960,34 +1023,8 @@ public:
 						else snprintf(gh, sizeof(gh), "%s (%d/%d)", kGroupName[r], m, (int)nodeGroups[r].size());
 						ImGui::TextColored(PobUi::TokV4(Tok::TextMuted), "%s", gh);
 						ImGui::Indent(PobUi::D(10.0f));
-						for (const PanelNode& p : nodeGroups[r]) {
-							if (!matches(p.searchKey)) continue;
-							const AtlasNode& n = tree.nodes[p.idx];
-							const std::string& nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
-							ImGui::PushID(p.idx); // duplicate display names exist
-							ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(kindCol));
-							if (ImGui::Selectable(nm.empty() ? u8"(未命名)" : nm.c_str(), false))
-								view.CenterOn(tree, p.idx);
-							ImGui::PopStyleColor();
-							if (ImGui::IsItemHovered()) {
-								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
-								ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * scale, FLT_MAX));
-								ImGui::BeginTooltip();
-								ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());
-								// explicit wrap width so a short title cannot make the tooltip a narrow strip
-								ImGui::PushTextWrapPos(380.0f * scale);
-								for (const std::string& s : n.stats) {
-									ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
-									ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
-									ImGui::PopStyleColor();
-								}
-								ImGui::PopTextWrapPos();
-								PobUi::Hint(u8"點擊清單以在輿圖中定位");
-								ImGui::EndTooltip();
-								ImGui::PopStyleVar();
-							}
-							ImGui::PopID();
-						}
+						for (const PanelNode& p : nodeGroups[r])
+							if (nodeHit(p.idx)) nodeRow(p.idx, kindCol);
 						ImGui::Unindent(PobUi::D(10.0f));
 						ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 					}
@@ -2074,21 +2111,42 @@ private:
 	std::vector<PanelNode> nodeGroups[4]; // keystone / wormhole / notable / small
 	char panelSearch[256] = "";
 	bool panelDirty = true;
+	// Whole-tree search: the box also finds nodes that are not allocated yet.
+	std::vector<std::string> nodeKeys;   // per node, aligned with tree.nodes
+	std::vector<int> searchHits;         // ascending node indices (binary_search)
+	std::vector<int> searchOrder;        // the same hits by kind, then name, for the list
+	std::string searchFor;
+	bool searchStale = true;
+	void syncSearch(const char* query)
+	{
+		if (!searchStale && searchFor == query) return;
+		searchFor = query;
+		searchStale = false;
+		searchHits = AtlasSearchNodes(nodeKeys, searchFor);
+		view.SetSearchHighlight(searchHits);
+		searchOrder = searchHits;
+		std::sort(searchOrder.begin(), searchOrder.end(), [&](int a, int b) {
+			const AtlasNode& x = tree.nodes[a];
+			const AtlasNode& y = tree.nodes[b];
+			const int rx = PanelRank(x.kind), ry = PanelRank(y.kind);
+			return rx != ry ? rx < ry : x.name != y.name ? x.name < y.name : a < b;
+		});
+	}
 	void rebuildPanel()
 	{
 		statAgg.clear();
 		statOrderEn.clear();
 		statOrderZh.clear();
 		for (auto& g : nodeGroups) g.clear();
-		auto rank = [](int kind) {
-			return kind == kAtlasKeystone ? 0 : kind == kAtlasWormhole ? 1 : kind == kAtlasNotable ? 2 : 3;
-		};
+		// Rebuilt here, not only on a season load: every path that swaps the tree
+		// or the zh mapping already sets panelDirty.
+		nodeKeys = AtlasNodeSearchKeys(tree, zhLoaded ? &i18n : nullptr);
+		searchStale = true;
 		std::unordered_map<std::string, size_t> pos;
 		for (int i = 0; i < (int)tree.nodes.size(); i++) {
 			const AtlasNode& n = tree.nodes[i];
 			if (!n.alloc || n.kind == kAtlasStart) continue;
-			const std::string& zhName = zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
-			nodeGroups[rank(n.kind)].push_back({ i, ToLowerAscii(n.name + "\n" + zhName) });
+			nodeGroups[PanelRank(n.kind)].push_back({ i });
 			for (const std::string& s : n.stats)
 				AccumulateStatLine(s, statAgg, pos);
 		}

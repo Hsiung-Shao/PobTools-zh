@@ -73,3 +73,19 @@ private:
 	std::string repoe_;
 	bool loaded_ = false;
 };
+
+class AtlasTreeData;
+
+// Whole-tree node search (the planner's side-panel box). One lowered key per
+// node, aligned with d.nodes: en name, zh name, en stat lines, zh stat lines
+// (markup stripped). zh may be null -> English only. The start node's key is
+// empty, so it can never match.
+std::vector<std::string> AtlasNodeSearchKeys(const AtlasTreeData& d, const AtlasI18n* zh);
+
+// Node indices (ascending) whose key contains `query` as a case-insensitive
+// substring. A blank query matches nothing.
+std::vector<int> AtlasSearchNodes(const std::vector<std::string>& keys, const std::string& query);
+
+// Headless checks appended to --atlas-selftest. Returns the number of failures
+// and appends a PASS/FAIL line per check to `out`.
+int RunAtlasSearchSelfTest(const std::wstring& exeDir, std::string& out);
