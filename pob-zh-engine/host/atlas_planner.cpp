@@ -265,9 +265,11 @@ public:
 			ust = updater.Poll();
 		} else if (ust.zhRefreshed) {
 			bool zhWas = zhLoaded || zhLag_;
-			applyZh(viewTag);            // the season on the canvas, with the lag rule
-			reloadMechanics();           // its labels depend on the lag too
-			syncShowZh(zhWas);
+			if (ready) {                 // not ready = `tree` is not viewTag's tree
+				applyZh(viewTag);        // the season on the canvas, with the lag rule
+				reloadMechanics();       // its labels depend on the lag too
+				syncShowZh(zhWas);
+			}
 			importMsg = ust.message;
 			importFailed = false;
 			panelDirty = true; // cached dispZh strings must pick up the new mapping
@@ -586,15 +588,15 @@ public:
 				if (PobUi::MenuRow(PobIcon::Refresh, u8"匯入賽季資料…", nullptr, !updaterBusy))
 					askImportSeason_ = true;
 				if (PobUi::MenuRow(PobIcon::RotateCcw, u8"重置配點…", nullptr, true, true)) askReset_ = true;
-				if (zhLoaded) {
+				if (zhLoaded || zhLag_) {   // lagging: the tree is English anyway, the rest still switches
 					PobUi::MenuSeparator();
-					if (PobUi::MenuRow(PobIcon::Languages, showZh ? u8"節點改顯示英文" : u8"節點改顯示中文", "F2"))
+					if (PobUi::MenuRow(PobIcon::Languages, showZh ? u8"內容改顯示英文" : u8"內容改顯示中文", "F2"))
 						showZh = !showZh;
 				}
 				PobUi::EndMenuPopup();
 			}
 			// zh/en display toggle (only when a mapping is available)
-			if (zhLoaded && ImGui::IsKeyPressed(ImGuiKey_F2, false)) showZh = !showZh;
+			if ((zhLoaded || zhLag_) && ImGui::IsKeyPressed(ImGuiKey_F2, false)) showZh = !showZh;
 
 			// --- dialogs: one look (Dialog), the destructive answer in danger ---
 			if (PobUi::BeginDialog(u8"##newproj", &askNew_, u8"新增專案", u8"新專案從空白配點開始。")) {
