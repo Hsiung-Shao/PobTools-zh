@@ -979,6 +979,7 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 	// with the same backward-compatibility guarantees the scarabs established.
 	rep.failures += RunAstrolabeSelfTest(exeDir, rep.text);
 	rep.failures += RunAtlasMapSelfTest(exeDir, rep.text);
+	rep.failures += RunAtlasSearchSelfTest(exeDir, rep.text);
 
 	// 3.30 thread slots: placement rules and persistence (atlas_threads.cpp).
 	rep.failures += RunThreadSelfTest(exeDir, rep.text);
