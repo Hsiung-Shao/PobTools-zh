@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { normAccent, normFontFile, normTheme, onColor, ACCENTS, normBgFile, normLook, lookVars, LOOK_DEFAULT, isVideoFile } from "./prefs.svelte";
+import { normAccent, normFontFile, normTheme, onColor, normBgFile, normLook, lookVars, LOOK_DEFAULT, isVideoFile } from "./prefs.svelte";
+import { ACCENTS as ACCENTS1 } from "../theme1/accents";
+import { ACCENTS } from "../theme2/accents";
 
 // Mirrors host/launcher_config.cpp NormalizeModern* (--launcher-config-selftest
 // T17s-u): the page and the ini must agree on what is a valid value.
@@ -29,7 +31,7 @@ describe("appearance prefs", () => {
     expect(onColor("#ffc83d")).toBe("#17120a");
     expect(onColor("#1a237e")).toBe("#ffffff");
     expect(onColor("#946510")).toBe("#ffffff");
-    for (const c of ACCENTS) expect(["#17120a", "#ffffff"]).toContain(onColor(c));
+    for (const c of [...ACCENTS1, ...ACCENTS]) expect(["#17120a", "#ffffff"]).toContain(onColor(c));
   });
   it("background file is a bare picture name (host NormalizeBackgroundFile)", () => {
     expect(normBgFile("ynQsfhbtoegqAym.webp")).toBe("ynQsfhbtoegqAym.webp");

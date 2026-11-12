@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => ({
     outDir: "../dist/ui",
     emptyOutDir: true,
     sourcemap: false,
+    rollupOptions: { input: ["index.html", "theme2.html"] },
   },
   test: {
     environment: "node",
