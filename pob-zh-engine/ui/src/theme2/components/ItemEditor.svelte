@@ -311,7 +311,6 @@
         </section>
       {/if}
 
-      <!-- 插槽與連結 -->
       {#if item.socketShown.some((s) => s) || item.canAddSocket}
         <section class="sec">
           <span class="k">{t("edit.sockets")}</span>
@@ -344,7 +343,6 @@
         </section>
       {/if}
 
-      <!-- 變體 -->
       {#if item.variants.length || item.versions}
         <section class="sec grid2">
           {#if item.versions}
@@ -358,7 +356,6 @@
         </section>
       {/if}
 
-      <!-- 星團珠寶打造 -->
       {#if item.cluster}
         <section class="sec grid2">
           <span class="k">{t("edit.cluster")}</span>
@@ -394,7 +391,6 @@
         </section>
       {/if}
 
-      <!-- 數值範圍 -->
       {#if item.ranges.length}
         <section class="sec">
           <span class="k">{t("edit.ranges")}</span>
@@ -433,7 +429,6 @@
         </section>
       {/if}
 
-      <!-- 開 POB 的 popup -->
       <section class="sec btns">
         {#if item.actions.enchant}<button class="btn sm" onclick={() => openPopup("enchant", 1)}>{t("edit.enchant")}</button>{/if}
         {#if item.actions.enchant2}<button class="btn sm" onclick={() => openPopup("enchant", 2)}>{t("edit.enchant2")}</button>{/if}

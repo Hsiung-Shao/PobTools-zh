@@ -1,12 +1,9 @@
 // The new interface's compatibility gate, remembered between runs.
 //
-// bridge.lua probes POB's classes and functions on every boot and reports
-// `gate_result`. When it fails the new-interface window falls back to the
-// classic POB window and writes PobTools\bridge_gate.json, so the launcher
-// can grey its "new interface" button and say why. The verdict is bound to
-// the POB version it was taken against and to the bridge.lua that took it:
-// once POB updates or a new bridge arrives (app or data line), the button
-// comes back and the next open takes a fresh verdict.
+// bridge.lua probes POB's classes and functions on every boot and reports `gate_result`. On failure the new-interface
+// window falls back to the classic POB window and writes PobTools\bridge_gate.json, so the launcher can grey its
+// button and say why. The verdict is bound to the POB version and the bridge.lua that took it: once either changes
+// the button comes back and the next open takes a fresh verdict.
 #pragma once
 #include <string>
 #include <vector>

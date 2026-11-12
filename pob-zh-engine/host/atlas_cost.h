@@ -1,12 +1,7 @@
-// 輿圖策略 × 倉庫收益 — what one map of a project costs to run.
-//
-// A project's map device holds up to five Vaal fragments (the list
-// repeats an entry once per copy placed); each is priced by its English name on
-// poe.ninja's exchange table, the same key the stash pricer uses. Regular maps
-// have no poe.ninja price any more, so the map itself is a price the user types.
-//
-// Pure data: no ImGui, no ScarabDb, no network -- the caller resolves slots to
-// MapCostInput and injects the price lookup, so the self-test drives it directly.
+// 輿圖策略 × 倉庫收益 — what one map of a project costs to run. The map device holds up to five Vaal fragments (an
+// entry repeats once per copy), each priced by English name on poe.ninja's exchange table (the stash pricer's key);
+// regular maps have no poe.ninja price, so the map price is typed by the user.
+// Pure data: no ImGui, no ScarabDb, no network -- the caller resolves slots to MapCostInput and injects the price lookup.
 #pragma once
 
 #include "atlas_persist.h"      // AtlasProfitRecord

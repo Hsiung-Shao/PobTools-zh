@@ -1,23 +1,14 @@
-// Why a frozen program says nothing, and what this fixes.
-//
-// PobLog::Error only ever writes when the program NOTICES a failure. A hang is
-// the case where nothing notices anything ever again: the frame loop stops, the
-// window greys out, the user force-quits, and error-<date>.log is empty. A crash
-// was nearly as bad -- the engine's SEH catch printed one bare address to a
-// console window that dies with the process.
-//
-// So a second thread watches the first one and, when it stops moving, writes
-// down what it was doing and where it stopped. That report is the answer to the
-// only question worth asking about a freeze: WHY.
+// Hang/crash reporting: PobLog::Error only writes when the program NOTICES a
+// failure, and a hang is when nothing notices anything. So a second thread
+// watches the frame loop and, when it stops moving, writes down what it was
+// doing and where it stopped.
 //
 // Three rules this module lives by:
 //
-//   * A FALSE ALARM IS WORSE THAN NO ALARM. If PobTools\logs\ fills up with
-//     "hang" reports every time somebody drags a window, nobody reads any of
-//     them. So a stall is reported only when BOTH the heartbeat stopped for
-//     `stallMs` AND the window stopped answering WM_NULL. Dragging, resizing,
-//     menus and file dialogs all block the frame loop while the window keeps
-//     answering sent messages, which is exactly the case gate two removes.
+//   * A FALSE ALARM IS WORSE THAN NO ALARM. A stall is reported only when BOTH
+//     the heartbeat stopped for `stallMs` AND the window stopped answering
+//     WM_NULL. Dragging, resizing, menus and file dialogs block the frame loop
+//     while the window keeps answering sent messages -- gate two removes that case.
 //
 //   * THE WATCHDOG MUST NEVER BE THE THING THAT HANGS. While the watched thread
 //     is suspended we do nothing but copy memory -- no loader lock, no dbghelp,
@@ -83,12 +74,11 @@ private:
 	bool active_;
 };
 
-// --- watching other processes (launcher only) --------------------------------
-// The launcher owns the POB child processes but must not poll them from the UI
-// thread: a SendMessageTimeout against a wedged window is exactly the kind of
-// wait that would freeze the launcher too. So the UI hands over a snapshot each
-// frame (RunningInstances is not thread-safe) and the watchdog thread does the
-// asking.
+// watching other processes (launcher only)
+// The launcher must not poll POB children from the UI thread (a
+// SendMessageTimeout against a wedged window would freeze it too): the UI hands
+// over a snapshot each frame (RunningInstances is not thread-safe) and the
+// watchdog thread does the asking.
 struct Peer {
 	unsigned long pid = 0;
 	void* hwnd = nullptr;      // HWND
@@ -135,7 +125,6 @@ int RunHangProbe(const std::wstring& exeDir, int seconds);
 
 // --hang-exit-probe: starts the watchdog and returns WITHOUT stopping it, the
 // way a caller that forgot Stop() would. The self-test spawns this and asserts
-// the process still exits 0 and promptly -- the v1.4.0 regression was a
-// std::terminate at exit (0xC0000409) plus the Windows Error Reporting delay
-// that came with it.
+// the process still exits 0 and promptly (a live thread at exit means
+// std::terminate, 0xC0000409, plus the Windows Error Reporting delay).
 int RunHangExitProbe();

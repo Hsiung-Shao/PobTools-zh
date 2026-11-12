@@ -1,8 +1,5 @@
-// 倉庫收益統計 — the worker behind the panel.
-//
-// Same shape as AtlasUpdater: one worker thread, a command queue in, a Status
-// snapshot out, polled by the UI every frame. All network -- stash fetches and
-// ninja pricing -- happens here; the panel never blocks.
+// 倉庫收益統計 — the worker behind the panel. Same shape as AtlasUpdater: one worker thread, command queue in,
+// Status snapshot out, polled every frame. All network (stash fetches, ninja pricing) happens here.
 #pragma once
 
 #include "warehouse_ninja.h"
@@ -33,18 +30,15 @@ public:
 	void Init(const std::wstring& exeDir); // starts the worker; touches no network
 	void Shutdown();                       // cancels any transfer and joins
 
-	// Main thread. Copied under a lock; the worker takes its own copy per job, so
-	// a mid-job change applies from the next command on.
+	// Main thread. Copied under a lock; the worker takes its own copy per job (a mid-job change applies from the next command).
 	void SetAuth(const StashAuth& a);
 
-	// Main thread. Drops the held credential (overwriting its bytes) and the
-	// session verdict with it -- the 清除 button. A job already running keeps the
-	// copy it took; the next one has nothing to send.
+	// Main thread. Drops the held credential (overwriting its bytes) and the session verdict -- the 清除 button.
+	// A running job keeps the copy it took; the next one has nothing to send.
 	void ForgetAuth();
 
-	// Main thread. "poe1" / "poe2": which realm and which price table later
-	// requests use (captured into each command when it is queued). Clears the
-	// per-realm status (tab/league lists, session verdict).
+	// Main thread. "poe1" / "poe2": realm and price table for later requests (captured into each queued command).
+	// Clears the per-realm status (tab/league lists, session verdict).
 	void SetGame(const std::string& game);
 
 	void RequestVerify();
@@ -89,9 +83,8 @@ private:
 	StashAuth authCopy();
 	void noteError(StashError kind, const std::string& err);
 
-	// The shared request guard (warehouse_state.h). guardRefuses: a pause the
-	// server asked for has not passed -> Error, and nothing is sent. noteBackoff:
-	// carries the provider's pending pause into the guard when a job ends.
+	// The shared request guard (warehouse_state.h). guardRefuses: a server-requested pause has not passed -> Error,
+	// nothing sent. noteBackoff: carries the provider's pending pause into the guard when a job ends.
 	bool guardRefuses();
 	void noteBackoff(const IStashProvider& p);
 	struct BackoffCarry { // noteBackoff at scope exit, whichever way a job ends

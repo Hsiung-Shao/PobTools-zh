@@ -16,7 +16,7 @@
 
 using nlohmann::ordered_json;
 
-// ---- helpers ---------------------------------------------------------------
+// helpers
 
 static std::wstring widen(const std::string& s)
 {
@@ -95,7 +95,7 @@ static bool HttpGet(HINTERNET hConnect, const std::wstring& path, std::vector<un
 	return ok;
 }
 
-// ---- IconManager -----------------------------------------------------------
+// IconManager
 
 void IconManager::Init(const std::wstring& exeDir)
 {
@@ -109,9 +109,7 @@ void IconManager::Init(const std::wstring& exeDir)
 					if (v.is_string()) paths_.emplace(k, v.get<std::string>());
 		} catch (...) {}
 	}
-	// The worker starts even without the index: callers that already know an art
-	// path (atlas planner scarabs) do not need one, and an idle worker parked on
-	// its condition variable costs nothing.
+	// The worker starts even without the index: callers that already know an art path (atlas planner) need none.
 	cacheDir_ = exeDir + L"PobTools\\cache\\icons\\";
 	SHCreateDirectoryExW(nullptr, cacheDir_.c_str(), nullptr); // best-effort
 
@@ -209,12 +207,9 @@ void IconManager::workerLoop()
 			reqQ_.pop_front();
 		}
 
-		// Two key shapes share this queue. Classic art paths
-		// ("Art/2DItems/X") fetch /image/<path>.png and cache under the
-		// sanitized path, exactly as before. Modern stash-API icons are
-		// pre-signed generator URLs ("gen/image/<b64>/<sig>/<Name>") -- the
-		// b64 token is a few hundred characters, so the cache name is a hash
-		// plus the readable tail instead of the sanitized whole.
+		// Two key shapes share this queue. Classic art paths ("Art/2DItems/X") fetch /image/<path>.png, cached under the
+		// sanitized path. Stash-API icons are pre-signed generator URLs ("gen/image/<b64>/<sig>/<Name>") whose b64
+		// token is a few hundred characters, so the cache name is a hash plus the readable tail.
 		std::wstring cacheName;
 		std::wstring urlPath;
 		if (artPath.rfind("gen/", 0) == 0) {

@@ -1,19 +1,16 @@
 // PobTools passive-tree (timeless-jewel view) updater.
 //
-// Checks BOTH sources for a newer league than the bundled tree
-// (Data/passive_tree_poe1.json's "treeVersion", e.g. "3_29"):
-//   a. the user's local PoB install — a bare TreeData\3_NN\ folder newer than
-//      the bundled tree (PoB self-updated first; its sheets are copied locally,
-//      no download needed for sprites), and
-//   b. GitHub grindinggear/skilltree-export release tags (the stopgap source
-//      when GGG publishes a league before PoB ships it).
-// The newer of the two wins. Updating downloads that tag's data.json (node data
-// always comes from the GGG export; PoB's tree.lua is not parseable here),
-// fetches only the sprite sheets PoB doesn't already have, and feeds everything
-// through ImportPassiveTreeData() — a SINGLE in-place tree (no version dirs).
+// Checks BOTH sources for a newer league than the bundled tree (Data/passive_tree_poe1.json's
+// "treeVersion", e.g. "3_29"):
+//   a. the local PoB install: a bare TreeData\3_NN\ folder newer than the bundled tree (sprite
+//      sheets are copied locally), and
+//   b. GitHub grindinggear/skilltree-export release tags (when GGG publishes before PoB ships).
+// The newer wins. Updating downloads that tag's data.json (node data always comes from the GGG export;
+// PoB's tree.lua is not parseable here), fetches only the missing sprite sheets, and feeds it through
+// ImportPassiveTreeData() -- a SINGLE in-place tree (no version dirs).
 //
-// Same worker-thread / Poll() contract and once-per-day throttle as
-// AtlasUpdater; the record lives in Data/passive_update.json.
+// Same worker-thread / Poll() contract and once-per-day throttle as AtlasUpdater
+// (record in Data/passive_update.json).
 #pragma once
 
 #include <atomic>

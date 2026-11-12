@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 
-// ---- scanning / formatting ----------------------------------------------------
+// scanning / formatting
 
 std::vector<StatNumTok> FindStatNumbers(const std::string& s)
 {
@@ -65,7 +65,7 @@ std::string ToLowerAscii(const std::string& s)
 	return out;
 }
 
-// ---- aggregation --------------------------------------------------------------
+// aggregation
 
 void AccumulateStatLine(const std::string& line, std::vector<StatAggGroup>& groups,
                         std::unordered_map<std::string, size_t>& pos)
@@ -179,7 +179,7 @@ void BuildStatAggDisplay(std::vector<StatAggGroup>& groups,
 	}
 }
 
-// ---- selftest -----------------------------------------------------------------
+// selftest
 
 int RunAtlasAggSelfTest(const std::wstring& exeDir)
 {

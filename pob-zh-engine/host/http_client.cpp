@@ -93,11 +93,9 @@ HttpsClient::~HttpsClient()
 	if (hSession_) WinHttpCloseHandle((HINTERNET)hSession_);
 }
 
-// A request carrying the token must never forward it to a redirect destination,
-// so only those requests stop following redirects. Anonymous ones (no token set,
-// or the retry below) keep WinHTTP's normal behaviour: a renamed repository's 301
-// still resolves. Release assets use separate github.com/CDN clients and never
-// see the token at all.
+// A request carrying the token must never forward it to a redirect destination, so only those requests
+// stop following redirects. Anonymous ones (no token, or the retry below) follow normally (a renamed
+// repository's 301 still resolves). Release assets use separate github.com/CDN clients and never see the token.
 static bool github_request(HINTERNET request, const std::wstring& host, bool withToken,
                            std::wstring& headers, unsigned* tokenGen)
 {
@@ -308,9 +306,8 @@ bool HttpsClient::getExOnce(const std::wstring& path, const HttpExtra& extra, Ht
 		WINHTTP_FLAG_SECURE | WINHTTP_FLAG_ESCAPE_DISABLE);
 	if (!hReq) return fail(u8"建立 HTTP 請求失敗");
 
-	// The only cookies on the wire are the ones extra.headers spells out. Without
-	// this, WinHTTP keeps a per-session jar: a Set-Cookie from one response would
-	// ride along on every later request through this client.
+	// The only cookies on the wire are the ones extra.headers spells out (else WinHTTP's per-session
+	// jar would replay a Set-Cookie on every later request through this client).
 	DWORD disable = WINHTTP_DISABLE_COOKIES;
 	WinHttpSetOption(hReq, WINHTTP_OPTION_DISABLE_FEATURE, &disable, sizeof(disable));
 

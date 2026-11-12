@@ -387,12 +387,11 @@ void JournalRecord(EditJournal& j, const FilterFile& baseline, const FilterFile&
                    const std::set<std::string>* carried)
 {
 	// An entry recorded on an older NeverSink version is re-expressed on this one
-	// the first time it is seen here: its edit merged onto this version's rule as
-	// NeverSink shipped it. The baseline's rule IS that the first time -- the old
-	// edit has not been put on this file yet, so the rule is still NeverSink's,
-	// and a hand edit made since is only in `current`. From then on the entry is
-	// "pending" until an apply carries it over: a hand edit meanwhile is merged
-	// into it (the newer edit wins), never written over it.
+	// the first time it is seen: its edit merged onto this version's rule as
+	// NeverSink shipped it (the baseline's rule IS that, the old edit not being on
+	// this file yet; a hand edit since is only in `current`). From then on it is
+	// "pending" until an apply carries it over; a hand edit meanwhile is merged
+	// into it (the newer wins), never written over it.
 	const std::string baseVersion = FilterBannerValue(baseline, "VERSION");
 	const std::map<std::string, int> base = RuleIndex(baseline);
 	const std::map<std::string, int> cur = RuleIndex(current);

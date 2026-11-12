@@ -17,7 +17,7 @@ FilterFile ParseFilter(const std::string& content);
 // line ending (CRLF/LF) and trailing newline.
 std::string SerializeFilter(const FilterFile& file);
 
-// ---- structural helpers (shared with FilterDocumentEditor) ------------------
+// structural helpers (shared with FilterDocumentEditor)
 
 // Classify one raw line (no newline) exactly as ParseFilter does per line.
 FilterLine ParseFilterLine(const std::string& raw);
@@ -40,7 +40,7 @@ std::string FilterBlockText(const FilterFile& file, const FilterBlock& block, bo
 bool FilterIsKnownCondition(const std::string& keyword);
 bool FilterIsKnownAction(const std::string& keyword);
 
-// ---- value accessors used by the editor UI ---------------------------------
+// value accessors used by the editor UI
 
 // Read the idx-th value of a line as an int (returns def if absent/non-numeric).
 int FilterValueInt(const FilterLine& line, size_t idx, int def);
@@ -62,7 +62,7 @@ void FilterGetColor(const FilterLine& line, int& r, int& g, int& b, int& a, bool
 // stays a 3-component line, avoiding a needless diff).
 void FilterSetColor(FilterLine& line, int r, int g, int b, int a, bool hasAlpha);
 
-// ---- multi-value list helpers (e.g. BaseType / Class lists) -----------------
+// multi-value list helpers (e.g. BaseType / Class lists)
 
 // True if the line already carries a value equal to text.
 bool FilterHasValue(const FilterLine& line, const std::string& text);

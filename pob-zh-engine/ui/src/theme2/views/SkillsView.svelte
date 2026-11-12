@@ -197,8 +197,8 @@
 
   async function reload() {
     const r = await app.run(() => api.listSkills());
-    // The gem search reads "sort by DPS" from these options; they used to load
-    // only when the panel was expanded, so POB's default (on) never applied.
+    // The gem search reads "sort by DPS" from these options, so load them even while the
+    // panel is collapsed (POB's default is on).
     if (!gemOpts) void loadGemOpts();
     if (r) {
       // the label being typed (not yet applied) survives a re-read (F2, a recalculation)

@@ -89,7 +89,6 @@ std::string synthetic_lf()
 
 int RunFilterSelfTest(const std::wstring& exeDir)
 {
-	// WIN32-subsystem app: surface printf when started from a console.
 	if (AttachConsole(ATTACH_PARENT_PROCESS)) {
 		FILE* f = nullptr;
 		freopen_s(&f, "CONOUT$", "w", stdout);
@@ -97,7 +96,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 
 	TestReport rep;
 
-	// ---- T1: parse/serialize round-trip is byte-exact --------------------
+	// T1: parse/serialize round-trip is byte-exact
 	{
 		const std::string src = synthetic_crlf();
 		FilterFile f = ParseFilter(src);
@@ -121,7 +120,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(!lf.hadBom && !lf.crlf && !lf.finalNewline, "T1 LF flags detected");
 	}
 
-	// ---- T2: negation operators ------------------------------------------
+	// T2: negation operators
 	{
 		FilterLine a = ParseFilterLine("    Rarity != Unique");
 		rep.check(a.op == "!=" && a.values.size() == 1 && a.values[0].text == "Unique",
@@ -136,7 +135,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(c.op == ">=" && c.values[0].text == "84", "T2 '>=' unchanged");
 	}
 
-	// ---- T3: document CRUD ------------------------------------------------
+	// T3: document CRUD
 	{
 		const std::string src = synthetic_crlf();
 		FilterFile f = ParseFilter(src);
@@ -147,8 +146,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		int qLine = doc.InsertLine(0, "Quality", ">=", { FilterToken{ "20", false } });
 		rep.check(qLine >= 0 && f.lines[qLine].kind == FilterLineKind::Condition,
 		          "T3 InsertLine condition kind");
-		// The new condition must sit after "Rarity >= Rare" and before the
-		// block's actions (conditions group together).
+		// The new condition must sit after "Rarity >= Rare", before the block's actions.
 		rep.check(f.lines[qLine - 1].keyword == "Rarity", "T3 condition inserted after last condition",
 		          "prev=" + f.lines[qLine - 1].keyword);
 		rep.check(f.lines[qLine].indent == f.lines[qLine - 1].indent, "T3 indent copied from neighbour");
@@ -190,7 +188,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T3 RemoveLine hard-deletes");
 	}
 
-	// ---- T4: disable (#!) / restore --------------------------------------
+	// T4: disable (#!) / restore
 	{
 		FilterFile f = ParseFilter(synthetic_crlf());
 		FilterDocumentEditor doc;
@@ -220,7 +218,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(f.blocks[0].idxFontSize == li, "T4 action cache back after restore");
 	}
 
-	// ---- T5: selection anchor across structural mutations ----------------
+	// T5: selection anchor across structural mutations
 	{
 		FilterFile f = ParseFilter(synthetic_crlf());
 		FilterDocumentEditor doc;
@@ -230,7 +228,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		BlockAnchor a = doc.CaptureAnchor(2);
 		rep.check(a.valid() && !a.firstCondRaw.empty(), "T5 anchor captured");
 
-		doc.CreateBlockAtLine(0, false, "front insert");   // shifts every line
+		doc.CreateBlockAtLine(0, false, "front insert");
 		int resolved = doc.ResolveAnchor(a);
 		bool ok = resolved >= 0 &&
 		          doc.FindLine(resolved, "BaseType") >= 0 &&
@@ -238,7 +236,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(ok, "T5 anchor resolves to same block after front insert",
 		          "resolved=" + std::to_string(resolved));
 
-		doc.CommentOutBlock(0);                            // the block we just added
+		doc.CommentOutBlock(0);
 		resolved = doc.ResolveAnchor(a);
 		ok = resolved >= 0 && doc.FindLine(resolved, "BaseType") >= 0 &&
 		     FilterHasValue(f.lines[doc.FindLine(resolved, "BaseType")], "Vaal Orb");
@@ -257,13 +255,12 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(orphanFree, "T5 CommentOutBlock leaves no orphan syntax lines");
 	}
 
-	// ---- T6: schema integrity --------------------------------------------
+	// T6: schema integrity
 	{
 		bool kwOk = true, defOk = true, exclOk = true, enumOk = true, grpOk = true;
 		std::string bad;
 		for (const CardSchema& c : FilterSchemaAll()) {
-			// Every keyword (and alias) must be one the parser recognises, and
-			// isAction must match the parser's classification.
+			// Every keyword (and alias) must be parser-recognised; isAction must match its classification.
 			bool known = c.isAction ? FilterIsKnownAction(c.keyword) : FilterIsKnownCondition(c.keyword);
 			if (!known) { kwOk = false; bad += std::string(c.keyword) + " "; }
 			if (c.alias) {
@@ -294,7 +291,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.note("schema cards=" + std::to_string(FilterSchemaAll().size()));
 	}
 
-	// ---- T7: batch apply --------------------------------------------------
+	// T7: batch apply
 	{
 		EditorShell es;   // default-constructed shell: doc + model only, no services
 		es.model = ParseFilter(synthetic_crlf());
@@ -333,7 +330,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T7 unselected block untouched");
 	}
 
-	// ---- T8: custom zone + export/import ---------------------------------
+	// T8: custom zone + export/import
 	{
 		FilterFile f = ParseFilter(synthetic_crlf());
 		FilterDocumentEditor doc;
@@ -379,7 +376,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(z4.present(), "T8 damaged zone repaired");
 	}
 
-	// ---- T9: rename + reference sync (real files under %TEMP%) -----------
+	// T9: rename + reference sync (real files under %TEMP%)
 	{
 		auto writeFile = [](const std::wstring& p, const std::string& content) {
 			std::ofstream o(p, std::ios::binary);
@@ -403,7 +400,6 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		writeFile(dir + L"\\AAA.mp3", "aaa");
 		writeFile(dir + L"\\BBB.mp3", "bbb");
 
-		// Keep the user's persisted sound folder safe.
 		std::wstring savedFolder = GetSoundFolder();
 		struct FolderGuard {
 			std::wstring saved;
@@ -487,7 +483,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		RemoveDirectoryW(dir.c_str());
 	}
 
-	// ---- T10: naming-rules json round-trip -------------------------------
+	// T10: naming-rules json round-trip
 	{
 		std::vector<NamingRule> rules = {
 			{ u8"神聖石音效", "divine", "divine{n}.{ext}", true },
@@ -505,7 +501,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(!SoundRulesFromJson("[]", &bad), "T10 wrong shape rejected");
 	}
 
-	// ---- T10b: 替換引用 (ReplaceSoundRefs) --------------------------------
+	// T10b: 替換引用 (ReplaceSoundRefs)
 	{
 		std::string src =
 			"Show\r\n\tBaseType \"A\"\r\n\tCustomAlertSound \"old.mp3\" 250\r\n"
@@ -525,9 +521,8 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T10b same-name replace is a no-op");
 	}
 
-	// ---- T11: big-file health (the bundled NeverSink fixture) --------------
-	// Reads Filters\default.filter next to the exe -- never the user's own
-	// filters in Documents (a selftest does not touch the user's game files).
+	// T11: big-file health (the bundled NeverSink fixture)
+	// Reads Filters\default.filter next to the exe -- never the user's own filters in Documents.
 	{
 		std::vector<FilterListEntry> found;
 		{
@@ -554,7 +549,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T12: NeverSink header zh display ---------------------------------
+	// T12: NeverSink header zh display
 	{
 		rep.check(NeverSinkHeaderZh("%H2 $type->leveling->flasks->life $tier->t2") ==
 		          u8"%H2 【練等·藥劑·生命】T2",
@@ -570,7 +565,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T12 tier keyword translated");
 	}
 
-	// ---- T13: drop-preview evaluator --------------------------------------
+	// T13: drop-preview evaluator
 	{
 		const char* src =
 			"Show\r\n"
@@ -595,7 +590,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			"Hide\r\n"
 			"\tBaseType \"Scroll\"\r\n";
 		FilterFile f = ParseFilter(src);
-		FilterI18n emptyI18n;   // ClassNameEn falls back to the input
+		FilterI18n emptyI18n;
 
 		PreviewItem divine; divine.baseType = "Divine Orb"; divine.classId = "Stackable Currency";
 		PreviewResult r = EvaluatePreview(f, divine, emptyI18n);
@@ -669,7 +664,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(eq(z.itemClass, u8"深淵珠寶", "Abyss Jewels"), "T14 Abyss Jewels supplement");
 	}
 
-	// ---- T15: pasted-item parser — real zh fixtures -----------------------
+	// T15: pasted-item parser — real zh fixtures
 	{
 		FilterI18n i18n;
 		i18n.Load(exeDir, "zh-rTW");
@@ -715,7 +710,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T15 sockets W-W-W with trailing space tolerated");
 	}
 
-	// ---- T16: pasted-item parser — en client text -------------------------
+	// T16: pasted-item parser — en client text
 	{
 		FilterI18n i18n;
 		i18n.Load(exeDir, "zh-rTW");
@@ -824,7 +819,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T16 magic composed name -> longest base substring", mg.baseEn);
 	}
 
-	// ---- T17: evaluator extensions (SocketGroup + influence bitmask) ------
+	// T17: evaluator extensions (SocketGroup + influence bitmask)
 	{
 		FilterI18n emptyI18n;
 		auto evalOne = [&emptyI18n](const std::string& cond, const PreviewItem& it) {
@@ -838,7 +833,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		it.socketGroups = { "R", "GW", "R" };
 
 		PreviewItem rgb = it;
-		rgb.socketGroups = { "BGR", "W" };          // one linked group holding R+G+B
+		rgb.socketGroups = { "BGR", "W" };
 
 		rep.check(evalOne("SocketGroup \"RGB\"", rgb).matched,
 		          "T17 SocketGroup RGB matches linked R+G+B in any order");
@@ -888,7 +883,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T17 Sockets colour syntax stays unmodelled + reported");
 	}
 
-	// ---- T18: end-to-end — pasted zh boots through a mini filter ----------
+	// T18: end-to-end — pasted zh boots through a mini filter
 	{
 		FilterI18n i18n;
 		i18n.Load(exeDir, "zh-rTW");
@@ -931,7 +926,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(sawHem, "T18 HasExplicitMod reported as not simulated");
 	}
 
-	// ---- T19: baseline snapshot + "modified" ------------------------------
+	// T19: baseline snapshot + "modified"
 	{
 		const std::string src = synthetic_crlf();
 		FilterFile f = ParseFilter(src);
@@ -972,7 +967,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(doc.BlockState(0) == BlockChange::Same, "T19 restoring it is Same again");
 	}
 
-	// ---- T20: restore one block -> byte-exact round-trip -------------------
+	// T20: restore one block -> byte-exact round-trip
 	{
 		const std::string src = synthetic_crlf();
 		FilterFile f = ParseFilter(src);
@@ -1013,7 +1008,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(SerializeFilter(f) == src && !f.dirty, "T20 restore is repeatable");
 	}
 
-	// ---- T21: a new custom rule is Added, not Modified ----------------------
+	// T21: a new custom rule is Added, not Modified
 	{
 		const std::string src = synthetic_crlf();
 		FilterFile f = ParseFilter(src);
@@ -1040,13 +1035,13 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T21 a duplicated block is Added, its source stays Same");
 	}
 
-	// ---- T22/T23/T24 need a scratch folder ---------------------------------
+	// T22/T23/T24 need a scratch folder
 	wchar_t tmpBuf2[MAX_PATH] = L"";
 	GetTempPathW(MAX_PATH, tmpBuf2);
 	const std::wstring scratch = std::wstring(tmpBuf2) + L"pobtools_fe_st_" + std::to_wstring(GetCurrentProcessId()) + L"\\";
 	CreateDirectoryW(scratch.c_str(), nullptr);
 
-	// ---- T22: external modification ----------------------------------------
+	// T22: external modification
 	{
 		const std::wstring path = scratch + L"watch.filter";
 		auto writeFile = [](const std::wstring& p, const std::string& data) {
@@ -1080,15 +1075,14 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		w.Acknowledge();
 		rep.check(!w.Poll(5.0), "T22 dismissed: the current stamp is the new normal");
 
-		// the editor's own save must not report itself (EditorShell::Save shows
-		// a toast, so it runs inside a scratch ImGui context)
+		// the editor's own save must not report itself (Save shows a toast: needs a scratch ImGui context)
 		ImGuiContext* prevCtx = ImGui::GetCurrentContext();
 		ImGuiContext* ctx = ImGui::CreateContext();
 		ImGui::SetCurrentContext(ctx);
 		{
 			EditorShell sh;
 			sh.exeDir = scratch;
-			sh.testMode = true;   // no ini writes
+			sh.testMode = true;
 			const bool opened = sh.OpenByPath(path, true);
 			rep.check(opened && sh.watch.path() == path && sh.doc.HasBaseline(), "T22 OpenByPath starts the watch and the baseline");
 			FilterSetValueInt(sh.model.lines[sh.doc.FindLine(0, "SetFontSize")], 0, 41);
@@ -1107,7 +1101,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		DeleteFileW((path + L".bak").c_str());
 	}
 
-	// ---- T23: filter chip counts ---------------------------------------------
+	// T23: filter chip counts
 	{
 		EditorShell sh;
 		sh.testMode = true;
@@ -1160,7 +1154,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(headingsOk && sh.visList.back().block >= 0, "T23 the list interleaves group headings correctly");
 	}
 
-	// ---- T24: recently used colours --------------------------------------------
+	// T24: recently used colours
 	{
 		std::vector<std::uint32_t> list;
 		for (int i = 0; i < 10; i++) {
@@ -1192,7 +1186,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		t.exeDir = scratch;
 		t.testMode = true;
 		t.recentColors = { 0xffffffffu };
-		SaveEditorSettings(t);   // a test run writes nothing
+		SaveEditorSettings(t);
 		EditorShell r;
 		r.exeDir = scratch;
 		LoadEditorSettings(r);
@@ -1202,7 +1196,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 	RemoveDirectoryW(scratch.c_str());
 	rep.check(GetFileAttributesW(scratch.c_str()) == INVALID_FILE_ATTRIBUTES, "T24 the scratch folder is gone");
 
-	// ---- T25: sound file names with a download suffix ------------------------
+	// T25: sound file names with a download suffix
 	{
 		rep.check(SoundNameHasDownloadSuffix(L"6maps (1).mp3") && SoundNameHasDownloadSuffix(L"alert (12).wav") &&
 		          !SoundNameHasDownloadSuffix(L"6maps.mp3") && !SoundNameHasDownloadSuffix(L"(1).mp3") &&
@@ -1210,7 +1204,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T25 \" (n)\" download suffix detected, plain names not");
 	}
 
-	// ---- T26: right-click copy of one rule -----------------------------------
+	// T26: right-click copy of one rule
 	{
 		const FilterFile f = ParseFilter(
 			"Show # $type->a\n\tClass \"Rings\"\n\t# note\n\tSetTextColor 255 0 0\n\tPlayAlertSound 3 300\n\n"
@@ -1227,7 +1221,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T27: paste a copied look onto another rule ---------------------------
+	// T27: paste a copied look onto another rule
 	{
 		FilterFile f = ParseFilter(
 			"Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tCustomAlertSound \"x.mp3\" 300\n\n"
@@ -1267,13 +1261,12 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		          "T27 one line per card, the last one wins");
 	}
 
-	// ---- T28: undo / redo history over the whole line list ---------------------
+	// T28: undo / redo history over the whole line list
 	{
 		const std::string fx =
 			"Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tSetFontSize 40\n\n"
 			"Show # b\n\tBaseType \"Chaos Orb\"\n\tSetTextColor 4 5 6\n\tSetFontSize 30\n\n"
 			"Hide # c\n\tRarity Normal\n";
-		// Edit a card value the way the editor does: change the token, flag the line.
 		auto setVal = [](FilterFile& file, int blockIdx, FilterDocumentEditor& d, const char* kw, size_t vi, const std::string& v) {
 			const int li = d.FindLine(blockIdx, kw);
 			if (li < 0 || vi >= file.lines[li].values.size()) return false;
@@ -1448,7 +1441,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T29: copy a rule into the custom zone (right-click copy) --------------
+	// T29: copy a rule into the custom zone (right-click copy)
 	{
 		FilterFile f = ParseFilter(
 			"Show # %D3 $type->currency\n\tClass \"Currency\"\n\tBaseType \"Chaos Orb\"\n\tSetTextColor 255 0 0\n\tSetFontSize 45\n\n"
@@ -1483,7 +1476,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T30: paste a look onto a rule that has the keyword twice ---------------
+	// T30: paste a look onto a rule that has the keyword twice
 	{
 		FilterFile f = ParseFilter("Show # a\n\tClass \"Rings\"\n\tSetTextColor 1 2 3\n\tSetTextColor 4 5 6\n\tSetFontSize 40\n");
 		FilterDocumentEditor doc;
@@ -1545,7 +1538,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		DeleteFileW((path + L".bak").c_str());
 	}
 
-	// ---- T33: move a custom rule up / down inside the zone ----------------------
+	// T33: move a custom rule up / down inside the zone
 	{
 		// Zone with three rules; c2 ends with a #! disabled line; a blank line sits
 		// between c1 and c2, a blank line + a plain note between c2 and c3; one
@@ -1753,7 +1746,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T33i: the note right above a rule moves with it ------------------------
+	// T33i: the note right above a rule moves with it
 	{
 		FilterFile f = ParseFilter(
 			"#pobtools-custom-begin v=1\n# note A\nShow\n\tClass \"Rings\"\n\n#=====\n# note B\nShow\n\tClass \"Amulets\"\n"
@@ -1768,7 +1761,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(nb == 0 && out == want, "T33i a note right above a rule moves with it; blank, banner and sentinels stay", out);
 	}
 
-	// ---- T34: a rule's name in the left list (EdRuleLabel) ----------------------
+	// T34: a rule's name in the left list (EdRuleLabel)
 	{
 		FilterI18n i18n;
 		i18n.Load(exeDir, "zh-rTW");
@@ -1907,7 +1900,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T35: base items the catalog lacks (OffCatalogMatches) ------------------
+	// T35: base items the catalog lacks (OffCatalogMatches)
 	{
 		wchar_t tb[MAX_PATH];
 		GetTempPathW(MAX_PATH, tb);
@@ -1922,7 +1915,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			o << body;
 		};
 		std::string items = "{\"entries\":{\"Alpha Ring\":\"甲戒\",\"Bravo Belt\":\"乙腰帶\"";
-		for (int i = 30; i >= 1; i--) {   // written in reverse so sorting has to happen
+		for (int i = 30; i >= 1; i--) {
 			char nm[32];
 			snprintf(nm, sizeof(nm), "Zed Item %02d", i);
 			items += std::string(",\"") + nm + "\":\"澤德" + std::to_string(i) + "\"";
@@ -1981,7 +1974,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T36: what Enter adds from the candidate list -------------------------
+	// T36: what Enter adds from the candidate list
 	{
 		auto item = [](const char* en, const char* zh, bool off) {
 			LibItem it;
@@ -2002,7 +1995,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		rep.check(CardEnterPick({}, "x").empty(), "T36 no candidates: nothing");
 	}
 
-	// ---- T37: the "preview may differ" note (PreviewEstimateNote) ---------------
+	// T37: the "preview may differ" note (PreviewEstimateNote)
 	{
 		auto has = [](const std::string& hay, const std::string& needle) { return hay.find(needle) != std::string::npos; };
 		FilterI18n emptyI18n;
@@ -2119,8 +2112,8 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			std::string ver = "8.19.2a";
 			std::string c1 = "255 0 0", s1 = "45", c2 = "0 255 0", c3 = "0 0 255";
 			bool gems = true;
-			std::string zoneCol;    // "" = no custom zone; else the custom rule's SetTextColor
-			std::string plainCol;   // "" = no rule without $type; else its SetTextColor
+			std::string zoneCol;
+			std::string plainCol;
 		};
 		auto build = [](const Fx& x) {
 			std::string s = "# VERSION:  " + x.ver + "\n# TYPE:     2-SEMI-STRICT\n\n";
@@ -2249,7 +2242,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 
 		// ---- T39: applying to a newer file ----
-		const EditJournal jColor = recordJ(Fx(), edited);   // currency/t1 colour -> 9 9 9
+		const EditJournal jColor = recordJ(Fx(), edited);
 		{
 			Fx nv;   // NeverSink changed nothing in this rule
 			nv.ver = "8.20.2";
@@ -2480,7 +2473,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			};
 			EditJournal jm;
 			JournalRecord(jm, mk3("1", "255 0 0", "45"), mk3("1", "9 9 9", "45"));
-			JournalRecord(jm, mk3("2", "255 0 0", "45"), mk3("2", "255 0 0", "30"));   // size edited, colour not applied
+			JournalRecord(jm, mk3("2", "255 0 0", "45"), mk3("2", "255 0 0", "30"));
 			const auto it2 = jm.rules.find("$type->currency $tier->t1");
 			bool keepsColour = false;
 			if (it2 != jm.rules.end())
@@ -2601,7 +2594,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			// the rule is carried onto v2 as it now is (not held back as pending)
 			EditJournal jc;
 			JournalRecord(jc, mk3("1", "255 0 0", "45"), mk3("1", "9 9 9", "45"));
-			FilterFile v2c = mk3("2", "1 2 3", "45");      // NeverSink changed the colour too
+			FilterFile v2c = mk3("2", "1 2 3", "45");
 			const FilterFile v2cPristine = v2c;
 			JournalReport rc;
 			{
@@ -2609,7 +2602,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 				d.Attach(&v2c);
 				rc = JournalApply(jc, d, { { "$type->currency $tier->t1|SetTextColor", true } }, false);
 			}
-			FilterFile tweaked = mk3("2", "1 2 3", "30");  // kept NeverSink's colour, then changed the size
+			FilterFile tweaked = mk3("2", "1 2 3", "30");
 			JournalRecord(jc, v2cPristine, tweaked, &rc.carried);
 			const auto ic = jc.rules.find("$type->currency $tier->t1");
 			rep.check(ic != jc.rules.end() && ic->second.before == FilterOwnLines(v2cPristine, v2cPristine.blocks[0]) &&
@@ -2626,10 +2619,10 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 			EditJournal jj;
 			JournalRecord(jj, mk2("1", "255 0 0", "255 0 0"), mk2("1", "9 9 9", "8 8 8"));
 			const FilterFile p2 = mk2("2", "255 0 0", "255 0 0");
-			const FilterFile s1 = mk2("2", "9 9 9", "255 0 0");   // only t1 carried over
-			JournalRecord(jj, p2, s1);                           // first save on v2
-			const FilterFile s2 = mk2("2", "7 7 7", "255 0 0");   // t1 edited again on v2
-			JournalRecord(jj, s1, s2);                           // second save, baseline = the saved file
+			const FilterFile s1 = mk2("2", "9 9 9", "255 0 0");
+			JournalRecord(jj, p2, s1);
+			const FilterFile s2 = mk2("2", "7 7 7", "255 0 0");
+			JournalRecord(jj, s1, s2);
 			const auto a = jj.rules.find("$type->currency $tier->t1");
 			const auto b = jj.rules.find("$type->currency $tier->t2");
 			rep.check(jj.rules.size() == 2 && a != jj.rules.end() && b != jj.rules.end() &&
@@ -2660,7 +2653,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 	}
 
 	// ---- T38h: Show/Hide and NeverSink's header comment are separate settings;
-	//      repeated keywords are paired by content, not by position ------------
+	//      repeated keywords are paired by content, not by position
 	{
 		auto jr = [](const std::string& before, const std::string& after) {
 			EditJournal j;
@@ -2828,7 +2821,7 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// ---- T31: undo capture cost on the real NeverSink file ----------------------
+	// T31: undo capture cost on the real NeverSink file
 	{
 		bool ok = false;
 		FilterFile f = LoadFilter(exeDir + L"Filters\\default.filter", &ok);
@@ -2876,7 +2869,6 @@ int RunFilterSelfTest(const std::wstring& exeDir)
 	return rep.failures ? 1 : 0;
 }
 
-// ---------------------------------------------------------------------------
 // --filter-import-probe: the paste button's exact path, headless.
 
 int RunFilterImportProbe(const std::wstring& exeDir, const std::wstring& itemFile,
@@ -2894,7 +2886,7 @@ int RunFilterImportProbe(const std::wstring& exeDir, const std::wstring& itemFil
 		std::ifstream in(itemFile, std::ios::binary);
 		text.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 	} else {
-		text = ReadClipboardUtf8(nullptr);   // the same call the paste button makes
+		text = ReadClipboardUtf8(nullptr);
 	}
 	line("input: " + std::to_string(text.size()) + " bytes (" +
 	     (itemFile.empty() ? "clipboard" : "file") + ")");

@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// ---- file helper (report output) --------------------------------------------
+// file helper (report output)
 
 static bool write_file_utf8(const std::wstring& path, const std::string& content)
 {
@@ -44,7 +44,7 @@ static bool read_file_utf8(const std::wstring& path, std::string& out)
 	return ok;
 }
 
-// ---- stat-line normalization ------------------------------------------------
+// stat-line normalization
 
 namespace {
 
@@ -135,7 +135,7 @@ void DiffStats(const std::vector<std::string>& oldStats, const std::vector<std::
 
 } // namespace
 
-// ---- compute ----------------------------------------------------------------
+// compute
 
 AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTreeData& newTree,
                                    const AtlasI18n* i18nOld, const AtlasI18n* i18nNew,
@@ -202,7 +202,7 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 	return diff;
 }
 
-// ---- cross-season TC backfill -----------------------------------------------
+// cross-season TC backfill
 
 int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
                       const AtlasI18n& oldI18n, const AtlasTreeData& oldTree)
@@ -270,7 +270,7 @@ int PruneStaleTranslations(AtlasI18n& newI18n, const AtlasTreeData& newTree, con
 	return dropped;
 }
 
-// ---- report -----------------------------------------------------------------
+// report
 
 static const char* KindTag(int k)
 {
@@ -324,7 +324,7 @@ std::string FormatAtlasTreeDiffReport(const AtlasTreeDiff& diff)
 	return s;
 }
 
-// ---- self-test (--atlas-diff-selftest) --------------------------------------
+// self-test (--atlas-diff-selftest)
 
 namespace {
 
@@ -544,7 +544,7 @@ int RunAtlasDiffSelfTest(const std::wstring& exeDir)
 	return failures == 0 ? 0 : 1;
 }
 
-// ---- CLI (--atlas-diff <oldVer> <newVer>) -----------------------------------
+// CLI (--atlas-diff <oldVer> <newVer>)
 
 int RunAtlasDiffCli(const std::wstring& oldVer, const std::wstring& newVer, const std::wstring& exeDir)
 {

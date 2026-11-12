@@ -37,7 +37,7 @@ static const char* kUsedCats[] = {
 };
 static const char* kZoom = "0.3835";
 
-// ---- small helpers (same conventions as atlas_update.cpp) -------------------
+// small helpers (same conventions as atlas_update.cpp)
 
 static bool read_file_utf8(const std::wstring& path, std::string& out)
 {
@@ -180,7 +180,7 @@ static std::pair<int, int> newest_pob_tree_version(const std::wstring& exeDir)
 	return best;
 }
 
-// ---- PassiveTreeUpdater -----------------------------------------------------
+// PassiveTreeUpdater
 
 void PassiveTreeUpdater::Init(const std::wstring& exeDir)
 {
@@ -269,9 +269,8 @@ void PassiveTreeUpdater::workerLoop()
 		std::string err;
 		if (cmd == Cmd::Check) {
 			if (!doCheck(&err)) {
-				// Quiet on screen (nobody asked, and the network comes back on its
-				// own) but never quiet in the log -- this is the same shape that
-				// made "check for updates does nothing" unreportable in v0.27.0.
+				// Quiet on screen (nobody asked) but never in the log, or a failed
+				// check is unreportable.
 				PobLog::Error("tree", "check failed: " + err);
 				setPhase(PassiveUpdatePhase::Idle, "");
 			}
@@ -433,7 +432,7 @@ void PassiveTreeUpdater::saveRecord()
 	write_file_utf8(exeDir_ + L"Data\\passive_update.json", v.dump());
 }
 
-// ---- CLI --------------------------------------------------------------------
+// CLI
 
 int RunPassiveTreeUpdateCli(const std::wstring& exeDir)
 {

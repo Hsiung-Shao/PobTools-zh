@@ -1,18 +1,8 @@
-// PobTools atlas-tree version registry.
-//
-// Replaces the old single-slot Data/atlas_version.json with a rolling registry
-// of the atlas passive-tree seasons installed on disk, so two leagues can live
-// side by side (Data/atlas_versions/<tag>/) and be diffed. The auto updater
-// installs new seasons here and prunes to the newest two LEAGUES — keeping every
-// revision of the current one (3.29.0 and 3.29.1 both stay) but only the final
-// revision of the previous one; the planner resolves which season to load
-// through this index.
-//
-// Backward compatible: a legacy flat install (Data/atlas_tree_poe1.json +
-// Data/atlas_version.json, no atlas_versions/ dir) keeps working — the resolver
-// falls back to the flat Data/ directory when a version subfolder is absent.
-//
-// Pure data, no ImGui / GL / network.
+// PobTools atlas-tree version registry: the atlas passive-tree seasons installed on disk (Data/atlas_versions/<tag>/),
+// so two leagues live side by side and can be diffed. The auto updater installs new seasons here and prunes to the
+// newest two LEAGUES; the planner resolves which season to load through this index.
+// A legacy flat install (Data/atlas_tree_poe1.json + Data/atlas_version.json) still works: the resolver falls back to
+// the flat Data/ directory when a version subfolder is absent. Pure data, no ImGui / GL / network.
 #pragma once
 
 #include <string>
@@ -26,9 +16,8 @@ struct AtlasVersionEntry {
 
 class AtlasVersionIndex {
 public:
-	// Loads Data/atlas_index.json under exeDir. When absent, migrates in-memory
-	// from the legacy Data/atlas_version.json (single tag) if present; otherwise
-	// stays empty. Never fails hard — always leaves a usable object.
+	// Loads Data/atlas_index.json under exeDir; when absent, migrates in-memory from the legacy
+	// Data/atlas_version.json, else stays empty. Never fails hard.
 	void Load(const std::wstring& exeDir);
 	bool Save(const std::wstring& exeDir) const;
 
@@ -43,9 +32,7 @@ public:
 	bool Has(const std::string& tag) const;
 	const AtlasVersionEntry* Find(const std::string& tag) const;
 
-	// True when Load() had to repair the index against what is on disk (see
-	// adoptFromDisk). Callers write it back once so the repair sticks instead of
-	// being re-derived on every launch.
+	// True when Load() had to repair the index against disk (see adoptFromDisk); callers write it back once.
 	bool NeedsSave() const { return dirty_; }
 
 	// Tags sorted newest-first by semver.
@@ -88,10 +75,8 @@ public:
 
 private:
 	void refreshCompareBase();
-	// Register season folders on disk that the index file does not list. The
-	// index is a cache of the filesystem, not the authority: an interrupted
-	// update or a restored older index would otherwise leave real data
-	// permanently invisible. Never changes `active`.
+	// Register season folders on disk that the index does not list. The index is a cache of the filesystem, not the
+	// authority (an interrupted update or restored older index would hide real data). Never changes `active`.
 	void adoptFromDisk(const std::wstring& exeDir);
 
 	std::string active_, compareBase_;

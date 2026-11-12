@@ -463,7 +463,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		if (!ok) failures++;
 	};
 
-	// ---- URI whitelist ----
+	// URI whitelist
 	struct Good { const wchar_t* in; const wchar_t* game; const wchar_t* norm; };
 	const Good good[] = {
 		{ L"pob://poeninja/AbC123", L"poe1", L"pob://poeninja/AbC123" },
@@ -473,7 +473,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		{ L"pob://poeninja/AbC123/", L"poe1", L"pob://poeninja/AbC123" },  // one trailing slash
 		{ L"pob:poeninja/abc", L"poe1", L"pob://poeninja/abc" },           // no slashes after the colon
 		{ L"pob:///poeninja/abc", L"poe1", L"pob://poeninja/abc" },        // one extra slash after the colon
-		// the real poe.ninja buttons (2026-10): a path plus the character in a query
+		// the real poe.ninja buttons: a path plus the character in a query
 		{ L"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp", L"poe1",
 		  L"pob://poeninja/overview/code?account=Brainwar-1546&name=BrainAllFlamed&overview=allflame&type=exp" },
 		{ L"pob2://PoeNinja/overview/code?account=perceptionofreality-7468&name=BABYROSHANCOM&overview=forbidden-rites", L"poe2",
@@ -561,14 +561,14 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 		check("C refuse: unterminated program quote", !PobUriCommandLineIsClean(L"\"D:\\x\\pob-zh.exe pob://a/b", L"pob://a/b"));
 		check("C refuse: empty argument", !PobUriCommandLineIsClean(L"pob-zh.exe \"\"", L""));
 	}
-	// Phase 2: which game a classic POB window title belongs to.
+	// which game a classic POB window title belongs to
 	check("T title poe1", GameFromPobTitle(L"Imported Build (Chieftain) - Path of Building") == L"poe1");
 	check("T title poe2", GameFromPobTitle(L"Imported Build (Oracle) - Path of Building (PoE2)") == L"poe2");
 	check("T title bare poe1/poe2", GameFromPobTitle(L"Path of Building") == L"poe1" &&
 	                                    GameFromPobTitle(L"Path of Building (PoE2)") == L"poe2");
 	check("T title others are none", GameFromPobTitle(L"PobTools").empty() && GameFromPobTitle(L"").empty() &&
 	                                     GameFromPobTitle(L"Path of Building - notes.txt").empty());
-	// Phase 2: the WM_COPYDATA payload a running new-interface window accepts.
+	// the WM_COPYDATA payload a running new-interface window accepts
 	{
 		const std::wstring good = L"POB://PoeNinja/overview/code?account=a-1&name=b";
 		std::wstring out;
@@ -590,7 +590,7 @@ int RunPobProtocolSelfTest(const std::wstring& exeDir)
 	check("U LooksLikePobUri routes pob:/pob2:/POB2:", LooksLikePobUri(L"pob://x") && LooksLikePobUri(L"POB2:x") &&
 	                                                       !LooksLikePobUri(L"pobx://x") && !LooksLikePobUri(L"--engine"));
 
-	// ---- registry round-trip on a test-only scheme ----
+	// registry round-trip on a test-only scheme
 	const std::wstring scheme = L"pobtools-selftest";
 	const std::wstring me = L"C:\\PobToolsSelfTest\\Folder\\pob-zh.exe";
 	const std::wstring other = L"C:\\Program Files\\Path of Building\\Path of Building.exe";

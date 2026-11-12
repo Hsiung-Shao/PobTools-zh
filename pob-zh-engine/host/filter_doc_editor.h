@@ -44,7 +44,7 @@ public:
 	FilterFile* file() { return f_; }
 	const FilterFile* file() const { return f_; }
 
-	// ---- queries ----
+	// queries
 	// First live line in the block with exactly this keyword, -1 if none.
 	// Alias grouping (PlayAlertSound vs PlayAlertSoundPositional) is the schema
 	// layer's job: call once per alias.
@@ -56,7 +56,7 @@ public:
 	// never qualify. On true, *parsedOut (if given) receives the parsed line.
 	bool IsDisabledLine(int lineIdx, FilterLine* parsedOut = nullptr) const;
 
-	// ---- line-level mutations (all set model.dirty; structural ones rebuild) --
+	// line-level mutations (all set model.dirty; structural ones rebuild)
 	// Insert a structured new line into a block: a condition goes after the
 	// block's last condition line, an action after the last action line (falling
 	// back to end of block). Indent is copied from a neighbour line. Returns the
@@ -72,7 +72,7 @@ public:
 	// CommentOutLine).
 	void RemoveLine(int lineIdx);
 
-	// ---- block-level mutations ----
+	// block-level mutations
 	// Create an empty block (header + blank separator) before the given block
 	// (insertBeforeBlockIdx == -1 or out of range appends at end of file).
 	// headerComment (may be "") becomes the header's trailing comment.
@@ -99,11 +99,11 @@ private:
 	int MoveBlock(int blockIdx, int targetBlockIdx, bool after);
 public:
 
-	// ---- selection anchoring ----
+	// selection anchoring
 	BlockAnchor CaptureAnchor(int blockIdx) const;
 	int ResolveAnchor(const BlockAnchor& a) const;  // -1 when not found
 
-	// ---- batching ----
+	// batching
 	// Between BeginBatch/EndBatch, rebuilds are deferred and blocks[] goes stale:
 	// process blocks in DESCENDING header-line order so earlier mutations only
 	// shift lines the loop has already passed.
@@ -115,7 +115,7 @@ public:
 	void RebuildBlocks();
 	unsigned structureVersion() const { return version_; }
 
-	// ---- baseline: "what the file on disk says" ----------------------------
+	// baseline: "what the file on disk says"
 	// A snapshot of every block's own lines (header through its last syntax or
 	// "#!" line; the blank / comment gap before the next block is not part of
 	// it), keyed by the header line's uid. Taken after a load or a save. It never

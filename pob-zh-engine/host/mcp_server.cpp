@@ -50,7 +50,7 @@ std::string ReadAll(const std::wstring& path)
 	return out;
 }
 
-// ---- stdio ------------------------------------------------------------------
+// stdio
 
 HANDLE g_in = INVALID_HANDLE_VALUE;
 HANDLE g_out = INVALID_HANDLE_VALUE;
@@ -86,7 +86,7 @@ bool ReadLine(std::string& carry, std::string& line)
 	}
 }
 
-// ---- the headless engine ----------------------------------------------------
+// the headless engine
 
 class Engine {
 public:
@@ -270,7 +270,7 @@ private:
 	std::string bootError_;
 };
 
-// ---- tools ------------------------------------------------------------------
+// tools
 
 json ToolResult(const json& structured, bool isError)
 {
@@ -327,8 +327,6 @@ unsigned TimeoutFor(const std::string& tool)
 
 json g_clientInfo = json::object();
 
-// Replaces every spelling of the user's profile path, so a report pasted into
-// a public issue does not carry the Windows account name.
 // Each user-folder spelling that can reach the log: UTF-8 (C++ messages), the
 // ANSI code page (Lua chunk names and package.path are ANSI, so a Chinese
 // account name arrives in CP950 bytes), forward slashes, JSON-escaped doubled

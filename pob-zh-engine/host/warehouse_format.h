@@ -1,6 +1,5 @@
-// 倉庫收益統計 — how money is written, shared by every view of it (the revenue
-// panel and the atlas planner's cost card). One definition, so a value can never
-// read "3.2 d" in one window and "640 c" in the other.
+// 倉庫收益統計 — how money is written, shared by the revenue panel and the atlas planner's cost card (one definition,
+// so a value never reads "3.2 d" in one window and "640 c" in the other).
 #pragma once
 
 #include <cstdio>

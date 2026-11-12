@@ -5,7 +5,7 @@
 
 namespace TransEd {
 
-// ---- add-entry notice ---------------------------------------------------------
+// add-entry notice
 
 std::string TrimKey(const std::string& key)
 {
@@ -58,7 +58,7 @@ AddHint ClassifyAdd(const EditorModel& model, const std::string& key, int target
 	return h;
 }
 
-// ---- undo -------------------------------------------------------------------
+// undo
 
 EntryState StateOf(const EditorModel& model, int fileIdx, const std::string& key)
 {
@@ -136,7 +136,7 @@ bool SetWithUndo(EditorModel& model, UndoStack& undo, int fileIdx, const std::st
 	return shape;
 }
 
-// ---- missing strings ----------------------------------------------------------
+// missing strings
 
 namespace {
 bool fillable(const std::vector<MissEntry>& misses, const std::vector<MissRow>& rows, int i)
@@ -226,7 +226,7 @@ bool UndoInto(EditorModel& model, UndoStack& undo, std::vector<MissRow>& rows, b
 	return true;
 }
 
-// ---- multi-line editor checks -------------------------------------------------
+// multi-line editor checks
 
 namespace {
 bool hexDigit(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); }

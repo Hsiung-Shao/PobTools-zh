@@ -266,7 +266,7 @@ std::string SerializeFilter(const FilterFile& f)
 	return out;
 }
 
-// ---- value accessors -------------------------------------------------------
+// value accessors
 
 int FilterValueInt(const FilterLine& line, size_t idx, int def)
 {

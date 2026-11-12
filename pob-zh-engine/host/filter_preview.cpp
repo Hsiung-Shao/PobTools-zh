@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 
-// ---------------------------------------------------------------------------
 // evaluator (pure, selftest-covered)
 
 namespace {
@@ -158,8 +157,7 @@ bool evalCond(const FilterLine& ln, const PreviewItem& it, const std::string& cl
 
 	if (kw == "HasInfluence") {
 		// Game semantics: any listed influence present matches; "None" matches
-		// an uninfluenced item; `!`/`!=` negates. With influence == 0 this is
-		// exactly the old "only None matches" behaviour.
+		// an uninfluenced item; `!`/`!=` negates.
 		bool neg = (ln.op == "!" || ln.op == "!=");
 		bool any = false;
 		for (const FilterToken& t : ln.values) {
@@ -429,7 +427,6 @@ bool SynthesizePreviewItem(const FilterFile& f, int blockIdx, const FilterI18n& 
 	return true;
 }
 
-// ---------------------------------------------------------------------------
 // UI (design: FilterPreview.dc.html)
 
 namespace Tok = PobUi::Tok;
@@ -443,7 +440,7 @@ struct PvDropEntry {
 	std::vector<ImportIssue> importWarnings;
 };
 
-// Per-panel state (used to be file statics, which two tabs would have shared).
+// Per-panel state (not file statics: two tabs must not share it).
 struct PreviewUiState {
 	std::vector<PvDropEntry> drops;
 	PreviewItem item;                   // the configurable "current item"
@@ -1117,7 +1114,7 @@ void DrawDropPreviewSection(EditorShell& s)
 	ImGui::SetCursorScreenPos(origin + ImVec2(0, H));
 }
 
-// ---- test aids ----------------------------------------------------------------
+// test aids
 
 void PreviewTestDrops(EditorShell& s, unsigned seed, int tipIdx)
 {

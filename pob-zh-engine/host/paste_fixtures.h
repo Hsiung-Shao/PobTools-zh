@@ -5,7 +5,7 @@
 // verbatim.
 #pragma once
 
-// ---------------------------------------------------------------- fixtures
+// fixtures
 
 inline const char* const kFxFlask =
 "物品種類: 功能藥劑\n稀有度: 傳奇\n噬燼甕\n真銀藥劑\n--------\n"
@@ -83,10 +83,8 @@ inline const char* const kFxCluster =
 "{ 後綴 \"放逐之\"(階層：2)— 混沌,抗性 }\n附加的小天賦給予：+4% 混沌抗性\n--------\n"
 "放置於天賦樹已配置的中型或巨型珠寶插槽中。附加的天賦點不與珠寶範圍互動。點擊右鍵從插槽中移除。\n";
 
-// A second cluster jewel, kept because its enchant carries a DIFFERENT inner
-// stat: one missing enchant made POB rebuild the whole jewel around the wrong
-// skill and discard all three notables it had actually rolled, so the failure is
-// worth pinning on more than one wording.
+// A second cluster jewel whose enchant carries a DIFFERENT inner stat (a missing enchant made POB
+// rebuild the jewel around the wrong skill and discard its notables; pinned on more than one wording).
 inline const char* const kFxLargeCluster =
 "物品種類: 珠寶\n稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n無形性: 33%\n--------\n"
 "需求:\n等級: 54\n--------\n物品等級: 72\n--------\n"
@@ -100,9 +98,8 @@ inline const char* const kFxLargeCluster =
 "{ 後綴 \"放逐之\"(階層：2)— 混沌,抗性 }\n附加的小天賦給予：+4% 混沌抗性\n--------\n"
 "放置於天賦樹已配置的巨型珠寶插槽中。附加的天賦點不與珠寶範圍互動。點擊右鍵從插槽中移除。\n";
 
-// Melding of the Flesh: its rolls are NEGATIVE, so the advanced-copy range comes
-// out as "-72(-80--70)%" with four minus signs in a row. Kept as a fixture
-// because that shape broke every roll on the item and nothing else here has it.
+// Melding of the Flesh: NEGATIVE rolls, so the advanced-copy range is "-72(-80--70)%" (four minus
+// signs in a row), a shape that broke every roll on the item.
 inline const char* const kFxMelding =
 "物品種類: 珠寶\n稀有度: 傳奇\n血肉融合\n鈷藍珠寶\n--------\n僅限: 1\n--------\n"
 "物品等級: 85\n--------\n"
@@ -114,12 +111,9 @@ inline const char* const kFxMelding =
 "然後升到了生命的天空。 我的家人仍然在我身邊尖叫。\"\n--------\n"
 "放置到一個天賦樹的珠寶插槽中以產生效果。右鍵點擊以移出插槽。\n";
 
-// Vestigial Sin Trek, 3.29: the base-type line carries the "殘存 " (Vestigial)
-// prefix GGG composes from the "Vestigial {0}" template, and two modifiers
-// carry the " — 無法使用的值" (Unscalable Value) marker. All three lines used
-// to come out of the paste as '?' runs -- the two rules they pin down did not
-// exist. The reminder line after the vestigial implicit and the flavour line
-// were already handled; they are here so the whole reported item stays green.
+// Vestigial Sin Trek: the base-type line carries the "殘存 " (Vestigial) prefix composed from the
+// "Vestigial {0}" template, and two modifiers carry the " — 無法使用的值" (Unscalable Value) marker;
+// both used to paste as '?' runs. The reminder and flavour lines are here so the whole item stays green.
 inline const char* const kFxVestigialBoots =
 "物品種類: 鞋子\n稀有度: 傳奇\n敏銳思維\n殘存 匿蹤短靴\n--------\n"
 "閃避值: 441 (augmented)\n能量護盾: 108 (augmented)\n--------\n"

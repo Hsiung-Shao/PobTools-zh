@@ -1,11 +1,8 @@
 // The standalone-window host for an IToolPanel.
 //
-// This is the boilerplate every ShowXxx() used to repeat: create a window and a GL
-// context, build a CJK font atlas, run a frame loop, translate the window's close
-// button into a close request, tear it all down. Written once here so the separate
-// and tabbed modes cannot drift apart -- the only thing that differs between them
-// is this file versus the launcher's tab body, and neither contains any of the
-// tool's own drawing code.
+// Window and GL context, CJK font atlas, frame loop, close button -> close
+// request, teardown. Written once so the separate and tabbed modes cannot drift
+// apart; neither this file nor the launcher's tab body contains tool drawing code.
 #pragma once
 
 #include <cstdint>

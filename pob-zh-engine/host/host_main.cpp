@@ -1,18 +1,9 @@
 // pob-zh host: launcher UI + thin loader for the SimpleGraphic engine.
-//
-// Process flow:
-//   pob-zh.exe                      -> dark ImGui launcher (language / POE1-POE2 /
-//                                      return-to-launcher), then spawns itself with
-//                                      --engine and waits; loops if configured.
-//   pob-zh.exe --engine <Launch.lua>-> internal: load SimpleGraphic.dll and run POB
-//                                      (POB_GAME/POB_LOCALE inherited from parent).
-//   pob-zh.exe <path>               -> legacy CLI: skip the UI, run POB directly in
-//                                      this process (path = Launch.lua or POB folder).
-//
-// The engine always runs in a fresh process: SimpleGraphic.dll and its deps
-// (LuaJIT, curl, GLFW/ANGLE globals, POB worker threads) cannot be safely
-// re-run after RunLuaFileAsWin returns, so "return to launcher" re-spawns.
-//
+//   pob-zh.exe                       -> ImGui launcher, then spawns itself with --engine and waits.
+//   pob-zh.exe --engine <Launch.lua> -> internal: load SimpleGraphic.dll and run POB.
+//   pob-zh.exe <path>                -> legacy CLI: run POB in this process.
+// The engine always runs in a fresh process: SimpleGraphic.dll and its deps (LuaJIT, curl,
+// GLFW/ANGLE globals, worker threads) cannot be re-run after RunLuaFileAsWin returns.
 // The external POB folder is never modified, so it can keep self-updating.
 
 #define WIN32_LEAN_AND_MEAN
@@ -79,19 +70,15 @@
 
 typedef int (*RunLuaFileAsWin_t)(int argc, char** argv);
 
-// Set an environment variable in BOTH the Win32 and CRT environments.
-// This exe uses the STATIC CRT, so the engine's getenv() reads a different
-// (UCRT) environment: ucrtbase.dll initialises when the first /MD DLL loads
-// and snapshots the Win32 environment AT THAT MOMENT. SetEnvironmentVariableW
-// is therefore the critical half here — it runs before any DLL is loaded.
-// Do not remove either call.
+// Set an env var in BOTH the Win32 and CRT environments: this exe uses the STATIC CRT, while the
+// engine's getenv() reads the UCRT environment snapshotted when the first /MD DLL loads.
+// SetEnvironmentVariableW is the critical half (runs before any DLL loads); keep both calls.
 static void set_env_both(const wchar_t* var, const wchar_t* val)
 {
 	SetEnvironmentVariableW(var, val);
 	_wputenv_s(var, val);
 }
 
-// Convert a wide string to UTF-8.
 static std::string to_utf8(const std::wstring& w)
 {
 	if (w.empty()) return std::string();
@@ -101,7 +88,6 @@ static std::string to_utf8(const std::wstring& w)
 	return s;
 }
 
-// Convert a UTF-8 string to wide.
 static std::wstring from_utf8(const std::string& s)
 {
 	if (s.empty()) return std::wstring();
@@ -111,7 +97,6 @@ static std::wstring from_utf8(const std::string& s)
 	return w;
 }
 
-// Full path of this exe.
 static std::wstring exe_path()
 {
 	wchar_t buf[MAX_PATH];
@@ -152,8 +137,7 @@ static std::wstring launch_lua_from(std::wstring p)
 	return L"";
 }
 
-// Legacy resolution for the CLI path mode: POB_PATH env, then the detected
-// sibling PoE1 install (any folder name with Launch.lua, or the exe dir itself).
+// Legacy CLI path mode: POB_PATH env, then the detected sibling PoE1 install.
 static std::wstring resolve_launch_lua_legacy(const std::wstring& dir)
 {
 	wchar_t env[MAX_PATH];
@@ -165,10 +149,9 @@ static std::wstring resolve_launch_lua_legacy(const std::wstring& dir)
 	return DetectInstalls(dir).poe1Lua;
 }
 
-// Set POB_GAME / POB_LOCALE for the engine, unless already set in the environment.
-// Falls back to pob-zh.ini ([PobTools] Game / Locale, legacy [PoeCharm]) then to poe1 / zh-rTW.
-// Used by the CLI path mode; in launcher mode the UI choices are set explicitly,
-// and the --engine child inherits them from the parent.
+// Set POB_GAME / POB_LOCALE etc. for the engine unless already in the environment; falls back to
+// pob-zh.ini ([PobTools], legacy [PoeCharm]), then poe1 / zh-rTW. CLI path mode only (the
+// launcher sets them explicitly and the --engine child inherits).
 static void apply_locale_env(const std::wstring& dir)
 {
 	std::wstring ini = dir + L"pob-zh.ini";
@@ -176,7 +159,6 @@ static void apply_locale_env(const std::wstring& dir)
 	auto ensure = [&](const wchar_t* var, const wchar_t* iniKey, const wchar_t* fallback) {
 		if (GetEnvironmentVariableW(var, nullptr, 0) > 0) return; // already set, respect it
 		wchar_t val[128];
-		// New [PobTools] section, falling back to legacy [PoeCharm] for old ini files.
 		static const wchar_t* kSentinel = L"\x01\x7f";
 		GetPrivateProfileStringW(L"PobTools", iniKey, kSentinel, val, 128, ini.c_str());
 		if (wcscmp(val, kSentinel) == 0)
@@ -186,33 +168,24 @@ static void apply_locale_env(const std::wstring& dir)
 
 	ensure(L"POB_GAME", L"Game", L"poe1");
 	ensure(L"POB_LOCALE", L"Locale", L"zh-rTW");
-	// The font was never covered here, so POB started from the legacy CLI path
-	// (or, now, detached from the launcher) got no font setting at all. `ensure`
-	// is a no-op when the variable was inherited, so this cannot override the
-	// launcher's choice.
+	// The legacy CLI / detached paths never get SetEngineEnv, so mirror the ini here; `ensure` does
+	// not override what the launcher already passed ("absent" means on for the switches).
 	ensure(L"POB_ZH_FONTFILE", L"Font", kDefaultFontFile);
-	// Same gap as the font file: the launcher passes this via SetEngineEnv, but
-	// the legacy CLI path never did, so a user who turned the switch OFF in the
-	// ini would still get letters/digits in the custom font ("absent" means on).
 	ensure(L"POB_ZH_FONT_ALL", L"FontApplyAll", L"1");
-	// Same gap again: a POB started from the legacy CLI path would otherwise
-	// ignore an ini that turned the watchdog off ("absent" means on).
 	ensure(L"POB_ZH_HANGWATCH", L"HangWatch", L"1");
 	ensure(L"POB_ZH_FPS_FG", L"PobFpsForeground", L"60");
 	ensure(L"POB_ZH_FPS_BG", L"PobFpsBackground", L"15");
 	ensure(L"POB_ZH_PERFLOG", L"PerfLog", L"0");
-	// Appearance (per game, see AppearanceConfig): all of it goes through the
-	// config loader -- the per-game keys have a fallback chain (`ensure` has
-	// none) and the background is a path that may be non-ASCII.
+	// Appearance goes through the config loader: per-game keys have a fallback chain (`ensure` has
+	// none) and the background path may be non-ASCII.
 	{
 		wchar_t g[64] = L"poe1";
-		GetEnvironmentVariableW(L"POB_GAME", g, 64); // set by `ensure` above
+		GetEnvironmentVariableW(L"POB_GAME", g, 64);
 		const LauncherConfig iniCfg = LoadLauncherConfig(ini);
 		const AppearanceConfig& look = iniCfg.look[GameIndex(g)];
 		auto ensureVal = [&](const wchar_t* var, const std::wstring& val) {
 			if (GetEnvironmentVariableW(var, nullptr, 0) == 0) set_env_both(var, val.c_str());
 		};
-		// Same gap as the font switch: the settings page's dictionary switches.
 		ensureVal(L"POB_ZH_DICT_SWITCHES", DictSwitchesEnv(iniCfg));
 		ensureVal(L"POB_ZH_WINDOW_OPACITY", std::to_wstring(look.windowOpacity));
 		ensureVal(L"POB_ZH_BG_BRIGHT", std::to_wstring(look.bgBright));
@@ -221,16 +194,11 @@ static void apply_locale_env(const std::wstring& dir)
 		ensureVal(L"POB_ZH_BG", ResolveBackgroundPath(dir, look.background));
 	}
 
-	// The external dictionary folder deliberately does NOT go through `ensure`:
-	//  - it is a path, and that helper's fixed 128-wchar buffer truncates silently
-	//    (GetPrivateProfileStringW cannot report truncation, so the symptom would
-	//    be "my folder is ignored" for long paths only);
-	//  - the codepage-proof hex spelling and the folder validation both already
-	//    live in launcher_config, and a second copy of either would drift.
-	// Only a usable folder is passed on, so this path behaves like the launcher's.
+	// The external dictionary folder must NOT go through `ensure`: its fixed 128-wchar buffer
+	// truncates long paths silently, and the hex spelling + validation already live in launcher_config.
 	if (GetEnvironmentVariableW(L"POB_ZH_DATADIR", nullptr, 0) == 0) {
 		wchar_t g[64] = L"poe1";
-		GetEnvironmentVariableW(L"POB_GAME", g, 64); // set by `ensure` just above
+		GetEnvironmentVariableW(L"POB_GAME", g, 64);
 		const DictSlot slot = (wcscmp(g, L"poe2") == 0) ? DictSlot::Poe2 : DictSlot::Poe1;
 		DictDirInfo dd = ResolveDictDir(dir, slot, LoadLauncherConfig(ini).dataDir[(int)slot]);
 		set_env_both(L"POB_ZH_DATADIR",
@@ -238,24 +206,18 @@ static void apply_locale_env(const std::wstring& dir)
 	}
 }
 
-// Load SimpleGraphic.dll (from the engine DLL directory) and run POB.
-// Blocks until POB exits. `extraArg` (optional) becomes POB's arg[1]: an
-// "Open in PoB" link that Main.lua downloads and imports. Callers pass only a
-// URI that PobProtocol::ParsePobUri accepted.
+// Load SimpleGraphic.dll and run POB; blocks until it exits. `extraArg` becomes POB's arg[1]
+// (an "Open in PoB" link) -- callers pass only a URI that PobProtocol::ParsePobUri accepted.
 static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua,
                       const std::wstring& extraArg = std::wstring())
 {
 	std::wstring dllPath = dllDir + L"SimpleGraphic.dll";
-	// ALTERED_SEARCH_PATH: resolve SimpleGraphic's dependencies (fmt.dll etc.)
-	// from its own directory FIRST. The default order starts with the exe dir,
-	// so a stale flat-layout DLL left in the install root (e.g. an old fmt.dll
-	// after unzipping a new release over an old install) would win and fail
-	// with "entry point not found". Field-reported on 0.5/0.6 fresh unzips.
+	// ALTERED_SEARCH_PATH: resolve dependencies from the DLL's own directory FIRST, so a stale
+	// flat-layout DLL left in the install root (old fmt.dll after unzipping over an old install)
+	// cannot win and fail with "entry point not found".
 	HMODULE engine = LoadLibraryExW(dllPath.c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
 	if (!engine) {
-		// The child dies here and the user sees a box with no detail. 126 is
-		// "a dependency is missing", 193 is "wrong architecture", 5 is denied --
-		// three completely different stories behind one message.
+		// GetLastError tells the stories apart: 126 missing dependency, 193 wrong architecture, 5 denied.
 		PobLog::Error("pob", "SimpleGraphic.dll failed to load, GetLastError=" +
 		                         std::to_string((unsigned long)GetLastError()));
 		MessageBoxW(nullptr, L"無法載入 SimpleGraphic.dll。", L"PobTools", MB_ICONERROR | MB_OK);
@@ -264,15 +226,12 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua,
 
 	RunLuaFileAsWin_t RunLuaFileAsWin = (RunLuaFileAsWin_t)GetProcAddress(engine, "RunLuaFileAsWin");
 	if (!RunLuaFileAsWin) {
-		// A DLL from a different build than the exe. Worth naming, because the
-		// message on screen reads like corruption when it is really a mismatch.
 		PobLog::Error("pob", "SimpleGraphic.dll loaded but has no RunLuaFileAsWin export "
 		                     "(engine and launcher are from different builds)");
 		MessageBoxW(nullptr, L"SimpleGraphic.dll 缺少 RunLuaFileAsWin 匯出。", L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;
 	}
 
-	// argv[0] = Launch.lua path (engine sets the working dir to its parent folder).
 	std::string luaUtf8 = to_utf8(launchLua);
 	std::vector<char> arg0(luaUtf8.begin(), luaUtf8.end());
 	arg0.push_back('\0');
@@ -282,15 +241,12 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua,
 	char* argv[2] = { arg0.data(), arg1.data() };
 
 	const int rc = RunLuaFileAsWin(extraArg.empty() ? 1 : 2, argv);
-	// The gap between this and the launcher's "POB child exited" mark is the
-	// process teardown (DLL unloads, static destructors) nothing else can time.
 	startup_trace_mark("engine returned (code %d); process teardown follows", rc);
 	return rc;
 }
 
-// Relaunch marker, written by the engine right before it spawns POB's
-// runtime updater (Update.exe): the updater finishes by start-ing this exe,
-// and the marker tells us to skip the launcher UI once and reopen that POB.
+// Relaunch marker, written by the engine before it spawns POB's updater (Update.exe), which
+// restarts this exe; the marker tells us to skip the launcher UI once and reopen that POB.
 static std::wstring relaunch_marker_path(const std::wstring& dir)
 {
 	return dir + L"pob-zh.relaunch";
@@ -311,15 +267,11 @@ static PobLaunch::RelaunchMarker take_relaunch_marker(const std::wstring& dir)
 	return PobLaunch::ParseRelaunchMarker(std::string(buf, read));
 }
 
-// The engine environment for one POB run (game, language, font, dictionaries,
-// appearance, frame caps): what the launcher loop and the pob:// link path
-// both hand to the child. `game` is passed separately because a link decides
-// the game by its scheme, not by the launcher's last choice.
+// The engine environment for one POB run, shared by the launcher loop and the pob:// link path.
+// `game` is separate because a link decides the game by its scheme, not the launcher's last choice.
 static void apply_engine_env(const LauncherConfig& cfg, const std::wstring& dir, const std::wstring& game)
 {
-	// Only a folder that actually holds dictionaries is handed over; a
-	// broken setting must leave POB on the built-in ones rather than with
-	// no translations at all.
+	// Only a folder that really holds dictionaries is handed over; a broken setting falls back to the built-in ones.
 	const DictSlot slot = (game == L"poe2") ? DictSlot::Poe2 : DictSlot::Poe1;
 	DictDirInfo dd = ResolveDictDir(dir, slot, cfg.dataDir[(int)slot]);
 	const AppearanceConfig& look = cfg.look[GameIndex(game)];
@@ -332,18 +284,14 @@ static void apply_engine_env(const LauncherConfig& cfg, const std::wstring& dir,
 	                        DictSwitchesEnv(cfg));
 }
 
-// An "Open in PoB" link (pob://<site>/<id> or pob2://...), started by the
-// browser through the HKCU registration (pob_protocol.h). Skips the launcher
-// screen and the updater and opens POB the way the user's interface setting
-// says: the new interface (which imports the build itself) when it is chosen
-// and usable for that POB, otherwise the classic window with the link as its
-// arg[1]. `extraArgs` = anything after the URI on the command line, which a
-// well-formed link never produces (the registration quotes "%1").
+// An "Open in PoB" link (pob://<site>/<id> or pob2://...) started via the HKCU registration
+// (pob_protocol.h). Skips the launcher screen and opens POB per the interface setting: the new
+// interface (imports the build itself) when usable, else the classic window with the link as arg[1].
+// `extraArgs` = anything after the URI on the command line (a well-formed link never has any).
 static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bool extraArgs)
 {
 	std::wstring game, uri;
-	// The raw command line too: argv parsing swallows quotes, which would let a
-	// link with '"' in it through as a different, valid-looking link.
+	// Check the raw command line too: argv parsing swallows quotes, letting a '"' link through as a different valid-looking one.
 	if (!extraArgs && !PobProtocol::PobUriCommandLineIsClean(GetCommandLineW(), rawUri)) extraArgs = true;
 	if (extraArgs || !PobProtocol::ParsePobUri(rawUri, &game, &uri)) {
 		std::string shown = to_utf8(rawUri.substr(0, 300));
@@ -362,7 +310,6 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 	const InstallInfo installs = DetectInstalls(dir);
 	const bool poe2 = game == L"poe2";
 	std::wstring launchLua = poe2 ? installs.poe2Lua : installs.poe1Lua;
-	// POB_PATH (the legacy override) only ever meant the PoE1 install.
 	if (launchLua.empty() && !poe2) launchLua = resolve_launch_lua_legacy(dir);
 	if (launchLua.empty()) {
 		PobLog::Error("protocol", std::string("no ") + (poe2 ? "PoE2" : "PoE1") + " POB install for link " + to_utf8(uri));
@@ -381,10 +328,7 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 		: ModernUiUsableFor(dir, installs.poe1Dir, installs.poe1Version));
 	const std::wstring self = exe_path();
 	if (openModern) {
-		// Same game already open in the new interface: hand the link to that
-		// window (it asks about an unsaved build and swaps the build in place)
-		// instead of a second window on the same install. Browser mode does the
-		// same inside ShowModernUiInBrowser.
+		// Same game already open in the new interface: hand the link to that window instead of a second one.
 		if (void* mw = PobProtocol::FindModernUiWindow(game, self)) {
 			if (PobProtocol::SendLinkToModernUi(mw, uri)) {
 				PobLog::Diag("protocol", "link handed to the open new-interface window");
@@ -392,15 +336,11 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 			}
 			PobLog::Error("protocol", "the open new-interface window did not take the link; opening another one");
 		}
-		// Blocks until the window closes; a refused bridge gate makes the window
-		// open the classic POB itself, link included (exit code 3).
+		// Blocks until the window closes; a refused bridge gate makes it open the classic POB itself (exit code 3).
 		return ShowModernUi(dir, game, cfg.locale, cfg, L"", uri);
 	}
-	// Same game already open in the classic window: close the one used last
-	// (top of the z-order) through POB's own "save changes?" question first, so
-	// the two never share the install (Settings.xml is written by whoever
-	// closes last). Save / Don't Save end that POB; Cancel keeps it and drops
-	// the link.
+	// Same game already open classically: close the last-used one via POB's own "save changes?"
+	// prompt so two never share the install (Settings.xml is written by whoever closes last).
 	if (void* pw = PobProtocol::FindLastPobWindow(game, self)) {
 		switch (PobProtocol::ClosePobWindowAndWait(pw)) {
 		case PobProtocol::CloseResult::Cancelled:
@@ -410,7 +350,6 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 			PobLog::Diag("protocol", "the open POB closed; opening the link");
 			break;
 		case PobProtocol::CloseResult::NoAnswer:
-			// Not initialised yet, or not answering: phase 1's behaviour.
 			PobLog::Error("protocol", "the open POB neither closed nor asked within 5 s; opening the link in a new window");
 			break;
 		}
@@ -418,26 +357,16 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 	return PobLaunch::SpawnPobDetached(launchLua, game, nullptr, uri) ? 0 : 1;
 }
 
-// Spawning POB now lives in pob_launch.cpp: the launcher can also start it
-// detached (KeepOpen mode), and both paths must hand the engine the same
-// environment.
-
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 {
 	std::wstring dir = exe_dir();
 
-	// All DLLs (SimpleGraphic.dll + its deps + our delay-loaded glfw3 and
-	// libGLESv2) live in <exe dir>\engine; fall back to the exe dir itself
-	// for the legacy flat layout. SetDllDirectoryW must happen before the
-	// first glfw/GL call so the delay-loads resolve from here, and keeps the
-	// POB folder's own bundled DLLs out of the search path.
+	// DLLs live in <exe dir>\engine (legacy flat layout: the exe dir). SetDllDirectoryW must run
+	// before the first glfw/GL call so the delay-loads resolve here, not from the POB folder's own DLLs.
 	std::wstring engineDir = dir + L"engine\\";
 	if (!file_exists(engineDir + L"SimpleGraphic.dll")) {
-		// Legacy flat layout: the engine used to sit beside the exe. Falling back
-		// is right for those installs -- but when the DLL is simply GONE this
-		// silently re-points every later check at the wrong folder, and the user
-		// ends up being told that glfw3.dll is missing. That message sends them
-		// looking for the wrong file, so record what actually happened.
+		// Falling back is right for flat installs, but when the DLL is simply GONE it re-points
+		// every later check at the wrong folder (user gets told glfw3.dll is missing), so log it.
 		engineDir = dir;
 		if (!file_exists(engineDir + L"SimpleGraphic.dll")) {
 			PobLog::Error("pob", "engine\\SimpleGraphic.dll is missing and there is no "
@@ -447,8 +376,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	SetDllDirectoryW(engineDir.c_str());
 
-	// Tell the engine where to find our bundled CJK fonts (dir\Fonts\FZ_ZY.ttf),
-	// so the external POB folder stays pristine.
+	// Bundled CJK fonts live in dir\Fonts, so the external POB folder stays pristine.
 	set_env_both(L"POB_ZH_FONTDIR", dir.c_str());
 
 	int argc = 0;
@@ -460,27 +388,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	const int argCount = argvW ? argc : 0;
 	if (argvW) LocalFree(argvW);
 
-	// Proxy for every WinHTTP session, before any dispatch: the launcher's
-	// updater, the CLI update/atlas probes and the tool children (their own
-	// processes re-enter here) must all see it, or GitHub stays unreachable for
-	// people who need a proxy. Empty follows the system proxy.
+	// Proxy for every WinHTTP session, set before any dispatch (tool children re-enter here too).
+	// Empty follows the system proxy.
 	HttpSetManualProxy(LoadLauncherConfig(dir + L"pob-zh.ini").proxy);
-	// Watched, not read once: a tool child keeps running while the launcher's
-	// settings page saves or clears the token, and must pick that up.
+	// The token is watched, not read once: a tool child must pick up the settings page saving/clearing it.
 	GitHubToken::Init(dir);
 
-	// Startup timeline (PobTools\startup_launcher.txt) for the launcher only: the
-	// engine child writes its own from inside SimpleGraphic.dll, and the CLI
-	// probes are not startups anyone waits on.
+	// Startup timeline for the launcher only (the engine child writes its own inside SimpleGraphic.dll).
 	if (arg1.empty()) {
 		startup_trace_begin("launcher");
 		startup_trace_mark("wWinMain entered");
 	}
 
-	// App-updater leftovers (*.old backups + download cache) are cleaned by the
-	// launcher only. The engine child skips it to keep POB startup lean, and the
-	// tool children (--filter-editor etc.) are started BY a running launcher --
-	// one whose updater may be staging a pack in that very cache right now.
+	// Updater leftovers are cleaned by the launcher only: tool children are started BY a running
+	// launcher whose updater may be staging a pack in that very cache.
 	if (arg1.empty()) {
 		CleanupAppUpdateLeftovers(dir);
 		startup_trace_mark("update leftovers cleaned");
@@ -493,8 +414,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--app-update-check") {
 		return RunAppUpdateCli(dir, /*checkOnly=*/true, arg2 == L"--allow-back");
 	}
-	// Which repo does this binary take updates from? Packaging asserts it, so a
-	// test build (built with -DPOBTOOLS_UPDATE_REPO=...) can never be shipped.
+	// Which repo this binary updates from; packaging asserts it so a test build can never ship.
 	if (arg1 == L"--update-source") { // --update-source [outFile]
 		return RunUpdateSourceCli(arg2);
 	}
@@ -506,17 +426,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--app-update-selftest") {
 		return RunAppUpdateSelfTest(dir);
 	}
-	// Packaging: which files belong in the translation data pack. Takes a
-	// directory (the staged tree, not necessarily this install) plus an optional
-	// output file, because PowerShell 5.1 reads a native program's stdout through
-	// the console code page.
+	// Packaging: which files belong in the translation data pack (staged tree dir + optional output
+	// file, since PowerShell 5.1 reads native stdout through the console code page).
 	if (arg1 == L"--translation-data-list") {
 		return RunTranslationDataList(arg2.empty() ? dir : arg2, arg3);
 	}
-	// Packaging: verify a freshly signed release manifest against the public keys
-	// compiled into THIS exe. The packaging script has its own copy of the key,
-	// but a verifier that shares the signer's blind spot is no verifier -- this is
-	// the same code path the user's client will run.
+	// Packaging: verify a signed release manifest against the public keys compiled into THIS exe
+	// (the same code path the user's client runs; the packaging script's own key copy is not enough).
 	if (arg1 == L"--verify-manifest") { // --verify-manifest <manifest.json> <manifest.json.sig>
 		return RunVerifyManifestCli(arg2, arg3);
 	}
@@ -536,8 +452,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	if (arg1 == L"--tj-verify") { // dump transforms to tj_verify.tsv for offline diffing
 		return RunTimelessJewelVerify(dir);
 	}
-	// Abyss jewels read a different container and are checked separately; the
-	// files are ~70 MB inflated each, so this is not folded into --tj-selftest.
+	// Abyss jewels read a different container (~70 MB inflated each), so not folded into --tj-selftest.
 	if (arg1 == L"--abyss-selftest") {
 		return RunAbyssSelfTest(dir);
 	}
@@ -597,10 +512,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunAtlasDiffCli(arg2, arg3, dir);
 	}
 
-	// Maintainer tool: build a season's mechanic map from an atlastree-export
-	// data.json. Same classifier the in-app updater runs, so the files shipped
-	// in host/data/atlas_versions/ cannot drift from an in-app update's output.
-	//   --atlas-mechanics-build <data.json> <tag> [destDir]
+	// Maintainer tool: build a season's mechanic map (same classifier as the in-app updater, so shipped
+	// files cannot drift): --atlas-mechanics-build <data.json> <tag> [destDir]
 	if (arg1 == L"--atlas-mechanics-build") {
 		std::string tag(arg3.begin(), arg3.end());
 		return RunAtlasMechanicBuild(arg2, tag, arg4);
@@ -715,20 +628,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		// headless: ini parsing, legacy migration and clamping — no window needed
 		return RunLauncherConfigSelfTest(dir);
 	}
-	// The failure log's own contract: line shape, flattening, concurrent writers,
-	// and a retention sweep that must never touch anything it did not write.
+	// The failure log's contract: line shape, concurrent writers, retention sweep only touches its own files.
 	if (arg1 == L"--error-log-selftest") {
 		return RunErrorLogSelfTest(dir);
 	}
-	// The watchdog that explains a freeze. Its second gate -- a window that still
-	// answers -- is what keeps a dragged window from being reported as a hang, so
-	// that gate gets a case of its own here.
+	// The freeze watchdog; its second gate (a window that still answers) keeps a dragged window from being reported as a hang.
 	if (arg1 == L"--hang-selftest") {
 		return RunHangWatchSelfTest(dir);
 	}
-	// Deliberately stalls this process so a real report lands in the real log
-	// folder: the only way to confirm on a live machine that the frames in it
-	// resolve against the build that produced the release.
+	// Deliberately stalls this process so a real report lands in the real log folder (checks frame symbolisation).
 	if (arg1 == L"--hang-probe") {
 		return RunHangProbe(dir, arg2.empty() ? 25 : _wtoi(arg2.c_str()));
 	}
@@ -791,11 +699,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		ShowAtlasPlanner(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
 		return 0;
 	}
-	// Open the translation editor directly (shortcut-friendly). The launcher still
-	// opens it IN-PROCESS -- that is what lets its own labels reload on the way
-	// back -- so this is an extra entry point, not a replacement.
-	// Optional arg2 picks the dictionary set ("poe1" / "poe2" / "launcher");
-	// without it the editor opens on whatever the launcher last used.
+	// Open the translation editor directly (shortcut-friendly); the launcher still opens it IN-PROCESS
+	// so its own labels reload on return. Optional arg2 picks the dictionary set ("poe1" / "poe2" / "launcher").
 	if (arg1 == L"--translation-editor") {
 		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
 		ShowEditor(dir, arg2.empty() ? c.game : arg2, c.locale);
@@ -924,11 +829,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return RunMcpSelfTest(dir, arg2);
 	}
 
-	// Internal headless engine child (new UI / self-test): same as --engine but
-	// with POB_ZH_HEADLESS=1 in the environment, so the engine creates no window
-	// and talks JSON over the stdio pipes the parent handed it. The variable is
-	// set here as well as by the parent: a headless child must never come up as
-	// a classic window because someone launched it by hand.
+	// Internal headless engine child: --engine with POB_ZH_HEADLESS=1 (no window, JSON over stdio pipes).
+	// Set here as well as by the parent so a hand-launched child never comes up as a classic window.
 	if (arg1 == L"--engine-headless") {
 		std::wstring launchLua = launch_lua_from(arg2);
 		if (launchLua.empty()) {
@@ -990,9 +892,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return run_engine(engineDir, launchLua);
 	}
 
-	// Pre-flight: glfw3.dll / libGLESv2.dll are delay-loaded — if they are
-	// missing, the first glfw call dies with an unhelpful SEH exception
-	// (0xC06D007E) instead of a loader error, so check up front.
+	// glfw3.dll / libGLESv2.dll are delay-loaded: if missing, the first glfw call dies with SEH
+	// 0xC06D007E instead of a loader error, so check up front.
 	if (!file_exists(engineDir + L"glfw3.dll") || !file_exists(engineDir + L"libGLESv2.dll")) {
 		// The earliest failure there is: the launcher exits before its window
 		// exists, so nothing in the UI can ever report it. Name the files that
@@ -1032,9 +933,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	// shows the result. Destructor joins the worker on every return path.
 	AppUpdater appUpdater;
 	appUpdater.Init(dir);
-	// Before the first check: the worker downloads and applies translation packs
-	// on its own schedule, so the opt-out has to be in place before it runs, not
-	// merely reflected in the UI afterwards.
+	// Before the first check: the worker applies translation packs on its own schedule, so the opt-out must be in place first.
 	{
 		const LauncherConfig updCfg = LoadLauncherConfig(ini);
 		appUpdater.SetTranslationUpdates(updCfg.updateTranslations);
@@ -1046,9 +945,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	appUpdater.RequestCheck(AppUpdater::CheckReason::Background);
 	startup_trace_mark("app updater started");
 
-	// Retention, once per launch. 30 days is long enough that a user who reports
-	// a problem a fortnight late still has the evidence, and short enough that an
-	// install nobody looks after never accumulates anything worth noticing.
+	// Retention, once per launch; 30 days keeps evidence for a late report without unbounded growth.
 	PobLog::PruneOlderThan(30);
 
 	// "Open in PoB" links switched on, but HKCU no longer points here (the
@@ -1062,21 +959,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		}
 	}
 
-	// From here on the launcher window is the only thing between the user and a
-	// freeze, so start watching our own frame loop -- and, through SetPeers in
-	// the launcher UI, the POB processes we start. While POB runs in the mode
-	// that closes the launcher, this process sits in a blocking wait with no
-	// window of its own: no window means the second gate can never be satisfied,
-	// which is exactly the "not a hang" answer that case needs.
+	// Watch our own frame loop (and, via SetPeers, the POB processes we start). While POB runs in the
+	// close-launcher mode this process blocks with no window, so the second gate can never fire: not a hang.
 	{
 		HangWatch::Options watch;
 		watch.role = "launcher";
 		HangWatch::Start(watch);
 	}
-	// Joined on every way out of the loop below (there are several returns). A
-	// watchdog thread still alive at exit was a std::terminate in v1.4.0:
-	// exit code 0xC0000409 and a Windows Error Reporting cycle every time the
-	// launcher closed. --hang-selftest T11 guards the same thing for the engine.
+	// Must be joined on every exit path below: a watchdog thread alive at exit is a std::terminate (0xC0000409).
 	struct StopWatchAtExit { ~StopWatchAtExit() { HangWatch::Stop(); } } stopWatchAtExit;
 
 	for (;;) {
@@ -1086,9 +976,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		startup_trace_mark("config + installs detected");
 
 		std::wstring launchLua;
-		// "Default interface: new" (close / return-after-exit modes; KeepOpen is
-		// handled inside the launcher): the WebView2 window in this process
-		// instead of the classic POB window, for either game when it can run here.
+		// "Default interface: new" (close / return-after-exit modes; KeepOpen is handled inside the
+		// launcher): the WebView2 window in this process instead of the classic POB window.
 		bool openModern = false;
 		if (!pendingLua.empty()) {
 			launchLua = launch_lua_from(pendingLua);
@@ -1112,18 +1001,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				continue;
 			}
 			if (res == LauncherResult::OpenEditor) {
-				// The editor reads and writes Data\*.json in this process; a
-				// translation pack landing meanwhile would leave one file old and
-				// the rest new. Held, not shut down: the worker stays for the
-				// launcher screen this returns to.
+				// The editor reads/writes Data\*.json in this process; a translation pack landing meanwhile
+				// would mix old and new files. Held, not shut down: the worker stays for the launcher screen.
 				appUpdater.SetHold(true);
 				ShowEditor(dir, cfg.game, cfg.locale);
 				appUpdater.SetHold(false);
 				continue; // back to the launcher screen
 			}
-			// The window mode is decided when the launcher window is created, so
-			// "restart now" is a fresh ShowLauncher with the saved config -- in this
-			// process, which keeps the record of the POB windows it started.
+			// The window mode is fixed at creation, so "restart now" = fresh ShowLauncher in this process
+			// (which keeps the record of the POB windows it started).
 			if (res == LauncherResult::Relaunch) continue;
 			// filter editor / atlas planner / timeless jewel are spawned as
 			// child processes from inside the launcher loop (window stays open)
@@ -1140,9 +1026,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		}
 
 		apply_engine_env(cfg, dir, cfg.game);
-		// Held for the whole run: the engine reads Data\*.json on a background
-		// thread right after start, and the updater's check (started above, still
-		// on the network) would otherwise write a new pack straight over them.
+		// Held for the whole run: the engine reads Data\*.json on a background thread, and the updater
+		// would otherwise write a new pack straight over them.
 		appUpdater.SetHold(true);
 		if (openModern) {
 			// Blocks until the window closes, like SpawnPobAndWait; a refused gate
@@ -1153,13 +1038,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		}
 		appUpdater.SetHold(false);
 
-		// POB self-updated: its updater is about to start a fresh pob-zh.exe
-		// (which will consume the marker), so this instance bows out instead
-		// of racing it with a launcher window.
+		// POB self-updated: its updater starts a fresh pob-zh.exe (consumes the marker); bow out instead of racing it.
 		if (GetFileAttributesW(relaunch_marker_path(dir).c_str()) != INVALID_FILE_ATTRIBUTES) return 0;
 
-		// KeepOpen never reaches here: in that mode the launcher spawns POB
-		// itself and its window never closes, so ShowLauncher only returns Quit.
+		// KeepOpen never reaches here: the launcher spawns POB itself and never closes, so ShowLauncher only returns Quit.
 		if (cfg.exitMode != LaunchExitMode::ReturnAfterExit) return 0;
 	}
 }

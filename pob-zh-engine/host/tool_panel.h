@@ -1,21 +1,10 @@
 // One tool's content, independent of where it is drawn.
 //
-// Each tool used to be a function that owned a window, a GL context, an ImGui
-// context, a font atlas and a main loop. That works when the tool IS the
-// application, but it cannot be a tab in the launcher: the launcher already has
-// all of those, and there can only be one of each.
-//
-// So a tool is split in two. Everything about being an application moves to a
-// host; what is left is this interface. Two hosts implement it:
-//
-//   * RunToolWindow (tool_window.cpp) -- the standalone window, i.e. what the
-//     separate-window mode has always done. It is the old ShowXxx() function with
-//     the tool's content lifted out.
+// The window / GL context / ImGui context / font atlas / main loop belong to a host; the tool only
+// implements this interface. Two hosts:
+//   * RunToolWindow (tool_window.cpp) -- the standalone window.
 //   * the launcher's tab body -- draws the panel straight into its own frame.
-//
-// The per-frame code is written ONCE and both hosts call it, which is the point:
-// two copies of "draw the filter editor" would drift, and only one of them would
-// be the one anybody tested.
+// The per-frame code is written ONCE and both hosts call it.
 #pragma once
 
 #include "ui_theme.h"
@@ -24,36 +13,24 @@
 
 struct ImFont;
 
-// What the host lends the panel. Owned by the host and outliving the panel; the
-// panel keeps a pointer and reads through it every frame.
-//
-// In particular the fonts are read through this EVERY FRAME and never cached: the
-// launcher rebuilds its glyph atlas when the user changes font, and every ImFont*
-// from before that is dangling afterwards.
+// What the host lends the panel (owned by the host, outliving the panel; read every frame).
+// Fonts are read through this EVERY FRAME and never cached: the launcher rebuilds its glyph atlas
+// on font change and every earlier ImFont* dangles.
 struct ToolPanelHost {
 	std::wstring exeDir;
 	std::wstring game;      // "poe1" / "poe2"; empty when the tool does not care
 	std::wstring locale;
 	float scale = 1.0f;
 
-	// The container's HWND, for Win32 dialogs to be owned by. Panels must use this
-	// rather than GetActiveWindow(): that happens to return the right window today
-	// and would silently stop doing so the moment a panel opened a dialog while
-	// something else had focus.
+	// The container's HWND, for Win32 dialogs to be owned by. Use this, never GetActiveWindow().
 	void* hostHwnd = nullptr;
 
-	// True when drawn as a launcher tab. Panels should need this only for things
-	// that are genuinely different (a standalone window can be closed by its own X;
-	// a tab cannot), never for layout.
+	// True when drawn as a launcher tab (for genuine differences like closing, never layout).
 	bool embedded = false;
 
 	ImFont* body = nullptr;   // CJK-capable; what panels draw with
-	// kBigFontGlyphs only (digits, '/', and what a money figure needs: "+-.,~"
-	// and the "c" / "d" currency suffixes), at roughly 1.6x body. For the few
-	// things a panel wants big enough to read across the room -- the atlas
-	// planner's points counter, the stash tracker's KPI figures. Deliberately not
-	// a full face: a score of glyphs costs nothing, a second CJK face costs more
-	// atlas than the whole rest of the launcher.
+	// kBigFontGlyphs only (digits, '/', "+-.,~", "c" / "d" suffixes) at ~1.6x body, for big counters
+	// and KPI figures. Deliberately not a full face: a second CJK face costs more atlas than the rest of the launcher.
 	ImFont* big = nullptr;
 	bool cjkOk = false;       // false = the font could not supply Chinese glyphs
 };
@@ -77,12 +54,9 @@ public:
 	// the host shows a message instead of the panel rather than an empty tab.
 	virtual bool Init(const ToolPanelHost& host) = 0;
 
-	// Why Init() said no, in the user's language; empty for "no comment".
-	//
-	// Reported rather than shown, because Init runs INSIDE a frame in the
-	// launcher, and a modal message box there stops the loop that keeps the
-	// docked POB windows glued to the client area -- the same reason panels defer
-	// their file dialogs. The host puts it up at a moment when that is safe.
+	// Why Init() said no, in the user's language; empty for "no comment". Reported, not shown:
+	// Init runs INSIDE a launcher frame and a modal box there stops the loop that keeps docked
+	// POB windows glued to the client area. The host shows it when that is safe.
 	virtual const char* InitError() const { return ""; }
 
 	// Exactly one frame of content, inside the window the host has already begun.
@@ -97,10 +71,8 @@ public:
 	//     large file read -- records an intent here and does it in RunDeferred().
 	virtual void Frame() = 0;
 
-	// The one place a panel may block. Called after the host has rendered and, in
-	// the launcher, after the docked POB windows have been hidden -- so a modal
-	// dialog cannot open underneath one of them, and a long pause cannot leave a
-	// docked window stranded mid-frame.
+	// The one place a panel may block. Called after the host rendered and (launcher) after docked
+	// POB windows were hidden, so a modal dialog cannot open underneath one.
 	virtual void RunDeferred() {}
 
 	// Ask to close. The first call raises the intent; the answer arrives through
@@ -109,13 +81,8 @@ public:
 	virtual ToolCloseState RequestClose() = 0;
 	virtual ToolCloseState CloseState() const = 0;
 
-	// Take the request back, returning the panel to Open.
-	//
-	// Needed because closing the launcher asks EVERY panel at once: a clean one
-	// answers Closed immediately, and if another then answers Cancelled the whole
-	// shutdown is abandoned -- at which point the ones that already agreed must not
-	// quietly disappear. Without this, cancelling a save prompt would take the
-	// user's other tabs with it.
+	// Take the request back, returning the panel to Open. Needed because closing the launcher asks
+	// EVERY panel at once: if one answers Cancelled, the ones that already agreed must not disappear.
 	virtual void AbortClose() = 0;
 
 	// Release threads and GL textures. Must run while the GL context is still
@@ -124,7 +91,6 @@ public:
 
 	virtual PobUi::Density Density() const { return PobUi::Density::Compact; }
 
-	// Stable across reorderings and across runs: it is the ImGui ID scope the panel
-	// is drawn in, so widget state would be lost (or worse, shared) if it moved.
+	// Stable across reorderings and runs: it is the ImGui ID scope the panel is drawn in.
 	virtual const char* PanelId() const = 0;
 };

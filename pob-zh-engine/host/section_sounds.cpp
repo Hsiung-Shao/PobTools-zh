@@ -124,7 +124,7 @@ void RefPill(int n, float w, float h)
 	            n > 0 ? Tok::AccentText : Tok::TextFaint, t.c_str());
 }
 
-// ---- dialogs ------------------------------------------------------------------
+// dialogs
 
 void DrawRuleEditor(EditorShell& s, SoundsUiState& u)
 {
@@ -379,7 +379,7 @@ void DrawSoundsSection(EditorShell& s)
 	const ImVec2 origin = ImGui::GetCursorScreenPos();
 	const float W = ImGui::GetContentRegionAvail().x;
 
-	// ---- folder row ----
+	// folder row
 	{
 		const float padX = PobUi::D(16.0f), padY = PobUi::D(10.0f);
 		const ImVec2 p = origin + ImVec2(padX, padY);
@@ -423,7 +423,7 @@ void DrawSoundsSection(EditorShell& s)
 	const float rightW = bodyW - leftW - pad;
 	bool wantRule = false, wantPlan = false, wantRename = false, wantRepl = false;
 
-	// ---- left: naming rules ----
+	// left: naming rules
 	ImGui::SetCursorScreenPos(body);
 	ImGui::BeginChild("##sndrules", ImVec2(leftW, bodyH), false);
 	PobUi::CardBegin("##rulescard", nullptr, u8"命名規則", nullptr, false, leftW, bodyH);
@@ -485,7 +485,7 @@ void DrawSoundsSection(EditorShell& s)
 	PobUi::CardEnd();
 	ImGui::EndChild();
 
-	// ---- right: files ----
+	// right: files
 	ImGui::SetCursorScreenPos(ImVec2(body.x + leftW + pad, body.y));
 	ImGui::BeginChild("##sndfiles", ImVec2(rightW, bodyH), false);
 	{
@@ -593,7 +593,7 @@ void DrawSoundsSection(EditorShell& s)
 	ImGui::EndChild();
 	ImGui::SetCursorScreenPos(origin + ImVec2(0, H0));
 
-	// ---- dialogs, at the page's top level ----
+	// dialogs, at the page's top level
 	if (wantRule) u.ruleOpen = true;
 	if (wantPlan) u.planOpen = true;
 	if (wantRename) u.renameOpen = true;

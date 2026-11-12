@@ -6,12 +6,7 @@
 ** JSON format (structured): { "entries": { "key": { "翻譯": "value", "色碼標籤": "^7", ... }, ... } }
 ** Additional config: meta.json, synonyms.json, item_metadata.json
 **
-** Provides O(1) lookup via std::unordered_map.
-**
-** Locale selection:
-**   1. Environment variable POB_LOCALE (e.g. "zh-rTW")
-**   2. If not set, reads Data/Translate.json and picks first entry
-**   3. If nothing found, translation is disabled (passthrough)
+** Locale: env POB_LOCALE, else the first entry of Data/Translate.json, else passthrough.
 */
 
 #include <windows.h>
@@ -42,8 +37,7 @@ using njson = nlohmann::json;
 
 /* ========== Internal State ========== */
 
-/* 樣板配對的產物不是「另一個雜湊字串」而是一份填值計畫:只有 '#' 的字串留不住
-** {N} 的編號,而編號正是中英語序不同時唯一的對位依據。細節見 build_fill_plan。
+/* 樣板配對的產物是填值計畫而非雜湊字串:'#' 留不住 {N} 編號,編號是中英語序不同時唯一的對位依據。
 **   text  目標樣板(待填處仍是 '#',填不出來的字面數字已直接寫回去)
 **   src   text 裡第 i 個 '#' 要取來源的第 src[i] 格;-1 = 沒有來源,留 '#' */
 struct FillPlan {
@@ -54,35 +48,24 @@ struct FillPlan {
 static std::unordered_map<std::string, std::string> s_translations;      /* English → Chinese */
 static std::unordered_map<std::string, std::string> s_reverse;           /* Chinese → English (exact) */
 static std::unordered_map<std::string, FillPlan>    s_reverse_pattern;   /* Chinese pattern → English fill plan */
-/* Which file supplied the entry that currently OWNS each reverse key. Both maps
-** are last-wins across the eight dictionaries, so this is the only way to say
-** which file shadowed which — see the trace notes below. Populated always (a few
-** MB) because the answer is needed the moment something looks wrong, and a build
-** flag would mean the diagnostic is missing exactly when it is wanted. */
+/* Which file supplied the entry that currently OWNS each reverse key (both maps are last-wins
+** across the eight dictionaries). Always populated: needed the moment something looks wrong. */
 static std::unordered_map<std::string, std::string> s_reverse_origin;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_origin;
 static std::unordered_map<std::string, FillPlan>    s_forward_pattern;   /* English pattern → Chinese fill plan */
-/* s_forward_pattern is keyed lower-case (POB and the dictionaries disagree on
-** case: "on hit" / "on Hit"), so two keys that differ ONLY in case share one
-** slot and the later file's wording answered both: stats.json's GGPK line
-** "Auras from your Skills have {0}% increased Effect on you for" (每個影響你的捷光環,)
-** lost to an older "...increased effect on you for" (你每受一個捷光環影響,).
-** For such collisions only, each case form also keeps its own plan here, keyed
-** by its case-preserved pattern; an input whose case-preserved pattern is one of
-** them takes that plan (find_forward_pattern). Anything else is unchanged.
-** s_forward_pattern_case_of: lower-case key -> case form of its current plan. */
+/* s_forward_pattern is keyed lower-case, so keys differing ONLY in case share one slot. For such
+** collisions each case form also keeps its own plan here, keyed case-preserved
+** (find_forward_pattern). s_forward_pattern_case_of: lower-case key -> case form of its plan. */
 static std::unordered_map<std::string, FillPlan>    s_forward_pattern_cased;
 static std::unordered_map<std::string, std::string> s_forward_pattern_case_of;
 static std::unordered_map<std::string, std::string> s_reverse_bases;    /* Chinese base type → English (from items.json base entries) */
-/* Forward twin of s_reverse_bases: the English base type names. Only used to
-** recognise POB's generated "<title>, <base type>" item names — see the
-** comma-list path in translation_lookup. */
+/* Forward twin of s_reverse_bases: only recognises POB's generated "<title>, <base type>" item names
+** (comma-list path in translation_lookup). */
 static std::unordered_set<std::string> s_base_items_en;
 static std::vector<std::pair<std::string, std::string>> s_term_glossary; /* sorted longest-first for substring replacement */
 static std::unordered_map<std::string, std::string> s_lookup_cache;     /* forward lookup cache (input → result, empty = no match) */
-/* Item-title results are cached apart from s_lookup_cache on purpose — see
-** translation_lookup_item_title. Mixing them would leak the relaxed answer into
-** the general path, which is exactly what the separate entry point prevents. */
+/* Item-title results are cached apart from s_lookup_cache: the relaxed answer must not leak into
+** the general path (translation_lookup_item_title). */
 static std::unordered_map<std::string, std::string> s_item_title_cache;
 static std::string s_locale;
 static bool s_initialized = false;
@@ -106,12 +89,10 @@ static double tr_ms_since(tr_clock::time_point t0) {
 
 /* ========== 背景載入 ==========
 **
-** 三態:s_initialized = 已經開始(同步或非同步),s_ready = 已經完成。
-** 執行緒物件放在堆上而不是 static std::thread:引擎的 sys_main_c::Error() 走
-** ExitProcess 不經 shutdown,一個還 joinable 的 static thread 在 DLL 靜態解構時會
-** std::terminate,POB 崩潰時會再多彈一個「pob-zh.exe 已停止運作」。
-** worker 裡只能用絕對路徑(本檔本來就全是 get_exe_directory() 前綴):主執行緒在
-** Lua 載入期會反覆 SetWorkDir 改 CWD。 */
+** 三態:s_initialized = 已開始,s_ready = 已完成。
+** 執行緒物件放堆上而非 static std::thread:sys_main_c::Error() 走 ExitProcess 不經 shutdown,
+** 還 joinable 的 static thread 會在 DLL 靜態解構時 std::terminate。
+** worker 只能用絕對路徑:主執行緒在 Lua 載入期會反覆 SetWorkDir。 */
 static std::atomic<bool> s_ready{true};   /* 沒有 async 在跑時恆為 true */
 static std::thread *s_init_thread = nullptr;
 
@@ -119,23 +100,12 @@ static void do_init(void);
 
 /* ========== Source dictionaries ==========
 **
-** The lookup map is flat and merged in meta.json load order, so the LAST file
-** to define a key wins everywhere. That breaks whenever the same bare English
-** word means different things depending on where POB read it: POB stores
-** support gems under their short name ("Volatility", not "Volatility Support"),
-** and passives.json — loaded later — redefines that key as the passive node of
-** the same name, so the skill tab showed 易爆 instead of 易變輔助 (issue #3).
-** 65 keys collide this way in poe1.
-**
-** Load order cannot fix it: whichever file wins, the other context is wrong.
-** So POB tells us WHERE it read the string from (PobToolsSetSource, wrapped
-** around the controls that draw the string) and that file's own dictionary is
-** consulted first — its exact entries, then its own value patterns, both ahead
-** of the merged exact map. Nothing is marked by default, so unmarked call sites
-** behave exactly as before.
-**
-** ascendancy is not registered yet: which file carries those names is still
-** undecided on the data side.
+** The lookup map is flat and merged in meta.json load order, so the LAST file to define a key
+** wins everywhere. That breaks when the same bare English word means different things by where
+** POB read it (support gem "Volatility" vs the passive of that name; 65 keys collide in poe1).
+** Load order cannot fix it, so POB tells us WHERE it read the string from (PobToolsSetSource)
+** and that file's own dictionary is consulted first: exact entries, then its own value
+** patterns, both ahead of the merged exact map. Nothing is marked by default.
 */
 struct SourceDict {
     const char *name;   /* what Lua passes to PobToolsSetSource */
@@ -148,10 +118,8 @@ static const SourceDict kSourceDicts[] = {
     { "stats",    "stats.json" },
     { "uniques",  "uniques.json" },
     { "items",    "items.json" },
-    /* Listed only in meta.json "source_dicts": loaded (with source_lookup)
-    ** as source tables, never merged -- their wording differs from the merged
-    ** map on purpose (an anoint's "Juggernaut" is the notable, not the
-    ** ascendancy class). */
+    /* Listed only in meta.json "source_dicts": loaded (with source_lookup) as source tables,
+    ** never merged -- their wording differs from the merged map on purpose. */
     { "anoint",   "anoint.json" },
     { "legion",   "legion.json" },
     { "tattoo",   "tattoo.json" },
@@ -170,62 +138,49 @@ static const SourceDict kSourceDicts[] = {
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
 
-/* Id-keyed dictionaries: same English, different id, different wording (two
-** passives both named "Elemental Overload" with their own GraphIds; two mods
-** sharing the affix name "Robust"). Keys are ids, never English, so these
-** files feed ONLY this table -- not the merged map, not the source exact or
-** pattern maps -- and are reachable only through translation_lookup_by_id.
-** Listed in meta.json "source_dicts" (load_order also works, for older data),
-** keyed by the same source names. */
+/* Id-keyed dictionaries: same English, different id, different wording. Keys are ids, never
+** English, so these files feed ONLY this table (not the merged map, not the source exact or
+** pattern maps), reachable only through translation_lookup_by_id. Listed in meta.json
+** "source_dicts" (load_order also works), keyed by the same source names. */
 static const SourceDict kIdDicts[] = {
     { "passives", "passives_by_id.json" },   /* GraphId -> name */
     { "affixes",  "affixes_by_id.json" },    /* mod Id  -> affix name */
     { "gems_desc", "gems_desc_by_id.json" }, /* grantedEffect id -> gem description */
-    /* 使用者裁定 2026-10-28「更改」: drop-down rows by language-independent id.
-    ** The two *_stats files hold no Chinese: their value is the GGPK stat ids
+    /* Drop-down rows by language-independent id. The two *_stats files hold no Chinese: their value is the GGPK stat ids
     ** (space separated) the inject hands to translation_lookup_stat_row /
     ** PobToolsTranslateStat for that mod's / passive's lines. */
     { "mod_stats", "mod_stats_by_id.json" },         /* Mods.Id -> stat ids */
     { "passive_stats", "passive_stats_by_id.json" }, /* PassiveSkillGraphId -> stat ids */
     { "gem_names", "gem_names_by_id.json" },         /* GrantedEffects.Id -> gem name */
     { "ascendancy", "ascendancy_by_id.json" },       /* Ascendancy.Id -> ascendancy name */
-    /* No "legion" id table (user ruling S8, reversed): POB, poedb and GGPK
-    ** agree on the legion passives' Name column; only GGPK's Id STRINGS have
-    ** the two Faith notables swapped (templar_notable_minimum_power_charge is
-    ** "Frenzied Faith"), so naming by id would be the one that is wrong.
-    ** Legion names go through the English "legion" source table instead. */
+    /* No "legion" id table: GGPK's Id STRINGS have the two Faith notables swapped, so naming by
+    ** id would be wrong; legion names go through the English "legion" source table. */
 };
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_dicts;
-/* source -> (id -> whitespace-normalised GGPK English), from the id file's
-** optional "templates". A source present here (even with an empty map) had a
-** templates field: its id answers are English-checked. Kept out of s_id_dicts
-** so translation_debug_sources is unchanged. */
+/* source -> (id -> whitespace-normalised GGPK English), from the id file's optional "templates".
+** A source present here (even empty) had a templates field: its id answers are English-checked.
+** Kept out of s_id_dicts so translation_debug_sources is unchanged. */
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_id_templates;
 
-/* stats_by_id.json: GGG stat descriptions keyed "stat_ids|cond|src_file|dup_ix",
-** Chinese templates in "entries", English templates in "templates". Like the
-** id files above it feeds ONLY its own index (s_stat_index) -- never the merged
-** map, any reverse/pattern table or s_id_dicts -- and is reachable only through
-** translation_lookup_stat. Built only when meta.json has "source_lookup".
-** Only the two description files a ctx can select are indexed. */
+/* stats_by_id.json: GGG stat descriptions keyed "stat_ids|cond|src_file|dup_ix", Chinese
+** templates in "entries", English in "templates". Feeds ONLY its own index (s_stat_index) --
+** never the merged map, reverse/pattern tables or s_id_dicts -- reachable only through
+** translation_lookup_stat. Built only when meta.json has "source_lookup". */
 static const char *const kStatDictFile = "stats_by_id.json";
 static const char *const kStatFileItem = "stat_descriptions.txt";
 static const char *const kStatFilePassive = "passive_skill_stat_descriptions.txt";
 /* Aura-type passives (nearby enemies...) live only here. */
 static const char *const kStatFilePassiveAura = "passive_skill_aura_stat_descriptions.txt";
 
-/* Every description file in stats_by_id.json gets an id; a ctx turns into a
-** CHAIN of file ids, most specific first (stat_ctx_chain):
+/* Every description file in stats_by_id.json gets an id; a ctx turns into a CHAIN of file ids,
+** most specific first (stat_ctx_chain):
 **   item          -> stat_descriptions
 **   passive       -> passive_skill -> stat_descriptions -> passive_skill_aura
 **   gem           -> skill_stat -> active_skill_gem -> gem_stat -> stat_descriptions
 **                    (POB scopeList order for an active skill)
-**   gem:<scope>   -> <scope>.txt and its parents from stats_by_id.json
-**                    "stat_desc_parents" (POB's statDescriptionScope + parent
-**                    chain); the gem default when the scope is not in that
-**                    table or the data pack predates it.
-** Lookups walk the chain; the first file with a candidate decides (a file
-** whose candidate matches the line's case exactly is preferred over all). */
+**   gem:<scope>   -> <scope>.txt and its parents ("stat_desc_parents"); the gem default when
+**                    the scope is unknown or the data pack predates it.
+** The first file with a candidate decides (an exact-case match is preferred over all). */
 static std::vector<std::string> s_stat_files;                  /* id -> basename */
 static std::unordered_map<std::string, int> s_stat_file_ids;   /* basename -> id */
 static std::unordered_map<std::string, std::string> s_stat_parents;  /* child -> parent */
@@ -263,11 +218,9 @@ struct StatCand {
 /* normalised English template -> candidates */
 static std::unordered_map<std::string, std::vector<StatCand>> s_stat_index;
 
-/* Stat entries with NAME slots (stats_by_id.json "name_slots": {key: {"N":
-** "passives"|"gems"}}): a {N} filled by a passive / skill NAME, not a number
-** ("Allocates {0}", "+{0} to Level of all {1} Gems"). They cannot live in the
-** hash index (a name is not a '#'), so they are matched token by token
-** (stat_match_named) and kept here instead. */
+/* Stat entries with NAME slots (stats_by_id.json "name_slots": {key: {"N": "passives"|"gems"}}):
+** a {N} filled by a passive / skill NAME, not a number. A name is not a '#', so they cannot
+** live in the hash index; they are matched token by token (stat_match_named) from here. */
 struct StatNamedTok {
     std::string lit;   /* literal text, or empty for a placeholder */
     int         ph;    /* placeholder number, -1 for a literal */
@@ -281,21 +234,15 @@ struct StatNamedCand {
 };
 static std::vector<StatNamedCand> s_stat_named;
 
-/* ggpk_groups.json (generator pob_export/gen_ggpk_groups.py): every GGPK
-** description whose English has more than one line -- stat descriptions
-** ("stats", same keys as stats_by_id.json) and texts such as flavour text
-** ("texts"). POB draws such a description as one tooltip line / label per
-** English line, so a per-line lookup can only ever translate fragments. The
-** catalog says which consecutive lines are ONE description; the whole is then
-** translated at once (translation_group_lines) and laid out the way GGPK's
-** Chinese is: its lines in order, the whole sentence on the first line when
-** the Chinese has fewer lines, the rest blank.
-**   stats -> the joined lines go through the stat lookup (stats_by_id.json is
-**            the only source of the wording; the catalog only says where a
+/* ggpk_groups.json: every GGPK description whose English has more than one line -- "stats"
+** (same keys as stats_by_id.json) and "texts" such as flavour text. POB draws one tooltip
+** line per English line, so a per-line lookup only translates fragments. The catalog says
+** which consecutive lines are ONE description; the whole is translated at once
+** (translation_group_lines) and laid out the way GGPK's Chinese is.
+**   stats -> joined lines go through the stat lookup (the catalog only says where a
 **            description starts and how many lines it spans)
-**   texts -> the catalog's Chinese, only where its line count differs from
-**            the English (same count: the per-line dictionaries already have
-**            each line, and their rulings stay in charge)
+**   texts -> the catalog's Chinese, only where its line count differs from the English
+**            (same count: the per-line dictionaries and their rulings stay in charge)
 ** Never merged; loaded by name when meta.json has "source_lookup". */
 static const char *const kGroupFile = "ggpk_groups.json";
 struct GroupStat { std::vector<std::string> keys; };   /* stat_index_key per English line */
@@ -303,12 +250,9 @@ struct GroupText { std::vector<std::string> lines; std::string zh; };   /* norma
 /* first line's key -> candidates (longest first) */
 static std::unordered_map<std::string, std::vector<GroupStat>> s_group_stat_heads;
 static std::unordered_map<std::string, std::vector<GroupText>> s_group_text_heads;
-/* slash_group_lookup's answers by ctx + '\x1f' + input ("" = no answer).
-** Capped at kSlashCacheMax entries: past that it is emptied before the next
-** insert (a '/' string with a live number per frame must not grow it without
-** end). An answer pointer therefore lives until the next translation_lookup,
-** which is what every caller already assumes (they copy before looking up
-** again). */
+/* slash_group_lookup's answers by ctx + '\x1f' + input ("" = no answer). Capped at
+** kSlashCacheMax entries (emptied before the next insert), so an answer pointer lives only
+** until the next translation_lookup; callers copy before looking up again. */
 static std::unordered_map<std::string, std::string> s_slash_group_cache;
 static const size_t kSlashCacheMax = 4096;
 /* translation_set_slash_context: the ctx the "/" lookup asks the stat lookup
@@ -317,39 +261,28 @@ static std::string s_slash_ctx;
 static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
                             std::vector<std::string> &out, std::vector<char> &hit);
 
-/* display_exclude.json (使用者裁定 2026-10-25 方案 a):
+/* display_exclude.json:
 **   {"version":1,"entries":{"stats.json":["<原字典鍵>",...],"ui.json":[...]}}
-** A listed key of THAT file never reaches a forward table -- the merged exact
-** map, the merged forward patterns, the per-line entries derived into them,
-** and that file's source copy (使用者裁定 2026-10-25「全部改 GGPK」: a
-** source-marked lookup of an excluded key falls back to the merged table,
-** i.e. GGPK's wording -- gems "Onslaught" is 猛攻, not 猛攻輔助) -- nor
-** (through s_translations) the glossary; it neither adds nor overrides there.
-** The same file cannot bring it back another way either (V10B): an entry
-** whose [X|Y]-stripped key is a listed key, or a line derived from an
-** unlisted multi-line key that is itself a listed key, is kept out the same.
-** Built as before: its reverse entries (paste Chinese -> English) and
-** s_base_items_en (a list recognising base types, not a translation:
-** "<rare name>, <base>" titles depend on it; 審查第 6 輪). Keys are the raw
-** dictionary keys (before any 色碼標籤 prefix). Loaded by name like
-** synonyms.json; absent file = nothing excluded. */
+** A listed key of THAT file never reaches a forward table (merged exact map, merged forward
+** patterns, per-line entries derived into them, that file's source copy -- a source-marked
+** lookup of an excluded key falls back to the merged table) nor the glossary. The same file
+** cannot bring it back another way: an entry whose [X|Y]-stripped key is listed, or a line
+** derived from an unlisted multi-line key that is itself listed, is kept out too.
+** Still built: its reverse entries (paste Chinese -> English) and s_base_items_en
+** ("<rare name>, <base>" titles depend on it). Keys are raw dictionary keys (before any
+** 色碼標籤 prefix). Loaded by name like synonyms.json; absent file = nothing excluded. */
 static const char *const kDisplayExcludeFile = "display_exclude.json";
 static std::unordered_map<std::string, std::unordered_set<std::string>> s_display_exclude;
 
-/* exact_only.json (使用者裁定 2026-10-26「只比整句」):
+/* exact_only.json:
 **   {"version":1,"entries":{"ggpk_full.json":["<原字典鍵>",...]}}
-** A listed key of THAT file is matched as the whole sentence only. It enters
-** the exact tables as usual (the merged exact map, that file's source copy,
-** the reverse exact map), but nothing is generalised from it: no forward
-** pattern (merged or source copy), no reverse / compact / fuzzy reverse
-** pattern, no per-line entries derived from a multi-line key, and the glossary
-** skips it. So its number never spills onto another value of the same
-** template (whatever template another file built keeps answering those) and
-** its wording is never substituted inside another sentence. display_exclude
-** wins: a key on both lists stays out of every forward table, and still gets
-** no reverse pattern. Keys are the raw dictionary keys (before any 色碼標籤
-** prefix); an [X|Y] key also matches by its stripped form. Loaded by name like
-** display_exclude.json; absent file = nothing restricted. */
+** A listed key of THAT file is matched as the whole sentence only. It enters the exact tables
+** as usual (merged exact map, source copy, reverse exact map) but nothing is generalised from
+** it: no forward pattern, no reverse / compact / fuzzy reverse pattern, no per-line entries,
+** and the glossary skips it -- so its number never spills onto another value of the same
+** template. display_exclude wins: a key on both lists stays out of every forward table and
+** still gets no reverse pattern. Keys are raw dictionary keys; an [X|Y] key also matches by
+** its stripped form. Loaded by name; absent file = nothing restricted. */
 static const char *const kExactOnlyFile = "exact_only.json";
 static std::unordered_map<std::string, std::unordered_set<std::string>> s_exact_only;
 /* Merged-map keys (色碼 prefix included) whose current value came from an
@@ -370,10 +303,8 @@ static std::unordered_map<std::string, std::string> s_stat_colored_cache;
 /* translation_lookup_stat_row: ctx '\x1f' ids '\x1f' row -> answer ("" = none);
 ** node-stable until the next reload. */
 static std::unordered_map<std::string, std::string> s_stat_row_cache;
-/* meta.json "source_lookup". false (absent) = only the legacy "gems" source can
-** be selected, exact entries only, and id lookups answer nothing -- so a locale
-** whose data was never reorganised (poe2, zh-rCN, ko-KR) behaves exactly as it
-** did before the per-source dictionaries existed. */
+/* meta.json "source_lookup". false (absent) = only the legacy "gems" source can be selected,
+** exact entries only, and id lookups answer nothing (poe2, zh-rCN, ko-KR). */
 static bool s_source_lookup = false;
 /* The game whose rules run (game_rules.h, translation_game()). Set at the start
 ** of every load from POB_GAME; with POB_GAME unset, meta.json "source" decides
@@ -384,19 +315,14 @@ static std::string s_meta_source; /* meta.json "source", "" when absent */
 static const char *const kLegacySource = "gems";
 static const std::unordered_map<std::string, std::string> *s_active_source = nullptr;
 static std::string s_active_source_name;
-/* Each source's own forward patterns (same key/plan shape as s_forward_pattern),
-** so a sourced value line ("23% increased X") resolves through ITS file's
-** template rather than whichever later file redefined the pattern or the exact
-** line. Created at load time next to s_sources; the pointer follows it. */
+/* Each source's own forward patterns (same shape as s_forward_pattern), so a sourced value
+** line resolves through ITS file's template, not whichever later file redefined it. */
 static std::unordered_map<std::string, std::unordered_map<std::string, FillPlan>> s_source_patterns;
 static const std::unordered_map<std::string, FillPlan> *s_active_source_patterns = nullptr;
 
-/* Results computed while a source is active may embed a source-specific
-** translation (the pattern / comma-list / suffix paths all recurse), so they
-** must never land in the shared cache — a later unmarked lookup of the same
-** string would get the gem-context answer. Each source therefore caches into
-** its own map. Entries are created once at load time, and unordered_map keeps
-** references to existing elements valid, so these pointers stay good. */
+/* Results computed while a source is active may embed a source-specific translation (the
+** recursing paths), so they must never land in the shared cache; each source caches into its
+** own map. Entries are created once at load time (pointers stay valid). */
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_source_cache;
 static std::unordered_map<std::string, std::string> *s_lookup_cache_active = &s_lookup_cache;
 /* Same isolation for translation_lookup_item_title: its cached answer came
@@ -420,19 +346,16 @@ struct SynonymRule {
 
 /* ========== Reverse-translation trace ==========
 **
-** See translation_manager.h. The only field that needs threading through the
-** lookup helpers is the origin: which of the eight dictionary files supplied
-** the entry that won. Without it "who shadowed whom" is unanswerable, and that
-** question is the root of every mis-attribution the paste work has produced. */
+** See translation_manager.h. The only field threaded through the lookup helpers is the
+** origin: which dictionary file supplied the winning entry. */
 static bool        s_trace_on = false;
 static std::string s_trace_buf;
 static const char *s_rev_rule = "";      /* branch that produced the last result */
 static std::string s_rev_key;            /* dictionary key that matched, if any */
 static std::string s_rev_file;           /* file that key's winning copy came from */
 
-/* Set right before returning, so the wrapper can record which branch ran.
-** Deliberately a comma expression rather than a statement macro: it wraps the
-** returned value in place and keeps each edit to one line. */
+/* Set right before returning, so the wrapper can record which branch ran; a comma
+** expression wraps the returned value in place. */
 #define REV(tag, expr) (s_rev_rule = (tag), (expr))
 
 static void rev_note(const std::string &key, const std::string &file)
@@ -464,13 +387,10 @@ static std::unordered_map<std::string, std::vector<HeaderMapping_Dyn>> s_header_
 ** client writes 無法使用的值, PoE2's 無法變動的值 (clientstrings
 ** DescriptionLabelFixedValueStat); item_metadata may add more. */
 static std::vector<std::string> s_unscalable_markers;
-/* Whitespace-blind reverse patterns. PoE2's client prints a modifier with no
-** space between a number and the words ("+77(60-80)最大生命") while the
-** dictionaries carry GGG's template spacing ("{0} 最大生命"); the exact pattern
-** map therefore never sees those lines. Keyed on the pattern with every space
-** removed. Two templates that differ only by spacing but translate differently
-** are ambiguous: they are recorded and never answered, because picking one
-** would be a guess. */
+/* Whitespace-blind reverse patterns. PoE2's client prints "+77(60-80)最大生命" with no
+** space while the dictionaries carry "{0} 最大生命", so the exact pattern map never sees
+** those lines. Keyed on the pattern with every space removed; templates differing only by
+** spacing but translating differently are ambiguous: recorded, never answered. */
 static std::unordered_map<std::string, FillPlan> s_reverse_pattern_compact;
 static std::unordered_map<std::string, std::string> s_reverse_pattern_compact_origin;
 static std::unordered_set<std::string> s_reverse_pattern_compact_ambiguous;
@@ -480,18 +400,12 @@ static std::unordered_map<std::string, std::string> s_reverse_pattern_compact_sr
 ** -> "Grants Skill: Spear Throw"): every run of non-ASCII text in the value is
 ** looked up whole in the exact reverse map. */
 static std::unordered_set<std::string> s_header_names;
-/* Lines the game COMPOSES as "<prefix><an ordinary stat>" rather than storing
-** whole. GGPK holds only the template, so the composed string is absent from
-** every dictionary — translate it the same way it was built.
-**
-** POB uses two English prefixes for the same Chinese one, and which is correct
-** depends on whether the line is the jewel's ENCHANT or one of its rolled
-** modifiers (verified against POB's own export of the same item):
+/* Lines the game COMPOSES as "<prefix><an ordinary stat>"; GGPK holds only the template, so the
+** composed string is in no dictionary -- translate it the way it was built.
+** POB uses two English prefixes for the same Chinese one:
 **     enchant  ->  "Added Small Passive Skills grant: "
 **     modifier ->  "Added Small Passive Skills also grant: "
-** The discriminator is the trailing " (enchant)", not the Chinese wording: GGG
-** writes 小型 on the enchant and 小 on the modifier, but its own stat data uses
-** both for both, so the wording cannot be trusted to tell them apart. */
+** The discriminator is the trailing " (enchant)", not the Chinese wording. */
 struct CompositePrefix {
     std::string chinese;
     std::string english;          /* rolled modifier form */
@@ -505,17 +419,10 @@ static std::unordered_map<std::string, std::string> s_affix_names;
 
 /* ========== Section grammar ==========
 **
-** A pasted item is a sequence of dash-separated SECTIONS, and what a line means
-** depends on which section it sits in — the same prose is flavour text on a
-** unique and a modifier on a rare. Every rule below used to guess that from the
-** line alone ("starts with a full-width paren", "nothing in here translated and
-** there are no digits", a hardcoded list of property names), which is why each
-** new copy format needed one more special case.
-**
-** Deliberately NOT split into implicit/explicit/enchant-as-separate-kinds: they
-** drive identical behaviour here (POB derives the stage from the "{ ... Modifier }"
-** annotations we rebuild), and a distinction no rule reads is one that can drift
-** wrong without any test noticing. */
+** A pasted item is a sequence of dash-separated SECTIONS; what a line means depends on its
+** section (the same prose is flavour text on a unique, a modifier on a rare).
+** Deliberately NOT split into implicit/explicit/enchant kinds: POB derives the stage from the
+** "{ ... Modifier }" annotations we rebuild, and a distinction no rule reads drifts silently. */
 enum class LineKind {
     Unknown = 0,  /* no structural evidence — behave exactly as before */
     Separator,
@@ -551,18 +458,14 @@ static std::vector<std::pair<std::string,std::string>> s_strip_measure_words;
 /* Incomplete-translation whitelist (from meta.json) */
 static std::vector<std::string>   s_whitelist_terms;
 
-/* Keys that must never become glossary terms (from meta.json). The dictionary
-** inherits GGG's internal placeholder affixes ("[UNUSED]" -> "反鍊金的"), and
-** a placeholder in the substring glossary silently rewrites unrelated UI text:
-** "Unused Items" came out as "反鍊金的 物品". */
+/* Keys that must never become glossary terms (from meta.json): GGG's internal placeholder
+** affixes ("[UNUSED]" -> "反鍊金的") would silently rewrite unrelated UI text. */
 static std::vector<std::string>   s_glossary_blacklist;
 
 /* ========== Helper: read env via Win32 (NOT getenv) ==========
 **
-** The host exe uses a static CRT and passes POB_* variables with
-** SetEnvironmentVariableW. The UCRT used by this DLL snapshots the
-** environment when ucrtbase initialises — which can happen at process start
-** (system DLLs), BEFORE the host sets anything — so getenv() may never see
+** The host sets POB_* with SetEnvironmentVariableW, but this DLL's UCRT snapshots the
+** environment at ucrtbase init (BEFORE the host sets anything), so getenv() may never see
 ** them. GetEnvironmentVariableA reads the live Win32 environment. */
 const char* translation_win_env(const char *name, char *buf, unsigned size) {
     DWORD n = GetEnvironmentVariableA(name, buf, size);
@@ -576,12 +479,8 @@ static const char* win_env(const char *name, char *buf, unsigned size) {
 /* ========== Launcher dictionary switches (POB_ZH_DICT_SWITCHES) ==========
 **
 ** "a.json=0;b.json=1" -- the settings page's per-file switches (launcher_config.h
-** kOptionalDicts). A file switched off is skipped although meta.json's load_order
-** names it; every other file loads exactly as before, and with no variable at all
-** (an older launcher, the CLI path) nothing is skipped. One diag line per switched
-** file says what happened, so "is my tooltip file in effect?" has an answer in
-** PobTools\logs\diag-<date>.log. Names compare case-insensitively, like the file
-** system they name. */
+** kOptionalDicts). A file switched off is skipped although load_order names it; with no
+** variable (older launcher, CLI path) nothing is skipped. Names compare case-insensitively. */
 struct DictSwitches {
     std::vector<std::pair<std::string, bool>> items;   /* file, on */
     std::vector<std::string> notes;                    /* one per switched file met */
@@ -619,13 +518,11 @@ struct DictSwitches {
     }
 };
 
-/* ========== Helper: Check if char is an ASCII letter ========== */
 
 static inline bool is_ascii_alpha(char c) {
     return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 }
 
-/* ========== Helper: case-insensitive ASCII string comparison ========== */
 
 static std::string to_ascii_lower(const std::string &s) {
     std::string r = s;
@@ -635,7 +532,6 @@ static std::string to_ascii_lower(const std::string &s) {
     return r;
 }
 
-/* ========== Helper: case-insensitive find (ASCII only) ========== */
 
 static size_t find_icase(const std::string &haystack, const std::string &needle_lower, size_t start = 0) {
     if (needle_lower.size() > haystack.size()) return std::string::npos;
@@ -651,18 +547,15 @@ static size_t find_icase(const std::string &haystack, const std::string &needle_
     return std::string::npos;
 }
 
-/* ========== Helper: Check if a key is suitable for term glossary ========== */
 
 static bool is_glossary_candidate(const std::string &key) {
     if (key.size() < 4 || key.size() > 60) return false;
-    /* Must contain at least one letter */
     bool has_letter = false;
     for (char c : key) {
         if (is_ascii_alpha(c)) has_letter = true;
         /* Reject entries with placeholders */
         if (c == '{') return false;
     }
-    /* Must not start with ^ (color code) */
     if (!key.empty() && key[0] == '^') return false;
     if (!has_letter) return false;
     for (const std::string &bad : s_glossary_blacklist) {
@@ -671,7 +564,6 @@ static bool is_glossary_candidate(const std::string &key) {
     return true;
 }
 
-/* ========== Helper: Get exe directory ========== */
 
 static std::string get_exe_directory() {
     char path[MAX_PATH];
@@ -683,7 +575,6 @@ static std::string get_exe_directory() {
     return std::string(path);
 }
 
-/* ========== Helper: normalize whitespace (collapse, trim, convert fullwidth) ========== */
 
 static std::string normalize_whitespace(const std::string &s) {
     std::string result;
@@ -753,12 +644,9 @@ static void register_compact_pattern(const std::string &key, const FillPlan &pla
 /* ========== Helper: check if position starts a (X-Y) range pattern ========== */
 
 /* Returns length of the range if matched (including parens), or 0 if not a range.
- * Matches patterns like (4-6), (10-20), (1.5-3.0), and the NEGATIVE form the
- * game uses for penalties: Melding of the Flesh rolls "-72(-80--70)% to all
- * Elemental Resistances", where four minus signs run together. Requiring a digit
- * straight after '(' rejected those, so the range was never collapsed, the
- * hashed pattern came out malformed, and every negative roll on the item failed
- * to translate. */
+ * Matches (4-6), (10-20), (1.5-3.0) and the NEGATIVE form used for penalties
+ * ("-72(-80--70)%", four minus signs run together), so a digit must not be required
+ * straight after '('. */
 static size_t match_range(const std::string &s, size_t pos) {
     if (pos >= s.size() || s[pos] != '(') return 0;
     size_t i = pos + 1;
@@ -778,11 +666,9 @@ static size_t match_range(const std::string &s, size_t pos) {
     return (i + 1) - pos;
 }
 
-/* A '+'/'-' sitting right before a number is part of that number and gets folded
-** into its '#'. A '-' BETWEEN two numbers is a range separator ("5-10") and must
-** be left alone, so only absorb one when what precedes it is not itself a number.
-** Templates write "{0}" and let the value carry its own sign, which is why the
-** signed form has to hash the same as the unsigned one. */
+/* A '+'/'-' right before a number is folded into its '#' (templates write "{0}" and let the
+** value carry its sign, so signed and unsigned must hash the same). A '-' BETWEEN two numbers
+** is a range separator ("5-10"): absorb one only when what precedes it is not a number. */
 static bool absorb_sign(std::string &result) {
     if (result.empty()) return false;
     char back = result.back();
@@ -813,15 +699,11 @@ static bool sign_before(const std::string &s, size_t i) {
 
 /* 除了雜湊字串,還可以回報「每一個 '#' 是哪來的」。
 **
-** 為什麼要塞在同一支函式裡:填值需要知道輸入的第 i 個 '#' 對應哪一段原文,而那
-** 個對應關係完全由這裡的掃描規則決定(正負號吸收、(X-Y) 範圍、7(6-11) 進階複製
-** 形式、千分位)。另外寫一支「抽值器」等於把同一套規則寫兩份,兩份一旦漂開,錯位
-** 會安靜地發生在使用者畫面上而不是任何斷言裡 —— 這個專案已經吃過一次「驗證器與
-** 被驗證的程式共享同一個盲點」的虧。
-**
-** slots 若不為 null,長度等於輸出裡 '#' 的個數,依序:
-**   非空 = 這個 '#' 是由數字(含吸收掉的正負號、範圍)摺疊來的,內容就是原文;
-**   空字串 = 輸入本來就寫著 '#'(POB 工藝介面的詞綴列就長這樣),沒有數值可填。 */
+** 塞在同一支函式:第 i 個 '#' 對應哪段原文完全由這裡的掃描規則決定(正負號吸收、(X-Y) 範圍、
+** 7(6-11) 進階複製形式、千分位);另寫抽值器等於同一套規則寫兩份,漂開後會安靜錯位。
+** slots 若不為 null,長度等於輸出的 '#' 數,依序:
+**   非空 = 由數字(含吸收的正負號、範圍)摺疊來的,內容就是原文;
+**   空字串 = 輸入本來就寫著 '#'(POB 工藝介面詞綴列),沒有數值可填。 */
 static std::string digits_to_hash(const std::string &s, std::vector<std::string> *slots = nullptr) {
     std::string result;
     result.reserve(s.size());
@@ -860,12 +742,8 @@ static std::string digits_to_hash(const std::string &s, std::vector<std::string>
         char c = s[i];
         if (c >= '0' && c <= '9') {
             if (!in_number) {
-                /* Absorb a preceding sign into the # placeholder.
-                 * POB stat descriptions use {0:+d} format which outputs "+20",
-                 * but translation templates use {0} which normalizes to just "#".
-                 * By consuming the sign, "+20 to Intelligence" → "# to Intelligence"
-                 * matches pattern "# to Intelligence"; likewise "-2" so that
-                 * "此物品插槽中輔助寶石等級 -2" matches the same key "+2" does. */
+                /* Absorb a preceding sign into the # placeholder: POB prints "{0:+d}" ("+20") but
+                 * templates use "{0}" (just "#"); likewise "-2" must match the key "+2" does. */
                 char sign = result.empty() ? '\0' : result.back();
                 bool absorbed = absorb_sign(result);
                 result += '#';
@@ -883,12 +761,9 @@ static std::string digits_to_hash(const std::string &s, std::vector<std::string>
         } else {
             in_number = false;
             if (c == '#') {
-                /* 原文自己就寫著 '#'(POB 工藝介面的詞綴下拉:"+# to all Attributes"):
-                ** 它也是一個待填格,而且要跟數字一樣吃掉前面的正負號。否則
-                ** "+5 to all Attributes" 的鍵是 "# to all Attributes",同一條詞綴寫成
-                ** "+#" 卻變成 "+# to all Attributes",整份字典都對不上 —— POE1 工藝下拉
-                ** 大半顯示英文就是這個。吃掉的正負號留在這一格的值裡("+#"),填回
-                ** 譯文時照原樣放回;沒有正負號的仍是空字串 = 「沒有數值」。 */
+                /* 原文自己寫著 '#'(POB 工藝下拉 "+# to all Attributes")也是一格,且要像數字一樣
+                ** 吃掉前面的正負號,否則鍵跟 "+5 ..." 對不上。吃掉的正負號留在這格的值裡("+#"),
+                ** 填回譯文時照原樣放回;沒有正負號的仍是空字串。 */
                 char sign = result.empty() ? '\0' : result.back();
                 bool absorbed = absorb_sign(result);
                 result += '#';
@@ -959,10 +834,8 @@ static std::vector<std::string> extract_numbers(const std::string &s) {
 
 /* ========== Helper: normalize {0},{1},... placeholders to # ==========
 **
-** ph_index 若不為 null,長度等於輸出裡 '#' 的個數,依序記下那一格的來歷:
-**   >= 0 是 {N} 的 N;-1 是原文本來就寫著的 '#'。
-** 編號只有在這裡看得見 —— 一旦全部變成 '#' 就永久消失了,而中文常常把 {1} 排到
-** {0} 前面,少了編號就只能照出現順序填,於是語序相反的詞條數值必定填反。 */
+** ph_index 若不為 null,長度等於輸出的 '#' 數,記下每格來歷:>= 0 是 {N} 的 N;-1 是原文本
+** 寫著的 '#'。編號只在這裡看得見(變成 '#' 後就消失),而中文常把 {1} 排在 {0} 前面。 */
 
 static std::string normalize_placeholders(const std::string &s, std::vector<int> *ph_index = nullptr) {
     std::string result;
@@ -979,11 +852,9 @@ static std::string normalize_placeholders(const std::string &s, std::vector<int>
                     i = j; /* skip past } */
                     continue;
                 }
-                /* GGG's format specs — {0:+d}, {0:.2f} — are the same placeholder
-                ** as {0}, but were left literal here, so every template carrying
-                ** one hashed to garbage ("{#:+d}") and could never match. The
-                ** Chinese side of "{0}% Chance to Block Attack Damage during
-                ** Effect" is one of these. Bounded so a stray '{' cannot scan on. */
+                /* GGG's format specs ({0:+d}, {0:.2f}) are the same placeholder as {0};
+                ** left literal they hash to garbage ("{#:+d}"). Bounded so a stray '{'
+                ** cannot scan on. */
                 if (s[j] == ':') {
                     size_t k = s.find('}', j);
                     if (k != std::string::npos && k - j <= 8) {
@@ -1035,18 +906,16 @@ static std::vector<TmplSlot> template_slots(const std::string &tmpl) {
     return out;
 }
 
-/* 兩個字面數字是不是同一個值。忽略正負號,因為 digits_to_hash 會把緊貼數字的
-** 正負號吸進 '#',英文寫 "+1" 而中文寫 "1" 的條目非常多(光 poe1 就上千條),
-** 拿字串硬比會讓它們全部配不上而退回舊行為。 */
+/* 兩個字面數字是不是同一個值。忽略正負號:digits_to_hash 會把緊貼數字的正負號吸進 '#',
+** 英文寫 "+1" 而中文寫 "1" 的條目非常多。 */
 static bool same_literal_value(const std::string &a, const std::string &b) {
     size_t ai = (!a.empty() && (a[0] == '+' || a[0] == '-')) ? 1 : 0;
     size_t bi = (!b.empty() && (b[0] == '+' || b[0] == '-')) ? 1 : 0;
     return a.compare(ai, std::string::npos, b, bi, std::string::npos) == 0;
 }
 
-/* 測試用的突變開關:打開就退回「照 '#' 出現順序填」的舊行為。留成開關而不是叫人
-** 手動改一次程式碼,是為了讓「把修好的地方弄回去,測試就該紅」這件事可以隨時重跑
-** —— 一次性的手改驗證,下一個人是驗不到的。只有 --placeholder-selftest 會碰它。 */
+/* 測試用的突變開關:打開就退回「照 '#' 出現順序填」的舊行為,讓「弄回舊行為測試就該紅」
+** 可隨時重跑。只有 --placeholder-selftest 會碰它。 */
 static bool s_legacy_fill = false;
 
 int translation_debug_set_legacy_fill(int on) {
@@ -1055,17 +924,13 @@ int translation_debug_set_legacy_fill(int on) {
     return prev ? 1 : 0;
 }
 
-/* dst_text 是已經雜湊+正規化好的目標樣板(也就是舊版直接拿去依序填的那個字串)。
-** 對照關係一律用語言無關的鍵決定,配不上才退回位置:
-**   1. {N} 對 {N} —— 這是唯一能表達「中文把 {1} 講在前面」的資訊
-**   2. 字面數字對同值的字面數字 —— 「per 200 命中值」那種寫死的變體
-**   3. 剩下的照剩下的順序配 —— 兩邊都沒有可對的鍵時,維持舊行為不亂改
-**   4. 還是配不到的字面數字就照抄樣板;配不到的 {N} 留 '#'(寧可空著,也不要
-**      安靜地填一個錯的數字進去)
-** keep_dst_literals(stats_by_id.json "keep_literals" 逐鍵裁定):第 3 步不把來源
-** 剩下的數字配給目標自己寫死的數字 —— 中文樣板的字面數字照 GGPK 原樣顯示(「每 10
-** 秒…5 秒」不因英文寫 4 秒就變成 4 秒)。只給裁定過的鍵用:同一條規則套到全部鍵,
-** 會把「每 5 點敏捷」這類英文才對的數字也改掉。 */
+/* dst_text 是已雜湊+正規化的目標樣板。對照一律用語言無關的鍵,配不上才退回位置:
+**   1. {N} 對 {N} —— 唯一能表達「中文把 {1} 講在前面」的資訊
+**   2. 字面數字對同值的字面數字(寫死的變體)
+**   3. 剩下的照剩下的順序配(兩邊都無鍵時維持舊行為)
+**   4. 配不到的字面數字照抄樣板;配不到的 {N} 留 '#'(寧可空著,也不要填錯數字)
+** keep_dst_literals("keep_literals" 逐鍵裁定):第 3 步不把來源剩下的數字配給目標寫死的
+** 數字,中文字面數字照 GGPK 顯示。只給裁定過的鍵用,套全部鍵會改壞英文才對的數字。 */
 static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
                                       const std::string &dst_text, bool keep_dst_literals = false);
 
@@ -1074,8 +939,7 @@ static FillPlan build_fill_plan(const std::string &src_tmpl, const std::string &
     return build_fill_plan_slots(template_slots(src_tmpl), template_slots(dst_tmpl), dst_text);
 }
 
-/* 載入時每筆詞條要建三份計畫,而 template_slots 是其中最貴的一步(兩次正規化掃描);
-** 把它抽出來讓呼叫端對同一個樣板只算一次。 */
+/* template_slots 是載入時建計畫最貴的一步(兩次正規化掃描),抽出來讓呼叫端對同一樣板只算一次。 */
 static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const std::vector<TmplSlot> &dst,
                                       const std::string &dst_text, bool keep_dst_literals) {
     FillPlan plan;
@@ -1097,13 +961,8 @@ static FillPlan build_fill_plan_slots(const std::vector<TmplSlot> &src, const st
     for (size_t d = 0; d < dst.size(); d++) {
         if (dst[d].ph < 0) continue;
         for (size_t s = 0; s < src.size(); s++) {
-            /* 同一個 {0} 在目標出現兩次是合法的,所以這裡不看 taken:兩格都該取
-            ** 同一個來源值。taken 只是給第 3 步用的「還沒被認領」標記。
-            **
-            ** 已知代價:英文寫 {0}/{1} 而中文兩格都寫成 {0} 的條目(全量 A/B 掃出
-            ** poe1 35 條、poe2 26 條,全在 stats.json),舊做法依序填會碰巧把 {1} 的
-            ** 值放進第二格,新做法照樣板要求填兩次同一個值。那是譯文本身的缺陷,
-            ** 修法在資料不在這裡 —— 引擎按樣板說的做,錯就錯得看得見。 */
+            /* 同一個 {0} 在目標出現兩次是合法的,所以不看 taken(它只給第 3 步標記「未認領」)。
+            ** 已知代價:英文 {0}/{1}、中文兩格都寫 {0} 的條目會填兩次同值,那是資料缺陷。 */
             if (src[s].ph == dst[d].ph) { from[d] = (int)s; taken[s] = 1; break; }
         }
     }
@@ -1161,20 +1020,12 @@ static std::string fill_plan(const FillPlan &plan, const std::vector<std::string
     return result;
 }
 
-/* 輸入端的對照組:把一行實際文字拆成「每個 '#' 對應的原文」。
-**
-** 與舊的 extract_numbers 差在「原文自己寫著 '#' 的那一格」也會算一格(值是空的)。
-** POB 工藝介面的詞綴列就是這種形狀,舊做法只數數字,於是 "#% increased Armour per
-** 10 Strength" 的 10 會被塞進第一格 —— 那一格根本不是它的。
-**
-** normalize_ph 必須跟該路徑「算查表鍵時有沒有做 normalize_placeholders」一致:計畫
-** 是按鍵裡 '#' 的順序寫的,抽值的切法只要與鍵不同步,整排就錯位。正向的 pattern 有
-** 做(translation_lookup 步驟 3),反向的沒有(reverse_one_line_impl 步驟 5)。
-** 這個不對稱害過一次:GGG 的 "<colour:...>{{{0}}}" 在反向多切了一刀,9001 被當成
-** 佔位符吃掉,整格變成空的 —— A/B 掃出 23 列才抓到。
-**
-** 突變開關也要管到這裡:舊行為是 fill_numbers(樣板, extract_numbers(輸入)),兩半
-** 都得退回去,否則 A/B 的基準線其實比真正的舊引擎好一點,量出來的差異會偏少。 */
+/* 輸入端的對照組:把一行實際文字拆成「每個 '#' 對應的原文」。與 extract_numbers 差在原文自己
+** 寫著 '#' 的那一格也算一格(值是空的)。
+** normalize_ph 必須跟該路徑算查表鍵時有沒有做 normalize_placeholders 一致,否則整排錯位:
+** 正向 pattern 有做(translation_lookup 步驟 3),反向沒有(reverse_one_line_impl 步驟 5);
+** 反向多切一刀,"<colour:...>{{{0}}}" 的 9001 會被當佔位符吃掉。
+** 突變開關也要管到這裡:舊行為是 fill_numbers(樣板, extract_numbers(輸入)),兩半都得退回去。 */
 static std::vector<std::string> hash_slot_values(const std::string &s, bool normalize_ph) {
     if (s_legacy_fill) return extract_numbers(s);
     std::vector<std::string> vals;
@@ -1182,7 +1033,6 @@ static std::vector<std::string> hash_slot_values(const std::string &s, bool norm
     return vals;
 }
 
-/* ========== Helper: replace all occurrences of a substring ========== */
 
 static void replace_all(std::string &str, const std::string &from, const std::string &to) {
     size_t pos = 0;
@@ -1192,12 +1042,10 @@ static void replace_all(std::string &str, const std::string &from, const std::st
     }
 }
 
-/* ========== Helper: normalize Chinese synonyms for fuzzy matching ========== */
 
 static std::string normalize_chinese_synonyms(const std::string &s) {
     std::string result = s;
 
-    /* Apply dynamic synonym rules from synonyms.json */
 
     /* Phase 1: Apply replacements and protect compounds */
     std::string protect_placeholder = "\x01\x02\x03\x04";
@@ -1257,7 +1105,6 @@ static std::string normalize_chinese_synonyms(const std::string &s) {
     return result;
 }
 
-/* ========== Helper: strip [X|Y] bracket markup → Y (display part only) ========== */
 
 static std::string strip_brackets(const std::string &s) {
     std::string result;
@@ -1286,13 +1133,9 @@ static std::string strip_brackets(const std::string &s) {
 
 /* ========== 測試掛勾:直接驅動填值機制 ==========
 **
-** 自檢要涵蓋的邊角(編號不從 0 開始、目標用了來源沒有的編號、同一個 {0} 用兩次、
-** 樣板裡寫死數字)在出貨字典裡不見得樣樣都有,而為了測試往字典塞假資料等於改變
-** 被測對象。這支掛勾讓測試自己給兩個樣板加一行輸入,走的仍是載入期與執行期共用的
-** build_fill_plan / fill_plan —— 測到的就是引擎真正在跑的那一份。
-**
-** 輸入必須雜湊成與 source 樣板相同的字串(那正是它在執行期會命中的條件);對不起來
-** 就回 nullptr,免得一個打錯的測試案例安靜地「通過」。 */
+** 出貨字典不見得有自檢要涵蓋的邊角(編號不從 0 開始、同一個 {0} 用兩次、寫死數字);這支掛勾
+** 讓測試自給樣板與輸入,走的仍是共用的 build_fill_plan / fill_plan。
+** 輸入必須雜湊成與 source 樣板相同的字串;對不起來回 nullptr,免得打錯的案例安靜「通過」。 */
 const char* translation_debug_fill(const char *source_tmpl, const char *target_tmpl, const char *input) {
     static std::string out;
     out.clear();
@@ -1307,18 +1150,15 @@ const char* translation_debug_fill(const char *source_tmpl, const char *target_t
     std::string in_hash = normalize_whitespace(digits_to_hash(normalize_placeholders(in_plain)));
     if (to_ascii_lower(in_hash) != to_ascii_lower(src_hash)) return nullptr;
 
-    /* 抽值走執行期同一支,突變開關才管得到這一半(舊行為只抽數字,不把原文自帶的
-    ** '#' 算一格)。自己在這裡再抽一次,等於讓測試繞過一半的被測程式碼。 */
+    /* 抽值走執行期同一支,突變開關才管得到這一半。 */
     std::vector<std::string> vals = hash_slot_values(in_plain, /*normalize_ph=*/true);
 
     out = fill_plan(build_fill_plan(src, dst, dst_hash), vals);
     return out.c_str();
 }
 
-/* 同一行文字,兩支掃描器的答案必須一致:digits_to_hash 回報的數字格,去掉「原文本來
-** 就寫著 '#'」的空格之後,應該逐一等於 extract_numbers。兩者是同一套規則的兩個出口
-** (一個給填值、一個給 composite 的數值存活檢查),漂開了不會有人發現。
-** 回傳不一致的欄位數,0 代表相符。 */
+/* 同一行文字,兩支掃描器的答案必須一致:digits_to_hash 回報的數字格(去掉原文本來就寫著
+** '#' 的空格)應逐一等於 extract_numbers。回傳不一致的欄位數,0 代表相符。 */
 int translation_debug_slot_mismatch(const char *text) {
     if (!text) return 0;
     std::vector<std::string> vals;
@@ -1335,10 +1175,8 @@ int translation_debug_slot_mismatch(const char *text) {
     return (int)bad;
 }
 
-/* ========== Helper: determine locale ========== */
 
 static std::string determine_locale() {
-    /* 1. Check environment variable */
     char envbuf[128];
     const char *env = win_env("POB_LOCALE", envbuf, sizeof(envbuf));
     if (env && strlen(env) > 0) {
@@ -1410,13 +1248,9 @@ static int load_json_id_dict(const std::string &filepath,
     return count;
 }
 
-/* The distinct {N} numbers a template line uses. Splitting a multi-line entry
-** into per-line entries is only safe when line i of the English and line i of
-** the Chinese carry the SAME set: when the value moved to the other line, the
-** half that lost it would translate to a line that silently drops the number,
-** and the half that gained it would show a raw {0} (or swallow a written-out
-** number of the English as its value). Shared by the dictionary loader's
-** per-line registration and the stat index's per-line candidates. */
+/* The distinct {N} numbers a template line uses. Splitting a multi-line entry per line is only
+** safe when line i of the English and of the Chinese carry the SAME set (else one half drops the
+** number and the other shows a raw {0}). Shared by the per-line registration and the stat index. */
 static std::vector<int> placeholder_index_set(const std::string &s) {
     std::vector<int> ix;
     normalize_placeholders(s, &ix);
@@ -1442,10 +1276,8 @@ static std::string stat_unescape_newlines(const std::string &s) {
     return r;
 }
 
-/* "{}" / "{:+d}" are GGG's auto-numbered placeholders (the first is {0}, the
-** next {1}, ...). normalize_placeholders only knows the numbered form, so give
-** them their numbers here -- otherwise "{:+d} to maximum Life if ..." keeps a
-** literal "{:+d}" and can never match a real line. */
+/* "{}" / "{:+d}" are GGG's auto-numbered placeholders (first is {0}, next {1}, ...);
+** normalize_placeholders only knows the numbered form, so number them here. */
 static std::string stat_number_bare_placeholders(const std::string &s) {
     std::string r;
     r.reserve(s.size() + 4);
@@ -1515,9 +1347,8 @@ static int load_json_stat_dict(const std::string &filepath) {
     }
     const njson *fixed_slots = nullptr;
     if (doc.contains("fixed_slots") && doc["fixed_slots"].is_object()) fixed_slots = &doc["fixed_slots"];
-    /* Optional "keep_literals": {key: true} -- user rulings (generator table
-    ** STATS_KEEP_LITERALS): the Chinese template's written-out numbers are shown
-    ** as GGPK wrote them (build_fill_plan_slots keep_dst_literals). */
+    /* Optional "keep_literals": {key: true} -- the Chinese template's written-out numbers are
+    ** shown as GGPK wrote them (build_fill_plan_slots keep_dst_literals). */
     const njson *keep_literals = nullptr;
     if (doc.contains("keep_literals") && doc["keep_literals"].is_object()) keep_literals = &doc["keep_literals"];
     int count = 0;
@@ -1552,11 +1383,8 @@ static int load_json_stat_dict(const std::string &filepath) {
             stat_unescape_newlines(strip_brackets(it.value().get<std::string>())));
         if (en.empty() || zh.empty()) continue;
 
-        /* "fixed_slots": {key: {"k": N}}. The Chinese {k} has no English
-        ** counterpart -- the value is fixed by the description's condition
-        ** (map_num_extra_invasion_bosses|1: "an additional Invasion Boss" ->
-        ** "{0} 隻額外...", always 1). Write N into the Chinese before anything
-        ** else sees it. */
+        /* "fixed_slots": {key: {"k": N}}: the Chinese {k} has no English counterpart (the value
+        ** is fixed by the description's condition). Write N into the Chinese first. */
         if (fixed_slots) {
             auto fit = fixed_slots->find(key);
             if (fit != fixed_slots->end() && fit->is_object()) {
@@ -1616,12 +1444,10 @@ static int load_json_stat_dict(const std::string &filepath) {
                     s_stat_named.push_back(std::move(nc));
                 };
                 add_named(en, zh);
-                /* A multi-line name template whose LAST line is a fixed tag on
-                ** both sides (Impossible Escape: "...\nPassage" / "...\n通途")
-                ** is drawn by POB as the lines before it, joined into one line.
-                ** Register that form too: English lines 1..n-1 joined by a
-                ** space -> Chinese lines 1..m-1. Only when both last lines
-                ** carry no placeholder and the rest keeps the same {N} set. */
+                /* A multi-line name template whose LAST line is a fixed tag on both sides is drawn
+                ** by POB as the lines before it joined into one: register that form too (English
+                ** lines 1..n-1 joined by a space -> Chinese lines 1..m-1), only when both last
+                ** lines carry no placeholder and the rest keeps the same {N} set. */
                 if (en.find('\n') != std::string::npos && zh.find('\n') != std::string::npos) {
                     const size_t el = en.rfind('\n'), zl = zh.rfind('\n');
                     const std::string en_last = en.substr(el + 1), zh_last = zh.substr(zl + 1);
@@ -1668,9 +1494,8 @@ static int load_json_stat_dict(const std::string &filepath) {
                 if (q > p + 1 && q + 1 < en_t.size() && en_t[q] == ':' && en_t[q + 1] == '+')
                     plus_ph.push_back(atoi(en_t.c_str() + p + 1));
             }
-            /* The plan keeps the Chinese template's own spacing (GGG writes
-            ** "錘和權杖增加  {0}%" with two spaces and the game shows both);
-            ** only the index KEY is whitespace-normalised. */
+            /* The plan keeps the Chinese template's own spacing (the game shows GGG's double
+            ** spaces); only the index KEY is whitespace-normalised. */
             const std::string zh_text = digits_to_hash(normalize_placeholders(zh_t));
             const std::vector<TmplSlot> en_slots = template_slots(en_t);
             for (size_t i = 0; i < en_slots.size(); i++) {
@@ -1691,29 +1516,19 @@ static int load_json_stat_dict(const std::string &filepath) {
         };
         add_cand(en, zh);
         ++count;
-        /* POB may draw a two-line description as ONE line, the lines joined by
-        ** a space ("...Maximum Energy Shield per 1% ..."): index that form too.
-        ** The answer keeps the Chinese line break. */
+        /* POB may draw a two-line description as ONE line joined by a space: index that form
+        ** too; the answer keeps the Chinese line break. */
         if (en.find('\n') != std::string::npos) {
             std::string joined = en;
             for (char &ch : joined) if (ch == '\n') ch = ' ';
             add_cand(joined, zh);
         }
 
-        /* A keystone's description is one multi-line template in the passive
-        ** file, but POB draws each line on its own ("Cannot Evade enemy
-        ** Attacks"). When both sides have the same number of lines, line i of
-        ** the English is line i of the Chinese, so each line is a candidate
-        ** too. Every indexed file does this (the item file has multi-line
-        ** templates POB also sends line by line).
-        **
-        ** A line pair is only a candidate when both lines use the same {N}
-        ** set. Chinese often moves the value to the other line ("{0}% chance
-        ** ... when any\nof your Traps ..." -> "當你的陷阱被敵人觸發時，\n有 {0}%
-        ** ..."): the Chinese line with {0} would leak a placeholder (the guard
-        ** catches that), and the English line with {0} would translate to a
-        ** Chinese line that silently DROPS the value -- nothing catches that,
-        ** so such pairs are never indexed. */
+        /* A keystone's description is one multi-line template, but POB draws each line on its
+        ** own. With equal line counts, English line i is Chinese line i, so each line is a
+        ** candidate too (every indexed file does this) -- only when both lines use the same {N}
+        ** set. If Chinese moved the value to the other line, the English line would translate to
+        ** one that silently DROPS the value and nothing catches that, so such pairs are never indexed. */
         if (en.find('\n') != std::string::npos) {
             auto split = [](const std::string &s) {
                 std::vector<std::string> v;
@@ -1832,10 +1647,8 @@ static int load_json_group_catalog(const std::string &filepath) {
         }
     }
     if (doc.contains("texts") && doc["texts"].is_object()) {
-        /* Every text by its English first (all of them, whatever their line
-        ** count): the same English with two different GGPK Chinese texts
-        ** (SupportGemMinionPact / SupportGemHarrowingThrong) is ambiguous and
-        ** never grouped -- which one POB is drawing cannot be told from here. */
+        /* Every text by its English first (whatever the line count): the same English with two
+        ** different GGPK Chinese texts is ambiguous and never grouped. */
         std::unordered_map<std::string, std::vector<GroupText>> by_en;
         std::vector<std::string> order;
         for (auto it = doc["texts"].begin(); it != doc["texts"].end(); ++it) {
@@ -1877,12 +1690,10 @@ static int load_json_group_catalog(const std::string &filepath) {
     return count;
 }
 
-/* One forward pattern in, under its case-preserved key `cased` (normalised,
-** not lower-cased). overwrite = the merged map's rule for this entry (a
-** purpose-built entry overwrites; a line derived from a multi-line key only
-** fills an empty slot). The lower-case map behaves exactly as before; a second
-** case form of a key starts keeping every form's own plan (see
-** s_forward_pattern_cased). */
+/* One forward pattern in, under its case-preserved key `cased` (normalised, not lower-cased).
+** overwrite = the merged map's rule for this entry (a purpose-built entry overwrites; a line
+** derived from a multi-line key only fills an empty slot). A second case form of a key starts
+** keeping every form's own plan (s_forward_pattern_cased). */
 static void put_forward_pattern(const std::string &cased, FillPlan &&plan, bool overwrite) {
     const std::string lk = to_ascii_lower(cased);
     auto it = s_forward_pattern.find(lk);
@@ -1924,17 +1735,13 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                                   bool source_only = false,
                                   const std::unordered_set<std::string> *exclude = nullptr,
                                   const std::unordered_set<std::string> *exact_only = nullptr) {
-    /* source_only (meta.json "source_only"): the file feeds ONLY its source
-    ** dictionary -- exact and pattern sinks. Nothing reaches the merged forward
-    ** map, the forward patterns, any reverse map or (via s_translations) the
+    /* source_only (meta.json "source_only"): the file feeds ONLY its source dictionary (exact
+    ** and pattern sinks); nothing reaches the merged map, forward patterns, reverse maps or the
     ** glossary, so unmarked lookups and paste never see it.
-    ** exclude (display_exclude.json, this file's list): those keys skip every
-    ** forward table, merged and source copy alike (also as an [X|Y] twin or a
-    ** derived line, see s_display_exclude); reverse entries and the base-type
+    ** exclude (display_exclude.json, this file's list): those keys skip every forward table,
+    ** merged and source copy alike (see s_display_exclude); reverse entries and the base-type
     ** list are built as before.
-    ** exact_only (exact_only.json, this file's list): those keys go into the
-    ** exact tables only -- no pattern of any kind, no derived line, no glossary
-    ** (see s_exact_only). */
+    ** exact_only (exact_only.json, this file's list): exact tables only (see s_exact_only). */
     const bool merge = !source_only;
     std::unordered_set<std::string> listed_hit;   /* listed keys that are keys of this file */
     int twin_skipped = 0, line_skipped = 0;
@@ -1964,12 +1771,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         snprintf(msg, sizeof(msg), "[pob-proxy] JSON parse error in %s: %s\n",
                  filepath.c_str(), e.what());
         OutputDebugStringA(msg);
-        /* THIS is what a broken dictionary actually looks like -- not an
-        ** exception out of translation_init, but ONE FILE quietly contributing
-        ** zero entries. The user sees a whole category revert to English and
-        ** nothing else in the program mentions it. The outer catch only fires
-        ** for failures that escape every per-file handler, i.e. almost never;
-        ** hooking the log there alone left the common case uncovered. */
+        /* A broken dictionary is ONE FILE quietly contributing zero entries (a whole category
+        ** reverts to English), not an exception out of translation_init; the outer catch
+        ** almost never fires, so log here. */
         PobLog::Error("i18n", "dictionary file did not parse, its entries are all "
                               "missing: " + filepath + " - " + e.what());
         return 0;
@@ -1985,25 +1789,14 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
         is_base_items = doc["is_base_items"].get<bool>();
     }
 
-    /* Entries GGG ships as ONE string containing its own "\n" (497 of them).
-    ** The game renders those as separate lines and a pasted item presents them
-    ** as separate lines, so the joined form — which is the dictionary key —
-    ** matches neither half. The Red Nightmare's
-    **     "Passives granting Fire Resistance or all Elemental Resistances in
-    **      Radius\nalso grant Chance to Block Attack Damage at {0}% of its value"
-    ** arrived as two lines and the first one had no translation at all.
-    **
-    ** Registered per line IN ADDITION to the joined form, and only when the two
-    ** sides line up: same number of lines, and the same placeholder/number count
-    ** on each. GGG's "\n" in a stat description is a hard break at the same point
-    ** in both languages, but that is a claim about the data, so it is checked
-    ** rather than assumed — a mismatch means the break moved and pairing line i
-    ** with line i would be exactly the positional guessing this project bans.
-    ** Existing entries are never overwritten: a purpose-built single-line entry
-    ** always beats one derived by splitting. */
-    /* Two spellings of the same break live in the shipped files: stats.json
-    ** carries GGG's newline as the literal two characters '\' 'n', ui.json as a
-    ** real 0x0A. Both mean "the game renders this as two lines", so both split. */
+    /* Entries GGG ships as ONE string containing its own "\n". The game and a pasted item show
+    ** separate lines, so the joined dictionary key matches neither half.
+    ** Registered per line IN ADDITION to the joined form, only when the sides line up (same line
+    ** count, same placeholder/number count per line; a mismatch means the break moved and
+    ** pairing would be positional guessing). Existing entries are never overwritten: a
+    ** purpose-built single-line entry beats one derived by splitting.
+    ** Two spellings of the break exist: stats.json has the literal chars '\' 'n', ui.json a
+    ** real 0x0A. Both split. */
     auto next_break = [](const std::string &s, size_t from, size_t &len) -> size_t {
         size_t a = s.find('\n', from);
         size_t b = s.find("\\n", from);
@@ -2046,8 +1839,7 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             value = val.get<std::string>();
         } else if (val.is_object()) {
             /* Structured format: { "翻譯": "...", "色碼標籤": "^x...", "分類": "...", ... } */
-            /* UTF-8: 翻譯=E7 BF BB E8 AD AF, 色碼標籤=E8 89 B2 E7 A2 BC E6 A8 99 E7 B1 A4 */
-            if (val.contains("\xe7\xbf\xbb\xe8\xad\xaf")) {
+                if (val.contains("\xe7\xbf\xbb\xe8\xad\xaf")) {
                 auto &trans = val["\xe7\xbf\xbb\xe8\xad\xaf"];
                 if (!trans.is_string()) continue;
                 value = trans.get<std::string>();
@@ -2071,9 +1863,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                 listed_hit.insert(key);
                 fwd = false;
             } else if (key.find('[') != std::string::npos) {
-                /* "[Curse|Cursed] Enemies have a {0}%..." is the listed
-                ** "Cursed Enemies have a {0}%..." again: its forward pattern is
-                ** built from the stripped key */
+                /* "[Curse|Cursed] Enemies..." is the listed "Cursed Enemies..." again: its forward
+                ** pattern is built from the stripped key */
                 const std::string bare = strip_brackets(key);
                 if (bare != key && exclude->count(bare)) { twin_skipped++; fwd = false; }
             }
@@ -2125,10 +1916,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
 
         if (merge && is_base_items) {
             s_reverse_bases[clean_value] = clean_key;
-            /* Item.lua strips any " (...)" from the base name before appending it
-            ** to the title, so the form that reaches us is always the clean one;
-            ** the full key is recorded too because it costs nothing and a future
-            ** dictionary may carry markup we have not seen. */
+            /* Item.lua strips any " (...)" from the base name before appending it to the title,
+            ** so the clean form is what reaches us; the full key is recorded too, at no cost. */
             s_base_items_en.insert(clean_key);
             s_base_items_en.insert(full_key);
             if (clean_value != full_value) {
@@ -2177,20 +1966,14 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
             } else {
                 ensure_slots();
             }
-            /* A forward pattern fills the Chinese {N} from the line's values. When
-            ** the Chinese uses a {N} the English key does not have ("Shield per
-            ** 1% Chaos Resistance they have" -> "將他們 {0}% 的最大生命..."), the
-            ** only thing left to feed it is a number the English wrote out as
-            ** wording -- an unverifiable guess, so no forward pattern is made
-            ** from such an entry (its exact entry is still blocked by the
-            ** placeholder guard at lookup time).
-            **
-            ** The test is a COUNT, not the numbering: only when the English has
-            ** fewer placeholder occurrences than the Chinese has distinct {N}
-            ** must a value come from written-out wording. Enough placeholders
-            ** numbered differently (key {0} / value {1}, key {0}{0} / value
-            ** {0}{1} -- data renumbering slips) keep the pattern and its
-            ** in-order fallback, which reads them correctly. */
+            /* A forward pattern fills the Chinese {N} from the line's values. When the Chinese uses
+            ** a {N} the English key lacks, the only feed is a number the English wrote out as
+            ** wording -- an unverifiable guess, so no forward pattern is made (the exact entry is
+            ** still blocked by the placeholder guard at lookup time).
+            ** The test is a COUNT, not the numbering: only when the English has fewer placeholder
+            ** occurrences than the Chinese has distinct {N}. Enough placeholders numbered
+            ** differently (key {0} / value {1}: data renumbering slips) keep the pattern and its
+            ** in-order fallback. */
             bool fwd_ok = true;
             {
                 std::vector<int> key_ix;
@@ -2236,12 +2019,9 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
                     if (line_fwd && merge && !s_translations.count(k)) {
                         s_translations[k] = v;
                     }
-                    /* The source copy ignores the merged map (an earlier file
-                    ** owning the line says nothing about what THIS file means by
-                    ** it) but keeps the merged rule inside the file: a derived
-                    ** line never replaces an entry already there, and a later
-                    ** purpose-built entry overwrites it (the main-entry write
-                    ** above is unconditional). Same as the pattern sink below. */
+                    /* The source copy ignores the merged map but keeps the merged rule inside the
+                    ** file: a derived line never replaces an existing entry, and a later
+                    ** purpose-built entry overwrites it. Same as the pattern sink below. */
                     if (line_fwd && sink && !sink->count(k)) (*sink)[k] = v;
                     if (merge && !s_reverse.count(v)) {
                         s_reverse[v] = k;
@@ -2270,10 +2050,8 @@ static int load_json_translations(const std::string &filepath, bool is_base_item
     s_init_stats.build_ms += tr_ms_since(t_build);
     s_init_stats.files++;
     if (exclude) {
-        /* what the list actually touched in THIS file: a source-only file
-        ** (meta.json "source_only" / source_dicts) never merges, so there only
-        ** its source copy loses the keys; a merged file without a source
-        ** dictionary has no source copy at all */
+        /* what the list actually touched in THIS file: a source-only file never merges (only its
+        ** source copy loses keys); a merged file without a source dictionary has no source copy */
         const char *where = !merge ? "its source copy (source-only file, never merged)"
                           : sink   ? "the merged forward tables and its source copy"
                                    : "the merged forward tables";
@@ -2312,10 +2090,8 @@ static bool load_json_meta(const std::string &filepath,
     try {
         doc = njson::parse(file);
     } catch (...) {
-        /* meta.json decides the merge order. Losing it does not empty the
-        ** dictionaries -- it silently changes which file wins a shadowed key,
-        ** which shows up as a handful of WRONG translations rather than missing
-        ** ones. That is much harder to recognise, so say it out loud. */
+        /* meta.json decides the merge order. Losing it silently changes which file wins a
+        ** shadowed key (a few WRONG translations, hard to notice), so say it out loud. */
         PobLog::Error("i18n", "meta.json did not parse; dictionary load order falls "
                               "back to the default and shadowed keys may resolve to "
                               "a different file");
@@ -2329,9 +2105,8 @@ static bool load_json_meta(const std::string &filepath,
         }
     }
 
-    /* Optional: files that load in load_order but feed only their source
-    ** dictionary (see load_json_translations). Absent = every file merges.
-    ** Kept for compatibility; shipped data uses source_dicts instead. */
+    /* Optional: files in load_order that feed only their source dictionary. Absent = every file
+    ** merges. Kept for compatibility; shipped data uses source_dicts. */
     if (doc.contains("source_only") && doc["source_only"].is_array()) {
         for (auto &item : doc["source_only"]) {
             if (item.is_string())
@@ -2339,11 +2114,9 @@ static bool load_json_meta(const std::string &filepath,
         }
     }
 
-    /* Optional: files that are NOT in load_order at all and feed only their
-    ** source dictionary (English keys) or the id table (*_by_id). Keeping them
-    ** out of load_order is the point: an older engine reads load_order only,
-    ** so it never merges an affix-name file or takes an id file's numeric keys
-    ** for English. */
+    /* Optional: files NOT in load_order that feed only their source dictionary or the id table
+    ** (*_by_id). Keeping them out of load_order is the point: an older engine reads load_order
+    ** only, so it never merges an affix-name file or takes numeric id keys for English. */
     if (doc.contains("source_dicts") && doc["source_dicts"].is_array()) {
         for (auto &item : doc["source_dicts"]) {
             if (item.is_string())
@@ -2351,10 +2124,8 @@ static bool load_json_meta(const std::string &filepath,
         }
     }
 
-    /* Optional: true = this locale's data is organised for per-source lookup
-    ** (passives/affixes/stats/uniques/items + id files). Absent = the
-    ** behaviour from before those sources existed: only "gems" (exact entries)
-    ** can be selected, everything else answers as unmarked. */
+    /* Optional: true = this locale's data is organised for per-source lookup. Absent = only
+    ** "gems" (exact entries) can be selected, everything else answers as unmarked. */
     source_lookup = doc.contains("source_lookup") && doc["source_lookup"].is_boolean() &&
                     doc["source_lookup"].get<bool>();
     s_meta_source = (doc.contains("source") && doc["source"].is_string()) ? doc["source"].get<std::string>()
@@ -2431,9 +2202,8 @@ static bool load_json_item_metadata(const std::string &filepath) {
         }
     }
 
-    /* The annotation scan consumes matches, so a marker that is a prefix of a
-    ** longer one must never be tried first. The generator already emits them in
-    ** order; re-sorting here means a hand-edited file cannot break it silently. */
+    /* The annotation scan consumes matches, so a marker that is a prefix of a longer one must
+    ** never be tried first; re-sort here so a hand-edited file cannot break it silently. */
     std::stable_sort(s_mod_annotations_vec.begin(), s_mod_annotations_vec.end(),
                      [](const HeaderMapping_Dyn &a, const HeaderMapping_Dyn &b) {
                          return a.chinese.size() > b.chinese.size();
@@ -2568,9 +2338,8 @@ static bool load_json_synonyms(const std::string &filepath) {
 }
 
 /* A per-file key list ({"version":1,"entries":{file:[keys]}}: display_exclude.json
-** -> s_display_exclude, exact_only.json -> s_exact_only). Absent file: empty list.
-** A file that does not parse, or a version this engine does not know, is
-** ignored as a whole (logged): half a list is not a list. */
+** -> s_display_exclude, exact_only.json -> s_exact_only). Absent file: empty list. A file that
+** does not parse, or an unknown version, is ignored as a whole (logged). */
 using KeyLists = std::unordered_map<std::string, std::unordered_set<std::string>>;
 static int load_json_key_lists(const std::string &filepath, const char *name, const char *ignored,
                                KeyLists &out) {
@@ -2604,11 +2373,8 @@ static const std::unordered_set<std::string> *key_list_for(const KeyLists &lists
 
 /* Try to load JSON translation files. Returns true if JSON mode activated. */
 static bool try_load_json(const std::string &base_dir) {
-    /* Build locale-aware JSON directory path.
-     * Layout: Data/{game}/{locale}/ — poe1 and poe2 dictionaries live in
-     * separate folders directly under Data.
-     * POB_LOCALE "" or "poe1" defaults to "zh-rTW".
-     */
+    /* Layout: Data/{game}/{locale}/ (poe1 and poe2 in separate folders). POB_LOCALE "" or "poe1"
+     * defaults to "zh-rTW". */
     std::string effective_locale;
     if (s_locale.empty() || s_locale == "poe1") {
         effective_locale = "zh-rTW";
@@ -2626,23 +2392,14 @@ static bool try_load_json(const std::string &base_dir) {
     std::string meta_path;
     bool found = false;
 
-    /* POB_ZH_DATADIR: the dictionary folder for THIS game, kept outside the
-     * install so a translator can edit a working copy and see it rendered by the
-     * real POB -- and so updates, which only ever write to the install directory,
-     * cannot overwrite it.
-     *
-     * It points at the folder that directly contains the <locale> sub-folders
-     * (exactly what you get by copying Data\poe1 somewhere), NOT at a Data root:
-     * the launcher already knows which game it is starting, so it picks the right
-     * folder and this code never has to know about games at all.
-     *
-     * The launcher validates the folder and only sets the variable when it is
-     * usable; the fallback below is for a hand-set variable pointing somewhere
-     * wrong, where shipping no translations would be far worse than ignoring it.
-     *
-     * Note the whole dictionary path is ANSI (GetEnvironmentVariableA here,
-     * std::ifstream below), exactly as it already is for the install directory,
-     * so the folder has to be spellable in the system codepage. */
+    /* POB_ZH_DATADIR: the dictionary folder for THIS game, kept outside the install so a
+     * translator can edit a working copy and see it rendered by the real POB, and updates
+     * cannot overwrite it. It points at the folder that directly contains the <locale>
+     * sub-folders (what you get by copying Data\poe1 somewhere), NOT at a Data root.
+     * The launcher only sets it when usable; the fallback below is for a hand-set wrong
+     * value, where shipping no translations would be worse than ignoring it.
+     * The whole dictionary path is ANSI (GetEnvironmentVariableA, std::ifstream), so the
+     * folder has to be spellable in the system codepage. */
     char dirbuf[1024];
     const char *data_env = win_env("POB_ZH_DATADIR", dirbuf, sizeof(dirbuf));
     if (data_env && *data_env) {
@@ -2763,10 +2520,9 @@ static bool try_load_json(const std::string &base_dir) {
                 continue;
             }
         }
-        /* Files backing a source dictionary get a second copy of their own
-         * entries, untouched by whatever later files redefine. Without
-         * source_lookup only gems can be selected, and only its exact entries
-         * (see translation_set_source), so no other copy is built at all. */
+        /* Files backing a source dictionary get a second copy of their own entries, untouched by
+         * later files. Without source_lookup only gems (exact entries) can be selected, so no
+         * other copy is built. */
         std::unordered_map<std::string, std::string> *sink = nullptr;
         std::unordered_map<std::string, FillPlan> *pattern_sink = nullptr;
         for (const SourceDict &sd : kSourceDicts) {
@@ -2808,10 +2564,8 @@ static bool try_load_json(const std::string &base_dir) {
         }
     }
 
-    /* source_dicts: never merged. Files also listed in load_order were handled
-    ** above (treated as source-only there), so only the ones outside load_order
-    ** load here. Without source_lookup none of them could ever be read (the
-    ** legacy gems source has its own file in load_order), so none is loaded. */
+    /* source_dicts: never merged. Files also in load_order were handled above (as source-only);
+    ** only the ones outside load_order load here, and none without source_lookup. */
     for (auto &filename : source_dicts) {
         if (!source_lookup) break;
         if (std::find(load_order.begin(), load_order.end(), filename) != load_order.end())
@@ -2941,10 +2695,8 @@ void translation_init_async(void) {
                 char why[300];
                 snprintf(why, sizeof(why), "[pob-proxy] translation_init threw (%s); dictionaries left as loaded so far\n", e.what());
                 OutputDebugStringA(why);
-                /* OutputDebugString reaches a debugger and nobody else. The
-                ** user-visible symptom is "half the interface is in English",
-                ** which looks like a translation gap rather than a crash, so
-                ** without this line there is nothing to tell the two apart. */
+                /* OutputDebugString reaches only a debugger; "half the interface in English" looks
+                ** like a translation gap, so without this line the two cannot be told apart. */
                 PobLog::Error("i18n", std::string("dictionary load threw: ") + e.what() +
                                           "; only the entries loaded so far are active");
             }
@@ -2994,20 +2746,14 @@ static void do_init(void) {
         return;
     }
     OutputDebugStringA("[pob-proxy] Using JSON translation mode\n");
-    /* Build term glossary for substring replacement (sorted longest-first).
-     * Store the LOWERCASE version of each term's key for case-insensitive matching,
-     * but keep the original value (Chinese translation) as-is.
-     *
-     * Several keys can collapse onto one term ("Breach:" in ui.json and
-     * "Breach" in passives.json, or two spellings differing only in case).
-     * s_translations is an unordered_map, so "whichever came first" would be
-     * the hash order -- adding unrelated keys could flip the winner. The pick is
-     * therefore a rule on the keys themselves:
-     *   1. a key without a trailing colon beats one with it ("Breach" -> 裂痕,
-     *      not "Breach:" -> 裂痕：);
+    /* Term glossary for substring replacement (longest-first, keyed lowercase, value as-is).
+     * Several keys can collapse onto one term ("Breach:" in ui.json and "Breach" in
+     * passives.json, or spellings differing only in case); s_translations is unordered, so
+     * the pick is a rule on the keys themselves, not hash order:
+     *   1. a key without a trailing colon beats one with it ("Breach" -> 裂痕, not 裂痕：);
      *   2. otherwise the lexicographically smallest original key.
-     * A trailing colon is ':' or the full-width '：' (EF BC 9A), on the key and,
-     * when the key had one, on its translation too. */
+     * A trailing colon is ':' or the full-width '：', on the key and, when the key had one, on
+     * its translation too. */
     {
         auto strip_colon = [](std::string &s) -> bool {
             if (!s.empty() && s.back() == ':') { s.pop_back(); return true; }
@@ -3042,9 +2788,8 @@ static void do_init(void) {
         s_term_glossary.reserve(picks.size());
         for (auto &kv : picks) s_term_glossary.emplace_back(kv.first, std::move(kv.second.trans));
     }
-    /* Longest terms match first; equal lengths by term so the order (and with
-     * it every overlapping replacement) never depends on hash order. Terms are
-     * unique after the pick above, so this is a total order. */
+    /* Longest terms first; equal lengths by term, so overlapping replacements never depend on
+     * hash order (terms are unique after the pick above: a total order). */
     std::sort(s_term_glossary.begin(), s_term_glossary.end(),
         [](const auto &a, const auto &b) {
             if (a.first.size() != b.first.size()) return a.first.size() > b.first.size();
@@ -3192,9 +2937,8 @@ const char *translation_meta_source(void) {
 
 /* ========== Dev helper: log untranslated strings ==========
 **
-** Writes every unique untranslated string to <exe dir>\translate_misses.log
-** so the dictionaries can be tuned. Truncated on each run (the file always
-** holds the CURRENT session). Disable with environment POB_TR_LOG=0.
+** Writes every unique untranslated string to <exe dir>\translate_misses.log (truncated on each
+** run). Disable with environment POB_TR_LOG=0.
 **   MISS|<text>  forward lookup failed (English shown as-is in the UI)
 **   REV |<text>  paste line containing CJK that could not be reversed
 */
@@ -3220,11 +2964,9 @@ static void log_translation_miss(const char *tag, const std::string &text) {
     if (!s_fp || text.size() > 400) return;
     if (!s_seen.insert(text).second) return; /* already logged this session */
     fprintf(s_fp, "%s|%s\n", tag, text.c_str());
-    /* Flush periodically rather than per line: a text-heavy view (the About
-     * popup's changelog/help) can log hundreds of misses in one frame, and a
-     * per-line fflush turns that into hundreds of blocking disk writes on the
-     * render thread. The editor reads this log after POB exits, by which point
-     * the CRT has flushed the remainder. */
+    /* Flush periodically rather than per line: a text-heavy view can log hundreds of misses
+     * in one frame, and per-line fflush means blocking disk writes on the render thread.
+     * The editor reads this log after POB exits (the CRT flushes the remainder). */
     static int s_since_flush = 0;
     if (++s_since_flush >= 64) { fflush(s_fp); s_since_flush = 0; }
 }
@@ -3243,10 +2985,9 @@ static std::string strip_color_codes(const std::string &s) {
     return plain;
 }
 
-/* Length of the SimpleGraphic colour escape starting at `i`, or 0 if there is
-** none. Deliberately as permissive about "^x" as strip_color_codes above (no
-** hex validation): if the two disagreed about what counts as an escape, the
-** segment path and the strip path would cut the same string differently. */
+/* Length of the SimpleGraphic colour escape starting at `i`, or 0. Deliberately as permissive
+** about "^x" as strip_color_codes above (no hex validation): the two must agree on what an
+** escape is, or the segment and strip paths cut the same string differently. */
 static int colour_escape_len(const std::string &s, size_t i) {
     if (i >= s.size() || s[i] != '^' || i + 1 >= s.size()) return 0;
     const char n = s[i + 1];
@@ -3271,9 +3012,8 @@ static std::vector<ColourSegment> split_colour_segments(const std::string &s) {
     while (i < s.size()) {
         const int esc = colour_escape_len(s, i);
         if (esc > 0) {
-            /* An escape closes the current run -- unless no text has been
-            ** collected yet, in which case the leading escapes all belong to
-            ** the run that is about to start. */
+            /* An escape closes the current run, unless no text was collected yet (leading
+            ** escapes belong to the run about to start). */
             if (!cur.text.empty()) { out.push_back(cur); cur = ColourSegment(); }
             cur.colour.append(s, i, esc);
             i += esc;
@@ -3298,9 +3038,8 @@ static bool covered_by_whitelist(const std::string &s) {
             const size_t p = s.find(wl, from);
             if (p == std::string::npos) break;
             from = p + 1;
-            /* Whole-word only, same rule the glossary uses. The list holds the
-            ** single-letter gem codes ("B", "R", "G", "W"), so without this a
-            ** "Bag" would count as fully whitelisted and never be translated. */
+            /* Whole-word only, as the glossary: the list holds single-letter gem codes ("B", "R"),
+            ** so otherwise "Bag" would count as whitelisted and never be translated. */
             const size_t end = p + wl.size();
             if (p > 0 && is_ascii_alpha(s[p - 1])) continue;
             if (end < s.size() && is_ascii_alpha(s[end])) continue;
@@ -3345,21 +3084,10 @@ static bool forward_miss_worth_logging(const std::string &input) {
 
 /* Translate a generated item title word by word.
 **
-** GGG assembles rare and cluster-jewel titles from a word pool ("Loath" + "Joy"),
-** and POB concatenates the result with the base type (Item.lua:1572), so the
-** finished name is never a dictionary key even though every word in it is. The
-** term glossary is what normally rescues these, but it refuses keys shorter than
-** four characters (is_glossary_candidate) — a floor that exists to keep short
-** function words like "and"/"for" out of ordinary prose, where a spurious hit
-** would let a whole English sentence reach full coverage and be translated word
-** salad. "Loath Joy" lost to that floor because "Joy" is three letters, while
-** "Soul Star" and "Rift Suit" cleared it at exactly four.
-**
-** Relaxing the floor globally is not the fix; relaxing it HERE is, because the
-** only caller first proves the string ends in a real base type. Prose does not
-** end in a base type, so nothing outside item names can reach this path.
-**
-** All-or-nothing on purpose: a half-translated name is worse than an English one.
+** Rare / cluster-jewel titles are a word-pool pair plus the base type (Item.lua:1572), never a
+** dictionary key. The glossary refuses keys under four characters (is_glossary_candidate, to keep
+** "and"/"for" out of prose); relaxing that HERE is safe because the only caller first proves the
+** string ends in a real base type. All-or-nothing: half-translated is worse than English.
 */
 static bool translate_title_words(const std::string &title, std::string &out) {
     if (title.empty() || title.find(' ') == std::string::npos) return false;
@@ -3369,11 +3097,9 @@ static bool translate_title_words(const std::string &title, std::string &out) {
         size_t sp = title.find(' ', start);
         std::string word = title.substr(start, sp == std::string::npos ? std::string::npos : sp - start);
         if (word.empty()) return false;
-        /* Same two exact layers translation_lookup consults first, in the same
-        ** order — a source dictionary must still win for a word it disambiguates.
-        ** Deliberately NOT a recursive translation_lookup: the pattern and
-        ** glossary paths below it exist for sentences, and letting them fire on a
-        ** single bare word is how a title would silently become something else. */
+        /* Same two exact layers translation_lookup consults first, same order (a source
+        ** dictionary must still win). NOT a recursive translation_lookup: the pattern and glossary
+        ** paths are for sentences and must not fire on a bare word. */
         const std::string *zh = nullptr;
         if (s_active_source) {
             auto sit = s_active_source->find(word);
@@ -3400,22 +3126,16 @@ static bool translate_title_words(const std::string &title, std::string &out) {
     return true;
 }
 
-/* Unfilled-placeholder guard. A result carrying "{N}" / "{}" / "{N:fmt}" that
-** the English never had is a template whose value was never filled: POB sent
-** half of a multi-line stat, or a dictionary value kept GGG's {0} while its key
-** was written with a real number ("Fires 1 Projectile" -> "發射 {0} 個投射物").
-** Showing "獲得 {0} 充能" is worse than showing the English, so every step
-** treats such a result as a miss and moves on. An English that itself has a
-** '{' (stats.json keys like "{0} (action speed modifier)") is exempt: there the
-** placeholder is the input's own. */
+/* Unfilled-placeholder guard. A result carrying "{N}" / "{}" / "{N:fmt}" that the English never
+** had is a template whose value was never filled (POB sent half of a multi-line stat, or a
+** dictionary value kept GGG's {0} while its key was written with a real number). That is worse
+** than showing the English, so every step treats it as a miss. An English that itself has a
+** '{' (stats.json keys like "{0} (action speed modifier)") is exempt. */
 static bool leaks_placeholder(const std::string &out, const std::string &in, bool check_hash = true) {
-    /* A '#' is fill_plan's "no value for this slot" (and POB's own crafting
-    ** rows write the value as '#'): a stray one the English did not have is an
-    ** incompletely filled answer, the same failure as a raw {0}. Only a FILLED
-    ** answer can be incompletely filled, so callers handing over a dictionary
-    ** entry as written (exact steps, and composites built from such entries)
-    ** pass check_hash = false: a translator's own '#' ("暴擊時 #% 充能:") is
-    ** text, not a missing value. */
+    /* A '#' is fill_plan's "no value for this slot": a stray one the English did not have is an
+    ** incompletely filled answer, the same failure as a raw {0}. Only a FILLED answer can be
+    ** incomplete, so callers handing over a dictionary entry as written (exact steps and
+    ** composites of such entries) pass check_hash = false: a translator's own '#' is text. */
     if (check_hash && in.find('#') == std::string::npos && out.find('#') != std::string::npos) return true;
     if (in.find('{') != std::string::npos) return false;
     for (size_t i = 0; i + 1 < out.size(); i++)
@@ -3445,22 +3165,15 @@ static std::string literal_to_newlines(const std::string &s) {
     return r;
 }
 
-/* "/"-joined multi-line description: POB's crafting drop-downs label a mod as
-** its lines joined by "/" (ItemsTab.lua table.concat(mod, "/")), so a two-line
-** GGPK description arrives as "<line 1>/<line 2>". Translated piece by piece --
-** or through a dictionary key built from GGPK's per-line rows -- it comes out
-** as "<whole sentence>/" with the other side empty. When the pieces are exactly
-** descriptions of the line-group catalog (ggpk_groups.json), translate each
-** whole through the stat lookup (ctx from translation_set_slash_context:
-** "item" for the crafting rows, "passive" for the mastery popup) and give back
-** GGPK's Chinese lines joined by the row's separator again -- one line when
-** the Chinese is one sentence. A row may hold several groups and pieces in no
-** group (a one-line mod next to a two-line one): those are looked up whole on
-** their own, and the row is answered only when every piece has a translation
-** (no half-English row) and at least one group was found. Runs before the
-** exact map (see translation_lookup); its own cache ("" = not such a string),
-** because exact hits are never cached and DrawString asks every frame.
-** nullptr = not a catalog description (or no answer). */
+/* "/"-joined multi-line description: POB's crafting drop-downs join a mod's lines with "/"
+** (ItemsTab.lua), so a two-line GGPK description arrives as "<line 1>/<line 2>" and piecewise
+** translation yields "<whole sentence>/". When the pieces are line-group catalog descriptions
+** (ggpk_groups.json), translate each whole through the stat lookup (ctx from
+** translation_set_slash_context: "item" / "passive") and join GGPK's Chinese lines with the
+** row's separator again. A row may mix groups and pieces in no group (looked up whole); it is
+** answered only when every piece has a translation and at least one group was found. Runs
+** before the exact map; own cache ("" = not such a string), since exact hits are never cached
+** and DrawString asks every frame. nullptr = not a catalog description (or no answer). */
 static const char *slash_group_lookup(const std::string &input) {
     if (!s_source_lookup || s_group_stat_heads.empty() || input.find('/') == std::string::npos ||
         input.find('\n') != std::string::npos)
@@ -3523,13 +3236,13 @@ static const char *slash_group_lookup(const std::string &input) {
     return ins->second.empty() ? nullptr : ins->second.c_str();
 }
 
-/* POB's own trailing decorations on a mod line (使用者裁定 2026-10-26):
+/* POB's own trailing decorations on a mod line:
 **   " (Prefix)" / " (Suffix)"            crafting / custom-modifier rows (ItemsTab)
 **   " ^8(Prefix)" / " ^8(Suffix)"        bench-crafted rows
 **   " ^8(Not supported in PoB yet)"      main.notSupportedTooltipText, any unsupported line
-** True when `s` ends in one of them, preceded by its separator (spaces and/or
-** one colour escape -- a bare "Word(Prefix)" is not POB's). body_end is where
-** the separator starts; word is what stands inside the parentheses. */
+** True when `s` ends in one of them after its separator (spaces and/or one colour escape; a
+** bare "Word(Prefix)" is not POB's). body_end = where the separator starts; word = the
+** parenthesised text. */
 static bool split_pob_tail(const std::string &s, size_t &body_end, std::string &word) {
     static const char *const kWords[] = { "Prefix", "Suffix", "Not supported in PoB yet" };
     if (s.size() < 4 || s.back() != ')') return false;
@@ -3554,29 +3267,19 @@ static bool split_pob_tail(const std::string &s, size_t &body_end, std::string &
     return true;
 }
 
-/* Step -1 of translation_lookup: a line carrying one of POB's trailing
-** decorations is the mod line + the decoration, never a sentence of its own.
-** Priority (the GGPK wording first, 使用者裁定 2026-10-26「直接用 GGPK 繁中」):
-**   1. (Prefix) / (Suffix) only: the body through the stat lookup
-**      (stats_by_id.json = GGPK's templates, ctx "item" -- only the crafting
-**      and custom-modifier rows of an item carry these; leading colour kept)
-**   2. the body through the whole pipeline below (source, "/" groups, merged
-**      exact / patterns...) -- the same answer the undecorated line gets.
-**      The note goes straight here: it ends lines of every context (item,
-**      gem, passive), and the inject already asks the stat lookup with the
-**      right ctx and stat ids where it knows them (item mod / gem / node
-**      lines); what reaches the engine with a note is a line whose context
-**      is not known here, so it gets what the bare line gets
-**   3. only when the body has no translation at all: nullptr, and the caller
-**      goes on with the WHOLE string (old flat keys that carry the decoration,
-**      the trailing-note step...), so nothing turns English that was not
-** A hit for the body always wins over any whole-string key. The decoration
-** goes back as written -- spaces and colour escape included: "Prefix" /
-** "Suffix" as the dictionary words them (前綴 / 後綴), POB's "Not supported
-** in PoB yet" stays English (使用者裁定). Answers live in the lookup cache. */
-/* tail = " (Prefix)" / " ^8(Suffix)" as split_pob_tail cut it, word = what
-** stands inside: the word replaced by the dictionary's (the active source's
-** first, then the merged map's); left as written when neither has it. */
+/* Step -1 of translation_lookup: a line carrying one of POB's trailing decorations is the mod
+** line + the decoration, never a sentence of its own. Priority (GGPK wording first):
+**   1. (Prefix) / (Suffix) only: the body through the stat lookup (ctx "item"; leading colour kept)
+**   2. the body through the whole pipeline below -- the same answer the undecorated line gets.
+**      The "not supported" note goes straight here: it ends lines of every context and what
+**      reaches the engine with it has an unknown ctx.
+**   3. no translation for the body at all: nullptr, and the caller goes on with the WHOLE string
+**      (old flat keys carrying the decoration, the trailing-note step), so nothing turns English.
+** A hit for the body always wins over any whole-string key. The decoration goes back as written
+** (spaces and colour escape included): "Prefix"/"Suffix" as the dictionary words them, POB's
+** "Not supported in PoB yet" stays English. Answers live in the lookup cache. */
+/* tail = " (Prefix)" / " ^8(Suffix)" as split_pob_tail cut it, word = the parenthesised text:
+** replaced by the dictionary's (active source first, then merged); as written when neither has it. */
 static void translate_affix_tail(std::string &tail, const std::string &word) {
     const std::string *zw = nullptr;
     if (s_active_source) {
@@ -3647,12 +3350,10 @@ static bool is_keep_english(const char *s) {
     return s_keep_english.count(s) > 0 || s_keep_scope.count(s) > 0;
 }
 
-/* translation_set_draw_override (see the header). The Chinese values are
-** interned in s_draw_override_pool (node-based: an element's address never
-** moves) and never freed, so a pointer translation_lookup handed out stays
-** valid after the next set replaced the map; the pool is bounded (a value past
-** the cap is not taken -- that row keeps the ordinary lookup). Not touched by
-** translation_reload: the values are already the answer, no dictionary needed. */
+/* translation_set_draw_override (see the header). The Chinese values are interned in
+** s_draw_override_pool (node-based: addresses never move) and never freed, so a pointer
+** handed out stays valid after the next set replaced the map; the pool is bounded (a value
+** past the cap keeps the ordinary lookup). Not touched by translation_reload. */
 static std::unordered_map<std::string, const std::string *> s_draw_override;
 static std::unordered_set<std::string> s_draw_override_pool;
 static std::mutex s_draw_override_mu;
@@ -3707,14 +3408,10 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 0. Source dictionary: POB told us which of its own data files this
-     *    string came from, so that file's entries win over the merged map.
-     *    A miss here just falls through to the normal path. */
-    /* An exact entry exists for this very sentence but needs a value it was
-    ** not given (the guard below blocked it): the sentence is KNOWN, so the
-    ** word-by-word glossary (step 4) must not stitch it together from halves
-    ** ("Increases and Reductions to Armour also apply to Energy Shield").
-    ** Pattern and the other structural steps still run. */
+    /* 0. Source dictionary: the file POB said the string came from wins over the merged map. */
+    /* An exact entry exists for this very sentence but needs a value it was not given (the
+    ** guard below blocked it): the sentence is KNOWN, so the glossary (step 4) must not
+    ** stitch it together from halves. Pattern and the other structural steps still run. */
     bool exact_blocked = false;
     if (s_active_source) {
         auto sit = s_active_source->find(english);
@@ -3724,14 +3421,10 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 0.5 Source pattern: the marked file's own value template beats the merged
-     *     exact map too — another file carrying the literal line ("15% increased
-     *     X") must not override what the sourced file means by it. Same entry
-     *     condition and fill plan as step 3. Only reachable while a source is
-     *     active, so unmarked lookups never get here. Results go to the source's
-     *     own cache (s_lookup_cache_active), which is consulted first: that cache
-     *     only ever holds strings that missed the exact layers, so answering from
-     *     it here is what the full pipeline would answer anyway. */
+    /* 0.5 Source pattern: the marked file's own value template beats the merged exact map too
+     *     (another file's literal line must not override what the sourced file means). Same entry
+     *     condition and fill plan as step 3; results go to s_lookup_cache_active, consulted
+     *     first (it only holds strings that missed the exact layers). */
     if (s_active_source_patterns && !s_active_source_patterns->empty()) {
         std::string sinput(english);
         std::string spattern = to_ascii_lower(digits_to_hash(normalize_placeholders(sinput)));
@@ -3772,24 +3465,19 @@ const char* translation_lookup(const char *english) {
 
     /* 3. Pattern match: normalize digits and placeholders, then lookup (case-insensitive) */
     std::string input(english);
-    /* Every step below that produces an answer goes through here: a leaking
-    ** answer (see leaks_placeholder) is a miss for that step -- nothing is
-    ** cached for it and the next step gets its turn. */
-    /* check_hash: true for an answer produced by filling a pattern (a stray '#'
-    ** is a slot left unfilled); false for an exact entry as written and for
-    ** composites of answers that were already checked by their own lookup. */
+    /* Every answer-producing step goes through here: a leaking answer (leaks_placeholder) is a
+    ** miss for that step -- nothing cached, the next step gets its turn.
+    ** check_hash: true for a filled pattern (a stray '#' = unfilled slot); false for an exact
+    ** entry as written and for composites of already-checked answers. */
     auto accept = [&input](std::string &&result, bool check_hash) -> const char * {
         if (leaks_placeholder(result, input, check_hash)) return nullptr;
         auto [iter, _] = s_lookup_cache_active->emplace(input, std::move(result));
         return iter->second.c_str();
     };
     std::string pattern = to_ascii_lower(digits_to_hash(normalize_placeholders(input)));
-    /* The second clause is not redundant. POB's own crafting UI writes a mod's
-    ** rollable value as a literal '#' ("#% increased Armour during Effect" in
-    ** the affix rows), which is ALREADY the hashed form — so hashing changes
-    ** nothing, the first clause is false, and the pattern map was skipped
-    ** entirely. Those rows stayed English while the same mod translated fine in
-    ** the tooltip, where it carries a real number. */
+    /* The second clause is not redundant. POB's crafting UI writes a mod's rollable value as a
+    ** literal '#' ("#% increased Armour during Effect"), which is ALREADY the hashed form, so
+    ** hashing changes nothing and the first clause is false -- the pattern map would be skipped. */
     if ((pattern != to_ascii_lower(input) || input.find('#') != std::string::npos)
         && !s_forward_pattern.empty()) {
         const FillPlan *plan = find_forward_pattern(digits_to_hash(normalize_placeholders(input)));
@@ -3822,12 +3510,10 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.3 Whole multi-line stat: GGG stores a two-line description as ONE key
-     *     with a literal "\n" ("...Mine from Supported\nSkills is Detonated
-     *     ..."), and POB may send the whole thing with a real newline. Try that
-     *     key (exact, then pattern) before 3.35 splits the block into lines --
-     *     a half line can match some other, shorter template. The answer's
-     *     literal "\n" comes back as a real newline. */
+    /* 3.3 Whole multi-line stat: GGG stores a two-line description as ONE key with a literal
+     *     "\n", and POB may send it with a real newline. Try that key (exact, then pattern)
+     *     before 3.35 splits the block -- a half line can match some other, shorter template.
+     *     The answer's literal "\n" comes back as a real newline. */
     if (input.find('\n') != std::string::npos) {
         const std::string esc = newlines_to_literal(input);
         auto eit = s_translations.find(esc);
@@ -3844,24 +3530,16 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.35 Multi-line blocks: POB's LabelControls are whole [[...]] literals
-     *     (the skills tab's "Usage Tips:" block) and EditControl's unfocused
-     *     view is every line glued into one string (colour..line.."\n",
-     *     ConfigTab.lua:85) -- ONE DrawString call, while the dictionary keys
-     *     are per line.
-     *
-     *     Each line is translated INDEPENDENTLY through the full pipeline: a
-     *     line that translates is replaced, a line that does not is kept
-     *     verbatim. The all-or-nothing iron rule holds WITHIN a line, not
-     *     across lines -- the custom-mods box mixes recognised mods with the
-     *     player's own notes ("grafts--"), and demanding the whole block made
-     *     one untranslatable note drag every recognised mod back to English
-     *     while the focused view (drawn per line) showed them in Chinese.
-     *
-     *     Runs BEFORE the colour-segment step so 3.4 only ever sees single
-     *     lines. A line holds no '\n', so the recursion cannot come back here.
-     *     A line that misses but starts with the "- " bullet is retried
-     *     without it -- zh-rCN keys carry no bullet. */
+    /* 3.35 Multi-line blocks: POB's LabelControls are whole [[...]] literals and EditControl's
+     *     unfocused view is every line glued into one string (ConfigTab.lua:85) -- ONE DrawString
+     *     call, while the dictionary keys are per line.
+     *     Each line is translated INDEPENDENTLY through the full pipeline: translated lines are
+     *     replaced, the rest kept verbatim. All-or-nothing holds WITHIN a line, not across lines
+     *     (the custom-mods box mixes recognised mods with the player's own notes; demanding the
+     *     whole block would drag every mod back to English).
+     *     Runs BEFORE the colour-segment step so 3.4 only sees single lines (a line holds no
+     *     '\n', so no recursion back here). A miss starting with the "- " bullet is retried
+     *     without it (zh-rCN keys carry no bullet). */
     if (input.find('\n') != std::string::npos) {
         std::vector<std::string> lines;
         size_t start = 0;
@@ -3910,25 +3588,15 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.4 Colour segments: POB glues colour escapes straight onto words
-     *     ("^x7070FFKinetic Blast ^720/20", "111,337^x808080 (Guard)",
-     *     "<name>^xE0B0FF (Active) ^7^x8888FFB^7-^x8888FFB"), which defeats
-     *     every matcher above and breaks glossary word boundaries.
-     *
-     *     Translate each coloured run on its own and put the runs back where
-     *     they were. Stripping the codes and translating the whole line -- what
-     *     this step used to do -- can only ever return a colourless string,
-     *     which is why every mid-string colour was lost: the caller could
-     *     re-attach the LEADING escape and nothing else. Field-reported as
-     *     "the translation takes the colour of whatever came before it".
-     *
-     *     A segment carries no colour ESCAPE, so the recursive lookup cannot
-     *     come back here; there is no unbounded recursion. The entry check
-     *     must be for a real escape, not the '^' character: the Notes tab's
-     *     own description contains a literal "(^)", and a bare-caret string
-     *     re-entering here is a single segment identical to its input --
-     *     lookup(core) == lookup(input), which recursed until the stack was
-     *     gone (0xC00000FD the moment the Notes tab rendered). */
+    /* 3.4 Colour segments: POB glues colour escapes straight onto words ("^x7070FFKinetic Blast
+     *     ^720/20", "111,337^x808080 (Guard)"), which defeats every matcher above and the glossary
+     *     word boundaries. Translate each coloured run on its own and put the runs back; stripping
+     *     the codes would return a colourless string (the caller can re-attach only the LEADING
+     *     escape).
+     *     A segment carries no colour ESCAPE, so the recursive lookup cannot come back here. The
+     *     entry check must be for a real escape, not the '^' character: a bare-caret string (the
+     *     Notes tab text has a literal "(^)") re-entering as one segment identical to its input
+     *     recursed until stack overflow (0xC00000FD). */
     bool input_has_escape = false;
     for (size_t i = 0; i + 1 < input.size(); i++) {
         if (colour_escape_len(input, i) > 0) { input_has_escape = true; break; }
@@ -3940,13 +3608,10 @@ const char* translation_lookup(const char *english) {
         bool translated_any = false;
         bool all_covered = true;
         for (const ColourSegment &seg : segs) {
-            /* Split the run into <leading space><core><trailing space>: POB
-            ** puts the escape before the space (" (Guard)"), and the space is
-            ** not part of any dictionary key. Newlines count as space here:
-            ** EditControl's unfocused view is built as colour..line.."\n" per
-            ** line (ConfigTab.lua:85), so every line arrives as its own
-            ** segment with a trailing "\n" that no dictionary key carries --
-            ** the custom-mods box translated only while focused without this. */
+            /* Split the run into <leading space><core><trailing space>: POB puts the escape before
+            ** the space (" (Guard)") and no dictionary key carries the space. Newlines count as
+            ** space: EditControl's unfocused view sends each line as its own segment with a
+            ** trailing "\n" (ConfigTab.lua:85). */
             const size_t b = seg.text.find_first_not_of(" \t\r\n");
             const size_t e = seg.text.find_last_not_of(" \t\r\n");
             const std::string core = (b == std::string::npos)
@@ -3955,10 +3620,8 @@ const char* translation_lookup(const char *english) {
             bool has_alpha = false;
             for (char c : core) if (is_ascii_alpha(c)) { has_alpha = true; break; }
 
-            /* Nothing to translate (digits, punctuation, the "-" between gem
-            ** letters, text already in Chinese), or a run the whitelist says
-            ** stays in English ("B", "DPS", "FullDPS"). Either way it is
-            ** covered, and it is emitted exactly as it arrived. */
+            /* Nothing to translate (digits, punctuation, Chinese already), or a run the whitelist
+            ** keeps in English ("B", "DPS"): covered, emitted exactly as it arrived. */
             if (!has_alpha || covered_by_whitelist(core)) {
                 rebuilt += seg.colour;
                 rebuilt += seg.text;
@@ -3980,16 +3643,10 @@ const char* translation_lookup(const char *english) {
             if (const char *r_ = accept(std::move(rebuilt), /*check_hash=*/false)) return r_;
         }
 
-        /* Segment translation did not cover the line. Fall back to the old
-        ** whole-line behaviour so the translation rate never regresses -- that
-        ** path still loses the colours, but a coloured English line is worse
-        ** than a colourless Chinese one.
-        **
-        ** Only for a line that actually carries an English word, though. With
-        ** no letters there is nothing to translate, and the fallback returns
-        ** only what punctuation normalisation did to the text -- the rage value
-        ** "^7^xFF99220 ^7(0)" came back as "^70（0）": half-width brackets
-        ** widened, one colour code left of the two. */
+        /* Segment translation did not cover the line: fall back to whole-line behaviour (loses
+        ** the colours, but a coloured English line is worse than a colourless Chinese one).
+        ** Only for a line that carries an English word: with no letters the fallback only
+        ** punctuation-normalises ("^7^xFF99220 ^7(0)" came back as "^70（0）"). */
         std::string stripped = strip_color_codes(input);
         bool stripped_has_alpha = false;
         for (char c : stripped) if (is_ascii_alpha(c)) { stripped_has_alpha = true; break; }
@@ -4002,20 +3659,11 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.45 POB's raw item-text tags. A line in the "Edit item text" box (and
-     *      in the unique database) can carry one or more "{...}" prefixes:
-     *      "{enchant}{rune}36% increased Armour, Evasion and Energy Shield",
-     *      "{variant:2}...", "{range:0.5}...", "{crafted}...". None of them is
-     *      part of any dictionary key, so the exact match above misses and the
-     *      glossary below takes the line apart word by word. Field-reported as
-     *      "{附魔}{符紋}3增加 6% 護甲，閃避和能量護盾": the tag words
-     *      translated, and "6% increased Armour, Evasion and Energy Shield"
-     *      matched INSIDE "36% increased ...", leaving a stray "3".
-     *
-     *      Translate the body on its own and put the tags back verbatim. They
-     *      are POB syntax, not prose -- that box is editable and saved straight
-     *      back into the item, so a translated tag is a corrupted item, not
-     *      merely an ugly line. */
+    /* 3.45 POB's raw item-text tags ("{enchant}{rune}...", "{variant:2}...", "{range:0.5}...",
+     *      "{crafted}...") on a line in the "Edit item text" box or unique database: no
+     *      dictionary key has them, so the glossary would take the line apart word by word.
+     *      Translate the body alone and put the tags back verbatim: they are POB syntax and the
+     *      box is saved straight back into the item, so a translated tag corrupts it. */
     if (input.size() > 2 && input[0] == '{') {
         size_t p = 0;
         while (p < input.size() && input[p] == '{') {
@@ -4036,21 +3684,17 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.46 A wholly bracketed run "[...]" with no '|' inside (not POB's
-     *      "[Tag|Shown]" markup) and no other bracket: the custom-modifier list
-     *      draws an essence's mod as "<name>   ^8[32% increased Movement Speed]
-     *      (Prefix)", and that run reaches here on its own (3.4). The inside is
-     *      a whole stat line: translated through the full pipeline, put back
-     *      between the brackets. Left to the glossary, a term matched INSIDE
-     *      "32%" (「[3增加 2% 移動速度]」, 使用者裁定 2026-10-27). The inside holds
-     *      no bracket, so this cannot recurse. */
+    /* 3.46 A wholly bracketed run "[...]" with no '|' (not POB's "[Tag|Shown]" markup) and no other
+     *      bracket: the custom-modifier list draws an essence's mod as "<name>   ^8[32% increased
+     *      Movement Speed] (Prefix)" and the run reaches here alone (3.4). The inside is a whole
+     *      stat line: translate it through the full pipeline, put it back between the brackets
+     *      (the glossary would match a term INSIDE "32%"). No bracket inside, so no recursion. */
     if (input.size() > 2 && input.front() == '[' && input.back() == ']') {
         const std::string inner = input.substr(1, input.size() - 2);
         if (inner.find_first_of("[]|") == std::string::npos) {
             /* A placeholder in brackets is not a stat line: GGG's all-capitals
             ** tags ("[UNUSED]", "[DNT]") and the glossary blacklist's keys stay
-            ** English as they are (使用者裁定 2026-10-23: [UNUSED] 維持英文) --
-            ** before this step they were never translated whole. */
+            ** English as they are ([UNUSED] 維持英文). */
             bool letters = false, lower = false;
             for (char ch : inner) {
                 if (ch >= 'a' && ch <= 'z') lower = true;
@@ -4078,12 +3722,9 @@ const char* translation_lookup(const char *english) {
      *     ...) defeats the exact and pattern matches above. Split the note
      *     off, translate the body recursively, translate the note when the
      *     dictionary has it, and stitch the two back together.
-     *     POB's own decorations -- (Prefix) / (Suffix) / (Not supported in PoB
-     *     yet) -- are not notes for this step: decorated_tail_lookup (step -1)
-     *     owns them, and when it found no translation for the body there is
-     *     none to give. Left to this step they were split at whatever " (" came
-     *     last, often one INSIDE the body ("Life (5-6) gained ^8(Not supported
-     *     in PoB yet)" -> "生命 (5-6) gained ..."). */
+     *     POB's own decorations -- (Prefix) / (Suffix) / (Not supported in PoB yet) -- are
+     *     not notes here: decorated_tail_lookup (step -1) owns them (this step would split at
+     *     the last " (", often one INSIDE the body: "Life (5-6) gained ^8(Not supported...)"). */
     size_t pob_tail_end = 0;
     std::string pob_tail_word;
     if (input.size() > 4 && input.back() == ')' && !split_pob_tail(input, pob_tail_end, pob_tail_word)) {
@@ -4098,11 +3739,8 @@ const char* translation_lookup(const char *english) {
                 std::string body = input.substr(0, open);
                 if (const char *body_zh = translation_lookup(body.c_str())) {
                     std::string combined(body_zh); /* copy before the next lookup can rehash the cache */
-                    /* Ask for the bracketed form FIRST. "(Unused)" is a real
-                    ** dictionary key; the bare "Unused" is not, and stripping
-                    ** the brackets hands it to the glossary, which carries
-                    ** GGG's placeholder affix "[UNUSED]" -- that is how
-                    ** "<item>  ^9(Unused)" came out as "<item>  (反鍊金的)". */
+                    /* Ask for the bracketed form FIRST: "(Unused)" is a real key, the bare "Unused"
+                    ** is not and would reach the glossary's placeholder affix "[UNUSED]". */
                     const std::string bracketed = "(" + suffix + ")";
                     if (const char *whole_zh = translation_lookup(bracketed.c_str())) {
                         if (bracketed != whole_zh) {
@@ -4121,12 +3759,9 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 3.7 Comma-joined lists: POB builds strings like
-     *     "Arcane Cloak, Automation, Sigil of Power" or
-     *     "4 Power Charges, 4 Endurance Charges, Onslaught" at runtime.
-     *     Translate each segment through the full pipeline; only join the
-     *     result when EVERY segment translates (consistency rule: a line is
-     *     either fully translated or left fully in English). */
+    /* 3.7 Comma-joined lists POB builds at runtime ("Arcane Cloak, Automation, Sigil of Power"):
+     *     translate each segment through the full pipeline; join only when EVERY segment
+     *     translates (a line is either fully translated or fully English). */
     if (input.find(", ") != std::string::npos) {
         std::vector<std::string> parts;
         size_t start = 0;
@@ -4136,10 +3771,9 @@ const char* translation_lookup(const char *english) {
             parts.push_back(input.substr(start, sep - start));
             start = sep + 2;
         }
-        /* "<title>, <base type>" is how POB names every rare and every cluster
-        ** jewel (Item.lua:1572). Confirming the LAST segment is a real base type
-        ** is what licenses the relaxed per-word fallback for the segments before
-        ** it: that check is the boundary keeping the relaxation out of prose. */
+        /* "<title>, <base type>" names every rare and cluster jewel (Item.lua:1572). Confirming the
+        ** LAST segment is a real base type licenses the relaxed per-word fallback for the rest;
+        ** that check keeps the relaxation out of prose. */
         const bool item_name = parts.size() >= 2 && s_base_items_en.count(parts.back()) > 0;
         bool all_ok = parts.size() >= 2;
         std::string joined;
@@ -4161,13 +3795,10 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 4. Term glossary: substring replacement for composite stat strings,
-     *    e.g., "+5 Total Mana (+10.0%)" → "+5 最大魔力 (+10.0%)".
-     *    Only applied when the glossary (plus the meta.json whitelist of
-     *    terms allowed to stay in English, e.g. "DPS") covers EVERY letter
-     *    of the input. Partially covered sentences — flavour text, unknown
-     *    mods — are left fully in English: a mixed-language line is worse
-     *    than an untranslated one. */
+    /* 4. Term glossary: substring replacement for composite stat strings ("+5 Total Mana
+     *    (+10.0%)" → "+5 最大魔力 (+10.0%)"). Only applied when the glossary plus the meta.json
+     *    English whitelist covers EVERY letter of the input; partial coverage stays fully English
+     *    (a mixed-language line is worse than an untranslated one). */
     if (!exact_blocked && input.size() >= 4 && !s_term_glossary.empty() &&
         input.find("Community Fork") == std::string::npos) {
         struct Span { size_t pos, len; const std::string *to; };
@@ -4180,10 +3811,9 @@ const char* translation_lookup(const char *english) {
             }
             return false;
         };
-        /* A term is a whole word AND a whole number: one that begins with a
-        ** digit cannot start inside a number ("2% increased Movement Speed"
-        ** inside "32% ..." left a stray "3": 「[3增加 2% 移動速度]」), nor can
-        ** one that ends with a digit stop inside one. */
+        /* A term is a whole word AND a whole number: one beginning with a digit cannot start
+        ** inside a number ("2% increased..." inside "32% ..." left a stray "3"), nor one ending
+        ** with a digit stop inside one. */
         auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
         auto boundary_ok = [&input, &is_digit](size_t pos, size_t len) {
             if (pos > 0 && is_ascii_alpha(input[pos - 1])) return false;
@@ -4201,13 +3831,9 @@ const char* translation_lookup(const char *english) {
             return true;
         };
 
-        /* Index input positions by lowercased byte. Every occurrence of a term
-         * must begin where the term's (already-lowercased) first char appears,
-         * so each term only probes those positions instead of find_icase
-         * rescanning the whole string for all ~thousands of glossary terms.
-         * Same matches as before, but far cheaper on long prose — the About
-         * popup renders the multi-thousand-line changelog/help text, and the
-         * old full scan froze the render thread for seconds on first open. */
+        /* Index input positions by lowercased byte: each term probes only the positions of its
+         * first char instead of rescanning the string per term (thousands of terms; a full scan
+         * froze the render thread for seconds on the About popup's long changelog text). */
         std::vector<size_t> posByChar[256];
         for (size_t i = 0; i < input.size(); i++) {
             unsigned char c = (unsigned char)input[i];
@@ -4283,15 +3909,12 @@ const char* translation_lookup(const char *english) {
         }
     }
 
-    /* 4.5 Drop-down rows, last resort: POB lays the Timeless jewel / tattoo /
-     *     runegraft pickers out as "<name><48 spaces><stat text>" (TreeTab.lua).
-     *     The part after the spaces is cut off on screen -- it is there for the
-     *     list's search box (使用者裁定 2026-10-23/24: 隱藏搜尋字維持英文, 不匯出)
-     *     -- so when nothing above covered the row, only the NAME is translated
-     *     (full pipeline) and everything from the spaces on is kept as it came.
-     *     Only for that shape (a run of 48+ spaces); other strings are not
-     *     touched. Last on purpose: a row an earlier step answers is unchanged.
-     *     The name holds no such run, so this cannot recurse. */
+    /* 4.5 Drop-down rows, last resort: POB lays the Timeless jewel / tattoo / runegraft pickers out
+     *     as "<name><48 spaces><stat text>" (TreeTab.lua); the part after the spaces is cut off
+     *     on screen and only feeds the list's search box (hidden search text stays English).
+     *     When nothing above covered the row, translate only the NAME and keep everything from
+     *     the spaces on. Only for that shape (a run of 48+ spaces); last on purpose; the name
+     *     holds no such run, so no recursion. */
     if (!exact_blocked) {
         const size_t gap = input.find(std::string(48, ' '));
         if (gap != std::string::npos && gap > 0) {
@@ -4323,10 +3946,8 @@ const char* translation_lookup_item_title(const char *english) {
     translation_wait_ready();
     if (s_translations.empty()) return nullptr;
 
-    /* Deliberately NOT s_lookup_cache: a relaxed result must never become
-    ** visible to the general path. Caching "Loath Joy" -> "惡行 歡愉" in the
-    ** shared cache would hand that answer to every later caller, including prose,
-    ** which is the very leak the separate entry point exists to prevent. */
+    /* Deliberately NOT s_lookup_cache: a relaxed result must never become visible to the general
+    ** path (later callers, including prose) -- the leak this separate entry point prevents. */
     std::string input(english);
     /* Per-source like s_lookup_cache: the answer below goes through the active
     ** source, so it must not be served to an unmarked caller (or another source). */
@@ -4348,20 +3969,14 @@ const char* translation_lookup_item_title(const char *english) {
     return iter->second.empty() ? nullptr : iter->second.c_str();
 }
 
-/* Select the source dictionary consulted before the merged map, or pass null /
-** "" to go back to the plain merged lookup. Returns the PREVIOUS selection so
-** the caller can restore it, which is what makes nesting safe.
-**
-** An unknown name deliberately behaves as "no source" rather than failing:
-** a dictionary file may be missing from an older data pack, and the app must
-** still render — just without the disambiguation. */
+/* Select the source dictionary consulted before the merged map (null / "" = plain merged lookup).
+** Returns the PREVIOUS selection so the caller can restore it (nesting-safe). An unknown name
+** deliberately means "no source" (an older data pack may lack the file; the app must still render). */
 const char* translation_set_source(const char *name) {
     translation_wait_ready();
     static std::string prev_holder;
-    /* Copy the argument BEFORE touching prev_holder. Restoring a nested scope
-    ** means passing back the pointer this function returned last time, which
-    ** aliases prev_holder — assigning to it first would rewrite the argument
-    ** out from under us. */
+    /* Copy the argument BEFORE touching prev_holder: restoring a nested scope passes back the
+    ** pointer returned last time, which aliases prev_holder. */
     const std::string want = (name && *name) ? std::string(name) : std::string();
     prev_holder = s_active_source_name;
 
@@ -4412,10 +4027,9 @@ const char* translation_lookup_by_id(const char *source, const char *id) {
     return it->second.c_str();
 }
 
-/* translation_lookup_by_id plus an English check (see translation_manager.h):
-** a Timeless jewel / tattoo renames a node but keeps its id, so when the id
-** file carries "templates" the id answer counts only if its GGPK English is
-** the English being shown. Same F2 / source_lookup gates via the plain call. */
+/* translation_lookup_by_id plus an English check: a Timeless jewel / tattoo renames a node but
+** keeps its id, so when the id file carries "templates" the answer counts only if its GGPK
+** English is the English being shown. Same source_lookup gates via the plain call. */
 const char* translation_lookup_by_id_en(const char *source, const char *id, const char *en) {
     const char *zh = translation_lookup_by_id(source, id);
     if (!zh || !en) return zh;
@@ -4428,26 +4042,21 @@ const char* translation_lookup_by_id_en(const char *source, const char *id, cons
 
 /* One stat line through stats_by_id.json (see translation_manager.h).
 **
-** 1. The line hashes like an English template (markup stripped, numbers -> '#')
-**    and that key names the candidate stat entries.
-** 2. ctx picks the description files (StatTier): item -> stat_descriptions.txt;
-**    passive -> passive_skill_stat_descriptions.txt; gem -> the skill/gem
-**    files. passive and gem fall back to stat_descriptions.txt only when their
-**    own files have no candidate. A candidate whose English writes out a
-**    number the line does not carry is a different stat.
-** 2b. With stat id hints (translation_lookup_stat_ids) only candidates sharing
-**    a stat id stay, and the sign format decides between a "{N:+d}" and a
-**    "{N}" template: a value printed without a sign cannot come from "+d";
-**    a value printed with '+' prefers the "+d" candidates.
-** 3. Every remaining candidate is filled with the line's values (by {N} index).
-**    Answers still showing a placeholder are dropped. All the same -> that
-**    answer.
-** 4. Tie-break: keep only candidates whose stat count equals the number of
-**    values on the line (Thread of Hope's two-stat "{1:+d}% to all Elemental
-**    Resistances" loses to the one-stat line). All the same -> that answer.
-** 4b. With stat id hints: candidates whose written-out numbers equal the
-**    line's values exactly (string for string) win. All the same -> that
-**    answer; otherwise ambiguous -> nullptr.
+** 1. The line hashes like an English template (markup stripped, numbers -> '#'); that key names
+**    the candidate stat entries.
+** 2. ctx picks the description files (StatTier): item -> stat_descriptions.txt; passive ->
+**    passive_skill_stat_descriptions.txt; gem -> the skill/gem files. passive and gem fall back
+**    to stat_descriptions.txt only when their own files have no candidate. A candidate whose
+**    English writes out a number the line does not carry is a different stat.
+** 2b. With stat id hints (translation_lookup_stat_ids) only candidates sharing a stat id stay,
+**    and the sign format decides between "{N:+d}" and "{N}" templates (no sign printed cannot
+**    come from "+d"; a '+' prefers "+d").
+** 3. Every remaining candidate is filled with the line's values (by {N} index); answers still
+**    showing a placeholder are dropped. All the same -> that answer.
+** 4. Tie-break: keep candidates whose stat count equals the number of values on the line. All
+**    the same -> that answer.
+** 4b. With stat id hints: candidates whose written-out numbers equal the line's values exactly
+**    win. All the same -> that answer; otherwise ambiguous -> nullptr.
 ** The pointer is into s_stat_cache: valid until the next reload. */
 static std::string stat_lookup_uncached(const std::string &line, const std::vector<int> &chain,
                                         const std::vector<std::string> *hint,
@@ -4459,11 +4068,9 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     if (it == s_stat_index.end()) return std::string();
 
     const std::vector<std::string> vals = hash_slot_values(in, /*normalize_ph=*/true);
-    /* hash_lits (group / "/" lookups, 使用者裁定 2026-10-25): POB's crafting
-    ** rows write EVERY number as '#', the ones the English template writes out
-    ** too ("up to a maximum of 100%" -> "#%"). There a written '#' matches the
-    ** template's number, and the answer shows that number (GGPK's "最多 100%"),
-    ** not '#'. */
+    /* hash_lits (group / "/" lookups): POB's crafting rows write EVERY number as '#', even
+    ** ones the English template writes out ("up to a maximum of 100%" -> "#%"); a written
+    ** '#' then matches the template's number and the answer shows that number. */
     auto is_hash = [](const std::string &v) { return v.empty() || v.back() == '#'; };
     auto lits_ok = [&](const StatCand &c) {
         for (const auto &l : c.lits) {
@@ -4529,10 +4136,8 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     outs.reserve(cands.size());
     for (const StatCand *c : cands) {
         std::vector<std::string> cv = vals;
-        /* With stat ids (a crafting row asked by its mod): a written '#' in a
-        ** "{N:+d}" slot -- POB's tier merge turned "-9" into "#" and lost the
-        ** sign -- is written as that template writes a value, "+#" (what the
-        ** same-value reading of GGPK's template gives). */
+        /* With stat ids: a written '#' in a "{N:+d}" slot (POB's tier merge lost the sign)
+        ** is written as that template writes a value, "+#". */
         if (hint)
             for (size_t i = 0; i < c->plus_slot.size() && i < cv.size(); i++)
                 if (c->plus_slot[i] && cv[i].empty()) cv[i] = "+#";
@@ -4585,11 +4190,9 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
         if (cands[i]->nstats == nvals) kept.push_back(outs[i]);
     if (all_same(kept)) return kept[0];
 
-    /* 4a. Nobody matched that count. It happens when ONE candidate writes the
-    ** line's only number out ("...by Level 10 Intensify", a fixed-level
-    ** variant) while the others take it as {0}: the value then counts for no
-    ** one. Count per candidate instead -- the values that fill one of ITS {N}
-    ** -- and keep the candidates whose stat count equals their own. */
+    /* 4a. Nobody matched that count (one candidate writes the line's only number out, the
+    ** others take it as {0}). Count per candidate instead -- the values that fill one of ITS
+    ** {N} -- and keep the candidates whose stat count equals their own. */
     if (kept.empty()) {
         for (size_t i = 0; i < cands.size(); i++) {
             std::vector<char> lit(vals.size(), 0);
@@ -4624,9 +4227,8 @@ static std::string stat_lookup_uncached(const std::string &line, const std::vect
     return std::string();
 }
 
-/* Match `in` against a name-slot template, token by token. A number slot must
-** capture exactly one number (sign / range included: it hashes to a single
-** '#'); a name slot captures any non-empty text without surrounding spaces.
+/* Match `in` against a name-slot template, token by token. A number slot captures exactly one
+** number (sign / range included); a name slot any non-empty text without surrounding spaces.
 ** Backtracks over where each slot ends. caps[N] = the text of {N}. */
 static bool stat_match_named(const StatNamedCand &c, const std::string &in, size_t ti, size_t pos,
                              std::unordered_map<int, std::string> &caps) {
@@ -4666,13 +4268,10 @@ static bool stat_match_named(const StatNamedCand &c, const std::string &in, size
 ** (stats_by_id.json "name_slots"):
 **   passives            -> passives source exact, then the merged map
 **   gems                -> gem_names, gems, then the merged map
-**   gem_names*          -> that source, gem_names, then the merged map (never
-**                          gems.json: its "…輔助" names double the template's 輔助)
-** A gem name ending in " Support" ("Barrage Support", as Forbidden Shako
-** writes it) is looked up without it: the template around the slot already
-** says 輔助. Only the NAME is stripped -- the line is never re-hashed with it
-** (that would hit a dedicated fixed-gem stat instead). Empty when nothing has
-** the name. */
+**   gem_names*          -> that source, gem_names, then the merged map (never gems.json:
+**                          its "…輔助" names double the template's 輔助)
+** A name ending in " Support" is looked up without it (the template already says 輔助);
+** only the NAME is stripped, the line is never re-hashed with it. Empty when no match. */
 static std::string stat_translate_name(const std::string &src, const std::string &en_in) {
     auto exact = [](const char *source, const std::string &key) -> std::string {
         auto sit = s_sources.find(source);
@@ -4910,10 +4509,8 @@ const char* translation_lookup_stat_ids_colored(const char *line, const char *ct
     for (const std::string &id : stat_split_ids(stat_ids)) { ck += id; ck += ' '; }
     ck += '\x1f';
     ck += line;
-    /* Keep the first answer: rewriting the slot would free the buffer a
-    ** caller of the previous call may still hold (same lifetime contract as
-    ** translation_lookup_stat). The answer for a given line never changes
-    ** before the next reload, which clears this cache. */
+    /* Keep the first answer: rewriting the slot would free a buffer a caller of the previous
+    ** call may still hold (same lifetime contract as translation_lookup_stat). */
     auto ins = s_stat_colored_cache.try_emplace(std::move(ck), std::move(out));
     return ins.first->second.c_str();
 }
@@ -4922,11 +4519,10 @@ const char* translation_lookup_stat_colored(const char *line, const char *ctx) {
     return translation_lookup_stat_ids_colored(line, ctx, nullptr);
 }
 
-/* The row without its (Prefix) / (Suffix) tail and leading colour: one line
-** through the stat lookup with the ids, else -- a row holding '/' -- its
-** "/"-joined lines (slash_group_lookup's split): the pieces a GGPK multi-line
-** description covers taken whole from the line groups, every other piece
-** through the stat lookup with the ids. "" unless every piece has an answer. */
+/* The row without its (Prefix) / (Suffix) tail and leading colour: one line through the stat
+** lookup with the ids, else its "/"-joined lines (slash_group_lookup's split): pieces a GGPK
+** multi-line description covers come whole from the line groups, others from the stat lookup.
+** "" unless every piece has an answer. */
 static std::string stat_row_body(const std::string &body, const char *ctx, const char *stat_ids) {
     if (body.empty()) return std::string();
     if (const char *z = stat_lookup_cached(body.c_str(), ctx, stat_ids)) return z;
@@ -5013,21 +4609,15 @@ const char* translation_lookup_stat_row(const char *row, const char *ctx, const 
 }
 
 /* ---- line groups (ggpk_groups.json) ----
-**
-** in: the lines as POB draws them, one per tooltip line / label (colour lead
-** and POB's "not supported" note already removed by the caller). Walks them in
-** order; at each line the catalog's candidates starting there (longest first)
-** are tried:
-**   text -> every line equals the catalog's English line (whitespace
-**           normalised): the catalog's Chinese
-**   stat -> every line has the catalog line's key: the lines joined with "\n"
-**           through the stat lookup (ctx as translation_lookup_stat); a miss
-**           is no group
-** A group of k English lines and m Chinese lines: line j gets Chinese line j,
-** lines past m get "" (the whole sentence on the first line when m == 1); when
-** m > k the last English line carries the remaining Chinese lines joined by
-** "\n". A Chinese answer whose first line is empty is no group. Lines in no
-** group keep hit[i] == 0. Returns the number of groups. */
+** in: the lines as POB draws them (colour lead and "not supported" note already removed).
+** At each line the catalog's candidates starting there (longest first) are tried:
+**   text -> every line equals the catalog's English line (whitespace normalised)
+**   stat -> every line has the catalog line's key: lines joined with "\n" through the
+**           stat lookup (ctx as translation_lookup_stat); a miss is no group
+** A group of k English / m Chinese lines: line j gets Chinese line j, lines past m get ""
+** (whole sentence on the first line when m == 1); when m > k the last English line carries
+** the remaining Chinese lines joined by "\n". A Chinese answer with an empty first line is no
+** group. Lines in no group keep hit[i] == 0. Returns the number of groups. */
 static int group_lines_core(const std::vector<std::string> &in, const char *ctx,
                             std::vector<std::string> &out, std::vector<char> &hit) {
     const size_t n = in.size();
@@ -5190,11 +4780,8 @@ static bool try_header_translate(const std::string &line, std::string &out) {
     std::string key_part = line.substr(0, colon);
     std::string rest = line.substr(colon); /* includes ": value" */
 
-    /* Properties POB has no field for used to be named here, one at a time. That
-    ** list is gone: an unknown property key is now dropped by the section grammar
-    ** (reverse_one_line_impl step 7b), which needs no list to maintain. */
-
-    /* Look up key in header mappings */
+    /* An unknown property key is dropped by the section grammar (reverse_one_line_impl
+    ** step 7b), not by a list kept here. */
     const char *eng = find_header_mapping(key_part, s_item_headers_vec);
     if (eng) {
         /* Headers whose VALUE also needs translating (範圍: 大 → Radius: Large).
@@ -5310,15 +4897,11 @@ static std::string strip_suffix(const std::string &line, std::string &suffix) {
         }
     }
 
-    /* "… — 無法使用的值" — advanced copy's marker for a roll that cannot scale
-     * (a Vestigial implicit's fixed value). Unlike the (implicit)-style suffixes
-     * above, this one is TRANSLATED on re-attachment, because POB parses the
-     * English marker itself: Item.lua:1059 strips " - Unscalable Value" and sets
-     * modLine.unscalable. ASCII hyphen on purpose — sanitiseText folds every
-     * dash variant to '-' before that match runs, so the em-dash form would work
-     * too, but only by accident of that folding. The em-dash is required on the
-     * Chinese side: it is what marks the words as GGG's marker rather than prose
-     * that merely ends with the same characters. */
+    /* "… — 無法使用的值": advanced copy's marker for a roll that cannot scale. Unlike the
+     * (implicit)-style suffixes above it is TRANSLATED on re-attachment, because POB parses
+     * the English marker (Item.lua:1059 strips " - Unscalable Value"). ASCII hyphen on purpose
+     * (sanitiseText folds dashes to '-'); the em-dash is required on the Chinese side, to tell
+     * GGG's marker from prose that merely ends with the same characters. */
     {
         static const char kUnscalableZh[] =
             "\xe7\x84\xa1\xe6\xb3\x95\xe4\xbd\xbf\xe7\x94\xa8\xe7\x9a\x84\xe5\x80\xbc"; /* 無法使用的值 (PoE1) */
@@ -5355,22 +4938,13 @@ static std::string strip_suffix(const std::string &line, std::string &suffix) {
 **
 ** The game writes, inside braces, [wrapper] core "affix name"(tier)— tags:
 **     { 已大師工藝 前綴 "進化的"(階級：3)— 防禦,護甲,能量護盾 }
-** POB reads ONLY the words before the literal "Modifier" and looks each one up
-** in Item.lua's lineFlags table (Classes/Item.lua:495), so the whole line
-** collapses to its flag words:
+** POB reads ONLY the words before the literal "Modifier" and looks each one up in Item.lua's
+** lineFlags table (Item.lua:495), so the line collapses to its flag words:
 **     { Master Crafted Prefix Modifier }
-** That restores implicit / fractured / crafted / exarch / eater / prefix /
-** suffix, which decide whether a mod is counted as an implicit at all.
-**
-** Deliberately dropped:
-**   - the quoted affix name. There is no Chinese→English affix-name dictionary;
-**     leaving Chinese in makes POB match no affix and mark the mod {custom},
-**     which is worse than saying nothing.
-**   - the tier and the tags. Both only matter once an affix name has matched.
-**
-** Composition (marker strings, the em-dash separator and the differing spacing
-** between the English and Chinese forms) all come from GGPK clientstrings —
-** ModDescriptionLine* and AdvancedModDisplayTags. See gen_item_metadata.py. */
+** which decides whether a mod counts as an implicit at all. Dropped: the tier and tags (only
+** matter once an affix name matched); the quoted name too, except as handled below.
+** Marker strings, the em-dash separator and spacing come from GGPK clientstrings
+** (ModDescriptionLine*, AdvancedModDisplayTags). See gen_item_metadata.py. */
 static bool rebuild_mod_annotation(const std::string &line, std::string &out) {
     if (line.size() < 3 || line[0] != '{' || line.back() != '}') return false;
     std::string body = line.substr(1, line.size() - 2);
@@ -5381,18 +4955,13 @@ static bool rebuild_mod_annotation(const std::string &line, std::string &out) {
     size_t dash = body.find(kEmDash);
     if (dash != std::string::npos) body.erase(dash);
 
-    /* The quoted affix name, kept before the cut. POB reads it back out —
-    **     Item.lua:463  local modName = fullModName:match("^.*Modifier \"(.*)\"")
-    ** — and uses it to fill the item's prefix/suffix slots. Emitting the flags
-    ** alone leaves those slots empty, and on a CLUSTER JEWEL that erases the
-    ** item: a "{ " line sets self.crafted (Item.lua:455), a crafted cluster
-    ** jewel makes ItemsTab call CraftClusterJewel (ItemsTab.lua:1858), and that
-    ** rebuilds the whole jewel FROM the affix dropdowns — so empty dropdowns
-    ** throw away every notable the jewel actually rolled.
-    **
-    ** One English name covering many modifiers is fine: POB narrows down within
-    ** a name by matching the stat line that follows (Item.lua:871-889), and all
-    ** 284 cluster-jewel notables share the single name "Notable". */
+    /* The quoted affix name, kept before the cut: POB reads it back (Item.lua:463,
+    ** fullModName:match("^.*Modifier \"(.*)\"")) to fill the prefix/suffix slots. Flags alone
+    ** leave them empty, and on a CLUSTER JEWEL that erases the item: a "{ " line sets
+    ** self.crafted (Item.lua:455), ItemsTab then calls CraftClusterJewel (ItemsTab.lua:1858),
+    ** which rebuilds the jewel FROM the affix dropdowns and drops every rolled notable.
+    ** One English name covering many modifiers is fine: POB narrows by the following stat line
+    ** (Item.lua:871-889); all 284 cluster-jewel notables share the name "Notable". */
     std::string affix_zh;
     size_t quote = body.find('"');
     if (quote != std::string::npos) {
@@ -5432,10 +5001,8 @@ static bool rebuild_mod_annotation(const std::string &line, std::string &out) {
     out = "{";
     for (auto &f : found) { out += ' '; out += f.second; }
     out += " Modifier";
-    /* Only names with ONE English counterpart that POB actually has an affix for
-    ** are in the map (the generator drops the rest and writes the full excluded
-    ** list to docs/notes). A name we cannot resolve is simply left off, which is
-    ** exactly the behaviour that shipped before this. */
+    /* Only names with ONE English counterpart that POB has an affix for are in the map (the
+    ** generator drops the rest); an unresolved name is simply left off. */
     if (!affix_zh.empty()) {
         auto ait = s_affix_names.find(affix_zh);
         if (ait != s_affix_names.end()) out += " \"" + ait->second + "\"";
@@ -5448,14 +5015,10 @@ static bool rebuild_mod_annotation(const std::string &line, std::string &out) {
 
 /* ========== Section grammar: split into sections and label every line ==========
 **
-** Anchors are the ones POB itself uses (Item.lua switches parser stage on the
-** Item Level line), and every test is data-driven — a header key is recognised
-** by translating it, not by matching Chinese spelled into this file.
-**
-** Section ORDER is not an anchor: across the nine real items this was built
-** from, sections range 6..8 and sockets/requirements/influence appear or not.
-** Anything the grammar cannot place stays Unknown, and Unknown means "do
-** exactly what the old per-line code did" — that is the whole safety story. */
+** Anchors are the ones POB itself uses (Item.lua switches parser stage on the Item Level
+** line); every test is data-driven (a header key is recognised by translating it, not by
+** Chinese spelled into this file). Section ORDER is not an anchor. Anything the grammar
+** cannot place stays Unknown, meaning "do exactly what the per-line code did". */
 
 static bool is_separator_line(const std::string &l) {
     if (l.size() < 4) return false;
@@ -5539,10 +5102,9 @@ static std::vector<LineKind> classify_lines(const std::vector<std::string> &line
         if (rv && strcmp(rv, "Unique") == 0) is_unique = true;
     }
 
-    /* Advanced copy annotates every modifier section. Without those annotations
-     * (plain Ctrl+C) there is no structural difference between a mod section and
-     * flavour text, so the positional flavour rule below stays switched off and
-     * the old content test in translation_reverse_text keeps the job. */
+    /* Advanced copy annotates every modifier section. Without annotations (plain Ctrl+C) a mod
+     * section looks like flavour text, so the positional flavour rule stays off and the content
+     * test in translation_reverse_text keeps the job. */
     bool any_annotation = false;
     for (const std::string &l : lines) if (is_annotation_line(l)) any_annotation = true;
 
@@ -5569,22 +5131,14 @@ static std::vector<LineKind> classify_lines(const std::vector<std::string> &line
         for (size_t idx : sec) kinds[idx] = k;
     }
 
-    /* 5. The prose that trails the last section carrying mechanics. Two things
-     *    live there and they need telling apart:
-     *
-     *    - the item class instruction ("放置到一個天賦樹的珠寶插槽中…"), which is
-     *      boilerplate GGG ships for every jewel and the dictionary therefore has;
-     *    - a unique's flavour text, which is per-item and is not in any dictionary.
-     *
-     *    So the discriminator is "does the dictionary know this whole line", not
-     *    position and not a keyword list. That matters because the keyword list
-     *    only ever held 點擊右鍵 / 點擊左鍵, and GGG writes 右鍵點擊 on jewels —
-     *    which is why the same sentence was dropped on a flask and passed through
-     *    on a jewel. Both are dropped now: neither feeds a calculation, and left
-     *    in place POB renders them as a modifier it could not parse.
-     *
-     *    Anything that is neither stays Unknown, so a mod section that somehow
-     *    reached here still takes the old path and stays visible. */
+    /* 5. The prose that trails the last section carrying mechanics: either the item class
+     *    instruction ("放置到一個天賦樹的珠寶插槽中…", boilerplate the dictionary has) or a
+     *    unique's flavour text (per-item, in no dictionary). The discriminator is "does the
+     *    dictionary know this whole line", not position or a keyword list (GGG writes 右鍵點擊
+     *    on jewels but 點擊右鍵 on flasks). Both are dropped: neither feeds a calculation, and
+     *    POB would render them as a modifier it could not parse.
+     *    Anything that is neither stays Unknown, so a mod section that somehow reached here
+     *    stays visible. */
     if (any_annotation) {
         size_t last_mech = (size_t)-1;
         for (size_t s = il_sec + 1; s < sections.size(); s++) {
@@ -5640,10 +5194,8 @@ static std::string reverse_one_line(const std::string &line, LineKind kind = Lin
 
 static std::string reverse_one_line_impl(const std::string &line_in, LineKind kind) {
     if (line_in.empty()) return REV("empty", line_in);
-    /* GGG markup that survived into the copied text ("[1.00E|裂紋怪客]" on a
-     * PoE2 unique's name): the words the client shows are the part after the
-     * pipe. Only a line that carries non-ASCII inside the brackets is touched,
-     * so an English "[...]" line stays as it was. */
+    /* GGG markup that survived into the copied text ("[1.00E|裂紋怪客]"): the shown words are
+     * the part after the pipe. Only a line with non-ASCII inside the brackets is touched. */
     std::string line_markup;
     if (line_in.find('[') != std::string::npos && line_in.find(']') != std::string::npos) {
         const std::string shown = strip_brackets(line_in);
@@ -5665,23 +5217,18 @@ static std::string reverse_one_line_impl(const std::string &line_in, LineKind ki
     }
     if (line.find("--------") != std::string::npos) return REV("separator-embedded", line);
 
-    /* 0a. Sections the grammar placed as carrying no mechanics. Both used to be
-     * decided per line: flavour by "nothing in this section translated and no
-     * digits anywhere", description by a two-entry keyword list. Position is the
-     * better witness — it holds for flavour that contains a number and for a
-     * description whose second sentence has no keyword in it. */
+    /* 0a. Sections the grammar placed as carrying no mechanics. Position is the
+     * better witness than a per-line guess: it holds for flavour that contains a
+     * number and for a description whose second sentence has no keyword in it. */
     if (kind == LineKind::Flavour) {
         log_translation_miss("FLAVOUR ", line);
         return REV("flavour", "");
     }
     if (kind == LineKind::Description) return REV("description", "");
 
-    /* 0b. Advanced-copy affix annotation lines, e.g.
-     *   { 前綴 "微光的"(階層：10)— 防禦,能量護盾 }
-     * Rebuild them into the flag-only English form POB parses, so implicit /
-     * fractured / crafted / exarch survive. Anything unrecognised is stripped
-     * instead: left in Chinese it would reach POB as '?' bytes, and a stripped
-     * line still parses because the mod carries its own roll range. */
+    /* 0b. Advanced-copy affix annotation lines ({ 前綴 "微光的"(階層：10)— 防禦,能量護盾 }):
+     * rebuilt into the flag-only English form POB parses so implicit / fractured / crafted /
+     * exarch survive. Unrecognised ones are stripped (in Chinese they would reach POB as '?'). */
     if (line.size() >= 2 && line[0] == '{' && line.back() == '}') {
         std::string rebuilt;
         if (rebuild_mod_annotation(line, rebuilt)) return REV("annotation", rebuilt);
@@ -5877,24 +5424,13 @@ static std::string reverse_one_line_impl(const std::string &line_in, LineKind ki
         }
     }
 
-    /* 3c. Composed lines. GGG builds these by substitution — clientstrings
-     * StatDescripotionTreeExpansionJewelGrantedSmallStat is "Added Small Passive
-     * Skills grant: {0}" / "附加的小型天賦給予：{0}" — so the composed string exists
-     * in no dictionary. Translate it the same way it was built: strip the prefix,
-     * translate the remainder as the ordinary stat it is, put the English prefix
-     * back.
-     *
-     * This runs BEFORE the direct lookups, and that ordering is the fix, not an
-     * accident. The dictionary does hold some of these strings, but it holds the
-     * same Chinese under BOTH "grant:" and "also grant:", so the merged map hands
-     * back whichever file was loaded last — and for a rolled modifier that answer
-     * is wrong half the time. Composing from the prefix decides it on evidence
-     * the line actually carries.
-     *
-     * None of this is cosmetic: POB reads the cluster jewel's SKILL from the
-     * enchant line (Data/ClusterJewels.lua) via an exact whole-line lookup
-     * (Modules/ModParser.lua:6463). Get the line wrong and POB rebuilds the whole
-     * jewel around the wrong skill, discarding every notable it actually rolled. */
+    /* 3c. Composed lines ("Added Small Passive Skills grant: {0}" is built by substitution, so it
+     * is in no dictionary): strip the prefix, translate the remainder as an ordinary stat, put the
+     * English prefix back. Runs BEFORE the direct lookups on purpose: the dictionary holds the same
+     * Chinese under BOTH "grant:" and "also grant:", so the merged map answers wrongly half the time
+     * for a rolled modifier. Not cosmetic: POB reads the cluster jewel's SKILL from the enchant
+     * line via an exact whole-line lookup (ModParser.lua:6463); a wrong line rebuilds the jewel
+     * around the wrong skill and discards every rolled notable. */
     {
         static int depth = 0;
         if (depth == 0) {
@@ -5909,12 +5445,8 @@ static std::string reverse_one_line_impl(const std::string &line_in, LineKind ki
                 depth--;
                 if (inner_en.empty() || inner_en == inner) break;  /* inner unknown */
 
-                /* Every number the inner carried has to survive. Without this the
-                 * rule will happily wrap a WRONG inner match — the census caught
-                 * "附加的小天賦給予：#% 最大能量護盾" coming back as "...also grant:
-                 * you and nearby Allies", turning a line that used to fail
-                 * visibly into confident nonsense. A translation that dropped the
-                 * value was not a translation of this line. */
+                /* Every number the inner carried has to survive, or the rule would wrap a
+                 * WRONG inner match into confident nonsense. */
                 bool numbers_survived = true;
                 for (const std::string &n : extract_numbers(inner)) {
                     if (inner_en.find(n) == std::string::npos) { numbers_survived = false; break; }
@@ -5927,13 +5459,10 @@ static std::string reverse_one_line_impl(const std::string &line_in, LineKind ki
         }
     }
 
-    /* 3d. "殘存 <基底名>" — a Vestigial item's base-type line. GGG composes it
-     * from the "Vestigial {0}" clientstring, so the composed form exists in no
-     * dictionary and the exact lookup below can never see it. Translate the
-     * base name and put the English prefix back; POB strips "^Vestigial "
-     * itself when resolving the base (Item.lua:973). Guarded by "the remainder
-     * is a whole dictionary key", so a modifier that merely starts with 殘存
-     * cannot be rewritten. */
+    /* 3d. "殘存 <基底名>" -- a Vestigial item's base-type line, composed from the "Vestigial {0}"
+     * clientstring and so in no dictionary. Translate the base name and put the English prefix
+     * back (POB strips "^Vestigial " itself, Item.lua:973). Guarded by "the remainder is a whole
+     * dictionary key", so a modifier that merely starts with 殘存 is not rewritten. */
     {
         static const char kVestigialZh[] = "\xe6\xae\x98\xe5\xad\x98 "; /* 殘存 + space */
         const size_t vlen = sizeof(kVestigialZh) - 1;
@@ -6119,17 +5648,11 @@ static std::string reverse_one_line_impl(const std::string &line_in, LineKind ki
         }
     }
 
-    /* 7b. A "key: value" line in the property block that nothing above could
-     * translate. Leaving it is the worst option available: POB sanitises the
-     * Chinese to '?' bytes, and an unknown property still satisfies its property
-     * regex, so Item.lua:704 flips the parser into the EXPLICIT stage early and
-     * every implicit after it is misclassified. Dropping costs nothing — POB
-     * recomputes every property from base type plus modifiers.
-     *
-     * This replaces the hardcoded drop list (which held exactly one entry, 無形性,
-     * the Allflame crafting percentage). The list only ever named the symptom;
-     * the rule is "unknown property", and it covers whatever GGG adds next.
-     * Logged, because a property we cannot translate is still a gap. */
+    /* 7b. A "key: value" line in the property block that nothing above could translate. Leaving
+     * it is the worst option: POB turns the Chinese into '?' bytes yet the line still satisfies
+     * its property regex, so Item.lua:704 flips the parser into the EXPLICIT stage early and every
+     * implicit after it is misclassified. Dropping costs nothing (POB recomputes properties from
+     * base type plus modifiers). Logged, because an untranslatable property is still a gap. */
     if (kind == LineKind::Property && line.find(':') != std::string::npos) {
         log_translation_miss("PROPERTY ", line);
         return REV("drop-property", "");
@@ -6240,10 +5763,9 @@ char* translation_reverse_text(const char *chinese_text) {
             }
             if (has_cjk) {
                 if (prev_rarity_type == 3) {
-                    /* Magic/Normal: name contains base type (e.g. 鷹眼的石英藥劑)
-                     * POB needs the English base type in the name to identify the item.
-                     * Search s_reverse_bases (base item entries) for the longest substring match.
-                     * This avoids false positives from affix names in s_reverse. */
+                    /* Magic/Normal: the name contains the base type; POB needs it in English.
+                     * Longest substring match in s_reverse_bases (not s_reverse: affix names
+                     * would give false positives). */
                     std::string best_en;
                     size_t best_len = 0;
                     for (auto& pair : s_reverse_bases) {
@@ -6360,17 +5882,11 @@ char* translation_reverse_text(const char *chinese_text) {
         }
     }
 
-    /* Unique flavour text, FALLBACK path. POB has no branch for it, so a pasted
-    ** flavour line is parsed as a modifier -- and in Chinese it arrives as '?'
-    ** bytes, because Item.lua runs everything through sanitiseText. Nothing is
-    ** lost by dropping it: POB renders flavour text from its own Data/FlavourText.
-    **
-    ** The section grammar already dropped flavour it could place by position.
-    ** What is left is plain Ctrl+C text, where no annotation marks the modifier
-    ** sections and position proves nothing — so the old content test still has to
-    ** do the work: only a section where NOTHING translated and no line carries a
-    ** number qualifies. Sections the grammar DID label are skipped, so the
-    ** heuristic can no longer overrule it. */
+    /* Unique flavour text, FALLBACK path. POB has no branch for it, so a pasted flavour line is
+    ** parsed as a modifier ('?' bytes in Chinese); dropping loses nothing (POB renders flavour
+    ** from its own Data/FlavourText). The section grammar already dropped what it could place by
+    ** position; this is for plain Ctrl+C text: only a section where NOTHING translated and no
+    ** line carries a number qualifies, and sections the grammar labelled are skipped. */
     if (is_unique) {
         size_t i = 0;
         while (i < out_lines.size()) {

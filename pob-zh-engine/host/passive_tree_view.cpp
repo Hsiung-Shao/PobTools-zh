@@ -12,12 +12,10 @@
 #include <algorithm>
 #include <cmath>
 
-// ---- palette ----------------------------------------------------------------
+// palette
 
-// Design-system tokens (ui_theme.h). The jewel's reach and the nodes it changes
-// are both TreeHit (gold) -- the window's text says "以金框標示", and a red ring
-// for the same thing contradicted it. Sockets take their kind colour, shared with
-// the side lists through PobUi::TreeKindColor.
+// Design-system tokens (ui_theme.h). The jewel's reach and the nodes it changes are both TreeHit
+// (gold), matching the window text "以金框標示". Sockets take their kind colour via PobUi::TreeKindColor.
 namespace Tok = PobUi::Tok;
 static ImU32 WithAlpha(ImU32 c, unsigned a) { return (c & 0x00FFFFFFu) | ((ImU32)a << 24); }
 static const ImU32 kColEdge       = WithAlpha(Tok::TreeLink, 150);
@@ -33,7 +31,7 @@ static const ImU32 kColRadiusRing = WithAlpha(Tok::TreeHit, 217);    // opacity 
 static const float kFocusMinZoom = 0.14f;
 static const float kMaxZoom = 0.7f;
 
-// ---- textures ---------------------------------------------------------------
+// textures
 
 bool PassiveTreeView::LoadTextures(const std::wstring& exeDir, const PassiveTreeData& d, std::string* err)
 {
@@ -77,7 +75,7 @@ void PassiveTreeView::DestroyTextures()
 	tex_.clear();
 }
 
-// ---- camera -----------------------------------------------------------------
+// camera
 
 ImVec2 PassiveTreeView::worldToScreen(ImVec2 w) const
 {
@@ -120,7 +118,7 @@ void PassiveTreeView::CenterOn(const PassiveTreeData& d, int nodeIdx)
 	focusAnim_ = true;
 }
 
-// ---- main entry -------------------------------------------------------------
+// main entry
 
 PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale, const PassiveTreeInput& in)
 {
@@ -209,7 +207,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(vpPos_, vpPos_ + vpSize_, true);
 
-	// --- group backgrounds -------------------------------------------------
+	// group backgrounds
 	auto drawDecos = [&](const std::vector<PtDeco>& decos) {
 		for (const PtDeco& deco : decos) {
 			if (!deco.spr.valid || deco.spr.sheet >= (int)tex_.size()) continue;
@@ -233,7 +231,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 	};
 	drawDecos(d.groupbg);
 
-	// --- edges -------------------------------------------------------------
+	// edges
 	float thick = std::clamp(zoom_ * 14.0f, 1.0f, 5.0f);
 	const float emargin = 900.0f;
 	for (const PtEdge& e : d.edges) {
@@ -259,7 +257,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 
 	drawDecos(d.masteries);
 
-	// --- jewel radius ring (under nodes so highlights stay readable) -------
+	// jewel radius ring (under nodes so highlights stay readable)
 	// radiusWorld <= 0 means "this jewel does not use a radius" (Abyss jewels):
 	// draw no ring rather than a wrong one.
 	if (in.radiusWorld > 0.0f &&
@@ -270,7 +268,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 		dl->AddCircle(c, rr, kColRadiusRing, 96, 2.5f); // outline only, no fill
 	}
 
-	// --- nodes -------------------------------------------------------------
+	// nodes
 	for (int i = 0; i < (int)d.nodes.size(); i++) {
 		const PtNode& n = d.nodes[i];
 		if (cull(n.x, n.y, 260.0f)) continue;
@@ -306,9 +304,7 @@ PassiveTreeOutput PassiveTreeView::Draw(const PassiveTreeData& d, float uiScale,
 				             ImVec2(f.uv[0], f.uv[1]), ImVec2(f.uv[2], f.uv[3]));
 			}
 		}
-		// a node the seed changes: a gold (TreeHit) ring, drawn a bit larger than
-		// the node itself so it reads as a halo around it. A REPLACED node gets a
-		// second, inner ring -- same hue, so the legend's one swatch covers both.
+		// a node the seed changes: a gold (TreeHit) halo ring; a REPLACED node gets a second inner ring (same hue, one legend swatch).
 		if (h) {
 			float ring = std::max((std::max(n.off.w, n.off.h) * 0.5f + 22.0f) * zoom_, 8.0f);
 			dl->AddCircle(c, ring, h == kPtHiReplaced ? kColReplaced : kColAffected, 0, 3.5f);

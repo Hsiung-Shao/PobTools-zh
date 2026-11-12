@@ -12,7 +12,7 @@
 
 using nlohmann::ordered_json;
 
-// ---- file helpers (same conventions as atlas_tree_data.cpp) -----------------
+// file helpers (same conventions as atlas_tree_data.cpp)
 
 static bool read_file_utf8(const std::wstring& path, std::string& out)
 {
@@ -30,7 +30,7 @@ static bool read_file_utf8(const std::wstring& path, std::string& out)
 	return ok;
 }
 
-// ---- json parsing -----------------------------------------------------------
+// json parsing
 
 static bool parse_sprite(const ordered_json& j, PtSprite& out)
 {
@@ -173,7 +173,7 @@ int PassiveTreeData::IndexOfId(int id) const
 	return -1;
 }
 
-// ---- selftest ---------------------------------------------------------------
+// selftest
 
 static void ptlog(FILE* f, const char* fmt, ...)
 {
@@ -285,10 +285,9 @@ int RunPassiveTreeSelfTest(const std::wstring& exeDir)
 		      std::to_string(zhLines) + "/" + std::to_string(lines));
 	}
 
-	// Timeless-jewel LUT coverage: every non-socket tree node id should appear in
-	// timeless_jewels.json's nodeIndex, else jewel search silently skips it (the
-	// jewel dataset ships from PoB and can lag a new league's tree). >=90% keeps
-	// the drift visible without failing on a handful of brand-new nodes.
+	// Timeless-jewel LUT coverage: every non-socket node id should appear in timeless_jewels.json's
+	// nodeIndex, else jewel search silently skips it (the dataset ships from PoB and can lag a new
+	// league's tree). >=90% keeps the drift visible without failing on a handful of new nodes.
 	{
 		TJDataset ds;
 		std::string terr;

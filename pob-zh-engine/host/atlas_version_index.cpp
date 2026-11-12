@@ -10,7 +10,7 @@
 
 using nlohmann::ordered_json;
 
-// ---- file helpers (same conventions as atlas_tree_data.cpp) -----------------
+// file helpers (same conventions as atlas_tree_data.cpp)
 
 static bool read_file_utf8(const std::wstring& path, std::string& out)
 {
@@ -51,7 +51,7 @@ static bool file_exists(const std::wstring& p)
 	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-// ---- semver comparison ------------------------------------------------------
+// semver comparison
 
 int AtlasVersionIndex::CompareSemver(const std::string& a, const std::string& b)
 {
@@ -74,7 +74,7 @@ int AtlasVersionIndex::CompareSemver(const std::string& a, const std::string& b)
 	return 0;
 }
 
-// ---- paths ------------------------------------------------------------------
+// paths
 
 std::wstring AtlasVersionIndex::IndexPath(const std::wstring& exeDir)
 {
@@ -97,7 +97,7 @@ std::wstring AtlasVersionIndex::ResolveDataDir(const std::wstring& exeDir, const
 	return exeDir + L"Data\\"; // legacy flat layout
 }
 
-// ---- registry ---------------------------------------------------------------
+// registry
 
 bool AtlasVersionIndex::Has(const std::string& tag) const { return Find(tag) != nullptr; }
 
@@ -125,13 +125,9 @@ std::string AtlasVersionIndex::OlderThan(const std::string& tag) const
 
 void AtlasVersionIndex::refreshCompareBase()
 {
-	// Prefer the newest version OLDER than the active one, so the default diff
-	// reads old -> new. Only when the active season is the oldest installed does
-	// this fall back to "newest that is not active" (which then reads new -> old,
-	// but at least offers something). This mattered once the registry started
-	// holding several revisions of one league: with 3.29.0 active and 3.29.1 also
-	// installed, "newest non-active" alone would have pointed the base at a
-	// version NEWER than the target.
+	// Prefer the newest version OLDER than the active one (default diff reads old -> new); only when the active
+	// season is the oldest installed fall back to "newest non-active" (else with 3.29.0 active and 3.29.1 installed
+	// the base would be NEWER than the target).
 	compareBase_ = OlderThan(active_);
 	if (!compareBase_.empty()) return;
 	for (const std::string& t : TagsNewestFirst())
@@ -140,11 +136,8 @@ void AtlasVersionIndex::refreshCompareBase()
 
 void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
 {
-	// The index is a cache of what is on disk, not the other way round. A season
-	// folder that carries real data but never made it into atlas_index.json (an
-	// update interrupted midway, a hand-copied folder, an index restored from an
-	// older backup) is otherwise invisible to the planner forever — which is
-	// exactly how a downloaded 3.29.1 ended up unusable while sitting on disk.
+	// The index is a cache of what is on disk, not the reverse: a season folder with real data missing from
+	// atlas_index.json (interrupted update, hand-copied folder, older backup) would stay invisible to the planner forever.
 	std::wstring glob = exeDir + L"Data\\atlas_versions\\*";
 	WIN32_FIND_DATAW fd{};
 	HANDLE h = FindFirstFileW(glob.c_str(), &fd);
@@ -163,10 +156,7 @@ void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
 			tag.push_back((char)c);
 		}
 		if (!ascii || Has(tag)) continue;
-		// Only adopt a folder that carries a COMPLETE season. A tree file alone
-		// is not enough: an interrupted download can leave one behind without
-		// its sprites or its Chinese mapping, and promoting that to active below
-		// would break the planner outright.
+		// Only adopt a COMPLETE season: a tree file alone (interrupted download, no sprites / Chinese mapping) would break the planner once made active.
 		std::wstring vd = VersionDir(exeDir, tag);
 		if (!file_exists(vd + L"atlas_tree_poe1.json")) continue;
 		if (!file_exists(vd + L"atlas_tree_zh.json")) continue;
@@ -179,14 +169,10 @@ void AtlasVersionIndex::adoptFromDisk(const std::wstring& exeDir)
 	} while (FindNextFileW(h, &fd));
 	FindClose(h);
 	if (!added) return;
-	// The newest complete season ON DISK is canonical, even when the index file
-	// disagrees. It regularly does: Data/atlas_index.json ships with the app, so
-	// every install and every app update writes the packaged copy back over it
-	// and orphans a season the user downloaded in-app afterwards. Leaving
-	// `active` alone made that season permanently "舊賽季檢視（唯讀）" -- visible,
-	// selectable, and silently refusing to save. Which season the user is
-	// LOOKING at is a separate, persisted choice (uiState.season), so promoting
-	// active here does not move them.
+	// The newest complete season ON DISK is canonical even when the index disagrees: Data/atlas_index.json ships
+	// with the app, so every install / update overwrites it and orphans an in-app downloaded season (which would then
+	// be a read-only "舊賽季檢視（唯讀）" that silently refuses to save). The season being viewed is a separate
+	// persisted choice (uiState.season), so promoting `active` does not move the user.
 	if (active_.empty() || CompareSemver(newest, active_) > 0) active_ = newest;
 	refreshCompareBase();
 	dirty_ = true;
@@ -240,9 +226,7 @@ std::vector<std::string> AtlasVersionIndex::PruneSeasons(size_t keepSeasons)
 		} else if (si == 0) {
 			keep = true;               // current league: every in-league revision
 		} else {
-			// An older league keeps only its final revision. `order` is
-			// newest-first, so this tag is the final one iff no tag of the same
-			// season came before it.
+			// An older league keeps only its final revision: `order` is newest-first, so that is the first tag of its season.
 			keep = true;
 			for (const std::string& o : order) {
 				if (o == t) break;
@@ -262,7 +246,7 @@ std::vector<std::string> AtlasVersionIndex::PruneSeasons(size_t keepSeasons)
 	return dropped;
 }
 
-// ---- load / save ------------------------------------------------------------
+// load / save
 
 void AtlasVersionIndex::Load(const std::wstring& exeDir)
 {
@@ -342,7 +326,7 @@ bool AtlasVersionIndex::Save(const std::wstring& exeDir) const
 	return ok;
 }
 
-// ---- headless self-test (--atlas-index-selftest) ----------------------------
+// headless self-test (--atlas-index-selftest)
 
 #include <cstdio>
 
@@ -399,15 +383,14 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 	std::vector<std::string> none = idx.PruneSeasons(2);
 	check(none.empty() && idx.Versions().size() == 2, "prune no-op at keep count");
 
-	// --- retention is per LEAGUE, not per tag ---------------------------------
+	// retention is per LEAGUE, not per tag
 	check(AtlasVersionIndex::SeasonOf("3.29.1") == "3.29" &&
 	      AtlasVersionIndex::SeasonOf("3.29") == "3.29" &&
 	      AtlasVersionIndex::SeasonOf("3.29.0.4.2") == "3.29" &&
 	      AtlasVersionIndex::SeasonOf("weird") == "weird",
 	      "SeasonOf strips the patch component");
 	{
-		// The shape the user actually has: several revisions of the current
-		// league, several of the previous one, and an older league.
+		// Several revisions of the current league, several of the previous one, and an older league.
 		AtlasVersionIndex s;
 		s.UpsertActive({ "3.27.0", "", "" });
 		s.UpsertActive({ "3.28.0", "", "" });
@@ -426,16 +409,12 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		check(!s.Has("3.27.0"), "leagues outside the window are dropped");
 		check(s.Versions().size() == 3, "three tags survive");
 		check(gone.size() == 3, "three tags reported as dropped for folder deletion");
-		// With 3.29.1 active, the newest version older than it is its own
-		// sibling 3.29.0 — so the default diff is the mid-league one. That is
-		// the useful default now that in-league revisions are retained, and it
-		// is asserted so it stays a decision rather than an accident.
+		// With 3.29.1 active the base is its sibling 3.29.0 (the mid-league diff); asserted so it stays deliberate.
 		check(s.Active() == "3.29.1" && s.CompareBase() == "3.29.0",
 		      "compare base is the newest OLDER version, i.e. the sibling revision");
 	}
 	{
-		// The moment a NEW league lands: the outgoing league collapses to its
-		// final revision and the one before it goes entirely.
+		// A NEW league lands: the outgoing league collapses to its final revision, the one before goes entirely.
 		AtlasVersionIndex s;
 		s.UpsertActive({ "3.28.2", "", "" });
 		s.UpsertActive({ "3.29.0", "", "" });
@@ -450,9 +429,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		check(s.CompareBase() == "3.29.1", "compare base is the previous league's final revision");
 	}
 	{
-		// Compare base must be OLDER than active, not merely "not active" —
-		// otherwise a mid-league revision installed alongside the active one
-		// points the default diff backwards.
+		// Compare base must be OLDER than active, not merely "not active" (else the default diff points backwards).
 		AtlasVersionIndex s;
 		s.UpsertActive({ "3.28.0", "", "" });
 		s.UpsertActive({ "3.29.0", "", "" });
@@ -462,8 +439,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		      "base is the newest version OLDER than active, not the newer sibling");
 	}
 	{
-		// The active season is never dropped, even when its league is outside the
-		// window (a user previewing an old league must not lose it underfoot).
+		// The active season is never dropped, even when its league is outside the window.
 		AtlasVersionIndex s;
 		s.UpsertActive({ "3.29.0", "", "" });
 		s.UpsertActive({ "3.28.0", "", "" });
@@ -473,8 +449,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		check(gone.empty() && s.Has("3.27.0"), "the active season survives an out-of-window prune");
 	}
 
-	// OlderThan: the newest installed season strictly older than a given tag
-	// (backs the compare base + the cross-season TC backfill source selection)
+	// OlderThan: the newest installed season strictly older than a tag (compare base + TC backfill source)
 	{
 		AtlasVersionIndex oi;
 		oi.UpsertActive({ "3.27.0", "", "" });
@@ -485,10 +460,8 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		check(oi.OlderThan("3.27.0").empty(), "OlderThan(oldest) = empty");
 	}
 
-	// --- against the REAL install: every season folder holding a tree must be
-	// reachable through the index. The in-memory cases above cannot catch an
-	// index file that simply never listed a folder sitting on disk, which is the
-	// state a downloaded 3.29.1 was found in.
+	// against the REAL install: every season folder holding a tree must be reachable through the index
+	// (the in-memory cases above cannot catch an index that never listed an on-disk folder).
 	{
 		std::wstring root = exeDir + L"Data\\atlas_versions\\";
 		std::vector<std::string> onDisk;
@@ -516,10 +489,7 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 			if (!missing.empty()) rep += "      missing: " + missing + "\n";
 			check(!live.Active().empty(), "a live index resolves an active season");
 			check(live.Has(live.Active()), "the active season is one of the registered ones");
-			// The newest COMPLETE season on disk is canonical. Anything else and
-			// the planner marks it "舊賽季檢視（唯讀）" and silently refuses to
-			// save into it -- which is what a downloaded 3.29.1 did while the
-			// packaged atlas_index.json still said 3.29.0.
+			// The newest COMPLETE season on disk is canonical; otherwise the planner shows it read-only and refuses to save.
 			std::string newestComplete;
 			for (const std::string& t : onDisk) {
 				std::wstring vd = AtlasVersionIndex::VersionDir(exeDir, t);
@@ -536,12 +506,8 @@ int RunAtlasVersionIndexSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// --- adoption against a synthetic install tree ----------------------------
-	// The real-install block above can only observe whatever this machine
-	// happens to have. This one builds the exact situation the bug came from
-	// (index names an older season, a newer complete one sits on disk) plus the
-	// case that must NOT be adopted (a half-finished download), in a throwaway
-	// directory so nothing real is touched.
+	// adoption against a synthetic install tree (throwaway dir): index names an older season while a newer complete
+	// one sits on disk, plus a half-finished download that must NOT be adopted.
 	{
 		wchar_t tmp[MAX_PATH]{};
 		GetTempPathW(MAX_PATH, tmp);

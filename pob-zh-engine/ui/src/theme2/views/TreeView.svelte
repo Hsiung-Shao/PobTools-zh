@@ -401,8 +401,7 @@
     // nodes
     const showIcons = zoom > 0.035;
     // Node Power heat, the Compare rings and search hits: one pass shared by both
-    // games' drawing (PoE2's branch used to `continue` before reaching them, so
-    // neither Node Power nor Compare showed anything on a PoE2 tree).
+    // games' drawing (PoE2's branch must not `continue` before reaching them).
     const overlays = (n: TreeNode, sx: number, sy: number, half: number, alloc: boolean) => {
       // Show Node Power: POB tints unallocated nodes by their power
       if (power && !alloc) {

@@ -1,13 +1,13 @@
 // PobTools economy service.
 //
-// Phase 5a: a static, offline price source loaded from bundled JSON
+// A static, offline price source loaded from bundled JSON
 // (Data/economy_poe1.json: English name -> chaos value) plus value->tier thresholds
 // (Data/economy_tiers_poe1.json). Provides per-item valuation and a "suggested tier"
 // for the tier-list cards. Everything is display-only — accepting a suggestion goes
 // through the existing MoveItemToTier path, so output stays English.
 //
-// Phase 5b will add a live provider behind the same surface (worker thread + cache),
-// with this static data as the permanent offline fallback.
+// Static data only (no live provider yet); a live one would sit behind the same
+// surface with this as the offline fallback.
 #pragma once
 
 #include "filter_tierlist.h"   // TierCategory / TierListIndex

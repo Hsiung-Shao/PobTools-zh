@@ -25,7 +25,7 @@ static const char* kZoom = "0.5";
 static const double kWorldPerPx = 2.0; // sprite px at zoom 0.5 -> world units
 static const double kPi = 3.14159265358979323846;
 
-// ---- small helpers ------------------------------------------------------------
+// small helpers
 
 static bool read_file_utf8(const std::wstring& path, std::string& out)
 {
@@ -84,7 +84,7 @@ static std::vector<double> calc_orbit_angles(int n)
 // kind values shared with atlas_tree_data.h / gen_atlas_tree.py
 enum { K_NORMAL = 0, K_NOTABLE = 1, K_KEYSTONE = 2, K_START = 3, K_WORMHOLE = 4 };
 
-// ---- sprite sheet index ---------------------------------------------------------
+// sprite sheet index
 
 const ordered_json* AtlasSpriteLevel(const std::string& cat, const ordered_json& levels)
 {
@@ -179,7 +179,7 @@ struct SheetIndex {
 
 } // namespace
 
-// ---- conversion (port of gen_atlas_tree.py main()) --------------------------------
+// conversion (port of gen_atlas_tree.py main())
 
 static bool import_variants(const ordered_json& v, ordered_json* out, std::string* err);
 
@@ -188,8 +188,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 {
 	auto fail = [&](const std::string& m) {
 		if (err) *err = m;
-		// Every refusal in this function funnels through here, which is why the
-		// log hook is here and not at twenty return sites.
+		// Every refusal funnels through here, so the log hook lives here.
 		PobLog::Error("atlas", "atlas tree import failed: " + m);
 		return false;
 	};
@@ -492,12 +491,9 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		if (!write_file_utf8(destDir + L"atlas_tree_poe1.json", out.dump()))
 			return fail(u8"寫入 atlas_tree_poe1.json 失敗");
 
-		// League-mechanic map for the same season, from the same document. This
-		// lives here rather than in a maintainer script precisely so a new season
-		// installed in-app gets it automatically -- the scarab and astrolabe
-		// catalogues need a manual re-run every league and that is a standing
-		// trap. Best-effort: the tree is already written and perfectly usable
-		// without it, so a failure is reported in the summary, never fatal.
+		// League-mechanic map for the same season, from the same document. Lives here (not in a
+		// maintainer script) so an in-app season install gets it automatically. Best-effort: the tree
+		// is already usable, so a failure goes in the summary, never fatal.
 		std::string mechNote;
 		{
 			// destDir is Data/atlas_versions/<tag>/; the folder name IS the tag.

@@ -119,7 +119,7 @@ const std::string& AtlasI18n::StatLine(const std::string& en) const
 	return it != statByEn_.end() ? it->second : en;
 }
 
-// ---- whole-tree node search ---------------------------------------------------
+// whole-tree node search
 
 std::vector<std::string> AtlasNodeSearchKeys(const AtlasTreeData& d, const AtlasI18n* zh)
 {
@@ -149,7 +149,7 @@ std::vector<int> AtlasSearchNodes(const std::vector<std::string>& keys, const st
 	return hits;
 }
 
-// ---- self-test (folded into --atlas-selftest) --------------------------------
+// self-test (folded into --atlas-selftest)
 
 namespace {
 

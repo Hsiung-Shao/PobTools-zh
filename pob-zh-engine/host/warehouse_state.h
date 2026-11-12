@@ -1,17 +1,13 @@
 // 倉庫收益統計 — the panel's persisted settings: PobTools\warehouse_ui.json.
 //
-// The session id is the first credential this application has ever stored, so
-// it does NOT follow the plain-text convention the other tools' state files
-// use: on disk it exists only as a DPAPI blob (CryptProtectData, current user),
-// which a copy of the file -- a backup, a cloud sync, another machine -- cannot
-// decrypt. A failed decrypt loads as "no session id saved", never as an error.
+// The session id is a credential, so on disk it exists only as a DPAPI blob (CryptProtectData,
+// current user); a copied file cannot decrypt it. A failed decrypt loads as "no session id saved", never an error.
 #pragma once
 
 #include <string>
 #include <vector>
 
-// What the player picked for one game. Kept per game: a PoE1 league name or tab
-// id means nothing on the PoE2 realm, and switching must not lose either side.
+// What the player picked for one game (per game: PoE1 league/tab ids mean nothing on PoE2).
 struct WarehouseGameSel {
 	std::string league;
 	std::vector<std::string> tabIds;
@@ -25,59 +21,42 @@ struct WarehouseUiState {
 	WarehouseGameSel& sel() { return game == "poe2" ? poe2 : poe1; }
 	const WarehouseGameSel& sel() const { return game == "poe2" ? poe2 : poe1; }
 	int autoMinutes = 0;     // auto-snapshot interval: 0 = off, else 60..360 (whole hours)
-	bool showDivine = true; // totals shown in divine by default (user request)
+	bool showDivine = true;
 
-	// Whether the session id may touch the disk at all. Default OFF: a pasted
-	// credential stays in this process's memory and is gone when it exits, and
-	// keeping it is something the player opts into. A file written before this
-	// setting existed carries a blob and no flag -- that reads as ON, so an
-	// upgrade never silently drops what the player already saved.
+	// Whether the session id may touch the disk at all. Default OFF (opt-in). A file written before
+	// this setting existed carries a blob and no flag -- that reads as ON, so an upgrade keeps what was saved.
 	bool rememberSessid = false;
 
-	// Memory only. Load fills it from the DPAPI blob when this machine+user can
-	// decrypt it; a Save(writeSecret=true) writes the blob only when
-	// rememberSessid and non-empty -- otherwise it writes an EMPTY field, which
-	// erases a blob saved earlier.
+	// Memory only. Load fills it from the DPAPI blob when this machine+user can decrypt it;
+	// Save(writeSecret=true) writes the blob only when rememberSessid and non-empty, otherwise an
+	// EMPTY field (erasing an earlier blob).
 	std::string sessid;
 
 	bool Load(const std::wstring& exeDir);
 
-	// writeSecret says whether THIS save is about the credential. Default false,
-	// and that default is the safe one: several panels can be open at once (the
-	// standalone tool and the atlas planner's embed, in this process or another),
-	// each holding its own copy of this struct loaded at its own Init. Since a
-	// save rewrites the whole file, a panel that saved an unrelated setting --
-	// or simply closed -- used to write its stale copy of the session id back
-	// over a clear another panel had just performed. So an ordinary save now
-	// carries the file's OWN sessidDpapi/rememberSessid forward untouched, and
-	// only the three places that mean it (typing in the field, the 記住 box, the
-	// 清除 button) pass true.
+	// writeSecret: whether THIS save is about the credential. Default false is the safe one: several
+	// panels may be open at once, each with its own stale copy, and a save rewrites the whole file, so
+	// an ordinary save carries the file's OWN sessidDpapi/rememberSessid forward untouched. Only the
+	// three places that mean it (typing in the field, the 記住 box, the 清除 button) pass true.
 	bool Save(const std::wstring& exeDir, bool writeSecret = false) const;
 };
 
-// Overwrites a string's bytes, then clears it. Used wherever a session id is
-// dropped: "cleared" should not leave the credential readable in the memory the
-// string happened to own. Best effort by nature -- a copy made earlier, or a
-// buffer the string reallocated away from, is beyond reach.
+// Overwrites a string's bytes, then clears it (wherever a session id is dropped). Best effort:
+// earlier copies and reallocated buffers are beyond reach.
 void WarehouseWipe(std::string& s);
 
-// The PoE1 league the revenue panel is set to, read straight from the settings
-// file without touching the DPAPI blob -- cheap enough for another view (the
-// atlas planner's cost card) to poll so its prices follow the panel. "" when
-// nothing is saved yet.
+// The PoE1 league the revenue panel is set to, read from the settings file without touching the
+// DPAPI blob (cheap to poll). "" when nothing is saved yet.
 std::string WarehouseSavedLeague(const std::wstring& exeDir);
 
-// The auto-snapshot interval as it may be saved: off, or 1..6 whole hours.
-// Anything else -- the 5..30-minute choices of the first, removed version
-// included -- reads as off below an hour, else the nearest hour capped at 6, so
-// an old file can never quietly switch a burst-prone schedule back on.
+// The auto-snapshot interval as it may be saved: off, or 1..6 whole hours. Anything else (including
+// old sub-hour values) reads as off below an hour, else the nearest hour capped at 6, so an old file
+// can never switch a burst-prone schedule back on.
 int WarehouseNormalizeAutoMinutes(int minutes);
 
-// ---- request guard: PobTools\warehouse_guard.json -------------------------
-// GGG's rate limit is one pool per ACCOUNT: the standalone tool, the atlas
-// planner's embed (another window, maybe another process), the site and trade
-// tools all draw from it. So the rules that keep this tool polite live in one
-// shared file rather than in any one panel:
+// request guard: PobTools\warehouse_guard.json
+// GGG's rate limit is one pool per ACCOUNT (standalone tool, atlas planner embed, site, trade tools),
+// so the politeness rules live in one shared file rather than in any panel:
 //   * a snapshot starts at most once per kWarehouseSnapshotCooldownS, manual
 //     or automatic, whichever panel starts it;
 //   * a pause the server asked for (a 429's Retry-After, an exhausted bucket's

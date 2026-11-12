@@ -16,9 +16,8 @@ bool PlayAudioFileVol(const std::wstring& path, int volumePct);
 // Stop whatever is currently playing.
 void StopAudio();
 
-// Is the clip started by PlayAudioFile / PlayAudioFileVol still playing? Asks
-// MCI (one cheap status query); a .wav started by PlayAudioFile goes through
-// PlaySound, which cannot be asked, and reports false.
+// Is the clip started by PlayAudioFile / PlayAudioFileVol still playing? Asks MCI; a .wav started by PlayAudioFile
+// goes through PlaySound, which cannot be asked, and reports false.
 bool AudioIsPlaying();
 // The file last started (empty after StopAudio).
 const std::wstring& AudioCurrentPath();

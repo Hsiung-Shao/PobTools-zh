@@ -1,5 +1,5 @@
 // Self-test for atlas_threads (3.30 Threads of Creation rules + persistence).
-// Written from the spec / header only. Folded into --atlas-selftest.
+// Folded into --atlas-selftest.
 
 #include "atlas_threads.h"
 
@@ -61,7 +61,7 @@ int RunThreadSelfTest(const std::wstring& /*exeDir*/, std::string& out)
 	ThreadRules keystone;
 	keystone.singleTypeKeystone = true;
 
-	// --- CanPlace ---
+	// CanPlace
 	rep.check(db.CanPlace({}, A, normal) == ThreadPlace::kOk, "T1 0 槽放已知絲線 A 回 kOk");
 	rep.check(db.CanPlace({}, "Test/Nope", normal) == ThreadPlace::kUnknown, "T2 放不存在的 id 回 kUnknown");
 	rep.check(db.CanPlace({ {A, 1}, {B, 1}, {C, 1} }, D, normal) == ThreadPlace::kFull,
@@ -71,7 +71,7 @@ int RunThreadSelfTest(const std::wstring& /*exeDir*/, std::string& out)
 	rep.check(db.CanPlace({ {A, 1} }, B, keystone) == ThreadPlace::kKeystoneMixed,
 	          "T5 關鍵天賦下已有 A 放 B 回 kKeystoneMixed");
 
-	// --- max / clamp ---
+	// max / clamp
 	rep.check(ThreadMaxCount(normal) == 8 && ThreadMaxCount(keystone) == 10,
 	          "T6a 單槽上限一般 8、關鍵天賦 10",
 	          std::to_string(ThreadMaxCount(normal)) + "/" + std::to_string(ThreadMaxCount(keystone)));
@@ -81,7 +81,7 @@ int RunThreadSelfTest(const std::wstring& /*exeDir*/, std::string& out)
 	          ThreadClampCount(0, keystone) == 1 && ThreadClampCount(-3, keystone) == 1,
 	          "T7 count 為 0 或 -3 時夾到 1");
 
-	// --- Sanitize ---
+	// Sanitize
 	{
 		// unknown X, duplicate B, over-cap A, 6 entries -> truncated to 3
 		std::vector<ThreadSlot> in = { {B, 2}, {"Test/Nope", 1}, {A, 20}, {B, 5}, {C, 1}, {D, 1} };
@@ -115,7 +115,7 @@ int RunThreadSelfTest(const std::wstring& /*exeDir*/, std::string& out)
 		rep.check(!empty.available() && r == in, "T11 未載入資料時 Sanitize 原樣回傳輸入", Describe(r));
 	}
 
-	// --- persistence ---
+	// persistence
 	{
 		AtlasBuildFile touched;
 		touched.ParseDoc(u8"{\"builds\":[{\"name\":\"a\",\"alloc\":[7]}]}");

@@ -9,13 +9,9 @@
 
 #include "passive_tree_data.h"
 
-// ---- byte readers -------------------------------------------------------------
-//
-// Every read is bounds-checked and reports failure rather than clamping. These
-// files are 70-100 MB of variable-length records: one bad length walks the
-// cursor into the middle of another record and everything after it decodes into
-// plausible-looking nonsense. Stopping at the first impossible read is the only
-// way that stays detectable.
+// Byte readers: every read is bounds-checked and reports failure rather than clamping. The files are
+// 70-100 MB of variable-length records; one bad length decodes everything after it into plausible
+// nonsense, so stopping at the first impossible read is the only detectable behaviour.
 
 namespace {
 
@@ -101,7 +97,7 @@ bool TJIsAbyss(int jewelType) { return jewelType >= 7 && jewelType <= 11; }
 bool TJAbyssUsable(int jewelType) { return jewelType >= 7 && jewelType <= 11; }
 bool TJIsZorath(int jewelType) { return jewelType == 11; }
 
-// ---- container parse ----------------------------------------------------------
+// Container parse
 
 bool TJAbyssParse(const std::string& blob, int jewelType, TJAbyssLUT& out, std::string* err)
 {
@@ -187,10 +183,8 @@ bool TJAbyssParse(const std::string& blob, int jewelType, TJAbyssLUT& out, std::
 		}
 	}
 
-	// The walk is the check. Every record is variable length, so landing exactly
-	// on the end of the file means no length was misread anywhere; landing
-	// anywhere else means the layout is not what this code believes it is, and
-	// the block offsets above are already worthless.
+	// The walk is the check: records are variable length, so landing exactly on the end of the file
+	// means no length was misread; anywhere else means the layout is not what we believe.
 	if (o != blob.size())
 		return fail(u8"深淵查表檔走訪結束於位元組 " + std::to_string(o) + u8",但檔案長 " +
 		            std::to_string(blob.size()) + u8" —— 格式與本程式認知不符");
@@ -207,8 +201,7 @@ int TJAbyssSeedIndex(const TJAbyssLUT& lut, int seed)
 	return off / lut.seedInc;
 }
 
-// Where each seed's record starts inside one block. Records vary in length, so
-// this is a linear count; PoB caches it the same way and for the same reason.
+// Where each seed's record starts inside one block (records vary in length, so a linear count; PoB caches it too).
 static const std::vector<size_t>* block_seed_offsets(const std::string& blob, TJAbyssLUT& lut,
                                                      int blockKey,
                                                      bool (*skipper)(const std::string&, size_t&))
@@ -291,9 +284,7 @@ bool TJAbyssReadAscendancies(const std::string& blob, TJAbyssLUT& lut, int seed,
 	if (si < 0) return false;
 	for (std::map<std::string, size_t>::const_iterator it = lut.ascOffsets.begin();
 	     it != lut.ascOffsets.end(); ++it) {
-		// Ascendancy blocks are keyed by name, not by an int, so they cannot use
-		// the same offset cache as the node blocks. They are 21 short records
-		// each, so walking them is cheap enough not to need one.
+		// Ascendancy blocks are keyed by name, so no offset cache; they are 21 short records, cheap to walk.
 		size_t o = it->second;
 		for (int s = 0; s < si; s++)
 			if (!skip_ascendancy_record(blob, o)) return false;
@@ -315,21 +306,12 @@ double TJAbyssRollFor(const TJAbyssComponent& c, const TJStatMod& m)
 	const int i = m.index - 1;
 	if (i < 0 || i >= (int)c.rolls.size()) return 0.0;
 	double v = (double)c.rolls[i];
-	// "(15-20)% reduced Critical Strike Chance" stores its roll as -16. The
-	// direction is already in the word "reduced", so printing the sign as well
-	// would state the opposite of what the game shows.
-	//
-	// This is a DELIBERATE divergence from PoB's PassiveSpec.lua, which feeds
-	// component.rolls[statMod.index] through unchanged and would render
-	// "-16% reduced". PoB's own TreeTab does flip it, via
-	// getAbyssJewelComponentRoll, so PoB disagrees with itself; the game settles
-	// it. Every stat that can receive a negative roll here -- there are three,
-	// all worded "reduced" -- carries a `negate` handler on its negative branch
-	// in GGPK's stat descriptions, so the game displays the magnitude.
-	//
-	// Only flip when the stat's own range is non-negative: one Abyss entry
-	// (abyss_hypnotic_notable_18, enemies_you_wither_have_all_resistances_%)
-	// declares a negative range and must keep its sign.
+	// "(15-20)% reduced Critical Strike Chance" stores its roll as -16; the direction is already in
+	// "reduced", so printing the sign too would state the opposite of the game.
+	// DELIBERATE divergence from PoB's PassiveSpec.lua (which would render "-16% reduced"; PoB's TreeTab
+	// flips it via getAbyssJewelComponentRoll): all three stats that get negative rolls carry a `negate`
+	// handler in GGPK's stat descriptions. Only flip when the stat's own range is non-negative: one entry
+	// (abyss_hypnotic_notable_18, enemies_you_wither_have_all_resistances_%) declares a negative range and keeps its sign.
 	if (v < 0 && m.min >= 0) v = -v;
 	return v;
 }
@@ -355,10 +337,8 @@ TJTransform TJAbyssApply(const TJDataset& ds, const TJAbyssMod& mod)
 		out.ok = true;
 		if (replaces) {
 			out.replaced = true;
-			// Abyss additions carry the game's own placeholder name ("Notable 39")
-			// and no Chinese one, so only a replacement contributes a name. The
-			// caller shows the stat lines for the rest, which is what the game
-			// shows too.
+			// Abyss additions carry the game's placeholder name ("Notable 39") and no Chinese one, so only a
+			// replacement contributes a name; the caller shows stat lines for the rest (as the game does).
 			out.newName = e->dn;
 			out.newNameZh = e->dnZh;
 		}
@@ -416,10 +396,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 	if (!lut.ok || q.wants.empty()) return hits;
 	const bool byNode = (lut.fmt == "ABYN");
 	if (byNode) {
-		// Zorath scores whatever the caller nominated. Refusing an empty list is
-		// the point: "no candidates" means the caller has not said what the seed
-		// should be judged on, and scoring every passive in the tree instead
-		// would answer a question nobody asked.
+		// Zorath scores whatever the caller nominated; an empty list is refused (scoring the whole tree would answer an unasked question).
 		if (q.nodeIds.empty()) return hits;
 	} else if (lut.fmt != "ABYS" || lut.blockOffsets.find(socketId) == lut.blockOffsets.end()) {
 		return hits;
@@ -465,7 +442,7 @@ std::vector<TJSeedHit> TJAbyssSearch(const TJDataset& ds, const std::string& blo
 	return hits;
 }
 
-// ---- headless entry points ----------------------------------------------------
+// Headless entry points
 
 static void abyss_console()
 {
@@ -476,10 +453,7 @@ static void abyss_console()
 	}
 }
 
-// Write a UTF-8 report next to the exe. This is a WIN32 GUI binary: it has no
-// stdout of its own, and the console it attaches to belongs to whoever launched
-// it, so piped output is lost. Every headless check here goes to a file for
-// that reason.
+// Write a UTF-8 report next to the exe (a WIN32 GUI binary has no stdout of its own, so every headless check goes to a file).
 static void abyss_write_report(const std::wstring& exeDir, const wchar_t* name,
                                const std::string& body)
 {
@@ -491,10 +465,8 @@ static void abyss_write_report(const std::wstring& exeDir, const wchar_t* name,
 	CloseHandle(h);
 }
 
-// "--abyss <jewelType> <socketId> <seed>": report what one jewel does in one
-// socket, to abyss_cli.txt. This runs the same composition the detail panel
-// does -- read the record, map each conquered id onto the tree, render its
-// lines -- so what lands in the file is what the window shows.
+// "--abyss <jewelType> <socketId> <seed>": report to abyss_cli.txt what one jewel does in one socket,
+// using the same composition as the detail panel (read record, map ids onto the tree, render lines).
 int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int seed)
 {
 	abyss_console();
@@ -540,9 +512,7 @@ int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int see
 
 	std::map<int, TJAbyssMod> got;
 	if (TJIsZorath(jewelType)) {
-		// Zorath is keyed by passive, not by socket, so "what does this socket
-		// take" has no answer. Report what the seed does to the passives around
-		// the socket instead — and say that is what it is.
+		// Zorath is keyed by passive, not socket, so "what does this socket take" has no answer: report what the seed does to nearby passives.
 		if (!haveTree) {
 			emit("Zorath needs the passive tree to pick the passives around a socket");
 			return finish(1);
@@ -631,14 +601,9 @@ int RunAbyssCli(const std::wstring& exeDir, int jewelType, int socketId, int see
 	return finish(0);
 }
 
-// ---- selftest -----------------------------------------------------------------
-//
-// The pinned values below were read off PoB 2.67.1's shipped containers and
-// cross-checked against Parazeya/abyss-jewels' independent walk (4494 of 4494
-// (socket, seed) node sets identical; the same comparison with the seed shifted
-// by one matched 0 of 4494, so it can tell seeds apart). If the game's passive
-// tree changes these move, and the failure text says so — a stale pin should
-// read as "the data moved", not as "the reader broke".
+// Selftest. The pinned values were read off PoB 2.67.1's containers and cross-checked against
+// Parazeya/abyss-jewels' independent walk (4494/4494 node sets identical; seed shifted by one matched 0).
+// If the game's passive tree changes the pins move, and the failure text says "data moved", not "reader broke".
 
 static std::string join_lines(const std::vector<std::string>& v)
 {
@@ -746,10 +711,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      std::to_string(fromFile.size()) + " file");
 		}
 
-		// A4b the scope filter must see keystones. The Abyss walk conquers them,
-		// but the Legion node index does not carry keystones at all, so the
-		// index-only classification files every one of them under "small". That
-		// is the bug this asserts against: same node, two answers.
+		// A4b the scope filter must see keystones: the Legion node index has none, so index-only classification files them as "small".
 		{
 			std::map<int, TJAbyssMod> rec;
 			int keystones = 0, keystonesBigWithTree = 0, keystonesBigWithoutTree = 0;
@@ -806,9 +768,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				check(!t.newNameZh.empty(), "a replacement carries a Chinese name", t.newNameZh);
 			}
 
-			// an addition: the passive keeps itself and gains stats. Both of its
-			// two rolls must land in the right line, which is what would break if
-			// the rolls were read in the wrong order.
+			// an addition: the passive keeps itself and gains stats; both rolls must land in the right line.
 			it = got.find(5126);
 			if (it == got.end()) {
 				check(false, "node 5126 present");
@@ -824,8 +784,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 
 		// A7 the search agrees with the reader about what a hit is.
 		{
-			// Pick a template this jewel really produces, so the query is not
-			// vacuous by construction.
+			// Pick a template this jewel really produces (a non-vacuous query).
 			std::vector<TJStatTemplate> tmpl = TJAbyssStatTemplates(ds, 7);
 			check(tmpl.size() > 20, "Tecrod offers a stat picker list",
 			      std::to_string(tmpl.size()));
@@ -840,10 +799,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				q.jewelType = 7;
 				q.scope = 0;
 				q.wants.push_back({ want, 0.0, 1.0 });
-				// Timed, because a search is a full sweep of 7901 seeds and the UI
-				// runs it on a worker while the window keeps drawing: if this
-				// ever creeps into tens of seconds that is a product problem, not
-				// a detail. Reported, not asserted — machines differ.
+				// Timed (a full sweep of 7901 seeds on a UI worker); reported, not asserted -- machines differ.
 				const DWORD t0 = GetTickCount();
 				std::vector<TJSeedHit> hits = TJAbyssSearch(ds, blob, lut, q, 2491, 20, &nodeKind, nullptr);
 				const DWORD dt = GetTickCount() - t0;
@@ -856,8 +812,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 					ordered = ordered && hits[i - 1].weight >= hits[i].weight;
 				check(ordered, "results are ordered by weight");
 
-				// Re-count one hit by hand through the reader. If the search and
-				// the reader ever disagree the number the UI shows is fiction.
+				// Re-count one hit by hand through the reader (search and reader must agree).
 				if (!hits.empty()) {
 					std::map<int, TJAbyssMod> rec;
 					TJAbyssReadSocket(ds, blob, lut, 2491, hits[0].seed, rec);
@@ -884,9 +839,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			}
 		}
 
-		// A8 a damaged container must be refused, not half-read. Chopping the
-		// tail cannot change any header field, so only the end-of-walk check can
-		// catch it — this is what proves that check is load-bearing.
+		// A8 a damaged container must be refused, not half-read (a chopped tail changes no header field; only the end-of-walk check catches it).
 		{
 			TJAbyssLUT bad;
 			std::string berr;
@@ -901,9 +854,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// A9 the node set must not depend on the jewel type — the walk that picks
-	// the passives is shared, only what they become differs. Checked against a
-	// second file so a shared bug in one decode path cannot hide it.
+	// A9 the node set must not depend on the jewel type (shared walk); checked against a second file.
 	{
 		std::string ulaman;
 		TJAbyssLUT lut8;
@@ -932,10 +883,8 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			      "Tecrod and Ulaman conquer the same passives for the same (socket, seed)",
 			      std::to_string(compared) + " pairs compared");
 
-			// A10 the negative-roll rule. Stored negatives only occur on two of
-			// the four jewels, so a test written against Tecrod alone would never
-			// reach it. Assert the stored value really is negative first, or the
-			// rule below is being "confirmed" by a case that never needed it.
+			// A10 the negative-roll rule. Stored negatives occur on only two of the four jewels; assert the
+			// stored value really is negative first, or the rule is "confirmed" by a case that never needed it.
 			std::map<int, TJAbyssMod> rec;
 			if (!TJAbyssReadSocket(ds, ulaman, lut8, 2491, 120, rec) || !rec.count(34601)) {
 				check(false, "read Ulaman socket 2491 seed 120 node 34601");
@@ -955,11 +904,8 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				      "(the word 'reduced' already carries the direction)", joined);
 			}
 
-			// A10b the other half of that rule, and the reason it is a rule
-			// rather than "always flip". One Abyss entry declares a negative
-			// range; flipping it would state the opposite. Pure-function checks,
-			// because a fixture for the negative-range entry would pin a seed
-			// that game data can move.
+			// A10b the other half: one entry declares a negative range and must keep its sign. Pure-function
+			// checks (a fixture would pin a seed that game data can move).
 			{
 				TJAbyssComponent c;
 				c.type = 2;
@@ -971,8 +917,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				check(TJAbyssRollFor(c, pos) == 16.0 && TJAbyssRollFor(c, neg) == -16.0,
 				      "the flip is conditioned on the stat's own range, not on the sign alone");
 
-				// And the negative-range case must actually exist in the data,
-				// or that branch is guarding against nothing.
+				// The negative-range case must actually exist in the data.
 				bool haveNegRange = false;
 				for (const auto& e : ds.additions)
 					for (const auto& kv : e.stats)
@@ -983,9 +928,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 		}
 	}
 
-	// A11 Zorath. Its container answers a different question, so it gets a
-	// different set of checks: what one passive becomes is exact, which passives
-	// apply is not knowable here, and the Ascendancy pick needs no path at all.
+	// A11 Zorath answers a different question: what one passive becomes is exact, which passives apply is not knowable, the Ascendancy pick needs no path.
 	{
 		std::string zorath;
 		TJAbyssLUT lz;
@@ -1006,9 +949,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 			check(!TJAbyssReadSocket(ds, zorath, lz, 2491, 100, none) && none.empty(),
 			      "the socket reader refuses an ABYN container rather than misreading it");
 
-			// A11a one passive, exactly. Same value the pre-container selftest
-			// pinned for (seed 100, node 6) — the container reorganised the file
-			// without changing the answer.
+			// A11a one passive, exactly (seed 100, node 6).
 			TJAbyssMod mod;
 			if (!TJAbyssReadNode(ds, zorath, lz, 6, 100, mod) || mod.size() != 1) {
 				check(false, "read Zorath node 6 seed 100");
@@ -1024,9 +965,7 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				      "and rolls 25 into its own range", join_lines(t.lines));
 			}
 
-			// A11b every passive has an answer for every seed. This is what makes
-			// the socket a place to look rather than a lookup key, so it is worth
-			// asserting rather than remembering.
+			// A11b every passive has an answer for every seed (the socket is a place to look, not a lookup key).
 			{
 				int have = 0;
 				const int probe[] = { 6, 94, 127, 223, 224, 238 };
@@ -1050,11 +989,8 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				      std::to_string(got.size()) + " of 2 returned");
 			}
 
-			// A11d the Ascendancy pick. No path is involved, so this half is
-			// exact. Ascendant getting nothing is the discriminating case: all of
-			// its notables cost five points and the jewel cannot rewrite one
-			// costing four or more, which is also what Parazeya's in-game
-			// observations show.
+			// A11d the Ascendancy pick (exact, no path). Ascendant getting nothing is the discriminating case:
+			// its notables cost five points and the jewel cannot rewrite one costing four or more.
 			std::map<std::string, std::vector<int> > a100, a368;
 			if (!TJAbyssReadAscendancies(zorath, lz, 100, a100) ||
 			    !TJAbyssReadAscendancies(zorath, lz, 368, a368)) {
@@ -1069,15 +1005,12 @@ int RunAbyssSelfTest(const std::wstring& exeDir)
 				      a100["Deadeye"][0] == 2872,
 				      "Deadeye seed 100 picks node 2872",
 				      a100["Deadeye"].empty() ? "(none)" : std::to_string(a100["Deadeye"][0]));
-				// Anti-vacuity: if the picks never moved with the seed, the reader
-				// could be returning the same record every time and still "pass".
+				// Anti-vacuity: the picks must move with the seed.
 				check(a100["Berserker"] != a368["Berserker"],
 				      "a different seed picks a different Ascendancy notable");
 			}
 
-			// A11e the search must refuse to guess. With no candidate passives it
-			// has not been told what to judge, and scoring the whole tree instead
-			// would answer a question nobody asked.
+			// A11e the search must refuse to guess when given no candidate passives.
 			{
 				TJSearchQuery qz;
 				qz.jewelType = 11;

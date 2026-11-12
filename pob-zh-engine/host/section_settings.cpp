@@ -37,7 +37,7 @@ void DrawSettingsSection(EditorShell& s)
 	ImGui::TextDisabled(u8"設定");
 	ImGui::Spacing();
 
-	// --- language / locale ---
+	// language / locale
 	ImGui::SeparatorText(u8"語言");
 	struct Loc { const char* code; const char* label; };
 	static const Loc locs[] = {
@@ -62,7 +62,7 @@ void DrawSettingsSection(EditorShell& s)
 	}
 	ImGui::TextDisabled(u8"此設定與啟動器共用；物品名稱顯示用，輸出的 .filter 仍為英文。");
 
-	// --- economy ---
+	// economy
 	ImGui::Spacing();
 	ImGui::SeparatorText(u8"經濟估值");
 	if (ImGui::Checkbox(u8"啟用經濟估值（顯示估值與建議分階）", &s.economyEnabled)) {
@@ -81,7 +81,7 @@ void DrawSettingsSection(EditorShell& s)
 	if (ImGui::SmallButton("Standard")) { s.league = "Standard"; s.economy.SetLeague(s.league); SaveEditorSettings(s); }
 	ImGui::TextDisabled(u8"線上價格在啟用後抓取；無網路或來源失效時自動略過，不影響其他功能。");
 
-	// --- sound library ---
+	// sound library
 	ImGui::Spacing();
 	ImGui::SeparatorText(u8"音效");
 	if (ImGui::Button(u8"開啟音效庫（試聽／設定資料夾）")) ImGui::OpenPopup("##setsndlib");
@@ -92,7 +92,7 @@ void DrawSettingsSection(EditorShell& s)
 	}
 	ImGui::TextDisabled(u8"設定自訂音效資料夾並試聽；在「客製規則／樣式」的自訂音效處可指派與播放。");
 
-	// --- filter folder ---
+	// filter folder
 	ImGui::Spacing();
 	ImGui::SeparatorText(u8"過濾器資料夾");
 	if (s.initialDir.empty()) {

@@ -1,13 +1,8 @@
 // 倉庫收益統計 — the POESESSID (test-channel) stash provider.
 //
-// Talks to the legacy character-window endpoints on www.pathofexile.com with the
-// user's own session cookie. This channel exists to prove the feature out before
-// the official OAuth application lands; nothing above IStashProvider knows which
-// channel served it.
-//
-// The session id is an account credential. It goes into exactly one place -- the
-// Cookie request header -- and never into an error string, a log line or a
-// report file.
+// Talks to the legacy character-window endpoints on www.pathofexile.com with the user's own session cookie (test
+// channel until the OAuth application lands; nothing above IStashProvider knows the channel).
+// The session id is an account credential: only in the Cookie request header, never in an error string, log line or report file.
 #include "warehouse_provider.h"
 
 #include "http_client.h"
@@ -26,8 +21,7 @@ namespace {
 
 constexpr wchar_t kHost[] = L"www.pathofexile.com";
 
-// RFC 3986 unreserved set; everything else (spaces, CJK bytes) is escaped the
-// way the site itself does it. Account names and league names both need this.
+// RFC 3986 unreserved set; everything else (spaces, CJK bytes) is escaped as the site does. For account and league names.
 std::wstring UrlEncode(const std::string& utf8)
 {
 	static const wchar_t hex[] = L"0123456789ABCDEF";
@@ -94,14 +88,11 @@ bool ParseStashTabJson(const std::string& body, int tabIndex,
 		if (err) *err = m;
 		return false;
 	};
-	// The whole walk lives inside one try: value(key, default) throws on a
-	// present-but-null field, and an exception escaping a worker thread kills
-	// the process. Anything unexpected degrades to "parse failed".
+	// The whole walk is in one try: value(key, default) throws on a present-but-null field, and an exception escaping a worker thread kills the process.
 	try {
 	ordered_json doc = ordered_json::parse(body);
 	if (!doc.is_object()) return fail(u8"回應不是 JSON 物件");
-	// GGG's own refusals come back as 200 with {"error":{...}} -- surface the
-	// shape without copying the message (it is not ours and not localised).
+	// GGG's own refusals come back as 200 with {"error":{...}}; surface the shape, not the message (not ours, not localised).
 	if (doc.find("error") != doc.end())
 		return fail(u8"API 回應帶有錯誤: " + StashApiErrorText(body));
 
@@ -133,8 +124,7 @@ bool ParseStashTabJson(const std::string& body, int tabIndex,
 		if (ji != doc.end() && ji->is_array()) {
 			for (const auto& it : *ji) {
 				if (!it.is_object()) continue;
-				// One malformed item (a null where a value should be) skips that
-				// item, not the whole tab.
+				// One malformed item (a null where a value should be) skips that item, not the tab.
 				try {
 				StashItemRaw raw;
 				raw.name = StripNameMarkup(it.value("name", std::string()));
@@ -192,8 +182,7 @@ void SimpleThrottle::OnResponse(long long nowMs, int status,
 	};
 
 	if (status == 429) {
-		// Retry-After is seconds; absent means the server did not say, and 60 is
-		// the conservative reading. +1s covers clock skew between us and them.
+		// Retry-After is seconds; absent = 60 (conservative). +1s covers clock skew.
 		int ra = ToInt(get("retry-after"), 60);
 		long long until = nowMs + ((long long)ra + 1) * 1000;
 		if (until > blockedUntilMs_) blockedUntilMs_ = until;
@@ -237,14 +226,12 @@ void SimpleThrottle::OnResponse(long long nowMs, int status,
 			const int maxHits = lv[0], windowS = lv[1], penaltyS = lv[2], curHits = sv[0];
 			if (maxHits <= 0) continue;
 			if (curHits >= maxHits) {
-				// Bucket exhausted: back off for the penalty (or the window when the
-				// server reports no penalty).
+				// Bucket exhausted: back off for the penalty (or the window when none is reported).
 				long long until = nowMs + (long long)(penaltyS > 0 ? penaltyS : windowS) * 1000;
 				if (until > blockedUntilMs_) blockedUntilMs_ = until;
 			} else if (curHits * 2 >= maxHits) {
-				// Past the halfway mark: stretch the spacing so the bucket cannot be
-				// reached inside its window. Twice the even-spacing rate keeps a
-				// safety margin over requests other tools may be making.
+				// Past the halfway mark: stretch the spacing so the bucket cannot be reached inside its window
+				// (twice the even-spacing rate leaves margin over other tools' requests).
 				long long spacing = maxHits > 0 ? ((long long)windowS * 1000 / maxHits) * 2 : 0;
 				long long until = lastReqMs_ + spacing;
 				if (until > blockedUntilMs_) blockedUntilMs_ = until;
@@ -347,17 +334,12 @@ public:
 		return true;
 	}
 
-	// Four different 403s, told apart by the body:
+	// Four different 403s, told apart by the body (lumping the HTML ones once reported an expired session as "blocked by Cloudflare"):
 	//   JSON                  -> GGG refusing this session (Auth)
-	//   Cloudflare challenge  -> edge protection (Blocked); re-entering the
-	//                            session id would not help
-	//   "Permission Denied"   -> GGG's own page for an unauthenticated request:
-	//                            byte-identical with the stored cookie and with
-	//                            no cookie at all (2026-09-11), i.e. the session
-	//                            expired -- or the account name does not match it
+	//   Cloudflare challenge  -> edge protection (Blocked); re-entering the session id would not help
+	//   "Permission Denied"   -> GGG's page for an unauthenticated request, byte-identical with the stored cookie and
+	//                            with no cookie: the session expired, or the account name does not match it
 	//   any other HTML page   -> the site refusing this REQUEST (Forbidden)
-	// Lumping the HTML ones together once reported an expired session as
-	// "blocked by Cloudflare".
 	static StashError classify403(const std::string& body, std::string* err)
 	{
 		if (!looksLikeLoginPage(body)) {
@@ -408,12 +390,9 @@ private:
 		return s;
 	}
 
-	// Cloudflare's challenge / block pages, by their own fixed markers. Two
-	// markers that look right and are NOT: the word "cloudflare" (ordinary pages
-	// carry /cdn-cgi/ links) and "challenge-platform" -- Cloudflare's JS
-	// detection script (/cdn-cgi/challenge-platform/scripts/jsd/main.js) is
-	// injected into EVERY page, including GGG's own "Permission Denied" page,
-	// which it would then misreport as a Cloudflare block.
+	// Cloudflare's challenge / block pages, by their own fixed markers. NOT markers: the word "cloudflare" (ordinary
+	// pages carry /cdn-cgi/ links) and "challenge-platform" (its JS detection script is injected into EVERY page,
+	// incl. GGG's "Permission Denied", which would be misreported as a block).
 	static bool looksLikeCloudflare(const std::string& body)
 	{
 		const std::string s = lowerHead(body, body.size());
@@ -422,8 +401,7 @@ private:
 		       s.find("attention required") != std::string::npos;
 	}
 
-	// The page's <title>, trimmed and capped: short, never secret, and exactly
-	// what tells two HTML refusals apart in a report.
+	// The page's <title>, trimmed and capped: short, never secret, and what tells two HTML refusals apart.
 	static std::string htmlTitle(const std::string& body)
 	{
 		const std::string s = lowerHead(body, 16384);
@@ -500,9 +478,7 @@ private:
 			if (err) *err = u8"請求過於頻繁 (HTTP 429)，已自動退避";
 			return false;
 		default: {
-			// GGG answers malformed or unsupported requests with 400/404 and a
-			// JSON {"error":{...}} whose message is the only thing that says WHY
-			// (a bare "HTTP 400" once left a realm question unanswerable).
+			// GGG answers malformed / unsupported requests with 400/404 and JSON {"error":{...}} whose message is the only WHY.
 			const std::string why = StashApiErrorText(res.body);
 			const bool refused = res.status == 400 || res.status == 404;
 			if (kind) *kind = refused ? StashError::Forbidden : StashError::Network;

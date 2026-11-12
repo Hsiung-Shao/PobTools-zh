@@ -58,11 +58,9 @@ struct AtlasNode {
 	std::vector<std::string> EffStats() const;
 	// EffStats for the stat panel. Most options are half a sentence finishing the
 	// base line ("...Shrines in your Maps to be of type" + "Gloom Shrine"), and
-	// several nodes share one base line: summed as separate lines the panel
-	// would show a bare "Gloom Shrine" and add four nodes' "100%" into "400%".
-	// So each base line carries the pick ("<base>: <pick>"), which keeps it a
-	// distinct key. The joiner is ours, not game wording. An unpicked node
-	// contributes nothing: its base line alone is that same half sentence.
+	// several nodes share one base line, so each base line carries the pick
+	// ("<base>: <pick>", our joiner, not game wording) to stay a distinct key
+	// instead of summing "100%" x4 into "400%". An unpicked node contributes nothing.
 	std::vector<std::string> AggStats() const;
 	// Every line the node can show: `stats` plus all options' lines. Season
 	// diff and translation pruning compare tree definitions, not a build.

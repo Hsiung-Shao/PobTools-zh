@@ -216,8 +216,7 @@ bool Set(const std::string& input)
 
 void Init(const std::wstring& exeDir)
 {
-	// Stamp before reading: if the file changes in between, the stamp is the
-	// old one and the next request notices and reads again.
+	// Stamp before reading: a change in between leaves the old stamp, so the next request reads again.
 	const FileStamp stamp = Stamp(Path(exeDir));
 	std::string token = Load(exeDir);
 	std::lock_guard<std::mutex> lock(tokenMutex);
@@ -228,8 +227,7 @@ void Init(const std::wstring& exeDir)
 
 void NoteRejected(unsigned generation)
 {
-	// Only the token that was actually sent: a 401 arriving after the user saved
-	// a new token must not mark the new one.
+	// Only the token that was actually sent: a late 401 must not mark a token the user saved since.
 	std::lock_guard<std::mutex> lock(tokenMutex);
 	if (generation != 0 && generation == tokenGeneration) rejected = true;
 }
@@ -246,8 +244,7 @@ std::wstring RequestHeaders(const std::wstring& host, unsigned* generation)
 	if (generation) *generation = 0;
 	if (!IsApiHost(host)) return {};
 
-	// Follow the saved file (Init). The file I/O and DPAPI run outside the lock,
-	// so a slow disk cannot freeze the settings page waiting in Set.
+	// Follow the saved file (Init). File I/O and DPAPI run outside the lock so a slow disk cannot freeze Set.
 	std::wstring dir;
 	FileStamp seen;
 	{

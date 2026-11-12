@@ -15,9 +15,8 @@ void ShowEditor(const std::wstring& exeDir, const std::wstring& game, const std:
 
 // As a tab. Caller owns the panel and must Init() it before drawing.
 //
-// The concrete type also exposes TakeSavedFlag(): this editor can be editing the
-// LAUNCHER's own dictionary, so a save means the strings the launcher is drawing
-// with are now stale. The launcher checks it and reloads.
+// The concrete type also exposes TakeSavedFlag(): this editor can edit the LAUNCHER's own dictionary, so a save makes
+// the launcher's strings stale; the launcher checks it and reloads.
 IToolPanel* CreateTranslationEditorPanel();
 bool TranslationEditorPanelSaved(IToolPanel* panel);
 // "前往設定" was pressed in the tab: the launcher opens Settings > Translation

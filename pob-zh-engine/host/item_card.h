@@ -1,9 +1,5 @@
-// PobTools tier-list item card.
-//
-// One item rendered as a card: icon + Chinese name + English name, with optional
-// economy value and a "suggested tier" badge (filled in once the economy service is
-// available; empty otherwise). Display only — the English name is the drag key and
-// the value/badge never change what gets written to the .filter.
+// PobTools tier-list item card: icon + Chinese name + English name, with optional economy value and "suggested tier"
+// badge. Display only -- the English name is the drag key and value/badge never change what is written to the .filter.
 #pragma once
 
 #include <string>

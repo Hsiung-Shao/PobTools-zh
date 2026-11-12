@@ -27,7 +27,7 @@ void DrawAppearanceSection(EditorShell& s)
 	}
 	const TierCategory& cat = s.tierIndex.categories[s.appCategory];
 
-	// --- batch text colour ---
+	// batch text colour
 	ImGui::SeparatorText(u8"批次文字顏色");
 	static float col[3] = { 0.95f, 0.95f, 0.95f };
 	ImGui::SetNextItemWidth(220 * s.scale);
@@ -49,7 +49,7 @@ void DrawAppearanceSection(EditorShell& s)
 	}
 	ImGui::TextDisabled(u8"僅套用到已有 SetTextColor 動作的規則。");
 
-	// --- per-tier style ---
+	// per-tier style
 	ImGui::SeparatorText(u8"逐階樣式");
 	ImGui::BeginChild("##apptiers");
 	for (int ti : cat.tierEntryIdx) {

@@ -1,15 +1,12 @@
 // PobTools filter-editor app shell.
 //
-// The window / GL context / theme / fonts / main loop live in whichever host
-// draws the panel (filter_editor.cpp). Everything the three pages read or mutate
-// lives in EditorShell, and each page is one draw function. This keeps the
-// "display Chinese, output English" invariant: pages only ever mutate the model
-// through the existing English-token paths (FilterDocumentEditor / FilterSet*).
+// The window / GL context / theme / fonts / main loop live in whichever host draws the panel
+// (filter_editor.cpp). Everything the three pages read or mutate lives in EditorShell, each page
+// one draw function. Invariant "display Chinese, output English": pages only mutate the model
+// through the English-token paths (FilterDocumentEditor / FilterSet*).
 //
-// Page-local UI state (the drop preview's canvas, the batch dialog's draft, the
-// sound page's dialogs, a card's text input) used to be function statics, which
-// two filter-editor tabs would have shared. It is held here instead, behind
-// shared_ptrs to types each page defines privately.
+// Page-local UI state is held here behind shared_ptrs (not function statics, which two
+// filter-editor tabs would share).
 #pragma once
 
 #include "filter_data.h"
@@ -33,9 +30,8 @@ enum class Section {
 	Sounds,       // 音效
 };
 
-// One cached row of the block list (1:1 with FilterFile::blocks). Rebuilt as a
-// whole when FilterDocumentEditor::structureVersion changes — translation and
-// summaries must never run inside the list clipper loop.
+// One cached row of the block list (1:1 with FilterFile::blocks). Rebuilt as a whole when
+// FilterDocumentEditor::structureVersion changes — never translate/summarise inside the clipper loop.
 struct BlockListRow {
 	std::string label;      // display text (NeverSink marker or summary)
 	std::string haystack;   // lower-cased label + English + Chinese summary, for search
@@ -68,12 +64,9 @@ struct BlockListEntry {
 
 // A Win32 dialog the UI asked for but which has NOT been opened yet.
 //
-// Common dialogs run their own modal message loop, so opening one from inside a
-// frame stops that frame half-drawn -- and when this editor is a launcher tab, it
-// stops the whole launcher, including the code that keeps docked POB windows
-// hidden. Recording the intent and opening the dialog after the frame has been
-// presented (EdRunDeferredDialogs, called from the panel's RunDeferred) keeps the
-// dialog out of the middle of a frame.
+// Common dialogs run their own modal loop: opened mid-frame they stop the frame half-drawn (and,
+// as a launcher tab, the whole launcher incl. the code hiding docked POB windows). So the intent is
+// recorded and the dialog opens after the frame is presented (EdRunDeferredDialogs, from RunDeferred).
 enum class EdDialog {
 	None,
 	OpenFilter,       // 開啟其他檔案…
@@ -102,9 +95,7 @@ struct EditorShell {
 	std::wstring locale;
 	float scale = 1.0f;
 	bool cjkOk = false;
-	// The container window, so a dialog is owned by it. Never GetActiveWindow():
-	// that returns whatever is active on this thread at the moment of the call,
-	// which is right today only by coincidence.
+	// The container window, so a dialog is owned by it. Never GetActiveWindow() (right only by coincidence).
 	void* hostHwnd = nullptr;
 
 	// Test run (POBTOOLS_TOOL_SHOT / POBTOOLS_FILTER_STATE): the file list comes
@@ -119,7 +110,7 @@ struct EditorShell {
 	// "save first?" (switching files / reloading with unsaved edits)
 	EdPendingAction pendingAction = EdPendingAction::None;
 	std::wstring pendingPath;
-	bool askSaveFirst = false;       // open the dialog next frame
+	bool askSaveFirst = false;
 	bool uiAskOpen = false;          // BeginDialog's open flag for it
 	bool uiOpenMore = false;         // the header's ⋯ menu, opened next frame
 
@@ -148,9 +139,9 @@ struct EditorShell {
 	unsigned rowsVersion = 0;              // doc.structureVersion the caches were built at
 	bool batchMode = false;                // 批量修改: multi-select in the block list
 	std::vector<char> batchSel;            // per-block tick (cleared on rebuild)
-	bool wantBatchDialog = false;          // open the batch dialog next frame
-	bool scrollToSel = false;              // bring the selection into view in the list
-	bool wantDeleteDialog = false;         // open "delete this custom rule?" next frame
+	bool wantBatchDialog = false;
+	bool scrollToSel = false;
+	bool wantDeleteDialog = false;
 
 	// 音效 (lazy-initialised on first page draw)
 	SoundLibraryService sounds;
@@ -177,10 +168,10 @@ struct EditorShell {
 	bool onlineConfirmOpen = false;
 	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
 	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
-	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
+	bool focusSearch = false;        // Ctrl+F
 	bool saveRequest = false;        // Ctrl+S while a field was active: save once it has written its value
 	bool keepBatchSel = false;       // next RebuildRows keeps the ticks (a paste added no rules)
-	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
+	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx
 	std::string search, searchLower;
 	RuleChip chip = RuleChip::All;
 	ChipCounts chipCounts;           // refreshed every frame (EdRefreshRowStates)
@@ -202,9 +193,7 @@ struct EditorShell {
 	std::shared_ptr<SoundsUiState> soundsUi;
 	std::shared_ptr<CardUiState> cardUi;
 
-	// Open a .filter; force=true bypasses the unsaved-changes guard (used by
-	// reload and by the "save first?" dialog once answered). Returns true when
-	// the file was opened.
+	// Open a .filter; force=true bypasses the unsaved-changes guard (reload, answered "save first?").
 	bool OpenByPath(const std::wstring& path, bool force);
 	// Open, or ask "save first?" when there are unsaved edits.
 	void RequestOpen(const std::wstring& path);
@@ -215,9 +204,8 @@ struct EditorShell {
 	bool SaveAs(const std::wstring& path);
 	// A message for the user: kept in status and shown as a toast.
 	void Notify(const std::string& text, bool error = false);
-	// Number of unsaved changes, as the header and the dialogs count them:
-	// modified + added + removed blocks against the baseline. A file whose
-	// edits were all undone by hand counts 0 and is marked clean again.
+	// Number of unsaved changes: modified + added + removed blocks against the baseline
+	// (all edits undone by hand counts 0 and is marked clean).
 	int UnsavedCount();
 };
 
@@ -256,10 +244,8 @@ void EdJournalOnOpen(EditorShell& s);                    // load it, dry-run it,
 void EdJournalOnSave(EditorShell& s, const FilterFile& baseline);   // record the save, write it
 void DrawJournalBanner(EditorShell& s);
 void DrawJournalDialog(EditorShell& s);                  // top level of the window (also the subscription dialogs)
-// A rule's name in the list (section_filteredit.cpp): 【類別】 + the NeverSink tier
-// when it is a known one (T1, 任意…), else up to two key conditions in Chinese,
-// then the first item (or the class). *tierCodeOut: the raw tier code when it
-// was left out of the name ("armors1q1"), "" otherwise.
+// A rule's name in the list (section_filteredit.cpp): 【類別】 + known NeverSink tier, else up to two
+// key conditions in Chinese, then the first item (or class). *tierCodeOut: raw tier code left out of the name, else "".
 std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI18n& i18n, std::string* tierCodeOut);
 // 復原 / 重做 one step (editor_shell.cpp): rebuild, settle the unsaved count,
 // select the rule the step touched, notify.
@@ -285,8 +271,7 @@ void EdRefreshFileList(EditorShell& s);
 // Is block bi inside the custom zone?
 bool EdBlockIsCustom(const EditorShell& s, int bi);
 
-// Open whatever dialog the last frame asked for, and apply the result. Called
-// once per frame AFTER the frame has been presented -- never from inside one.
+// Open whatever dialog the last frame asked for and apply the result; once per frame AFTER presenting.
 void EdRunDeferredDialogs(EditorShell& s);
 
 // --- settings persistence (pob-zh.ini [PobTools]) ---

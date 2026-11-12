@@ -4,9 +4,7 @@
 #define NOMINMAX // windows.h defines min/max as macros and eats std::max at the call site
 #include <windows.h>
 
-// For ImHashStr only: the tab-id check below has to hash the way ImGui does
-// rather than by looking at the string, or it would be testing my reading of
-// ImGui instead of ImGui. No context is created and nothing is drawn.
+// For ImHashStr only: the tab-id check below must hash the way ImGui does. No context is created, nothing is drawn.
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -26,9 +24,7 @@ WinRect ComputeDockRect(int originX, int originY, int clientW, int clientH, int 
 	return WinRect{ originX, originY + stripH, clientW, clientH - stripH };
 }
 
-// How long after a tab switch the "it minimised itself" rule stays disarmed.
-// ShowWindowAsync has not necessarily landed yet, and the transient state looks
-// exactly like a deliberate minimise.
+// How long after a tab switch the "it minimised itself" rule stays disarmed (ShowWindowAsync may not have landed; the transient state looks like a deliberate minimise).
 static const unsigned long long kSwitchGraceMs = 600;
 
 TabAction DecideTab(bool hostMinimised, const TabState& t)
@@ -36,10 +32,8 @@ TabAction DecideTab(bool hostMinimised, const TabState& t)
 	// The container is the single source of truth for "is this app on screen".
 	// Docked windows follow it; they never drive it while it is minimised.
 	if (hostMinimised || !t.isActive) return TabAction::Hide;
-	// Showing and positioning are deliberately different frames. SW_SHOWNOACTIVATE
-	// restores a window to its OWN last size and position, which undoes the docking
-	// geometry -- so this frame only shows it and a later one moves it. Doing both
-	// at once raced, and the window ended up back at its pre-dock size.
+	// Showing and positioning are deliberately different frames: SW_SHOWNOACTIVATE restores the window's OWN last
+	// geometry (undoing the docking), so this frame only shows it and a later one moves it (both at once raced).
 	return t.hidden ? TabAction::Show : TabAction::Position;
 }
 
@@ -48,10 +42,8 @@ HostDecision DecideHost(const HostDecisionIn& in)
 	HostDecision out;
 	if (in.hostMinimised || !in.haveActiveTab) return out;
 	if (in.activeTabMinimised) {
-		// There is deliberately no "docked window is up but the container is
-		// minimised -> restore the container" rule. That is indistinguishable from
-		// the user having just minimised the container themselves, and it made the
-		// window spring straight back every time they tried.
+		// Deliberately no "docked window is up but the container is minimised -> restore the container" rule: it is
+		// indistinguishable from the user just minimising the container, and the window sprang back every time.
 		out.minimiseContainer = in.msSinceTabSwitch >= kSwitchGraceMs;
 	} else {
 		out.sinkContainer = true;
@@ -74,9 +66,7 @@ bool RequestClose(void* hwnd)
 {
 	HWND h = (HWND)hwnd;
 	if (!h || !IsWindow(h)) return false;
-	// PostMessage, not SendMessage: the target belongs to another process and may
-	// be busy for seconds at a time (POB recalculating), which would block the
-	// caller's frame loop for as long as it took.
+	// PostMessage, not SendMessage: the target is another process and may be busy for seconds (POB recalculating), blocking the frame loop.
 	return !!PostMessageW(h, WM_CLOSE, 0, 0);
 }
 
@@ -102,8 +92,7 @@ std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring&
 	if (caption.empty()) return std::wstring();   // unreadable: keep what the tab has
 
 	std::wstring s = caption;
-	// Matched as a SUFFIX rather than searched for, so a build actually called
-	// "Path of Building" does not get its own name eaten out of the middle.
+	// Matched as a SUFFIX, not searched for, so a build actually called "Path of Building" keeps its name.
 	static const wchar_t* kSuffix = L" - Path of Building";
 	const size_t suffixLen = wcslen(kSuffix);
 	if (s.size() > suffixLen && s.compare(s.size() - suffixLen, suffixLen, kSuffix) == 0) {
@@ -111,23 +100,14 @@ std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring&
 	} else if (s == L"Path of Building") {
 		s.clear();   // no build loaded yet
 	} else {
-		// Not POB, so the caption carries nothing the tab does not already say.
-		//
-		// Only POB has a caption worth following: it puts the build name in it and
-		// changes it as the user works. A tool's caption is fixed ("PobTools —
-		// 輿圖策略"), so adopting it merely replaced a clean tab label with the same
-		// words plus a redundant prefix. Taking the caption "as-is" whenever it did
-		// not look like POB was the wrong rule, and this is the case it got wrong.
+		// Not POB, so the caption says nothing the tab does not: only POB's caption (build name, changing as the user
+		// works) is worth following; a tool's is fixed ("PobTools — 輿圖策略") and would add a redundant prefix.
 		return std::wstring();
 	}
 
-	// POB appends the class in parentheses -- "name (Elementalist)" from
-	// PassiveSpec.lua:2307, "name (Elementalist + X)" with a secondary
-	// ascendancy, or "name (char, class, league)" from ImportTab.lua:1249 --
-	// always as the caption's FINAL group. The tab exists to tell builds apart
-	// and the build's own name does that; the class annotation is what pushed
-	// real names past the 28-char clip. Only the last group goes, so a build
-	// name that itself contains parentheses keeps them.
+	// POB appends the class in parentheses as the caption's FINAL group ("name (Elementalist)" PassiveSpec.lua:2307,
+	// "name (Elementalist + X)", "name (char, class, league)" ImportTab.lua:1249). The build name tells builds
+	// apart and the annotation pushes names past the 28-char clip; only the last group goes, so parentheses in the name stay.
 	if (!s.empty() && s.back() == L')') {
 		const size_t open = s.rfind(L" (");
 		if (open != std::wstring::npos && open > 0) s.erase(open);
@@ -145,7 +125,7 @@ std::wstring ShortenWindowTitle(const std::wstring& caption, const std::wstring&
 	return s;
 }
 
-// ---- selftest ----------------------------------------------------------------
+// selftest
 
 int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 {
@@ -164,15 +144,12 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 	};
 
 	{
-		// The ordinary case: container client at screen (100,50), 1400x900, with a
-		// 31px strip. The docked window starts below the strip and is that much
-		// shorter.
+		// The ordinary case: container client at screen (100,50), 1400x900, 31px strip; the docked window starts below it and is that much shorter.
 		WinRect r = ComputeDockRect(100, 50, 1400, 900, 31);
 		check("D1 docked rect sits below the strip", r == WinRect{ 100, 81, 1400, 869 }, rectStr(r));
 	}
 	{
-		// Moving the container must move the rect by exactly the same amount --
-		// this is what keeps a docked window glued during a drag.
+		// Moving the container must move the rect by exactly the same amount (keeps a docked window glued during a drag).
 		WinRect a = ComputeDockRect(100, 50, 1400, 900, 31);
 		WinRect b = ComputeDockRect(340, 210, 1400, 900, 31);
 		check("D2 moving the container translates the rect 1:1",
@@ -195,16 +172,13 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      r == WinRect{ 10, 10, 800, 600 }, rectStr(r));
 	}
 	{
-		// Equality is what the docking loop uses to decide whether to make a
-		// cross-process call at all, so it has to notice a move, not just a resize.
+		// Equality gates the cross-process call in the docking loop, so it must notice a move, not just a resize.
 		WinRect a = ComputeDockRect(100, 50, 1400, 900, 31);
 		WinRect b = ComputeDockRect(101, 50, 1400, 900, 31);
 		check("D6 a one-pixel move compares as different", !(a == b), rectStr(b));
 	}
 
-	// ---- what the dock decides -----------------------------------------------
-	// These used to live inside Dock::Update as Win32 calls, which is why the
-	// minimise behaviour could be wrong for months without anything noticing.
+	// what the dock decides
 	{
 		TabState t; t.isActive = true; t.hidden = false;
 		check("M1 the active tab stays glued while the container is up",
@@ -214,9 +188,7 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      DecideTab(false, t) == TabAction::Show);
 	}
 	{
-		// The one that matters for "the container will not minimise": every docked
-		// window has to go away, or it is left floating on the desktop by itself --
-		// a docked window is not a child, so nothing hides it automatically.
+		// Matters for "the container will not minimise": every docked window must go away (it is not a child, so nothing hides it).
 		TabState t; t.isActive = true; t.hidden = false;
 		check("M3 a minimised container hides even its active tab",
 		      DecideTab(true, t) == TabAction::Hide);
@@ -256,9 +228,7 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      "hiding the docked window removed ITS button; without this the app is unreachable");
 	}
 	{
-		// WS_MAXIMIZE (0x01000000) is NOT WS_MAXIMIZEBOX (0x00010000). Mixing them up
-		// left POB -- which starts maximized -- carrying a style that told Windows it
-		// was still maximized while the dock sized it by hand.
+		// WS_MAXIMIZE (0x01000000) is NOT WS_MAXIMIZEBOX (0x00010000); mixing them left POB (starts maximized) claiming to be maximized while the dock sized it.
 		const unsigned long long m = DockedStyleMask();
 		char hex[32];
 		snprintf(hex, sizeof(hex), "0x%08llX", m);
@@ -270,13 +240,10 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      (m & 0x00C00000ull) != 0 && (m & 0x00040000ull) != 0);
 	}
 
-	// ---- tab titles ----------------------------------------------------------
+	// tab titles
 	{
 		const std::wstring fb = L"PoE1";
-		// The class annotation POB appends is dropped (user ruling 2026-08-14):
-		// the tab is for telling builds apart, and at tab width the annotation
-		// only ate the name -- "3.29點燃贖罪 (Elementalist + Ab…" showed no less
-		// class and no more name than "3.29點燃贖罪" does.
+		// The class annotation POB appends is dropped: at tab width it only ate the name.
 		check("T1 the build name ALONE is what the tab shows",
 		      ShortenWindowTitle(L"Frostblades Raider (Ranger) - Path of Building", fb) ==
 		          L"Frostblades Raider");
@@ -294,15 +261,11 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		check("T3 an unreadable caption says nothing, so the tab keeps its label",
 		      ShortenWindowTitle(L"", fb).empty(),
 		      "empty means 'no opinion', NOT 'use the fallback'");
-		// The suffix is matched at the end, not searched for: a build named after the
-		// app itself must keep its name.
+		// The suffix is matched at the end, not searched for: a build named after the app keeps its name.
 		check("T4 a build called 'Path of Building' survives",
 		      ShortenWindowTitle(L"Path of Building - Path of Building", fb) ==
 		          L"Path of Building");
-		// This asserted the opposite until a tool tab showed up labelled
-		// "PobTools — 輿圖策略" instead of "輿圖策略": a caption that is not POB's
-		// says nothing the tab does not already say, and taking it "as-is" only
-		// added a redundant prefix. The test was pinning the wrong behaviour.
+		// A caption that is not POB's says nothing the tab does not ("PobTools — 輿圖策略" vs "輿圖策略"), so it is not taken as-is.
 		check("T5 a caption that is not POB's leaves the tab alone",
 		      ShortenWindowTitle(L"PobTools — 輿圖策略", fb).empty());
 		check("T5b ... including anything else that is not POB",
@@ -317,11 +280,7 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      ShortenWindowTitle(L"   Spark Inquis   - Path of Building", fb) ==
 		          L"Spark Inquis",
 		      "a caption is user data");
-		// Whitespace is not POB's caption either, so it takes the same route as any
-		// other foreign one: no opinion, and the tab keeps whatever it says. The
-		// visible result is the same as falling back -- the label was already the
-		// fallback -- but it also means a caption that momentarily reads blank does
-		// not wipe out a build name that was there a second ago.
+		// Whitespace is not POB's caption either: no opinion, the tab keeps what it says (a momentarily blank caption must not wipe a build name).
 		check("T8 a caption of only spaces leaves the tab alone",
 		      ShortenWindowTitle(L"    ", fb).empty());
 		check("T8b the fallback is still used when POB has no build open",
@@ -329,9 +288,7 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      "the one case where the caption really does mean 'nothing loaded'");
 	}
 	{
-		// Now that the label follows POB's caption, the tab's ID must not. Hashed
-		// with ImGui's own function, because the whole trap is that "##" looks like
-		// it hides the label from the id and does not -- only "###" does.
+		// The label follows POB's caption but the tab's ID must not. Hashed with ImGui's own function: "##" looks like it hides the label from the id and does not, only "###" does.
 		const ImGuiID a = ImHashStr(DockTabLabel("Frostblades Raider (Ranger)", 4242).c_str());
 		const ImGuiID b = ImHashStr(DockTabLabel("Boneshatter Jugg (Marauder)", 4242).c_str());
 		check("T9 renaming the build does not give the tab a new identity", a == b,
@@ -343,8 +300,7 @@ int RunWindowLayoutSelfTest(const std::wstring& exeDir)
 		      DockTabLabel("PoE1", 7));
 	}
 
-	// Snapshot first: `checks` is incremented by the call below, so reading it
-	// inside the condition would count a check that has not happened yet.
+	// Snapshot first: `checks` is incremented by the call below.
 	const int ran = checks;
 	check("D7 the suite actually ran", ran >= 32, std::to_string(ran) + " checks");
 

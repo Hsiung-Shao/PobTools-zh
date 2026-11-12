@@ -1,17 +1,7 @@
-// PobTools atlas-tree cross-season diff.
-//
-// Compares two atlas passive trees keyed by GGG skill id and reports, per node,
-// a STRICT per-stat-line difference: lines added, lines removed, and lines whose
-// template matches but whose numbers changed (e.g. "15% increased X" ->
-// "20% increased X"). Node-level adds/removes are reported too.
-//
-// Stat lines are normalized with FindStatNumbers() (atlas_stat_agg.h) into a
-// "#"-placeholder template plus a number vector, so reordered lines still match
-// and only genuine numeric/text changes surface. Pure data, no ImGui / GL /
-// network; Traditional-Chinese display is injected via optional AtlasI18n.
-//
-// Verified headless via "pob-zh.exe --atlas-diff-selftest"; a real cross-season
-// report is produced by "pob-zh.exe --atlas-diff <oldVer> <newVer>".
+// PobTools atlas-tree cross-season diff, keyed by GGG skill id: per node, a STRICT per-stat-line difference (added,
+// removed, same template with changed numbers) plus node-level adds/removes.
+// Lines are normalized with FindStatNumbers() (atlas_stat_agg.h) into a "#" template + numbers, so reordered lines
+// still match. Pure data (no ImGui / GL / network); zh display comes from optional AtlasI18n.
 #pragma once
 
 #include <string>
@@ -62,36 +52,25 @@ AtlasTreeDiff ComputeAtlasTreeDiff(const AtlasTreeData& oldTree, const AtlasTree
 // UTF-8 plain-text report for the CLI / log.
 std::string FormatAtlasTreeDiffReport(const AtlasTreeDiff& diff);
 
-// Cross-season TC backfill (conservative): for every stat line in newTree that
-// has no direct translation in newI18n, if the OLD season has a byte-identical
-// English line WITH a translation, reuse that translation verbatim. Lines whose
-// numbers or wording changed at all are left in the new English (no synthesis) —
-// so a stale translation is never shown for a changed line. Returns the number
-// of lines backfilled. Helps unchanged lines that repoe-fork failed to cover.
+// Cross-season TC backfill (conservative): a newTree stat line with no translation reuses the OLD season's
+// translation only when the English line is byte-identical; changed lines stay English (no stale translation).
+// Returns the number of lines backfilled.
 int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
                       const AtlasI18n& oldI18n, const AtlasTreeData& oldTree);
 
-// Drop the node-name translation for every node whose English name changed
-// between the two seasons: the repoe snapshot (keyed by node id) still holds the
-// OLD name's Chinese, which reads as a wrong name after a rework. Dropping it
-// falls the name back to the correct new English. Returns the number dropped.
-// Translations from an EARLIER LEAGUE (AtlasI18n::LagsSeason): keep only what
-// was written for this league -- the "fresh" lines and names -- and drop the
-// rest to English. Pairings inherited by node id are not trusted across a
-// league: a reused id pairs this league's line with last league's meaning, and
-// "the English line also existed last league" does not prove the Chinese next
-// to it is that line's translation. Returns how many entries were dropped.
+// Drop the node-name translation for every node whose English name changed between seasons (the id-keyed repoe
+// snapshot still holds the OLD name's Chinese). Returns the number dropped.
+// Translations from an EARLIER LEAGUE (AtlasI18n::LagsSeason): keep only what was written for this league (the
+// "fresh" lines and names), drop the rest to English. Id-inherited pairings are not trusted across leagues: a reused
+// id pairs this league's line with last league's meaning. Returns how many entries were dropped.
 int KeepFreshOnly(AtlasI18n& i18n, const AtlasTreeData& tree);
 
 int DropRenamedNames(AtlasI18n& newI18n, const AtlasTreeData& newTree, const AtlasTreeData& oldTree);
 
-// Drop the stat-line translations of every English line that is NEW this season
-// (absent from the old tree): the zh snapshot predates the season (repoe-fork
-// lags), so whatever Chinese got paired to a changed/new line is a translation
-// of the OLD wording — a plain mistranslation. Unchanged lines (present in both
-// seasons) keep their Chinese untouched, so ordinary wording differences like
-// "an" vs "1 個" are never affected. Returns the number of lines dropped.
-// Skip this when the zh snapshot is at/after the season (repoe caught up).
+// Drop the translations of every English line that is NEW this season (absent from the old tree): the zh snapshot
+// predates the season (repoe-fork lags), so Chinese paired to a changed/new line translates the OLD wording.
+// Lines present in both seasons keep their Chinese. Returns the number dropped.
+// Skip when the zh snapshot is at/after the season.
 int PruneStaleTranslations(AtlasI18n& newI18n, const AtlasTreeData& newTree, const AtlasTreeData& oldTree);
 
 // "pob-zh.exe --atlas-diff-selftest": synthetic old/new trees with known

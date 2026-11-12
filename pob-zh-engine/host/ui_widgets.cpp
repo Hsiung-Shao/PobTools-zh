@@ -53,8 +53,7 @@ void DrawText(ImDrawList* dl, ImFont* f, float px, ImVec2 pos, ImU32 col, const 
 	dl->AddText(f, px, pos, col, text, end, wrap);
 }
 
-// While a SettingRow is open: the height every inline control box takes, so a
-// 22 px switch and a 28 px button sit centred on the same line as a 36 px select.
+// While a SettingRow is open: the height every inline control box takes (a 22 px switch and 28 px button centre against a 36 px select).
 float g_lineBoxH = 0.0f;
 
 float BoxH(float own) { return g_lineBoxH > own ? g_lineBoxH : own; }
@@ -134,7 +133,7 @@ void PushControlFrame()
 }
 void PopControlFrame() { ImGui::PopStyleVar(); }
 
-// ---- text ---------------------------------------------------------------
+// text
 
 void Hint(const char* text, float wrapWidth, std::uint32_t col)
 {
@@ -233,7 +232,7 @@ bool Link(const char* label, std::uint32_t col)
 	return clicked;
 }
 
-// ---- icons --------------------------------------------------------------
+// icons
 
 float IconWidth(const char* icon, float px)
 {
@@ -259,7 +258,7 @@ void Icon(const char* icon, std::uint32_t col, float px)
 	IconAt(ImGui::GetWindowDrawList(), ImVec2(p.x, p.y + (lineH - size) * 0.5f), icon, col, size);
 }
 
-// ---- buttons ------------------------------------------------------------
+// buttons
 
 namespace {
 struct BtnMetrics { float h, padX, px; ImFont* font; };
@@ -348,7 +347,7 @@ bool Button(const char* label, BtnKind kind, BtnSize size, const char* icon, flo
 	return clicked && enabled;
 }
 
-// ---- switch ---------------------------------------------------------------
+// switch
 
 float SwitchWidth() { return std::floor(D(40.0f)); }
 
@@ -380,7 +379,7 @@ bool Switch(const char* id, bool* value, bool enabled)
 	return clicked && enabled;
 }
 
-// ---- segmented ------------------------------------------------------------
+// segmented
 
 namespace {
 float SegItemW(const char* label) { return TextSize(SmallFont(), SmallPx(), label).x + D(28.0f); }
@@ -451,7 +450,7 @@ bool SegmentedEx(const char* id, int* selected, const char* const* labels, int c
 	return changed;
 }
 
-// ---- select ---------------------------------------------------------------
+// select
 
 float SelectFitWidth(const char* const* labels, int count)
 {
@@ -474,8 +473,7 @@ SelectLayout SelectLayoutFor(const char* const* labels, const char* const* notes
 			l.noteMaxW = std::max(l.noteMaxW, TextSize(SmallFont(), SmallPx(), notes[i]).x);
 	}
 	const float need = std::ceil(l.labelX + l.labelMaxW + (l.noteMaxW > 0.0f ? l.gap + l.noteMaxW : 0.0f));
-	// The combo popup pads by FramePadding.x each side (PushControlFrame: D(12)),
-	// plus a scrollbar past 20 rows.
+	// The combo popup pads by FramePadding.x each side (PushControlFrame: D(12)), plus a scrollbar past 20 rows.
 	const float chrome = D(12.0f) * 2.0f + (count > 20 ? ImGui::GetStyle().ScrollbarSize : 0.0f);
 	l.popupW = std::max(width, need + chrome);
 	l.contentW = l.popupW - chrome;
@@ -495,9 +493,7 @@ bool Select(const char* id, int* selected, const char* const* labels, const char
 	ImGui::SetNextItemWidth(width);
 	const char* preview = (*selected >= 0 && *selected < count) ? labels[*selected] : "";
 	ImGui::BeginDisabled(!enabled);
-	// The popup auto-sizes to its items, but the rows are drawn by hand, so tell
-	// it how wide they need to be: otherwise it stays at the button's width and a
-	// long note lands on top of its label.
+	// Rows are drawn by hand, so tell the auto-sizing popup how wide they need to be (else a long note lands on its label).
 	const SelectLayout lay = SelectLayoutFor(labels, notes, count, width);
 	if (!g_testOpenSelect.empty() && g_testOpenSelect == id) {
 		g_testOpenSelect.clear();
@@ -543,7 +539,7 @@ bool Select(const char* id, int* selected, const char* const* labels, const char
 	return changed;
 }
 
-// ---- slider ---------------------------------------------------------------
+// slider
 
 float SliderWithResetWidth(float trackWidth, const char* resetLabel)
 {
@@ -622,7 +618,7 @@ SliderResult SliderWithReset(const char* id, int* edit, int min, int max, int de
 	return r;
 }
 
-// ---- status ---------------------------------------------------------------
+// status
 
 float PillWidth(const char* text)
 {
@@ -720,7 +716,7 @@ void ProgressBar(float fraction, float width)
 	if (f > 0.0f) dl->AddRectFilled(p, p + ImVec2(std::max(h, width * f), h), Tok::Accent, h * 0.5f);
 }
 
-// ---- cards and rows -------------------------------------------------------
+// cards and rows
 
 void CardBegin(const char* id, const char* icon, const char* title, const char* note, bool padded, float width,
                float minHeight)
@@ -942,7 +938,7 @@ bool ToolTile(const char* id, const char* icon, const char* name, const char* ba
 	return click && enabled;
 }
 
-// ---- toast ----------------------------------------------------------------
+// toast
 
 void ShowToast(const char* text, Tone tone)
 {
@@ -1003,7 +999,7 @@ void DrawToast()
 	ImGui::PopStyleVar(2);
 }
 
-// ---- dialog ---------------------------------------------------------------
+// dialog
 
 namespace {
 float g_dialogInner = 0.0f;
@@ -1105,7 +1101,7 @@ DialogResult ConfirmDialog(const char* popupId, bool* open, const char* title, c
 	return res;
 }
 
-// ---- tabs, sections, slots, menus -------------------------------------------
+// tabs, sections, slots, menus
 
 int PageTabs(const char* id, int selected, const char* const* labels, int count, float width)
 {
@@ -1284,8 +1280,7 @@ bool MenuRow(const char* icon, const char* label, const char* shortcut, bool ena
 	const ImVec2 p = ImGui::GetCursorScreenPos();
 	ImGui::PushID(label);
 	ImGui::BeginDisabled(!enabled);
-	// `need` is what the row reports, so an auto-sized popup grows to its widest
-	// row; SpanAvailWidth then stretches the highlight across the popup.
+	// `need` is what the row reports, so an auto-sized popup grows to its widest row; SpanAvailWidth stretches the highlight.
 	const bool click = ImGui::Selectable("##row", false, ImGuiSelectableFlags_SpanAvailWidth, ImVec2(need, h));
 	ImGui::EndDisabled();
 	ImGui::PopID();
@@ -1316,7 +1311,7 @@ void MenuSeparator()
 	ImGui::Dummy(ImVec2(0, D(3.0f)));
 }
 
-// ---- empty state ----------------------------------------------------------
+// empty state
 
 namespace {
 struct EmptyMetrics { float padX, padY, gap, iconPx, textW; };
@@ -1441,7 +1436,7 @@ int EmptyStateEx(const char* id, const char* icon, const char* title, const char
 	return clicked;
 }
 
-// ---- selftest -------------------------------------------------------------
+// selftest
 
 bool RunWidgetSelfTest()
 {
@@ -1467,8 +1462,7 @@ bool RunWidgetSelfTest()
 	ok = ok && SegmentedWidth(seg, 2) > SegmentedWidth(seg, 1);
 	ok = ok && ButtonWidth("x", BtnSize::Md, nullptr, 200.0f) == 200.0f;
 	ok = ok && ButtonWidth("long label here", BtnSize::Lg) > ButtonWidth("long label here", BtnSize::Sm);
-	// EmptyState: an action adds a button's height; a narrower box wraps the hint
-	// onto more lines and so is never shorter.
+	// EmptyState: an action adds a button's height; a narrower box wraps to more lines, never shorter.
 	{
 		const char* hint = "a hint long enough to wrap onto a second line in a narrow box";
 		const float plain = EmptyStateHeight("Title", hint, false, 600.0f);
@@ -1476,9 +1470,8 @@ bool RunWidgetSelfTest()
 		ok = ok && EmptyStateHeight("Title", hint, false, 160.0f) > plain;
 		ok = ok && EmptyStateHeight("Title", nullptr, false, 600.0f) < plain;
 	}
-	// Select: with notes far longer than the button, the popup grows so that every
-	// label's right edge + space-4 stays left of every note's left edge (notes are
-	// right-aligned to contentW), and nothing runs past the row.
+	// Select: with notes far longer than the button, the popup grows so every label's right edge + space-4 stays
+	// left of every note's left edge (notes right-aligned to contentW), and nothing runs past the row.
 	{
 		const char* lab[3] = { "Glorious Vanity XX", "Brutal", "Lethal Pride" };
 		const char* nts[3] = { "a fairly long english note", nullptr, "Lethal Pride note" };
@@ -1506,12 +1499,9 @@ bool RunWidgetSelfTest()
 		}
 		ok = ok && !ToolDensity() && ControlH() == launcherH;
 	}
-	// Tool density at every font-size setting the launcher offers (14 / 19 / 26,
-	// i.e. scale = n/19): the faces are 19 / 15 px times the scale (tool_window.cpp,
-	// launcher_ui.cpp), the boxes are design px times the same scale, so the
-	// ratio is fixed and only the floor() rounding moves -- worst at 14. Every
-	// box that holds a line of text keeps at least 3 px above and below it (the
-	// tightest is the pill at 14: floor(24.5 * 14/19) = 18 around an 11 px face).
+	// Tool density at every launcher font-size setting (14 / 19 / 26, scale = n/19): faces are 19 / 15 px times the
+	// scale, boxes are design px times the same scale, so only floor() rounding moves (worst at 14). Every
+	// text box keeps at least 3 px above and below (tightest: the pill at 14, floor(24.5 * 14/19) = 18 around an 11 px face).
 	{
 		const float sizes[3] = { 14.0f, 19.0f, 26.0f };
 		for (float n : sizes) {

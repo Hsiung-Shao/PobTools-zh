@@ -1,26 +1,20 @@
 // 多佔位符詞條的數值填位回歸。
 //
-// 這裡防守的不變量只有一句:一個 {N} 的值,不管中文把它排到句子的哪裡,都必須落在
-// 標著 {N} 的那一格。舊做法把 {0}/{1}/{2} 全部正規化成 '#' 之後照出現順序填,所以
-// 中英語序相反的詞條(光 poe1 就 2,373 條)數值必定填反:
-//
+// 不變量:一個 {N} 的值不管中文排在句子哪裡,都必須落在標著 {N} 的那一格。舊做法把 {0}/{1}/{2}
+// 全正規化成 '#' 照出現順序填,中英語序相反的詞條(poe1 就 2,373 條)數值必定填反:
 //   EN  {0} to {1} Added Attack Lightning Damage per {2} Accuracy Rating
 //   ZH  每 {2} 命中值附加 {0} 至 {1} 攻擊閃電傷害
 //   舊  每 1 命中值附加 6 至 200 攻擊閃電傷害      <- 值照中文的出現順序塞
 //   新  每 200 命中值附加 1 至 6 攻擊閃電傷害
 //
-// 三支進入點:
+// 進入點:
 //   --placeholder-selftest              邊角案例表 + 出貨字典端到端 + 突變測試
 //   --placeholder-dump <out.tsv> [game] 全量 A/B 快照(改動前後各跑一次逐行比對)
 //   --placeholder-probe <english>       單筆正向查詢,排查用
 //
-// 案例表走 translation_debug_fill,也就是載入期與執行期共用的那份計畫產生器 —— 不是
-// 在測試裡另寫一份對照邏輯。本專案吃過「驗證器與被驗證的程式共享同一個盲點」的虧,
-// 這裡的取捨是反過來的:寧可讓測試直接驅動生產程式碼,也不要有第二份實作。
-//
-// 為什麼案例大多是合成的:編號不從 0 開始、目標用了來源沒有的編號、同一個 {0} 用
-// 兩次、樣板裡寫死數字 —— 出貨字典裡不見得樣樣齊全,而為了測試往字典塞假資料等於
-// 改變被測對象。合成樣板 + 真實字典端到端兩者都做,才同時有鑑別力與代表性。
+// 案例表走 translation_debug_fill(載入期與執行期共用的計畫產生器),不另寫第二份對照邏輯
+// (避免驗證器與被驗證程式共享盲點)。案例多為合成樣板(出貨字典不見得樣樣齊全,往字典塞假資料會改變被測對象),
+// 再加真實字典端到端,兼顧鑑別力與代表性。
 
 #include "placeholder_selftest.h"
 
@@ -62,10 +56,8 @@ std::string narrow(const std::wstring& w)
 	return s;
 }
 
-// pob-zh 是 WIN32 子系統的 exe,啟動時根本沒有 stdout,printf 直接掉進黑洞。既有的
-// 自檢都自己 AttachConsole(ATTACH_PARENT_PROCESS),但那樣一來從 PowerShell 重導就
-// 收不到 —— 輸出跑去主控台緩衝區,不走管線。所以這裡先把 stdout 導進報告檔,結束時
-// 接回主控台再把檔案內容回放一次:螢幕上看得到,腳本也讀得到同一份。
+// pob-zh 是 WIN32 子系統 exe,沒有 stdout;AttachConsole 的輸出走主控台緩衝區、PowerShell 重導收不到。
+// 所以先把 stdout 導進報告檔,結束時接回主控台並回放一次:螢幕與腳本讀到同一份。
 struct TeeOut {
 	FILE*        f = nullptr;
 	std::wstring path;
@@ -79,9 +71,7 @@ struct TeeOut {
 	{
 		fflush(stdout);
 		if (f) fclose(f);
-		// Replay the report to the console we were started from. Without one
-		// (redirected, or under Wine) stdout is the file just closed above, and
-		// writing to it is what made the process exit 9 (EBADF) with a clean report.
+		// Replay the report to the starting console; without one (redirected / Wine) stdout is the file just closed, and writing to it exits 9 (EBADF).
 		if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;
 		FILE* c = nullptr;
 		if (freopen_s(&c, "CONOUT$", "w", stdout) != 0) return;
@@ -105,12 +95,10 @@ std::string tsv_safe(const std::string& s)
 	return r;
 }
 
-// ---------------------------------------------------------------- 案例表
+// 案例表
 
 // 一列 = 來源樣板 / 目標樣板 / 一行實際輸入 / 應該吐出來的字。
-// `order` 標記這一列的正確性是否取決於「依編號填」:突變測試只要求這些列在舊行為下
-// 變紅。沒標的列是「舊行為本來就對」的,它們必須在兩種模式下都過 —— 過度修正同樣
-// 是回歸,把碰巧正確的案例一併寫進來就是為了擋這個。
+// `order` 標記這列是否取決於「依編號填」:突變測試只要求這些列在舊行為下變紅;沒標的列兩種模式都必須過(擋過度修正)。
 struct Case {
 	const char* name;
 	const char* src;
@@ -121,7 +109,7 @@ struct Case {
 };
 
 const Case kCases[] = {
-	// ---- 五種佔位符寫法 ----
+	// 五種佔位符寫法
 	{ "{N} 重排(使用者回報 1)",
 	  "{0} to {1} Added Attack Lightning Damage per {2} Accuracy Rating",
 	  "每 {2} 命中值附加 {0} 至 {1} 攻擊閃電傷害",
@@ -146,17 +134,14 @@ const Case kCases[] = {
 	  "Chain Hook has +2 metre to radius per 12 Rage",
 	  "奪魂勾索每 12 層盛怒 +2 米範圍", true },
 
-	// ---- 邊角 1:字面數字寫死的變體 ----
-	// 同一條詞綴常有兩個變體並存(一個 {2}、一個寫死 200)。寫死的那一格在中文樣板裡
-	// 沒有對應的 {N},依編號索引時必須正確跳過。
+	// 邊角 1:字面數字寫死的變體。同一詞綴常有兩變體並存(一個 {2}、一個寫死 200),寫死那格在中文樣板無對應 {N},依編號索引須跳過。
 	{ "字面 200 變體:值仍照編號落位",
 	  "{0} to {1} Added Attack Lightning Damage per 200 Accuracy Rating",
 	  "每 200 命中值附加 {0} 至 {1} 攻擊閃電傷害",
 	  "1 to 6 Added Attack Lightning Damage per 200 Accuracy Rating",
 	  "每 200 命中值附加 1 至 6 攻擊閃電傷害", true },
 
-	// 雜湊會把 200 與 250 摺成同一個鍵,所以「per 250」的實物會命中「per 200」那條
-	// 樣板。字面格取的是輸入的值而不是樣板的值,這種撞鍵才不會印出錯的常數。
+	// 雜湊把 200 與 250 摺成同一個鍵,「per 250」會命中「per 200」樣板;字面格取輸入值而非樣板值,撞鍵才不會印錯常數。
 	{ "字面格跟著輸入走,不是照抄樣板",
 	  "{0} to {1} Added Attack Lightning Damage per 200 Accuracy Rating",
 	  "每 200 命中值附加 {0} 至 {1} 攻擊閃電傷害",
@@ -170,7 +155,7 @@ const Case kCases[] = {
 	  "+2 to maximum number of Golems",
 	  "最多可同時擁有額外 +2 個魔像，上限 3 個", true },
 
-	// ---- 邊角 2:GGG markup 不可被當成佔位符 ----
+	// 邊角 2:GGG markup 不可被當成佔位符
 	{ "[Key|Display] 標記",
 	  "{0} to maximum number of Summoned Golems if you have {1} Primordial Items Socketed or [Equipped]",
 	  "若你鑲嵌或[Equipped|已裝備] {1} 個原始物品，召喚魔像的最大數量增加 {0} 個",
@@ -183,15 +168,14 @@ const Case kCases[] = {
 	  "<default>{{<white>{{Awakening Bonus:}} Complete this map with at least tier 14 and Awakening level 8}}",
 	  "<default>{{<white>{{覺醒加成:}} 在至少覺醒等級 8 和地圖階級 14 下完成此地圖}}", true },
 
-	// "<grey>{(" 裡的 '{' 緊接著 '('，不是 {N};而括號裡的 (20-30) 是一個範圍,
-	// 會被摺成一格 —— 它必須被當成字面數字,不能吃掉 {0} 的值。
+	// "<grey>{(" 的 '{' 緊接 '(' 不是 {N};括號裡的 (20-30) 是範圍、摺成一格,須當字面數字,不能吃掉 {0} 的值。
 	{ "<grey>{(範圍)} 不是佔位符",
 	  "{0}% increased Damage <grey>{(20-30)}",
 	  "<grey>{(20-30)} 增加 {0}% 傷害",
 	  "35% increased Damage <grey>{(20-30)}",
 	  "<grey>{(20-30)} 增加 35% 傷害", true },
 
-	// ---- 邊角 3:編號不從 0 開始 / 不連續 / 重複 / 越界 ----
+	// 邊角 3:編號不從 0 開始 / 不連續 / 重複 / 越界
 	{ "編號不從 0 開始({1} 單獨出現)",
 	  "Bathed in the blood of {1} sacrificed in the name of Xibaqua",
 	  "浸泡在以賽巴昆之名獻祭的 {1} 條生命中",
@@ -210,15 +194,14 @@ const Case kCases[] = {
 	  "25% increased Effect",
 	  "增加 25% 效果(共 25%)", true },
 
-	// 越界:目標引用了來源沒有的 {1}。不得崩潰,也不得安靜地填一個錯的數字進去 ——
-	// 留 '#' 是「這裡沒有值」的既有寫法,看得見。
+	// 越界:目標引用來源沒有的 {1}。不得崩潰或安靜填錯數字,留 '#'(「沒有值」的既有寫法)。
 	{ "目標引用來源沒有的編號:留 '#' 不亂填",
 	  "{0} Damage",
 	  "{0} 至 {1} 傷害",
 	  "5 Damage",
 	  "5 至 # 傷害", false },
 
-	// ---- 邊角 4:抽值規則(正負號吸收 / 範圍 / 進階複製 / 千分位)不得改變 ----
+	// 邊角 4:抽值規則(正負號吸收 / 範圍 / 進階複製 / 千分位)不得改變
 	{ "進階複製 7(6-11) 併成一格",
 	  "{0}% increased Burning Damage",
 	  "增加 {0}% 燃燒傷害",
@@ -256,8 +239,7 @@ const Case kCases[] = {
 	  "#% increased Armour during Effect",
 	  "效果期間增加 #% 護甲", false },
 
-	// 同一行同時有「輸入自帶的 '#'」與一個真的字面數字:兩格都要對到正確的來源,
-	// 否則 10 會被塞進 '#' 那一格。
+	// 同一行同時有輸入自帶的 '#' 與真的字面數字:兩格都要對到正確來源,否則 10 會塞進 '#' 那格。
 	{ "自帶 '#' 與字面數字並存",
 	  "{0}% increased Armour per 10 Strength",
 	  "增加 {0}% 護甲，每 10 點力量",
@@ -265,8 +247,7 @@ const Case kCases[] = {
 	  "增加 #% 護甲，每 10 點力量", true },
 };
 
-// 把 {N} / {N:spec} 換成每個編號各不相同的哨兵值。全部填同一個值(舊的 census 就是
-// 這樣)在這裡等於沒測 —— 順序錯了也看不出來,這正是這個 bug 活這麼久的原因之一。
+// 把 {N} / {N:spec} 換成每個編號各不相同的哨兵值(全填同一值等於沒測,順序錯了看不出來)。
 std::string fill_sentinels(const std::string& s)
 {
 	std::string out;
@@ -291,8 +272,7 @@ std::string fill_sentinels(const std::string& s)
 					if (n < 0) n = 0;
 					if (n > 20) n = 20;
 					char buf[16];
-					// 9001, 9002, ... 每個編號一個值,而且不像 1/2/3 那樣容易與
-					// 樣板自己寫死的常數撞在一起。
+					// 9001, 9002, ... 每個編號一個值,不易與樣板寫死的常數撞在一起。
 					snprintf(buf, sizeof(buf), "%s%d", plus ? "+" : "", 9001 + n);
 					out += buf;
 					i = close;
@@ -315,9 +295,8 @@ bool has_placeholder_or_digit(const std::string& s)
 	return false;
 }
 
-// 反向探針的外殼。裸一行會被段落文法當成物品名那一段而走別條規則,詞條永遠碰不到
-// 樣式比對,量出來的「零差異」會是假的。這個外殼沒有物品等級行,所以文法對探針那行
-// 不下判斷(Unknown),正好是舊行為的比較基準。
+// 反向探針的外殼。裸一行會被段落文法當物品名而走別條規則、碰不到樣式比對(「零差異」是假的);
+// 此外殼無物品等級行,文法對探針行不下判斷(Unknown),正是舊行為的比較基準。
 const char* kShell = "\xe7\xa8\x80\xe6\x9c\x89\xe5\xba\xa6: \xe7\xa8\x80\xe6\x9c\x89\n"  // 稀有度: 稀有
                      "New Item\nCrimson Jewel\n--------\n";
 
@@ -371,24 +350,20 @@ int RunPlaceholderSelftest()
 	translation_init();
 	printf("locale=%s entries=%d\n", translation_get_locale(), translation_get_count());
 
-	// ---- 1. 邊角案例表(修好之後應該全綠) ----
+	// 1. 邊角案例表(應全綠)
 	int failed = run_cases("== 1. 填位規則(合成樣板,走引擎自己的計畫產生器) ==", true, nullptr);
 	g_pass += (int)(sizeof(kCases) / sizeof(kCases[0])) - failed;
 	g_fail += failed;
 
-	// ---- 2. 出貨字典端到端 ----
+	// 2. 出貨字典端到端
 	printf("\n== 2. 出貨字典端到端(translation_lookup,POB 畫面走的那支) ==\n");
 	{
-		// 使用者回報的那一條。字典裡「per {2}」與「per 200」兩個變體雜湊成同一個鍵,
-		// 誰勝出由載入序決定 —— 所以這裡不釘死中文用字,只釘死不變量:200 必須落在
-		// 「命中值」前面那一格,1 與 6 必須落在傷害那兩格。
+		// 「per {2}」與「per 200」兩變體雜湊成同一個鍵,勝出者由載入序決定,所以只釘不變量:200 落在「命中值」前,1 與 6 落在傷害兩格。
 		const char* in = "1 to 6 Added Attack Lightning Damage per 200 Accuracy Rating";
 		const char* got = translation_lookup(in);
 		printf("  in:  %s\n  out: %s\n", in, got ? got : "(NOT FOUND)");
 		std::string s = got ? got : "";
-		// 字典裡至少三條詞綴雜湊成這個鍵(「每 {2}…」「每有 {2}…」「per 200」),
-		// 誰勝出由載入序決定,所以斷言不能夾帶任何一種措辭 —— 只釘「200 緊接著
-		// 命中值」這個位置事實,它在每一種措辭下都必須成立。
+		// 至少三條詞綴雜湊成這個鍵(「每 {2}…」「每有 {2}…」「per 200」),勝出者由載入序決定,斷言只釘「200 緊接命中值」這個位置事實。
 		check(s.find("200 \xe5\x91\xbd\xe4\xb8\xad\xe5\x80\xbc") != std::string::npos,
 		      "200 落在「命中值」前面那一格");
 		check(s.find("1 \xe8\x87\xb3 6") != std::string::npos, "1 與 6 落在傷害那兩格");
@@ -398,8 +373,7 @@ int RunPlaceholderSelftest()
 		const char* got = translation_lookup(in);
 		printf("  in:  %s\n  out: %s\n", in, got ? got : "(NOT FOUND)");
 		std::string s = got ? got : "";
-		// 3 是「幾個原始物品」,+1 是「魔像數量」。不管勝出的是哪個中文變體,
-		// 「3 個」必定出現、而「+1 個」不可以接在物品那一格。
+		// 3 是「幾個原始物品」,+1 是「魔像數量」;不論哪個中文變體勝出,「3 個」必出現、「+1 個」不可接在物品那格。
 		check(s.find("3 \xe5\x80\x8b") != std::string::npos, "3 落在物品數量那一格");
 		check(s.find("+1") != std::string::npos, "+1 仍在輸出裡(沒有被吃掉)");
 		check(s.find("+1 \xe5\x80\x8b\xe5\x8e\x9f\xe5\xa7\x8b") == std::string::npos &&
@@ -408,10 +382,8 @@ int RunPlaceholderSelftest()
 	}
 
 	{
-		// 反向路徑算查表鍵時「沒有」做 normalize_placeholders,正向有。抽值的切法
-		// 必須各自跟自己那條路徑一致,否則 GGG 的 "<colour:...>{{{0}}}" 這種把數字
-		// 包在大括號裡的 UI 字串會多切一刀,值整個變成空的。全量 A/B 掃出 23 列才
-		// 抓到這一刀,所以釘一條在這裡。
+		// 反向路徑算查表鍵時「沒有」做 normalize_placeholders(正向有),抽值切法須各自與自己那條路徑一致,
+		// 否則 "<colour:...>{{{0}}}" 這種大括號包數字的 UI 字串會多切一刀、值變空(全量 A/B 掃出 23 列)。
 		const char* zh = "- <colour:rgb(255,255,255)>{{4321}} \xe9\x80\xb2\xe5\x85\xa5 -";
 		std::string got = reverse_probe(zh);
 		printf("  rev: %s\n   ->  %s\n", zh, got.c_str());
@@ -421,9 +393,7 @@ int RunPlaceholderSelftest()
 		      "顏色標記裡的數字原樣保留(反向)");
 	}
 
-	// ---- 3. 兩支掃描器不得漂開 ----
-	// 填值用的數值格與 extract_numbers 是同一套規則的兩個出口。全字典逐條比對,
-	// 並且斷言真的檢查過東西(數 bad == 0 而沒有 checked > 0 是空洞判準)。
+	// 3. 兩支掃描器不得漂開:填值用的數值格與 extract_numbers 是同一套規則的兩個出口;全字典比對,並斷言 checked > 0(只數 bad == 0 是空洞判準)。
 	printf("\n== 3. 數值格 vs extract_numbers(全字典) ==\n");
 	{
 		EditorModel model = LoadModel(exe_dir() + L"Data\\poe1\\", "zh-rTW");
@@ -442,10 +412,7 @@ int RunPlaceholderSelftest()
 		if (bad) printf("           %d slot(s) disagree\n", bad);
 	}
 
-	// ---- 4. 突變測試 ----
-	// 把填值改回「照 '#' 出現順序填」,依編號才會對的那些列必須全部變紅。
-	// 只驗合成表還不夠:計畫是載入時算進字典的,所以連字典一起重載一次,證明真正的
-	// 執行期路徑也退回了舊行為。
+	// 4. 突變測試:填值改回「照 '#' 出現順序填」,依編號才對的列必須全變紅;計畫是載入時算進字典的,所以連字典一起重載,證明執行期路徑也退回舊行為。
 	printf("\n== 4. 突變測試(退回「照出現順序填」) ==\n");
 	{
 		translation_debug_set_legacy_fill(1);
@@ -504,10 +471,7 @@ int RunPlaceholderDump(const std::wstring& outPath, const std::string& game, boo
 		printf("cannot write %ls\n", outPath.c_str());
 		return 2;
 	}
-	// 樣板兩欄跟著每一列走,而不是留給分析端用 id 反查字典。第一版就是那樣做的,
-	// 而 LoadModel 的條目順序與 meta.json 的 load_order 並不相同 —— 於是 diff 全部
-	// 掛到別條詞綴上,分類表整個是錯的。稽核工具的定位假設要嘛驗證要嘛消滅,這裡選
-	// 消滅:每一列自己說明它是誰。
+	// 樣板兩欄跟著每一列走,不留給分析端用 id 反查字典(LoadModel 條目順序 ≠ meta.json load_order,反查會把 diff 掛到別條詞綴)。
 	fputs("id\tfile\tdir\ttmpl_en\ttmpl_zh\tin\tout\n", f);
 
 	int id = -1, probes = 0, skipped = 0, fwdHit = 0, revChanged = 0;

@@ -7,9 +7,8 @@
 //   U+3000 + U+00B7       bullet
 //   U+3000, anything else continuation -- folded back into the previous line
 //
-// WRITE ONE BULLET PER LINE. The tab is full width and the renderer wraps at the
-// real width; the hard wrapping in the older entries below dates from a 600px
-// modal and is undone at render time. Those entries stay as they are.
+// WRITE ONE BULLET PER LINE: the renderer wraps at the real width. The hard
+// wrapping in the older entries below is undone at render time; leave it.
 //
 // Use U+00B7 for the bullet, never U+30FB: the shipped FZ_ZY.ttf has no glyph
 // for U+30FB and ImGui silently draws '?'. --font-coverage-selftest catches it.

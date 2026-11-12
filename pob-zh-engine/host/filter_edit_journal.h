@@ -90,7 +90,7 @@ bool CustomZoneHasRule(const FilterFile& f, const std::string& key);
 bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* err);
 bool JournalLoad(const std::wstring& path, EditJournal* j);
 
-// ---- game subscriptions (OnlineFilters\) ------------------------------------
+// game subscriptions (OnlineFilters\)
 
 struct OnlineFilterHeader {
 	bool online = false;               // the "#Online Item Filter" line is there

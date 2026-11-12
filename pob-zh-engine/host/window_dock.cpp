@@ -31,10 +31,8 @@
 namespace WindowDock {
 namespace {
 
-// Flushed on every line, on purpose. A crash loses anything still in a buffer,
-// and the point of this log is to survive one: the last line written IS the last
-// thing that happened. This is how the owner-crash was finally located after
-// half a dozen bisections had failed.
+// Flushed on every line, on purpose: a crash loses anything still in a buffer,
+// and the point of this log is to survive one.
 FILE* g_log = nullptr;
 bool  g_verbose = false;
 
@@ -52,8 +50,7 @@ void dlog(const char* fmt, ...)
 	fflush(g_log);
 }
 
-// Per-frame chatter; silent unless verbose is on. At several thousand frames a
-// second this is both enormous and slow, so it is a diagnostic, not a default.
+// Per-frame chatter; silent unless verbose is on (thousands of lines a second).
 void vlog(const char* fmt, ...)
 {
 	if (!g_log || !g_verbose) return;
@@ -68,10 +65,8 @@ void vlog(const char* fmt, ...)
 	fflush(g_log);
 }
 
-// fprintf's %S goes through the C locale, which in the default "C" locale cannot
-// convert anything outside ASCII -- so every Chinese tab label logged as an empty
-// string, and the log said nothing about the very tabs it was meant to describe.
-// UTF-8 is what the rest of this codebase writes, so the log writes it too.
+// fprintf's %S in the default "C" locale cannot convert non-ASCII (Chinese tab
+// labels logged as empty), so the log is written as UTF-8 instead.
 std::string to_utf8_log(const std::wstring& w)
 {
 	if (w.empty()) return std::string();
@@ -144,11 +139,8 @@ void Dock::Init(void* host, const std::wstring& logPath)
 	if (!g_log && !logPath.empty()) {
 		DeleteFileW(logPath.c_str());
 		// _wfsopen with _SH_DENYWR, NOT _wfopen_s: the secure variant opens
-		// EXCLUSIVELY, so nothing -- not even a plain type of the file -- could read
-		// this log while the program was running. For a log whose entire purpose is
-		// to survive a freeze, being readable only after the process exits defeats
-		// the point: a hang is exactly when it cannot be read and exactly when it is
-		// needed. Measured: every FileShare combination failed against the old handle.
+		// EXCLUSIVELY, so the log could not be read while the program ran -- and a
+		// hang is exactly when it is needed.
 		g_log = _wfsopen(logPath.c_str(), L"w", _SH_DENYWR);
 	}
 	// Needed by ITaskbarList. S_FALSE (already initialised) is fine.
@@ -180,11 +172,9 @@ void Dock::Adopt(Tab& t)
 	HWND w = (HWND)t.hwnd;
 	const size_t i = (size_t)(&t - tabs_.data());
 	Original& o = orig_[i];
-	// Captured ONCE, on the first attempt. Adoption can return early to wait for an
-	// un-maximise, and re-reading here on the retry would record the restored state
-	// as "the original" -- RestoreAll would then hand the user a merely large window
-	// where they had a maximized one, and o.style would have lost WS_MAXIMIZE, which
-	// is the only record that it was maximized at all.
+	// Captured ONCE, on the first attempt: adoption can return early to wait for an
+	// un-maximise, and re-reading on the retry would record the restored state as
+	// "the original" (o.style would lose WS_MAXIMIZE, the only record of it).
 	if (!o.captured) {
 		o.style = GetWindowLongPtrW(w, GWL_STYLE);
 		o.exStyle = GetWindowLongPtrW(w, GWL_EXSTYLE);
@@ -201,9 +191,7 @@ void Dock::Adopt(Tab& t)
 	//
 	// ShowWindowAsync POSTS -- it has not happened when this returns. Stripping the
 	// frame in the same breath wrote `o.style` (WS_MAXIMIZE and all) back over the
-	// restore that was still in flight, so the window stayed maximized as far as
-	// Windows was concerned. Measured: both lines landed in the same millisecond.
-	// So adoption waits instead, and the caller retries on a later frame.
+	// restore still in flight. So adoption waits and the caller retries later.
 	if (IsZoomed(w) || IsIconic(w)) {
 		if (!t.awaitingRestore) {
 			dlog("dock: window is maximized/minimized -- restoring before adopting");
@@ -213,8 +201,7 @@ void Dock::Adopt(Tab& t)
 		return;
 	}
 	t.awaitingRestore = false;
-	// WS_MAXIMIZE is in this mask and used to be missing; it is not WS_MAXIMIZEBOX.
-	// See WindowMgr::DockedStyleMask.
+	// WS_MAXIMIZE (not WS_MAXIMIZEBOX) must be in this mask; see WindowMgr::DockedStyleMask.
 	LONG_PTR style = o.style & ~(LONG_PTR)WindowMgr::DockedStyleMask();
 	SetWindowLongPtrW(w, GWL_STYLE, style);
 	// A style change does not repaint the non-client area by itself: without
@@ -233,16 +220,9 @@ void Dock::Position(Tab& t, bool force)
 	if (!w || !IsWindow(w)) return;
 	// A minimised container has no client area: Windows reports it as 0x0 at
 	// (-32000,-32000), and positioning against that throws the docked window into
-	// the corner at 2x2. The move and size callbacks reach here during the
-	// minimise itself -- WM_MOVE and WM_SIZE are how a minimise is delivered --
-	// which is BEFORE Update gets to hide anything, so the window is still on
-	// screen when it happens.
-	//
-	// Worse than the flicker: the drag path asks for it synchronously, and a
-	// synchronous SetWindowPos across processes blocks until the other side pumps
-	// its queue. POB mid-recalculation is exactly when it will not, so minimising
-	// could stall this loop for as long as POB took -- which from the outside is a
-	// window that will not go down. Measured by S13.
+	// the corner at 2x2. The move/size callbacks reach here during the minimise
+	// itself (WM_MOVE/WM_SIZE), BEFORE Update hides anything. A synchronous
+	// SetWindowPos across processes would also block while POB recalculates.
 	if (IsIconic((HWND)host_)) return;
 	RECT rc{};
 	GetClientRect((HWND)host_, &rc);
@@ -261,10 +241,8 @@ void Dock::Position(Tab& t, bool force)
 	// relationship: the input queues stay separate, which is the documented
 	// precondition for this flag to post instead of send.
 	//
-	// ALWAYS, with no synchronous variant on offer. There was one, for the drag
-	// path, and it is what let a busy POB freeze the container mid-drag. S18/S19
-	// measure the difference: 516ms versus 0ms against a window that is not
-	// pumping. Nothing this loop does is worth waiting on another process for.
+	// ALWAYS async, no synchronous variant: a sync move let a busy POB freeze the
+	// container mid-drag (S18/S19: 516ms vs 0ms against a window that is not pumping).
 	SetWindowPos(w, HWND_TOP, want.x, want.y, want.w, want.h,
 	             SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 	vlog("dock: positioned %p to %d,%d %dx%d", (void*)w, want.x, want.y, want.w, want.h);
@@ -274,10 +252,8 @@ void Dock::FixZOrder(Tab& t)
 {
 	HWND w = (HWND)t.hwnd;
 	if (!w || !IsWindow(w) || !t.docked) return;
-	// Sink OURS below theirs -- never try to raise theirs. Raising another
-	// process's window is subject to Windows' foreground rules and simply does
-	// not take: measured, HWND_TOP on the docked window ran every 200ms and never
-	// once changed the order. Re-ordering our own window has no such restriction.
+	// Sink OURS below theirs -- never try to raise theirs: raising another
+	// process's window is subject to Windows' foreground rules and does not take.
 	SetWindowPos((HWND)host_, w, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 }
 
@@ -316,13 +292,9 @@ void Dock::Update(int stripH, int activeIndex)
 		i++;
 	}
 
-	// Adopt windows that have appeared. Throttled: EnumWindows walks every
-	// top-level window on the desktop, and doing that every frame of an
-	// unthrottled loop is thousands of full enumerations per second.
-	//
-	// 60ms rather than something lazier because this interval is how long a newly
-	// opened tool is visible as an ordinary window before it snaps into place --
-	// and only runs at all while something is still waiting to be adopted.
+	// Adopt windows that have appeared. Throttled (EnumWindows walks every
+	// top-level window). 60ms because that is how long a newly opened tool shows
+	// as an ordinary window before it snaps in; only runs while something waits.
 	if (GetTickCount64() - lastFind_ >= 60) {
 		lastFind_ = GetTickCount64();
 		for (Tab& t : tabs_) {
@@ -379,16 +351,12 @@ void Dock::Update(int stripH, int activeIndex)
 		ts.hidden = !IsWindowVisible((HWND)t.hwnd) || !!IsIconic((HWND)t.hwnd);
 		switch (WindowMgr::DecideTab(hostMin, ts)) {
 			case WindowMgr::TabAction::Show:
-				// SW_SHOWNOACTIVATE, not SW_SHOWNA: SW_SHOWNA means "display it in its
-				// CURRENT state", so a window that was minimised stays minimised -- and
-				// DecideHost then reads that as an intentional minimise and pulls the
-				// whole container down with it.
-				//
-				// But SW_SHOWNOACTIVATE restores it to its own most recent size and
-				// position, which undoes the docking geometry. So this frame only shows
-				// it; positioning happens on a later frame, once the asynchronous show
-				// has actually landed. Doing both here raced, and the window ended up
-				// back at its pre-dock size.
+				// SW_SHOWNOACTIVATE, not SW_SHOWNA: SW_SHOWNA keeps a minimised window
+				// minimised, and DecideHost would read that as an intentional minimise
+				// and pull the whole container down.
+				// SW_SHOWNOACTIVATE restores the window's last size/position (undoing
+				// the docking geometry), so this frame only shows it; positioning
+				// happens on a later frame, once the asynchronous show has landed.
 				dlog("dock: tab %zu -> show", i);
 				ShowWindowAsync((HWND)t.hwnd, SW_SHOWNOACTIVATE);
 				break;
@@ -396,9 +364,7 @@ void Dock::Update(int stripH, int activeIndex)
 				Position(t, false);
 				break;
 			case WindowMgr::TabAction::Hide:
-				// Only when there is something to hide. This used to fire unconditionally
-				// every frame, which at vsync is 60 cross-process calls a second per
-				// inactive tab, all of them no-ops.
+				// Only when there is something to hide (avoids per-frame cross-process no-ops).
 				if (!ts.hidden || IsWindowVisible((HWND)t.hwnd)) {
 					dlog("dock: tab %zu -> hide (%s)", i,
 					     hostMin ? "container minimised" : "not the active tab");
@@ -448,20 +414,14 @@ void Dock::OnHostMoved()
 	// drag, so glfwPollEvents never returns and this callback is the only thing
 	// keeping the docked window with the container.
 	//
-	// It used to ask synchronously, to stop the docked window trailing. That
-	// bought smoothness with the wrong currency: a cross-queue SetWindowPos
-	// without SWP_ASYNCWINDOWPOS SENDS, and a window whose owner is not pumping
-	// cannot answer. Measured by S18/S19: 516ms against a 500ms stall, versus 0ms
-	// posted. POB recalculating a build is exactly that window, so the wait landed
-	// on the container -- on the thing under the user's mouse. A follower that
-	// lags is a far smaller problem than a drag that judders.
+	// Not synchronous: a cross-queue SetWindowPos without SWP_ASYNCWINDOWPOS
+	// SENDS, and a busy POB cannot answer (S18/S19: 516ms vs 0ms), so the wait
+	// would land on the container under the mouse. A lagging follower is the
+	// smaller problem.
 	//
-	// The throttle is what makes the posted version behave. A drag produces many
-	// more moves than any window can repaint, and posting every one of them leaves
-	// the other process a backlog of stale positions to grind through after the
-	// drag has already finished. Whatever gets dropped is corrected by the first
-	// Update after the modal loop ends, which is the same code that puts the
-	// window back after a minimise.
+	// The throttle stops a backlog of stale positions queuing in the other
+	// process. Dropped moves are corrected by the first Update after the modal
+	// loop ends (same code that repositions after a minimise).
 	const unsigned long long now = GetTickCount64();
 	if (now - lastDragPos_ >= 16) {
 		lastDragPos_ = now;
@@ -488,15 +448,10 @@ void Dock::RequestClose(size_t index)
 	Tab& t = tabs_[index];
 	if (!t.hwnd || !IsWindow((HWND)t.hwnd)) return;
 	dlog("dock: asking tab %zu to close", index);
-	// Deliberately NOT restored first. Putting the frame and the old rectangle
-	// back makes the window pop out as a normal window for the moment before it
-	// dies -- close several at once and they all flash across the screen.
-	//
-	// Restoring was only ever there in case the window persisted its geometry on
-	// exit, and measurement says it does not: a full SHA-256 snapshot of POB's
-	// folder before and after shows the same single file changed (Settings.xml)
-	// whether it ran docked or standalone, and that file holds no window
-	// geometry. RestoreAll still restores, because there the window lives on.
+	// Deliberately NOT restored first: putting the frame and old rectangle back
+	// makes the window flash as a normal window just before it dies. POB does not
+	// persist window geometry on exit (checked). RestoreAll still restores,
+	// because there the window lives on.
 	//
 	// PostMessage, not SendMessage: the target may be busy for seconds at a time.
 	PostMessageW((HWND)t.hwnd, WM_CLOSE, 0, 0);
@@ -508,11 +463,9 @@ void Dock::RestoreAll()
 		Tab& t = tabs_[i];
 		if (!t.docked || !t.hwnd || !IsWindow((HWND)t.hwnd)) continue;
 		const Original& o = orig_[i];
-		// WS_MAXIMIZE is a STATE, not a look. Writing the bit back produced a window
-		// that told Windows it was maximized while sitting at the rectangle it had
-		// when maximized -- overhanging the screen by the border width, and with a
-		// restore button that did nothing sensible. So the bit is withheld here and
-		// the state is asked for properly below.
+		// WS_MAXIMIZE is a STATE, not a look: writing the bit back leaves a window
+		// overhanging the screen with a dead restore button. Withheld here; the
+		// state is requested properly below.
 		const bool wasMaximized = (o.style & (LONG_PTR)WS_MAXIMIZE) != 0;
 		dlog("dock: restoring tab %zu (maximized=%d)", i, wasMaximized ? 1 : 0);
 		SetWindowLongPtrW((HWND)t.hwnd, GWL_STYLE, (LONG_PTR)(o.style & ~(LONG_PTR)WS_MAXIMIZE));
@@ -539,7 +492,7 @@ void Dock::RestoreAll()
 	}
 }
 
-// ---- adoption / restoration against a real window ----------------------------
+// adoption / restoration against a real window
 
 namespace {
 // The suite installs the launcher's own move / size / focus callbacks, and GLFW
@@ -612,27 +565,18 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 				check("S2 the window was adopted", adopted);
 
 				const LONG_PTR after = GetWindowLongPtrW(th, GWL_STYLE);
-				// THE regression this suite exists for. WS_MAXIMIZE (0x01000000) was
-				// missing from the strip list -- only WS_MAXIMIZEBOX (0x00010000) was
-				// there -- so the docked window went on telling Windows it was maximized
-				// while the dock sized it by hand.
+				// THE regression this suite exists for: WS_MAXIMIZE (0x01000000) must be
+				// stripped (not just WS_MAXIMIZEBOX 0x00010000), else the docked window
+				// keeps telling Windows it is maximized while the dock sizes it by hand.
 				check("S3 adoption clears WS_MAXIMIZE", (after & WS_MAXIMIZE) == 0, hexs(after));
 				check("S4 ... and the window is genuinely no longer zoomed", !IsZoomed(th));
 				check("S5 adoption clears the caption", (after & WS_CAPTION) == 0, hexs(after));
 				check("S6 adoption clears the sizing frame", (after & WS_THICKFRAME) == 0);
 
-				// ---- the minimise cycle ------------------------------------
-				//
-				// Nothing else reaches this. The pure rules (M1-M12) say what
-				// SHOULD happen when the container goes down; only running it
-				// says whether the window actually goes with it -- and a docked
-				// window left behind on the desktop is precisely what "the app
-				// will not minimise" looks like from the outside.
-				//
-				// The container's move / size / focus callbacks are wired up the
-				// way the launcher wires them, because minimising a window
-				// generates WM_MOVE and WM_SIZE, and what the dock does with
-				// those is part of what is under test.
+				// the minimise cycle: the pure rules (M1-M12) say what SHOULD happen;
+				// only running it shows whether the docked window goes with the
+				// container. Move/size/focus callbacks are wired as the launcher
+				// wires them, since minimising generates WM_MOVE and WM_SIZE.
 				g_selfTestDock = &dock;
 				glfwSetWindowPosCallback(host, [](GLFWwindow*, int, int) {
 					if (g_selfTestDock) g_selfTestDock->OnHostMoved();
@@ -707,10 +651,8 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 					          std::to_string(want.y) + " " + std::to_string(want.w) + "x" +
 					          std::to_string(want.h));
 				}
-				// Moving the container still drags the docked window along. The
-				// move callback is throttled now, so a single move can be dropped
-				// -- Update is what has to make that invisible, and this is the
-				// check that says it does.
+				// Moving the container still drags the docked window along. The move
+				// callback is throttled, so a move can be dropped; Update must hide that.
 				{
 					RECT hr{};
 					GetWindowRect(hh, &hr);
@@ -734,27 +676,18 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 				dock.RestoreAll();
 				for (int i = 0; i < 40 && !IsZoomed(th); i++) { glfwPollEvents(); Sleep(25); }
 				const LONG_PTR back = GetWindowLongPtrW(th, GWL_STYLE);
-				// Putting the STYLE BIT back is not the same as being maximized: that
-				// produced a window overhanging the screen by the border width whose
-				// restore button did nothing sensible. The state has to be asked for.
+				// Putting the STYLE BIT back is not the same as being maximized; the
+				// state has to be asked for.
 				check("S7 restoring gives back a genuinely maximized window", !!IsZoomed(th),
 				      hexs(back));
 				check("S8 ... with its caption", (back & WS_CAPTION) != 0, hexs(back));
 			}
 
-			// ---- what a synchronous cross-queue move actually costs ----------
-			//
-			// The drag path used to ask for the docked window's move
-			// SYNCHRONOUSLY, on the grounds that a posted move visibly trails the
-			// container. What that traded away was never measured: a window whose
-			// owner is not pumping cannot answer, and the caller waits. POB
-			// recalculating a build is exactly such a window, and the wait lands
-			// on the container -- the one thing the user is physically dragging.
-			//
-			// The target lives on its own thread so the two have separate message
-			// queues. That is the same condition that holds across processes, and
-			// the documented precondition for SWP_ASYNCWINDOWPOS to post rather
-			// than send.
+			// what a synchronous cross-queue move actually costs: a window whose owner
+			// is not pumping cannot answer and the caller waits. The target lives on
+			// its own thread so the two have separate message queues -- the same
+			// condition as across processes, and the documented precondition for
+			// SWP_ASYNCWINDOWPOS to post rather than send.
 			{
 				const DWORD kStallMs = 500;
 				std::atomic<bool> ready{ false }, stall{ false }, done{ false };
@@ -834,7 +767,7 @@ int RunDockStyleSelfTest(const std::wstring& exeDir)
 	return failures ? 2 : 0;
 }
 
-// ---- spike -------------------------------------------------------------------
+// spike
 
 namespace {
 Dock* g_spikeDock = nullptr;

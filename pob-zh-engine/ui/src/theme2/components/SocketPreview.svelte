@@ -42,7 +42,6 @@
     const sy = (y: number) => size / 2 + (y - centre.y) * k;
     const near = (x: number, y: number) => Math.abs(x - centre.x) < view * 1.2 && Math.abs(y - centre.y) < view * 1.2;
 
-    // connectors
     ctx.lineWidth = 1.5;
     for (const e of model.edges) {
       const a = model.nodes.get(e.a);
@@ -65,7 +64,6 @@
       ctx.stroke();
     }
 
-    // the jewel's radius
     ctx.strokeStyle = gold;
     ctx.globalAlpha = 0.55;
     ctx.setLineDash([4, 4]);
@@ -75,7 +73,6 @@
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
-    // nodes
     const labels: { x: number; y: number; text: string }[] = [];
     for (const n of model.nodes.values()) {
       if (n.asc || n.kind === "classStart" || n.kind === "ascStart" || n.kind === "image" || !near(n.x, n.y)) continue;
@@ -96,7 +93,6 @@
       if (n.kind === "keystone") labels.push({ x: sx(n.x), y: sy(n.y) - r - 3, text: n.raw.nameZh || n.raw.name });
     }
 
-    // the socket itself
     ctx.strokeStyle = gold;
     ctx.lineWidth = 2.5;
     ctx.beginPath();

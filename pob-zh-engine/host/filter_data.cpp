@@ -11,7 +11,7 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")  // CoTaskMemFree
 
-// ---- small Win32 / encoding helpers (self-contained, mirrors editor_data.cpp) ----
+// small Win32 / encoding helpers (self-contained, mirrors editor_data.cpp)
 
 static std::wstring widen(const std::string& s)
 {
@@ -77,7 +77,7 @@ static std::wstring basename_w(const std::wstring& path)
 	return (slash == std::wstring::npos) ? path : path.substr(slash + 1);
 }
 
-// ---- directory discovery ---------------------------------------------------
+// directory discovery
 
 static std::wstring documents_dir()
 {
@@ -178,7 +178,7 @@ std::vector<FilterListEntry> ListFilters()
 	return out;
 }
 
-// ---- load / save -----------------------------------------------------------
+// load / save
 
 FilterFile LoadFilter(const std::wstring& path, bool* ok)
 {

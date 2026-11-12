@@ -24,7 +24,7 @@
 
 namespace Tok = PobUi::Tok;
 
-// ---- Chinese display helpers ------------------------------------------------
+// Chinese display helpers
 
 std::string CardValueZh(const FilterLine& ln, const FilterI18n& i18n)
 {
@@ -128,7 +128,7 @@ std::string CardEffectSummary(const FilterLine& ln)
 	return std::string(CardEffectColorZh(col)) + (temp ? u8" · 只在掉落瞬間" : u8" · 持續顯示");
 }
 
-// ---- per-panel UI state -----------------------------------------------------
+// per-panel UI state
 
 enum class CardPop { None, Color, Minimap, Effect, Sound };
 
@@ -230,10 +230,7 @@ int DisableAll(EditorShell& s, int bi, const char* kw, const char* alias = nullp
 ImU32 SmallPxFontCol() { return Tok::TextMuted; }
 ImFont* SmallF() { const PobUi::WidgetFonts& wf = PobUi::Fonts(); return wf.small ? wf.small : ImGui::GetFont(); }
 
-// ---- card rows ------------------------------------------------------------------
-//
-// A row: label column (130 design px) | widgets | a right-aligned ghost button
-// (停用 / 恢復). The widgets wrap at `g_rowRight`.
+// card rows: label column (130 design px) | widgets (wrap at `g_rowRight`) | right-aligned ghost button (停用 / 恢復)
 
 float g_rowRight = 0.0f;
 
@@ -298,8 +295,7 @@ bool RowFinish(const Row& r)
 	return click;
 }
 
-// Fits the next widget into the row: wraps to a new line when it would cross
-// g_rowRight.
+// Fits the next widget into the row: wraps when it would cross g_rowRight.
 void Flow(float w, bool first)
 {
 	if (first) return;
@@ -428,7 +424,7 @@ bool IntField(const char* id, int* v, float designW)
 	return ch;
 }
 
-// ---- generic widgets per CardKind ------------------------------------------
+// generic widgets per CardKind
 
 void DrawBoolWidget(EditorShell& s, FilterLine& ln)
 {
@@ -528,8 +524,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		changed = true;
 	}
 
-	// the text typed for this line (kept per line uid, so two list rows in one
-	// block do not wipe each other's input)
+	// the text typed for this line (kept per line uid, so two list rows in one block do not wipe each other)
 	std::string& in = u.inputs[ln.uid];
 	const float inW = std::floor(PobUi::D(200.0f));
 	Flow(inW, false);
@@ -579,8 +574,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 					if (u.live.size() >= 40) break;
 				}
 			}
-			// nothing in the catalog: the engine dictionary's base items (a new
-			// league's items before the catalog is regenerated), marked as such
+			// nothing in the catalog: the engine dictionary's base items (new-league items before the catalog is regenerated), marked as such
 			if (u.live.empty()) {
 				for (const auto& [en, zh] : s.i18n.OffCatalogMatches(in, 20)) {
 					LibItem cand;
@@ -868,15 +862,14 @@ bool IsLookKw(const std::string& kw)
 
 } // namespace
 
-// ---- middle pane ------------------------------------------------------------
+// middle pane
 
 bool DrawBlockCards(EditorShell& s, int blockIdx)
 {
 	if (blockIdx < 0 || blockIdx >= (int)s.model.blocks.size()) return false;
 	FilterBlock& b = s.model.blocks[blockIdx];
 
-	// Collect the block's rows, conditions first, keeping file order inside
-	// each section. Disabled lines render with a 恢復 button.
+	// Collect the block's rows, conditions first, file order inside each section. Disabled lines get a 恢復 button.
 	struct CRow { int li; const CardSchema* cs; bool disabled; FilterLine parsed; };
 	std::vector<CRow> conds, acts;
 	for (int li : b.lineIdx) {
@@ -897,8 +890,7 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 	}
 
 	bool mutated = false;
-	// Against the baseline (the file as last loaded / saved). A whole new block
-	// is marked once in the list, not on every one of its lines.
+	// Against the baseline (file as last loaded / saved). A whole new block is marked once, not on every line.
 	const bool blockAdded = s.doc.BlockState(blockIdx) == BlockChange::Added;
 	auto changePill = [&](int li) {
 		if (blockAdded || !s.doc.HasBaseline()) return;
@@ -942,7 +934,7 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 		if (disable) { s.doc.CommentOutLine(r.li); mutated = true; }
 	};
 
-	// ---- 條件 ----
+	// 條件
 	PobUi::CardBegin("##condcard", nullptr, u8"條件", u8"全部符合才套用", false);
 	if (conds.empty()) {
 		ImGui::SetCursorScreenPos(ImVec2(PobUi::CardInnerX(), ImGui::GetCursorScreenPos().y + PobUi::D(10.0f)));
@@ -954,7 +946,7 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 	if (mutated) return true;
 	ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
 
-	// ---- 外觀與音效 ----
+	// 外觀與音效
 	PobUi::CardBegin("##actcard", nullptr, u8"外觀與音效", nullptr, false);
 	bool first = true;
 	// the look row: text / border / background swatches + font size
@@ -1029,7 +1021,7 @@ bool DrawBlockCards(EditorShell& s, int blockIdx)
 	return mutated;
 }
 
-// ---- right add-column -------------------------------------------------------
+// right add-column
 
 bool DrawAddColumn(EditorShell& s, int blockIdx)
 {
@@ -1122,7 +1114,7 @@ bool DrawAddColumn(EditorShell& s, int blockIdx)
 	return false;
 }
 
-// ---- shared editors -----------------------------------------------------------
+// shared editors
 
 bool CardEffectPalette(const char* id, std::string* color)
 {
@@ -1240,9 +1232,8 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 		char cur[48];
 		std::snprintf(cur, sizeof(cur), "%d %d %d %d", rgba[0], rgba[1], rgba[2], rgba[3]);
 		const ImGuiID fid = ImGui::GetID("##rgba");
-		// resync from the value only when the field is neither being typed in nor
-		// was let go of this frame (Ctrl+S lets go of it from outside: the typed
-		// text must reach the write-back below, not be replaced by the old value)
+		// resync from the value only when the field is neither being typed in nor let go of this frame
+		// (Ctrl+S lets go from outside: the typed text must reach the write-back below, not be replaced)
 		if (ImGui::GetActiveID() != fid && ImGui::GetCurrentContext()->ActiveIdPreviousFrame != fid)
 			std::snprintf(u.rgbaBuf, sizeof(u.rgbaBuf), "%s", cur);
 		const unsigned char sw[4] = { (unsigned char)rgba[0], (unsigned char)rgba[1], (unsigned char)rgba[2], (unsigned char)rgba[3] };
@@ -1300,7 +1291,7 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 	return changed;
 }
 
-// ---- popovers -------------------------------------------------------------------
+// popovers
 
 bool CardBeginPopover(const char* id)
 {

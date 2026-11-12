@@ -1,8 +1,6 @@
-// --perf-selftest: the POB window's frame cap and present rules as a table, and
-// the performance log's recorder driven by a fake clock. Both run inside the
-// engine's frame loop, where a mistake shows up as a stuck picture, a
-// spinning core or a log that points at the wrong page -- none of which a
-// user reports precisely, so they are pinned down here.
+// --perf-selftest: the POB window's frame cap and present rules as a table, and the performance log's recorder driven
+// by a fake clock. Both run inside the engine's frame loop, where a mistake shows as a stuck picture, a spinning core
+// or a log pointing at the wrong page.
 
 #include "perf_log.h"
 #include "pob_frame_cap.h"
@@ -96,7 +94,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 	line("POB frame cap + performance log self-test");
 	line("");
 
-	// ---- C: frame cap ----------------------------------------------------------
+	// C: frame cap
 	{
 		CapInputs c;
 		c.active = true;
@@ -127,7 +125,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		      ClampFps(-5) == 0 && ClampFps(100000) == 0 && ClampFps(144) == 144 && ClampFps(0) == 0);
 	}
 
-	// ---- R: present rule -------------------------------------------------------
+	// R: present rule
 	{
 		PresentInputs p;
 		p.now = 50.0;
@@ -154,7 +152,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		check("R8 ...or the clock went backwards", ShouldPresent(p));
 	}
 
-	// ---- L: recorder -------------------------------------------------------------
+	// L: recorder
 	{
 		Harness h;
 		h.rec.SetGpuSupported(true);
@@ -229,7 +227,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		check("L15 nothing is written after the summary, and it is written once", h.lines.size() == count);
 	}
 
-	// ---- size cap ----------------------------------------------------------------
+	// size cap
 	{
 		Harness h;
 		const std::string big(4096, 'x');
@@ -240,7 +238,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		check("L17 the summary is still written after the cap", h.CountPrefix("SUMMARY") >= 1);
 	}
 
-	// ---- state equality / group keys -------------------------------------------------
+	// state equality / group keys
 	{
 		PerfLog::State a = Page("BUILD", "ITEMS", true), b = a;
 		b.luaKB = 12345;
@@ -250,7 +248,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		check("L19 group key marks minimised", b.GroupKey() == "BUILD/ITEMS fg minimized", b.GroupKey());
 	}
 
-	// ---- file naming and pruning ----------------------------------------------------
+	// file naming and pruning
 	{
 		wchar_t tmp[MAX_PATH] = {};
 		GetTempPathW(MAX_PATH, tmp);
@@ -278,7 +276,7 @@ int RunPerfSelfTest(const std::wstring& exeDir)
 		PobLog::SetDirForTest(L"");
 	}
 
-	// ---- switch ------------------------------------------------------------------------
+	// switch
 	check("L22 disabled unless POB_ZH_PERFLOG=1 (this process has it unset)",
 	      GetEnvironmentVariableW(L"POB_ZH_PERFLOG", nullptr, 0) != 0 || !PerfLog::Enabled());
 

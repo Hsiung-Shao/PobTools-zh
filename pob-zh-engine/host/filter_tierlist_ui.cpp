@@ -23,7 +23,7 @@
 
 #pragma comment(lib, "comdlg32.lib")
 
-// ---- small self-contained helpers ------------------------------------------
+// small self-contained helpers
 
 static std::string narrow(const std::wstring& w)
 {
@@ -178,7 +178,7 @@ static bool HasTag(const std::vector<std::string>& tags, const std::string& want
 	return false;
 }
 
-// ---- shared rule-style editor (verb + colours + font + sound) ---------------
+// shared rule-style editor (verb + colours + font + sound)
 
 bool DrawBlockStyleEditor(FilterFile& model, FilterBlock& b, float scale)
 {
@@ -281,7 +281,7 @@ bool DrawBlockStyleEditor(FilterFile& model, FilterBlock& b, float scale)
 	return changed;
 }
 
-// ---- three-pane tier-list ---------------------------------------------------
+// three-pane tier-list
 
 // Add an English item token to a target tier's BaseType line (full-catalog "add").
 // Returns a status message. Output stays English; only that one line changes.
@@ -305,7 +305,7 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 	if (index.categories.empty()) { ImGui::TextDisabled(u8"此過濾器沒有可分類的規則。"); return; }
 	if (ui.selectedCategory < 0 || ui.selectedCategory >= (int)index.categories.size()) ui.selectedCategory = 0;
 
-	// ---- category tabs (replaces the old left category list) ----
+	// category tabs
 	if (ImGui::BeginTabBar("##cattabs", ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton)) {
 		for (int c = 0; c < (int)index.categories.size(); c++) {
 			std::string lbl = index.categories[c].display + "##cat" + std::to_string(c);
@@ -315,7 +315,7 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 	}
 	const TierCategory& cat = index.categories[ui.selectedCategory];
 
-	// ---- usage hint + category stats (right-aligned) ----
+	// usage hint + category stats (right-aligned)
 	ImGui::TextDisabled(u8"拖物品換階級／點欄頭設目標再點物品；每階級「顯示」勾選批次開關、右鍵物品可單獨隱藏；hover 看英文（輸出仍英文）。");
 	{
 		const bool eco = economy.available();
@@ -440,7 +440,7 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 	float midW = fullW - rightW - gap;
 	if (midW < 240 * scale) midW = 240 * scale;
 
-	// ---- MIDDLE: collapsible vertical tier list (no horizontal scroll) ----
+	// MIDDLE: collapsible vertical tier list (no horizontal scroll)
 	ImGui::BeginChild("##tiers", ImVec2(midW, 0), true);
 	for (int ti : cat.tierEntryIdx) {
 		TierEntry& te = index.tiers[ti];
@@ -562,12 +562,11 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 	ImGui::EndChild();
 	ImGui::SameLine();
 
-	// ---- RIGHT: item library ----
-	// Two sources: items already in this filter (move between tiers) or the whole
-	// game catalog (add any item to the active target tier). Both keep output English.
+	// RIGHT: item library. Two sources: items already in this filter (move between tiers) or the whole game catalog
+	// (add any item to the target tier). Both keep output English.
 	ImGui::BeginChild("##lib", ImVec2(0, 0), true);
 
-	// ---- item detail panel (the last-clicked card) ----
+	// item detail panel (the last-clicked card)
 	if (!ui.selectedItem.empty()) {
 		const std::string& en = ui.selectedItem;
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
@@ -612,7 +611,7 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 	ImGui::Separator();
 
 	if (ui.libShowAll) {
-		// ---- whole-catalog mode: add any game item to the target tier ----
+		// whole-catalog mode: add any game item to the target tier
 		const std::vector<LibItem>& all = library.items();
 		std::vector<int> rows;
 		rows.reserve(all.size());
@@ -653,7 +652,7 @@ void DrawTierListView(FilterFile& model, TierListIndex& index, TierListUIState& 
 		}
 		ImGui::EndChild();
 	} else {
-		// ---- in-filter mode: move an existing item between tiers ----
+		// in-filter mode: move an existing item between tiers
 		struct LibRow { const std::string* item; const std::string* tier; int block; };
 		std::vector<LibRow> rows;
 		for (int ti : cat.tierEntryIdx) {

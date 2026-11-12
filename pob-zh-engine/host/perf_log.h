@@ -1,10 +1,7 @@
 // Opt-in performance diagnostics for the POB window: PobTools\logs\perf-<date>.log
 //
-// Why this exists: a user's POB sat at 87% of a 3060 Ti with the CPU at 0.9%,
-// and nothing we could do on our own machines reproduced it (2026-09-17). The
-// only way forward was data from THEIR machine, and a screenshot of Task
-// Manager is not data. So the engine can write down, on request, what it was
-// doing -- and, just as importantly, WHERE the user was when it did it.
+// Why this exists: GPU load that cannot be reproduced locally needs data from
+// THE USER'S machine -- what the engine was doing and WHERE the user was.
 //
 // What a report has to answer, and the part of the file that answers it:
 //
@@ -192,7 +189,7 @@ private:
 	std::map<std::string, Group> groups_;
 };
 
-// ---- the engine's global recorder ------------------------------------------------
+// the engine's global recorder
 
 // POB_ZH_PERFLOG=1. Read once.
 bool Enabled();

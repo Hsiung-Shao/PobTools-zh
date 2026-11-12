@@ -28,12 +28,9 @@
 #include <string>
 #include <vector>
 
-// ---- filter editor, as a panel ---------------------------------------------
-//
-// The window / GL context / font atlas / main loop live in whichever host is
-// drawing this (RunToolWindow for its own window, the launcher's tab body when
-// embedded). What is left here is the content, the unsaved-changes guard and
-// the screenshot test states.
+// filter editor, as a panel: content, the unsaved-changes guard and the
+// screenshot test states. Window / GL / main loop live in the host
+// (RunToolWindow, or the launcher's tab body when embedded).
 
 void SoundsTestOpenPlan(EditorShell& s);          // section_sounds.cpp
 void CardTestOpenPop(EditorShell& s, int which);  // filter_card_ui.cpp
@@ -223,10 +220,10 @@ public:
 	const char* PanelId() const override { return "filter"; }
 
 private:
-	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
+	// POBTOOLS_FILTER_STATE values:
 	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | journal-banner | journal-dialog | online-create | online-update | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
-	// saved | close (phase 2 adds extchange)
+	// saved | close | extchange
 	void applyTestState()
 	{
 		const int f = testFrame_++;

@@ -2,9 +2,9 @@
 //
 // Icon glyphs for the launcher (Lucide 1.47.0, ISC; see host/data/icons_lucide.inc).
 // Each constant is the icon's UTF-8 string: draw it with the body / small / title
-// face (the icon font is merged into them) or through PobUi::Icon. They are NOT
-// in the launcher string table on purpose: the glyphs are Private Use Area
-// codepoints that no text font has, and the coverage selftest must not ask for them.
+// face (icon font merged in) or PobUi::Icon. NOT in the launcher string table on
+// purpose: they are Private Use Area codepoints no text font has, and the coverage
+// selftest must not ask for them.
 #pragma once
 
 namespace PobIcon {

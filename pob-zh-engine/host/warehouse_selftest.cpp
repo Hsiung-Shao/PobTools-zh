@@ -170,7 +170,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 	const std::wstring scratch = ScratchDir();
 	PobLog::SetDirForTest(scratch);
 
-	// ---- stash JSON parsing ----------------------------------------------
+	// stash JSON parsing
 	{
 		std::vector<StashItemRaw> items;
 		std::vector<StashTabInfo> tabs;
@@ -198,7 +198,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          !ParseStashTabJson(R"({"error":{"message":"x"}})", 0, &items, nullptr, &perr));
 	}
 
-	// ---- price keys -------------------------------------------------------
+	// price keys
 	{
 		auto keyOf = [&](const StashItemRaw& it) {
 			std::string k, d;
@@ -237,7 +237,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T2i unidentified unique unpriceable", keyOf(unid) == "(none)");
 	}
 
-	// ---- ninja parsers ----------------------------------------------------
+	// ninja parsers
 	{
 		std::vector<std::pair<std::string, NinjaPrice>> out;
 		std::string err;
@@ -264,9 +264,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              !NinjaPriceSource::CacheFresh(1000, 1000 + 15 * 60) &&
 		              !NinjaPriceSource::CacheFresh(0, 1000));
 
-		// Regression: poe.ninja emits explicit nulls, and value(key, default)
-		// throws on them. This once escaped the worker thread and killed the
-		// process mid-"取得市場價格".
+		// poe.ninja emits explicit nulls, and value(key, default) throws on them.
 		const char kNullsItem[] = R"json({"lines":[
 		  {"name":null,"chaosValue":5},
 		  {"name":"HasNullValue","chaosValue":null},
@@ -283,8 +281,8 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		out.clear();
 		ok = NinjaPriceSource::ParseExchangeOverview(kNullsExch, &out, &err);
 		rep.check("T3j exchange nulls do not throw", ok && out.empty(), err);
-		// Exchange ids are numbers for currency but SLUG STRINGS for cards, and
-		// cards key under card| -- both once fell through the numeric-only join.
+		// Exchange ids are numbers for currency but SLUG STRINGS for cards, which
+		// key under card|.
 		const char kCardExch[] = R"json({"items":[
 		  {"id":"abandoned-wealth","name":"Abandoned Wealth","category":"Cards"}],
 		  "lines":[{"id":"abandoned-wealth","primaryValue":0.22}]})json";
@@ -352,7 +350,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              nitems.size() == 1 && nitems[0].typeLine == "Chaos Orb");
 	}
 
-	// ---- aggregation + pricing -------------------------------------------
+	// aggregation + pricing
 	{
 		std::vector<StashItemRaw> items;
 		ParseStashTabJson(kStashFixture, 0, &items, nullptr, nullptr);
@@ -425,7 +423,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          g2.lines[0].priced && g2.totalChaos == 60.0);
 	}
 
-	// ---- diff -------------------------------------------------------------
+	// diff
 	{
 		Snapshot a, b;
 		a.utc = 1000000;
@@ -489,7 +487,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              ds.qtyGain == 0.0 && ds.priceMove == 0.0);
 	}
 
-	// ---- throttle arithmetic ---------------------------------------------
+	// throttle arithmetic
 	{
 		SimpleThrottle th;
 		th.SetMinIntervalMs(1000);
@@ -527,7 +525,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T6e requests are spaced at least 1.5 s by default", kStashMinSpacingMs >= 1500);
 	}
 
-	// ---- state round-trip + DPAPI ----------------------------------------
+	// state round-trip + DPAPI
 	{
 		const std::string fakeToken = "selftest-not-a-real-token-0123456789abcd";
 		std::string blob = WarehouseProtectSecret(fakeToken);
@@ -673,7 +671,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          !old.rememberSessid);
 	}
 
-	// ---- history round-trip, per-league files, summaries ---------------------
+	// history round-trip, per-league files, summaries
 	{
 		const std::string L = "Mercenaries";
 		WarehouseHistory h;
@@ -784,12 +782,11 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		          std::to_string(summaries));
 	}
 
-	// ---- 403 classification ----------------------------------------------
+	// 403 classification
 	{
 		// GGG's real "Permission Denied" page carries Cloudflare's JS-detection
-		// script (challenge-platform/scripts/jsd) like every page on the site.
-		// It once read as "blocked by Cloudflare" while the session had simply
-		// expired (2026-09-11).
+		// script (challenge-platform/scripts/jsd) like every page on the site; it
+		// must not read as "blocked by Cloudflare" when the session merely expired.
 		const char kGggDenied[] =
 		    "<!DOCTYPE html><html lang=\"en\"><head><title>Path of Exile</title></head>"
 		    "<body><h2>Permission Denied</h2><p>You don't have permission to access this "
@@ -818,7 +815,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T9e non-JSON body yields no text", StashApiErrorText("<html></html>").empty());
 	}
 
-	// ---- atlas map cost ---------------------------------------------------
+	// atlas map cost
 	{
 		const std::vector<MapCostInput> slots = {
 			{ "S/Abyss", "Abyss Scarab", u8"深淵聖甲蟲", "Art/a", true },
@@ -863,7 +860,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              cb.unpricedKinds == 2 && cb.totalChaos == 23.0);
 	}
 
-	// ---- saved league, read without DPAPI --------------------------------
+	// saved league, read without DPAPI
 	{
 		WarehouseUiState s;
 		s.poe1.league = "Allflame";
@@ -881,7 +878,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T11a pre-PoE2 file's top-level league", WarehouseSavedLeague(scratch) == "Settlers");
 	}
 
-	// ---- two panels on one history file ------------------------------------
+	// two panels on one history file
 	{
 		const std::string L = "Mercenaries";
 		DeleteFileW(WarehouseHistory::PathOf(scratch, "poe1", L).c_str());
@@ -938,7 +935,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		              withSummary.sessionStartUtc == s2.utc);
 	}
 
-	// ---- snapshot-card money ("14d 64c", the Wealthy-Exile format) ---------
+	// snapshot-card money ("14d 64c", the Wealthy-Exile format)
 	{
 		const std::string a = WhFmt::FormatDivChaos(14 * 200.0 + 64.0, 200.0, true);
 		rep.check("T13 whole divines + leftover chaos", a == "+14d 64c", a);
@@ -950,7 +947,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T13d no rate: chaos only", WhFmt::FormatDivChaos(326.0, 0.0, true) == "+326c");
 	}
 
-	// ---- one-time move to per-league files ---------------------------------
+	// one-time move to per-league files
 	{
 		// A pre-split file: two leagues, the session start in the second one.
 		CreateDirectoryW((scratch + L"PobTools").c_str(), nullptr);
@@ -1005,7 +1002,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		DeleteFileW(legacy.c_str());
 	}
 
-	// ---- 收益紀錄: a stretch bound to an atlas project ----------------------
+	// 收益紀錄: a stretch bound to an atlas project
 	{
 		Snapshot a, b; // T5's pair
 		a.utc = 1000000;
@@ -1036,7 +1033,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		rep.check("T15d the end must come after the start", MakeProfitRecord(b, a, zh, 0.0).empty());
 	}
 
-	// ---- stale poe.ninja caches ---------------------------------------------
+	// stale poe.ninja caches
 	{
 		const std::wstring dir = scratch + L"PobTools\\cache\\ninja\\";
 		CreateDirectoryW((scratch + L"PobTools").c_str(), nullptr);
@@ -1076,7 +1073,7 @@ int RunWarehouseSelfTest(const std::wstring& exeDir)
 		DeleteFileW((dir + L"poe1_Mercenaries.json").c_str());
 	}
 
-	// ---- request guard, shared by every panel and process -----------------
+	// request guard, shared by every panel and process
 	{
 		const std::wstring guardFile = scratch + L"PobTools\\warehouse_guard.json";
 		DeleteFileW(guardFile.c_str());
@@ -1270,8 +1267,6 @@ int RunWarehouseProbe(const std::wstring& exeDir, const std::wstring& realmArg,
 	// A realm the server does not know is silently IGNORED -- it answers for
 	// PoE1. Getting tabs back therefore proves nothing by itself: compare with
 	// the same league on pc; identical tab ids mean the realm was dropped.
-	// (2026-09-11: realm=poe2 returned the PoE1 stash verbatim, and the first
-	// version of this probe reported "PoE2 stash available".)
 	if (realm != "pc") {
 		Sleep(1000); // a second provider has a fresh throttle; stay polite
 		auto pcProvider = CreateSessidStashProvider(auth, "pc");

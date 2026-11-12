@@ -85,7 +85,7 @@ void DrawPreviewSection(EditorShell& s)
 	float avail = ImGui::GetContentRegionAvail().y;
 	float canvasH = hasSel ? avail * 0.55f : avail;
 
-	// ---- loot canvas ----
+	// loot canvas
 	ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.04f, 0.05f, 0.06f, 1.0f));
 	ImGui::BeginChild("##canvas", ImVec2(0, canvasH), true);
 	ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -128,7 +128,7 @@ void DrawPreviewSection(EditorShell& s)
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
 
-	// ---- inline editor for the clicked label ----
+	// inline editor for the clicked label
 	if (hasSel) {
 		ImGui::Separator();
 		FilterBlock& b = s.model.blocks[g_selBlock];

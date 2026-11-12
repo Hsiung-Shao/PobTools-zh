@@ -1,10 +1,7 @@
 // Starting POB, and knowing whether any is still running.
 //
-// There are now two launch paths — host_main's blocking one (the launcher window
-// is already gone) and the launcher's detached one (KeepOpen mode, window stays
-// up) — and both need the same environment handed to the engine. Keeping the
-// environment and the CreateProcess call in one place is the only way they stay
-// in step.
+// Two launch paths — host_main's blocking one and the launcher's detached one
+// (KeepOpen mode) — share the same engine environment and CreateProcess call.
 //
 // The engine always runs in a fresh process: SimpleGraphic.dll and its
 // dependencies cannot be safely re-run in-process after RunLuaFileAsWin returns.
@@ -15,13 +12,9 @@
 
 namespace PobLaunch {
 
-// What a tracked child process is. The launcher used to remember only POB and
-// throw the tools' handles away, so it could tell you a POB was running but not
-// that the atlas planner was. The window list needs both.
-//
-// The distinction is not cosmetic: only Pob loads engine\*.dll, and that is what
-// an update must not swap out from under. Tools must NEVER count as "busy" --
-// see AnyPobRunning.
+// What a tracked child process is. Only Pob loads engine\*.dll, which an update
+// must not swap out from under, so tools must NEVER count as "busy" -- see
+// AnyPobRunning.
 enum class InstanceKind {
 	Pob = 0,
 	AtlasPlanner,
@@ -93,10 +86,9 @@ RelaunchMarker ParseRelaunchMarker(const std::string& utf8);
 // True for the headless child's `spawn_process` event that hands POB's
 // runtime files to Update.exe (a real spawn, not the self-test's dry run).
 // The new interface's windows latch this: once seen, the child's exit means
-// "close, the updater reopens us". The marker file cannot be the signal on its
-// own -- Update.exe starts pob-zh.exe, which reads and DELETES the marker,
-// often before the old window has even noticed its child is gone, and the old
-// window then stayed open next to the new one.
+// "close, the updater reopens us". The marker file alone cannot be the signal:
+// Update.exe starts pob-zh.exe, which reads and DELETES it, often before the old
+// window notices its child is gone.
 bool IsUpdaterHandoffLine(const std::string& jsonLine);
 
 // Start POB and wait for it to close. Returns its exit code, (DWORD)-1 on
@@ -106,9 +98,8 @@ unsigned long SpawnPobAndWait(const std::wstring& launchLua);
 // Start POB and return immediately, remembering the process so PobRunningCount
 // can report on it. `game` is only used to label the instance. false on failure.
 //
-// `outPid` receives the new process id. Callers that need it must take it from
-// here rather than fishing the last entry out of RunningInstances(): that list is
-// reaped and re-ordered, so "the one I just started" is an assumption, not a fact.
+// `outPid` receives the new process id; take it from here, not from the last
+// entry of RunningInstances() (that list is reaped and re-ordered).
 //
 // `uri` (optional) is an "Open in PoB" link (pob:// / pob2://): it becomes the
 // engine's arg[1], which POB's Main.lua downloads and imports. It is passed on

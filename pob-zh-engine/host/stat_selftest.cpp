@@ -12,22 +12,7 @@
 // 負向測試(E6~E9、E12)都附「同環境下有命中」的前提,所以永遠回 nullptr 的實作
 // 過不了 —— 只斷言「回空」的測試,空殼也會綠。
 //
-// 期望值的出處(tools/ggpk_zh/out_source_dicts/stats_by_id.json,2026-10-17 產出):
-//   E1  base_resist_all_elements_%|#|stat_descriptions.txt|0       {0:+d}% 全部元素抗性
-//   E1b accuracy_rating_+%|1|#|stat_descriptions.txt|0             增加 {0}% 全域命中值
-//   E2  base_maximum_life|#|stat_descriptions.txt|0                {0:+d} 最大生命
-//   E3  accuracy_rating_+%|#|-1|stat_descriptions.txt|0            減少 {0}% 全域命中值
-//   E4  global_minimum_added_fire_damage global_maximum_added_fire_damage|# #|stat_descriptions.txt|0
-//                                                                  附加 {0} 至 {1} 火焰傷害
-//   E4b deaths_oath_debuff_on_kill_duration_ms deaths_oath_debuff_on_kill_base_chaos_damage_to_deal_per_minute|# #|stat_descriptions.txt|0
-//       EN "You take {1} Chaos Damage per second for {0} seconds on Kill"
-//       ZH "殺死敵人後 {0} 秒內持續承受 {1} 混沌傷害"(中英語序相反)
-//   E5  accuracy_rating_+%|1|#|passive_skill_stat_descriptions.txt|0 增加 {0}% 命中率
-//       local_accuracy_rating_+%|1|#|stat_descriptions.txt|0         增加 {0}% 命中值
-//   E6  stats_ambiguous.tsv:"# to Level of Socketed Gems"(stat_descriptions.txt 兩譯)
-//   E10 %_chance_to_gain_random_charge_on_trap_triggered_by_an_enemy|#|stat_descriptions.txt|0
-//   E11 chance_%_to_gain_brine_charge_instead_of_endurance_charge|1|99|stat_descriptions.txt|0
-//       EN "{0}% chance to gain a [BrineCharges|Brine Charge] instead of an Endurance Charge"
+// 期望值出自 tools/ggpk_zh/out_source_dicts/stats_by_id.json(鍵與中英模板見各測試)。
 
 #include "stat_selftest.h"
 
@@ -409,7 +394,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 
 	printf("\n=== 正向:數值填回 ===\n");
 	// E1:題目指定的範例。⚠ 這句在 stat_descriptions.txt 另有 thread_of_hope 一譯
-	// ({1:+d}%全元素抗性),依「篩後中文全同才採用」它是歧義 —— 見回報。
+	// ({1:+d}%全元素抗性),依「篩後中文全同才採用」它是歧義。
 	expect("+(10-15)% to all Elemental Resistances", "item", u8"+(10-15)% 全部元素抗性",
 	       "E1 物品行範圍值原樣填回(全部元素抗性)");
 	expect("(10-15)% increased Global Accuracy Rating", "item", u8"增加 (10-15)% 全域命中值",
@@ -504,7 +489,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!(kept && e2Hit)) printf("           global='%s' guardE2=%d\n", r ? r : "(null)", e2Hit);
 	}
 
-	// ---- 稽核 r4(tools/ggpk_zh/audit_prod/report_r4)的重現 -----------------
+	// 稽核 r4(tools/ggpk_zh/audit_prod/report_r4)的重現
 	printf("\n=== 稽核 r4 重現 ===\n");
 	// F1:天賦核心(keystone)的說明是 passive_skill_stat_descriptions.txt 多行模板的
 	// 其中一行;同英文在 stat_descriptions.txt 另有別的 stat(base_cannot_evade 等)。
@@ -572,7 +557,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(ok && e2Hit, "F4c 無色碼輸入時與 translation_lookup_stat 結果相同");
 	}
 
-	// ---- R:code review 確認的實作問題 ----------------------------------------
+	// R:實作問題的回歸
 	printf("\n=== R code review 重現 ===\n");
 	// R1:colored 的回傳指標要和 translation_lookup_stat 一樣活到下次 reload。
 	// 結果遠超過 SSO 長度,快取格若每次被新字串 move 覆寫,第一次的指標就懸空。
@@ -606,7 +591,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("13% chance to gain Onslaught for 10 seconds on Kill", "item",
 	       u8"擊殺時有 13% 機率獲得猛攻 10 秒", "R2b 平手時寫死數字不算值(10 秒猛攻取 1-stat 譯法)");
 
-	// ---- P0:依 id 查譯名時比對英文(軍團珠寶/刺青換名不換 id)-------------------
+	// P0:依 id 查譯名時比對英文(軍團珠寶/刺青換名不換 id)
 	// 英文取自 GGPK(ggpk_zh.sqlite cell passiveskills.Name / mods.Name,與 POB 3_29
 	// tree.lua 的 name 相同):94 Evasion→閃避;33287 Juggernaut→戰神(天賦);
 	// 17765 Juggernaut→勇士(昇華);AbyssAccuracyRatingJewel1 "of Calm"→平靜之。
@@ -644,7 +629,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			return got == want;
 		};
 
-		// --- 帶 templates 的複本(templates 只含上面幾筆;id 33 刻意沒有)---
+		// 帶 templates 的複本(templates 只含上面幾筆;id 33 刻意沒有)
 		SetEnvironmentVariableW(L"POB_ZH_DATADIR", tRoot.c_str());
 		translation_set_source(nullptr);
 		translation_reload();
@@ -687,7 +672,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			check(ok, "P0-5 en 為 nullptr 時等同 translation_lookup_by_id");
 		}
 
-		// --- 舊格式(無 templates)的複本 ---
+		// 舊格式(無 templates)的複本
 		SetEnvironmentVariableW(L"POB_ZH_DATADIR", lRoot.c_str());
 		translation_reload();
 		{
@@ -704,7 +689,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(lRoot);
 	}
 
-	// ---- P1:寶石情境(ctx "gem")與寶石說明 id 字典(gems_desc)--------------------
+	// P1:寶石情境(ctx "gem")與寶石說明 id 字典(gems_desc)
 	// POB 寶石提示用的描述檔(Data/Skills/*.lua 的 statDescriptionScope + 各檔 parent 鏈):
 	//   skill / gem / active_skill_gem / minion_skill / minion_spell / minion_spell_damage /
 	//   single_minion_spell / minion_attack / aura / banner_aura / buff / secondary_debuff /
@@ -819,7 +804,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(gRoot);
 	}
 
-	// ---- P4:星團附魔「Added Small Passive Skills grant: X」 -------------------------
+	// P4:星團附魔「Added Small Passive Skills grant: X」
 	// GGPK 沒有含此前綴的 stat 模板(stats_by_id 只有 "...also grant: ..." 的
 	// local_affliction_jewel_small_nodes_grant_* 與 "...grant Nothing");前綴來自
 	// clientstrings StatDescripotionTreeExpansionJewelGrantedSmallStat:
@@ -837,7 +822,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Added Small Passive Skills grant: 12% increased Burning Damage", "item",
 	       u8"附加的小型天賦給予：增加 12% 燃燒傷害", "P4-3 星團附魔(原英文類)以前綴 + 內層 stat 翻譯");
 
-	// ---- P5:名稱槽(passive_hash / display_indexable_skill)-------------------------
+	// P5:名稱槽(passive_hash / display_indexable_skill)
 	// 模板的 {N} 是查表型 handler,值為名稱：以 passives / gems 來源把名稱翻成中文。
 	printf("\n=== P5 名稱槽 ===\n");
 	// P5-2:unique_jewel_grants_notable_hash_part_1|#|stat_descriptions.txt|0(handler passive_hash)
@@ -851,7 +836,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("+3 to Level of all Pact of Beidat Gems", "item",
 	       u8"全部 貝達特誓約 寶石等級 +3", "P5-3 寶石等級：技能名稱槽填入繁中名");
 
-	// ---- FC:passive 情境含 passive_skill_aura_stat_descriptions.txt ----------------
+	// FC:passive 情境含 passive_skill_aura_stat_descriptions.txt
 	// coverage_r3 cat_08(天賦 40059 / 47630):光環型天賦行只在天賦光環描述檔。
 	printf("\n=== FC passive 光環描述檔 ===\n");
 	{
@@ -867,7 +852,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!ok) printf("           a='%s' b='%s'\n", shown(a), shown(b));
 	}
 
-	// ---- FA:名稱槽寶石名先查 gem_names 來源 ------------------------------------
+	// FA:名稱槽寶石名先查 gem_names 來源
 	// coverage_r3 cat_10 Pearl of Tsoatha:「…等級 20 的附加混沌傷害輔助輔助」—— 名稱槽
 	// 填了 gems 來源的「…輔助」,模板本身又帶「輔助」。gem_names.json(扁平，鍵 = GGPK
 	// 寶石顯示名英文，值 = 不含「輔助」的繁中)應先於 gems 來源 / 全域。
@@ -912,8 +897,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(gnRoot);
 	}
 
-	// ---- FR:audit r9(report_r9/regress_r9.tsv)--------------------------------
-	// ---- RV-1:精確條目值裡的 '#' 是資料，不是未填格 ------------------------------
+	// FR / RV-1:精確條目值裡的 '#' 是資料，不是未填格
 	// 出貨字典 "Charge on crit %:" → "暴擊時 #% 充能:"(poe1 ui.json L15320 / passives.json
 	// L9769;poe2 passives.json L7396,load_order 最後,蓋過 ui.json 的「暴擊充能機率:」)。
 	// 精確條目只檢查未填 {N}/{};'#' 規則只套在填值產出的結果(P2-5)。
@@ -949,7 +933,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!ok) printf("           got '%s'\n", r);
 	}
 
-	// ---- coverage_r4「一之一」可修(引擎)項 ----------------------------------------
+	// coverage_r4「一之一」可修(引擎)項
 	printf("\n=== coverage_r4 E2/E4/E5/N1 ===\n");
 	// E2-1:兩個候選只差大小寫且中文不同 → 現行大小寫不敏感判成歧義:
 	//   local_display_socketed_gems_get_chance_to_bleed_level "…supported by Level {0} Chance to Bleed" → 插槽中的寶石被等級 {0} 的機率流血輔助
@@ -1026,7 +1010,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Area is inhabited by an additional Invasion Boss", "item",
 	       u8"地圖中含有 1 隻額外侵略聯盟的頭目", "N1-1 英文無數字、條件單值 1 時以 1 填 {0}(需資料補入)");
 
-	// ---- E6:名稱槽的來源名與「 Support」結尾 ----------------------------------------
+	// E6:名稱槽的來源名與「 Support」結尾
 	printf("\n=== E6 名稱槽來源 ===\n");
 	{
 		// E6-1:name_slots 指向 stats_by_id 以外的新來源(gem_names_nonactive)時，
@@ -1093,7 +1077,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Socketed Gems are Supported by Level 5 Barrage Support", "item",
 	       u8"插槽中的寶石被等級 5 的 彈幕 輔助", "E6-2 名稱槽寶石名結尾「 Support」先去掉再查");
 
-	// ---- S5 / V5(使用者裁定 2026-10-21)--------------------------------------------
+	// S5 / V5
 	printf("\n=== S5 / V5 名稱槽 ===\n");
 	// S5-1:Impossible Escape。local_unique_jewel_disconnected_passives_can_be_allocated_around_keystone_hash
 	//   EN 三行 "Passive Skills in Radius of {} can be Allocated\nwithout being connected to your tree\nPassage"
@@ -1154,8 +1138,8 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(vRoot);
 	}
 
-	// ---- E7:產生器把中文拆成與英文同行數(使用者核准)---------------------------
-	// 期望值取自 dist stats_by_id.json(本輪新版)。行數約定：中文模板第二行為空
+	// E7:產生器把中文拆成與英文同行數
+	// 期望值取自 dist stats_by_id.json。行數約定：中文模板第二行為空
 	// 字串時，整段結果保留結尾 "\n"(「第一行\n」,依 '\n' 切為兩段、第二段空字串),
 	// 與英文行數一致 —— 注入層配對才能把第二行對上空字串而不是英文半句。
 	printf("\n=== E7 中英同行數 ===\n");
@@ -1198,12 +1182,12 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			if (!okL) printf("           line1 got '%s' want '%s'\n", shown(l1), m.zh1);
 		}
 	}
-	// E7-7:tornado_hinder|#|skill_stat_descriptions.txt|0(中文模板寫死數字;使用者裁定 2026-10-25 去掉負號,
+	// E7-7:tornado_hinder|#|skill_stat_descriptions.txt|0(中文模板寫死數字;裁定去掉負號,
 	// 資料 32dab45 改成「減少 1%」)
 	expect("Enemies in range are Hindered", "gem:skill_stat_descriptions",
 	       u8"範圍內敵人被阻礙減少 1% 移動速度", "E7-7 龍捲風阻礙(gem:skill_stat_descriptions)");
 
-	// ---- S8(使用者重新裁定，撤回依 id):legion 不載入 id 字典 -------------------
+	// S8:legion 不載入 id 字典
 	// 查證:POB / poedb / GGPK Name 欄都是 Powerful Faith=暴擊信念、Frenzied Faith=
 	// 狂怒信念，只有 GGPK 內部 Id 字串對調。裁定撤回「legion 依 id 取名」,改回依
 	// 英文名查 legion 來源。即使 legion_by_id.json 列在 source_dicts,引擎也不得載入
@@ -1282,7 +1266,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 	expect("Nearby Enemies have 50% reduced Life Regeneration Rate", "passive",
 	       u8"附近敵人減少 50% 生命恢復率", "FR-2 專精行取天賦描述檔，光環檔排在最後");
 
-	// ---- P3:anoint / legion / tattoo 來源字典 ------------------------------------
+	// P3:anoint / legion / tattoo 來源字典
 	// 扁平 {source_files,is_base_items,entries},只列 meta source_dicts,只在
 	// source_lookup 下當來源表;絕不併入全域。三檔由測試在暫存複本放小樣本。
 	// 全域現值(出貨字典):Juggernaut→勇士、Bleed Avoidance→避免流血、
@@ -1390,7 +1374,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		remove_tree(nRoot);
 	}
 
-	// ---- P2:不得輸出未填的佔位符 ------------------------------------------------
+	// P2:不得輸出未填的佔位符
 	// coverage_r2(tools/ggpk_zh/audit_prod/coverage_r2/out/cat_*.tsv 的 leak 欄)40 列:
 	// POB 把多行 stat 拆成半句 / 逐行送來,半句被當成整條模板或 pattern 翻,模板裡
 	// 找不到值的 {N} 原樣輸出(例「獲得 {0} 充能，每秒不超過 1 次」)。
@@ -1517,7 +1501,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (!ok) printf("           %s -> '%s'\n", kEn, r);
 	}
 
-	// ---- D:詞彙表(glossary)選擇規則(使用者裁定)----------------------------
+	// D:詞彙表(glossary)選擇規則
 	// 同一 term(小寫、去結尾冒號)只留一筆：優先原鍵不帶冒號者;都帶冒號取原鍵
 	// 字典序最小;全形「：」與半形「:」結尾都去除;排序 = 長度降冪、再 term 字典序。
 	// 例:ui.json "Breach:" → "裂痕：" 與 passives.json "Breach" → "裂痕" 去冒號後
@@ -1600,7 +1584,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		printf(")\n");
 	}
 
-	// ---- G:keep_literals(使用者裁定 2026-10-25:岩漿之擊照 GGPK「…5 秒」)----------
+	// G:keep_literals(岩漿之擊照 GGPK「…5 秒」)
 	printf("\n=== G 照抄中文數字(keep_literals)只作用於標記鍵 ===\n");
 	{
 		const char* kKeepKey = "every_10_seconds_physical_damage_%_to_add_as_fire_for_3_seconds|#|stat_descriptions.txt|0";
@@ -1637,7 +1621,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		const Said magWith = ask(kMagma2, "item");
 		std::string body, why2;
 		bool setup = read_bytes(flagRoot + L"zh-rTW\\stats_by_id.json", body);
-		// 腎上腺素那條(kUnflagged[4])由使用者裁定 2026-10-26 改照 GGPK(資料端 keep_literals,另一分支):
+		// 腎上腺素那條(kUnflagged[4])已改照 GGPK(資料端 keep_literals):
 		// 出貨資料帶上旗標後,它就不再是「未標記」,G3a 不拿它比。
 		const char* kAdrKey = "gain_adrenaline_for_x_ms_per_100_ms_stun_duration_on_you|1|#|stat_descriptions.txt|0";
 		std::vector<char> shippedFlag(std::size(kUnflaggedKeys), 0);
@@ -1698,7 +1682,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 				if (planted[i] != noFlag[i]) printf("           planted %s: '%s'(none '%s')\n", kUnflagged[i], planted[i].c_str(), noFlag[i].c_str());
 		(void)kKeepKey;
 		// G5:專精「Gain Adrenaline…per 100ms」英文寫死 100(毫秒)、GGPK 中文寫死 0.1(秒),字面數字不同。
-		// 使用者裁定 2026-10-26 照 GGPK「每 0.1 秒」,修在資料端(keep_literals,wip/round9-data)。
+		// 裁定照 GGPK「每 0.1 秒」,修在資料端(keep_literals)。
 		// G5a 先用測試字典植入旗標驗機制(現在就該綠);G5b 看出貨資料,資料帶上旗標才生效(之前列 WAIT)。
 		const char* kAdr = kUnflagged[4];
 		const std::string kAdrWant = u8"當暈眩時，每 0.1 秒暈眩持續時間，獲得腎上腺素 2 秒";
@@ -1730,7 +1714,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
-	// ---- H:多行描述的整句重組(ggpk_groups.json) ------------------------------------
+	// H:多行描述的整句重組(ggpk_groups.json)
 	printf("\n=== H 多行描述整句重組(translation_group_lines) ===\n");
 	{
 		struct G { int n; std::vector<std::string> out; };
@@ -1826,7 +1810,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		         "That diversity would empower the Syndicate - and the increased",
 		         "number of dispensible bodies was a convenient coincidence."}, "gem", {N, N, N},
 		        "H12 同英文多個 GGPK 繁中的風味文字不成組(歧義)");
-		// H13(C1,使用者裁定 2026-10-25):POB 製作列把模板寫死的 100 也寫成 #;群組 / 「/」查表時 # 視為吻合
+		// H13:POB 製作列把模板寫死的 100 也寫成 #;群組 / 「/」查表時 # 視為吻合
 		// 寫死的數字,並顯示 GGPK 寫死的 100。
 		{
 			const char* kP1 = "#% increased Poison Duration for each Poison you have inflicted Recently, up";
@@ -1860,7 +1844,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 			check(bok, "H14b 組外有一段查不到:整列不採用(不出現半中半英)");
 			if (!bok) printf("           got '%s'\n", b);
 		}
-		// H15(審查第 5 輪):「/」查表語境由呼叫端設定(專精彈窗 passive);快取依語境分開。
+		// H15:「/」查表語境由呼叫端設定(專精彈窗 passive);快取依語境分開。
 		// 這句兩行描述只在 passive_skill_stat_descriptions,item 語境查不到(--tr 實測 no match)。
 		{
 			const char* kRow = "20% less maximum Life / Increases and reductions to Maximum Life also apply to Maximum Rage at 20% Value";
@@ -1879,7 +1863,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
-	// ---- X:顯示排除清單(使用者裁定 2026-10-25 方案 a)-------------------------------
+	// X:顯示排除清單
 	printf("\n=== X 顯示排除清單(display_exclude.json) ===\n");
 	{
 		const std::vector<std::pair<std::string, std::string>> kUi = {
@@ -1995,7 +1979,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(x4, "X4 排除鍵不進逐行衍生");
 		const bool x5 = setup && on.gl.find(u8"排除詞") == std::string::npos && on.ctrlGl == u8"限定: 控制詞";
 		check(x5, "X5 排除鍵不進詞彙表(句中替換不出現該詞)");
-		// 使用者裁定 2026-10-25「全部改 GGPK」:標了來源的位置也不用被排除鍵的舊值,改回落到合併表(GGPK 值)。
+		// 全部改 GGPK:標了來源的位置也不用被排除鍵的舊值,改回落到合併表(GGPK 值)。
 		const bool x6 = setup && on.src == u8"全量來源" && on.ctrlSrc == u8"控制來源" && on.srcMerged == u8"全量來源";
 		check(x6, "X6 標了來源也不回被排除鍵的舊值,改回落合併表的 GGPK 值");
 		const bool x6b = setup && on.srcPat == u8"全量來源 8 件" && on.srcLine == u8"全量一" &&
@@ -2051,7 +2035,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
-	// ---- T:POB 尾端裝飾(使用者裁定 2026-10-26)-----------------------------------------------
+	// T:POB 尾端裝飾
 	// 製作/自訂詞綴下拉的「 (Prefix)」「 ^8(Suffix)」與不支援詞綴的「 ^8(Not supported in PoB yet)」:剝掉後
 	// 本文照常查表(GGPK 優先),再接回 —— 前/後綴用字典的「Prefix/Suffix」譯法,註記維持英文且原樣保留。
 	// 剝除後的本文查表優先於整串舊鍵;本文查不到時才走原本的整串路徑(不會變英文)。
@@ -2122,7 +2106,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		        "T10b 「X (Unused) ^8(Not supported in PoB yet)」:註記維持英文接回");
 	}
 
-	// ---- EO:「只比整句」的鍵(exact_only.json,使用者裁定 2026-10-26)--------------------------------
+	// EO:「只比整句」的鍵(exact_only.json)
 	// 被列的鍵只進精確表(正向、來源副本、反向精確);不建正向/反向樣板、不做逐行衍生、不進詞彙表;排除清單優先。
 	printf("\n=== EO 只比整句的鍵(exact_only.json) ===\n");
 	{
@@ -2204,7 +2188,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		}
 	}
 
-	// ---- R12(使用者裁定 2026-10-27:舊字典既有錯譯現在修)------------------------------------------
+	// R12:舊字典既有錯譯
 	// GL 詞彙表詞條不從數字中間開始比;BR 整段方括號 "[...]" 把裡面整句查;CS 只差大小寫的兩個樣板
 	// 輸入大小寫完全相同的那個優先;KE 登記為「維持英文」的整串顯示字不翻(傳奇風味)。
 	printf("\n=== R12 詞彙表數字邊界 / 整段方括號 / 大小寫不同的樣板 / 維持英文 ===\n");
@@ -2269,7 +2253,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		check(setup && k0 == u8"^xAF6025風味句" && k1 == "(null)" && k2 == u8"風味句",
 		      "KE1 登記維持英文的整串顯示字不翻;沒登記的(不帶色碼)照翻");
 		check(setup && k3 == "(null)", "KE2 維持英文的登記不因重新載入字典而消失");
-		// 使用者裁定 2026-10-23/24:下拉列名稱後 48 空白的英文詞綴是隱藏搜尋字,維持英文
+		// 下拉列名稱後 48 空白的英文詞綴是隱藏搜尋字,維持英文
 		check(setup && t1 == u8"名稱C" + pad + "15% zzqcol speed",
 		      "TL1 下拉列「名稱<48 空白>隱藏搜尋字」只翻名稱欄,48 空白後的英文原樣保留");
 		check(setup && t2 == u8"名稱C" + pad + "Zzqcol unknown words", "TL2 隱藏搜尋字翻不翻得出來都不影響(只看名稱欄)");
@@ -2286,12 +2270,12 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		       k5.c_str(), k6.c_str());
 	}
 
-	// ---- R15(使用者裁定 2026-10-28「更改」:下拉列改用語言無關 id)-----------------------------------
+	// R15:下拉列改用語言無關 id
 	// ID 新的 id 表(詞綴→stat id、寶石名、昇華名、天賦→stat id)由 meta.json source_dicts 載入;
 	// SR 一列詞綴以該詞綴的 stat id 走 stats_by_id(單行 / 「/」接的多行 / 尾綴 (Prefix)(Suffix));
 	// DO 繪製期間的覆寫表(某控制項正在畫的字 → 依 id 翻好的中文),清掉後照舊。
 	// 植入的 id 值抄自 GGPK(pos_affix/out/_cache 的 rel_mod_stat / passiveskills / ascendancy /
-	// activeskills,2026-10-28 讀),不是虛構;出貨字典目前沒有這幾個檔(待 pob_export 補)。
+	// activeskills),不是虛構;出貨字典目前沒有這幾個檔(待 pob_export 補)。
 	printf("\n=== R15 id 表 / 一列詞綴走 stat id / 繪製覆寫 ===\n");
 	{
 		auto lk = [](const char* s) {
@@ -2430,7 +2414,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		if (d3 != u8"覆寫列, 混沌石") printf("           d3='%s'\n", d3.c_str());
 	}
 
-	// ---- C1(使用者裁定 2026-10-29「PoE1 / PoE2 依遊戲走各自規則」)-------------------------------
+	// C1:PoE1 / PoE2 依遊戲走各自規則
 	// 屬性查詢(translation_lookup_stat)對輸入行的方括號處理依字典 meta.json 的 "source":
 	// poe2 的畫面字串不帶 GGPK 標記,不去方括號(POB 的 [整句] 外框要原樣當成查不到);
 	// poe1(含沒寫)照舊去掉。樣板端不變。
@@ -2467,7 +2451,7 @@ int RunStatSelftest(const std::wstring& statsJsonArg)
 		      "C1c meta source=poe1:帶方括號的同一句照舊去方括號、翻成中文(現行行為)");
 	}
 
-	// ---- G(引擎拆分第 1 期:遊戲由 POB_GAME 決定,沒設才看 meta source)----------------------------
+	// G:遊戲由 POB_GAME 決定,沒設才看 meta source
 	// translation_game() / translation_meta_source() 在最近一次載入時定下;方括號規則改看 game。
 	// POB_GAME 有設、meta source 非空且兩者不同 → 寫一筆 i18n 錯誤記錄(含 POB_GAME 與 source)。
 	printf("\n=== G 遊戲判斷:POB_GAME 優先,沒設才看 meta source ===\n");

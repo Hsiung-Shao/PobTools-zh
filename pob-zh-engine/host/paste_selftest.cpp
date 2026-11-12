@@ -1,28 +1,16 @@
 // Headless regression for the Chinese item paste path.
 //
-// The invariant this file exists to defend is blunt: after reverse translation,
-// NOTHING may still be non-ASCII. POB runs every pasted item through
-// sanitiseText (Classes/Item.lua:68 -> Modules/Common.lua:272), which replaces
-// every byte >= 0x80 with a literal '?'. So a line we fail to translate is not
-// "left in Chinese" -- it is destroyed, one '?' per byte, and shows up in POB as
-// a red "(Not supported in PoB yet)" modifier. "無形性" (9 bytes) became exactly
-// "?????????" in the report that prompted this work.
+// Invariant: after reverse translation NOTHING may still be non-ASCII. POB runs
+// every pasted item through sanitiseText (Classes/Item.lua:68 ->
+// Modules/Common.lua:272), which replaces every byte >= 0x80 with '?', so an
+// untranslated line is destroyed (one '?' per byte), not "left in Chinese".
 //
-// The fixtures are real items the user copied out of 3.29, kept verbatim
-// (including GGG's own inconsistencies: 階層 in one annotation and 階級 in the
-// next, and the em-dash carrying no leading space in Chinese where the English
-// template has one). Six items are enough to cover every shape the reported ten
-// contained -- unique flask, rare armour with eldritch implicits, fractured
-// jewel, Foulborn unique jewel, helmet with an implicit annotation and a
-// negative value, and a cluster jewel with enchant lines.
+// The fixtures are real items copied out of 3.29, kept verbatim (including GGG's
+// own inconsistencies: 階層 vs 階級, em-dash without a leading space in Chinese).
 //
-// kKnownGaps is the list of lines allowed to stay Chinese -- genuine dictionary
-// gaps, named exactly so they stay visible, since a missing mod that silently
-// disappears is worse than one POB flags. It is currently EMPTY: every item
-// fixture must come out fully ASCII. Filling a gap therefore fails this test,
-// which is the correct prompt to update it. That is not hypothetical -- adding
-// "Intangibility: {0}%" to ui.json is what rewrote the property assertions
-// below.
+// kKnownGaps lists lines allowed to stay Chinese (genuine dictionary gaps, named
+// so they stay visible). Currently EMPTY: every fixture must come out fully
+// ASCII, so filling a gap fails the test as the prompt to update it.
 
 #include "paste_selftest.h"
 #include "paste_fixtures.h"
@@ -125,8 +113,7 @@ std::vector<std::string> kinds_of(const char* zh)
 }
 
 // "header*4 sep property*6" -> "header header header header sep property ..."
-// The run-length form is what makes these assertions readable: an item has 30-40
-// lines and a bare wall of repeated words is a diff nobody can check by eye.
+// (run-length form keeps 30-40 line items readable)
 std::string expand_kinds(const char* spec)
 {
 	std::string out;
@@ -171,11 +158,8 @@ void check_eq(const char* zh, const char* expect, const char* what)
 
 // Lines that legitimately have no translation yet, keyed by the fixture they
 // belong to. Asserted exactly so a gap can neither appear nor vanish unnoticed.
-//
-// Empty since the per-line registration of GGG's own multi-line entries landed:
-// the one entry here ("範圍內天賦獲得火焰抗性或全部元素抗性") was never missing
-// from the dictionary, it was the FIRST LINE of a two-line entry whose key is
-// stored joined, so neither half could ever match on its own.
+// (GGG's multi-line entries are stored joined, so neither half matched alone;
+// per-line registration removed the last entry.)
 struct KnownGap { const char* item; const char* line; };
 const KnownGap kKnownGaps[] = {
 	{ nullptr, nullptr },
@@ -223,10 +207,9 @@ int RunPasteSelftest()
 	check_item("vestigial boots", kFxVestigialBoots, 0);
 
 	printf("\n-- section grammar: every line's label, on every fixture --\n");
-	// Section COUNT and ORDER differ across these eight (6 to 8 sections; sockets,
-	// requirements and influence come and go), which is exactly why the grammar
-	// keys on the Item Level line and on what a section contains, never on "the
-	// third section". These sequences are the proof that it holds up.
+	// Section COUNT and ORDER differ across these eight (6 to 8 sections), which is
+	// why the grammar keys on the Item Level line and section contents, never on
+	// "the third section".
 	check_kinds("unique flask", kFxFlask,
 	            "header*4 sep property*6 sep property*2 sep property sep enchant "
 	            "sep mods*10 sep flavour sep desc");
@@ -257,8 +240,7 @@ int RunPasteSelftest()
 	check_eq("{ 傳奇詞綴 }", "{ Unique Modifier }", "unique");
 	check_eq("{ 傳奇詞綴— 傷害 }", "{ Unique Modifier }", "tags dropped after em-dash");
 	// The quoted affix name is what POB matches against its own mod database to
-	// fill the item's prefix/suffix slots (Item.lua:463). Dropping it is what
-	// made a pasted cluster jewel lose every notable it rolled.
+	// fill the prefix/suffix slots (Item.lua:463); dropping it loses cluster notables.
 	check_eq("{ 前綴 \"獵豹的\"(階層：2)— 速度 }", "{ Prefix Modifier \"Cheetah's\" }",
 	         "prefix keeps the affix name, tier dropped");
 	check_eq("{ 已破裂 前綴 \"衰老的\"(階層：1)— 異常狀態 }",
@@ -267,14 +249,13 @@ int RunPasteSelftest()
 	check_eq("{ 已大師工藝 前綴 \"進化的\"(階級：3)— 防禦,護甲,能量護盾 }",
 	         "{ Master Crafted Prefix Modifier \"Upgraded\" }",
 	         "master crafted + prefix (階級 spelling)");
-	// A name with more than one English counterpart, or one POB has no affix
-	// for, is left off entirely -- the old behaviour. 精髓之 is Essence /
-	// of Essences / of the Essence in GGG's own data, so there is nothing to
-	// pick from and guessing would put the wrong affix in the slot.
+	// A name with more than one English counterpart (精髓之 = Essence / of Essences /
+	// of the Essence), or one POB has no affix for, is left off: guessing would put
+	// the wrong affix in the slot.
 	check_eq("{ 後綴 \"精髓之\"— 傷害,元素,寶石 }", "{ Suffix Modifier }",
 	         "an ambiguous affix name is omitted, not guessed");
-	// The one that made the cluster jewel fail: all 284 notable modifiers share
-	// this single name, and POB narrows down using the stat line that follows.
+	// All 284 notable modifiers share this single name; POB narrows down using the
+	// stat line that follows.
 	check_eq("{ 前綴 \"顯著的\"(階層：1)— 傷害,元素,抗性 }",
 	         "{ Prefix Modifier \"Notable\" }", "cluster jewel notable affix name");
 	check_eq("{ 灼烙總督固定詞綴 (宏偉)— 元素,閃電,異常狀態 }",
@@ -297,21 +278,16 @@ int RunPasteSelftest()
 	         "Added Small Passive Skills grant: 10% increased Damage while affected by a Herald (enchant)",
 	         "same rule, a different inner stat");
 	// "grant:" vs "also grant:" is decided by the " (enchant)" suffix, not by the
-	// Chinese wording -- GGG writes 小型 on the enchant and 小 on the modifier but
-	// uses both for both in its stat data. Verified against POB's own export of
-	// the same jewel, which lists the enchant as "grant:" and the rolled suffix
-	// as "also grant:". Getting this wrong made POB show the rolled modifier as
-	// "(Not supported in PoB yet)".
+	// Chinese wording (GGG uses 小型 and 小 for both in its stat data); matches
+	// POB's own export: enchant = "grant:", rolled suffix = "also grant:".
 	check_eq("附加的小天賦給予：+3(2-3)% 冰冷抗性",
 	         "Added Small Passive Skills also grant: +3(2-3)% to Cold Resistance",
 	         "a rolled modifier gets 'also grant:'");
 	check_eq("附加的小型天賦給予：+3(2-3)% 冰冷抗性 (enchant)",
 	         "Added Small Passive Skills grant: +3(2-3)% to Cold Resistance (enchant)",
 	         "the same stat as an enchant gets 'grant:'");
-	// The value must survive the round trip. Without this guard the rule wrapped
-	// a wrong inner match and turned a line that used to fail visibly into
-	// confident nonsense ("...also grant: you and nearby Allies"); the census
-	// caught three of them.
+	// The value must survive the round trip; otherwise a wrong inner match turns a
+	// visible failure into confident nonsense ("...also grant: you and nearby Allies").
 	{
 		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n"
 		                    "附加的小天賦給予：+37% 最大能量護盾\n");
@@ -322,9 +298,8 @@ int RunPasteSelftest()
 	}
 
 	// An inner stat that translates to nothing must leave the line alone rather
-	// than emit a half-English hybrid. Probed inside a real item because
-	// translation_reverse_text reports "nothing translated" as a null return, so
-	// on its own an untouched line is indistinguishable from a refusal.
+	// than emit a half-English hybrid. Probed inside a real item because a null
+	// return from translation_reverse_text cannot tell "untouched" from "refused".
 	{
 		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n"
 		                    "附加的小型天賦給予：這不是任何一條詞綴\n");
@@ -333,32 +308,25 @@ int RunPasteSelftest()
 	}
 
 	printf("\n-- unknown properties: dropped by the rule, not by a list --\n");
-	// There is no drop list any more. A "key: value" line inside the property
-	// block that nothing could translate is dropped because of WHERE it is, so
-	// these four assertions have to hold together: the known case still drops,
-	// a key nobody has ever seen drops too, a key POB does consume survives, and
-	// the same text outside the property block is left alone.
+	// No drop list: an untranslatable "key: value" line inside the property block
+	// is dropped because of WHERE it is. These four assertions hold together: a
+	// known case drops, an unseen key drops, a key POB consumes survives, and the
+	// same text outside the property block is left alone.
 	check(!prop_survives("虛構屬性: 42%"),
 	      "an unknown property key drops -- the rule is not a list");
 	check(prop_survives("品質: +20% (augmented)", "Quality: +20%"),
 	      "a property POB does consume is NOT dropped");
-	// 無形性 was the one hardcoded drop, and then the worked example of the rule
-	// that replaced it, purely because the dictionary had no entry for POB's own
-	// wording ("Intangibility: {0}%", now in ui.json -- GGPK only ever writes the
-	// term inside its "[Key|Display]" markup, which POB does not emit). With a
-	// translation available the line no longer reaches the drop rule, and that is
-	// the better outcome: POB writes this property itself (Item.lua:1753) and
-	// parses it back (Item.lua:825), so a pasted item now KEEPS its Intangibility
-	// instead of losing it.
+	// 無形性 translates ("Intangibility: {0}%" in ui.json; GGPK only writes the term
+	// inside "[Key|Display]" markup, which POB does not emit), so it no longer
+	// reaches the drop rule: POB writes (Item.lua:1753) and parses (Item.lua:825)
+	// this property itself, so the pasted item KEEPS it.
 	//
-	// Asserted by its English form. "The Chinese vanished" would pass either way
-	// -- dropped or translated -- so it would have hidden this change entirely.
+	// Asserted by its English form: "the Chinese vanished" passes either way.
 	check(prop_survives("無形性: 15%", "Intangibility: 15%"),
 	      "Intangibility translates, so it survives as a real property");
-	// Outside the property block the same shape must fall through untouched:
-	// dropping it there would delete a modifier that merely contains a colon.
-	// Sampled with a key that cannot translate, so a future dictionary addition
-	// cannot quietly turn this into a vacuous pass the way 無形性 just did.
+	// Outside the property block the same shape must fall through untouched
+	// (a modifier that merely contains a colon). Sampled with a key that cannot
+	// translate, so a future dictionary addition cannot make this vacuous.
 	{
 		std::string s = rev("稀有度: 稀有\n狂喜光澤\n巨型星團珠寶\n--------\n虛構屬性: 42%\n");
 		check(s.find("虛構屬性: 42%") != std::string::npos,
@@ -366,10 +334,8 @@ int RunPasteSelftest()
 	}
 
 	printf("\n-- GGG's own multi-line entries, registered per line --\n");
-	// The dictionary stores these joined, but the game renders them as two lines
-	// and a pasted item presents them as two lines, so neither half could match.
-	// This one is The Red Nightmare's first line -- it was the last remaining
-	// "no translation" gap in the fixtures and it was never a missing entry.
+	// The dictionary stores these joined, but a pasted item presents two lines, so
+	// neither half could match (this one is The Red Nightmare's first line).
 	check_eq("範圍內天賦獲得火焰抗性或全部元素抗性",
 	         "Passives granting Fire Resistance or all Elemental Resistances in Radius",
 	         "first line of a two-line entry resolves on its own");
@@ -378,10 +344,8 @@ int RunPasteSelftest()
 	         "second line of the same entry, with its number filled");
 
 	printf("\n-- POB's own '#' placeholder form --\n");
-	// POB's crafting UI writes a rollable value as a literal '#'. That string is
-	// ALREADY the hashed form, so hashing changed nothing and the pattern lookup
-	// used to be skipped entirely -- the affix rows stayed English while the same
-	// mod translated fine in the tooltip, where it carries a real number.
+	// POB's crafting UI writes a rollable value as a literal '#', which is ALREADY
+	// the hashed form, so the pattern lookup must not be skipped for it.
 	check(fwd_eq("#% increased Armour during Effect", "效果持續時間內，增加 #% 護甲"),
 	      "a '#' placeholder line is looked up, not skipped");
 	check(fwd_eq("60% increased Armour during Effect", "效果持續時間內，增加 60% 護甲"),
@@ -407,17 +371,15 @@ int RunPasteSelftest()
 	         "negative value matches the same pattern '+2' does");
 	check_eq("此物品插槽中技能寶石等級 +2", "+2 to Level of Socketed Skill Gems",
 	         "positive value still works");
-	// The Chinese side of this one is stored as "{0:+d}"; before normalize_
-	// placeholders understood format specs it hashed to garbage and never matched.
+	// The Chinese side is stored as "{0:+d}" (normalize_placeholders must understand format specs).
 	check_eq("效果持續時間內，+10(8-12)% 攻擊傷害格擋率",
 	         "+10(8-12)% Chance to Block Attack Damage during Effect",
 	         "{0:+d} format spec is the same placeholder as {0}");
 	// A '-' BETWEEN two numbers is a separator, not a sign; the socket line would
 	// break if that distinction were lost.
 	check_eq("插槽: R G-W R", "Sockets: R G-W R", "hyphen between socket groups untouched");
-	// Negative rolls put four minus signs in a row. match_range demanded a digit
-	// straight after '(', so the range was never collapsed and the whole line
-	// failed -- every roll on Melding of the Flesh.
+	// Negative rolls put four minus signs in a row; match_range must accept a '-'
+	// straight after '(' (Melding of the Flesh).
 	check_eq("-72(-80--70)% 全部元素抗性",
 	         "-72(-80--70)% to all Elemental Resistances",
 	         "negative roll range survives");
@@ -469,10 +431,8 @@ int RunPasteSelftest()
 		// The safety property: an untranslated line sharing a section with a
 		// translated one is a missing MOD, not flavour, and must stay visible.
 		//
-		// The specimen is deliberately synthetic. It used to be a real line that
-		// had no translation ("範圍內天賦獲得火焰抗性或全部元素抗性"), and when
-		// that gap was closed these two assertions started passing vacuously --
-		// a test whose premise a fix can remove is not testing what it claims.
+		// The specimen is deliberately synthetic: a real untranslated line stops
+		// being one once its gap is closed, making the assertions vacuous.
 		const char* kNoSuchMod = "這不是任何一條詞綴";
 		std::string kept = rev(std::string("稀有度: 傳奇\n噬燼甕\n真銀藥劑\n--------\n")
 		                       .append(kNoSuchMod).append("\n增加 30% 移動速度\n").c_str());
@@ -508,10 +468,9 @@ int RunPasteSelftest()
 
 // --paste-selftest-poe2: PoE2's client writes a different item text than PoE1's
 // (no space between a number and the words, "需求: 等級 24" on one line, GGG
-// markup left on a unique's name, " — 無法變動的值"), and PoE2 had no
-// item_metadata.json at all until it was generated from GGPK. Fourteen real
-// zh-TW PoE2 copies (paste_fixtures_poe2.h) must come back with their unique's
-// English name and no Chinese beyond the lines each fixture names.
+// markup left on a unique's name, " — 無法變動的值"). The real zh-TW PoE2 copies
+// (paste_fixtures_poe2.h) must come back with their unique's English name and no
+// Chinese beyond the lines each fixture names.
 int RunPasteSelftestPoe2()
 {
 	SetEnvironmentVariableA("POB_LOCALE", "zh-rTW");

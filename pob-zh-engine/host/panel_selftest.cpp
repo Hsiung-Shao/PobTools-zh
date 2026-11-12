@@ -1,14 +1,11 @@
 // Drives an IToolPanel the way the LAUNCHER does, headlessly.
 //
-// The other selftests cannot see this path at all: none of them creates an ImGui
-// frame, so a panel that draws its own root window, leaves the ID stack unbalanced
-// or reads io.DisplaySize would leave every one of them green and only break when
+// No other selftest creates an ImGui frame, so a panel that draws its own root
+// window, unbalances the ID stack or reads io.DisplaySize would only break when
 // somebody opened the tab.
 //
-// What it checks is the contract in tool_panel.h, and it checks it in the
-// awkward case rather than the easy one: the panel is drawn inside a tab bar,
-// inside a window that is NOT the whole viewport, with another tab present. A
-// panel that quietly assumed it owned the screen passes when drawn alone.
+// Checks the contract in tool_panel.h in the awkward case: drawn inside a tab
+// bar, inside a window that is NOT the whole viewport, with another tab present.
 #include "panel_selftest.h"
 
 #include "atlas_planner.h"
@@ -54,9 +51,8 @@ struct Report {
 	}
 };
 
-// Depths that must be identical before and after Frame(). An imbalance here is
-// the failure mode that hurts most when embedded: ImGui carries it forward into
-// whatever the launcher draws next, so the symptom appears on a different tab.
+// Depths that must be identical before and after Frame(): ImGui carries an
+// imbalance into whatever the launcher draws next, on a different tab.
 struct Stacks {
 	int window = 0, id = 0, font = 0, colour = 0, styleVar = 0, group = 0;
 	bool operator==(const Stacks& o) const {
@@ -98,8 +94,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 		glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-		// Hidden and never focused: a check that steals focus produces phantom
-		// clicks in whatever the user happens to be doing.
+		// Hidden and never focused: stealing focus would send phantom clicks elsewhere.
 		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 		GLFWwindow* win = glfwCreateWindow(1280, 800, "panel-selftest", nullptr, nullptr);
 		if (!win) {
@@ -111,10 +106,8 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			ImGui::CreateContext();
 			ImGui::GetIO().IniFilename = nullptr;
 			PobUi::ApplyTheme(1.0f, PobUi::Density::Comfortable);
-			// The built-in face with the icon font merged in, at two sizes: both
-			// real hosts hand the panels body + small faces that carry the icons,
-			// and the icon branches of the widgets are a different code path from
-			// the no-icon fallbacks (they size and place glyphs, not text).
+			// The built-in face with the icon font merged in, at two sizes, as both
+			// real hosts do (the widgets' icon branches differ from the no-icon fallbacks).
 			ImFontAtlas* atlas = ImGui::GetIO().Fonts;
 			ImFontConfig defCfg;
 			defCfg.SizePixels = 13.0f;
@@ -140,13 +133,11 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 			host.hostHwnd = glfwGetWin32Window(win);
 			host.embedded = true;
 			host.body = stBody;
-			// Both real hosts always supply one, so that is the configuration worth
-			// exercising here.
+			// Both real hosts always supply one.
 			host.big = stBody;
 			host.cjkOk = false;   // the default font has no CJK; the panel must cope
 
-			// Every panel, not just one: the contract is the same for all of them and
-			// a check that only ever exercises the easiest tool proves the least.
+			// Every panel, not just the easiest one.
 			struct Entry { const char* what; IToolPanel* (*make)(); };
 			const Entry kPanels[] = {
 				{ "filter", &CreateFilterEditorPanel },
@@ -166,13 +157,9 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 
 			Stacks before, after;
 			bool balanced = true, everDrew = false;
-			// How much the panel actually put on screen, at its busiest frame.
-			//
-			// "The tab body ran" is a much weaker statement than it looks: three of
-			// these tools draw a short apology instead of themselves when their data
-			// files are missing, and that path leaves every check below green while
-			// exercising almost none of the panel. A real body is thousands of
-			// vertices; an apology is a few dozen.
+			// How much the panel put on screen at its busiest frame: three tools draw
+			// a short apology when their data files are missing, which would leave
+			// every check below green. A real body is thousands of vertices.
 			int peakVtx = 0;
 			for (int frame = 0; frame < 8; frame++) {
 				ImGui_ImplOpenGL3_NewFrame();
@@ -191,17 +178,14 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 					PobUi::SetWidgetFonts(wf);
 				}
 
-				// NOT the whole viewport, and not at the origin: a panel that reads
-				// io.DisplaySize or assumes it starts at (0,0) draws off its own area,
-				// and only a container that is smaller than the screen reveals it.
+				// NOT the whole viewport, not at the origin: reveals a panel that reads
+				// io.DisplaySize or assumes (0,0).
 				ImGui::SetNextWindowPos(ImVec2(40, 30));
 				ImGui::SetNextWindowSize(ImVec2(1100, 700));
 				ImGui::Begin("##container", nullptr,
 					ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings);
 				if (ImGui::BeginTabBar("##tabs")) {
-					// A neighbour, so the panel is never the only thing in the bar --
-					// ID collisions and popup-scope mistakes need something to collide
-					// with before they show up.
+					// A neighbour, so ID collisions and popup-scope mistakes have something to hit.
 					if (ImGui::BeginTabItem("neighbour")) {
 						ImGui::TextUnformatted("...");
 						ImGui::EndTabItem();
@@ -228,10 +212,8 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				ImGui::End();
 
 				ImGui::Render();
-				// Whole-frame, because a panel's children each own a draw list and the
-				// container's own list would miss everything inside them. The neighbour
-				// tab and the bar itself are the only other contributors, and they are
-				// worth well under a hundred vertices.
+				// Whole-frame: a panel's children each own a draw list. The neighbour
+				// tab and bar add well under a hundred vertices.
 				if (ImGui::GetDrawData())
 					peakVtx = (std::max)(peakVtx, ImGui::GetDrawData()->TotalVtxCount);
 				int fw = 0, fh = 0;
@@ -243,15 +225,12 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				panel->RunDeferred();
 			}
 
-			// Without this the loop above could have skipped the tab entirely (a tab
-			// bar does not draw an unselected tab's body) and everything below would
-			// be comparing two default-constructed snapshots.
+			// The loop could have skipped the tab entirely (unselected tab bodies are
+			// not drawn), leaving the checks below comparing empty snapshots.
 			rep.check(std::string("P2 the panel's body was actually drawn") + tag, everDrew);
-			// Measured, not guessed: forcing the atlas planner down its missing-data
-			// branch draws 444 vertices, while its real body draws 40,218. The other
-			// three measure 1,694 / 3,512 / 99,508. 1000 is the line between "drew
-			// almost nothing" and "drew a panel", and any panel that later crosses it
-			// is worth a look whatever the reason.
+			// Measured: the atlas planner's missing-data branch draws 444 vertices, its
+			// real body 40,218; the other three 1,694 / 3,512 / 99,508. 1000 separates
+			// "drew almost nothing" from "drew a panel".
 			rep.check(std::string("P2b ...and it was the real body, not a missing-data notice") + tag,
 			          peakVtx >= 1000, std::to_string(peakVtx) + " vertices");
 			rep.check(std::string("P3 Frame() leaves every ImGui stack as it found it") + tag, balanced,
@@ -263,9 +242,7 @@ int RunPanelSelfTest(const std::wstring& exeDir)
 				          "glGetError=" + std::to_string((unsigned)err));
 			}
 
-			// Closing an untouched panel must not put up a prompt: there is nothing to
-			// save, and a tab that argues about closing when nothing changed is worse
-			// than one that just goes.
+			// Closing an untouched panel must not put up a prompt.
 			const ToolCloseState cs = panel->RequestClose();
 			rep.check(std::string("P5 a clean panel closes without asking") + tag,
 			          cs == ToolCloseState::Closed, "state=" + std::to_string((int)cs));

@@ -1,17 +1,9 @@
-// Launcher UI strings as editable translation data.
-//
-// The 49 strings in launcher_strings.h are compiled into the exe, so a translator
-// could not touch them at all -- let alone see the result. They now also ship as
-// Data\launcher\<locale>\launcher.json, laid out EXACTLY like Data\poe1\zh-rTW\
-// (a meta.json with a load_order plus one dictionary file). That shape is the
-// whole design: the external-data-path override, the "update the app but not the
-// translation data" split and the translation editor all handle it with no
-// special-case code, because to each of them it is just another dictionary.
-//
-// The JSON is an OVERLAY, never the source of truth. Whatever it does not define
-// keeps the compiled string, so a stale, partial or corrupt file can never blank
-// a button -- and text added by a NEW build still renders correctly for someone
-// who has turned translation-data updates off.
+// Launcher UI strings as editable translation data. The strings in launcher_strings.h are compiled into the exe;
+// they also ship as Data\launcher\<locale>\launcher.json, laid out EXACTLY like Data\poe1\zh-rTW\ (meta.json with a
+// load_order plus one dictionary file), so the external-data-path override, the app/translation-data update split and
+// the translation editor handle it with no special case.
+// The JSON is an OVERLAY, never the source of truth: whatever it does not define keeps the compiled string, so a
+// stale, partial or corrupt file never blanks a button and a NEW build's text still renders with data updates off.
 #pragma once
 
 #include <deque>
@@ -21,17 +13,13 @@
 
 struct LauncherStringStore {
 	LauncherStrings s{};             // fields point into the compiled table or into `owned`
-	// deque, not vector: adding an element must never move the ones already
-	// there, because `s` holds raw pointers into them. A vector reallocation
-	// would leave every previously-overridden field dangling.
+	// deque, not vector: adding an element must never move the others (`s` holds raw pointers into them).
 	std::deque<std::string> owned;
 	int overridden = 0;              // how many fields the JSON replaced
 	bool fileFound = false;
 
-	// Copying would duplicate `owned` while `s` kept pointing at the ORIGINAL
-	// strings -- fine until the original dies, then every overridden field is a
-	// dangling pointer. Moving is safe (deque move preserves element addresses),
-	// so the type stays returnable and storable; only the silent-copy trap is gone.
+	// Copying would duplicate `owned` while `s` kept pointing at the ORIGINAL strings (dangling once it dies).
+	// Moving is safe (deque move preserves element addresses).
 	LauncherStringStore() = default;
 	LauncherStringStore(const LauncherStringStore&) = delete;
 	LauncherStringStore& operator=(const LauncherStringStore&) = delete;

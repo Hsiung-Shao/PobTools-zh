@@ -1,9 +1,6 @@
-// 倉庫收益統計 — stash revenue tracker, as a standalone window and a launcher tab.
-//
-// Same two entry points every other tool has: CreateWarehousePanel() for the
-// tabbed launcher, ShowWarehouseTool() for the separate window "--warehouse"
-// starts. TEST-CHANNEL feature: authentication is a pasted POESESSID until the
-// official OAuth application is approved (see warehouse_provider.h).
+// 倉庫收益統計 — stash revenue tracker, as a standalone window and a launcher tab: CreateWarehousePanel() for the
+// tabbed launcher, ShowWarehouseTool() for the "--warehouse" window. TEST-CHANNEL feature: authentication is a pasted
+// POESESSID until the official OAuth application is approved (see warehouse_provider.h).
 #pragma once
 
 #include <functional>
@@ -16,15 +13,11 @@ IToolPanel* CreateWarehousePanel();
 // What a host embedding the revenue panel adds -- the atlas planner's 收益 and
 // 設定 tabs. Every member is optional.
 struct WarehouseEmbed {
-	// Both drawn inside the panel's frame and ID scope. topCard fills a card
-	// beside the revenue page's 主要增減 (the project's per-map cost): the panel
-	// draws the card itself (PobUi::CardBegin, padded) and calls this for its
-	// content, which lays itself out in PobUi::CardInnerWidth(). The card's
-	// height follows that content. settingsBottom closes the settings page's
-	// left column (the revenue-record buttons).
+	// Both drawn inside the panel's frame and ID scope. topCard fills a card beside the revenue page's 主要增減 (the
+	// project's per-map cost): the panel draws the padded card (PobUi::CardBegin) and calls this for its content, laid
+	// out in PobUi::CardInnerWidth(). settingsBottom closes the settings page's left column (the revenue-record buttons).
 	std::function<void()> topCard, settingsBottom;
-	// Unused since the 2026-10-08 redesign (the card is as tall as its content);
-	// kept so an older host still compiles.
+	// Unused (the card is as tall as its content); kept so an older host still compiles.
 	std::function<float()> topCardHeight;
 	// The right end of the revenue page's action row (the atlas planner's
 	// 「綁定到「方案」」 button and its dialog). topBarWidth says how wide it is,

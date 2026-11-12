@@ -1,10 +1,6 @@
-// PobTools filter-editor localization layer (DISPLAY ONLY).
-//
-// Loads the same engine dictionaries the translation editor uses (items / uniques
-// / gems / ui) into an English->Chinese name map, plus a bundled base-type ->
-// item-class map (generated from POB's Data/Bases) and the class-name zh labels
-// from item_metadata.json. The tier-list UI shows Chinese names and groups items
-// by class, while the underlying .filter values stay English (output is unchanged).
+// PobTools filter-editor localization layer (DISPLAY ONLY): English->Chinese name map from the engine dictionaries,
+// a bundled base-type -> item-class map (from POB's Data/Bases) and class zh labels from item_metadata.json.
+// The underlying .filter values stay English.
 #pragma once
 
 #include <string>
@@ -50,11 +46,9 @@ public:
 	// unknown — callers keep their defaults.
 	bool SizeOf(const std::string& en, int* w, int* h) const;
 
-	// zh -> en lookup tables for parsing pasted game item text. Built from the
-	// same item_metadata.json the paste path uses, plus code-side supplements
-	// verified against GGPK (the file itself feeds classify_lines and is not
-	// touched). Keys are the exact zh strings the TW client prints; values are
-	// the exact en client strings. Empty maps when the locale has no file.
+	// zh -> en lookup tables for parsing pasted item text: item_metadata.json (as the paste path uses, left untouched)
+	// plus GGPK-verified code-side supplements. Keys are the TW client's exact strings, values the en client's.
+	// Empty maps when the locale has no file.
 	struct ZhTables {
 		std::unordered_map<std::string, std::string> header;     // "物品種類" -> "Item Class"
 		std::unordered_map<std::string, std::string> rarity;     // "稀有"     -> "Rare"

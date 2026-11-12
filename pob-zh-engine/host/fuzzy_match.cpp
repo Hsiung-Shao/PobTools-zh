@@ -4,9 +4,8 @@
 
 #include <cstring> // strlen
 
-// Punctuation that shows up in these names and would otherwise make a query
-// typed without it fail. Listed as UTF-8 literals because they are multi-byte;
-// a byte-wise filter would corrupt the surrounding CJK.
+// Punctuation in these names that would make a query typed without it fail. UTF-8 literals (multi-byte): a
+// byte-wise filter would corrupt the surrounding CJK.
 static const char* kDropTokens[] = {
 	u8"：", u8"，", u8"。", u8"、", u8"（", u8"）", u8"「", u8"」", u8"·", u8"…",
 	":", ",", ".", "'", "\"", "(", ")", "[", "]", "-", "/",

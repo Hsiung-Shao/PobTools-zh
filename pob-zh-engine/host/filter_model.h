@@ -1,10 +1,6 @@
-// PobTools loot-filter editor data model.
-//
-// A parsed .filter is kept as an ordered list of lines — the round-trip source
-// of truth: every line stores its original bytes and is re-emitted verbatim
-// unless the user edits it — plus a list of blocks that index into those lines
-// so the UI can edit conditions/actions structurally without losing comments,
-// blank lines, indentation or any unrecognised (forward-compatible) syntax.
+// PobTools loot-filter editor data model. A parsed .filter is an ordered list of lines (the round-trip source of
+// truth: original bytes re-emitted verbatim unless edited) plus blocks indexing into them, so the UI edits
+// structurally without losing comments, blank lines, indentation or unrecognised (forward-compatible) syntax.
 #pragma once
 
 #include <string>
@@ -35,9 +31,8 @@ struct FilterLine {
 	std::vector<FilterToken> values;
 	std::string trailingComment;  // trailing " # ..." kept verbatim (leading spaces + '#' included)
 	bool dirty = false;           // true -> rebuild from fields; false -> emit raw
-	// Stable identity given by FilterDocumentEditor (0 = not yet assigned). It
-	// survives value edits, #! disabling and restoring, so a line can be matched
-	// with what the file said when it was loaded. Never serialized.
+	// Stable identity given by FilterDocumentEditor (0 = unassigned); survives value edits and #! disabling/restoring
+	// so a line can be matched with the loaded file. Never serialized.
 	unsigned uid = 0;
 };
 

@@ -9,7 +9,6 @@
 #ifndef TRANSLATION_MANAGER_H
 #define TRANSLATION_MANAGER_H
 
-/* Initialize translation system: load JSON files based on config */
 void translation_init(void);
 
 /* 背景載入:在 InitAPI 啟一條執行緒建字典,POB 的 Lua 不必等它。任何會讀字典的
@@ -21,16 +20,14 @@ void translation_init(void);
 void translation_init_async(void);
 void translation_wait_ready(void);
 
-/* Shutdown: free all translation data */
 void translation_shutdown(void);
 
-/* Reload: shutdown + re-init (used by F3 hotkey) */
+/* shutdown + re-init (F3 hotkey) */
 void translation_reload(void);
 
-/* Which game's rules the engine runs (使用者裁定 2026-10-29: PoE1 / PoE2 follow
-** their own rules): "poe1" or "poe2", decided at the last load. POB_GAME wins
-** when set; unset falls back to meta.json "source" (the behaviour before this
-** existed). A set POB_GAME that disagrees with the source is logged. */
+/* Which game's rules the engine runs: "poe1" or "poe2", decided at the last load. POB_GAME
+** wins when set; unset falls back to meta.json "source". A set POB_GAME that disagrees
+** with the source is logged. */
 const char *translation_game(void);
 /* meta.json "source" as read at the last load ("" when absent). */
 const char *translation_meta_source(void);
@@ -153,9 +150,8 @@ int translation_group_lines(const char *const *lines, int n, const char *ctx, co
 ** ctx, nullptr for the default (static storage, overwritten by the next call). */
 const char* translation_set_slash_context(const char *ctx);
 
-/* A display string that must be drawn in English exactly as given (使用者裁定
-** 2026-10-27: a unique's flavour text stays English). From now on
-** translation_lookup answers nullptr for that exact string -- before its exact
+/* A display string that must be drawn in English exactly as given (a unique's flavour
+** text stays English). From now on translation_lookup answers nullptr for that exact string -- before its exact
 ** map, caches, patterns and glossary -- so neither the tooltip that registered it
 ** nor the draw-time lookup translates it. Exact bytes, colour codes included;
 ** kept across translation_reload (the tooltip holding the line is not rebuilt);
@@ -171,8 +167,7 @@ void translation_keep_english(const char *s);
 void translation_set_keep_english_scope(const char *const *s, int n);
 
 /* One crafting / popup drop-down row of a mod, through stats_by_id.json with
-** that mod's GGPK stat ids (使用者裁定 2026-10-28: language-independent ids, no
-** flat text keys). The row as POB labels it:
+** that mod's GGPK stat ids (language-independent ids, no flat text keys). The row as POB labels it:
 **   "<line>"                       one mod line ("#" where tiers were merged)
 **   "<line>/<line>..."             a mod's lines joined by "/"; a GGPK
 **                                  description POB split over two lines is
@@ -196,11 +191,8 @@ void translation_set_draw_override(const char *const *keys, const char *const *v
 
 /* ===== Reverse-translation trace =====
 **
-** Why this exists: reverse_one_line() is a chain of ~15 fallback rules over a
-** flat dictionary merged from 8 files, and from the outside you cannot see
-** which rule fired or which file's copy of a key won. Every claim about paste
-** coverage then has to be inferred from black-box round trips, which is how
-** three separate coverage figures came out wrong in one session.
+** Why: reverse_one_line() is a chain of ~15 fallback rules over a flat dictionary merged
+** from 8 files; from the outside you cannot see which rule fired or which file's copy won.
 **
 ** Between begin() and end(), each reverse-translated line appends one TSV row:
 **   line <TAB> rule <TAB> key <TAB> file <TAB> nums <TAB> in <TAB> out
@@ -211,18 +203,14 @@ void        translation_trace_begin(void);
 const char* translation_trace_get(void);
 void        translation_trace_end(void);
 
-/* Render GGG's "[Key|Display]" / "[Key]" markup the way the game does before it
-** draws a string. Exposed so a diagnostic can build a probe that looks like real
-** game text using the ENGINE's own rendering — re-implementing it alongside is
-** how an instrument ends up measuring itself instead of the engine. Returns a
-** pointer to static storage, valid until the next call. */
+/* Render GGG's "[Key|Display]" / "[Key]" markup the way the game does before it draws a string.
+** Exposed so a diagnostic probe uses the ENGINE's own rendering. Returns a pointer to static
+** storage, valid until the next call. */
 const char* translation_strip_ggg_markup(const char *s);
 
 /* Debug: the section grammar's verdict, one "<kind>\t<line>" row per input line
-** (kinds: sep/header/property/enchant/mods/status/flavour/desc/-). Exposed so
-** the selftest can assert what the grammar decided instead of only what came out
-** the far end -- a wrong label that happens to produce the right English is a
-** bug waiting for the next item shape. Buffer is valid until the next call. */
+** (kinds: sep/header/property/enchant/mods/status/flavour/desc/-), so the selftest can
+** assert what the grammar decided. Buffer is valid until the next call. */
 const char* translation_classify_dump(const char *text);
 
 /* ===== 填值機制的測試掛勾(--placeholder-selftest 專用) =====
@@ -253,26 +241,20 @@ int translation_debug_set_legacy_fill(int on);
 ** 回傳靜態緩衝區,下次呼叫即失效。 */
 const char* translation_debug_sources(void);
 
-/* Get current locale string (e.g. "zh-rTW") */
-const char* translation_get_locale(void);
-
-/* Get number of loaded translation entries */
+const char* translation_get_locale(void);   /* e.g. "zh-rTW" */
 int translation_get_count(void);
 
 /* 載入耗時摘要(一行文字,給探針與 console 用)。 */
 const char* translation_get_init_stats(void);
 
-/* Toggle translation on/off at runtime (F2 hotkey) */
+/* Toggle translation at runtime (F2 hotkey) */
 void translation_set_enabled(bool enabled);
 bool translation_is_enabled(void);
 
-/* Reverse-translate a multi-line text (Chinese → English).
-** Processes line by line, tries exact match and pattern match.
-** Returns newly allocated string (caller must free with translation_free).
-** Returns nullptr if no translations were made. */
+/* Reverse-translate a multi-line text (Chinese → English), line by line.
+** Returns a newly allocated string (free with translation_free), or nullptr if
+** no translations were made. */
 char* translation_reverse_text(const char *chinese_text);
-
-/* Free a string returned by translation_reverse_text */
 void translation_free(char *str);
 
 /* Reverse-lookup a single term: given Chinese text, return English.

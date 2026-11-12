@@ -29,7 +29,7 @@ const TypePlan kPoe1Exchange[] = {
 };
 
 // PoE2: the economy IS the in-game Currency Exchange. Names are the site's own
-// request parameters, not its URL slugs (read off its requests, 2026-09-11).
+// request parameters, not its URL slugs.
 const TypePlan kPoe2Exchange[] = {
 	{ "Currency", "currency|" },   { "Fragments", "currency|" },
 	{ "Abyss", "currency|" },      { "UncutGems", "currency|" },
@@ -118,9 +118,8 @@ bool ReadAll(const std::wstring& path, std::string& out)
 
 bool WriteAtomic(const std::wstring& dst, const std::string& body)
 {
-	// Unique per writer: two price sources (the snapshot worker and the atlas
-	// cost card's feed, possibly in two processes) can save the same cache file
-	// at once, and a shared ".tmp" would let one truncate the other's half-write.
+	// Unique per writer: two price sources (possibly two processes) can save the same cache file at once,
+	// and a shared ".tmp" would let one truncate the other's half-write.
 	const std::wstring tmp = dst + L".tmp" + std::to_wstring(GetCurrentProcessId()) + L"_" +
 	                         std::to_wstring(GetCurrentThreadId());
 	HANDLE f = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr,
@@ -157,10 +156,9 @@ double RateOf(const ordered_json& rates, const char* unit)
 	return it != rates.end() && it->is_number() ? it->get<double>() : 0.0;
 }
 
-// How many chaos one unit of this response's quotes is worth. poe.ninja quotes
-// in core.primary (chaos on PoE1, divine on PoE2); core.rates says how many of
-// each other unit one primary buys. No core at all is the PoE1 shape from
-// before core existed: chaos. Returns 0 when the quote cannot be converted.
+// How many chaos one unit of this response's quotes is worth. poe.ninja quotes in core.primary
+// (chaos on PoE1, divine on PoE2); core.rates says how many of each other unit one primary buys.
+// No core at all = old PoE1 shape: chaos. Returns 0 when the quote cannot be converted.
 // chaosPerDivine (optional) receives the rate the core states, if any.
 double ChaosFactor(const ordered_json& doc, double* chaosPerDivine)
 {
@@ -200,9 +198,8 @@ bool NinjaPriceSource::ParseExchangeOverview(
 		if (err) *err = m;
 		return false;
 	};
-	// The id is a NUMBER for some types and a SLUG STRING for others
-	// (currency: 1; divination cards: "abandoned-wealth") -- normalised to a
-	// string so the items/lines join works for both.
+	// The id is a NUMBER for some types and a SLUG STRING for others (currency: 1; cards:
+	// "abandoned-wealth"); normalised to a string so the items/lines join works for both.
 	auto idOf = [](const ordered_json& o) -> std::string {
 		auto it = o.find("id");
 		if (it == o.end()) return std::string();
@@ -210,10 +207,8 @@ bool NinjaPriceSource::ParseExchangeOverview(
 		if (it->is_number_integer()) return std::to_string(it->get<long long>());
 		return std::string();
 	};
-	// The WHOLE walk sits inside the try: value(key, default) throws on a
-	// present-but-null field (type_error.302), and poe.ninja does emit nulls.
-	// An exception escaping here would cross the worker thread and terminate
-	// the process -- which is exactly what it did once.
+	// The WHOLE walk sits inside the try: value(key, default) throws on a present-but-null field
+	// (type_error.302) and poe.ninja does emit nulls; an escaping exception would terminate the process.
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		if (!doc.is_object()) return fail(u8"exchange 回應不是物件");
@@ -262,8 +257,7 @@ bool NinjaPriceSource::ParseItemOverview(
 		if (err) *err = m;
 		return false;
 	};
-	// Null-tolerant field reads: value(key, default) throws on an explicit null,
-	// and several overview fields (baseType, gem details, counts) arrive as null.
+	// Null-tolerant field reads (value(key, default) throws on an explicit null; several overview fields arrive as null).
 	auto jstr = [](const ordered_json& o, const char* k) -> std::string {
 		auto it = o.find(k);
 		return it != o.end() && it->is_string() ? it->get<std::string>() : std::string();
@@ -277,8 +271,7 @@ bool NinjaPriceSource::ParseItemOverview(
 		return it != o.end() && it->is_boolean() && it->get<bool>();
 	};
 
-	// Everything inside the try: an exception must degrade to "this type is
-	// skipped", never cross the worker thread (that terminates the process).
+	// Everything inside the try: an exception must degrade to "this type is skipped", never cross the worker thread.
 	try {
 		ordered_json doc = ordered_json::parse(body);
 		if (!doc.is_object()) return fail(u8"item overview 回應不是物件");
@@ -413,9 +406,7 @@ bool NinjaPriceSource::loadCache(const std::string& game, const std::string& lea
 	if (!ReadAll(CachePath(exeDir_, game, league), body)) return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);
-		// Exact schema match: bumping the number is how a coverage or unit fix
-		// invalidates every stale cache at once -- otherwise the 15-minute TTL
-		// keeps serving the pre-fix price table.
+		// Exact schema match: bumping the number invalidates every stale cache at once (else the TTL keeps serving the pre-fix table).
 		if (doc.value("schema", 1) != 3) return false;
 		if (doc.value("game", std::string()) != game) return false;
 		if (doc.value("league", std::string()) != league) return false;
@@ -561,8 +552,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	prices_ = std::move(fresh);
 	fetchedUtc_ = NowUtc();
 
-	// Chaos Orb IS the unit every price was converted into: 1 by definition,
-	// and no PoE1 source ever lists it.
+	// Chaos Orb IS the unit prices were converted into: 1 by definition (no PoE1 source lists it).
 	NinjaPrice chaosOrb;
 	chaosOrb.chaos = 1.0;
 	chaosOrb.listingCount = 999;

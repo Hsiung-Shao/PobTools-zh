@@ -104,9 +104,8 @@
     if (rev !== loadedRev) untrack(() => void reload());
   });
 
-  // Leaving this tab un-mounts it, which used to drop an item being edited (a
-  // fresh craft, never added) on the floor. POB keeps its displayItem, so pick
-  // the edit back up from it when the page comes back.
+  // Leaving this tab un-mounts it; POB keeps its displayItem (a fresh craft, never
+  // added), so pick the edit back up from it when the page comes back.
   let resumed = false;
   $effect(() => {
     if (!app.loaded || resumed) return;
@@ -143,11 +142,9 @@
   }
 
   // --- tooltips ---------------------------------------------------------------
-  // Every hide bumps tipGen, and a fetch only shows its card if nothing hid it in
-  // the meantime: without that, a tooltip requested on the way through a row
-  // arrived after the mouse had left (or the row was gone -- double-click opens
-  // the editor and unmounts it, so its mouseleave never fires) and stayed on
-  // screen over the editor with nothing left to close it.
+  // Every hide bumps tipGen, and a fetch only shows its card if nothing hid it in the
+  // meantime (the row may be gone: double-click opens the editor and unmounts it, so its
+  // mouseleave never fires).
   let tipGen = 0;
   function showTip(key: string, fetch: () => Promise<ItemTooltip>, e: MouseEvent) {
     clearTimeout(tipTimer);
@@ -355,8 +352,7 @@
     selectedId = r.id;
     await changed();
   }
-  // "Craft" is the right pane's third tab (it used to be a dialog behind a button
-  // in the list's toolbar); its choices stay as they were between visits.
+  // "Craft" is the right pane's third tab; its choices stay as they were between visits.
   async function openCraft() {
     rightTab = "craft";
     if (craft) return;

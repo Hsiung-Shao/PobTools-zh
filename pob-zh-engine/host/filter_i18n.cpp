@@ -225,7 +225,6 @@ std::string FilterI18n::ClassNameZh(const std::string& enClass) const
 	return m != classZh_.end() ? m->second : enClass;
 }
 
-// ---------------------------------------------------------------------------
 // NeverSink 標記標題中文化（display only）。
 // 節段表對齊 Garena 台服譯名（精髓/培育器/魔符/魔偶/萃取物…），
 // 覆蓋 NeverSink 8.x $type-> 全部節段;未知節段保留英文。

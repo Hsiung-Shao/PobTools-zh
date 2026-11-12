@@ -125,7 +125,7 @@ int ApplyBatchStyle(EditorShell& s, const std::vector<int>& blocks, const BatchS
 }
 
 
-// ---- the dialog (design: FilterBatch.dc.html) ---------------------------------
+// the dialog (design: FilterBatch.dc.html)
 
 namespace Tok = PobUi::Tok;
 

@@ -16,10 +16,9 @@
 
 namespace TransEd {
 
-// ---- add-entry notice ---------------------------------------------------------
-// The dictionary is ONE flat map merged in meta.json's load_order, and the last
-// file to define a key wins (translation_manager.cpp). So where a key is written
-// decides whether it does anything at all.
+// add-entry notice
+// The dictionary is ONE flat map merged in meta.json's load_order; the last file to define a key wins
+// (translation_manager.cpp), so where a key is written decides whether it does anything.
 enum class AddKind {
 	Empty,          // no key typed
 	Whitespace,     // the key starts or ends with whitespace (offer to trim)
@@ -40,7 +39,7 @@ AddHint ClassifyAdd(const EditorModel& model, const std::string& key, int target
 // Leading / trailing spaces, tabs, CR, LF and U+3000 removed.
 std::string TrimKey(const std::string& key);
 
-// ---- undo -------------------------------------------------------------------
+// undo
 struct EntryState {
 	bool exists = false;
 	std::string value;
@@ -88,7 +87,7 @@ private:
 bool SetWithUndo(EditorModel& model, UndoStack& undo, int fileIdx, const std::string& key,
                  const std::string& value);
 
-// ---- missing strings ----------------------------------------------------------
+// missing strings
 // Per-row state of the missing-strings view.
 struct MissRow {
 	int target = -1;          // file to write to
@@ -109,11 +108,10 @@ bool WithdrawMiss(EditorModel& model, UndoStack& undo, const std::vector<MissEnt
 // Undo, with the marks landing in `rows`.
 bool UndoInto(EditorModel& model, UndoStack& undo, std::vector<MissRow>& rows, bool* reshaped);
 
-// ---- multi-line editor checks -------------------------------------------------
+// multi-line editor checks
 struct TextChecks {
-	// Colour escapes (^0-^9, ^xRRGGBB): the translation carries the same ones as
-	// the key. A key without any passes whatever the translation does -- giving a
-	// translation its own colour is deliberate and supported by the engine.
+	// Colour escapes (^0-^9, ^xRRGGBB): the translation carries the same ones as the key. A key
+	// without any passes whatever the translation does (its own colour is supported by the engine).
 	bool colourOk = true;
 	int colourKey = 0, colourValue = 0;
 	std::vector<std::string> colourMissing;   // in the key, not the translation
