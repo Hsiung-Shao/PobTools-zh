@@ -5,10 +5,25 @@
 #define STBI_ONLY_JPEG
 #include "stb_image.h"
 
+#include <webp/decode.h>
+
 #include <GLES2/gl2.h>
+#include <cstdlib>
+#include <cstring>
 
 unsigned char* DecodeImageRGBA(const unsigned char* data, int len, int* w, int* h)
 {
+	// GGG's atlastree-export ships webp sheets from 3.30 on; stb has no webp.
+	if (len >= 12 && !memcmp(data, "RIFF", 4) && !memcmp(data + 8, "WEBP", 4)) {
+		unsigned char* px = WebPDecodeRGBA(data, (size_t)len, w, h);
+		if (!px) return nullptr;
+		// Copied so FreeDecoded can stay a plain free() for both decoders.
+		size_t n = (size_t)*w * (size_t)*h * 4;
+		unsigned char* out = (unsigned char*)malloc(n);
+		if (out) memcpy(out, px, n);
+		WebPFree(px);
+		return out;
+	}
 	int comp = 0;
 	return stbi_load_from_memory(data, len, w, h, &comp, 4); // force RGBA
 }

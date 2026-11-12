@@ -167,6 +167,7 @@ namespace {
 struct AtlasUndo {
 	bool valid = false;
 	std::vector<int> alloc, targets, blocked;
+	std::map<int, int> variants;
 };
 struct PanelNode { int idx; std::string searchKey; };
 
@@ -230,6 +231,17 @@ public:
 			else if (page == L"reset") askReset_ = true;
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
 			else if (page == L"planexit" && ready) { enterPlanning(); planningAskExit = true; }
+			// two multiple-choice nodes: one with an option picked, one with its picker up
+			else if (page == L"variant" && ready) {
+				int seen = 0;
+				for (int i = 0; i < (int)tree.nodes.size() && seen < 2; i++) {
+					if (tree.nodes[i].variants.empty()) continue;
+					tree.Alloc(tree.FindPathTo(i));
+					if (seen++ == 0) tree.nodes[i].variant = 0;
+					else view.OpenVariantPicker(i);
+				}
+				panelDirty = true;
+			}
 		}
 		return true;   // missing data is a screen with an import button, not a failure
 	}
@@ -317,6 +329,7 @@ public:
 				tree.ApplyAllocIds(buildFile.Active().alloc);
 				tree.ApplyTargetIds(buildFile.Active().targets);
 				tree.ApplyBlockedIds(buildFile.Active().blocked);
+				tree.ApplyVariantIds(buildFile.Active().variants);
 				undo.valid = false;      // undo does not cross projects
 				saveActive();            // persist active index + pruned mapping
 				panelDirty = true;
@@ -620,6 +633,7 @@ public:
 					tree.ApplyAllocIds(buildFile.Active().alloc);
 					tree.ApplyTargetIds(buildFile.Active().targets);
 					tree.ApplyBlockedIds(buildFile.Active().blocked);
+					tree.ApplyVariantIds(buildFile.Active().variants);
 					undo.valid = false;
 					saveActive();
 					panelDirty = true;
@@ -760,6 +774,7 @@ public:
 				tree.ApplyAllocIds(undo.alloc);
 				tree.ApplyTargetIds(undo.targets);
 				tree.ApplyBlockedIds(undo.blocked);
+				tree.ApplyVariantIds(undo.variants);
 				undo.valid = false;
 				saveActive();
 				panelDirty = true;
@@ -963,7 +978,8 @@ public:
 						for (const PanelNode& p : nodeGroups[r]) {
 							if (!matches(p.searchKey)) continue;
 							const AtlasNode& n = tree.nodes[p.idx];
-							const std::string& nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
+							std::string nm = showZh && zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
+							if (!n.variants.empty() && n.variant < 0) nm += u8"（未選選項）";
 							ImGui::PushID(p.idx); // duplicate display names exist
 							ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(kindCol));
 							if (ImGui::Selectable(nm.empty() ? u8"(未命名)" : nm.c_str(), false))
@@ -976,7 +992,7 @@ public:
 								ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());
 								// explicit wrap width so a short title cannot make the tooltip a narrow strip
 								ImGui::PushTextWrapPos(380.0f * scale);
-								for (const std::string& s : n.stats) {
+								for (const std::string& s : n.EffStats()) {
 									ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(Tok::AccentText));
 									ImGui::TextUnformatted(StripStatMarkup(showZh && zhLoaded ? i18n.StatLine(s) : s).c_str());
 									ImGui::PopStyleColor();
@@ -1845,6 +1861,7 @@ private:
 			buildFile.Active().alloc = tree.AllocIds();
 			buildFile.Active().targets = tree.TargetIds();
 			buildFile.Active().blocked = tree.BlockedIds();
+			buildFile.Active().variants = tree.VariantIds();
 			buildFile.version = tree.Version();
 		}
 		buildFile.Save(exeDir);
@@ -1857,6 +1874,7 @@ private:
 		u.alloc = tree.AllocIds();
 		u.targets = tree.TargetIds();
 		u.blocked = tree.BlockedIds();
+		u.variants = tree.VariantIds();
 	}
 
 	// --- sandbox planning mode ---
@@ -1878,6 +1896,7 @@ private:
 		tree.ApplyAllocIds(planSnapshot.alloc);
 		tree.ApplyTargetIds(planSnapshot.targets);
 		tree.ApplyBlockedIds(planSnapshot.blocked);
+		tree.ApplyVariantIds(planSnapshot.variants);
 		planningMode = false;
 		planningAskExit = false;
 		undo.valid = false;            // undo does not straddle the sandbox
@@ -2022,6 +2041,7 @@ private:
 			int mapped = tree.ApplyAllocIds(buildFile.Active().alloc);
 			tree.ApplyTargetIds(buildFile.Active().targets);   // must follow ApplyAllocIds
 			tree.ApplyBlockedIds(buildFile.Active().blocked);
+			tree.ApplyVariantIds(buildFile.Active().variants);
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
 			zhLoaded = i18n.LoadVersion(exeDir, tag);
@@ -2089,7 +2109,7 @@ private:
 			if (!n.alloc || n.kind == kAtlasStart) continue;
 			const std::string& zhName = zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
 			nodeGroups[rank(n.kind)].push_back({ i, ToLowerAscii(n.name + "\n" + zhName) });
-			for (const std::string& s : n.stats)
+			for (const std::string& s : n.EffStats())
 				AccumulateStatLine(s, statAgg, pos);
 		}
 		std::function<std::string(const std::string&)> zhFn =
@@ -3178,6 +3198,7 @@ private:
 		buildFile.builds[idx].notes = e.notes;
 		buildFile.builds[idx].targets = e.targets;
 		buildFile.builds[idx].blocked = e.blocked;
+		buildFile.builds[idx].variants = e.variants;
 		// Each Sanitize clears the note it is handed, so they get their own
 		// and are concatenated afterwards.
 		std::string snote, anote;
@@ -3191,6 +3212,7 @@ private:
 		int kept = tree.ApplyAllocIds(e.alloc);
 		tree.ApplyTargetIds(e.targets);
 		tree.ApplyBlockedIds(e.blocked);
+		tree.ApplyVariantIds(e.variants);
 		undo.valid = false;
 		saveActive();
 		panelDirty = true;

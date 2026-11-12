@@ -86,6 +86,21 @@ enum { K_NORMAL = 0, K_NOTABLE = 1, K_KEYSTONE = 2, K_START = 3, K_WORMHOLE = 4 
 
 // ---- sprite sheet index ---------------------------------------------------------
 
+const ordered_json* AtlasSpriteLevel(const std::string& cat, const ordered_json& levels)
+{
+	if (!levels.is_object()) return nullptr;
+	if (cat == "atlasBackground") {
+		const ordered_json* best = nullptr;
+		for (const auto& [zoom, s] : levels.items()) {
+			(void)zoom;
+			int w = s.value("w", 0), h = s.value("h", 0);
+			if (w > 0 && h > 0 && w <= 2560 && h <= 2560 && (!best || w > best->value("w", 0))) best = &s;
+		}
+		if (best) return best;
+	}
+	return levels.contains(kZoom) ? &levels[kZoom] : nullptr;
+}
+
 namespace {
 
 struct SheetIndex {
@@ -111,11 +126,9 @@ struct SheetIndex {
 
 	const ordered_json* section(const std::string& cat)
 	{
-		if (!sprites.contains(cat) || !sprites[cat].contains(kZoom)) {
-			err = u8"sprites 段缺少類別 " + cat + u8"（zoom 0.5）";
-			return nullptr;
-		}
-		return &sprites[cat][kZoom];
+		const ordered_json* sec = sprites.contains(cat) ? AtlasSpriteLevel(cat, sprites[cat]) : nullptr;
+		if (!sec) err = u8"sprites 段缺少類別 " + cat + u8"（zoom 0.5）";
+		return sec;
 	}
 
 	int sheetFor(const std::string& cat)
@@ -126,10 +139,6 @@ struct SheetIndex {
 		auto it = byBase.find(base);
 		if (it != byBase.end()) return it->second;
 
-		if (base.size() >= 5 && base.compare(base.size() - 5, 5, ".webp") == 0) {
-			err = u8"圖集 " + base + u8" 是 webp 格式，目前不支援（需要 png/jpg）";
-			return -1;
-		}
 		int w = sec->value("w", 0), h = sec->value("h", 0);
 		if (w <= 0 || h <= 0 || w > 4096 || h > 4096) {
 			err = u8"圖集 " + base + u8" 尺寸異常或超過 4096";
@@ -171,6 +180,8 @@ struct SheetIndex {
 } // namespace
 
 // ---- conversion (port of gen_atlas_tree.py main()) --------------------------------
+
+static bool import_variants(const ordered_json& v, ordered_json* out, std::string* err);
 
 bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& destDir,
                          std::string* err, std::string* summary)
@@ -235,7 +246,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		ordered_json outNodes = ordered_json::array();
 		ordered_json outMast = ordered_json::array();
 		std::vector<int> nGroup, nOrbit;   // per out-node, for arc detection
-		std::vector<double> nAng;
+		std::vector<double> nAng, nX, nY;
 
 		for (const auto& [key, v] : nodesIn.items()) {
 			if (key == "root") continue;
@@ -296,10 +307,18 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 			n["kind"] = kind;
 			n["x"] = r2(x); n["y"] = r2(y);
 			n["stats"] = v.contains("stats") ? v["stats"] : ordered_json::array();
+			{
+				ordered_json vars;
+				std::string vErr;
+				if (!import_variants(v, &vars, &vErr))
+					return fail(u8"節點 " + key + u8"：" + vErr + u8"（schema 已變動，需更新匯入器）");
+				if (!vars.is_null()) n["variants"] = std::move(vars);
+			}
 			n["on"] = std::move(on);
 			n["off"] = std::move(off);
 			id2idx[key] = (int)outNodes.size();
 			outNodes.push_back(std::move(n));
+			nX.push_back(x); nY.push_back(y);
 			nGroup.push_back(grpId);
 			nOrbit.push_back(orbit);
 			nAng.push_back(ang);
@@ -309,6 +328,9 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 
 		// undirected edges, skipping root and masteries
 		std::set<std::pair<int, int>> edgeSet;
+		// 3.30+: a link between two groups can be drawn on a circle of its own
+		// ("connections" gives the circle's centre; both ends sit on it).
+		std::map<std::pair<int, int>, std::pair<double, double>> connArc;
 		for (const auto& [key, v] : nodesIn.items()) {
 			if (key == "root" || masteryIds.count(key)) continue;
 			auto addNb = [&](const std::string& nb) -> bool {
@@ -323,6 +345,13 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 				for (const auto& nb : v["out"]) if (!addNb(nb.get<std::string>())) return false;
 			if (v.contains("in"))
 				for (const auto& nb : v["in"]) if (!addNb(nb.get<std::string>())) return false;
+			if (v.contains("connections"))
+				for (const auto& c : v["connections"]) {
+					auto it = id2idx.find(c.value("to", std::string()));
+					if (it == id2idx.end() || !c.contains("orbitX") || !c.contains("orbitY")) continue; // straight
+					int a = id2idx[key], b = it->second;
+					connArc[{ (std::min)(a, b), (std::max)(a, b) }] = { c["orbitX"].get<double>(), c["orbitY"].get<double>() };
+				}
 		}
 
 		ordered_json outEdges = ordered_json::array();
@@ -344,6 +373,14 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 				if (delta < 0) { a0 += delta; delta = -delta; }
 				e["arc"] = { r2(grp.value("x", 0.0)), r2(grp.value("y", 0.0)),
 				             orbitRadii[nOrbit[a]], r5(a0), r5(delta) };
+			} else if (auto ca = connArc.find({ a, b }); ca != connArc.end()) {
+				double cx = ca->second.first, cy = ca->second.second;
+				double a0 = std::atan2(nY[a] - cy, nX[a] - cx), a1 = std::atan2(nY[b] - cy, nX[b] - cx);
+				double delta = std::fmod(a1 - a0, 2.0 * kPi);
+				if (delta < -kPi) delta += 2.0 * kPi;
+				else if (delta > kPi) delta -= 2.0 * kPi;
+				if (delta < 0) { a0 += delta; delta = -delta; }
+				e["arc"] = { r2(cx), r2(cy), r2(std::hypot(nX[a] - cx, nY[a] - cy)), r5(a0), r5(delta) };
 			}
 			outEdges.push_back(std::move(e));
 		}
@@ -481,6 +518,39 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 	} catch (const std::exception& e) {
 		return fail(std::string(u8"匯入過程發生例外: ") + e.what());
 	}
+}
+
+static bool import_variants(const ordered_json& v, ordered_json* out, std::string* err)
+{
+	*out = nullptr;
+	if (!v.value("isMultipleChoiceVariant", false) && !v.contains("variantEffects")) return true;
+	auto bad = [&](const char* why) { if (err) *err = why; return false; };
+	if (!v.contains("variantEffects") || !v["variantEffects"].is_array() || v["variantEffects"].empty())
+		return bad(u8"多選節點沒有 variantEffects");
+	ordered_json arr = ordered_json::array();
+	for (const auto& e : v["variantEffects"]) {
+		if (!e.is_object() || !e.contains("effect") || !e["effect"].is_number_integer())
+			return bad(u8"多選節點的選項缺少整數 effect");
+		if (!e.contains("stats") || !e["stats"].is_array())
+			return bad(u8"多選節點的選項缺少 stats 陣列");
+		ordered_json o;
+		o["e"] = e["effect"];
+		o["stats"] = e["stats"];
+		arr.push_back(std::move(o));
+	}
+	*out = std::move(arr);
+	return true;
+}
+
+bool AtlasImportVariants(const std::string& nodeJson, std::string* outJson, std::string* err)
+{
+	if (outJson) outJson->clear();
+	ordered_json v = ordered_json::parse(nodeJson, nullptr, false);
+	if (!v.is_object()) { if (err) *err = "node is not a json object"; return false; }
+	ordered_json out;
+	if (!import_variants(v, &out, err)) return false;
+	if (outJson && !out.is_null()) *outJson = out.dump();
+	return true;
 }
 
 int RunAtlasImportCli(const std::wstring& dataJsonPath, const std::wstring& exeDir)

@@ -6,6 +6,7 @@
 #include "atlas_maps.h"    // selftest T10: main-map catalogue
 #include "atlas_optimize.h" // selftest T11: contrast against the minimum-point model
 #include "atlas_version_index.h" // season resolution (versioned data layout)
+#include "atlas_import.h"  // selftest 多選: AtlasImportVariants
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -13,8 +14,10 @@
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <deque>
+#include <map>
 #include <set>
 
 using nlohmann::ordered_json;
@@ -125,6 +128,14 @@ bool AtlasTreeData::loadFromDir(const std::wstring& dataDir, const std::string& 
 			n.x = jn.value("x", 0.0f); n.y = jn.value("y", 0.0f);
 			if (jn.contains("stats"))
 				for (const auto& st : jn["stats"]) n.stats.push_back(st.get<std::string>());
+			if (jn.contains("variants"))
+				for (const auto& jv : jn["variants"]) {
+					AtlasVariant v;
+					v.effect = jv.value("e", 0);
+					if (jv.contains("stats"))
+						for (const auto& st : jv["stats"]) v.stats.push_back(st.get<std::string>());
+					n.variants.push_back(std::move(v));
+				}
 			if (!parse_sprite(jn.at("on"), n.on) || !parse_sprite(jn.at("off"), n.off))
 				throw std::runtime_error("bad node sprite");
 			nodes.push_back(std::move(n));
@@ -260,7 +271,7 @@ void AtlasTreeData::Remove(const std::vector<int>& removeSet)
 
 void AtlasTreeData::Reset()
 {
-	for (AtlasNode& n : nodes) { n.alloc = (n.kind == kAtlasStart); n.target = false; n.blocked = false; }
+	for (AtlasNode& n : nodes) { n.alloc = (n.kind == kAtlasStart); n.target = false; n.blocked = false; n.variant = -1; }
 	if (root >= 0) nodes[root].alloc = true;
 }
 
@@ -404,6 +415,43 @@ void AtlasTreeData::SetAllocSet(const std::vector<int>& idx)
 		if (i >= 0 && i < (int)nodes.size()) nodes[i].alloc = true;
 }
 
+std::vector<std::string> AtlasNode::EffStats() const
+{
+	std::vector<std::string> out = stats;
+	if (variant >= 0 && variant < (int)variants.size())
+		out.insert(out.end(), variants[variant].stats.begin(), variants[variant].stats.end());
+	return out;
+}
+
+std::vector<std::string> AtlasNode::AllStats() const
+{
+	std::vector<std::string> out = stats;
+	for (const AtlasVariant& v : variants) out.insert(out.end(), v.stats.begin(), v.stats.end());
+	return out;
+}
+
+int AtlasTreeData::ApplyVariantIds(const std::map<int, int>& nodeToEffect)
+{
+	int mapped = 0;
+	for (AtlasNode& n : nodes) {
+		n.variant = -1;
+		auto it = nodeToEffect.find(n.id);
+		if (it == nodeToEffect.end()) continue;
+		for (int i = 0; i < (int)n.variants.size(); i++)
+			if (n.variants[i].effect == it->second) { n.variant = i; mapped++; break; }
+	}
+	return mapped;
+}
+
+std::map<int, int> AtlasTreeData::VariantIds() const
+{
+	std::map<int, int> out;
+	for (const AtlasNode& n : nodes)
+		if (n.alloc && n.variant >= 0 && n.variant < (int)n.variants.size())
+			out[n.id] = n.variants[n.variant].effect;
+	return out;
+}
+
 bool AtlasTreeData::SaveBuild(const std::wstring& exeDir) const
 {
 	// read-modify-write: only the active project changes, siblings stay intact
@@ -413,6 +461,7 @@ bool AtlasTreeData::SaveBuild(const std::wstring& exeDir) const
 	f.Active().alloc = AllocIds();
 	f.Active().targets = TargetIds();
 	f.Active().blocked = BlockedIds();
+	f.Active().variants = VariantIds();
 	return f.Save(exeDir);
 }
 
@@ -423,6 +472,7 @@ bool AtlasTreeData::LoadBuild(const std::wstring& exeDir)
 	ApplyAllocIds(f.Active().alloc);     // clears targets, so it goes first
 	ApplyTargetIds(f.Active().targets);
 	ApplyBlockedIds(f.Active().blocked);
+	ApplyVariantIds(f.Active().variants);
 	return true;
 }
 
@@ -991,6 +1041,273 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 		          "a malformed profit record is dropped, the project kept");
 		f.builds[0].profit = AtlasProfitRecord{};
 		rep.check(f.SerializeDoc() == before, "unset plannedMaps / profit serialize byte-identically");
+	}
+
+	// T12: 3.30 多選節點 + 跨群弧線 + 所選選項的存檔(規格 T1~T7)。
+	{
+		d.Reset();
+		int tagMaj = 0, tagMin = 0;
+		sscanf_s(d.Tag().c_str(), "%d.%d", &tagMaj, &tagMin);
+		const bool ge330 = tagMaj > 3 || (tagMaj == 3 && tagMin >= 30);
+		const bool is330 = d.Tag() == "3.30.0";
+		auto idxOfId = [&](int id) {
+			for (int i = 0; i < (int)d.nodes.size(); i++)
+				if (d.nodes[i].id == id) return i;
+			return -1;
+		};
+		std::vector<int> multi; // 多選節點的索引
+		for (int i = 0; i < (int)d.nodes.size(); i++)
+			if (!d.nodes[i].variants.empty()) multi.push_back(i);
+		const int mi = multi.empty() ? -1 : multi[0];
+		const bool mcOk = mi >= 0 && d.nodes[mi].variants.size() >= 2;
+		const std::string tagInfo = "tag=" + d.Tag() + " multi=" + std::to_string(multi.size());
+		// 無多選節點時:3.30+ 讓測試失敗,更舊賽季只留註記。
+		auto needMulti = [&](const char* title) {
+			if (mcOk) return true;
+			if (ge330) rep.check(false, title, "樹上沒有可用的多選節點; " + tagInfo);
+			else rep.note(std::string("略過(舊賽季無多選節點): ") + title);
+			return false;
+		};
+
+		// T1: 匯入後多選節點帶齊選項。
+		if (ge330) {
+			int badNode = 0, dupEff = 0;
+			std::set<int> effs;
+			for (int i : multi) {
+				bool bad = d.nodes[i].variants.size() < 2;
+				for (const AtlasVariant& v : d.nodes[i].variants) {
+					if (v.stats.empty()) bad = true;
+					if (!effs.insert(v.effect).second) dupEff++;
+				}
+				if (bad) badNode++;
+			}
+			rep.check(!multi.empty(), u8"[多選T1] 3.30 樹至少有一個多選節點", tagInfo);
+			rep.check(!multi.empty() && badNode == 0, u8"[多選T1] 每個多選節點都有 2 個以上選項、每項至少 1 行",
+			          "bad=" + std::to_string(badNode));
+			rep.check(!multi.empty() && dupEff == 0, u8"[多選T1] 全樹 effect id 不重複", "dup=" + std::to_string(dupEff));
+		} else {
+			rep.note("略過多選 T1(a): 賽季 " + d.Tag() + " 早於 3.30");
+		}
+		if (is330) {
+			int found = 0, good = 0;
+			for (const AtlasNode& n : d.nodes) {
+				if (n.name != "Suffused with Darkness") continue;
+				found++;
+				std::set<int> eff;
+				bool lines = n.variants.size() == 2;
+				for (const AtlasVariant& v : n.variants) { eff.insert(v.effect); lines = lines && !v.stats.empty(); }
+				if (lines && eff == std::set<int>({ 2215, 38495 })) good++;
+			}
+			rep.check(found >= 1 && good == found, u8"[多選T1] Suffused with Darkness 恰 2 個選項 2215 與 38495",
+			          "found=" + std::to_string(found) + " good=" + std::to_string(good));
+		}
+
+		// T2: 多選旗標但缺選項時匯入中止。
+		{
+			auto run = [&](const char* json, std::string& out, std::string& e) {
+				out.clear(); e.clear();
+				return AtlasImportVariants(json, &out, &e);
+			};
+			std::string vout, verr;
+			bool ok = run(R"({"name":"N","stats":["s"]})", vout, verr);
+			rep.check(ok && vout.empty(), u8"[多選T2] 一般節點匯入成功且無選項輸出");
+			ok = run(R"({"name":"N","isMultipleChoiceVariant":true,"variantEffects":[{"effect":2215,"stats":["A"]},{"effect":38495,"stats":["B"]}]})",
+			         vout, verr);
+			ordered_json arr = ordered_json::parse(vout, nullptr, false);
+			bool shape = ok && arr.is_array() && arr.size() == 2;
+			if (shape) {
+				shape = arr[0].value("e", -1) == 2215 && arr[1].value("e", -1) == 38495 &&
+				        arr[0].contains("stats") && arr[0]["stats"] == ordered_json::array({ "A" }) &&
+				        arr[1].contains("stats") && arr[1]["stats"] == ordered_json::array({ "B" });
+			}
+			rep.check(shape, u8"[多選T2] 合法多選節點輸出 e/stats 陣列", vout);
+			ok = run(R"({"name":"N","isMultipleChoiceVariant":true})", vout, verr);
+			rep.check(!ok && !verr.empty(), u8"[多選T2] 有旗標但沒有 variantEffects 時失敗並帶錯誤");
+			ok = run(R"({"name":"N","isMultipleChoiceVariant":true,"variantEffects":[]})", vout, verr);
+			rep.check(!ok && !verr.empty(), u8"[多選T2] variantEffects 為空陣列時失敗並帶錯誤");
+			ok = run(R"({"name":"N","isMultipleChoiceVariant":true,"variantEffects":[{"stats":["A"]},{"effect":38495,"stats":["B"]}]})",
+			         vout, verr);
+			rep.check(!ok && !verr.empty(), u8"[多選T2] 某選項缺整數 effect 時失敗並帶錯誤");
+			ok = run(R"({"name":"N","isMultipleChoiceVariant":true,"variantEffects":[{"effect":2215},{"effect":38495,"stats":["B"]}]})",
+			         vout, verr);
+			rep.check(!ok && !verr.empty(), u8"[多選T2] 某選項缺 stats 陣列時失敗並帶錯誤");
+		}
+
+		// T3: 跨群連線產生弧線。
+		if (is330) {
+			const int ia = idxOfId(36820), ib = idxOfId(34925);
+			const AtlasEdge* arc = nullptr;
+			for (const AtlasEdge& e : d.edges)
+				if ((e.a == ia && e.b == ib) || (e.a == ib && e.b == ia)) arc = &e;
+			rep.check(ia >= 0 && ib >= 0 && arc != nullptr && arc->hasArc, u8"[多選T3] 36820 與 34925 之間的邊是弧線");
+			if (arc && arc->hasArc) {
+				rep.check(std::fabs(arc->cx + 4716.51f) < 1.0f && std::fabs(arc->cy + 8708.05f) < 1.0f,
+				          u8"[多選T3] 弧心約在 (-4716.51, -8708.05)",
+				          std::to_string(arc->cx) + "," + std::to_string(arc->cy));
+				rep.check(std::fabs(arc->r - 846.0f) < 2.0f, u8"[多選T3] 半徑約 846", std::to_string(arc->r));
+				const float da = std::hypot(d.nodes[ia].x - arc->cx, d.nodes[ia].y - arc->cy);
+				const float db = std::hypot(d.nodes[ib].x - arc->cx, d.nodes[ib].y - arc->cy);
+				rep.check(std::fabs(da - arc->r) < 2.0f && std::fabs(db - arc->r) < 2.0f,
+				          u8"[多選T3] 兩端點到弧心的距離都約等於半徑", std::to_string(da) + "," + std::to_string(db));
+			}
+		}
+
+		// T4: 節點數與連通性。
+		if (is330) {
+			rep.check(d.nodes.size() == 967 && d.masteries.size() == 149 && d.TotalPoints() == 138,
+			          u8"[多選T4] 3.30 樹為 967 節點、149 個 mastery、138 點",
+			          std::to_string(d.nodes.size()) + "/" + std::to_string(d.masteries.size()) + "/" +
+			              std::to_string(d.TotalPoints()));
+		}
+		{
+			std::vector<char> seen(d.nodes.size(), 0);
+			std::vector<int> st;
+			int cnt = 0;
+			if (d.root >= 0) { seen[d.root] = 1; st.push_back(d.root); cnt = 1; }
+			while (!st.empty()) {
+				int cur = st.back(); st.pop_back();
+				for (int nb : d.nodes[cur].adj)
+					if (!seen[nb]) { seen[nb] = 1; cnt++; st.push_back(nb); }
+			}
+			rep.check(cnt == (int)d.nodes.size(), u8"[多選T4] 全部節點都能從起點沿 adj 走到",
+			          std::to_string(cnt) + "/" + std::to_string(d.nodes.size()));
+		}
+
+		// T5: 統計只算所選選項(複製一份節點,不動樹)。
+		if (needMulti(u8"[多選T5] 統計只算所選選項")) {
+			AtlasNode n = d.nodes[mi];
+			n.variant = -1;
+			rep.check(n.EffStats() == n.stats, u8"[多選T5] 未選時 EffStats 只有 stats");
+			n.variant = 1;
+			std::vector<std::string> want = n.stats;
+			want.insert(want.end(), n.variants[1].stats.begin(), n.variants[1].stats.end());
+			const std::vector<std::string> eff = n.EffStats();
+			rep.check(eff == want, u8"[多選T5] 選第 2 項時 EffStats = stats + 該項的行");
+			bool leak = false; // 只檢查「第 1 項獨有」的行,避免與 stats/第 2 項同字串而誤判
+			for (const std::string& l : n.variants[0].stats)
+				if (std::find(want.begin(), want.end(), l) == want.end() &&
+				    std::find(eff.begin(), eff.end(), l) != eff.end())
+					leak = true;
+			rep.check(!leak, u8"[多選T5] 選第 2 項時不含第 1 項的行");
+			std::vector<std::string> all = n.stats;
+			for (const AtlasVariant& v : n.variants) all.insert(all.end(), v.stats.begin(), v.stats.end());
+			rep.check(n.AllStats() == all, u8"[多選T5] AllStats = stats + 全部選項的行(依序)");
+		}
+
+		// T6(a): 所選選項存檔後讀回。
+		int other = -1; // 另一個「未配置」的多選節點
+		if (needMulti(u8"[多選T6] 所選選項存檔後讀回")) {
+			d.Reset();
+			const std::vector<int> p = d.FindPathTo(mi);
+			d.Alloc(p);
+			rep.check(!p.empty() && d.nodes[mi].alloc, u8"[多選T6] 配到多選節點");
+			const int nodeId = d.nodes[mi].id;
+			const std::map<int, int> want{ { nodeId, d.nodes[mi].variants[1].effect } };
+			rep.check(d.ApplyVariantIds(want) == 1, u8"[多選T6] ApplyVariantIds 對上 1 筆");
+			rep.check(d.VariantIds() == want && d.nodes[mi].variant == 1,
+			          u8"[多選T6] VariantIds 含該筆且節點 variant==1");
+			for (int i : multi)
+				if (i != mi && !d.nodes[i].alloc) { other = i; break; }
+			if (other >= 0) {
+				d.nodes[other].variant = 0;
+				rep.check(d.VariantIds() == want, u8"[多選T6] 未配置節點即使有選擇也不出現在 VariantIds");
+			} else {
+				rep.note("略過多選 T6 未配置節點檢查: 沒有第二個未配置的多選節點");
+			}
+			rep.check(d.SaveBuild(exeDir), u8"[多選T6] 存檔成功");
+			d.Reset();
+			rep.check(d.VariantIds().empty() && d.nodes[mi].variant == -1 && (other < 0 || d.nodes[other].variant == -1),
+			          u8"[多選T6] Reset 清掉所有選擇");
+			rep.check(d.LoadBuild(exeDir), u8"[多選T6] 讀檔成功");
+			rep.check(d.VariantIds() == want && d.nodes[mi].alloc && d.nodes[mi].variant == 1,
+			          u8"[多選T6] 讀檔後選擇與存檔前相同");
+			rep.check(other < 0 || d.nodes[other].variant == -1, u8"[多選T6] 未配置節點的選擇沒有被存進檔案");
+			d.ApplyAllocIds(d.AllocIds());
+			rep.check(d.VariantIds().empty() && d.nodes[mi].variant == -1 && d.nodes[mi].alloc,
+			          u8"[多選T6] ApplyAllocIds 清掉選擇但保留配置");
+		}
+
+		// T6(b): AtlasBuildEntry.variants 的三條存檔路徑。
+		{
+			AtlasBuildEntry e;
+			e.name = u8"多選測試";
+			e.alloc = { 1, 2, 3 };
+			e.variants = { { 3926, 2215 }, { 4000, 38495 } };
+			AtlasBuildFile f;
+			f.version = "3.30.0";
+			f.builds.push_back(e);
+			const std::string doc = f.SerializeDoc();
+			AtlasBuildFile g;
+			rep.check(g.ParseDoc(doc) && g.builds.size() == 1 && g.builds[0].variants == e.variants,
+			          u8"[多選T6] variants 經 SerializeDoc/ParseDoc 原樣回來");
+			rep.check(doc.find("\"variants\"") != std::string::npos, u8"[多選T6] 有選擇時存檔含 variants 鍵");
+			AtlasBuildEntry viaJson, viaCode;
+			std::string perr;
+			rep.check(AtlasParseExportJson(AtlasExportJson(e, "3.30.0"), &viaJson, &perr) &&
+			              viaJson.variants == e.variants,
+			          u8"[多選T6] variants 經匯出 json 原樣回來", perr);
+			rep.check(AtlasParseShareCode(AtlasBuildShareCode(e, "3.30.0"), &viaCode, &perr) &&
+			              viaCode.variants == e.variants,
+			          u8"[多選T6] variants 經分享碼原樣回來", perr);
+			e.variants.clear();
+			f.builds[0] = e;
+			rep.check(f.SerializeDoc().find("\"variants\"") == std::string::npos &&
+			              AtlasExportJson(e, "3.30.0").find("\"variants\"") == std::string::npos,
+			          u8"[多選T6] variants 為空時存檔與匯出都不寫此鍵");
+		}
+
+		// T7: 失效的選項 id 讀檔時丟棄。
+		if (needMulti(u8"[多選T7] 失效的選項 id 丟棄")) {
+			// 前一區塊的 ApplyAllocIds 後,mi 仍是已配置、未選;不足時補配。
+			if (!d.nodes[mi].alloc) d.Alloc(d.FindPathTo(mi));
+			const int nodeId = d.nodes[mi].id;
+			const int eff0 = d.nodes[mi].variants[0].effect;
+			rep.check(d.ApplyVariantIds({ { nodeId, 999999 } }) == 0 && d.nodes[mi].alloc && d.nodes[mi].variant == -1 &&
+			              d.VariantIds().empty(),
+			          u8"[多選T7] 節點沒有的 effect 回傳 0,節點仍配置且未選");
+			rep.check(d.ApplyVariantIds({ { -777777, eff0 } }) == 0 && d.VariantIds().empty(),
+			          u8"[多選T7] 未知節點 id 被丟棄");
+			int ord = -1; // 一般節點:優先取已配置的
+			for (int i = 0; i < (int)d.nodes.size(); i++)
+				if (d.nodes[i].variants.empty() && d.nodes[i].kind != kAtlasStart && d.nodes[i].alloc) { ord = i; break; }
+			if (ord < 0)
+				for (int i = 0; i < (int)d.nodes.size(); i++)
+					if (d.nodes[i].variants.empty() && d.nodes[i].kind != kAtlasStart) { ord = i; break; }
+			rep.check(ord >= 0 && d.ApplyVariantIds({ { d.nodes[ord].id, eff0 } }) == 0 && d.nodes[ord].variant == -1 &&
+			              d.VariantIds().empty(),
+			          u8"[多選T7] 一般(無選項)節點的選擇被丟棄");
+			rep.check(d.ApplyVariantIds({ { nodeId, eff0 }, { -777777, 1 } }) == 1 &&
+			              d.VariantIds() == std::map<int, int>({ { nodeId, eff0 } }) && d.nodes[mi].variant == 0,
+			          u8"[多選T7] 有效與無效混合時只回傳並保留有效的 1 筆");
+			rep.check(d.ApplyVariantIds({}) == 0 && d.VariantIds().empty() && d.nodes[mi].variant == -1,
+			          u8"[多選T7] 再次套用會先清掉原有選擇");
+		}
+		{
+			AtlasBuildEntry e;
+			e.name = "t";
+			e.alloc = { 1, 2 };
+			AtlasBuildFile f;
+			f.version = "3.30.0";
+			f.builds.push_back(e);
+			const ordered_json base = ordered_json::parse(f.SerializeDoc());
+			auto parseWith = [&](const char* variantsJson, AtlasBuildFile& out) {
+				ordered_json j = base;
+				j["builds"][0]["variants"] = ordered_json::parse(variantsJson);
+				return out.ParseDoc(j.dump());
+			};
+			AtlasBuildFile p1, p2, p3;
+			rep.check(parseWith("[1,2]", p1) && p1.builds.size() == 1 && p1.builds[0].variants.empty() &&
+			              p1.builds[0].alloc == e.alloc,
+			          u8"[多選T7] variants 不是物件時丟棄,文件仍解析成功");
+			rep.check(parseWith(R"({"abc":5,"3926":"x","3926b":1})", p2) && p2.builds.size() == 1 &&
+			              p2.builds[0].variants.empty(),
+			          u8"[多選T7] key 非整數或值非整數時整筆丟棄,文件仍解析成功");
+			rep.check(parseWith(R"({"3926":2215,"abc":5})", p3) && p3.builds.size() == 1 &&
+			              p3.builds[0].variants == std::map<int, int>({ { 3926, 2215 } }),
+			          u8"[多選T7] 只丟壞的那一筆,合法的保留");
+		}
+
+		d.Reset();
 	}
 
 	rep.text += rep.failures == 0 ? "\nALL PASS\n" : "\nFAILURES: " + std::to_string(rep.failures) + "\n";

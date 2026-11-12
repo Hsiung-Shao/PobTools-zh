@@ -435,6 +435,22 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 		ImGui::TextUnformatted(StripStatMarkup(zh ? zh->StatLine(s) : s).c_str());
 		ImGui::PopStyleColor();
 	}
+	// Multiple-choice node: every option, the picked one in the stat colour.
+	if (!n.variants.empty()) {
+		ImGui::TextDisabled(n.variant < 0 ? u8"選項（擇一，尚未選擇）" : u8"選項（擇一）");
+		for (int i = 0; i < (int)n.variants.size(); i++) {
+			std::string line = i == n.variant ? "> " : "   ";
+			for (size_t k = 0; k < n.variants[i].stats.size(); k++) {
+				const std::string& s = n.variants[i].stats[k];
+				if (k) line += "\n   ";
+				line += StripStatMarkup(zh ? zh->StatLine(s) : s);
+			}
+			ImGui::PushStyleColor(ImGuiCol_Text, PobUi::TokV4(i == n.variant ? Tok::AccentText : Tok::TextMuted));
+			ImGui::TextUnformatted(line.c_str());
+			ImGui::PopStyleColor();
+		}
+		if (n.alloc && !planning_) ImGui::TextDisabled(u8"右鍵更換選項");
+	}
 	ImGui::PopTextWrapPos();
 
 	ImGui::Separator();
@@ -667,6 +683,8 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 				// Only the node actually clicked is a deliberate pick; the rest
 				// of the path is wiring.
 				d.nodes[hover_].target = true;
+				// A multiple-choice node grants nothing until an option is picked.
+				if (!d.nodes[hover_].variants.empty()) OpenVariantPicker(hover_);
 				status_ = u8"已配置 " + std::to_string((int)hoverAdd_.size()) +
 				          u8" 點 · 共 " + std::to_string(d.UsedPoints()) + u8" 點";
 				changed = true;
@@ -680,6 +698,47 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 		}
 	}
 	if (rejectFlash_ > 0.0f) rejectFlash_ -= io.DeltaTime;
+
+	// Option picker of a multiple-choice node: opened by allocating one (above)
+	// or by right-clicking an allocated one. Normal mode only -- the planning
+	// sandbox re-derives the allocation on every mark and has its own right click.
+	if (!planning && hovered && hover_ != -1 && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Right)) < 16.0f * uiScale * uiScale &&
+	    d.nodes[hover_].alloc && !d.nodes[hover_].variants.empty()) {
+		OpenVariantPicker(hover_);
+	}
+	// Opened once per request: re-opening whenever it is closed would undo the
+	// user dismissing it.
+	if (pickRequest_) ImGui::OpenPopup("##atlasvariant");
+	pickRequest_ = false;
+	bool pickerOpen = false;
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f * uiScale, 12.0f * uiScale));
+	if (ImGui::BeginPopup("##atlasvariant")) {
+		pickerOpen = true;
+		if (pickNode_ < 0 || pickNode_ >= (int)d.nodes.size() || !d.nodes[pickNode_].alloc) {
+			ImGui::CloseCurrentPopup();
+		} else {
+			AtlasNode& n = d.nodes[pickNode_];
+			ImGui::TextColored(PobUi::TokV4(Tok::TreeNotable), "%s", (zh ? zh->NodeName(n.id, n.name) : n.name).c_str());
+			ImGui::TextDisabled(u8"選擇一個選項");
+			ImGui::Separator();
+			for (int i = 0; i < (int)n.variants.size(); i++) {
+				std::string label;
+				for (const std::string& s : n.variants[i].stats) {
+					if (!label.empty()) label += "\n";
+					label += StripStatMarkup(zh ? zh->StatLine(s) : s);
+				}
+				ImGui::PushID(i);
+				if (ImGui::Selectable(label.c_str(), i == n.variant) && i != n.variant) {
+					n.variant = i;
+					changed = true;
+				}
+				ImGui::PopID();
+			}
+		}
+		ImGui::EndPopup();
+	}
+	ImGui::PopStyleVar();
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(vpPos_, vpPos_ + vpSize_, true);
@@ -730,7 +789,7 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	}
 	dl->PopClipRect();
 
-	if (hovered) drawTooltip(d, uiScale, zh);
+	if (hovered && !pickerOpen) drawTooltip(d, uiScale, zh);
 
 	ImGui::EndChild();
 	ImGui::PopStyleVar();

@@ -639,9 +639,9 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		if (!d.contains("sprites") || !d["sprites"].is_object())
 			{ if (err) *err = u8"data.json 缺少 sprites 段"; return false; }
 		for (const auto& [cat, sec] : d["sprites"].items()) {
-			(void)cat;
-			if (!sec.is_object() || !sec.contains("0.5")) continue; // import uses zoom 0.5 only
-			std::string base = cdn_base_name(sec["0.5"].value("filename", std::string()));
+			const ordered_json* lv = AtlasSpriteLevel(cat, sec); // the level the import reads
+			if (!lv) continue;
+			std::string base = cdn_base_name(lv->value("filename", std::string()));
 			if (!base.empty()) assets.insert(base);
 		}
 	} catch (const std::exception& e) {

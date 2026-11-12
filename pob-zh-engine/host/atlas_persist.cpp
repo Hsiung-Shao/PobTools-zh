@@ -65,6 +65,16 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	e.blocked.clear();
 	if (obj.contains("blocked") && obj["blocked"].is_array())
 		e.blocked = parse_alloc_array(obj["blocked"]);
+	// {"<node id>": <effect id>}; a malformed entry is dropped, never fatal.
+	// Whether the ids still exist is the tree's call (ApplyVariantIds).
+	e.variants.clear();
+	if (obj.contains("variants") && obj["variants"].is_object())
+		for (auto it = obj["variants"].begin(); it != obj["variants"].end(); ++it) {
+			char* end = nullptr;
+			long id = strtol(it.key().c_str(), &end, 10);
+			if (!it.key().empty() && end && *end == 0 && it.value().is_number_integer())
+				e.variants[(int)id] = it.value().get<int>();
+		}
 	// Astrolabes are an object keyed by quadrant. ordered_json preserves the
 	// insertion order, so a round trip keeps the quadrants as they were written;
 	// nothing downstream depends on that order, only on one entry per key.
@@ -140,6 +150,11 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 	if (!e.scarabs.empty()) obj["scarabs"] = e.scarabs;
 	if (!e.targets.empty()) obj["targets"] = e.targets;
 	if (!e.blocked.empty()) obj["blocked"] = e.blocked;
+	if (!e.variants.empty()) {
+		ordered_json v = ordered_json::object();
+		for (const auto& kv : e.variants) v[std::to_string(kv.first)] = kv.second;
+		obj["variants"] = std::move(v);
+	}
 	if (!e.astrolabes.empty()) {
 		ordered_json a = ordered_json::object();
 		// First write wins, mirroring "one Shaped Region per quadrant"; a list

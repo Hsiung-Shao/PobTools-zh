@@ -5,6 +5,7 @@
 // Pure data + graph logic; no ImGui / GL. Rendering lives in atlas_view.cpp.
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -22,6 +23,12 @@ enum : int {
 	kAtlasKeystone = 2,
 	kAtlasStart = 3,     // the single start node: always allocated, zero cost
 	kAtlasWormhole = 4,  // gateway pair; teleport edge is a normal graph edge
+};
+
+// One option of a multiple-choice node (GGG "variantEffects", 3.30+).
+struct AtlasVariant {
+	int effect = 0;                   // GGG effect id: the stable key the build file stores
+	std::vector<std::string> stats;
 };
 
 struct AtlasNode {
@@ -42,6 +49,16 @@ struct AtlasNode {
 	// optimal -- but it CAN wall a target off, which is reported rather than
 	// silently leaving that target allocated-but-disconnected.
 	bool blocked = false;
+	// Multiple-choice node: the player picks exactly one option after allocating
+	// it. Empty for ordinary nodes. `variant` indexes `variants`, -1 = not picked.
+	std::vector<AtlasVariant> variants;
+	int variant = -1;
+	// What the node grants right now: `stats` plus the picked option's lines
+	// (none while unpicked). The stat panel sums this, never `stats` alone.
+	std::vector<std::string> EffStats() const;
+	// Every line the node can show: `stats` plus all options' lines. Season
+	// diff and translation pruning compare tree definitions, not a build.
+	std::vector<std::string> AllStats() const;
 };
 
 struct AtlasEdge {
@@ -116,6 +133,13 @@ public:
 	std::vector<int> BlockedIds() const;
 	std::vector<int> BlockedIdx() const;
 	std::vector<int> AllocIdx() const;            // allocated node indices, start INCLUDED
+
+	// Picked options of multiple-choice nodes, as node id -> effect id. Apply
+	// clears every pick first; an unknown node, a node without options or an
+	// effect the node does not offer is dropped (the node stays unpicked).
+	// Returns how many picks mapped. Like targets, call it AFTER ApplyAllocIds.
+	int ApplyVariantIds(const std::map<int, int>& nodeToEffect);
+	std::map<int, int> VariantIds() const;        // allocated nodes with a pick only
 	void SetAllocSet(const std::vector<int>& idx); // replace the allocation wholesale
 	const std::string& Version() const { return version_; }
 
