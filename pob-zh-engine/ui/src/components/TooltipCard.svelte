@@ -12,7 +12,10 @@
     width = 340,
     centerHead = true,
     avoid = null,
+    children,
   }: {
+    /** drawn under the lines (the breakdown's passive-node minimap) */
+    children?: import("svelte").Snippet;
     lines: TooltipLine[];
     accent?: string | null;
     x?: number;
@@ -59,6 +62,7 @@
       </div>
     {/if}
   {/each}
+  {@render children?.()}
 </div>
 
 <style>

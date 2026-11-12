@@ -4,6 +4,7 @@
 <script lang="ts">
   import { api, type BreakdownSection, type BreakdownTip, type BreakdownTipRef, type TooltipLine } from "$lib/bridge";
   import TooltipCard from "./TooltipCard.svelte";
+  import NodeMiniMap from "./NodeMiniMap.svelte";
   import { t } from "$lib/i18n";
   import PobText from "./PobText.svelte";
 
@@ -12,9 +13,9 @@
   let { sections, tipFor }: { sections: BreakdownSection[]; tipFor?: (ref: BreakdownTipRef) => Promise<BreakdownTip> } = $props();
 
   type Box = { left: number; top: number; right: number; bottom: number };
-  let tip = $state<{ lines: TooltipLine[]; x: number; y: number; avoid: Box } | null>(null);
+  let tip = $state<{ lines: TooltipLine[]; node?: number; x: number; y: number; avoid: Box } | null>(null);
   let tipSeq = 0;
-  const tipCache = new Map<string, TooltipLine[]>();
+  const tipCache = new Map<string, { lines: TooltipLine[]; node?: number }>();
   $effect(() => {
     void sections;
     tipCache.clear();
@@ -26,17 +27,17 @@
     const at = { x: Math.round(r.right + 8), y: Math.round(r.top), avoid: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } };
     const key = `${ref.s}:${ref.r}:${ref.k}`;
     const seq = ++tipSeq;
-    let lines = tipCache.get(key);
-    if (!lines) {
+    let got = tipCache.get(key);
+    if (!got) {
       try {
         const t = await tipFor!(ref);
-        lines = t.lines ?? (t.node != null ? (await api.nodeInfo(t.node)).lines : []);
-        tipCache.set(key, lines);
+        got = { lines: t.lines ?? (t.node != null ? (await api.nodeInfo(t.node)).lines : []), node: t.node };
+        tipCache.set(key, got);
       } catch {
         return; // the build changed under the request
       }
     }
-    if (seq === tipSeq && lines.length) tip = { lines, ...at };
+    if (seq === tipSeq && got.lines.length) tip = { ...got, ...at };
   }
   function leaveCell() {
     tipSeq++;
@@ -97,7 +98,11 @@
       <div class="radius">{t("breakdown.radius", { radius: s.radius })}</div>
     {/if}
   {/each}
-  {#if tip}<TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} avoid={tip.avoid} />{/if}
+  {#if tip}
+    <TooltipCard lines={tip.lines} x={tip.x} y={tip.y} width={360} avoid={tip.avoid}>
+      {#if tip.node != null}<NodeMiniMap node={tip.node} />{/if}
+    </TooltipCard>
+  {/if}
   {#if sections.length === 0}
     <div class="radius">{t("breakdown.none")}</div>
   {/if}
