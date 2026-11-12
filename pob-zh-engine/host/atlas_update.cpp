@@ -286,6 +286,25 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 				n["statsEn"] = statsEn;
 			}
 			outNodes[std::to_string(id)] = std::move(n);
+
+			// Options of a multiple-choice node (3.30+): one entry per option,
+			// keyed by its effect id -- a passive id of its own, disjoint from
+			// the node ids, so repoe / the game files can join it the same way.
+			// No name: an option is only its lines.
+			if (v.contains("variantEffects") && v["variantEffects"].is_array())
+				for (const auto& e : v["variantEffects"]) {
+					if (!e.is_object() || !e.contains("effect") || !e["effect"].is_number_integer()) continue;
+					std::string ek = std::to_string(e["effect"].get<int>());
+					ordered_json o;
+					o["en"] = "";
+					o["statsEn"] = e.contains("stats") ? e["stats"] : ordered_json::array();
+					auto eit = tcp.find(ek);
+					if (eit != tcp.end() && eit->contains("stat_text")) {
+						o["statsZh"] = (*eit)["stat_text"];
+						AlignStatsZhOrder(o);
+					}
+					outNodes[ek] = std::move(o);
+				}
 		}
 
 		if (total == 0)

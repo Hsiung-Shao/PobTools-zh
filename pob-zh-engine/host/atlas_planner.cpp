@@ -232,7 +232,7 @@ public:
 			else if (page == L"new") { nameBuf = u8"新專案"; askNew_ = true; }
 			else if (page == L"planexit" && ready) { enterPlanning(); planningAskExit = true; }
 			// two multiple-choice nodes: one with an option picked, one with its picker up
-			else if (page == L"variant" && ready) {
+			else if ((page == L"variant" || page == L"variantzh") && ready) {
 				int seen = 0;
 				for (int i = 0; i < (int)tree.nodes.size() && seen < 2; i++) {
 					if (tree.nodes[i].variants.empty()) continue;
@@ -241,6 +241,7 @@ public:
 					else view.OpenVariantPicker(i);
 				}
 				panelDirty = true;
+				if (page == L"variantzh" && zhLag_) setLagZh(true);
 			}
 		}
 		return true;   // missing data is a screen with an import button, not a failure
@@ -588,15 +589,22 @@ public:
 				if (PobUi::MenuRow(PobIcon::Refresh, u8"匯入賽季資料…", nullptr, !updaterBusy))
 					askImportSeason_ = true;
 				if (PobUi::MenuRow(PobIcon::RotateCcw, u8"重置配點…", nullptr, true, true)) askReset_ = true;
-				if (zhLoaded || zhLag_) {   // lagging: the tree is English anyway, the rest still switches
+				if (zhLag_) {               // lagging: the switch is the tree's (see applyZh)
 					PobUi::MenuSeparator();
-					if (PobUi::MenuRow(PobIcon::Languages, showZh ? u8"內容改顯示英文" : u8"內容改顯示中文", "F2"))
+					if (PobUi::MenuRow(PobIcon::Languages, lagZh_ ? u8"節點改顯示英文" : u8"節點改顯示中文（部分）", "F2"))
+						setLagZh(!lagZh_);
+				} else if (zhLoaded) {
+					PobUi::MenuSeparator();
+					if (PobUi::MenuRow(PobIcon::Languages, showZh ? u8"節點改顯示英文" : u8"節點改顯示中文", "F2"))
 						showZh = !showZh;
 				}
 				PobUi::EndMenuPopup();
 			}
 			// zh/en display toggle (only when a mapping is available)
-			if ((zhLoaded || zhLag_) && ImGui::IsKeyPressed(ImGuiKey_F2, false)) showZh = !showZh;
+			if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) {
+				if (zhLag_) setLagZh(!lagZh_);
+				else if (zhLoaded) showZh = !showZh;
+			}
 
 			// --- dialogs: one look (Dialog), the destructive answer in danger ---
 			if (PobUi::BeginDialog(u8"##newproj", &askNew_, u8"新增專案", u8"新專案從空白配點開始。")) {
@@ -691,9 +699,10 @@ public:
 				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
 			if (!zhLagMsg_.empty()) {
-				if (PobUi::Banner("##apzhlag", PobUi::BannerTone::Info, PobIcon::Languages, u8"譯文尚未齊全",
-				                  zhLagMsg_.c_str(), false, nullptr, true) == PobUi::BannerResult::Close)
-					zhLagMsg_.clear();
+				const PobUi::BannerResult br = PobUi::Banner("##apzhlag", PobUi::BannerTone::Info, PobIcon::Languages,
+					u8"譯文尚未齊全", zhLagMsg_.c_str(), false, lagZh_ ? u8"顯示英文" : u8"顯示中文", true);
+				if (br == PobUi::BannerResult::Action) setLagZh(!lagZh_);
+				else if (br == PobUi::BannerResult::Close) zhLagMsg_.clear();
 				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
 			if (!noticeMsg_.empty()) {
@@ -2021,7 +2030,7 @@ private:
 			if (!d) continue;
 			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
 			// Chinese for the new name yet: show the game's English, not the old name.
-			labels[i] = (tree.masteries[i].name == d->en && !zhLag_) ? d->zh : tree.masteries[i].name;
+			labels[i] = (tree.masteries[i].name == d->en && (!zhLag_ || lagZh_)) ? d->zh : tree.masteries[i].name;
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
@@ -2072,18 +2081,17 @@ private:
 	void applyZh(const std::string& tag)
 	{
 		zhLoaded = i18n.LoadVersion(exeDir, tag);
-		// Translations from an earlier league: only the lines that did not change
-		// could keep their Chinese, which leaves a tree that is half and half.
-		// The user's ruling (2026-11-12) is the whole tree in English until the
-		// league's own translations exist -- and a notice, so it reads as
-		// temporary rather than broken. zhLoaded gates every tree string.
+		// Translations from an earlier league. What can be shown in Chinese is
+		// only what is certain: lines unchanged since last league, plus lines the
+		// maintainer patched from official templates ("fresh"); everything else
+		// is English (the prune below). That is a half-and-half tree, so by the
+		// user's ruling (2026-11-12) it opens in English with a notice, and
+		// Chinese is one click away (lagZh_). zhLoaded gates every tree string.
+		zhAvail_ = zhLoaded;
 		zhLag_ = zhLoaded && i18n.LagsSeason(tag);
 		zhLagMsg_.clear();
-		if (zhLag_) {
-			zhLagMsg_ = tag + u8" 的節點內容先全部顯示英文，繁體中文會在開季後補上。";
-			zhLoaded = false;
-			return;
-		}
+		if (zhLag_)
+			zhLagMsg_ = tag + u8" 的繁體中文尚未齊全：能確定的內容可顯示中文，其餘維持英文，開季後補齊。";
 		std::string older = verIndex.OlderThan(tag);
 		if (zhLoaded && !older.empty()) {
 			AtlasTreeData ot;
@@ -2103,6 +2111,19 @@ private:
 				BackfillAtlasI18n(i18n, tree, oi, ot); // unchanged lines repoe missed
 			}
 		}
+		if (zhLag_) zhLoaded = lagZh_;
+	}
+	// The tree's language while its translations lag (see applyZh). The mapping
+	// stays loaded and pruned in i18n either way; this only flips the gate.
+	bool zhAvail_ = false;    // a mapping for the viewed season is loaded
+	bool lagZh_ = false;      // user asked for Chinese on a lagging tree
+	void setLagZh(bool on)
+	{
+		lagZh_ = on;
+		zhLoaded = zhAvail_ && on;
+		if (on) showZh = true;
+		reloadMechanics();
+		panelDirty = true;
 	}
 	// showZh follows the mapping coming and going. A lagging mapping keeps it on:
 	// the tree is English by zhLoaded, while maps, astrolabes and the revenue tab
@@ -2938,10 +2959,6 @@ private:
 		if (!tt.LoadVersion(exeDir, targ, &e)) { diffErr = u8"載入 " + targ + u8" 失敗：" + e; return; }
 		AtlasI18n bz, tz;
 		bool hb = bz.LoadVersion(exeDir, base), ht = tz.LoadVersion(exeDir, targ);
-		// a side whose translations are from an earlier league is all English,
-		// exactly as on the canvas (applyZh)
-		if (hb && bz.LagsSeason(base)) hb = false;
-		if (ht && tz.LagsSeason(targ)) ht = false;
 		// same display rules as the canvas: when the zh snapshot predates the
 		// season, changed lines / renamed nodes fall back to English; unchanged
 		// lines keep (or backfill) their Chinese
