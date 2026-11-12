@@ -1,3 +1,4 @@
+import "$lib/base.css";
 import "./app.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
