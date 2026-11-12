@@ -286,7 +286,7 @@
     color: var(--ink-0);
   }
   .sopt.on {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .grid {
     display: grid;

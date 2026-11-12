@@ -181,7 +181,7 @@
   }
   .seg button.on {
     background: var(--gold-soft);
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .pane :global(.select.sm),
   .input.sm {

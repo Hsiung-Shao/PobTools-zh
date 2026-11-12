@@ -5,7 +5,9 @@
   import BreakdownPanel from "./BreakdownPanel.svelte";
   import { api, type BreakdownSection, type SidebarRow } from "$lib/bridge";
   import { t } from "$lib/i18n";
-  import { groupSidebar } from "$lib/sidebar-groups";
+  import SideHead from "./SideHead.svelte";
+  import { groupSidebar, headlineStat } from "$lib/sidebar-groups";
+  import { pobPlain } from "$lib/pobtext";
   import { loadCollapsed, saveCollapsed, sidebarSummary } from "$lib/sidebar-collapse";
   import { app } from "$lib/state.svelte";
   import { fitFloat, type FloatAnchor } from "$lib/floatFit";
@@ -63,6 +65,7 @@
   const info = $derived(app.info);
   const side = $derived(app.sidebar);
   const sections = $derived(side ? groupSidebar(side.rows) : []);
+  const headline = $derived(side ? headlineStat(side.rows) : null);
 
   // POB row shapes: "label:" + value, a heading (label only), a centred
   // message, or an empty spacer.
@@ -72,8 +75,6 @@
     if (r.lhs && !r.rhs) return "heading";
     return "pair";
   }
-
-  const overCap = (used: number, max?: number | null) => max != null && used > max;
 
   // 使用者收合的分組;預設全部展開
   let folded = $state(loadCollapsed());
@@ -92,40 +93,26 @@
 <aside class="side" bind:this={sideEl}>
   {#if info}
     <section class="summary">
-      <div class="name" title={info.dbFileName ?? ""}>{info.buildName}</div>
-      <div class="who">
-        <span class="cls">{info.ascendClassNameZh ?? info.ascendClassName ?? info.classNameZh ?? info.className ?? ""}</span>
-        {#if info.ascendClassName}<span class="base dim">{info.classNameZh ?? info.className}</span>{/if}
-      </div>
-      <dl class="facts">
-        <div>
-          <dt>{t("sidebar.level")}</dt>
-          <dd class="num">{info.level}</dd>
+      <SideHead />
+      {#if headline}
+        {@const hl = headline}
+        {@const live = side?.rows[hl.index - 1]?.hasBreakdown}
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          class="headline"
+          class:live
+          class:pinned={bd?.pinned && bd.row === hl.index}
+          role={live ? "button" : undefined}
+          tabindex={live ? 0 : undefined}
+          onmouseenter={(e) => live && showBreakdown(e.clientY, hl.index, false)}
+          onmouseleave={leaveRow}
+          onclick={(e) => live && showBreakdown(e.clientY, hl.index, true)}
+          onkeydown={(e) => e.key === "Enter" && live && showBreakdown(200, hl.index, true)}
+        >
+          <div class="hl-k"><PobText text={hl.lhs.replace(/[:：]\s*$/, "")} muted="var(--ink-2)" /></div>
+          <div class="hl-v num">{pobPlain(hl.rhs)}</div>
         </div>
-        <div title={info.points.req ?? ""}>
-          <dt>{t("sidebar.points")}</dt>
-          <dd class="num">
-            <b class:over={overCap(info.points.used, info.points.usedMax)}>{info.points.used}</b><span class="dim">/{info.points.usedMax ?? "?"}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>{t("sidebar.asc")}</dt>
-          <dd class="num">
-            <b class:over={overCap(info.points.ascUsed, info.points.ascMax)}>{info.points.ascUsed}</b><span class="dim">/{info.points.ascMax ?? "?"}</span>
-          </dd>
-        </div>
-        {#if info.points.weaponSets?.length}
-          <!-- PoE2: POB's point display has the two weapon sets between them -->
-          <div class="ws" title={t("sidebar.weaponSetsHint")}>
-            <dt>{t("sidebar.weaponSets")}</dt>
-            <dd class="num">
-              {#each info.points.weaponSets as w, i}
-                {#if i}<span class="dim"> · </span>{/if}<b class:over={overCap(w.used, w.max)}>{w.used}</b><span class="dim">/{w.max}</span>
-              {/each}
-            </dd>
-          </div>
-        {/if}
-      </dl>
+      {/if}
     </section>
 
     <div class="stats" class:busy={app.busy > 0}>
@@ -186,7 +173,7 @@
     <div class="float" class:pinned={bd.pinned} use:fitFloat={bd.anchor}>
       {#if bd.pinned}<span class="pin">{t("sidebar.pinned")}</span>{/if}
       <div class="float-body">
-        <BreakdownPanel sections={bd.sections} />
+        <BreakdownPanel sections={bd.sections} tipFor={(ref) => api.sidebarBreakdownTip(bd!.row, ref)} />
       </div>
     </div>
   {/if}
@@ -202,63 +189,42 @@
     border-right: 1px solid var(--edge-0);
   }
 
-  /* 摘要:名稱大字、職業一行、三個數字並排 */
+  /* 摘要:職業/等級/主要技能(SideHead)+ 主數字;很多技能控制項時自己捲動,不擠掉數值清單 */
   .summary {
-    padding: 14px 16px 12px;
+    flex: none;
+    max-height: 60%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    background: var(--surface-1);
     border-bottom: 1px solid var(--edge-0);
-    background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
   }
-  .name {
-    font-size: var(--fs-lg);
-    font-weight: 600;
-    line-height: 1.3;
+  .headline {
+    margin: 6px 10px;
+    padding: 6px 6px 8px;
+    border-radius: var(--radius-s);
+  }
+  .hl-k {
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .who {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-top: 2px;
-    font-size: var(--fs-sm);
+  .hl-v {
+    font-size: calc(var(--fs-base) + 13px);
+    line-height: calc(var(--fs-base) + 19px);
+    font-weight: 500;
+    color: var(--hl);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .cls {
-    color: var(--gold);
+  .headline.live:hover,
+  .headline.pinned {
+    background: var(--gold-soft);
   }
-  .base {
-    font-size: var(--fs-xs);
-  }
-  .facts {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin: 12px 0 0;
-  }
-  .facts .ws {
-    grid-column: 1 / -1;
-  }
-  .facts div {
-    padding: 6px 8px;
-    border: 1px solid var(--edge-0);
-    border-radius: var(--radius-s);
-    background: var(--surface-1);
-  }
-  .facts dt {
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.1em;
-    color: var(--ink-3);
-  }
-  .facts dd {
-    margin: 2px 0 0;
-    font-size: var(--fs-md);
-    color: var(--ink-0);
-  }
-  .facts b {
-    font-weight: 600;
-  }
-  .over {
-    color: var(--bad);
+  .headline.pinned {
+    box-shadow: inset 2px 0 0 var(--gold);
   }
 
   /* 統計列表 */
@@ -273,22 +239,28 @@
   }
   .sec {
     margin: 16px 0 4px;
-    padding-left: 10px;
-    position: relative;
     font-size: var(--fs-2xs);
     font-weight: 600;
     letter-spacing: 0.14em;
     color: var(--ink-2);
   }
-  .sec::before {
+  /* 標題文字右邊一條細線,延伸到摘要或箭頭前 */
+  .sec-btn > span:first-child::after,
+  .sec-row::after {
     content: "";
-    position: absolute;
-    left: 0;
-    top: 3px;
-    bottom: 3px;
-    width: 2px;
-    background: var(--gold);
-    border-radius: 1px;
+    flex: 1;
+    min-width: 12px;
+    align-self: center;
+    border-top: 1px solid var(--edge-0);
+  }
+  .sec-row .sum {
+    order: 1;
+  }
+  .sec-btn > span:first-child {
+    flex: 1 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   /* 分組標題是收合鈕;收合時顯示該組前幾個數值 */
   .sec-btn,
@@ -338,9 +310,6 @@
   }
   .sec.warn {
     color: var(--warn);
-  }
-  .sec.warn::before {
-    background: var(--warn);
   }
   .stats > .sec:first-child {
     margin-top: 6px;
@@ -433,7 +402,7 @@
     top: 3px;
     right: 6px;
     font-size: var(--fs-2xs);
-    color: var(--gold);
+    color: var(--gold-text);
     letter-spacing: 0.08em;
   }
   /* 最後手段:內容比整個視窗還高才在這裡捲動;釘住時讓浮層接滑鼠,滾輪才捲得到 */
@@ -442,7 +411,7 @@
     padding: 10px 14px;
     overflow-y: auto;
   }
-  .float.pinned:global([data-fit-tall]) {
+  .float.pinned {
     pointer-events: auto;
   }
 </style>

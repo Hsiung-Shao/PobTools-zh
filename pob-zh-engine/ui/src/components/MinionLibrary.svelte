@@ -153,7 +153,7 @@
     background: var(--surface-2);
   }
   .row.on .nm {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .nm {
     flex: 1;

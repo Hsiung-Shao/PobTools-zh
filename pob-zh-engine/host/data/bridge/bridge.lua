@@ -454,6 +454,9 @@ end
 -- classic window makes (Build.lua ShowDisplayStat -> GetSidebarBreakdown ->
 -- CalcBreakdownControl:SetBreakdownData), then read the control's section
 -- list and clear it again. rowIndex is 1-based into get_sidebar's rows.
+-- Defined after tooltip_lines (a local function declared below its caller is a nil upvalue).
+local breakdown_tips, breakdown_tip
+
 local function cell_text(v)
 	if type(v) == "number" then
 		if v == math.floor(v) then return tostring(math.floor(v)) end
@@ -474,10 +477,11 @@ function M.sidebar_breakdown(p)
 	end
 	local ctl = b.controls.breakdown
 	local data = b:GetSidebarBreakdown(line.breakdown, line.modNames, line.ignoredSections, line.actorName)
-	local sections = {}
+	local sections, tipOut = {}, nil
 	local ok, err = pcall(function()
 		ctl:SetBreakdownData(data, false, line.actorName)
-		for _, s in ipairs(ctl.sectionList or {}) do
+		if p.tip then tipOut = breakdown_tip(ctl, p.tip) return end
+		for _si, s in ipairs(ctl.sectionList or {}) do
 			if s.type == "TEXT" then
 				local lines = {}
 				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
@@ -494,12 +498,14 @@ function M.sidebar_breakdown(p)
 					end
 					rows[i] = setmetatable(row, { __object = true })
 				end
+				local tips = breakdown_tips(_si, s)
 				sections[#sections + 1] = {
 					type = "table",
 					label = s.label and tr(s.label) or nil,
 					footer = s.footer and tr(s.footer) or nil,
 					cols = cols,
 					rows = rows,
+					tips = tips,
 				}
 			elseif s.type == "RADIUS" then
 				sections[#sections + 1] = { type = "radius", radius = s.radius }
@@ -508,6 +514,7 @@ function M.sidebar_breakdown(p)
 	end)
 	ctl:SetBreakdownData() -- always clear, the classic window does too (ClearDisplayStat)
 	if not ok then error(err, 0) end
+	if tipOut then return tipOut end
 	return { sections = sections, rev = b.outputRevision }
 end
 
@@ -2816,6 +2823,40 @@ local function without_wrap(fn)
 	local ok, err = pcall(fn)
 	m.WrapString = savedWrap
 	if not ok then error(err, 0) end
+end
+
+-- Cells of a breakdown table POB gives a hover tooltip (CalcBreakdownControl's
+-- table draw: row[key.."Tooltip"], or row[key.."Node"] for a passive), listed so
+-- the page can ask for one: {s = section, r = row, k = column key}.
+breakdown_tips = function(si, s)
+	local tips = {}
+	for ri, r in ipairs(s.rowList or {}) do
+		for _, c in ipairs(s.colList or {}) do
+			local k = tostring(c.key)
+			if type(r[k .. "Tooltip"]) == "function" or type(r[k .. "Node"]) == "table" then
+				tips[#tips + 1] = { s = si, r = ri, k = k }
+			end
+		end
+	end
+	return #tips > 0 and tips or nil
+end
+
+-- One of those cells: POB's own tooltip function run into a Tooltip, or the
+-- passive node's id (the page shows node_info for it, as the tree does).
+breakdown_tip = function(ctl, tip)
+	local s = ctl.sectionList and ctl.sectionList[tonumber(tip.s) or 0]
+	local r = s and s.rowList and s.rowList[tonumber(tip.r) or 0]
+	local k = tostring(tip.k or "")
+	if not r then error("no such breakdown cell", 0) end
+	local fn, node = r[k .. "Tooltip"], r[k .. "Node"]
+	if type(fn) == "function" then
+		local tt = make("Tooltip")
+		without_wrap(function() fn(tt) end)
+		return { lines = tooltip_lines(tt) }
+	elseif type(node) == "table" and node.id then
+		return { node = node.id }
+	end
+	error("that breakdown cell has no tooltip", 0)
 end
 
 local influence_keys = { "shaper", "elder", "adjudicator", "basilisk", "crusader", "eyrie", "cleansing", "tangle" }
@@ -7425,11 +7466,12 @@ end
 
 -- The breakdown control's sections as data (shared by the sidebar and the
 -- calcs page): SetBreakdownData fills ctl.sectionList, we read it, then clear.
-local function breakdown_sections(ctl, fill)
-	local sections = {}
+local function breakdown_sections(ctl, fill, tip)
+	local sections, tipOut = {}, nil
 	local ok, err = pcall(function()
 		fill()
-		for _, s in ipairs(ctl.sectionList or {}) do
+		if tip then tipOut = breakdown_tip(ctl, tip) return end
+		for _si, s in ipairs(ctl.sectionList or {}) do
 			if s.type == "TEXT" then
 				local lines = {}
 				for i, l in ipairs(s.lines) do lines[i] = tr(l) end
@@ -7446,7 +7488,8 @@ local function breakdown_sections(ctl, fill)
 					end
 					rows[i] = setmetatable(row, { __object = true })
 				end
-				sections[#sections + 1] = { type = "table", label = s.label and tr(s.label) or nil, footer = s.footer and tr(s.footer) or nil, cols = cols, rows = rows }
+				local tips = breakdown_tips(_si, s)
+				sections[#sections + 1] = { type = "table", label = s.label and tr(s.label) or nil, footer = s.footer and tr(s.footer) or nil, cols = cols, rows = rows, tips = tips }
 			elseif s.type == "RADIUS" then
 				sections[#sections + 1] = { type = "radius", radius = s.radius }
 			end
@@ -7454,7 +7497,7 @@ local function breakdown_sections(ctl, fill)
 	end)
 	ctl:SetBreakdownData()
 	if not ok then error(err, 0) end
-	return sections
+	return tipOut or sections
 end
 
 local function calcs_actor(tab)
@@ -7660,7 +7703,8 @@ function M.calcs_breakdown(p)
 	local col = row and row[tonumber(p.ci or 0)]
 	if not col then error("no such cell", 0) end
 	local ctl = tab.controls.breakdown
-	local sections = breakdown_sections(ctl, function() ctl:SetBreakdownData(col, false) end)
+	local sections = breakdown_sections(ctl, function() ctl:SetBreakdownData(col, false) end, p.tip)
+	if p.tip then return sections end
 	return { sections = sections, rev = b.outputRevision }
 end
 

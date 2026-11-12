@@ -179,8 +179,8 @@
     pal.line = v("--tree-line", pal.line);
     pal.lineLit = v("--tree-line-lit", pal.lineLit);
     pal.path = v("--accent", pal.path);
-    pal.alloc = v("--gold", pal.alloc);
-    pal.allocEdge = v("--gold-dim", pal.allocEdge);
+    pal.alloc = v("--hl", pal.alloc);
+    pal.allocEdge = v("--hl-dim", pal.allocEdge);
     pal.dep = v("--bad", pal.dep);
     pal.search = v("--warn", pal.search);
   }
@@ -1031,6 +1031,7 @@
         infoCache.clear();
         if (langChanged) dynKey = ""; // same ids and places, new names: rebuild anyway
         rebuild();
+        repaint(); // rebuild() returns early when only the allocation changed (the top bar's undo / redo)
         if (switched) focusClass(); // the build bar changed the class: go look at the new start
         if (langChanged && power) void runPower({ enabled: true, stat: powerStat || undefined });
       })
@@ -1110,30 +1111,14 @@
   <div class="toolbar">
     <TreeSpecBar />
     <span class="vsep"></span>
-    <input class="input search" placeholder={t("tree.search")} bind:value={search} bind:this={searchEl} onkeydown={(e) => e.key === "Enter" && nextMatch()} />
-    {#if matches.size}<span class="count pill num">{matches.size}</span>{/if}
-    <button class="btn ghost sm" onclick={focusClass}>{t("sidebar.class")}</button>
-    <button class="btn ghost sm" onclick={fitAll}>{t("tree.fit")}</button>
-    <span class="vsep"></span>
-    <button class="btn ghost sm" onclick={undo} disabled={app.busy > 0} title="Ctrl+Z">{t("tree.undo")}</button>
-    <button class="btn ghost sm" onclick={redo} disabled={app.busy > 0} title="Ctrl+Y">{t("tree.redo")}</button>
-    {#if model?.poe2 && tree}
-      <span class="vsep"></span>
-      <span class="dim small">{t("tree.allocMode")}</span>
-      <div class="seg">
-        {#each [0, 1, 2] as m (m)}
-          <button class="btn sm" class:primary={(tree.allocMode ?? 0) === m} disabled={app.busy > 0} onclick={() => setAllocMode(m)}>
-            {#if m}<i class="dot" style:background={SET_COLOR[m]}></i>{/if}{t(m === 0 ? "tree.allocMain" : m === 1 ? "tree.allocSet1" : "tree.allocSet2")}
-          </button>
-        {/each}
-      </div>
-    {/if}
-    {#if !model?.poe2 && app.has("timelessJewel")}
-      <button class="btn ghost sm" onclick={() => (tjOpen = true)}>{t("tj.open")}</button>
-    {/if}
+    <span class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+      <input class="input" placeholder={t("tree.search")} bind:value={search} bind:this={searchEl} onkeydown={(e) => e.key === "Enter" && nextMatch()} />
+    </span>
+    {#if matches.size}<span class="pill warn num">{matches.size}</span>{/if}
     <span class="vsep"></span>
     <label class="chk small" title={t("tree.powerHint")}>
-      <input type="checkbox" checked={!!power} disabled={powerBusy || app.busy > 0} onchange={(e) => togglePower(e.currentTarget.checked)} />
+      <input type="checkbox" class="sw" checked={!!power} disabled={powerBusy || app.busy > 0} onchange={(e) => togglePower(e.currentTarget.checked)} />
       {t("tree.power")}
     </label>
     {#if power}
@@ -1142,16 +1127,24 @@
       <button class="btn ghost sm" disabled={!power.report?.length} onclick={() => (reportOpen = !reportOpen)}>{t(reportOpen ? "tree.powerHide" : "tree.powerShow")}</button>
     {/if}
     {#if powerBusy}<span class="dim small pulse">{t("tree.powerWorking")}</span>
-    {:else if !power}<span class="dim small">{t("tree.powerOffHint")}</span>{/if}
-    <span class="spacer"></span>
-    {#if tree}
-      <span class="points">
-        <span class="dim">{t("sidebar.points")}</span>
-        <b class="num" class:over={tree.points.usedMax != null && tree.points.used > tree.points.usedMax}>{tree.points.used}</b><span class="dim num">/{tree.points.usedMax ?? "?"}</span>
-        <span class="dim"> · {t("sidebar.asc")}</span>
-        <b class="num" class:over={tree.points.ascMax != null && tree.points.ascUsed > tree.points.ascMax}>{tree.points.ascUsed}</b><span class="dim num">/{tree.points.ascMax ?? "?"}</span>
-      </span>
     {/if}
+    <span class="spacer"></span>
+    <!-- right side; TreeSpecBar's compare drop-down and reset are its own elements, `order` slots them in here -->
+    {#if model?.poe2 && tree}
+      <span class="dim small r1">{t("tree.allocMode")}</span>
+      <div class="seg r1">
+        {#each [0, 1, 2] as m (m)}
+          <button class:on={(tree.allocMode ?? 0) === m} disabled={app.busy > 0} onclick={() => setAllocMode(m)}>
+            {#if m}<i class="dot" style:background={SET_COLOR[m]}></i>{/if}{t(m === 0 ? "tree.allocMain" : m === 1 ? "tree.allocSet1" : "tree.allocSet2")}
+          </button>
+        {/each}
+      </div>
+    {/if}
+    {#if !model?.poe2 && app.has("timelessJewel")}
+      <button class="btn ghost sm r1" onclick={() => (tjOpen = true)}>{t("tj.open")}</button>
+    {/if}
+    <button class="btn ghost sm r3" onclick={focusClass}>{t("sidebar.class")}</button>
+    <button class="btn ghost sm r3" onclick={fitAll}>{t("tree.fit")}</button>
   </div>
   <div class="stage pob-dark" bind:this={wrap}>
     <canvas bind:this={canvas} onwheel={onWheel} onpointerdown={onDown} onpointermove={onMove} onpointerup={onUp} onpointerleave={() => setHover(null)} oncontextmenu={(e) => e.preventDefault()}></canvas>
@@ -1163,14 +1156,27 @@
         <button class="hint-x" title={t("tree.keyHintOff")} aria-label={t("tree.keyHintOff")} onclick={closeKeyHint}>×</button>
       </div>
     {/if}
-    {#if compareDiff && tree?.compare}
-      <!-- what the Compare rings mean (the canvas draws them; see paint) -->
-      <div class="cmp-legend">
-        <span class="cmp-title">{t("tree.compareWith", { name: tree.compare.title || t("tree.specDefault") })}</span>
-        <span><i class="ring there"></i>{t("tree.compareOnlyThere", { n: compareDiff.there })}</span>
-        <span><i class="ring here"></i>{t("tree.compareOnlyHere", { n: compareDiff.here })}</span>
-      </div>
-    {/if}
+    <!-- zoom buttons stacked above the Compare legend so the two never overlap -->
+    <div class="corner">
+      {#if model}
+        <div class="zoom">
+          <button aria-label={t("tree.zoomIn")} title={t("tree.zoomIn")} onclick={() => zoomTo(zoom * 1.25)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          </button>
+          <button aria-label={t("tree.zoomOut")} title={t("tree.zoomOut")} onclick={() => zoomTo(zoom / 1.25)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /></svg>
+          </button>
+        </div>
+      {/if}
+      {#if compareDiff && tree?.compare}
+        <!-- what the Compare rings mean (the canvas draws them; see paint) -->
+        <div class="cmp-legend">
+          <span class="cmp-title">{t("tree.compareWith", { name: tree.compare.title || t("tree.specDefault") })}</span>
+          <span><i class="ring there"></i>{t("tree.compareOnlyThere", { n: compareDiff.there })}</span>
+          <span><i class="ring here"></i>{t("tree.compareOnlyHere", { n: compareDiff.here })}</span>
+        </div>
+      {/if}
+    </div>
     {#if loadError}
       <div class="veil bad">{loadError}</div>
     {:else if !model}
@@ -1301,6 +1307,21 @@
       </div>
     {/if}
   </div>
+  <div class="legend">
+    <span><i class="lg alloc"></i>{t("tree.legendAllocated")}</span>
+    <span><i class="lg path"></i>{t("tree.legendPath")}</span>
+    <span><i class="lg keystone"></i>{t("tree.kind.keystone")}</span>
+    <span><i class="lg socket"></i>{t("tree.kind.socket")}</span>
+    <span class="spacer"></span>
+    {#if tree}
+      <span class="points">
+        <span>{t("sidebar.points")}</span>
+        <b class="num" class:over={tree.points.usedMax != null && tree.points.used > tree.points.usedMax}>{tree.points.used}</b><span class="num">/{tree.points.usedMax ?? "?"}</span>
+        <span> · {t("sidebar.asc")}</span>
+        <b class="num" class:over={tree.points.ascMax != null && tree.points.ascUsed > tree.points.ascMax}>{tree.points.ascUsed}</b><span class="num">/{tree.points.ascMax ?? "?"}</span>
+      </span>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -1310,37 +1331,156 @@
     flex-direction: column;
     min-height: 0;
   }
+  /* layout comes from the global .toolbar; this only adds the bar's own fill */
   .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--edge-0);
     background: var(--surface-1);
   }
   .search {
+    position: relative;
+    display: inline-flex;
     width: min(240px, 30cqw);
   }
-  .count {
-    padding: 0 7px;
-    border: 1px solid var(--warn);
-    border-radius: 9px;
-    color: var(--warn);
-    font-size: var(--fs-xs);
+  .search svg {
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translateY(-50%);
+    fill: none;
+    stroke: var(--ink-3);
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    pointer-events: none;
+  }
+  .search .input {
+    width: 100%;
+    padding-left: 28px;
+  }
+  .chk {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
   .spacer {
     flex: 1;
+  }
+  /* right-hand group order; TreeSpecBar's compare (3) and reset (5) sit between */
+  .toolbar .spacer {
+    order: 1;
+  }
+  .r1 {
+    order: 2;
+  }
+  .toolbar :global(.tsb-cmp) {
+    order: 3;
+  }
+  .r3 {
+    order: 4;
+  }
+  .toolbar :global(.tsb-reset) {
+    order: 5;
+  }
+  .legend {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 32px;
+    padding: 0 16px;
+    background: var(--surface-1);
+    border-top: 1px solid var(--edge-0);
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .lg {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    flex: none;
+  }
+  .lg.alloc {
+    border-radius: 50%;
+    background: var(--hl);
+  }
+  .lg.path {
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+  }
+  .lg.keystone {
+    width: 9px;
+    height: 9px;
+    transform: rotate(45deg);
+    border: 1.5px solid var(--ink-1);
+  }
+  .lg.socket {
+    border: 1.5px solid var(--ink-1);
+    border-radius: 2px;
   }
   .points {
     display: inline-flex;
     align-items: baseline;
     gap: 4px;
-    font-size: var(--fs-sm);
-    white-space: nowrap;
+  }
+  .points b {
+    color: var(--ink-0);
+    font-weight: 500;
   }
   .points .over {
     color: var(--bad);
+  }
+  .corner {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .zoom {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--edge-2);
+    border-radius: var(--radius-m);
+    background: var(--surface-2-c);
+    box-shadow: var(--shadow-float);
+    overflow: hidden;
+    pointer-events: auto;
+  }
+  .zoom button {
+    appearance: none;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--ink-1);
+  }
+  .zoom button + button {
+    border-top: 1px solid var(--edge-1);
+  }
+  .zoom button:hover {
+    background: var(--surface-hover-c);
+    color: var(--ink-0);
+  }
+  .zoom svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
   }
   .keyhint {
     position: absolute;
@@ -1403,9 +1543,6 @@
     border-radius: var(--radius-s);
   }
   .cmp-legend {
-    position: absolute;
-    right: 12px;
-    bottom: 12px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1449,20 +1586,14 @@
   .ok {
     color: var(--ok);
   }
-  .vsep {
-    width: 1px;
-    height: 16px;
-    background: var(--edge-1);
-    margin: 0 4px;
-  }
   /* floating panels: never wider than the main area (100cqw of App's `view`) */
   .menu {
     position: absolute;
     min-width: min(260px, 100cqw - 24px);
     max-width: min(380px, 100cqw - 24px);
     padding: 6px;
-    background: var(--surface-1);
-    border: 1px solid var(--edge-1);
+    background: var(--surface-2-c);
+    border: 1px solid var(--edge-2);
     border-radius: var(--radius-m);
     box-shadow: var(--shadow-float);
     display: flex;
@@ -1509,9 +1640,9 @@
     position: absolute;
     width: min(320px, 100cqw - 24px);
     pointer-events: none;
-    background: var(--surface-0-c);
-    border: 1px solid var(--ink-3);
-    border-radius: 3px;
+    background: var(--surface-2-c);
+    border: 1px solid var(--edge-2);
+    border-radius: var(--radius-m);
     box-shadow: var(--shadow-float);
     font-size: var(--fs-sm);
   }
@@ -1529,7 +1660,7 @@
     color: var(--ink-0);
   }
   .line.jewel-name {
-    color: var(--gold);
+    color: var(--hl);
     font-weight: 600;
     margin-bottom: 2px;
   }
@@ -1537,7 +1668,7 @@
     color: var(--c-rare);
   }
   .tip-title .name.notable {
-    color: var(--gold);
+    color: var(--hl);
   }
   .tip-title .kind {
     font-size: var(--fs-2xs);
@@ -1570,9 +1701,9 @@
     border-top: 1px solid var(--edge-0);
     font-size: var(--fs-xs);
   }
-  .seg {
+  .seg > button {
     display: inline-flex;
-    gap: 2px;
+    align-items: center;
   }
   .seg .dot {
     display: inline-block;
@@ -1601,9 +1732,10 @@
     max-height: 46%;
     display: flex;
     flex-direction: column;
-    background: color-mix(in srgb, var(--surface-1) 94%, transparent);
-    border: 1px solid var(--edge-1);
-    border-radius: 6px;
+    background: var(--surface-2-c);
+    border: 1px solid var(--edge-2);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-float);
     overflow: hidden;
   }
   .rhead {
@@ -1624,7 +1756,7 @@
   .rtable thead th {
     position: sticky;
     top: 0;
-    background: var(--surface-1);
+    background: var(--surface-2-c);
   }
   .rtable td:first-child,
   .rtable th:first-child {
@@ -1648,6 +1780,6 @@
     cursor: default;
   }
   .rtable tr.alloc td:first-child {
-    color: var(--gold);
+    color: var(--hl);
   }
 </style>

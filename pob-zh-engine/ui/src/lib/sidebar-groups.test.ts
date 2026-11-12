@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupOf, groupSidebar } from "./sidebar-groups";
+import { groupOf, groupSidebar, headlineStat } from "./sidebar-groups";
 import type { SidebarRow } from "./bridge";
 
 describe("groupOf: POB stat keys land in the section a player expects", () => {
@@ -71,5 +71,43 @@ describe("groupSidebar", () => {
     const s = groupSidebar(rows);
     expect(s).toHaveLength(1);
     expect(s[0].items).toHaveLength(2);
+  });
+});
+
+describe("headlineStat: 側欄主數字", () => {
+  const row = (p: Partial<SidebarRow>): SidebarRow => ({ h: 16, hasBreakdown: false, ...p });
+  const p = (stat: string, rhs = "1") => row({ lhs: `${stat}:`, rhs, stat, actor: "player" });
+
+  it("有完整 DPS 列時取它當主數字", () => {
+    const rows = [
+      row({ lhs: "^7Hit DPS:", rhs: "^77,031,006.2", stat: "TotalDPS", actor: "player" }),
+      p("CombinedDPS", "^79,000,000"),
+      row({ lhs: "^xAA9E82Full DPS:", rhs: "^710,493,990.4", stat: "FullDPS", actor: "player" }),
+    ];
+    // 索引沿用 groupSidebar 的 1-based(第 3 列)
+    expect(headlineStat(rows)).toEqual({ index: 3, lhs: "^xAA9E82Full DPS:", rhs: "^710,493,990.4" });
+  });
+
+  it("沒有完整 DPS 時依序退到下一個", () => {
+    const a = [p("TotalDPS", "1"), p("CombinedDPS", "2")];
+    expect(headlineStat(a)).toEqual({ index: 2, lhs: "CombinedDPS:", rhs: "2" });
+    const b = [p("Life", "9"), p("TotalDPS", "3")];
+    expect(headlineStat(b)).toEqual({ index: 2, lhs: "TotalDPS:", rhs: "3" });
+    const c = [p("Life", "9"), p("TotalDot", "4")];
+    expect(headlineStat(c)).toEqual({ index: 2, lhs: "TotalDot:", rhs: "4" });
+  });
+
+  it("沒有任何傷害列時不顯示主數字", () => {
+    expect(headlineStat([p("Life"), p("Mana")])).toBeNull();
+    expect(headlineStat([])).toBeNull();
+    expect(headlineStat([p("FullDPS", "")])).toBeNull();
+  });
+
+  it("召喚物的 DPS 列不會蓋過玩家的", () => {
+    const rows = [
+      row({ lhs: "Minion Full DPS:", rhs: "999", stat: "FullDPS", actor: "minion" }),
+      row({ lhs: "Hit DPS:", rhs: "7", stat: "TotalDPS", actor: "player" }),
+    ];
+    expect(headlineStat(rows)).toEqual({ index: 2, lhs: "Hit DPS:", rhs: "7" });
   });
 });

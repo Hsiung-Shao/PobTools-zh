@@ -112,13 +112,13 @@
 {#if specs}
   <Select class="select sm tsb-spec" value={String(specs.activeSpec)} title={t("tree.specSelect")} options={specs.specs.map((s) => ({ value: String(s.index), label: specLabel(s) }))} onchange={(v) => pick(String(v))} disabled={app.busy > 0} />
   {#if !compact}
-    <button class="btn ghost sm" onclick={() => { manage = true; manageSel = specs!.activeSpec; }}>{t("tree.specManage")}</button>
     <!-- controlled: picking a version only asks (the convert dialog); the drop-down keeps showing the tree's version -->
     <Select class="select sm tsb-ver" value={specs.treeVersion} title={t("tree.version")} options={specs.versions.map((v) => ({ value: v.value, label: v.label }))} onchange={(v) => { if (String(v) !== specs!.treeVersion) convert = String(v); }} disabled={app.busy > 0} />
+    <button class="btn ghost sm" onclick={() => { manage = true; manageSel = specs!.activeSpec; }}>{t("tree.specManage")}</button>
     <Select class="select sm tsb-cmp" value={String(compare ?? "")} title={t(specs.specs.length < 2 ? "tree.compareNeedTwo" : "tree.compareHint")}
       options={[{ value: "", label: `${t("tree.compare")}: ${t("tree.compareOff")}` }, ...specs.specs.filter((s) => s.index !== specs!.activeSpec).map((s) => ({ value: String(s.index), label: `${t("tree.compare")}: ${s.title || t("tree.specDefault")}` }))]}
       onchange={(v) => setCompare(String(v))} disabled={app.busy > 0 || (specs.specs.length < 2 && compare == null)} />
-    <button class="btn ghost sm" onclick={() => (reset = true)} disabled={app.busy > 0}>{t(specs.tattoos ? "tree.resetTattoos" : "tree.reset")}</button>
+    <button class="btn sm danger tsb-reset" onclick={() => (reset = true)} disabled={app.busy > 0}>{t(specs.tattoos ? "tree.resetTattoos" : "tree.reset")}</button>
   {/if}
 {/if}
 
@@ -247,7 +247,7 @@
     padding: 18px 20px;
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
-    border-radius: 8px;
+    border-radius: var(--radius-m);
   }
   .dialog.wide {
     min-width: 560px;
@@ -269,7 +269,15 @@
     background: var(--surface-2);
   }
   .row.sel {
-    background: color-mix(in srgb, var(--gold) 18%, transparent);
+    background: var(--gold-soft);
+  }
+  .badge.gold {
+    padding: 0 7px;
+    border: 1px solid var(--hl-dim);
+    border-radius: 999px;
+    color: var(--hl);
+    font-size: var(--fs-2xs);
+    white-space: nowrap;
   }
   .btns {
     display: flex;

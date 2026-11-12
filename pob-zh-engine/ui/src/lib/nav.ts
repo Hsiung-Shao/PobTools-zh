@@ -62,3 +62,11 @@ export function folderCrumbs(subPath: string): { name: string; path: string }[] 
   }
   return out;
 }
+
+const NAV_IDS = ["builds", "tree", "items", "skills", "config", "calcs", "notes", "party", "import", "compare", "settings"] as const;
+export type NavId = (typeof NAV_IDS)[number];
+
+/** The nav rail's entries in order (the first nine are the 1-9 number keys); all but builds / settings are `disabled` until a build is loaded. */
+export function navItems(loaded: boolean): { id: NavId; key: string; disabled: boolean }[] {
+  return NAV_IDS.map((id) => ({ id, key: id === "settings" ? "settings.title" : `title.${id}`, disabled: !loaded && id !== "builds" && id !== "settings" }));
+}

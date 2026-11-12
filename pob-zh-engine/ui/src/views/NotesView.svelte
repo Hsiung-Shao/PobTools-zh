@@ -13,6 +13,9 @@
   let loadedRev = "";
   let timer = 0;
   let ta = $state<HTMLTextAreaElement | null>(null);
+  let gutterEl = $state<HTMLElement | null>(null);
+  const lineCount = $derived(text.split("\n").length);
+  const gutter = $derived(Array.from({ length: lineCount }, (_, i) => i + 1).join("\n"));
   // Our own Ctrl+Z / Ctrl+Y: the colour buttons and the reload after a save set
   // the text from script, which empties the text box's own undo stack.
   const history = new TextHistory();
@@ -128,18 +131,22 @@
 </script>
 
 <div class="page">
-  <div class="bar">
-    <span class="dim small hint">{t("notes.hint")}</span>
-    <span class="small" class:dim={text === saved} class:pending={text !== saved}>{t(text === saved ? "notes.saved" : "notes.saving")}</span>
-    <span class="grow"></span>
+  <div class="toolbar">
     <span class="k">{t("notes.colors")}</span>
     {#each colours as c}
-      <button class="sw" title={c.code} style:color={swatch(c.code)} onclick={() => insertColour(c.code)}>{colourLabel(c.name)}</button>
+      <button class="swatch" title={colourLabel(c.name)} aria-label={colourLabel(c.name)} onclick={() => insertColour(c.code)}><i style:background={swatch(c.code)}></i></button>
     {/each}
+    <span class="grow"></span>
+    <span class="small" class:dim={text === saved} class:pending={text !== saved}>{t(text === saved ? "notes.saved" : "notes.saving")}</span>
+    <span class="small num dim">{t("notes.stats", { chars: text.length, lines: lineCount })}</span>
   </div>
   <div class="two">
-    <textarea class="input area" bind:this={ta} bind:value={text} onbeforeinput={onBeforeInput} onkeydown={onKey} oninput={onTyped} onblur={flush} spellcheck="false"></textarea>
-    <div class="preview">
+    <div class="card editor">
+      <pre class="gutter" bind:this={gutterEl} aria-hidden="true">{gutter}</pre>
+      <textarea class="input area" bind:this={ta} bind:value={text} placeholder={t("notes.hint")} onbeforeinput={onBeforeInput} onkeydown={onKey} oninput={onTyped} onblur={flush}
+        onscroll={(e) => { if (gutterEl) gutterEl.scrollTop = e.currentTarget.scrollTop; }} spellcheck="false"></textarea>
+    </div>
+    <div class="card preview">
       <div class="label">{t("notes.preview")}</div>
       <div class="pv">
         {#each text.split("\n") as line}
@@ -157,16 +164,6 @@
     flex-direction: column;
     min-height: 0;
   }
-  .bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    min-height: 36px;
-    padding: 4px 12px;
-    border-bottom: 1px solid var(--edge-0);
-    background: var(--surface-1);
-  }
   .pending {
     color: var(--warn);
   }
@@ -174,30 +171,40 @@
     flex: 1;
   }
   .k {
-    font-size: var(--fs-2xs);
-    letter-spacing: 0.1em;
-    color: var(--ink-3);
+    margin-right: 2px;
+    font-size: var(--fs-xs);
+    color: var(--ink-2);
   }
   .small {
-    font-size: var(--fs-2xs);
-  }
-  .sw {
-    appearance: none;
-    border: 1px solid var(--edge-0);
-    border-radius: 3px;
-    background: none;
     font-size: var(--fs-xs);
-    padding: 1px 6px;
-    white-space: nowrap;
   }
-  .sw:hover {
-    border-color: var(--edge-1);
+  .swatch {
+    appearance: none;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--edge-1);
+    border-radius: var(--radius-s);
+    background: var(--surface-2);
+  }
+  .swatch:hover {
+    border-color: var(--edge-2);
+    background: var(--surface-hover);
+  }
+  .swatch i {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
   }
   .two {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
   }
   /* a narrow main area: editor over preview */
   @container view (max-width: 759px) {
@@ -205,29 +212,55 @@
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(160px, 1fr) minmax(160px, 1fr);
     }
-    .two .preview {
-      border-left: 0;
-      border-top: 1px solid var(--edge-0);
-    }
   }
-  /* the rule between the halves as a border, not a solid fill behind a gap (it hid
-     the background image) */
-  .preview {
-    border-left: 1px solid var(--edge-0);
+  .editor {
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
   }
+  /* line numbers: same font, size, line height and top padding as the text box,
+     which does not wrap, so row N is always line N */
+  .gutter,
   .area {
-    height: 100%;
-    border: 0;
-    border-radius: 0;
-    padding: 12px 14px;
+    margin: 0;
+    padding-top: 12px;
     font-family: var(--font-mono);
     font-size: var(--fs-sm);
     line-height: 1.5;
+  }
+  .gutter {
+    flex: none;
+    width: 44px;
+    padding-right: 8px;
+    /* + the text box's 9px horizontal scrollbar, so both reach the same last line */
+    padding-bottom: calc(12px + 9px);
+    overflow: hidden;
+    border-right: 1px solid var(--edge-0);
+    color: var(--ink-3);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .area {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    padding-right: 14px;
+    padding-bottom: 12px;
+    padding-left: 12px;
     resize: none;
     background: transparent;
+    white-space: pre;
+    overflow: auto;
+  }
+  .area:focus {
+    box-shadow: none;
+  }
+  .editor:focus-within {
+    border-color: var(--gold);
   }
   .preview {
-    background: var(--surface-1);
     padding: 12px 14px;
     overflow-y: auto;
     min-height: 0;

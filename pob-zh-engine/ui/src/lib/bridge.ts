@@ -576,9 +576,18 @@ export interface Sidebar {
   rev: number;
 }
 
+/** A breakdown table cell POB has a hover tooltip for: section / row (1-based, POB's own lists) and column key. */
+export interface BreakdownTipRef {
+  s: number;
+  r: number;
+  k: string;
+}
+/** POB's tooltip for such a cell, or the passive node it names (node_info has its tooltip). */
+export type BreakdownTip = { lines?: TooltipLine[]; node?: number };
+
 export type BreakdownSection =
   | { type: "text"; size: number; lines: string[] }
-  | { type: "table"; label?: string; footer?: string; cols: { label: string; key: string; right: boolean }[]; rows: Record<string, string>[] }
+  | { type: "table"; label?: string; footer?: string; cols: { label: string; key: string; right: boolean }[]; rows: Record<string, string>[]; tips?: BreakdownTipRef[] }
   | { type: "radius"; radius: number };
 
 export interface BuildListResult {
@@ -1397,6 +1406,8 @@ export const api = {
     bridge.call<{ path: string }>("move_build", p),
   loadBuildFile: (path: string) => bridge.call<LoadedBuild>("load_build_file", { path }, 120000),
   getSidebar: () => bridge.call<Sidebar>("get_sidebar"),
+  sidebarBreakdownTip: (rowIndex: number, tip: BreakdownTipRef) => bridge.call<BreakdownTip>("sidebar_breakdown", { rowIndex, tip }, 60000),
+  calcsBreakdownTip: (si: number, ui: number, ri: number, ci: number, tip: BreakdownTipRef) => bridge.call<BreakdownTip>("calcs_breakdown", { si, ui, ri, ci, tip }, 60000),
   sidebarBreakdown: (rowIndex: number) => bridge.call<{ sections: BreakdownSection[]; rev: number }>("sidebar_breakdown", { rowIndex }),
   getBuildInfo: () => bridge.call<BuildInfo>("get_build_info"),
   selfCheck: () => bridge.call<GateResult>("self_check"),

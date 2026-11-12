@@ -242,7 +242,7 @@
             {:else if c.kind === "edit"}
               <input class="input sm wide" value={c.text ?? ""} onchange={(e) => pick(c.name, { text: e.currentTarget.value })} />
             {:else if c.kind === "check"}
-              <input type="checkbox" checked={!!c.state} disabled={!c.enabled} onchange={(e) => pick(c.name, { state: e.currentTarget.checked })} />
+              <input type="checkbox" class="sw" checked={!!c.state} disabled={!c.enabled} onchange={(e) => pick(c.name, { state: e.currentTarget.checked })} />
             {:else if c.kind === "slider"}
               <input class="slider" type="range" min="0" max="1" step="0.01" value={c.value ?? 0} onchange={(e) => pick(c.name, { value: Number(e.currentTarget.value) })} />
             {:else if c.kind === "nodes" && c.options}
@@ -763,7 +763,7 @@
     flex-wrap: wrap;
   }
   .btn.on {
-    color: var(--gold);
+    color: var(--gold-text);
   }
   .small {
     font-size: var(--fs-2xs);
@@ -780,7 +780,6 @@
     gap: 6px;
     padding: 8px 10px 10px;
     border: 1px solid var(--edge-1);
-    border-left: 3px solid var(--gold);
     border-radius: var(--radius-m);
     background: var(--surface-1);
   }

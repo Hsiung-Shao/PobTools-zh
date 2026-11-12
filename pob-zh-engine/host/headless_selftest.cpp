@@ -504,6 +504,40 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				check("sidebar_breakdown of the first breakdown row has sections (POB with GetSidebarBreakdown)",
 				      okBd && bd.contains("sections") && !bd["sections"].empty(),
 				      okBd ? bd.dump().substr(0, 300) : ("row=" + std::to_string(firstBd) + " " + bd.dump()));
+				// 來源提示:表格段列出的每個 tips 參照,帶回去問都要拿到 POB 的提示行或節點 id。
+				// 逐列找到第一個有 tips 的細項為止(樣本建置一定有物品或天賦來源)。
+				int tipRow = -1, tipRefs = 0, tipLines = 0, tipNodes = 0, tipBad = 0;
+				std::string tipDetail;
+				int ri = 0;
+				for (auto& r : sidebar["rows"]) {
+					ri++;
+					if (tipRow > 0) break;
+					if (!r.value("hasBreakdown", false)) continue;
+					json b;
+					if (!child.Call("sidebar_breakdown", json{{"rowIndex", ri}}, b, 30000) || !b.contains("sections")) continue;
+					for (auto& s : b["sections"]) {
+						if (!s.contains("tips") || !s["tips"].is_array()) continue;
+						for (auto& ref : s["tips"]) {
+							tipRow = ri;
+							if (++tipRefs > 12) break;
+							json tp;
+							bool okTp = child.Call("sidebar_breakdown", json{{"rowIndex", ri}, {"tip", ref}}, tp, 30000);
+							if (okTp && tp.contains("lines") && tp["lines"].is_array() && !tp["lines"].empty()) tipLines++;
+							else if (okTp && tp.contains("node") && tp["node"].is_number()) tipNodes++;
+							else {
+								tipBad++;
+								if (tipDetail.empty()) tipDetail = ref.dump() + " -> " + tp.dump().substr(0, 160);
+							}
+						}
+					}
+				}
+				check("sidebar_breakdown{tip}: every source reference a table lists answers POB's tooltip lines or a node id",
+				      tipRow > 0 && tipBad == 0 && tipLines + tipNodes > 0,
+				      "row=" + std::to_string(tipRow) + " refs=" + std::to_string(tipRefs) + " lines=" + std::to_string(tipLines) +
+				          " nodes=" + std::to_string(tipNodes) + " bad=" + std::to_string(tipBad) + " " + tipDetail);
+				json none;
+				bool okNone = tipRow > 0 && child.Call("sidebar_breakdown", json{{"rowIndex", tipRow}, {"tip", json{{"s", 99}, {"r", 99}, {"k", "sourceName"}}}}, none, 30000);
+				check("sidebar_breakdown{tip} for a row that is not there is an error, not a tooltip", tipRow > 0 && !okNone, none.dump().substr(0, 160));
 			} else {
 				bool okBd = okCaps && child.Call("sidebar_breakdown", json{{"rowIndex", 1}}, bd, 30000);
 				check("sidebar breakdown degrades on a POB without GetSidebarBreakdown: no row offers one, asking answers empty",
