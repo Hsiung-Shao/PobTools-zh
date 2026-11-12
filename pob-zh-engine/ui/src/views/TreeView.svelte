@@ -1031,6 +1031,7 @@
         infoCache.clear();
         if (langChanged) dynKey = ""; // same ids and places, new names: rebuild anyway
         rebuild();
+        repaint(); // rebuild() returns early when only the allocation changed (the top bar's undo / redo)
         if (switched) focusClass(); // the build bar changed the class: go look at the new start
         if (langChanged && power) void runPower({ enabled: true, stat: powerStat || undefined });
       })

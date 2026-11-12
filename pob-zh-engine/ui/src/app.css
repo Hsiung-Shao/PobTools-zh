@@ -188,6 +188,7 @@
   --ink-3: #b4b4b4;
   --ink-4: #858585;
   --gold: var(--accent-user, #ffc83d);
+  --on-gold: var(--on-accent-user, #17120a);
   --hl: #ffc83d;
   --accent: #74b4ff;
   --accent-soft: rgba(116, 180, 255, 0.22);
@@ -218,6 +219,7 @@
   --ink-3: #817359;
   --ink-4: #584e3b;
   --gold: var(--accent-user, #e0a94a);
+  --on-gold: var(--on-accent-user, #17120a);
   --hl: #e0a94a;
   --accent: #7fb3d6;
   --accent-soft: rgba(127, 179, 214, 0.18);

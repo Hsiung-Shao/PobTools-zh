@@ -1,16 +1,14 @@
 <!-- 天賦節點在整棵樹上的位置:整棵樹縮成小圖,已配置的點亮,目標節點加圈與十字線。
      經典視窗在細項的天賦來源上也會畫出樹的位置。 -->
 <script lang="ts" module>
-  import { api, type TreeState } from "$lib/bridge";
+  import { api } from "$lib/bridge";
   import type { TreeData } from "$lib/tree/model";
 
   // the static tree is large: one request per version for the page's lifetime
   const dataCache = new Map<string, Promise<TreeData>>();
-  let stateCache: { rev: number; p: Promise<TreeState> } | null = null;
 </script>
 
 <script lang="ts">
-  import { app } from "$lib/state.svelte";
   import { buildModel } from "$lib/tree/model";
   import { fitTransform } from "$lib/tree/minimap";
 
@@ -23,8 +21,7 @@
     if (!cv) return;
     let dead = false;
     (async () => {
-      if (stateCache?.rev !== app.rev) stateCache = { rev: app.rev, p: api.getTreeState() };
-      const st = await stateCache.p;
+      const st = await api.getTreeState();
       let dp = dataCache.get(st.treeVersion);
       if (!dp) dataCache.set(st.treeVersion, (dp = api.treeData(st.treeVersion)));
       const model = buildModel(await dp, st.dynamicNodes, st.dynamicGroups, st.dynamicConnectors ?? []);

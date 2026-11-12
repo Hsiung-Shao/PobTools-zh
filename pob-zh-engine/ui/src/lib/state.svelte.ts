@@ -283,6 +283,9 @@ class AppState {
     if (this.info?.unsaved && !confirm(t("builds.unsavedOpen"))) return;
     const ok = await this.run(async () => {
       await api.loadBuildFile(path);
+      // Build:Init restarts POB's revision at 1: without this two freshly opened
+      // builds share a revision and everything keyed on it keeps the old build's data
+      this.rev = 0;
       return this.refresh();
     });
     if (ok) this.view = this.landingView();
