@@ -35,6 +35,12 @@ std::string ExportCustomRules(const FilterFile& f, const std::vector<int>& block
 // Write an export fragment to disk (UTF-8 BOM). Returns false + *err on failure.
 bool SaveCustomRulesFile(const std::wstring& path, const std::string& fragment, std::string* err);
 
+// Which custom rule a move would go past. dir: -1 up one, +1 down one, -2 to
+// the top of the zone, +2 to the bottom. Returns that rule's block index, or
+// -1 when the move is not allowed: blockIdx is not a custom rule, or it is
+// already first (up / top) or last (down / bottom) in the zone.
+int CustomRuleMoveTarget(const FilterFile& f, int blockIdx, int dir);
+
 // Parse a fragment and insert its blocks at the end of the custom zone.
 // Duplicate blocks (same header + same condition lines, byte-wise) are skipped.
 // Returns the number of blocks imported, -1 on parse failure.

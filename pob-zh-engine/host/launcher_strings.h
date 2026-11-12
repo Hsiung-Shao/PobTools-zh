@@ -248,6 +248,11 @@
 	X(pobProtocolHint,   u8"讓 poe.ninja / pobb.in 等網站的「Open in PoB」開啟 PobTools(會取代官方安裝版 POB 的連結)。點連結時不顯示啟動器,直接依「預設介面」開啟中文化 POB 並匯入那個建置。只寫入目前使用者的登錄檔;取消勾選只移除指向這個 PobTools 的登記。", \
 	                     u8"Lets the \"Open in PoB\" buttons on poe.ninja, pobb.in and other sites open PobTools (this replaces the official POB install's link handling). A link skips the launcher and opens the localised POB in your default interface with that build imported. Only the current user's registry is written; unticking removes only the registration that points at this PobTools.") \
 	X(pobProtocolFail,   u8"無法變更連結登記(登錄檔寫入失敗),已還原勾選。", u8"Could not change the link registration (registry write failed); the setting was reverted.") \
+	/* AI clients over MCP (pob-zh.exe --mcp, host/mcp_server.h): copy the \
+	   registration for this exe into each client. */ \
+	X(mcpRow,            u8"AI 串接(MCP)",                u8"AI assistants (MCP)") \
+	X(mcpHint,           u8"複製設定貼到 AI 工具,讓它用 POB 的計算讀取與試算建置。", u8"Copy the setup into an AI tool so it can read and try out builds with POB's own numbers.") \
+	X(mcpHintLong,       u8"Claude Desktop:貼進 claude_desktop_config.json。Claude Code／CLI:在終端機執行複製的指令。Codex:貼進 ~/.codex/config.toml。AI 只在暫存複本上操作,不會改動你的 POB 建置,成品以分享碼交給你。", u8"Claude Desktop: paste into claude_desktop_config.json. Claude Code / CLI: run the copied command in a terminal. Codex: paste into ~/.codex/config.toml. The AI works on a private copy and never changes your POB builds; it hands results over as share codes.") \
 	/* Launcher redesign (design system v1, 2026-10): header, banners, cards,
 	   settings side navigation, appearance thumbnails, about card. */          \
 	X(appSubtitle,       u8"Path of Building 繁體中文化", u8"Path of Building in Traditional Chinese") \

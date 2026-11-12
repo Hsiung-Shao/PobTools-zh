@@ -21,6 +21,7 @@
 #include "github_token.h"
 #include "pob_launch.h"
 #include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
+#include "mcp_config.h"       // the "AI assistants (MCP)" copy buttons
 #include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "modern_ui_browser.h" // ModernUiBrowserAvailable: the system-browser fallback
@@ -3246,6 +3247,26 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					protoQueriedAt = -10.0;   // re-read the state on the next frame
 				}
 				PobUi::RowEnd();
+				// AI clients over MCP: the registration for this exe, per client.
+				{
+					const std::string exeU8 = to_utf8(exeBuf);
+					const char* names[3] = { "Claude Desktop", "Claude Code", "Codex" };
+					float w = 0.0f;
+					for (const char* n : names) w += PobUi::ButtonWidth(n, PobUi::BtnSize::Sm, PobIcon::Copy) + gapRow;
+					PobUi::RowBegin(S.mcpRow, S.mcpHint, w - gapRow, 0.0f, S.mcpHintLong);
+					for (int k = 0; k < 3; k++) {
+						if (k > 0) ImGui::SameLine(0, gapRow);
+						ImGui::PushID(k);
+						if (PobUi::Button(names[k], PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Copy)) {
+							const std::string text = k == 0 ? McpConfig::ClaudeDesktopJson(exeU8)
+							                       : k == 1 ? McpConfig::ClaudeCodeCommand(exeU8) : McpConfig::CodexToml(exeU8);
+							ImGui::SetClipboardText(text.c_str());
+							PobUi::ShowToast(S.copiedToast);
+						}
+						ImGui::PopID();
+					}
+					PobUi::RowEnd();
+				}
 			}
 			PobUi::CardEnd();
 

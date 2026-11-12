@@ -12,6 +12,7 @@
 #include "modern_ui_browser.h"
 #include "paste_fixtures_poe2.h"
 #include "pob_launch.h"
+#include "pob_sandbox.h"
 
 #include "error_log.h"
 #include "launcher_config.h"
@@ -19,7 +20,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <windows.h>
-#include <winioctl.h>
 
 #include <atomic>
 #include <cmath>
@@ -64,133 +64,7 @@ std::wstring widen(const std::string& s)
 	return w;
 }
 
-bool IsDir(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-bool IsReparse(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_REPARSE_POINT);
-}
-
-// Removes a tree. A junction is removed as a directory entry and NEVER
-// descended into: descending would delete the user's TreeData through it.
-void Rmtree(const std::wstring& dir)
-{
-	if (!IsDir(dir)) return;
-	if (IsReparse(dir)) { RemoveDirectoryW(dir.c_str()); return; }
-	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-	if (h != INVALID_HANDLE_VALUE) {
-		do {
-			const std::wstring n = fd.cFileName;
-			if (n == L"." || n == L"..") continue;
-			const std::wstring p = dir + L"\\" + n;
-			if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-				Rmtree(p);
-			} else {
-				SetFileAttributesW(p.c_str(), FILE_ATTRIBUTE_NORMAL);
-				DeleteFileW(p.c_str());
-			}
-		} while (FindNextFileW(h, &fd));
-		FindClose(h);
-	}
-	RemoveDirectoryW(dir.c_str());
-}
-
-bool MkdirP(const std::wstring& dir)
-{
-	// Each level explicitly: CreateDirectoryW does not create parents.
-	for (size_t i = 3; i < dir.size(); i++) {
-		if (dir[i] == L'\\') CreateDirectoryW(dir.substr(0, i).c_str(), nullptr);
-	}
-	CreateDirectoryW(dir.c_str(), nullptr);
-	return IsDir(dir);
-}
-
-// NTFS junction (mount point): no privilege needed, unlike a symlink.
-bool MakeJunction(const std::wstring& link, const std::wstring& target)
-{
-	if (!CreateDirectoryW(link.c_str(), nullptr)) return false;
-	HANDLE h = CreateFileW(link.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
-	                       FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	std::wstring subst = L"\\??\\" + target;
-	if (subst.back() == L'\\') subst.pop_back();
-	const std::wstring print = target.back() == L'\\' ? target.substr(0, target.size() - 1) : target;
-	// REPARSE_DATA_BUFFER's MountPointReparseBuffer, laid out by hand: the
-	// struct lives in ntifs.h, which user-mode code does not get to include.
-	const size_t substBytes = subst.size() * sizeof(wchar_t);
-	const size_t printBytes = print.size() * sizeof(wchar_t);
-	const size_t pathBytes = substBytes + sizeof(wchar_t) + printBytes + sizeof(wchar_t);
-	std::vector<char> buf(8 + 8 + pathBytes, 0);
-	char* p = buf.data();
-	*(DWORD*)(p + 0) = IO_REPARSE_TAG_MOUNT_POINT;
-	*(WORD*)(p + 4) = (WORD)(8 + pathBytes); // ReparseDataLength
-	*(WORD*)(p + 8) = 0;                     // SubstituteNameOffset
-	*(WORD*)(p + 10) = (WORD)substBytes;     // SubstituteNameLength
-	*(WORD*)(p + 12) = (WORD)(substBytes + sizeof(wchar_t)); // PrintNameOffset
-	*(WORD*)(p + 14) = (WORD)printBytes;     // PrintNameLength
-	memcpy(p + 16, subst.data(), substBytes);
-	memcpy(p + 16 + substBytes + sizeof(wchar_t), print.data(), printBytes);
-	DWORD ret = 0;
-	BOOL ok = DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, buf.data(), (DWORD)buf.size(), nullptr, 0, &ret, nullptr);
-	CloseHandle(h);
-	if (!ok) RemoveDirectoryW(link.c_str());
-	return ok != 0;
-}
-
-// Copies src\ into dst\ recursively. `rel` is the path relative to the sandbox
-// root, used to decide what to junction and what to skip.
-struct CopyStats { int files = 0; int dirs = 0; int junctions = 0; int errors = 0; };
-
-bool ShouldJunction(const std::wstring& rel)
-{
-	return _wcsicmp(rel.c_str(), L"TreeData") == 0 ||
-	       _wcsicmp(rel.c_str(), L"Data\\TimelessJewelData") == 0;
-}
-
-bool ShouldSkip(const std::wstring& rel)
-{
-	// State this test owns (Builds gets one sample; Settings.xml is regenerated)
-	// or that a previous POB run left behind.
-	return _wcsicmp(rel.c_str(), L"Builds") == 0 ||
-	       _wcsicmp(rel.c_str(), L"Update") == 0 ||
-	       _wcsicmp(rel.c_str(), L"Settings.xml") == 0 ||
-	       _wcsicmp(rel.c_str(), L"imgui.ini") == 0;
-}
-
-void CopyTree(const std::wstring& src, const std::wstring& dst, const std::wstring& rel, CopyStats& st)
-{
-	MkdirP(dst);
-	st.dirs++;
-	WIN32_FIND_DATAW fd{};
-	HANDLE h = FindFirstFileW((src + L"\\*").c_str(), &fd);
-	if (h == INVALID_HANDLE_VALUE) return;
-	do {
-		const std::wstring n = fd.cFileName;
-		if (n == L"." || n == L"..") continue;
-		const std::wstring r = rel.empty() ? n : rel + L"\\" + n;
-		if (ShouldSkip(r)) continue;
-		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-			if (ShouldJunction(r)) {
-				// Wine has no mount-point reparse points (FSCTL_SET_REPARSE_POINT
-				// fails there): copy the folder instead -- slower, same content.
-				if (MakeJunction(dst + L"\\" + n, src + L"\\" + n)) st.junctions++;
-				else if (PobLaunch::RunningUnderWine()) { RemoveDirectoryW((dst + L"\\" + n).c_str()); CopyTree(src + L"\\" + n, dst + L"\\" + n, r, st); }
-				else st.errors++;
-			} else if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT)) {
-				CopyTree(src + L"\\" + n, dst + L"\\" + n, r, st);
-			}
-		} else {
-			if (CopyFileW((src + L"\\" + n).c_str(), (dst + L"\\" + n).c_str(), FALSE)) st.files++; else st.errors++;
-		}
-	} while (FindNextFileW(h, &fd));
-	FindClose(h);
-}
+using namespace PobSandbox;
 
 std::string ReadFileA(const std::wstring& path)
 {
@@ -441,7 +315,7 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 		Rmtree(sandbox);
 		MkdirP(sandboxRoot);
 		CopyStats st;
-		CopyTree(pobDir, sandbox, L"", st);
+		CopyTree(pobDir, sandbox, st);
 		check("sandbox copied", st.errors == 0 && st.files > 100,
 		      "files=" + std::to_string(st.files) + " dirs=" + std::to_string(st.dirs) +
 		          " junctions=" + std::to_string(st.junctions) + " errors=" + std::to_string(st.errors));
@@ -2749,7 +2623,7 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 		Rmtree(sandbox);
 		MkdirP(sandboxRoot);
 		CopyStats st;
-		CopyTree(pobDir, sandbox, L"", st);
+		CopyTree(pobDir, sandbox, st);
 		MkdirP(sandbox + L"\\Builds");
 		check("sandbox copied (TreeData junctioned; copied under Wine)", st.errors == 0 && st.files > 50 &&
 		      (IsReparse(sandbox + L"\\TreeData") || (PobLaunch::RunningUnderWine() && IsDir(sandbox + L"\\TreeData"))),

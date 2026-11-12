@@ -75,6 +75,11 @@ struct PreviewResult {
 PreviewResult EvaluatePreview(const FilterFile& f, const PreviewItem& it,
                               const FilterI18n& i18n);
 
+// "" when the result is exact; else why it may differ in game: earlier rules
+// used conditions the preview does not model (Chinese names, at most four),
+// and the game may let one of them decide instead.
+std::string PreviewEstimateNote(const PreviewResult& r);
+
 struct LibItem;
 
 // Build an item that satisfies blockIdx's conditions (BaseType token picked at
@@ -92,3 +97,4 @@ void DrawDropPreviewSection(EditorShell& s);
 // forced open; a pasted item from text (no clipboard).
 void PreviewTestDrops(EditorShell& s, unsigned seed, int tipIdx);
 void PreviewTestImport(EditorShell& s, const std::string& itemText);
+void PreviewTestEstimate(EditorShell& s);

@@ -30,6 +30,12 @@ std::string FilterSerializeLine(const FilterLine& line);
 // inserted/removed/reclassified) must call it again so block indices stay valid.
 void RebuildFilterBlocks(FilterFile& file);
 
+// One block as text for the clipboard (lines joined with CRLF, no trailing
+// newline). Whole block: header through its last condition/action line, so the
+// next section's banner comments and blank lines are left out. actionsOnly:
+// just the block's action lines (colours, font size, sounds, icon, beam).
+std::string FilterBlockText(const FilterFile& file, const FilterBlock& block, bool actionsOnly);
+
 // Keyword-set membership (schema validation + disabled-line detection).
 bool FilterIsKnownCondition(const std::string& keyword);
 bool FilterIsKnownAction(const std::string& keyword);

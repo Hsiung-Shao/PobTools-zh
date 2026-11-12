@@ -1,5 +1,6 @@
 #include "filter_data.h"
 #include "filter_parser.h"
+#include "filter_edit_journal.h"   // ParseOnlineHeader, FilterBannerValue
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -102,6 +103,57 @@ std::vector<std::wstring> Poe1FilterDirs()
 	return dirs;
 }
 
+std::wstring Poe1FilterBaseDir()
+{
+	std::wstring docs = documents_dir();
+	if (docs.empty()) return std::wstring();
+	if (docs.back() != L'\\') docs += L'\\';
+	const std::wstring base = docs + L"My Games\\Path of Exile\\";
+	return dir_exists(base) ? base : std::wstring();
+}
+
+std::vector<OnlineFilterEntry> ListOnlineFiltersIn(const std::wstring& dir)
+{
+	std::vector<OnlineFilterEntry> out;
+	WIN32_FIND_DATAW fd{};
+	HANDLE h = FindFirstFileW((dir + L"*").c_str(), &fd);
+	if (h == INVALID_HANDLE_VALUE) return out;
+	do {
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+		const std::wstring path = dir + fd.cFileName;
+		// the header and NeverSink's banner are in the first few lines
+		std::string head;
+		{
+			HANDLE fh = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+			                        FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (fh == INVALID_HANDLE_VALUE) continue;
+			char buf[8192];
+			DWORD got = 0;
+			if (ReadFile(fh, buf, sizeof(buf), &got, nullptr)) head.assign(buf, got);
+			CloseHandle(fh);
+		}
+		const OnlineFilterHeader oh = ParseOnlineHeader(head);
+		if (!oh.online) continue;
+		OnlineFilterEntry e;
+		e.path = path;
+		e.name = oh.name.empty() ? narrow(fd.cFileName) : oh.name;
+		e.filterVersion = oh.filterVersion;
+		// the banner's own version, cut off at the head's last whole line
+		const FilterFile f = ParseFilter(StripOnlineHeader(head.substr(0, head.find_last_of('\n') + 1)));
+		e.version = FilterBannerValue(f, "VERSION");
+		out.push_back(std::move(e));
+	} while (FindNextFileW(h, &fd));
+	FindClose(h);
+	std::sort(out.begin(), out.end(), [](const OnlineFilterEntry& a, const OnlineFilterEntry& b) { return a.name < b.name; });
+	return out;
+}
+
+std::vector<OnlineFilterEntry> ListOnlineFilters()
+{
+	const std::wstring base = Poe1FilterBaseDir();
+	return base.empty() ? std::vector<OnlineFilterEntry>() : ListOnlineFiltersIn(base + L"OnlineFilters\\");
+}
+
 std::vector<FilterListEntry> ListFilters()
 {
 	std::vector<FilterListEntry> out;
@@ -157,7 +209,13 @@ bool SaveFilter(FilterFile& file, std::string* err)
 		if (err) *err = file.name + ": write failed";
 		return false;
 	}
-	for (FilterLine& ln : file.lines) ln.dirty = false;
+	// What was written becomes each edited line's raw bytes: a clean line is
+	// emitted from raw, so clearing the flag alone would put the old text back
+	// on the next save.
+	for (FilterLine& ln : file.lines) {
+		if (ln.dirty) ln.raw = FilterSerializeLine(ln);
+		ln.dirty = false;
+	}
 	file.dirty = false;
 	return true;
 }

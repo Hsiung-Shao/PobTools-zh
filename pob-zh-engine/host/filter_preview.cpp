@@ -2,6 +2,7 @@
 #include "editor_shell.h"
 #include "editor_util.h"
 #include "filter_parser.h"
+#include "filter_schema.h"   // FilterSchemaKeywordZh
 #include "filter_item_import.h"
 #include "clipboard_util.h"
 #include "audio_player.h"
@@ -272,6 +273,7 @@ PreviewResult EvaluatePreview(const FilterFile& f, const PreviewItem& it,
 	for (int bi = 0; bi < (int)f.blocks.size(); bi++) {
 		const FilterBlock& b = f.blocks[bi];
 		bool match = true;
+		bool knownFails = false;   // a modelled condition is false: this rule cannot match in game either
 		bool hasContinue = false;
 		std::vector<std::string> unknownHere;
 		for (int li : b.lineIdx) {
@@ -280,16 +282,19 @@ PreviewResult EvaluatePreview(const FilterFile& f, const PreviewItem& it,
 			if (ln.kind != FilterLineKind::Condition) continue;
 			bool unknown = false;
 			if (!evalCond(ln, it, className, &unknown)) {
-				if (unknown) unknownHere.push_back(ln.keyword);
 				match = false;
-				break;
+				if (!unknown) { knownFails = true; break; }
+				unknownHere.push_back(ln.keyword);
 			}
 		}
 		if (!match) {
-			// only surface unknown-condition keywords once per evaluation
-			for (const std::string& k : unknownHere)
-				if (std::find(r.unknownConds.begin(), r.unknownConds.end(), k) == r.unknownConds.end())
-					r.unknownConds.push_back(k);
+			// only a rule that could still match in game (every modelled condition
+			// true, only unmodelled ones undecided) makes the result an estimate;
+			// each keyword once per evaluation
+			if (!knownFails)
+				for (const std::string& k : unknownHere)
+					if (std::find(r.unknownConds.begin(), r.unknownConds.end(), k) == r.unknownConds.end())
+						r.unknownConds.push_back(k);
 			continue;
 		}
 
@@ -720,11 +725,8 @@ void DrawDropTooltip(const EditorShell& s, const PvDropEntry& d, const ImVec2* a
 	else if (r.alertId > 0) line2 += u8" · 音效 內建 " + std::to_string(r.alertId) + u8" 號";
 	ImGui::TextUnformatted(line2.c_str());
 	if (!r.unknownConds.empty()) {
-		std::string u = u8"未模擬的條件：";
-		for (size_t k = 0; k < r.unknownConds.size() && k < 6; k++) u += (k ? ", " : "") + r.unknownConds[k];
-		u += u8"（視為不符）";
 		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::Warning));
-		ImGui::TextUnformatted(u.c_str());
+		ImGui::TextUnformatted(PreviewEstimateNote(r).c_str());
 		ImGui::PopStyleColor();
 	}
 	for (size_t k = 0; k < d.importWarnings.size() && k < 4; k++) {
@@ -1016,10 +1018,14 @@ void DrawDropPreviewSection(EditorShell& s)
 		PobUi::EmptyState("##pvempty", PobIcon::Search, u8"畫布是空的",
 		                  u8"左側搜尋並點一個物品，或按「隨機掉落一批」。標籤樣子就是目前過濾器判定的結果。", nullptr, w);
 	} else {
-		int nHid = 0;
-		for (const PvDropEntry& d : u.drops) if (d.res.hidden) nHid++;
+		int nHid = 0, nEst = 0;
+		for (const PvDropEntry& d : u.drops) {
+			if (d.res.hidden) nHid++;
+			if (!d.res.unknownConds.empty()) nEst++;
+		}
 		std::string head = std::to_string((int)u.drops.size()) + u8" 件";
 		if (nHid) head += u8"（" + std::to_string(nHid) + u8" 件被隱藏）";
+		if (nEst) head += u8" · " + std::to_string(nEst) + u8" 件是估算（滑鼠停在標籤上看原因）";
 		head += u8" · 點標籤跳到命中的規則";
 		PobUi::Hint(head.c_str());
 		ImGui::Dummy(ImVec2(0, PobUi::D(6.0f)));
@@ -1035,7 +1041,7 @@ void DrawDropPreviewSection(EditorShell& s)
 
 			ImGui::PushID(i);
 			if (r.hidden) {
-				const std::string t = u8"（已隱藏）" + label;
+				const std::string t = u8"（已隱藏）" + label + (r.unknownConds.empty() ? "" : u8"（估算）");
 				const float lx = cx - ImGui::CalcTextSize(t.c_str()).x * 0.5f + d.jitter * PobUi::D(1.0f);
 				ImGui::SetCursorPosX((std::max)(ImGui::GetStyle().WindowPadding.x, lx));
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Tok::TextFaint));
@@ -1076,6 +1082,17 @@ void DrawDropPreviewSection(EditorShell& s)
 				dl->AddRect(pmin - ImVec2(2, 2), pmax + ImVec2(2, 2), Tok::Accent, 0.0f, 0, 1.5f);
 				ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
 			}
+			// 估算: an earlier rule used a condition the preview does not model
+			if (!r.unknownConds.empty()) {
+				ImFont* sfb = SmallFace();
+				const char* tag = u8"估算";
+				const ImVec2 ts = sfb->CalcTextSizeA(sfb->FontSize, FLT_MAX, 0.0f, tag);
+				const ImVec2 bmin(pmax.x - ts.x * 0.5f - PobUi::D(4.0f), pmin.y - ts.y * 0.5f - PobUi::D(2.0f));
+				const ImVec2 bmax(bmin.x + ts.x + PobUi::D(8.0f), bmin.y + ts.y + PobUi::D(4.0f));
+				dl->AddRectFilled(bmin, bmax, Tok::Surface1, PobUi::D(4.0f));
+				dl->AddRect(bmin, bmax, Tok::Warning, PobUi::D(4.0f), 0, 1.0f);
+				dl->AddText(sfb, sfb->FontSize, ImVec2(bmin.x + PobUi::D(4.0f), bmin.y + PobUi::D(2.0f)), Tok::Warning, tag);
+			}
 			// minimap icon marker to the right
 			if (!r.minimapIcon.empty()) {
 				const size_t sp = r.minimapIcon.find(' ');
@@ -1111,6 +1128,25 @@ void PreviewTestDrops(EditorShell& s, unsigned seed, int tipIdx)
 	u.testTip = tipIdx;
 }
 
+// Test aid (POBTOOLS_FILTER_STATE=preview-estimate): a random batch plus, first,
+// a rare ilvl 86 Ambush Boots -- on NeverSink it passes rules with unmodelled
+// conditions, so its label carries 估算 (its tooltip shown).
+void PreviewTestEstimate(EditorShell& s)
+{
+	PreviewUiState& u = PUI(s);
+	srand(7u);
+	u.autoPlay = false;
+	randomDrops(s, u);
+	PvDropEntry d;
+	d.item.baseType = "Ambush Boots";
+	d.item.classId = s.i18n.ItemClass("Ambush Boots");   // as the synthesizer resolves it
+	d.item.rarity = 2;
+	d.item.itemLevel = 86;
+	d.res = EvaluatePreview(s.model, d.item, s.i18n);
+	u.drops.insert(u.drops.begin(), std::move(d));
+	u.testTip = 0;
+}
+
 void PreviewTestImport(EditorShell& s, const std::string& itemText)
 {
 	PreviewUiState& u = PUI(s);
@@ -1118,4 +1154,14 @@ void PreviewTestImport(EditorShell& s, const std::string& itemText)
 	u.importTried = true;
 	u.autoPlay = false;
 	if (u.imp.ok) importShow(s, u, true);
+}
+
+std::string PreviewEstimateNote(const PreviewResult& r)
+{
+	if (r.unknownConds.empty()) return std::string();
+	std::string names;
+	for (size_t k = 0; k < r.unknownConds.size() && k < 4; k++)
+		names += (k ? u8"、" : "") + FilterSchemaKeywordZh(r.unknownConds[k]);
+	if (r.unknownConds.size() > 4) names += u8"…";
+	return u8"估算：前面有規則用了預覽沒模擬的條件（" + names + u8"），遊戲裡可能改由那些規則命中";
 }

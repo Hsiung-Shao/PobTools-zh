@@ -88,6 +88,17 @@ public:
 	// Hard-delete all lines of a block (custom-zone management).
 	void RemoveBlock(int blockIdx);
 
+	// Move a block's own lines (header through its last syntax or "#!" line,
+	// the same range BodyEnd covers) to just before / after another block. The
+	// blank lines and comments between blocks stay where they are; uids are
+	// kept. Returns the moved block's new index, -1 when nothing moved (same
+	// block, out of range). Callers decide which moves are allowed.
+	int MoveBlockBefore(int blockIdx, int targetBlockIdx);
+	int MoveBlockAfter(int blockIdx, int targetBlockIdx);
+private:
+	int MoveBlock(int blockIdx, int targetBlockIdx, bool after);
+public:
+
 	// ---- selection anchoring ----
 	BlockAnchor CaptureAnchor(int blockIdx) const;
 	int ResolveAnchor(const BlockAnchor& a) const;  // -1 when not found
@@ -131,6 +142,8 @@ public:
 	int UnsavedBlockCount(bool settle);
 	// The whole file serializes to the baseline's bytes.
 	bool MatchesBaseline() const;
+	// The file as last loaded or saved (SerializeFilter at capture), "" without a baseline.
+	const std::string& BaselineText() const { return baseText_; }
 
 private:
 	// Index of the last line that belongs to the block itself.

@@ -346,3 +346,28 @@ bool FilterRemoveValue(FilterLine& line, const std::string& text)
 	}
 	return false;
 }
+
+std::string FilterBlockText(const FilterFile& file, const FilterBlock& block, bool actionsOnly)
+{
+	std::vector<int> keep;
+	int last = -1;
+	for (int li : block.lineIdx) {
+		if (li < 0 || li >= (int)file.lines.size()) continue;
+		const FilterLineKind k = file.lines[li].kind;
+		if (actionsOnly) {
+			if (k == FilterLineKind::Action) keep.push_back(li);
+			continue;
+		}
+		keep.push_back(li);
+		if (k == FilterLineKind::BlockHeader || k == FilterLineKind::Condition || k == FilterLineKind::Action ||
+		    k == FilterLineKind::Unknown)
+			last = (int)keep.size();
+	}
+	if (!actionsOnly) keep.resize(last < 0 ? 0 : last);
+	std::string out;
+	for (size_t i = 0; i < keep.size(); i++) {
+		if (i) { out.push_back((char)13); out.push_back((char)10); }   // CRLF
+		out += FilterSerializeLine(file.lines[keep[i]]);
+	}
+	return out;
+}
