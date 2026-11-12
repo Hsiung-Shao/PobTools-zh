@@ -992,7 +992,7 @@ public:
 								view.CenterOn(tree, p.idx);
 							ImGui::PopStyleColor();
 							if (ImGui::IsItemHovered()) {
-								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PobUi::D(14.0f), PobUi::D(10.0f)));
+								ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(PobUi::D(14.0f)), std::floor(PobUi::D(10.0f)))); // whole px, see AtlasView::drawTooltip
 								ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * scale, FLT_MAX));
 								ImGui::BeginTooltip();
 								ImGui::TextColored(PobUi::TokV4(kindCol), "%s", nm.empty() ? u8"(未命名)" : nm.c_str());

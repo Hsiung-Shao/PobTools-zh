@@ -402,7 +402,10 @@ void AtlasView::drawTooltip(const AtlasTreeData& d, float uiScale, const AtlasI1
 	}
 	if (hover_ == -1) return;
 	const AtlasNode& n = d.nodes[hover_];
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f * uiScale, 12.0f * uiScale));
+	// Whole pixels: a size constraint makes ImGui floor the window size, and with
+	// a fractional padding the content then needs a fraction more than it got --
+	// which shows up as a vertical scrollbar eating the right edge of the text.
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(std::floor(16.0f * uiScale), std::floor(12.0f * uiScale)));
 	ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(460.0f * uiScale, FLT_MAX));
 	ImGui::BeginTooltip();
 
