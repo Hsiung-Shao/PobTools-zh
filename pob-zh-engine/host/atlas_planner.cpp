@@ -688,7 +688,7 @@ public:
 					errBanner_.clear();
 				ImGui::Dummy(ImVec2(0, PobUi::D(4.0f)));
 			}
-			if (!zhLagMsg_.empty() && showZh) {
+			if (!zhLagMsg_.empty()) {
 				if (PobUi::Banner("##apzhlag", PobUi::BannerTone::Info, PobIcon::Languages, u8"譯文尚未齊全",
 				                  zhLagMsg_.c_str(), false, nullptr, true) == PobUi::BannerResult::Close)
 					zhLagMsg_.clear();
@@ -2019,7 +2019,7 @@ private:
 			if (!d) continue;
 			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
 			// Chinese for the new name yet: show the game's English, not the old name.
-			labels[i] = tree.masteries[i].name == d->en ? d->zh : tree.masteries[i].name;
+			labels[i] = (tree.masteries[i].name == d->en && zhLagMsg_.empty()) ? d->zh : tree.masteries[i].name;
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
@@ -2058,13 +2058,17 @@ private:
 			if (!buildFile.version.empty() && buildFile.version != tree.Version())
 				startupDropped = (int)buildFile.Active().alloc.size() - mapped;
 			zhLoaded = i18n.LoadVersion(exeDir, tag);
-			// The translations predate this season: new and changed text stays
-			// English on purpose (an unsure translation is never shown), so say
-			// that it is temporary rather than leave it looking broken.
+			// The translations predate this season. Only the lines that did not
+			// change could keep their Chinese, which leaves a tree that is half
+			// and half; the user's ruling (2026-11-12) is the whole tree in
+			// English until the season's own translations exist -- and a notice,
+			// so it reads as temporary rather than broken.
 			zhLagMsg_.clear();
 			if (zhLoaded && !i18n.RepoeVersion().empty() &&
-			    AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0)
-				zhLagMsg_ = tag + u8" 新增與改動的內容先顯示英文，繁體中文會在開季後補上。";
+			    AtlasVersionIndex::CompareSemver(i18n.RepoeVersion(), tag) < 0) {
+				zhLagMsg_ = tag + u8" 的節點內容先全部顯示英文，繁體中文會在開季後補上。";
+				zhLoaded = false;
+			}
 			std::string older = verIndex.OlderThan(tag);
 			if (zhLoaded && !older.empty()) {
 				AtlasTreeData ot;
