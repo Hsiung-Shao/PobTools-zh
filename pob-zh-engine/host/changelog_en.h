@@ -19,6 +19,10 @@
 #pragma once
 
 inline constexpr const char* kChangelogTextEn =
+	u8"v1.8.7 (2026-11-12)\n"
+	u8"Added\n"
+	u8"　·Atlas planner: the search box now finds nodes across the whole atlas, by name or stat text, in English or Chinese. (Matches are ringed on the atlas and listed in the side panel; click one to jump to it)\n"
+	u8"\n"
 	u8"v1.8.6 (2026-11-12)\n"
 	u8"Fixed\n"
 	u8"　·Translation: some sentences were stitched together word by word into the wrong meaning. (e.g. Charge)\n"
