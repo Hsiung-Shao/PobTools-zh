@@ -121,6 +121,7 @@ public:
 		std::string latestDataVer;          // remote data tag "data-3", once known
 		std::string message;                // UTF-8 progress / result / error text
 		unsigned long long bytesDone = 0, bytesTotal = 0; // app download progress
+		bool appIsBack = false;             // AppAvailable offers an OLDER stable release (leaving the beta)
 		bool applyPending = false;          // AppReadyToApply: stageDir is valid
 		std::wstring stageDir;
 	};
@@ -136,7 +137,7 @@ public:
 	bool IsHeld() const { return hold_.load(); }
 
 private:
-	friend int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly);
+	friend int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly, bool allowBack);
 	friend int RunAppFetchTest(const std::wstring& exeDir);
 	friend int RunAppUpdateSelfTest(const std::wstring& exeDir);
 
@@ -177,7 +178,7 @@ private:
 	};
 
 	void workerLoop();
-	bool doCheck(std::string* err);            // worker
+	bool doCheck(std::string* err, bool userAsked = false); // worker
 	bool fetchAppRelease(RemoteRelease* rel, std::string* err);  // worker: releases/latest, or the list on the beta line
 	bool fetchDataRelease(RemoteRelease* rel, std::string* err); // worker: /releases scan
 	bool doUpdateTranslations(std::string* err); // worker (invoked from doCheck)
@@ -211,6 +212,7 @@ private:
 	std::atomic<bool> hold_{ false };           // see SetHold
 	std::atomic<bool> transUpdates_{ true };    // see SetTranslationUpdates
 	std::atomic<bool> betaChannel_{ false };    // see SetBetaChannel
+	bool appOffered_ = false;                   // worker only: the last check put an app release on offer
 
 	std::mutex cmdMx_;
 	std::condition_variable cmdCv_;
@@ -231,14 +233,18 @@ private:
 // remoteDataSeq/localDataSeq are the "data-<n>" sequence numbers (-1 = none).
 // autoData is the 自動更新翻譯資料 setting.
 struct UpdatePlan {
-	bool promptApp = false;    // newer app release exists and has an update asset
+	bool promptApp = false;    // an app release to offer exists and has an update asset
+	bool appIsBack = false;    // ...and it is OLDER than this build (back to stable)
 	bool applyDataNow = false; // newer data release + the setting says yes
 	bool offerData = false;    // newer data release + the setting says no
 };
+// allowBack: the user asked for this check with the beta line off. Only then is
+// an older stable release offered -- a background check never walks a build
+// backwards (a dev build is always "newer than stable").
 UpdatePlan PlanUpdates(bool hasAppAsset, std::tuple<int, int, int> remoteApp,
                        std::tuple<int, int, int> localApp,
                        bool hasDataAsset, long long remoteDataSeq, long long localDataSeq,
-                       bool autoData);
+                       bool autoData, bool allowBack = false);
 
 // Should the launcher press its own update button?
 //
@@ -258,11 +264,17 @@ struct AutoApplyInputs {
 	bool pobBusy = false;          // a POB is running: engine\* cannot be swapped
 	bool anythingLaunched = false; // this launcher session has started POB or a tool
 	bool alreadyTried = false;     // one shot per process; see below
+	bool isBack = false;           // the offer is a downgrade: always needs a click
 };
 // alreadyTried exists because a failed apply returns to the launcher with the
 // updater re-Init'ed. Without the latch that would download, fail, and download
 // again forever -- the same loop Init's Status reset is there to prevent.
 bool ShouldAutoApplyApp(const AutoApplyInputs& in);
+
+// An apply request (the button, or "retry" on an error banner) must turn into a
+// fresh check when nothing is on offer, or when a back-to-stable offer is still
+// on screen after the beta line was switched on again.
+bool MustRecheckBeforeApply(bool appOffered, bool offerIsBack, bool betaOn);
 
 // "data-3" -> 3. False for anything else, including "v0.19.0" and "data-" — the
 // Data 線 must never mistake an app tag for a data tag.
@@ -338,7 +350,9 @@ int RemoveStrayRootDlls(const std::wstring& exeDir);
 // "pob-zh.exe --app-update" (checkOnly=false) / "--app-update-check" (true):
 // headless check (+ translation catch-up + app stage/swap, without relaunch).
 // Ignores the daily throttle. Prints and logs to PobTools\app_update_log.txt.
-int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly);
+// allowBack (hidden "--allow-back"): behave like a check the user asked for, so
+// a beta-off install is offered the older stable release. For verification.
+int RunAppUpdateCli(const std::wstring& exeDir, bool checkOnly, bool allowBack = false);
 
 // "pob-zh.exe --update-source [outFile]": reports the GitHub repo this binary
 // checks for updates, and nothing else. Exists so packaging can ASSERT it -- the

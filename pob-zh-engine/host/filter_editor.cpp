@@ -9,6 +9,7 @@
 #include "custom_rules_io.h"
 #include "paste_fixtures.h"
 #include "error_log.h"
+#include "filter_edit_journal.h"
 #include "tool_panel.h"
 #include "tool_window.h"
 #include "ui_theme.h"
@@ -19,6 +20,7 @@
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
+#include <imgui_internal.h>   // GetTopMostPopupModal
 
 #include <algorithm>
 #include <cmath>
@@ -87,6 +89,48 @@ public:
 		return true;
 	}
 
+	// Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z / Ctrl+S / Ctrl+F, and the header's 復原 / 重做.
+	// Runs after the header and before the pages, so a structural change is seen
+	// by the pages' own rebuild this frame.
+	void handleShortcuts()
+	{
+		const ImGuiIO& io = ImGui::GetIO();
+		int req = shell_.undoRequest;
+		shell_.undoRequest = 0;
+		const bool modal = ImGui::GetTopMostPopupModal() != nullptr;
+		// a text field keeps its own Ctrl+Z; not while a popover / menu is open
+		// (it edits the selected rule, which undo would switch) or a drag is
+		// under way (the half-dragged value would become a step)
+		const bool popup = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+		if (io.KeyCtrl && !io.WantTextInput && !modal && !popup && !ImGui::IsAnyItemActive() && shell_.loaded) {
+			if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) req = io.KeyShift ? 1 : -1;
+			if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) req = 1;
+		}
+		// Alt+Up / Alt+Down: move the selected custom rule (same guards as Ctrl+Z)
+		if (io.KeyAlt && !io.KeyCtrl && !io.WantTextInput && !modal && !popup && !ImGui::IsAnyItemActive() &&
+		    shell_.loaded && shell_.section == Section::FilterEdit && !shell_.batchMode) {
+			if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) EdMoveRule(shell_, shell_.selectedBlock, -1);
+			if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) EdMoveRule(shell_, shell_.selectedBlock, 1);
+		}
+		if (io.KeyCtrl && !modal && shell_.loaded) {
+			if (ImGui::IsKeyPressed(ImGuiKey_S, false)) {
+				// a field being typed in writes its value when it is let go: let
+				// go of it now and save next frame, so the save has the new value
+				if (ImGui::GetActiveID() != 0) {
+					ImGui::ClearActiveID();
+					shell_.saveRequest = true;
+				} else if (shell_.model.dirty) {
+					shell_.Save();
+				}
+			}
+			if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+				shell_.section = Section::FilterEdit;
+				shell_.focusSearch = true;
+			}
+		}
+		if (req != 0) EdUndoRedo(shell_, req > 0);
+	}
+
 	void Frame() override
 	{
 		// The host's font-size zoom can change while the panel is open (the
@@ -95,6 +139,7 @@ public:
 		if (!testState_.empty()) applyTestState();
 
 		DrawEditorHeader(shell_);
+		handleShortcuts();
 		if (!shell_.cjkOk) {
 			ImGui::TextColored(PobUi::TokV4(PobUi::Tok::Danger),
 				"[!] CJK font atlas not loaded (Fonts\\FZ_ZY.ttf). Chinese cannot display.");
@@ -117,6 +162,15 @@ public:
 			case Section::Sounds:      DrawSoundsSection(shell_); break;
 		}
 		ImGui::EndChild();
+		DrawJournalDialog(shell_);   // top level: popups never open from inside a child
+		// one undo step per finished edit: not while a field is being typed in or
+		// a colour dragged (that becomes one step when it is let go)
+		if (shell_.loaded && !ImGui::IsAnyItemActive()) shell_.undo.Capture(shell_.model.lines);
+		// Ctrl+S that let go of a field: the pages above have now written its value
+		if (shell_.saveRequest && ImGui::GetActiveID() == 0) {
+			shell_.saveRequest = false;
+			if (shell_.loaded && shell_.model.dirty) shell_.Save();
+		}
 		DrawStatusBar(shell_);
 
 		// The close guard: the same "save first?" dialog as switching files.
@@ -170,7 +224,7 @@ public:
 
 private:
 	// ---- POBTOOLS_FILTER_STATE ----------------------------------------------
-	// rules | detail-color | detail-sound | detail-minimap | batch | preview |
+	// rules | rules-ctx | rules-paste | batch-paste | undo | copy-custom | move | detail-basetype-off | preview-estimate | journal-banner | journal-dialog | online-create | online-update | detail-color | detail-sound | detail-minimap | batch | preview |
 	// preview-import | sounds | soundsplan | empty | unsaved | delete | readfail |
 	// saved | close (phase 2 adds extchange)
 	void applyTestState()
@@ -188,7 +242,7 @@ private:
 			shell_.OpenByPath(shell_.fileList.front().path, true);
 			if (!shell_.loaded) return;
 			seedEdits();
-			if (st == "preview" || st == "preview-import") shell_.section = Section::DropPreview;
+			if (st == "preview" || st == "preview-import" || st == "preview-estimate") shell_.section = Section::DropPreview;
 			if (st == "sounds" || st == "soundsplan") {
 				shell_.section = Section::Sounds;
 				// in memory only: a test run's sound service writes nothing
@@ -223,7 +277,140 @@ private:
 			}
 			if (st == "detail-sound") CardTestOpenPop(shell_, 4);
 			if (st == "detail-basetype") CardTestInput(shell_, u8"混沌");
+			if (st == "online-create") {
+				OnlineFilterEntry e;
+				e.name = "NeverSink-5uberstr-softcore";
+				e.version = "8.20.2.2026.309.7";
+				shell_.onlineList = { e };
+				OnlineFilterEntry e2 = e;
+				e2.name = "NeverSink-2semistr-softcore";
+				shell_.onlineList.push_back(e2);
+				shell_.wantOnlineDialog = true;
+			}
+			if (st == "online-update") {
+				shell_.journal.subscription = "NeverSink-2semistr-softcore";
+				shell_.onlineUpdate.name = shell_.journal.subscription;
+				shell_.onlineUpdate.version = "8.20.2.2026.309.7";
+				shell_.onlineBanner = true;
+			}
+			if (st == "journal-banner" || st == "journal-dialog") {
+				// your edits: the seeded ones, recorded against the file as loaded;
+				// then the file goes back to that (a fresh NeverSink download) with
+				// NeverSink having changed one of those rules too (a conflict)
+				const FilterFile disk = ParseFilter(shell_.doc.BaselineText());
+				FilterFile mine = shell_.model;
+				for (FilterBlock& b : mine.blocks) {
+					if (FilterRuleKey(mine, b).empty() || b.idxTextColor < 0) continue;
+					FilterLine& ln = mine.lines[b.idxTextColor];
+					if (ln.values.size() >= 3) { ln.values[0].text = "9"; ln.values[1].text = "9"; ln.values[2].text = "9"; ln.dirty = true; }
+					break;
+				}
+				EditJournal j;
+				JournalRecord(j, disk, mine);
+				FilterFile fresh = disk;
+				fresh.path = shell_.model.path;
+				fresh.name = shell_.model.name;
+				for (FilterBlock& b : fresh.blocks) {
+					if (!j.rules.count(FilterRuleKey(fresh, b)) || b.idxTextColor < 0) continue;
+					FilterLine& ln = fresh.lines[b.idxTextColor];
+					if (ln.values.size() >= 3) { ln.values[0].text = "1"; ln.values[1].text = "2"; ln.values[2].text = "3"; ln.dirty = true; }
+					break;
+				}
+				shell_.model = fresh;
+				shell_.model.dirty = false;
+				shell_.doc.Attach(&shell_.model);
+				shell_.doc.CaptureBaseline();
+				shell_.undo.Reset(shell_.model.lines);
+				shell_.journal = j;
+				shell_.journal.fromVersion = "8.18.0";   // as if recorded on an older NeverSink
+				shell_.journalPreview = JournalApply(shell_.journal, shell_.doc, {}, true);
+				shell_.journalBanner = true;
+				if (st == "journal-dialog") shell_.wantJournalDialog = true;
+			}
+			if (st == "detail-basetype-off") {
+				// a base item the catalog lacks, typed in Chinese: the 目錄外 fallback.
+				// A rule with a short item list, so the input (under the chips) is on screen.
+				for (int bi = 0; bi < (int)shell_.model.blocks.size(); bi++) {
+					const int li = shell_.doc.FindLine(bi, "BaseType");
+					if (li >= 0 && shell_.model.lines[li].values.size() <= 2) {
+						shell_.selectedBlock = bi;
+						shell_.selAnchor = shell_.doc.CaptureAnchor(bi);
+						shell_.scrollToSel = true;
+						break;
+					}
+				}
+				const auto m = shell_.i18n.OffCatalogMatches("Ring", 1);
+				CardTestInput(shell_, m.empty() ? "zzz" : m[0].second.c_str());
+			}
 			if (st == "detail-minimap") CardTestOpenPop(shell_, 2);
+			if (st == "move" && shell_.selectedBlock >= 0) {
+				// two rules copied into the custom zone, the second moved up, its menu open
+				const int src = shell_.selectedBlock;
+				const std::string a = FilterBlockText(shell_.model, shell_.model.blocks[src], false);
+				EdImportAsCustom(shell_, a, false);
+				// the second: the file's last rule (indices of the row caches are stale here)
+				EdImportAsCustom(shell_, FilterBlockText(shell_.model, shell_.model.blocks.back(), false), false);
+				EdMoveRule(shell_, shell_.selectedBlock, -1);
+				shell_.ctxOpenTest = true;
+			}
+			if (st == "copy-custom" && shell_.selectedBlock >= 0)   // 複製成新的自訂規則 on the selected rule
+				EdImportAsCustom(shell_, FilterBlockText(shell_.model, shell_.model.blocks[shell_.selectedBlock], false), false);
+			if (st == "undo") {
+				// two edits, one undone: the header's 復原 / 重做 both live, the toast says which rule
+				const int bi = shell_.selectedBlock;
+				const int li = bi >= 0 ? shell_.doc.FindLine(bi, "SetFontSize") : -1;
+				if (li >= 0) {
+					shell_.undo.Capture(shell_.model.lines);
+					shell_.model.lines[li].values[0].text = "30";
+					shell_.model.lines[li].dirty = true;
+					shell_.model.dirty = true;
+					shell_.undo.Capture(shell_.model.lines);
+					shell_.model.lines[li].values[0].text = "20";
+					shell_.undo.Capture(shell_.model.lines);
+					EdUndoRedo(shell_, false);
+				}
+			}
+			if (st == "batch-paste") {
+				// as if 複製外觀 on the selected rule, then 貼上外觀到已勾選 on four others
+				shell_.batchMode = true;
+				const int src = shell_.selectedBlock;
+				int n = 0;
+				for (int bi : shell_.visRows) {
+					if (n >= 4) break;
+					if (bi != src && bi < (int)shell_.batchSel.size()) { shell_.batchSel[bi] = 1; n++; }
+				}
+				if (src >= 0) EdPasteLook(shell_, -1, FilterBlockText(shell_.model, shell_.model.blocks[src], true));
+			}
+			if (st == "rules-paste") {
+				// as if 複製外觀 on the selected rule, then 貼上外觀 on the next visible one
+				const int src = shell_.selectedBlock;
+				int dst = -1;
+				for (size_t k = 0; k + 1 < shell_.visRows.size(); k++)
+					if (shell_.visRows[k] == src) { dst = shell_.visRows[k + 1]; break; }
+				if (src >= 0 && dst >= 0) {
+					const std::string look = FilterBlockText(shell_.model, shell_.model.blocks[src], true);
+					CardPasteLook(shell_.doc, dst, look);
+					shell_.selectedBlock = dst;
+					shell_.selAnchor = shell_.doc.CaptureAnchor(dst);
+				}
+			}
+			if (st == "rules-ctx") {
+				shell_.ctxOpenTest = true;
+				// POBTOOLS_FILTER_CTX_DUMP=<file>: what the two menu rows would copy, for a demo
+				const std::wstring dump = EnvW(L"POBTOOLS_FILTER_CTX_DUMP");
+				const int bi = shell_.selectedBlock;
+				if (!dump.empty() && bi >= 0 && bi < (int)shell_.model.blocks.size()) {
+					FILE* fp = nullptr;
+					if (_wfopen_s(&fp, dump.c_str(), L"wb") == 0 && fp) {
+						const std::string all = FilterBlockText(shell_.model, shell_.model.blocks[bi], false);
+						const std::string look = FilterBlockText(shell_.model, shell_.model.blocks[bi], true);
+						const std::string sep = std::string(1, (char)13) + std::string(1, (char)10);
+						const std::string out = "[all]" + sep + all + sep + sep + "[look]" + sep + look + sep;
+						fwrite(out.data(), 1, out.size(), fp);
+						fclose(fp);
+					}
+				}
+			}
 			if (st == "batch") {
 				int n = 0;
 				for (int bi : shell_.visRows) {
@@ -233,6 +420,7 @@ private:
 				BatchTestPreset(shell_);
 			}
 			if (st == "preview") PreviewTestDrops(shell_, 7u, 0);
+			if (st == "preview-estimate") PreviewTestEstimate(shell_);
 			if (st == "preview-import") PreviewTestImport(shell_, kFxBoots);
 			if (st == "soundsplan") SoundsTestOpenPlan(shell_);
 			if (st == "sounds") SoundsTestPlaying(shell_, L"2currency.mp3");

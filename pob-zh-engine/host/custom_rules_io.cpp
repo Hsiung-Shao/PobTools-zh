@@ -1,4 +1,5 @@
 #include "custom_rules_io.h"
+#include <algorithm>
 #include "filter_parser.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -169,4 +170,25 @@ int ImportCustomRules(FilterDocumentEditor& doc, const std::string& fragment, st
 		doc.RebuildBlocks();
 	}
 	return imported;
+}
+
+int CustomRuleMoveTarget(const FilterFile& f, int blockIdx, int dir)
+{
+	const CustomZone z = FindCustomZone(f);
+	if (!z.present()) return -1;
+	std::vector<int> zone;
+	for (int bi = 0; bi < (int)f.blocks.size(); bi++) {
+		const int h = f.blocks[bi].headerLineIdx;
+		if (h > z.beginLine && h < z.endLine) zone.push_back(bi);
+	}
+	const auto it = std::find(zone.begin(), zone.end(), blockIdx);
+	if (it == zone.end()) return -1;
+	const int pos = (int)(it - zone.begin()), last = (int)zone.size() - 1;
+	switch (dir) {
+		case -1: return pos > 0 ? zone[pos - 1] : -1;
+		case -2: return pos > 0 ? zone[0] : -1;
+		case 1:  return pos < last ? zone[pos + 1] : -1;
+		case 2:  return pos < last ? zone[last] : -1;
+		default: return -1;
+	}
 }

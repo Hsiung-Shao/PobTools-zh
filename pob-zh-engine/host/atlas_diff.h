@@ -75,6 +75,14 @@ int BackfillAtlasI18n(AtlasI18n& newI18n, const AtlasTreeData& newTree,
 // between the two seasons: the repoe snapshot (keyed by node id) still holds the
 // OLD name's Chinese, which reads as a wrong name after a rework. Dropping it
 // falls the name back to the correct new English. Returns the number dropped.
+// Translations from an EARLIER LEAGUE (AtlasI18n::LagsSeason): keep only what
+// was written for this league -- the "fresh" lines and names -- and drop the
+// rest to English. Pairings inherited by node id are not trusted across a
+// league: a reused id pairs this league's line with last league's meaning, and
+// "the English line also existed last league" does not prove the Chinese next
+// to it is that line's translation. Returns how many entries were dropped.
+int KeepFreshOnly(AtlasI18n& i18n, const AtlasTreeData& tree);
+
 int DropRenamedNames(AtlasI18n& newI18n, const AtlasTreeData& newTree, const AtlasTreeData& oldTree);
 
 // Drop the stat-line translations of every English line that is NEW this season

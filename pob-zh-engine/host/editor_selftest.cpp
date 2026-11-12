@@ -1102,8 +1102,8 @@ int RunEditorSelftest(const std::string& games)
 			// S22a: guard -- with the flag every source is built, so S22 is not
 			// passing on an observer that always reports "gems".
 			const std::string full = translation_debug_sources();
-			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
-			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,uniques;"
+			check(full == "exact=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,title_words,uniques;"
+			              "pattern=affixes,anoint,gem_names,gem_names_nonactive,gem_names_support,gems,items,legion,passives,stats,tattoo,title_words,uniques;"
 			              "id=affixes,ascendancy,gem_names,gems_desc,mod_stats,passive_stats,passives",
 			      "S22a 有旗標時來源表齊全(觀察函式不是假的)");
 			if (full.find("passives") == std::string::npos) printf("    %s\n", full.c_str());
@@ -1193,8 +1193,8 @@ int RunEditorSelftest(const std::string& games)
 		check(keys.size() > 1000 && lost == 0,
 		      "S16p poe2 有旗標：設來源後原本翻得到的仍翻得到");
 		const std::string built = translation_debug_sources();
-		const char* kPoe2Built = "exact=gems,items,passives,stats,uniques;"
-		                         "pattern=gems,items,passives,stats,uniques;id=affixes,mod_stats";
+		const char* kPoe2Built = "exact=gems,items,passives,stats,title_words,uniques;"
+		                         "pattern=gems,items,passives,stats,title_words,uniques;id=affixes,mod_stats";
 		check(built == kPoe2Built,
 		      "S22p poe2 有旗標：依 meta 建齊來源表與 id 表");
 		if (built != kPoe2Built) printf("    %s\n", built.c_str());

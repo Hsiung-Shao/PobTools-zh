@@ -34,6 +34,8 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 	nameById_.clear();
 	statByEn_.clear();
 	freshStats_.clear();
+	freshNames_.clear();
+	provisional_ = false;
 	note_.clear();
 	repoe_.clear();
 	loaded_ = false;
@@ -50,7 +52,8 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 		if (!doc.contains("nodes") || !doc["nodes"].is_object()) return false;
 
 		for (const auto& [key, v] : doc["nodes"].items()) {
-			if (!v.contains("zh")) continue; // English-only entry (repoe behind)
+			// English-only entry (repoe behind). An option entry has lines but no name.
+			if (!v.contains("zh") && !v.contains("statsZh")) continue;
 			int id = 0;
 			try {
 				id = std::stoi(key);
@@ -77,6 +80,10 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 		if (doc.contains("fresh") && doc["fresh"].is_array())
 			for (const auto& f : doc["fresh"])
 				if (f.is_string()) freshStats_.insert(f.get<std::string>());
+		if (doc.contains("freshNames") && doc["freshNames"].is_array())
+			for (const auto& f : doc["freshNames"])
+				if (f.is_string()) freshNames_.insert(atoi(f.get<std::string>().c_str()));
+		provisional_ = doc.value("provisional", false);
 
 		repoe_ = doc.value("repoe", std::string());
 		note_ = doc.value("tag", std::string("?")) + " / repoe " + (repoe_.empty() ? "?" : repoe_);
@@ -88,6 +95,14 @@ bool AtlasI18n::LoadVersion(const std::wstring& exeDir, const std::string& tag)
 		freshStats_.clear();
 		return false;
 	}
+}
+
+bool AtlasI18n::LagsSeason(const std::string& tag) const
+{
+	int ra = 0, rb = 0, ta = 0, tb = 0;
+	if (sscanf_s(repoe_.c_str(), "%d.%d", &ra, &rb) != 2 || sscanf_s(tag.c_str(), "%d.%d", &ta, &tb) != 2)
+		return false;   // unknown on either side: no claim
+	return ra < ta || (ra == ta && rb < tb);
 }
 
 const std::string& AtlasI18n::NodeName(int id, const std::string& en) const

@@ -45,6 +45,8 @@
 #include "pob_launch.h"
 #include "pob_protocol.h"   // pob:// / pob2:// "Open in PoB" links
 #include "headless_proc.h" // --engine-headless / --headless-selftest
+#include "mcp_selftest.h"   // --mcp-selftest
+#include "mcp_server.h"     // --mcp
 #include "modern_ui_window.h"
 #include "modern_ui_browser.h" // --modern-ui
 #include "window_manager.h"
@@ -488,10 +490,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 
 	// Headless app self-update: check releases, apply translations / stage+swap.
 	if (arg1 == L"--app-update") {
-		return RunAppUpdateCli(dir, /*checkOnly=*/false);
+		return RunAppUpdateCli(dir, /*checkOnly=*/false, arg2 == L"--allow-back");
 	}
 	if (arg1 == L"--app-update-check") {
-		return RunAppUpdateCli(dir, /*checkOnly=*/true);
+		return RunAppUpdateCli(dir, /*checkOnly=*/true, arg2 == L"--allow-back");
 	}
 	// Which repo does this binary take updates from? Packaging asserts it, so a
 	// test build (built with -DPOBTOOLS_UPDATE_REPO=...) can never be shipped.
@@ -924,6 +926,15 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--headless-selftest-poe2") { // --headless-selftest-poe2 [pobDir]
 		return RunHeadlessSelfTestPoe2(dir, arg2);
+	}
+
+	// MCP server on stdio for AI clients (Claude Desktop / Claude Code / Codex).
+	if (arg1 == L"--mcp") { // --mcp [--pob <dir>]
+		return RunMcpServer(dir, arg2 == L"--pob" ? arg3 : L"");
+	}
+	// MCP server end-to-end check (spawns `pob-zh.exe --mcp` and talks JSON-RPC).
+	if (arg1 == L"--mcp-selftest") { // --mcp-selftest [pobDir]
+		return RunMcpSelfTest(dir, arg2);
 	}
 
 	// Internal headless engine child (new UI / self-test): same as --engine but

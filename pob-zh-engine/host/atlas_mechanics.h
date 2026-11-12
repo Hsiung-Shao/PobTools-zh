@@ -36,6 +36,10 @@ struct AtlasMechanicDef {
 	std::string token;
 	std::string en;   // mastery display name in the tree export
 	std::string zh;   // GGPK PassiveSkills Traditional Chinese, same row index
+	// Added from the tree export alone, before the season's game files exist:
+	// `id` is the icon token standing in for the GGPK id and `zh` repeats `en`
+	// (an unsure translation is shown in English). Replace both from GGPK.
+	bool provisional = false;
 };
 
 // The catalogue, sorted by `en`. Compiled in rather than shipped as data: it is

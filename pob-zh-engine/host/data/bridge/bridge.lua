@@ -5493,6 +5493,39 @@ function M.craft_item_options()
 	return { rarities = rarities, types = types, defaults = { rarity = cap.controls.rarity.selIndex, type = cap.controls.type.selIndex, base = cap.controls.base.selIndex } }
 end
 
+-- craft_base_tooltip{rarity, type, base, title?, compare?}: the tooltip POB shows while
+-- pointing at a base in the Craft Item dialog's open list (controls.base.tooltipFunc
+-- "HOVER" -> AddItemTooltip(makeItem(base))). rarity/type/base are 1-based indices, as
+-- in craft_item_options; title is the Name box (makeItem reads it); compare = the
+-- page's "show differences" toggle, as item_tooltip. The dialog is discarded; nothing
+-- is added to the build.
+function M.craft_base_tooltip(p)
+	local b = ensure_build()
+	local tab = b.itemsTab
+	local cap = capture_popup(function() tab:CraftItem() end, false)
+	local ctl = cap.controls
+	local r, ty, bi = tonumber(p and p.rarity), tonumber(p and p.type), tonumber(p and p.base)
+	if r then
+		if not ctl.rarity.list[r] then error("no such rarity " .. tostring(r), 0) end
+		ctl.rarity.selIndex = r
+	end
+	if ty then
+		if not ctl.type.list[ty] then error("no such type " .. tostring(ty), 0) end
+		ctl.type:SetSel(ty)
+	end
+	if p and p.title and ctl.title then ctl.title:SetText(p.title) end
+	local value = bi and ctl.base.list[bi]
+	if not value then error("no such base " .. tostring(bi), 0) end
+	if type(ctl.base.tooltipFunc) ~= "function" then error("craft base tooltip unavailable", 0) end
+	local tt = make("Tooltip")
+	local savedDiff = tab.showStatDifferences
+	if p and p.compare ~= nil then tab.showStatDifferences = p.compare and true or false end
+	local ok, err = pcall(without_wrap, function() ctl.base.tooltipFunc(tt, "HOVER", bi, value) end)
+	tab.showStatDifferences = savedDiff
+	if not ok then error(err, 0) end
+	return { color = tt.color, lines = tooltip_lines(tt) }
+end
+
 -- item_edit_begin{id | raw | craft={rarity,type,base,title?}}: start editing
 -- a copy of a build item (the list's double-click), pasted text
 -- (CreateDisplayItemFromRaw), or a new item from the Craft Item dialog.
@@ -5819,6 +5852,27 @@ function M.item_edit_popup(p)
 			if node.id == want then return { id = node.id, tooltip = notable_tooltip(ctl, i, node) } end
 		end
 		error("no node " .. tostring(p.value), 0)
+	end
+	if action == "rank" then
+		-- The Anoint dialog's own "Sort by <stat>" (NotableDBControl:SetSortMode +
+		-- ListBuilder, which recalculates the build once per notable).
+		local ctl = ctls.notableDB
+		if not ctl or type(ctl.SetSortMode) ~= "function" then error("this dialog has no notable list", 0) end
+		local metric = p.metric or "CombinedDPS"
+		local known = false
+		for _, s in ipairs(data.powerStatList) do
+			if s.stat == metric and not s.ignoreForItems then known = true break end
+		end
+		if not known then error("unknown power stat " .. tostring(metric), 0) end
+		with_popup(function() ctl:SetSortMode(metric) run_list_builder(ctl) end)
+		ctl.listBuildFlag = false
+		local top = math.max(1, math.min(30, tonumber(p.top) or 10))
+		local out = {}
+		for i, node in ipairs(ctl.list or {}) do
+			if #out >= top then break end
+			out[#out + 1] = { id = node.id, name = node.dn, nameZh = tr(node.dn), power = node.measuredPower }
+		end
+		return { metric = metric, notables = out }
 	end
 	if action == "cancel" then
 		close_edit_popup()
@@ -7204,8 +7258,12 @@ function M.set_config(p)
 	elseif vd.type == "text" then
 		v = v ~= nil and tostring(v) or nil
 	end
+	local before = set.input[vd.var]
 	set.input[vd.var] = v
-	return config_committed(b)
+	local r = config_committed(b)
+	-- read back, so a caller can tell an applied change from a silent no-op
+	if type(r) == "table" then r.var, r.type, r.before, r.after = vd.var, vd.type, before, set.input[vd.var] end
+	return r
 end
 
 -- set_config_placeholder{var, value}: the grey "what the build implies" number.
@@ -7888,6 +7946,19 @@ probe("classes.PartyTab.ParseBuffs/exportBuffs", function()
 	local c = class_of("PartyTab")
 	return type(c) == "table" and type(c.ParseBuffs) == "function" and type(c.exportBuffs) == "function"
 end)
+
+-- MCP tools (`pob-zh.exe --mcp`, host/mcp_server.cpp): mcp_tools.lua beside
+-- this file adds M.mcp_call. Optional: without it the new UI is unaffected.
+do
+	local dir = debug.getinfo(1, "S").source:match("^@(.*[/\\])")
+	local chunk = dir and loadfile(dir .. "mcp_tools.lua")
+	if chunk then
+		local ok, err = pcall(function()
+			chunk()(M, { tr = tr, gem_tr = gem_tr, ensure_build = ensure_build, main = main, dir = dir, wait_db = wait_db })
+		end)
+		if not ok then log_error("mcp_tools.lua: " .. tostring(err)) end
+	end
+end
 
 -- ---------------------------------------------------------------------------
 -- Wire-up

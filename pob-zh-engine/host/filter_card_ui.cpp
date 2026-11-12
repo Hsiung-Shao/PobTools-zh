@@ -579,16 +579,24 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 					if (u.live.size() >= 40) break;
 				}
 			}
+			// nothing in the catalog: the engine dictionary's base items (a new
+			// league's items before the catalog is regenerated), marked as such
+			if (u.live.empty()) {
+				for (const auto& [en, zh] : s.i18n.OffCatalogMatches(in, 20)) {
+					LibItem cand;
+					cand.en = en;
+					cand.zh = zh;
+					cand.offCatalog = true;
+					u.live.push_back(std::move(cand));
+				}
+			}
 		}
 	}
 
 	if (enter && !in.empty()) {
 		std::string token;
 		if (translateInput) {
-			for (const LibItem& it : u.live)
-				if (it.en == in || it.zh == in) { token = it.en; break; }
-			if (token.empty() && u.live.size() == 1) token = u.live[0].en;
-			if (token.empty() && !u.live.empty()) token = u.live[0].en;   // the highlighted first row
+			token = CardEnterPick(u.live, in);
 		} else {
 			token = in;
 		}
@@ -602,6 +610,10 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		const float rowH = std::floor(ImGui::GetTextLineHeight() + PobUi::D(8.0f));
 		const float listW = (std::min)(std::floor(PobUi::D(420.0f)), g_rowRight - ImGui::GetCursorScreenPos().x);
 		const float listH = (std::min)((float)u.live.size(), 6.5f) * rowH + PobUi::D(8.0f);
+		if (u.live.front().offCatalog) {
+			PobUi::Hint(u8"物品目錄沒有，以下來自翻譯字典，不一定是可用的物品名稱，要點選才會加入（名稱完全相同時 Enter 也可以）；加入後請在掉落預覽確認。", listW);
+			ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, ImGui::GetCursorScreenPos().y + PobUi::D(2.0f)));
+		}
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(Tok::SurfaceRaised));
 		ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(Tok::Border));
 		ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, PobUi::D(8.0f));
@@ -624,7 +636,7 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 			dl->AddText(ImVec2(x, ty), Tok::Text, zh.c_str());
 			x += ImGui::CalcTextSize(zh.c_str()).x + PobUi::D(8.0f);
 			// the class, so two items of one name tell apart
-			std::string cls = classCard ? std::string() : s.i18n.ClassNameZh(it.enClass);
+			std::string cls = classCard ? std::string() : (it.offCatalog ? std::string(u8"目錄外") : s.i18n.ClassNameZh(it.enClass));
 			if (i == 0 && cls.empty()) cls = u8"Enter 加入";
 			const float clsW = cls.empty() ? 0.0f : sf->CalcTextSizeA(sf->FontSize, FLT_MAX, 0.0f, cls.c_str()).x + PobUi::D(24.0f);
 			if (it.zh != it.en) {
@@ -648,7 +660,8 @@ bool DrawChipsAndInput(EditorShell& s, FilterLine& ln, size_t chipStart, bool tr
 		if (!picked.empty()) addToken(picked);
 	} else if (translateInput && !in.empty() && u.liveUid == ln.uid && u.live.empty()) {
 		ImGui::NewLine();
-		PobUi::Hint(u8"遊戲內沒有這個名稱。過濾器只認英文名稱，用原文加入會比對不到物品。", g_rowRight - ImGui::GetCursorScreenPos().x);
+		PobUi::Hint(u8"物品目錄和翻譯字典都沒有這個名稱（可能是新物品或打錯）。過濾器只認英文名稱，確定拼法正確再用原文加入。",
+		            g_rowRight - ImGui::GetCursorScreenPos().x);
 		if (PobUi::Button(u8"仍以原文加入", PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm)) addToken(in);
 	}
 	return changed;
@@ -1227,7 +1240,11 @@ bool CardColorEditor(EditorShell& s, const char* id, int rgba[4])
 		char cur[48];
 		std::snprintf(cur, sizeof(cur), "%d %d %d %d", rgba[0], rgba[1], rgba[2], rgba[3]);
 		const ImGuiID fid = ImGui::GetID("##rgba");
-		if (ImGui::GetActiveID() != fid) std::snprintf(u.rgbaBuf, sizeof(u.rgbaBuf), "%s", cur);
+		// resync from the value only when the field is neither being typed in nor
+		// was let go of this frame (Ctrl+S lets go of it from outside: the typed
+		// text must reach the write-back below, not be replaced by the old value)
+		if (ImGui::GetActiveID() != fid && ImGui::GetCurrentContext()->ActiveIdPreviousFrame != fid)
+			std::snprintf(u.rgbaBuf, sizeof(u.rgbaBuf), "%s", cur);
 		const unsigned char sw[4] = { (unsigned char)rgba[0], (unsigned char)rgba[1], (unsigned char)rgba[2], (unsigned char)rgba[3] };
 		ImGui::SetCursorScreenPos(ImGui::GetCursorScreenPos() + ImVec2(0, PobUi::D(4.0f)));
 		const ImVec2 p = ImGui::GetCursorScreenPos();
@@ -1545,6 +1562,14 @@ void CardTestOpenPop(EditorShell& s, int which)
 	u.anchor = ImVec2(PobUi::D(520.0f), PobUi::D(300.0f));
 }
 
+std::string CardEnterPick(const std::vector<LibItem>& live, const std::string& typed)
+{
+	for (const LibItem& it : live)
+		if (it.en == typed || it.zh == typed) return it.en;
+	if (live.empty() || live.front().offCatalog) return std::string();
+	return live.front().en;   // the highlighted first row
+}
+
 // Test aid (POBTOOLS_FILTER_STATE=detail-basetype): text typed into the
 // selected block's BaseType input, so the candidate list shows.
 void CardTestInput(EditorShell& s, const char* text)
@@ -1554,4 +1579,91 @@ void CardTestInput(EditorShell& s, const char* text)
 	if (li < 0) return;
 	u.inputs[s.model.lines[li].uid] = text;
 	u.liveFor.clear();
+}
+
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text, bool* changedOut)
+{
+	if (changedOut) *changedOut = false;
+	FilterFile* f = doc.file();
+	if (!f || blockIdx < 0 || blockIdx >= (int)f->blocks.size()) return 0;
+	std::vector<FilterLine> look;
+	int headers = 0;
+	size_t pos = 0;
+	while (pos <= text.size()) {
+		size_t end = text.find((char)10, pos);
+		if (end == std::string::npos) end = text.size();
+		std::string raw = text.substr(pos, end - pos);
+		if (!raw.empty() && raw.back() == (char)13) raw.pop_back();
+		FilterLine ln = ParseFilterLine(raw);
+		if (ln.kind == FilterLineKind::BlockHeader && ++headers > 1) return -1;   // more than one rule
+		if (ln.kind == FilterLineKind::Action) {
+			// one line per card (an alias counts as the same card): the last one wins
+			const CardSchema* cs = FilterSchemaFind(ln.keyword);
+			const std::string key = cs ? cs->keyword : ln.keyword;
+			auto same = std::find_if(look.begin(), look.end(), [&](const FilterLine& o) {
+				const CardSchema* ocs = FilterSchemaFind(o.keyword);
+				return (ocs ? std::string(ocs->keyword) : o.keyword) == key;
+			});
+			if (same != look.end()) *same = std::move(ln);
+			else look.push_back(std::move(ln));
+		}
+		pos = end + 1;
+	}
+	if (look.empty()) return 0;
+	bool changed = false;
+	for (const FilterLine& p : look) {
+		const CardSchema* cs = FilterSchemaFind(p.keyword);
+		// a sound replaces the other sound kind
+		if (cs && cs->exclusiveGroup > 0) {
+			for (const CardSchema& other : FilterSchemaAll()) {
+				if (&other == cs || other.exclusiveGroup != cs->exclusiveGroup) continue;
+				for (const char* kw : { other.keyword, other.alias }) {
+					if (!kw) continue;
+					for (int li; (li = doc.FindLine(blockIdx, kw)) >= 0;) { doc.CommentOutLine(li); changed = true; }
+				}
+			}
+		}
+		// the same card spelled the other way (PlayAlertSound / ...Positional)
+		if (cs && cs->alias) {
+			const char* otherKw = p.keyword == cs->keyword ? cs->alias : cs->keyword;
+			for (int li; (li = doc.FindLine(blockIdx, otherKw)) >= 0;) { doc.CommentOutLine(li); changed = true; }
+		}
+		int li = doc.FindLine(blockIdx, p.keyword);
+		if (li < 0) {
+			// a #! line of this keyword comes back (as adding the card does) instead of a second line
+			for (int dl : f->blocks[blockIdx].lineIdx) {
+				FilterLine parsed;
+				if (doc.IsDisabledLine(dl, &parsed) && parsed.keyword == p.keyword) {
+					doc.RestoreLine(dl);
+					changed = true;
+					li = doc.FindLine(blockIdx, p.keyword);
+					break;
+				}
+			}
+		}
+		if (li < 0) {
+			doc.InsertLine(blockIdx, p.keyword, p.op, p.values);
+			changed = true;
+			continue;
+		}
+		// every live line of this keyword (a rule can repeat one), not only the first
+		for (int tl : f->blocks[blockIdx].lineIdx) {
+			FilterLine& t = f->lines[tl];
+			if (t.kind != FilterLineKind::Action || t.keyword != p.keyword) continue;
+			FilterLine cand = t;
+			cand.op = p.op;
+			cand.values = p.values;
+			cand.dirty = true;
+			// same values: leave the line (and its original bytes) alone
+			if (FilterSerializeLine(cand) == FilterSerializeLine(t)) continue;
+			t = cand;
+			changed = true;
+		}
+	}
+	if (changed) {
+		f->dirty = true;
+		doc.RebuildBlocks();
+	}
+	if (changedOut) *changedOut = changed;
+	return (int)look.size();
 }

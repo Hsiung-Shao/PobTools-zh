@@ -8,6 +8,7 @@
 #include "ui_theme.h"
 #include "ui_widgets.h"
 #include "ui_icons.h"
+#include "clipboard_util.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
@@ -122,22 +123,10 @@ void RebuildRows(EditorShell& s)
 		BlockListRow& r = s.rows[i];
 		std::string rawLabel = ExtractBlockLabel(f, b);
 		r.custom = z.present() && b.headerLineIdx > z.beginLine && b.headerLineIdx < z.endLine;
-		std::string zh = NeverSinkHeaderZh(rawLabel);
-		const bool ns = rawLabel.find("$type->") != std::string::npos;
-		r.label = ns ? StripStyleMarkers(zh) : zh;
+		// NeverSink: 【類別】 + known tier / key conditions + first item (EdRuleLabel)
+		r.label = EdRuleLabel(f, b, s.i18n, &r.tierCode);
 		// A custom rule still carrying the placeholder name reads as what it matches.
 		if (r.custom && b.headerComment == "PobTools custom rule") r.label = CardBlockSummaryZh(f, b, s.i18n);
-		// A NeverSink label says which tier, not which item: name the first base.
-		if (ns) {
-			for (int li : b.lineIdx) {
-				const FilterLine& ln = f.lines[li];
-				if (ln.kind != FilterLineKind::Condition || ln.keyword != "BaseType" || ln.values.empty()) continue;
-				r.label += ' ';
-				r.label += s.i18n.DisplayName(ln.values[0].text);
-				if (ln.values.size() > 1) r.label += u8" 等 " + std::to_string(ln.values.size()) + u8" 種";
-				break;
-			}
-		}
 		if (r.custom) {
 			r.group = 0;
 		} else {
@@ -162,7 +151,10 @@ void RebuildRows(EditorShell& s)
 	if (s.selectedBlock < 0 || s.selectedBlock >= (int)f.blocks.size())
 		s.selectedBlock = f.blocks.empty() ? -1 : 0;
 	if (s.selectedBlock >= 0) s.selAnchor = s.doc.CaptureAnchor(s.selectedBlock);
-	s.batchSel.assign(f.blocks.size(), 0);
+	// a look paste only adds / disables action lines: same rules, same indices,
+	// so the ticks stay for the next paste
+	if (!(s.keepBatchSel && s.batchSel.size() == f.blocks.size())) s.batchSel.assign(f.blocks.size(), 0);
+	s.keepBatchSel = false;
 	s.rowsVersion = s.doc.structureVersion();
 	s.rowStateSig = RefreshStates(s);
 	EdRebuildVisRows(s);
@@ -437,6 +429,137 @@ void EdRebuildVisRows(EditorShell& s)
 // page first.
 void EdRebuildRows(EditorShell& s) { RebuildRows(s); }
 
+std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI18n& i18n, std::string* tierCodeOut)
+{
+	if (tierCodeOut) tierCodeOut->clear();
+	const std::string raw = ExtractBlockLabel(f, b);
+	if (raw.find("$type->") == std::string::npos) return NeverSinkHeaderZh(raw);
+
+	// 【類別】 from the header without its $tier-> token
+	std::string tierCode, rest;
+	{
+		size_t p = 0;
+		while (p < raw.size()) {
+			const size_t sp = raw.find_first_not_of(" 	", p);
+			if (sp == std::string::npos) break;
+			size_t e = raw.find_first_of(" 	", sp);
+			if (e == std::string::npos) e = raw.size();
+			const std::string tok = raw.substr(sp, e - sp);
+			if (tok.rfind("$tier->", 0) == 0) tierCode = tok.substr(7);
+			else rest += (rest.empty() ? "" : " ") + tok;
+			p = e;
+		}
+	}
+	std::string label = StripStyleMarkers(NeverSinkHeaderZh(rest));
+	bool whole = false;
+	const std::string tierZh = NeverSinkTierZhKnown(tierCode, &whole);
+	label += tierZh;   // 「【…】T2」: the tier sits right after the category
+	if (!whole && !tierCode.empty() && tierCodeOut) *tierCodeOut = tierCode;
+
+	// up to two key conditions, only when the tier did not say it all
+	std::vector<std::string> conds;
+	const FilterLine* baseType = nullptr;
+	const FilterLine* cls = nullptr;
+	for (int li : b.lineIdx) {
+		const FilterLine& ln = f.lines[li];
+		if (ln.kind != FilterLineKind::Condition) continue;
+		if (ln.keyword == "BaseType") { if (!baseType) baseType = &ln; continue; }
+		if (ln.keyword == "Class") { if (!cls) cls = &ln; continue; }
+		if (whole || conds.size() >= 2) continue;
+		if (ln.values.size() == 1 && ln.values[0].text == "False") continue;   // an exclusion, not what the rule is
+		if (ln.keyword == "StackSize" && ln.op == ">=" && ln.values.size() == 1 && ln.values[0].text == "1") continue;
+		const std::string zh = CardConditionZh(ln, i18n);
+		if (!zh.empty()) conds.push_back(zh);
+	}
+	std::string item;
+	if (baseType && !baseType->values.empty()) {
+		item = i18n.DisplayName(baseType->values[0].text);
+		if (baseType->values.size() > 1) item += u8" 等 " + std::to_string(baseType->values.size()) + u8" 種";
+	} else if (cls && !cls->values.empty()) {
+		item = i18n.ClassNameZh(cls->values[0].text);
+		if (cls->values.size() > 1) item += u8" 等 " + std::to_string(cls->values.size()) + u8" 類";
+	}
+	std::string tail;
+	for (const std::string& c : conds) tail += (tail.empty() ? "" : u8" · ") + c;
+	if (!item.empty()) tail += (tail.empty() ? "" : u8" · ") + item;
+	if (!tail.empty()) label += " " + tail;
+	return label;
+}
+
+bool EdMoveRule(EditorShell& s, int blockIdx, int dir)
+{
+	const int target = CustomRuleMoveTarget(s.model, blockIdx, dir);
+	if (target < 0) return false;
+	const int nb = dir < 0 ? s.doc.MoveBlockBefore(blockIdx, target) : s.doc.MoveBlockAfter(blockIdx, target);
+	if (nb < 0) return false;
+	s.selectedBlock = nb;
+	s.selAnchor = s.doc.CaptureAnchor(nb);
+	s.scrollToSel = true;
+	s.Notify(u8"已移動，還沒儲存；越上面的規則越優先");
+	return true;
+}
+
+void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard)
+{
+	// a whole filter on the clipboard is a mistake, not a rule to copy
+	constexpr size_t kMaxRules = 20;
+	if (fromClipboard && ParseFilter(ruleText).blocks.size() > kMaxRules) {
+		s.Notify(u8"剪貼簿裡超過 " + std::to_string(kMaxRules) + u8" 條規則，看起來是整份過濾器，沒有貼上", true);
+		return;
+	}
+	std::string err;
+	const int n = ImportCustomRules(s.doc, ruleText, &err);
+	if (n < 0) {   // no Show / Hide in the text (nothing is touched)
+		s.Notify(fromClipboard ? u8"剪貼簿裡沒有規則：先在一條規則按右鍵「複製整條規則」" : u8"這條規則沒辦法複製", true);
+		return;
+	}
+	if (n == 0) {
+		s.Notify(u8"自訂區已經有一樣的規則", true);
+		return;
+	}
+	// select the last rule of the zone: the one just added
+	const CustomZone z = FindCustomZone(s.model);
+	int sel = -1;
+	for (int bi = 0; bi < (int)s.model.blocks.size(); bi++) {
+		const int h = s.model.blocks[bi].headerLineIdx;
+		if (z.present() && h > z.beginLine && h < z.endLine) sel = bi;
+	}
+	if (sel >= 0) {
+		s.selectedBlock = sel;
+		s.selAnchor = s.doc.CaptureAnchor(sel);
+		s.scrollToSel = true;
+	}
+	s.Notify(u8"已在自訂區新增 " + std::to_string(n) + u8" 條規則（還沒儲存）；自訂區優先，原本的規則對同樣的物品不會再生效");
+}
+
+void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text)
+{
+	std::vector<int> targets;
+	if (blockIdx < 0) {
+		for (int i = 0; i < (int)s.batchSel.size() && i < (int)s.model.blocks.size(); i++)
+			if (s.batchSel[i]) targets.push_back(i);
+	} else if (blockIdx < (int)s.model.blocks.size()) {
+		targets.push_back(blockIdx);
+	}
+	int n = 0, nChanged = 0;
+	for (int bi : targets) {
+		bool ch = false;
+		n = CardPasteLook(s.doc, bi, text, &ch);
+		if (n <= 0) break;
+		if (ch) nChanged++;
+	}
+	// the ticked rules stay ticked for the next paste
+	if (blockIdx < 0 && nChanged > 0) s.keepBatchSel = true;
+	if (n < 0)
+		s.Notify(u8"剪貼簿裡不只一條規則：請先在單一規則按右鍵「複製外觀」", true);
+	else if (n == 0)
+		s.Notify(u8"剪貼簿裡沒有外觀設定：先在另一條規則按右鍵「複製外觀」", true);
+	else if (nChanged == 0)
+		s.Notify(u8"外觀已經相同，沒有變更");
+	else
+		s.Notify(u8"已把外觀貼到 " + std::to_string(nChanged) + u8" 條規則；沒提到的外觀設定保留原樣");
+}
+
 namespace {
 
 // Left pane. Returns false when a structural mutation made every cached index
@@ -448,7 +571,11 @@ bool DrawBlockList(EditorShell& s, float height)
 	ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(padX, PobUi::D(10.0f)));
 	const float innerW = w - padX * 2.0f;
 	ImGui::BeginGroup();
-	if (PobUi::SearchField("##fesearch", s.searchBuf, (int)sizeof(s.searchBuf), u8"搜尋規則", innerW)) {
+	if (s.focusSearch) {
+		s.focusSearch = false;
+		ImGui::SetKeyboardFocusHere();
+	}
+	if (PobUi::SearchField("##fesearch", s.searchBuf, (int)sizeof(s.searchBuf), u8"搜尋規則（Ctrl+F）", innerW)) {
 		s.search = s.searchBuf;
 		s.searchLower = EdToLowerAscii(s.search);
 		EdRebuildVisRows(s);
@@ -566,6 +693,7 @@ bool DrawBlockList(EditorShell& s, float height)
 	ImGuiListClipper clip;
 	clip.Begin((int)s.visList.size(), rowH);
 	int toggleHide = -1;
+	int ctxOpen = -1;   // right-clicked row: the menu opens outside PushID
 	while (clip.Step()) {
 		for (int vi = clip.DisplayStart; vi < clip.DisplayEnd; vi++) {
 			const BlockListEntry& e = s.visList[vi];
@@ -614,6 +742,9 @@ bool DrawBlockList(EditorShell& s, float height)
 				else { s.selectedBlock = bi; s.selAnchor = s.doc.CaptureAnchor(bi); }
 			}
 			if (hov && !sel) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+			// right-click also works while the menu is open on another row (one click, not two)
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+				ctxOpen = bi;
 
 			// swatch (background + border colour) at the right
 			const EdLabelStyle st = EdBlockStyle(s, bi);
@@ -649,7 +780,9 @@ bool DrawBlockList(EditorShell& s, float height)
 			}
 			if (hid)
 				dl->AddText(sf, sf->FontSize, ImVec2(mx, p.y + std::floor((rowH - sf->FontSize) * 0.5f)), Tok::TextFaint, hid);
-			if (hov && ls.x > labelMax) PobUi::Tooltip(row.label.c_str());
+			if (hov && (ls.x > labelMax || !row.tierCode.empty()))
+				PobUi::Tooltip(row.tierCode.empty() ? row.label.c_str()
+				                                    : (row.label + std::string(1, (char)10) + u8"NeverSink 代號：" + row.tierCode).c_str());
 
 			ImGui::SetCursorScreenPos(ImVec2(p.x, p.y + rowH));
 			ImGui::Dummy(ImVec2(0, 0));
@@ -658,6 +791,59 @@ bool DrawBlockList(EditorShell& s, float height)
 	}
 	clip.End();
 	if (s.visList.empty()) PobUi::Hint(u8"沒有符合的規則");
+	// right-click a rule: copy it (whole block, or only its look) as filter text
+	if (s.ctxOpenTest) {
+		s.ctxOpenTest = false;
+		ctxOpen = s.selectedBlock;
+		if (ctxOpen >= 0) ImGui::SetNextWindowPos(ImGui::GetWindowPos() + ImVec2(PobUi::D(120.0f), PobUi::D(80.0f)));
+	}
+	if (ctxOpen >= 0) {
+		s.ctxBlock = ctxOpen;
+		// the menu is for this row: select it so the user sees which one
+		if (!s.batchMode) { s.selectedBlock = ctxOpen; s.selAnchor = s.doc.CaptureAnchor(ctxOpen); }
+		ImGui::OpenPopup("##blockctx");
+	}
+	if (PobUi::BeginMenuPopup("##blockctx")) {
+		const bool ok = s.ctxBlock >= 0 && s.ctxBlock < (int)s.model.blocks.size();
+		int what = 0;
+		if (PobUi::MenuRow(PobIcon::Copy, u8"複製整條規則", nullptr, ok)) what = 1;
+		if (PobUi::MenuRow(PobIcon::Copy, u8"複製外觀（顏色、字級、音效、圖示）", nullptr, ok)) what = 2;
+		if (what && ok) {
+			const std::string t = FilterBlockText(s.model, s.model.blocks[s.ctxBlock], what == 2);
+			if (t.empty()) s.Notify(u8"這條規則沒有外觀設定可以複製", true);
+			else if (s.testMode || WriteClipboardUtf8(s.hostHwnd, t))
+				s.Notify(what == 1 ? u8"已複製整條規則，可貼到其他過濾器或文字編輯器"
+				                   : u8"已複製外觀，可貼進其他規則裡");
+			else s.Notify(u8"複製失敗", true);
+		}
+		PobUi::MenuSeparator();
+		// a rule of your own, starting from this one (or from a copied rule)
+		if (PobUi::MenuRow(PobIcon::CopyPlus, u8"複製成新的自訂規則", nullptr, ok))
+			EdImportAsCustom(s, FilterBlockText(s.model, s.model.blocks[s.ctxBlock], false), false);
+		if (ImGui::IsItemHovered())
+			PobUi::Tooltip(u8"在檔案最上方的自訂區放一份一樣的規則給你改；自訂區優先，同樣的物品會改用這份");
+		if (PobUi::MenuRow(PobIcon::CopyPlus, u8"貼上為新的自訂規則", nullptr, !s.testMode))
+			EdImportAsCustom(s, ReadClipboardUtf8(s.hostHwnd), true);
+		PobUi::MenuSeparator();
+		// order inside the custom zone (NeverSink's own order is its tier design: not offered)
+		if (ok && s.rows[s.ctxBlock].custom) {
+			struct { const char* lbl; const char* key; int dir; } mv[4] = {
+				{ u8"上移", "Alt+Up", -1 }, { u8"下移", "Alt+Down", 1 },
+				{ u8"移到自訂區最上面", nullptr, -2 }, { u8"移到自訂區最下面", nullptr, 2 } };
+			for (const auto& m : mv)
+				if (PobUi::MenuRow(nullptr, m.lbl, m.key, CustomRuleMoveTarget(s.model, s.ctxBlock, m.dir) >= 0))
+					EdMoveRule(s, s.ctxBlock, m.dir);
+			PobUi::MenuSeparator();
+		}
+		// paste a copied look: onto the ticked rules in batch mode, else onto this one
+		const bool toTicked = s.batchMode && nSel > 0;
+		const std::string pasteLbl = toTicked ? u8"貼上外觀到已勾選的 " + std::to_string(nSel) + u8" 條"
+		                                      : std::string(u8"貼上外觀到這條規則");
+		if (PobUi::MenuRow(PobIcon::Palette, pasteLbl.c_str(), nullptr, ok && !s.testMode)) {
+			EdPasteLook(s, toTicked ? -1 : s.ctxBlock, ReadClipboardUtf8(s.hostHwnd));
+		}
+		PobUi::EndMenuPopup();
+	}
 	ImGui::EndChild();
 	ImGui::PopStyleColor();
 
@@ -721,6 +907,7 @@ bool DrawMiddle(EditorShell& s, bool* wantDelete, bool* wantUndo)
 			where += u8" · 有 " + std::to_string((std::max)(1, nChanged)) + u8" 處修改";
 		}
 		where += u8" · 第 " + std::to_string(bi + 1) + u8" 條";
+		if (!row.tierCode.empty()) where += u8" · 代號 " + row.tierCode;
 		dl->AddText(sf, sf->FontSize, ImVec2(p.x, ty + hpx + PobUi::D(2.0f)), Tok::TextMuted, where.c_str(), nullptr, 0.0f, &clip);
 		if (ImGui::IsMouseHoveringRect(ImVec2(clip.x, clip.y), ImVec2(clip.z, clip.w)))
 			PobUi::Tooltip(row.label.c_str());

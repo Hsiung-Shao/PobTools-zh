@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
+#include <algorithm>
 
 using nlohmann::ordered_json;
 
@@ -71,6 +72,15 @@ void FilterI18n::Load(const std::wstring& exeDir, const std::string& locale)
 
 	// 2. Engine dictionaries fill anything the bundled set lacks (first value wins).
 	std::wstring dir = exeDir + L"Data\\poe1\\" + widen(locale) + L"\\";
+	// base items the catalog lacks: the filter search's fallback (not uniques.json)
+	{
+		std::unordered_map<std::string, std::string> bases;
+		load_entries(dir + L"items.json", bases);
+		offCatalog_.clear();
+		for (const auto& [en, zh] : bases)
+			if (!names_.count(en)) offCatalog_.emplace_back(en, zh);
+		std::sort(offCatalog_.begin(), offCatalog_.end());
+	}
 	for (const wchar_t* f : { L"items.json", L"uniques.json", L"gems.json", L"ui.json" })
 		load_entries(dir + f, names_);
 
@@ -337,6 +347,24 @@ static std::string ns_tier_seg_zh(const std::string& seg)
 	return seg;
 }
 
+std::string NeverSinkTierZhKnown(const std::string& code, bool* whole)
+{
+	if (whole) *whole = false;
+	if (code.empty() || code.find("->") != std::string::npos) return std::string();
+	const std::string zh = ns_tier_seg_zh(code);
+	if (zh != code) {   // a known word or a plain "t<n>"
+		if (whole) *whole = true;
+		return zh;
+	}
+	// "t1exalted": the tier number is plain, the rest is the author's own word
+	size_t i = 1;
+	if (code.size() > 2 && code[0] == 't' && code[1] >= '0' && code[1] <= '9') {
+		while (i < code.size() && code[i] >= '0' && code[i] <= '9') i++;
+		if (i < code.size()) return "T" + code.substr(1, i - 1);
+	}
+	return std::string();
+}
+
 // "a->b->c" -> 各節段翻譯後以「·」相接;未知節段原樣保留。
 static std::string ns_join_path(const std::string& path, bool tierPath)
 {
@@ -386,6 +414,22 @@ std::string NeverSinkHeaderZh(const std::string& header)
 		out += piece;
 		lastWasType = isType;
 		p = e;
+	}
+	return out;
+}
+
+std::vector<std::pair<std::string, std::string>> FilterI18n::OffCatalogMatches(const std::string& query, size_t limit) const
+{
+	std::vector<std::pair<std::string, std::string>> out;
+	if (query.empty()) return out;
+	auto lower = [](std::string t) {
+		for (char& c : t) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+		return t;
+	};
+	const std::string q = lower(query);
+	for (const auto& e : offCatalog_) {
+		if (out.size() >= limit) break;
+		if (lower(e.first).find(q) != std::string::npos || e.second.find(query) != std::string::npos) out.push_back(e);
 	}
 	return out;
 }

@@ -15,6 +15,8 @@
 #include "filter_data.h"
 #include "filter_doc_editor.h"
 #include "filter_file_watch.h"
+#include "filter_undo.h"
+#include "filter_edit_journal.h"
 #include "sound_library_service.h"
 #include "filter_i18n.h"
 #include "item_library.h"
@@ -37,6 +39,7 @@ enum class Section {
 struct BlockListRow {
 	std::string label;      // display text (NeverSink marker or summary)
 	std::string haystack;   // lower-cased label + English + Chinese summary, for search
+	std::string tierCode;   // NeverSink tier code left out of the label ("armors1q1"), for the tooltip
 	int group = 0;          // index into EditorShell::groupNames
 	bool custom = false;    // inside the PobTools custom zone
 	bool hide = false;      // refreshed every frame (EdRefreshRowStates)
@@ -154,6 +157,30 @@ struct EditorShell {
 	bool soundsInit = false;
 
 	int selectedBlock = -1;          // resolved from selAnchor after every rebuild
+	int ctxBlock = -1;               // block list row whose right-click menu is open
+	// NeverSink 更新後保留修改 (section_journal.cpp)
+	EditJournal journal;             // this file's edits to NeverSink's rules
+	JournalReport journalPreview;    // what applying it would do (dry run at open / after an apply)
+	JournalChoices journalChoices;   // the dialog's 用我的 / 用新版 per conflict
+	std::set<std::string> journalCarried;   // rules an apply put on this file since it was opened
+	std::set<std::string> journalDropOnSave;   // missing rules copied into the custom zone: leave the journal at the next save
+	bool journalBanner = false;      // edits waiting to be put on this file
+	bool wantJournalDialog = false;
+	bool journalDialogOpen = false;
+	// game subscriptions: a local copy that follows one (section_journal.cpp)
+	std::vector<OnlineFilterEntry> onlineList;   // for the 從訂閱建立 dialog
+	int onlineSel = 0;
+	bool wantOnlineDialog = false;
+	bool onlineDialogOpen = false;
+	OnlineFilterEntry onlineUpdate;              // the subscription with a newer version than this file
+	bool onlineBanner = false;
+	bool onlineConfirmOpen = false;
+	FilterUndoHistory undo;          // 復原 / 重做 (captured once per frame, filter_editor.cpp)
+	int undoRequest = 0;             // -1 undo / +1 redo, from the header buttons, run before the pages draw
+	bool focusSearch = false;        // Ctrl+F: focus the rule search box next frame
+	bool saveRequest = false;        // Ctrl+S while a field was active: save once it has written its value
+	bool keepBatchSel = false;       // next RebuildRows keeps the ticks (a paste added no rules)
+	bool ctxOpenTest = false;        // POBTOOLS_FILTER_STATE=rules-ctx: open it for the selected row
 	std::string search, searchLower;
 	RuleChip chip = RuleChip::All;
 	ChipCounts chipCounts;           // refreshed every frame (EdRefreshRowStates)
@@ -223,6 +250,29 @@ void SetBlockHide(EditorShell& s, FilterBlock& b, bool hide);
 // Rebuild rows/visRows/selection caches from the model (section_filteredit.cpp).
 // Call when rowsVersion != doc.structureVersion() outside the 規則 page.
 void EdRebuildRows(EditorShell& s);
+// section_journal.cpp: the journal of edits to NeverSink's rules.
+std::wstring EdJournalPath(const EditorShell& s);        // PobTools/filter_edits/<file>.json (a temp folder in test mode)
+void EdJournalOnOpen(EditorShell& s);                    // load it, dry-run it, raise the banner
+void EdJournalOnSave(EditorShell& s, const FilterFile& baseline);   // record the save, write it
+void DrawJournalBanner(EditorShell& s);
+void DrawJournalDialog(EditorShell& s);                  // top level of the window (also the subscription dialogs)
+// A rule's name in the list (section_filteredit.cpp): 【類別】 + the NeverSink tier
+// when it is a known one (T1, 任意…), else up to two key conditions in Chinese,
+// then the first item (or the class). *tierCodeOut: the raw tier code when it
+// was left out of the name ("armors1q1"), "" otherwise.
+std::string EdRuleLabel(const FilterFile& f, const FilterBlock& b, const FilterI18n& i18n, std::string* tierCodeOut);
+// 復原 / 重做 one step (editor_shell.cpp): rebuild, settle the unsaved count,
+// select the rule the step touched, notify.
+void EdUndoRedo(EditorShell& s, bool redo);
+// 貼上外觀 (section_filteredit.cpp): onto blockIdx, or onto every ticked rule when
+// blockIdx < 0 (the ticks are kept). Notifies the result.
+void EdPasteLook(EditorShell& s, int blockIdx, const std::string& text);
+// 上移 / 下移 / 移到自訂區最上面 / 最下面 (dir -1 / +1 / -2 / +2) for a custom
+// rule: select it afterwards and notify. False when that move is not allowed.
+bool EdMoveRule(EditorShell& s, int blockIdx, int dir);
+// 複製成新的自訂規則 / 貼上為新的自訂規則: import the rule text into the custom
+// zone at the top of the file and select it. Notifies the result.
+void EdImportAsCustom(EditorShell& s, const std::string& ruleText, bool fromClipboard);
 // Rebuild only the search-filtered list (search text / filter changed).
 void EdRebuildVisRows(EditorShell& s);
 // Per frame: each row's show/hide and baseline state, the chip counts, and the

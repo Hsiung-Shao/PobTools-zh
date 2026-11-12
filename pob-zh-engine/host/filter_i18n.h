@@ -9,6 +9,7 @@
 
 #include <string>
 #include <vector>
+#include <utility>
 #include <unordered_map>
 
 class FilterI18n {
@@ -21,6 +22,13 @@ public:
 
 	// English item/base name -> Chinese display name (falls back to the input).
 	std::string DisplayName(const std::string& en) const;
+
+	// Base items the engine dictionary (Data/poe1/<locale>/items.json) has but the
+	// item catalog (filter_items_zh.json) lacks -- a new league's items before the
+	// catalog is regenerated. Not checked to be valid BaseType names. Case-
+	// insensitive English or Chinese substring, sorted by English, at most limit;
+	// an empty query matches nothing. Pairs are (English, Chinese).
+	std::vector<std::pair<std::string, std::string>> OffCatalogMatches(const std::string& query, size_t limit) const;
 
 	// English base type -> English item class ("Bow", "Body Armour", ...); "" if unknown.
 	// (Legacy gear-only map, used by the existing base-class sub-filter.)
@@ -74,6 +82,7 @@ private:
 	};
 
 	std::unordered_map<std::string, std::string> names_;      // en name  -> zh name
+	std::vector<std::pair<std::string, std::string>> offCatalog_;   // (en, zh) base items the catalog lacks, sorted
 	std::unordered_map<std::string, std::string> baseClass_;  // en base  -> en class (legacy)
 	std::unordered_map<std::string, std::string> classZh_;    // en class -> zh class
 	std::unordered_map<std::string, std::string> classEn_;    // class id -> game class name
@@ -86,3 +95,9 @@ private:
 // "%H2 $type->leveling->flasks->life $tier->t2" -> "%H2 【練等·藥劑·生命】T2"。
 // 未知節段保留英文；非 NeverSink 標題原樣返回。
 std::string NeverSinkHeaderZh(const std::string& header);
+
+// A NeverSink tier code ("t2", "any", "t1exalted", "armors1q1") as far as it can
+// be read without guessing: the whole code when it is a known word (T2, 任意),
+// just the "t<n>" lead of "t1exalted" (T1, *whole = false), else "" (author's
+// own abbreviation). *whole: the code was translated completely.
+std::string NeverSinkTierZhKnown(const std::string& code, bool* whole);

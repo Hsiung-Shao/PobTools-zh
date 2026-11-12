@@ -286,6 +286,25 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 				n["statsEn"] = statsEn;
 			}
 			outNodes[std::to_string(id)] = std::move(n);
+
+			// Options of a multiple-choice node (3.30+): one entry per option,
+			// keyed by its effect id -- a passive id of its own, disjoint from
+			// the node ids, so repoe / the game files can join it the same way.
+			// No name: an option is only its lines.
+			if (v.contains("variantEffects") && v["variantEffects"].is_array())
+				for (const auto& e : v["variantEffects"]) {
+					if (!e.is_object() || !e.contains("effect") || !e["effect"].is_number_integer()) continue;
+					std::string ek = std::to_string(e["effect"].get<int>());
+					ordered_json o;
+					o["en"] = "";
+					o["statsEn"] = e.contains("stats") ? e["stats"] : ordered_json::array();
+					auto eit = tcp.find(ek);
+					if (eit != tcp.end() && eit->contains("stat_text")) {
+						o["statsZh"] = (*eit)["stat_text"];
+						AlignStatsZhOrder(o);
+					}
+					outNodes[ek] = std::move(o);
+				}
 		}
 
 		if (total == 0)
@@ -299,12 +318,14 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 		// wherever repoe now supplies its own zh, repoe wins and the marker is
 		// dropped (once repoe catches the season up, markers become inert).
 		std::set<std::string> freshOut, freshNamesOut;
+		bool prevProvisional = false;
 		{
 			// phase 1 (may throw): parse the previous mapping's fresh markers
 			std::map<std::string, std::string> freshZh, freshName;
 			std::string prevRaw;
 			if (read_file_utf8(destDir + L"atlas_tree_zh.json", prevRaw)) try {
 				ordered_json prev = ordered_json::parse(prevRaw);
+				prevProvisional = prev.value("provisional", false);
 				std::set<std::string> freshSet, freshNameSet;
 				if (prev.contains("fresh") && prev["fresh"].is_array())
 					for (const auto& f : prev["fresh"])
@@ -372,6 +393,8 @@ bool GenerateAtlasZhMapping(const std::string& gggDataJson, const std::string& t
 			out["fresh"] = ordered_json(freshOut);
 		if (!freshNamesOut.empty())
 			out["freshNames"] = ordered_json(freshNamesOut);
+		if (prevProvisional && (!freshOut.empty() || !freshNamesOut.empty()))
+			out["provisional"] = true;
 		out["nodes"] = std::move(outNodes);
 
 		SHCreateDirectoryExW(nullptr, destDir.c_str(), nullptr);
@@ -639,9 +662,9 @@ bool AtlasUpdater::doUpdate(std::string* err)
 		if (!d.contains("sprites") || !d["sprites"].is_object())
 			{ if (err) *err = u8"data.json 缺少 sprites 段"; return false; }
 		for (const auto& [cat, sec] : d["sprites"].items()) {
-			(void)cat;
-			if (!sec.is_object() || !sec.contains("0.5")) continue; // import uses zoom 0.5 only
-			std::string base = cdn_base_name(sec["0.5"].value("filename", std::string()));
+			const ordered_json* lv = AtlasSpriteLevel(cat, sec); // the level the import reads
+			if (!lv) continue;
+			std::string base = cdn_base_name(lv->value("filename", std::string()));
 			if (!base.empty()) assets.insert(base);
 		}
 	} catch (const std::exception& e) {

@@ -37,6 +37,22 @@ bool DrawAddColumn(EditorShell& s, int blockIdx);
 // mutation.
 bool DrawCardPopovers(EditorShell& s);
 
+// Paste a copied look onto a block: every action line in `text` (a 複製外觀 or a
+// whole 複製整條規則 copy; other lines are ignored) replaces the block's line with
+// the same keyword, or is inserted when the block has none. A sound replaces the
+// other sound kind (the schema's exclusive group, disabled with #!). Lines the
+// paste does not mention stay; a #! line of a pasted keyword is restored rather
+// than doubled. One line per card (the last wins). Returns how many cards the
+// text carried: 0 = no action lines, -1 = more than one rule (both leave the
+// block untouched). *changedOut: whether anything changed. Structural.
+int CardPasteLook(FilterDocumentEditor& doc, int blockIdx, const std::string& text, bool* changedOut = nullptr);
+
+// What Enter adds from the candidate list under an item-name input: an exact
+// English or Chinese match, else (catalog candidates only) the first row. A
+// 目錄外 list adds only on an exact match -- its first row is not necessarily
+// what was meant, nor a usable name. "" = add nothing.
+std::string CardEnterPick(const std::vector<LibItem>& live, const std::string& typed);
+
 // ---- editors shared with the batch dialog ----------------------------------
 // Colour picker body: SV square + hue, RGBA field, recently used colours.
 // rgba is edited in place; true when it changed.

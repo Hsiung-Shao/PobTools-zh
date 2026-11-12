@@ -217,8 +217,8 @@
 	   walk the install backwards, and that the dictionaries are the same ones
 	   the stable line gets -- because nobody reads a hint twice. */            \
 	X(betaChannel,       u8"參加 beta 測試（搶先版）", u8"Join the beta (early builds)") \
-	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後不會退回舊版，會等正式版追上來。翻譯資料與正式版共用同一份。", \
-	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off does not downgrade: you keep what you have until the stable line catches up. The translation data is the same either way.") \
+	X(betaChannelHint,   u8"打開之後，程式更新會抓還沒轉正式的搶先版。搶先版是測試用的，可能有還沒修好的問題；關掉之後會問你要不要回到正式版，不會自動退回。翻譯資料與正式版共用同一份。", \
+	                     u8"With this on, program updates come from builds that have not been made official yet. Early builds are for testing and may have problems that are not fixed yet. Turning it back off offers to go back to the stable release; nothing is downgraded without a click. The translation data is the same either way.") \
 	/* Link-board labels that are NOT proper nouns. The rest of kLinks stays
 	   hard-coded: site names (PoeDB, poe.ninja, FilterBlade...) read the same in
 	   every language, and the Chinese-community links keep their Chinese labels
@@ -248,10 +248,16 @@
 	X(pobProtocolHint,   u8"讓 poe.ninja / pobb.in 等網站的「Open in PoB」開啟 PobTools(會取代官方安裝版 POB 的連結)。點連結時不顯示啟動器,直接依「預設介面」開啟中文化 POB 並匯入那個建置。只寫入目前使用者的登錄檔;取消勾選只移除指向這個 PobTools 的登記。", \
 	                     u8"Lets the \"Open in PoB\" buttons on poe.ninja, pobb.in and other sites open PobTools (this replaces the official POB install's link handling). A link skips the launcher and opens the localised POB in your default interface with that build imported. Only the current user's registry is written; unticking removes only the registration that points at this PobTools.") \
 	X(pobProtocolFail,   u8"無法變更連結登記(登錄檔寫入失敗),已還原勾選。", u8"Could not change the link registration (registry write failed); the setting was reverted.") \
+	/* AI clients over MCP (pob-zh.exe --mcp, host/mcp_server.h): copy the \
+	   registration for this exe into each client. */ \
+	X(mcpRow,            u8"AI 串接(MCP)",                u8"AI assistants (MCP)") \
+	X(mcpHint,           u8"複製設定貼到 AI 工具,讓它用 POB 的計算讀取與試算建置。", u8"Copy the setup into an AI tool so it can read and try out builds with POB's own numbers.") \
+	X(mcpHintLong,       u8"Claude Desktop:貼進 claude_desktop_config.json。Claude Code／CLI:在終端機執行複製的指令。Codex:貼進 ~/.codex/config.toml。AI 只在暫存複本上操作,不會改動你的 POB 建置,成品以分享碼交給你。", u8"Claude Desktop: paste into claude_desktop_config.json. Claude Code / CLI: run the copied command in a terminal. Codex: paste into ~/.codex/config.toml. The AI works on a private copy and never changes your POB builds; it hands results over as share codes.") \
 	/* Launcher redesign (design system v1, 2026-10): header, banners, cards,
 	   settings side navigation, appearance thumbnails, about card. */          \
 	X(appSubtitle,       u8"Path of Building 繁體中文化", u8"Path of Building in Traditional Chinese") \
 	X(updateTo,          u8"更新到 v%s",                   u8"Update to v%s")                         \
+	X(updateBackTo,      u8"回到正式版 v%s",               u8"Back to stable v%s")                    \
 	X(updateDownloadingVer, u8"下載 v%s",                  u8"Downloading v%s")                       \
 	X(transUpdatingHdr,  u8"更新翻譯資料",                 u8"Updating translation data")             \
 	X(updateFailedPill,  u8"更新失敗",                     u8"Update failed")                         \
@@ -309,8 +315,8 @@
 	                     u8"Update checks, translation data and icon downloads go through it, e.g. 127.0.0.1:7890") \
 	X(autoAppUpdateHintShort, u8"只在剛開啟、還沒開過 POB 或工具時才會安裝並重開", \
 	                     u8"Only right after start, before any POB or tool has been opened") \
-	X(betaHintShort,     u8"更新到還沒轉正式的搶先版；關掉後不會退回，會等正式版追上", \
-	                     u8"Get builds before they are released; turning it off never downgrades, you wait for the release instead") \
+	X(betaHintShort,     u8"更新到還沒轉正式的搶先版；關掉後可選擇回到正式版", \
+	                     u8"Get builds before they are released; turning it off offers to go back to the stable release") \
 	X(transUpdateHintShort, u8"自己在改翻譯的話請關掉，以免被新版蓋掉", \
 	                     u8"Turn it off if you edit translations yourself, so an update does not overwrite them") \
 	X(pobPerfNote,       u8"改了立即套用到開著的 POB",     u8"Applies to open POB windows right away") \

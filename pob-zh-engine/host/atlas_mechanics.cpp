@@ -27,6 +27,12 @@ using nlohmann::ordered_json;
 // ones are league-variant labels ("獸獵聯盟 （標準）") and every one of them was
 // verified to start with the short form, so this is a rule, not a pick.
 //
+// 3.30 (2026-11-12): nine mechanics below are `provisional` -- taken from the
+// 3.30.0 tree export before any 3.30 game files existed. Their id is the mastery
+// icon token and their zh is the English name. Redo them from GGPK -- and
+// regenerate every season's atlas_mechanics.json in the same change: those files
+// store these ids, and a group whose id is no longer in the catalogue vanishes.
+//
 // ⚠ "Labyrinth" really is 帝王迷宮機率 in the game files -- GGG named that single
 // mastery row after the stat rather than the mechanic. Left verbatim: the game
 // shows that string, and inventing 帝王迷宮 would be exactly the kind of guess
@@ -35,6 +41,7 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 {
 	static const std::vector<AtlasMechanicDef> kDefs = {
 		{ "Abyss", "Abyss", u8"Abyss", u8"深淵" },
+		{ "Anomalies", "Anomalies", u8"Atlas Anomalies", u8"Atlas Anomalies", true },
 		{ "Memory", "Memories", u8"Atlas Memories", u8"輿圖記憶" },
 		{ "Bestiary", "Bestiary", u8"Bestiary", u8"獸獵" },
 		{ "Betrayal", "Jun", u8"Betrayal", u8"反叛" },
@@ -47,15 +54,20 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 		{ "Divination", "Divination", u8"Divination Cards", u8"命運卡" },
 		{ "Essence", "Essence", u8"Essence", u8"精髓" },
 		{ "Expedition", "Expedition", u8"Expedition", u8"探險" },
+		{ "Gold", "Gold", u8"Gold", u8"Gold", true },
 		{ "Harvest", "Harvest", u8"Harvest", u8"豐收" },
 		{ "Heist", "Heist", u8"Heist", u8"劫盜" },
 		{ "Incursion", "Alva", u8"Incursion", u8"穿越" },
 		{ "Labyrinth", "Labyrinth", u8"Labyrinth", u8"帝王迷宮機率" },
 		{ "Legion", "Legion", u8"Legion", u8"戰亂" },
+		{ "MagicMonsters", "MagicMonsters", u8"Magic Monsters", u8"Magic Monsters", true },
 		{ "Map Tier", "Map", u8"Maps", u8"地圖" },
 		{ "Mercenary", "Mercenaries", u8"Mercenaries", u8"傭兵" },
+		{ "Mirage", "Mirage", u8"Mirage", u8"Mirage", true },
+		{ "RareMonsters", "RareMonsters", u8"Rare Monsters", u8"Rare Monsters", true },
 		{ "Ritual", "Ritual", u8"Ritual", u8"祭祀" },
 		{ "Anarchy", "Anarchy", u8"Rogue Exiles", u8"盜賊流亡者" },
+		{ "Sentinek", "Sentinek", u8"Sentinels", u8"Sentinels", true },
 		{ "Kalguur", "Settlers", u8"Settlers of Kalguur", u8"卡爾葛拓荒者" },
 		{ "Domination", "Domination", u8"Shrines", u8"神殿" },
 		{ "Strongbox", "Strongbox", u8"Strongboxes", u8"保險箱" },
@@ -63,9 +75,12 @@ static const std::vector<AtlasMechanicDef>& catalogue()
 		{ "Tangle", "Tangle", u8"The Eater of Worlds", u8"吞噬天地" },
 		{ "CleansingFire", "CleansingFire", u8"The Searing Exarch", u8"灼烙總督" },
 		{ "ElderShaper", "ElderShaper", u8"The Shaper and Elder", u8"塑界者和尊師" },
+		{ "Thread", "Thread", u8"Threads", u8"Threads", true },
 		{ "Torment", "Torment", u8"Torment", u8"罪魂" },
 		{ "Ultimatum", "Ultimatum", u8"Ultimatum", u8"通牒" },
+		{ "UniqueMonsters", "UniqueMonsters", u8"Unique Monsters", u8"Unique Monsters", true },
 		{ "Vaal", "Vaal", u8"Vaal Side Areas", u8"瓦爾區域" },
+		{ "AzmeriForest", "AzmeriForest", u8"Viridian Wildwood", u8"Viridian Wildwood", true },
 	};
 	return kDefs;
 }
@@ -88,6 +103,18 @@ static const MechAlias kAliases[] = {
 	{ "Memory", "Memory" },
 	{ "Mercenary", "Mercenary" },
 	{ "DivinationCard", "Divination" },
+	// 3.30: the node icons spell these differently from the mastery icon
+	// (AtlasUniquemonstersNode, AtlasMagicmonsters1, SentinelNode vs ...Sentinek).
+	{ "Uniquemonsters", "UniqueMonsters" },
+	{ "Magicmonsters", "MagicMonsters" },
+	{ "Sentinel", "Sentinek" },
+};
+
+// A mastery the game renamed while keeping its icon: the same mechanic under a
+// new English name. 3.30 calls the Harvest clusters "Sacred Flora".
+struct MechRename { const char* en; const char* id; };
+static const MechRename kRenames[] = {
+	{ "Sacred Flora", "Harvest" },
 };
 
 const std::vector<AtlasMechanicDef>& AtlasMechanicCatalogue() { return catalogue(); }
@@ -103,6 +130,8 @@ const AtlasMechanicDef* AtlasMechanicByEn(const std::string& en)
 {
 	for (const AtlasMechanicDef& d : catalogue())
 		if (d.en == en) return &d;
+	for (const MechRename& r : kRenames)
+		if (en == r.en) return AtlasMechanicById(r.id);
 	return nullptr;
 }
 
@@ -433,13 +462,14 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 	const std::vector<AtlasMechanicDef>& defs = catalogue();
 	check(defs.size() >= 30, "mechanic catalogue is populated", std::to_string(defs.size()) + " mechanics");
 	std::set<std::string> ids, ens, tokens;
-	int blank = 0, untranslated = 0;
+	int blank = 0, untranslated = 0, provisional = 0;
 	for (const AtlasMechanicDef& d : defs) {
 		ids.insert(d.id);
 		ens.insert(d.en);
 		tokens.insert(d.token);
 		if (d.id.empty() || d.en.empty() || d.zh.empty() || d.token.empty()) blank++;
-		if (d.zh == d.en) untranslated++;
+		if (d.zh == d.en && !d.provisional) untranslated++;
+		if (d.provisional) provisional++;
 	}
 	check(ids.size() == defs.size(), "mechanic ids are unique");
 	check(ens.size() == defs.size(), "mastery names are unique (they are the join key)");
@@ -447,6 +477,8 @@ int RunAtlasMechanicSelfTest(const std::wstring& exeDir, std::string& out)
 	check(blank == 0, "no blank field in the catalogue");
 	check(untranslated == 0, "every mechanic has a Chinese name distinct from English",
 	      std::to_string(untranslated) + " untranslated");
+	if (provisional)
+		out += u8"      提示:" + std::to_string(provisional) + u8" 個機制是暫定(等該賽季 GGPK 補 id 與繁中,目前顯示英文)\n";
 	check(AtlasMechanicById("Breach") && AtlasMechanicByEn("Breach"), "lookup by id and by name works");
 	// An alias must not point at a mechanic this build does not have.
 	int badAlias = 0;

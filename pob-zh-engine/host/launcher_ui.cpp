@@ -21,6 +21,7 @@
 #include "github_token.h"
 #include "pob_launch.h"
 #include "pob_protocol.h"     // the "Open in PoB" link switch on the settings page
+#include "mcp_config.h"       // the "AI assistants (MCP)" copy buttons
 #include "bridge_gate.h"
 #include "modern_ui_window.h"  // ModernUiAvailable: whether the new-interface button exists
 #include "modern_ui_browser.h" // ModernUiBrowserAvailable: the system-browser fallback
@@ -1962,6 +1963,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				ai.pobBusy = pobBusy;
 				ai.anythingLaunched = anythingLaunched;
 				ai.alreadyTried = autoApplyTried;
+				ai.isBack = ust.appIsBack;
 				if (!live && ShouldAutoApplyApp(ai)) {
 					autoApplyTried = true;
 					appUpd->StartAppUpdate();
@@ -2085,7 +2087,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : S.updateCheckTip);
 				} else if (ph == AppUpdatePhase::AppAvailable) {
 					char label[96];
-					snprintf(label, sizeof(label), S.updateTo, ust.latestAppVer.c_str());
+					snprintf(label, sizeof(label), ust.appIsBack ? S.updateBackTo : S.updateTo, ust.latestAppVer.c_str());
 					const float bw = PobUi::ButtonWidth(label, PobUi::BtnSize::Sm, PobIcon::Download);
 					placeAt(numericW(verLine) + gap + bw);
 					numericAt(verLine);
@@ -2093,7 +2095,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					if (PobUi::Button(label, PobUi::BtnKind::Update, PobUi::BtnSize::Sm, PobIcon::Download, 0.0f, !pobBusy))
 						appUpd->StartAppUpdate();
 					if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : (std::string(S.updateAvailable) + ust.latestAppVer + S.updateNow).c_str());
+						PobUi::Tooltip(pobBusy ? S.updateBlockedTip : ust.appIsBack ? ust.message.c_str() : (std::string(S.updateAvailable) + ust.latestAppVer + S.updateNow).c_str());
 				} else if (ph == AppUpdatePhase::AppDownloading || ph == AppUpdatePhase::AppStaging ||
 				           ph == AppUpdatePhase::AppReadyToApply || ph == AppUpdatePhase::TransUpdating) {
 					char what[96];
@@ -3246,6 +3248,26 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					protoQueriedAt = -10.0;   // re-read the state on the next frame
 				}
 				PobUi::RowEnd();
+				// AI clients over MCP: the registration for this exe, per client.
+				{
+					const std::string exeU8 = to_utf8(exeBuf);
+					const char* names[3] = { "Claude Desktop", "Claude Code", "Codex" };
+					float w = 0.0f;
+					for (const char* n : names) w += PobUi::ButtonWidth(n, PobUi::BtnSize::Sm, PobIcon::Copy) + gapRow;
+					PobUi::RowBegin(S.mcpRow, S.mcpHint, w - gapRow, 0.0f, S.mcpHintLong);
+					for (int k = 0; k < 3; k++) {
+						if (k > 0) ImGui::SameLine(0, gapRow);
+						ImGui::PushID(k);
+						if (PobUi::Button(names[k], PobUi::BtnKind::Secondary, PobUi::BtnSize::Sm, PobIcon::Copy)) {
+							const std::string text = k == 0 ? McpConfig::ClaudeDesktopJson(exeU8)
+							                       : k == 1 ? McpConfig::ClaudeCodeCommand(exeU8) : McpConfig::CodexToml(exeU8);
+							ImGui::SetClipboardText(text.c_str());
+							PobUi::ShowToast(S.copiedToast);
+						}
+						ImGui::PopID();
+					}
+					PobUi::RowEnd();
+				}
 			}
 			PobUi::CardEnd();
 

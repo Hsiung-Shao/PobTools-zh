@@ -162,6 +162,10 @@ static const SourceDict kSourceDicts[] = {
     ** directly (a non-active support's name, an indexable support's name). */
     { "gem_names_nonactive", "gem_names_nonactive.json" },
     { "gem_names_support",   "gem_names_support.json" },
+    /* GGPK words-table wording for title words whose bare English is ALSO a UI
+    ** string in clientstrings ("Keep" = 堅城 in a rare name, 保留 as a button).
+    ** Read only by translate_title_words, ahead of the merged map. */
+    { "title_words", "title_words.json" },
 };
 
 static std::unordered_map<std::string, std::unordered_map<std::string, std::string>> s_sources;
@@ -3374,6 +3378,13 @@ static bool translate_title_words(const std::string &title, std::string &out) {
         if (s_active_source) {
             auto sit = s_active_source->find(word);
             if (sit != s_active_source->end()) zh = &sit->second;
+        }
+        if (!zh) {
+            auto tw = s_sources.find("title_words");
+            if (tw != s_sources.end()) {
+                auto wit = tw->second.find(word);
+                if (wit != tw->second.end()) zh = &wit->second;
+            }
         }
         if (!zh) {
             auto it = s_translations.find(word);

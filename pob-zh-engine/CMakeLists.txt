@@ -302,7 +302,11 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/poecharm_inject.lua"
 # Headless bridge: the Lua side of the new UI, loaded after the inject script
 # when POB_ZH_HEADLESS=1. Under Data\ (not engine\) so the signed translation-
 # data line can hotfix it between app releases.
-install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua" DESTINATION "Data/bridge")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/bridge.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.lua"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_tools.json"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_guide.md"
+              "${CMAKE_CURRENT_SOURCE_DIR}/host/data/bridge/mcp_check_rules.json" DESTINATION "Data/bridge")
 
 # Fallback pure-Lua runtime modules. POB's built-in updater does not ship new
 # runtime lua files (e.g. sha2.lua, required by PoEAPI since POB 2.66), so a
@@ -442,6 +446,9 @@ if (WIN32)
         translate/startup_trace.cpp
         host/filter_parser.cpp
         host/filter_doc_editor.cpp
+        host/filter_undo.cpp
+        host/filter_edit_journal.cpp
+        host/section_journal.cpp
         host/filter_file_watch.cpp
         host/filter_selftest.cpp
         host/filter_schema.cpp
@@ -479,6 +486,8 @@ if (WIN32)
         host/atlas_update.cpp
         host/atlas_stat_agg.cpp
         host/atlas_scarabs.cpp
+        host/atlas_threads.cpp
+        host/atlas_threads_selftest.cpp
         host/atlas_astrolabes.cpp
         host/atlas_maps.cpp
         # league-mechanic grouping behind "show me every 裂痕 cluster"; the map
@@ -504,6 +513,10 @@ if (WIN32)
         # headless POB child (stdio JSON) + its self-test against a sandbox install
         host/headless_proc.cpp
         host/headless_selftest.cpp
+        host/mcp_selftest.cpp
+        host/mcp_server.cpp
+        host/mcp_config.cpp
+        host/pob_sandbox.cpp
         # the new UI: a Win32 window hosting WebView2, forwarding lines between
         # the Svelte page (dist\ui) and the headless POB child
         host/modern_ui_window.cpp
@@ -589,8 +602,10 @@ if (WIN32)
     set_property(TARGET pob-zh PROPERTY
         MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     find_package(unofficial-webview2 CONFIG REQUIRED)
-    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 unofficial::webview2::webview2 delayimp)
-    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll")
+    # webpdecoder: the 3.30+ atlas sprite sheets are webp. Its DLL already ships
+    # in engine/ for SimpleGraphic, hence delay-loaded like glfw3/libGLESv2.
+    target_link_libraries(pob-zh PRIVATE glfw unofficial::angle::libGLESv2 unofficial::webview2::webview2 WebP::webpdecoder delayimp)
+    target_link_options(pob-zh PRIVATE "/DELAYLOAD:glfw3.dll" "/DELAYLOAD:libGLESv2.dll" "/DELAYLOAD:WebView2Loader.dll" "/DELAYLOAD:libwebpdecoder.dll")
     set_target_properties(pob-zh PROPERTIES OUTPUT_NAME "pob-zh")
     install(TARGETS pob-zh RUNTIME DESTINATION ".")
     # Bundled base-type -> item-class map (generated from POB Data/Bases) and

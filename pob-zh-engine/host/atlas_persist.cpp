@@ -59,12 +59,35 @@ static void parse_extras(const ordered_json& obj, AtlasBuildEntry& e)
 	if (obj.contains("scarabs") && obj["scarabs"].is_array())
 		for (const auto& s : obj["scarabs"])
 			if (s.is_string()) e.scarabs.push_back(s.get<std::string>());
+	// Threads: an element without a string id is dropped; a missing or
+	// non-integer "n" means one thread. The caller still runs ThreadDb::Sanitize.
+	e.threads.clear();
+	auto jth = obj.find("threads");
+	if (jth != obj.end() && jth->is_array())
+		for (const auto& t : *jth) {
+			if (!t.is_object()) continue;
+			auto ji = t.find("id");
+			if (ji == t.end() || !ji->is_string() || ji->get<std::string>().empty()) continue;
+			auto jn = t.find("n");
+			e.threads.push_back({ ji->get<std::string>(),
+			                      jn != t.end() && jn->is_number_integer() ? jn->get<int>() : 1 });
+		}
 	e.targets.clear();
 	if (obj.contains("targets") && obj["targets"].is_array())
 		e.targets = parse_alloc_array(obj["targets"]);
 	e.blocked.clear();
 	if (obj.contains("blocked") && obj["blocked"].is_array())
 		e.blocked = parse_alloc_array(obj["blocked"]);
+	// {"<node id>": <effect id>}; a malformed entry is dropped, never fatal.
+	// Whether the ids still exist is the tree's call (ApplyVariantIds).
+	e.variants.clear();
+	if (obj.contains("variants") && obj["variants"].is_object())
+		for (auto it = obj["variants"].begin(); it != obj["variants"].end(); ++it) {
+			char* end = nullptr;
+			long id = strtol(it.key().c_str(), &end, 10);
+			if (!it.key().empty() && end && *end == 0 && it.value().is_number_integer())
+				e.variants[(int)id] = it.value().get<int>();
+		}
 	// Astrolabes are an object keyed by quadrant. ordered_json preserves the
 	// insertion order, so a round trip keeps the quadrants as they were written;
 	// nothing downstream depends on that order, only on one entry per key.
@@ -138,8 +161,18 @@ static void write_extras(ordered_json& obj, const AtlasBuildEntry& e)
 {
 	if (!e.notes.empty()) obj["notes"] = e.notes;
 	if (!e.scarabs.empty()) obj["scarabs"] = e.scarabs;
+	if (!e.threads.empty()) {
+		ordered_json th = ordered_json::array();
+		for (const ThreadSlot& t : e.threads) th.push_back({ { "id", t.id }, { "n", t.count } });
+		obj["threads"] = std::move(th);
+	}
 	if (!e.targets.empty()) obj["targets"] = e.targets;
 	if (!e.blocked.empty()) obj["blocked"] = e.blocked;
+	if (!e.variants.empty()) {
+		ordered_json v = ordered_json::object();
+		for (const auto& kv : e.variants) v[std::to_string(kv.first)] = kv.second;
+		obj["variants"] = std::move(v);
+	}
 	if (!e.astrolabes.empty()) {
 		ordered_json a = ordered_json::object();
 		// First write wins, mirroring "one Shaped Region per quadrant"; a list
