@@ -477,8 +477,9 @@ struct Server {
 			size_t n = strlen(r.name);
 			if (sub.compare(0, n, r.name) == 0) { root = r.dir; sub = sub.substr(n); isApp = false; break; }
 		}
-		// the session's address is the folder: it serves the theme this run was launched with
-		if (isApp && (sub.empty() || sub.back() == '/')) sub += narrow(ModernUiPage(cfg.uiMode));
+		// the session's address is the folder. Re-read the theme per request: Launch reuses a live session, and the
+		// user may have picked the other theme since it started
+		if (isApp && (sub.empty() || sub.back() == '/')) sub += narrow(ModernUiPage(LoadLauncherConfig(exeDir + L"pob-zh.ini").uiMode));
 		// no climbing, no drive letters, no backslashes smuggled in
 		if (sub.find("..") != std::string::npos || sub.find(':') != std::string::npos || sub.find('\\') != std::string::npos) return false;
 		std::wstring w = widen(sub);
@@ -825,7 +826,7 @@ int ShowModernUiInBrowser(const std::wstring& exeDir, const std::wstring& game,
 		S.launchLua = pobDirOverride + L"\\Launch.lua";
 	}
 	if (!ModernUiBrowserAvailable(exeDir)) {
-		PobLog::Error("modernui", "browser mode: ui\\index.html is missing");
+		PobLog::Error("modernui", "browser mode: ui\\index.html or ui\\theme2.html is missing");
 		return 1;
 	}
 	if (S.pobDir.empty() || !file_exists(S.launchLua)) {

@@ -3279,6 +3279,20 @@ int RunHeadlessSelfTestPoe2(const std::wstring& exeDir, const std::wstring& pobD
 			check("browser mode: the page is served with the window.pobtools boot script injected",
 			      page == 200 && body.find("window.pobtools") != std::string::npos && body.find("\"browser\":true") != std::string::npos,
 			      std::to_string(page));
+			// 工作階段開著時使用者改主題再按啟動會重用同一個工作階段,首頁必須依請求當下 ini 的 UiMode 回對應主題
+			const std::wstring uiIni = exeDir + L"pob-zh.ini";
+			const UINT uiModeOrig = GetPrivateProfileIntW(L"PobTools", L"UiMode", 0, uiIni.c_str());
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"1", uiIni.c_str());
+			std::string bodyT1, bodyT2;
+			const int pageT1 = port ? http("GET", prefix, host, "", bodyT1) : -1;
+			const bool t1Ok = bodyT1.find("./assets/index-") != std::string::npos && bodyT1.find("./assets/theme2-") == std::string::npos;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", L"2", uiIni.c_str());
+			const int pageT2 = port ? http("GET", prefix, host, "", bodyT2) : -1;
+			const bool t2Ok = bodyT2.find("./assets/theme2-") != std::string::npos;
+			WritePrivateProfileStringW(L"PobTools", L"UiMode", std::to_wstring(uiModeOrig).c_str(), uiIni.c_str());
+			check("browser mode: the page follows the ini's UiMode at request time (a relaunch reuses the live session)",
+			      pageT1 == 200 && pageT2 == 200 && t1Ok && t2Ok,
+			      "t1=" + std::to_string(pageT1) + " t1Ok=" + std::to_string(t1Ok) + " t2=" + std::to_string(pageT2) + " t2Ok=" + std::to_string(t2Ok));
 			int font = port ? http("GET", prefix + "~fonts/NotoSansTC-Regular.ttf", host, "", body) : -1;
 			int badTok = port ? http("GET", "/t/00000000000000000000000000000000/", host, "", body) : -1;
 			int climb = port ? http("GET", prefix + "~pob/../../pob-zh.ini", host, "", body) : -1;
