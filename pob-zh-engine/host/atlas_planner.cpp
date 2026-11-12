@@ -1906,6 +1906,10 @@ private:
 		planningMode = false;
 		planningAskExit = false;
 		undo = planSnapshot;           // one step back = "before I started planning"
+		// The sandbox began with Reset() and has no option picker: nodes that
+		// survived the planning keep the option they had (others drop out, since
+		// only allocated nodes are saved).
+		tree.ApplyVariantIds(planSnapshot.variants);
 		saveActive();
 	}
 
@@ -2109,7 +2113,7 @@ private:
 			if (!n.alloc || n.kind == kAtlasStart) continue;
 			const std::string& zhName = zhLoaded ? i18n.NodeName(n.id, n.name) : n.name;
 			nodeGroups[rank(n.kind)].push_back({ i, ToLowerAscii(n.name + "\n" + zhName) });
-			for (const std::string& s : n.EffStats())
+			for (const std::string& s : n.AggStats())
 				AccumulateStatLine(s, statAgg, pos);
 		}
 		std::function<std::string(const std::string&)> zhFn =

@@ -48,6 +48,8 @@ bool AtlasView::LoadTextures(const std::wstring& exeDir, const AtlasTreeData& d,
 {
 	DestroyTextures();
 	focusNode_ = -1;                 // node indices may change on hot-reload
+	pickNode_ = -1;
+	pickRequest_ = false;
 	focusAnim_ = false;
 	focusTimer_ = 0.0f;
 	// Sprite sheets live beside the tree data (versioned: Data/atlas_versions/
@@ -655,7 +657,9 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	// along with whatever it was holding on to. Nothing already allocated ever
 	// moves -- see solvePreview for why the minimum-point model was pulled back
 	// out of the click path.
-	if (ImGui::IsItemDeactivated() &&
+	// IsMouseReleased(Left): the canvas button takes the right button as well,
+	// and a right click (the option picker) must not also remove the node.
+	if (ImGui::IsItemDeactivated() && ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
 	    ImLengthSqr(ImGui::GetMouseDragDelta(ImGuiMouseButton_Left)) < 16.0f * uiScale * uiScale &&
 	    hover_ != -1 && d.nodes[hover_].kind != kAtlasStart) {
 		// A click before the hover settled has no cached preview yet; build it
@@ -715,11 +719,14 @@ bool AtlasView::Draw(AtlasTreeData& d, float uiScale, const AtlasI18n* zh, bool 
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f * uiScale, 12.0f * uiScale));
 	if (ImGui::BeginPopup("##atlasvariant")) {
 		pickerOpen = true;
-		if (pickNode_ < 0 || pickNode_ >= (int)d.nodes.size() || !d.nodes[pickNode_].alloc) {
+		if (pickNode_ < 0 || pickNode_ >= (int)d.nodes.size() || !d.nodes[pickNode_].alloc ||
+		    d.nodes[pickNode_].variants.empty()) {
 			ImGui::CloseCurrentPopup();
 		} else {
 			AtlasNode& n = d.nodes[pickNode_];
 			ImGui::TextColored(PobUi::TokV4(Tok::TreeNotable), "%s", (zh ? zh->NodeName(n.id, n.name) : n.name).c_str());
+			for (const std::string& s : n.stats)
+				ImGui::TextUnformatted(StripStatMarkup(zh ? zh->StatLine(s) : s).c_str());
 			ImGui::TextDisabled(u8"選擇一個選項");
 			ImGui::Separator();
 			for (int i = 0; i < (int)n.variants.size(); i++) {

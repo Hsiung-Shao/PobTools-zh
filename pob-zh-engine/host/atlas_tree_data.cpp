@@ -266,7 +266,7 @@ void AtlasTreeData::Remove(const std::vector<int>& removeSet)
 {
 	for (int i : removeSet)
 		if (i >= 0 && i < (int)nodes.size() && nodes[i].kind != kAtlasStart)
-			nodes[i].alloc = false;
+			nodes[i].alloc = false, nodes[i].variant = -1;
 }
 
 void AtlasTreeData::Reset()
@@ -420,6 +420,30 @@ std::vector<std::string> AtlasNode::EffStats() const
 	std::vector<std::string> out = stats;
 	if (variant >= 0 && variant < (int)variants.size())
 		out.insert(out.end(), variants[variant].stats.begin(), variants[variant].stats.end());
+	return out;
+}
+
+std::vector<std::string> AtlasNode::AggStats() const
+{
+	if (variants.empty()) return stats;
+	// Unpicked: the node grants nothing yet, and its base line alone is half a sentence.
+	if (variant < 0 || variant >= (int)variants.size()) return {};
+	if (stats.empty()) return variants[variant].stats;
+	std::string pick;
+	for (const std::string& s : variants[variant].stats) pick += (pick.empty() ? "" : " / ") + s;
+	std::vector<std::string> out;
+	for (const std::string& s : stats) {
+		std::string line;
+		size_t at = 0;
+		while (true) {
+			size_t nl = s.find('\n', at);
+			line += s.substr(at, nl == std::string::npos ? nl : nl - at) + ": " + pick;
+			if (nl == std::string::npos) break;
+			line += '\n';
+			at = nl + 1;
+		}
+		out.push_back(std::move(line));
+	}
 	return out;
 }
 
@@ -1305,6 +1329,19 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			rep.check(parseWith(R"({"3926":2215,"abc":5})", p3) && p3.builds.size() == 1 &&
 			              p3.builds[0].variants == std::map<int, int>({ { 3926, 2215 } }),
 			          u8"[多選T7] 只丟壞的那一筆,合法的保留");
+		}
+
+		// 審查後補:統計用的行把所選選項併進每一條基本行。
+		{
+			AtlasNode n;
+			n.stats = { "A of type", "B from\nC from" };
+			n.variants = { { 1, { "X" } }, { 2, { "Y", "Z" } } };
+			rep.check(n.AggStats().empty(), u8"[多選T5] 多選節點未選時不進統計");
+			n.variant = 1;
+			rep.check(n.AggStats() == std::vector<std::string>({ "A of type: Y / Z", "B from: Y / Z\nC from: Y / Z" }),
+			          u8"[多選T5] 已選時每條基本行都帶所選選項,不單獨成行");
+			n.stats.clear();
+			rep.check(n.AggStats() == std::vector<std::string>({ "Y", "Z" }), u8"[多選T5] 沒有基本行時統計行就是選項的行");
 		}
 
 		d.Reset();
