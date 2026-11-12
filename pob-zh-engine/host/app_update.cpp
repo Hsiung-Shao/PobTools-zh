@@ -1192,6 +1192,15 @@ static bool parse_app_version(const std::string& s, std::tuple<int, int, int>* b
 	return true;
 }
 
+// The stable line reads releases/latest, which a beta never is -- unless someone
+// presses "Set as latest" on one. Refusing a beta tag there keeps that mistake from
+// offering a test build to everybody; the beta line takes either shape.
+static bool app_tag_ok_for_line(const std::string& ver, bool betaLine)
+{
+	bool isBeta = false;
+	return parse_app_version(ver, nullptr, &isBeta) && (betaLine || !isBeta);
+}
+
 // GitHub's published_at "2026-11-12T07:25:30Z" -> 20261112072530, 0 if malformed.
 // The hash in a beta tag cannot be ordered, so its release date is what does.
 static long long published_key(const std::string& iso)
@@ -1359,7 +1368,7 @@ bool AppUpdater::fetchAppRelease(RemoteRelease* rel, std::string* err)
 	// ⚠ 這裡解析失敗就整個檢查失敗,是刻意的:releases/latest 回了一個不是
 	// semver 的 tag,代表有人把 data-<n> 發成了正式 release,那正是本次改版
 	// 最高風險的那一格 —— 沉默地繼續會讓使用者以為自己是最新版。
-	if (!parse_app_version(rel->appVer, nullptr, nullptr)) {
+	if (!app_tag_ok_for_line(rel->appVer, beta)) {
 		if (err) *err = kMsgBadVersion + rel->appVer;
 		return false;
 	}
@@ -3444,6 +3453,19 @@ int RunAppUpdateSelfTest(const std::wstring& exeDir)
 			if (!CheckDataMinApp("1.8.6", base, &err)) bad += " minApp-1.8.6-blocked";
 			if (CheckDataMinApp("1.8.7", base, &err)) bad += " minApp-1.8.7-passed";
 			check(bad.empty(), ("T66 本機 beta 的 minApp 以基底版號判斷" +
+			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
+		}
+
+		// T67: 穩定線拒收 beta 版號(防 beta 被誤標成 latest),beta 線照收
+		{
+			std::string bad;
+			if (!app_tag_ok_for_line("1.8.7", false)) bad += " stable-rejected-1.8.7";
+			if (app_tag_ok_for_line("1.8.7-beta-1ef80a6", false)) bad += " stable-accepted-beta";
+			if (app_tag_ok_for_line("data-22", false)) bad += " stable-accepted-data";
+			if (!app_tag_ok_for_line("1.8.7", true)) bad += " beta-rejected-1.8.7";
+			if (!app_tag_ok_for_line("1.8.7-beta-1ef80a6", true)) bad += " beta-rejected-beta";
+			if (app_tag_ok_for_line("data-22", true)) bad += " beta-accepted-data";
+			check(bad.empty(), ("T67 穩定線拒收 beta 版號、beta 線照收" +
 			                    (bad.empty() ? std::string() : (" --" + bad))).c_str());
 		}
 	}
