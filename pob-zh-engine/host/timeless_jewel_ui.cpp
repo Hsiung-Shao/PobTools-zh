@@ -20,6 +20,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 
 #include <GLES2/gl2.h>
 #include <GLFW/glfw3.h>
@@ -71,15 +72,6 @@ std::string url_encode(const std::string& s)
 		else { out += '%'; out += hex[c >> 4]; out += hex[c & 15]; }
 	}
 	return out;
-}
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return L"";
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), &w[0], n);
-	return w;
 }
 
 } // namespace

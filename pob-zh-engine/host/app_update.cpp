@@ -13,6 +13,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 #include <algorithm>
@@ -217,22 +218,6 @@ static std::string MsgDataApplied(const std::string& tag)
 
 // ---- small helpers (same conventions as atlas_update.cpp) ------------------
 
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
 static bool write_file_bytes(const std::wstring& path, const void* data, size_t size)
 {
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -255,24 +240,6 @@ static bool write_file_atomic(const std::wstring& path, const std::string& conte
 	return true;
 }
 
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static std::string narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
 // "0.2.0" -> {0,2,0}; rejects anything with a suffix ("0.2.0-rc1").
 static bool parse_semver(const std::string& s, std::tuple<int, int, int>* out)
 {
@@ -289,18 +256,6 @@ static long long now_filetime()
 	GetSystemTimeAsFileTime(&ft);
 	ULARGE_INTEGER u{ ft.dwLowDateTime, ft.dwHighDateTime };
 	return (long long)u.QuadPart;
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 static long long file_size(const std::wstring& p)

@@ -5,6 +5,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -51,15 +52,6 @@ const char* const kPoe2ItemTypes[] = { "UniqueWeapons", "UniqueArmours", "Unique
 
 constexpr int kLowConfidenceMinCount = 5;
 
-std::wstring Widen(const std::string& utf8)
-{
-	if (utf8.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), (int)utf8.size(), &w[0], n);
-	return w;
-}
-
 std::wstring UrlEncodeQuery(const std::string& utf8)
 {
 	static const wchar_t hex[] = L"0123456789ABCDEF";
@@ -94,7 +86,7 @@ std::wstring SanitizeForFile(const std::string& s)
 std::wstring CachePath(const std::wstring& exeDir, const std::string& game,
                        const std::string& league)
 {
-	return exeDir + L"PobTools\\cache\\ninja\\" + Widen(game) + L"_" +
+	return exeDir + L"PobTools\\cache\\ninja\\" + widen(game) + L"_" +
 	       SanitizeForFile(league) + L".json";
 }
 
@@ -474,7 +466,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 	int fetchedTypes = 0;
 	auto polite = [&]() { Sleep(300); }; // it is a community resource
 
-	const std::wstring base = L"/" + Widen(game) + L"/api/economy/";
+	const std::wstring base = L"/" + widen(game) + L"/api/economy/";
 	const std::wstring leagueQ = UrlEncodeQuery(league);
 
 	auto runExchange = [&](const TypePlan* plans, size_t n) {
@@ -482,7 +474,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 			if (cancel && cancel->load()) return;
 			std::string body, terr;
 			if (http.GetString(base + L"exchange/current/overview?league=" + leagueQ +
-			                       L"&type=" + Widen(plans[i].type),
+			                       L"&type=" + widen(plans[i].type),
 			                   body, &terr, cancel)) {
 				std::vector<std::pair<std::string, NinjaPrice>> lines;
 				double cpd = 0.0;
@@ -500,7 +492,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 			if (cancel && cancel->load()) return;
 			std::string body, terr;
 			if (http.GetString(base + L"stash/current/item/overview?league=" + leagueQ +
-			                       L"&type=" + Widen(types[i]),
+			                       L"&type=" + widen(types[i]),
 			                   body, &terr, cancel)) {
 				std::vector<std::pair<std::string, NinjaPrice>> lines;
 				if (ParseItemOverview(body, types[i], &lines, nullptr)) {
@@ -529,7 +521,7 @@ bool NinjaPriceSource::Refresh(const std::string& gameIn, const std::string& lea
 			if (cancel && cancel->load()) break;
 			std::string body, terr;
 			if (http.GetString(base + L"stash/current/currency/overview?league=" + leagueQ +
-			                       L"&type=" + Widen(type),
+			                       L"&type=" + widen(type),
 			                   body, &terr, cancel)) {
 				std::vector<std::pair<std::string, NinjaPrice>> lines;
 				if (ParseCurrencyOverview(body, &lines, nullptr)) {
@@ -586,7 +578,7 @@ bool FetchNinjaLeagues(const std::string& gameIn, std::vector<std::string>& out,
 	const std::string game = gameIn == "poe2" ? "poe2" : "poe1";
 	HttpsClient http(kNinjaHost);
 	std::string body;
-	if (!http.GetString(L"/" + Widen(game) + L"/api/economy/leagues", body, err, cancel))
+	if (!http.GetString(L"/" + widen(game) + L"/api/economy/leagues", body, err, cancel))
 		return false;
 	try {
 		ordered_json doc = ordered_json::parse(body);

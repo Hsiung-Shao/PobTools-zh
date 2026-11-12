@@ -98,12 +98,6 @@ bool IsDir(const std::wstring& p)
 	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-bool FileExists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
 std::string ReadFileA(const std::wstring& path)
 {
 	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
@@ -186,7 +180,7 @@ public:
 	bool Start(const std::wstring& exeDir, const std::wstring& pobDir, std::string& err)
 	{
 		const std::wstring exe = exeDir + L"pob-zh.exe";
-		if (!FileExists(exe)) { err = "找不到 " + narrow(exe); return false; }
+		if (!file_exists(exe)) { err = "找不到 " + narrow(exe); return false; }
 
 		SECURITY_ATTRIBUTES sa{};
 		sa.nLength = sizeof(sa);
@@ -1950,7 +1944,7 @@ void TestM26(const Ctx& c, const PobCounts& cntBefore)
 			if (t.triggered) break;
 		}
 		// 覆蓋層的沙盒裡有沒有出現該 .bin(只印不判)。
-		sandboxBin = FileExists(SandboxDir(c.exeDir, q.Pid()) + L"\\Data\\TimelessJewelData\\" + oi.stem + L".bin");
+		sandboxBin = file_exists(SandboxDir(c.exeDir, q.Pid()) + L"\\Data\\TimelessJewelData\\" + oi.stem + L".bin");
 	} while (false);
 	q.Close();
 	{
@@ -2822,7 +2816,7 @@ int RunMcpSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOverrid
 
 	if (pobDir.empty() || !IsDir(pobDir)) {
 		failAll("找不到 PoE1 的 POB 資料夾: " + narrow(pobDir) + "(請把資料夾當第二個參數傳入)");
-	} else if (!FileExists(exeDir + L"pob-zh.exe")) {
+	} else if (!file_exists(exeDir + L"pob-zh.exe")) {
 		failAll("找不到 " + narrow(exeDir) + "pob-zh.exe");
 	} else {
 		Snapshot(pobDir, L"", snapBefore);

@@ -5,6 +5,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp>   // nlohmann (deps/nlohmann)
 
@@ -326,15 +327,6 @@ void Rewrite(FilterDocumentEditor& doc, const std::string& key, const Settings& 
 	doc.RebuildBlocks();
 }
 
-std::string Narrow(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	const int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
 } // namespace
 
 bool CustomZoneHasRule(const FilterFile& f, const std::string& key)
@@ -504,7 +496,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	const std::wstring tmp = path + L".tmp";
 	{
 		std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
-		if (!o) { if (err) *err = "cannot write " + Narrow(tmp); return false; }
+		if (!o) { if (err) *err = "cannot write " + narrow(tmp); return false; }
 		o.write(text.data(), (std::streamsize)text.size());
 		if (!o) {
 			o.close();
@@ -515,7 +507,7 @@ bool JournalSave(const std::wstring& path, const EditJournal& j, std::string* er
 	}
 	if (!MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
 		DeleteFileW(tmp.c_str());
-		if (err) *err = "cannot replace " + Narrow(path);
+		if (err) *err = "cannot replace " + narrow(path);
 		return false;
 	}
 	return true;

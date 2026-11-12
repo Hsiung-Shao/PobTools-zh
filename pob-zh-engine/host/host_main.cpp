@@ -9,6 +9,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 #include <stdlib.h>
 #include <cwchar>
 #include <string>
@@ -79,49 +80,11 @@ static void set_env_both(const wchar_t* var, const wchar_t* val)
 	_wputenv_s(var, val);
 }
 
-static std::string to_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], needed, nullptr, nullptr);
-	return s;
-}
-
-static std::wstring from_utf8(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int needed = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(needed, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], needed);
-	return w;
-}
-
 static std::wstring exe_path()
 {
 	wchar_t buf[MAX_PATH];
 	GetModuleFileNameW(nullptr, buf, MAX_PATH);
 	return std::wstring(buf);
-}
-
-// Directory of this exe, with trailing backslash.
-static std::wstring exe_dir()
-{
-	std::wstring p = exe_path();
-	size_t slash = p.find_last_of(L'\\');
-	return (slash == std::wstring::npos) ? p : p.substr(0, slash + 1);
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-static bool dir_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
 }
 
 // Accept a Launch.lua file or a POB folder; return the Launch.lua path or empty.
@@ -232,10 +195,10 @@ static int run_engine(const std::wstring& dllDir, const std::wstring& launchLua,
 		return 1;
 	}
 
-	std::string luaUtf8 = to_utf8(launchLua);
+	std::string luaUtf8 = narrow(launchLua);
 	std::vector<char> arg0(luaUtf8.begin(), luaUtf8.end());
 	arg0.push_back('\0');
-	std::string extraUtf8 = to_utf8(extraArg);
+	std::string extraUtf8 = narrow(extraArg);
 	std::vector<char> arg1(extraUtf8.begin(), extraUtf8.end());
 	arg1.push_back('\0');
 	char* argv[2] = { arg0.data(), arg1.data() };
@@ -294,7 +257,7 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 	// Check the raw command line too: argv parsing swallows quotes, letting a '"' link through as a different valid-looking one.
 	if (!extraArgs && !PobProtocol::PobUriCommandLineIsClean(GetCommandLineW(), rawUri)) extraArgs = true;
 	if (extraArgs || !PobProtocol::ParsePobUri(rawUri, &game, &uri)) {
-		std::string shown = to_utf8(rawUri.substr(0, 300));
+		std::string shown = narrow(rawUri.substr(0, 300));
 		for (char& c : shown) if ((unsigned char)c < 0x20) c = '?';
 		PobLog::Error("protocol", "refused a link that is not a valid pob:// URI" +
 		                              std::string(extraArgs ? " (quotes or extra arguments on the command line)" : "") + ": " + shown);
@@ -312,7 +275,7 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 	std::wstring launchLua = poe2 ? installs.poe2Lua : installs.poe1Lua;
 	if (launchLua.empty() && !poe2) launchLua = resolve_launch_lua_legacy(dir);
 	if (launchLua.empty()) {
-		PobLog::Error("protocol", std::string("no ") + (poe2 ? "PoE2" : "PoE1") + " POB install for link " + to_utf8(uri));
+		PobLog::Error("protocol", std::string("no ") + (poe2 ? "PoE2" : "PoE1") + " POB install for link " + narrow(uri));
 		MessageBoxW(nullptr,
 			poe2 ? L"找不到 PoE2 版 POB(Path of Building PoE2)。\n\n"
 			       L"請把 PoE2 版 POB 資料夾放在 pob-zh.exe 旁邊,再點一次連結。"
@@ -321,7 +284,7 @@ static int open_pob_link(const std::wstring& dir, const std::wstring& rawUri, bo
 			L"PobTools", MB_ICONERROR | MB_OK);
 		return 1;
 	}
-	PobLog::Diag("protocol", "opening link " + to_utf8(uri) + " for " + to_utf8(game));
+	PobLog::Diag("protocol", "opening link " + narrow(uri) + " for " + narrow(game));
 	apply_engine_env(cfg, dir, game);
 	const bool openModern = cfg.uiMode != 0 && (poe2
 		? ModernUiUsableFor(dir, installs.poe2Dir, installs.poe2Version)
@@ -829,7 +792,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		std::wstring launchLua = launch_lua_from(arg2);
 		if (launchLua.empty()) {
 			PobLog::Error("headless", "--engine-headless was given a path with no Launch.lua: " +
-			                              to_utf8(arg2));
+			                              narrow(arg2));
 			return 1;
 		}
 		SetEnvironmentVariableW(L"POB_ZH_HEADLESS", L"1");
@@ -845,7 +808,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 			// The child exits with no window and no message at all: from the
 			// launcher it looks as if POB opened and vanished.
 			PobLog::Error("pob", "--engine was given a path with no Launch.lua: " +
-			                         to_utf8(arg2));
+			                         narrow(arg2));
 			return 1;
 		}
 		// Publish "a POB is running against this install" for as long as this
@@ -898,7 +861,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		if (!file_exists(engineDir + L"glfw3.dll")) miss += "glfw3.dll ";
 		if (!file_exists(engineDir + L"libGLESv2.dll")) miss += "libGLESv2.dll ";
 		PobLog::Error("pob", "launcher cannot start: missing " + miss + "under " +
-		                         to_utf8(engineDir));
+		                         narrow(engineDir));
 		MessageBoxW(nullptr,
 			L"engine 資料夾不完整（缺少 glfw3.dll 或 libGLESv2.dll）。\n"
 			L"請重新解壓縮完整的 pob-zh 套件。",
@@ -949,7 +912,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		const std::wstring self = exe_path();
 		if (PobProtocol::QueryPobProtocol(self) != PobProtocol::State::Ours) {
 			if (PobProtocol::RegisterPobProtocol(self))
-				PobLog::Diag("protocol", "pob:// / pob2:// re-registered to " + to_utf8(self));
+				PobLog::Diag("protocol", "pob:// / pob2:// re-registered to " + narrow(self));
 		}
 	}
 
@@ -989,7 +952,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 				                                    cfg.updateTranslations) == 0) {
 					return 0; // the freshly spawned new exe takes over
 				}
-				MessageBoxW(nullptr, (L"更新套用失敗：\n" + from_utf8(aerr)).c_str(),
+				MessageBoxW(nullptr, (L"更新套用失敗：\n" + widen(aerr)).c_str(),
 				            L"PobTools", MB_ICONERROR | MB_OK);
 				appUpdater.Init(dir); // resume the launcher with a fresh worker
 				continue;

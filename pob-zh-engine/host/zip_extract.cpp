@@ -3,19 +3,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <miniz.h>
 
 #pragma comment(lib, "shell32.lib")
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
 
 // Normalized name ('/' separators) -> safe? Rejects absolute paths, drive
 // letters and any "."/".." path component.

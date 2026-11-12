@@ -2,6 +2,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <cstdio>
 #include <string>
@@ -13,31 +14,6 @@
 using nlohmann::ordered_json;
 
 namespace {
-
-std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w((size_t)n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 26)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
 
 bool write_file_bytes(const std::wstring& path, const std::string& data)
 {

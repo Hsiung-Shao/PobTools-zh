@@ -58,26 +58,6 @@ bool PathIsInside(const std::wstring& parentDir, const std::wstring& path)
 	return c.size() >= p.size() && c.compare(0, p.size(), p) == 0;
 }
 
-// narrow/widen (UTF-8)
-
-static std::string narrow_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s((size_t)n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], n, nullptr, nullptr);
-	return s;
-}
-
-static std::wstring widen_utf8(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w((size_t)n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
 // Read a string key from [PobTools]; if it is absent, fall back to the legacy
 // [PoeCharm] section (a sentinel default distinguishes "absent" from "empty").
 static void read_ini_str(const std::wstring& iniPath, const wchar_t* key,
@@ -120,7 +100,7 @@ static bool is_ascii(const std::wstring& w)
 static std::wstring hex_of_utf8(const std::wstring& w)
 {
 	static const wchar_t* kHex = L"0123456789abcdef";
-	std::string bytes = narrow_utf8(w);
+	std::string bytes = narrow(w);
 	std::wstring out;
 	out.reserve(bytes.size() * 2);
 	for (unsigned char b : bytes) { out.push_back(kHex[b >> 4]); out.push_back(kHex[b & 0xF]); }
@@ -143,7 +123,7 @@ static std::wstring utf8_of_hex(const std::wstring& hex)
 		if (hi < 0 || lo < 0) return std::wstring(); // garbage: fall back to the raw key
 		bytes.push_back((char)((hi << 4) | lo));
 	}
-	return widen_utf8(bytes);
+	return widen(bytes);
 }
 
 const wchar_t* ModernUiPage(int uiMode) { return uiMode == 2 ? L"theme2.html" : L"index.html"; }
@@ -519,7 +499,7 @@ static std::vector<std::pair<std::string, int>> locales_in(const std::wstring& d
 	for (const std::wstring& loc : subdirs_of(dir)) {
 		const std::wstring leaf = dir + loc + L"\\";
 		if (file_exists(leaf + L"meta.json"))
-			out.push_back({ narrow_utf8(loc), count_json(leaf) });
+			out.push_back({ narrow(loc), count_json(leaf) });
 	}
 	return out;
 }
@@ -567,7 +547,7 @@ DictDirInfo ResolveDictDir(const std::wstring& exeDir, DictSlot slot, const std:
 	// load_order, and the engine loads only what load_order names -- so it goes
 	// missing with no error anywhere.
 	for (const auto& f : info.found) {
-		const std::wstring loc = widen_utf8(f.first);
+		const std::wstring loc = widen(f.first);
 		std::vector<std::string> mine = load_order_of(path + loc + L"\\meta.json");
 		for (const std::string& name : load_order_of(builtin + loc + L"\\meta.json")) {
 			bool have = false;
@@ -635,7 +615,7 @@ std::vector<LocaleInfo> ListInstalledLocales(const std::wstring& exeDir, const L
 		for (const std::wstring& loc : subdirs_of(root)) {
 			const std::wstring meta = root + loc + L"\\meta.json";
 			if (!file_exists(meta)) continue;
-			const std::string id = narrow_utf8(loc);
+			const std::string id = narrow(loc);
 			if (id == "en") continue; // already there, and it needs no dictionary
 
 			auto it = out.begin();
@@ -666,7 +646,7 @@ std::vector<LocaleInfo> ListInstalledLocales(const std::wstring& exeDir, const L
 int PickLocaleIndex(const std::vector<LocaleInfo>& locales, const std::wstring& want)
 {
 	if (locales.empty()) return 0;
-	const std::string id = narrow_utf8(want);
+	const std::string id = narrow(want);
 	for (size_t i = 0; i < locales.size(); i++) if (locales[i].id == id) return (int)i;
 	for (size_t i = 0; i < locales.size(); i++) if (locales[i].id == "zh-rTW") return (int)i;
 	return 0; // en
@@ -695,7 +675,7 @@ static int copy_tree(const std::wstring& src, const std::wstring& dst, std::stri
 {
 	if (!dir_exists(dst) && !CreateDirectoryW(dst.c_str(), nullptr) &&
 	    GetLastError() != ERROR_ALREADY_EXISTS) {
-		if (err) *err = u8"無法建立資料夾：" + narrow_utf8(dst);
+		if (err) *err = u8"無法建立資料夾：" + narrow(dst);
 		return -1;
 	}
 	int n = 0;
@@ -712,7 +692,7 @@ static int copy_tree(const std::wstring& src, const std::wstring& dst, std::stri
 		} else if (CopyFileW((src + name).c_str(), (dst + name).c_str(), FALSE)) {
 			n++;
 		} else {
-			if (err) *err = u8"無法複製：" + narrow_utf8(name);
+			if (err) *err = u8"無法複製：" + narrow(name);
 			FindClose(h);
 			return -1;
 		}
@@ -1043,7 +1023,7 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 
 	std::string report;
 	int failures = 0;
-	auto narrow = [](const std::wstring& w) {
+	auto ascii_narrow = [](const std::wstring& w) {
 		std::string s;
 		for (wchar_t c : w) s.push_back(c < 128 ? (char)c : '?');
 		return s;
@@ -1076,21 +1056,21 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		      i.poe2Dir == r + L"PathOfBuildingCommunity-PoE2-Portable" &&
 		      i.poe1Lua == i.poe1Dir + L"\\Launch.lua" &&
 		      i.poe2Lua == i.poe2Dir + L"\\Launch.lua",
-		      narrow(i.poe1Dir + L" | " + i.poe2Dir));
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 	{ // T2: the official portable folder name counts as PoE1
 		std::wstring r = makeRoot({ L"PathOfBuildingCommunity-Portable" }, false);
 		InstallInfo i = DetectInstalls(r);
 		check("T2 portable name",
 		      i.poe1Dir == r + L"PathOfBuildingCommunity-Portable" && i.poe2Dir.empty(),
-		      narrow(i.poe1Dir));
+		      ascii_narrow(i.poe1Dir));
 	}
 	{ // T3: arbitrary names, classified by the "poe2" substring
 		std::wstring r = makeRoot({ L"MyPob", L"PathOfBuilding-PoE2" }, false);
 		InstallInfo i = DetectInstalls(r);
 		check("T3 arbitrary names",
 		      i.poe1Dir == r + L"MyPob" && i.poe2Dir == r + L"PathOfBuilding-PoE2",
-		      narrow(i.poe1Dir + L" | " + i.poe2Dir));
+		      ascii_narrow(i.poe1Dir + L" | " + i.poe2Dir));
 	}
 	{ // T4: Launch.lua next to the exe itself; slot from the folder's own name
 		std::wstring r1 = makeRoot({}, true, L"case4_plain");
@@ -1100,12 +1080,12 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		check("T4 root-level lua",
 		      a.poe1Dir + L"\\" == r1 && a.poe2Dir.empty() &&
 		      b.poe2Dir + L"\\" == r2 && b.poe1Dir.empty(),
-		      narrow(a.poe1Dir + L" | " + b.poe2Dir));
+		      ascii_narrow(a.poe1Dir + L" | " + b.poe2Dir));
 	}
 	{ // T5: canonical wins over a renamed sibling that sorts first
 		std::wstring r = makeRoot({ L"AAA_Renamed", L"PathOfBuildingCommunity" }, false);
 		InstallInfo i = DetectInstalls(r);
-		check("T5 canonical priority", i.poe1Dir == r + L"PathOfBuildingCommunity", narrow(i.poe1Dir));
+		check("T5 canonical priority", i.poe1Dir == r + L"PathOfBuildingCommunity", ascii_narrow(i.poe1Dir));
 	}
 	{ // T6: subfolders without Launch.lua are ignored
 		std::wstring r = makeRoot({}, false, L"case6");
@@ -1118,7 +1098,7 @@ int RunDetectInstallsSelfTest(const std::wstring& exeDir)
 		std::wstring r = makeRoot({ L"MyPob" }, false);
 		std::wstring d = FindPoe1Dir(r);
 		std::wstring none = FindPoe1Dir(root + L"\\case6\\");
-		check("T7 FindPoe1Dir", d == r + L"MyPob\\" && none.empty(), narrow(d));
+		check("T7 FindPoe1Dir", d == r + L"MyPob\\" && none.empty(), ascii_narrow(d));
 	}
 
 	report += failures ? "RESULT FAIL\n" : "RESULT PASS\n";
@@ -1274,7 +1254,7 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		std::wstring hex = read_ini_path(ini, L"DataDirPoe1Hex");
 		LauncherConfig back = LoadLauncherConfig(ini);
 		check("T13 non-ASCII DataDir round-trips and writes a hex copy",
-		      back.dataDir[0] == zh && !hex.empty(), narrow_utf8(hex));
+		      back.dataDir[0] == zh && !hex.empty(), narrow(hex));
 
 		DeleteFileW(ini.c_str());
 		c.dataDir[0] = L"D:\\plain\\ascii\\";
@@ -1658,14 +1638,14 @@ int RunLauncherConfigSelfTest(const std::wstring& exeDir)
 		check("T21 pointing at the locale folder reports WrongShape and suggests going up",
 		      deep.status == DataDirStatus::WrongShape && deep.root == builtin1 &&
 		          deep.suggestion == box + L"ext\\",
-		      narrow_utf8(deep.suggestion));
+		      narrow(deep.suggestion));
 
 		// One level too SHALLOW: the user picked the Data folder, which holds poe1\.
 		DictDirInfo shallow = ResolveDictDir(exe, DictSlot::Poe1, exe + L"Data");
 		check("T21b pointing at the Data folder reports TooShallow and suggests going down",
 		      shallow.status == DataDirStatus::TooShallow && shallow.root == builtin1 &&
 		          shallow.suggestion == exe + L"Data\\poe1\\",
-		      narrow_utf8(shallow.suggestion));
+		      narrow(shallow.suggestion));
 
 		DictDirInfo ok = ResolveDictDir(exe, DictSlot::Poe1, box + L"ext");
 		check("T22 a correctly shaped external copy is used",

@@ -42,6 +42,7 @@
 #endif
 #include <windows.h>
 #include <shellapi.h>
+#include "win_util.h"
 #include <commdlg.h>             // "add an image" on the appearance page
 #pragma comment(lib, "comdlg32.lib")
 
@@ -349,15 +350,6 @@ static std::vector<unsigned char> read_file(const std::wstring& path)
 	return data;
 }
 
-static std::string to_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], needed, nullptr, nullptr);
-	return s;
-}
-
 // UTF-8 -> codepoints. One decoder shared by the live coverage probe and the
 // headless coverage selftest: two copies would eventually disagree about some
 // edge case and the check would stop meaning what the probe means.
@@ -382,16 +374,6 @@ static void ForEachCodepoint(const char* text, F&& fn)
 	}
 }
 
-// ImGui hands back UTF-8; Win32 paths are UTF-16. The data-folder field is the
-// one place the user types a path directly.
-static std::wstring from_utf8(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int needed = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w((size_t)needed, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], needed);
-	return w;
-}
 
 // Build one atlas covering every string in all language tables (plus any
 // runtime texts such as detected install paths), so switching the UI
@@ -843,7 +825,7 @@ static std::vector<bool> ProbeLocaleCoverage(const LauncherFonts& fonts,
 				ok[i] = false;
 				if (missing && shown < 6) {
 					wchar_t w[2] = { (wchar_t)cp, 0 };
-					(*missing)[i] += to_utf8(w);
+					(*missing)[i] += narrow(w);
 					shown++;
 				}
 			});
@@ -1227,8 +1209,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	PobUi::ApplyTheme(scale, PobUi::Density::Comfortable);
 
 	// Detected install folders (shown in card tooltips) need their glyphs in the atlas.
-	std::string poe1Dir = installs.poe1Lua.empty() ? "" : to_utf8(installs.poe1Lua.substr(0, installs.poe1Lua.find_last_of(L'\\')));
-	std::string poe2Dir = installs.poe2Lua.empty() ? "" : to_utf8(installs.poe2Lua.substr(0, installs.poe2Lua.find_last_of(L'\\')));
+	std::string poe1Dir = installs.poe1Lua.empty() ? "" : narrow(installs.poe1Lua.substr(0, installs.poe1Lua.find_last_of(L'\\')));
+	std::string poe2Dir = installs.poe2Lua.empty() ? "" : narrow(installs.poe2Lua.substr(0, installs.poe2Lua.find_last_of(L'\\')));
 	// Where each dictionary set lives: the install, or a translator's working copy
 	// somewhere else. Independent per slot -- someone translating only PoE1 should
 	// not be dragged into keeping an external PoE2 copy in step.
@@ -1266,7 +1248,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	std::vector<LauncherStringStore> strStore;
 	strStore.reserve(locales.size()); // LauncherStringStore is move-only (see its header)
 	for (const LocaleInfo& l : locales)
-		strStore.emplace_back(LoadLauncherStrings(launcherRoot, from_utf8(l.id)));
+		strStore.emplace_back(LoadLauncherStrings(launcherRoot, widen(l.id)));
 	// EVERY language, not just the selected one: the atlas is rebuilt only when the
 	// font changes, so switching language must not need glyphs that were never
 	// added. A missing one is drawn as '?' with no warning of any kind.
@@ -1330,7 +1312,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	auto syncCfgFromUi = [&]() {
 		cfg.game = poe2Sel ? L"poe2" : L"poe1";
 		if (localeIdx >= 0 && localeIdx < (int)locales.size())
-			cfg.locale = from_utf8(locales[localeIdx].id);
+			cfg.locale = widen(locales[localeIdx].id);
 	};
 
 	// tools spawn as child processes so this window stays open; the kind is what
@@ -1346,7 +1328,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// interface is the exception: the dock only adopts GLFW windows
 		// (window_dock.cpp find_cb) and its WebView2 window is plain Win32, so it
 		// stays a window of its own in both modes.
-		if (tabbed && kind != PobLaunch::InstanceKind::ModernUi) dock.Track(pid, from_utf8(label));
+		if (tabbed && kind != PobLaunch::InstanceKind::ModernUi) dock.Track(pid, widen(label));
 	};
 	// KeepOpen mode: start POB the same way the tools are started (detached, the
 	// window stays up) instead of returning Launch. ShowLauncher tears down GLFW
@@ -1398,8 +1380,8 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 	// is not treated as the setting, and mirrored back from cfg whenever the box
 	// is not focused (so Clear / Browse / the suggestion button show up there).
 	std::string dirEdit[kDictSlotCount];
-	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = to_utf8(cfg.dataDir[i]);
-	std::string proxyEdit = to_utf8(cfg.proxy);
+	for (int i = 0; i < kDictSlotCount; i++) dirEdit[i] = narrow(cfg.dataDir[i]);
+	std::string proxyEdit = narrow(cfg.proxy);
 	// The saved token is never put back into the edit box: "Show" would then hand
 	// it to anyone at the keyboard. The box only ever holds what is being pasted.
 	std::string githubTokenEdit;
@@ -2331,7 +2313,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				char t[256];
 				snprintf(t, sizeof(t), S.extDataBannerTitle, slotName);
 				b.title = t;
-				b.desc = to_utf8(dictDir[i].root);
+				b.desc = narrow(dictDir[i].root);
 				b.mono = true;
 				b.action = S.useBuiltin;
 				b.kind = kExt;
@@ -2825,7 +2807,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			{
 				// Fonts\*.ttf; switching rebuilds the atlas live, between frames.
 				auto fontStem = [](const std::wstring& f) {
-					std::string s = to_utf8(f);
+					std::string s = narrow(f);
 					size_t d = s.rfind(".ttf");
 					if (d == std::string::npos) d = s.rfind(".TTF");
 					return d != std::string::npos ? s.substr(0, d) : s;
@@ -2865,7 +2847,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 									fontChanged = true;
 									saveNow();
 								} else if (CopyFileW(src.c_str(), dst.c_str(), TRUE)) {
-									PobUi::ShowToast((std::string(S.fontInstalled) + to_utf8(name)).c_str());
+									PobUi::ShowToast((std::string(S.fontInstalled) + narrow(name)).c_str());
 									fontList = ListAvailableFonts(exeDir);
 									cfg.fontFile = name;
 									fontChanged = true;
@@ -3092,7 +3074,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				// Reaches the HTTP layer immediately: the update worker opens a new
 				// session per operation, so the next check already uses it.
 				auto applyProxy = [&](const std::string& v) {
-					std::wstring w = from_utf8(v);
+					std::wstring w = widen(v);
 					if (w == cfg.proxy) return;
 					cfg.proxy = w;
 					saveNow();
@@ -3106,7 +3088,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					applyProxy(proxyEdit);
 				// Clicking away must not discard what was typed.
 				if (ImGui::IsItemDeactivatedAfterEdit()) applyProxy(proxyEdit);
-				if (!ImGui::IsItemActive()) proxyEdit = to_utf8(cfg.proxy);
+				if (!ImGui::IsItemActive()) proxyEdit = narrow(cfg.proxy);
 				PobUi::PopControlFrame();
 				PobUi::RowEnd();
 			}
@@ -3246,7 +3228,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				PobUi::RowEnd();
 				// AI clients over MCP: the registration for this exe, per client.
 				{
-					const std::string exeU8 = to_utf8(exeBuf);
+					const std::string exeU8 = narrow(exeBuf);
 					const char* names[3] = { "Claude Desktop", "Claude Code", "Codex" };
 					float w = 0.0f;
 					for (const char* n : names) w += PobUi::ButtonWidth(n, PobUi::BtnSize::Sm, PobIcon::Copy) + gapRow;
@@ -3313,10 +3295,10 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					ImGui::SetNextItemWidth(std::max(D(120.0f), cw - bw1 - bw2 - gapRow * 2));
 					// The hint says what empty MEANS, not what the built-in path is.
 					if (ImGui::InputTextWithHint("##datadir", S.dataDirEmptyHint, &dirEdit[i], ImGuiInputTextFlags_EnterReturnsTrue))
-						applyPath(from_utf8(dirEdit[i]));
+						applyPath(widen(dirEdit[i]));
 					// Enter is not the only way people finish typing.
-					if (ImGui::IsItemDeactivatedAfterEdit()) applyPath(from_utf8(dirEdit[i]));
-					if (!ImGui::IsItemActive()) dirEdit[i] = to_utf8(cfg.dataDir[i]);
+					if (ImGui::IsItemDeactivatedAfterEdit()) applyPath(widen(dirEdit[i]));
+					if (!ImGui::IsItemActive()) dirEdit[i] = narrow(cfg.dataDir[i]);
 					PobUi::PopControlFrame();
 					ImGui::SameLine(0, gapRow);
 					if (PobUi::Button(S.browse)) {
@@ -3341,9 +3323,9 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 					switch (dd.status) {
 						case DataDirStatus::Builtin: {
 							// Relative to the app folder; the full path is one hover away.
-							const std::string rel = std::string("Data\\") + to_utf8(DictSlotFolder((DictSlot)i)) + "\\";
+							const std::string rel = std::string("Data\\") + narrow(DictSlotFolder((DictSlot)i)) + "\\";
 							ImGui::TextDisabled("%s", rel.c_str());
-							if (ImGui::IsItemHovered()) PobUi::Tooltip(to_utf8(builtin).c_str());
+							if (ImGui::IsItemHovered()) PobUi::Tooltip(narrow(builtin).c_str());
 							break;
 						}
 						case DataDirStatus::External: {
@@ -3363,7 +3345,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						case DataDirStatus::TooShallow:
 							ImGui::TextColored(warn, "%s", dd.status == DataDirStatus::WrongShape ? S.dataDirWrongShape : S.dataDirTooShallow);
 							if (!dd.suggestion.empty()) {
-								ImGui::TextDisabled("%s", to_utf8(dd.suggestion).c_str());
+								ImGui::TextDisabled("%s", narrow(dd.suggestion).c_str());
 								ImGui::SameLine(0, gapRow);
 								if (PobUi::Button(S.useSuggestion, PobUi::BtnKind::Ghost, PobUi::BtnSize::Sm)) applyPath(dd.suggestion);
 							}
@@ -3556,14 +3538,14 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 							}
 						}
 						tdl->AddRect(tp, tp + ImVec2(tw, th), edge, D(8.0f), 0, selected ? 2.0f : 1.0f);
-						const std::string cap = isAdd ? std::string(S.bgAdd) : isBuiltin ? std::string(S.bgBuiltinShort) : to_utf8(t->file);
+						const std::string cap = isAdd ? std::string(S.bgAdd) : isBuiltin ? std::string(S.bgBuiltinShort) : narrow(t->file);
 						tdl->PushClipRect(tp + ImVec2(D(10.0f), imgH), tp + ImVec2(tw - D(10.0f), th), true);
 						tdl->AddText(fonts.small, fonts.small->FontSize, tp + ImVec2(isAdd ? std::max(D(10.0f), (tw - fonts.small->CalcTextSizeA(fonts.small->FontSize, FLT_MAX, 0.0f, cap.c_str()).x) * 0.5f) : D(10.0f), imgH + D(6.0f)),
 						             selected ? Tok::Text : Tok::TextMuted, cap.c_str());
 						tdl->PopClipRect();
 						if (hov) {
 							ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-							if (t) PobUi::Tooltip(to_utf8(t->file).c_str());
+							if (t) PobUi::Tooltip(narrow(t->file).c_str());
 						}
 						if (clicked) {
 							if (isAdd) {
@@ -3580,7 +3562,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 										look.background = NormalizeBackgroundFile(name);
 										PobLaunch::ApplyPobBackground(lookGameKey, ResolveBackgroundPath(exeDir, look.background));
 										saveNow();
-										PobUi::ShowToast((std::string(S.bgAdded) + to_utf8(name)).c_str());
+										PobUi::ShowToast((std::string(S.bgAdded) + narrow(name)).c_str());
 									} else {
 										PobUi::ShowToast(S.bgAddFailed, PobUi::Tone::Bad);
 									}
@@ -3851,7 +3833,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 						kindBadge = in.game == L"poe2" ? "P2" : "P1";
 				// The label alone is not unique -- two PoE1 tabs are ordinary -- and it
 				// follows POB's caption, so it must not be part of the id at all.
-				const std::string text = (kindBadge ? std::string((size_t)nSpaces, ' ') : std::string()) + to_utf8(dtabs[i].label);
+				const std::string text = (kindBadge ? std::string((size_t)nSpaces, ' ') : std::string()) + narrow(dtabs[i].label);
 				std::string label = WindowMgr::DockTabLabel(text, dtabs[i].pid);
 				bool open = true;
 				// Newly started windows bring themselves to the front.
@@ -3898,7 +3880,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// A tool that refused to open. Here for the same reason a panel's dialogs
 		// are: the frame is over and the docked windows have been dealt with.
 		if (!live && !panelInitError.empty()) {
-			const std::wstring why = from_utf8(panelInitError);
+			const std::wstring why = widen(panelInitError);
 			panelInitError.clear();
 			MessageBoxW(glfwGetWin32Window(win), why.c_str(), L"PobTools", MB_ICONERROR | MB_OK);
 		}
@@ -3920,7 +3902,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (TranslationEditorPanelSaved(ep.panel.get())) {
 				strStore.clear();
 				for (const LocaleInfo& l : locales)
-					strStore.emplace_back(LoadLauncherStrings(launcherRoot, from_utf8(l.id)));
+					strStore.emplace_back(LoadLauncherStrings(launcherRoot, widen(l.id)));
 				strOverlays.clear();
 				for (const LauncherStringStore& st : strStore) strOverlays.push_back(&st.s);
 				fontChanged = true;
@@ -3957,7 +3939,7 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 		// action is the danger button.
 		{
 			const PobUi::DialogResult r = PobUi::ConfirmDialog("##copyconfirm", &askOverwrite, S.copyOverwriteTitle,
-			    S.copyOverwrite, to_utf8(copyDest).c_str(), S.cancel, S.overwriteConfirm, nullptr);
+			    S.copyOverwrite, narrow(copyDest).c_str(), S.cancel, S.overwriteConfirm, nullptr);
 			if (r == PobUi::DialogResult::Danger) doCopy = true;
 			else if (r == PobUi::DialogResult::Cancel) copyDest.clear();
 		}
@@ -4151,7 +4133,7 @@ int RunFontAtlasSelftest(const std::wstring& exeDir)
 	const int   kLimits[] = { 2048, 4096, 8192, 16384 };
 
 	for (const std::wstring& f : fontList) {
-		const std::string fname = to_utf8(f);
+		const std::string fname = narrow(f);
 		for (float sc : kScales) {
 			for (int lim : kLimits) {
 				ImGui::CreateContext();
@@ -4591,7 +4573,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 			return 1;
 		}
 		if (GetFileAttributesW(dir.c_str()) != INVALID_FILE_ATTRIBUTES) {
-			printf("  [FAIL]  probe language folder was left behind: %s\n", to_utf8(dir).c_str());
+			printf("  [FAIL]  probe language folder was left behind: %s\n", narrow(dir).c_str());
 			return 1;
 		}
 	}
@@ -4638,7 +4620,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 			if (font) io.Fonts->Build();
 		}
 
-		const std::string name = to_utf8(f);
+		const std::string name = narrow(f);
 		if (!font) {
 			printf("  [FAIL] %s: could not be loaded\n", name.c_str());
 			bad++;
@@ -4662,7 +4644,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 					else continue;
 					if (cp <= 0xFFFF && !font->FindGlyphNoFallback((ImWchar)cp)) {
 						wchar_t w[2] = { (wchar_t)cp, 0 };
-						absent += to_utf8(w);
+						absent += narrow(w);
 					}
 				}
 			}
@@ -4689,7 +4671,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 			printf("  [FAIL] %d character(s) missing from EVERY shipped font\n", (int)nowhere.size());
 			for (unsigned cp : nowhere) {
 				wchar_t w[2] = { (wchar_t)cp, 0 };
-				printf("           U+%04X  '%s'\n", cp, to_utf8(w).c_str());
+				printf("           U+%04X  '%s'\n", cp, narrow(w).c_str());
 			}
 			bad++;
 		} else {

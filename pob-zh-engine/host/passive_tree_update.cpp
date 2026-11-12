@@ -8,6 +8,7 @@
 #define NOMINMAX
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <json.hpp> // nlohmann::ordered_json (deps/nlohmann)
 
@@ -38,48 +39,6 @@ static const char* kUsedCats[] = {
 static const char* kZoom = "0.3835";
 
 // small helpers (same conventions as atlas_update.cpp)
-
-static bool read_file_utf8(const std::wstring& path, std::string& out)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	LARGE_INTEGER size{};
-	bool ok = false;
-	if (GetFileSizeEx(h, &size) && size.QuadPart >= 0 && size.QuadPart < (1ll << 30)) {
-		out.resize((size_t)size.QuadPart);
-		DWORD read = 0;
-		ok = out.empty() || (ReadFile(h, &out[0], (DWORD)out.size(), &read, nullptr) && read == out.size());
-		if (!ok) out.clear();
-	}
-	CloseHandle(h);
-	return ok;
-}
-
-static bool write_file_utf8(const std::wstring& path, const std::string& content)
-{
-	HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE) return false;
-	DWORD written = 0;
-	bool ok = content.empty() ||
-		(WriteFile(h, content.data(), (DWORD)content.size(), &written, nullptr) && written == content.size());
-	CloseHandle(h);
-	return ok;
-}
-
-static std::wstring widen(const std::string& s)
-{
-	if (s.empty()) return std::wstring();
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), &w[0], n);
-	return w;
-}
-
-static bool file_exists(const std::wstring& p)
-{
-	DWORD a = GetFileAttributesW(p.c_str());
-	return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
 
 // "3.28.0" -> {3,28,0}; rejects suffixed variants ("3.25.0-ruthless")
 static bool parse_semver(const std::string& s, std::tuple<int, int, int>* out)

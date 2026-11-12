@@ -7,6 +7,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "win_util.h"
 
 #include <json.hpp>
 
@@ -174,15 +175,6 @@ void ApplyPobWindowOpacity(const std::wstring& game, int percent)
 	}
 }
 
-static std::string to_utf8(const std::wstring& w)
-{
-	if (w.empty()) return std::string();
-	int needed = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(needed, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), &s[0], needed, nullptr, nullptr);
-	return s;
-}
-
 static const UINT      kMsgSetGlassBlur   = WM_APP + 0x51; // mirrored in engine sys_video.cpp
 static const UINT      kMsgSetBgBright    = WM_APP + 0x52;
 static const UINT      kMsgSetTreeBg      = WM_APP + 0x53;
@@ -217,7 +209,7 @@ void ApplyPobTreeBackdrop(const std::wstring& game, int percent)     { post_pct(
 void ApplyPobBackground(const std::wstring& game, const std::wstring& bgPath)
 {
 	if (RunningUnderWine()) return;
-	std::string utf8 = to_utf8(bgPath);
+	std::string utf8 = narrow(bgPath);
 	COPYDATASTRUCT cds{};
 	cds.dwData = kCopyDataBgPath;
 	cds.cbData = (DWORD)utf8.size();

@@ -12,6 +12,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shlobj.h>
+#include "win_util.h"
 
 #include <algorithm>
 #include <condition_variable>
@@ -26,15 +27,6 @@ using json = nlohmann::json;
 namespace {
 
 const char* const kDefaultProtocol = "2025-06-18";
-
-std::string Narrow(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
 
 std::string ReadAll(const std::wstring& path)
 {
@@ -338,7 +330,7 @@ std::vector<std::pair<std::string, std::string>> RedactNeedles()
 	auto addAll = [&](const std::wstring& w, const char* label) {
 		if (w.empty()) return;
 		std::vector<std::string> forms;
-		forms.push_back(Narrow(w));
+		forms.push_back(narrow(w));
 		int n = WideCharToMultiByte(CP_ACP, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
 		if (n > 0) {
 			std::string acp(n, '\0');
@@ -464,7 +456,7 @@ std::vector<std::string> RecentMcpErrors(size_t max)
 
 json ReportProblem(const Engine& eng)
 {
-	const std::string pobDir = eng.PobDir().empty() ? "(not found)" : Redact(Narrow(eng.PobDir()));
+	const std::string pobDir = eng.PobDir().empty() ? "(not found)" : Redact(narrow(eng.PobDir()));
 	const std::string pobVer = eng.PobDir().empty() ? "unknown" : PobVersionOf(eng.PobDir());
 	auto str = [](const json& o, const char* k) {
 		return o.is_object() && o.contains(k) && o[k].is_string() ? o[k].get<std::string>() : std::string();

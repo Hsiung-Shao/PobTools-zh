@@ -2,29 +2,12 @@
 
 #include <json.hpp>
 #include <windows.h>
+#include "win_util.h"
 #include <ctime>
 
 using json = nlohmann::json;
 
 namespace BridgeGate {
-
-static std::string narrow_utf8(const std::wstring& w)
-{
-	if (w.empty()) return {};
-	int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), nullptr, 0, nullptr, nullptr);
-	std::string s(n, '\0');
-	WideCharToMultiByte(CP_UTF8, 0, w.c_str(), (int)w.size(), s.data(), n, nullptr, nullptr);
-	return s;
-}
-
-static std::wstring widen_utf8(const std::string& s)
-{
-	if (s.empty()) return {};
-	int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), nullptr, 0);
-	std::wstring w(n, L'\0');
-	MultiByteToWideChar(CP_UTF8, 0, s.c_str(), (int)s.size(), w.data(), n);
-	return w;
-}
 
 static std::wstring lower(std::wstring s)
 {
@@ -55,7 +38,7 @@ Verdict Parse(const std::string& text)
 		for (auto& f : j["failed"]) if (f.is_string()) v.failed.push_back(f.get<std::string>());
 	v.pobVersion = j.value("pobVersion", "");
 	v.pobBranch = j.value("pobBranch", "");
-	v.pobDir = widen_utf8(j.value("pobDir", ""));
+	v.pobDir = widen(j.value("pobDir", ""));
 	v.checkedAtUtc = j.value("checkedAtUtc", "");
 	v.bridgeHash = j.value("bridgeHash", "");
 	return v;
@@ -78,7 +61,7 @@ bool Write(const std::wstring& exeDir, const Verdict& v)
 		{"failed", v.failed},
 		{"pobVersion", v.pobVersion},
 		{"pobBranch", v.pobBranch},
-		{"pobDir", narrow_utf8(v.pobDir)},
+		{"pobDir", narrow(v.pobDir)},
 		{"checkedAtUtc", stamp},
 		{"bridgeHash", v.bridgeHash},
 	};
