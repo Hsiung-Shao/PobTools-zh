@@ -7,7 +7,7 @@
   import { prefs } from "$lib/prefs.svelte";
   import { layout } from "$lib/layout.svelte";
   import TitleBar from "./components/TitleBar.svelte";
-  import StatusBar from "./components/StatusBar.svelte";
+  import StatusBar from "$lib/ui/StatusBar.svelte";
   import Sidebar from "./components/Sidebar.svelte";
   import BuildList from "./components/BuildList.svelte";
   import BuildBar from "./components/BuildBar.svelte";

@@ -63,6 +63,8 @@
   --ok: #66d38f;
   --warn: #e8b55b;
   --bad: #ef696f;
+  /* 共用元件 (lib/ui) 的狀態列底色;theme1 不定義,用 --surface-0 */
+  --statusbar-bg: var(--surface-1);
 
   /* PoB 色碼 ^x 對應(依深底微調亮度) */
   --c-life: #f25c5c;

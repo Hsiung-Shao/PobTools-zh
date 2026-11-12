@@ -13,7 +13,7 @@
   import { dataKey } from "$lib/lang.svelte";
   import { fitFloat, pointAnchor } from "$lib/floatFit";
   import BreakdownPanel from "../components/BreakdownPanel.svelte";
-  import MinionLibrary from "../components/MinionLibrary.svelte";
+  import MinionLibrary from "$lib/ui/MinionLibrary.svelte";
   import PobText from "$lib/ui/PobText.svelte";
   import { subsectionSummary } from "$lib/calcs-summary";
   import Select from "$lib/ui/Select.svelte";

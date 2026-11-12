@@ -8,7 +8,7 @@
   import { t } from "$lib/i18n";
   import { app } from "$lib/state.svelte";
   import { dataKey } from "$lib/lang.svelte";
-  import TooltipCard from "../components/TooltipCard.svelte";
+  import TooltipCard from "$lib/ui/TooltipCard.svelte";
   import Select from "$lib/ui/Select.svelte";
 
   let data = $state<SkillsList | null>(null);

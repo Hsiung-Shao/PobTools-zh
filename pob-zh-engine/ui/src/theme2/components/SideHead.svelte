@@ -5,9 +5,9 @@
   import { t } from "$lib/i18n";
   import type { SelOption } from "$lib/select";
   import { app } from "$lib/state.svelte";
-  import ClassChangeDialog from "./ClassChangeDialog.svelte";
+  import ClassChangeDialog from "$lib/ui/ClassChangeDialog.svelte";
   import Select from "$lib/ui/Select.svelte";
-  import MinionLibrary from "./MinionLibrary.svelte";
+  import MinionLibrary from "$lib/ui/MinionLibrary.svelte";
 
   const h = $derived(app.header);
   const info = $derived(app.info);

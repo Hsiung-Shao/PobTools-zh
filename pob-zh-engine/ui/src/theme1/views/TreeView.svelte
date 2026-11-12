@@ -13,7 +13,7 @@
   // allocate, node_info for the tooltip POB would show).
   import { onMount } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
-  import TimelessJewelDialog from "../components/TimelessJewelDialog.svelte";
+  import TimelessJewelDialog from "$lib/ui/TimelessJewelDialog.svelte";
   import { api, type MasteryChoice, type NodeInfo, type NodePower, type TattooOptions, type TooltipLine, type TreeSocket, type TreeState } from "$lib/bridge";
   import { copyText } from "$lib/clipboard";
   import { t } from "$lib/i18n";
@@ -24,7 +24,7 @@
   import { Sprites, ART_SCALE } from "$lib/tree/assets";
   import PobText from "$lib/ui/PobText.svelte";
   import Select from "$lib/ui/Select.svelte";
-  import ClassChangeDialog from "../components/ClassChangeDialog.svelte";
+  import ClassChangeDialog from "$lib/ui/ClassChangeDialog.svelte";
 
   let canvas = $state<HTMLCanvasElement | null>(null);
   let wrap = $state<HTMLDivElement | null>(null);

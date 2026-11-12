@@ -44,6 +44,7 @@
     padding: 16px 18px;
     background: var(--surface-1);
     border: 1px solid var(--edge-1);
+    border-left: var(--note-bar, 1px solid var(--edge-1));
     border-radius: var(--radius-m);
     display: flex;
     flex-direction: column;

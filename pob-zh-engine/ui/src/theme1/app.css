@@ -52,6 +52,11 @@
   --gold: var(--accent-user, #d8aa4b);
   --gold-soft: color-mix(in srgb, var(--gold) 16%, transparent);
   --gold-dim: color-mix(in srgb, var(--gold) 55%, black);
+  /* 共用元件 (lib/ui) 用 theme2 的 token 名;theme1 沒有身分金,全部指到 --gold */
+  --gold-text: var(--gold);
+  --hl: var(--gold);
+  --hl-dim: var(--gold-dim);
+  --note-bar: 3px solid var(--gold);
   --on-gold: var(--on-accent-user, #17120a);
   --accent: #5b9dff;
   --accent-soft: rgba(91, 157, 255, 0.18);

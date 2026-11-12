@@ -6,17 +6,17 @@
   import { untrack } from "svelte";
   import TreeSpecBar from "../components/TreeSpecBar.svelte";
   import SharedItemsDialog from "$lib/ui/SharedItemsDialog.svelte";
-  import TradeDialog from "../components/TradeDialog.svelte";
+  import TradeDialog from "$lib/ui/TradeDialog.svelte";
   import { api, type CraftOptions, type ItemEditState, type ItemSlot, type ItemSummary, type ItemsList, type ItemTooltip } from "$lib/bridge";
   import { t } from "$lib/i18n";
   import { equippedIn, filterByLoadout, groupSlots, itemById, looksLikeItem, looksLikePobRaw, rarityColor, restoreRarity, resumeEdit, slotsFor, usedInBadge, type LoadoutFilter } from "$lib/items";
   import { app } from "$lib/state.svelte";
   import { dataKey } from "$lib/lang.svelte";
   import { copyText } from "$lib/clipboard";
-  import TooltipCard from "../components/TooltipCard.svelte";
+  import TooltipCard from "$lib/ui/TooltipCard.svelte";
   import SlotSelect from "$lib/ui/SlotSelect.svelte";
-  import ItemEditor from "../components/ItemEditor.svelte";
-  import ItemDb from "../components/ItemDb.svelte";
+  import ItemEditor from "$lib/ui/ItemEditor.svelte";
+  import ItemDb from "$lib/ui/ItemDb.svelte";
   import Select from "$lib/ui/Select.svelte";
 
   let data = $state<ItemsList | null>(null);

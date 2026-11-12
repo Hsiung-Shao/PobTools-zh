@@ -3,7 +3,7 @@
      任何一段都不出現水平捲軸。 -->
 <script lang="ts">
   import { api, type BreakdownSection, type BreakdownTip, type BreakdownTipRef, type TooltipLine } from "$lib/bridge";
-  import TooltipCard from "./TooltipCard.svelte";
+  import TooltipCard from "$lib/ui/TooltipCard.svelte";
   import NodeMiniMap from "./NodeMiniMap.svelte";
   import { t } from "$lib/i18n";
   import PobText from "$lib/ui/PobText.svelte";

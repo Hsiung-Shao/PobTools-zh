@@ -165,7 +165,7 @@
     align-items: center;
     gap: 2px;
     padding: 0 8px;
-    background: var(--surface-0);
+    background: var(--statusbar-bg, var(--surface-0));
     border-top: 1px solid var(--edge-0);
     font-size: var(--fs-xs);
     color: var(--ink-2);

@@ -10,7 +10,7 @@
   import { dataKey } from "$lib/lang.svelte";
   import PobText from "$lib/ui/PobText.svelte";
   import Select from "$lib/ui/Select.svelte";
-  import TooltipCard from "../components/TooltipCard.svelte";
+  import TooltipCard from "$lib/ui/TooltipCard.svelte";
   import { textToTooltipLines } from "$lib/tooltip-lines";
 
   let data = $state<ConfigList | null>(null);
