@@ -143,8 +143,9 @@ public:
 	std::vector<int> AllocIdx() const;            // allocated node indices, start INCLUDED
 
 	// Picked options of multiple-choice nodes, as node id -> effect id. Apply
-	// clears every pick first; an unknown node, a node without options or an
-	// effect the node does not offer is dropped (the node stays unpicked).
+	// clears every pick first; an unknown node, an unallocated node, a node
+	// without options or an effect the node does not offer is dropped (the node
+	// stays unpicked).
 	// Returns how many picks mapped. Like targets, call it AFTER ApplyAllocIds.
 	int ApplyVariantIds(const std::map<int, int>& nodeToEffect);
 	std::map<int, int> VariantIds() const;        // allocated nodes with a pick only

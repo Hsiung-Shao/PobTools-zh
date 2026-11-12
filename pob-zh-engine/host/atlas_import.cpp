@@ -331,6 +331,7 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 		// 3.30+: a link between two groups can be drawn on a circle of its own
 		// ("connections" gives the circle's centre; both ends sit on it).
 		std::map<std::pair<int, int>, std::pair<double, double>> connArc;
+		std::set<std::pair<int, int>> connStraight; // listed with no centre ("orbit": 0): a straight line
 		for (const auto& [key, v] : nodesIn.items()) {
 			if (key == "root" || masteryIds.count(key)) continue;
 			auto addNb = [&](const std::string& nb) -> bool {
@@ -348,9 +349,13 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 			if (v.contains("connections"))
 				for (const auto& c : v["connections"]) {
 					auto it = id2idx.find(c.value("to", std::string()));
-					if (it == id2idx.end() || !c.contains("orbitX") || !c.contains("orbitY")) continue; // straight
+					if (it == id2idx.end()) continue;
 					int a = id2idx[key], b = it->second;
-					connArc[{ (std::min)(a, b), (std::max)(a, b) }] = { c["orbitX"].get<double>(), c["orbitY"].get<double>() };
+					std::pair<int, int> ab{ (std::min)(a, b), (std::max)(a, b) };
+					if (c.contains("orbitX") && c.contains("orbitY"))
+						connArc[ab] = { c["orbitX"].get<double>(), c["orbitY"].get<double>() };
+					else
+						connStraight.insert(ab);
 				}
 		}
 
@@ -364,6 +369,8 @@ bool ImportAtlasTreeData(const std::wstring& dataJsonPath, const std::wstring& d
 			int ka = outNodes[a]["kind"].get<int>(), kb = outNodes[b]["kind"].get<int>();
 			if (ka == K_WORMHOLE && kb == K_WORMHOLE) {
 				e["w"] = 1;
+			} else if (connStraight.count({ a, b })) {
+				// explicit straight link: overrides the same-orbit arc below
 			} else if (nGroup[a] == nGroup[b] && nOrbit[a] == nOrbit[b] && nOrbit[a] > 0) {
 				const ordered_json& grp = groups.at(std::to_string(nGroup[a]));
 				double a0 = nAng[a] - kPi / 2.0, a1 = nAng[b] - kPi / 2.0;

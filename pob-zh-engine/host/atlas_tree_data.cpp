@@ -459,6 +459,7 @@ int AtlasTreeData::ApplyVariantIds(const std::map<int, int>& nodeToEffect)
 	int mapped = 0;
 	for (AtlasNode& n : nodes) {
 		n.variant = -1;
+		if (!n.alloc) continue;   // a pick belongs to an allocated node
 		auto it = nodeToEffect.find(n.id);
 		if (it == nodeToEffect.end()) continue;
 		for (int i = 0; i < (int)n.variants.size(); i++)
@@ -1331,6 +1332,20 @@ int RunAtlasSelfTest(const std::wstring& exeDir)
 			          u8"[多選T7] 只丟壞的那一筆,合法的保留");
 		}
 
+		// 審查後補:未配置節點的選擇不套用;明示直線的連線不畫弧。
+		for (AtlasNode& n : d.nodes) {
+			if (n.variants.empty() || n.alloc) continue;
+			rep.check(d.ApplyVariantIds({ { n.id, n.variants[0].effect } }) == 0 && n.variant == -1,
+			          u8"[多選T7] 未配置節點的選擇不套用");
+			break;
+		}
+		if (is330) {
+			const int ia = idxOfId(43387), ib = idxOfId(10399);
+			bool found = false, straight = false;
+			for (const AtlasEdge& e : d.edges)
+				if ((e.a == ia && e.b == ib) || (e.a == ib && e.b == ia)) { found = true; straight = !e.hasArc; }
+			rep.check(found && straight, u8"[多選T3] 43387 與 10399 的連線(orbit 0)是直線");
+		}
 		// 審查後補:統計用的行把所選選項併進每一條基本行。
 		{
 			AtlasNode n;
