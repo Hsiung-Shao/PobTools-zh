@@ -526,31 +526,6 @@ if (WIN32)
         host/zip_extract.cpp
         host/hash_sha256.cpp
         host/sig_verify.cpp
-        # 搜尋字串產生器：核心 + 資料 + UI + 自檢
-        host/regex_gen.cpp
-        host/regex_match.cpp
-        host/regex_numeric.cpp
-        host/regex_frag.cpp
-        host/regex_algo_pages.cpp
-        host/regex_data.cpp
-        host/regex_state.cpp
-        host/regex_folders.cpp
-        host/regex_embed.cpp
-        host/regex_itemmods.cpp
-        host/regex_share.cpp
-        host/regex_bookmarks_share.cpp
-        host/regex_send.cpp
-        host/regex_tool_ui.cpp
-        host/regex_selftest.cpp
-        host/regex_selftest_r3.cpp
-        host/regex_selftest_r4.cpp
-        host/regex_selftest_r5.cpp
-        host/regex_selftest_r7.cpp
-        host/regex_selftest_r8.cpp
-        host/regex_selftest_send.cpp
-        host/regex_selftest_r9.cpp
-        host/regex_selftest_r10.cpp
-        host/regex_selftest_parity.cpp
         # 倉庫收益統計（測試性質，POESESSID 通道）：provider + 資料層 + 服務 + UI + 自檢
         host/warehouse_provider_sessid.cpp
         host/warehouse_snapshot.cpp
@@ -652,30 +627,6 @@ if (WIN32)
     # so a new league needs a fresh run of both.
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/astrolabes_poe1.json" DESTINATION "Data")
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/atlas_maps_poe1.json" DESTINATION "Data")
-    # Search-string generator catalogue: every list the tool can build a query
-    # over (map and logbook modifiers for PoE1; waystone, tablet, relic and
-    # remnant modifiers for PoE2), each entry carrying the line the game prints
-    # with '#' where a roll goes. Regenerated from a local Content.ggpk by
-    # tools/gen_regex_data.py and gen_regex_data2.py; like the scarabs neither has
-    # an online updater, so a new league needs a fresh run.
-    # BOTH files ship: the panel loads every catalogue it finds and labels each
-    # page with its game, so a PoE1 player can still read the PoE2 list.
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_poe2.json" DESTINATION "Data")
-    # Label stand-ins for the numeric sections / vendor pages: exile-appraiser
-    # data/regex/labels.<game>.json verbatim; the catalogue's own `labels` win key by key.
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe1.json" DESTINATION "Data")
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_labels_poe2.json" DESTINATION "Data")
-    # Item-mod values page: exile-appraiser's stats.ndjson (trade stat ids, so share
-    # codes interoperate), gzip-compressed (6.8 MB -> 0.9 MB); loaded the first time the
-    # page is opened. Source commit and hashes: host/data/regex_stats/MANIFEST.json.
-    # Also item-mod-forms.json.gz (exile-appraiser data/regex/item-mod-forms.json, the
-    # multi-form arbitration; covered by the same *.gz pattern).
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_stats/" DESTINATION "Data/regex_stats"
-            FILES_MATCHING PATTERN "*.gz")
-    # Share-code templates (R8): exile-appraiser data/regex/templates.json copied verbatim
-    # (hand-written; keys are language-neutral English lines / algorithmic entry ids).
-    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/host/data/regex_templates.json" DESTINATION "Data")
     # The shipped CJK font. Until 2026-08 this file existed ONLY in dist\Fonts\,
     # which is gitignored and has no install rule -- so a `cmake --install` into a
     # fresh prefix, or any cleanup of dist\, silently lost it. Nothing reported the

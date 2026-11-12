@@ -33,7 +33,6 @@ the "localization breaks every time POB updates" problem this project set out to
 | Filter editor             | NeverSink tier-list style item filter editor, with Chinese display and icons                  |
 | Atlas strategy            | Atlas passive tree planner: multiple builds, export / share codes, **auto-update for new leagues** |
 | Timeless jewel calculator | Timeless jewel seed calculation, with Chinese search and trade-site links                     |
-| Regex generator           | Tick affixes to generate a regular expression for the in-game search box; POE1 and POE2 lists |
 | Switchable font           | Noto Sans TC (OFL) by default; swap in any `.ttf` at any time                                 |
 
 Usage details are in **[docs/USAGE.en.md](docs/USAGE.en.md)**.

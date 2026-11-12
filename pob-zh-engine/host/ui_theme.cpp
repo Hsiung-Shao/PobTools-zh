@@ -27,8 +27,8 @@ static_assert(std::is_same<ImWchar, unsigned short>::value, "SymbolGlyphRanges a
 const unsigned short* SymbolGlyphRanges()
 {
 	static const ImWchar ranges[] = {
-		0x2190, 0x21FF,   // Arrows (⇐ in the regex conflict list)
-		0x2200, 0x22FF,   // Mathematical Operators (≥ ≤ in the regex tool)
+		0x2190, 0x21FF,   // Arrows (→ ⇐)
+		0x2200, 0x22FF,   // Mathematical Operators (− ≥ ≤)
 		0,
 	};
 	return ranges;

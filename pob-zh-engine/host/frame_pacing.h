@@ -90,7 +90,7 @@ private:
 //
 // Showing it as soon as it exists puts a white rectangle on the desktop for as
 // long as the glyph atlas and the panel take to build -- measured at 330-410 ms
-// for the Poe Regex tool window. So the window appears on the pass whose frame
+// for a tool window. So the window appears on the pass whose frame
 // was actually presented: the picture is in the swap chain before the window
 // is, and the first thing anyone sees is the finished UI.
 //

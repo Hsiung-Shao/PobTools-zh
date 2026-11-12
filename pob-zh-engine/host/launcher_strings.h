@@ -38,7 +38,6 @@
 	X(filterEditor,      u8"過濾器編輯器",                 u8"Filter editor")                         \
 	X(atlasPlanner,      u8"輿圖策略",                     u8"Atlas strategy")                        \
 	X(timelessJewel,     u8"軍團珠寶",                     u8"Timeless jewel")                        \
-	X(regexTool,         u8"Poe Regex",                    u8"Poe Regex")                              \
 	X(warehouseTool,     u8"倉庫收益",                     u8"Stash tracker")                         \
 	X(modernUiTool,      u8"新介面(Beta)",                 u8"Modern UI (Beta)")                      \
 	X(modernUiTip,       u8"以新版介面開啟建置(測試中)",   u8"Open a build in the new interface (preview)") \
@@ -287,7 +286,6 @@
 	X(tipFilter,         u8"編輯 .filter、預覽掉落外觀",   u8"Edit .filter files, preview how drops look") \
 	X(tipAtlas,          u8"配點、地圖格、星盤與每張圖成本", u8"Passives, map device, astrolabes and the cost of each map") \
 	X(tipTimeless,       u8"查種子對天賦的影響、找想要的種子", u8"See what a seed changes, find the seed you want") \
-	X(tipRegex,          u8"勾選詞綴，產生遊戲內搜尋字串", u8"Pick mods, get an in-game search string") \
 	X(tipWarehouse,      u8"快照倉庫，算刷圖收益",         u8"Snapshot your stash, see what a map earned") \
 	X(tipEditor,         u8"修改或補上 POB 的翻譯",        u8"Fix or fill in POB's translations")     \
 	X(toolOpenTab,       u8"已開啟，點擊切換過去",         u8"Open; click to switch to it")           \

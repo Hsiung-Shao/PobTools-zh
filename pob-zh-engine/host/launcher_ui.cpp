@@ -31,7 +31,6 @@
 #include "atlas_planner.h"
 #include "filter_editor.h"
 #include "launcher_editor.h"
-#include "regex_tool.h"
 #include "warehouse_tool.h"
 #include "timeless_jewel_ui.h"
 #include "tool_panel.h"
@@ -2513,9 +2512,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 				{ PobIcon::Funnel, S.filterEditor, nullptr, S.tipFilter, &CreateFilterEditorPanel, L"--filter-editor", PobLaunch::InstanceKind::FilterEditor, S.filterEditor },
 				{ PobIcon::Crosshair, S.atlasPlanner, nullptr, S.tipAtlas, &CreateAtlasPlannerPanel, L"--atlas", PobLaunch::InstanceKind::AtlasPlanner, S.atlasPlanner },
 				{ PobIcon::Gem, S.timelessJewel, nullptr, S.tipTimeless, &CreateTimelessJewelPanel, L"--timeless-jewel", PobLaunch::InstanceKind::TimelessJewel, S.timelessJewel },
-				// Builds a string for the GAME's search box, not for POB -- useful
-				// with no POB installed.
-				{ PobIcon::CodeXml, S.regexTool, nullptr, S.tipRegex, &CreateRegexToolPanel, L"--regex", PobLaunch::InstanceKind::RegexTool, S.regexTool },
 				// TEST-channel stash revenue tracker (POESESSID; see warehouse_tool.h).
 				{ PobIcon::ChartColumn, S.warehouseTool, S.warehouseBadge, S.tipWarehouse, &CreateWarehousePanel, L"--warehouse", PobLaunch::InstanceKind::Warehouse, S.warehouseTool },
 				// Edits dist\Data\{game}\{locale}\*.json in place. Separate mode opens
@@ -3808,7 +3804,6 @@ LauncherResult ShowLauncher(LauncherConfig& cfg, const InstallInfo& installs, co
 			if (ep.label == S.filterEditor) icon = PobIcon::Funnel;
 			else if (ep.label == S.atlasPlanner) icon = PobIcon::Crosshair;
 			else if (ep.label == S.timelessJewel) icon = PobIcon::Gem;
-			else if (ep.label == S.regexTool) icon = PobIcon::CodeXml;
 			else if (ep.label == S.warehouseTool) icon = PobIcon::ChartColumn;
 			else if (ep.label == S.editor) icon = PobIcon::Languages;
 			std::string label = ((icon && fonts.icons) ? std::string(icon) + " " : std::string()) + ep.label +
@@ -4497,8 +4492,7 @@ int RunFontCoverageSelftest(const std::wstring& exeDir)
 
 	std::vector<const char*> texts;
 	CollectLauncherTexts(texts, overlays);
-	// The symbols the tool panels draw that are NOT CJK (the regex tool's ≥ / ≤
-	// buttons and condition text, its "a ⇐ b" conflict lines, separators): judged
+	// The symbols the tool panels draw that are NOT CJK (≥ / ≤ / ⇐, separators): judged
 	// with the launcher strings below (some shipped font must carry each), and
 	// first checked against the ranges the two ImGui hosts actually put in the
 	// atlas -- a glyph every font has still draws as '?' when the atlas skips it.

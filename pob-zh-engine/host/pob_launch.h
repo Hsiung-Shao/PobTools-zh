@@ -28,7 +28,6 @@ enum class InstanceKind {
 	FilterEditor,
 	TimelessJewel,
 	TranslationEditor,
-	RegexTool,
 	Warehouse,
 	// The WebView2 "new interface" window (--modern-ui). A tool for update
 	// purposes: the POB it drives is a headless engine child of its own, and
@@ -118,7 +117,7 @@ bool SpawnPobDetached(const std::wstring& launchLua, const std::wstring& game,
                       unsigned long* outPid = nullptr, const std::wstring& uri = std::wstring());
 
 // Start one of the tool windows (--atlas / --filter-editor / --timeless-jewel /
-// --regex / --warehouse / --translation-editor) and track it the same way. The child
+// --warehouse / --translation-editor) and track it the same way. The child
 // reads pob-zh.ini for game/locale, so callers must SaveLauncherConfig before spawning.
 //
 // `outPid` receives the new process id, for callers that need to find its window

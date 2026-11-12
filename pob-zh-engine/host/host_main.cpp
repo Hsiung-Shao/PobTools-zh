@@ -62,8 +62,6 @@
 #include "atlas_mechanics.h"
 #include "atlas_version_index.h"
 #include "filter_selftest.h"
-#include "regex_selftest.h"
-#include "regex_tool.h"
 #include "warehouse_tool.h"
 #include "timeless_jewel.h"
 #include "timeless_jewel_abyss.h"
@@ -628,12 +626,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 		return fails == 0 ? 0 : 1;
 	}
 
-	// Headless search-string generator check (synthetic rules + the shipped
-	// catalogue through hundreds of random picks).
-	if (arg1 == L"--regex-selftest") {
-		return RunRegexSelfTest(dir);
-	}
-
 	// Headless warehouse (stash revenue) data-layer check: fixtures only, no
 	// network, never the real PobTools\ directory.
 	if (arg1 == L"--warehouse-selftest") {
@@ -888,11 +880,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
 	}
 	if (arg1 == L"--timeless-jewel") {
 		ShowTimelessJewel(dir, LoadLauncherConfig(dir + L"pob-zh.ini").locale);
-		return 0;
-	}
-	if (arg1 == L"--regex") {
-		LauncherConfig c = LoadLauncherConfig(dir + L"pob-zh.ini");
-		ShowRegexTool(dir, c.game, c.locale);
 		return 0;
 	}
 	// 倉庫收益統計（測試性質：POESESSID 通道，見 warehouse_provider.h）
