@@ -2017,7 +2017,9 @@ private:
 		for (int i = 0; i < (int)tree.masteries.size(); i++) {
 			const AtlasMechanicDef* d = AtlasMechanicByEn(tree.masteries[i].name);
 			if (!d) continue;
-			labels[i] = d->zh;
+			// A renamed mastery (3.30 "Sacred Flora" = Harvest) has no official
+			// Chinese for the new name yet: show the game's English, not the old name.
+			labels[i] = tree.masteries[i].name == d->en ? d->zh : tree.masteries[i].name;
 			bool found = false;
 			for (auto& kv : mechMastIdx)
 				if (kv.first == d->id) { kv.second.push_back(i); found = true; break; }
