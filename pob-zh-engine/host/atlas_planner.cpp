@@ -2242,7 +2242,9 @@ private:
 		for (auto& g : nodeGroups) g.clear();
 		// Rebuilt here, not only on a season load: every path that swaps the tree
 		// or the zh mapping already sets panelDirty.
-		nodeKeys = AtlasNodeSearchKeys(tree, zhLoaded ? &i18n : nullptr);
+		// zhAvail_, not zhLoaded: a lagging season opens in English, but typing
+		// Chinese must still find the node (search matches, it does not display).
+		nodeKeys = AtlasNodeSearchKeys(tree, zhAvail_ ? &i18n : nullptr);
 		searchStale = true;
 		std::unordered_map<std::string, size_t> pos;
 		for (int i = 0; i < (int)tree.nodes.size(); i++) {
