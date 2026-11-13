@@ -271,8 +271,7 @@ bool PassiveTreeUpdater::doUpdate(std::string* err)
 			std::vector<unsigned char> bytes;
 			std::wstring path = std::wstring(kRawBase) + widen(tag) + L"/assets/" + widen(base);
 			if (!raw.Get(path, bytes, err, &stop_)) return false;
-			std::string body((const char*)bytes.data(), bytes.size());
-			if (!write_file_utf8(dst, body))
+			if (!DataUpdaterWriteCacheFile(dst, bytes))
 				{ if (err) *err = u8"寫入圖集快取失敗: " + base; return false; }
 		}
 		done++;

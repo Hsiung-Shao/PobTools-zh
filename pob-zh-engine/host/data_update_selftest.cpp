@@ -781,6 +781,37 @@ void test_shutdown(Rep& R)
 	R.chk(5, chg.empty() && c.created_absent().empty(), u8"Shutdown 後既有樹檔與版本紀錄不變、沒裝出新版", "changed=" + chg);
 }
 
+// ---- 圖集快取寫入 ---------------------------------------------------------------------------------------
+
+void test_cache_write(Rep& R)
+{
+	const Flavor& fl = R.fl;
+	const std::wstring d = make_sandbox_dir();
+	const std::wstring dst = d + L"sheet.png";
+	const std::vector<unsigned char> body = { 'N', 'E', 'W' };
+	R.chk_id("C1", DataUpdaterWriteCacheFile(dst, body) && slurp(dst) == "NEW" && !file_exists(dst + L".part"),
+	         u8"圖集寫入快取後內容完整、不留 .part");
+	put(dst, "HALF");
+	CreateDirectoryW((dst + L".part").c_str(), nullptr); // makes the write itself fail
+	R.chk_id("C2", !DataUpdaterWriteCacheFile(dst, body) && slurp(dst) == "HALF",
+	         u8"寫入失敗時回報失敗、不動到最終檔名");
+	rmtree(d.substr(0, d.size() - 1));
+
+	// what an interrupted write leaves behind must not count as a downloaded sheet
+	Opt o;
+	Ctx c(fl, o);
+	const std::string one = *fl.neededAssets.begin();
+	put(c.dir + L"PobTools\\cache\\" + (fl.atlas ? L"atlas_update" : L"pt_update") + L"\\" + widen(fl.newTag) +
+	    L"\\assets\\" + widen(one) + L".part", "HALF");
+	bool ok = false;
+	View v = c.check(true, &ok);
+	if (!ok || v.phase != Ph::UpdateAvailable) { R.chk_id("C3", false, u8"檢查到新版", vdesc(v)); return; }
+	c.u->update();
+	View done = c.wait_update(&ok);
+	R.chk_id("C3", ok && done.phase == Ph::Done && asset_calls(c.net.allCalls()) == fl.neededAssets,
+	         u8"快取留有上次中斷的 .part 時，該圖集仍重新下載、更新完成", vdesc(done));
+}
+
 // ---- T10 補：本機 POB TreeData 較新 ------------------------------------------------------------------------
 
 void test_pob_local(Rep& R)
@@ -830,6 +861,7 @@ int run(const std::wstring& exeDir, const Flavor& fl, const wchar_t* reportName)
 	test_net_fail(R);
 	test_throttle(R);
 	test_shutdown(R);
+	test_cache_write(R);
 	if (!fl.atlas) test_pob_local(R);
 	else rep.note(u8"輿圖更新器不讀本機 POB，無對應補充項");
 	return rep.finish(exeDir + reportName);
