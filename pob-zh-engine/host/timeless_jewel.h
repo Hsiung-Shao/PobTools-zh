@@ -176,6 +176,10 @@ struct TJSearchQuery {
 	// Empty = every indexed node in scope (global search). Node type (notable vs
 	// normal) is derived from the dataset, so smalls are rolled correctly too.
 	std::vector<int> nodeIds;
+	// Notables that must keep their identity: a seed that REPLACES any of them is
+	// dropped, whatever it scores. Independent of nodeIds/scope -- a protected
+	// node need not be one that is scored. Empty = no constraint.
+	std::vector<int> protectIds;
 };
 
 struct TJSeedHit {

@@ -32,6 +32,7 @@ struct PassiveTreeInput {
 	const std::vector<unsigned char>* hi = nullptr;       // per-node highlight class (size==nodes)
 	const std::vector<char>* disabled = nullptr;          // per-node: dimmed & excluded
 	const std::vector<char>* selected = nullptr;          // per-node: draw a "picked" marker
+	const std::vector<char>* protectedMark = nullptr;     // per-node: draw a "must not be replaced" ring
 	int emphasize = -1;                                   // node index to ring-pulse (list pick)
 	// Drawn last, inside the canvas clip, with the canvas rect (legend, notes).
 	std::function<void(ImDrawList*, ImVec2 min, ImVec2 max)> overlay;
@@ -41,6 +42,7 @@ struct PassiveTreeOutput {
 	int hoveredNode = -1;                    // node under the cursor (-1 none)
 	int clickedSocket = -1;                  // a socket clicked this frame (-1 none)
 	int clickedNode = -1;                    // a non-socket node clicked this frame (-1 none)
+	int rightClickedNode = -1;               // a non-socket node right-clicked (not dragged) this frame
 	ImVec2 canvasMin{ 0, 0 }, canvasMax{ 0, 0 }; // the canvas rect this frame (screen)
 };
 
