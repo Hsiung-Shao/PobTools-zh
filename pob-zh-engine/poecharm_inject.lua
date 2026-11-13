@@ -2193,10 +2193,113 @@ end
 -- gets POB's own cleanup), selection replacement, the per-box filter inside
 -- Insert/ReplaceSel, the length limit -- is still POB's own code, and every
 -- other key goes straight to the original.
+--
+-- Two more upstream gaps in the same box, both reported on v1.8.7:
+--   * BACK / DELETE remove ONE byte (`local len = 1`). A CJK character is three,
+--     so deleting one in the middle of the text left two bytes behind, drawn as
+--     two broken glyphs (at the end of the text they are simply not drawn, which
+--     is why it looked fine there). The extra bytes are dropped here first and
+--     upstream removes the last one, so its changeFunc / undo see one edit.
+--   * The box's own text is drawn through DrawString like any label, so a build
+--     named "Build" or "Test" -- a whole dictionary key -- was shown translated.
+--     The pieces Draw sends stay English while this box draws / handles a key.
+
+-- The engine's keep-English scope is one list at a time: whoever draws inside
+-- someone else's scope (a tooltip inside an edit box) puts the outer list back.
+local activeKeep = nil
+local function withKeepScope(list, fn, ...)
+	local set = type(PobToolsSetKeepEnglishScope) == "function" and PobToolsSetKeepEnglishScope
+	if not set or not list then return fn(...) end
+	local prev = activeKeep
+	activeKeep = list
+	pcall(set, list)
+	local ok, a, b, c = pcall(fn, ...)
+	activeKeep = prev
+	pcall(set, prev)
+	if not ok then error(a, 0) end
+	return a, b, c
+end
+
+-- Every string EditControl:Draw (and the click handler) passes for this buffer
+-- that the engine would translate; nil when there is none, which is the usual
+-- case. Rebuilt only when the text, caret or selection changed.
+local function editKeepList(self)
+	local buf = self.buf
+	if type(buf) ~= "string" or buf == "" or type(PobToolsTranslateDisplay) ~= "function" then return nil end
+	local memo = self.pobtoolsKeep
+	if memo and memo.buf == buf and memo.caret == self.caret and memo.sel == self.sel then return memo.list end
+	local list = {}
+	local function add(s)
+		if s ~= "" and PobToolsTranslateDisplay(s) then list[#list + 1] = s end
+	end
+	local caret = self.caret or 1
+	local left, right = math.min(caret, self.sel or caret), math.max(caret, self.sel or caret)
+	local textCol, selCol = self.textCol or "", self.selCol or ""
+	local strip = type(StripEscapes) == "function" and StripEscapes or function(s) return s end
+	add(buf)
+	if self.lineHeight then
+		-- same walk as the multi-line branch of Draw
+		for s, line, e in (buf .. "\n"):gmatch("()([^\n]*)\n()") do
+			add(line)
+			if left > s and left < e then add(line:sub(1, left - s)) end
+			if left ~= right and left < e and right > s then
+				local sel = selCol .. strip(line:sub(math.max(1, left - s + 1), math.min(#line, right - s)))
+				add(sel)
+				add(sel .. "  ")
+			end
+			if right > s and right < e then add(line:sub(right - s + 1)) end
+		end
+	else
+		add(textCol .. buf:sub(1, left - 1))
+		add(selCol .. strip(buf:sub(left, right - 1)))
+		add(textCol .. buf:sub(right))
+		add(buf:sub(right))
+	end
+	self.pobtoolsKeep = { buf = buf, caret = self.caret, sel = self.sel, list = list[1] and list or nil }
+	return self.pobtoolsKeep.list
+end
+
+-- Leave one byte of the character next to the caret for upstream to remove.
+local function trimCharForDelete(self, key)
+	local buf, caret = self.buf, self.caret
+	if type(buf) ~= "string" or type(caret) ~= "number" then return end
+	local function cont(i)
+		local b = buf:byte(i)
+		return b and b >= 0x80 and b < 0xC0
+	end
+	if key == "BACK" then
+		local i = caret - 1
+		while i > 1 and caret - 1 - i < 3 and cont(i) do i = i - 1 end
+		if i < caret - 1 and (buf:byte(i) or 0) >= 0xC0 then
+			self.buf = buf:sub(1, i - 1) .. buf:sub(caret - 1)
+			self.caret = i + 1
+		end
+	elseif (buf:byte(caret) or 0) >= 0xC0 then
+		local j = caret + 1
+		while j - caret < 4 and cont(j) do j = j + 1 end
+		self.buf = buf:sub(1, caret) .. buf:sub(j)
+	end
+end
+
 PATCHES["EditControl"] = function(class)
-	local orig = class.OnKeyDown
-	if not orig then error("EditControl has no OnKeyDown to wrap") end
-	class.OnKeyDown = keepArity(orig, function(self, key, doubleClick)
+	local upstream = class.OnKeyDown
+	if not upstream then error("EditControl has no OnKeyDown to wrap") end
+	local function orig(self, key, doubleClick)
+		-- same guards as upstream's first lines: a hidden / disabled box, or a key
+		-- that goes to the control under the mouse, edits nothing
+		if (key == "BACK" or key == "DELETE") and not (self.sel and self.sel ~= self.caret)
+			and self:IsShown() and self:IsEnabled() then
+			local over = self:GetMouseOverControl()
+			if not (over and over.OnKeyDown) then trimCharForDelete(self, key) end
+		end
+		return withKeepScope(editKeepList(self), upstream, self, key, doubleClick)
+	end
+	local origDraw = class.Draw
+	if not origDraw then error("EditControl has no Draw to wrap") end
+	class.Draw = keepArity(origDraw, function(self, ...)
+		return withKeepScope(editKeepList(self), origDraw, self, ...)
+	end)
+	class.OnKeyDown = keepArity(upstream, function(self, key, doubleClick)
 		-- same condition as upstream; disableRightClickPaste exists in PoE2 only
 		-- (nil in PoE1, so the extra test is harmless there)
 		local paste = (key == "v" and IsKeyDown("CTRL"))
@@ -2239,10 +2342,57 @@ PATCHES["EditControl"] = function(class)
 	-- method into the subclass table, so a subclass that already resolved
 	-- OnKeyDown would keep the old one. Swap those copies too.
 	for _, other in pairs(common.classes) do
-		if other ~= class and rawget(other, "OnKeyDown") == orig then
+		if other ~= class and rawget(other, "OnKeyDown") == upstream then
 			other.OnKeyDown = class.OnKeyDown
 		end
+		if other ~= class and rawget(other, "Draw") == origDraw then
+			other.Draw = class.Draw
+		end
 	end
+end
+
+-- The names the user gave are drawn outside the edit box too: the build / folder
+-- list and the path bar above it showed a build called "Build" as 流派 and a
+-- folder called "Test" as ">> 測試". Same remedy, same scope.
+local function keepOf(strings)
+	if type(PobToolsTranslateDisplay) ~= "function" then return nil end
+	local list = {}
+	for _, s in ipairs(strings) do
+		if type(s) == "string" and s ~= "" and PobToolsTranslateDisplay(s) then list[#list + 1] = s end
+	end
+	return list[1] and list or nil
+end
+
+local function patchNameList(class)
+	local origDraw = class.Draw
+	if not origDraw then error("the list has no Draw to wrap") end
+	class.Draw = keepArity(origDraw, function(self, ...)
+		local labels = {}
+		for i, value in ipairs(type(self.list) == "table" and self.list or {}) do
+			local ok, label = pcall(self.GetRowValue, self, 1, i, value)
+			if ok and type(label) == "string" then labels[#labels + 1] = label end
+		end
+		return withKeepScope(keepOf(labels), origDraw, self, ...)
+	end)
+end
+PATCHES["BuildListControl"] = patchNameList
+PATCHES["FolderListControl"] = patchNameList
+
+PATCHES["PathControl"] = function(class)
+	local origDraw, origSet = class.Draw, class.SetSubPath
+	if not origDraw or not origSet then error("PathControl has no Draw / SetSubPath to wrap") end
+	local function folders(subPath)
+		local names = {}
+		for folder in tostring(subPath or ""):gmatch("[^/]+") do names[#names + 1] = folder end
+		return keepOf(names)
+	end
+	class.Draw = keepArity(origDraw, function(self, ...)
+		return withKeepScope(folders(self.subPath), origDraw, self, ...)
+	end)
+	-- the buttons are sized here, from the same labels
+	class.SetSubPath = keepArity(origSet, function(self, subPath, noUndo)
+		return withKeepScope(folders(subPath), origSet, self, subPath, noUndo)
+	end)
 end
 
 -- Tooltips: translate a line BEFORE POB wraps it.
@@ -2711,23 +2861,12 @@ PATCHES["Tooltip"] = function(class)
 	-- The flavour pieces kept English while this tooltip is drawn (tooltipKeep
 	-- above): the engine's scope is this tooltip's list during Draw, and the
 	-- previous one again afterwards (also on error). Clear drops the list.
-	local activeKeep = nil
-	local function setKeepScope(list)
-		if type(PobToolsSetKeepEnglishScope) == "function" then pcall(PobToolsSetKeepEnglishScope, list) end
-	end
 	local origDraw = class.Draw
 	if type(origDraw) == "function" then
 		class.Draw = keepArity(origDraw, function(self, ...)
 			local list = tooltipKeep[self]
 			if not list then return origDraw(self, ...) end
-			local prev = activeKeep
-			activeKeep = list
-			setKeepScope(list)
-			local ok, a, b, c = pcall(origDraw, self, ...)
-			activeKeep = prev
-			setKeepScope(prev)
-			if not ok then error(a, 0) end
-			return a, b, c
+			return withKeepScope(list, origDraw, self, ...)
 		end)
 	end
 	local origClear = class.Clear
@@ -2792,7 +2931,10 @@ local PATCH_SYMPTOM = {
 	MinionSearchListControl = "召喚物搜尋框打不進中文",
 	CalcsTab                = "計算頁搜尋框打不進中文",
 	SearchHost              = "天賦樹搜尋框打不進中文",
-	EditControl             = "輸入框貼上中文會變成問號",
+	EditControl             = "輸入框貼上中文會變成問號;退格刪中文留下亂碼;輸入的英文名稱被翻成中文",
+	BuildListControl        = "流派清單裡使用者取的英文名稱被翻成中文",
+	FolderListControl       = "資料夾清單裡使用者取的英文名稱被翻成中文",
+	PathControl             = "路徑列上使用者取的英文資料夾名稱被翻成中文",
 	Tooltip                 = "提示視窗的中文顯示",
 	ItemsTab                = "選了會加詞綴數的符文後，滑過新的詞綴欄會讓 POB 報錯",
 	Item                    = "貼上的物品會多出一條「Dex: 99」之類的假詞綴;缺半徑的傳奇珠寶(從無到有)放進插槽會讓 POB 報錯",

@@ -1278,6 +1278,39 @@ int RunHeadlessSelfTest(const std::wstring& exeDir, const std::wstring& pobDirOv
 				if (mId > 0) child.Call("delete_item", json{{"id", mId}}, del, 60000);
 			}
 
+			// The classic POB edit box (build / folder names, notes): upstream removes one BYTE per Backspace / Delete, and the engine
+			// translated whatever the box held when it happened to be a dictionary key.
+			{
+				json bk, dl, dr, du;
+				// "測文試", caret after 文 (byte 7) -> Backspace
+				bool okBk = child.Call("selftest_edit_control", json{{"buf", u8"測文試"}, {"caret", 7}, {"keys", json::array({"BACK"})}}, bk, 30000);
+				check(u8"輸入框:在兩個中文字之間按 Backspace 刪掉整個字", okBk && bk.value("bufHex", "") == "E6B8ACE8A9A6" && bk.value("caret", 0) == 4,
+				      bk.dump().substr(0, 200));
+				// "測試", caret at the start -> Delete
+				bool okDl = child.Call("selftest_edit_control", json{{"buf", u8"測試"}, {"caret", 1}, {"keys", json::array({"DELETE"})}}, dl, 30000);
+				check(u8"輸入框:在中文字前按 Delete 刪掉整個字", okDl && dl.value("bufHex", "") == "E8A9A6" && dl.value("caret", 0) == 1, dl.dump().substr(0, 200));
+				auto allAscii = [](const json& r) {
+					if (!r.contains("drawn") || !r["drawn"].is_array() || r["drawn"].empty()) return false;
+					for (auto& s : r["drawn"])
+						for (unsigned char c : s.get<std::string>()) if (c >= 0x80) return false;
+					return true;
+				};
+				bool okDr = child.Call("selftest_edit_control", json{{"buf", "Build"}, {"draw", true}}, dr, 30000);
+				check(u8"輸入框:輸入 Build 時畫出來仍是 Build(不被翻譯)", okDr && allAscii(dr), dr.dump().substr(0, 200));
+				bool okDu = child.Call("selftest_edit_control", json{{"buf", "Test"}, {"draw", true}, {"focus", false}}, du, 30000);
+				check(u8"輸入框:失去焦點後 Test 仍是 Test(不被翻譯)", okDu && allAscii(du), du.dump().substr(0, 200));
+				// the same names where the list and the path bar above it draw them
+				json bl;
+				bool okBl = child.Call("selftest_build_list", json{{"buildName", "Build"}, {"folderName", "Test"}, {"subPath", "Test/"}}, bl, 30000);
+				auto drew = [&](const char* s) {
+					if (!bl.contains("drawn")) return false;
+					for (auto& d : bl["drawn"]) if (d.get<std::string>() == s) return true;
+					return false;
+				};
+				check(u8"流派清單與路徑列:名為 Build 的流派、名為 Test 的資料夾照原文顯示", okBl && drew("Build") && drew(">> Test") && drew("Test"),
+				      bl.dump().substr(0, 200));
+			}
+
 			json dbU, dbZh, dbR;
 			bool okDbU = okLoad && child.Call("item_db", json{{"kind", "unique"}, {"query", "shavronne"}, {"page", 1}, {"size", 10}}, dbU, 180000);
 			bool okDbZh = okDbU && child.Call("item_db", json{{"kind", "unique"}, {"query", u8"\u859b\u6717"}, {"page", 1}, {"size", 10}}, dbZh, 60000);

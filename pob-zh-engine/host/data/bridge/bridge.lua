@@ -7674,6 +7674,47 @@ end
 
 -- party_action{action = "clear"|"disable"|"rebuild"}: Clear, Disable Party
 -- Effects and Rebuild All.
+-- Selftest probes (--headless-selftest only, no UI calls them): what a classic
+-- POB control hands to the renderer, after translation, when it draws.
+local function selftest_drawn(control)
+	local drawn = {}
+	local realDrawString = DrawString
+	DrawString = function(_, _, _, _, _, text)
+		drawn[#drawn + 1] = type(PobToolsTranslateDisplay) == "function" and PobToolsTranslateDisplay(text) or text
+	end
+	local ok, err = pcall(control.Draw, control, { x = 0, y = 0, width = 1920, height = 1080 })
+	DrawString = realDrawString
+	if not ok then error(err, 0) end
+	return drawn
+end
+
+-- One EditControl driven the way the keyboard does. The buffer goes back as hex:
+-- a half-deleted character is not valid UTF-8 and would not survive the JSON reply.
+function M.selftest_edit_control(p)
+	-- PoE1 constructs in two steps, the PoE2 fork still passes the arguments to new()
+	local rect = { 0, 0, 300, 20 }
+	local twoStep, e = pcall(function() return new("EditControl"):EditControl(nil, rect, "") end)
+	if not twoStep then e = new("EditControl", nil, rect, "") end
+	e.buf = p.buf or ""
+	e.caret = p.caret or (#e.buf + 1)
+	e.sel = p.sel
+	for _, key in ipairs(p.keys or {}) do e:OnKeyDown(key) end
+	e.hasFocus = p.focus ~= false
+	return { bufHex = (e.buf:gsub(".", function(c) return string.format("%02X", c:byte()) end)), caret = e.caret,
+		drawn = p.draw and selftest_drawn(e) or {} }
+end
+
+-- The build list (with its path bar) holding one build and one folder under subPath.
+function M.selftest_build_list(p)
+	local listMode = { subPath = p.subPath or "", BuildList = function() end, list = {
+		{ buildName = p.buildName, fileName = p.buildName .. ".xml", subPath = p.subPath or "", level = 1, className = "Witch" },
+		{ folderName = p.folderName, subPath = p.subPath or "" },
+	} }
+	local list = new("BuildListControl"):BuildListControl(nil, { 0, 0, 600, 300 }, listMode)
+	list.width = function() return 600 end -- BuildList.lua sets a function here; the path bar calls it
+	return { drawn = selftest_drawn(list) }
+end
+
 function M.party_action(p)
 	local b = ensure_build()
 	local c = b.partyTab.controls
